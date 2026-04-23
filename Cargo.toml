@@ -1,0 +1,18 @@
+[workspace]
+members = [
+    "crates/chem-core",
+    "crates/bio-core",
+    "crates/io",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
+authors = ["COSMolKit Contributors"]
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+

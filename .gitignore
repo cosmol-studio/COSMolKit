@@ -1,0 +1,7 @@
+/target
+**/*.pyc
+__pycache__/
+.venv/
+.maturin/
+
+tests/golden
