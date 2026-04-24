@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate RDKit atomic-number golden data from tests/smiles.txt."""
+"""Generate RDKit graph-feature golden data (direct + AddHs) from tests/smiles.txt."""
 
 from __future__ import annotations
 
@@ -9,6 +9,43 @@ from pathlib import Path
 from typing import Iterable
 
 from rdkit import Chem
+
+
+def atom_features(mol: Chem.Mol) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for atom in mol.GetAtoms():
+        rows.append(
+            {
+                "atomic_num": atom.GetAtomicNum(),
+                "chirality": str(atom.GetChiralTag()),
+                "degree": atom.GetTotalDegree(),
+                "formal_charge": atom.GetFormalCharge(),
+                "num_hs": atom.GetTotalNumHs(),
+                "num_radical_electrons": atom.GetNumRadicalElectrons(),
+                "hybridization": str(atom.GetHybridization()),
+                "is_aromatic": atom.GetIsAromatic(),
+                "is_in_ring": atom.IsInRing(),
+                "explicit_valence": atom.GetExplicitValence(),
+                "implicit_hs": atom.GetNumImplicitHs(),
+                "total_valence": atom.GetTotalValence(),
+            }
+        )
+    return rows
+
+
+def bond_features(mol: Chem.Mol) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for bond in mol.GetBonds():
+        rows.append(
+            {
+                "begin_atom": bond.GetBeginAtomIdx(),
+                "end_atom": bond.GetEndAtomIdx(),
+                "bond_type": str(bond.GetBondType()),
+                "stereo": str(bond.GetStereo()),
+                "is_conjugated": bond.GetIsConjugated(),
+            }
+        )
+    return rows
 
 
 def iter_smiles(path: Path) -> Iterable[str]:
@@ -25,15 +62,23 @@ def build_record(smiles: str) -> dict[str, object]:
         return {
             "smiles": smiles,
             "rdkit_ok": False,
-            "atomic_nums": None,
+            "direct": None,
+            "with_hs": None,
             "error": "MolFromSmiles returned None",
         }
 
-    atomic_nums = [atom.GetAtomicNum() for atom in mol.GetAtoms()]
+    mol_h = Chem.AddHs(Chem.Mol(mol))
     return {
         "smiles": smiles,
         "rdkit_ok": True,
-        "atomic_nums": atomic_nums,
+        "direct": {
+            "atom_features": atom_features(mol),
+            "bond_features": bond_features(mol),
+        },
+        "with_hs": {
+            "atom_features": atom_features(mol_h),
+            "bond_features": bond_features(mol_h),
+        },
         "error": None,
     }
 
@@ -68,4 +113,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

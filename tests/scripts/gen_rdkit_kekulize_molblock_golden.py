@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate RDKit V2000/V3000 golden data for minimal molblock subset tests."""
+"""Generate RDKit kekulized molblock golden data for bond-block parity tests."""
 
 from __future__ import annotations
 
@@ -27,10 +27,12 @@ def molblock_body(block: str) -> str:
     return "\n".join(lines[3:])
 
 
-def render_molblock_variant(mol: Chem.Mol, *, force_v3000: bool) -> tuple[bool, str | None, str | None]:
+def render_molblock_variant(
+    mol: Chem.Mol, *, force_v3000: bool
+) -> tuple[bool, str | None, str | None]:
     try:
         mb = Chem.MolToMolBlock(mol, forceV3000=force_v3000)
-    except Exception as exc:  # RDKit raises when format cannot represent molecule
+    except Exception as exc:
         return False, None, str(exc)
     body = molblock_body(mb)
     first = body.splitlines()[0] if body else ""
@@ -51,8 +53,8 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("tests/golden/molblock_v2000_minimal.jsonl"),
-        help="output jsonl (default: tests/golden/molblock_v2000_minimal.jsonl)",
+        default=Path("tests/golden/molblock_v2000_kekulized.jsonl"),
+        help="output jsonl (default: tests/golden/molblock_v2000_kekulized.jsonl)",
     )
     args = parser.parse_args()
 
@@ -67,6 +69,8 @@ def main() -> None:
                     "smiles": smi,
                     "parse_ok": False,
                     "parse_error": "MolFromSmiles returned None",
+                    "kekulize_ok": False,
+                    "kekulize_error": "parse failed",
                     "v2000_ok": False,
                     "v2000_body": None,
                     "v2000_error": "parse failed",
@@ -75,17 +79,42 @@ def main() -> None:
                     "v3000_error": "parse failed",
                 }
             else:
-                AllChem.Compute2DCoords(mol)
-                v2000_ok, v2000_body, v2000_error = render_molblock_variant(
-                    mol, force_v3000=False
-                )
-                v3000_ok, v3000_body, v3000_error = render_molblock_variant(
-                    mol, force_v3000=True
-                )
+                parse_ok = True
+                parse_error = None
+                try:
+                    Chem.Kekulize(mol, clearAromaticFlags=True)
+                    kek_ok = True
+                    kek_error = None
+                except Exception as exc:
+                    kek_ok = False
+                    kek_error = str(exc)
+
+                if kek_ok:
+                    AllChem.Compute2DCoords(mol)
+                    v2000_ok, v2000_body, v2000_error = render_molblock_variant(
+                        mol, force_v3000=False
+                    )
+                    v3000_ok, v3000_body, v3000_error = render_molblock_variant(
+                        mol, force_v3000=True
+                    )
+                else:
+                    v2000_ok, v2000_body, v2000_error = (
+                        False,
+                        None,
+                        "kekulize failed",
+                    )
+                    v3000_ok, v3000_body, v3000_error = (
+                        False,
+                        None,
+                        "kekulize failed",
+                    )
+
                 rec = {
                     "smiles": smi,
-                    "parse_ok": True,
-                    "parse_error": None,
+                    "parse_ok": parse_ok,
+                    "parse_error": parse_error,
+                    "kekulize_ok": kek_ok,
+                    "kekulize_error": kek_error,
                     "v2000_ok": v2000_ok,
                     "v2000_body": v2000_body,
                     "v2000_error": v2000_error,
@@ -93,6 +122,7 @@ def main() -> None:
                     "v3000_body": v3000_body,
                     "v3000_error": v3000_error,
                 }
+
             f.write(json.dumps(rec, ensure_ascii=True))
             f.write("\n")
 

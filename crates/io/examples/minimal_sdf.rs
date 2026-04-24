@@ -36,4 +36,3 @@ fn main() {
         print!("{}", output);
     }
 }
-

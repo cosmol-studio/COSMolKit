@@ -10,9 +10,8 @@ dev = [
     "maturin>=1.7",
     "numpy<2",
     "pytest>=8.0",
-    "rdkit-pypi==2022.9.5",
+    "rdkit==2025.3.5",
 ]
 
 [tool.uv]
 package = false
-

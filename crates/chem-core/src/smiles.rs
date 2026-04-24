@@ -160,6 +160,8 @@ impl<'a> Parser<'a> {
         end_atom: usize,
         pending: PendingBond,
     ) {
+        let mut bgn = begin_atom;
+        let mut end = end_atom;
         let order = match pending {
             PendingBond::Single => BondOrder::Single,
             PendingBond::Double => BondOrder::Double,
@@ -167,7 +169,14 @@ impl<'a> Parser<'a> {
             PendingBond::Quadruple => BondOrder::Quadruple,
             PendingBond::Aromatic => BondOrder::Aromatic,
             PendingBond::DirectionalSingle => BondOrder::Single,
-            PendingBond::DativeForward | PendingBond::DativeBackward => BondOrder::Dative,
+            PendingBond::DativeForward => BondOrder::Dative,
+            PendingBond::DativeBackward => {
+                // RDKit keeps dative direction in begin/end topology:
+                // "<-" means right atom donates to left atom.
+                bgn = end_atom;
+                end = begin_atom;
+                BondOrder::Dative
+            }
             PendingBond::Null => BondOrder::Null,
             PendingBond::Unspecified => {
                 let atom1 = &mol.atoms[begin_atom];
@@ -181,8 +190,8 @@ impl<'a> Parser<'a> {
         };
         mol.add_bond(Bond {
             index: 0,
-            begin_atom,
-            end_atom,
+            begin_atom: bgn,
+            end_atom: end,
             order,
         });
     }
@@ -205,6 +214,8 @@ impl<'a> Parser<'a> {
                 is_aromatic: aromatic,
                 formal_charge: 0,
                 explicit_hydrogens: 0,
+                no_implicit: false,
+                num_radical_electrons: 0,
                 isotope: None,
             });
         }
@@ -221,6 +232,8 @@ impl<'a> Parser<'a> {
                 is_aromatic: false,
                 formal_charge: 0,
                 explicit_hydrogens: 0,
+                no_implicit: true,
+                num_radical_electrons: 0,
                 isotope,
             }
         } else if self.consume_if('*') {
@@ -230,6 +243,8 @@ impl<'a> Parser<'a> {
                 is_aromatic: false,
                 formal_charge: 0,
                 explicit_hydrogens: 0,
+                no_implicit: true,
+                num_radical_electrons: 0,
                 isotope,
             }
         } else if let Some((atomic_num, aromatic, consumed)) = self.match_bracket_atom_symbol() {
@@ -240,6 +255,8 @@ impl<'a> Parser<'a> {
                 is_aromatic: aromatic,
                 formal_charge: 0,
                 explicit_hydrogens: 0,
+                no_implicit: true,
+                num_radical_electrons: 0,
                 isotope,
             }
         } else {

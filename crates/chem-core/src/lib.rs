@@ -3,6 +3,7 @@
 pub mod adjacency;
 pub mod atom;
 pub mod bond;
+pub mod hydrogens;
 pub mod kekulize;
 pub mod molecule;
 mod smiles;
@@ -11,8 +12,11 @@ pub mod valence;
 pub use adjacency::{AdjacencyList, NeighborRef};
 pub use atom::Atom;
 pub use bond::{Bond, BondOrder};
+pub use hydrogens::{AddHydrogensError, add_hydrogens_in_place};
 pub use molecule::{Molecule, SmilesParseError};
-pub use valence::{ValenceAssignment, ValenceError, ValenceModel};
+pub use valence::{
+    ValenceAssignment, ValenceError, ValenceModel, assign_radicals_rdkit_2025, assign_valence,
+};
 
 /// Returns the crate version at compile time.
 #[must_use]
@@ -22,7 +26,7 @@ pub fn version() -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{version, Atom, Bond, BondOrder, Molecule};
+    use super::{Atom, Bond, BondOrder, Molecule, version};
 
     #[test]
     fn version_is_not_empty() {
@@ -43,6 +47,8 @@ mod tests {
             is_aromatic: false,
             formal_charge: 0,
             explicit_hydrogens: 0,
+            no_implicit: false,
+            num_radical_electrons: 0,
             isotope: None,
         };
         let _bond = Bond {

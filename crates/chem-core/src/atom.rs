@@ -11,6 +11,10 @@ pub struct Atom {
     pub formal_charge: i8,
     /// Explicit hydrogen count provided in bracket SMILES.
     pub explicit_hydrogens: u8,
+    /// RDKit-style noImplicit flag (true for bracket atoms in SMILES parser).
+    pub no_implicit: bool,
+    /// Radical electron count cache.
+    pub num_radical_electrons: u8,
     /// Optional isotope label from bracket SMILES.
     pub isotope: Option<u16>,
 }
