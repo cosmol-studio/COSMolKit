@@ -47,8 +47,8 @@ def main() -> None:
     parser.add_argument(
         "--input",
         type=Path,
-        default=Path("tests/molblock_minimal_smiles.txt"),
-        help="input smiles corpus (default: tests/molblock_minimal_smiles.txt)",
+        default=Path("tests/smiles.smi"),
+        help="input smiles corpus (default: tests/smiles.smi)",
     )
     parser.add_argument(
         "--output",

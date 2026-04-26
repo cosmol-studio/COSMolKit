@@ -153,6 +153,11 @@ pub(crate) fn valence_list(atomic_num: u8) -> Option<&'static [i32]> {
     }
 }
 
+/// Returns the RDKit 2025.03.5 valence list for an atomic number.
+pub fn rdkit_valence_list(atomic_num: u8) -> Option<&'static [i32]> {
+    valence_list(atomic_num)
+}
+
 fn is_aromatic_atom(molecule: &Molecule, atom_index: usize) -> bool {
     if molecule.atoms[atom_index].is_aromatic {
         return true;

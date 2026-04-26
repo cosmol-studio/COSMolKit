@@ -13,9 +13,18 @@ The project focuses on providing a practical and reliable subset of functionalit
 
 COSMolKit is designed as a **systems-level library with first-class Python bindings**, allowing it to be directly integrated into existing scientific workflows while maintaining a consistent API across Rust and Python. Leveraging Rust’s compilation model, COSMolKit can be deployed across native and WebAssembly (WASM) targets, enabling seamless use in both backend systems and browser-based environments.
 
-A key design goal is to achieve **behavioral consistency with established tools such as :contentReference[oaicite:0]{index=0}** for core operations. Through extensive consistency testing and validation on real-world datasets, COSMolKit aims to reproduce identical results for critical procedures (e.g., Kekulization, aromaticity, and valence handling), making it a potential **drop-in replacement for common RDKit-based workflows**.
+A key design goal is to achieve **behavioral consistency with established tools such as RDKit** for core operations. Through extensive consistency testing and validation on real-world datasets, COSMolKit aims to reproduce identical results for critical procedures (e.g., Kekulization, aromaticity, and valence handling), making it a potential **drop-in replacement for common RDKit-based workflows**.
 
 The overall goal is to provide a **portable, reliable, and extensible foundation** for chemistry and biomolecular structure data processing.
+
+---
+
+## Current Progress
+
+COSMolKit is currently focused on the chemistry core. The repository already contains a Rust workspace with `chem-core`, `io`, and `bio-core` crates, plus RDKit-based regression tests for SMILES parsing, atom/bond feature parity, hydrogen expansion, Kekulization, and minimal MOL/SDF output.
+
+RDKit 2025.03.5 is used as the active behavioral reference. The implementation is still a subset and is being expanded by source-level parity work rather than broad API coverage.
+As of 2026-04-26, `chem-core` RDKit graph-feature parity tests are passing for direct and explicit-hydrogen molecules. `io` molblock parity remains in progress, with current first failures in V2000 coordinate parity at row 18 (`F[C@](Cl)(Br)I`) and kekulized topology parity at row 31 (strict `computeInitialCoords` branch missing).
 
 ---
 
@@ -70,7 +79,7 @@ we aim to achieve:
 
 This is ensured through:
 
-- large-scale consistency testing against :contentReference[oaicite:0]{index=0}  
+- large-scale consistency testing against RDKit
 - regression test suites on real-world molecule datasets  
 - strict validation of edge cases (aromatic rings, charged systems, fused systems, etc.)
 
@@ -83,12 +92,12 @@ The long-term goal is to make COSMolKit usable as an **in-place replacement** fo
 ## Phase 0 — Project Foundation
 **Goal:** establish the minimal architecture and internal data model
 
-- [ ] Rust workspace layout
+- ✅ Rust workspace layout
 - [ ] core error types
 - [ ] shared chemical element table
 - [ ] common indexing and identifier types
 - [ ] serialization strategy
-- [ ] test corpus for molecules and protein structures
+- ✅ test corpus for molecule parity work
 - [ ] PyO3 binding scaffold
 
 ---
@@ -97,11 +106,11 @@ The long-term goal is to make COSMolKit usable as an **in-place replacement** fo
 **Goal:** achieve a small but complete and verifiable workflow
 
 - [ ] SDF reader (robust, streaming-capable)
-- [ ] Atom / Bond / Molecule struct
-- [ ] adjacency representation
-- [ ] bond order + formal charge support
-- [ ] basic valence handling
-- [ ] Kekulization
+- ✅ Atom / Bond / Molecule struct
+- ✅ adjacency representation
+- ✅ bond order + formal charge support
+- [ ] basic valence handling (in progress for tested subset)
+- [ ] Kekulization (in progress for tested subset)
 
 Deliverable:
 - load molecules from SDF
@@ -115,11 +124,11 @@ This phase defines the **correctness baseline** of the project.
 ## Phase 2 — Chemical Perception Core
 **Goal:** complete the minimal RDKit-equivalent perception pipeline
 
-- [ ] implicit hydrogen assignment
+- [ ] implicit hydrogen assignment (in progress for tested subset)
 - [ ] aromaticity detection
-- [ ] ring perception
+- [ ] ring perception (in progress for tested subset)
 - [ ] sanitization pipeline
-- [ ] consistency testing vs RDKit (large-scale)
+- [ ] consistency testing vs RDKit (in progress: `chem-core` graph-feature parity green; `io` molblock parity still being closed)
 
 Deliverable:
 - molecules can be fully sanitized and normalized
@@ -130,9 +139,9 @@ Deliverable:
 ## Phase 3 — Chemical File I/O Expansion
 **Goal:** broaden usable chemistry workflows
 
-- [ ] SMILES parser
+- [ ] SMILES parser (in progress for tested subset)
 - [ ] MOL reader
-- [ ] SDF writer
+- [ ] SDF writer (minimal V2000 output in progress; strict coordinate/kekulized parity still open)
 - [ ] batch molecule loading
 - [ ] format validation tools
 

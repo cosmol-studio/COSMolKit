@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate RDKit graph-feature golden data (direct + AddHs) from tests/smiles.txt."""
+"""Generate RDKit graph-feature golden data (direct + AddHs) from tests/smiles.smi."""
 
 from __future__ import annotations
 
@@ -11,13 +11,31 @@ from typing import Iterable
 from rdkit import Chem
 
 
+def explicit_valence(atom: Chem.Atom) -> int:
+    if hasattr(Chem, "ValenceType"):
+        return int(atom.GetValence(Chem.ValenceType.EXPLICIT))
+    return int(atom.GetExplicitValence())
+
+
+def implicit_valence(atom: Chem.Atom) -> int:
+    if hasattr(Chem, "ValenceType"):
+        return int(atom.GetValence(Chem.ValenceType.IMPLICIT))
+    return int(atom.GetImplicitValence())
+
+
 def atom_features(mol: Chem.Mol) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for atom in mol.GetAtoms():
+        cip_rank = atom.GetProp("_CIPRank") if atom.HasProp("_CIPRank") else None
+        explicit = explicit_valence(atom)
+        implicit = implicit_valence(atom)
         rows.append(
             {
                 "atomic_num": atom.GetAtomicNum(),
                 "chirality": str(atom.GetChiralTag()),
+                "cip_code": atom.GetProp("_CIPCode") if atom.HasProp("_CIPCode") else None,
+                "cip_rank": int(cip_rank) if cip_rank is not None else None,
+                "chirality_possible": bool(atom.HasProp("_ChiralityPossible")),
                 "degree": atom.GetTotalDegree(),
                 "formal_charge": atom.GetFormalCharge(),
                 "num_hs": atom.GetTotalNumHs(),
@@ -25,9 +43,9 @@ def atom_features(mol: Chem.Mol) -> list[dict[str, object]]:
                 "hybridization": str(atom.GetHybridization()),
                 "is_aromatic": atom.GetIsAromatic(),
                 "is_in_ring": atom.IsInRing(),
-                "explicit_valence": atom.GetExplicitValence(),
+                "explicit_valence": explicit,
                 "implicit_hs": atom.GetNumImplicitHs(),
-                "total_valence": atom.GetTotalValence(),
+                "total_valence": explicit + implicit,
             }
         )
     return rows
@@ -67,7 +85,9 @@ def build_record(smiles: str) -> dict[str, object]:
             "error": "MolFromSmiles returned None",
         }
 
+    Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
     mol_h = Chem.AddHs(Chem.Mol(mol))
+    Chem.AssignStereochemistry(mol_h, cleanIt=True, force=True)
     return {
         "smiles": smiles,
         "rdkit_ok": True,
@@ -88,14 +108,14 @@ def main() -> None:
     parser.add_argument(
         "--input",
         type=Path,
-        default=Path("tests/smiles.txt"),
-        help="input SMILES file (default: tests/smiles.txt)",
+        default=Path("tests/smiles.smi"),
+        help="input SMILES file (default: tests/smiles.smi)",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("tests/golden/atomic_nums.jsonl"),
-        help="output JSONL path (default: tests/golden/atomic_nums.jsonl)",
+        default=Path("tests/golden/graph_features.jsonl"),
+        help="output JSONL path (default: tests/golden/graph_features.jsonl)",
     )
     args = parser.parse_args()
 

@@ -1,5 +1,5 @@
 use crate::valence::assign_valence;
-use crate::{Atom, Bond, BondOrder, Molecule, ValenceModel};
+use crate::{Atom, Bond, BondDirection, BondOrder, BondStereo, ChiralTag, Molecule, ValenceModel};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AddHydrogensError {
@@ -50,6 +50,7 @@ pub fn add_hydrogens_in_place(molecule: &mut Molecule) -> Result<(), AddHydrogen
                 explicit_hydrogens: 0,
                 no_implicit: false,
                 num_radical_electrons: 0,
+                chiral_tag: ChiralTag::Unspecified,
                 isotope: None,
             });
             molecule.add_bond(Bond {
@@ -57,6 +58,9 @@ pub fn add_hydrogens_in_place(molecule: &mut Molecule) -> Result<(), AddHydrogen
                 begin_atom: i,
                 end_atom: h_idx,
                 order: BondOrder::Single,
+                direction: BondDirection::None,
+                stereo: BondStereo::None,
+                stereo_atoms: Vec::new(),
             });
         }
     }

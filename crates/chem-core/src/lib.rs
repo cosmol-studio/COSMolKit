@@ -10,12 +10,13 @@ mod smiles;
 pub mod valence;
 
 pub use adjacency::{AdjacencyList, NeighborRef};
-pub use atom::Atom;
-pub use bond::{Bond, BondOrder};
+pub use atom::{Atom, ChiralTag};
+pub use bond::{Bond, BondDirection, BondOrder, BondStereo};
 pub use hydrogens::{AddHydrogensError, add_hydrogens_in_place};
 pub use molecule::{Molecule, SmilesParseError};
 pub use valence::{
     ValenceAssignment, ValenceError, ValenceModel, assign_radicals_rdkit_2025, assign_valence,
+    rdkit_valence_list,
 };
 
 /// Returns the crate version at compile time.
@@ -49,6 +50,7 @@ mod tests {
             explicit_hydrogens: 0,
             no_implicit: false,
             num_radical_electrons: 0,
+            chiral_tag: super::ChiralTag::Unspecified,
             isotope: None,
         };
         let _bond = Bond {
@@ -56,6 +58,9 @@ mod tests {
             begin_atom: 0,
             end_atom: 1,
             order: BondOrder::Single,
+            direction: super::BondDirection::None,
+            stereo: super::BondStereo::None,
+            stereo_atoms: Vec::new(),
         };
         let _mol = Molecule::default();
     }

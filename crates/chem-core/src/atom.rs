@@ -1,3 +1,10 @@
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ChiralTag {
+    Unspecified,
+    TetrahedralCw,
+    TetrahedralCcw,
+}
+
 /// Atom record in a molecule graph.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Atom {
@@ -15,6 +22,8 @@ pub struct Atom {
     pub no_implicit: bool,
     /// Radical electron count cache.
     pub num_radical_electrons: u8,
+    /// Parsed tetrahedral chirality tag from SMILES (`@`/`@@`) when present.
+    pub chiral_tag: ChiralTag,
     /// Optional isotope label from bracket SMILES.
     pub isotope: Option<u16>,
 }
