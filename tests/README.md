@@ -19,7 +19,7 @@ RDKit `2025.03.5` is the current oracle for generated golden files. Keep the Pyt
    - `.venv/bin/python tests/scripts/gen_rdkit_v2000_minimal_golden.py --input tests/smiles.smi --output tests/golden/molblock_v2000_minimal.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_kekulize_molblock_golden.py --input tests/smiles.smi --output tests/golden/molblock_v2000_kekulized.jsonl`
 3. (Optional) Install local COSMolKit Python build into the same env for direct comparison:
-   - `.venv/bin/maturin develop --manifest-path bindings/python/native/Cargo.toml`
+   - `.venv/bin/maturin develop --manifest-path python/Cargo.toml`
 4. Run Rust tests:
    - `cargo test -p cosmolkit-chem-core`
    - `cargo test -p cosmolkit-io`

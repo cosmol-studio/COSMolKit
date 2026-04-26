@@ -1,0 +1,39 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "cosmolkit"
+version = "0.0.1"
+description = "Python bindings for COSMolKit"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "COSMolKit Contributors" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Chemistry",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/cosmol-studio/COSMolKit"
+Repository = "https://github.com/cosmol-studio/COSMolKit"
+Issues = "https://github.com/cosmol-studio/COSMolKit/issues"
+
+[tool.maturin]
+module-name = "cosmolkit"
+manifest-path = "Cargo.toml"
+features = ["pyo3/extension-module"]

@@ -3,13 +3,14 @@ members = [
     "crates/chem-core",
     "crates/bio-core",
     "crates/io",
+    "python",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["COSMolKit Contributors"]
 
 [workspace.lints.clippy]

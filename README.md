@@ -25,6 +25,7 @@ COSMolKit is currently focused on the chemistry core. The repository already con
 
 RDKit 2025.03.5 is used as the active behavioral reference. The implementation is still a subset and is being expanded by source-level parity work rather than broad API coverage.
 As of 2026-04-26, `chem-core` RDKit graph-feature parity tests are passing for direct and explicit-hydrogen molecules. `io` molblock parity remains in progress, with current first failures in V2000 coordinate parity at row 18 (`F[C@](Cl)(Br)I`) and kekulized topology parity at row 31 (strict `computeInitialCoords` branch missing).
+The repository also now includes a PyO3 placeholder package scaffold under `python/`, along with a GitHub Actions workflow for building and publishing Python wheels to PyPI.
 
 ---
 
@@ -98,7 +99,7 @@ The long-term goal is to make COSMolKit usable as an **in-place replacement** fo
 - [ ] common indexing and identifier types
 - [ ] serialization strategy
 - ✅ test corpus for molecule parity work
-- [ ] PyO3 binding scaffold
+- ✅ PyO3 binding scaffold
 
 ---
 

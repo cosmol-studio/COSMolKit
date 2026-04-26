@@ -1,0 +1,77 @@
+name: python-publish
+
+on:
+    push:
+        tags:
+            - "*"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    build-wheels:
+        name: build wheels on ${{ matrix.os }}
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                os:
+                    - ubuntu-latest
+                    - macos-latest
+                    - windows-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Build wheels
+              uses: PyO3/maturin-action@v1
+              with:
+                  command: build
+                  working-directory: python
+                  args: --release --manifest-path Cargo.toml --out dist
+
+            - name: Upload wheels
+              uses: actions/upload-artifact@v4
+              with:
+                  name: wheels-${{ matrix.os }}
+                  path: python/dist
+
+    build-sdist:
+        name: build sdist
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Build sdist
+              uses: PyO3/maturin-action@v1
+              with:
+                  command: sdist
+                  working-directory: python
+                  args: --manifest-path Cargo.toml --out dist
+
+            - name: Upload sdist
+              uses: actions/upload-artifact@v4
+              with:
+                  name: sdist
+                  path: python/dist
+
+    publish:
+        name: publish to pypi
+        runs-on: ubuntu-latest
+        needs:
+            - build-wheels
+            - build-sdist
+
+        steps:
+            - name: Download artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  path: dist
+                  merge-multiple: true
+
+            - name: Publish to PyPI
+              uses: pypa/gh-action-pypi-publish@release/v1
+              with:
+                  password: ${{ secrets.PYPI_API_TOKEN }}
