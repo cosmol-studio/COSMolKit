@@ -1,8 +1,7 @@
 [workspace]
 members = [
-    "crates/chem-core",
-    "crates/bio-core",
-    "crates/io",
+    "crates/cosmolkit-core",
+    "crates/cosmolkit",
     "python",
 ]
 resolver = "2"
@@ -12,6 +11,9 @@ edition = "2024"
 license = "MIT"
 version = "0.0.1"
 authors = ["COSMolKit Contributors"]
+description = "Core cheminformatics and structural biology toolkit in Rust"
+repository = "https://github.com/cosmol-studio/COSMolKit"
+homepage = "https://github.com/cosmol-studio/COSMolKit"
 
 [workspace.lints.clippy]
 all = "warn"

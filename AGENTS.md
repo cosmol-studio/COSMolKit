@@ -3,10 +3,9 @@
 ## Project Structure & Module Organization
 This repository is currently in bootstrap stage and contains only [README.md](/home/wangjingtong/code/COSMolKit/README.md). As implementation lands, keep a predictable Rust workspace layout:
 
-- `crates/chem-core/` for molecular graph and chemistry perception logic
-- `crates/bio-core/` for PDB/mmCIF parsing and structure hierarchy
-- `crates/io/` for SDF/MOL/SMILES/PDB/mmCIF readers and writers
-- `bindings/python/` for PyO3 bindings and packaging metadata
+- `crates/cosmolkit-core/` for molecular graph, chemistry perception, IO, and biomolecular primitives
+- `crates/cosmolkit/` for facade re-exports and public top-level API
+- `python/` for PyO3 bindings and packaging metadata
 - `tests/` for integration/regression datasets and parity tests
 
 Prefer small, focused crates over a monolith; keep public APIs in `lib.rs` and internal helpers in private modules.
@@ -22,7 +21,7 @@ Use standard Rust workflows from repo root once `Cargo.toml` is added:
 For Python tooling and bindings, use project-level `uv` env management:
 
 - `uv sync --group dev` creates/updates root `.venv` with RDKit/testing/build tools
-- `.venv/bin/maturin develop --manifest-path bindings/python/native/Cargo.toml` installs local extension into the shared env
+- `.venv/bin/maturin develop --manifest-path python/Cargo.toml` installs local extension into the shared env
 - `.venv/bin/pytest` runs Python-facing tests
 
 ## Coding Style & Naming Conventions

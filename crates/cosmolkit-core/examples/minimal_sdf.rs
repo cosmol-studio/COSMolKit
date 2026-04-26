@@ -2,16 +2,16 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-use cosmolkit_chem_core::Molecule;
-use cosmolkit_io::molblock::mol_to_sdf_record_minimal;
+use cosmolkit_core::Molecule;
+use cosmolkit_core::io::molblock::mol_to_sdf_record_minimal;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
 
     // Usage:
-    //   cargo run -p cosmolkit-io --example minimal_sdf
-    //   cargo run -p cosmolkit-io --example minimal_sdf -- "CCO"
-    //   cargo run -p cosmolkit-io --example minimal_sdf -- "CCO" /tmp/out.sdf
+    //   cargo run -p cosmolkit-core --example minimal_sdf
+    //   cargo run -p cosmolkit-core --example minimal_sdf -- "CCO"
+    //   cargo run -p cosmolkit-core --example minimal_sdf -- "CCO" /tmp/out.sdf
     let smiles_inputs: Vec<String> = if args.len() >= 2 {
         vec![args[1].clone()]
     } else {

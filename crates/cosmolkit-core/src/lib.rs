@@ -1,5 +1,7 @@
 //! Core molecular graph and chemistry perception primitives.
 
+pub mod bio;
+pub mod io;
 pub mod adjacency;
 pub mod atom;
 pub mod bond;

@@ -1,7 +1,7 @@
 use core::fmt;
 use std::f64::consts::PI;
 
-use cosmolkit_chem_core::{BondOrder, BondStereo, Molecule};
+use crate::{BondOrder, BondStereo, Molecule};
 
 #[derive(Debug)]
 pub enum MolWriteError {
@@ -28,7 +28,7 @@ pub fn mol_to_v2000_block_minimal(mol: &Molecule) -> Result<String, MolWriteErro
         .iter()
         .any(|b| matches!(b.order, BondOrder::Aromatic))
     {
-        cosmolkit_chem_core::kekulize::kekulize_in_place(&mut write_mol)
+        crate::kekulize::kekulize_in_place(&mut write_mol)
             .map_err(|_| MolWriteError::UnsupportedSubset("kekulize before v2000 write failed"))?;
     }
 
@@ -623,7 +623,7 @@ fn rdkit_hybridizations_for_depict(
     degree: &[usize],
 ) -> Result<Vec<RdkitHybridization>, MolWriteError> {
     let assignment =
-        cosmolkit_chem_core::assign_valence(mol, cosmolkit_chem_core::ValenceModel::RdkitLike)
+        crate::assign_valence(mol, crate::ValenceModel::RdkitLike)
             .map_err(|_| {
                 MolWriteError::UnsupportedSubset("RDKit hybridization valence assignment failed")
             })?;
@@ -4194,7 +4194,7 @@ mod tests {
     use std::process::Command;
 
     use super::mol_to_v2000_block_minimal;
-    use cosmolkit_chem_core::Molecule;
+    use crate::Molecule;
     use serde::Deserialize;
 
     #[derive(Debug, Deserialize)]
@@ -4528,9 +4528,9 @@ mod tests {
             .filter(|b| {
                 matches!(
                     b.order,
-                    cosmolkit_chem_core::BondOrder::Aromatic
-                        | cosmolkit_chem_core::BondOrder::Dative
-                        | cosmolkit_chem_core::BondOrder::Null
+                    crate::BondOrder::Aromatic
+                        | crate::BondOrder::Dative
+                        | crate::BondOrder::Null
                 )
             })
             .map(|b| {
@@ -4986,7 +4986,7 @@ mod tests {
             let mut mol = parsed.expect("parse checked above");
 
             let ours_kek = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                cosmolkit_chem_core::kekulize::kekulize_in_place(&mut mol)
+                crate::kekulize::kekulize_in_place(&mut mol)
             }));
             let kek_ok = matches!(ours_kek, Ok(Ok(())));
 

@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::Command;
 
-use cosmolkit_chem_core::{
+use cosmolkit_core::{
     BondOrder, BondStereo, ChiralTag as OursChiralTag, Molecule, ValenceModel,
     add_hydrogens_in_place, assign_radicals_rdkit_2025, assign_valence, rdkit_valence_list,
 };
@@ -583,7 +583,7 @@ fn rdkit_n_outer_electrons(atomic_num: u8) -> Option<i32> {
     }
 }
 
-fn bond_valence_contrib_for_atom(b: &cosmolkit_chem_core::Bond, atom_index: usize) -> f64 {
+fn bond_valence_contrib_for_atom(b: &cosmolkit_core::Bond, atom_index: usize) -> f64 {
     if b.begin_atom != atom_index && b.end_atom != atom_index {
         return 0.0;
     }
@@ -606,7 +606,7 @@ fn bond_valence_contrib_for_atom(b: &cosmolkit_chem_core::Bond, atom_index: usiz
 
 fn count_atom_electrons_rdkit(
     mol: &Molecule,
-    assignment: &cosmolkit_chem_core::ValenceAssignment,
+    assignment: &cosmolkit_core::ValenceAssignment,
     atom_degree: &[usize],
     atom_index: usize,
 ) -> i32 {
@@ -648,7 +648,7 @@ fn count_atom_electrons_rdkit(
 
 fn is_atom_conjug_cand(
     mol: &Molecule,
-    assignment: &cosmolkit_chem_core::ValenceAssignment,
+    assignment: &cosmolkit_core::ValenceAssignment,
     atom_degree: &[usize],
     atom_index: usize,
 ) -> bool {
@@ -673,7 +673,7 @@ fn is_atom_conjug_cand(
 
 fn compute_conjugated_bonds(
     mol: &Molecule,
-    assignment: &cosmolkit_chem_core::ValenceAssignment,
+    assignment: &cosmolkit_core::ValenceAssignment,
     atom_degree: &[usize],
 ) -> Vec<bool> {
     let mut conjugated = vec![false; mol.bonds.len()];
@@ -743,7 +743,7 @@ fn compute_conjugated_bonds(
 
 fn compute_hybridization(
     mol: &Molecule,
-    assignment: &cosmolkit_chem_core::ValenceAssignment,
+    assignment: &cosmolkit_core::ValenceAssignment,
     atom_degree: &[usize],
     atom_has_conjugated_bond: &[bool],
     atom_index: usize,

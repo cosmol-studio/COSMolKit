@@ -3,25 +3,22 @@
 pub mod molblock;
 pub mod sdf;
 
-/// Returns versions of dependent core crates to ensure linkage works.
+/// Returns versions of core modules to ensure linkage works.
 #[must_use]
 pub fn dependency_versions() -> (&'static str, &'static str) {
-    (
-        cosmolkit_chem_core::version(),
-        cosmolkit_bio_core::version(),
-    )
+    (crate::version(), crate::bio::version())
 }
 
 #[cfg(test)]
 mod tests {
     use super::{dependency_versions, molblock, sdf::SdfReader};
-    use cosmolkit_chem_core::Molecule;
+    use crate::Molecule;
     use std::io::Cursor;
 
     #[test]
     fn dependencies_are_available() {
-        let (chem, bio) = dependency_versions();
-        assert!(!chem.is_empty());
+        let (core, bio) = dependency_versions();
+        assert!(!core.is_empty());
         assert!(!bio.is_empty());
     }
 

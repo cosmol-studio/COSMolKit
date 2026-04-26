@@ -1,17 +1,16 @@
 [package]
-name = "cosmolkit-io"
+name = "cosmolkit-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [lib]
-name = "cosmolkit_io"
+name = "cosmolkit_core"
 path = "src/lib.rs"
-
-[dependencies]
-cosmolkit-chem-core = { path = "../chem-core" }
-cosmolkit-bio-core = { path = "../bio-core" }
 
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }

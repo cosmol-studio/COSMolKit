@@ -3,7 +3,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
-use cosmolkit_chem_core::{
+use cosmolkit_core::{
     BondOrder, Molecule, ValenceModel, add_hydrogens_in_place, assign_radicals_rdkit_2025,
     assign_valence,
 };
@@ -285,7 +285,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!(
-            "Usage: cargo run -p cosmolkit-chem-core --example feature_parity -- \"<SMILES>\""
+            "Usage: cargo run -p cosmolkit-core --example feature_parity -- \"<SMILES>\""
         );
         std::process::exit(2);
     }

@@ -1,6 +1,6 @@
 //! Biomolecular structure primitives and traversal helpers.
 
-/// Returns the crate version at compile time.
+/// Returns the module version at compile time.
 #[must_use]
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")

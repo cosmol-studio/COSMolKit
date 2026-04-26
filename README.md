@@ -21,10 +21,10 @@ The overall goal is to provide a **portable, reliable, and extensible foundation
 
 ## Current Progress
 
-COSMolKit is currently focused on the chemistry core. The repository already contains a Rust workspace with `chem-core`, `io`, and `bio-core` crates, plus RDKit-based regression tests for SMILES parsing, atom/bond feature parity, hydrogen expansion, Kekulization, and minimal MOL/SDF output.
+COSMolKit is currently focused on the chemistry core. The repository now uses a two-crate Rust layout: `cosmolkit-core` (core implementation) and `cosmolkit` (facade re-export crate), plus RDKit-based regression tests for SMILES parsing, atom/bond feature parity, hydrogen expansion, Kekulization, and minimal MOL/SDF output.
 
 RDKit 2025.03.5 is used as the active behavioral reference. The implementation is still a subset and is being expanded by source-level parity work rather than broad API coverage.
-As of 2026-04-26, `chem-core` RDKit graph-feature parity tests are passing for direct and explicit-hydrogen molecules. `io` molblock parity remains in progress, with current first failures in V2000 coordinate parity at row 18 (`F[C@](Cl)(Br)I`) and kekulized topology parity at row 31 (strict `computeInitialCoords` branch missing).
+As of 2026-04-26, `cosmolkit-core` RDKit graph-feature parity tests are passing for direct and explicit-hydrogen molecules. Molblock parity remains in progress, with current first failures in V2000 coordinate parity at row 18 (`F[C@](Cl)(Br)I`) and kekulized topology parity at row 31 (strict `computeInitialCoords` branch missing).
 The repository also now includes a PyO3 placeholder package scaffold under `python/`, along with a GitHub Actions workflow for building and publishing Python wheels to PyPI.
 
 ---
@@ -129,7 +129,7 @@ This phase defines the **correctness baseline** of the project.
 - [ ] aromaticity detection
 - [ ] ring perception (in progress for tested subset)
 - [ ] sanitization pipeline
-- [ ] consistency testing vs RDKit (in progress: `chem-core` graph-feature parity green; `io` molblock parity still being closed)
+- [ ] consistency testing vs RDKit (in progress: `cosmolkit-core` graph-feature parity green; molblock parity still being closed)
 
 Deliverable:
 - molecules can be fully sanitized and normalized

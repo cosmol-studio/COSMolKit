@@ -13,8 +13,8 @@ Current layout:
 
 Current status:
 - this is a placeholder package scaffold
-- it does not bind `chem-core`, `io`, or `bio-core` yet
-- the extension currently exposes only `placeholder()` and `rust_version()`
+- it currently only binds `cosmolkit-core` version metadata (no functional API binding yet)
+- the extension currently exposes `placeholder()`, `rust_version()`, and `core_version()`
 
 Local development:
 - `uv sync --group dev`

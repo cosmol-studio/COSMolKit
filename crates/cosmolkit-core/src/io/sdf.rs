@@ -1,6 +1,6 @@
 use std::io::BufRead;
 
-use cosmolkit_chem_core::Molecule;
+use crate::Molecule;
 
 /// One record extracted from an SDF stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
