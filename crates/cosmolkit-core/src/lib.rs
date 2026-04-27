@@ -1,14 +1,15 @@
 //! Core molecular graph and chemistry perception primitives.
 
-pub mod bio;
-pub mod io;
 pub mod adjacency;
 pub mod atom;
+pub mod bio;
 pub mod bond;
 pub mod hydrogens;
+pub mod io;
 pub mod kekulize;
 pub mod molecule;
 mod smiles;
+pub mod stereo;
 pub mod valence;
 
 pub use adjacency::{AdjacencyList, NeighborRef};
@@ -16,6 +17,7 @@ pub use atom::{Atom, ChiralTag};
 pub use bond::{Bond, BondDirection, BondOrder, BondStereo};
 pub use hydrogens::{AddHydrogensError, add_hydrogens_in_place};
 pub use molecule::{Molecule, SmilesParseError};
+pub use stereo::{LigandRef, TetrahedralStereo};
 pub use valence::{
     ValenceAssignment, ValenceError, ValenceModel, assign_radicals_rdkit_2025, assign_valence,
     rdkit_valence_list,

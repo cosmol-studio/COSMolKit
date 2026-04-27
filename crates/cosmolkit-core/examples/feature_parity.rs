@@ -284,9 +284,7 @@ fn print_diff(label: &str, ours: &[String], rdkit: &[String]) {
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!(
-            "Usage: cargo run -p cosmolkit-core --example feature_parity -- \"<SMILES>\""
-        );
+        eprintln!("Usage: cargo run -p cosmolkit-core --example feature_parity -- \"<SMILES>\"");
         std::process::exit(2);
     }
     let smiles = &args[1];

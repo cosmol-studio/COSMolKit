@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This repository is currently in bootstrap stage and contains only [README.md](/home/wangjingtong/code/COSMolKit/README.md). As implementation lands, keep a predictable Rust workspace layout:
+This repository is in active bootstrap development. Keep the current two-crate Rust workspace layout predictable and stable:
 
 - `crates/cosmolkit-core/` for molecular graph, chemistry perception, IO, and biomolecular primitives
 - `crates/cosmolkit/` for facade re-exports and public top-level API
@@ -29,6 +29,8 @@ Use Rust 2021 defaults: 4-space indentation, `snake_case` for functions/modules,
 
 ## Testing Guidelines
 Place unit tests near code (`mod tests`) and integration tests under `tests/`. Name tests by behavior, e.g., `kekulize_handles_fused_aromatics`. Add regression fixtures for chemistry/biostructure edge cases and explicitly compare outputs against RDKit/Biopython where parity is a goal.
+
+For RDKit parity work, the standard is source-level reproduction against `third_party/rdkit`. Do not blur mismatches, add fallback behavior, weaken or simplify test conditions, special-case rows to pass tests, or guess heuristically when RDKit source code is available. If behavior differs, trace the relevant RDKit implementation and reproduce that logic directly, or leave the failure explicit with a precise unsupported-path error.
 
 ## Commit & Pull Request Guidelines
 No commit history exists yet; adopt Conventional Commits from day one (e.g., `feat: add sdf streaming parser`, `fix: correct aromatic valence handling`). Keep commits atomic and buildable.

@@ -32,6 +32,7 @@ def atom_features(mol: Chem.Mol) -> list[dict[str, object]]:
         rows.append(
             {
                 "atomic_num": atom.GetAtomicNum(),
+                "isotope": atom.GetIsotope() or None,
                 "chirality": str(atom.GetChiralTag()),
                 "cip_code": atom.GetProp("_CIPCode") if atom.HasProp("_CIPCode") else None,
                 "cip_rank": int(cip_rank) if cip_rank is not None else None,

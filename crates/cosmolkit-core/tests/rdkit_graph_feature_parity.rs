@@ -198,6 +198,7 @@ impl<'de> Deserialize<'de> for RdkitBondStereo {
 #[derive(Debug, Deserialize)]
 struct AtomFeature {
     atomic_num: u8,
+    isotope: Option<u16>,
     chirality: ChiralTag,
     cip_code: Option<CipCode>,
     cip_rank: Option<i64>,
@@ -367,6 +368,7 @@ fn ensure_golden_exists(golden_path: &PathBuf) {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct OursAtomFeature {
     atomic_num: u8,
+    isotope: Option<u16>,
     chirality: ChiralTag,
     degree: usize,
     formal_charge: i8,
@@ -869,6 +871,7 @@ fn extract_ours_features(mol: &Molecule) -> (Vec<OursAtomFeature>, Vec<OursBondF
             compute_hybridization(mol, &assignment, &atom_degree, &atom_has_conjugated_bond, i);
         atoms.push(OursAtomFeature {
             atomic_num: a.atomic_num,
+            isotope: a.isotope,
             chirality: ours_chiral_tag_name(a.chiral_tag),
             degree,
             formal_charge: a.formal_charge,
@@ -927,6 +930,11 @@ fn compare_features(
         assert_eq!(
             a.atomic_num, e.atomic_num,
             "atomic_num mismatch row {} atom {} ({}) [{}]",
+            row_idx, i, smiles, mode
+        );
+        assert_eq!(
+            a.isotope, e.isotope,
+            "isotope mismatch row {} atom {} ({}) [{}]",
             row_idx, i, smiles, mode
         );
         assert_eq!(
@@ -1114,6 +1122,26 @@ fn graph_feature_golden_has_one_record_per_smiles() {
             );
         }
     }
+}
+
+#[test]
+fn graph_feature_golden_records_isotopes_from_smiles() {
+    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let mut isotopes = Vec::new();
+
+    for record in golden.iter().filter(|record| record.rdkit_ok) {
+        let direct = record.direct.as_ref().expect("direct missing");
+        isotopes.extend(direct.atom_features.iter().filter_map(|atom| atom.isotope));
+    }
+
+    assert!(
+        isotopes.contains(&13),
+        "SMILES corpus should include a carbon-13 isotope"
+    );
+    assert!(
+        isotopes.contains(&2),
+        "SMILES corpus should include deuterium"
+    );
 }
 
 #[test]
