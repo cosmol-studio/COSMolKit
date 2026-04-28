@@ -292,14 +292,10 @@ fn rdkit_compute_initial_coords_strict(mol: &Molecule) -> Result<Vec<(f64, f64)>
         let mut local = local.ok_or(MolWriteError::UnsupportedSubset(
             "strict RDKit computeInitialCoords branch missing for this component; no heuristic fallback",
         ))?;
-        canonicalize_component_rdkit_like(&mut local);
-        if is_row51_diagnostic_molecule(mol) {
-            let dump: Vec<_> = local
-                .iter()
-                .map(|(a, (x, y))| format!("{a}:({x:.4},{y:.4})"))
-                .collect();
-            eprintln!("DEBUG row51-ish post_canonicalize {}", dump.join(" "));
+        if std::env::var_os("COSMOLKIT_DEBUG_PRECANON").is_some() {
+            eprintln!("DEBUG precanon local: {:?}", local);
         }
+        canonicalize_component_rdkit_like(&mut local);
         local_components.push(local);
     }
 
@@ -383,13 +379,6 @@ fn strict_rdkit_subset_coords(mol: &Molecule) -> Option<Vec<(f64, f64)>> {
         return Some(vec![(-0.7500, 0.0), (0.7500, -0.0)]);
     }
     None
-}
-
-fn is_row51_diagnostic_molecule(mol: &Molecule) -> bool {
-    const ATOMS: [u8; 20] = [6, 8, 6, 8, 6, 6, 6, 6, 7, 6, 8, 6, 6, 6, 6, 6, 6, 6, 6, 6];
-    mol.atoms.len() == 20
-        && mol.bonds.len() == 21
-        && mol.atoms.iter().map(|a| a.atomic_num).eq(ATOMS)
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -752,7 +741,7 @@ fn recompute_cip_ranks(sorted: &[(Vec<i64>, usize, i64)], ranks: &mut [i64]) {
     }
 }
 
-fn rdkit_cip_ranks_for_depict(mol: &Molecule) -> Vec<i64> {
+pub(crate) fn rdkit_cip_ranks_for_depict(mol: &Molecule) -> Vec<i64> {
     // RDKit legacy Chirality.cpp::assignAtomCIPRanks()/iterateCIPRanks() enough
     // for depictor ordering. This preserves duplicated neighbor entries for
     // multiple bonds through getTwiceBondType().
@@ -2104,27 +2093,39 @@ fn remove_collisions_bond_flip_like(
         let Some(path) = shortest_path(a, b) else {
             break;
         };
-        if path.len() < 2 {
-            break;
+        if path.len() < 4 {
+            iter += 1;
+            continue;
         }
+        let internal = &path[1..path.len() - 1];
         let mut rot_bonds: Vec<(usize, usize)> = Vec::new();
-        for w in path.windows(2) {
-            let mut u = w[0];
-            let mut v = w[1];
+        let mut pid = internal[0];
+        for &aid in internal.iter() {
+            if aid == pid {
+                continue;
+            }
+            let mut u = pid;
+            let mut v = aid;
             if u > v {
                 std::mem::swap(&mut u, &mut v);
             }
             let bond = mol.bonds.iter().find(|bd| {
                 (bd.begin_atom == u && bd.end_atom == v) || (bd.begin_atom == v && bd.end_atom == u)
             });
-            let Some(bd) = bond else { continue };
+            let Some(bd) = bond else {
+                pid = aid;
+                continue;
+            };
             if !matches!(bd.order, BondOrder::Single) {
+                pid = aid;
                 continue;
             }
             if ring_edge(u, v) {
+                pid = aid;
                 continue;
             }
             rot_bonds.push((u, v));
+            pid = aid;
         }
 
         let mut accepted = false;
@@ -2132,7 +2133,7 @@ fn remove_collisions_bond_flip_like(
         let prev_density = score(&pos);
         for &(u, v) in &rot_bonds {
             let cnt = *done_bonds.get(&(u, v)).unwrap_or(&0);
-            if cnt >= 4 {
+            if cnt >= 3 {
                 continue;
             }
             done_bonds.insert((u, v), cnt + 1);
@@ -2182,7 +2183,7 @@ fn remove_collisions_bond_flip_like(
                 if c2 < ncols || (c2 == ncols && den2 < prev_density) {
                     pos = trial;
                     if c2 < ncols {
-                        done_bonds.insert((u, v), 4);
+                        done_bonds.insert((u, v), 3);
                     }
                     accepted = true;
                     break;
@@ -3202,17 +3203,9 @@ fn place_multiring_nonfused_component_rdkit_like(
 ) -> Option<Vec<(usize, (f64, f64))>> {
     #[derive(Clone)]
     struct DepictFrag {
-        atoms: std::collections::HashMap<usize, TreeEmbeddedAtom>,
+        atoms: std::collections::BTreeMap<usize, TreeEmbeddedAtom>,
         attach_pts: std::collections::VecDeque<usize>,
         done: bool,
-    }
-
-    fn depict_rank(mol: &Molecule, degree: &[usize], idx: usize) -> usize {
-        atom_depict_rank(mol.atoms[idx].atomic_num, degree[idx]) * mol.atoms.len() + idx
-    }
-
-    fn sort_by_depict_rank(mol: &Molecule, degree: &[usize], atoms: &mut [usize]) {
-        atoms.sort_by_key(|&idx| depict_rank(mol, degree, idx));
     }
 
     fn update_new_neighs_for_frag(
@@ -3238,7 +3231,8 @@ fn place_multiring_nonfused_component_rdkit_like(
         heavy.extend(hydrogens);
 
         if !heavy.is_empty() && (degree[aid] < 4 || heavy.len() < 3) {
-            sort_by_depict_rank(mol, degree, &mut heavy);
+            let cip_ranks = rdkit_cip_ranks_for_depict(mol);
+            rdkit_rank_atoms_by_rank(mol, &mut heavy, degree, &cip_ranks);
         } else if degree[aid] >= 4 && heavy.len() >= 3 {
             let cip_ranks = rdkit_cip_ranks_for_depict(mol);
             heavy = rdkit_set_nbr_order(aid, &heavy, mol, adjacency, degree, &cip_ranks);
@@ -3261,7 +3255,8 @@ fn place_multiring_nonfused_component_rdkit_like(
     ) {
         frag.attach_pts.clear();
         let mut atoms: Vec<usize> = frag.atoms.keys().copied().collect();
-        sort_by_depict_rank(mol, degree, &mut atoms);
+        let cip_ranks = rdkit_cip_ranks_for_depict(mol);
+        rdkit_rank_atoms_by_rank(mol, &mut atoms, degree, &cip_ranks);
         for aid in atoms {
             update_new_neighs_for_frag(frag, mol, comp_set, adjacency, degree, aid);
         }
@@ -3283,13 +3278,6 @@ fn place_multiring_nonfused_component_rdkit_like(
         aid: usize,
         to_aid: usize,
     ) -> Option<()> {
-        if aid == 2 && to_aid == 4 {
-            let mut embedded: Vec<_> = frag.atoms.keys().copied().collect();
-            embedded.sort_unstable();
-            eprintln!(
-                "DEBUG row51-ish before add_atom_to_atom_with_ang aid={aid} to={to_aid} embedded={embedded:?}"
-            );
-        }
         let ref_state = frag.atoms.get(&to_aid)?.clone();
         let nnbr = ref_state.pending.len() as f64;
         let rem_angle = 2.0 * PI - ref_state.angle;
@@ -3325,12 +3313,6 @@ fn place_multiring_nonfused_component_rdkit_like(
         let tp2 = (curr_loc.0 - probe_normal.0, curr_loc.1 - probe_normal.1);
         let nccw = find_num_neigh_frag(frag, tp1, 2.5);
         let ncw = find_num_neigh_frag(frag, tp2, 2.5);
-        if aid == 2 && to_aid == 4 {
-            eprintln!(
-                "DEBUG row51-ish density nccw={nccw} ncw={ncw} tp1=({:.4},{:.4}) tp2=({:.4},{:.4})",
-                tp1.0, tp1.1, tp2.0, tp2.1
-            );
-        }
         let mut normal = normalize(probe_normal);
         let (ccw, out_normal) = if nccw < ncw {
             (false, normal)
@@ -3431,14 +3413,6 @@ fn place_multiring_nonfused_component_rdkit_like(
         if frag.atoms.contains_key(&aid) || !frag.atoms.contains_key(&to_aid) {
             return None;
         }
-        if is_row51_diagnostic_molecule(mol) && aid == 2 && to_aid == 4 {
-            let mut embedded: Vec<_> = frag.atoms.keys().copied().collect();
-            embedded.sort_unstable();
-            eprintln!(
-                "DEBUG row51 add_non_ring aid={aid} to={to_aid} angle={:.4} embedded={embedded:?}",
-                frag.atoms.get(&to_aid)?.angle
-            );
-        }
         if frag.atoms.get(&to_aid)?.angle > 0.0 {
             add_atom_to_atom_with_ang_frag(frag, aid, to_aid)?;
         } else {
@@ -3535,6 +3509,12 @@ fn place_multiring_nonfused_component_rdkit_like(
                 density_reflect += if rd > 1e-3 { 1.0 / rd } else { 1000.0 };
             }
         }
+        if std::env::var_os("COSMOLKIT_DEBUG_FUSED_DENSITY").is_some() {
+            eprintln!(
+                "DEBUG density pins=({aid1},{aid2}) normal={density_normal:.8} reflect={density_reflect:.8} choose_reflect={}",
+                density_normal - density_reflect > 1e-4
+            );
+        }
         if density_normal - density_reflect > 1e-4 {
             reflect_frag(other, pin1, pin2);
         }
@@ -3595,7 +3575,7 @@ fn place_multiring_nonfused_component_rdkit_like(
         let radius = 1.5f64 / (2.0 * (PI / n as f64).sin());
         let largest_angle = PI * (1.0 - (2.0 / n as f64));
         let mut frag = DepictFrag {
-            atoms: std::collections::HashMap::new(),
+            atoms: std::collections::BTreeMap::new(),
             attach_pts: std::collections::VecDeque::new(),
             done: false,
         };
@@ -3734,6 +3714,9 @@ fn place_multiring_nonfused_component_rdkit_like(
                 }
             }
             let (rid, common) = best?;
+            if std::env::var_os("COSMOLKIT_DEBUG_FUSED_DENSITY").is_some() {
+                eprintln!("DEBUG next ring rid={rid} common={common:?}");
+            }
             let mut emb_ring = init_ring_frag_from_order(&cycles[rid]);
             let mut pin_atoms = Vec::new();
             if common.len() == 1 {
@@ -4315,6 +4298,9 @@ fn place_multiring_nonfused_component_rdkit_like(
     if cycles.is_empty() {
         return None;
     }
+    if std::env::var_os("COSMOLKIT_DEBUG_RING_CYCLES").is_some() {
+        eprintln!("DEBUG cycles: {:?}", cycles);
+    }
     let embedded_ring_set: std::collections::HashSet<usize> =
         cycles.iter().flatten().copied().collect();
     let mut parent: Vec<usize> = (0..cycles.len()).collect();
@@ -4352,14 +4338,12 @@ fn place_multiring_nonfused_component_rdkit_like(
             let ring_set: std::collections::HashSet<usize> = ring.iter().copied().collect();
             let ring_order = rdkit_single_ring_order(mol, &ring_set, &deg_in_comp)
                 .unwrap_or_else(|| ring.clone());
-            if is_row51_diagnostic_molecule(mol) && ring_order.contains(&4) {
-                eprintln!("DEBUG row51-ish ring_order {ring_order:?}");
-            }
-            init_ring_frag_from_order(&ring_order)
+            let mut frag = init_ring_frag_from_order(&ring_order);
+            setup_new_neighs_for_frag(&mut frag, mol, &comp_set, adjacency, degree);
+            frag
         } else {
             build_fused_group_frag(mol, &comp_set, adjacency, degree, &cycles, group)?
         };
-        setup_new_neighs_for_frag(&mut frag, mol, &comp_set, adjacency, degree);
         frags.push(frag);
     }
 
@@ -4436,37 +4420,21 @@ fn place_multiring_nonfused_component_rdkit_like(
         .map(|a| (a, master.atoms[&a].loc))
         .collect();
     local.sort_by_key(|(idx, _)| *idx);
-    if is_row51_diagnostic_molecule(mol) {
-        let dump: Vec<_> = local
-            .iter()
-            .map(|(a, (x, y))| format!("{a}:({x:.4},{y:.4})"))
-            .collect();
-        eprintln!("DEBUG row51-ish pre_cleanup {}", dump.join(" "));
+    if std::env::var_os("COSMOLKIT_DEBUG_CLEANUP").is_some() {
+        eprintln!("DEBUG before cleanup: {:?}", local);
     }
 
     remove_collisions_bond_flip_like(mol, comp, adjacency, &mut local);
-    if is_row51_diagnostic_molecule(mol) {
-        let dump: Vec<_> = local
-            .iter()
-            .map(|(a, (x, y))| format!("{a}:({x:.4},{y:.4})"))
-            .collect();
-        eprintln!("DEBUG row51-ish post_bond_flip {}", dump.join(" "));
+    if std::env::var_os("COSMOLKIT_DEBUG_CLEANUP").is_some() {
+        eprintln!("DEBUG after bond_flip: {:?}", local);
     }
     remove_collisions_open_angles_like(mol, comp, adjacency, &mut local);
-    if is_row51_diagnostic_molecule(mol) {
-        let dump: Vec<_> = local
-            .iter()
-            .map(|(a, (x, y))| format!("{a}:({x:.4},{y:.4})"))
-            .collect();
-        eprintln!("DEBUG row51-ish post_open_angles {}", dump.join(" "));
+    if std::env::var_os("COSMOLKIT_DEBUG_CLEANUP").is_some() {
+        eprintln!("DEBUG after open_angles: {:?}", local);
     }
     remove_collisions_shorten_bonds_like(mol, comp, adjacency, &mut local);
-    if is_row51_diagnostic_molecule(mol) {
-        let dump: Vec<_> = local
-            .iter()
-            .map(|(a, (x, y))| format!("{a}:({x:.4},{y:.4})"))
-            .collect();
-        eprintln!("DEBUG row51-ish post_shorten {}", dump.join(" "));
+    if std::env::var_os("COSMOLKIT_DEBUG_CLEANUP").is_some() {
+        eprintln!("DEBUG after cleanup: {:?}", local);
     }
     Some(local)
 }
@@ -5684,5 +5652,79 @@ mod tests {
             max_rot.3.0,
             max_rot.3.1
         );
+    }
+
+    #[test]
+    #[ignore = "temporary row 71 layout diagnostic"]
+    fn row71_precanonical_coordinate_diagnostic() {
+        let smiles = "c1sccc1[C@@](C)(O)[C@H]2CCCC(C23C)=Cc4c(C3)cnn4-c5ccc(F)cc5";
+        let mol = Molecule::from_smiles(smiles).expect("parse row 71 diagnostic molecule");
+        let coords = super::rdkit_compute_initial_coords_strict(&mol)
+            .expect("compute row 71 diagnostic coordinates");
+        for (idx, (x, y)) in coords.iter().enumerate() {
+            println!("{idx}: {x:.4} {y:.4}");
+        }
+    }
+
+    #[test]
+    #[ignore = "temporary row 71 ring-order diagnostic"]
+    fn row71_ring_order_diagnostic() {
+        let smiles = "c1sccc1[C@@](C)(O)[C@H]2CCCC(C23C)=Cc4c(C3)cnn4-c5ccc(F)cc5";
+        let mol = Molecule::from_smiles(smiles).expect("parse row 71 diagnostic molecule");
+        let n = mol.atoms.len();
+        let mut adjacency = vec![Vec::<usize>::new(); n];
+        for b in &mol.bonds {
+            adjacency[b.begin_atom].push(b.end_atom);
+            adjacency[b.end_atom].push(b.begin_atom);
+        }
+        for nbs in &mut adjacency {
+            nbs.sort_unstable();
+            nbs.dedup();
+        }
+        let comp: Vec<usize> = (0..n).collect();
+        let mut deg_in_comp = vec![0usize; n];
+        for &a in &comp {
+            deg_in_comp[a] = adjacency[a].len();
+        }
+        let mut removed = std::collections::HashSet::<usize>::new();
+        let mut queue: Vec<usize> = comp
+            .iter()
+            .copied()
+            .filter(|&a| deg_in_comp[a] <= 1)
+            .collect();
+        while let Some(a) = queue.pop() {
+            if removed.contains(&a) {
+                continue;
+            }
+            removed.insert(a);
+            for &nb in &adjacency[a] {
+                if removed.contains(&nb) {
+                    continue;
+                }
+                if deg_in_comp[nb] > 0 {
+                    deg_in_comp[nb] -= 1;
+                    if deg_in_comp[nb] == 1 {
+                        queue.push(nb);
+                    }
+                }
+            }
+        }
+        let ring_atoms: Vec<usize> = comp
+            .iter()
+            .copied()
+            .filter(|a| !removed.contains(a))
+            .collect();
+        let ring_set: std::collections::HashSet<usize> = ring_atoms.iter().copied().collect();
+        let ring_bond_count = mol
+            .bonds
+            .iter()
+            .filter(|b| ring_set.contains(&b.begin_atom) && ring_set.contains(&b.end_atom))
+            .count();
+        let target_cycle_count = ring_bond_count + 1 - ring_atoms.len();
+        let cycles = super::place_multiring_nonfused_component_rdkit_like;
+        let _ = cycles;
+        println!("target_cycle_count={target_cycle_count}");
+        // keep this test as a compile-time anchor; use the existing failure output
+        // for detailed coordinate diagnostics.
     }
 }

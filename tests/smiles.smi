@@ -25,6 +25,7 @@ Cl[C@@](C)1CC[C@@](C)(C1)Cl
 F/C=C/F
 F/C=C\F
 C1CCCCC1
+CN1CCCC1
 C1=CC=CC=C1
 C%12CCCCC%12
 C1CC2CCC1C2
@@ -62,3 +63,9 @@ CCCCCCCOc1ccc(C(N)=O)cc1
 COc1ccc(C(C)=O)cc1F
 CCCCCCC(=O)Oc1ccc(/N=[N+](\[O-])c2ccc(CCCC)cc2)cc1
 O=C(OCC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)F)C(=O)OCC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)F
+COc1c(O)ccc2OC(=C\c(c3[C@@H](C(F)(F)F)O)scc3)/c(c4c12)c5c(cc4)NC(C)(C)C=C5C
+COc1c(O)ccc2OC(=C\c(c3C(=O)C)scc3)/c(c4c12)c5c(cc4)NC(C)(C)C=C5C
+C=CCC[C@H](O)[C@H]1CCCC(C12C)=Cc3c(C2)cnn3-c4ccc(F)cc4
+CSCC[C@@H](NC(=O)Cc1ccc(C(=O)c2ccccc2)cc1)C(=O)N1CC[NH+](CCCCN2c3ccccc3Sc3cc(N=[N+]=[N-])ccc32)CC1
+CCOC(=O)c1sc2nc(C)c3c(c2c1N)[C@H](C)[C@H]1[C@@H]2CC=C4C[C@@H](O)CC[C@@]4(C)[C@@H]2CC[C@]31C
+c1sccc1[C@@](C)(O)[C@H]2CCCC(C23C)=Cc4c(C3)cnn4-c5ccc(F)cc5

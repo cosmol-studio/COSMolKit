@@ -26,7 +26,9 @@ fn tetrahedral_stereo_from_smiles(smiles: &str) -> PyResult<Vec<(usize, Vec<Opti
     Ok(to_python_tetrahedral_stereo(&mol))
 }
 
-fn to_python_tetrahedral_stereo(mol: &cosmolkit_core::Molecule) -> Vec<(usize, Vec<Option<usize>>)> {
+fn to_python_tetrahedral_stereo(
+    mol: &cosmolkit_core::Molecule,
+) -> Vec<(usize, Vec<Option<usize>>)> {
     mol.tetrahedral_stereo()
         .into_iter()
         .map(|stereo| {
@@ -51,7 +53,9 @@ fn unimplemented_api(name: &str) -> PyErr {
 
 fn bond_order_name(order: cosmolkit_core::BondOrder) -> &'static str {
     match order {
-        cosmolkit_core::BondOrder::Null => "ZERO",
+        // RDKit SMILES "~" is BondType::UNSPECIFIED.
+        // In cosmolkit-core this is currently represented as BondOrder::Null.
+        cosmolkit_core::BondOrder::Null => "UNSPECIFIED",
         cosmolkit_core::BondOrder::Single => "SINGLE",
         cosmolkit_core::BondOrder::Double => "DOUBLE",
         cosmolkit_core::BondOrder::Triple => "TRIPLE",

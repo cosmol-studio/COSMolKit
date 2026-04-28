@@ -60,5 +60,5 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 Current status:
 - `cosmolkit-core` graph-feature parity is currently passing on the shared corpus (direct + explicit-H comparisons).
 - tetrahedral stereo ordered-ligand geometry validation is currently passing against RDKit ETKDGv3 (`seed=42`) on all chiral corpus entries.
-- Kekulized V2000/V3000 bond-block parity currently fails first at row 31 (strict `computeInitialCoords` branch missing for one component; no heuristic fallback).
-- Strict V2000 coordinate parity currently fails first at row 18 (`F[C@](Cl)(Br)I`).
+- Kekulized V2000/V3000 bond-block parity is currently passing on the shared corpus.
+- Strict V2000 coordinate parity currently fails first at row 52 (`COC(=O)c1ccc(NC(=O)c2cccc(C)c2)cc1`).

@@ -92,4 +92,19 @@ mod tests {
             .expect("representative special subset should parse");
         assert_eq!(mol.atomic_numbers(), vec![0, 6, 7, 29, 7]);
     }
+
+    #[test]
+    fn molecule_from_smiles_does_not_aromatize_saturated_n_heterocycle() {
+        let mol = Molecule::from_smiles("CN1CCCC1").expect("saturated ring should parse");
+        assert!(
+            mol.atoms.iter().all(|atom| !atom.is_aromatic),
+            "saturated N-heterocycle atoms should not be aromatic"
+        );
+        assert!(
+            mol.bonds
+                .iter()
+                .all(|bond| !matches!(bond.order, super::BondOrder::Aromatic)),
+            "saturated N-heterocycle bonds should not be aromatic"
+        );
+    }
 }

@@ -24,7 +24,7 @@ The overall goal is to provide a **portable, reliable, and extensible foundation
 COSMolKit is currently focused on the chemistry core. The repository now uses a two-crate Rust layout: `cosmolkit-core` (core implementation, including chemistry perception, IO, and biomolecular primitives) and `cosmolkit` (facade re-export crate), plus RDKit-based regression tests for SMILES parsing, atom/bond feature parity, hydrogen expansion, Kekulization, minimal MOL/SDF output, and tetrahedral stereo geometry checks.
 
 RDKit 2025.03.5 is used as the active behavioral reference. The implementation is still a subset and is being expanded by source-level parity work rather than broad API coverage.
-As of 2026-04-27, `cosmolkit-core` RDKit graph-feature parity tests are passing for direct and explicit-hydrogen molecules. Tetrahedral stereo now also has an internal ordered-ligand representation (`TetrahedralStereo`) derived from the existing RDKit-compatible atom chiral tags, with a Rust integration test that validates positive oriented volume against RDKit ETKDGv3 coordinates (`seed=42`) on the shared chiral corpus. The representation contract is documented in `tetrahedral_stereo_representation.md`. Molblock parity remains in progress, with current first failures in V2000 coordinate parity at row 18 (`F[C@](Cl)(Br)I`) and kekulized topology parity at row 31 (strict `computeInitialCoords` branch missing).
+As of 2026-04-28, `cosmolkit-core` RDKit graph-feature parity tests are passing for direct and explicit-hydrogen molecules. Tetrahedral stereo now also has an internal ordered-ligand representation (`TetrahedralStereo`) derived from the existing RDKit-compatible atom chiral tags, with a Rust integration test that validates positive oriented volume against RDKit ETKDGv3 coordinates (`seed=42`) on the shared chiral corpus. The representation contract is documented in `tetrahedral_stereo_representation.md`. Molblock parity remains in progress: kekulized topology parity is currently passing on the shared corpus, while strict V2000 coordinate parity currently fails first at row 52 (`COC(=O)c1ccc(NC(=O)c2cccc(C)c2)cc1`).
 The repository also includes a PyO3 package under `python/`, along with a GitHub Actions workflow for building and publishing Python wheels to PyPI. The binding layer is still partial, but now exposes lower-level molecule graph access and `Molecule.tetrahedral_stereo()` for the new stereo representation.
 
 ---
@@ -129,7 +129,7 @@ This phase defines the **correctness baseline** of the project.
 - [ ] aromaticity detection
 - [ ] ring perception (in progress for tested subset)
 - [ ] sanitization pipeline
-- [ ] consistency testing vs RDKit (in progress: `cosmolkit-core` graph-feature parity green; tetrahedral stereo ETKDG geometry check added; molblock parity still being closed)
+- [ ] consistency testing vs RDKit (in progress: `cosmolkit-core` graph-feature parity and kekulized molblock topology parity are green; tetrahedral stereo ETKDG geometry check added; strict V2000 coordinate parity still being closed)
 
 Deliverable:
 - molecules can be fully sanitized and normalized
@@ -142,7 +142,7 @@ Deliverable:
 
 - [ ] SMILES parser (in progress for tested subset)
 - [ ] MOL reader
-- [ ] SDF writer (minimal V2000 output in progress; strict coordinate/kekulized parity still open)
+- [ ] SDF writer (minimal V2000 output in progress; strict coordinate parity still open)
 - [ ] tetrahedral stereo API promotion from derived view to first-class internal geometry/stereo primitive
 - [ ] batch molecule loading
 - [ ] format validation tools
