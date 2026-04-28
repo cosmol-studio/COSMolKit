@@ -85,6 +85,7 @@ fn oriented_volume(center: [f64; 3], ligands: [[f64; 3]; 3]) -> f64 {
 
 #[test]
 fn tetrahedral_stereo_ordered_ligands_match_rdkit_etkdg_positive_volume() {
+    // The ligand-order contract is defined in tetrahedral_stereo_representation.md.
     let golden = load_golden();
     assert!(
         golden.len() >= 7,

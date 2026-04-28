@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "cosmolkit"
-version = "0.0.2"
+version = "0.0.3"
 description = "Python bindings for COSMolKit"
 readme = "README.md"
 requires-python = ">=3.9"

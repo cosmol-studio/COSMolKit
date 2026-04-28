@@ -11,8 +11,10 @@ pub enum LigandRef {
 
 /// Ordered tetrahedral stereochemistry for one atom center.
 ///
-/// `ligands[3]` is the reference ligand. For RDKit-style tetrahedral tags, the
-/// ordering is derived from the atom's incoming bond order and chiral tag.
+/// Specification: `tetrahedral_stereo_representation.md` at repository root.
+///
+/// For RDKit-style tetrahedral tags, the ordering is derived from the atom's
+/// incoming bond order and chiral tag.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct TetrahedralStereo {
     pub center: usize,
@@ -102,7 +104,7 @@ mod tests {
     }
 
     #[test]
-    fn tetrahedral_stereo_places_implicit_hydrogen_as_reference_ligand() {
+    fn tetrahedral_stereo_places_implicit_hydrogen_as_fourth_ligand() {
         let mol = Molecule::from_smiles("[13CH3:7][C@H](F)Cl").expect("parse chiral smiles");
         let stereo = mol.tetrahedral_stereo();
 

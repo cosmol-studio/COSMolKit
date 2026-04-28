@@ -55,7 +55,7 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 `crates/cosmolkit-core/tests/tetrahedral_stereo_geometry.rs` contains:
 - `tetrahedral_stereo_ordered_ligands_match_rdkit_etkdg_positive_volume`
 - auto-generation hook for the ETKDG geometry golden
-- oriented-volume validation for `Molecule::tetrahedral_stereo()`
+- oriented-volume validation for `Molecule::tetrahedral_stereo()` (spec: `tetrahedral_stereo_representation.md`)
 
 Current status:
 - `cosmolkit-core` graph-feature parity is currently passing on the shared corpus (direct + explicit-H comparisons).

@@ -16,7 +16,7 @@ Current status:
 - low-level bindings now expose:
   - `placeholder()`, `rust_version()`, and `core_version()`
   - `Molecule.from_smiles()`, `Molecule.read_sdf()`, `atoms()`, `bonds()`, and `find_chiral_centers()`
-  - `tetrahedral_stereo_from_smiles()` for the ordered-ligand tetrahedral stereo representation
+  - `Molecule.tetrahedral_stereo()` for the ordered-ligand tetrahedral stereo representation (spec: `tetrahedral_stereo_representation.md`)
 - `Molecule.ensure_conformer()` and the higher-level 3D pipeline remain intentionally unimplemented on the COSMolKit side
 
 Examples:

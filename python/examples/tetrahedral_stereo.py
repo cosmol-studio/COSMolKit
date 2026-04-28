@@ -1,17 +1,19 @@
 """COSMolKit tetrahedral stereo representation.
 
-`tetrahedral_stereo_from_smiles()` exposes the internal ordered-ligand view
-derived from COSMolKit's RDKit-compatible chiral tags.
+`Molecule.tetrahedral_stereo()` exposes the internal ordered-ligand view
+derived from COSMolKit's RDKit-compatible chiral tags. Ligand indices match
+the same atom indexing used by `mol.atoms()`.
+Specification: `tetrahedral_stereo_representation.md`.
 """
 
-from cosmolkit import tetrahedral_stereo_from_smiles
+from cosmolkit import Molecule
 
-stereo = tetrahedral_stereo_from_smiles("[13CH3:7][C@H](F)Cl")
+mol = Molecule.from_smiles("[13CH3:7][C@H](F)Cl")
+stereo = mol.tetrahedral_stereo()
 
 for center, ligands in stereo:
     print("center:", center)
     print("ordered ligands:", ligands)
-    print("reference ligand:", ligands[3])
 
 # `None` represents an implicit hydrogen ligand.
 # The first three ligands are ordered so that, when coordinates are available,

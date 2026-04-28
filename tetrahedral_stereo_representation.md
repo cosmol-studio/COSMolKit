@@ -9,7 +9,8 @@ pub struct TetrahedralStereo {
 }
 ```
 
-`ligands` stores the ordered four ligands around the center atom. `ligands[3]` is treated as the reference ligand; if an implicit hydrogen exists, it can be represented as `ImplicitH` and is usually placed last.
+`ligands` stores the ordered four ligands around the center atom in molecule atom-index space.
+If an implicit hydrogen exists, it is represented as `ImplicitH` and is usually placed at `ligands[3]`.
 
 When 3D coordinates are available, the first three ligands should satisfy:
 

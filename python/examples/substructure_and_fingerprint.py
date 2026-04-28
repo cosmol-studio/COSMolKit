@@ -11,7 +11,9 @@ query = Molecule.query_from_smarts("c1ccccc1")
 matches = mol.substructure_find(query)
 
 fp1 = mol.fingerprint_morgan(radius=2, n_bits=2048)
-fp2 = Molecule.from_smiles("CCN", sanitize=True).fingerprint_morgan(radius=2, n_bits=2048)
+fp2 = Molecule.from_smiles("CCN", sanitize=True).fingerprint_morgan(
+    radius=2, n_bits=2048
+)
 similarity = fp1.tanimoto(fp2)
 
 _ = (matches, similarity)
