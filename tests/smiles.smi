@@ -69,3 +69,8 @@ C=CCC[C@H](O)[C@H]1CCCC(C12C)=Cc3c(C2)cnn3-c4ccc(F)cc4
 CSCC[C@@H](NC(=O)Cc1ccc(C(=O)c2ccccc2)cc1)C(=O)N1CC[NH+](CCCCN2c3ccccc3Sc3cc(N=[N+]=[N-])ccc32)CC1
 CCOC(=O)c1sc2nc(C)c3c(c2c1N)[C@H](C)[C@H]1[C@@H]2CC=C4C[C@@H](O)CC[C@@]4(C)[C@@H]2CC[C@]31C
 c1sccc1[C@@](C)(O)[C@H]2CCCC(C23C)=Cc4c(C3)cnn4-c5ccc(F)cc5
+C[C@@H](NC(=O)c1cc2c3ccccc3n(C)c2s1)c1ccco1
+COc1c(O)ccc2OC(=C\c(c3[C@@H](C(F)(F)F)O)scc3)/c(c4c12)c5c(cc4)NC(C)(C)C=C5C
+CC#C[C@]1(O)CC[C@H]([C@@]12C)[C@H]3C(=C4C(CC3)=CC(=O)CC4)[C@H](C2)c5ccc(cc5)N(C)C
+CCOCCCNC(=O)Nc1c(-c2ccc(F)cc2)[nH]c2ccccc12
+CC1=CC(C)(C)N2C(=O)C(=C(C#N)C#N)c3cc(OC(=O)c4ccc(Br)cc4)cc1c32

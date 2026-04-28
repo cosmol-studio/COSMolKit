@@ -971,7 +971,7 @@ fn mark_aromatic_subset_rdkit_like(
         }
     }
 
-    let mut bond_counts = HashMap::<usize, usize>::new();
+    let mut bond_counts = std::collections::BTreeMap::<usize, usize>::new();
     for &ring_idx in subset {
         for &bond_idx in &ring_bonds[ring_idx] {
             *bond_counts.entry(bond_idx).or_insert(0) += 1;

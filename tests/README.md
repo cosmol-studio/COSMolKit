@@ -60,5 +60,7 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 Current status:
 - `cosmolkit-core` graph-feature parity is currently passing on the shared corpus (direct + explicit-H comparisons).
 - tetrahedral stereo ordered-ligand geometry validation is currently passing against RDKit ETKDGv3 (`seed=42`) on all chiral corpus entries.
-- Kekulized V2000/V3000 bond-block parity is currently passing on the shared corpus.
-- Strict V2000 coordinate parity currently fails first at row 52 (`COC(=O)c1ccc(NC(=O)c2cccc(C)c2)cc1`).
+- The shared `tests/smiles.smi` corpus currently has 76 rows.
+- Kekulized V2000/V3000 bond-block parity currently fails first at row 76 (`CC1=CC(C)(C)N2C(=O)C(=C(C#N)C#N)c3cc(OC(=O)c4ccc(Br)cc4)cc1c32`).
+- Strict V2000 coordinate parity currently fails first at row 75 (`CCOCCCNC(=O)Nc1c(-c2ccc(F)cc2)[nH]c2ccccc12`).
+- Temporary stress check result: random sampling 1000 SMILES from `core_comp_lib.csv` with regenerated RDKit goldens still exposes unresolved molblock parity gaps (details logged under `tmp/rust_test_core_comp_lib_sample1000_with_regen_errors.txt`).

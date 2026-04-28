@@ -4,14 +4,14 @@ version = 4
 
 [[package]]
 name = "cosmolkit"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "cosmolkit-core",
 ]
 
 [[package]]
 name = "cosmolkit-core"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-py"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "cosmolkit-core",
  "pyo3",
