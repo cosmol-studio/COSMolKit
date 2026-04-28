@@ -10,7 +10,7 @@
 
 ## Standard Workflow (RDKit Parity)
 
-RDKit `2025.03.5` is the current oracle for generated golden files. Keep the Python environment project-level so the same `.venv` can later host COSMolKit Python bindings for direct comparison.
+RDKit `2026.03.1` is the current oracle for generated golden files. The source reference is `third_party/rdkit` pinned to `Release_2026_03_1` (`351f8f378f8ad6bbd517980c38896e66bf907af8`). Keep the Python environment project-level so the same `.venv` can later host COSMolKit Python bindings for direct comparison.
 
 RDKit parity tests are strict source-level reproduction tests against `third_party/rdkit`. Do not make parity tests pass by loosening assertions, skipping mismatching fields, adding vague fallbacks, simplifying test conditions, row-specific patches, or heuristic guesses. When a mismatch appears, locate the corresponding RDKit source path and port that behavior directly; if the path is not implemented yet, keep the failure explicit and narrowly described.
 
@@ -38,7 +38,7 @@ Notes:
 - `cargo test -p cosmolkit-core` will auto-generate `tests/golden/molblock_v2000_kekulized.jsonl` if it is missing.
 - `cargo test -p cosmolkit-core --test tetrahedral_stereo_geometry` will auto-generate `tests/golden/tetrahedral_stereo_geometry.jsonl` if it is missing.
 - Python lookup order for auto-generation: `COSMOLKIT_PYTHON` -> `.venv/bin/python` -> `python3`.
-- `tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py` asserts `rdkit == 2025.3.5` before generating ETKDG geometry golden so test conditions do not drift silently.
+- `tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py` asserts `rdkit == 2026.3.1` before generating ETKDG geometry golden so test conditions do not drift silently.
 
 `crates/cosmolkit-core/tests/rdkit_graph_feature_parity.rs` contains:
 - `graph_feature_golden_has_one_record_per_smiles`
@@ -61,6 +61,6 @@ Current status:
 - `cosmolkit-core` graph-feature parity is currently passing on the shared corpus (direct + explicit-H comparisons).
 - tetrahedral stereo ordered-ligand geometry validation is currently passing against RDKit ETKDGv3 (`seed=42`) on all chiral corpus entries.
 - The shared `tests/smiles.smi` corpus currently has 76 rows.
-- Kekulized V2000/V3000 bond-block parity currently fails first at row 76 (`CC1=CC(C)(C)N2C(=O)C(=C(C#N)C#N)c3cc(OC(=O)c4ccc(Br)cc4)cc1c32`).
-- Strict V2000 coordinate parity currently fails first at row 75 (`CCOCCCNC(=O)Nc1c(-c2ccc(F)cc2)[nH]c2ccccc12`).
+- `cargo test` currently passes for the Rust workspace, including graph-feature parity, kekulized topology parity, strict V2000 coordinate/topology parity, no-RDKit-runtime-dependency checks, and tetrahedral stereo geometry.
+- Python tests currently require local binding installation plus ML dependencies. The latest direct `python/tests` run reached collection after installing the local package and was blocked by missing `torch` in the active Python environment.
 - Temporary stress check result: random sampling 1000 SMILES from `core_comp_lib.csv` with regenerated RDKit goldens still exposes unresolved molblock parity gaps (details logged under `tmp/rust_test_core_comp_lib_sample1000_with_regen_errors.txt`).

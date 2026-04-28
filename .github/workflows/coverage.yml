@@ -56,15 +56,15 @@ jobs:
         continue-on-error: true
         run: |
           cargo llvm-cov clean --workspace
-          cargo llvm-cov --workspace --all-features --no-report
+          cargo llvm-cov --workspace --exclude cosmolkit-py --all-features --no-report
 
       - name: Generate HTML coverage report
         if: always()
-        run: cargo llvm-cov report --html --output-dir target/llvm-cov/html
+        run: cargo llvm-cov report --workspace --exclude cosmolkit-py --html --output-dir target/llvm-cov/html
 
       - name: Generate LCOV coverage report
         if: always()
-        run: cargo llvm-cov report --lcov --output-path lcov.info
+        run: cargo llvm-cov report --workspace --exclude cosmolkit-py --lcov --output-path lcov.info
 
       - name: Upload HTML coverage artifact
         if: always()

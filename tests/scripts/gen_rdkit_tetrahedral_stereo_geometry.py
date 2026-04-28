@@ -12,7 +12,7 @@ from typing import Iterable
 from rdkit import Chem, RDLogger
 from rdkit.Chem import AllChem
 
-EXPECTED_RDKIT_VERSION = "2025.3.5"
+EXPECTED_RDKIT_VERSION = "2026.3.1"
 
 
 def assert_rdkit_version() -> None:

@@ -26,7 +26,7 @@ pub enum ValenceError {
 }
 
 pub(crate) fn valence_list(atomic_num: u8) -> Option<&'static [i32]> {
-    // Complete RDKit valence cache (Release_2025_03_5), generated via:
+    // Complete RDKit valence cache (Release_2026_03_1), generated via:
     //   [list(Chem.GetPeriodicTable().GetValenceList(z)) for z in range(119)]
     // This intentionally mirrors RDKit's table entries and ordering.
     match atomic_num {
@@ -153,7 +153,7 @@ pub(crate) fn valence_list(atomic_num: u8) -> Option<&'static [i32]> {
     }
 }
 
-/// Returns the RDKit 2025.03.5 valence list for an atomic number.
+/// Returns the RDKit 2026.03.1 valence list for an atomic number.
 pub fn rdkit_valence_list(atomic_num: u8) -> Option<&'static [i32]> {
     valence_list(atomic_num)
 }
@@ -515,7 +515,7 @@ fn n_outer_electrons(atomic_num: u8) -> Option<i32> {
     }
 }
 
-/// RDKit 2025.03.5 MolOps::assignRadicals parity helper.
+/// RDKit 2026.03.1 MolOps::assignRadicals parity helper.
 pub fn assign_radicals_rdkit_2025(
     molecule: &Molecule,
     existing_explicit_valence: &[u8],

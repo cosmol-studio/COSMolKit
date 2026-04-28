@@ -1,5 +1,29 @@
 # COSMolKit
 
+<p align="center">
+  <a href="https://github.com/cosmol-studio/COSMolKit/actions/workflows/coverage.yml">
+    <img src="https://github.com/cosmol-studio/COSMolKit/actions/workflows/coverage.yml/badge.svg" alt="coverage workflow badge"/>
+  </a>
+  <a href="https://app.codecov.io/gh/cosmol-studio/COSMolKit">
+    <img src="https://codecov.io/gh/cosmol-studio/COSMolKit/branch/main/graph/badge.svg" alt="codecov badge"/>
+  </a>
+  <a href="https://crates.io/crates/cosmolkit">
+    <img src="https://img.shields.io/crates/v/cosmolkit.svg" alt="crates.io badge"/>
+  </a>
+  <a href="https://docs.rs/cosmolkit/latest/cosmolkit/">
+    <img src="https://img.shields.io/docsrs/cosmolkit" alt="docs.rs badge"/>
+  </a>
+  <a href="https://pypi.org/project/cosmolkit/">
+    <img src="https://img.shields.io/pypi/v/cosmolkit.svg" alt="pypi badge"/>
+  </a>
+</p>
+
+## Installation
+
+```bash
+pip install cosmolkit
+```
+
 ## Overview
 
 **COSMolKit** is a Rust toolkit for core cheminformatics and structural biology data processing.
@@ -23,8 +47,8 @@ The overall goal is to provide a **portable, reliable, and extensible foundation
 
 COSMolKit is currently focused on the chemistry core. The repository now uses a two-crate Rust layout: `cosmolkit-core` (core implementation, including chemistry perception, IO, and biomolecular primitives) and `cosmolkit` (facade re-export crate), plus RDKit-based regression tests for SMILES parsing, atom/bond feature parity, hydrogen expansion, Kekulization, minimal MOL/SDF output, and tetrahedral stereo geometry checks.
 
-RDKit 2025.03.5 is used as the active behavioral reference. The implementation is still a subset and is being expanded by source-level parity work rather than broad API coverage.
-As of 2026-04-28, `cosmolkit-core` RDKit graph-feature parity tests are passing for direct and explicit-hydrogen molecules. Tetrahedral stereo now also has an internal ordered-ligand representation (`TetrahedralStereo`) derived from the existing RDKit-compatible atom chiral tags, with a Rust integration test that validates positive oriented volume against RDKit ETKDGv3 coordinates (`seed=42`) on the shared chiral corpus. The representation contract is documented in `tetrahedral_stereo_representation.md`. The shared `tests/smiles.smi` corpus is now 76 rows. Molblock parity remains in progress: strict V2000 coordinate parity currently fails first at row 75 (`CCOCCCNC(=O)Nc1c(-c2ccc(F)cc2)[nH]c2ccccc12`), and kekulized topology parity currently fails first at row 76 (`CC1=CC(C)(C)N2C(=O)C(=C(C#N)C#N)c3cc(OC(=O)c4ccc(Br)cc4)cc1c32`).
+RDKit 2026.03.1 is used as the active behavioral reference, with `third_party/rdkit` pinned to `Release_2026_03_1` (`351f8f378f8ad6bbd517980c38896e66bf907af8`). The implementation is still a subset and is being expanded by source-level parity work rather than broad API coverage.
+As of 2026-04-28, the Rust workspace test suite is passing against the active RDKit 2026.03.1 oracle. `cosmolkit-core` graph-feature parity tests pass for direct and explicit-hydrogen molecules, kekulized topology parity passes on the shared corpus, and strict V2000 molblock coordinate/topology parity now passes on the 76-row `tests/smiles.smi` corpus. Tetrahedral stereo has an internal ordered-ligand representation (`TetrahedralStereo`) derived from the existing RDKit-compatible atom chiral tags, with a Rust integration test that validates positive oriented volume against RDKit ETKDGv3 coordinates (`seed=42`) on the shared chiral corpus. The representation contract is documented in `tetrahedral_stereo_representation.md`. Python-facing tests require the local PyO3 package plus ML dependencies; the last direct run reached import collection and was blocked by a missing `torch` dependency in the active Python environment.
 The repository also includes a PyO3 package under `python/`, along with a GitHub Actions workflow for building and publishing Python wheels to PyPI. The binding layer is still partial, but now exposes lower-level molecule graph access and `Molecule.tetrahedral_stereo()` for the new stereo representation.
 
 ---
@@ -90,80 +114,86 @@ The long-term goal is to make COSMolKit usable as an **in-place replacement** fo
 
 ## Roadmap
 
-## Phase 0 — Project Foundation
-**Goal:** establish the minimal architecture and internal data model
+## Phase 1 — Chemistry Core Parity
+**Goal:** keep the small core correct before expanding breadth
 
-- ✅ Rust workspace layout
-- [ ] core error types
-- [ ] shared chemical element table
-- [ ] common indexing and identifier types
-- [ ] serialization strategy
-- ✅ test corpus for molecule parity work
-- ✅ PyO3 binding scaffold
-
----
-
-## Phase 1 — Minimal Usable Core (Critical Start)
-**Goal:** achieve a small but complete and verifiable workflow
-
-- [ ] SDF reader (robust, streaming-capable)
-- ✅ Atom / Bond / Molecule struct
+- ✅ Atom / Bond / Molecule data model
 - ✅ adjacency representation
 - ✅ bond order + formal charge support
-- [ ] basic valence handling (in progress for tested subset)
-- [ ] Kekulization (in progress for tested subset)
+- ✅ SMILES parser for the active parity corpus
+- ✅ ring perception for the active parity corpus
+- ✅ basic valence handling for the active parity corpus
+- ✅ Kekulization for the active parity corpus
+- ✅ atom and bond feature parity tests against RDKit
+- ✅ explicit hydrogen expansion for the active parity corpus
+- ✅ tetrahedral stereo ordered-ligand representation
+- [ ] complete the remaining strict molblock V2000 coordinate/topology parity failures
+- [ ] promote sanitization into a single explicit public pipeline
 
 Deliverable:
-- load molecules from SDF
-- perform Kekulization
-- return identical results (validated) to RDKit
+- parse molecules from SMILES
+- run the core perception path
+- match RDKit behavior for the tracked regression corpus
 
-This phase defines the **correctness baseline** of the project.
+This phase defines the correctness baseline of the project.
 
 ---
 
-## Phase 2 — Chemical Perception Core
-**Goal:** complete the minimal RDKit-equivalent perception pipeline
+## Phase 2 — Chemical File I/O
+**Goal:** make molecule import/export usable beyond SMILES
 
-- [ ] implicit hydrogen assignment (in progress for tested subset)
-- [ ] aromaticity detection
-- [ ] ring perception (in progress for tested subset)
-- [ ] sanitization pipeline
-- [ ] consistency testing vs RDKit (in progress: `cosmolkit-core` graph-feature parity and kekulized molblock topology parity are green; tetrahedral stereo ETKDG geometry check added; strict V2000 coordinate parity still being closed)
-
-Deliverable:
-- molecules can be fully sanitized and normalized
-- results match RDKit for standard datasets
-
----
-
-## Phase 3 — Chemical File I/O Expansion
-**Goal:** broaden usable chemistry workflows
-
-- [ ] SMILES parser (in progress for tested subset)
 - [ ] MOL reader
-- [ ] SDF writer (minimal V2000 output in progress; strict coordinate parity still open)
-- [ ] tetrahedral stereo API promotion from derived view to first-class internal geometry/stereo primitive
+- [ ] SDF reader with robust multi-record handling
+- [ ] SDF writer with strict RDKit-compatible V2000 output
 - [ ] batch molecule loading
-- [ ] format validation tools
+- [ ] format validation tools with precise error reporting
 
 ---
 
-## Phase 4 — Query and Basic Computation
+## Phase 3 — Python API and User Workflows
+**Goal:** expose the verified Rust core through a practical Python interface
+
+- ✅ PyO3 package scaffold
+- ✅ `Molecule.from_smiles()`
+- ✅ atom and bond graph access
+- ✅ `Molecule.add_hydrogens()`
+- ✅ `Molecule.kekulize()`
+- ✅ `Molecule.tetrahedral_stereo()`
+- [ ] remove-hydrogens API
+- [ ] SDF read/write bindings
+- [ ] stable graph-extraction helpers for ML workflows
+- [ ] explicit sanitization and error reporting API
+
+---
+
+## Phase 4 — Query, Descriptors, and Computation
 **Goal:** enable practical filtering and analysis
 
 - [ ] atom selection API
 - [ ] bond selection API
 - [ ] neighborhood queries
 - [ ] connected component analysis
-- [ ] substructure matching (initial version)
+- [ ] substructure matching
 - [ ] molecular formula
 - [ ] molecular weight
 - [ ] ring statistics
+- [ ] fingerprint generation and similarity metrics
 
 ---
 
-## Phase 5 — Biomolecular Structure Parsing
+## Phase 5 — 2D Coordinates and Drawing
+**Goal:** provide RDKit-drawer-like molecule depiction
+
+- [ ] 2D coordinate generation
+- [ ] SVG molecule drawer
+- [ ] PNG rendering path for Python users
+- [ ] atom and bond annotation overlays
+- [ ] stereochemistry-aware wedge/dash depiction
+- [ ] visual regression tests for generated drawings
+
+---
+
+## Phase 6 — Biomolecular Structure Support
 **Goal:** cover core Biopython-like structure functionality
 
 - [ ] PDB parser
@@ -172,53 +202,20 @@ Deliverable:
 - [ ] alternate location handling
 - [ ] insertion code handling
 - [ ] HETATM parsing
-- [ ] coordinate extraction utilities
-
----
-
-## Phase 6 — Biomolecular Utilities
-**Goal:** support real preprocessing workflows
-
-- [ ] chain filtering
-- [ ] residue selection
 - [ ] ligand extraction
-- [ ] water / ion filtering
-- [ ] coordinate range utilities
+- [ ] residue and chain selection utilities
 - [ ] residue neighborhood queries
 
 ---
 
-## Phase 7 — Stability and Ecosystem
-**Goal:** make COSMolKit production-ready
-
-- [ ] Python API stabilization
-- [ ] documentation and examples
-- [ ] benchmark suite
-- [ ] dataset-scale performance testing
-- [ ] CLI tools
-
----
-
-## Phase 8 — WASM Support (Forward-Looking)
-**Goal:** enable browser-native scientific computation
+## Phase 7 — WASM and Browser Integration
+**Goal:** enable browser-native chemistry workflows
 
 - [ ] WASM compilation target
 - [ ] JS bindings
-- [ ] in-browser SDF parsing
+- [ ] in-browser SMILES/SDF parsing
 - [ ] lightweight molecule processing
 - [ ] integration with visualization tools
-
----
-
-## Non-Goals (Early Development)
-
-- conformer generation
-- docking
-- scoring
-- virtual screening
-- molecular simulation
-- protein–ligand interaction modeling
-- deep learning model integration
 
 ---
 
@@ -237,3 +234,8 @@ with:
 - long-term portability via WebAssembly  
 
 In short, it is a **systems-level toolkit for chemistry and structure data**, designed for correctness, performance, and broad deployment environments.
+
+
+> **Respect for RDKit**
+>
+> COSMolKit is developed with deep respect for RDKit and the broader open-source cheminformatics community, and aims to provide an independent Rust-native implementation while maintaining interoperability and behavioral compatibility where appropriate.
