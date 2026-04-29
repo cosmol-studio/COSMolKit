@@ -1,92 +1,92 @@
 name: coverage
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
+    push:
+        branches:
+            - main
+    pull_request:
+        branches:
+            - main
+    workflow_dispatch:
 
 permissions:
-  contents: read
+    contents: read
 
 jobs:
-  rust-coverage:
-    runs-on: ubuntu-latest
+    rust-coverage:
+        runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+            - name: Setup Rust
+              uses: dtolnay/rust-toolchain@stable
 
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
+            - name: Setup Rust cache
+              uses: Swatinem/rust-cache@v2
 
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+            - name: Install cargo-llvm-cov
+              uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+            - name: Setup Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.11"
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v6
+            - name: Setup uv
+              uses: astral-sh/setup-uv@v6
 
-      - name: Sync dev environment
-        run: uv sync --group dev
+            - name: Sync dev environment
+              run: uv sync --group dev
 
-      - name: Regenerate RDKit goldens from tests/smiles.smi
-        run: |
-          rm -f tests/golden/molblock_v2000_minimal.jsonl
-          rm -f tests/golden/molblock_v2000_kekulized.jsonl
-          rm -f tests/golden/graph_features.jsonl
-          rm -f tests/golden/tetrahedral_stereo_geometry.jsonl
-          .venv/bin/python tests/scripts/gen_rdkit_v2000_minimal_golden.py
-          .venv/bin/python tests/scripts/gen_rdkit_kekulize_molblock_golden.py
-          .venv/bin/python tests/scripts/gen_rdkit_graph_features.py
-          .venv/bin/python tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py
+            - name: Regenerate RDKit goldens from tests/smiles.smi
+              run: |
+                  rm -f tests/golden/molblock_v2000_minimal.jsonl
+                  rm -f tests/golden/molblock_v2000_kekulized.jsonl
+                  rm -f tests/golden/graph_features.jsonl
+                  rm -f tests/golden/tetrahedral_stereo_geometry.jsonl
+                  .venv/bin/python tests/scripts/gen_rdkit_v2000_minimal_golden.py
+                  .venv/bin/python tests/scripts/gen_rdkit_kekulize_molblock_golden.py
+                  .venv/bin/python tests/scripts/gen_rdkit_graph_features.py
+                  .venv/bin/python tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py
 
-      - name: Run Rust tests with coverage instrumentation
-        id: cov_run
-        continue-on-error: true
-        run: |
-          cargo llvm-cov clean --workspace
-          cargo llvm-cov --workspace --exclude cosmolkit-py --all-features --no-report
+            - name: Run Rust tests with coverage instrumentation
+              id: cov_run
+              continue-on-error: true
+              run: |
+                  cargo llvm-cov clean --workspace
+                  cargo llvm-cov --workspace --exclude cosmolkit-py --all-features --no-report
 
-      - name: Generate HTML coverage report
-        if: always()
-        run: cargo llvm-cov report --workspace --exclude cosmolkit-py --html --output-dir target/llvm-cov/html
+            - name: Generate HTML coverage report
+              if: always()
+              run: cargo llvm-cov report --html --output-dir target/llvm-cov/html
 
-      - name: Generate LCOV coverage report
-        if: always()
-        run: cargo llvm-cov report --workspace --exclude cosmolkit-py --lcov --output-path lcov.info
+            - name: Generate LCOV coverage report
+              if: always()
+              run: cargo llvm-cov report --lcov --output-path lcov.info
 
-      - name: Upload HTML coverage artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: llvm-cov-html
-          path: target/llvm-cov/html
-          if-no-files-found: error
+            - name: Upload HTML coverage artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: llvm-cov-html
+                  path: target/llvm-cov/html
+                  if-no-files-found: error
 
-      - name: Upload coverage to Codecov
-        if: always()
-        uses: codecov/codecov-action@v6
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: lcov.info
-          flags: rust,from-scratch-golden,allow-failed-tests
-          name: rust-llvm-cov
-          fail_ci_if_error: false
-          verbose: true
+            - name: Upload coverage to Codecov
+              if: always()
+              uses: codecov/codecov-action@v6
+              with:
+                  token: ${{ secrets.CODECOV_TOKEN }}
+                  files: lcov.info
+                  flags: rust,from-scratch-golden,allow-failed-tests
+                  name: rust-llvm-cov
+                  fail_ci_if_error: false
+                  verbose: true
 
-      - name: Fail workflow if tests failed
-        if: steps.cov_run.outcome == 'failure'
-        run: |
-          echo "Rust tests failed. Coverage artifacts were still generated and uploaded."
-          exit 1
+            - name: Fail workflow if tests failed
+              if: steps.cov_run.outcome == 'failure'
+              run: |
+                  echo "Rust tests failed. Coverage artifacts were still generated and uploaded."
+                  exit 1
