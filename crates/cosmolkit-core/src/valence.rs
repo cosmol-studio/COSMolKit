@@ -15,13 +15,17 @@ pub struct ValenceAssignment {
 }
 
 /// Valence handling errors.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ValenceError {
+    #[error(
+        "invalid valence at atom {atom_index}: atomic_num={atomic_num}, formal_charge={formal_charge}"
+    )]
     InvalidValence {
         atom_index: usize,
         atomic_num: u8,
         formal_charge: i8,
     },
+    #[error("valence assignment path is not implemented")]
     NotImplemented,
 }
 

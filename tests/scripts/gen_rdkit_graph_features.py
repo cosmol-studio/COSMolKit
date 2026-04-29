@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate RDKit graph-feature golden data (direct + AddHs) from tests/smiles.smi."""
+"""Generate RDKit graph-feature golden data from tests/smiles.smi."""
 
 from __future__ import annotations
 
@@ -83,12 +83,41 @@ def build_record(smiles: str) -> dict[str, object]:
             "rdkit_ok": False,
             "direct": None,
             "with_hs": None,
+            "addhs_removehs": None,
+            "possible_stereo": None,
+            "chiral_centers": None,
             "error": "MolFromSmiles returned None",
         }
 
     Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
+    # RDKit's non-legacy FindMolChiralCenters() calls FindPotentialStereo() and
+    # AssignCIPLabels() on the input molecule, which can rewrite bond stereo
+    # labels (for example E/Z -> CIS/TRANS). Collect chiral-center metadata from
+    # a copy so the "direct" branch remains the post-AssignStereochemistry state.
+    mol_chiral_centers = Chem.Mol(mol)
+    chiral_centers_exclude_unassigned = [
+        {"atom_idx": int(i), "label": str(label)}
+        for i, label in Chem.FindMolChiralCenters(
+            mol_chiral_centers, includeUnassigned=False, useLegacyImplementation=False
+        )
+    ]
+    chiral_centers_include_unassigned = [
+        {"atom_idx": int(i), "label": str(label)}
+        for i, label in Chem.FindMolChiralCenters(
+            mol_chiral_centers, includeUnassigned=True, useLegacyImplementation=False
+        )
+    ]
     mol_h = Chem.AddHs(Chem.Mol(mol))
     Chem.AssignStereochemistry(mol_h, cleanIt=True, force=True)
+    mol_addhs_removehs = Chem.RemoveHs(Chem.Mol(mol_h))
+    Chem.AssignStereochemistry(mol_addhs_removehs, cleanIt=True, force=True)
+    mol_possible_stereo = Chem.Mol(mol)
+    Chem.AssignStereochemistry(
+        mol_possible_stereo,
+        cleanIt=True,
+        force=True,
+        flagPossibleStereoCenters=True,
+    )
     return {
         "smiles": smiles,
         "rdkit_ok": True,
@@ -99,6 +128,18 @@ def build_record(smiles: str) -> dict[str, object]:
         "with_hs": {
             "atom_features": atom_features(mol_h),
             "bond_features": bond_features(mol_h),
+        },
+        "addhs_removehs": {
+            "atom_features": atom_features(mol_addhs_removehs),
+            "bond_features": bond_features(mol_addhs_removehs),
+        },
+        "possible_stereo": {
+            "atom_features": atom_features(mol_possible_stereo),
+            "bond_features": bond_features(mol_possible_stereo),
+        },
+        "chiral_centers": {
+            "include_unassigned_false": chiral_centers_exclude_unassigned,
+            "include_unassigned_true": chiral_centers_include_unassigned,
         },
         "error": None,
     }

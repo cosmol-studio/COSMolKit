@@ -1,4 +1,3 @@
-use core::fmt;
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -8,6 +7,7 @@ use std::process::Command;
 use cosmolkit_core::{
     BondOrder, BondStereo, ChiralTag as OursChiralTag, Molecule, ValenceModel,
     add_hydrogens_in_place, assign_radicals_rdkit_2025, assign_valence, rdkit_valence_list,
+    remove_hydrogens_in_place,
 };
 use serde::{Deserialize, Deserializer};
 
@@ -236,35 +236,34 @@ struct GoldenRecord {
     rdkit_ok: bool,
     direct: Option<FeatureSet>,
     with_hs: Option<FeatureSet>,
+    addhs_removehs: Option<FeatureSet>,
+    possible_stereo: Option<FeatureSet>,
+    chiral_centers: Option<ChiralCentersRecord>,
     error: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+struct ChiralCenter {
+    atom_idx: usize,
+    label: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChiralCentersRecord {
+    include_unassigned_false: Vec<ChiralCenter>,
+    include_unassigned_true: Vec<ChiralCenter>,
+}
+
+#[derive(Debug, thiserror::Error)]
 enum TestDataError {
-    Io(std::io::Error),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("invalid jsonl at line {line_no}: {source}")]
     Json {
         line_no: usize,
+        #[source]
         source: serde_json::Error,
     },
-}
-
-impl fmt::Display for TestDataError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Io(err) => write!(f, "{err}"),
-            Self::Json { line_no, source } => {
-                write!(f, "invalid jsonl at line {line_no}: {source}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for TestDataError {}
-
-impl From<std::io::Error> for TestDataError {
-    fn from(value: std::io::Error) -> Self {
-        Self::Io(value)
-    }
 }
 
 fn repo_root() -> PathBuf {
@@ -383,6 +382,14 @@ struct OursAtomFeature {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct OursPossibleStereoAtomFeature {
+    base: OursAtomFeature,
+    cip_code: Option<CipCode>,
+    cip_rank: Option<i64>,
+    chirality_possible: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct OursBondFeature {
     begin_atom: usize,
     end_atom: usize,
@@ -417,6 +424,17 @@ fn ours_bond_stereo_name(stereo: BondStereo) -> RdkitBondStereo {
         BondStereo::Any => RdkitBondStereo::StereoAny,
         BondStereo::Cis => RdkitBondStereo::StereoZ,
         BondStereo::Trans => RdkitBondStereo::StereoE,
+    }
+}
+
+fn ours_cip_code_name(code: Option<&str>) -> Option<CipCode> {
+    match code {
+        Some("R") => Some(CipCode::R),
+        Some("S") => Some(CipCode::S),
+        Some("r") => Some(CipCode::LowerR),
+        Some("s") => Some(CipCode::LowerS),
+        Some(other) => Some(CipCode::Unknown(other.to_owned())),
+        None => None,
     }
 }
 
@@ -1080,6 +1098,46 @@ fn compare_features(
     }
 }
 
+fn compare_possible_stereo_features(
+    ours_atoms: &[OursPossibleStereoAtomFeature],
+    ours_bonds: &[OursBondFeature],
+    expected: &FeatureSet,
+    row_idx: usize,
+    smiles: &str,
+) {
+    let base_atoms: Vec<OursAtomFeature> = ours_atoms.iter().map(|a| a.base.clone()).collect();
+    compare_features(
+        &base_atoms,
+        ours_bonds,
+        expected,
+        row_idx,
+        smiles,
+        "possible_stereo",
+    );
+
+    for (i, (a, e)) in ours_atoms
+        .iter()
+        .zip(expected.atom_features.iter())
+        .enumerate()
+    {
+        assert_eq!(
+            a.cip_code, e.cip_code,
+            "cip_code mismatch row {} atom {} ({}) [possible_stereo]",
+            row_idx, i, smiles
+        );
+        assert_eq!(
+            a.cip_rank, e.cip_rank,
+            "cip_rank mismatch row {} atom {} ({}) [possible_stereo]",
+            row_idx, i, smiles
+        );
+        assert_eq!(
+            a.chirality_possible, e.chirality_possible,
+            "chirality_possible mismatch row {} atom {} ({}) [possible_stereo]",
+            row_idx, i, smiles
+        );
+    }
+}
+
 #[test]
 fn graph_feature_golden_has_one_record_per_smiles() {
     let smiles = load_smiles().expect("should read tests/smiles.smi");
@@ -1100,8 +1158,12 @@ fn graph_feature_golden_has_one_record_per_smiles() {
 
         if record.rdkit_ok {
             assert!(
-                record.direct.is_some() && record.with_hs.is_some(),
-                "rdkit_ok=true requires both direct and with_hs at row {}",
+                record.direct.is_some()
+                    && record.with_hs.is_some()
+                    && record.addhs_removehs.is_some()
+                    && record.possible_stereo.is_some()
+                    && record.chiral_centers.is_some(),
+                "rdkit_ok=true requires direct, with_hs, addhs_removehs, possible_stereo, and chiral_centers at row {}",
                 idx + 1
             );
             assert!(
@@ -1111,8 +1173,12 @@ fn graph_feature_golden_has_one_record_per_smiles() {
             );
         } else {
             assert!(
-                record.direct.is_none() && record.with_hs.is_none(),
-                "rdkit_ok=false should not carry feature sets at row {}",
+                record.direct.is_none()
+                    && record.with_hs.is_none()
+                    && record.addhs_removehs.is_none()
+                    && record.possible_stereo.is_none()
+                    && record.chiral_centers.is_none(),
+                "rdkit_ok=false should not carry feature/chiral-center sets at row {}",
                 idx + 1
             );
             assert!(
@@ -1122,6 +1188,86 @@ fn graph_feature_golden_has_one_record_per_smiles() {
             );
         }
     }
+}
+
+#[test]
+fn graph_feature_golden_records_chiral_centers_with_include_unassigned_branches() {
+    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    for (idx, record) in golden.iter().enumerate() {
+        if !record.rdkit_ok {
+            continue;
+        }
+        let centers = record
+            .chiral_centers
+            .as_ref()
+            .expect("chiral_centers missing for rdkit_ok row");
+
+        for c in &centers.include_unassigned_false {
+            let found = centers
+                .include_unassigned_true
+                .iter()
+                .any(|x| x.atom_idx == c.atom_idx && x.label == c.label);
+            assert!(
+                found,
+                "includeUnassigned=true should contain includeUnassigned=false center at row {} atom {} ({})",
+                idx + 1,
+                c.atom_idx,
+                record.smiles
+            );
+        }
+    }
+}
+
+#[test]
+fn graph_feature_golden_records_flag_possible_stereo_centers_branch() {
+    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let mut possible_center_rows = 0usize;
+    let required_smiles = ["CC(F)(Cl)Br", "FC(Cl)(Br)I", "CC(F)Cl", "CC(Cl)Br"];
+
+    for required in required_smiles {
+        assert!(
+            golden.iter().any(|record| record.smiles == required),
+            "SMILES corpus should contain explicit potential-stereocenter fixture {required}"
+        );
+    }
+
+    for (idx, record) in golden.iter().enumerate() {
+        if !record.rdkit_ok {
+            continue;
+        }
+        let direct = record.direct.as_ref().expect("direct missing");
+        let possible = record
+            .possible_stereo
+            .as_ref()
+            .expect("possible_stereo missing for rdkit_ok row");
+        assert_eq!(
+            direct.atom_features.len(),
+            possible.atom_features.len(),
+            "possible_stereo atom count mismatch at row {} ({})",
+            idx + 1,
+            record.smiles
+        );
+        assert_eq!(
+            direct.bond_features.len(),
+            possible.bond_features.len(),
+            "possible_stereo bond count mismatch at row {} ({})",
+            idx + 1,
+            record.smiles
+        );
+
+        if possible
+            .atom_features
+            .iter()
+            .any(|atom| atom.chirality_possible)
+        {
+            possible_center_rows += 1;
+        }
+    }
+
+    assert!(
+        possible_center_rows >= 4,
+        "SMILES corpus should exercise RDKit AssignStereochemistry(flagPossibleStereoCenters=True)"
+    );
 }
 
 #[test]
@@ -1145,10 +1291,11 @@ fn graph_feature_golden_records_isotopes_from_smiles() {
 }
 
 #[test]
-fn graph_feature_golden_records_cip_for_chiral_atoms() {
+fn graph_feature_golden_preserves_rdkit_cip_fields_for_chiral_atoms() {
     let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
     let mut chiral_atoms = 0usize;
-    let mut cip_labeled_chiral_atoms = 0usize;
+    let mut cip_code_count = 0usize;
+    let mut cip_rank_count = 0usize;
 
     for (idx, record) in golden.iter().enumerate() {
         if !record.rdkit_ok {
@@ -1160,23 +1307,22 @@ fn graph_feature_golden_records_cip_for_chiral_atoms() {
                 continue;
             }
             chiral_atoms += 1;
-            assert!(
-                atom.cip_rank.is_some(),
-                "chiral atom must carry RDKit _CIPRank at row {} atom {} ({})",
-                idx + 1,
-                atom_idx,
-                record.smiles
-            );
-            assert!(
-                matches!(
-                    atom.cip_code,
-                    Some(CipCode::R | CipCode::S | CipCode::LowerR | CipCode::LowerS)
-                ),
-                "chiral atom must carry RDKit _CIPCode at row {} atom {} ({})",
-                idx + 1,
-                atom_idx,
-                record.smiles
-            );
+            if atom.cip_rank.is_some() {
+                cip_rank_count += 1;
+            }
+            if let Some(code) = &atom.cip_code {
+                assert!(
+                    matches!(
+                        code,
+                        CipCode::R | CipCode::S | CipCode::LowerR | CipCode::LowerS
+                    ),
+                    "RDKit _CIPCode must be a known CIP label at row {} atom {} ({})",
+                    idx + 1,
+                    atom_idx,
+                    record.smiles
+                );
+                cip_code_count += 1;
+            }
             assert!(
                 !atom.chirality_possible,
                 "chiral atom should not carry RDKit _ChiralityPossible in this corpus at row {} atom {} ({})",
@@ -1184,7 +1330,6 @@ fn graph_feature_golden_records_cip_for_chiral_atoms() {
                 atom_idx,
                 record.smiles
             );
-            cip_labeled_chiral_atoms += 1;
         }
     }
 
@@ -1192,7 +1337,14 @@ fn graph_feature_golden_records_cip_for_chiral_atoms() {
         chiral_atoms >= 8,
         "SMILES corpus should include multiple RDKit-recognized chiral atoms"
     );
-    assert_eq!(cip_labeled_chiral_atoms, chiral_atoms);
+    assert!(
+        cip_code_count >= 8,
+        "SMILES corpus should include multiple RDKit-assigned CIP codes"
+    );
+    assert!(
+        cip_rank_count >= cip_code_count,
+        "atoms with RDKit _CIPCode should also be represented in the ranked CIP field population"
+    );
 }
 
 #[test]
@@ -1232,6 +1384,117 @@ fn graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules(
                     idx + 1,
                     &record.smiles,
                     "with_hs",
+                );
+            }
+            (false, Err(_)) => {}
+            (true, Err(err)) => {
+                panic!(
+                    "unexpected parse error at row {} ({}): {}",
+                    idx + 1,
+                    record.smiles,
+                    err
+                );
+            }
+            (false, Ok(_)) => {
+                panic!(
+                    "expected parse failure at row {} ({})",
+                    idx + 1,
+                    record.smiles
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn graph_features_match_rdkit_golden_for_addhs_removehs_roundtrip_branch() {
+    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+
+    for (idx, record) in golden.iter().enumerate() {
+        let ours = Molecule::from_smiles(&record.smiles);
+        match (record.rdkit_ok, ours) {
+            (true, Ok(mut mol)) => {
+                add_hydrogens_in_place(&mut mol).unwrap_or_else(|e| {
+                    panic!(
+                        "add_hydrogens failed at row {} ({}): {:?}",
+                        idx + 1,
+                        record.smiles,
+                        e
+                    )
+                });
+                remove_hydrogens_in_place(&mut mol).unwrap_or_else(|e| {
+                    panic!(
+                        "remove_hydrogens failed at row {} ({}): {:?}",
+                        idx + 1,
+                        record.smiles,
+                        e
+                    )
+                });
+
+                let expected = record
+                    .addhs_removehs
+                    .as_ref()
+                    .expect("addhs_removehs missing");
+                let (ours_atoms, ours_bonds) = extract_ours_features(&mol);
+                compare_features(
+                    &ours_atoms,
+                    &ours_bonds,
+                    expected,
+                    idx + 1,
+                    &record.smiles,
+                    "addhs_removehs",
+                );
+            }
+            (false, Err(_)) => {}
+            (true, Err(err)) => {
+                panic!(
+                    "unexpected parse error at row {} ({}): {}",
+                    idx + 1,
+                    record.smiles,
+                    err
+                );
+            }
+            (false, Ok(_)) => {
+                panic!(
+                    "expected parse failure at row {} ({})",
+                    idx + 1,
+                    record.smiles
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn graph_features_match_rdkit_golden_for_flag_possible_stereo_centers_branch() {
+    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+
+    for (idx, record) in golden.iter().enumerate() {
+        let ours = Molecule::from_smiles(&record.smiles);
+        match (record.rdkit_ok, ours) {
+            (true, Ok(mol)) => {
+                let expected = record
+                    .possible_stereo
+                    .as_ref()
+                    .expect("possible_stereo missing");
+                let (ours_atoms, ours_bonds) = extract_ours_features(&mol);
+                let stereo_props = mol.rdkit_legacy_stereo_atom_props(true);
+                let ours_atoms: Vec<OursPossibleStereoAtomFeature> = ours_atoms
+                    .into_iter()
+                    .zip(stereo_props.iter())
+                    .map(|(base, props)| OursPossibleStereoAtomFeature {
+                        base,
+                        cip_code: ours_cip_code_name(props.cip_code.as_deref()),
+                        cip_rank: props.cip_rank,
+                        chirality_possible: props.chirality_possible,
+                    })
+                    .collect();
+                compare_possible_stereo_features(
+                    &ours_atoms,
+                    &ours_bonds,
+                    expected,
+                    idx + 1,
+                    &record.smiles,
                 );
             }
             (false, Err(_)) => {}

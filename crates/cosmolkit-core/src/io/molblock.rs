@@ -1,7 +1,7 @@
-use core::fmt;
+use std::collections::HashMap;
 use std::f64::consts::PI;
 
-use crate::{BondOrder, BondStereo, Molecule};
+use crate::{BondDirection, BondOrder, BondStereo, ChiralTag, Molecule};
 
 unsafe extern "C" {
     #[link_name = "cos"]
@@ -30,22 +30,24 @@ fn rdkit_sqrt(x: f64) -> f64 {
     unsafe { c_libm_sqrt(x) }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum MolWriteError {
+    #[error("{0}")]
     UnsupportedSubset(&'static str),
 }
 
-impl fmt::Display for MolWriteError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnsupportedSubset(msg) => f.write_str(msg),
-        }
-    }
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SdfFormat {
+    Auto,
+    V2000,
+    V3000,
 }
 
-impl std::error::Error for MolWriteError {}
-
 pub fn mol_to_v2000_block_minimal(mol: &Molecule) -> Result<String, MolWriteError> {
+    mol_to_v2000_2d_block(mol)
+}
+
+pub fn mol_to_v2000_2d_block(mol: &Molecule) -> Result<String, MolWriteError> {
     // Mirror the golden generation path: tests/scripts first calls
     // RDDepict::Compute2DCoords() on the parsed molecule, then MolToMolBlock()
     // writes through a kekulized copy while preserving the existing conformer.
@@ -59,7 +61,14 @@ pub fn mol_to_v2000_block_minimal(mol: &Molecule) -> Result<String, MolWriteErro
             .map_err(|_| MolWriteError::UnsupportedSubset("kekulize before v2000 write failed"))?;
     }
 
-    let coords = compute_2d_coords_minimal(mol)?;
+    let coords = mol.coords_2d().ok_or(MolWriteError::UnsupportedSubset(
+        "2D coordinates are required; call Molecule::compute_2d_coords() before writing 2D SDF",
+    ))?;
+    if coords.len() != write_mol.atoms.len() {
+        return Err(MolWriteError::UnsupportedSubset(
+            "2D coordinate count does not match atom count",
+        ));
+    }
 
     let mut out = String::new();
     out.push('\n');
@@ -72,35 +81,136 @@ pub fn mol_to_v2000_block_minimal(mol: &Molecule) -> Result<String, MolWriteErro
     ));
 
     for (idx, atom) in write_mol.atoms.iter().enumerate() {
-        let (x, y) = coords[idx];
+        let coord = coords[idx];
         out.push_str(&format!(
-            "{:>10.4}{:>10.4}{:>10.4} {:<3} 0  0  0  0  0  0  0  0  0  0  0  0\n",
-            x,
-            y,
+            "{:>10.4}{:>10.4}{:>10.4} {:<3} 0{:>3}{:>3}  0  0  0  0  0  0  0  0  0\n",
+            coord.x,
+            coord.y,
             0.0,
-            atom_symbol(atom.atomic_num)
+            atom_symbol(atom.atomic_num),
+            0,
+            0
         ));
     }
 
+    let wedge = pick_bonds_to_wedge_rdkit_subset(&write_mol);
     for bond in &write_mol.bonds {
+        let (dir_code, reverse) = if matches!(bond.order, BondOrder::Single) {
+            let dir = determine_bond_wedge_state_rdkit_subset(bond, &wedge, coords, &write_mol);
+            let reverse = wedge
+                .get(&bond.index)
+                .is_some_and(|from_atom| *from_atom != bond.begin_atom)
+                && !matches!(dir, BondDirection::None);
+            (bond_stereo_code_with_direction(bond, dir), reverse)
+        } else {
+            (bond_stereo_code(bond), false)
+        };
+        let (begin_atom, end_atom) = if reverse {
+            (bond.end_atom + 1, bond.begin_atom + 1)
+        } else {
+            (bond.begin_atom + 1, bond.end_atom + 1)
+        };
         out.push_str(&format!(
-            "{:>3}{:>3}{:>3}  0\n",
-            bond.begin_atom + 1,
-            bond.end_atom + 1,
-            bond_type_code(bond.order)
+            "{:>3}{:>3}{:>3}{:>3}\n",
+            begin_atom,
+            end_atom,
+            bond_type_code(bond.order),
+            dir_code
         ));
     }
+    append_v2000_property_lines(&mut out, &write_mol);
     out.push_str("M  END\n");
     Ok(out)
 }
 
 pub fn mol_to_sdf_record_minimal(mol: &Molecule) -> Result<String, MolWriteError> {
-    let mut block = mol_to_v2000_block_minimal(mol)?;
+    mol_to_2d_sdf_record(mol, SdfFormat::Auto)
+}
+
+pub fn mol_to_2d_sdf_record(mol: &Molecule, format: SdfFormat) -> Result<String, MolWriteError> {
+    let mut block = match format {
+        SdfFormat::Auto => {
+            if mol.atoms.len() > 999
+                || mol.bonds.len() > 999
+                || mol
+                    .bonds
+                    .iter()
+                    .any(|bond| matches!(bond.order, BondOrder::Dative))
+            {
+                mol_to_v3000_2d_block(mol)?
+            } else {
+                mol_to_v2000_2d_block(mol)?
+            }
+        }
+        SdfFormat::V2000 => mol_to_v2000_2d_block(mol)?,
+        SdfFormat::V3000 => mol_to_v3000_2d_block(mol)?,
+    };
     block.push_str("$$$$\n");
     Ok(block)
 }
 
-fn compute_2d_coords_minimal(mol: &Molecule) -> Result<Vec<(f64, f64)>, MolWriteError> {
+pub fn mol_to_v3000_2d_block(mol: &Molecule) -> Result<String, MolWriteError> {
+    let coords = mol.coords_2d().ok_or(MolWriteError::UnsupportedSubset(
+        "2D coordinates are required; call Molecule::compute_2d_coords() before writing 2D SDF",
+    ))?;
+    if coords.len() != mol.atoms.len() {
+        return Err(MolWriteError::UnsupportedSubset(
+            "2D coordinate count does not match atom count",
+        ));
+    }
+
+    let mut out = String::new();
+    out.push('\n');
+    out.push_str("     COSMolKit      2D\n");
+    out.push('\n');
+    out.push_str("  0  0  0  0  0  0  0  0  0  0999 V3000\n");
+    out.push_str("M  V30 BEGIN CTAB\n");
+    out.push_str(&format!(
+        "M  V30 COUNTS {} {} 0 0 0\n",
+        mol.atoms.len(),
+        mol.bonds.len()
+    ));
+    out.push_str("M  V30 BEGIN ATOM\n");
+    for (idx, atom) in mol.atoms.iter().enumerate() {
+        let coord = coords[idx];
+        out.push_str(&format!(
+            "M  V30 {} {} {:.6} {:.6} {:.6} 0",
+            idx + 1,
+            atom_symbol(atom.atomic_num),
+            coord.x,
+            coord.y,
+            0.0
+        ));
+        if atom.formal_charge != 0 {
+            out.push_str(&format!(" CHG={}", atom.formal_charge));
+        }
+        if let Some(isotope) = atom.isotope {
+            out.push_str(&format!(" MASS={isotope}"));
+        }
+        out.push('\n');
+    }
+    out.push_str("M  V30 END ATOM\n");
+    out.push_str("M  V30 BEGIN BOND\n");
+    for (idx, bond) in mol.bonds.iter().enumerate() {
+        out.push_str(&format!(
+            "M  V30 {} {} {} {}",
+            idx + 1,
+            bond_type_code(bond.order),
+            bond.begin_atom + 1,
+            bond.end_atom + 1
+        ));
+        if let Some(cfg) = bond_v3000_cfg_code(bond) {
+            out.push_str(&format!(" CFG={cfg}"));
+        }
+        out.push('\n');
+    }
+    out.push_str("M  V30 END BOND\n");
+    out.push_str("M  V30 END CTAB\n");
+    out.push_str("M  END\n");
+    Ok(out)
+}
+
+pub(crate) fn compute_2d_coords_minimal(mol: &Molecule) -> Result<Vec<(f64, f64)>, MolWriteError> {
     let n = mol.atoms.len();
     if n == 0 {
         return Err(MolWriteError::UnsupportedSubset(
@@ -264,55 +374,21 @@ fn rdkit_compute_initial_coords_strict(mol: &Molecule) -> Result<Vec<(f64, f64)>
                 .count();
             let cyclomatic = bond_count_in_comp as isize - k as isize + 1;
 
-            let is_tree = bond_count_in_comp + 1 == k;
-            let branch_try = if is_tree {
-                let centers: Vec<_> = comp.iter().copied().filter(|&a| degree[a] > 1).collect();
-                if centers.len() == 1 {
-                    let center = centers[0];
-                    let mut leaves: Vec<_> =
-                        comp.iter().copied().filter(|&a| a != center).collect();
-                    if degree[center] == 4
-                        && leaves.len() == 4
-                        && matches!(mol.atoms[center].chiral_tag, crate::ChiralTag::Unspecified)
-                        && leaves.iter().all(|&a| degree[a] == 1)
-                    {
-                        leaves.sort_by_key(|&idx| {
-                            let depict = atom_depict_rank(mol.atoms[idx].atomic_num, degree[idx]);
-                            depict * mol.atoms.len() + idx
-                        });
-                        Some(vec![
-                            (center, (0.0, 0.0)),
-                            (leaves[0], (-1.2990, -0.7500)),
-                            (leaves[1], (1.2990, 0.7500)),
-                            (leaves[2], (0.7500, -1.2990)),
-                            (leaves[3], (-0.7500, 1.2990)),
-                        ])
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
+            let chosen = if cyclomatic <= 0 {
+                place_acyclic_tree_rdkit_like(
+                    mol,
+                    &comp,
+                    &adjacency,
+                    &degree,
+                    &hybridizations,
+                    &cip_ranks,
+                    None,
+                )
+            } else if cyclomatic == 1 {
+                place_multiring_nonfused_component_rdkit_like(mol, &comp, &adjacency, &degree)
             } else {
-                None
+                place_multiring_nonfused_component_rdkit_like(mol, &comp, &adjacency, &degree)
             };
-            let chosen = branch_try.or_else(|| {
-                if cyclomatic <= 0 {
-                    place_acyclic_tree_rdkit_like(
-                        mol,
-                        &comp,
-                        &adjacency,
-                        &degree,
-                        &hybridizations,
-                        &cip_ranks,
-                        None,
-                    )
-                } else if cyclomatic == 1 {
-                    place_multiring_nonfused_component_rdkit_like(mol, &comp, &adjacency, &degree)
-                } else {
-                    place_multiring_nonfused_component_rdkit_like(mol, &comp, &adjacency, &degree)
-                }
-            });
             chosen
         };
 
@@ -709,14 +785,50 @@ fn rdkit_twice_bond_type(order: BondOrder) -> i64 {
 
 fn rdkit_cip_invariants(mol: &Molecule) -> Vec<i64> {
     // RDKit Chirality.cpp::buildCIPInvariants() without isotope/map-number
-    // variation; both are currently represented as their default values here.
+    // map-number variation; atom maps are not currently stored in the graph.
     const MASS_BITS: i64 = 10;
     const MAX_MASS: i64 = 1 << MASS_BITS;
+
+    fn most_common_isotope(atomic_num: u8) -> i32 {
+        match atomic_num {
+            1 => 1,
+            5 => 11,
+            6 => 12,
+            7 => 14,
+            8 => 16,
+            9 => 19,
+            11 => 23,
+            12 => 24,
+            13 => 27,
+            14 => 28,
+            15 => 31,
+            16 => 32,
+            17 => 35,
+            29 => 63,
+            34 => 80,
+            35 => 79,
+            53 => 127,
+            _ => 0,
+        }
+    }
+
     mol.atoms
         .iter()
         .map(|atom| {
             let mut invariant = i64::from(atom.atomic_num % 128);
-            let mass = MAX_MASS / 2;
+            let mut mass = 0i64;
+            if let Some(isotope) = atom.isotope {
+                mass = i64::from(isotope) - i64::from(most_common_isotope(atom.atomic_num));
+                if mass >= 0 {
+                    mass += 1;
+                }
+            }
+            mass += MAX_MASS / 2;
+            if mass < 0 {
+                mass = 0;
+            } else {
+                mass %= MAX_MASS;
+            }
             invariant = (invariant << MASS_BITS) | mass;
             let mapnum = 0;
             (invariant << 10) | mapnum
@@ -778,6 +890,7 @@ pub(crate) fn rdkit_cip_ranks_for_depict(mol: &Molecule) -> Vec<i64> {
     // for depictor ordering. This preserves duplicated neighbor entries for
     // multiple bonds through getTwiceBondType().
     let n = mol.atoms.len();
+    let assignment = crate::assign_valence(mol, crate::ValenceModel::RdkitLike).ok();
     let invars = rdkit_cip_invariants(mol);
     let mut cip_entries: Vec<Vec<i64>> = invars.iter().copied().map(|v| vec![v]).collect();
     let mut sortable: Vec<(Vec<i64>, usize, i64)> = cip_entries
@@ -810,7 +923,22 @@ pub(crate) fn rdkit_cip_ranks_for_depict(mol: &Molecule) -> Vec<i64> {
             } else {
                 continue;
             };
-            bond_features[atom_idx].push((rdkit_twice_bond_type(bond.order), nbr_idx));
+            let count = if matches!(bond.order, BondOrder::Double) {
+                let nbr = &mol.atoms[nbr_idx];
+                let nbr_degree = mol
+                    .bonds
+                    .iter()
+                    .filter(|other| other.begin_atom == nbr_idx || other.end_atom == nbr_idx)
+                    .count();
+                if nbr.atomic_num == 15 && matches!(nbr_degree, 3 | 4) {
+                    1
+                } else {
+                    rdkit_twice_bond_type(bond.order)
+                }
+            } else {
+                rdkit_twice_bond_type(bond.order)
+            };
+            bond_features[atom_idx].push((count, nbr_idx));
         }
     }
 
@@ -832,6 +960,28 @@ pub(crate) fn rdkit_cip_ranks_for_depict(mol: &Molecule) -> Vec<i64> {
                     cip_entries[index].push(ranks[nbr_idx] + 1);
                 }
             }
+            let graph_h_count = mol
+                .bonds
+                .iter()
+                .filter(|bond| {
+                    let nbr = if bond.begin_atom == index {
+                        Some(bond.end_atom)
+                    } else if bond.end_atom == index {
+                        Some(bond.begin_atom)
+                    } else {
+                        None
+                    };
+                    nbr.is_some_and(|nbr_idx| mol.atoms[nbr_idx].atomic_num == 1)
+                })
+                .count();
+            let total_hs = if let Some(assignment) = &assignment {
+                mol.atoms[index].explicit_hydrogens as usize
+                    + assignment.implicit_hydrogens[index] as usize
+                    + graph_h_count
+            } else {
+                mol.atoms[index].explicit_hydrogens as usize + graph_h_count
+            };
+            cip_entries[index].extend(std::iter::repeat_n(0, total_hs));
         }
         for item in &mut sortable {
             item.0 = cip_entries[item.1].clone();
@@ -4302,21 +4452,6 @@ fn place_multiring_nonfused_component_rdkit_like(
         }
     }
 
-    fn share_ring_edge(a: &[usize], b: &[usize]) -> bool {
-        for i in 0..a.len() {
-            let a1 = a[i];
-            let a2 = a[(i + 1) % a.len()];
-            for j in 0..b.len() {
-                let b1 = b[j];
-                let b2 = b[(j + 1) % b.len()];
-                if (a1 == b1 && a2 == b2) || (a1 == b2 && a2 == b1) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
     fn share_ring_atom(a: &[usize], b: &[usize]) -> bool {
         a.iter().any(|x| b.contains(x))
     }
@@ -4915,36 +5050,55 @@ fn place_multiring_nonfused_component_rdkit_like(
     }
     let embedded_ring_set: std::collections::BTreeSet<usize> =
         cycles.iter().flatten().copied().collect();
-    let mut parent: Vec<usize> = (0..cycles.len()).collect();
-    fn find_parent(parent: &mut [usize], x: usize) -> usize {
-        if parent[x] != x {
-            let root = find_parent(parent, parent[x]);
-            parent[x] = root;
-        }
-        parent[x]
-    }
-    fn union_parent(parent: &mut [usize], a: usize, b: usize) {
-        let ra = find_parent(parent, a);
-        let rb = find_parent(parent, b);
-        if ra != rb {
-            parent[rb] = ra;
-        }
-    }
+
+    // RDKit Depictor/RDDepictor.cpp::embedFusedSystems() builds a ring
+    // neighbor map and then uses RingUtils::pickFusedRings(), which is a DFS
+    // over ring indices in insertion order. The resulting traversal order is
+    // passed directly to EmbeddedFrag::embedFusedRings() and affects
+    // pickFirstRingToEmbed() plus subsequent merge orientation.
+    let mut ring_neighbors = vec![Vec::<usize>::new(); cycles.len()];
     for i in 0..cycles.len() {
         for j in i + 1..cycles.len() {
-            if share_ring_edge(&cycles[i], &cycles[j]) || share_ring_atom(&cycles[i], &cycles[j]) {
-                union_parent(&mut parent, i, j);
+            if share_ring_atom(&cycles[i], &cycles[j]) {
+                ring_neighbors[i].push(j);
+                ring_neighbors[j].push(i);
             }
         }
     }
-    let mut grouped = std::collections::BTreeMap::<usize, Vec<usize>>::new();
-    for i in 0..cycles.len() {
-        let root = find_parent(&mut parent, i);
-        grouped.entry(root).or_default().push(i);
+    fn pick_fused_rings_rdkit_order(
+        curr: usize,
+        ring_neighbors: &[Vec<usize>],
+        done: &mut [bool],
+        out: &mut Vec<usize>,
+    ) {
+        done[curr] = true;
+        out.push(curr);
+        for &nb in &ring_neighbors[curr] {
+            if !done[nb] {
+                pick_fused_rings_rdkit_order(nb, ring_neighbors, done, out);
+            }
+        }
+    }
+    let mut grouped = Vec::<Vec<usize>>::new();
+    let mut done_rings = vec![false; cycles.len()];
+    let mut curr = 0usize;
+    while curr < cycles.len() {
+        let mut group = Vec::new();
+        pick_fused_rings_rdkit_order(curr, &ring_neighbors, &mut done_rings, &mut group);
+        grouped.push(group);
+        let mut next = None;
+        for (idx, done) in done_rings.iter().enumerate() {
+            if !*done {
+                next = Some(idx);
+                break;
+            }
+        }
+        let Some(next_idx) = next else { break };
+        curr = next_idx;
     }
 
     let mut frags = Vec::<DepictFrag>::new();
-    for group in grouped.values() {
+    for group in &grouped {
         let frag = if group.len() == 1 {
             let ring = &cycles[group[0]];
             let mut frag = init_ring_frag_from_order(mol, ring);
@@ -5221,6 +5375,81 @@ fn remove_collisions_shorten_bonds_like(
                         }
                     }
                 }
+            } else {
+                fn recurse_deg_two_ring_atoms(
+                    aid: usize,
+                    adjacency: &[Vec<usize>],
+                    comp_set: &std::collections::HashSet<usize>,
+                    edge_is_ring_like: &dyn Fn(usize, usize) -> bool,
+                    r_path: &mut Vec<usize>,
+                    nbr_map: &mut std::collections::HashMap<usize, Vec<usize>>,
+                ) {
+                    let nbrs: Vec<usize> = adjacency[aid]
+                        .iter()
+                        .copied()
+                        .filter(|n| comp_set.contains(n) && edge_is_ring_like(aid, *n))
+                        .collect();
+                    if nbrs.len() != 2 {
+                        return;
+                    }
+                    r_path.push(aid);
+                    nbr_map.insert(aid, nbrs.clone());
+                    for nbr in nbrs {
+                        if !r_path.contains(&nbr) {
+                            recurse_deg_two_ring_atoms(
+                                nbr,
+                                adjacency,
+                                comp_set,
+                                edge_is_ring_like,
+                                r_path,
+                                nbr_map,
+                            );
+                        }
+                    }
+                }
+
+                let mut r_path = Vec::<usize>::new();
+                let mut nbr_map = std::collections::HashMap::<usize, Vec<usize>>::new();
+                recurse_deg_two_ring_atoms(
+                    aid1,
+                    adjacency,
+                    &comp_set,
+                    &edge_is_ring_like,
+                    &mut r_path,
+                    &mut nbr_map,
+                );
+                if r_path.is_empty() {
+                    recurse_deg_two_ring_atoms(
+                        aid2,
+                        adjacency,
+                        &comp_set,
+                        &edge_is_ring_like,
+                        &mut r_path,
+                        &mut nbr_map,
+                    );
+                }
+                let mut move_map = std::collections::HashMap::<usize, (f64, f64)>::new();
+                for &rpi in &r_path {
+                    let Some(nbrs) = nbr_map.get(&rpi) else {
+                        continue;
+                    };
+                    let p0 = pos[&rpi];
+                    let p1 = pos[&nbrs[0]];
+                    let p2 = pos[&nbrs[1]];
+                    let mut mv = ((p1.0 + p2.0) * 0.5 - p0.0, (p1.1 + p2.1) * 0.5 - p0.1);
+                    let len = (mv.0 * mv.0 + mv.1 * mv.1).sqrt();
+                    if len > 1e-12 {
+                        mv.0 = mv.0 / len * COLLISION_THRES;
+                        mv.1 = mv.1 / len * COLLISION_THRES;
+                        move_map.insert(rpi, mv);
+                    }
+                }
+                for rpi in r_path {
+                    if let Some(mv) = move_map.get(&rpi) {
+                        let p = pos[&rpi];
+                        pos.insert(rpi, (p.0 + mv.0, p.1 + mv.1));
+                    }
+                }
             }
         }
         colls = find_collisions(&pos);
@@ -5268,10 +5497,371 @@ fn bond_type_code(order: BondOrder) -> usize {
     }
 }
 
+fn bond_stereo_code(bond: &crate::Bond) -> usize {
+    match (bond.direction, bond.stereo) {
+        (crate::BondDirection::EndUpRight, _) => 1,
+        (crate::BondDirection::EndDownRight, _) => 6,
+        (_, BondStereo::Any) => 3,
+        _ => 0,
+    }
+}
+
+fn bond_stereo_code_with_direction(bond: &crate::Bond, direction: BondDirection) -> usize {
+    match (direction, bond.stereo) {
+        (BondDirection::EndUpRight, _) => 1,
+        (BondDirection::EndDownRight, _) => 6,
+        (_, BondStereo::Any) => 3,
+        _ => 0,
+    }
+}
+
+fn pick_bonds_to_wedge_rdkit_subset(mol: &Molecule) -> HashMap<usize, usize> {
+    const NO_NBRS: i32 = 100;
+    let mut n_chiral_nbrs = vec![NO_NBRS; mol.atoms.len()];
+
+    for atom in &mol.atoms {
+        if !matches!(
+            atom.chiral_tag,
+            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+        ) {
+            continue;
+        }
+        n_chiral_nbrs[atom.index] = 0;
+        for nb in atom_neighbors(mol, atom.index) {
+            if matches!(
+                mol.atoms[nb].chiral_tag,
+                ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+            ) {
+                n_chiral_nbrs[atom.index] -= 1;
+            }
+        }
+    }
+
+    let mut indices: Vec<usize> = (0..mol.atoms.len()).collect();
+    indices.sort_by_key(|i| n_chiral_nbrs[*i]);
+    let mut wedge = HashMap::new();
+
+    for idx in indices {
+        if n_chiral_nbrs[idx] > NO_NBRS {
+            continue;
+        }
+        let atom = &mol.atoms[idx];
+        if !matches!(
+            atom.chiral_tag,
+            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+        ) {
+            break;
+        }
+        if let Some(bid) =
+            pick_bond_to_wedge_rdkit_subset(idx, mol, &n_chiral_nbrs, &wedge, NO_NBRS)
+        {
+            wedge.insert(bid, idx);
+        }
+    }
+    wedge
+}
+
+fn pick_bond_to_wedge_rdkit_subset(
+    atom_idx: usize,
+    mol: &Molecule,
+    n_chiral_nbrs: &[i32],
+    already: &HashMap<usize, usize>,
+    no_nbrs: i32,
+) -> Option<usize> {
+    let mut best: Option<(i32, usize)> = None;
+    for bond in &mol.bonds {
+        if !matches!(bond.order, BondOrder::Single) {
+            continue;
+        }
+        let other = if bond.begin_atom == atom_idx {
+            Some(bond.end_atom)
+        } else if bond.end_atom == atom_idx {
+            Some(bond.begin_atom)
+        } else {
+            None
+        };
+        let Some(other_idx) = other else { continue };
+        if already.contains_key(&bond.index) {
+            continue;
+        }
+        let other_atom = &mol.atoms[other_idx];
+        let score = if other_atom.atomic_num == 1 {
+            -1_000_000
+        } else {
+            let mut s = other_atom.atomic_num as i32
+                + 100 * atom_degree(mol, other_idx) as i32
+                + 1000 * i32::from(!matches!(other_atom.chiral_tag, ChiralTag::Unspecified));
+            if n_chiral_nbrs[other_idx] < no_nbrs {
+                s -= 100_000 * n_chiral_nbrs[other_idx];
+            }
+            let (has_double, has_known_double, has_any_double) =
+                get_double_bond_presence(mol, other_idx, bond.index);
+            s += 11_000 * i32::from(has_double);
+            s += 12_000 * i32::from(has_known_double);
+            s += 23_000 * i32::from(has_any_double);
+            s
+        };
+        match best {
+            None => best = Some((score, bond.index)),
+            Some((bscore, _)) if score < bscore => best = Some((score, bond.index)),
+            _ => {}
+        }
+    }
+    best.map(|(_, bid)| bid)
+}
+
+fn determine_bond_wedge_state_rdkit_subset(
+    bond: &crate::Bond,
+    wedge: &HashMap<usize, usize>,
+    coords: &[glam::DVec2],
+    mol: &Molecule,
+) -> BondDirection {
+    let Some(&from_atom) = wedge.get(&bond.index) else {
+        return bond.direction;
+    };
+    if !matches!(bond.order, BondOrder::Single) {
+        return bond.direction;
+    }
+    let center = from_atom;
+    let other = if bond.begin_atom == center {
+        bond.end_atom
+    } else {
+        bond.begin_atom
+    };
+    let chiral = mol.atoms[center].chiral_tag;
+    if !matches!(chiral, ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw) {
+        return bond.direction;
+    }
+
+    let center_loc = coords[center];
+    let ref_vec = coords[other] - center_loc;
+    let ref_len2 = ref_vec.length_squared();
+    if ref_len2 <= 1e-18 {
+        return bond.direction;
+    }
+
+    let mut neighbor_bonds = vec![(bond.index, 0.0f64)];
+    for nb in atom_bond_indices(mol, center) {
+        if nb == bond.index {
+            continue;
+        }
+        let nbond = &mol.bonds[nb];
+        let other_atom = if nbond.begin_atom == center {
+            nbond.end_atom
+        } else {
+            nbond.begin_atom
+        };
+        let tmp_vec = coords[other_atom] - center_loc;
+        if tmp_vec.length_squared() <= 1e-18 {
+            return bond.direction;
+        }
+        let mut angle = signed_angle_2d(ref_vec, tmp_vec);
+        if angle < 0.0 {
+            angle += 2.0 * PI;
+        }
+        neighbor_bonds.push((nb, angle));
+    }
+    neighbor_bonds.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let canonical = atom_bond_indices(mol, center);
+    let mut perm: Vec<usize> = neighbor_bonds.iter().map(|(bid, _)| *bid).collect();
+    let n_swaps = permutation_parity_swaps(&mut perm, &canonical);
+
+    let mut swaps = n_swaps;
+    if neighbor_bonds.len() == 3 {
+        let angle1 = neighbor_bonds[1].1;
+        let angle2 = neighbor_bonds[2].1;
+        let angle_tol = PI * 1.9 / 180.0;
+        if angle2 - angle1 >= (PI - angle_tol) {
+            swaps += 1;
+        }
+    }
+
+    match chiral {
+        ChiralTag::TetrahedralCcw => {
+            if swaps % 2 == 1 {
+                BondDirection::EndDownRight
+            } else {
+                BondDirection::EndUpRight
+            }
+        }
+        ChiralTag::TetrahedralCw => {
+            if swaps % 2 == 1 {
+                BondDirection::EndUpRight
+            } else {
+                BondDirection::EndDownRight
+            }
+        }
+        ChiralTag::Unspecified => BondDirection::None,
+    }
+}
+
+fn atom_neighbors(mol: &Molecule, atom_idx: usize) -> Vec<usize> {
+    let mut out = Vec::new();
+    for b in &mol.bonds {
+        if b.begin_atom == atom_idx {
+            out.push(b.end_atom);
+        } else if b.end_atom == atom_idx {
+            out.push(b.begin_atom);
+        }
+    }
+    out
+}
+
+fn atom_bond_indices(mol: &Molecule, atom_idx: usize) -> Vec<usize> {
+    let mut out = Vec::new();
+    for b in &mol.bonds {
+        if b.begin_atom == atom_idx || b.end_atom == atom_idx {
+            out.push(b.index);
+        }
+    }
+    out
+}
+
+fn atom_degree(mol: &Molecule, atom_idx: usize) -> usize {
+    atom_bond_indices(mol, atom_idx).len()
+}
+
+fn get_double_bond_presence(
+    mol: &Molecule,
+    atom_idx: usize,
+    ignore_bond: usize,
+) -> (bool, bool, bool) {
+    let mut has_double = false;
+    let mut has_known_double = false;
+    let mut has_any_double = false;
+    for b in &mol.bonds {
+        if b.index == ignore_bond {
+            continue;
+        }
+        if b.begin_atom != atom_idx && b.end_atom != atom_idx {
+            continue;
+        }
+        if matches!(b.order, BondOrder::Double) {
+            has_double = true;
+            if matches!(b.stereo, BondStereo::Any) {
+                has_any_double = true;
+            } else {
+                has_known_double = true;
+            }
+        }
+    }
+    (has_double, has_known_double, has_any_double)
+}
+
+fn signed_angle_2d(a: glam::DVec2, b: glam::DVec2) -> f64 {
+    let cross = a.x * b.y - a.y * b.x;
+    let dot = a.x * b.x + a.y * b.y;
+    cross.atan2(dot)
+}
+
+fn permutation_parity_swaps(perm: &mut [usize], canonical: &[usize]) -> i32 {
+    if perm.len() != canonical.len() {
+        return 0;
+    }
+    let mut pos = HashMap::new();
+    for (i, v) in canonical.iter().enumerate() {
+        pos.insert(*v, i);
+    }
+    let mut target = Vec::with_capacity(perm.len());
+    for v in perm.iter() {
+        let Some(&p) = pos.get(v) else { return 0 };
+        target.push(p);
+    }
+    let mut seen = vec![false; target.len()];
+    let mut swaps = 0i32;
+    for i in 0..target.len() {
+        if seen[i] {
+            continue;
+        }
+        let mut j = i;
+        let mut cycle = 0usize;
+        while !seen[j] {
+            seen[j] = true;
+            j = target[j];
+            cycle += 1;
+        }
+        if cycle > 0 {
+            swaps += (cycle as i32) - 1;
+        }
+    }
+    swaps
+}
+
+fn bond_v3000_cfg_code(bond: &crate::Bond) -> Option<usize> {
+    match bond.direction {
+        crate::BondDirection::EndUpRight => Some(1),
+        crate::BondDirection::EndDownRight => Some(3),
+        crate::BondDirection::None => {
+            if matches!(bond.stereo, BondStereo::Any) {
+                Some(2)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn append_v2000_property_lines(out: &mut String, mol: &Molecule) {
+    let charges: Vec<(usize, i8)> = mol
+        .atoms
+        .iter()
+        .filter_map(|atom| {
+            if atom.formal_charge == 0 {
+                None
+            } else {
+                Some((atom.index + 1, atom.formal_charge))
+            }
+        })
+        .collect();
+    for chunk in charges.chunks(8) {
+        out.push_str(&format!("M  CHG{:>3}", chunk.len()));
+        for (idx, charge) in chunk {
+            out.push_str(&format!("{idx:>4}{charge:>4}"));
+        }
+        out.push('\n');
+    }
+
+    let isotopes: Vec<(usize, u16)> = mol
+        .atoms
+        .iter()
+        .filter_map(|atom| atom.isotope.map(|isotope| (atom.index + 1, isotope)))
+        .collect();
+    for chunk in isotopes.chunks(8) {
+        out.push_str(&format!("M  ISO{:>3}", chunk.len()));
+        for (idx, isotope) in chunk {
+            out.push_str(&format!("{idx:>4}{isotope:>4}"));
+        }
+        out.push('\n');
+    }
+
+    let radicals: Vec<(usize, u8)> = mol
+        .atoms
+        .iter()
+        .filter_map(|atom| {
+            if atom.num_radical_electrons == 0 {
+                None
+            } else {
+                let code = if atom.num_radical_electrons % 2 == 1 {
+                    2
+                } else {
+                    3
+                };
+                Some((atom.index + 1, code))
+            }
+        })
+        .collect();
+    for chunk in radicals.chunks(8) {
+        out.push_str(&format!("M  RAD{:>3}", chunk.len()));
+        for (idx, radical) in chunk {
+            out.push_str(&format!("{idx:>4}{radical:>4}"));
+        }
+        out.push('\n');
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use core::fmt;
-    use std::collections::HashSet;
     use std::fs::File;
     use std::io::{BufRead, BufReader};
     use std::path::{Path, PathBuf};
@@ -5309,32 +5899,16 @@ mod tests {
         v3000_error: Option<String>,
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, thiserror::Error)]
     enum TestDataError {
-        Io(std::io::Error),
+        #[error(transparent)]
+        Io(#[from] std::io::Error),
+        #[error("invalid jsonl at line {line_no}: {source}")]
         Json {
             line_no: usize,
+            #[source]
             source: serde_json::Error,
         },
-    }
-
-    impl fmt::Display for TestDataError {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                Self::Io(err) => write!(f, "{err}"),
-                Self::Json { line_no, source } => {
-                    write!(f, "invalid jsonl at line {line_no}: {source}")
-                }
-            }
-        }
-    }
-
-    impl std::error::Error for TestDataError {}
-
-    impl From<std::io::Error> for TestDataError {
-        fn from(value: std::io::Error) -> Self {
-            Self::Io(value)
-        }
     }
 
     fn repo_root() -> PathBuf {
@@ -5491,17 +6065,8 @@ mod tests {
         }
     }
 
-    fn canonical_bonds_for_compare(
-        bonds: &[(usize, usize, usize)],
-        flexible_pairs: &HashSet<(usize, usize)>,
-    ) -> Vec<(usize, usize, usize)> {
-        let mut out = Vec::with_capacity(bonds.len());
-        for &(a, b, mut order) in bonds {
-            if flexible_pairs.contains(&(a, b)) {
-                order = 0;
-            }
-            out.push((a, b, order));
-        }
+    fn canonical_bonds_for_compare(bonds: &[(usize, usize, usize)]) -> Vec<(usize, usize, usize)> {
+        let mut out = bonds.to_vec();
         out.sort_unstable();
         out
     }
@@ -5582,7 +6147,7 @@ mod tests {
         (sse / (indices_1based.len() as f64)).sqrt()
     }
 
-    fn non_coordinate_sections_match(ours_body: &str, expected_body: &str, mol: &Molecule) -> bool {
+    fn non_coordinate_sections_match(ours_body: &str, expected_body: &str) -> bool {
         let Some(ours) = parse_body_for_compare(ours_body) else {
             return false;
         };
@@ -5606,31 +6171,13 @@ mod tests {
             }
         }
 
-        let flexible_pairs: HashSet<(usize, usize)> = mol
-            .bonds
-            .iter()
-            .filter(|b| {
-                matches!(
-                    b.order,
-                    crate::BondOrder::Aromatic | crate::BondOrder::Dative | crate::BondOrder::Null
-                )
-            })
-            .map(|b| {
-                let a = b.begin_atom + 1;
-                let c = b.end_atom + 1;
-                if a <= c { (a, c) } else { (c, a) }
-            })
-            .collect();
-
-        canonical_bonds_for_compare(&ours.bonds, &flexible_pairs)
-            == canonical_bonds_for_compare(&expected.bonds, &flexible_pairs)
+        canonical_bonds_for_compare(&ours.bonds) == canonical_bonds_for_compare(&expected.bonds)
             && coords_ok
     }
 
     fn compare_against_expected(
         ours_body: &str,
         expected_body: &str,
-        mol: &Molecule,
         smiles: &str,
         row_idx_1based: usize,
         variant: &str,
@@ -5675,7 +6222,7 @@ mod tests {
             }
         };
         assert!(
-            non_coordinate_sections_match(&ours_norm, &expected_norm, mol),
+            non_coordinate_sections_match(&ours_norm, &expected_norm),
             "molblock mismatch (including coordinates) at row {} ({}) against {}\n{}",
             row_idx_1based,
             smiles,
@@ -5966,7 +6513,10 @@ mod tests {
                 );
                 continue;
             }
-            let mol = parsed.expect("parse checked above");
+            let mut mol = parsed.expect("parse checked above");
+            mol.compute_2d_coords().unwrap_or_else(|e| {
+                panic!("2D coordinate generation failed at row {}: {}", idx + 1, e)
+            });
             let ours = mol_to_v2000_block_minimal(&mol)
                 .unwrap_or_else(|e| panic!("write failed at row {}: {}", idx + 1, e));
             let ours_body = body(&ours);
@@ -5979,7 +6529,6 @@ mod tests {
                 compare_against_expected(
                     &ours_body,
                     expected_v2000,
-                    &mol,
                     &record.smiles,
                     idx + 1,
                     "v2000",
@@ -5993,7 +6542,6 @@ mod tests {
                 compare_against_expected(
                     &ours_body,
                     expected_v3000,
-                    &mol,
                     &record.smiles,
                     idx + 1,
                     "v3000",
@@ -6125,6 +6673,9 @@ mod tests {
                 continue;
             }
 
+            mol.compute_2d_coords().unwrap_or_else(|e| {
+                panic!("2D coordinate generation failed at row {}: {}", idx + 1, e)
+            });
             let ours = mol_to_v2000_block_minimal(&mol)
                 .unwrap_or_else(|e| panic!("write failed at row {}: {}", idx + 1, e));
             let ours_body = body(&ours);
@@ -6177,7 +6728,9 @@ mod tests {
             "diagnostic molecule should have v2000 golden body"
         );
 
-        let mol = Molecule::from_smiles(&record.smiles).expect("parse diagnostic molecule");
+        let mut mol = Molecule::from_smiles(&record.smiles).expect("parse diagnostic molecule");
+        mol.compute_2d_coords()
+            .expect("compute diagnostic 2D coordinates");
         let ours_block = mol_to_v2000_block_minimal(&mol).expect("write diagnostic molecule");
         let ours = parse_v2000_body(&body(&ours_block)).expect("parse ours diagnostic body");
         let expected = parse_v2000_body(
@@ -6217,7 +6770,9 @@ mod tests {
             .iter()
             .find(|record| record.smiles == diagnostic_smiles)
             .expect("diagnostic molecule should exist in golden");
-        let mol = Molecule::from_smiles(&record.smiles).expect("parse diagnostic molecule");
+        let mut mol = Molecule::from_smiles(&record.smiles).expect("parse diagnostic molecule");
+        mol.compute_2d_coords()
+            .expect("compute diagnostic 2D coordinates");
         let ours_block = mol_to_v2000_block_minimal(&mol).expect("write diagnostic molecule");
         let ours = parse_v2000_body(&body(&ours_block)).expect("parse ours diagnostic body");
         let expected = parse_v2000_body(

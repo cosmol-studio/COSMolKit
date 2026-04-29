@@ -48,8 +48,8 @@ The overall goal is to provide a **portable, reliable, and extensible foundation
 COSMolKit is currently focused on the chemistry core. The repository now uses a two-crate Rust layout: `cosmolkit-core` (core implementation, including chemistry perception, IO, and biomolecular primitives) and `cosmolkit` (facade re-export crate), plus RDKit-based regression tests for SMILES parsing, atom/bond feature parity, hydrogen expansion, Kekulization, minimal MOL/SDF output, and tetrahedral stereo geometry checks.
 
 RDKit 2026.03.1 is used as the active behavioral reference, with `third_party/rdkit` pinned to `Release_2026_03_1` (`351f8f378f8ad6bbd517980c38896e66bf907af8`). The implementation is still a subset and is being expanded by source-level parity work rather than broad API coverage.
-As of 2026-04-28, the Rust workspace test suite is passing against the active RDKit 2026.03.1 oracle. `cosmolkit-core` graph-feature parity tests pass for direct and explicit-hydrogen molecules, kekulized topology parity passes on the shared corpus, and strict V2000 molblock coordinate/topology parity now passes on the 76-row `tests/smiles.smi` corpus. Tetrahedral stereo has an internal ordered-ligand representation (`TetrahedralStereo`) derived from the existing RDKit-compatible atom chiral tags, with a Rust integration test that validates positive oriented volume against RDKit ETKDGv3 coordinates (`seed=42`) on the shared chiral corpus. The representation contract is documented in `tetrahedral_stereo_representation.md`. Python-facing tests require the local PyO3 package plus ML dependencies; the last direct run reached import collection and was blocked by a missing `torch` dependency in the active Python environment.
-The repository also includes a PyO3 package under `python/`, along with a GitHub Actions workflow for building and publishing Python wheels to PyPI. The binding layer is still partial, but now exposes lower-level molecule graph access and `Molecule.tetrahedral_stereo()` for the new stereo representation.
+As of 2026-04-29, the Rust workspace test suite is close to green but not fully passing against the active RDKit 2026.03.1 oracle: `cosmolkit-core` graph-feature parity, tetrahedral stereo geometry parity, kekulized topology parity, and SDF reader/writer roundtrip tests are passing, while strict V2000 molblock coordinate/topology parity still has an unresolved failure at `molblock_v2000_body_matches_rdkit_coordinates_and_topology` row 77. Tetrahedral stereo has an internal ordered-ligand representation (`TetrahedralStereo`) derived from the existing RDKit-compatible atom chiral tags, with a Rust integration test that validates positive oriented volume against RDKit ETKDGv3 coordinates (`seed=42`) on the shared chiral corpus. The representation contract is documented in `tetrahedral_stereo_representation.md`.
+The repository also includes a PyO3 package under `python/`, along with a GitHub Actions workflow for building and publishing Python wheels to PyPI. The binding layer remains partial overall, but now includes graph access, `Molecule.tetrahedral_stereo()`, hydrogen add/remove APIs, and SDF read/write plus string/dir export helpers.
 
 ---
 
@@ -157,10 +157,10 @@ This phase defines the correctness baseline of the project.
 - ✅ `Molecule.from_smiles()`
 - ✅ atom and bond graph access
 - ✅ `Molecule.add_hydrogens()`
+- ✅ `Molecule.remove_hydrogens()`
 - ✅ `Molecule.kekulize()`
 - ✅ `Molecule.tetrahedral_stereo()`
-- [ ] remove-hydrogens API
-- [ ] SDF read/write bindings
+- ✅ SDF read/write bindings
 - [ ] stable graph-extraction helpers for ML workflows
 - [ ] explicit sanitization and error reporting API
 

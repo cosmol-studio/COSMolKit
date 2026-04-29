@@ -45,6 +45,12 @@ c1ncccc1
 c1ccoc1
 c1ccsc1
 c1cc[se]c1
+CC(F)(Cl)Br
+FC(Cl)(Br)I
+CC(F)Cl
+CC(Cl)Br
+FC=CCl
+ClC=CBr
 O=c1cc(O)c2ccccc2o1
 Clc1ccc2ccc3cccc4ccc1c2c34
 CN(C)c1ccc2c3c(cccc13)C(=O)OC2=O
@@ -74,3 +80,4 @@ COc1c(O)ccc2OC(=C\c(c3[C@@H](C(F)(F)F)O)scc3)/c(c4c12)c5c(cc4)NC(C)(C)C=C5C
 CC#C[C@]1(O)CC[C@H]([C@@]12C)[C@H]3C(=C4C(CC3)=CC(=O)CC4)[C@H](C2)c5ccc(cc5)N(C)C
 CCOCCCNC(=O)Nc1c(-c2ccc(F)cc2)[nH]c2ccccc12
 CC1=CC(C)(C)N2C(=O)C(=C(C#N)C#N)c3cc(OC(=O)c4ccc(Br)cc4)cc1c32
+O=C(NC[C@]12C[C@H]3C[C@H](C[C@H](C3)C1)C2)[C@@H]1C[C@H]2c3ccccc3[C@@H]1c1ccccc12

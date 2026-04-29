@@ -20,8 +20,11 @@ fn main() {
 
     let mut output = String::new();
     for smiles in smiles_inputs {
-        let mol = Molecule::from_smiles(&smiles)
+        let mut mol = Molecule::from_smiles(&smiles)
             .unwrap_or_else(|err| panic!("failed to parse SMILES '{}': {}", smiles, err));
+        mol.compute_2d_coords().unwrap_or_else(|err| {
+            panic!("failed to compute 2D coordinates for '{}': {}", smiles, err)
+        });
         let sdf = mol_to_sdf_record_minimal(&mol)
             .unwrap_or_else(|err| panic!("failed to write SDF for '{}': {}", smiles, err));
         output.push_str(&sdf);

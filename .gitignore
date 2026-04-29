@@ -2,7 +2,10 @@
 **/*.pyc
 __pycache__/
 .venv/
+python/dist/
+python/cosmolkit.pyi
 .maturin/
+.zed/
 
 tests/golden
 

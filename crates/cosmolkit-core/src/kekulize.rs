@@ -6,9 +6,11 @@ use crate::valence::{ValenceModel, assign_valence};
 use crate::{BondOrder, Molecule};
 
 /// Kekulization errors.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum KekulizeError {
+    #[error("impossible aromatic assignment")]
     ImpossibleAromaticAssignment,
+    #[error("kekulization path is not implemented")]
     NotImplemented,
 }
 

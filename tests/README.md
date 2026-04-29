@@ -60,7 +60,7 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 Current status:
 - `cosmolkit-core` graph-feature parity is currently passing on the shared corpus (direct + explicit-H comparisons).
 - tetrahedral stereo ordered-ligand geometry validation is currently passing against RDKit ETKDGv3 (`seed=42`) on all chiral corpus entries.
-- The shared `tests/smiles.smi` corpus currently has 76 rows.
-- `cargo test` currently passes for the Rust workspace, including graph-feature parity, kekulized topology parity, strict V2000 coordinate/topology parity, no-RDKit-runtime-dependency checks, and tetrahedral stereo geometry.
+- `cargo test --workspace` on 2026-04-29 fails at one remaining strict parity test: `io::molblock::tests::molblock_v2000_body_matches_rdkit_coordinates_and_topology` row 77.
+- Other Rust parity areas are green in the same run: graph-feature parity, tetrahedral stereo geometry parity, kekulized topology parity, and SDF V2000/V3000 roundtrip parity.
 - Python tests currently require local binding installation plus ML dependencies. The latest direct `python/tests` run reached collection after installing the local package and was blocked by missing `torch` in the active Python environment.
 - Temporary stress check result: random sampling 1000 SMILES from `core_comp_lib.csv` with regenerated RDKit goldens still exposes unresolved molblock parity gaps (details logged under `tmp/rust_test_core_comp_lib_sample1000_with_regen_errors.txt`).

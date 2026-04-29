@@ -1,17 +1,15 @@
-"""Ideal COSMolKit usage: IO + basic properties.
-
-This script demonstrates the target public API shape only.
-Current bindings are placeholders and will raise NotImplementedError.
-"""
+"""COSMolKit usage: IO + basic properties."""
 
 from cosmolkit import Molecule
 
-mol = Molecule.from_smiles("CCO", sanitize=True)
-lig = Molecule.read_sdf("ligand.sdf", sanitize=True)
+mol = Molecule.from_smiles("CCO", sanitize=True).compute_2d_coords()
+sdf_text = mol.to_sdf_string(format="v2000")
+print("SDF length:", len(sdf_text))
 
-# Planned pythonic property access (not implemented yet):
-# print(mol.formula, mol.exact_mass, mol.num_atoms, mol.num_bonds)
-# for atom in mol.atoms:
-#     print(atom.index, atom.element, atom.formal_charge, atom.total_valence)
+saved_path = mol.write_sdf_to_directory(
+    "python/examples", file_name="ethanol.sdf", format="v2000"
+)
+print("Saved:", saved_path)
 
-_ = lig
+lig = Molecule.read_sdf(saved_path, sanitize=True)
+print("Loaded:", lig)

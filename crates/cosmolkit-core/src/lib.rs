@@ -15,7 +15,9 @@ pub mod valence;
 pub use adjacency::{AdjacencyList, NeighborRef};
 pub use atom::{Atom, ChiralTag};
 pub use bond::{Bond, BondDirection, BondOrder, BondStereo};
-pub use hydrogens::{AddHydrogensError, add_hydrogens_in_place};
+pub use hydrogens::{
+    AddHydrogensError, RemoveHydrogensError, add_hydrogens_in_place, remove_hydrogens_in_place,
+};
 pub use molecule::{Molecule, SmilesParseError};
 pub use stereo::{LigandRef, TetrahedralStereo};
 pub use valence::{
