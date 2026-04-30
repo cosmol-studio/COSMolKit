@@ -59,12 +59,14 @@ pub fn add_hydrogens_in_place(molecule: &mut Molecule) -> Result<(), AddHydrogen
                 num_radical_electrons: 0,
                 chiral_tag: ChiralTag::Unspecified,
                 isotope: None,
+                atom_map_num: None,
             });
             molecule.add_bond(Bond {
                 index: 0,
                 begin_atom: i,
                 end_atom: h_idx,
                 order: BondOrder::Single,
+                is_aromatic: false,
                 direction: BondDirection::None,
                 stereo: BondStereo::None,
                 stereo_atoms: Vec::new(),

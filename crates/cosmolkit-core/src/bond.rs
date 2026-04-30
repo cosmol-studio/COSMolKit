@@ -38,6 +38,8 @@ pub struct Bond {
     pub end_atom: usize,
     /// Bond order annotation.
     pub order: BondOrder,
+    /// RDKit-style aromatic flag, independent from bond order.
+    pub is_aromatic: bool,
     /// Directional single-bond marker used to assign double-bond stereo.
     pub direction: BondDirection,
     /// Double-bond stereo assignment after RDKit-like stereo perception.

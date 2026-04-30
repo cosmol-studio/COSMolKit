@@ -7,6 +7,8 @@
 - `golden/molblock_v2000_minimal.jsonl` RDKit baseline for minimal V2000 mol block body parity
 - `golden/molblock_v2000_kekulized.jsonl` RDKit baseline for kekulized bond-block parity (ignores coordinates)
 - `golden/tetrahedral_stereo_geometry.jsonl` auto-generated RDKit ETKDG geometry baseline for tetrahedral stereo volume checks
+- `golden/smiles_writer.jsonl` RDKit baseline for `MolToSmiles()` parity across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches
+- `golden/dg_bounds_matrix.jsonl` RDKit baseline for distance-geometry bounds matrix parity
 
 ## Standard Workflow (RDKit Parity)
 
@@ -22,6 +24,8 @@ RDKit parity tests are strict source-level reproduction tests against `third_par
    - `.venv/bin/python tests/scripts/gen_rdkit_v2000_minimal_golden.py --input tests/smiles.smi --output tests/golden/molblock_v2000_minimal.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_kekulize_molblock_golden.py --input tests/smiles.smi --output tests/golden/molblock_v2000_kekulized.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py --input tests/smiles.smi --output tests/golden/tetrahedral_stereo_geometry.jsonl`
+   - `.venv/bin/python tests/scripts/gen_rdkit_smiles_writer_golden.py --input tests/smiles.smi --output tests/golden/smiles_writer.jsonl`
+   - `.venv/bin/python tests/scripts/gen_rdkit_dg_bounds_golden.py --input tests/smiles.smi --output tests/golden/dg_bounds_matrix.jsonl`
 3. (Optional) Install local COSMolKit Python build into the same env for direct comparison:
    - `.venv/bin/maturin develop --manifest-path python/Cargo.toml`
 4. Run Rust tests:
@@ -37,6 +41,8 @@ Notes:
 - `cargo test -p cosmolkit-core` will auto-generate `tests/golden/molblock_v2000_minimal.jsonl` if it is missing.
 - `cargo test -p cosmolkit-core` will auto-generate `tests/golden/molblock_v2000_kekulized.jsonl` if it is missing.
 - `cargo test -p cosmolkit-core --test tetrahedral_stereo_geometry` will auto-generate `tests/golden/tetrahedral_stereo_geometry.jsonl` if it is missing.
+- `cargo test -p cosmolkit-core --test rdkit_smiles_writer_parity` will auto-generate `tests/golden/smiles_writer.jsonl` if it is missing.
+- `cargo test -p cosmolkit-core --test rdkit_dg_bounds_parity` will auto-generate `tests/golden/dg_bounds_matrix.jsonl` if it is missing.
 - Python lookup order for auto-generation: `COSMOLKIT_PYTHON` -> `.venv/bin/python` -> `python3`.
 - `tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py` asserts `rdkit == 2026.3.1` before generating ETKDG geometry golden so test conditions do not drift silently.
 
@@ -57,10 +63,22 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 - auto-generation hook for the ETKDG geometry golden
 - oriented-volume validation for `Molecule::tetrahedral_stereo()` (spec: `tetrahedral_stereo_representation.md`)
 
+`crates/cosmolkit-core/tests/rdkit_dg_bounds_parity.rs` contains:
+- `dg_bounds_golden_has_one_record_per_smiles`
+- `dg_bounds_matrix_matches_rdkit_golden`
+- strict RDKit parity coverage for distance-geometry bounds generation
+
+`crates/cosmolkit-core/tests/rdkit_smiles_writer_parity.rs` contains:
+- `smiles_writer_golden_has_one_record_per_smiles`
+- `smiles_writer_matches_rdkit_golden_across_param_branches`
+- strict RDKit parity coverage for `MolToSmiles()` across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches
+
 Current status:
 - `cosmolkit-core` graph-feature parity is currently passing on the shared corpus (direct + explicit-H comparisons).
 - tetrahedral stereo ordered-ligand geometry validation is currently passing against RDKit ETKDGv3 (`seed=42`) on all chiral corpus entries.
-- `cargo test --workspace` on 2026-04-29 fails at one remaining strict parity test: `io::molblock::tests::molblock_v2000_body_matches_rdkit_coordinates_and_topology` row 77.
-- Other Rust parity areas are green in the same run: graph-feature parity, tetrahedral stereo geometry parity, kekulized topology parity, and SDF V2000/V3000 roundtrip parity.
-- Python tests currently require local binding installation plus ML dependencies. The latest direct `python/tests` run reached collection after installing the local package and was blocked by missing `torch` in the active Python environment.
+- DG bounds matrix parity is currently passing on the shared corpus.
+- SMILES writer parity is currently passing on the shared corpus across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches.
+- strict V2000 molblock coordinate/topology parity is currently passing on the shared corpus.
+- `cargo test -p cosmolkit-core` is currently green: `26 passed`, `0 failed`, `0 ignored`.
+- `cargo test -p cosmolkit` is currently green.
 - Temporary stress check result: random sampling 1000 SMILES from `core_comp_lib.csv` with regenerated RDKit goldens still exposes unresolved molblock parity gaps (details logged under `tmp/rust_test_core_comp_lib_sample1000_with_regen_errors.txt`).

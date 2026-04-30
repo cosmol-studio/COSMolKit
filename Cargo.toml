@@ -2,6 +2,7 @@
 members = [
     "crates/cosmolkit-core",
     "crates/cosmolkit",
+    "crates/cosmolkit-macros",
     "python",
 ]
 resolver = "2"
@@ -9,7 +10,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.0.7"
+version = "0.0.8"
 authors = ["COSMolKit Contributors"]
 description = "Core cheminformatics and structural biology toolkit in Rust"
 repository = "https://github.com/cosmol-studio/COSMolKit"
@@ -18,3 +19,11 @@ homepage = "https://github.com/cosmol-studio/COSMolKit"
 [workspace.lints.clippy]
 all = "warn"
 pedantic = "warn"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+panic = "abort"
+strip = "symbols"
+incremental = false

@@ -15,14 +15,17 @@ pub enum KekulizeError {
 }
 
 /// Convert aromatic bond representation to one concrete alternating form.
-pub fn kekulize_in_place(molecule: &mut Molecule) -> Result<(), KekulizeError> {
+pub fn kekulize_in_place(
+    molecule: &mut Molecule,
+    clear_aromatic_flags: bool,
+) -> Result<(), KekulizeError> {
     if molecule.bonds.is_empty() {
         return Ok(());
     }
 
     let mut aromatic_bonds: Vec<usize> = Vec::new();
     for (bi, b) in molecule.bonds.iter().enumerate() {
-        if matches!(b.order, BondOrder::Aromatic) {
+        if b.is_aromatic {
             aromatic_bonds.push(bi);
         }
     }
@@ -107,14 +110,18 @@ pub fn kekulize_in_place(molecule: &mut Molecule) -> Result<(), KekulizeError> {
         }
     }
 
-    // clear aromatic flags in a "clearAromaticFlags=True"-like behavior
-    // and ensure no aromatic bond type remains.
-    for atom in &mut molecule.atoms {
-        atom.is_aromatic = false;
-    }
-    for b in &mut molecule.bonds {
-        if matches!(b.order, BondOrder::Aromatic) {
-            b.order = BondOrder::Single;
+    if clear_aromatic_flags {
+        // RDKit markAtomsBonds=true / clearAromaticFlags=True behavior.
+        for atom in &mut molecule.atoms {
+            atom.is_aromatic = false;
+        }
+        for b in &mut molecule.bonds {
+            if b.is_aromatic {
+                b.is_aromatic = false;
+            }
+            if matches!(b.order, BondOrder::Aromatic) {
+                b.order = BondOrder::Single;
+            }
         }
     }
 
@@ -430,6 +437,7 @@ struct CanonAtom {
     total_num_hs: usize,
     atomic_num: u8,
     isotope: u16,
+    atom_map_num: u32,
     formal_charge: i8,
     chiral_presence: bool,
     nbr_ids: Vec<usize>,
@@ -463,15 +471,21 @@ fn rdkit_bond_stereo_rank(stereo: crate::BondStereo) -> u8 {
 }
 
 fn init_fragment_canon_atoms(mol: &Molecule) -> Vec<CanonAtom> {
+    let valence = crate::assign_valence(mol, crate::ValenceModel::RdkitLike).ok();
     let mut atoms: Vec<CanonAtom> = mol
         .atoms
         .iter()
         .map(|atom| CanonAtom {
             index: atom.index,
             degree: 0,
-            total_num_hs: atom.explicit_hydrogens as usize,
+            total_num_hs: atom.explicit_hydrogens as usize
+                + valence
+                    .as_ref()
+                    .map(|v| v.implicit_hydrogens[atom.index] as usize)
+                    .unwrap_or(0),
             atomic_num: atom.atomic_num,
             isotope: atom.isotope.unwrap_or(0),
+            atom_map_num: atom.atom_map_num.unwrap_or(0),
             formal_charge: atom.formal_charge,
             chiral_presence: !matches!(atom.chiral_tag, crate::ChiralTag::Unspecified),
             nbr_ids: Vec::new(),
@@ -538,11 +552,12 @@ fn canon_atom_compare(atoms: &[CanonAtom], i: usize, j: usize) -> Ordering {
     atoms[i]
         .index
         .cmp(&atoms[j].index)
+        .then_with(|| atoms[i].atom_map_num.cmp(&atoms[j].atom_map_num))
         .then_with(|| atoms[i].degree.cmp(&atoms[j].degree))
         .then_with(|| atoms[i].atomic_num.cmp(&atoms[j].atomic_num))
         .then_with(|| atoms[i].isotope.cmp(&atoms[j].isotope))
         .then_with(|| atoms[i].total_num_hs.cmp(&atoms[j].total_num_hs))
-        .then_with(|| atoms[i].formal_charge.cmp(&atoms[j].formal_charge))
+        .then_with(|| (atoms[i].formal_charge as u32).cmp(&(atoms[j].formal_charge as u32)))
         .then_with(|| atoms[i].chiral_presence.cmp(&atoms[j].chiral_presence))
         .then_with(|| {
             let n = atoms[i].bonds.len().min(atoms[j].bonds.len());
@@ -807,15 +822,13 @@ fn break_ties(
             }
             refine_partitions(atoms, order, count, next, changed, touched, activeset);
         }
-        if atoms[partition].index != old_part {
-            i = i.saturating_sub(1);
-        } else {
+        if atoms[partition].index == old_part {
             i += 1;
         }
     }
 }
 
-fn rank_fragment_atoms_for_kekulize(mol: &Molecule) -> Vec<usize> {
+pub(crate) fn rank_fragment_atoms_for_kekulize(mol: &Molecule) -> Vec<usize> {
     // Source mapping: RDKit 2026.03.1
     //   Code/GraphMol/Kekulize.cpp::KekulizeFragment(canonical=true)
     //   Code/GraphMol/new_canon.cpp::rankFragmentAtoms()

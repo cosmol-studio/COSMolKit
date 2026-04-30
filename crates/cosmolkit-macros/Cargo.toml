@@ -1,16 +1,12 @@
 [package]
-name = "cosmolkit"
+name = "cosmolkit-macros"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description.workspace = true
+description = "Compile-time macros for COSMolKit"
 repository.workspace = true
 homepage.workspace = true
 
 [lib]
-name = "cosmolkit"
-path = "src/lib.rs"
-
-[dependencies]
-cosmolkit-core = { version = "0.0.8", path = "../cosmolkit-core" }
+proc-macro = true

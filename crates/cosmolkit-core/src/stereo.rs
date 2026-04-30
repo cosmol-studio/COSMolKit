@@ -66,10 +66,7 @@ fn has_protium_neighbor(mol: &Molecule, atom_index: usize) -> bool {
 
 fn bond_is_conjugated_for_stereo(mol: &Molecule, bond_index: usize) -> bool {
     let bond = &mol.bonds[bond_index];
-    if !matches!(
-        bond.order,
-        BondOrder::Single | BondOrder::Double | BondOrder::Aromatic
-    ) {
+    if !(matches!(bond.order, BondOrder::Single | BondOrder::Double) || bond.is_aromatic) {
         return false;
     }
     let endpoints = [bond.begin_atom, bond.end_atom];
@@ -91,17 +88,15 @@ fn bond_is_conjugated_for_stereo(mol: &Molecule, bond_index: usize) -> bool {
             .collect();
         adjacent.iter().any(|&a| {
             adjacent.iter().any(|&b| {
-                a != b
-                    && matches!(
-                        (mol.bonds[a].order, mol.bonds[b].order),
-                        (BondOrder::Single, BondOrder::Double)
-                            | (BondOrder::Double, BondOrder::Single)
-                            | (BondOrder::Aromatic, BondOrder::Single)
-                            | (BondOrder::Single, BondOrder::Aromatic)
-                            | (BondOrder::Aromatic, BondOrder::Double)
-                            | (BondOrder::Double, BondOrder::Aromatic)
-                            | (BondOrder::Aromatic, BondOrder::Aromatic)
-                    )
+                a != b && {
+                    let a_conj =
+                        matches!(mol.bonds[a].order, BondOrder::Single | BondOrder::Double)
+                            || mol.bonds[a].is_aromatic;
+                    let b_conj =
+                        matches!(mol.bonds[b].order, BondOrder::Single | BondOrder::Double)
+                            || mol.bonds[b].is_aromatic;
+                    a_conj && b_conj
+                }
             })
         })
     })

@@ -698,7 +698,7 @@ fn compute_conjugated_bonds(
 ) -> Vec<bool> {
     let mut conjugated = vec![false; mol.bonds.len()];
     for (bi, b) in mol.bonds.iter().enumerate() {
-        conjugated[bi] = matches!(b.order, BondOrder::Aromatic);
+        conjugated[bi] = b.is_aromatic;
     }
     for at in 0..mol.atoms.len() {
         if !is_atom_conjug_cand(mol, assignment, atom_degree, at) {

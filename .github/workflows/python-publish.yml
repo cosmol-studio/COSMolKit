@@ -116,19 +116,3 @@ jobs:
               uses: pypa/gh-action-pypi-publish@release/v1
               with:
                   password: ${{ secrets.PYPI_API_TOKEN }}
-
-            - name: Add release marker tag
-              if: startsWith(github.ref, 'refs/tags/v')
-              env:
-                  SRC_TAG: ${{ github.ref_name }}
-              run: |
-                  set -euo pipefail
-                  MARKER_TAG="release-py-${SRC_TAG}"
-                  git config user.name "github-actions[bot]"
-                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-                  if git ls-remote --exit-code --tags origin "${MARKER_TAG}" >/dev/null 2>&1; then
-                    echo "marker tag already exists: ${MARKER_TAG}"
-                    exit 0
-                  fi
-                  git tag "${MARKER_TAG}" "${SRC_TAG}"
-                  git push origin "${MARKER_TAG}"

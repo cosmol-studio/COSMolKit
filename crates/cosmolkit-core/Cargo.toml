@@ -13,6 +13,7 @@ name = "cosmolkit_core"
 path = "src/lib.rs"
 
 [dependencies]
+cosmolkit-macros = { path = "../cosmolkit-macros", version = "0.0.8" }
 glam = "0.32.1"
 thiserror = "2.0.18"
 

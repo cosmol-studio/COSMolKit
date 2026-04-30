@@ -26,4 +26,6 @@ pub struct Atom {
     pub chiral_tag: ChiralTag,
     /// Optional isotope label from bracket SMILES.
     pub isotope: Option<u16>,
+    /// Optional atom-map number from bracket SMILES.
+    pub atom_map_num: Option<u32>,
 }

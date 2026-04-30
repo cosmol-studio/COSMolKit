@@ -7,7 +7,7 @@ use cosmolkit_core::io::sdf::SdfReader;
 use pyo3::PyErr;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyType;
+use pyo3::types::{PyAny, PyType};
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::define_stub_info_gatherer;
 #[cfg(feature = "stubgen")]
@@ -73,6 +73,23 @@ fn chiral_tag_name(tag: cosmolkit_core::ChiralTag) -> &'static str {
     }
 }
 
+fn bond_direction_name(direction: cosmolkit_core::BondDirection) -> &'static str {
+    match direction {
+        cosmolkit_core::BondDirection::None => "NONE",
+        cosmolkit_core::BondDirection::EndUpRight => "ENDUPRIGHT",
+        cosmolkit_core::BondDirection::EndDownRight => "ENDDOWNRIGHT",
+    }
+}
+
+fn bond_stereo_name(stereo: cosmolkit_core::BondStereo) -> &'static str {
+    match stereo {
+        cosmolkit_core::BondStereo::None => "STEREONONE",
+        cosmolkit_core::BondStereo::Any => "STEREOANY",
+        cosmolkit_core::BondStereo::Cis => "STEREOCIS",
+        cosmolkit_core::BondStereo::Trans => "STEREOTRANS",
+    }
+}
+
 fn parse_sdf_format(format: Option<&str>) -> PyResult<SdfFormat> {
     match format.map(|s| s.to_ascii_lowercase()) {
         None => Ok(SdfFormat::Auto),
@@ -113,15 +130,96 @@ fn atomic_number_from_element(element: &str) -> Option<u8> {
     }
 }
 
+fn py_method<'py>(obj: &Bound<'py, PyAny>, method: &str) -> PyResult<Bound<'py, PyAny>> {
+    obj.call_method0(method)
+        .map_err(|err| PyValueError::new_err(format!("from_rdkit failed calling {method}: {err}")))
+}
+
+fn py_method_index<'py>(
+    obj: &Bound<'py, PyAny>,
+    method: &str,
+    index: usize,
+) -> PyResult<Bound<'py, PyAny>> {
+    obj.call_method1(method, (index,))
+        .map_err(|err| PyValueError::new_err(format!("from_rdkit failed calling {method}: {err}")))
+}
+
+fn py_method_extract<T>(obj: &Bound<'_, PyAny>, method: &str) -> PyResult<T>
+where
+    for<'a> T: FromPyObject<'a, 'a>,
+{
+    py_method(obj, method)?.extract::<T>().map_err(|_| {
+        PyValueError::new_err(format!("from_rdkit failed extracting result from {method}"))
+    })
+}
+
+fn py_method_str(obj: &Bound<'_, PyAny>, method: &str) -> PyResult<String> {
+    let value = py_method(obj, method)?;
+    Ok(value
+        .str()
+        .map_err(|err| {
+            PyValueError::new_err(format!("from_rdkit failed stringifying {method}: {err}"))
+        })?
+        .to_string_lossy()
+        .into_owned())
+}
+
+fn rdkit_chiral_tag_from_name(name: &str) -> PyResult<cosmolkit_core::ChiralTag> {
+    match name {
+        "CHI_UNSPECIFIED" => Ok(cosmolkit_core::ChiralTag::Unspecified),
+        "CHI_TETRAHEDRAL_CW" => Ok(cosmolkit_core::ChiralTag::TetrahedralCw),
+        "CHI_TETRAHEDRAL_CCW" => Ok(cosmolkit_core::ChiralTag::TetrahedralCcw),
+        other => Err(PyValueError::new_err(format!(
+            "from_rdkit unsupported atom chiral tag '{other}'"
+        ))),
+    }
+}
+
+fn rdkit_bond_order_from_name(name: &str) -> PyResult<cosmolkit_core::BondOrder> {
+    match name {
+        "UNSPECIFIED" | "ZERO" => Ok(cosmolkit_core::BondOrder::Null),
+        "SINGLE" => Ok(cosmolkit_core::BondOrder::Single),
+        "DOUBLE" => Ok(cosmolkit_core::BondOrder::Double),
+        "TRIPLE" => Ok(cosmolkit_core::BondOrder::Triple),
+        "QUADRUPLE" => Ok(cosmolkit_core::BondOrder::Quadruple),
+        "AROMATIC" => Ok(cosmolkit_core::BondOrder::Aromatic),
+        "DATIVE" | "DATIVEL" | "DATIVER" => Ok(cosmolkit_core::BondOrder::Dative),
+        other => Err(PyValueError::new_err(format!(
+            "from_rdkit unsupported bond type '{other}'"
+        ))),
+    }
+}
+
+fn rdkit_bond_direction_from_name(name: &str) -> PyResult<cosmolkit_core::BondDirection> {
+    match name {
+        "NONE" => Ok(cosmolkit_core::BondDirection::None),
+        "ENDUPRIGHT" => Ok(cosmolkit_core::BondDirection::EndUpRight),
+        "ENDDOWNRIGHT" => Ok(cosmolkit_core::BondDirection::EndDownRight),
+        other => Err(PyValueError::new_err(format!(
+            "from_rdkit unsupported bond direction '{other}'"
+        ))),
+    }
+}
+
+fn clone_for_python_value_api(mol: &cosmolkit_core::Molecule) -> cosmolkit_core::Molecule {
+    // Transitional implementation for the immutable-first Python API:
+    // public methods return a new Molecule value, but today we still realize
+    // that by cloning the Rust molecule eagerly before mutation.
+    //
+    // Planned follow-up: replace this eager clone with copy-on-write storage
+    // in core so unchanged topology/conformer/property blocks stay shared.
+    mol.clone()
+}
+
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 struct Molecule {
     inner: cosmolkit_core::Molecule,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 struct Atom {
     idx: usize,
@@ -129,15 +227,29 @@ struct Atom {
     formal_charge: i8,
     chiral_tag: String,
     isotope: Option<u16>,
+    is_aromatic: bool,
+    explicit_hydrogens: usize,
+    no_implicit: bool,
+    num_radical_electrons: usize,
+    degree: usize,
+    explicit_valence: Option<usize>,
+    implicit_hydrogens: Option<usize>,
+    total_num_hs: Option<usize>,
+    total_valence: Option<usize>,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 struct Bond {
+    idx: usize,
     begin_atom_idx: usize,
     end_atom_idx: usize,
     bond_type: String,
+    bond_dir: String,
+    stereo: String,
+    stereo_atoms: Vec<usize>,
+    is_aromatic: bool,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
@@ -153,6 +265,104 @@ impl Molecule {
         let _ = sanitize;
         let mol = cosmolkit_core::Molecule::from_smiles(smiles)
             .map_err(|err| PyValueError::new_err(err.to_string()))?;
+        Ok(Self { inner: mol })
+    }
+
+    #[classmethod]
+    #[pyo3(signature = (rdmol, sanitize=None))]
+    fn from_rdkit(
+        _cls: &Bound<'_, PyType>,
+        rdmol: &Bound<'_, PyAny>,
+        sanitize: Option<bool>,
+    ) -> PyResult<Self> {
+        rdmol.py().import("rdkit.Chem").map_err(|err| {
+            PyValueError::new_err(format!(
+                "Molecule.from_rdkit requires rdkit to be installed and importable: {err}"
+            ))
+        })?;
+        let _ = sanitize;
+        let atom_count: usize = py_method_extract(rdmol, "GetNumAtoms")?;
+        let bond_count: usize = py_method_extract(rdmol, "GetNumBonds")?;
+        let mut mol = cosmolkit_core::Molecule::new();
+
+        for idx in 0..atom_count {
+            let atom = py_method_index(rdmol, "GetAtomWithIdx", idx)?;
+            let atomic_num_raw: usize = py_method_extract(&atom, "GetAtomicNum")?;
+            let atomic_num = u8::try_from(atomic_num_raw).map_err(|_| {
+                PyValueError::new_err(format!(
+                    "from_rdkit atom {idx} atomic number out of u8 range: {atomic_num_raw}"
+                ))
+            })?;
+            let formal_charge_raw: i32 = py_method_extract(&atom, "GetFormalCharge")?;
+            let formal_charge = i8::try_from(formal_charge_raw).map_err(|_| {
+                PyValueError::new_err(format!(
+                    "from_rdkit atom {idx} formal charge out of i8 range: {formal_charge_raw}"
+                ))
+            })?;
+            let explicit_h_raw: usize = py_method_extract(&atom, "GetNumExplicitHs")?;
+            let explicit_hydrogens = u8::try_from(explicit_h_raw).map_err(|_| {
+                PyValueError::new_err(format!(
+                    "from_rdkit atom {idx} explicit H count out of u8 range: {explicit_h_raw}"
+                ))
+            })?;
+            let radical_raw: usize = py_method_extract(&atom, "GetNumRadicalElectrons")?;
+            let num_radical_electrons = u8::try_from(radical_raw).map_err(|_| {
+                PyValueError::new_err(format!(
+                    "from_rdkit atom {idx} radical electron count out of u8 range: {radical_raw}"
+                ))
+            })?;
+            let isotope_raw: u16 = py_method_extract(&atom, "GetIsotope")?;
+            let chiral_tag = rdkit_chiral_tag_from_name(&py_method_str(&atom, "GetChiralTag")?)?;
+
+            mol.add_atom(cosmolkit_core::Atom {
+                index: 0,
+                atomic_num,
+                is_aromatic: py_method_extract(&atom, "GetIsAromatic")?,
+                formal_charge,
+                explicit_hydrogens,
+                no_implicit: py_method_extract(&atom, "GetNoImplicit")?,
+                num_radical_electrons,
+                chiral_tag,
+                isotope: (isotope_raw != 0).then_some(isotope_raw),
+                atom_map_num: None,
+            });
+        }
+
+        for idx in 0..bond_count {
+            let bond = py_method_index(rdmol, "GetBondWithIdx", idx)?;
+            let begin_atom: usize = py_method_extract(&bond, "GetBeginAtomIdx")?;
+            let end_atom: usize = py_method_extract(&bond, "GetEndAtomIdx")?;
+            if begin_atom >= atom_count || end_atom >= atom_count {
+                return Err(PyValueError::new_err(format!(
+                    "from_rdkit bond {idx} atom index out of range: {begin_atom}-{end_atom}"
+                )));
+            }
+            let is_aromatic: bool = py_method_extract(&bond, "GetIsAromatic")?;
+            let order = rdkit_bond_order_from_name(&py_method_str(&bond, "GetBondType")?)?;
+            let direction = rdkit_bond_direction_from_name(&py_method_str(&bond, "GetBondDir")?)?;
+            let stereo_atoms: Vec<usize> =
+                py_method(&bond, "GetStereoAtoms")?
+                    .extract()
+                    .map_err(|err| {
+                        PyValueError::new_err(format!(
+                            "from_rdkit failed extracting result from GetStereoAtoms: {err}"
+                        ))
+                    })?;
+
+            mol.add_bond(cosmolkit_core::Bond {
+                index: 0,
+                begin_atom,
+                end_atom,
+                order,
+                is_aromatic,
+                direction,
+                stereo: cosmolkit_core::BondStereo::None,
+                stereo_atoms,
+            });
+        }
+
+        cosmolkit_core::assign_double_bond_stereo_from_directions(&mut mol);
+        mol.rebuild_adjacency();
         Ok(Self { inner: mol })
     }
 
@@ -175,14 +385,14 @@ impl Molecule {
     }
 
     fn add_hydrogens(&self) -> PyResult<Self> {
-        let mut out = self.inner.clone();
+        let mut out = clone_for_python_value_api(&self.inner);
         cosmolkit_core::add_hydrogens_in_place(&mut out)
             .map_err(|err| PyValueError::new_err(format!("add_hydrogens failed: {err:?}")))?;
         Ok(Self { inner: out })
     }
 
     fn remove_hydrogens(&self) -> PyResult<Self> {
-        let mut out = self.inner.clone();
+        let mut out = clone_for_python_value_api(&self.inner);
         cosmolkit_core::remove_hydrogens_in_place(&mut out)
             .map_err(|err| PyValueError::new_err(format!("remove_hydrogens failed: {err:?}")))?;
         Ok(Self { inner: out })
@@ -191,13 +401,21 @@ impl Molecule {
     #[pyo3(signature = (sanitize=None))]
     fn kekulize(&self, sanitize: Option<bool>) -> PyResult<Self> {
         let _ = sanitize;
-        let mut out = self.inner.clone();
-        cosmolkit_core::kekulize::kekulize_in_place(&mut out)
+        let mut out = clone_for_python_value_api(&self.inner);
+        cosmolkit_core::kekulize::kekulize_in_place(&mut out, false)
             .map_err(|err| PyValueError::new_err(format!("kekulize failed: {err:?}")))?;
         Ok(Self { inner: out })
     }
 
     fn atoms(&self) -> Vec<Atom> {
+        let assignment =
+            cosmolkit_core::assign_valence(&self.inner, cosmolkit_core::ValenceModel::RdkitLike)
+                .ok();
+        let mut degrees = vec![0usize; self.inner.atoms.len()];
+        for bond in &self.inner.bonds {
+            degrees[bond.begin_atom] += 1;
+            degrees[bond.end_atom] += 1;
+        }
         self.inner
             .atoms
             .iter()
@@ -207,6 +425,24 @@ impl Molecule {
                 formal_charge: atom.formal_charge,
                 chiral_tag: chiral_tag_name(atom.chiral_tag).to_string(),
                 isotope: atom.isotope,
+                is_aromatic: atom.is_aromatic,
+                explicit_hydrogens: atom.explicit_hydrogens as usize,
+                no_implicit: atom.no_implicit,
+                num_radical_electrons: atom.num_radical_electrons as usize,
+                degree: degrees[atom.index],
+                explicit_valence: assignment
+                    .as_ref()
+                    .map(|v| v.explicit_valence[atom.index] as usize),
+                implicit_hydrogens: assignment
+                    .as_ref()
+                    .map(|v| v.implicit_hydrogens[atom.index] as usize),
+                total_num_hs: assignment.as_ref().map(|v| {
+                    atom.explicit_hydrogens as usize + v.implicit_hydrogens[atom.index] as usize
+                }),
+                total_valence: assignment.as_ref().map(|v| {
+                    v.explicit_valence[atom.index] as usize
+                        + v.implicit_hydrogens[atom.index] as usize
+                }),
             })
             .collect()
     }
@@ -216,9 +452,14 @@ impl Molecule {
             .bonds
             .iter()
             .map(|bond| Bond {
+                idx: bond.index,
                 begin_atom_idx: bond.begin_atom,
                 end_atom_idx: bond.end_atom,
                 bond_type: bond_order_name(bond.order).to_string(),
+                bond_dir: bond_direction_name(bond.direction).to_string(),
+                stereo: bond_stereo_name(bond.stereo).to_string(),
+                stereo_atoms: bond.stereo_atoms.clone(),
+                is_aromatic: bond.is_aromatic,
             })
             .collect()
     }
@@ -251,7 +492,7 @@ impl Molecule {
     }
 
     fn compute_2d_coords(&self) -> PyResult<Self> {
-        let mut out = self.inner.clone();
+        let mut out = clone_for_python_value_api(&self.inner);
         out.compute_2d_coords()
             .map_err(|err| PyValueError::new_err(format!("compute_2d_coords failed: {err}")))?;
         Ok(Self { inner: out })
@@ -272,6 +513,21 @@ impl Molecule {
             ));
         };
         Ok(coords.iter().map(|p| vec![p.x, p.y, 0.0]).collect())
+    }
+
+    fn dg_bounds_matrix(&self) -> PyResult<Vec<Vec<f64>>> {
+        self.inner.dg_bounds_matrix().map_err(|err| {
+            PyValueError::new_err(format!("Molecule.dg_bounds_matrix failed: {err}"))
+        })
+    }
+
+    #[pyo3(signature = (isomeric_smiles=true))]
+    fn to_smiles(&self, isomeric_smiles: bool) -> PyResult<String> {
+        self.inner.to_smiles(isomeric_smiles).map_err(|err| {
+            PyNotImplementedError::new_err(format!(
+                "Molecule.to_smiles(isomeric_smiles={isomeric_smiles}) is not implemented yet: {err}"
+            ))
+        })
     }
 
     #[pyo3(signature = (path, format=None))]
@@ -325,7 +581,10 @@ impl Molecule {
 
     fn edit(&self) -> MoleculeEdit {
         MoleculeEdit {
-            working: self.inner.clone(),
+            // Transitional implementation: the edit context starts from a
+            // cloned working molecule today. Once core adopts copy-on-write,
+            // this should share storage initially and detach only on mutation.
+            working: clone_for_python_value_api(&self.inner),
         }
     }
 
@@ -375,17 +634,46 @@ impl Atom {
     fn isotope(&self) -> Option<u16> {
         self.isotope
     }
+    fn is_aromatic(&self) -> bool {
+        self.is_aromatic
+    }
+    fn explicit_hydrogens(&self) -> usize {
+        self.explicit_hydrogens
+    }
+    fn no_implicit(&self) -> bool {
+        self.no_implicit
+    }
+    fn num_radical_electrons(&self) -> usize {
+        self.num_radical_electrons
+    }
+    fn degree(&self) -> usize {
+        self.degree
+    }
+    fn explicit_valence(&self) -> Option<usize> {
+        self.explicit_valence
+    }
+    fn implicit_hydrogens(&self) -> Option<usize> {
+        self.implicit_hydrogens
+    }
+    fn total_num_hs(&self) -> Option<usize> {
+        self.total_num_hs
+    }
+    fn total_valence(&self) -> Option<usize> {
+        self.total_valence
+    }
 
     fn __repr__(&self) -> String {
         format!(
-            "Atom(idx={}, atomic_num={}, formal_charge={}, chiral_tag='{}', isotope={})",
+            "Atom(idx={}, atomic_num={}, formal_charge={}, chiral_tag='{}', isotope={}, is_aromatic={}, degree={})",
             self.idx,
             self.atomic_num,
             self.formal_charge,
             self.chiral_tag,
             self.isotope
                 .map(|x| x.to_string())
-                .unwrap_or_else(|| "None".to_string())
+                .unwrap_or_else(|| "None".to_string()),
+            self.is_aromatic,
+            self.degree
         )
     }
 }
@@ -393,6 +681,9 @@ impl Atom {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Bond {
+    fn idx(&self) -> usize {
+        self.idx
+    }
     fn begin_atom_idx(&self) -> usize {
         self.begin_atom_idx
     }
@@ -402,11 +693,28 @@ impl Bond {
     fn bond_type(&self) -> String {
         self.bond_type.clone()
     }
+    fn bond_dir(&self) -> String {
+        self.bond_dir.clone()
+    }
+    fn stereo(&self) -> String {
+        self.stereo.clone()
+    }
+    fn stereo_atoms(&self) -> Vec<usize> {
+        self.stereo_atoms.clone()
+    }
+    fn is_aromatic(&self) -> bool {
+        self.is_aromatic
+    }
 
     fn __repr__(&self) -> String {
         format!(
-            "Bond(begin_atom_idx={}, end_atom_idx={}, bond_type='{}')",
-            self.begin_atom_idx, self.end_atom_idx, self.bond_type
+            "Bond(idx={}, begin_atom_idx={}, end_atom_idx={}, bond_type='{}', bond_dir='{}', stereo='{}')",
+            self.idx,
+            self.begin_atom_idx,
+            self.end_atom_idx,
+            self.bond_type,
+            self.bond_dir,
+            self.stereo
         )
     }
 }
@@ -436,6 +744,7 @@ impl MoleculeEdit {
             num_radical_electrons: 0,
             chiral_tag: cosmolkit_core::ChiralTag::Unspecified,
             isotope: None,
+            atom_map_num: None,
         });
         Ok(idx)
     }
@@ -463,6 +772,7 @@ impl MoleculeEdit {
             begin_atom: begin,
             end_atom: end,
             order,
+            is_aromatic: matches!(order, cosmolkit_core::BondOrder::Aromatic),
             direction: cosmolkit_core::BondDirection::None,
             stereo: cosmolkit_core::BondStereo::None,
             stereo_atoms: Vec::new(),
