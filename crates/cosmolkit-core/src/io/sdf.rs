@@ -164,7 +164,7 @@ fn parse_v2000_mol_data_stream(lines: &[String]) -> Result<(Molecule, usize), Sd
         .enumerate()
     {
         let bond = parse_v2000_bond_line(line, offset + expected_atom_end + 1)?;
-        if matches!(bond.order, BondOrder::Aromatic) {
+        if bond.is_aromatic {
             molecule.atoms[bond.begin_atom].is_aromatic = true;
             molecule.atoms[bond.end_atom].is_aromatic = true;
         }
@@ -255,6 +255,7 @@ fn parse_v2000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec2)
             num_radical_electrons: 0,
             chiral_tag: ChiralTag::Unspecified,
             isotope,
+            atom_map_num: None,
         },
         DVec2::new(x, y),
     ))
@@ -316,6 +317,7 @@ fn parse_v2000_bond_line(line: &str, line_number: usize) -> Result<Bond, SdfRead
         begin_atom,
         end_atom,
         order,
+        is_aromatic: matches!(order, BondOrder::Aromatic),
         direction,
         stereo,
         stereo_atoms: Vec::new(),
@@ -498,7 +500,7 @@ fn parse_v3000_mol_data_stream(lines: &[String]) -> Result<(Molecule, usize), Sd
             .ok_or_else(|| SdfReadError::Parse("Bad V3000 bond line".to_owned()))?,
             cursor + 1,
         )?;
-        if matches!(bond.order, BondOrder::Aromatic) {
+        if bond.is_aromatic {
             molecule.atoms[bond.begin_atom].is_aromatic = true;
             molecule.atoms[bond.end_atom].is_aromatic = true;
         }
@@ -596,6 +598,7 @@ fn parse_v3000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec2)
             num_radical_electrons: radicals,
             chiral_tag: ChiralTag::Unspecified,
             isotope,
+            atom_map_num: None,
         },
         DVec2::new(x, y),
     ))
@@ -669,6 +672,7 @@ fn parse_v3000_bond_line(line: &str, line_number: usize) -> Result<Bond, SdfRead
         begin_atom,
         end_atom,
         order,
+        is_aromatic: matches!(order, BondOrder::Aromatic),
         direction,
         stereo,
         stereo_atoms: Vec::new(),

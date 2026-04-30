@@ -28,6 +28,16 @@ pip install cosmolkit
 
 **COSMolKit** is a Rust toolkit for core cheminformatics and structural biology data processing.
 
+At the Python API level, COSMolKit is designed to avoid ambiguous inplace semantics:
+
+- molecule operations return a new value by default
+- public Python APIs do not rely on ambiguous inplace mutation semantics
+- explicit editing is separated from normal transformation calls
+
+This is an intentional design difference from legacy wrapper-style chemistry APIs where callers must remember which operations mutate input objects and which return copies. COSMolKit aims to make Python-side data flow obvious from the call site itself.
+
+Under the hood, the intended implementation strategy is Rust-side **copy-on-write** storage, so unchanged topology / conformer / property data can remain shared while preserving the same non-inplace Python semantics.
+
 The project focuses on providing a practical and reliable subset of functionality for:
 
 - molecular file parsing and writing  
@@ -45,11 +55,11 @@ The overall goal is to provide a **portable, reliable, and extensible foundation
 
 ## Current Progress
 
-COSMolKit is currently focused on the chemistry core. The repository now uses a two-crate Rust layout: `cosmolkit-core` (core implementation, including chemistry perception, IO, and biomolecular primitives) and `cosmolkit` (facade re-export crate), plus RDKit-based regression tests for SMILES parsing, atom/bond feature parity, hydrogen expansion, Kekulization, minimal MOL/SDF output, and tetrahedral stereo geometry checks.
+COSMolKit is currently focused on the chemistry core. The repository now uses a two-crate Rust layout: `cosmolkit-core` (core implementation, including chemistry perception, IO, and biomolecular primitives) and `cosmolkit` (facade re-export crate), plus RDKit-based regression tests for SMILES parsing and writing, atom/bond feature parity, hydrogen expansion, Kekulization, distance-geometry bounds, MOL/SDF output, and tetrahedral stereo geometry checks.
 
 RDKit 2026.03.1 is used as the active behavioral reference, with `third_party/rdkit` pinned to `Release_2026_03_1` (`351f8f378f8ad6bbd517980c38896e66bf907af8`). The implementation is still a subset and is being expanded by source-level parity work rather than broad API coverage.
-As of 2026-04-29, the Rust workspace test suite is close to green but not fully passing against the active RDKit 2026.03.1 oracle: `cosmolkit-core` graph-feature parity, tetrahedral stereo geometry parity, kekulized topology parity, and SDF reader/writer roundtrip tests are passing, while strict V2000 molblock coordinate/topology parity still has an unresolved failure at `molblock_v2000_body_matches_rdkit_coordinates_and_topology` row 77. Tetrahedral stereo has an internal ordered-ligand representation (`TetrahedralStereo`) derived from the existing RDKit-compatible atom chiral tags, with a Rust integration test that validates positive oriented volume against RDKit ETKDGv3 coordinates (`seed=42`) on the shared chiral corpus. The representation contract is documented in `tetrahedral_stereo_representation.md`.
-The repository also includes a PyO3 package under `python/`, along with a GitHub Actions workflow for building and publishing Python wheels to PyPI. The binding layer remains partial overall, but now includes graph access, `Molecule.tetrahedral_stereo()`, hydrogen add/remove APIs, and SDF read/write plus string/dir export helpers.
+As of 2026-04-30, the Rust chemistry test suite is green against the active RDKit 2026.03.1 oracle for the currently tracked corpus. Passing parity areas include graph features, add-H / remove-H roundtrip features, tetrahedral stereo geometry, DG bounds matrices, Kekulization with both aromatic-flag branches, canonical/non-canonical `MolToSmiles()` output branches, strict V2000 molblock coordinate/topology parity, and SDF V2000/V3000 roundtrip checks. Tetrahedral stereo has an internal ordered-ligand representation (`TetrahedralStereo`) derived from the existing RDKit-compatible atom chiral tags, with a Rust integration test that validates positive oriented volume against RDKit ETKDGv3 coordinates (`seed=42`) on the shared chiral corpus. The representation contract is documented in `tetrahedral_stereo_representation.md`.
+The repository also includes a PyO3 package under `python/`, along with a GitHub Actions workflow for building and publishing Python wheels to PyPI. The binding layer remains partial overall, but now includes graph access, `Molecule.tetrahedral_stereo()`, hydrogen add/remove APIs, 2D coordinate generation, SMILES export, and SDF read/write plus string/dir export helpers.
 
 ---
 
@@ -84,6 +94,8 @@ Python bindings are a **first-class feature**, not an afterthought.
 - All core modules are designed with binding compatibility in mind
 - Exposed via PyO3
 - API parity between Rust and Python is maintained where possible
+- public Python molecule operations are intentionally non-inplace by default
+- internal performance work should happen below the API boundary, not by leaking mutation ambiguity to users
 - Intended to support **drop-in replacement workflows** for RDKit / Biopython in common tasks
 
 ---
@@ -124,10 +136,12 @@ The long-term goal is to make COSMolKit usable as an **in-place replacement** fo
 - ✅ ring perception for the active parity corpus
 - ✅ basic valence handling for the active parity corpus
 - ✅ Kekulization for the active parity corpus
+- ✅ SMILES writer parity for the active corpus
 - ✅ atom and bond feature parity tests against RDKit
 - ✅ explicit hydrogen expansion for the active parity corpus
 - ✅ tetrahedral stereo ordered-ligand representation
-- [ ] complete the remaining strict molblock V2000 coordinate/topology parity failures
+- ✅ DG bounds matrix parity for the active corpus
+- ✅ strict molblock V2000 coordinate/topology parity for the active corpus
 - [ ] promote sanitization into a single explicit public pipeline
 
 Deliverable:
@@ -143,8 +157,9 @@ This phase defines the correctness baseline of the project.
 **Goal:** make molecule import/export usable beyond SMILES
 
 - [ ] MOL reader
-- [ ] SDF reader with robust multi-record handling
-- [ ] SDF writer with strict RDKit-compatible V2000 output
+- ✅ SDF reader with robust multi-record handling
+- ✅ SDF writer with strict RDKit-compatible V2000/V3000 output
+- ✅ SMILES output via RDKit-parity writer branches
 - [ ] batch molecule loading
 - [ ] format validation tools with precise error reporting
 
@@ -160,6 +175,8 @@ This phase defines the correctness baseline of the project.
 - ✅ `Molecule.remove_hydrogens()`
 - ✅ `Molecule.kekulize()`
 - ✅ `Molecule.tetrahedral_stereo()`
+- ✅ `Molecule.compute_2d_coords()`
+- ✅ `Molecule.to_smiles()`
 - ✅ SDF read/write bindings
 - [ ] stable graph-extraction helpers for ML workflows
 - [ ] explicit sanitization and error reporting API
@@ -169,6 +186,7 @@ This phase defines the correctness baseline of the project.
 ## Phase 4 — Query, Descriptors, and Computation
 **Goal:** enable practical filtering and analysis
 
+- ✅ distance-geometry bounds matrix parity
 - [ ] atom selection API
 - [ ] bond selection API
 - [ ] neighborhood queries

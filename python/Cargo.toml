@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 pyo3 = { version = "0.28.3", default-features = false }
 pyo3-stub-gen = { version = "0.22.1", default-features = false, optional = true }
-cosmolkit-core = { version = "0.0.7", path = "../crates/cosmolkit-core" }
+cosmolkit-core = { version = "0.0.8", path = "../crates/cosmolkit-core" }
 
 [features]
 default = ["release-abi3-py39"]

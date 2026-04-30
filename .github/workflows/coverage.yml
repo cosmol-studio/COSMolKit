@@ -46,10 +46,12 @@ jobs:
                   rm -f tests/golden/molblock_v2000_kekulized.jsonl
                   rm -f tests/golden/graph_features.jsonl
                   rm -f tests/golden/tetrahedral_stereo_geometry.jsonl
+                  rm -f tests/golden/dg_bounds_matrix.jsonl
                   .venv/bin/python tests/scripts/gen_rdkit_v2000_minimal_golden.py
                   .venv/bin/python tests/scripts/gen_rdkit_kekulize_molblock_golden.py
                   .venv/bin/python tests/scripts/gen_rdkit_graph_features.py
                   .venv/bin/python tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py
+                  .venv/bin/python tests/scripts/gen_rdkit_dg_bounds_golden.py
 
             - name: Run Rust tests with coverage instrumentation
               id: cov_run

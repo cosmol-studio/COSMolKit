@@ -166,10 +166,10 @@ fn is_aromatic_atom(molecule: &Molecule, atom_index: usize) -> bool {
     if molecule.atoms[atom_index].is_aromatic {
         return true;
     }
-    molecule.bonds.iter().any(|b| {
-        (b.begin_atom == atom_index || b.end_atom == atom_index)
-            && matches!(b.order, crate::BondOrder::Aromatic)
-    })
+    molecule
+        .bonds
+        .iter()
+        .any(|b| (b.begin_atom == atom_index || b.end_atom == atom_index) && b.is_aromatic)
 }
 
 fn get_effective_atomic_num(atomic_num: u8, formal_charge: i8) -> Option<u8> {

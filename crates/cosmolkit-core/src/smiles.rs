@@ -50,6 +50,15 @@ pub(crate) fn parse_smiles(smiles: &str) -> Result<Molecule, SmilesParseError> {
     Ok(mol)
 }
 
+/// Assign double-bond stereochemistry from stored directional single bonds.
+///
+/// This mirrors the same RDKit-aligned path used after SMILES parsing, without
+/// requiring the molecule to have originated from a SMILES string.
+pub fn assign_double_bond_stereo_from_directions(mol: &mut Molecule) {
+    assign_double_bond_stereo(mol);
+    canonicalize_double_bond_stereo_by_cip_rdkit_like(mol);
+}
+
 fn bond_order_as_double(order: BondOrder) -> f64 {
     match order {
         BondOrder::Null => 0.0,
@@ -985,6 +994,7 @@ fn mark_aromatic_subset_rdkit_like(
             if matches!(bond.order, BondOrder::Single | BondOrder::Double) {
                 bond.order = BondOrder::Aromatic;
             }
+            bond.is_aromatic = true;
             done_bonds.insert(bond_idx);
         }
     }
@@ -1284,7 +1294,7 @@ fn prune_noncyclic_aromatic_bonds_rdkit_like(mol: &mut Molecule) {
     }
     let mut adj = vec![Vec::<(usize, usize)>::new(); n_atoms];
     for (bi, b) in mol.bonds.iter().enumerate() {
-        if !matches!(b.order, BondOrder::Aromatic) {
+        if !b.is_aromatic {
             continue;
         }
         adj[b.begin_atom].push((b.end_atom, bi));
@@ -1341,8 +1351,9 @@ fn prune_noncyclic_aromatic_bonds_rdkit_like(mol: &mut Molecule) {
             continue;
         }
         if let Some(bond) = mol.bonds.get_mut(bi)
-            && matches!(bond.order, BondOrder::Aromatic)
+            && bond.is_aromatic
         {
+            bond.is_aromatic = false;
             bond.order = BondOrder::Single;
         }
     }
@@ -1696,31 +1707,31 @@ impl<'a> Parser<'a> {
     ) -> usize {
         let mut bgn = begin_atom;
         let mut end = end_atom;
-        let order = match pending {
-            PendingBond::Single => BondOrder::Single,
-            PendingBond::Double => BondOrder::Double,
-            PendingBond::Triple => BondOrder::Triple,
-            PendingBond::Quadruple => BondOrder::Quadruple,
-            PendingBond::Aromatic => BondOrder::Aromatic,
+        let (order, is_aromatic) = match pending {
+            PendingBond::Single => (BondOrder::Single, false),
+            PendingBond::Double => (BondOrder::Double, false),
+            PendingBond::Triple => (BondOrder::Triple, false),
+            PendingBond::Quadruple => (BondOrder::Quadruple, false),
+            PendingBond::Aromatic => (BondOrder::Aromatic, true),
             PendingBond::DirectionalSingleUp | PendingBond::DirectionalSingleDown => {
-                BondOrder::Single
+                (BondOrder::Single, false)
             }
-            PendingBond::DativeForward => BondOrder::Dative,
+            PendingBond::DativeForward => (BondOrder::Dative, false),
             PendingBond::DativeBackward => {
                 // RDKit keeps dative direction in begin/end topology:
                 // "<-" means right atom donates to left atom.
                 bgn = end_atom;
                 end = begin_atom;
-                BondOrder::Dative
+                (BondOrder::Dative, false)
             }
-            PendingBond::Null => BondOrder::Null,
+            PendingBond::Null => (BondOrder::Null, false),
             PendingBond::Unspecified => {
                 let atom1 = &mol.atoms[begin_atom];
                 let atom2 = &mol.atoms[end_atom];
                 if atom1.is_aromatic && atom2.is_aromatic {
-                    BondOrder::Aromatic
+                    (BondOrder::Aromatic, true)
                 } else {
-                    BondOrder::Single
+                    (BondOrder::Single, false)
                 }
             }
         };
@@ -1734,6 +1745,7 @@ impl<'a> Parser<'a> {
             begin_atom: bgn,
             end_atom: end,
             order,
+            is_aromatic,
             direction,
             stereo: BondStereo::None,
             stereo_atoms: Vec::new(),
@@ -1762,6 +1774,7 @@ impl<'a> Parser<'a> {
                 num_radical_electrons: 0,
                 chiral_tag: ChiralTag::Unspecified,
                 isotope: None,
+                atom_map_num: None,
             });
         }
         Err(self.error("unsupported atom token"))
@@ -1781,6 +1794,7 @@ impl<'a> Parser<'a> {
                 num_radical_electrons: 0,
                 chiral_tag: ChiralTag::Unspecified,
                 isotope,
+                atom_map_num: None,
             }
         } else if self.consume_if('*') {
             Atom {
@@ -1793,6 +1807,7 @@ impl<'a> Parser<'a> {
                 num_radical_electrons: 0,
                 chiral_tag: ChiralTag::Unspecified,
                 isotope,
+                atom_map_num: None,
             }
         } else if let Some((atomic_num, aromatic, consumed)) = self.match_bracket_atom_symbol() {
             self.pos += consumed;
@@ -1806,6 +1821,7 @@ impl<'a> Parser<'a> {
                 num_radical_electrons: 0,
                 chiral_tag: ChiralTag::Unspecified,
                 isotope,
+                atom_map_num: None,
             }
         } else {
             return Err(self.error("unsupported bracket atom"));
@@ -1835,7 +1851,7 @@ impl<'a> Parser<'a> {
             };
         }
         if self.consume_if(':') {
-            let _ = self.parse_required_number()?;
+            atom.atom_map_num = Some(self.parse_required_number()? as u32);
         }
         self.expect_char(']')?;
         Ok(atom)
