@@ -4,8 +4,8 @@ from cosmolkit import Molecule
 
 mol = Molecule.from_smiles("CCO", sanitize=True)
 
-mol_h = mol.add_hydrogens()
-mol_no_h = mol_h.remove_hydrogens()
+mol_h = mol.with_hydrogens()
+mol_no_h = mol_h.without_hydrogens()
 _ = mol_no_h
 
 editor = mol.edit()

@@ -2,11 +2,11 @@
 
 ## Goal
 
-Introduce a clear immutable-first public molecule model without paying full deep-copy cost on every non-inplace API call.
+Introduce a clear pandas 3.0 / Polars-style public molecule model without paying full deep-copy cost on every value-returning API call.
 
-This is primarily meant to solve the API ambiguity that exists in RDKit's mixed inplace/non-inplace style, while preserving strict source-level parity work against `third_party/rdkit` in the internal algorithm paths.
+This is primarily meant to solve the API ambiguity that exists in RDKit's mixed inplace/non-inplace style, while preserving RDKit-compatible behavior in the internal algorithm paths where compatibility is the goal.
 
-COSMolKit's public model should be deterministic and predictable: normal molecule transformations return new molecule objects and never modify the input. Explicit mutation belongs behind clearly named editing or inplace APIs.
+COSMolKit's public model should be deterministic and predictable: normal molecule transformations return new molecule objects and never modify the input. This mirrors pandas 3.0 Copy-on-Write and Polars-style explicit dataflow: ordinary transformations produce new values, while mutation belongs behind clearly named editing APIs.
 
 The target model is:
 
@@ -34,15 +34,16 @@ it is still acceptable, and often preferable, to materialize an explicit mutable
 
 ## Why COW Fits COSMolKit
 
-The intended COSMolKit Python/Rust API is already moving toward:
+The intended COSMolKit Python/Rust API is deliberately aligned with modern dataframe API design:
 
-- immutable-first operations
+- pandas 3.0-style Copy-on-Write behavior at the public API boundary
+- Polars-style explicit transformation chains that return new values
 - explicit editing contexts
-- explicit inplace naming when mutation is intended
+- no `inplace=True`-style API ambiguity
 
 That API style maps naturally to copy-on-write:
 
-- `mol2 = mol.add_hydrogens()` is logically "return a new molecule"
+- `mol2 = mol.with_hydrogens()` is logically "return a new molecule"
 - internally we can share data first and only detach the modified storage on write
 
 This avoids the two bad extremes:
@@ -123,8 +124,8 @@ This isolates cheap metadata updates from graph/coordinate duplication.
 The public `Molecule` API should remain value-like:
 
 ```rust
-let mol_h = mol.add_hydrogens()?;
-let mol_2d = mol_h.compute_2d_coords()?;
+let mol_h = mol.with_hydrogens()?;
+let mol_2d = mol_h.with_2d_coords()?;
 let mol_named = mol_2d.with_name("ligand");
 ```
 
@@ -326,9 +327,9 @@ This should start with the most mutation-heavy or RDKit-structured code:
 
 Once COW is in place, Python bindings can expose clearer semantics without paying full clone cost:
 
-- `mol.add_hydrogens()`
-- `mol.remove_hydrogens()`
-- `mol.compute_2d_coords()`
+- `mol.with_hydrogens()`
+- `mol.without_hydrogens()`
+- `mol.with_2d_coords()`
 - `mol.with_name(...)`
 
 Optional explicit mutation surface:
@@ -402,7 +403,7 @@ For long mutation sequences, convert to a dedicated mutable working object first
 The user should still see a crisp semantic distinction:
 
 - default methods return a new molecule
-- explicit editing/inplace APIs are clearly named
+- explicit editing APIs are clearly named
 
 Copy-on-write is an implementation detail, not a semantic excuse for hidden mutation.
 
@@ -412,7 +413,7 @@ Desired behavior:
 
 ```rust
 let mol = Molecule::from_smiles("CCO")?;
-let mol2 = mol.compute_2d_coords()?;
+let mol2 = mol.with_2d_coords()?;
 let mol3 = mol2.with_name("ethanol");
 ```
 
@@ -433,4 +434,4 @@ The recommended end state is:
 - explicit mutable working states for parity-critical algorithms
 - immutable-first Python/Rust API on top
 
-That gives COSMolKit a cleaner semantic model than RDKit while keeping the implementation compatible with strict source-level reproduction work.
+That gives COSMolKit a cleaner semantic model than RDKit while keeping selected behavior compatible with RDKit where compatibility is required.

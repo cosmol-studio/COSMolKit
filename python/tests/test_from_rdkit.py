@@ -140,8 +140,8 @@ def test_from_rdkit_matches_direct_cosmolkit_2d_sdf(smiles):
     rd_mol = Chem.MolFromSmiles(smiles)
     assert rd_mol is not None
 
-    direct = cosmolkit.Molecule.from_smiles(smiles).compute_2d_coords()
-    bridged = cosmolkit.Molecule.from_rdkit(rd_mol).compute_2d_coords()
+    direct = cosmolkit.Molecule.from_smiles(smiles).with_2d_coords()
+    bridged = cosmolkit.Molecule.from_rdkit(rd_mol).with_2d_coords()
 
     assert bridged.to_sdf_string("v2000") == direct.to_sdf_string("v2000")
 

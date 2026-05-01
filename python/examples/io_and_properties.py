@@ -2,7 +2,7 @@
 
 from cosmolkit import Molecule
 
-mol = Molecule.from_smiles("CCO", sanitize=True).compute_2d_coords()
+mol = Molecule.from_smiles("CCO", sanitize=True).with_2d_coords()
 sdf_text = mol.to_sdf_string(format="v2000")
 print("SDF length:", len(sdf_text))
 

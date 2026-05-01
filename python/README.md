@@ -5,10 +5,12 @@ graph workflows. The Python package currently exposes a strict, tested subset
 of the Rust core while the chemistry implementation is expanded against RDKit
 parity tests.
 
-The public Python API is intentionally non-inplace by default: ordinary
+The public Python API is intentionally Copy-on-Write style by default: ordinary
 operations return a new `Molecule` value instead of mutating the input object
-implicitly. The intended optimization strategy for this API shape is Rust-side
-copy-on-write storage, not ambiguous Python-layer mutation semantics.
+implicitly. This follows the modern pandas 3.0 / Polars direction where
+transformation calls make dataflow explicit and hidden mutation is avoided. The
+intended optimization strategy for this API shape is Rust-side copy-on-write
+storage, not ambiguous Python-layer mutation semantics.
 
 ## Installation
 
@@ -63,9 +65,9 @@ for bond in mol.bonds():
 from cosmolkit import Molecule
 
 mol = Molecule.from_smiles("c1ccccc1O")
-mol_h = mol.add_hydrogens()
-mol_no_h = mol_h.remove_hydrogens()
-kek = mol.kekulize()
+mol_h = mol.with_hydrogens()
+mol_no_h = mol_h.without_hydrogens()
+kek = mol.with_kekulized_bonds()
 
 print(len(mol.atoms()), len(mol_h.atoms()), len(mol_no_h.atoms()))
 print(kek.to_smiles())
@@ -94,7 +96,7 @@ for center, ligands in mol.tetrahedral_stereo():
 ```python
 from cosmolkit import Molecule
 
-mol = Molecule.from_smiles("CCO").compute_2d_coords()
+mol = Molecule.from_smiles("CCO").with_2d_coords()
 
 print("num conformers:", mol.num_conformers())
 print("first position:", mol.conformer_positions()[0])
@@ -112,7 +114,7 @@ print(loaded)
 ```python
 from cosmolkit import Molecule
 
-mol = Molecule.from_smiles("c1ccccc1O").compute_2d_coords()
+mol = Molecule.from_smiles("c1ccccc1O").with_2d_coords()
 svg = mol.to_svg(width=400, height=300)
 mol.write_svg("phenol.svg", width=400, height=300)
 mol.write_png("phenol.png", width=400, height=300)
@@ -186,5 +188,6 @@ The following API directions are planned but not currently available:
 COSMolKit is not a full RDKit replacement today. The Python package is being
 built through strict parity testing against RDKit behavior where compatibility
 is the goal. The currently usable binding surface is centered on deterministic
-non-inplace molecule transforms, graph/stereo inspection, 2D coordinates,
-SMILES/SDF IO, DG bounds export, SVG rendering, and explicit editing.
+Copy-on-Write style molecule transforms, graph/stereo inspection, 2D
+coordinates, SMILES/SDF IO, DG bounds export, SVG rendering, and explicit
+editing.

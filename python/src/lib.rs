@@ -400,26 +400,27 @@ impl Molecule {
         })
     }
 
-    fn add_hydrogens(&self) -> PyResult<Self> {
+    fn with_hydrogens(&self) -> PyResult<Self> {
         let mut out = clone_for_python_value_api(&self.inner);
         cosmolkit_core::add_hydrogens_in_place(&mut out)
-            .map_err(|err| PyValueError::new_err(format!("add_hydrogens failed: {err:?}")))?;
+            .map_err(|err| PyValueError::new_err(format!("with_hydrogens failed: {err:?}")))?;
         Ok(Self { inner: out })
     }
 
-    fn remove_hydrogens(&self) -> PyResult<Self> {
+    fn without_hydrogens(&self) -> PyResult<Self> {
         let mut out = clone_for_python_value_api(&self.inner);
         cosmolkit_core::remove_hydrogens_in_place(&mut out)
-            .map_err(|err| PyValueError::new_err(format!("remove_hydrogens failed: {err:?}")))?;
+            .map_err(|err| PyValueError::new_err(format!("without_hydrogens failed: {err:?}")))?;
         Ok(Self { inner: out })
     }
 
     #[pyo3(signature = (sanitize=None))]
-    fn kekulize(&self, sanitize: Option<bool>) -> PyResult<Self> {
+    fn with_kekulized_bonds(&self, sanitize: Option<bool>) -> PyResult<Self> {
         let _ = sanitize;
         let mut out = clone_for_python_value_api(&self.inner);
-        cosmolkit_core::kekulize::kekulize_in_place(&mut out, false)
-            .map_err(|err| PyValueError::new_err(format!("kekulize failed: {err:?}")))?;
+        cosmolkit_core::kekulize::kekulize_in_place(&mut out, false).map_err(|err| {
+            PyValueError::new_err(format!("with_kekulized_bonds failed: {err:?}"))
+        })?;
         Ok(Self { inner: out })
     }
 
@@ -507,10 +508,10 @@ impl Molecule {
         to_python_tetrahedral_stereo(&self.inner)
     }
 
-    fn compute_2d_coords(&self) -> PyResult<Self> {
+    fn with_2d_coords(&self) -> PyResult<Self> {
         let mut out = clone_for_python_value_api(&self.inner);
         out.compute_2d_coords()
-            .map_err(|err| PyValueError::new_err(format!("compute_2d_coords failed: {err}")))?;
+            .map_err(|err| PyValueError::new_err(format!("with_2d_coords failed: {err}")))?;
         Ok(Self { inner: out })
     }
 
@@ -525,7 +526,7 @@ impl Molecule {
     fn conformer_positions(&self) -> PyResult<Vec<Vec<f64>>> {
         let Some(coords) = self.inner.coords_2d() else {
             return Err(PyValueError::new_err(
-                "no 2D coordinates present; call compute_2d_coords() first",
+                "no 2D coordinates present; call with_2d_coords() first",
             ));
         };
         Ok(coords.iter().map(|p| vec![p.x, p.y, 0.0]).collect())

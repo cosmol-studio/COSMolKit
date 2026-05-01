@@ -15,7 +15,7 @@ mol = (
     mol.sanitize(strict=True)
     .perceive_rings()
     .perceive_aromaticity()
-    .kekulize(sanitize=False)
+    .with_kekulized_bonds(sanitize=False)
 )
 
 _ = mol

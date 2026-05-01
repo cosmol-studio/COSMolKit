@@ -8,7 +8,7 @@ from cosmolkit import Alignment, Molecule
 
 mol = Molecule.from_smiles("CCO", sanitize=True)
 mol3d = (
-    mol.add_hydrogens()
+    mol.with_hydrogens()
     .embed_3d(seed=42, num_conformers=20)
     .optimize(forcefield="mmff94")
 )

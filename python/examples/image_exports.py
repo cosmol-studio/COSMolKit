@@ -7,7 +7,7 @@ from cosmolkit import Molecule
 output_dir = Path(__file__).resolve().parent / "output"
 output_dir.mkdir(parents=True, exist_ok=True)
 
-mol = Molecule.from_smiles("c1ccccc1O", sanitize=True).compute_2d_coords()
+mol = Molecule.from_smiles("c1ccccc1O", sanitize=True).with_2d_coords()
 
 svg = mol.to_svg(width=400, height=300)
 print("SVG length:", len(svg))
