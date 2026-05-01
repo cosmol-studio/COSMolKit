@@ -9,6 +9,8 @@
 - `golden/tetrahedral_stereo_geometry.jsonl` auto-generated RDKit ETKDG geometry baseline for tetrahedral stereo volume checks
 - `golden/smiles_writer.jsonl` RDKit baseline for `MolToSmiles()` parity across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches
 - `golden/dg_bounds_matrix.jsonl` RDKit baseline for distance-geometry bounds matrix parity
+- `golden/svg_drawer.jsonl` RDKit baseline for `MolDraw2DSVG` output parity
+- `golden/prepared_draw_molecule.jsonl` RDKit baseline for `PrepareMolForDrawing(kekulize=True, addChiralHs=True, wedgeBonds=True, forceCoords=True)` prepared atom coordinates and bond directions
 
 ## Standard Workflow (RDKit Parity)
 
@@ -26,6 +28,8 @@ RDKit parity tests are strict source-level reproduction tests against `third_par
    - `.venv/bin/python tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py --input tests/smiles.smi --output tests/golden/tetrahedral_stereo_geometry.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_smiles_writer_golden.py --input tests/smiles.smi --output tests/golden/smiles_writer.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_dg_bounds_golden.py --input tests/smiles.smi --output tests/golden/dg_bounds_matrix.jsonl`
+   - `.venv/bin/python tests/scripts/gen_rdkit_svg_golden.py --input tests/smiles.smi --output tests/golden/svg_drawer.jsonl`
+   - `.venv/bin/python tests/scripts/gen_rdkit_prepared_draw_golden.py --input tests/smiles.smi --output tests/golden/prepared_draw_molecule.jsonl`
 3. (Optional) Install local COSMolKit Python build into the same env for direct comparison:
    - `.venv/bin/maturin develop --manifest-path python/Cargo.toml`
 4. Run Rust tests:
@@ -73,12 +77,18 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 - `smiles_writer_matches_rdkit_golden_across_param_branches`
 - strict RDKit parity coverage for `MolToSmiles()` across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches
 
+`crates/cosmolkit-core/tests/rdkit_svg_drawer_parity.rs` contains:
+- `svg_drawer_golden_has_one_record_per_smiles`
+- `svg_drawer_matches_rdkit_golden`
+- strict RDKit parity coverage for the Python-exposed `MolDraw2DSVG(..., noFreetype=True)` final SVG string
+
 Current status:
 - `cosmolkit-core` graph-feature parity is currently passing on the shared corpus (direct + explicit-H comparisons).
 - tetrahedral stereo ordered-ligand geometry validation is currently passing against RDKit ETKDGv3 (`seed=42`) on all chiral corpus entries.
 - DG bounds matrix parity is currently passing on the shared corpus.
 - SMILES writer parity is currently passing on the shared corpus across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches.
 - strict V2000 molblock coordinate/topology parity is currently passing on the shared corpus.
-- `cargo test -p cosmolkit-core` is currently green: `26 passed`, `0 failed`, `0 ignored`.
+- SVG drawer parity is wired to RDKit final SVG goldens and intentionally fails while `Molecule::to_svg()` is still a fixed placeholder.
+- `cargo test -p cosmolkit-core` is expected to fail until the RDKit MolDraw2D SVG source chain is ported.
 - `cargo test -p cosmolkit` is currently green.
 - Temporary stress check result: random sampling 1000 SMILES from `core_comp_lib.csv` with regenerated RDKit goldens still exposes unresolved molblock parity gaps (details logged under `tmp/rust_test_core_comp_lib_sample1000_with_regen_errors.txt`).

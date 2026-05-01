@@ -278,7 +278,12 @@ fn rdkit_compute_initial_coords_strict(mol: &Molecule) -> Result<Vec<(f64, f64)>
         nbs.dedup();
     }
     let hybridizations = rdkit_hybridizations_for_depict(mol, &degree)?;
-    let cip_ranks = rdkit_cip_ranks_for_depict(mol);
+    let cip_ranks = mol
+        .rdkit_legacy_stereo_atom_props(true)
+        .into_iter()
+        .enumerate()
+        .map(|(idx, props)| props.cip_rank.unwrap_or(idx as i64))
+        .collect::<Vec<_>>();
 
     let mut visited = vec![false; n];
     let mut components: Vec<Vec<usize>> = Vec::new();
@@ -501,8 +506,9 @@ fn canonicalize_component_rdkit_like(component: &mut Vec<(usize, (f64, f64))>) {
         cx += x;
         cy += y;
     }
-    cx /= n;
-    cy /= n;
+    let inv_n = 1.0 / n;
+    cx *= inv_n;
+    cy *= inv_n;
 
     let (mut xx, mut xy, mut yy) = (0.0f64, 0.0f64, 0.0f64);
     let mut centered: Vec<(f64, f64)> = Vec::with_capacity(component.len());
@@ -1015,7 +1021,10 @@ fn rdkit_rank_atoms_by_rank(
     cip_ranks: &[i64],
 ) {
     atoms.sort_by_key(|&idx| {
-        let rank = cip_ranks.get(idx).copied().unwrap_or_else(|| idx as i64);
+        let rank = mol.atoms[idx]
+            .rdkit_cip_rank
+            .or_else(|| cip_ranks.get(idx).copied())
+            .unwrap_or(idx as i64);
         (rank, idx)
     });
 
@@ -2510,21 +2519,6 @@ fn place_multiring_nonfused_component_rdkit_like(
 
         if let Some(st) = frag.atoms.get_mut(&aid) {
             st.pending = heavy;
-            if std::env::var_os("COSMOLKIT_DEBUG_ATTACH").is_some()
-                && mol.atoms.len() == 33
-                && mol.bonds.len() == 37
-                && aid == 13
-            {
-                let cip_ranks = rdkit_cip_ranks_for_depict(mol);
-                eprintln!(
-                    "DEBUG update aid=13 pending {:?} ranks {:?}",
-                    st.pending,
-                    st.pending
-                        .iter()
-                        .map(|&a| (a, cip_ranks.get(a).copied()))
-                        .collect::<Vec<_>>()
-                );
-            }
             if !st.pending.is_empty() && !frag.attach_pts.iter().any(|&x| x == aid) {
                 frag.attach_pts.push_back(aid);
             }
@@ -2546,19 +2540,6 @@ fn place_multiring_nonfused_component_rdkit_like(
         let cip_ranks = rdkit_cip_ranks_for_depict(mol);
         let attach = frag.attach_pts.make_contiguous();
         rdkit_rank_atoms_by_rank(mol, attach, degree, &cip_ranks);
-        if std::env::var_os("COSMOLKIT_DEBUG_ATTACH").is_some()
-            && ((mol.atoms.len() == 26 && mol.bonds.len() == 28)
-                || (mol.atoms.len() == 33 && mol.bonds.len() == 37))
-        {
-            eprintln!(
-                "DEBUG attach {:?} ranks {:?}",
-                frag.attach_pts,
-                frag.attach_pts
-                    .iter()
-                    .map(|&a| (a, cip_ranks.get(a).copied()))
-                    .collect::<Vec<_>>()
-            );
-        }
     }
 
     fn find_num_neigh_frag(frag: &DepictFrag, pt: (f64, f64), radius: f64) -> i32 {
@@ -2717,31 +2698,10 @@ fn place_multiring_nonfused_component_rdkit_like(
         if frag.atoms.contains_key(&aid) || !frag.atoms.contains_key(&to_aid) {
             return None;
         }
-        if std::env::var_os("COSMOLKIT_DEBUG_ATTACH").is_some()
-            && mol.atoms.len() == 33
-            && mol.bonds.len() == 37
-            && to_aid == 13
-        {
-            eprintln!(
-                "DEBUG add_non_ring before to_aid=13 aid={aid} state={:?}",
-                frag.atoms.get(&to_aid)
-            );
-        }
         if frag.atoms.get(&to_aid)?.angle > 0.0 {
             add_atom_to_atom_with_ang_frag(frag, aid, to_aid)?;
         } else {
             add_atom_to_atom_with_no_ang_frag(frag, mol, degree, aid, to_aid)?;
-        }
-        if std::env::var_os("COSMOLKIT_DEBUG_ATTACH").is_some()
-            && mol.atoms.len() == 33
-            && mol.bonds.len() == 37
-            && to_aid == 13
-        {
-            eprintln!(
-                "DEBUG add_non_ring after to_aid=13 aid={aid} parent={:?} child={:?}",
-                frag.atoms.get(&to_aid),
-                frag.atoms.get(&aid)
-            );
         }
         if let Some(st) = frag.atoms.get_mut(&to_aid) {
             st.pending.retain(|&x| x != aid);
@@ -2967,46 +2927,62 @@ fn place_multiring_nonfused_component_rdkit_like(
     ) -> Option<()> {
         add_non_ring_atom_frag(master, mol, comp_set, adjacency, degree, nbr_aid, to_aid)?;
         add_non_ring_atom_frag(other, mol, comp_set, adjacency, degree, to_aid, nbr_aid)?;
-        let ref1 = master.atoms.get(&to_aid)?.loc;
-        let ref2 = master.atoms.get(&nbr_aid)?.loc;
-        let oth1 = other.atoms.get(&to_aid)?.loc;
-        let oth2 = other.atoms.get(&nbr_aid)?.loc;
-        transform_frag_two_point(other, ref1, ref2, oth1, oth2)?;
-        reflect_if_necessary_density(master, other, to_aid, nbr_aid);
+        merge_with_common_frag(
+            master,
+            other,
+            mol,
+            comp_set,
+            adjacency,
+            degree,
+            vec![to_aid, nbr_aid],
+        )
+    }
 
-        let common = [to_aid, nbr_aid];
-        let mut to_update = Vec::new();
-        for (&aid, ost) in &other.atoms {
-            if !common.contains(&aid) {
-                master.atoms.insert(aid, ost.clone());
-                if !ost.pending.is_empty() && !master.attach_pts.iter().any(|&x| x == aid) {
-                    master.attach_pts.push_back(aid);
-                }
-            } else if let Some(mst) = master.atoms.get_mut(&aid) {
-                if ost.cis_trans_nbr.is_some() {
-                    mst.cis_trans_nbr = ost.cis_trans_nbr;
-                    mst.normal = ost.normal;
-                    mst.ccw = ost.ccw;
-                }
-                if ost.angle > 0.0 {
-                    mst.angle = ost.angle;
-                    mst.nbr1 = ost.nbr1;
-                    mst.nbr2 = ost.nbr2;
-                }
-            }
-            to_update.push(aid);
-        }
-        for aid in common {
-            to_update.push(aid);
-        }
-        to_update.sort_unstable();
-        to_update.dedup();
-        for aid in to_update {
-            if master.atoms.contains_key(&aid) {
-                update_new_neighs_for_frag(master, mol, comp_set, adjacency, degree, aid);
+    fn find_common_atoms(master: &DepictFrag, other: &DepictFrag) -> Vec<usize> {
+        let mut common = Vec::new();
+        for aid in master.atoms.keys() {
+            if other.atoms.contains_key(aid) {
+                common.push(*aid);
             }
         }
-        other.done = true;
+        common
+    }
+
+    fn merge_frags_with_common(
+        master: &mut DepictFrag,
+        frags: &mut Vec<DepictFrag>,
+        mol: &Molecule,
+        comp_set: &std::collections::BTreeSet<usize>,
+        adjacency: &[Vec<usize>],
+        degree: &[usize],
+    ) -> Option<()> {
+        loop {
+            let mut found = None;
+            for (idx, frag) in frags.iter().enumerate() {
+                if frag.done {
+                    continue;
+                }
+                let common = find_common_atoms(master, frag);
+                if !common.is_empty() {
+                    found = Some((idx, common));
+                    break;
+                }
+            }
+            let Some((idx, common)) = found else { break };
+            let mut other = frags.remove(idx);
+            let common_for_cleanup = common.clone();
+            merge_with_common_frag(master, &mut other, mol, comp_set, adjacency, degree, common)?;
+            for cai in common_for_cleanup {
+                let remove_attach = master
+                    .atoms
+                    .get(&cai)
+                    .is_some_and(|st| st.pending.is_empty())
+                    && master.attach_pts.iter().any(|&x| x == cai);
+                if remove_attach {
+                    master.attach_pts.retain(|&x| x != cai);
+                }
+            }
+        }
         Some(())
     }
 
@@ -3561,7 +3537,101 @@ fn place_multiring_nonfused_component_rdkit_like(
 
             let d2nodes = rdkit_pick_d2_nodes(mol, comp, &atom_degrees, &active_bonds);
             if d2nodes.is_empty() {
-                break;
+                let d3node = comp.iter().copied().find(|&cand| {
+                    !done_atoms[cand]
+                        && atom_degrees[cand] == 3
+                        && mol.bonds.iter().any(|bond| {
+                            active_bonds[bond.index]
+                                && (bond.begin_atom == cand || bond.end_atom == cand)
+                        })
+                });
+                let Some(cand) = d3node else { break };
+
+                let forbidden = vec![false; mol.atoms.len()];
+                let srings = rdkit_smallest_rings_bfs(mol, cand, &active_bonds, &forbidden);
+                for ring in &srings {
+                    let mut inv = ring.clone();
+                    inv.sort_unstable();
+                    if invariants.insert(inv) {
+                        rings.push(ring.clone());
+                    }
+                }
+
+                let mut active_neighbors = Vec::<usize>::new();
+                for bond in &mol.bonds {
+                    if !active_bonds[bond.index] {
+                        continue;
+                    }
+                    if bond.begin_atom == cand {
+                        active_neighbors.push(bond.end_atom);
+                    } else if bond.end_atom == cand {
+                        active_neighbors.push(bond.begin_atom);
+                    }
+                }
+                if active_neighbors.len() >= 3 && srings.len() < 3 && !srings.is_empty() {
+                    let n1 = active_neighbors[0];
+                    let n2 = active_neighbors[1];
+                    let n3 = active_neighbors[2];
+                    if srings.len() == 2 {
+                        let f = if srings[0].contains(&n1) && srings[1].contains(&n1) {
+                            Some(n1)
+                        } else if srings[0].contains(&n2) && srings[1].contains(&n2) {
+                            Some(n2)
+                        } else if srings[0].contains(&n3) && srings[1].contains(&n3) {
+                            Some(n3)
+                        } else {
+                            None
+                        };
+                        if let Some(f) = f {
+                            let mut forb = vec![false; mol.atoms.len()];
+                            forb[f] = true;
+                            for ring in rdkit_smallest_rings_bfs(mol, cand, &active_bonds, &forb) {
+                                let mut inv = ring.clone();
+                                inv.sort_unstable();
+                                if invariants.insert(inv) {
+                                    rings.push(ring);
+                                }
+                            }
+                        }
+                    } else if srings.len() == 1 {
+                        let (f1, f2) = if !srings[0].contains(&n1) {
+                            (n2, n3)
+                        } else if !srings[0].contains(&n2) {
+                            (n1, n3)
+                        } else {
+                            (n1, n2)
+                        };
+                        let mut forb = vec![false; mol.atoms.len()];
+                        forb[f2] = true;
+                        for ring in rdkit_smallest_rings_bfs(mol, cand, &active_bonds, &forb) {
+                            let mut inv = ring.clone();
+                            inv.sort_unstable();
+                            if invariants.insert(inv) {
+                                rings.push(ring);
+                            }
+                        }
+                        let mut forb = vec![false; mol.atoms.len()];
+                        forb[f1] = true;
+                        for ring in rdkit_smallest_rings_bfs(mol, cand, &active_bonds, &forb) {
+                            let mut inv = ring.clone();
+                            inv.sort_unstable();
+                            if invariants.insert(inv) {
+                                rings.push(ring);
+                            }
+                        }
+                    }
+                }
+
+                done_atoms[cand] = true;
+                n_atoms_done += 1;
+                rdkit_trim_bonds(
+                    mol,
+                    cand,
+                    &mut changed,
+                    &mut atom_degrees,
+                    &mut active_bonds,
+                );
+                continue;
             }
 
             for &cand in &d2nodes {
@@ -3590,24 +3660,78 @@ fn place_multiring_nonfused_component_rdkit_like(
         rings
     }
 
-    fn canonical_cycle(mut c: Vec<usize>) -> Vec<usize> {
-        let min_pos = c
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, v)| **v)
-            .map(|(i, _)| i)
-            .unwrap_or(0);
-        c.rotate_left(min_pos);
-        let mut rev = c.clone();
-        rev.reverse();
-        let min_pos_rev = rev
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, v)| **v)
-            .map(|(i, _)| i)
-            .unwrap_or(0);
-        rev.rotate_left(min_pos_rev);
-        if rev < c { rev } else { c }
+    fn ring_atom_invariant(mut ring: Vec<usize>) -> Vec<usize> {
+        ring.sort_unstable();
+        ring
+    }
+
+    fn cycle_edges(cycle: &[usize]) -> Vec<(usize, usize)> {
+        (0..cycle.len())
+            .map(|i| {
+                let a = cycle[i];
+                let b = cycle[(i + 1) % cycle.len()];
+                if a <= b { (a, b) } else { (b, a) }
+            })
+            .collect()
+    }
+
+    fn add_rdkit_symm_sssr_extra_rings(
+        cycles: &mut Vec<Vec<usize>>,
+        extra_candidates: &[Vec<usize>],
+    ) {
+        let mut existing = std::collections::BTreeSet::<Vec<usize>>::new();
+        for cycle in cycles.iter() {
+            existing.insert(ring_atom_invariant(cycle.clone()));
+        }
+        let mut bond_counts = std::collections::BTreeMap::<(usize, usize), usize>::new();
+        let mut cycle_edges_cache = Vec::<Vec<(usize, usize)>>::new();
+        for cycle in cycles.iter() {
+            let edges = cycle_edges(cycle);
+            for edge in &edges {
+                *bond_counts.entry(*edge).or_insert(0) += 1;
+            }
+            cycle_edges_cache.push(edges);
+        }
+
+        for extra in extra_candidates {
+            let canonical = ring_atom_invariant(extra.clone());
+            if existing.contains(&canonical) {
+                continue;
+            }
+            let extra_edges = cycle_edges(extra);
+            let extra_edge_set: std::collections::BTreeSet<(usize, usize)> =
+                extra_edges.iter().copied().collect();
+            let mut accepted = false;
+            for ring_edges in &cycle_edges_cache {
+                if ring_edges.len() != extra_edges.len() {
+                    continue;
+                }
+                let mut share_bond = false;
+                let mut replaces_all_unique_bonds = true;
+                for bond_id in ring_edges {
+                    let bond_count = *bond_counts.get(bond_id).unwrap_or(&0);
+                    if bond_count == 1 || !share_bond {
+                        if extra_edge_set.contains(bond_id) {
+                            share_bond = true;
+                        } else if bond_count == 1 {
+                            replaces_all_unique_bonds = false;
+                        }
+                    }
+                }
+                if share_bond && replaces_all_unique_bonds {
+                    accepted = true;
+                    break;
+                }
+            }
+            if accepted {
+                existing.insert(canonical);
+                cycles.push(extra.clone());
+                cycle_edges_cache.push(extra_edges.clone());
+                for edge in extra_edges {
+                    *bond_counts.entry(edge).or_insert(0) += 1;
+                }
+            }
+        }
     }
 
     let ring_bond_count = mol
@@ -3637,9 +3761,9 @@ fn place_multiring_nonfused_component_rdkit_like(
             cycles: &mut Vec<Vec<usize>>,
         ) {
             if path.len() >= 3 && adjacency[cur].contains(&start) {
-                let c = canonical_cycle(path.clone());
-                if seen.insert(c.clone()) {
-                    cycles.push(c);
+                let key = ring_atom_invariant(path.clone());
+                if seen.insert(key) {
+                    cycles.push(path.clone());
                 }
             }
             if path.len() == MAX_RING_ENUM {
@@ -3691,31 +3815,23 @@ fn place_multiring_nonfused_component_rdkit_like(
         cycles.push(rdkit_single_ring_order(mol, &ring_set, &deg_in_comp)?);
     } else if cycles.len() < target_cycle_count {
         let mut covered_edges = std::collections::BTreeSet::<(usize, usize)>::new();
-        for cyc in all_cycles {
-            let edges: Vec<(usize, usize)> = (0..cyc.len())
-                .map(|i| {
-                    let a = cyc[i];
-                    let b = cyc[(i + 1) % cyc.len()];
-                    if a <= b { (a, b) } else { (b, a) }
-                })
-                .collect();
+        for cyc in &all_cycles {
+            let edges = cycle_edges(cyc);
             if cycles.is_empty() || edges.iter().any(|edge| !covered_edges.contains(edge)) {
                 for edge in edges {
                     covered_edges.insert(edge);
                 }
-                cycles.push(cyc);
+                cycles.push(cyc.clone());
             }
             if cycles.len() == target_cycle_count {
                 break;
             }
         }
     }
+    add_rdkit_symm_sssr_extra_rings(&mut cycles, &all_cycles);
 
     if cycles.is_empty() {
         return None;
-    }
-    if std::env::var_os("COSMOLKIT_DEBUG_RING_CYCLES").is_some() {
-        eprintln!("DEBUG cycles: {:?}", cycles);
     }
     let embedded_ring_set: std::collections::BTreeSet<usize> =
         cycles.iter().flatten().copied().collect();
@@ -3801,6 +3917,7 @@ fn place_multiring_nonfused_component_rdkit_like(
     master.done = true;
 
     while !master.attach_pts.is_empty() || !non_ring_atoms.is_empty() {
+        merge_frags_with_common(&mut master, &mut frags, mol, &comp_set, adjacency, degree)?;
         if master.attach_pts.is_empty() {
             unimplemented!("RDKit fallback to start a new non-ring fragment after ring expansion");
         }
@@ -4184,8 +4301,10 @@ fn bond_stereo_code_with_direction(bond: &crate::Bond, direction: BondDirection)
     }
 }
 
-fn pick_bonds_to_wedge_rdkit_subset(mol: &Molecule) -> HashMap<usize, usize> {
+pub(crate) fn pick_bonds_to_wedge_rdkit_subset(mol: &Molecule) -> HashMap<usize, usize> {
     const NO_NBRS: i32 = 100;
+    let atom_rings = rdkit_atom_rings_for_wedging(mol);
+    let bond_rings = rdkit_bond_rings_for_wedging(mol, &atom_rings);
     let mut n_chiral_nbrs = vec![NO_NBRS; mol.atoms.len()];
 
     for atom in &mol.atoms {
@@ -4197,6 +4316,10 @@ fn pick_bonds_to_wedge_rdkit_subset(mol: &Molecule) -> HashMap<usize, usize> {
         }
         n_chiral_nbrs[atom.index] = 0;
         for nb in atom_neighbors(mol, atom.index) {
+            if mol.atoms[nb].atomic_num == 1 {
+                n_chiral_nbrs[atom.index] -= 10;
+                continue;
+            }
             if matches!(
                 mol.atoms[nb].chiral_tag,
                 ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
@@ -4221,13 +4344,43 @@ fn pick_bonds_to_wedge_rdkit_subset(mol: &Molecule) -> HashMap<usize, usize> {
         ) {
             break;
         }
-        if let Some(bid) =
-            pick_bond_to_wedge_rdkit_subset(idx, mol, &n_chiral_nbrs, &wedge, NO_NBRS)
-        {
+        if let Some(bid) = pick_bond_to_wedge_rdkit_subset(
+            idx,
+            mol,
+            &n_chiral_nbrs,
+            &wedge,
+            NO_NBRS,
+            &atom_rings,
+            &bond_rings,
+        ) {
             wedge.insert(bid, idx);
         }
     }
     wedge
+}
+
+fn rdkit_atom_rings_for_wedging(mol: &Molecule) -> Vec<Vec<usize>> {
+    crate::distgeom::rdkit_atom_rings(mol)
+}
+
+fn rdkit_bond_rings_for_wedging(mol: &Molecule, atom_rings: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    atom_rings
+        .iter()
+        .map(|ring| {
+            let mut out = Vec::new();
+            for i in 0..ring.len() {
+                let a1 = ring[i];
+                let a2 = ring[(i + 1) % ring.len()];
+                if let Some(bond) = mol.bonds.iter().find(|bond| {
+                    (bond.begin_atom == a1 && bond.end_atom == a2)
+                        || (bond.begin_atom == a2 && bond.end_atom == a1)
+                }) {
+                    out.push(bond.index);
+                }
+            }
+            out
+        })
+        .collect()
 }
 
 fn pick_bond_to_wedge_rdkit_subset(
@@ -4236,6 +4389,8 @@ fn pick_bond_to_wedge_rdkit_subset(
     n_chiral_nbrs: &[i32],
     already: &HashMap<usize, usize>,
     no_nbrs: i32,
+    atom_rings: &[Vec<usize>],
+    bond_rings: &[Vec<usize>],
 ) -> Option<usize> {
     let mut best: Option<(i32, usize)> = None;
     for bond in &mol.bonds {
@@ -4263,8 +4418,18 @@ fn pick_bond_to_wedge_rdkit_subset(
             if n_chiral_nbrs[other_idx] < no_nbrs {
                 s -= 100_000 * n_chiral_nbrs[other_idx];
             }
+            s += 10_000
+                * atom_rings
+                    .iter()
+                    .filter(|ring| ring.contains(&other_idx))
+                    .count() as i32;
+            s += 20_000
+                * bond_rings
+                    .iter()
+                    .filter(|ring| ring.contains(&bond.index))
+                    .count() as i32;
             let (has_double, has_known_double, has_any_double) =
-                get_double_bond_presence(mol, other_idx, bond.index);
+                get_double_bond_presence(mol, other_idx, usize::MAX);
             s += 11_000 * i32::from(has_double);
             s += 12_000 * i32::from(has_known_double);
             s += 23_000 * i32::from(has_any_double);
@@ -4279,7 +4444,7 @@ fn pick_bond_to_wedge_rdkit_subset(
     best.map(|(_, bid)| bid)
 }
 
-fn determine_bond_wedge_state_rdkit_subset(
+pub(crate) fn determine_bond_wedge_state_rdkit_subset(
     bond: &crate::Bond,
     wedge: &HashMap<usize, usize>,
     coords: &[glam::DVec2],
@@ -4410,7 +4575,7 @@ fn get_double_bond_presence(
             has_double = true;
             if matches!(b.stereo, BondStereo::Any) {
                 has_any_double = true;
-            } else {
+            } else if matches!(b.stereo, BondStereo::Cis | BondStereo::Trans) {
                 has_known_double = true;
             }
         }
@@ -4835,7 +5000,7 @@ mod tests {
         for i in 0..ours.atoms.len() {
             let ours_symbol = &ours.atoms[i];
             let expected_symbol = &expected.atoms[i];
-            if !atom_symbols_equivalent(&ours_symbol, &expected_symbol) {
+            if !atom_symbols_equivalent(ours_symbol, expected_symbol) {
                 return false;
             }
         }

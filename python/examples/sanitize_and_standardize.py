@@ -1,7 +1,7 @@
-"""Ideal COSMolKit usage: explicit sanitize/perception pipeline.
+"""Target COSMolKit sanitize/perception pipeline.
 
-This script demonstrates the target public API shape only.
-Current bindings are placeholders and will raise NotImplementedError.
+This example shows the intended explicit workflow shape. The sanitize and
+perception APIs used here are not implemented yet.
 """
 
 from cosmolkit import Molecule

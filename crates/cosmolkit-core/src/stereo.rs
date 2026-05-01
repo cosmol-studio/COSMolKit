@@ -476,6 +476,13 @@ impl Molecule {
     }
 }
 
+pub(crate) fn cache_rdkit_legacy_cip_ranks(mol: &mut Molecule) {
+    let ranks = mol.rdkit_legacy_stereo_atom_props(true);
+    for (atom, props) in mol.atoms.iter_mut().zip(ranks) {
+        atom.rdkit_cip_rank = props.cip_rank;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{LigandRef, TetrahedralStereo};

@@ -46,6 +46,7 @@ pub(crate) fn parse_smiles(smiles: &str) -> Result<Molecule, SmilesParseError> {
     prune_noncyclic_aromatic_bonds_rdkit_like(&mut mol);
     assign_double_bond_stereo(&mut mol);
     canonicalize_double_bond_stereo_by_cip_rdkit_like(&mut mol);
+    crate::stereo::cache_rdkit_legacy_cip_ranks(&mut mol);
     mol.rebuild_adjacency();
     Ok(mol)
 }
@@ -1775,6 +1776,7 @@ impl<'a> Parser<'a> {
                 chiral_tag: ChiralTag::Unspecified,
                 isotope: None,
                 atom_map_num: None,
+                rdkit_cip_rank: None,
             });
         }
         Err(self.error("unsupported atom token"))
@@ -1795,6 +1797,7 @@ impl<'a> Parser<'a> {
                 chiral_tag: ChiralTag::Unspecified,
                 isotope,
                 atom_map_num: None,
+                rdkit_cip_rank: None,
             }
         } else if self.consume_if('*') {
             Atom {
@@ -1808,6 +1811,7 @@ impl<'a> Parser<'a> {
                 chiral_tag: ChiralTag::Unspecified,
                 isotope,
                 atom_map_num: None,
+                rdkit_cip_rank: None,
             }
         } else if let Some((atomic_num, aromatic, consumed)) = self.match_bracket_atom_symbol() {
             self.pos += consumed;
@@ -1822,6 +1826,7 @@ impl<'a> Parser<'a> {
                 chiral_tag: ChiralTag::Unspecified,
                 isotope,
                 atom_map_num: None,
+                rdkit_cip_rank: None,
             }
         } else {
             return Err(self.error("unsupported bracket atom"));
@@ -1851,7 +1856,7 @@ impl<'a> Parser<'a> {
             };
         }
         if self.consume_if(':') {
-            atom.atom_map_num = Some(self.parse_required_number()? as u32);
+            atom.atom_map_num = Some(self.parse_required_number()?);
         }
         self.expect_char(']')?;
         Ok(atom)
@@ -1910,7 +1915,7 @@ impl<'a> Parser<'a> {
                 if !self.consume_if(')') {
                     return None;
                 }
-                return Some(number as u32);
+                return Some(number);
             }
             let d1 = self.parse_single_digit()? as u32;
             let d2 = self.parse_single_digit()? as u32;

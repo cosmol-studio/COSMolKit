@@ -22,15 +22,23 @@ The current binding surface is useful for:
 
 - SMILES parsing with `Molecule.from_smiles()`
 - optional RDKit bridge with `Molecule.from_rdkit()` when `rdkit` is installed
+- SDF loading with `Molecule.read_sdf()`
 - atom and bond graph inspection with RDKit-like feature names
+- chiral center inspection with `Molecule.find_chiral_centers()`
 - hydrogen add/remove transforms
 - Kekulization
 - tetrahedral stereo inspection
 - 2D coordinate generation and coordinate access
+- molecule length / basic repr helpers
 - SMILES export
 - distance-geometry bounds matrix export
+- SVG export with `Molecule.to_svg()`
+- SVG file export with `Molecule.write_svg()`
+- PNG file export with `Molecule.write_png()`
 - SDF read/write and SDF string export
+- SDF directory export with `Molecule.write_sdf_to_directory()`
 - explicit edit context with `Molecule.edit()`
+- module version helpers via `cosmolkit.rust_version()` and `cosmolkit.core_version()`
 
 ## Quick Start
 
@@ -99,6 +107,21 @@ loaded = Molecule.read_sdf("ethanol.sdf")
 print(loaded)
 ```
 
+## SVG Rendering
+
+```python
+from cosmolkit import Molecule
+
+mol = Molecule.from_smiles("c1ccccc1O").compute_2d_coords()
+svg = mol.to_svg(width=400, height=300)
+mol.write_svg("phenol.svg", width=400, height=300)
+mol.write_png("phenol.png", width=400, height=300)
+```
+
+`Molecule.to_svg()` returns the SVG string directly. `Molecule.write_svg()`
+and `Molecule.write_png()` perform the file IO inside the Rust binding.
+See `python/examples/image_exports.py` for a runnable file-export example.
+
 ## SMILES Export and DG Bounds
 
 ```python
@@ -147,7 +170,7 @@ mol = Molecule.from_rdkit(rd_mol)
 print(mol.to_smiles())
 ```
 
-## Not Implemented Yet
+## Planned APIs
 
 The following API directions are planned but not currently available:
 
@@ -156,10 +179,12 @@ The following API directions are planned but not currently available:
 - substructure search
 - fingerprint generation
 - 3D embedding and force-field optimization
-- alignment APIs
+- alignment result APIs beyond the current minimal surface
 
 ## Development Status
 
 COSMolKit is not a full RDKit replacement today. The Python package is being
 built through strict parity testing against RDKit behavior where compatibility
-is the goal.
+is the goal. The currently usable binding surface is centered on deterministic
+non-inplace molecule transforms, graph/stereo inspection, 2D coordinates,
+SMILES/SDF IO, DG bounds export, SVG rendering, and explicit editing.

@@ -1,7 +1,7 @@
-"""Ideal COSMolKit usage: substructure search + fingerprint similarity.
+"""Target COSMolKit usage: substructure search + fingerprint similarity.
 
-This script demonstrates the target public API shape only.
-Current bindings are placeholders and will raise NotImplementedError.
+This example shows planned query and fingerprint APIs that are not implemented
+yet.
 """
 
 from cosmolkit import Molecule

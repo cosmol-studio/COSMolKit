@@ -102,4 +102,21 @@ impl Molecule {
     pub fn dg_bounds_matrix(&self) -> Result<Vec<Vec<f64>>, crate::DgBoundsError> {
         crate::distgeom::dg_bounds_matrix(self)
     }
+
+    /// Serialize this molecule to RDKit-style SVG.
+    pub fn to_svg(&self, width: u32, height: u32) -> Result<String, crate::SvgDrawError> {
+        crate::draw::mol_to_svg(self, width, height)
+    }
+
+    /// Rasterize this molecule's RDKit-style SVG drawing into PNG bytes.
+    pub fn to_png(&self, width: u32, height: u32) -> Result<Vec<u8>, crate::SvgDrawError> {
+        crate::draw::mol_to_png(self, width, height)
+    }
+
+    /// Return the RDKit `PrepareMolForDrawing()`-style prepared drawing snapshot.
+    pub fn prepare_for_drawing_parity(
+        &self,
+    ) -> Result<crate::PreparedDrawMolecule, crate::SvgDrawError> {
+        crate::draw::prepare_mol_for_drawing_parity(self)
+    }
 }

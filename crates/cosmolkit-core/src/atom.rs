@@ -28,4 +28,7 @@ pub struct Atom {
     pub isotope: Option<u16>,
     /// Optional atom-map number from bracket SMILES.
     pub atom_map_num: Option<u32>,
+    /// Cached RDKit `_CIPRank` atom property assigned by legacy stereochemistry.
+    #[doc(hidden)]
+    pub rdkit_cip_rank: Option<i64>,
 }

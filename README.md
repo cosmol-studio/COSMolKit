@@ -28,15 +28,26 @@ pip install cosmolkit
 
 **COSMolKit** is a Rust toolkit for core cheminformatics and structural biology data processing.
 
-At the Python API level, COSMolKit is designed to avoid ambiguous inplace semantics:
+### Predictable transformations
+
+COSMolKit is built around deterministic, predictable transformations instead of ambiguous inplace operations. Molecule operations return new molecule objects and never modify the input unless an API is explicitly named as an editing or inplace API.
+
+```python
+mol = Molecule.from_smiles("CCO")
+mol_h = mol.add_hydrogens()
+
+# mol is unchanged
+```
+
+This is a core design difference from RDKit-style APIs where callers often need to remember which operations mutate input objects and which return copies. In COSMolKit, normal transformation calls have value-like semantics: input molecules remain unchanged, outputs are explicit, and data flow is visible from the call site.
+
+At the Python API level, this means:
 
 - molecule operations return a new value by default
 - public Python APIs do not rely on ambiguous inplace mutation semantics
 - explicit editing is separated from normal transformation calls
 
-This is an intentional design difference from legacy wrapper-style chemistry APIs where callers must remember which operations mutate input objects and which return copies. COSMolKit aims to make Python-side data flow obvious from the call site itself.
-
-Under the hood, the intended implementation strategy is Rust-side **copy-on-write** storage, so unchanged topology / conformer / property data can remain shared while preserving the same non-inplace Python semantics.
+Under the hood, the intended implementation strategy is Rust-side **copy-on-write** storage, so unchanged topology / conformer / property data can remain shared. Transformations remain efficient without requiring full deep copies, while preserving the same deterministic non-inplace semantics at the API boundary.
 
 The project focuses on providing a practical and reliable subset of functionality for:
 
@@ -44,12 +55,15 @@ The project focuses on providing a practical and reliable subset of functionalit
 - graph-based molecular representation  
 - core chemical operations such as valence handling, aromaticity, ring perception, and Kekulization  
 - structural biology file parsing such as PDB and mmCIF  
+- AI-native molecular representations such as model-ready graph tensors, internal coordinates, torsion features, and molecular tokenization  
 
 COSMolKit is designed as a **systems-level library with first-class Python bindings**, allowing it to be directly integrated into existing scientific workflows while maintaining a consistent API across Rust and Python. Leveraging Rust’s compilation model, COSMolKit can be deployed across native and WebAssembly (WASM) targets, enabling seamless use in both backend systems and browser-based environments.
 
 A key design goal is to achieve **behavioral consistency with established tools such as RDKit** for core operations. Through extensive consistency testing and validation on real-world datasets, COSMolKit aims to reproduce identical results for critical procedures (e.g., Kekulization, aromaticity, and valence handling), making it a potential **drop-in replacement for common RDKit-based workflows**.
 
 The overall goal is to provide a **portable, reliable, and extensible foundation** for chemistry and biomolecular structure data processing.
+
+Beyond RDKit-compatible core behavior, COSMolKit also aims to provide modern AI-oriented molecular APIs that traditional cheminformatics toolkits do not expose as first-class concepts. Planned directions include model-ready graph export, ring-aware internal coordinates, torsion/chirality-aware diffusion helpers, and molecular tokenization for 3D transformers and generative models. The design sketch for this direction is documented in `ai_native_features_sketch.md`.
 
 ---
 
@@ -58,8 +72,8 @@ The overall goal is to provide a **portable, reliable, and extensible foundation
 COSMolKit is currently focused on the chemistry core. The repository now uses a two-crate Rust layout: `cosmolkit-core` (core implementation, including chemistry perception, IO, and biomolecular primitives) and `cosmolkit` (facade re-export crate), plus RDKit-based regression tests for SMILES parsing and writing, atom/bond feature parity, hydrogen expansion, Kekulization, distance-geometry bounds, MOL/SDF output, and tetrahedral stereo geometry checks.
 
 RDKit 2026.03.1 is used as the active behavioral reference, with `third_party/rdkit` pinned to `Release_2026_03_1` (`351f8f378f8ad6bbd517980c38896e66bf907af8`). The implementation is still a subset and is being expanded by source-level parity work rather than broad API coverage.
-As of 2026-04-30, the Rust chemistry test suite is green against the active RDKit 2026.03.1 oracle for the currently tracked corpus. Passing parity areas include graph features, add-H / remove-H roundtrip features, tetrahedral stereo geometry, DG bounds matrices, Kekulization with both aromatic-flag branches, canonical/non-canonical `MolToSmiles()` output branches, strict V2000 molblock coordinate/topology parity, and SDF V2000/V3000 roundtrip checks. Tetrahedral stereo has an internal ordered-ligand representation (`TetrahedralStereo`) derived from the existing RDKit-compatible atom chiral tags, with a Rust integration test that validates positive oriented volume against RDKit ETKDGv3 coordinates (`seed=42`) on the shared chiral corpus. The representation contract is documented in `tetrahedral_stereo_representation.md`.
-The repository also includes a PyO3 package under `python/`, along with a GitHub Actions workflow for building and publishing Python wheels to PyPI. The binding layer remains partial overall, but now includes graph access, `Molecule.tetrahedral_stereo()`, hydrogen add/remove APIs, 2D coordinate generation, SMILES export, and SDF read/write plus string/dir export helpers.
+As of 2026-05-01, the Rust chemistry test suite is green against the active RDKit 2026.03.1 oracle for the currently tracked corpus. Passing parity areas include graph features, add-H / remove-H roundtrip features, tetrahedral stereo geometry, DG bounds matrices, Kekulization with both aromatic-flag branches, canonical/non-canonical `MolToSmiles()` output branches, strict V2000 molblock coordinate/topology parity, and SDF V2000/V3000 roundtrip checks. Tetrahedral stereo has an internal ordered-ligand representation (`TetrahedralStereo`) derived from the existing RDKit-compatible atom chiral tags, with a Rust integration test that validates positive oriented volume against RDKit ETKDGv3 coordinates (`seed=42`) on the shared chiral corpus. The representation contract is documented in `tetrahedral_stereo_representation.md`.
+The repository also includes a PyO3 package under `python/`, along with a GitHub Actions workflow for building and publishing Python wheels to PyPI. The binding layer remains partial overall, but it now exposes SMILES parsing, `Molecule.from_rdkit()`, atom/bond graph inspection, chiral-center and tetrahedral stereo inspection, hydrogen add/remove transforms, 2D coordinate generation and coordinate readout, SMILES export, DG bounds export, SVG rendering via `Molecule.to_svg()`, direct SVG/PNG file export via `Molecule.write_svg()` and `Molecule.write_png()`, SDF read/write plus string/directory export helpers, and an explicit `Molecule.edit()` workflow for controlled mutation.
 
 ---
 
@@ -85,6 +99,13 @@ The repository also includes a PyO3 package under `python/`, along with a GitHub
 - hetero atom and ligand record parsing
 - biomolecular structure traversal and query utilities
 
+### AI-native molecular representation
+- model-ready graph export with versioned node and edge feature schemas
+- geometry-aware graph features with coordinates, chirality, torsions, and ring annotations
+- internal coordinate conversion through Z-matrices, bond-angle-torsion trees, torsion graphs, and ring-aware constraints
+- torsion and chirality-aware diffusion utilities for periodic losses, noise schedules, and reconstruction checks
+- molecular tokenization for SMILES, atoms, bonds, fragments, torsions, 3D geometry, pharmacophores, rings, and scaffolds
+
 ---
 
 ## Python Binding Strategy
@@ -94,7 +115,7 @@ Python bindings are a **first-class feature**, not an afterthought.
 - All core modules are designed with binding compatibility in mind
 - Exposed via PyO3
 - API parity between Rust and Python is maintained where possible
-- public Python molecule operations are intentionally non-inplace by default
+- public Python molecule operations are intentionally deterministic and non-inplace by default
 - internal performance work should happen below the API boundary, not by leaking mutation ambiguity to users
 - Intended to support **drop-in replacement workflows** for RDKit / Biopython in common tasks
 
@@ -121,6 +142,8 @@ This is ensured through:
 - strict validation of edge cases (aromatic rings, charged systems, fused systems, etc.)
 
 The long-term goal is to make COSMolKit usable as an **in-place replacement** for RDKit in selected workflows.
+
+For AI-native features, RDKit compatibility is the correctness floor rather than the API ceiling. COSMolKit should preserve RDKit-compatible chemistry semantics where they define molecular facts, while exposing COSMolKit-native schemas for graph tensors, internal coordinates, torsion utilities, diffusion helpers, and tokenizers.
 
 ---
 
@@ -237,6 +260,24 @@ This phase defines the correctness baseline of the project.
 
 ---
 
+## Phase 8 — AI-Native Molecular Representations
+**Goal:** expose model-ready molecular data structures for modern ML workflows
+
+- [ ] versioned `Molecule.to_graph()` export with `cosmol-v1` node and edge feature schemas
+- [ ] optional graph fields for coordinates, chirality, torsions, rings, fragments, and rotatable bonds
+- [ ] Python output adapters for NumPy dictionaries and graph-learning libraries
+- [ ] `Molecule.to_internal_coordinates()` and `InternalCoordinates.to_cartesian()` APIs
+- [ ] Z-matrix and bond-angle-torsion tree support
+- [ ] ring-aware internal coordinates and torsion graph metadata
+- [ ] torsion/chirality-aware diffusion utilities with periodic angle losses and sin/cos encodings
+- [ ] chirality-preserving reconstruction checks and ring torsion constraints
+- [ ] `Molecule.to_tokens()` with versioned graph, fragment, torsion, 3D geometry, and pharmacophore token schemes
+
+Design sketch:
+- `ai_native_features_sketch.md`
+
+---
+
 ## Vision
 
 COSMolKit aims to become a reliable Rust foundation for:
@@ -245,6 +286,7 @@ COSMolKit aims to become a reliable Rust foundation for:
 - molecular graph manipulation
 - core chemical perception
 - biomolecular structure parsing
+- AI-native molecular representation, internal coordinates, diffusion utilities, and tokenization
 
 with:
 

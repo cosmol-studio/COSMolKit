@@ -1,8 +1,4 @@
-"""Ideal COSMolKit usage: immutable-first + explicit edit context.
-
-This script demonstrates the target public API shape only.
-Current bindings are placeholders and will raise NotImplementedError.
-"""
+"""COSMolKit usage: immutable-first transforms + explicit edit context."""
 
 from cosmolkit import Molecule
 

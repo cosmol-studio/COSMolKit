@@ -1,7 +1,7 @@
-"""Ideal COSMolKit usage: 3D pipeline + explicit alignment mutation control.
+"""Target COSMolKit usage: 3D pipeline + pure alignment query.
 
-This script demonstrates the target public API shape only.
-Current bindings are placeholders and will raise NotImplementedError.
+This example shows planned 3D embedding, optimization, and alignment APIs that
+are not implemented yet.
 """
 
 from cosmolkit import Alignment, Molecule
@@ -23,8 +23,6 @@ candidates = [
 best = Alignment.find_most_similar_fragment(
     reference=ref,
     candidates=candidates,
-    mutate_reference=False,
-    mutate_candidates=False,
 )
 
 _ = (mol3d, best)

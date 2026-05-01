@@ -10,3 +10,4 @@ python/cosmolkit.pyi
 tests/golden
 
 tmp/
+python/examples/output

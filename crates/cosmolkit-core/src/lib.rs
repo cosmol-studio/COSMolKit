@@ -6,6 +6,7 @@ pub mod bio;
 pub mod bond;
 pub mod canon_smiles;
 pub mod distgeom;
+pub mod draw;
 pub mod hydrogens;
 pub mod io;
 pub mod kekulize;
@@ -19,6 +20,7 @@ pub use adjacency::{AdjacencyList, NeighborRef};
 pub use atom::{Atom, ChiralTag};
 pub use bond::{Bond, BondDirection, BondOrder, BondStereo};
 pub use distgeom::DgBoundsError;
+pub use draw::{PreparedDrawAtom, PreparedDrawBond, PreparedDrawMolecule, SvgDrawError};
 pub use hydrogens::{
     AddHydrogensError, RemoveHydrogensError, add_hydrogens_in_place, remove_hydrogens_in_place,
 };
@@ -65,6 +67,7 @@ mod tests {
             chiral_tag: super::ChiralTag::Unspecified,
             isotope: None,
             atom_map_num: None,
+            rdkit_cip_rank: None,
         };
         let _bond = Bond {
             index: 0,

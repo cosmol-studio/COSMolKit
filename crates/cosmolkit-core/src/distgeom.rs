@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::{BondOrder, Molecule, ValenceModel, assign_valence, rdkit_valence_list};
 
@@ -905,6 +905,137 @@ fn canonical_cycle(mut c: Vec<usize>) -> Vec<usize> {
     if rev < c { rev } else { c }
 }
 
+fn cycle_edges(cycle: &[usize]) -> Vec<(usize, usize)> {
+    (0..cycle.len())
+        .map(|i| {
+            let a = cycle[i];
+            let b = cycle[(i + 1) % cycle.len()];
+            if a <= b { (a, b) } else { (b, a) }
+        })
+        .collect()
+}
+
+fn all_simple_cycles_in_ring_set(
+    adjacency: &[Vec<usize>],
+    ring_set: &BTreeSet<usize>,
+) -> Vec<Vec<usize>> {
+    let mut seen = BTreeSet::<Vec<usize>>::new();
+    let mut cycles = Vec::<Vec<usize>>::new();
+    let mut starts: Vec<usize> = ring_set.iter().copied().collect();
+    starts.sort_unstable();
+    const MAX_RING_ENUM: usize = 8;
+
+    fn dfs_cycles(
+        start: usize,
+        cur: usize,
+        path: &mut Vec<usize>,
+        used: &mut BTreeSet<usize>,
+        adjacency: &[Vec<usize>],
+        ring_set: &BTreeSet<usize>,
+        seen: &mut BTreeSet<Vec<usize>>,
+        cycles: &mut Vec<Vec<usize>>,
+    ) {
+        if path.len() >= 3 && adjacency[cur].contains(&start) {
+            let c = canonical_cycle(path.clone());
+            if seen.insert(c.clone()) {
+                cycles.push(c);
+            }
+        }
+        if path.len() == MAX_RING_ENUM {
+            return;
+        }
+        let mut nbs: Vec<usize> = adjacency[cur]
+            .iter()
+            .copied()
+            .filter(|n| ring_set.contains(n) && !used.contains(n))
+            .collect();
+        nbs.sort_unstable();
+        for nb in nbs {
+            if nb < start {
+                continue;
+            }
+            used.insert(nb);
+            path.push(nb);
+            dfs_cycles(start, nb, path, used, adjacency, ring_set, seen, cycles);
+            path.pop();
+            used.remove(&nb);
+        }
+    }
+
+    for start in starts {
+        let mut path = vec![start];
+        let mut used = BTreeSet::<usize>::new();
+        used.insert(start);
+        dfs_cycles(
+            start,
+            start,
+            &mut path,
+            &mut used,
+            adjacency,
+            ring_set,
+            &mut seen,
+            &mut cycles,
+        );
+    }
+    cycles.sort_by_key(|cyc| (cyc.len(), cyc.clone()));
+    cycles
+}
+
+fn add_rdkit_symm_sssr_extra_rings(cycles: &mut Vec<Vec<usize>>, extra_candidates: &[Vec<usize>]) {
+    let mut existing = BTreeSet::<Vec<usize>>::new();
+    for cycle in cycles.iter() {
+        existing.insert(canonical_cycle(cycle.clone()));
+    }
+    let mut bond_counts = BTreeMap::<(usize, usize), usize>::new();
+    let mut cycle_edges_cache = Vec::<Vec<(usize, usize)>>::new();
+    for cycle in cycles.iter() {
+        let edges = cycle_edges(cycle);
+        for edge in &edges {
+            *bond_counts.entry(*edge).or_insert(0) += 1;
+        }
+        cycle_edges_cache.push(edges);
+    }
+
+    for extra in extra_candidates {
+        let canonical = canonical_cycle(extra.clone());
+        if existing.contains(&canonical) {
+            continue;
+        }
+        let extra_edges = cycle_edges(extra);
+        let extra_edge_set: BTreeSet<(usize, usize)> = extra_edges.iter().copied().collect();
+        let mut accepted = false;
+        for ring_edges in &cycle_edges_cache {
+            if ring_edges.len() != extra_edges.len() {
+                continue;
+            }
+            let mut share_bond = false;
+            let mut replaces_all_unique_bonds = true;
+            for bond_id in ring_edges {
+                let bond_count = *bond_counts.get(bond_id).unwrap_or(&0);
+                if bond_count == 1 || !share_bond {
+                    if extra_edge_set.contains(bond_id) {
+                        share_bond = true;
+                    } else if bond_count == 1 {
+                        replaces_all_unique_bonds = false;
+                    }
+                }
+            }
+            if share_bond && replaces_all_unique_bonds {
+                accepted = true;
+                break;
+            }
+        }
+        if accepted {
+            existing.insert(canonical);
+            cycles.push(extra.clone());
+            cycle_edges_cache.push(extra_edges.clone());
+            for edge in extra_edges {
+                *bond_counts.entry(edge).or_insert(0) += 1;
+            }
+        }
+    }
+}
+
 fn adjacency_vec(mol: &Molecule) -> Vec<Vec<usize>> {
     let mut adjacency = vec![Vec::new(); mol.atoms.len()];
     for bond in &mol.bonds {
@@ -1243,7 +1374,7 @@ fn rdkit_find_sssr_orders(mol: &Molecule, comp: &[usize]) -> Vec<Vec<usize>> {
     rings
 }
 
-fn rdkit_atom_rings(mol: &Molecule) -> Vec<Vec<usize>> {
+pub(crate) fn rdkit_atom_rings(mol: &Molecule) -> Vec<Vec<usize>> {
     let adjacency = adjacency_vec(mol);
     let comps = connected_components(mol, &adjacency);
     let mut out = Vec::new();
@@ -1300,98 +1431,31 @@ fn rdkit_atom_rings(mol: &Molecule) -> Vec<Vec<usize>> {
             if let Some(cycle) = rdkit_single_ring_order(mol, &ring_set, &deg_in_comp) {
                 cycles.push(cycle);
             }
-        } else if cycles.len() < target_cycle_count {
-            let mut seen = BTreeSet::<Vec<usize>>::new();
-            let mut all_cycles = Vec::<Vec<usize>>::new();
-            let mut ring_atoms_sorted = ring_atoms.clone();
-            ring_atoms_sorted.sort_unstable();
-            const MAX_RING_ENUM: usize = 8;
-            for &start in &ring_atoms_sorted {
-                let mut path = vec![start];
-                let mut used = BTreeSet::<usize>::new();
-                used.insert(start);
-                fn dfs_cycles(
-                    start: usize,
-                    cur: usize,
-                    path: &mut Vec<usize>,
-                    used: &mut BTreeSet<usize>,
-                    adjacency: &[Vec<usize>],
-                    ring_set: &BTreeSet<usize>,
-                    seen: &mut BTreeSet<Vec<usize>>,
-                    cycles: &mut Vec<Vec<usize>>,
-                ) {
-                    if path.len() >= 3 && adjacency[cur].contains(&start) {
-                        let c = canonical_cycle(path.clone());
-                        if seen.insert(c.clone()) {
-                            cycles.push(c);
-                        }
-                    }
-                    if path.len() == MAX_RING_ENUM {
-                        return;
-                    }
-                    let mut nbs: Vec<usize> = adjacency[cur]
-                        .iter()
-                        .copied()
-                        .filter(|n| ring_set.contains(n) && !used.contains(n))
-                        .collect();
-                    nbs.sort_unstable();
-                    for nb in nbs {
-                        if nb < start {
-                            continue;
-                        }
-                        used.insert(nb);
-                        path.push(nb);
-                        dfs_cycles(start, nb, path, used, adjacency, ring_set, seen, cycles);
-                        path.pop();
-                        used.remove(&nb);
-                    }
-                }
-                dfs_cycles(
-                    start,
-                    start,
-                    &mut path,
-                    &mut used,
-                    &adjacency,
-                    &ring_set,
-                    &mut seen,
-                    &mut all_cycles,
-                );
-            }
-            all_cycles.retain(|cyc| {
-                (0..cyc.len()).all(|i| {
-                    let a = cyc[i];
-                    let b = cyc[(i + 1) % cyc.len()];
-                    adjacency[a].contains(&b) && ring_set.contains(&a) && ring_set.contains(&b)
-                })
-            });
-            all_cycles.sort_by_key(|cyc| (cyc.len(), cyc.clone()));
+        }
+        let all_cycles = all_simple_cycles_in_ring_set(&adjacency, &ring_set);
+        if cycles.len() < target_cycle_count {
             let mut covered_edges = BTreeSet::<(usize, usize)>::new();
-            for cyc in all_cycles {
-                let edges: Vec<(usize, usize)> = (0..cyc.len())
-                    .map(|i| {
-                        let a = cyc[i];
-                        let b = cyc[(i + 1) % cyc.len()];
-                        if a <= b { (a, b) } else { (b, a) }
-                    })
-                    .collect();
+            for cyc in &all_cycles {
+                let edges = cycle_edges(cyc);
                 if cycles.is_empty() || edges.iter().any(|edge| !covered_edges.contains(edge)) {
                     for edge in edges {
                         covered_edges.insert(edge);
                     }
-                    cycles.push(cyc);
+                    cycles.push(cyc.clone());
                 }
                 if cycles.len() == target_cycle_count {
                     break;
                 }
             }
         }
+        add_rdkit_symm_sssr_extra_rings(&mut cycles, &all_cycles);
         out.extend(cycles);
     }
     out.sort_by_key(|r| r.len());
     out
 }
 
-fn rdkit_bond_rings(mol: &Molecule) -> Vec<Vec<usize>> {
+pub(crate) fn rdkit_bond_rings(mol: &Molecule) -> Vec<Vec<usize>> {
     rdkit_atom_rings(mol)
         .into_iter()
         .filter_map(|ring| cycle_bond_indices(mol, &ring))
@@ -2600,40 +2664,6 @@ fn set15_bounds(
                 }
                 if dl < 0.0 {
                     dl = 0.0;
-                }
-                let debug_pair = std::env::var("COSMOLKIT_DEBUG_DG_PAIR").ok().and_then(|s| {
-                    let (a, b) = s.split_once(',')?;
-                    Some((a.parse::<usize>().ok()?, b.parse::<usize>().ok()?))
-                });
-                if std::env::var_os("COSMOLKIT_DEBUG_DG").is_some()
-                    && debug_pair
-                        .map(|(a, b)| (aid1 == a && aid5 == b) || (aid1 == b && aid5 == a))
-                        .unwrap_or(false)
-                {
-                    let dbg_ciscis = compute_15_dists_cis_cis(d1, d2, d3, d4, ang12, ang23, ang34);
-                    let dbg_cistrans =
-                        compute_15_dists_cis_trans(d1, d2, d3, d4, ang12, ang23, ang34);
-                    let dbg_transcis =
-                        compute_15_dists_trans_cis(d1, d2, d3, d4, ang12, ang23, ang34);
-                    let dbg_transtrans =
-                        compute_15_dists_trans_trans(d1, d2, d3, d4, ang12, ang23, ang34);
-                    eprintln!(
-                        "DEBUG set15 0-4 kind={:?} path=({}, {}, {}) next={} path_id={} cis?={} trans?={} cc={} ct={} tc={} tt={} dl={} du={}",
-                        kind,
-                        bid1,
-                        bid2,
-                        bid3,
-                        i,
-                        path_id,
-                        has_path_flag(&accum_data.cis_paths, path_id),
-                        has_path_flag(&accum_data.trans_paths, path_id),
-                        dbg_ciscis,
-                        dbg_cistrans,
-                        dbg_transcis,
-                        dbg_transtrans,
-                        dl,
-                        du
-                    );
                 }
                 check_and_set_bounds(aid1, aid5, dl, du, mmat);
                 accum_data.set15_atoms[pid1] = true;

@@ -256,6 +256,7 @@ fn parse_v2000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec2)
             chiral_tag: ChiralTag::Unspecified,
             isotope,
             atom_map_num: None,
+            rdkit_cip_rank: None,
         },
         DVec2::new(x, y),
     ))
@@ -599,6 +600,7 @@ fn parse_v3000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec2)
             chiral_tag: ChiralTag::Unspecified,
             isotope,
             atom_map_num: None,
+            rdkit_cip_rank: None,
         },
         DVec2::new(x, y),
     ))

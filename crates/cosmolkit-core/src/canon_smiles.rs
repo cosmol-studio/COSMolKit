@@ -585,12 +585,10 @@ fn update_atom_neighbor_index(atoms: &mut [CanonRankAtom], atom_idx: usize) {
         .iter()
         .map(|bond| (bond.nbr_idx, atoms[bond.nbr_idx].index))
         .collect();
-    for (bond, (_, cls)) in atoms[atom_idx].bonds.iter_mut().zip(classes.into_iter()) {
+    for (bond, (_, cls)) in atoms[atom_idx].bonds.iter_mut().zip(classes) {
         bond.nbr_sym_class = cls;
     }
-    atoms[atom_idx]
-        .bonds
-        .sort_by(|lhs, rhs| canon_bond_greater(lhs, rhs));
+    atoms[atom_idx].bonds.sort_by(canon_bond_greater);
 }
 
 #[derive(Debug, Clone, Copy)]

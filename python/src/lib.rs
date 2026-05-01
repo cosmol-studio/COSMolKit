@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{BufReader, Write};
-use std::path::Path;
+use std::path::PathBuf;
 
 use cosmolkit_core::io::molblock::{self, SdfFormat};
 use cosmolkit_core::io::sdf::SdfReader;
@@ -99,6 +99,20 @@ fn parse_sdf_format(format: Option<&str>) -> PyResult<SdfFormat> {
         Some(v) => Err(PyValueError::new_err(format!(
             "unsupported SDF format '{v}', expected one of: auto, v2000, v3000"
         ))),
+    }
+}
+
+fn expand_user_path(path: &str) -> PyResult<PathBuf> {
+    if path == "~" || path.starts_with("~/") {
+        let home = std::env::var_os("HOME")
+            .ok_or_else(|| PyValueError::new_err("cannot expand '~': HOME is not set"))?;
+        let mut expanded = PathBuf::from(home);
+        if let Some(rest) = path.strip_prefix("~/") {
+            expanded.push(rest);
+        }
+        Ok(expanded)
+    } else {
+        Ok(PathBuf::from(path))
     }
 }
 
@@ -325,6 +339,7 @@ impl Molecule {
                 chiral_tag,
                 isotope: (isotope_raw != 0).then_some(isotope_raw),
                 atom_map_num: None,
+                rdkit_cip_rank: None,
             });
         }
 
@@ -370,7 +385,8 @@ impl Molecule {
     #[pyo3(signature = (path, sanitize=None))]
     fn read_sdf(_cls: &Bound<'_, PyType>, path: &str, sanitize: Option<bool>) -> PyResult<Self> {
         let _ = sanitize;
-        let file = File::open(path)
+        let expanded_path = expand_user_path(path)?;
+        let file = File::open(&expanded_path)
             .map_err(|e| PyValueError::new_err(format!("read_sdf open failed: {e}")))?;
         let mut reader = SdfReader::new(BufReader::new(file));
         let Some(record) = reader
@@ -521,6 +537,41 @@ impl Molecule {
         })
     }
 
+    #[pyo3(signature = (width=300, height=300))]
+    fn to_svg(&self, width: u32, height: u32) -> PyResult<String> {
+        self.inner
+            .to_svg(width, height)
+            .map_err(|err| PyNotImplementedError::new_err(format!("Molecule.to_svg failed: {err}")))
+    }
+
+    #[pyo3(signature = (path, width=300, height=300))]
+    fn write_svg(&self, path: &str, width: u32, height: u32) -> PyResult<()> {
+        let expanded_path = expand_user_path(path)?;
+        let svg = self
+            .inner
+            .to_svg(width, height)
+            .map_err(|err| PyNotImplementedError::new_err(format!("write_svg failed: {err}")))?;
+        let mut f = File::create(&expanded_path)
+            .map_err(|e| PyValueError::new_err(format!("write_svg create failed: {e}")))?;
+        f.write_all(svg.as_bytes())
+            .map_err(|e| PyValueError::new_err(format!("write_svg write failed: {e}")))?;
+        Ok(())
+    }
+
+    #[pyo3(signature = (path, width=300, height=300))]
+    fn write_png(&self, path: &str, width: u32, height: u32) -> PyResult<()> {
+        let expanded_path = expand_user_path(path)?;
+        let png = self
+            .inner
+            .to_png(width, height)
+            .map_err(|err| PyNotImplementedError::new_err(format!("write_png failed: {err}")))?;
+        let mut f = File::create(&expanded_path)
+            .map_err(|e| PyValueError::new_err(format!("write_png create failed: {e}")))?;
+        f.write_all(&png)
+            .map_err(|e| PyValueError::new_err(format!("write_png write failed: {e}")))?;
+        Ok(())
+    }
+
     #[pyo3(signature = (isomeric_smiles=true))]
     fn to_smiles(&self, isomeric_smiles: bool) -> PyResult<String> {
         self.inner.to_smiles(isomeric_smiles).map_err(|err| {
@@ -532,10 +583,11 @@ impl Molecule {
 
     #[pyo3(signature = (path, format=None))]
     fn write_sdf(&self, path: &str, format: Option<&str>) -> PyResult<()> {
+        let expanded_path = expand_user_path(path)?;
         let fmt = parse_sdf_format(format)?;
         let block = molblock::mol_to_2d_sdf_record(&self.inner, fmt)
             .map_err(|err| PyValueError::new_err(format!("write_sdf failed: {err}")))?;
-        let mut f = File::create(path)
+        let mut f = File::create(&expanded_path)
             .map_err(|e| PyValueError::new_err(format!("write_sdf create failed: {e}")))?;
         f.write_all(block.as_bytes())
             .map_err(|e| PyValueError::new_err(format!("write_sdf write failed: {e}")))?;
@@ -556,7 +608,8 @@ impl Molecule {
         file_name: Option<&str>,
         format: Option<&str>,
     ) -> PyResult<String> {
-        let dir = Path::new(directory);
+        let expanded_directory = expand_user_path(directory)?;
+        let dir = expanded_directory.as_path();
         if !dir.exists() {
             return Err(PyValueError::new_err(format!(
                 "directory does not exist: {directory}"
@@ -745,6 +798,7 @@ impl MoleculeEdit {
             chiral_tag: cosmolkit_core::ChiralTag::Unspecified,
             isotope: None,
             atom_map_num: None,
+            rdkit_cip_rank: None,
         });
         Ok(idx)
     }
@@ -842,15 +896,13 @@ struct Alignment;
 #[pymethods]
 impl Alignment {
     #[classmethod]
-    #[pyo3(signature = (reference, candidates, mutate_reference=None, mutate_candidates=None))]
+    #[pyo3(signature = (reference, candidates))]
     fn find_most_similar_fragment(
         _cls: &Bound<'_, PyType>,
         reference: &Molecule,
         candidates: Vec<Py<Molecule>>,
-        mutate_reference: Option<bool>,
-        mutate_candidates: Option<bool>,
     ) -> PyResult<AlignmentResult> {
-        let _ = (reference, candidates, mutate_reference, mutate_candidates);
+        let _ = (reference, candidates);
         Err(unimplemented_api("Alignment.find_most_similar_fragment"))
     }
 }

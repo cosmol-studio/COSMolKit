@@ -13,9 +13,12 @@ name = "cosmolkit_core"
 path = "src/lib.rs"
 
 [dependencies]
-cosmolkit-macros = { path = "../cosmolkit-macros", version = "0.0.8" }
+cosmolkit-macros = { path = "../cosmolkit-macros", version = "0.0.9" }
 glam = "0.32.1"
+resvg = "0.45"
 thiserror = "2.0.18"
+tiny-skia = "0.11"
+usvg = "0.45"
 
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }

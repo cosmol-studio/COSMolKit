@@ -6,10 +6,13 @@ Introduce a clear immutable-first public molecule model without paying full deep
 
 This is primarily meant to solve the API ambiguity that exists in RDKit's mixed inplace/non-inplace style, while preserving strict source-level parity work against `third_party/rdkit` in the internal algorithm paths.
 
+COSMolKit's public model should be deterministic and predictable: normal molecule transformations return new molecule objects and never modify the input. Explicit mutation belongs behind clearly named editing or inplace APIs.
+
 The target model is:
 
 - public `Molecule` is cheap to clone
 - user-facing transforms return a new molecule by default
+- input molecules are unchanged after normal transformations
 - only mutated storage is copied
 - complex RDKit-aligned algorithms still run on explicit mutable working state when needed
 

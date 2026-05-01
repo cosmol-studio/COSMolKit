@@ -13,4 +13,4 @@ name = "cosmolkit"
 path = "src/lib.rs"
 
 [dependencies]
-cosmolkit-core = { version = "0.0.8", path = "../cosmolkit-core" }
+cosmolkit-core = { version = "0.0.9", path = "../cosmolkit-core" }

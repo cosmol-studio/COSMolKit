@@ -60,6 +60,7 @@ pub fn add_hydrogens_in_place(molecule: &mut Molecule) -> Result<(), AddHydrogen
                 chiral_tag: ChiralTag::Unspecified,
                 isotope: None,
                 atom_map_num: None,
+                rdkit_cip_rank: None,
             });
             molecule.add_bond(Bond {
                 index: 0,
@@ -146,7 +147,7 @@ pub fn remove_hydrogens_in_place(molecule: &mut Molecule) -> Result<(), RemoveHy
         atoms.push(atom);
     }
 
-    let mut bonds = Vec::new();
+    let mut bonds = Vec::with_capacity(molecule.bonds.len());
     for bond in &molecule.bonds {
         if remove[bond.begin_atom] || remove[bond.end_atom] {
             continue;
