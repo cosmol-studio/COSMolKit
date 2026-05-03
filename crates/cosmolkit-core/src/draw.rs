@@ -200,6 +200,14 @@ struct DrawArrow {
     bond_idx: usize,
 }
 
+#[derive(Debug, Clone)]
+struct DrawRadical {
+    rect: StringRect,
+    orient: OrientType,
+    atom_idx: usize,
+    count: u8,
+}
+
 #[derive(Debug, Copy, Clone)]
 enum DrawItem {
     Line(usize),
@@ -224,6 +232,7 @@ struct DrawMol {
     y_range: f64,
     at_cds: Vec<DVec2>,
     atom_labels: Vec<Option<AtomLabel>>,
+    atom_orients: Vec<OrientType>,
     implicit_hs: Vec<u8>,
     bonds: Vec<DrawLine>,
     wedges: Vec<DrawWedge>,
@@ -231,6 +240,7 @@ struct DrawMol {
     draw_items: Vec<DrawItem>,
     join_paths: Vec<DrawPolyline>,
     post_shapes: Vec<DrawPolyline>,
+    radicals: Vec<DrawRadical>,
     single_bond_lines: Vec<usize>,
     mean_bond_length: f64,
     font_size: f64,
@@ -291,6 +301,11 @@ pub fn mol_to_svg(mol: &Molecule, width: u32, height: u32) -> Result<String, Svg
     for label in draw_mol.atom_labels.iter().flatten() {
         draw_atom_label(&mut svg, label, final_font_size);
     }
+    draw_radicals(
+        &mut svg,
+        &draw_mol.radicals,
+        draw_mol.radical_spot_radius_unscaled() * draw_mol.scale,
+    );
     for polyline in &draw_mol.post_shapes {
         draw_polyline(&mut svg, polyline, draw_mol.scale);
     }
@@ -323,7 +338,7 @@ pub fn prepare_mol_for_drawing_parity(
     let wedge_bonds = pick_bonds_to_wedge_rdkit_subset(&draw_mol);
 
     let atoms = draw_mol
-        .atoms
+        .atoms()
         .iter()
         .map(|atom| {
             let pt = coords[atom.index];
@@ -336,7 +351,7 @@ pub fn prepare_mol_for_drawing_parity(
         })
         .collect();
     let bonds = draw_mol
-        .bonds
+        .bonds()
         .iter()
         .map(|bond| {
             let direction =
@@ -451,6 +466,7 @@ impl DrawMol {
             y_range: f64::MAX,
             at_cds,
             atom_labels: Vec::new(),
+            atom_orients: Vec::new(),
             implicit_hs,
             bonds: Vec::new(),
             wedges: Vec::new(),
@@ -458,6 +474,7 @@ impl DrawMol {
             draw_items: Vec::new(),
             join_paths: Vec::new(),
             post_shapes: Vec::new(),
+            radicals: Vec::new(),
             single_bond_lines: Vec::new(),
             mean_bond_length: 0.0,
             font_size: 0.6,
@@ -467,6 +484,7 @@ impl DrawMol {
         out.extract_bonds(&draw_mol)?;
         out.smooth_bond_joins(&draw_mol);
         out.resolve_atom_symbol_clashes();
+        out.extract_radicals(&draw_mol);
         out.calculate_scale();
         let drawn_font_size = out.font_size * out.scale;
         if !(6.0..=40.0).contains(&drawn_font_size) {
@@ -479,6 +497,7 @@ impl DrawMol {
             out.extract_bonds(&draw_mol)?;
             out.smooth_bond_joins(&draw_mol);
             out.resolve_atom_symbol_clashes();
+            out.extract_radicals(&draw_mol);
             out.find_extremes();
         }
         out.change_to_draw_coords();
@@ -487,8 +506,10 @@ impl DrawMol {
 
     fn extract_atom_symbols(&mut self, mol: &Molecule) {
         self.atom_labels.clear();
-        for atom in &mol.atoms {
+        self.atom_orients.clear();
+        for atom in mol.atoms() {
             let orient = self.get_atom_orientation(mol, atom.index);
+            self.atom_orients.push(orient);
             let symbol = self.get_atom_symbol(mol, atom, orient);
             if symbol.is_empty() {
                 self.atom_labels.push(None);
@@ -522,7 +543,7 @@ impl DrawMol {
             .map(|pt| DVec2::new(pt.x, -pt.y))
             .collect::<Vec<_>>();
 
-        for bond in &mol.bonds {
+        for bond in mol.bonds() {
             match bond.order {
                 BondOrder::Double | BondOrder::Aromatic => {
                     self.make_double_bond_lines(mol, bond, double_bond_offset);
@@ -569,6 +590,122 @@ impl DrawMol {
         Ok(())
     }
 
+    fn extract_radicals(&mut self, mol: &Molecule) {
+        self.radicals.clear();
+        for atom in mol.atoms() {
+            if atom.num_radical_electrons == 0 {
+                continue;
+            }
+            let (rect, orient) = self.calc_radical_rect(atom);
+            self.radicals.push(DrawRadical {
+                rect,
+                orient,
+                atom_idx: atom.index,
+                count: atom.num_radical_electrons,
+            });
+        }
+    }
+
+    fn calc_radical_rect(&self, atom: &Atom) -> (StringRect, OrientType) {
+        let spot_rad = self.radical_spot_radius_unscaled();
+        let at_cds = self.at_cds[atom.index];
+        let orient = self
+            .atom_orients
+            .get(atom.index)
+            .copied()
+            .unwrap_or(OrientType::C);
+        let rad_size = (4.0 * f64::from(atom.num_radical_electrons) - 2.0) * spot_rad
+            / self.font_scale_factor();
+        let (x_min, x_max, y_min, y_max) =
+            if let Some(label) = self.atom_labels.get(atom.index).and_then(Option::as_ref) {
+                let mut x_min = f64::MAX;
+                let mut x_max = f64::MIN;
+                let mut y_min = f64::MAX;
+                let mut y_max = f64::MIN;
+                label.find_extremes(&mut x_min, &mut x_max, &mut y_min, &mut y_max);
+                (x_min, x_max, y_min, y_max)
+            } else {
+                (
+                    at_cds.x - 3.0 * spot_rad,
+                    at_cds.x + 3.0 * spot_rad,
+                    at_cds.y - 3.0 * spot_rad,
+                    at_cds.y + 3.0 * spot_rad,
+                )
+            };
+
+        for trial in std::iter::once(orient).chain(
+            [OrientType::N, OrientType::E, OrientType::S, OrientType::W]
+                .into_iter()
+                .filter(move |fallback| *fallback != orient),
+        ) {
+            let rect = radical_rect_for_orientation(
+                trial, at_cds, x_min, x_max, y_min, y_max, spot_rad, rad_size,
+            );
+            if !self.does_rect_clash(&rect, 0.0) {
+                return (rect, trial);
+            }
+        }
+        (
+            radical_rect_for_orientation(
+                OrientType::N,
+                at_cds,
+                x_min,
+                x_max,
+                y_min,
+                y_max,
+                spot_rad,
+                rad_size,
+            ),
+            OrientType::N,
+        )
+    }
+
+    fn font_scale_factor(&self) -> f64 {
+        self.font_size / 0.6
+    }
+
+    fn radical_spot_radius_unscaled(&self) -> f64 {
+        0.2 * self.options.multiple_bond_offset * self.font_scale_factor()
+    }
+
+    fn does_rect_clash(&self, rect: &StringRect, padding: f64) -> bool {
+        for bond in &self.bonds {
+            if rect_clashes_with_line(rect, bond.begin, bond.end, padding) {
+                return true;
+            }
+        }
+        for wedge in &self.wedges {
+            match wedge.kind {
+                WedgeKind::Solid => {
+                    for tri in wedge.points.chunks_exact(3) {
+                        if rect_clashes_with_triangle(rect, tri[0], tri[1], tri[2], padding) {
+                            return true;
+                        }
+                    }
+                }
+                WedgeKind::Dashed => {
+                    if wedge.points.len() >= 3
+                        && rect_clashes_with_triangle(
+                            rect,
+                            wedge.points[0],
+                            wedge.points[1],
+                            wedge.points[2],
+                            padding,
+                        )
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        for label in self.atom_labels.iter().flatten() {
+            if label_rects_intersect(&label.rects, label.cds, rect, padding) {
+                return true;
+            }
+        }
+        false
+    }
+
     fn smooth_bond_joins(&mut self, mol: &Molecule) {
         let wedge_bonds = pick_bonds_to_wedge_rdkit_subset(mol);
         let wedge_coords = self
@@ -576,14 +713,14 @@ impl DrawMol {
             .iter()
             .map(|pt| DVec2::new(pt.x, -pt.y))
             .collect::<Vec<_>>();
-        for atom in &mol.atoms {
+        for atom in mol.atoms() {
             if self.atom_labels[atom.index].is_some() {
                 continue;
             }
             let degree = atom_degree(mol, atom.index);
             let mut do_it = degree == 2;
             if !do_it && degree == 3 {
-                for bond in &mol.bonds {
+                for bond in mol.bonds() {
                     let nbr = if bond.begin_atom == atom.index {
                         Some(bond.end_atom)
                     } else if bond.end_atom == atom.index {
@@ -904,7 +1041,7 @@ impl DrawMol {
         wedge_bonds: &HashMap<usize, usize>,
         wedge_coords: &[DVec2],
     ) {
-        for bond in mol.bonds.iter().rev() {
+        for bond in mol.bonds().iter().rev() {
             let wedge_dir =
                 determine_bond_wedge_state_rdkit_subset(bond, wedge_bonds, wedge_coords, mol);
             if wedge_dir != BondDirection::EndUpRight || !wedge_bonds.contains_key(&bond.index) {
@@ -987,16 +1124,16 @@ impl DrawMol {
     }
 
     fn calc_mean_bond_length(&mut self, mol: &Molecule) {
-        if mol.bonds.is_empty() {
+        if mol.bonds().is_empty() {
             self.mean_bond_length = 0.0;
             return;
         }
         let total = mol
-            .bonds
+            .bonds()
             .iter()
             .map(|bond| (self.at_cds[bond.begin_atom] - self.at_cds[bond.end_atom]).length())
             .sum::<f64>();
-        self.mean_bond_length = total / mol.bonds.len() as f64;
+        self.mean_bond_length = total / mol.bonds().len() as f64;
     }
 
     fn make_double_bond_lines(&mut self, mol: &Molecule, bond: &Bond, offset: f64) {
@@ -1287,7 +1424,7 @@ impl DrawMol {
             for ring in &rings {
                 if ring
                     .iter()
-                    .all(|&bond_idx| mol.bonds[bond_idx].is_aromatic == bond.is_aromatic)
+                    .all(|&bond_idx| mol.bonds()[bond_idx].is_aromatic == bond.is_aromatic)
                 {
                     return Some(ring.clone());
                 }
@@ -1303,7 +1440,7 @@ impl DrawMol {
         bond: &Bond,
         ring_bonds: &[usize],
     ) -> Option<usize> {
-        for bond2 in &mol.bonds {
+        for bond2 in mol.bonds() {
             if bond2.index == bond.index {
                 continue;
             }
@@ -1426,7 +1563,7 @@ impl DrawMol {
             return false;
         }
         let mut nbrs = Vec::new();
-        for bond in &mol.bonds {
+        for bond in mol.bonds() {
             if bond.begin_atom == atom_idx {
                 nbrs.push((bond.end_atom, bond.order));
             } else if bond.end_atom == atom_idx {
@@ -1450,7 +1587,7 @@ impl DrawMol {
         nbor_num: usize,
     ) -> Option<usize> {
         let mut count = 0;
-        for bond in &mol.bonds {
+        for bond in mol.bonds() {
             let nbr = if bond.begin_atom == first_atom {
                 Some(bond.end_atom)
             } else if bond.end_atom == first_atom {
@@ -1646,6 +1783,15 @@ impl DrawMol {
                 &mut self.y_max,
             );
         }
+        for radical in &self.radicals {
+            find_rect_extremes(
+                &radical.rect,
+                &mut self.x_min,
+                &mut self.x_max,
+                &mut self.y_min,
+                &mut self.y_max,
+            );
+        }
         self.x_range = self.x_max - self.x_min;
         self.y_range = self.y_max - self.y_min;
         if self.x_range < 1e-4 {
@@ -1689,6 +1835,11 @@ impl DrawMol {
         for label in self.atom_labels.iter_mut().flatten() {
             label.cds = transform_point(label.cds, trans, scale, to_centre);
             label.recalculate_rects(self.font_size * self.scale);
+        }
+        for radical in &mut self.radicals {
+            radical.rect.trans = transform_point(radical.rect.trans, trans, scale, to_centre);
+            radical.rect.width *= self.scale;
+            radical.rect.height *= self.scale;
         }
         self.extract_close_contacts(trans, scale, to_centre);
     }
@@ -1744,7 +1895,7 @@ impl DrawMol {
         const VERT_SLOPE: f64 = 2.7474774194546216;
         let at1_cds = self.at_cds[atom_idx];
         let mut nbr_sum = DVec2::ZERO;
-        for bond in &mol.bonds {
+        for bond in mol.bonds() {
             let other = if bond.begin_atom == atom_idx {
                 Some(bond.end_atom)
             } else if bond.end_atom == atom_idx {
@@ -1758,7 +1909,7 @@ impl DrawMol {
         }
         let degree = atom_degree(mol, atom_idx);
         if degree == 0 {
-            let atomic_num = mol.atoms[atom_idx].atomic_num;
+            let atomic_num = mol.atoms()[atom_idx].atomic_num;
             return if matches!(atomic_num, 8 | 9 | 16 | 17 | 34 | 35 | 52 | 53 | 84 | 85) {
                 OrientType::W
             } else {
@@ -1793,7 +1944,7 @@ impl DrawMol {
     }
 
     fn get_atom_symbol(&self, mol: &Molecule, atom: &Atom, orient: OrientType) -> String {
-        let symbol = element_symbol(atom.atomic_num);
+        let symbol = crate::periodic_table::element_symbol(atom.atomic_num).unwrap_or("?");
         let isotope = atom
             .isotope
             .map(|isotope| format!("<sup>{isotope}</sup>"))
@@ -2265,6 +2416,127 @@ fn draw_atom_label(out: &mut String, label: &AtomLabel, base_font_size: f64) {
     }
 }
 
+fn draw_radicals(out: &mut String, radicals: &[DrawRadical], spot_rad: f64) {
+    for radical in radicals {
+        let rect = &radical.rect;
+        let dir = !matches!(
+            radical.orient,
+            OrientType::N | OrientType::S | OrientType::C
+        );
+        draw_radical_spots(
+            out,
+            radical.atom_idx,
+            rect.trans,
+            radical.count,
+            if dir { rect.height } else { rect.width },
+            dir,
+            spot_rad,
+        );
+    }
+}
+
+fn draw_radical_spots(
+    out: &mut String,
+    atom_idx: usize,
+    cds: DVec2,
+    num_spots: u8,
+    width: f64,
+    vertical: bool,
+    spot_rad: f64,
+) {
+    let mut ncds = cds;
+    match num_spots {
+        3 => {
+            if vertical {
+                ncds.y = cds.y - 0.6 * width + spot_rad;
+            } else {
+                ncds.x = cds.x - 0.6 * width + spot_rad;
+            }
+            draw_filled_circle_path(out, atom_idx, ncds, spot_rad);
+            if vertical {
+                ncds.y = cds.y + 0.6 * width - spot_rad;
+            } else {
+                ncds.x = cds.x + 0.6 * width - spot_rad;
+            }
+            draw_filled_circle_path(out, atom_idx, ncds, spot_rad);
+            draw_filled_circle_path(out, atom_idx, cds, spot_rad);
+        }
+        1 => draw_filled_circle_path(out, atom_idx, cds, spot_rad),
+        4 => {
+            if vertical {
+                ncds.y = cds.y + 6.0 * spot_rad;
+            } else {
+                ncds.x = cds.x + 6.0 * spot_rad;
+            }
+            draw_filled_circle_path(out, atom_idx, ncds, spot_rad);
+            if vertical {
+                ncds.y = cds.y - 6.0 * spot_rad;
+            } else {
+                ncds.x = cds.x - 6.0 * spot_rad;
+            }
+            draw_filled_circle_path(out, atom_idx, ncds, spot_rad);
+            if vertical {
+                ncds.y = cds.y + 2.0 * spot_rad;
+            } else {
+                ncds.x = cds.x + 2.0 * spot_rad;
+            }
+            draw_filled_circle_path(out, atom_idx, ncds, spot_rad);
+            if vertical {
+                ncds.y = cds.y - 2.0 * spot_rad;
+            } else {
+                ncds.x = cds.x - 2.0 * spot_rad;
+            }
+            draw_filled_circle_path(out, atom_idx, ncds, spot_rad);
+        }
+        2 => {
+            if vertical {
+                ncds.y = cds.y + 2.0 * spot_rad;
+            } else {
+                ncds.x = cds.x + 2.0 * spot_rad;
+            }
+            draw_filled_circle_path(out, atom_idx, ncds, spot_rad);
+            if vertical {
+                ncds.y = cds.y - 2.0 * spot_rad;
+            } else {
+                ncds.x = cds.x - 2.0 * spot_rad;
+            }
+            draw_filled_circle_path(out, atom_idx, ncds, spot_rad);
+        }
+        _ => {}
+    }
+}
+
+fn draw_filled_circle_path(out: &mut String, atom_idx: usize, centre: DVec2, radius: f64) {
+    let num_steps = 1 + (360.0_f64 / 5.0) as usize;
+    let angle_incr = 360.0_f64 / num_steps as f64 * std::f64::consts::PI / 180.0;
+    out.push_str("<path ");
+    out.push_str(&format!("class='atom-{atom_idx}' "));
+    out.push_str("d='M");
+    for i in 0..=num_steps {
+        let angle = i as f64 * angle_incr;
+        let point = DVec2::new(
+            centre.x + radius * angle.cos(),
+            centre.y + radius * angle.sin(),
+        );
+        out.push_str(&format!(
+            " {},{}",
+            format_double(point.x),
+            format_double(point.y)
+        ));
+        if i < num_steps {
+            out.push_str(" L");
+        }
+    }
+    out.push_str(&format!(
+        " L {},{} Z' ",
+        format_double(centre.x),
+        format_double(centre.y)
+    ));
+    out.push_str(
+        "style='fill:#000000;fill-rule:evenodd;fill-opacity:1;stroke:#000000;stroke-width:0.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:10;stroke-opacity:1;' />\n",
+    );
+}
+
 fn transform_point(point: DVec2, trans: DVec2, scale: DVec2, to_centre: DVec2) -> DVec2 {
     let mut out = point;
     out.x += trans.x;
@@ -2483,7 +2755,7 @@ fn angle_to(v1: DVec2, v2: DVec2) -> f64 {
 }
 
 fn atom_degree(mol: &Molecule, atom_idx: usize) -> usize {
-    mol.bonds
+    mol.bonds()
         .iter()
         .filter(|bond| bond.begin_atom == atom_idx || bond.end_atom == atom_idx)
         .count()
@@ -2495,7 +2767,7 @@ fn add_chiral_hs_for_drawing(mol: &mut Molecule) {
         return;
     };
     let mut chiral_atoms = Vec::new();
-    for atom in &mol.atoms {
+    for atom in mol.atoms() {
         let in_ring_count = atom_rings
             .iter()
             .filter(|ring| ring.contains(&atom.index))
@@ -2514,12 +2786,12 @@ fn add_chiral_hs_for_drawing(mol: &mut Molecule) {
     if chiral_atoms.is_empty() {
         return;
     }
-    for atom in &mut mol.atoms {
+    for atom in mol.atoms_mut() {
         atom.rdkit_cip_rank = None;
     }
     for atom_idx in chiral_atoms {
-        if mol.atoms[atom_idx].explicit_hydrogens > 0 {
-            mol.atoms[atom_idx].explicit_hydrogens -= 1;
+        if mol.atoms()[atom_idx].explicit_hydrogens > 0 {
+            mol.atoms_mut()[atom_idx].explicit_hydrogens -= 1;
         }
         let h_idx = mol.add_atom(Atom {
             index: 0,
@@ -2550,7 +2822,7 @@ fn add_chiral_hs_for_drawing(mol: &mut Molecule) {
 }
 
 fn atom_neighbors(mol: &Molecule, atom_idx: usize) -> Vec<usize> {
-    mol.bonds
+    mol.bonds()
         .iter()
         .filter_map(|bond| {
             if bond.begin_atom == atom_idx {
@@ -2565,7 +2837,7 @@ fn atom_neighbors(mol: &Molecule, atom_idx: usize) -> Vec<usize> {
 }
 
 fn bond_between_atoms(mol: &Molecule, atom1: usize, atom2: usize) -> Option<&Bond> {
-    mol.bonds.iter().find(|bond| {
+    mol.bonds().iter().find(|bond| {
         (bond.begin_atom == atom1 && bond.end_atom == atom2)
             || (bond.begin_atom == atom2 && bond.end_atom == atom1)
     })
@@ -2638,16 +2910,81 @@ fn rects_intersect(a: &StringRect, b: &StringRect, padding: f64) -> bool {
     a_min_x <= b_max_x && a_max_x >= b_min_x && a_min_y <= b_max_y && a_max_y >= b_min_y
 }
 
+fn find_rect_extremes(
+    rect: &StringRect,
+    xmin: &mut f64,
+    xmax: &mut f64,
+    ymin: &mut f64,
+    ymax: &mut f64,
+) {
+    *xmax = xmax.max(rect.trans.x + rect.width / 2.0);
+    *xmin = xmin.min(rect.trans.x - rect.width / 2.0);
+    *ymax = ymax.max(rect.trans.y + rect.height / 2.0);
+    *ymin = ymin.min(rect.trans.y - rect.height / 2.0);
+}
+
+fn radical_rect_at(trans: DVec2, width: f64, height: f64) -> StringRect {
+    StringRect {
+        ch: ' ',
+        draw_mode: TextDrawType::Normal,
+        trans,
+        offset: DVec2::ZERO,
+        g_centre: DVec2::ZERO,
+        y_shift: 0.0,
+        width,
+        height,
+        rect_corr: 0.0,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn radical_rect_for_orientation(
+    orient: OrientType,
+    at_cds: DVec2,
+    x_min: f64,
+    x_max: f64,
+    y_min: f64,
+    y_max: f64,
+    spot_rad: f64,
+    rad_size: f64,
+) -> StringRect {
+    match orient {
+        OrientType::N | OrientType::C => radical_rect_at(
+            DVec2::new(at_cds.x, y_max + 0.5 * spot_rad * 3.0),
+            rad_size,
+            spot_rad * 3.0,
+        ),
+        OrientType::S => radical_rect_at(
+            DVec2::new(at_cds.x, y_min - 0.5 * spot_rad * 3.0),
+            rad_size,
+            spot_rad * 3.0,
+        ),
+        OrientType::E => radical_rect_at(
+            DVec2::new(x_max + 3.0 * spot_rad, at_cds.y),
+            spot_rad * 1.5,
+            rad_size,
+        ),
+        OrientType::W => radical_rect_at(
+            DVec2::new(x_min - 3.0 * spot_rad, at_cds.y),
+            spot_rad * 1.5,
+            rad_size,
+        ),
+    }
+}
+
+fn rect_clashes_with_line(rect: &StringRect, begin: DVec2, end: DVec2, padding: f64) -> bool {
+    let (tl, tr, br, bl) = rect.calc_corners(padding);
+    line_intersection(begin, end, tl, tr).is_some()
+        || line_intersection(begin, end, tr, br).is_some()
+        || line_intersection(begin, end, br, bl).is_some()
+        || line_intersection(begin, end, bl, tl).is_some()
+}
+
 fn label_rects_clash_with_line(label: &AtomLabel, begin: DVec2, end: DVec2, padding: f64) -> bool {
     for rect in &label.rects {
         let mut shifted = rect.clone();
         shifted.trans += label.cds;
-        let (tl, tr, br, bl) = shifted.calc_corners(padding);
-        if line_intersection(begin, end, tl, tr).is_some()
-            || line_intersection(begin, end, tr, br).is_some()
-            || line_intersection(begin, end, br, bl).is_some()
-            || line_intersection(begin, end, bl, tl).is_some()
-        {
+        if rect_clashes_with_line(&shifted, begin, end, padding) {
             return true;
         }
     }
@@ -3090,29 +3427,6 @@ fn cross(a: DVec2, b: DVec2) -> f64 {
     a.x * b.y - a.y * b.x
 }
 
-fn element_symbol(atomic_num: u8) -> &'static str {
-    match atomic_num {
-        0 => "*",
-        1 => "H",
-        5 => "B",
-        6 => "C",
-        7 => "N",
-        8 => "O",
-        9 => "F",
-        14 => "Si",
-        15 => "P",
-        16 => "S",
-        17 => "Cl",
-        29 => "Cu",
-        11 => "Na",
-        34 => "Se",
-        35 => "Br",
-        45 => "Rh",
-        53 => "I",
-        _ => "?",
-    }
-}
-
 fn atom_colour(atomic_num: u8) -> DrawColour {
     match atomic_num {
         0 => DrawColour {
@@ -3179,30 +3493,25 @@ fn atom_colour(atomic_num: u8) -> DrawColour {
 }
 
 fn char_width(ch: char) -> f64 {
-    match ch {
-        'N' => 722.0,
-        'O' => 778.0,
-        'C' => 722.0,
-        'e' => 556.0,
-        'F' => 611.0,
-        'P' => 667.0,
-        'S' => 667.0,
-        'H' => 722.0,
-        'i' => 222.0,
-        'l' => 222.0,
-        'r' => 333.0,
-        'u' => 556.0,
-        'R' => 722.0,
-        'h' => 556.0,
-        'B' => 667.0,
-        'I' => 278.0,
-        '*' => 389.0,
-        '?' => 556.0,
-        ':' => 278.0,
-        '+' => 584.0,
-        '-' => 333.0,
-        '0'..='9' => 556.0,
-        _ => 556.0,
+    const CHAR_WIDTHS: &[u16] = &[
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 278, 278, 355, 556, 556, 889, 667, 222, 333, 333, 389, 584, 278, 333, 278, 278, 556,
+        556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667,
+        722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611,
+        722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 222, 556, 556, 500, 556, 556, 278,
+        556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500,
+        500, 500, 334, 260, 334, 584, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 333, 556, 556, 167, 556, 556, 556, 556, 191, 333,
+        556, 333, 333, 500, 500, 0, 556, 556, 556, 278, 0, 537, 350, 222, 333, 333, 556, 1000,
+        1000, 0, 611, 0, 333, 333, 333, 333, 333, 333, 333, 333, 0, 333, 333, 0, 333, 333, 333,
+        1000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1000, 0, 370, 0, 0, 0, 0, 556, 778,
+        1000, 365, 0, 0, 0, 0, 0, 889, 0, 0, 0, 278, 0, 0, 222, 611, 944, 611, 0, 0, 834,
+    ];
+    let idx = ch as usize;
+    if idx < CHAR_WIDTHS.len() && CHAR_WIDTHS[idx] != 0 {
+        f64::from(CHAR_WIDTHS[idx])
+    } else {
+        556.0
     }
 }
 

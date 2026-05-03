@@ -12,6 +12,7 @@ pub mod hydrogens;
 pub mod io;
 pub mod kekulize;
 pub mod molecule;
+mod periodic_table;
 mod smiles;
 pub mod smiles_write;
 pub mod stereo;
@@ -29,7 +30,10 @@ pub use draw::{PreparedDrawAtom, PreparedDrawBond, PreparedDrawMolecule, SvgDraw
 pub use hydrogens::{
     AddHydrogensError, RemoveHydrogensError, add_hydrogens_in_place, remove_hydrogens_in_place,
 };
-pub use molecule::{CoordinateDimension, Molecule, SmilesParseError, SmilesWriteError};
+pub use molecule::{
+    ConformerStore, CoordinateDimension, Molecule, PropertyStore, SmilesParseError,
+    SmilesWriteError, TopologyData,
+};
 pub use smiles::assign_double_bond_stereo_from_directions;
 pub use smiles_write::SmilesWriteParams;
 pub use stereo::{LigandRef, TetrahedralStereo};
@@ -92,8 +96,8 @@ mod tests {
     fn molecule_from_smiles_parses_bracket_charge() {
         let mol = Molecule::from_smiles("[N-]=[N+]=N").expect("charged atoms should parse");
         assert_eq!(mol.atomic_numbers(), vec![7, 7, 7]);
-        assert_eq!(mol.atoms[0].formal_charge, -1);
-        assert_eq!(mol.atoms[1].formal_charge, 1);
+        assert_eq!(mol.atoms()[0].formal_charge, -1);
+        assert_eq!(mol.atoms()[1].formal_charge, 1);
     }
 
     #[test]
@@ -116,11 +120,11 @@ mod tests {
     fn molecule_from_smiles_does_not_aromatize_saturated_n_heterocycle() {
         let mol = Molecule::from_smiles("CN1CCCC1").expect("saturated ring should parse");
         assert!(
-            mol.atoms.iter().all(|atom| !atom.is_aromatic),
+            mol.atoms().iter().all(|atom| !atom.is_aromatic),
             "saturated N-heterocycle atoms should not be aromatic"
         );
         assert!(
-            mol.bonds.iter().all(|bond| !bond.is_aromatic),
+            mol.bonds().iter().all(|bond| !bond.is_aromatic),
             "saturated N-heterocycle bonds should not be aromatic"
         );
     }
@@ -130,11 +134,11 @@ mod tests {
         let mut mol = Molecule::from_smiles("c1ccccc1").expect("benzene should parse");
         super::kekulize::kekulize_in_place(&mut mol, true).expect("kekulize should succeed");
         assert!(
-            mol.atoms.iter().all(|atom| !atom.is_aromatic),
+            mol.atoms().iter().all(|atom| !atom.is_aromatic),
             "clearAromaticFlags=true should clear aromatic atom flags"
         );
         assert!(
-            mol.bonds.iter().all(|bond| !bond.is_aromatic),
+            mol.bonds().iter().all(|bond| !bond.is_aromatic),
             "clearAromaticFlags=true should remove aromatic bond order annotations"
         );
     }
@@ -144,15 +148,15 @@ mod tests {
         let mut mol = Molecule::from_smiles("c1ccccc1").expect("benzene should parse");
         super::kekulize::kekulize_in_place(&mut mol, false).expect("kekulize should succeed");
         assert!(
-            mol.atoms.iter().all(|atom| atom.is_aromatic),
+            mol.atoms().iter().all(|atom| atom.is_aromatic),
             "clearAromaticFlags=false should preserve aromatic atom flags"
         );
         assert!(
-            mol.bonds.iter().all(|bond| bond.is_aromatic),
+            mol.bonds().iter().all(|bond| bond.is_aromatic),
             "clearAromaticFlags=false should preserve aromatic bond flags"
         );
         assert!(
-            mol.bonds
+            mol.bonds()
                 .iter()
                 .all(|bond| !matches!(bond.order, super::BondOrder::Aromatic)),
             "clearAromaticFlags=false should still rewrite aromatic bond types to single/double"

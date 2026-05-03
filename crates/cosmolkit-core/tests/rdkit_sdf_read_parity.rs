@@ -139,6 +139,7 @@ fn chiral_tag_name(tag: ChiralTag) -> &'static str {
         ChiralTag::Unspecified => "CHI_UNSPECIFIED",
         ChiralTag::TetrahedralCw => "CHI_TETRAHEDRAL_CW",
         ChiralTag::TetrahedralCcw => "CHI_TETRAHEDRAL_CCW",
+        ChiralTag::TrigonalBipyramidal => "CHI_TRIGONALBIPYRAMIDAL",
     }
 }
 
@@ -227,7 +228,7 @@ fn sdf_read_topology_and_atom_fields_match_rdkit() {
 
         let actual_atoms = parsed
             .molecule
-            .atoms
+            .atoms()
             .iter()
             .map(|atom| AtomRecord {
                 atomic_num: atom.atomic_num,
@@ -248,7 +249,7 @@ fn sdf_read_topology_and_atom_fields_match_rdkit() {
 
         let actual_bonds = parsed
             .molecule
-            .bonds
+            .bonds()
             .iter()
             .map(|bond| BondRecord {
                 begin: bond.begin_atom,
@@ -283,7 +284,7 @@ fn sdf_read_topology_and_atom_fields_match_rdkit() {
         };
         let expected_atoms = record.atoms.as_ref().expect("rdkit_ok row has atoms");
         let actual_atoms = molecule
-            .atoms
+            .atoms()
             .iter()
             .map(|atom| AtomRecord {
                 atomic_num: atom.atomic_num,
@@ -303,7 +304,7 @@ fn sdf_read_topology_and_atom_fields_match_rdkit() {
         );
         let expected_bonds = record.bonds.as_ref().expect("rdkit_ok row has bonds");
         let actual_bonds = molecule
-            .bonds
+            .bonds()
             .iter()
             .map(|bond| BondRecord {
                 begin: bond.begin_atom,
@@ -467,7 +468,7 @@ fn sdf_read_chirality_matches_rdkit_for_markers_and_coordinates() {
             .expect("rdkit_ok row should have chiral tags");
         let actual_tags = parsed
             .molecule
-            .atoms
+            .atoms()
             .iter()
             .map(|atom| chiral_tag_name(atom.chiral_tag).to_owned())
             .collect::<Vec<_>>();
@@ -497,7 +498,7 @@ fn sdf_read_chirality_matches_rdkit_for_markers_and_coordinates() {
             .as_ref()
             .expect("rdkit_ok row should have chiral tags");
         let actual_tags = molecule
-            .atoms
+            .atoms()
             .iter()
             .map(|atom| chiral_tag_name(atom.chiral_tag).to_owned())
             .collect::<Vec<_>>();

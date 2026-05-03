@@ -415,6 +415,9 @@ fn ours_chiral_tag_name(tag: OursChiralTag) -> ChiralTag {
         OursChiralTag::Unspecified => ChiralTag::ChiUnspecified,
         OursChiralTag::TetrahedralCw => ChiralTag::ChiTetrahedralCw,
         OursChiralTag::TetrahedralCcw => ChiralTag::ChiTetrahedralCcw,
+        OursChiralTag::TrigonalBipyramidal => {
+            ChiralTag::Unknown("CHI_TRIGONALBIPYRAMIDAL".to_owned())
+        }
     }
 }
 
@@ -439,9 +442,15 @@ fn ours_cip_code_name(code: Option<&str>) -> Option<CipCode> {
 }
 
 fn compute_ring_flags(mol: &Molecule) -> Vec<bool> {
-    let n = mol.atoms.len();
+    let n = mol.atoms().len();
     let mut adj = vec![Vec::<usize>::new(); n];
-    for b in &mol.bonds {
+    for b in mol.bonds() {
+        if matches!(
+            b.order,
+            cosmolkit_core::BondOrder::Null | cosmolkit_core::BondOrder::Dative
+        ) {
+            continue;
+        }
         adj[b.begin_atom].push(b.end_atom);
         adj[b.end_atom].push(b.begin_atom);
     }
@@ -630,7 +639,7 @@ fn count_atom_electrons_rdkit(
     atom_degree: &[usize],
     atom_index: usize,
 ) -> i32 {
-    let atom = &mol.atoms[atom_index];
+    let atom = &mol.atoms()[atom_index];
     let Some(dv) = rdkit_default_valence(atom.atomic_num) else {
         return -1;
     };
@@ -640,7 +649,7 @@ fn count_atom_electrons_rdkit(
     let mut degree = atom_degree[atom_index] as i32
         + atom.explicit_hydrogens as i32
         + assignment.implicit_hydrogens[atom_index] as i32;
-    for b in &mol.bonds {
+    for b in mol.bonds() {
         if (b.begin_atom == atom_index || b.end_atom == atom_index)
             && bond_valence_contrib_for_atom(b, atom_index) == 0.0
         {
@@ -672,7 +681,7 @@ fn is_atom_conjug_cand(
     atom_degree: &[usize],
     atom_index: usize,
 ) -> bool {
-    let at = &mol.atoms[atom_index];
+    let at = &mol.atoms()[atom_index];
     if let Some(vals) = rdkit_valence_list(at.atomic_num)
         && at.formal_charge == 0
         && !vals.is_empty()
@@ -698,22 +707,22 @@ fn compute_conjugated_bonds(
     assignment: &cosmolkit_core::ValenceAssignment,
     atom_degree: &[usize],
 ) -> Vec<bool> {
-    let mut conjugated = vec![false; mol.bonds.len()];
-    for (bi, b) in mol.bonds.iter().enumerate() {
+    let mut conjugated = vec![false; mol.bonds().len()];
+    for (bi, b) in mol.bonds().iter().enumerate() {
         conjugated[bi] = b.is_aromatic;
     }
-    for at in 0..mol.atoms.len() {
+    for at in 0..mol.atoms().len() {
         if !is_atom_conjug_cand(mol, assignment, atom_degree, at) {
             continue;
         }
         let sbo = atom_degree[at]
-            + mol.atoms[at].explicit_hydrogens as usize
+            + mol.atoms()[at].explicit_hydrogens as usize
             + assignment.implicit_hydrogens[at] as usize;
         if !(2..=3).contains(&sbo) {
             continue;
         }
         let bnds: Vec<usize> = mol
-            .bonds
+            .bonds()
             .iter()
             .enumerate()
             .filter_map(|(bi, b)| {
@@ -725,7 +734,7 @@ fn compute_conjugated_bonds(
             })
             .collect();
         for &b1 in &bnds {
-            let bond1 = &mol.bonds[b1];
+            let bond1 = &mol.bonds()[b1];
             if bond_valence_contrib_for_atom(bond1, at) < 1.5 {
                 continue;
             }
@@ -741,14 +750,14 @@ fn compute_conjugated_bonds(
                 if b1 == b2 {
                     continue;
                 }
-                let bond2 = &mol.bonds[b2];
+                let bond2 = &mol.bonds()[b2];
                 let o2 = if bond2.begin_atom == at {
                     bond2.end_atom
                 } else {
                     bond2.begin_atom
                 };
                 let sbo2 = atom_degree[o2]
-                    + mol.atoms[o2].explicit_hydrogens as usize
+                    + mol.atoms()[o2].explicit_hydrogens as usize
                     + assignment.implicit_hydrogens[o2] as usize;
                 if sbo2 > 3 {
                     continue;
@@ -770,7 +779,7 @@ fn compute_hybridization(
     atom_has_conjugated_bond: &[bool],
     atom_index: usize,
 ) -> Hybridization {
-    let atom = &mol.atoms[atom_index];
+    let atom = &mol.atoms()[atom_index];
     if atom.atomic_num == 1 {
         // RDKit parity corpus behavior: hydrogens introduced by AddHs() stay
         // UNSPECIFIED, while bracket/input hydrogens (including isotopes) are S.
@@ -793,7 +802,7 @@ fn compute_hybridization(
     let mut deg = atom_degree[atom_index] as i32
         + atom.explicit_hydrogens as i32
         + assignment.implicit_hydrogens[atom_index] as i32;
-    for b in &mol.bonds {
+    for b in mol.bonds() {
         if (b.begin_atom == atom_index || b.end_atom == atom_index)
             && (matches!(b.order, BondOrder::Dative) && b.end_atom != atom_index)
         {
@@ -855,10 +864,10 @@ fn extract_ours_features(mol: &Molecule) -> (Vec<OursAtomFeature>, Vec<OursBondF
                 e
             );
         });
-    let mut atom_degree = vec![0usize; mol.atoms.len()];
-    let mut atom_has_multi = vec![false; mol.atoms.len()];
+    let mut atom_degree = vec![0usize; mol.atoms().len()];
+    let mut atom_has_multi = vec![false; mol.atoms().len()];
 
-    for b in &mol.bonds {
+    for b in mol.bonds() {
         atom_degree[b.begin_atom] += 1;
         atom_degree[b.end_atom] += 1;
         if matches!(
@@ -871,16 +880,16 @@ fn extract_ours_features(mol: &Molecule) -> (Vec<OursAtomFeature>, Vec<OursBondF
     }
 
     let conjugated_bonds = compute_conjugated_bonds(mol, &assignment, &atom_degree);
-    let mut atom_has_conjugated_bond = vec![false; mol.atoms.len()];
-    for (bi, b) in mol.bonds.iter().enumerate() {
+    let mut atom_has_conjugated_bond = vec![false; mol.atoms().len()];
+    for (bi, b) in mol.bonds().iter().enumerate() {
         if conjugated_bonds[bi] {
             atom_has_conjugated_bond[b.begin_atom] = true;
             atom_has_conjugated_bond[b.end_atom] = true;
         }
     }
 
-    let mut atoms = Vec::with_capacity(mol.atoms.len());
-    for (i, a) in mol.atoms.iter().enumerate() {
+    let mut atoms = Vec::with_capacity(mol.atoms().len());
+    for (i, a) in mol.atoms().iter().enumerate() {
         let implicit_hs = assignment.implicit_hydrogens[i] as i32;
         let explicit_valence = assignment.explicit_valence[i] as i32;
         let num_hs = (a.explicit_hydrogens as i32 + implicit_hs).max(0) as usize;
@@ -906,8 +915,8 @@ fn extract_ours_features(mol: &Molecule) -> (Vec<OursAtomFeature>, Vec<OursBondF
         });
     }
 
-    let mut bonds = Vec::with_capacity(mol.bonds.len());
-    for (bi, b) in mol.bonds.iter().enumerate() {
+    let mut bonds = Vec::with_capacity(mol.bonds().len());
+    for (bi, b) in mol.bonds().iter().enumerate() {
         bonds.push(OursBondFeature {
             begin_atom: b.begin_atom,
             end_atom: b.end_atom,

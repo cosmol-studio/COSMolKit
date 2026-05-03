@@ -165,6 +165,6 @@ def test_from_rdkit_matches_direct_cosmolkit_smiles(smiles):
     assert bridged.to_smiles(False) == direct.to_smiles(False)
 
 
-def test_from_rdkit_rejects_non_rdkit_like_object():
+def test_from_rdkit_rejects_non_object():
     with pytest.raises(ValueError, match="from_rdkit failed calling GetNumAtoms"):
         cosmolkit.Molecule.from_rdkit(object())

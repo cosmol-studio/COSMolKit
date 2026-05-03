@@ -163,11 +163,11 @@ pub fn rdkit_valence_list(atomic_num: u8) -> Option<&'static [i32]> {
 }
 
 fn is_aromatic_atom(molecule: &Molecule, atom_index: usize) -> bool {
-    if molecule.atoms[atom_index].is_aromatic {
+    if molecule.atoms()[atom_index].is_aromatic {
         return true;
     }
     molecule
-        .bonds
+        .bonds()
         .iter()
         .any(|b| (b.begin_atom == atom_index || b.end_atom == atom_index) && b.is_aromatic)
 }
@@ -210,12 +210,12 @@ fn bond_valence_contrib_for_atom(bond: &crate::Bond, atom_index: usize) -> f64 {
     bond_type_as_double(bond.order)
 }
 
-fn calculate_explicit_valence(
+pub(crate) fn calculate_explicit_valence(
     molecule: &Molecule,
     atom_index: usize,
     strict: bool,
 ) -> Result<i32, ValenceError> {
-    let atom = &molecule.atoms[atom_index];
+    let atom = &molecule.atoms()[atom_index];
     let ovalens = valence_list(atom.atomic_num).ok_or(ValenceError::NotImplemented)?;
     let mut effective_atomic_num = atom.atomic_num;
     if ovalens.len() > 1 || ovalens[0] != -1 {
@@ -230,7 +230,7 @@ fn calculate_explicit_valence(
     let dv = valens[0];
 
     let mut accum = atom.explicit_hydrogens as f64;
-    for b in &molecule.bonds {
+    for b in molecule.bonds() {
         accum += bond_valence_contrib_for_atom(b, atom_index);
     }
 
@@ -279,8 +279,11 @@ fn calculate_implicit_valence(
     explicit_valence: i32,
     strict: bool,
 ) -> Result<i32, ValenceError> {
-    let atom = &molecule.atoms[atom_index];
+    let atom = &molecule.atoms()[atom_index];
     if atom.atomic_num == 0 {
+        return Ok(0);
+    }
+    if atom.no_implicit {
         return Ok(0);
     }
     if atom.atomic_num == 1 && explicit_valence == 0 {
@@ -524,16 +527,16 @@ pub fn assign_radicals_rdkit_2025(
     molecule: &Molecule,
     existing_explicit_valence: &[u8],
 ) -> Result<Vec<u8>, ValenceError> {
-    if existing_explicit_valence.len() != molecule.atoms.len() {
+    if existing_explicit_valence.len() != molecule.atoms().len() {
         return Err(ValenceError::NotImplemented);
     }
     let mut radicals: Vec<u8> = molecule
-        .atoms
+        .atoms()
         .iter()
         .map(|a| a.num_radical_electrons)
         .collect();
 
-    for (i, atom) in molecule.atoms.iter().enumerate() {
+    for (i, atom) in molecule.atoms().iter().enumerate() {
         if !atom.no_implicit || atom.atomic_num == 0 {
             continue;
         }
@@ -549,7 +552,7 @@ pub fn assign_radicals_rdkit_2025(
                 existing_explicit_valence[i] as i32
             } else {
                 let mut accum = atom.explicit_hydrogens as f64;
-                for b in &molecule.bonds {
+                for b in molecule.bonds() {
                     accum += bond_valence_contrib_for_atom(b, i);
                 }
                 (accum + 0.1) as i32
@@ -578,7 +581,7 @@ pub fn assign_radicals_rdkit_2025(
             num_radicals
         } else {
             let degree = molecule
-                .bonds
+                .bonds()
                 .iter()
                 .filter(|b| b.begin_atom == i || b.end_atom == i)
                 .count();
@@ -609,9 +612,9 @@ pub fn assign_valence(
         return Err(ValenceError::NotImplemented);
     }
 
-    let mut explicit_valence = vec![0u8; molecule.atoms.len()];
-    let mut implicit_hydrogens = vec![0u8; molecule.atoms.len()];
-    for (i, atom) in molecule.atoms.iter().enumerate() {
+    let mut explicit_valence = vec![0u8; molecule.atoms().len()];
+    let mut implicit_hydrogens = vec![0u8; molecule.atoms().len()];
+    for (i, atom) in molecule.atoms().iter().enumerate() {
         let ev = calculate_explicit_valence(molecule, i, true)?;
         let ih = calculate_implicit_valence(molecule, i, ev, true)?;
         explicit_valence[i] = to_u8_checked(ev, i, atom)?;

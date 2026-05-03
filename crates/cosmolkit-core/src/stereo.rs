@@ -1,6 +1,9 @@
 use std::collections::{HashMap, VecDeque};
 
-use crate::{Bond, BondDirection, BondOrder, ChiralTag, Molecule, ValenceModel, assign_valence};
+use crate::{
+    AdjacencyList, Bond, BondDirection, BondOrder, ChiralTag, Molecule, ValenceModel,
+    assign_valence,
+};
 use glam::DVec3;
 
 /// A ligand participating in a tetrahedral stereocenter.
@@ -35,12 +38,12 @@ pub struct LegacyStereoAtomProps {
 }
 
 fn bond_affects_atom_chirality(bond: &Bond, atom_index: usize) -> bool {
-    !matches!(bond.order, BondOrder::Null)
-        && !(matches!(bond.order, BondOrder::Dative) && bond.begin_atom == atom_index)
+    !(matches!(bond.order, BondOrder::Null)
+        || matches!(bond.order, BondOrder::Dative) && bond.begin_atom == atom_index)
 }
 
 fn atom_nonzero_degree(mol: &Molecule, atom_index: usize) -> usize {
-    mol.bonds
+    mol.bonds()
         .iter()
         .filter(|bond| {
             (bond.begin_atom == atom_index || bond.end_atom == atom_index)
@@ -49,24 +52,37 @@ fn atom_nonzero_degree(mol: &Molecule, atom_index: usize) -> usize {
         .count()
 }
 
-fn has_protium_neighbor(mol: &Molecule, atom_index: usize) -> bool {
-    mol.bonds.iter().any(|bond| {
-        let nbr = if bond.begin_atom == atom_index {
-            Some(bond.end_atom)
-        } else if bond.end_atom == atom_index {
-            Some(bond.begin_atom)
-        } else {
-            None
-        };
-        nbr.is_some_and(|nbr_idx| {
-            let atom = &mol.atoms[nbr_idx];
-            atom.atomic_num == 1 && atom.isotope.is_none()
+fn atom_nonzero_degree_with_adjacency(
+    mol: &Molecule,
+    adjacency: &AdjacencyList,
+    atom_index: usize,
+) -> usize {
+    adjacency
+        .neighbors_of(atom_index)
+        .iter()
+        .filter(|neighbor| {
+            bond_affects_atom_chirality(&mol.bonds()[neighbor.bond_index], atom_index)
         })
+        .count()
+}
+
+fn has_protium_neighbor_with_adjacency(
+    mol: &Molecule,
+    adjacency: &AdjacencyList,
+    atom_index: usize,
+) -> bool {
+    adjacency.neighbors_of(atom_index).iter().any(|neighbor| {
+        let atom = &mol.atoms()[neighbor.atom_index];
+        atom.atomic_num == 1 && atom.isotope.is_none()
     })
 }
 
-fn bond_is_conjugated_for_stereo(mol: &Molecule, bond_index: usize) -> bool {
-    let bond = &mol.bonds[bond_index];
+fn bond_is_conjugated_for_stereo_with_adjacency(
+    mol: &Molecule,
+    adjacency: &AdjacencyList,
+    bond_index: usize,
+) -> bool {
+    let bond = &mol.bonds()[bond_index];
     if bond.is_aromatic || matches!(bond.order, BondOrder::Double | BondOrder::Triple) {
         return true;
     }
@@ -74,19 +90,22 @@ fn bond_is_conjugated_for_stereo(mol: &Molecule, bond_index: usize) -> bool {
         return false;
     }
     [bond.begin_atom, bond.end_atom].into_iter().any(|center| {
-        mol.bonds.iter().enumerate().any(|(idx, other)| {
-            idx != bond_index
-                && (other.begin_atom == center || other.end_atom == center)
-                && (other.is_aromatic
-                    || matches!(other.order, BondOrder::Double | BondOrder::Triple))
+        adjacency.neighbors_of(center).iter().any(|neighbor| {
+            neighbor.bond_index != bond_index && {
+                let other = &mol.bonds()[neighbor.bond_index];
+                other.is_aromatic || matches!(other.order, BondOrder::Double | BondOrder::Triple)
+            }
         })
     })
 }
 
-fn atom_has_conjugated_bond(mol: &Molecule, atom_index: usize) -> bool {
-    mol.bonds.iter().enumerate().any(|(bond_index, bond)| {
-        (bond.begin_atom == atom_index || bond.end_atom == atom_index)
-            && bond_is_conjugated_for_stereo(mol, bond_index)
+fn atom_has_conjugated_bond_with_adjacency(
+    mol: &Molecule,
+    adjacency: &AdjacencyList,
+    atom_index: usize,
+) -> bool {
+    adjacency.neighbors_of(atom_index).iter().any(|neighbor| {
+        bond_is_conjugated_for_stereo_with_adjacency(mol, adjacency, neighbor.bond_index)
     })
 }
 
@@ -99,19 +118,15 @@ fn unit_or_zero(v: DVec3) -> DVec3 {
     if len == 0.0 { DVec3::ZERO } else { v / len }
 }
 
-fn graph_h_neighbor_count(mol: &Molecule, atom_index: usize) -> usize {
-    mol.bonds
+fn graph_h_neighbor_count_with_adjacency(
+    mol: &Molecule,
+    adjacency: &AdjacencyList,
+    atom_index: usize,
+) -> usize {
+    adjacency
+        .neighbors_of(atom_index)
         .iter()
-        .filter(|bond| {
-            let nbr = if bond.begin_atom == atom_index {
-                Some(bond.end_atom)
-            } else if bond.end_atom == atom_index {
-                Some(bond.begin_atom)
-            } else {
-                None
-            };
-            nbr.is_some_and(|nbr_idx| mol.atoms[nbr_idx].atomic_num == 1)
-        })
+        .filter(|neighbor| mol.atoms()[neighbor.atom_index].atomic_num == 1)
         .count()
 }
 
@@ -128,27 +143,27 @@ fn bond_valence_for_total_hs(bond: &Bond, atom_index: usize) -> usize {
     }
 }
 
-fn rdkit_total_num_hs_for_3d(
+fn rdkit_total_num_hs_for_3d_with_adjacency(
     mol: &Molecule,
+    adjacency: &AdjacencyList,
     atom_index: usize,
     implicit_hydrogens: &[u8],
 ) -> usize {
-    let graph_hs = graph_h_neighbor_count(mol, atom_index);
-    let assigned = mol.atoms[atom_index].explicit_hydrogens as usize
+    let graph_hs = graph_h_neighbor_count_with_adjacency(mol, adjacency, atom_index);
+    let assigned = mol.atoms()[atom_index].explicit_hydrogens as usize
         + implicit_hydrogens[atom_index] as usize
         + graph_hs;
     if assigned != 0 {
         return assigned;
     }
-    let atom = &mol.atoms[atom_index];
+    let atom = &mol.atoms()[atom_index];
     if atom.no_implicit || atom.formal_charge != 0 || atom.is_aromatic {
         return graph_hs;
     }
-    let explicit_valence = mol
-        .bonds
+    let explicit_valence = adjacency
+        .neighbors_of(atom_index)
         .iter()
-        .filter(|bond| bond.begin_atom == atom_index || bond.end_atom == atom_index)
-        .map(|bond| bond_valence_for_total_hs(bond, atom_index))
+        .map(|neighbor| bond_valence_for_total_hs(&mol.bonds()[neighbor.bond_index], atom_index))
         .sum::<usize>();
     let default_valence: usize = match atom.atomic_num {
         6 => 4,
@@ -161,34 +176,42 @@ fn rdkit_total_num_hs_for_3d(
 
 pub(crate) fn assign_chiral_types_from_3d_rdkit_subset(mol: &mut Molecule) {
     // Source mapping: RDKit Chirality.cpp::assignChiralTypesFrom3D().
-    // This intentionally covers the tetrahedral branch only. Non-tetrahedral
-    // stereochemistry is left unspecified until reproduced separately.
     const ZERO_VOLUME_TOL: f64 = 0.1;
     let Some(coords) = mol.coords_3d() else {
         return;
     };
-    if coords.len() != mol.atoms.len() {
+    if coords.len() != mol.atoms().len() {
         return;
     }
     let coords = coords.to_vec();
     let Ok(assignment) = assign_valence(mol, ValenceModel::RdkitLike) else {
         return;
     };
-    for atom_index in 0..mol.atoms.len() {
-        mol.atoms[atom_index].chiral_tag = ChiralTag::Unspecified;
+    let adjacency = AdjacencyList::from_topology(mol.atoms().len(), mol.bonds());
+    for atom_index in 0..mol.atoms().len() {
+        mol.atoms_mut()[atom_index].chiral_tag = ChiralTag::Unspecified;
 
-        let nz_degree = atom_nonzero_degree(mol, atom_index);
-        let total_num_hs =
-            rdkit_total_num_hs_for_3d(mol, atom_index, &assignment.implicit_hydrogens);
+        let nz_degree = atom_nonzero_degree_with_adjacency(mol, &adjacency, atom_index);
+        let total_num_hs = rdkit_total_num_hs_for_3d_with_adjacency(
+            mol,
+            &adjacency,
+            atom_index,
+            &assignment.implicit_hydrogens,
+        );
         let tnz_degree = nz_degree + total_num_hs;
 
         if nz_degree < 3 || tnz_degree > 6 {
             continue;
         }
+        if assign_nontetrahedral_chiral_type_from_3d_with_adjacency(
+            mol, &adjacency, atom_index, &coords,
+        ) {
+            continue;
+        }
         if tnz_degree > 4 {
             continue;
         }
-        let atomic_num = mol.atoms[atom_index].atomic_num;
+        let atomic_num = mol.atoms()[atom_index].atomic_num;
         if matches!(atomic_num, 7 | 15 | 33) {
             continue;
         }
@@ -198,21 +221,12 @@ pub(crate) fn assign_chiral_types_from_3d_rdkit_subset(mol: &mut Molecule) {
 
         let center = coords[atom_index];
         let mut nbrs = Vec::with_capacity(4);
-        for bond in &mol.bonds {
-            let other = if bond.begin_atom == atom_index {
-                Some(bond.end_atom)
-            } else if bond.end_atom == atom_index {
-                Some(bond.begin_atom)
-            } else {
-                None
-            };
-            let Some(other) = other else {
-                continue;
-            };
+        for neighbor in adjacency.neighbors_of(atom_index) {
+            let bond = &mol.bonds()[neighbor.bond_index];
             if !bond_affects_atom_chirality(bond, atom_index) {
                 continue;
             }
-            nbrs.push(coords[other]);
+            nbrs.push(coords[neighbor.atom_index]);
         }
         if nbrs.len() < 3 {
             continue;
@@ -223,16 +237,16 @@ pub(crate) fn assign_chiral_types_from_3d_rdkit_subset(mol: &mut Molecule) {
         let v3 = sub3(nbrs[2], center);
         let mut chiral_vol = v1.dot(v2.cross(v3));
         if chiral_vol < -ZERO_VOLUME_TOL {
-            mol.atoms[atom_index].chiral_tag = ChiralTag::TetrahedralCw;
+            mol.atoms_mut()[atom_index].chiral_tag = ChiralTag::TetrahedralCw;
         } else if chiral_vol > ZERO_VOLUME_TOL {
-            mol.atoms[atom_index].chiral_tag = ChiralTag::TetrahedralCcw;
+            mol.atoms_mut()[atom_index].chiral_tag = ChiralTag::TetrahedralCcw;
         } else if nbrs.len() == 4 {
             let v4 = sub3(nbrs[3], center);
             chiral_vol = -v1.dot(v2.cross(v4));
             if chiral_vol < -ZERO_VOLUME_TOL {
-                mol.atoms[atom_index].chiral_tag = ChiralTag::TetrahedralCw;
+                mol.atoms_mut()[atom_index].chiral_tag = ChiralTag::TetrahedralCw;
             } else if chiral_vol > ZERO_VOLUME_TOL {
-                mol.atoms[atom_index].chiral_tag = ChiralTag::TetrahedralCcw;
+                mol.atoms_mut()[atom_index].chiral_tag = ChiralTag::TetrahedralCcw;
             }
         }
     }
@@ -246,62 +260,262 @@ pub(crate) fn assign_chiral_types_from_3d_rdkit_subset(mol: &mut Molecule) {
         .iter()
         .map(|props| props.cip_code.is_some())
         .collect::<Vec<_>>();
-    for atom_index in 0..mol.atoms.len() {
-        if matches!(mol.atoms[atom_index].chiral_tag, ChiralTag::Unspecified) {
+    let mut cycle_cache = StereoBondCycleCache::new(mol.bonds().len());
+    for (atom_index, legacy_prop) in legacy_props.iter().enumerate() {
+        if !matches!(
+            mol.atoms()[atom_index].chiral_tag,
+            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+        ) {
             continue;
         }
-        if legacy_props[atom_index].cip_code.is_some() {
+        if legacy_prop.cip_code.is_some() {
             continue;
         }
-        let has_ring_stereo_partner =
-            has_ring_stereo_partner_rdkit_like(mol, atom_index, &cleanup_ranks, &has_cip_code);
+        let has_ring_stereo_partner = has_ring_stereo_partner_with_cache(
+            mol,
+            &adjacency,
+            &mut cycle_cache,
+            atom_index,
+            &cleanup_ranks,
+            &has_cip_code,
+        );
         if has_ring_stereo_partner {
             continue;
         }
-        mol.atoms[atom_index].chiral_tag = ChiralTag::Unspecified;
-        if mol.atoms[atom_index].explicit_hydrogens == 1
-            && mol.atoms[atom_index].formal_charge == 0
-            && !mol.atoms[atom_index].is_aromatic
+        mol.atoms_mut()[atom_index].chiral_tag = ChiralTag::Unspecified;
+        if mol.atoms()[atom_index].explicit_hydrogens == 1
+            && mol.atoms()[atom_index].formal_charge == 0
+            && !mol.atoms()[atom_index].is_aromatic
         {
-            mol.atoms[atom_index].explicit_hydrogens = 0;
-            mol.atoms[atom_index].no_implicit = false;
+            mol.atoms_mut()[atom_index].explicit_hydrogens = 0;
+            mol.atoms_mut()[atom_index].no_implicit = false;
         }
     }
 }
 
-fn has_ring_stereo_partner_rdkit_like(
+fn assign_nontetrahedral_chiral_type_from_3d_with_adjacency(
+    mol: &mut Molecule,
+    adjacency: &AdjacencyList,
+    atom_index: usize,
+    coords: &[DVec3],
+) -> bool {
+    // Source mapping: RDKit Chirality.cpp::assignNontetrahedralChiralTypeFrom3D(),
+    // count=5 trigonal-bipyramidal branch.
+    if mol.atoms()[atom_index].atomic_num < 15 {
+        return false;
+    }
+    if adjacency.neighbors_of(atom_index).iter().any(|neighbor| {
+        matches!(
+            mol.bonds()[neighbor.bond_index].stereo,
+            crate::BondStereo::Any
+        )
+    }) {
+        return false;
+    }
+
+    let center = coords[atom_index];
+    let mut vectors = Vec::new();
+    for neighbor in adjacency.neighbors_of(atom_index) {
+        if vectors.len() == 6 {
+            return false;
+        }
+        let direction = coords[neighbor.atom_index] - center;
+        let length = direction.length();
+        if length == 0.0 {
+            return false;
+        }
+        vectors.push(direction / length);
+    }
+    if vectors.len() != 4 && vectors.len() != 5 {
+        return false;
+    }
+
+    assign_nontetrahedral_chiral_type_from_vectors(mol, atom_index, &vectors)
+}
+
+fn assign_nontetrahedral_chiral_type_from_vectors(
+    mol: &mut Molecule,
+    atom_index: usize,
+    vectors: &[DVec3],
+) -> bool {
+    let mut pair = [0usize; 6];
+    let mut pairs = 0usize;
+    for i in 0..vectors.len() {
+        for j in (i + 1)..vectors.len() {
+            if vectors[i].dot(vectors[j]) < -(1.0 - 0.1) {
+                if pair[i] != 0 || pair[j] != 0 {
+                    return false;
+                }
+                pair[i] = j + 1;
+                pair[j] = i + 1;
+                pairs += 1;
+            }
+        }
+    }
+    if pairs != 1 {
+        return false;
+    }
+
+    let voltest =
+        |x: usize, y: usize, z: usize| vectors[x].dot(vectors[y].cross(vectors[z])) >= 0.0;
+    let perm = if vectors.len() == 4 {
+        if pair[0] == 2 {
+            if angle_between(vectors[2], vectors[3]) < 100.0_f64.to_radians() {
+                return false;
+            }
+            if voltest(0, 2, 3) { 7 } else { 8 }
+        } else if pair[0] == 3 {
+            if angle_between(vectors[1], vectors[3]) < 100.0_f64.to_radians() {
+                return false;
+            }
+            if voltest(0, 1, 3) { 5 } else { 6 }
+        } else if pair[0] == 4 {
+            if angle_between(vectors[1], vectors[2]) < 100.0_f64.to_radians() {
+                return false;
+            }
+            if voltest(0, 1, 2) { 3 } else { 4 }
+        } else if pair[1] == 3 {
+            if angle_between(vectors[0], vectors[3]) < 100.0_f64.to_radians() {
+                return false;
+            }
+            if voltest(1, 0, 3) { 13 } else { 14 }
+        } else if pair[1] == 4 {
+            if angle_between(vectors[0], vectors[2]) < 100.0_f64.to_radians() {
+                return false;
+            }
+            if voltest(1, 0, 2) { 10 } else { 12 }
+        } else {
+            if angle_between(vectors[0], vectors[1]) < 100.0_f64.to_radians() {
+                return false;
+            }
+            if voltest(3, 0, 1) { 16 } else { 19 }
+        }
+    } else if pair[0] == 2 {
+        if voltest(0, 2, 3) { 7 } else { 8 }
+    } else if pair[0] == 3 {
+        if voltest(0, 1, 3) { 5 } else { 6 }
+    } else if pair[0] == 4 {
+        if voltest(0, 1, 2) { 3 } else { 4 }
+    } else if pair[0] == 5 {
+        if voltest(0, 1, 2) { 1 } else { 2 }
+    } else if pair[1] == 3 {
+        if voltest(1, 0, 3) { 13 } else { 14 }
+    } else if pair[1] == 4 {
+        if voltest(1, 0, 2) { 10 } else { 12 }
+    } else if pair[1] == 5 {
+        if voltest(1, 0, 2) { 9 } else { 11 }
+    } else if pair[2] == 4 {
+        if voltest(2, 0, 1) { 16 } else { 19 }
+    } else if pair[2] == 5 {
+        if voltest(2, 0, 1) { 15 } else { 20 }
+    } else if voltest(3, 0, 1) {
+        17
+    } else {
+        18
+    };
+    mol.atoms_mut()[atom_index].chiral_tag = ChiralTag::TrigonalBipyramidal;
+    mol.atoms_mut()[atom_index]
+        .props
+        .insert("_chiralPermutation".to_owned(), perm.to_string());
+    true
+}
+
+fn angle_between(a: DVec3, b: DVec3) -> f64 {
+    a.dot(b).clamp(-1.0, 1.0).acos()
+}
+
+struct StereoBondCycleCache {
+    min_cycle_sizes: Vec<Option<Option<usize>>>,
+}
+
+impl StereoBondCycleCache {
+    fn new(bond_count: usize) -> Self {
+        Self {
+            min_cycle_sizes: vec![None; bond_count],
+        }
+    }
+
+    fn min_cycle_size_for_bond(
+        &mut self,
+        mol: &Molecule,
+        adjacency: &AdjacencyList,
+        bond_index: usize,
+    ) -> Option<usize> {
+        if let Some(cached) = self.min_cycle_sizes[bond_index] {
+            return cached;
+        }
+        let result = min_cycle_size_for_bond_with_adjacency(mol, adjacency, bond_index);
+        self.min_cycle_sizes[bond_index] = Some(result);
+        result
+    }
+}
+
+fn min_cycle_size_for_bond_with_adjacency(
     mol: &Molecule,
+    adjacency: &AdjacencyList,
+    bond_index: usize,
+) -> Option<usize> {
+    let bond = &mol.bonds()[bond_index];
+    let start = bond.begin_atom;
+    let goal = bond.end_atom;
+    let mut queue = VecDeque::from([(start, 0usize)]);
+    let mut seen = vec![false; mol.atoms().len()];
+    seen[start] = true;
+    while let Some((atom, dist)) = queue.pop_front() {
+        for neighbor in adjacency.neighbors_of(atom) {
+            if neighbor.bond_index == bond_index {
+                continue;
+            }
+            let next_atom = neighbor.atom_index;
+            if next_atom == goal {
+                return Some(dist + 2);
+            }
+            if !seen[next_atom] {
+                seen[next_atom] = true;
+                queue.push_back((next_atom, dist + 1));
+            }
+        }
+    }
+    None
+}
+
+fn has_ring_stereo_partner_with_cache(
+    mol: &Molecule,
+    adjacency: &AdjacencyList,
+    cycle_cache: &mut StereoBondCycleCache,
     atom_index: usize,
     ranks: &[i64],
     has_cip_code: &[bool],
 ) -> bool {
-    if !atom_is_candidate_for_ring_stereochem_rdkit_like(mol, atom_index, ranks) {
+    if !atom_is_candidate_for_ring_stereochem_with_cache(
+        mol,
+        adjacency,
+        cycle_cache,
+        atom_index,
+        ranks,
+    ) {
         return false;
     }
-    let atom_ring_neighbor_count = mol
-        .bonds
+    let atom_ring_neighbor_count = adjacency
+        .neighbors_of(atom_index)
         .iter()
-        .enumerate()
-        .filter(|(bond_idx, bond)| {
-            (bond.begin_atom == atom_index || bond.end_atom == atom_index)
-                && min_cycle_size_for_bond(mol, *bond_idx).is_some()
+        .filter(|neighbor| {
+            cycle_cache
+                .min_cycle_size_for_bond(mol, adjacency, neighbor.bond_index)
+                .is_some()
         })
         .count();
-    let mut seen_atoms = vec![false; mol.atoms.len()];
-    let mut seen_bonds = vec![false; mol.bonds.len()];
-    let mut queue = std::collections::VecDeque::new();
+    let mut seen_atoms = vec![false; mol.atoms().len()];
+    let mut seen_bonds = vec![false; mol.bonds().len()];
+    let mut queue = VecDeque::new();
     seen_atoms[atom_index] = true;
-    for (bond_idx, bond) in mol.bonds.iter().enumerate() {
-        if bond.begin_atom != atom_index && bond.end_atom != atom_index {
-            continue;
-        }
-        seen_bonds[bond_idx] = true;
-        if min_cycle_size_for_bond(mol, bond_idx).is_some() {
-            let other = if bond.begin_atom == atom_index {
-                bond.end_atom
-            } else {
-                bond.begin_atom
-            };
+    for neighbor in adjacency.neighbors_of(atom_index) {
+        seen_bonds[neighbor.bond_index] = true;
+        if cycle_cache
+            .min_cycle_size_for_bond(mol, adjacency, neighbor.bond_index)
+            .is_some()
+        {
+            let other = neighbor.atom_index;
             if !seen_atoms[other] {
                 seen_atoms[other] = true;
                 queue.push_back(other);
@@ -309,27 +523,29 @@ fn has_ring_stereo_partner_rdkit_like(
         }
     }
     while let Some(current) = queue.pop_front() {
-        if !matches!(mol.atoms[current].chiral_tag, ChiralTag::Unspecified)
+        if !matches!(mol.atoms()[current].chiral_tag, ChiralTag::Unspecified)
             && !has_cip_code.get(current).copied().unwrap_or(false)
             && (atom_ring_neighbor_count == 4
-                || atom_is_candidate_for_ring_stereochem_rdkit_like(mol, current, ranks))
+                || atom_is_candidate_for_ring_stereochem_with_cache(
+                    mol,
+                    adjacency,
+                    cycle_cache,
+                    current,
+                    ranks,
+                ))
         {
             return true;
         }
-        for (bond_idx, bond) in mol.bonds.iter().enumerate() {
-            if seen_bonds[bond_idx] {
+        for neighbor in adjacency.neighbors_of(current) {
+            if seen_bonds[neighbor.bond_index] {
                 continue;
             }
-            if bond.begin_atom != current && bond.end_atom != current {
-                continue;
-            }
-            seen_bonds[bond_idx] = true;
-            if min_cycle_size_for_bond(mol, bond_idx).is_some() {
-                let other = if bond.begin_atom == current {
-                    bond.end_atom
-                } else {
-                    bond.begin_atom
-                };
+            seen_bonds[neighbor.bond_index] = true;
+            if cycle_cache
+                .min_cycle_size_for_bond(mol, adjacency, neighbor.bond_index)
+                .is_some()
+            {
+                let other = neighbor.atom_index;
                 if !seen_atoms[other] {
                     seen_atoms[other] = true;
                     queue.push_back(other);
@@ -340,50 +556,45 @@ fn has_ring_stereo_partner_rdkit_like(
     false
 }
 
-fn atom_is_candidate_for_ring_stereochem_rdkit_like(
+fn atom_is_candidate_for_ring_stereochem_with_cache(
     mol: &Molecule,
+    adjacency: &AdjacencyList,
+    cycle_cache: &mut StereoBondCycleCache,
     atom_index: usize,
     ranks: &[i64],
 ) -> bool {
-    if !mol.bonds.iter().enumerate().any(|(bond_idx, bond)| {
-        (bond.begin_atom == atom_index || bond.end_atom == atom_index)
-            && min_cycle_size_for_bond(mol, bond_idx).is_some()
+    if !adjacency.neighbors_of(atom_index).iter().any(|neighbor| {
+        cycle_cache
+            .min_cycle_size_for_bond(mol, adjacency, neighbor.bond_index)
+            .is_some()
     }) {
         return false;
     }
-    let atom = &mol.atoms[atom_index];
+    let atom = &mol.atoms()[atom_index];
     if atom.atomic_num == 7
-        && atom_nonzero_degree(mol, atom_index) == 3
-        && !mol.bonds.iter().enumerate().any(|(bond_idx, bond)| {
-            (bond.begin_atom == atom_index || bond.end_atom == atom_index)
-                && min_cycle_size_for_bond(mol, bond_idx).is_some_and(|size| size == 3)
+        && atom_nonzero_degree_with_adjacency(mol, adjacency, atom_index) == 3
+        && !adjacency.neighbors_of(atom_index).iter().any(|neighbor| {
+            cycle_cache
+                .min_cycle_size_for_bond(mol, adjacency, neighbor.bond_index)
+                .is_some_and(|size| size == 3)
         })
-        && !is_atom_bridgehead_rdkit_like(mol, atom_index)
+        && !is_atom_bridgehead_with_cache(mol, adjacency, cycle_cache, atom_index)
     {
         return false;
     }
 
     let mut non_ring_neighbors = Vec::new();
-    let mut ring_neighbors = Vec::new();
     let mut ring_neighbor_ranks = std::collections::BTreeSet::new();
     let mut ring_neighbor_count = 0usize;
-    for (bond_idx, bond) in mol.bonds.iter().enumerate() {
-        let other = if bond.begin_atom == atom_index {
-            Some(bond.end_atom)
-        } else if bond.end_atom == atom_index {
-            Some(bond.begin_atom)
-        } else {
-            None
-        };
-        let Some(other) = other else {
-            continue;
-        };
-        if min_cycle_size_for_bond(mol, bond_idx).is_some() {
+    for neighbor in adjacency.neighbors_of(atom_index) {
+        if cycle_cache
+            .min_cycle_size_for_bond(mol, adjacency, neighbor.bond_index)
+            .is_some()
+        {
             ring_neighbor_count += 1;
-            ring_neighbors.push(other);
-            ring_neighbor_ranks.insert(ranks[other]);
+            ring_neighbor_ranks.insert(ranks[neighbor.atom_index]);
         } else {
-            non_ring_neighbors.push(other);
+            non_ring_neighbors.push(neighbor.atom_index);
         }
     }
     match non_ring_neighbors.len() {
@@ -400,6 +611,27 @@ fn atom_is_candidate_for_ring_stereochem_rdkit_like(
     }
 }
 
+fn is_atom_bridgehead_with_cache(
+    mol: &Molecule,
+    adjacency: &AdjacencyList,
+    cycle_cache: &mut StereoBondCycleCache,
+    atom_index: usize,
+) -> bool {
+    if atom_nonzero_degree_with_adjacency(mol, adjacency, atom_index) < 3 {
+        return false;
+    }
+    let atom_ring_bonds = adjacency
+        .neighbors_of(atom_index)
+        .iter()
+        .filter(|neighbor| {
+            cycle_cache
+                .min_cycle_size_for_bond(mol, adjacency, neighbor.bond_index)
+                .is_some()
+        })
+        .count();
+    atom_ring_bonds >= 3
+}
+
 pub(crate) fn assign_chiral_types_from_bond_dirs_rdkit_subset(mol: &mut Molecule) {
     // Source mapping: RDKit Chirality.cpp::assignChiralTypesFromBondDirs()
     // tetrahedral pseudo-3D branch. This covers molfile wedge/dash input and
@@ -413,30 +645,30 @@ pub(crate) fn assign_chiral_types_from_bond_dirs_rdkit_subset(mol: &mut Molecule
     let Some(coords_2d) = mol.coords_2d() else {
         return;
     };
-    if coords_2d.len() != mol.atoms.len() {
+    if coords_2d.len() != mol.atoms().len() {
         return;
     }
     let coords = coords_2d
         .iter()
         .map(|coord| DVec3::new(coord.x, coord.y, 0.0))
         .collect::<Vec<_>>();
-    let mut atoms_set = vec![false; mol.atoms.len()];
+    let mut atoms_set = vec![false; mol.atoms().len()];
 
-    for bond_index in 0..mol.bonds.len() {
-        let direction = mol.bonds[bond_index].direction;
+    for bond_index in 0..mol.bonds().len() {
+        let direction = mol.bonds()[bond_index].direction;
         if !matches!(
             direction,
             BondDirection::EndUpRight | BondDirection::EndDownRight
         ) {
             continue;
         }
-        let atom_index = mol.bonds[bond_index].begin_atom;
+        let atom_index = mol.bonds()[bond_index].begin_atom;
         if atoms_set[atom_index] || atom_nonzero_degree(mol, atom_index) > 4 {
             continue;
         }
 
         let center = coords[atom_index];
-        let wedged_atom = mol.bonds[bond_index].end_atom;
+        let wedged_atom = mol.bonds()[bond_index].end_atom;
         let ref_length = (center - coords[wedged_atom]).length();
         let z_offset = if matches!(direction, BondDirection::EndUpRight) {
             PSEUDO_3D_OFFSET
@@ -448,7 +680,7 @@ pub(crate) fn assign_chiral_types_from_bond_dirs_rdkit_subset(mol: &mut Molecule
         let mut bond_vects = Vec::<DVec3>::new();
         let mut all_single = true;
         for (neighbor_idx, neighbor_bond) in mol
-            .bonds
+            .bonds()
             .iter()
             .filter(|bond| bond.begin_atom == atom_index || bond.end_atom == atom_index)
             .enumerate()
@@ -490,7 +722,7 @@ pub(crate) fn assign_chiral_types_from_bond_dirs_rdkit_subset(mol: &mut Molecule
         if !(3..=4).contains(&n_nbrs) {
             continue;
         }
-        if !all_single && !matches!(mol.atoms[atom_index].atomic_num, 15 | 16) {
+        if !all_single && !matches!(mol.atoms()[atom_index].atomic_num, 15 | 16) {
             continue;
         }
 
@@ -632,10 +864,10 @@ pub(crate) fn assign_chiral_types_from_bond_dirs_rdkit_subset(mol: &mut Molecule
         }
         vol *= prefactor;
         if vol > VOLUME_TOLERANCE {
-            mol.atoms[atom_index].chiral_tag = ChiralTag::TetrahedralCcw;
+            mol.atoms_mut()[atom_index].chiral_tag = ChiralTag::TetrahedralCcw;
             atoms_set[atom_index] = true;
         } else if vol < -VOLUME_TOLERANCE {
-            mol.atoms[atom_index].chiral_tag = ChiralTag::TetrahedralCw;
+            mol.atoms_mut()[atom_index].chiral_tag = ChiralTag::TetrahedralCw;
             atoms_set[atom_index] = true;
         }
     }
@@ -684,25 +916,28 @@ fn count_swaps_to_interconvert(probe: &[usize], reference: &[usize]) -> usize {
     swaps
 }
 
-fn perturbation_order_for_atom(mol: &Molecule, atom_index: usize, probe: &[usize]) -> usize {
-    let reference: Vec<usize> = mol
-        .bonds
+fn perturbation_order_for_atom_with_adjacency(
+    adjacency: &AdjacencyList,
+    atom_index: usize,
+    probe: &[usize],
+) -> usize {
+    let reference = adjacency
+        .neighbors_of(atom_index)
         .iter()
-        .filter(|bond| bond.begin_atom == atom_index || bond.end_atom == atom_index)
-        .map(|bond| bond.index)
-        .collect();
+        .map(|neighbor| neighbor.bond_index)
+        .collect::<Vec<_>>();
     count_swaps_to_interconvert(probe, &reference)
 }
 
 pub(crate) fn min_cycle_size_for_bond(mol: &Molecule, bond_index: usize) -> Option<usize> {
-    let bond = &mol.bonds[bond_index];
+    let bond = &mol.bonds()[bond_index];
     let start = bond.begin_atom;
     let goal = bond.end_atom;
     let mut queue = VecDeque::from([(start, 0usize)]);
-    let mut seen = vec![false; mol.atoms.len()];
+    let mut seen = vec![false; mol.atoms().len()];
     seen[start] = true;
     while let Some((atom, dist)) = queue.pop_front() {
-        for (idx, edge) in mol.bonds.iter().enumerate() {
+        for (idx, edge) in mol.bonds().iter().enumerate() {
             if idx == bond_index {
                 continue;
             }
@@ -732,47 +967,55 @@ pub(crate) fn should_detect_double_bond_stereo(mol: &Molecule, bond_index: usize
     min_cycle_size_for_bond(mol, bond_index).is_none_or(|size| size >= 8)
 }
 
-fn atom_has_directional_bond_to_other_than(
+fn atom_has_directional_bond_to_other_than_with_adjacency(
     mol: &Molecule,
+    adjacency: &AdjacencyList,
     atom_index: usize,
     excluded_neighbor: usize,
 ) -> bool {
-    mol.bonds.iter().any(|bond| {
-        let other = if bond.begin_atom == atom_index {
-            Some(bond.end_atom)
-        } else if bond.end_atom == atom_index {
-            Some(bond.begin_atom)
-        } else {
-            None
-        };
-        other.is_some_and(|idx| idx != excluded_neighbor)
+    adjacency.neighbors_of(atom_index).iter().any(|neighbor| {
+        neighbor.atom_index != excluded_neighbor
             && matches!(
-                bond.direction,
+                mol.bonds()[neighbor.bond_index].direction,
                 crate::BondDirection::EndDownRight | crate::BondDirection::EndUpRight
             )
     })
 }
 
-fn legacy_assign_bond_stereo_would_leave_unassigned(mol: &Molecule) -> bool {
+fn legacy_assign_bond_stereo_would_leave_unassigned_with_cache(
+    mol: &Molecule,
+    adjacency: &AdjacencyList,
+    cycle_cache: &mut StereoBondCycleCache,
+) -> bool {
     // Source mapping: RDKit Chirality.cpp::assignBondStereoCodes(). During
     // clean legacy stereo perception RDKit clears double-bond stereo first,
     // then counts eligible double bonds that cannot be assigned from adjacent
     // directional single bonds.
-    for (bond_index, bond) in mol.bonds.iter().enumerate() {
+    for (bond_index, bond) in mol.bonds().iter().enumerate() {
         if !matches!(bond.order, BondOrder::Double)
-            || !should_detect_double_bond_stereo(mol, bond_index)
+            || cycle_cache
+                .min_cycle_size_for_bond(mol, adjacency, bond_index)
+                .is_some_and(|size| size < 8)
         {
             continue;
         }
-        let begin_degree = atom_nonzero_degree(mol, bond.begin_atom);
-        let end_degree = atom_nonzero_degree(mol, bond.end_atom);
+        let begin_degree = atom_nonzero_degree_with_adjacency(mol, adjacency, bond.begin_atom);
+        let end_degree = atom_nonzero_degree_with_adjacency(mol, adjacency, bond.end_atom);
         if !matches!(begin_degree, 2 | 3) || !matches!(end_degree, 2 | 3) {
             continue;
         }
-        let begin_has_dir =
-            atom_has_directional_bond_to_other_than(mol, bond.begin_atom, bond.end_atom);
-        let end_has_dir =
-            atom_has_directional_bond_to_other_than(mol, bond.end_atom, bond.begin_atom);
+        let begin_has_dir = atom_has_directional_bond_to_other_than_with_adjacency(
+            mol,
+            adjacency,
+            bond.begin_atom,
+            bond.end_atom,
+        );
+        let end_has_dir = atom_has_directional_bond_to_other_than_with_adjacency(
+            mol,
+            adjacency,
+            bond.end_atom,
+            bond.begin_atom,
+        );
         if !(begin_has_dir && end_has_dir) {
             return true;
         }
@@ -780,12 +1023,12 @@ fn legacy_assign_bond_stereo_would_leave_unassigned(mol: &Molecule) -> bool {
     false
 }
 
-pub(crate) fn is_atom_bridgehead_rdkit_like(mol: &Molecule, atom_index: usize) -> bool {
+pub(crate) fn is_atom_bridgehead(mol: &Molecule, atom_index: usize) -> bool {
     if atom_nonzero_degree(mol, atom_index) < 3 {
         return false;
     }
     let atom_ring_bonds = mol
-        .bonds
+        .bonds()
         .iter()
         .filter(|bond| bond.begin_atom == atom_index || bond.end_atom == atom_index)
         .filter(|bond| min_cycle_size_for_bond(mol, bond.index).is_some())
@@ -793,54 +1036,48 @@ pub(crate) fn is_atom_bridgehead_rdkit_like(mol: &Molecule, atom_index: usize) -
     atom_ring_bonds >= 3
 }
 
-fn is_atom_potential_chiral_center(
+fn is_atom_potential_chiral_center_with_cache(
     mol: &Molecule,
+    adjacency: &AdjacencyList,
+    cycle_cache: &mut StereoBondCycleCache,
     atom_index: usize,
     ranks: &[i64],
     explicit_valence: &[u8],
     implicit_hydrogens: &[u8],
 ) -> (bool, bool, Vec<(i64, usize)>) {
-    let atom = &mol.atoms[atom_index];
-    let nz_degree = atom_nonzero_degree(mol, atom_index);
-    let graph_h_neighbors = mol.bonds.iter().filter(|bond| {
-        let nbr = if bond.begin_atom == atom_index {
-            Some(bond.end_atom)
-        } else if bond.end_atom == atom_index {
-            Some(bond.begin_atom)
-        } else {
-            None
-        };
-        nbr.is_some_and(|nbr_idx| mol.atoms[nbr_idx].atomic_num == 1)
-    });
+    let atom = &mol.atoms()[atom_index];
+    let nz_degree = atom_nonzero_degree_with_adjacency(mol, adjacency, atom_index);
     let total_num_hs = atom.explicit_hydrogens as usize
         + implicit_hydrogens[atom_index] as usize
-        + graph_h_neighbors.count();
+        + graph_h_neighbor_count_with_adjacency(mol, adjacency, atom_index);
     let tnz_degree = nz_degree + total_num_hs;
     let mut legal_center = true;
     let mut has_dupes = false;
     let mut nbrs = Vec::new();
 
-    if tnz_degree > 4 {
-        legal_center = false;
-    } else if tnz_degree < 3 {
-        legal_center = false;
-    } else if nz_degree < 3 && !matches!(atom.atomic_num, 15 | 33) {
+    if tnz_degree > 4 || tnz_degree < 3 || (nz_degree < 3 && !matches!(atom.atomic_num, 15 | 33)) {
         legal_center = false;
     } else if nz_degree == 3 {
         if total_num_hs == 1 {
-            if has_protium_neighbor(mol, atom_index) {
+            if has_protium_neighbor_with_adjacency(mol, adjacency, atom_index) {
                 legal_center = false;
             }
         } else {
             legal_center = false;
             match atom.atomic_num {
                 7 => {
-                    let in_three_ring = mol.bonds.iter().enumerate().any(|(bond_index, bond)| {
-                        (bond.begin_atom == atom_index || bond.end_atom == atom_index)
-                            && min_cycle_size_for_bond(mol, bond_index) == Some(3)
+                    let in_three_ring = adjacency.neighbors_of(atom_index).iter().any(|neighbor| {
+                        cycle_cache.min_cycle_size_for_bond(mol, adjacency, neighbor.bond_index)
+                            == Some(3)
                     });
-                    if !atom_has_conjugated_bond(mol, atom_index)
-                        && (in_three_ring || is_atom_bridgehead_rdkit_like(mol, atom_index))
+                    if !atom_has_conjugated_bond_with_adjacency(mol, adjacency, atom_index)
+                        && (in_three_ring
+                            || is_atom_bridgehead_with_cache(
+                                mol,
+                                adjacency,
+                                cycle_cache,
+                                atom_index,
+                            ))
                     {
                         legal_center = true;
                     }
@@ -861,22 +1098,13 @@ fn is_atom_potential_chiral_center(
 
     if legal_center && !ranks.is_empty() {
         let mut seen_ranks = HashMap::<i64, ()>::new();
-        for bond in &mol.bonds {
-            let other_idx = if bond.begin_atom == atom_index {
-                Some(bond.end_atom)
-            } else if bond.end_atom == atom_index {
-                Some(bond.begin_atom)
-            } else {
-                None
-            };
-            let Some(other_idx) = other_idx else {
-                continue;
-            };
-            nbrs.push((ranks[other_idx], bond.index));
+        for neighbor in adjacency.neighbors_of(atom_index) {
+            let bond = &mol.bonds()[neighbor.bond_index];
+            nbrs.push((ranks[neighbor.atom_index], neighbor.bond_index));
             if !bond_affects_atom_chirality(bond, atom_index) {
                 continue;
             }
-            if seen_ranks.insert(ranks[other_idx], ()).is_some() {
+            if seen_ranks.insert(ranks[neighbor.atom_index], ()).is_some() {
                 has_dupes = true;
                 break;
             }
@@ -892,14 +1120,14 @@ impl Molecule {
     #[must_use]
     pub fn tetrahedral_stereo(&self) -> Vec<TetrahedralStereo> {
         let mut out = Vec::new();
-        for atom in &self.atoms {
+        for atom in self.atoms() {
             let tag = atom.chiral_tag;
             if !matches!(tag, ChiralTag::TetrahedralCcw | ChiralTag::TetrahedralCw) {
                 continue;
             }
 
             let mut ligands = Vec::with_capacity(4);
-            for bond in &self.bonds {
+            for bond in self.bonds() {
                 if bond.begin_atom == atom.index {
                     ligands.push(LigandRef::Atom(bond.end_atom));
                 } else if bond.end_atom == atom.index {
@@ -945,18 +1173,22 @@ impl Molecule {
                     cip_rank: None,
                     chirality_possible: false,
                 };
-                self.atoms.len()
+                self.atoms().len()
             ];
         };
+        let adjacency = AdjacencyList::from_topology(self.atoms().len(), self.bonds());
+        let mut cycle_cache = StereoBondCycleCache::new(self.bonds().len());
 
         let mut has_stereo_atoms = false;
         let mut has_potential_stereo_atoms = false;
-        for atom in &self.atoms {
+        for atom in self.atoms() {
             if !has_stereo_atoms && !matches!(atom.chiral_tag, ChiralTag::Unspecified) {
                 has_stereo_atoms = true;
-            } else if !has_potential_stereo_atoms {
-                has_potential_stereo_atoms = is_atom_potential_chiral_center(
+            } else if flag_possible_stereo_centers && !has_potential_stereo_atoms {
+                has_potential_stereo_atoms = is_atom_potential_chiral_center_with_cache(
                     self,
+                    &adjacency,
+                    &mut cycle_cache,
                     atom.index,
                     &[],
                     &assignment.explicit_valence,
@@ -968,13 +1200,13 @@ impl Molecule {
 
         let mut has_stereo_bonds = false;
         let mut has_potential_stereo_bonds = false;
-        for (bond_index, bond) in self.bonds.iter().enumerate() {
+        for (bond_index, bond) in self.bonds().iter().enumerate() {
             if !matches!(bond.order, BondOrder::Double) {
                 continue;
             }
             let begin = bond.begin_atom;
             let end = bond.end_atom;
-            let is_specified = self.bonds.iter().any(|other| {
+            let is_specified = self.bonds().iter().any(|other| {
                 (other.begin_atom == begin
                     || other.end_atom == begin
                     || other.begin_atom == end
@@ -986,8 +1218,11 @@ impl Molecule {
             });
             if is_specified {
                 has_stereo_bonds = true;
-            } else if !has_potential_stereo_bonds
-                && should_detect_double_bond_stereo(self, bond_index)
+            } else if flag_possible_stereo_centers
+                && !has_potential_stereo_bonds
+                && cycle_cache
+                    .min_cycle_size_for_bond(self, &adjacency, bond_index)
+                    .is_none_or(|size| size >= 8)
             {
                 has_potential_stereo_bonds = true;
             }
@@ -1008,7 +1243,7 @@ impl Molecule {
                     cip_rank: None,
                     chirality_possible: false,
                 };
-                self.atoms.len()
+                self.atoms().len()
             ];
         }
 
@@ -1022,14 +1257,16 @@ impl Molecule {
             })
             .collect();
 
-        for atom in &self.atoms {
+        for atom in self.atoms() {
             let tag = atom.chiral_tag;
             if !flag_possible_stereo_centers && matches!(tag, ChiralTag::Unspecified) {
                 continue;
             }
 
-            let (legal_center, has_dupes, mut nbrs) = is_atom_potential_chiral_center(
+            let (legal_center, has_dupes, mut nbrs) = is_atom_potential_chiral_center_with_cache(
                 self,
+                &adjacency,
+                &mut cycle_cache,
                 atom.index,
                 &ranks,
                 &assignment.explicit_valence,
@@ -1044,23 +1281,11 @@ impl Molecule {
 
             nbrs.sort();
             let probe: Vec<usize> = nbrs.into_iter().map(|(_, bond_index)| bond_index).collect();
-            let mut swaps = perturbation_order_for_atom(self, atom.index, &probe);
+            let mut swaps =
+                perturbation_order_for_atom_with_adjacency(&adjacency, atom.index, &probe);
             let total_num_hs = atom.explicit_hydrogens as usize
                 + assignment.implicit_hydrogens[atom.index] as usize
-                + self
-                    .bonds
-                    .iter()
-                    .filter(|bond| {
-                        let nbr = if bond.begin_atom == atom.index {
-                            Some(bond.end_atom)
-                        } else if bond.end_atom == atom.index {
-                            Some(bond.begin_atom)
-                        } else {
-                            None
-                        };
-                        nbr.is_some_and(|nbr_idx| self.atoms[nbr_idx].atomic_num == 1)
-                    })
-                    .count();
+                + graph_h_neighbor_count_with_adjacency(self, &adjacency, atom.index);
             if probe.len() == 3 && total_num_hs == 1 {
                 swaps += 1;
             }
@@ -1069,6 +1294,7 @@ impl Molecule {
                 final_tag = match final_tag {
                     ChiralTag::TetrahedralCcw => ChiralTag::TetrahedralCw,
                     ChiralTag::TetrahedralCw => ChiralTag::TetrahedralCcw,
+                    ChiralTag::TrigonalBipyramidal => ChiralTag::TrigonalBipyramidal,
                     ChiralTag::Unspecified => ChiralTag::Unspecified,
                 };
             }
@@ -1084,7 +1310,11 @@ impl Molecule {
         let cip_codes: Vec<Option<String>> =
             out.iter().map(|props| props.cip_code.clone()).collect();
         if cip_codes.iter().any(Option::is_some)
-            && legacy_assign_bond_stereo_would_leave_unassigned(self)
+            && legacy_assign_bond_stereo_would_leave_unassigned_with_cache(
+                self,
+                &adjacency,
+                &mut cycle_cache,
+            )
         {
             let reranked =
                 crate::io::molblock::rdkit_cip_reranks_with_legacy_stereo(self, &ranks, &cip_codes);
@@ -1106,7 +1336,7 @@ impl Molecule {
 
 pub(crate) fn cache_rdkit_legacy_cip_ranks(mol: &mut Molecule) {
     let ranks = mol.rdkit_legacy_stereo_atom_props(true);
-    for (atom, props) in mol.atoms.iter_mut().zip(ranks) {
+    for (atom, props) in mol.atoms_mut().iter_mut().zip(ranks) {
         atom.rdkit_cip_rank = props.cip_rank;
     }
 }

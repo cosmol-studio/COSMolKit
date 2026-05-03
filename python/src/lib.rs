@@ -200,6 +200,7 @@ fn chiral_tag_name(tag: cosmolkit_core::ChiralTag) -> &'static str {
         cosmolkit_core::ChiralTag::Unspecified => "CHI_UNSPECIFIED",
         cosmolkit_core::ChiralTag::TetrahedralCw => "CHI_TETRAHEDRAL_CW",
         cosmolkit_core::ChiralTag::TetrahedralCcw => "CHI_TETRAHEDRAL_CCW",
+        cosmolkit_core::ChiralTag::TrigonalBipyramidal => "CHI_TRIGONALBIPYRAMIDAL",
     }
 }
 
@@ -380,10 +381,6 @@ fn rdkit_bond_stereo_from_name(name: &str) -> PyResult<cosmolkit_core::BondStere
             "from_rdkit unsupported bond stereo '{other}'"
         ))),
     }
-}
-
-fn clone_for_python_value_api(mol: &cosmolkit_core::Molecule) -> cosmolkit_core::Molecule {
-    mol.clone()
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
@@ -1221,7 +1218,7 @@ Molecule
         }
 
         cosmolkit_core::assign_double_bond_stereo_from_directions(&mut mol);
-        for (bond, stereo) in mol.bonds.iter_mut().zip(explicit_bond_stereo) {
+        for (bond, stereo) in mol.bonds_mut().iter_mut().zip(explicit_bond_stereo) {
             if !matches!(stereo, cosmolkit_core::BondStereo::None) {
                 bond.stereo = stereo;
             }
@@ -1320,8 +1317,9 @@ Read all molecule records from an SDF string.
 Return a new molecule with explicit hydrogens added.
 "#]
     fn with_hydrogens(&self) -> PyResult<Self> {
-        let mut out = clone_for_python_value_api(&self.inner);
-        cosmolkit_core::add_hydrogens_in_place(&mut out)
+        let out = self
+            .inner
+            .with_hydrogens()
             .map_err(|err| PyValueError::new_err(format!("with_hydrogens failed: {err:?}")))?;
         Ok(Self { inner: out })
     }
@@ -1330,8 +1328,9 @@ Return a new molecule with explicit hydrogens added.
 Return a new molecule with explicit hydrogens removed.
 "#]
     fn without_hydrogens(&self) -> PyResult<Self> {
-        let mut out = clone_for_python_value_api(&self.inner);
-        cosmolkit_core::remove_hydrogens_in_place(&mut out)
+        let out = self
+            .inner
+            .without_hydrogens()
             .map_err(|err| PyValueError::new_err(format!("without_hydrogens failed: {err:?}")))?;
         Ok(Self { inner: out })
     }
@@ -1342,11 +1341,24 @@ Return a new molecule with aromatic bonds converted to an explicit Kekule form.
 "#]
     fn with_kekulized_bonds(&self, sanitize: Option<bool>) -> PyResult<Self> {
         let _ = sanitize;
-        let mut out = clone_for_python_value_api(&self.inner);
-        cosmolkit_core::kekulize::kekulize_in_place(&mut out, false).map_err(|err| {
+        let out = self.inner.with_kekulized_bonds(false).map_err(|err| {
             PyValueError::new_err(format!("with_kekulized_bonds failed: {err:?}"))
         })?;
         Ok(Self { inner: out })
+    }
+
+    #[doc = r#"
+Return the number of atoms.
+"#]
+    fn num_atoms(&self) -> usize {
+        self.inner.atoms().len()
+    }
+
+    #[doc = r#"
+Return the number of bonds.
+"#]
+    fn num_bonds(&self) -> usize {
+        self.inner.bonds().len()
     }
 
     #[doc = r#"
@@ -1356,13 +1368,13 @@ Return read-only atom feature records.
         let assignment =
             cosmolkit_core::assign_valence(&self.inner, cosmolkit_core::ValenceModel::RdkitLike)
                 .ok();
-        let mut degrees = vec![0usize; self.inner.atoms.len()];
-        for bond in &self.inner.bonds {
+        let mut degrees = vec![0usize; self.inner.atoms().len()];
+        for bond in self.inner.bonds() {
             degrees[bond.begin_atom] += 1;
             degrees[bond.end_atom] += 1;
         }
         self.inner
-            .atoms
+            .atoms()
             .iter()
             .map(|atom| Atom {
                 idx: atom.index,
@@ -1398,7 +1410,7 @@ Return read-only bond feature records.
 "#]
     fn bonds(&self) -> Vec<Bond> {
         self.inner
-            .bonds
+            .bonds()
             .iter()
             .map(|bond| Bond {
                 idx: bond.index,
@@ -1424,7 +1436,7 @@ include_unassigned : bool, default True
 "#]
     fn find_chiral_centers(&self, include_unassigned: bool) -> Vec<(usize, String)> {
         self.inner
-            .atoms
+            .atoms()
             .iter()
             .filter_map(|atom| match atom.chiral_tag {
                 cosmolkit_core::ChiralTag::Unspecified => {
@@ -1439,6 +1451,9 @@ include_unassigned : bool, default True
                 }
                 cosmolkit_core::ChiralTag::TetrahedralCcw => {
                     Some((atom.index, "CHI_TETRAHEDRAL_CCW".to_string()))
+                }
+                cosmolkit_core::ChiralTag::TrigonalBipyramidal => {
+                    Some((atom.index, "CHI_TRIGONALBIPYRAMIDAL".to_string()))
                 }
             })
             .collect()
@@ -1458,8 +1473,9 @@ represented as ``None``.
 Return a new molecule with 2D coordinates.
 "#]
     fn with_2d_coords(&self) -> PyResult<Self> {
-        let mut out = clone_for_python_value_api(&self.inner);
-        out.compute_2d_coords()
+        let out = self
+            .inner
+            .with_2d_coords()
             .map_err(|err| PyValueError::new_err(format!("with_2d_coords failed: {err}")))?;
         Ok(Self { inner: out })
     }
@@ -1662,7 +1678,7 @@ as one new molecule value.
 "#]
     fn edit(&self) -> MoleculeEdit {
         MoleculeEdit {
-            working: clone_for_python_value_api(&self.inner),
+            working: self.inner.clone(),
         }
     }
 
@@ -1681,14 +1697,14 @@ as one new molecule value.
     }
 
     fn __len__(&self) -> usize {
-        self.inner.atoms.len()
+        self.inner.atoms().len()
     }
 
     fn __repr__(&self) -> String {
         format!(
             "Molecule(num_atoms={}, num_bonds={}, has_2d_coords={})",
-            self.inner.atoms.len(),
-            self.inner.bonds.len(),
+            self.inner.atoms().len(),
+            self.inner.bonds().len(),
             self.inner.coords_2d().is_some()
         )
     }
@@ -1860,7 +1876,7 @@ order : {"single", "double", "triple", "aromatic", "dative", "unspecified"}
     Bond order.
 "#]
     fn add_bond(&mut self, begin: usize, end: usize, order: &str) -> PyResult<()> {
-        if begin >= self.working.atoms.len() || end >= self.working.atoms.len() {
+        if begin >= self.working.atoms().len() || end >= self.working.atoms().len() {
             return Err(PyValueError::new_err("bond atom index out of range"));
         }
         let order = match order.to_ascii_lowercase().as_str() {
@@ -1895,7 +1911,7 @@ Set an atom formal charge.
     fn set_atom_charge(&mut self, atom_index: usize, charge: i32) -> PyResult<()> {
         let atom = self
             .working
-            .atoms
+            .atoms_mut()
             .get_mut(atom_index)
             .ok_or_else(|| PyValueError::new_err("atom index out of range"))?;
         let charge =
@@ -1918,8 +1934,8 @@ Commit staged edits and return a new molecule.
     fn __repr__(&self) -> String {
         format!(
             "MoleculeEdit(num_atoms={}, num_bonds={})",
-            self.working.atoms.len(),
-            self.working.bonds.len()
+            self.working.atoms().len(),
+            self.working.bonds().len()
         )
     }
 }

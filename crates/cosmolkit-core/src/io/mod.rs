@@ -48,10 +48,10 @@ mod tests {
             .expect("minimal V2000 SDF record should parse")
             .expect("record should exist");
 
-        assert_eq!(record.molecule.atoms.len(), 2);
-        assert_eq!(record.molecule.bonds.len(), 1);
+        assert_eq!(record.molecule.atoms().len(), 2);
+        assert_eq!(record.molecule.bonds().len(), 1);
         assert_eq!(record.molecule.atomic_numbers(), vec![6, 6]);
-        assert_eq!(record.molecule.bonds[0].order, BondOrder::Single);
+        assert_eq!(record.molecule.bonds()[0].order, BondOrder::Single);
         assert_eq!(record.title, "");
         assert_eq!(
             record.program_line.as_deref(),
@@ -193,10 +193,18 @@ $$$$
     }
 
     fn assert_molecule_graph_and_coords_equal(lhs: &Molecule, rhs: &Molecule, label: &str) {
-        assert_eq!(lhs.atoms.len(), rhs.atoms.len(), "atom count for {label}");
-        assert_eq!(lhs.bonds.len(), rhs.bonds.len(), "bond count for {label}");
+        assert_eq!(
+            lhs.atoms().len(),
+            rhs.atoms().len(),
+            "atom count for {label}"
+        );
+        assert_eq!(
+            lhs.bonds().len(),
+            rhs.bonds().len(),
+            "bond count for {label}"
+        );
 
-        for (idx, (lhs_atom, rhs_atom)) in lhs.atoms.iter().zip(rhs.atoms.iter()).enumerate() {
+        for (idx, (lhs_atom, rhs_atom)) in lhs.atoms().iter().zip(rhs.atoms().iter()).enumerate() {
             assert_eq!(
                 lhs_atom.atomic_num, rhs_atom.atomic_num,
                 "atomic_num at atom {idx} for {label}"
@@ -219,7 +227,7 @@ $$$$
             );
         }
 
-        for (idx, (lhs_bond, rhs_bond)) in lhs.bonds.iter().zip(rhs.bonds.iter()).enumerate() {
+        for (idx, (lhs_bond, rhs_bond)) in lhs.bonds().iter().zip(rhs.bonds().iter()).enumerate() {
             assert_eq!(
                 (lhs_bond.begin_atom, lhs_bond.end_atom),
                 (rhs_bond.begin_atom, rhs_bond.end_atom),
@@ -302,9 +310,9 @@ $$$$
         assert_eq!(coords.len(), 2);
         assert!((coords[0].z - 2.5).abs() <= 1e-12);
         assert_eq!(record.molecule.num_3d_conformers(), 1);
-        assert_eq!(record.molecule.atoms[0].prop("WEIGHT"), Some("0.75"));
-        assert_eq!(record.molecule.atoms[0].prop("LABEL"), Some("foo"));
-        assert_eq!(record.molecule.atoms[0].prop_f64("WEIGHT"), Some(0.75));
+        assert_eq!(record.molecule.atoms()[0].prop("WEIGHT"), Some("0.75"));
+        assert_eq!(record.molecule.atoms()[0].prop("LABEL"), Some("foo"));
+        assert_eq!(record.molecule.atoms()[0].prop_f64("WEIGHT"), Some(0.75));
     }
 
     #[test]

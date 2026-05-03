@@ -136,14 +136,14 @@ fn kekulize_clear_flags_false_matches_rdkit_golden() {
         });
 
         let actual_atom_is_aromatic: Vec<bool> =
-            mol.atoms.iter().map(|atom| atom.is_aromatic).collect();
+            mol.atoms().iter().map(|atom| atom.is_aromatic).collect();
         let actual_bond_types: Vec<&'static str> = mol
-            .bonds
+            .bonds()
             .iter()
             .map(|bond| bond_type_name(bond.order))
             .collect();
         let actual_bond_is_aromatic: Vec<bool> =
-            mol.bonds.iter().map(|bond| bond.is_aromatic).collect();
+            mol.bonds().iter().map(|bond| bond.is_aromatic).collect();
 
         assert_eq!(
             actual_atom_is_aromatic,

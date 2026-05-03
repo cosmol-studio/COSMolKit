@@ -1,5 +1,6 @@
 use crate::smiles_write::SmilesWriteError;
-use crate::{BondOrder, Molecule};
+use crate::{BondDirection, BondOrder, BondStereo, Molecule, ValenceAssignment};
+use std::borrow::Cow;
 use std::cmp::Ordering;
 
 const MAX_NATOMS: i64 = 5000;
@@ -63,7 +64,44 @@ pub struct FragmentTraversal {
     pub atom_ring_closure_counts: Vec<usize>,
     pub atom_traversal_bond_order: Vec<Vec<usize>>,
     pub chiral_tag_overrides: Vec<Option<crate::ChiralTag>>,
+    pub chiral_permutation_overrides: Vec<Option<u32>>,
     pub bond_direction_overrides: Vec<Option<crate::BondDirection>>,
+}
+
+struct CanonBondState<'a> {
+    mol: &'a Molecule,
+    bond_directions: Vec<BondDirection>,
+    bond_stereos: Vec<BondStereo>,
+}
+
+impl<'a> CanonBondState<'a> {
+    fn new(mol: &'a Molecule) -> Self {
+        Self {
+            mol,
+            bond_directions: mol.bonds().iter().map(|bond| bond.direction).collect(),
+            bond_stereos: mol.bonds().iter().map(|bond| bond.stereo).collect(),
+        }
+    }
+
+    fn bond(&self, bond_idx: usize) -> &crate::Bond {
+        &self.mol.bonds()[bond_idx]
+    }
+
+    fn direction(&self, bond_idx: usize) -> BondDirection {
+        self.bond_directions[bond_idx]
+    }
+
+    fn set_direction(&mut self, bond_idx: usize, direction: BondDirection) {
+        self.bond_directions[bond_idx] = direction;
+    }
+
+    fn stereo(&self, bond_idx: usize) -> BondStereo {
+        self.bond_stereos[bond_idx]
+    }
+
+    fn set_stereo(&mut self, bond_idx: usize, stereo: BondStereo) {
+        self.bond_stereos[bond_idx] = stereo;
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -89,22 +127,68 @@ fn rdkit_bond_type_value(order: BondOrder) -> i64 {
     }
 }
 
-fn adjacency(mol: &Molecule) -> crate::AdjacencyList {
-    mol.adjacency
-        .clone()
-        .unwrap_or_else(|| crate::AdjacencyList::from_topology(mol.atoms.len(), &mol.bonds))
+fn adjacency(mol: &Molecule) -> Cow<'_, crate::AdjacencyList> {
+    if let Some(adjacency) = mol.adjacency() {
+        Cow::Borrowed(adjacency)
+    } else {
+        Cow::Owned(crate::AdjacencyList::from_topology(
+            mol.atoms().len(),
+            mol.bonds(),
+        ))
+    }
 }
 
-fn bond_in_any_cycle(mol: &Molecule, bond_idx: usize) -> bool {
-    let bond = &mol.bonds[bond_idx];
-    let adj = adjacency(mol);
-    let mut seen = vec![false; mol.atoms.len()];
+struct BondCycleCache {
+    values: Vec<Option<bool>>,
+    seen: Vec<bool>,
+}
+
+impl BondCycleCache {
+    fn new(mol: &Molecule) -> Self {
+        Self {
+            values: vec![None; mol.bonds().len()],
+            seen: vec![false; mol.atoms().len()],
+        }
+    }
+
+    fn bond_in_any_cycle(
+        &mut self,
+        mol: &Molecule,
+        adj: &crate::AdjacencyList,
+        bond_idx: usize,
+    ) -> bool {
+        if let Some(value) = self.values[bond_idx] {
+            return value;
+        }
+        let value = compute_bond_in_any_cycle(mol, adj, bond_idx, &mut self.seen);
+        self.values[bond_idx] = Some(value);
+        value
+    }
+}
+
+fn compute_bond_in_any_cycle(
+    mol: &Molecule,
+    adj: &crate::AdjacencyList,
+    bond_idx: usize,
+    seen: &mut [bool],
+) -> bool {
+    let bond = &mol.bonds()[bond_idx];
+    if matches!(bond.order, BondOrder::Null | BondOrder::Dative) {
+        return false;
+    }
+    seen.fill(false);
     let mut queue = std::collections::VecDeque::new();
     seen[bond.begin_atom] = true;
     queue.push_back(bond.begin_atom);
     while let Some(atom_idx) = queue.pop_front() {
         for nbr in adj.neighbors_of(atom_idx) {
             if nbr.bond_index == bond_idx {
+                continue;
+            }
+            if matches!(
+                mol.bonds()[nbr.bond_index].order,
+                BondOrder::Null | BondOrder::Dative
+            ) {
                 continue;
             }
             if nbr.atom_index == bond.end_atom {
@@ -126,6 +210,7 @@ fn build_possibles(
     colors: &[AtomColor],
     ranks: &[u32],
     do_random: bool,
+    cycle_cache: &mut BondCycleCache,
 ) -> Vec<Possible> {
     let adj = adjacency(mol);
     let mut possibles = Vec::new();
@@ -137,10 +222,10 @@ fn build_possibles(
         if !do_random {
             if colors[nbr.atom_index] == AtomColor::Grey {
                 rank -= (MAX_BONDTYPE + 1) * MAX_NATOMS * MAX_NATOMS;
-                rank += (MAX_BONDTYPE - rdkit_bond_type_value(mol.bonds[nbr.bond_index].order))
+                rank += (MAX_BONDTYPE - rdkit_bond_type_value(mol.bonds()[nbr.bond_index].order))
                     * MAX_NATOMS;
-            } else if bond_in_any_cycle(mol, nbr.bond_index) {
-                rank += (MAX_BONDTYPE - rdkit_bond_type_value(mol.bonds[nbr.bond_index].order))
+            } else if cycle_cache.bond_in_any_cycle(mol, &adj, nbr.bond_index) {
+                rank += (MAX_BONDTYPE - rdkit_bond_type_value(mol.bonds()[nbr.bond_index].order))
                     * MAX_NATOMS
                     * MAX_NATOMS;
             }
@@ -165,9 +250,18 @@ fn dfs_find_cycles(
     ranks: &[u32],
     atom_ring_closures: &mut [Vec<usize>],
     do_random: bool,
+    cycle_cache: &mut BondCycleCache,
 ) {
     colors[atom_idx] = AtomColor::Grey;
-    for possible in build_possibles(mol, atom_idx, in_bond_idx, colors, ranks, do_random) {
+    for possible in build_possibles(
+        mol,
+        atom_idx,
+        in_bond_idx,
+        colors,
+        ranks,
+        do_random,
+        cycle_cache,
+    ) {
         match colors[possible.other_idx] {
             AtomColor::White => {
                 dfs_find_cycles(
@@ -178,6 +272,7 @@ fn dfs_find_cycles(
                     ranks,
                     atom_ring_closures,
                     do_random,
+                    cycle_cache,
                 );
             }
             AtomColor::Grey => {
@@ -202,9 +297,10 @@ fn dfs_build_stack(
     atom_ring_closures: &mut [Vec<usize>],
     atom_traversal_bond_order: &mut [Vec<usize>],
     do_random: bool,
+    cycle_cache: &mut BondCycleCache,
 ) -> Result<(), SmilesWriteError> {
     let adj = adjacency(mol);
-    let mut seen_from_here = vec![false; mol.atoms.len()];
+    let mut seen_from_here = vec![false; mol.atoms().len()];
     seen_from_here[atom_idx] = true;
     mol_stack.push(MolStackElem::Atom { atom_idx });
     colors[atom_idx] = AtomColor::Grey;
@@ -218,7 +314,7 @@ fn dfs_build_stack(
         let closures = atom_ring_closures[atom_idx].clone();
         for bond_idx in closures {
             trav_list.push(bond_idx);
-            let bond = &mol.bonds[bond_idx];
+            let bond = &mol.bonds()[bond_idx];
             let other = if bond.begin_atom == atom_idx {
                 bond.end_atom
             } else {
@@ -262,8 +358,8 @@ fn dfs_build_stack(
         }
         let mut rank = i64::from(ranks[nbr.atom_index]);
         if !do_random {
-            if bond_in_any_cycle(mol, nbr.bond_index) {
-                rank += (MAX_BONDTYPE - rdkit_bond_type_value(mol.bonds[nbr.bond_index].order))
+            if cycle_cache.bond_in_any_cycle(mol, &adj, nbr.bond_index) {
+                rank += (MAX_BONDTYPE - rdkit_bond_type_value(mol.bonds()[nbr.bond_index].order))
                     * MAX_NATOMS
                     * MAX_NATOMS;
             }
@@ -305,6 +401,7 @@ fn dfs_build_stack(
             atom_ring_closures,
             atom_traversal_bond_order,
             do_random,
+            cycle_cache,
         )?;
         if branch_idx + 1 != possibles.len() {
             mol_stack.push(MolStackElem::BranchClose { branch_idx });
@@ -395,25 +492,30 @@ fn flip_if_needed(
 
 fn init_canon_rank_atoms(
     mol: &Molecule,
+    assignment: &ValenceAssignment,
     include_chirality: bool,
+    ring_stereo_atoms_cache: Option<&[Vec<i32>]>,
 ) -> Result<Vec<CanonRankAtom>, SmilesWriteError> {
-    let assignment = crate::assign_valence(mol, crate::ValenceModel::RdkitLike).map_err(|_| {
-        SmilesWriteError::UnsupportedPath(
-            "RDKit canonical ranking requires RDKit-like valence assignment",
-        )
-    })?;
+    let computed_ring_stereo_atoms;
+    let empty_ring_stereo_atoms;
     let ring_stereo_atoms = if include_chirality {
-        find_chiral_atom_special_cases(mol)?
+        if let Some(ring_stereo_atoms) = ring_stereo_atoms_cache {
+            ring_stereo_atoms
+        } else {
+            computed_ring_stereo_atoms = find_chiral_atom_special_cases(mol)?;
+            &computed_ring_stereo_atoms
+        }
     } else {
-        vec![Vec::new(); mol.atoms.len()]
+        empty_ring_stereo_atoms = vec![Vec::new(); mol.atoms().len()];
+        &empty_ring_stereo_atoms
     };
     let adjacency = adjacency(mol);
-    let mut atoms = Vec::with_capacity(mol.atoms.len());
-    for atom in &mol.atoms {
+    let mut atoms = Vec::with_capacity(mol.atoms().len());
+    for atom in mol.atoms() {
         let has_ring_nbr = adjacency.neighbors_of(atom.index).iter().any(|nbr| {
             !ring_stereo_atoms[nbr.atom_index].is_empty()
                 && matches!(
-                    mol.atoms[nbr.atom_index].chiral_tag,
+                    mol.atoms()[nbr.atom_index].chiral_tag,
                     crate::ChiralTag::TetrahedralCw | crate::ChiralTag::TetrahedralCcw
                 )
         });
@@ -442,10 +544,10 @@ fn init_canon_rank_atoms(
             bonds: Vec::new(),
         });
     }
-    for atom_idx in 0..mol.atoms.len() {
+    for atom_idx in 0..mol.atoms().len() {
         let mut bonds = Vec::new();
         for nbr in adjacency.neighbors_of(atom_idx) {
-            let bond = &mol.bonds[nbr.bond_index];
+            let bond = &mol.bonds()[nbr.bond_index];
             bonds.push(CanonBondHolder {
                 bond_type: rdkit_bond_type_rank(bond.order),
                 bond_stereo: if include_chirality {
@@ -460,7 +562,7 @@ fn init_canon_rank_atoms(
                 } else {
                     crate::BondStereo::None
                 },
-                controlling_atoms: canonical_bond_controlling_atoms(mol, bond),
+                controlling_atoms: canonical_bond_controlling_atoms(&adjacency, bond),
             });
         }
         bonds.sort_by(canon_bond_greater);
@@ -469,7 +571,10 @@ fn init_canon_rank_atoms(
     Ok(atoms)
 }
 
-fn canonical_bond_controlling_atoms(mol: &Molecule, bond: &crate::Bond) -> [Option<usize>; 4] {
+fn canonical_bond_controlling_atoms(
+    adj: &crate::AdjacencyList,
+    bond: &crate::Bond,
+) -> [Option<usize>; 4] {
     let mut out = [None, None, None, None];
     if !matches!(
         bond.stereo,
@@ -483,17 +588,17 @@ fn canonical_bond_controlling_atoms(mol: &Molecule, bond: &crate::Bond) -> [Opti
     } else {
         return out;
     }
-    let begin_degree = adjacency(mol).neighbors_of(bond.begin_atom).len();
+    let begin_degree = adj.neighbors_of(bond.begin_atom).len();
     if begin_degree > 2 {
-        for nbr in adjacency(mol).neighbors_of(bond.begin_atom) {
+        for nbr in adj.neighbors_of(bond.begin_atom) {
             if nbr.atom_index != bond.end_atom && Some(nbr.atom_index) != out[0] {
                 out[1] = Some(nbr.atom_index);
             }
         }
     }
-    let end_degree = adjacency(mol).neighbors_of(bond.end_atom).len();
+    let end_degree = adj.neighbors_of(bond.end_atom).len();
     if end_degree > 2 {
-        for nbr in adjacency(mol).neighbors_of(bond.end_atom) {
+        for nbr in adj.neighbors_of(bond.end_atom) {
             if nbr.atom_index != bond.begin_atom && Some(nbr.atom_index) != out[2] {
                 out[3] = Some(nbr.atom_index);
             }
@@ -642,6 +747,7 @@ impl AtomCompareFunctor {
                 }
                 res
             }
+            crate::ChiralTag::TrigonalBipyramidal => 1,
             crate::ChiralTag::Unspecified => 0,
         }
     }
@@ -742,6 +848,108 @@ fn count_swaps(lhs: &[usize], rhs: &[usize]) -> usize {
         swaps += 1;
     }
     swaps
+}
+
+fn insert_implicit_nontetrahedral_neighbors(
+    order: &mut Vec<i32>,
+    max_neighbors: usize,
+    first_atom: bool,
+) {
+    if order.len() >= max_neighbors {
+        return;
+    }
+    let missing = max_neighbors - order.len();
+    if first_atom {
+        order.splice(0..0, std::iter::repeat_n(-1, missing));
+    } else {
+        let insert_at = order.len().min(1);
+        order.splice(insert_at..insert_at, std::iter::repeat_n(-1, missing));
+    }
+}
+
+fn trigonal_bipyramidal_chiral_permutation(
+    mol: &Molecule,
+    adj: &crate::AdjacencyList,
+    atom_index: usize,
+    mut perm: u32,
+    probe: &[i32],
+) -> Option<u32> {
+    if perm == 0 || perm > 20 || probe.len() > 5 {
+        return None;
+    }
+    let reference_bonds = adj
+        .neighbors_of(atom_index)
+        .iter()
+        .map(|nbr| nbr.bond_index)
+        .collect::<Vec<_>>();
+    let mut order = vec![-1i32; mol.bonds().len()];
+    for (neighbor_order, bond_idx) in reference_bonds.iter().enumerate() {
+        order[*bond_idx] = neighbor_order as i32;
+    }
+    let mut nbr_perm = (0..reference_bonds.len() as i32).collect::<Vec<_>>();
+    let probe_perm = probe
+        .iter()
+        .map(|bond_idx| {
+            if *bond_idx < 0 {
+                -1
+            } else {
+                order[*bond_idx as usize]
+            }
+        })
+        .collect::<Vec<_>>();
+    if nbr_perm.len() < probe_perm.len() {
+        nbr_perm.extend(std::iter::repeat_n(-1, probe_perm.len() - nbr_perm.len()));
+    }
+    if nbr_perm.len() != probe_perm.len() {
+        return None;
+    }
+    for i in 0..probe_perm.len().saturating_sub(1) {
+        let pval = probe_perm[i];
+        if nbr_perm[i] == pval {
+            continue;
+        }
+        let target = nbr_perm[i..].iter().position(|value| *value == pval)? + i;
+        perm = swap_trigonal_bipyramidal(perm, i, target)?;
+        nbr_perm.swap(i, target);
+    }
+    Some(perm)
+}
+
+fn swap_trigonal_bipyramidal(perm: u32, x: usize, y: usize) -> Option<u32> {
+    const TABLE: [[u8; 10]; 21] = [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [9, 20, 17, 2, 2, 2, 7, 2, 6, 3],
+        [11, 15, 18, 1, 1, 1, 8, 1, 5, 4],
+        [10, 19, 4, 18, 4, 8, 4, 5, 4, 1],
+        [12, 16, 3, 17, 3, 7, 3, 6, 3, 2],
+        [13, 6, 16, 20, 7, 6, 6, 3, 2, 6],
+        [14, 5, 19, 15, 8, 5, 5, 4, 1, 5],
+        [8, 14, 10, 11, 5, 4, 1, 8, 8, 8],
+        [7, 13, 12, 9, 6, 3, 2, 7, 7, 7],
+        [1, 11, 11, 8, 15, 18, 11, 11, 14, 10],
+        [3, 12, 7, 12, 16, 12, 17, 13, 12, 9],
+        [2, 9, 9, 7, 20, 17, 9, 9, 13, 12],
+        [4, 10, 8, 10, 19, 10, 18, 14, 10, 11],
+        [5, 8, 14, 14, 14, 19, 15, 10, 11, 14],
+        [6, 7, 13, 13, 13, 16, 20, 12, 9, 13],
+        [20, 2, 20, 6, 9, 20, 13, 17, 20, 16],
+        [19, 4, 5, 19, 10, 14, 19, 19, 18, 15],
+        [18, 18, 1, 4, 18, 11, 10, 15, 19, 18],
+        [17, 17, 2, 3, 17, 9, 12, 20, 16, 17],
+        [16, 3, 6, 16, 12, 13, 16, 16, 17, 20],
+        [15, 1, 15, 5, 11, 15, 14, 18, 15, 19],
+    ];
+    if x == y {
+        return Some(perm);
+    }
+    let (lo, hi) = if x < y { (x, y) } else { (y, x) };
+    if hi > 4 || perm as usize >= TABLE.len() {
+        return None;
+    }
+    let offset = [0usize, 3, 5, 6];
+    let swap_idx = offset[lo] + hi - 1;
+    let out = TABLE[perm as usize][swap_idx] as u32;
+    (out != 0).then_some(out)
 }
 
 fn hanoi_sort_partition(
@@ -1004,11 +1212,38 @@ pub fn rank_mol_atoms(
     use_non_stereo_ranks: bool,
     _include_ring_stereo: bool,
 ) -> Result<Vec<u32>, SmilesWriteError> {
-    let _has_bond_stereo = mol.bonds.iter().any(|bond| {
-        !matches!(bond.stereo, crate::BondStereo::None) || !bond.stereo_atoms.is_empty()
-    });
-    let _has_ring_bond = (0..mol.bonds.len()).any(|bond_idx| bond_in_any_cycle(mol, bond_idx));
-    let mut atoms = init_canon_rank_atoms(mol, include_chirality)?;
+    let assignment = crate::assign_valence(mol, crate::ValenceModel::RdkitLike).map_err(|_| {
+        SmilesWriteError::UnsupportedPath(
+            "RDKit canonical ranking requires RDKit-like valence assignment",
+        )
+    })?;
+    rank_mol_atoms_with_valence(
+        mol,
+        &assignment,
+        break_ties,
+        include_chirality,
+        include_isotopes,
+        include_atom_maps,
+        include_chiral_presence,
+        use_non_stereo_ranks,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn rank_mol_atoms_with_valence(
+    mol: &Molecule,
+    assignment: &ValenceAssignment,
+    break_ties: bool,
+    include_chirality: bool,
+    include_isotopes: bool,
+    include_atom_maps: bool,
+    include_chiral_presence: bool,
+    use_non_stereo_ranks: bool,
+    ring_stereo_atoms_cache: Option<&[Vec<i32>]>,
+) -> Result<Vec<u32>, SmilesWriteError> {
+    let mut atoms =
+        init_canon_rank_atoms(mol, assignment, include_chirality, ring_stereo_atoms_cache)?;
     let n = atoms.len();
     if n == 0 {
         return Ok(Vec::new());
@@ -1066,8 +1301,9 @@ pub fn build_noncanonical_fragment(
     atom_ranks: &[u32],
     do_random: bool,
 ) -> Result<FragmentTraversal, SmilesWriteError> {
-    let mut cycle_colors = vec![AtomColor::White; mol.atoms.len()];
-    let mut atom_ring_closures = vec![Vec::<usize>::new(); mol.atoms.len()];
+    let mut cycle_cache = BondCycleCache::new(mol);
+    let mut cycle_colors = vec![AtomColor::White; mol.atoms().len()];
+    let mut atom_ring_closures = vec![Vec::<usize>::new(); mol.atoms().len()];
     dfs_find_cycles(
         mol,
         atom_idx,
@@ -1076,12 +1312,13 @@ pub fn build_noncanonical_fragment(
         atom_ranks,
         &mut atom_ring_closures,
         do_random,
+        &mut cycle_cache,
     );
-    let mut colors = vec![AtomColor::White; mol.atoms.len()];
+    let mut colors = vec![AtomColor::White; mol.atoms().len()];
     let mut cycles_available = vec![true; MAX_CYCLES];
     let mut ring_openings = std::collections::HashMap::new();
-    let mut atom_traversal_bond_order = vec![Vec::<usize>::new(); mol.atoms.len()];
-    let mut mol_stack = Vec::with_capacity(mol.atoms.len() + mol.bonds.len());
+    let mut atom_traversal_bond_order = vec![Vec::<usize>::new(); mol.atoms().len()];
+    let mut mol_stack = Vec::with_capacity(mol.atoms().len() + mol.bonds().len());
     dfs_build_stack(
         mol,
         atom_idx,
@@ -1094,6 +1331,7 @@ pub fn build_noncanonical_fragment(
         &mut atom_ring_closures,
         &mut atom_traversal_bond_order,
         do_random,
+        &mut cycle_cache,
     )?;
     Ok(FragmentTraversal {
         atom_colors: colors,
@@ -1101,8 +1339,9 @@ pub fn build_noncanonical_fragment(
         mol_stack,
         atom_ring_closure_counts: atom_ring_closures.iter().map(Vec::len).collect(),
         atom_traversal_bond_order,
-        chiral_tag_overrides: vec![None; mol.atoms.len()],
-        bond_direction_overrides: vec![None; mol.bonds.len()],
+        chiral_tag_overrides: vec![None; mol.atoms().len()],
+        chiral_permutation_overrides: vec![None; mol.atoms().len()],
+        bond_direction_overrides: vec![None; mol.bonds().len()],
     })
 }
 
@@ -1114,16 +1353,44 @@ pub fn canonicalize_fragment(
     do_random: bool,
     do_chiral_inversions: bool,
 ) -> Result<FragmentTraversal, SmilesWriteError> {
-    let mut traversal = build_noncanonical_fragment(mol, atom_idx, atom_ranks, do_random)?;
-    if !do_isomeric_smiles {
-        return Ok(traversal);
-    }
-    let ring_stereo_atoms = find_chiral_atom_special_cases(mol)?;
     let assignment = crate::assign_valence(mol, crate::ValenceModel::RdkitLike).map_err(|_| {
         SmilesWriteError::UnsupportedPath(
             "canonical fragment chirality handling requires RDKit-like valence assignment",
         )
     })?;
+    canonicalize_fragment_with_valence(
+        mol,
+        atom_idx,
+        atom_ranks,
+        do_isomeric_smiles,
+        do_random,
+        do_chiral_inversions,
+        &assignment,
+        None,
+    )
+}
+
+pub(crate) fn canonicalize_fragment_with_valence(
+    mol: &Molecule,
+    atom_idx: usize,
+    atom_ranks: &[u32],
+    do_isomeric_smiles: bool,
+    do_random: bool,
+    do_chiral_inversions: bool,
+    assignment: &ValenceAssignment,
+    ring_stereo_atoms_cache: Option<&[Vec<i32>]>,
+) -> Result<FragmentTraversal, SmilesWriteError> {
+    let mut traversal = build_noncanonical_fragment(mol, atom_idx, atom_ranks, do_random)?;
+    if !do_isomeric_smiles {
+        return Ok(traversal);
+    }
+    let computed_ring_stereo_atoms;
+    let ring_stereo_atoms = if let Some(ring_stereo_atoms) = ring_stereo_atoms_cache {
+        ring_stereo_atoms
+    } else {
+        computed_ring_stereo_atoms = find_chiral_atom_special_cases(mol)?;
+        &computed_ring_stereo_atoms
+    };
     let first_idx = traversal
         .mol_stack
         .iter()
@@ -1134,33 +1401,41 @@ pub fn canonicalize_fragment(
         .ok_or(SmilesWriteError::UnsupportedPath(
             "empty MolStack in canonical fragment traversal",
         ))?;
-    let mut num_swaps_chiral_atoms = vec![false; mol.atoms.len()];
-    for atom in &mol.atoms {
+    let mut num_swaps_chiral_atoms = vec![false; mol.atoms().len()];
+    let adj = adjacency(mol);
+    for atom in mol.atoms() {
         if matches!(atom.chiral_tag, crate::ChiralTag::Unspecified) {
             continue;
         }
         let mut true_order = traversal.atom_traversal_bond_order[atom.index].clone();
-        let degree = mol
-            .bonds
-            .iter()
-            .filter(|bond| bond.begin_atom == atom.index || bond.end_atom == atom.index)
-            .count();
+        let degree = adj.neighbors_of(atom.index).len();
         if true_order.len() < degree {
-            for bond in &mol.bonds {
-                if (bond.begin_atom == atom.index || bond.end_atom == atom.index)
-                    && !true_order.contains(&bond.index)
-                {
-                    true_order.push(bond.index);
+            for nbr in adj.neighbors_of(atom.index) {
+                if !true_order.contains(&nbr.bond_index) {
+                    true_order.push(nbr.bond_index);
                 }
             }
         }
-        let reference: Vec<usize> = mol
-            .bonds
+        let reference: Vec<usize> = adj
+            .neighbors_of(atom.index)
             .iter()
-            .filter(|bond| bond.begin_atom == atom.index || bond.end_atom == atom.index)
-            .map(|bond| bond.index)
+            .map(|nbr| nbr.bond_index)
             .collect();
-        let mut n_swaps = count_swaps(&true_order, &reference);
+        let mut n_swaps = 0;
+        if matches!(atom.chiral_tag, crate::ChiralTag::TrigonalBipyramidal) {
+            let mut t_order = true_order.iter().map(|idx| *idx as i32).collect::<Vec<_>>();
+            insert_implicit_nontetrahedral_neighbors(&mut t_order, 5, atom.index == first_idx);
+            if let Some(perm) = atom
+                .props
+                .get("_chiralPermutation")
+                .and_then(|value| value.parse::<u32>().ok())
+            {
+                traversal.chiral_permutation_overrides[atom.index] =
+                    trigonal_bipyramidal_chiral_permutation(mol, &adj, atom.index, perm, &t_order);
+            }
+        } else {
+            n_swaps = count_swaps(&true_order, &reference);
+        }
         if do_chiral_inversions
             && chiral_atom_needs_tag_inversion(
                 mol,
@@ -1168,6 +1443,7 @@ pub fn canonicalize_fragment(
                 atom.index == first_idx,
                 traversal.atom_ring_closure_counts[atom.index],
                 &assignment.implicit_hydrogens,
+                &adj,
             )
         {
             n_swaps += 1;
@@ -1177,13 +1453,14 @@ pub fn canonicalize_fragment(
             traversal.chiral_tag_overrides[atom.index] = Some(match atom.chiral_tag {
                 crate::ChiralTag::TetrahedralCw => crate::ChiralTag::TetrahedralCcw,
                 crate::ChiralTag::TetrahedralCcw => crate::ChiralTag::TetrahedralCw,
+                crate::ChiralTag::TrigonalBipyramidal => crate::ChiralTag::TrigonalBipyramidal,
                 crate::ChiralTag::Unspecified => crate::ChiralTag::Unspecified,
             });
         }
     }
-    let mut atom_visit_orders = vec![usize::MAX; mol.atoms.len()];
-    let mut bond_visit_orders = vec![usize::MAX; mol.bonds.len()];
-    let mut traversal_ring_closure_bonds = vec![false; mol.bonds.len()];
+    let mut atom_visit_orders = vec![usize::MAX; mol.atoms().len()];
+    let mut bond_visit_orders = vec![usize::MAX; mol.bonds().len()];
+    let mut traversal_ring_closure_bonds = vec![false; mol.bonds().len()];
     let mut pos = 0usize;
     for elem in &traversal.mol_stack {
         match elem {
@@ -1202,12 +1479,12 @@ pub fn canonicalize_fragment(
         }
         pos += 1;
     }
-    let mut ring_stereo_adjusted = vec![false; mol.atoms.len()];
+    let mut ring_stereo_adjusted = vec![false; mol.atoms().len()];
     for elem in &traversal.mol_stack {
         let MolStackElem::Atom { atom_idx } = elem else {
             continue;
         };
-        let atom = &mol.atoms[*atom_idx];
+        let atom = &mol.atoms()[*atom_idx];
         if matches!(atom.chiral_tag, crate::ChiralTag::Unspecified)
             || ring_stereo_atoms[*atom_idx].is_empty()
         {
@@ -1229,6 +1506,7 @@ pub fn canonicalize_fragment(
                 tag = match tag {
                     crate::ChiralTag::TetrahedralCw => crate::ChiralTag::TetrahedralCcw,
                     crate::ChiralTag::TetrahedralCcw => crate::ChiralTag::TetrahedralCw,
+                    crate::ChiralTag::TrigonalBipyramidal => crate::ChiralTag::TrigonalBipyramidal,
                     crate::ChiralTag::Unspecified => crate::ChiralTag::Unspecified,
                 };
             }
@@ -1236,6 +1514,7 @@ pub fn canonicalize_fragment(
                 tag = match tag {
                     crate::ChiralTag::TetrahedralCw => crate::ChiralTag::TetrahedralCcw,
                     crate::ChiralTag::TetrahedralCcw => crate::ChiralTag::TetrahedralCw,
+                    crate::ChiralTag::TrigonalBipyramidal => crate::ChiralTag::TrigonalBipyramidal,
                     crate::ChiralTag::Unspecified => crate::ChiralTag::Unspecified,
                 };
             }
@@ -1244,11 +1523,11 @@ pub fn canonicalize_fragment(
         }
     }
 
-    let mut tmp_mol = mol.clone();
-    let mut bond_dir_counts = vec![0i8; tmp_mol.bonds.len()];
-    let mut atom_dir_counts = vec![0i8; tmp_mol.atoms.len()];
+    let mut bond_state = CanonBondState::new(mol);
+    let mut bond_dir_counts = vec![0i8; mol.bonds().len()];
+    let mut atom_dir_counts = vec![0i8; mol.atoms().len()];
     canonicalize_double_bonds(
-        &mut tmp_mol,
+        &mut bond_state,
         &bond_visit_orders,
         &atom_visit_orders,
         &mut bond_dir_counts,
@@ -1257,14 +1536,14 @@ pub fn canonicalize_fragment(
         &traversal_ring_closure_bonds,
     )?;
     remove_unwanted_bond_dir_specs(
-        &mut tmp_mol,
+        &mut bond_state,
         &traversal.mol_stack,
         &mut bond_dir_counts,
         &mut atom_dir_counts,
         &bond_visit_orders,
     );
     remove_redundant_bond_dir_specs(
-        &mut tmp_mol,
+        &mut bond_state,
         &traversal.mol_stack,
         &mut bond_dir_counts,
         &mut atom_dir_counts,
@@ -1273,7 +1552,7 @@ pub fn canonicalize_fragment(
         let MolStackElem::Bond { bond_idx, .. } = elem else {
             continue;
         };
-        traversal.bond_direction_overrides[*bond_idx] = Some(tmp_mol.bonds[*bond_idx].direction);
+        traversal.bond_direction_overrides[*bond_idx] = Some(bond_state.direction(*bond_idx));
     }
     Ok(traversal)
 }
@@ -1284,33 +1563,29 @@ fn chiral_atom_needs_tag_inversion(
     is_atom_first: bool,
     num_closures: usize,
     implicit_hydrogens: &[u8],
+    adj: &crate::AdjacencyList,
 ) -> bool {
-    let degree = mol
-        .bonds
-        .iter()
-        .filter(|bond| bond.begin_atom == atom_idx || bond.end_atom == atom_idx)
-        .count();
+    let degree = adj.neighbors_of(atom_idx).len();
     if degree != 3 {
         return false;
     }
-    let atom = &mol.atoms[atom_idx];
+    let atom = &mol.atoms()[atom_idx];
     (is_atom_first && atom.explicit_hydrogens == 1)
         || (!atom_has_fourth_valence(atom, implicit_hydrogens[atom_idx])
             && num_closures == 1
-            && !is_unsaturated_atom(mol, atom_idx))
+            && !is_unsaturated_atom(mol, atom_idx, adj))
 }
 
 fn atom_has_fourth_valence(atom: &crate::Atom, implicit_hydrogens: u8) -> bool {
     atom.explicit_hydrogens == 1 || implicit_hydrogens == 1
 }
 
-fn is_unsaturated_atom(mol: &Molecule, atom_idx: usize) -> bool {
-    mol.bonds.iter().any(|bond| {
-        (bond.begin_atom == atom_idx || bond.end_atom == atom_idx)
-            && matches!(
-                bond.order,
-                BondOrder::Double | BondOrder::Triple | BondOrder::Quadruple
-            )
+fn is_unsaturated_atom(mol: &Molecule, atom_idx: usize, adj: &crate::AdjacencyList) -> bool {
+    adj.neighbors_of(atom_idx).iter().any(|nbr| {
+        matches!(
+            mol.bonds()[nbr.bond_index].order,
+            BondOrder::Double | BondOrder::Triple | BondOrder::Quadruple
+        )
     })
 }
 
@@ -1342,21 +1617,21 @@ fn bond_other_atom(bond: &crate::Bond, atom_idx: usize) -> usize {
 }
 
 fn set_direction_from_neighboring_bond(
-    mol: &mut Molecule,
+    state: &mut CanonBondState<'_>,
     source_bond_idx: usize,
     source_flipped: bool,
     target_bond_idx: usize,
     target_flipped: bool,
 ) {
-    let mut dir = mol.bonds[source_bond_idx].direction;
+    let mut dir = state.direction(source_bond_idx);
     if source_flipped == target_flipped {
         dir = flip_stereo_bond_dir(dir);
     }
-    mol.bonds[target_bond_idx].direction = dir;
+    state.set_direction(target_bond_idx, dir);
 }
 
 fn get_reference_direction(
-    mol: &Molecule,
+    state: &CanonBondState<'_>,
     dbl_bond_idx: usize,
     ref_atom_idx: usize,
     target_atom_idx: usize,
@@ -1365,12 +1640,10 @@ fn get_reference_direction(
     target_bond_idx: usize,
     target_is_flipped: bool,
 ) -> Result<crate::BondDirection, SmilesWriteError> {
-    let dbl_bond = &mol.bonds[dbl_bond_idx];
-    let mut dir = match dbl_bond.stereo {
-        crate::BondStereo::Trans => mol.bonds[ref_controlling_bond_idx].direction,
-        crate::BondStereo::Cis => {
-            flip_stereo_bond_dir(mol.bonds[ref_controlling_bond_idx].direction)
-        }
+    let dbl_bond = state.bond(dbl_bond_idx);
+    let mut dir = match state.stereo(dbl_bond_idx) {
+        crate::BondStereo::Trans => state.direction(ref_controlling_bond_idx),
+        crate::BondStereo::Cis => flip_stereo_bond_dir(state.direction(ref_controlling_bond_idx)),
         _ => crate::BondDirection::None,
     };
     if matches!(dir, crate::BondDirection::None) {
@@ -1379,13 +1652,13 @@ fn get_reference_direction(
         ));
     }
 
-    let adj = adjacency(mol);
-    let ref_ctrl_other = bond_other_atom(&mol.bonds[ref_controlling_bond_idx], ref_atom_idx);
+    let adj = adjacency(state.mol);
+    let ref_ctrl_other = bond_other_atom(state.bond(ref_controlling_bond_idx), ref_atom_idx);
     if adj.neighbors_of(ref_atom_idx).len() == 3 && !dbl_bond.stereo_atoms.contains(&ref_ctrl_other)
     {
         dir = flip_stereo_bond_dir(dir);
     }
-    let target_other = bond_other_atom(&mol.bonds[target_bond_idx], target_atom_idx);
+    let target_other = bond_other_atom(state.bond(target_bond_idx), target_atom_idx);
     if adj.neighbors_of(target_atom_idx).len() == 3
         && !dbl_bond.stereo_atoms.contains(&target_other)
     {
@@ -1398,28 +1671,28 @@ fn get_reference_direction(
 }
 
 fn same_side_dirs_are_compatible(
-    mol: &Molecule,
+    state: &CanonBondState<'_>,
     first_bond_idx: usize,
     second_bond_idx: usize,
     first_flipped: bool,
     second_flipped: bool,
 ) -> bool {
     let dirs_should_match = first_flipped != second_flipped;
-    let dirs_match = mol.bonds[first_bond_idx].direction == mol.bonds[second_bond_idx].direction;
+    let dirs_match = state.direction(first_bond_idx) == state.direction(second_bond_idx);
     dirs_match == dirs_should_match
 }
 
 fn get_neighboring_stereo_bond(
-    mol: &Molecule,
+    state: &CanonBondState<'_>,
     dbl_bond_atom_idx: usize,
     nbr_bond_idx: usize,
 ) -> Option<usize> {
-    let other_atom_idx = bond_other_atom(&mol.bonds[nbr_bond_idx], dbl_bond_atom_idx);
-    for nbr in adjacency(mol).neighbors_of(other_atom_idx) {
+    let other_atom_idx = bond_other_atom(state.bond(nbr_bond_idx), dbl_bond_atom_idx);
+    for nbr in adjacency(state.mol).neighbors_of(other_atom_idx) {
         if nbr.bond_index != nbr_bond_idx
-            && matches!(mol.bonds[nbr.bond_index].order, BondOrder::Double)
+            && matches!(state.bond(nbr.bond_index).order, BondOrder::Double)
             && matches!(
-                mol.bonds[nbr.bond_index].stereo,
+                state.stereo(nbr.bond_index),
                 crate::BondStereo::Cis | crate::BondStereo::Trans
             )
         {
@@ -1430,7 +1703,7 @@ fn get_neighboring_stereo_bond(
 }
 
 fn find_neighbor_bonds(
-    mol: &Molecule,
+    state: &CanonBondState<'_>,
     dbl_bond_idx: usize,
     atom_idx: usize,
     bond_dir_counts: &[i8],
@@ -1439,10 +1712,10 @@ fn find_neighbor_bonds(
     let mut first_neighbor_bond = None;
     let mut second_neighbor_bond = None;
     let mut dir_set = false;
-    let mut first_visit_order = mol.bonds.len() + 1;
-    for nbr in adjacency(mol).neighbors_of(atom_idx) {
+    let mut first_visit_order = state.mol.bonds().len() + 1;
+    for nbr in adjacency(state.mol).neighbors_of(atom_idx) {
         if nbr.bond_index == dbl_bond_idx
-            || !can_set_double_bond_stereo(mol.bonds[nbr.bond_index].order)
+            || !can_set_double_bond_stereo(state.bond(nbr.bond_index).order)
         {
             continue;
         }
@@ -1464,7 +1737,7 @@ fn find_neighbor_bonds(
 
 #[allow(clippy::too_many_arguments)]
 fn fix_conflict_across_double_bond(
-    mol: &mut Molecule,
+    state: &mut CanonBondState<'_>,
     dbl_bond_idx: usize,
     atom_idx: usize,
     first_bond_idx: usize,
@@ -1481,12 +1754,12 @@ fn fix_conflict_across_double_bond(
         (first_bond_idx, first_flipped, second_bond_idx),
         (second_bond_idx, second_flipped, first_bond_idx),
     ] {
-        let other_idx = bond_other_atom(&mol.bonds[other_bond_idx], atom_idx);
+        let other_idx = bond_other_atom(state.bond(other_bond_idx), atom_idx);
         if atom_dir_counts[other_idx] != 2 {
             continue;
         }
         let expected_atom_dir = get_reference_direction(
-            mol,
+            state,
             dbl_bond_idx,
             ref_atom_idx,
             atom_idx,
@@ -1495,7 +1768,7 @@ fn fix_conflict_across_double_bond(
             bond_idx,
             is_flipped,
         )?;
-        if expected_atom_dir == mol.bonds[bond_idx].direction {
+        if expected_atom_dir == state.direction(bond_idx) {
             bond_dir_counts[other_bond_idx] = 0;
             atom_dir_counts[atom_idx] -= 1;
             atom_dir_counts[other_idx] -= 1;
@@ -1507,7 +1780,7 @@ fn fix_conflict_across_double_bond(
 
 #[allow(clippy::too_many_arguments)]
 fn handle_dir_conflicts_across_double_bond(
-    mol: &mut Molecule,
+    state: &mut CanonBondState<'_>,
     dbl_bond_idx: usize,
     atom1_idx: usize,
     atom1_dirs_are_consistent: bool,
@@ -1526,7 +1799,7 @@ fn handle_dir_conflicts_across_double_bond(
 ) -> Result<bool, SmilesWriteError> {
     if atom1_dirs_are_consistent && atom2_dirs_are_consistent {
         let expected = get_reference_direction(
-            mol,
+            state,
             dbl_bond_idx,
             atom1_idx,
             atom2_idx,
@@ -1535,10 +1808,10 @@ fn handle_dir_conflicts_across_double_bond(
             first_from_atom2_idx,
             is_first_from_atom2_flipped,
         )?;
-        Ok(expected == mol.bonds[first_from_atom2_idx].direction)
+        Ok(expected == state.direction(first_from_atom2_idx))
     } else if !atom2_dirs_are_consistent && atom1_dirs_are_consistent {
         fix_conflict_across_double_bond(
-            mol,
+            state,
             dbl_bond_idx,
             atom2_idx,
             first_from_atom2_idx,
@@ -1553,7 +1826,7 @@ fn handle_dir_conflicts_across_double_bond(
         )
     } else if !atom1_dirs_are_consistent && atom2_dirs_are_consistent {
         fix_conflict_across_double_bond(
-            mol,
+            state,
             dbl_bond_idx,
             atom1_idx,
             first_from_atom1_idx,
@@ -1592,7 +1865,7 @@ fn handle_dir_conflicts_across_double_bond(
                 ),
             ] {
                 let expected = get_reference_direction(
-                    mol,
+                    state,
                     dbl_bond_idx,
                     atom1_idx,
                     atom2_idx,
@@ -1601,14 +1874,14 @@ fn handle_dir_conflicts_across_double_bond(
                     atom2_bond_idx,
                     atom2_flipped,
                 )?;
-                if expected != mol.bonds[atom2_bond_idx].direction {
+                if expected != state.direction(atom2_bond_idx) {
                     continue;
                 }
-                let atom1_other_atom_idx = bond_other_atom(&mol.bonds[atom1_other_idx], atom1_idx);
+                let atom1_other_atom_idx = bond_other_atom(state.bond(atom1_other_idx), atom1_idx);
                 if atom_dir_counts[atom1_other_atom_idx] != 2 {
                     continue;
                 }
-                let atom2_other_atom_idx = bond_other_atom(&mol.bonds[atom2_other_idx], atom2_idx);
+                let atom2_other_atom_idx = bond_other_atom(state.bond(atom2_other_idx), atom2_idx);
                 if atom1_other_atom_idx == atom2_other_atom_idx
                     || atom_dir_counts[atom2_other_atom_idx] != 2
                 {
@@ -1628,46 +1901,46 @@ fn handle_dir_conflicts_across_double_bond(
 }
 
 fn clear_bond_dirs(
-    mol: &mut Molecule,
+    state: &mut CanonBondState<'_>,
     ref_bond_idx: usize,
     from_atom_idx: usize,
     bond_dir_counts: &mut [i8],
     atom_dir_counts: &mut [i8],
 ) {
-    let clear_direction = |mol: &mut Molecule,
+    let clear_direction = |state: &mut CanonBondState<'_>,
                            bond_idx: usize,
                            from_atom_idx: usize,
                            bond_dir_counts: &mut [i8],
                            atom_dir_counts: &mut [i8]| {
         bond_dir_counts[bond_idx] -= 1;
         if bond_dir_counts[bond_idx] == 0 {
-            mol.bonds[bond_idx].direction = crate::BondDirection::None;
+            state.set_direction(bond_idx, crate::BondDirection::None);
             atom_dir_counts[from_atom_idx] -= 1;
-            let other_atom_idx = bond_other_atom(&mol.bonds[bond_idx], from_atom_idx);
+            let other_atom_idx = bond_other_atom(state.bond(bond_idx), from_atom_idx);
             if atom_dir_counts[other_atom_idx] > 0 {
                 atom_dir_counts[other_atom_idx] -= 1;
             }
         }
     };
 
-    for nbr in adjacency(mol).neighbors_of(from_atom_idx) {
-        if nbr.bond_index != ref_bond_idx && can_have_direction(mol.bonds[nbr.bond_index].order) {
+    for nbr in adjacency(state.mol).neighbors_of(from_atom_idx) {
+        if nbr.bond_index != ref_bond_idx && can_have_direction(state.bond(nbr.bond_index).order) {
             if bond_dir_counts[nbr.bond_index] >= bond_dir_counts[ref_bond_idx]
-                && atom_dir_counts[mol.bonds[nbr.bond_index].begin_atom] != 1
-                && atom_dir_counts[mol.bonds[nbr.bond_index].end_atom] != 1
+                && atom_dir_counts[state.bond(nbr.bond_index).begin_atom] != 1
+                && atom_dir_counts[state.bond(nbr.bond_index).end_atom] != 1
             {
                 clear_direction(
-                    mol,
+                    state,
                     nbr.bond_index,
                     from_atom_idx,
                     bond_dir_counts,
                     atom_dir_counts,
                 );
-            } else if atom_dir_counts[mol.bonds[ref_bond_idx].begin_atom] != 1
-                && atom_dir_counts[mol.bonds[ref_bond_idx].end_atom] != 1
+            } else if atom_dir_counts[state.bond(ref_bond_idx).begin_atom] != 1
+                && atom_dir_counts[state.bond(ref_bond_idx).end_atom] != 1
             {
                 clear_direction(
-                    mol,
+                    state,
                     ref_bond_idx,
                     from_atom_idx,
                     bond_dir_counts,
@@ -1680,7 +1953,7 @@ fn clear_bond_dirs(
 }
 
 fn canonicalize_double_bond(
-    mol: &mut Molecule,
+    state: &mut CanonBondState<'_>,
     dbl_bond_idx: usize,
     bond_visit_orders: &[usize],
     atom_visit_orders: &[usize],
@@ -1688,17 +1961,17 @@ fn canonicalize_double_bond(
     atom_dir_counts: &mut [i8],
     traversal_ring_closure_bonds: &[bool],
 ) -> Result<(), SmilesWriteError> {
-    let dbl_bond = &mol.bonds[dbl_bond_idx];
+    let dbl_bond = state.bond(dbl_bond_idx);
     if !matches!(dbl_bond.order, BondOrder::Double)
         || !matches!(
-            dbl_bond.stereo,
+            state.stereo(dbl_bond_idx),
             crate::BondStereo::Cis | crate::BondStereo::Trans
         )
         || dbl_bond.stereo_atoms.len() < 2
     {
         return Ok(());
     }
-    let adj = adjacency(mol);
+    let adj = adjacency(state.mol);
     let begin_degree = adj.neighbors_of(dbl_bond.begin_atom).len();
     let end_degree = adj.neighbors_of(dbl_bond.end_atom).len();
     if !matches!(begin_degree, 2 | 3) || !matches!(end_degree, 2 | 3) {
@@ -1711,14 +1984,14 @@ fn canonicalize_double_bond(
     }
 
     let (first_from_atom1, second_from_atom1, dir1_set) = find_neighbor_bonds(
-        mol,
+        state,
         dbl_bond_idx,
         atom1_idx,
         bond_dir_counts,
         bond_visit_orders,
     );
     let (first_from_atom2, second_from_atom2, dir2_set) = find_neighbor_bonds(
-        mol,
+        state,
         dbl_bond_idx,
         atom2_idx,
         bond_dir_counts,
@@ -1731,24 +2004,24 @@ fn canonicalize_double_bond(
     };
 
     let is_first_from_atom1_flipped = {
-        let anchor_idx = bond_other_atom(&mol.bonds[first_from_atom1_idx], atom1_idx);
+        let anchor_idx = bond_other_atom(state.bond(first_from_atom1_idx), atom1_idx);
         (atom_visit_orders[atom1_idx] < atom_visit_orders[anchor_idx])
             != traversal_ring_closure_bonds[first_from_atom1_idx]
     };
     let is_second_from_atom1_flipped = if let Some(second_from_atom1_idx) = second_from_atom1 {
-        let anchor_idx = bond_other_atom(&mol.bonds[second_from_atom1_idx], atom1_idx);
+        let anchor_idx = bond_other_atom(state.bond(second_from_atom1_idx), atom1_idx);
         (atom_visit_orders[atom1_idx] < atom_visit_orders[anchor_idx])
             != traversal_ring_closure_bonds[second_from_atom1_idx]
     } else {
         false
     };
     let is_first_from_atom2_flipped = {
-        let anchor_idx = bond_other_atom(&mol.bonds[first_from_atom2_idx], atom2_idx);
+        let anchor_idx = bond_other_atom(state.bond(first_from_atom2_idx), atom2_idx);
         (atom_visit_orders[anchor_idx] < atom_visit_orders[atom2_idx])
             != traversal_ring_closure_bonds[first_from_atom2_idx]
     };
     let is_second_from_atom2_flipped = if let Some(second_from_atom2_idx) = second_from_atom2 {
-        let anchor_idx = bond_other_atom(&mol.bonds[second_from_atom2_idx], atom2_idx);
+        let anchor_idx = bond_other_atom(state.bond(second_from_atom2_idx), atom2_idx);
         (atom_visit_orders[anchor_idx] < atom_visit_orders[atom2_idx])
             != traversal_ring_closure_bonds[second_from_atom2_idx]
     } else {
@@ -1760,7 +2033,7 @@ fn canonicalize_double_bond(
         if let Some(second_from_atom1_idx) = second_from_atom1 {
             if bond_dir_counts[first_from_atom1_idx] == 0 {
                 set_direction_from_neighboring_bond(
-                    mol,
+                    state,
                     second_from_atom1_idx,
                     is_second_from_atom1_flipped,
                     first_from_atom1_idx,
@@ -1768,7 +2041,7 @@ fn canonicalize_double_bond(
                 );
             } else if bond_dir_counts[second_from_atom1_idx] == 0 {
                 set_direction_from_neighboring_bond(
-                    mol,
+                    state,
                     first_from_atom1_idx,
                     is_first_from_atom1_flipped,
                     second_from_atom1_idx,
@@ -1776,7 +2049,7 @@ fn canonicalize_double_bond(
                 );
             } else {
                 atom1_dirs_are_consistent = same_side_dirs_are_compatible(
-                    mol,
+                    state,
                     first_from_atom1_idx,
                     second_from_atom1_idx,
                     is_first_from_atom1_flipped,
@@ -1793,7 +2066,7 @@ fn canonicalize_double_bond(
         if let Some(second_from_atom2_idx) = second_from_atom2 {
             if bond_dir_counts[first_from_atom2_idx] == 0 {
                 set_direction_from_neighboring_bond(
-                    mol,
+                    state,
                     second_from_atom2_idx,
                     is_second_from_atom2_flipped,
                     first_from_atom2_idx,
@@ -1801,7 +2074,7 @@ fn canonicalize_double_bond(
                 );
             } else if bond_dir_counts[second_from_atom2_idx] == 0 {
                 set_direction_from_neighboring_bond(
-                    mol,
+                    state,
                     first_from_atom2_idx,
                     is_first_from_atom2_flipped,
                     second_from_atom2_idx,
@@ -1809,7 +2082,7 @@ fn canonicalize_double_bond(
                 );
             } else {
                 atom2_dirs_are_consistent = same_side_dirs_are_compatible(
-                    mol,
+                    state,
                     first_from_atom2_idx,
                     second_from_atom2_idx,
                     is_first_from_atom2_flipped,
@@ -1826,7 +2099,7 @@ fn canonicalize_double_bond(
             (second_from_atom1, second_from_atom2)
         {
             let _ = handle_dir_conflicts_across_double_bond(
-                mol,
+                state,
                 dbl_bond_idx,
                 atom1_idx,
                 atom1_dirs_are_consistent,
@@ -1851,7 +2124,7 @@ fn canonicalize_double_bond(
     let mut atom1_controlling_bond_idx = first_from_atom1_idx;
     let mut atom2_controlling_bond_idx = first_from_atom2_idx;
     if !dir1_set && !dir2_set {
-        mol.bonds[first_from_atom1_idx].direction = crate::BondDirection::EndUpRight;
+        state.set_direction(first_from_atom1_idx, crate::BondDirection::EndUpRight);
         bond_dir_counts[first_from_atom1_idx] += 1;
         atom_dir_counts[atom1_idx] += 1;
     } else if !dir2_set {
@@ -1862,7 +2135,7 @@ fn canonicalize_double_bond(
                 && bond_dir_counts[second_from_atom1_idx] > 0
             {
                 let _ = same_side_dirs_are_compatible(
-                    mol,
+                    state,
                     first_from_atom1_idx,
                     second_from_atom1_idx,
                     is_first_from_atom1_flipped,
@@ -1883,7 +2156,7 @@ fn canonicalize_double_bond(
                 ));
             }
             set_direction_from_neighboring_bond(
-                mol,
+                state,
                 second_from_atom1_idx,
                 is_second_from_atom1_flipped,
                 first_from_atom1_idx,
@@ -1903,7 +2176,7 @@ fn canonicalize_double_bond(
                 && bond_dir_counts[second_from_atom2_idx] > 0
             {
                 let _ = same_side_dirs_are_compatible(
-                    mol,
+                    state,
                     first_from_atom2_idx,
                     second_from_atom2_idx,
                     is_first_from_atom2_flipped,
@@ -1924,7 +2197,7 @@ fn canonicalize_double_bond(
                 ));
             }
             set_direction_from_neighboring_bond(
-                mol,
+                state,
                 second_from_atom2_idx,
                 is_second_from_atom2_flipped,
                 first_from_atom2_idx,
@@ -1944,7 +2217,7 @@ fn canonicalize_double_bond(
             is_second_from_atom1_flipped
         };
         let atom2_dir = get_reference_direction(
-            mol,
+            state,
             dbl_bond_idx,
             atom1_idx,
             atom2_idx,
@@ -1953,7 +2226,7 @@ fn canonicalize_double_bond(
             first_from_atom2_idx,
             is_first_from_atom2_flipped,
         )?;
-        mol.bonds[first_from_atom2_idx].direction = atom2_dir;
+        state.set_direction(first_from_atom2_idx, atom2_dir);
         bond_dir_counts[first_from_atom2_idx] += 1;
         atom_dir_counts[atom2_idx] += 1;
     } else {
@@ -1963,7 +2236,7 @@ fn canonicalize_double_bond(
             is_second_from_atom2_flipped
         };
         let atom1_dir = get_reference_direction(
-            mol,
+            state,
             dbl_bond_idx,
             atom2_idx,
             atom1_idx,
@@ -1972,7 +2245,7 @@ fn canonicalize_double_bond(
             first_from_atom1_idx,
             is_first_from_atom1_flipped,
         )?;
-        mol.bonds[first_from_atom1_idx].direction = atom1_dir;
+        state.set_direction(first_from_atom1_idx, atom1_dir);
         bond_dir_counts[first_from_atom1_idx] += 1;
         atom_dir_counts[atom1_idx] += 1;
     }
@@ -1982,7 +2255,7 @@ fn canonicalize_double_bond(
         && bond_dir_counts[second_from_atom1_idx] == 0
     {
         set_direction_from_neighboring_bond(
-            mol,
+            state,
             first_from_atom1_idx,
             is_first_from_atom1_flipped,
             second_from_atom1_idx,
@@ -1997,7 +2270,7 @@ fn canonicalize_double_bond(
         && bond_dir_counts[second_from_atom2_idx] == 0
     {
         set_direction_from_neighboring_bond(
-            mol,
+            state,
             first_from_atom2_idx,
             is_first_from_atom2_flipped,
             second_from_atom2_idx,
@@ -2011,7 +2284,7 @@ fn canonicalize_double_bond(
 }
 
 fn canonicalize_double_bonds(
-    mol: &mut Molecule,
+    state: &mut CanonBondState<'_>,
     bond_visit_orders: &[usize],
     atom_visit_orders: &[usize],
     bond_dir_counts: &mut [i8],
@@ -2022,7 +2295,7 @@ fn canonicalize_double_bonds(
     use std::cmp::Reverse;
     use std::collections::{BinaryHeap, VecDeque};
 
-    let mut stereo_bond_nbrs = vec![Vec::<usize>::new(); mol.bonds.len()];
+    let mut stereo_bond_nbrs = vec![Vec::<usize>::new(); state.mol.bonds().len()];
     let mut heap = BinaryHeap::<(usize, Reverse<usize>, usize)>::new();
     for ms in mol_stack {
         let MolStackElem::Bond { bond_idx, .. } = ms else {
@@ -2030,33 +2303,33 @@ fn canonicalize_double_bonds(
         };
 
         if matches!(
-            mol.bonds[*bond_idx].direction,
+            state.direction(*bond_idx),
             crate::BondDirection::EndDownRight | crate::BondDirection::EndUpRight
         ) {
-            mol.bonds[*bond_idx].direction = crate::BondDirection::None;
+            state.set_direction(*bond_idx, crate::BondDirection::None);
         }
 
-        if !matches!(mol.bonds[*bond_idx].order, BondOrder::Double)
+        if !matches!(state.bond(*bond_idx).order, BondOrder::Double)
             || !matches!(
-                mol.bonds[*bond_idx].stereo,
+                state.stereo(*bond_idx),
                 crate::BondStereo::Cis | crate::BondStereo::Trans
             )
-            || mol.bonds[*bond_idx].stereo_atoms.len() < 2
+            || state.bond(*bond_idx).stereo_atoms.len() < 2
         {
-            mol.bonds[*bond_idx].stereo = crate::BondStereo::None;
+            state.set_stereo(*bond_idx, crate::BondStereo::None);
             continue;
         }
 
         for &dbl_bond_atom_idx in &[
-            mol.bonds[*bond_idx].begin_atom,
-            mol.bonds[*bond_idx].end_atom,
+            state.bond(*bond_idx).begin_atom,
+            state.bond(*bond_idx).end_atom,
         ] {
-            for nbr in adjacency(mol).neighbors_of(dbl_bond_atom_idx) {
-                if !can_have_direction(mol.bonds[nbr.bond_index].order) {
+            for nbr in adjacency(state.mol).neighbors_of(dbl_bond_atom_idx) {
+                if !can_have_direction(state.bond(nbr.bond_index).order) {
                     continue;
                 }
                 if let Some(nbr_stereo_bond_idx) =
-                    get_neighboring_stereo_bond(mol, dbl_bond_atom_idx, nbr.bond_index)
+                    get_neighboring_stereo_bond(state, dbl_bond_atom_idx, nbr.bond_index)
                 {
                     stereo_bond_nbrs[*bond_idx].push(nbr_stereo_bond_idx);
                 }
@@ -2070,7 +2343,7 @@ fn canonicalize_double_bonds(
         ));
     }
 
-    let mut seen_bonds = vec![false; mol.bonds.len()];
+    let mut seen_bonds = vec![false; state.mol.bonds().len()];
     while let Some((_nbr_count, _visit_order, bond_idx)) = heap.pop() {
         if seen_bonds[bond_idx] {
             continue;
@@ -2083,7 +2356,7 @@ fn canonicalize_double_bonds(
                 continue;
             }
             canonicalize_double_bond(
-                mol,
+                state,
                 current_bond_idx,
                 bond_visit_orders,
                 atom_visit_orders,
@@ -2104,7 +2377,7 @@ fn canonicalize_double_bonds(
 }
 
 fn remove_unwanted_bond_dir_specs(
-    mol: &mut Molecule,
+    state: &mut CanonBondState<'_>,
     mol_stack: &[MolStackElem],
     bond_dir_counts: &mut [i8],
     atom_dir_counts: &mut [i8],
@@ -2115,25 +2388,25 @@ fn remove_unwanted_bond_dir_specs(
             continue;
         };
 
-        if !matches!(mol.bonds[*bond_idx].order, BondOrder::Double)
+        if !matches!(state.bond(*bond_idx).order, BondOrder::Double)
             || matches!(
-                mol.bonds[*bond_idx].stereo,
+                state.stereo(*bond_idx),
                 crate::BondStereo::Cis | crate::BondStereo::Trans
             )
         {
             continue;
         }
 
-        let first_atom = mol.bonds[*bond_idx].begin_atom;
-        let second_atom = mol.bonds[*bond_idx].end_atom;
-        if adjacency(mol).neighbors_of(first_atom).len() == 1
-            || adjacency(mol).neighbors_of(second_atom).len() == 1
+        let first_atom = state.bond(*bond_idx).begin_atom;
+        let second_atom = state.bond(*bond_idx).end_atom;
+        if adjacency(state.mol).neighbors_of(first_atom).len() == 1
+            || adjacency(state.mol).neighbors_of(second_atom).len() == 1
         {
             continue;
         }
 
         let mut removal_candidates = Vec::new();
-        for nbr in adjacency(mol).neighbors_of(first_atom) {
+        for nbr in adjacency(state.mol).neighbors_of(first_atom) {
             if bond_dir_counts[nbr.bond_index] > 0 {
                 removal_candidates.push(nbr.bond_index);
             }
@@ -2146,7 +2419,7 @@ fn remove_unwanted_bond_dir_specs(
         }
 
         let mut candidates_on_second_end = 0u8;
-        for nbr in adjacency(mol).neighbors_of(second_atom) {
+        for nbr in adjacency(state.mol).neighbors_of(second_atom) {
             if bond_dir_counts[nbr.bond_index] > 0 {
                 removal_candidates.push(nbr.bond_index);
                 candidates_on_second_end += 1;
@@ -2161,16 +2434,16 @@ fn remove_unwanted_bond_dir_specs(
 
         removal_candidates.sort_by_key(|&idx| bond_visit_orders[idx]);
         for candidate_bond_idx in removal_candidates {
-            let other_atom = if mol.bonds[candidate_bond_idx].begin_atom == first_atom
-                || mol.bonds[candidate_bond_idx].end_atom == first_atom
+            let other_atom = if state.bond(candidate_bond_idx).begin_atom == first_atom
+                || state.bond(candidate_bond_idx).end_atom == first_atom
             {
-                bond_other_atom(&mol.bonds[candidate_bond_idx], first_atom)
+                bond_other_atom(state.bond(candidate_bond_idx), first_atom)
             } else {
-                bond_other_atom(&mol.bonds[candidate_bond_idx], second_atom)
+                bond_other_atom(state.bond(candidate_bond_idx), second_atom)
             };
             if atom_dir_counts[other_atom] == 2 {
                 bond_dir_counts[candidate_bond_idx] = 0;
-                mol.bonds[candidate_bond_idx].direction = crate::BondDirection::None;
+                state.set_direction(candidate_bond_idx, crate::BondDirection::None);
                 atom_dir_counts[other_atom] -= 1;
                 break;
             }
@@ -2179,7 +2452,7 @@ fn remove_unwanted_bond_dir_specs(
 }
 
 fn remove_redundant_bond_dir_specs(
-    mol: &mut Molecule,
+    state: &mut CanonBondState<'_>,
     mol_stack: &[MolStackElem],
     bond_dir_counts: &mut [i8],
     atom_dir_counts: &mut [i8],
@@ -2194,24 +2467,24 @@ fn remove_redundant_bond_dir_specs(
             continue;
         };
 
-        if can_have_direction(mol.bonds[*bond_idx].order) && bond_dir_counts[*bond_idx] > 0 {
+        if can_have_direction(state.bond(*bond_idx).order) && bond_dir_counts[*bond_idx] > 0 {
             let canon_begin_atom = *atom_to_left_idx;
-            let canon_end_atom = bond_other_atom(&mol.bonds[*bond_idx], *atom_to_left_idx);
+            let canon_end_atom = bond_other_atom(state.bond(*bond_idx), *atom_to_left_idx);
             if atom_dir_counts[canon_begin_atom] >= 2
-                && adjacency(mol)
+                && adjacency(state.mol)
                     .neighbors_of(canon_begin_atom)
                     .iter()
                     .any(|nbr| {
                         nbr.bond_index != *bond_idx
-                            && matches!(mol.bonds[nbr.bond_index].order, BondOrder::Double)
+                            && matches!(state.bond(nbr.bond_index).order, BondOrder::Double)
                             && matches!(
-                                mol.bonds[nbr.bond_index].stereo,
+                                state.stereo(nbr.bond_index),
                                 crate::BondStereo::Cis | crate::BondStereo::Trans
                             )
                     })
             {
                 clear_bond_dirs(
-                    mol,
+                    state,
                     *bond_idx,
                     canon_begin_atom,
                     bond_dir_counts,
@@ -2219,28 +2492,28 @@ fn remove_redundant_bond_dir_specs(
                 );
             }
             if atom_dir_counts[canon_end_atom] >= 2
-                && adjacency(mol)
+                && adjacency(state.mol)
                     .neighbors_of(canon_end_atom)
                     .iter()
                     .any(|nbr| {
                         nbr.bond_index != *bond_idx
-                            && matches!(mol.bonds[nbr.bond_index].order, BondOrder::Double)
+                            && matches!(state.bond(nbr.bond_index).order, BondOrder::Double)
                             && matches!(
-                                mol.bonds[nbr.bond_index].stereo,
+                                state.stereo(nbr.bond_index),
                                 crate::BondStereo::Cis | crate::BondStereo::Trans
                             )
                     })
             {
                 clear_bond_dirs(
-                    mol,
+                    state,
                     *bond_idx,
                     canon_end_atom,
                     bond_dir_counts,
                     atom_dir_counts,
                 );
             }
-        } else if !matches!(mol.bonds[*bond_idx].direction, crate::BondDirection::None) {
-            mol.bonds[*bond_idx].direction = crate::BondDirection::None;
+        } else if !matches!(state.direction(*bond_idx), crate::BondDirection::None) {
+            state.set_direction(*bond_idx, crate::BondDirection::None);
         }
     }
 }
@@ -2252,8 +2525,8 @@ fn shortest_path_ignoring_bond(
     skip_bond: usize,
 ) -> Option<Vec<usize>> {
     let adj = adjacency(mol);
-    let mut prev = vec![None::<usize>; mol.atoms.len()];
-    let mut seen = vec![false; mol.atoms.len()];
+    let mut prev = vec![None::<usize>; mol.atoms().len()];
+    let mut seen = vec![false; mol.atoms().len()];
     let mut q = std::collections::VecDeque::new();
     seen[begin] = true;
     q.push_back(begin);
@@ -2292,7 +2565,7 @@ fn cycle_key(cycle: &[usize]) -> Vec<usize> {
 fn all_cycle_candidates(mol: &Molecule) -> Vec<Vec<usize>> {
     let mut out = Vec::<Vec<usize>>::new();
     let mut seen = std::collections::BTreeSet::<Vec<usize>>::new();
-    for bond in &mol.bonds {
+    for bond in mol.bonds() {
         if let Some(path) =
             shortest_path_ignoring_bond(mol, bond.begin_atom, bond.end_atom, bond.index)
         {
@@ -2308,50 +2581,78 @@ fn all_cycle_candidates(mol: &Molecule) -> Vec<Vec<usize>> {
     out
 }
 
-fn atom_is_in_ring_size(mol: &Molecule, atom_idx: usize, ring_size: usize) -> bool {
-    all_cycle_candidates(mol)
-        .into_iter()
-        .any(|cycle| cycle.len() == ring_size && cycle.contains(&atom_idx))
+struct RingQueryCache {
+    atom_ring_counts: Vec<usize>,
+    atom_ring_sizes: Vec<Vec<usize>>,
+    bond_ring_counts: Vec<usize>,
 }
 
-fn atom_ring_count(mol: &Molecule, atom_idx: usize) -> usize {
-    all_cycle_candidates(mol)
-        .into_iter()
-        .filter(|cycle| cycle.contains(&atom_idx))
-        .count()
-}
+impl RingQueryCache {
+    fn new(mol: &Molecule) -> Self {
+        let cycles = all_cycle_candidates(mol);
+        let mut atom_ring_counts = vec![0usize; mol.atoms().len()];
+        let mut atom_ring_sizes = vec![Vec::<usize>::new(); mol.atoms().len()];
+        let mut bond_ring_counts = vec![0usize; mol.bonds().len()];
+        let mut bond_lookup = std::collections::HashMap::<(usize, usize), usize>::new();
+        for bond in mol.bonds() {
+            let key = if bond.begin_atom <= bond.end_atom {
+                (bond.begin_atom, bond.end_atom)
+            } else {
+                (bond.end_atom, bond.begin_atom)
+            };
+            bond_lookup.insert(key, bond.index);
+        }
 
-fn bond_ring_count(mol: &Molecule, bond_idx: usize) -> usize {
-    let bond = &mol.bonds[bond_idx];
-    all_cycle_candidates(mol)
-        .into_iter()
-        .filter(|cycle| {
-            cycle.windows(2).any(|w| {
-                (w[0] == bond.begin_atom && w[1] == bond.end_atom)
-                    || (w[0] == bond.end_atom && w[1] == bond.begin_atom)
-            }) || {
-                let first = cycle[0];
-                let last = *cycle.last().unwrap_or(&first);
-                (first == bond.begin_atom && last == bond.end_atom)
-                    || (first == bond.end_atom && last == bond.begin_atom)
+        for cycle in cycles {
+            let ring_size = cycle.len();
+            for &atom_idx in &cycle {
+                atom_ring_counts[atom_idx] += 1;
+                atom_ring_sizes[atom_idx].push(ring_size);
             }
-        })
-        .count()
+            for edge_idx in 0..cycle.len() {
+                let a = cycle[edge_idx];
+                let b = cycle[(edge_idx + 1) % cycle.len()];
+                let key = if a <= b { (a, b) } else { (b, a) };
+                if let Some(&bond_idx) = bond_lookup.get(&key) {
+                    bond_ring_counts[bond_idx] += 1;
+                }
+            }
+        }
+
+        Self {
+            atom_ring_counts,
+            atom_ring_sizes,
+            bond_ring_counts,
+        }
+    }
+
+    fn atom_is_in_ring_size(&self, atom_idx: usize, ring_size: usize) -> bool {
+        self.atom_ring_sizes[atom_idx].contains(&ring_size)
+    }
+
+    fn atom_ring_count(&self, atom_idx: usize) -> usize {
+        self.atom_ring_counts[atom_idx]
+    }
+
+    fn bond_ring_count(&self, bond_idx: usize) -> usize {
+        self.bond_ring_counts[bond_idx]
+    }
 }
 
 fn atom_is_candidate_for_ring_stereochem(
     mol: &Molecule,
+    ring_cache: &RingQueryCache,
     atom_idx: usize,
     atom_ranks: &[u32],
 ) -> bool {
-    if atom_ring_count(mol, atom_idx) == 0 {
+    if ring_cache.atom_ring_count(atom_idx) == 0 {
         return false;
     }
-    let atom = &mol.atoms[atom_idx];
+    let atom = &mol.atoms()[atom_idx];
     if atom.atomic_num == 7 {
         let total_degree =
             adjacency(mol).neighbors_of(atom_idx).len() + atom.explicit_hydrogens as usize;
-        if total_degree == 3 && !atom_is_in_ring_size(mol, atom_idx, 3) {
+        if total_degree == 3 && !ring_cache.atom_is_in_ring_size(atom_idx, 3) {
             return false;
         }
     }
@@ -2360,7 +2661,7 @@ fn atom_is_candidate_for_ring_stereochem(
     let mut ring_nbr_ranks = std::collections::BTreeSet::<u32>::new();
     let adj = adjacency(mol);
     for nbr in adj.neighbors_of(atom_idx) {
-        if bond_ring_count(mol, nbr.bond_index) == 0 {
+        if ring_cache.bond_ring_count(nbr.bond_index) == 0 {
             non_ring_nbrs.push(nbr.atom_index);
         } else {
             ring_nbrs.push(nbr.atom_index);
@@ -2381,25 +2682,32 @@ fn atom_is_candidate_for_ring_stereochem(
     }
 }
 
-fn find_chiral_atom_special_cases(mol: &Molecule) -> Result<Vec<Vec<i32>>, SmilesWriteError> {
+pub(crate) fn find_chiral_atom_special_cases(
+    mol: &Molecule,
+) -> Result<Vec<Vec<i32>>, SmilesWriteError> {
     let legacy = mol.rdkit_legacy_stereo_atom_props(false);
     let atom_ranks: Vec<u32> = legacy
         .iter()
         .map(|p| p.cip_rank.unwrap_or(0) as u32)
         .collect();
-    let mut possible_special_cases = vec![Vec::<i32>::new(); mol.atoms.len()];
-    let mut atoms_seen = vec![false; mol.atoms.len()];
-    let mut atoms_used = vec![false; mol.atoms.len()];
-    let mut bonds_seen = vec![false; mol.bonds.len()];
+    let mut possible_special_cases = vec![Vec::<i32>::new(); mol.atoms().len()];
+    let mut atoms_seen = vec![false; mol.atoms().len()];
+    let mut atoms_used = vec![false; mol.atoms().len()];
+    let mut bonds_seen = vec![false; mol.bonds().len()];
+    let mut ring_cache = None::<RingQueryCache>;
     let adj = adjacency(mol);
-    for atom in &mol.atoms {
+    for atom in mol.atoms() {
         if atoms_seen[atom.index] {
             continue;
         }
         if matches!(atom.chiral_tag, crate::ChiralTag::Unspecified)
             || legacy[atom.index].cip_code.is_some()
-            || atom_ring_count(mol, atom.index) == 0
-            || !atom_is_candidate_for_ring_stereochem(mol, atom.index, &atom_ranks)
+        {
+            continue;
+        }
+        let ring_cache = ring_cache.get_or_insert_with(|| RingQueryCache::new(mol));
+        if ring_cache.atom_ring_count(atom.index) == 0
+            || !atom_is_candidate_for_ring_stereochem(mol, ring_cache, atom.index, &atom_ranks)
         {
             continue;
         }
@@ -2407,7 +2715,7 @@ fn find_chiral_atom_special_cases(mol: &Molecule) -> Result<Vec<Vec<i32>>, Smile
         for nbr in adj.neighbors_of(atom.index) {
             if !bonds_seen[nbr.bond_index] {
                 bonds_seen[nbr.bond_index] = true;
-                if bond_ring_count(mol, nbr.bond_index) > 0 && !atoms_seen[nbr.atom_index] {
+                if ring_cache.bond_ring_count(nbr.bond_index) > 0 && !atoms_seen[nbr.atom_index] {
                     next_atoms.push_back(nbr.atom_index);
                     atoms_used[nbr.atom_index] = true;
                 }
@@ -2416,10 +2724,10 @@ fn find_chiral_atom_special_cases(mol: &Molecule) -> Result<Vec<Vec<i32>>, Smile
         let mut ring_stereo_atoms = possible_special_cases[atom.index].clone();
         while let Some(ratom_idx) = next_atoms.pop_front() {
             atoms_seen[ratom_idx] = true;
-            let ratom = &mol.atoms[ratom_idx];
+            let ratom = &mol.atoms()[ratom_idx];
             if !matches!(ratom.chiral_tag, crate::ChiralTag::Unspecified)
                 && legacy[ratom_idx].cip_code.is_none()
-                && atom_is_candidate_for_ring_stereochem(mol, ratom_idx, &atom_ranks)
+                && atom_is_candidate_for_ring_stereochem(mol, &ring_cache, ratom_idx, &atom_ranks)
             {
                 let same = if ratom.chiral_tag == atom.chiral_tag {
                     1
@@ -2432,7 +2740,7 @@ fn find_chiral_atom_special_cases(mol: &Molecule) -> Result<Vec<Vec<i32>>, Smile
             for nbr in adj.neighbors_of(ratom_idx) {
                 if !bonds_seen[nbr.bond_index] {
                     bonds_seen[nbr.bond_index] = true;
-                    if bond_ring_count(mol, nbr.bond_index) > 0
+                    if ring_cache.bond_ring_count(nbr.bond_index) > 0
                         && !atoms_seen[nbr.atom_index]
                         && !atoms_used[nbr.atom_index]
                     {

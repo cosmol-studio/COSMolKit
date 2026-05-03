@@ -1,7 +1,8 @@
 use std::io::BufRead;
 
 use crate::{
-    Atom, Bond, BondDirection, BondOrder, BondStereo, ChiralTag, CoordinateDimension, Molecule,
+    AdjacencyList, Atom, Bond, BondDirection, BondOrder, BondStereo, ChiralTag,
+    CoordinateDimension, Molecule,
 };
 use glam::{DVec2, DVec3};
 
@@ -226,37 +227,37 @@ fn parse_v2000_mol_data_stream(
     let mut coords_3d = Vec::with_capacity(n_atoms);
     let mut has_nonzero_z = false;
     for (offset, line) in lines[4..expected_atom_end].iter().enumerate() {
-        let (atom, coord) = parse_v2000_atom_line(line, offset + 5)?;
-        molecule.add_atom(atom);
+        let (mut atom, coord) = parse_v2000_atom_line(line, offset + 5)?;
+        atom.index = offset;
+        molecule.atoms_mut().push(atom);
         has_nonzero_z |= coord.z.abs() > 1e-12;
         coords_2d.push(DVec2::new(coord.x, coord.y));
         coords_3d.push(coord);
     }
-    let coord_dim = source_dim.unwrap_or_else(|| {
-        if has_nonzero_z {
-            CoordinateDimension::ThreeD
-        } else {
-            CoordinateDimension::TwoD
-        }
+    let coord_dim = source_dim.unwrap_or(if has_nonzero_z {
+        CoordinateDimension::ThreeD
+    } else {
+        CoordinateDimension::TwoD
     });
     if matches!(coord_dim, CoordinateDimension::ThreeD) {
-        molecule.conformers_3d.push(coords_3d);
-        molecule.source_coordinate_dim = Some(CoordinateDimension::ThreeD);
+        molecule.conformers_3d_mut().push(coords_3d);
+        molecule.set_source_coordinate_dim(Some(CoordinateDimension::ThreeD));
     } else {
-        molecule.coords_2d = Some(coords_2d);
-        molecule.source_coordinate_dim = Some(CoordinateDimension::TwoD);
+        molecule.set_coords_2d(Some(coords_2d));
+        molecule.set_source_coordinate_dim(Some(CoordinateDimension::TwoD));
     }
 
     for (offset, line) in lines[expected_atom_end..expected_bond_end]
         .iter()
         .enumerate()
     {
-        let bond = parse_v2000_bond_line(line, offset + expected_atom_end + 1)?;
+        let mut bond = parse_v2000_bond_line(line, offset + expected_atom_end + 1)?;
+        bond.index = offset;
         if bond.is_aromatic {
-            molecule.atoms[bond.begin_atom].is_aromatic = true;
-            molecule.atoms[bond.end_atom].is_aromatic = true;
+            molecule.atoms_mut()[bond.begin_atom].is_aromatic = true;
+            molecule.atoms_mut()[bond.end_atom].is_aromatic = true;
         }
-        molecule.add_bond(bond);
+        molecule.bonds_mut().push(bond);
     }
 
     let mut cursor = expected_bond_end;
@@ -468,7 +469,7 @@ fn apply_v2000_charge_line(
         let zero_based = atom_idx.checked_sub(1).ok_or_else(|| {
             SdfReadError::Parse(format!("Bad charge atom index on line {line_number}"))
         })?;
-        let atom = molecule.atoms.get_mut(zero_based).ok_or_else(|| {
+        let atom = molecule.atoms_mut().get_mut(zero_based).ok_or_else(|| {
             SdfReadError::Parse(format!("Bad charge atom index on line {line_number}"))
         })?;
         atom.formal_charge = charge;
@@ -488,7 +489,7 @@ fn apply_v2000_isotope_line(
             )));
         }
         let atom = molecule
-            .atoms
+            .atoms_mut()
             .get_mut(atom_idx)
             .ok_or_else(|| SdfReadError::Parse(format!("Bad atom index on line {line_number}")))?;
         atom.isotope = Some(value as u16);
@@ -514,7 +515,7 @@ fn apply_v2000_radical_line(
             }
         };
         let atom = molecule
-            .atoms
+            .atoms_mut()
             .get_mut(atom_idx)
             .ok_or_else(|| SdfReadError::Parse(format!("Bad atom index on line {line_number}")))?;
         atom.num_radical_electrons = radicals;
@@ -586,32 +587,31 @@ fn parse_v3000_mol_data_stream(
     let mut coords_3d = Vec::with_capacity(n_atoms);
     let mut has_nonzero_z = false;
     for _ in 0..n_atoms {
-        let (atom, coord) = parse_v3000_atom_line(
+        let (mut atom, coord) = parse_v3000_atom_line(
             v3000_content(lines.get(cursor).ok_or_else(|| {
                 SdfReadError::Parse("EOF hit while reading V3000 atoms".to_owned())
             })?)
             .ok_or_else(|| SdfReadError::Parse("Bad V3000 atom line".to_owned()))?,
             cursor + 1,
         )?;
-        molecule.add_atom(atom);
+        atom.index = molecule.atoms().len();
+        molecule.atoms_mut().push(atom);
         has_nonzero_z |= coord.z.abs() > 1e-12;
         coords_2d.push(DVec2::new(coord.x, coord.y));
         coords_3d.push(coord);
         cursor += 1;
     }
-    let coord_dim = source_dim.unwrap_or_else(|| {
-        if has_nonzero_z {
-            CoordinateDimension::ThreeD
-        } else {
-            CoordinateDimension::TwoD
-        }
+    let coord_dim = source_dim.unwrap_or(if has_nonzero_z {
+        CoordinateDimension::ThreeD
+    } else {
+        CoordinateDimension::TwoD
     });
     if matches!(coord_dim, CoordinateDimension::ThreeD) {
-        molecule.conformers_3d.push(coords_3d);
-        molecule.source_coordinate_dim = Some(CoordinateDimension::ThreeD);
+        molecule.conformers_3d_mut().push(coords_3d);
+        molecule.set_source_coordinate_dim(Some(CoordinateDimension::ThreeD));
     } else {
-        molecule.coords_2d = Some(coords_2d);
-        molecule.source_coordinate_dim = Some(CoordinateDimension::TwoD);
+        molecule.set_coords_2d(Some(coords_2d));
+        molecule.set_source_coordinate_dim(Some(CoordinateDimension::TwoD));
     }
     expect_v3000_line(lines, cursor, "END ATOM")?;
     cursor += 1;
@@ -624,18 +624,19 @@ fn parse_v3000_mol_data_stream(
         expect_v3000_line(lines, cursor, "BEGIN BOND")?;
         cursor += 1;
         for _ in 0..n_bonds {
-            let bond = parse_v3000_bond_line(
+            let mut bond = parse_v3000_bond_line(
                 v3000_content(lines.get(cursor).ok_or_else(|| {
                     SdfReadError::Parse("EOF hit while reading V3000 bonds".to_owned())
                 })?)
                 .ok_or_else(|| SdfReadError::Parse("Bad V3000 bond line".to_owned()))?,
                 cursor + 1,
             )?;
+            bond.index = molecule.bonds().len();
             if bond.is_aromatic {
-                molecule.atoms[bond.begin_atom].is_aromatic = true;
-                molecule.atoms[bond.end_atom].is_aromatic = true;
+                molecule.atoms_mut()[bond.begin_atom].is_aromatic = true;
+                molecule.atoms_mut()[bond.end_atom].is_aromatic = true;
             }
-            molecule.add_bond(bond);
+            molecule.bonds_mut().push(bond);
             cursor += 1;
         }
         expect_v3000_line(lines, cursor, "END BOND")?;
@@ -659,50 +660,52 @@ fn parse_v3000_mol_data_stream(
 }
 
 fn finalize_parsed_stereochemistry(molecule: &mut Molecule) {
-    apply_molfile_total_valence_rdkit_like(molecule);
-    cache_molfile_explicit_valence_for_aromaticity_rdkit_like(molecule);
-    crate::smiles::sanitize_molfile_aromaticity_rdkit_like(molecule);
-    apply_aromatic_n_h_from_molfile_valence_rdkit_like(molecule);
+    let explicit_valences = molfile_explicit_valences(molecule);
+    apply_molfile_total_valence(molecule, &explicit_valences);
+    cache_molfile_explicit_valence_for_aromaticity(molecule, &explicit_valences);
+    crate::smiles::sanitize_molfile_aromaticity(molecule);
+    apply_aromatic_n_h_from_molfile_valence(molecule);
     let has_bond_stereo_markers = molecule
-        .bonds
+        .bonds()
         .iter()
         .any(|bond| !matches!(bond.direction, BondDirection::None));
     if matches!(
-        molecule.source_coordinate_dim,
+        molecule.source_coordinate_dim(),
         Some(CoordinateDimension::ThreeD)
     ) {
         crate::stereo::assign_chiral_types_from_3d_rdkit_subset(molecule);
     } else if has_bond_stereo_markers {
         crate::stereo::assign_chiral_types_from_bond_dirs_rdkit_subset(molecule);
     }
-    clear_single_bond_dir_flags_rdkit_like(molecule);
+    clear_single_bond_dir_flags(molecule);
     set_double_bond_neighbor_directions_from_coords_rdkit_subset(molecule);
     crate::smiles::assign_double_bond_stereo_from_directions(molecule);
-    crate::smiles::cleanup_nonstereo_double_bond_dirs_rdkit_like(molecule);
+    crate::smiles::cleanup_nonstereo_double_bond_dirs(molecule);
     crate::stereo::cache_rdkit_legacy_cip_ranks(molecule);
 }
 
-fn cache_molfile_explicit_valence_for_aromaticity_rdkit_like(molecule: &mut Molecule) {
-    let explicit_valences = molecule
-        .atoms
-        .iter()
-        .map(|atom| {
-            molecule
-                .bonds
-                .iter()
-                .filter(|bond| bond.begin_atom == atom.index || bond.end_atom == atom.index)
-                .map(|bond| match bond.order {
-                    BondOrder::Single | BondOrder::Dative => 1,
-                    BondOrder::Double => 2,
-                    BondOrder::Triple => 3,
-                    BondOrder::Quadruple => 4,
-                    BondOrder::Aromatic => 1,
-                    BondOrder::Null => 0,
-                })
-                .sum::<i32>()
-        })
-        .collect::<Vec<_>>();
-    for atom in &mut molecule.atoms {
+fn molfile_explicit_valences(molecule: &Molecule) -> Vec<i32> {
+    let mut explicit_valences = vec![0; molecule.atoms().len()];
+    for bond in molecule.bonds() {
+        let contribution = match bond.order {
+            BondOrder::Single | BondOrder::Dative => 1,
+            BondOrder::Double => 2,
+            BondOrder::Triple => 3,
+            BondOrder::Quadruple => 4,
+            BondOrder::Aromatic => 1,
+            BondOrder::Null => 0,
+        };
+        explicit_valences[bond.begin_atom] += contribution;
+        explicit_valences[bond.end_atom] += contribution;
+    }
+    explicit_valences
+}
+
+fn cache_molfile_explicit_valence_for_aromaticity(
+    molecule: &mut Molecule,
+    explicit_valences: &[i32],
+) {
+    for atom in molecule.atoms_mut() {
         atom.props.insert(
             "_MolFileExplicitValence".to_owned(),
             explicit_valences[atom.index].to_string(),
@@ -710,8 +713,8 @@ fn cache_molfile_explicit_valence_for_aromaticity_rdkit_like(molecule: &mut Mole
     }
 }
 
-fn apply_aromatic_n_h_from_molfile_valence_rdkit_like(molecule: &mut Molecule) {
-    for atom in &mut molecule.atoms {
+fn apply_aromatic_n_h_from_molfile_valence(molecule: &mut Molecule) {
+    for atom in molecule.atoms_mut() {
         let explicit_valence = atom
             .props
             .remove("_MolFileExplicitValence")
@@ -728,27 +731,8 @@ fn apply_aromatic_n_h_from_molfile_valence_rdkit_like(molecule: &mut Molecule) {
     }
 }
 
-fn apply_molfile_total_valence_rdkit_like(molecule: &mut Molecule) {
-    let explicit_valences = molecule
-        .atoms
-        .iter()
-        .map(|atom| {
-            molecule
-                .bonds
-                .iter()
-                .filter(|bond| bond.begin_atom == atom.index || bond.end_atom == atom.index)
-                .map(|bond| match bond.order {
-                    BondOrder::Single | BondOrder::Dative => 1,
-                    BondOrder::Double => 2,
-                    BondOrder::Triple => 3,
-                    BondOrder::Quadruple => 4,
-                    BondOrder::Aromatic => 1,
-                    BondOrder::Null => 0,
-                })
-                .sum::<i32>()
-        })
-        .collect::<Vec<_>>();
-    for atom in &mut molecule.atoms {
+fn apply_molfile_total_valence(molecule: &mut Molecule, explicit_valences: &[i32]) {
+    for atom in molecule.atoms_mut() {
         let Some(value) = atom
             .props
             .remove("_MolFileTotValence")
@@ -768,8 +752,8 @@ fn apply_molfile_total_valence_rdkit_like(molecule: &mut Molecule) {
     }
 }
 
-fn clear_single_bond_dir_flags_rdkit_like(molecule: &mut Molecule) {
-    for bond in &mut molecule.bonds {
+fn clear_single_bond_dir_flags(molecule: &mut Molecule) {
+    for bond in molecule.bonds_mut() {
         if matches!(bond.order, BondOrder::Single) {
             bond.direction = BondDirection::None;
         }
@@ -787,23 +771,27 @@ fn set_double_bond_neighbor_directions_from_coords_rdkit_subset(molecule: &mut M
     } else {
         return;
     };
-    if coords.len() != molecule.atoms.len() {
+    if coords.len() != molecule.atoms().len() {
         return;
     }
+    let adjacency = AdjacencyList::from_topology(molecule.atoms().len(), molecule.bonds());
+    let mut cycle_cache = BondCycleCache::new(molecule.bonds().len());
 
-    let mut single_bond_counts = vec![0usize; molecule.bonds.len()];
-    let mut double_bond_neighbors = vec![Vec::<usize>::new(); molecule.bonds.len()];
-    let mut single_bond_neighbors = vec![Vec::<usize>::new(); molecule.bonds.len()];
-    let mut needs_dir = vec![false; molecule.bonds.len()];
+    let mut single_bond_counts = vec![0usize; molecule.bonds().len()];
+    let mut double_bond_neighbors = vec![Vec::<usize>::new(); molecule.bonds().len()];
+    let mut single_bond_neighbors = vec![Vec::<usize>::new(); molecule.bonds().len()];
+    let mut needs_dir = vec![false; molecule.bonds().len()];
     let mut bonds_in_play = Vec::<usize>::new();
 
-    for bond in &molecule.bonds {
-        if !is_double_bond_candidate_for_stereo(molecule, bond.index) {
+    for bond in molecule.bonds() {
+        if !is_double_bond_candidate_for_stereo(molecule, &adjacency, &mut cycle_cache, bond.index)
+        {
             continue;
         }
         for atom_idx in [bond.begin_atom, bond.end_atom] {
-            for neighbor_idx in bond_indices_for_atom(molecule, atom_idx) {
-                let neighbor = &molecule.bonds[neighbor_idx];
+            for neighbor in adjacency.neighbors_of(atom_idx) {
+                let neighbor_idx = neighbor.bond_index;
+                let neighbor = &molecule.bonds()[neighbor_idx];
                 if matches!(neighbor.order, BondOrder::Single | BondOrder::Aromatic) {
                     single_bond_counts[neighbor_idx] += 1;
                     needs_dir[bond.index] = true;
@@ -830,15 +818,19 @@ fn set_double_bond_neighbor_directions_from_coords_rdkit_subset(molecule: &mut M
             .iter()
             .map(|neighbor_idx| single_bond_counts[*neighbor_idx])
             .sum::<usize>();
-        if min_cycle_size_for_bond(molecule, *bond_idx).is_none() {
+        if cycle_cache
+            .min_cycle_size_for_bond(molecule, &adjacency, *bond_idx)
+            .is_none()
+        {
             count *= 10;
         }
         count
     });
     for bond_idx in bonds_in_play.into_iter().rev() {
-        update_double_bond_neighbors_rdkit_like(
+        update_double_bond_neighbors(
             molecule,
             &coords,
+            &adjacency,
             bond_idx,
             &mut needs_dir,
             &single_bond_counts,
@@ -847,9 +839,10 @@ fn set_double_bond_neighbor_directions_from_coords_rdkit_subset(molecule: &mut M
     }
 }
 
-fn update_double_bond_neighbors_rdkit_like(
+fn update_double_bond_neighbors(
     molecule: &mut Molecule,
     coords: &[DVec3],
+    adjacency: &AdjacencyList,
     double_bond_idx: usize,
     needs_dir: &mut [bool],
     single_bond_counts: &[usize],
@@ -859,28 +852,30 @@ fn update_double_bond_neighbors_rdkit_like(
         return;
     }
     needs_dir[double_bond_idx] = false;
-    let double_bond = molecule.bonds[double_bond_idx].clone();
-    let Some((Some(mut bond1_idx), mut obond1_idx)) = controlling_bond_from_atom_rdkit_like(
+    let double_bond = molecule.bonds()[double_bond_idx].clone();
+    let Some((Some(mut bond1_idx), mut obond1_idx)) = controlling_bond_from_atom(
         molecule,
         needs_dir,
         single_bond_counts,
         double_bond_idx,
         double_bond.begin_atom,
+        adjacency,
     ) else {
         return;
     };
-    let Some((Some(mut bond2_idx), mut obond2_idx)) = controlling_bond_from_atom_rdkit_like(
+    let Some((Some(mut bond2_idx), mut obond2_idx)) = controlling_bond_from_atom(
         molecule,
         needs_dir,
         single_bond_counts,
         double_bond_idx,
         double_bond.end_atom,
+        adjacency,
     ) else {
         return;
     };
 
-    let mut bond1_other = other_atom_index(&molecule.bonds[bond1_idx], double_bond.begin_atom);
-    let mut bond2_other = other_atom_index(&molecule.bonds[bond2_idx], double_bond.end_atom);
+    let mut bond1_other = other_atom_index(&molecule.bonds()[bond1_idx], double_bond.begin_atom);
+    let mut bond2_other = other_atom_index(&molecule.bonds()[bond2_idx], double_bond.end_atom);
     let begin_p = coords[double_bond.begin_atom];
     let end_p = coords[double_bond.end_atom];
     let mut bond1_p = coords[bond1_other];
@@ -892,7 +887,7 @@ fn update_double_bond_neighbors_rdkit_like(
         if let Some(obond1) = obond1_idx {
             obond1_idx = Some(bond1_idx);
             bond1_idx = obond1;
-            bond1_other = other_atom_index(&molecule.bonds[bond1_idx], double_bond.begin_atom);
+            bond1_other = other_atom_index(&molecule.bonds()[bond1_idx], double_bond.begin_atom);
             bond1_p = coords[bond1_other];
             p1 = bond1_p - begin_p;
             if is_linear_arrangement(p1, p2) {
@@ -909,7 +904,7 @@ fn update_double_bond_neighbors_rdkit_like(
             if let Some(obond2) = obond2_idx {
                 obond2_idx = Some(bond2_idx);
                 bond2_idx = obond2;
-                bond2_other = other_atom_index(&molecule.bonds[bond2_idx], double_bond.end_atom);
+                bond2_other = other_atom_index(&molecule.bonds()[bond2_idx], double_bond.end_atom);
                 bond2_p = coords[bond2_other];
                 p1 = bond2_p - begin_p;
                 if is_linear_arrangement(p1, p2) {
@@ -921,7 +916,7 @@ fn update_double_bond_neighbors_rdkit_like(
         }
     }
     if linear {
-        molecule.bonds[double_bond_idx].stereo = BondStereo::Any;
+        molecule.bonds_mut()[double_bond_idx].stereo = BondStereo::Any;
         return;
     }
 
@@ -947,29 +942,33 @@ fn update_double_bond_neighbors_rdkit_like(
     }
     if !needs_dir[bond1_idx] {
         if needs_dir[bond2_idx] {
-            if molecule.bonds[bond1_idx].begin_atom != atom1 {
+            if molecule.bonds()[bond1_idx].begin_atom != atom1 {
                 reverse_bond_dir = !reverse_bond_dir;
             }
-            let dir = molecule.bonds[bond1_idx].direction;
-            molecule.bonds[bond2_idx].direction =
-                bond_dir_relative_to_atom(&molecule.bonds[bond2_idx], atom2, dir, reverse_bond_dir);
+            let dir = molecule.bonds()[bond1_idx].direction;
+            molecule.bonds_mut()[bond2_idx].direction = bond_dir_relative_to_atom(
+                &molecule.bonds()[bond2_idx],
+                atom2,
+                dir,
+                reverse_bond_dir,
+            );
         }
     } else if !needs_dir[bond2_idx] {
-        if molecule.bonds[bond2_idx].begin_atom != atom2 {
+        if molecule.bonds()[bond2_idx].begin_atom != atom2 {
             reverse_bond_dir = !reverse_bond_dir;
         }
-        let dir = molecule.bonds[bond2_idx].direction;
-        molecule.bonds[bond1_idx].direction =
-            bond_dir_relative_to_atom(&molecule.bonds[bond1_idx], atom1, dir, reverse_bond_dir);
+        let dir = molecule.bonds()[bond2_idx].direction;
+        molecule.bonds_mut()[bond1_idx].direction =
+            bond_dir_relative_to_atom(&molecule.bonds()[bond1_idx], atom1, dir, reverse_bond_dir);
     } else {
-        molecule.bonds[bond1_idx].direction = bond_dir_relative_to_atom(
-            &molecule.bonds[bond1_idx],
+        molecule.bonds_mut()[bond1_idx].direction = bond_dir_relative_to_atom(
+            &molecule.bonds()[bond1_idx],
             atom1,
             BondDirection::EndDownRight,
             false,
         );
-        molecule.bonds[bond2_idx].direction = bond_dir_relative_to_atom(
-            &molecule.bonds[bond2_idx],
+        molecule.bonds_mut()[bond2_idx].direction = bond_dir_relative_to_atom(
+            &molecule.bonds()[bond2_idx],
             atom2,
             BondDirection::EndDownRight,
             reverse_bond_dir,
@@ -980,25 +979,26 @@ fn update_double_bond_neighbors_rdkit_like(
     if let Some(obond1_idx) = obond1_idx
         && needs_dir[obond1_idx]
     {
-        let dir = molecule.bonds[bond1_idx].direction;
-        let reverse = molecule.bonds[bond1_idx].begin_atom == atom1;
-        molecule.bonds[obond1_idx].direction =
-            bond_dir_relative_to_atom(&molecule.bonds[obond1_idx], atom1, dir, reverse);
+        let dir = molecule.bonds()[bond1_idx].direction;
+        let reverse = molecule.bonds()[bond1_idx].begin_atom == atom1;
+        molecule.bonds_mut()[obond1_idx].direction =
+            bond_dir_relative_to_atom(&molecule.bonds()[obond1_idx], atom1, dir, reverse);
         needs_dir[obond1_idx] = false;
     }
     if let Some(obond2_idx) = obond2_idx
         && needs_dir[obond2_idx]
     {
-        let dir = molecule.bonds[bond2_idx].direction;
-        let reverse = molecule.bonds[bond2_idx].begin_atom == atom2;
-        molecule.bonds[obond2_idx].direction =
-            bond_dir_relative_to_atom(&molecule.bonds[obond2_idx], atom2, dir, reverse);
+        let dir = molecule.bonds()[bond2_idx].direction;
+        let reverse = molecule.bonds()[bond2_idx].begin_atom == atom2;
+        molecule.bonds_mut()[obond2_idx].direction =
+            bond_dir_relative_to_atom(&molecule.bonds()[obond2_idx], atom2, dir, reverse);
         needs_dir[obond2_idx] = false;
     }
     for followup in followup_bonds {
-        update_double_bond_neighbors_rdkit_like(
+        update_double_bond_neighbors(
             molecule,
             coords,
+            adjacency,
             followup,
             needs_dir,
             single_bond_counts,
@@ -1007,20 +1007,22 @@ fn update_double_bond_neighbors_rdkit_like(
     }
 }
 
-fn controlling_bond_from_atom_rdkit_like(
+fn controlling_bond_from_atom(
     molecule: &Molecule,
     needs_dir: &[bool],
     single_bond_counts: &[usize],
     double_bond_idx: usize,
     atom_idx: usize,
+    adjacency: &AdjacencyList,
 ) -> Option<(Option<usize>, Option<usize>)> {
     let mut bond = None;
     let mut obond = None;
-    for bond_idx in bond_indices_for_atom(molecule, atom_idx) {
+    for neighbor in adjacency.neighbors_of(atom_idx) {
+        let bond_idx = neighbor.bond_index;
         if bond_idx == double_bond_idx {
             continue;
         }
-        let candidate = &molecule.bonds[bond_idx];
+        let candidate = &molecule.bonds()[bond_idx];
         if matches!(candidate.order, BondOrder::Single | BondOrder::Aromatic)
             && matches!(
                 candidate.direction,
@@ -1055,15 +1057,6 @@ fn other_atom_index(bond: &Bond, atom_idx: usize) -> usize {
     }
 }
 
-fn bond_indices_for_atom(molecule: &Molecule, atom_idx: usize) -> Vec<usize> {
-    molecule
-        .bonds
-        .iter()
-        .filter(|bond| bond.begin_atom == atom_idx || bond.end_atom == atom_idx)
-        .map(|bond| bond.index)
-        .collect()
-}
-
 fn opposite_bond_direction(direction: BondDirection) -> BondDirection {
     match direction {
         BondDirection::EndUpRight => BondDirection::EndDownRight,
@@ -1088,27 +1081,48 @@ fn bond_dir_relative_to_atom(
     }
 }
 
-fn min_cycle_size_for_bond(molecule: &Molecule, bond_idx: usize) -> Option<usize> {
-    let bond = molecule.bonds.get(bond_idx)?;
-    let mut visited = vec![false; molecule.atoms.len()];
+struct BondCycleCache {
+    min_cycle_sizes: Vec<Option<Option<usize>>>,
+}
+
+impl BondCycleCache {
+    fn new(bond_count: usize) -> Self {
+        Self {
+            min_cycle_sizes: vec![None; bond_count],
+        }
+    }
+
+    fn min_cycle_size_for_bond(
+        &mut self,
+        molecule: &Molecule,
+        adjacency: &AdjacencyList,
+        bond_idx: usize,
+    ) -> Option<usize> {
+        if let Some(cached) = self.min_cycle_sizes[bond_idx] {
+            return cached;
+        }
+        let result = min_cycle_size_for_bond(molecule, adjacency, bond_idx);
+        self.min_cycle_sizes[bond_idx] = Some(result);
+        result
+    }
+}
+
+fn min_cycle_size_for_bond(
+    molecule: &Molecule,
+    adjacency: &AdjacencyList,
+    bond_idx: usize,
+) -> Option<usize> {
+    let bond = molecule.bonds().get(bond_idx)?;
+    let mut visited = vec![false; molecule.atoms().len()];
     let mut queue = std::collections::VecDeque::new();
     visited[bond.begin_atom] = true;
     queue.push_back((bond.begin_atom, 0usize));
     while let Some((atom_idx, distance)) = queue.pop_front() {
-        for neighbor_bond in &molecule.bonds {
-            if neighbor_bond.index == bond_idx {
+        for neighbor in adjacency.neighbors_of(atom_idx) {
+            if neighbor.bond_index == bond_idx {
                 continue;
             }
-            let next = if neighbor_bond.begin_atom == atom_idx {
-                Some(neighbor_bond.end_atom)
-            } else if neighbor_bond.end_atom == atom_idx {
-                Some(neighbor_bond.begin_atom)
-            } else {
-                None
-            };
-            let Some(next) = next else {
-                continue;
-            };
+            let next = neighbor.atom_index;
             if next == bond.end_atom {
                 return Some(distance + 2);
             }
@@ -1121,13 +1135,20 @@ fn min_cycle_size_for_bond(molecule: &Molecule, bond_idx: usize) -> Option<usize
     None
 }
 
-fn is_double_bond_candidate_for_stereo(molecule: &Molecule, bond_idx: usize) -> bool {
-    let bond = &molecule.bonds[bond_idx];
+fn is_double_bond_candidate_for_stereo(
+    molecule: &Molecule,
+    adjacency: &AdjacencyList,
+    cycle_cache: &mut BondCycleCache,
+    bond_idx: usize,
+) -> bool {
+    let bond = &molecule.bonds()[bond_idx];
     matches!(bond.order, BondOrder::Double)
         && !matches!(bond.stereo, BondStereo::Any)
-        && min_cycle_size_for_bond(molecule, bond_idx).is_none_or(|size| size >= 8)
-        && bond_indices_for_atom(molecule, bond.begin_atom).len() > 1
-        && bond_indices_for_atom(molecule, bond.end_atom).len() > 1
+        && cycle_cache
+            .min_cycle_size_for_bond(molecule, adjacency, bond_idx)
+            .is_none_or(|size| size >= 8)
+        && adjacency.neighbors_of(bond.begin_atom).len() > 1
+        && adjacency.neighbors_of(bond.end_atom).len() > 1
 }
 
 fn is_linear_arrangement(v1: DVec3, v2: DVec3) -> bool {
@@ -1494,22 +1515,6 @@ fn atomic_number_from_molfile_symbol(symbol: &str) -> Option<(u8, Option<u16>)> 
         "*" | "A" | "Q" | "L" | "LP" | "R" | "R#" => Some((0, None)),
         "D" => Some((1, Some(2))),
         "T" => Some((1, Some(3))),
-        "H" => Some((1, None)),
-        "B" => Some((5, None)),
-        "C" => Some((6, None)),
-        "N" => Some((7, None)),
-        "O" => Some((8, None)),
-        "F" => Some((9, None)),
-        "Na" => Some((11, None)),
-        "Si" => Some((14, None)),
-        "P" => Some((15, None)),
-        "S" => Some((16, None)),
-        "Cl" => Some((17, None)),
-        "Cu" => Some((29, None)),
-        "Se" => Some((34, None)),
-        "Br" => Some((35, None)),
-        "Rh" => Some((45, None)),
-        "I" => Some((53, None)),
-        _ => None,
+        _ => crate::periodic_table::atomic_number(symbol).map(|atomic_num| (atomic_num, None)),
     }
 }

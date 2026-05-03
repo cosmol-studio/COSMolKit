@@ -43,7 +43,7 @@ impl Default for RemoveHydrogensParams {
 }
 
 pub fn add_hydrogens_in_place(molecule: &mut Molecule) -> Result<(), AddHydrogensError> {
-    let n = molecule.atoms.len();
+    let n = molecule.atoms().len();
     if n == 0 {
         return Ok(());
     }
@@ -65,18 +65,18 @@ pub fn add_hydrogens_in_place(molecule: &mut Molecule) -> Result<(), AddHydrogen
 
     let mut add_counts = vec![0usize; n];
     for i in 0..n {
-        if molecule.atoms[i].atomic_num == 1 {
+        if molecule.atoms()[i].atomic_num == 1 {
             continue;
         }
         add_counts[i] = assignment.implicit_hydrogens[i] as usize
-            + molecule.atoms[i].explicit_hydrogens as usize;
+            + molecule.atoms()[i].explicit_hydrogens as usize;
     }
 
     for (i, cnt) in add_counts.into_iter().enumerate() {
         if cnt == 0 {
             continue;
         }
-        molecule.atoms[i].explicit_hydrogens = 0;
+        molecule.atoms_mut()[i].explicit_hydrogens = 0;
         for _ in 0..cnt {
             let h_idx = molecule.add_atom(Atom {
                 index: 0,
@@ -132,7 +132,7 @@ pub(crate) fn adjust_hydrogens_after_aromaticity_in_place(
     let Ok(assignment) = assign_valence(molecule, ValenceModel::RdkitLike) else {
         return;
     };
-    for (idx, atom) in molecule.atoms.iter_mut().enumerate() {
+    for (idx, atom) in molecule.atoms_mut().iter_mut().enumerate() {
         let Some(&original_implicit) = original_implicit_hydrogens.get(idx) else {
             continue;
         };
@@ -149,7 +149,7 @@ fn remove_hydrogens_with_params_in_place(
     molecule: &mut Molecule,
     params: RemoveHydrogensParams,
 ) -> Result<(), RemoveHydrogensError> {
-    let n = molecule.atoms.len();
+    let n = molecule.atoms().len();
     if n == 0 {
         return Ok(());
     }
@@ -157,21 +157,21 @@ fn remove_hydrogens_with_params_in_place(
     let mut degree = vec![0usize; n];
     let mut h_neighbor = vec![None::<usize>; n];
     let mut h_bond = vec![None::<usize>; n];
-    for bond in &molecule.bonds {
+    for bond in molecule.bonds() {
         degree[bond.begin_atom] += 1;
         degree[bond.end_atom] += 1;
-        if molecule.atoms[bond.begin_atom].atomic_num == 1 {
+        if molecule.atoms()[bond.begin_atom].atomic_num == 1 {
             h_neighbor[bond.begin_atom] = Some(bond.end_atom);
             h_bond[bond.begin_atom] = Some(bond.index);
         }
-        if molecule.atoms[bond.end_atom].atomic_num == 1 {
+        if molecule.atoms()[bond.end_atom].atomic_num == 1 {
             h_neighbor[bond.end_atom] = Some(bond.begin_atom);
             h_bond[bond.end_atom] = Some(bond.index);
         }
     }
 
     let mut remove = vec![false; n];
-    for (idx, atom) in molecule.atoms.iter().enumerate() {
+    for (idx, atom) in molecule.atoms().iter().enumerate() {
         if should_remove_hydrogen(molecule, idx, atom, &degree, &h_neighbor, &h_bond, params)? {
             remove[idx] = true;
         }
@@ -181,13 +181,31 @@ fn remove_hydrogens_with_params_in_place(
         return Ok(());
     }
 
+    let cached_total_valence =
+        assign_valence(molecule, ValenceModel::RdkitLike)
+            .ok()
+            .map(|assignment| {
+                assignment
+                    .explicit_valence
+                    .iter()
+                    .zip(assignment.implicit_hydrogens.iter())
+                    .map(|(explicit, implicit)| *explicit as i32 + *implicit as i32)
+                    .collect::<Vec<_>>()
+            });
+
     for idx in (0..n).rev() {
         if remove[idx] {
-            remove_hydrogen_atom_at(molecule, idx, params.update_explicit_count)?;
+            remove_hydrogen_atom_at(
+                molecule,
+                idx,
+                params.update_explicit_count,
+                cached_total_valence.as_deref(),
+                h_neighbor[idx].zip(h_bond[idx]),
+            )?;
         }
     }
 
-    for atom in &mut molecule.atoms {
+    for atom in molecule.atoms_mut() {
         if !atom.no_implicit
             && !matches!(atom.chiral_tag, ChiralTag::Unspecified)
             && atom.explicit_hydrogens > 1
@@ -234,14 +252,14 @@ fn should_remove_hydrogen(
     let Some(neighbor_idx) = h_neighbor[atom_index] else {
         return Err(RemoveHydrogensError::UnsupportedHydrogen { atom_index });
     };
-    if !params.remove_dummy_neighbors && molecule.atoms[neighbor_idx].atomic_num == 0 {
+    if !params.remove_dummy_neighbors && molecule.atoms()[neighbor_idx].atomic_num == 0 {
         return Ok(false);
     }
 
     if !params.remove_only_h_neighbors {
         let only_h_neighbors = neighbors_of(molecule, atom_index)
             .into_iter()
-            .all(|idx| molecule.atoms[idx].atomic_num == 1);
+            .all(|idx| molecule.atoms()[idx].atomic_num == 1);
         if only_h_neighbors {
             return Ok(false);
         }
@@ -251,11 +269,11 @@ fn should_remove_hydrogen(
         let Some(h_bond_idx) = h_bond[atom_index] else {
             return Err(RemoveHydrogensError::UnsupportedHydrogen { atom_index });
         };
-        let h_bond_direction = molecule.bonds[h_bond_idx].direction;
+        let h_bond_direction = molecule.bonds()[h_bond_idx].direction;
         for bond in incident_bond_indices(molecule, neighbor_idx) {
-            if matches!(molecule.bonds[bond].order, BondOrder::Double)
+            if matches!(molecule.bonds()[bond].order, BondOrder::Double)
                 && (matches!(
-                    molecule.bonds[bond].stereo,
+                    molecule.bonds()[bond].stereo,
                     BondStereo::Cis | BondStereo::Trans
                 ) || !matches!(h_bond_direction, BondDirection::None))
             {
@@ -271,8 +289,15 @@ fn remove_hydrogen_atom_at(
     molecule: &mut Molecule,
     atom_index: usize,
     update_explicit_count: bool,
+    cached_total_valence: Option<&[i32]>,
+    known_neighbor_and_bond: Option<(usize, usize)>,
 ) -> Result<(), RemoveHydrogensError> {
-    let Some((bond_index, heavy_idx)) = hydrogen_bond_and_neighbor(molecule, atom_index) else {
+    let Some((bond_index, heavy_idx)) = known_neighbor_and_bond
+        .and_then(|(neighbor_idx, bond_idx)| {
+            valid_hydrogen_bond_and_neighbor(molecule, atom_index, neighbor_idx, bond_idx)
+        })
+        .or_else(|| hydrogen_bond_and_neighbor(molecule, atom_index))
+    else {
         return Err(RemoveHydrogensError::UnsupportedHydrogen { atom_index });
     };
 
@@ -282,8 +307,9 @@ fn remove_hydrogen_atom_at(
         heavy_idx,
         bond_index,
         update_explicit_count,
+        cached_total_valence,
     );
-    remove_atom_at(molecule, atom_index);
+    remove_atom_at(molecule, atom_index, Some(bond_index));
     Ok(())
 }
 
@@ -293,14 +319,23 @@ fn update_neighbor_before_hydrogen_removal(
     heavy_idx: usize,
     bond_index: usize,
     update_explicit_count: bool,
+    cached_total_valence: Option<&[i32]>,
 ) {
-    if should_increment_explicit_h_count(molecule, heavy_idx, update_explicit_count) {
-        molecule.atoms[heavy_idx].explicit_hydrogens = molecule.atoms[heavy_idx]
+    if should_increment_explicit_h_count(
+        molecule,
+        heavy_idx,
+        update_explicit_count,
+        cached_total_valence,
+    ) {
+        molecule.atoms_mut()[heavy_idx].explicit_hydrogens = molecule.atoms()[heavy_idx]
             .explicit_hydrogens
             .saturating_add(1);
     }
 
-    if !matches!(molecule.atoms[heavy_idx].chiral_tag, ChiralTag::Unspecified) {
+    if !matches!(
+        molecule.atoms()[heavy_idx].chiral_tag,
+        ChiralTag::Unspecified
+    ) {
         let reference = incident_bond_indices(molecule, heavy_idx);
         let mut probe: Vec<usize> = reference
             .iter()
@@ -309,7 +344,7 @@ fn update_neighbor_before_hydrogen_removal(
             .collect();
         probe.push(bond_index);
         if count_swaps_to_interconvert(&probe, &reference).unwrap_or(0) % 2 == 1 {
-            invert_chiral_tag(&mut molecule.atoms[heavy_idx]);
+            invert_chiral_tag(&mut molecule.atoms_mut()[heavy_idx]);
         }
     }
 
@@ -319,17 +354,17 @@ fn update_neighbor_before_hydrogen_removal(
                 continue;
             }
             if matches!(
-                molecule.bonds[idx].stereo,
+                molecule.bonds()[idx].stereo,
                 BondStereo::Cis | BondStereo::Trans
             ) {
-                molecule.bonds[idx].stereo = BondStereo::None;
-                molecule.bonds[idx].stereo_atoms.clear();
+                molecule.bonds_mut()[idx].stereo = BondStereo::None;
+                molecule.bonds_mut()[idx].stereo_atoms.clear();
             }
             break;
         }
     }
 
-    if !matches!(molecule.bonds[bond_index].direction, BondDirection::None) {
+    if !matches!(molecule.bonds()[bond_index].direction, BondDirection::None) {
         copy_hydrogen_bond_direction_to_neighbor(molecule, heavy_idx, bond_index);
     }
     adjust_stereo_atoms_if_required(molecule, atom_index, heavy_idx);
@@ -339,8 +374,9 @@ fn should_increment_explicit_h_count(
     molecule: &Molecule,
     heavy_idx: usize,
     update_explicit_count: bool,
+    cached_total_valence: Option<&[i32]>,
 ) -> bool {
-    let heavy = &molecule.atoms[heavy_idx];
+    let heavy = &molecule.atoms()[heavy_idx];
     if update_explicit_count
         || heavy.no_implicit
         || !matches!(heavy.chiral_tag, ChiralTag::Unspecified)
@@ -348,39 +384,37 @@ fn should_increment_explicit_h_count(
         return true;
     }
 
-    let assignment = assign_valence(molecule, ValenceModel::RdkitLike).ok();
-    let total_valence = assignment
-        .as_ref()
-        .map(|assignment| {
-            assignment.explicit_valence[heavy_idx] as i32
-                + assignment.implicit_hydrogens[heavy_idx] as i32
-        })
+    let total_valence = cached_total_valence
+        .and_then(|values| values.get(heavy_idx))
+        .copied()
         .unwrap_or(0);
     let non_default_valence = valence_list(heavy.atomic_num)
         .map(|values| values.iter().skip(1).any(|value| *value == total_valence))
         .unwrap_or(false);
-    ((heavy.atomic_num == 7 || heavy.atomic_num == 15 || may_need_extra_h(molecule, heavy_idx))
+    ((heavy.atomic_num == 7
+        || heavy.atomic_num == 15
+        || may_need_extra_h(molecule, heavy_idx, cached_total_valence))
         && heavy.is_aromatic)
         || non_default_valence
 }
 
-fn may_need_extra_h(molecule: &Molecule, atom_index: usize) -> bool {
+fn may_need_extra_h(
+    molecule: &Molecule,
+    atom_index: usize,
+    cached_total_valence: Option<&[i32]>,
+) -> bool {
     let mut single_bonds = 0usize;
     let mut aromatic_bonds = 0usize;
     for bond_idx in incident_bond_indices(molecule, atom_index) {
-        match molecule.bonds[bond_idx].order {
+        match molecule.bonds()[bond_idx].order {
             BondOrder::Single => single_bonds += 1,
             BondOrder::Aromatic => aromatic_bonds += 1,
             _ => return false,
         }
     }
-    let assignment = assign_valence(molecule, ValenceModel::RdkitLike).ok();
-    let total_valence = assignment
-        .as_ref()
-        .map(|assignment| {
-            assignment.explicit_valence[atom_index] as i32
-                + assignment.implicit_hydrogens[atom_index] as i32
-        })
+    let total_valence = cached_total_valence
+        .and_then(|values| values.get(atom_index))
+        .copied()
         .unwrap_or(0);
     single_bonds == 1 && aromatic_bonds == 2 && total_valence == 3
 }
@@ -393,10 +427,10 @@ fn copy_hydrogen_bond_direction_to_neighbor(
     let mut found_direction = false;
     let mut other_single_bond = None::<usize>;
     for idx in incident_bond_indices(molecule, heavy_idx) {
-        if idx == hydrogen_bond_idx || !matches!(molecule.bonds[idx].order, BondOrder::Single) {
+        if idx == hydrogen_bond_idx || !matches!(molecule.bonds()[idx].order, BondOrder::Single) {
             continue;
         }
-        if matches!(molecule.bonds[idx].direction, BondDirection::None) {
+        if matches!(molecule.bonds()[idx].direction, BondDirection::None) {
             other_single_bond = Some(idx);
         } else {
             found_direction = true;
@@ -409,13 +443,13 @@ fn copy_hydrogen_bond_direction_to_neighbor(
         return;
     };
 
-    let mut direction = molecule.bonds[hydrogen_bond_idx].direction;
-    let flip = molecule.bonds[other_bond_idx].begin_atom == heavy_idx
-        && molecule.bonds[hydrogen_bond_idx].begin_atom == heavy_idx;
+    let mut direction = molecule.bonds()[hydrogen_bond_idx].direction;
+    let flip = molecule.bonds()[other_bond_idx].begin_atom == heavy_idx
+        && molecule.bonds()[hydrogen_bond_idx].begin_atom == heavy_idx;
     if flip {
         direction = opposite_bond_direction(direction);
     }
-    molecule.bonds[other_bond_idx].direction = direction;
+    molecule.bonds_mut()[other_bond_idx].direction = direction;
 }
 
 fn adjust_stereo_atoms_if_required(
@@ -429,32 +463,32 @@ fn adjust_stereo_atoms_if_required(
 
     let incident = incident_bond_indices(molecule, heavy_idx);
     for bond_idx in incident {
-        if !matches!(molecule.bonds[bond_idx].order, BondOrder::Double)
+        if !matches!(molecule.bonds()[bond_idx].order, BondOrder::Double)
             || !matches!(
-                molecule.bonds[bond_idx].stereo,
+                molecule.bonds()[bond_idx].stereo,
                 BondStereo::Cis | BondStereo::Trans
             )
         {
             continue;
         }
-        let Some(stereo_pos) = molecule.bonds[bond_idx]
+        let Some(stereo_pos) = molecule.bonds()[bond_idx]
             .stereo_atoms
             .iter()
             .position(|idx| *idx == atom_index)
         else {
             continue;
         };
-        let double_neighbor = if molecule.bonds[bond_idx].begin_atom == heavy_idx {
-            molecule.bonds[bond_idx].end_atom
+        let double_neighbor = if molecule.bonds()[bond_idx].begin_atom == heavy_idx {
+            molecule.bonds()[bond_idx].end_atom
         } else {
-            molecule.bonds[bond_idx].begin_atom
+            molecule.bonds()[bond_idx].begin_atom
         };
         for neighbor in neighbors_of(molecule, heavy_idx) {
             if neighbor == double_neighbor || neighbor == atom_index {
                 continue;
             }
-            molecule.bonds[bond_idx].stereo_atoms[stereo_pos] = neighbor;
-            molecule.bonds[bond_idx].stereo = match molecule.bonds[bond_idx].stereo {
+            molecule.bonds_mut()[bond_idx].stereo_atoms[stereo_pos] = neighbor;
+            molecule.bonds_mut()[bond_idx].stereo = match molecule.bonds()[bond_idx].stereo {
                 BondStereo::Cis => BondStereo::Trans,
                 BondStereo::Trans => BondStereo::Cis,
                 other => other,
@@ -465,14 +499,18 @@ fn adjust_stereo_atoms_if_required(
     false
 }
 
-fn remove_atom_at(molecule: &mut Molecule, atom_index: usize) {
-    molecule.atoms.remove(atom_index);
-    for (new_idx, atom) in molecule.atoms.iter_mut().enumerate() {
+fn remove_atom_at(molecule: &mut Molecule, atom_index: usize, known_bond_index: Option<usize>) {
+    if remove_trailing_hydrogen_fast_path(molecule, atom_index, known_bond_index) {
+        return;
+    }
+
+    molecule.atoms_mut().remove(atom_index);
+    for (new_idx, atom) in molecule.atoms_mut().iter_mut().enumerate() {
         atom.index = new_idx;
     }
 
-    let mut bonds = Vec::with_capacity(molecule.bonds.len());
-    for bond in &molecule.bonds {
+    let mut bonds = Vec::with_capacity(molecule.bonds().len());
+    for bond in molecule.bonds() {
         if bond.begin_atom == atom_index || bond.end_atom == atom_index {
             continue;
         }
@@ -499,20 +537,72 @@ fn remove_atom_at(molecule: &mut Molecule, atom_index: usize) {
             .collect();
         bonds.push(bond);
     }
-    molecule.bonds = bonds;
-    if let Some(coords) = molecule.coords_2d.as_mut() {
+    *molecule.bonds_mut() = bonds;
+    if let Some(coords) = molecule.coords_2d_mut().as_mut() {
         if atom_index < coords.len() {
             coords.remove(atom_index);
         } else {
-            molecule.coords_2d = None;
+            molecule.set_coords_2d(None);
         }
     }
-    molecule.adjacency = None;
+    molecule.clear_adjacency_cache();
+}
+
+fn remove_trailing_hydrogen_fast_path(
+    molecule: &mut Molecule,
+    atom_index: usize,
+    known_bond_index: Option<usize>,
+) -> bool {
+    if atom_index + 1 != molecule.atoms().len() {
+        return false;
+    }
+    let Some(bond_index) = known_bond_index else {
+        return false;
+    };
+    if bond_index + 1 != molecule.bonds().len() {
+        return false;
+    }
+    let Some(bond) = molecule.bonds().last() else {
+        return false;
+    };
+    if bond.begin_atom != atom_index && bond.end_atom != atom_index {
+        return false;
+    }
+
+    molecule.atoms_mut().pop();
+    molecule.bonds_mut().pop();
+    if let Some(coords) = molecule.coords_2d_mut().as_mut() {
+        if atom_index < coords.len() && atom_index + 1 == coords.len() {
+            coords.pop();
+        } else if atom_index < coords.len() {
+            coords.remove(atom_index);
+        } else {
+            molecule.set_coords_2d(None);
+        }
+    }
+    molecule.clear_adjacency_cache();
+    true
+}
+
+fn valid_hydrogen_bond_and_neighbor(
+    molecule: &Molecule,
+    atom_index: usize,
+    neighbor_idx: usize,
+    bond_index: usize,
+) -> Option<(usize, usize)> {
+    let bond = molecule.bonds().get(bond_index)?;
+    if bond.begin_atom == atom_index && bond.end_atom == neighbor_idx {
+        Some((bond_index, neighbor_idx))
+    } else if bond.end_atom == atom_index && bond.begin_atom == neighbor_idx {
+        Some((bond_index, neighbor_idx))
+    } else {
+        None
+    }
 }
 
 fn hydrogen_bond_and_neighbor(molecule: &Molecule, atom_index: usize) -> Option<(usize, usize)> {
     let mut out = None;
-    for bond in &molecule.bonds {
+    for bond in molecule.bonds() {
         if bond.begin_atom == atom_index {
             if out.is_some() {
                 return None;
@@ -530,7 +620,7 @@ fn hydrogen_bond_and_neighbor(molecule: &Molecule, atom_index: usize) -> Option<
 
 fn incident_bond_indices(molecule: &Molecule, atom_index: usize) -> Vec<usize> {
     molecule
-        .bonds
+        .bonds()
         .iter()
         .filter_map(|bond| {
             if bond.begin_atom == atom_index || bond.end_atom == atom_index {
@@ -544,7 +634,7 @@ fn incident_bond_indices(molecule: &Molecule, atom_index: usize) -> Vec<usize> {
 
 fn neighbors_of(molecule: &Molecule, atom_index: usize) -> Vec<usize> {
     molecule
-        .bonds
+        .bonds()
         .iter()
         .filter_map(|bond| {
             if bond.begin_atom == atom_index {
@@ -570,6 +660,7 @@ fn invert_chiral_tag(atom: &mut Atom) {
     atom.chiral_tag = match atom.chiral_tag {
         ChiralTag::TetrahedralCw => ChiralTag::TetrahedralCcw,
         ChiralTag::TetrahedralCcw => ChiralTag::TetrahedralCw,
+        ChiralTag::TrigonalBipyramidal => ChiralTag::TrigonalBipyramidal,
         ChiralTag::Unspecified => ChiralTag::Unspecified,
     };
 }

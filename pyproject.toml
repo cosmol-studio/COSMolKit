@@ -17,3 +17,16 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+testpaths = [
+    "python/tests",
+]
+norecursedirs = [
+    ".git",
+    ".venv",
+    "target",
+    "third_party",
+    "tmp",
+    "python/docs/build",
+]

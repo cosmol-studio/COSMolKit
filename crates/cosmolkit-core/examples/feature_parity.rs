@@ -78,9 +78,9 @@ fn bond_type_name(order: BondOrder) -> String {
 }
 
 fn compute_ring_flags(mol: &Molecule) -> Vec<bool> {
-    let n = mol.atoms.len();
+    let n = mol.atoms().len();
     let mut adj = vec![Vec::<usize>::new(); n];
-    for b in &mol.bonds {
+    for b in mol.bonds() {
         adj[b.begin_atom].push(b.end_atom);
         adj[b.end_atom].push(b.begin_atom);
     }
@@ -133,14 +133,14 @@ fn extract_lines(mol: &Molecule) -> Vec<String> {
     let radicals = assign_radicals_rdkit_2025(mol, &assignment.explicit_valence)
         .unwrap_or_else(|e| panic!("assign_radicals failed: {:?}", e));
 
-    let mut degree = vec![0usize; mol.atoms.len()];
-    for b in &mol.bonds {
+    let mut degree = vec![0usize; mol.atoms().len()];
+    for b in mol.bonds() {
         degree[b.begin_atom] += 1;
         degree[b.end_atom] += 1;
     }
 
     let mut out = Vec::new();
-    for (i, a) in mol.atoms.iter().enumerate() {
+    for (i, a) in mol.atoms().iter().enumerate() {
         let implicit_hs = assignment.implicit_hydrogens[i] as i32;
         let explicit_valence = assignment.explicit_valence[i] as i32;
         let num_hs = (a.explicit_hydrogens as i32 + implicit_hs).max(0) as usize;
@@ -161,7 +161,7 @@ fn extract_lines(mol: &Molecule) -> Vec<String> {
     }
 
     let mut bonds = Vec::new();
-    for b in &mol.bonds {
+    for b in mol.bonds() {
         bonds.push(
             BondLine {
                 begin_atom: b.begin_atom,

@@ -1,9 +1,6 @@
 use crate::io::molblock::{self, SdfFormat};
 use crate::io::sdf::{SdfCoordinateMode, read_sdf_record_from_str_with_coordinate_mode};
-use crate::{
-    Molecule, PreparedDrawMolecule, SmilesWriteParams, add_hydrogens_in_place,
-    remove_hydrogens_in_place,
-};
+use crate::{Molecule, PreparedDrawMolecule, SmilesWriteParams};
 use rayon::prelude::*;
 use std::fs::{self, File};
 use std::io::Write;
@@ -213,9 +210,9 @@ impl MoleculeBatch {
 
     pub fn add_hydrogens(&self, errors: BatchErrorMode) -> Result<Self, BatchValidationError> {
         self.transform_valid("add_hydrogens", "AddHydrogensError", errors, |molecule| {
-            let mut out = molecule.clone();
-            add_hydrogens_in_place(&mut out).map_err(|error| format!("{error:?}"))?;
-            Ok(out)
+            molecule
+                .with_hydrogens()
+                .map_err(|error| format!("{error:?}"))
         })
     }
 
@@ -225,9 +222,9 @@ impl MoleculeBatch {
             "RemoveHydrogensError",
             errors,
             |molecule| {
-                let mut out = molecule.clone();
-                remove_hydrogens_in_place(&mut out).map_err(|error| format!("{error:?}"))?;
-                Ok(out)
+                molecule
+                    .without_hydrogens()
+                    .map_err(|error| format!("{error:?}"))
             },
         )
     }
@@ -240,10 +237,9 @@ impl MoleculeBatch {
 
     pub fn kekulize(&self, errors: BatchErrorMode) -> Result<Self, BatchValidationError> {
         self.transform_valid("kekulize", "KekulizeError", errors, |molecule| {
-            let mut out = molecule.clone();
-            crate::kekulize::kekulize_in_place(&mut out, false)
-                .map_err(|error| format!("{error:?}"))?;
-            Ok(out)
+            molecule
+                .with_kekulized_bonds(false)
+                .map_err(|error| format!("{error:?}"))
         })
     }
 
@@ -252,11 +248,7 @@ impl MoleculeBatch {
             "compute_2d_coords",
             "CoordinateGenerationError",
             errors,
-            |molecule| {
-                let mut out = molecule.clone();
-                out.compute_2d_coords().map_err(|error| error.to_string())?;
-                Ok(out)
-            },
+            |molecule| molecule.with_2d_coords().map_err(|error| error.to_string()),
         )
     }
 

@@ -19,12 +19,12 @@ pub fn kekulize_in_place(
     molecule: &mut Molecule,
     clear_aromatic_flags: bool,
 ) -> Result<(), KekulizeError> {
-    if molecule.bonds.is_empty() {
+    if molecule.bonds().is_empty() {
         return Ok(());
     }
 
     let mut aromatic_bonds: Vec<usize> = Vec::new();
-    for (bi, b) in molecule.bonds.iter().enumerate() {
+    for (bi, b) in molecule.bonds().iter().enumerate() {
         if b.is_aromatic {
             aromatic_bonds.push(bi);
         }
@@ -34,7 +34,7 @@ pub fn kekulize_in_place(
     }
 
     let mut bond_lookup: HashMap<(usize, usize), usize> = HashMap::new();
-    for (bi, b) in molecule.bonds.iter().enumerate() {
+    for (bi, b) in molecule.bonds().iter().enumerate() {
         let key = if b.begin_atom <= b.end_atom {
             (b.begin_atom, b.end_atom)
         } else {
@@ -48,7 +48,7 @@ pub fn kekulize_in_place(
         .filter(|comp| {
             let comp_set: HashSet<usize> = comp.iter().copied().collect();
             aromatic_set.iter().any(|&bi| {
-                let bond = &molecule.bonds[bi];
+                let bond = &molecule.bonds()[bi];
                 comp_set.contains(&bond.begin_atom) && comp_set.contains(&bond.end_atom)
             })
         })
@@ -65,7 +65,7 @@ pub fn kekulize_in_place(
             // sanitization/kekulization flow.
             return Err(KekulizeError::ImpossibleAromaticAssignment);
         }
-        let mut d_bond_cands = vec![false; molecule.atoms.len()];
+        let mut d_bond_cands = vec![false; molecule.atoms().len()];
         let mut done = Vec::<usize>::new();
         let mut questions = Vec::<usize>::new();
         mark_dbond_cands(
@@ -77,7 +77,7 @@ pub fn kekulize_in_place(
             &mut done,
         );
 
-        let mut d_bond_adds = vec![false; molecule.bonds.len()];
+        let mut d_bond_adds = vec![false; molecule.bonds().len()];
         let ok = kekulize_worker(
             molecule,
             &all_atms,
@@ -112,10 +112,10 @@ pub fn kekulize_in_place(
 
     if clear_aromatic_flags {
         // RDKit markAtomsBonds=true / clearAromaticFlags=True behavior.
-        for atom in &mut molecule.atoms {
+        for atom in molecule.atoms_mut() {
             atom.is_aromatic = false;
         }
-        for b in &mut molecule.bonds {
+        for b in molecule.bonds_mut() {
             if b.is_aromatic {
                 b.is_aromatic = false;
             }
@@ -129,9 +129,7 @@ pub fn kekulize_in_place(
 }
 
 pub fn kekulized(molecule: &Molecule) -> Result<Molecule, KekulizeError> {
-    let mut out = molecule.clone();
-    kekulize_in_place(&mut out, true)?;
-    Ok(out)
+    molecule.with_kekulized_bonds(true)
 }
 
 fn bond_order_contrib(order: BondOrder) -> i32 {
@@ -146,7 +144,7 @@ fn bond_order_contrib(order: BondOrder) -> i32 {
 }
 
 fn bond_valence_contrib_for_atom(mol: &Molecule, bond_index: usize, atom_idx: usize) -> i32 {
-    let b = &mol.bonds[bond_index];
+    let b = &mol.bonds()[bond_index];
     if b.begin_atom != atom_idx && b.end_atom != atom_idx {
         return 0;
     }
@@ -241,8 +239,8 @@ fn is_early_atom(atomic_num: u8) -> bool {
 }
 
 fn total_valence_for_atom(mol: &Molecule, atom_idx: usize) -> i32 {
-    let mut total = mol.atoms[atom_idx].explicit_hydrogens as i32;
-    for bi in 0..mol.bonds.len() {
+    let mut total = mol.atoms()[atom_idx].explicit_hydrogens as i32;
+    for bi in 0..mol.bonds().len() {
         total += bond_valence_contrib_for_atom(mol, bi, atom_idx);
     }
     total
@@ -250,7 +248,7 @@ fn total_valence_for_atom(mol: &Molecule, atom_idx: usize) -> i32 {
 
 fn degree_for_atom(mol: &Molecule, atom_idx: usize) -> i32 {
     let mut degree = 0;
-    for b in &mol.bonds {
+    for b in mol.bonds() {
         if b.begin_atom == atom_idx || b.end_atom == atom_idx {
             degree += 1;
         }
@@ -260,7 +258,7 @@ fn degree_for_atom(mol: &Molecule, atom_idx: usize) -> i32 {
 
 fn neighbors_of(mol: &Molecule, atom_idx: usize) -> Vec<usize> {
     let mut out = Vec::new();
-    for b in &mol.bonds {
+    for b in mol.bonds() {
         if b.begin_atom == atom_idx {
             out.push(b.end_atom);
         } else if b.end_atom == atom_idx {
@@ -290,8 +288,8 @@ fn canonical_cycle_key(cycle: &[usize]) -> Vec<usize> {
 }
 
 fn all_bond_adjacency(mol: &Molecule) -> Vec<Vec<(usize, usize)>> {
-    let mut adj = vec![Vec::<(usize, usize)>::new(); mol.atoms.len()];
-    for (bi, b) in mol.bonds.iter().enumerate() {
+    let mut adj = vec![Vec::<(usize, usize)>::new(); mol.atoms().len()];
+    for (bi, b) in mol.bonds().iter().enumerate() {
         adj[b.begin_atom].push((b.end_atom, bi));
         adj[b.end_atom].push((b.begin_atom, bi));
     }
@@ -302,7 +300,7 @@ fn all_cycle_candidates(mol: &Molecule) -> Vec<Vec<usize>> {
     let adj = all_bond_adjacency(mol);
     let mut seen = HashSet::<Vec<usize>>::new();
     let mut rings = Vec::<Vec<usize>>::new();
-    for (bi, bond) in mol.bonds.iter().enumerate() {
+    for (bi, bond) in mol.bonds().iter().enumerate() {
         let Some(path) = shortest_path_ignoring_edge(&adj, bond.begin_atom, bond.end_atom, bi)
         else {
             continue;
@@ -319,9 +317,9 @@ fn all_cycle_candidates(mol: &Molecule) -> Vec<Vec<usize>> {
 }
 
 fn graph_component_count(mol: &Molecule) -> usize {
-    let mut seen = vec![false; mol.atoms.len()];
+    let mut seen = vec![false; mol.atoms().len()];
     let mut comps = 0usize;
-    for start in 0..mol.atoms.len() {
+    for start in 0..mol.atoms().len() {
         if seen[start] {
             continue;
         }
@@ -330,7 +328,7 @@ fn graph_component_count(mol: &Molecule) -> usize {
         q.push_back(start);
         seen[start] = true;
         while let Some(u) = q.pop_front() {
-            for b in &mol.bonds {
+            for b in mol.bonds() {
                 let v = if b.begin_atom == u {
                     b.end_atom
                 } else if b.end_atom == u {
@@ -362,7 +360,7 @@ fn cycle_bond_indices(mol: &Molecule, cycle: &[usize]) -> Vec<usize> {
     for i in 0..cycle.len() {
         let a = cycle[i];
         let b = cycle[(i + 1) % cycle.len()];
-        if let Some((bi, _)) = mol.bonds.iter().enumerate().find(|(_, bond)| {
+        if let Some((bi, _)) = mol.bonds().iter().enumerate().find(|(_, bond)| {
             (bond.begin_atom == a && bond.end_atom == b)
                 || (bond.begin_atom == b && bond.end_atom == a)
         }) {
@@ -373,14 +371,14 @@ fn cycle_bond_indices(mol: &Molecule, cycle: &[usize]) -> Vec<usize> {
 }
 
 fn reduce_to_min_cycle_basis_indices(mol: &Molecule, rings: &[Vec<usize>]) -> Vec<usize> {
-    if rings.is_empty() || mol.bonds.is_empty() {
+    if rings.is_empty() || mol.bonds().is_empty() {
         return Vec::new();
     }
-    let cyclomatic = mol.bonds.len() + graph_component_count(mol) - mol.atoms.len();
+    let cyclomatic = mol.bonds().len() + graph_component_count(mol) - mol.atoms().len();
     if cyclomatic == 0 {
         return Vec::new();
     }
-    let words = mol.bonds.len().div_ceil(64);
+    let words = mol.bonds().len().div_ceil(64);
     let mut entries: Vec<(usize, Vec<usize>, Vec<u64>)> = rings
         .iter()
         .enumerate()
@@ -538,7 +536,7 @@ fn rdkit_bond_stereo_rank(stereo: crate::BondStereo) -> u8 {
 fn init_fragment_canon_atoms(mol: &Molecule) -> Vec<CanonAtom> {
     let valence = crate::assign_valence(mol, crate::ValenceModel::RdkitLike).ok();
     let mut atoms: Vec<CanonAtom> = mol
-        .atoms
+        .atoms()
         .iter()
         .map(|atom| CanonAtom {
             index: atom.index,
@@ -558,7 +556,7 @@ fn init_fragment_canon_atoms(mol: &Molecule) -> Vec<CanonAtom> {
         })
         .collect();
 
-    for bond in &mol.bonds {
+    for bond in mol.bonds() {
         let begin = bond.begin_atom;
         let end = bond.end_atom;
         atoms[begin].nbr_ids.push(end);
@@ -898,7 +896,7 @@ pub(crate) fn rank_fragment_atoms_for_kekulize(mol: &Molecule) -> Vec<usize> {
     //   Code/GraphMol/Kekulize.cpp::KekulizeFragment(canonical=true)
     //   Code/GraphMol/new_canon.cpp::rankFragmentAtoms()
     //   Code/GraphMol/new_canon.h::{RefinePartitions,BreakTies}
-    let n = mol.atoms.len();
+    let n = mol.atoms().len();
     if n == 0 {
         return Vec::new();
     }
@@ -955,11 +953,11 @@ fn aromatic_component_bond_lookup(
     all_atms: &[usize],
     aromatic_set: &HashSet<usize>,
 ) -> (Vec<Vec<(usize, usize)>>, HashMap<(usize, usize), usize>) {
-    let mut local_adj: Vec<Vec<(usize, usize)>> = vec![Vec::new(); mol.atoms.len()];
+    let mut local_adj: Vec<Vec<(usize, usize)>> = vec![Vec::new(); mol.atoms().len()];
     let in_all: HashSet<usize> = all_atms.iter().copied().collect();
     let mut bmap = HashMap::new();
     for &bi in aromatic_set {
-        let b = &mol.bonds[bi];
+        let b = &mol.bonds()[bi];
         if !in_all.contains(&b.begin_atom) || !in_all.contains(&b.end_atom) {
             continue;
         }
@@ -1028,7 +1026,7 @@ fn aromatic_rings_for_component(
     let mut rings = Vec::<Vec<usize>>::new();
     let mut seen = HashSet::<Vec<usize>>::new();
     for &bi in aromatic_set {
-        let b = &mol.bonds[bi];
+        let b = &mol.bonds()[bi];
         if let Some(path) = shortest_path_ignoring_edge(&local_adj, b.begin_atom, b.end_atom, bi) {
             if path.len() < 3 {
                 continue;
@@ -1060,7 +1058,7 @@ fn aromatic_component_has_cycle(
     let e = aromatic_set
         .iter()
         .filter(|&&bi| {
-            let b = &mol.bonds[bi];
+            let b = &mol.bonds()[bi];
             let in_component = in_all.contains(&b.begin_atom) && in_all.contains(&b.end_atom);
             if in_component {
                 aromatic_atoms.insert(b.begin_atom);
@@ -1078,8 +1076,8 @@ fn ring_not_candidates(
     mol: &Molecule,
     rings: &[Vec<usize>],
 ) -> (Vec<bool>, Vec<usize>, Vec<Vec<usize>>) {
-    let mut num_atom_rings = vec![0usize; mol.atoms.len()];
-    let mut atom_members = vec![Vec::<usize>::new(); mol.atoms.len()];
+    let mut num_atom_rings = vec![0usize; mol.atoms().len()];
+    let mut atom_members = vec![Vec::<usize>::new(); mol.atoms().len()];
     for (ri, ring) in rings.iter().enumerate() {
         for &ai in ring {
             num_atom_rings[ai] += 1;
@@ -1093,7 +1091,7 @@ fn ring_not_candidates(
     let mut is_ring_not_cand = vec![true; rings.len()];
     for (ri, ring) in rings.iter().enumerate() {
         for &ai in ring {
-            let at = &mol.atoms[ai];
+            let at = &mol.atoms()[ai];
             if at.is_aromatic && num_atom_rings[ai] == 1 {
                 is_ring_not_cand[ri] = false;
                 break;
@@ -1116,7 +1114,7 @@ fn can_receive_double(
     aromatic_set: &HashSet<usize>,
     total_hs: &[i32],
 ) -> bool {
-    let atom = &mol.atoms[atom_idx];
+    let atom = &mol.atoms()[atom_idx];
     if atom.atomic_num == 0 {
         return true;
     }
@@ -1126,7 +1124,7 @@ fn can_receive_double(
 
     let mut base_valence = total_hs[atom_idx];
     let mut n_to_ignore = 0i32;
-    for (bi, b) in mol.bonds.iter().enumerate() {
+    for (bi, b) in mol.bonds().iter().enumerate() {
         if b.begin_atom != atom_idx && b.end_atom != atom_idx {
             continue;
         }
@@ -1202,7 +1200,7 @@ fn mark_dbond_cands(
     done: &mut Vec<usize>,
 ) {
     let has_aromatic_or_dummy = all_atms.iter().any(|&ai| {
-        let at = &mol.atoms[ai];
+        let at = &mol.atoms()[ai];
         at.atomic_num == 0 || at.is_aromatic
     });
     if !has_aromatic_or_dummy {
@@ -1220,27 +1218,27 @@ fn mark_dbond_cands(
     let mut make_single: Vec<usize> = Vec::new();
     let total_hs: Vec<i32> = match assign_valence(mol, ValenceModel::RdkitLike) {
         Ok(v) => mol
-            .atoms
+            .atoms()
             .iter()
             .enumerate()
             .map(|(i, at)| at.explicit_hydrogens as i32 + v.implicit_hydrogens[i] as i32)
             .collect(),
         Err(_) => mol
-            .atoms
+            .atoms()
             .iter()
             .map(|at| at.explicit_hydrogens as i32)
             .collect(),
     };
 
     for &ai in all_atms {
-        let at = &mol.atoms[ai];
+        let at = &mol.atoms()[ai];
         if at.atomic_num != 0 && !at.is_aromatic {
             done.push(ai);
             continue;
         }
 
         let mut non_ar_non_dummy_nbr = 0usize;
-        for b in &mol.bonds {
+        for b in mol.bonds() {
             if b.begin_atom != ai && b.end_atom != ai {
                 continue;
             }
@@ -1250,7 +1248,7 @@ fn mark_dbond_cands(
                 b.begin_atom
             };
             if in_all.contains(&nbr) {
-                let other = &mol.atoms[nbr];
+                let other = &mol.atoms()[nbr];
                 if other.atomic_num != 0 && !other.is_aromatic {
                     non_ar_non_dummy_nbr += 1;
                 }
@@ -1281,7 +1279,7 @@ fn mark_dbond_cands(
     }
 
     for bi in make_single {
-        let b = &mut mol.bonds[bi];
+        let b = &mut mol.bonds_mut()[bi];
         if in_all.contains(&b.begin_atom) && in_all.contains(&b.end_atom) {
             b.order = BondOrder::Single;
         }
@@ -1306,14 +1304,14 @@ fn backtrack(
         aqueue.push_front(a);
     }
     let tdone_set: HashSet<usize> = tdone.iter().copied().collect();
-    for bi in 0..mol.bonds.len() {
+    for bi in 0..mol.bonds().len() {
         if !d_bond_adds[bi] {
             continue;
         }
-        let b = &mol.bonds[bi];
+        let b = &mol.bonds()[bi];
         if !tdone_set.contains(&b.begin_atom) && !tdone_set.contains(&b.end_atom) {
             d_bond_adds[bi] = false;
-            let bb = &mut mol.bonds[bi];
+            let bb = &mut mol.bonds_mut()[bi];
             bb.order = BondOrder::Single;
             d_bond_cands[bb.begin_atom] = true;
             d_bond_cands[bb.end_atom] = true;
@@ -1339,7 +1337,7 @@ fn kekulize_worker(
     let mut options: HashMap<usize, VecDeque<usize>> = HashMap::new();
     let mut btmoves: Vec<usize> = Vec::new();
     let mut last_opt: Option<usize> = None;
-    let mut local_bonds_added = vec![false; mol.bonds.len()];
+    let mut local_bonds_added = vec![false; mol.bonds().len()];
     let mut num_bt = 0usize;
     let mut sorted_atms = all_atms.to_vec();
     sorted_atms.sort_by_key(|&a| (atom_ranks.get(a).copied().unwrap_or(usize::MAX), a));
@@ -1386,8 +1384,8 @@ fn kekulize_worker(
                     continue;
                 };
                 let ok_edge = aromatic_set.contains(&bi)
-                    || mol.atoms[curr].atomic_num == 0
-                    || mol.atoms[nbr].atomic_num == 0;
+                    || mol.atoms()[curr].atomic_num == 0
+                    || mol.atoms()[nbr].atomic_num == 0;
                 if ok_edge {
                     new_opts.push_back(nbr);
                 }
@@ -1401,9 +1399,9 @@ fn kekulize_worker(
                 let Some(bi) = bond_index_between(bond_lookup, curr, ncnd) else {
                     return false;
                 };
-                mol.bonds[bi].order = BondOrder::Double;
-                if !matches!(mol.bonds[bi].direction, BondDirection::None) {
-                    mol.bonds[bi].direction = BondDirection::None;
+                mol.bonds_mut()[bi].order = BondOrder::Double;
+                if !matches!(mol.bonds()[bi].direction, BondDirection::None) {
+                    mol.bonds_mut()[bi].direction = BondDirection::None;
                 }
                 d_bond_cands[curr] = false;
                 d_bond_cands[ncnd] = false;
@@ -1423,7 +1421,7 @@ fn kekulize_worker(
                     btmoves.push(curr);
                     options.insert(curr, opts);
                 }
-            } else if mol.atoms[curr].atomic_num != 0 {
+            } else if mol.atoms()[curr].atomic_num != 0 {
                 if let Some(lo) = last_opt {
                     if num_bt < max_backtracks {
                         backtrack(
@@ -1439,7 +1437,7 @@ fn kekulize_worker(
                     } else {
                         for (bi, added) in local_bonds_added.iter().copied().enumerate() {
                             if added {
-                                mol.bonds[bi].order = BondOrder::Single;
+                                mol.bonds_mut()[bi].order = BondOrder::Single;
                             }
                         }
                         return false;
@@ -1447,7 +1445,7 @@ fn kekulize_worker(
                 } else {
                     for (bi, added) in local_bonds_added.iter().copied().enumerate() {
                         if added {
-                            mol.bonds[bi].order = BondOrder::Single;
+                            mol.bonds_mut()[bi].order = BondOrder::Single;
                         }
                     }
                     return false;
@@ -1475,7 +1473,7 @@ fn permute_dummies_and_kekulize(
     let mut mask = 1usize;
     while mask < (1usize << questions.len()) {
         // reset aromatic edges in this fragment
-        for (bi, b) in mol.bonds.iter_mut().enumerate() {
+        for (bi, b) in mol.bonds_mut().iter_mut().enumerate() {
             if aromatic_set.contains(&bi)
                 && all_set.contains(&b.begin_atom)
                 && all_set.contains(&b.end_atom)
@@ -1492,7 +1490,7 @@ fn permute_dummies_and_kekulize(
                 t_cands[q] = false;
             }
         }
-        let mut d_bond_adds = vec![false; mol.bonds.len()];
+        let mut d_bond_adds = vec![false; mol.bonds().len()];
         let mut done = Vec::new();
         let ok = kekulize_worker(
             mol,

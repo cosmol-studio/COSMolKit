@@ -1,6 +1,4 @@
-use crate::{
-    Atom, Bond, BondDirection, BondOrder, ChiralTag, Molecule, ValenceModel, assign_valence,
-};
+use crate::{Atom, Bond, BondDirection, BondOrder, ChiralTag, Molecule, ValenceAssignment};
 use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,15 +42,168 @@ pub enum SmilesWriteError {
 
 const ORGANIC_SUBSET_ATOMS: &[u8] = &[5, 6, 7, 8, 9, 15, 16, 17, 35, 53];
 
+struct SmilesWriteState<'a> {
+    mol: &'a Molecule,
+    params: &'a SmilesWriteParams,
+    valence: ValenceAssignment,
+}
+
+impl<'a> SmilesWriteState<'a> {
+    fn new(mol: &'a Molecule, params: &'a SmilesWriteParams) -> Result<Self, SmilesWriteError> {
+        let valence = crate::assign_valence(mol, crate::ValenceModel::RdkitLike).map_err(|_| {
+            SmilesWriteError::UnsupportedPath(
+                "RDKit-like valence assignment required by GetAtomSmiles failed",
+            )
+        })?;
+        Ok(Self {
+            mol,
+            params,
+            valence,
+        })
+    }
+
+    fn total_num_hs(&self, atom_index: usize) -> usize {
+        self.mol.atoms()[atom_index].explicit_hydrogens as usize
+            + self.valence.implicit_hydrogens[atom_index] as usize
+    }
+
+    fn total_valence(&self, atom_index: usize) -> i32 {
+        i32::from(self.valence.explicit_valence[atom_index])
+            + i32::from(self.valence.implicit_hydrogens[atom_index])
+    }
+
+    fn atom_needs_bracket(&self, atom: &Atom, at_string: &str) -> bool {
+        let num = atom.atomic_num;
+        if !in_organic_subset(num) {
+            return true;
+        }
+        if atom.formal_charge != 0 {
+            return true;
+        }
+        if atom.atom_map_num.is_some() && !self.params.ignore_atom_map_numbers {
+            return true;
+        }
+        if self.params.do_isomeric_smiles && (atom.isotope.is_some() || !at_string.is_empty()) {
+            return true;
+        }
+        if atom.num_radical_electrons != 0 {
+            return true;
+        }
+        if (num == 7 || num == 15) && atom.is_aromatic && atom.explicit_hydrogens > 0 {
+            return true;
+        }
+
+        let total_valence = self.total_valence(atom.index);
+        let total_num_hs = self.total_num_hs(atom.index);
+        let default_valence = match num {
+            5 => Some(3),
+            6 => Some(4),
+            7 => Some(3),
+            8 => Some(2),
+            9 => Some(1),
+            15 => Some(3),
+            16 => Some(2),
+            17 => Some(1),
+            35 => Some(1),
+            53 => Some(1),
+            _ => None,
+        };
+        if let Some(default_valence) = default_valence
+            && total_valence != default_valence
+            && total_num_hs > 0
+        {
+            return true;
+        }
+        if bond_is_to_metal(self.mol, atom.index) {
+            return true;
+        }
+        false
+    }
+
+    fn atom_smiles(&self, atom: &Atom) -> Result<String, SmilesWriteError> {
+        let fc = atom.formal_charge;
+        let isotope = atom.isotope;
+        let mut symb = crate::periodic_table::element_symbol(atom.atomic_num)
+            .ok_or(SmilesWriteError::UnsupportedPath(
+                "element symbol lookup outside the RDKit periodic table",
+            ))?
+            .to_string();
+        let at_string = if self.params.do_isomeric_smiles {
+            atom_chirality_info(atom)
+        } else {
+            String::new()
+        };
+        let needs_bracket = if !self.params.all_hs_explicit {
+            self.atom_needs_bracket(atom, &at_string)
+        } else {
+            true
+        };
+
+        let mut res = String::new();
+        if needs_bracket {
+            res.push('[');
+        }
+        if let Some(isotope) = isotope
+            && self.params.do_isomeric_smiles
+        {
+            res.push_str(&isotope.to_string());
+        }
+        if !self.params.do_kekule && atom.is_aromatic && symb.as_bytes()[0].is_ascii_uppercase() {
+            match atom.atomic_num {
+                5 | 6 | 7 | 8 | 14 | 15 | 16 | 33 | 34 | 52 => {
+                    symb.replace_range(0..1, &symb[0..1].to_ascii_lowercase());
+                }
+                _ => {}
+            }
+        }
+        res.push_str(&symb);
+        res.push_str(&at_string);
+
+        if needs_bracket {
+            let tot_num_hs = self.total_num_hs(atom.index);
+            if tot_num_hs > 0 {
+                res.push('H');
+                if tot_num_hs > 1 {
+                    res.push_str(&tot_num_hs.to_string());
+                }
+            }
+            if fc > 0 {
+                res.push('+');
+                if fc > 1 {
+                    res.push_str(&fc.to_string());
+                }
+            } else if fc < 0 {
+                if fc < -1 {
+                    res.push_str(&fc.to_string());
+                } else {
+                    res.push('-');
+                }
+            }
+            if let Some(map_num) = atom.atom_map_num
+                && !self.params.ignore_atom_map_numbers
+            {
+                res.push(':');
+                res.push_str(&map_num.to_string());
+            }
+            res.push(']');
+        }
+        Ok(res)
+    }
+
+    fn bond_smiles(&self, bond: &Bond, atom_to_left_idx: Option<usize>) -> String {
+        get_bond_smiles(self.mol, bond, self.params, atom_to_left_idx)
+    }
+}
+
 pub fn mol_to_smiles(
     mol: &Molecule,
     params: &SmilesWriteParams,
 ) -> Result<String, SmilesWriteError> {
-    if mol.atoms.is_empty() {
+    if mol.atoms().is_empty() {
         return Ok(String::new());
     }
     if let Some(rooted_at_atom) = params.rooted_at_atom
-        && rooted_at_atom >= mol.atoms.len()
+        && rooted_at_atom >= mol.atoms().len()
     {
         return Err(SmilesWriteError::RootedAtAtomOutOfRange(rooted_at_atom));
     }
@@ -68,16 +219,22 @@ pub fn mol_to_smiles(
         ));
     }
     if params.canonical {
-        let atom_ranks = crate::canon_smiles::rank_mol_atoms(
+        let rank_state = SmilesWriteState::new(mol, params)?;
+        let rank_ring_stereo_atoms = if params.do_isomeric_smiles {
+            Some(crate::canon_smiles::find_chiral_atom_special_cases(mol)?)
+        } else {
+            None
+        };
+        let atom_ranks = crate::canon_smiles::rank_mol_atoms_with_valence(
             mol,
+            &rank_state.valence,
             true,
             params.do_isomeric_smiles,
             params.do_isomeric_smiles,
             true,
             false,
-            params.do_isomeric_smiles,
             false,
-            true,
+            rank_ring_stereo_atoms.as_deref(),
         )?;
         let fragments = connected_components(mol);
         let mut pieces = Vec::with_capacity(fragments.len());
@@ -93,6 +250,25 @@ pub fn mol_to_smiles(
             None
         };
         let traversal_mol = write_mol.as_ref().unwrap_or(mol);
+        let traversal_ring_stereo_atoms_storage;
+        let traversal_state_storage;
+        let (emit_state, traversal_ring_stereo_atoms) = if let Some(write_mol) = write_mol.as_ref()
+        {
+            traversal_state_storage = SmilesWriteState::new(write_mol, params)?;
+            traversal_ring_stereo_atoms_storage = if params.do_isomeric_smiles {
+                Some(crate::canon_smiles::find_chiral_atom_special_cases(
+                    write_mol,
+                )?)
+            } else {
+                None
+            };
+            (
+                &traversal_state_storage,
+                traversal_ring_stereo_atoms_storage.as_deref(),
+            )
+        } else {
+            (&rank_state, rank_ring_stereo_atoms.as_deref())
+        };
         for fragment in fragments {
             let start = fragment
                 .iter()
@@ -101,15 +277,17 @@ pub fn mol_to_smiles(
                 .ok_or(SmilesWriteError::UnsupportedPath(
                     "canonical fragment start selection failed",
                 ))?;
-            let traversal = crate::canon_smiles::canonicalize_fragment(
+            let traversal = crate::canon_smiles::canonicalize_fragment_with_valence(
                 traversal_mol,
                 start,
                 &atom_ranks,
                 params.do_isomeric_smiles,
                 params.do_random,
                 true,
+                &emit_state.valence,
+                traversal_ring_stereo_atoms,
             )?;
-            pieces.push(emit_fragment_smiles(traversal_mol, &traversal, params)?);
+            pieces.push(emit_fragment_smiles(&emit_state, &traversal)?);
         }
         pieces.sort();
         return Ok(pieces.join("."));
@@ -128,30 +306,33 @@ pub fn mol_to_smiles(
         None
     };
     let traversal_mol = write_mol.as_ref().unwrap_or(mol);
+    let emit_state = SmilesWriteState::new(traversal_mol, params)?;
     for fragment in fragments {
         let start = fragment[0];
-        let atom_ranks: Vec<u32> = (0..mol.atoms.len()).map(|idx| idx as u32).collect();
-        let traversal = crate::canon_smiles::canonicalize_fragment(
+        let atom_ranks: Vec<u32> = (0..mol.atoms().len()).map(|idx| idx as u32).collect();
+        let traversal = crate::canon_smiles::canonicalize_fragment_with_valence(
             traversal_mol,
             start,
             &atom_ranks,
             params.do_isomeric_smiles,
             false,
             true,
+            &emit_state.valence,
+            None,
         )?;
-        pieces.push(emit_fragment_smiles(traversal_mol, &traversal, params)?);
+        pieces.push(emit_fragment_smiles(&emit_state, &traversal)?);
     }
     Ok(pieces.join("."))
 }
 
 fn connected_components(mol: &Molecule) -> Vec<Vec<usize>> {
     let adjacency = mol
-        .adjacency
-        .clone()
-        .unwrap_or_else(|| crate::AdjacencyList::from_topology(mol.atoms.len(), &mol.bonds));
-    let mut seen = vec![false; mol.atoms.len()];
+        .adjacency()
+        .cloned()
+        .unwrap_or_else(|| crate::AdjacencyList::from_topology(mol.atoms().len(), mol.bonds()));
+    let mut seen = vec![false; mol.atoms().len()];
     let mut out = Vec::new();
-    for atom_idx in 0..mol.atoms.len() {
+    for atom_idx in 0..mol.atoms().len() {
         if seen[atom_idx] {
             continue;
         }
@@ -174,10 +355,10 @@ fn connected_components(mol: &Molecule) -> Vec<Vec<usize>> {
 }
 
 fn emit_fragment_smiles(
-    mol: &Molecule,
+    state: &SmilesWriteState<'_>,
     traversal: &crate::canon_smiles::FragmentTraversal,
-    params: &SmilesWriteParams,
 ) -> Result<String, SmilesWriteError> {
+    let mol = state.mol;
     let mut res = String::new();
     let mut ring_closure_map = std::collections::BTreeMap::<usize, usize>::new();
     let mut ring_closures_to_erase = Vec::<usize>::new();
@@ -187,11 +368,15 @@ fn emit_fragment_smiles(
                 for key in ring_closures_to_erase.drain(..) {
                     ring_closure_map.remove(&key);
                 }
-                let mut atom = mol.atoms[*atom_idx].clone();
+                let mut atom = mol.atoms()[*atom_idx].clone();
                 if let Some(tag) = traversal.chiral_tag_overrides[*atom_idx] {
                     atom.chiral_tag = tag;
                 }
-                res.push_str(&get_atom_smiles(mol, &atom, params)?);
+                if let Some(perm) = traversal.chiral_permutation_overrides[*atom_idx] {
+                    atom.props
+                        .insert("_chiralPermutation".to_owned(), perm.to_string());
+                }
+                res.push_str(&state.atom_smiles(&atom)?);
             }
             crate::canon_smiles::MolStackElem::Bond {
                 bond_idx,
@@ -199,16 +384,11 @@ fn emit_fragment_smiles(
                 ..
             } => {
                 if *atom_to_left_idx != usize::MAX {
-                    let mut bond = mol.bonds[*bond_idx].clone();
+                    let mut bond = mol.bonds()[*bond_idx].clone();
                     if let Some(direction) = traversal.bond_direction_overrides[*bond_idx] {
                         bond.direction = direction;
                     }
-                    res.push_str(&get_bond_smiles(
-                        mol,
-                        &bond,
-                        params,
-                        Some(*atom_to_left_idx),
-                    ));
+                    res.push_str(&state.bond_smiles(&bond, Some(*atom_to_left_idx)));
                 }
             }
             crate::canon_smiles::MolStackElem::Ring { ring_idx } => {
@@ -246,65 +426,24 @@ pub fn in_organic_subset(atomic_number: u8) -> bool {
     ORGANIC_SUBSET_ATOMS.contains(&atomic_number)
 }
 
-fn atom_chirality_info(atom: &Atom) -> &'static str {
+fn atom_chirality_info(atom: &Atom) -> String {
     match atom.chiral_tag {
-        ChiralTag::TetrahedralCw => "@@",
-        ChiralTag::TetrahedralCcw => "@",
-        ChiralTag::Unspecified => "",
+        ChiralTag::TetrahedralCw => "@@".to_owned(),
+        ChiralTag::TetrahedralCcw => "@".to_owned(),
+        ChiralTag::TrigonalBipyramidal => {
+            let perm = atom
+                .props
+                .get("_chiralPermutation")
+                .map(String::as_str)
+                .unwrap_or("1");
+            format!("@TB{perm}")
+        }
+        ChiralTag::Unspecified => String::new(),
     }
-}
-
-fn element_symbol(atomic_num: u8) -> Result<&'static str, SmilesWriteError> {
-    match atomic_num {
-        0 => Ok("*"),
-        1 => Ok("H"),
-        3 => Ok("Li"),
-        5 => Ok("B"),
-        6 => Ok("C"),
-        7 => Ok("N"),
-        8 => Ok("O"),
-        9 => Ok("F"),
-        11 => Ok("Na"),
-        14 => Ok("Si"),
-        15 => Ok("P"),
-        16 => Ok("S"),
-        17 => Ok("Cl"),
-        19 => Ok("K"),
-        29 => Ok("Cu"),
-        45 => Ok("Rh"),
-        33 => Ok("As"),
-        34 => Ok("Se"),
-        35 => Ok("Br"),
-        52 => Ok("Te"),
-        53 => Ok("I"),
-        _ => Err(SmilesWriteError::UnsupportedPath(
-            "element symbol lookup outside current RDKit-aligned table is not ported yet",
-        )),
-    }
-}
-
-fn total_num_hs_rdkit_like(mol: &Molecule, atom_index: usize) -> Result<usize, SmilesWriteError> {
-    let assignment = assign_valence(mol, ValenceModel::RdkitLike).map_err(|_| {
-        SmilesWriteError::UnsupportedPath(
-            "RDKit-like valence assignment required by GetAtomSmiles failed",
-        )
-    })?;
-    Ok(mol.atoms[atom_index].explicit_hydrogens as usize
-        + assignment.implicit_hydrogens[atom_index] as usize)
-}
-
-fn total_valence_rdkit_like(mol: &Molecule, atom_index: usize) -> Result<i32, SmilesWriteError> {
-    let assignment = assign_valence(mol, ValenceModel::RdkitLike).map_err(|_| {
-        SmilesWriteError::UnsupportedPath(
-            "RDKit-like valence assignment required by GetAtomSmiles failed",
-        )
-    })?;
-    Ok(i32::from(assignment.explicit_valence[atom_index])
-        + i32::from(assignment.implicit_hydrogens[atom_index]))
 }
 
 fn bond_is_to_metal(mol: &Molecule, atom_index: usize) -> bool {
-    mol.bonds.iter().any(|bond| {
+    mol.bonds().iter().any(|bond| {
         let other = if bond.begin_atom == atom_index {
             Some(bond.end_atom)
         } else if bond.end_atom == atom_index {
@@ -316,63 +455,10 @@ fn bond_is_to_metal(mol: &Molecule, atom_index: usize) -> bool {
             return false;
         };
         matches!(
-            mol.atoms[other].atomic_num,
+            mol.atoms()[other].atomic_num,
             3 | 4 | 11 | 12 | 13 | 19 | 20 | 21..=32 | 37..=51 | 55..=84 | 87..=116
         )
     })
-}
-
-fn atom_needs_bracket(
-    mol: &Molecule,
-    atom: &Atom,
-    at_string: &str,
-    params: &SmilesWriteParams,
-) -> Result<bool, SmilesWriteError> {
-    let num = atom.atomic_num;
-    if !in_organic_subset(num) {
-        return Ok(true);
-    }
-    if atom.formal_charge != 0 {
-        return Ok(true);
-    }
-    if atom.atom_map_num.is_some() && !params.ignore_atom_map_numbers {
-        return Ok(true);
-    }
-    if params.do_isomeric_smiles && (atom.isotope.is_some() || !at_string.is_empty()) {
-        return Ok(true);
-    }
-    if atom.num_radical_electrons != 0 {
-        return Ok(true);
-    }
-    if (num == 7 || num == 15) && atom.is_aromatic && atom.explicit_hydrogens > 0 {
-        return Ok(true);
-    }
-
-    let total_valence = total_valence_rdkit_like(mol, atom.index)?;
-    let total_num_hs = total_num_hs_rdkit_like(mol, atom.index)?;
-    let default_valence = match num {
-        5 => Some(3),
-        6 => Some(4),
-        7 => Some(3),
-        8 => Some(2),
-        9 => Some(1),
-        15 => Some(3),
-        16 => Some(2),
-        17 => Some(1),
-        35 => Some(1),
-        53 => Some(1),
-        _ => None,
-    };
-    if let Some(default_valence) = default_valence
-        && total_valence != default_valence
-        && total_num_hs > 0
-    {
-        return Ok(true);
-    }
-    if bond_is_to_metal(mol, atom.index) {
-        return Ok(true);
-    }
-    Ok(false)
 }
 
 pub fn get_atom_smiles(
@@ -380,69 +466,7 @@ pub fn get_atom_smiles(
     atom: &Atom,
     params: &SmilesWriteParams,
 ) -> Result<String, SmilesWriteError> {
-    let fc = atom.formal_charge;
-    let isotope = atom.isotope;
-    let mut symb = element_symbol(atom.atomic_num)?.to_string();
-    let at_string = if params.do_isomeric_smiles {
-        atom_chirality_info(atom)
-    } else {
-        ""
-    };
-    let needs_bracket = if !params.all_hs_explicit {
-        atom_needs_bracket(mol, atom, at_string, params)?
-    } else {
-        true
-    };
-
-    let mut res = String::new();
-    if needs_bracket {
-        res.push('[');
-    }
-    if let Some(isotope) = isotope
-        && params.do_isomeric_smiles
-    {
-        res.push_str(&isotope.to_string());
-    }
-    if !params.do_kekule && atom.is_aromatic && symb.as_bytes()[0].is_ascii_uppercase() {
-        match atom.atomic_num {
-            5 | 6 | 7 | 8 | 14 | 15 | 16 | 33 | 34 | 52 => {
-                symb.replace_range(0..1, &symb[0..1].to_ascii_lowercase());
-            }
-            _ => {}
-        }
-    }
-    res.push_str(&symb);
-    res.push_str(at_string);
-
-    if needs_bracket {
-        let tot_num_hs = total_num_hs_rdkit_like(mol, atom.index)?;
-        if tot_num_hs > 0 {
-            res.push('H');
-            if tot_num_hs > 1 {
-                res.push_str(&tot_num_hs.to_string());
-            }
-        }
-        if fc > 0 {
-            res.push('+');
-            if fc > 1 {
-                res.push_str(&fc.to_string());
-            }
-        } else if fc < 0 {
-            if fc < -1 {
-                res.push_str(&fc.to_string());
-            } else {
-                res.push('-');
-            }
-        }
-        if let Some(map_num) = atom.atom_map_num
-            && !params.ignore_atom_map_numbers
-        {
-            res.push(':');
-            res.push_str(&map_num.to_string());
-        }
-        res.push(']');
-    }
-    Ok(res)
+    SmilesWriteState::new(mol, params)?.atom_smiles(atom)
 }
 
 fn aromatic_bond_smiles_context(
@@ -460,8 +484,8 @@ fn aromatic_bond_smiles_context(
     ) {
         return false;
     }
-    let a1 = &mol.atoms[atom_to_left_idx];
-    let a2 = &mol.atoms[if bond.begin_atom == atom_to_left_idx {
+    let a1 = &mol.atoms()[atom_to_left_idx];
+    let a2 = &mol.atoms()[if bond.begin_atom == atom_to_left_idx {
         bond.end_atom
     } else {
         bond.begin_atom

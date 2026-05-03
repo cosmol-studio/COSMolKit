@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("coord {} {:.3} {:.3}", i, pt.x, pt.y);
         }
     }
-    for bond in &mol.bonds {
+    for bond in mol.bonds() {
         println!(
             "{} {} {} {:?} arom={}",
             bond.index, bond.begin_atom, bond.end_atom, bond.order, bond.is_aromatic
