@@ -14,7 +14,7 @@ mod tests {
     use super::{
         dependency_versions,
         molblock::{self, SdfFormat},
-        sdf::SdfReader,
+        sdf::{SdfCoordinateMode, SdfReader},
     };
     use crate::{BondOrder, Molecule};
     use std::io::Cursor;
@@ -36,10 +36,11 @@ mod tests {
     }
 
     #[test]
-    fn sdf_reader_reads_minimal_v2000_topology_record() {
+    fn sdf_reader_reads_v2000_topology_record() {
         let mut mol = Molecule::from_smiles("CC").expect("SMILES parser should parse CC");
         mol.compute_2d_coords().expect("2D coords should compute");
-        let sdf = molblock::mol_to_sdf_record_minimal(&mol).expect("writer should work");
+        let sdf =
+            molblock::mol_to_2d_sdf_record(&mol, SdfFormat::Auto).expect("writer should work");
 
         let mut reader = SdfReader::new(Cursor::new(sdf.into_bytes()));
         let record = reader
@@ -51,6 +52,13 @@ mod tests {
         assert_eq!(record.molecule.bonds.len(), 1);
         assert_eq!(record.molecule.atomic_numbers(), vec![6, 6]);
         assert_eq!(record.molecule.bonds[0].order, BondOrder::Single);
+        assert_eq!(record.title, "");
+        assert_eq!(
+            record.program_line.as_deref(),
+            Some("     COSMolKit      2D")
+        );
+        assert_eq!(record.comment_line.as_deref(), Some(""));
+        assert!(record.raw_molblock.contains("V2000"));
         assert_eq!(record.data_fields, Vec::<(String, String)>::new());
         assert!(
             reader
@@ -95,6 +103,12 @@ $$$$
                 ),
             ]
         );
+        assert_eq!(record.title, "ethane");
+        assert_eq!(
+            record.program_line.as_deref(),
+            Some("     COSMolKit      2D")
+        );
+        assert_eq!(record.comment_line.as_deref(), Some(""));
     }
 
     #[test]
@@ -248,10 +262,114 @@ $$$$
     }
 
     #[test]
-    fn molblock_minimal_writer_emits_v2000_for_ethane() {
+    fn molblock_writer_emits_v2000_for_ethane() {
         let mut mol = Molecule::from_smiles("CC").expect("SMILES parser should parse CC");
         mol.compute_2d_coords().expect("2D coords should compute");
-        let out = molblock::mol_to_v2000_block_minimal(&mol).expect("writer should work");
+        let out = molblock::mol_to_v2000_block(&mol).expect("writer should work");
         assert!(out.contains("V2000"));
+    }
+
+    #[test]
+    fn sdf_reader_preserves_v3000_atom_properties_and_3d_coordinates() {
+        let sdf = "example
+  COSMolKit  3D
+comment
+  0  0  0  0  0  0  0  0  0  0999 V3000
+M  V30 BEGIN CTAB
+M  V30 COUNTS 2 1 0 0 0
+M  V30 BEGIN ATOM
+M  V30 1 C 0.000000 1.250000 2.500000 0 WEIGHT=0.75 LABEL=foo
+M  V30 2 O 1.000000 0.000000 0.500000 0 CHG=-1
+M  V30 END ATOM
+M  V30 BEGIN BOND
+M  V30 1 1 1 2
+M  V30 END BOND
+M  V30 END CTAB
+M  END
+$$$$
+";
+        let mut reader = SdfReader::new(Cursor::new(sdf.as_bytes()));
+        let record = reader
+            .next_record()
+            .expect("3D V3000 SDF should parse")
+            .expect("record should exist");
+
+        assert!(record.molecule.coords_2d().is_none());
+        let coords = record
+            .molecule
+            .coords_3d()
+            .expect("3D coordinates should be preserved");
+        assert_eq!(coords.len(), 2);
+        assert!((coords[0].z - 2.5).abs() <= 1e-12);
+        assert_eq!(record.molecule.num_3d_conformers(), 1);
+        assert_eq!(record.molecule.atoms[0].prop("WEIGHT"), Some("0.75"));
+        assert_eq!(record.molecule.atoms[0].prop("LABEL"), Some("foo"));
+        assert_eq!(record.molecule.atoms[0].prop_f64("WEIGHT"), Some(0.75));
+    }
+
+    #[test]
+    fn sdf_record_from_str_helpers_parse_single_and_multiple_records() {
+        let sdf = "methane
+     COSMolKit      2D
+
+  1  0  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+$$$$
+methane2
+     COSMolKit      2D
+
+  1  0  0  0  0  0  0  0  0  0999 V2000
+    1.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+$$$$
+";
+        let one = crate::io::sdf::read_sdf_record_from_str(sdf).expect("first record should parse");
+        assert_eq!(one.title, "methane");
+        let all = crate::io::sdf::read_sdf_records_from_str(sdf).expect("all records should parse");
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[1].title, "methane2");
+    }
+
+    #[test]
+    fn sdf_reader_preserves_declared_3d_even_when_z_is_zero() {
+        let sdf = "flat3d
+     COSMolKit      3D
+
+  1  0  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+$$$$
+";
+        let record = crate::io::sdf::read_sdf_record_from_str(sdf).expect("3D record should parse");
+        assert!(record.molecule.coords_2d().is_none());
+        assert_eq!(record.molecule.num_3d_conformers(), 1);
+    }
+
+    #[test]
+    fn sdf_reader_coordinate_mode_can_override_header_dimension() {
+        let sdf = "flat
+     COSMolKit      2D
+
+  1  0  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+$$$$
+";
+        let record_2d = crate::io::sdf::read_sdf_record_from_str_with_coordinate_mode(
+            sdf,
+            SdfCoordinateMode::Force2D,
+        )
+        .expect("forced 2D record should parse");
+        let record_3d = crate::io::sdf::read_sdf_record_from_str_with_coordinate_mode(
+            sdf,
+            SdfCoordinateMode::Force3D,
+        )
+        .expect("forced 3D record should parse");
+
+        assert!(record_2d.molecule.coords_2d().is_some());
+        assert!(record_2d.molecule.coords_3d().is_none());
+        assert!(record_3d.molecule.coords_2d().is_none());
+        assert!(record_3d.molecule.coords_3d().is_some());
     }
 }

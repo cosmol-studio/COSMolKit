@@ -39,6 +39,10 @@ fn assert_no_banned_patterns(path: &Path, content: &str) {
     }
 }
 
+fn is_out_of_line_test_module(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == "tests.rs")
+}
+
 #[test]
 fn rust_and_python_binding_runtime_code_must_not_call_rdkit_or_shell_out() {
     let root = repo_root();
@@ -47,6 +51,9 @@ fn rust_and_python_binding_runtime_code_must_not_call_rdkit_or_shell_out() {
     gather_rs_files(&root.join("crates/cosmolkit-core/src"), &mut rust_src_files);
     gather_rs_files(&root.join("crates/cosmolkit/src"), &mut rust_src_files);
     for path in rust_src_files {
+        if is_out_of_line_test_module(&path) {
+            continue;
+        }
         let content = fs::read_to_string(&path).expect("source file should be readable");
         assert_no_banned_patterns(&path, strip_after_cfg_test(&content));
     }

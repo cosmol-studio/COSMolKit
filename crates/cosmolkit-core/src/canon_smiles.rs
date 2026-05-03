@@ -1134,6 +1134,7 @@ pub fn canonicalize_fragment(
         .ok_or(SmilesWriteError::UnsupportedPath(
             "empty MolStack in canonical fragment traversal",
         ))?;
+    let mut num_swaps_chiral_atoms = vec![false; mol.atoms.len()];
     for atom in &mol.atoms {
         if matches!(atom.chiral_tag, crate::ChiralTag::Unspecified) {
             continue;
@@ -1171,6 +1172,7 @@ pub fn canonicalize_fragment(
         {
             n_swaps += 1;
         }
+        num_swaps_chiral_atoms[atom.index] = n_swaps % 2 == 1;
         if n_swaps % 2 == 1 {
             traversal.chiral_tag_overrides[atom.index] = Some(match atom.chiral_tag {
                 crate::ChiralTag::TetrahedralCw => crate::ChiralTag::TetrahedralCcw,
@@ -1230,11 +1232,7 @@ pub fn canonicalize_fragment(
                     crate::ChiralTag::Unspecified => crate::ChiralTag::Unspecified,
                 };
             }
-            let first_swapped =
-                traversal.chiral_tag_overrides[*atom_idx].is_some_and(|t| t != atom.chiral_tag);
-            let nbr_swapped = traversal.chiral_tag_overrides[nbr_idx]
-                .is_some_and(|t| t != mol.atoms[nbr_idx].chiral_tag);
-            if first_swapped ^ nbr_swapped {
+            if num_swaps_chiral_atoms[*atom_idx] ^ num_swaps_chiral_atoms[nbr_idx] {
                 tag = match tag {
                     crate::ChiralTag::TetrahedralCw => crate::ChiralTag::TetrahedralCcw,
                     crate::ChiralTag::TetrahedralCcw => crate::ChiralTag::TetrahedralCw,
@@ -1271,10 +1269,11 @@ pub fn canonicalize_fragment(
         &mut bond_dir_counts,
         &mut atom_dir_counts,
     );
-    for bond in &tmp_mol.bonds {
-        if !matches!(bond.direction, crate::BondDirection::None) {
-            traversal.bond_direction_overrides[bond.index] = Some(bond.direction);
-        }
+    for elem in &traversal.mol_stack {
+        let MolStackElem::Bond { bond_idx, .. } = elem else {
+            continue;
+        };
+        traversal.bond_direction_overrides[*bond_idx] = Some(tmp_mol.bonds[*bond_idx].direction);
     }
     Ok(traversal)
 }
@@ -1978,7 +1977,7 @@ fn canonicalize_double_bond(
         atom_dir_counts[atom1_idx] += 1;
     }
 
-    if begin_degree == 3
+    if adj.neighbors_of(atom1_idx).len() == 3
         && let Some(second_from_atom1_idx) = second_from_atom1
         && bond_dir_counts[second_from_atom1_idx] == 0
     {
@@ -1993,7 +1992,7 @@ fn canonicalize_double_bond(
         atom_dir_counts[atom1_idx] += 1;
     }
 
-    if end_degree == 3
+    if adj.neighbors_of(atom2_idx).len() == 3
         && let Some(second_from_atom2_idx) = second_from_atom2
         && bond_dir_counts[second_from_atom2_idx] == 0
     {

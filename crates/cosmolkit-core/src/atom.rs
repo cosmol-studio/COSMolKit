@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ChiralTag {
     Unspecified,
@@ -28,7 +30,21 @@ pub struct Atom {
     pub isotope: Option<u16>,
     /// Optional atom-map number from bracket SMILES.
     pub atom_map_num: Option<u32>,
+    /// Preserved Molfile/SDF atom properties.
+    pub props: BTreeMap<String, String>,
     /// Cached RDKit `_CIPRank` atom property assigned by legacy stereochemistry.
     #[doc(hidden)]
     pub rdkit_cip_rank: Option<i64>,
+}
+
+impl Atom {
+    #[must_use]
+    pub fn prop(&self, key: &str) -> Option<&str> {
+        self.props.get(key).map(String::as_str)
+    }
+
+    #[must_use]
+    pub fn prop_f64(&self, key: &str) -> Option<f64> {
+        self.prop(key)?.parse().ok()
+    }
 }

@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use cosmolkit_core::Molecule;
-use cosmolkit_core::io::molblock::mol_to_sdf_record_minimal;
+use cosmolkit_core::io::molblock::{SdfFormat, mol_to_2d_sdf_record};
 
 // Usage:
 //   cargo run -p cosmolkit-core --example minimal_sdf
@@ -26,7 +26,7 @@ fn main() {
         mol.compute_2d_coords().unwrap_or_else(|err| {
             panic!("failed to compute 2D coordinates for '{}': {}", smiles, err)
         });
-        let sdf = mol_to_sdf_record_minimal(&mol)
+        let sdf = mol_to_2d_sdf_record(&mol, SdfFormat::Auto)
             .unwrap_or_else(|err| panic!("failed to write SDF for '{}': {}", smiles, err));
         output.push_str(&sdf);
     }

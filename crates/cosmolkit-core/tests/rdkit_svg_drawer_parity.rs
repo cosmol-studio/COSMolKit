@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
-use cosmolkit_core::Molecule;
+use cosmolkit_core::{BatchErrorMode, Molecule, MoleculeBatch};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -50,6 +50,54 @@ fn normalize_svg_identity(svg: &str) -> String {
         "font-family:sans-serif",
         "font-family:\"Noto Sans\",sans-serif",
     )
+}
+
+fn svg_diff(actual: &str, expected: &str) -> String {
+    const MAX_DIFF_LINES: usize = 80;
+    const CONTEXT: usize = 2;
+
+    let actual_lines: Vec<&str> = actual.lines().collect();
+    let expected_lines: Vec<&str> = expected.lines().collect();
+    let mut first_diff = 0usize;
+    while first_diff < actual_lines.len().min(expected_lines.len())
+        && actual_lines[first_diff] == expected_lines[first_diff]
+    {
+        first_diff += 1;
+    }
+
+    let start = first_diff.saturating_sub(CONTEXT);
+    let end = (first_diff + CONTEXT + 1)
+        .max(actual_lines.len().min(expected_lines.len()))
+        .min(start + MAX_DIFF_LINES)
+        .min(actual_lines.len().max(expected_lines.len()));
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "first differing line: {}\nactual length: {}, expected length: {}\n--- actual\n+++ expected\n",
+        first_diff + 1,
+        actual.len(),
+        expected.len()
+    ));
+    for idx in start..end {
+        let actual_line = actual_lines.get(idx).copied();
+        let expected_line = expected_lines.get(idx).copied();
+        match (actual_line, expected_line) {
+            (Some(a), Some(e)) if a == e => {
+                out.push_str(&format!(" {}\n", a));
+            }
+            (Some(a), Some(e)) => {
+                out.push_str(&format!("-{}\n", a));
+                out.push_str(&format!("+{}\n", e));
+            }
+            (Some(a), None) => out.push_str(&format!("-{}\n", a)),
+            (None, Some(e)) => out.push_str(&format!("+{}\n", e)),
+            (None, None) => {}
+        }
+    }
+    if end < actual_lines.len().max(expected_lines.len()) {
+        out.push_str("... diff truncated ...\n");
+    }
+    out
 }
 
 #[test]
@@ -108,12 +156,43 @@ fn svg_drawer_matches_rdkit_golden() {
                 record.smiles
             )
         });
-        assert_eq!(
-            normalize_svg_identity(&actual),
-            normalize_svg_identity(expected),
-            "SVG drawer mismatch at row {} ({})",
+        let actual = normalize_svg_identity(&actual);
+        let expected = normalize_svg_identity(expected);
+        assert!(
+            actual == expected,
+            "SVG drawer mismatch at row {} ({})\n{}",
             row_idx + 1,
-            record.smiles
+            record.smiles,
+            svg_diff(&actual, &expected)
+        );
+    }
+
+    let smiles = records
+        .iter()
+        .map(|record| record.smiles.clone())
+        .collect::<Vec<_>>();
+    let batch = MoleculeBatch::from_smiles_list(&smiles, BatchErrorMode::Keep)
+        .expect("batch SMILES parse should not raise in keep mode");
+    let batch_svgs = batch
+        .to_svg_list(300, 300)
+        .expect("batch SVG rendering should succeed");
+    for (row_idx, (record, actual)) in records.iter().zip(batch_svgs).enumerate() {
+        if !record.rdkit_ok {
+            continue;
+        }
+        let actual = normalize_svg_identity(
+            actual
+                .as_deref()
+                .unwrap_or_else(|| panic!("batch SVG missing at row {}", row_idx + 1)),
+        );
+        let expected =
+            normalize_svg_identity(record.svg.as_ref().expect("RDKit ok row should have SVG"));
+        assert!(
+            actual == expected,
+            "batch SVG drawer mismatch at row {} ({})\n{}",
+            row_idx + 1,
+            record.smiles,
+            svg_diff(&actual, &expected)
         );
     }
 }

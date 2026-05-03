@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
-use cosmolkit_core::{Molecule, SmilesWriteParams};
+use cosmolkit_core::{BatchErrorMode, Molecule, MoleculeBatch, SmilesWriteParams};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -184,6 +184,41 @@ fn smiles_writer_matches_rdkit_golden_across_param_branches() {
                     );
                 }
             }
+        }
+    }
+
+    let smiles = records
+        .iter()
+        .map(|record| record.smiles.clone())
+        .collect::<Vec<_>>();
+    let batch = MoleculeBatch::from_smiles_list(&smiles, BatchErrorMode::Keep)
+        .expect("batch SMILES parse should not raise in keep mode");
+    for branch_name in records
+        .iter()
+        .flat_map(|record| record.branches.keys())
+        .map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>()
+    {
+        let params = branch_params(branch_name);
+        let actual = batch
+            .to_smiles_list_with_params(&params)
+            .expect("batch SMILES writing should succeed");
+        for (row_idx, (record, actual)) in records.iter().zip(actual).enumerate() {
+            if !record.rdkit_ok {
+                continue;
+            }
+            let expected = record.branches[branch_name]
+                .smiles
+                .as_ref()
+                .expect("RDKit ok branch should have SMILES");
+            assert_eq!(
+                actual.as_ref(),
+                Some(expected),
+                "batch smiles writer mismatch at row {} ({}) branch {}",
+                row_idx + 1,
+                record.smiles,
+                branch_name
+            );
         }
     }
 }

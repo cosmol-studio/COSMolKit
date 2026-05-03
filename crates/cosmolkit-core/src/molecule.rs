@@ -1,5 +1,5 @@
 use crate::{AdjacencyList, Atom, Bond};
-use glam::DVec2;
+use glam::{DVec2, DVec3};
 
 /// Errors returned by SMILES parsing routines.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -15,12 +15,20 @@ pub enum SmilesParseError {
 /// Errors returned by SMILES writing routines.
 pub use crate::smiles_write::SmilesWriteError;
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum CoordinateDimension {
+    TwoD,
+    ThreeD,
+}
+
 /// Molecular graph with atom/bond tables, optional 2D coordinates, and adjacency cache.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Molecule {
     pub atoms: Vec<Atom>,
     pub bonds: Vec<Bond>,
     pub coords_2d: Option<Vec<DVec2>>,
+    pub conformers_3d: Vec<Vec<DVec3>>,
+    pub source_coordinate_dim: Option<CoordinateDimension>,
     pub adjacency: Option<AdjacencyList>,
 }
 
@@ -38,6 +46,8 @@ impl Molecule {
         atom.index = index;
         self.atoms.push(atom);
         self.coords_2d = None;
+        self.conformers_3d.clear();
+        self.source_coordinate_dim = None;
         self.adjacency = None;
         index
     }
@@ -81,8 +91,9 @@ impl Molecule {
 
     /// Compute RDKit-aligned 2D coordinates and store them on this molecule.
     pub fn compute_2d_coords(&mut self) -> Result<&mut Self, crate::io::molblock::MolWriteError> {
-        let coords = crate::io::molblock::compute_2d_coords_minimal(self)?;
+        let coords = crate::io::molblock::compute_2d_coords(self)?;
         self.coords_2d = Some(coords.into_iter().map(|(x, y)| DVec2::new(x, y)).collect());
+        self.source_coordinate_dim = Some(CoordinateDimension::TwoD);
         Ok(self)
     }
 
@@ -90,6 +101,24 @@ impl Molecule {
     #[must_use]
     pub fn coords_2d(&self) -> Option<&[DVec2]> {
         self.coords_2d.as_deref()
+    }
+
+    /// Return the default stored 3D conformer, if present.
+    #[must_use]
+    pub fn coords_3d(&self) -> Option<&[DVec3]> {
+        self.conformers_3d.first().map(Vec::as_slice)
+    }
+
+    /// Return one stored 3D conformer by index.
+    #[must_use]
+    pub fn conformer_3d(&self, index: usize) -> Option<&[DVec3]> {
+        self.conformers_3d.get(index).map(Vec::as_slice)
+    }
+
+    /// Return the number of stored 3D conformers.
+    #[must_use]
+    pub fn num_3d_conformers(&self) -> usize {
+        self.conformers_3d.len()
     }
 
     /// Return atom atomic numbers in atom-index order.

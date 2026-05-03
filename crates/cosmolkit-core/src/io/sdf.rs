@@ -1,13 +1,19 @@
 use std::io::BufRead;
 
-use crate::{Atom, Bond, BondDirection, BondOrder, BondStereo, ChiralTag, Molecule};
-use glam::DVec2;
+use crate::{
+    Atom, Bond, BondDirection, BondOrder, BondStereo, ChiralTag, CoordinateDimension, Molecule,
+};
+use glam::{DVec2, DVec3};
 
 /// One record extracted from an SDF stream.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SdfRecord {
+    pub title: String,
+    pub program_line: Option<String>,
+    pub comment_line: Option<String>,
     pub molecule: Molecule,
     pub data_fields: Vec<(String, String)>,
+    pub raw_molblock: String,
 }
 
 /// Errors returned by SDF reading APIs.
@@ -21,21 +27,36 @@ pub enum SdfReadError {
     NotImplemented,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub enum SdfCoordinateMode {
+    #[default]
+    Auto,
+    Force2D,
+    Force3D,
+}
+
 /// Streaming-capable SDF reader.
 pub struct SdfReader<R> {
     reader: R,
     line_number: usize,
     at_end: bool,
+    coordinate_mode: SdfCoordinateMode,
 }
 
 impl<R: BufRead> SdfReader<R> {
     /// Create a reader from any buffered input stream.
     #[must_use]
     pub fn new(reader: R) -> Self {
+        Self::with_coordinate_mode(reader, SdfCoordinateMode::Auto)
+    }
+
+    #[must_use]
+    pub fn with_coordinate_mode(reader: R, coordinate_mode: SdfCoordinateMode) -> Self {
         Self {
             reader,
             line_number: 0,
             at_end: false,
+            coordinate_mode,
         }
     }
 
@@ -51,13 +72,25 @@ impl<R: BufRead> SdfReader<R> {
             return Ok(None);
         }
 
-        let (mut molecule, data_start) = parse_mol_data_stream(&lines)?;
+        let title = lines.first().cloned().unwrap_or_default();
+        let program_line = lines.get(1).cloned();
+        let comment_line = lines.get(2).cloned();
+        let source_dim = resolve_coordinate_dimension(
+            self.coordinate_mode,
+            infer_header_coordinate_dimension(lines.get(1).map(String::as_str)),
+        );
+        let (mut molecule, data_start) = parse_mol_data_stream(&lines, source_dim)?;
         let data_fields = parse_sdf_data_fields(&lines[data_start..])?;
         molecule.rebuild_adjacency();
+        let raw_molblock = lines[..data_start].join("\n");
 
         Ok(Some(SdfRecord {
+            title,
+            program_line,
+            comment_line,
             molecule,
             data_fields,
+            raw_molblock,
         }))
     }
 
@@ -90,7 +123,42 @@ impl<R: BufRead> SdfReader<R> {
     }
 }
 
-fn parse_mol_data_stream(lines: &[String]) -> Result<(Molecule, usize), SdfReadError> {
+pub fn read_sdf_record_from_str(s: &str) -> Result<SdfRecord, SdfReadError> {
+    read_sdf_record_from_str_with_coordinate_mode(s, SdfCoordinateMode::Auto)
+}
+
+pub fn read_sdf_record_from_str_with_coordinate_mode(
+    s: &str,
+    coordinate_mode: SdfCoordinateMode,
+) -> Result<SdfRecord, SdfReadError> {
+    let mut reader =
+        SdfReader::with_coordinate_mode(std::io::Cursor::new(s.as_bytes()), coordinate_mode);
+    reader
+        .next_record()?
+        .ok_or_else(|| SdfReadError::Parse("SDF text did not contain a complete record".to_owned()))
+}
+
+pub fn read_sdf_records_from_str(s: &str) -> Result<Vec<SdfRecord>, SdfReadError> {
+    read_sdf_records_from_str_with_coordinate_mode(s, SdfCoordinateMode::Auto)
+}
+
+pub fn read_sdf_records_from_str_with_coordinate_mode(
+    s: &str,
+    coordinate_mode: SdfCoordinateMode,
+) -> Result<Vec<SdfRecord>, SdfReadError> {
+    let mut reader =
+        SdfReader::with_coordinate_mode(std::io::Cursor::new(s.as_bytes()), coordinate_mode);
+    let mut records = Vec::new();
+    while let Some(record) = reader.next_record()? {
+        records.push(record);
+    }
+    Ok(records)
+}
+
+fn parse_mol_data_stream(
+    lines: &[String],
+    source_dim: Option<CoordinateDimension>,
+) -> Result<(Molecule, usize), SdfReadError> {
     let counts = lines.get(3).ok_or_else(|| {
         SdfReadError::Parse(format!(
             "Counts line too short: '{}' on line4",
@@ -99,18 +167,21 @@ fn parse_mol_data_stream(lines: &[String]) -> Result<(Molecule, usize), SdfReadE
     })?;
     if counts.len() > 35 && counts.len() >= 39 && counts.as_bytes().get(34) == Some(&b'V') {
         match &counts[34..39] {
-            "V2000" => parse_v2000_mol_data_stream(lines),
-            "V3000" => parse_v3000_mol_data_stream(lines),
+            "V2000" => parse_v2000_mol_data_stream(lines, source_dim),
+            "V3000" => parse_v3000_mol_data_stream(lines, source_dim),
             version => Err(SdfReadError::Parse(format!(
                 "Unsupported CTAB version: '{version}' at line 4"
             ))),
         }
     } else {
-        parse_v2000_mol_data_stream(lines)
+        parse_v2000_mol_data_stream(lines, source_dim)
     }
 }
 
-fn parse_v2000_mol_data_stream(lines: &[String]) -> Result<(Molecule, usize), SdfReadError> {
+fn parse_v2000_mol_data_stream(
+    lines: &[String],
+    source_dim: Option<CoordinateDimension>,
+) -> Result<(Molecule, usize), SdfReadError> {
     if lines.len() < 4 {
         return Err(SdfReadError::Parse(format!(
             "Counts line too short: '{}' on line4",
@@ -151,13 +222,30 @@ fn parse_v2000_mol_data_stream(lines: &[String]) -> Result<(Molecule, usize), Sd
     }
 
     let mut molecule = Molecule::new();
-    let mut coords = Vec::with_capacity(n_atoms);
+    let mut coords_2d = Vec::with_capacity(n_atoms);
+    let mut coords_3d = Vec::with_capacity(n_atoms);
+    let mut has_nonzero_z = false;
     for (offset, line) in lines[4..expected_atom_end].iter().enumerate() {
         let (atom, coord) = parse_v2000_atom_line(line, offset + 5)?;
         molecule.add_atom(atom);
-        coords.push(coord);
+        has_nonzero_z |= coord.z.abs() > 1e-12;
+        coords_2d.push(DVec2::new(coord.x, coord.y));
+        coords_3d.push(coord);
     }
-    molecule.coords_2d = Some(coords);
+    let coord_dim = source_dim.unwrap_or_else(|| {
+        if has_nonzero_z {
+            CoordinateDimension::ThreeD
+        } else {
+            CoordinateDimension::TwoD
+        }
+    });
+    if matches!(coord_dim, CoordinateDimension::ThreeD) {
+        molecule.conformers_3d.push(coords_3d);
+        molecule.source_coordinate_dim = Some(CoordinateDimension::ThreeD);
+    } else {
+        molecule.coords_2d = Some(coords_2d);
+        molecule.source_coordinate_dim = Some(CoordinateDimension::TwoD);
+    }
 
     for (offset, line) in lines[expected_atom_end..expected_bond_end]
         .iter()
@@ -175,6 +263,7 @@ fn parse_v2000_mol_data_stream(lines: &[String]) -> Result<(Molecule, usize), Sd
     while cursor < lines.len() {
         let line = &lines[cursor];
         if line.starts_with("M  END") {
+            finalize_parsed_stereochemistry(&mut molecule);
             return Ok((molecule, cursor + 1));
         }
         if line.starts_with("M  CHG") {
@@ -197,7 +286,7 @@ fn parse_v2000_mol_data_stream(lines: &[String]) -> Result<(Molecule, usize), Sd
     )))
 }
 
-fn parse_v2000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec2), SdfReadError> {
+fn parse_v2000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec3), SdfReadError> {
     if line.len() < 32 {
         return Err(SdfReadError::Parse(format!(
             "Atom line too short: '{line}' on line {line_number}"
@@ -206,7 +295,7 @@ fn parse_v2000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec2)
 
     let x = parse_double_field(line, 0, 10, line_number)?;
     let y = parse_double_field(line, 10, 20, line_number)?;
-    parse_double_field(line, 20, 30, line_number)?;
+    let z = parse_double_field(line, 20, 30, line_number)?;
 
     let symbol = field(line, 31, 34).unwrap_or("").trim();
     let (atomic_num, isotope) = atomic_number_from_molfile_symbol(symbol).ok_or_else(|| {
@@ -244,6 +333,21 @@ fn parse_v2000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec2)
         )));
     }
 
+    let atom_map_num = if line.len() >= 63 && field(line, 60, 63) != Some("  0") {
+        Some(parse_unsigned_field(line, 60, 63, line_number)? as u32)
+    } else {
+        None
+    };
+    let total_valence = if line.len() >= 51 && field(line, 48, 51) != Some("  0") {
+        Some(parse_int_field(line, 48, 51, line_number)?)
+    } else {
+        None
+    };
+    let mut props = std::collections::BTreeMap::new();
+    if let Some(total_valence) = total_valence {
+        props.insert("_MolFileTotValence".to_owned(), total_valence.to_string());
+    }
+
     Ok((
         Atom {
             index: 0,
@@ -255,10 +359,11 @@ fn parse_v2000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec2)
             num_radical_electrons: 0,
             chiral_tag: ChiralTag::Unspecified,
             isotope,
-            atom_map_num: None,
+            atom_map_num,
+            props,
             rdkit_cip_rank: None,
         },
-        DVec2::new(x, y),
+        DVec3::new(x, y, z),
     ))
 }
 
@@ -450,7 +555,10 @@ fn parse_v2000_atom_int_pairs(
     Ok(updates)
 }
 
-fn parse_v3000_mol_data_stream(lines: &[String]) -> Result<(Molecule, usize), SdfReadError> {
+fn parse_v3000_mol_data_stream(
+    lines: &[String],
+    source_dim: Option<CoordinateDimension>,
+) -> Result<(Molecule, usize), SdfReadError> {
     let mut cursor = 4;
     expect_v3000_line(lines, cursor, "BEGIN CTAB")?;
     cursor += 1;
@@ -474,7 +582,9 @@ fn parse_v3000_mol_data_stream(lines: &[String]) -> Result<(Molecule, usize), Sd
     expect_v3000_line(lines, cursor, "BEGIN ATOM")?;
     cursor += 1;
     let mut molecule = Molecule::new();
-    let mut coords = Vec::with_capacity(n_atoms);
+    let mut coords_2d = Vec::with_capacity(n_atoms);
+    let mut coords_3d = Vec::with_capacity(n_atoms);
+    let mut has_nonzero_z = false;
     for _ in 0..n_atoms {
         let (atom, coord) = parse_v3000_atom_line(
             v3000_content(lines.get(cursor).ok_or_else(|| {
@@ -484,32 +594,53 @@ fn parse_v3000_mol_data_stream(lines: &[String]) -> Result<(Molecule, usize), Sd
             cursor + 1,
         )?;
         molecule.add_atom(atom);
-        coords.push(coord);
+        has_nonzero_z |= coord.z.abs() > 1e-12;
+        coords_2d.push(DVec2::new(coord.x, coord.y));
+        coords_3d.push(coord);
         cursor += 1;
     }
-    molecule.coords_2d = Some(coords);
+    let coord_dim = source_dim.unwrap_or_else(|| {
+        if has_nonzero_z {
+            CoordinateDimension::ThreeD
+        } else {
+            CoordinateDimension::TwoD
+        }
+    });
+    if matches!(coord_dim, CoordinateDimension::ThreeD) {
+        molecule.conformers_3d.push(coords_3d);
+        molecule.source_coordinate_dim = Some(CoordinateDimension::ThreeD);
+    } else {
+        molecule.coords_2d = Some(coords_2d);
+        molecule.source_coordinate_dim = Some(CoordinateDimension::TwoD);
+    }
     expect_v3000_line(lines, cursor, "END ATOM")?;
     cursor += 1;
 
-    expect_v3000_line(lines, cursor, "BEGIN BOND")?;
-    cursor += 1;
-    for _ in 0..n_bonds {
-        let bond = parse_v3000_bond_line(
-            v3000_content(lines.get(cursor).ok_or_else(|| {
-                SdfReadError::Parse("EOF hit while reading V3000 bonds".to_owned())
-            })?)
-            .ok_or_else(|| SdfReadError::Parse("Bad V3000 bond line".to_owned()))?,
-            cursor + 1,
-        )?;
-        if bond.is_aromatic {
-            molecule.atoms[bond.begin_atom].is_aromatic = true;
-            molecule.atoms[bond.end_atom].is_aromatic = true;
+    let has_bond_block = lines
+        .get(cursor)
+        .and_then(|line| v3000_content(line))
+        .is_some_and(|content| content == "BEGIN BOND");
+    if n_bonds > 0 || has_bond_block {
+        expect_v3000_line(lines, cursor, "BEGIN BOND")?;
+        cursor += 1;
+        for _ in 0..n_bonds {
+            let bond = parse_v3000_bond_line(
+                v3000_content(lines.get(cursor).ok_or_else(|| {
+                    SdfReadError::Parse("EOF hit while reading V3000 bonds".to_owned())
+                })?)
+                .ok_or_else(|| SdfReadError::Parse("Bad V3000 bond line".to_owned()))?,
+                cursor + 1,
+            )?;
+            if bond.is_aromatic {
+                molecule.atoms[bond.begin_atom].is_aromatic = true;
+                molecule.atoms[bond.end_atom].is_aromatic = true;
+            }
+            molecule.add_bond(bond);
+            cursor += 1;
         }
-        molecule.add_bond(bond);
+        expect_v3000_line(lines, cursor, "END BOND")?;
         cursor += 1;
     }
-    expect_v3000_line(lines, cursor, "END BOND")?;
-    cursor += 1;
 
     expect_v3000_line(lines, cursor, "END CTAB")?;
     cursor += 1;
@@ -517,6 +648,7 @@ fn parse_v3000_mol_data_stream(lines: &[String]) -> Result<(Molecule, usize), Sd
         .get(cursor)
         .is_some_and(|line| line.starts_with("M  END"))
     {
+        finalize_parsed_stereochemistry(&mut molecule);
         Ok((molecule, cursor + 1))
     } else {
         Err(SdfReadError::Parse(format!(
@@ -526,7 +658,501 @@ fn parse_v3000_mol_data_stream(lines: &[String]) -> Result<(Molecule, usize), Sd
     }
 }
 
-fn parse_v3000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec2), SdfReadError> {
+fn finalize_parsed_stereochemistry(molecule: &mut Molecule) {
+    apply_molfile_total_valence_rdkit_like(molecule);
+    cache_molfile_explicit_valence_for_aromaticity_rdkit_like(molecule);
+    crate::smiles::sanitize_molfile_aromaticity_rdkit_like(molecule);
+    apply_aromatic_n_h_from_molfile_valence_rdkit_like(molecule);
+    let has_bond_stereo_markers = molecule
+        .bonds
+        .iter()
+        .any(|bond| !matches!(bond.direction, BondDirection::None));
+    if matches!(
+        molecule.source_coordinate_dim,
+        Some(CoordinateDimension::ThreeD)
+    ) {
+        crate::stereo::assign_chiral_types_from_3d_rdkit_subset(molecule);
+    } else if has_bond_stereo_markers {
+        crate::stereo::assign_chiral_types_from_bond_dirs_rdkit_subset(molecule);
+    }
+    clear_single_bond_dir_flags_rdkit_like(molecule);
+    set_double_bond_neighbor_directions_from_coords_rdkit_subset(molecule);
+    crate::smiles::assign_double_bond_stereo_from_directions(molecule);
+    crate::smiles::cleanup_nonstereo_double_bond_dirs_rdkit_like(molecule);
+    crate::stereo::cache_rdkit_legacy_cip_ranks(molecule);
+}
+
+fn cache_molfile_explicit_valence_for_aromaticity_rdkit_like(molecule: &mut Molecule) {
+    let explicit_valences = molecule
+        .atoms
+        .iter()
+        .map(|atom| {
+            molecule
+                .bonds
+                .iter()
+                .filter(|bond| bond.begin_atom == atom.index || bond.end_atom == atom.index)
+                .map(|bond| match bond.order {
+                    BondOrder::Single | BondOrder::Dative => 1,
+                    BondOrder::Double => 2,
+                    BondOrder::Triple => 3,
+                    BondOrder::Quadruple => 4,
+                    BondOrder::Aromatic => 1,
+                    BondOrder::Null => 0,
+                })
+                .sum::<i32>()
+        })
+        .collect::<Vec<_>>();
+    for atom in &mut molecule.atoms {
+        atom.props.insert(
+            "_MolFileExplicitValence".to_owned(),
+            explicit_valences[atom.index].to_string(),
+        );
+    }
+}
+
+fn apply_aromatic_n_h_from_molfile_valence_rdkit_like(molecule: &mut Molecule) {
+    for atom in &mut molecule.atoms {
+        let explicit_valence = atom
+            .props
+            .remove("_MolFileExplicitValence")
+            .and_then(|value| value.parse::<i32>().ok());
+        if atom.atomic_num == 7
+            && atom.formal_charge == 0
+            && atom.is_aromatic
+            && atom.explicit_hydrogens == 0
+            && explicit_valence == Some(2)
+        {
+            atom.explicit_hydrogens = 1;
+            atom.no_implicit = true;
+        }
+    }
+}
+
+fn apply_molfile_total_valence_rdkit_like(molecule: &mut Molecule) {
+    let explicit_valences = molecule
+        .atoms
+        .iter()
+        .map(|atom| {
+            molecule
+                .bonds
+                .iter()
+                .filter(|bond| bond.begin_atom == atom.index || bond.end_atom == atom.index)
+                .map(|bond| match bond.order {
+                    BondOrder::Single | BondOrder::Dative => 1,
+                    BondOrder::Double => 2,
+                    BondOrder::Triple => 3,
+                    BondOrder::Quadruple => 4,
+                    BondOrder::Aromatic => 1,
+                    BondOrder::Null => 0,
+                })
+                .sum::<i32>()
+        })
+        .collect::<Vec<_>>();
+    for atom in &mut molecule.atoms {
+        let Some(value) = atom
+            .props
+            .remove("_MolFileTotValence")
+            .and_then(|value| value.parse::<i32>().ok())
+        else {
+            continue;
+        };
+        if value == 0 {
+            continue;
+        }
+        atom.no_implicit = true;
+        if value == 15 || value == -1 || explicit_valences[atom.index] > value {
+            atom.explicit_hydrogens = 0;
+        } else {
+            atom.explicit_hydrogens = (value - explicit_valences[atom.index]) as u8;
+        }
+    }
+}
+
+fn clear_single_bond_dir_flags_rdkit_like(molecule: &mut Molecule) {
+    for bond in &mut molecule.bonds {
+        if matches!(bond.order, BondOrder::Single) {
+            bond.direction = BondDirection::None;
+        }
+    }
+}
+
+fn set_double_bond_neighbor_directions_from_coords_rdkit_subset(molecule: &mut Molecule) {
+    let coords = if let Some(coords_2d) = molecule.coords_2d() {
+        coords_2d
+            .iter()
+            .map(|coord| DVec3::new(coord.x, coord.y, 0.0))
+            .collect::<Vec<_>>()
+    } else if let Some(coords_3d) = molecule.coords_3d() {
+        coords_3d.to_vec()
+    } else {
+        return;
+    };
+    if coords.len() != molecule.atoms.len() {
+        return;
+    }
+
+    let mut single_bond_counts = vec![0usize; molecule.bonds.len()];
+    let mut double_bond_neighbors = vec![Vec::<usize>::new(); molecule.bonds.len()];
+    let mut single_bond_neighbors = vec![Vec::<usize>::new(); molecule.bonds.len()];
+    let mut needs_dir = vec![false; molecule.bonds.len()];
+    let mut bonds_in_play = Vec::<usize>::new();
+
+    for bond in &molecule.bonds {
+        if !is_double_bond_candidate_for_stereo(molecule, bond.index) {
+            continue;
+        }
+        for atom_idx in [bond.begin_atom, bond.end_atom] {
+            for neighbor_idx in bond_indices_for_atom(molecule, atom_idx) {
+                let neighbor = &molecule.bonds[neighbor_idx];
+                if matches!(neighbor.order, BondOrder::Single | BondOrder::Aromatic) {
+                    single_bond_counts[neighbor_idx] += 1;
+                    needs_dir[bond.index] = true;
+                    if matches!(
+                        neighbor.direction,
+                        BondDirection::None
+                            | BondDirection::EndDownRight
+                            | BondDirection::EndUpRight
+                    ) {
+                        needs_dir[neighbor_idx] = true;
+                        double_bond_neighbors[bond.index].push(neighbor_idx);
+                        if !single_bond_neighbors[neighbor_idx].contains(&bond.index) {
+                            single_bond_neighbors[neighbor_idx].push(bond.index);
+                        }
+                    }
+                }
+            }
+        }
+        bonds_in_play.push(bond.index);
+    }
+
+    bonds_in_play.sort_by_key(|bond_idx| {
+        let mut count = double_bond_neighbors[*bond_idx]
+            .iter()
+            .map(|neighbor_idx| single_bond_counts[*neighbor_idx])
+            .sum::<usize>();
+        if min_cycle_size_for_bond(molecule, *bond_idx).is_none() {
+            count *= 10;
+        }
+        count
+    });
+    for bond_idx in bonds_in_play.into_iter().rev() {
+        update_double_bond_neighbors_rdkit_like(
+            molecule,
+            &coords,
+            bond_idx,
+            &mut needs_dir,
+            &single_bond_counts,
+            &single_bond_neighbors,
+        );
+    }
+}
+
+fn update_double_bond_neighbors_rdkit_like(
+    molecule: &mut Molecule,
+    coords: &[DVec3],
+    double_bond_idx: usize,
+    needs_dir: &mut [bool],
+    single_bond_counts: &[usize],
+    single_bond_neighbors: &[Vec<usize>],
+) {
+    if !needs_dir[double_bond_idx] {
+        return;
+    }
+    needs_dir[double_bond_idx] = false;
+    let double_bond = molecule.bonds[double_bond_idx].clone();
+    let Some((Some(mut bond1_idx), mut obond1_idx)) = controlling_bond_from_atom_rdkit_like(
+        molecule,
+        needs_dir,
+        single_bond_counts,
+        double_bond_idx,
+        double_bond.begin_atom,
+    ) else {
+        return;
+    };
+    let Some((Some(mut bond2_idx), mut obond2_idx)) = controlling_bond_from_atom_rdkit_like(
+        molecule,
+        needs_dir,
+        single_bond_counts,
+        double_bond_idx,
+        double_bond.end_atom,
+    ) else {
+        return;
+    };
+
+    let mut bond1_other = other_atom_index(&molecule.bonds[bond1_idx], double_bond.begin_atom);
+    let mut bond2_other = other_atom_index(&molecule.bonds[bond2_idx], double_bond.end_atom);
+    let begin_p = coords[double_bond.begin_atom];
+    let end_p = coords[double_bond.end_atom];
+    let mut bond1_p = coords[bond1_other];
+    let mut bond2_p = coords[bond2_other];
+    let mut linear = false;
+    let mut p1 = bond1_p - begin_p;
+    let p2 = end_p - begin_p;
+    if is_linear_arrangement(p1, p2) {
+        if let Some(obond1) = obond1_idx {
+            obond1_idx = Some(bond1_idx);
+            bond1_idx = obond1;
+            bond1_other = other_atom_index(&molecule.bonds[bond1_idx], double_bond.begin_atom);
+            bond1_p = coords[bond1_other];
+            p1 = bond1_p - begin_p;
+            if is_linear_arrangement(p1, p2) {
+                linear = true;
+            }
+        } else {
+            linear = true;
+        }
+    }
+    if !linear {
+        p1 = bond2_p - end_p;
+        let p2 = begin_p - end_p;
+        if is_linear_arrangement(p1, p2) {
+            if let Some(obond2) = obond2_idx {
+                obond2_idx = Some(bond2_idx);
+                bond2_idx = obond2;
+                bond2_other = other_atom_index(&molecule.bonds[bond2_idx], double_bond.end_atom);
+                bond2_p = coords[bond2_other];
+                p1 = bond2_p - begin_p;
+                if is_linear_arrangement(p1, p2) {
+                    linear = true;
+                }
+            } else {
+                linear = true;
+            }
+        }
+    }
+    if linear {
+        molecule.bonds[double_bond_idx].stereo = BondStereo::Any;
+        return;
+    }
+
+    let same_torsion_dir =
+        compute_dihedral_angle(bond1_p, begin_p, end_p, bond2_p) >= std::f64::consts::FRAC_PI_2;
+    let mut reverse_bond_dir = same_torsion_dir;
+    let atom1 = double_bond.begin_atom;
+    let atom2 = double_bond.end_atom;
+    let mut followup_bonds = Vec::<usize>::new();
+    if needs_dir[bond1_idx] {
+        for bidx in &single_bond_neighbors[bond1_idx] {
+            if needs_dir[*bidx] {
+                followup_bonds.push(*bidx);
+            }
+        }
+    }
+    if needs_dir[bond2_idx] {
+        for bidx in &single_bond_neighbors[bond2_idx] {
+            if needs_dir[*bidx] {
+                followup_bonds.push(*bidx);
+            }
+        }
+    }
+    if !needs_dir[bond1_idx] {
+        if needs_dir[bond2_idx] {
+            if molecule.bonds[bond1_idx].begin_atom != atom1 {
+                reverse_bond_dir = !reverse_bond_dir;
+            }
+            let dir = molecule.bonds[bond1_idx].direction;
+            molecule.bonds[bond2_idx].direction =
+                bond_dir_relative_to_atom(&molecule.bonds[bond2_idx], atom2, dir, reverse_bond_dir);
+        }
+    } else if !needs_dir[bond2_idx] {
+        if molecule.bonds[bond2_idx].begin_atom != atom2 {
+            reverse_bond_dir = !reverse_bond_dir;
+        }
+        let dir = molecule.bonds[bond2_idx].direction;
+        molecule.bonds[bond1_idx].direction =
+            bond_dir_relative_to_atom(&molecule.bonds[bond1_idx], atom1, dir, reverse_bond_dir);
+    } else {
+        molecule.bonds[bond1_idx].direction = bond_dir_relative_to_atom(
+            &molecule.bonds[bond1_idx],
+            atom1,
+            BondDirection::EndDownRight,
+            false,
+        );
+        molecule.bonds[bond2_idx].direction = bond_dir_relative_to_atom(
+            &molecule.bonds[bond2_idx],
+            atom2,
+            BondDirection::EndDownRight,
+            reverse_bond_dir,
+        );
+    }
+    needs_dir[bond1_idx] = false;
+    needs_dir[bond2_idx] = false;
+    if let Some(obond1_idx) = obond1_idx
+        && needs_dir[obond1_idx]
+    {
+        let dir = molecule.bonds[bond1_idx].direction;
+        let reverse = molecule.bonds[bond1_idx].begin_atom == atom1;
+        molecule.bonds[obond1_idx].direction =
+            bond_dir_relative_to_atom(&molecule.bonds[obond1_idx], atom1, dir, reverse);
+        needs_dir[obond1_idx] = false;
+    }
+    if let Some(obond2_idx) = obond2_idx
+        && needs_dir[obond2_idx]
+    {
+        let dir = molecule.bonds[bond2_idx].direction;
+        let reverse = molecule.bonds[bond2_idx].begin_atom == atom2;
+        molecule.bonds[obond2_idx].direction =
+            bond_dir_relative_to_atom(&molecule.bonds[obond2_idx], atom2, dir, reverse);
+        needs_dir[obond2_idx] = false;
+    }
+    for followup in followup_bonds {
+        update_double_bond_neighbors_rdkit_like(
+            molecule,
+            coords,
+            followup,
+            needs_dir,
+            single_bond_counts,
+            single_bond_neighbors,
+        );
+    }
+}
+
+fn controlling_bond_from_atom_rdkit_like(
+    molecule: &Molecule,
+    needs_dir: &[bool],
+    single_bond_counts: &[usize],
+    double_bond_idx: usize,
+    atom_idx: usize,
+) -> Option<(Option<usize>, Option<usize>)> {
+    let mut bond = None;
+    let mut obond = None;
+    for bond_idx in bond_indices_for_atom(molecule, atom_idx) {
+        if bond_idx == double_bond_idx {
+            continue;
+        }
+        let candidate = &molecule.bonds[bond_idx];
+        if matches!(candidate.order, BondOrder::Single | BondOrder::Aromatic)
+            && matches!(
+                candidate.direction,
+                BondDirection::None | BondDirection::EndDownRight | BondDirection::EndUpRight
+            )
+        {
+            if let Some(current) = bond {
+                if needs_dir[bond_idx] {
+                    if single_bond_counts[bond_idx] > single_bond_counts[current] {
+                        obond = bond;
+                        bond = Some(bond_idx);
+                    } else {
+                        obond = Some(bond_idx);
+                    }
+                } else {
+                    obond = bond;
+                    bond = Some(bond_idx);
+                }
+            } else {
+                bond = Some(bond_idx);
+            }
+        }
+    }
+    Some((bond, obond))
+}
+
+fn other_atom_index(bond: &Bond, atom_idx: usize) -> usize {
+    if bond.begin_atom == atom_idx {
+        bond.end_atom
+    } else {
+        bond.begin_atom
+    }
+}
+
+fn bond_indices_for_atom(molecule: &Molecule, atom_idx: usize) -> Vec<usize> {
+    molecule
+        .bonds
+        .iter()
+        .filter(|bond| bond.begin_atom == atom_idx || bond.end_atom == atom_idx)
+        .map(|bond| bond.index)
+        .collect()
+}
+
+fn opposite_bond_direction(direction: BondDirection) -> BondDirection {
+    match direction {
+        BondDirection::EndUpRight => BondDirection::EndDownRight,
+        BondDirection::EndDownRight => BondDirection::EndUpRight,
+        BondDirection::None => BondDirection::None,
+    }
+}
+
+fn bond_dir_relative_to_atom(
+    bond: &Bond,
+    atom_idx: usize,
+    direction: BondDirection,
+    mut reverse: bool,
+) -> BondDirection {
+    if bond.begin_atom != atom_idx {
+        reverse = !reverse;
+    }
+    if reverse {
+        opposite_bond_direction(direction)
+    } else {
+        direction
+    }
+}
+
+fn min_cycle_size_for_bond(molecule: &Molecule, bond_idx: usize) -> Option<usize> {
+    let bond = molecule.bonds.get(bond_idx)?;
+    let mut visited = vec![false; molecule.atoms.len()];
+    let mut queue = std::collections::VecDeque::new();
+    visited[bond.begin_atom] = true;
+    queue.push_back((bond.begin_atom, 0usize));
+    while let Some((atom_idx, distance)) = queue.pop_front() {
+        for neighbor_bond in &molecule.bonds {
+            if neighbor_bond.index == bond_idx {
+                continue;
+            }
+            let next = if neighbor_bond.begin_atom == atom_idx {
+                Some(neighbor_bond.end_atom)
+            } else if neighbor_bond.end_atom == atom_idx {
+                Some(neighbor_bond.begin_atom)
+            } else {
+                None
+            };
+            let Some(next) = next else {
+                continue;
+            };
+            if next == bond.end_atom {
+                return Some(distance + 2);
+            }
+            if !visited[next] {
+                visited[next] = true;
+                queue.push_back((next, distance + 1));
+            }
+        }
+    }
+    None
+}
+
+fn is_double_bond_candidate_for_stereo(molecule: &Molecule, bond_idx: usize) -> bool {
+    let bond = &molecule.bonds[bond_idx];
+    matches!(bond.order, BondOrder::Double)
+        && !matches!(bond.stereo, BondStereo::Any)
+        && min_cycle_size_for_bond(molecule, bond_idx).is_none_or(|size| size >= 8)
+        && bond_indices_for_atom(molecule, bond.begin_atom).len() > 1
+        && bond_indices_for_atom(molecule, bond.end_atom).len() > 1
+}
+
+fn is_linear_arrangement(v1: DVec3, v2: DVec3) -> bool {
+    let length_sq = v1.length_squared() * v2.length_squared();
+    if length_sq < 1.0e-6 {
+        return true;
+    }
+    let cos178 = -0.999388_f64;
+    v1.dot(v2) < cos178 * length_sq.sqrt()
+}
+
+fn compute_dihedral_angle(pt1: DVec3, pt2: DVec3, pt3: DVec3, pt4: DVec3) -> f64 {
+    let beg_end_vec = pt3 - pt2;
+    let beg_nbr_vec = pt1 - pt2;
+    let crs1 = beg_nbr_vec.cross(beg_end_vec);
+    let end_nbr_vec = pt4 - pt3;
+    let crs2 = end_nbr_vec.cross(beg_end_vec);
+    let denom = crs1.length() * crs2.length();
+    if denom == 0.0 {
+        return 0.0;
+    }
+    (crs1.dot(crs2) / denom).clamp(-1.0, 1.0).acos()
+}
+
+fn parse_v3000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec3), SdfReadError> {
     let tokens: Vec<_> = line.split_whitespace().collect();
     if tokens.len() < 6 {
         return Err(SdfReadError::Parse(format!(
@@ -541,10 +1167,15 @@ fn parse_v3000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec2)
     })?;
     let x = parse_f64_token(tokens[2], line_number)?;
     let y = parse_f64_token(tokens[3], line_number)?;
-    parse_f64_token(tokens[4], line_number)?;
+    let z = parse_f64_token(tokens[4], line_number)?;
+    let atom_map_num = match parse_i32_token(tokens[5], line_number)? {
+        value if value > 0 => Some(value as u32),
+        _ => None,
+    };
 
     let mut formal_charge = 0;
     let mut radicals = 0;
+    let mut props = std::collections::BTreeMap::new();
     for token in tokens.iter().skip(6) {
         let Some((prop, value)) = token.split_once('=') else {
             return Err(SdfReadError::Parse(format!(
@@ -575,15 +1206,14 @@ fn parse_v3000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec2)
                     }
                 };
             }
-            "CFG" => {
-                return Err(SdfReadError::Parse(format!(
-                    "V3000 atom CFG is not implemented on line {line_number}"
-                )));
+            "VAL" => {
+                let total_valence = parse_i32_token(value, line_number)?;
+                if total_valence != 0 {
+                    props.insert("_MolFileTotValence".to_owned(), total_valence.to_string());
+                }
             }
             _ => {
-                return Err(SdfReadError::Parse(format!(
-                    "Unsupported V3000 atom property '{prop}' on line {line_number}"
-                )));
+                props.insert(prop.to_owned(), value.to_owned());
             }
         }
     }
@@ -599,10 +1229,11 @@ fn parse_v3000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec2)
             num_radical_electrons: radicals,
             chiral_tag: ChiralTag::Unspecified,
             isotope,
-            atom_map_num: None,
+            atom_map_num,
+            props,
             rdkit_cip_rank: None,
         },
-        DVec2::new(x, y),
+        DVec3::new(x, y, z),
     ))
 }
 
@@ -696,6 +1327,29 @@ fn expect_v3000_line(lines: &[String], index: usize, expected: &str) -> Result<(
 
 fn v3000_content(line: &str) -> Option<&str> {
     line.strip_prefix("M  V30 ").map(strip_rdkit)
+}
+
+fn infer_header_coordinate_dimension(line: Option<&str>) -> Option<CoordinateDimension> {
+    let line = line?;
+    let trimmed = line.trim();
+    if trimmed.ends_with("3D") || trimmed.contains(" 3D") {
+        Some(CoordinateDimension::ThreeD)
+    } else if trimmed.ends_with("2D") || trimmed.contains(" 2D") {
+        Some(CoordinateDimension::TwoD)
+    } else {
+        None
+    }
+}
+
+fn resolve_coordinate_dimension(
+    coordinate_mode: SdfCoordinateMode,
+    inferred: Option<CoordinateDimension>,
+) -> Option<CoordinateDimension> {
+    match coordinate_mode {
+        SdfCoordinateMode::Auto => inferred,
+        SdfCoordinateMode::Force2D => Some(CoordinateDimension::TwoD),
+        SdfCoordinateMode::Force3D => Some(CoordinateDimension::ThreeD),
+    }
 }
 
 fn parse_sdf_data_fields(lines: &[String]) -> Result<Vec<(String, String)>, SdfReadError> {

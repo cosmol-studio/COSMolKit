@@ -41,3 +41,19 @@ From repo root:
 ```bash
 .venv/bin/maturin build --release --manifest-path python/Cargo.toml --features release-abi3-py39 --out python/dist
 ```
+
+## Build Python Documentation
+
+From repo root:
+
+```bash
+uv sync --group dev
+.venv/bin/maturin develop --manifest-path python/Cargo.toml
+.venv/bin/python -m sphinx -b html python/docs/source python/docs/build/html
+```
+
+Generated HTML:
+
+```text
+python/docs/build/html/index.html
+```

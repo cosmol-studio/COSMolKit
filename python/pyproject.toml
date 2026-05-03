@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "cosmolkit"
-version = "0.0.9"
+version = "0.1.0"
 description = "Python bindings for COSMolKit"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -26,7 +26,9 @@ classifiers = [
     "Programming Language :: Rust",
     "Topic :: Scientific/Engineering :: Chemistry",
 ]
-dependencies = []
+dependencies = [
+    "numpy>=1.23",
+]
 
 [project.urls]
 Homepage = "https://github.com/cosmol-studio/COSMolKit"

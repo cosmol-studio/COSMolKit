@@ -1,6 +1,6 @@
 [project]
 name = "cosmolkit-dev"
-version = "0.0.9"
+version = "0.1.0"
 description = "Project-level Python environment for COSMolKit tooling and parity tests"
 requires-python = ">=3.11"
 dependencies = []
@@ -11,6 +11,8 @@ dev = [
     "numpy<2",
     "pytest>=8.0",
     "rdkit==2026.3.1",
+    "sphinx>=8.0",
+    "furo>=2024.8.6",
 ]
 
 [tool.uv]

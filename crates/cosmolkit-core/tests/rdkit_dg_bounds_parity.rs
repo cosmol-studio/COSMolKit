@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
-use cosmolkit_core::Molecule;
+use cosmolkit_core::{BatchErrorMode, Molecule, MoleculeBatch};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -61,11 +61,11 @@ fn dg_bounds_golden_has_one_record_per_smiles() {
 #[test]
 fn dg_bounds_matrix_matches_rdkit_golden() {
     let records = load_golden();
+    let row_filter = std::env::var("COSMOLKIT_DG_ROW_FILTER")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok());
     for (row_idx, record) in records.iter().enumerate() {
-        if let Some(filter) = std::env::var("COSMOLKIT_DG_ROW_FILTER")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-        {
+        if let Some(filter) = row_filter {
             if row_idx + 1 != filter {
                 continue;
             }
@@ -128,6 +128,45 @@ fn dg_bounds_matrix_matches_rdkit_golden() {
                     a,
                     e
                 );
+            }
+        }
+    }
+
+    if row_filter.is_none() {
+        let smiles = records
+            .iter()
+            .map(|record| record.smiles.clone())
+            .collect::<Vec<_>>();
+        let batch = MoleculeBatch::from_smiles_list(&smiles, BatchErrorMode::Keep)
+            .expect("batch SMILES parse should not raise in keep mode");
+        let actual = batch
+            .dg_bounds_matrix_list()
+            .expect("batch DG bounds calculation should succeed");
+        for (row_idx, (record, actual)) in records.iter().zip(actual).enumerate() {
+            if !record.rdkit_ok {
+                continue;
+            }
+            let actual = actual.as_ref().unwrap_or_else(|| {
+                panic!(
+                    "batch DG bounds missing at row {} ({})",
+                    row_idx + 1,
+                    record.smiles
+                )
+            });
+            let expected = record.bounds.as_ref().expect("RDKit ok row has bounds");
+            for (i, (actual_row, expected_row)) in actual.iter().zip(expected).enumerate() {
+                for (j, (&a, &e)) in actual_row.iter().zip(expected_row).enumerate() {
+                    assert!(
+                        (a - e).abs() <= 1e-8,
+                        "batch DG bounds mismatch at row {} ({}) matrix[{}][{}]: ours={} expected={}",
+                        row_idx + 1,
+                        record.smiles,
+                        i,
+                        j,
+                        a,
+                        e
+                    );
+                }
             }
         }
     }

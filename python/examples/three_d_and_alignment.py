@@ -4,6 +4,11 @@ This example shows planned 3D embedding, optimization, and alignment APIs that
 are not implemented yet.
 """
 
+raise NotImplementedError(
+    "python/examples/three_d_and_alignment.py is a forward-looking sketch. "
+    "embed_3d(), optimize(), and Alignment.find_most_similar_fragment() are not implemented yet."
+)
+
 from cosmolkit import Alignment, Molecule
 
 mol = Molecule.from_smiles("CCO", sanitize=True)

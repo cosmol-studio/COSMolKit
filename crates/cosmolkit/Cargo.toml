@@ -1,16 +1,19 @@
 [package]
 name = "cosmolkit"
+description = "Rust-native cheminformatics and structural biology toolkit for molecules, SMILES, SDF, molecular graphs, conformers, and AI-ready workflows"
+keywords = ["cheminformatics", "molecule", "smiles", "sdf", "bioinformatics"]
+categories = ["science", "parser-implementations", "data-structures"]
+repository = "https://github.com/cosmol-studio/COSMolKit"
+homepage = "https://github.com/cosmol-studio/COSMolKit"
+documentation = "https://docs.rs/cosmolkit"
+readme = "../README.md"
+license = "MIT OR Apache-2.0"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
-authors.workspace = true
-description.workspace = true
-repository.workspace = true
-homepage.workspace = true
 
 [lib]
 name = "cosmolkit"
 path = "src/lib.rs"
 
 [dependencies]
-cosmolkit-core = { version = "0.0.9", path = "../cosmolkit-core" }
+cosmolkit-core = { version = "0.1.0", path = "../cosmolkit-core" }

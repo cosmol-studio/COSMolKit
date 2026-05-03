@@ -685,9 +685,11 @@ fn is_atom_conjug_cand(
         }
     }
     let nouter = rdkit_n_outer_electrons(at.atomic_num).unwrap_or(0);
-    let row_ok = at.atomic_num <= 10
-        || (nouter != 5 && nouter != 6)
-        || (nouter == 6 && atom_degree[atom_index] < 2);
+    let total_degree = atom_degree[atom_index]
+        + at.explicit_hydrogens as usize
+        + assignment.implicit_hydrogens[atom_index] as usize;
+    let row_ok =
+        at.atomic_num <= 10 || (nouter != 5 && nouter != 6) || (nouter == 6 && total_degree < 2);
     row_ok && count_atom_electrons_rdkit(mol, assignment, atom_degree, atom_index) > 0
 }
 

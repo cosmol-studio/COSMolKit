@@ -1,0 +1,75 @@
+name: docs
+
+on:
+    push:
+        branches:
+            - main
+    pull_request:
+        branches:
+            - main
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+concurrency:
+    group: pages
+    cancel-in-progress: false
+
+jobs:
+    build:
+        name: build docs
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Rust
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Setup Rust cache
+              uses: Swatinem/rust-cache@v2
+
+            - name: Setup Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.11"
+
+            - name: Setup uv
+              uses: astral-sh/setup-uv@v6
+
+            - name: Sync documentation environment
+              run: uv sync --group dev
+
+            - name: Install package
+              run: .venv/bin/maturin develop --manifest-path python/Cargo.toml
+
+            - name: Build HTML documentation
+              run: |
+                  rm -rf python/docs/build/html
+                  .venv/bin/python -m sphinx -E -b html python/docs/source python/docs/build/html
+
+            - name: Configure GitHub Pages
+              uses: actions/configure-pages@v5
+
+            - name: Upload documentation artifact
+              uses: actions/upload-pages-artifact@v3
+              with:
+                  path: python/docs/build/html
+
+    deploy:
+        name: deploy docs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        needs: build
+        runs-on: ubuntu-latest
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+
+        steps:
+            - name: Deploy to GitHub Pages
+              id: deployment
+              uses: actions/deploy-pages@v4

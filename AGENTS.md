@@ -23,6 +23,7 @@ For Python tooling and bindings, use project-level `uv` env management:
 - `uv sync --group dev` creates/updates root `.venv` with RDKit/testing/build tools
 - `.venv/bin/maturin develop --manifest-path python/Cargo.toml` installs local extension into the shared env
 - `.venv/bin/pytest` runs Python-facing tests
+- `python/cosmolkit.pyi` is generated; do not edit it by hand. Regenerate it with `cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen`.
 
 ## Coding Style & Naming Conventions
 Use Rust 2021 defaults: 4-space indentation, `snake_case` for functions/modules, `CamelCase` for types/traits, and `SCREAMING_SNAKE_CASE` for constants. Keep modules narrowly scoped and avoid large files with mixed responsibilities. Run `cargo fmt` and `cargo clippy` before opening a PR.

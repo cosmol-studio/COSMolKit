@@ -3,6 +3,7 @@
 __pycache__/
 .venv/
 python/dist/
+python/docs/build/
 python/cosmolkit.pyi
 .maturin/
 .zed/

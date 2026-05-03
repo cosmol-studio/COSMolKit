@@ -1,10 +1,13 @@
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{BufReader, Write};
 use std::path::PathBuf;
 
 use cosmolkit_core::io::molblock::{self, SdfFormat};
 use cosmolkit_core::io::sdf::SdfReader;
+use cosmolkit_core::{BatchErrorMode, BatchRecordError, SmilesWriteParams};
+use numpy::PyArray2;
 use pyo3::PyErr;
+use pyo3::create_exception;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyType};
@@ -12,20 +15,147 @@ use pyo3::types::{PyAny, PyType};
 use pyo3_stub_gen::define_stub_info_gatherer;
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+#[cfg(not(feature = "stubgen"))]
+use pyo3_stub_gen_derive::remove_gen_stub;
+use rayon::ThreadPoolBuilder;
 
-#[pyfunction]
-fn placeholder() -> &'static str {
-    "COSMolKit PyO3 module"
+create_exception!(cosmolkit, BatchValidationError, PyValueError);
+
+fn parse_batch_error_mode(errors: Option<&str>) -> PyResult<BatchErrorMode> {
+    match errors.map(|s| s.to_ascii_lowercase()) {
+        None => Ok(BatchErrorMode::Raise),
+        Some(v) if v == "raise" => Ok(BatchErrorMode::Raise),
+        Some(v) if v == "keep" => Ok(BatchErrorMode::Keep),
+        Some(v) if v == "skip" => Ok(BatchErrorMode::Skip),
+        Some(v) => Err(PyValueError::new_err(format!(
+            "unsupported errors mode '{v}', expected one of: raise, keep, skip"
+        ))),
+    }
 }
 
-#[pyfunction]
-fn rust_version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
+#[allow(clippy::too_many_arguments)]
+fn make_smiles_write_params(
+    isomeric_smiles: bool,
+    canonical: bool,
+    kekule: bool,
+    clean_stereo: bool,
+    all_bonds_explicit: bool,
+    all_hs_explicit: bool,
+    include_dative_bonds: bool,
+    ignore_atom_map_numbers: bool,
+    rooted_at_atom: Option<usize>,
+) -> SmilesWriteParams {
+    SmilesWriteParams {
+        do_isomeric_smiles: isomeric_smiles,
+        canonical,
+        do_kekule: kekule,
+        clean_stereo,
+        all_bonds_explicit,
+        all_hs_explicit,
+        include_dative_bonds,
+        ignore_atom_map_numbers,
+        rooted_at_atom,
+        ..Default::default()
+    }
 }
 
-#[pyfunction]
-fn core_version() -> &'static str {
-    cosmolkit_core::version()
+fn run_with_n_jobs<T, F>(n_jobs: Option<usize>, f: F) -> PyResult<T>
+where
+    T: Send,
+    F: FnOnce() -> PyResult<T> + Send,
+{
+    match n_jobs {
+        Some(0) => Err(PyValueError::new_err("n_jobs must be >= 1")),
+        Some(1) => f(),
+        Some(n) => ThreadPoolBuilder::new()
+            .num_threads(n)
+            .build()
+            .map_err(|err| PyValueError::new_err(format!("failed to build rayon pool: {err}")))?
+            .install(f),
+        None => f(),
+    }
+}
+
+fn batch_validation_pyerr(error: cosmolkit_core::BatchValidationError) -> PyErr {
+    BatchValidationError::new_err(format_batch_errors(&error.errors))
+}
+
+fn format_batch_errors(errors: &[BatchRecordError]) -> String {
+    let mut message = format!("batch validation failed with {} error(s)", errors.len());
+    for error in errors.iter().take(5) {
+        message.push_str(&format!(
+            "; index={} stage={} type={} message={}",
+            error.index, error.stage, error.error_type, error.message
+        ));
+    }
+    if errors.len() > 5 {
+        message.push_str("; ...");
+    }
+    message
+}
+
+fn json_escape(value: &str) -> String {
+    let mut out = String::new();
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+fn write_batch_report(path: &str, report: &cosmolkit_core::BatchExportReport) -> PyResult<()> {
+    let expanded_path = expand_user_path(path)?;
+    let ext = expanded_path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("json")
+        .to_ascii_lowercase();
+    let content = if ext == "csv" {
+        let mut content = String::from("index,input,stage,error_type,message\n");
+        for error in &report.errors {
+            content.push_str(&format!(
+                "{},\"{}\",\"{}\",\"{}\",\"{}\"\n",
+                error.index,
+                json_escape(error.input.as_deref().unwrap_or("")),
+                json_escape(&error.stage),
+                json_escape(&error.error_type),
+                json_escape(&error.message)
+            ));
+        }
+        content
+    } else {
+        let mut content = format!(
+            "{{\n  \"total\": {},\n  \"success\": {},\n  \"failed\": {},\n  \"errors\": [",
+            report.total, report.success, report.failed
+        );
+        for (i, error) in report.errors.iter().enumerate() {
+            if i > 0 {
+                content.push(',');
+            }
+            content.push_str(&format!(
+                "\n    {{\"index\": {}, \"input\": {}, \"stage\": \"{}\", \"error_type\": \"{}\", \"message\": \"{}\"}}",
+                error.index,
+                error
+                    .input
+                    .as_ref()
+                    .map(|s| format!("\"{}\"", json_escape(s)))
+                    .unwrap_or_else(|| "null".to_string()),
+                json_escape(&error.stage),
+                json_escape(&error.error_type),
+                json_escape(&error.message)
+            ));
+        }
+        content.push_str("\n  ]\n}\n");
+        content
+    };
+    fs::write(&expanded_path, content)
+        .map_err(|err| PyValueError::new_err(format!("write error report failed: {err}")))
 }
 
 fn to_python_tetrahedral_stereo(
@@ -49,7 +179,7 @@ fn to_python_tetrahedral_stereo(
 
 fn unimplemented_api(name: &str) -> PyErr {
     PyNotImplementedError::new_err(format!(
-        "{name} is not implemented yet in cosmolkit PyO3 bindings"
+        "{name} is not implemented yet in the cosmolkit Python package"
     ))
 }
 
@@ -99,6 +229,31 @@ fn parse_sdf_format(format: Option<&str>) -> PyResult<SdfFormat> {
         Some(v) => Err(PyValueError::new_err(format!(
             "unsupported SDF format '{v}', expected one of: auto, v2000, v3000"
         ))),
+    }
+}
+
+fn parse_sdf_coordinate_mode(
+    coordinate_dim: Option<&str>,
+) -> PyResult<cosmolkit_core::io::sdf::SdfCoordinateMode> {
+    match coordinate_dim.map(|s| s.to_ascii_lowercase()) {
+        None => Ok(cosmolkit_core::io::sdf::SdfCoordinateMode::Auto),
+        Some(v) if v == "auto" => Ok(cosmolkit_core::io::sdf::SdfCoordinateMode::Auto),
+        Some(v) if v == "2d" => Ok(cosmolkit_core::io::sdf::SdfCoordinateMode::Force2D),
+        Some(v) if v == "3d" => Ok(cosmolkit_core::io::sdf::SdfCoordinateMode::Force3D),
+        Some(v) => Err(PyValueError::new_err(format!(
+            "unsupported coordinate_dim '{v}', expected one of: auto, 2d, 3d"
+        ))),
+    }
+}
+
+fn molecule_to_sdf_record_string(
+    mol: &cosmolkit_core::Molecule,
+    format: SdfFormat,
+) -> Result<String, cosmolkit_core::io::molblock::MolWriteError> {
+    if mol.coords_2d().is_some() {
+        molblock::mol_to_2d_sdf_record(mol, format)
+    } else {
+        molblock::mol_to_3d_sdf_record(mol, format)
     }
 }
 
@@ -215,19 +370,39 @@ fn rdkit_bond_direction_from_name(name: &str) -> PyResult<cosmolkit_core::BondDi
     }
 }
 
+fn rdkit_bond_stereo_from_name(name: &str) -> PyResult<cosmolkit_core::BondStereo> {
+    match name {
+        "STEREONONE" => Ok(cosmolkit_core::BondStereo::None),
+        "STEREOANY" => Ok(cosmolkit_core::BondStereo::Any),
+        "STEREOCIS" | "STEREOZ" => Ok(cosmolkit_core::BondStereo::Cis),
+        "STEREOTRANS" | "STEREOE" => Ok(cosmolkit_core::BondStereo::Trans),
+        other => Err(PyValueError::new_err(format!(
+            "from_rdkit unsupported bond stereo '{other}'"
+        ))),
+    }
+}
+
 fn clone_for_python_value_api(mol: &cosmolkit_core::Molecule) -> cosmolkit_core::Molecule {
-    // Transitional implementation for the immutable-first Python API:
-    // public methods return a new Molecule value, but today we still realize
-    // that by cloning the Rust molecule eagerly before mutation.
-    //
-    // Planned follow-up: replace this eager clone with copy-on-write storage
-    // in core so unchanged topology/conformer/property blocks stay shared.
     mol.clone()
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(from_py_object)]
 #[derive(Clone)]
+#[doc = r#"
+A molecule value.
+
+``Molecule`` stores atoms, bonds, stereochemistry, and optional coordinate data.
+Transformation methods such as ``with_hydrogens()``, ``without_hydrogens()``,
+``with_kekulized_bonds()``, and ``with_2d_coords()`` return new molecule values.
+The original molecule is left unchanged.
+
+Examples
+--------
+Create molecules with ``Molecule.from_smiles()``, transform them with value
+methods such as ``with_2d_coords()``, then export strings, arrays, or depiction
+files.
+"#]
 struct Molecule {
     inner: cosmolkit_core::Molecule,
 }
@@ -235,12 +410,19 @@ struct Molecule {
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(from_py_object)]
 #[derive(Clone)]
+#[doc = r#"
+Read-only atom feature record returned by ``Molecule.atoms()``.
+
+The methods on this object expose common atom properties such as atomic number,
+formal charge, aromaticity, chiral tag, hydrogen counts, and valence values.
+"#]
 struct Atom {
     idx: usize,
     atomic_num: usize,
     formal_charge: i8,
     chiral_tag: String,
     isotope: Option<u16>,
+    atom_map_num: Option<u32>,
     is_aromatic: bool,
     explicit_hydrogens: usize,
     no_implicit: bool,
@@ -255,6 +437,12 @@ struct Atom {
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(from_py_object)]
 #[derive(Clone)]
+#[doc = r#"
+Read-only bond feature record returned by ``Molecule.bonds()``.
+
+The methods on this object expose atom endpoints, bond type, direction,
+stereo labels, stereo atom indices, and aromaticity.
+"#]
 struct Bond {
     idx: usize,
     begin_atom_idx: usize,
@@ -266,11 +454,647 @@ struct Bond {
     is_aromatic: bool,
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "BatchError", skip_from_py_object)]
+#[derive(Clone)]
+#[doc = r#"
+A per-record batch processing error.
+
+Batch methods can keep invalid records when ``errors="keep"`` is used. In that
+case, ``MoleculeBatch.errors()`` returns ``BatchError`` objects describing the
+input index, processing stage, error type, and message.
+"#]
+struct PyBatchError {
+    index: usize,
+    input: Option<String>,
+    stage: String,
+    error_type: String,
+    message: String,
+}
+
+impl From<BatchRecordError> for PyBatchError {
+    fn from(error: BatchRecordError) -> Self {
+        Self {
+            index: error.index,
+            input: error.input,
+            stage: error.stage,
+            error_type: error.error_type,
+            message: error.message,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "BatchExportReport", skip_from_py_object)]
+#[derive(Clone)]
+#[doc = r#"
+Summary returned by batch export methods.
+
+The report records how many inputs were processed successfully and includes
+structured errors for records that could not be exported.
+"#]
+struct PyBatchExportReport {
+    total: usize,
+    success: usize,
+    failed: usize,
+    errors: Vec<PyBatchError>,
+}
+
+impl From<cosmolkit_core::BatchExportReport> for PyBatchExportReport {
+    fn from(report: cosmolkit_core::BatchExportReport) -> Self {
+        Self {
+            total: report.total,
+            success: report.success,
+            failed: report.failed,
+            errors: report.errors.into_iter().map(PyBatchError::from).collect(),
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+#[doc = r#"
+An ordered collection of molecules for batch workflows.
+
+``MoleculeBatch`` keeps input order and supports construction, transformation,
+filtering, rendering, and SDF export across many molecules. Methods that
+transform molecules return a new batch.
+
+Parameters such as ``errors`` control invalid-record handling:
+
+- ``"raise"`` raises an exception when any record fails.
+- ``"keep"`` keeps failed records and exposes them through ``errors()``.
+- ``"skip"`` omits failed records from the returned batch or export.
+
+Examples
+--------
+Construct a batch with ``MoleculeBatch.from_smiles_list()``, choose an
+``errors`` mode for invalid records, and pass ``n_jobs`` to methods that expose
+parallel execution.
+"#]
+struct MoleculeBatch {
+    inner: cosmolkit_core::MoleculeBatch,
+}
+
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl PyBatchError {
+    #[doc = r#"
+Return the zero-based input index that produced the error.
+"#]
+    fn index(&self) -> usize {
+        self.index
+    }
+
+    #[doc = r#"
+Return the original input value when available.
+"#]
+    fn input(&self) -> Option<String> {
+        self.input.clone()
+    }
+
+    #[doc = r#"
+Return the processing stage where the error occurred.
+"#]
+    fn stage(&self) -> String {
+        self.stage.clone()
+    }
+
+    #[doc = r#"
+Return a short machine-readable error category.
+"#]
+    fn error_type(&self) -> String {
+        self.error_type.clone()
+    }
+
+    #[doc = r#"
+Return the human-readable error message.
+"#]
+    fn message(&self) -> String {
+        self.message.clone()
+    }
+
+    #[doc = r#"
+Return the error as key-value pairs.
+"#]
+    fn as_dict(&self) -> Vec<(String, String)> {
+        vec![
+            ("index".to_string(), self.index.to_string()),
+            ("input".to_string(), self.input.clone().unwrap_or_default()),
+            ("stage".to_string(), self.stage.clone()),
+            ("error_type".to_string(), self.error_type.clone()),
+            ("message".to_string(), self.message.clone()),
+        ]
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "BatchError(index={}, stage='{}', error_type='{}', message='{}')",
+            self.index, self.stage, self.error_type, self.message
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl PyBatchExportReport {
+    #[doc = r#"
+Return the total number of records considered for export.
+"#]
+    fn total(&self) -> usize {
+        self.total
+    }
+
+    #[doc = r#"
+Return the number of records exported successfully.
+"#]
+    fn success(&self) -> usize {
+        self.success
+    }
+
+    #[doc = r#"
+Return the number of records that failed during export.
+"#]
+    fn failed(&self) -> usize {
+        self.failed
+    }
+
+    #[doc = r#"
+Return structured errors for failed records.
+"#]
+    fn errors(&self) -> Vec<PyBatchError> {
+        self.errors.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "BatchExportReport(total={}, success={}, failed={})",
+            self.total, self.success, self.failed
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl MoleculeBatch {
+    #[classmethod]
+    #[pyo3(signature = (smiles, sanitize=None, errors=None, n_jobs=None))]
+    #[doc = r#"
+Create a batch from a list of SMILES strings.
+
+Parameters
+----------
+smiles : list[str]
+    Input SMILES strings.
+sanitize : bool, optional
+    Optional molecule preparation flag. COSMolKit applies the available
+    preparation behavior during construction.
+errors : {"raise", "keep", "skip"}, optional
+    Invalid-record handling mode. The default is ``"raise"``.
+n_jobs : int, optional
+    Number of worker threads to use. ``None`` uses the default scheduler.
+
+Returns
+-------
+MoleculeBatch
+    A batch preserving the input order for valid and kept records.
+"#]
+    fn from_smiles_list(
+        _cls: &Bound<'_, PyType>,
+        smiles: Vec<String>,
+        sanitize: Option<bool>,
+        errors: Option<&str>,
+        n_jobs: Option<usize>,
+    ) -> PyResult<Self> {
+        let _ = sanitize;
+        let mode = parse_batch_error_mode(errors)?;
+        run_with_n_jobs(n_jobs, move || {
+            cosmolkit_core::MoleculeBatch::from_smiles_list(&smiles, mode)
+                .map(|inner| Self { inner })
+                .map_err(batch_validation_pyerr)
+        })
+    }
+
+    #[classmethod]
+    #[pyo3(signature = (sdf_records, coordinate_dim=None, errors=None, n_jobs=None))]
+    #[doc = r#"
+Create a batch from SDF record strings.
+
+Parameters
+----------
+sdf_records : list[str]
+    Individual SDF records.
+coordinate_dim : {"auto", "2d", "3d"}, optional
+    How coordinate columns should be interpreted.
+errors : {"raise", "keep", "skip"}, optional
+    Invalid-record handling mode. The default is ``"raise"``.
+n_jobs : int, optional
+    Number of worker threads to use.
+"#]
+    fn from_sdf_record_strings(
+        _cls: &Bound<'_, PyType>,
+        sdf_records: Vec<String>,
+        coordinate_dim: Option<&str>,
+        errors: Option<&str>,
+        n_jobs: Option<usize>,
+    ) -> PyResult<Self> {
+        let mode = parse_batch_error_mode(errors)?;
+        let coordinate_mode = parse_sdf_coordinate_mode(coordinate_dim)?;
+        run_with_n_jobs(n_jobs, move || {
+            cosmolkit_core::MoleculeBatch::from_sdf_record_strings(
+                &sdf_records,
+                coordinate_mode,
+                mode,
+            )
+            .map(|inner| Self { inner })
+            .map_err(batch_validation_pyerr)
+        })
+    }
+
+    #[pyo3(signature = (errors=None, n_jobs=None))]
+    #[doc = r#"
+Return a new batch with explicit hydrogens added to each valid molecule.
+"#]
+    fn add_hydrogens(&self, errors: Option<&str>, n_jobs: Option<usize>) -> PyResult<Self> {
+        let mode = parse_batch_error_mode(errors)?;
+        let inner = self.inner.clone();
+        run_with_n_jobs(n_jobs, move || {
+            inner
+                .add_hydrogens(mode)
+                .map(|inner| Self { inner })
+                .map_err(batch_validation_pyerr)
+        })
+    }
+
+    #[pyo3(signature = (errors=None, n_jobs=None))]
+    #[doc = r#"
+Return a new batch with explicit hydrogens removed from each valid molecule.
+"#]
+    fn remove_hydrogens(&self, errors: Option<&str>, n_jobs: Option<usize>) -> PyResult<Self> {
+        let mode = parse_batch_error_mode(errors)?;
+        let inner = self.inner.clone();
+        run_with_n_jobs(n_jobs, move || {
+            inner
+                .remove_hydrogens(mode)
+                .map(|inner| Self { inner })
+                .map_err(batch_validation_pyerr)
+        })
+    }
+
+    #[pyo3(signature = (strict=None, errors=None, n_jobs=None))]
+    #[doc = r#"
+Return a sanitized batch.
+
+Parameters
+----------
+strict : bool, optional
+    Optional strictness flag for available validation steps.
+errors : {"raise", "keep", "skip"}, optional
+    Invalid-record handling mode.
+n_jobs : int, optional
+    Number of worker threads to use.
+"#]
+    fn sanitize(
+        &self,
+        strict: Option<bool>,
+        errors: Option<&str>,
+        n_jobs: Option<usize>,
+    ) -> PyResult<Self> {
+        let _ = strict;
+        let mode = parse_batch_error_mode(errors)?;
+        let inner = self.inner.clone();
+        run_with_n_jobs(n_jobs, move || {
+            inner
+                .sanitize(mode)
+                .map(|inner| Self { inner })
+                .map_err(batch_validation_pyerr)
+        })
+    }
+
+    #[pyo3(signature = (sanitize=None, errors=None, n_jobs=None))]
+    #[doc = r#"
+Return a new batch with aromatic bonds converted to an explicit Kekule form.
+"#]
+    fn with_kekulized_bonds(
+        &self,
+        sanitize: Option<bool>,
+        errors: Option<&str>,
+        n_jobs: Option<usize>,
+    ) -> PyResult<Self> {
+        let _ = sanitize;
+        let mode = parse_batch_error_mode(errors)?;
+        let inner = self.inner.clone();
+        run_with_n_jobs(n_jobs, move || {
+            inner
+                .kekulize(mode)
+                .map(|inner| Self { inner })
+                .map_err(batch_validation_pyerr)
+        })
+    }
+
+    #[pyo3(signature = (errors=None, n_jobs=None))]
+    #[doc = r#"
+Return a new batch with 2D coordinates computed for each valid molecule.
+"#]
+    fn compute_2d_coords(&self, errors: Option<&str>, n_jobs: Option<usize>) -> PyResult<Self> {
+        let mode = parse_batch_error_mode(errors)?;
+        let inner = self.inner.clone();
+        run_with_n_jobs(n_jobs, move || {
+            inner
+                .compute_2d_coords(mode)
+                .map(|inner| Self { inner })
+                .map_err(batch_validation_pyerr)
+        })
+    }
+
+    #[doc = r#"
+Return a batch containing only valid molecules.
+"#]
+    fn filter_valid(&self) -> Self {
+        Self {
+            inner: self.inner.filter_valid(),
+        }
+    }
+
+    #[doc = r#"
+Return a boolean mask indicating which records are valid.
+"#]
+    fn valid_mask(&self) -> Vec<bool> {
+        self.inner.valid_mask()
+    }
+
+    #[doc = r#"
+Return a boolean mask indicating which records are invalid.
+"#]
+    fn invalid_mask(&self) -> Vec<bool> {
+        self.inner
+            .valid_mask()
+            .into_iter()
+            .map(|valid| !valid)
+            .collect()
+    }
+
+    #[doc = r#"
+Return structured errors collected for invalid records.
+"#]
+    fn errors(&self) -> Vec<PyBatchError> {
+        self.inner
+            .errors()
+            .into_iter()
+            .map(PyBatchError::from)
+            .collect()
+    }
+
+    #[doc = r#"
+Return the number of valid records.
+"#]
+    fn valid_count(&self) -> usize {
+        self.inner.valid_count()
+    }
+
+    #[doc = r#"
+Return the number of invalid records.
+"#]
+    fn invalid_count(&self) -> usize {
+        self.inner.invalid_count()
+    }
+
+    #[pyo3(signature = (
+        isomeric_smiles=true,
+        canonical=true,
+        kekule=false,
+        clean_stereo=true,
+        all_bonds_explicit=false,
+        all_hs_explicit=false,
+        include_dative_bonds=true,
+        ignore_atom_map_numbers=false,
+        rooted_at_atom=None,
+        n_jobs=None
+    ))]
+    #[doc = r#"
+Return one SMILES string per record.
+
+Invalid records are returned as ``None`` when they are kept in the batch.
+
+Parameters
+----------
+isomeric_smiles : bool, default True
+    Include stereochemical and isotopic information when available.
+canonical : bool, default True
+    Return canonical SMILES when enabled.
+kekule : bool, default False
+    Write aromatic systems in Kekule form.
+clean_stereo : bool, default True
+    Normalize stereo output where possible.
+all_bonds_explicit : bool, default False
+    Write explicit bond symbols.
+all_hs_explicit : bool, default False
+    Write explicit hydrogens.
+include_dative_bonds : bool, default True
+    Include dative bond notation.
+ignore_atom_map_numbers : bool, default False
+    Omit atom map numbers from canonical decisions.
+rooted_at_atom : int, optional
+    Start traversal from a selected atom index.
+n_jobs : int, optional
+    Number of worker threads to use.
+"#]
+    #[allow(clippy::too_many_arguments)]
+    fn to_smiles_list(
+        &self,
+        isomeric_smiles: bool,
+        canonical: bool,
+        kekule: bool,
+        clean_stereo: bool,
+        all_bonds_explicit: bool,
+        all_hs_explicit: bool,
+        include_dative_bonds: bool,
+        ignore_atom_map_numbers: bool,
+        rooted_at_atom: Option<usize>,
+        n_jobs: Option<usize>,
+    ) -> PyResult<Vec<Option<String>>> {
+        let inner = self.inner.clone();
+        let params = make_smiles_write_params(
+            isomeric_smiles,
+            canonical,
+            kekule,
+            clean_stereo,
+            all_bonds_explicit,
+            all_hs_explicit,
+            include_dative_bonds,
+            ignore_atom_map_numbers,
+            rooted_at_atom,
+        );
+        run_with_n_jobs(n_jobs, move || {
+            inner
+                .to_smiles_list_with_params(&params)
+                .map_err(batch_validation_pyerr)
+        })
+    }
+
+    #[pyo3(signature = (n_jobs=None))]
+    #[doc = r#"
+Return distance-geometry bounds matrices for all valid records.
+"#]
+    fn dg_bounds_matrix_list(&self, n_jobs: Option<usize>) -> PyResult<Vec<Option<Vec<Vec<f64>>>>> {
+        let inner = self.inner.clone();
+        run_with_n_jobs(n_jobs, move || {
+            inner
+                .dg_bounds_matrix_list()
+                .map_err(batch_validation_pyerr)
+        })
+    }
+
+    #[pyo3(signature = (width=300, height=300, n_jobs=None))]
+    #[doc = r#"
+Render each valid molecule to an SVG string.
+"#]
+    fn to_svg_list(
+        &self,
+        width: u32,
+        height: u32,
+        n_jobs: Option<usize>,
+    ) -> PyResult<Vec<Option<String>>> {
+        let inner = self.inner.clone();
+        run_with_n_jobs(n_jobs, move || {
+            inner
+                .to_svg_list(width, height)
+                .map_err(batch_validation_pyerr)
+        })
+    }
+
+    #[pyo3(signature = (out_dir, format=None, size=None, n_jobs=None, errors=None, report_path=None))]
+    #[doc = r#"
+Write molecule depictions to a directory.
+
+Parameters
+----------
+out_dir : str
+    Output directory.
+format : {"png", "svg"}, optional
+    Image format. The default is ``"png"``.
+size : tuple[int, int], optional
+    Output image size as ``(width, height)``.
+n_jobs : int, optional
+    Number of worker threads to use.
+errors : {"raise", "keep", "skip"}, optional
+    Export error handling mode.
+report_path : str, optional
+    Write a JSON or CSV error report.
+
+Returns
+-------
+BatchExportReport
+    Export summary.
+"#]
+    fn to_images(
+        &self,
+        out_dir: &str,
+        format: Option<&str>,
+        size: Option<(u32, u32)>,
+        n_jobs: Option<usize>,
+        errors: Option<&str>,
+        report_path: Option<&str>,
+    ) -> PyResult<PyBatchExportReport> {
+        let mode = parse_batch_error_mode(errors)?;
+        let image_format = format.unwrap_or("png").to_string();
+        let (width, height) = size.unwrap_or((300, 300));
+        let out_dir = expand_user_path(out_dir)?;
+        let inner = self.inner.clone();
+        let report = run_with_n_jobs(n_jobs, move || {
+            inner
+                .write_images(out_dir.as_path(), &image_format, width, height, mode)
+                .map_err(batch_validation_pyerr)
+        })?;
+        if let Some(path) = report_path {
+            write_batch_report(path, &report)?;
+        }
+        Ok(report.into())
+    }
+
+    #[pyo3(signature = (path, format=None, errors=None, n_jobs=None, report_path=None))]
+    #[doc = r#"
+Write valid molecules to an SDF file.
+
+Parameters
+----------
+path : str
+    Output SDF path.
+format : {"auto", "v2000", "v3000"}, optional
+    SDF output format.
+errors : {"raise", "keep", "skip"}, optional
+    Export error handling mode.
+n_jobs : int, optional
+    Number of worker threads to use.
+report_path : str, optional
+    Write a JSON or CSV error report.
+"#]
+    fn to_sdf(
+        &self,
+        path: &str,
+        format: Option<&str>,
+        errors: Option<&str>,
+        n_jobs: Option<usize>,
+        report_path: Option<&str>,
+    ) -> PyResult<PyBatchExportReport> {
+        let mode = parse_batch_error_mode(errors)?;
+        let sdf_format = parse_sdf_format(format)?;
+        let path = expand_user_path(path)?;
+        let inner = self.inner.clone();
+        let report = run_with_n_jobs(n_jobs, move || {
+            inner
+                .write_sdf(path.as_path(), sdf_format, mode)
+                .map_err(batch_validation_pyerr)
+        })?;
+        if let Some(report_path) = report_path {
+            write_batch_report(report_path, &report)?;
+        }
+        Ok(report.into())
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "MoleculeBatch(n={}, valid={}, invalid={})",
+            self.inner.len(),
+            self.inner.valid_count(),
+            self.inner.invalid_count()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl Molecule {
     #[classmethod]
     #[pyo3(signature = (smiles, sanitize=None))]
+    #[doc = r#"
+Create a molecule from a SMILES string.
+
+Parameters
+----------
+smiles : str
+    Input SMILES string.
+sanitize : bool, optional
+    Optional molecule preparation flag. COSMolKit applies the available
+    preparation behavior during construction.
+
+Returns
+-------
+Molecule
+    Parsed molecule.
+
+Examples
+--------
+Use ``Molecule.from_smiles("CCO")`` to create a molecule and
+``mol.to_smiles()`` to write it back.
+"#]
     fn from_smiles(
         _cls: &Bound<'_, PyType>,
         smiles: &str,
@@ -284,6 +1108,21 @@ impl Molecule {
 
     #[classmethod]
     #[pyo3(signature = (rdmol, sanitize=None))]
+    #[doc = r#"
+Create a molecule from an RDKit molecule object.
+
+Parameters
+----------
+rdmol : object
+    An object compatible with RDKit's molecule API.
+sanitize : bool, optional
+    Optional molecule preparation flag.
+
+Returns
+-------
+Molecule
+    COSMolKit molecule copied from the input object.
+"#]
     fn from_rdkit(
         _cls: &Bound<'_, PyType>,
         rdmol: &Bound<'_, PyAny>,
@@ -298,6 +1137,7 @@ impl Molecule {
         let atom_count: usize = py_method_extract(rdmol, "GetNumAtoms")?;
         let bond_count: usize = py_method_extract(rdmol, "GetNumBonds")?;
         let mut mol = cosmolkit_core::Molecule::new();
+        let mut explicit_bond_stereo = Vec::with_capacity(bond_count);
 
         for idx in 0..atom_count {
             let atom = py_method_index(rdmol, "GetAtomWithIdx", idx)?;
@@ -325,6 +1165,7 @@ impl Molecule {
                     "from_rdkit atom {idx} radical electron count out of u8 range: {radical_raw}"
                 ))
             })?;
+            let atom_map_raw: u32 = py_method_extract(&atom, "GetAtomMapNum")?;
             let isotope_raw: u16 = py_method_extract(&atom, "GetIsotope")?;
             let chiral_tag = rdkit_chiral_tag_from_name(&py_method_str(&atom, "GetChiralTag")?)?;
 
@@ -338,7 +1179,8 @@ impl Molecule {
                 num_radical_electrons,
                 chiral_tag,
                 isotope: (isotope_raw != 0).then_some(isotope_raw),
-                atom_map_num: None,
+                atom_map_num: (atom_map_raw != 0).then_some(atom_map_raw),
+                props: Default::default(),
                 rdkit_cip_rank: None,
             });
         }
@@ -355,6 +1197,7 @@ impl Molecule {
             let is_aromatic: bool = py_method_extract(&bond, "GetIsAromatic")?;
             let order = rdkit_bond_order_from_name(&py_method_str(&bond, "GetBondType")?)?;
             let direction = rdkit_bond_direction_from_name(&py_method_str(&bond, "GetBondDir")?)?;
+            let stereo = rdkit_bond_stereo_from_name(&py_method_str(&bond, "GetStereo")?)?;
             let stereo_atoms: Vec<usize> =
                 py_method(&bond, "GetStereoAtoms")?
                     .extract()
@@ -364,6 +1207,7 @@ impl Molecule {
                         ))
                     })?;
 
+            explicit_bond_stereo.push(stereo);
             mol.add_bond(cosmolkit_core::Bond {
                 index: 0,
                 begin_atom,
@@ -377,18 +1221,41 @@ impl Molecule {
         }
 
         cosmolkit_core::assign_double_bond_stereo_from_directions(&mut mol);
+        for (bond, stereo) in mol.bonds.iter_mut().zip(explicit_bond_stereo) {
+            if !matches!(stereo, cosmolkit_core::BondStereo::None) {
+                bond.stereo = stereo;
+            }
+        }
         mol.rebuild_adjacency();
         Ok(Self { inner: mol })
     }
 
     #[classmethod]
-    #[pyo3(signature = (path, sanitize=None))]
-    fn read_sdf(_cls: &Bound<'_, PyType>, path: &str, sanitize: Option<bool>) -> PyResult<Self> {
+    #[pyo3(signature = (path, sanitize=None, coordinate_dim=None))]
+    #[doc = r#"
+Read the first molecule record from an SDF file.
+
+Parameters
+----------
+path : str
+    SDF file path.
+sanitize : bool, optional
+    Optional molecule preparation flag.
+coordinate_dim : {"auto", "2d", "3d"}, optional
+    How coordinate columns should be interpreted.
+"#]
+    fn read_sdf(
+        _cls: &Bound<'_, PyType>,
+        path: &str,
+        sanitize: Option<bool>,
+        coordinate_dim: Option<&str>,
+    ) -> PyResult<Self> {
         let _ = sanitize;
+        let coordinate_mode = parse_sdf_coordinate_mode(coordinate_dim)?;
         let expanded_path = expand_user_path(path)?;
         let file = File::open(&expanded_path)
             .map_err(|e| PyValueError::new_err(format!("read_sdf open failed: {e}")))?;
-        let mut reader = SdfReader::new(BufReader::new(file));
+        let mut reader = SdfReader::with_coordinate_mode(BufReader::new(file), coordinate_mode);
         let Some(record) = reader
             .next_record()
             .map_err(|e| PyValueError::new_err(format!("read_sdf parse failed: {e:?}")))?
@@ -400,6 +1267,58 @@ impl Molecule {
         })
     }
 
+    #[classmethod]
+    #[pyo3(signature = (sdf_text, sanitize=None, coordinate_dim=None))]
+    #[doc = r#"
+Read one molecule from an SDF record string.
+"#]
+    fn read_sdf_record_from_str(
+        _cls: &Bound<'_, PyType>,
+        sdf_text: &str,
+        sanitize: Option<bool>,
+        coordinate_dim: Option<&str>,
+    ) -> PyResult<Self> {
+        let _ = sanitize;
+        let coordinate_mode = parse_sdf_coordinate_mode(coordinate_dim)?;
+        let record = cosmolkit_core::io::sdf::read_sdf_record_from_str_with_coordinate_mode(
+            sdf_text,
+            coordinate_mode,
+        )
+        .map_err(|e| PyValueError::new_err(format!("read_sdf_record_from_str failed: {e:?}")))?;
+        Ok(Self {
+            inner: record.molecule,
+        })
+    }
+
+    #[classmethod]
+    #[pyo3(signature = (sdf_text, sanitize=None, coordinate_dim=None))]
+    #[doc = r#"
+Read all molecule records from an SDF string.
+"#]
+    fn read_sdf_records_from_str(
+        _cls: &Bound<'_, PyType>,
+        sdf_text: &str,
+        sanitize: Option<bool>,
+        coordinate_dim: Option<&str>,
+    ) -> PyResult<Vec<Self>> {
+        let _ = sanitize;
+        let coordinate_mode = parse_sdf_coordinate_mode(coordinate_dim)?;
+        let records = cosmolkit_core::io::sdf::read_sdf_records_from_str_with_coordinate_mode(
+            sdf_text,
+            coordinate_mode,
+        )
+        .map_err(|e| PyValueError::new_err(format!("read_sdf_records_from_str failed: {e:?}")))?;
+        Ok(records
+            .into_iter()
+            .map(|record| Self {
+                inner: record.molecule,
+            })
+            .collect())
+    }
+
+    #[doc = r#"
+Return a new molecule with explicit hydrogens added.
+"#]
     fn with_hydrogens(&self) -> PyResult<Self> {
         let mut out = clone_for_python_value_api(&self.inner);
         cosmolkit_core::add_hydrogens_in_place(&mut out)
@@ -407,6 +1326,9 @@ impl Molecule {
         Ok(Self { inner: out })
     }
 
+    #[doc = r#"
+Return a new molecule with explicit hydrogens removed.
+"#]
     fn without_hydrogens(&self) -> PyResult<Self> {
         let mut out = clone_for_python_value_api(&self.inner);
         cosmolkit_core::remove_hydrogens_in_place(&mut out)
@@ -415,6 +1337,9 @@ impl Molecule {
     }
 
     #[pyo3(signature = (sanitize=None))]
+    #[doc = r#"
+Return a new molecule with aromatic bonds converted to an explicit Kekule form.
+"#]
     fn with_kekulized_bonds(&self, sanitize: Option<bool>) -> PyResult<Self> {
         let _ = sanitize;
         let mut out = clone_for_python_value_api(&self.inner);
@@ -424,6 +1349,9 @@ impl Molecule {
         Ok(Self { inner: out })
     }
 
+    #[doc = r#"
+Return read-only atom feature records.
+"#]
     fn atoms(&self) -> Vec<Atom> {
         let assignment =
             cosmolkit_core::assign_valence(&self.inner, cosmolkit_core::ValenceModel::RdkitLike)
@@ -442,6 +1370,7 @@ impl Molecule {
                 formal_charge: atom.formal_charge,
                 chiral_tag: chiral_tag_name(atom.chiral_tag).to_string(),
                 isotope: atom.isotope,
+                atom_map_num: atom.atom_map_num,
                 is_aromatic: atom.is_aromatic,
                 explicit_hydrogens: atom.explicit_hydrogens as usize,
                 no_implicit: atom.no_implicit,
@@ -464,6 +1393,9 @@ impl Molecule {
             .collect()
     }
 
+    #[doc = r#"
+Return read-only bond feature records.
+"#]
     fn bonds(&self) -> Vec<Bond> {
         self.inner
             .bonds
@@ -482,6 +1414,14 @@ impl Molecule {
     }
 
     #[pyo3(signature = (include_unassigned=true))]
+    #[doc = r#"
+Return chiral center labels.
+
+Parameters
+----------
+include_unassigned : bool, default True
+    Include atoms with unspecified tetrahedral chirality.
+"#]
     fn find_chiral_centers(&self, include_unassigned: bool) -> Vec<(usize, String)> {
         self.inner
             .atoms
@@ -504,10 +1444,19 @@ impl Molecule {
             .collect()
     }
 
+    #[doc = r#"
+Return ordered tetrahedral stereo ligand records.
+
+Each record is ``(center_atom_index, ordered_ligands)``. Implicit hydrogen is
+represented as ``None``.
+"#]
     fn tetrahedral_stereo(&self) -> Vec<(usize, Vec<Option<usize>>)> {
         to_python_tetrahedral_stereo(&self.inner)
     }
 
+    #[doc = r#"
+Return a new molecule with 2D coordinates.
+"#]
     fn with_2d_coords(&self) -> PyResult<Self> {
         let mut out = clone_for_python_value_api(&self.inner);
         out.compute_2d_coords()
@@ -515,30 +1464,74 @@ impl Molecule {
         Ok(Self { inner: out })
     }
 
+    #[doc = r#"
+Return the number of stored 3D conformers.
+"#]
     fn num_conformers(&self) -> usize {
-        if self.inner.coords_2d().is_some() {
-            1
-        } else {
-            0
-        }
+        self.inner.num_3d_conformers()
     }
 
-    fn conformer_positions(&self) -> PyResult<Vec<Vec<f64>>> {
+    #[doc = r#"
+Return whether the molecule has 2D coordinates.
+"#]
+    fn has_2d_coords(&self) -> bool {
+        self.inner.coords_2d().is_some()
+    }
+
+    #[gen_stub(override_return_type(type_repr = "numpy.ndarray", imports = ("numpy")))]
+    #[doc = r#"
+Return 2D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
+
+The z column is zero-filled.
+"#]
+    fn coords_2d<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let Some(coords) = self.inner.coords_2d() else {
             return Err(PyValueError::new_err(
                 "no 2D coordinates present; call with_2d_coords() first",
             ));
         };
-        Ok(coords.iter().map(|p| vec![p.x, p.y, 0.0]).collect())
+        let rows: Vec<Vec<f64>> = coords.iter().map(|p| vec![p.x, p.y, 0.0]).collect();
+        PyArray2::from_vec2(py, &rows)
+            .map_err(|err| PyValueError::new_err(format!("Molecule.coords_2d failed: {err}")))
     }
 
-    fn dg_bounds_matrix(&self) -> PyResult<Vec<Vec<f64>>> {
-        self.inner.dg_bounds_matrix().map_err(|err| {
+    #[pyo3(signature = (conformer_index=0))]
+    #[gen_stub(override_return_type(type_repr = "numpy.ndarray", imports = ("numpy")))]
+    #[doc = r#"
+Return 3D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
+"#]
+    fn coords_3d<'py>(
+        &self,
+        py: Python<'py>,
+        conformer_index: usize,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let Some(coords) = self.inner.conformer_3d(conformer_index) else {
+            return Err(PyValueError::new_err(format!(
+                "no 3D conformer present at index {conformer_index}"
+            )));
+        };
+        let rows: Vec<Vec<f64>> = coords.iter().map(|p| vec![p.x, p.y, p.z]).collect();
+        PyArray2::from_vec2(py, &rows)
+            .map_err(|err| PyValueError::new_err(format!("Molecule.coords_3d failed: {err}")))
+    }
+
+    #[gen_stub(override_return_type(type_repr = "numpy.ndarray", imports = ("numpy")))]
+    #[doc = r#"
+Return the distance-geometry bounds matrix as a NumPy array.
+"#]
+    fn dg_bounds_matrix<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let rows = self.inner.dg_bounds_matrix().map_err(|err| {
+            PyValueError::new_err(format!("Molecule.dg_bounds_matrix failed: {err}"))
+        })?;
+        PyArray2::from_vec2(py, &rows).map_err(|err| {
             PyValueError::new_err(format!("Molecule.dg_bounds_matrix failed: {err}"))
         })
     }
 
     #[pyo3(signature = (width=300, height=300))]
+    #[doc = r#"
+Render the molecule to an SVG string.
+"#]
     fn to_svg(&self, width: u32, height: u32) -> PyResult<String> {
         self.inner
             .to_svg(width, height)
@@ -546,6 +1539,9 @@ impl Molecule {
     }
 
     #[pyo3(signature = (path, width=300, height=300))]
+    #[doc = r#"
+Write an SVG depiction to a file.
+"#]
     fn write_svg(&self, path: &str, width: u32, height: u32) -> PyResult<()> {
         let expanded_path = expand_user_path(path)?;
         let svg = self
@@ -560,6 +1556,9 @@ impl Molecule {
     }
 
     #[pyo3(signature = (path, width=300, height=300))]
+    #[doc = r#"
+Write a PNG depiction to a file.
+"#]
     fn write_png(&self, path: &str, width: u32, height: u32) -> PyResult<()> {
         let expanded_path = expand_user_path(path)?;
         let png = self
@@ -574,6 +1573,14 @@ impl Molecule {
     }
 
     #[pyo3(signature = (isomeric_smiles=true))]
+    #[doc = r#"
+Return a SMILES string.
+
+Parameters
+----------
+isomeric_smiles : bool, default True
+    Include stereochemical and isotopic information when available.
+"#]
     fn to_smiles(&self, isomeric_smiles: bool) -> PyResult<String> {
         self.inner.to_smiles(isomeric_smiles).map_err(|err| {
             PyNotImplementedError::new_err(format!(
@@ -583,10 +1590,13 @@ impl Molecule {
     }
 
     #[pyo3(signature = (path, format=None))]
+    #[doc = r#"
+Write the molecule as an SDF file.
+"#]
     fn write_sdf(&self, path: &str, format: Option<&str>) -> PyResult<()> {
         let expanded_path = expand_user_path(path)?;
         let fmt = parse_sdf_format(format)?;
-        let block = molblock::mol_to_2d_sdf_record(&self.inner, fmt)
+        let block = molecule_to_sdf_record_string(&self.inner, fmt)
             .map_err(|err| PyValueError::new_err(format!("write_sdf failed: {err}")))?;
         let mut f = File::create(&expanded_path)
             .map_err(|e| PyValueError::new_err(format!("write_sdf create failed: {e}")))?;
@@ -596,13 +1606,24 @@ impl Molecule {
     }
 
     #[pyo3(signature = (format=None))]
+    #[doc = r#"
+Return the molecule as an SDF record string.
+"#]
     fn to_sdf_string(&self, format: Option<&str>) -> PyResult<String> {
         let fmt = parse_sdf_format(format)?;
-        molblock::mol_to_2d_sdf_record(&self.inner, fmt)
+        molecule_to_sdf_record_string(&self.inner, fmt)
             .map_err(|err| PyValueError::new_err(format!("to_sdf_string failed: {err}")))
     }
 
     #[pyo3(signature = (directory, file_name=None, format=None))]
+    #[doc = r#"
+Write the molecule to an SDF file inside a directory.
+
+Returns
+-------
+str
+    The output path.
+"#]
     fn write_sdf_to_directory(
         &self,
         directory: &str,
@@ -633,11 +1654,14 @@ impl Molecule {
         Ok(output_str.to_string())
     }
 
+    #[doc = r#"
+Create an explicit edit context for this molecule.
+
+The edit context is useful when several changes should be staged and committed
+as one new molecule value.
+"#]
     fn edit(&self) -> MoleculeEdit {
         MoleculeEdit {
-            // Transitional implementation: the edit context starts from a
-            // cloned working molecule today. Once core adopts copy-on-write,
-            // this should share storage initially and detach only on mutation.
             working: clone_for_python_value_api(&self.inner),
         }
     }
@@ -687,6 +1711,9 @@ impl Atom {
     }
     fn isotope(&self) -> Option<u16> {
         self.isotope
+    }
+    fn atom_map_num(&self) -> Option<u32> {
+        self.atom_map_num
     }
     fn is_aromatic(&self) -> bool {
         self.is_aromatic
@@ -775,6 +1802,17 @@ impl Bond {
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass]
+#[doc = r#"
+An explicit molecule editing context.
+
+Use ``Molecule.edit()`` to create an editor, apply changes, and call
+``commit()`` to receive a new ``Molecule``.
+
+Examples
+--------
+Create an editor with ``mol.edit()``, apply atom and bond changes, then call
+``commit()`` to produce a new ``Molecule``.
+"#]
 struct MoleculeEdit {
     working: cosmolkit_core::Molecule,
 }
@@ -782,6 +1820,9 @@ struct MoleculeEdit {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl MoleculeEdit {
+    #[doc = r#"
+Add an atom by element symbol and return its atom index.
+"#]
     fn add_atom(&mut self, element: &str) -> PyResult<usize> {
         let Some(atomic_num) = atomic_number_from_element(element) else {
             return Err(PyValueError::new_err(format!(
@@ -799,12 +1840,25 @@ impl MoleculeEdit {
             chiral_tag: cosmolkit_core::ChiralTag::Unspecified,
             isotope: None,
             atom_map_num: None,
+            props: Default::default(),
             rdkit_cip_rank: None,
         });
         Ok(idx)
     }
 
     #[pyo3(signature = (begin, end, order))]
+    #[doc = r#"
+Add a bond between two atom indices.
+
+Parameters
+----------
+begin : int
+    Begin atom index.
+end : int
+    End atom index.
+order : {"single", "double", "triple", "aromatic", "dative", "unspecified"}
+    Bond order.
+"#]
     fn add_bond(&mut self, begin: usize, end: usize, order: &str) -> PyResult<()> {
         if begin >= self.working.atoms.len() || end >= self.working.atoms.len() {
             return Err(PyValueError::new_err("bond atom index out of range"));
@@ -835,6 +1889,9 @@ impl MoleculeEdit {
         Ok(())
     }
 
+    #[doc = r#"
+Set an atom formal charge.
+"#]
     fn set_atom_charge(&mut self, atom_index: usize, charge: i32) -> PyResult<()> {
         let atom = self
             .working
@@ -848,6 +1905,9 @@ impl MoleculeEdit {
     }
 
     #[pyo3(signature = (sanitize=None))]
+    #[doc = r#"
+Commit staged edits and return a new molecule.
+"#]
     fn commit(&mut self, sanitize: Option<bool>) -> PyResult<Molecule> {
         let _ = sanitize;
         Ok(Molecule {
@@ -915,10 +1975,14 @@ struct AlignmentResult;
 #[pymodule]
 fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    m.add_function(wrap_pyfunction!(placeholder, m)?)?;
-    m.add_function(wrap_pyfunction!(rust_version, m)?)?;
-    m.add_function(wrap_pyfunction!(core_version, m)?)?;
+    m.add(
+        "BatchValidationError",
+        m.py().get_type::<BatchValidationError>(),
+    )?;
     m.add_class::<Molecule>()?;
+    m.add_class::<MoleculeBatch>()?;
+    m.add_class::<PyBatchError>()?;
+    m.add_class::<PyBatchExportReport>()?;
     m.add_class::<Atom>()?;
     m.add_class::<Bond>()?;
     m.add_class::<MoleculeEdit>()?;

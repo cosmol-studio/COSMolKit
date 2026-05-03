@@ -26,9 +26,11 @@ pip install cosmolkit
 
 ## Overview
 
-**COSMolKit** is a Rust toolkit with first-class Python bindings for core cheminformatics, molecular graph workflows, and future AI-native molecular representations.
+**COSMolKit** is a Rust-native cheminformatics and structural biology toolkit for molecules, SMILES/SDF/MolBlock parsing, molecular graphs, conformers, coordinates, and AI-ready batch workflows.
 
 It currently focuses on a chemistry core whose selected features are tested for RDKit-compatible behavior: SMILES parsing/writing, atom and bond feature inspection, hydrogen transforms, Kekulization, stereochemistry checks, distance-geometry bounds, SDF output, and 2D depiction.
+
+COSMolKit is designed around ndarray-oriented structural data access, keeping molecular data efficient and natural for NumPy and PyTorch workflows.
 
 ### Copy-on-Write style transformations
 
@@ -50,27 +52,24 @@ COSMolKit is in early active development. The implementation is intentionally a 
 - **Core layout:** `cosmolkit-core` contains chemistry perception, IO, drawing, and biomolecular primitives; `cosmolkit` is the Rust facade crate; `python/` contains the PyO3 package.
 - **RDKit reference:** RDKit 2026.03.1 is the active compatibility reference for selected behaviors, with `third_party/rdkit` pinned to `Release_2026_03_1` (`351f8f378f8ad6bbd517980c38896e66bf907af8`).
 - **Parity coverage:** current tests cover graph features, add-H / remove-H roundtrips, tetrahedral stereo geometry, DG bounds matrices, Kekulization branches, SMILES writer branches, V2000 molblock output, and SDF V2000/V3000 roundtrips.
-- **Python bindings:** the package exposes SMILES parsing, `Molecule.from_rdkit()`, graph/stereo inspection, value-style transforms, 2D coordinates, SMILES/SDF IO, DG bounds, SVG/PNG rendering, and explicit editing.
+- **Batch-native workflows:** `MoleculeBatch` APIs support ordered molecule construction, parallel transforms, image/SDF export, and structured error handling for high-throughput datasets.
+- **Python bindings:** the package exposes SMILES parsing, `Molecule.from_rdkit()`, graph/stereo inspection, value-style transforms, explicit `coords_2d()` / `coords_3d()` access, 2D/3D SDF IO for molecules with stored coordinates, DG bounds, SVG/PNG rendering, and explicit editing.
 - **AI direction:** planned COSMolKit-native APIs include model-ready graph export, internal coordinates, torsion/chirality-aware diffusion helpers, and molecular tokenization. See `ai_native_features_sketch.md`.
 
 ## Python Quick Start
 
 ```python
-from cosmolkit import Molecule
+from cosmolkit import Molecule, MoleculeBatch
 
 mol = Molecule.from_smiles("c1ccccc1O")
-
-mol_h = mol.with_hydrogens()
-kek = mol.with_kekulized_bonds()
 mol_2d = mol.with_2d_coords()
-
-print(mol.to_smiles())
-print(len(mol.atoms()), len(mol_h.atoms()))
-print(kek.to_smiles())
-
-svg = mol_2d.to_svg(width=400, height=300)
-mol_2d.write_svg("phenol.svg", width=400, height=300)
 mol_2d.write_png("phenol.png", width=400, height=300)
+
+smiles = ["CCO", "c1ccccc1", "CC(=O)O"]
+batch = MoleculeBatch.from_smiles_list(smiles, sanitize=True, errors="keep", n_jobs=8)
+
+prepared = batch.add_hydrogens(errors="keep").compute_2d_coords(errors="keep")
+prepared.to_images("molecule_images", format="png", size=(300, 300), n_jobs=8, errors="skip")
 ```
 
 For more Python examples, see `python/README.md` and `python/examples/`.
@@ -80,6 +79,8 @@ For more Python examples, see `python/README.md` and `python/examples/`.
 - **RDKit-compatible core behavior:** parity matters for molecular facts such as valence handling, aromaticity, Kekulization, stereochemistry, and file output.
 - **Modern public API:** normal transformations are value-style and deterministic; explicit mutation belongs in editing workflows.
 - **Rust-first performance:** heavy logic lives in Rust and is exposed to Python through PyO3 without leaking mutation ambiguity to users.
+- **ndarray-oriented structural data access:** molecular data should be exposed through efficient array views that fit naturally into NumPy and PyTorch workflows.
+- **Batch-native throughput:** large molecule collections should be processed as ordered batches with Rust-side parallel scheduling, minimal Python-loop overhead, and traceable per-record failures.
 - **AI-ready extensions:** RDKit compatibility is the correctness floor, while COSMolKit-native graph, geometry, torsion, diffusion, and token APIs are the API ceiling.
 
 ## Roadmap
@@ -111,6 +112,16 @@ For more Python examples, see `python/README.md` and `python/examples/`.
 - ✅ SMILES output via RDKit-parity writer branches
 - [ ] batch molecule loading
 - [ ] format validation tools with precise error reporting
+
+### Phase 2.5 — Batch-Native Processing
+**Goal:** make high-throughput molecule preparation and export a core product identity
+
+- ✅ `MoleculeBatch.from_smiles_list()` with input-order preservation
+- ✅ batch transformations for sanitize, add/remove hydrogens, Kekulization, and 2D coordinates
+- ✅ Rust-side parallel scheduling with configurable `n_jobs`
+- ✅ structured batch errors with `errors="raise" | "keep" | "skip"`
+- ✅ validity masks, error summaries, and JSON/CSV error reports
+- ✅ parallel SDF and image export for large molecule collections
 
 ### Phase 3 — Python API and User Workflows
 **Goal:** expose the verified Rust core through a practical Python interface

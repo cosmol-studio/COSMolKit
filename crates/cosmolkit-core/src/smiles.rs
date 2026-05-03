@@ -28,12 +28,14 @@ struct RingOpen {
 }
 
 pub(crate) fn parse_smiles(smiles: &str) -> Result<Molecule, SmilesParseError> {
+    let (smiles, cx_part) = preprocess_smiles_rdkit_like(smiles)?;
     let mut parser = Parser::new(smiles);
     let mut mol = parser.parse_molecule()?;
     parser.skip_ascii_whitespace();
     if !parser.is_eof() {
         return Err(parser.error("unexpected trailing characters"));
     }
+    validate_cxsmiles_part_rdkit_like(cx_part)?;
     parser.reorder_ring_closure_bonds_rdkit_like(&mut mol);
     adjust_atom_chirality_flags(
         &mut mol,
@@ -42,13 +44,61 @@ pub(crate) fn parse_smiles(smiles: &str) -> Result<Molecule, SmilesParseError> {
         &parser.ring_closure_bond_numbers,
     );
     validate_aromatic_atoms_are_in_rings(&mol)?;
+    let original_implicit_hydrogens = assign_valence(&mol, ValenceModel::RdkitLike)
+        .ok()
+        .map(|assignment| assignment.implicit_hydrogens);
+    crate::kekulize::kekulize_in_place(&mut mol, true)
+        .map_err(|err| SmilesParseError::ParseError(format!("kekulization failed: {err}")))?;
     perceive_aromaticity_rdkit_like(&mut mol, &parser.ring_closure_bonds)?;
     prune_noncyclic_aromatic_bonds_rdkit_like(&mut mol);
+    if let Some(original_implicit_hydrogens) = original_implicit_hydrogens {
+        crate::hydrogens::adjust_hydrogens_after_aromaticity_in_place(
+            &mut mol,
+            &original_implicit_hydrogens,
+        );
+    }
+    crate::hydrogens::remove_hydrogens_after_smiles_parse_in_place(&mut mol)
+        .map_err(|err| SmilesParseError::ParseError(err.to_string()))?;
     assign_double_bond_stereo(&mut mol);
     canonicalize_double_bond_stereo_by_cip_rdkit_like(&mut mol);
+    cleanup_single_bond_dirs_around_nonstereo_double_bonds(&mut mol);
+    cleanup_invalid_tetrahedral_stereo_rdkit_like(&mut mol);
     crate::stereo::cache_rdkit_legacy_cip_ranks(&mut mol);
     mol.rebuild_adjacency();
     Ok(mol)
+}
+
+fn preprocess_smiles_rdkit_like(smiles: &str) -> Result<(&str, Option<&str>), SmilesParseError> {
+    let trimmed = smiles.trim();
+    let Some(split_idx) = trimmed.find([' ', '\t']) else {
+        return Ok((trimmed, None));
+    };
+    if split_idx == 0 {
+        return Ok((trimmed, None));
+    }
+    let core = &trimmed[..split_idx];
+    let suffix = trimmed[split_idx..].trim();
+    if suffix.is_empty() {
+        Ok((core, None))
+    } else {
+        Ok((core, Some(suffix)))
+    }
+}
+
+fn validate_cxsmiles_part_rdkit_like(cx_part: Option<&str>) -> Result<(), SmilesParseError> {
+    let Some(cx_part) = cx_part else {
+        return Ok(());
+    };
+    if !cx_part.starts_with('|') {
+        return Ok(());
+    }
+    let Some(end_idx) = cx_part[1..].find('|').map(|idx| idx + 1) else {
+        return Err(SmilesParseError::ParseError(
+            "unterminated CXSMILES extension".to_owned(),
+        ));
+    };
+    let _cx_data = &cx_part[..=end_idx];
+    Ok(())
 }
 
 /// Assign double-bond stereochemistry from stored directional single bonds.
@@ -58,6 +108,15 @@ pub(crate) fn parse_smiles(smiles: &str) -> Result<Molecule, SmilesParseError> {
 pub fn assign_double_bond_stereo_from_directions(mol: &mut Molecule) {
     assign_double_bond_stereo(mol);
     canonicalize_double_bond_stereo_by_cip_rdkit_like(mol);
+}
+
+pub(crate) fn cleanup_nonstereo_double_bond_dirs_rdkit_like(mol: &mut Molecule) {
+    cleanup_single_bond_dirs_around_nonstereo_double_bonds(mol);
+}
+
+pub(crate) fn sanitize_molfile_aromaticity_rdkit_like(mol: &mut Molecule) {
+    let _ = perceive_aromaticity_rdkit_like(mol, &[]);
+    prune_noncyclic_aromatic_bonds_rdkit_like(mol);
 }
 
 fn bond_order_as_double(order: BondOrder) -> f64 {
@@ -1134,6 +1193,14 @@ fn opposite_bond_direction(direction: BondDirection) -> BondDirection {
     }
 }
 
+fn reverse_directional_pending_bond(pending: PendingBond) -> PendingBond {
+    match pending {
+        PendingBond::DirectionalSingleUp => PendingBond::DirectionalSingleDown,
+        PendingBond::DirectionalSingleDown => PendingBond::DirectionalSingleUp,
+        other => other,
+    }
+}
+
 fn has_stereo_bond_dir(direction: BondDirection) -> bool {
     matches!(
         direction,
@@ -1143,13 +1210,26 @@ fn has_stereo_bond_dir(direction: BondDirection) -> bool {
 
 fn assign_double_bond_stereo(mol: &mut Molecule) {
     // Mirrors RDKit Chirality.cpp::setBondStereoFromDirections().
+    let cip_ranks = crate::io::molblock::rdkit_cip_ranks_for_depict(mol);
     let bond_count = mol.bonds.len();
     for db_idx in 0..bond_count {
         if !matches!(mol.bonds[db_idx].order, BondOrder::Double) {
             continue;
         }
+        if !crate::stereo::should_detect_double_bond_stereo(mol, db_idx) {
+            mol.bonds[db_idx].stereo = BondStereo::None;
+            mol.bonds[db_idx].stereo_atoms.clear();
+            continue;
+        }
         let begin = mol.bonds[db_idx].begin_atom;
         let end = mol.bonds[db_idx].end_atom;
+        if has_equal_ranked_double_bond_substituents(mol, begin, end, &cip_ranks)
+            || has_equal_ranked_double_bond_substituents(mol, end, begin, &cip_ranks)
+        {
+            mol.bonds[db_idx].stereo = BondStereo::None;
+            mol.bonds[db_idx].stereo_atoms.clear();
+            continue;
+        }
 
         let begin_control = mol.bonds.iter().enumerate().find_map(|(idx, bond)| {
             if idx == db_idx || matches!(bond.order, BondOrder::Double) {
@@ -1209,6 +1289,33 @@ fn assign_double_bond_stereo(mol: &mut Molecule) {
             BondStereo::Cis
         };
     }
+}
+
+fn has_equal_ranked_double_bond_substituents(
+    mol: &Molecule,
+    atom_index: usize,
+    skip_atom_index: usize,
+    cip_ranks: &[i64],
+) -> bool {
+    let neighbors: Vec<usize> = mol
+        .bonds
+        .iter()
+        .filter_map(|bond| {
+            let nbr = if bond.begin_atom == atom_index {
+                bond.end_atom
+            } else if bond.end_atom == atom_index {
+                bond.begin_atom
+            } else {
+                return None;
+            };
+            (nbr != skip_atom_index).then_some(nbr)
+        })
+        .collect();
+    neighbors.len() == 2
+        && matches!(
+            (cip_ranks.get(neighbors[0]), cip_ranks.get(neighbors[1])),
+            (Some(left), Some(right)) if left == right
+        )
 }
 
 fn highest_cip_neighbor_excluding(
@@ -1284,6 +1391,184 @@ fn canonicalize_double_bond_stereo_by_cip_rdkit_like(mol: &mut Molecule) {
             };
         }
     }
+}
+
+fn cleanup_single_bond_dirs_around_nonstereo_double_bonds(mol: &mut Molecule) {
+    // Mirrors RDKit Chirality.cpp cleanup for github #2422: directional
+    // single/aromatic bonds adjacent to a double bond with no usable stereo
+    // are cleared unless that same single bond also controls another
+    // stereochemically assigned double bond.
+    let mut clear = vec![false; mol.bonds.len()];
+    for double_idx in 0..mol.bonds.len() {
+        if !matches!(mol.bonds[double_idx].order, BondOrder::Double)
+            || !matches!(
+                mol.bonds[double_idx].stereo,
+                BondStereo::None | BondStereo::Any
+            )
+        {
+            continue;
+        }
+        let double_begin = mol.bonds[double_idx].begin_atom;
+        let double_end = mol.bonds[double_idx].end_atom;
+        for double_atom in [double_begin, double_end] {
+            for single_idx in 0..mol.bonds.len() {
+                if single_idx == double_idx {
+                    continue;
+                }
+                let single = &mol.bonds[single_idx];
+                if single.begin_atom != double_atom && single.end_atom != double_atom {
+                    continue;
+                }
+                if !has_stereo_bond_dir(single.direction)
+                    || !matches!(single.order, BondOrder::Single | BondOrder::Aromatic)
+                {
+                    continue;
+                }
+                let other = if single.begin_atom == double_atom {
+                    single.end_atom
+                } else {
+                    single.begin_atom
+                };
+                let ok_to_clear = mol.bonds.iter().enumerate().all(|(other_idx, other_bond)| {
+                    other_idx == single_idx
+                        || !(other_bond.begin_atom == other || other_bond.end_atom == other)
+                        || !matches!(other_bond.order, BondOrder::Double)
+                        || matches!(other_bond.stereo, BondStereo::None | BondStereo::Any)
+                });
+                if ok_to_clear {
+                    clear[single_idx] = true;
+                }
+            }
+        }
+    }
+    for (idx, should_clear) in clear.into_iter().enumerate() {
+        if should_clear {
+            mol.bonds[idx].direction = BondDirection::None;
+        }
+    }
+}
+
+fn cleanup_invalid_tetrahedral_stereo_rdkit_like(mol: &mut Molecule) {
+    // Mirrors the Issue 194 cleanup branch in RDKit
+    // Chirality.cpp::legacyStereoPerception()/assignStereochemistry(): if an
+    // invalid chiral tag has a sole explicit H retained only for chirality,
+    // clear both the tag and that explicit H.
+    let props = mol.rdkit_legacy_stereo_atom_props(false);
+    let cip_ranks = crate::io::molblock::rdkit_cip_ranks_for_depict(mol);
+    for (atom_index, props) in props.iter().enumerate() {
+        if matches!(mol.atoms[atom_index].chiral_tag, ChiralTag::Unspecified)
+            || props.cip_code.is_some()
+        {
+            continue;
+        }
+        if has_paired_ring_stereo_candidate_rdkit_like(mol, atom_index, &cip_ranks) {
+            continue;
+        }
+        let atom = &mut mol.atoms[atom_index];
+        atom.chiral_tag = ChiralTag::Unspecified;
+        if atom.explicit_hydrogens == 1 && atom.formal_charge == 0 && !atom.is_aromatic {
+            atom.explicit_hydrogens = 0;
+            atom.no_implicit = false;
+        }
+    }
+}
+
+fn is_ring_stereo_candidate_rdkit_like(
+    mol: &Molecule,
+    atom_index: usize,
+    cip_ranks: &[i64],
+) -> bool {
+    let atom = &mol.atoms[atom_index];
+    let mut ring_neighbors = Vec::<usize>::new();
+    let mut non_ring_neighbors = Vec::<usize>::new();
+    let mut ring_neighbor_ranks = HashSet::<i64>::new();
+    for bond in &mol.bonds {
+        let other = if bond.begin_atom == atom_index {
+            Some(bond.end_atom)
+        } else if bond.end_atom == atom_index {
+            Some(bond.begin_atom)
+        } else {
+            None
+        };
+        let Some(other) = other else {
+            continue;
+        };
+        if crate::stereo::min_cycle_size_for_bond(mol, bond.index).is_some() {
+            ring_neighbors.push(other);
+            if let Some(&rank) = cip_ranks.get(other) {
+                ring_neighbor_ranks.insert(rank);
+            }
+        } else {
+            non_ring_neighbors.push(other);
+        }
+    }
+    if ring_neighbors.is_empty() {
+        return false;
+    }
+    if atom.atomic_num == 7
+        && ring_neighbors.len() + non_ring_neighbors.len() == 3
+        && !mol.bonds.iter().enumerate().any(|(bond_index, bond)| {
+            (bond.begin_atom == atom_index || bond.end_atom == atom_index)
+                && crate::stereo::min_cycle_size_for_bond(mol, bond_index) == Some(3)
+        })
+        && !crate::stereo::is_atom_bridgehead_rdkit_like(mol, atom_index)
+    {
+        return false;
+    }
+    match non_ring_neighbors.len() {
+        2 => {
+            let left = cip_ranks.get(non_ring_neighbors[0]);
+            let right = cip_ranks.get(non_ring_neighbors[1]);
+            left != right && ring_neighbors.len() != ring_neighbor_ranks.len()
+        }
+        1 => ring_neighbors.len() > ring_neighbor_ranks.len(),
+        0 => {
+            (ring_neighbors.len() == 4 && ring_neighbor_ranks.len() == 3)
+                || (ring_neighbors.len() == 3 && ring_neighbor_ranks.len() == 2)
+        }
+        _ => false,
+    }
+}
+
+fn has_paired_ring_stereo_candidate_rdkit_like(
+    mol: &Molecule,
+    atom_index: usize,
+    cip_ranks: &[i64],
+) -> bool {
+    if !is_ring_stereo_candidate_rdkit_like(mol, atom_index, cip_ranks) {
+        return false;
+    }
+    let mut seen = HashSet::<usize>::new();
+    let mut queue = VecDeque::new();
+    seen.insert(atom_index);
+    queue.push_back(atom_index);
+    while let Some(current) = queue.pop_front() {
+        for bond in &mol.bonds {
+            let other = if bond.begin_atom == current {
+                Some(bond.end_atom)
+            } else if bond.end_atom == current {
+                Some(bond.begin_atom)
+            } else {
+                None
+            };
+            let Some(other) = other else {
+                continue;
+            };
+            if crate::stereo::min_cycle_size_for_bond(mol, bond.index).is_none()
+                || !seen.insert(other)
+            {
+                continue;
+            }
+            if other != atom_index
+                && !matches!(mol.atoms[other].chiral_tag, ChiralTag::Unspecified)
+                && is_ring_stereo_candidate_rdkit_like(mol, other, cip_ranks)
+            {
+                return true;
+            }
+            queue.push_back(other);
+        }
+    }
+    false
 }
 
 fn prune_noncyclic_aromatic_bonds_rdkit_like(mol: &mut Molecule) {
@@ -1627,7 +1912,16 @@ impl<'a> Parser<'a> {
             }) {
                 return Err(self.error("ring closure duplicates existing bond"));
             }
-            let (begin_atom, end_atom, chosen) = if open.bond != PendingBond::Unspecified {
+            let (begin_atom, end_atom, chosen) = if matches!(
+                open.bond,
+                PendingBond::DirectionalSingleUp | PendingBond::DirectionalSingleDown
+            ) {
+                (
+                    current_atom,
+                    open.atom_index,
+                    reverse_directional_pending_bond(open.bond),
+                )
+            } else if open.bond != PendingBond::Unspecified {
                 (open.atom_index, current_atom, open.bond)
             } else {
                 // RDKit CloseMolRings() keeps the first specified partial
@@ -1776,6 +2070,7 @@ impl<'a> Parser<'a> {
                 chiral_tag: ChiralTag::Unspecified,
                 isotope: None,
                 atom_map_num: None,
+                props: Default::default(),
                 rdkit_cip_rank: None,
             });
         }
@@ -1797,6 +2092,7 @@ impl<'a> Parser<'a> {
                 chiral_tag: ChiralTag::Unspecified,
                 isotope,
                 atom_map_num: None,
+                props: Default::default(),
                 rdkit_cip_rank: None,
             }
         } else if self.consume_if('*') {
@@ -1811,6 +2107,7 @@ impl<'a> Parser<'a> {
                 chiral_tag: ChiralTag::Unspecified,
                 isotope,
                 atom_map_num: None,
+                props: Default::default(),
                 rdkit_cip_rank: None,
             }
         } else if let Some((atomic_num, aromatic, consumed)) = self.match_bracket_atom_symbol() {
@@ -1826,6 +2123,7 @@ impl<'a> Parser<'a> {
                 chiral_tag: ChiralTag::Unspecified,
                 isotope,
                 atom_map_num: None,
+                props: Default::default(),
                 rdkit_cip_rank: None,
             }
         } else {
@@ -1902,6 +2200,9 @@ impl<'a> Parser<'a> {
             }
             '\\' => {
                 self.consume_char();
+                if self.peek_char() == Some('\\') {
+                    self.consume_char();
+                }
                 Some(PendingBond::DirectionalSingleDown)
             }
             _ => None,

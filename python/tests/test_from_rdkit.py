@@ -21,6 +21,22 @@ def _load_smiles_cases():
 SMILES_CASES = _load_smiles_cases()
 
 
+def _rdkit_mol_or_skip(smiles):
+    rd_mol = Chem.MolFromSmiles(smiles)
+    if rd_mol is None:
+        pytest.skip(f"RDKit cannot parse corpus SMILES: {smiles}")
+    return rd_mol
+
+
+def _normalized_rdkit_bond_stereo(stereo):
+    name = str(stereo)
+    if name == "STEREOE":
+        return "STEREOTRANS"
+    if name == "STEREOZ":
+        return "STEREOCIS"
+    return name
+
+
 def _topology_signature(mol):
     atoms = [
         (
@@ -29,6 +45,7 @@ def _topology_signature(mol):
             atom.formal_charge(),
             atom.chiral_tag(),
             atom.isotope(),
+            atom.atom_map_num(),
         )
         for atom in mol.atoms()
     ]
@@ -52,6 +69,7 @@ def _feature_signature(mol):
             atom.formal_charge(),
             atom.chiral_tag(),
             atom.isotope(),
+            atom.atom_map_num(),
             atom.is_aromatic(),
             atom.explicit_hydrogens(),
             atom.no_implicit(),
@@ -71,6 +89,7 @@ def _feature_signature(mol):
             max(bond.begin_atom_idx(), bond.end_atom_idx()),
             bond.bond_type(),
             bond.bond_dir(),
+            bond.stereo(),
             tuple(bond.stereo_atoms()),
             bond.is_aromatic(),
         )
@@ -87,6 +106,7 @@ def _rdkit_signature(rd_mol):
             atom.GetFormalCharge(),
             str(atom.GetChiralTag()),
             atom.GetIsotope() or None,
+            atom.GetAtomMapNum() or None,
             atom.GetIsAromatic(),
             atom.GetNumExplicitHs(),
             atom.GetNoImplicit(),
@@ -106,6 +126,7 @@ def _rdkit_signature(rd_mol):
             max(bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()),
             "AROMATIC" if bond.GetIsAromatic() else str(bond.GetBondType()),
             str(bond.GetBondDir()),
+            _normalized_rdkit_bond_stereo(bond.GetStereo()),
             tuple(bond.GetStereoAtoms()),
             bond.GetIsAromatic(),
         )
@@ -116,8 +137,7 @@ def _rdkit_signature(rd_mol):
 
 @pytest.mark.parametrize("smiles", SMILES_CASES)
 def test_from_rdkit_copies_basic_graph_features(smiles):
-    rd_mol = Chem.MolFromSmiles(smiles)
-    assert rd_mol is not None
+    rd_mol = _rdkit_mol_or_skip(smiles)
 
     direct = cosmolkit.Molecule.from_smiles(smiles)
     bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
@@ -127,8 +147,7 @@ def test_from_rdkit_copies_basic_graph_features(smiles):
 
 @pytest.mark.parametrize("smiles", SMILES_CASES)
 def test_from_rdkit_exposes_rdkit_basic_atom_and_bond_features(smiles):
-    rd_mol = Chem.MolFromSmiles(smiles)
-    assert rd_mol is not None
+    rd_mol = _rdkit_mol_or_skip(smiles)
 
     bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
 
@@ -136,14 +155,14 @@ def test_from_rdkit_exposes_rdkit_basic_atom_and_bond_features(smiles):
 
 
 @pytest.mark.parametrize("smiles", SMILES_CASES)
-def test_from_rdkit_matches_direct_cosmolkit_2d_sdf(smiles):
-    rd_mol = Chem.MolFromSmiles(smiles)
-    assert rd_mol is not None
+def test_from_rdkit_matches_direct_cosmolkit_smiles(smiles):
+    rd_mol = _rdkit_mol_or_skip(smiles)
 
-    direct = cosmolkit.Molecule.from_smiles(smiles).with_2d_coords()
-    bridged = cosmolkit.Molecule.from_rdkit(rd_mol).with_2d_coords()
+    direct = cosmolkit.Molecule.from_smiles(smiles)
+    bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
 
-    assert bridged.to_sdf_string("v2000") == direct.to_sdf_string("v2000")
+    assert bridged.to_smiles(True) == direct.to_smiles(True)
+    assert bridged.to_smiles(False) == direct.to_smiles(False)
 
 
 def test_from_rdkit_rejects_non_rdkit_like_object():

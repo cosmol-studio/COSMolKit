@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
-use cosmolkit_core::{BondOrder, Molecule};
+use cosmolkit_core::{BatchErrorMode, BondOrder, Molecule, MoleculeBatch, PreparedDrawMolecule};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -211,5 +211,124 @@ fn prepared_draw_molecule_matches_rdkit_golden() {
                 record.smiles
             );
         }
+    }
+
+    let smiles = records
+        .iter()
+        .map(|record| record.smiles.clone())
+        .collect::<Vec<_>>();
+    let batch = MoleculeBatch::from_smiles_list(&smiles, BatchErrorMode::Keep)
+        .expect("batch SMILES parse should not raise in keep mode");
+    let prepared = batch
+        .prepare_for_drawing_parity_list()
+        .expect("batch prepared drawing should succeed");
+    for (row_idx, (record, actual)) in records.iter().zip(prepared).enumerate() {
+        if !record.rdkit_ok {
+            continue;
+        }
+        let actual =
+            actual.unwrap_or_else(|| panic!("batch prepared draw missing at row {}", row_idx + 1));
+        assert_prepared_draw_matches(row_idx, record, &actual);
+    }
+}
+
+fn assert_prepared_draw_matches(
+    row_idx: usize,
+    record: &PreparedDrawRecord,
+    actual: &PreparedDrawMolecule,
+) {
+    let expected_atoms = record.atoms.as_ref().expect("rdkit ok row has atoms");
+    let expected_bonds = record.bonds.as_ref().expect("rdkit ok row has bonds");
+
+    assert_eq!(
+        actual.atoms.len(),
+        expected_atoms.len(),
+        "row {} ({}) atom count mismatch",
+        row_idx + 1,
+        record.smiles
+    );
+    assert_eq!(
+        actual.bonds.len(),
+        expected_bonds.len(),
+        "row {} ({}) bond count mismatch",
+        row_idx + 1,
+        record.smiles
+    );
+
+    for (atom_idx, (actual_atom, expected_atom)) in
+        actual.atoms.iter().zip(expected_atoms).enumerate()
+    {
+        assert_eq!(
+            actual_atom.index,
+            expected_atom.idx,
+            "row {} atom {atom_idx} index",
+            row_idx + 1
+        );
+        assert_eq!(
+            actual_atom.atomic_num,
+            expected_atom.atomic_num,
+            "row {} atom {atom_idx} atomic number",
+            row_idx + 1
+        );
+        assert!(
+            (actual_atom.x - expected_atom.x).abs() <= 1e-8,
+            "row {} ({}) atom {atom_idx} x mismatch: expected {}, got {}",
+            row_idx + 1,
+            record.smiles,
+            expected_atom.x,
+            actual_atom.x
+        );
+        assert!(
+            (actual_atom.y - expected_atom.y).abs() <= 1e-8,
+            "row {} ({}) atom {atom_idx} y mismatch: expected {}, got {}",
+            row_idx + 1,
+            record.smiles,
+            expected_atom.y,
+            actual_atom.y
+        );
+    }
+
+    for (bond_idx, (actual_bond, expected_bond)) in
+        actual.bonds.iter().zip(expected_bonds).enumerate()
+    {
+        assert_eq!(
+            actual_bond.index,
+            expected_bond.idx,
+            "row {} bond {bond_idx} index",
+            row_idx + 1
+        );
+        assert_eq!(
+            actual_bond.begin_atom,
+            expected_bond.begin,
+            "row {} bond {bond_idx} begin",
+            row_idx + 1
+        );
+        assert_eq!(
+            actual_bond.end_atom,
+            expected_bond.end,
+            "row {} bond {bond_idx} end",
+            row_idx + 1
+        );
+        assert_eq!(
+            bond_order_name(actual_bond.bond_type),
+            expected_bond.bond_type,
+            "row {} ({}) bond {bond_idx} type",
+            row_idx + 1,
+            record.smiles
+        );
+        assert_eq!(
+            actual_bond.is_aromatic,
+            expected_bond.is_aromatic,
+            "row {} ({}) bond {bond_idx} aromatic flag",
+            row_idx + 1,
+            record.smiles
+        );
+        assert_eq!(
+            actual_bond.rdkit_direction_name,
+            expected_bond.dir,
+            "row {} ({}) bond {bond_idx} direction",
+            row_idx + 1,
+            record.smiles
+        );
     }
 }

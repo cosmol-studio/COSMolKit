@@ -11,6 +11,7 @@
 - `golden/dg_bounds_matrix.jsonl` RDKit baseline for distance-geometry bounds matrix parity
 - `golden/svg_drawer.jsonl` RDKit baseline for `MolDraw2DSVG` output parity
 - `golden/prepared_draw_molecule.jsonl` RDKit baseline for `PrepareMolForDrawing(kekulize=True, addChiralHs=True, wedgeBonds=True, forceCoords=True)` prepared atom coordinates and bond directions
+- `golden/sdf_read.jsonl` RDKit baseline for SDF read parity across 2D/3D, V2000/V3000, stereo-marker, and coordinate-inferred branches
 
 ## Standard Workflow (RDKit Parity)
 
@@ -30,6 +31,7 @@ RDKit parity tests are strict source-level reproduction tests against `third_par
    - `.venv/bin/python tests/scripts/gen_rdkit_dg_bounds_golden.py --input tests/smiles.smi --output tests/golden/dg_bounds_matrix.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_svg_golden.py --input tests/smiles.smi --output tests/golden/svg_drawer.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_prepared_draw_golden.py --input tests/smiles.smi --output tests/golden/prepared_draw_molecule.jsonl`
+   - `.venv/bin/python tests/scripts/gen_rdkit_sdf_read_golden.py --input tests/smiles.smi --output tests/golden/sdf_read.jsonl`
 3. (Optional) Install local COSMolKit Python build into the same env for direct comparison:
    - `.venv/bin/maturin develop --manifest-path python/Cargo.toml`
 4. Run Rust tests:
@@ -47,6 +49,7 @@ Notes:
 - `cargo test -p cosmolkit-core --test tetrahedral_stereo_geometry` will auto-generate `tests/golden/tetrahedral_stereo_geometry.jsonl` if it is missing.
 - `cargo test -p cosmolkit-core --test rdkit_smiles_writer_parity` will auto-generate `tests/golden/smiles_writer.jsonl` if it is missing.
 - `cargo test -p cosmolkit-core --test rdkit_dg_bounds_parity` will auto-generate `tests/golden/dg_bounds_matrix.jsonl` if it is missing.
+- `cargo test -p cosmolkit-core --test rdkit_sdf_read_parity` will auto-generate `tests/golden/sdf_read.jsonl` if it is missing.
 - Python lookup order for auto-generation: `COSMOLKIT_PYTHON` -> `.venv/bin/python` -> `python3`.
 - `tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py` asserts `rdkit == 2026.3.1` before generating ETKDG geometry golden so test conditions do not drift silently.
 
@@ -81,6 +84,12 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 - `svg_drawer_golden_has_one_record_per_smiles`
 - `svg_drawer_matches_rdkit_golden`
 - strict RDKit parity coverage for the Python-exposed `MolDraw2DSVG(..., noFreetype=True)` final SVG string
+
+`crates/cosmolkit-core/tests/rdkit_sdf_read_parity.rs` contains:
+- `sdf_read_topology_and_atom_fields_match_rdkit`
+- `sdf_read_coordinates_match_rdkit_for_2d_and_3d_records`
+- `sdf_read_chirality_matches_rdkit_for_markers_and_coordinates`
+- `sdf_read_to_smiles_matches_rdkit_canonical_and_noncanonical`
 
 Current status:
 - `cosmolkit-core` graph-feature parity is currently passing on the shared corpus (direct + explicit-H comparisons).

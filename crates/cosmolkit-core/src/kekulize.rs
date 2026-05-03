@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::valence::valence_list;
 use crate::valence::{ValenceModel, assign_valence};
-use crate::{BondOrder, Molecule};
+use crate::{BondDirection, BondOrder, Molecule};
 
 /// Kekulization errors.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -128,6 +128,12 @@ pub fn kekulize_in_place(
     Ok(())
 }
 
+pub fn kekulized(molecule: &Molecule) -> Result<Molecule, KekulizeError> {
+    let mut out = molecule.clone();
+    kekulize_in_place(&mut out, true)?;
+    Ok(out)
+}
+
 fn bond_order_contrib(order: BondOrder) -> i32 {
     match order {
         BondOrder::Single | BondOrder::Dative => 1,
@@ -172,7 +178,66 @@ fn default_valence(atomic_num: u8) -> i32 {
 }
 
 fn is_early_atom(atomic_num: u8) -> bool {
-    atomic_num <= 10
+    // Mirrors RDKit Atom.cpp::isEarlyAtom(): elements to the left of carbon.
+    matches!(
+        atomic_num,
+        3 | 4
+            | 5
+            | 11
+            | 12
+            | 13
+            | 19
+            | 20
+            | 21
+            | 22
+            | 30
+            | 31
+            | 32
+            | 37
+            | 38
+            | 39
+            | 40
+            | 41
+            | 48
+            | 49
+            | 50
+            | 51
+            | 55
+            | 56
+            | 57
+            | 58
+            | 59
+            | 60
+            | 61
+            | 72
+            | 73
+            | 80
+            | 81
+            | 82
+            | 83
+            | 87
+            | 88
+            | 89
+            | 90
+            | 91
+            | 92
+            | 93
+            | 104
+            | 105
+            | 106
+            | 107
+            | 108
+            | 109
+            | 110
+            | 111
+            | 112
+            | 113
+            | 114
+            | 115
+            | 116
+            | 117
+            | 118
+    )
 }
 
 fn total_valence_for_atom(mol: &Molecule, atom_idx: usize) -> i32 {
@@ -1337,6 +1402,9 @@ fn kekulize_worker(
                     return false;
                 };
                 mol.bonds[bi].order = BondOrder::Double;
+                if !matches!(mol.bonds[bi].direction, BondDirection::None) {
+                    mol.bonds[bi].direction = BondDirection::None;
+                }
                 d_bond_cands[curr] = false;
                 d_bond_cands[ncnd] = false;
                 d_bond_adds[bi] = true;

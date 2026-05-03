@@ -504,9 +504,11 @@ fn is_atom_conjug_cand(
         }
     }
     let nouter = rdkit_n_outer_electrons(at.atomic_num).unwrap_or(0);
-    let row_ok = at.atomic_num <= 10
-        || (nouter != 5 && nouter != 6)
-        || (nouter == 6 && atom_degree[atom_index] < 2);
+    let total_degree = atom_degree[atom_index]
+        + at.explicit_hydrogens as usize
+        + assignment.implicit_hydrogens[atom_index] as usize;
+    let row_ok =
+        at.atomic_num <= 10 || (nouter != 5 && nouter != 6) || (nouter == 6 && total_degree < 2);
     row_ok && count_atom_electrons_rdkit(mol, assignment, atom_degree, atom_index) > 0
 }
 
@@ -1309,7 +1311,99 @@ fn rdkit_pick_d2_nodes(
     d2nodes
 }
 
-fn rdkit_find_sssr_orders(mol: &Molecule, comp: &[usize]) -> Vec<Vec<usize>> {
+fn rdkit_find_sssr_orders(
+    mol: &Molecule,
+    comp: &[usize],
+    include_degree_three_nodes: bool,
+) -> Vec<Vec<usize>> {
+    fn add_unique_rings(
+        rings: &mut Vec<Vec<usize>>,
+        invariants: &mut BTreeSet<Vec<usize>>,
+        new_rings: Vec<Vec<usize>>,
+    ) {
+        for ring in new_rings {
+            let mut inv = ring.clone();
+            inv.sort_unstable();
+            if invariants.insert(inv) {
+                rings.push(ring);
+            }
+        }
+    }
+
+    fn rdkit_find_rings_d3_node(
+        mol: &Molecule,
+        rings: &mut Vec<Vec<usize>>,
+        invariants: &mut BTreeSet<Vec<usize>>,
+        cand: usize,
+        active_bonds: &[bool],
+    ) {
+        let srings =
+            rdkit_smallest_rings_bfs(mol, cand, active_bonds, &vec![false; mol.atoms.len()]);
+        let nsmall = srings.len();
+        add_unique_rings(rings, invariants, srings.clone());
+        if nsmall >= 3 {
+            return;
+        }
+
+        let mut active_neighbors = Vec::<usize>::new();
+        for bond in &mol.bonds {
+            if !active_bonds[bond.index] {
+                continue;
+            }
+            if bond.begin_atom == cand {
+                active_neighbors.push(bond.end_atom);
+            } else if bond.end_atom == cand {
+                active_neighbors.push(bond.begin_atom);
+            }
+            if active_neighbors.len() == 3 {
+                break;
+            }
+        }
+        if active_neighbors.len() < 3 {
+            return;
+        }
+        let n1 = active_neighbors[0];
+        let n2 = active_neighbors[1];
+        let n3 = active_neighbors[2];
+
+        if nsmall == 2 {
+            let f = if srings[0].contains(&n1) && srings[1].contains(&n1) {
+                Some(n1)
+            } else if srings[0].contains(&n2) && srings[1].contains(&n2) {
+                Some(n2)
+            } else if srings[0].contains(&n3) && srings[1].contains(&n3) {
+                Some(n3)
+            } else {
+                None
+            };
+            if let Some(f) = f {
+                let mut forb = vec![false; mol.atoms.len()];
+                forb[f] = true;
+                let trings = rdkit_smallest_rings_bfs(mol, cand, active_bonds, &forb);
+                add_unique_rings(rings, invariants, trings);
+            }
+        } else if nsmall == 1 {
+            let (f1, f2) = if !srings[0].contains(&n1) {
+                (n2, n3)
+            } else if !srings[0].contains(&n2) {
+                (n1, n3)
+            } else if !srings[0].contains(&n3) {
+                (n1, n2)
+            } else {
+                return;
+            };
+            let mut forb = vec![false; mol.atoms.len()];
+            forb[f2] = true;
+            let trings = rdkit_smallest_rings_bfs(mol, cand, active_bonds, &forb);
+            add_unique_rings(rings, invariants, trings);
+
+            let mut forb = vec![false; mol.atoms.len()];
+            forb[f1] = true;
+            let trings = rdkit_smallest_rings_bfs(mol, cand, active_bonds, &forb);
+            add_unique_rings(rings, invariants, trings);
+        }
+    }
+
     let mut atom_degrees = vec![0usize; mol.atoms.len()];
     for bond in &mol.bonds {
         atom_degrees[bond.begin_atom] += 1;
@@ -1345,7 +1439,27 @@ fn rdkit_find_sssr_orders(mol: &Molecule, comp: &[usize]) -> Vec<Vec<usize>> {
 
         let d2nodes = rdkit_pick_d2_nodes(mol, comp, &atom_degrees, &active_bonds);
         if d2nodes.is_empty() {
-            break;
+            if !include_degree_three_nodes {
+                break;
+            }
+            let cand = comp
+                .iter()
+                .copied()
+                .find(|&idx| !done_atoms[idx] && atom_degrees[idx] == 3);
+            let Some(cand) = cand else {
+                break;
+            };
+            rdkit_find_rings_d3_node(mol, &mut rings, &mut invariants, cand, &active_bonds);
+            done_atoms[cand] = true;
+            n_atoms_done += 1;
+            rdkit_trim_bonds(
+                mol,
+                cand,
+                &mut changed,
+                &mut atom_degrees,
+                &mut active_bonds,
+            );
+            continue;
         }
 
         for &cand in &d2nodes {
@@ -1375,46 +1489,76 @@ fn rdkit_find_sssr_orders(mol: &Molecule, comp: &[usize]) -> Vec<Vec<usize>> {
 }
 
 pub(crate) fn rdkit_atom_rings(mol: &Molecule) -> Vec<Vec<usize>> {
+    rdkit_atom_rings_with_degree_three_nodes(mol, false, true)
+}
+
+pub(crate) fn rdkit_bond_rings_preserve_order(mol: &Molecule) -> Vec<Vec<usize>> {
+    rdkit_atom_rings_with_degree_three_nodes(mol, false, false)
+        .into_iter()
+        .filter_map(|ring| cycle_bond_indices(mol, &ring))
+        .collect()
+}
+
+fn rdkit_atom_rings_with_degree_three_nodes(
+    mol: &Molecule,
+    include_degree_three_nodes: bool,
+    sort_by_len: bool,
+) -> Vec<Vec<usize>> {
     let adjacency = adjacency_vec(mol);
     let comps = connected_components(mol, &adjacency);
     let mut out = Vec::new();
     for comp in comps {
         let comp_set: BTreeSet<usize> = comp.iter().copied().collect();
-        let mut deg_in_comp = vec![0usize; mol.atoms.len()];
-        for &a in &comp {
-            deg_in_comp[a] = adjacency[a].iter().filter(|n| comp_set.contains(n)).count();
-        }
-        let mut removed = BTreeSet::<usize>::new();
-        let mut queue: Vec<usize> = comp
-            .iter()
-            .copied()
-            .filter(|&a| deg_in_comp[a] <= 1)
-            .collect();
-        while let Some(a) = queue.pop() {
-            if removed.contains(&a) {
+        let mut cycles = rdkit_find_sssr_orders(mol, &comp, include_degree_three_nodes);
+        let ring_atoms: Vec<usize> = if include_degree_three_nodes {
+            if cycles.is_empty() {
                 continue;
             }
-            removed.insert(a);
-            for &nb in &adjacency[a] {
-                if !comp_set.contains(&nb) || removed.contains(&nb) {
+            cycles
+                .iter()
+                .flatten()
+                .copied()
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect()
+        } else {
+            let mut deg_in_comp = vec![0usize; mol.atoms.len()];
+            for &a in &comp {
+                deg_in_comp[a] = adjacency[a].iter().filter(|n| comp_set.contains(n)).count();
+            }
+            let mut removed = BTreeSet::<usize>::new();
+            let mut queue: Vec<usize> = comp
+                .iter()
+                .copied()
+                .filter(|&a| deg_in_comp[a] <= 1)
+                .collect();
+            while let Some(a) = queue.pop() {
+                if removed.contains(&a) {
                     continue;
                 }
-                if deg_in_comp[nb] > 0 {
-                    deg_in_comp[nb] -= 1;
-                    if deg_in_comp[nb] == 1 {
-                        queue.push(nb);
+                removed.insert(a);
+                for &nb in &adjacency[a] {
+                    if !comp_set.contains(&nb) || removed.contains(&nb) {
+                        continue;
+                    }
+                    if deg_in_comp[nb] > 0 {
+                        deg_in_comp[nb] -= 1;
+                        if deg_in_comp[nb] == 1 {
+                            queue.push(nb);
+                        }
                     }
                 }
             }
-        }
-        let ring_atoms: Vec<usize> = comp
-            .iter()
-            .copied()
-            .filter(|a| !removed.contains(a))
-            .collect();
-        if ring_atoms.is_empty() {
-            continue;
-        }
+            let ring_atoms: Vec<usize> = comp
+                .iter()
+                .copied()
+                .filter(|a| !removed.contains(a))
+                .collect();
+            if ring_atoms.is_empty() {
+                continue;
+            }
+            ring_atoms
+        };
         let ring_set: BTreeSet<usize> = ring_atoms.iter().copied().collect();
         let ring_bond_count = mol
             .bonds
@@ -1425,22 +1569,34 @@ pub(crate) fn rdkit_atom_rings(mol: &Molecule) -> Vec<Vec<usize>> {
         if target_cycle_count == 0 {
             continue;
         }
-
-        let mut cycles = rdkit_find_sssr_orders(mol, &comp);
         if target_cycle_count == 1 && cycles.is_empty() {
+            let mut deg_in_comp = vec![0usize; mol.atoms.len()];
+            for &a in &comp {
+                deg_in_comp[a] = adjacency[a].iter().filter(|n| comp_set.contains(n)).count();
+            }
             if let Some(cycle) = rdkit_single_ring_order(mol, &ring_set, &deg_in_comp) {
                 cycles.push(cycle);
             }
         }
         let all_cycles = all_simple_cycles_in_ring_set(&adjacency, &ring_set);
         if cycles.len() < target_cycle_count {
+            let mut existing_cycles = cycles
+                .iter()
+                .cloned()
+                .map(canonical_cycle)
+                .collect::<BTreeSet<_>>();
             let mut covered_edges = BTreeSet::<(usize, usize)>::new();
             for cyc in &all_cycles {
+                let canonical = canonical_cycle(cyc.clone());
+                if existing_cycles.contains(&canonical) {
+                    continue;
+                }
                 let edges = cycle_edges(cyc);
                 if cycles.is_empty() || edges.iter().any(|edge| !covered_edges.contains(edge)) {
                     for edge in edges {
                         covered_edges.insert(edge);
                     }
+                    existing_cycles.insert(canonical);
                     cycles.push(cyc.clone());
                 }
                 if cycles.len() == target_cycle_count {
@@ -1451,12 +1607,18 @@ pub(crate) fn rdkit_atom_rings(mol: &Molecule) -> Vec<Vec<usize>> {
         add_rdkit_symm_sssr_extra_rings(&mut cycles, &all_cycles);
         out.extend(cycles);
     }
-    out.sort_by_key(|r| r.len());
+    if sort_by_len {
+        out.sort_by_key(|r| r.len());
+    }
     out
 }
 
-pub(crate) fn rdkit_bond_rings(mol: &Molecule) -> Vec<Vec<usize>> {
-    rdkit_atom_rings(mol)
+pub(crate) fn rdkit_atom_rings_for_chiral_hs(mol: &Molecule) -> Vec<Vec<usize>> {
+    rdkit_atom_rings_with_degree_three_nodes(mol, true, true)
+}
+
+fn rdkit_bond_rings_with_degree_three_nodes(mol: &Molecule) -> Vec<Vec<usize>> {
+    rdkit_atom_rings_with_degree_three_nodes(mol, true, true)
         .into_iter()
         .filter_map(|ring| cycle_bond_indices(mol, &ring))
         .collect()
@@ -1703,7 +1865,7 @@ fn set13_bounds_nonring(
     }
     let hybridizations =
         compute_hybridizations(mol, &assignment, &atom_degree, &atom_has_conjugated_bond);
-    let atom_rings = rdkit_atom_rings(mol);
+    let atom_rings = rdkit_atom_rings_with_degree_three_nodes(mol, true, true);
 
     let nb = mol.bonds.len();
     let mut visited = vec![0usize; mol.atoms.len()];
@@ -2260,7 +2422,7 @@ fn set_chain14_bounds_nonring(
     }
     let hybridizations =
         compute_hybridizations(mol, &assignment, &atom_degree, &atom_has_conjugated_bond);
-    let bond_rings = rdkit_bond_rings(mol);
+    let bond_rings = rdkit_bond_rings_with_degree_three_nodes(mol);
     let mut ring_bond_pairs = BTreeSet::<u64>::new();
     let mut done_paths = BTreeSet::<u64>::new();
     let mut bond_ring_counts = vec![0usize; mol.bonds.len()];
@@ -2583,7 +2745,7 @@ fn set15_bounds(
                 };
                 let pid = aid1.min(aid5) * na + aid1.max(aid5);
                 if accum_data.visited_bound(pid, true) {
-                    continue;
+                    break;
                 }
                 if dmat[aid1.max(aid5) * na + aid1.min(aid5)] < 3.9 || aid1 == aid5 {
                     continue;

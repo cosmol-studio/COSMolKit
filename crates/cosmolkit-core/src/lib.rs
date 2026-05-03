@@ -2,6 +2,7 @@
 
 pub mod adjacency;
 pub mod atom;
+pub mod batch;
 pub mod bio;
 pub mod bond;
 pub mod canon_smiles;
@@ -18,13 +19,17 @@ pub mod valence;
 
 pub use adjacency::{AdjacencyList, NeighborRef};
 pub use atom::{Atom, ChiralTag};
+pub use batch::{
+    BatchErrorMode, BatchExportReport, BatchRecord, BatchRecordError, BatchValidationError,
+    MoleculeBatch,
+};
 pub use bond::{Bond, BondDirection, BondOrder, BondStereo};
 pub use distgeom::DgBoundsError;
 pub use draw::{PreparedDrawAtom, PreparedDrawBond, PreparedDrawMolecule, SvgDrawError};
 pub use hydrogens::{
     AddHydrogensError, RemoveHydrogensError, add_hydrogens_in_place, remove_hydrogens_in_place,
 };
-pub use molecule::{Molecule, SmilesParseError, SmilesWriteError};
+pub use molecule::{CoordinateDimension, Molecule, SmilesParseError, SmilesWriteError};
 pub use smiles::assign_double_bond_stereo_from_directions;
 pub use smiles_write::SmilesWriteParams;
 pub use stereo::{LigandRef, TetrahedralStereo};
@@ -67,6 +72,7 @@ mod tests {
             chiral_tag: super::ChiralTag::Unspecified,
             isotope: None,
             atom_map_num: None,
+            props: Default::default(),
             rdkit_cip_rank: None,
         };
         let _bond = Bond {
