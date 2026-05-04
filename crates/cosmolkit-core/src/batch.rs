@@ -77,24 +77,34 @@ impl MoleculeBatch {
         smiles: &[String],
         errors: BatchErrorMode,
     ) -> Result<Self, BatchValidationError> {
+        Self::from_smiles_list_with_sanitize(smiles, true, errors)
+    }
+
+    pub fn from_smiles_list_with_sanitize(
+        smiles: &[String],
+        sanitize: bool,
+        errors: BatchErrorMode,
+    ) -> Result<Self, BatchValidationError> {
         let records: Vec<BatchRecord> = smiles
             .par_iter()
             .enumerate()
-            .filter_map(|(index, smiles)| match Molecule::from_smiles(smiles) {
-                Ok(molecule) => Some(BatchRecord::Valid(molecule)),
-                Err(error) => {
-                    let record_error = BatchRecordError::new(
-                        index,
-                        Some(smiles.clone()),
-                        "parse_smiles",
-                        "SmilesParseError",
-                        error.to_string(),
-                    );
-                    match errors {
-                        BatchErrorMode::Raise | BatchErrorMode::Keep => {
-                            Some(BatchRecord::Invalid(record_error))
+            .filter_map(|(index, smiles)| {
+                match Molecule::from_smiles_with_sanitize(smiles, sanitize) {
+                    Ok(molecule) => Some(BatchRecord::Valid(molecule)),
+                    Err(error) => {
+                        let record_error = BatchRecordError::new(
+                            index,
+                            Some(smiles.clone()),
+                            "parse_smiles",
+                            "SmilesParseError",
+                            error.to_string(),
+                        );
+                        match errors {
+                            BatchErrorMode::Raise | BatchErrorMode::Keep => {
+                                Some(BatchRecord::Invalid(record_error))
+                            }
+                            BatchErrorMode::Skip => None,
                         }
-                        BatchErrorMode::Skip => None,
                     }
                 }
             })
@@ -231,14 +241,22 @@ impl MoleculeBatch {
 
     pub fn sanitize(&self, errors: BatchErrorMode) -> Result<Self, BatchValidationError> {
         self.transform_valid("sanitize", "SanitizeError", errors, |molecule| {
-            Ok(molecule.clone())
+            molecule.sanitize().map_err(|error| error.to_string())
         })
     }
 
     pub fn kekulize(&self, errors: BatchErrorMode) -> Result<Self, BatchValidationError> {
+        self.kekulize_with_sanitize(false, errors)
+    }
+
+    pub fn kekulize_with_sanitize(
+        &self,
+        sanitize: bool,
+        errors: BatchErrorMode,
+    ) -> Result<Self, BatchValidationError> {
         self.transform_valid("kekulize", "KekulizeError", errors, |molecule| {
             molecule
-                .with_kekulized_bonds(false)
+                .with_kekulized_bonds(sanitize)
                 .map_err(|error| format!("{error:?}"))
         })
     }
@@ -280,6 +298,28 @@ impl MoleculeBatch {
         self.collect_optional_values("dg_bounds_matrix", "DistanceGeometryError", |molecule| {
             molecule
                 .dg_bounds_matrix()
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    pub fn morgan_fingerprint_list(
+        &self,
+        params: &crate::MorganFingerprintParams,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        self.collect_optional_values("morgan_fingerprint", "FingerprintError", |molecule| {
+            molecule
+                .morgan_fingerprint(params)
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    pub fn morgan_fingerprint_with_output_list(
+        &self,
+        params: &crate::MorganFingerprintParams,
+    ) -> Result<Vec<Option<crate::MorganFingerprintOutput>>, BatchValidationError> {
+        self.collect_optional_values("morgan_fingerprint", "FingerprintError", |molecule| {
+            molecule
+                .morgan_fingerprint_with_output(params)
                 .map_err(|error| error.to_string())
         })
     }
@@ -432,16 +472,19 @@ impl MoleculeBatch {
                 },
             })
             .collect();
-        let report_errors = outcomes
-            .iter()
-            .filter_map(|outcome| outcome.as_ref().err().cloned())
-            .collect::<Vec<_>>();
+        let mut success = 0usize;
+        let mut report_errors = Vec::new();
+        for outcome in outcomes {
+            match outcome {
+                Ok(()) => success += 1,
+                Err(error) => report_errors.push(error),
+            }
+        }
         if matches!(errors, BatchErrorMode::Raise) && !report_errors.is_empty() {
             return Err(BatchValidationError {
                 errors: report_errors,
             });
         }
-        let success = outcomes.iter().filter(|outcome| outcome.is_ok()).count();
         Ok(BatchExportReport {
             total: self.records.len(),
             success,
@@ -472,10 +515,14 @@ impl MoleculeBatch {
                 },
             })
             .collect();
-        let report_errors = outcomes
-            .iter()
-            .filter_map(|outcome| outcome.as_ref().err().cloned())
-            .collect::<Vec<_>>();
+        let mut blocks = Vec::new();
+        let mut report_errors = Vec::new();
+        for outcome in outcomes {
+            match outcome {
+                Ok(block) => blocks.push(block),
+                Err(error) => report_errors.push(error),
+            }
+        }
         if matches!(errors, BatchErrorMode::Raise) && !report_errors.is_empty() {
             return Err(BatchValidationError {
                 errors: report_errors,
@@ -490,8 +537,8 @@ impl MoleculeBatch {
                 format!("create SDF failed: {error}"),
             )],
         })?;
-        let mut success = 0usize;
-        for block in outcomes.into_iter().filter_map(Result::ok) {
+        let success = blocks.len();
+        for block in blocks {
             file.write_all(block.as_bytes())
                 .map_err(|error| BatchValidationError {
                     errors: vec![BatchRecordError::new(
@@ -502,7 +549,6 @@ impl MoleculeBatch {
                         format!("write SDF failed: {error}"),
                     )],
                 })?;
-            success += 1;
         }
         Ok(BatchExportReport {
             total: self.records.len(),
@@ -552,7 +598,8 @@ fn molecule_to_sdf_record_string(molecule: &Molecule, format: SdfFormat) -> Resu
 
 #[cfg(test)]
 mod tests {
-    use super::{BatchErrorMode, MoleculeBatch};
+    use super::{BatchErrorMode, BatchRecord, MoleculeBatch};
+    use crate::Molecule;
 
     #[test]
     fn from_smiles_list_keeps_invalid_records_in_order() {
@@ -597,5 +644,27 @@ mod tests {
         assert_eq!(prepared.len(), 1);
         assert_eq!(prepared.valid_count(), 1);
         assert_eq!(prepared.invalid_count(), 0);
+    }
+
+    #[test]
+    fn sanitize_transform_applies_pipeline_to_valid_records() {
+        let raw = Molecule::from_smiles_with_sanitize("CN(=O)=O", false)
+            .expect("unsanitized nitro SMILES should parse");
+        let batch = MoleculeBatch::new(vec![BatchRecord::Valid(raw)]);
+
+        let sanitized = batch
+            .sanitize(BatchErrorMode::Raise)
+            .expect("sanitize should transform valid records");
+
+        let BatchRecord::Valid(mol) = &sanitized.records[0] else {
+            panic!("record should remain valid");
+        };
+        assert_eq!(
+            mol.atoms()
+                .iter()
+                .map(|atom| atom.formal_charge)
+                .collect::<Vec<_>>(),
+            vec![0, 1, -1, 0]
+        );
     }
 }

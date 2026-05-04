@@ -1,7 +1,10 @@
 # COSMolKit Python
 
 COSMolKit is a Python package for molecule graph workflows, SMILES/SDF IO,
-coordinate access, molecule depiction, and high-throughput batch processing.
+coordinate access, Morgan fingerprints, molecule depiction, and
+high-throughput batch processing.
+
+Current Python documentation: <https://kit.cosmol.org/>
 
 ## API Model: Copy-On-Write (COW) Molecule Values
 
@@ -43,6 +46,29 @@ print(drawn.atoms()[0])
 drawn.write_png("phenol.png", width=400, height=300)
 ```
 
+Morgan fingerprints are exposed as RDKit-style sparse bit vectors. The
+``on_bits()`` output is a list of bit indexes set to 1 inside a fixed-length
+binary vector, not a dense neural embedding:
+
+```python
+fp = mol.fingerprint_morgan(radius=2, n_bits=2048)
+
+print(fp.n_bits())
+print(fp.on_bits())
+print(fp.tanimoto(Molecule.from_smiles("c1ccccc1").fingerprint_morgan()))
+```
+
+Additional output mirrors RDKit's Morgan provenance helpers:
+
+```python
+result = mol.fingerprint_morgan_with_output(radius=2, n_bits=2048)
+info = result.additional_output()
+
+print(result.fingerprint().on_bits())
+print(info.atom_counts())
+print(info.bit_info_map())
+```
+
 Chiral tags are available directly on atoms, so code that works with the
 SMILES/RDKit-style CW and CCW path does not need to switch to the ordered
 tetrahedral view:
@@ -77,9 +103,11 @@ batch = MoleculeBatch.from_smiles_list(smiles, errors="keep")
 
 prepared = batch.add_hydrogens(errors="keep").compute_2d_coords(errors="keep")
 report = prepared.to_images("molecule_images", format="png", errors="skip")
+fingerprints = prepared.fingerprint_morgan_list(n_bits=2048, n_jobs=8)
 
 print(prepared.valid_mask())
 print(prepared.errors())
+print([fp.on_bits() if fp is not None else None for fp in fingerprints])
 print(report)
 ```
 
@@ -126,6 +154,8 @@ print(bounds.shape)
 - CW/CCW chiral tags, chiral centers, and tetrahedral stereo inspection
 - 2D coordinate generation and NumPy coordinate arrays
 - distance-geometry bounds matrix export
+- Morgan fingerprint bit vectors, Tanimoto similarity, and AdditionalOutput
 - SVG and PNG molecule depictions
 - ordered batch construction, transformation, filtering, and export
+- batch Morgan fingerprint generation with Rust-side parallel scheduling
 - explicit molecule editing with `Molecule.edit()`

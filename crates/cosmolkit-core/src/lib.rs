@@ -8,11 +8,13 @@ pub mod bond;
 pub mod canon_smiles;
 pub mod distgeom;
 pub mod draw;
+pub mod fingerprint;
 pub mod hydrogens;
 pub mod io;
 pub mod kekulize;
 pub mod molecule;
 mod periodic_table;
+pub mod sanitize;
 mod smiles;
 pub mod smiles_write;
 pub mod stereo;
@@ -27,6 +29,10 @@ pub use batch::{
 pub use bond::{Bond, BondDirection, BondOrder, BondStereo};
 pub use distgeom::DgBoundsError;
 pub use draw::{PreparedDrawAtom, PreparedDrawBond, PreparedDrawMolecule, SvgDrawError};
+pub use fingerprint::{
+    Fingerprint, FingerprintError, MorganAdditionalOutput, MorganAtomInvariantsGenerator,
+    MorganBondInvariantsGenerator, MorganFingerprintOutput, MorganFingerprintParams,
+};
 pub use hydrogens::{
     AddHydrogensError, RemoveHydrogensError, add_hydrogens_in_place, remove_hydrogens_in_place,
 };
@@ -34,6 +40,7 @@ pub use molecule::{
     ConformerStore, CoordinateDimension, Molecule, PropertyStore, SmilesParseError,
     SmilesWriteError, TopologyData,
 };
+pub use sanitize::{SanitizeError, SanitizeOps, SanitizeStep};
 pub use smiles::assign_double_bond_stereo_from_directions;
 pub use smiles_write::SmilesWriteParams;
 pub use stereo::{LigandRef, TetrahedralStereo};
@@ -98,6 +105,37 @@ mod tests {
         assert_eq!(mol.atomic_numbers(), vec![7, 7, 7]);
         assert_eq!(mol.atoms()[0].formal_charge, -1);
         assert_eq!(mol.atoms()[1].formal_charge, 1);
+    }
+
+    #[test]
+    fn molecule_from_smiles_sanitize_flag_controls_cleanup_pipeline() {
+        let raw = Molecule::from_smiles_with_sanitize("CN(=O)=O", false)
+            .expect("unsanitized nitro SMILES should parse");
+        assert_eq!(
+            raw.atoms()
+                .iter()
+                .map(|atom| atom.formal_charge)
+                .collect::<Vec<_>>(),
+            vec![0, 0, 0, 0]
+        );
+
+        let sanitized = raw.sanitize().expect("sanitize should clean nitro form");
+        assert_eq!(
+            sanitized
+                .atoms()
+                .iter()
+                .map(|atom| atom.formal_charge)
+                .collect::<Vec<_>>(),
+            vec![0, 1, -1, 0]
+        );
+        assert_eq!(
+            raw.atoms()
+                .iter()
+                .map(|atom| atom.formal_charge)
+                .collect::<Vec<_>>(),
+            vec![0, 0, 0, 0],
+            "COW sanitize must not mutate the original molecule"
+        );
     }
 
     #[test]

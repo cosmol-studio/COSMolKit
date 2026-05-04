@@ -17,6 +17,54 @@ def test_with_2d_coords_returns_new_molecule_without_mutating_input():
     assert mol_2d.has_2d_coords()
 
 
+def test_from_smiles_sanitize_flag_and_molecule_sanitize_are_value_style():
+    raw = cosmolkit.Molecule.from_smiles("CN(=O)=O", sanitize=False)
+
+    sanitized = raw.sanitize()
+
+    assert [atom.formal_charge() for atom in raw.atoms()] == [0, 0, 0, 0]
+    assert [atom.formal_charge() for atom in sanitized.atoms()] == [0, 1, -1, 0]
+    assert raw is not sanitized
+
+
+def test_sdf_sanitize_false_is_not_silently_ignored():
+    sdf = """ethane
+     COSMolKit      2D
+
+  2  1  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+M  END
+$$$$
+"""
+    with pytest.raises(ValueError, match="sanitize=False is not implemented for SDF"):
+        cosmolkit.Molecule.read_sdf_record_from_str(sdf, sanitize=False)
+
+
+def test_sanitize_strict_false_is_not_silently_ignored():
+    mol = cosmolkit.Molecule.from_smiles("CCO")
+
+    with pytest.raises(ValueError, match="strict=False sanitization is not implemented"):
+        mol.sanitize(strict=False)
+
+
+def test_molecule_batch_sanitize_flag_and_transform_are_not_noops():
+    batch = cosmolkit.MoleculeBatch.from_smiles_list(
+        ["CN(=O)=O"],
+        sanitize=False,
+        errors="raise",
+        n_jobs=1,
+    )
+
+    with pytest.raises(cosmolkit.BatchValidationError, match="to_smiles"):
+        batch.to_smiles_list(canonical=False)
+
+    sanitized = batch.sanitize(errors="raise", n_jobs=1).to_smiles_list()
+
+    assert sanitized == ["C[N+](=O)[O-]"]
+
+
 def test_structural_array_access_returns_numpy_arrays():
     mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coords()
 
@@ -153,6 +201,10 @@ def test_molecule_batch_parallel_smiles_writer_options():
         "F[C@H](Cl)[13CH3]",
     ]
     assert batch.to_smiles_list(all_bonds_explicit=True, n_jobs=2)[0] == "C-[*:1]"
+    assert batch.to_smiles_list(rooted_at_atom=0, n_jobs=2) == [
+        "[*:1]C",
+        "[13CH3:7][C@H](F)Cl",
+    ]
 
 
 def test_molecule_batch_raise_aggregates_errors():

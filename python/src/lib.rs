@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{BufReader, Write};
 use std::path::PathBuf;
@@ -78,6 +79,110 @@ where
 
 fn batch_validation_pyerr(error: cosmolkit_core::BatchValidationError) -> PyErr {
     BatchValidationError::new_err(format_batch_errors(&error.errors))
+}
+
+fn sanitize_pyerr(error: cosmolkit_core::SanitizeError) -> PyErr {
+    PyValueError::new_err(error.to_string())
+}
+
+fn fingerprint_pyerr(error: cosmolkit_core::FingerprintError) -> PyErr {
+    PyValueError::new_err(error.to_string())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn make_morgan_fingerprint_params(
+    radius: u32,
+    n_bits: usize,
+    include_chirality: bool,
+    use_bond_types: bool,
+    count_simulation: bool,
+    count_bounds: Option<Vec<u32>>,
+    only_nonzero_invariants: bool,
+    include_redundant_environments: bool,
+    from_atoms: Option<Vec<usize>>,
+    ignore_atoms: Option<Vec<usize>>,
+    custom_atom_invariants: Option<Vec<u32>>,
+    custom_bond_invariants: Option<Vec<u32>>,
+    atom_invariants_generator: Option<&str>,
+    atom_invariants_include_ring_membership: bool,
+    bond_invariants_generator: Option<&str>,
+    bond_invariants_use_bond_types: bool,
+    bond_invariants_use_chirality: bool,
+    num_bits_per_feature: u32,
+    collect_additional_output: bool,
+) -> PyResult<cosmolkit_core::MorganFingerprintParams> {
+    let atom_invariants_generator = match atom_invariants_generator
+        .map(|value| value.to_ascii_lowercase())
+        .as_deref()
+    {
+        None | Some("connectivity") | Some("morgan") => {
+            cosmolkit_core::MorganAtomInvariantsGenerator::Connectivity {
+                include_ring_membership: atom_invariants_include_ring_membership,
+            }
+        }
+        Some("feature") | Some("fcfp") => cosmolkit_core::MorganAtomInvariantsGenerator::Feature,
+        Some(value) => {
+            return Err(PyValueError::new_err(format!(
+                "unsupported atom_invariants_generator '{value}', expected one of: connectivity, morgan, feature, fcfp"
+            )));
+        }
+    };
+
+    let bond_invariants_generator = match bond_invariants_generator
+        .map(|value| value.to_ascii_lowercase())
+        .as_deref()
+    {
+        None => None,
+        Some("morgan") | Some("default") | Some("bond") => {
+            Some(cosmolkit_core::MorganBondInvariantsGenerator {
+                use_bond_types: bond_invariants_use_bond_types,
+                use_chirality: bond_invariants_use_chirality,
+            })
+        }
+        Some(value) => {
+            return Err(PyValueError::new_err(format!(
+                "unsupported bond_invariants_generator '{value}', expected one of: morgan, default, bond"
+            )));
+        }
+    };
+
+    Ok(cosmolkit_core::MorganFingerprintParams {
+        radius,
+        n_bits,
+        use_chirality: include_chirality,
+        use_bond_types,
+        count_simulation,
+        count_bounds: count_bounds.unwrap_or_else(|| vec![1, 2, 4, 8]),
+        only_nonzero_invariants,
+        include_ring_membership: atom_invariants_include_ring_membership,
+        include_redundant_environments,
+        from_atoms,
+        ignore_atoms,
+        custom_atom_invariants,
+        custom_bond_invariants,
+        atom_invariants_generator,
+        bond_invariants_generator,
+        num_bits_per_feature,
+        collect_additional_output,
+    })
+}
+
+fn reject_non_strict_sanitize(strict: Option<bool>) -> PyResult<()> {
+    if matches!(strict, Some(false)) {
+        return Err(PyValueError::new_err(
+            "strict=False sanitization is not implemented; COSMolKit currently supports RDKit-style strict sanitization only",
+        ));
+    }
+    Ok(())
+}
+
+fn reject_unsanitized_sdf(sanitize: Option<bool>) -> PyResult<()> {
+    if matches!(sanitize, Some(false)) {
+        return Err(PyValueError::new_err(
+            "sanitize=False is not implemented for SDF readers; MolBlock/SDF parsing currently finalizes chemistry during read",
+        ));
+    }
+    Ok(())
 }
 
 fn format_batch_errors(errors: &[BatchRecordError]) -> String {
@@ -665,10 +770,10 @@ MoleculeBatch
         errors: Option<&str>,
         n_jobs: Option<usize>,
     ) -> PyResult<Self> {
-        let _ = sanitize;
+        let sanitize = sanitize.unwrap_or(true);
         let mode = parse_batch_error_mode(errors)?;
         run_with_n_jobs(n_jobs, move || {
-            cosmolkit_core::MoleculeBatch::from_smiles_list(&smiles, mode)
+            cosmolkit_core::MoleculeBatch::from_smiles_list_with_sanitize(&smiles, sanitize, mode)
                 .map(|inner| Self { inner })
                 .map_err(batch_validation_pyerr)
         })
@@ -716,7 +821,7 @@ Return a new batch with explicit hydrogens added to each valid molecule.
 "#]
     fn add_hydrogens(&self, errors: Option<&str>, n_jobs: Option<usize>) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
-        let inner = self.inner.clone();
+        let inner = &self.inner;
         run_with_n_jobs(n_jobs, move || {
             inner
                 .add_hydrogens(mode)
@@ -731,7 +836,7 @@ Return a new batch with explicit hydrogens removed from each valid molecule.
 "#]
     fn remove_hydrogens(&self, errors: Option<&str>, n_jobs: Option<usize>) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
-        let inner = self.inner.clone();
+        let inner = &self.inner;
         run_with_n_jobs(n_jobs, move || {
             inner
                 .remove_hydrogens(mode)
@@ -759,9 +864,9 @@ n_jobs : int, optional
         errors: Option<&str>,
         n_jobs: Option<usize>,
     ) -> PyResult<Self> {
-        let _ = strict;
+        reject_non_strict_sanitize(strict)?;
         let mode = parse_batch_error_mode(errors)?;
-        let inner = self.inner.clone();
+        let inner = &self.inner;
         run_with_n_jobs(n_jobs, move || {
             inner
                 .sanitize(mode)
@@ -780,12 +885,12 @@ Return a new batch with aromatic bonds converted to an explicit Kekule form.
         errors: Option<&str>,
         n_jobs: Option<usize>,
     ) -> PyResult<Self> {
-        let _ = sanitize;
+        let sanitize = sanitize.unwrap_or(true);
         let mode = parse_batch_error_mode(errors)?;
-        let inner = self.inner.clone();
+        let inner = &self.inner;
         run_with_n_jobs(n_jobs, move || {
             inner
-                .kekulize(mode)
+                .kekulize_with_sanitize(sanitize, mode)
                 .map(|inner| Self { inner })
                 .map_err(batch_validation_pyerr)
         })
@@ -797,7 +902,7 @@ Return a new batch with 2D coordinates computed for each valid molecule.
 "#]
     fn compute_2d_coords(&self, errors: Option<&str>, n_jobs: Option<usize>) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
-        let inner = self.inner.clone();
+        let inner = &self.inner;
         run_with_n_jobs(n_jobs, move || {
             inner
                 .compute_2d_coords(mode)
@@ -912,7 +1017,7 @@ n_jobs : int, optional
         rooted_at_atom: Option<usize>,
         n_jobs: Option<usize>,
     ) -> PyResult<Vec<Option<String>>> {
-        let inner = self.inner.clone();
+        let inner = &self.inner;
         let params = make_smiles_write_params(
             isomeric_smiles,
             canonical,
@@ -936,10 +1041,178 @@ n_jobs : int, optional
 Return distance-geometry bounds matrices for all valid records.
 "#]
     fn dg_bounds_matrix_list(&self, n_jobs: Option<usize>) -> PyResult<Vec<Option<Vec<Vec<f64>>>>> {
-        let inner = self.inner.clone();
+        let inner = &self.inner;
         run_with_n_jobs(n_jobs, move || {
             inner
                 .dg_bounds_matrix_list()
+                .map_err(batch_validation_pyerr)
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        radius=2,
+        n_bits=2048,
+        include_chirality=false,
+        use_bond_types=true,
+        count_simulation=false,
+        count_bounds=None,
+        only_nonzero_invariants=false,
+        include_redundant_environments=false,
+        from_atoms=None,
+        ignore_atoms=None,
+        custom_atom_invariants=None,
+        custom_bond_invariants=None,
+        atom_invariants_generator=None,
+        atom_invariants_include_ring_membership=true,
+        bond_invariants_generator=None,
+        bond_invariants_use_bond_types=true,
+        bond_invariants_use_chirality=false,
+        num_bits_per_feature=1,
+        n_jobs=None
+    ))]
+    #[doc = r#"
+Return Morgan fingerprints for valid batch records.
+
+Invalid records are returned as ``None`` in their original positions.
+"#]
+    fn fingerprint_morgan_list(
+        &self,
+        radius: u32,
+        n_bits: usize,
+        include_chirality: bool,
+        use_bond_types: bool,
+        count_simulation: bool,
+        count_bounds: Option<Vec<u32>>,
+        only_nonzero_invariants: bool,
+        include_redundant_environments: bool,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        custom_atom_invariants: Option<Vec<u32>>,
+        custom_bond_invariants: Option<Vec<u32>>,
+        atom_invariants_generator: Option<&str>,
+        atom_invariants_include_ring_membership: bool,
+        bond_invariants_generator: Option<&str>,
+        bond_invariants_use_bond_types: bool,
+        bond_invariants_use_chirality: bool,
+        num_bits_per_feature: u32,
+        n_jobs: Option<usize>,
+    ) -> PyResult<Vec<Option<Fingerprint>>> {
+        let params = make_morgan_fingerprint_params(
+            radius,
+            n_bits,
+            include_chirality,
+            use_bond_types,
+            count_simulation,
+            count_bounds,
+            only_nonzero_invariants,
+            include_redundant_environments,
+            from_atoms,
+            ignore_atoms,
+            custom_atom_invariants,
+            custom_bond_invariants,
+            atom_invariants_generator,
+            atom_invariants_include_ring_membership,
+            bond_invariants_generator,
+            bond_invariants_use_bond_types,
+            bond_invariants_use_chirality,
+            num_bits_per_feature,
+            false,
+        )?;
+        let inner = &self.inner;
+        run_with_n_jobs(n_jobs, move || {
+            inner
+                .morgan_fingerprint_list(&params)
+                .map(|values| {
+                    values
+                        .into_iter()
+                        .map(|value| value.map(|inner| Fingerprint { inner }))
+                        .collect()
+                })
+                .map_err(batch_validation_pyerr)
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        radius=2,
+        n_bits=2048,
+        include_chirality=false,
+        use_bond_types=true,
+        count_simulation=false,
+        count_bounds=None,
+        only_nonzero_invariants=false,
+        include_redundant_environments=false,
+        from_atoms=None,
+        ignore_atoms=None,
+        custom_atom_invariants=None,
+        custom_bond_invariants=None,
+        atom_invariants_generator=None,
+        atom_invariants_include_ring_membership=true,
+        bond_invariants_generator=None,
+        bond_invariants_use_bond_types=true,
+        bond_invariants_use_chirality=false,
+        num_bits_per_feature=1,
+        n_jobs=None
+    ))]
+    #[doc = r#"
+Return Morgan fingerprints and additional output for valid batch records.
+
+Invalid records are returned as ``None`` in their original positions.
+"#]
+    fn fingerprint_morgan_with_output_list(
+        &self,
+        radius: u32,
+        n_bits: usize,
+        include_chirality: bool,
+        use_bond_types: bool,
+        count_simulation: bool,
+        count_bounds: Option<Vec<u32>>,
+        only_nonzero_invariants: bool,
+        include_redundant_environments: bool,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        custom_atom_invariants: Option<Vec<u32>>,
+        custom_bond_invariants: Option<Vec<u32>>,
+        atom_invariants_generator: Option<&str>,
+        atom_invariants_include_ring_membership: bool,
+        bond_invariants_generator: Option<&str>,
+        bond_invariants_use_bond_types: bool,
+        bond_invariants_use_chirality: bool,
+        num_bits_per_feature: u32,
+        n_jobs: Option<usize>,
+    ) -> PyResult<Vec<Option<MorganFingerprintResult>>> {
+        let params = make_morgan_fingerprint_params(
+            radius,
+            n_bits,
+            include_chirality,
+            use_bond_types,
+            count_simulation,
+            count_bounds,
+            only_nonzero_invariants,
+            include_redundant_environments,
+            from_atoms,
+            ignore_atoms,
+            custom_atom_invariants,
+            custom_bond_invariants,
+            atom_invariants_generator,
+            atom_invariants_include_ring_membership,
+            bond_invariants_generator,
+            bond_invariants_use_bond_types,
+            bond_invariants_use_chirality,
+            num_bits_per_feature,
+            true,
+        )?;
+        let inner = &self.inner;
+        run_with_n_jobs(n_jobs, move || {
+            inner
+                .morgan_fingerprint_with_output_list(&params)
+                .map(|values| {
+                    values
+                        .into_iter()
+                        .map(|value| value.map(Into::into))
+                        .collect()
+                })
                 .map_err(batch_validation_pyerr)
         })
     }
@@ -954,7 +1227,7 @@ Render each valid molecule to an SVG string.
         height: u32,
         n_jobs: Option<usize>,
     ) -> PyResult<Vec<Option<String>>> {
-        let inner = self.inner.clone();
+        let inner = &self.inner;
         run_with_n_jobs(n_jobs, move || {
             inner
                 .to_svg_list(width, height)
@@ -999,7 +1272,7 @@ BatchExportReport
         let image_format = format.unwrap_or("png").to_string();
         let (width, height) = size.unwrap_or((300, 300));
         let out_dir = expand_user_path(out_dir)?;
-        let inner = self.inner.clone();
+        let inner = &self.inner;
         let report = run_with_n_jobs(n_jobs, move || {
             inner
                 .write_images(out_dir.as_path(), &image_format, width, height, mode)
@@ -1039,7 +1312,7 @@ report_path : str, optional
         let mode = parse_batch_error_mode(errors)?;
         let sdf_format = parse_sdf_format(format)?;
         let path = expand_user_path(path)?;
-        let inner = self.inner.clone();
+        let inner = &self.inner;
         let report = run_with_n_jobs(n_jobs, move || {
             inner
                 .write_sdf(path.as_path(), sdf_format, mode)
@@ -1097,9 +1370,9 @@ Use ``Molecule.from_smiles("CCO")`` to create a molecule and
         smiles: &str,
         sanitize: Option<bool>,
     ) -> PyResult<Self> {
-        let _ = sanitize;
-        let mol = cosmolkit_core::Molecule::from_smiles(smiles)
-            .map_err(|err| PyValueError::new_err(err.to_string()))?;
+        let mol =
+            cosmolkit_core::Molecule::from_smiles_with_sanitize(smiles, sanitize.unwrap_or(true))
+                .map_err(|err| PyValueError::new_err(err.to_string()))?;
         Ok(Self { inner: mol })
     }
 
@@ -1130,7 +1403,6 @@ Molecule
                 "Molecule.from_rdkit requires rdkit to be installed and importable: {err}"
             ))
         })?;
-        let _ = sanitize;
         let atom_count: usize = py_method_extract(rdmol, "GetNumAtoms")?;
         let bond_count: usize = py_method_extract(rdmol, "GetNumBonds")?;
         let mut mol = cosmolkit_core::Molecule::new();
@@ -1224,7 +1496,12 @@ Molecule
             }
         }
         mol.rebuild_adjacency();
-        Ok(Self { inner: mol })
+        let inner = if matches!(sanitize, Some(true)) {
+            mol.sanitize().map_err(sanitize_pyerr)?
+        } else {
+            mol
+        };
+        Ok(Self { inner })
     }
 
     #[classmethod]
@@ -1247,7 +1524,7 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
         sanitize: Option<bool>,
         coordinate_dim: Option<&str>,
     ) -> PyResult<Self> {
-        let _ = sanitize;
+        reject_unsanitized_sdf(sanitize)?;
         let coordinate_mode = parse_sdf_coordinate_mode(coordinate_dim)?;
         let expanded_path = expand_user_path(path)?;
         let file = File::open(&expanded_path)
@@ -1275,7 +1552,7 @@ Read one molecule from an SDF record string.
         sanitize: Option<bool>,
         coordinate_dim: Option<&str>,
     ) -> PyResult<Self> {
-        let _ = sanitize;
+        reject_unsanitized_sdf(sanitize)?;
         let coordinate_mode = parse_sdf_coordinate_mode(coordinate_dim)?;
         let record = cosmolkit_core::io::sdf::read_sdf_record_from_str_with_coordinate_mode(
             sdf_text,
@@ -1298,7 +1575,7 @@ Read all molecule records from an SDF string.
         sanitize: Option<bool>,
         coordinate_dim: Option<&str>,
     ) -> PyResult<Vec<Self>> {
-        let _ = sanitize;
+        reject_unsanitized_sdf(sanitize)?;
         let coordinate_mode = parse_sdf_coordinate_mode(coordinate_dim)?;
         let records = cosmolkit_core::io::sdf::read_sdf_records_from_str_with_coordinate_mode(
             sdf_text,
@@ -1324,13 +1601,14 @@ Return a new molecule with explicit hydrogens added.
         Ok(Self { inner: out })
     }
 
+    #[pyo3(signature = (sanitize=None))]
     #[doc = r#"
 Return a new molecule with explicit hydrogens removed.
 "#]
-    fn without_hydrogens(&self) -> PyResult<Self> {
+    fn without_hydrogens(&self, sanitize: Option<bool>) -> PyResult<Self> {
         let out = self
             .inner
-            .without_hydrogens()
+            .without_hydrogens_with_sanitize(sanitize.unwrap_or(true))
             .map_err(|err| PyValueError::new_err(format!("without_hydrogens failed: {err:?}")))?;
         Ok(Self { inner: out })
     }
@@ -1340,10 +1618,12 @@ Return a new molecule with explicit hydrogens removed.
 Return a new molecule with aromatic bonds converted to an explicit Kekule form.
 "#]
     fn with_kekulized_bonds(&self, sanitize: Option<bool>) -> PyResult<Self> {
-        let _ = sanitize;
-        let out = self.inner.with_kekulized_bonds(false).map_err(|err| {
-            PyValueError::new_err(format!("with_kekulized_bonds failed: {err:?}"))
-        })?;
+        let out = self
+            .inner
+            .with_kekulized_bonds(sanitize.unwrap_or(true))
+            .map_err(|err| {
+                PyValueError::new_err(format!("with_kekulized_bonds failed: {err:?}"))
+            })?;
         Ok(Self { inner: out })
     }
 
@@ -1682,10 +1962,202 @@ as one new molecule value.
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        radius=2,
+        n_bits=2048,
+        include_chirality=false,
+        use_bond_types=true,
+        count_simulation=false,
+        count_bounds=None,
+        only_nonzero_invariants=false,
+        include_redundant_environments=false,
+        from_atoms=None,
+        ignore_atoms=None,
+        custom_atom_invariants=None,
+        custom_bond_invariants=None,
+        atom_invariants_generator=None,
+        atom_invariants_include_ring_membership=true,
+        bond_invariants_generator=None,
+        bond_invariants_use_bond_types=true,
+        bond_invariants_use_chirality=false,
+        num_bits_per_feature=1
+    ))]
+    #[doc = r#"
+Return an RDKit-style Morgan fingerprint.
+
+Parameters
+----------
+radius : int, default 2
+    Morgan neighborhood radius.
+n_bits : int, default 2048
+    Output bit vector size.
+include_chirality : bool, default False
+    Include atom chirality in invariant updates.
+use_bond_types : bool, default True
+    Include bond order in invariant updates.
+count_simulation : bool, default False
+    Apply RDKit count-simulation bit expansion.
+count_bounds : list[int], optional
+    Count-simulation thresholds. Defaults to ``[1, 2, 4, 8]``.
+only_nonzero_invariants : bool, default False
+    Skip atoms whose starting invariant is zero.
+include_redundant_environments : bool, default False
+    Retain duplicate environments instead of applying RDKit redundancy checks.
+from_atoms : list[int], optional
+    Restrict environments to these root atoms.
+ignore_atoms : list[int], optional
+    Accepted for RDKit API parity; Morgan currently ignores this input.
+custom_atom_invariants : list[int], optional
+    Per-atom starting invariants.
+custom_bond_invariants : list[int], optional
+    Per-bond invariants.
+atom_invariants_generator : {"connectivity", "morgan", "feature", "fcfp"}, optional
+    Explicit atom invariant generator. ``None`` uses the Morgan connectivity default.
+atom_invariants_include_ring_membership : bool, default True
+    Include ring membership for the connectivity invariant generator.
+bond_invariants_generator : {"morgan", "default", "bond"}, optional
+    Explicit Morgan bond invariant generator. ``None`` uses the fingerprint defaults.
+bond_invariants_use_bond_types : bool, default True
+    Include bond order in the explicit bond invariant generator.
+bond_invariants_use_chirality : bool, default False
+    Include bond stereo in the explicit bond invariant generator.
+num_bits_per_feature : int, default 1
+    Number of bits set for each feature.
+"#]
+    fn fingerprint_morgan(
+        &self,
+        radius: u32,
+        n_bits: usize,
+        include_chirality: bool,
+        use_bond_types: bool,
+        count_simulation: bool,
+        count_bounds: Option<Vec<u32>>,
+        only_nonzero_invariants: bool,
+        include_redundant_environments: bool,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        custom_atom_invariants: Option<Vec<u32>>,
+        custom_bond_invariants: Option<Vec<u32>>,
+        atom_invariants_generator: Option<&str>,
+        atom_invariants_include_ring_membership: bool,
+        bond_invariants_generator: Option<&str>,
+        bond_invariants_use_bond_types: bool,
+        bond_invariants_use_chirality: bool,
+        num_bits_per_feature: u32,
+    ) -> PyResult<Fingerprint> {
+        let params = make_morgan_fingerprint_params(
+            radius,
+            n_bits,
+            include_chirality,
+            use_bond_types,
+            count_simulation,
+            count_bounds,
+            only_nonzero_invariants,
+            include_redundant_environments,
+            from_atoms,
+            ignore_atoms,
+            custom_atom_invariants,
+            custom_bond_invariants,
+            atom_invariants_generator,
+            atom_invariants_include_ring_membership,
+            bond_invariants_generator,
+            bond_invariants_use_bond_types,
+            bond_invariants_use_chirality,
+            num_bits_per_feature,
+            false,
+        )?;
+        self.inner
+            .morgan_fingerprint(&params)
+            .map(|inner| Fingerprint { inner })
+            .map_err(fingerprint_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        radius=2,
+        n_bits=2048,
+        include_chirality=false,
+        use_bond_types=true,
+        count_simulation=false,
+        count_bounds=None,
+        only_nonzero_invariants=false,
+        include_redundant_environments=false,
+        from_atoms=None,
+        ignore_atoms=None,
+        custom_atom_invariants=None,
+        custom_bond_invariants=None,
+        atom_invariants_generator=None,
+        atom_invariants_include_ring_membership=true,
+        bond_invariants_generator=None,
+        bond_invariants_use_bond_types=true,
+        bond_invariants_use_chirality=false,
+        num_bits_per_feature=1
+    ))]
+    #[doc = r#"
+Return a Morgan fingerprint together with allocated RDKit-style additional output.
+"#]
+    fn fingerprint_morgan_with_output(
+        &self,
+        radius: u32,
+        n_bits: usize,
+        include_chirality: bool,
+        use_bond_types: bool,
+        count_simulation: bool,
+        count_bounds: Option<Vec<u32>>,
+        only_nonzero_invariants: bool,
+        include_redundant_environments: bool,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        custom_atom_invariants: Option<Vec<u32>>,
+        custom_bond_invariants: Option<Vec<u32>>,
+        atom_invariants_generator: Option<&str>,
+        atom_invariants_include_ring_membership: bool,
+        bond_invariants_generator: Option<&str>,
+        bond_invariants_use_bond_types: bool,
+        bond_invariants_use_chirality: bool,
+        num_bits_per_feature: u32,
+    ) -> PyResult<MorganFingerprintResult> {
+        let params = make_morgan_fingerprint_params(
+            radius,
+            n_bits,
+            include_chirality,
+            use_bond_types,
+            count_simulation,
+            count_bounds,
+            only_nonzero_invariants,
+            include_redundant_environments,
+            from_atoms,
+            ignore_atoms,
+            custom_atom_invariants,
+            custom_bond_invariants,
+            atom_invariants_generator,
+            atom_invariants_include_ring_membership,
+            bond_invariants_generator,
+            bond_invariants_use_bond_types,
+            bond_invariants_use_chirality,
+            num_bits_per_feature,
+            true,
+        )?;
+        let output = self
+            .inner
+            .morgan_fingerprint_with_output(&params)
+            .map_err(fingerprint_pyerr)?;
+        Ok(MorganFingerprintResult {
+            fingerprint: Fingerprint {
+                inner: output.fingerprint,
+            },
+            additional_output: output.additional_output.map(Into::into),
+        })
+    }
+
     #[pyo3(signature = (strict=None))]
     fn sanitize(&self, strict: Option<bool>) -> PyResult<Self> {
-        let _ = strict;
-        Err(unimplemented_api("Molecule.sanitize"))
+        reject_non_strict_sanitize(strict)?;
+        self.inner
+            .sanitize()
+            .map(|inner| Self { inner })
+            .map_err(sanitize_pyerr)
     }
 
     fn perceive_rings(&self) -> PyResult<Self> {
@@ -1925,10 +2397,12 @@ Set an atom formal charge.
 Commit staged edits and return a new molecule.
 "#]
     fn commit(&mut self, sanitize: Option<bool>) -> PyResult<Molecule> {
-        let _ = sanitize;
-        Ok(Molecule {
-            inner: self.working.clone(),
-        })
+        let inner = if sanitize.unwrap_or(true) {
+            self.working.sanitize().map_err(sanitize_pyerr)?
+        } else {
+            self.working.clone()
+        };
+        Ok(Molecule { inner })
     }
 
     fn __repr__(&self) -> String {
@@ -1945,15 +2419,153 @@ Commit staged edits and return a new molecule.
 struct QueryMolecule;
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass]
-struct Fingerprint;
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct Fingerprint {
+    inner: cosmolkit_core::Fingerprint,
+}
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Fingerprint {
+    #[doc = r#"
+Return the fingerprint bit-vector length.
+"#]
+    fn n_bits(&self) -> usize {
+        self.inner.n_bits()
+    }
+
+    #[doc = r#"
+Return the sorted indexes of all on bits.
+"#]
+    fn on_bits(&self) -> Vec<usize> {
+        self.inner.on_bits()
+    }
+
+    #[doc = r#"
+Return the Tanimoto similarity to another fingerprint.
+"#]
     fn tanimoto(&self, other: &Fingerprint) -> PyResult<f64> {
-        let _ = other;
-        Err(unimplemented_api("Fingerprint.tanimoto"))
+        self.inner.tanimoto(&other.inner).map_err(fingerprint_pyerr)
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.n_bits()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Fingerprint(n_bits={}, on_bits={})",
+            self.inner.n_bits(),
+            self.inner.on_bits().len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct MorganAdditionalOutput {
+    atom_counts: Vec<u32>,
+    atom_to_bits: Vec<Vec<usize>>,
+    bit_info_map: BTreeMap<usize, Vec<(usize, u32)>>,
+    atoms_per_bit: BTreeMap<usize, Vec<Vec<usize>>>,
+}
+
+impl From<cosmolkit_core::MorganAdditionalOutput> for MorganAdditionalOutput {
+    fn from(value: cosmolkit_core::MorganAdditionalOutput) -> Self {
+        Self {
+            atom_counts: value.atom_counts,
+            atom_to_bits: value.atom_to_bits,
+            bit_info_map: value.bit_info_map,
+            atoms_per_bit: value.atoms_per_bit,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl MorganAdditionalOutput {
+    #[doc = r#"
+Return the number of fingerprint environments rooted at each atom.
+"#]
+    fn atom_counts(&self) -> Vec<u32> {
+        self.atom_counts.clone()
+    }
+
+    #[doc = r#"
+Return the fingerprint bit indexes associated with each atom.
+"#]
+    fn atom_to_bits(&self) -> Vec<Vec<usize>> {
+        self.atom_to_bits.clone()
+    }
+
+    #[doc = r#"
+Return ``{bit: [(atom_idx, radius), ...]}`` Morgan bit provenance.
+"#]
+    fn bit_info_map(&self) -> BTreeMap<usize, Vec<(usize, u32)>> {
+        self.bit_info_map.clone()
+    }
+
+    #[doc = r#"
+Return ``{bit: [[atom_idx, ...], ...]}`` atom environments per bit.
+"#]
+    fn atoms_per_bit(&self) -> BTreeMap<usize, Vec<Vec<usize>>> {
+        self.atoms_per_bit.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "MorganAdditionalOutput(atom_counts={}, bit_info_bits={}, atoms_per_bit={})",
+            self.atom_counts.len(),
+            self.bit_info_map.len(),
+            self.atoms_per_bit.len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct MorganFingerprintResult {
+    fingerprint: Fingerprint,
+    additional_output: Option<MorganAdditionalOutput>,
+}
+
+impl From<cosmolkit_core::MorganFingerprintOutput> for MorganFingerprintResult {
+    fn from(value: cosmolkit_core::MorganFingerprintOutput) -> Self {
+        Self {
+            fingerprint: Fingerprint {
+                inner: value.fingerprint,
+            },
+            additional_output: value.additional_output.map(Into::into),
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl MorganFingerprintResult {
+    #[doc = r#"
+Return the computed fingerprint.
+"#]
+    fn fingerprint(&self) -> Fingerprint {
+        self.fingerprint.clone()
+    }
+
+    #[doc = r#"
+Return Morgan additional output when it was collected.
+"#]
+    fn additional_output(&self) -> Option<MorganAdditionalOutput> {
+        self.additional_output.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "MorganFingerprintResult(n_bits={}, has_additional_output={})",
+            self.fingerprint.inner.n_bits(),
+            self.additional_output.is_some()
+        )
     }
 }
 
@@ -2004,6 +2616,8 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<MoleculeEdit>()?;
     m.add_class::<QueryMolecule>()?;
     m.add_class::<Fingerprint>()?;
+    m.add_class::<MorganAdditionalOutput>()?;
+    m.add_class::<MorganFingerprintResult>()?;
     m.add_class::<SubstructureMatch>()?;
     m.add_class::<ValenceReport>()?;
     m.add_class::<Alignment>()?;

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::{
     Atom, Bond, BondDirection, BondOrder, BondStereo, ChiralTag, Molecule, SmilesParseError,
-    ValenceModel, assign_radicals_rdkit_2025, assign_valence,
+    ValenceModel, assign_valence,
     valence::{calculate_explicit_valence, valence_list},
 };
 
@@ -28,7 +28,10 @@ struct RingOpen {
     opening_slot: usize,
 }
 
-pub(crate) fn parse_smiles(smiles: &str) -> Result<Molecule, SmilesParseError> {
+pub(crate) fn parse_smiles_with_sanitize(
+    smiles: &str,
+    sanitize: bool,
+) -> Result<Molecule, SmilesParseError> {
     let (smiles, cx_part) = preprocess_smiles(smiles)?;
     let mut parser = Parser::new(smiles);
     let mut mol = parser.parse_molecule()?;
@@ -45,43 +48,17 @@ pub(crate) fn parse_smiles(smiles: &str) -> Result<Molecule, SmilesParseError> {
         &parser.ring_closure_bond_numbers,
     );
     validate_aromatic_atoms_are_in_rings(&mol)?;
-    cleanup_neutral_five_coordinate_nitrogens(&mut mol)?;
-    cleanup_organometallic_single_bonds(&mut mol)?;
-    let original_implicit_hydrogens = assign_valence(&mol, ValenceModel::RdkitLike)
-        .ok()
-        .map(|assignment| assignment.implicit_hydrogens);
-    crate::kekulize::kekulize_in_place(&mut mol, true)
-        .map_err(|err| SmilesParseError::ParseError(format!("kekulization failed: {err}")))?;
-    perceive_aromaticity(&mut mol, &parser.ring_closure_bonds)?;
-    prune_noncyclic_aromatic_bonds(&mut mol);
-    if let Some(original_implicit_hydrogens) = original_implicit_hydrogens {
-        crate::hydrogens::adjust_hydrogens_after_aromaticity_in_place(
+    if sanitize {
+        crate::sanitize::apply_sanitize_pipeline(
             &mut mol,
-            &original_implicit_hydrogens,
-        );
+            crate::sanitize::SanitizeOps::SUPPORTED_ALL,
+        )?;
+    } else {
+        assign_double_bond_stereo(&mut mol);
+        canonicalize_double_bond_stereo_by_cip(&mut mol);
+        mol.rebuild_adjacency();
     }
-    crate::hydrogens::remove_hydrogens_after_smiles_parse_in_place(&mut mol)
-        .map_err(|err| SmilesParseError::ParseError(err.to_string()))?;
-    assign_double_bond_stereo(&mut mol);
-    canonicalize_double_bond_stereo_by_cip(&mut mol);
-    cleanup_single_bond_dirs_around_nonstereo_double_bonds(&mut mol);
-    cleanup_invalid_tetrahedral_stereo(&mut mol);
-    assign_sanitized_radicals(&mut mol);
-    crate::stereo::cache_rdkit_legacy_cip_ranks(&mut mol);
-    mol.rebuild_adjacency();
     Ok(mol)
-}
-
-fn assign_sanitized_radicals(mol: &mut Molecule) {
-    let Ok(assignment) = assign_valence(mol, ValenceModel::RdkitLike) else {
-        return;
-    };
-    let Ok(radicals) = assign_radicals_rdkit_2025(mol, &assignment.explicit_valence) else {
-        return;
-    };
-    for (atom, radical) in mol.atoms_mut().iter_mut().zip(radicals) {
-        atom.num_radical_electrons = radical;
-    }
 }
 
 fn preprocess_smiles(smiles: &str) -> Result<(&str, Option<&str>), SmilesParseError> {
@@ -130,7 +107,9 @@ pub(crate) fn cleanup_nonstereo_double_bond_dirs(mol: &mut Molecule) {
     cleanup_single_bond_dirs_around_nonstereo_double_bonds(mol);
 }
 
-fn cleanup_neutral_five_coordinate_nitrogens(mol: &mut Molecule) -> Result<(), SmilesParseError> {
+pub(crate) fn cleanup_neutral_five_coordinate_nitrogens(
+    mol: &mut Molecule,
+) -> Result<(), SmilesParseError> {
     let mut nitrogens_to_consider = Vec::new();
     for (atom_idx, atom) in mol.atoms().iter().enumerate() {
         if atom.atomic_num != 7 || atom.formal_charge != 0 {
@@ -193,7 +172,9 @@ fn cleanup_neutral_five_coordinate_nitrogens(mol: &mut Molecule) -> Result<(), S
     Ok(())
 }
 
-fn cleanup_organometallic_single_bonds(mol: &mut Molecule) -> Result<(), SmilesParseError> {
+pub(crate) fn cleanup_organometallic_single_bonds(
+    mol: &mut Molecule,
+) -> Result<(), SmilesParseError> {
     for atom_idx in 0..mol.atoms().len() {
         if !is_hypervalent_nonmetal(mol, atom_idx)? || no_dative(mol.atoms()[atom_idx].atomic_num) {
             continue;
@@ -1251,7 +1232,7 @@ fn mark_aromatic_subset(
     }
 }
 
-fn perceive_aromaticity(
+pub(crate) fn perceive_aromaticity(
     mol: &mut Molecule,
     ring_closure_bonds: &[usize],
 ) -> Result<(), SmilesParseError> {
@@ -1643,7 +1624,7 @@ fn cleanup_single_bond_dirs_around_nonstereo_double_bonds(mol: &mut Molecule) {
     }
 }
 
-fn cleanup_invalid_tetrahedral_stereo(mol: &mut Molecule) {
+pub(crate) fn cleanup_invalid_tetrahedral_stereo(mol: &mut Molecule) {
     // Mirrors the Issue 194 cleanup branch in RDKit
     // Chirality.cpp::legacyStereoPerception()/assignStereochemistry(): if an
     // invalid chiral tag has a sole explicit H retained only for chirality,
@@ -1758,7 +1739,7 @@ fn has_paired_ring_stereo_candidate(mol: &Molecule, atom_index: usize, cip_ranks
     false
 }
 
-fn prune_noncyclic_aromatic_bonds(mol: &mut Molecule) {
+pub(crate) fn prune_noncyclic_aromatic_bonds(mol: &mut Molecule) {
     // Aromatic bonds must participate in an aromatic cycle. Any aromatic edge
     // that is a bridge in the aromatic-only subgraph is demoted.
     let n_atoms = mol.atoms().len();

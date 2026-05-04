@@ -89,7 +89,15 @@ impl Molecule {
 
     /// Construct one molecule from a SMILES string.
     pub fn from_smiles(smiles: &str) -> Result<Self, SmilesParseError> {
-        crate::smiles::parse_smiles(smiles)
+        Self::from_smiles_with_sanitize(smiles, true)
+    }
+
+    /// Construct one molecule from a SMILES string with RDKit-like sanitization control.
+    pub fn from_smiles_with_sanitize(
+        smiles: &str,
+        sanitize: bool,
+    ) -> Result<Self, SmilesParseError> {
+        crate::smiles::parse_smiles_with_sanitize(smiles, sanitize)
     }
 
     /// Serialize this molecule to a SMILES string.
@@ -127,8 +135,16 @@ impl Molecule {
 
     /// Return a new molecule with explicit hydrogens removed.
     pub fn without_hydrogens(&self) -> Result<Self, crate::hydrogens::RemoveHydrogensError> {
+        self.without_hydrogens_with_sanitize(true)
+    }
+
+    /// Return a new molecule with explicit hydrogens removed.
+    pub fn without_hydrogens_with_sanitize(
+        &self,
+        sanitize: bool,
+    ) -> Result<Self, crate::hydrogens::RemoveHydrogensError> {
         let mut out = self.clone();
-        crate::hydrogens::remove_hydrogens_in_place(&mut out)?;
+        crate::hydrogens::remove_hydrogens_with_sanitize_in_place(&mut out, sanitize)?;
         Ok(out)
     }
 
@@ -146,6 +162,21 @@ impl Molecule {
     ) -> Result<Self, crate::kekulize::KekulizeError> {
         let mut out = self.clone();
         crate::kekulize::kekulize_in_place(&mut out, sanitize)?;
+        Ok(out)
+    }
+
+    /// Return a new molecule after applying the RDKit-style sanitize pipeline.
+    pub fn sanitize(&self) -> Result<Self, crate::sanitize::SanitizeError> {
+        self.sanitize_with_ops(crate::sanitize::SanitizeOps::SUPPORTED_ALL)
+    }
+
+    /// Return a new molecule after applying selected RDKit-style sanitize operations.
+    pub fn sanitize_with_ops(
+        &self,
+        ops: crate::sanitize::SanitizeOps,
+    ) -> Result<Self, crate::sanitize::SanitizeError> {
+        let mut out = self.clone();
+        crate::sanitize::apply_sanitize_pipeline(&mut out, ops)?;
         Ok(out)
     }
 
@@ -303,6 +334,22 @@ impl Molecule {
         crate::distgeom::dg_bounds_matrix(self)
     }
 
+    /// Return a Morgan fingerprint using RDKit-style fingerprint generator parameters.
+    pub fn morgan_fingerprint(
+        &self,
+        params: &crate::MorganFingerprintParams,
+    ) -> Result<crate::Fingerprint, crate::FingerprintError> {
+        crate::fingerprint::morgan_fingerprint(self, params)
+    }
+
+    /// Return a Morgan fingerprint and RDKit-style additional output payloads.
+    pub fn morgan_fingerprint_with_output(
+        &self,
+        params: &crate::MorganFingerprintParams,
+    ) -> Result<crate::MorganFingerprintOutput, crate::FingerprintError> {
+        crate::fingerprint::morgan_fingerprint_with_output(self, params)
+    }
+
     /// Serialize this molecule to RDKit-style SVG.
     pub fn to_svg(&self, width: u32, height: u32) -> Result<String, crate::SvgDrawError> {
         crate::draw::mol_to_svg(self, width, height)
@@ -418,5 +465,51 @@ mod tests {
         assert!(!Arc::ptr_eq(&mol.props, &named.props));
         assert_eq!(mol.props().name, None);
         assert_eq!(named.props().name.as_deref(), Some("ligand"));
+    }
+
+    #[test]
+    fn value_hydrogen_transform_detaches_topology_only() {
+        let mol = Molecule::from_smiles("CCO")
+            .expect("SMILES should parse")
+            .with_name("ethanol")
+            .with_2d_coords()
+            .expect("2D coordinates should compute")
+            .with_hydrogens()
+            .expect("hydrogens should add");
+        let without_h = mol.without_hydrogens().expect("hydrogens should remove");
+
+        assert!(!Arc::ptr_eq(&mol.topology, &without_h.topology));
+        assert!(Arc::ptr_eq(&mol.conformers, &without_h.conformers));
+        assert!(Arc::ptr_eq(&mol.props, &without_h.props));
+        assert!(mol.atoms().len() > without_h.atoms().len());
+        assert_eq!(mol.props().name, without_h.props().name);
+    }
+
+    #[test]
+    fn reassignment_drops_replaced_topology_block() {
+        let mut mol = Molecule::from_smiles("CCO")
+            .expect("SMILES should parse")
+            .with_hydrogens()
+            .expect("hydrogens should add");
+        let old_topology: std::sync::Weak<TopologyData> = Arc::downgrade(&mol.topology);
+
+        mol = mol.without_hydrogens().expect("hydrogens should remove");
+
+        assert!(old_topology.upgrade().is_none());
+        assert_eq!(mol.atoms().len(), 3);
+    }
+
+    #[test]
+    fn retaining_old_and_new_keeps_both_topology_blocks() {
+        let mol = Molecule::from_smiles("CCO")
+            .expect("SMILES should parse")
+            .with_hydrogens()
+            .expect("hydrogens should add");
+        let old_topology: std::sync::Weak<TopologyData> = Arc::downgrade(&mol.topology);
+
+        let without_h = mol.without_hydrogens().expect("hydrogens should remove");
+
+        assert!(old_topology.upgrade().is_some());
+        assert!(mol.atoms().len() > without_h.atoms().len());
     }
 }

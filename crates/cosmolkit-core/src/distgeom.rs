@@ -2695,8 +2695,7 @@ fn set15_bounds(
 ) {
     let nb = mol.bonds().len();
     let na = mol.atoms().len();
-    let paths14 = accum_data.paths14.clone();
-    for path in paths14 {
+    for path in &accum_data.paths14 {
         for &(bid1, bid2, bid3, kind) in &[
             (path.bid1, path.bid2, path.bid3, path.kind),
             (path.bid3, path.bid2, path.bid1, path.kind),

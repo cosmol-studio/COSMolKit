@@ -73,6 +73,21 @@ Access coordinates as NumPy arrays:
 
    print(coords.shape)
 
+Generate a Morgan fingerprint:
+
+.. code-block:: python
+
+   fp = Molecule.from_smiles("c1ccccc1O").fingerprint_morgan(
+       radius=2,
+       n_bits=2048,
+   )
+
+   print(fp.n_bits())
+   print(fp.on_bits())
+
+``on_bits()`` returns the sparse bit indexes set inside the fixed-length binary
+fingerprint. It is not a dense neural embedding.
+
 Process a list of molecules:
 
 .. code-block:: python
@@ -85,6 +100,8 @@ Process a list of molecules:
    )
 
    prepared = batch.compute_2d_coords(errors="keep")
+   fingerprints = prepared.fingerprint_morgan_list(n_bits=2048, n_jobs=8)
 
    print(prepared.valid_mask())
    print(prepared.to_smiles_list(canonical=True))
+   print([fp.on_bits() if fp is not None else None for fp in fingerprints])

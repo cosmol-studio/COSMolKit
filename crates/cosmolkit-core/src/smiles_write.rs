@@ -213,11 +213,6 @@ pub fn mol_to_smiles(
             "doRandom path from RDKit SmilesWrite::detail::MolToSmiles is not ported yet",
         ));
     }
-    if params.rooted_at_atom.is_some() {
-        return Err(SmilesWriteError::UnsupportedPath(
-            "rootedAtAtom path from RDKit SmilesWrite::detail::MolToSmiles is not ported yet",
-        ));
-    }
     if params.canonical {
         let rank_state = SmilesWriteState::new(mol, params)?;
         let rank_ring_stereo_atoms = if params.do_isomeric_smiles {
@@ -270,13 +265,14 @@ pub fn mol_to_smiles(
             (&rank_state, rank_ring_stereo_atoms.as_deref())
         };
         for fragment in fragments {
-            let start = fragment
-                .iter()
-                .copied()
-                .min_by_key(|&atom_idx| atom_ranks[atom_idx])
-                .ok_or(SmilesWriteError::UnsupportedPath(
-                    "canonical fragment start selection failed",
-                ))?;
+            let start =
+                rooted_fragment_start(params.rooted_at_atom, &fragment).unwrap_or_else(|| {
+                    fragment
+                        .iter()
+                        .copied()
+                        .min_by_key(|&atom_idx| atom_ranks[atom_idx])
+                        .expect("connected component cannot be empty")
+                });
             let traversal = crate::canon_smiles::canonicalize_fragment_with_valence(
                 traversal_mol,
                 start,
@@ -308,7 +304,7 @@ pub fn mol_to_smiles(
     let traversal_mol = write_mol.as_ref().unwrap_or(mol);
     let emit_state = SmilesWriteState::new(traversal_mol, params)?;
     for fragment in fragments {
-        let start = fragment[0];
+        let start = rooted_fragment_start(params.rooted_at_atom, &fragment).unwrap_or(fragment[0]);
         let atom_ranks: Vec<u32> = (0..mol.atoms().len()).map(|idx| idx as u32).collect();
         let traversal = crate::canon_smiles::canonicalize_fragment_with_valence(
             traversal_mol,
@@ -323,6 +319,10 @@ pub fn mol_to_smiles(
         pieces.push(emit_fragment_smiles(&emit_state, &traversal)?);
     }
     Ok(pieces.join("."))
+}
+
+fn rooted_fragment_start(rooted_at_atom: Option<usize>, fragment: &[usize]) -> Option<usize> {
+    rooted_at_atom.filter(|root| fragment.contains(root))
 }
 
 fn connected_components(mol: &Molecule) -> Vec<Vec<usize>> {

@@ -67,6 +67,22 @@ Derived Outputs
    )
    svgs = prepared.to_svg_list(width=300, height=300)
    bounds = prepared.dg_bounds_matrix_list()
+   fingerprints = prepared.fingerprint_morgan_list(n_bits=2048, n_jobs=8)
+
+Morgan fingerprints can also be collected with provenance data:
+
+.. code-block:: python
+
+   results = prepared.fingerprint_morgan_with_output_list(
+       radius=2,
+       n_bits=2048,
+       n_jobs=8,
+   )
+
+   for result in results:
+       if result is not None:
+           print(result.fingerprint().on_bits())
+           print(result.additional_output().bit_info_map())
 
 SMILES Options
 --------------

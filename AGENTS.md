@@ -26,7 +26,7 @@ For Python tooling and bindings, use project-level `uv` env management:
 - `python/cosmolkit.pyi` is generated; do not edit it by hand. Regenerate it with `cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen`.
 
 ## Coding Style & Naming Conventions
-Use Rust 2021 defaults: 4-space indentation, `snake_case` for functions/modules, `CamelCase` for types/traits, and `SCREAMING_SNAKE_CASE` for constants. Keep modules narrowly scoped and avoid large files with mixed responsibilities. Run `cargo fmt` and `cargo clippy` before opening a PR.
+Use Rust 2024 defaults: 4-space indentation, `snake_case` for functions/modules, `CamelCase` for types/traits, and `SCREAMING_SNAKE_CASE` for constants. Keep modules narrowly scoped and avoid large files with mixed responsibilities. Run `cargo fmt` and `cargo clippy` before opening a PR.
 
 ## Testing Guidelines
 Place unit tests near code (`mod tests`) and integration tests under `tests/`. Name tests by behavior, e.g., `kekulize_handles_fused_aromatics`. Add regression fixtures for chemistry/biostructure edge cases and explicitly compare outputs against RDKit/Biopython where parity is a goal.

@@ -2,7 +2,8 @@ COSMolKit Python
 ================
 
 COSMolKit is a Python package for molecule graph workflows, SMILES/SDF IO,
-coordinate access, molecule depiction, and high-throughput batch processing.
+coordinate access, Morgan fingerprints, molecule depiction, and
+high-throughput batch processing.
 
 Important API model: COSMolKit uses copy-on-write (COW) molecule values.
 Transform methods return new ``Molecule`` objects and do not mutate the
@@ -17,5 +18,6 @@ code often updates an existing molecule or ``RWMol`` directly.
    quickstart
    molecule
    batch
+   fingerprints
    io
    api

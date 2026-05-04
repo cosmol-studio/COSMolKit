@@ -11,6 +11,8 @@ pub enum AddHydrogensError {
 pub enum RemoveHydrogensError {
     #[error("unsupported hydrogen removal at atom index {atom_index}")]
     UnsupportedHydrogen { atom_index: usize },
+    #[error("{0}")]
+    Sanitize(#[from] crate::sanitize::SanitizeError),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -110,7 +112,22 @@ pub fn add_hydrogens_in_place(molecule: &mut Molecule) -> Result<(), AddHydrogen
 }
 
 pub fn remove_hydrogens_in_place(molecule: &mut Molecule) -> Result<(), RemoveHydrogensError> {
-    remove_hydrogens_with_params_in_place(molecule, RemoveHydrogensParams::default())
+    remove_hydrogens_with_sanitize_in_place(molecule, true)
+}
+
+pub fn remove_hydrogens_with_sanitize_in_place(
+    molecule: &mut Molecule,
+    sanitize: bool,
+) -> Result<(), RemoveHydrogensError> {
+    let removed =
+        remove_hydrogens_with_params_in_place(molecule, RemoveHydrogensParams::default())?;
+    if removed && sanitize {
+        crate::sanitize::apply_sanitize_pipeline(
+            molecule,
+            crate::sanitize::SanitizeOps::SUPPORTED_ALL,
+        )?;
+    }
+    Ok(())
 }
 
 pub(crate) fn remove_hydrogens_after_smiles_parse_in_place(
@@ -122,7 +139,8 @@ pub(crate) fn remove_hydrogens_after_smiles_parse_in_place(
             update_explicit_count: true,
             ..Default::default()
         },
-    )
+    )?;
+    Ok(())
 }
 
 pub(crate) fn adjust_hydrogens_after_aromaticity_in_place(
@@ -148,10 +166,10 @@ pub(crate) fn adjust_hydrogens_after_aromaticity_in_place(
 fn remove_hydrogens_with_params_in_place(
     molecule: &mut Molecule,
     params: RemoveHydrogensParams,
-) -> Result<(), RemoveHydrogensError> {
+) -> Result<bool, RemoveHydrogensError> {
     let n = molecule.atoms().len();
     if n == 0 {
-        return Ok(());
+        return Ok(false);
     }
 
     let mut degree = vec![0usize; n];
@@ -178,7 +196,7 @@ fn remove_hydrogens_with_params_in_place(
     }
 
     if remove.iter().all(|x| !*x) {
-        return Ok(());
+        return Ok(false);
     }
 
     let cached_total_valence =
@@ -215,7 +233,7 @@ fn remove_hydrogens_with_params_in_place(
     }
 
     molecule.rebuild_adjacency();
-    Ok(())
+    Ok(true)
 }
 
 fn should_remove_hydrogen(
@@ -538,7 +556,9 @@ fn remove_atom_at(molecule: &mut Molecule, atom_index: usize, known_bond_index: 
         bonds.push(bond);
     }
     *molecule.bonds_mut() = bonds;
-    if let Some(coords) = molecule.coords_2d_mut().as_mut() {
+    if molecule.coords_2d().is_some()
+        && let Some(coords) = molecule.coords_2d_mut().as_mut()
+    {
         if atom_index < coords.len() {
             coords.remove(atom_index);
         } else {
@@ -571,7 +591,9 @@ fn remove_trailing_hydrogen_fast_path(
 
     molecule.atoms_mut().pop();
     molecule.bonds_mut().pop();
-    if let Some(coords) = molecule.coords_2d_mut().as_mut() {
+    if molecule.coords_2d().is_some()
+        && let Some(coords) = molecule.coords_2d_mut().as_mut()
+    {
         if atom_index < coords.len() && atom_index + 1 == coords.len() {
             coords.pop();
         } else if atom_index < coords.len() {
@@ -687,4 +709,42 @@ fn count_swaps_to_interconvert(probe: &[usize], reference: &[usize]) -> Option<u
         swaps += 1;
     }
     Some(swaps)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Molecule;
+
+    #[test]
+    fn remove_hydrogens_sanitize_flag_controls_rdkit_cleanup() {
+        let raw = Molecule::from_smiles_with_sanitize("[H]CN(=O)=O", false)
+            .expect("unsanitized SMILES should parse");
+
+        let removed_only = raw
+            .without_hydrogens_with_sanitize(false)
+            .expect("hydrogen removal should succeed without sanitizing");
+        assert_eq!(removed_only.atoms().len(), 4);
+        assert_eq!(
+            removed_only
+                .atoms()
+                .iter()
+                .map(|atom| atom.formal_charge)
+                .collect::<Vec<_>>(),
+            vec![0, 0, 0, 0]
+        );
+
+        let sanitized = raw
+            .without_hydrogens_with_sanitize(true)
+            .expect("RDKit-style RemoveHs default should sanitize after removal");
+        assert_eq!(sanitized.atoms().len(), 4);
+        assert_eq!(
+            sanitized
+                .atoms()
+                .iter()
+                .map(|atom| atom.formal_charge)
+                .collect::<Vec<_>>(),
+            vec![0, 1, -1, 0]
+        );
+        assert_eq!(raw.atoms().len(), 5);
+    }
 }

@@ -1511,7 +1511,7 @@ fn refine_chiral_partitions(
                 symclass = offset + i;
             }
             atoms[index].index = symclass;
-            for nbr in atoms[index].nbr_ids.clone() {
+            for &nbr in &atoms[index].nbr_ids {
                 changed[nbr] = true;
             }
             i += 1;
@@ -1521,7 +1521,7 @@ fn refine_chiral_partitions(
         let mut i = count[index];
         while i < len {
             index = start[i];
-            for nbr in atoms[index].nbr_ids.clone() {
+            for &nbr in &atoms[index].nbr_ids {
                 touched[atoms[nbr].index] = true;
             }
             i += 1;

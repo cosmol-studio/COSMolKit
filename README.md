@@ -18,6 +18,10 @@
   </a>
 </p>
 
+## Documentation
+
+Current Python documentation: <https://kit.cosmol.org/>
+
 ## Installation
 
 ```bash
@@ -28,7 +32,7 @@ pip install cosmolkit
 
 **COSMolKit** is a Rust-native cheminformatics and structural biology toolkit for molecules, SMILES/SDF/MolBlock parsing, molecular graphs, conformers, coordinates, and AI-ready batch workflows.
 
-It currently focuses on a chemistry core whose selected features are tested for RDKit-compatible behavior: SMILES parsing/writing, atom and bond feature inspection, hydrogen transforms, Kekulization, stereochemistry checks, distance-geometry bounds, SDF output, and 2D depiction.
+It currently focuses on a chemistry core whose selected features are tested for RDKit-compatible behavior: SMILES parsing/writing, atom and bond feature inspection, hydrogen transforms, Kekulization, stereochemistry checks, distance-geometry bounds, Morgan fingerprints, SDF output, and 2D depiction.
 
 COSMolKit is designed around ndarray-oriented structural data access, keeping molecular data efficient and natural for NumPy and PyTorch workflows.
 
@@ -51,9 +55,9 @@ COSMolKit is in early active development. The implementation is intentionally a 
 
 - **Core layout:** `cosmolkit-core` contains chemistry perception, IO, drawing, and biomolecular primitives; `cosmolkit` is the Rust facade crate; `python/` contains the PyO3 package.
 - **RDKit reference:** RDKit 2026.03.1 is the active compatibility reference for selected behaviors, with `third_party/rdkit` pinned to `Release_2026_03_1` (`351f8f378f8ad6bbd517980c38896e66bf907af8`).
-- **Parity coverage:** current tests cover graph features, add-H / remove-H roundtrips, tetrahedral stereo geometry, DG bounds matrices, Kekulization branches, SMILES writer branches, V2000 molblock output, and SDF V2000/V3000 roundtrips.
+- **Parity coverage:** current tests cover graph features, add-H / remove-H roundtrips, tetrahedral stereo geometry, DG bounds matrices, Morgan fingerprint branches, Kekulization branches, SMILES writer branches, V2000 molblock output, and SDF V2000/V3000 roundtrips.
 - **Batch-native workflows:** `MoleculeBatch` APIs support ordered molecule construction, parallel transforms, image/SDF export, and structured error handling for high-throughput datasets.
-- **Python bindings:** the package exposes SMILES parsing, `Molecule.from_rdkit()`, graph/stereo inspection, value-style transforms, explicit `coords_2d()` / `coords_3d()` access, 2D/3D SDF IO for molecules with stored coordinates, DG bounds, SVG/PNG rendering, and explicit editing.
+- **Python bindings:** the package exposes SMILES parsing, `Molecule.from_rdkit()`, graph/stereo inspection, value-style transforms, explicit `coords_2d()` / `coords_3d()` access, 2D/3D SDF IO for molecules with stored coordinates, DG bounds, Morgan fingerprints, SVG/PNG rendering, batch processing, and explicit editing.
 - **AI direction:** planned COSMolKit-native APIs include model-ready graph export, internal coordinates, torsion/chirality-aware diffusion helpers, and molecular tokenization. See `ai_native_features_sketch.md`.
 
 ## Python Quick Start
@@ -65,10 +69,14 @@ mol = Molecule.from_smiles("c1ccccc1O")
 mol_2d = mol.with_2d_coords()
 mol_2d.write_png("phenol.png", width=400, height=300)
 
+fp = mol.fingerprint_morgan(radius=2, n_bits=2048)
+print(fp.on_bits())
+
 smiles = ["CCO", "c1ccccc1", "CC(=O)O"]
 batch = MoleculeBatch.from_smiles_list(smiles, sanitize=True, errors="keep", n_jobs=8)
 
 prepared = batch.add_hydrogens(errors="keep").compute_2d_coords(errors="keep")
+fps = prepared.fingerprint_morgan_list(n_bits=2048, n_jobs=8)
 prepared.to_images("molecule_images", format="png", size=(300, 300), n_jobs=8, errors="skip")
 ```
 
@@ -85,23 +93,25 @@ For more Python examples, see `python/README.md` and `python/examples/`.
 
 ## Roadmap
 
-### Phase 1 — Chemistry Core Parity
+### Phase 1 — Chemistry Core
 **Goal:** keep the small core correct before expanding breadth
 
 - ✅ Atom / Bond / Molecule data model
 - ✅ adjacency representation
 - ✅ bond order + formal charge support
-- ✅ SMILES parser for the active parity corpus
-- ✅ ring perception for the active parity corpus
-- ✅ basic valence handling for the active parity corpus
-- ✅ Kekulization for the active parity corpus
-- ✅ SMILES writer parity for the active corpus
-- ✅ atom and bond feature parity tests against RDKit
-- ✅ explicit hydrogen expansion for the active parity corpus
+- ✅ SMILES parser
+- ✅ ring perception
+- ✅ valence handling
+- ✅ Kekulization
+- ✅ SMILES writer
+- ✅ atom and bond feature extraction
+- ✅ explicit hydrogen expansion
 - ✅ tetrahedral stereo ordered-ligand representation
-- ✅ DG bounds matrix parity for the active corpus
-- ✅ strict molblock V2000 coordinate/topology parity for the active corpus
-- [ ] promote sanitization into a single explicit public pipeline
+- ✅ DG bounds matrix generation
+- ✅ molblock V2000 coordinate/topology handling
+- ✅ explicit COW sanitization pipeline
+- ✅ RDKit-style `SanitizeMol()` flags, errors, conjugation, hybridization, atropisomer cleanup, and raw SDF sanitize control
+- ✅ RDKit-style Morgan fingerprint core with bit-vector, Tanimoto, generator, count-simulation, custom-invariant, and AdditionalOutput branches
 
 ### Phase 2 — Chemical File I/O
 **Goal:** make molecule import/export usable beyond SMILES
@@ -139,13 +149,20 @@ For more Python examples, see `python/README.md` and `python/examples/`.
 - ✅ SDF read/write bindings
 - ✅ SVG/PNG rendering and file export
 - ✅ explicit `Molecule.edit()` workflow
+- ✅ explicit `Molecule.sanitize()` and `sanitize` construction flags for supported SMILES workflows
+- ✅ `Molecule.fingerprint_morgan()` and `Molecule.fingerprint_morgan_with_output()` bindings
+- ✅ generated Python stubs for Morgan fingerprint classes and methods
+- [ ] `Molecule` pickle roundtrip support for Python persistence and multiprocessing workflows
 - [ ] stable graph-extraction helpers for ML workflows
-- [ ] explicit sanitization and error reporting API
+- [ ] full `SanitizeMol()`-style error parity and catch-errors API
 
 ### Phase 4 — Query, Descriptors, and Computation
 **Goal:** enable practical filtering and analysis
 
 - ✅ distance-geometry bounds matrix parity
+- ✅ Morgan fingerprint generation and Tanimoto similarity metrics
+- [ ] topological fingerprint generation
+- [ ] 3D conformer generation and embedding APIs
 - [ ] atom selection API
 - [ ] bond selection API
 - [ ] neighborhood queries
@@ -154,7 +171,6 @@ For more Python examples, see `python/README.md` and `python/examples/`.
 - [ ] molecular formula
 - [ ] molecular weight
 - [ ] ring statistics
-- [ ] fingerprint generation and similarity metrics
 
 ### Phase 5 — 2D Coordinates and Drawing
 **Goal:** provide RDKit-drawer-like molecule depiction
