@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::OnceLock;
 
 use cosmolkit_core::{
     BatchErrorMode, BondDirection, BondOrder, BondStereo, ChiralTag, MoleculeBatch,
@@ -62,21 +63,24 @@ fn repo_root() -> PathBuf {
 }
 
 fn ensure_golden_exists() {
-    let path = golden_path();
-    if path.exists() {
-        return;
-    }
+    static ENSURE_GOLDEN: OnceLock<()> = OnceLock::new();
+    ENSURE_GOLDEN.get_or_init(|| {
+        let path = golden_path();
+        if path.exists() {
+            return;
+        }
 
-    let root = repo_root();
-    let status = Command::new(root.join(".venv/bin/python"))
-        .arg("tests/scripts/gen_rdkit_sdf_read_golden.py")
-        .current_dir(&root)
-        .status()
-        .expect("failed to run RDKit SDF read golden generator");
-    assert!(
-        status.success(),
-        "RDKit SDF read golden generator failed with status {status}"
-    );
+        let root = repo_root();
+        let status = Command::new(root.join(".venv/bin/python"))
+            .arg("tests/scripts/gen_rdkit_sdf_read_golden.py")
+            .current_dir(&root)
+            .status()
+            .expect("failed to run RDKit SDF read golden generator");
+        assert!(
+            status.success(),
+            "RDKit SDF read golden generator failed with status {status}"
+        );
+    });
 }
 
 fn load_golden() -> Vec<SdfReadRecord> {
