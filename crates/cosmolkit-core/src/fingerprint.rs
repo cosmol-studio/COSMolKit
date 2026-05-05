@@ -925,52 +925,12 @@ fn isotope_delta_mass(atomic_num: u8, isotope: Option<u16>) -> i32 {
     let Some(isotope) = isotope else {
         return 0;
     };
-    let Some(standard_weight) = average_atomic_weight(atomic_num) else {
+    let Some(standard_weight) = crate::periodic_table::average_atomic_weight(atomic_num) else {
         return 0;
     };
-    let isotope_mass = exact_isotope_mass(atomic_num, isotope).unwrap_or(f64::from(isotope));
+    let isotope_mass = crate::periodic_table::exact_isotope_mass(atomic_num, isotope)
+        .unwrap_or(f64::from(isotope));
     (isotope_mass - standard_weight) as i32
-}
-
-fn exact_isotope_mass(atomic_num: u8, isotope: u16) -> Option<f64> {
-    match (atomic_num, isotope) {
-        (1, 2) => Some(2.014_101_778),
-        (1, 3) => Some(3.016_049_278),
-        (6, 13) => Some(13.003_354_835),
-        (6, 14) => Some(14.003_241_989),
-        (7, 15) => Some(15.000_108_899),
-        (8, 17) => Some(16.999_131_757),
-        (8, 18) => Some(17.999_159_613),
-        _ => None,
-    }
-}
-
-fn average_atomic_weight(atomic_num: u8) -> Option<f64> {
-    match atomic_num {
-        1 => Some(1.008),
-        2 => Some(4.003),
-        3 => Some(6.941),
-        4 => Some(9.012),
-        5 => Some(10.812),
-        6 => Some(12.011),
-        7 => Some(14.007),
-        8 => Some(15.999),
-        9 => Some(18.998),
-        10 => Some(20.18),
-        11 => Some(22.99),
-        12 => Some(24.305),
-        13 => Some(26.982),
-        14 => Some(28.086),
-        15 => Some(30.974),
-        16 => Some(32.067),
-        17 => Some(35.453),
-        18 => Some(39.948),
-        19 => Some(39.098),
-        20 => Some(40.078),
-        35 => Some(79.904),
-        53 => Some(126.904),
-        _ => None,
-    }
 }
 
 fn hash_vec_u32(values: &[u32]) -> u32 {

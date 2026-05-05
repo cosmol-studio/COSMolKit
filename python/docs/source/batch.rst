@@ -6,14 +6,16 @@ single API call.
 
 .. code-block:: python
 
-   from cosmolkit import MoleculeBatch
+   from cosmolkit import BatchErrorMode, BatchErrorType, BatchValidationError, MoleculeBatch
 
    batch = MoleculeBatch.from_smiles_list(
        ["CCO", "c1ccccc1", "not-smiles"],
-       errors="keep",
-   )
+       errors=BatchErrorMode.KEEP,
+   ).with_parallel_jobs(8)
 
-   prepared = batch.add_hydrogens(errors="keep").compute_2d_coords(errors="keep")
+   prepared = batch.add_hydrogens(errors=BatchErrorMode.KEEP).compute_2d_coords(
+       errors=BatchErrorMode.KEEP,
+   )
 
    print(prepared.valid_mask())
    print(prepared.errors())
@@ -27,6 +29,48 @@ Batch APIs accept ``errors``:
 - ``"keep"`` keeps failed records and exposes structured errors.
 - ``"skip"`` omits failed records from the returned result or export.
 
+String modes remain supported, but Python callers can also pass
+``BatchErrorMode`` enum members. Per-record ``BatchError.error_type()`` returns
+a ``BatchErrorType`` enum member, so matching does not depend on spelling a
+string:
+
+.. code-block:: python
+
+   for error in batch.errors():
+       if error.error_type() == BatchErrorType.SMILES_PARSE:
+           print(error.index(), error.error_type().name, error.message())
+
+   try:
+       MoleculeBatch.from_smiles_list(["C1CC"], errors=BatchErrorMode.RAISE)
+   except BatchValidationError as exc:
+       for error in exc.errors():
+           print(error.error_type(), error.error_type_name())
+
+Read-only maps such as ``BATCH_ERROR_TYPE_MAP`` and ``BATCH_ERROR_MODE_MAP``
+convert external string names to enum members when needed.
+
+Batch Values
+------------
+
+``MoleculeBatch`` behaves like an ordered Python container. Valid records are
+returned as ``Molecule`` objects and invalid kept records are returned as
+``None``:
+
+.. code-block:: python
+
+   molecules = prepared.to_list()
+   first = prepared[0]
+   tail = prepared[5:]
+   valid = prepared[prepared.valid_mask()]
+
+   for molecule in prepared:
+       if molecule is not None:
+           print(molecule.to_smiles())
+
+Integer indexing returns ``Molecule | None`` because kept invalid records are
+represented as ``None``. Slices, integer index lists, and boolean masks return a
+new ``MoleculeBatch`` and preserve the batch-level parallel job setting.
+
 Export Images
 -------------
 
@@ -37,10 +81,15 @@ Export Images
        format="png",
        size=(300, 300),
        errors="skip",
+       filenames=["ethanol.png", "benzene.png", "invalid.png"],
        report_path="image_errors.json",
    )
 
    print(report.total(), report.success(), report.failed())
+
+``filenames`` is optional. Entries must match the batch length; ``None`` uses
+the default zero-padded name for that record. Names are relative to the output
+directory, and missing extensions are filled from ``format``.
 
 Export SDF
 ----------
@@ -52,6 +101,18 @@ Export SDF
        format="v2000",
        errors="skip",
        report_path="sdf_errors.csv",
+   )
+
+Use ``to_sdf_files()`` when each valid record should be written to its own SDF
+file:
+
+.. code-block:: python
+
+   report = prepared.to_sdf_files(
+       "prepared_records",
+       format="v2000",
+       errors="skip",
+       filenames=["ethanol", "benzene.sdf", "invalid.sdf"],
    )
 
 Derived Outputs
@@ -67,7 +128,7 @@ Derived Outputs
    )
    svgs = prepared.to_svg_list(width=300, height=300)
    bounds = prepared.dg_bounds_matrix_list()
-   fingerprints = prepared.fingerprint_morgan_list(n_bits=2048, n_jobs=8)
+   fingerprints = prepared.fingerprint_morgan_list(n_bits=2048)
 
 Morgan fingerprints can also be collected with provenance data:
 
@@ -76,7 +137,6 @@ Morgan fingerprints can also be collected with provenance data:
    results = prepared.fingerprint_morgan_with_output_list(
        radius=2,
        n_bits=2048,
-       n_jobs=8,
    )
 
    for result in results:
@@ -124,9 +184,24 @@ input traversal while keeping the same CW/CCW chiral tag path:
 Parallel Work
 -------------
 
-Batch methods that accept ``n_jobs`` can run across multiple worker threads:
+``with_parallel_jobs()`` returns a new batch with a default worker count for
+later parallel operations. Because molecule values use copy-on-write storage,
+this configuration step does not duplicate the molecular data.
 
 .. code-block:: python
 
-   prepared = batch.compute_2d_coords(errors="keep", n_jobs=8)
-   smiles = prepared.to_smiles_list(n_jobs=8)
+   configured = batch.with_parallel_jobs(8)
+   prepared = configured.compute_2d_coords(errors="keep")
+   smiles = prepared.to_smiles_list()
+
+Method-level ``n_jobs`` still overrides the batch default for a single call:
+
+.. code-block:: python
+
+   svgs = prepared.to_svg_list(n_jobs=2)
+
+Pass ``None`` to clear the batch-level default and let rayon choose:
+
+.. code-block:: python
+
+   default_scheduled = prepared.with_parallel_jobs(None)

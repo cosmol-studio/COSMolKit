@@ -5,9 +5,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use cosmolkit_core::{
-    BondOrder, BondStereo, ChiralTag as OursChiralTag, Molecule, ValenceModel,
-    add_hydrogens_in_place, assign_radicals_rdkit_2025, assign_valence, rdkit_valence_list,
-    remove_hydrogens_in_place,
+    BatchErrorMode, BatchRecord, BondOrder, BondStereo, ChiralTag as OursChiralTag, Molecule,
+    MoleculeBatch, ValenceModel, add_hydrogens_in_place, assign_radicals_rdkit_2025,
+    assign_valence, rdkit_valence_list, remove_hydrogens_in_place,
 };
 use serde::{Deserialize, Deserializer};
 
@@ -1396,6 +1396,52 @@ fn graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules(
                     &record.smiles,
                     "with_hs",
                 );
+
+                let batch_smiles = vec![record.smiles.clone(), record.smiles.clone()];
+                let batch = MoleculeBatch::from_smiles_list(&batch_smiles, BatchErrorMode::Keep)
+                    .expect("batch graph-feature SMILES parse should not raise in keep mode");
+                for (batch_idx, batch_record) in batch.records.iter().enumerate() {
+                    let BatchRecord::Valid(batch_mol) = batch_record else {
+                        panic!(
+                            "batch direct graph feature missing at row {} ({}) duplicate {}",
+                            idx + 1,
+                            record.smiles,
+                            batch_idx
+                        );
+                    };
+                    let (batch_atoms, batch_bonds) = extract_ours_features(batch_mol);
+                    compare_features(
+                        &batch_atoms,
+                        &batch_bonds,
+                        direct_expected,
+                        idx + 1,
+                        &record.smiles,
+                        "batch_direct",
+                    );
+                }
+
+                let batch_with_h = batch
+                    .add_hydrogens(BatchErrorMode::Keep)
+                    .expect("batch add_hydrogens should succeed after scalar branch passed");
+                for (batch_idx, batch_record) in batch_with_h.records.iter().enumerate() {
+                    let BatchRecord::Valid(batch_mol) = batch_record else {
+                        panic!(
+                            "batch explicit-hydrogen graph feature missing at row {} ({}) duplicate {}",
+                            idx + 1,
+                            record.smiles,
+                            batch_idx
+                        );
+                    };
+                    let (batch_atoms, batch_bonds) = extract_ours_features(batch_mol);
+                    compare_features(
+                        &batch_atoms,
+                        &batch_bonds,
+                        with_h_expected,
+                        idx + 1,
+                        &record.smiles,
+                        "batch_with_hs",
+                    );
+                }
             }
             (false, Err(_)) => {}
             (true, Err(err)) => {
@@ -1455,6 +1501,33 @@ fn graph_features_match_rdkit_golden_for_addhs_removehs_roundtrip_branch() {
                     &record.smiles,
                     "addhs_removehs",
                 );
+
+                let batch_smiles = vec![record.smiles.clone(), record.smiles.clone()];
+                let batch = MoleculeBatch::from_smiles_list(&batch_smiles, BatchErrorMode::Keep)
+                    .expect("batch add/remove hydrogens SMILES parse should not raise in keep mode")
+                    .add_hydrogens(BatchErrorMode::Keep)
+                    .expect("batch add_hydrogens should succeed after scalar branch passed")
+                    .remove_hydrogens(BatchErrorMode::Keep)
+                    .expect("batch remove_hydrogens should succeed after scalar branch passed");
+                for (batch_idx, batch_record) in batch.records.iter().enumerate() {
+                    let BatchRecord::Valid(batch_mol) = batch_record else {
+                        panic!(
+                            "batch add/remove hydrogens graph feature missing at row {} ({}) duplicate {}",
+                            idx + 1,
+                            record.smiles,
+                            batch_idx
+                        );
+                    };
+                    let (batch_atoms, batch_bonds) = extract_ours_features(batch_mol);
+                    compare_features(
+                        &batch_atoms,
+                        &batch_bonds,
+                        expected,
+                        idx + 1,
+                        &record.smiles,
+                        "batch_addhs_removehs",
+                    );
+                }
             }
             (false, Err(_)) => {}
             (true, Err(err)) => {
@@ -1507,6 +1580,39 @@ fn graph_features_match_rdkit_golden_for_flag_possible_stereo_centers_branch() {
                     idx + 1,
                     &record.smiles,
                 );
+
+                let batch_smiles = vec![record.smiles.clone(), record.smiles.clone()];
+                let batch = MoleculeBatch::from_smiles_list(&batch_smiles, BatchErrorMode::Keep)
+                    .expect("batch possible-stereo SMILES parse should not raise in keep mode");
+                for (batch_idx, batch_record) in batch.records.iter().enumerate() {
+                    let BatchRecord::Valid(batch_mol) = batch_record else {
+                        panic!(
+                            "batch possible-stereo graph feature missing at row {} ({}) duplicate {}",
+                            idx + 1,
+                            record.smiles,
+                            batch_idx
+                        );
+                    };
+                    let (batch_atoms, batch_bonds) = extract_ours_features(batch_mol);
+                    let stereo_props = batch_mol.rdkit_legacy_stereo_atom_props(true);
+                    let batch_atoms: Vec<OursPossibleStereoAtomFeature> = batch_atoms
+                        .into_iter()
+                        .zip(stereo_props.iter())
+                        .map(|(base, props)| OursPossibleStereoAtomFeature {
+                            base,
+                            cip_code: ours_cip_code_name(props.cip_code.as_deref()),
+                            cip_rank: props.cip_rank,
+                            chirality_possible: props.chirality_possible,
+                        })
+                        .collect();
+                    compare_possible_stereo_features(
+                        &batch_atoms,
+                        &batch_bonds,
+                        expected,
+                        idx + 1,
+                        &format!("{} duplicate {batch_idx}", record.smiles),
+                    );
+                }
             }
             (false, Err(_)) => {}
             (true, Err(err)) => {

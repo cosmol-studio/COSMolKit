@@ -9,7 +9,7 @@ return a new ``Molecule`` and leave the original object unchanged:
 
 .. code-block:: python
 
-   from cosmolkit import Molecule
+   from cosmolkit import BatchErrorMode, BatchErrorType, BondOrder, ChiralTag, Molecule
 
    mol = Molecule.from_smiles("CCO")
    mol_h = mol.with_hydrogens()
@@ -38,11 +38,14 @@ Inspect atoms and bonds:
 
 .. code-block:: python
 
+   from cosmolkit import BondOrder
+
    for atom in mol.atoms():
        print(atom.idx(), atom.atomic_num(), atom.is_aromatic())
 
    for bond in mol.bonds():
-       print(bond.begin_atom_idx(), bond.end_atom_idx(), bond.bond_type())
+       if bond.bond_type() == BondOrder.SINGLE:
+           print(bond.begin_atom_idx(), bond.end_atom_idx(), bond.bond_type().name)
 
 Inspect chiral tags without converting to an ordered tetrahedral record:
 
@@ -54,8 +57,8 @@ Inspect chiral tags without converting to an ordered tetrahedral record:
    print(chiral.to_smiles(isomeric_smiles=False))
 
    for atom in chiral.atoms():
-       if atom.chiral_tag() != "CHI_UNSPECIFIED":
-           print(atom.idx(), atom.chiral_tag())
+       if atom.chiral_tag() != ChiralTag.CHI_UNSPECIFIED:
+           print(atom.idx(), atom.chiral_tag().name)
 
 Read and write SDF:
 
@@ -92,16 +95,21 @@ Process a list of molecules:
 
 .. code-block:: python
 
-   from cosmolkit import MoleculeBatch
+   from cosmolkit import BatchErrorMode, BatchErrorType, MoleculeBatch
 
    batch = MoleculeBatch.from_smiles_list(
        ["CCO", "c1ccccc1", "not-smiles"],
-       errors="keep",
-   )
+       errors=BatchErrorMode.KEEP,
+   ).with_parallel_jobs(8)
 
-   prepared = batch.compute_2d_coords(errors="keep")
-   fingerprints = prepared.fingerprint_morgan_list(n_bits=2048, n_jobs=8)
+   for error in batch.errors():
+       if error.error_type() == BatchErrorType.SMILES_PARSE:
+           print(error.index(), error.message())
+
+   prepared = batch.compute_2d_coords(errors=BatchErrorMode.KEEP)
+   fingerprints = prepared.fingerprint_morgan_list(n_bits=2048)
 
    print(prepared.valid_mask())
    print(prepared.to_smiles_list(canonical=True))
+   print([mol.to_smiles() if mol is not None else None for mol in prepared])
    print([fp.on_bits() if fp is not None else None for fp in fingerprints])

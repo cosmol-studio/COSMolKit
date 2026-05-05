@@ -5,13 +5,15 @@ use std::path::PathBuf;
 
 use cosmolkit_core::io::molblock::{self, SdfFormat};
 use cosmolkit_core::io::sdf::SdfReader;
-use cosmolkit_core::{BatchErrorMode, BatchRecordError, SmilesWriteParams};
+use cosmolkit_core::{BatchErrorMode, BatchRecord, BatchRecordError, SmilesWriteParams};
 use numpy::PyArray2;
 use pyo3::PyErr;
-use pyo3::create_exception;
-use pyo3::exceptions::{PyNotImplementedError, PyValueError};
+use pyo3::exceptions::{PyIndexError, PyNotImplementedError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyType};
+use pyo3::types::{
+    PyAny, PyBool, PyDict, PyIterator, PyList, PyMapping, PyMappingProxy, PySlice, PySliceMethods,
+    PyType,
+};
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::define_stub_info_gatherer;
 #[cfg(feature = "stubgen")]
@@ -20,17 +22,71 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use pyo3_stub_gen_derive::remove_gen_stub;
 use rayon::ThreadPoolBuilder;
 
-create_exception!(cosmolkit, BatchValidationError, PyValueError);
-
-fn parse_batch_error_mode(errors: Option<&str>) -> PyResult<BatchErrorMode> {
-    match errors.map(|s| s.to_ascii_lowercase()) {
-        None => Ok(BatchErrorMode::Raise),
-        Some(v) if v == "raise" => Ok(BatchErrorMode::Raise),
-        Some(v) if v == "keep" => Ok(BatchErrorMode::Keep),
-        Some(v) if v == "skip" => Ok(BatchErrorMode::Skip),
-        Some(v) => Err(PyValueError::new_err(format!(
-            "unsupported errors mode '{v}', expected one of: raise, keep, skip"
+fn parse_batch_error_mode(errors: Option<&Bound<'_, PyAny>>) -> PyResult<BatchErrorMode> {
+    let Some(errors) = errors else {
+        return Ok(BatchErrorMode::Raise);
+    };
+    if let Ok(value) = errors.extract::<String>() {
+        return match value.to_ascii_lowercase().as_str() {
+            "raise" => Ok(BatchErrorMode::Raise),
+            "keep" => Ok(BatchErrorMode::Keep),
+            "skip" => Ok(BatchErrorMode::Skip),
+            _ => Err(PyValueError::new_err(format!(
+                "unsupported errors mode '{value}', expected one of: raise, keep, skip"
+            ))),
+        };
+    }
+    match errors.extract::<i64>()? {
+        1 => Ok(BatchErrorMode::Raise),
+        2 => Ok(BatchErrorMode::Keep),
+        3 => Ok(BatchErrorMode::Skip),
+        value => Err(PyValueError::new_err(format!(
+            "unsupported errors mode code {value}, expected BatchErrorMode.RAISE, KEEP, or SKIP"
         ))),
+    }
+}
+
+fn batch_error_type_code(error_type: &str) -> i64 {
+    match error_type {
+        "SmilesParseError" => 1,
+        "SdfReadError" => 2,
+        "AddHydrogensError" => 3,
+        "RemoveHydrogensError" => 4,
+        "SanitizeError" => 5,
+        "KekulizeError" => 6,
+        "CoordinateGenerationError" => 7,
+        "SmilesWriteError" => 8,
+        "DistanceGeometryError" => 9,
+        "FingerprintError" => 10,
+        "SvgDrawError" => 11,
+        "PreparedDrawError" => 12,
+        "SdfWriteError" => 13,
+        "ImageExportError" => 14,
+        "IoError" => 15,
+        "FilenameError" => 16,
+        _ => 0,
+    }
+}
+
+fn batch_error_type_member_name(error_type: &str) -> &'static str {
+    match error_type {
+        "SmilesParseError" => "SMILES_PARSE",
+        "SdfReadError" => "SDF_READ",
+        "AddHydrogensError" => "ADD_HYDROGENS",
+        "RemoveHydrogensError" => "REMOVE_HYDROGENS",
+        "SanitizeError" => "SANITIZE",
+        "KekulizeError" => "KEKULIZE",
+        "CoordinateGenerationError" => "COORDINATE_GENERATION",
+        "SmilesWriteError" => "SMILES_WRITE",
+        "DistanceGeometryError" => "DISTANCE_GEOMETRY",
+        "FingerprintError" => "FINGERPRINT",
+        "SvgDrawError" => "SVG_DRAW",
+        "PreparedDrawError" => "PREPARED_DRAW",
+        "SdfWriteError" => "SDF_WRITE",
+        "ImageExportError" => "IMAGE_EXPORT",
+        "IoError" => "IO",
+        "FilenameError" => "FILENAME",
+        _ => "UNKNOWN",
     }
 }
 
@@ -60,25 +116,50 @@ fn make_smiles_write_params(
     }
 }
 
-fn run_with_n_jobs<T, F>(n_jobs: Option<usize>, f: F) -> PyResult<T>
+fn run_batch_with_n_jobs<T, F>(
+    n_jobs: Option<usize>,
+    f: F,
+) -> PyResult<Result<T, cosmolkit_core::BatchValidationError>>
 where
     T: Send,
-    F: FnOnce() -> PyResult<T> + Send,
+    F: FnOnce() -> Result<T, cosmolkit_core::BatchValidationError> + Send,
 {
     match n_jobs {
         Some(0) => Err(PyValueError::new_err("n_jobs must be >= 1")),
-        Some(1) => f(),
-        Some(n) => ThreadPoolBuilder::new()
+        Some(1) => Ok(f()),
+        Some(n) => Ok(ThreadPoolBuilder::new()
             .num_threads(n)
             .build()
             .map_err(|err| PyValueError::new_err(format!("failed to build rayon pool: {err}")))?
-            .install(f),
-        None => f(),
+            .install(f)),
+        None => Ok(f()),
     }
 }
 
+fn validate_n_jobs(n_jobs: Option<usize>) -> PyResult<Option<usize>> {
+    if matches!(n_jobs, Some(0)) {
+        return Err(PyValueError::new_err("n_jobs must be >= 1"));
+    }
+    Ok(n_jobs)
+}
+
 fn batch_validation_pyerr(error: cosmolkit_core::BatchValidationError) -> PyErr {
-    BatchValidationError::new_err(format_batch_errors(&error.errors))
+    let message = format_batch_errors(&error.errors);
+    Python::attach(|py| {
+        let py_errors = error
+            .errors
+            .into_iter()
+            .map(|error| Py::new(py, PyBatchError::from(error)))
+            .collect::<PyResult<Vec<_>>>();
+        match py_errors.and_then(|errors| {
+            let errors = PyList::new(py, errors)?;
+            let cls = py.import("cosmolkit")?.getattr("BatchValidationError")?;
+            cls.call1((message, errors))
+        }) {
+            Ok(instance) => PyErr::from_value(instance),
+            Err(error) => error,
+        }
+    })
 }
 
 fn sanitize_pyerr(error: cosmolkit_core::SanitizeError) -> PyErr {
@@ -282,48 +363,183 @@ fn to_python_tetrahedral_stereo(
         .collect()
 }
 
-fn unimplemented_api(name: &str) -> PyErr {
-    PyNotImplementedError::new_err(format!(
-        "{name} is not implemented yet in the cosmolkit Python package"
-    ))
+fn bond_order_name(order: cosmolkit_core::BondOrder) -> &'static str {
+    order.rdkit_name()
 }
 
-fn bond_order_name(order: cosmolkit_core::BondOrder) -> &'static str {
-    match order {
-        cosmolkit_core::BondOrder::Null => "UNSPECIFIED",
-        cosmolkit_core::BondOrder::Single => "SINGLE",
-        cosmolkit_core::BondOrder::Double => "DOUBLE",
-        cosmolkit_core::BondOrder::Triple => "TRIPLE",
-        cosmolkit_core::BondOrder::Quadruple => "QUADRUPLE",
-        cosmolkit_core::BondOrder::Aromatic => "AROMATIC",
-        cosmolkit_core::BondOrder::Dative => "DATIVE",
-    }
+fn bond_order_code(order: cosmolkit_core::BondOrder) -> i64 {
+    order.python_code()
 }
 
 fn chiral_tag_name(tag: cosmolkit_core::ChiralTag) -> &'static str {
-    match tag {
-        cosmolkit_core::ChiralTag::Unspecified => "CHI_UNSPECIFIED",
-        cosmolkit_core::ChiralTag::TetrahedralCw => "CHI_TETRAHEDRAL_CW",
-        cosmolkit_core::ChiralTag::TetrahedralCcw => "CHI_TETRAHEDRAL_CCW",
-        cosmolkit_core::ChiralTag::TrigonalBipyramidal => "CHI_TRIGONALBIPYRAMIDAL",
-    }
+    tag.rdkit_name()
+}
+
+fn chiral_tag_code(tag: cosmolkit_core::ChiralTag) -> i64 {
+    tag.python_code()
 }
 
 fn bond_direction_name(direction: cosmolkit_core::BondDirection) -> &'static str {
-    match direction {
-        cosmolkit_core::BondDirection::None => "NONE",
-        cosmolkit_core::BondDirection::EndUpRight => "ENDUPRIGHT",
-        cosmolkit_core::BondDirection::EndDownRight => "ENDDOWNRIGHT",
-    }
+    direction.rdkit_name()
+}
+
+fn bond_direction_code(direction: cosmolkit_core::BondDirection) -> i64 {
+    direction.python_code()
 }
 
 fn bond_stereo_name(stereo: cosmolkit_core::BondStereo) -> &'static str {
-    match stereo {
-        cosmolkit_core::BondStereo::None => "STEREONONE",
-        cosmolkit_core::BondStereo::Any => "STEREOANY",
-        cosmolkit_core::BondStereo::Cis => "STEREOCIS",
-        cosmolkit_core::BondStereo::Trans => "STEREOTRANS",
+    stereo.rdkit_name()
+}
+
+fn bond_stereo_code(stereo: cosmolkit_core::BondStereo) -> i64 {
+    stereo.python_code()
+}
+
+fn enum_member<'py>(py: Python<'py>, enum_name: &str, code: i64) -> PyResult<Bound<'py, PyAny>> {
+    let module = py.import("cosmolkit")?;
+    module.getattr(enum_name)?.call1((code,))
+}
+
+fn add_int_enum(
+    m: &Bound<'_, PyModule>,
+    enum_name: &str,
+    map_name: &str,
+    members: &[(&str, i64)],
+) -> PyResult<()> {
+    let members_with_map_keys = members
+        .iter()
+        .map(|(name, value)| (*name, *value, *name))
+        .collect::<Vec<_>>();
+    add_int_enum_with_map_keys(m, enum_name, map_name, &members_with_map_keys)
+}
+
+fn add_int_enum_with_map_keys(
+    m: &Bound<'_, PyModule>,
+    enum_name: &str,
+    map_name: &str,
+    members: &[(&str, i64, &str)],
+) -> PyResult<()> {
+    let py = m.py();
+    let enum_module = py.import("enum")?;
+    let int_enum = enum_module.getattr("IntEnum")?;
+    let member_dict = PyDict::new(py);
+    for (name, value, _) in members {
+        member_dict.set_item(name, value)?;
     }
+    let enum_cls = int_enum.call1((enum_name, member_dict))?;
+    m.add(enum_name, &enum_cls)?;
+
+    let enum_map = PyDict::new(py);
+    for (name, _, map_key) in members {
+        enum_map.set_item(map_key, enum_cls.getattr(name)?)?;
+    }
+    let proxy = PyMappingProxy::new(py, enum_map.cast::<PyMapping>()?);
+    m.add(map_name, proxy)?;
+    Ok(())
+}
+
+fn add_public_enums(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    add_int_enum(
+        m,
+        "BondOrder",
+        "BOND_ORDER_MAP",
+        &[
+            ("UNSPECIFIED", 0),
+            ("SINGLE", 1),
+            ("DOUBLE", 2),
+            ("TRIPLE", 3),
+            ("QUADRUPLE", 4),
+            ("AROMATIC", 5),
+            ("DATIVE", 6),
+        ],
+    )?;
+    add_int_enum(
+        m,
+        "BondDirection",
+        "BOND_DIRECTION_MAP",
+        &[("NONE", 0), ("ENDUPRIGHT", 1), ("ENDDOWNRIGHT", 2)],
+    )?;
+    add_int_enum(
+        m,
+        "BondStereo",
+        "BOND_STEREO_MAP",
+        &[
+            ("STEREONONE", 0),
+            ("STEREOANY", 1),
+            ("STEREOCIS", 2),
+            ("STEREOTRANS", 3),
+        ],
+    )?;
+    add_int_enum(
+        m,
+        "ChiralTag",
+        "CHIRAL_TAG_MAP",
+        &[
+            ("CHI_UNSPECIFIED", 0),
+            ("CHI_TETRAHEDRAL_CW", 1),
+            ("CHI_TETRAHEDRAL_CCW", 2),
+            ("CHI_TRIGONALBIPYRAMIDAL", 3),
+        ],
+    )?;
+    add_int_enum_with_map_keys(
+        m,
+        "BatchErrorMode",
+        "BATCH_ERROR_MODE_MAP",
+        &[
+            ("RAISE", 1, "raise"),
+            ("KEEP", 2, "keep"),
+            ("SKIP", 3, "skip"),
+        ],
+    )?;
+    add_int_enum_with_map_keys(
+        m,
+        "BatchErrorType",
+        "BATCH_ERROR_TYPE_MAP",
+        &[
+            ("UNKNOWN", 0, "UnknownError"),
+            ("SMILES_PARSE", 1, "SmilesParseError"),
+            ("SDF_READ", 2, "SdfReadError"),
+            ("ADD_HYDROGENS", 3, "AddHydrogensError"),
+            ("REMOVE_HYDROGENS", 4, "RemoveHydrogensError"),
+            ("SANITIZE", 5, "SanitizeError"),
+            ("KEKULIZE", 6, "KekulizeError"),
+            ("COORDINATE_GENERATION", 7, "CoordinateGenerationError"),
+            ("SMILES_WRITE", 8, "SmilesWriteError"),
+            ("DISTANCE_GEOMETRY", 9, "DistanceGeometryError"),
+            ("FINGERPRINT", 10, "FingerprintError"),
+            ("SVG_DRAW", 11, "SvgDrawError"),
+            ("PREPARED_DRAW", 12, "PreparedDrawError"),
+            ("SDF_WRITE", 13, "SdfWriteError"),
+            ("IMAGE_EXPORT", 14, "ImageExportError"),
+            ("IO", 15, "IoError"),
+            ("FILENAME", 16, "FilenameError"),
+        ],
+    )
+}
+
+fn add_batch_validation_error_class(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = m.py();
+    let globals = PyDict::new(py);
+    globals.set_item("ValueError", py.get_type::<PyValueError>())?;
+    let code = r#"
+class BatchValidationError(ValueError):
+    __module__ = "cosmolkit"
+
+    def __init__(self, message, errors=None):
+        super().__init__(message)
+        self._errors = list(errors or [])
+
+    def errors(self):
+        return list(self._errors)
+"#;
+    py.import("builtins")?
+        .getattr("exec")?
+        .call1((code, &globals))?;
+    let cls = globals
+        .get_item("BatchValidationError")?
+        .ok_or_else(|| PyValueError::new_err("failed to create BatchValidationError class"))?;
+    m.add("BatchValidationError", cls)?;
+    Ok(())
 }
 
 fn parse_sdf_format(format: Option<&str>) -> PyResult<SdfFormat> {
@@ -440,52 +656,26 @@ fn py_method_str(obj: &Bound<'_, PyAny>, method: &str) -> PyResult<String> {
 }
 
 fn rdkit_chiral_tag_from_name(name: &str) -> PyResult<cosmolkit_core::ChiralTag> {
-    match name {
-        "CHI_UNSPECIFIED" => Ok(cosmolkit_core::ChiralTag::Unspecified),
-        "CHI_TETRAHEDRAL_CW" => Ok(cosmolkit_core::ChiralTag::TetrahedralCw),
-        "CHI_TETRAHEDRAL_CCW" => Ok(cosmolkit_core::ChiralTag::TetrahedralCcw),
-        other => Err(PyValueError::new_err(format!(
-            "from_rdkit unsupported atom chiral tag '{other}'"
-        ))),
-    }
+    cosmolkit_core::ChiralTag::from_rdkit_name(name).ok_or_else(|| {
+        PyValueError::new_err(format!("from_rdkit unsupported atom chiral tag '{name}'"))
+    })
 }
 
 fn rdkit_bond_order_from_name(name: &str) -> PyResult<cosmolkit_core::BondOrder> {
-    match name {
-        "UNSPECIFIED" | "ZERO" => Ok(cosmolkit_core::BondOrder::Null),
-        "SINGLE" => Ok(cosmolkit_core::BondOrder::Single),
-        "DOUBLE" => Ok(cosmolkit_core::BondOrder::Double),
-        "TRIPLE" => Ok(cosmolkit_core::BondOrder::Triple),
-        "QUADRUPLE" => Ok(cosmolkit_core::BondOrder::Quadruple),
-        "AROMATIC" => Ok(cosmolkit_core::BondOrder::Aromatic),
-        "DATIVE" | "DATIVEL" | "DATIVER" => Ok(cosmolkit_core::BondOrder::Dative),
-        other => Err(PyValueError::new_err(format!(
-            "from_rdkit unsupported bond type '{other}'"
-        ))),
-    }
+    cosmolkit_core::BondOrder::from_rdkit_name(name)
+        .ok_or_else(|| PyValueError::new_err(format!("from_rdkit unsupported bond type '{name}'")))
 }
 
 fn rdkit_bond_direction_from_name(name: &str) -> PyResult<cosmolkit_core::BondDirection> {
-    match name {
-        "NONE" => Ok(cosmolkit_core::BondDirection::None),
-        "ENDUPRIGHT" => Ok(cosmolkit_core::BondDirection::EndUpRight),
-        "ENDDOWNRIGHT" => Ok(cosmolkit_core::BondDirection::EndDownRight),
-        other => Err(PyValueError::new_err(format!(
-            "from_rdkit unsupported bond direction '{other}'"
-        ))),
-    }
+    cosmolkit_core::BondDirection::from_rdkit_name(name).ok_or_else(|| {
+        PyValueError::new_err(format!("from_rdkit unsupported bond direction '{name}'"))
+    })
 }
 
 fn rdkit_bond_stereo_from_name(name: &str) -> PyResult<cosmolkit_core::BondStereo> {
-    match name {
-        "STEREONONE" => Ok(cosmolkit_core::BondStereo::None),
-        "STEREOANY" => Ok(cosmolkit_core::BondStereo::Any),
-        "STEREOCIS" | "STEREOZ" => Ok(cosmolkit_core::BondStereo::Cis),
-        "STEREOTRANS" | "STEREOE" => Ok(cosmolkit_core::BondStereo::Trans),
-        other => Err(PyValueError::new_err(format!(
-            "from_rdkit unsupported bond stereo '{other}'"
-        ))),
-    }
+    cosmolkit_core::BondStereo::from_rdkit_name(name).ok_or_else(|| {
+        PyValueError::new_err(format!("from_rdkit unsupported bond stereo '{name}'"))
+    })
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
@@ -522,7 +712,8 @@ struct Atom {
     idx: usize,
     atomic_num: usize,
     formal_charge: i8,
-    chiral_tag: String,
+    chiral_tag_name: String,
+    chiral_tag_code: i64,
     isotope: Option<u16>,
     atom_map_num: Option<u32>,
     is_aromatic: bool,
@@ -549,9 +740,12 @@ struct Bond {
     idx: usize,
     begin_atom_idx: usize,
     end_atom_idx: usize,
-    bond_type: String,
-    bond_dir: String,
-    stereo: String,
+    bond_type_name: String,
+    bond_type_code: i64,
+    bond_dir_name: String,
+    bond_dir_code: i64,
+    stereo_name: String,
+    stereo_code: i64,
     stereo_atoms: Vec<usize>,
     is_aromatic: bool,
 }
@@ -570,17 +764,23 @@ struct PyBatchError {
     index: usize,
     input: Option<String>,
     stage: String,
-    error_type: String,
+    error_type_name: String,
+    error_type_code: i64,
+    error_type_member_name: String,
     message: String,
 }
 
 impl From<BatchRecordError> for PyBatchError {
     fn from(error: BatchRecordError) -> Self {
+        let error_type_code = batch_error_type_code(&error.error_type);
+        let error_type_member_name = batch_error_type_member_name(&error.error_type).to_string();
         Self {
             index: error.index,
             input: error.input,
             stage: error.stage,
-            error_type: error.error_type,
+            error_type_name: error.error_type,
+            error_type_code,
+            error_type_member_name,
             message: error.message,
         }
     }
@@ -632,14 +832,130 @@ Parameters such as ``errors`` control invalid-record handling:
 Examples
 --------
 Construct a batch with ``MoleculeBatch.from_smiles_list()``, choose an
-``errors`` mode for invalid records, and pass ``n_jobs`` to methods that expose
-parallel execution.
+``errors`` mode for invalid records, and use ``with_parallel_jobs()`` when the
+same worker count should apply to later batch operations.
 "#]
 struct MoleculeBatch {
     inner: cosmolkit_core::MoleculeBatch,
+    parallel_jobs: Option<usize>,
+}
+
+impl MoleculeBatch {
+    fn effective_n_jobs(&self, n_jobs: Option<usize>) -> Option<usize> {
+        n_jobs.or(self.parallel_jobs)
+    }
+
+    fn with_inner(&self, inner: cosmolkit_core::MoleculeBatch) -> Self {
+        Self {
+            inner,
+            parallel_jobs: self.parallel_jobs,
+        }
+    }
+
+    fn records_as_molecules(&self) -> Vec<Option<Molecule>> {
+        self.inner
+            .records
+            .iter()
+            .map(|record| match record {
+                BatchRecord::Valid(molecule) => Some(Molecule {
+                    inner: molecule.clone(),
+                }),
+                BatchRecord::Invalid(_) => None,
+            })
+            .collect()
+    }
+
+    fn normalize_index(&self, index: isize) -> PyResult<usize> {
+        let len = self.inner.len() as isize;
+        let index = if index < 0 { len + index } else { index };
+        if index < 0 || index >= len {
+            return Err(PyIndexError::new_err("MoleculeBatch index out of range"));
+        }
+        Ok(index as usize)
+    }
+
+    fn select_records(&self, indices: &[usize]) -> Self {
+        let records = indices
+            .iter()
+            .map(|index| self.inner.records[*index].clone())
+            .collect();
+        Self {
+            inner: cosmolkit_core::MoleculeBatch::new(records),
+            parallel_jobs: self.parallel_jobs,
+        }
+    }
+
+    fn selected_batch_pyobject(&self, py: Python<'_>, indices: &[usize]) -> PyResult<Py<PyAny>> {
+        Ok(Py::new(py, self.select_records(indices))?.into_any())
+    }
+
+    fn get_record_pyobject(&self, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
+        match &self.inner.records[index] {
+            BatchRecord::Valid(molecule) => Ok(Py::new(
+                py,
+                Molecule {
+                    inner: molecule.clone(),
+                },
+            )?
+            .into_any()),
+            BatchRecord::Invalid(_) => Ok(py.None()),
+        }
+    }
+
+    fn slice_indices(&self, slice: &Bound<'_, PySlice>) -> PyResult<Vec<usize>> {
+        let indices = slice.indices(self.inner.len() as isize)?;
+        let mut out = Vec::with_capacity(indices.slicelength);
+        let mut index = indices.start;
+        for _ in 0..indices.slicelength {
+            out.push(index as usize);
+            index += indices.step;
+        }
+        Ok(out)
+    }
+
+    fn sequence_indices(&self, key: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
+        let items = key.extract::<Vec<Py<PyAny>>>()?;
+        if items.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let py = key.py();
+        let bool_mask = items
+            .iter()
+            .all(|item| item.bind(py).is_exact_instance_of::<PyBool>());
+        if bool_mask {
+            if items.len() != self.inner.len() {
+                return Err(PyIndexError::new_err(format!(
+                    "boolean mask length {} does not match MoleculeBatch length {}",
+                    items.len(),
+                    self.inner.len()
+                )));
+            }
+            let mut indices = Vec::new();
+            for (index, item) in items.iter().enumerate() {
+                if item.bind(py).extract::<bool>()? {
+                    indices.push(index);
+                }
+            }
+            return Ok(indices);
+        }
+
+        let mut indices = Vec::with_capacity(items.len());
+        for item in items {
+            let item = item.bind(py);
+            if item.is_exact_instance_of::<PyBool>() {
+                return Err(PyTypeError::new_err(
+                    "MoleculeBatch index lists must not mix bool and int values",
+                ));
+            }
+            indices.push(self.normalize_index(item.extract::<isize>()?)?);
+        }
+        Ok(indices)
+    }
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PyBatchError {
     #[doc = r#"
@@ -664,10 +980,25 @@ Return the processing stage where the error occurred.
     }
 
     #[doc = r#"
-Return a short machine-readable error category.
+Return a stable machine-readable error category.
 "#]
-    fn error_type(&self) -> String {
-        self.error_type.clone()
+    #[gen_stub(override_return_type(type_repr = "BatchErrorType"))]
+    fn error_type<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        enum_member(py, "BatchErrorType", self.error_type_code)
+    }
+
+    #[doc = r#"
+Return the integer code for ``error_type()``.
+"#]
+    fn error_type_code(&self) -> i64 {
+        self.error_type_code
+    }
+
+    #[doc = r#"
+Return the external string name for this error category.
+"#]
+    fn error_type_name(&self) -> String {
+        self.error_type_name.clone()
     }
 
     #[doc = r#"
@@ -685,7 +1016,7 @@ Return the error as key-value pairs.
             ("index".to_string(), self.index.to_string()),
             ("input".to_string(), self.input.clone().unwrap_or_default()),
             ("stage".to_string(), self.stage.clone()),
-            ("error_type".to_string(), self.error_type.clone()),
+            ("error_type".to_string(), self.error_type_name.clone()),
             ("message".to_string(), self.message.clone()),
         ]
     }
@@ -693,7 +1024,7 @@ Return the error as key-value pairs.
     fn __repr__(&self) -> String {
         format!(
             "BatchError(index={}, stage='{}', error_type='{}', message='{}')",
-            self.index, self.stage, self.error_type, self.message
+            self.index, self.stage, self.error_type_member_name, self.message
         )
     }
 }
@@ -767,16 +1098,19 @@ MoleculeBatch
         _cls: &Bound<'_, PyType>,
         smiles: Vec<String>,
         sanitize: Option<bool>,
-        errors: Option<&str>,
+        errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
     ) -> PyResult<Self> {
         let sanitize = sanitize.unwrap_or(true);
         let mode = parse_batch_error_mode(errors)?;
-        run_with_n_jobs(n_jobs, move || {
+        run_batch_with_n_jobs(n_jobs, move || {
             cosmolkit_core::MoleculeBatch::from_smiles_list_with_sanitize(&smiles, sanitize, mode)
-                .map(|inner| Self { inner })
-                .map_err(batch_validation_pyerr)
-        })
+                .map(|inner| Self {
+                    inner,
+                    parallel_jobs: None,
+                })
+        })?
+        .map_err(batch_validation_pyerr)
     }
 
     #[classmethod]
@@ -799,50 +1133,86 @@ n_jobs : int, optional
         _cls: &Bound<'_, PyType>,
         sdf_records: Vec<String>,
         coordinate_dim: Option<&str>,
-        errors: Option<&str>,
+        errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
     ) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
         let coordinate_mode = parse_sdf_coordinate_mode(coordinate_dim)?;
-        run_with_n_jobs(n_jobs, move || {
+        run_batch_with_n_jobs(n_jobs, move || {
             cosmolkit_core::MoleculeBatch::from_sdf_record_strings(
                 &sdf_records,
                 coordinate_mode,
                 mode,
             )
-            .map(|inner| Self { inner })
-            .map_err(batch_validation_pyerr)
+            .map(|inner| Self {
+                inner,
+                parallel_jobs: None,
+            })
+        })?
+        .map_err(batch_validation_pyerr)
+    }
+
+    #[pyo3(signature = (n_jobs))]
+    #[doc = r#"
+Return a new batch configured to use this worker count by default.
+
+Pass ``None`` to clear the batch-level default and let rayon decide. Method-level
+``n_jobs`` arguments still override this setting for that one call.
+"#]
+    fn with_parallel_jobs(&self, n_jobs: Option<usize>) -> PyResult<Self> {
+        Ok(Self {
+            inner: self.inner.clone(),
+            parallel_jobs: validate_n_jobs(n_jobs)?,
         })
+    }
+
+    #[doc = r#"
+Return the batch-level default worker count, or ``None`` when unset.
+"#]
+    fn parallel_jobs(&self) -> Option<usize> {
+        self.parallel_jobs
     }
 
     #[pyo3(signature = (errors=None, n_jobs=None))]
     #[doc = r#"
 Return a new batch with explicit hydrogens added to each valid molecule.
 "#]
-    fn add_hydrogens(&self, errors: Option<&str>, n_jobs: Option<usize>) -> PyResult<Self> {
+    fn add_hydrogens(
+        &self,
+        errors: Option<&Bound<'_, PyAny>>,
+        n_jobs: Option<usize>,
+    ) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
         let inner = &self.inner;
-        run_with_n_jobs(n_jobs, move || {
-            inner
-                .add_hydrogens(mode)
-                .map(|inner| Self { inner })
-                .map_err(batch_validation_pyerr)
-        })
+        let parallel_jobs = self.parallel_jobs;
+        run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
+            inner.add_hydrogens(mode).map(|inner| Self {
+                inner,
+                parallel_jobs,
+            })
+        })?
+        .map_err(batch_validation_pyerr)
     }
 
     #[pyo3(signature = (errors=None, n_jobs=None))]
     #[doc = r#"
 Return a new batch with explicit hydrogens removed from each valid molecule.
 "#]
-    fn remove_hydrogens(&self, errors: Option<&str>, n_jobs: Option<usize>) -> PyResult<Self> {
+    fn remove_hydrogens(
+        &self,
+        errors: Option<&Bound<'_, PyAny>>,
+        n_jobs: Option<usize>,
+    ) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
         let inner = &self.inner;
-        run_with_n_jobs(n_jobs, move || {
-            inner
-                .remove_hydrogens(mode)
-                .map(|inner| Self { inner })
-                .map_err(batch_validation_pyerr)
-        })
+        let parallel_jobs = self.parallel_jobs;
+        run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
+            inner.remove_hydrogens(mode).map(|inner| Self {
+                inner,
+                parallel_jobs,
+            })
+        })?
+        .map_err(batch_validation_pyerr)
     }
 
     #[pyo3(signature = (strict=None, errors=None, n_jobs=None))]
@@ -861,18 +1231,20 @@ n_jobs : int, optional
     fn sanitize(
         &self,
         strict: Option<bool>,
-        errors: Option<&str>,
+        errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
     ) -> PyResult<Self> {
         reject_non_strict_sanitize(strict)?;
         let mode = parse_batch_error_mode(errors)?;
         let inner = &self.inner;
-        run_with_n_jobs(n_jobs, move || {
-            inner
-                .sanitize(mode)
-                .map(|inner| Self { inner })
-                .map_err(batch_validation_pyerr)
-        })
+        let parallel_jobs = self.parallel_jobs;
+        run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
+            inner.sanitize(mode).map(|inner| Self {
+                inner,
+                parallel_jobs,
+            })
+        })?
+        .map_err(batch_validation_pyerr)
     }
 
     #[pyo3(signature = (sanitize=None, errors=None, n_jobs=None))]
@@ -882,42 +1254,50 @@ Return a new batch with aromatic bonds converted to an explicit Kekule form.
     fn with_kekulized_bonds(
         &self,
         sanitize: Option<bool>,
-        errors: Option<&str>,
+        errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
     ) -> PyResult<Self> {
         let sanitize = sanitize.unwrap_or(true);
         let mode = parse_batch_error_mode(errors)?;
         let inner = &self.inner;
-        run_with_n_jobs(n_jobs, move || {
+        let parallel_jobs = self.parallel_jobs;
+        run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
             inner
                 .kekulize_with_sanitize(sanitize, mode)
-                .map(|inner| Self { inner })
-                .map_err(batch_validation_pyerr)
-        })
+                .map(|inner| Self {
+                    inner,
+                    parallel_jobs,
+                })
+        })?
+        .map_err(batch_validation_pyerr)
     }
 
     #[pyo3(signature = (errors=None, n_jobs=None))]
     #[doc = r#"
 Return a new batch with 2D coordinates computed for each valid molecule.
 "#]
-    fn compute_2d_coords(&self, errors: Option<&str>, n_jobs: Option<usize>) -> PyResult<Self> {
+    fn compute_2d_coords(
+        &self,
+        errors: Option<&Bound<'_, PyAny>>,
+        n_jobs: Option<usize>,
+    ) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
         let inner = &self.inner;
-        run_with_n_jobs(n_jobs, move || {
-            inner
-                .compute_2d_coords(mode)
-                .map(|inner| Self { inner })
-                .map_err(batch_validation_pyerr)
-        })
+        let parallel_jobs = self.parallel_jobs;
+        run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
+            inner.compute_2d_coords(mode).map(|inner| Self {
+                inner,
+                parallel_jobs,
+            })
+        })?
+        .map_err(batch_validation_pyerr)
     }
 
     #[doc = r#"
 Return a batch containing only valid molecules.
 "#]
     fn filter_valid(&self) -> Self {
-        Self {
-            inner: self.inner.filter_valid(),
-        }
+        self.with_inner(self.inner.filter_valid())
     }
 
     #[doc = r#"
@@ -1029,24 +1409,40 @@ n_jobs : int, optional
             ignore_atom_map_numbers,
             rooted_at_atom,
         );
-        run_with_n_jobs(n_jobs, move || {
-            inner
-                .to_smiles_list_with_params(&params)
-                .map_err(batch_validation_pyerr)
-        })
+        run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
+            inner.to_smiles_list_with_params(&params)
+        })?
+        .map_err(batch_validation_pyerr)
     }
 
     #[pyo3(signature = (n_jobs=None))]
     #[doc = r#"
 Return distance-geometry bounds matrices for all valid records.
 "#]
-    fn dg_bounds_matrix_list(&self, n_jobs: Option<usize>) -> PyResult<Vec<Option<Vec<Vec<f64>>>>> {
+    #[gen_stub(override_return_type(type_repr = "builtins.list[typing.Optional[numpy.ndarray[typing.Any, typing.Any]]]", imports = ("builtins", "typing", "numpy")))]
+    fn dg_bounds_matrix_list<'py>(
+        &self,
+        py: Python<'py>,
+        n_jobs: Option<usize>,
+    ) -> PyResult<Bound<'py, PyList>> {
         let inner = &self.inner;
-        run_with_n_jobs(n_jobs, move || {
-            inner
-                .dg_bounds_matrix_list()
-                .map_err(batch_validation_pyerr)
-        })
+        let values = run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
+            inner.dg_bounds_matrix_list()
+        })?
+        .map_err(batch_validation_pyerr)?;
+        let out = PyList::empty(py);
+        for value in values {
+            if let Some(matrix) = value {
+                out.append(PyArray2::from_vec2(py, &matrix).map_err(|err| {
+                    PyValueError::new_err(format!(
+                        "MoleculeBatch.dg_bounds_matrix_list failed: {err}"
+                    ))
+                })?)?;
+            } else {
+                out.append(py.None())?;
+            }
+        }
+        Ok(out)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1120,17 +1516,15 @@ Invalid records are returned as ``None`` in their original positions.
             false,
         )?;
         let inner = &self.inner;
-        run_with_n_jobs(n_jobs, move || {
-            inner
-                .morgan_fingerprint_list(&params)
-                .map(|values| {
-                    values
-                        .into_iter()
-                        .map(|value| value.map(|inner| Fingerprint { inner }))
-                        .collect()
-                })
-                .map_err(batch_validation_pyerr)
-        })
+        run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
+            inner.morgan_fingerprint_list(&params).map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.map(|inner| Fingerprint { inner }))
+                    .collect()
+            })
+        })?
+        .map_err(batch_validation_pyerr)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1204,7 +1598,7 @@ Invalid records are returned as ``None`` in their original positions.
             true,
         )?;
         let inner = &self.inner;
-        run_with_n_jobs(n_jobs, move || {
+        run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
             inner
                 .morgan_fingerprint_with_output_list(&params)
                 .map(|values| {
@@ -1213,8 +1607,8 @@ Invalid records are returned as ``None`` in their original positions.
                         .map(|value| value.map(Into::into))
                         .collect()
                 })
-                .map_err(batch_validation_pyerr)
-        })
+        })?
+        .map_err(batch_validation_pyerr)
     }
 
     #[pyo3(signature = (width=300, height=300, n_jobs=None))]
@@ -1228,14 +1622,13 @@ Render each valid molecule to an SVG string.
         n_jobs: Option<usize>,
     ) -> PyResult<Vec<Option<String>>> {
         let inner = &self.inner;
-        run_with_n_jobs(n_jobs, move || {
-            inner
-                .to_svg_list(width, height)
-                .map_err(batch_validation_pyerr)
-        })
+        run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
+            inner.to_svg_list(width, height)
+        })?
+        .map_err(batch_validation_pyerr)
     }
 
-    #[pyo3(signature = (out_dir, format=None, size=None, n_jobs=None, errors=None, report_path=None))]
+    #[pyo3(signature = (out_dir, format=None, size=None, n_jobs=None, errors=None, report_path=None, filenames=None))]
     #[doc = r#"
 Write molecule depictions to a directory.
 
@@ -1253,6 +1646,9 @@ errors : {"raise", "keep", "skip"}, optional
     Export error handling mode.
 report_path : str, optional
     Write a JSON or CSV error report.
+filenames : list[str | None], optional
+    Per-record output filenames. Names are relative to ``out_dir``; missing
+    extensions are filled from ``format``.
 
 Returns
 -------
@@ -1265,19 +1661,26 @@ BatchExportReport
         format: Option<&str>,
         size: Option<(u32, u32)>,
         n_jobs: Option<usize>,
-        errors: Option<&str>,
+        errors: Option<&Bound<'_, PyAny>>,
         report_path: Option<&str>,
+        filenames: Option<Vec<Option<String>>>,
     ) -> PyResult<PyBatchExportReport> {
         let mode = parse_batch_error_mode(errors)?;
         let image_format = format.unwrap_or("png").to_string();
         let (width, height) = size.unwrap_or((300, 300));
         let out_dir = expand_user_path(out_dir)?;
         let inner = &self.inner;
-        let report = run_with_n_jobs(n_jobs, move || {
-            inner
-                .write_images(out_dir.as_path(), &image_format, width, height, mode)
-                .map_err(batch_validation_pyerr)
-        })?;
+        let report = run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
+            inner.write_images(
+                out_dir.as_path(),
+                &image_format,
+                width,
+                height,
+                mode,
+                filenames.as_deref(),
+            )
+        })?
+        .map_err(batch_validation_pyerr)?;
         if let Some(path) = report_path {
             write_batch_report(path, &report)?;
         }
@@ -1305,7 +1708,7 @@ report_path : str, optional
         &self,
         path: &str,
         format: Option<&str>,
-        errors: Option<&str>,
+        errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
         report_path: Option<&str>,
     ) -> PyResult<PyBatchExportReport> {
@@ -1313,15 +1716,95 @@ report_path : str, optional
         let sdf_format = parse_sdf_format(format)?;
         let path = expand_user_path(path)?;
         let inner = &self.inner;
-        let report = run_with_n_jobs(n_jobs, move || {
-            inner
-                .write_sdf(path.as_path(), sdf_format, mode)
-                .map_err(batch_validation_pyerr)
-        })?;
+        let report = run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
+            inner.write_sdf(path.as_path(), sdf_format, mode)
+        })?
+        .map_err(batch_validation_pyerr)?;
         if let Some(report_path) = report_path {
             write_batch_report(report_path, &report)?;
         }
         Ok(report.into())
+    }
+
+    #[pyo3(signature = (out_dir, format=None, errors=None, n_jobs=None, report_path=None, filenames=None))]
+    #[doc = r#"
+Write each valid molecule to its own SDF file in a directory.
+
+Parameters
+----------
+out_dir : str
+    Output directory.
+format : {"auto", "v2000", "v3000"}, optional
+    SDF output format.
+errors : {"raise", "keep", "skip"}, optional
+    Export error handling mode.
+n_jobs : int, optional
+    Number of worker threads to use.
+report_path : str, optional
+    Write a JSON or CSV error report.
+filenames : list[str | None], optional
+    Per-record output filenames. Names are relative to ``out_dir``; missing
+    extensions are written as ``.sdf``.
+"#]
+    fn to_sdf_files(
+        &self,
+        out_dir: &str,
+        format: Option<&str>,
+        errors: Option<&Bound<'_, PyAny>>,
+        n_jobs: Option<usize>,
+        report_path: Option<&str>,
+        filenames: Option<Vec<Option<String>>>,
+    ) -> PyResult<PyBatchExportReport> {
+        let mode = parse_batch_error_mode(errors)?;
+        let sdf_format = parse_sdf_format(format)?;
+        let out_dir = expand_user_path(out_dir)?;
+        let inner = &self.inner;
+        let report = run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
+            inner.write_sdf_files(out_dir.as_path(), sdf_format, mode, filenames.as_deref())
+        })?
+        .map_err(batch_validation_pyerr)?;
+        if let Some(report_path) = report_path {
+            write_batch_report(report_path, &report)?;
+        }
+        Ok(report.into())
+    }
+
+    #[doc = r#"
+Return batch records as a Python list.
+
+Valid records become ``Molecule`` objects and invalid records become ``None``.
+"#]
+    fn to_list(&self) -> Vec<Option<Molecule>> {
+        self.records_as_molecules()
+    }
+
+    fn __getitem__(&self, py: Python<'_>, key: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        if let Ok(slice) = key.cast::<PySlice>() {
+            let indices = self.slice_indices(slice)?;
+            return self.selected_batch_pyobject(py, &indices);
+        }
+        if !key.is_exact_instance_of::<PyBool>() {
+            if let Ok(index) = key.extract::<isize>() {
+                return self.get_record_pyobject(py, self.normalize_index(index)?);
+            }
+        }
+        match self.sequence_indices(key) {
+            Ok(indices) => return self.selected_batch_pyobject(py, &indices),
+            Err(error) => {
+                if key.extract::<Vec<Py<PyAny>>>().is_ok() {
+                    return Err(error);
+                }
+            }
+        }
+        Err(PyTypeError::new_err(
+            "MoleculeBatch indices must be integers, slices, integer lists, or boolean masks",
+        ))
+    }
+
+    #[gen_stub(override_return_type(type_repr = "typing.Iterator[typing.Optional[Molecule]]", imports = ("typing")))]
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
+        let list = PyList::new(py, self.records_as_molecules())?;
+        PyIterator::from_object(list.as_any())
     }
 
     fn __len__(&self) -> usize {
@@ -1330,10 +1813,11 @@ report_path : str, optional
 
     fn __repr__(&self) -> String {
         format!(
-            "MoleculeBatch(n={}, valid={}, invalid={})",
+            "MoleculeBatch(n={}, valid={}, invalid={}, parallel_jobs={:?})",
             self.inner.len(),
             self.inner.valid_count(),
-            self.inner.invalid_count()
+            self.inner.invalid_count(),
+            self.parallel_jobs
         )
     }
 }
@@ -1660,7 +2144,8 @@ Return read-only atom feature records.
                 idx: atom.index,
                 atomic_num: atom.atomic_num as usize,
                 formal_charge: atom.formal_charge,
-                chiral_tag: chiral_tag_name(atom.chiral_tag).to_string(),
+                chiral_tag_name: chiral_tag_name(atom.chiral_tag).to_string(),
+                chiral_tag_code: chiral_tag_code(atom.chiral_tag),
                 isotope: atom.isotope,
                 atom_map_num: atom.atom_map_num,
                 is_aromatic: atom.is_aromatic,
@@ -1696,9 +2181,12 @@ Return read-only bond feature records.
                 idx: bond.index,
                 begin_atom_idx: bond.begin_atom,
                 end_atom_idx: bond.end_atom,
-                bond_type: bond_order_name(bond.order).to_string(),
-                bond_dir: bond_direction_name(bond.direction).to_string(),
-                stereo: bond_stereo_name(bond.stereo).to_string(),
+                bond_type_name: bond_order_name(bond.order).to_string(),
+                bond_type_code: bond_order_code(bond.order),
+                bond_dir_name: bond_direction_name(bond.direction).to_string(),
+                bond_dir_code: bond_direction_code(bond.direction),
+                stereo_name: bond_stereo_name(bond.stereo).to_string(),
+                stereo_code: bond_stereo_code(bond.stereo),
                 stereo_atoms: bond.stereo_atoms.clone(),
                 is_aromatic: bond.is_aromatic,
             })
@@ -1774,7 +2262,7 @@ Return whether the molecule has 2D coordinates.
         self.inner.coords_2d().is_some()
     }
 
-    #[gen_stub(override_return_type(type_repr = "numpy.ndarray", imports = ("numpy")))]
+    #[gen_stub(override_return_type(type_repr = "numpy.ndarray[typing.Any, typing.Any]", imports = ("numpy", "typing")))]
     #[doc = r#"
 Return 2D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
 
@@ -1792,7 +2280,7 @@ The z column is zero-filled.
     }
 
     #[pyo3(signature = (conformer_index=0))]
-    #[gen_stub(override_return_type(type_repr = "numpy.ndarray", imports = ("numpy")))]
+    #[gen_stub(override_return_type(type_repr = "numpy.ndarray[typing.Any, typing.Any]", imports = ("numpy", "typing")))]
     #[doc = r#"
 Return 3D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
 "#]
@@ -1811,7 +2299,7 @@ Return 3D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
             .map_err(|err| PyValueError::new_err(format!("Molecule.coords_3d failed: {err}")))
     }
 
-    #[gen_stub(override_return_type(type_repr = "numpy.ndarray", imports = ("numpy")))]
+    #[gen_stub(override_return_type(type_repr = "numpy.ndarray[typing.Any, typing.Any]", imports = ("numpy", "typing")))]
     #[doc = r#"
 Return the distance-geometry bounds matrix as a NumPy array.
 "#]
@@ -1868,7 +2356,17 @@ Write a PNG depiction to a file.
         Ok(())
     }
 
-    #[pyo3(signature = (isomeric_smiles=true))]
+    #[pyo3(signature = (
+        isomeric_smiles=true,
+        canonical=true,
+        kekule=false,
+        clean_stereo=true,
+        all_bonds_explicit=false,
+        all_hs_explicit=false,
+        include_dative_bonds=true,
+        ignore_atom_map_numbers=false,
+        rooted_at_atom=None
+    ))]
     #[doc = r#"
 Return a SMILES string.
 
@@ -1876,11 +2374,50 @@ Parameters
 ----------
 isomeric_smiles : bool, default True
     Include stereochemical and isotopic information when available.
+canonical : bool, default True
+    Return a canonical SMILES when supported.
+kekule : bool, default False
+    Write aromatic systems using Kekule bond notation.
+clean_stereo : bool, default True
+    Normalize stereo annotations before writing.
+all_bonds_explicit : bool, default False
+    Write explicit bond symbols.
+all_hs_explicit : bool, default False
+    Write explicit hydrogens.
+include_dative_bonds : bool, default True
+    Include dative bond notation.
+ignore_atom_map_numbers : bool, default False
+    Omit atom map numbers from canonical decisions.
+rooted_at_atom : int, optional
+    Start traversal from a selected atom index.
 "#]
-    fn to_smiles(&self, isomeric_smiles: bool) -> PyResult<String> {
-        self.inner.to_smiles(isomeric_smiles).map_err(|err| {
+    #[allow(clippy::too_many_arguments)]
+    fn to_smiles(
+        &self,
+        isomeric_smiles: bool,
+        canonical: bool,
+        kekule: bool,
+        clean_stereo: bool,
+        all_bonds_explicit: bool,
+        all_hs_explicit: bool,
+        include_dative_bonds: bool,
+        ignore_atom_map_numbers: bool,
+        rooted_at_atom: Option<usize>,
+    ) -> PyResult<String> {
+        let params = make_smiles_write_params(
+            isomeric_smiles,
+            canonical,
+            kekule,
+            clean_stereo,
+            all_bonds_explicit,
+            all_hs_explicit,
+            include_dative_bonds,
+            ignore_atom_map_numbers,
+            rooted_at_atom,
+        );
+        self.inner.to_smiles_with_params(&params).map_err(|err| {
             PyNotImplementedError::new_err(format!(
-                "Molecule.to_smiles(isomeric_smiles={isomeric_smiles}) is not implemented yet: {err}"
+                "Molecule.to_smiles(...) is not implemented for these parameters yet: {err}"
             ))
         })
     }
@@ -2160,14 +2697,6 @@ Return a Morgan fingerprint together with allocated RDKit-style additional outpu
             .map_err(sanitize_pyerr)
     }
 
-    fn perceive_rings(&self) -> PyResult<Self> {
-        Err(unimplemented_api("Molecule.perceive_rings"))
-    }
-
-    fn perceive_aromaticity(&self) -> PyResult<Self> {
-        Err(unimplemented_api("Molecule.perceive_aromaticity"))
-    }
-
     fn __len__(&self) -> usize {
         self.inner.atoms().len()
     }
@@ -2183,6 +2712,7 @@ Return a Morgan fingerprint together with allocated RDKit-style additional outpu
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl Atom {
     fn idx(&self) -> usize {
@@ -2194,8 +2724,15 @@ impl Atom {
     fn formal_charge(&self) -> i8 {
         self.formal_charge
     }
-    fn chiral_tag(&self) -> String {
-        self.chiral_tag.clone()
+    #[gen_stub(override_return_type(type_repr = "ChiralTag"))]
+    fn chiral_tag<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        enum_member(py, "ChiralTag", self.chiral_tag_code)
+    }
+    fn chiral_tag_code(&self) -> i64 {
+        self.chiral_tag_code
+    }
+    fn chiral_tag_name(&self) -> String {
+        self.chiral_tag_name.clone()
     }
     fn isotope(&self) -> Option<u16> {
         self.isotope
@@ -2237,7 +2774,7 @@ impl Atom {
             self.idx,
             self.atomic_num,
             self.formal_charge,
-            self.chiral_tag,
+            self.chiral_tag_name,
             self.isotope
                 .map(|x| x.to_string())
                 .unwrap_or_else(|| "None".to_string()),
@@ -2248,6 +2785,7 @@ impl Atom {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl Bond {
     fn idx(&self) -> usize {
@@ -2259,14 +2797,35 @@ impl Bond {
     fn end_atom_idx(&self) -> usize {
         self.end_atom_idx
     }
-    fn bond_type(&self) -> String {
-        self.bond_type.clone()
+    #[gen_stub(override_return_type(type_repr = "BondOrder"))]
+    fn bond_type<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        enum_member(py, "BondOrder", self.bond_type_code)
     }
-    fn bond_dir(&self) -> String {
-        self.bond_dir.clone()
+    fn bond_type_code(&self) -> i64 {
+        self.bond_type_code
     }
-    fn stereo(&self) -> String {
-        self.stereo.clone()
+    fn bond_type_name(&self) -> String {
+        self.bond_type_name.clone()
+    }
+    #[gen_stub(override_return_type(type_repr = "BondDirection"))]
+    fn bond_dir<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        enum_member(py, "BondDirection", self.bond_dir_code)
+    }
+    fn bond_dir_code(&self) -> i64 {
+        self.bond_dir_code
+    }
+    fn bond_dir_name(&self) -> String {
+        self.bond_dir_name.clone()
+    }
+    #[gen_stub(override_return_type(type_repr = "BondStereo"))]
+    fn stereo<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        enum_member(py, "BondStereo", self.stereo_code)
+    }
+    fn stereo_code(&self) -> i64 {
+        self.stereo_code
+    }
+    fn stereo_name(&self) -> String {
+        self.stereo_name.clone()
     }
     fn stereo_atoms(&self) -> Vec<usize> {
         self.stereo_atoms.clone()
@@ -2281,9 +2840,9 @@ impl Bond {
             self.idx,
             self.begin_atom_idx,
             self.end_atom_idx,
-            self.bond_type,
-            self.bond_dir,
-            self.stereo
+            self.bond_type_name,
+            self.bond_dir_name,
+            self.stereo_name
         )
     }
 }
@@ -2413,10 +2972,6 @@ Commit staged edits and return a new molecule.
         )
     }
 }
-
-#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass]
-struct QueryMolecule;
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(skip_from_py_object)]
@@ -2554,10 +3109,14 @@ Return the computed fingerprint.
     }
 
     #[doc = r#"
-Return Morgan additional output when it was collected.
+Return the Morgan additional output collected by ``fingerprint_morgan_with_output()``.
 "#]
-    fn additional_output(&self) -> Option<MorganAdditionalOutput> {
-        self.additional_output.clone()
+    fn additional_output(&self) -> PyResult<MorganAdditionalOutput> {
+        self.additional_output.clone().ok_or_else(|| {
+            PyValueError::new_err(
+                "Morgan additional output was not collected for this fingerprint result",
+            )
+        })
     }
 
     fn __repr__(&self) -> String {
@@ -2569,44 +3128,11 @@ Return Morgan additional output when it was collected.
     }
 }
 
-#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass]
-struct SubstructureMatch;
-
-#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass]
-struct ValenceReport;
-
-#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass]
-struct Alignment;
-
-#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
-#[pymethods]
-impl Alignment {
-    #[classmethod]
-    #[pyo3(signature = (reference, candidates))]
-    fn find_most_similar_fragment(
-        _cls: &Bound<'_, PyType>,
-        reference: &Molecule,
-        candidates: Vec<Py<Molecule>>,
-    ) -> PyResult<AlignmentResult> {
-        let _ = (reference, candidates);
-        Err(unimplemented_api("Alignment.find_most_similar_fragment"))
-    }
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass]
-struct AlignmentResult;
-
 #[pymodule]
 fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    m.add(
-        "BatchValidationError",
-        m.py().get_type::<BatchValidationError>(),
-    )?;
+    add_public_enums(m)?;
+    add_batch_validation_error_class(m)?;
     m.add_class::<Molecule>()?;
     m.add_class::<MoleculeBatch>()?;
     m.add_class::<PyBatchError>()?;
@@ -2614,14 +3140,9 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Atom>()?;
     m.add_class::<Bond>()?;
     m.add_class::<MoleculeEdit>()?;
-    m.add_class::<QueryMolecule>()?;
     m.add_class::<Fingerprint>()?;
     m.add_class::<MorganAdditionalOutput>()?;
     m.add_class::<MorganFingerprintResult>()?;
-    m.add_class::<SubstructureMatch>()?;
-    m.add_class::<ValenceReport>()?;
-    m.add_class::<Alignment>()?;
-    m.add_class::<AlignmentResult>()?;
     Ok(())
 }
 

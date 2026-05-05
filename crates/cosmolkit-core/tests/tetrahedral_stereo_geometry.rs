@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::Command;
 
-use cosmolkit_core::{LigandRef, Molecule};
+use cosmolkit_core::{BatchErrorMode, BatchRecord, LigandRef, Molecule, MoleculeBatch};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -130,6 +130,56 @@ fn tetrahedral_stereo_ordered_ligands_match_rdkit_etkdg_positive_volume() {
                 volume,
                 stereo.ligands
             );
+        }
+
+        let batch_smiles = vec![record.smiles.clone(), record.smiles.clone()];
+        let batch = MoleculeBatch::from_smiles_list(&batch_smiles, BatchErrorMode::Keep)
+            .expect("batch tetrahedral stereo SMILES parse should not raise in keep mode");
+        for (batch_idx, batch_record) in batch.records.iter().enumerate() {
+            let BatchRecord::Valid(batch_mol) = batch_record else {
+                panic!(
+                    "batch tetrahedral stereo molecule missing at row {} ({}) duplicate {}",
+                    row_idx + 1,
+                    record.smiles,
+                    batch_idx
+                );
+            };
+            let batch_stereos = batch_mol.tetrahedral_stereo();
+            let batch_centers: Vec<usize> =
+                batch_stereos.iter().map(|stereo| stereo.center).collect();
+            assert_eq!(
+                batch_centers,
+                record.centers,
+                "batch tetrahedral center mismatch at row {} ({}) duplicate {}",
+                row_idx + 1,
+                record.smiles,
+                batch_idx
+            );
+            for stereo in batch_stereos {
+                let center = positions
+                    .get(stereo.center)
+                    .copied()
+                    .expect("center coordinate missing");
+                let first_three = [
+                    ligand_position(stereo.ligands[0], positions)
+                        .expect("ligand 0 coordinate missing"),
+                    ligand_position(stereo.ligands[1], positions)
+                        .expect("ligand 1 coordinate missing"),
+                    ligand_position(stereo.ligands[2], positions)
+                        .expect("ligand 2 coordinate missing"),
+                ];
+                let volume = oriented_volume(center, first_three);
+                assert!(
+                    volume > 1.0e-8,
+                    "batch ordered tetrahedral ligands should produce positive RDKit ETKDG volume at row {} center {} ({}) duplicate {}, got {} from {:?}",
+                    row_idx + 1,
+                    stereo.center,
+                    record.smiles,
+                    batch_idx,
+                    volume,
+                    stereo.ligands
+                );
+            }
         }
     }
 }

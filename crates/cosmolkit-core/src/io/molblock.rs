@@ -697,116 +697,7 @@ fn rdkit_ring_radius(ring_size: usize, bond_len: f64) -> f64 {
 }
 
 fn n_outer_electrons_rdkit(atomic_num: u8) -> Option<i32> {
-    // RDKit PeriodicTable::getNouterElecs(), values mirrored from chem-core's
-    // RDKit 2026.03.1 valence support table.
-    match atomic_num {
-        0 => Some(0),
-        1 => Some(1),
-        2 => Some(2),
-        3 => Some(1),
-        4 => Some(2),
-        5 => Some(3),
-        6 => Some(4),
-        7 => Some(5),
-        8 => Some(6),
-        9 => Some(7),
-        10 => Some(8),
-        11 => Some(1),
-        12 => Some(2),
-        13 => Some(3),
-        14 => Some(4),
-        15 => Some(5),
-        16 => Some(6),
-        17 => Some(7),
-        18 => Some(8),
-        19 => Some(1),
-        20 => Some(2),
-        21 => Some(3),
-        22 => Some(4),
-        23 => Some(5),
-        24 => Some(6),
-        25 => Some(7),
-        26 => Some(8),
-        27 => Some(9),
-        28 => Some(10),
-        29 => Some(11),
-        30 => Some(2),
-        31 => Some(3),
-        32 => Some(4),
-        33 => Some(5),
-        34 => Some(6),
-        35 => Some(7),
-        36 => Some(8),
-        37 => Some(1),
-        38 => Some(2),
-        39 => Some(3),
-        40 => Some(4),
-        41 => Some(5),
-        42 => Some(6),
-        43 => Some(7),
-        44 => Some(8),
-        45 => Some(9),
-        46 => Some(10),
-        47 => Some(11),
-        48 => Some(2),
-        49 => Some(3),
-        50 => Some(4),
-        51 => Some(5),
-        52 => Some(6),
-        53 => Some(7),
-        54 => Some(8),
-        55 => Some(1),
-        56 => Some(2),
-        57 => Some(3),
-        58 => Some(4),
-        59 => Some(3),
-        60 => Some(4),
-        61 => Some(5),
-        62 => Some(6),
-        63 => Some(7),
-        64 => Some(8),
-        65 => Some(9),
-        66 => Some(10),
-        67 => Some(11),
-        68 => Some(12),
-        69 => Some(13),
-        70 => Some(14),
-        71 => Some(15),
-        72 => Some(4),
-        73 => Some(5),
-        74 => Some(6),
-        75 => Some(7),
-        76 => Some(8),
-        77 => Some(9),
-        78 => Some(10),
-        79 => Some(11),
-        80 => Some(2),
-        81 => Some(3),
-        82 => Some(4),
-        83 => Some(5),
-        84 => Some(6),
-        85 => Some(7),
-        86 => Some(8),
-        87 => Some(1),
-        88 => Some(2),
-        89 => Some(3),
-        90 => Some(4),
-        91 => Some(3),
-        92 => Some(4),
-        93 => Some(5),
-        94 => Some(6),
-        95 => Some(7),
-        96 => Some(8),
-        97 => Some(9),
-        98 => Some(10),
-        99 => Some(11),
-        100 => Some(12),
-        101 => Some(13),
-        102 => Some(14),
-        103 => Some(15),
-        104..=118 => Some(2),
-        _ => None,
-    }
+    crate::periodic_table::n_outer_electrons(atomic_num)
 }
 
 fn rdkit_num_bonds_plus_lone_pairs(
@@ -5406,13 +5297,13 @@ fn atom_total_degree(mol: &Molecule, atom_index: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
+    use std::fs::{self, File};
     use std::io::{BufRead, BufReader};
     use std::path::{Path, PathBuf};
     use std::process::Command;
 
-    use super::mol_to_v2000_block;
-    use crate::Molecule;
+    use super::{SdfFormat, mol_to_v2000_block};
+    use crate::{BatchErrorMode, Molecule, MoleculeBatch};
     use serde::Deserialize;
 
     #[derive(Debug, Deserialize)]
@@ -5462,6 +5353,32 @@ mod tests {
             .parent()
             .expect("repo root")
             .to_path_buf()
+    }
+
+    fn unique_temp_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "cosmolkit-{name}-{}-{:?}.sdf",
+            std::process::id(),
+            std::thread::current().id()
+        ))
+    }
+
+    fn sdf_blocks(text: &str) -> Vec<String> {
+        text.split("$$$$")
+            .enumerate()
+            .map(|(idx, block)| {
+                let block = block.trim_end_matches(['\r', '\n']);
+                if idx == 0 {
+                    block
+                } else if let Some(block) = block.strip_prefix("\r\n") {
+                    block
+                } else {
+                    block.strip_prefix('\n').unwrap_or(block)
+                }
+            })
+            .filter(|block| !block.is_empty())
+            .map(ToOwned::to_owned)
+            .collect()
     }
 
     fn body(block: &str) -> String {
@@ -6091,6 +6008,45 @@ mod tests {
                 );
             }
         }
+
+        let batch_records = golden
+            .iter()
+            .enumerate()
+            .filter(|(_, record)| record.parse_ok && record.v2000_ok)
+            .collect::<Vec<_>>();
+        let smiles = batch_records
+            .iter()
+            .map(|(_, record)| record.smiles.clone())
+            .collect::<Vec<_>>();
+        let batch = MoleculeBatch::from_smiles_list(&smiles, BatchErrorMode::Keep)
+            .expect("batch molblock SMILES parse should not raise in keep mode")
+            .compute_2d_coords(BatchErrorMode::Keep)
+            .expect(
+                "batch molblock 2D coordinate generation should succeed after scalar test passed",
+            );
+        let path = unique_temp_path("molblock-v2000-golden");
+        let report = batch
+            .write_sdf(&path, SdfFormat::V2000, BatchErrorMode::Keep)
+            .expect("batch V2000 SDF write should succeed after scalar test passed");
+        assert_eq!(report.success, batch_records.len());
+        assert_eq!(report.failed, 0);
+        let written = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("failed to read batch SDF {}: {err}", path.display()));
+        let _ = fs::remove_file(&path);
+        let blocks = sdf_blocks(&written);
+        assert_eq!(
+            blocks.len(),
+            batch_records.len(),
+            "batch V2000 SDF record count must match successful golden rows"
+        );
+        for ((idx, record), block) in batch_records.iter().zip(blocks.iter()) {
+            let ours_body = body(block);
+            let expected = record
+                .v2000_body
+                .as_ref()
+                .expect("v2000_ok=true requires v2000_body");
+            compare_against_expected(&ours_body, expected, &record.smiles, idx + 1, "batch_v2000");
+        }
     }
 
     #[test]
@@ -6255,6 +6211,58 @@ mod tests {
                     expected_norm
                 );
             }
+        }
+
+        let batch_records = golden
+            .iter()
+            .enumerate()
+            .filter(|(_, record)| record.parse_ok && record.kekulize_ok && record.v2000_ok)
+            .collect::<Vec<_>>();
+        let smiles = batch_records
+            .iter()
+            .map(|(_, record)| record.smiles.clone())
+            .collect::<Vec<_>>();
+        let batch = MoleculeBatch::from_smiles_list(&smiles, BatchErrorMode::Keep)
+            .expect("batch kekulized molblock SMILES parse should not raise in keep mode")
+            .kekulize_with_sanitize(true, BatchErrorMode::Keep)
+            .expect("batch kekulize should succeed after scalar test passed")
+            .compute_2d_coords(BatchErrorMode::Keep)
+            .expect("batch kekulized molblock 2D coordinate generation should succeed");
+        let path = unique_temp_path("molblock-kekulized-golden");
+        let report = batch
+            .write_sdf(&path, SdfFormat::V2000, BatchErrorMode::Keep)
+            .expect("batch kekulized V2000 SDF write should succeed after scalar test passed");
+        assert_eq!(report.success, batch_records.len());
+        assert_eq!(report.failed, 0);
+        let written = fs::read_to_string(&path).unwrap_or_else(|err| {
+            panic!(
+                "failed to read batch kekulized SDF {}: {err}",
+                path.display()
+            )
+        });
+        let _ = fs::remove_file(&path);
+        let blocks = sdf_blocks(&written);
+        assert_eq!(
+            blocks.len(),
+            batch_records.len(),
+            "batch kekulized V2000 SDF record count must match successful golden rows"
+        );
+        for ((idx, record), block) in batch_records.iter().zip(blocks.iter()) {
+            let ours_norm = normalize_signed_zero(&body(block));
+            let expected_norm = normalize_signed_zero(
+                record
+                    .v2000_body
+                    .as_ref()
+                    .expect("v2000_ok=true requires v2000_body"),
+            );
+            assert!(
+                bonds_and_atoms_match_strict(&ours_norm, &expected_norm),
+                "batch kekulized bond block mismatch at row {} ({}) against v2000\nours:\n{}\nexpected:\n{}",
+                idx + 1,
+                record.smiles,
+                ours_norm,
+                expected_norm
+            );
         }
     }
 

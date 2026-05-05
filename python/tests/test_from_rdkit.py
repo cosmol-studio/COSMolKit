@@ -104,7 +104,7 @@ def _rdkit_signature(rd_mol):
             atom.GetIdx(),
             atom.GetAtomicNum(),
             atom.GetFormalCharge(),
-            str(atom.GetChiralTag()),
+            cosmolkit.CHIRAL_TAG_MAP[str(atom.GetChiralTag())],
             atom.GetIsotope() or None,
             atom.GetAtomMapNum() or None,
             atom.GetIsAromatic(),
@@ -124,9 +124,11 @@ def _rdkit_signature(rd_mol):
             bond.GetIdx(),
             min(bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()),
             max(bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()),
-            "AROMATIC" if bond.GetIsAromatic() else str(bond.GetBondType()),
-            str(bond.GetBondDir()),
-            _normalized_rdkit_bond_stereo(bond.GetStereo()),
+            cosmolkit.BOND_ORDER_MAP[
+                "AROMATIC" if bond.GetIsAromatic() else str(bond.GetBondType())
+            ],
+            cosmolkit.BOND_DIRECTION_MAP[str(bond.GetBondDir())],
+            cosmolkit.BOND_STEREO_MAP[_normalized_rdkit_bond_stereo(bond.GetStereo())],
             tuple(bond.GetStereoAtoms()),
             bond.GetIsAromatic(),
         )
@@ -143,6 +145,21 @@ def test_from_rdkit_copies_basic_graph_features(smiles):
     bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
 
     assert _topology_signature(bridged) == _topology_signature(direct)
+
+
+def test_atom_and_bond_feature_enums_are_intenum_values():
+    mol = cosmolkit.Molecule.from_smiles("C=C")
+    atom = mol.atoms()[0]
+    bond = mol.bonds()[0]
+
+    assert atom.chiral_tag() == cosmolkit.ChiralTag.CHI_UNSPECIFIED
+    assert atom.chiral_tag_code() == int(cosmolkit.ChiralTag.CHI_UNSPECIFIED)
+    assert bond.bond_type() == cosmolkit.BondOrder.DOUBLE
+    assert bond.bond_type_code() == int(cosmolkit.BondOrder.DOUBLE)
+    assert bond.bond_dir() == cosmolkit.BondDirection.NONE
+    assert bond.stereo() == cosmolkit.BondStereo.STEREONONE
+    assert cosmolkit.BOND_ORDER_MAP["DOUBLE"] == cosmolkit.BondOrder.DOUBLE
+    assert not hasattr(bond, "order")
 
 
 @pytest.mark.parametrize("smiles", SMILES_CASES)

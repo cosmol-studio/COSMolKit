@@ -19,10 +19,144 @@ fn main() -> Result<()> {
     if !text.contains(future_line) {
         text = format!("{future_line}{text}");
     }
+    text = expose_chem_enums(text);
     text = expose_batch_validation_error(text);
+    text = expose_batch_error_mode_inputs(text);
+    text = expose_batch_getitem_overloads(text);
     fs::write(pyi_path, text)?;
 
     Ok(())
+}
+
+fn expose_batch_error_mode_inputs(text: String) -> String {
+    text.replace(
+        "errors: typing.Optional[typing.Any]",
+        "errors: typing.Union[BatchErrorMode, builtins.str, None]",
+    )
+}
+
+fn expose_batch_getitem_overloads(mut text: String) -> String {
+    let overloads = r#"@typing.overload
+    def __getitem__(self, index: builtins.int) -> typing.Optional[Molecule]: ...
+    @typing.overload
+    def __getitem__(self, index: builtins.slice) -> MoleculeBatch: ...
+    @typing.overload
+    def __getitem__(self, index: typing.Sequence[builtins.bool]) -> MoleculeBatch: ...
+    @typing.overload
+    def __getitem__(self, index: typing.Sequence[builtins.int]) -> MoleculeBatch: ..."#;
+    if text.contains("def __getitem__(self, key: typing.Any) -> typing.Any: ...") {
+        text = text.replace(
+            "def __getitem__(self, key: typing.Any) -> typing.Any: ...",
+            overloads,
+        );
+    } else if text
+        .contains("def __getitem__(self, index: builtins.int) -> typing.Optional[Molecule]: ...")
+    {
+        text = text.replace(
+            "def __getitem__(self, index: builtins.int) -> typing.Optional[Molecule]: ...",
+            overloads,
+        );
+    }
+    text
+}
+
+fn expose_chem_enums(mut text: String) -> String {
+    if !text.contains("import enum\n") {
+        text = text.replace("import builtins\n", "import builtins\nimport enum\n");
+    }
+
+    for name in [
+        "BondOrder",
+        "BondDirection",
+        "BondStereo",
+        "ChiralTag",
+        "BatchErrorMode",
+        "BatchErrorType",
+        "BOND_ORDER_MAP",
+        "BOND_DIRECTION_MAP",
+        "BOND_STEREO_MAP",
+        "CHIRAL_TAG_MAP",
+        "BATCH_ERROR_MODE_MAP",
+        "BATCH_ERROR_TYPE_MAP",
+    ] {
+        let export = format!("    \"{name}\",\n");
+        if !text.contains(&export) {
+            text = text.replace("    \"Bond\",\n", &format!("{export}    \"Bond\",\n"));
+        }
+    }
+
+    let enum_defs = r#"@typing.final
+class BondOrder(enum.IntEnum):
+    UNSPECIFIED = 0
+    SINGLE = 1
+    DOUBLE = 2
+    TRIPLE = 3
+    QUADRUPLE = 4
+    AROMATIC = 5
+    DATIVE = 6
+
+@typing.final
+class BondDirection(enum.IntEnum):
+    NONE = 0
+    ENDUPRIGHT = 1
+    ENDDOWNRIGHT = 2
+
+@typing.final
+class BondStereo(enum.IntEnum):
+    STEREONONE = 0
+    STEREOANY = 1
+    STEREOCIS = 2
+    STEREOTRANS = 3
+
+@typing.final
+class ChiralTag(enum.IntEnum):
+    CHI_UNSPECIFIED = 0
+    CHI_TETRAHEDRAL_CW = 1
+    CHI_TETRAHEDRAL_CCW = 2
+    CHI_TRIGONALBIPYRAMIDAL = 3
+
+@typing.final
+class BatchErrorMode(enum.IntEnum):
+    RAISE = 1
+    KEEP = 2
+    SKIP = 3
+
+@typing.final
+class BatchErrorType(enum.IntEnum):
+    UNKNOWN = 0
+    SMILES_PARSE = 1
+    SDF_READ = 2
+    ADD_HYDROGENS = 3
+    REMOVE_HYDROGENS = 4
+    SANITIZE = 5
+    KEKULIZE = 6
+    COORDINATE_GENERATION = 7
+    SMILES_WRITE = 8
+    DISTANCE_GEOMETRY = 9
+    FINGERPRINT = 10
+    SVG_DRAW = 11
+    PREPARED_DRAW = 12
+    SDF_WRITE = 13
+    IMAGE_EXPORT = 14
+    IO = 15
+    FILENAME = 16
+
+BOND_ORDER_MAP: typing.Mapping[builtins.str, BondOrder]
+BOND_DIRECTION_MAP: typing.Mapping[builtins.str, BondDirection]
+BOND_STEREO_MAP: typing.Mapping[builtins.str, BondStereo]
+CHIRAL_TAG_MAP: typing.Mapping[builtins.str, ChiralTag]
+BATCH_ERROR_MODE_MAP: typing.Mapping[builtins.str, BatchErrorMode]
+BATCH_ERROR_TYPE_MAP: typing.Mapping[builtins.str, BatchErrorType]
+
+"#;
+    if !text.contains("class BondOrder(enum.IntEnum)") {
+        text = text.replace(
+            "@typing.final\nclass Atom:",
+            &format!("{enum_defs}@typing.final\nclass Atom:"),
+        );
+    }
+
+    text
 }
 
 fn expose_batch_validation_error(mut text: String) -> String {
@@ -34,11 +168,16 @@ fn expose_batch_validation_error(mut text: String) -> String {
         );
     }
 
-    let class_decl = "class BatchValidationError(builtins.ValueError):\n    ...\n\n";
+    let class_decl = "class BatchValidationError(builtins.ValueError):\n    def errors(self) -> builtins.list[BatchError]: ...\n\n";
     if !text.contains("class BatchValidationError") {
         text = text.replace(
             "@typing.final\nclass Alignment:",
             &format!("{class_decl}@typing.final\nclass Alignment:"),
+        );
+    } else {
+        text = text.replace(
+            "class BatchValidationError(builtins.ValueError):\n    ...\n\n",
+            class_decl,
         );
     }
 

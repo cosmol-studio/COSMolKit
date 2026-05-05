@@ -1,21 +1,14 @@
-"""Target COSMolKit sanitize/perception pipeline.
-
-This example shows the intended explicit workflow shape. The sanitize and
-perception APIs used here are not implemented yet.
-"""
+"""COSMolKit usage: explicit sanitize and standardize steps."""
 
 from cosmolkit import Molecule
 
-mol = Molecule.from_smiles("c1ccccc1", sanitize=False)
+raw = Molecule.from_smiles("CN(=O)=O", sanitize=False)
+sanitized = raw.sanitize(strict=True)
 
-report = mol.check_valence()
-_ = report
+print("raw charges:", [atom.formal_charge() for atom in raw.atoms()])
+print("sanitized charges:", [atom.formal_charge() for atom in sanitized.atoms()])
+print("sanitized smiles:", sanitized.to_smiles())
 
-mol = (
-    mol.sanitize(strict=True)
-    .perceive_rings()
-    .perceive_aromaticity()
-    .with_kekulized_bonds(sanitize=False)
-)
+kekule = Molecule.from_smiles("c1ccccc1").with_kekulized_bonds(sanitize=True)
 
-_ = mol
+print("kekulized molecule smiles:", kekule.to_smiles(kekule=True))

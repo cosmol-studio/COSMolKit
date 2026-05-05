@@ -56,8 +56,8 @@ COSMolKit is in early active development. The implementation is intentionally a 
 - **Core layout:** `cosmolkit-core` contains chemistry perception, IO, drawing, and biomolecular primitives; `cosmolkit` is the Rust facade crate; `python/` contains the PyO3 package.
 - **RDKit reference:** RDKit 2026.03.1 is the active compatibility reference for selected behaviors, with `third_party/rdkit` pinned to `Release_2026_03_1` (`351f8f378f8ad6bbd517980c38896e66bf907af8`).
 - **Parity coverage:** current tests cover graph features, add-H / remove-H roundtrips, tetrahedral stereo geometry, DG bounds matrices, Morgan fingerprint branches, Kekulization branches, SMILES writer branches, V2000 molblock output, and SDF V2000/V3000 roundtrips.
-- **Batch-native workflows:** `MoleculeBatch` APIs support ordered molecule construction, parallel transforms, image/SDF export, and structured error handling for high-throughput datasets.
-- **Python bindings:** the package exposes SMILES parsing, `Molecule.from_rdkit()`, graph/stereo inspection, value-style transforms, explicit `coords_2d()` / `coords_3d()` access, 2D/3D SDF IO for molecules with stored coordinates, DG bounds, Morgan fingerprints, SVG/PNG rendering, batch processing, and explicit editing.
+- **Batch-native workflows:** `MoleculeBatch` APIs support ordered molecule construction, Python-style indexing and iteration, parallel transforms, image/SDF export, custom export filenames, and structured error handling for high-throughput datasets.
+- **Python bindings:** the package exposes SMILES parsing/writing with RDKit-style writer options, `Molecule.from_rdkit()`, enum-valued graph/stereo inspection, value-style transforms, explicit `coords_2d()` / `coords_3d()` access, 2D/3D SDF IO for molecules with stored coordinates, DG bounds, Morgan fingerprints, SVG/PNG rendering, batch processing, and explicit editing.
 - **AI direction:** planned COSMolKit-native APIs include model-ready graph export, internal coordinates, torsion/chirality-aware diffusion helpers, and molecular tokenization. See `ai_native_features_sketch.md`.
 
 ## Python Quick Start
@@ -73,11 +73,17 @@ fp = mol.fingerprint_morgan(radius=2, n_bits=2048)
 print(fp.on_bits())
 
 smiles = ["CCO", "c1ccccc1", "CC(=O)O"]
-batch = MoleculeBatch.from_smiles_list(smiles, sanitize=True, errors="keep", n_jobs=8)
+batch = MoleculeBatch.from_smiles_list(smiles, sanitize=True, errors="keep").with_parallel_jobs(8)
 
 prepared = batch.add_hydrogens(errors="keep").compute_2d_coords(errors="keep")
-fps = prepared.fingerprint_morgan_list(n_bits=2048, n_jobs=8)
-prepared.to_images("molecule_images", format="png", size=(300, 300), n_jobs=8, errors="skip")
+fps = prepared.fingerprint_morgan_list(n_bits=2048)
+prepared.to_images(
+    "molecule_images",
+    format="png",
+    size=(300, 300),
+    errors="skip",
+    filenames=["ethanol", "benzene", "acetate"],
+)
 ```
 
 For more Python examples, see `python/README.md` and `python/examples/`.
@@ -129,9 +135,11 @@ For more Python examples, see `python/README.md` and `python/examples/`.
 - ✅ `MoleculeBatch.from_smiles_list()` with input-order preservation
 - ✅ batch transformations for sanitize, add/remove hydrogens, Kekulization, and 2D coordinates
 - ✅ Rust-side parallel scheduling with configurable `n_jobs`
-- ✅ structured batch errors with `errors="raise" | "keep" | "skip"`
+- ✅ batch-level default parallelism with `MoleculeBatch.with_parallel_jobs()`
+- ✅ structured batch errors with `errors="raise" | "keep" | "skip"` and Python `BatchErrorMode` / `BatchErrorType` enums
 - ✅ validity masks, error summaries, and JSON/CSV error reports
-- ✅ parallel SDF and image export for large molecule collections
+- ✅ Python-style iteration, integer indexing, slicing, index-list selection, and boolean-mask selection
+- ✅ parallel SDF and image export for large molecule collections, including per-record filenames
 
 ### Phase 3 — Python API and User Workflows
 **Goal:** expose the verified Rust core through a practical Python interface
@@ -140,12 +148,13 @@ For more Python examples, see `python/README.md` and `python/examples/`.
 - ✅ `Molecule.from_smiles()`
 - ✅ `Molecule.from_rdkit()`
 - ✅ atom and bond graph access
+- ✅ enum-valued bond order, bond direction, bond stereo, and chiral tag access
 - ✅ `Molecule.with_hydrogens()`
 - ✅ `Molecule.without_hydrogens()`
 - ✅ `Molecule.with_kekulized_bonds()`
 - ✅ `Molecule.tetrahedral_stereo()`
 - ✅ `Molecule.with_2d_coords()`
-- ✅ `Molecule.to_smiles()`
+- ✅ `Molecule.to_smiles()` with RDKit-style writer options
 - ✅ SDF read/write bindings
 - ✅ SVG/PNG rendering and file export
 - ✅ explicit `Molecule.edit()` workflow

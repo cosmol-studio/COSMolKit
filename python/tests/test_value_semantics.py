@@ -165,6 +165,97 @@ def test_molecule_batch_processes_in_order_and_preserves_single_molecule_inputs(
     assert mol.to_smiles() == "CCO"
 
 
+def test_molecule_to_smiles_exposes_writer_options():
+    benzene = cosmolkit.Molecule.from_smiles("c1ccccc1")
+    ethanol = cosmolkit.Molecule.from_smiles("CCO")
+    mapped = cosmolkit.Molecule.from_smiles("[CH3:7][OH:2]")
+
+    assert benzene.to_smiles(kekule=True) == "C1=CC=CC=C1"
+    assert ethanol.to_smiles(all_bonds_explicit=True) == "C-C-O"
+    assert ethanol.to_smiles(all_hs_explicit=True) == "[CH3][CH2][OH]"
+    assert ethanol.to_smiles(canonical=False, rooted_at_atom=2) == "OCC"
+    assert mapped.to_smiles(canonical=False) == "[CH3:7][OH:2]"
+    assert mapped.to_smiles(ignore_atom_map_numbers=True) == "OC"
+
+
+def test_molecule_batch_parallel_jobs_are_value_style_and_inherited():
+    batch = cosmolkit.MoleculeBatch.from_smiles_list(["CCO", "CC"], errors="keep")
+
+    configured = batch.with_parallel_jobs(2)
+    prepared = configured.add_hydrogens(errors="keep").compute_2d_coords(errors="keep")
+
+    assert batch.parallel_jobs() is None
+    assert configured.parallel_jobs() == 2
+    assert prepared.parallel_jobs() == 2
+    assert prepared.to_smiles_list(n_jobs=1)[0].startswith("[H]O")
+    assert configured.with_parallel_jobs(None).parallel_jobs() is None
+    with pytest.raises(ValueError, match="n_jobs must be >= 1"):
+        batch.with_parallel_jobs(0)
+
+
+def test_molecule_batch_to_list_indexing_and_iteration_return_molecules_or_none():
+    batch = cosmolkit.MoleculeBatch.from_smiles_list(["CCO", "C1CC", "CC"], errors="keep")
+
+    values = batch.to_list()
+
+    assert [value.to_smiles() if value is not None else None for value in values] == [
+        "CCO",
+        None,
+        "CC",
+    ]
+    assert batch[0].to_smiles() == "CCO"
+    assert batch[-1].to_smiles() == "CC"
+    assert batch[1] is None
+    assert [value.to_smiles() if value is not None else None for value in batch] == [
+        "CCO",
+        None,
+        "CC",
+    ]
+    with pytest.raises(IndexError):
+        _ = batch[3]
+
+
+def test_molecule_batch_getitem_supports_slices_masks_and_index_lists():
+    batch = cosmolkit.MoleculeBatch.from_smiles_list(
+        ["CCO", "C1CC", "CC", "N"],
+        errors="keep",
+    ).with_parallel_jobs(2)
+
+    tail = batch[2:]
+    assert isinstance(tail, cosmolkit.MoleculeBatch)
+    assert tail.parallel_jobs() == 2
+    assert tail.to_smiles_list() == ["CC", "N"]
+
+    reversed_batch = batch[::-1]
+    assert reversed_batch.to_smiles_list() == ["N", "CC", None, "CCO"]
+
+    valid = batch[batch.valid_mask()]
+    assert valid.to_smiles_list() == ["CCO", "CC", "N"]
+
+    selected = batch[[3, 0, -2]]
+    assert selected.to_smiles_list() == ["N", "CCO", "CC"]
+
+    assert len(batch[[]]) == 0
+    with pytest.raises(IndexError, match="boolean mask length"):
+        _ = batch[[True, False]]
+    with pytest.raises(IndexError):
+        _ = batch[[99]]
+    with pytest.raises(TypeError):
+        _ = batch[True]
+
+
+def test_molecule_batch_dg_bounds_matrix_list_returns_numpy_arrays_or_none():
+    batch = cosmolkit.MoleculeBatch.from_smiles_list(["CCO", "C1CC", "CC"], errors="keep")
+
+    matrices = batch.dg_bounds_matrix_list(n_jobs=2)
+
+    assert isinstance(matrices[0], np.ndarray)
+    assert matrices[0].shape == (3, 3)
+    assert matrices[1] is None
+    assert isinstance(matrices[2], np.ndarray)
+    assert matrices[2].shape == (2, 2)
+
+
 def test_molecule_batch_keeps_errors_and_filters_valid_records(tmp_path: Path):
     batch = cosmolkit.MoleculeBatch.from_smiles_list(["CCO", "C1CC"], errors="keep", n_jobs=2)
 
@@ -182,6 +273,37 @@ def test_molecule_batch_keeps_errors_and_filters_valid_records(tmp_path: Path):
     assert report.success() == 1
     assert report.failed() == 0
     assert (tmp_path / "valid.sdf").exists()
+
+
+def test_molecule_batch_exports_use_custom_filenames(tmp_path: Path):
+    batch = (
+        cosmolkit.MoleculeBatch.from_smiles_list(["CCO", "C1CC", "CC"], errors="keep")
+        .with_parallel_jobs(2)
+        .compute_2d_coords(errors="keep")
+    )
+
+    image_report = batch.to_images(
+        str(tmp_path / "images"),
+        format="svg",
+        errors="skip",
+        filenames=["ethanol", "bad.svg", None],
+    )
+    assert image_report.success() == 2
+    assert (tmp_path / "images" / "ethanol.svg").exists()
+    assert (tmp_path / "images" / "000002.svg").exists()
+
+    sdf_report = batch.to_sdf_files(
+        str(tmp_path / "sdf"),
+        format="v2000",
+        errors="skip",
+        filenames=["ethanol", "bad.sdf", None],
+    )
+    assert sdf_report.success() == 2
+    assert (tmp_path / "sdf" / "ethanol.sdf").exists()
+    assert (tmp_path / "sdf" / "000002.sdf").exists()
+
+    with pytest.raises(cosmolkit.BatchValidationError, match="FilenameError"):
+        batch.to_images(str(tmp_path / "bad"), format="svg", filenames=["../x", None, None])
 
 
 def test_molecule_batch_parallel_smiles_writer_options():
@@ -212,3 +334,31 @@ def test_molecule_batch_raise_aggregates_errors():
         cosmolkit.MoleculeBatch.from_smiles_list(["C1CC", "N1"], errors="raise", n_jobs=2)
 
     assert "batch validation failed" in str(excinfo.value)
+    errors = excinfo.value.errors()
+    assert [error.error_type() for error in errors] == [
+        cosmolkit.BatchErrorType.SMILES_PARSE,
+        cosmolkit.BatchErrorType.SMILES_PARSE,
+    ]
+    assert errors[0].error_type_code() == int(cosmolkit.BatchErrorType.SMILES_PARSE)
+    assert errors[0].error_type_name() == "SmilesParseError"
+
+
+def test_batch_errors_expose_intenum_types_and_mode_enum_is_accepted():
+    batch = cosmolkit.MoleculeBatch.from_smiles_list(
+        ["CCO", "C1CC"],
+        errors=cosmolkit.BatchErrorMode.KEEP,
+        n_jobs=2,
+    )
+
+    errors = batch.errors()
+    assert len(errors) == 1
+    assert errors[0].error_type() == cosmolkit.BatchErrorType.SMILES_PARSE
+    assert errors[0].error_type_name() == "SmilesParseError"
+    assert errors[0].as_dict()[3] == ("error_type", "SmilesParseError")
+    assert cosmolkit.BATCH_ERROR_TYPE_MAP["SmilesParseError"] == (
+        cosmolkit.BatchErrorType.SMILES_PARSE
+    )
+    assert cosmolkit.BATCH_ERROR_MODE_MAP["keep"] == cosmolkit.BatchErrorMode.KEEP
+
+    filtered = batch.compute_2d_coords(errors=cosmolkit.BatchErrorMode.SKIP)
+    assert len(filtered) == 1

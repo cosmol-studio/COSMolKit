@@ -8,6 +8,45 @@ pub enum ChiralTag {
     TrigonalBipyramidal,
 }
 
+macro_rules! impl_chiral_tag_metadata {
+    ($($variant:path => ($code:literal, $name:literal, $from_rdkit:literal)),+ $(,)?) => {
+        impl ChiralTag {
+            #[must_use]
+            pub const fn python_code(self) -> i64 {
+                match self {
+                    $($variant => $code,)+
+                }
+            }
+
+            #[must_use]
+            pub const fn rdkit_name(self) -> &'static str {
+                match self {
+                    $($variant => $name,)+
+                }
+            }
+
+            #[must_use]
+            pub fn from_rdkit_name(name: &str) -> Option<Self> {
+                match name {
+                    $($from_rdkit => Some($variant),)+
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+impl_chiral_tag_metadata! {
+    ChiralTag::Unspecified => (0, "CHI_UNSPECIFIED", "CHI_UNSPECIFIED"),
+    ChiralTag::TetrahedralCw => (1, "CHI_TETRAHEDRAL_CW", "CHI_TETRAHEDRAL_CW"),
+    ChiralTag::TetrahedralCcw => (2, "CHI_TETRAHEDRAL_CCW", "CHI_TETRAHEDRAL_CCW"),
+    ChiralTag::TrigonalBipyramidal => (
+        3,
+        "CHI_TRIGONALBIPYRAMIDAL",
+        "CHI_TRIGONALBIPYRAMIDAL"
+    ),
+}
+
 /// Atom record in a molecule graph.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Atom {

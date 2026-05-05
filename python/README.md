@@ -69,20 +69,27 @@ print(info.atom_counts())
 print(info.bit_info_map())
 ```
 
-Chiral tags are available directly on atoms, so code that works with the
-SMILES/RDKit-style CW and CCW path does not need to switch to the ordered
-tetrahedral view:
+Chiral tags and bond orders are Python ``IntEnum`` values, so code can compare
+against typed constants instead of strings:
 
 ```python
-chiral = Molecule.from_smiles("F[C@H](Cl)Br")
+from cosmolkit import BondOrder, ChiralTag, Molecule
 
+chiral = Molecule.from_smiles("F[C@H](Cl)Br")
 print(chiral.to_smiles())
 print(chiral.to_smiles(isomeric_smiles=False))
 
 for atom in chiral.atoms():
-    if atom.chiral_tag() != "CHI_UNSPECIFIED":
-        print(atom.idx(), atom.chiral_tag())
+    if atom.chiral_tag() != ChiralTag.CHI_UNSPECIFIED:
+        print(atom.idx(), atom.chiral_tag().name)
+
+for bond in Molecule.from_smiles("C=C").bonds():
+    if bond.bond_type() == BondOrder.DOUBLE:
+        print("double bond:", bond.begin_atom_idx(), bond.end_atom_idx())
 ```
+
+Read-only maps such as `BOND_ORDER_MAP` and `CHIRAL_TAG_MAP` convert external
+string names to the enum members when needed.
 
 Use `Molecule.edit()` when you want an explicit editing workflow:
 
@@ -96,19 +103,41 @@ mol2 = editor.commit()
 ## Batch Workflows
 
 ```python
-from cosmolkit import MoleculeBatch
+from cosmolkit import BatchErrorMode, BatchErrorType, MoleculeBatch
 
 smiles = ["CCO", "c1ccccc1", "not-smiles"]
-batch = MoleculeBatch.from_smiles_list(smiles, errors="keep")
+batch = MoleculeBatch.from_smiles_list(
+    smiles,
+    errors=BatchErrorMode.KEEP,
+).with_parallel_jobs(8)
 
-prepared = batch.add_hydrogens(errors="keep").compute_2d_coords(errors="keep")
-report = prepared.to_images("molecule_images", format="png", errors="skip")
-fingerprints = prepared.fingerprint_morgan_list(n_bits=2048, n_jobs=8)
+for error in batch.errors():
+    if error.error_type() == BatchErrorType.SMILES_PARSE:
+        print(error.index(), error.message())
+
+prepared = batch.add_hydrogens(errors=BatchErrorMode.KEEP).compute_2d_coords(
+    errors=BatchErrorMode.KEEP,
+)
+report = prepared.to_images(
+    "molecule_images",
+    format="png",
+    errors=BatchErrorMode.SKIP,
+    filenames=["ethanol", "benzene", "invalid"],
+)
+sdf_files = prepared.to_sdf_files(
+    "molecule_sdf_records",
+    format="v2000",
+    errors=BatchErrorMode.SKIP,
+    filenames=["ethanol", "benzene", "invalid"],
+)
+fingerprints = prepared.fingerprint_morgan_list(n_bits=2048)
 
 print(prepared.valid_mask())
 print(prepared.errors())
 print([fp.on_bits() if fp is not None else None for fp in fingerprints])
+print([mol.to_smiles() if mol is not None else None for mol in prepared])
 print(report)
+print(sdf_files)
 ```
 
 The `errors` option controls invalid records:
@@ -128,6 +157,26 @@ explicit = prepared.to_smiles_list(
 without_maps = prepared.to_smiles_list(ignore_atom_map_numbers=True)
 ```
 
+Single-molecule SMILES output accepts the same writer options:
+
+```python
+benzene = Molecule.from_smiles("c1ccccc1")
+ethanol = Molecule.from_smiles("CCO")
+
+print(benzene.to_smiles(kekule=True))
+print(ethanol.to_smiles(all_bonds_explicit=True))
+print(ethanol.to_smiles(canonical=False, rooted_at_atom=2))
+```
+
+`with_parallel_jobs()` configures the default worker count for later batch
+operations while keeping the batch value-style. Method-level `n_jobs` can still
+override it for one call, and `prepared.to_list()` returns `list[Molecule |
+None]` when a Python list is more convenient than iteration.
+
+Directory exports accept optional `filenames` lists. Entries are aligned with
+the batch records, `None` keeps the default numbered filename, and missing
+extensions are filled from the selected output format.
+
 ## SDF and Arrays
 
 ```python
@@ -146,6 +195,7 @@ print(bounds.shape)
 ## Main Features
 
 - SMILES parsing and writing with `Molecule.from_smiles()` and `to_smiles()`
+- RDKit-style SMILES writer options on single molecules and batches
 - copy-on-write molecule value semantics for transforms
 - SDF file and string IO
 - atom and bond feature inspection
@@ -158,4 +208,7 @@ print(bounds.shape)
 - SVG and PNG molecule depictions
 - ordered batch construction, transformation, filtering, and export
 - batch Morgan fingerprint generation with Rust-side parallel scheduling
+- batch-level default parallelism with `with_parallel_jobs()`
+- Python-style batch iteration, slicing, integer-list selection, and boolean-mask selection
+- custom per-record filenames for batch image and SDF directory exports
 - explicit molecule editing with `Molecule.edit()`

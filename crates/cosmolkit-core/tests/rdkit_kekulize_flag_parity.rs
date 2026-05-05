@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
-use cosmolkit_core::{BondOrder, Molecule};
+use cosmolkit_core::{BatchErrorMode, BatchRecord, BondOrder, Molecule, MoleculeBatch};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -166,5 +166,62 @@ fn kekulize_clear_flags_false_matches_rdkit_golden() {
             row_idx + 1,
             record.smiles
         );
+
+        let batch_smiles = vec![record.smiles.clone(), record.smiles.clone()];
+        let batch = MoleculeBatch::from_smiles_list(&batch_smiles, BatchErrorMode::Keep)
+            .expect("batch kekulize SMILES parse should not raise in keep mode")
+            .kekulize(BatchErrorMode::Keep)
+            .expect(
+                "batch clearAromaticFlags=false kekulize should succeed after scalar branch passed",
+            );
+        for (batch_idx, batch_record) in batch.records.iter().enumerate() {
+            let BatchRecord::Valid(batch_mol) = batch_record else {
+                panic!(
+                    "batch clearAromaticFlags=false kekulize missing at row {} ({}) duplicate {}",
+                    row_idx + 1,
+                    record.smiles,
+                    batch_idx
+                );
+            };
+            let batch_atom_is_aromatic: Vec<bool> = batch_mol
+                .atoms()
+                .iter()
+                .map(|atom| atom.is_aromatic)
+                .collect();
+            let batch_bond_types: Vec<&'static str> = batch_mol
+                .bonds()
+                .iter()
+                .map(|bond| bond_type_name(bond.order))
+                .collect();
+            let batch_bond_is_aromatic: Vec<bool> = batch_mol
+                .bonds()
+                .iter()
+                .map(|bond| bond.is_aromatic)
+                .collect();
+            assert_eq!(
+                batch_atom_is_aromatic,
+                *expected_atom_is_aromatic,
+                "batch atom aromatic flags mismatch at row {} ({}) duplicate {}",
+                row_idx + 1,
+                record.smiles,
+                batch_idx
+            );
+            assert_eq!(
+                batch_bond_types,
+                *expected_bond_types,
+                "batch bond types mismatch at row {} ({}) duplicate {}",
+                row_idx + 1,
+                record.smiles,
+                batch_idx
+            );
+            assert_eq!(
+                batch_bond_is_aromatic,
+                *expected_bond_is_aromatic,
+                "batch bond aromatic flags mismatch at row {} ({}) duplicate {}",
+                row_idx + 1,
+                record.smiles,
+                batch_idx
+            );
+        }
     }
 }

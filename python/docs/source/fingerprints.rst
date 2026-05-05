@@ -77,7 +77,7 @@ Batch Fingerprints
    batch = MoleculeBatch.from_smiles_list(
        ["CCO", "not-smiles", "CCCO"],
        errors="keep",
-   )
-   fps = batch.fingerprint_morgan_list(n_bits=2048, n_jobs=8)
+   ).with_parallel_jobs(8)
+   fps = batch.fingerprint_morgan_list(n_bits=2048)
 
    print([fp.on_bits() if fp is not None else None for fp in fps])

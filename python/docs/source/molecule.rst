@@ -39,6 +39,17 @@ SMILES Output
    print(mol.to_smiles())
    print(mol.to_smiles(isomeric_smiles=False))
 
+SMILES writer options are available on both single molecules and batches:
+
+.. code-block:: python
+
+   benzene = Molecule.from_smiles("c1ccccc1")
+   ethanol = Molecule.from_smiles("CCO")
+
+   print(benzene.to_smiles(kekule=True))
+   print(ethanol.to_smiles(all_bonds_explicit=True))
+   print(ethanol.to_smiles(canonical=False, rooted_at_atom=2))
+
 Explicit Editing
 ----------------
 
@@ -50,7 +61,6 @@ new molecule:
    editor = mol.edit()
    cl = editor.add_atom("Cl")
    editor.add_bond(0, cl, order="single")
-   editor.set_atom_charge(cl, -1)
 
    edited = editor.commit()
 
@@ -76,13 +86,21 @@ RDKit atoms:
 
 .. code-block:: python
 
+   from cosmolkit import ChiralTag
+
    mol = Molecule.from_smiles("F[C@H](Cl)Br")
 
    for atom in mol.atoms():
-       if atom.chiral_tag() != "CHI_UNSPECIFIED":
-           print(atom.idx(), atom.chiral_tag())
+       if atom.chiral_tag() != ChiralTag.CHI_UNSPECIFIED:
+           print(atom.idx(), atom.chiral_tag().name)
 
    print(mol.find_chiral_centers(include_unassigned=False))
+
+Atom and bond enum-valued fields return Python ``IntEnum`` members, so callers
+can compare or match against ``ChiralTag``, ``BondOrder``, ``BondDirection``,
+and ``BondStereo`` instead of spelling chemistry states as strings. Read-only
+maps such as ``BOND_ORDER_MAP`` and ``CHIRAL_TAG_MAP`` are available when a
+string name from an external source needs to be converted to the enum member.
 
 When code needs COSMolKit's ordered-ligand tetrahedral representation, use
 ``tetrahedral_stereo()`` as a separate view derived from those chiral tags:

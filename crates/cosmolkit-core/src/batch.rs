@@ -2,9 +2,10 @@ use crate::io::molblock::{self, SdfFormat};
 use crate::io::sdf::{SdfCoordinateMode, read_sdf_record_from_str_with_coordinate_mode};
 use crate::{Molecule, PreparedDrawMolecule, SmilesWriteParams};
 use rayon::prelude::*;
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -437,7 +438,10 @@ impl MoleculeBatch {
         width: u32,
         height: u32,
         errors: BatchErrorMode,
+        filenames: Option<&[Option<String>]>,
     ) -> Result<BatchExportReport, BatchValidationError> {
+        let format = format.to_ascii_lowercase();
+        let paths = output_paths(out_dir, self.records.len(), &format, filenames, "to_images")?;
         fs::create_dir_all(out_dir).map_err(|error| BatchValidationError {
             errors: vec![BatchRecordError::new(
                 0,
@@ -447,18 +451,17 @@ impl MoleculeBatch {
                 format!("create output directory failed: {error}"),
             )],
         })?;
-        let format = format.to_ascii_lowercase();
         let outcomes: Vec<Result<(), BatchRecordError>> = self
             .records
             .par_iter()
             .enumerate()
             .filter_map(|(index, record)| match record {
                 BatchRecord::Valid(molecule) => Some(
-                    write_one_image(molecule, out_dir, index, &format, width, height).map_err(
+                    write_one_image(molecule, &paths[index], &format, width, height).map_err(
                         |message| {
                             BatchRecordError::new(
                                 index,
-                                None,
+                                Some(paths[index].display().to_string()),
                                 "to_images",
                                 "ImageExportError",
                                 message,
@@ -557,18 +560,81 @@ impl MoleculeBatch {
             errors: report_errors,
         })
     }
+
+    pub fn write_sdf_files(
+        &self,
+        out_dir: &Path,
+        format: SdfFormat,
+        errors: BatchErrorMode,
+        filenames: Option<&[Option<String>]>,
+    ) -> Result<BatchExportReport, BatchValidationError> {
+        let paths = output_paths(
+            out_dir,
+            self.records.len(),
+            "sdf",
+            filenames,
+            "to_sdf_files",
+        )?;
+        fs::create_dir_all(out_dir).map_err(|error| BatchValidationError {
+            errors: vec![BatchRecordError::new(
+                0,
+                Some(out_dir.display().to_string()),
+                "to_sdf_files",
+                "IoError",
+                format!("create output directory failed: {error}"),
+            )],
+        })?;
+        let outcomes: Vec<Result<(), BatchRecordError>> = self
+            .records
+            .par_iter()
+            .enumerate()
+            .filter_map(|(index, record)| match record {
+                BatchRecord::Valid(molecule) => Some(
+                    write_one_sdf_file(molecule, &paths[index], format).map_err(|message| {
+                        BatchRecordError::new(
+                            index,
+                            Some(paths[index].display().to_string()),
+                            "to_sdf_files",
+                            "SdfWriteError",
+                            message,
+                        )
+                    }),
+                ),
+                BatchRecord::Invalid(error) => match errors {
+                    BatchErrorMode::Raise | BatchErrorMode::Keep => Some(Err(error.clone())),
+                    BatchErrorMode::Skip => None,
+                },
+            })
+            .collect();
+        let mut success = 0usize;
+        let mut report_errors = Vec::new();
+        for outcome in outcomes {
+            match outcome {
+                Ok(()) => success += 1,
+                Err(error) => report_errors.push(error),
+            }
+        }
+        if matches!(errors, BatchErrorMode::Raise) && !report_errors.is_empty() {
+            return Err(BatchValidationError {
+                errors: report_errors,
+            });
+        }
+        Ok(BatchExportReport {
+            total: self.records.len(),
+            success,
+            failed: report_errors.len(),
+            errors: report_errors,
+        })
+    }
 }
 
 fn write_one_image(
     molecule: &Molecule,
-    out_dir: &Path,
-    index: usize,
+    path: &Path,
     format: &str,
     width: u32,
     height: u32,
 ) -> Result<(), String> {
-    let filename = format!("{index:06}.{format}");
-    let path = PathBuf::from(out_dir).join(filename);
     match format {
         "svg" => {
             let svg = molecule
@@ -588,6 +654,11 @@ fn write_one_image(
     }
 }
 
+fn write_one_sdf_file(molecule: &Molecule, path: &Path, format: SdfFormat) -> Result<(), String> {
+    let block = molecule_to_sdf_record_string(molecule, format)?;
+    fs::write(path, block).map_err(|error| error.to_string())
+}
+
 fn molecule_to_sdf_record_string(molecule: &Molecule, format: SdfFormat) -> Result<String, String> {
     if molecule.coords_2d().is_some() {
         molblock::mol_to_2d_sdf_record(molecule, format).map_err(|error| error.to_string())
@@ -596,10 +667,103 @@ fn molecule_to_sdf_record_string(molecule: &Molecule, format: SdfFormat) -> Resu
     }
 }
 
+fn output_paths(
+    out_dir: &Path,
+    total: usize,
+    extension: &str,
+    filenames: Option<&[Option<String>]>,
+    stage: &'static str,
+) -> Result<Vec<PathBuf>, BatchValidationError> {
+    if let Some(filenames) = filenames
+        && filenames.len() != total
+    {
+        return Err(BatchValidationError {
+            errors: vec![BatchRecordError::new(
+                0,
+                None,
+                stage,
+                "FilenameError",
+                format!(
+                    "filenames length {} must match batch length {total}",
+                    filenames.len()
+                ),
+            )],
+        });
+    }
+
+    let mut seen = HashSet::new();
+    let mut paths = Vec::with_capacity(total);
+    for index in 0..total {
+        let filename = match filenames.and_then(|items| items[index].as_deref()) {
+            Some(raw) => normalize_output_filename(raw, extension).map_err(|message| {
+                BatchValidationError {
+                    errors: vec![BatchRecordError::new(
+                        index,
+                        Some(raw.to_string()),
+                        stage,
+                        "FilenameError",
+                        message,
+                    )],
+                }
+            })?,
+            None => format!("{index:06}.{extension}"),
+        };
+        if !seen.insert(filename.clone()) {
+            return Err(BatchValidationError {
+                errors: vec![BatchRecordError::new(
+                    index,
+                    Some(filename),
+                    stage,
+                    "FilenameError",
+                    "duplicate output filename",
+                )],
+            });
+        }
+        paths.push(out_dir.join(filename));
+    }
+    Ok(paths)
+}
+
+fn normalize_output_filename(raw: &str, extension: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("filename must not be empty".to_string());
+    }
+    let path = Path::new(trimmed);
+    if path.is_absolute() {
+        return Err("filename must be relative to the output directory".to_string());
+    }
+    let components = path.components().collect::<Vec<_>>();
+    if components.len() != 1 || !matches!(components[0], Component::Normal(_)) {
+        return Err("filename must not include path separators or '..'".to_string());
+    }
+    let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
+        return Err("filename must be valid UTF-8".to_string());
+    };
+    match path.extension().and_then(|value| value.to_str()) {
+        Some(actual) if actual.eq_ignore_ascii_case(extension) => Ok(file_name.to_string()),
+        Some(actual) => Err(format!(
+            "filename extension '.{actual}' does not match expected '.{extension}'"
+        )),
+        None => Ok(format!("{file_name}.{extension}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{BatchErrorMode, BatchRecord, MoleculeBatch};
     use crate::Molecule;
+    use crate::io::molblock::SdfFormat;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "cosmolkit-batch-{name}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ))
+    }
 
     #[test]
     fn from_smiles_list_keeps_invalid_records_in_order() {
@@ -666,5 +830,72 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![0, 1, -1, 0]
         );
+    }
+
+    #[test]
+    fn write_images_uses_custom_filenames_and_rejects_unsafe_names() {
+        let smiles = vec!["CCO".to_string(), "C1CC".to_string(), "CC".to_string()];
+        let batch = MoleculeBatch::from_smiles_list(&smiles, BatchErrorMode::Keep)
+            .expect("keep mode should not raise");
+        let out_dir = unique_temp_dir("images");
+        let filenames = vec![
+            Some("ethanol".to_string()),
+            Some("invalid.svg".to_string()),
+            None,
+        ];
+
+        let report = batch
+            .write_images(
+                &out_dir,
+                "svg",
+                120,
+                100,
+                BatchErrorMode::Skip,
+                Some(&filenames),
+            )
+            .expect("custom image filenames should write");
+
+        assert_eq!(report.success, 2);
+        assert!(out_dir.join("ethanol.svg").exists());
+        assert!(out_dir.join("000002.svg").exists());
+        let _ = fs::remove_dir_all(&out_dir);
+
+        let bad = vec![Some("../escape".to_string()), None, None];
+        let error = batch
+            .write_images(
+                &unique_temp_dir("bad-images"),
+                "svg",
+                120,
+                100,
+                BatchErrorMode::Skip,
+                Some(&bad),
+            )
+            .expect_err("unsafe filename should be rejected");
+        assert_eq!(error.errors[0].error_type, "FilenameError");
+    }
+
+    #[test]
+    fn write_sdf_files_uses_custom_filenames() {
+        let smiles = vec!["CCO".to_string(), "CC".to_string()];
+        let batch = MoleculeBatch::from_smiles_list(&smiles, BatchErrorMode::Raise)
+            .expect("SMILES should parse")
+            .compute_2d_coords(BatchErrorMode::Raise)
+            .expect("2D coords should compute");
+        let out_dir = unique_temp_dir("sdf-files");
+        let filenames = vec![Some("ethanol".to_string()), Some("ethane.sdf".to_string())];
+
+        let report = batch
+            .write_sdf_files(
+                &out_dir,
+                SdfFormat::V2000,
+                BatchErrorMode::Raise,
+                Some(&filenames),
+            )
+            .expect("custom SDF filenames should write");
+
+        assert_eq!(report.success, 2);
+        assert!(out_dir.join("ethanol.sdf").exists());
+        assert!(out_dir.join("ethane.sdf").exists());
+        let _ = fs::remove_dir_all(&out_dir);
     }
 }

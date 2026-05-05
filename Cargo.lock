@@ -129,14 +129,14 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "cosmolkit-core",
 ]
 
 [[package]]
 name = "cosmolkit-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "cosmolkit-macros",
  "glam",
@@ -151,11 +151,11 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-macros"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "cosmolkit-py"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "cosmolkit-core",
  "numpy",

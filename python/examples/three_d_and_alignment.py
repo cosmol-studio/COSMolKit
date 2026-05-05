@@ -1,33 +1,31 @@
-"""Target COSMolKit usage: 3D pipeline + pure alignment query.
+"""COSMolKit usage: reading 3D SDF coordinates.
 
-This example shows planned 3D embedding, optimization, and alignment APIs that
-are not implemented yet.
+COSMolKit can preserve 3D coordinates from SDF records. 3D embedding,
+optimization, and alignment are not exposed as Python APIs yet.
 """
 
-raise NotImplementedError(
-    "python/examples/three_d_and_alignment.py is a forward-looking sketch. "
-    "embed_3d(), optimize(), and Alignment.find_most_similar_fragment() are not implemented yet."
-)
+from cosmolkit import Molecule
 
-from cosmolkit import Alignment, Molecule
+sdf = """methane_3d
+  COSMolKit      3D
 
-mol = Molecule.from_smiles("CCO", sanitize=True)
-mol3d = (
-    mol.with_hydrogens()
-    .embed_3d(seed=42, num_conformers=20)
-    .optimize(forcefield="mmff94")
-)
-mol3d.write_sdf("ligand_3d.sdf")
+  5  4  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.6291    0.6291    0.6291 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.6291   -0.6291    0.6291 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.6291    0.6291   -0.6291 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.6291   -0.6291   -0.6291 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  1  3  1  0
+  1  4  1  0
+  1  5  1  0
+M  END
+$$$$
+"""
 
-ref = Molecule.from_smiles("CCOC(=O)N", sanitize=True)
-candidates = [
-    Molecule.from_smiles("CCOC(=O)N", sanitize=True),
-    Molecule.from_smiles("CCN", sanitize=True),
-]
+mol = Molecule.read_sdf_record_from_str(sdf, coordinate_dim="3d")
+coords = mol.coords_3d()
 
-best = Alignment.find_most_similar_fragment(
-    reference=ref,
-    candidates=candidates,
-)
-
-_ = (mol3d, best)
+print("atoms:", mol.num_atoms())
+print("3d coords shape:", coords.shape)
+print("centroid:", coords.mean(axis=0))

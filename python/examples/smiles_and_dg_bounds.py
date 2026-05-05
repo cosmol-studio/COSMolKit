@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from cosmolkit import Molecule
+from cosmolkit import ChiralTag, Molecule
 
 mol = Molecule.from_smiles("F[C@H](Cl)Br", sanitize=True)
 
@@ -11,9 +11,9 @@ print("non-isomeric smiles:", mol.to_smiles(False))
 print(
     "chiral tags:",
     [
-        (atom.idx(), atom.chiral_tag())
+        (atom.idx(), atom.chiral_tag().name)
         for atom in mol.atoms()
-        if atom.chiral_tag() != "CHI_UNSPECIFIED"
+        if atom.chiral_tag() != ChiralTag.CHI_UNSPECIFIED
     ],
 )
 

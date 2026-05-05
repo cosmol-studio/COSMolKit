@@ -6,7 +6,8 @@ use std::process::Command;
 use std::sync::OnceLock;
 
 use cosmolkit_core::{
-    Molecule, MorganAtomInvariantsGenerator, MorganBondInvariantsGenerator, MorganFingerprintParams,
+    BatchErrorMode, Molecule, MoleculeBatch, MorganAtomInvariantsGenerator,
+    MorganBondInvariantsGenerator, MorganFingerprintParams,
 };
 use serde::Deserialize;
 
@@ -460,6 +461,98 @@ fn morgan_fingerprint_matches_rdkit_golden_across_param_branches() {
                     record.smiles,
                     branch_name
                 );
+            }
+
+            let batch_smiles = vec![record.smiles.clone(), record.smiles.clone()];
+            let batch = MoleculeBatch::from_smiles_list(&batch_smiles, BatchErrorMode::Keep)
+                .expect("batch Morgan SMILES parse should not raise in keep mode");
+            let batch_outputs = batch
+                .morgan_fingerprint_with_output_list(&params)
+                .expect("batch Morgan fingerprint should succeed after scalar branch passed");
+            for (batch_idx, batch_output) in batch_outputs.into_iter().enumerate() {
+                let batch_output = batch_output.unwrap_or_else(|| {
+                    panic!(
+                        "batch Morgan fingerprint missing at row {} ({}) branch {} duplicate {}",
+                        row_idx + 1,
+                        record.smiles,
+                        branch_name,
+                        batch_idx
+                    )
+                });
+                assert_eq!(
+                    batch_output.fingerprint.on_bits(),
+                    *expected_on_bits,
+                    "batch Morgan fingerprint bit mismatch at row {} ({}) branch {} duplicate {}",
+                    row_idx + 1,
+                    record.smiles,
+                    branch_name,
+                    batch_idx
+                );
+                if let Some(expected_output) = expected_branch.additional_output.as_ref() {
+                    let batch_additional = batch_output
+                        .additional_output
+                        .as_ref()
+                        .expect("batch branch with additional_output golden should collect output");
+                    assert_eq!(
+                        batch_additional.atom_counts,
+                        expected_output.atom_counts,
+                        "batch Morgan atomCounts mismatch at row {} ({}) branch {} duplicate {}",
+                        row_idx + 1,
+                        record.smiles,
+                        branch_name,
+                        batch_idx
+                    );
+                    assert_eq!(
+                        batch_additional.atom_to_bits,
+                        expected_output.atom_to_bits,
+                        "batch Morgan atomToBits mismatch at row {} ({}) branch {} duplicate {}",
+                        row_idx + 1,
+                        record.smiles,
+                        branch_name,
+                        batch_idx
+                    );
+                    let expected_bit_info = expected_output
+                        .bit_info_map
+                        .iter()
+                        .map(|(bit, pairs)| {
+                            (
+                                bit.parse::<usize>().expect("bit id should parse"),
+                                pairs
+                                    .iter()
+                                    .map(|pair| (pair[0], pair[1] as u32))
+                                    .collect::<Vec<_>>(),
+                            )
+                        })
+                        .collect::<BTreeMap<_, _>>();
+                    assert_eq!(
+                        batch_additional.bit_info_map,
+                        expected_bit_info,
+                        "batch Morgan bitInfoMap mismatch at row {} ({}) branch {} duplicate {}",
+                        row_idx + 1,
+                        record.smiles,
+                        branch_name,
+                        batch_idx
+                    );
+                    let expected_atoms_per_bit = expected_output
+                        .atoms_per_bit
+                        .iter()
+                        .map(|(bit, atoms_per_bit)| {
+                            (
+                                bit.parse::<usize>().expect("bit id should parse"),
+                                atoms_per_bit.clone(),
+                            )
+                        })
+                        .collect::<BTreeMap<_, _>>();
+                    assert_eq!(
+                        batch_additional.atoms_per_bit,
+                        expected_atoms_per_bit,
+                        "batch Morgan atomsPerBit mismatch at row {} ({}) branch {} duplicate {}",
+                        row_idx + 1,
+                        record.smiles,
+                        branch_name,
+                        batch_idx
+                    );
+                }
             }
 
             previous_by_branch.insert(branch_name.clone(), actual);
