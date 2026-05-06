@@ -92,6 +92,7 @@ pub fn add_hydrogens_in_place(molecule: &mut Molecule) -> Result<(), AddHydrogen
                 isotope: None,
                 atom_map_num: None,
                 props: Default::default(),
+                query: None,
                 rdkit_cip_rank: None,
             });
             molecule.add_bond(Bond {
@@ -103,6 +104,9 @@ pub fn add_hydrogens_in_place(molecule: &mut Molecule) -> Result<(), AddHydrogen
                 direction: BondDirection::None,
                 stereo: BondStereo::None,
                 stereo_atoms: Vec::new(),
+                molfile_query_bond_code: None,
+                props: Default::default(),
+                query: None,
             });
         }
     }
@@ -556,15 +560,7 @@ fn remove_atom_at(molecule: &mut Molecule, atom_index: usize, known_bond_index: 
         bonds.push(bond);
     }
     *molecule.bonds_mut() = bonds;
-    if molecule.coords_2d().is_some()
-        && let Some(coords) = molecule.coords_2d_mut().as_mut()
-    {
-        if atom_index < coords.len() {
-            coords.remove(atom_index);
-        } else {
-            molecule.set_coords_2d(None);
-        }
-    }
+    remove_conformer_atom_at(molecule, atom_index);
     molecule.clear_adjacency_cache();
 }
 
@@ -591,19 +587,39 @@ fn remove_trailing_hydrogen_fast_path(
 
     molecule.atoms_mut().pop();
     molecule.bonds_mut().pop();
+    remove_conformer_atom_at(molecule, atom_index);
+    molecule.clear_adjacency_cache();
+    true
+}
+
+fn remove_conformer_atom_at(molecule: &mut Molecule, atom_index: usize) {
     if molecule.coords_2d().is_some()
         && let Some(coords) = molecule.coords_2d_mut().as_mut()
     {
-        if atom_index < coords.len() && atom_index + 1 == coords.len() {
-            coords.pop();
-        } else if atom_index < coords.len() {
+        if atom_index < coords.len() {
             coords.remove(atom_index);
         } else {
             molecule.set_coords_2d(None);
         }
     }
-    molecule.clear_adjacency_cache();
-    true
+
+    let mut keep_source_dim = true;
+    if !molecule.conformers_3d().is_empty() {
+        let conformers = molecule.conformers_3d_mut();
+        for coords in conformers.iter_mut() {
+            if atom_index < coords.len() {
+                coords.remove(atom_index);
+            } else {
+                keep_source_dim = false;
+            }
+        }
+        if !keep_source_dim {
+            conformers.clear();
+        }
+    }
+    if !keep_source_dim && molecule.coords_2d().is_none() {
+        molecule.set_source_coordinate_dim(None);
+    }
 }
 
 fn valid_hydrogen_bond_and_neighbor(
@@ -675,6 +691,7 @@ fn opposite_bond_direction(direction: BondDirection) -> BondDirection {
         BondDirection::EndUpRight => BondDirection::EndDownRight,
         BondDirection::EndDownRight => BondDirection::EndUpRight,
         BondDirection::None => BondDirection::None,
+        BondDirection::Unknown => BondDirection::Unknown,
     }
 }
 
@@ -713,7 +730,55 @@ fn count_swaps_to_interconvert(probe: &[usize], reference: &[usize]) -> Option<u
 
 #[cfg(test)]
 mod tests {
-    use crate::Molecule;
+    use crate::{
+        Atom, Bond, BondDirection, BondOrder, BondStereo, ChiralTag, CoordinateDimension, Molecule,
+    };
+    use glam::{DVec2, DVec3};
+
+    fn test_atom(atomic_num: u8) -> Atom {
+        Atom {
+            index: 0,
+            atomic_num,
+            is_aromatic: false,
+            formal_charge: 0,
+            explicit_hydrogens: 0,
+            no_implicit: false,
+            num_radical_electrons: 0,
+            chiral_tag: ChiralTag::Unspecified,
+            isotope: None,
+            atom_map_num: None,
+            props: Default::default(),
+            query: None,
+            rdkit_cip_rank: None,
+        }
+    }
+
+    fn test_bond(begin_atom: usize, end_atom: usize) -> Bond {
+        Bond {
+            index: 0,
+            begin_atom,
+            end_atom,
+            order: BondOrder::Single,
+            is_aromatic: false,
+            direction: BondDirection::None,
+            stereo: BondStereo::None,
+            stereo_atoms: Vec::new(),
+            molfile_query_bond_code: None,
+            props: Default::default(),
+            query: None,
+        }
+    }
+
+    fn interleaved_hydrogen_molecule() -> Molecule {
+        let mut mol = Molecule::new();
+        for atomic_num in [6, 1, 8, 1] {
+            mol.add_atom(test_atom(atomic_num));
+        }
+        mol.add_bond(test_bond(0, 1));
+        mol.add_bond(test_bond(0, 2));
+        mol.add_bond(test_bond(2, 3));
+        mol
+    }
 
     #[test]
     fn remove_hydrogens_sanitize_flag_controls_rdkit_cleanup() {
@@ -746,5 +811,113 @@ mod tests {
             vec![0, 1, -1, 0]
         );
         assert_eq!(raw.atoms().len(), 5);
+    }
+
+    #[test]
+    fn remove_hydrogens_filters_3d_conformer_rows_for_interleaved_hydrogens() {
+        let mut mol = interleaved_hydrogen_molecule();
+        mol.conformers_3d_mut().push(vec![
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(1.0, 0.0, 0.0),
+            DVec3::new(2.0, 0.0, 0.0),
+            DVec3::new(3.0, 0.0, 0.0),
+        ]);
+        mol.conformers_3d_mut().push(vec![
+            DVec3::new(10.0, 0.0, 0.0),
+            DVec3::new(11.0, 0.0, 0.0),
+            DVec3::new(12.0, 0.0, 0.0),
+            DVec3::new(13.0, 0.0, 0.0),
+        ]);
+        mol.set_source_coordinate_dim(Some(CoordinateDimension::ThreeD));
+
+        let removed = mol
+            .without_hydrogens_with_sanitize(false)
+            .expect("hydrogens should remove");
+
+        assert_eq!(removed.atoms().len(), 2);
+        assert_eq!(
+            removed.coords_3d().expect("3D coords should remain"),
+            &[DVec3::new(0.0, 0.0, 0.0), DVec3::new(2.0, 0.0, 0.0)]
+        );
+        assert_eq!(
+            removed
+                .conformer_3d(1)
+                .expect("second conformer should remain"),
+            &[DVec3::new(10.0, 0.0, 0.0), DVec3::new(12.0, 0.0, 0.0)]
+        );
+        assert_eq!(
+            removed.source_coordinate_dim(),
+            Some(CoordinateDimension::ThreeD)
+        );
+    }
+
+    #[test]
+    fn remove_hydrogens_filters_2d_rows_for_interleaved_hydrogens() {
+        let mut mol = interleaved_hydrogen_molecule();
+        mol.set_coords_2d(Some(vec![
+            DVec2::new(0.0, 0.0),
+            DVec2::new(1.0, 0.0),
+            DVec2::new(2.0, 0.0),
+            DVec2::new(3.0, 0.0),
+        ]));
+        mol.set_source_coordinate_dim(Some(CoordinateDimension::TwoD));
+
+        let removed = mol
+            .without_hydrogens_with_sanitize(false)
+            .expect("hydrogens should remove");
+
+        assert_eq!(removed.atoms().len(), 2);
+        assert_eq!(
+            removed.coords_2d().expect("2D coords should remain"),
+            &[DVec2::new(0.0, 0.0), DVec2::new(2.0, 0.0)]
+        );
+        assert_eq!(
+            removed.source_coordinate_dim(),
+            Some(CoordinateDimension::TwoD)
+        );
+    }
+
+    #[test]
+    fn remove_hydrogens_filters_both_2d_and_3d_coordinate_stores() {
+        let mut mol = interleaved_hydrogen_molecule();
+        mol.set_coords_2d(Some(vec![
+            DVec2::new(0.0, 0.0),
+            DVec2::new(1.0, 0.0),
+            DVec2::new(2.0, 0.0),
+            DVec2::new(3.0, 0.0),
+        ]));
+        mol.conformers_3d_mut().push(vec![
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(1.0, 0.0, 0.0),
+            DVec3::new(2.0, 0.0, 0.0),
+            DVec3::new(3.0, 0.0, 0.0),
+        ]);
+        mol.set_source_coordinate_dim(Some(CoordinateDimension::ThreeD));
+
+        let removed = mol
+            .without_hydrogens_with_sanitize(false)
+            .expect("hydrogens should remove");
+
+        assert_eq!(removed.atoms().len(), 2);
+        assert_eq!(
+            removed.coords_2d().expect("2D coords should remain").len(),
+            2
+        );
+        assert_eq!(
+            removed.coords_3d().expect("3D coords should remain").len(),
+            2
+        );
+        assert_eq!(
+            removed.coords_2d().expect("2D coords should remain"),
+            &[DVec2::new(0.0, 0.0), DVec2::new(2.0, 0.0)]
+        );
+        assert_eq!(
+            removed.coords_3d().expect("3D coords should remain"),
+            &[DVec3::new(0.0, 0.0, 0.0), DVec3::new(2.0, 0.0, 0.0)]
+        );
+        assert_eq!(
+            removed.source_coordinate_dim(),
+            Some(CoordinateDimension::ThreeD)
+        );
     }
 }

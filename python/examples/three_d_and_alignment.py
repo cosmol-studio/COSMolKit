@@ -23,7 +23,7 @@ M  END
 $$$$
 """
 
-mol = Molecule.read_sdf_record_from_str(sdf, coordinate_dim="3d")
+mol = Molecule.read_sdf_from_str(sdf, coordinate_dim="3d")
 coords = mol.coords_3d()
 
 print("atoms:", mol.num_atoms())

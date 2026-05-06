@@ -703,6 +703,7 @@ fn explicit_valence_rough(mol: &Molecule, atom_index: usize) -> u32 {
                 BondOrder::Double => 2,
                 BondOrder::Triple => 3,
                 BondOrder::Quadruple => 4,
+                BondOrder::Hydrogen => 0,
                 BondOrder::Null => 0,
             };
         }
@@ -908,6 +909,7 @@ fn rdkit_bond_type_value(order: BondOrder) -> i32 {
         BondOrder::Quadruple => 4,
         BondOrder::Aromatic => 12,
         BondOrder::Dative => 17,
+        BondOrder::Hydrogen => 0,
         BondOrder::Null => 0,
     }
 }

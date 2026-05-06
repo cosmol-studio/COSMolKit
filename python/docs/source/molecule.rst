@@ -74,8 +74,8 @@ Molecules with 2D coordinates can be exported as SVG or PNG:
    mol = Molecule.from_smiles("c1ccccc1O").with_2d_coords()
 
    svg = mol.to_svg(width=400, height=300)
-   mol.write_svg("phenol.svg", width=400, height=300)
-   mol.write_png("phenol.png", width=400, height=300)
+   mol.write_svg("python/examples/output/phenol.svg", width=400, height=300)
+   mol.write_png("python/examples/output/phenol.png", width=400, height=300)
 
 Stereo
 ------

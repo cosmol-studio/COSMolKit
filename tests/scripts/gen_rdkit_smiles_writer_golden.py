@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 from importlib.metadata import version
 from pathlib import Path
@@ -13,16 +14,35 @@ from rdkit import Chem, RDLogger
 
 EXPECTED_RDKIT_VERSION = "2026.3.1"
 
-BRANCHES = [
-    {"name": "iso_true_kek_false_can_true", "isomericSmiles": True, "kekuleSmiles": False, "canonical": True},
-    {"name": "iso_false_kek_false_can_true", "isomericSmiles": False, "kekuleSmiles": False, "canonical": True},
-    {"name": "iso_true_kek_false_can_false", "isomericSmiles": True, "kekuleSmiles": False, "canonical": False},
-    {"name": "iso_false_kek_false_can_false", "isomericSmiles": False, "kekuleSmiles": False, "canonical": False},
-    {"name": "iso_true_kek_true_can_true", "isomericSmiles": True, "kekuleSmiles": True, "canonical": True},
-    {"name": "iso_false_kek_true_can_true", "isomericSmiles": False, "kekuleSmiles": True, "canonical": True},
-    {"name": "iso_true_kek_true_can_false", "isomericSmiles": True, "kekuleSmiles": True, "canonical": False},
-    {"name": "iso_false_kek_true_can_false", "isomericSmiles": False, "kekuleSmiles": True, "canonical": False},
+BOOL_PARAMS = [
+    "do_isomeric_smiles",
+    "do_kekule",
+    "canonical",
+    "clean_stereo",
+    "all_bonds_explicit",
+    "all_hs_explicit",
+    "include_dative_bonds",
+    "ignore_atom_map_numbers",
 ]
+
+
+def iter_branches() -> Iterable[dict[str, object]]:
+    for values in itertools.product([False, True], repeat=len(BOOL_PARAMS)):
+        base = dict(zip(BOOL_PARAMS, values, strict=True))
+        for rooted_at_atom in [None, "first", "last"]:
+            params = {**base, "rooted_at_atom": rooted_at_atom}
+            name_bits = [
+                f"iso{int(params['do_isomeric_smiles'])}",
+                f"kek{int(params['do_kekule'])}",
+                f"can{int(params['canonical'])}",
+                f"clean{int(params['clean_stereo'])}",
+                f"bond{int(params['all_bonds_explicit'])}",
+                f"hs{int(params['all_hs_explicit'])}",
+                f"dat{int(params['include_dative_bonds'])}",
+                f"map{int(params['ignore_atom_map_numbers'])}",
+                f"root_{rooted_at_atom or 'none'}",
+            ]
+            yield {"name": "_".join(name_bits), "params": params}
 
 
 def assert_rdkit_version() -> None:
@@ -40,20 +60,41 @@ def iter_smiles(path: Path) -> Iterable[str]:
         yield line
 
 
+def rdkit_params(mol: Chem.Mol, branch_params: dict[str, object]) -> Chem.SmilesWriteParams:
+    params = Chem.SmilesWriteParams()
+    params.doIsomericSmiles = bool(branch_params["do_isomeric_smiles"])
+    params.doKekule = bool(branch_params["do_kekule"])
+    params.canonical = bool(branch_params["canonical"])
+    params.cleanStereo = bool(branch_params["clean_stereo"])
+    params.allBondsExplicit = bool(branch_params["all_bonds_explicit"])
+    params.allHsExplicit = bool(branch_params["all_hs_explicit"])
+    params.includeDativeBonds = bool(branch_params["include_dative_bonds"])
+    params.ignoreAtomMapNumbers = bool(branch_params["ignore_atom_map_numbers"])
+    rooted_at_atom = branch_params["rooted_at_atom"]
+    if rooted_at_atom is None:
+        params.rootedAtAtom = -1
+    elif rooted_at_atom == "first":
+        params.rootedAtAtom = 0 if mol.GetNumAtoms() else -1
+    elif rooted_at_atom == "last":
+        params.rootedAtAtom = mol.GetNumAtoms() - 1
+    else:
+        raise AssertionError(f"unknown rooted_at_atom value: {rooted_at_atom!r}")
+    params.doRandom = False
+    return params
+
+
 def branch_result(mol: Chem.Mol, branch: dict[str, object]) -> dict[str, object]:
-    kwargs = {
-        "isomericSmiles": branch["isomericSmiles"],
-        "kekuleSmiles": branch["kekuleSmiles"],
-        "canonical": branch["canonical"],
-    }
+    params = branch["params"]
     try:
         return {
+            "params": params,
             "ok": True,
-            "smiles": Chem.MolToSmiles(mol, **kwargs),
+            "smiles": Chem.MolToSmiles(mol, rdkit_params(mol, params)),
             "error": None,
         }
     except Exception as exc:  # noqa: BLE001
         return {
+            "params": params,
             "ok": False,
             "smiles": None,
             "error": f"{type(exc).__name__}: {exc}",
@@ -69,7 +110,7 @@ def build_record(smiles: str) -> dict[str, object]:
             "branches": {},
             "error": "MolFromSmiles returned None",
         }
-    branches = {branch["name"]: branch_result(mol, branch) for branch in BRANCHES}
+    branches = {branch["name"]: branch_result(mol, branch) for branch in iter_branches()}
     return {
         "smiles": smiles,
         "rdkit_ok": True,

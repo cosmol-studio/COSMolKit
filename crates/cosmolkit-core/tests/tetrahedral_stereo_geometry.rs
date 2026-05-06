@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::Command;
 
 use cosmolkit_core::{BatchErrorMode, BatchRecord, LigandRef, Molecule, MoleculeBatch};
 use serde::Deserialize;
@@ -20,25 +19,13 @@ fn golden_path() -> PathBuf {
         .join("../../tests/golden/tetrahedral_stereo_geometry.jsonl")
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
 fn ensure_golden_exists() {
     let path = golden_path();
-    if path.exists() {
-        return;
-    }
-
-    let root = repo_root();
-    let status = Command::new(root.join(".venv/bin/python"))
-        .arg("tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py")
-        .current_dir(&root)
-        .status()
-        .expect("failed to run RDKit tetrahedral stereo geometry generator");
     assert!(
-        status.success(),
-        "RDKit tetrahedral stereo geometry generator failed with status {status}"
+        path.exists(),
+        "missing RDKit tetrahedral stereo geometry golden: {}. Generate it before running tests:\n\
+         uv sync --group dev && .venv/bin/python tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py --input tests/smiles.smi --output tests/golden/tetrahedral_stereo_geometry.jsonl",
+        path.display()
     );
 }
 

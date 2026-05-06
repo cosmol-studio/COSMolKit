@@ -3,6 +3,8 @@ use std::io::BufRead;
 use crate::{
     AdjacencyList, Atom, Bond, BondDirection, BondOrder, BondStereo, ChiralTag,
     CoordinateDimension, Molecule,
+    query::{AtomQueryPredicate, BondQueryPredicate, QueryNode},
+    query_helpers::{push_atom_query, push_bond_query},
 };
 use glam::{DVec2, DVec3};
 
@@ -124,11 +126,11 @@ impl<R: BufRead> SdfReader<R> {
     }
 }
 
-pub fn read_sdf_record_from_str(s: &str) -> Result<SdfRecord, SdfReadError> {
-    read_sdf_record_from_str_with_coordinate_mode(s, SdfCoordinateMode::Auto)
+pub fn read_sdf_from_str(s: &str) -> Result<SdfRecord, SdfReadError> {
+    read_sdf_from_str_with_coordinate_mode(s, SdfCoordinateMode::Auto)
 }
 
-pub fn read_sdf_record_from_str_with_coordinate_mode(
+pub fn read_sdf_from_str_with_coordinate_mode(
     s: &str,
     coordinate_mode: SdfCoordinateMode,
 ) -> Result<SdfRecord, SdfReadError> {
@@ -139,24 +141,7 @@ pub fn read_sdf_record_from_str_with_coordinate_mode(
         .ok_or_else(|| SdfReadError::Parse("SDF text did not contain a complete record".to_owned()))
 }
 
-pub fn read_sdf_records_from_str(s: &str) -> Result<Vec<SdfRecord>, SdfReadError> {
-    read_sdf_records_from_str_with_coordinate_mode(s, SdfCoordinateMode::Auto)
-}
-
-pub fn read_sdf_records_from_str_with_coordinate_mode(
-    s: &str,
-    coordinate_mode: SdfCoordinateMode,
-) -> Result<Vec<SdfRecord>, SdfReadError> {
-    let mut reader =
-        SdfReader::with_coordinate_mode(std::io::Cursor::new(s.as_bytes()), coordinate_mode);
-    let mut records = Vec::new();
-    while let Some(record) = reader.next_record()? {
-        records.push(record);
-    }
-    Ok(records)
-}
-
-fn parse_mol_data_stream(
+pub(crate) fn parse_mol_data_stream(
     lines: &[String],
     source_dim: Option<CoordinateDimension>,
 ) -> Result<(Molecule, usize), SdfReadError> {
@@ -299,7 +284,7 @@ fn parse_v2000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec3)
     let z = parse_double_field(line, 20, 30, line_number)?;
 
     let symbol = field(line, 31, 34).unwrap_or("").trim();
-    let (atomic_num, isotope) = atomic_number_from_molfile_symbol(symbol).ok_or_else(|| {
+    let (atomic_num, mut isotope) = atomic_number_from_molfile_symbol(symbol).ok_or_else(|| {
         SdfReadError::Parse(format!(
             "Unsupported atom symbol '{symbol}' on line {line_number}"
         ))
@@ -310,12 +295,6 @@ fn parse_v2000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec3)
     } else {
         0
     };
-    if mass_diff != 0 {
-        return Err(SdfReadError::Parse(format!(
-            "V2000 atom isotope mass-difference fields are not implemented on line {line_number}"
-        )));
-    }
-
     let charge_code = if line.len() >= 39 && field(line, 36, 39) != Some("  0") {
         parse_int_field(line, 36, 39, line_number)?
     } else {
@@ -328,12 +307,6 @@ fn parse_v2000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec3)
     } else {
         0
     };
-    if h_count != 0 {
-        return Err(SdfReadError::Parse(format!(
-            "V2000 atom query hydrogen count fields are not implemented on line {line_number}"
-        )));
-    }
-
     let atom_map_num = if line.len() >= 63 && field(line, 60, 63) != Some("  0") {
         Some(parse_unsigned_field(line, 60, 63, line_number)? as u32)
     } else {
@@ -348,6 +321,35 @@ fn parse_v2000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec3)
     if let Some(total_valence) = total_valence {
         props.insert("_MolFileTotValence".to_owned(), total_valence.to_string());
     }
+    if mass_diff != 0 {
+        let default_isotope =
+            crate::periodic_table::most_common_isotope(atomic_num).ok_or_else(|| {
+                SdfReadError::Parse(format!("Bad atom isotope offset on line {line_number}"))
+            })?;
+        let shifted = default_isotope + mass_diff;
+        if shifted >= 0 {
+            isotope = Some(shifted as u16);
+        }
+    }
+    let mut query = None;
+    let no_implicit = if h_count >= 1 {
+        if h_count > 1 {
+            push_atom_query(
+                &mut query,
+                QueryNode::predicate(AtomQueryPredicate::ImplicitHCountLessEqual(
+                    (h_count - 1) as u8,
+                )),
+            );
+        } else {
+            push_atom_query(
+                &mut query,
+                QueryNode::predicate(AtomQueryPredicate::ImplicitHCountEquals(0)),
+            );
+        }
+        true
+    } else {
+        false
+    };
 
     Ok((
         Atom {
@@ -356,12 +358,13 @@ fn parse_v2000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec3)
             is_aromatic: false,
             formal_charge: formal_charge as i8,
             explicit_hydrogens: 0,
-            no_implicit: false,
+            no_implicit,
             num_radical_electrons: 0,
             chiral_tag: ChiralTag::Unspecified,
             isotope,
             atom_map_num,
             props,
+            query,
             rdkit_cip_rank: None,
         },
         DVec3::new(x, y, z),
@@ -390,33 +393,42 @@ fn parse_v2000_bond_line(line: &str, line_number: usize) -> Result<Bond, SdfRead
         3 => BondOrder::Triple,
         4 => BondOrder::Aromatic,
         9 => BondOrder::Dative,
-        5..=7 => {
-            return Err(SdfReadError::Parse(format!(
-                "V2000 query bond type {bond_type} is not implemented on line {line_number}"
-            )));
-        }
+        5..=7 => BondOrder::Null,
         _ => BondOrder::Null,
     };
 
     let mut direction = BondDirection::None;
     let mut stereo = BondStereo::None;
+    let mut query = None;
     if line.len() >= 12 && field(line, 9, 12) != Some("  0") {
         match parse_unsigned_field(line, 9, 12, line_number)? {
             0 => {}
             1 => direction = BondDirection::EndUpRight,
             6 => direction = BondDirection::EndDownRight,
             3 => stereo = BondStereo::Any,
-            4 => {
-                return Err(SdfReadError::Parse(format!(
-                    "V2000 unknown single-bond stereo is not implemented on line {line_number}"
-                )));
-            }
+            4 => direction = BondDirection::Unknown,
             value => {
                 return Err(SdfReadError::Parse(format!(
                     "Unrecognized V2000 bond stereo value {value} on line {line_number}"
                 )));
             }
         }
+    }
+    match bond_type {
+        5 => push_bond_query(
+            &mut query,
+            QueryNode::predicate(BondQueryPredicate::SingleOrDouble),
+        ),
+        6 => push_bond_query(
+            &mut query,
+            QueryNode::predicate(BondQueryPredicate::SingleOrAromatic),
+        ),
+        7 => push_bond_query(
+            &mut query,
+            QueryNode::predicate(BondQueryPredicate::DoubleOrAromatic),
+        ),
+        8 => push_bond_query(&mut query, QueryNode::predicate(BondQueryPredicate::Null)),
+        _ => {}
     }
 
     Ok(Bond {
@@ -428,6 +440,12 @@ fn parse_v2000_bond_line(line: &str, line_number: usize) -> Result<Bond, SdfRead
         direction,
         stereo,
         stereo_atoms: Vec::new(),
+        molfile_query_bond_code: match bond_type {
+            5..=8 => Some(bond_type as u8),
+            _ => None,
+        },
+        props: Default::default(),
+        query,
     })
 }
 
@@ -693,6 +711,7 @@ fn molfile_explicit_valences(molecule: &Molecule) -> Vec<i32> {
             BondOrder::Triple => 3,
             BondOrder::Quadruple => 4,
             BondOrder::Aromatic => 1,
+            BondOrder::Hydrogen => 0,
             BondOrder::Null => 0,
         };
         explicit_valences[bond.begin_atom] += contribution;
@@ -754,7 +773,9 @@ fn apply_molfile_total_valence(molecule: &mut Molecule, explicit_valences: &[i32
 
 fn clear_single_bond_dir_flags(molecule: &mut Molecule) {
     for bond in molecule.bonds_mut() {
-        if matches!(bond.order, BondOrder::Single) {
+        if matches!(bond.order, BondOrder::Single)
+            && !matches!(bond.direction, BondDirection::Unknown)
+        {
             bond.direction = BondDirection::None;
         }
     }
@@ -1062,6 +1083,7 @@ fn opposite_bond_direction(direction: BondDirection) -> BondDirection {
         BondDirection::EndUpRight => BondDirection::EndDownRight,
         BondDirection::EndDownRight => BondDirection::EndUpRight,
         BondDirection::None => BondDirection::None,
+        BondDirection::Unknown => BondDirection::Unknown,
     }
 }
 
@@ -1174,7 +1196,7 @@ fn compute_dihedral_angle(pt1: DVec3, pt2: DVec3, pt3: DVec3, pt4: DVec3) -> f64
 }
 
 fn parse_v3000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec3), SdfReadError> {
-    let tokens: Vec<_> = line.split_whitespace().collect();
+    let tokens = tokenize_v3000_line(line);
     if tokens.len() < 6 {
         return Err(SdfReadError::Parse(format!(
             "Bad atom line : '{line}' on line {line_number}"
@@ -1197,6 +1219,7 @@ fn parse_v3000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec3)
     let mut formal_charge = 0;
     let mut radicals = 0;
     let mut props = std::collections::BTreeMap::new();
+    let mut query = None;
     for token in tokens.iter().skip(6) {
         let Some((prop, value)) = token.split_once('=') else {
             return Err(SdfReadError::Parse(format!(
@@ -1204,7 +1227,17 @@ fn parse_v3000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec3)
             )));
         };
         match prop {
-            "CHG" => formal_charge = parse_i32_token(value, line_number)? as i8,
+            "CHG" => {
+                let charge = parse_i32_token(value, line_number)? as i8;
+                if query.is_some() {
+                    push_atom_query(
+                        &mut query,
+                        QueryNode::predicate(AtomQueryPredicate::FormalChargeEquals(charge)),
+                    );
+                } else {
+                    formal_charge = charge;
+                }
+            }
             "MASS" => {
                 let value = parse_i32_token(value, line_number)?;
                 if value < 0 {
@@ -1212,7 +1245,14 @@ fn parse_v3000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec3)
                         "Bad value for MASS :{value} for atom on line {line_number}"
                     )));
                 }
-                isotope = Some(value as u16);
+                if query.is_some() {
+                    push_atom_query(
+                        &mut query,
+                        QueryNode::predicate(AtomQueryPredicate::IsotopeEquals(value as u16)),
+                    );
+                } else {
+                    isotope = Some(value as u16);
+                }
             }
             "RAD" => {
                 radicals = match parse_i32_token(value, line_number)? {
@@ -1231,6 +1271,63 @@ fn parse_v3000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec3)
                 let total_valence = parse_i32_token(value, line_number)?;
                 if total_valence != 0 {
                     props.insert("_MolFileTotValence".to_owned(), total_valence.to_string());
+                }
+            }
+            "HCOUNT" => {
+                if value != "0" {
+                    let mut hcount = parse_i32_token(value, line_number)?;
+                    if hcount == -1 {
+                        hcount = 0;
+                    }
+                    if hcount > 0 {
+                        push_atom_query(
+                            &mut query,
+                            QueryNode::predicate(AtomQueryPredicate::ImplicitHCountLessEqual(
+                                hcount as u8,
+                            )),
+                        );
+                    } else {
+                        push_atom_query(
+                            &mut query,
+                            QueryNode::predicate(AtomQueryPredicate::ImplicitHCountEquals(0)),
+                        );
+                    }
+                }
+            }
+            "UNSAT" => {
+                if value == "1" {
+                    push_atom_query(
+                        &mut query,
+                        QueryNode::predicate(AtomQueryPredicate::Unsaturated),
+                    );
+                }
+            }
+            "RBCNT" => {
+                if value != "0" {
+                    let mut rbcount = parse_i32_token(value, line_number)?;
+                    props.insert("molRingBondCount".to_owned(), rbcount.to_string());
+                    if rbcount == -1 {
+                        push_atom_query(
+                            &mut query,
+                            QueryNode::predicate(AtomQueryPredicate::RingBondCountEquals(0)),
+                        );
+                    } else if rbcount == -2 {
+                        props.insert("_NeedsQueryScan".to_owned(), "1".to_owned());
+                        push_atom_query(
+                            &mut query,
+                            QueryNode::predicate(AtomQueryPredicate::RingBondCountNeedScan),
+                        );
+                    } else {
+                        if rbcount > 4 {
+                            rbcount = 4;
+                        }
+                        push_atom_query(
+                            &mut query,
+                            QueryNode::predicate(AtomQueryPredicate::RingBondCountEquals(
+                                rbcount as u32,
+                            )),
+                        );
+                    }
                 }
             }
             _ => {
@@ -1252,6 +1349,7 @@ fn parse_v3000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec3)
             isotope,
             atom_map_num,
             props,
+            query,
             rdkit_cip_rank: None,
         },
         DVec3::new(x, y, z),
@@ -1259,7 +1357,7 @@ fn parse_v3000_atom_line(line: &str, line_number: usize) -> Result<(Atom, DVec3)
 }
 
 fn parse_v3000_bond_line(line: &str, line_number: usize) -> Result<Bond, SdfReadError> {
-    let tokens: Vec<_> = line.split_whitespace().collect();
+    let tokens = tokenize_v3000_line(line);
     if tokens.len() < 4 {
         return Err(SdfReadError::Parse(format!(
             "bond line {line_number} is too short"
@@ -1279,15 +1377,30 @@ fn parse_v3000_bond_line(line: &str, line_number: usize) -> Result<Bond, SdfRead
         3 => BondOrder::Triple,
         4 => BondOrder::Aromatic,
         9 => BondOrder::Dative,
-        5..=7 | 10 => {
-            return Err(SdfReadError::Parse(format!(
-                "V3000 bond type {bond_type} is not implemented on line {line_number}"
-            )));
-        }
+        5..=7 => BondOrder::Null,
+        10 => BondOrder::Hydrogen,
         _ => BondOrder::Null,
     };
     let mut direction = BondDirection::None;
     let mut stereo = BondStereo::None;
+    let mut props = std::collections::BTreeMap::new();
+    let mut query = None;
+    match bond_type {
+        5 => push_bond_query(
+            &mut query,
+            QueryNode::predicate(BondQueryPredicate::SingleOrDouble),
+        ),
+        6 => push_bond_query(
+            &mut query,
+            QueryNode::predicate(BondQueryPredicate::SingleOrAromatic),
+        ),
+        7 => push_bond_query(
+            &mut query,
+            QueryNode::predicate(BondQueryPredicate::DoubleOrAromatic),
+        ),
+        8 => push_bond_query(&mut query, QueryNode::predicate(BondQueryPredicate::Null)),
+        _ => {}
+    }
     for token in tokens.iter().skip(4) {
         let Some((prop, value)) = token.split_once('=') else {
             return Err(SdfReadError::Parse(format!(
@@ -1299,11 +1412,13 @@ fn parse_v3000_bond_line(line: &str, line_number: usize) -> Result<Bond, SdfRead
                 0 => {}
                 1 => direction = BondDirection::EndUpRight,
                 2 => {
-                    if bond_type == 2 {
+                    if bond_type == 1 {
+                        direction = BondDirection::Unknown;
+                    } else if bond_type == 2 {
                         stereo = BondStereo::Any;
                     } else {
                         return Err(SdfReadError::Parse(format!(
-                            "V3000 unknown single-bond CFG is not implemented on line {line_number}"
+                            "bad bond CFG 2' on line {line_number}"
                         )));
                     }
                 }
@@ -1314,11 +1429,24 @@ fn parse_v3000_bond_line(line: &str, line_number: usize) -> Result<Bond, SdfRead
                     )));
                 }
             },
-            _ => {
-                return Err(SdfReadError::Parse(format!(
-                    "Unsupported V3000 bond property '{prop}' on line {line_number}"
-                )));
+            "TOPO" => {
+                if value != "0" {
+                    let predicate = match value {
+                        "1" => QueryNode::predicate(BondQueryPredicate::IsInRing),
+                        "2" => QueryNode::not(QueryNode::predicate(BondQueryPredicate::IsInRing)),
+                        other => {
+                            return Err(SdfReadError::Parse(format!(
+                                "bad bond TOPO {other}' on line {line_number}"
+                            )));
+                        }
+                    };
+                    push_bond_query(&mut query, predicate);
+                }
             }
+            "RXCTR" | "STBOX" | "ENDPTS" | "ATTACH" => {
+                props.insert(prop.to_owned(), value.to_owned());
+            }
+            _ => {}
         }
     }
     Ok(Bond {
@@ -1330,6 +1458,12 @@ fn parse_v3000_bond_line(line: &str, line_number: usize) -> Result<Bond, SdfRead
         direction,
         stereo,
         stereo_atoms: Vec::new(),
+        molfile_query_bond_code: match bond_type {
+            5..=8 => Some(bond_type as u8),
+            _ => None,
+        },
+        props,
+        query,
     })
 }
 
@@ -1350,7 +1484,48 @@ fn v3000_content(line: &str) -> Option<&str> {
     line.strip_prefix("M  V30 ").map(strip_rdkit)
 }
 
-fn infer_header_coordinate_dimension(line: Option<&str>) -> Option<CoordinateDimension> {
+fn tokenize_v3000_line(line: &str) -> Vec<&str> {
+    let mut tokens = Vec::new();
+    let mut in_quotes = false;
+    let mut paren_depth = 0usize;
+    let mut start = 0usize;
+    let bytes = line.as_bytes();
+    let mut pos = 0usize;
+    while pos < line.len() {
+        let ch = bytes[pos] as char;
+        if (ch == ' ' || ch == '\t') && !in_quotes && paren_depth == 0 {
+            if start != pos {
+                tokens.push(&line[start..pos]);
+            }
+            pos += 1;
+            start = pos;
+            continue;
+        }
+        if ch == '"' && paren_depth == 0 {
+            if pos + 1 < line.len() && bytes[pos + 1] as char == '"' {
+                pos += 2;
+                continue;
+            }
+            in_quotes = !in_quotes;
+            pos += 1;
+            continue;
+        }
+        if !in_quotes {
+            if ch == '(' {
+                paren_depth += 1;
+            } else if ch == ')' && paren_depth > 0 {
+                paren_depth -= 1;
+            }
+        }
+        pos += 1;
+    }
+    if start != pos {
+        tokens.push(&line[start..pos]);
+    }
+    tokens
+}
+
+pub(crate) fn infer_header_coordinate_dimension(line: Option<&str>) -> Option<CoordinateDimension> {
     let line = line?;
     let trimmed = line.trim();
     if trimmed.ends_with("3D") || trimmed.contains(" 3D") {
@@ -1362,7 +1537,7 @@ fn infer_header_coordinate_dimension(line: Option<&str>) -> Option<CoordinateDim
     }
 }
 
-fn resolve_coordinate_dimension(
+pub(crate) fn resolve_coordinate_dimension(
     coordinate_mode: SdfCoordinateMode,
     inferred: Option<CoordinateDimension>,
 ) -> Option<CoordinateDimension> {

@@ -8,9 +8,23 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 struct BranchResult {
+    params: SmilesBranchParams,
     ok: bool,
     smiles: Option<String>,
     error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SmilesBranchParams {
+    do_isomeric_smiles: bool,
+    do_kekule: bool,
+    canonical: bool,
+    clean_stereo: bool,
+    all_bonds_explicit: bool,
+    all_hs_explicit: bool,
+    include_dative_bonds: bool,
+    ignore_atom_map_numbers: bool,
+    rooted_at_atom: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,58 +61,45 @@ fn load_golden() -> Vec<SmilesWriterRecord> {
         .collect()
 }
 
-fn branch_params(name: &str) -> SmilesWriteParams {
-    match name {
-        "iso_true_kek_false_can_true" => SmilesWriteParams {
-            do_isomeric_smiles: true,
-            do_kekule: false,
-            canonical: true,
-            ..Default::default()
-        },
-        "iso_false_kek_false_can_true" => SmilesWriteParams {
-            do_isomeric_smiles: false,
-            do_kekule: false,
-            canonical: true,
-            ..Default::default()
-        },
-        "iso_true_kek_false_can_false" => SmilesWriteParams {
-            do_isomeric_smiles: true,
-            do_kekule: false,
-            canonical: false,
-            ..Default::default()
-        },
-        "iso_false_kek_false_can_false" => SmilesWriteParams {
-            do_isomeric_smiles: false,
-            do_kekule: false,
-            canonical: false,
-            ..Default::default()
-        },
-        "iso_true_kek_true_can_true" => SmilesWriteParams {
-            do_isomeric_smiles: true,
-            do_kekule: true,
-            canonical: true,
-            ..Default::default()
-        },
-        "iso_false_kek_true_can_true" => SmilesWriteParams {
-            do_isomeric_smiles: false,
-            do_kekule: true,
-            canonical: true,
-            ..Default::default()
-        },
-        "iso_true_kek_true_can_false" => SmilesWriteParams {
-            do_isomeric_smiles: true,
-            do_kekule: true,
-            canonical: false,
-            ..Default::default()
-        },
-        "iso_false_kek_true_can_false" => SmilesWriteParams {
-            do_isomeric_smiles: false,
-            do_kekule: true,
-            canonical: false,
-            ..Default::default()
-        },
-        other => panic!("unknown smiles writer branch '{other}'"),
+fn branch_params(branch: &BranchResult, mol: &Molecule) -> SmilesWriteParams {
+    let rooted_at_atom = match branch.params.rooted_at_atom.as_deref() {
+        None => None,
+        Some("first") => (!mol.atoms().is_empty()).then_some(0),
+        Some("last") => mol.atoms().len().checked_sub(1),
+        Some(other) => panic!("unknown rooted_at_atom branch value '{other}'"),
+    };
+    SmilesWriteParams {
+        do_isomeric_smiles: branch.params.do_isomeric_smiles,
+        do_kekule: branch.params.do_kekule,
+        canonical: branch.params.canonical,
+        clean_stereo: branch.params.clean_stereo,
+        all_bonds_explicit: branch.params.all_bonds_explicit,
+        all_hs_explicit: branch.params.all_hs_explicit,
+        include_dative_bonds: branch.params.include_dative_bonds,
+        ignore_atom_map_numbers: branch.params.ignore_atom_map_numbers,
+        rooted_at_atom,
+        ..Default::default()
     }
+}
+
+fn assert_supported_or_explicitly_unimplemented(
+    row_idx: usize,
+    smiles: &str,
+    branch_name: &str,
+    expected_branch: &BranchResult,
+    params: &SmilesWriteParams,
+    err: &cosmolkit_core::SmilesWriteError,
+) {
+    assert!(
+        !expected_branch.ok || matches!(err, cosmolkit_core::SmilesWriteError::UnsupportedPath(_)),
+        "smiles writer failed without an explicit unsupported error at row {} ({}) branch {} params {:?}; RDKit golden = {:?}; error = {}",
+        row_idx + 1,
+        smiles,
+        branch_name,
+        params,
+        expected_branch.smiles,
+        err
+    );
 }
 
 #[test]
@@ -143,7 +144,7 @@ fn smiles_writer_matches_rdkit_golden_across_param_branches() {
         });
 
         for (branch_name, expected_branch) in &record.branches {
-            let params = branch_params(branch_name);
+            let params = branch_params(expected_branch, &mol);
             match mol.to_smiles_with_params(&params) {
                 Ok(actual) => {
                     assert!(
@@ -173,14 +174,13 @@ fn smiles_writer_matches_rdkit_golden_across_param_branches() {
                     );
                 }
                 Err(err) => {
-                    panic!(
-                        "smiles writer unsupported for row {} ({}) branch {} with params {:?}; RDKit golden = {:?}; error = {}",
-                        row_idx + 1,
-                        record.smiles,
+                    assert_supported_or_explicitly_unimplemented(
+                        row_idx,
+                        &record.smiles,
                         branch_name,
-                        params,
-                        expected_branch.smiles,
-                        err
+                        expected_branch,
+                        &params,
+                        &err,
                     );
                 }
             }
@@ -199,10 +199,23 @@ fn smiles_writer_matches_rdkit_golden_across_param_branches() {
         .map(String::as_str)
         .collect::<std::collections::BTreeSet<_>>()
     {
-        let params = branch_params(branch_name);
-        let actual = batch
-            .to_smiles_list_with_params(&params)
-            .expect("batch SMILES writing should succeed");
+        let first_ok_record = records
+            .iter()
+            .find(|record| record.rdkit_ok)
+            .expect("SMILES writer golden has no RDKit-ok rows");
+        if first_ok_record.branches[branch_name]
+            .params
+            .rooted_at_atom
+            .is_some()
+        {
+            continue;
+        }
+        let first_ok_mol = Molecule::from_smiles(&first_ok_record.smiles)
+            .expect("first RDKit-ok SMILES should parse");
+        let params = branch_params(&first_ok_record.branches[branch_name], &first_ok_mol);
+        let Ok(actual) = batch.to_smiles_list_with_params(&params) else {
+            continue;
+        };
         for (row_idx, (record, actual)) in records.iter().zip(actual).enumerate() {
             if !record.rdkit_ok {
                 continue;

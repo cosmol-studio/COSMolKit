@@ -47,6 +47,19 @@ pub(crate) fn n_outer_electrons(atomic_num: u8) -> Option<i32> {
     OUTER_ELECTRONS.get(usize::from(atomic_num)).copied()
 }
 
+pub(crate) const MOST_COMMON_ISOTOPES: [i32; 119] = [
+    0, 1, 4, 7, 9, 11, 12, 14, 16, 19, 20, 23, 24, 27, 28, 31, 32, 35, 40, 39, 40, 45, 48, 51, 52,
+    55, 56, 59, 58, 63, 64, 69, 74, 75, 80, 79, 84, 85, 88, 89, 90, 93, 98, 97, 102, 103, 106, 107,
+    114, 115, 120, 121, 130, 127, 132, 133, 138, 139, 140, 141, 142, 145, 152, 153, 158, 159, 164,
+    165, 166, 169, 174, 175, 180, 181, 184, 187, 192, 193, 195, 197, 202, 205, 208, 209, 209, 210,
+    222, 223, 226, 227, 232, 231, 238, 236, 238, 241, 243, 247, 249, 252, 257, 258, 259, 262, 267,
+    268, 271, 270, 269, 278, 281, 281, 285, 284, 289, 288, 293, 292, 294,
+];
+
+pub(crate) fn most_common_isotope(atomic_num: u8) -> Option<i32> {
+    MOST_COMMON_ISOTOPES.get(usize::from(atomic_num)).copied()
+}
+
 pub(crate) const RDKIT_VALENCE_LISTS: [&[i32]; 119] = [
     &[-1],
     &[1],
@@ -231,8 +244,11 @@ mod tests {
     #[test]
     fn rdkit_periodic_tables_cover_expected_range() {
         assert_eq!(super::OUTER_ELECTRONS.len(), 119);
+        assert_eq!(super::MOST_COMMON_ISOTOPES.len(), 119);
         assert_eq!(super::RDKIT_VALENCE_LISTS.len(), 119);
         assert_eq!(super::n_outer_electrons(118), Some(2));
+        assert_eq!(super::most_common_isotope(6), Some(12));
+        assert_eq!(super::most_common_isotope(88), Some(226));
         assert_eq!(super::valence_list(15), Some(&[3, 5, 7][..]));
         assert_eq!(super::valence_list(200), None);
     }

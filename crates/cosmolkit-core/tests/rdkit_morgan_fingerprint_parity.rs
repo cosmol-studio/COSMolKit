@@ -2,8 +2,6 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::Command;
-use std::sync::OnceLock;
 
 use cosmolkit_core::{
     BatchErrorMode, Molecule, MoleculeBatch, MorganAtomInvariantsGenerator,
@@ -65,59 +63,12 @@ fn load_golden() -> Vec<MorganRecord> {
 }
 
 fn ensure_golden_exists(golden_path: &PathBuf) {
-    static ENSURE_GOLDEN: OnceLock<()> = OnceLock::new();
-    ENSURE_GOLDEN.get_or_init(|| {
-        if golden_path.exists() {
-            return;
-        }
-
-        let repo = repo_root();
-        let script = repo.join("tests/scripts/gen_rdkit_morgan_fingerprint_golden.py");
-        let smiles = repo.join("tests/smiles.smi");
-
-        let candidates = [
-            std::env::var("COSMOLKIT_PYTHON").ok(),
-            Some(repo.join(".venv/bin/python").display().to_string()),
-            Some(String::from("python3")),
-        ];
-
-        let mut last_error = String::new();
-        for candidate in candidates.iter().flatten() {
-            let output = Command::new(candidate)
-                .arg(&script)
-                .arg("--input")
-                .arg(&smiles)
-                .arg("--output")
-                .arg(golden_path)
-                .output();
-
-            match output {
-                Ok(out) if out.status.success() => return,
-                Ok(out) => {
-                    last_error = format!(
-                        "python={} exit={} stderr={}",
-                        candidate,
-                        out.status,
-                        String::from_utf8_lossy(&out.stderr)
-                    );
-                }
-                Err(err) => {
-                    last_error = format!("python={} spawn error={}", candidate, err);
-                }
-            }
-        }
-
-        panic!(
-            "golden file missing and auto-generation failed.\n\
-             expected: {}\n\
-             tried COSMOLKIT_PYTHON, .venv/bin/python, python3.\n\
-             last error: {}\n\
-             please run:\n\
-             uv sync --group dev && .venv/bin/python tests/scripts/gen_rdkit_morgan_fingerprint_golden.py --input tests/smiles.smi --output tests/golden/morgan_fingerprint.jsonl",
-            golden_path.display(),
-            last_error
-        );
-    });
+    assert!(
+        golden_path.exists(),
+        "missing RDKit Morgan fingerprint golden: {}. Generate it before running tests:\n\
+         uv sync --group dev && .venv/bin/python tests/scripts/gen_rdkit_morgan_fingerprint_golden.py --input tests/smiles.smi --output tests/golden/morgan_fingerprint.jsonl",
+        golden_path.display()
+    );
 }
 
 fn branch_params(name: &str, mol: &Molecule) -> MorganFingerprintParams {

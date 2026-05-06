@@ -318,6 +318,7 @@ fn bond_valence_contrib_for_atom(bond: &crate::Bond, atom_index: usize) -> f64 {
         BondOrder::Triple => 3.0,
         BondOrder::Quadruple => 4.0,
         BondOrder::Aromatic => 1.5,
+        BondOrder::Hydrogen => 0.0,
         BondOrder::Dative => {
             if bond.end_atom == atom_index {
                 1.0
@@ -1545,6 +1546,7 @@ fn bond_order_as_double(order: BondOrder) -> f64 {
         BondOrder::Triple => 3.0,
         BondOrder::Quadruple => 4.0,
         BondOrder::Aromatic => 1.5,
+        BondOrder::Hydrogen => 0.0,
     }
 }
 

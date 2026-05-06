@@ -74,13 +74,23 @@ impl<'a> SmilesWriteState<'a> {
 
     fn atom_needs_bracket(&self, atom: &Atom, at_string: &str) -> bool {
         let num = atom.atomic_num;
+        if num == 0 {
+            return atom.formal_charge != 0
+                || atom.isotope.is_some()
+                || !at_string.is_empty()
+                || atom.num_radical_electrons != 0
+                || (atom.atom_map_num.is_some()
+                    && (!self.params.ignore_atom_map_numbers || self.params.canonical));
+        }
         if !in_organic_subset(num) {
             return true;
         }
         if atom.formal_charge != 0 {
             return true;
         }
-        if atom.atom_map_num.is_some() && !self.params.ignore_atom_map_numbers {
+        if atom.atom_map_num.is_some()
+            && (!self.params.ignore_atom_map_numbers || self.params.canonical)
+        {
             return true;
         }
         if self.params.do_isomeric_smiles && (atom.isotope.is_some() || !at_string.is_empty()) {
@@ -180,7 +190,7 @@ impl<'a> SmilesWriteState<'a> {
                 }
             }
             if let Some(map_num) = atom.atom_map_num
-                && !self.params.ignore_atom_map_numbers
+                && (!self.params.ignore_atom_map_numbers || self.params.canonical)
             {
                 res.push(':');
                 res.push_str(&map_num.to_string());
@@ -213,15 +223,89 @@ pub fn mol_to_smiles(
             "doRandom path from RDKit SmilesWrite::detail::MolToSmiles is not ported yet",
         ));
     }
+    let dative_as_single_storage;
+    let mol = if !params.include_dative_bonds
+        && mol
+            .bonds()
+            .iter()
+            .any(|bond| matches!(bond.order, BondOrder::Dative))
+    {
+        let mut owned = mol.clone();
+        for bond in owned.bonds_mut() {
+            if matches!(bond.order, BondOrder::Dative) {
+                bond.order = BondOrder::Single;
+            }
+        }
+        dative_as_single_storage = Some(owned);
+        dative_as_single_storage
+            .as_ref()
+            .expect("dative-as-single mol was just set")
+    } else {
+        mol
+    };
+    if !params.clean_stereo {
+        return Err(SmilesWriteError::UnsupportedPath(
+            "cleanStereo=false path from RDKit SmilesWriteParams is not ported yet",
+        ));
+    }
+    if params.rooted_at_atom.is_some()
+        && mol
+            .bonds()
+            .iter()
+            .any(|bond| !matches!(bond.direction, BondDirection::None))
+    {
+        return Err(SmilesWriteError::UnsupportedPath(
+            "rooted SMILES traversal with directional stereo bonds is not ported yet",
+        ));
+    }
+    if params.rooted_at_atom.is_some()
+        && params.do_isomeric_smiles
+        && mol
+            .atoms()
+            .iter()
+            .any(|atom| !matches!(atom.chiral_tag, ChiralTag::Unspecified))
+    {
+        return Err(SmilesWriteError::UnsupportedPath(
+            "rooted SMILES traversal with tetrahedral stereo is not ported yet",
+        ));
+    }
+    if params.rooted_at_atom.is_some() && mol.bonds().len() >= mol.atoms().len() {
+        return Err(SmilesWriteError::UnsupportedPath(
+            "rooted SMILES traversal for cyclic molecules is not ported yet",
+        ));
+    }
+    if params.all_bonds_explicit
+        && mol
+            .bonds()
+            .iter()
+            .any(|bond| !matches!(bond.direction, BondDirection::None))
+    {
+        return Err(SmilesWriteError::UnsupportedPath(
+            "allBondsExplicit traversal with directional stereo bonds is not ported yet",
+        ));
+    }
     if params.canonical {
         let rank_state = SmilesWriteState::new(mol, params)?;
+        let rank_mol_storage;
+        let rank_mol = if params.ignore_atom_map_numbers {
+            let mut owned = mol.clone();
+            for atom in owned.atoms_mut() {
+                atom.atom_map_num = None;
+            }
+            rank_mol_storage = Some(owned);
+            rank_mol_storage.as_ref().expect("rank mol was just set")
+        } else {
+            mol
+        };
         let rank_ring_stereo_atoms = if params.do_isomeric_smiles {
-            Some(crate::canon_smiles::find_chiral_atom_special_cases(mol)?)
+            Some(crate::canon_smiles::find_chiral_atom_special_cases(
+                rank_mol,
+            )?)
         } else {
             None
         };
         let atom_ranks = crate::canon_smiles::rank_mol_atoms_with_valence(
-            mol,
+            rank_mol,
             &rank_state.valence,
             true,
             params.do_isomeric_smiles,
@@ -524,6 +608,7 @@ pub fn get_bond_smiles(
                     String::new()
                 }
             }
+            BondDirection::Unknown => String::new(),
         },
         BondOrder::Double => {
             if !aromatic || !bond.is_aromatic || params.all_bonds_explicit {
@@ -556,6 +641,7 @@ pub fn get_bond_smiles(
                     String::new()
                 }
             }
+            BondDirection::Unknown => String::new(),
         },
         BondOrder::Dative => {
             if bond.begin_atom == atom_to_left_idx {
@@ -564,6 +650,7 @@ pub fn get_bond_smiles(
                 "<-".to_string()
             }
         }
+        BondOrder::Hydrogen => "~".to_string(),
         BondOrder::Null => "~".to_string(),
     }
 }

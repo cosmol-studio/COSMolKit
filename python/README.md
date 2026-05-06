@@ -1,10 +1,14 @@
 # COSMolKit Python
 
-COSMolKit is a Python package for molecule graph workflows, SMILES/SDF IO,
+COSMolKit is a Python package for molecule graph workflows, SMILES/SDF/MOL IO,
 coordinate access, Morgan fingerprints, molecule depiction, and
 high-throughput batch processing.
 
 Current Python documentation: <https://kit.cosmol.org/>
+
+Current note: COSMolKit already preserves supported MOL/SDF query semantics
+internally in Rust, but the Python package does not yet expose a public query
+AST or query-matching API. That surface is still pending design.
 
 ## API Model: Copy-On-Write (COW) Molecule Values
 
@@ -43,7 +47,7 @@ drawn = mol.with_2d_coords()
 print(mol.to_smiles())
 print(drawn.atoms()[0])
 
-drawn.write_png("phenol.png", width=400, height=300)
+drawn.write_png("python/examples/output/phenol.png", width=400, height=300)
 ```
 
 Morgan fingerprints are exposed as RDKit-style sparse bit vectors. The
@@ -119,13 +123,13 @@ prepared = batch.add_hydrogens(errors=BatchErrorMode.KEEP).compute_2d_coords(
     errors=BatchErrorMode.KEEP,
 )
 report = prepared.to_images(
-    "molecule_images",
+    "python/examples/output/molecule_images",
     format="png",
     errors=BatchErrorMode.SKIP,
     filenames=["ethanol", "benzene", "invalid"],
 )
 sdf_files = prepared.to_sdf_files(
-    "molecule_sdf_records",
+    "python/examples/output/molecule_sdf_records",
     format="v2000",
     errors=BatchErrorMode.SKIP,
     filenames=["ethanol", "benzene", "invalid"],
@@ -173,6 +177,10 @@ operations while keeping the batch value-style. Method-level `n_jobs` can still
 override it for one call, and `prepared.to_list()` returns `list[Molecule |
 None]` when a Python list is more convenient than iteration.
 
+`with_progress_bar(True)` configures Rust-side progress bars for later batch
+operations. Method-level `progress_bar=True` or `False` overrides the batch
+default for a single call, and the progress output is written to stderr.
+
 Directory exports accept optional `filenames` lists. Entries are aligned with
 the batch records, `None` keeps the default numbered filename, and missing
 extensions are filled from the selected output format.
@@ -182,8 +190,8 @@ extensions are filled from the selected output format.
 ```python
 mol = Molecule.from_smiles("CCO").with_2d_coords()
 
-sdf_text = mol.to_sdf_string(format="v2000")
-restored = Molecule.read_sdf_record_from_str(sdf_text, coordinate_dim="2d")
+sdf_text = mol.to_2d_sdf_string(format="v2000", include_stereo=True, kekulize=True)
+restored = Molecule.read_sdf_from_str(sdf_text, coordinate_dim="2d")
 
 coords = restored.coords_2d()
 bounds = restored.dg_bounds_matrix()
@@ -197,7 +205,7 @@ print(bounds.shape)
 - SMILES parsing and writing with `Molecule.from_smiles()` and `to_smiles()`
 - RDKit-style SMILES writer options on single molecules and batches
 - copy-on-write molecule value semantics for transforms
-- SDF file and string IO
+- SDF and MOL file/string IO
 - atom and bond feature inspection
 - hydrogen add/remove transforms
 - Kekule bond representation

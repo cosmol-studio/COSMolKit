@@ -291,6 +291,7 @@ fn bond_order_as_double(order: BondOrder) -> f64 {
         BondOrder::Triple => 3.0,
         BondOrder::Quadruple => 4.0,
         BondOrder::Aromatic => 1.5,
+        BondOrder::Hydrogen => 0.0,
     }
 }
 
@@ -480,6 +481,7 @@ fn bond_valence_contrib_for_atom(bond: &Bond, atom_index: usize) -> i32 {
         BondOrder::Triple => 3,
         BondOrder::Quadruple => 4,
         BondOrder::Aromatic => 1,
+        BondOrder::Hydrogen => 0,
         BondOrder::Dative => {
             if bond.end_atom == atom_index {
                 1
@@ -1255,6 +1257,7 @@ fn opposite_bond_direction(direction: BondDirection) -> BondDirection {
         BondDirection::EndUpRight => BondDirection::EndDownRight,
         BondDirection::EndDownRight => BondDirection::EndUpRight,
         BondDirection::None => BondDirection::None,
+        BondDirection::Unknown => BondDirection::Unknown,
     }
 }
 
@@ -2113,6 +2116,13 @@ impl<'a> Parser<'a> {
             direction,
             stereo: BondStereo::None,
             stereo_atoms: Vec::new(),
+            molfile_query_bond_code: if matches!(pending, PendingBond::Null) {
+                Some(8)
+            } else {
+                None
+            },
+            props: Default::default(),
+            query: None,
         })
     }
 
@@ -2140,6 +2150,7 @@ impl<'a> Parser<'a> {
                 isotope: None,
                 atom_map_num: None,
                 props: Default::default(),
+                query: None,
                 rdkit_cip_rank: None,
             });
         }
@@ -2162,6 +2173,7 @@ impl<'a> Parser<'a> {
                 isotope,
                 atom_map_num: None,
                 props: Default::default(),
+                query: None,
                 rdkit_cip_rank: None,
             }
         } else if self.consume_if('*') {
@@ -2177,6 +2189,7 @@ impl<'a> Parser<'a> {
                 isotope,
                 atom_map_num: None,
                 props: Default::default(),
+                query: None,
                 rdkit_cip_rank: None,
             }
         } else if self.consume_if('#') {
@@ -2196,6 +2209,7 @@ impl<'a> Parser<'a> {
                 isotope,
                 atom_map_num: None,
                 props: Default::default(),
+                query: None,
                 rdkit_cip_rank: None,
             }
         } else if let Some((atomic_num, aromatic, consumed)) = self.match_bracket_atom_symbol() {
@@ -2212,6 +2226,7 @@ impl<'a> Parser<'a> {
                 isotope,
                 atom_map_num: None,
                 props: Default::default(),
+                query: None,
                 rdkit_cip_rank: None,
             }
         } else {

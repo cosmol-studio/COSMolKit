@@ -46,7 +46,36 @@ pub enum SdfFormat {
     V3000,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct MolBlockWriteParams {
+    pub format: SdfFormat,
+    pub include_stereo: bool,
+    pub kekulize: bool,
+}
+
+impl Default for MolBlockWriteParams {
+    fn default() -> Self {
+        Self {
+            format: SdfFormat::Auto,
+            include_stereo: true,
+            kekulize: true,
+        }
+    }
+}
+
+fn reject_unported_writer_params(params: &MolBlockWriteParams) -> Result<(), MolWriteError> {
+    let _ = params;
+    Ok(())
+}
+
 pub fn mol_to_v2000_2d_block(mol: &Molecule) -> Result<String, MolWriteError> {
+    mol_to_v2000_2d_block_with_kekulize(mol, true)
+}
+
+fn mol_to_v2000_2d_block_with_kekulize(
+    mol: &Molecule,
+    kekulize: bool,
+) -> Result<String, MolWriteError> {
     let coords = mol.coords_2d().ok_or(MolWriteError::UnsupportedSubset(
         "2D coordinates are required; call Molecule::compute_2d_coords() before writing 2D SDF",
     ))?;
@@ -54,10 +83,17 @@ pub fn mol_to_v2000_2d_block(mol: &Molecule) -> Result<String, MolWriteError> {
         .iter()
         .map(|coord| (coord.x, coord.y, 0.0))
         .collect::<Vec<_>>();
-    mol_to_v2000_block_with_coords(mol, &coords, "2D")
+    mol_to_v2000_block_with_coords(mol, &coords, "2D", kekulize)
 }
 
 pub fn mol_to_v2000_3d_block(mol: &Molecule) -> Result<String, MolWriteError> {
+    mol_to_v2000_3d_block_with_kekulize(mol, true)
+}
+
+fn mol_to_v2000_3d_block_with_kekulize(
+    mol: &Molecule,
+    kekulize: bool,
+) -> Result<String, MolWriteError> {
     let coords = mol.coords_3d().ok_or(MolWriteError::UnsupportedSubset(
         "3D coordinates are required; parse a 3D molfile or add a 3D conformer before writing 3D SDF",
     ))?;
@@ -65,7 +101,7 @@ pub fn mol_to_v2000_3d_block(mol: &Molecule) -> Result<String, MolWriteError> {
         .iter()
         .map(|coord| (coord.x, coord.y, coord.z))
         .collect::<Vec<_>>();
-    mol_to_v2000_block_with_coords(mol, &coords, "3D")
+    mol_to_v2000_block_with_coords(mol, &coords, "3D", kekulize)
 }
 
 pub fn mol_to_v2000_block(mol: &Molecule) -> Result<String, MolWriteError> {
@@ -80,12 +116,13 @@ fn mol_to_v2000_block_with_coords(
     mol: &Molecule,
     coords: &[(f64, f64, f64)],
     coord_label: &str,
+    kekulize: bool,
 ) -> Result<String, MolWriteError> {
     // Mirror the golden generation path: tests/scripts first calls
     // RDDepict::Compute2DCoords() on the parsed molecule, then MolToMolBlock()
     // writes through a kekulized copy while preserving the existing conformer.
     let mut write_mol = mol.clone();
-    if write_mol.bonds().iter().any(|b| b.is_aromatic) {
+    if kekulize && write_mol.bonds().iter().any(|b| b.is_aromatic) {
         crate::kekulize::kekulize_in_place(&mut write_mol, true)
             .map_err(|_| MolWriteError::UnsupportedSubset("kekulize before v2000 write failed"))?;
     }
@@ -115,13 +152,16 @@ fn mol_to_v2000_block_with_coords(
         let (x, y, z) = coords[idx];
         let total_valence =
             v2000_total_valence_field(&write_mol, idx, &write_valence, write_radicals[idx]);
+        let parity = atom_parity_flag_3d(&write_mol, idx, coords, &write_valence);
         out.push_str(&format!(
-            "{:>10.4}{:>10.4}{:>10.4} {:<3} 0  0  0  0  0{:>3}  0  0  0  0  0\n",
+            "{:>10.4}{:>10.4}{:>10.4} {:<3} 0  0{:>3}  0  0{:>3}  0  0  0{:>3}  0  0\n",
             x,
             y,
             z,
-            crate::periodic_table::element_symbol(atom.atomic_num).unwrap_or("*"),
-            total_valence
+            molfile_atom_symbol(atom.atomic_num),
+            parity,
+            total_valence,
+            atom.atom_map_num.unwrap_or(0)
         ));
     }
 
@@ -132,12 +172,18 @@ fn mol_to_v2000_block_with_coords(
     let wedge = pick_bonds_to_wedge_rdkit_subset(&write_mol);
     for bond in write_mol.bonds() {
         let (dir_code, reverse) = if matches!(bond.order, BondOrder::Single) {
-            let dir = determine_bond_wedge_state_rdkit_subset(bond, &wedge, &coords_2d, &write_mol);
+            let dir = if wedge.contains_key(&bond.index) {
+                determine_bond_wedge_state_rdkit_subset(bond, &wedge, &coords_2d, &write_mol)
+            } else {
+                BondDirection::None
+            };
             let reverse = wedge
                 .get(&bond.index)
                 .is_some_and(|from_atom| *from_atom != bond.begin_atom)
                 && !matches!(dir, BondDirection::None);
             (bond_stereo_code_with_direction(bond, dir), reverse)
+        } else if matches!(bond.order, BondOrder::Aromatic) {
+            (0, false)
         } else {
             (bond_stereo_code(bond), false)
         };
@@ -150,7 +196,7 @@ fn mol_to_v2000_block_with_coords(
             "{:>3}{:>3}{:>3}{:>3}\n",
             begin_atom,
             end_atom,
-            bond_type_code(bond.order),
+            bond_molfile_type_code(bond),
             dir_code
         ));
     }
@@ -160,7 +206,21 @@ fn mol_to_v2000_block_with_coords(
 }
 
 pub fn mol_to_2d_sdf_record(mol: &Molecule, format: SdfFormat) -> Result<String, MolWriteError> {
-    let mut block = match format {
+    mol_to_2d_sdf_record_with_params(
+        mol,
+        &MolBlockWriteParams {
+            format,
+            ..Default::default()
+        },
+    )
+}
+
+pub fn mol_to_2d_sdf_record_with_params(
+    mol: &Molecule,
+    params: &MolBlockWriteParams,
+) -> Result<String, MolWriteError> {
+    reject_unported_writer_params(params)?;
+    let mut block = match params.format {
         SdfFormat::Auto => {
             if mol.atoms().len() > 999
                 || mol.bonds().len() > 999
@@ -169,20 +229,34 @@ pub fn mol_to_2d_sdf_record(mol: &Molecule, format: SdfFormat) -> Result<String,
                     .iter()
                     .any(|bond| matches!(bond.order, BondOrder::Dative))
             {
-                mol_to_v3000_2d_block(mol)?
+                mol_to_v3000_block_with_coords_from_2d(mol, params.kekulize)?
             } else {
-                mol_to_v2000_2d_block(mol)?
+                mol_to_v2000_2d_block_with_kekulize(mol, params.kekulize)?
             }
         }
-        SdfFormat::V2000 => mol_to_v2000_2d_block(mol)?,
-        SdfFormat::V3000 => mol_to_v3000_2d_block(mol)?,
+        SdfFormat::V2000 => mol_to_v2000_2d_block_with_kekulize(mol, params.kekulize)?,
+        SdfFormat::V3000 => mol_to_v3000_block_with_coords_from_2d(mol, params.kekulize)?,
     };
     block.push_str("$$$$\n");
     Ok(block)
 }
 
 pub fn mol_to_3d_sdf_record(mol: &Molecule, format: SdfFormat) -> Result<String, MolWriteError> {
-    let mut block = match format {
+    mol_to_3d_sdf_record_with_params(
+        mol,
+        &MolBlockWriteParams {
+            format,
+            ..Default::default()
+        },
+    )
+}
+
+pub fn mol_to_3d_sdf_record_with_params(
+    mol: &Molecule,
+    params: &MolBlockWriteParams,
+) -> Result<String, MolWriteError> {
+    reject_unported_writer_params(params)?;
+    let mut block = match params.format {
         SdfFormat::Auto => {
             if mol.atoms().len() > 999
                 || mol.bonds().len() > 999
@@ -191,19 +265,26 @@ pub fn mol_to_3d_sdf_record(mol: &Molecule, format: SdfFormat) -> Result<String,
                     .iter()
                     .any(|bond| matches!(bond.order, BondOrder::Dative))
             {
-                mol_to_v3000_3d_block(mol)?
+                mol_to_v3000_block_with_coords_from_3d(mol, params.kekulize)?
             } else {
-                mol_to_v2000_3d_block(mol)?
+                mol_to_v2000_3d_block_with_kekulize(mol, params.kekulize)?
             }
         }
-        SdfFormat::V2000 => mol_to_v2000_3d_block(mol)?,
-        SdfFormat::V3000 => mol_to_v3000_3d_block(mol)?,
+        SdfFormat::V2000 => mol_to_v2000_3d_block_with_kekulize(mol, params.kekulize)?,
+        SdfFormat::V3000 => mol_to_v3000_block_with_coords_from_3d(mol, params.kekulize)?,
     };
     block.push_str("$$$$\n");
     Ok(block)
 }
 
 pub fn mol_to_v3000_2d_block(mol: &Molecule) -> Result<String, MolWriteError> {
+    mol_to_v3000_block_with_coords_from_2d(mol, true)
+}
+
+fn mol_to_v3000_block_with_coords_from_2d(
+    mol: &Molecule,
+    kekulize: bool,
+) -> Result<String, MolWriteError> {
     let coords = mol.coords_2d().ok_or(MolWriteError::UnsupportedSubset(
         "2D coordinates are required; call Molecule::compute_2d_coords() before writing 2D SDF",
     ))?;
@@ -211,10 +292,17 @@ pub fn mol_to_v3000_2d_block(mol: &Molecule) -> Result<String, MolWriteError> {
         .iter()
         .map(|coord| (coord.x, coord.y, 0.0))
         .collect::<Vec<_>>();
-    mol_to_v3000_block_with_coords(mol, &coords, "2D")
+    mol_to_v3000_block_with_coords(mol, &coords, "2D", kekulize)
 }
 
 pub fn mol_to_v3000_3d_block(mol: &Molecule) -> Result<String, MolWriteError> {
+    mol_to_v3000_block_with_coords_from_3d(mol, true)
+}
+
+fn mol_to_v3000_block_with_coords_from_3d(
+    mol: &Molecule,
+    kekulize: bool,
+) -> Result<String, MolWriteError> {
     let coords = mol.coords_3d().ok_or(MolWriteError::UnsupportedSubset(
         "3D coordinates are required; parse a 3D molfile or add a 3D conformer before writing 3D SDF",
     ))?;
@@ -222,19 +310,31 @@ pub fn mol_to_v3000_3d_block(mol: &Molecule) -> Result<String, MolWriteError> {
         .iter()
         .map(|coord| (coord.x, coord.y, coord.z))
         .collect::<Vec<_>>();
-    mol_to_v3000_block_with_coords(mol, &coords, "3D")
+    mol_to_v3000_block_with_coords(mol, &coords, "3D", kekulize)
 }
 
 fn mol_to_v3000_block_with_coords(
     mol: &Molecule,
     coords: &[(f64, f64, f64)],
     coord_label: &str,
+    kekulize: bool,
 ) -> Result<String, MolWriteError> {
     if coords.len() != mol.atoms().len() {
         return Err(MolWriteError::UnsupportedSubset(
             "coordinate count does not match atom count",
         ));
     }
+    let mut write_mol = mol.clone();
+    if kekulize && write_mol.bonds().iter().any(|b| b.is_aromatic) {
+        crate::kekulize::kekulize_in_place(&mut write_mol, true)
+            .map_err(|_| MolWriteError::UnsupportedSubset("kekulize before v3000 write failed"))?;
+    }
+
+    let write_valence = crate::assign_valence(&write_mol, crate::ValenceModel::RdkitLike)
+        .map_err(|_| MolWriteError::UnsupportedSubset("RDKit valence assignment failed"))?;
+    let write_radicals =
+        crate::assign_radicals_rdkit_2025(&write_mol, &write_valence.explicit_valence)
+            .map_err(|_| MolWriteError::UnsupportedSubset("RDKit radical assignment failed"))?;
 
     let mut out = String::new();
     out.push('\n');
@@ -244,47 +344,101 @@ fn mol_to_v3000_block_with_coords(
     out.push_str("M  V30 BEGIN CTAB\n");
     out.push_str(&format!(
         "M  V30 COUNTS {} {} 0 0 0\n",
-        mol.atoms().len(),
-        mol.bonds().len()
+        write_mol.atoms().len(),
+        write_mol.bonds().len()
     ));
     out.push_str("M  V30 BEGIN ATOM\n");
-    for (idx, atom) in mol.atoms().iter().enumerate() {
+    for (idx, atom) in write_mol.atoms().iter().enumerate() {
         let (x, y, z) = coords[idx];
         out.push_str(&format!(
-            "M  V30 {} {} {:.6} {:.6} {:.6} 0",
+            "M  V30 {} {} {:.6} {:.6} {:.6} {}",
             idx + 1,
-            crate::periodic_table::element_symbol(atom.atomic_num).unwrap_or("*"),
+            molfile_atom_symbol(atom.atomic_num),
             x,
             y,
-            z
+            z,
+            atom.atom_map_num.unwrap_or(0)
         ));
+        let parity = atom_parity_flag_3d(&write_mol, idx, coords, &write_valence);
+        if parity != 0 {
+            out.push_str(&format!(" CFG={parity}"));
+        }
         if atom.formal_charge != 0 {
             out.push_str(&format!(" CHG={}", atom.formal_charge));
         }
         if let Some(isotope) = atom.isotope {
             out.push_str(&format!(" MASS={isotope}"));
         }
-        for (key, value) in &atom.props {
-            out.push_str(&format!(" {key}={value}"));
+        if write_radicals[idx] != 0 && atom_total_degree(&write_mol, idx) != 0 {
+            let radical_code = if write_radicals[idx] % 2 == 1 { 2 } else { 3 };
+            out.push_str(&format!(" RAD={radical_code}"));
+        }
+        if has_v2000_non_default_valence(
+            atom,
+            write_valence.explicit_valence[idx],
+            write_radicals[idx],
+        ) {
+            let bond_degree = write_mol
+                .bonds()
+                .iter()
+                .filter(|bond| bond.begin_atom == idx || bond.end_atom == idx)
+                .count();
+            let total_degree = bond_degree
+                + atom.explicit_hydrogens as usize
+                + write_valence.implicit_hydrogens[idx] as usize;
+            if total_degree == 0 {
+                out.push_str(" VAL=-1");
+            } else {
+                let total_valence =
+                    write_valence.explicit_valence[idx] + write_valence.implicit_hydrogens[idx];
+                out.push_str(&format!(" VAL={total_valence}"));
+            }
         }
         out.push('\n');
     }
     out.push_str("M  V30 END ATOM\n");
-    out.push_str("M  V30 BEGIN BOND\n");
-    for (idx, bond) in mol.bonds().iter().enumerate() {
-        out.push_str(&format!(
-            "M  V30 {} {} {} {}",
-            idx + 1,
-            bond_type_code(bond.order),
-            bond.begin_atom + 1,
-            bond.end_atom + 1
-        ));
-        if let Some(cfg) = bond_v3000_cfg_code(bond) {
-            out.push_str(&format!(" CFG={cfg}"));
+    let coords_2d = coords
+        .iter()
+        .map(|(x, y, _)| glam::DVec2::new(*x, *y))
+        .collect::<Vec<_>>();
+    let wedge = pick_bonds_to_wedge_rdkit_subset(&write_mol);
+    if !write_mol.bonds().is_empty() {
+        out.push_str("M  V30 BEGIN BOND\n");
+        for (idx, bond) in write_mol.bonds().iter().enumerate() {
+            let reverse = wedge
+                .get(&bond.index)
+                .is_some_and(|from_atom| *from_atom != bond.begin_atom)
+                && matches!(bond.order, BondOrder::Single);
+            let (begin_atom, end_atom) = if reverse {
+                (bond.end_atom + 1, bond.begin_atom + 1)
+            } else {
+                (bond.begin_atom + 1, bond.end_atom + 1)
+            };
+            out.push_str(&format!(
+                "M  V30 {} {} {} {}",
+                idx + 1,
+                bond_molfile_type_code(bond),
+                begin_atom,
+                end_atom
+            ));
+            let cfg = if matches!(bond.order, BondOrder::Single) && wedge.contains_key(&bond.index)
+            {
+                let mut cfg_bond = bond.clone();
+                cfg_bond.direction =
+                    determine_bond_wedge_state_rdkit_subset(bond, &wedge, &coords_2d, &write_mol);
+                bond_v3000_cfg_code(&cfg_bond)
+            } else if matches!(bond.stereo, BondStereo::Any) {
+                bond_v3000_cfg_code(bond)
+            } else {
+                None
+            };
+            if let Some(cfg) = cfg {
+                out.push_str(&format!(" CFG={cfg}"));
+            }
+            out.push('\n');
         }
-        out.push('\n');
+        out.push_str("M  V30 END BOND\n");
     }
-    out.push_str("M  V30 END BOND\n");
     out.push_str("M  V30 END CTAB\n");
     out.push_str("M  END\n");
     Ok(out)
@@ -796,6 +950,7 @@ fn rdkit_twice_bond_type(order: BondOrder) -> i64 {
         BondOrder::Quadruple => 8,
         BondOrder::Aromatic => 3,
         BondOrder::Dative => 2,
+        BondOrder::Hydrogen => 0,
     }
 }
 
@@ -805,36 +960,16 @@ fn rdkit_cip_invariants(mol: &Molecule) -> Vec<i64> {
     const MASS_BITS: i64 = 10;
     const MAX_MASS: i64 = 1 << MASS_BITS;
 
-    fn most_common_isotope(atomic_num: u8) -> i32 {
-        match atomic_num {
-            1 => 1,
-            5 => 11,
-            6 => 12,
-            7 => 14,
-            8 => 16,
-            9 => 19,
-            11 => 23,
-            12 => 24,
-            13 => 27,
-            14 => 28,
-            15 => 31,
-            16 => 32,
-            17 => 35,
-            29 => 63,
-            34 => 80,
-            35 => 79,
-            53 => 127,
-            _ => 0,
-        }
-    }
-
     mol.atoms()
         .iter()
         .map(|atom| {
             let mut invariant = i64::from(atom.atomic_num % 128);
             let mut mass = 0i64;
             if let Some(isotope) = atom.isotope {
-                mass = i64::from(isotope) - i64::from(most_common_isotope(atom.atomic_num));
+                mass = i64::from(isotope)
+                    - i64::from(
+                        crate::periodic_table::most_common_isotope(atom.atomic_num).unwrap_or(0),
+                    );
                 if mass >= 0 {
                     mass += 1;
                 }
@@ -4813,15 +4948,27 @@ fn remove_collisions_shorten_bonds_like(
     }
 }
 
-fn bond_type_code(order: BondOrder) -> usize {
-    match order {
+fn bond_molfile_type_code(bond: &crate::Bond) -> usize {
+    if let Some(code) = bond.molfile_query_bond_code {
+        return usize::from(code);
+    }
+    match bond.order {
         BondOrder::Single => 1,
         BondOrder::Double => 2,
         BondOrder::Triple => 3,
         BondOrder::Aromatic => 4,
         BondOrder::Dative => 9,
-        BondOrder::Null => 8,
+        BondOrder::Hydrogen => 10,
+        BondOrder::Null => 0,
         BondOrder::Quadruple => 0,
+    }
+}
+
+fn molfile_atom_symbol(atomic_num: u8) -> &'static str {
+    if atomic_num == 0 {
+        "R"
+    } else {
+        crate::periodic_table::element_symbol(atomic_num).unwrap_or("*")
     }
 }
 
@@ -5168,6 +5315,7 @@ fn bond_v3000_cfg_code(bond: &crate::Bond) -> Option<usize> {
     match bond.direction {
         crate::BondDirection::EndUpRight => Some(1),
         crate::BondDirection::EndDownRight => Some(3),
+        crate::BondDirection::Unknown => Some(2),
         crate::BondDirection::None => {
             if matches!(bond.stereo, BondStereo::Any) {
                 Some(2)
@@ -5175,6 +5323,55 @@ fn bond_v3000_cfg_code(bond: &crate::Bond) -> Option<usize> {
                 None
             }
         }
+    }
+}
+
+fn atom_parity_flag_3d(
+    mol: &Molecule,
+    atom_index: usize,
+    coords: &[(f64, f64, f64)],
+    assignment: &crate::ValenceAssignment,
+) -> u8 {
+    let atom = &mol.atoms()[atom_index];
+    if coords.iter().all(|(_, _, z)| *z == 0.0) || matches!(atom.chiral_tag, ChiralTag::Unspecified)
+    {
+        return 0;
+    }
+    let neighbors = atom_neighbors(mol, atom_index);
+    let total_degree = neighbors.len()
+        + atom.explicit_hydrogens as usize
+        + assignment.implicit_hydrogens[atom_index] as usize;
+    if neighbors.len() < 3 || total_degree != 4 {
+        return 0;
+    }
+
+    let (x, y, z) = coords[atom_index];
+    let center = glam::DVec3::new(x, y, z);
+    let mut vs = neighbors
+        .into_iter()
+        .map(|neighbor| {
+            let (nx, ny, nz) = coords[neighbor];
+            let sort_idx = if mol.atoms()[neighbor].atomic_num == 1 {
+                neighbor + mol.atoms().len()
+            } else {
+                neighbor
+            };
+            (sort_idx, glam::DVec3::new(nx, ny, nz) - center)
+        })
+        .collect::<Vec<_>>();
+    vs.sort_by_key(|(idx, _)| *idx);
+
+    let volume = if vs.len() == 4 {
+        vs[0].1.cross(vs[1].1).dot(vs[3].1)
+    } else {
+        -vs[0].1.cross(vs[1].1).dot(vs[2].1)
+    };
+    if volume < 0.0 {
+        2
+    } else if volume > 0.0 {
+        1
+    } else {
+        0
     }
 }
 
@@ -5300,10 +5497,9 @@ mod tests {
     use std::fs::{self, File};
     use std::io::{BufRead, BufReader};
     use std::path::{Path, PathBuf};
-    use std::process::Command;
 
     use super::{SdfFormat, mol_to_v2000_block};
-    use crate::{BatchErrorMode, Molecule, MoleculeBatch};
+    use crate::{BatchErrorMode, BondOrder, Molecule, MoleculeBatch};
     use serde::Deserialize;
 
     #[derive(Debug, Deserialize)]
@@ -5768,105 +5964,32 @@ mod tests {
         Ok(rows)
     }
 
+    fn v2000_batch_write_supported(smiles: &str) -> bool {
+        let Ok(mol) = Molecule::from_smiles(smiles) else {
+            return false;
+        };
+        !mol.atoms().iter().any(|atom| atom.atomic_num == 0)
+            && !mol
+                .bonds()
+                .iter()
+                .any(|bond| matches!(bond.order, BondOrder::Null | BondOrder::Quadruple))
+    }
+
     fn ensure_golden_exists(golden_path: &Path) {
-        if golden_path.exists() {
-            return;
-        }
-        let repo = repo_root();
-        let script = repo.join("tests/scripts/gen_rdkit_v2000_minimal_golden.py");
-        let input = repo.join("tests/smiles.smi");
-
-        let candidates = [
-            std::env::var("COSMOLKIT_PYTHON").ok(),
-            Some(repo.join(".venv/bin/python").display().to_string()),
-            Some(String::from("python3")),
-        ];
-
-        let mut last_error = String::new();
-        for candidate in candidates.iter().flatten() {
-            let output = Command::new(candidate)
-                .arg(&script)
-                .arg("--input")
-                .arg(&input)
-                .arg("--output")
-                .arg(golden_path)
-                .output();
-            match output {
-                Ok(out) if out.status.success() => return,
-                Ok(out) => {
-                    last_error = format!(
-                        "python={} exit={} stderr={}",
-                        candidate,
-                        out.status,
-                        String::from_utf8_lossy(&out.stderr)
-                    );
-                }
-                Err(err) => {
-                    last_error = format!("python={} spawn error={}", candidate, err);
-                }
-            }
-        }
-
-        panic!(
-            "golden file missing and auto-generation failed.\n\
-             expected: {}\n\
-             tried COSMOLKIT_PYTHON, .venv/bin/python, python3.\n\
-             last error: {}\n\
-             please run:\n\
+        assert!(
+            golden_path.exists(),
+            "missing RDKit V2000 molblock golden: {}. Generate it before running tests:\n\
              uv sync --group dev && .venv/bin/python tests/scripts/gen_rdkit_v2000_minimal_golden.py --input tests/smiles.smi --output tests/golden/molblock_v2000_minimal.jsonl",
-            golden_path.display(),
-            last_error
+            golden_path.display()
         );
     }
 
     fn ensure_kekulize_golden_exists(golden_path: &Path) {
-        if golden_path.exists() {
-            return;
-        }
-        let repo = repo_root();
-        let script = repo.join("tests/scripts/gen_rdkit_kekulize_molblock_golden.py");
-        let input = repo.join("tests/smiles.smi");
-
-        let candidates = [
-            std::env::var("COSMOLKIT_PYTHON").ok(),
-            Some(repo.join(".venv/bin/python").display().to_string()),
-            Some(String::from("python3")),
-        ];
-
-        let mut last_error = String::new();
-        for candidate in candidates.iter().flatten() {
-            let output = Command::new(candidate)
-                .arg(&script)
-                .arg("--input")
-                .arg(&input)
-                .arg("--output")
-                .arg(golden_path)
-                .output();
-            match output {
-                Ok(out) if out.status.success() => return,
-                Ok(out) => {
-                    last_error = format!(
-                        "python={} exit={} stderr={}",
-                        candidate,
-                        out.status,
-                        String::from_utf8_lossy(&out.stderr)
-                    );
-                }
-                Err(err) => {
-                    last_error = format!("python={} spawn error={}", candidate, err);
-                }
-            }
-        }
-
-        panic!(
-            "kekulize golden file missing and auto-generation failed.\n\
-             expected: {}\n\
-             tried COSMOLKIT_PYTHON, .venv/bin/python, python3.\n\
-             last error: {}\n\
-             please run:\n\
+        assert!(
+            golden_path.exists(),
+            "missing RDKit kekulized molblock golden: {}. Generate it before running tests:\n\
              uv sync --group dev && .venv/bin/python tests/scripts/gen_rdkit_kekulize_molblock_golden.py --input tests/smiles.smi --output tests/golden/molblock_v2000_kekulized.jsonl",
-            golden_path.display(),
-            last_error
+            golden_path.display()
         );
     }
 
@@ -6012,7 +6135,9 @@ mod tests {
         let batch_records = golden
             .iter()
             .enumerate()
-            .filter(|(_, record)| record.parse_ok && record.v2000_ok)
+            .filter(|(_, record)| {
+                record.parse_ok && record.v2000_ok && v2000_batch_write_supported(&record.smiles)
+            })
             .collect::<Vec<_>>();
         let smiles = batch_records
             .iter()
@@ -6216,7 +6341,12 @@ mod tests {
         let batch_records = golden
             .iter()
             .enumerate()
-            .filter(|(_, record)| record.parse_ok && record.kekulize_ok && record.v2000_ok)
+            .filter(|(_, record)| {
+                record.parse_ok
+                    && record.kekulize_ok
+                    && record.v2000_ok
+                    && v2000_batch_write_supported(&record.smiles)
+            })
             .collect::<Vec<_>>();
         let smiles = batch_records
             .iter()

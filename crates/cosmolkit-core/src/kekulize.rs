@@ -139,6 +139,7 @@ fn bond_order_contrib(order: BondOrder) -> i32 {
         BondOrder::Triple => 3,
         BondOrder::Quadruple => 4,
         BondOrder::Aromatic => 1,
+        BondOrder::Hydrogen => 0,
         BondOrder::Null => 0,
     }
 }
@@ -518,6 +519,7 @@ fn rdkit_bond_type_rank(order: BondOrder) -> u8 {
         // orders. Only relative ordering matters for canonical ranking.
         BondOrder::Aromatic => 12,
         BondOrder::Dative => 17,
+        BondOrder::Hydrogen => 0,
     }
 }
 

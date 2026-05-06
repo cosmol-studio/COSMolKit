@@ -375,6 +375,7 @@ pub fn prepare_mol_for_drawing_parity(
                 (BondDirection::EndDownRight, true) => "BEGINDASH",
                 (BondDirection::EndUpRight, false) => "ENDUPRIGHT",
                 (BondDirection::EndDownRight, false) => "ENDDOWNRIGHT",
+                (BondDirection::Unknown, _) => "UNKNOWN",
             }
             .to_string();
             PreparedDrawBond {
@@ -583,6 +584,9 @@ impl DrawMol {
                 }
                 BondOrder::Dative => {
                     self.make_dative_bond(bond, double_bond_offset);
+                }
+                BondOrder::Hydrogen => {
+                    self.make_bond_null_query_line(bond);
                 }
             }
         }
@@ -961,6 +965,10 @@ impl DrawMol {
         match wedge_dir {
             BondDirection::EndUpRight => self.make_solid_wedge(mol, from_atom, to_atom, bond),
             BondDirection::EndDownRight => self.make_dashed_wedge(mol, from_atom, to_atom, bond),
+            BondDirection::Unknown => {
+                let (begin, end) = self.adjust_bond_ends_for_labels(from_atom, to_atom);
+                self.new_bond_line(begin, end, bond);
+            }
             BondDirection::None => {}
         }
         Ok(())
@@ -2805,6 +2813,7 @@ fn add_chiral_hs_for_drawing(mol: &mut Molecule) {
             isotope: None,
             atom_map_num: None,
             props: Default::default(),
+            query: None,
             rdkit_cip_rank: None,
         });
         mol.add_bond(Bond {
@@ -2816,6 +2825,9 @@ fn add_chiral_hs_for_drawing(mol: &mut Molecule) {
             direction: BondDirection::None,
             stereo: BondStereo::None,
             stereo_atoms: Vec::new(),
+            molfile_query_bond_code: None,
+            props: Default::default(),
+            query: None,
         });
     }
     mol.rebuild_adjacency();

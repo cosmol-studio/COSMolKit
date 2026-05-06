@@ -70,6 +70,7 @@ fn bond_type_as_double(order: crate::BondOrder) -> f64 {
         crate::BondOrder::Quadruple => 4.0,
         crate::BondOrder::Aromatic => 1.5,
         crate::BondOrder::Dative => 1.0,
+        crate::BondOrder::Hydrogen => 0.0,
     }
 }
 

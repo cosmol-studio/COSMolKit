@@ -1,7 +1,6 @@
 """COSMolKit usage: IO + basic properties."""
 
 import numpy as np
-
 from cosmolkit import Molecule
 
 mol = Molecule.from_smiles("CCO", sanitize=True).with_2d_coords()
@@ -9,11 +8,15 @@ coords = mol.coords_2d()
 print("coords shape:", coords.shape)
 print("centroid:", coords.mean(axis=0))
 
-sdf_text = mol.to_sdf_string(format="v2000")
+sdf_text = mol.to_2d_sdf_string(format="v2000", include_stereo=True, kekulize=True)
 print("SDF length:", len(sdf_text))
 
 saved_path = mol.write_sdf_to_directory(
-    "python/examples", file_name="ethanol.sdf", format="v2000"
+    "python/examples/output",
+    file_name="ethanol.sdf",
+    format="v2000",
+    include_stereo=True,
+    kekulize=True,
 )
 print("Saved:", saved_path)
 

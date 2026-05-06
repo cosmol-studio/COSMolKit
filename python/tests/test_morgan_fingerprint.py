@@ -19,12 +19,16 @@ pytestmark = pytest.mark.skipif(
 
 
 def rdkit_on_bits(smiles, **generator_kwargs):
+    assert Chem is not None
+    assert rdFingerprintGenerator is not None
     mol = Chem.MolFromSmiles(smiles, sanitize=True)
     generator = rdFingerprintGenerator.GetMorganGenerator(**generator_kwargs)
     return list(generator.GetFingerprint(mol).GetOnBits())
 
 
 def assert_morgan_bits_equal(smiles, **kwargs):
+    assert Chem is not None
+    assert rdFingerprintGenerator is not None
     rdkit_kwargs = {
         "radius": kwargs.get("radius", 2),
         "fpSize": kwargs.get("n_bits", 2048),
@@ -80,6 +84,9 @@ def assert_morgan_bits_equal(smiles, **kwargs):
 
 
 def test_morgan_fingerprint_default_and_tanimoto_match_rdkit():
+    assert Chem is not None
+    assert DataStructs is not None
+    assert rdFingerprintGenerator is not None
     assert_morgan_bits_equal("CCO", radius=2, n_bits=2048)
 
     ethanol = cosmolkit.Molecule.from_smiles("CCO").fingerprint_morgan()
@@ -118,6 +125,7 @@ def test_morgan_fingerprint_advanced_generators_and_counts_match_rdkit():
 
 
 def test_morgan_fingerprint_custom_invariants_and_root_atoms_match_rdkit():
+    assert Chem is not None
     smiles = "CC(C)O"
     mol = Chem.MolFromSmiles(smiles, sanitize=True)
     assert_morgan_bits_equal(
@@ -133,6 +141,8 @@ def test_morgan_fingerprint_custom_invariants_and_root_atoms_match_rdkit():
 
 
 def test_morgan_additional_output_matches_rdkit():
+    assert Chem is not None
+    assert rdFingerprintGenerator is not None
     smiles = "CC(C)O"
     rdmol = Chem.MolFromSmiles(smiles, sanitize=True)
     generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=256)
@@ -166,11 +176,13 @@ def test_morgan_batch_api_preserves_order_and_none_for_invalid_records():
     )
     values = batch.fingerprint_morgan_list(n_bits=256, n_jobs=2)
     assert [value is not None for value in values] == [True, False, True]
+    assert values[0] is not None
     assert values[0].on_bits() == cosmolkit.Molecule.from_smiles("CCO").fingerprint_morgan(
         n_bits=256
     ).on_bits()
 
     with_output = batch.fingerprint_morgan_with_output_list(n_bits=256, n_jobs=2)
+    assert with_output[0] is not None
     assert with_output[0].additional_output().atom_counts()
     assert with_output[1] is None
 

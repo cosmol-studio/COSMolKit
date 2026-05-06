@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use crate::query::{AtomQueryPredicate, QueryNode};
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ChiralTag {
     Unspecified,
@@ -72,6 +74,8 @@ pub struct Atom {
     pub atom_map_num: Option<u32>,
     /// Preserved Molfile/SDF atom properties.
     pub props: BTreeMap<String, String>,
+    /// RDKit-like query atom AST when the atom originates from a query Molfile.
+    pub query: Option<QueryNode<AtomQueryPredicate>>,
     /// Cached RDKit `_CIPRank` atom property assigned by legacy stereochemistry.
     #[doc(hidden)]
     pub rdkit_cip_rank: Option<i64>,

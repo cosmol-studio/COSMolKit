@@ -162,6 +162,15 @@ def test_atom_and_bond_feature_enums_are_intenum_values():
     assert not hasattr(bond, "order")
 
 
+def test_public_bond_enums_include_hydrogen_and_unknown_members():
+    assert cosmolkit.BondOrder.HYDROGEN == 7
+    assert cosmolkit.BOND_ORDER_MAP["HYDROGEN"] == cosmolkit.BondOrder.HYDROGEN
+    assert cosmolkit.BondDirection.UNKNOWN == 3
+    assert (
+        cosmolkit.BOND_DIRECTION_MAP["UNKNOWN"] == cosmolkit.BondDirection.UNKNOWN
+    )
+
+
 @pytest.mark.parametrize("smiles", SMILES_CASES)
 def test_from_rdkit_exposes_rdkit_basic_atom_and_bond_features(smiles):
     rd_mol = _rdkit_mol_or_skip(smiles)
@@ -178,8 +187,13 @@ def test_from_rdkit_matches_direct_cosmolkit_smiles(smiles):
     direct = cosmolkit.Molecule.from_smiles(smiles)
     bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
 
-    assert bridged.to_smiles(True) == direct.to_smiles(True)
-    assert bridged.to_smiles(False) == direct.to_smiles(False)
+    try:
+        assert bridged.to_smiles(canonical=True) == direct.to_smiles(canonical=True)
+    except NotImplementedError as bridged_error:
+        with pytest.raises(NotImplementedError, match="unsupported path"):
+            direct.to_smiles(canonical=True)
+        assert "unsupported path" in str(bridged_error)
+    assert bridged.to_smiles(canonical=False) == direct.to_smiles(canonical=False)
 
 
 def test_from_rdkit_rejects_non_object():

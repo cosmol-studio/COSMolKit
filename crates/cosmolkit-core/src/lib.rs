@@ -14,6 +14,8 @@ pub mod io;
 pub mod kekulize;
 pub mod molecule;
 mod periodic_table;
+pub mod query;
+mod query_helpers;
 pub mod sanitize;
 mod smiles;
 pub mod smiles_write;
@@ -23,8 +25,8 @@ pub mod valence;
 pub use adjacency::{AdjacencyList, NeighborRef};
 pub use atom::{Atom, ChiralTag};
 pub use batch::{
-    BatchErrorMode, BatchExportReport, BatchRecord, BatchRecordError, BatchValidationError,
-    MoleculeBatch,
+    BatchErrorMode, BatchExportReport, BatchProgress, BatchProgressBar, BatchRecord,
+    BatchRecordError, BatchValidationError, MoleculeBatch, batch_progress_bar,
 };
 pub use bond::{Bond, BondDirection, BondOrder, BondStereo};
 pub use distgeom::DgBoundsError;
@@ -40,6 +42,7 @@ pub use molecule::{
     ConformerStore, CoordinateDimension, Molecule, PropertyStore, SmilesParseError,
     SmilesWriteError, TopologyData,
 };
+pub use query::{AtomQueryPredicate, BondQueryPredicate, QueryNode};
 pub use sanitize::{SanitizeError, SanitizeOps, SanitizeStep};
 pub use smiles::assign_double_bond_stereo_from_directions;
 pub use smiles_write::SmilesWriteParams;
@@ -84,6 +87,7 @@ mod tests {
             isotope: None,
             atom_map_num: None,
             props: Default::default(),
+            query: None,
             rdkit_cip_rank: None,
         };
         let _bond = Bond {
@@ -95,6 +99,9 @@ mod tests {
             direction: super::BondDirection::None,
             stereo: super::BondStereo::None,
             stereo_atoms: Vec::new(),
+            molfile_query_bond_code: None,
+            props: Default::default(),
+            query: None,
         };
         let _mol = Molecule::default();
     }

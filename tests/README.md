@@ -6,13 +6,16 @@
 - `golden/graph_features.jsonl` RDKit baseline for atom, bond, valence, stereo, and CIP graph-feature parity
 - `golden/molblock_v2000_minimal.jsonl` RDKit baseline for minimal V2000 mol block body parity
 - `golden/molblock_v2000_kekulized.jsonl` RDKit baseline for kekulized bond-block parity (ignores coordinates)
-- `golden/tetrahedral_stereo_geometry.jsonl` auto-generated RDKit ETKDG geometry baseline for tetrahedral stereo volume checks
+- `golden/tetrahedral_stereo_geometry.jsonl` RDKit ETKDG geometry baseline for tetrahedral stereo volume checks
 - `golden/smiles_writer.jsonl` RDKit baseline for `MolToSmiles()` parity across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches
+- `golden/isomeric_smiles.jsonl` RDKit baseline for focused isomeric SMILES parity cases
 - `golden/dg_bounds_matrix.jsonl` RDKit baseline for distance-geometry bounds matrix parity
 - `golden/morgan_fingerprint.jsonl` RDKit baseline for Morgan fingerprint bit-vector and adjacent-row Tanimoto parity across radius, bit-count, chirality, bond-type, count-simulation, custom-invariant, generator, and AdditionalOutput branches
 - `golden/svg_drawer.jsonl` RDKit baseline for `MolDraw2DSVG` output parity
 - `golden/prepared_draw_molecule.jsonl` RDKit baseline for `PrepareMolForDrawing(kekulize=True, addChiralHs=True, wedgeBonds=True, forceCoords=True)` prepared atom coordinates and bond directions
+- `golden/sdf_write.jsonl` RDKit baseline for MolBlock/SDF write parity across 2D/3D, V2000/V3000, stereo, and kekulize branches
 - `golden/sdf_read.jsonl` RDKit baseline for SDF read parity across 2D/3D, V2000/V3000, stereo-marker, and coordinate-inferred branches
+- `golden/molfile_read.jsonl` RDKit baseline for direct `.mol`/molblock read parity across the same CTAB branch matrix without SDF record separators or data fields
 
 ## Standard Workflow (RDKit Parity)
 
@@ -23,17 +26,23 @@ RDKit parity tests are strict source-level reproduction tests against `third_par
 1. Create project-level Python env (one shared env for testing + future bindings):
    - `uv sync --group dev`
    - this creates/updates `.venv/` at repository root
-2. Regenerate RDKit golden:
+2. Regenerate all RDKit golden files through the single entrypoint:
+   - `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean`
+3. Regenerate one specific golden manually when you are working on a single parity surface:
    - `.venv/bin/python tests/scripts/gen_rdkit_graph_features.py --input tests/smiles.smi --output tests/golden/graph_features.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_v2000_minimal_golden.py --input tests/smiles.smi --output tests/golden/molblock_v2000_minimal.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_kekulize_molblock_golden.py --input tests/smiles.smi --output tests/golden/molblock_v2000_kekulized.jsonl`
+   - `.venv/bin/python tests/scripts/gen_rdkit_kekulize_flags_golden.py --input tests/smiles.smi --output tests/golden/kekulize_clear_flags_false.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py --input tests/smiles.smi --output tests/golden/tetrahedral_stereo_geometry.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_smiles_writer_golden.py --input tests/smiles.smi --output tests/golden/smiles_writer.jsonl`
+   - `.venv/bin/python tests/scripts/gen_rdkit_isomeric_smiles_golden.py --input tests/smiles.smi --output tests/golden/isomeric_smiles.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_dg_bounds_golden.py --input tests/smiles.smi --output tests/golden/dg_bounds_matrix.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_morgan_fingerprint_golden.py --input tests/smiles.smi --output tests/golden/morgan_fingerprint.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_svg_golden.py --input tests/smiles.smi --output tests/golden/svg_drawer.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_prepared_draw_golden.py --input tests/smiles.smi --output tests/golden/prepared_draw_molecule.jsonl`
+   - `.venv/bin/python tests/scripts/gen_rdkit_sdf_write_golden.py --input tests/smiles.smi --output tests/golden/sdf_write.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_sdf_read_golden.py --input tests/smiles.smi --output tests/golden/sdf_read.jsonl`
+   - `.venv/bin/python tests/scripts/gen_rdkit_molfile_read_golden.py --input tests/smiles.smi --output tests/golden/molfile_read.jsonl`
 3. (Optional) Install local COSMolKit Python build into the same env for direct comparison:
    - `.venv/bin/maturin develop --manifest-path python/Cargo.toml`
 4. Run Rust tests:
@@ -46,15 +55,8 @@ RDKit parity tests are strict source-level reproduction tests against `third_par
    - `cargo run -p cosmolkit-core --example minimal_sdf -- "CCO"`
 
 Notes:
-- `cargo test -p cosmolkit-core` will auto-generate `tests/golden/graph_features.jsonl` if it is missing.
-- `cargo test -p cosmolkit-core` will auto-generate `tests/golden/molblock_v2000_minimal.jsonl` if it is missing.
-- `cargo test -p cosmolkit-core` will auto-generate `tests/golden/molblock_v2000_kekulized.jsonl` if it is missing.
-- `cargo test -p cosmolkit-core --test tetrahedral_stereo_geometry` will auto-generate `tests/golden/tetrahedral_stereo_geometry.jsonl` if it is missing.
-- `cargo test -p cosmolkit-core --test rdkit_smiles_writer_parity` will auto-generate `tests/golden/smiles_writer.jsonl` if it is missing.
-- `cargo test -p cosmolkit-core --test rdkit_dg_bounds_parity` will auto-generate `tests/golden/dg_bounds_matrix.jsonl` if it is missing.
-- `cargo test -p cosmolkit-core --test rdkit_morgan_fingerprint_parity` will auto-generate `tests/golden/morgan_fingerprint.jsonl` if it is missing.
-- `cargo test -p cosmolkit-core --test rdkit_sdf_read_parity` will auto-generate `tests/golden/sdf_read.jsonl` if it is missing.
-- Python lookup order for auto-generation: `COSMOLKIT_PYTHON` -> `.venv/bin/python` -> `python3`.
+- `cargo test` never generates RDKit golden files. If a golden file is missing, the test fails with the exact Python generator command to run first.
+- CI regenerates all RDKit Python golden files through `tests/scripts/gen_all_rdkit_goldens.py` immediately after `uv sync --group dev` and before running Rust tests.
 - `tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py` asserts `rdkit == 2026.3.1` before generating ETKDG geometry golden so test conditions do not drift silently.
 
 `crates/cosmolkit-core/tests/rdkit_graph_feature_parity.rs` contains:
@@ -71,7 +73,7 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 
 `crates/cosmolkit-core/tests/tetrahedral_stereo_geometry.rs` contains:
 - `tetrahedral_stereo_ordered_ligands_match_rdkit_etkdg_positive_volume`
-- auto-generation hook for the ETKDG geometry golden
+- missing-golden checks for the ETKDG geometry golden
 - oriented-volume validation for `Molecule::tetrahedral_stereo()` (spec: `tetrahedral_stereo_representation.md`)
 
 `crates/cosmolkit-core/tests/rdkit_dg_bounds_parity.rs` contains:
@@ -101,6 +103,12 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 - `sdf_read_coordinates_match_rdkit_for_2d_and_3d_records`
 - `sdf_read_chirality_matches_rdkit_for_markers_and_coordinates`
 - `sdf_read_to_smiles_matches_rdkit_canonical_and_noncanonical`
+
+`crates/cosmolkit-core/tests/rdkit_molfile_read_parity.rs` contains:
+- `molfile_read_topology_and_atom_fields_match_rdkit`
+- `molfile_read_coordinates_match_rdkit_for_2d_and_3d_records`
+- `molfile_read_chirality_matches_rdkit_for_markers_and_coordinates`
+- `molfile_read_to_smiles_matches_rdkit_canonical_and_noncanonical`
 
 Current status:
 - `cosmolkit-core` graph-feature parity is currently passing on the shared corpus (direct + explicit-H comparisons).

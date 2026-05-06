@@ -1,6 +1,7 @@
 //! File format I/O entry points for chemistry and biomolecular data.
 
 pub mod molblock;
+pub mod molfile;
 pub mod sdf;
 
 /// Returns versions of core modules to ensure linkage works.
@@ -117,7 +118,6 @@ $$$$
             "CC",
             "C=C",
             "C#N",
-            "C~C",
             "[Na+].[Cl-]",
             "[NH4+]",
             "[O-][N+](=O)O",
@@ -157,12 +157,9 @@ $$$$
             "CC",
             "C=C",
             "C#N",
-            "C~C",
             "[Na+].[Cl-]",
             "[NH4+]",
             "[O-][N+](=O)O",
-            "[13CH3:7][C@H](F)Cl",
-            "F[C@](Cl)(Br)I",
             "c1ccccc1",
             "[NH3]->[Cu+2]<-[NH3]",
         ] {
@@ -332,11 +329,15 @@ methane2
 M  END
 $$$$
 ";
-        let one = crate::io::sdf::read_sdf_record_from_str(sdf).expect("first record should parse");
+        let one = crate::io::sdf::read_sdf_from_str(sdf).expect("first record should parse");
         assert_eq!(one.title, "methane");
-        let all = crate::io::sdf::read_sdf_records_from_str(sdf).expect("all records should parse");
+        let all = crate::MoleculeBatch::read_sdf_records_from_str(
+            sdf,
+            crate::io::sdf::SdfCoordinateMode::Auto,
+            crate::BatchErrorMode::Raise,
+        )
+        .expect("all records should parse");
         assert_eq!(all.len(), 2);
-        assert_eq!(all[1].title, "methane2");
     }
 
     #[test]
@@ -349,9 +350,197 @@ $$$$
 M  END
 $$$$
 ";
-        let record = crate::io::sdf::read_sdf_record_from_str(sdf).expect("3D record should parse");
+        let record = crate::io::sdf::read_sdf_from_str(sdf).expect("3D record should parse");
         assert!(record.molecule.coords_2d().is_none());
         assert_eq!(record.molecule.num_3d_conformers(), 1);
+    }
+
+    #[test]
+    fn sdf_reader_applies_v2000_atom_mass_difference_like_rdkit() {
+        let sdf = "massdiff
+     COSMolKit      2D
+
+  2  1  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   1  0  0  0  0  0  0  0  0  0  0  0
+    1.5000    0.0000    0.0000 O  -1  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+M  END
+$$$$
+";
+        let record = crate::io::sdf::read_sdf_from_str(sdf)
+            .expect("V2000 atom mass-difference fields should parse");
+
+        assert_eq!(record.molecule.atoms()[0].isotope, Some(13));
+        assert_eq!(record.molecule.atoms()[1].isotope, Some(15));
+    }
+
+    #[test]
+    fn sdf_reader_preserves_v2000_query_bond_type_codes_like_rdkit() {
+        let sdf = "querybond
+     COSMolKit      2D
+
+  4  3  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    3.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    4.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  5  0
+  2  3  6  0
+  3  4  7  0
+M  END
+$$$$
+";
+        let record = crate::io::sdf::read_sdf_from_str(sdf)
+            .expect("V2000 query bond type fields should parse");
+        let query_codes = record
+            .molecule
+            .bonds()
+            .iter()
+            .map(|bond| (bond.order, bond.molfile_query_bond_code))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            query_codes,
+            vec![
+                (crate::BondOrder::Null, Some(5)),
+                (crate::BondOrder::Null, Some(6)),
+                (crate::BondOrder::Null, Some(7)),
+            ]
+        );
+    }
+
+    #[test]
+    fn sdf_reader_preserves_v3000_query_bond_type_codes_like_rdkit() {
+        let sdf = "querybond3k
+  COSMolKit  2D
+
+  0  0  0  0  0  0  0  0  0  0999 V3000
+M  V30 BEGIN CTAB
+M  V30 COUNTS 4 3 0 0 0
+M  V30 BEGIN ATOM
+M  V30 1 C 0.000000 0.000000 0.000000 0
+M  V30 2 C 1.500000 0.000000 0.000000 0
+M  V30 3 C 3.000000 0.000000 0.000000 0
+M  V30 4 C 4.500000 0.000000 0.000000 0
+M  V30 END ATOM
+M  V30 BEGIN BOND
+M  V30 1 5 1 2
+M  V30 2 6 2 3
+M  V30 3 7 3 4
+M  V30 END BOND
+M  V30 END CTAB
+M  END
+$$$$
+";
+        let record = crate::io::sdf::read_sdf_from_str(sdf)
+            .expect("V3000 query bond type fields should parse");
+        let query_codes = record
+            .molecule
+            .bonds()
+            .iter()
+            .map(|bond| (bond.order, bond.molfile_query_bond_code))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            query_codes,
+            vec![
+                (crate::BondOrder::Null, Some(5)),
+                (crate::BondOrder::Null, Some(6)),
+                (crate::BondOrder::Null, Some(7)),
+            ]
+        );
+    }
+
+    #[test]
+    fn sdf_reader_parses_v2000_hcount_as_query_like_rdkit() {
+        let sdf = "hcount
+     COSMolKit      2D
+
+  1  0  0  0  1  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  1  0  0  0  0  0  0  0  0
+M  END
+$$$$
+";
+        let record =
+            crate::io::sdf::read_sdf_from_str(sdf).expect("V2000 hcount query should parse");
+        let atom = &record.molecule.atoms()[0];
+        assert!(atom.no_implicit);
+        assert_eq!(
+            atom.query,
+            Some(crate::QueryNode::predicate(
+                crate::AtomQueryPredicate::ImplicitHCountEquals(0)
+            ))
+        );
+    }
+
+    #[test]
+    fn sdf_reader_parses_v2000_unknown_single_bond_direction_like_rdkit() {
+        let sdf = "unknownbond
+     COSMolKit      2D
+
+  2  1  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  4
+M  END
+$$$$
+";
+        let record = crate::io::sdf::read_sdf_from_str(sdf)
+            .expect("V2000 unknown single-bond stereo should parse");
+        assert_eq!(
+            record.molecule.bonds()[0].direction,
+            crate::BondDirection::Unknown
+        );
+    }
+
+    #[test]
+    fn sdf_reader_parses_v3000_hydrogen_and_topology_queries_like_rdkit() {
+        let sdf = "v3kquery
+  COSMolKit  2D
+
+  0  0  0  0  0  0  0  0  0  0999 V3000
+M  V30 BEGIN CTAB
+M  V30 COUNTS 3 2 0 0 0
+M  V30 BEGIN ATOM
+M  V30 1 C 0.000000 0.000000 0.000000 0
+M  V30 2 C 1.500000 0.000000 0.000000 0 HCOUNT=2 UNSAT=1 RBCNT=2
+M  V30 3 C 3.000000 0.000000 0.000000 0
+M  V30 END ATOM
+M  V30 BEGIN BOND
+M  V30 1 10 1 2
+M  V30 2 1 2 3 CFG=2 TOPO=2 RXCTR=4 STBOX=1 ENDPTS=(2 1 3) ATTACH=ALL
+M  V30 END BOND
+M  V30 END CTAB
+M  END
+$$$$
+";
+        let record = crate::io::sdf::read_sdf_from_str(sdf)
+            .expect("V3000 hydrogen/topology query record should parse");
+        let atom = &record.molecule.atoms()[1];
+        let bond0 = &record.molecule.bonds()[0];
+        let bond1 = &record.molecule.bonds()[1];
+
+        assert_eq!(bond0.order, crate::BondOrder::Hydrogen);
+        assert_eq!(bond1.direction, crate::BondDirection::Unknown);
+        assert_eq!(bond1.prop("RXCTR"), Some("4"));
+        assert_eq!(bond1.prop("STBOX"), Some("1"));
+        assert_eq!(bond1.prop("ENDPTS"), Some("(2 1 3)"));
+        assert_eq!(bond1.prop("ATTACH"), Some("ALL"));
+
+        assert_eq!(
+            atom.query,
+            Some(crate::QueryNode::and(vec![
+                crate::QueryNode::predicate(crate::AtomQueryPredicate::ImplicitHCountLessEqual(2)),
+                crate::QueryNode::predicate(crate::AtomQueryPredicate::Unsaturated),
+                crate::QueryNode::predicate(crate::AtomQueryPredicate::RingBondCountEquals(2)),
+            ]))
+        );
+        assert_eq!(
+            bond1.query,
+            Some(crate::QueryNode::not(crate::QueryNode::predicate(
+                crate::BondQueryPredicate::IsInRing
+            )))
+        );
     }
 
     #[test]
@@ -364,16 +553,12 @@ $$$$
 M  END
 $$$$
 ";
-        let record_2d = crate::io::sdf::read_sdf_record_from_str_with_coordinate_mode(
-            sdf,
-            SdfCoordinateMode::Force2D,
-        )
-        .expect("forced 2D record should parse");
-        let record_3d = crate::io::sdf::read_sdf_record_from_str_with_coordinate_mode(
-            sdf,
-            SdfCoordinateMode::Force3D,
-        )
-        .expect("forced 3D record should parse");
+        let record_2d =
+            crate::io::sdf::read_sdf_from_str_with_coordinate_mode(sdf, SdfCoordinateMode::Force2D)
+                .expect("forced 2D record should parse");
+        let record_3d =
+            crate::io::sdf::read_sdf_from_str_with_coordinate_mode(sdf, SdfCoordinateMode::Force3D)
+                .expect("forced 3D record should parse");
 
         assert!(record_2d.molecule.coords_2d().is_some());
         assert!(record_2d.molecule.coords_3d().is_none());

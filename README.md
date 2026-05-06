@@ -55,7 +55,8 @@ COSMolKit is in early active development. The implementation is intentionally a 
 
 - **Core layout:** `cosmolkit-core` contains chemistry perception, IO, drawing, and biomolecular primitives; `cosmolkit` is the Rust facade crate; `python/` contains the PyO3 package.
 - **RDKit reference:** RDKit 2026.03.1 is the active compatibility reference for selected behaviors, with `third_party/rdkit` pinned to `Release_2026_03_1` (`351f8f378f8ad6bbd517980c38896e66bf907af8`).
-- **Parity coverage:** current tests cover graph features, add-H / remove-H roundtrips, tetrahedral stereo geometry, DG bounds matrices, Morgan fingerprint branches, Kekulization branches, SMILES writer branches, V2000 molblock output, and SDF V2000/V3000 roundtrips.
+- **Parity coverage:** current tests cover graph features, add-H / remove-H roundtrips, tetrahedral stereo geometry, DG bounds matrices, Morgan fingerprint branches, Kekulization branches, SMILES writer branches, V2000 molblock output, direct MOL/molblock reading, and SDF V2000/V3000 roundtrips.
+- **Query import status:** MOL/SDF parsing now preserves a structured internal representation for supported RDKit query atom/bond features such as `HCOUNT`, `UNSAT`, `RBCNT`, `TOPO`, hydrogen bonds, and unknown single-bond directions. Public query-inspection APIs are still intentionally deferred.
 - **Batch-native workflows:** `MoleculeBatch` APIs support ordered molecule construction, Python-style indexing and iteration, parallel transforms, image/SDF export, custom export filenames, and structured error handling for high-throughput datasets.
 - **Python bindings:** the package exposes SMILES parsing/writing with RDKit-style writer options, `Molecule.from_rdkit()`, enum-valued graph/stereo inspection, value-style transforms, explicit `coords_2d()` / `coords_3d()` access, 2D/3D SDF IO for molecules with stored coordinates, DG bounds, Morgan fingerprints, SVG/PNG rendering, batch processing, and explicit editing.
 - **AI direction:** planned COSMolKit-native APIs include model-ready graph export, internal coordinates, torsion/chirality-aware diffusion helpers, and molecular tokenization. See `ai_native_features_sketch.md`.
@@ -122,7 +123,7 @@ For more Python examples, see `python/README.md` and `python/examples/`.
 ### Phase 2 — Chemical File I/O
 **Goal:** make molecule import/export usable beyond SMILES
 
-- [ ] MOL reader
+- ✅ MOL reader
 - ✅ SDF reader with robust multi-record handling
 - ✅ SDF writer with strict RDKit-compatible V2000/V3000 output
 - ✅ SMILES output via RDKit-parity writer branches
@@ -170,6 +171,7 @@ For more Python examples, see `python/README.md` and `python/examples/`.
 
 - ✅ distance-geometry bounds matrix parity
 - ✅ Morgan fingerprint generation and Tanimoto similarity metrics
+- ✅ internal query-atom / query-bond storage for supported MOL/SDF parser branches
 - [ ] topological fingerprint generation
 - [ ] 3D conformer generation and embedding APIs
 - [ ] atom selection API
@@ -177,9 +179,13 @@ For more Python examples, see `python/README.md` and `python/examples/`.
 - [ ] neighborhood queries
 - [ ] connected component analysis
 - [ ] substructure matching
+- [ ] public Rust query inspection API
+- [ ] Python query inspection / matching API
 - [ ] molecular formula
 - [ ] molecular weight
 - [ ] ring statistics
+
+Query API note: internal query AST support exists to preserve RDKit MOL/SDF semantics during parsing. Public inspection and matching APIs are still pending design, especially for Python users.
 
 ### Phase 5 — 2D Coordinates and Drawing
 **Goal:** provide RDKit-drawer-like molecule depiction

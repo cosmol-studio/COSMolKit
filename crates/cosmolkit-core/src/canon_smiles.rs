@@ -123,6 +123,7 @@ fn rdkit_bond_type_value(order: BondOrder) -> i64 {
         BondOrder::Quadruple => 4,
         BondOrder::Aromatic => 12,
         BondOrder::Dative => 17,
+        BondOrder::Hydrogen => 0,
         BondOrder::Null => 0,
     }
 }
@@ -449,6 +450,7 @@ fn rdkit_bond_type_rank(order: BondOrder) -> u8 {
         BondOrder::Quadruple => 4,
         BondOrder::Aromatic => 12,
         BondOrder::Dative => 17,
+        BondOrder::Hydrogen => 0,
     }
 }
 
@@ -1594,6 +1596,7 @@ fn flip_stereo_bond_dir(direction: crate::BondDirection) -> crate::BondDirection
         crate::BondDirection::EndUpRight => crate::BondDirection::EndDownRight,
         crate::BondDirection::EndDownRight => crate::BondDirection::EndUpRight,
         crate::BondDirection::None => crate::BondDirection::None,
+        crate::BondDirection::Unknown => crate::BondDirection::Unknown,
     }
 }
 

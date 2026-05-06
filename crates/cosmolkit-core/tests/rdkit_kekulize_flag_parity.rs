@@ -52,6 +52,7 @@ fn bond_type_name(order: BondOrder) -> &'static str {
         BondOrder::Quadruple => "QUADRUPLE",
         BondOrder::Aromatic => "AROMATIC",
         BondOrder::Dative => "DATIVE",
+        BondOrder::Hydrogen => "HYDROGEN",
     }
 }
 

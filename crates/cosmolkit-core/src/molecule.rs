@@ -1,5 +1,6 @@
 use crate::{AdjacencyList, Atom, Bond};
 use glam::{DVec2, DVec3};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// Errors returned by SMILES parsing routines.
@@ -43,6 +44,7 @@ pub struct ConformerStore {
 pub struct PropertyStore {
     pub name: Option<String>,
     pub sdf_data_fields: Vec<(String, String)>,
+    pub props: BTreeMap<String, String>,
 }
 
 /// Molecular graph with split owned topology, coordinate, and metadata blocks.
@@ -98,6 +100,18 @@ impl Molecule {
         sanitize: bool,
     ) -> Result<Self, SmilesParseError> {
         crate::smiles::parse_smiles_with_sanitize(smiles, sanitize)
+    }
+
+    /// Construct one molecule from an MDL molfile block.
+    pub fn from_mol_block(block: &str) -> Result<Self, crate::io::sdf::SdfReadError> {
+        crate::io::molfile::read_mol_record_from_str(block).map(|record| record.molecule)
+    }
+
+    /// Construct one molecule from an MDL molfile path.
+    pub fn from_mol_file(
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<Self, crate::io::sdf::SdfReadError> {
+        crate::io::molfile::read_mol_file(path).map(|record| record.molecule)
     }
 
     /// Serialize this molecule to a SMILES string.
@@ -299,6 +313,11 @@ impl Molecule {
         Arc::make_mut(&mut self.props)
     }
 
+    #[must_use]
+    pub fn prop(&self, key: &str) -> Option<&str> {
+        self.props.props.get(key).map(String::as_str)
+    }
+
     /// Return stored 2D coordinates, if present.
     #[must_use]
     pub fn coords_2d(&self) -> Option<&[DVec2]> {
@@ -386,6 +405,7 @@ mod tests {
             isotope: None,
             atom_map_num: None,
             props: Default::default(),
+            query: None,
             rdkit_cip_rank: None,
         }
     }
@@ -400,6 +420,9 @@ mod tests {
             direction: BondDirection::None,
             stereo: BondStereo::None,
             stereo_atoms: Vec::new(),
+            molfile_query_bond_code: None,
+            props: Default::default(),
+            query: None,
         }
     }
 
@@ -410,6 +433,37 @@ mod tests {
         mol.add_bond(single_bond(0, 1));
         mol.set_coords_2d(Some(vec![DVec2::new(0.0, 0.0), DVec2::new(1.0, 0.0)]));
         mol
+    }
+
+    fn assert_coordinate_rows_match_atoms(mol: &Molecule) {
+        let atom_count = mol.atoms().len();
+        if let Some(coords) = mol.coords_2d() {
+            assert_eq!(coords.len(), atom_count, "2D coordinate row count mismatch");
+        }
+        for (idx, coords) in mol.conformers_3d().iter().enumerate() {
+            assert_eq!(
+                coords.len(),
+                atom_count,
+                "3D conformer {idx} coordinate row count mismatch"
+            );
+        }
+    }
+
+    fn interleaved_hydrogen_sdf() -> &'static str {
+        "interleaved_h
+  COSMolKit  3D
+
+  4  3  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.0000    0.0000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+    2.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+    3.0000    0.0000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  1  3  1  0
+  3  4  1  0
+M  END
+$$$$
+"
     }
 
     #[test]
@@ -453,6 +507,55 @@ mod tests {
         assert!(Arc::ptr_eq(&mol.props, &with_coords.props));
         assert!(mol.coords_2d().is_none());
         assert!(with_coords.coords_2d().is_some());
+    }
+
+    #[test]
+    fn public_transforms_keep_coordinate_rows_aligned_with_atoms() {
+        let base_2d = Molecule::from_smiles("CCO")
+            .expect("SMILES should parse")
+            .with_2d_coords()
+            .expect("2D coordinates should compute");
+        assert_coordinate_rows_match_atoms(&base_2d);
+        assert_coordinate_rows_match_atoms(
+            &base_2d
+                .with_hydrogens()
+                .expect("hydrogens should add and clear stale coordinates"),
+        );
+        assert_coordinate_rows_match_atoms(
+            &base_2d
+                .sanitize()
+                .expect("sanitize should preserve coordinate alignment"),
+        );
+
+        let benzene = Molecule::from_smiles("c1ccccc1")
+            .expect("benzene should parse")
+            .with_2d_coords()
+            .expect("benzene 2D coordinates should compute");
+        assert_coordinate_rows_match_atoms(
+            &benzene
+                .with_kekulized_bonds(false)
+                .expect("kekulize should preserve coordinate alignment"),
+        );
+
+        let base_3d = crate::io::sdf::read_sdf_from_str(interleaved_hydrogen_sdf())
+            .expect("3D SDF should parse")
+            .molecule;
+        assert_coordinate_rows_match_atoms(&base_3d);
+        assert_coordinate_rows_match_atoms(
+            &base_3d
+                .without_hydrogens_with_sanitize(false)
+                .expect("hydrogens should remove"),
+        );
+
+        let base_both = base_3d
+            .with_2d_coords()
+            .expect("2D coordinates should compute while preserving 3D conformer");
+        assert_coordinate_rows_match_atoms(&base_both);
+        assert_coordinate_rows_match_atoms(
+            &base_both
+                .without_hydrogens_with_sanitize(false)
+                .expect("hydrogens should remove"),
+        );
     }
 
     #[test]

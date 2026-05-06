@@ -200,8 +200,20 @@ Method-level ``n_jobs`` still overrides the batch default for a single call:
 
    svgs = prepared.to_svg_list(n_jobs=2)
 
+``with_progress_bar()`` returns a new batch with a default Rust-side progress
+bar setting. Progress is emitted by Rust to stderr, matching the usual terminal
+stream for progress indicators, and method-level ``progress_bar`` overrides the
+batch default for one call:
+
+.. code-block:: python
+
+   tracked = batch.with_parallel_jobs(8).with_progress_bar(True)
+   prepared = tracked.compute_2d_coords(errors="keep")
+   smiles = prepared.to_smiles_list(progress_bar=False)
+
 Pass ``None`` to clear the batch-level default and let rayon choose:
 
 .. code-block:: python
 
    default_scheduled = prepared.with_parallel_jobs(None)
+   quiet = prepared.with_progress_bar(None)

@@ -32,7 +32,7 @@ Create a molecule from SMILES and export a depiction:
    drawn = mol.with_2d_coords()
 
    print(mol.to_smiles())
-   drawn.write_png("phenol.png", width=400, height=300)
+   drawn.write_png("python/examples/output/phenol.png", width=400, height=300)
 
 Inspect atoms and bonds:
 
@@ -65,7 +65,7 @@ Read and write SDF:
 .. code-block:: python
 
    mol = Molecule.read_sdf("input.sdf", coordinate_dim="auto")
-   mol.write_sdf("output.sdf", format="v2000")
+   mol.write_sdf("python/examples/output/output.sdf", format="v2000")
 
 Access coordinates as NumPy arrays:
 

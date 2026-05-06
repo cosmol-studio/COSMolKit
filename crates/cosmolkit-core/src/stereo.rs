@@ -139,6 +139,7 @@ fn bond_valence_for_total_hs(bond: &Bond, atom_index: usize) -> usize {
         BondOrder::Double => 2,
         BondOrder::Triple => 3,
         BondOrder::Quadruple => 4,
+        BondOrder::Hydrogen => 0,
         BondOrder::Null => 0,
     }
 }

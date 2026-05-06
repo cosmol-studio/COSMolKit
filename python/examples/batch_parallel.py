@@ -15,12 +15,17 @@ smiles = [
     "CC(=O)O",
 ]
 
-batch = MoleculeBatch.from_smiles_list(
-    smiles,
-    errors=BatchErrorMode.KEEP,
-).with_parallel_jobs(4)
+batch = (
+    MoleculeBatch.from_smiles_list(
+        smiles,
+        errors=BatchErrorMode.KEEP,
+    )
+    .with_parallel_jobs(4)
+    .with_progress_bar(True)
+)
 print("records:", len(batch))
 print("parallel jobs:", batch.parallel_jobs())
+print("progress bar:", batch.progress_bar())
 print("valid mask:", batch.valid_mask())
 for error in batch.errors():
     if error.error_type() == BatchErrorType.SMILES_PARSE:
@@ -47,7 +52,7 @@ print("valid molecule count from to_list:", len(valid_molecules))
 print("tail smiles:", prepared[2:].to_smiles_list())
 print("valid smiles:", prepared[prepared.valid_mask()].to_smiles_list())
 
-svgs = prepared.to_svg_list(width=320, height=240)
+svgs = prepared.to_svg_list(width=320, height=240, progress_bar=False)
 print("svg count:", sum(svg is not None for svg in svgs))
 
 image_report = prepared.to_images(

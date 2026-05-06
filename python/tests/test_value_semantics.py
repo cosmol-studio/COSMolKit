@@ -5,6 +5,14 @@ import numpy as np
 import pytest
 
 
+def assert_coordinate_rows_match_atoms(mol: cosmolkit.Molecule) -> None:
+    atom_count = len(mol)
+    if mol.has_2d_coords():
+        assert mol.coords_2d().shape == (atom_count, 3)
+    for conformer_index in range(mol.num_conformers()):
+        assert mol.coords_3d(conformer_index).shape == (atom_count, 3)
+
+
 def test_with_2d_coords_returns_new_molecule_without_mutating_input():
     mol = cosmolkit.Molecule.from_smiles("CCO")
 
@@ -39,7 +47,7 @@ M  END
 $$$$
 """
     with pytest.raises(ValueError, match="sanitize=False is not implemented for SDF"):
-        cosmolkit.Molecule.read_sdf_record_from_str(sdf, sanitize=False)
+        cosmolkit.Molecule.read_sdf_from_str(sdf, sanitize=False)
 
 
 def test_sanitize_strict_false_is_not_silently_ignored():
@@ -75,6 +83,59 @@ def test_structural_array_access_returns_numpy_arrays():
     assert coords.shape == (3, 3)
     assert isinstance(bounds, np.ndarray)
     assert bounds.shape == (3, 3)
+
+
+def test_sdf_string_export_is_explicit_about_2d_or_3d_coordinates():
+    mol = cosmolkit.Molecule.from_smiles("CCO")
+
+    sdf_text = mol.to_2d_sdf_string(format="v2000")
+    assert "2D" in sdf_text.splitlines()[1]
+    assert not mol.has_2d_coords()
+    assert "V2000" in mol.to_2d_sdf_string(format="v2000", include_stereo=False)
+    aromatic_sdf = cosmolkit.Molecule.from_smiles("c1ccccc1").to_2d_sdf_string(
+        format="v2000", kekulize=False
+    )
+    assert "  4  0" in aromatic_sdf
+
+    with pytest.raises(ValueError, match="3D coordinates are required"):
+        mol.to_3d_sdf_string(format="v2000")
+
+    methane_3d = """methane_3d
+  COSMolKit      3D
+
+  5  4  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.6291    0.6291    0.6291 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.6291   -0.6291    0.6291 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.6291    0.6291   -0.6291 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.6291   -0.6291   -0.6291 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  1  3  1  0
+  1  4  1  0
+  1  5  1  0
+M  END
+$$$$
+"""
+    mol_3d = cosmolkit.Molecule.read_sdf_from_str(methane_3d, coordinate_dim="3d")
+    assert "3D" in mol_3d.to_3d_sdf_string(format="v2000").splitlines()[1]
+    assert "2D" in mol_3d.to_2d_sdf_string(format="v2000").splitlines()[1]
+    assert mol_3d.num_conformers() == 1
+    assert not mol_3d.has_2d_coords()
+
+
+def test_molfile_read_matches_single_record_without_sdf_separator(tmp_path: Path):
+    mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coords()
+    mol_text = mol.to_2d_sdf_string(format="v2000").replace("$$$$\n", "")
+
+    parsed = cosmolkit.Molecule.read_mol_from_str(mol_text, coordinate_dim="2d")
+    assert parsed.to_smiles() == "CCO"
+    assert parsed.has_2d_coords()
+
+    path = tmp_path / "ethanol.mol"
+    path.write_text(mol_text, encoding="utf-8")
+    from_file = cosmolkit.Molecule.read_mol(str(path), coordinate_dim="2d")
+    assert from_file.to_smiles() == "CCO"
+    assert from_file.has_2d_coords()
 
 
 def test_structural_array_access_supports_numpy_operations():
@@ -125,12 +186,14 @@ def test_read_sdf_from_str_helpers_return_molecules():
 M  END
 $$$$
 """
-    one = cosmolkit.Molecule.read_sdf_record_from_str(sdf)
-    many = cosmolkit.Molecule.read_sdf_records_from_str(sdf)
+    one = cosmolkit.Molecule.read_sdf_from_str(sdf)
+    many = cosmolkit.MoleculeBatch.read_sdf_records_from_str(sdf)
 
     assert len(one) == 2
     assert len(many) == 1
-    assert len(many[0]) == 2
+    first_many = many[0]
+    assert first_many is not None
+    assert len(first_many) == 2
 
 
 def test_read_sdf_coordinate_dim_can_be_forced():
@@ -142,11 +205,86 @@ def test_read_sdf_coordinate_dim_can_be_forced():
 M  END
 $$$$
 """
-    mol_2d = cosmolkit.Molecule.read_sdf_record_from_str(sdf, coordinate_dim="2d")
-    mol_3d = cosmolkit.Molecule.read_sdf_record_from_str(sdf, coordinate_dim="3d")
+    mol_2d = cosmolkit.Molecule.read_sdf_from_str(sdf, coordinate_dim="2d")
+    mol_3d = cosmolkit.Molecule.read_sdf_from_str(sdf, coordinate_dim="3d")
 
     assert mol_2d.coords_2d().shape == (1, 3)
     assert np.allclose(mol_3d.coords_3d(), np.array([[0.0, 0.0, 0.0]]))
+
+
+def test_without_hydrogens_filters_coordinate_rows_for_removed_atoms():
+    sdf = """interleaved_h
+  COSMolKit  3D
+
+  4  3  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.0000    0.0000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+    2.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+    3.0000    0.0000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  1  3  1  0
+  3  4  1  0
+M  END
+$$$$
+"""
+    mol_3d = cosmolkit.Molecule.read_sdf_from_str(sdf, coordinate_dim="3d")
+    removed_3d = mol_3d.without_hydrogens(sanitize=False)
+
+    assert len(removed_3d) == 2
+    assert removed_3d.coords_3d().shape == (2, 3)
+    assert np.allclose(removed_3d.coords_3d(), np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]))
+
+    mol_2d = cosmolkit.Molecule.read_sdf_from_str(sdf, coordinate_dim="2d")
+    removed_2d = mol_2d.without_hydrogens(sanitize=False)
+
+    assert len(removed_2d) == 2
+    assert removed_2d.coords_2d().shape == (2, 3)
+    assert np.allclose(removed_2d.coords_2d(), np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]))
+
+    both = mol_3d.with_2d_coords().without_hydrogens(sanitize=False)
+    assert len(both) == 2
+    assert both.coords_2d().shape == (2, 3)
+    assert both.coords_3d().shape == (2, 3)
+
+
+def test_public_transforms_keep_coordinate_rows_aligned_with_atoms():
+    base_2d = cosmolkit.Molecule.from_smiles("CCO").with_2d_coords()
+    assert_coordinate_rows_match_atoms(base_2d)
+    assert_coordinate_rows_match_atoms(base_2d.with_hydrogens())
+    assert_coordinate_rows_match_atoms(base_2d.sanitize())
+
+    benzene = cosmolkit.Molecule.from_smiles("c1ccccc1").with_2d_coords()
+    assert_coordinate_rows_match_atoms(benzene.with_kekulized_bonds(sanitize=False))
+
+    sdf = """interleaved_h
+  COSMolKit  3D
+
+  4  3  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.0000    0.0000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+    2.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+    3.0000    0.0000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  1  3  1  0
+  3  4  1  0
+M  END
+$$$$
+"""
+    base_3d = cosmolkit.Molecule.read_sdf_from_str(sdf, coordinate_dim="3d")
+    assert_coordinate_rows_match_atoms(base_3d)
+    assert_coordinate_rows_match_atoms(base_3d.without_hydrogens(sanitize=False))
+
+    base_both = base_3d.with_2d_coords()
+    assert_coordinate_rows_match_atoms(base_both)
+    assert_coordinate_rows_match_atoms(base_both.without_hydrogens(sanitize=False))
+
+    batch = cosmolkit.MoleculeBatch.read_sdf_records_from_str(
+        sdf, coordinate_dim="3d", errors="raise", n_jobs=2
+    )
+    batch_removed = batch.remove_hydrogens(errors="raise", n_jobs=2)
+    first_removed = batch_removed[0]
+    assert first_removed is not None
+    assert_coordinate_rows_match_atoms(first_removed)
 
 
 def test_molecule_batch_processes_in_order_and_preserves_single_molecule_inputs():
@@ -175,7 +313,8 @@ def test_molecule_to_smiles_exposes_writer_options():
     assert ethanol.to_smiles(all_hs_explicit=True) == "[CH3][CH2][OH]"
     assert ethanol.to_smiles(canonical=False, rooted_at_atom=2) == "OCC"
     assert mapped.to_smiles(canonical=False) == "[CH3:7][OH:2]"
-    assert mapped.to_smiles(ignore_atom_map_numbers=True) == "OC"
+    assert mapped.to_smiles(canonical=False, ignore_atom_map_numbers=True) == "CO"
+    assert mapped.to_smiles(ignore_atom_map_numbers=True) == "[CH3:7][OH:2]"
 
 
 def test_molecule_batch_parallel_jobs_are_value_style_and_inherited():
@@ -187,10 +326,25 @@ def test_molecule_batch_parallel_jobs_are_value_style_and_inherited():
     assert batch.parallel_jobs() is None
     assert configured.parallel_jobs() == 2
     assert prepared.parallel_jobs() == 2
-    assert prepared.to_smiles_list(n_jobs=1)[0].startswith("[H]O")
+    first_smiles = prepared.to_smiles_list(n_jobs=1)[0]
+    assert first_smiles is not None
+    assert first_smiles.startswith("[H]O")
     assert configured.with_parallel_jobs(None).parallel_jobs() is None
     with pytest.raises(ValueError, match="n_jobs must be >= 1"):
         batch.with_parallel_jobs(0)
+
+
+def test_molecule_batch_progress_bar_is_value_style_and_overridable():
+    batch = cosmolkit.MoleculeBatch.from_smiles_list(["CCO", "CC"], errors="keep")
+
+    configured = batch.with_progress_bar(True)
+    prepared = configured.compute_2d_coords(errors="keep", progress_bar=False)
+
+    assert batch.progress_bar() is None
+    assert configured.progress_bar() is True
+    assert prepared.progress_bar() is True
+    assert configured.with_progress_bar(None).progress_bar() is None
+    assert prepared.to_smiles_list(progress_bar=False) == ["CCO", "CC"]
 
 
 def test_molecule_batch_to_list_indexing_and_iteration_return_molecules_or_none():
@@ -203,8 +357,12 @@ def test_molecule_batch_to_list_indexing_and_iteration_return_molecules_or_none(
         None,
         "CC",
     ]
-    assert batch[0].to_smiles() == "CCO"
-    assert batch[-1].to_smiles() == "CC"
+    first_batch = batch[0]
+    assert first_batch is not None
+    assert first_batch.to_smiles() == "CCO"
+    last_batch = batch[-1]
+    assert last_batch is not None
+    assert last_batch.to_smiles() == "CC"
     assert batch[1] is None
     assert [value.to_smiles() if value is not None else None for value in batch] == [
         "CCO",
@@ -318,15 +476,22 @@ def test_molecule_batch_parallel_smiles_writer_options():
         "[*:1]C",
         "[13CH3:7][C@H](F)Cl",
     ]
-    assert batch.to_smiles_list(ignore_atom_map_numbers=True, n_jobs=2) == [
-        "C[*]",
-        "F[C@H](Cl)[13CH3]",
+    assert batch.to_smiles_list(
+        canonical=False, ignore_atom_map_numbers=True, n_jobs=2
+    ) == [
+        "*C",
+        "[13CH3][C@H](F)Cl",
     ]
-    assert batch.to_smiles_list(all_bonds_explicit=True, n_jobs=2)[0] == "C-[*:1]"
-    assert batch.to_smiles_list(rooted_at_atom=0, n_jobs=2) == [
+    assert batch.to_smiles_list(ignore_atom_map_numbers=True, n_jobs=2) == [
         "[*:1]C",
         "[13CH3:7][C@H](F)Cl",
     ]
+    assert batch.to_smiles_list(all_bonds_explicit=True, n_jobs=2)[0] == "C-[*:1]"
+    with pytest.raises(cosmolkit.BatchValidationError, match="tetrahedral stereo"):
+        _ = batch.to_smiles_list(rooted_at_atom=0, n_jobs=2)
+    first_valid = batch.filter_valid()[0]
+    assert first_valid is not None
+    assert first_valid.to_smiles(rooted_at_atom=0) == "[*:1]C"
 
 
 def test_molecule_batch_raise_aggregates_errors():

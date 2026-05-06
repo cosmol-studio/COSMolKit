@@ -1,3 +1,7 @@
+use std::collections::BTreeMap;
+
+use crate::query::{BondQueryPredicate, QueryNode};
+
 /// Bond order for chemical edges.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum BondOrder {
@@ -7,6 +11,7 @@ pub enum BondOrder {
     Quadruple,
     Aromatic,
     Dative,
+    Hydrogen,
     Null,
 }
 
@@ -57,6 +62,7 @@ impl_enum_metadata!(
         BondOrder::Quadruple => (4, "QUADRUPLE", []),
         BondOrder::Aromatic => (5, "AROMATIC", []),
         BondOrder::Dative => (6, "DATIVE", ["DATIVEL", "DATIVER"]),
+        BondOrder::Hydrogen => (7, "HYDROGEN", []),
     ]
 );
 
@@ -66,6 +72,7 @@ pub enum BondDirection {
     None,
     EndUpRight,
     EndDownRight,
+    Unknown,
 }
 
 impl_enum_metadata!(
@@ -77,6 +84,7 @@ impl_enum_metadata!(
         BondDirection::None => (0, "NONE", []),
         BondDirection::EndUpRight => (1, "ENDUPRIGHT", []),
         BondDirection::EndDownRight => (2, "ENDDOWNRIGHT", []),
+        BondDirection::Unknown => (3, "UNKNOWN", []),
     ]
 );
 
@@ -121,4 +129,18 @@ pub struct Bond {
     pub stereo: BondStereo,
     /// Controlling atom pair for double-bond stereo, in RDKit stereo atom order.
     pub stereo_atoms: Vec<usize>,
+    /// MDL molfile query-bond code for query bonds representable by a single
+    /// V2000/V3000 bond type field.
+    pub molfile_query_bond_code: Option<u8>,
+    /// Preserved Molfile/SDF bond properties.
+    pub props: BTreeMap<String, String>,
+    /// RDKit-like query bond AST when the bond originates from a query Molfile.
+    pub query: Option<QueryNode<BondQueryPredicate>>,
+}
+
+impl Bond {
+    #[must_use]
+    pub fn prop(&self, key: &str) -> Option<&str> {
+        self.props.get(key).map(String::as_str)
+    }
 }

@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::Command;
 
 use cosmolkit_core::{
     BatchErrorMode, BatchRecord, BondOrder, BondStereo, ChiralTag as OursChiralTag, Molecule,
@@ -312,55 +311,11 @@ fn load_golden() -> Result<Vec<GoldenRecord>, TestDataError> {
 }
 
 fn ensure_golden_exists(golden_path: &PathBuf) {
-    if golden_path.exists() {
-        return;
-    }
-
-    let repo = repo_root();
-    let script = repo.join("tests/scripts/gen_rdkit_graph_features.py");
-    let smiles = repo.join("tests/smiles.smi");
-
-    let candidates = [
-        std::env::var("COSMOLKIT_PYTHON").ok(),
-        Some(repo.join(".venv/bin/python").display().to_string()),
-        Some(String::from("python3")),
-    ];
-
-    let mut last_error = String::new();
-    for candidate in candidates.iter().flatten() {
-        let output = Command::new(candidate)
-            .arg(&script)
-            .arg("--input")
-            .arg(&smiles)
-            .arg("--output")
-            .arg(golden_path)
-            .output();
-
-        match output {
-            Ok(out) if out.status.success() => return,
-            Ok(out) => {
-                last_error = format!(
-                    "python={} exit={} stderr={}",
-                    candidate,
-                    out.status,
-                    String::from_utf8_lossy(&out.stderr)
-                );
-            }
-            Err(err) => {
-                last_error = format!("python={} spawn error={}", candidate, err);
-            }
-        }
-    }
-
-    panic!(
-        "golden file missing and auto-generation failed.\n\
-         expected: {}\n\
-         tried COSMOLKIT_PYTHON, .venv/bin/python, python3.\n\
-         last error: {}\n\
-         please run:\n\
+    assert!(
+        golden_path.exists(),
+        "missing RDKit graph feature golden: {}. Generate it before running tests:\n\
          uv sync --group dev && .venv/bin/python tests/scripts/gen_rdkit_graph_features.py --input tests/smiles.smi --output tests/golden/graph_features.jsonl",
-        golden_path.display(),
-        last_error
+        golden_path.display()
     );
 }
 
@@ -406,6 +361,7 @@ fn bond_type_name(order: BondOrder) -> RdkitBondType {
         BondOrder::Quadruple => RdkitBondType::Quadruple,
         BondOrder::Aromatic => RdkitBondType::Aromatic,
         BondOrder::Dative => RdkitBondType::Dative,
+        BondOrder::Hydrogen => RdkitBondType::Hydrogen,
         BondOrder::Null => RdkitBondType::Unspecified,
     }
 }
@@ -623,6 +579,7 @@ fn bond_valence_contrib_for_atom(b: &cosmolkit_core::Bond, atom_index: usize) ->
         BondOrder::Triple => 3.0,
         BondOrder::Quadruple => 4.0,
         BondOrder::Aromatic => 1.5,
+        BondOrder::Hydrogen => 0.0,
         BondOrder::Dative => {
             if b.end_atom == atom_index {
                 1.0

@@ -73,6 +73,7 @@ fn bond_type_name(order: BondOrder) -> String {
         BondOrder::Quadruple => "QUADRUPLE".to_string(),
         BondOrder::Aromatic => "AROMATIC".to_string(),
         BondOrder::Dative => "DATIVE".to_string(),
+        BondOrder::Hydrogen => "HYDROGEN".to_string(),
         BondOrder::Null => "UNSPECIFIED".to_string(),
     }
 }
