@@ -1,4 +1,7 @@
-use crate::{Molecule, SmilesParseError, ValenceModel, assign_radicals_rdkit_2025, assign_valence};
+use crate::{
+    Molecule, SmilesParseError, ValenceAssignment, ValenceModel, assign_radicals_rdkit_2025,
+    assign_valence,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct SanitizeOps(u32);
@@ -94,6 +97,7 @@ pub(crate) fn apply_sanitize_pipeline(
     ops: SanitizeOps,
 ) -> Result<(), SanitizeError> {
     let mut original_implicit_hydrogens = None;
+    let mut post_kekulize_assignment: Option<ValenceAssignment> = None;
 
     if ops.contains(SanitizeOps::CLEANUP) {
         crate::smiles::cleanup_neutral_five_coordinate_nitrogens(mol)
@@ -123,7 +127,6 @@ pub(crate) fn apply_sanitize_pipeline(
     if ops.contains(SanitizeOps::SYMMRINGS) {
         // COSMolKit currently computes ring-derived facts on demand instead of
         // storing an RDKit-style symmetrized SSSR cache.
-        mol.rebuild_adjacency();
     }
 
     if ops.contains(SanitizeOps::KEKULIZE) {
@@ -132,12 +135,16 @@ pub(crate) fn apply_sanitize_pipeline(
     }
 
     if ops.contains(SanitizeOps::FINDRADICALS) {
-        assign_sanitized_radicals(mol)
+        let assignment = ensure_post_kekulize_assignment(mol, &mut post_kekulize_assignment)
+            .map_err(|error| SanitizeError::new(SanitizeStep::FindRadicals, error))?;
+        assign_sanitized_radicals(mol, assignment)
             .map_err(|error| SanitizeError::new(SanitizeStep::FindRadicals, error))?;
     }
 
     if ops.contains(SanitizeOps::SETAROMATICITY) {
-        crate::smiles::perceive_aromaticity(mol, &[])
+        let assignment = ensure_post_kekulize_assignment(mol, &mut post_kekulize_assignment)
+            .map_err(|error| SanitizeError::new(SanitizeStep::SetAromaticity, error))?;
+        crate::smiles::perceive_aromaticity_with_assignment(mol, &[], assignment)
             .map_err(|error| SanitizeError::new(SanitizeStep::SetAromaticity, error.to_string()))?;
         crate::smiles::prune_noncyclic_aromatic_bonds(mol);
     }
@@ -163,11 +170,6 @@ pub(crate) fn apply_sanitize_pipeline(
         ));
     }
 
-    if ops.contains(SanitizeOps::CLEANUPCHIRALITY) {
-        crate::smiles::assign_double_bond_stereo_from_directions(mol);
-        crate::smiles::cleanup_nonstereo_double_bond_dirs(mol);
-    }
-
     if ops.contains(SanitizeOps::ADJUSTHS) {
         if let Some(original_implicit_hydrogens) = original_implicit_hydrogens {
             crate::hydrogens::adjust_hydrogens_after_aromaticity_in_place(
@@ -180,9 +182,43 @@ pub(crate) fn apply_sanitize_pipeline(
     }
 
     if ops.contains(SanitizeOps::CLEANUPCHIRALITY) {
+        let cleanup_assignment = assign_valence(mol, ValenceModel::RdkitLike).ok();
+        let stereo_presence =
+            crate::stereo::legacy_stereo_cleanup_presence(mol, cleanup_assignment.as_ref());
+        let legacy_cleanup = if stereo_presence
+            .is_some_and(|presence| presence.requires_rank_work())
+        {
+            let initial_cip_ranks = if let Some(assignment) = cleanup_assignment.as_ref() {
+                crate::io::molblock::rdkit_cip_ranks_for_depict_with_assignment(mol, assignment)
+            } else {
+                crate::io::molblock::rdkit_cip_ranks_for_depict(mol)
+            };
+            crate::smiles::assign_double_bond_stereo_from_directions_with_cip_ranks(
+                mol,
+                &initial_cip_ranks,
+            );
+            crate::smiles::cleanup_nonstereo_double_bond_dirs(mol);
+            crate::stereo::analyze_legacy_stereo_cleanup_with_initial_ranks_assignment_and_presence(
+                mol,
+                &initial_cip_ranks,
+                cleanup_assignment.as_ref(),
+                stereo_presence,
+            )
+        } else {
+            crate::stereo::LegacyStereoCleanupAnalysis::empty(mol.atoms().len())
+        };
         // COSMolKit's tetrahedral cleanup examines explicit-H bookkeeping, so
-        // it must run after the RDKit-aligned H adjustment for current storage.
-        crate::smiles::cleanup_invalid_tetrahedral_stereo(mol);
+        // it runs here with the post-adjustHs state, matching RDKit's
+        // sanitizeMol() followed by assignStereochemistry() ordering.
+        let removed_explicit_hydrogen =
+            crate::smiles::cleanup_invalid_tetrahedral_stereo_with_analysis(mol, &legacy_cleanup);
+        if removed_explicit_hydrogen && ops.contains(SanitizeOps::PROPERTIES) {
+            assign_valence(mol, ValenceModel::RdkitLike).map_err(|error| {
+                SanitizeError::new(SanitizeStep::Properties, format!("{error:?}"))
+            })?;
+        }
+        crate::stereo::cache_rdkit_legacy_cip_ranks_with_analysis(mol, &legacy_cleanup);
+        return Ok(());
     }
 
     if ops.contains(SanitizeOps::PROPERTIES) {
@@ -191,7 +227,6 @@ pub(crate) fn apply_sanitize_pipeline(
     }
 
     crate::stereo::cache_rdkit_legacy_cip_ranks(mol);
-    mol.rebuild_adjacency();
     Ok(())
 }
 
@@ -259,9 +294,25 @@ mod tests {
     }
 }
 
-fn assign_sanitized_radicals(mol: &mut Molecule) -> Result<(), String> {
-    let assignment = assign_valence(mol, ValenceModel::RdkitLike)
-        .map_err(|error| format!("valence assignment failed: {error:?}"))?;
+fn ensure_post_kekulize_assignment<'a>(
+    mol: &Molecule,
+    cache: &'a mut Option<ValenceAssignment>,
+) -> Result<&'a ValenceAssignment, String> {
+    if cache.is_none() {
+        *cache = Some(
+            assign_valence(mol, ValenceModel::RdkitLike)
+                .map_err(|error| format!("valence assignment failed: {error:?}"))?,
+        );
+    }
+    Ok(cache
+        .as_ref()
+        .expect("post-kekulize valence assignment cache was just initialized"))
+}
+
+fn assign_sanitized_radicals(
+    mol: &mut Molecule,
+    assignment: &ValenceAssignment,
+) -> Result<(), String> {
     let radicals = assign_radicals_rdkit_2025(mol, &assignment.explicit_valence)
         .map_err(|error| format!("radical assignment failed: {error:?}"))?;
     for (atom, radical) in mol.atoms_mut().iter_mut().zip(radicals) {

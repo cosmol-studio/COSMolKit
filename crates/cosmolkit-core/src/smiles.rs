@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::{
-    Atom, Bond, BondDirection, BondOrder, BondStereo, ChiralTag, Molecule, SmilesParseError,
-    ValenceModel, assign_valence,
+    Atom, Bond, BondDirection, BondOrder, BondStereo, ChiralTag, ConformerStore, Molecule,
+    PropertyStore, SmilesParseError, TopologyData, ValenceModel, assign_valence,
     valence::{calculate_explicit_valence, valence_list},
 };
 
@@ -28,6 +28,58 @@ struct RingOpen {
     opening_slot: usize,
 }
 
+struct SmilesBuildState {
+    topology: TopologyData,
+}
+
+impl SmilesBuildState {
+    fn with_capacity(atom_capacity: usize, bond_capacity: usize) -> Self {
+        Self {
+            topology: TopologyData {
+                atoms: Vec::with_capacity(atom_capacity),
+                bonds: Vec::with_capacity(bond_capacity),
+                adjacency: None,
+            },
+        }
+    }
+
+    fn finish(self) -> Molecule {
+        Molecule::from_owned_blocks(
+            self.topology,
+            ConformerStore::default(),
+            PropertyStore::default(),
+        )
+    }
+
+    fn add_atom(&mut self, atom: Atom) -> usize {
+        let index = self.topology.atoms.len();
+        let mut atom = atom;
+        atom.index = index;
+        self.topology.atoms.push(atom);
+        index
+    }
+
+    fn add_bond(&mut self, bond: Bond) -> usize {
+        let index = self.topology.bonds.len();
+        let mut bond = bond;
+        bond.index = index;
+        self.topology.bonds.push(bond);
+        index
+    }
+
+    fn atoms(&self) -> &[Atom] {
+        &self.topology.atoms
+    }
+
+    fn atoms_mut(&mut self) -> &mut Vec<Atom> {
+        &mut self.topology.atoms
+    }
+
+    fn bonds(&self) -> &[Bond] {
+        &self.topology.bonds
+    }
+}
+
 pub(crate) fn parse_smiles_with_sanitize(
     smiles: &str,
     sanitize: bool,
@@ -47,7 +99,6 @@ pub(crate) fn parse_smiles_with_sanitize(
         &parser.atom_ring_closure_slots,
         &parser.ring_closure_bond_numbers,
     );
-    validate_aromatic_atoms_are_in_rings(&mol)?;
     if sanitize {
         crate::sanitize::apply_sanitize_pipeline(
             &mut mol,
@@ -55,8 +106,6 @@ pub(crate) fn parse_smiles_with_sanitize(
         )?;
     } else {
         assign_double_bond_stereo(&mut mol);
-        canonicalize_double_bond_stereo_by_cip(&mut mol);
-        mol.rebuild_adjacency();
     }
     Ok(mol)
 }
@@ -100,7 +149,13 @@ fn validate_cxsmiles_part(cx_part: Option<&str>) -> Result<(), SmilesParseError>
 /// requiring the molecule to have originated from a SMILES string.
 pub fn assign_double_bond_stereo_from_directions(mol: &mut Molecule) {
     assign_double_bond_stereo(mol);
-    canonicalize_double_bond_stereo_by_cip(mol);
+}
+
+pub(crate) fn assign_double_bond_stereo_from_directions_with_cip_ranks(
+    mol: &mut Molecule,
+    cip_ranks: &[i64],
+) {
+    assign_double_bond_stereo_with_cip_ranks_rdkit(mol, cip_ranks);
 }
 
 pub(crate) fn cleanup_nonstereo_double_bond_dirs(mol: &mut Molecule) {
@@ -426,6 +481,14 @@ fn adjust_atom_chirality_flags(
     atom_ring_closure_slots: &[Vec<Option<usize>>],
     ring_closure_bond_numbers: &[Option<u32>],
 ) {
+    if !mol.atoms().iter().any(|atom| {
+        matches!(
+            atom.chiral_tag,
+            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+        )
+    }) {
+        return;
+    }
     let assignment = assign_valence(mol, ValenceModel::RdkitLike).ok();
     for atom_idx in 0..mol.atoms().len() {
         if !matches!(
@@ -1133,6 +1196,14 @@ pub(crate) fn perceive_aromaticity(
 ) -> Result<(), SmilesParseError> {
     let assignment = assign_valence(mol, ValenceModel::RdkitLike)
         .map_err(|e| SmilesParseError::ParseError(format!("valence assignment failed: {:?}", e)))?;
+    perceive_aromaticity_with_assignment(mol, ring_closure_bonds, &assignment)
+}
+
+pub(crate) fn perceive_aromaticity_with_assignment(
+    mol: &mut Molecule,
+    ring_closure_bonds: &[usize],
+    assignment: &crate::ValenceAssignment,
+) -> Result<(), SmilesParseError> {
     let mut atom_degree = vec![0usize; mol.atoms().len()];
     for b in mol.bonds() {
         atom_degree[b.begin_atom] += 1;
@@ -1276,11 +1347,66 @@ fn has_stereo_bond_dir(direction: BondDirection) -> bool {
     )
 }
 
-fn assign_double_bond_stereo(mol: &mut Molecule) {
-    // Mirrors RDKit Chirality.cpp::setBondStereoFromDirections().
-    let cip_ranks = crate::io::molblock::rdkit_cip_ranks_for_depict(mol);
-    let bond_count = mol.bonds().len();
-    for db_idx in 0..bond_count {
+fn collect_double_bond_neighbor_dirs_rdkit(
+    mol: &Molecule,
+    atom_index: usize,
+    ref_bond_index: usize,
+    cip_ranks: &[i64],
+    has_explicit_unknown_stereo: &mut bool,
+) -> Vec<(usize, BondDirection)> {
+    let mut neighbors = Vec::new();
+    let mut seen_dir = false;
+    for bond in mol.bonds() {
+        if bond.index == ref_bond_index {
+            continue;
+        }
+        if bond.begin_atom != atom_index && bond.end_atom != atom_index {
+            continue;
+        }
+
+        if !*has_explicit_unknown_stereo && matches!(bond.direction, BondDirection::Unknown) {
+            *has_explicit_unknown_stereo = true;
+        }
+
+        let mut dir = bond.direction;
+        if has_stereo_bond_dir(dir) {
+            seen_dir = true;
+            if atom_index != bond.begin_atom {
+                dir = opposite_bond_direction(dir);
+            }
+        }
+
+        let neighbor_atom = if bond.begin_atom == atom_index {
+            bond.end_atom
+        } else {
+            bond.begin_atom
+        };
+        neighbors.push((neighbor_atom, dir));
+    }
+
+    if !seen_dir {
+        return Vec::new();
+    }
+    if neighbors.len() == 2
+        && matches!(
+            (cip_ranks.get(neighbors[0].0), cip_ranks.get(neighbors[1].0)),
+            (Some(left), Some(right)) if left == right
+        )
+    {
+        return Vec::new();
+    }
+    if !has_stereo_bond_dir(neighbors[0].1) {
+        debug_assert!(neighbors.len() > 1);
+        neighbors[0].1 = opposite_bond_direction(neighbors[1].1);
+    } else if neighbors.len() > 1 && !has_stereo_bond_dir(neighbors[1].1) {
+        neighbors[1].1 = opposite_bond_direction(neighbors[0].1);
+    }
+    neighbors
+}
+
+fn assign_double_bond_stereo_with_cip_ranks_rdkit(mol: &mut Molecule, cip_ranks: &[i64]) {
+    let mut bonds_to_clear = vec![false; mol.bonds().len()];
+    for db_idx in 0..mol.bonds().len() {
         if !matches!(mol.bonds()[db_idx].order, BondOrder::Double) {
             continue;
         }
@@ -1289,176 +1415,116 @@ fn assign_double_bond_stereo(mol: &mut Molecule) {
             mol.bonds_mut()[db_idx].stereo_atoms.clear();
             continue;
         }
+
         let begin = mol.bonds()[db_idx].begin_atom;
         let end = mol.bonds()[db_idx].end_atom;
-        if has_equal_ranked_double_bond_substituents(mol, begin, end, &cip_ranks)
-            || has_equal_ranked_double_bond_substituents(mol, end, begin, &cip_ranks)
-        {
+        let begin_degree = mol
+            .bonds()
+            .iter()
+            .filter(|bond| bond.begin_atom == begin || bond.end_atom == begin)
+            .count();
+        let end_degree = mol
+            .bonds()
+            .iter()
+            .filter(|bond| bond.begin_atom == end || bond.end_atom == end)
+            .count();
+        if !matches!(begin_degree, 2 | 3) || !matches!(end_degree, 2 | 3) {
+            continue;
+        }
+
+        let mut has_explicit_unknown_stereo = false;
+        let begin_neighbors = collect_double_bond_neighbor_dirs_rdkit(
+            mol,
+            begin,
+            db_idx,
+            cip_ranks,
+            &mut has_explicit_unknown_stereo,
+        );
+        let end_neighbors = collect_double_bond_neighbor_dirs_rdkit(
+            mol,
+            end,
+            db_idx,
+            cip_ranks,
+            &mut has_explicit_unknown_stereo,
+        );
+        if begin_neighbors.is_empty() || end_neighbors.is_empty() {
+            continue;
+        }
+
+        let conflicting_begin =
+            begin_neighbors.len() == 2 && begin_neighbors[0].1 == begin_neighbors[1].1;
+        let conflicting_end = end_neighbors.len() == 2 && end_neighbors[0].1 == end_neighbors[1].1;
+        if conflicting_begin || conflicting_end {
             mol.bonds_mut()[db_idx].stereo = BondStereo::None;
             mol.bonds_mut()[db_idx].stereo_atoms.clear();
+            if conflicting_begin {
+                if let Some(conflict_bond) = mol.bonds().iter().find(|bond| {
+                    (bond.begin_atom == begin_neighbors[0].0 && bond.end_atom == begin)
+                        || (bond.begin_atom == begin && bond.end_atom == begin_neighbors[0].0)
+                }) {
+                    bonds_to_clear[conflict_bond.index] = true;
+                }
+                if let Some(conflict_bond) = mol.bonds().iter().find(|bond| {
+                    (bond.begin_atom == begin_neighbors[1].0 && bond.end_atom == begin)
+                        || (bond.begin_atom == begin && bond.end_atom == begin_neighbors[1].0)
+                }) {
+                    bonds_to_clear[conflict_bond.index] = true;
+                }
+            }
+            if conflicting_end {
+                if let Some(conflict_bond) = mol.bonds().iter().find(|bond| {
+                    (bond.begin_atom == end_neighbors[0].0 && bond.end_atom == end)
+                        || (bond.begin_atom == end && bond.end_atom == end_neighbors[0].0)
+                }) {
+                    bonds_to_clear[conflict_bond.index] = true;
+                }
+                if let Some(conflict_bond) = mol.bonds().iter().find(|bond| {
+                    (bond.begin_atom == end_neighbors[1].0 && bond.end_atom == end)
+                        || (bond.begin_atom == end && bond.end_atom == end_neighbors[1].0)
+                }) {
+                    bonds_to_clear[conflict_bond.index] = true;
+                }
+            }
             continue;
         }
 
-        let begin_control = mol.bonds().iter().enumerate().find_map(|(idx, bond)| {
-            if idx == db_idx || matches!(bond.order, BondOrder::Double) {
-                return None;
-            }
-            if !has_stereo_bond_dir(bond.direction) {
-                return None;
-            }
-            if bond.begin_atom == begin {
-                let mut dir = bond.direction;
-                // RDKit begin-side rule: flip if the directed bond begins at
-                // the begin atom of the stereo double bond.
-                if bond.begin_atom == begin {
-                    dir = opposite_bond_direction(dir);
-                }
-                Some((bond.end_atom, dir))
-            } else if bond.end_atom == begin {
-                Some((bond.begin_atom, bond.direction))
-            } else {
-                None
-            }
-        });
-
-        let end_control = mol.bonds().iter().enumerate().find_map(|(idx, bond)| {
-            if idx == db_idx || matches!(bond.order, BondOrder::Double) {
-                return None;
-            }
-            if !has_stereo_bond_dir(bond.direction) {
-                return None;
-            }
-            if bond.begin_atom == end {
-                Some((bond.end_atom, bond.direction))
-            } else if bond.end_atom == end {
-                let mut dir = bond.direction;
-                // RDKit end-side rule: flip if the directed bond ends at the
-                // end atom of the stereo double bond.
-                if bond.end_atom == end {
-                    dir = opposite_bond_direction(dir);
-                }
-                Some((bond.begin_atom, dir))
-            } else {
-                None
-            }
-        });
-
-        let (Some((begin_atom, begin_dir)), Some((end_atom, end_dir))) =
-            (begin_control, end_control)
-        else {
-            continue;
+        let (begin_ctrl, begin_dir) = if begin_neighbors.len() == 1
+            || cip_ranks[begin_neighbors[0].0] > cip_ranks[begin_neighbors[1].0]
+        {
+            begin_neighbors[0]
+        } else {
+            begin_neighbors[1]
+        };
+        let (end_ctrl, end_dir) = if end_neighbors.len() == 1
+            || cip_ranks[end_neighbors[0].0] > cip_ranks[end_neighbors[1].0]
+        {
+            end_neighbors[0]
+        } else {
+            end_neighbors[1]
         };
 
-        mol.bonds_mut()[db_idx].stereo_atoms = vec![begin_atom, end_atom];
-        // RDKit: equal directional markers means trans, different means cis.
-        mol.bonds_mut()[db_idx].stereo = if begin_dir == end_dir {
-            BondStereo::Trans
-        } else {
+        mol.bonds_mut()[db_idx].stereo_atoms = vec![begin_ctrl, end_ctrl];
+        mol.bonds_mut()[db_idx].stereo = if has_explicit_unknown_stereo {
+            BondStereo::Any
+        } else if begin_dir == end_dir {
             BondStereo::Cis
-        };
-    }
-}
-
-fn has_equal_ranked_double_bond_substituents(
-    mol: &Molecule,
-    atom_index: usize,
-    skip_atom_index: usize,
-    cip_ranks: &[i64],
-) -> bool {
-    let neighbors: Vec<usize> = mol
-        .bonds()
-        .iter()
-        .filter_map(|bond| {
-            let nbr = if bond.begin_atom == atom_index {
-                bond.end_atom
-            } else if bond.end_atom == atom_index {
-                bond.begin_atom
-            } else {
-                return None;
-            };
-            (nbr != skip_atom_index).then_some(nbr)
-        })
-        .collect();
-    neighbors.len() == 2
-        && matches!(
-            (cip_ranks.get(neighbors[0]), cip_ranks.get(neighbors[1])),
-            (Some(left), Some(right)) if left == right
-        )
-}
-
-fn highest_cip_neighbor_excluding(
-    mol: &Molecule,
-    atom_index: usize,
-    skip_atom_index: usize,
-    cip_ranks: &[i64],
-) -> Option<usize> {
-    let mut best_atom = None::<usize>;
-    let mut best_rank = i64::MIN;
-    for bond in mol.bonds() {
-        let nbr = if bond.begin_atom == atom_index {
-            bond.end_atom
-        } else if bond.end_atom == atom_index {
-            bond.begin_atom
         } else {
-            continue;
+            BondStereo::Trans
         };
-        if nbr == skip_atom_index {
-            continue;
-        }
-        let rank = *cip_ranks.get(nbr)?;
-        if best_atom.is_none() || rank > best_rank {
-            best_atom = Some(nbr);
-            best_rank = rank;
-        } else if rank == best_rank {
-            // Mirrors RDKit findHighestCIPNeighbor(): ties invalidate result.
-            best_atom = None;
+    }
+
+    for (bond_index, should_clear) in bonds_to_clear.into_iter().enumerate() {
+        if should_clear {
+            mol.bonds_mut()[bond_index].direction = BondDirection::None;
         }
     }
-    best_atom
 }
 
-fn canonicalize_double_bond_stereo_by_cip(mol: &mut Molecule) {
-    // Mirrors the post-direction double-bond stereo normalization in RDKit
-    // assignStereochemistry: controlling atoms are chosen by highest CIP rank,
-    // and cis/trans is inverted when controlling atoms flip parity.
+fn assign_double_bond_stereo(mol: &mut Molecule) {
+    // Mirrors the legacy assignBondStereoCodes() directional-bond branch for
+    // already-directed neighbors, choosing highest-ranked controlling atoms.
     let cip_ranks = crate::io::molblock::rdkit_cip_ranks_for_depict(mol);
-    for bond_idx in 0..mol.bonds().len() {
-        if !matches!(mol.bonds()[bond_idx].order, BondOrder::Double) {
-            continue;
-        }
-        if !matches!(
-            mol.bonds()[bond_idx].stereo,
-            BondStereo::Cis | BondStereo::Trans
-        ) {
-            continue;
-        }
-        let begin = mol.bonds()[bond_idx].begin_atom;
-        let end = mol.bonds()[bond_idx].end_atom;
-        let Some(begin_ctrl) = highest_cip_neighbor_excluding(mol, begin, end, &cip_ranks) else {
-            continue;
-        };
-        let Some(end_ctrl) = highest_cip_neighbor_excluding(mol, end, begin, &cip_ranks) else {
-            continue;
-        };
-
-        let mut flips = 0usize;
-        if mol.bonds()[bond_idx].stereo_atoms.len() == 2 {
-            if mol.bonds()[bond_idx].stereo_atoms[0] != begin_ctrl {
-                flips += 1;
-            }
-            if mol.bonds()[bond_idx].stereo_atoms[1] != end_ctrl {
-                flips += 1;
-            }
-        }
-        mol.bonds_mut()[bond_idx].stereo_atoms = vec![begin_ctrl, end_ctrl];
-        if flips % 2 == 1 {
-            mol.bonds_mut()[bond_idx].stereo = match mol.bonds()[bond_idx].stereo {
-                BondStereo::Cis => BondStereo::Trans,
-                BondStereo::Trans => BondStereo::Cis,
-                other => other,
-            };
-        }
-    }
+    assign_double_bond_stereo_with_cip_ranks_rdkit(mol, &cip_ranks);
 }
 
 fn cleanup_single_bond_dirs_around_nonstereo_double_bonds(mol: &mut Molecule) {
@@ -1520,20 +1586,31 @@ fn cleanup_single_bond_dirs_around_nonstereo_double_bonds(mol: &mut Molecule) {
     }
 }
 
-pub(crate) fn cleanup_invalid_tetrahedral_stereo(mol: &mut Molecule) {
+pub(crate) fn cleanup_invalid_tetrahedral_stereo_with_analysis(
+    mol: &mut Molecule,
+    analysis: &crate::stereo::LegacyStereoCleanupAnalysis,
+) -> bool {
     // Mirrors the Issue 194 cleanup branch in RDKit
     // Chirality.cpp::legacyStereoPerception()/assignStereochemistry(): if an
     // invalid chiral tag has a sole explicit H retained only for chirality,
     // clear both the tag and that explicit H.
-    let props = mol.rdkit_legacy_stereo_atom_props(false);
-    let cip_ranks = crate::io::molblock::rdkit_cip_ranks_for_depict(mol);
-    for (atom_index, props) in props.iter().enumerate() {
+    let mut removed_explicit_hydrogen = false;
+    for atom_index in 0..mol.atoms().len() {
         if matches!(mol.atoms()[atom_index].chiral_tag, ChiralTag::Unspecified)
-            || props.cip_code.is_some()
+            || analysis
+                .cip_codes
+                .get(atom_index)
+                .and_then(|code| code.as_ref())
+                .is_some()
         {
             continue;
         }
-        if has_paired_ring_stereo_candidate(mol, atom_index, &cip_ranks) {
+        if analysis
+            .paired_ring_stereo_candidates
+            .get(atom_index)
+            .copied()
+            .unwrap_or(false)
+        {
             continue;
         }
         let atom = &mut mol.atoms_mut()[atom_index];
@@ -1541,98 +1618,80 @@ pub(crate) fn cleanup_invalid_tetrahedral_stereo(mol: &mut Molecule) {
         if atom.explicit_hydrogens == 1 && atom.formal_charge == 0 && !atom.is_aromatic {
             atom.explicit_hydrogens = 0;
             atom.no_implicit = false;
+            removed_explicit_hydrogen = true;
         }
     }
+    removed_explicit_hydrogen
 }
 
-fn is_ring_stereo_candidate(mol: &Molecule, atom_index: usize, cip_ranks: &[i64]) -> bool {
-    let atom = &mol.atoms()[atom_index];
-    let mut ring_neighbors = Vec::<usize>::new();
-    let mut non_ring_neighbors = Vec::<usize>::new();
-    let mut ring_neighbor_ranks = HashSet::<i64>::new();
-    for bond in mol.bonds() {
-        let other = if bond.begin_atom == atom_index {
-            Some(bond.end_atom)
-        } else if bond.end_atom == atom_index {
-            Some(bond.begin_atom)
-        } else {
-            None
-        };
-        let Some(other) = other else {
+pub(crate) fn compute_paired_ring_stereo_candidates(
+    mol: &Molecule,
+    cip_ranks: &[i64],
+    cip_codes: &[Option<String>],
+) -> Vec<bool> {
+    let atom_count = mol.atoms().len();
+    let adjacency = crate::AdjacencyList::from_topology(atom_count, mol.bonds());
+    let mut cycle_cache = crate::stereo::StereoBondCycleCache::new(mol.bonds().len());
+    let mut ring_bond_mask = vec![false; mol.bonds().len()];
+    for bond_index in 0..mol.bonds().len() {
+        ring_bond_mask[bond_index] = cycle_cache
+            .min_cycle_size_for_bond(mol, &adjacency, bond_index)
+            .is_some();
+    }
+
+    let mut ring_candidates = vec![false; atom_count];
+    for atom_index in 0..atom_count {
+        if matches!(mol.atoms()[atom_index].chiral_tag, ChiralTag::Unspecified)
+            || cip_codes
+                .get(atom_index)
+                .and_then(|code| code.as_ref())
+                .is_some()
+        {
             continue;
-        };
-        if crate::stereo::min_cycle_size_for_bond(mol, bond.index).is_some() {
-            ring_neighbors.push(other);
-            if let Some(&rank) = cip_ranks.get(other) {
-                ring_neighbor_ranks.insert(rank);
-            }
-        } else {
-            non_ring_neighbors.push(other);
         }
+        ring_candidates[atom_index] =
+            crate::stereo::atom_is_candidate_for_ring_stereochem_with_cache(
+                mol,
+                &adjacency,
+                &mut cycle_cache,
+                atom_index,
+                cip_ranks,
+            );
     }
-    if ring_neighbors.is_empty() {
-        return false;
-    }
-    if atom.atomic_num == 7
-        && ring_neighbors.len() + non_ring_neighbors.len() == 3
-        && !mol.bonds().iter().enumerate().any(|(bond_index, bond)| {
-            (bond.begin_atom == atom_index || bond.end_atom == atom_index)
-                && crate::stereo::min_cycle_size_for_bond(mol, bond_index) == Some(3)
-        })
-        && !crate::stereo::is_atom_bridgehead(mol, atom_index)
-    {
-        return false;
-    }
-    match non_ring_neighbors.len() {
-        2 => {
-            let left = cip_ranks.get(non_ring_neighbors[0]);
-            let right = cip_ranks.get(non_ring_neighbors[1]);
-            left != right && ring_neighbors.len() != ring_neighbor_ranks.len()
-        }
-        1 => ring_neighbors.len() > ring_neighbor_ranks.len(),
-        0 => {
-            (ring_neighbors.len() == 4 && ring_neighbor_ranks.len() == 3)
-                || (ring_neighbors.len() == 3 && ring_neighbor_ranks.len() == 2)
-        }
-        _ => false,
-    }
-}
 
-fn has_paired_ring_stereo_candidate(mol: &Molecule, atom_index: usize, cip_ranks: &[i64]) -> bool {
-    if !is_ring_stereo_candidate(mol, atom_index, cip_ranks) {
-        return false;
-    }
-    let mut seen = HashSet::<usize>::new();
-    let mut queue = VecDeque::new();
-    seen.insert(atom_index);
-    queue.push_back(atom_index);
-    while let Some(current) = queue.pop_front() {
-        for bond in mol.bonds() {
-            let other = if bond.begin_atom == current {
-                Some(bond.end_atom)
-            } else if bond.end_atom == current {
-                Some(bond.begin_atom)
-            } else {
-                None
-            };
-            let Some(other) = other else {
-                continue;
-            };
-            if crate::stereo::min_cycle_size_for_bond(mol, bond.index).is_none()
-                || !seen.insert(other)
-            {
-                continue;
+    let mut out = vec![false; atom_count];
+    let mut seen = vec![false; atom_count];
+    for atom_index in 0..atom_count {
+        if seen[atom_index] || !ring_candidates[atom_index] {
+            continue;
+        }
+        let mut queue = VecDeque::from([atom_index]);
+        let mut component_atoms = Vec::new();
+        seen[atom_index] = true;
+        while let Some(current) = queue.pop_front() {
+            component_atoms.push(current);
+            for neighbor in adjacency.neighbors_of(current) {
+                if !ring_bond_mask[neighbor.bond_index] {
+                    continue;
+                }
+                let other = neighbor.atom_index;
+                if !seen[other] {
+                    seen[other] = true;
+                    queue.push_back(other);
+                }
             }
-            if other != atom_index
-                && !matches!(mol.atoms()[other].chiral_tag, ChiralTag::Unspecified)
-                && is_ring_stereo_candidate(mol, other, cip_ranks)
-            {
-                return true;
+        }
+        let component_candidates: Vec<usize> = component_atoms
+            .into_iter()
+            .filter(|&idx| ring_candidates[idx])
+            .collect();
+        if component_candidates.len() >= 2 {
+            for idx in component_candidates {
+                out[idx] = true;
             }
-            queue.push_back(other);
         }
     }
-    false
+    out
 }
 
 pub(crate) fn prune_noncyclic_aromatic_bonds(mol: &mut Molecule) {
@@ -1709,82 +1768,6 @@ pub(crate) fn prune_noncyclic_aromatic_bonds(mol: &mut Molecule) {
     }
 }
 
-fn validate_aromatic_atoms_are_in_rings(mol: &Molecule) -> Result<(), SmilesParseError> {
-    // Mirror RDKit sanitize behavior for obvious aromatic-invalid inputs:
-    // aromatic atoms must belong to at least one cycle (ring).
-    let n = mol.atoms().len();
-    if n == 0 || mol.bonds().is_empty() {
-        return Ok(());
-    }
-
-    let mut adj: Vec<Vec<(usize, usize)>> = vec![Vec::new(); n];
-    for (bi, b) in mol.bonds().iter().enumerate() {
-        adj[b.begin_atom].push((b.end_atom, bi));
-        adj[b.end_atom].push((b.begin_atom, bi));
-    }
-
-    // Tarjan bridges: an edge is in a ring iff it is not a bridge.
-    let mut disc = vec![usize::MAX; n];
-    let mut low = vec![usize::MAX; n];
-    let mut time = 0usize;
-    let mut is_bridge = vec![false; mol.bonds().len()];
-
-    fn dfs(
-        u: usize,
-        parent_edge: Option<usize>,
-        adj: &[Vec<(usize, usize)>],
-        disc: &mut [usize],
-        low: &mut [usize],
-        time: &mut usize,
-        is_bridge: &mut [bool],
-    ) {
-        disc[u] = *time;
-        low[u] = *time;
-        *time += 1;
-        for &(v, eidx) in &adj[u] {
-            if Some(eidx) == parent_edge {
-                continue;
-            }
-            if disc[v] == usize::MAX {
-                dfs(v, Some(eidx), adj, disc, low, time, is_bridge);
-                low[u] = low[u].min(low[v]);
-                if low[v] > disc[u] {
-                    is_bridge[eidx] = true;
-                }
-            } else {
-                low[u] = low[u].min(disc[v]);
-            }
-        }
-    }
-
-    for u in 0..n {
-        if disc[u] == usize::MAX {
-            dfs(
-                u,
-                None,
-                &adj,
-                &mut disc,
-                &mut low,
-                &mut time,
-                &mut is_bridge,
-            );
-        }
-    }
-
-    for a in 0..n {
-        if !mol.atoms()[a].is_aromatic {
-            continue;
-        }
-        let in_ring = adj[a].iter().any(|&(_, eidx)| !is_bridge[eidx]);
-        if !in_ring {
-            return Err(SmilesParseError::ParseError(
-                "non-ring atom marked aromatic".to_string(),
-            ));
-        }
-    }
-    Ok(())
-}
-
 struct Parser<'a> {
     input: &'a str,
     pos: usize,
@@ -1797,20 +1780,22 @@ struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     fn new(input: &'a str) -> Self {
+        let topology_capacity = input.len().saturating_div(2).max(1);
+        let ring_capacity = input.len().saturating_div(4);
         Self {
             input,
             pos: 0,
-            ring_opens: HashMap::new(),
-            ring_closure_bonds: Vec::new(),
-            ring_closure_bond_numbers: Vec::new(),
-            smiles_start_atoms: Vec::new(),
-            atom_ring_closure_slots: Vec::new(),
+            ring_opens: HashMap::with_capacity(ring_capacity),
+            ring_closure_bonds: Vec::with_capacity(ring_capacity),
+            ring_closure_bond_numbers: Vec::with_capacity(ring_capacity),
+            smiles_start_atoms: Vec::with_capacity(topology_capacity),
+            atom_ring_closure_slots: Vec::with_capacity(topology_capacity),
         }
     }
 
     fn add_atom_with_tracking(
         &mut self,
-        mol: &mut Molecule,
+        mol: &mut SmilesBuildState,
         atom: Atom,
         smiles_start: bool,
     ) -> usize {
@@ -1827,7 +1812,8 @@ impl<'a> Parser<'a> {
 
     fn parse_molecule(&mut self) -> Result<Molecule, SmilesParseError> {
         self.skip_ascii_whitespace();
-        let mut mol = Molecule::new();
+        let topology_capacity = self.input.len().saturating_div(2).max(1);
+        let mut mol = SmilesBuildState::with_capacity(topology_capacity, topology_capacity);
         let first_atom = self.parse_atom()?;
         let current = self.add_atom_with_tracking(&mut mol, first_atom, true);
         self.parse_chain(&mut mol, current)?;
@@ -1839,7 +1825,7 @@ impl<'a> Parser<'a> {
         if !self.ring_opens.is_empty() {
             return Err(self.error("unclosed ring"));
         }
-        Ok(mol)
+        Ok(mol.finish())
     }
 
     fn reorder_ring_closure_bonds(&mut self, mol: &mut Molecule) {
@@ -1847,13 +1833,16 @@ impl<'a> Parser<'a> {
             return;
         }
 
-        let ring_set: HashSet<usize> = self.ring_closure_bonds.iter().copied().collect();
+        let mut is_ring_closure_bond = vec![false; mol.bonds().len()];
+        for &bond_idx in &self.ring_closure_bonds {
+            is_ring_closure_bond[bond_idx] = true;
+        }
         let mut old_order = Vec::with_capacity(mol.bonds().len());
         old_order.extend(
             mol.bonds()
                 .iter()
                 .map(|bond| bond.index)
-                .filter(|idx| !ring_set.contains(idx)),
+                .filter(|idx| !is_ring_closure_bond[*idx]),
         );
 
         let mut closures = self.ring_closure_bonds.clone();
@@ -1873,12 +1862,17 @@ impl<'a> Parser<'a> {
             old_to_new[old_idx] = new_idx;
         }
 
-        let old_bonds = mol.bonds().to_vec();
+        let mut old_bonds: Vec<Option<crate::Bond>> = std::mem::take(mol.bonds_mut())
+            .into_iter()
+            .map(Some)
+            .collect();
         *mol.bonds_mut() = old_order
             .iter()
             .enumerate()
             .map(|(new_idx, &old_idx)| {
-                let mut bond = old_bonds[old_idx].clone();
+                let mut bond = old_bonds[old_idx]
+                    .take()
+                    .expect("bond reorder mapping should use each original bond once");
                 bond.index = new_idx;
                 bond
             })
@@ -1890,7 +1884,7 @@ impl<'a> Parser<'a> {
             .map(|&old_idx| old_to_new[old_idx])
             .collect();
 
-        let old_numbers = self.ring_closure_bond_numbers.clone();
+        let old_numbers = std::mem::take(&mut self.ring_closure_bond_numbers);
         self.ring_closure_bond_numbers = vec![None; mol.bonds().len()];
         for (old_idx, maybe_number) in old_numbers.into_iter().enumerate() {
             if let Some(number) = maybe_number {
@@ -1909,7 +1903,7 @@ impl<'a> Parser<'a> {
 
     fn parse_chain(
         &mut self,
-        mol: &mut Molecule,
+        mol: &mut SmilesBuildState,
         mut current_atom: usize,
     ) -> Result<(), SmilesParseError> {
         loop {
@@ -1961,7 +1955,7 @@ impl<'a> Parser<'a> {
 
     fn handle_ring_closure(
         &mut self,
-        mol: &mut Molecule,
+        mol: &mut SmilesBuildState,
         current_atom: usize,
         bond: PendingBond,
         ring_number: u32,
@@ -2061,7 +2055,7 @@ impl<'a> Parser<'a> {
 
     fn add_resolved_bond(
         &self,
-        mol: &mut Molecule,
+        mol: &mut SmilesBuildState,
         begin_atom: usize,
         end_atom: usize,
         pending: PendingBond,

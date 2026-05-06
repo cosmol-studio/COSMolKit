@@ -62,6 +62,18 @@ impl Molecule {
         Self::default()
     }
 
+    pub(crate) fn from_owned_blocks(
+        topology: TopologyData,
+        conformers: ConformerStore,
+        props: PropertyStore,
+    ) -> Self {
+        Self {
+            topology: Arc::new(topology),
+            conformers: Arc::new(conformers),
+            props: Arc::new(props),
+        }
+    }
+
     /// Add one atom and return its assigned index.
     pub fn add_atom(&mut self, atom: Atom) -> usize {
         let index = self.atoms().len();

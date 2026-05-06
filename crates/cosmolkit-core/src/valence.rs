@@ -38,14 +38,44 @@ pub fn rdkit_valence_list(atomic_num: u8) -> Option<&'static [i32]> {
     valence_list(atomic_num)
 }
 
-fn is_aromatic_atom(molecule: &Molecule, atom_index: usize) -> bool {
-    if molecule.atoms()[atom_index].is_aromatic {
-        return true;
+struct ValenceContext {
+    bond_valence_sums: Vec<f64>,
+    aromatic_atoms: Vec<bool>,
+    degrees: Vec<usize>,
+}
+
+impl ValenceContext {
+    fn from_molecule(molecule: &Molecule) -> Self {
+        let mut bond_valence_sums = vec![0.0; molecule.atoms().len()];
+        let mut aromatic_atoms = molecule
+            .atoms()
+            .iter()
+            .map(|atom| atom.is_aromatic)
+            .collect::<Vec<_>>();
+        let mut degrees = vec![0usize; molecule.atoms().len()];
+
+        for bond in molecule.bonds() {
+            bond_valence_sums[bond.begin_atom] +=
+                bond_valence_contrib_for_atom(bond, bond.begin_atom);
+            bond_valence_sums[bond.end_atom] += bond_valence_contrib_for_atom(bond, bond.end_atom);
+            degrees[bond.begin_atom] += 1;
+            degrees[bond.end_atom] += 1;
+            if bond.is_aromatic {
+                aromatic_atoms[bond.begin_atom] = true;
+                aromatic_atoms[bond.end_atom] = true;
+            }
+        }
+
+        Self {
+            bond_valence_sums,
+            aromatic_atoms,
+            degrees,
+        }
     }
-    molecule
-        .bonds()
-        .iter()
-        .any(|b| (b.begin_atom == atom_index || b.end_atom == atom_index) && b.is_aromatic)
+}
+
+fn is_aromatic_atom_with_context(context: &ValenceContext, atom_index: usize) -> bool {
+    context.aromatic_atoms[atom_index]
 }
 
 fn get_effective_atomic_num(atomic_num: u8, formal_charge: i8) -> Option<u8> {
@@ -92,6 +122,16 @@ pub(crate) fn calculate_explicit_valence(
     atom_index: usize,
     strict: bool,
 ) -> Result<i32, ValenceError> {
+    let context = ValenceContext::from_molecule(molecule);
+    calculate_explicit_valence_with_context(molecule, &context, atom_index, strict)
+}
+
+fn calculate_explicit_valence_with_context(
+    molecule: &Molecule,
+    context: &ValenceContext,
+    atom_index: usize,
+    strict: bool,
+) -> Result<i32, ValenceError> {
     let atom = &molecule.atoms()[atom_index];
     let ovalens = valence_list(atom.atomic_num).ok_or(ValenceError::NotImplemented)?;
     let mut effective_atomic_num = atom.atomic_num;
@@ -106,12 +146,9 @@ pub(crate) fn calculate_explicit_valence(
     let valens = valence_list(effective_atomic_num).ok_or(ValenceError::NotImplemented)?;
     let dv = valens[0];
 
-    let mut accum = atom.explicit_hydrogens as f64;
-    for b in molecule.bonds() {
-        accum += bond_valence_contrib_for_atom(b, atom_index);
-    }
+    let mut accum = atom.explicit_hydrogens as f64 + context.bond_valence_sums[atom_index];
 
-    if accum > dv as f64 && is_aromatic_atom(molecule, atom_index) {
+    if accum > dv as f64 && is_aromatic_atom_with_context(context, atom_index) {
         let mut pval = dv;
         for &v in valens {
             if v == -1 {
@@ -150,8 +187,9 @@ pub(crate) fn calculate_explicit_valence(
     Ok(res)
 }
 
-fn calculate_implicit_valence(
+fn calculate_implicit_valence_with_context(
     molecule: &Molecule,
+    context: &ValenceContext,
     atom_index: usize,
     explicit_valence: i32,
     strict: bool,
@@ -208,7 +246,7 @@ fn calculate_implicit_valence(
         valens = valence_list(effective_atomic_num).ok_or(ValenceError::NotImplemented)?;
     }
 
-    if is_aromatic_atom(molecule, atom_index) {
+    if is_aromatic_atom_with_context(context, atom_index) {
         if explicit_plus_rad_v <= dv {
             return Ok(dv - explicit_plus_rad_v);
         }
@@ -291,6 +329,7 @@ pub fn assign_radicals_rdkit_2025(
         .iter()
         .map(|a| a.num_radical_electrons)
         .collect();
+    let context = ValenceContext::from_molecule(molecule);
 
     for (i, atom) in molecule.atoms().iter().enumerate() {
         if !atom.no_implicit || atom.atomic_num == 0 {
@@ -300,18 +339,14 @@ pub fn assign_radicals_rdkit_2025(
         let chg = atom.formal_charge as i32;
         let n_outer = n_outer_electrons(atom.atomic_num).ok_or(ValenceError::NotImplemented)?;
         let value = if valens.len() != 1 || valens[0] != -1 {
-            let total_valence = if is_aromatic_atom(molecule, i) {
+            let total_valence = if is_aromatic_atom_with_context(&context, i) {
                 // RDKit runs assignRadicals after Kekulize(). In this codebase we
                 // do not yet store a separate kekulized bond table, so we use the
                 // already-RDKit-aligned explicit valence cache as the sanitized
                 // total valence surrogate for aromatic atoms.
                 existing_explicit_valence[i] as i32
             } else {
-                let mut accum = atom.explicit_hydrogens as f64;
-                for b in molecule.bonds() {
-                    accum += bond_valence_contrib_for_atom(b, i);
-                }
-                (accum + 0.1) as i32
+                (atom.explicit_hydrogens as f64 + context.bond_valence_sums[i] + 0.1) as i32
             };
             let base_count = if atom.atomic_num == 1 || atom.atomic_num == 2 {
                 2
@@ -336,11 +371,7 @@ pub fn assign_radicals_rdkit_2025(
             }
             num_radicals
         } else {
-            let degree = molecule
-                .bonds()
-                .iter()
-                .filter(|b| b.begin_atom == i || b.end_atom == i)
-                .count();
+            let degree = context.degrees[i];
             if degree > 0 {
                 0
             } else {
@@ -368,11 +399,12 @@ pub fn assign_valence(
         return Err(ValenceError::NotImplemented);
     }
 
+    let context = ValenceContext::from_molecule(molecule);
     let mut explicit_valence = vec![0u8; molecule.atoms().len()];
     let mut implicit_hydrogens = vec![0u8; molecule.atoms().len()];
     for (i, atom) in molecule.atoms().iter().enumerate() {
-        let ev = calculate_explicit_valence(molecule, i, true)?;
-        let ih = calculate_implicit_valence(molecule, i, ev, true)?;
+        let ev = calculate_explicit_valence_with_context(molecule, &context, i, true)?;
+        let ih = calculate_implicit_valence_with_context(molecule, &context, i, ev, true)?;
         explicit_valence[i] = to_u8_checked(ev, i, atom)?;
         implicit_hydrogens[i] = to_u8_checked(ih, i, atom)?;
     }

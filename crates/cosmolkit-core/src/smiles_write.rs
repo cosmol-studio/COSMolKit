@@ -1,5 +1,6 @@
 use crate::{Atom, Bond, BondDirection, BondOrder, ChiralTag, Molecule, ValenceAssignment};
-use std::collections::BTreeSet;
+use std::borrow::Cow;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SmilesWriteParams {
@@ -46,6 +47,7 @@ struct SmilesWriteState<'a> {
     mol: &'a Molecule,
     params: &'a SmilesWriteParams,
     valence: ValenceAssignment,
+    bonded_to_metal: Vec<bool>,
 }
 
 impl<'a> SmilesWriteState<'a> {
@@ -55,10 +57,22 @@ impl<'a> SmilesWriteState<'a> {
                 "RDKit-like valence assignment required by GetAtomSmiles failed",
             )
         })?;
+        let mut bonded_to_metal = vec![false; mol.atoms().len()];
+        for bond in mol.bonds() {
+            let begin_is_metal = is_metal_atomic_num(mol.atoms()[bond.begin_atom].atomic_num);
+            let end_is_metal = is_metal_atomic_num(mol.atoms()[bond.end_atom].atomic_num);
+            if begin_is_metal && !end_is_metal {
+                bonded_to_metal[bond.end_atom] = true;
+            }
+            if end_is_metal && !begin_is_metal {
+                bonded_to_metal[bond.begin_atom] = true;
+            }
+        }
         Ok(Self {
             mol,
             params,
             valence,
+            bonded_to_metal,
         })
     }
 
@@ -124,13 +138,19 @@ impl<'a> SmilesWriteState<'a> {
         {
             return true;
         }
-        if bond_is_to_metal(self.mol, atom.index) {
+        if self.bonded_to_metal[atom.index] {
             return true;
         }
         false
     }
 
-    fn atom_smiles(&self, atom: &Atom) -> Result<String, SmilesWriteError> {
+    fn append_atom_smiles_with_overrides(
+        &self,
+        out: &mut String,
+        atom: &Atom,
+        chiral_tag_override: Option<ChiralTag>,
+        chiral_permutation_override: Option<u32>,
+    ) -> Result<(), SmilesWriteError> {
         let fc = atom.formal_charge;
         let isotope = atom.isotope;
         let mut symb = crate::periodic_table::element_symbol(atom.atomic_num)
@@ -139,7 +159,14 @@ impl<'a> SmilesWriteState<'a> {
             ))?
             .to_string();
         let at_string = if self.params.do_isomeric_smiles {
-            atom_chirality_info(atom)
+            atom_chirality_info(
+                chiral_tag_override.unwrap_or(atom.chiral_tag),
+                chiral_permutation_override.or_else(|| {
+                    atom.props
+                        .get("_chiralPermutation")
+                        .and_then(|perm| perm.parse().ok())
+                }),
+            )
         } else {
             String::new()
         };
@@ -149,14 +176,13 @@ impl<'a> SmilesWriteState<'a> {
             true
         };
 
-        let mut res = String::new();
         if needs_bracket {
-            res.push('[');
+            out.push('[');
         }
         if let Some(isotope) = isotope
             && self.params.do_isomeric_smiles
         {
-            res.push_str(&isotope.to_string());
+            out.push_str(&isotope.to_string());
         }
         if !self.params.do_kekule && atom.is_aromatic && symb.as_bytes()[0].is_ascii_uppercase() {
             match atom.atomic_num {
@@ -166,42 +192,61 @@ impl<'a> SmilesWriteState<'a> {
                 _ => {}
             }
         }
-        res.push_str(&symb);
-        res.push_str(&at_string);
+        out.push_str(&symb);
+        out.push_str(&at_string);
 
         if needs_bracket {
             let tot_num_hs = self.total_num_hs(atom.index);
             if tot_num_hs > 0 {
-                res.push('H');
+                out.push('H');
                 if tot_num_hs > 1 {
-                    res.push_str(&tot_num_hs.to_string());
+                    out.push_str(&tot_num_hs.to_string());
                 }
             }
             if fc > 0 {
-                res.push('+');
+                out.push('+');
                 if fc > 1 {
-                    res.push_str(&fc.to_string());
+                    out.push_str(&fc.to_string());
                 }
             } else if fc < 0 {
                 if fc < -1 {
-                    res.push_str(&fc.to_string());
+                    out.push_str(&fc.to_string());
                 } else {
-                    res.push('-');
+                    out.push('-');
                 }
             }
             if let Some(map_num) = atom.atom_map_num
                 && (!self.params.ignore_atom_map_numbers || self.params.canonical)
             {
-                res.push(':');
-                res.push_str(&map_num.to_string());
+                out.push(':');
+                out.push_str(&map_num.to_string());
             }
-            res.push(']');
+            out.push(']');
         }
-        Ok(res)
+        Ok(())
     }
 
-    fn bond_smiles(&self, bond: &Bond, atom_to_left_idx: Option<usize>) -> String {
-        get_bond_smiles(self.mol, bond, self.params, atom_to_left_idx)
+    fn atom_smiles(&self, atom: &Atom) -> Result<String, SmilesWriteError> {
+        let mut out = String::new();
+        self.append_atom_smiles_with_overrides(&mut out, atom, None, None)?;
+        Ok(out)
+    }
+
+    fn append_bond_smiles_with_override(
+        &self,
+        out: &mut String,
+        bond: &Bond,
+        atom_to_left_idx: Option<usize>,
+        direction_override: Option<BondDirection>,
+    ) {
+        append_bond_smiles(
+            out,
+            self.mol,
+            bond,
+            self.params,
+            atom_to_left_idx,
+            direction_override,
+        )
     }
 }
 
@@ -410,10 +455,14 @@ fn rooted_fragment_start(rooted_at_atom: Option<usize>, fragment: &[usize]) -> O
 }
 
 fn connected_components(mol: &Molecule) -> Vec<Vec<usize>> {
-    let adjacency = mol
-        .adjacency()
-        .cloned()
-        .unwrap_or_else(|| crate::AdjacencyList::from_topology(mol.atoms().len(), mol.bonds()));
+    let adjacency = if let Some(adjacency) = mol.adjacency() {
+        Cow::Borrowed(adjacency)
+    } else {
+        Cow::Owned(crate::AdjacencyList::from_topology(
+            mol.atoms().len(),
+            mol.bonds(),
+        ))
+    };
     let mut seen = vec![false; mol.atoms().len()];
     let mut out = Vec::new();
     for atom_idx in 0..mol.atoms().len() {
@@ -444,23 +493,27 @@ fn emit_fragment_smiles(
 ) -> Result<String, SmilesWriteError> {
     let mol = state.mol;
     let mut res = String::new();
-    let mut ring_closure_map = std::collections::BTreeMap::<usize, usize>::new();
+    res.reserve(traversal.mol_stack.len() * 3);
+    let mut ring_closure_map = HashMap::<usize, usize>::new();
+    let mut used_ring_closure_labels = vec![false];
     let mut ring_closures_to_erase = Vec::<usize>::new();
     for elem in &traversal.mol_stack {
         match elem {
             crate::canon_smiles::MolStackElem::Atom { atom_idx } => {
                 for key in ring_closures_to_erase.drain(..) {
-                    ring_closure_map.remove(&key);
+                    if let Some(label) = ring_closure_map.remove(&key)
+                        && label < used_ring_closure_labels.len()
+                    {
+                        used_ring_closure_labels[label] = false;
+                    }
                 }
-                let mut atom = mol.atoms()[*atom_idx].clone();
-                if let Some(tag) = traversal.chiral_tag_overrides[*atom_idx] {
-                    atom.chiral_tag = tag;
-                }
-                if let Some(perm) = traversal.chiral_permutation_overrides[*atom_idx] {
-                    atom.props
-                        .insert("_chiralPermutation".to_owned(), perm.to_string());
-                }
-                res.push_str(&state.atom_smiles(&atom)?);
+                let atom = &mol.atoms()[*atom_idx];
+                state.append_atom_smiles_with_overrides(
+                    &mut res,
+                    atom,
+                    traversal.chiral_tag_overrides[*atom_idx],
+                    traversal.chiral_permutation_overrides[*atom_idx],
+                )?;
             }
             crate::canon_smiles::MolStackElem::Bond {
                 bond_idx,
@@ -468,11 +521,13 @@ fn emit_fragment_smiles(
                 ..
             } => {
                 if *atom_to_left_idx != usize::MAX {
-                    let mut bond = mol.bonds()[*bond_idx].clone();
-                    if let Some(direction) = traversal.bond_direction_overrides[*bond_idx] {
-                        bond.direction = direction;
-                    }
-                    res.push_str(&state.bond_smiles(&bond, Some(*atom_to_left_idx)));
+                    let bond = &mol.bonds()[*bond_idx];
+                    state.append_bond_smiles_with_override(
+                        &mut res,
+                        bond,
+                        Some(*atom_to_left_idx),
+                        traversal.bond_direction_overrides[*bond_idx],
+                    );
                 }
             }
             crate::canon_smiles::MolStackElem::Ring { ring_idx } => {
@@ -480,10 +535,16 @@ fn emit_fragment_smiles(
                     ring_closures_to_erase.push(*ring_idx);
                     existing
                 } else {
-                    let used: BTreeSet<usize> = ring_closure_map.values().copied().collect();
                     let mut candidate = 1usize;
-                    while used.contains(&candidate) {
+                    while candidate < used_ring_closure_labels.len()
+                        && used_ring_closure_labels[candidate]
+                    {
                         candidate += 1;
+                    }
+                    if candidate == used_ring_closure_labels.len() {
+                        used_ring_closure_labels.push(true);
+                    } else {
+                        used_ring_closure_labels[candidate] = true;
                     }
                     ring_closure_map.insert(*ring_idx, candidate);
                     candidate
@@ -510,39 +571,22 @@ pub fn in_organic_subset(atomic_number: u8) -> bool {
     ORGANIC_SUBSET_ATOMS.contains(&atomic_number)
 }
 
-fn atom_chirality_info(atom: &Atom) -> String {
-    match atom.chiral_tag {
+fn atom_chirality_info(chiral_tag: ChiralTag, chiral_permutation: Option<u32>) -> String {
+    match chiral_tag {
         ChiralTag::TetrahedralCw => "@@".to_owned(),
         ChiralTag::TetrahedralCcw => "@".to_owned(),
         ChiralTag::TrigonalBipyramidal => {
-            let perm = atom
-                .props
-                .get("_chiralPermutation")
-                .map(String::as_str)
-                .unwrap_or("1");
-            format!("@TB{perm}")
+            format!("@TB{}", chiral_permutation.unwrap_or(1))
         }
         ChiralTag::Unspecified => String::new(),
     }
 }
 
-fn bond_is_to_metal(mol: &Molecule, atom_index: usize) -> bool {
-    mol.bonds().iter().any(|bond| {
-        let other = if bond.begin_atom == atom_index {
-            Some(bond.end_atom)
-        } else if bond.end_atom == atom_index {
-            Some(bond.begin_atom)
-        } else {
-            None
-        };
-        let Some(other) = other else {
-            return false;
-        };
-        matches!(
-            mol.atoms()[other].atomic_num,
-            3 | 4 | 11 | 12 | 13 | 19 | 20 | 21..=32 | 37..=51 | 55..=84 | 87..=116
-        )
-    })
+fn is_metal_atomic_num(atomic_num: u8) -> bool {
+    matches!(
+        atomic_num,
+        3 | 4 | 11 | 12 | 13 | 19 | 20 | 21..=32 | 37..=51 | 55..=84 | 87..=116
+    )
 }
 
 pub fn get_atom_smiles(
@@ -582,75 +626,83 @@ pub fn get_bond_smiles(
     bond: &Bond,
     params: &SmilesWriteParams,
     atom_to_left_idx: Option<usize>,
+    direction_override: Option<BondDirection>,
 ) -> String {
+    let mut out = String::new();
+    append_bond_smiles(
+        &mut out,
+        mol,
+        bond,
+        params,
+        atom_to_left_idx,
+        direction_override,
+    );
+    out
+}
+
+fn append_bond_smiles(
+    out: &mut String,
+    mol: &Molecule,
+    bond: &Bond,
+    params: &SmilesWriteParams,
+    atom_to_left_idx: Option<usize>,
+    direction_override: Option<BondDirection>,
+) {
     let atom_to_left_idx = atom_to_left_idx.unwrap_or(bond.begin_atom);
+    let direction = direction_override.unwrap_or(bond.direction);
     let aromatic = aromatic_bond_smiles_context(mol, bond, atom_to_left_idx, params);
     match bond.order {
-        BondOrder::Single => match bond.direction {
+        BondOrder::Single => match direction {
             BondDirection::EndDownRight => {
                 if params.all_bonds_explicit || params.do_isomeric_smiles {
-                    "\\".to_string()
-                } else {
-                    String::new()
+                    out.push('\\');
                 }
             }
             BondDirection::EndUpRight => {
                 if params.all_bonds_explicit || params.do_isomeric_smiles {
-                    "/".to_string()
-                } else {
-                    String::new()
+                    out.push('/');
                 }
             }
             BondDirection::None => {
                 if params.all_bonds_explicit || (aromatic && !bond.is_aromatic) {
-                    "-".to_string()
-                } else {
-                    String::new()
+                    out.push('-');
                 }
             }
-            BondDirection::Unknown => String::new(),
+            BondDirection::Unknown => {}
         },
         BondOrder::Double => {
             if !aromatic || !bond.is_aromatic || params.all_bonds_explicit {
-                "=".to_string()
-            } else {
-                String::new()
+                out.push('=');
             }
         }
-        BondOrder::Triple => "#".to_string(),
-        BondOrder::Quadruple => "$".to_string(),
-        BondOrder::Aromatic => match bond.direction {
+        BondOrder::Triple => out.push('#'),
+        BondOrder::Quadruple => out.push('$'),
+        BondOrder::Aromatic => match direction {
             BondDirection::EndDownRight => {
                 if params.all_bonds_explicit || params.do_isomeric_smiles {
-                    "\\".to_string()
-                } else {
-                    String::new()
+                    out.push('\\');
                 }
             }
             BondDirection::EndUpRight => {
                 if params.all_bonds_explicit || params.do_isomeric_smiles {
-                    "/".to_string()
-                } else {
-                    String::new()
+                    out.push('/');
                 }
             }
             BondDirection::None => {
                 if params.all_bonds_explicit || !aromatic {
-                    ":".to_string()
-                } else {
-                    String::new()
+                    out.push(':');
                 }
             }
-            BondDirection::Unknown => String::new(),
+            BondDirection::Unknown => {}
         },
         BondOrder::Dative => {
             if bond.begin_atom == atom_to_left_idx {
-                "->".to_string()
+                out.push_str("->");
             } else {
-                "<-".to_string()
+                out.push_str("<-");
             }
         }
-        BondOrder::Hydrogen => "~".to_string(),
-        BondOrder::Null => "~".to_string(),
+        BondOrder::Hydrogen => out.push('~'),
+        BondOrder::Null => out.push('~'),
     }
 }

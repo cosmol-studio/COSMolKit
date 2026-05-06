@@ -130,17 +130,20 @@ $$$$
 
 def test_editing_commit_boundary_matches_sanitize_behavior():
     invalid_editor = cosmolkit.Molecule.from_smiles("CC").edit()
-    oxygen = invalid_editor.add_atom("O")
-    hydrogen = invalid_editor.add_atom("H")
-    invalid_editor.add_bond(1, oxygen, order="double")
-    invalid_editor.add_bond(oxygen, hydrogen, order="hydrogen")
+    oxygen_a = invalid_editor.add_atom("O")
+    oxygen_b = invalid_editor.add_atom("O")
+    invalid_editor.add_bond(1, oxygen_a, order="double")
+    invalid_editor.add_bond(1, oxygen_b, order="double")
 
     with pytest.raises(ValueError, match="sanitize failed"):
         _ = invalid_editor.commit()
 
     edited = invalid_editor.commit(sanitize=False)
     assert len(edited) == 4
-    assert edited.bonds()[-1].bond_type() == cosmolkit.BondOrder.HYDROGEN
+    assert [bond.bond_type() for bond in edited.bonds()][-2:] == [
+        cosmolkit.BondOrder.DOUBLE,
+        cosmolkit.BondOrder.DOUBLE,
+    ]
 
     valid_editor = cosmolkit.Molecule.from_smiles("CC").edit()
     oxygen = valid_editor.add_atom("O")

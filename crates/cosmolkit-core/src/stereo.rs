@@ -37,6 +37,40 @@ pub struct LegacyStereoAtomProps {
     pub chirality_possible: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LegacyStereoCleanupAnalysis {
+    pub cip_ranks: Vec<Option<i64>>,
+    pub cip_codes: Vec<Option<String>>,
+    pub paired_ring_stereo_candidates: Vec<bool>,
+}
+
+impl LegacyStereoCleanupAnalysis {
+    pub(crate) fn empty(atom_count: usize) -> Self {
+        Self {
+            cip_ranks: vec![None; atom_count],
+            cip_codes: vec![None; atom_count],
+            paired_ring_stereo_candidates: vec![false; atom_count],
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct LegacyStereoPresence {
+    has_stereo_atoms: bool,
+    has_potential_stereo_atoms: bool,
+    has_stereo_bonds: bool,
+    has_potential_stereo_bonds: bool,
+}
+
+impl LegacyStereoPresence {
+    pub(crate) fn requires_rank_work(self) -> bool {
+        self.has_stereo_atoms
+            || self.has_stereo_bonds
+            || self.has_potential_stereo_atoms
+            || self.has_potential_stereo_bonds
+    }
+}
+
 fn bond_affects_atom_chirality(bond: &Bond, atom_index: usize) -> bool {
     !(matches!(bond.order, BondOrder::Null)
         || matches!(bond.order, BondOrder::Dative) && bond.begin_atom == atom_index)
@@ -425,18 +459,18 @@ fn angle_between(a: DVec3, b: DVec3) -> f64 {
     a.dot(b).clamp(-1.0, 1.0).acos()
 }
 
-struct StereoBondCycleCache {
+pub(crate) struct StereoBondCycleCache {
     min_cycle_sizes: Vec<Option<Option<usize>>>,
 }
 
 impl StereoBondCycleCache {
-    fn new(bond_count: usize) -> Self {
+    pub(crate) fn new(bond_count: usize) -> Self {
         Self {
             min_cycle_sizes: vec![None; bond_count],
         }
     }
 
-    fn min_cycle_size_for_bond(
+    pub(crate) fn min_cycle_size_for_bond(
         &mut self,
         mol: &Molecule,
         adjacency: &AdjacencyList,
@@ -557,7 +591,7 @@ fn has_ring_stereo_partner_with_cache(
     false
 }
 
-fn atom_is_candidate_for_ring_stereochem_with_cache(
+pub(crate) fn atom_is_candidate_for_ring_stereochem_with_cache(
     mol: &Molecule,
     adjacency: &AdjacencyList,
     cycle_cache: &mut StereoBondCycleCache,
@@ -983,6 +1017,97 @@ fn atom_has_directional_bond_to_other_than_with_adjacency(
     })
 }
 
+fn scan_legacy_stereo_presence(
+    mol: &Molecule,
+    adjacency: &AdjacencyList,
+    cycle_cache: &mut StereoBondCycleCache,
+    assignment: &crate::ValenceAssignment,
+    flag_possible_stereo_centers: bool,
+) -> LegacyStereoPresence {
+    let mut has_stereo_atoms = false;
+    let mut has_potential_stereo_atoms = false;
+    for atom in mol.atoms() {
+        if !has_stereo_atoms && !matches!(atom.chiral_tag, ChiralTag::Unspecified) {
+            has_stereo_atoms = true;
+        } else if flag_possible_stereo_centers && !has_potential_stereo_atoms {
+            has_potential_stereo_atoms = is_atom_potential_chiral_center_with_cache(
+                mol,
+                adjacency,
+                cycle_cache,
+                atom.index,
+                &[],
+                &assignment.explicit_valence,
+                &assignment.implicit_hydrogens,
+            )
+            .0;
+        }
+    }
+
+    let mut has_stereo_bonds = false;
+    let mut has_potential_stereo_bonds = false;
+    for (bond_index, bond) in mol.bonds().iter().enumerate() {
+        if !matches!(bond.order, BondOrder::Double) {
+            continue;
+        }
+        let is_specified = atom_has_directional_bond_to_other_than_with_adjacency(
+            mol,
+            adjacency,
+            bond.begin_atom,
+            bond.end_atom,
+        ) || atom_has_directional_bond_to_other_than_with_adjacency(
+            mol,
+            adjacency,
+            bond.end_atom,
+            bond.begin_atom,
+        );
+        if is_specified {
+            has_stereo_bonds = true;
+        } else if flag_possible_stereo_centers
+            && !has_potential_stereo_bonds
+            && cycle_cache
+                .min_cycle_size_for_bond(mol, adjacency, bond_index)
+                .is_none_or(|size| size >= 8)
+        {
+            has_potential_stereo_bonds = true;
+        }
+        if has_stereo_bonds && (!flag_possible_stereo_centers || has_potential_stereo_bonds) {
+            break;
+        }
+    }
+
+    LegacyStereoPresence {
+        has_stereo_atoms,
+        has_potential_stereo_atoms,
+        has_stereo_bonds,
+        has_potential_stereo_bonds,
+    }
+}
+
+pub(crate) fn legacy_stereo_cleanup_presence(
+    mol: &Molecule,
+    precomputed_assignment: Option<&crate::ValenceAssignment>,
+) -> Option<LegacyStereoPresence> {
+    let owned_assignment;
+    let assignment = if let Some(assignment) = precomputed_assignment {
+        assignment
+    } else {
+        owned_assignment = match assign_valence(mol, ValenceModel::RdkitLike) {
+            Ok(assignment) => assignment,
+            Err(_) => return None,
+        };
+        &owned_assignment
+    };
+    let adjacency = AdjacencyList::from_topology(mol.atoms().len(), mol.bonds());
+    let mut cycle_cache = StereoBondCycleCache::new(mol.bonds().len());
+    Some(scan_legacy_stereo_presence(
+        mol,
+        &adjacency,
+        &mut cycle_cache,
+        assignment,
+        true,
+    ))
+}
+
 fn legacy_assign_bond_stereo_would_leave_unassigned_with_cache(
     mol: &Molecule,
     adjacency: &AdjacencyList,
@@ -1022,19 +1147,6 @@ fn legacy_assign_bond_stereo_would_leave_unassigned_with_cache(
         }
     }
     false
-}
-
-pub(crate) fn is_atom_bridgehead(mol: &Molecule, atom_index: usize) -> bool {
-    if atom_nonzero_degree(mol, atom_index) < 3 {
-        return false;
-    }
-    let atom_ring_bonds = mol
-        .bonds()
-        .iter()
-        .filter(|bond| bond.begin_atom == atom_index || bond.end_atom == atom_index)
-        .filter(|bond| min_cycle_size_for_bond(mol, bond.index).is_some())
-        .count();
-    atom_ring_bonds >= 3
 }
 
 fn is_atom_potential_chiral_center_with_cache(
@@ -1179,63 +1291,18 @@ impl Molecule {
         };
         let adjacency = AdjacencyList::from_topology(self.atoms().len(), self.bonds());
         let mut cycle_cache = StereoBondCycleCache::new(self.bonds().len());
+        let presence = scan_legacy_stereo_presence(
+            self,
+            &adjacency,
+            &mut cycle_cache,
+            &assignment,
+            flag_possible_stereo_centers,
+        );
 
-        let mut has_stereo_atoms = false;
-        let mut has_potential_stereo_atoms = false;
-        for atom in self.atoms() {
-            if !has_stereo_atoms && !matches!(atom.chiral_tag, ChiralTag::Unspecified) {
-                has_stereo_atoms = true;
-            } else if flag_possible_stereo_centers && !has_potential_stereo_atoms {
-                has_potential_stereo_atoms = is_atom_potential_chiral_center_with_cache(
-                    self,
-                    &adjacency,
-                    &mut cycle_cache,
-                    atom.index,
-                    &[],
-                    &assignment.explicit_valence,
-                    &assignment.implicit_hydrogens,
-                )
-                .0;
-            }
-        }
-
-        let mut has_stereo_bonds = false;
-        let mut has_potential_stereo_bonds = false;
-        for (bond_index, bond) in self.bonds().iter().enumerate() {
-            if !matches!(bond.order, BondOrder::Double) {
-                continue;
-            }
-            let begin = bond.begin_atom;
-            let end = bond.end_atom;
-            let is_specified = self.bonds().iter().any(|other| {
-                (other.begin_atom == begin
-                    || other.end_atom == begin
-                    || other.begin_atom == end
-                    || other.end_atom == end)
-                    && matches!(
-                        other.direction,
-                        crate::BondDirection::EndUpRight | crate::BondDirection::EndDownRight
-                    )
-            });
-            if is_specified {
-                has_stereo_bonds = true;
-            } else if flag_possible_stereo_centers
-                && !has_potential_stereo_bonds
-                && cycle_cache
-                    .min_cycle_size_for_bond(self, &adjacency, bond_index)
-                    .is_none_or(|size| size >= 8)
-            {
-                has_potential_stereo_bonds = true;
-            }
-            if has_stereo_bonds && has_potential_stereo_bonds {
-                break;
-            }
-        }
-
-        let mut keep_going = has_stereo_atoms || has_stereo_bonds;
+        let mut keep_going = presence.has_stereo_atoms || presence.has_stereo_bonds;
         if !keep_going {
             keep_going = flag_possible_stereo_centers
-                && (has_potential_stereo_atoms || has_potential_stereo_bonds);
+                && (presence.has_potential_stereo_atoms || presence.has_potential_stereo_bonds);
         }
         if !keep_going {
             return vec![
@@ -1335,10 +1402,164 @@ impl Molecule {
     }
 }
 
+pub(crate) fn legacy_cip_code_for_atom_with_cache(
+    mol: &Molecule,
+    adjacency: &AdjacencyList,
+    cycle_cache: &mut StereoBondCycleCache,
+    assignment: &crate::ValenceAssignment,
+    ranks: &[i64],
+    atom_index: usize,
+) -> Option<String> {
+    let atom = &mol.atoms()[atom_index];
+    if matches!(atom.chiral_tag, ChiralTag::Unspecified) {
+        return None;
+    }
+
+    let (legal_center, has_dupes, mut nbrs) = is_atom_potential_chiral_center_with_cache(
+        mol,
+        adjacency,
+        cycle_cache,
+        atom_index,
+        ranks,
+        &assignment.explicit_valence,
+        &assignment.implicit_hydrogens,
+    );
+    if !legal_center || has_dupes {
+        return None;
+    }
+
+    nbrs.sort();
+    let probe: Vec<usize> = nbrs.into_iter().map(|(_, bond_index)| bond_index).collect();
+    let mut swaps = perturbation_order_for_atom_with_adjacency(adjacency, atom_index, &probe);
+    let total_num_hs = atom.explicit_hydrogens as usize
+        + assignment.implicit_hydrogens[atom_index] as usize
+        + graph_h_neighbor_count_with_adjacency(mol, adjacency, atom_index);
+    if probe.len() == 3 && total_num_hs == 1 {
+        swaps += 1;
+    }
+
+    let mut final_tag = atom.chiral_tag;
+    if swaps % 2 == 1 {
+        final_tag = match final_tag {
+            ChiralTag::TetrahedralCcw => ChiralTag::TetrahedralCw,
+            ChiralTag::TetrahedralCw => ChiralTag::TetrahedralCcw,
+            ChiralTag::TrigonalBipyramidal => ChiralTag::TrigonalBipyramidal,
+            ChiralTag::Unspecified => ChiralTag::Unspecified,
+        };
+    }
+
+    Some(
+        if matches!(final_tag, ChiralTag::TetrahedralCcw) {
+            "S"
+        } else {
+            "R"
+        }
+        .to_owned(),
+    )
+}
+
+pub(crate) fn analyze_legacy_stereo_cleanup(mol: &Molecule) -> LegacyStereoCleanupAnalysis {
+    let initial_ranks = crate::io::molblock::rdkit_cip_ranks_for_depict(mol);
+    analyze_legacy_stereo_cleanup_with_initial_ranks_and_assignment(mol, &initial_ranks, None)
+}
+
+pub(crate) fn analyze_legacy_stereo_cleanup_with_initial_ranks_and_assignment(
+    mol: &Molecule,
+    initial_ranks: &[i64],
+    precomputed_assignment: Option<&crate::ValenceAssignment>,
+) -> LegacyStereoCleanupAnalysis {
+    analyze_legacy_stereo_cleanup_with_initial_ranks_assignment_and_presence(
+        mol,
+        initial_ranks,
+        precomputed_assignment,
+        None,
+    )
+}
+
+pub(crate) fn analyze_legacy_stereo_cleanup_with_initial_ranks_assignment_and_presence(
+    mol: &Molecule,
+    initial_ranks: &[i64],
+    precomputed_assignment: Option<&crate::ValenceAssignment>,
+    precomputed_presence: Option<LegacyStereoPresence>,
+) -> LegacyStereoCleanupAnalysis {
+    let owned_assignment;
+    let assignment = if let Some(assignment) = precomputed_assignment {
+        assignment
+    } else {
+        owned_assignment = match assign_valence(mol, ValenceModel::RdkitLike) {
+            Ok(assignment) => assignment,
+            Err(_) => {
+                return LegacyStereoCleanupAnalysis::empty(mol.atoms().len());
+            }
+        };
+        &owned_assignment
+    };
+    let adjacency = AdjacencyList::from_topology(mol.atoms().len(), mol.bonds());
+    let mut cycle_cache = StereoBondCycleCache::new(mol.bonds().len());
+    let presence = precomputed_presence.unwrap_or_else(|| {
+        scan_legacy_stereo_presence(mol, &adjacency, &mut cycle_cache, assignment, true)
+    });
+    if !presence.requires_rank_work() {
+        return LegacyStereoCleanupAnalysis::empty(mol.atoms().len());
+    }
+
+    let mut ranks = initial_ranks.to_vec();
+    let mut cip_codes = vec![None; mol.atoms().len()];
+    if presence.has_stereo_atoms {
+        for atom in mol.atoms() {
+            cip_codes[atom.index] = legacy_cip_code_for_atom_with_cache(
+                mol,
+                &adjacency,
+                &mut cycle_cache,
+                assignment,
+                &ranks,
+                atom.index,
+            );
+        }
+    }
+    if cip_codes.iter().any(Option::is_some)
+        && legacy_assign_bond_stereo_would_leave_unassigned_with_cache(
+            mol,
+            &adjacency,
+            &mut cycle_cache,
+        )
+    {
+        ranks = if let Some(assignment) = precomputed_assignment {
+            crate::io::molblock::rdkit_cip_reranks_with_legacy_stereo_with_assignment(
+                mol, &ranks, &cip_codes, assignment,
+            )
+        } else {
+            crate::io::molblock::rdkit_cip_reranks_with_legacy_stereo(mol, &ranks, &cip_codes)
+        };
+    }
+
+    let paired_ring_stereo_candidates =
+        crate::smiles::compute_paired_ring_stereo_candidates(mol, &ranks, &cip_codes);
+
+    LegacyStereoCleanupAnalysis {
+        cip_ranks: ranks.into_iter().map(Some).collect(),
+        cip_codes,
+        paired_ring_stereo_candidates,
+    }
+}
+
+fn compute_legacy_cip_rank_cache(mol: &Molecule) -> Vec<Option<i64>> {
+    analyze_legacy_stereo_cleanup(mol).cip_ranks
+}
+
 pub(crate) fn cache_rdkit_legacy_cip_ranks(mol: &mut Molecule) {
-    let ranks = mol.rdkit_legacy_stereo_atom_props(true);
-    for (atom, props) in mol.atoms_mut().iter_mut().zip(ranks) {
-        atom.rdkit_cip_rank = props.cip_rank;
+    let ranks = compute_legacy_cip_rank_cache(mol);
+    for (atom, rank) in mol.atoms_mut().iter_mut().zip(ranks) {
+        atom.rdkit_cip_rank = rank;
+    }
+}
+
+pub(crate) fn cache_rdkit_legacy_cip_ranks_with_analysis(
+    mol: &mut Molecule,
+    analysis: &LegacyStereoCleanupAnalysis,
+) {
+    for (atom, rank) in mol.atoms_mut().iter_mut().zip(&analysis.cip_ranks) {
+        atom.rdkit_cip_rank = *rank;
     }
 }
 

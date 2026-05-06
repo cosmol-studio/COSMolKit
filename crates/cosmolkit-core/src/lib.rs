@@ -155,6 +155,20 @@ mod tests {
     }
 
     #[test]
+    fn molecule_from_smiles_unsanitized_keeps_non_ring_aromatic_atoms() {
+        let mol = Molecule::from_smiles_with_sanitize("cc", false)
+            .expect("unsanitized non-ring aromatic input should parse like RDKit");
+        assert_eq!(mol.atomic_numbers(), vec![6, 6]);
+        assert!(mol.atoms().iter().all(|atom| atom.is_aromatic));
+    }
+
+    #[test]
+    fn molecule_from_smiles_sanitized_rejects_non_ring_aromatic_atoms() {
+        Molecule::from_smiles("cc")
+            .expect_err("sanitized non-ring aromatic input should fail like RDKit");
+    }
+
+    #[test]
     fn molecule_from_smiles_parses_fragment_dummy_and_dative_subset() {
         let mol = Molecule::from_smiles("[*:1]C.[NH3]->[Cu+2]<-[NH3]")
             .expect("representative special subset should parse");

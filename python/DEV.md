@@ -57,3 +57,9 @@ Generated HTML:
 ```text
 python/docs/build/html/index.html
 ```
+
+## Type Checking
+
+```bash
+.venv/bin/basedpyright python/tests python/examples
+```

@@ -987,7 +987,10 @@ fn rdkit_cip_invariants(mol: &Molecule) -> Vec<i64> {
         .collect()
 }
 
-fn find_cip_segments(sorted: &mut [(Vec<i64>, usize, i64)]) -> (Vec<(usize, usize)>, usize) {
+fn find_cip_segments(
+    sorted: &mut [(usize, i64)],
+    cip_entries: &[Vec<i64>],
+) -> (Vec<(usize, usize)>, usize) {
     let mut segments = Vec::new();
     if sorted.is_empty() {
         return (segments, 0);
@@ -995,13 +998,13 @@ fn find_cip_segments(sorted: &mut [(Vec<i64>, usize, i64)]) -> (Vec<(usize, usiz
 
     let mut num_independent = sorted.len();
     let mut running_rank = 0i64;
-    sorted[0].2 = running_rank;
+    sorted[0].1 = running_rank;
     let mut current = 0usize;
     let mut in_equal_section = false;
 
     for i in 1..sorted.len() {
-        if sorted[current].0 == sorted[i].0 {
-            sorted[i].2 = running_rank;
+        if cip_entries[sorted[current].0] == cip_entries[sorted[i].0] {
+            sorted[i].1 = running_rank;
             num_independent -= 1;
             if !in_equal_section {
                 in_equal_section = true;
@@ -1009,7 +1012,7 @@ fn find_cip_segments(sorted: &mut [(Vec<i64>, usize, i64)]) -> (Vec<(usize, usiz
             }
         } else {
             running_rank += 1;
-            sorted[i].2 = running_rank;
+            sorted[i].1 = running_rank;
             current = i;
 
             if in_equal_section {
@@ -1030,9 +1033,9 @@ fn find_cip_segments(sorted: &mut [(Vec<i64>, usize, i64)]) -> (Vec<(usize, usiz
     (segments, num_independent)
 }
 
-fn recompute_cip_ranks(sorted: &[(Vec<i64>, usize, i64)], ranks: &mut [i64]) {
-    for entry in sorted {
-        ranks[entry.1] = entry.2;
+fn recompute_cip_ranks(sorted: &[(usize, i64)], ranks: &mut [i64]) {
+    for &(atom_idx, rank) in sorted {
+        ranks[atom_idx] = rank;
     }
 }
 
@@ -1041,18 +1044,46 @@ fn rdkit_cip_ranks_from_invariants(
     invars: Vec<i64>,
     seed_with_invars: bool,
 ) -> Vec<i64> {
-    let n = mol.atoms().len();
-    let assignment = crate::assign_valence(mol, crate::ValenceModel::RdkitLike).ok();
-    let mut cip_entries: Vec<Vec<i64>> = invars.iter().copied().map(|v| vec![v]).collect();
-    let mut sortable: Vec<(Vec<i64>, usize, i64)> = cip_entries
-        .iter()
-        .cloned()
-        .enumerate()
-        .map(|(idx, entry)| (entry, idx, -1))
-        .collect();
+    rdkit_cip_ranks_from_invariants_with_assignment(mol, invars, seed_with_invars, None)
+}
 
-    sortable.sort_by(|a, b| a.0.cmp(&b.0));
-    let (mut needs_sorting, mut num_ranks) = find_cip_segments(&mut sortable);
+fn rdkit_cip_ranks_from_invariants_with_assignment(
+    mol: &Molecule,
+    invars: Vec<i64>,
+    seed_with_invars: bool,
+    precomputed_assignment: Option<&crate::ValenceAssignment>,
+) -> Vec<i64> {
+    let n = mol.atoms().len();
+    let owned_assignment;
+    let assignment = if let Some(assignment) = precomputed_assignment {
+        Some(assignment)
+    } else {
+        owned_assignment = crate::assign_valence(mol, crate::ValenceModel::RdkitLike).ok();
+        owned_assignment.as_ref()
+    };
+    let coordinated_h_counts = (0..n)
+        .map(|index| {
+            if let Some(assignment) = assignment {
+                mol.atoms()[index].explicit_hydrogens as usize
+                    + assignment.implicit_hydrogens[index] as usize
+            } else {
+                mol.atoms()[index].explicit_hydrogens as usize
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut cip_entries: Vec<Vec<i64>> = invars
+        .iter()
+        .copied()
+        .map(|v| {
+            let mut entry = Vec::with_capacity(16);
+            entry.push(v);
+            entry
+        })
+        .collect();
+    let mut sortable: Vec<(usize, i64)> = (0..n).map(|idx| (idx, -1)).collect();
+
+    sortable.sort_by(|a, b| cip_entries[a.0].cmp(&cip_entries[b.0]));
+    let (mut needs_sorting, mut num_ranks) = find_cip_segments(&mut sortable, &cip_entries);
     let mut ranks = vec![0i64; n];
     recompute_cip_ranks(&sortable, &mut ranks);
 
@@ -1064,45 +1095,49 @@ fn rdkit_cip_ranks_from_invariants(
             cip_entries[i].push(ranks[i]);
         }
     }
-    for item in &mut sortable {
-        item.0 = cip_entries[item.1].clone();
-    }
     let cip_rank_index = if seed_with_invars { 1 } else { 2 };
 
     const K_MAX_BONDS: usize = 16;
     let mut bond_features = vec![(0i64, 0usize); n * K_MAX_BONDS];
     let mut num_neighbors = vec![0usize; n];
-    for atom_idx in 0..n {
-        let mut index_offset = atom_idx * K_MAX_BONDS;
-        for bond in mol.bonds() {
-            let nbr_idx = if bond.begin_atom == atom_idx {
-                bond.end_atom
-            } else if bond.end_atom == atom_idx {
-                bond.begin_atom
-            } else {
-                continue;
-            };
-            let count = if matches!(bond.order, BondOrder::Double) {
-                let nbr = &mol.atoms()[nbr_idx];
-                let nbr_degree = mol
-                    .bonds()
-                    .iter()
-                    .filter(|other| other.begin_atom == nbr_idx || other.end_atom == nbr_idx)
-                    .count();
-                if nbr.atomic_num == 15 && matches!(nbr_degree, 3 | 4) {
-                    1
-                } else {
-                    rdkit_twice_bond_type(bond.order)
-                }
+    let mut atom_degrees = vec![0usize; n];
+    for bond in mol.bonds() {
+        atom_degrees[bond.begin_atom] += 1;
+        atom_degrees[bond.end_atom] += 1;
+    }
+    for bond in mol.bonds() {
+        let begin_count = if matches!(bond.order, BondOrder::Double) {
+            let nbr = &mol.atoms()[bond.end_atom];
+            if nbr.atomic_num == 15 && matches!(atom_degrees[bond.end_atom], 3 | 4) {
+                1
             } else {
                 rdkit_twice_bond_type(bond.order)
-            };
-            if index_offset < (atom_idx + 1) * K_MAX_BONDS {
-                bond_features[index_offset] = (count, nbr_idx);
             }
-            num_neighbors[atom_idx] += 1;
-            index_offset += 1;
+        } else {
+            rdkit_twice_bond_type(bond.order)
+        };
+        let end_count = if matches!(bond.order, BondOrder::Double) {
+            let nbr = &mol.atoms()[bond.begin_atom];
+            if nbr.atomic_num == 15 && matches!(atom_degrees[bond.begin_atom], 3 | 4) {
+                1
+            } else {
+                rdkit_twice_bond_type(bond.order)
+            }
+        } else {
+            rdkit_twice_bond_type(bond.order)
+        };
+
+        let begin_offset = bond.begin_atom * K_MAX_BONDS + num_neighbors[bond.begin_atom];
+        if begin_offset < (bond.begin_atom + 1) * K_MAX_BONDS {
+            bond_features[begin_offset] = (begin_count, bond.end_atom);
         }
+        num_neighbors[bond.begin_atom] += 1;
+
+        let end_offset = bond.end_atom * K_MAX_BONDS + num_neighbors[bond.end_atom];
+        if end_offset < (bond.end_atom + 1) * K_MAX_BONDS {
+            bond_features[end_offset] = (end_count, bond.begin_atom);
+        }
+        num_neighbors[bond.end_atom] += 1;
     }
 
     let max_its = n / 2 + 1;
@@ -1116,32 +1151,23 @@ fn rdkit_cip_ranks_from_invariants(
         for index in 0..n {
             let index_offset = K_MAX_BONDS * index;
             let feature_len = num_neighbors[index].min(K_MAX_BONDS);
-            let mut features = bond_features[index_offset..index_offset + feature_len].to_vec();
             if num_neighbors[index] > 1 {
-                features.sort_by(|a, b| ranks[b.1].cmp(&ranks[a.1]));
+                bond_features[index_offset..index_offset + feature_len]
+                    .sort_by(|a, b| ranks[b.1].cmp(&ranks[a.1]));
             }
-            for (count, nbr_idx) in features {
+            for &(count, nbr_idx) in &bond_features[index_offset..index_offset + feature_len] {
                 for _ in 0..count {
                     cip_entries[index].push(ranks[nbr_idx] + 1);
                 }
             }
-            let total_hs = if let Some(assignment) = &assignment {
-                mol.atoms()[index].explicit_hydrogens as usize
-                    + assignment.implicit_hydrogens[index] as usize
-            } else {
-                mol.atoms()[index].explicit_hydrogens as usize
-            };
-            cip_entries[index].extend(std::iter::repeat_n(0, total_hs));
+            let new_len = cip_entries[index].len() + coordinated_h_counts[index];
+            cip_entries[index].resize(new_len, 0);
         }
-        for item in &mut sortable {
-            item.0 = cip_entries[item.1].clone();
-        }
-
         last_num_ranks = Some(num_ranks);
         for &(first, last) in &needs_sorting {
-            sortable[first..=last].sort_by(|a, b| a.0.cmp(&b.0));
+            sortable[first..=last].sort_by(|a, b| cip_entries[a.0].cmp(&cip_entries[b.0]));
         }
-        let found = find_cip_segments(&mut sortable);
+        let found = find_cip_segments(&mut sortable, &cip_entries);
         needs_sorting = found.0;
         num_ranks = found.1;
         recompute_cip_ranks(&sortable, &mut ranks);
@@ -1150,9 +1176,6 @@ fn rdkit_cip_ranks_from_invariants(
             for i in 0..n {
                 cip_entries[i].resize(cip_rank_index + 1, 0);
                 cip_entries[i][cip_rank_index] = ranks[i];
-            }
-            for item in &mut sortable {
-                item.0 = cip_entries[item.1].clone();
             }
         }
 
@@ -1612,14 +1635,57 @@ pub(crate) fn rdkit_cip_ranks_for_depict(mol: &Molecule) -> Vec<i64> {
     rdkit_cip_ranks_from_invariants(mol, rdkit_cip_invariants(mol), false)
 }
 
+pub(crate) fn rdkit_cip_ranks_for_depict_with_assignment(
+    mol: &Molecule,
+    assignment: &crate::ValenceAssignment,
+) -> Vec<i64> {
+    rdkit_cip_ranks_from_invariants_with_assignment(
+        mol,
+        rdkit_cip_invariants(mol),
+        false,
+        Some(assignment),
+    )
+}
+
 pub(crate) fn rdkit_cip_reranks_with_legacy_stereo(
     mol: &Molecule,
     ranks: &[i64],
     cip_codes: &[Option<String>],
 ) -> Vec<i64> {
+    rdkit_cip_reranks_with_legacy_stereo_and_assignment(mol, ranks, cip_codes, None)
+}
+
+pub(crate) fn rdkit_cip_reranks_with_legacy_stereo_with_assignment(
+    mol: &Molecule,
+    ranks: &[i64],
+    cip_codes: &[Option<String>],
+    assignment: &crate::ValenceAssignment,
+) -> Vec<i64> {
+    rdkit_cip_reranks_with_legacy_stereo_and_assignment(mol, ranks, cip_codes, Some(assignment))
+}
+
+fn rdkit_cip_reranks_with_legacy_stereo_and_assignment(
+    mol: &Molecule,
+    ranks: &[i64],
+    cip_codes: &[Option<String>],
+    assignment: Option<&crate::ValenceAssignment>,
+) -> Vec<i64> {
     let mut factor = 100i64;
     while factor < mol.atoms().len() as i64 {
         factor *= 10;
+    }
+    let mut double_bond_stereo_contrib = vec![0i64; mol.atoms().len()];
+    for bond in mol.bonds() {
+        if !matches!(bond.order, BondOrder::Double) {
+            continue;
+        }
+        let contrib = match bond.stereo {
+            BondStereo::Trans => 1,
+            BondStereo::Cis => 2,
+            BondStereo::None | BondStereo::Any => 0,
+        };
+        double_bond_stereo_contrib[bond.begin_atom] += contrib;
+        double_bond_stereo_contrib[bond.end_atom] += contrib;
     }
     let mut invars = vec![0i64; mol.atoms().len()];
     for atom in mol.atoms() {
@@ -1631,20 +1697,10 @@ pub(crate) fn rdkit_cip_reranks_with_legacy_stereo(
                 invariant += 20;
             }
         }
-        for bond in mol.bonds() {
-            if (bond.begin_atom == atom.index || bond.end_atom == atom.index)
-                && matches!(bond.order, BondOrder::Double)
-            {
-                invariant += match bond.stereo {
-                    BondStereo::Trans => 1,
-                    BondStereo::Cis => 2,
-                    BondStereo::None | BondStereo::Any => 0,
-                };
-            }
-        }
+        invariant += double_bond_stereo_contrib[atom.index];
         invars[atom.index] = invariant;
     }
-    rdkit_cip_ranks_from_invariants(mol, invars, true)
+    rdkit_cip_ranks_from_invariants_with_assignment(mol, invars, true, assignment)
 }
 
 fn rdkit_rank_atoms_by_rank(
