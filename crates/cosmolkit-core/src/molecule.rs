@@ -1,371 +1,643 @@
-use crate::{AdjacencyList, Atom, Bond};
-use glam::{DVec2, DVec3};
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
-/// Errors returned by SMILES parsing routines.
+use crate::{
+    Atom, AtomId, Bond, MoleculeBuilder, error::InvariantError,
+    invariants::enforce_molecule_invariants, sgroup::SubstanceGroup, stereo::StereoGroup,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SmilesParseError {
-    /// Parsing is not implemented yet in bootstrap phase.
-    #[error("SMILES parser is not implemented yet")]
+    #[error("SMILES parser is not implemented")]
     NotImplemented,
-    /// Concrete parse error from the RDKit-aligned subset parser.
+    #[error(transparent)]
+    UnsupportedFeature(#[from] crate::UnsupportedFeatureError),
     #[error("{0}")]
     ParseError(String),
 }
 
-/// Errors returned by SMILES writing routines.
 pub use crate::smiles_write::SmilesWriteError;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoordinateDimension {
     TwoD,
     ThreeD,
 }
 
-/// Persistent topology storage owned by a molecule value.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct TopologyData {
-    pub atoms: Vec<Atom>,
-    pub bonds: Vec<Bond>,
-    pub adjacency: Option<AdjacencyList>,
-}
-
-/// Coordinate storage owned separately from topology.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ConformerStore {
-    pub coords_2d: Option<Vec<DVec2>>,
-    pub conformers_3d: Vec<Vec<DVec3>>,
+    pub coords_2d: Option<Vec<[f64; 2]>>,
+    pub conformers_3d: Vec<Conformer3D>,
     pub source_coordinate_dim: Option<CoordinateDimension>,
 }
 
-/// Molecule-level metadata storage.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PropertyStore {
     pub name: Option<String>,
     pub sdf_data_fields: Vec<(String, String)>,
-    pub props: BTreeMap<String, String>,
+    pub sdf_property_lists: Vec<SdfPropertyList>,
+    pub props: std::collections::BTreeMap<String, String>,
 }
 
-/// Molecular graph with split owned topology, coordinate, and metadata blocks.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Conformer3D {
+    id: usize,
+    coords: Vec<[f64; 3]>,
+    is_3d: bool,
+    props: BTreeMap<String, String>,
+}
+
+impl Conformer3D {
+    #[must_use]
+    pub fn new(id: usize, coords: Vec<[f64; 3]>, is_3d: bool) -> Self {
+        Self {
+            id,
+            coords,
+            is_3d,
+            props: BTreeMap::new(),
+        }
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> usize {
+        self.id
+    }
+
+    #[must_use]
+    pub fn coords(&self) -> &[[f64; 3]] {
+        &self.coords
+    }
+
+    #[must_use]
+    pub const fn is_3d(&self) -> bool {
+        self.is_3d
+    }
+
+    #[must_use]
+    pub fn props(&self) -> &BTreeMap<String, String> {
+        &self.props
+    }
+
+    #[must_use]
+    pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.props.insert(key.into(), value.into());
+        self
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn remapped_to_kept_atoms(&self, kept_old_indices: &[usize], id: usize) -> Self {
+        let coords = kept_old_indices
+            .iter()
+            .filter_map(|old_idx| self.coords.get(*old_idx).copied())
+            .collect();
+        Self {
+            id,
+            coords,
+            is_3d: self.is_3d,
+            props: self.props.clone(),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn push_coord(&mut self, coord: [f64; 3]) {
+        self.coords.push(coord);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MoleculeProperties {
+    name: Option<String>,
+    sdf_data_fields: Vec<(String, String)>,
+    sdf_property_lists: Vec<SdfPropertyList>,
+    props: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SdfPropertyListTarget {
+    Atom,
+    Bond,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SdfPropertyList {
+    target: SdfPropertyListTarget,
+    name: String,
+    values: Vec<Option<String>>,
+}
+
+impl SdfPropertyList {
+    #[must_use]
+    pub fn new(
+        target: SdfPropertyListTarget,
+        name: impl Into<String>,
+        values: Vec<Option<String>>,
+    ) -> Self {
+        Self {
+            target,
+            name: name.into(),
+            values,
+        }
+    }
+
+    #[must_use]
+    pub const fn target(&self) -> SdfPropertyListTarget {
+        self.target
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[must_use]
+    pub fn values(&self) -> &[Option<String>] {
+        &self.values
+    }
+}
+
+impl MoleculeProperties {
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    #[must_use]
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    #[must_use]
+    pub fn sdf_data_fields(&self) -> &[(String, String)] {
+        &self.sdf_data_fields
+    }
+
+    #[must_use]
+    pub fn sdf_property_lists(&self) -> &[SdfPropertyList] {
+        &self.sdf_property_lists
+    }
+
+    #[must_use]
+    pub fn props(&self) -> &BTreeMap<String, String> {
+        &self.props
+    }
+
+    #[must_use]
+    pub fn prop(&self, key: &str) -> Option<&str> {
+        self.props.get(key).map(String::as_str)
+    }
+
+    #[must_use]
+    pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.props.insert(key.into(), value.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_sdf_data_field(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.sdf_data_fields.push((key.into(), value.into()));
+        self
+    }
+
+    #[must_use]
+    pub fn with_sdf_property_list(mut self, property_list: SdfPropertyList) -> Self {
+        self.sdf_property_lists.push(property_list);
+        self
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        self.props.insert(key.into(), value.into());
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn clear_prop(&mut self, key: &str) {
+        self.props.remove(key);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct TopologyBlock {
+    pub(crate) atoms: Vec<Atom>,
+    pub(crate) bonds: Vec<Bond>,
+    pub(crate) substance_groups: Vec<SubstanceGroup>,
+    pub(crate) stereo_groups: Vec<StereoGroup>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct CoordinateBlock {
+    /// One optional 2D coordinate row per atom.
+    ///
+    /// Coordinates are stored in the same atom-index order as `TopologyBlock`.
+    /// Any operation changing atom indices must remap or drop this block through
+    /// a topology report. Do not mutate this block directly from operation code.
+    pub(crate) coords_2d: Option<Vec<[f64; 2]>>,
+    pub(crate) conformers_3d: Vec<Conformer3D>,
+    pub(crate) source_coordinate_dim: Option<CoordinateDimension>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct DerivedCacheBlock {
+    pub(crate) adjacency: Option<crate::AdjacencyList>,
+    pub(crate) rings: Option<crate::RingInfo>,
+    pub(crate) ring_families: Option<crate::RingInfo>,
+    pub(crate) valence: Option<crate::ValenceAssignment>,
+    pub(crate) aromaticity_valid: bool,
+    pub(crate) stereo_valid: bool,
+}
+
+impl DerivedCacheBlock {
+    pub(crate) fn invalidate(&mut self, states: crate::DerivedState) {
+        if states.contains(crate::DerivedState::ADJACENCY) {
+            self.adjacency = None;
+        }
+        if states.contains(crate::DerivedState::VALENCE) {
+            self.valence = None;
+        }
+        if states.contains(crate::DerivedState::RINGS) {
+            self.rings = None;
+        }
+        if states.contains(crate::DerivedState::RING_FAMILIES) {
+            self.ring_families = None;
+        }
+        if states.contains(crate::DerivedState::AROMATICITY) {
+            self.aromaticity_valid = false;
+        }
+        if states.contains(crate::DerivedState::STEREO) {
+            self.stereo_valid = false;
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AtomMapping {
+    old_to_new: Vec<Option<AtomId>>,
+    new_to_old: Vec<Option<AtomId>>,
+}
+
+impl AtomMapping {
+    #[must_use]
+    pub fn old_to_new(&self) -> &[Option<AtomId>] {
+        &self.old_to_new
+    }
+
+    #[must_use]
+    pub fn new_to_old(&self) -> &[Option<AtomId>] {
+        &self.new_to_old
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BondMapping {
+    old_to_new: Vec<Option<crate::BondId>>,
+    new_to_old: Vec<Option<crate::BondId>>,
+}
+
+impl BondMapping {
+    #[must_use]
+    pub fn old_to_new(&self) -> &[Option<crate::BondId>] {
+        &self.old_to_new
+    }
+
+    #[must_use]
+    pub fn new_to_old(&self) -> &[Option<crate::BondId>] {
+        &self.new_to_old
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopologyMapping {
+    atoms: AtomMapping,
+    bonds: BondMapping,
+}
+
+impl TopologyMapping {
+    #[must_use]
+    pub fn atoms(&self) -> &AtomMapping {
+        &self.atoms
+    }
+
+    #[must_use]
+    pub fn bonds(&self) -> &BondMapping {
+        &self.bonds
+    }
+}
+
+impl TopologyBlock {
+    #[allow(dead_code)]
+    pub(crate) fn remove_atoms_with_mapping(
+        &mut self,
+        atoms_to_remove: &[AtomId],
+    ) -> TopologyMapping {
+        let mut remove_atom = vec![false; self.atoms.len()];
+        for atom in atoms_to_remove {
+            if let Some(slot) = remove_atom.get_mut(atom.index()) {
+                *slot = true;
+            }
+        }
+
+        let mut atom_old_to_new = vec![None; self.atoms.len()];
+        let mut atom_new_to_old = Vec::new();
+        let mut atoms = Vec::with_capacity(self.atoms.len().saturating_sub(atoms_to_remove.len()));
+        for atom in &self.atoms {
+            if remove_atom[atom.id().index()] {
+                continue;
+            }
+            let new_id = AtomId::new(atoms.len());
+            atom_old_to_new[atom.id().index()] = Some(new_id);
+            atom_new_to_old.push(Some(atom.id()));
+            atoms.push(atom.clone().with_id(new_id));
+        }
+
+        let mut bond_old_to_new = vec![None; self.bonds.len()];
+        let mut bond_new_to_old = Vec::new();
+        let mut bonds = Vec::new();
+        for bond in &self.bonds {
+            let Some(begin) = atom_old_to_new
+                .get(bond.begin().index())
+                .and_then(|mapped| *mapped)
+            else {
+                continue;
+            };
+            let Some(end) = atom_old_to_new
+                .get(bond.end().index())
+                .and_then(|mapped| *mapped)
+            else {
+                continue;
+            };
+
+            let stereo_atoms = bond.stereo_atoms().and_then(|[left, right]| {
+                Some([
+                    atom_old_to_new
+                        .get(left.index())
+                        .and_then(|mapped| *mapped)?,
+                    atom_old_to_new
+                        .get(right.index())
+                        .and_then(|mapped| *mapped)?,
+                ])
+            });
+
+            let new_id = crate::BondId::new(bonds.len());
+            bond_old_to_new[bond.id().index()] = Some(new_id);
+            bond_new_to_old.push(Some(bond.id()));
+            bonds.push(bond.clone().remapped(new_id, begin, end, stereo_atoms));
+        }
+
+        let sgroup_map = vec![None; self.substance_groups.len()];
+        self.substance_groups = self
+            .substance_groups
+            .iter()
+            .enumerate()
+            .filter_map(|(new_index, sgroup)| {
+                sgroup.remapped(
+                    crate::SubstanceGroupId::new(new_index),
+                    &atom_old_to_new,
+                    &bond_old_to_new,
+                    &sgroup_map,
+                )
+            })
+            .collect();
+
+        self.stereo_groups = self
+            .stereo_groups
+            .iter()
+            .filter_map(|group| group.remapped(&atom_old_to_new, &bond_old_to_new))
+            .collect();
+
+        self.atoms = atoms;
+        self.bonds = bonds;
+
+        TopologyMapping {
+            atoms: AtomMapping {
+                old_to_new: atom_old_to_new,
+                new_to_old: atom_new_to_old,
+            },
+            bonds: BondMapping {
+                old_to_new: bond_old_to_new,
+                new_to_old: bond_new_to_old,
+            },
+        }
+    }
+}
+
+impl CoordinateBlock {
+    #[allow(dead_code)]
+    pub(crate) fn remap_topology(&mut self, mapping: &TopologyMapping) {
+        if let Some(coords_2d) = &self.coords_2d {
+            self.coords_2d = Some(
+                mapping
+                    .atoms
+                    .new_to_old
+                    .iter()
+                    .filter_map(|old_atom| {
+                        old_atom.and_then(|atom| coords_2d.get(atom.index()).copied())
+                    })
+                    .collect(),
+            );
+        }
+
+        self.conformers_3d = self
+            .conformers_3d
+            .iter()
+            .enumerate()
+            .map(|(id, conformer)| {
+                let kept_old_indices: Vec<_> = mapping
+                    .atoms
+                    .new_to_old
+                    .iter()
+                    .filter_map(|old_atom| old_atom.map(AtomId::index))
+                    .collect();
+                conformer.remapped_to_kept_atoms(&kept_old_indices, id)
+            })
+            .collect();
+    }
+}
+
+/// Immutable molecule value.
+///
+/// The only public way to create a molecule is `MoleculeBuilder`.
+///
+/// Existing molecules are transformed through registered operations. This type
+/// intentionally does not expose mutable storage accessors.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Molecule {
-    topology: Arc<TopologyData>,
-    conformers: Arc<ConformerStore>,
-    props: Arc<PropertyStore>,
+    topology: Arc<TopologyBlock>,
+    coordinates: Arc<CoordinateBlock>,
+    properties: Arc<MoleculeProperties>,
+    derived_cache: Arc<DerivedCacheBlock>,
 }
 
 impl Molecule {
-    /// Create an empty molecule.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub(crate) fn from_owned_blocks(
-        topology: TopologyData,
-        conformers: ConformerStore,
-        props: PropertyStore,
-    ) -> Self {
-        Self {
+    #[must_use]
+    pub fn builder() -> MoleculeBuilder {
+        MoleculeBuilder::new()
+    }
+
+    pub(crate) fn from_blocks(
+        topology: TopologyBlock,
+        coordinates: CoordinateBlock,
+        properties: MoleculeProperties,
+    ) -> Result<Self, InvariantError> {
+        let molecule = Self {
             topology: Arc::new(topology),
-            conformers: Arc::new(conformers),
-            props: Arc::new(props),
+            coordinates: Arc::new(coordinates),
+            properties: Arc::new(properties),
+            derived_cache: Arc::new(DerivedCacheBlock::default()),
+        };
+        enforce_molecule_invariants(&molecule)?;
+        Ok(molecule)
+    }
+
+    #[must_use]
+    pub fn atoms(&self) -> &[Atom] {
+        &self.topology.atoms
+    }
+
+    #[must_use]
+    pub fn bonds(&self) -> &[Bond] {
+        &self.topology.bonds
+    }
+
+    #[must_use]
+    pub fn atom(&self, id: AtomId) -> Option<&Atom> {
+        self.atoms().get(id.index())
+    }
+
+    #[must_use]
+    pub fn atomic_numbers(&self) -> Vec<u8> {
+        self.atoms().iter().map(Atom::atomic_number).collect()
+    }
+
+    #[must_use]
+    pub fn num_atoms(&self) -> usize {
+        self.atoms().len()
+    }
+
+    #[must_use]
+    pub fn num_bonds(&self) -> usize {
+        self.bonds().len()
+    }
+
+    #[must_use]
+    pub fn coords_2d(&self) -> Option<&[[f64; 2]]> {
+        self.coordinates.coords_2d.as_deref()
+    }
+
+    #[must_use]
+    pub fn conformers_3d(&self) -> &[Conformer3D] {
+        &self.coordinates.conformers_3d
+    }
+
+    #[must_use]
+    pub fn source_coordinate_dim(&self) -> Option<CoordinateDimension> {
+        self.coordinates.source_coordinate_dim
+    }
+
+    #[must_use]
+    pub fn substance_groups(&self) -> &[SubstanceGroup] {
+        &self.topology.substance_groups
+    }
+
+    #[must_use]
+    pub fn stereo_groups(&self) -> &[StereoGroup] {
+        &self.topology.stereo_groups
+    }
+
+    #[must_use]
+    pub fn properties(&self) -> &MoleculeProperties {
+        &self.properties
+    }
+
+    #[must_use]
+    pub fn prop(&self, key: &str) -> Option<&str> {
+        self.properties.prop(key)
+    }
+
+    #[must_use]
+    pub fn with_name(&self, name: impl Into<String>) -> Self {
+        let mut properties = (*self.properties).clone();
+        properties = properties.with_name(name);
+        Self {
+            topology: Arc::clone(&self.topology),
+            coordinates: Arc::clone(&self.coordinates),
+            properties: Arc::new(properties),
+            derived_cache: Arc::clone(&self.derived_cache),
         }
     }
 
-    /// Add one atom and return its assigned index.
-    pub fn add_atom(&mut self, atom: Atom) -> usize {
-        let index = self.atoms().len();
-        let mut atom = atom;
-        atom.index = index;
-        self.atoms_mut().push(atom);
-        self.clear_conformers();
-        self.clear_adjacency_cache();
-        index
+    #[must_use]
+    pub fn with_prop(&self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        let mut properties = (*self.properties).clone();
+        properties = properties.with_prop(key, value);
+        Self {
+            topology: Arc::clone(&self.topology),
+            coordinates: Arc::clone(&self.coordinates),
+            properties: Arc::new(properties),
+            derived_cache: Arc::clone(&self.derived_cache),
+        }
     }
 
-    /// Add one bond and return its assigned index.
-    pub fn add_bond(&mut self, bond: Bond) -> usize {
-        let index = self.bonds().len();
-        let mut bond = bond;
-        bond.index = index;
-        self.bonds_mut().push(bond);
-        self.clear_adjacency_cache();
-        index
+    #[must_use]
+    pub fn with_sdf_data_field(&self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        let mut properties = (*self.properties).clone();
+        properties = properties.with_sdf_data_field(key, value);
+        Self {
+            topology: Arc::clone(&self.topology),
+            coordinates: Arc::clone(&self.coordinates),
+            properties: Arc::new(properties),
+            derived_cache: Arc::clone(&self.derived_cache),
+        }
     }
 
-    /// Rebuild adjacency representation from current topology.
-    pub fn rebuild_adjacency(&mut self) {
-        let adjacency = AdjacencyList::from_topology(self.atoms().len(), self.bonds());
-        self.topology_mut().adjacency = Some(adjacency);
-    }
-
-    /// Construct one molecule from a SMILES string.
     pub fn from_smiles(smiles: &str) -> Result<Self, SmilesParseError> {
-        Self::from_smiles_with_sanitize(smiles, true)
+        crate::smiles::mol_from_smiles(smiles, &crate::smiles::SmilesParseParams::default())
     }
 
-    /// Construct one molecule from a SMILES string with RDKit-like sanitization control.
     pub fn from_smiles_with_sanitize(
         smiles: &str,
         sanitize: bool,
     ) -> Result<Self, SmilesParseError> {
-        crate::smiles::parse_smiles_with_sanitize(smiles, sanitize)
+        let params = crate::smiles::SmilesParseParams::with_sanitize(sanitize);
+        crate::smiles::mol_from_smiles(smiles, &params)
     }
 
-    /// Construct one molecule from an MDL molfile block.
-    pub fn from_mol_block(block: &str) -> Result<Self, crate::io::sdf::SdfReadError> {
-        crate::io::molfile::read_mol_record_from_str(block).map(|record| record.molecule)
+    pub fn from_mol_block(_block: &str) -> Result<Self, crate::io::sdf::SdfReadError> {
+        Ok(crate::io::sdf::read_sdf_from_str_with_params(
+            _block,
+            crate::io::sdf::SdfReadParams::default(),
+        )?
+        .molecule)
     }
 
-    /// Construct one molecule from an MDL molfile path.
     pub fn from_mol_file(
-        path: impl AsRef<std::path::Path>,
+        _path: impl AsRef<std::path::Path>,
     ) -> Result<Self, crate::io::sdf::SdfReadError> {
-        crate::io::molfile::read_mol_file(path).map(|record| record.molecule)
+        Ok(crate::io::molfile::read_mol_file(_path)?.molecule)
     }
 
-    /// Serialize this molecule to a SMILES string.
     pub fn to_smiles(&self, isomeric_smiles: bool) -> Result<String, SmilesWriteError> {
-        let params = crate::smiles_write::SmilesWriteParams {
+        let params = crate::SmilesWriteParams {
             do_isomeric_smiles: isomeric_smiles,
             ..Default::default()
         };
         self.to_smiles_with_params(&params)
     }
 
-    /// Serialize this molecule to a SMILES string using RDKit-like write params.
     pub fn to_smiles_with_params(
         &self,
-        params: &crate::smiles_write::SmilesWriteParams,
+        params: &crate::SmilesWriteParams,
     ) -> Result<String, SmilesWriteError> {
         crate::smiles_write::mol_to_smiles(self, params)
     }
 
-    /// Compute RDKit-aligned 2D coordinates and store them on this molecule.
-    pub fn compute_2d_coords(&mut self) -> Result<&mut Self, crate::io::molblock::MolWriteError> {
-        let coords = crate::io::molblock::compute_2d_coords(self)?;
-        let conformers = self.conformers_mut();
-        conformers.coords_2d = Some(coords.into_iter().map(|(x, y)| DVec2::new(x, y)).collect());
-        conformers.source_coordinate_dim = Some(CoordinateDimension::TwoD);
-        Ok(self)
-    }
-
-    /// Return a new molecule with explicit hydrogens added.
-    pub fn with_hydrogens(&self) -> Result<Self, crate::hydrogens::AddHydrogensError> {
-        let mut out = self.clone();
-        crate::hydrogens::add_hydrogens_in_place(&mut out)?;
-        Ok(out)
-    }
-
-    /// Return a new molecule with explicit hydrogens removed.
-    pub fn without_hydrogens(&self) -> Result<Self, crate::hydrogens::RemoveHydrogensError> {
-        self.without_hydrogens_with_sanitize(true)
-    }
-
-    /// Return a new molecule with explicit hydrogens removed.
-    pub fn without_hydrogens_with_sanitize(
-        &self,
-        sanitize: bool,
-    ) -> Result<Self, crate::hydrogens::RemoveHydrogensError> {
-        let mut out = self.clone();
-        crate::hydrogens::remove_hydrogens_with_sanitize_in_place(&mut out, sanitize)?;
-        Ok(out)
-    }
-
-    /// Return a new molecule with RDKit-aligned 2D coordinates.
-    pub fn with_2d_coords(&self) -> Result<Self, crate::io::molblock::MolWriteError> {
-        let mut out = self.clone();
-        out.compute_2d_coords()?;
-        Ok(out)
-    }
-
-    /// Return a new molecule with aromatic bonds converted to an explicit Kekule form.
-    pub fn with_kekulized_bonds(
-        &self,
-        sanitize: bool,
-    ) -> Result<Self, crate::kekulize::KekulizeError> {
-        let mut out = self.clone();
-        crate::kekulize::kekulize_in_place(&mut out, sanitize)?;
-        Ok(out)
-    }
-
-    /// Return a new molecule after applying the RDKit-style sanitize pipeline.
-    pub fn sanitize(&self) -> Result<Self, crate::sanitize::SanitizeError> {
-        self.sanitize_with_ops(crate::sanitize::SanitizeOps::SUPPORTED_ALL)
-    }
-
-    /// Return a new molecule after applying selected RDKit-style sanitize operations.
-    pub fn sanitize_with_ops(
-        &self,
-        ops: crate::sanitize::SanitizeOps,
-    ) -> Result<Self, crate::sanitize::SanitizeError> {
-        let mut out = self.clone();
-        crate::sanitize::apply_sanitize_pipeline(&mut out, ops)?;
-        Ok(out)
-    }
-
-    /// Return a new molecule with molecule-level name metadata replaced.
-    #[must_use]
-    pub fn with_name(&self, name: impl Into<String>) -> Self {
-        let mut out = self.clone();
-        out.props_mut().name = Some(name.into());
-        out
-    }
-
-    /// Return persistent topology storage.
-    #[must_use]
-    pub fn topology(&self) -> &TopologyData {
-        &self.topology
-    }
-
-    /// Return mutable topology storage.
-    pub fn topology_mut(&mut self) -> &mut TopologyData {
-        Arc::make_mut(&mut self.topology)
-    }
-
-    /// Return atom storage.
-    #[must_use]
-    pub fn atoms(&self) -> &[Atom] {
-        &self.topology.atoms
-    }
-
-    /// Return mutable atom storage.
-    pub fn atoms_mut(&mut self) -> &mut Vec<Atom> {
-        &mut self.topology_mut().atoms
-    }
-
-    /// Return bond storage.
-    #[must_use]
-    pub fn bonds(&self) -> &[Bond] {
-        &self.topology.bonds
-    }
-
-    /// Return mutable bond storage.
-    pub fn bonds_mut(&mut self) -> &mut Vec<Bond> {
-        &mut self.topology_mut().bonds
-    }
-
-    /// Return cached adjacency, if present.
-    #[must_use]
-    pub fn adjacency(&self) -> Option<&AdjacencyList> {
-        self.topology.adjacency.as_ref()
-    }
-
-    /// Return mutable cached adjacency slot.
-    pub fn adjacency_mut(&mut self) -> &mut Option<AdjacencyList> {
-        &mut self.topology_mut().adjacency
-    }
-
-    /// Clear cached topology-derived adjacency.
-    pub fn clear_adjacency_cache(&mut self) {
-        self.topology_mut().adjacency = None;
-    }
-
-    /// Return coordinate storage.
-    #[must_use]
-    pub fn conformers(&self) -> &ConformerStore {
-        &self.conformers
-    }
-
-    /// Return mutable coordinate storage.
-    pub fn conformers_mut(&mut self) -> &mut ConformerStore {
-        Arc::make_mut(&mut self.conformers)
-    }
-
-    /// Return mutable 2D coordinate storage.
-    pub fn coords_2d_mut(&mut self) -> &mut Option<Vec<DVec2>> {
-        &mut self.conformers_mut().coords_2d
-    }
-
-    /// Replace stored 2D coordinates.
-    pub fn set_coords_2d(&mut self, coords: Option<Vec<DVec2>>) {
-        self.conformers_mut().coords_2d = coords;
-    }
-
-    /// Return stored 3D conformers.
-    #[must_use]
-    pub fn conformers_3d(&self) -> &[Vec<DVec3>] {
-        &self.conformers.conformers_3d
-    }
-
-    /// Return mutable 3D conformer storage.
-    pub fn conformers_3d_mut(&mut self) -> &mut Vec<Vec<DVec3>> {
-        &mut self.conformers_mut().conformers_3d
-    }
-
-    /// Return the source coordinate dimensionality, if known.
-    #[must_use]
-    pub fn source_coordinate_dim(&self) -> Option<CoordinateDimension> {
-        self.conformers.source_coordinate_dim
-    }
-
-    /// Set the source coordinate dimensionality.
-    pub fn set_source_coordinate_dim(&mut self, coordinate_dim: Option<CoordinateDimension>) {
-        self.conformers_mut().source_coordinate_dim = coordinate_dim;
-    }
-
-    /// Remove all stored conformer coordinates and dimensionality metadata.
-    pub fn clear_conformers(&mut self) {
-        let conformers = self.conformers_mut();
-        conformers.coords_2d = None;
-        conformers.conformers_3d.clear();
-        conformers.source_coordinate_dim = None;
-    }
-
-    /// Return molecule-level metadata storage.
-    #[must_use]
-    pub fn props(&self) -> &PropertyStore {
-        &self.props
-    }
-
-    /// Return mutable molecule-level metadata storage.
-    pub fn props_mut(&mut self) -> &mut PropertyStore {
-        Arc::make_mut(&mut self.props)
-    }
-
-    #[must_use]
-    pub fn prop(&self, key: &str) -> Option<&str> {
-        self.props.props.get(key).map(String::as_str)
-    }
-
-    /// Return stored 2D coordinates, if present.
-    #[must_use]
-    pub fn coords_2d(&self) -> Option<&[DVec2]> {
-        self.conformers.coords_2d.as_deref()
-    }
-
-    /// Return the default stored 3D conformer, if present.
-    #[must_use]
-    pub fn coords_3d(&self) -> Option<&[DVec3]> {
-        self.conformers.conformers_3d.first().map(Vec::as_slice)
-    }
-
-    /// Return one stored 3D conformer by index.
-    #[must_use]
-    pub fn conformer_3d(&self, index: usize) -> Option<&[DVec3]> {
-        self.conformers.conformers_3d.get(index).map(Vec::as_slice)
-    }
-
-    /// Return the number of stored 3D conformers.
-    #[must_use]
-    pub fn num_3d_conformers(&self) -> usize {
-        self.conformers.conformers_3d.len()
-    }
-
-    /// Return atom atomic numbers in atom-index order.
-    #[must_use]
-    pub fn atomic_numbers(&self) -> Vec<u8> {
-        self.atoms().iter().map(|atom| atom.atomic_num).collect()
-    }
-
-    /// Return the RDKit-style distance-geometry bounds matrix.
     pub fn dg_bounds_matrix(&self) -> Result<Vec<Vec<f64>>, crate::DgBoundsError> {
         crate::distgeom::dg_bounds_matrix(self)
     }
 
-    /// Return a Morgan fingerprint using RDKit-style fingerprint generator parameters.
     pub fn morgan_fingerprint(
         &self,
         params: &crate::MorganFingerprintParams,
@@ -373,7 +645,6 @@ impl Molecule {
         crate::fingerprint::morgan_fingerprint(self, params)
     }
 
-    /// Return a Morgan fingerprint and RDKit-style additional output payloads.
     pub fn morgan_fingerprint_with_output(
         &self,
         params: &crate::MorganFingerprintParams,
@@ -381,250 +652,58 @@ impl Molecule {
         crate::fingerprint::morgan_fingerprint_with_output(self, params)
     }
 
-    /// Serialize this molecule to RDKit-style SVG.
     pub fn to_svg(&self, width: u32, height: u32) -> Result<String, crate::SvgDrawError> {
         crate::draw::mol_to_svg(self, width, height)
     }
 
-    /// Rasterize this molecule's RDKit-style SVG drawing into PNG bytes.
     pub fn to_png(&self, width: u32, height: u32) -> Result<Vec<u8>, crate::SvgDrawError> {
         crate::draw::mol_to_png(self, width, height)
     }
 
-    /// Return the RDKit `PrepareMolForDrawing()`-style prepared drawing snapshot.
-    pub fn prepare_for_drawing_parity(
+    pub fn prepared_for_drawing_parity(
         &self,
     ) -> Result<crate::PreparedDrawMolecule, crate::SvgDrawError> {
         crate::draw::prepare_mol_for_drawing_parity(self)
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{BondDirection, BondOrder, BondStereo, ChiralTag};
-
-    fn carbon(index: usize) -> Atom {
-        Atom {
-            index,
-            atomic_num: 6,
-            is_aromatic: false,
-            formal_charge: 0,
-            explicit_hydrogens: 0,
-            no_implicit: false,
-            num_radical_electrons: 0,
-            chiral_tag: ChiralTag::Unspecified,
-            isotope: None,
-            atom_map_num: None,
-            props: Default::default(),
-            query: None,
-            rdkit_cip_rank: None,
-        }
+    pub fn tetrahedral_stereo(&self) -> Result<Vec<crate::TetrahedralStereo>, crate::StereoError> {
+        crate::stereo::tetrahedral_stereo(self)
     }
 
-    fn single_bond(begin_atom: usize, end_atom: usize) -> Bond {
-        Bond {
-            index: 0,
-            begin_atom,
-            end_atom,
-            order: BondOrder::Single,
-            is_aromatic: false,
-            direction: BondDirection::None,
-            stereo: BondStereo::None,
-            stereo_atoms: Vec::new(),
-            molfile_query_bond_code: None,
-            props: Default::default(),
-            query: None,
-        }
+    #[allow(dead_code)]
+    pub(crate) fn topology_block(&self) -> &TopologyBlock {
+        &self.topology
     }
 
-    fn ethane_with_2d_coords() -> Molecule {
-        let mut mol = Molecule::new();
-        mol.add_atom(carbon(0));
-        mol.add_atom(carbon(1));
-        mol.add_bond(single_bond(0, 1));
-        mol.set_coords_2d(Some(vec![DVec2::new(0.0, 0.0), DVec2::new(1.0, 0.0)]));
-        mol
+    // Operation-body COW accessors are reached through OpParts. Some accessors
+    // are intentionally ahead of the first real operation body that uses them.
+    #[allow(dead_code)]
+    pub(crate) fn topology_block_mut(&mut self) -> &mut TopologyBlock {
+        Arc::make_mut(&mut self.topology)
     }
 
-    fn assert_coordinate_rows_match_atoms(mol: &Molecule) {
-        let atom_count = mol.atoms().len();
-        if let Some(coords) = mol.coords_2d() {
-            assert_eq!(coords.len(), atom_count, "2D coordinate row count mismatch");
-        }
-        for (idx, coords) in mol.conformers_3d().iter().enumerate() {
-            assert_eq!(
-                coords.len(),
-                atom_count,
-                "3D conformer {idx} coordinate row count mismatch"
-            );
-        }
+    #[allow(dead_code)]
+    pub(crate) fn coordinate_block(&self) -> &CoordinateBlock {
+        &self.coordinates
     }
 
-    fn interleaved_hydrogen_sdf() -> &'static str {
-        "interleaved_h
-  COSMolKit  3D
-
-  4  3  0  0  0  0  0  0  0  0999 V2000
-    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
-    1.0000    0.0000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
-    2.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
-    3.0000    0.0000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
-  1  2  1  0
-  1  3  1  0
-  3  4  1  0
-M  END
-$$$$
-"
+    #[allow(dead_code)]
+    pub(crate) fn coordinate_block_mut(&mut self) -> &mut CoordinateBlock {
+        Arc::make_mut(&mut self.coordinates)
     }
 
-    #[test]
-    fn clone_shares_storage_blocks_until_touched_block_mutates() {
-        let mol = ethane_with_2d_coords();
-        let cloned = mol.clone();
-        assert!(Arc::ptr_eq(&mol.topology, &cloned.topology));
-        assert!(Arc::ptr_eq(&mol.conformers, &cloned.conformers));
-        assert!(Arc::ptr_eq(&mol.props, &cloned.props));
-
-        let mut topology_edit = mol.clone();
-        topology_edit.atoms_mut()[0].formal_charge = 1;
-        assert!(!Arc::ptr_eq(&mol.topology, &topology_edit.topology));
-        assert!(Arc::ptr_eq(&mol.conformers, &topology_edit.conformers));
-        assert!(Arc::ptr_eq(&mol.props, &topology_edit.props));
-
-        let mut conformer_edit = mol.clone();
-        conformer_edit.set_coords_2d(None);
-        assert!(Arc::ptr_eq(&mol.topology, &conformer_edit.topology));
-        assert!(!Arc::ptr_eq(&mol.conformers, &conformer_edit.conformers));
-        assert!(Arc::ptr_eq(&mol.props, &conformer_edit.props));
-
-        let mut props_edit = mol.clone();
-        props_edit.props_mut().name = Some("ligand".to_owned());
-        assert!(Arc::ptr_eq(&mol.topology, &props_edit.topology));
-        assert!(Arc::ptr_eq(&mol.conformers, &props_edit.conformers));
-        assert!(!Arc::ptr_eq(&mol.props, &props_edit.props));
+    #[allow(dead_code)]
+    pub(crate) fn derived_cache(&self) -> &DerivedCacheBlock {
+        &self.derived_cache
     }
 
-    #[test]
-    fn value_coordinate_transform_detaches_only_conformers() {
-        let mut mol = Molecule::new();
-        mol.add_atom(carbon(0));
-
-        let with_coords = mol
-            .with_2d_coords()
-            .expect("single atom 2D coordinates should compute");
-
-        assert!(Arc::ptr_eq(&mol.topology, &with_coords.topology));
-        assert!(!Arc::ptr_eq(&mol.conformers, &with_coords.conformers));
-        assert!(Arc::ptr_eq(&mol.props, &with_coords.props));
-        assert!(mol.coords_2d().is_none());
-        assert!(with_coords.coords_2d().is_some());
+    #[allow(dead_code)]
+    pub(crate) fn derived_cache_mut(&mut self) -> &mut DerivedCacheBlock {
+        Arc::make_mut(&mut self.derived_cache)
     }
 
-    #[test]
-    fn public_transforms_keep_coordinate_rows_aligned_with_atoms() {
-        let base_2d = Molecule::from_smiles("CCO")
-            .expect("SMILES should parse")
-            .with_2d_coords()
-            .expect("2D coordinates should compute");
-        assert_coordinate_rows_match_atoms(&base_2d);
-        assert_coordinate_rows_match_atoms(
-            &base_2d
-                .with_hydrogens()
-                .expect("hydrogens should add and clear stale coordinates"),
-        );
-        assert_coordinate_rows_match_atoms(
-            &base_2d
-                .sanitize()
-                .expect("sanitize should preserve coordinate alignment"),
-        );
-
-        let benzene = Molecule::from_smiles("c1ccccc1")
-            .expect("benzene should parse")
-            .with_2d_coords()
-            .expect("benzene 2D coordinates should compute");
-        assert_coordinate_rows_match_atoms(
-            &benzene
-                .with_kekulized_bonds(false)
-                .expect("kekulize should preserve coordinate alignment"),
-        );
-
-        let base_3d = crate::io::sdf::read_sdf_from_str(interleaved_hydrogen_sdf())
-            .expect("3D SDF should parse")
-            .molecule;
-        assert_coordinate_rows_match_atoms(&base_3d);
-        assert_coordinate_rows_match_atoms(
-            &base_3d
-                .without_hydrogens_with_sanitize(false)
-                .expect("hydrogens should remove"),
-        );
-
-        let base_both = base_3d
-            .with_2d_coords()
-            .expect("2D coordinates should compute while preserving 3D conformer");
-        assert_coordinate_rows_match_atoms(&base_both);
-        assert_coordinate_rows_match_atoms(
-            &base_both
-                .without_hydrogens_with_sanitize(false)
-                .expect("hydrogens should remove"),
-        );
-    }
-
-    #[test]
-    fn value_metadata_transform_detaches_only_props() {
-        let mol = ethane_with_2d_coords();
-        let named = mol.with_name("ligand");
-
-        assert!(Arc::ptr_eq(&mol.topology, &named.topology));
-        assert!(Arc::ptr_eq(&mol.conformers, &named.conformers));
-        assert!(!Arc::ptr_eq(&mol.props, &named.props));
-        assert_eq!(mol.props().name, None);
-        assert_eq!(named.props().name.as_deref(), Some("ligand"));
-    }
-
-    #[test]
-    fn value_hydrogen_transform_detaches_topology_only() {
-        let mol = Molecule::from_smiles("CCO")
-            .expect("SMILES should parse")
-            .with_name("ethanol")
-            .with_2d_coords()
-            .expect("2D coordinates should compute")
-            .with_hydrogens()
-            .expect("hydrogens should add");
-        let without_h = mol.without_hydrogens().expect("hydrogens should remove");
-
-        assert!(!Arc::ptr_eq(&mol.topology, &without_h.topology));
-        assert!(Arc::ptr_eq(&mol.conformers, &without_h.conformers));
-        assert!(Arc::ptr_eq(&mol.props, &without_h.props));
-        assert!(mol.atoms().len() > without_h.atoms().len());
-        assert_eq!(mol.props().name, without_h.props().name);
-    }
-
-    #[test]
-    fn reassignment_drops_replaced_topology_block() {
-        let mut mol = Molecule::from_smiles("CCO")
-            .expect("SMILES should parse")
-            .with_hydrogens()
-            .expect("hydrogens should add");
-        let old_topology: std::sync::Weak<TopologyData> = Arc::downgrade(&mol.topology);
-
-        mol = mol.without_hydrogens().expect("hydrogens should remove");
-
-        assert!(old_topology.upgrade().is_none());
-        assert_eq!(mol.atoms().len(), 3);
-    }
-
-    #[test]
-    fn retaining_old_and_new_keeps_both_topology_blocks() {
-        let mol = Molecule::from_smiles("CCO")
-            .expect("SMILES should parse")
-            .with_hydrogens()
-            .expect("hydrogens should add");
-        let old_topology: std::sync::Weak<TopologyData> = Arc::downgrade(&mol.topology);
-
-        let without_h = mol.without_hydrogens().expect("hydrogens should remove");
-
-        assert!(old_topology.upgrade().is_some());
-        assert!(mol.atoms().len() > without_h.atoms().len());
+    #[allow(dead_code)]
+    pub(crate) fn properties_mut(&mut self) -> &mut MoleculeProperties {
+        Arc::make_mut(&mut self.properties)
     }
 }

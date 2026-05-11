@@ -1,146 +1,457 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt};
 
-use crate::query::{BondQueryPredicate, QueryNode};
+use crate::{AtomId, BondQueryPredicate, QueryNode};
 
-/// Bond order for chemical edges.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+/// Stable bond table index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BondId(usize);
+
+impl BondId {
+    #[must_use]
+    pub const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
+impl fmt::Display for BondId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// COSMolKit core bond order.
+///
+/// RDKit aliases and integer codes belong in a compatibility module, not here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BondOrder {
+    Null,
     Single,
     Double,
     Triple,
     Quadruple,
+    Quintuple,
+    Hextuple,
+    OneAndHalf,
+    TwoAndHalf,
+    ThreeAndHalf,
+    FourAndHalf,
+    FiveAndHalf,
     Aromatic,
+    Ionic,
     Dative,
+    DativeOne,
+    DativeLeft,
+    DativeRight,
     Hydrogen,
-    Null,
+    ThreeCenter,
+    Other,
+    Zero,
+    Unspecified,
 }
 
-macro_rules! impl_enum_metadata {
-    (
-        $type:ty,
-        code $code_fn:ident,
-        name $name_fn:ident,
-        parse $parse_fn:ident,
-        members [$($variant:path => ($code:literal, $name:literal, [$($alias:literal),* $(,)?])),+ $(,)?]
-    ) => {
-        impl $type {
-            #[must_use]
-            pub const fn $code_fn(self) -> i64 {
-                match self {
-                    $($variant => $code,)+
-                }
-            }
-
-            #[must_use]
-            pub const fn $name_fn(self) -> &'static str {
-                match self {
-                    $($variant => $name,)+
-                }
-            }
-
-            #[must_use]
-            pub fn $parse_fn(name: &str) -> Option<Self> {
-                match name {
-                    $($name $(| $alias)* => Some($variant),)+
-                    _ => None,
-                }
-            }
+impl BondOrder {
+    #[must_use]
+    pub const fn rdkit_name(self) -> &'static str {
+        match self {
+            Self::Null | Self::Unspecified => "UNSPECIFIED",
+            Self::Single => "SINGLE",
+            Self::Double => "DOUBLE",
+            Self::Triple => "TRIPLE",
+            Self::Quadruple => "QUADRUPLE",
+            Self::Quintuple => "QUINTUPLE",
+            Self::Hextuple => "HEXTUPLE",
+            Self::OneAndHalf => "ONEANDAHALF",
+            Self::TwoAndHalf => "TWOANDAHALF",
+            Self::ThreeAndHalf => "THREEANDAHALF",
+            Self::FourAndHalf => "FOURANDAHALF",
+            Self::FiveAndHalf => "FIVEANDAHALF",
+            Self::Aromatic => "AROMATIC",
+            Self::Ionic => "IONIC",
+            Self::Dative => "DATIVE",
+            Self::DativeOne => "DATIVEONE",
+            Self::DativeLeft => "DATIVEL",
+            Self::DativeRight => "DATIVER",
+            Self::Hydrogen => "HYDROGEN",
+            Self::ThreeCenter => "THREECENTER",
+            Self::Other => "OTHER",
+            Self::Zero => "ZERO",
         }
-    };
+    }
+
+    #[must_use]
+    pub fn from_rdkit_name(name: &str) -> Option<Self> {
+        match name {
+            "UNSPECIFIED" | "ZERO" => Some(Self::Unspecified),
+            "SINGLE" => Some(Self::Single),
+            "DOUBLE" => Some(Self::Double),
+            "TRIPLE" => Some(Self::Triple),
+            "QUADRUPLE" => Some(Self::Quadruple),
+            "QUINTUPLE" => Some(Self::Quintuple),
+            "HEXTUPLE" => Some(Self::Hextuple),
+            "ONEANDAHALF" => Some(Self::OneAndHalf),
+            "TWOANDAHALF" => Some(Self::TwoAndHalf),
+            "THREEANDAHALF" => Some(Self::ThreeAndHalf),
+            "FOURANDAHALF" => Some(Self::FourAndHalf),
+            "FIVEANDAHALF" => Some(Self::FiveAndHalf),
+            "AROMATIC" => Some(Self::Aromatic),
+            "IONIC" => Some(Self::Ionic),
+            "DATIVE" => Some(Self::Dative),
+            "DATIVEONE" => Some(Self::DativeOne),
+            "DATIVEL" => Some(Self::DativeLeft),
+            "DATIVER" => Some(Self::DativeRight),
+            "HYDROGEN" => Some(Self::Hydrogen),
+            "THREECENTER" => Some(Self::ThreeCenter),
+            "OTHER" => Some(Self::Other),
+            _ => None,
+        }
+    }
 }
 
-impl_enum_metadata!(
-    BondOrder,
-    code python_code,
-    name rdkit_name,
-    parse from_rdkit_name,
-    members [
-        BondOrder::Null => (0, "UNSPECIFIED", ["ZERO"]),
-        BondOrder::Single => (1, "SINGLE", []),
-        BondOrder::Double => (2, "DOUBLE", []),
-        BondOrder::Triple => (3, "TRIPLE", []),
-        BondOrder::Quadruple => (4, "QUADRUPLE", []),
-        BondOrder::Aromatic => (5, "AROMATIC", []),
-        BondOrder::Dative => (6, "DATIVE", ["DATIVEL", "DATIVER"]),
-        BondOrder::Hydrogen => (7, "HYDROGEN", []),
-    ]
-);
-
-/// RDKit-style directional single-bond marker used for SMILES cis/trans stereo.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BondDirection {
     None,
+    BeginWedge,
+    BeginDash,
     EndUpRight,
     EndDownRight,
+    EitherDouble,
     Unknown,
 }
 
-impl_enum_metadata!(
-    BondDirection,
-    code python_code,
-    name rdkit_name,
-    parse from_rdkit_name,
-    members [
-        BondDirection::None => (0, "NONE", []),
-        BondDirection::EndUpRight => (1, "ENDUPRIGHT", []),
-        BondDirection::EndDownRight => (2, "ENDDOWNRIGHT", []),
-        BondDirection::Unknown => (3, "UNKNOWN", []),
-    ]
-);
-
-/// RDKit-style double-bond stereo assignment.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BondStereo {
     None,
     Any,
+    Z,
+    E,
     Cis,
     Trans,
+    AtropCw,
+    AtropCcw,
 }
 
-impl_enum_metadata!(
-    BondStereo,
-    code python_code,
-    name rdkit_name,
-    parse from_rdkit_name,
-    members [
-        BondStereo::None => (0, "STEREONONE", []),
-        BondStereo::Any => (1, "STEREOANY", []),
-        BondStereo::Cis => (2, "STEREOCIS", ["STEREOZ"]),
-        BondStereo::Trans => (3, "STEREOTRANS", ["STEREOE"]),
-    ]
-);
-
-/// Bond record in a molecule graph.
+/// Bond construction payload. Builders assign `BondId`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Bond {
-    /// 0-based index in molecule bond table.
-    pub index: usize,
-    /// 0-based begin atom index.
-    pub begin_atom: usize,
-    /// 0-based end atom index.
-    pub end_atom: usize,
-    /// Bond order annotation.
-    pub order: BondOrder,
-    /// RDKit-style aromatic flag, independent from bond order.
-    pub is_aromatic: bool,
-    /// Directional single-bond marker used to assign double-bond stereo.
-    pub direction: BondDirection,
-    /// Double-bond stereo assignment after RDKit-like stereo perception.
-    pub stereo: BondStereo,
-    /// Controlling atom pair for double-bond stereo, in RDKit stereo atom order.
-    pub stereo_atoms: Vec<usize>,
-    /// MDL molfile query-bond code for query bonds representable by a single
-    /// V2000/V3000 bond type field.
-    pub molfile_query_bond_code: Option<u8>,
-    /// Preserved Molfile/SDF bond properties.
-    pub props: BTreeMap<String, String>,
-    /// RDKit-like query bond AST when the bond originates from a query Molfile.
-    pub query: Option<QueryNode<BondQueryPredicate>>,
+pub struct BondSpec {
+    begin: AtomId,
+    end: AtomId,
+    order: BondOrder,
+    is_aromatic: bool,
+    is_conjugated: bool,
+    direction: BondDirection,
+    stereo: BondStereo,
+    stereo_atoms: Option<[AtomId; 2]>,
+    query: Option<QueryNode<BondQueryPredicate>>,
+    props: BTreeMap<String, String>,
 }
 
-impl Bond {
+impl BondSpec {
+    #[must_use]
+    pub const fn new(begin: AtomId, end: AtomId, order: BondOrder) -> Self {
+        Self {
+            begin,
+            end,
+            order,
+            is_aromatic: false,
+            is_conjugated: false,
+            direction: BondDirection::None,
+            stereo: BondStereo::None,
+            stereo_atoms: None,
+            query: None,
+            props: BTreeMap::new(),
+        }
+    }
+
+    #[must_use]
+    pub const fn begin(&self) -> AtomId {
+        self.begin
+    }
+
+    #[must_use]
+    pub const fn end(&self) -> AtomId {
+        self.end
+    }
+
+    #[must_use]
+    pub const fn order(&self) -> BondOrder {
+        self.order
+    }
+
+    #[must_use]
+    pub const fn with_order(mut self, order: BondOrder) -> Self {
+        self.order = order;
+        self
+    }
+
+    #[must_use]
+    pub const fn direction(&self) -> BondDirection {
+        self.direction
+    }
+
+    #[must_use]
+    pub const fn stereo(&self) -> BondStereo {
+        self.stereo
+    }
+
+    #[must_use]
+    pub const fn is_aromatic(&self) -> bool {
+        self.is_aromatic
+    }
+
+    #[must_use]
+    pub const fn is_conjugated(&self) -> bool {
+        self.is_conjugated
+    }
+
+    #[must_use]
+    pub const fn with_aromatic(mut self, is_aromatic: bool) -> Self {
+        self.is_aromatic = is_aromatic;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_conjugated(mut self, is_conjugated: bool) -> Self {
+        self.is_conjugated = is_conjugated;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_direction(mut self, direction: BondDirection) -> Self {
+        self.direction = direction;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_stereo(mut self, stereo: BondStereo) -> Self {
+        self.stereo = stereo;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_stereo_atoms(mut self, begin_ref: AtomId, end_ref: AtomId) -> Self {
+        self.stereo_atoms = Some([begin_ref, end_ref]);
+        self
+    }
+
+    #[must_use]
+    pub const fn without_stereo_atoms(mut self) -> Self {
+        self.stereo_atoms = None;
+        self
+    }
+
+    #[must_use]
+    pub const fn stereo_atoms(&self) -> Option<[AtomId; 2]> {
+        self.stereo_atoms
+    }
+
+    #[must_use]
+    pub fn with_query(mut self, query: QueryNode<BondQueryPredicate>) -> Self {
+        self.query = Some(query);
+        self
+    }
+
+    #[must_use]
+    pub fn without_query(mut self) -> Self {
+        self.query = None;
+        self
+    }
+
+    #[must_use]
+    pub const fn query(&self) -> Option<&QueryNode<BondQueryPredicate>> {
+        self.query.as_ref()
+    }
+
+    #[must_use]
+    pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.props.insert(key.into(), value.into());
+        self
+    }
+
+    #[must_use]
+    pub fn props(&self) -> &BTreeMap<String, String> {
+        &self.props
+    }
+
     #[must_use]
     pub fn prop(&self, key: &str) -> Option<&str> {
         self.props.get(key).map(String::as_str)
+    }
+}
+
+/// Immutable bond record owned by `Molecule`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bond {
+    id: BondId,
+    begin: AtomId,
+    end: AtomId,
+    order: BondOrder,
+    is_aromatic: bool,
+    is_conjugated: bool,
+    direction: BondDirection,
+    stereo: BondStereo,
+    stereo_atoms: Option<[AtomId; 2]>,
+    query: Option<QueryNode<BondQueryPredicate>>,
+    props: BTreeMap<String, String>,
+}
+
+impl Bond {
+    pub(crate) fn from_spec(id: BondId, spec: BondSpec) -> Self {
+        Self {
+            id,
+            begin: spec.begin,
+            end: spec.end,
+            order: spec.order,
+            is_aromatic: spec.is_aromatic,
+            is_conjugated: spec.is_conjugated,
+            direction: spec.direction,
+            stereo: spec.stereo,
+            stereo_atoms: spec.stereo_atoms,
+            query: spec.query,
+            props: spec.props,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn remapped(
+        mut self,
+        id: BondId,
+        begin: AtomId,
+        end: AtomId,
+        stereo_atoms: Option<[AtomId; 2]>,
+    ) -> Self {
+        self.id = id;
+        self.begin = begin;
+        self.end = end;
+        self.stereo_atoms = stereo_atoms;
+        self
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> BondId {
+        self.id
+    }
+
+    #[must_use]
+    pub const fn begin(&self) -> AtomId {
+        self.begin
+    }
+
+    #[must_use]
+    pub const fn end(&self) -> AtomId {
+        self.end
+    }
+
+    #[must_use]
+    pub const fn order(&self) -> BondOrder {
+        self.order
+    }
+
+    #[must_use]
+    pub const fn is_aromatic(&self) -> bool {
+        self.is_aromatic
+    }
+
+    #[must_use]
+    pub const fn is_conjugated(&self) -> bool {
+        self.is_conjugated
+    }
+
+    #[must_use]
+    pub const fn direction(&self) -> BondDirection {
+        self.direction
+    }
+
+    #[must_use]
+    pub const fn stereo(&self) -> BondStereo {
+        self.stereo
+    }
+
+    #[must_use]
+    pub const fn stereo_atoms(&self) -> Option<[AtomId; 2]> {
+        self.stereo_atoms
+    }
+
+    #[must_use]
+    pub const fn query(&self) -> Option<&QueryNode<BondQueryPredicate>> {
+        self.query.as_ref()
+    }
+
+    #[must_use]
+    pub fn props(&self) -> &BTreeMap<String, String> {
+        &self.props
+    }
+
+    #[must_use]
+    pub fn prop(&self, key: &str) -> Option<&str> {
+        self.props.get(key).map(String::as_str)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_order(&mut self, order: BondOrder) {
+        self.order = order;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_endpoints(&mut self, begin: AtomId, end: AtomId) {
+        self.begin = begin;
+        self.end = end;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_aromatic(&mut self, is_aromatic: bool) {
+        self.is_aromatic = is_aromatic;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_conjugated(&mut self, is_conjugated: bool) {
+        self.is_conjugated = is_conjugated;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_direction(&mut self, direction: BondDirection) {
+        self.direction = direction;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_stereo(&mut self, stereo: BondStereo) {
+        // BEGIN RDKIT CPP FUNCTION Bond::setStereo
+        // RDKit✔️✔️: void setStereo(BondStereo what) {
+        // RDKit✔️✔️:   PRECONDITION(((what != STEREOCIS && what != STEREOTRANS) ||
+        // RDKit✔️✔️:                 getStereoAtoms().size() == 2),
+        // RDKit✔️✔️:                "Stereo atoms should be specified before specifying CIS/TRANS "
+        // RDKit✔️✔️:                "bond stereochemistry")
+        // RDKit✔️✔️:   d_stereo = what;
+        // RDKit✔️✔️: }
+        // END RDKIT CPP FUNCTION Bond::setStereo
+        debug_assert!(
+            !matches!(stereo, BondStereo::Cis | BondStereo::Trans) || self.stereo_atoms.is_some(),
+            "stereo atoms should be specified before CIS/TRANS bond stereochemistry"
+        );
+        self.stereo = stereo;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_stereo_atoms(&mut self, stereo_atoms: Option<[AtomId; 2]>) {
+        self.stereo_atoms = stereo_atoms;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_query(&mut self, query: Option<QueryNode<BondQueryPredicate>>) {
+        self.query = query;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        self.props.insert(key.into(), value.into());
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn clear_prop(&mut self, key: &str) {
+        self.props.remove(key);
     }
 }

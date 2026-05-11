@@ -1,3 +1,9 @@
 [submodule "third_party/rdkit"]
 	path = third_party/rdkit
 	url = https://github.com/rdkit/rdkit.git
+[submodule "third_party/gemmi"]
+	path = third_party/gemmi
+	url = https://github.com/project-gemmi/gemmi.git
+[submodule "third_party/RingDecomposerLib"]
+	path = third_party/RingDecomposerLib
+	url = https://github.com/rareylab/RingDecomposerLib.git

@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -55,10 +57,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="delete existing target golden files before regenerating them",
     )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=min(4, os.cpu_count() or 1, len(GENERATORS)),
+        help="number of generator subprocesses to run in parallel (default: min(4, cpu_count, generator_count))",
+    )
     return parser.parse_args()
 
 
-def run_generator(python: str, script_name: str, input_path: Path, output_path: Path) -> None:
+def run_generator(
+    python: str, script_name: str, input_path: Path, output_path: Path
+) -> subprocess.CompletedProcess[str]:
     script_path = REPO_ROOT / "tests" / "scripts" / script_name
     cmd = [
         python,
@@ -68,12 +78,37 @@ def run_generator(python: str, script_name: str, input_path: Path, output_path: 
         "--output",
         str(output_path),
     ]
-    print(f"[golden] {' '.join(cmd)}")
-    subprocess.run(cmd, check=True, cwd=REPO_ROOT)
+    return subprocess.run(
+        cmd,
+        cwd=REPO_ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def print_completed(
+    script_name: str, output_name: str, result: subprocess.CompletedProcess[str]
+) -> None:
+    print(f"[golden] {script_name} -> {output_name}")
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+    if result.stderr:
+        print(result.stderr, end="" if result.stderr.endswith("\n") else "\n", file=sys.stderr)
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode,
+            result.args,
+            output=result.stdout,
+            stderr=result.stderr,
+        )
 
 
 def main() -> None:
     args = parse_args()
+    if args.jobs < 1:
+        raise SystemExit("--jobs must be >= 1")
+
     args.golden_dir.mkdir(parents=True, exist_ok=True)
     if args.clean:
         for _, output_name in GENERATORS:
@@ -81,8 +116,30 @@ def main() -> None:
             if output_path.exists():
                 output_path.unlink()
 
-    for script_name, output_name in GENERATORS:
-        run_generator(args.python, script_name, args.input, args.golden_dir / output_name)
+    if args.jobs == 1:
+        for script_name, output_name in GENERATORS:
+            print(f"[golden] starting {script_name} -> {output_name}")
+            result = run_generator(
+                args.python, script_name, args.input, args.golden_dir / output_name
+            )
+            print_completed(script_name, output_name, result)
+    else:
+        print(f"[golden] running {len(GENERATORS)} generators with --jobs {args.jobs}")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
+            futures = {
+                executor.submit(
+                    run_generator,
+                    args.python,
+                    script_name,
+                    args.input,
+                    args.golden_dir / output_name,
+                ): (script_name, output_name)
+                for script_name, output_name in GENERATORS
+            }
+            for future in concurrent.futures.as_completed(futures):
+                script_name, output_name = futures[future]
+                result = future.result()
+                print_completed(script_name, output_name, result)
 
     print(f"Generated {len(GENERATORS)} RDKit golden files in {args.golden_dir}")
 

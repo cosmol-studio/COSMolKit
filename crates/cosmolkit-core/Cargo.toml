@@ -1,8 +1,8 @@
 [package]
 name = "cosmolkit-core"
-description = "Rust-native cheminformatics and structural biology toolkit for molecules, SMILES, SDF, molecular graphs, conformers, and AI-ready workflows"
-keywords = ["cheminformatics", "molecule", "smiles", "sdf", "bioinformatics"]
-categories = ["science", "parser-implementations", "data-structures"]
+description = "Redesigned COSMolKit core with value-style molecule state and explicit topology operation contracts"
+keywords = ["cheminformatics", "molecule", "graph", "chemistry"]
+categories = ["science", "data-structures"]
 repository = "https://github.com/cosmol-studio/COSMolKit"
 homepage = "https://github.com/cosmol-studio/COSMolKit"
 documentation = "https://docs.rs/cosmolkit"
@@ -15,17 +15,15 @@ edition.workspace = true
 name = "cosmolkit_core"
 path = "src/lib.rs"
 
-[dependencies]
-console = "0.16"
-cosmolkit-macros = { path = "../cosmolkit-macros", version = "0.1.3" }
-glam = "0.32.1"
-indicatif = "0.18"
-rayon = "1.12.0"
-resvg = "0.47.0"
-thiserror = "2.0.18"
-tiny-skia = "0.12.0"
-usvg = "0.47"
+[features]
+default = []
+runtime-invariants = []
+op-contracts = []
+op-contracts-strict = ["runtime-invariants", "op-contracts"]
 
-[dev-dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+[dependencies]
+cosmolkit-macros = { path = "../cosmolkit-macros" }
+cosmolkit-ringdecomposer = { path = "../cosmolkit-ringdecomposer" }
+glam = "0.32.1"
+log = "0.4.29"
+thiserror = "2.0.18"

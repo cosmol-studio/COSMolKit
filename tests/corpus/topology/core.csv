@@ -1,0 +1,23 @@
+case_id,smiles,tags
+basic_methane_001,C,basic hydrogens add_h remove_h
+basic_ethanol_001,CCO,basic hydrogens coords props
+basic_acetic_acid_001,CC(=O)O,basic charged_possible sanitize
+basic_cyclohexane_001,C1CCCCC1,ring hydrogens fragment
+basic_disconnected_001,CC.O,disconnected fragment combine
+charged_ammonium_001,[NH4+],charged explicit_h hydrogens sanitize
+charged_tma_001,C[N+](C)(C)C,charged sanitize
+charged_carboxylate_001,O=C([O-])C,charged sanitize
+charged_nitro_001,C[N+](=O)[O-],charged sanitize
+aromatic_benzene_001,c1ccccc1,aromatic kekulize set_aromatic
+aromatic_pyridine_001,c1ccncc1,aromatic hetero kekulize
+aromatic_pyrrole_001,c1[nH]cccc1,aromatic explicit_h kekulize remove_h
+aromatic_furan_001,c1ccoc1,aromatic hetero kekulize
+ring_fused_001,C1CC2CCC1C2,ring fused fragment renumber
+ring_stereo_001,C1[C@H](O)CCC1,ring stereo renumber
+stereo_tetra_001,F[C@](Cl)(Br)I,stereo tetra renumber remove_atom
+stereo_tetra_h_001,[H][C@](F)(Cl)Br,stereo explicit_h remove_h
+stereo_amino_acid_001,N[C@@H](C)C(=O)O,stereo tetra sanitize
+stereo_alkene_e_001,C/C=C/C,stereo double_bond set_bond_type
+stereo_alkene_z_001,C/C=C\C,stereo double_bond set_bond_type
+dummy_atom_001,*CC,dummy query edit_atom
+isotope_map_001,[13CH3:7]O,isotope atom_map props renumber

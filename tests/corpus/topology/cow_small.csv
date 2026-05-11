@@ -1,0 +1,6 @@
+case_id,smiles,tags
+cow_basic_001,CCO,basic hydrogens
+cow_aromatic_001,c1ccccc1,aromatic kekulize
+cow_stereo_001,F[C@](Cl)(Br)I,stereo renumber
+cow_explicit_h_001,[H][C@](F)(Cl)Br,explicit_h remove_h
+cow_disconnected_001,CC.O,disconnected fragment combine

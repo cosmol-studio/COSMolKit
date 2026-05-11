@@ -5,7 +5,9 @@ use std::path::PathBuf;
 
 use cosmolkit_core::io::molblock::{self, SdfFormat};
 use cosmolkit_core::io::sdf::SdfReader;
-use cosmolkit_core::{BatchErrorMode, BatchRecord, BatchRecordError, SmilesWriteParams};
+use cosmolkit_core::{
+    BatchErrorMode, BatchRecord, BatchRecordError, SmilesWriteParams, batch_progress_bar,
+};
 use numpy::PyArray2;
 use pyo3::PyErr;
 use pyo3::exceptions::{PyIndexError, PyNotImplementedError, PyTypeError, PyValueError};
@@ -704,6 +706,19 @@ where
     })
 }
 
+fn py_attr_f64(obj: &Bound<'_, PyAny>, attr: &str) -> PyResult<f64> {
+    let value = obj.getattr(attr).map_err(|err| {
+        PyValueError::new_err(format!(
+            "from_rdkit failed accessing attribute {attr}: {err}"
+        ))
+    })?;
+    value.extract::<f64>().map_err(|err| {
+        PyValueError::new_err(format!(
+            "from_rdkit failed extracting attribute {attr}: {err}"
+        ))
+    })
+}
+
 fn py_method_str(obj: &Bound<'_, PyAny>, method: &str) -> PyResult<String> {
     let value = py_method(obj, method)?;
     Ok(value
@@ -828,6 +843,97 @@ struct PyBatchError {
     error_type_code: i64,
     error_type_member_name: String,
     message: String,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "SdfRecordMetadata", skip_from_py_object)]
+#[derive(Clone)]
+#[doc = r#"
+Lightweight metadata for one indexed SDF record.
+
+Metadata is available from ``SdfDataset`` without parsing the molecule graph.
+"#]
+struct PySdfRecordMetadata {
+    inner: cosmolkit_core::SdfRecordMetadata,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "SdfRecord", skip_from_py_object)]
+#[derive(Clone)]
+#[doc = r#"
+One parsed SDF record returned by ``SdfDataset``.
+
+The record keeps SDF-level data such as title, data fields, and raw molblock
+separate from the molecular graph.
+"#]
+struct PySdfRecord {
+    index: usize,
+    title: String,
+    molecule: cosmolkit_core::Molecule,
+    data_fields: Vec<(String, String)>,
+    raw_molblock: String,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "SdfDataset", skip_from_py_object)]
+#[derive(Clone)]
+#[doc = r#"
+Indexed, seekable SDF dataset.
+
+``SdfDataset`` builds a lightweight in-memory index of record byte ranges first.
+After opening, ``len(dataset)`` is cheap, ``dataset[i]`` parses only that record,
+``dataset[:n]`` returns a ``MoleculeBatch``, and ``dataset.batches(size=...)``
+yields bounded ``MoleculeBatch`` chunks.
+
+Use ``MoleculeBatch.read_sdf()`` when you intentionally want the whole file in
+memory. Use ``SdfDataset`` for large seekable files where random access,
+metadata inspection, or chunked processing matter.
+"#]
+struct PySdfDataset {
+    inner: cosmolkit_core::SdfDataset,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "SdfReader", skip_from_py_object)]
+#[derive(Clone)]
+#[doc = r#"
+Forward-only SDF reader for one-pass workflows.
+
+Use ``SdfReader`` for non-indexed stream-style processing. For seekable files
+where random access or accurate record-count progress matters, prefer
+``SdfDataset``.
+"#]
+struct PySdfReader {
+    path: PathBuf,
+    coordinate_mode: cosmolkit_core::io::sdf::SdfCoordinateMode,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "SdfDatasetIterator", skip_from_py_object)]
+struct PySdfDatasetIterator {
+    dataset: cosmolkit_core::SdfDataset,
+    position: usize,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "SdfBatchIterator", skip_from_py_object)]
+struct PySdfBatchIterator {
+    dataset: cosmolkit_core::SdfDataset,
+    position: usize,
+    size: usize,
+    errors: BatchErrorMode,
+    n_jobs: Option<usize>,
+    progress_bar: Option<cosmolkit_core::BatchProgressBar>,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "SdfReaderBatchIterator", skip_from_py_object)]
+struct PySdfReaderBatchIterator {
+    reader: cosmolkit_core::io::sdf::SdfReader<BufReader<File>>,
+    index: usize,
+    size: usize,
+    errors: BatchErrorMode,
+    n_jobs: Option<usize>,
 }
 
 impl From<BatchRecordError> for PyBatchError {
@@ -1096,6 +1202,446 @@ Return the error as key-value pairs.
     }
 }
 
+fn sdf_record_py(index: usize, record: cosmolkit_core::io::sdf::SdfRecord) -> PySdfRecord {
+    PySdfRecord {
+        index,
+        title: record.title,
+        molecule: record.molecule,
+        data_fields: record.data_fields,
+        raw_molblock: record.raw_molblock,
+    }
+}
+
+fn sdf_indices_from_key(len: usize, key: &Bound<'_, PyAny>) -> PyResult<Result<Vec<usize>, usize>> {
+    if let Ok(index) = key.extract::<isize>() {
+        let len_i = len as isize;
+        let index = if index < 0 { len_i + index } else { index };
+        if index < 0 || index >= len_i {
+            return Err(PyIndexError::new_err("SdfDataset index out of range"));
+        }
+        return Ok(Err(index as usize));
+    }
+    if let Ok(slice) = key.cast::<PySlice>() {
+        let indices = slice.indices(len as isize)?;
+        let mut out = Vec::with_capacity(indices.slicelength);
+        let mut index = indices.start;
+        for _ in 0..indices.slicelength {
+            out.push(index as usize);
+            index += indices.step;
+        }
+        return Ok(Ok(out));
+    }
+    let raw_indices = key.extract::<Vec<isize>>()?;
+    let mut out = Vec::with_capacity(raw_indices.len());
+    for index in raw_indices {
+        let len_i = len as isize;
+        let index = if index < 0 { len_i + index } else { index };
+        if index < 0 || index >= len_i {
+            return Err(PyIndexError::new_err("SdfDataset index out of range"));
+        }
+        out.push(index as usize);
+    }
+    Ok(Ok(out))
+}
+
+fn sdf_batch_from_range(
+    dataset: &cosmolkit_core::SdfDataset,
+    start: usize,
+    end: usize,
+    errors: BatchErrorMode,
+    progress_bar: Option<&cosmolkit_core::BatchProgressBar>,
+) -> Result<cosmolkit_core::MoleculeBatch, cosmolkit_core::BatchValidationError> {
+    let mut records = Vec::with_capacity(end.saturating_sub(start));
+    for index in start..end {
+        match dataset.record(index) {
+            Ok(record) => records.push(BatchRecord::Valid(record.molecule)),
+            Err(error) => {
+                let record_error = BatchRecordError::new(
+                    index,
+                    None,
+                    "read_sdf",
+                    "SdfReadError",
+                    error.to_string(),
+                );
+                match errors {
+                    BatchErrorMode::Raise | BatchErrorMode::Keep => {
+                        records.push(BatchRecord::Invalid(record_error));
+                    }
+                    BatchErrorMode::Skip => {}
+                }
+            }
+        }
+        if let Some(progress_bar) = progress_bar {
+            progress_bar.inc(1);
+        }
+    }
+    cosmolkit_core::MoleculeBatch::from_records_with_mode(records, errors)
+}
+
+fn sdf_batch_from_indices(
+    dataset: &cosmolkit_core::SdfDataset,
+    indices: Vec<usize>,
+) -> Result<cosmolkit_core::MoleculeBatch, cosmolkit_core::BatchValidationError> {
+    let mut records = Vec::with_capacity(indices.len());
+    for index in indices {
+        match dataset.record(index) {
+            Ok(record) => records.push(BatchRecord::Valid(record.molecule)),
+            Err(error) => records.push(BatchRecord::Invalid(BatchRecordError::new(
+                index,
+                None,
+                "read_sdf",
+                "SdfReadError",
+                error.to_string(),
+            ))),
+        }
+    }
+    cosmolkit_core::MoleculeBatch::from_records_with_mode(records, BatchErrorMode::Raise)
+}
+
+fn sdf_batch_from_reader(
+    reader: &mut cosmolkit_core::io::sdf::SdfReader<BufReader<File>>,
+    start_index: usize,
+    size: usize,
+    errors: BatchErrorMode,
+) -> Result<Option<(cosmolkit_core::MoleculeBatch, usize)>, cosmolkit_core::BatchValidationError> {
+    let mut records = Vec::with_capacity(size);
+    let mut seen = 0usize;
+    let mut index = start_index;
+    while seen < size {
+        match reader.next_record() {
+            Ok(Some(record)) => {
+                records.push(BatchRecord::Valid(record.molecule));
+                seen += 1;
+                index += 1;
+            }
+            Ok(None) => break,
+            Err(error) => {
+                let record_error = BatchRecordError::new(
+                    index,
+                    None,
+                    "read_sdf",
+                    "SdfReadError",
+                    error.to_string(),
+                );
+                match errors {
+                    BatchErrorMode::Raise | BatchErrorMode::Keep => {
+                        records.push(BatchRecord::Invalid(record_error));
+                    }
+                    BatchErrorMode::Skip => {}
+                }
+                seen += 1;
+                index += 1;
+            }
+        }
+    }
+    if seen == 0 {
+        return Ok(None);
+    }
+    cosmolkit_core::MoleculeBatch::from_records_with_mode(records, errors)
+        .map(|batch| Some((batch, index)))
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PySdfRecordMetadata {
+    fn index(&self) -> usize {
+        self.inner.index
+    }
+
+    fn title(&self) -> String {
+        self.inner.title.clone()
+    }
+
+    fn byte_range(&self) -> (u64, u64) {
+        (self.inner.byte_start, self.inner.byte_end)
+    }
+
+    fn line_range(&self) -> (usize, usize) {
+        (self.inner.line_start, self.inner.line_end)
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PySdfRecord {
+    fn index(&self) -> usize {
+        self.index
+    }
+
+    fn title(&self) -> String {
+        self.title.clone()
+    }
+
+    fn molecule(&self) -> Molecule {
+        Molecule {
+            inner: self.molecule.clone(),
+        }
+    }
+
+    fn data_fields(&self) -> Vec<(String, String)> {
+        self.data_fields.clone()
+    }
+
+    fn data_field(&self, name: &str) -> Option<String> {
+        self.data_fields
+            .iter()
+            .find_map(|(key, value)| (key == name).then(|| value.clone()))
+    }
+
+    fn raw_molblock(&self) -> String {
+        self.raw_molblock.clone()
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PySdfDataset {
+    #[classmethod]
+    #[pyo3(signature = (path, index=None, build=None, coordinate_dim=None))]
+    fn open(
+        _cls: &Bound<'_, PyType>,
+        path: &str,
+        index: Option<&Bound<'_, PyAny>>,
+        build: Option<&str>,
+        coordinate_dim: Option<&str>,
+    ) -> PyResult<Self> {
+        let coordinate_mode = parse_sdf_coordinate_mode(coordinate_dim)?;
+        let expanded_path = expand_user_path(path)?;
+        if let Some(build) = build
+            && !matches!(build, "auto" | "always" | "never")
+        {
+            return Err(PyValueError::new_err(
+                "unsupported build mode, expected one of: auto, always, never",
+            ));
+        }
+        if let Some(index) = index
+            && !index.is_none()
+        {
+            if let Ok(value) = index.extract::<String>() {
+                if value != "auto" && value != "memory" {
+                    return Err(PyNotImplementedError::new_err(
+                        "persistent SDF sidecar indexes are not implemented yet; use index='auto', index='memory', or None",
+                    ));
+                }
+            }
+        }
+        let inner = cosmolkit_core::SdfDataset::open(expanded_path, coordinate_mode)
+            .map_err(|err| PyValueError::new_err(format!("SdfDataset.open failed: {err}")))?;
+        Ok(Self { inner })
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn path(&self) -> String {
+        self.inner.path().display().to_string()
+    }
+
+    fn metadata(&self, index: isize) -> PyResult<PySdfRecordMetadata> {
+        let len = self.inner.len() as isize;
+        let index = if index < 0 { len + index } else { index };
+        if index < 0 || index >= len {
+            return Err(PyIndexError::new_err("SdfDataset index out of range"));
+        }
+        Ok(PySdfRecordMetadata {
+            inner: self.inner.metadata(index as usize).unwrap().clone(),
+        })
+    }
+
+    #[gen_stub(override_return_type(type_repr = "typing.Union[SdfRecord, MoleculeBatch]", imports = ("typing")))]
+    fn __getitem__(&self, py: Python<'_>, key: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        match sdf_indices_from_key(self.inner.len(), key)? {
+            Err(index) => {
+                let record = self.inner.record(index).map_err(|err| {
+                    PyValueError::new_err(format!("SdfDataset read failed: {err}"))
+                })?;
+                Ok(Py::new(py, sdf_record_py(index, record))?.into_any())
+            }
+            Ok(indices) => {
+                let inner =
+                    sdf_batch_from_indices(&self.inner, indices).map_err(batch_validation_pyerr)?;
+                Ok(Py::new(
+                    py,
+                    MoleculeBatch {
+                        inner,
+                        parallel_jobs: None,
+                        progress_bar: None,
+                    },
+                )?
+                .into_any())
+            }
+        }
+    }
+
+    fn __iter__(&self) -> PySdfDatasetIterator {
+        PySdfDatasetIterator {
+            dataset: self.inner.clone(),
+            position: 0,
+        }
+    }
+
+    #[pyo3(signature = (size=1024, indices=None, errors=None, n_jobs=None, progress_bar=false))]
+    fn batches(
+        &self,
+        size: usize,
+        indices: Option<Vec<usize>>,
+        errors: Option<&Bound<'_, PyAny>>,
+        n_jobs: Option<usize>,
+        progress_bar: bool,
+    ) -> PyResult<PySdfBatchIterator> {
+        if size == 0 {
+            return Err(PyValueError::new_err("size must be >= 1"));
+        }
+        if indices.is_some() {
+            return Err(PyNotImplementedError::new_err(
+                "indices=... for SdfDataset.batches() is not implemented yet",
+            ));
+        }
+        let errors = parse_batch_error_mode(errors)?;
+        let n_jobs = validate_n_jobs(n_jobs)?;
+        let progress_bar = batch_progress_bar(progress_bar, self.inner.len(), "read_sdf_batches");
+        Ok(PySdfBatchIterator {
+            dataset: self.inner.clone(),
+            position: 0,
+            size,
+            errors,
+            n_jobs,
+            progress_bar,
+        })
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PySdfReader {
+    #[classmethod]
+    #[pyo3(signature = (path, coordinate_dim=None))]
+    fn open(_cls: &Bound<'_, PyType>, path: &str, coordinate_dim: Option<&str>) -> PyResult<Self> {
+        Ok(Self {
+            path: expand_user_path(path)?,
+            coordinate_mode: parse_sdf_coordinate_mode(coordinate_dim)?,
+        })
+    }
+
+    #[pyo3(signature = (size=1024, errors=None, n_jobs=None, progress_bar=false))]
+    fn batches(
+        &self,
+        size: usize,
+        errors: Option<&Bound<'_, PyAny>>,
+        n_jobs: Option<usize>,
+        progress_bar: bool,
+    ) -> PyResult<PySdfReaderBatchIterator> {
+        if size == 0 {
+            return Err(PyValueError::new_err("size must be >= 1"));
+        }
+        if progress_bar {
+            return Err(PyNotImplementedError::new_err(
+                "SdfReader.batches(progress_bar=True) cannot show an accurate total for forward-only streams; use SdfDataset.batches() for indexed progress",
+            ));
+        }
+        let file = File::open(&self.path)
+            .map_err(|err| PyValueError::new_err(format!("SdfReader.open failed: {err}")))?;
+        Ok(PySdfReaderBatchIterator {
+            reader: cosmolkit_core::io::sdf::SdfReader::with_coordinate_mode(
+                BufReader::new(file),
+                self.coordinate_mode,
+            ),
+            index: 0,
+            size,
+            errors: parse_batch_error_mode(errors)?,
+            n_jobs: validate_n_jobs(n_jobs)?,
+        })
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PySdfDatasetIterator {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    #[gen_stub(override_return_type(type_repr = "SdfRecord"))]
+    fn __next__(&mut self) -> PyResult<Option<PySdfRecord>> {
+        if self.position >= self.dataset.len() {
+            return Ok(None);
+        }
+        let index = self.position;
+        self.position += 1;
+        let record = self
+            .dataset
+            .record(index)
+            .map_err(|err| PyValueError::new_err(format!("SdfDataset read failed: {err}")))?;
+        Ok(Some(sdf_record_py(index, record)))
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PySdfBatchIterator {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    #[gen_stub(override_return_type(type_repr = "MoleculeBatch"))]
+    fn __next__(&mut self) -> PyResult<Option<MoleculeBatch>> {
+        if self.position >= self.dataset.len() {
+            if let Some(progress_bar) = self.progress_bar.take() {
+                progress_bar.finish();
+            }
+            return Ok(None);
+        }
+        let start = self.position;
+        let end = self.dataset.len().min(start + self.size);
+        self.position = end;
+        let inner = sdf_batch_from_range(
+            &self.dataset,
+            start,
+            end,
+            self.errors,
+            self.progress_bar.as_ref(),
+        )
+        .map_err(batch_validation_pyerr)?;
+        Ok(Some(MoleculeBatch {
+            inner,
+            parallel_jobs: self.n_jobs,
+            progress_bar: None,
+        }))
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PySdfReaderBatchIterator {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    #[gen_stub(override_return_type(type_repr = "MoleculeBatch"))]
+    fn __next__(&mut self) -> PyResult<Option<MoleculeBatch>> {
+        let start = self.index;
+        let result = sdf_batch_from_reader(&mut self.reader, start, self.size, self.errors)
+            .map_err(batch_validation_pyerr)?;
+        let Some((inner, next_index)) = result else {
+            return Ok(None);
+        };
+        self.index = next_index;
+        Ok(Some(MoleculeBatch {
+            inner,
+            parallel_jobs: self.n_jobs,
+            progress_bar: None,
+        }))
+    }
+}
+
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl PyBatchExportReport {
@@ -1210,6 +1756,85 @@ n_jobs : int, optional
         run_batch_with_n_jobs(n_jobs, move || {
             cosmolkit_core::MoleculeBatch::read_sdf_records_from_str(
                 &sdf_text,
+                coordinate_mode,
+                mode,
+            )
+            .map(|inner| Self {
+                inner,
+                parallel_jobs: None,
+                progress_bar: None,
+            })
+        })?
+        .map_err(batch_validation_pyerr)
+    }
+
+    #[classmethod]
+    #[pyo3(signature = (path, coordinate_dim=None, errors=None, n_jobs=None, progress_bar=false))]
+    #[doc = r#"
+Read all molecule records from an SDF file into a batch.
+
+Parameters
+----------
+path : str
+    SDF file path.
+coordinate_dim : {"auto", "2d", "3d"}, optional
+    How coordinate columns should be interpreted.
+errors : {"raise", "keep", "skip"}, optional
+    Invalid-record handling mode. The default is ``"raise"``.
+n_jobs : int, optional
+    Number of worker threads to use for batch construction.
+progress_bar : bool, optional
+    Show a Rust-side progress bar while records are parsed. This builds a
+    lightweight record index first so the total is known.
+"#]
+    fn read_sdf(
+        _cls: &Bound<'_, PyType>,
+        path: &str,
+        coordinate_dim: Option<&str>,
+        errors: Option<&Bound<'_, PyAny>>,
+        n_jobs: Option<usize>,
+        progress_bar: bool,
+    ) -> PyResult<Self> {
+        let mode = parse_batch_error_mode(errors)?;
+        let coordinate_mode = parse_sdf_coordinate_mode(coordinate_dim)?;
+        let expanded_path = expand_user_path(path)?;
+        if progress_bar {
+            let dataset = cosmolkit_core::SdfDataset::open(&expanded_path, coordinate_mode)
+                .map_err(|err| PyValueError::new_err(format!("read_sdf index failed: {err}")))?;
+            let progress = batch_progress_bar(true, dataset.len(), "read_sdf");
+            validate_n_jobs(n_jobs)?;
+            let result = {
+                let callback = progress.as_ref().map(|progress| progress.callback());
+                cosmolkit_core::MoleculeBatch::read_sdf_dataset_with_progress(
+                    &dataset,
+                    mode,
+                    callback.as_ref().map(|callback| callback.as_ref()),
+                )
+                .map(|inner| Self {
+                    inner,
+                    parallel_jobs: None,
+                    progress_bar: None,
+                })
+            };
+            if let Some(progress) = progress {
+                progress.finish();
+            }
+            return result.map_err(batch_validation_pyerr);
+        }
+        run_batch_with_n_jobs(n_jobs, move || {
+            let file = File::open(&expanded_path).map_err(|error| {
+                cosmolkit_core::BatchValidationError {
+                    errors: vec![cosmolkit_core::BatchRecordError::new(
+                        0,
+                        Some(expanded_path.display().to_string()),
+                        "read_sdf",
+                        "IoError",
+                        format!("open failed: {error}"),
+                    )],
+                }
+            })?;
+            cosmolkit_core::MoleculeBatch::read_sdf_records_from_reader(
+                BufReader::new(file),
                 coordinate_mode,
                 mode,
             )
@@ -2301,6 +2926,32 @@ Molecule
                 props: Default::default(),
                 query: None,
             });
+        }
+
+        let conformers = py_method(rdmol, "GetConformers")?;
+        let conformer_iter = PyIterator::from_object(&conformers)?;
+        for conformer in conformer_iter {
+            let conformer = conformer.map_err(|err| {
+                PyValueError::new_err(format!(
+                    "from_rdkit failed iterating result from GetConformers: {err}"
+                ))
+            })?;
+            if !py_method_extract::<bool>(&conformer, "Is3D")? {
+                continue;
+            }
+            let mut coords = Vec::with_capacity(atom_count);
+            for atom_idx in 0..atom_count {
+                let pos = py_method_index(&conformer, "GetAtomPosition", atom_idx)?;
+                coords.push(glam::DVec3::new(
+                    py_attr_f64(&pos, "x")?,
+                    py_attr_f64(&pos, "y")?,
+                    py_attr_f64(&pos, "z")?,
+                ));
+            }
+            mol.conformers_3d_mut().push(coords);
+        }
+        if !mol.conformers_3d().is_empty() {
+            mol.set_source_coordinate_dim(Some(cosmolkit_core::CoordinateDimension::ThreeD));
         }
 
         cosmolkit_core::assign_double_bond_stereo_from_directions(&mut mol);
@@ -3533,6 +4184,13 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     add_batch_validation_error_class(m)?;
     m.add_class::<Molecule>()?;
     m.add_class::<MoleculeBatch>()?;
+    m.add_class::<PySdfDataset>()?;
+    m.add_class::<PySdfReader>()?;
+    m.add_class::<PySdfRecord>()?;
+    m.add_class::<PySdfRecordMetadata>()?;
+    m.add_class::<PySdfDatasetIterator>()?;
+    m.add_class::<PySdfBatchIterator>()?;
+    m.add_class::<PySdfReaderBatchIterator>()?;
     m.add_class::<PyBatchError>()?;
     m.add_class::<PyBatchExportReport>()?;
     m.add_class::<Atom>()?;

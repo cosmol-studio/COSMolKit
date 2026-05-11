@@ -1,185 +1,1420 @@
-use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use crate::valence::valence_list;
-use crate::valence::{ValenceModel, assign_valence};
-use crate::{BondDirection, BondOrder, Molecule};
+use crate::{
+    AtomId, BondDirection, BondId, BondOrder, Molecule, RingFindingError, RingInfo, ValenceError,
+    ValenceModel, assign_valence_with_options, canon_rank::FragmentRankScope,
+    canon_rank::rank_fragment_atoms_for_kekulize, molecule::TopologyBlock, symmetrize_sssr,
+};
 
-/// Kekulization errors.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum KekulizeError {
-    #[error("impossible aromatic assignment")]
-    ImpossibleAromaticAssignment,
-    #[error("kekulization path is not implemented")]
-    NotImplemented,
+    #[error("can't kekulize mol. unkekulized atoms: {atoms:?}")]
+    UnkekulizedAtoms { atoms: Vec<AtomId> },
+    #[error("non-ring atom {atom} marked aromatic")]
+    NonRingAromaticAtom { atom: AtomId },
+    #[error("incomplete RDKit kekulize port for {branch}: {reason}")]
+    ProtocolDebt {
+        branch: &'static str,
+        reason: &'static str,
+    },
+    #[error("kekulization changed valence on atom {atom}: {before}!={after}")]
+    ValenceChanged {
+        atom: AtomId,
+        before: i32,
+        after: i32,
+    },
+    #[error("kekulize fragment bitset size mismatch: atoms={atoms}, bonds={bonds}")]
+    FragmentBitsetSizeMismatch { atoms: usize, bonds: usize },
+    #[error("canonical rank {kind} symbol size mismatch: expected={expected}, actual={actual}")]
+    CanonicalRankSymbolSizeMismatch {
+        kind: &'static str,
+        expected: usize,
+        actual: usize,
+    },
+    #[error(transparent)]
+    RingFinding(#[from] RingFindingError),
+    #[error(transparent)]
+    Valence(#[from] ValenceError),
 }
 
-/// Convert aromatic bond representation to one concrete alternating form.
-pub fn kekulize_in_place(
-    molecule: &mut Molecule,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct KekulizeAssignment {
+    bond_orders: Vec<Option<BondOrder>>,
+    bond_aromatic_flags: Vec<Option<bool>>,
+    bond_directions: Vec<Option<BondDirection>>,
+    atom_aromatic_flags: Vec<Option<bool>>,
+    atom_explicit_hydrogens: Vec<Option<u8>>,
+    atom_no_implicit: Vec<Option<bool>>,
+}
+
+struct KekulizeCandidateState {
+    all_atoms: Vec<AtomId>,
+    candidate_atoms: BTreeSet<AtomId>,
+    aromatic_edges: Vec<(BondId, AtomId, AtomId)>,
+    questions: Vec<AtomId>,
+    done: Vec<AtomId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct KekulizeRing {
+    atoms: Vec<AtomId>,
+    bonds: Vec<BondId>,
+    source_ring: usize,
+}
+
+impl KekulizeAssignment {
+    fn empty(molecule: &Molecule) -> Self {
+        Self {
+            bond_orders: vec![None; molecule.num_bonds()],
+            bond_aromatic_flags: vec![None; molecule.num_bonds()],
+            bond_directions: vec![None; molecule.num_bonds()],
+            atom_aromatic_flags: vec![None; molecule.num_atoms()],
+            atom_explicit_hydrogens: vec![None; molecule.num_atoms()],
+            atom_no_implicit: vec![None; molecule.num_atoms()],
+        }
+    }
+
+    pub(crate) fn bond_order(&self, bond: BondId) -> Option<BondOrder> {
+        self.bond_orders[bond.index()]
+    }
+
+    pub(crate) fn bond_aromatic_flag(&self, bond: BondId) -> Option<bool> {
+        self.bond_aromatic_flags[bond.index()]
+    }
+
+    pub(crate) fn bond_direction(&self, bond: BondId) -> Option<BondDirection> {
+        self.bond_directions[bond.index()]
+    }
+
+    pub(crate) fn atom_aromatic_flag(&self, atom: AtomId) -> Option<bool> {
+        self.atom_aromatic_flags[atom.index()]
+    }
+
+    pub(crate) fn atom_explicit_hydrogens(&self, atom: AtomId) -> Option<u8> {
+        self.atom_explicit_hydrogens[atom.index()]
+    }
+
+    pub(crate) fn atom_no_implicit(&self, atom: AtomId) -> Option<bool> {
+        self.atom_no_implicit[atom.index()]
+    }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.bond_orders.iter().all(Option::is_none)
+            && self.bond_aromatic_flags.iter().all(Option::is_none)
+            && self.bond_directions.iter().all(Option::is_none)
+            && self.atom_aromatic_flags.iter().all(Option::is_none)
+            && self.atom_explicit_hydrogens.iter().all(Option::is_none)
+            && self.atom_no_implicit.iter().all(Option::is_none)
+    }
+}
+
+pub(crate) fn apply_kekulize_assignment(
+    topology: &mut TopologyBlock,
+    assignment: &KekulizeAssignment,
+) -> bool {
+    let mut changed = false;
+    for bond in &mut topology.bonds {
+        if let Some(next) = assignment.bond_order(bond.id()) {
+            if bond.order() != next {
+                bond.set_order(next);
+                changed = true;
+            }
+        }
+        if let Some(next) = assignment.bond_aromatic_flag(bond.id()) {
+            if bond.is_aromatic() != next {
+                bond.set_aromatic(next);
+                changed = true;
+            }
+        }
+        if let Some(next) = assignment.bond_direction(bond.id()) {
+            if bond.direction() != next {
+                bond.set_direction(next);
+                changed = true;
+            }
+        }
+    }
+    for atom in &mut topology.atoms {
+        if let Some(next) = assignment.atom_aromatic_flag(atom.id()) {
+            if atom.is_aromatic() != next {
+                atom.set_aromatic(next);
+                changed = true;
+            }
+        }
+        if let Some(next) = assignment.atom_explicit_hydrogens(atom.id()) {
+            if atom.explicit_hydrogens() != next {
+                atom.set_explicit_hydrogens(next);
+                changed = true;
+            }
+        }
+        if let Some(next) = assignment.atom_no_implicit(atom.id()) {
+            if atom.no_implicit() != next {
+                atom.set_no_implicit(next);
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
+pub(crate) fn kekulize_assignment(
+    molecule: &Molecule,
+    rings: Option<&RingInfo>,
     clear_aromatic_flags: bool,
-) -> Result<(), KekulizeError> {
-    if molecule.bonds().is_empty() {
-        return Ok(());
+    canonical: bool,
+    max_backtracks: usize,
+) -> Result<KekulizeAssignment, KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION MolOps::Kekulize
+    // RDKit❗✔️: void Kekulize(RWMol &mol, bool markAtomsBonds, bool canonical,
+    // RDKit❗✔️:               unsigned int maxBackTracks) {
+    // RDKit❗✔️:   boost::dynamic_bitset<> atomsToUse(mol.getNumAtoms());
+    // RDKit❗✔️:   atomsToUse.set();
+    // RDKit❗✔️:   boost::dynamic_bitset<> bondsToUse(mol.getNumBonds());
+    // RDKit❗✔️:   bondsToUse.set();
+    // RDKit❗✔️:   details::KekulizeFragment(mol, atomsToUse, bondsToUse, markAtomsBonds,
+    // RDKit❗✔️:                             canonical, maxBackTracks);
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION MolOps::Kekulize
+    let owned_rings;
+    let rings = if let Some(rings) = rings {
+        rings
+    } else {
+        owned_rings = symmetrize_sssr(molecule)?;
+        &owned_rings
+    };
+    let atoms_to_use = vec![true; molecule.num_atoms()];
+    let bonds_to_use = vec![true; molecule.num_bonds()];
+    kekulize_fragment_assignment(
+        molecule,
+        rings,
+        &atoms_to_use,
+        bonds_to_use,
+        clear_aromatic_flags,
+        canonical,
+        max_backtracks,
+    )
+}
+
+fn kekulize_fragment_assignment(
+    molecule: &Molecule,
+    rings: &RingInfo,
+    atoms_to_use: &[bool],
+    mut bonds_to_use: Vec<bool>,
+    clear_aromatic_flags: bool,
+    canonical: bool,
+    max_backtracks: usize,
+) -> Result<KekulizeAssignment, KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION details::KekulizeFragment
+    // RDKit❗✔️: void KekulizeFragment(RWMol &mol, const boost::dynamic_bitset<> &atomsToUse,
+    // RDKit❗✔️:                       boost::dynamic_bitset<> bondsToUse, bool markAtomsBonds,
+    // RDKit❗✔️:                       bool canonical, unsigned int maxBackTracks) {
+    // RDKit❗✔️:   PRECONDITION(atomsToUse.size() == mol.getNumAtoms(),
+    // RDKit❗✔️:                "atomsToUse is wrong size");
+    // RDKit❗✔️:   PRECONDITION(bondsToUse.size() == mol.getNumBonds(),
+    // RDKit❗✔️:                "bondsToUse is wrong size");
+    // RDKit❗✔️:   if (atomsToUse.none()) {
+    // RDKit❗✔️:     return;
+    // RDKit❗✔️:   }
+    if atoms_to_use.len() != molecule.num_atoms() || bonds_to_use.len() != molecule.num_bonds() {
+        return Err(KekulizeError::FragmentBitsetSizeMismatch {
+            atoms: atoms_to_use.len(),
+            bonds: bonds_to_use.len(),
+        });
+    }
+    let mut assignment = KekulizeAssignment::empty(molecule);
+    if !atoms_to_use.iter().any(|selected| *selected) {
+        return Ok(assignment);
     }
 
-    let mut aromatic_bonds: Vec<usize> = Vec::new();
-    for (bi, b) in molecule.bonds().iter().enumerate() {
-        if b.is_aromatic {
-            aromatic_bonds.push(bi);
+    // RDKit❗✔️:   bool foundAromatic = false;
+    // RDKit❗✔️:   for (const auto bond : mol.bonds()) {
+    // RDKit❗✔️:     if (bondsToUse[bond->getIdx()]) {
+    // RDKit❗✔️:       if (QueryOps::hasBondTypeQuery(*bond)) {
+    // RDKit❗✔️:         bondsToUse[bond->getIdx()] = 0;
+    // RDKit❗✔️:       } else if (bond->getIsAromatic()) {
+    // RDKit❗✔️:         foundAromatic = true;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    let mut found_aromatic = false;
+    for bond in molecule.bonds() {
+        if bonds_to_use[bond.id().index()] {
+            if bond
+                .query()
+                .is_some_and(crate::valence::has_bond_type_query)
+            {
+                bonds_to_use[bond.id().index()] = false;
+            } else if bond.is_aromatic() {
+                found_aromatic = true;
+            }
         }
     }
-    if aromatic_bonds.is_empty() {
-        return Ok(());
+
+    // RDKit❗✔️:   for (auto atom : mol.atoms()) {
+    // RDKit❗✔️:     atom->calcImplicitValence(false);
+    // RDKit❗✔️:     valences[atom->getIdx()] = atom->getTotalValence();
+    // RDKit❗✔️:     if (isAromaticAtom(*atom)) {
+    // RDKit❗✔️:       foundAromatic = true;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    let pre_kek_valence = assign_valence_with_options(molecule, ValenceModel::RdkitLike, false)?;
+    if molecule.atoms().iter().any(crate::Atom::is_aromatic) {
+        found_aromatic = true;
+    }
+    if !found_aromatic {
+        return Ok(assignment);
     }
 
-    let mut bond_lookup: HashMap<(usize, usize), usize> = HashMap::new();
-    for (bi, b) in molecule.bonds().iter().enumerate() {
-        let key = if b.begin_atom <= b.end_atom {
-            (b.begin_atom, b.end_atom)
-        } else {
-            (b.end_atom, b.begin_atom)
-        };
-        bond_lookup.insert(key, bi);
-    }
-    let aromatic_set: HashSet<usize> = aromatic_bonds.iter().copied().collect();
-    let aromatic_components: Vec<Vec<usize>> = fused_ring_atom_components(molecule)
-        .into_iter()
-        .filter(|comp| {
-            let comp_set: HashSet<usize> = comp.iter().copied().collect();
-            aromatic_set.iter().any(|&bi| {
-                let bond = &molecule.bonds()[bi];
-                comp_set.contains(&bond.begin_atom) && comp_set.contains(&bond.end_atom)
-            })
-        })
-        .collect();
-    if aromatic_components.is_empty() {
-        return Err(KekulizeError::ImpossibleAromaticAssignment);
-    }
-
-    let atom_ranks = rank_fragment_atoms_for_kekulize(molecule);
-
-    for all_atms in aromatic_components {
-        if !aromatic_component_has_cycle(molecule, &all_atms, &aromatic_set) {
-            // RDKit rejects aromatic atoms/bonds outside ring systems in
-            // sanitization/kekulization flow.
-            return Err(KekulizeError::ImpossibleAromaticAssignment);
-        }
-        let mut d_bond_cands = vec![false; molecule.atoms().len()];
-        let mut done = Vec::<usize>::new();
-        let mut questions = Vec::<usize>::new();
-        mark_dbond_cands(
+    // RDKit❗✔️:   UINT_VECT atomRanks(mol.getNumAtoms());
+    // RDKit❗✔️:   if (canonical) {
+    // RDKit❗✔️:     Canon::rankFragmentAtoms(mol, atomRanks, atomsToUse, bondsToUse);
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     std::iota(atomRanks.begin(), atomRanks.end(), 0u);
+    // RDKit❗✔️:   }
+    let atom_ranks = if canonical {
+        rank_fragment_atoms_for_kekulize(
             molecule,
-            &all_atms,
-            &aromatic_set,
-            &mut d_bond_cands,
-            &mut questions,
-            &mut done,
-        );
+            FragmentRankScope::new(atoms_to_use, &bonds_to_use),
+        )?
+    } else {
+        (0..molecule.num_atoms()).collect::<Vec<_>>()
+    };
 
-        let mut d_bond_adds = vec![false; molecule.bonds().len()];
-        let ok = kekulize_worker(
-            molecule,
-            &all_atms,
-            &aromatic_set,
-            &bond_lookup,
-            &atom_ranks,
-            &mut d_bond_cands,
-            &mut d_bond_adds,
-            &mut done,
-            100,
-        );
-        let success = if ok {
-            true
-        } else if !questions.is_empty() {
-            permute_dummies_and_kekulize(
-                molecule,
-                &all_atms,
-                &aromatic_set,
-                &bond_lookup,
-                &atom_ranks,
-                &d_bond_cands,
-                &questions,
-                100,
+    // RDKit❗✔️:   if (bondsToUse.any()) {
+    // RDKit❗✔️:     if (!mol.getRingInfo()->isInitialized()) {
+    // RDKit❗✔️:       MolOps::findSSSR(mol, allringsSSSR);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   if (bondsToUse.any()) {
+    // RDKit❗✔️:     boost::dynamic_bitset<> wedgedAtoms(numAtoms);
+    // RDKit❗✔️:     for (const auto bond : mol.bonds()) {
+    // RDKit❗✔️:       if (bondsToUse[bond->getIdx()] &&
+    // RDKit❗✔️:           (bond->getBondDir() == Bond::BEGINWEDGE ||
+    // RDKit❗✔️:            bond->getBondDir() == Bond::BEGINDASH)) {
+    // RDKit❗✔️:         wedgedAtoms.set(bond->getBeginAtomIdx());
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    let mut wedged_atoms = BTreeSet::new();
+    for bond in molecule.bonds() {
+        if bonds_to_use[bond.id().index()]
+            && matches!(
+                bond.direction(),
+                BondDirection::BeginWedge | BondDirection::BeginDash
             )
-        } else {
-            false
-        };
-        if !success {
-            return Err(KekulizeError::ImpossibleAromaticAssignment);
+        {
+            wedged_atoms.insert(bond.begin());
         }
     }
 
+    // RDKit❗✔️:     const VECT_INT_VECT &allrings =
+    // RDKit❗✔️:         allringsSSSR.empty() ? mol.getRingInfo()->atomRings() : allringsSSSR;
+    // RDKit❗✔️:     std::deque<INT_VECT> tmpRings;
+    // RDKit❗✔️:     auto containsNonDummy = [&atomsToUse, &dummyAts](const INT_VECT &ring) {
+    // RDKit❗✔️:       bool ringOk = false;
+    // RDKit❗✔️:       for (auto ai : ring) {
+    // RDKit❗✔️:         if (!atomsToUse[ai]) {
+    // RDKit❗✔️:           return false;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         if (!dummyAts[ai]) {
+    // RDKit❗✔️:           ringOk = true;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       return ringOk;
+    // RDKit❗✔️:     };
+    // RDKit❗✔️:     for (const auto &ring : allrings) {
+    // RDKit❗✔️:       if (containsNonDummy(ring)) {
+    // RDKit❗✔️:         unsigned int startPos = 0;
+    // RDKit❗✔️:         bool hasWedge = false;
+    // RDKit❗✔️:         for (auto ri = 0u; ri < ring.size(); ++ri) {
+    // RDKit❗✔️:           if (wedgedAtoms[ring[ri]]) {
+    // RDKit❗✔️:             startPos = ri;
+    // RDKit❗✔️:             hasWedge = true;
+    // RDKit❗✔️:             break;
+    // RDKit❗✔️:           }
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         INT_VECT nring(ring.size());
+    // RDKit❗✔️:         for (auto ri = 0u; ri < ring.size(); ++ri) {
+    // RDKit❗✔️:           nring[ri] = ring.at((ri + startPos) % ring.size());
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         if (!hasWedge) {
+    // RDKit❗✔️:           tmpRings.push_back(nring);
+    // RDKit❗✔️:         } else {
+    // RDKit❗✔️:           tmpRings.push_front(nring);
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     VECT_INT_VECT arings;
+    // RDKit❗✔️:     arings.reserve(allrings.size());
+    // RDKit❗✔️:     arings.insert(arings.end(), tmpRings.begin(), tmpRings.end());
+    // RDKit❗✔️:     VECT_INT_VECT allbrings;
+    // RDKit❗✔️:     RingUtils::convertToBonds(arings, allbrings, mol);
+    // RDKit❗✔️:     VECT_INT_VECT brings;
+    // RDKit❗✔️:     brings.reserve(allbrings.size());
+    // RDKit❗✔️:     auto copyBondRingsWithinFragment = [&bondsToUse](const INT_VECT &ring) {
+    // RDKit❗✔️:       return std::all_of(ring.begin(), ring.end(), [&bondsToUse](const int bi) {
+    // RDKit❗✔️:         return bondsToUse[bi];
+    // RDKit❗✔️:       });
+    // RDKit❗✔️:     };
+    // RDKit❗✔️:     VECT_INT_VECT aringsRemaining;
+    // RDKit❗✔️:     aringsRemaining.reserve(arings.size());
+    // RDKit❗✔️:     for (unsigned i = 0; i < allbrings.size(); ++i) {
+    // RDKit❗✔️:       if (copyBondRingsWithinFragment(allbrings[i])) {
+    // RDKit❗✔️:         brings.push_back(allbrings[i]);
+    // RDKit❗✔️:         aringsRemaining.push_back(arings[i]);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     arings = std::move(aringsRemaining);
+    let kekulize_rings =
+        ordered_kekulize_rings(molecule, rings, atoms_to_use, &bonds_to_use, &wedged_atoms);
+    let ring_systems = fused_ring_systems(&kekulize_rings);
+    for system in ring_systems {
+        let ring_bond_set = system
+            .iter()
+            .flat_map(|&ring_idx| kekulize_rings[ring_idx].bonds.iter().copied())
+            .collect::<BTreeSet<_>>();
+        let ring_atom_set = system
+            .iter()
+            .flat_map(|&ring_idx| kekulize_rings[ring_idx].atoms.iter().copied())
+            .collect::<BTreeSet<_>>();
+
+        if ring_bond_set
+            .iter()
+            .any(|bond| molecule.bonds()[bond.index()].is_aromatic())
+            || ring_atom_set
+                .iter()
+                .any(|atom| molecule.atoms()[atom.index()].is_aromatic())
+        {
+            kekulize_fused_assignment(
+                molecule,
+                rings,
+                &kekulize_rings,
+                &system,
+                &atom_ranks,
+                max_backtracks,
+                &mut assignment,
+            )?;
+        }
+    }
+
+    // RDKit❗✔️:   if (markAtomsBonds) {
+    // RDKit❗✔️:     for (auto bond : mol.bonds()) {
+    // RDKit❗✔️:       if (bondsToUse[bond->getIdx()]) {
+    // RDKit❗✔️:         bond->setIsAromatic(false);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     for (auto atom : mol.atoms()) {
+    // RDKit❗✔️:       if (atomsToUse[atom->getIdx()] && atom->getIsAromatic()) {
     if clear_aromatic_flags {
-        // RDKit markAtomsBonds=true / clearAromaticFlags=True behavior.
-        for atom in molecule.atoms_mut() {
-            atom.is_aromatic = false;
-        }
-        for b in molecule.bonds_mut() {
-            if b.is_aromatic {
-                b.is_aromatic = false;
+        for bond in molecule.bonds() {
+            if bonds_to_use[bond.id().index()] && bond.is_aromatic() {
+                assignment.bond_aromatic_flags[bond.id().index()] = Some(false);
             }
-            if matches!(b.order, BondOrder::Aromatic) {
-                b.order = BondOrder::Single;
+        }
+        for atom in molecule.atoms() {
+            if atoms_to_use[atom.id().index()] && atom.is_aromatic() {
+                if rings.num_atom_rings(atom.id()) == 0 {
+                    return Err(KekulizeError::NonRingAromaticAtom { atom: atom.id() });
+                }
+                assignment.atom_aromatic_flags[atom.id().index()] = Some(false);
+                // RDKit❗✔️:         if ((atom->getAtomicNum() == 7 || atom->getAtomicNum() == 15) &&
+                // RDKit❗✔️:             atom->getFormalCharge() == 0 && atom->getNumExplicitHs() == 1) {
+                // RDKit❗✔️:           atom->setNoImplicit(false);
+                // RDKit❗✔️:           atom->setNumExplicitHs(0);
+                if matches!(atom.atomic_number(), 7 | 15)
+                    && atom.formal_charge() == 0
+                    && atom.explicit_hydrogens() == 1
+                {
+                    assignment.atom_no_implicit[atom.id().index()] = Some(false);
+                    assignment.atom_explicit_hydrogens[atom.id().index()] = Some(0);
+                }
             }
         }
     }
+    let mut kekulized = molecule.clone();
+    apply_kekulize_assignment(kekulized.topology_block_mut(), &assignment);
+    let post_kek_valence = assign_valence_with_options(&kekulized, ValenceModel::RdkitLike, false)?;
+    for atom in molecule.atoms() {
+        let idx = atom.id().index();
+        let before =
+            pre_kek_valence.explicit_valence[idx] + pre_kek_valence.implicit_hydrogens[idx];
+        let after =
+            post_kek_valence.explicit_valence[idx] + post_kek_valence.implicit_hydrogens[idx];
+        if before != after {
+            return Err(KekulizeError::ValenceChanged {
+                atom: atom.id(),
+                before,
+                after,
+            });
+        }
+    }
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION details::KekulizeFragment
+    Ok(assignment)
+}
 
+fn kekulize_fused_assignment(
+    molecule: &Molecule,
+    rings: &RingInfo,
+    kekulize_rings: &[KekulizeRing],
+    fused_ring_indices: &[usize],
+    atom_ranks: &[usize],
+    max_backtracks: usize,
+    assignment: &mut KekulizeAssignment,
+) -> Result<(), KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION kekulizeFused
+    // RDKit❗✔️: void kekulizeFused(RWMol &mol, const VECT_INT_VECT &arings,
+    // RDKit❗✔️:                    const UINT_VECT &atomRanks, unsigned int maxBackTracks) {
+    // RDKit❗✔️:   INT_VECT allAtms;
+    // RDKit❗✔️:   Union(arings, allAtms);
+    // RDKit❗✔️:   INT_VECT done;
+    // RDKit❗✔️:   INT_VECT questions;
+    // RDKit❗✔️:   boost::dynamic_bitset<> dBndCands(nats);
+    // RDKit❗✔️:   boost::dynamic_bitset<> dBndAdds(nbnds);
+    // RDKit❗✔️:   markDbondCands(mol, allAtms, dBndCands, questions, done);
+    let state = mark_double_bond_candidates(
+        molecule,
+        rings,
+        kekulize_rings,
+        fused_ring_indices,
+        assignment,
+    )?;
+
+    // RDKit❗✔️:   auto kekulized =
+    // RDKit❗✔️:       kekulizeWorker(mol, allAtms, dBndCands, dBndAdds, done, atomRanks,
+    // RDKit❗✔️:                      maxBackTracks);
+    let matched_bonds = if let Some(matched_bonds) = kekulize_worker_matching(
+        molecule,
+        &state,
+        &state.done,
+        atom_ranks,
+        max_backtracks,
+        &BTreeSet::new(),
+    ) {
+        matched_bonds
+    } else if let Some(matched_bonds) = permute_dummies_and_match(
+        molecule,
+        &state,
+        &state.questions,
+        atom_ranks,
+        max_backtracks,
+    ) {
+        matched_bonds
+    } else {
+        return Err(KekulizeError::UnkekulizedAtoms {
+            atoms: state.candidate_atoms.iter().copied().collect(),
+        });
+    };
+
+    for (bond, _, _) in state.aromatic_edges {
+        assignment.bond_orders[bond.index()] = Some(if matched_bonds.contains(&bond) {
+            BondOrder::Double
+        } else {
+            BondOrder::Single
+        });
+        if matched_bonds.contains(&bond)
+            && molecule.bonds()[bond.index()].direction() != BondDirection::None
+        {
+            assignment.bond_directions[bond.index()] = Some(BondDirection::None);
+        }
+    }
+    // RDKit❗✔️:   if (!kekulized) {
+    // RDKit❗✔️:     throw KekulizeException(msg, problemAtoms);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION kekulizeFused
     Ok(())
 }
 
-pub fn kekulized(molecule: &Molecule) -> Result<Molecule, KekulizeError> {
-    molecule.with_kekulized_bonds(true)
-}
-
-fn bond_order_contrib(order: BondOrder) -> i32 {
-    match order {
-        BondOrder::Single | BondOrder::Dative => 1,
-        BondOrder::Double => 2,
-        BondOrder::Triple => 3,
-        BondOrder::Quadruple => 4,
-        BondOrder::Aromatic => 1,
-        BondOrder::Hydrogen => 0,
-        BondOrder::Null => 0,
-    }
-}
-
-fn bond_valence_contrib_for_atom(mol: &Molecule, bond_index: usize, atom_idx: usize) -> i32 {
-    let b = &mol.bonds()[bond_index];
-    if b.begin_atom != atom_idx && b.end_atom != atom_idx {
-        return 0;
-    }
-    if matches!(b.order, BondOrder::Dative) {
-        // Mirror RDKit valence contribution for dative bonds:
-        // donor(begin)=0, acceptor(end)=1.
-        if b.end_atom == atom_idx {
-            return 1;
+fn mark_double_bond_candidates(
+    molecule: &Molecule,
+    rings: &RingInfo,
+    kekulize_rings: &[KekulizeRing],
+    fused_ring_indices: &[usize],
+    assignment: &mut KekulizeAssignment,
+) -> Result<KekulizeCandidateState, KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION markDbondCands
+    // RDKit❗✔️: void markDbondCands(RWMol &mol, const INT_VECT &allAtms,
+    // RDKit❗✔️:                     boost::dynamic_bitset<> &dBndCands, INT_VECT &questions,
+    // RDKit❗✔️:                     INT_VECT &done) {
+    // RDKit❗✔️:   bool hasAromaticOrDummyAtom =
+    // RDKit❗✔️:       std::any_of(allAtms.begin(), allAtms.end(), [&mol](int allAtm) {
+    // RDKit❗✔️:         return (!mol.getAtomWithIdx(allAtm)->getAtomicNum() ||
+    // RDKit❗✔️:                 isAromaticAtom(*mol.getAtomWithIdx(allAtm)));
+    // RDKit❗✔️:       });
+    let mut all_atoms = Vec::new();
+    let mut seen_atoms = BTreeSet::new();
+    for &ring_idx in fused_ring_indices {
+        for &atom_id in &kekulize_rings[ring_idx].atoms {
+            if seen_atoms.insert(atom_id) {
+                all_atoms.push(atom_id);
+            }
         }
-        return 0;
     }
-    bond_order_contrib(b.order)
+    let mut ring_bonds = Vec::new();
+    let mut seen_bonds = BTreeSet::new();
+    for &ring_idx in fused_ring_indices {
+        for &bond_id in &kekulize_rings[ring_idx].bonds {
+            if seen_bonds.insert(bond_id) {
+                ring_bonds.push(bond_id);
+            }
+        }
+    }
+    let all_atom_set = all_atoms.iter().copied().collect::<BTreeSet<_>>();
+    if !all_atoms.iter().any(|atom| {
+        molecule.atoms()[atom.index()].atomic_number() == 0
+            || molecule.atoms()[atom.index()].is_aromatic()
+    }) {
+        return Ok(KekulizeCandidateState {
+            all_atoms,
+            candidate_atoms: BTreeSet::new(),
+            aromatic_edges: Vec::new(),
+            questions: Vec::new(),
+            done: Vec::new(),
+        });
+    }
+    let valence = assign_valence_with_options(molecule, ValenceModel::RdkitLike, false)?;
+    let fused_source_ring_set = fused_ring_indices
+        .iter()
+        .map(|&ring_idx| kekulize_rings[ring_idx].source_ring)
+        .collect::<BTreeSet<_>>();
+    let mut is_ring_not_cand = BTreeSet::new();
+    for &ring_idx in fused_ring_indices {
+        let mut ring_is_candidate = false;
+        let source_ring = kekulize_rings[ring_idx].source_ring;
+        for atom in &rings.atom_rings()[source_ring] {
+            if molecule.atoms()[atom.index()].is_aromatic() && rings.num_atom_rings(*atom) == 1 {
+                ring_is_candidate = true;
+                break;
+            }
+        }
+        if !ring_is_candidate {
+            is_ring_not_cand.insert(source_ring);
+        }
+    }
+    let mut candidate_atoms = BTreeSet::<AtomId>::new();
+    let mut aromatic_edges = Vec::<(BondId, AtomId, AtomId)>::new();
+    let mut questions = Vec::<AtomId>::new();
+    let mut done = Vec::<AtomId>::new();
+    // RDKit❗✔️:   std::vector<Bond *> makeSingle;
+    for bond_id in ring_bonds {
+        let bond = &molecule.bonds()[bond_id.index()];
+        if bond.is_aromatic()
+            && matches!(
+                bond.order(),
+                BondOrder::Single | BondOrder::Double | BondOrder::Aromatic
+            )
+        {
+            assignment.bond_orders[bond_id.index()] = Some(BondOrder::Single);
+            aromatic_edges.push((bond_id, bond.begin(), bond.end()));
+        }
+    }
+    for &atom_id in &all_atoms {
+        let atom = &molecule.atoms()[atom_id.index()];
+        if atom.atomic_number() != 0 && !atom.is_aromatic() {
+            done.push(atom_id);
+            continue;
+        }
+        let mut sbo = 0i32;
+        let mut n_to_ignore = 0usize;
+        let mut non_ar_non_dummy_nbr = 0usize;
+        for bond in molecule.bonds().iter().filter(|bond| {
+            (bond.begin() == atom_id && all_atom_set.contains(&bond.end()))
+                || (bond.end() == atom_id && all_atom_set.contains(&bond.begin()))
+        }) {
+            let other = if bond.begin() == atom_id {
+                bond.end()
+            } else {
+                bond.begin()
+            };
+            let other_atom = &molecule.atoms()[other.index()];
+            if other_atom.atomic_number() != 0 && !other_atom.is_aromatic() {
+                non_ar_non_dummy_nbr += 1;
+            }
+            if bond.is_aromatic()
+                && matches!(
+                    bond.order(),
+                    BondOrder::Single | BondOrder::Double | BondOrder::Aromatic
+                )
+            {
+                sbo += 1;
+            } else {
+                let bond_contrib =
+                    crate::valence::bond_valence_contrib(bond, atom_id)?.round() as i32;
+                sbo += bond_contrib;
+                if bond_contrib == 0 {
+                    n_to_ignore += 1;
+                }
+            }
+        }
+        let num_atom_rings = rings.num_atom_rings(atom_id);
+        let num_non_cand_rings = rings
+            .atom_members(atom_id)
+            .iter()
+            .filter(|ring_idx| {
+                fused_source_ring_set.contains(ring_idx) && is_ring_not_cand.contains(ring_idx)
+            })
+            .count();
+        if atom.atomic_number() == 0
+            && non_ar_non_dummy_nbr < num_atom_rings
+            && num_non_cand_rings < num_atom_rings
+        {
+            candidate_atoms.insert(atom_id);
+            questions.push(atom_id);
+            continue;
+        }
+        if atom.atomic_number() == 0 {
+            continue;
+        }
+        sbo += i32::from(atom.explicit_hydrogens()) + valence.implicit_hydrogens[atom_id.index()];
+        let mut dv = rdkit_kekulize_default_valence(atom.atomic_number())?;
+        let mut chrg = atom.formal_charge();
+        if rdkit_is_early_atom(atom.atomic_number()) {
+            chrg = -chrg;
+        }
+        if atom.atomic_number() == 6 && chrg > 0 {
+            chrg = -chrg;
+        }
+        dv += i32::from(chrg);
+        let tbo =
+            valence.explicit_valence[atom_id.index()] + valence.implicit_hydrogens[atom_id.index()];
+        let n_radicals = i32::from(atom.radical_electrons());
+        let total_degree = i32::try_from(
+            molecule
+                .bonds()
+                .iter()
+                .filter(|bond| bond.begin() == atom_id || bond.end() == atom_id)
+                .count(),
+        )
+        .unwrap_or(i32::MAX)
+            + valence.implicit_hydrogens[atom_id.index()]
+            - i32::try_from(n_to_ignore).unwrap_or(i32::MAX);
+        let valence_list = crate::rdkit_valence_list(atom.atomic_number())?.ok_or(
+            ValenceError::UnsupportedBranch {
+                reason: "kekulize valence list atomic number out of range",
+            },
+        )?;
+        let mut vi = 1usize;
+        while tbo > dv && vi < valence_list.len() && valence_list[vi] > 0 {
+            dv = valence_list[vi] + i32::from(chrg);
+            vi += 1;
+        }
+        if tbo == 5
+            && sbo == 4
+            && dv == 3
+            && total_degree == 3
+            && n_radicals == 0
+            && chrg == 0
+            && atom.explicit_hydrogens() == 0
+            && valence.implicit_hydrogens[atom_id.index()] == 0
+            && matches!(atom.atomic_number(), 7 | 15 | 33)
+        {
+            dv = 5;
+        }
+        if total_degree + n_radicals >= dv {
+            continue;
+        }
+        if dv == (sbo + 1 + n_radicals)
+            || (n_radicals == 0 && atom.no_implicit() && dv == (sbo + 2))
+        {
+            candidate_atoms.insert(atom_id);
+        }
+    }
+    // RDKit❗✔️:   for (auto &bi : makeSingle) {
+    // RDKit❗✔️:     bi->setBondType(Bond::SINGLE);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION markDbondCands
+    Ok(KekulizeCandidateState {
+        all_atoms,
+        candidate_atoms,
+        aromatic_edges,
+        questions,
+        done,
+    })
 }
 
-fn default_valence(atomic_num: u8) -> i32 {
-    match atomic_num {
-        0 => 0,
-        5 => 3,  // B
-        6 => 4,  // C
-        7 => 3,  // N
-        8 => 2,  // O
-        14 => 4, // Si
-        15 => 3, // P
-        16 => 2, // S
-        33 => 3, // As
-        34 => 2, // Se
-        _ => 0,
+fn kekulize_worker_matching(
+    molecule: &Molecule,
+    state: &KekulizeCandidateState,
+    initial_done: &[AtomId],
+    atom_ranks: &[usize],
+    max_backtracks: usize,
+    switched_off: &BTreeSet<AtomId>,
+) -> Option<BTreeSet<BondId>> {
+    // BEGIN RDKIT CPP FUNCTION kekulizeWorker
+    // RDKit❗✔️: bool kekulizeWorker(RWMol &mol, const INT_VECT &allAtms,
+    // RDKit❗✔️:                     boost::dynamic_bitset<> dBndCands,
+    // RDKit❗✔️:                     boost::dynamic_bitset<> dBndAdds, INT_VECT done,
+    // RDKit❗✔️:                     const UINT_VECT &atomRanks, unsigned int maxBackTracks) {
+    // RDKit❗✔️:   INT_DEQUE astack;
+    // RDKit❗✔️:   INT_INT_DEQ_MAP options;
+    // RDKit❗✔️:   int lastOpt = -1;
+    // RDKit❗✔️:   boost::dynamic_bitset<> localBondsAdded(mol.getNumBonds());
+    // RDKit❗✔️:   boost::dynamic_bitset<> inAllAtms(mol.getNumAtoms());
+    // RDKit❗✔️:   for (int allAtm : allAtms) {
+    // RDKit❗✔️:     inAllAtms.set(allAtm);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   auto lessByRank = [&atomRanks](int a, int b) {
+    // RDKit❗✔️:     const auto ra = atomRanks.at(static_cast<unsigned int>(a));
+    // RDKit❗✔️:     const auto rb = atomRanks.at(static_cast<unsigned int>(b));
+    // RDKit❗✔️:     return (ra < rb) || (ra == rb && a < b);
+    // RDKit❗✔️:   };
+    // RDKit❗✔️:   boost::dynamic_bitset<> wedgeEndAtoms(mol.getNumAtoms());
+    // RDKit❗✔️:   for (const auto bond : mol.bonds()) {
+    // RDKit❗✔️:     if (bond->getBondDir() == Bond::BondDir::BEGINWEDGE ||
+    // RDKit❗✔️:         bond->getBondDir() == Bond::BondDir::BEGINDASH) {
+    // RDKit❗✔️:       const auto endIdx = bond->getEndAtomIdx();
+    // RDKit❗✔️:       if (inAllAtms.test(endIdx)) {
+    // RDKit❗✔️:         wedgeEndAtoms.set(endIdx);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   INT_VECT sortedAtms(allAtms);
+    // RDKit❗✔️:   std::sort(sortedAtms.begin(), sortedAtms.end(),
+    // RDKit❗✔️:             [&wedgeEndAtoms, &lessByRank](int a, int b) {
+    // RDKit❗✔️:               const bool wa = wedgeEndAtoms.test(a);
+    // RDKit❗✔️:               const bool wb = wedgeEndAtoms.test(b);
+    // RDKit❗✔️:               if (wa != wb) {
+    // RDKit❗✔️:                 return wa;
+    // RDKit❗✔️:               }
+    // RDKit❗✔️:               return lessByRank(a, b);
+    // RDKit❗✔️:             });
+    // RDKit❗✔️:   int curr = -1;
+    // RDKit❗✔️:   INT_DEQUE btmoves;
+    // RDKit❗✔️:   unsigned int numBT = 0;
+    // RDKit❗✔️:   while ((done.size() < sortedAtms.size()) || !astack.empty()) {
+    // RDKit❗✔️:     if (astack.size() > 0) {
+    // RDKit❗✔️:       curr = astack.front();
+    // RDKit❗✔️:       astack.pop_front();
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       curr = -1;
+    // RDKit❗✔️:       for (int allAtm : sortedAtms) {
+    // RDKit❗✔️:         if (std::find(done.begin(), done.end(), allAtm) == done.end()) {
+    // RDKit❗✔️:           curr = allAtm;
+    // RDKit❗✔️:           break;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     CHECK_INVARIANT(curr >= 0, "starting point not found");
+    // RDKit❗✔️:     done.push_back(curr);
+    // RDKit❗✔️:     INT_DEQUE opts;
+    // RDKit❗✔️:     bool cCand = false;
+    // RDKit❗✔️:     if (dBndCands[curr]) {
+    // RDKit❗✔️:       cCand = true;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     int ncnd;
+    // RDKit❗✔️:     if (options.find(curr) != options.end()) {
+    // RDKit❗✔️:       opts = options[curr];
+    // RDKit❗✔️:       CHECK_INVARIANT(opts.size() > 0, "");
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       INT_DEQUE lstack;
+    // RDKit❗✔️:       std::vector<int> optsV;
+    // RDKit❗✔️:       std::vector<int> wedgedOptsV;
+    // RDKit❗✔️:       std::vector<int> nbrs;
+    // RDKit❗✔️:       for (auto nbrAtom : mol.atomNeighbors(mol.getAtomWithIdx(curr))) {
+    // RDKit❗✔️:         const auto nbrIdx = static_cast<int>(nbrAtom->getIdx());
+    // RDKit❗✔️:         if (!inAllAtms.test(nbrIdx)) {
+    // RDKit❗✔️:           continue;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         if (std::find(done.begin(), done.end(), nbrIdx) != done.end()) {
+    // RDKit❗✔️:           continue;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         nbrs.push_back(nbrIdx);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       std::sort(nbrs.begin(), nbrs.end(), lessByRank);
+    // RDKit❗✔️:       for (int nbrIdx : nbrs) {
+    // RDKit❗✔️:         auto nbrBond = mol.getBondBetweenAtoms(curr, nbrIdx);
+    // RDKit❗✔️:         if (std::find(astack.begin(), astack.end(), nbrIdx) == astack.end()) {
+    // RDKit❗✔️:           lstack.push_back(nbrIdx);
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         if (cCand && dBndCands[nbrIdx] &&
+    // RDKit❗✔️:             (nbrBond->getIsAromatic() ||
+    // RDKit❗✔️:              mol.getAtomWithIdx(curr)->getAtomicNum() == 0 ||
+    // RDKit❗✔️:              mol.getAtomWithIdx(nbrIdx)->getAtomicNum() == 0)) {
+    // RDKit❗✔️:           if (nbrBond->getBondDir() == Bond::BondDir::BEGINWEDGE ||
+    // RDKit❗✔️:               nbrBond->getBondDir() == Bond::BondDir::BEGINDASH) {
+    // RDKit❗✔️:             wedgedOptsV.push_back(nbrIdx);
+    // RDKit❗✔️:           } else {
+    // RDKit❗✔️:             optsV.push_back(nbrIdx);
+    // RDKit❗✔️:           }
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       for (int v : optsV) {
+    // RDKit❗✔️:         opts.push_back(v);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       for (int v : wedgedOptsV) {
+    // RDKit❗✔️:         opts.push_back(v);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       astack.insert(astack.end(), lstack.begin(), lstack.end());
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (cCand) {
+    // RDKit❗✔️:       if (!opts.empty()) {
+    // RDKit❗✔️:         ncnd = opts.front();
+    // RDKit❗✔️:         opts.pop_front();
+    // RDKit❗✔️:         auto bnd = mol.getBondBetweenAtoms(curr, ncnd);
+    // RDKit❗✔️:         bnd->setBondType(Bond::DOUBLE);
+    // RDKit❗✔️:         if (bnd->getBondDir() != Bond::BondDir::NONE) {
+    // RDKit❗✔️:           bnd->setBondDir(Bond::BondDir::NONE);
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         dBndCands[curr] = 0;
+    // RDKit❗✔️:         dBndCands[ncnd] = 0;
+    // RDKit❗✔️:         dBndAdds[bnd->getIdx()] = 1;
+    // RDKit❗✔️:         localBondsAdded[bnd->getIdx()] = 1;
+    // RDKit❗✔️:         if (options.find(curr) != options.end()) {
+    // RDKit❗✔️:           if (opts.size() == 0) {
+    // RDKit❗✔️:             options.erase(curr);
+    // RDKit❗✔️:             btmoves.pop_back();
+    // RDKit❗✔️:             if (btmoves.size() > 0) {
+    // RDKit❗✔️:               lastOpt = btmoves.back();
+    // RDKit❗✔️:             } else {
+    // RDKit❗✔️:               lastOpt = -1;
+    // RDKit❗✔️:             }
+    // RDKit❗✔️:           } else {
+    // RDKit❗✔️:             options[curr] = opts;
+    // RDKit❗✔️:           }
+    // RDKit❗✔️:         } else {
+    // RDKit❗✔️:           if (opts.size() > 0) {
+    // RDKit❗✔️:             lastOpt = curr;
+    // RDKit❗✔️:             btmoves.push_back(lastOpt);
+    // RDKit❗✔️:             options[curr] = opts;
+    // RDKit❗✔️:           }
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       } else if (mol.getAtomWithIdx(curr)->getAtomicNum()) {
+    // RDKit❗✔️:         if ((lastOpt >= 0) && (numBT < maxBackTracks)) {
+    // RDKit❗✔️:           backTrack(mol, options, lastOpt, done, astack, dBndCands, dBndAdds);
+    // RDKit❗✔️:           ++numBT;
+    // RDKit❗✔️:         } else {
+    // RDKit❗✔️:           for (unsigned int bidx = 0; bidx < mol.getNumBonds(); ++bidx) {
+    // RDKit❗✔️:             if (localBondsAdded[bidx]) {
+    // RDKit❗✔️:               mol.getBondWithIdx(bidx)->setBondType(Bond::SINGLE);
+    // RDKit❗✔️:             }
+    // RDKit❗✔️:           }
+    // RDKit❗✔️:           return false;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return true;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION kekulizeWorker
+    let all_atom_set = state.all_atoms.iter().copied().collect::<BTreeSet<_>>();
+    let mut adjacency = BTreeMap::<AtomId, Vec<(AtomId, BondId)>>::new();
+    for &(bond, begin, end) in &state.aromatic_edges {
+        if all_atom_set.contains(&begin) && all_atom_set.contains(&end) {
+            adjacency.entry(begin).or_default().push((end, bond));
+            adjacency.entry(end).or_default().push((begin, bond));
+        }
+    }
+    for neighbors in adjacency.values_mut() {
+        neighbors.sort_by_key(|(atom, _)| (atom_ranks[atom.index()], atom.index()));
+    }
+
+    let mut wedge_end_atoms = BTreeSet::new();
+    for bond in molecule.bonds() {
+        if matches!(
+            bond.direction(),
+            BondDirection::BeginWedge | BondDirection::BeginDash
+        ) && all_atom_set.contains(&bond.end())
+        {
+            wedge_end_atoms.insert(bond.end());
+        }
+    }
+
+    let mut sorted_atoms = state.all_atoms.clone();
+    sorted_atoms.sort_by(|left, right| {
+        match (
+            wedge_end_atoms.contains(left),
+            wedge_end_atoms.contains(right),
+        ) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => (atom_ranks[left.index()], left.index())
+                .cmp(&(atom_ranks[right.index()], right.index())),
+        }
+    });
+
+    let mut d_bnd_cands = vec![false; molecule.num_atoms()];
+    for atom in &state.candidate_atoms {
+        if !switched_off.contains(atom) {
+            d_bnd_cands[atom.index()] = true;
+        }
+    }
+    let mut d_bnd_adds = vec![false; molecule.num_bonds()];
+    let mut local_bonds_added = vec![false; molecule.num_bonds()];
+    let mut done = initial_done.to_vec();
+    let mut astack = VecDeque::<AtomId>::new();
+    let mut options = BTreeMap::<AtomId, VecDeque<AtomId>>::new();
+    let mut last_opt = None::<AtomId>;
+    let mut btmoves = Vec::<AtomId>::new();
+    let mut matched = BTreeSet::<BondId>::new();
+    let mut num_bt = 0usize;
+
+    while done.len() < sorted_atoms.len() || !astack.is_empty() {
+        let curr = if let Some(curr) = astack.pop_front() {
+            curr
+        } else {
+            sorted_atoms
+                .iter()
+                .copied()
+                .find(|atom| !done.contains(atom))
+                .expect("starting point not found")
+        };
+        done.push(curr);
+        let c_cand = d_bnd_cands[curr.index()];
+        let mut opts = if let Some(saved) = options.get(&curr) {
+            saved.clone()
+        } else {
+            let mut lstack = VecDeque::new();
+            let mut opts_v = Vec::new();
+            let mut wedged_opts_v = Vec::new();
+            let mut nbrs = adjacency
+                .get(&curr)
+                .map(|neighbors| {
+                    neighbors
+                        .iter()
+                        .filter_map(|(nbr, _)| (!done.contains(nbr)).then_some(*nbr))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            nbrs.sort_by_key(|atom| (atom_ranks[atom.index()], atom.index()));
+            for nbr_idx in nbrs {
+                let nbr_bond = adjacency
+                    .get(&curr)
+                    .and_then(|neighbors| {
+                        neighbors
+                            .iter()
+                            .find_map(|(nbr, bond)| (*nbr == nbr_idx).then_some(*bond))
+                    })
+                    .expect("bond between neighbor atoms not found");
+                if !astack.contains(&nbr_idx) {
+                    lstack.push_back(nbr_idx);
+                }
+                let bond = &molecule.bonds()[nbr_bond.index()];
+                if c_cand
+                    && d_bnd_cands[nbr_idx.index()]
+                    && (bond.is_aromatic()
+                        || molecule.atoms()[curr.index()].atomic_number() == 0
+                        || molecule.atoms()[nbr_idx.index()].atomic_number() == 0)
+                {
+                    if matches!(
+                        bond.direction(),
+                        BondDirection::BeginWedge | BondDirection::BeginDash
+                    ) {
+                        wedged_opts_v.push(nbr_idx);
+                    } else {
+                        opts_v.push(nbr_idx);
+                    }
+                }
+            }
+            let mut computed = VecDeque::new();
+            computed.extend(opts_v);
+            computed.extend(wedged_opts_v);
+            astack.extend(lstack);
+            computed
+        };
+        if c_cand {
+            if let Some(ncnd) = opts.pop_front() {
+                let bond_id = adjacency
+                    .get(&curr)
+                    .and_then(|neighbors| {
+                        neighbors
+                            .iter()
+                            .find_map(|(nbr, bond)| (*nbr == ncnd).then_some(*bond))
+                    })
+                    .expect("bond between current atom and option atom not found");
+                d_bnd_cands[curr.index()] = false;
+                d_bnd_cands[ncnd.index()] = false;
+                d_bnd_adds[bond_id.index()] = true;
+                local_bonds_added[bond_id.index()] = true;
+                matched.insert(bond_id);
+                if options.contains_key(&curr) {
+                    if opts.is_empty() {
+                        options.remove(&curr);
+                        let _ = btmoves.pop();
+                        last_opt = btmoves.last().copied();
+                    } else {
+                        options.insert(curr, opts);
+                    }
+                } else if !opts.is_empty() {
+                    last_opt = Some(curr);
+                    btmoves.push(curr);
+                    options.insert(curr, opts);
+                }
+            } else if molecule.atoms()[curr.index()].atomic_number() != 0 {
+                if let Some(last_opt_atom) = last_opt {
+                    if num_bt < max_backtracks {
+                        back_track(
+                            molecule,
+                            &mut options,
+                            last_opt_atom,
+                            &mut done,
+                            &mut astack,
+                            &mut d_bnd_cands,
+                            &mut d_bnd_adds,
+                            &mut matched,
+                        );
+                        num_bt += 1;
+                    } else {
+                        for (bond_idx, was_added) in local_bonds_added.iter().enumerate() {
+                            if *was_added {
+                                matched.remove(&BondId::new(bond_idx));
+                            }
+                        }
+                        return None;
+                    }
+                } else {
+                    for (bond_idx, was_added) in local_bonds_added.iter().enumerate() {
+                        if *was_added {
+                            matched.remove(&BondId::new(bond_idx));
+                        }
+                    }
+                    return None;
+                }
+            }
+        }
+    }
+    Some(matched)
+}
+
+fn permute_dummies_and_match(
+    molecule: &Molecule,
+    state: &KekulizeCandidateState,
+    questions: &[AtomId],
+    atom_ranks: &[usize],
+    max_backtracks: usize,
+) -> Option<BTreeSet<BondId>> {
+    // BEGIN RDKIT CPP FUNCTION QuestionEnumerator
+    // RDKit✔️✔️: class QuestionEnumerator {
+    // RDKit✔️✔️:  public:
+    // RDKit✔️✔️:   QuestionEnumerator(INT_VECT questions)
+    // RDKit✔️✔️:       : d_questions(std::move(questions)), d_pos(1) {};
+    // RDKit✔️✔️:   INT_VECT next() {
+    // RDKit✔️✔️:     INT_VECT res;
+    // RDKit✔️✔️:     if (d_pos >= (0x1u << d_questions.size())) {
+    // RDKit✔️✔️:       return res;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < d_questions.size(); ++i) {
+    // RDKit✔️✔️:       if (d_pos & (0x1u << i)) {
+    // RDKit✔️✔️:         res.push_back(d_questions[i]);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     ++d_pos;
+    // RDKit✔️✔️:     return res;
+    // RDKit✔️✔️:   };
+    // RDKit✔️✔️: };
+    // END RDKIT CPP FUNCTION QuestionEnumerator
+    // BEGIN RDKIT CPP FUNCTION permuteDummiesAndKekulize
+    // RDKit❗✔️: bool permuteDummiesAndKekulize(RWMol &mol, const INT_VECT &allAtms,
+    // RDKit❗✔️:                                boost::dynamic_bitset<> dBndCands,
+    // RDKit❗✔️:                                INT_VECT &questions,
+    // RDKit❗✔️:                                const UINT_VECT &atomRanks,
+    // RDKit❗✔️:                                unsigned int maxBackTracks) {
+    // RDKit❗✔️:   boost::dynamic_bitset<> atomsInPlay(mol.getNumAtoms());
+    // RDKit❗✔️:   for (int allAtm : allAtms) {
+    // RDKit❗✔️:     atomsInPlay[allAtm] = 1;
+    // RDKit❗✔️:   }
+    // RDKit✔️✔️:   bool kekulized = false;
+    // RDKit✔️✔️:   QuestionEnumerator qEnum(questions);
+    // RDKit✔️✔️:   while (!kekulized && questions.size()) {
+    // RDKit❗✔️:     boost::dynamic_bitset<> dBndAdds(mol.getNumBonds());
+    // RDKit✔️✔️:     INT_VECT done;
+    // RDKit❗✔️:     // reset the state: all aromatic bonds are remarked to single:
+    // RDKit❗✔️:     for (const auto bond : mol.bonds()) {
+    // RDKit❗✔️:       if (bond->getIsAromatic() && bond->getBondType() != Bond::SINGLE &&
+    // RDKit❗✔️:           atomsInPlay[bond->getBeginAtomIdx()] &&
+    // RDKit❗✔️:           atomsInPlay[bond->getEndAtomIdx()]) {
+    // RDKit❗✔️:         bond->setBondType(Bond::SINGLE);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit✔️✔️:     const auto &switchOff = qEnum.next();
+    // RDKit✔️✔️:     if (!switchOff.size()) {
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     auto tCands = dBndCands;
+    // RDKit✔️✔️:     for (int it : switchOff) {
+    // RDKit✔️✔️:       tCands[it] = 0;
+    // RDKit✔️✔️:     }
+    // RDKit❗✔️:     kekulized =
+    // RDKit❗✔️:         kekulizeWorker(mol, allAtms, tCands, dBndAdds, done, atomRanks,
+    // RDKit❗✔️:                        maxBackTracks);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return kekulized;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION permuteDummiesAndKekulize
+    if questions.is_empty() {
+        return None;
+    }
+    let question_count = questions.len();
+    for mask in 1usize..(1usize << question_count) {
+        let switched_off = questions
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, atom)| ((mask & (1usize << idx)) != 0).then_some(*atom))
+            .collect::<BTreeSet<_>>();
+        if let Some(matched) = kekulize_worker_matching(
+            molecule,
+            state,
+            &[],
+            atom_ranks,
+            max_backtracks,
+            &switched_off,
+        ) {
+            return Some(matched);
+        }
+    }
+    None
+}
+
+fn back_track(
+    molecule: &Molecule,
+    options: &mut BTreeMap<AtomId, VecDeque<AtomId>>,
+    last_opt: AtomId,
+    done: &mut Vec<AtomId>,
+    aqueue: &mut VecDeque<AtomId>,
+    d_bnd_cands: &mut [bool],
+    d_bnd_adds: &mut [bool],
+    matched: &mut BTreeSet<BondId>,
+) {
+    // BEGIN RDKIT CPP FUNCTION backTrack
+    // RDKit✔️✔️: void backTrack(RWMol &mol, INT_INT_DEQ_MAP &, int lastOpt, INT_VECT &done,
+    // RDKit✔️✔️:                INT_DEQUE &aqueue, boost::dynamic_bitset<> &dBndCands,
+    // RDKit✔️✔️:                boost::dynamic_bitset<> &dBndAdds) {
+    // RDKit✔️✔️:   auto ei = std::find(done.begin(), done.end(), lastOpt);
+    // RDKit✔️✔️:   INT_VECT tdone;
+    // RDKit✔️✔️:   tdone.insert(tdone.end(), done.begin(), ei);
+    let split = done
+        .iter()
+        .position(|atom| *atom == last_opt)
+        .expect("lastOpt must exist in done");
+    let tdone = done[..split].to_vec();
+    // RDKit✔️✔️:   INT_VECT_CRI eri = std::find(done.rbegin(), done.rend(), lastOpt);
+    // RDKit✔️✔️:   ++eri;
+    // RDKit✔️✔️:   for (INT_VECT_CRI ri = done.rbegin(); ri != eri; ++ri) {
+    // RDKit✔️✔️:     aqueue.push_front(*ri);
+    // RDKit✔️✔️:   }
+    for atom in done[split..].iter().rev() {
+        aqueue.push_front(*atom);
+    }
+    // RDKit✔️✔️:   for (unsigned int bi = 0; bi < nbnds; ++bi) {
+    for bond in molecule.bonds() {
+        let bi = bond.id().index();
+        if d_bnd_adds[bi] {
+            let aid1 = bond.begin();
+            let aid2 = bond.end();
+            if !tdone.contains(&aid1) && !tdone.contains(&aid2) {
+                d_bnd_adds[bi] = false;
+                matched.remove(&bond.id());
+                d_bnd_cands[aid1.index()] = true;
+                d_bnd_cands[aid2.index()] = true;
+            }
+        }
+    }
+    *done = tdone;
+    options.retain(|atom, _| done.contains(atom));
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION backTrack
+}
+
+fn rdkit_kekulize_default_valence(atomic_number: u8) -> Result<i32, ValenceError> {
+    crate::valence::rdkit_default_valence(atomic_number)
+}
+
+// Ported RDKit entrypoint kept private until the public operation surface has a
+// deliberate `KekulizeIfPossible` API. Tests exercise it directly.
+#[allow(dead_code)]
+fn kekulize_if_possible_assignment(
+    molecule: &Molecule,
+    clear_aromatic_flags: bool,
+    canonical: bool,
+    max_backtracks: usize,
+) -> Result<Option<KekulizeAssignment>, KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION MolOps::KekulizeIfPossible
+    // RDKit❗✔️: bool KekulizeIfPossible(RWMol &mol, bool markAtomsBonds, bool canonical,
+    // RDKit❗✔️:                         unsigned int maxBackTracks) {
+    // RDKit❗✔️:   boost::dynamic_bitset<> aromaticBonds(mol.getNumBonds());
+    // RDKit❗✔️:   for (const auto bond : mol.bonds()) {
+    // RDKit❗✔️:     if (bond->getIsAromatic()) {
+    // RDKit❗✔️:       aromaticBonds.set(bond->getIdx());
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   boost::dynamic_bitset<> aromaticAtoms(mol.getNumAtoms());
+    // RDKit❗✔️:   for (const auto atom : mol.atoms()) {
+    // RDKit❗✔️:     if (isAromaticAtom(*atom)) {
+    // RDKit❗✔️:       aromaticAtoms.set(atom->getIdx());
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   bool res = true;
+    // RDKit❗✔️:   try {
+    // RDKit❗✔️:     Kekulize(mol, markAtomsBonds, canonical, maxBackTracks);
+    // RDKit❗✔️:   } catch (const MolSanitizeException &) {
+    // RDKit❗✔️:     res = false;
+    // RDKit❗✔️:     for (unsigned int i = 0; i < mol.getNumBonds(); ++i) {
+    // RDKit❗✔️:       if (aromaticBonds[i]) {
+    // RDKit❗✔️:         auto bond = mol.getBondWithIdx(i);
+    // RDKit❗✔️:         bond->setIsAromatic(true);
+    // RDKit❗✔️:         bond->setBondType(Bond::BondType::AROMATIC);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit❗✔️:       if (aromaticAtoms[i]) {
+    // RDKit❗✔️:         mol.getAtomWithIdx(i)->setIsAromatic(true);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION MolOps::KekulizeIfPossible
+    match kekulize_assignment(
+        molecule,
+        None,
+        clear_aromatic_flags,
+        canonical,
+        max_backtracks,
+    ) {
+        Ok(assignment) => Ok(Some(assignment)),
+        Err(KekulizeError::ProtocolDebt { branch, reason }) => {
+            Err(KekulizeError::ProtocolDebt { branch, reason })
+        }
+        Err(
+            KekulizeError::UnkekulizedAtoms { .. }
+            | KekulizeError::NonRingAromaticAtom { .. }
+            | KekulizeError::ValenceChanged { .. }
+            | KekulizeError::FragmentBitsetSizeMismatch { .. }
+            | KekulizeError::CanonicalRankSymbolSizeMismatch { .. }
+            | KekulizeError::Valence(_)
+            | KekulizeError::RingFinding(_),
+        ) => Ok(None),
     }
 }
 
-fn is_early_atom(atomic_num: u8) -> bool {
-    // Mirrors RDKit Atom.cpp::isEarlyAtom(): elements to the left of carbon.
+fn rdkit_is_early_atom(atomic_number: u8) -> bool {
+    // BEGIN RDKIT CPP FUNCTION isEarlyAtom
+    // RDKit✔️✔️: bool isEarlyAtom(int atomicNum) {
+    // RDKit✔️✔️:   static const bool table[119] = {
+    // RDKit✔️✔️:       false,  // #0 *
+    // RDKit✔️✔️:       false,  // #1 H
+    // RDKit✔️✔️:       false,  // #2 He
+    // RDKit✔️✔️:       true,   // #3 Li
+    // RDKit✔️✔️:       true,   // #4 Be
+    // RDKit✔️✔️:       true,   // #5 B
+    // RDKit✔️✔️:       false,  // #6 C
+    // RDKit✔️✔️:       false,  // #7 N
+    // RDKit✔️✔️:       false,  // #8 O
+    // RDKit✔️✔️:       false,  // #9 F
+    // RDKit✔️✔️:       false,  // #10 Ne
+    // RDKit✔️✔️:       true,   // #11 Na
+    // RDKit✔️✔️:       true,   // #12 Mg
+    // RDKit✔️✔️:       true,   // #13 Al
+    // RDKit✔️✔️:       false,  // #14 Si
+    // RDKit✔️✔️:       false,  // #15 P
+    // RDKit✔️✔️:       false,  // #16 S
+    // RDKit✔️✔️:       false,  // #17 Cl
+    // RDKit✔️✔️:       false,  // #18 Ar
+    // RDKit✔️✔️:       true,   // #19 K
+    // RDKit✔️✔️:       true,   // #20 Ca
+    // RDKit✔️✔️:       true,   // #21 Sc
+    // RDKit✔️✔️:       true,   // #22 Ti
+    // RDKit✔️✔️:       false,  // #23 V
+    // RDKit✔️✔️:       false,  // #24 Cr
+    // RDKit✔️✔️:       false,  // #25 Mn
+    // RDKit✔️✔️:       false,  // #26 Fe
+    // RDKit✔️✔️:       false,  // #27 Co
+    // RDKit✔️✔️:       false,  // #28 Ni
+    // RDKit✔️✔️:       false,  // #29 Cu
+    // RDKit✔️✔️:       true,   // #30 Zn
+    // RDKit✔️✔️:       true,   // #31 Ga
+    // RDKit✔️✔️:       true,   // #32 Ge  see github #2606
+    // RDKit✔️✔️:       false,  // #33 As
+    // RDKit✔️✔️:       false,  // #34 Se
+    // RDKit✔️✔️:       false,  // #35 Br
+    // RDKit✔️✔️:       false,  // #36 Kr
+    // RDKit✔️✔️:       true,   // #37 Rb
+    // RDKit✔️✔️:       true,   // #38 Sr
+    // RDKit✔️✔️:       true,   // #39 Y
+    // RDKit✔️✔️:       true,   // #40 Zr
+    // RDKit✔️✔️:       true,   // #41 Nb
+    // RDKit✔️✔️:       false,  // #42 Mo
+    // RDKit✔️✔️:       false,  // #43 Tc
+    // RDKit✔️✔️:       false,  // #44 Ru
+    // RDKit✔️✔️:       false,  // #45 Rh
+    // RDKit✔️✔️:       false,  // #46 Pd
+    // RDKit✔️✔️:       false,  // #47 Ag
+    // RDKit✔️✔️:       true,   // #48 Cd
+    // RDKit✔️✔️:       true,   // #49 In
+    // RDKit✔️✔️:       true,   // #50 Sn  see github #2606
+    // RDKit✔️✔️:       true,   // #51 Sb  see github #2775
+    // RDKit✔️✔️:       false,  // #52 Te
+    // RDKit✔️✔️:       false,  // #53 I
+    // RDKit✔️✔️:       false,  // #54 Xe
+    // RDKit✔️✔️:       true,   // #55 Cs
+    // RDKit✔️✔️:       true,   // #56 Ba
+    // RDKit✔️✔️:       true,   // #57 La
+    // RDKit✔️✔️:       true,   // #58 Ce
+    // RDKit✔️✔️:       true,   // #59 Pr
+    // RDKit✔️✔️:       true,   // #60 Nd
+    // RDKit✔️✔️:       true,   // #61 Pm
+    // RDKit✔️✔️:       false,  // #62 Sm
+    // RDKit✔️✔️:       false,  // #63 Eu
+    // RDKit✔️✔️:       false,  // #64 Gd
+    // RDKit✔️✔️:       false,  // #65 Tb
+    // RDKit✔️✔️:       false,  // #66 Dy
+    // RDKit✔️✔️:       false,  // #67 Ho
+    // RDKit✔️✔️:       false,  // #68 Er
+    // RDKit✔️✔️:       false,  // #69 Tm
+    // RDKit✔️✔️:       false,  // #70 Yb
+    // RDKit✔️✔️:       false,  // #71 Lu
+    // RDKit✔️✔️:       true,   // #72 Hf
+    // RDKit✔️✔️:       true,   // #73 Ta
+    // RDKit✔️✔️:       false,  // #74 W
+    // RDKit✔️✔️:       false,  // #75 Re
+    // RDKit✔️✔️:       false,  // #76 Os
+    // RDKit✔️✔️:       false,  // #77 Ir
+    // RDKit✔️✔️:       false,  // #78 Pt
+    // RDKit✔️✔️:       false,  // #79 Au
+    // RDKit✔️✔️:       true,   // #80 Hg
+    // RDKit✔️✔️:       true,   // #81 Tl
+    // RDKit✔️✔️:       true,   // #82 Pb  see github #2606
+    // RDKit✔️✔️:       true,   // #83 Bi  see github #2775
+    // RDKit✔️✔️:       false,  // #84 Po
+    // RDKit✔️✔️:       false,  // #85 At
+    // RDKit✔️✔️:       false,  // #86 Rn
+    // RDKit✔️✔️:       true,   // #87 Fr
+    // RDKit✔️✔️:       true,   // #88 Ra
+    // RDKit✔️✔️:       true,   // #89 Ac
+    // RDKit✔️✔️:       true,   // #90 Th
+    // RDKit✔️✔️:       true,   // #91 Pa
+    // RDKit✔️✔️:       true,   // #92 U
+    // RDKit✔️✔️:       true,   // #93 Np
+    // RDKit✔️✔️:       false,  // #94 Pu
+    // RDKit✔️✔️:       false,  // #95 Am
+    // RDKit✔️✔️:       false,  // #96 Cm
+    // RDKit✔️✔️:       false,  // #97 Bk
+    // RDKit✔️✔️:       false,  // #98 Cf
+    // RDKit✔️✔️:       false,  // #99 Es
+    // RDKit✔️✔️:       false,  // #100 Fm
+    // RDKit✔️✔️:       false,  // #101 Md
+    // RDKit✔️✔️:       false,  // #102 No
+    // RDKit✔️✔️:       false,  // #103 Lr
+    // RDKit✔️✔️:       true,   // #104 Rf
+    // RDKit✔️✔️:       true,   // #105 Db
+    // RDKit✔️✔️:       true,   // #106 Sg
+    // RDKit✔️✔️:       true,   // #107 Bh
+    // RDKit✔️✔️:       true,   // #108 Hs
+    // RDKit✔️✔️:       true,   // #109 Mt
+    // RDKit✔️✔️:       true,   // #110 Ds
+    // RDKit✔️✔️:       true,   // #111 Rg
+    // RDKit✔️✔️:       true,   // #112 Cn
+    // RDKit✔️✔️:       true,   // #113 Nh
+    // RDKit✔️✔️:       true,   // #114 Fl
+    // RDKit✔️✔️:       true,   // #115 Mc
+    // RDKit✔️✔️:       true,   // #116 Lv
+    // RDKit✔️✔️:       true,   // #117 Ts
+    // RDKit✔️✔️:       true,   // #118 Og
+    // RDKit✔️✔️:   };
+    // RDKit✔️✔️:   return ((unsigned int)atomicNum < 119) && table[atomicNum];
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION isEarlyAtom
     matches!(
-        atomic_num,
+        atomic_number,
         3 | 4
             | 5
             | 11
@@ -239,1276 +1474,341 @@ fn is_early_atom(atomic_num: u8) -> bool {
     )
 }
 
-fn total_valence_for_atom(mol: &Molecule, atom_idx: usize) -> i32 {
-    let mut total = mol.atoms()[atom_idx].explicit_hydrogens as i32;
-    for bi in 0..mol.bonds().len() {
-        total += bond_valence_contrib_for_atom(mol, bi, atom_idx);
-    }
-    total
-}
-
-fn degree_for_atom(mol: &Molecule, atom_idx: usize) -> i32 {
-    let mut degree = 0;
-    for b in mol.bonds() {
-        if b.begin_atom == atom_idx || b.end_atom == atom_idx {
-            degree += 1;
-        }
-    }
-    degree
-}
-
-fn neighbors_of(mol: &Molecule, atom_idx: usize) -> Vec<usize> {
-    let mut out = Vec::new();
-    for b in mol.bonds() {
-        if b.begin_atom == atom_idx {
-            out.push(b.end_atom);
-        } else if b.end_atom == atom_idx {
-            out.push(b.begin_atom);
-        }
-    }
-    out
-}
-
-fn canonical_cycle_key(cycle: &[usize]) -> Vec<usize> {
-    let n = cycle.len();
-    let mut best = cycle.to_vec();
-    for start in 0..n {
-        let mut rotated = Vec::with_capacity(n);
-        for i in 0..n {
-            rotated.push(cycle[(start + i) % n]);
-        }
-        if rotated < best {
-            best = rotated.clone();
-        }
-        rotated.reverse();
-        if rotated < best {
-            best = rotated;
-        }
-    }
-    best
-}
-
-fn all_bond_adjacency(mol: &Molecule) -> Vec<Vec<(usize, usize)>> {
-    let mut adj = vec![Vec::<(usize, usize)>::new(); mol.atoms().len()];
-    for (bi, b) in mol.bonds().iter().enumerate() {
-        adj[b.begin_atom].push((b.end_atom, bi));
-        adj[b.end_atom].push((b.begin_atom, bi));
-    }
-    adj
-}
-
-fn all_cycle_candidates(mol: &Molecule) -> Vec<Vec<usize>> {
-    let adj = all_bond_adjacency(mol);
-    let mut seen = HashSet::<Vec<usize>>::new();
-    let mut rings = Vec::<Vec<usize>>::new();
-    for (bi, bond) in mol.bonds().iter().enumerate() {
-        let Some(path) = shortest_path_ignoring_edge(&adj, bond.begin_atom, bond.end_atom, bi)
-        else {
-            continue;
-        };
-        if path.len() < 3 {
-            continue;
-        }
-        let key = canonical_cycle_key(&path);
-        if seen.insert(key) {
-            rings.push(path);
-        }
-    }
-    rings
-}
-
-fn graph_component_count(mol: &Molecule) -> usize {
-    let mut seen = vec![false; mol.atoms().len()];
-    let mut comps = 0usize;
-    for start in 0..mol.atoms().len() {
-        if seen[start] {
-            continue;
-        }
-        comps += 1;
-        let mut q = VecDeque::new();
-        q.push_back(start);
-        seen[start] = true;
-        while let Some(u) = q.pop_front() {
-            for b in mol.bonds() {
-                let v = if b.begin_atom == u {
-                    b.end_atom
-                } else if b.end_atom == u {
-                    b.begin_atom
-                } else {
-                    continue;
-                };
-                if !seen[v] {
-                    seen[v] = true;
-                    q.push_back(v);
-                }
-            }
-        }
-    }
-    comps
-}
-
-fn highest_set_bit(words: &[u64]) -> Option<usize> {
-    for (wi, &word) in words.iter().enumerate().rev() {
-        if word != 0 {
-            return Some(wi * 64 + (63usize - word.leading_zeros() as usize));
-        }
-    }
-    None
-}
-
-fn cycle_bond_indices(mol: &Molecule, cycle: &[usize]) -> Vec<usize> {
-    let mut out = Vec::with_capacity(cycle.len());
-    for i in 0..cycle.len() {
-        let a = cycle[i];
-        let b = cycle[(i + 1) % cycle.len()];
-        if let Some((bi, _)) = mol.bonds().iter().enumerate().find(|(_, bond)| {
-            (bond.begin_atom == a && bond.end_atom == b)
-                || (bond.begin_atom == b && bond.end_atom == a)
-        }) {
-            out.push(bi);
-        }
-    }
-    out
-}
-
-fn reduce_to_min_cycle_basis_indices(mol: &Molecule, rings: &[Vec<usize>]) -> Vec<usize> {
-    if rings.is_empty() || mol.bonds().is_empty() {
-        return Vec::new();
-    }
-    let cyclomatic = mol.bonds().len() + graph_component_count(mol) - mol.atoms().len();
-    if cyclomatic == 0 {
-        return Vec::new();
-    }
-    let words = mol.bonds().len().div_ceil(64);
-    let mut entries: Vec<(usize, Vec<usize>, Vec<u64>)> = rings
-        .iter()
-        .enumerate()
-        .map(|(idx, ring)| {
-            let mut bits = vec![0u64; words];
-            let mut edges = cycle_bond_indices(mol, ring);
-            edges.sort_unstable();
-            for edge in edges {
-                bits[edge / 64] ^= 1u64 << (edge % 64);
-            }
-            (idx, ring.clone(), bits)
-        })
-        .collect();
-    entries.sort_by(|a, b| {
-        let ka = canonical_cycle_key(&a.1);
-        let kb = canonical_cycle_key(&b.1);
-        (a.1.len(), ka).cmp(&(b.1.len(), kb))
-    });
-
-    let mut basis: Vec<(usize, Vec<u64>)> = Vec::new();
-    let mut selected = Vec::<usize>::new();
-    for (ring_idx, _ring, mut row) in entries {
-        for (pivot, basis_row) in &basis {
-            if (row[pivot / 64] >> (pivot % 64)) & 1 == 1 {
-                for wi in 0..row.len() {
-                    row[wi] ^= basis_row[wi];
-                }
-            }
-        }
-        let Some(pivot) = highest_set_bit(&row) else {
-            continue;
-        };
-        basis.push((pivot, row));
-        basis.sort_by(|left, right| right.0.cmp(&left.0));
-        selected.push(ring_idx);
-        if selected.len() >= cyclomatic {
-            break;
-        }
-    }
-    selected
-}
-
-fn ring_neighbor_components(ring_bonds: &[Vec<usize>]) -> Vec<Vec<usize>> {
-    let mut neighbors = vec![Vec::<usize>::new(); ring_bonds.len()];
-    for i in 0..ring_bonds.len() {
-        let left: HashSet<usize> = ring_bonds[i].iter().copied().collect();
-        for j in (i + 1)..ring_bonds.len() {
-            if ring_bonds[j].iter().any(|bond| left.contains(bond)) {
-                neighbors[i].push(j);
-                neighbors[j].push(i);
-            }
-        }
-    }
-
-    let mut seen = vec![false; ring_bonds.len()];
-    let mut components = Vec::<Vec<usize>>::new();
-    for start in 0..ring_bonds.len() {
-        if seen[start] {
-            continue;
-        }
-        let mut q = VecDeque::new();
-        q.push_back(start);
-        seen[start] = true;
-        let mut comp = Vec::new();
-        while let Some(ring_idx) = q.pop_front() {
-            comp.push(ring_idx);
-            for &nbr in &neighbors[ring_idx] {
-                if !seen[nbr] {
-                    seen[nbr] = true;
-                    q.push_back(nbr);
-                }
-            }
-        }
-        components.push(comp);
-    }
-    components
-}
-
-fn fused_ring_atom_components(mol: &Molecule) -> Vec<Vec<usize>> {
-    // Source mapping: RDKit 2026.03.1 Kekulize.cpp::KekulizeFragment
-    // uses findSSSR(), convertToBonds(), makeRingNeighborMap(), and
-    // pickFusedRings() before calling kekulizeFused().
-    let all_rings = all_cycle_candidates(mol);
-    let basis_ids = reduce_to_min_cycle_basis_indices(mol, &all_rings);
-    let rings: Vec<Vec<usize>> = basis_ids
-        .into_iter()
-        .map(|idx| all_rings[idx].clone())
-        .collect();
-    let ring_bonds: Vec<Vec<usize>> = rings
-        .iter()
-        .map(|ring| cycle_bond_indices(mol, ring))
-        .collect();
-    ring_neighbor_components(&ring_bonds)
-        .into_iter()
-        .map(|component| {
-            let mut atoms = Vec::<usize>::new();
-            for ring_idx in component {
-                atoms.extend(rings[ring_idx].iter().copied());
-            }
-            atoms.sort_unstable();
-            atoms.dedup();
-            atoms
-        })
-        .collect()
-}
-
-#[derive(Debug, Clone)]
-struct CanonBond {
-    bond_type: u8,
-    stereo: u8,
-    nbr_sym_class: usize,
-    nbr_idx: usize,
-}
-
-#[derive(Debug, Clone)]
-struct CanonAtom {
-    index: usize,
-    degree: usize,
-    total_num_hs: usize,
-    atomic_num: u8,
-    isotope: u16,
-    atom_map_num: u32,
-    formal_charge: i8,
-    chiral_presence: bool,
-    nbr_ids: Vec<usize>,
-    bonds: Vec<CanonBond>,
-}
-
-fn rdkit_bond_type_rank(order: BondOrder) -> u8 {
-    match order {
-        BondOrder::Null => 0,
-        BondOrder::Single => 1,
-        BondOrder::Double => 2,
-        BondOrder::Triple => 3,
-        BondOrder::Quadruple => 4,
-        // RDKit Bond::AROMATIC has a larger enum value than ordinary bond
-        // orders. Only relative ordering matters for canonical ranking.
-        BondOrder::Aromatic => 12,
-        BondOrder::Dative => 17,
-        BondOrder::Hydrogen => 0,
-    }
-}
-
-fn rdkit_bond_stereo_rank(stereo: crate::BondStereo) -> u8 {
-    // RDKit 2026.03.1 Code/GraphMol/Bond.h::BondStereo:
-    // STEREONONE=0, STEREOANY=1, STEREOZ=2, STEREOE=3,
-    // STEREOCIS=4, STEREOTRANS=5.
-    match stereo {
-        crate::BondStereo::None => 0,
-        crate::BondStereo::Any => 1,
-        crate::BondStereo::Cis => 4,
-        crate::BondStereo::Trans => 5,
-    }
-}
-
-fn init_fragment_canon_atoms(mol: &Molecule) -> Vec<CanonAtom> {
-    let valence = crate::assign_valence(mol, crate::ValenceModel::RdkitLike).ok();
-    let mut atoms: Vec<CanonAtom> = mol
-        .atoms()
-        .iter()
-        .map(|atom| CanonAtom {
-            index: atom.index,
-            degree: 0,
-            total_num_hs: atom.explicit_hydrogens as usize
-                + valence
-                    .as_ref()
-                    .map(|v| v.implicit_hydrogens[atom.index] as usize)
-                    .unwrap_or(0),
-            atomic_num: atom.atomic_num,
-            isotope: atom.isotope.unwrap_or(0),
-            atom_map_num: atom.atom_map_num.unwrap_or(0),
-            formal_charge: atom.formal_charge,
-            chiral_presence: !matches!(atom.chiral_tag, crate::ChiralTag::Unspecified),
-            nbr_ids: Vec::new(),
-            bonds: Vec::new(),
-        })
-        .collect();
-
-    for bond in mol.bonds() {
-        let begin = bond.begin_atom;
-        let end = bond.end_atom;
-        atoms[begin].nbr_ids.push(end);
-        atoms[end].nbr_ids.push(begin);
-        atoms[begin].degree += 1;
-        atoms[end].degree += 1;
-
-        atoms[begin].bonds.push(CanonBond {
-            bond_type: rdkit_bond_type_rank(bond.order),
-            stereo: rdkit_bond_stereo_rank(bond.stereo),
-            nbr_sym_class: 0,
-            nbr_idx: end,
-        });
-        atoms[end].bonds.push(CanonBond {
-            bond_type: rdkit_bond_type_rank(bond.order),
-            stereo: rdkit_bond_stereo_rank(bond.stereo),
-            nbr_sym_class: 0,
-            nbr_idx: begin,
-        });
-    }
-
-    for atom in &mut atoms {
-        atom.bonds.sort_by(canon_bond_greater);
-    }
-    atoms
-}
-
-fn canon_bond_compare(lhs: &CanonBond, rhs: &CanonBond) -> Ordering {
-    lhs.bond_type
-        .cmp(&rhs.bond_type)
-        .then_with(|| lhs.stereo.cmp(&rhs.stereo))
-        .then_with(|| lhs.nbr_sym_class.cmp(&rhs.nbr_sym_class))
-}
-
-fn canon_bond_greater(lhs: &CanonBond, rhs: &CanonBond) -> Ordering {
-    canon_bond_compare(rhs, lhs)
-}
-
-fn update_atom_neighbor_index(atoms: &mut [CanonAtom], atom_idx: usize) {
-    let neighbor_classes: Vec<(usize, usize)> = atoms[atom_idx]
-        .bonds
-        .iter()
-        .map(|bond| (bond.nbr_idx, atoms[bond.nbr_idx].index))
-        .collect();
-    for (bond, (_, nbr_class)) in atoms[atom_idx]
-        .bonds
-        .iter_mut()
-        .zip(neighbor_classes.into_iter())
-    {
-        bond.nbr_sym_class = nbr_class;
-    }
-    atoms[atom_idx].bonds.sort_by(canon_bond_greater);
-}
-
-fn canon_atom_compare(atoms: &[CanonAtom], i: usize, j: usize) -> Ordering {
-    atoms[i]
-        .index
-        .cmp(&atoms[j].index)
-        .then_with(|| atoms[i].atom_map_num.cmp(&atoms[j].atom_map_num))
-        .then_with(|| atoms[i].degree.cmp(&atoms[j].degree))
-        .then_with(|| atoms[i].atomic_num.cmp(&atoms[j].atomic_num))
-        .then_with(|| atoms[i].isotope.cmp(&atoms[j].isotope))
-        .then_with(|| atoms[i].total_num_hs.cmp(&atoms[j].total_num_hs))
-        .then_with(|| (atoms[i].formal_charge as u32).cmp(&(atoms[j].formal_charge as u32)))
-        .then_with(|| atoms[i].chiral_presence.cmp(&atoms[j].chiral_presence))
-        .then_with(|| {
-            let n = atoms[i].bonds.len().min(atoms[j].bonds.len());
-            for k in 0..n {
-                let cmp = canon_bond_compare(&atoms[i].bonds[k], &atoms[j].bonds[k]);
-                if cmp != Ordering::Equal {
-                    return cmp;
-                }
-            }
-            atoms[i].bonds.len().cmp(&atoms[j].bonds.len())
-        })
-}
-
-fn canon_atom_compare_i32(atoms: &mut [CanonAtom], i: usize, j: usize) -> i32 {
-    update_atom_neighbor_index(atoms, i);
-    update_atom_neighbor_index(atoms, j);
-    match canon_atom_compare(atoms, i, j) {
-        Ordering::Less => -1,
-        Ordering::Equal => 0,
-        Ordering::Greater => 1,
-    }
-}
-
-fn hanoi_sort_partition(
-    order: &mut [usize],
-    count: &mut [usize],
-    changed: &mut [bool],
-    atoms: &mut [CanonAtom],
-) {
-    fn hanoi(
-        base: &mut [usize],
-        temp: &mut [usize],
-        count: &mut [usize],
-        changed: &mut [bool],
-        atoms: &mut [CanonAtom],
-    ) -> bool {
-        let nel = base.len();
-        if nel == 1 {
-            count[base[0]] = 1;
-            return false;
-        }
-        if nel == 2 {
-            let n1 = base[0];
-            let n2 = base[1];
-            let stat = if changed[n1] || changed[n2] {
-                canon_atom_compare_i32(atoms, n1, n2)
-            } else {
-                0
-            };
-            if stat == 0 {
-                count[n1] = 2;
-                count[n2] = 0;
-                return false;
-            }
-            count[n1] = 1;
-            count[n2] = 1;
-            if stat > 0 {
-                base[0] = n2;
-                base[1] = n1;
-            }
-            return false;
-        }
-
-        let n1_len = nel / 2;
-        let n2_len = nel - n1_len;
-        let (b1, b2) = base.split_at_mut(n1_len);
-        let (t1, t2) = temp.split_at_mut(n1_len);
-
-        let left_temp = hanoi(b1, t1, count, changed, atoms);
-        let right_temp = hanoi(b2, t2, count, changed, atoms);
-
-        let s1 = if left_temp { t1.to_vec() } else { b1.to_vec() };
-        let s2 = if right_temp { t2.to_vec() } else { b2.to_vec() };
-        let result = !left_temp;
-        let mut merged = Vec::with_capacity(nel);
-        let mut i1 = 0usize;
-        let mut i2 = 0usize;
-
-        while i1 < n1_len && i2 < n2_len {
-            let a = s1[i1];
-            let b = s2[i2];
-            let stat = if changed[a] || changed[b] {
-                canon_atom_compare_i32(atoms, a, b)
-            } else {
-                0
-            };
-            let len1 = count[a];
-            let len2 = count[b];
-            debug_assert!(len1 > 0);
-            debug_assert!(len2 > 0);
-
-            if stat == 0 {
-                count[a] = len1 + len2;
-                count[b] = 0;
-                merged.extend_from_slice(&s1[i1..i1 + len1]);
-                i1 += len1;
-                if i1 == n1_len {
-                    merged.extend_from_slice(&s2[i2..]);
-                    break;
-                }
-                merged.extend_from_slice(&s2[i2..i2 + len2]);
-                i2 += len2;
-                if i2 == n2_len {
-                    merged.extend_from_slice(&s1[i1..]);
-                    break;
-                }
-            } else if stat < 0 {
-                merged.extend_from_slice(&s1[i1..i1 + len1]);
-                i1 += len1;
-                if i1 == n1_len {
-                    merged.extend_from_slice(&s2[i2..]);
-                    break;
-                }
-            } else {
-                merged.extend_from_slice(&s2[i2..i2 + len2]);
-                i2 += len2;
-                if i2 == n2_len {
-                    merged.extend_from_slice(&s1[i1..]);
-                    break;
-                }
-            }
-        }
-
-        if result {
-            temp.copy_from_slice(&merged);
-        } else {
-            base.copy_from_slice(&merged);
-        }
-        result
-    }
-
-    let mut temp = vec![0usize; order.len()];
-    if hanoi(order, &mut temp, count, changed, atoms) {
-        order.copy_from_slice(&temp);
-    }
-}
-
-fn activate_partitions(
-    order: &[usize],
-    count: &[usize],
-    next: &mut [isize],
-    changed: &mut [bool],
-) -> isize {
-    next.fill(-2);
-    let mut activeset = -1isize;
-    let mut i = 0usize;
-    while i < order.len() {
-        let j = order[i];
-        if count[j] > 1 {
-            next[j] = activeset;
-            activeset = j as isize;
-            i += count[j];
-        } else {
-            i += 1;
-        }
-    }
-    for &j in order {
-        changed[j] = true;
-    }
-    activeset
-}
-
-fn refine_partitions(
-    atoms: &mut [CanonAtom],
-    order: &mut [usize],
-    count: &mut [usize],
-    next: &mut [isize],
-    changed: &mut [bool],
-    touched: &mut [bool],
-    mut activeset: isize,
-) {
-    while activeset != -1 {
-        let partition = activeset as usize;
-        activeset = next[partition];
-        next[partition] = -2;
-        let len = count[partition];
-        let offset = atoms[partition].index;
-        let start = &mut order[offset..offset + len];
-        hanoi_sort_partition(start, count, changed, atoms);
-
-        for k in offset..(offset + len) {
-            changed[order[k]] = false;
-        }
-
-        let mut index = order[offset];
-        let mut i = count[index];
-        let mut symclass = 0usize;
-        while i < len {
-            index = order[offset + i];
-            if count[index] != 0 {
-                symclass = offset + i;
-            }
-            atoms[index].index = symclass;
-            for &nbr in &atoms[index].nbr_ids {
-                changed[nbr] = true;
-            }
-            i += 1;
-        }
-
-        index = order[offset];
-        let mut i = count[index];
-        while i < len {
-            index = order[offset + i];
-            for &nbr in &atoms[index].nbr_ids {
-                touched[atoms[nbr].index] = true;
-            }
-            i += 1;
-        }
-
-        for idx in 0..atoms.len() {
-            if touched[idx] {
-                let partition = order[idx];
-                if count[partition] > 1 && next[partition] == -2 {
-                    next[partition] = activeset;
-                    activeset = partition as isize;
-                }
-                touched[idx] = false;
-            }
-        }
-    }
-}
-
-fn break_ties(
-    atoms: &mut [CanonAtom],
-    order: &mut [usize],
-    count: &mut [usize],
-    next: &mut [isize],
-    changed: &mut [bool],
-    touched: &mut [bool],
-) {
-    let n = atoms.len();
-    let mut i = 0usize;
-    while i < n {
-        let partition = order[i];
-        let old_part = atoms[partition].index;
-        while count[partition] > 1 {
-            let len = count[partition];
-            let offset = atoms[partition].index + len - 1;
-            let idx = order[offset];
-            atoms[idx].index = offset;
-            count[partition] = len - 1;
-            count[idx] = 1;
-
-            if atoms[idx].degree < 1 {
-                continue;
-            }
-            for &nbr in &atoms[idx].nbr_ids {
-                touched[atoms[nbr].index] = true;
-                changed[nbr] = true;
-            }
-
-            let mut activeset = -1isize;
-            for part_idx in 0..n {
-                if touched[part_idx] {
-                    let part = order[part_idx];
-                    if count[part] > 1 && next[part] == -2 {
-                        next[part] = activeset;
-                        activeset = part as isize;
-                    }
-                    touched[part_idx] = false;
-                }
-            }
-            refine_partitions(atoms, order, count, next, changed, touched, activeset);
-        }
-        if atoms[partition].index == old_part {
-            i += 1;
-        }
-    }
-}
-
-pub(crate) fn rank_fragment_atoms_for_kekulize(mol: &Molecule) -> Vec<usize> {
-    // Source mapping: RDKit 2026.03.1
-    //   Code/GraphMol/Kekulize.cpp::KekulizeFragment(canonical=true)
-    //   Code/GraphMol/new_canon.cpp::rankFragmentAtoms()
-    //   Code/GraphMol/new_canon.h::{RefinePartitions,BreakTies}
-    let n = mol.atoms().len();
-    if n == 0 {
-        return Vec::new();
-    }
-
-    let mut atoms = init_fragment_canon_atoms(mol);
-    let mut order: Vec<usize> = (0..n).collect();
-    let mut count = vec![0usize; n];
-    let mut next = vec![-2isize; n];
-    let mut changed = vec![true; n];
-    let mut touched = vec![false; n];
-
-    for atom in &mut atoms {
-        atom.index = 0;
-    }
-    count[0] = n;
-
-    let activeset = activate_partitions(&order, &count, &mut next, &mut changed);
-    refine_partitions(
-        &mut atoms,
-        &mut order,
-        &mut count,
-        &mut next,
-        &mut changed,
-        &mut touched,
-        activeset,
-    );
-    break_ties(
-        &mut atoms,
-        &mut order,
-        &mut count,
-        &mut next,
-        &mut changed,
-        &mut touched,
-    );
-
-    let mut ranks = vec![0usize; n];
-    for idx in 0..n {
-        ranks[idx] = atoms[idx].index;
-    }
-    ranks
-}
-
-fn bond_index_between(
-    bond_lookup: &HashMap<(usize, usize), usize>,
-    a: usize,
-    b: usize,
-) -> Option<usize> {
-    let key = if a <= b { (a, b) } else { (b, a) };
-    bond_lookup.get(&key).copied()
-}
-
-fn aromatic_component_bond_lookup(
-    mol: &Molecule,
-    all_atms: &[usize],
-    aromatic_set: &HashSet<usize>,
-) -> (Vec<Vec<(usize, usize)>>, HashMap<(usize, usize), usize>) {
-    let mut local_adj: Vec<Vec<(usize, usize)>> = vec![Vec::new(); mol.atoms().len()];
-    let in_all: HashSet<usize> = all_atms.iter().copied().collect();
-    let mut bmap = HashMap::new();
-    for &bi in aromatic_set {
-        let b = &mol.bonds()[bi];
-        if !in_all.contains(&b.begin_atom) || !in_all.contains(&b.end_atom) {
-            continue;
-        }
-        local_adj[b.begin_atom].push((b.end_atom, bi));
-        local_adj[b.end_atom].push((b.begin_atom, bi));
-        let key = if b.begin_atom <= b.end_atom {
-            (b.begin_atom, b.end_atom)
-        } else {
-            (b.end_atom, b.begin_atom)
-        };
-        bmap.insert(key, bi);
-    }
-    (local_adj, bmap)
-}
-
-fn shortest_path_ignoring_edge(
-    local_adj: &[Vec<(usize, usize)>],
-    start: usize,
-    goal: usize,
-    ignored_bond: usize,
-) -> Option<Vec<usize>> {
-    let mut prev = vec![usize::MAX; local_adj.len()];
-    let mut seen = vec![false; local_adj.len()];
-    let mut q = VecDeque::new();
-    seen[start] = true;
-    q.push_back(start);
-    while let Some(v) = q.pop_front() {
-        if v == goal {
-            break;
-        }
-        for &(nb, bi) in &local_adj[v] {
-            if bi == ignored_bond || seen[nb] {
-                continue;
-            }
-            seen[nb] = true;
-            prev[nb] = v;
-            q.push_back(nb);
-        }
-    }
-    if !seen[goal] {
-        return None;
-    }
-    let mut path = vec![goal];
-    let mut cur = goal;
-    while cur != start {
-        cur = prev[cur];
-        if cur == usize::MAX {
-            return None;
-        }
-        path.push(cur);
-    }
-    path.reverse();
-    Some(path)
-}
-
-fn aromatic_rings_for_component(
-    mol: &Molecule,
-    all_atms: &[usize],
-    aromatic_set: &HashSet<usize>,
-) -> Vec<Vec<usize>> {
-    // We do not have RDKit RingInfo/SSSR state in this data model.
-    // Build a deterministic cycle set from aromatic edges by:
-    // for each aromatic edge (u,v), find shortest path u->v without that edge.
-    // path + edge forms one simple cycle candidate.
-    let (local_adj, _bmap) = aromatic_component_bond_lookup(mol, all_atms, aromatic_set);
-    let mut rings = Vec::<Vec<usize>>::new();
-    let mut seen = HashSet::<Vec<usize>>::new();
-    for &bi in aromatic_set {
-        let b = &mol.bonds()[bi];
-        if let Some(path) = shortest_path_ignoring_edge(&local_adj, b.begin_atom, b.end_atom, bi) {
-            if path.len() < 3 {
-                continue;
-            }
-            // Build canonical ring atom key from path (drop duplicated closure atom).
-            let mut ring = path;
-            ring.sort_unstable();
-            ring.dedup();
-            if ring.len() < 3 {
-                continue;
-            }
-            if seen.insert(ring.clone()) {
-                rings.push(ring);
-            }
-        }
-    }
-
-    // Empty ring-set is allowed here; caller decides whether component is valid.
-    rings
-}
-
-fn aromatic_component_has_cycle(
-    mol: &Molecule,
-    all_atms: &[usize],
-    aromatic_set: &HashSet<usize>,
-) -> bool {
-    let in_all: HashSet<usize> = all_atms.iter().copied().collect();
-    let mut aromatic_atoms = HashSet::<usize>::new();
-    let e = aromatic_set
-        .iter()
-        .filter(|&&bi| {
-            let b = &mol.bonds()[bi];
-            let in_component = in_all.contains(&b.begin_atom) && in_all.contains(&b.end_atom);
-            if in_component {
-                aromatic_atoms.insert(b.begin_atom);
-                aromatic_atoms.insert(b.end_atom);
-            }
-            in_component
-        })
-        .count();
-    // For the aromatic subgraph inside the fused ring component: cycle iff
-    // E >= V for one connected undirected component.
-    e >= aromatic_atoms.len()
-}
-
-fn ring_not_candidates(
-    mol: &Molecule,
-    rings: &[Vec<usize>],
-) -> (Vec<bool>, Vec<usize>, Vec<Vec<usize>>) {
-    let mut num_atom_rings = vec![0usize; mol.atoms().len()];
-    let mut atom_members = vec![Vec::<usize>::new(); mol.atoms().len()];
-    for (ri, ring) in rings.iter().enumerate() {
-        for &ai in ring {
-            num_atom_rings[ai] += 1;
-            atom_members[ai].push(ri);
-        }
-    }
-
-    // RDKit markDbondCands:
-    // ring is "not candidate" unless it has at least one aromatic atom
-    // that belongs to exactly one ring.
-    let mut is_ring_not_cand = vec![true; rings.len()];
-    for (ri, ring) in rings.iter().enumerate() {
-        for &ai in ring {
-            let at = &mol.atoms()[ai];
-            if at.is_aromatic && num_atom_rings[ai] == 1 {
-                is_ring_not_cand[ri] = false;
-                break;
-            }
-        }
-    }
-    (is_ring_not_cand, num_atom_rings, atom_members)
-}
-
-fn rdkit_wedged_bond_priority_reachable(_mol: &Molecule) -> bool {
-    // RDKit branch in kekulizeWorker uses BondDir BEGINWEDGE/BEGINDASH
-    // to push wedged neighbors after normal options.
-    // Current Bond model does not contain bond direction/stereo-wedge state.
-    false
-}
-
-fn can_receive_double(
-    mol: &Molecule,
-    atom_idx: usize,
-    aromatic_set: &HashSet<usize>,
-    total_hs: &[i32],
-) -> bool {
-    let atom = &mol.atoms()[atom_idx];
-    if atom.atomic_num == 0 {
-        return true;
-    }
-    if !atom.is_aromatic {
-        return false;
-    }
-
-    let mut base_valence = total_hs[atom_idx];
-    let mut n_to_ignore = 0i32;
-    for (bi, b) in mol.bonds().iter().enumerate() {
-        if b.begin_atom != atom_idx && b.end_atom != atom_idx {
-            continue;
-        }
-        if aromatic_set.contains(&bi) {
-            base_valence += 1;
-        } else {
-            let contrib = bond_valence_contrib_for_atom(mol, bi, atom_idx);
-            base_valence += contrib;
-            if contrib == 0 {
-                n_to_ignore += 1;
-            }
-        }
-    }
-
-    let mut dv = default_valence(atom.atomic_num);
-    if dv <= 0 {
-        return false;
-    }
-
-    let mut chrg = atom.formal_charge as i32;
-    if is_early_atom(atom.atomic_num) {
-        chrg = -chrg;
-    }
-    if atom.atomic_num == 6 && chrg > 0 {
-        chrg = -chrg;
-    }
-    dv += chrg;
-
-    let total_valence = total_valence_for_atom(mol, atom_idx);
-    let n_radicals = atom.num_radical_electrons as i32;
-    let total_degree = degree_for_atom(mol, atom_idx) + total_hs[atom_idx] - n_to_ignore;
-
-    if let Some(vlist) = valence_list(atom.atomic_num) {
-        let mut vi = 1usize;
-        while total_valence > dv && vi < vlist.len() && vlist[vi] > 0 {
-            dv = vlist[vi] + chrg;
-            vi += 1;
-        }
-    }
-
-    // RDKit special case for aromatic N-oxides:
-    // O=n1ccccc1 family can require dv=5 on N/P/As.
-    if total_valence == 5
-        && base_valence == 4
-        && dv == 3
-        && total_degree == 3
-        && n_radicals == 0
-        && chrg == 0
-        && total_hs[atom_idx] == 0
-        && matches!(atom.atomic_num, 7 | 15 | 33)
-    {
-        dv = 5;
-    }
-
-    if total_degree + n_radicals >= dv {
-        return false;
-    }
-    if dv == base_valence + 1 + n_radicals {
-        return true;
-    }
-    if n_radicals == 0 && atom.no_implicit && dv == base_valence + 2 {
-        return true;
-    }
-    false
-}
-
-fn mark_dbond_cands(
-    mol: &mut Molecule,
-    all_atms: &[usize],
-    aromatic_set: &HashSet<usize>,
-    d_bond_cands: &mut [bool],
-    questions: &mut Vec<usize>,
-    done: &mut Vec<usize>,
-) {
-    let has_aromatic_or_dummy = all_atms.iter().any(|&ai| {
-        let at = &mol.atoms()[ai];
-        at.atomic_num == 0 || at.is_aromatic
-    });
-    if !has_aromatic_or_dummy {
-        return;
-    }
-    if rdkit_wedged_bond_priority_reachable(mol) {
-        unimplemented!(
-            "RDKit wedged-bond option ordering in KekulizeWorker is not representable without bond direction field"
-        );
-    }
-
-    let in_all: HashSet<usize> = all_atms.iter().copied().collect();
-    let rings = aromatic_rings_for_component(mol, all_atms, aromatic_set);
-    let (is_ring_not_cand, num_atom_rings, atom_members) = ring_not_candidates(mol, &rings);
-    let mut make_single: Vec<usize> = Vec::new();
-    let total_hs: Vec<i32> = match assign_valence(mol, ValenceModel::RdkitLike) {
-        Ok(v) => mol
-            .atoms()
+fn ordered_kekulize_rings(
+    molecule: &Molecule,
+    rings: &RingInfo,
+    atoms_to_use: &[bool],
+    bonds_to_use: &[bool],
+    wedged_atoms: &BTreeSet<AtomId>,
+) -> Vec<KekulizeRing> {
+    let mut front = Vec::new();
+    let mut back = Vec::new();
+    for ring_idx in 0..rings.num_rings() {
+        let atoms = &rings.atom_rings()[ring_idx];
+        let bonds = &rings.bond_rings()[ring_idx];
+        let contains_non_dummy = atoms
             .iter()
-            .enumerate()
-            .map(|(i, at)| at.explicit_hydrogens as i32 + v.implicit_hydrogens[i] as i32)
-            .collect(),
-        Err(_) => mol
-            .atoms()
-            .iter()
-            .map(|at| at.explicit_hydrogens as i32)
-            .collect(),
-    };
-
-    for &ai in all_atms {
-        let at = &mol.atoms()[ai];
-        if at.atomic_num != 0 && !at.is_aromatic {
-            done.push(ai);
-            continue;
-        }
-
-        let mut non_ar_non_dummy_nbr = 0usize;
-        for b in mol.bonds() {
-            if b.begin_atom != ai && b.end_atom != ai {
-                continue;
-            }
-            let nbr = if b.begin_atom == ai {
-                b.end_atom
-            } else {
-                b.begin_atom
-            };
-            if in_all.contains(&nbr) {
-                let other = &mol.atoms()[nbr];
-                if other.atomic_num != 0 && !other.is_aromatic {
-                    non_ar_non_dummy_nbr += 1;
-                }
-            }
-            if aromatic_set.contains(&b.index)
-                && matches!(
-                    b.order,
-                    BondOrder::Single | BondOrder::Double | BondOrder::Aromatic
-                )
-            {
-                make_single.push(b.index);
-            }
-        }
-
-        if at.atomic_num == 0 {
-            let n_atom_rings = num_atom_rings[ai];
-            let n_non_cand_rings = atom_members[ai]
+            .all(|atom| atom.index() < molecule.num_atoms() && atoms_to_use[atom.index()])
+            && atoms
                 .iter()
-                .filter(|&&ri| is_ring_not_cand[ri])
-                .count();
-            if non_ar_non_dummy_nbr < n_atom_rings && n_non_cand_rings < n_atom_rings {
-                d_bond_cands[ai] = true;
-                questions.push(ai);
-            }
-        } else if can_receive_double(mol, ai, aromatic_set, &total_hs) {
-            d_bond_cands[ai] = true;
-        }
-    }
-
-    for bi in make_single {
-        let b = &mut mol.bonds_mut()[bi];
-        if in_all.contains(&b.begin_atom) && in_all.contains(&b.end_atom) {
-            b.order = BondOrder::Single;
-        }
-    }
-}
-
-fn backtrack(
-    mol: &mut Molecule,
-    options: &mut HashMap<usize, VecDeque<usize>>,
-    last_opt: usize,
-    done: &mut Vec<usize>,
-    aqueue: &mut VecDeque<usize>,
-    d_bond_cands: &mut [bool],
-    d_bond_adds: &mut [bool],
-) {
-    let Some(pos) = done.iter().position(|x| *x == last_opt) else {
-        return;
-    };
-    let tdone: Vec<usize> = done[..pos].to_vec();
-    let rollback: Vec<usize> = done[pos..].to_vec();
-    for &a in rollback.iter().rev() {
-        aqueue.push_front(a);
-    }
-    let tdone_set: HashSet<usize> = tdone.iter().copied().collect();
-    for bi in 0..mol.bonds().len() {
-        if !d_bond_adds[bi] {
+                .any(|atom| molecule.atoms()[atom.index()].atomic_number() != 0);
+        if !contains_non_dummy {
             continue;
         }
-        let b = &mol.bonds()[bi];
-        if !tdone_set.contains(&b.begin_atom) && !tdone_set.contains(&b.end_atom) {
-            d_bond_adds[bi] = false;
-            let bb = &mut mol.bonds_mut()[bi];
-            bb.order = BondOrder::Single;
-            d_bond_cands[bb.begin_atom] = true;
-            d_bond_cands[bb.end_atom] = true;
+        if !bonds.iter().all(|bond| bonds_to_use[bond.index()]) {
+            continue;
+        }
+        let start_pos = atoms
+            .iter()
+            .position(|atom| wedged_atoms.contains(atom))
+            .unwrap_or(0);
+        let rotated_atoms = (0..atoms.len())
+            .map(|offset| atoms[(offset + start_pos) % atoms.len()])
+            .collect::<Vec<_>>();
+        let entry = KekulizeRing {
+            atoms: rotated_atoms,
+            bonds: bonds.clone(),
+            source_ring: ring_idx,
+        };
+        if start_pos == 0 && !atoms.iter().any(|atom| wedged_atoms.contains(atom)) {
+            back.push(entry);
+        } else {
+            front.push(entry);
         }
     }
-    *done = tdone;
-    options.retain(|k, _| done.contains(k) || *k == last_opt);
+    front.extend(back);
+    front
 }
 
-fn kekulize_worker(
-    mol: &mut Molecule,
-    all_atms: &[usize],
-    aromatic_set: &HashSet<usize>,
-    bond_lookup: &HashMap<(usize, usize), usize>,
-    atom_ranks: &[usize],
-    d_bond_cands: &mut [bool],
-    d_bond_adds: &mut [bool],
-    done: &mut Vec<usize>,
-    max_backtracks: usize,
-) -> bool {
-    let all_set: HashSet<usize> = all_atms.iter().copied().collect();
-    let mut astack: VecDeque<usize> = VecDeque::new();
-    let mut options: HashMap<usize, VecDeque<usize>> = HashMap::new();
-    let mut btmoves: Vec<usize> = Vec::new();
-    let mut last_opt: Option<usize> = None;
-    let mut local_bonds_added = vec![false; mol.bonds().len()];
-    let mut num_bt = 0usize;
-    let mut sorted_atms = all_atms.to_vec();
-    sorted_atms.sort_by_key(|&a| (atom_ranks.get(a).copied().unwrap_or(usize::MAX), a));
-
-    while done.len() < sorted_atms.len() || !astack.is_empty() {
-        let curr = if let Some(v) = astack.pop_front() {
-            v
-        } else {
-            let mut next_start = None;
-            for &a in &sorted_atms {
-                if !done.contains(&a) {
-                    next_start = Some(a);
-                    break;
-                }
-            }
-            match next_start {
-                Some(v) => v,
-                None => return true,
-            }
-        };
-        done.push(curr);
-
-        let c_cand = d_bond_cands[curr];
-        let mut existing_option_frame = false;
-        let mut opts = if let Some(saved) = options.get(&curr) {
-            existing_option_frame = true;
-            saved.clone()
-        } else {
-            let mut lstack: VecDeque<usize> = VecDeque::new();
-            let mut new_opts: VecDeque<usize> = VecDeque::new();
-            let mut neighbors = neighbors_of(mol, curr);
-            neighbors.sort_by_key(|&nbr| (atom_ranks.get(nbr).copied().unwrap_or(usize::MAX), nbr));
-            for nbr in neighbors {
-                if done.contains(&nbr) || !all_set.contains(&nbr) {
-                    continue;
-                }
-                if !astack.contains(&nbr) {
-                    lstack.push_back(nbr);
-                }
-                if !c_cand || !d_bond_cands[nbr] {
-                    continue;
-                }
-                let Some(bi) = bond_index_between(bond_lookup, curr, nbr) else {
-                    continue;
-                };
-                let ok_edge = aromatic_set.contains(&bi)
-                    || mol.atoms()[curr].atomic_num == 0
-                    || mol.atoms()[nbr].atomic_num == 0;
-                if ok_edge {
-                    new_opts.push_back(nbr);
-                }
-            }
-            astack.extend(lstack);
-            new_opts
-        };
-
-        if c_cand {
-            if let Some(ncnd) = opts.pop_front() {
-                let Some(bi) = bond_index_between(bond_lookup, curr, ncnd) else {
-                    return false;
-                };
-                mol.bonds_mut()[bi].order = BondOrder::Double;
-                if !matches!(mol.bonds()[bi].direction, BondDirection::None) {
-                    mol.bonds_mut()[bi].direction = BondDirection::None;
-                }
-                d_bond_cands[curr] = false;
-                d_bond_cands[ncnd] = false;
-                d_bond_adds[bi] = true;
-                local_bonds_added[bi] = true;
-
-                if existing_option_frame {
-                    if opts.is_empty() {
-                        options.remove(&curr);
-                        btmoves.pop();
-                        last_opt = btmoves.last().copied();
-                    } else {
-                        options.insert(curr, opts);
-                    }
-                } else if !opts.is_empty() {
-                    last_opt = Some(curr);
-                    btmoves.push(curr);
-                    options.insert(curr, opts);
-                }
-            } else if mol.atoms()[curr].atomic_num != 0 {
-                if let Some(lo) = last_opt {
-                    if num_bt < max_backtracks {
-                        backtrack(
-                            mol,
-                            &mut options,
-                            lo,
-                            done,
-                            &mut astack,
-                            d_bond_cands,
-                            d_bond_adds,
-                        );
-                        num_bt += 1;
-                    } else {
-                        for (bi, added) in local_bonds_added.iter().copied().enumerate() {
-                            if added {
-                                mol.bonds_mut()[bi].order = BondOrder::Single;
-                            }
-                        }
-                        return false;
-                    }
-                } else {
-                    for (bi, added) in local_bonds_added.iter().copied().enumerate() {
-                        if added {
-                            mol.bonds_mut()[bi].order = BondOrder::Single;
-                        }
-                    }
-                    return false;
+fn fused_ring_systems(rings: &[KekulizeRing]) -> Vec<Vec<usize>> {
+    let mut systems = Vec::<Vec<usize>>::new();
+    let mut seen = vec![false; rings.len()];
+    for start in 0..rings.len() {
+        if seen[start] {
+            continue;
+        }
+        let mut stack = vec![start];
+        let mut system = Vec::new();
+        seen[start] = true;
+        while let Some(ring) = stack.pop() {
+            system.push(ring);
+            for next in 0..rings.len() {
+                if !seen[next] && rings_share_bond(rings, ring, next) {
+                    seen[next] = true;
+                    stack.push(next);
                 }
             }
         }
+        systems.push(system);
     }
-    true
+    systems
 }
 
-fn permute_dummies_and_kekulize(
-    mol: &mut Molecule,
-    all_atms: &[usize],
-    aromatic_set: &HashSet<usize>,
-    bond_lookup: &HashMap<(usize, usize), usize>,
-    atom_ranks: &[usize],
-    d_bond_cands: &[bool],
-    questions: &[usize],
-    max_backtracks: usize,
-) -> bool {
-    if questions.is_empty() {
-        return false;
-    }
-    let all_set: HashSet<usize> = all_atms.iter().copied().collect();
-    let mut mask = 1usize;
-    while mask < (1usize << questions.len()) {
-        // reset aromatic edges in this fragment
-        for (bi, b) in mol.bonds_mut().iter_mut().enumerate() {
-            if aromatic_set.contains(&bi)
-                && all_set.contains(&b.begin_atom)
-                && all_set.contains(&b.end_atom)
-            {
-                if !matches!(b.order, BondOrder::Single) {
-                    b.order = BondOrder::Single;
-                }
-            }
-        }
+fn rings_share_bond(rings: &[KekulizeRing], left: usize, right: usize) -> bool {
+    rings[left]
+        .bonds
+        .iter()
+        .any(|bond| rings[right].bonds.contains(bond))
+}
 
-        let mut t_cands = d_bond_cands.to_vec();
-        for (i, &q) in questions.iter().enumerate() {
-            if (mask & (1usize << i)) != 0 {
-                t_cands[q] = false;
-            }
-        }
-        let mut d_bond_adds = vec![false; mol.bonds().len()];
-        let mut done = Vec::new();
-        let ok = kekulize_worker(
-            mol,
-            all_atms,
-            aromatic_set,
-            bond_lookup,
-            atom_ranks,
-            &mut t_cands,
-            &mut d_bond_adds,
-            &mut done,
-            max_backtracks,
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        AtomSpec, BondOrder, BondQueryPredicate, BondSpec, Element, MoleculeBuilder, QueryNode,
+    };
+
+    #[test]
+    fn kekulize_assignment_returns_empty_for_empty_molecule() {
+        let molecule = Molecule::new();
+
+        let assignment = kekulize_assignment(&molecule, None, true, false, 100).unwrap();
+
+        assert!(assignment.is_empty());
+    }
+
+    #[test]
+    fn kekulize_assignment_kekulizes_benzene_like_aromatic_cycle() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+
+        let assignment = kekulize_assignment(&molecule, None, true, false, 100).unwrap();
+        let double_bonds = molecule
+            .bonds()
+            .iter()
+            .filter(|bond| assignment.bond_order(bond.id()) == Some(BondOrder::Double))
+            .count();
+        let single_bonds = molecule
+            .bonds()
+            .iter()
+            .filter(|bond| assignment.bond_order(bond.id()) == Some(BondOrder::Single))
+            .count();
+
+        assert_eq!(double_bonds, 3);
+        assert_eq!(single_bonds, 3);
+        assert!(
+            molecule
+                .bonds()
+                .iter()
+                .all(|bond| assignment.bond_aromatic_flag(bond.id()) == Some(false))
         );
-        if ok {
-            return true;
-        }
-        mask += 1;
+        assert!(
+            molecule
+                .atoms()
+                .iter()
+                .all(|atom| assignment.atom_aromatic_flag(atom.id()) == Some(false))
+        );
     }
-    false
+
+    #[test]
+    fn kekulize_fragment_returns_empty_when_atoms_to_use_is_empty_like_rdkit() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+        let rings = symmetrize_sssr(&molecule).unwrap();
+
+        let assignment = kekulize_fragment_assignment(
+            &molecule,
+            &rings,
+            &[false; 6],
+            vec![true; molecule.num_bonds()],
+            true,
+            false,
+            100,
+        )
+        .unwrap();
+
+        assert!(assignment.is_empty());
+    }
+
+    #[test]
+    fn kekulize_fragment_rejects_bitset_size_mismatch() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+        let rings = symmetrize_sssr(&molecule).unwrap();
+
+        let error = kekulize_fragment_assignment(
+            &molecule,
+            &rings,
+            &[true; 5],
+            vec![true; molecule.num_bonds()],
+            true,
+            false,
+            100,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            KekulizeError::FragmentBitsetSizeMismatch { atoms: 5, bonds: 6 }
+        ));
+    }
+
+    #[test]
+    fn kekulize_assignment_runs_canonical_fragment_ranking_for_plain_aromatic_cycle() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+
+        let assignment = kekulize_assignment(&molecule, None, true, true, 100).unwrap();
+
+        let double_bonds = molecule
+            .bonds()
+            .iter()
+            .filter(|bond| assignment.bond_order(bond.id()) == Some(BondOrder::Double))
+            .count();
+        let single_bonds = molecule
+            .bonds()
+            .iter()
+            .filter(|bond| assignment.bond_order(bond.id()) == Some(BondOrder::Single))
+            .count();
+        assert_eq!(double_bonds, 3);
+        assert_eq!(single_bonds, 3);
+    }
+
+    #[test]
+    fn kekulize_if_possible_returns_assignment_for_kekulizable_molecule() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+
+        let assignment = kekulize_if_possible_assignment(&molecule, true, false, 100)
+            .unwrap()
+            .unwrap();
+
+        let double_bonds = molecule
+            .bonds()
+            .iter()
+            .filter(|bond| assignment.bond_order(bond.id()) == Some(BondOrder::Double))
+            .count();
+        assert_eq!(double_bonds, 3);
+    }
+
+    #[test]
+    fn kekulize_if_possible_runs_canonical_fragment_ranking_for_plain_aromatic_cycle() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+
+        let assignment = kekulize_if_possible_assignment(&molecule, true, true, 100)
+            .unwrap()
+            .unwrap();
+
+        let double_bonds = molecule
+            .bonds()
+            .iter()
+            .filter(|bond| assignment.bond_order(bond.id()) == Some(BondOrder::Double))
+            .count();
+        assert_eq!(double_bonds, 3);
+    }
+
+    #[test]
+    fn canonical_kekulize_handles_stereo_ranking_branch() {
+        let mut builder = MoleculeBuilder::new();
+        let atoms = (0..6)
+            .map(|_| builder.add_atom(AtomSpec::new(Element::C).with_aromatic(true)))
+            .collect::<Vec<_>>();
+        for idx in 0..6 {
+            builder
+                .add_bond(
+                    BondSpec::new(atoms[idx], atoms[(idx + 1) % 6], BondOrder::Aromatic)
+                        .with_aromatic(true),
+                )
+                .unwrap();
+        }
+        let mut molecule = builder.build().unwrap();
+        molecule.topology_block_mut().atoms[0].set_chiral_tag(crate::ChiralTag::TetrahedralCw);
+
+        let assignment = kekulize_assignment(&molecule, None, true, true, 100).unwrap();
+
+        let double_bonds = molecule
+            .bonds()
+            .iter()
+            .filter(|bond| assignment.bond_order(bond.id()) == Some(BondOrder::Double))
+            .count();
+        assert_eq!(double_bonds, 3);
+    }
+
+    #[test]
+    fn kekulize_assignment_handles_dummy_atom_permutation_branch() {
+        let molecule = Molecule::from_smiles_with_sanitize("*1cccc1", false).unwrap();
+
+        let assignment = kekulize_assignment(&molecule, None, true, false, 100).unwrap();
+
+        let double_bonds = molecule
+            .bonds()
+            .iter()
+            .filter(|bond| assignment.bond_order(bond.id()) == Some(BondOrder::Double))
+            .count();
+        let single_bonds = molecule
+            .bonds()
+            .iter()
+            .filter(|bond| assignment.bond_order(bond.id()) == Some(BondOrder::Single))
+            .count();
+
+        assert_eq!(double_bonds, 2, "{:?}", assignment.bond_orders);
+        assert_eq!(single_bonds, 1, "{:?}", assignment.bond_orders);
+    }
+
+    #[test]
+    fn kekulize_assignment_excludes_bond_type_query_from_bonds_to_use() {
+        let mut builder = MoleculeBuilder::new();
+        let a0 = builder.add_atom(AtomSpec::new(Element::C).with_aromatic(true));
+        let a1 = builder.add_atom(AtomSpec::new(Element::C).with_aromatic(true));
+        let a2 = builder.add_atom(AtomSpec::new(Element::C).with_aromatic(true));
+        builder
+            .add_bond(
+                BondSpec::new(a0, a1, BondOrder::Aromatic)
+                    .with_aromatic(true)
+                    .with_query(QueryNode::predicate(BondQueryPredicate::OrderIn(vec![
+                        BondOrder::Single,
+                        BondOrder::Aromatic,
+                    ]))),
+            )
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(a1, a2, BondOrder::Aromatic).with_aromatic(true))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(a2, a0, BondOrder::Aromatic).with_aromatic(true))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        let assignment = kekulize_assignment(&molecule, None, true, false, 100).unwrap();
+
+        assert_eq!(assignment.bond_order(BondId::new(0)), None);
+        assert_eq!(assignment.bond_aromatic_flag(BondId::new(0)), None);
+        assert_eq!(assignment.bond_aromatic_flag(BondId::new(1)), Some(false));
+        assert_eq!(assignment.bond_aromatic_flag(BondId::new(2)), Some(false));
+    }
+
+    #[test]
+    fn kekulize_assignment_keeps_non_bond_type_query_in_bonds_to_use() {
+        let mut builder = MoleculeBuilder::new();
+        let atoms = (0..6)
+            .map(|_| builder.add_atom(AtomSpec::new(Element::C).with_aromatic(true)))
+            .collect::<Vec<_>>();
+        builder
+            .add_bond(
+                BondSpec::new(atoms[0], atoms[1], BondOrder::Aromatic)
+                    .with_aromatic(true)
+                    .with_query(QueryNode::predicate(BondQueryPredicate::IsInRing(true))),
+            )
+            .unwrap();
+        for idx in 1..6 {
+            builder
+                .add_bond(
+                    BondSpec::new(atoms[idx], atoms[(idx + 1) % 6], BondOrder::Aromatic)
+                        .with_aromatic(true),
+                )
+                .unwrap();
+        }
+        let molecule = builder.build().unwrap();
+
+        let assignment = kekulize_assignment(&molecule, None, true, false, 100).unwrap();
+
+        assert_eq!(assignment.bond_aromatic_flag(BondId::new(0)), Some(false));
+    }
+
+    #[test]
+    fn kekulize_source_markers_do_not_hide_elided_rdkit_lines() {
+        let source = include_str!("kekulize.rs");
+
+        for line in source.lines().filter(|line| line.contains("RDKit")) {
+            assert!(
+                !line.contains("..."),
+                "RDKit source marker must not contain elided source: {line}"
+            );
+        }
+    }
 }

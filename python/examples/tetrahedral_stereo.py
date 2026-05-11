@@ -5,7 +5,7 @@ Atom `chiral_tag()` values keep the SMILES/RDKit-style CW and CCW path as
 `Molecule.tetrahedral_stereo()` is an additional ordered-ligand view derived
 from those chiral tags. Ligand indices match the same atom indexing used by
 `mol.atoms()`.
-Specification: `tetrahedral_stereo_representation.md`.
+Specification: `dev/tetrahedral_stereo.md`.
 """
 
 from cosmolkit import ChiralTag, Molecule

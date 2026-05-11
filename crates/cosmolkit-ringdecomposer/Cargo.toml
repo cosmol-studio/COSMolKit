@@ -1,0 +1,17 @@
+[package]
+name = "cosmolkit-ringdecomposer"
+description = "Pure Rust RingDecomposerLib port for URF and relevant-cycle graph decomposition"
+keywords = ["graph", "rings", "urf", "cycle-basis"]
+categories = ["algorithms", "data-structures", "science"]
+repository.workspace = true
+homepage.workspace = true
+license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "cosmolkit_ringdecomposer"
+path = "src/lib.rs"
+
+[dependencies]
+thiserror = "2.0.18"

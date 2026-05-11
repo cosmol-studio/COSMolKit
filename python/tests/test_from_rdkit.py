@@ -1,10 +1,12 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import cosmolkit
 
 Chem = pytest.importorskip("rdkit.Chem")
+Point3D = pytest.importorskip("rdkit.Geometry").Point3D
 
 
 def _load_smiles_cases():
@@ -194,6 +196,58 @@ def test_from_rdkit_matches_direct_cosmolkit_smiles(smiles):
             direct.to_smiles(canonical=True)
         assert "unsupported path" in str(bridged_error)
     assert bridged.to_smiles(canonical=False) == direct.to_smiles(canonical=False)
+
+
+def _add_conformer(rd_mol, coords, is_3d):
+    conf = Chem.Conformer(rd_mol.GetNumAtoms())
+    conf.Set3D(is_3d)
+    for idx, (x, y, z) in enumerate(coords):
+        conf.SetAtomPosition(idx, Point3D(float(x), float(y), float(z)))
+    rd_mol.AddConformer(conf, assignId=True)
+
+
+def test_from_rdkit_copies_3d_conformers():
+    rd_mol = Chem.MolFromSmiles("CCO")
+    coords = np.array(
+        [
+            [0.1, 0.2, 0.3],
+            [1.1, 1.2, 1.3],
+            [2.1, 2.2, 2.3],
+        ]
+    )
+    _add_conformer(rd_mol, coords, is_3d=True)
+
+    bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
+
+    assert bridged.num_conformers() == 1
+    assert np.allclose(bridged.coords_3d(), coords)
+
+
+def test_from_rdkit_copies_multiple_3d_conformers_and_skips_2d():
+    rd_mol = Chem.MolFromSmiles("CO")
+    coords_2d = np.array([[10.0, 11.0, 0.0], [12.0, 13.0, 0.0]])
+    coords_3d_a = np.array([[0.0, 0.1, 0.2], [1.0, 1.1, 1.2]])
+    coords_3d_b = np.array([[2.0, 2.1, 2.2], [3.0, 3.1, 3.2]])
+    _add_conformer(rd_mol, coords_2d, is_3d=False)
+    _add_conformer(rd_mol, coords_3d_a, is_3d=True)
+    _add_conformer(rd_mol, coords_3d_b, is_3d=True)
+
+    bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
+
+    assert bridged.num_conformers() == 2
+    assert np.allclose(bridged.coords_3d(0), coords_3d_a)
+    assert np.allclose(bridged.coords_3d(1), coords_3d_b)
+
+
+def test_from_rdkit_does_not_copy_2d_conformer():
+    rd_mol = Chem.MolFromSmiles("CO")
+    _add_conformer(rd_mol, [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]], is_3d=False)
+
+    bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
+
+    assert bridged.num_conformers() == 0
+    with pytest.raises(ValueError, match="no 3D conformer"):
+        bridged.coords_3d()
 
 
 def test_from_rdkit_rejects_non_object():

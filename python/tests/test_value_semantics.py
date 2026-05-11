@@ -212,6 +212,144 @@ $$$$
     assert np.allclose(mol_3d.coords_3d(), np.array([[0.0, 0.0, 0.0]]))
 
 
+def test_molecule_batch_read_sdf_reads_file_records(tmp_path: Path):
+    sdf = """ethane
+     COSMolKit      2D
+
+  2  1  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+M  END
+$$$$
+oxygen
+     COSMolKit      2D
+
+  1  0  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+$$$$
+"""
+    path = tmp_path / "mols.sdf"
+    path.write_text(sdf)
+
+    batch = cosmolkit.MoleculeBatch.read_sdf(str(path), errors="raise", n_jobs=1)
+
+    assert len(batch) == 2
+    assert batch.valid_mask() == [True, True]
+    assert len(batch[0]) == 2
+    assert len(batch[1]) == 1
+
+
+def test_molecule_batch_read_sdf_progress_bar_reads_file_records(tmp_path: Path):
+    sdf = """carbon
+     COSMolKit      2D
+
+  1  0  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+$$$$
+oxygen
+     COSMolKit      2D
+
+  1  0  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+$$$$
+"""
+    path = tmp_path / "progress.sdf"
+    path.write_text(sdf)
+
+    batch = cosmolkit.MoleculeBatch.read_sdf(
+        str(path), errors="raise", progress_bar=True
+    )
+
+    assert len(batch) == 2
+    assert batch.valid_mask() == [True, True]
+
+
+def test_sdf_dataset_supports_indexing_iteration_and_batches(tmp_path: Path):
+    sdf = """carbon
+     COSMolKit      2D
+
+  1  0  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+>  <supplier_id>
+D008
+
+$$$$
+oxygen
+     COSMolKit      2D
+
+  1  0  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+$$$$
+nitrogen
+     COSMolKit      2D
+
+  1  0  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+$$$$
+"""
+    path = tmp_path / "indexed.sdf"
+    path.write_text(sdf)
+
+    ds = cosmolkit.SdfDataset.open(str(path))
+
+    assert len(ds) == 3
+    assert ds.metadata(0).title() == "carbon"
+    assert ds[1].title() == "oxygen"
+    assert ds[-1].title() == "nitrogen"
+    assert ds[0].data_field("supplier_id") == "D008"
+    head = ds[:2]
+    assert len(head) == 2
+    assert head.valid_mask() == [True, True]
+    assert [record.title() for record in ds] == ["carbon", "oxygen", "nitrogen"]
+
+    batches = list(ds.batches(size=2, errors="raise"))
+    assert [len(batch) for batch in batches] == [2, 1]
+    assert batches[0].valid_mask() == [True, True]
+    assert batches[1].valid_mask() == [True]
+
+    reader_batches = list(cosmolkit.SdfReader.open(str(path)).batches(size=2))
+    assert [len(batch) for batch in reader_batches] == [2, 1]
+
+
+def test_molecule_batch_read_sdf_file_error_modes(tmp_path: Path):
+    sdf = """ok
+     COSMolKit      2D
+
+  1  0  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+$$$$
+bad
+     COSMolKit      2D
+
+bad counts
+M  END
+$$$$
+"""
+    path = tmp_path / "with_error.sdf"
+    path.write_text(sdf)
+
+    kept = cosmolkit.MoleculeBatch.read_sdf(str(path), errors="keep", n_jobs=1)
+    assert len(kept) == 2
+    assert kept.valid_mask() == [True, False]
+    assert kept.errors()[0].index() == 1
+    assert kept.errors()[0].stage() == "read_sdf"
+
+    skipped = cosmolkit.MoleculeBatch.read_sdf(str(path), errors="skip", n_jobs=1)
+    assert len(skipped) == 1
+    assert skipped.valid_mask() == [True]
+
+    with pytest.raises(cosmolkit.BatchValidationError):
+        cosmolkit.MoleculeBatch.read_sdf(str(path), errors="raise", n_jobs=1)
+
+
 def test_without_hydrogens_filters_coordinate_rows_for_removed_atoms():
     sdf = """interleaved_h
   COSMolKit  3D

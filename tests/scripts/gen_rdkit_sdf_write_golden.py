@@ -62,6 +62,32 @@ def molblock_body(block: str) -> str:
     return "\n".join(lines[3:])
 
 
+def render_source_molblock(source: Chem.Mol | None) -> tuple[str | None, str | None]:
+    if source is None:
+        return None, "source molecule generation failed"
+    try:
+        return (
+            Chem.MolToMolBlock(
+                source, includeStereo=True, kekulize=True, forceV3000=True
+            ),
+            None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return None, f"{type(exc).__name__}: {exc}"
+
+
+def parse_source_molblock(block: str | None) -> tuple[Chem.Mol | None, str | None]:
+    if block is None:
+        return None, "source molblock generation failed"
+    try:
+        parsed = Chem.MolFromMolBlock(block, sanitize=True, removeHs=False)
+    except Exception as exc:  # noqa: BLE001
+        return None, f"{type(exc).__name__}: {exc}"
+    if parsed is None:
+        return None, "MolFromMolBlock returned None"
+    return parsed, None
+
+
 def branch_result(
     source: Chem.Mol | None,
     source_error: str | None,
@@ -118,32 +144,17 @@ def build_record(smiles: str) -> dict[str, object]:
         }
     source_2d, error_2d = make_2d_source(mol)
     source_3d, error_3d = make_3d_source(mol)
-    source_2d_molblock = (
-        Chem.MolToMolBlock(source_2d, includeStereo=True, kekulize=True, forceV3000=True)
-        if source_2d is not None
-        else None
-    )
-    source_3d_molblock = (
-        Chem.MolToMolBlock(source_3d, includeStereo=True, kekulize=True, forceV3000=True)
-        if source_3d is not None
-        else None
-    )
-    source_2d_for_write = (
-        Chem.MolFromMolBlock(source_2d_molblock, sanitize=True, removeHs=False)
-        if source_2d_molblock is not None
-        else None
-    )
-    source_3d_for_write = (
-        Chem.MolFromMolBlock(source_3d_molblock, sanitize=True, removeHs=False)
-        if source_3d_molblock is not None
-        else None
-    )
+    source_2d_molblock, source_2d_molblock_error = render_source_molblock(source_2d)
+    source_3d_molblock, source_3d_molblock_error = render_source_molblock(source_3d)
+    source_2d_for_write, source_2d_parse_error = parse_source_molblock(source_2d_molblock)
+    source_3d_for_write, source_3d_parse_error = parse_source_molblock(source_3d_molblock)
+    source_2d_error = error_2d or source_2d_molblock_error or source_2d_parse_error
+    source_3d_error = error_3d or source_3d_molblock_error or source_3d_parse_error
     branches = {}
     for dimension, source, source_error in [
-        ("2d", source_2d, error_2d),
-        ("3d", source_3d, error_3d),
+        ("2d", source_2d_for_write, source_2d_error),
+        ("3d", source_3d_for_write, source_3d_error),
     ]:
-        source = source_2d_for_write if dimension == "2d" else source_3d_for_write
         for include_stereo, kekulize, force_v3000 in itertools.product(
             [False, True], repeat=3
         ):
@@ -163,7 +174,9 @@ def build_record(smiles: str) -> dict[str, object]:
         "smiles": smiles,
         "rdkit_ok": True,
         "source_2d_molblock": source_2d_molblock,
+        "source_2d_error": source_2d_error,
         "source_3d_molblock": source_3d_molblock,
+        "source_3d_error": source_3d_error,
         "branches": branches,
         "error": None,
     }

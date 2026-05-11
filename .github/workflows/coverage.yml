@@ -1,12 +1,12 @@
 name: coverage
 
 on:
-    push:
-        branches:
-            - main
-    pull_request:
-        branches:
-            - main
+    # push:
+    #     branches:
+    #         - main
+    # pull_request:
+    #     branches:
+    #         - main
     workflow_dispatch:
 
 permissions:
@@ -14,6 +14,7 @@ permissions:
 
 jobs:
     rust-coverage:
+        if: ${{ false }}
         runs-on: ubuntu-latest
 
         steps:
@@ -42,7 +43,7 @@ jobs:
 
             - name: Regenerate RDKit goldens from tests/smiles.smi
               run: |
-                  .venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean
+                  .venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4
 
             - name: Run Rust tests with coverage instrumentation
               id: cov_run

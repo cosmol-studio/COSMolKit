@@ -200,6 +200,31 @@ print(coords.shape)
 print(bounds.shape)
 ```
 
+For multi-record SDF files, choose the reader by workload:
+
+```python
+from cosmolkit import MoleculeBatch, SdfDataset, SdfReader
+
+# Convenience: load the whole file into one in-memory batch.
+batch = MoleculeBatch.read_sdf("input.sdf", errors="keep", progress_bar=True)
+
+# Large seekable files: build a lightweight index, then read records on demand.
+dataset = SdfDataset.open("large.sdf")
+record = dataset[12345]
+head = dataset[:1024]
+for batch in dataset.batches(size=1024, errors="keep", progress_bar=True):
+    ...
+
+# One-pass stream-style processing.
+for batch in SdfReader.open("large.sdf").batches(size=1024, errors="keep"):
+    ...
+```
+
+Use `MoleculeBatch.read_sdf()` when you want all molecules in memory. Use
+`SdfDataset` when you need random access, accurate record-count progress, or
+bounded-memory batches. `dataset[i]` returns one `SdfRecord`; slices and index
+lists return `MoleculeBatch`. Use `SdfReader` for simple forward-only pipelines.
+
 ## Main Features
 
 - SMILES parsing and writing with `Molecule.from_smiles()` and `to_smiles()`

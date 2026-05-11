@@ -1,37 +1,131 @@
-/// Adjacency entry: neighboring atom and corresponding bond index.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct NeighborRef {
-    pub atom_index: usize,
-    pub bond_index: usize,
+use crate::{AtomId, Bond, BondId};
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AdjacencyError {
+    #[error("bond {bond} {endpoint} atom index {atom} is out of range for {atom_count} atoms")]
+    BondAtomOutOfRange {
+        bond: BondId,
+        endpoint: &'static str,
+        atom: AtomId,
+        atom_count: usize,
+    },
 }
 
-/// Graph adjacency list indexed by atom index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NeighborRef {
+    pub atom_index: usize,
+    pub bond: BondId,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AdjacencyList {
-    pub neighbors: Vec<Vec<NeighborRef>>,
+    offsets: Vec<usize>,
+    entries: Vec<NeighborRef>,
 }
 
 impl AdjacencyList {
-    /// Build adjacency representation from atom and bond tables.
-    #[must_use]
-    pub fn from_topology(atom_count: usize, bonds: &[crate::Bond]) -> Self {
-        let mut neighbors = vec![Vec::new(); atom_count];
+    pub fn try_from_topology(atom_count: usize, bonds: &[Bond]) -> Result<Self, AdjacencyError> {
+        let mut degrees = vec![0usize; atom_count];
         for bond in bonds {
-            neighbors[bond.begin_atom].push(NeighborRef {
-                atom_index: bond.end_atom,
-                bond_index: bond.index,
-            });
-            neighbors[bond.end_atom].push(NeighborRef {
-                atom_index: bond.begin_atom,
-                bond_index: bond.index,
-            });
+            let begin = bond.begin();
+            let end = bond.end();
+            if begin.index() >= atom_count {
+                return Err(AdjacencyError::BondAtomOutOfRange {
+                    bond: bond.id(),
+                    endpoint: "begin",
+                    atom: begin,
+                    atom_count,
+                });
+            }
+            if end.index() >= atom_count {
+                return Err(AdjacencyError::BondAtomOutOfRange {
+                    bond: bond.id(),
+                    endpoint: "end",
+                    atom: end,
+                    atom_count,
+                });
+            }
+            degrees[begin.index()] += 1;
+            degrees[end.index()] += 1;
         }
-        Self { neighbors }
+
+        let mut offsets = Vec::with_capacity(atom_count + 1);
+        offsets.push(0);
+        for degree in degrees {
+            offsets.push(offsets.last().copied().expect("offsets is nonempty") + degree);
+        }
+
+        let mut entries = vec![
+            NeighborRef {
+                atom_index: 0,
+                bond: BondId::new(0),
+            };
+            offsets.last().copied().unwrap_or(0)
+        ];
+        let mut cursor = offsets[..atom_count].to_vec();
+        for bond in bonds {
+            let begin = bond.begin().index();
+            let end = bond.end().index();
+            let begin_slot = cursor[begin];
+            entries[begin_slot] = NeighborRef {
+                atom_index: end,
+                bond: bond.id(),
+            };
+            cursor[begin] += 1;
+
+            let end_slot = cursor[end];
+            entries[end_slot] = NeighborRef {
+                atom_index: begin,
+                bond: bond.id(),
+            };
+            cursor[end] += 1;
+        }
+
+        Ok(Self { offsets, entries })
     }
 
-    /// Get neighbor list for one atom.
+    #[must_use]
+    pub fn from_topology(atom_count: usize, bonds: &[Bond]) -> Self {
+        Self::try_from_topology(atom_count, bonds)
+            .expect("topology must be valid before building adjacency")
+    }
+
     #[must_use]
     pub fn neighbors_of(&self, atom_index: usize) -> &[NeighborRef] {
-        &self.neighbors[atom_index]
+        let Some(window) = self.offsets.get(atom_index..atom_index.saturating_add(2)) else {
+            return &[];
+        };
+        if window.len() != 2 {
+            return &[];
+        }
+        &self.entries[window[0]..window[1]]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{AdjacencyList, AtomSpec, BondOrder, BondSpec, Element, MoleculeBuilder};
+
+    #[test]
+    fn adjacency_list_stores_incident_bonds_in_csr_layout() {
+        let mut builder = MoleculeBuilder::new();
+        let left = builder.add_atom(AtomSpec::new(Element::C));
+        let middle = builder.add_atom(AtomSpec::new(Element::C));
+        let right = builder.add_atom(AtomSpec::new(Element::O));
+        builder
+            .add_bond(BondSpec::new(left, middle, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(middle, right, BondOrder::Double))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        let adjacency =
+            AdjacencyList::try_from_topology(molecule.num_atoms(), molecule.bonds()).unwrap();
+
+        assert_eq!(adjacency.neighbors_of(left.index()).len(), 1);
+        assert_eq!(adjacency.neighbors_of(middle.index()).len(), 2);
+        assert_eq!(adjacency.neighbors_of(right.index()).len(), 1);
+        assert!(adjacency.neighbors_of(usize::MAX).is_empty());
     }
 }

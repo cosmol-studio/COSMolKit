@@ -4,13 +4,71 @@ File IO and Arrays
 SDF Files
 ---------
 
-Read the first molecule from an SDF file:
+COSMolKit exposes multiple SDF reading styles because small files, large
+seekable files, and stream inputs have different memory and access patterns.
+
+Use ``Molecule.read_sdf()`` when you only need the first record:
 
 .. code-block:: python
 
-   from cosmolkit import Molecule, MoleculeBatch
+   from cosmolkit import Molecule
 
    mol = Molecule.read_sdf("input.sdf", coordinate_dim="auto")
+
+Use ``MoleculeBatch.read_sdf()`` when you intentionally want the entire file as
+one in-memory batch:
+
+.. code-block:: python
+
+   from cosmolkit import MoleculeBatch
+
+   batch = MoleculeBatch.read_sdf(
+       "input.sdf",
+       coordinate_dim="auto",
+       errors="keep",
+       progress_bar=True,
+   )
+
+``progress_bar=True`` first builds a lightweight record index so the progress
+bar has an accurate total. For very large files this is still an all-in-memory
+batch; use ``SdfDataset.batches()`` when bounded memory matters.
+
+Use ``SdfDataset`` for large seekable files when you want cheap ``len()``,
+random access, metadata inspection, or chunked processing:
+
+.. code-block:: python
+
+   from cosmolkit import SdfDataset
+
+   dataset = SdfDataset.open("large.sdf", coordinate_dim="auto")
+
+   print(len(dataset))
+   print(dataset.metadata(0).title())
+
+   record = dataset[12345]
+   print(record.title(), record.data_field("supplier_id"))
+
+   head = dataset[:1024]
+   print(head.valid_mask())
+
+   for batch in dataset.batches(size=1024, errors="keep", progress_bar=True):
+       fingerprints = batch.fingerprint_morgan_list()
+
+``dataset[i]`` returns one ``SdfRecord`` with SDF metadata and data fields.
+Slices, integer index lists, and boolean masks return ``MoleculeBatch`` objects.
+
+Use ``SdfReader`` for one-pass stream-style processing where random access is
+not needed:
+
+.. code-block:: python
+
+   from cosmolkit import SdfReader
+
+   for batch in SdfReader.open("large.sdf").batches(size=1024, errors="keep"):
+       smiles = batch.to_smiles_list(canonical=True)
+
+``SdfReader`` does not know the final record count without pre-indexing the
+file, so accurate record-count progress belongs to ``SdfDataset``.
 
 Read a single-record MDL molfile with the same CTAB parser:
 

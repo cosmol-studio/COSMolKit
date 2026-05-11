@@ -1,0 +1,1 @@
+{"case_id":"stereo_tetra_h_001","operation":"without_hydrogens","invariant":"stereo_remapping","expected_error_kind":"InvalidStereoReference","reason":"explicit H stereo remapping must be implemented before this xfail can be removed","created_at":"2026-05-07","fixed_by":null}

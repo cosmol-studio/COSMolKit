@@ -1,6 +1,8 @@
 [workspace]
 members = [
     "crates/cosmolkit-core",
+    "crates/cosmolkit-core-old",
+    "crates/cosmolkit-ringdecomposer",
     "crates/cosmolkit",
     "crates/cosmolkit-macros",
     "python",

@@ -1,233 +1,137 @@
-//! Core molecular graph and chemistry perception primitives.
+//! COSMolKit core, redesigned around value-style molecule state.
+//!
+//! This crate intentionally starts small. The previous implementation has been
+//! moved to `crates/cosmolkit-core-old` and is reference material only; it must
+//! not be used as a dependency for this crate.
+//!
+//! # Non-negotiable architecture rules
+//!
+//! - `Molecule` is a value object. Public transforms return a new `Molecule`.
+//! - Public APIs must not expose `atoms_mut`, `bonds_mut`, `topology_mut`, or
+//!   direct mutable access to internal storage.
+//! - Construction happens through `MoleculeBuilder`.
+//! - Mutation of existing molecules happens through registered operations.
+//! - Derived state must be invalidated or recomputed through an operation
+//!   contract, not by ad hoc field edits.
+//! - RDKit compatibility belongs in a future `compat::rdkit` layer. It must not
+//!   define the canonical shape of core molecule state.
+//!
+//! Agent guardrail: if a future change requires bypassing any rule above, the
+//! agent is not allowed to "just make it work". The agent must stop and confirm
+//! the design exception with the human author before editing code that violates
+//! these standards.
 
 pub mod adjacency;
+pub mod aromaticity;
 pub mod atom;
 pub mod batch;
 pub mod bio;
+pub mod bio_invariants;
+pub mod bio_ops;
 pub mod bond;
+pub mod builder;
+mod canon_rank;
 pub mod canon_smiles;
+pub mod derived;
 pub mod distgeom;
 pub mod draw;
+pub mod error;
 pub mod fingerprint;
 pub mod hydrogens;
+mod invariants;
 pub mod io;
 pub mod kekulize;
 pub mod molecule;
-mod periodic_table;
+pub mod ops;
 pub mod query;
-mod query_helpers;
+pub mod rings;
 pub mod sanitize;
+pub mod sgroup;
 mod smiles;
 pub mod smiles_write;
 pub mod stereo;
+pub mod support;
 pub mod valence;
 
-pub use adjacency::{AdjacencyList, NeighborRef};
-pub use atom::{Atom, ChiralTag};
+pub use adjacency::{AdjacencyError, AdjacencyList, NeighborRef};
+pub use aromaticity::{AromaticityAssignment, AromaticityError, AromaticityModel, set_aromaticity};
+pub use atom::{Atom, AtomId, AtomSpec, ChiralTag, Element, Hybridization};
 pub use batch::{
     BatchErrorMode, BatchExportReport, BatchProgress, BatchProgressBar, BatchRecord,
     BatchRecordError, BatchValidationError, MoleculeBatch, batch_progress_bar,
 };
-pub use bond::{Bond, BondDirection, BondOrder, BondStereo};
+pub use bio::{
+    AltLocLabel, AtomName, AtomRow, AtomSourceIds, BioStructure, ChainKind, ChainRow,
+    ChainSourceIds, CoordinateBlock, ModelRow, PolymerKind, ResidueKind, ResidueName, ResidueRow,
+    RowSpan, classify_residue_name,
+};
+pub use bio::{
+    AtomId as BioAtomId, ChainId as BioChainId, EntityId as BioEntityId, ModelId as BioModelId,
+    ResidueId as BioResidueId,
+};
+pub use bio_ops::{
+    BioBlockSet, BioDerivedState, BioEditKind, BioOpDomain, BioOpKind, BioOpOutcome,
+    BioOperationError, BioParityPolicy, BioRowMapping, BioStateSet, BioStructureMapping,
+    BioStructureOpSpec,
+};
+pub use bond::{Bond, BondDirection, BondId, BondOrder, BondSpec, BondStereo};
+pub use builder::MoleculeBuilder;
+pub use derived::DerivedState;
 pub use distgeom::DgBoundsError;
 pub use draw::{PreparedDrawAtom, PreparedDrawBond, PreparedDrawMolecule, SvgDrawError};
+pub use error::{InvariantError, MoleculeBuildError};
 pub use fingerprint::{
     Fingerprint, FingerprintError, MorganAdditionalOutput, MorganAtomInvariantsGenerator,
     MorganBondInvariantsGenerator, MorganFingerprintOutput, MorganFingerprintParams,
 };
-pub use hydrogens::{
-    AddHydrogensError, RemoveHydrogensError, add_hydrogens_in_place, remove_hydrogens_in_place,
+pub use hydrogens::{AddHydrogensError, RemoveHydrogensError};
+pub use io::bio::{
+    BioPdbReadParams, BioReadError, read_mmcif_atom_site_subset_from_str,
+    read_pdb_coordinate_subset_from_str, read_pdb_coordinate_subset_from_str_with_params,
 };
+pub use io::sdf::{SdfDataset, SdfRecordMetadata};
+pub use kekulize::KekulizeError;
 pub use molecule::{
-    ConformerStore, CoordinateDimension, Molecule, PropertyStore, SmilesParseError,
-    SmilesWriteError, TopologyData,
+    AtomMapping, BondMapping, Conformer3D, ConformerStore, CoordinateDimension, Molecule,
+    MoleculeProperties, PropertyStore, SdfPropertyList, SdfPropertyListTarget, SmilesParseError,
+    SmilesWriteError, TopologyMapping,
+};
+pub use ops::{
+    ASSIGNED_AROMATICITY_SPEC, ASSIGNED_RING_FAMILIES_SPEC, ASSIGNED_RINGS_SPEC,
+    ASSIGNED_VALENCE_SPEC, BlockSet, DerivedStateSet, InvariantCheckSet, MOLECULE_OPS,
+    MappingRequirement, MoleculeOpKind, MoleculeOpSpec, OPERATION_INVARIANT_MATRIX, OpOutcome,
+    OperationDomain, OperationError, OperationInvariantEntry, OperationReportSet, OperationTrace,
+    PARITY_MATRIX, ParityMatrixEntry, ParityPolicy, SANITIZED_SPEC, SUPPORT_MATRIX,
+    SupportMatrixEntry, TopologyEditKind, WITH_2D_COORDINATES_SPEC, WITH_HYDROGENS_SPEC,
+    WITH_KEKULIZED_BONDS_SPEC, WITHOUT_HYDROGENS_SPEC,
 };
 pub use query::{AtomQueryPredicate, BondQueryPredicate, QueryNode};
+pub use rings::{
+    RingFindType, RingFindingError, RingInfo, find_ring_families, find_sssr, symmetrize_sssr,
+};
 pub use sanitize::{SanitizeError, SanitizeOps, SanitizeStep};
+pub use sgroup::{
+    SGroupAttachPoint, SGroupBracket, SGroupBracketStyle, SGroupCState, SGroupConnection,
+    SGroupData, SGroupDisplay, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+};
 pub use smiles::assign_double_bond_stereo_from_directions;
-pub use smiles_write::SmilesWriteParams;
-pub use stereo::{LigandRef, TetrahedralStereo};
+pub use smiles_write::{CxSmilesFields, RestoreBondDirOption, SmilesWriteParams};
+pub use stereo::{LigandRef, StereoError, StereoGroup, StereoGroupKind, TetrahedralStereo};
+pub use support::{
+    AROMATICITY_FEATURE, BATCH_FEATURE, BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+    BIO_PDB_COORDINATE_SUBSET_READ_FEATURE, BIO_SELECTION_FEATURE, BIO_STRUCTURE_FEATURE,
+    COORDINATE_2D_FEATURE, DRAWING_FEATURE, FINGERPRINT_FEATURE, FeatureCategory, FeatureSpec,
+    HYDROGENS_FEATURE, KEKULIZE_FEATURE, MOLBLOCK_IO_FEATURE, PUBLIC_FEATURES, RINGS_FEATURE,
+    SANITIZE_FEATURE, SMILES_PARSE_FEATURE, SMILES_WRITE_FEATURE, STEREO_FEATURE, SupportStatus,
+    UnsupportedFeatureError, VALENCE_FEATURE,
+};
 pub use valence::{
-    ValenceAssignment, ValenceError, ValenceModel, assign_radicals_rdkit_2025, assign_valence,
-    rdkit_valence_list,
+    ValenceAssignment, ValenceError, ValenceModel, assign_radicals, assign_valence,
+    assign_valence_with_options, atom_has_valence_violation, rdkit_valence_list,
 };
 
 /// Returns the crate version at compile time.
 #[must_use]
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{Atom, Bond, BondOrder, Molecule, version};
-
-    #[test]
-    fn version_is_not_empty() {
-        assert!(!version().is_empty());
-    }
-
-    #[test]
-    fn molecule_from_smiles_parses_basic_chain() {
-        let mol = Molecule::from_smiles("CCO").expect("basic SMILES should parse");
-        assert_eq!(mol.atomic_numbers(), vec![6, 6, 8]);
-    }
-
-    #[test]
-    fn api_surface_types_exist() {
-        let _atom = Atom {
-            index: 0,
-            atomic_num: 6,
-            is_aromatic: false,
-            formal_charge: 0,
-            explicit_hydrogens: 0,
-            no_implicit: false,
-            num_radical_electrons: 0,
-            chiral_tag: super::ChiralTag::Unspecified,
-            isotope: None,
-            atom_map_num: None,
-            props: Default::default(),
-            query: None,
-            rdkit_cip_rank: None,
-        };
-        let _bond = Bond {
-            index: 0,
-            begin_atom: 0,
-            end_atom: 1,
-            order: BondOrder::Single,
-            is_aromatic: false,
-            direction: super::BondDirection::None,
-            stereo: super::BondStereo::None,
-            stereo_atoms: Vec::new(),
-            molfile_query_bond_code: None,
-            props: Default::default(),
-            query: None,
-        };
-        let _mol = Molecule::default();
-    }
-
-    #[test]
-    fn molecule_from_smiles_parses_bracket_charge() {
-        let mol = Molecule::from_smiles("[N-]=[N+]=N").expect("charged atoms should parse");
-        assert_eq!(mol.atomic_numbers(), vec![7, 7, 7]);
-        assert_eq!(mol.atoms()[0].formal_charge, -1);
-        assert_eq!(mol.atoms()[1].formal_charge, 1);
-    }
-
-    #[test]
-    fn molecule_from_smiles_sanitize_flag_controls_cleanup_pipeline() {
-        let raw = Molecule::from_smiles_with_sanitize("CN(=O)=O", false)
-            .expect("unsanitized nitro SMILES should parse");
-        assert_eq!(
-            raw.atoms()
-                .iter()
-                .map(|atom| atom.formal_charge)
-                .collect::<Vec<_>>(),
-            vec![0, 0, 0, 0]
-        );
-
-        let sanitized = raw.sanitize().expect("sanitize should clean nitro form");
-        assert_eq!(
-            sanitized
-                .atoms()
-                .iter()
-                .map(|atom| atom.formal_charge)
-                .collect::<Vec<_>>(),
-            vec![0, 1, -1, 0]
-        );
-        assert_eq!(
-            raw.atoms()
-                .iter()
-                .map(|atom| atom.formal_charge)
-                .collect::<Vec<_>>(),
-            vec![0, 0, 0, 0],
-            "COW sanitize must not mutate the original molecule"
-        );
-    }
-
-    #[test]
-    fn molecule_from_smiles_parses_aromatic_ring_order() {
-        let mol = Molecule::from_smiles("O=c1cc(O)c2ccccc2o1").expect("aromatic ring should parse");
-        assert_eq!(
-            mol.atomic_numbers(),
-            vec![8, 6, 6, 6, 8, 6, 6, 6, 6, 6, 6, 8]
-        );
-    }
-
-    #[test]
-    fn molecule_from_smiles_unsanitized_keeps_non_ring_aromatic_atoms() {
-        let mol = Molecule::from_smiles_with_sanitize("cc", false)
-            .expect("unsanitized non-ring aromatic input should parse like RDKit");
-        assert_eq!(mol.atomic_numbers(), vec![6, 6]);
-        assert!(mol.atoms().iter().all(|atom| atom.is_aromatic));
-    }
-
-    #[test]
-    fn molecule_from_smiles_sanitized_rejects_non_ring_aromatic_atoms() {
-        Molecule::from_smiles("cc")
-            .expect_err("sanitized non-ring aromatic input should fail like RDKit");
-    }
-
-    #[test]
-    fn molecule_from_smiles_parses_fragment_dummy_and_dative_subset() {
-        let mol = Molecule::from_smiles("[*:1]C.[NH3]->[Cu+2]<-[NH3]")
-            .expect("representative special subset should parse");
-        assert_eq!(mol.atomic_numbers(), vec![0, 6, 7, 29, 7]);
-    }
-
-    #[test]
-    fn molecule_from_smiles_does_not_aromatize_saturated_n_heterocycle() {
-        let mol = Molecule::from_smiles("CN1CCCC1").expect("saturated ring should parse");
-        assert!(
-            mol.atoms().iter().all(|atom| !atom.is_aromatic),
-            "saturated N-heterocycle atoms should not be aromatic"
-        );
-        assert!(
-            mol.bonds().iter().all(|bond| !bond.is_aromatic),
-            "saturated N-heterocycle bonds should not be aromatic"
-        );
-    }
-
-    #[test]
-    fn kekulize_in_place_with_clear_aromatic_flags_true_clears_aromatic_marks() {
-        let mut mol = Molecule::from_smiles("c1ccccc1").expect("benzene should parse");
-        super::kekulize::kekulize_in_place(&mut mol, true).expect("kekulize should succeed");
-        assert!(
-            mol.atoms().iter().all(|atom| !atom.is_aromatic),
-            "clearAromaticFlags=true should clear aromatic atom flags"
-        );
-        assert!(
-            mol.bonds().iter().all(|bond| !bond.is_aromatic),
-            "clearAromaticFlags=true should remove aromatic bond order annotations"
-        );
-    }
-
-    #[test]
-    fn kekulize_in_place_with_clear_aromatic_flags_false_preserves_aromatic_marks() {
-        let mut mol = Molecule::from_smiles("c1ccccc1").expect("benzene should parse");
-        super::kekulize::kekulize_in_place(&mut mol, false).expect("kekulize should succeed");
-        assert!(
-            mol.atoms().iter().all(|atom| atom.is_aromatic),
-            "clearAromaticFlags=false should preserve aromatic atom flags"
-        );
-        assert!(
-            mol.bonds().iter().all(|bond| bond.is_aromatic),
-            "clearAromaticFlags=false should preserve aromatic bond flags"
-        );
-        assert!(
-            mol.bonds()
-                .iter()
-                .all(|bond| !matches!(bond.order, super::BondOrder::Aromatic)),
-            "clearAromaticFlags=false should still rewrite aromatic bond types to single/double"
-        );
-    }
-
-    #[test]
-    fn molecule_to_smiles_writes_basic_chain() {
-        let mol = Molecule::from_smiles("CCO").expect("SMILES parser should parse CCO");
-        let smiles = mol
-            .to_smiles(true)
-            .expect("SMILES writer should serialize CCO");
-        assert_eq!(smiles, "CCO");
-    }
 }

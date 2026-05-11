@@ -16,6 +16,9 @@
 - `golden/sdf_write.jsonl` RDKit baseline for MolBlock/SDF write parity across 2D/3D, V2000/V3000, stereo, and kekulize branches
 - `golden/sdf_read.jsonl` RDKit baseline for SDF read parity across 2D/3D, V2000/V3000, stereo-marker, and coordinate-inferred branches
 - `golden/molfile_read.jsonl` RDKit baseline for direct `.mol`/molblock read parity across the same CTAB branch matrix without SDF record separators or data fields
+- `corpus/topology/core.csv` target contract corpus for topology-changing operation invariant tests
+- `corpus/topology/cow_small.csv` small COW-only topology corpus; do not run broad parity matrices just to prove value isolation
+- `known_failures/topology_invariants.jsonl` exact xfail records for topology invariant failures; records must match operation, case, invariant, and error kind
 
 ## Standard Workflow (RDKit Parity)
 
@@ -27,7 +30,8 @@ RDKit parity tests are strict source-level reproduction tests against `third_par
    - `uv sync --group dev`
    - this creates/updates `.venv/` at repository root
 2. Regenerate all RDKit golden files through the single entrypoint:
-   - `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean`
+   - `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`
+   - omit `--jobs` to use the script default (`min(4, cpu_count, generator_count)`), or pass a larger value for a local high-core machine
 3. Regenerate one specific golden manually when you are working on a single parity surface:
    - `.venv/bin/python tests/scripts/gen_rdkit_graph_features.py --input tests/smiles.smi --output tests/golden/graph_features.jsonl`
    - `.venv/bin/python tests/scripts/gen_rdkit_v2000_minimal_golden.py --input tests/smiles.smi --output tests/golden/molblock_v2000_minimal.jsonl`
@@ -59,6 +63,20 @@ Notes:
 - CI regenerates all RDKit Python golden files through `tests/scripts/gen_all_rdkit_goldens.py` immediately after `uv sync --group dev` and before running Rust tests.
 - `tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py` asserts `rdkit == 2026.3.1` before generating ETKDG geometry golden so test conditions do not drift silently.
 
+## Future Workflow (Gemmi Macromolecular Parsing)
+
+Gemmi `v0.7.5` is the planned source-level reproduction target for future PDB/mmCIF macromolecular parsing. The source reference is `third_party/gemmi` pinned to `5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e`. When this parser work starts, keep Gemmi comparison fixtures explicit and separate from RDKit chemistry parity fixtures.
+
+## Topology Operation Invariants
+
+`crates/cosmolkit-core/tests/topology_operation_invariants.rs` is the target contract for every topology-changing operation. It intentionally assumes a future internal test API under `cosmolkit_core::testing::topology` and operation entry points such as `with_hydrogens_with_report()`, `remove_atom_with_report()`, and `renumber_atoms_with_report()`.
+
+Every `_with_report()` operation must return the transformed molecule plus atom/bond mappings and policy metadata. The invariant runner verifies graph structure, conformer alignment, cache freshness, stereo reference validity, property preservation/remapping, copy-on-write isolation, optional I/O roundtrip, and optional RDKit parity.
+
+COW is a sub-invariant, not a reason to run the whole RDKit parity corpus. Use `corpus/topology/cow_small.csv` for value-isolation coverage and `corpus/topology/core.csv` for the full topology operation contract.
+
+Known topology failures are xfail records, not skips. The case still runs, the failure shape must match the record exactly, and an unexpected pass should fail so the record is removed.
+
 `crates/cosmolkit-core/tests/rdkit_graph_feature_parity.rs` contains:
 - `graph_feature_golden_has_one_record_per_smiles`
 - `graph_feature_golden_records_cip_for_chiral_atoms`
@@ -74,7 +92,7 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 `crates/cosmolkit-core/tests/tetrahedral_stereo_geometry.rs` contains:
 - `tetrahedral_stereo_ordered_ligands_match_rdkit_etkdg_positive_volume`
 - missing-golden checks for the ETKDG geometry golden
-- oriented-volume validation for `Molecule::tetrahedral_stereo()` (spec: `tetrahedral_stereo_representation.md`)
+- oriented-volume validation for `Molecule::tetrahedral_stereo()` (spec: `dev/tetrahedral_stereo.md`)
 
 `crates/cosmolkit-core/tests/rdkit_dg_bounds_parity.rs` contains:
 - `dg_bounds_golden_has_one_record_per_smiles`

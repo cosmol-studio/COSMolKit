@@ -63,8 +63,7 @@ impl Default for MolBlockWriteParams {
     }
 }
 
-fn reject_unported_writer_params(params: &MolBlockWriteParams) -> Result<(), MolWriteError> {
-    let _ = params;
+fn reject_unported_writer_params(_params: &MolBlockWriteParams) -> Result<(), MolWriteError> {
     Ok(())
 }
 

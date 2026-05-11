@@ -144,6 +144,17 @@ dependencies = [
 name = "cosmolkit-core"
 version = "0.1.3"
 dependencies = [
+ "cosmolkit-macros",
+ "cosmolkit-ringdecomposer",
+ "glam",
+ "log",
+ "thiserror",
+]
+
+[[package]]
+name = "cosmolkit-core-old"
+version = "0.1.3"
+dependencies = [
  "console",
  "cosmolkit-macros",
  "glam",
@@ -160,17 +171,30 @@ dependencies = [
 [[package]]
 name = "cosmolkit-macros"
 version = "0.1.3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "cosmolkit-py"
 version = "0.1.3"
 dependencies = [
  "cosmolkit-core",
+ "glam",
  "numpy",
  "pyo3",
  "pyo3-stub-gen",
  "pyo3-stub-gen-derive",
  "rayon",
+]
+
+[[package]]
+name = "cosmolkit-ringdecomposer"
+version = "0.1.3"
+dependencies = [
+ "thiserror",
 ]
 
 [[package]]

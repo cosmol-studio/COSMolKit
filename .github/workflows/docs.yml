@@ -1,12 +1,12 @@
 name: docs
 
 on:
-    push:
-        branches:
-            - main
-    pull_request:
-        branches:
-            - main
+    # push:
+    #     branches:
+    #         - main
+    # pull_request:
+    #     branches:
+    #         - main
     workflow_dispatch:
 
 permissions:
@@ -20,6 +20,7 @@ concurrency:
 
 jobs:
     build:
+        if: ${{ false }}
         name: build docs
         runs-on: ubuntu-latest
 
@@ -62,7 +63,7 @@ jobs:
 
     deploy:
         name: deploy docs
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: ${{ false }}
         needs: build
         runs-on: ubuntu-latest
         environment:

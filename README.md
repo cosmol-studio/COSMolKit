@@ -51,15 +51,22 @@ Explicit mutation is separated into editing workflows such as `Molecule.edit()`.
 
 ## Current Status
 
+COSMolKit is currently undergoing a core redesign. The redesigned implementation
+lives in `crates/cosmolkit-core/`; the previous implementation has been moved to
+`crates/cosmolkit-core-old/` and is retained as reference material during the
+migration. Some README sections may still describe the pre-redesign API or
+completed legacy parity work while the new core is being rebuilt.
+
 COSMolKit is in early active development. The implementation is intentionally a subset and is expanded by adding well-tested behavior rather than by broad API cloning.
 
 - **Core layout:** `cosmolkit-core` contains chemistry perception, IO, drawing, and biomolecular primitives; `cosmolkit` is the Rust facade crate; `python/` contains the PyO3 package.
 - **RDKit reference:** RDKit 2026.03.1 is the active compatibility reference for selected behaviors, with `third_party/rdkit` pinned to `Release_2026_03_1` (`351f8f378f8ad6bbd517980c38896e66bf907af8`).
+- **Gemmi reference:** Gemmi is the planned reproduction target for future macromolecular PDB/mmCIF parsing work, with `third_party/gemmi` pinned to `v0.7.5` (`5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e`).
 - **Parity coverage:** current tests cover graph features, add-H / remove-H roundtrips, tetrahedral stereo geometry, DG bounds matrices, Morgan fingerprint branches, Kekulization branches, SMILES writer branches, V2000 molblock output, direct MOL/molblock reading, and SDF V2000/V3000 roundtrips.
 - **Query import status:** MOL/SDF parsing now preserves a structured internal representation for supported RDKit query atom/bond features such as `HCOUNT`, `UNSAT`, `RBCNT`, `TOPO`, hydrogen bonds, and unknown single-bond directions. Public query-inspection APIs are still intentionally deferred.
 - **Batch-native workflows:** `MoleculeBatch` APIs support ordered molecule construction, Python-style indexing and iteration, parallel transforms, image/SDF export, custom export filenames, and structured error handling for high-throughput datasets.
 - **Python bindings:** the package exposes SMILES parsing/writing with RDKit-style writer options, `Molecule.from_rdkit()`, enum-valued graph/stereo inspection, value-style transforms, explicit `coords_2d()` / `coords_3d()` access, 2D/3D SDF IO for molecules with stored coordinates, DG bounds, Morgan fingerprints, SVG/PNG rendering, batch processing, and explicit editing.
-- **AI direction:** planned COSMolKit-native APIs include model-ready graph export, internal coordinates, torsion/chirality-aware diffusion helpers, and molecular tokenization. See `ai_native_features_sketch.md`.
+- **AI direction:** planned COSMolKit-native APIs include model-ready graph export, internal coordinates, torsion/chirality-aware diffusion helpers, and molecular tokenization. See `dev/ai_native_features.md`.
 
 ## Python Quick Start
 
@@ -233,7 +240,7 @@ Query API note: internal query AST support exists to preserve RDKit MOL/SDF sema
 - [ ] chirality-preserving reconstruction checks and ring torsion constraints
 - [ ] `Molecule.to_tokens()` with versioned graph, fragment, torsion, 3D geometry, and pharmacophore token schemes
 
-Design sketch: `ai_native_features_sketch.md`
+Design sketch: `dev/ai_native_features.md`
 
 ## Respect for RDKit
 

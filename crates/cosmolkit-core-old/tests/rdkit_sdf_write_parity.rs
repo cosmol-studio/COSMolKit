@@ -17,7 +17,9 @@ struct SdfWriteRecord {
     smiles: String,
     rdkit_ok: bool,
     source_2d_molblock: Option<String>,
+    source_2d_error: Option<String>,
     source_3d_molblock: Option<String>,
+    source_3d_error: Option<String>,
     branches: BTreeMap<String, SdfWriteBranch>,
     error: Option<String>,
 }
@@ -150,9 +152,21 @@ fn sdf_write_matches_rdkit_for_supported_branches_and_reports_unimplemented_ones
                 other => panic!("unknown SDF write dimension branch '{other}'"),
             };
             let Some(actual) = actual else {
+                let source_error = match branch.params.dimension.as_str() {
+                    "2d" => &record.source_2d_error,
+                    "3d" => &record.source_3d_error,
+                    other => panic!("unknown SDF write dimension branch '{other}'"),
+                };
                 assert!(
                     !branch.ok,
                     "row {} ({}) branch {} has RDKit output but no COSMolKit source molecule",
+                    row_idx + 1,
+                    record.smiles,
+                    branch_name
+                );
+                assert!(
+                    source_error.is_some(),
+                    "row {} ({}) branch {} has no COSMolKit source molecule but golden has no source error",
                     row_idx + 1,
                     record.smiles,
                     branch_name
@@ -188,13 +202,15 @@ fn sdf_write_matches_rdkit_for_supported_branches_and_reports_unimplemented_ones
                     );
                 }
                 Err(err) => {
-                    assert!(
-                        err.to_string().contains("not ported yet"),
-                        "row {} ({}) branch {} should expose explicit unimplemented error, got: {err}",
-                        row_idx + 1,
-                        record.smiles,
-                        branch_name
-                    );
+                    if branch.ok {
+                        assert!(
+                            err.to_string().contains("not ported yet"),
+                            "row {} ({}) branch {} should expose explicit unimplemented error, got: {err}",
+                            row_idx + 1,
+                            record.smiles,
+                            branch_name
+                        );
+                    }
                 }
             }
         }
