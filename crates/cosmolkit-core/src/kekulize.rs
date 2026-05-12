@@ -1,3 +1,5 @@
+// RDKit marker convention defined in dev/source_reproduction_protocol.md.
+
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::{
@@ -195,7 +197,7 @@ pub(crate) fn kekulize_assignment(
     )
 }
 
-fn kekulize_fragment_assignment(
+pub(crate) fn kekulize_fragment_assignment(
     molecule: &Molecule,
     rings: &RingInfo,
     atoms_to_use: &[bool],

@@ -76,6 +76,141 @@ pub enum Hybridization {
     Other,
 }
 
+/// Typed atom-level PDB residue metadata.
+///
+/// This models the RDKit `AtomPDBResidueInfo` subset needed by hydrogen
+/// addition. It is atom state, not generic string props, so topology operations
+/// remap it with the atom row.
+#[derive(Debug, Clone)]
+pub struct AtomPdbResidueInfo {
+    atom_name: String,
+    serial_number: i32,
+    alt_loc: String,
+    residue_name: String,
+    residue_number: i32,
+    chain_id: String,
+    insertion_code: String,
+    occupancy: f64,
+    temp_factor: f64,
+    is_hetero_atom: bool,
+}
+
+impl PartialEq for AtomPdbResidueInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.atom_name == other.atom_name
+            && self.serial_number == other.serial_number
+            && self.alt_loc == other.alt_loc
+            && self.residue_name == other.residue_name
+            && self.residue_number == other.residue_number
+            && self.chain_id == other.chain_id
+            && self.insertion_code == other.insertion_code
+            && self.occupancy.to_bits() == other.occupancy.to_bits()
+            && self.temp_factor.to_bits() == other.temp_factor.to_bits()
+            && self.is_hetero_atom == other.is_hetero_atom
+    }
+}
+
+impl Eq for AtomPdbResidueInfo {}
+
+impl AtomPdbResidueInfo {
+    #[must_use]
+    pub fn new(
+        atom_name: impl Into<String>,
+        serial_number: i32,
+        residue_name: impl Into<String>,
+        residue_number: i32,
+        chain_id: impl Into<String>,
+        is_hetero_atom: bool,
+    ) -> Self {
+        Self {
+            atom_name: atom_name.into(),
+            serial_number,
+            alt_loc: String::new(),
+            residue_name: residue_name.into(),
+            residue_number,
+            chain_id: chain_id.into(),
+            insertion_code: String::new(),
+            occupancy: 1.0,
+            temp_factor: 0.0,
+            is_hetero_atom,
+        }
+    }
+
+    #[must_use]
+    pub fn with_alt_loc(mut self, alt_loc: impl Into<String>) -> Self {
+        self.alt_loc = alt_loc.into();
+        self
+    }
+
+    #[must_use]
+    pub fn with_insertion_code(mut self, insertion_code: impl Into<String>) -> Self {
+        self.insertion_code = insertion_code.into();
+        self
+    }
+
+    #[must_use]
+    pub const fn with_occupancy(mut self, occupancy: f64) -> Self {
+        self.occupancy = occupancy;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_temp_factor(mut self, temp_factor: f64) -> Self {
+        self.temp_factor = temp_factor;
+        self
+    }
+
+    #[must_use]
+    pub fn atom_name(&self) -> &str {
+        &self.atom_name
+    }
+
+    #[must_use]
+    pub const fn serial_number(&self) -> i32 {
+        self.serial_number
+    }
+
+    #[must_use]
+    pub fn alt_loc(&self) -> &str {
+        &self.alt_loc
+    }
+
+    #[must_use]
+    pub fn residue_name(&self) -> &str {
+        &self.residue_name
+    }
+
+    #[must_use]
+    pub const fn residue_number(&self) -> i32 {
+        self.residue_number
+    }
+
+    #[must_use]
+    pub fn chain_id(&self) -> &str {
+        &self.chain_id
+    }
+
+    #[must_use]
+    pub fn insertion_code(&self) -> &str {
+        &self.insertion_code
+    }
+
+    #[must_use]
+    pub const fn occupancy(&self) -> f64 {
+        self.occupancy
+    }
+
+    #[must_use]
+    pub const fn temp_factor(&self) -> f64 {
+        self.temp_factor
+    }
+
+    #[must_use]
+    pub const fn is_hetero_atom(&self) -> bool {
+        self.is_hetero_atom
+    }
+}
+
 /// Stable atom table index.
 ///
 /// This is intentionally a newtype instead of a bare `usize` so APIs make index
@@ -135,6 +270,12 @@ pub struct AtomSpec {
     formal_charge: i8,
     explicit_hydrogens: u8,
     chiral_tag: ChiralTag,
+    chiral_permutation: Option<u32>,
+    unknown_stereo: bool,
+    mol_parity: Option<i32>,
+    mol_inversion_flag: Option<i32>,
+    implicit_hydrogen: bool,
+    tracked_isotopic_hydrogens: Vec<u16>,
     is_aromatic: bool,
     isotope: Option<u16>,
     atom_map: Option<u32>,
@@ -143,6 +284,7 @@ pub struct AtomSpec {
     hybridization: Hybridization,
     query: Option<QueryNode<AtomQueryPredicate>>,
     props: BTreeMap<String, String>,
+    pdb_residue_info: Option<AtomPdbResidueInfo>,
 }
 
 impl AtomSpec {
@@ -153,6 +295,12 @@ impl AtomSpec {
             formal_charge: 0,
             explicit_hydrogens: 0,
             chiral_tag: ChiralTag::Unspecified,
+            chiral_permutation: None,
+            unknown_stereo: false,
+            mol_parity: None,
+            mol_inversion_flag: None,
+            implicit_hydrogen: false,
+            tracked_isotopic_hydrogens: Vec::new(),
             is_aromatic: false,
             isotope: None,
             atom_map: None,
@@ -161,6 +309,7 @@ impl AtomSpec {
             hybridization: Hybridization::Unspecified,
             query: None,
             props: BTreeMap::new(),
+            pdb_residue_info: None,
         }
     }
 
@@ -185,6 +334,66 @@ impl AtomSpec {
     #[must_use]
     pub const fn with_chiral_tag(mut self, chiral_tag: ChiralTag) -> Self {
         self.chiral_tag = chiral_tag;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_chiral_permutation(mut self, chiral_permutation: u32) -> Self {
+        self.chiral_permutation = Some(chiral_permutation);
+        self
+    }
+
+    #[must_use]
+    pub const fn without_chiral_permutation(mut self) -> Self {
+        self.chiral_permutation = None;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_unknown_stereo(mut self, unknown_stereo: bool) -> Self {
+        self.unknown_stereo = unknown_stereo;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_mol_parity(mut self, mol_parity: i32) -> Self {
+        self.mol_parity = Some(mol_parity);
+        self
+    }
+
+    #[must_use]
+    pub const fn without_mol_parity(mut self) -> Self {
+        self.mol_parity = None;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_mol_inversion_flag(mut self, mol_inversion_flag: i32) -> Self {
+        self.mol_inversion_flag = Some(mol_inversion_flag);
+        self
+    }
+
+    #[must_use]
+    pub const fn without_mol_inversion_flag(mut self) -> Self {
+        self.mol_inversion_flag = None;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_implicit_hydrogen(mut self, implicit_hydrogen: bool) -> Self {
+        self.implicit_hydrogen = implicit_hydrogen;
+        self
+    }
+
+    #[must_use]
+    pub fn with_tracked_isotopic_hydrogens(mut self, isotopes: Vec<u16>) -> Self {
+        self.tracked_isotopic_hydrogens = isotopes;
+        self
+    }
+
+    #[must_use]
+    pub fn without_tracked_isotopic_hydrogens(mut self) -> Self {
+        self.tracked_isotopic_hydrogens.clear();
         self
     }
 
@@ -249,6 +458,12 @@ impl AtomSpec {
     }
 
     #[must_use]
+    pub fn with_pdb_residue_info(mut self, info: AtomPdbResidueInfo) -> Self {
+        self.pdb_residue_info = Some(info);
+        self
+    }
+
+    #[must_use]
     pub fn without_query(mut self) -> Self {
         self.query = None;
         self
@@ -262,6 +477,41 @@ impl AtomSpec {
     #[must_use]
     pub const fn formal_charge(&self) -> i8 {
         self.formal_charge
+    }
+
+    #[must_use]
+    pub const fn chiral_tag(&self) -> ChiralTag {
+        self.chiral_tag
+    }
+
+    #[must_use]
+    pub const fn chiral_permutation(&self) -> Option<u32> {
+        self.chiral_permutation
+    }
+
+    #[must_use]
+    pub const fn unknown_stereo(&self) -> bool {
+        self.unknown_stereo
+    }
+
+    #[must_use]
+    pub const fn mol_parity(&self) -> Option<i32> {
+        self.mol_parity
+    }
+
+    #[must_use]
+    pub const fn mol_inversion_flag(&self) -> Option<i32> {
+        self.mol_inversion_flag
+    }
+
+    #[must_use]
+    pub const fn implicit_hydrogen(&self) -> bool {
+        self.implicit_hydrogen
+    }
+
+    #[must_use]
+    pub fn tracked_isotopic_hydrogens(&self) -> &[u16] {
+        &self.tracked_isotopic_hydrogens
     }
 
     #[must_use]
@@ -303,6 +553,11 @@ impl AtomSpec {
     pub fn prop(&self, key: &str) -> Option<&str> {
         self.props.get(key).map(String::as_str)
     }
+
+    #[must_use]
+    pub const fn pdb_residue_info(&self) -> Option<&AtomPdbResidueInfo> {
+        self.pdb_residue_info.as_ref()
+    }
 }
 
 /// Immutable atom record owned by `Molecule`.
@@ -313,6 +568,12 @@ pub struct Atom {
     formal_charge: i8,
     explicit_hydrogens: u8,
     chiral_tag: ChiralTag,
+    chiral_permutation: Option<u32>,
+    unknown_stereo: bool,
+    mol_parity: Option<i32>,
+    mol_inversion_flag: Option<i32>,
+    implicit_hydrogen: bool,
+    tracked_isotopic_hydrogens: Vec<u16>,
     is_aromatic: bool,
     isotope: Option<u16>,
     atom_map: Option<u32>,
@@ -321,6 +582,7 @@ pub struct Atom {
     hybridization: Hybridization,
     query: Option<QueryNode<AtomQueryPredicate>>,
     props: BTreeMap<String, String>,
+    pdb_residue_info: Option<AtomPdbResidueInfo>,
 }
 
 impl Atom {
@@ -331,6 +593,12 @@ impl Atom {
             formal_charge: spec.formal_charge,
             explicit_hydrogens: spec.explicit_hydrogens,
             chiral_tag: spec.chiral_tag,
+            chiral_permutation: spec.chiral_permutation,
+            unknown_stereo: spec.unknown_stereo,
+            mol_parity: spec.mol_parity,
+            mol_inversion_flag: spec.mol_inversion_flag,
+            implicit_hydrogen: spec.implicit_hydrogen,
+            tracked_isotopic_hydrogens: spec.tracked_isotopic_hydrogens,
             is_aromatic: spec.is_aromatic,
             isotope: spec.isotope,
             atom_map: spec.atom_map,
@@ -339,6 +607,7 @@ impl Atom {
             hybridization: spec.hybridization,
             query: spec.query,
             props: spec.props,
+            pdb_residue_info: spec.pdb_residue_info,
         }
     }
 
@@ -376,6 +645,36 @@ impl Atom {
     #[must_use]
     pub const fn chiral_tag(&self) -> ChiralTag {
         self.chiral_tag
+    }
+
+    #[must_use]
+    pub const fn chiral_permutation(&self) -> Option<u32> {
+        self.chiral_permutation
+    }
+
+    #[must_use]
+    pub const fn unknown_stereo(&self) -> bool {
+        self.unknown_stereo
+    }
+
+    #[must_use]
+    pub const fn mol_parity(&self) -> Option<i32> {
+        self.mol_parity
+    }
+
+    #[must_use]
+    pub const fn mol_inversion_flag(&self) -> Option<i32> {
+        self.mol_inversion_flag
+    }
+
+    #[must_use]
+    pub const fn implicit_hydrogen(&self) -> bool {
+        self.implicit_hydrogen
+    }
+
+    #[must_use]
+    pub fn tracked_isotopic_hydrogens(&self) -> &[u16] {
+        &self.tracked_isotopic_hydrogens
     }
 
     #[must_use]
@@ -423,9 +722,44 @@ impl Atom {
         self.props.get(key).map(String::as_str)
     }
 
+    #[must_use]
+    pub const fn pdb_residue_info(&self) -> Option<&AtomPdbResidueInfo> {
+        self.pdb_residue_info.as_ref()
+    }
+
     #[allow(dead_code)]
     pub(crate) fn set_chiral_tag(&mut self, chiral_tag: ChiralTag) {
         self.chiral_tag = chiral_tag;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_chiral_permutation(&mut self, chiral_permutation: Option<u32>) {
+        self.chiral_permutation = chiral_permutation;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_unknown_stereo(&mut self, unknown_stereo: bool) {
+        self.unknown_stereo = unknown_stereo;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_mol_parity(&mut self, mol_parity: Option<i32>) {
+        self.mol_parity = mol_parity;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_mol_inversion_flag(&mut self, mol_inversion_flag: Option<i32>) {
+        self.mol_inversion_flag = mol_inversion_flag;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_implicit_hydrogen(&mut self, implicit_hydrogen: bool) {
+        self.implicit_hydrogen = implicit_hydrogen;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_tracked_isotopic_hydrogens(&mut self, isotopes: Vec<u16>) {
+        self.tracked_isotopic_hydrogens = isotopes;
     }
 
     #[allow(dead_code)]
@@ -481,5 +815,10 @@ impl Atom {
     #[allow(dead_code)]
     pub(crate) fn set_hybridization(&mut self, hybridization: Hybridization) {
         self.hybridization = hybridization;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_pdb_residue_info(&mut self, info: Option<AtomPdbResidueInfo>) {
+        self.pdb_residue_info = info;
     }
 }

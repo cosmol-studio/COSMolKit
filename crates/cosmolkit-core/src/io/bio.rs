@@ -1,9 +1,9 @@
 //! PDB/mmCIF readers for `BioStructure`.
 //!
-//! Source-derived parser work in this module follows the source-reproduction
-//! protocol documented in `io::sdf`: copied Gemmi source lines stay adjacent to
-//! the Rust code that ports them, and every unsupported source branch remains
-//! visible with a two-axis marker.
+//! Source-derived parser work in this module follows
+//! `dev/source_reproduction_protocol.md`: copied Gemmi source lines stay
+//! adjacent to the Rust code that ports them, and every unsupported source
+//! branch remains visible with a two-axis marker.
 //!
 //! Marker prefix:
 //!

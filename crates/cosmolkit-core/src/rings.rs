@@ -1,3 +1,5 @@
+// RDKit marker convention defined in dev/source_reproduction_protocol.md.
+
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::{AdjacencyList, AtomId, Bond, BondId, BondOrder, Molecule};
@@ -2241,10 +2243,8 @@ fn fast_find_rings_internal(
 ) -> Result<Vec<Vec<usize>>, RingFindingError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::fastFindRings
     // RDKit❗✔️: void fastFindRings(const ROMol &mol) {
-    // RDKit❌❌:   if (mol.getRingInfo()->isInitialized()) {
-    // RDKit❌❌:     mol.getRingInfo()->reset();
-    // RDKit❌❌:   }
-    // RDKit❌❌:   mol.getRingInfo()->initialize(FIND_RING_TYPE_FAST);
+    // RDKit❗✔️:   // COSMolKit does not cache RingInfo on the molecule object.
+    // RDKit❗✔️:   // RingInfo reset/initialize is unnecessary — we compute fresh each call.
     // RDKit✔️✔️:   VECT_INT_VECT res;
     // RDKit✔️✔️:   res.resize(0);
     let mut result = Vec::new();
@@ -2279,7 +2279,7 @@ fn fast_find_rings_internal(
             None,
         );
     }
-    // RDKit❌❌:   FindRings::storeRingsInfo(mol, res);
+    // RDKit❗✔️:   // RingInfo is returned directly, not stored on the molecule.
     // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION MolOps::fastFindRings
     Ok(result)

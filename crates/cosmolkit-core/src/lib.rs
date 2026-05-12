@@ -32,6 +32,7 @@ pub mod bond;
 pub mod builder;
 mod canon_rank;
 pub mod canon_smiles;
+pub mod coordinates;
 pub mod derived;
 pub mod distgeom;
 pub mod draw;
@@ -44,6 +45,7 @@ pub mod kekulize;
 pub mod molecule;
 pub mod ops;
 pub mod query;
+pub(crate) mod read_parts;
 pub mod rings;
 pub mod sanitize;
 pub mod sgroup;
@@ -55,7 +57,7 @@ pub mod valence;
 
 pub use adjacency::{AdjacencyError, AdjacencyList, NeighborRef};
 pub use aromaticity::{AromaticityAssignment, AromaticityError, AromaticityModel, set_aromaticity};
-pub use atom::{Atom, AtomId, AtomSpec, ChiralTag, Element, Hybridization};
+pub use atom::{Atom, AtomId, AtomPdbResidueInfo, AtomSpec, ChiralTag, Element, Hybridization};
 pub use batch::{
     BatchErrorMode, BatchExportReport, BatchProgress, BatchProgressBar, BatchRecord,
     BatchRecordError, BatchValidationError, MoleculeBatch, batch_progress_bar,
@@ -84,7 +86,7 @@ pub use fingerprint::{
     Fingerprint, FingerprintError, MorganAdditionalOutput, MorganAtomInvariantsGenerator,
     MorganBondInvariantsGenerator, MorganFingerprintOutput, MorganFingerprintParams,
 };
-pub use hydrogens::{AddHydrogensError, RemoveHydrogensError};
+pub use hydrogens::{AddHsParams, AddHydrogensError, RemoveHsParams, RemoveHydrogensError};
 pub use io::bio::{
     BioPdbReadParams, BioReadError, read_mmcif_atom_site_subset_from_str,
     read_pdb_coordinate_subset_from_str, read_pdb_coordinate_subset_from_str_with_params,
@@ -103,7 +105,7 @@ pub use ops::{
     OperationDomain, OperationError, OperationInvariantEntry, OperationReportSet, OperationTrace,
     PARITY_MATRIX, ParityMatrixEntry, ParityPolicy, SANITIZED_SPEC, SUPPORT_MATRIX,
     SupportMatrixEntry, TopologyEditKind, WITH_2D_COORDINATES_SPEC, WITH_HYDROGENS_SPEC,
-    WITH_KEKULIZED_BONDS_SPEC, WITHOUT_HYDROGENS_SPEC,
+    WITH_KEKULIZED_BONDS_SPEC, WITHOUT_HYDROGENS_SPEC, WITHOUT_HYDROGENS_WITH_PARAMS_SPEC,
 };
 pub use query::{AtomQueryPredicate, BondQueryPredicate, QueryNode};
 pub use rings::{
@@ -111,19 +113,23 @@ pub use rings::{
 };
 pub use sanitize::{SanitizeError, SanitizeOps, SanitizeStep};
 pub use sgroup::{
-    SGroupAttachPoint, SGroupBracket, SGroupBracketStyle, SGroupCState, SGroupConnection,
-    SGroupData, SGroupDisplay, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+    SGroupAttachPoint, SGroupBondRole, SGroupBracket, SGroupBracketStyle, SGroupCState,
+    SGroupConnection, SGroupData, SGroupDisplay, SubstanceGroup, SubstanceGroupId,
+    SubstanceGroupKind,
 };
 pub use smiles::assign_double_bond_stereo_from_directions;
 pub use smiles_write::{CxSmilesFields, RestoreBondDirOption, SmilesWriteParams};
-pub use stereo::{LigandRef, StereoError, StereoGroup, StereoGroupKind, TetrahedralStereo};
+pub use stereo::{
+    DoubleBondStereo, LigandRef, StereoError, StereoGroup, StereoGroupKind, TetrahedralStereo,
+    assign_stereochemistry,
+};
 pub use support::{
     AROMATICITY_FEATURE, BATCH_FEATURE, BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
     BIO_PDB_COORDINATE_SUBSET_READ_FEATURE, BIO_SELECTION_FEATURE, BIO_STRUCTURE_FEATURE,
-    COORDINATE_2D_FEATURE, DRAWING_FEATURE, FINGERPRINT_FEATURE, FeatureCategory, FeatureSpec,
-    HYDROGENS_FEATURE, KEKULIZE_FEATURE, MOLBLOCK_IO_FEATURE, PUBLIC_FEATURES, RINGS_FEATURE,
-    SANITIZE_FEATURE, SMILES_PARSE_FEATURE, SMILES_WRITE_FEATURE, STEREO_FEATURE, SupportStatus,
-    UnsupportedFeatureError, VALENCE_FEATURE,
+    COORDINATE_2D_FEATURE, DG_BOUNDS_FEATURE, DRAWING_FEATURE, FINGERPRINT_FEATURE,
+    FeatureCategory, FeatureSpec, HYDROGENS_FEATURE, KEKULIZE_FEATURE, MOLBLOCK_IO_FEATURE,
+    PUBLIC_FEATURES, RINGS_FEATURE, SANITIZE_FEATURE, SMILES_PARSE_FEATURE, SMILES_WRITE_FEATURE,
+    STEREO_FEATURE, SupportStatus, UnsupportedFeatureError, VALENCE_FEATURE,
 };
 pub use valence::{
     ValenceAssignment, ValenceError, ValenceModel, assign_radicals, assign_valence,

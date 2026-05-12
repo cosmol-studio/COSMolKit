@@ -213,6 +213,42 @@ impl MoleculeProperties {
     pub(crate) fn clear_prop(&mut self, key: &str) {
         self.props.remove(key);
     }
+
+    pub(crate) fn remap_topology(&mut self, mapping: &TopologyMapping) {
+        self.sdf_property_lists = self
+            .sdf_property_lists
+            .iter()
+            .map(|property_list| property_list.remapped_topology(mapping))
+            .collect();
+    }
+}
+
+impl SdfPropertyList {
+    fn remapped_topology(&self, mapping: &TopologyMapping) -> Self {
+        let values = match self.target {
+            SdfPropertyListTarget::Atom => mapping
+                .atoms
+                .new_to_old
+                .iter()
+                .map(|old_row| {
+                    old_row.and_then(|row| self.values.get(row.index()).cloned().flatten())
+                })
+                .collect(),
+            SdfPropertyListTarget::Bond => mapping
+                .bonds
+                .new_to_old
+                .iter()
+                .map(|old_row| {
+                    old_row.and_then(|row| self.values.get(row.index()).cloned().flatten())
+                })
+                .collect(),
+        };
+        Self {
+            target: self.target,
+            name: self.name.clone(),
+            values,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -311,6 +347,55 @@ pub struct TopologyMapping {
 }
 
 impl TopologyMapping {
+    pub(crate) fn identity(atom_count: usize, bond_count: usize) -> Self {
+        Self {
+            atoms: AtomMapping {
+                old_to_new: (0..atom_count).map(|idx| Some(AtomId::new(idx))).collect(),
+                new_to_old: (0..atom_count).map(|idx| Some(AtomId::new(idx))).collect(),
+            },
+            bonds: BondMapping {
+                old_to_new: (0..bond_count)
+                    .map(|idx| Some(crate::BondId::new(idx)))
+                    .collect(),
+                new_to_old: (0..bond_count)
+                    .map(|idx| Some(crate::BondId::new(idx)))
+                    .collect(),
+            },
+        }
+    }
+
+    pub(crate) fn with_appended(
+        old_atom_count: usize,
+        old_bond_count: usize,
+        added_atom_count: usize,
+        added_bond_count: usize,
+    ) -> Self {
+        let mut atom_new_to_old = (0..old_atom_count)
+            .map(|idx| Some(AtomId::new(idx)))
+            .collect::<Vec<_>>();
+        atom_new_to_old.extend((0..added_atom_count).map(|_| None));
+
+        let mut bond_new_to_old = (0..old_bond_count)
+            .map(|idx| Some(crate::BondId::new(idx)))
+            .collect::<Vec<_>>();
+        bond_new_to_old.extend((0..added_bond_count).map(|_| None));
+
+        Self {
+            atoms: AtomMapping {
+                old_to_new: (0..old_atom_count)
+                    .map(|idx| Some(AtomId::new(idx)))
+                    .collect(),
+                new_to_old: atom_new_to_old,
+            },
+            bonds: BondMapping {
+                old_to_new: (0..old_bond_count)
+                    .map(|idx| Some(crate::BondId::new(idx)))
+                    .collect(),
+                new_to_old: bond_new_to_old,
+            },
+        }
+    }
+
     #[must_use]
     pub fn atoms(&self) -> &AtomMapping {
         &self.atoms
@@ -382,18 +467,48 @@ impl TopologyBlock {
             bonds.push(bond.clone().remapped(new_id, begin, end, stereo_atoms));
         }
 
-        let sgroup_map = vec![None; self.substance_groups.len()];
+        let mut sgroup_survives = self
+            .substance_groups
+            .iter()
+            .map(|sgroup| sgroup.can_remap_without_parent(&atom_old_to_new, &bond_old_to_new))
+            .collect::<Vec<_>>();
+        loop {
+            let mut changed = false;
+            for (idx, sgroup) in self.substance_groups.iter().enumerate() {
+                if !sgroup_survives[idx] {
+                    continue;
+                }
+                if let Some(parent) = sgroup.parent()
+                    && !sgroup_survives
+                        .get(parent.index())
+                        .copied()
+                        .unwrap_or(false)
+                {
+                    sgroup_survives[idx] = false;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        let mut sgroup_map = vec![None; self.substance_groups.len()];
+        let mut next_sgroup_index = 0usize;
+        for (old_index, survives) in sgroup_survives.iter().copied().enumerate() {
+            if survives {
+                sgroup_map[old_index] = Some(crate::SubstanceGroupId::new(next_sgroup_index));
+                next_sgroup_index += 1;
+            }
+        }
         self.substance_groups = self
             .substance_groups
             .iter()
             .enumerate()
-            .filter_map(|(new_index, sgroup)| {
-                sgroup.remapped(
-                    crate::SubstanceGroupId::new(new_index),
-                    &atom_old_to_new,
-                    &bond_old_to_new,
-                    &sgroup_map,
-                )
+            .filter_map(|(old_index, sgroup)| {
+                sgroup_map[old_index].and_then(|new_id| {
+                    sgroup.remapped(new_id, &atom_old_to_new, &bond_old_to_new, &sgroup_map)
+                })
             })
             .collect();
 

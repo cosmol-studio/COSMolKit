@@ -1,3 +1,5 @@
+// RDKit marker convention defined in dev/source_reproduction_protocol.md.
+
 use std::{
     cmp::Ordering,
     collections::{BTreeSet, VecDeque},
@@ -46,10 +48,27 @@ pub(crate) struct CanonicalRankOptions {
     pub(crate) include_isotopes: bool,
     pub(crate) include_atom_maps: bool,
     pub(crate) include_chiral_presence: bool,
+    pub(crate) include_stereo_groups: bool,
+    pub(crate) use_non_stereo_ranks: bool,
     pub(crate) include_ring_stereo: bool,
+    pub(crate) chirality_rings_use_ring_stereo: bool,
 }
 
 impl CanonicalRankOptions {
+    pub(crate) const fn rank_mol_default() -> Self {
+        Self {
+            break_ties: true,
+            include_chirality: true,
+            include_isotopes: true,
+            include_atom_maps: true,
+            include_chiral_presence: false,
+            include_stereo_groups: true,
+            use_non_stereo_ranks: false,
+            include_ring_stereo: true,
+            chirality_rings_use_ring_stereo: true,
+        }
+    }
+
     pub(crate) const fn kekulize_default() -> Self {
         Self {
             break_ties: true,
@@ -57,7 +76,10 @@ impl CanonicalRankOptions {
             include_isotopes: true,
             include_atom_maps: true,
             include_chiral_presence: false,
+            include_stereo_groups: true,
+            use_non_stereo_ranks: false,
             include_ring_stereo: true,
+            chirality_rings_use_ring_stereo: false,
         }
     }
 }
@@ -78,16 +100,92 @@ impl CanonRankFlags {
         Self {
             use_isotopes: options.include_isotopes,
             use_chirality: options.include_chirality,
-            // RDKit rankFragmentAtoms sets df_useChiralityRings from
-            // includeChirality, while includeRingStereo only controls the
-            // special ring-stereo refinement pass inside rankWithFunctor.
-            use_chirality_rings: options.include_chirality,
+            use_chirality_rings: if options.chirality_rings_use_ring_stereo {
+                options.include_chirality && options.include_ring_stereo
+            } else {
+                options.include_chirality
+            },
             use_atom_maps: options.include_atom_maps,
-            use_non_stereo_ranks: false,
+            use_non_stereo_ranks: options.use_non_stereo_ranks,
             use_chiral_presence: options.include_chiral_presence,
             use_atom_maps_on_dummies: true,
         }
     }
+}
+
+pub(crate) fn rank_mol_atoms(molecule: &Molecule) -> Result<Vec<usize>, KekulizeError> {
+    rank_mol_atoms_with_options(molecule, CanonicalRankOptions::rank_mol_default())
+}
+
+pub(crate) fn rank_mol_atoms_with_options(
+    molecule: &Molecule,
+    options: CanonicalRankOptions,
+) -> Result<Vec<usize>, KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: void rankMolAtoms(const ROMol&, std::vector<unsigned int>&, bool, bool, bool, bool, bool, bool, bool, bool)
+    // RDKit✔️✔️: void rankMolAtoms(const ROMol &mol, std::vector<unsigned int> &res,
+    // RDKit✔️✔️:                   bool breakTies, bool includeChirality, bool includeIsotopes,
+    // RDKit✔️✔️:                   bool includeAtomMaps, bool includeChiralPresence,
+    // RDKit✔️✔️:                   bool includeStereoGroups, bool useNonStereoRanks,
+    // RDKit✔️✔️:                   bool includeRingStereo) {
+    // RDKit✔️✔️:   if (!mol.getNumAtoms()) {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    if molecule.num_atoms() == 0 {
+        return Ok(Vec::new());
+    }
+
+    // RDKit✔️✔️:   bool clearRings = false;
+    // RDKit✔️✔️:   if (!mol.getRingInfo()->isFindFastOrBetter()) {
+    // RDKit✔️✔️:     MolOps::fastFindRings(mol);
+    // RDKit✔️✔️:     clearRings = true;
+    // RDKit✔️✔️:   }
+    // COSMolKit rank computation is read-only, so ring info is computed ephemerally.
+    let atoms_to_use = vec![true; molecule.num_atoms()];
+    let bonds_to_use = vec![true; molecule.num_bonds()];
+
+    // RDKit✔️✔️:   res.resize(mol.getNumAtoms());
+    // RDKit✔️✔️:   std::vector<Canon::canon_atom> atoms(mol.getNumAtoms());
+    // RDKit✔️✔️:   initCanonAtoms(mol, atoms, includeChirality, includeStereoGroups);
+    let mut atoms = init_fragment_canon_atoms_for_kekulize(
+        molecule,
+        &atoms_to_use,
+        &bonds_to_use,
+        options.include_chirality,
+        options.include_stereo_groups,
+        None,
+        None,
+    )?;
+
+    // RDKit✔️✔️:   AtomCompareFunctor ftor(&atoms.front(), mol);
+    // RDKit✔️✔️:   ftor.df_useIsotopes = includeIsotopes;
+    // RDKit✔️✔️:   ftor.df_useChirality = includeChirality;
+    // RDKit✔️✔️:   ftor.df_useChiralityRings = includeChirality && includeRingStereo;
+    // RDKit✔️✔️:   ftor.df_useAtomMaps = includeAtomMaps;
+    // RDKit✔️✔️:   ftor.df_useNonStereoRanks = useNonStereoRanks;
+    // RDKit✔️✔️:   ftor.df_useChiralPresence = includeChiralPresence;
+    let mut order = vec![0usize; molecule.num_atoms()];
+    let flags = CanonRankFlags::from_fragment_options(options);
+    // RDKit✔️✔️:   detail::rankWithFunctor(ftor, breakTies, order, true, includeChirality,
+    // RDKit✔️✔️:                           includeRingStereo);
+    rank_with_atom_compare_functor_for_kekulize(
+        molecule,
+        &mut atoms,
+        options.break_ties,
+        options.include_ring_stereo,
+        flags,
+        &mut order,
+    )?;
+
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit✔️✔️:     res[order[i]] = atoms[order[i]].index;
+    // RDKit✔️✔️:   }
+    let mut res = vec![0usize; molecule.num_atoms()];
+    for idx in 0..molecule.num_atoms() {
+        res[order[idx]] = usize::try_from(atoms[order[idx]].index).unwrap_or(usize::MAX);
+    }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: void rankMolAtoms(const ROMol&, std::vector<unsigned int>&, bool, bool, bool, bool, bool, bool, bool, bool)
+    Ok(res)
 }
 
 pub(crate) fn rank_fragment_atoms_for_kekulize(
@@ -104,7 +202,7 @@ pub(crate) fn rank_fragment_atoms(
 ) -> Result<Vec<usize>, KekulizeError> {
     let atoms_to_use = scope.atoms_to_use;
     let bonds_to_use = scope.bonds_to_use;
-    // BEGIN RDKIT CPP FUNCTION Canon::rankFragmentAtoms
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: void rankFragmentAtoms(const ROMol&, std::vector<unsigned int>&, const boost::dynamic_bitset<>&, const boost::dynamic_bitset<>&, const std::vector<std::string>*, const std::vector<std::string>*, bool, bool, bool, bool, bool, bool)
     // RDKit❗✔️: void rankFragmentAtoms(const ROMol &mol, std::vector<unsigned int> &res,
     // RDKit❗✔️:                        const boost::dynamic_bitset<> &atomsInPlay,
     // RDKit❗✔️:                        const boost::dynamic_bitset<> &bondsInPlay,
@@ -147,7 +245,7 @@ pub(crate) fn rank_fragment_atoms(
     // RDKit❗✔️:     mol.getRingInfo()->reset();
     // RDKit❗✔️:   }
     // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION Canon::rankFragmentAtoms
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: void rankFragmentAtoms(const ROMol&, std::vector<unsigned int>&, const boost::dynamic_bitset<>&, const boost::dynamic_bitset<>&, const std::vector<std::string>*, const std::vector<std::string>*, bool, bool, bool, bool, bool, bool)
     if atoms_to_use.len() != molecule.num_atoms() || bonds_to_use.len() != molecule.num_bonds() {
         return Err(KekulizeError::FragmentBitsetSizeMismatch {
             atoms: atoms_to_use.len(),
@@ -180,6 +278,7 @@ pub(crate) fn rank_fragment_atoms(
         atoms_to_use,
         bonds_to_use,
         options.include_chirality,
+        options.include_stereo_groups,
         scope.atom_symbols,
         scope.bond_symbols,
     )?;
@@ -416,6 +515,7 @@ fn init_fragment_canon_atoms_for_kekulize<'a>(
     atoms_to_use: &[bool],
     bonds_to_use: &[bool],
     include_chirality: bool,
+    include_stereo_groups: bool,
     atom_symbols: Option<&'a [String]>,
     bond_symbols: Option<&'a [String]>,
 ) -> Result<Vec<CanonAtom<'a>>, KekulizeError> {
@@ -570,7 +670,13 @@ fn init_fragment_canon_atoms_for_kekulize<'a>(
             + original_degree.saturating_sub(atoms[idx].degree);
         sort_canon_bonds_descending(&mut atoms[idx].bonds, &initial_ranks);
     }
-    advanced_init_canon_atoms_stereo_state_for_kekulize(molecule, &mut atoms, atoms_to_use)?;
+    advanced_init_canon_atoms_stereo_state_for_kekulize(
+        molecule,
+        &mut atoms,
+        atoms_to_use,
+        include_chirality,
+        include_stereo_groups,
+    )?;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION detail::initFragmentCanonAtoms
     Ok(atoms)
@@ -580,6 +686,8 @@ fn advanced_init_canon_atoms_stereo_state_for_kekulize(
     molecule: &Molecule,
     atoms: &mut [CanonAtom<'_>],
     atoms_to_use: &[bool],
+    include_chirality: bool,
+    include_stereo_groups: bool,
 ) -> Result<(), KekulizeError> {
     // BEGIN RDKIT CPP FUNCTION advancedInitCanonAtom
     // RDKit✔️✔️: void advancedInitCanonAtom(const ROMol &mol, Canon::canon_atom &atom,
@@ -618,14 +726,16 @@ fn advanced_init_canon_atoms_stereo_state_for_kekulize(
     // RDKit✔️✔️:     }
     // RDKit❗✔️:   }
     // END RDKIT CPP FUNCTION initCanonAtoms stereo group assignment
-    for (group_idx, group) in molecule.stereo_groups().iter().enumerate() {
-        let rdkit_group_idx = group_idx + 1;
-        for atom in group.atoms() {
-            let atom_idx = atom.index();
-            if atom_idx < atoms.len() && atoms_to_use[atom_idx] {
-                atoms[atom_idx].which_stereo_group = rdkit_group_idx;
-                atoms[atom_idx].type_of_stereo_group =
-                    canon_stereo_group_type_from_kind(group.kind());
+    if include_chirality && include_stereo_groups {
+        for (group_idx, group) in molecule.stereo_groups().iter().enumerate() {
+            let rdkit_group_idx = group_idx + 1;
+            for atom in group.atoms() {
+                let atom_idx = atom.index();
+                if atom_idx < atoms.len() && atoms_to_use[atom_idx] {
+                    atoms[atom_idx].which_stereo_group = rdkit_group_idx;
+                    atoms[atom_idx].type_of_stereo_group =
+                        canon_stereo_group_type_from_kind(group.kind());
+                }
             }
         }
     }
@@ -2684,6 +2794,53 @@ mod tests {
     use crate::{AtomSpec, BondSpec, Element, MoleculeBuilder, StereoGroup};
 
     #[test]
+    fn rank_mol_atoms_returns_empty_for_empty_molecule() {
+        let molecule = Molecule::default();
+
+        let ranks = rank_mol_atoms(&molecule).unwrap();
+
+        assert!(ranks.is_empty());
+    }
+
+    #[test]
+    fn rank_mol_atoms_break_ties_produces_unique_ranks() {
+        let molecule = Molecule::from_smiles_with_sanitize("CC", false).unwrap();
+
+        let ranks = rank_mol_atoms(&molecule).unwrap();
+        let mut sorted = ranks.clone();
+        sorted.sort_unstable();
+
+        assert_eq!(sorted, vec![0, 1]);
+    }
+
+    #[test]
+    fn rank_mol_atoms_without_break_ties_preserves_symmetry_classes() {
+        let molecule = Molecule::from_smiles_with_sanitize("CC", false).unwrap();
+        let options = CanonicalRankOptions {
+            break_ties: false,
+            ..CanonicalRankOptions::rank_mol_default()
+        };
+
+        let ranks = rank_mol_atoms_with_options(&molecule, options).unwrap();
+
+        assert_eq!(ranks, vec![0, 0]);
+    }
+
+    #[test]
+    fn rank_mol_options_gate_chirality_ring_stereo_like_rdkit_rank_mol_atoms() {
+        let mut rank_mol_options = CanonicalRankOptions::rank_mol_default();
+        rank_mol_options.include_ring_stereo = false;
+        let rank_mol_flags = CanonRankFlags::from_fragment_options(rank_mol_options);
+
+        let mut fragment_options = CanonicalRankOptions::kekulize_default();
+        fragment_options.include_ring_stereo = false;
+        let fragment_flags = CanonRankFlags::from_fragment_options(fragment_options);
+
+        assert!(!rank_mol_flags.use_chirality_rings);
+        assert!(fragment_flags.use_chirality_rings);
+    }
+
+    #[test]
     fn rank_fragment_atoms_accepts_symbol_overrides() {
         let molecule = Molecule::from_smiles_with_sanitize("CC", false).unwrap();
         let atoms_to_use = vec![true; molecule.num_atoms()];
@@ -2730,6 +2887,7 @@ mod tests {
             &atoms_to_use,
             &bonds_to_use,
             true,
+            true,
             Some(&atom_symbols),
             None,
         )
@@ -2764,6 +2922,7 @@ mod tests {
             &molecule,
             &atoms_to_use,
             &bonds_to_use,
+            true,
             true,
             None,
             None,
@@ -2817,6 +2976,7 @@ mod tests {
             &molecule,
             &atoms_to_use,
             &bonds_to_use,
+            true,
             true,
             None,
             None,
@@ -2873,6 +3033,7 @@ mod tests {
             &molecule,
             &atoms_to_use,
             &bonds_to_use,
+            true,
             true,
             None,
             None,

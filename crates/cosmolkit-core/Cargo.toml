@@ -27,3 +27,6 @@ cosmolkit-ringdecomposer = { path = "../cosmolkit-ringdecomposer" }
 glam = "0.32.1"
 log = "0.4.29"
 thiserror = "2.0.18"
+tiny-skia = "0.12.0"
+usvg = "0.47"
+resvg = "0.47"

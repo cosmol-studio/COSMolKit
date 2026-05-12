@@ -41,8 +41,8 @@ pub struct FragmentTraversal {
     pub bonds: Vec<usize>,
 }
 
-pub fn rank_mol_atoms(_molecule: &Molecule) -> Result<Vec<usize>, SmilesWriteError> {
-    Err(crate::UnsupportedFeatureError::from_spec(&crate::SMILES_WRITE_FEATURE).into())
+pub fn rank_mol_atoms(molecule: &Molecule) -> Result<Vec<usize>, SmilesWriteError> {
+    crate::canon_rank::rank_mol_atoms(molecule).map_err(Into::into)
 }
 
 pub fn build_noncanonical_fragment(

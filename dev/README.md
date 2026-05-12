@@ -7,6 +7,13 @@ while editing the redesigned core. The design documents define principles; this
 file defines the default commands and feature flags that should be used during
 daily development.
 
+## Related Documents
+
+- [porting_plan.md](porting_plan.md) — source porting roadmap and current phase
+  (entry point for porting work)
+- [porting_inventory.md](porting_inventory.md) — per-feature porting status
+- [work.md](work.md) — active phase implementation detail
+
 ## Required Development Mode
 
 Development and CI must use strict operation checks:

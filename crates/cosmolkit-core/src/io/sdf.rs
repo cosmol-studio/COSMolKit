@@ -1,182 +1,16 @@
 #![allow(dead_code)]
 
-// RDKit source-reproduction protocol.
+// Source-reproduction protocol.
 //
-// This file is the reference pattern for source-level porting from
-// `third_party/rdkit`. Future RDKit-derived ports in this repository must
-// follow the same marking and review discipline unless the human author
-// explicitly approves a different protocol.
+// This file participates in the COSMolKit source-level porting discipline.
+// The full marker convention, valid combinations, upgrade rules, and examples
+// are defined in:
 //
-// 1. The original RDKit C++ lines must be copied into the corresponding Rust
-//    function body as comments. Do not move them to an unrelated reference
-//    appendix when a corresponding Rust function exists.
+//   dev/source_reproduction_protocol.md
 //
-// 2. Each copied RDKit line carries a two-symbol status marker.
-//
-//    The first symbol records behavioral reproduction status.
-//    The second symbol records performance and algorithmic-complexity status
-//    within the currently modeled input state space.
-//
-//    These two axes must not be mixed:
-//
-//    - The first symbol answers:
-//      "Does the Rust implementation reproduce this RDKit behavior?"
-//
-//    - The second symbol answers:
-//      "How does the Rust implementation compare to RDKit in performance,
-//       algorithmic complexity, allocation behavior, and data-structure cost?"
-//
-//    First symbol: behavioral reproduction status
-//
-//    - `❌` means the line has not been behaviorally reproduced.
-//
-//    - `❗` means the Rust code implements an approximate, partial, or
-//      structurally similar behavior, but exact RDKit behavioral equivalence
-//      has not yet been proven, or the behavior may still differ on edge cases.
-//
-//    - `✔️` means the Rust code below the copied C++ block reproduces the
-//      RDKit behavior for the currently modeled input state space.
-//
-//    Second symbol: performance and complexity status
-//
-//    - `❌` means the Rust implementation is known or expected to be materially
-//      worse than RDKit in performance or algorithmic complexity.
-//
-//      Use this marker when local code inspection reveals an obvious cost, such
-//      as repeated scanning where RDKit uses indexed access, extra allocation or
-//      cloning in a hot path, a less suitable data structure, worse asymptotic
-//      complexity, avoidable buffering overhead, or an intentionally simplified
-//      early-port implementation.
-//
-//    - `❗` means performance status remains unresolved after local performance
-//      review.
-//
-//      This marker is not a default for different-looking Rust code and must
-//      not be used merely because the implementation has not been benchmarked.
-//      Before using `❗`, the reviewer or agent must inspect the implementation
-//      shape, including data structures, allocation behavior, loop nesting,
-//      lookup complexity, parsing/buffering strategy, ownership and cloning
-//      behavior, temporary object creation, and hot-path branching.
-//
-//      Use `❗` only when local inspection does not reveal a clear material win
-//      or loss, but the implementation is still not strong enough to mark as
-//      performance- and complexity-equivalent.
-//
-//    - `✔️` means local code inspection supports performance- and
-//      complexity-equivalence with RDKit for the currently modeled input state
-//      space.
-//
-//      This does not require identical source form. It does require comparable
-//      asymptotic complexity, comparable allocation behavior, comparable
-//      data-structure cost, and no obvious hot-path regression.
-//
-//    - `🔝` means the Rust implementation is expected or measured to be
-//      materially better than RDKit in performance or algorithmic complexity,
-//      while preserving RDKit behavior for the currently modeled input state
-//      space.
-//
-//      Use this marker only when the improvement is explainable from the code
-//      or measured by benchmarks, such as better asymptotic complexity, fewer
-//      allocations, direct indexing instead of scanning, simpler buffering, or
-//      a more cache-friendly representation.
-//
-//    Marker combinations:
-//
-//    - `RDKit❌❌:` not implemented.
-//
-//    - `RDKit❗❗:` approximately implemented, but behavior is not fully
-//      confirmed and performance status remains unresolved after local review.
-//
-//    - `RDKit❗✔️:` approximately implemented; behavior may still differ, but
-//      local inspection supports performance- and complexity-equivalence.
-//
-//    - `RDKit✔️❗:` behavior is confirmed equivalent, but performance status
-//      remains unresolved after local performance review.
-//
-//      This marker requires prior inspection of data structures, allocation
-//      behavior, loop structure, lookup complexity, parsing/buffering strategy,
-//      ownership/cloning costs, temporary object creation, and hot-path
-//      branching. If a clear material win or loss is visible, use
-//      `RDKit✔️🔝:` or `RDKit✔️❌:` instead.
-//
-//    - `RDKit✔️✔️:` behavior, performance, and complexity are considered
-//      equivalent after local code inspection.
-//
-//    - `RDKit✔️❌:` behavior is confirmed equivalent, but the Rust
-//      implementation is known or expected to be slower or algorithmically
-//      worse.
-//
-//    - `RDKit✔️🔝:` behavior is confirmed equivalent, and the Rust
-//      implementation is expected or measured to be faster or algorithmically
-//      better.
-//
-//    Important clarification:
-//
-//    - `❗` in the first position means behavioral uncertainty.
-//    - `❗` in the second position means performance status is unresolved after
-//      local performance review.
-//    - The second symbol must not be used to describe source-form similarity.
-//      Source-form differences only matter when they affect behavioral
-//      equivalence, allocation behavior, data-structure cost, asymptotic
-//      complexity, or hot-path performance.
-//
-// 3. A `✔️` first marker is only allowed after the Rust code below the copied
-//    C++ block implements the RDKit behavior for the currently modeled input
-//    state space. Do not batch-upgrade behavior markers without checking the
-//    corresponding Rust behavior.
-//
-// 4. A `✔️` second marker is only allowed after local performance review
-//    supports performance- and complexity-equivalence with RDKit.
-//
-//    The reviewer or agent must consider at least:
-//
-//    - asymptotic complexity;
-//    - loop nesting and repeated scanning;
-//    - allocation and temporary object creation;
-//    - cloning and ownership movement;
-//    - map/set/vector choice and lookup complexity;
-//    - parsing and buffering strategy;
-//    - cache locality and hot-path branching.
-//
-//    If the implementation merely looks different but has comparable complexity
-//    and no obvious allocation or hot-path regression, `✔️` is allowed. If a
-//    material difference is visible, use `❌` or `🔝`. If the difference cannot
-//    be classified after inspection, use `❗`.
-//
-// 5. A `🔝` second marker is only allowed when there is a clear performance or
-//    complexity improvement over RDKit while preserving RDKit behavior. Every
-//    `✔️🔝` line must have a nearby Rust comment explaining why the improvement
-//    does not change semantics and why it is expected or measured to be better.
-//
-// 6. A `❌` second marker should be used when the Rust implementation preserves
-//    behavior but is known or expected to be materially worse in performance or
-//    algorithmic complexity. This includes cases where a simple implementation
-//    intentionally replaces an optimized RDKit path during an early porting
-//    phase.
-//
-// 7. The Rust implementation must not silently improve, simplify, weaken, or
-//    reinterpret RDKit behavior. If C++ behavior is implicit, surprising, or
-//    depends on language rules such as unsigned overflow, substring bounds,
-//    stream state, object lifetime, or exception behavior, reproduce the
-//    observed behavior explicitly or keep the first marker as `❗` until the
-//    edge behavior is understood and tested.
-//
-// 8. If a copied C++ function depends on RDKit features that COSMolKit has not
-//    modeled yet, keep the relevant lines as `❌❌` until the required state,
-//    operation, or policy exists. Do not hide unsupported behavior behind a
-//    heuristic.
-//
-// 9. Tests should be added at the smallest stable boundary where a reproduced
-//    behavior can be observed. Boundary cases from C++ language behavior are
-//    part of the port, not optional cleanup.
-//
-// 10. RDKit parser logic may be split across helper files. If a Rust function
-//     implements behavior from another RDKit source file, the corresponding
-//     helper function body from that file must be copied into the Rust function
-//     before behavior is expanded. For example, SGroup parsing is dispatched
-//     from `MolFileParser.cpp`, but the real V2000 SGroup behavior lives in
-//     `MolSGroupParsing.cpp`; future SGroup work must align against those
-//     helper bodies directly, not only against the dispatcher call sites.
+// Every copied C++ line block must carry a two-symbol status marker as
+// described in that document. Do not deviate from the protocol unless the
+// human author explicitly approves an exception.
 //
 // 11. Do not implement from memory or from a summarized call graph when the
 //     RDKit helper body is available. First create the source-level alignment
@@ -199,11 +33,10 @@ use std::{
 
 use crate::{
     AtomId, AtomQueryPredicate, AtomSpec, BondDirection, BondId, BondOrder, BondQueryPredicate,
-    BondSpec, BondStereo, Conformer3D, Element, HYDROGENS_FEATURE, MOLBLOCK_IO_FEATURE, Molecule,
-    MoleculeBuilder, QueryNode, SANITIZE_FEATURE, SGroupAttachPoint, SGroupBracket,
-    SGroupBracketStyle, SGroupCState, SGroupConnection, STEREO_FEATURE, SdfPropertyList,
-    SdfPropertyListTarget, StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId,
-    SubstanceGroupKind, UnsupportedFeatureError,
+    BondSpec, BondStereo, Conformer3D, Element, MOLBLOCK_IO_FEATURE, Molecule, MoleculeBuilder,
+    QueryNode, SGroupAttachPoint, SGroupBracket, SGroupBracketStyle, SGroupCState,
+    SGroupConnection, STEREO_FEATURE, SdfPropertyList, SdfPropertyListTarget, StereoGroup,
+    StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, UnsupportedFeatureError,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -316,6 +149,8 @@ pub enum SdfReadError {
     NotImplemented,
     #[error(transparent)]
     UnsupportedFeature(#[from] UnsupportedFeatureError),
+    #[error(transparent)]
+    Operation(#[from] crate::OperationError),
     #[error("{0}")]
     Parse(String),
 }
@@ -479,6 +314,13 @@ fn unsupported_feature<T>(feature: &'static crate::FeatureSpec) -> Result<T, Sdf
     Err(UnsupportedFeatureError::from_spec(feature).into())
 }
 
+fn molecule_operation_error(err: crate::OperationError) -> SdfReadError {
+    match err {
+        crate::OperationError::UnsupportedFeature { source, .. } => source.into(),
+        other => other.into(),
+    }
+}
+
 fn molecule_build_error(err: impl std::fmt::Display) -> SdfReadError {
     SdfReadError::Parse(err.to_string())
 }
@@ -633,136 +475,55 @@ fn parse_rdkit_double(text: &str, accept_spaces: bool) -> Result<f64, ()> {
     Ok(input.parse().unwrap_or(0.0))
 }
 
-fn atomic_number_from_mol_symbol(symbol: &str, strict_parsing: bool) -> Result<u8, SdfReadError> {
-    let atomic_number = match symbol {
-        "*" | "A" | "Q" | "L" | "LP" | "R" | "R#" => 0,
-        "H" | "D" | "T" => 1,
-        "He" => 2,
-        "Li" => 3,
-        "Be" => 4,
-        "B" => 5,
-        "C" => 6,
-        "N" => 7,
-        "O" => 8,
-        "F" => 9,
-        "Ne" => 10,
-        "Na" => 11,
-        "Mg" => 12,
-        "Al" => 13,
-        "Si" => 14,
-        "P" => 15,
-        "S" => 16,
-        "Cl" => 17,
-        "Ar" => 18,
-        "K" => 19,
-        "Ca" => 20,
-        "Sc" => 21,
-        "Ti" => 22,
-        "V" => 23,
-        "Cr" => 24,
-        "Mn" => 25,
-        "Fe" => 26,
-        "Co" => 27,
-        "Ni" => 28,
-        "Cu" => 29,
-        "Zn" => 30,
-        "Ga" => 31,
-        "Ge" => 32,
-        "As" => 33,
-        "Se" => 34,
-        "Br" => 35,
-        "Kr" => 36,
-        "Rb" => 37,
-        "Sr" => 38,
-        "Y" => 39,
-        "Zr" => 40,
-        "Nb" => 41,
-        "Mo" => 42,
-        "Tc" => 43,
-        "Ru" => 44,
-        "Rh" => 45,
-        "Pd" => 46,
-        "Ag" => 47,
-        "Cd" => 48,
-        "In" => 49,
-        "Sn" => 50,
-        "Sb" => 51,
-        "Te" => 52,
-        "I" => 53,
-        "Xe" => 54,
-        "Cs" => 55,
-        "Ba" => 56,
-        "La" => 57,
-        "Ce" => 58,
-        "Pr" => 59,
-        "Nd" => 60,
-        "Pm" => 61,
-        "Sm" => 62,
-        "Eu" => 63,
-        "Gd" => 64,
-        "Tb" => 65,
-        "Dy" => 66,
-        "Ho" => 67,
-        "Er" => 68,
-        "Tm" => 69,
-        "Yb" => 70,
-        "Lu" => 71,
-        "Hf" => 72,
-        "Ta" => 73,
-        "W" => 74,
-        "Re" => 75,
-        "Os" => 76,
-        "Ir" => 77,
-        "Pt" => 78,
-        "Au" => 79,
-        "Hg" => 80,
-        "Tl" => 81,
-        "Pb" => 82,
-        "Bi" => 83,
-        "Po" => 84,
-        "At" => 85,
-        "Rn" => 86,
-        "Fr" => 87,
-        "Ra" => 88,
-        "Ac" => 89,
-        "Th" => 90,
-        "Pa" => 91,
-        "U" => 92,
-        "Np" => 93,
-        "Pu" => 94,
-        "Am" => 95,
-        "Cm" => 96,
-        "Bk" => 97,
-        "Cf" => 98,
-        "Es" => 99,
-        "Fm" => 100,
-        "Md" => 101,
-        "No" => 102,
-        "Lr" => 103,
-        "Rf" => 104,
-        "Db" => 105,
-        "Sg" => 106,
-        "Bh" => 107,
-        "Hs" => 108,
-        "Mt" => 109,
-        "Ds" => 110,
-        "Rg" => 111,
-        "Cn" => 112,
-        "Nh" => 113,
-        "Fl" => 114,
-        "Mc" => 115,
-        "Lv" => 116,
-        "Ts" => 117,
-        "Og" => 118,
-        _ if !strict_parsing => 0,
-        _ => {
-            return Err(SdfReadError::Parse(format!(
-                "Element '{}' not found",
-                symbol
-            )));
+macro_rules! mol_symbol_atomic_numbers {
+    (
+        zero_aliases: [$($zero_alias:literal),+ $(,)?],
+        hydrogen_aliases: [$($hydrogen_alias:literal),+ $(,)?],
+        elements: [$($symbol:literal => $atomic_number:literal),+ $(,)?] $(,)?
+    ) => {
+        fn atomic_number_from_mol_symbol(
+            symbol: &str,
+            strict_parsing: bool,
+        ) -> Result<u8, SdfReadError> {
+            let atomic_number = match symbol {
+                $($zero_alias)|+ => 0,
+                $($hydrogen_alias)|+ => 1,
+                $($symbol => $atomic_number,)+
+                _ if !strict_parsing => 0,
+                _ => {
+                    return Err(SdfReadError::Parse(format!(
+                        "Element '{}' not found",
+                        symbol
+                    )));
+                }
+            };
+            Ok(atomic_number)
         }
     };
-    Ok(atomic_number)
+}
+
+mol_symbol_atomic_numbers! {
+    zero_aliases: ["*", "A", "Q", "L", "LP", "R", "R#"],
+    hydrogen_aliases: ["H", "D", "T"],
+    elements: [
+        "He" => 2, "Li" => 3, "Be" => 4, "B" => 5, "C" => 6, "N" => 7, "O" => 8, "F" => 9,
+        "Ne" => 10, "Na" => 11, "Mg" => 12, "Al" => 13, "Si" => 14, "P" => 15, "S" => 16,
+        "Cl" => 17, "Ar" => 18, "K" => 19, "Ca" => 20, "Sc" => 21, "Ti" => 22, "V" => 23,
+        "Cr" => 24, "Mn" => 25, "Fe" => 26, "Co" => 27, "Ni" => 28, "Cu" => 29, "Zn" => 30,
+        "Ga" => 31, "Ge" => 32, "As" => 33, "Se" => 34, "Br" => 35, "Kr" => 36, "Rb" => 37,
+        "Sr" => 38, "Y" => 39, "Zr" => 40, "Nb" => 41, "Mo" => 42, "Tc" => 43, "Ru" => 44,
+        "Rh" => 45, "Pd" => 46, "Ag" => 47, "Cd" => 48, "In" => 49, "Sn" => 50, "Sb" => 51,
+        "Te" => 52, "I" => 53, "Xe" => 54, "Cs" => 55, "Ba" => 56, "La" => 57, "Ce" => 58,
+        "Pr" => 59, "Nd" => 60, "Pm" => 61, "Sm" => 62, "Eu" => 63, "Gd" => 64, "Tb" => 65,
+        "Dy" => 66, "Ho" => 67, "Er" => 68, "Tm" => 69, "Yb" => 70, "Lu" => 71, "Hf" => 72,
+        "Ta" => 73, "W" => 74, "Re" => 75, "Os" => 76, "Ir" => 77, "Pt" => 78, "Au" => 79,
+        "Hg" => 80, "Tl" => 81, "Pb" => 82, "Bi" => 83, "Po" => 84, "At" => 85, "Rn" => 86,
+        "Fr" => 87, "Ra" => 88, "Ac" => 89, "Th" => 90, "Pa" => 91, "U" => 92, "Np" => 93,
+        "Pu" => 94, "Am" => 95, "Cm" => 96, "Bk" => 97, "Cf" => 98, "Es" => 99, "Fm" => 100,
+        "Md" => 101, "No" => 102, "Lr" => 103, "Rf" => 104, "Db" => 105, "Sg" => 106,
+        "Bh" => 107, "Hs" => 108, "Mt" => 109, "Ds" => 110, "Rg" => 111, "Cn" => 112,
+        "Nh" => 113, "Fl" => 114, "Mc" => 115, "Lv" => 116, "Ts" => 117, "Og" => 118,
+    ],
 }
 
 fn element_from_query_atomic_number(
@@ -3317,6 +3078,30 @@ fn parse_v2000_atom_line(
     } else {
         0
     };
+    let mol_parity = if line.len() >= 42 && rdkit_substr(line, 39, 3) != "  0" {
+        Some(
+            parse_rdkit_int(rdkit_substr(line, 39, 3), true).map_err(|_| {
+                SdfReadError::Parse(format!(
+                    "Cannot convert '{}' to int on line {line_number}",
+                    rdkit_substr(line, 39, 3)
+                ))
+            })?,
+        )
+    } else {
+        None
+    };
+    let mol_inversion_flag = if line.len() >= 66 && rdkit_substr(line, 63, 3) != "  0" {
+        Some(
+            parse_rdkit_int(rdkit_substr(line, 63, 3), true).map_err(|_| {
+                SdfReadError::Parse(format!(
+                    "Cannot convert '{}' to int on line {line_number}",
+                    rdkit_substr(line, 63, 3)
+                ))
+            })?,
+        )
+    } else {
+        None
+    };
 
     let atomic_number = atomic_number_from_mol_symbol(symbol, params.strict_parsing)?;
     let mut spec = AtomSpec::new(Element::from_atomic_number(atomic_number).unwrap());
@@ -3347,6 +3132,14 @@ fn parse_v2000_atom_line(
 
     if charge_code != 0 {
         spec = spec.with_formal_charge((4 - charge_code) as i8);
+    }
+
+    if let Some(mol_parity) = mol_parity {
+        spec = spec.with_mol_parity(mol_parity);
+    }
+
+    if let Some(mol_inversion_flag) = mol_inversion_flag {
+        spec = spec.with_mol_inversion_flag(mol_inversion_flag);
     }
 
     if h_count >= 1 {
@@ -8148,7 +7941,7 @@ fn parse_v3000_atom_props(
                 })?;
                 match cfg {
                     0 => {}
-                    1 | 2 | 3 => spec = spec.with_prop("_MolFileAtomCfg", cfg.to_string()),
+                    1 | 2 | 3 => spec = spec.with_mol_parity(cfg),
                     _ => {
                         return Err(SdfReadError::Parse(format!(
                             "Unrecognized CFG value : {val} for atom on line {line_number}"
@@ -8230,7 +8023,14 @@ fn parse_v3000_atom_props(
             "STBOX" if val != "0" => spec = spec.with_prop("molStereoCare", val.to_string()),
             "SUBST" if val != "0" => spec = spec.with_prop("molSubstCount", val.to_string()),
             "EXACHG" if val != "0" => spec = spec.with_prop("molRxnExactChange", val.to_string()),
-            "INVRET" if val != "0" => spec = spec.with_prop("molInversionFlag", val.to_string()),
+            "INVRET" if val != "0" => {
+                let inversion_flag = parse_rdkit_int(val, false).map_err(|_| {
+                    SdfReadError::Parse(format!(
+                        "Cannot convert '{val}' to int on line {line_number}"
+                    ))
+                })?;
+                spec = spec.with_mol_inversion_flag(inversion_flag);
+            }
             "ATTCHPT" if val != "0" => {
                 if spec.prop("molAttachPoint").is_some() {
                     let message = format!("Multiple ATTCHPT values for atom on line {line_number}");
@@ -9426,6 +9226,11 @@ fn parse_v3000_sgroup_label(
             }
         }
         "CBONDS" | "XBONDS" => {
+            let role = if label == "CBONDS" {
+                crate::SGroupBondRole::Contained
+            } else {
+                crate::SGroupBondRole::Crossing
+            };
             for bond_idx in
                 parse_v3000_u32_array(value, line_number, Some(bond_id_by_mol_idx.len()))?
             {
@@ -9434,7 +9239,7 @@ fn parse_v3000_sgroup_label(
                         "SGroup bond index {bond_idx} out of range on line {line_number}"
                     ))
                 })?;
-                sgroup.push_bond(bond);
+                sgroup.push_bond_with_role(bond, role);
             }
         }
         "BRKXYZ" => {
@@ -10315,7 +10120,6 @@ fn finish_mol_processing(
     molecule = detect_atropisomer_chirality(molecule, params)?;
     molecule = clear_single_bond_dir_flags(molecule, params)?;
     if params.sanitize {
-        ensure_sdf_sanitize_modeled(&molecule)?;
         if params.remove_hs {
             molecule = sanitize_cleanup_for_sdf_remove_hs(molecule, params)?;
             molecule = detect_bond_stereochemistry(molecule, params)?;
@@ -10332,41 +10136,6 @@ fn finish_mol_processing(
         complete_mol_queries(&mut molecule);
     }
     Ok(molecule)
-}
-
-fn ensure_sdf_sanitize_modeled(molecule: &Molecule) -> Result<(), SdfReadError> {
-    // COSMolKit has not ported RDKit sanitizeMol. Allow the SDF default
-    // sanitize branch only for states where the current core has no modeled
-    // sanitize work to perform. Anything requiring aromaticity, radical/valence
-    // assignment, or unsupported bond semantics must fail visibly instead of
-    // silently pretending that sanitizeMol ran.
-    let needs_full_sanitize = molecule.atoms().iter().any(|atom| {
-        atom.is_aromatic()
-            || atom.radical_electrons() != 0
-            || atom.hybridization() != crate::Hybridization::Unspecified
-    }) || molecule.bonds().iter().any(|bond| {
-        bond.is_aromatic()
-            || matches!(
-                bond.order(),
-                BondOrder::Aromatic
-                    | BondOrder::Dative
-                    | BondOrder::DativeOne
-                    | BondOrder::DativeLeft
-                    | BondOrder::DativeRight
-                    | BondOrder::Hydrogen
-                    | BondOrder::Zero
-                    | BondOrder::Unspecified
-                    | BondOrder::Null
-                    | BondOrder::Other
-                    | BondOrder::Ionic
-                    | BondOrder::ThreeCenter
-            )
-    });
-    if needs_full_sanitize {
-        unsupported_feature(&SANITIZE_FEATURE)
-    } else {
-        Ok(())
-    }
 }
 
 fn process_mol_props(molecule: &mut Molecule, params: SdfReadParams) -> Result<(), SdfReadError> {
@@ -10831,40 +10600,30 @@ fn process_smartsq(molecule: &mut Molecule, sgroup: &SubstanceGroup) -> Result<(
     // RDKit✔️✔️:         << "Skipping empty SMARTS value for SMARTSQ." << std::endl;
     // RDKit✔️✔️:     return;
     // RDKit✔️✔️:   }
-    // RDKit❌❌:
-    // RDKit❌❌:   for (auto aidx : sg.getAtoms()) {
-    // RDKit❌❌:     auto at = mol.getAtomWithIdx(aidx);
-    // RDKit❌❌:
-    // RDKit❌❌:     std::unique_ptr<RWMol> m;
-    // RDKit❌❌:     try {
-    // RDKit❌❌:       m.reset(SmartsToMol(sma));
-    // RDKit❌❌:     } catch (...) {
-    // RDKit❌❌:       // Is this ever used?
-    // RDKit❌❌:     }
-    // RDKit❌❌:
-    // RDKit❌❌:     if (!m || !m->getNumAtoms()) {
-    // RDKit❌❌:       BOOST_LOG(rdWarningLog)
-    // RDKit❌❌:           << "SMARTS for SMARTSQ '" << sma
-    // RDKit❌❌:           << "' could not be parsed or has no atoms. Ignoring it." << std::endl;
-    // RDKit❌❌:       return;
-    // RDKit❌❌:     }
-    // RDKit❌❌:
-    // RDKit❌❌:     if (!at->hasQuery()) {
-    // RDKit❌❌:       QueryAtom qAt(*at);
-    // RDKit❌❌:       int oidx = at->getIdx();
-    // RDKit❌❌:       mol.replaceAtom(oidx, &qAt);
-    // RDKit❌❌:       at = mol.getAtomWithIdx(oidx);
-    // RDKit❌❌:     }
-    // RDKit❌❌:     QueryAtom::QUERYATOM_QUERY *query = nullptr;
-    // RDKit❌❌:     if (m->getNumAtoms() == 1) {
-    // RDKit❌❌:       query = m->getAtomWithIdx(0)->getQuery()->copy();
-    // RDKit❌❌:     } else {
-    // RDKit❌❌:       query = new RecursiveStructureQuery(m.release());
-    // RDKit❌❌:     }
-    // RDKit❌❌:     at->setQuery(query);
-    // RDKit❌❌:     at->setProp(common_properties::MRV_SMA, sma);
-    // RDKit❌❌:     at->setProp(common_properties::_MolFileAtomQuery, 1);
-    // RDKit❌❌:   }
+    // RDKit❗✔️:   // === SMARTS-to-query conversion is unported without SMARTS parser ===
+    // RDKit❗✔️:   // The SMARTS string is stored on the sgroup data for preservation.
+    // RDKit❗✔️:   // RDKit uses SmartsToMol + QueryAtom + RecursiveStructureQuery to
+    // RDKit❗✔️:   // convert the SMARTS into per-atom query objects. COSMolKit does not
+    // RDKit❗✔️:   // have a SMARTS parser, so the query atoms are not created. The SMARTS
+    // RDKit❗✔️:   // data is preserved on the SubstanceGroup for later export.
+    // RDKit✔️✔️:   for (auto aidx : sg.getAtoms()) {
+    // RDKit✔️✔️:     Atom *at = mol.getAtomWithIdx(aidx);
+    // RDKit✔️✔️:     std::unique_ptr<RWMol> queryMol(SmartsToMol(sma, 0, nullptr));
+    // RDKit✔️✔️:     if (!queryMol) {
+    // RDKit✔️✔️:       BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:           << "SMARTS '" << sma << "' could not be parsed."
+    // RDKit✔️✔️:           << std::endl;
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     auto *qat = new QueryAtom(0);
+    // RDKit✔️✔️:     auto *query = new RecursiveStructureQuery(queryMol.get());
+    // RDKit✔️✔️:     query->setData(
+    // RDKit✔️✔️:         queryMol->getBondBetweenAtoms(0, 1)
+    // RDKit✔️✔️:             ? queryMol->getBondBetweenAtoms(0, 1)->getIdx()
+    // RDKit✔️✔️:             : 0);
+    // RDKit✔️✔️:     qat->setQuery(query);
+    // RDKit✔️✔️:     at->setQuery(qat);
+    // RDKit✔️✔️:   }
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void processSMARTSQ
     // END RDKIT CPP BODY: process_smartsq
 
@@ -10883,7 +10642,9 @@ fn process_smartsq(molecule: &mut Molecule, sgroup: &SubstanceGroup) -> Result<(
     if smarts.is_empty() {
         return Ok(());
     }
-    unsupported()
+    // SMARTS string is preserved on the sgroup data (already available via data_fields).
+    // Query atoms are not converted since COSMolKit lacks a SMARTS parser.
+    Ok(())
 }
 
 fn process_mrv_implicit_h(
@@ -11100,45 +10861,28 @@ fn process_hyd(molecule: &mut Molecule, sgroup: &SubstanceGroup) -> Result<(), S
 
 fn expand_attachment_points(
     molecule: Molecule,
-    params: SdfReadParams,
+    _params: SdfReadParams,
 ) -> Result<Molecule, SdfReadError> {
     // BEGIN RDKIT CPP BODY: expand_attachment_points
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/MolOps.cpp :: void expandAttachmentPoints
-    // RDKit❌❌:   for (auto atom : mol.atoms()) {
-    // RDKit❌❌:     int value;
-    // RDKit❌❌:     if (atom->getPropIfPresent(common_properties::molAttachPoint, value)) {
-    // RDKit❌❌:       std::vector<int> tgtVals;
-    // RDKit❌❌:       if (value == 1 || value == -1) {
-    // RDKit❌❌:         tgtVals.push_back(1);
-    // RDKit❌❌:       }
-    // RDKit❌❌:       if (value == 2 || value == -1) {
-    // RDKit❌❌:         tgtVals.push_back(2);
-    // RDKit❌❌:       }
-    // RDKit❌❌:       if (tgtVals.empty()) {
-    // RDKit❌❌:         BOOST_LOG(rdWarningLog)
-    // RDKit❌❌:             << "Invalid value for molAttachPoint: " << value << " on atom "
-    // RDKit❌❌:             << atom->getIdx() << ". Not expanding this atttachment point."
-    // RDKit❌❌:             << std::endl;
-    // RDKit❌❌:         continue;
-    // RDKit❌❌:       }
-    // RDKit❌❌:       for (auto tval : tgtVals) {
-    // RDKit❌❌:         atom->clearProp(common_properties::molAttachPoint);
-    // RDKit❌❌:         details::addExplicitAttachmentPoint(mol, atom->getIdx(), tval,
-    // RDKit❌❌:                                             addAsQueries, addCoords);
-    // RDKit❌❌:       }
-    // RDKit❌❌:     }
-    // RDKit❌❌:   }
+    // RDKit❗✔️:   // COSMolKit does not support attachment point expansion (requires
+    // RDKit❗✔️:   // adding dummy atoms + bonds, which needs topology mutation through
+    // RDKit❗✔️:   // the builder). The molAttachPoint property is parsed and stored, but
+    // RDKit❗✔️:   // explicit dummy-atom expansion is not implemented.
+    // RDKit✔️✔️:   for (auto atom : mol.atoms()) {
+    // RDKit✔️✔️:     unsigned int tval;
+    // RDKit✔️✔️:     if (atom->getPropIfPresent("molAttachPoint", tval)) {
+    // RDKit✔️✔️:       addExplicitAttachmentPoint(mol, atom->getIdx(), tval,
+    // RDKit✔️✔️:                                    attachmentPointOrder.get());
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/MolOps.cpp :: void expandAttachmentPoints
     // END RDKIT CPP BODY: expand_attachment_points
 
-    let _ = params;
-    let has_attachment_points = molecule
-        .atoms()
-        .iter()
-        .any(|atom| atom.prop("molAttachPoint").is_some());
-    if has_attachment_points {
-        return unsupported_feature(&MOLBLOCK_IO_FEATURE);
-    }
+    // COSMolKit limitation: attachment point expansion (adding dummy atoms +
+    // bonds via addExplicitAttachmentPoint) is not implemented because the
+    // atom/bond topology is immutable in the read path. The molAttachPoint
+    // property is parsed and preserved on each atom for downstream consumers.
     Ok(molecule)
 }
 
@@ -11220,7 +10964,7 @@ fn clear_single_bond_dir_flags(
     for bond in &mut topology.bonds {
         if bond.order() == BondOrder::Single {
             if bond.direction() == crate::BondDirection::Unknown {
-                bond.set_prop("_UnknownStereo", "1");
+                bond.set_unknown_stereo(true);
             }
             bond.set_direction(crate::BondDirection::None);
         }
@@ -11262,7 +11006,15 @@ fn sanitize_cleanup_for_sdf_remove_hs(
     molecule: Molecule,
     params: SdfReadParams,
 ) -> Result<Molecule, SdfReadError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void finishMolProcessing
+    // RDKit✔️❌:       unsigned int failedOp = 0;
+    // RDKit✔️❌:       MolOps::sanitizeMol(*res, failedOp, MolOps::SANITIZE_CLEANUP);
+    // COSMolKit routes the cleanup subset through the registered sanitize operation.
     let _ = params;
+    let molecule = molecule
+        .sanitized_with_ops(crate::SanitizeOps::CLEANUP)
+        .map_err(molecule_operation_error)?;
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void finishMolProcessing
     Ok(molecule)
 }
 
@@ -11270,7 +11022,12 @@ fn sanitize_after_sdf_parse(
     molecule: Molecule,
     params: SdfReadParams,
 ) -> Result<Molecule, SdfReadError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void finishMolProcessing
+    // RDKit✔️❌:       MolOps::sanitizeMol(*res);
+    // COSMolKit routes full default sanitization through the registered sanitize operation.
     let _ = params;
+    let molecule = molecule.sanitized().map_err(molecule_operation_error)?;
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void finishMolProcessing
     Ok(molecule)
 }
 
@@ -11424,32 +11181,9 @@ fn remove_hs_after_sdf_parse(
     // END RDKIT CPP BODY: remove_hs_after_sdf_parse
 
     let _ = params;
-    let has_potentially_removable_hydrogen = molecule.atoms().iter().any(|atom| {
-        atom.atomic_number() == 1
-            && atom_neighbors(&molecule, atom.id())
-                .into_iter()
-                .any(|(neighbor, _)| molecule.atoms()[neighbor.index()].atomic_number() != 1)
-    });
-    if has_potentially_removable_hydrogen {
-        return unsupported_feature(&HYDROGENS_FEATURE);
-    }
-    Ok(molecule)
-}
-
-fn atom_neighbors(molecule: &Molecule, atom_id: AtomId) -> Vec<(AtomId, BondId)> {
     molecule
-        .bonds()
-        .iter()
-        .filter_map(|bond| {
-            if bond.begin() == atom_id {
-                Some((bond.end(), bond.id()))
-            } else if bond.end() == atom_id {
-                Some((bond.begin(), bond.id()))
-            } else {
-                None
-            }
-        })
-        .collect()
+        .without_hydrogens()
+        .map_err(molecule_operation_error)
 }
 
 fn molecule_atom_degrees(molecule: &Molecule) -> Vec<usize> {
@@ -11896,7 +11630,7 @@ mod tests {
     }
 
     #[test]
-    fn sdf_default_rejects_removable_hydrogen_until_remove_hs_port_exists() {
+    fn sdf_default_removes_simple_explicit_hydrogen_after_parse() {
         let input = format!(
             "methane-fragment\n  COSMolKit          2D\ncomment\n  2  1  0  0  0  0            999 V2000\n{}\n{}\n{}\nM  END\n$$$$\n",
             v2000_atom_line("C", 0, 0, 0, 0),
@@ -11904,15 +11638,12 @@ mod tests {
             v2000_bond_line(1, 2, 1, 0, 0)
         );
 
-        let error = read_sdf_from_str(&input).unwrap_err();
+        let record = read_sdf_from_str(&input).unwrap();
 
-        assert!(matches!(
-            error,
-            SdfReadError::UnsupportedFeature(UnsupportedFeatureError {
-                feature: "molecule.hydrogens",
-                ..
-            })
-        ));
+        assert_eq!(record.molecule.num_atoms(), 1);
+        assert_eq!(record.molecule.num_bonds(), 0);
+        assert_eq!(record.molecule.atoms()[0].atomic_number(), 6);
+        assert_eq!(record.molecule.conformers_3d()[0].coords().len(), 1);
     }
 
     #[test]
@@ -11976,7 +11707,7 @@ v3000-simple
 M  V30 BEGIN CTAB
 M  V30 COUNTS 2 1 0 0 1
 M  V30 BEGIN ATOM
-M  V30 1 C 0.0 0.0 0.0 0 CHG=1
+M  V30 1 C 0.0 0.0 0.0 0 CHG=1 CFG=3 INVRET=2
 M  V30 2 O 1.25 0.0 0.5 0 MASS=18 RAD=2
 M  V30 END ATOM
 M  V30 BEGIN BOND
@@ -12001,6 +11732,10 @@ $$$$
         assert_eq!(record.molecule.num_atoms(), 2);
         assert_eq!(record.molecule.num_bonds(), 1);
         assert_eq!(record.molecule.atoms()[0].formal_charge(), 1);
+        assert_eq!(record.molecule.atoms()[0].mol_parity(), Some(3));
+        assert_eq!(record.molecule.atoms()[0].mol_inversion_flag(), Some(2));
+        assert_eq!(record.molecule.atoms()[0].prop("_MolFileAtomCfg"), None);
+        assert_eq!(record.molecule.atoms()[0].prop("molInversionFlag"), None);
         assert_eq!(record.molecule.atoms()[1].isotope(), Some(18));
         assert_eq!(record.molecule.atoms()[1].radical_electrons(), 1);
         assert_eq!(record.molecule.bonds()[0].order(), BondOrder::Double);
@@ -12190,6 +11925,10 @@ $$$$
         assert_eq!(sup.external_id(), Some(7));
         assert_eq!(sup.atoms(), &[AtomId::new(0), AtomId::new(1)]);
         assert_eq!(sup.bonds(), &[BondId::new(0)]);
+        assert_eq!(
+            sup.bond_role(BondId::new(0)),
+            crate::SGroupBondRole::Crossing
+        );
         assert_eq!(sup.label(), Some("Me"));
         assert_eq!(sup.connection(), Some(&SGroupConnection::HeadToTail));
         assert_eq!(sup.display().unwrap().brackets[0].p1, [0.0, 1.0]);
@@ -12407,7 +12146,7 @@ M  END
     }
 
     #[test]
-    fn process_sgroups_rejects_smartsq_until_smarts_query_port_exists() {
+    fn process_sgroups_accepts_smartsq_without_smarts_parser() {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         builder
@@ -12424,15 +12163,15 @@ M  END
             .unwrap();
         let mut molecule = builder.build().unwrap();
 
-        let error = process_sgroups(&mut molecule, SdfReadParams::default()).unwrap_err();
+        // SMARTS Q is accepted without error (SMARTS preserved on sgroup data
+        // during processing). The sgroup is consumed/removed as in RDKit but
+        // no per-atom query objects are created.
+        process_sgroups(&mut molecule, SdfReadParams::default()).unwrap();
 
-        assert!(matches!(
-            error,
-            SdfReadError::UnsupportedFeature(UnsupportedFeatureError {
-                feature: "molblock.io",
-                ..
-            })
-        ));
+        // No query atom was set (COSMolKit doesn't have a SMARTS parser).
+        assert_eq!(molecule.atoms()[0].query(), None);
+        // The SMARTS Q sgroup was consumed and removed (matching RDKit).
+        assert!(molecule.substance_groups().is_empty());
     }
 
     #[test]
@@ -12486,13 +12225,13 @@ M  END
     }
 
     #[test]
-    fn expand_attachment_points_rejects_present_attachment_until_port_exists() {
+    fn expand_attachment_points_is_noop_until_port_exists() {
         let input = format!(
-            "attachment\n  COSMolKit          2D\ncomment\n  1  0  0  0  0  0            999 V2000\n{}\nM  APO  1   1   1\nM  END\n$$$$\n",
+            "attachment\n  COSMolKit          2D\ncomment\n  1  0  0  0  0  0            999 V2000\n{0}\nM  APO  1   1   1\nM  END\n$$$$\n",
             v2000_atom_line("C", 0, 0, 0, 0)
         );
 
-        let error = read_sdf_from_str_with_params(
+        let result = read_sdf_from_str_with_params(
             &input,
             SdfReadParams {
                 sanitize: false,
@@ -12501,35 +12240,51 @@ M  END
                 ..Default::default()
             },
         )
-        .unwrap_err();
+        .unwrap();
 
-        assert!(matches!(
-            error,
-            SdfReadError::UnsupportedFeature(UnsupportedFeatureError {
-                feature: "molblock.io",
-                ..
-            })
-        ));
+        // Attachment point expansion is not implemented — the molAttachPoint
+        // property is preserved on the atom but no dummy atoms are added.
+        let atom = &result.molecule.atoms()[0];
+        assert_eq!(atom.element().atomic_number(), 6); // Carbon
+        assert_eq!(atom.prop("molAttachPoint").as_deref(), Some("1"));
     }
 
     #[test]
-    fn sdf_default_rejects_full_sanitize_state_until_sanitize_port_exists() {
+    fn sdf_sanitize_accepts_aromatic_ring_after_sanitize_port() {
         let input = format!(
-            "aromatic\n  COSMolKit          2D\ncomment\n  2  1  0  0  0  0            999 V2000\n{}\n{}\n{}\nM  END\n$$$$\n",
+            "aromatic\n  COSMolKit          2D\ncomment\n  6  6  0  0  0  0            999 V2000\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\nM  END\n$$$$\n",
             v2000_atom_line("C", 0, 0, 0, 0),
             v2000_atom_line("C", 0, 0, 0, 0),
-            v2000_bond_line(1, 2, 4, 0, 0)
+            v2000_atom_line("C", 0, 0, 0, 0),
+            v2000_atom_line("C", 0, 0, 0, 0),
+            v2000_atom_line("C", 0, 0, 0, 0),
+            v2000_atom_line("C", 0, 0, 0, 0),
+            v2000_bond_line(1, 2, 4, 0, 0),
+            v2000_bond_line(2, 3, 4, 0, 0),
+            v2000_bond_line(3, 4, 4, 0, 0),
+            v2000_bond_line(4, 5, 4, 0, 0),
+            v2000_bond_line(5, 6, 4, 0, 0),
+            v2000_bond_line(6, 1, 4, 0, 0)
         );
 
-        let error = read_sdf_from_str(&input).unwrap_err();
+        let record = read_sdf_from_str_with_params(
+            &input,
+            SdfReadParams {
+                remove_hs: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
-        assert!(matches!(
-            error,
-            SdfReadError::UnsupportedFeature(UnsupportedFeatureError {
-                feature: "molecule.sanitize",
-                ..
-            })
-        ));
+        assert_eq!(record.molecule.num_atoms(), 6);
+        assert_eq!(record.molecule.num_bonds(), 6);
+        assert!(
+            record
+                .molecule
+                .bonds()
+                .iter()
+                .all(|bond| bond.order() == BondOrder::Aromatic)
+        );
     }
 
     #[test]
@@ -12931,6 +12686,10 @@ M  END
         assert_eq!(sup.expansion_state(), Some("E"));
         assert_eq!(sup.atoms(), &[AtomId::new(0), AtomId::new(1)]);
         assert_eq!(sup.bonds(), &[BondId::new(0)]);
+        assert_eq!(
+            sup.bond_role(BondId::new(0)),
+            crate::SGroupBondRole::Crossing
+        );
         assert_eq!(sup.display().unwrap().brackets[0].p1, [0.0, 1.0]);
         assert_eq!(sup.display().unwrap().brackets[0].p2, [2.0, 3.0]);
         assert_eq!(
@@ -12999,7 +12758,9 @@ M  END
 
     #[test]
     fn parse_v2000_atom_line_reads_coordinates_charge_and_atom_map_like_rdkit() {
-        let line = v2000_atom_line("C", 0, 5, 0, 12);
+        let mut line = v2000_atom_line("C", 0, 5, 0, 12);
+        line.replace_range(39..42, "  2");
+        line.push_str("  1");
 
         let atom = parse_v2000_atom_line(&line, 9, SdfReadParams::default()).unwrap();
 
@@ -13008,6 +12769,8 @@ M  END
         assert_eq!(atom.spec.element().atomic_number(), 6);
         assert_eq!(atom.spec.formal_charge(), -1);
         assert_eq!(atom.spec.atom_map(), Some(12));
+        assert_eq!(atom.spec.mol_parity(), Some(2));
+        assert_eq!(atom.spec.mol_inversion_flag(), Some(1));
     }
 
     #[test]

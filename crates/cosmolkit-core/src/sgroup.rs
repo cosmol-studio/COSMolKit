@@ -42,6 +42,12 @@ pub enum SubstanceGroupKind {
     Generic(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SGroupBondRole {
+    Crossing,
+    Contained,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SGroupBracket {
     pub p1: [f64; 2],
@@ -105,6 +111,7 @@ pub struct SubstanceGroup {
     kind: SubstanceGroupKind,
     atoms: Vec<AtomId>,
     bonds: Vec<BondId>,
+    bond_roles: BTreeMap<BondId, SGroupBondRole>,
     parent_atoms: Vec<AtomId>,
     parent: Option<SubstanceGroupId>,
     label: Option<String>,
@@ -132,6 +139,7 @@ impl SubstanceGroup {
             kind,
             atoms: Vec::new(),
             bonds: Vec::new(),
+            bond_roles: BTreeMap::new(),
             parent_atoms: Vec::new(),
             parent: None,
             label: None,
@@ -178,6 +186,14 @@ impl SubstanceGroup {
     #[must_use]
     pub fn bonds(&self) -> &[BondId] {
         &self.bonds
+    }
+
+    #[must_use]
+    pub fn bond_role(&self, bond: BondId) -> SGroupBondRole {
+        self.bond_roles
+            .get(&bond)
+            .copied()
+            .unwrap_or(SGroupBondRole::Crossing)
     }
 
     #[must_use]
@@ -281,7 +297,17 @@ impl SubstanceGroup {
 
     #[must_use]
     pub fn with_bonds(mut self, bonds: Vec<BondId>) -> Self {
+        self.bond_roles
+            .retain(|bond, _| bonds.iter().any(|candidate| candidate == bond));
         self.bonds = bonds;
+        self
+    }
+
+    #[must_use]
+    pub fn with_bond_role(mut self, bond: BondId, role: SGroupBondRole) -> Self {
+        if self.bonds.iter().any(|candidate| *candidate == bond) {
+            self.bond_roles.insert(bond, role);
+        }
         self
     }
 
@@ -378,7 +404,35 @@ impl SubstanceGroup {
     }
 
     pub(crate) fn push_bond(&mut self, bond: BondId) {
+        self.push_bond_with_role(bond, SGroupBondRole::Crossing);
+    }
+
+    pub(crate) fn push_bond_with_role(&mut self, bond: BondId, role: SGroupBondRole) {
         self.bonds.push(bond);
+        if role != SGroupBondRole::Crossing {
+            self.bond_roles.insert(bond, role);
+        }
+    }
+
+    pub(crate) fn remove_atom(&mut self, atom: AtomId) {
+        self.atoms.retain(|candidate| *candidate != atom);
+    }
+
+    pub(crate) fn remove_bond(&mut self, bond: BondId) {
+        self.bonds.retain(|candidate| *candidate != bond);
+        self.bond_roles.remove(&bond);
+    }
+
+    pub(crate) fn remove_parent_atom(&mut self, atom: AtomId) {
+        self.parent_atoms.retain(|candidate| *candidate != atom);
+    }
+
+    pub(crate) fn clear_attach_point_leaving_atom(&mut self, atom: AtomId) {
+        for attach_point in &mut self.attach_points {
+            if attach_point.leaving_atom == Some(atom) {
+                attach_point.leaving_atom = None;
+            }
+        }
     }
 
     #[allow(dead_code)]
@@ -459,6 +513,39 @@ impl SubstanceGroup {
         self.props.insert(key.into(), value.into());
     }
 
+    pub(crate) fn can_remap_without_parent(
+        &self,
+        atom_map: &[Option<AtomId>],
+        bond_map: &[Option<BondId>],
+    ) -> bool {
+        self.atoms
+            .iter()
+            .all(|atom| atom_map.get(atom.index()).is_some_and(Option::is_some))
+            && self
+                .bonds
+                .iter()
+                .all(|bond| bond_map.get(bond.index()).is_some_and(Option::is_some))
+            && self
+                .parent_atoms
+                .iter()
+                .all(|atom| atom_map.get(atom.index()).is_some_and(Option::is_some))
+            && self.attach_points.iter().all(|attach_point| {
+                atom_map
+                    .get(attach_point.atom.index())
+                    .is_some_and(Option::is_some)
+                    && attach_point.leaving_atom.is_none_or(|leaving_atom| {
+                        atom_map
+                            .get(leaving_atom.index())
+                            .is_some_and(Option::is_some)
+                    })
+            })
+            && self.cstates.iter().all(|cstate| {
+                bond_map
+                    .get(cstate.bond.index())
+                    .is_some_and(Option::is_some)
+            })
+    }
+
     pub(crate) fn remapped(
         &self,
         id: SubstanceGroupId,
@@ -518,6 +605,13 @@ impl SubstanceGroup {
                 })
             })
             .collect();
+        let mut bond_roles = BTreeMap::new();
+        for (old_bond, role) in &self.bond_roles {
+            let new_bond = bond_map.get(old_bond.index()).and_then(|x| *x)?;
+            if *role != SGroupBondRole::Crossing {
+                bond_roles.insert(new_bond, *role);
+            }
+        }
         Some(Self {
             id,
             rdkit_sequence_id: self.rdkit_sequence_id,
@@ -525,6 +619,7 @@ impl SubstanceGroup {
             kind: self.kind.clone(),
             atoms: atoms?,
             bonds: bonds?,
+            bond_roles,
             parent_atoms: parent_atoms?,
             parent,
             label: self.label.clone(),

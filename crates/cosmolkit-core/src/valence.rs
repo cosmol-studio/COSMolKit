@@ -1,3 +1,5 @@
+// RDKit marker convention defined in dev/source_reproduction_protocol.md.
+
 use crate::{
     AdjacencyList, Atom, AtomId, Bond, BondOrder, BondQueryPredicate, Molecule, QueryNode,
 };

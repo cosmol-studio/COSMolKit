@@ -1,3 +1,5 @@
+// RDKit marker convention defined in dev/source_reproduction_protocol.md.
+
 use crate::{
     Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, BondStereo, Conformer3D, Molecule,
     MoleculeBuildError, MoleculeProperties, StereoGroup, SubstanceGroup,
@@ -184,6 +186,14 @@ impl MoleculeBuilder {
 
     pub(crate) fn substance_groups_len(&self) -> usize {
         self.substance_groups.len()
+    }
+
+    pub(crate) fn substance_groups(&self) -> &[SubstanceGroup] {
+        &self.substance_groups
+    }
+
+    pub(crate) fn substance_group_mut(&mut self, index: usize) -> Option<&mut SubstanceGroup> {
+        self.substance_groups.get_mut(index)
     }
 
     pub fn add_stereo_group(

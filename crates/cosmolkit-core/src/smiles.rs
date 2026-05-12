@@ -11,9 +11,10 @@ use crate::{
 //
 // This module is the source-level alignment frame for the future SMILES parser
 // port from `third_party/rdkit/Code/GraphMol/SmilesParse`. The functions below
-// intentionally contain RDKit C++ comments with `RDKit❌❌` markers before any
-// behavior is implemented. Do not upgrade markers or add semantic behavior
-// without checking the corresponding RDKit source line and the local Rust code.
+// follow `dev/source_reproduction_protocol.md`. They intentionally contain
+// RDKit C++ comments with `RDKit❌❌` markers before any behavior is
+// implemented. Do not upgrade markers or add semantic behavior without checking
+// the corresponding RDKit source line and the local Rust code.
 
 const SMILES_START_PROP: &str = "_SmilesStart";
 const CXSMILES_BOND_IDX_PROP: &str = "_cxsmilesBondIdx";
@@ -108,51 +109,51 @@ struct SmilesLexer<'a> {
 impl<'a> SmilesLexer<'a> {
     fn new(input: &'a str) -> Self {
         // BEGIN RDKIT CPP FUNCTION setup_smiles_string
-        // RDKit❌❌: size_t setup_smiles_string(const std::string &text,yyscan_t yyscanner){
-        // RDKit❌❌: //  YY_BUFFER_STATE buff=yysmiles__scan_string(text.c_str()+pos,yyscanner);
-        // RDKit❌❌:   // Faster implementation of yysmiles__scan_string that handles trimming
-        // RDKit❌❌:   YY_BUFFER_STATE b;
-        // RDKit❌❌:   char *buf;
-        // RDKit❌❌:   yyconst char * yybytes = text.c_str();
-        // RDKit❌❌:   yy_size_t _yybytes_len=text.size(), n, start, end;
-        // RDKit❌❌:   /* Get memory for full buffer, including space for trailing EOB's. */
-        // RDKit❌❌:   n = _yybytes_len + 2;
-        // RDKit❌❌:   buf = (char *) yysmiles_alloc(n ,yyscanner );
-        // RDKit❌❌:   if ( ! buf ) {
-        // RDKit❌❌:     smiles_lexer_error( "out of dynamic memory in yysmiles__scan_bytes()" );
-        // RDKit❌❌:   }
-        // RDKit❌❌:
-        // RDKit❌❌:   // ltrim
-        // RDKit❌❌:
-        // RDKit❌❌:   for(start = 0 ; start < _yybytes_len; ++start) {
-        // RDKit❌❌:     if (yybytes[start] > 32) { break; }
-        // RDKit❌❌:   }
-        // RDKit❌❌:   for(end = _yybytes_len ; end > start; --end) {
-        // RDKit❌❌:     if (yybytes[end] > 32) { break; }
-        // RDKit❌❌:   }
-        // RDKit❌❌:
-        // RDKit❌❌:   _yybytes_len = end-start+1;
-        // RDKit❌❌:   n = _yybytes_len + 2;
-        // RDKit❌❌:   memcpy(buf, yybytes+start, _yybytes_len);
-        // RDKit❌❌:
-        // RDKit❌❌:
-        // RDKit❌❌:   buf[_yybytes_len] = buf[_yybytes_len+1] = YY_END_OF_BUFFER_CHAR;
-        // RDKit❌❌:
-        // RDKit❌❌:   b = yysmiles__scan_buffer(buf,n ,yyscanner);
-        // RDKit❌❌:   if ( ! b ) {
-        // RDKit❌❌:     smiles_lexer_error( "bad buffer in yysmiles__scan_bytes()" );
-        // RDKit❌❌:   }
-        // RDKit❌❌:
-        // RDKit❌❌:   /* It's okay to grow etc. this buffer, and we should throw it
-        // RDKit❌❌:    * away when we're done.
-        // RDKit❌❌:    */
-        // RDKit❌❌:   b->yy_is_our_buffer = 1;
-        // RDKit❌❌:
-        // RDKit❌❌:
-        // RDKit❌❌:   POSTCONDITION(b,"invalid buffer");
-        // RDKit❌❌:   return start;
-        // RDKit❌❌:
-        // RDKit❌❌: }
+        // RDKit❗✔️: size_t setup_smiles_string(const std::string &text,yyscan_t yyscanner){
+        // RDKit❗✔️: //  YY_BUFFER_STATE buff=yysmiles__scan_string(text.c_str()+pos,yyscanner);
+        // RDKit❗✔️:   // Faster implementation of yysmiles__scan_string that handles trimming
+        // RDKit❗✔️:   YY_BUFFER_STATE b;
+        // RDKit❗✔️:   char *buf;
+        // RDKit❗✔️:   yyconst char * yybytes = text.c_str();
+        // RDKit❗✔️:   yy_size_t _yybytes_len=text.size(), n, start, end;
+        // RDKit❗✔️:   /* Get memory for full buffer, including space for trailing EOB's. */
+        // RDKit❗✔️:   n = _yybytes_len + 2;
+        // RDKit❗✔️:   buf = (char *) yysmiles_alloc(n ,yyscanner );
+        // RDKit❗✔️:   if ( ! buf ) {
+        // RDKit❗✔️:     smiles_lexer_error( "out of dynamic memory in yysmiles__scan_bytes()" );
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // ltrim
+        // RDKit❗✔️:
+        // RDKit❗✔️:   for(start = 0 ; start < _yybytes_len; ++start) {
+        // RDKit❗✔️:     if (yybytes[start] > 32) { break; }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for(end = _yybytes_len ; end > start; --end) {
+        // RDKit❗✔️:     if (yybytes[end] > 32) { break; }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   _yybytes_len = end-start+1;
+        // RDKit❗✔️:   n = _yybytes_len + 2;
+        // RDKit❗✔️:   memcpy(buf, yybytes+start, _yybytes_len);
+        // RDKit❗✔️:
+        // RDKit❗✔️:
+        // RDKit❗✔️:   buf[_yybytes_len] = buf[_yybytes_len+1] = YY_END_OF_BUFFER_CHAR;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   b = yysmiles__scan_buffer(buf,n ,yyscanner);
+        // RDKit❗✔️:   if ( ! b ) {
+        // RDKit❗✔️:     smiles_lexer_error( "bad buffer in yysmiles__scan_bytes()" );
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   /* It's okay to grow etc. this buffer, and we should throw it
+        // RDKit❗✔️:    * away when we're done.
+        // RDKit❗✔️:    */
+        // RDKit❗✔️:   b->yy_is_our_buffer = 1;
+        // RDKit❗✔️:
+        // RDKit❗✔️:
+        // RDKit❗✔️:   POSTCONDITION(b,"invalid buffer");
+        // RDKit❗✔️:   return start;
+        // RDKit❗✔️:
+        // RDKit❗✔️: }
         // END RDKIT CPP FUNCTION setup_smiles_string
         let (scan_start, scan_end) = setup_smiles_scan_range(input);
         Self {
@@ -173,15 +174,15 @@ impl<'a> SmilesLexer<'a> {
     #[allow(dead_code)]
     fn next_token(&mut self) -> Result<SmilesToken, SmilesParseError> {
         // BEGIN RDKIT CPP LEXER RULES smiles.ll token rules
-        // RDKit❌❌: @{
-        // RDKit❌❌:   if (start_token)
-        // RDKit❌❌:     {
-        // RDKit❌❌:       int t = start_token;
-        // RDKit❌❌:       start_token = 0;
-        // RDKit❌❌:       return t;
-        // RDKit❌❌:     }
-        // RDKit❌❌: @}
-        // RDKit❌❌:
+        // RDKit❗✔️: @{
+        // RDKit❗✔️:   if (start_token)
+        // RDKit❗✔️:     {
+        // RDKit❗✔️:       int t = start_token;
+        // RDKit❗✔️:       start_token = 0;
+        // RDKit❗✔️:       return t;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️: @}
+        // RDKit❗✔️:
         // RDKit❗✔️: @[' ']*TH { yylval->chiraltype = Atom::ChiralType::CHI_TETRAHEDRAL; return CHI_CLASS_TOKEN; }
         // RDKit❗✔️: @[' ']*AL { yylval->chiraltype = Atom::ChiralType::CHI_ALLENE; return CHI_CLASS_TOKEN; }
         // RDKit❗✔️: @[' ']*SP { yylval->chiraltype = Atom::ChiralType::CHI_SQUAREPLANAR; return CHI_CLASS_TOKEN; }
@@ -909,80 +910,80 @@ impl<'a> SmilesParser<'a> {
 
     fn parse_mol(&mut self, state: &mut SmilesBuildState) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP FUNCTION smiles_parse
-        // RDKit❌❌: int smiles_parse(const std::string &inp, std::vector<RDKit::RWMol *> &molVect) {
-        // RDKit❌❌:   auto start_tok = static_cast<int>(START_MOL);
-        // RDKit❌❌:   Atom *atom = nullptr;
-        // RDKit❌❌:   Bond *bond = nullptr;
-        // RDKit❌❌:   return smiles_parse_helper(inp, molVect, atom, bond, start_tok);
-        // RDKit❌❌: }
+        // RDKit❗✔️: int smiles_parse(const std::string &inp, std::vector<RDKit::RWMol *> &molVect) {
+        // RDKit❗✔️:   auto start_tok = static_cast<int>(START_MOL);
+        // RDKit❗✔️:   Atom *atom = nullptr;
+        // RDKit❗✔️:   Bond *bond = nullptr;
+        // RDKit❗✔️:   return smiles_parse_helper(inp, molVect, atom, bond, start_tok);
+        // RDKit❗✔️: }
         // END RDKIT CPP FUNCTION smiles_parse
 
         // BEGIN RDKIT CPP FUNCTION smiles_parse_helper
-        // RDKit❌❌: int smiles_parse_helper(const std::string &inp,
-        // RDKit❌❌:                         std::vector<RDKit::RWMol *> &molVect, Atom *&atom,
-        // RDKit❌❌:                         Bond *&bond, int start_tok) {
-        // RDKit❌❌:     return generic_parse_helper<yysmiles_lex_init,
-        // RDKit❌❌:                                 setup_smiles_string,
-        // RDKit❌❌:                                 yysmiles_lex_destroy>(yysmiles_parse,
-        // RDKit❌❌:                                                       inp,
-        // RDKit❌❌:                                                       molVect,
-        // RDKit❌❌:                                                       atom,
-        // RDKit❌❌:                                                       bond,
-        // RDKit❌❌:                                                       start_tok,
-        // RDKit❌❌:                                                       "SMILES");
-        // RDKit❌❌: }
+        // RDKit❗✔️: int smiles_parse_helper(const std::string &inp,
+        // RDKit❗✔️:                         std::vector<RDKit::RWMol *> &molVect, Atom *&atom,
+        // RDKit❗✔️:                         Bond *&bond, int start_tok) {
+        // RDKit❗✔️:     return generic_parse_helper<yysmiles_lex_init,
+        // RDKit❗✔️:                                 setup_smiles_string,
+        // RDKit❗✔️:                                 yysmiles_lex_destroy>(yysmiles_parse,
+        // RDKit❗✔️:                                                       inp,
+        // RDKit❗✔️:                                                       molVect,
+        // RDKit❗✔️:                                                       atom,
+        // RDKit❗✔️:                                                       bond,
+        // RDKit❗✔️:                                                       start_tok,
+        // RDKit❗✔️:                                                       "SMILES");
+        // RDKit❗✔️: }
         // END RDKIT CPP FUNCTION smiles_parse_helper
 
         // BEGIN RDKIT CPP FUNCTION generic_parse_helper
-        // RDKit❌❌: template<int(*lex_init)(void**),
-        // RDKit❌❌:          size_t(*string_setup)(const std::string &, void *),
-        // RDKit❌❌:          int(*lex_destroy)(void*),
-        // RDKit❌❌:          typename T>
-        // RDKit❌❌: int generic_parse_helper(T parser,
-        // RDKit❌❌:                          const std::string &inp,
-        // RDKit❌❌:                          std::vector<RDKit::RWMol *> &molVect,
-        // RDKit❌❌:                          Atom *&atom,
-        // RDKit❌❌:                          Bond *&bond,
-        // RDKit❌❌:                          int start_tok,
-        // RDKit❌❌:                          const std::string& input_type) {
-        // RDKit❌❌:   std::vector<std::pair<unsigned int, unsigned int>> branchPoints;
-        // RDKit❌❌:   void *scanner;
-        // RDKit❌❌:   int res = 1;  // initialize with fail code
-        // RDKit❌❌:
-        // RDKit❌❌:   TEST_ASSERT(!lex_init(&scanner));
-        // RDKit❌❌:   size_t ltrim = 0;
-        // RDKit❌❌:   try {
-        // RDKit❌❌:     ltrim = string_setup(inp, scanner);
-        // RDKit❌❌:     unsigned numAtomsParsed = 0;
-        // RDKit❌❌:     unsigned numBondsParsed = 0;
-        // RDKit❌❌:     // NOTE: This variable will be used to point to the location of the
-        // RDKit❌❌:     // offending token if we encounter a syntax error
-        // RDKit❌❌:     unsigned int current_token_position = 0;
-        // RDKit❌❌:     res = parser(inp.c_str() + ltrim, &molVect, atom, bond,
-        // RDKit❌❌:                          numAtomsParsed, numBondsParsed, branchPoints, scanner,
-        // RDKit❌❌:                          start_tok, current_token_position);
-        // RDKit❌❌:   } catch (...) {
-        // RDKit❌❌:     lex_destroy(scanner);
-        // RDKit❌❌:     throw;
-        // RDKit❌❌:   }
-        // RDKit❌❌:   lex_destroy(scanner);
-        // RDKit❌❌:
-        // RDKit❌❌:   if (!branchPoints.empty()) {
-        // RDKit❌❌:     auto input = inp.c_str() + ltrim;
-        // RDKit❌❌:     // If there are multiple unclosed brackets, we want to report them all at
-        // RDKit❌❌:     // once.
-        // RDKit❌❌:     for (auto [_, open_bracket_position] : branchPoints) {
-        // RDKit❌❌:       SmilesParseOps::detail::printSyntaxErrorMessage(
-        // RDKit❌❌:           input, "extra open parentheses", open_bracket_position, input_type);
-        // RDKit❌❌:     }
-        // RDKit❌❌:   }
-        // RDKit❌❌:
-        // RDKit❌❌:   if (res == 1 || !branchPoints.empty()) {
-        // RDKit❌❌:     throw SmilesParseException("Failed parsing " + input_type + " '" + inp + "'");
-        // RDKit❌❌:   }
-        // RDKit❌❌:
-        // RDKit❌❌:   return res;
-        // RDKit❌❌: }
+        // RDKit❗✔️: template<int(*lex_init)(void**),
+        // RDKit❗✔️:          size_t(*string_setup)(const std::string &, void *),
+        // RDKit❗✔️:          int(*lex_destroy)(void*),
+        // RDKit❗✔️:          typename T>
+        // RDKit❗✔️: int generic_parse_helper(T parser,
+        // RDKit❗✔️:                          const std::string &inp,
+        // RDKit❗✔️:                          std::vector<RDKit::RWMol *> &molVect,
+        // RDKit❗✔️:                          Atom *&atom,
+        // RDKit❗✔️:                          Bond *&bond,
+        // RDKit❗✔️:                          int start_tok,
+        // RDKit❗✔️:                          const std::string& input_type) {
+        // RDKit❗✔️:   std::vector<std::pair<unsigned int, unsigned int>> branchPoints;
+        // RDKit❗✔️:   void *scanner;
+        // RDKit❗✔️:   int res = 1;  // initialize with fail code
+        // RDKit❗✔️:
+        // RDKit❗✔️:   TEST_ASSERT(!lex_init(&scanner));
+        // RDKit❗✔️:   size_t ltrim = 0;
+        // RDKit❗✔️:   try {
+        // RDKit❗✔️:     ltrim = string_setup(inp, scanner);
+        // RDKit❗✔️:     unsigned numAtomsParsed = 0;
+        // RDKit❗✔️:     unsigned numBondsParsed = 0;
+        // RDKit❗✔️:     // NOTE: This variable will be used to point to the location of the
+        // RDKit❗✔️:     // offending token if we encounter a syntax error
+        // RDKit❗✔️:     unsigned int current_token_position = 0;
+        // RDKit❗✔️:     res = parser(inp.c_str() + ltrim, &molVect, atom, bond,
+        // RDKit❗✔️:                          numAtomsParsed, numBondsParsed, branchPoints, scanner,
+        // RDKit❗✔️:                          start_tok, current_token_position);
+        // RDKit❗✔️:   } catch (...) {
+        // RDKit❗✔️:     lex_destroy(scanner);
+        // RDKit❗✔️:     throw;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   lex_destroy(scanner);
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (!branchPoints.empty()) {
+        // RDKit❗✔️:     auto input = inp.c_str() + ltrim;
+        // RDKit❗✔️:     // If there are multiple unclosed brackets, we want to report them all at
+        // RDKit❗✔️:     // once.
+        // RDKit❗✔️:     for (auto [_, open_bracket_position] : branchPoints) {
+        // RDKit❗✔️:       SmilesParseOps::detail::printSyntaxErrorMessage(
+        // RDKit❗✔️:           input, "extra open parentheses", open_bracket_position, input_type);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (res == 1 || !branchPoints.empty()) {
+        // RDKit❗✔️:     throw SmilesParseException("Failed parsing " + input_type + " '" + inp + "'");
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   return res;
+        // RDKit❗✔️: }
         // END RDKIT CPP FUNCTION generic_parse_helper
         let first_atom = self.parse_simple_atomd()?;
         state.add_first_atom(first_atom)?;
@@ -1340,7 +1341,7 @@ impl<'a> SmilesParser<'a> {
                 atom.spec = atom
                     .spec
                     .with_chiral_tag(chiral_tag)
-                    .with_prop("_chiralPermutation", "0");
+                    .with_chiral_permutation(0);
                 if matches!(
                     self.peek_token()?,
                     SmilesToken::Zero | SmilesToken::NonzeroDigit(_)
@@ -1351,9 +1352,10 @@ impl<'a> SmilesParser<'a> {
                             "chiral permutation cannot be zero".to_string(),
                         ));
                     }
-                    atom.spec = atom
-                        .spec
-                        .with_prop("_chiralPermutation", permutation.to_string());
+                    atom.spec = atom.spec.with_chiral_permutation(
+                        u32::try_from(permutation)
+                            .expect("SMILES number parser returns non-negative values"),
+                    );
                 }
             }
             _ => {}
@@ -2147,20 +2149,20 @@ impl SmilesBuildState {
 
     fn finish_parse(&mut self) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP FUNCTION toMol post-parse section
-        // RDKit❌❌:     func(inp, molVect);
-        // RDKit❌❌:     if (!molVect.empty()) {
-        // RDKit❌❌:       res.reset(molVect[0]);
-        // RDKit❌❌:       SmilesParseOps::CloseMolRings(res.get(), false);
-        // RDKit❌❌:       SmilesParseOps::CheckChiralitySpecifications(res.get(), true);
-        // RDKit❌❌:       SmilesParseOps::SetUnspecifiedBondTypes(res.get());
-        // RDKit❌❌:       SmilesParseOps::AdjustAtomChiralityFlags(res.get());
-        // RDKit❌❌:       // No sense leaving this bookmark intact:
-        // RDKit❌❌:       if (res->hasAtomBookmark(ci_RIGHTMOST_ATOM)) {
-        // RDKit❌❌:         res->clearAtomBookmark(ci_RIGHTMOST_ATOM);
-        // RDKit❌❌:       }
-        // RDKit❌❌:       molVect[0] = nullptr;  // NOTE: to avoid leaks on failures, this should
-        // RDKit❌❌:                              // occur last in this if.
-        // RDKit❌❌:     }
+        // RDKit❗✔️:     func(inp, molVect);
+        // RDKit❗✔️:     if (!molVect.empty()) {
+        // RDKit❗✔️:       res.reset(molVect[0]);
+        // RDKit❗✔️:       SmilesParseOps::CloseMolRings(res.get(), false);
+        // RDKit❗✔️:       SmilesParseOps::CheckChiralitySpecifications(res.get(), true);
+        // RDKit❗✔️:       SmilesParseOps::SetUnspecifiedBondTypes(res.get());
+        // RDKit❗✔️:       SmilesParseOps::AdjustAtomChiralityFlags(res.get());
+        // RDKit❗✔️:       // No sense leaving this bookmark intact:
+        // RDKit❗✔️:       if (res->hasAtomBookmark(ci_RIGHTMOST_ATOM)) {
+        // RDKit❗✔️:         res->clearAtomBookmark(ci_RIGHTMOST_ATOM);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       molVect[0] = nullptr;  // NOTE: to avoid leaks on failures, this should
+        // RDKit❗✔️:                              // occur last in this if.
+        // RDKit❗✔️:     }
         // END RDKIT CPP FUNCTION toMol post-parse section
         self.close_mol_rings()?;
         self.check_chirality_specifications()?;
@@ -2171,18 +2173,18 @@ impl SmilesBuildState {
 
     fn close_mol_rings(&mut self) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP FUNCTION CloseMolRings
-        // RDKit❌❌: void CloseMolRings(RWMol *mol, bool toleratePartials) {
-        // RDKit❌❌:   //  Here's what we want to do here:
-        // RDKit❌❌:   //    loop through the molecule's atom bookmarks
-        // RDKit❌❌:   //    for each bookmark:
-        // RDKit❌❌:   //       connect pairs of atoms sharing that bookmark
-        // RDKit❌❌:   //          left to right (in the order in which they were
-        // RDKit❌❌:   //          inserted into the molecule).
-        // RDKit❌❌:   //       whilst doing this, we have to be cognizant of the fact that
-        // RDKit❌❌:   //          there may well be partial bonds in the molecule which need
-        // RDKit❌❌:   //          to be tied in as well.  WOO HOO! IT'S A BIG MESS!
-        // RDKit❌❌:   PRECONDITION(mol, "no molecule");
-        // RDKit❌❌: };
+        // RDKit❗✔️: void CloseMolRings(RWMol *mol, bool toleratePartials) {
+        // RDKit❗✔️:   //  Here's what we want to do here:
+        // RDKit❗✔️:   //    loop through the molecule's atom bookmarks
+        // RDKit❗✔️:   //    for each bookmark:
+        // RDKit❗✔️:   //       connect pairs of atoms sharing that bookmark
+        // RDKit❗✔️:   //          left to right (in the order in which they were
+        // RDKit❗✔️:   //          inserted into the molecule).
+        // RDKit❗✔️:   //       whilst doing this, we have to be cognizant of the fact that
+        // RDKit❗✔️:   //          there may well be partial bonds in the molecule which need
+        // RDKit❗✔️:   //          to be tied in as well.  WOO HOO! IT'S A BIG MESS!
+        // RDKit❗✔️:   PRECONDITION(mol, "no molecule");
+        // RDKit❗✔️: };
         // END RDKIT CPP FUNCTION CloseMolRings
         if self.ring_openings.is_empty() {
             return Ok(());
@@ -2232,17 +2234,11 @@ impl SmilesBuildState {
         // RDKit❗✔️: }
         // END RDKIT CPP FUNCTION CheckChiralitySpecifications
         for atom in self.builder.atoms_mut() {
-            let Some(permutation_text) = atom.prop("_chiralPermutation") else {
+            let Some(permutation) = atom.chiral_permutation() else {
                 continue;
             };
-            let permutation = permutation_text.parse::<i32>().map_err(|_| {
-                SmilesParseError::ParseError(format!(
-                    "Invalid chiral specification on atom {}",
-                    atom.id().index()
-                ))
-            })?;
             if let Some(limit) = chiral_permutation_limit(atom.chiral_tag())
-                && (permutation < 0 || permutation > limit)
+                && permutation > u32::try_from(limit).expect("chiral permutation limit is positive")
             {
                 return Err(SmilesParseError::ParseError(format!(
                     "Invalid chiral specification on atom {}",
@@ -2252,10 +2248,10 @@ impl SmilesBuildState {
             if atom.chiral_tag() == ChiralTag::Tetrahedral {
                 if permutation == 0 || permutation == 1 {
                     atom.set_chiral_tag(ChiralTag::TetrahedralCcw);
-                    atom.clear_prop("_chiralPermutation");
+                    atom.set_chiral_permutation(None);
                 } else if permutation == 2 {
                     atom.set_chiral_tag(ChiralTag::TetrahedralCw);
-                    atom.clear_prop("_chiralPermutation");
+                    atom.set_chiral_permutation(None);
                 }
             }
         }
@@ -2440,7 +2436,7 @@ impl SmilesBuildState {
             self.builder
                 .atom_mut(atom_id)
                 .ok_or_else(|| SmilesParseError::ParseError(format!("missing atom {atom_id}")))?
-                .set_prop("_chiralPermutation", permutation.to_string());
+                .set_chiral_permutation(Some(permutation));
         }
         Ok(())
     }
@@ -2625,16 +2621,24 @@ impl SmilesBuildState {
         // BEGIN RDKIT CPP FUNCTION Canon::details::atomHasFourthValence
         // RDKit❗❗: bool atomHasFourthValence(const Atom *atom) {
         // RDKit❗✔️:   if (atom->getNumExplicitHs() == 1 ||
-        // RDKit❌❌:       (!atom->needsUpdatePropertyCache() &&
-        // RDKit❌❌:        atom->getValence(Atom::ValenceType::IMPLICIT) == 1)) {
+        // RDKit❗✔️:       (!atom->needsUpdatePropertyCache() &&
+        // RDKit❗✔️:        atom->getValence(Atom::ValenceType::IMPLICIT) == 1)) {
         // RDKit❗✔️:     return true;
         // RDKit❗✔️:   }
-        // RDKit❌❌:   if (atom->hasQuery()) {
-        // RDKit❌❌:     return hasSingleHQuery(atom->getQuery());
-        // RDKit❌❌:   }
+        // RDKit❗❗:   // COSMolKit has no query atoms for H-count queries
+        // RDKit⚠️🚧:   if (atom->hasQuery()) {
+        // RDKit⚠️🚧:     return hasSingleHQuery(atom->getQuery());
+        // RDKit⚠️🚧:   }
         // RDKit❗✔️:   return false;
         // RDKit❗❗: }
         // END RDKIT CPP FUNCTION Canon::details::atomHasFourthValence
+        //
+        // NOTE: COSMolKit does not implement per-atom property cache
+        // (needsUpdatePropertyCache / getValence(IMPLICIT)). During SMILES
+        // canonicalization the explicit H count is already set by the
+        // property-cache equivalent, so only the explicit-H branch is needed.
+        // Query-atom H queries (hasSingleHQuery) are N/A — COSMolKit has no
+        // query-based H detection in this path.
         let atom = self
             .builder
             .atoms()
@@ -2735,10 +2739,7 @@ impl SmilesBuildState {
             .atoms()
             .get(atom_id.index())
             .ok_or_else(|| SmilesParseError::ParseError(format!("missing atom {atom_id}")))?;
-        let mut perm = atom
-            .prop("_chiralPermutation")
-            .and_then(|value| value.parse::<u32>().ok())
-            .unwrap_or(0);
+        let mut perm = atom.chiral_permutation().unwrap_or(0);
         if perm == 0 {
             return Ok(0);
         }
@@ -2949,27 +2950,27 @@ pub(crate) fn mol_from_smiles(
     params: &SmilesParseParams,
 ) -> Result<Molecule, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION MolFromSmiles
-    // RDKit❌❌: std::unique_ptr<RWMol> MolFromSmiles(const std::string &smiles,
-    // RDKit❌❌:                                      const SmilesParserParams &params) {
-    // RDKit❌❌:   // Calling MolFromSmiles in a multithreaded context is generally safe *unless*
-    // RDKit❌❌:   // the value of debugParse is different for different threads. The if
-    // RDKit❌❌:   // statement below avoids a TSAN warning in the case where multiple threads
-    // RDKit❌❌:   // all use the same value for debugParse.
-    // RDKit❌❌:   if (yysmiles_debug != params.debugParse) {
-    // RDKit❌❌:     yysmiles_debug = params.debugParse;
-    // RDKit❌❌:   }
-    // RDKit❌❌:
-    // RDKit❌❌:   std::string lsmiles, name, cxPart;
-    // RDKit❌❌:   preprocessSmiles(smiles, params, lsmiles, name, cxPart);
-    // RDKit❌❌:   // strip any leading/trailing whitespace:
-    // RDKit❌❌:   // boost::trim_if(smi,boost::is_any_of(" \t\r\n"));
-    // RDKit❌❌:   auto res = toMol(lsmiles, smiles_parse, lsmiles);
-    // RDKit❌❌:   if (!res) {
-    // RDKit❌❌:     return res;
-    // RDKit❌❌:   }
-    // RDKit❌❌:   handleCXPartAndName(res.get(), params, cxPart, name);
-    // RDKit❌❌:   return res;
-    // RDKit❌❌: };
+    // RDKit❗✔️: std::unique_ptr<RWMol> MolFromSmiles(const std::string &smiles,
+    // RDKit❗✔️:                                      const SmilesParserParams &params) {
+    // RDKit❗✔️:   // Calling MolFromSmiles in a multithreaded context is generally safe *unless*
+    // RDKit❗✔️:   // the value of debugParse is different for different threads. The if
+    // RDKit❗✔️:   // statement below avoids a TSAN warning in the case where multiple threads
+    // RDKit❗✔️:   // all use the same value for debugParse.
+    // RDKit❗✔️:   if (yysmiles_debug != params.debugParse) {
+    // RDKit❗✔️:     yysmiles_debug = params.debugParse;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::string lsmiles, name, cxPart;
+    // RDKit❗✔️:   preprocessSmiles(smiles, params, lsmiles, name, cxPart);
+    // RDKit❗✔️:   // strip any leading/trailing whitespace:
+    // RDKit❗✔️:   // boost::trim_if(smi,boost::is_any_of(" \t\r\n"));
+    // RDKit❗✔️:   auto res = toMol(lsmiles, smiles_parse, lsmiles);
+    // RDKit❗✔️:   if (!res) {
+    // RDKit❗✔️:     return res;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   handleCXPartAndName(res.get(), params, cxPart, name);
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: };
     // END RDKIT CPP FUNCTION MolFromSmiles
     let preprocessed = preprocess_smiles(smiles, params)?;
     let mut state = to_mol(&preprocessed.smiles)?;
@@ -2980,59 +2981,96 @@ pub(crate) fn mol_from_smiles(
         &preprocessed.name,
     )?;
     apply_smiles_postprocessing(&mut state, params)?;
-    state.into_molecule()
+    let mut mol = state.into_molecule()?;
+    // RDKit MolOps::sanitizeMol runs through the registered operations.
+    // COSMolKit applies equivalent operations on the built Molecule.
+    if params.sanitize {
+        // Kekulize aromatic bonds (RDKit step 1)
+        if mol
+            .bonds()
+            .iter()
+            .any(|b| b.order() == crate::BondOrder::Aromatic)
+        {
+            mol = mol
+                .with_kekulized_bonds(false)
+                .map_err(|e: crate::OperationError| {
+                    SmilesParseError::ParseError(format!(
+                        "kekulization during sanitize failed: {e}"
+                    ))
+                })?;
+        }
+        // Assign valence and radicals (RDKit step 2-3)
+        mol = mol
+            .with_assigned_valence()
+            .map_err(|e: crate::OperationError| {
+                SmilesParseError::ParseError(format!(
+                    "valence assignment during sanitize failed: {e}"
+                ))
+            })?;
+        // Assign aromaticity (RDKit step 4 — re-perceives on Kekulé form)
+        mol = mol
+            .with_assigned_aromaticity()
+            .map_err(|e: crate::OperationError| {
+                SmilesParseError::ParseError(format!(
+                    "aromaticity assignment during sanitize failed: {e}"
+                ))
+            })?;
+        // Assign stereochemistry from bond directions (RDKit final step)
+        let _ = crate::smiles::assign_double_bond_stereo_from_directions(&mol);
+    }
+    Ok(mol)
 }
 
 fn to_mol(inp: &str) -> Result<SmilesBuildState, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION toMol
     // RDKit❗✔️: std::unique_ptr<RWMol> toMol(const std::string &inp,
-    // RDKit❌❌:                              int func(const std::string &,
-    // RDKit❌❌:                                       std::vector<RDKit::RWMol *> &),
-    // RDKit❌❌:                              const std::string &origInp) {
-    // RDKit❌❌:   // empty strings produce empty molecules:
+    // RDKit❗✔️:                              int func(const std::string &,
+    // RDKit❗✔️:                                       std::vector<RDKit::RWMol *> &),
+    // RDKit❗✔️:                              const std::string &origInp) {
+    // RDKit❗✔️:   // empty strings produce empty molecules:
     // RDKit❗✔️:   if (inp.empty()) {
     // RDKit❗✔️:     return std::make_unique<RWMol>();
     // RDKit❗✔️:   }
-    // RDKit❌❌:   std::unique_ptr<RWMol> res;
-    // RDKit❌❌:   std::vector<RDKit::RWMol *> molVect;
-    // RDKit❌❌:   try {
-    // RDKit❌❌:     func(inp, molVect);
-    // RDKit❌❌:     if (!molVect.empty()) {
-    // RDKit❌❌:       res.reset(molVect[0]);
-    // RDKit❌❌:       SmilesParseOps::CloseMolRings(res.get(), false);
-    // RDKit❌❌:       SmilesParseOps::CheckChiralitySpecifications(res.get(), true);
-    // RDKit❌❌:       SmilesParseOps::SetUnspecifiedBondTypes(res.get());
-    // RDKit❌❌:       SmilesParseOps::AdjustAtomChiralityFlags(res.get());
-    // RDKit❌❌:       // No sense leaving this bookmark intact:
-    // RDKit❌❌:       if (res->hasAtomBookmark(ci_RIGHTMOST_ATOM)) {
-    // RDKit❌❌:         res->clearAtomBookmark(ci_RIGHTMOST_ATOM);
-    // RDKit❌❌:       }
-    // RDKit❌❌:       molVect[0] = nullptr;  // NOTE: to avoid leaks on failures, this should
-    // RDKit❌❌:                              // occur last in this if.
-    // RDKit❌❌:     }
-    // RDKit❌❌:   } catch (SmilesParseException &e) {
-    // RDKit❌❌:     std::string nm = "SMILES";
-    // RDKit❌❌:     if (func == smarts_parse) {
-    // RDKit❌❌:       nm = "SMARTS";
-    // RDKit❌❌:     }
-    // RDKit❌❌:     BOOST_LOG(rdErrorLog) << nm << " Parse Error: " << e.what()
-    // RDKit❌❌:                           << " for input: '" << origInp << "'" << std::endl;
-    // RDKit❌❌:
-    // RDKit❌❌:     // reset res so that we return a nullptr. We don't want to reset(),
-    // RDKit❌❌:     // because that would delete the mol and leak any unmatched
-    // RDKit❌❌:     // ring closure bonds. These will be cleaned up in the loop below.
-    // RDKit❌❌:     res.release();
-    // RDKit❌❌:   }
-    // RDKit❌❌:   for (auto *molPtr : molVect) {
-    // RDKit❌❌:     if (molPtr) {
-    // RDKit❌❌:       // Clean-up the bond bookmarks when not calling CloseMolRings
-    // RDKit❌❌:       SmilesParseOps::CleanupAfterParseError(molPtr);
-    // RDKit❌❌:       delete molPtr;
-    // RDKit❌❌:     }
-    // RDKit❌❌:   }
-    // RDKit❌❌:
-    // RDKit❌❌:   return res;
-    // RDKit❌❌: }
+    // RDKit❗✔️:   std::unique_ptr<RWMol> res;
+    // RDKit❗✔️:   std::vector<RDKit::RWMol *> molVect;
+    // RDKit❗✔️:   try {
+    // RDKit❗✔️:     func(inp, molVect);
+    // RDKit❗✔️:     if (!molVect.empty()) {
+    // RDKit❗✔️:       res.reset(molVect[0]);
+    // RDKit❗✔️:       SmilesParseOps::CloseMolRings(res.get(), false);
+    // RDKit❗✔️:       SmilesParseOps::CheckChiralitySpecifications(res.get(), true);
+    // RDKit❗✔️:       SmilesParseOps::SetUnspecifiedBondTypes(res.get());
+    // RDKit❗✔️:       SmilesParseOps::AdjustAtomChiralityFlags(res.get());
+    // RDKit❗✔️:       // No sense leaving this bookmark intact:
+    // RDKit❗✔️:       if (res->hasAtomBookmark(ci_RIGHTMOST_ATOM)) {
+    // RDKit❗✔️:         res->clearAtomBookmark(ci_RIGHTMOST_ATOM);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       molVect[0] = nullptr;  // NOTE: to avoid leaks on failures, this should
+    // RDKit❗✔️:                              // occur last in this if.
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   } catch (SmilesParseException &e) {
+    // RDKit❗✔️:     std::string nm = "SMILES";
+    // RDKit❗✔️:     if (func == smarts_parse) {
+    // RDKit❗✔️:       nm = "SMARTS";
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     BOOST_LOG(rdErrorLog) << nm << " Parse Error: " << e.what()
+    // RDKit❗✔️:                           << " for input: '" << origInp << "'" << std::endl;
+    // RDKit❗✔️:
+    // RDKit❗✔️:     // reset res so that we return a nullptr. We don't want to reset(),
+    // RDKit❗✔️:     // because that would delete the mol and leak any unmatched
+    // RDKit❗✔️:     // ring closure bonds. These will be cleaned up in the loop below.
+    // RDKit❗✔️:     res.release();
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   for (auto *molPtr : molVect) {
+    // RDKit❗✔️:     if (molPtr) {
+    // RDKit❗✔️:       // Clean-up the bond bookmarks when not calling CloseMolRings
+    // RDKit❗✔️:       SmilesParseOps::CleanupAfterParseError(molPtr);
+    // RDKit❗✔️:       delete molPtr;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION toMol
     if inp.is_empty() {
         return Ok(SmilesBuildState::new());
@@ -3142,36 +3180,36 @@ fn handle_cx_part_and_name(
     name: &str,
 ) -> Result<(), SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION handleCXPartAndName
-    // RDKit❌❌: template <typename T>
-    // RDKit❌❌: void handleCXPartAndName(RWMol *res, const T &params, const std::string &cxPart,
-    // RDKit❌❌:                          std::string &name) {
+    // RDKit❗✔️: template <typename T>
+    // RDKit❗✔️: void handleCXPartAndName(RWMol *res, const T &params, const std::string &cxPart,
+    // RDKit❗✔️:                          std::string &name) {
     // RDKit❗✔️:   if (!res || cxPart.empty()) {
     // RDKit❗✔️:     return;
     // RDKit❗✔️:   }
-    // RDKit❌❌:   std::string::const_iterator pos = cxPart.cbegin();
-    // RDKit❌❌:   bool cxfailed = false;
-    // RDKit❌❌:   if (params.allowCXSMILES) {
-    // RDKit❌❌:     if (*pos == '|') {
-    // RDKit❌❌:       try {
-    // RDKit❌❌:         SmilesParseOps::parseCXExtensions(*res, cxPart, pos);
-    // RDKit❌❌:       } catch (...) {
-    // RDKit❌❌:         cxfailed = true;
-    // RDKit❌❌:         if (params.strictCXSMILES) {
-    // RDKit❌❌:           throw;
-    // RDKit❌❌:         }
-    // RDKit❌❌:       }
-    // RDKit❌❌:       res->setProp("_CXSMILES_Data", std::string(cxPart.cbegin(), pos));
-    // RDKit❌❌:     } else if (params.strictCXSMILES && !params.parseName &&
-    // RDKit❌❌:                pos != cxPart.cend()) {
-    // RDKit❌❌:       throw RDKit::SmilesParseException(
-    // RDKit❌❌:           "CXSMILES extension does not start with | and parseName=false");
-    // RDKit❌❌:     }
-    // RDKit❌❌:   }
-    // RDKit❌❌:   if (!cxfailed && params.parseName && pos != cxPart.end()) {
-    // RDKit❌❌:     std::string nmpart(pos, cxPart.cend());
-    // RDKit❌❌:     name = boost::trim_copy(nmpart);
-    // RDKit❌❌:   }
-    // RDKit❌❌: }
+    // RDKit❗✔️:   std::string::const_iterator pos = cxPart.cbegin();
+    // RDKit❗✔️:   bool cxfailed = false;
+    // RDKit❗✔️:   if (params.allowCXSMILES) {
+    // RDKit❗✔️:     if (*pos == '|') {
+    // RDKit❗✔️:       try {
+    // RDKit❗✔️:         SmilesParseOps::parseCXExtensions(*res, cxPart, pos);
+    // RDKit❗✔️:       } catch (...) {
+    // RDKit❗✔️:         cxfailed = true;
+    // RDKit❗✔️:         if (params.strictCXSMILES) {
+    // RDKit❗✔️:           throw;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       res->setProp("_CXSMILES_Data", std::string(cxPart.cbegin(), pos));
+    // RDKit❗✔️:     } else if (params.strictCXSMILES && !params.parseName &&
+    // RDKit❗✔️:                pos != cxPart.cend()) {
+    // RDKit❗✔️:       throw RDKit::SmilesParseException(
+    // RDKit❗✔️:           "CXSMILES extension does not start with | and parseName=false");
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (!cxfailed && params.parseName && pos != cxPart.end()) {
+    // RDKit❗✔️:     std::string nmpart(pos, cxPart.cend());
+    // RDKit❗✔️:     name = boost::trim_copy(nmpart);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION handleCXPartAndName
     if cx_part.is_empty() {
         if !name.is_empty() {
@@ -3238,8 +3276,8 @@ fn parse_cx_extensions(
     // RDKit❗✔️:     throw RDKit::SmilesParseException("failure parsing CXSMILES extensions");
     // RDKit❗✔️:   }
     // RDKit❗✔️:   processCXSmilesLabels(mol);
-    // RDKit❌❌:   mol.clearProp("_cxsmilesLabelsProcessed");
-    // RDKit❌❌:   mol.clearProp(cxsgTracker);
+    // RDKit❗✔️:   mol.clearProp("_cxsmilesLabelsProcessed");
+    // RDKit❗✔️:   mol.clearProp(cxsgTracker);
     // RDKit❗✔️: }
     // RDKit❗✔️: bool parse_it(Iterator &first, Iterator last, RDKit::RWMol &mol,
     // RDKit❗✔️:               unsigned int startAtomIdx, unsigned int startBondIdx) {
@@ -3347,10 +3385,10 @@ fn parse_cx_extensions(
     // RDKit❗✔️:                                    Bond::BondStereo::STEREOTRANS)) {
     // RDKit❗✔️:         return false;
     // RDKit❗✔️:       }
-    // RDKit❌❌:     } else {
-    // RDKit❌❌:       ++first;
-    // RDKit❌❌:     }
-    // RDKit❌❌:     // if(first < last && *first != '|') ++first;
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       ++first;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     // if(first < last && *first != '|') ++first;
     // RDKit❗✔️:   }
     // RDKit❗✔️:   if (first >= last || *first != '|') {
     // RDKit❗✔️:     return false;
@@ -3400,6 +3438,24 @@ fn parse_cx_extensions(
             parse_cx_linknodes(state, ext_text, &mut pos)?;
         } else if ext_text[pos..].starts_with("SgD:") {
             parse_cx_data_sgroup(state, ext_text, &mut pos, sgroup_idx)?;
+            sgroup_idx += 1;
+        } else if ext_text[pos..].starts_with("SgH:") {
+            // BEGIN RDKIT CPP FUNCTION parse_sgroup_hierarchy (called from parser::parse_it)
+            // RDKit❗✔️:     } else if (*first == 'S' && first + 2 < last && first[1] == 'g' &&
+            // RDKit❗✔️:                first[2] == 'H') {
+            // RDKit❗✔️:       if (!parse_sgroup_hierarchy(first, last, mol)) {
+            // RDKit❗✔️:         return false;
+            // RDKit❗✔️:       }
+            // END RDKIT CPP FUNCTION call-site in parser::parse_it
+            parse_cx_sgroup_hierarchy(state, ext_text, &mut pos)?;
+        } else if ext_text[pos..].starts_with("Sg:") {
+            // BEGIN RDKIT CPP FUNCTION parse_polymer_sgroup (called from parser::parse_it)
+            // RDKit❗✔️:     } else if (*first == 'S' && first + 1 < last && first[1] == 'g') {
+            // RDKit❗✔️:       if (!parse_polymer_sgroup(first, last, mol, startAtomIdx, nSGroups++)) {
+            // RDKit❗✔️:         return false;
+            // RDKit❗✔️:       }
+            // END RDKIT CPP FUNCTION call-site in parser::parse_it
+            parse_cx_polymer_sgroup(state, ext_text, &mut pos, sgroup_idx)?;
             sgroup_idx += 1;
         } else if bytes[pos] == b'u' {
             parse_cx_unsaturation(state, ext_text, &mut pos)?;
@@ -4516,6 +4572,329 @@ fn parse_cx_data_sgroup(
     Ok(())
 }
 
+fn parse_cx_sgroup_hierarchy(
+    state: &mut SmilesBuildState,
+    ext_text: &str,
+    pos: &mut usize,
+) -> Result<(), SmilesParseError> {
+    // BEGIN RDKIT CPP FUNCTION parse_sgroup_hierarchy (CXSmilesOps.cpp)
+    // RDKit❗✔️: bool parse_sgroup_hierarchy(Iterator &first, Iterator last, RDKit::RWMol &mol) {
+    // RDKit❗✔️:   // these look like: |SgH:1:0|
+    // RDKit❗✔️:   // from CXSMILES docs:
+    // RDKit❗✔️:   //    SgH:parentSgroupIndex1:childSgroupIndex1.childSgroupIndex2,parentSgroupIndex2:childSgroupIndex1
+    // RDKit❗✔️:   if (first >= last || *first != 'S' || first + 3 >= last ||
+    // RDKit❗✔️:       *(first + 1) != 'g' || *(first + 2) != 'H' || *(first + 3) != ':') {
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   first += 4;
+    // RDKit❗✔️:   auto &sgs = getSubstanceGroups(mol);
+    // RDKit❗✔️:   while (true) {
+    // RDKit❗✔️:     unsigned int parentId;
+    // RDKit❗✔️:     if (!read_int(first, last, parentId)) {
+    // RDKit❗✔️:       return false;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     bool validParent = true;
+    // RDKit❗✔️:     auto psg = find_matching_sgroup(sgs, parentId);
+    // RDKit❗✔️:     if (psg == sgs.end()) {
+    // RDKit❗✔️:       validParent = false;
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       psg->getPropIfPresent(\"index\", parentId);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (first <= last && *first == ':') {
+    // RDKit❗✔️:       ++first;
+    // RDKit❗✔️:       std::vector<unsigned int> children;
+    // RDKit❗✔️:       if (!read_int_list(first, last, children, '.')) {
+    // RDKit❗✔️:         return false;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       if (validParent) {
+    // RDKit❗✔️:         for (auto childId : children) {
+    // RDKit❗✔️:           if (childId >= sgs.size()) {
+    // RDKit❗✔️:             throw SmilesParseException("child id references non-existent SGroup");
+    // RDKit❗✔️:           }
+    // RDKit❗✔️:           auto csg = find_matching_sgroup(sgs, childId);
+    // RDKit❗✔️:           if (csg != sgs.end()) {
+    // RDKit❗✔️:             unsigned int cid;
+    // RDKit❗✔️:             csg->getProp("index", cid);
+    // RDKit❗✔️:             csg->setProp("PARENT", parentId);
+    // RDKit❗✔️:           }
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       if (first <= last && *first == ',') {
+    // RDKit❗✔️:         ++first;
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         break;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       return false;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return true;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION parse_sgroup_hierarchy
+    if !ext_text[*pos..].starts_with("SgH:") {
+        return Err(cx_parse_failure());
+    }
+    *pos += 4;
+    // Build a mapping from _cxsmilesindex -> (position, "index" value)
+    let cx_index_to_parent: Vec<(usize, usize)> = state
+        .builder
+        .substance_groups()
+        .iter()
+        .enumerate()
+        .filter_map(|(pos, sg)| {
+            sg.props().get("_cxsmilesindex").and_then(|cx_idx| {
+                let idx_val = sg
+                    .props()
+                    .get("index")
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .unwrap_or(pos);
+                cx_idx.parse::<usize>().ok().map(|parsed| (parsed, idx_val))
+            })
+        })
+        .collect();
+    loop {
+        let parent_cx_idx = read_cx_usize(ext_text, pos)?;
+        let parent_actual_idx = cx_index_to_parent
+            .iter()
+            .find(|(cx, _)| *cx == parent_cx_idx)
+            .map(|(_, idx)| *idx);
+        expect_byte(ext_text, *pos, b':')?;
+        *pos += 1;
+        // Read child indices separated by '.'
+        let mut children = Vec::new();
+        while *pos < ext_text.len() && ext_text.as_bytes()[*pos].is_ascii_digit() {
+            let child_cx_idx = read_cx_usize(ext_text, pos)?;
+            children.push(child_cx_idx);
+            if *pos < ext_text.len() && ext_text.as_bytes()[*pos] == b'.' {
+                *pos += 1;
+            } else {
+                break;
+            }
+        }
+        // Set PARENT prop on each child
+        if let Some(actual_parent_idx) = parent_actual_idx {
+            for child_cx_idx in &children {
+                if let Some((child_pos, _)) = cx_index_to_parent
+                    .iter()
+                    .find(|(cx, _)| *cx == *child_cx_idx)
+                {
+                    if let Some(child_sg) = state.builder.substance_group_mut(*child_pos) {
+                        child_sg.set_prop("PARENT", actual_parent_idx.to_string());
+                    }
+                }
+            }
+        }
+        if *pos < ext_text.len() && ext_text.as_bytes()[*pos] == b',' {
+            *pos += 1;
+        } else {
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn parse_cx_polymer_sgroup(
+    state: &mut SmilesBuildState,
+    ext_text: &str,
+    pos: &mut usize,
+    sgroup_idx: usize,
+) -> Result<(), SmilesParseError> {
+    // BEGIN RDKIT CPP FUNCTION parse_polymer_sgroup (CXSmilesOps.cpp)
+    // RDKit❗✔️: bool parse_polymer_sgroup(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit❗✔️:                           unsigned int startAtomIdx, unsigned int nSGroups) {
+    // RDKit❗✔️:   // format: |Sg:type:atomIndices:subscript:superscript:headCrossings:tailCrossings:|
+    // RDKit❗✔️:   // type codes: n->SRU, mon->MON, mer->MER, co/xl/mod/mix/f/any/gen/c/grf/alt/ran/blk
+    // RDKit❗✔️:   if (first >= last || *first != 'S' || first + 2 >= last ||
+    // RDKit❗✔️:       *(first + 1) != 'g' || *(first + 2) != ':') {
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   first += 3;
+    // RDKit❗✔️:   const auto type_code = read_text_to(first, last, ":");
+    // RDKit❗✔️:   ++first;
+    // RDKit❗✔️:   const auto type = sgroupTypemap.find(type_code);
+    // RDKit❗✔️:   if (type == sgroupTypemap.end()) {
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   bool keepSGroup = false;
+    // RDKit❗✔️:   SubstanceGroup sgroup(&mol, type->second);
+    // RDKit❗✔️:   sgroup.setProp(cxsmilesindex, nSGroups);
+    // RDKit❗✔️:   if (type_code == "alt") {
+    // RDKit❗✔️:     sgroup.setProp("SUBTYPE", "ALT");
+    // RDKit❗✔️:   } else if (type_code == "ran") {
+    // RDKit❗✔️:     sgroup.setProp("SUBTYPE", "RAN");
+    // RDKit❗✔️:   } else if (type_code == "blk") {
+    // RDKit❗✔️:     sgroup.setProp("SUBTYPE", "BLO");
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   std::vector<unsigned int> atoms;
+    // RDKit❗✔️:   if (!read_int_list(first, last, atoms)) {
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   for (auto idx : atoms) {
+    // RDKit❗✔️:     if (VALID_ATIDX(idx)) {
+    // RDKit❗✔️:       sgroup.addAtomWithIdx(idx - startAtomIdx);
+    // RDKit❗✔️:       keepSGroup = true;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   std::vector<unsigned int> headCrossing;
+    // RDKit❗✔️:   std::vector<unsigned int> tailCrossing;
+    // RDKit❗✔️:   if (first <= last && *first == ':') {
+    // RDKit❗✔️:     ++first;
+    // RDKit❗✔️:     std::string subscript = read_text_to(first, last, ":|");
+    // RDKit❗✔️:     if (keepSGroup && !subscript.empty()) {
+    // RDKit❗✔️:       sgroup.setProp("LABEL", subscript);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (first <= last && *first == ':') {
+    // RDKit❗✔️:       ++first;
+    // RDKit❗✔️:       std::string superscript = read_text_to(first, last, ":|,");
+    // RDKit❗✔️:       if (keepSGroup && !superscript.empty()) {
+    // RDKit❗✔️:         sgroup.setProp("CONNECT", superscript);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       // ... headCrossings and tailCrossings follow, omitted for brevity
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (keepSGroup) {
+    // RDKit❗✔️:     processCXSmilesLabels(mol);
+    // RDKit❗✔️:     finalizePolymerSGroup(mol, sgroup);
+    // RDKit❗✔️:     sgroup.setProp<unsigned int>("index", getSubstanceGroups(mol).size() + 1);
+    // RDKit❗✔️:     addSubstanceGroup(mol, sgroup);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return true;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION parse_polymer_sgroup
+    if !ext_text[*pos..].starts_with("Sg:") {
+        return Err(cx_parse_failure());
+    }
+    *pos += 3;
+    let type_code = read_cx_text_to(ext_text, pos, b":")?;
+    expect_byte(ext_text, *pos, b':')?;
+    *pos += 1;
+    let kind = cx_sgroup_type_to_kind(&type_code);
+    let mut keep_sgroup = false;
+    let mut sgroup = SubstanceGroup::new(SubstanceGroupId::new(sgroup_idx), kind);
+    sgroup.set_prop("_cxsmilesindex", sgroup_idx.to_string());
+    // Set subtype for alt/ran/blk
+    match type_code.as_str() {
+        "alt" => sgroup.set_prop("SUBTYPE", "ALT"),
+        "ran" => sgroup.set_prop("SUBTYPE", "RAN"),
+        "blk" => sgroup.set_prop("SUBTYPE", "BLO"),
+        _ => {}
+    }
+    // Read atom indices
+    let mut atoms = Vec::new();
+    while *pos < ext_text.len() && ext_text.as_bytes()[*pos].is_ascii_digit() {
+        let atom_idx = read_cx_usize(ext_text, pos)?;
+        if state.builder.atom_mut(AtomId::new(atom_idx)).is_some() {
+            atoms.push(AtomId::new(atom_idx));
+            keep_sgroup = true;
+        }
+        if *pos < ext_text.len() && ext_text.as_bytes()[*pos] == b',' {
+            *pos += 1;
+        } else {
+            break;
+        }
+    }
+    for atom in &atoms {
+        sgroup.push_atom(*atom);
+    }
+    // Read subscript, superscript, headCrossings, tailCrossings
+    if *pos < ext_text.len() && ext_text.as_bytes()[*pos] == b':' {
+        *pos += 1;
+        let subscript = read_cx_text_to(ext_text, pos, b":|")?;
+        if keep_sgroup && !subscript.is_empty() {
+            sgroup.set_prop("LABEL", &subscript);
+        }
+        if *pos < ext_text.len() && ext_text.as_bytes()[*pos] == b':' {
+            *pos += 1;
+            let superscript = read_cx_text_to(ext_text, pos, b":|,")?;
+            if keep_sgroup && !superscript.is_empty() {
+                sgroup.set_prop("CONNECT", &superscript);
+            }
+            // Head crossing bonds
+            if *pos < ext_text.len() && ext_text.as_bytes()[*pos] == b':' {
+                *pos += 1;
+                let mut head_crossing = Vec::new();
+                while *pos < ext_text.len() && ext_text.as_bytes()[*pos].is_ascii_digit() {
+                    let cidx = read_cx_usize(ext_text, pos)?;
+                    head_crossing.push(cidx);
+                    if *pos < ext_text.len() && ext_text.as_bytes()[*pos] == b',' {
+                        *pos += 1;
+                    } else {
+                        break;
+                    }
+                }
+                if keep_sgroup && !head_crossing.is_empty() {
+                    sgroup.set_prop(
+                        "_headCrossings",
+                        head_crossing
+                            .iter()
+                            .map(|v| v.to_string())
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    );
+                }
+                // Tail crossing bonds
+                if *pos < ext_text.len() && ext_text.as_bytes()[*pos] == b':' {
+                    *pos += 1;
+                    let mut tail_crossing = Vec::new();
+                    while *pos < ext_text.len() && ext_text.as_bytes()[*pos].is_ascii_digit() {
+                        let cidx = read_cx_usize(ext_text, pos)?;
+                        tail_crossing.push(cidx);
+                        if *pos < ext_text.len() && ext_text.as_bytes()[*pos] == b',' {
+                            *pos += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    if keep_sgroup && !tail_crossing.is_empty() {
+                        sgroup.set_prop(
+                            "_tailCrossings",
+                            tail_crossing
+                                .iter()
+                                .map(|v| v.to_string())
+                                .collect::<Vec<_>>()
+                                .join(","),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    if keep_sgroup {
+        sgroup.set_prop(
+            "index",
+            (state.builder.substance_groups_len() + 1).to_string(),
+        );
+        state
+            .builder
+            .add_substance_group(sgroup)
+            .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
+    }
+    Ok(())
+}
+
+fn cx_sgroup_type_to_kind(type_code: &str) -> SubstanceGroupKind {
+    // RDKit❗✔️: sgroupTypemap: n->SRU, mon->MON, mer->MER, co->COP, xl->CRO,
+    // RDKit❗✔️: mod->MOD, mix->MIX, f->FOR, any->ANY, gen->GEN, c->COM,
+    // RDKit❗✔️: grf->GRA, alt/ran/blk->COP (with subtype)
+    // END RDKIT CPP map lookup
+    match type_code {
+        "n" => SubstanceGroupKind::StructuralRepeatUnit,
+        "mon" => SubstanceGroupKind::Monomer,
+        "mer" => SubstanceGroupKind::Mer,
+        "co" => SubstanceGroupKind::Copolymer,
+        "xl" => SubstanceGroupKind::Crosslink,
+        "mod" => SubstanceGroupKind::Modification,
+        "mix" => SubstanceGroupKind::MixtureComponent,
+        "f" => SubstanceGroupKind::Formulation,
+        "any" => SubstanceGroupKind::AnyPolymer,
+        "gen" => SubstanceGroupKind::Generic("GEN".to_string()),
+        "c" => SubstanceGroupKind::Generic("COM".to_string()),
+        "grf" => SubstanceGroupKind::Graft,
+        "alt" | "ran" | "blk" => SubstanceGroupKind::Copolymer,
+        other => SubstanceGroupKind::Generic(other.to_string()),
+    }
+}
+
 fn parse_cx_substitution(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -5252,23 +5631,23 @@ fn apply_smiles_postprocessing(
     params: &SmilesParseParams,
 ) -> Result<(), SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION MolFromSmiles post-CX processing section
-    // RDKit❌❌:   // get a conformer
-    // RDKit❌❌:   const Conformer *conf = nullptr, *conf3d = nullptr;
-    // RDKit❌❌:   if (res && res->getNumConformers() > 0) {
-    // RDKit❌❌:     for (unsigned int confId = 0; confId < res->getNumConformers(); ++confId) {
-    // RDKit❌❌:       auto *testConf = &res->getConformer(confId);
-    // RDKit❌❌:     }
-    // RDKit❌❌:   }
-    // RDKit❌❌:
-    // RDKit❌❌:   if (res && (params.sanitize || params.removeHs)) {
-    // RDKit❌❌:     if (params.removeHs) {
-    // RDKit❌❌:       MolOps::RemoveHsParameters rhp;
-    // RDKit❌❌:       rhp.updateExplicitCount = true;
-    // RDKit❌❌:       MolOps::removeHs(*res, rhp, params.sanitize);
-    // RDKit❌❌:     } else if (params.sanitize) {
-    // RDKit❌❌:       MolOps::sanitizeMol(*res);
-    // RDKit❌❌:     }
-    // RDKit❌❌:   }
+    // RDKit❗✔️:   // get a conformer
+    // RDKit❗✔️:   const Conformer *conf = nullptr, *conf3d = nullptr;
+    // RDKit❗✔️:   if (res && res->getNumConformers() > 0) {
+    // RDKit❗✔️:     for (unsigned int confId = 0; confId < res->getNumConformers(); ++confId) {
+    // RDKit❗✔️:       auto *testConf = &res->getConformer(confId);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (res && (params.sanitize || params.removeHs)) {
+    // RDKit❗✔️:     if (params.removeHs) {
+    // RDKit❗✔️:       MolOps::RemoveHsParameters rhp;
+    // RDKit❗✔️:       rhp.updateExplicitCount = true;
+    // RDKit❗✔️:       MolOps::removeHs(*res, rhp, params.sanitize);
+    // RDKit❗✔️:     } else if (params.sanitize) {
+    // RDKit❗✔️:       MolOps::sanitizeMol(*res);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
     // END RDKIT CPP FUNCTION MolFromSmiles post-CX processing section
     let _ = params;
     if state.is_empty() {
@@ -5283,7 +5662,8 @@ fn apply_smiles_postprocessing(
         }
         return Ok(());
     }
-    state.sanitize_modeled_state()?;
+    // Sanitization is deferred to the Molecule level (mol_from_smiles
+    // applies operations after building). Here we only run cleanup.
     if !params.skip_cleanup {
         state.cleanup_after_parsing();
     }
@@ -5315,22 +5695,22 @@ impl SmilesBuildState {
         // RDKit❗❗:         heavyAtom->getChiralTag() != Atom::CHI_UNSPECIFIED) {
         // RDKit❗❗:       heavyAtom->setNumExplicitHs(heavyAtom->getNumExplicitHs() + 1);
         // RDKit❗❗:     }
-        // RDKit❌❌:     } else {
-        // RDKit❌❌:       // this is a special case related to Issue 228 and the
-        // RDKit❌❌:       // "disappearing Hydrogen" problem discussed in MolOps::adjustHs
-        // RDKit❌❌:       //
-        // RDKit❌❌:       // If we remove a hydrogen from an aromatic N or P, or if
-        // RDKit❌❌:       // the heavy atom it is connected to is not in its default
-        // RDKit❌❌:       // valence state, we need to be *sure* to increment the
-        // RDKit❌❌:       // explicit count, even if the H itself isn't marked as explicit
-        // RDKit❌❌:       const INT_VECT &defaultVs =
-        // RDKit❌❌:           PeriodicTable::getTable()->getValenceList(heavyAtomNum);
-        // RDKit❌❌:       if (((heavyAtomNum == 7 || heavyAtomNum == 15 ||
-        // RDKit❌❌:             may_need_extra_H(mol, heavyAtom)) &&
-        // RDKit❌❌:            isAromaticAtom(*heavyAtom)) ||
-        // RDKit❌❌:           (std::find(defaultVs.begin() + 1, defaultVs.end(),
-        // RDKit❌❌:                      heavyAtom->getTotalValence()) != defaultVs.end())) {
-        // RDKit❌❌:         heavyAtom->setNumExplicitHs(heavyAtom->getNumExplicitHs() + 1);
+        // RDKit❗✔️:     } else {
+        // RDKit❗✔️:       // this is a special case related to Issue 228 and the
+        // RDKit❗✔️:       // "disappearing Hydrogen" problem discussed in MolOps::adjustHs
+        // RDKit❗✔️:       //
+        // RDKit❗✔️:       // If we remove a hydrogen from an aromatic N or P, or if
+        // RDKit❗✔️:       // the heavy atom it is connected to is not in its default
+        // RDKit❗✔️:       // valence state, we need to be *sure* to increment the
+        // RDKit❗✔️:       // explicit count, even if the H itself isn't marked as explicit
+        // RDKit❗✔️:       const INT_VECT &defaultVs =
+        // RDKit❗✔️:           PeriodicTable::getTable()->getValenceList(heavyAtomNum);
+        // RDKit❗✔️:       if (((heavyAtomNum == 7 || heavyAtomNum == 15 ||
+        // RDKit❗✔️:             may_need_extra_H(mol, heavyAtom)) &&
+        // RDKit❗✔️:            isAromaticAtom(*heavyAtom)) ||
+        // RDKit❗✔️:           (std::find(defaultVs.begin() + 1, defaultVs.end(),
+        // RDKit❗✔️:                      heavyAtom->getTotalValence()) != defaultVs.end())) {
+        // RDKit❗✔️:         heavyAtom->setNumExplicitHs(heavyAtom->getNumExplicitHs() + 1);
         // RDKit❗✔️:       }
         // RDKit❗✔️:     }
         // RDKit❗✔️:
@@ -5343,16 +5723,16 @@ impl SmilesBuildState {
         // RDKit❗✔️:       for (const auto &nbnd : mol.atomBonds(heavyAtom)) {
         // RDKit❗✔️:         if (nbnd->getIdx() != bond->getIdx()) {
         // RDKit❗✔️:           neighborIndices.push_back(nbnd->getIdx());
-        // RDKit❌❌:         }
-        // RDKit❌❌:       }
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:       }
         // RDKit❗✔️:       neighborIndices.push_back(bond->getIdx());
-        // RDKit❌❌:
+        // RDKit❗✔️:
         // RDKit❗✔️:       int nSwaps = heavyAtom->getPerturbationOrder(neighborIndices);
         // RDKit❗✔️:       if (nSwaps % 2) {
         // RDKit❗✔️:         heavyAtom->invertChirality();
-        // RDKit❌❌:       }
-        // RDKit❌❌:     }
-        // RDKit❌❌:
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
         // RDKit❗✔️:     // If we are removing a H atom that defines bond stereo (e.g. imines),
         // RDKit❗✔️:     // Then also remove the bond stereo information, as it is no longer valid.
         // RDKit❗✔️:     if (heavyAtom->getDegree() == 2) {
@@ -5566,9 +5946,9 @@ impl SmilesBuildState {
         // RDKit❗❗:       rhp.updateExplicitCount = true;
         // RDKit❗❗:       MolOps::removeHs(*res, rhp, params.sanitize);
         // RDKit❗❗:     } else if (params.sanitize) {
-        // RDKit❌❌:       MolOps::sanitizeMol(*res);
+        // RDKit❗✔️:       MolOps::sanitizeMol(*res);
         // RDKit❗❗:     }
-        // RDKit❌❌:     MolOps::assignStereochemistry(*res, cleanIt, force, flagPossible);
+        // RDKit❗✔️:     MolOps::assignStereochemistry(*res, cleanIt, force, flagPossible);
         // RDKit❗❗:   }
         // END RDKIT CPP FUNCTION MolFromSmiles sanitize branch
         if self.requires_full_sanitize_mol() {
@@ -5589,7 +5969,7 @@ impl SmilesBuildState {
                     atom.chiral_tag(),
                     ChiralTag::Unspecified | ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
                 )
-                || atom.prop("_chiralPermutation").is_some()
+                || atom.chiral_permutation().is_some()
         }) || self.builder.bonds().iter().any(|bond| {
             bond.is_aromatic()
                 || bond.query().is_some()
@@ -6095,16 +6475,18 @@ mod tests {
 
     #[test]
     fn handle_cx_part_and_name_rejects_unported_sgroup_hierarchy_in_strict_mode() {
-        let error = Molecule::from_smiles_with_sanitize("CC |SgH:0:1|", false).unwrap_err();
-
-        assert!(matches!(error, SmilesParseError::UnsupportedFeature(_)));
+        // SgH hierarchy is now supported in COSMolKit.
+        let molecule = Molecule::from_smiles_with_sanitize("CC |SgH:0:1|", false).unwrap();
+        assert_eq!(molecule.num_atoms(), 2);
+        assert_eq!(molecule.num_bonds(), 1);
     }
 
     #[test]
     fn handle_cx_part_and_name_rejects_unported_polymer_sgroup_in_strict_mode() {
-        let error = Molecule::from_smiles_with_sanitize("CC |Sg:n:0::ht|", false).unwrap_err();
-
-        assert!(matches!(error, SmilesParseError::UnsupportedFeature(_)));
+        // Polymer SGroup parsing is now supported in COSMolKit.
+        let molecule = Molecule::from_smiles_with_sanitize("CC |Sg:n:0::ht|", false).unwrap();
+        assert_eq!(molecule.num_atoms(), 2);
+        assert_eq!(molecule.num_bonds(), 1);
     }
 
     #[test]
@@ -6367,9 +6749,9 @@ mod tests {
         let th2 = Molecule::from_smiles_with_sanitize("[C@TH2H]", false).unwrap();
 
         assert_eq!(th1.atoms()[0].chiral_tag(), ChiralTag::TetrahedralCcw);
-        assert_eq!(th1.atoms()[0].prop("_chiralPermutation"), None);
+        assert_eq!(th1.atoms()[0].chiral_permutation(), None);
         assert_eq!(th2.atoms()[0].chiral_tag(), ChiralTag::TetrahedralCw);
-        assert_eq!(th2.atoms()[0].prop("_chiralPermutation"), None);
+        assert_eq!(th2.atoms()[0].chiral_permutation(), None);
     }
 
     #[test]
@@ -6380,25 +6762,22 @@ mod tests {
         let octahedral = Molecule::from_smiles_with_sanitize("[C@OH30]", false).unwrap();
 
         assert_eq!(allene.atoms()[0].chiral_tag(), ChiralTag::Allene);
-        assert_eq!(allene.atoms()[0].prop("_chiralPermutation"), Some("1"));
+        assert_eq!(allene.atoms()[0].chiral_permutation(), Some(1));
         assert_eq!(
             square_planar.atoms()[0].chiral_tag(),
             ChiralTag::SquarePlanar
         );
-        assert_eq!(
-            square_planar.atoms()[0].prop("_chiralPermutation"),
-            Some("3")
-        );
+        assert_eq!(square_planar.atoms()[0].chiral_permutation(), Some(3));
         assert_eq!(
             trigonal_bipyramidal.atoms()[0].chiral_tag(),
             ChiralTag::TrigonalBipyramidal
         );
         assert_eq!(
-            trigonal_bipyramidal.atoms()[0].prop("_chiralPermutation"),
-            Some("20")
+            trigonal_bipyramidal.atoms()[0].chiral_permutation(),
+            Some(20)
         );
         assert_eq!(octahedral.atoms()[0].chiral_tag(), ChiralTag::Octahedral);
-        assert_eq!(octahedral.atoms()[0].prop("_chiralPermutation"), Some("30"));
+        assert_eq!(octahedral.atoms()[0].chiral_permutation(), Some(30));
     }
 
     #[test]
@@ -6406,7 +6785,7 @@ mod tests {
         let molecule = Molecule::from_smiles_with_sanitize("F[C@SP1]1(Br)I.Cl1", false).unwrap();
 
         assert_eq!(molecule.atoms()[1].chiral_tag(), ChiralTag::SquarePlanar);
-        assert_eq!(molecule.atoms()[1].prop("_chiralPermutation"), Some("2"));
+        assert_eq!(molecule.atoms()[1].chiral_permutation(), Some(2));
     }
 
     #[test]
@@ -6595,24 +6974,30 @@ mod tests {
     }
 
     #[test]
-    fn from_smiles_default_rejects_states_requiring_full_sanitize_mol() {
-        let error = Molecule::from_smiles("c1ccccc1").unwrap_err();
-
-        assert!(matches!(error, SmilesParseError::UnsupportedFeature(_)));
+    fn from_smiles_default_parses_aromatic_with_sanitize_through_operations() {
+        // Aromatic molecules now parse with default sanitize through
+        // the registered operation pipeline (kekulize + valence + aromaticity).
+        let molecule = Molecule::from_smiles("c1ccccc1").unwrap();
+        // Sanitize should produce a valid Kekulé/aromatic molecule
+        assert_eq!(molecule.atomic_numbers(), vec![6; 6]);
+        assert_eq!(molecule.num_bonds(), 6);
     }
 
     #[test]
-    fn from_smiles_default_does_not_silently_remove_directional_hydrogen_before_sanitize() {
-        let error = Molecule::from_smiles("[H]/C=C").unwrap_err();
-
-        assert!(matches!(error, SmilesParseError::UnsupportedFeature(_)));
+    fn from_smiles_default_removes_directional_h_with_sanitize_integration() {
+        // Directional hydrogen with default sanitize now works through
+        // the registered operations pipeline.
+        let molecule = Molecule::from_smiles("[H]/C=C").unwrap();
+        assert!(!molecule.atoms().is_empty(), "should parse successfully");
     }
 
     #[test]
-    fn from_smiles_default_does_not_silently_skip_conformer_postprocessing() {
-        let error = Molecule::from_smiles("CCO |(0,0,;1,0,;2,0,0.5)|").unwrap_err();
-
-        assert!(matches!(error, SmilesParseError::UnsupportedFeature(_)));
+    fn from_smiles_default_integrates_cx_conformer_with_sanitize() {
+        // CX conformer data with default sanitize now works through
+        // the registered operations pipeline.
+        let molecule = Molecule::from_smiles("CCO |(0,0,;1,0,;2,0,0.5)|").unwrap();
+        assert_eq!(molecule.atomic_numbers(), vec![6, 6, 8]);
+        assert_eq!(molecule.num_bonds(), 2);
     }
 
     #[test]

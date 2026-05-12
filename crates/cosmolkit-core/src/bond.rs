@@ -1,3 +1,5 @@
+// RDKit marker convention defined in dev/source_reproduction_protocol.md.
+
 use std::{collections::BTreeMap, fmt};
 
 use crate::{AtomId, BondQueryPredicate, QueryNode};
@@ -146,6 +148,7 @@ pub struct BondSpec {
     direction: BondDirection,
     stereo: BondStereo,
     stereo_atoms: Option<[AtomId; 2]>,
+    unknown_stereo: bool,
     query: Option<QueryNode<BondQueryPredicate>>,
     props: BTreeMap<String, String>,
 }
@@ -162,6 +165,7 @@ impl BondSpec {
             direction: BondDirection::None,
             stereo: BondStereo::None,
             stereo_atoms: None,
+            unknown_stereo: false,
             query: None,
             props: BTreeMap::new(),
         }
@@ -250,6 +254,17 @@ impl BondSpec {
     }
 
     #[must_use]
+    pub const fn unknown_stereo(&self) -> bool {
+        self.unknown_stereo
+    }
+
+    #[must_use]
+    pub const fn with_unknown_stereo(mut self, unknown_stereo: bool) -> Self {
+        self.unknown_stereo = unknown_stereo;
+        self
+    }
+
+    #[must_use]
     pub fn with_query(mut self, query: QueryNode<BondQueryPredicate>) -> Self {
         self.query = Some(query);
         self
@@ -295,6 +310,7 @@ pub struct Bond {
     direction: BondDirection,
     stereo: BondStereo,
     stereo_atoms: Option<[AtomId; 2]>,
+    unknown_stereo: bool,
     query: Option<QueryNode<BondQueryPredicate>>,
     props: BTreeMap<String, String>,
 }
@@ -311,6 +327,7 @@ impl Bond {
             direction: spec.direction,
             stereo: spec.stereo,
             stereo_atoms: spec.stereo_atoms,
+            unknown_stereo: spec.unknown_stereo,
             query: spec.query,
             props: spec.props,
         }
@@ -377,6 +394,11 @@ impl Bond {
     }
 
     #[must_use]
+    pub const fn unknown_stereo(&self) -> bool {
+        self.unknown_stereo
+    }
+
+    #[must_use]
     pub const fn query(&self) -> Option<&QueryNode<BondQueryPredicate>> {
         self.query.as_ref()
     }
@@ -438,6 +460,11 @@ impl Bond {
     #[allow(dead_code)]
     pub(crate) fn set_stereo_atoms(&mut self, stereo_atoms: Option<[AtomId; 2]>) {
         self.stereo_atoms = stereo_atoms;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_unknown_stereo(&mut self, unknown_stereo: bool) {
+        self.unknown_stereo = unknown_stereo;
     }
 
     #[allow(dead_code)]

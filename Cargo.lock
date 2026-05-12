@@ -148,7 +148,10 @@ dependencies = [
  "cosmolkit-ringdecomposer",
  "glam",
  "log",
+ "resvg",
  "thiserror",
+ "tiny-skia",
+ "usvg",
 ]
 
 [[package]]

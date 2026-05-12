@@ -3,6 +3,8 @@
 //! `BioStructure` is a flat-row, hierarchy-indexed representation for proteins,
 //! DNA, RNA, and complexes. It is NOT a giant `Molecule`; it is a hierarchy +
 //! coordinate + assembly object. See `dev/BioStructureOperationContractDesign.md`.
+//!
+//! Gemmi marker convention is defined in `dev/source_reproduction_protocol.md`.
 
 use std::marker::PhantomData;
 
@@ -158,16 +160,25 @@ impl ResidueName {
     }
 }
 
-#[must_use]
-pub fn classify_residue_name(name: ResidueName) -> ResidueKind {
-    let name = name.as_str();
-    if GEMMI_AMINO_ACID_RESIDUE_NAMES.contains(&name) {
-        ResidueKind::AminoAcid
-    } else if GEMMI_WATER_RESIDUE_NAMES.contains(&name) {
-        ResidueKind::Water
-    } else {
-        ResidueKind::Unknown
-    }
+macro_rules! gemmi_residue_classification {
+    (
+        amino_acids: [$($amino_acid:literal),+ $(,)?],
+        waters: [$($water:literal),+ $(,)?] $(,)?
+    ) => {
+        #[cfg(test)]
+        const GEMMI_AMINO_ACID_RESIDUE_NAMES: &[&str] = &[$($amino_acid),+];
+        #[cfg(test)]
+        const GEMMI_WATER_RESIDUE_NAMES: &[&str] = &[$($water),+];
+
+        #[must_use]
+        pub fn classify_residue_name(name: ResidueName) -> ResidueKind {
+            match name.as_str() {
+                $($amino_acid)|+ => ResidueKind::AminoAcid,
+                $($water)|+ => ResidueKind::Water,
+                _ => ResidueKind::Unknown,
+            }
+        }
+    };
 }
 
 // BEGIN GEMMI CPP TABLE gemmi::get_residue_info RI::AA/RI::AAD/RI::PAA/RI::MAA
@@ -176,25 +187,28 @@ pub fn classify_residue_name(name: ResidueName) -> ResidueKind {
 // Gemmi✔️✔️: `third_party/gemmi/src/resinfo.cpp` entries with these four kinds.
 // Gemmi❌❌: one-letter code, linking type, hydrogen count, molecular weight,
 // Gemmi❌❌: and standard-vs-modified residue semantics are not modeled here.
-const GEMMI_AMINO_ACID_RESIDUE_NAMES: &[&str] = &[
-    "0AF", "0TD", "3FG", "ABA", "AGM", "AIB", "ALA", "ALC", "ALY", "ARG", "ASN", "ASP", "ASX",
-    "B3E", "BFD", "BMT", "CAF", "CAS", "CGU", "CIR", "CME", "CR2", "CR8", "CRF", "CRO", "CRQ",
-    "CSD", "CSH", "CSO", "CSS", "CSX", "CXM", "CYS", "DAB", "DAL", "DAR", "DAS", "DCY", "DGL",
-    "DGN", "DHA", "DHI", "DIL", "DLE", "DLY", "DPN", "DPR", "DSG", "DSN", "DTH", "DTR", "DTY",
-    "DVA", "FGA", "FME", "FVA", "GHP", "GL3", "GLN", "GLU", "GLX", "GLY", "GYS", "HIC", "HIS",
-    "HYP", "IAS", "ILE", "KCX", "KPI", "LEU", "LLP", "LYS", "M3L", "MAA", "MDO", "MEA", "MED",
-    "MEN", "MEQ", "MET", "MHO", "MHS", "MK8", "MLE", "MLU", "MLY", "MLZ", "MSE", "MVA", "NEP",
-    "NLE", "NRQ", "OAS", "OCS", "OMY", "OMZ", "ORN", "PCA", "PHD", "PHE", "PHI", "PHL", "PRO",
-    "PTR", "PYL", "SAC", "SAR", "SCH", "SCY", "SEC", "SEP", "SER", "SMC", "SME", "SNC", "SNN",
-    "THR", "TOX", "TPO", "TPQ", "TRP", "TRQ", "TYR", "TYS", "UNK", "VAL", "YCM",
-];
 // END GEMMI CPP TABLE gemmi::get_residue_info RI::AA/RI::AAD/RI::PAA/RI::MAA
 
 // BEGIN GEMMI CPP FUNCTION gemmi::Residue::is_water
 // Gemmi✔️✔️: return id == ialpha4_id("HOH") || id == ialpha4_id("DOD") ||
 // Gemmi✔️✔️:        id == ialpha4_id("WAT") || id == ialpha4_id("H2O");
-const GEMMI_WATER_RESIDUE_NAMES: &[&str] = &["HOH", "DOD", "WAT", "H2O"];
 // END GEMMI CPP FUNCTION gemmi::Residue::is_water
+gemmi_residue_classification! {
+    amino_acids: [
+        "0AF", "0TD", "3FG", "ABA", "AGM", "AIB", "ALA", "ALC", "ALY", "ARG", "ASN", "ASP",
+        "ASX", "B3E", "BFD", "BMT", "CAF", "CAS", "CGU", "CIR", "CME", "CR2", "CR8", "CRF",
+        "CRO", "CRQ", "CSD", "CSH", "CSO", "CSS", "CSX", "CXM", "CYS", "DAB", "DAL", "DAR",
+        "DAS", "DCY", "DGL", "DGN", "DHA", "DHI", "DIL", "DLE", "DLY", "DPN", "DPR", "DSG",
+        "DSN", "DTH", "DTR", "DTY", "DVA", "FGA", "FME", "FVA", "GHP", "GL3", "GLN", "GLU",
+        "GLX", "GLY", "GYS", "HIC", "HIS", "HYP", "IAS", "ILE", "KCX", "KPI", "LEU", "LLP",
+        "LYS", "M3L", "MAA", "MDO", "MEA", "MED", "MEN", "MEQ", "MET", "MHO", "MHS", "MK8",
+        "MLE", "MLU", "MLY", "MLZ", "MSE", "MVA", "NEP", "NLE", "NRQ", "OAS", "OCS", "OMY",
+        "OMZ", "ORN", "PCA", "PHD", "PHE", "PHI", "PHL", "PRO", "PTR", "PYL", "SAC", "SAR",
+        "SCH", "SCY", "SEC", "SEP", "SER", "SMC", "SME", "SNC", "SNN", "THR", "TOX", "TPO",
+        "TPQ", "TRP", "TRQ", "TYR", "TYS", "UNK", "VAL", "YCM",
+    ],
+    waters: ["HOH", "DOD", "WAT", "H2O"],
+}
 
 #[cfg(test)]
 mod tests {
@@ -219,10 +233,13 @@ mod tests {
 
     #[test]
     fn classifies_gemmi_water_names_without_guessing_other_residues() {
-        assert_eq!(
-            classify_residue_name(residue_name("HOH")),
-            ResidueKind::Water
-        );
+        assert_eq!(GEMMI_WATER_RESIDUE_NAMES.len(), 4);
+        for name in GEMMI_WATER_RESIDUE_NAMES {
+            assert_eq!(
+                classify_residue_name(residue_name(name)),
+                ResidueKind::Water
+            );
+        }
         assert_eq!(
             classify_residue_name(residue_name("XYZ")),
             ResidueKind::Unknown

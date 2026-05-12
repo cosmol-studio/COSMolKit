@@ -71,45 +71,45 @@ impl UnsupportedFeatureError {
     }
 }
 
-pub const SMILES_PARSE_FEATURE: FeatureSpec = FeatureSpec::unsupported(
-    "smiles.parse",
-    FeatureCategory::Io,
-    true,
-    "SMILES parser has not been ported to the redesigned core",
-    "Parse SMILES into Molecule.",
-);
+pub const SMILES_PARSE_FEATURE: FeatureSpec = FeatureSpec {
+    name: "smiles.parse",
+    category: FeatureCategory::Io,
+    status: SupportStatus::Experimental,
+    parity_sensitive: true,
+    docs: "Parse SMILES into Molecule with sanitize integration through registered operations (kekulize, valence, aromaticity). CX extensions (coords, labels, values, props, radicals, stereo, SGroups) are parsed. Remove-H with updateExplicitCount is implemented.",
+};
 
-pub const SMILES_WRITE_FEATURE: FeatureSpec = FeatureSpec::unsupported(
-    "smiles.write",
-    FeatureCategory::Io,
-    true,
-    "SMILES writer has not been ported to the redesigned core",
-    "Serialize Molecule as SMILES.",
-);
+pub const SMILES_WRITE_FEATURE: FeatureSpec = FeatureSpec {
+    name: "smiles.write",
+    category: FeatureCategory::Io,
+    status: SupportStatus::Experimental,
+    parity_sensitive: true,
+    docs: "Plain SMILES output (canonical and noncanonical) is implemented. Aromatic atoms (lowercase) and BondOrder::Aromatic bonds are supported. CX extensions are implemented: atom labels, molfile values, 2D coordinates, radicals, atom properties, enhanced stereo groups, SGroups, coordinate/hydrogen/zero bonds. Fragment API, random SMILES, and stereochemical perception branch remain unported.",
+};
 
-pub const MOLBLOCK_IO_FEATURE: FeatureSpec = FeatureSpec::unsupported(
-    "molblock.io",
-    FeatureCategory::Io,
-    true,
-    "MolBlock/SDF I/O has not been ported to the redesigned core",
-    "Read and write MolBlock/SDF records.",
-);
+pub const MOLBLOCK_IO_FEATURE: FeatureSpec = FeatureSpec {
+    name: "molblock.io",
+    category: FeatureCategory::Io,
+    status: SupportStatus::Experimental,
+    parity_sensitive: true,
+    docs: "Experimental V2000/V3000 MolBlock/SDF writer with parity flag, bond-stereo, SGroup, RGroup, alias, value lines, and aromatic-bond bookkeeping. Reader has partial V2000 parsing. Unsupported branches (complex SMARTS queries, atropisomer wedge-bonds) fail closed.",
+};
 
-pub const HYDROGENS_FEATURE: FeatureSpec = FeatureSpec::unsupported(
-    "molecule.hydrogens",
-    FeatureCategory::TopologyOperation,
-    true,
-    "hydrogen addition/removal has not been ported to the redesigned core",
-    "Add or remove explicit hydrogens as value-style topology operations.",
-);
+pub const HYDROGENS_FEATURE: FeatureSpec = FeatureSpec {
+    name: "molecule.hydrogens",
+    category: FeatureCategory::TopologyOperation,
+    status: SupportStatus::Experimental,
+    parity_sensitive: true,
+    docs: "Experimental value-style explicit hydrogen operations. Remove-H is being ported through the operation-contract path; unsupported source branches fail closed.",
+};
 
-pub const COORDINATE_2D_FEATURE: FeatureSpec = FeatureSpec::unsupported(
-    "coordinates.2d",
-    FeatureCategory::TopologyOperation,
-    true,
-    "2D coordinate generation has not been ported to the redesigned core",
-    "Generate 2D coordinates while preserving molecule value semantics.",
-);
+pub const COORDINATE_2D_FEATURE: FeatureSpec = FeatureSpec {
+    name: "coordinates.2d",
+    category: FeatureCategory::TopologyOperation,
+    status: SupportStatus::Experimental,
+    parity_sensitive: true,
+    docs: "Generate 2D coordinates while preserving molecule value semantics. Invalid inputs and unported depiction branches fail explicitly.",
+};
 
 pub const SANITIZE_FEATURE: FeatureSpec = FeatureSpec {
     name: "molecule.sanitize",
@@ -127,29 +127,33 @@ pub const KEKULIZE_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Experimental operation-pipeline skeleton for kekulized bond rewriting.",
 };
 
-pub const FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec::unsupported(
-    "fingerprint.morgan",
-    FeatureCategory::Fingerprint,
-    true,
-    "Morgan fingerprint generation has not been ported to the redesigned core",
-    "Compute Morgan fingerprints and optional additional output.",
-);
+pub const FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
+    name: "fingerprint.morgan",
+    category: FeatureCategory::Fingerprint,
+    status: SupportStatus::Experimental,
+    parity_sensitive: true,
+    docs: "Compute Morgan-style fingerprints with connectivity invariants (RDKit component-vector hash style). Environment propagation uses RDKit's seed=layer + sorted neighbor-pair hashing. Chirality support, feature invariants (element/property classification), custom atom/bond invariants, count-simulation with configurable bounds. Hash-value alignment is structurally compatible but not bit-identical (uses own hash_combine instead of gboost::hash).",
+};
 
-pub const DRAWING_FEATURE: FeatureSpec = FeatureSpec::unsupported(
-    "drawing.depiction",
-    FeatureCategory::Drawing,
-    true,
-    "drawing and depiction have not been ported to the redesigned core",
-    "Prepare and render molecular depictions.",
-);
+pub const DRAWING_FEATURE: FeatureSpec = FeatureSpec {
+    name: "drawing.depiction",
+    category: FeatureCategory::Drawing,
+    status: SupportStatus::Experimental,
+    parity_sensitive: true,
+    docs: "SVG/PNG molecule renderer ported from RDKit MolDraw2D. \
+           Includes atom labels (isotope/charge/H/map), bond geometry \
+           (single/double/triple/wedge/aromatic), radical dots, clash \
+           detection, scale calculation. SVG output via native XML; \
+           PNG via usvg+resvg rasterization.",
+};
 
-pub const STEREO_FEATURE: FeatureSpec = FeatureSpec::unsupported(
-    "stereo.perception",
-    FeatureCategory::Stereo,
-    true,
-    "stereochemistry perception has not been ported to the redesigned core",
-    "Perceive and validate stereochemistry.",
-);
+pub const STEREO_FEATURE: FeatureSpec = FeatureSpec {
+    name: "stereo.perception",
+    category: FeatureCategory::Stereo,
+    status: SupportStatus::Experimental,
+    parity_sensitive: true,
+    docs: "Tetrahedral stereo detection from typed state (ChiralTag + chiral_permutation). Double-bond E/Z potential detection. Full geometric perception from 3D coordinates and CIP labeler not yet ported.",
+};
 
 pub const VALENCE_FEATURE: FeatureSpec = FeatureSpec {
     name: "valence.assignment",
@@ -175,13 +179,15 @@ pub const AROMATICITY_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Experimental RDKit-aligned aromaticity assignment scaffold with fail-closed unsupported branches.",
 };
 
-pub const BATCH_FEATURE: FeatureSpec = FeatureSpec::unsupported(
-    "batch.operations",
-    FeatureCategory::Batch,
-    false,
-    "batch operation execution has not been ported to the redesigned core",
-    "Run ordered, traceable batch operations.",
-);
+pub const BATCH_FEATURE: FeatureSpec = FeatureSpec {
+    name: "batch.operations",
+    category: FeatureCategory::Batch,
+    status: SupportStatus::Experimental,
+    parity_sensitive: false,
+    docs: "Batch construction from SMILES list, ordered transformations via registered molecule operations, \
+           error modes (Strict/KeepErrors), valid mask, filter valid, SMILES export with params, \
+           and PNG image export. Batch scheduling and parallel execution are not yet implemented.",
+};
 
 pub const BIO_STRUCTURE_FEATURE: FeatureSpec = FeatureSpec {
     name: "bio.structure",
@@ -222,11 +228,23 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &RINGS_FEATURE,
     &AROMATICITY_FEATURE,
     &BATCH_FEATURE,
+    &DG_BOUNDS_FEATURE,
     &BIO_STRUCTURE_FEATURE,
     &BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
     &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
     &BIO_SELECTION_FEATURE,
 ];
+
+pub const DG_BOUNDS_FEATURE: FeatureSpec = FeatureSpec {
+    name: "distgeom.bounds_matrix",
+    category: FeatureCategory::Core,
+    status: SupportStatus::Experimental,
+    parity_sensitive: false,
+    docs: "Distance geometry bounds matrix generation. Uses topology-based 1-2/1-3/1-4 bounds \
+           with hybridization angle estimates, VDW lower bounds, and triangle inequality smoothing. \
+           Does not include UFF bond-length parameters or full RDKit triangle smoother. \
+           The bounds matrix is an n×n Vec<Vec<f64>> of upper bounds.",
+};
 
 pub const BIO_SELECTION_FEATURE: FeatureSpec = FeatureSpec {
     name: "bio.selection",
