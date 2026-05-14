@@ -10907,17 +10907,20 @@ fn assign_chiral_types_from_3d(
     params: SdfReadParams,
 ) -> Result<Molecule, SdfReadError> {
     let _ = params;
-    if molecule.conformers_3d().is_empty() {
+    let Some(conf_id) = molecule
+        .conformers_3d()
+        .iter()
+        .find(|conf| conf.is_3d())
+        .map(|conf| conf.id())
+    else {
         return Ok(molecule);
-    }
-    let mut degree = vec![0_u8; molecule.num_atoms()];
-    for bond in molecule.bonds() {
-        degree[bond.begin().index()] = degree[bond.begin().index()].saturating_add(1);
-        degree[bond.end().index()] = degree[bond.end().index()].saturating_add(1);
-    }
-    if degree.into_iter().any(|degree| degree == 4) {
-        return unsupported_feature(&STEREO_FEATURE);
-    }
+    };
+    let mut molecule = molecule;
+    // RDKit Mol file finish processing calls assignChiralTypesFrom3D() here,
+    // not the higher-level assignStereochemistryFrom3D() helper. The latter
+    // also runs double-bond stereo detection plus assignStereochemistry(),
+    // which is sequenced later in finishMolProcessing.
+    crate::smiles::assign_chiral_types_from_3d_for_testing(&mut molecule, conf_id);
     Ok(molecule)
 }
 
@@ -10978,27 +10981,34 @@ fn detect_bond_stereochemistry(
 ) -> Result<Molecule, SdfReadError> {
     // BEGIN RDKIT CPP BODY: detect_bond_stereochemistry
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Chirality.cpp :: void detectBondStereochemistry
-    // RDKit❗❗:   if (!mol.getNumConformers()) {
-    // RDKit❗❗:     return;
-    // RDKit❗❗:   }
-    // RDKit❗❗:   const Conformer &conf = mol.getConformer(confId);
-    // RDKit❗❗:   setDoubleBondNeighborDirections(mol, &conf);
+    // RDKit✔️✔️:   if (!mol.getNumConformers()) {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   const Conformer &conf = mol.getConformer(confId);
+    // RDKit✔️✔️:   setDoubleBondNeighborDirections(mol, &conf);
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Chirality.cpp :: void detectBondStereochemistry
     // END RDKIT CPP BODY: detect_bond_stereochemistry
 
     let _ = params;
-    if molecule.conformers_3d().is_empty() {
+    let Some(conf_id) = molecule
+        .conformers_3d()
+        .iter()
+        .find(|conf| conf.is_3d())
+        .map(|conf| conf.id())
+    else {
+        return Ok(molecule);
+    };
+    if !molecule
+        .bonds()
+        .iter()
+        .any(|bond| crate::stereo::is_bond_candidate_for_stereo(&molecule, bond.id().index()))
+    {
         return Ok(molecule);
     }
-    let degrees = molecule_atom_degrees(&molecule);
-    let needs_double_bond_stereo_detection = molecule.bonds().iter().any(|bond| {
-        bond.order() == BondOrder::Double
-            && degrees.get(bond.begin().index()).copied().unwrap_or(0) > 1
-            && degrees.get(bond.end().index()).copied().unwrap_or(0) > 1
-    });
-    if needs_double_bond_stereo_detection {
-        return unsupported_feature(&STEREO_FEATURE);
-    }
+    let mut molecule = molecule;
+    crate::smiles::set_double_bond_neighbor_directions(&mut molecule, conf_id).map_err(|err| {
+        SdfReadError::Parse(format!("double-bond stereo detection failed: {err}"))
+    })?;
     Ok(molecule)
 }
 
@@ -11200,16 +11210,18 @@ fn assign_stereochemistry_after_sdf_parse(
     params: SdfReadParams,
 ) -> Result<Molecule, SdfReadError> {
     let _ = params;
-    let needs_stereo_assignment = molecule
-        .atoms()
+    let mut molecule = molecule;
+    if let Some(conf_id) = molecule
+        .conformers_3d()
         .iter()
-        .any(|atom| atom.chiral_tag() != crate::ChiralTag::Unspecified)
-        || molecule.bonds().iter().any(|bond| {
-            bond.stereo() != BondStereo::None || bond.direction() != BondDirection::None
-        })
-        || !molecule.stereo_groups().is_empty();
-    if needs_stereo_assignment {
-        return unsupported_feature(&STEREO_FEATURE);
+        .find(|conf| conf.is_3d())
+        .map(|conf| conf.id())
+    {
+        crate::smiles::assign_stereochemistry_from_3d(&mut molecule, conf_id).map_err(|err| {
+            SdfReadError::Parse(format!(
+                "post-parse stereochemistry assignment failed: {err}"
+            ))
+        })?;
     }
     Ok(molecule)
 }
@@ -12288,34 +12300,53 @@ M  END
     }
 
     #[test]
-    fn sdf_rejects_stereogenic_double_bond_detection_until_stereo_port_exists() {
-        let input = format!(
-            "stereo-double\n  COSMolKit          2D\ncomment\n  4  3  0  0  0  0            999 V2000\n{}\n{}\n{}\n{}\n{}\n{}\n{}\nM  END\n$$$$\n",
-            v2000_atom_line("C", 0, 0, 0, 0),
-            v2000_atom_line("C", 0, 0, 0, 0),
-            v2000_atom_line("F", 0, 0, 0, 0),
-            v2000_atom_line("Cl", 0, 0, 0, 0),
-            v2000_bond_line(1, 2, 2, 0, 0),
-            v2000_bond_line(1, 3, 1, 0, 0),
-            v2000_bond_line(2, 4, 1, 0, 0)
-        );
+    fn sdf_assigns_stereogenic_double_bond_detection_from_shared_3d_path() {
+        let mut builder = MoleculeBuilder::new();
+        let c0 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
+        let c1 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
+        let f = builder.add_atom(AtomSpec::new(Element::from_atomic_number(9).unwrap()));
+        let cl = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
+        builder
+            .add_bond(BondSpec::new(c0, c1, BondOrder::Double))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c0, f, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c1, cl, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_conformer(Conformer3D::new(
+                0,
+                vec![
+                    [-1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [-1.0, 1.0, 0.0],
+                    [1.0, -1.0, 0.0],
+                ],
+                true,
+            ))
+            .unwrap();
+        let molecule = builder.build().unwrap();
 
-        let error = read_sdf_from_str_with_params(
-            &input,
+        let molecule = detect_bond_stereochemistry(
+            molecule,
             SdfReadParams {
                 sanitize: false,
                 remove_hs: false,
                 ..Default::default()
             },
         )
-        .unwrap_err();
+        .unwrap();
 
+        assert_eq!(molecule.bonds()[0].stereo(), BondStereo::None);
         assert!(matches!(
-            error,
-            SdfReadError::UnsupportedFeature(UnsupportedFeatureError {
-                feature: "stereo.perception",
-                ..
-            })
+            molecule.bonds()[1].direction(),
+            BondDirection::EndUpRight | BondDirection::EndDownRight
+        ));
+        assert!(matches!(
+            molecule.bonds()[2].direction(),
+            BondDirection::EndUpRight | BondDirection::EndDownRight
         ));
     }
 
@@ -12344,37 +12375,49 @@ M  END
     }
 
     #[test]
-    fn sdf_rejects_3d_tetrahedral_chirality_until_stereo_port_exists() {
-        let input = format!(
-            "tetrahedral-3d\n  COSMolKit          3D\ncomment\n  5  4  0  0  0  0            999 V2000\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\nM  END\n$$$$\n",
-            v2000_atom_line_with_z("C", 0.0),
-            v2000_atom_line_with_z("F", 1.0),
-            v2000_atom_line_with_z("Cl", -1.0),
-            v2000_atom_line_with_z("Br", 0.5),
-            v2000_atom_line_with_z("I", -0.5),
-            v2000_bond_line(1, 2, 1, 0, 0),
-            v2000_bond_line(1, 3, 1, 0, 0),
-            v2000_bond_line(1, 4, 1, 0, 0),
-            v2000_bond_line(1, 5, 1, 0, 0)
-        );
+    fn sdf_assigns_3d_tetrahedral_chirality_from_shared_3d_path() {
+        let mut builder = MoleculeBuilder::new();
+        let center = builder.add_atom(AtomSpec::new(Element::C));
+        let fluorine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(9).unwrap()));
+        let chlorine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
+        let bromine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(35).unwrap()));
+        builder
+            .add_bond(BondSpec::new(center, fluorine, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(center, chlorine, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(center, bromine, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_conformer(Conformer3D::new(
+                0,
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
+                true,
+            ))
+            .unwrap();
+        let molecule = builder.build().unwrap();
 
-        let error = read_sdf_from_str_with_params(
-            &input,
+        let molecule = assign_chiral_types_from_3d(
+            molecule,
             SdfReadParams {
                 sanitize: false,
                 remove_hs: false,
                 ..Default::default()
             },
         )
-        .unwrap_err();
+        .unwrap();
 
-        assert!(matches!(
-            error,
-            SdfReadError::UnsupportedFeature(UnsupportedFeatureError {
-                feature: "stereo.perception",
-                ..
-            })
-        ));
+        assert_ne!(
+            molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
     }
 
     #[test]

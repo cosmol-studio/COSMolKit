@@ -5,16 +5,7 @@ porting from any external C/C++ library (e.g., RDKit, Gemmi, OpenBabel) into
 COSMolKit's Rust core. It is the single source of truth for the marker
 convention used across the entire repository.
 
-Every file that contains copied C++ source lines must include a reference to
-this protocol in its header comment. The canonical file is:
-
-```
-dev/source_reproduction_protocol.md
-```
-
-If a specific module uses a library-specific variant (e.g.,
-`dev/rdkit_porting_notes.md`), it must defer to this document for the marker
-definitions and only add library-specific guidance.
+python located at `.venv/bin/python`.
 
 ---
 
@@ -181,21 +172,9 @@ Tests should be added at the smallest stable boundary where a reproduced
 behavior can be observed. Boundary cases from C++ language behavior are part
 of the port, not optional cleanup.
 
-## 7. Plain-Text Fallback
-
-If rendering in a plain-text environment without emoji support, use these
-substitutes:
-
-| Unicode | Fallback |
-|---------|----------|
-| ❌      | `X`      |
-| ❗      | `!`      |
-| ✔️      | `V`      |
-| 🔝      | `UP`     |
-
 ---
 
-## 8. Examples
+## 7. Examples
 
 ### Example A — RDKit (current primary use)
 

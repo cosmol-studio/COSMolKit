@@ -97,7 +97,18 @@ operation/support contracts.
 8. **Unsupported branches must fail explicitly** with a structured error. They
    must not silently no-op or guess chemistry.
 
-9. **Final validation** for any core or operation edit:
+9. **PDB/mmCIF and protein IO are Gemmi-primary.**
+   `BioStructure` is the public structure hierarchy. Gemmi-derived code is the
+   canonical source for PDB/mmCIF reads into `BioStructure`. RDKit-derived PDB
+   behavior is reserved for `Molecule` compatibility APIs such as PDB block
+   writing or a future source-backed `Molecule::from_pdb_block`, and molecule
+   input must be layered over Gemmi structural parsing plus explicit
+   `BioStructure -> Molecule` conversion. Do not expose parallel public parser
+   modules for the same task. Follow
+   [`bio_structure_io_policy.md`](bio_structure_io_policy.md) and
+   [`pdb_mmcif_gemmi_primary_plan.md`](pdb_mmcif_gemmi_primary_plan.md).
+
+10. **Final validation** for any core or operation edit:
    ```bash
    cargo fmt --all
    cargo check -p cosmolkit-core --features op-contracts-strict
@@ -108,18 +119,18 @@ operation/support contracts.
 
 | # | Area | Key Deliverables | Status |
 |---|------|------------------|--------|
-| 0 | Code Baseline Sync | Audit README claims against current Rust source; update ledger from code evidence, not old Markdown | Active |
-| 1 | SMILES Writer Closure | Remove remaining unsupported writer branches needed for README-level options | Partial / substantial |
-| 2 | Morgan Fingerprint Closure | Finish README-level options and document non-parity hash semantics | Partial / substantial |
-| 3 | SMILES Parser Closure | Close user-visible parser gaps and sanitize integration gaps | Partial / substantial |
-| 4 | MOL/SDF Writer Closure | Finish README-level writer branches and unsupported query/stereo cases | Partial / substantial |
-| 5 | MOL/SDF Reader Closure | Finish V3000 and robust multi-record reader gaps | Partial |
-| 6 | DG Bounds Closure | Stabilize existing bounds matrix implementation and public support status | Partial |
-| 7 | 2D Coordinates Closure | Stabilize existing coordinate generation and unsupported branches | Partial / substantial |
-| 8 | Drawing Closure | Stabilize existing SVG/PNG renderer, font path, and image export behavior | Partial / substantial |
-| 9 | Chemistry Core Edge Closure | Hydrogens, valence/radicals, rings, aromaticity, sanitize edge branches | Partial |
-| 10 | Stereochemistry Closure | CIP/geometric perception and E/Z behavior needed by current APIs | Partial |
-| 11 | Batch Operations Closure | n_jobs, scheduling, transforms, masks/reports, SDF/image export | Partial |
+| 0 | Code Baseline Sync | Audit README claims against current Rust source; update ledger from code evidence, not old Markdown | Completed |
+| 1 | SMILES Writer Closure | Remove remaining unsupported writer branches needed for README-level options | Completed |
+| 2 | Morgan Fingerprint Closure | Finish README-level options and document non-parity hash semantics | Completed |
+| 3 | SMILES Parser Closure | Close user-visible parser gaps and sanitize integration gaps | Completed |
+| 4 | MOL/SDF Writer Closure | Finish README-level writer branches and unsupported query/stereo cases | Completed |
+| 5 | MOL/SDF Reader Closure | Finish V3000 and robust multi-record reader gaps | Completed |
+| 6 | DG Bounds Closure | Stabilize existing bounds matrix implementation and public support status | Completed |
+| 7 | 2D Coordinates Closure | Stabilize existing coordinate generation and unsupported branches | Completed |
+| 8 | Drawing Closure | Stabilize existing SVG/PNG renderer, font path, and image export behavior | Completed |
+| 9 | Chemistry Core Edge Closure | Hydrogens, valence/radicals, rings, aromaticity, sanitize edge branches | Completed |
+| 10 | Stereochemistry Closure | CIP/geometric perception and E/Z behavior needed by current APIs | Completed |
+| 11 | Batch Operations Closure | n_jobs, scheduling, transforms, masks/reports, SDF/image export | Completed |
 
 ## README Claim Closure Order
 

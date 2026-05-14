@@ -1,17 +1,24 @@
-# Redesigned cosmolkit-core
+# cosmolkit-core source layout
 
-This crate is the new canonical COSMolKit core.
+This crate is organized by ownership boundary, not by porting order.
 
-Rules for future changes:
+- `model/`: value-style molecule storage, row ids, builders, read-only views,
+  source invariants, and core error/state types.
+- `operations/`: registered mutation/finalization machinery. Existing
+  molecules must be changed here, not by exposing mutable model storage.
+- `chemistry/`: chemistry algorithms over the model: valence, aromaticity,
+  rings, hydrogens, stereo, coordinates, transforms, and distance geometry.
+- `notation/`: textual notations and sequence/fragment construction: SMILES,
+  canonical ranking/writing, sequence, and fragment helpers.
+- `search/`: query trees, SMARTS parsing, and substructure matching.
+- `properties/`: fingerprints, drawing, hashing, pickling, and batch helpers.
+- `bio/`: `BioStructure`, biomolecular invariants, and BioStructure operations.
+- `io/`: file-format readers/writers. Structural PDB/mmCIF goes through
+  `io::bio`; molecule molblock/SDF code stays in `io::molblock` and `io::sdf`.
+- `unported/`: quarantined stubs for modules that are intentionally not active.
+  Do not re-export or call these files as implementation shortcuts.
 
-- `Molecule` is a value object.
-- Public molecule transformations return a new value.
-- New molecules are built through `MoleculeBuilder`.
-- Existing molecule transformations must go through registered operations.
-- Any new derived state must be represented in `DerivedState` and checked by
-  invariants.
-- RDKit behavior belongs in a compatibility layer, not in canonical state.
-
-Agent guardrail: if a future change would bypass these rules, the agent must
-not proceed silently. It must ask the human author to confirm the design
-exception before making the change.
+`lib.rs` keeps root-level compatibility re-exports such as `crate::atom`,
+`crate::ops`, and `crate::smiles_write`. New code should prefer the domain
+directory when navigating, but it should not bypass operation or porting policy
+just because a root alias exists.

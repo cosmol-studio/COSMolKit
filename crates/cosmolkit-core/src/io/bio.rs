@@ -1,5 +1,10 @@
 //! PDB/mmCIF readers for `BioStructure`.
 //!
+//! This is the canonical structural PDB/mmCIF IO path. It is Gemmi-aligned and
+//! returns COSMolKit `BioStructure` rows. RDKit-derived PDB behavior belongs to
+//! Molecule compatibility APIs layered over `BioStructure`, not to a parallel
+//! public parser.
+//!
 //! Source-derived parser work in this module follows
 //! `dev/source_reproduction_protocol.md`: copied Gemmi source lines stay
 //! adjacent to the Rust code that ports them, and every unsupported source
@@ -16,7 +21,8 @@
 use crate::Element;
 use crate::bio::{
     AltLocLabel, AtomName, AtomRow, AtomSourceIds, BioStructure, ChainId, ChainKind, ChainRow,
-    ChainSourceIds, ModelId, ModelRow, PdbAtomSerial, PdbChainId, PdbSeqId, ResidueId, ResidueKind,
+    ChainSourceIds, CrystalCell, CrystalInfo, EntityId, EntityKind, EntityRow, EntitySourceIds,
+    ModelId, ModelRow, PdbAtomSerial, PdbChainId, PdbSeqId, PolymerKind, ResidueId, ResidueKind,
     ResidueName, ResidueRow, ResidueSourceIds, RowSpan, classify_residue_name,
 };
 use crate::bio_invariants::enforce_bio_structure_invariants;
@@ -71,6 +77,82 @@ struct PdbBioBuilder {
 }
 
 impl PdbBioBuilder {
+    fn find_entity_by_source_id(&self, source_entity_id: &str) -> Option<EntityId> {
+        self.structure
+            .entities
+            .iter()
+            .position(|entity| entity.source.source_entity_id == source_entity_id)
+            .map(|idx| EntityId::new(idx as u32))
+    }
+
+    fn find_entity_by_subchain(&self, subchain: PdbChainId) -> Option<EntityId> {
+        self.structure
+            .entities
+            .iter()
+            .position(|entity| entity.subchains.contains(&subchain))
+            .map(|idx| EntityId::new(idx as u32))
+    }
+
+    fn find_or_add_entity(
+        &mut self,
+        source_entity_id: &str,
+        kind: EntityKind,
+        polymer_kind: PolymerKind,
+    ) -> EntityId {
+        if let Some(entity_id) = self.find_entity_by_source_id(source_entity_id) {
+            let entity = &mut self.structure.entities[entity_id.index() as usize];
+            if entity.kind == EntityKind::Unknown {
+                entity.kind = kind;
+            }
+            if entity.polymer_kind == PolymerKind::Unknown {
+                entity.polymer_kind = polymer_kind;
+            }
+            return entity_id;
+        }
+
+        let entity_id = EntityId::new(self.structure.entities.len() as u32);
+        self.structure.entities.push(EntityRow {
+            kind,
+            polymer_kind,
+            sequence: Vec::new(),
+            subchains: Vec::new(),
+            source: EntitySourceIds {
+                source_entity_id: source_entity_id.to_string(),
+            },
+        });
+        entity_id
+    }
+
+    fn append_entity_sequence(&mut self, entity_id: EntityId, residue_name: &str) {
+        self.structure.entities[entity_id.index() as usize]
+            .sequence
+            .push(residue_name.to_string());
+    }
+
+    fn merge_entity_sequence_at(&mut self, entity_id: EntityId, pos: usize, residue_name: &str) {
+        let sequence = &mut self.structure.entities[entity_id.index() as usize].sequence;
+        if pos == sequence.len() {
+            sequence.push(residue_name.to_string());
+        } else if let Some(existing) = sequence.get_mut(pos) {
+            existing.push(',');
+            existing.push_str(residue_name);
+        }
+    }
+
+    fn add_entity_subchain(&mut self, entity_id: EntityId, subchain: PdbChainId) {
+        let entity = &mut self.structure.entities[entity_id.index() as usize];
+        if !entity.subchains.contains(&subchain) {
+            entity.subchains.push(subchain);
+        }
+    }
+
+    fn entity_for_chain_source(source: &ChainSourceIds) -> Option<String> {
+        source
+            .label_asym_id
+            .or(source.auth_chain_id)
+            .map(|chain_id| chain_id.as_str().to_string())
+    }
+
     fn ensure_model(&mut self, source_model_number: Option<i32>) -> ModelId {
         if let Some(model_id) = self.current_model {
             return model_id;
@@ -113,9 +195,17 @@ impl PdbBioBuilder {
 
         let chain_id = ChainId::new(self.structure.chains.len() as u32);
         let residue_start = self.structure.residues.len() as u32;
+        let entity_id = source
+            .label_asym_id
+            .or(source.auth_chain_id)
+            .and_then(|subchain| self.find_entity_by_subchain(subchain))
+            .or_else(|| {
+                Self::entity_for_chain_source(&source)
+                    .and_then(|source_id| self.find_entity_by_source_id(&source_id))
+            });
         self.structure.chains.push(ChainRow {
             model_id,
-            entity_id: None,
+            entity_id,
             residue_span: RowSpan::new(residue_start, 0),
             kind: ChainKind::Unknown,
             source,
@@ -126,6 +216,14 @@ impl PdbBioBuilder {
         self.current_chain = Some((chain_id, chain_key));
         self.current_residue = None;
         chain_id
+    }
+
+    fn assign_chain_entity_by_subchain(&mut self, subchain: PdbChainId, entity_id: EntityId) {
+        for chain in &mut self.structure.chains {
+            if chain.source.label_asym_id == Some(subchain) {
+                chain.entity_id = Some(entity_id);
+            }
+        }
     }
 
     fn ensure_residue(
@@ -318,10 +416,57 @@ pub fn read_pdb_coordinate_subset_from_str_with_params(
     // Gemmi✔️✔️:   atom.aniso.u23 = read_int(line+63, 7) * 1e-4f;
     // Gemmi❌❌: } else if (is_record_type4(line, "REMARK")) {
     // Gemmi❌❌: } else if (is_record_type4(line, "CONECT")) {
-    // Gemmi❌❌: } else if (is_record_type4(line, "SEQRES")) {
+    // Gemmi✔️✔️: } else if (is_record_type4(line, "SEQRES")) {
+    // Gemmi✔️✔️:   std::string chain_name = read_string(line+10, 2);
+    // Gemmi✔️✔️:   Entity& ent = impl::find_or_add(st.entities, chain_name);
+    // Gemmi✔️✔️:   ent.entity_type = EntityType::Polymer;
+    // Gemmi✔️✔️:   for (int i = 19; i < 68 && i < (int)len; i += 4) {
+    // Gemmi✔️✔️:     std::string res_name = read_string(line+i, 3);
+    // Gemmi✔️✔️:     if (!res_name.empty())
+    // Gemmi✔️✔️:       ent.full_sequence.emplace_back(res_name);
+    // Gemmi✔️✔️:   }
     // Gemmi❌❌: } else if (is_record_type4(line, "HELIX")) {
     // Gemmi❌❌: } else if (is_record_type4(line, "SHEET")) {
     // Gemmi❌❌: } else if (is_record_type3(line, "TER") && !options.ignore_ter) {
+    // Gemmi✔️✔️: } else if (is_record_type4(line, "HEADER")) {
+    // Gemmi✔️✔️:   if (len > 50)
+    // Gemmi✔️✔️:     st.info["_struct_keywords.pdbx_keywords"] = rtrim_str(std::string(line+10, 40));
+    // Gemmi✔️✔️:   if (len > 59) { // date in PDB has format 28-MAR-07
+    // Gemmi✔️✔️:     std::string date = pdb_date_format_to_iso(std::string(line+50, 9));
+    // Gemmi✔️✔️:     if (!date.empty())
+    // Gemmi✔️✔️:       st.info["_pdbx_database_status.recvd_initial_deposition_date"] = date;
+    // Gemmi✔️✔️:   }
+    // Gemmi✔️✔️:   if (len > 66) {
+    // Gemmi✔️✔️:     std::string entry_id = rtrim_str(std::string(line+62, 4));
+    // Gemmi✔️✔️:     if (!entry_id.empty())
+    // Gemmi✔️✔️:       st.info["_entry.id"] = entry_id;
+    // Gemmi✔️✔️:   }
+    // Gemmi✔️✔️: } else if (is_record_type4(line, "TITLE")) {
+    // Gemmi✔️✔️:   if (len > 10)
+    // Gemmi✔️✔️:     st.info["_struct.title"] += rtrim_str(std::string(line+10, len-10-1));
+    // Gemmi✔️✔️: } else if (is_record_type4(line, "KEYWDS")) {
+    // Gemmi✔️✔️:   if (len > 10)
+    // Gemmi✔️✔️:     st.info["_struct_keywords.text"] += rtrim_str(std::string(line+10, len-10-1));
+    // Gemmi✔️✔️: } else if (is_record_type4(line, "EXPDTA")) {
+    // Gemmi✔️✔️:   if (len > 10)
+    // Gemmi✔️✔️:     st.info["_exptl.method"] += trim_str(std::string(line+10, len-10-1));
+    // Gemmi✔️✔️: } else if (is_record_type4(line, "AUTHOR") && len > 10) {
+    // Gemmi✔️✔️:   split_str_into(std::string(start, end), ',', st.meta.authors);
+    // Gemmi✔️✔️: } else if (is_record_type4(line, "CRYST1")) {
+    // Gemmi✔️✔️:   if (len > 54)
+    // Gemmi✔️✔️:     st.cell.set(read_double(line+6, 9),
+    // Gemmi✔️✔️:                 read_double(line+15, 9),
+    // Gemmi✔️✔️:                 read_double(line+24, 9),
+    // Gemmi✔️✔️:                 read_double(line+33, 7),
+    // Gemmi✔️✔️:                 read_double(line+40, 7),
+    // Gemmi✔️✔️:                 read_double(line+47, 7));
+    // Gemmi✔️✔️:   if (len > 56)
+    // Gemmi✔️✔️:     st.spacegroup_hm = read_string(line+55, 11);
+    // Gemmi✔️✔️:   if (len > 67) {
+    // Gemmi✔️✔️:     std::string z = read_string(line+66, 4);
+    // Gemmi✔️✔️:     if (!z.empty())
+    // Gemmi✔️✔️:       st.info["_cell.Z_PDB"] = z;
+    // Gemmi✔️✔️:   }
     // END GEMMI CPP FUNCTION
 
     let mut builder = PdbBioBuilder::default();
@@ -343,6 +488,34 @@ pub fn read_pdb_coordinate_subset_from_str_with_params(
                 let anisou = parse_pdb_anisou_record(line, line_number)?;
                 builder.set_last_atom_anisou(line_number, anisou)?;
             }
+            "SEQR" if starts_record(line, "SEQRES") => {
+                parse_pdb_seqres_record(&mut builder, line);
+            }
+            "HEAD" if starts_record(line, "HEADER") => {
+                parse_pdb_header_record(&mut builder, line);
+            }
+            "TITL" if starts_record(line, "TITLE") => {
+                append_metadata_string(
+                    &mut builder.structure.metadata.title,
+                    field_raw(line, 10, line.len()),
+                );
+            }
+            "KEYW" if starts_record(line, "KEYWDS") => {
+                append_metadata_string(
+                    &mut builder.structure.metadata.keywords,
+                    field_raw(line, 10, line.len()),
+                );
+            }
+            "EXPD" if starts_record(line, "EXPDTA") => {
+                append_metadata_string(
+                    &mut builder.structure.metadata.experimental_method,
+                    field_raw(line, 10, line.len()).trim(),
+                );
+            }
+            "AUTH" if starts_record(line, "AUTHOR") => parse_pdb_author_record(&mut builder, line),
+            "CRYS" if starts_record(line, "CRYST1") => {
+                parse_pdb_cryst1_record(&mut builder, line, line_number)?;
+            }
             "CONE" if starts_record(line, "CONECT") && params.reject_unported_records => {
                 return Err(unsupported(
                     &BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
@@ -350,7 +523,7 @@ pub fn read_pdb_coordinate_subset_from_str_with_params(
                     "PDB CONECT bond semantics are not ported",
                 ));
             }
-            "SEQR" | "HELI" | "SHEE" | "SSBO" | "LINK" | "CISP" | "MODR" | "HETN" | "DBRE"
+            "HELI" | "SHEE" | "SSBO" | "LINK" | "CISP" | "MODR" | "HETN" | "DBRE"
                 if params.reject_unported_records =>
             {
                 return Err(unsupported(
@@ -435,8 +608,8 @@ pub fn read_mmcif_atom_site_subset_from_str(text: &str) -> Result<BioStructure, 
     // Gemmi✔️✔️:     atom.serial = string_to_int(row[kId], false);
     // Gemmi❌❌:     if (st.has_d_fraction)
     // Gemmi❌❌:       atom.fraction = (float) cif::as_number(row[kDeuterium], 0.);
-    // Gemmi❌❌:     if (row.has2(kCalcFlag)) { ... }
-    // Gemmi❌❌:     if (row.has2(kTlsGroupId)) { ... }
+    // Gemmi❌❌:     if (row.has2(kCalcFlag)) { set atom.calc_flag from CIF value }
+    // Gemmi❌❌:     if (row.has2(kTlsGroupId)) { set atom.tls_group_id from CIF value }
     // Gemmi✔️✔️:     atom.pos.x = cif::as_number(row[kX]);
     // Gemmi✔️✔️:     atom.pos.y = cif::as_number(row[kY]);
     // Gemmi✔️✔️:     atom.pos.z = cif::as_number(row[kZ]);
@@ -444,10 +617,45 @@ pub fn read_mmcif_atom_site_subset_from_str(text: &str) -> Result<BioStructure, 
     // Gemmi✔️✔️:       atom.occ = (float) cif::as_number(row[kOcc]);
     // Gemmi✔️✔️:     if (row.has2(kBiso))
     // Gemmi✔️✔️:       atom.b_iso = (float) cif::as_number(row[kBiso]);
-    // Gemmi❌❌:     if (!aniso_map.empty()) { ... }
+    // Gemmi❌❌:     if (!aniso_map.empty()) { attach matching anisotropic U tensor }
     // Gemmi❗✔️:     resi->atoms.emplace_back(atom);
     // Gemmi✔️✔️:   }
     // Gemmi✔️✔️: }
+    // END GEMMI CPP FUNCTION
+
+    // BEGIN GEMMI CPP FUNCTION read_entity_and_sequence_info
+    // Gemmi✔️✔️: cif::Table polymer_types = block.find("_entity_poly.", {"entity_id", "type"});
+    // Gemmi✔️✔️: for (auto row : block.find("_entity.", {"id", "?type"})) {
+    // Gemmi✔️✔️:     Entity ent(row.str(0));
+    // Gemmi✔️✔️:     if (row.has(1))
+    // Gemmi✔️✔️:         ent.entity_type = entity_type_from_string(row.str(1));
+    // Gemmi✔️✔️:     ent.polymer_type = PolymerType::Unknown;
+    // Gemmi✔️✔️:     if (polymer_types.ok()) {
+    // Gemmi✔️✔️:         try {
+    // Gemmi✔️✔️:             std::string poly_type = polymer_types.find_row(ent.name).str(1);
+    // Gemmi✔️✔️:             if (ent.entity_type == EntityType::Unknown)
+    // Gemmi✔️✔️:                 ent.entity_type = EntityType::Polymer;
+    // Gemmi✔️✔️:             ent.polymer_type = polymer_type_from_string(poly_type);
+    // Gemmi✔️✔️:         } catch (std::runtime_error&) {}
+    // Gemmi✔️✔️:     }
+    // Gemmi✔️✔️:     st.entities.push_back(ent);
+    // Gemmi✔️✔️: }
+    // Gemmi✔️✔️: for (auto row : block.find("_entity_poly_seq.",
+    // Gemmi✔️✔️:                            {"entity_id", "num", "mon_id"}))
+    // Gemmi✔️✔️:     if (Entity* ent = st.get_entity(row.str(0))) {
+    // Gemmi✔️✔️:         int pos = cif::as_int(row[1], 0) - 1;
+    // Gemmi✔️✔️:         if (pos == (int) ent->full_sequence.size())
+    // Gemmi✔️✔️:             ent->full_sequence.push_back(row.str(2));
+    // Gemmi✔️✔️:         else if (pos >= 0 && pos < (int) ent->full_sequence.size())
+    // Gemmi✔️✔️:             cat_to(ent->full_sequence[pos], ',', row.str(2));
+    // Gemmi✔️✔️:     }
+    // Gemmi❌❌: cif::Table struct_ref = block.find("_struct_ref.", ...);
+    // Gemmi✔️✔️: cif::Table s_asym_table = block.find("_struct_asym.", {"id", "entity_id"});
+    // Gemmi✔️✔️: if (s_asym_table.ok()) {
+    // Gemmi✔️✔️:     for (auto row : s_asym_table)
+    // Gemmi✔️✔️:         if (Entity* ent = st.get_entity(row.str(1)))
+    // Gemmi✔️✔️:             ent->subchains.push_back(row.str(0));
+    // Gemmi❌❌: } else if (!st.models.empty()) { infer subchains from model residues }
     // END GEMMI CPP FUNCTION
 
     let loops = parse_cif_loops(text)?;
@@ -461,7 +669,7 @@ pub fn read_mmcif_atom_site_subset_from_str(text: &str) -> Result<BioStructure, 
                 "mmCIF _atom_site loop is missing",
             )
         })?;
-    read_mmcif_atom_site(atom_site)
+    read_mmcif_atom_site(atom_site, &loops)
 }
 
 fn parse_pdb_atom_record(line: &str, line_number: usize) -> Result<PdbAtomRecord, BioReadError> {
@@ -574,6 +782,105 @@ fn parse_pdb_anisou_record(line: &str, line_number: usize) -> Result<[f32; 6], B
     ])
 }
 
+fn parse_pdb_seqres_record(builder: &mut PdbBioBuilder, line: &str) {
+    let chain_id = pdb_chain_id_from_field(field(line, 10, 12));
+    let source_entity_id = chain_id.as_str();
+    if source_entity_id.is_empty() {
+        return;
+    }
+    let entity_id =
+        builder.find_or_add_entity(source_entity_id, EntityKind::Polymer, PolymerKind::Unknown);
+    for start in (19..68).step_by(4) {
+        let residue_name = field(line, start, start + 3);
+        if !residue_name.is_empty() {
+            builder.append_entity_sequence(entity_id, residue_name);
+        }
+    }
+}
+
+fn parse_pdb_header_record(builder: &mut PdbBioBuilder, line: &str) {
+    let keywords = field_raw(line, 10, 50).trim_end();
+    if !keywords.is_empty() {
+        builder.structure.metadata.pdbx_keywords = Some(keywords.to_string());
+    }
+    let date = pdb_date_format_to_iso(field_raw(line, 50, 59));
+    if !date.is_empty() {
+        builder.structure.metadata.received_initial_deposition_date = Some(date);
+    }
+    let entry_id = field_raw(line, 62, 66).trim_end();
+    if !entry_id.is_empty() {
+        builder.structure.metadata.entry_id = Some(entry_id.to_string());
+    }
+}
+
+fn parse_pdb_author_record(builder: &mut PdbBioBuilder, line: &str) {
+    let text = field_raw(line, 10, line.len()).trim();
+    if text.is_empty() {
+        return;
+    }
+
+    let mut previous_tail = None;
+    if let Some(last) = builder.structure.metadata.authors.pop() {
+        previous_tail = Some(last);
+    }
+    let previous_len = builder.structure.metadata.authors.len();
+    builder.structure.metadata.authors.extend(
+        text.split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+    );
+
+    if let Some(mut last) = previous_tail {
+        if builder.structure.metadata.authors.len() > previous_len {
+            if !last.ends_with('-') && !last.ends_with('.') {
+                last.push(' ');
+            }
+            builder.structure.metadata.authors[previous_len].insert_str(0, &last);
+        } else {
+            builder.structure.metadata.authors.push(last);
+        }
+    }
+}
+
+fn parse_pdb_cryst1_record(
+    builder: &mut PdbBioBuilder,
+    line: &str,
+    line_number: usize,
+) -> Result<(), BioReadError> {
+    if line.len() > 54 {
+        builder.structure.crystal = Some(CrystalInfo {
+            cell: CrystalCell {
+                a: parse_f32(field(line, 6, 15), line_number, "CRYST1 a")?,
+                b: parse_f32(field(line, 15, 24), line_number, "CRYST1 b")?,
+                c: parse_f32(field(line, 24, 33), line_number, "CRYST1 c")?,
+                alpha: parse_f32(field(line, 33, 40), line_number, "CRYST1 alpha")?,
+                beta: parse_f32(field(line, 40, 47), line_number, "CRYST1 beta")?,
+                gamma: parse_f32(field(line, 47, 54), line_number, "CRYST1 gamma")?,
+            },
+            spacegroup_hm: None,
+            z_pdb: None,
+        });
+    }
+    if line.len() > 56 {
+        let spacegroup = field(line, 55, 66);
+        if !spacegroup.is_empty()
+            && let Some(crystal) = &mut builder.structure.crystal
+        {
+            crystal.spacegroup_hm = Some(spacegroup.to_string());
+        }
+    }
+    if line.len() > 67 {
+        let z_pdb = field(line, 66, 70);
+        if !z_pdb.is_empty()
+            && let Some(crystal) = &mut builder.structure.crystal
+        {
+            crystal.z_pdb = Some(z_pdb.to_string());
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CifToken {
     value: String,
@@ -586,7 +893,133 @@ struct CifLoop {
     values: Vec<CifToken>,
 }
 
-fn read_mmcif_atom_site(atom_site: &CifLoop) -> Result<BioStructure, BioReadError> {
+fn read_mmcif_entity_and_sequence_info(
+    builder: &mut PdbBioBuilder,
+    loops: &[CifLoop],
+) -> Result<(), BioReadError> {
+    if let Some(entity_loop) = find_cif_loop(loops, "_entity.id") {
+        let width = checked_cif_loop_width(entity_loop)?;
+        let id_col = required_cif_col(entity_loop, "_entity.id")?;
+        let type_col = optional_cif_col(entity_loop, "_entity.type");
+        for row in entity_loop.values.chunks(width) {
+            let source_id = cif_optional(row[id_col].value.as_str())
+                .ok_or_else(|| missing_cif_value(row[id_col].line_number, "_entity.id"))?;
+            let kind = type_col
+                .and_then(|idx| cif_optional(row[idx].value.as_str()))
+                .map(entity_kind_from_cif)
+                .unwrap_or(EntityKind::Unknown);
+            let polymer_kind = find_mmcif_polymer_kind(loops, source_id)?;
+            let entity_kind = if kind == EntityKind::Unknown && polymer_kind != PolymerKind::Unknown
+            {
+                EntityKind::Polymer
+            } else {
+                kind
+            };
+            builder.find_or_add_entity(source_id, entity_kind, polymer_kind);
+        }
+    }
+
+    if let Some(sequence_loop) = find_cif_loop(loops, "_entity_poly_seq.entity_id") {
+        let width = checked_cif_loop_width(sequence_loop)?;
+        let entity_col = required_cif_col(sequence_loop, "_entity_poly_seq.entity_id")?;
+        let num_col = required_cif_col(sequence_loop, "_entity_poly_seq.num")?;
+        let mon_col = required_cif_col(sequence_loop, "_entity_poly_seq.mon_id")?;
+        for row in sequence_loop.values.chunks(width) {
+            let source_id = cif_optional(row[entity_col].value.as_str()).ok_or_else(|| {
+                missing_cif_value(row[entity_col].line_number, "_entity_poly_seq.entity_id")
+            })?;
+            let Some(entity_id) = builder.find_entity_by_source_id(source_id) else {
+                continue;
+            };
+            let pos = parse_decimal_i32(
+                &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                row[num_col].value.as_str(),
+                row[num_col].line_number,
+                "_entity_poly_seq.num",
+            )? - 1;
+            if pos < 0 {
+                continue;
+            }
+            if let Some(residue_name) = cif_optional(row[mon_col].value.as_str()) {
+                builder.merge_entity_sequence_at(entity_id, pos as usize, residue_name);
+            }
+        }
+    }
+
+    if let Some(struct_asym_loop) = find_cif_loop(loops, "_struct_asym.id") {
+        let width = checked_cif_loop_width(struct_asym_loop)?;
+        let id_col = required_cif_col(struct_asym_loop, "_struct_asym.id")?;
+        let entity_col = required_cif_col(struct_asym_loop, "_struct_asym.entity_id")?;
+        for row in struct_asym_loop.values.chunks(width) {
+            let source_id = cif_optional(row[entity_col].value.as_str()).ok_or_else(|| {
+                missing_cif_value(row[entity_col].line_number, "_struct_asym.entity_id")
+            })?;
+            let Some(entity_id) = builder.find_entity_by_source_id(source_id) else {
+                continue;
+            };
+            let subchain = cif_optional(row[id_col].value.as_str())
+                .ok_or_else(|| missing_cif_value(row[id_col].line_number, "_struct_asym.id"))
+                .and_then(|value| pdb_chain_id_from_cif(value, row[id_col].line_number))?;
+            builder.add_entity_subchain(entity_id, subchain);
+            builder.assign_chain_entity_by_subchain(subchain, entity_id);
+        }
+    }
+
+    Ok(())
+}
+
+fn find_mmcif_polymer_kind(
+    loops: &[CifLoop],
+    entity_id: &str,
+) -> Result<PolymerKind, BioReadError> {
+    let Some(polymer_loop) = find_cif_loop(loops, "_entity_poly.entity_id") else {
+        return Ok(PolymerKind::Unknown);
+    };
+    let width = checked_cif_loop_width(polymer_loop)?;
+    let entity_col = required_cif_col(polymer_loop, "_entity_poly.entity_id")?;
+    let type_col = required_cif_col(polymer_loop, "_entity_poly.type")?;
+    for row in polymer_loop.values.chunks(width) {
+        if cif_optional(row[entity_col].value.as_str()) == Some(entity_id) {
+            return Ok(cif_optional(row[type_col].value.as_str())
+                .map(polymer_kind_from_cif)
+                .unwrap_or(PolymerKind::Unknown));
+        }
+    }
+    Ok(PolymerKind::Unknown)
+}
+
+fn find_cif_loop<'a>(loops: &'a [CifLoop], tag: &str) -> Option<&'a CifLoop> {
+    loops
+        .iter()
+        .find(|loop_| loop_.tags.iter().any(|candidate| candidate == tag))
+}
+
+fn checked_cif_loop_width(loop_: &CifLoop) -> Result<usize, BioReadError> {
+    let width = loop_.tags.len();
+    if width == 0 || loop_.values.len() % width != 0 {
+        return Err(BioReadError::Parse {
+            line_number: loop_.values.first().map_or(0, |token| token.line_number),
+            message: "mmCIF loop value count is not divisible by tag count".to_string(),
+        });
+    }
+    Ok(width)
+}
+
+fn required_cif_col(loop_: &CifLoop, tag: &'static str) -> Result<usize, BioReadError> {
+    optional_cif_col(loop_, tag).ok_or_else(|| BioReadError::Parse {
+        line_number: 0,
+        message: format!("required mmCIF column is missing: {tag}"),
+    })
+}
+
+fn optional_cif_col(loop_: &CifLoop, tag: &str) -> Option<usize> {
+    loop_.tags.iter().position(|candidate| candidate == tag)
+}
+
+fn read_mmcif_atom_site(
+    atom_site: &CifLoop,
+    loops: &[CifLoop],
+) -> Result<BioStructure, BioReadError> {
     let width = atom_site.tags.len();
     if width == 0 || atom_site.values.len() % width != 0 {
         return Err(BioReadError::Parse {
@@ -600,6 +1033,7 @@ fn read_mmcif_atom_site(atom_site: &CifLoop) -> Result<BioStructure, BioReadErro
 
     let columns = AtomSiteColumns::new(&atom_site.tags)?;
     let mut builder = PdbBioBuilder::default();
+    read_mmcif_entity_and_sequence_info(&mut builder, loops)?;
 
     for row in atom_site.values.chunks(width) {
         let line_number = row.first().map_or(0, |token| token.line_number);
@@ -990,6 +1424,61 @@ fn parse_optional_i32(value: &str, line_number: usize) -> Result<Option<i32>, Bi
     .map(Some)
 }
 
+fn append_metadata_string(target: &mut Option<String>, value: &str) {
+    let trimmed = value.trim_end();
+    if trimmed.is_empty() {
+        return;
+    }
+    match target {
+        Some(existing) => existing.push_str(trimmed),
+        None => *target = Some(trimmed.to_string()),
+    }
+}
+
+fn pdb_date_format_to_iso(value: &str) -> String {
+    let trimmed = value.trim();
+    let mut parts = trimmed.split('-');
+    let Some(day) = parts.next() else {
+        return String::new();
+    };
+    let Some(month) = parts.next() else {
+        return String::new();
+    };
+    let Some(year) = parts.next() else {
+        return String::new();
+    };
+    if parts.next().is_some() {
+        return String::new();
+    }
+    let Ok(day) = day.parse::<u8>() else {
+        return String::new();
+    };
+    let month = match month.to_ascii_uppercase().as_str() {
+        "JAN" => 1,
+        "FEB" => 2,
+        "MAR" => 3,
+        "APR" => 4,
+        "MAY" => 5,
+        "JUN" => 6,
+        "JUL" => 7,
+        "AUG" => 8,
+        "SEP" => 9,
+        "OCT" => 10,
+        "NOV" => 11,
+        "DEC" => 12,
+        _ => return String::new(),
+    };
+    let Ok(year2) = year.parse::<u16>() else {
+        return String::new();
+    };
+    let year = if year2 >= 50 {
+        1900 + year2
+    } else {
+        2000 + year2
+    };
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
 fn parse_f32(
     value: &str,
     line_number: usize,
@@ -1098,6 +1587,27 @@ fn cif_optional(value: &str) -> Option<&str> {
     match value.trim() {
         "" | "." | "?" => None,
         value => Some(value),
+    }
+}
+
+fn entity_kind_from_cif(value: &str) -> EntityKind {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "polymer" => EntityKind::Polymer,
+        "non-polymer" | "nonpolymer" => EntityKind::NonPolymer,
+        "branched" => EntityKind::Branched,
+        "water" => EntityKind::Water,
+        _ => EntityKind::Unknown,
+    }
+}
+
+fn polymer_kind_from_cif(value: &str) -> PolymerKind {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "polypeptide(l)" | "polypeptide(d)" => PolymerKind::Peptide,
+        "polydeoxyribonucleotide" => PolymerKind::DNA,
+        "polyribonucleotide" => PolymerKind::RNA,
+        "polydeoxyribonucleotide/polyribonucleotide hybrid" => PolymerKind::NucleicAcidHybrid,
+        "polysaccharide(d)" | "polysaccharide(l)" => PolymerKind::Saccharide,
+        _ => PolymerKind::Unknown,
     }
 }
 
@@ -1266,6 +1776,59 @@ ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
     }
 
     #[test]
+    fn reads_pdb_seqres_entity_sequence_and_links_chain() {
+        let pdb = "\
+SEQRES   1 A    5  ALA GLY SER THR TYR
+ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  
+";
+
+        let structure = read_pdb_coordinate_subset_from_str(pdb).unwrap();
+
+        assert_eq!(structure.num_entities(), 1);
+        assert_eq!(structure.entities[0].kind, EntityKind::Polymer);
+        assert_eq!(
+            structure.entities[0].sequence,
+            vec!["ALA", "GLY", "SER", "THR", "TYR"]
+        );
+        assert_eq!(structure.chains[0].entity_id, Some(EntityId::new(0)));
+    }
+
+    #[test]
+    fn reads_pdb_header_title_authors_and_cryst1() {
+        let pdb = "\
+HEADER    OXIDOREDUCTASE                          28-MAR-07   2XYZ              
+TITLE     EXAMPLE STRUCTURE
+KEYWDS    TEST, GEMMI ROUTE
+EXPDTA    X-RAY DIFFRACTION
+AUTHOR    DOE,J.SMITH
+CRYST1   10.000   20.000   30.000  90.00 100.00 120.00 P 1           2          
+ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  
+";
+
+        let structure = read_pdb_coordinate_subset_from_str(pdb).unwrap();
+        let metadata = structure.metadata();
+        let crystal = structure.crystal().unwrap();
+
+        assert_eq!(metadata.entry_id.as_deref(), Some("2XYZ"));
+        assert_eq!(
+            metadata.received_initial_deposition_date.as_deref(),
+            Some("2007-03-28")
+        );
+        assert_eq!(metadata.title.as_deref(), Some("EXAMPLE STRUCTURE"));
+        assert_eq!(metadata.pdbx_keywords.as_deref(), Some("OXIDOREDUCTASE"));
+        assert_eq!(metadata.keywords.as_deref(), Some("TEST, GEMMI ROUTE"));
+        assert_eq!(
+            metadata.experimental_method.as_deref(),
+            Some("X-RAY DIFFRACTION")
+        );
+        assert_eq!(metadata.authors, vec!["DOE", "J.SMITH"]);
+        assert_eq!(crystal.cell.a, 10.0);
+        assert_eq!(crystal.cell.gamma, 120.0);
+        assert_eq!(crystal.spacegroup_hm.as_deref(), Some("P 1"));
+        assert_eq!(crystal.z_pdb.as_deref(), Some("2"));
+    }
+
+    #[test]
     fn strict_pdb_mode_rejects_unported_records() {
         let pdb = "\
 ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  
@@ -1326,6 +1889,54 @@ ATOM 1 C CA . ALA A 7 11.104 13.207 9.900 1.00 20.00 7 ALA A CA 1
         assert_eq!(structure.atoms[0].occupancy, Some(1.0));
         assert_eq!(structure.atoms[0].b_iso, Some(20.0));
         assert_eq!(structure.coordinates.positions[0], [11.104, 13.207, 9.900]);
+    }
+
+    #[test]
+    fn reads_mmcif_entities_sequences_and_struct_asym_links() {
+        let cif = r#"
+data_demo
+loop_
+_entity.id
+_entity.type
+1 polymer
+loop_
+_entity_poly.entity_id
+_entity_poly.type
+1 polypeptide(L)
+loop_
+_entity_poly_seq.entity_id
+_entity_poly_seq.num
+_entity_poly_seq.mon_id
+1 1 ALA
+1 2 GLY
+1 2 SER
+loop_
+_struct_asym.id
+_struct_asym.entity_id
+A 1
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+ATOM 1 C CA . ALA A 1 0.0 1.0 2.0
+"#;
+
+        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+
+        assert_eq!(structure.num_entities(), 1);
+        assert_eq!(structure.entities[0].kind, EntityKind::Polymer);
+        assert_eq!(structure.entities[0].polymer_kind, PolymerKind::Peptide);
+        assert_eq!(structure.entities[0].sequence, vec!["ALA", "GLY,SER"]);
+        assert_eq!(structure.entities[0].subchains[0].as_str(), "A");
+        assert_eq!(structure.chains[0].entity_id, Some(EntityId::new(0)));
     }
 
     #[test]

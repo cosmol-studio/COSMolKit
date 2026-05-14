@@ -21,39 +21,30 @@
 //! the design exception with the human author before editing code that violates
 //! these standards.
 
-pub mod adjacency;
-pub mod aromaticity;
-pub mod atom;
-pub mod batch;
 pub mod bio;
-pub mod bio_invariants;
-pub mod bio_ops;
-pub mod bond;
-pub mod builder;
-mod canon_rank;
-pub mod canon_smiles;
-pub mod coordinates;
-pub mod derived;
-pub mod distgeom;
-pub mod draw;
-pub mod error;
-pub mod fingerprint;
-pub mod hydrogens;
-mod invariants;
+pub mod chemistry;
 pub mod io;
-pub mod kekulize;
-pub mod molecule;
-pub mod ops;
-pub mod query;
-pub(crate) mod read_parts;
-pub mod rings;
-pub mod sanitize;
-pub mod sgroup;
-mod smiles;
-pub mod smiles_write;
-pub mod stereo;
+pub mod model;
+pub mod notation;
+pub mod operations;
+pub mod properties;
+pub mod search;
 pub mod support;
-pub mod valence;
+
+pub use bio::invariants as bio_invariants;
+pub use bio::ops as bio_ops;
+pub use chemistry::{
+    aromaticity, atropisomer, coordinates, distgeom, hydrogens, kekulize, mol_transforms, rings,
+    stereo, stereo_enumerate, valence,
+};
+pub use io::pdb_writer;
+pub(crate) use model::invariants;
+pub use model::{adjacency, atom, bond, builder, derived, error, molecule, read_parts, sgroup};
+pub(crate) use notation::{canon_rank, smiles};
+pub use notation::{canon_smiles, fragment, sequence, smiles_write};
+pub use operations::{ops, sanitize};
+pub use properties::{avalon_fingerprint, batch, draw, fingerprint, mol_hash, mol_pickler};
+pub use search::{query, smarts_parse, substruct};
 
 pub use adjacency::{AdjacencyError, AdjacencyList, NeighborRef};
 pub use aromaticity::{AromaticityAssignment, AromaticityError, AromaticityModel, set_aromaticity};
@@ -63,9 +54,10 @@ pub use batch::{
     BatchRecordError, BatchValidationError, MoleculeBatch, batch_progress_bar,
 };
 pub use bio::{
-    AltLocLabel, AtomName, AtomRow, AtomSourceIds, BioStructure, ChainKind, ChainRow,
-    ChainSourceIds, CoordinateBlock, ModelRow, PolymerKind, ResidueKind, ResidueName, ResidueRow,
-    RowSpan, classify_residue_name,
+    AltLocLabel, AtomName, AtomRow, AtomSourceIds, BioMetadata, BioStructure, ChainKind, ChainRow,
+    ChainSourceIds, CoordinateBlock, CrystalCell, CrystalInfo, EntityKind, EntityRow,
+    EntitySourceIds, ModelRow, PolymerKind, ResidueKind, ResidueName, ResidueRow, RowSpan,
+    classify_residue_name,
 };
 pub use bio::{
     AtomId as BioAtomId, ChainId as BioChainId, EntityId as BioEntityId, ModelId as BioModelId,
@@ -93,6 +85,7 @@ pub use io::bio::{
 };
 pub use io::sdf::{SdfDataset, SdfRecordMetadata};
 pub use kekulize::KekulizeError;
+pub use mol_pickler::{PickleError, mol_from_binary, mol_to_binary};
 pub use molecule::{
     AtomMapping, BondMapping, Conformer3D, ConformerStore, CoordinateDimension, Molecule,
     MoleculeProperties, PropertyStore, SdfPropertyList, SdfPropertyListTarget, SmilesParseError,
@@ -107,21 +100,27 @@ pub use ops::{
     SupportMatrixEntry, TopologyEditKind, WITH_2D_COORDINATES_SPEC, WITH_HYDROGENS_SPEC,
     WITH_KEKULIZED_BONDS_SPEC, WITHOUT_HYDROGENS_SPEC, WITHOUT_HYDROGENS_WITH_PARAMS_SPEC,
 };
-pub use query::{AtomQueryPredicate, BondQueryPredicate, QueryNode};
+pub use query::{AtomQueryPredicate, BondQueryPredicate, QueryNode, SmartsParseError};
 pub use rings::{
     RingFindType, RingFindingError, RingInfo, find_ring_families, find_sssr, symmetrize_sssr,
 };
-pub use sanitize::{SanitizeError, SanitizeOps, SanitizeStep};
+pub use sanitize::{SanitizeError, SanitizeOps, SanitizeStep, detect_chemistry_problems};
 pub use sgroup::{
     SGroupAttachPoint, SGroupBondRole, SGroupBracket, SGroupBracketStyle, SGroupCState,
     SGroupConnection, SGroupData, SGroupDisplay, SubstanceGroup, SubstanceGroupId,
     SubstanceGroupKind,
 };
 pub use smiles::assign_double_bond_stereo_from_directions;
-pub use smiles_write::{CxSmilesFields, RestoreBondDirOption, SmilesWriteParams};
+pub use smiles_write::{
+    CxSmilesFields, RestoreBondDirOption, SmilesWriteParams, mol_to_random_smiles_vect,
+};
 pub use stereo::{
     DoubleBondStereo, LigandRef, StereoError, StereoGroup, StereoGroupKind, TetrahedralStereo,
     assign_stereochemistry,
+};
+pub use substruct::{
+    SubstructMatchParams, SubstructMatchResult, get_substruct_match, get_substruct_matches,
+    get_substruct_matches_with_params, has_substruct_match,
 };
 pub use support::{
     AROMATICITY_FEATURE, BATCH_FEATURE, BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,

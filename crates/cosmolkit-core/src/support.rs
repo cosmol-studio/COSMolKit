@@ -76,7 +76,7 @@ pub const SMILES_PARSE_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::Io,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Parse SMILES into Molecule with sanitize integration through registered operations (kekulize, valence, aromaticity). CX extensions (coords, labels, values, props, radicals, stereo, SGroups) are parsed. Remove-H with updateExplicitCount is implemented.",
+    docs: "Parse SMILES into Molecule with sanitize integration through registered operations (kekulize, valence, aromaticity, rings). RDKit-aligned postprocessing includes first-2D/first-3D conformer selection, wedged/3D stereo assignment (including non-tetrahedral branches), atropisomer chirality mutation paths, CX wiggly-bond direction cleanup, and _NeedsQueryScan ring/non-ring query completion. CX extensions (coords, labels, values, props, radicals, stereo, SGroups, hierarchy, polymer, linknodes) are parsed. Remove-H isotope tracking and the targeted fixture-backed reader parity gaps from the current checklist are closed, but the reader is not marker-complete: `notation/smiles.rs` still contains 1 `RDKit❌❌`, 2 `RDKit❗❗`, 14 `RDKit✔️❌`, and 2037 `RDKit❗✔️` copied-source lines across broader parse/CX/helper orchestration areas. Remaining unported or unresolved branches fail closed or remain explicitly tracked by gap reports.",
 };
 
 pub const SMILES_WRITE_FEATURE: FeatureSpec = FeatureSpec {
@@ -84,7 +84,7 @@ pub const SMILES_WRITE_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::Io,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Plain SMILES output (canonical and noncanonical) is implemented. Aromatic atoms (lowercase) and BondOrder::Aromatic bonds are supported. CX extensions are implemented: atom labels, molfile values, 2D coordinates, radicals, atom properties, enhanced stereo groups, SGroups, coordinate/hydrogen/zero bonds. Fragment API, random SMILES, and stereochemical perception branch remain unported.",
+    docs: "Plain SMILES output (canonical and noncanonical) is implemented, including the checklist-closed parity cases for noncanonical/rooted/connected/ring/fused/CIP-tie double-bond direction output and non-tetrahedral class emission/permutation recomputation. Aromatic atoms (lowercase) and BondOrder::Aromatic bonds are supported. CX writer blocks are implemented for bond wedge/dash config, ring-bond cis/trans config, linknodes, polymer SGroups, SGroup hierarchy, atropisomer bonds, atom labels, molfile values, 2D coordinates, radicals, atom properties, enhanced stereo groups, and coordinate/hydrogen/zero bonds. Writer behavior depends on the chemistry-core sanitize/valence/kekulize/ring state pipeline, and writer-internal unsupported stage guards were replaced by concrete invariant/validation errors where reachable. The writer is not marker-complete: `notation/smiles_write.rs` still contains 2 `RDKit❗❗` and 582 `RDKit❗✔️` copied-source lines concentrated in broader writer orchestration, double-bond canonicalization, fragment handling, and CX/helper sections.",
 };
 
 pub const MOLBLOCK_IO_FEATURE: FeatureSpec = FeatureSpec {
@@ -92,7 +92,7 @@ pub const MOLBLOCK_IO_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::Io,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Experimental V2000/V3000 MolBlock/SDF writer with parity flag, bond-stereo, SGroup, RGroup, alias, value lines, and aromatic-bond bookkeeping. Reader has partial V2000 parsing. Unsupported branches (complex SMARTS queries, atropisomer wedge-bonds) fail closed.",
+    docs: "Experimental V2000/V3000 MolBlock/SDF writer with parity flag, bond-stereo, SGroup, RGroup, alias, value lines, and aromatic-bond bookkeeping. Reader has partial V2000 parsing. The writer and reader remain dependent on explicit valence/kekulize/ring state management. Unsupported branches (complex SMARTS queries, atropisomer wedge-bonds) fail closed.",
 };
 
 pub const HYDROGENS_FEATURE: FeatureSpec = FeatureSpec {
@@ -100,7 +100,7 @@ pub const HYDROGENS_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::TopologyOperation,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Experimental value-style explicit hydrogen operations. Remove-H is being ported through the operation-contract path; unsupported source branches fail closed.",
+    docs: "Experimental value-style explicit hydrogen operations. Remove-H is being ported through the operation-contract path and depends on valence/kekulize/ring state being available; unsupported source branches fail closed.",
 };
 
 pub const COORDINATE_2D_FEATURE: FeatureSpec = FeatureSpec {
@@ -116,7 +116,7 @@ pub const SANITIZE_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::TopologyOperation,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Run supported RDKit-aligned sanitization steps as a weak topology-state operation; unported requested steps fail closed.",
+    docs: "Run supported RDKit-aligned sanitization steps as a weak topology-state operation, sequencing the explicit valence/kekulize/ring handoff used by the SMILES reader and other operations. Full RDKit flag/error/cleanup closure is still pending in the broader operation-orchestration surface: `operations/ops.rs` still contains 3 `RDKit❗❗`, 180 `RDKit✔️❌`, and 33 `RDKit❗✔️` copied-source lines in the relevant sanitize/property/cleanup orchestration blocks. Unported requested steps fail closed.",
 };
 
 pub const KEKULIZE_FEATURE: FeatureSpec = FeatureSpec {
@@ -124,7 +124,7 @@ pub const KEKULIZE_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::TopologyOperation,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Experimental operation-pipeline skeleton for kekulized bond rewriting.",
+    docs: "Experimental operation-pipeline for kekulized bond rewriting. This is the dependency used by fused aromatic assignment and KekulizeIfPossible restoration. Fragment filtering, fused aromatic candidate selection, worker ordering/backtracking, dummy-question permutation, and value-style `KekulizeIfPossible` restoration have focused regression coverage, but broader operation-state interaction closure is still pending and `chemistry/kekulize.rs` still contains 365 `RDKit❗✔️` copied-source lines in the current frozen-scope audit; unsupported branches fail closed.",
 };
 
 pub const FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
@@ -142,9 +142,13 @@ pub const DRAWING_FEATURE: FeatureSpec = FeatureSpec {
     parity_sensitive: true,
     docs: "SVG/PNG molecule renderer ported from RDKit MolDraw2D. \
            Includes atom labels (isotope/charge/H/map), bond geometry \
-           (single/double/triple/wedge/aromatic), radical dots, clash \
-           detection, scale calculation. SVG output via native XML; \
-           PNG via usvg+resvg rasterization.",
+           (single/double/triple/wedge/aromatic/dative), radical dots, clash \
+           detection, scale calculation, and smoothed bond joins. \
+           Annotations: CIP codes (R/S, E/Z), atom notes, bond notes, \
+           SGroup data, brackets, variable bonds, link nodes, close-contact \
+           markers, and highlights. SVG metadata, data-tag attributes, and \
+           CSS class output for atoms/bonds. \
+           SVG output via native XML; PNG via usvg+resvg rasterization.",
 };
 
 pub const STEREO_FEATURE: FeatureSpec = FeatureSpec {
@@ -152,7 +156,16 @@ pub const STEREO_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::Stereo,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Tetrahedral stereo detection from typed state (ChiralTag + chiral_permutation). Double-bond E/Z potential detection. Full geometric perception from 3D coordinates and CIP labeler not yet ported.",
+    docs: "Tetrahedral stereo detection from typed state (ChiralTag + chiral_permutation). \
+           CIP ranking system (assignAtomCIPRanks with iterative neighbor-rank refinement) ported. \
+           R/S label assignment (assignAtomChiralCodes) from ChiralTag + permutation. \
+           Double-bond E/Z potential detection. Pseudo-3D wedge-based chiral tag detection \
+           (atomChiralTypeFromBondDirPseudo3D). Full non-tetrahedral stereo infrastructure \
+           (SquarePlanar, TrigonalBipyramidal, Octahedral swap tables and across-atom lookup). \
+           Ring stereochemistry special-case detection. Full CIP-based bond stereo codes \
+           and assignLegacyCIPLabels dispatcher ported. assignAtomChiralTagsFromStructure \
+           (full 3D coordinate-based ChiralTag assignment) remains blocked on Conformer \
+           infrastructure completeness.",
 };
 
 pub const VALENCE_FEATURE: FeatureSpec = FeatureSpec {
@@ -160,7 +173,7 @@ pub const VALENCE_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::Valence,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Experimental RDKit-aligned valence and implicit hydrogen assignment.",
+    docs: "Experimental RDKit-aligned valence and implicit hydrogen assignment. This is a shared dependency for sanitize, kekulize, and SMILES postprocessing. `chemistry/valence.rs` still contains 13 `RDKit❗✔️` copied-source lines in the current frozen-scope audit, and remaining work is concentrated in property-cache maintenance, radicals, dative/query edge cases, and broader entrypoint/orchestration logic in `operations/ops.rs`. Unsupported branches fail closed.",
 };
 
 pub const RINGS_FEATURE: FeatureSpec = FeatureSpec {
@@ -168,7 +181,7 @@ pub const RINGS_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::TopologyOperation,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Experimental RDKit-aligned SSSR and symmetrized SSSR ring perception.",
+    docs: "Experimental RDKit-aligned SSSR, symmetrized SSSR, fast ring traversal, and URF-enabled ring-family/relevant-cycle perception via `cosmolkit_ringdecomposer`. SSSR active-bond filtering, D2 duplicate-candidate handling, D3/extra-ring discovery, symmetrized K4 storage, fastFindRings DFS traversal, and the URF-enabled ring-family/relevant-cycle path have focused regression coverage. `chemistry/rings.rs` still contains 7 `RDKit❌❌` lines in the explicit RDKit non-URF branch plus 78 `RDKit❗✔️` copied-source lines in broader aggregate `findSSSR` / `symmetrizeSSSR` surfaces, so frozen-scope closure remains open.",
 };
 
 pub const AROMATICITY_FEATURE: FeatureSpec = FeatureSpec {
@@ -194,7 +207,7 @@ pub const BIO_STRUCTURE_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::BioHierarchy,
     status: SupportStatus::Experimental,
     parity_sensitive: false,
-    docs: "Experimental flat-row BioStructure hierarchy and coordinate storage. Public access is read-only; mutation must go through crate-internal builders or registered BioStructure operations.",
+    docs: "Experimental flat-row BioStructure hierarchy and coordinate storage. This is COSMolKit's single public structural model for protein/PDB/mmCIF work. Public access is read-only; mutation must go through crate-internal builders or registered BioStructure operations.",
 };
 
 pub const BIO_PDB_COORDINATE_SUBSET_READ_FEATURE: FeatureSpec = FeatureSpec {
@@ -202,7 +215,7 @@ pub const BIO_PDB_COORDINATE_SUBSET_READ_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::Io,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Experimental Gemmi-aligned PDB coordinate subset reader. It models ATOM/HETATM, MODEL/ENDMDL, ANISOU, residue identity, atom identity, element, charge, occupancy, B factor, and coordinates. PDB metadata, connectivity, sequence, TER/entity semantics, secondary-structure, and other unported records are not complete PDB support.",
+    docs: "Experimental Gemmi-aligned PDB coordinate subset reader into BioStructure. This is the structural IO path and the required front end for future RDKit-compatible molecule input. The reader models ATOM/HETATM, MODEL/ENDMDL, ANISOU, residue identity, atom identity, element, charge, occupancy, B factor, coordinates, SEQRES entities, selected header metadata, AUTHOR, and CRYST1. Connectivity, TER/entity splitting semantics, secondary-structure, and other unported records are not complete PDB support.",
 };
 
 pub const BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE: FeatureSpec = FeatureSpec {
@@ -210,7 +223,7 @@ pub const BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::Io,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Experimental Gemmi-aligned mmCIF _atom_site subset reader. It is not complete mmCIF structure semantics; unsupported source branches remain visible in io::bio.",
+    docs: "Experimental Gemmi-aligned mmCIF _atom_site subset reader into BioStructure. This is the structural IO path and the required front end for any future molecule compatibility input. The reader also models _entity, _entity_poly, _entity_poly_seq, and _struct_asym enough to link chains to entities and preserve polymer sequence. RDKit-derived mmCIF parser work remains deferred unless a Molecule compatibility need is approved. It is not complete mmCIF structure semantics; unsupported source branches remain visible in io::bio.",
 };
 
 pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
@@ -241,7 +254,8 @@ pub const DG_BOUNDS_FEATURE: FeatureSpec = FeatureSpec {
     status: SupportStatus::Experimental,
     parity_sensitive: false,
     docs: "Distance geometry bounds matrix generation. Uses topology-based 1-2/1-3/1-4 bounds \
-           with hybridization angle estimates, VDW lower bounds, and triangle inequality smoothing. \
+           with hybridization angle estimates, VDW lower bounds, H-bond donor/acceptor special bounds, \
+           triangle inequality smoothing, and set15Bounds with stereochemistry detection. \
            Does not include UFF bond-length parameters or full RDKit triangle smoother. \
            The bounds matrix is an n×n Vec<Vec<f64>> of upper bounds.",
 };

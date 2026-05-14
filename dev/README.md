@@ -13,6 +13,12 @@ daily development.
   (entry point for porting work)
 - [porting_inventory.md](porting_inventory.md) — per-feature porting status
 - [work.md](work.md) — active phase implementation detail
+- [bio_structure_io_policy.md](bio_structure_io_policy.md) — PDB/mmCIF
+  structural IO boundary between Gemmi-derived BioStructure readers and
+  RDKit-derived Molecule compatibility behavior
+- [pdb_mmcif_gemmi_primary_plan.md](pdb_mmcif_gemmi_primary_plan.md) —
+  execution plan for Gemmi-primary PDB/mmCIF reading and RDKit-compatible
+  molecule construction
 
 ## Required Development Mode
 
@@ -172,6 +178,25 @@ compute selection/transform intent and call explicit migration primitives such
 as `remove_residues(...)`. Do not hand-write compacting hierarchy edits by
 mutating atom, residue, chain, model, or coordinate rows directly from an
 operation body.
+
+## PDB/mmCIF And Protein IO Boundary
+
+COSMolKit uses one public structural model: `BioStructure`.
+
+Gemmi-derived code is the canonical source for PDB/mmCIF reading into
+`BioStructure`. RDKit-derived PDB code is reserved for `Molecule` compatibility
+behavior such as PDB block writing, future `Molecule::from_pdb_block` support,
+and `AtomPDBResidueInfo` semantics. Future molecule input must be layered over
+the Gemmi-primary `BioStructure` parse plus an explicit conversion profile; it
+must not introduce a second public parser.
+
+Do not expose parallel public parser modules for the same user task. In
+particular, do not publicize `pdb_parser.rs` or `mmcif_parser.rs` beside
+`io::bio`; those files are quarantined until a source-backed Molecule-specific
+need exists. The detailed rule is in
+[`bio_structure_io_policy.md`](./bio_structure_io_policy.md) and the execution
+plan is in
+[`pdb_mmcif_gemmi_primary_plan.md`](./pdb_mmcif_gemmi_primary_plan.md).
 
 Compacting or renumbering topology edits must not be hand-written as a sequence
 of `topology_mut()`, coordinate remap, property remap, report, and invalidation

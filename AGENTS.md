@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+Read dev/source_reproduction_protocol.md after context compacted each time !!!
+
 ## Current Project State
 COSMolKit is in an intentional core redesign.
 
