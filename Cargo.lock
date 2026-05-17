@@ -149,6 +149,8 @@ dependencies = [
  "glam",
  "log",
  "resvg",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tiny-skia",

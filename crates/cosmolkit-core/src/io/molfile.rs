@@ -17,11 +17,24 @@ pub fn read_mol_file(path: impl AsRef<Path>) -> Result<MolFileRecord, SdfReadErr
 }
 
 pub fn read_mol_record_from_str(s: &str) -> Result<MolFileRecord, SdfReadError> {
-    let record = crate::io::sdf::read_sdf_from_str_with_params(
+    read_mol_record_from_str_with_params(
         s,
         crate::io::sdf::SdfReadParams {
             process_property_lists: false,
             ..Default::default()
+        },
+    )
+}
+
+pub fn read_mol_record_from_str_with_params(
+    s: &str,
+    params: crate::io::sdf::SdfReadParams,
+) -> Result<MolFileRecord, SdfReadError> {
+    let record = crate::io::sdf::read_sdf_from_str_with_params(
+        s,
+        crate::io::sdf::SdfReadParams {
+            process_property_lists: false,
+            ..params
         },
     )?;
     let name = record.molecule.properties().name().map(str::to_string);

@@ -30,12 +30,11 @@ struct OpFields {
     domain: Option<Ident>,
     kind: Option<Ident>,
     topology_edit: Option<Ident>,
+    access: Option<AccessFields>,
     may_mutate: Vec<Ident>,
     auto_remap: Vec<Ident>,
-    must_handle: Vec<Ident>,
-    needs_update: Vec<Ident>,
+    derived_effects: Option<DerivedEffectFields>,
     requires_mapping: Option<Ident>,
-    report: Vec<Ident>,
     allows_noop: Option<LitBool>,
     feature: Option<Path>,
     parity: Option<Ident>,
@@ -44,6 +43,19 @@ struct OpFields {
     parity_profile: Option<LitStr>,
     default_method: Option<Ident>,
     default_args: Vec<Expr>,
+}
+
+#[derive(Default)]
+struct AccessFields {
+    read: Vec<Ident>,
+    write: Vec<Ident>,
+}
+
+#[derive(Default)]
+struct DerivedEffectFields {
+    recompute: Vec<Ident>,
+    preserve: Vec<Ident>,
+    invalidate: Vec<Ident>,
 }
 
 impl Parse for MolOpBodyAttr {
@@ -91,24 +103,40 @@ impl Parse for OpEntry {
                 "domain" => fields.domain = Some(content.parse()?),
                 "kind" => fields.kind = Some(content.parse()?),
                 "topology_edit" => fields.topology_edit = Some(content.parse()?),
+                "access" => fields.access = Some(parse_access_fields(&content)?),
                 "may_mutate" => fields.may_mutate = parse_ident_list(&content)?,
                 "auto_remap" => fields.auto_remap = parse_ident_list(&content)?,
-                "must_handle" => fields.must_handle = parse_ident_list(&content)?,
-                "needs_update" => fields.needs_update = parse_ident_list(&content)?,
+                "derived_effects" => {
+                    fields.derived_effects = Some(parse_derived_effect_fields(&content)?)
+                }
+                "must_handle" => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        "use `derived_effects: { require_handle: [...], recompute: [...] }`; `must_handle` is a derived compatibility view",
+                    ));
+                }
+                "needs_update" => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        "use `derived_effects: { invalidate: [...], recompute: [...] }`; `needs_update` is a derived compatibility view",
+                    ));
+                }
                 "invalidates_old" => {
                     return Err(syn::Error::new(
                         key.span(),
-                        "use `needs_update` to declare stale cache states that must be cleared or updated",
+                        "use `derived_effects.invalidate` to declare stale cache states that must be cleared or updated",
                     ));
                 }
                 "invalidates" => {
                     return Err(syn::Error::new(
                         key.span(),
-                        "use `needs_update` to declare stale cache states that must be cleared or updated",
+                        "use `derived_effects.invalidate` to declare stale cache states that must be cleared or updated",
                     ));
                 }
                 "requires_mapping" => fields.requires_mapping = Some(content.parse()?),
-                "report" => fields.report = parse_ident_list(&content)?,
+                "report" => {
+                    let _ = parse_ident_list(&content)?;
+                }
                 "allows_noop" => fields.allows_noop = Some(content.parse()?),
                 "feature" => fields.feature = Some(content.parse()?),
                 "parity" => fields.parity = Some(content.parse()?),
@@ -148,6 +176,73 @@ fn parse_ident_list(input: ParseStream<'_>) -> syn::Result<Vec<Ident>> {
     bracketed!(content in input);
     let items = content.parse_terminated(Ident::parse, Token![,])?;
     Ok(items.into_iter().collect())
+}
+
+fn parse_access_fields(input: ParseStream<'_>) -> syn::Result<AccessFields> {
+    let content;
+    braced!(content in input);
+    let mut fields = AccessFields::default();
+    while !content.is_empty() {
+        let key: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+        match key.to_string().as_str() {
+            "read" => fields.read = parse_ident_list(&content)?,
+            "write" => fields.write = parse_ident_list(&content)?,
+            other => {
+                return Err(syn::Error::new(
+                    key.span(),
+                    format!("unknown access field `{other}`"),
+                ));
+            }
+        }
+        if content.peek(Token![,]) {
+            content.parse::<Token![,]>()?;
+        }
+    }
+    Ok(fields)
+}
+
+fn parse_derived_effect_fields(input: ParseStream<'_>) -> syn::Result<DerivedEffectFields> {
+    let content;
+    braced!(content in input);
+    let mut fields = DerivedEffectFields::default();
+    while !content.is_empty() {
+        let key: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+        match key.to_string().as_str() {
+            "recompute" => fields.recompute = parse_ident_list(&content)?,
+            "preserve" => fields.preserve = parse_ident_list(&content)?,
+            "invalidate" => fields.invalidate = parse_ident_list(&content)?,
+            "requires" => {
+                return Err(syn::Error::new(
+                    key.span(),
+                    "`derived_effects.requires` was removed; recompute from topology or declare preserve/invalidate as appropriate",
+                ));
+            }
+            "unsupported" => {
+                return Err(syn::Error::new(
+                    key.span(),
+                    "`derived_effects.unsupported` was removed; unsupported behavior should be expressed by returning a structured error",
+                ));
+            }
+            "require_handle" => {
+                return Err(syn::Error::new(
+                    key.span(),
+                    "`require_handle` was removed with `derived_effects.requires`; use recompute/preserve/invalidate only",
+                ));
+            }
+            other => {
+                return Err(syn::Error::new(
+                    key.span(),
+                    format!("unknown derived_effects field `{other}`"),
+                ));
+            }
+        }
+        if content.peek(Token![,]) {
+            content.parse::<Token![,]>()?;
+        }
+    }
+    Ok(fields)
 }
 
 fn parse_expr_list(input: ParseStream<'_>) -> syn::Result<Vec<Expr>> {
@@ -295,6 +390,8 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         .fields
         .topology_edit
         .map_or_else(|| ident_with_span("none", op.name.span()), Ok)?;
+    let access = required_field(op.fields.access, &op.name, "access")?;
+    let derived_effects = required_field(op.fields.derived_effects, &op.name, "derived_effects")?;
     let requires_mapping = op
         .fields
         .requires_mapping
@@ -314,12 +411,13 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
     let domain_expr = domain_expr(&domain)?;
     let kind_expr = kind_expr(&kind)?;
     let topology_edit_expr = topology_edit_expr(&topology_edit)?;
+    let access_expr = access_expr(&access)?;
     let may_mutate_expr = block_set_expr(&op.fields.may_mutate)?;
     let auto_remap_expr = block_set_expr(&op.fields.auto_remap)?;
-    let must_handle_expr = dependent_set_expr(&op.fields.must_handle)?;
-    let needs_update_expr = derived_state_expr(&op.fields.needs_update)?;
+    let recompute_expr = derived_state_expr(&derived_effects.recompute)?;
+    let preserve_expr = derived_state_expr(&derived_effects.preserve)?;
+    let invalidate_expr = derived_state_expr(&derived_effects.invalidate)?;
     let mapping_expr = mapping_expr(&requires_mapping)?;
-    let report_expr = report_set_expr(&op.fields.report)?;
     let parity_expr = parity_expr(&parity)?;
     let call_args = param_idents(&op.params)?;
     let params = op.params;
@@ -331,12 +429,15 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
             domain: #domain_expr,
             kind: #kind_expr,
             topology_edit: #topology_edit_expr,
+            access: #access_expr,
             may_mutate: #may_mutate_expr,
             auto_remap: #auto_remap_expr,
-            must_handle: #must_handle_expr,
-            needs_update: #needs_update_expr,
+            derived_effects: crate::ops::DerivedEffects::new(
+                #recompute_expr,
+                #preserve_expr,
+                #invalidate_expr,
+            ),
             requires_mapping: #mapping_expr,
-            report: #report_expr,
             allows_noop: #allows_noop,
             support: crate::#feature.status,
             parity: #parity_expr,
@@ -466,6 +567,9 @@ fn topology_edit_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
         "none" | "None" => Ok(quote!(crate::ops::TopologyEditKind::None)),
         "local" | "Local" => Ok(quote!(crate::ops::TopologyEditKind::Local)),
         "compacting" | "Compacting" => Ok(quote!(crate::ops::TopologyEditKind::Compacting)),
+        "appending" | "Appending" | "append" | "Append" => {
+            Ok(quote!(crate::ops::TopologyEditKind::Appending))
+        }
         "renumbering" | "Renumbering" => Ok(quote!(crate::ops::TopologyEditKind::Renumbering)),
         "merge" | "Merge" => Ok(quote!(crate::ops::TopologyEditKind::Merge)),
         other => Err(syn::Error::new(
@@ -485,24 +589,6 @@ fn mapping_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
             format!("unknown mapping requirement `{other}`"),
         )),
     }
-}
-
-fn report_set_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> {
-    let mut expr = quote!(crate::ops::OperationReportSet::NONE);
-    for item in items {
-        let flag = match item.to_string().as_str() {
-            "atom_mapping" | "AtomMapping" => quote!(crate::ops::OperationReportSet::ATOM_MAPPING),
-            "bond_mapping" | "BondMapping" => quote!(crate::ops::OperationReportSet::BOND_MAPPING),
-            other => {
-                return Err(syn::Error::new(
-                    item.span(),
-                    format!("unknown operation report `{other}`"),
-                ));
-            }
-        };
-        expr = quote!(#expr.union(#flag));
-    }
-    Ok(expr)
 }
 
 fn parity_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
@@ -540,25 +626,10 @@ fn block_set_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> {
     )
 }
 
-fn dependent_set_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> {
-    union_expr(
-        items,
-        quote!(crate::ops::DerivedStateSet::NONE),
-        |item| match item.to_string().as_str() {
-            "adjacency" | "Adjacency" => Ok(quote!(crate::ops::DerivedStateSet::ADJACENCY)),
-            "rings" | "Rings" => Ok(quote!(crate::ops::DerivedStateSet::RINGS)),
-            "ring_families" | "RingFamilies" => {
-                Ok(quote!(crate::ops::DerivedStateSet::RING_FAMILIES))
-            }
-            "valence" | "Valence" => Ok(quote!(crate::ops::DerivedStateSet::VALENCE)),
-            "aromaticity" | "Aromaticity" => Ok(quote!(crate::ops::DerivedStateSet::AROMATICITY)),
-            "stereo" | "Stereo" => Ok(quote!(crate::ops::DerivedStateSet::STEREO)),
-            other => Err(syn::Error::new(
-                item.span(),
-                format!("unknown dependent state `{other}`"),
-            )),
-        },
-    )
+fn access_expr(access: &AccessFields) -> syn::Result<proc_macro2::TokenStream> {
+    let read = block_set_expr(&access.read)?;
+    let write = block_set_expr(&access.write)?;
+    Ok(quote!(crate::ops::BlockAccess::new(#read, #write)))
 }
 
 fn derived_state_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> {
@@ -566,7 +637,6 @@ fn derived_state_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> 
         items,
         quote!(crate::DerivedState::NONE),
         |item| match item.to_string().as_str() {
-            "adjacency" | "Adjacency" => Ok(quote!(crate::DerivedState::ADJACENCY)),
             "rings" | "Rings" => Ok(quote!(crate::DerivedState::RINGS)),
             "ring_families" | "RingFamilies" => Ok(quote!(crate::DerivedState::RING_FAMILIES)),
             "valence" | "Valence" => Ok(quote!(crate::DerivedState::VALENCE)),

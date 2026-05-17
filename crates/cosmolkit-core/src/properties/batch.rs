@@ -329,6 +329,7 @@ impl MoleculeBatch {
                 }
                 BatchRecord::Error(_) => {
                     error_count += 1;
+                    results.push("?".to_string());
                 }
             }
         }
@@ -360,10 +361,18 @@ impl MoleculeBatch {
                                 reason: None,
                             });
                         }
+                        results.push("?".to_string());
                     }
                 },
                 BatchRecord::Error(_) => {
                     error_count += 1;
+                    if errors == BatchErrorMode::Strict {
+                        return Err(BatchValidationError {
+                            errors: error_count,
+                            reason: None,
+                        });
+                    }
+                    results.push("?".to_string());
                 }
             }
         }
@@ -803,5 +812,32 @@ mod tests {
         let report = batch.write_sdf(&path, BatchErrorMode::KeepErrors).unwrap();
         assert_eq!(report.written, 1);
         assert!(path.exists());
+    }
+
+    #[test]
+    fn to_smiles_list_with_params_keep_errors_preserves_record_slots() {
+        let batch = MoleculeBatch::from_smiles_list(&[
+            "CCO".to_string(),
+            "C1".to_string(),
+            "N".to_string(),
+        ]);
+
+        let smiles = batch
+            .to_smiles_list_with_params(&SmilesWriteParams::default(), BatchErrorMode::KeepErrors)
+            .unwrap();
+
+        assert_eq!(smiles.len(), 3);
+        assert_eq!(smiles[1], "?");
+    }
+
+    #[test]
+    fn to_smiles_list_with_params_strict_rejects_existing_error_slots() {
+        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string(), "C1".to_string()]);
+
+        let error = batch
+            .to_smiles_list_with_params(&SmilesWriteParams::default(), BatchErrorMode::Strict)
+            .unwrap_err();
+
+        assert_eq!(error.errors, 1);
     }
 }

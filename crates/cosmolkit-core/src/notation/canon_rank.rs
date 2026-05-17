@@ -6,9 +6,116 @@ use std::{
 };
 
 use crate::{
-    AtomId, BondOrder, BondStereo, ChiralTag, KekulizeError, Molecule, StereoGroupKind,
-    ValenceModel, assign_valence_with_options, symmetrize_sssr,
+    AdjacencyList, Atom, AtomId, Bond, BondId, BondOrder, BondStereo, ChiralTag, KekulizeError,
+    Molecule, RingInfo, StereoGroupKind, ValenceAssignment, ValenceModel, molecule::TopologyBlock,
+    read_parts::MoleculeReadParts, stereo::StereoGroup,
 };
+
+struct CanonRankReadView<'a> {
+    atoms: &'a [Atom],
+    bonds: &'a [Bond],
+    adjacency: &'a AdjacencyList,
+    stereo_groups: &'a [StereoGroup],
+    rings: RingInfo,
+    valence: ValenceAssignment,
+}
+
+impl<'a> CanonRankReadView<'a> {
+    fn from_molecule(molecule: &'a Molecule) -> Result<Self, KekulizeError> {
+        let rings = crate::fast_find_rings(molecule)?;
+        let valence =
+            crate::valence::assign_valence_with_options(molecule, ValenceModel::RdkitLike, false)?;
+        Ok(Self {
+            atoms: molecule.atoms(),
+            bonds: molecule.bonds(),
+            adjacency: &molecule.topology_block().adjacency,
+            stereo_groups: molecule.stereo_groups(),
+            rings,
+            valence,
+        })
+    }
+
+    fn from_read_parts(read: MoleculeReadParts<'a>) -> Result<Self, KekulizeError> {
+        Self::from_parts(
+            read.atoms(),
+            read.bonds(),
+            read.adjacency(),
+            read.stereo_groups(),
+        )
+    }
+
+    fn from_topology(
+        topology: &'a TopologyBlock,
+        stereo_groups: &'a [StereoGroup],
+    ) -> Result<Self, KekulizeError> {
+        Self::from_parts(
+            &topology.atoms,
+            &topology.bonds,
+            &topology.adjacency,
+            stereo_groups,
+        )
+    }
+
+    fn from_parts(
+        atoms: &'a [Atom],
+        bonds: &'a [Bond],
+        adjacency: &'a AdjacencyList,
+        stereo_groups: &'a [StereoGroup],
+    ) -> Result<Self, KekulizeError> {
+        // RDKit✔️✔️:   bool clearRings = false;
+        // RDKit✔️✔️:   if (!mol.getRingInfo()->isFindFastOrBetter()) {
+        // RDKit✔️✔️:     MolOps::fastFindRings(mol);
+        // RDKit✔️✔️:     clearRings = true;
+        // RDKit✔️✔️:   }
+        let rings = crate::rings::fast_find_rings_from_parts(atoms.len(), bonds, adjacency)?;
+        let valence = crate::valence::assign_valence_with_options_from_parts(
+            atoms,
+            bonds,
+            adjacency,
+            ValenceModel::RdkitLike,
+            false,
+        )?;
+        Ok(Self {
+            atoms,
+            bonds,
+            adjacency,
+            stereo_groups,
+            rings,
+            valence,
+        })
+    }
+
+    fn num_atoms(&self) -> usize {
+        self.atoms.len()
+    }
+
+    fn num_bonds(&self) -> usize {
+        self.bonds.len()
+    }
+
+    fn atom_degree(&self, atom: AtomId) -> usize {
+        self.adjacency.neighbors_of(atom.index()).len()
+    }
+
+    fn atom_neighbors(&self, atom: AtomId) -> Vec<usize> {
+        self.adjacency
+            .neighbors_of(atom.index())
+            .iter()
+            .map(|neighbor| neighbor.atom_index)
+            .collect()
+    }
+
+    fn bond_other_atom_index(&self, bond_id: BondId, atom_id: AtomId) -> Option<usize> {
+        let bond = self.bonds.get(bond_id.index())?;
+        if bond.begin() == atom_id {
+            Some(bond.end().index())
+        } else if bond.end() == atom_id {
+            Some(bond.begin().index())
+        } else {
+            None
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FragmentRankScope<'a> {
@@ -76,7 +183,7 @@ impl CanonicalRankOptions {
             include_isotopes: true,
             include_atom_maps: true,
             include_chiral_presence: false,
-            include_stereo_groups: true,
+            include_stereo_groups: false,
             use_non_stereo_ranks: false,
             include_ring_stereo: true,
             chirality_rings_use_ring_stereo: false,
@@ -114,11 +221,27 @@ impl CanonRankFlags {
 }
 
 pub(crate) fn rank_mol_atoms(molecule: &Molecule) -> Result<Vec<usize>, KekulizeError> {
-    rank_mol_atoms_with_options(molecule, CanonicalRankOptions::rank_mol_default())
+    let view = CanonRankReadView::from_molecule(molecule)?;
+    rank_mol_atoms_with_options_from_view(&view, CanonicalRankOptions::rank_mol_default())
+}
+
+pub(crate) fn rank_mol_atoms_from_read_parts(
+    read: MoleculeReadParts<'_>,
+) -> Result<Vec<usize>, KekulizeError> {
+    let view = CanonRankReadView::from_read_parts(read)?;
+    rank_mol_atoms_with_options_from_view(&view, CanonicalRankOptions::rank_mol_default())
 }
 
 pub(crate) fn rank_mol_atoms_with_options(
     molecule: &Molecule,
+    options: CanonicalRankOptions,
+) -> Result<Vec<usize>, KekulizeError> {
+    let view = CanonRankReadView::from_molecule(molecule)?;
+    rank_mol_atoms_with_options_from_view(&view, options)
+}
+
+fn rank_mol_atoms_with_options_from_view(
+    view: &CanonRankReadView<'_>,
     options: CanonicalRankOptions,
 ) -> Result<Vec<usize>, KekulizeError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: void rankMolAtoms(const ROMol&, std::vector<unsigned int>&, bool, bool, bool, bool, bool, bool, bool, bool)
@@ -130,7 +253,7 @@ pub(crate) fn rank_mol_atoms_with_options(
     // RDKit✔️✔️:   if (!mol.getNumAtoms()) {
     // RDKit✔️✔️:     return;
     // RDKit✔️✔️:   }
-    if molecule.num_atoms() == 0 {
+    if view.num_atoms() == 0 {
         return Ok(Vec::new());
     }
 
@@ -140,14 +263,14 @@ pub(crate) fn rank_mol_atoms_with_options(
     // RDKit✔️✔️:     clearRings = true;
     // RDKit✔️✔️:   }
     // COSMolKit rank computation is read-only, so ring info is computed ephemerally.
-    let atoms_to_use = vec![true; molecule.num_atoms()];
-    let bonds_to_use = vec![true; molecule.num_bonds()];
+    let atoms_to_use = vec![true; view.num_atoms()];
+    let bonds_to_use = vec![true; view.num_bonds()];
 
     // RDKit✔️✔️:   res.resize(mol.getNumAtoms());
     // RDKit✔️✔️:   std::vector<Canon::canon_atom> atoms(mol.getNumAtoms());
     // RDKit✔️✔️:   initCanonAtoms(mol, atoms, includeChirality, includeStereoGroups);
     let mut atoms = init_fragment_canon_atoms_for_kekulize(
-        molecule,
+        view,
         &atoms_to_use,
         &bonds_to_use,
         options.include_chirality,
@@ -163,12 +286,12 @@ pub(crate) fn rank_mol_atoms_with_options(
     // RDKit✔️✔️:   ftor.df_useAtomMaps = includeAtomMaps;
     // RDKit✔️✔️:   ftor.df_useNonStereoRanks = useNonStereoRanks;
     // RDKit✔️✔️:   ftor.df_useChiralPresence = includeChiralPresence;
-    let mut order = vec![0usize; molecule.num_atoms()];
+    let mut order = vec![0usize; view.num_atoms()];
     let flags = CanonRankFlags::from_fragment_options(options);
     // RDKit✔️✔️:   detail::rankWithFunctor(ftor, breakTies, order, true, includeChirality,
     // RDKit✔️✔️:                           includeRingStereo);
     rank_with_atom_compare_functor_for_kekulize(
-        molecule,
+        view,
         &mut atoms,
         options.break_ties,
         options.include_ring_stereo,
@@ -179,8 +302,8 @@ pub(crate) fn rank_mol_atoms_with_options(
     // RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
     // RDKit✔️✔️:     res[order[i]] = atoms[order[i]].index;
     // RDKit✔️✔️:   }
-    let mut res = vec![0usize; molecule.num_atoms()];
-    for idx in 0..molecule.num_atoms() {
+    let mut res = vec![0usize; view.num_atoms()];
+    for idx in 0..view.num_atoms() {
         res[order[idx]] = usize::try_from(atoms[order[idx]].index).unwrap_or(usize::MAX);
     }
     // RDKit✔️✔️: }
@@ -189,14 +312,25 @@ pub(crate) fn rank_mol_atoms_with_options(
 }
 
 pub(crate) fn rank_fragment_atoms_for_kekulize(
-    molecule: &Molecule,
+    topology: &TopologyBlock,
+    stereo_groups: &[StereoGroup],
     scope: FragmentRankScope<'_>,
 ) -> Result<Vec<usize>, KekulizeError> {
-    rank_fragment_atoms(molecule, scope, CanonicalRankOptions::kekulize_default())
+    let view = CanonRankReadView::from_topology(topology, stereo_groups)?;
+    rank_fragment_atoms_from_view(&view, scope, CanonicalRankOptions::kekulize_default())
 }
 
 pub(crate) fn rank_fragment_atoms(
     molecule: &Molecule,
+    scope: FragmentRankScope<'_>,
+    options: CanonicalRankOptions,
+) -> Result<Vec<usize>, KekulizeError> {
+    let view = CanonRankReadView::from_molecule(molecule)?;
+    rank_fragment_atoms_from_view(&view, scope, options)
+}
+
+fn rank_fragment_atoms_from_view(
+    view: &CanonRankReadView<'_>,
     scope: FragmentRankScope<'_>,
     options: CanonicalRankOptions,
 ) -> Result<Vec<usize>, KekulizeError> {
@@ -246,54 +380,56 @@ pub(crate) fn rank_fragment_atoms(
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: void rankFragmentAtoms(const ROMol&, std::vector<unsigned int>&, const boost::dynamic_bitset<>&, const boost::dynamic_bitset<>&, const std::vector<std::string>*, const std::vector<std::string>*, bool, bool, bool, bool, bool, bool)
-    if atoms_to_use.len() != molecule.num_atoms() || bonds_to_use.len() != molecule.num_bonds() {
+    if atoms_to_use.len() != view.num_atoms() || bonds_to_use.len() != view.num_bonds() {
         return Err(KekulizeError::FragmentBitsetSizeMismatch {
             atoms: atoms_to_use.len(),
             bonds: bonds_to_use.len(),
         });
     }
     if let Some(atom_symbols) = scope.atom_symbols
-        && atom_symbols.len() != molecule.num_atoms()
+        && atom_symbols.len() != view.num_atoms()
     {
         return Err(KekulizeError::CanonicalRankSymbolSizeMismatch {
             kind: "atomSymbols",
-            expected: molecule.num_atoms(),
+            expected: view.num_atoms(),
             actual: atom_symbols.len(),
         });
     }
     if let Some(bond_symbols) = scope.bond_symbols
-        && bond_symbols.len() != molecule.num_bonds()
+        && bond_symbols.len() != view.num_bonds()
     {
         return Err(KekulizeError::CanonicalRankSymbolSizeMismatch {
             kind: "bondSymbols",
-            expected: molecule.num_bonds(),
+            expected: view.num_bonds(),
             actual: bond_symbols.len(),
         });
     }
-    if molecule.num_atoms() == 0 {
+    if view.num_atoms() == 0 {
         return Ok(Vec::new());
     }
+    // RDKit✔️✔️: rankFragmentAtoms() has no includeStereoGroups parameter and
+    // RDKit✔️✔️: detail::initFragmentCanonAtoms() does not assign stereo groups.
     let mut atoms = init_fragment_canon_atoms_for_kekulize(
-        molecule,
+        view,
         atoms_to_use,
         bonds_to_use,
         options.include_chirality,
-        options.include_stereo_groups,
+        false,
         scope.atom_symbols,
         scope.bond_symbols,
     )?;
-    let mut order = vec![0usize; molecule.num_atoms()];
+    let mut order = vec![0usize; view.num_atoms()];
     let flags = CanonRankFlags::from_fragment_options(options);
     rank_with_atom_compare_functor_for_kekulize(
-        molecule,
+        view,
         &mut atoms,
         options.break_ties,
         options.include_ring_stereo,
         flags,
         &mut order,
     )?;
-    let mut res = vec![0usize; molecule.num_atoms()];
-    for idx in 0..molecule.num_atoms() {
+    let mut res = vec![0usize; view.num_atoms()];
+    for idx in 0..view.num_atoms() {
         res[order[idx]] = usize::try_from(atoms[order[idx]].index).unwrap_or(usize::MAX);
     }
     Ok(res)
@@ -354,15 +490,15 @@ enum CanonCompareMode {
 }
 
 fn atropisomer_atoms_and_bonds_for_canonical_rank(
-    molecule: &Molecule,
-    bond_id: crate::BondId,
-) -> Option<[(AtomId, Vec<crate::BondId>); 2]> {
+    view: &CanonRankReadView<'_>,
+    bond_id: BondId,
+) -> Option<[(AtomId, Vec<BondId>); 2]> {
     // BEGIN RDKIT CPP FUNCTION Atropisomers::getAtropisomerAtomsAndBonds
     // RDKit✔️✔️: bool getAtropisomerAtomsAndBonds(const Bond *bond,
     // RDKit✔️✔️:                                  AtropAtomAndBondVec atomsAndBondVects[2],
     // RDKit✔️✔️:                                  const ROMol &mol) {
     // RDKit✔️✔️:   PRECONDITION(bond, "no bond");
-    let bond = molecule.bonds().get(bond_id.index())?;
+    let bond = view.bonds.get(bond_id.index())?;
     // RDKit✔️✔️:   atomsAndBondVects[0].first = bond->getBeginAtom();
     // RDKit✔️✔️:   atomsAndBondVects[1].first = bond->getEndAtom();
     let atoms = [bond.begin(), bond.end()];
@@ -371,7 +507,7 @@ fn atropisomer_atoms_and_bonds_for_canonical_rank(
     for bond_atom_index in 0..2 {
         // RDKit✔️✔️:     for (const auto nbrBond :
         // RDKit✔️✔️:          mol.atomBonds(atomsAndBondVects[bondAtomIndex].first)) {
-        for neighbor_bond in molecule.bonds() {
+        for neighbor_bond in view.bonds {
             if neighbor_bond.begin() != atoms[bond_atom_index]
                 && neighbor_bond.end() != atoms[bond_atom_index]
             {
@@ -405,16 +541,10 @@ fn atropisomer_atoms_and_bonds_for_canonical_rank(
         // RDKit✔️✔️:                 atomsAndBondVects[bondAtomIndex].second[1]);
         // RDKit✔️✔️:     }
         if result[bond_atom_index].1.len() == 2 {
-            let first_other = bond_other_atom_index(
-                molecule,
-                result[bond_atom_index].1[0],
-                atoms[bond_atom_index],
-            )?;
-            let second_other = bond_other_atom_index(
-                molecule,
-                result[bond_atom_index].1[1],
-                atoms[bond_atom_index],
-            )?;
+            let first_other =
+                bond_other_atom_index(view, result[bond_atom_index].1[0], atoms[bond_atom_index])?;
+            let second_other =
+                bond_other_atom_index(view, result[bond_atom_index].1[1], atoms[bond_atom_index])?;
             if second_other < first_other {
                 result[bond_atom_index].1.swap(0, 1);
             }
@@ -427,42 +557,11 @@ fn atropisomer_atoms_and_bonds_for_canonical_rank(
 }
 
 fn bond_other_atom_index(
-    molecule: &Molecule,
-    bond_id: crate::BondId,
+    view: &CanonRankReadView<'_>,
+    bond_id: BondId,
     atom_id: AtomId,
 ) -> Option<usize> {
-    let bond = molecule.bonds().get(bond_id.index())?;
-    if bond.begin() == atom_id {
-        Some(bond.end().index())
-    } else if bond.end() == atom_id {
-        Some(bond.begin().index())
-    } else {
-        None
-    }
-}
-
-fn atom_degree(molecule: &Molecule, atom: AtomId) -> usize {
-    molecule
-        .bonds()
-        .iter()
-        .filter(|bond| bond.begin() == atom || bond.end() == atom)
-        .count()
-}
-
-fn atom_neighbors(molecule: &Molecule, atom: AtomId) -> Vec<usize> {
-    molecule
-        .bonds()
-        .iter()
-        .filter_map(|bond| {
-            if bond.begin() == atom {
-                Some(bond.end().index())
-            } else if bond.end() == atom {
-                Some(bond.begin().index())
-            } else {
-                None
-            }
-        })
-        .collect()
+    view.bond_other_atom_index(bond_id, atom_id)
 }
 
 fn count_swaps_to_interconvert<T: Copy + Eq + std::fmt::Debug>(
@@ -512,7 +611,7 @@ fn count_swaps_to_interconvert<T: Copy + Eq + std::fmt::Debug>(
 }
 
 fn init_fragment_canon_atoms_for_kekulize<'a>(
-    molecule: &Molecule,
+    view: &CanonRankReadView<'_>,
     atoms_to_use: &[bool],
     bonds_to_use: &[bool],
     include_chirality: bool,
@@ -534,15 +633,14 @@ fn init_fragment_canon_atoms_for_kekulize<'a>(
     // RDKit✔️✔️:                "bad atom symbols");
     // RDKit✔️✔️:   PRECONDITION(!bondSymbols || bondSymbols->size() == mol.getNumBonds(),
     // RDKit✔️✔️:                "bad bond symbols");
-    let valence = assign_valence_with_options(molecule, ValenceModel::RdkitLike, false)?;
     // RDKit✔️✔️:   for (const auto atom : mol.atoms()) {
     // RDKit✔️✔️:     auto i = atom->getIdx();
     // RDKit✔️✔️:     auto &atomsi = atoms[i];
     // RDKit✔️✔️:     atomsi.atom = atom;
     // RDKit✔️✔️:     atomsi.index = i;
     // RDKit✔️✔️:     atomsi.degree = 0;
-    let mut atoms = molecule
-        .atoms()
+    let mut atoms = view
+        .atoms
         .iter()
         .map(|atom| CanonAtom {
             index: i32::try_from(atom.id().index()).unwrap_or(i32::MAX),
@@ -571,7 +669,7 @@ fn init_fragment_canon_atoms_for_kekulize<'a>(
             bonds: Vec::new(),
         })
         .collect::<Vec<_>>();
-    for bond in molecule.bonds() {
+    for bond in view.bonds {
         let begin = bond.begin().index();
         let end = bond.end().index();
         atoms[begin].all_nbr_ids.push(end);
@@ -612,7 +710,7 @@ fn init_fragment_canon_atoms_for_kekulize<'a>(
     // RDKit✔️✔️:           makeBondHolder(bond, bond->getEndAtomIdx(), includeChirality, atoms));
     // RDKit✔️✔️:       endAt.bonds.push_back(makeBondHolder(bond, bond->getBeginAtomIdx(),
     // RDKit✔️✔️:                                            includeChirality, atoms));
-    for bond in molecule.bonds() {
+    for bond in view.bonds {
         let bond_idx = bond.id().index();
         let begin = bond.begin().index();
         let end = bond.end().index();
@@ -623,8 +721,8 @@ fn init_fragment_canon_atoms_for_kekulize<'a>(
         atoms[begin].degree += 1;
         atoms[end].nbr_ids.push(begin);
         atoms[end].degree += 1;
-        let mut begin_bond = make_canon_bond_holder(molecule, bond_idx, end, include_chirality)?;
-        let mut end_bond = make_canon_bond_holder(molecule, bond_idx, begin, include_chirality)?;
+        let mut begin_bond = make_canon_bond_holder(view, bond_idx, end, include_chirality)?;
+        let mut end_bond = make_canon_bond_holder(view, bond_idx, begin, include_chirality)?;
         if let Some(symbols) = bond_symbols {
             begin_bond.p_symbol = Some(symbols[bond_idx].as_str());
             end_bond.p_symbol = Some(symbols[bond_idx].as_str());
@@ -658,23 +756,19 @@ fn init_fragment_canon_atoms_for_kekulize<'a>(
     // RDKit✔️✔️:     std::sort(atomsi.bonds.begin(), atomsi.bonds.end(), bondholder::greater);
     // RDKit✔️✔️:   }
     let initial_ranks = canon_atom_rank_snapshot(&atoms);
-    for atom in molecule.atoms() {
+    for atom in view.atoms {
         let idx = atom.id().index();
         if !atoms_to_use[idx] {
             continue;
         }
-        let original_degree = molecule
-            .bonds()
-            .iter()
-            .filter(|bond| bond.begin() == atom.id() || bond.end() == atom.id())
-            .count();
+        let original_degree = view.atom_degree(atom.id());
         atoms[idx].total_num_hs = usize::from(atom.explicit_hydrogens())
-            + usize::try_from(valence.implicit_hydrogens[idx].max(0)).unwrap_or(usize::MAX)
+            + usize::try_from(view.valence.implicit_hydrogens[idx].max(0)).unwrap_or(usize::MAX)
             + original_degree.saturating_sub(atoms[idx].degree);
         sort_canon_bonds_descending(&mut atoms[idx].bonds, &initial_ranks);
     }
     advanced_init_canon_atoms_stereo_state_for_kekulize(
-        molecule,
+        view,
         &mut atoms,
         atoms_to_use,
         include_chirality,
@@ -686,7 +780,7 @@ fn init_fragment_canon_atoms_for_kekulize<'a>(
 }
 
 fn advanced_init_canon_atoms_stereo_state_for_kekulize(
-    molecule: &Molecule,
+    view: &CanonRankReadView<'_>,
     atoms: &mut [CanonAtom<'_>],
     atoms_to_use: &[bool],
     include_chirality: bool,
@@ -703,18 +797,17 @@ fn advanced_init_canon_atoms_stereo_state_for_kekulize(
     // RDKit✔️✔️:   atom.hasRingNbr = hasRingNbr(mol, atom.atom);
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION advancedInitCanonAtom
-    let rings = symmetrize_sssr(molecule)?;
-    for atom in molecule.atoms() {
+    for atom in view.atoms {
         let idx = atom.id().index();
         if !atoms_to_use[idx] {
             continue;
         }
-        atoms[idx].is_ring_atom = rings.num_atom_rings(atom.id()) > 0;
+        atoms[idx].is_ring_atom = view.rings.num_atom_rings(atom.id()) > 0;
         atoms[idx].is_ring_stereo_atom = matches!(
             atom.chiral_tag(),
             ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
         ) && atom.prop("_ringStereoAtoms").is_some();
-        atoms[idx].has_ring_nbr = has_ring_nbr_for_kekulize(molecule, idx);
+        atoms[idx].has_ring_nbr = has_ring_nbr_for_kekulize(view, idx);
     }
 
     // BEGIN RDKIT CPP FUNCTION initCanonAtoms stereo group assignment
@@ -730,7 +823,7 @@ fn advanced_init_canon_atoms_stereo_state_for_kekulize(
     // RDKit✔️✔️:   }
     // END RDKIT CPP FUNCTION initCanonAtoms stereo group assignment
     if include_chirality && include_stereo_groups {
-        for (group_idx, group) in molecule.stereo_groups().iter().enumerate() {
+        for (group_idx, group) in view.stereo_groups.iter().enumerate() {
             let rdkit_group_idx = group_idx + 1;
             for atom in group.atoms() {
                 let atom_idx = atom.index();
@@ -745,7 +838,7 @@ fn advanced_init_canon_atoms_stereo_state_for_kekulize(
     Ok(())
 }
 
-fn has_ring_nbr_for_kekulize(molecule: &Molecule, atom_idx: usize) -> bool {
+fn has_ring_nbr_for_kekulize(view: &CanonRankReadView<'_>, atom_idx: usize) -> bool {
     // BEGIN RDKIT CPP FUNCTION hasRingNbr
     // RDKit✔️✔️: bool hasRingNbr(const ROMol &mol, const Atom *at) {
     // RDKit✔️✔️:   PRECONDITION(at, "bad pointer");
@@ -759,23 +852,16 @@ fn has_ring_nbr_for_kekulize(molecule: &Molecule, atom_idx: usize) -> bool {
     // RDKit✔️✔️:   return false;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION hasRingNbr
-    let atom_id = AtomId::new(atom_idx);
-    molecule.bonds().iter().any(|bond| {
-        let other = if bond.begin() == atom_id {
-            Some(bond.end().index())
-        } else if bond.end() == atom_id {
-            Some(bond.begin().index())
-        } else {
-            None
-        };
-        other.is_some_and(|neighbor_idx| {
-            let neighbor = &molecule.atoms()[neighbor_idx];
+    view.adjacency
+        .neighbors_of(atom_idx)
+        .iter()
+        .any(|neighbor_ref| {
+            let neighbor = &view.atoms[neighbor_ref.atom_index];
             matches!(
                 neighbor.chiral_tag(),
                 ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
             ) && neighbor.prop("_ringStereoAtoms").is_some()
         })
-    })
 }
 
 const fn canon_stereo_group_type_from_kind(kind: StereoGroupKind) -> CanonStereoGroupType {
@@ -787,7 +873,7 @@ const fn canon_stereo_group_type_from_kind(kind: StereoGroupKind) -> CanonStereo
 }
 
 fn make_canon_bond_holder<'a>(
-    molecule: &Molecule,
+    view: &CanonRankReadView<'_>,
     bond_idx: usize,
     other_idx: usize,
     include_chirality: bool,
@@ -804,7 +890,7 @@ fn make_canon_bond_holder<'a>(
     // RDKit✔️✔️:   Bond::BondType bt =
     // RDKit✔️✔️:       bond->getIsAromatic() ? Bond::AROMATIC : bond->getBondType();
     // RDKit✔️✔️:   bondholder res(bt, stereo, otherIdx, 0, bond->getIdx());
-    let bond = &molecule.bonds()[bond_idx];
+    let bond = &view.bonds[bond_idx];
     let bond_type = if bond.is_aromatic() {
         BondOrder::Aromatic
     } else {
@@ -836,8 +922,8 @@ fn make_canon_bond_holder<'a>(
         // RDKit✔️✔️:           }
         // RDKit✔️✔️:         }
         // RDKit✔️✔️:       }
-        if atom_degree(molecule, bond.begin()) > 2 {
-            for neighbor in atom_neighbors(molecule, bond.begin()) {
+        if view.atom_degree(bond.begin()) > 2 {
+            for neighbor in view.atom_neighbors(bond.begin()) {
                 if neighbor != bond.end().index() && neighbor != stereo_atoms[0].index() {
                     controlling_atoms[1] = Some(neighbor);
                 }
@@ -853,8 +939,8 @@ fn make_canon_bond_holder<'a>(
         // RDKit✔️✔️:           }
         // RDKit✔️✔️:         }
         // RDKit✔️✔️:       }
-        if atom_degree(molecule, bond.end()) > 2 {
-            for neighbor in atom_neighbors(molecule, bond.end()) {
+        if view.atom_degree(bond.end()) > 2 {
+            for neighbor in view.atom_neighbors(bond.end()) {
                 if neighbor != bond.begin().index() && neighbor != stereo_atoms[1].index() {
                     controlling_atoms[3] = Some(neighbor);
                 }
@@ -869,8 +955,7 @@ fn make_canon_bond_holder<'a>(
         // RDKit✔️✔️:       CHECK_INVARIANT(Atropisomers::getAtropisomerAtomsAndBonds(
         // RDKit✔️✔️:                           bond, atropAtomAndBondVecs, bond->getOwningMol()),
         // RDKit✔️✔️:                       "Could not find atropisomer controlling atoms")
-        let Some(atrop) = atropisomer_atoms_and_bonds_for_canonical_rank(molecule, bond.id())
-        else {
+        let Some(atrop) = atropisomer_atoms_and_bonds_for_canonical_rank(view, bond.id()) else {
             return Err(KekulizeError::ProtocolDebt {
                 branch: "Atropisomers::getAtropisomerAtomsAndBonds invariant",
                 reason: "could not find atropisomer controlling atoms",
@@ -882,7 +967,7 @@ fn make_canon_bond_holder<'a>(
         // RDKit✔️✔️:                      ->getOtherAtom(atropAtomAndBondVecs[0].first)
         // RDKit✔️✔️:                      ->getIdx()];
         controlling_atoms[0] = Some(
-            bond_other_atom_index(molecule, atrop[0].1[0], atrop[0].0)
+            bond_other_atom_index(view, atrop[0].1[0], atrop[0].0)
                 .expect("atropisomer neighbor bond must include focus atom"),
         );
         // RDKit✔️✔️:       res.controllingAtoms[2] =
@@ -891,7 +976,7 @@ fn make_canon_bond_holder<'a>(
         // RDKit✔️✔️:                      ->getOtherAtom(atropAtomAndBondVecs[1].first)
         // RDKit✔️✔️:                      ->getIdx()];
         controlling_atoms[2] = Some(
-            bond_other_atom_index(molecule, atrop[1].1[0], atrop[1].0)
+            bond_other_atom_index(view, atrop[1].1[0], atrop[1].0)
                 .expect("atropisomer neighbor bond must include focus atom"),
         );
         // RDKit✔️✔️:       if (atropAtomAndBondVecs[0].second.size() > 1) {
@@ -903,7 +988,7 @@ fn make_canon_bond_holder<'a>(
         // RDKit✔️✔️:       }
         if atrop[0].1.len() > 1 {
             controlling_atoms[1] = Some(
-                bond_other_atom_index(molecule, atrop[0].1[1], atrop[0].0)
+                bond_other_atom_index(view, atrop[0].1[1], atrop[0].0)
                     .expect("atropisomer neighbor bond must include focus atom"),
             );
         }
@@ -916,7 +1001,7 @@ fn make_canon_bond_holder<'a>(
         // RDKit✔️✔️:     }
         if atrop[1].1.len() > 1 {
             controlling_atoms[3] = Some(
-                bond_other_atom_index(molecule, atrop[1].1[1], atrop[1].0)
+                bond_other_atom_index(view, atrop[1].1[1], atrop[1].0)
                     .expect("atropisomer neighbor bond must include focus atom"),
             );
         }
@@ -943,7 +1028,7 @@ fn make_canon_bond_holder<'a>(
 }
 
 fn rank_with_atom_compare_functor_for_kekulize(
-    molecule: &Molecule,
+    view: &CanonRankReadView<'_>,
     atoms: &mut [CanonAtom<'_>],
     break_ties: bool,
     include_ring_stereo: bool,
@@ -960,7 +1045,7 @@ fn rank_with_atom_compare_functor_for_kekulize(
     // RDKit✔️✔️:   const ROMol &mol = *ftor.dp_mol;
     // RDKit✔️✔️:   canon_atom *atoms = ftor.dp_atoms;
     // RDKit✔️✔️:   const unsigned int nAts = mol.getNumAtoms();
-    let n_atoms = molecule.num_atoms();
+    let n_atoms = view.num_atoms();
     // RDKit✔️✔️:   std::vector<int> count(nAts);
     // RDKit✔️✔️:   std::vector<int> next(nAts);
     // RDKit✔️✔️:   std::vector<int> changed(nAts, 1);
@@ -971,6 +1056,14 @@ fn rank_with_atom_compare_functor_for_kekulize(
     let mut changed = vec![true; n_atoms];
     let mut touched = vec![false; n_atoms];
     let mut active_set = -1isize;
+    let trace_row_142 = std::env::var_os("COSMOLKIT_TRACE_CANON").is_some();
+    let debug_trace_stage = |stage: &str, order: &[usize], count: &[usize]| {
+        if !trace_row_142 {
+            return;
+        }
+        eprintln!("rank-stage {stage} order={order:?}");
+        eprintln!("rank-stage {stage} count={count:?}");
+    };
     // RDKit✔️✔️:   CreateSinglePartition(nAts, order, count, atoms);
     create_single_partition_for_kekulize(n_atoms, order, &mut count, atoms);
     // RDKit✔️✔️:   ftor.df_useNbrs = true;
@@ -986,7 +1079,7 @@ fn rank_with_atom_compare_functor_for_kekulize(
     // RDKit✔️✔️:   RefinePartitions(mol, atoms, ftor, true, order, count, activeset, next,
     // RDKit✔️✔️:                    changed, touched);
     refine_partitions_for_kekulize(
-        molecule,
+        view,
         atoms,
         true,
         CanonCompareMode::Atom,
@@ -998,6 +1091,7 @@ fn rank_with_atom_compare_functor_for_kekulize(
         &mut changed,
         &mut touched,
     );
+    debug_trace_stage("after_refine", order, &count);
     // RDKit✔️✔️:   bool ties = false;
     // RDKit✔️✔️:   for (unsigned i = 0; i < nAts; ++i) {
     // RDKit✔️✔️:     if (!count[i]) {
@@ -1022,7 +1116,7 @@ fn rank_with_atom_compare_functor_for_kekulize(
             &mut changed,
         );
         refine_partitions_for_kekulize(
-            molecule,
+            view,
             atoms,
             true,
             CanonCompareMode::SpecialChirality,
@@ -1034,13 +1128,14 @@ fn rank_with_atom_compare_functor_for_kekulize(
             &mut changed,
             &mut touched,
         );
+        debug_trace_stage("after_special_chirality", order, &count);
     }
     // RDKit✔️✔️:   ties = false;
     // RDKit✔️✔️:   unsigned symRingAtoms = 0;
     // RDKit✔️✔️:   unsigned ringAtoms = 0;
     // RDKit✔️✔️:   bool branchingRingAtom = false;
     // RDKit✔️✔️:   RingInfo *ringInfo = mol.getRingInfo();
-    let use_special_symmetry = special_symmetry_rank_refinement_required(molecule, order, &count)?;
+    let use_special_symmetry = special_symmetry_rank_refinement_required(view, order, &count);
     // RDKit✔️✔️:   if (useSpecial && ties && ringAtoms > 0 &&
     // RDKit✔️✔️:       static_cast<float>(symRingAtoms) / ringAtoms > 0.5 && branchingRingAtom) {
     // RDKit✔️✔️:     SpecialSymmetryAtomCompareFunctor sftor(atoms, mol, atomsInPlay,
@@ -1051,7 +1146,7 @@ fn rank_with_atom_compare_functor_for_kekulize(
     // RDKit✔️✔️:                      changed, touched);
     // RDKit✔️✔️:   }
     if use_special_symmetry {
-        compare_ring_atoms_concerning_num_neighbors_for_kekulize(molecule, atoms)?;
+        compare_ring_atoms_concerning_num_neighbors_for_kekulize(view, atoms);
         activate_partitions_for_kekulize(
             n_atoms,
             order,
@@ -1061,7 +1156,7 @@ fn rank_with_atom_compare_functor_for_kekulize(
             &mut changed,
         );
         refine_partitions_for_kekulize(
-            molecule,
+            view,
             atoms,
             true,
             CanonCompareMode::SpecialSymmetry,
@@ -1073,6 +1168,7 @@ fn rank_with_atom_compare_functor_for_kekulize(
             &mut changed,
             &mut touched,
         );
+        debug_trace_stage("after_special_symmetry", order, &count);
     }
     // RDKit✔️✔️:   if (breakTies) {
     // RDKit✔️✔️:     BreakTies(mol, atoms, ftor, true, order, count, activeset, next, changed,
@@ -1080,7 +1176,7 @@ fn rank_with_atom_compare_functor_for_kekulize(
     // RDKit✔️✔️:   }
     if break_ties {
         break_ties_for_kekulize(
-            molecule,
+            view,
             atoms,
             true,
             CanonCompareMode::Atom,
@@ -1092,6 +1188,7 @@ fn rank_with_atom_compare_functor_for_kekulize(
             &mut changed,
             &mut touched,
         );
+        debug_trace_stage("after_break_ties", order, &count);
     }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION detail::rankWithFunctor
@@ -1181,7 +1278,7 @@ fn activate_partitions_for_kekulize(
 
 #[allow(clippy::too_many_arguments)]
 fn refine_partitions_for_kekulize(
-    molecule: &Molecule,
+    view: &CanonRankReadView<'_>,
     atoms: &mut [CanonAtom<'_>],
     mode: bool,
     compare_mode: CanonCompareMode,
@@ -1201,7 +1298,7 @@ fn refine_partitions_for_kekulize(
     // RDKit✔️✔️:                       std::vector<int> &next, std::vector<int> &changed,
     // RDKit✔️✔️:                       std::vector<char> &touchedPartitions) {
     // RDKit✔️✔️:   unsigned int nAtoms = mol.getNumAtoms();
-    let n_atoms = molecule.num_atoms();
+    let n_atoms = view.num_atoms();
     // RDKit✔️✔️:   while (activeset != -1) {
     while *active_set != -1 {
         // RDKit✔️✔️:     partition = activeset;
@@ -1306,7 +1403,7 @@ fn refine_partitions_for_kekulize(
 }
 
 fn break_ties_for_kekulize(
-    molecule: &Molecule,
+    view: &CanonRankReadView<'_>,
     atoms: &mut [CanonAtom<'_>],
     mode: bool,
     compare_mode: CanonCompareMode,
@@ -1326,7 +1423,7 @@ fn break_ties_for_kekulize(
     // RDKit✔️✔️:                std::vector<int> &changed,
     // RDKit✔️✔️:                std::vector<char> &touchedPartitions) {
     // RDKit✔️✔️:   unsigned int nAtoms = mol.getNumAtoms();
-    let n_atoms = molecule.num_atoms();
+    let n_atoms = view.num_atoms();
     // RDKit✔️✔️:   for (unsigned int i = 0; i < nAtoms; i++) {
     let mut i = 0usize;
     while i < n_atoms {
@@ -1389,7 +1486,7 @@ fn break_ties_for_kekulize(
             // RDKit✔️✔️:       RefinePartitions(mol, atoms, compar, mode, order, count, activeset, next,
             // RDKit✔️✔️:                        changed, touchedPartitions);
             refine_partitions_for_kekulize(
-                molecule,
+                view,
                 atoms,
                 mode,
                 compare_mode,
@@ -1578,11 +1675,7 @@ fn hanoi_order_for_kekulize(
     let result = !left_in_temp;
     let base_ptr = base.as_ptr();
     let temp_ptr = temp.as_ptr();
-    let left_source_ptr = if left_in_temp {
-        temp_ptr
-    } else {
-        base_ptr
-    };
+    let left_source_ptr = if left_in_temp { temp_ptr } else { base_ptr };
     let right_source_ptr = if right_in_temp {
         // SAFETY: right half starts at left_len within the same backing buffer.
         unsafe { temp_ptr.add(left_len) }
@@ -2283,23 +2376,22 @@ fn get_atom_ring_nbr_code_for_kekulize(atoms: &[CanonAtom<'_>], atom_idx: usize)
 }
 
 fn special_symmetry_rank_refinement_required(
-    molecule: &Molecule,
+    view: &CanonRankReadView<'_>,
     order: &[usize],
     count: &[usize],
-) -> Result<bool, KekulizeError> {
-    let rings = symmetrize_sssr(molecule)?;
+) -> bool {
     let mut ties = false;
     let mut sym_ring_atoms = 0usize;
     let mut ring_atoms = 0usize;
     let mut branching_ring_atom = false;
-    for &atom_idx in order.iter().take(molecule.num_atoms()) {
+    for &atom_idx in order.iter().take(view.num_atoms()) {
         let atom = AtomId::new(atom_idx);
-        if rings.num_atom_rings(atom) > 0 {
+        if view.rings.num_atom_rings(atom) > 0 {
             if count[atom_idx] > 2 {
                 sym_ring_atoms += count[atom_idx];
             }
             ring_atoms += 1;
-            if rings.num_atom_rings(atom) > 1 && count[atom_idx] > 1 {
+            if view.rings.num_atom_rings(atom) > 1 && count[atom_idx] > 1 {
                 branching_ring_atom = true;
             }
         }
@@ -2307,24 +2399,22 @@ fn special_symmetry_rank_refinement_required(
             ties = true;
         }
     }
-    Ok(ties
-        && ring_atoms > 0
+    ties && ring_atoms > 0
         && (sym_ring_atoms as f32) / (ring_atoms as f32) > 0.5
-        && branching_ring_atom)
+        && branching_ring_atom
 }
 
 fn compare_ring_atoms_concerning_num_neighbors_for_kekulize(
-    molecule: &Molecule,
+    view: &CanonRankReadView<'_>,
     atoms: &mut [CanonAtom<'_>],
-) -> Result<(), KekulizeError> {
+) {
     // BEGIN RDKIT CPP FUNCTION compareRingAtomsConcerningNumNeighbors
     // RDKit✔️✔️: void compareRingAtomsConcerningNumNeighbors(Canon::canon_atom *atoms,
     // RDKit✔️✔️:                                             unsigned int nAtoms,
     // RDKit✔️✔️:                                             const ROMol &mol) {
     // RDKit✔️✔️:   PRECONDITION(atoms, "bad pointer");
     // RDKit✔️✔️:   RingInfo *ringInfo = mol.getRingInfo();
-    let rings = symmetrize_sssr(molecule)?;
-    let n_atoms = molecule.num_atoms();
+    let n_atoms = view.num_atoms();
     // RDKit✔️✔️:   std::vector<char> visited(nAtoms);
     // RDKit✔️✔️:   std::vector<char> lastLevelNbrs(nAtoms);
     // RDKit✔️✔️:   std::vector<char> currentLevelNbrs(nAtoms);
@@ -2346,7 +2436,7 @@ fn compare_ring_atoms_concerning_num_neighbors_for_kekulize(
     // RDKit✔️✔️:       continue;
     // RDKit✔️✔️:     }
     for idx in 0..n_atoms {
-        if rings.num_atom_rings(AtomId::new(idx)) < 1 {
+        if view.rings.num_atom_rings(AtomId::new(idx)) < 1 {
             continue;
         }
         // RDKit✔️✔️:     std::deque<int> neighbors;
@@ -2394,7 +2484,7 @@ fn compare_ring_atoms_concerning_num_neighbors_for_kekulize(
                 // RDKit✔️✔️:         }
                 // symmetrize_sssr() always returns initialized RingInfo in the
                 // redesigned core, so only the ring-membership branch remains.
-                if rings.num_atom_rings(AtomId::new(nidx)) < 1 {
+                if view.rings.num_atom_rings(AtomId::new(nidx)) < 1 {
                     continue;
                 }
                 // RDKit✔️✔️:         lastLevelNbrs[nidx] = 1;
@@ -2519,7 +2609,6 @@ fn compare_ring_atoms_concerning_num_neighbors_for_kekulize(
     }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION compareRingAtomsConcerningNumNeighbors
-    Ok(())
 }
 
 fn update_atom_neighbor_index_for_kekulize(atoms: &mut [CanonAtom<'_>], atom_idx: usize) {
@@ -2892,6 +2981,84 @@ fn rdkit_bond_stereo_rank(stereo: BondStereo) -> u8 {
 mod tests {
     use super::*;
     use crate::{AtomSpec, BondSpec, Element, MoleculeBuilder, StereoGroup};
+
+    fn init_fragment_canon_atoms_for_kekulize<'a>(
+        molecule: &Molecule,
+        atoms_to_use: &[bool],
+        bonds_to_use: &[bool],
+        include_chirality: bool,
+        include_stereo_groups: bool,
+        atom_symbols: Option<&'a [String]>,
+        bond_symbols: Option<&'a [String]>,
+    ) -> Result<Vec<CanonAtom<'a>>, KekulizeError> {
+        let view = CanonRankReadView::from_molecule(molecule)?;
+        super::init_fragment_canon_atoms_for_kekulize(
+            &view,
+            atoms_to_use,
+            bonds_to_use,
+            include_chirality,
+            include_stereo_groups,
+            atom_symbols,
+            bond_symbols,
+        )
+    }
+
+    fn compare_ring_atoms_concerning_num_neighbors_for_kekulize(
+        molecule: &Molecule,
+        atoms: &mut [CanonAtom<'_>],
+    ) -> Result<(), KekulizeError> {
+        let view = CanonRankReadView::from_molecule(molecule)?;
+        super::compare_ring_atoms_concerning_num_neighbors_for_kekulize(&view, atoms);
+        Ok(())
+    }
+
+    fn make_canon_bond_holder<'a>(
+        molecule: &Molecule,
+        bond_idx: usize,
+        other_idx: usize,
+        include_chirality: bool,
+    ) -> Result<CanonBondHolder<'a>, KekulizeError> {
+        let view = CanonRankReadView::from_molecule(molecule)?;
+        super::make_canon_bond_holder(&view, bond_idx, other_idx, include_chirality)
+    }
+
+    fn atropisomer_atoms_and_bonds_for_canonical_rank(
+        molecule: &Molecule,
+        bond_id: BondId,
+    ) -> Option<[(AtomId, Vec<BondId>); 2]> {
+        let view = CanonRankReadView::from_molecule(molecule).ok()?;
+        super::atropisomer_atoms_and_bonds_for_canonical_rank(&view, bond_id)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn break_ties_for_kekulize(
+        molecule: &Molecule,
+        atoms: &mut [CanonAtom<'_>],
+        mode: bool,
+        compare_mode: CanonCompareMode,
+        flags: CanonRankFlags,
+        order: &mut [usize],
+        count: &mut [usize],
+        active_set: &mut isize,
+        next: &mut [isize],
+        changed: &mut [bool],
+        touched_partitions: &mut [bool],
+    ) {
+        let view = CanonRankReadView::from_molecule(molecule).unwrap();
+        super::break_ties_for_kekulize(
+            &view,
+            atoms,
+            mode,
+            compare_mode,
+            flags,
+            order,
+            count,
+            active_set,
+            next,
+            changed,
+            touched_partitions,
+        );
+    }
 
     #[test]
     fn rank_mol_atoms_returns_empty_for_empty_molecule() {
@@ -3609,5 +3776,70 @@ mod tests {
                 stereo: BondStereo::Cis
             }
         ));
+    }
+
+    #[test]
+    #[ignore = "debug helper for RDKit row 142 canon_atom state parity"]
+    fn debug_row_142_canon_atom_state() {
+        let input = "[C:12]12([CH:62]([CH3:65])[c:61]3[cH:64][cH:67][cH:68][cH:66][cH:63]3)[CH:20]4[c:30]5[c:40]6[c:49]7[c:57]8[c:60]([c:59]9[c:55]([c:47]([c:44]([c:52]9[c:51]([c:43]%10[c:35]%11[c:25]%12[c:19]%13%14)[c:53]8[c:45]%11[c:39]6[c:29]4%13)[c:34]([c:24]%15[c:15]%16[c:7]%17[c:3]%18%19)[c:33]%10[c:23]%16[c:16]%12[c:8]%18[c:11]%14[c:5]1%20)[c:37]([c:36]%21[c:26]%22[c:18]%23[c:10]%24[c:13]%25[c:6]%26%27)[c:27]%15[c:17]%22[c:9]%17[c:4]%24[c:1]%19[c:2]%20%26)[c:54]([c:46]%21[c:38]%28[c:28]%23[c:21]%25%29)[c:56]%30[c:48]%28[c:41]%31[c:31]%29[c:22]%32[c:14]2%27)[c:58]%30[c:50]7[c:42]%31[c:32]5%32";
+        let mut molecule = Molecule::from_smiles(input).unwrap();
+        let params = crate::notation::smiles_write::SmilesWriteParams {
+            do_isomeric_smiles: false,
+            do_kekule: true,
+            canonical: true,
+            clean_stereo: false,
+            include_dative_bonds: false,
+            ignore_atom_map_numbers: true,
+            rooted_at_atom: Some(molecule.num_atoms() - 1),
+            ..Default::default()
+        };
+        if params.ignore_atom_map_numbers {
+            for atom in &mut molecule.topology_block_mut().atoms {
+                atom.set_atom_map(None);
+            }
+        }
+        let view = CanonRankReadView::from_molecule(&molecule).unwrap();
+        let atoms_to_use = vec![true; molecule.num_atoms()];
+        let bonds_to_use = vec![true; molecule.num_bonds()];
+        let atoms = super::init_fragment_canon_atoms_for_kekulize(
+            &view,
+            &atoms_to_use,
+            &bonds_to_use,
+            false,
+            false,
+            None,
+            None,
+        )
+        .unwrap();
+        for (idx, atom) in atoms.iter().enumerate() {
+            eprintln!(
+                "atom {idx} degree={} totalHs={} isRingAtom={} hasRingNbr={} isRingStereoAtom={} nbrs={:?}",
+                atom.degree,
+                atom.total_num_hs,
+                atom.is_ring_atom,
+                atom.has_ring_nbr,
+                atom.is_ring_stereo_atom,
+                atom.nbr_ids
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "debug helper for RDKit row 142 fragment rank parity"]
+    fn debug_row_142_fragment_ranks() {
+        let input = "[C:12]12([CH:62]([CH3:65])[c:61]3[cH:64][cH:67][cH:68][cH:66][cH:63]3)[CH:20]4[c:30]5[c:40]6[c:49]7[c:57]8[c:60]([c:59]9[c:55]([c:47]([c:44]([c:52]9[c:51]([c:43]%10[c:35]%11[c:25]%12[c:19]%13%14)[c:53]8[c:45]%11[c:39]6[c:29]4%13)[c:34]([c:24]%15[c:15]%16[c:7]%17[c:3]%18%19)[c:33]%10[c:23]%16[c:16]%12[c:8]%18[c:11]%14[c:5]1%20)[c:37]([c:36]%21[c:26]%22[c:18]%23[c:10]%24[c:13]%25[c:6]%26%27)[c:27]%15[c:17]%22[c:9]%17[c:4]%24[c:1]%19[c:2]%20%26)[c:54]([c:46]%21[c:38]%28[c:28]%23[c:21]%25%29)[c:56]%30[c:48]%28[c:41]%31[c:31]%29[c:22]%32[c:14]2%27)[c:58]%30[c:50]7[c:42]%31[c:32]5%32";
+        let mut molecule = Molecule::from_smiles(input).unwrap();
+        for atom in &mut molecule.topology_block_mut().atoms {
+            atom.set_atom_map(None);
+        }
+        let atoms_to_use = vec![true; molecule.num_atoms()];
+        let bonds_to_use = vec![true; molecule.num_bonds()];
+        let ranks = super::rank_fragment_atoms(
+            &molecule,
+            FragmentRankScope::new(&atoms_to_use, &bonds_to_use),
+            CanonicalRankOptions::kekulize_default(),
+        )
+        .unwrap();
+        eprintln!("fragment-ranks={ranks:?}");
     }
 }

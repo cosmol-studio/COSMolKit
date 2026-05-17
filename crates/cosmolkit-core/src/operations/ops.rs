@@ -13,7 +13,7 @@
 //!
 //! RDKit marker convention is defined in `dev/source_reproduction_protocol.md`.
 
-use std::{fmt, marker::PhantomData};
+use std::fmt;
 
 use cosmolkit_macros::{mol_op_body, molecule_ops};
 
@@ -118,6 +118,7 @@ pub enum TopologyEditKind {
     None,
     Local,
     Compacting,
+    Appending,
     Renumbering,
     Merge,
 }
@@ -154,71 +155,106 @@ impl BlockSet {
     pub const fn contains(self, other: Self) -> bool {
         (self.0 & other.0) == other.0
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationReportSet(u8);
-
-impl OperationReportSet {
-    pub const NONE: Self = Self(0);
-    pub const ATOM_MAPPING: Self = Self(1 << 0);
-    pub const BOND_MAPPING: Self = Self(1 << 1);
 
     #[must_use]
-    pub const fn union(self, other: Self) -> Self {
-        Self(self.0 | other.0)
-    }
-
-    #[must_use]
-    pub const fn contains(self, other: Self) -> bool {
-        (self.0 & other.0) == other.0
+    pub const fn intersects(self, other: Self) -> bool {
+        (self.0 & other.0) != 0
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DerivedStateSet(u32);
+pub struct BlockAccess {
+    read: BlockSet,
+    write: BlockSet,
+}
 
-impl DerivedStateSet {
-    pub const NONE: Self = Self(0);
-    pub const ADJACENCY: Self = Self(1 << 0);
-    pub const RINGS: Self = Self(1 << 1);
-    pub const RING_FAMILIES: Self = Self(1 << 2);
-    pub const VALENCE: Self = Self(1 << 3);
-    pub const AROMATICITY: Self = Self(1 << 4);
-    pub const STEREO: Self = Self(1 << 5);
+impl BlockAccess {
+    pub const NONE: Self = Self {
+        read: BlockSet::NONE,
+        write: BlockSet::NONE,
+    };
 
     #[must_use]
-    pub const fn union(self, other: Self) -> Self {
-        Self(self.0 | other.0)
+    pub const fn new(read: BlockSet, write: BlockSet) -> Self {
+        Self { read, write }
     }
 
     #[must_use]
-    pub const fn contains(self, other: Self) -> bool {
-        (self.0 & other.0) == other.0
+    pub const fn read(self) -> BlockSet {
+        self.read
     }
 
     #[must_use]
-    pub const fn as_derived_state(self) -> DerivedState {
-        let mut states = DerivedState::NONE;
-        if self.contains(Self::ADJACENCY) {
-            states = states.union(DerivedState::ADJACENCY);
+    pub const fn write(self) -> BlockSet {
+        self.write
+    }
+
+    #[must_use]
+    pub const fn can_read(self, block: BlockSet) -> bool {
+        self.read.contains(block) || self.write.contains(block)
+    }
+
+    #[must_use]
+    pub const fn can_write(self, block: BlockSet) -> bool {
+        self.write.contains(block)
+    }
+
+    #[must_use]
+    pub const fn has_overlapping_read_write(self) -> bool {
+        self.read.intersects(self.write)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreservationProof {
+    LeafAtomAppend,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DerivedEffects {
+    recompute: DerivedState,
+    preserve: DerivedState,
+    invalidate: DerivedState,
+}
+
+impl DerivedEffects {
+    pub const NONE: Self = Self {
+        recompute: DerivedState::NONE,
+        preserve: DerivedState::NONE,
+        invalidate: DerivedState::NONE,
+    };
+
+    #[must_use]
+    pub const fn new(
+        recompute: DerivedState,
+        preserve: DerivedState,
+        invalidate: DerivedState,
+    ) -> Self {
+        Self {
+            recompute,
+            preserve,
+            invalidate,
         }
-        if self.contains(Self::RINGS) {
-            states = states.union(DerivedState::RINGS);
-        }
-        if self.contains(Self::RING_FAMILIES) {
-            states = states.union(DerivedState::RING_FAMILIES);
-        }
-        if self.contains(Self::VALENCE) {
-            states = states.union(DerivedState::VALENCE);
-        }
-        if self.contains(Self::AROMATICITY) {
-            states = states.union(DerivedState::AROMATICITY);
-        }
-        if self.contains(Self::STEREO) {
-            states = states.union(DerivedState::STEREO);
-        }
-        states
+    }
+
+    #[must_use]
+    pub const fn recompute(self) -> DerivedState {
+        self.recompute
+    }
+
+    #[must_use]
+    pub const fn preserve(self) -> DerivedState {
+        self.preserve
+    }
+
+    #[must_use]
+    pub const fn invalidate(self) -> DerivedState {
+        self.invalidate
+    }
+
+    #[must_use]
+    pub const fn needs_update(self) -> DerivedState {
+        self.invalidate.union(self.recompute)
     }
 }
 
@@ -236,12 +272,11 @@ pub struct MoleculeOpSpec {
     pub domain: OperationDomain,
     pub kind: MoleculeOpKind,
     pub topology_edit: TopologyEditKind,
+    pub access: BlockAccess,
     pub may_mutate: BlockSet,
     pub auto_remap: BlockSet,
-    pub must_handle: DerivedStateSet,
-    pub needs_update: DerivedState,
+    pub derived_effects: DerivedEffects,
     pub requires_mapping: MappingRequirement,
-    pub report: OperationReportSet,
     pub allows_noop: bool,
     pub support: SupportStatus,
     pub parity: ParityPolicy,
@@ -251,6 +286,13 @@ pub struct MoleculeOpSpec {
 impl fmt::Display for MoleculeOpSpec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.method)
+    }
+}
+
+impl MoleculeOpSpec {
+    #[must_use]
+    pub const fn needs_update(self: &Self) -> DerivedState {
+        self.derived_effects.needs_update()
     }
 }
 
@@ -394,11 +436,13 @@ pub struct ParityMatrixEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationTrace {
     touched_blocks: BlockSet,
+    claimed_write_blocks: BlockSet,
+    recorded_topology_edit: TopologyEditKind,
     remapped_blocks: BlockSet,
-    handled: DerivedStateSet,
+    preserved_cache: DerivedState,
+    read_cache: DerivedState,
     cleared_cache: DerivedState,
-    updated_cache: DerivedStateSet,
-    reported: OperationReportSet,
+    updated_cache: DerivedState,
     outcome: Option<OpOutcome>,
 }
 
@@ -409,8 +453,8 @@ impl OperationTrace {
     }
 
     #[must_use]
-    pub const fn handled(&self) -> DerivedStateSet {
-        self.handled
+    pub const fn read_cache(&self) -> DerivedState {
+        self.read_cache
     }
 
     #[must_use]
@@ -419,12 +463,17 @@ impl OperationTrace {
     }
 
     #[must_use]
+    pub const fn preserved_cache(&self) -> DerivedState {
+        self.preserved_cache
+    }
+
+    #[must_use]
     pub const fn cleared_cache(&self) -> DerivedState {
         self.cleared_cache
     }
 
     #[must_use]
-    pub const fn updated_cache(&self) -> DerivedStateSet {
+    pub const fn updated_cache(&self) -> DerivedState {
         self.updated_cache
     }
 
@@ -434,11 +483,21 @@ impl OperationTrace {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlockLifecycle {
+    Available,
+    Begun,
+    Committed,
+}
+
 pub struct OpParts<'a> {
     spec: &'static MoleculeOpSpec,
+    source: &'a Molecule,
     working: Molecule,
     topology_mapping: Option<TopologyMapping>,
-    _source: PhantomData<&'a Molecule>,
+    topology_lifecycle: BlockLifecycle,
+    coordinates_lifecycle: BlockLifecycle,
+    properties_lifecycle: BlockLifecycle,
 
     #[cfg(feature = "op-contracts")]
     trace: OperationTrace,
@@ -448,17 +507,22 @@ impl<'a> OpParts<'a> {
     pub(crate) fn new(source: &'a Molecule, spec: &'static MoleculeOpSpec) -> Self {
         Self {
             spec,
+            source,
             working: source.clone(),
             topology_mapping: None,
-            _source: PhantomData,
+            topology_lifecycle: BlockLifecycle::Available,
+            coordinates_lifecycle: BlockLifecycle::Available,
+            properties_lifecycle: BlockLifecycle::Available,
             #[cfg(feature = "op-contracts")]
             trace: OperationTrace {
                 touched_blocks: BlockSet::NONE,
+                claimed_write_blocks: BlockSet::NONE,
+                recorded_topology_edit: TopologyEditKind::None,
                 remapped_blocks: BlockSet::NONE,
-                handled: DerivedStateSet::NONE,
+                preserved_cache: DerivedState::NONE,
+                read_cache: DerivedState::NONE,
                 cleared_cache: DerivedState::NONE,
-                updated_cache: DerivedStateSet::NONE,
-                reported: OperationReportSet::NONE,
+                updated_cache: DerivedState::NONE,
                 outcome: None,
             },
         }
@@ -470,105 +534,265 @@ impl<'a> OpParts<'a> {
     // behavior here. Operation impl_fn bodies compute behavior themselves or
     // call domain modules, then use OpParts only to read the working molecule,
     // apply state changes, and record contract effects.
-    #[must_use]
-    pub(crate) fn read_parts(&self) -> MoleculeReadParts<'_> {
-        MoleculeReadParts::from_molecule(&self.working)
+    pub(crate) fn begin_topology_read(&self) -> Result<MoleculeReadParts<'_>, OperationError> {
+        self.validate_access_spec()?;
+        if !self.spec.access.read().contains(BlockSet::TOPOLOGY)
+            || self.spec.access.write().contains(BlockSet::TOPOLOGY)
+        {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "operation attempted to read topology outside its registry read access",
+            });
+        }
+        Ok(MoleculeReadParts::from_molecule(&self.working))
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn topology(&self) -> &TopologyBlock {
-        self.working.topology_block()
+    fn read_parts_for_topology(&self, topology: TopologyBlock) -> Result<Molecule, OperationError> {
+        self.read_parts_for_blocks(
+            topology,
+            self.working.coordinate_block().clone(),
+            self.working.properties().clone(),
+        )
     }
 
-    pub(crate) fn topology_mut(&mut self) -> &mut TopologyBlock {
-        self.record_mutation(BlockSet::TOPOLOGY);
-        self.working.topology_block_mut()
+    fn read_parts_for_blocks(
+        &self,
+        topology: TopologyBlock,
+        coordinates: CoordinateBlock,
+        properties: MoleculeProperties,
+    ) -> Result<Molecule, OperationError> {
+        Molecule::from_operation_blocks(
+            topology,
+            coordinates,
+            properties,
+            self.working.derived_cache().clone(),
+        )
+        .map_err(|failure| OperationError::InvariantViolation {
+            operation: self.spec,
+            failure,
+        })
     }
 
-    // These accessors are part of the operation body API. They may be unused
-    // until the corresponding operation family is ported.
-    #[allow(dead_code)]
-    pub(crate) fn coordinates_mut(&mut self) -> &mut CoordinateBlock {
-        self.record_mutation(BlockSet::COORDINATES);
-        self.working.coordinate_block_mut()
+    fn read_parts_for_optional_blocks(
+        &self,
+        topology: TopologyBlock,
+        coordinates: Option<&CoordinateBlock>,
+        properties: Option<&MoleculeProperties>,
+    ) -> Result<Molecule, OperationError> {
+        self.read_parts_for_blocks(
+            topology,
+            coordinates
+                .cloned()
+                .unwrap_or_else(|| self.working.coordinate_block().clone()),
+            properties
+                .cloned()
+                .unwrap_or_else(|| self.working.properties().clone()),
+        )
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn properties_mut(&mut self) -> &mut MoleculeProperties {
-        self.record_mutation(BlockSet::PROPERTIES);
-        self.working.properties_mut()
+    pub(crate) fn begin_topology_mut(&mut self) -> Result<TopologyBlock, OperationError> {
+        self.begin_block_mut(BlockSet::TOPOLOGY)?;
+        self.topology_lifecycle = BlockLifecycle::Begun;
+        Ok(self.working.topology_block().clone())
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn derived_cache_mut(&mut self) -> &mut DerivedCacheBlock {
-        self.record_mutation(BlockSet::DERIVED_CACHE);
-        self.working.derived_cache_mut()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn remove_atoms(
+    pub(crate) fn commit_topology(
         &mut self,
-        atoms_to_remove: &[AtomId],
-    ) -> Result<&TopologyMapping, OperationError> {
-        self.assert_compacting_topology_edit_allowed()?;
-
-        let mapping = {
-            self.record_mutation(BlockSet::TOPOLOGY);
-            self.working
-                .topology_block_mut()
-                .remove_atoms_with_mapping(atoms_to_remove)
-        };
-
-        self.remap_blocks_required_by_spec(&mapping)?;
-        self.clear_cache(self.spec.needs_update);
-        self.set_topology_mapping(mapping);
-
-        Ok(self
-            .topology_mapping
-            .as_ref()
-            .expect("topology mapping was just recorded"))
+        mut topology: TopologyBlock,
+    ) -> Result<(), OperationError> {
+        if self.topology_lifecycle != BlockLifecycle::Begun {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "topology block was not begun before commit",
+            });
+        }
+        topology.adjacency =
+            crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
+        self.record_mutation(BlockSet::TOPOLOGY);
+        self.working.replace_topology_block(topology);
+        self.topology_lifecycle = BlockLifecycle::Committed;
+        Ok(())
     }
 
-    pub(crate) fn set_adjacency_cache(&mut self, adjacency: crate::AdjacencyList) {
-        self.record_mutation(BlockSet::DERIVED_CACHE);
-        self.working.derived_cache_mut().adjacency = Some(adjacency);
-        self.record_updated_cache(DerivedStateSet::ADJACENCY);
+    pub(crate) fn begin_coordinates_mut(&mut self) -> Result<CoordinateBlock, OperationError> {
+        self.begin_block_mut(BlockSet::COORDINATES)?;
+        self.coordinates_lifecycle = BlockLifecycle::Begun;
+        Ok(self.working.coordinate_block().clone())
+    }
+
+    pub(crate) fn commit_coordinates(
+        &mut self,
+        coordinates: CoordinateBlock,
+    ) -> Result<(), OperationError> {
+        if self.coordinates_lifecycle != BlockLifecycle::Begun {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "coordinate block was not begun before commit",
+            });
+        }
+        self.record_mutation(BlockSet::COORDINATES);
+        self.working.replace_coordinate_block(coordinates);
+        self.coordinates_lifecycle = BlockLifecycle::Committed;
+        Ok(())
+    }
+
+    pub(crate) fn begin_properties_mut(&mut self) -> Result<MoleculeProperties, OperationError> {
+        self.begin_block_mut(BlockSet::PROPERTIES)?;
+        self.properties_lifecycle = BlockLifecycle::Begun;
+        Ok(self.working.properties().clone())
+    }
+
+    pub(crate) fn commit_properties(
+        &mut self,
+        properties: MoleculeProperties,
+    ) -> Result<(), OperationError> {
+        if self.properties_lifecycle != BlockLifecycle::Begun {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "properties block was not begun before commit",
+            });
+        }
+        self.record_mutation(BlockSet::PROPERTIES);
+        self.working.replace_properties(properties);
+        self.properties_lifecycle = BlockLifecycle::Committed;
+        Ok(())
+    }
+
+    pub(crate) fn record_topology_edit(
+        &mut self,
+        kind: TopologyEditKind,
+    ) -> Result<(), OperationError> {
+        if kind == TopologyEditKind::Local
+            && matches!(
+                self.spec.topology_edit,
+                TopologyEditKind::Appending
+                    | TopologyEditKind::Compacting
+                    | TopologyEditKind::Renumbering
+                    | TopologyEditKind::Merge
+            )
+        {
+            return Ok(());
+        }
+        if self.spec.topology_edit != kind {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "recorded topology edit does not match registry declaration",
+            });
+        }
+        #[cfg(feature = "op-contracts")]
+        {
+            self.trace.recorded_topology_edit = kind;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn record_topology_mapping(&mut self, mapping: TopologyMapping) {
+        self.topology_mapping = Some(mapping);
+        self.record_remapped(self.spec.auto_remap);
+    }
+
+    /// Check that `state` is in `requires | recompute` (write permission).
+    /// Check that `state` is in `recompute` (write permission).
+    /// Panics with a clear message on violation — this is a programming error.
+    #[cfg(feature = "op-contracts")]
+    fn check_cache_write_permission(&self, state: DerivedState) {
+        let effects = self.spec.derived_effects;
+        let allowed = effects.recompute();
+        if !allowed.contains(state) {
+            panic!(
+                "cache write permission violation: operation `{}` attempted to write \
+                 derived state `{:?}` but only has `recompute({:?})` \
+                 permissions",
+                self.spec.method,
+                state,
+                effects.recompute(),
+            );
+        }
+    }
+
+    /// Check that every bit set in `states` is in `invalidate | recompute` (clear permission).
+    /// Panics with a clear message on violation.
+    #[cfg(feature = "op-contracts")]
+    fn check_cache_clear_permission(&self, states: DerivedState) {
+        let effects = self.spec.derived_effects;
+        let allowed = effects.invalidate().union(effects.recompute());
+        let forbidden = states.bits() & !allowed.bits();
+        if forbidden != 0 {
+            panic!(
+                "cache clear permission violation: operation `{}` attempted to clear \
+                 derived state bits `{:#010b}` but only has `invalidate({:?})` and `recompute({:?})` \
+                 permissions",
+                self.spec.method,
+                forbidden,
+                effects.invalidate(),
+                effects.recompute(),
+            );
+        }
+    }
+
+    /// Check that `state` is in `preserve` (read permission).
+    /// Panics with a clear message on violation.
+    #[cfg(feature = "op-contracts")]
+    fn check_cache_read_permission(&self, state: DerivedState) {
+        let effects = self.spec.derived_effects;
+        let allowed = effects.preserve();
+        if !allowed.contains(state) {
+            panic!(
+                "cache read permission violation: operation `{}` attempted to read \
+                 derived state `{:?}` but only has `preserve({:?})` \
+                 permissions",
+                self.spec.method,
+                state,
+                effects.preserve(),
+            );
+        }
     }
 
     pub(crate) fn set_rings_cache(&mut self, rings: crate::RingInfo) {
+        #[cfg(feature = "op-contracts")]
+        self.check_cache_write_permission(DerivedState::RINGS);
         self.record_mutation(BlockSet::DERIVED_CACHE);
         self.working.derived_cache_mut().rings = Some(rings);
-        self.record_updated_cache(DerivedStateSet::RINGS);
+        self.record_updated_cache(DerivedState::RINGS);
     }
 
     pub(crate) fn set_ring_families_cache(&mut self, ring_families: crate::RingInfo) {
+        #[cfg(feature = "op-contracts")]
+        self.check_cache_write_permission(DerivedState::RING_FAMILIES);
         self.record_mutation(BlockSet::DERIVED_CACHE);
         self.working.derived_cache_mut().ring_families = Some(ring_families);
-        self.record_updated_cache(DerivedStateSet::RING_FAMILIES);
+        self.record_updated_cache(DerivedState::RING_FAMILIES);
     }
 
     pub(crate) fn set_valence_cache(&mut self, valence: crate::ValenceAssignment) {
+        #[cfg(feature = "op-contracts")]
+        self.check_cache_write_permission(DerivedState::VALENCE);
         self.record_mutation(BlockSet::DERIVED_CACHE);
         self.working.derived_cache_mut().valence = Some(valence);
-        self.record_updated_cache(DerivedStateSet::VALENCE);
+        self.record_updated_cache(DerivedState::VALENCE);
     }
 
     pub(crate) fn mark_aromaticity_valid(&mut self) {
+        #[cfg(feature = "op-contracts")]
+        self.check_cache_write_permission(DerivedState::AROMATICITY);
         self.record_mutation(BlockSet::DERIVED_CACHE);
         self.working.derived_cache_mut().aromaticity_valid = true;
-        self.record_updated_cache(DerivedStateSet::AROMATICITY);
+        self.record_updated_cache(DerivedState::AROMATICITY);
     }
 
     #[allow(dead_code)]
     pub(crate) fn mark_stereo_handled(&mut self) {
+        #[cfg(feature = "op-contracts")]
+        self.check_cache_write_permission(DerivedState::STEREO);
         self.record_mutation(BlockSet::DERIVED_CACHE);
         self.working.derived_cache_mut().stereo_valid = true;
-        self.record_updated_cache(DerivedStateSet::STEREO);
+        self.record_updated_cache(DerivedState::STEREO);
     }
 
     pub(crate) fn clear_cache(&mut self, states: DerivedState) {
         #[cfg(feature = "op-contracts")]
         {
+            self.check_cache_clear_permission(states);
             self.trace.cleared_cache |= states;
         }
         if states.touches_cache() {
@@ -581,67 +805,25 @@ impl<'a> OpParts<'a> {
         }
     }
 
-    fn remap_blocks_required_by_spec(
+    pub(crate) fn prove_preserved(
         &mut self,
-        mapping: &TopologyMapping,
+        states: DerivedState,
+        proof: PreservationProof,
     ) -> Result<(), OperationError> {
-        if self.spec.auto_remap.contains(BlockSet::COORDINATES) {
-            self.record_mutation(BlockSet::COORDINATES);
-            self.working.coordinate_block_mut().remap_topology(mapping);
-            self.record_remapped(BlockSet::COORDINATES);
+        if !self.spec.derived_effects.preserve().contains(states) {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "operation attempted to prove preservation for undeclared derived states",
+            });
         }
-
-        if self.spec.auto_remap.contains(BlockSet::PROPERTIES) {
-            self.record_mutation(BlockSet::PROPERTIES);
-            self.working.properties_mut().remap_topology(mapping);
-            self.record_remapped(BlockSet::PROPERTIES);
+        match proof {
+            PreservationProof::LeafAtomAppend => self.validate_leaf_atom_append_preservation()?,
         }
-
+        #[cfg(feature = "op-contracts")]
+        {
+            self.trace.preserved_cache |= states;
+        }
         Ok(())
-    }
-
-    fn set_topology_mapping(&mut self, mapping: TopologyMapping) {
-        self.topology_mapping = Some(mapping);
-        self.record_reported(
-            OperationReportSet::ATOM_MAPPING.union(OperationReportSet::BOND_MAPPING),
-        );
-    }
-
-    pub(crate) fn record_identity_topology_mapping(&mut self) {
-        let mapping = TopologyMapping::identity(self.working.num_atoms(), self.working.num_bonds());
-        self.topology_mapping = Some(mapping);
-        self.record_remapped(self.spec.auto_remap);
-        self.record_reported(
-            OperationReportSet::ATOM_MAPPING.union(OperationReportSet::BOND_MAPPING),
-        );
-    }
-
-    pub(crate) fn record_appended_topology_mapping(
-        &mut self,
-        old_atom_count: usize,
-        old_bond_count: usize,
-        added_atom_count: usize,
-        added_bond_count: usize,
-    ) {
-        let mapping = TopologyMapping::with_appended(
-            old_atom_count,
-            old_bond_count,
-            added_atom_count,
-            added_bond_count,
-        );
-        if self.spec.auto_remap.contains(BlockSet::PROPERTIES) {
-            self.record_mutation(BlockSet::PROPERTIES);
-            self.working.properties_mut().remap_topology(&mapping);
-        }
-        self.topology_mapping = Some(mapping);
-        self.record_remapped(self.spec.auto_remap);
-        self.record_reported(
-            OperationReportSet::ATOM_MAPPING.union(OperationReportSet::BOND_MAPPING),
-        );
-    }
-
-    pub(crate) fn mark_states_handled(&mut self, states: DerivedStateSet) {
-        self.record_handled(states);
     }
 
     pub(crate) fn finish(self, outcome: OpOutcome) -> Result<Molecule, OperationError> {
@@ -675,7 +857,7 @@ impl<'a> OpParts<'a> {
         #[cfg(feature = "op-contracts")]
         {
             assert!(
-                self.spec.may_mutate.contains(block),
+                self.spec.access.can_write(block) && self.spec.may_mutate.contains(block),
                 "operation `{}` attempted to mutate a block outside its registry permissions",
                 self.spec.method
             );
@@ -687,19 +869,56 @@ impl<'a> OpParts<'a> {
         }
     }
 
-    fn record_handled(&mut self, state: DerivedStateSet) {
-        #[cfg(feature = "op-contracts")]
-        {
-            self.trace.handled = self.trace.handled.union(state);
+    fn validate_access_spec(&self) -> Result<(), OperationError> {
+        if self.spec.access.has_overlapping_read_write() {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "operation access declares the same block as both read and write",
+            });
         }
-        #[cfg(not(feature = "op-contracts"))]
-        {
-            let _ = state;
+        if self.spec.access.write() != self.spec.may_mutate {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "operation access write set must match may_mutate",
+            });
         }
+        Ok(())
     }
 
-    fn record_updated_cache(&mut self, state: DerivedStateSet) {
-        self.record_handled(state);
+    fn begin_block_mut(&mut self, block: BlockSet) -> Result<(), OperationError> {
+        self.validate_access_spec()?;
+        if !self.spec.access.can_write(block) {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "operation attempted to write a block outside its registry access",
+            });
+        }
+        let lifecycle = if block == BlockSet::TOPOLOGY {
+            self.topology_lifecycle
+        } else if block == BlockSet::COORDINATES {
+            self.coordinates_lifecycle
+        } else if block == BlockSet::PROPERTIES {
+            self.properties_lifecycle
+        } else {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "operation attempted to begin an unknown block",
+            });
+        };
+        if lifecycle != BlockLifecycle::Available {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "operation attempted to begin the same writable block twice",
+            });
+        }
+        #[cfg(feature = "op-contracts")]
+        {
+            self.trace.claimed_write_blocks = self.trace.claimed_write_blocks.union(block);
+        }
+        Ok(())
+    }
+
+    fn record_updated_cache(&mut self, state: DerivedState) {
         #[cfg(feature = "op-contracts")]
         {
             self.trace.updated_cache = self.trace.updated_cache.union(state);
@@ -710,21 +929,122 @@ impl<'a> OpParts<'a> {
         }
     }
 
-    #[cfg(feature = "op-contracts")]
-    fn validate_contract(&self) -> Result<(), OperationError> {
-        if !self.trace.handled.contains(self.spec.must_handle) {
+    fn validate_leaf_atom_append_preservation(&self) -> Result<(), OperationError> {
+        if self.spec.topology_edit != TopologyEditKind::Appending {
             return Err(OperationError::InvalidInput {
                 operation: self.spec,
-                message: "operation body did not handle every required derived state",
+                message: "leaf-append preservation proof requires an appending topology operation",
+            });
+        }
+        let Some(mapping) = &self.topology_mapping else {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "leaf-append preservation proof requires a topology mapping",
+            });
+        };
+        let old_atom_count = self.source.num_atoms();
+        let old_bond_count = self.source.num_bonds();
+        if mapping.atoms().old_to_new().len() != old_atom_count
+            || mapping.bonds().old_to_new().len() != old_bond_count
+            || mapping.atoms().new_to_old().len() != self.working.num_atoms()
+            || mapping.bonds().new_to_old().len() != self.working.num_bonds()
+        {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "leaf-append preservation proof has inconsistent mapping dimensions",
+            });
+        }
+        for (old_idx, mapped) in mapping.atoms().old_to_new().iter().enumerate() {
+            if *mapped != Some(AtomId::new(old_idx)) {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "leaf-append preservation proof requires identity mapping for old atoms",
+                });
+            }
+        }
+        for (old_idx, mapped) in mapping.bonds().old_to_new().iter().enumerate() {
+            if *mapped != Some(crate::BondId::new(old_idx)) {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "leaf-append preservation proof requires identity mapping for old bonds",
+                });
+            }
+        }
+        for old_idx in 0..old_bond_count {
+            let before = &self.source.bonds()[old_idx];
+            let after = &self.working.bonds()[old_idx];
+            if before.begin() != after.begin() || before.end() != after.end() {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "leaf-append preservation proof detected changed old bond endpoints",
+                });
+            }
+        }
+
+        let mut appended_degrees =
+            vec![0usize; self.working.num_atoms().saturating_sub(old_atom_count)];
+        for bond in &self.working.bonds()[old_bond_count..] {
+            let begin_old = bond.begin().index() < old_atom_count;
+            let end_old = bond.end().index() < old_atom_count;
+            if begin_old == end_old {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "leaf-append preservation proof requires every appended bond to connect one old atom and one appended atom",
+                });
+            }
+            let appended_idx = if begin_old {
+                bond.end().index() - old_atom_count
+            } else {
+                bond.begin().index() - old_atom_count
+            };
+            if appended_idx >= appended_degrees.len() {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "leaf-append preservation proof found appended bond referencing an out-of-range atom",
+                });
+            }
+            appended_degrees[appended_idx] += 1;
+        }
+        if appended_degrees.iter().any(|degree| *degree != 1) {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "leaf-append preservation proof requires every appended atom to be a degree-one leaf",
+            });
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "op-contracts")]
+    fn validate_contract(&self) -> Result<(), OperationError> {
+        self.validate_access_spec()?;
+        let effects = self.spec.derived_effects;
+        let recompute_ds = effects.recompute();
+        if recompute_ds.intersects(effects.preserve())
+            || recompute_ds.intersects(effects.invalidate())
+            || effects.preserve().intersects(effects.invalidate())
+        {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "operation derived_effects contains overlapping effect categories",
             });
         }
 
-        let updated_or_cleared =
-            self.trace.cleared_cache | self.trace.updated_cache.as_derived_state();
-        if !updated_or_cleared.contains(self.spec.needs_update) {
+        let updated_or_cleared = self.trace.cleared_cache | self.trace.updated_cache;
+        if !updated_or_cleared.contains(self.spec.needs_update()) {
             return Err(OperationError::InvalidInput {
                 operation: self.spec,
                 message: "operation body did not clear or update every required cache state",
+            });
+        }
+
+        if !self
+            .trace
+            .preserved_cache
+            .contains(self.spec.derived_effects.preserve())
+        {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "operation body did not prove every declared preserved derived state",
             });
         }
 
@@ -744,35 +1064,16 @@ impl<'a> OpParts<'a> {
             });
         }
 
-        if !self.trace.reported.contains(self.spec.report) {
+        if self.trace.touched_blocks.contains(BlockSet::TOPOLOGY)
+            && self.spec.topology_edit != TopologyEditKind::None
+            && self.trace.recorded_topology_edit == TopologyEditKind::None
+        {
             return Err(OperationError::InvalidInput {
                 operation: self.spec,
-                message: "operation did not record every registry-required report",
+                message: "operation touched topology without recording the registry topology edit",
             });
         }
 
-        Ok(())
-    }
-
-    fn assert_compacting_topology_edit_allowed(&self) -> Result<(), OperationError> {
-        if self.spec.kind != MoleculeOpKind::Strong {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "compacting topology edits require a strong operation",
-            });
-        }
-        if self.spec.topology_edit != TopologyEditKind::Compacting {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "operation registry does not allow compacting topology edits",
-            });
-        }
-        if self.spec.requires_mapping != MappingRequirement::Required {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "compacting topology edits must require a topology mapping",
-            });
-        }
         Ok(())
     }
 
@@ -786,17 +1087,6 @@ impl<'a> OpParts<'a> {
             let _ = block;
         }
     }
-
-    fn record_reported(&mut self, report: OperationReportSet) {
-        #[cfg(feature = "op-contracts")]
-        {
-            self.trace.reported = self.trace.reported.union(report);
-        }
-        #[cfg(not(feature = "op-contracts"))]
-        {
-            let _ = report;
-        }
-    }
 }
 
 molecule_ops! {
@@ -807,13 +1097,16 @@ molecule_ops! {
         default_args: [crate::hydrogens::AddHsParams::default()],
         domain: topology,
         kind: strong,
-        topology_edit: compacting,
+        topology_edit: appending,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
         may_mutate: [topology, coordinates, properties, derived_cache],
         auto_remap: [coordinates, properties],
-        must_handle: [valence, aromaticity, stereo],
-        needs_update: [adjacency, rings, ring_families, valence, aromaticity, stereo, drawing, fingerprint],
+        derived_effects: {
+            recompute: [],
+            preserve: [rings, ring_families],
+            invalidate: [valence, aromaticity, stereo, drawing, fingerprint],
+        },
         requires_mapping: required,
-        report: [atom_mapping, bond_mapping],
         allows_noop: false,
         feature: HYDROGENS_FEATURE,
         parity: required_when_supported,
@@ -830,12 +1123,15 @@ molecule_ops! {
         domain: topology,
         kind: strong,
         topology_edit: compacting,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
         may_mutate: [topology, coordinates, properties, derived_cache],
         auto_remap: [coordinates, properties],
-        must_handle: [valence, aromaticity, stereo],
-        needs_update: [adjacency, rings, ring_families, valence, aromaticity, stereo, drawing, fingerprint],
+        derived_effects: {
+            recompute: [valence, aromaticity, rings],
+            preserve: [],
+            invalidate: [ring_families, stereo, drawing, fingerprint],
+        },
         requires_mapping: required,
-        report: [atom_mapping, bond_mapping],
         allows_noop: true,
         feature: HYDROGENS_FEATURE,
         parity: required_when_supported,
@@ -850,12 +1146,15 @@ molecule_ops! {
         domain: topology,
         kind: strong,
         topology_edit: compacting,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
         may_mutate: [topology, coordinates, properties, derived_cache],
         auto_remap: [coordinates, properties],
-        must_handle: [valence, aromaticity, stereo],
-        needs_update: [adjacency, rings, ring_families, valence, aromaticity, stereo, drawing, fingerprint],
+        derived_effects: {
+            recompute: [valence, aromaticity, rings],
+            preserve: [],
+            invalidate: [ring_families, stereo, drawing, fingerprint],
+        },
         requires_mapping: required,
-        report: [atom_mapping, bond_mapping],
         allows_noop: true,
         feature: HYDROGENS_FEATURE,
         parity: required_when_supported,
@@ -870,12 +1169,15 @@ molecule_ops! {
         domain: topology,
         kind: weak,
         topology_edit: local,
+        access: { read: [], write: [topology, derived_cache] },
         may_mutate: [topology, derived_cache],
         auto_remap: [],
-        must_handle: [valence],
-        needs_update: [aromaticity, valence, drawing, fingerprint],
+        derived_effects: {
+            recompute: [rings, valence],
+            preserve: [],
+            invalidate: [aromaticity, drawing, fingerprint],
+        },
         requires_mapping: none,
-        report: [],
         allows_noop: true,
         feature: KEKULIZE_FEATURE,
         parity: required_when_supported,
@@ -892,12 +1194,15 @@ molecule_ops! {
         domain: topology,
         kind: weak,
         topology_edit: local,
+        access: { read: [], write: [topology, derived_cache] },
         may_mutate: [topology, derived_cache],
         auto_remap: [],
-        must_handle: [],
-        needs_update: [rings, ring_families, valence, aromaticity, stereo, drawing, fingerprint],
+        derived_effects: {
+            recompute: [rings, valence, aromaticity],
+            preserve: [],
+            invalidate: [ring_families, stereo, drawing, fingerprint],
+        },
         requires_mapping: none,
-        report: [],
         allows_noop: true,
         feature: SANITIZE_FEATURE,
         parity: required_when_supported,
@@ -912,12 +1217,15 @@ molecule_ops! {
         domain: topology,
         kind: weak,
         topology_edit: none,
+        access: { read: [topology], write: [derived_cache] },
         may_mutate: [derived_cache],
         auto_remap: [],
-        must_handle: [adjacency, valence],
-        needs_update: [adjacency, valence],
+        derived_effects: {
+            recompute: [valence],
+            preserve: [],
+            invalidate: [],
+        },
         requires_mapping: none,
-        report: [],
         allows_noop: true,
         feature: VALENCE_FEATURE,
         parity: required_when_supported,
@@ -932,12 +1240,15 @@ molecule_ops! {
         domain: topology,
         kind: weak,
         topology_edit: none,
+        access: { read: [topology], write: [derived_cache] },
         may_mutate: [derived_cache],
         auto_remap: [],
-        must_handle: [adjacency, rings],
-        needs_update: [adjacency, rings],
+        derived_effects: {
+            recompute: [rings],
+            preserve: [],
+            invalidate: [],
+        },
         requires_mapping: none,
-        report: [],
         allows_noop: true,
         feature: RINGS_FEATURE,
         parity: required_when_supported,
@@ -952,12 +1263,15 @@ molecule_ops! {
         domain: topology,
         kind: weak,
         topology_edit: none,
+        access: { read: [topology], write: [derived_cache] },
         may_mutate: [derived_cache],
         auto_remap: [],
-        must_handle: [adjacency, ring_families],
-        needs_update: [adjacency, ring_families],
+        derived_effects: {
+            recompute: [ring_families],
+            preserve: [],
+            invalidate: [],
+        },
         requires_mapping: none,
-        report: [],
         allows_noop: true,
         feature: RINGS_FEATURE,
         parity: required_when_supported,
@@ -972,12 +1286,15 @@ molecule_ops! {
         domain: topology,
         kind: weak,
         topology_edit: local,
+        access: { read: [], write: [topology, derived_cache] },
         may_mutate: [topology, derived_cache],
         auto_remap: [],
-        must_handle: [adjacency, rings, valence, aromaticity],
-        needs_update: [adjacency, rings, valence, aromaticity, drawing, fingerprint],
+        derived_effects: {
+            recompute: [rings, valence, aromaticity],
+            preserve: [],
+            invalidate: [drawing, fingerprint],
+        },
         requires_mapping: none,
-        report: [],
         allows_noop: true,
         feature: AROMATICITY_FEATURE,
         parity: required_when_supported,
@@ -992,12 +1309,15 @@ molecule_ops! {
         domain: topology,
         kind: weak,
         topology_edit: local,
+        access: { read: [], write: [topology, derived_cache] },
         may_mutate: [topology, derived_cache],
         auto_remap: [],
-        must_handle: [adjacency, valence],
-        needs_update: [adjacency, valence],
+        derived_effects: {
+            recompute: [valence],
+            preserve: [],
+            invalidate: [],
+        },
         requires_mapping: none,
-        report: [],
         allows_noop: true,
         feature: VALENCE_FEATURE,
         parity: required_when_supported,
@@ -1012,12 +1332,15 @@ molecule_ops! {
         domain: coordinate,
         kind: weak,
         topology_edit: none,
+        access: { read: [topology], write: [coordinates] },
         may_mutate: [coordinates],
         auto_remap: [],
-        must_handle: [],
-        needs_update: [drawing],
+        derived_effects: {
+            recompute: [],
+            preserve: [],
+            invalidate: [drawing],
+        },
         requires_mapping: none,
-        report: [],
         allows_noop: true,
         feature: COORDINATE_2D_FEATURE,
         parity: required_when_supported,
@@ -1029,20 +1352,32 @@ molecule_ops! {
 
 #[mol_op_body(with_hydrogens, parts)]
 fn with_hydrogens_impl(params: crate::hydrogens::AddHsParams) -> Result<OpOutcome, OperationError> {
-    let assignment = parts
-        .read_parts()
+    let mut topology = parts.begin_topology_mut()?;
+    let mut coordinates = parts.begin_coordinates_mut()?;
+    let mut properties = parts.begin_properties_mut()?;
+    let view =
+        parts.read_parts_for_blocks(topology.clone(), coordinates.clone(), properties.clone())?;
+    let assignment = MoleculeReadParts::from_molecule(&view)
         .add_hs_assignment(&params)
         .map_err(|source| OperationError::AddHydrogens {
             operation: &WITH_HYDROGENS_SPEC,
             source,
         })?;
 
-    let changed = apply_add_hs_assignment(parts, &assignment)?;
-    parts.mark_states_handled(
-        DerivedStateSet::VALENCE
-            .union(DerivedStateSet::AROMATICITY)
-            .union(DerivedStateSet::STEREO),
-    );
+    let changed = apply_add_hs_assignment(
+        parts,
+        &mut topology,
+        &mut coordinates,
+        &mut properties,
+        &assignment,
+    )?;
+    parts.commit_topology(topology)?;
+    parts.commit_coordinates(coordinates)?;
+    parts.commit_properties(properties)?;
+    parts.prove_preserved(
+        DerivedState::RINGS | DerivedState::RING_FAMILIES,
+        PreservationProof::LeafAtomAppend,
+    )?;
 
     Ok(if changed {
         OpOutcome::Changed
@@ -1055,10 +1390,13 @@ fn with_hydrogens_impl(params: crate::hydrogens::AddHsParams) -> Result<OpOutcom
 
 fn apply_add_hs_assignment(
     parts: &mut OpParts<'_>,
+    topology: &mut TopologyBlock,
+    coordinates: &mut CoordinateBlock,
+    properties: &mut MoleculeProperties,
     assignment: &crate::hydrogens::AddHsAssignment,
 ) -> Result<bool, OperationError> {
-    let old_atom_count = parts.read_parts().num_atoms();
-    let old_bond_count = parts.read_parts().num_bonds();
+    let old_atom_count = topology.atoms.len();
+    let old_bond_count = topology.bonds.len();
     let added_atom_count = assignment.hydrogens_to_add.len();
     let added_bond_count = assignment.hydrogens_to_add.len();
     let changed = added_atom_count != 0
@@ -1066,86 +1404,81 @@ fn apply_add_hs_assignment(
         || !assignment.atom_pdb_residue_info_updates.is_empty()
         || !assignment.clear_isotopic_hydrogen_properties.is_empty();
 
-    let coords_2d_to_append = parts
-        .read_parts()
+    let view =
+        parts.read_parts_for_blocks(topology.clone(), coordinates.clone(), properties.clone())?;
+    let read = MoleculeReadParts::from_molecule(&view);
+    let coords_2d_to_append = read
         .coords_2d()
-        .map(|coords| add_hs_terminal_coords_2d(parts.read_parts(), assignment, coords));
+        .map(|coords| add_hs_terminal_coords_2d(read, assignment, coords));
     let coords_2d_to_append = match coords_2d_to_append {
         Some(coords) => Some(coords?),
         None => None,
     };
-    let conformer_coords_to_append = parts
-        .read_parts()
+    let conformer_coords_to_append = read
         .conformers_3d()
         .iter()
-        .map(|conformer| {
-            add_hs_terminal_coords_3d(parts.read_parts(), assignment, conformer.coords())
-        })
+        .map(|conformer| add_hs_terminal_coords_3d(read, assignment, conformer.coords()))
         .collect::<Result<Vec<_>, _>>()?;
 
-    {
-        let topology = parts.topology_mut();
-        for update in &assignment.atom_explicit_hydrogen_updates {
-            let Some(atom) = topology.atoms.get_mut(update.atom.index()) else {
-                return Err(OperationError::InvalidInput {
-                    operation: &WITH_HYDROGENS_SPEC,
-                    message: "AddHs explicit hydrogen update references an out-of-range atom",
-                });
-            };
-            atom.set_explicit_hydrogens(update.explicit_hydrogens);
-        }
-        for atom_id in &assignment.clear_isotopic_hydrogen_properties {
-            let Some(atom) = topology.atoms.get_mut(atom_id.index()) else {
-                return Err(OperationError::InvalidInput {
-                    operation: &WITH_HYDROGENS_SPEC,
-                    message: "AddHs isotope property cleanup references an out-of-range atom",
-                });
-            };
-            atom.set_tracked_isotopic_hydrogens(Vec::new());
-        }
-        for update in &assignment.atom_pdb_residue_info_updates {
-            let Some(atom) = topology.atoms.get_mut(update.atom.index()) else {
-                return Err(OperationError::InvalidInput {
-                    operation: &WITH_HYDROGENS_SPEC,
-                    message: "AddHs PDB residue info update references an out-of-range atom",
-                });
-            };
-            atom.set_pdb_residue_info(Some(update.pdb_residue_info.clone()));
-        }
+    for update in &assignment.atom_explicit_hydrogen_updates {
+        let Some(atom) = topology.atoms.get_mut(update.atom.index()) else {
+            return Err(OperationError::InvalidInput {
+                operation: &WITH_HYDROGENS_SPEC,
+                message: "AddHs explicit hydrogen update references an out-of-range atom",
+            });
+        };
+        atom.set_explicit_hydrogens(update.explicit_hydrogens);
+    }
+    for atom_id in &assignment.clear_isotopic_hydrogen_properties {
+        let Some(atom) = topology.atoms.get_mut(atom_id.index()) else {
+            return Err(OperationError::InvalidInput {
+                operation: &WITH_HYDROGENS_SPEC,
+                message: "AddHs isotope property cleanup references an out-of-range atom",
+            });
+        };
+        atom.set_tracked_isotopic_hydrogens(Vec::new());
+    }
+    for update in &assignment.atom_pdb_residue_info_updates {
+        let Some(atom) = topology.atoms.get_mut(update.atom.index()) else {
+            return Err(OperationError::InvalidInput {
+                operation: &WITH_HYDROGENS_SPEC,
+                message: "AddHs PDB residue info update references an out-of-range atom",
+            });
+        };
+        atom.set_pdb_residue_info(Some(update.pdb_residue_info.clone()));
+    }
 
-        for hydrogen in &assignment.hydrogens_to_add {
-            if topology.atoms.get(hydrogen.heavy_atom.index()).is_none() {
-                return Err(OperationError::InvalidInput {
-                    operation: &WITH_HYDROGENS_SPEC,
-                    message: "AddHs hydrogen references an out-of-range heavy atom",
-                });
-            }
-            let atom_id = crate::AtomId::new(topology.atoms.len());
-            let mut spec = crate::AtomSpec::new(crate::Element::H);
-            if let Some(isotope) = hydrogen.isotope {
-                spec = spec.with_isotope(isotope);
-            }
-            if hydrogen.is_implicit {
-                spec = spec.with_implicit_hydrogen(true);
-            }
-            for (key, value) in &hydrogen.props {
-                spec = spec.with_prop(key, value);
-            }
-            if let Some(info) = hydrogen.pdb_residue_info.clone() {
-                spec = spec.with_pdb_residue_info(info);
-            }
-            topology.atoms.push(crate::Atom::from_spec(atom_id, spec));
-
-            let bond_id = crate::BondId::new(topology.bonds.len());
-            topology.bonds.push(crate::Bond::from_spec(
-                bond_id,
-                crate::BondSpec::new(hydrogen.heavy_atom, atom_id, crate::BondOrder::Single),
-            ));
+    for hydrogen in &assignment.hydrogens_to_add {
+        if topology.atoms.get(hydrogen.heavy_atom.index()).is_none() {
+            return Err(OperationError::InvalidInput {
+                operation: &WITH_HYDROGENS_SPEC,
+                message: "AddHs hydrogen references an out-of-range heavy atom",
+            });
         }
+        let atom_id = crate::AtomId::new(topology.atoms.len());
+        let mut spec = crate::AtomSpec::new(crate::Element::H);
+        if let Some(isotope) = hydrogen.isotope {
+            spec = spec.with_isotope(isotope);
+        }
+        if hydrogen.is_implicit {
+            spec = spec.with_implicit_hydrogen(true);
+        }
+        for (key, value) in &hydrogen.props {
+            spec = spec.with_prop(key, value);
+        }
+        if let Some(info) = hydrogen.pdb_residue_info.clone() {
+            spec = spec.with_pdb_residue_info(info);
+        }
+        topology.atoms.push(crate::Atom::from_spec(atom_id, spec));
+
+        let bond_id = crate::BondId::new(topology.bonds.len());
+        topology.bonds.push(crate::Bond::from_spec(
+            bond_id,
+            crate::BondSpec::new(hydrogen.heavy_atom, atom_id, crate::BondOrder::Single),
+        ));
     }
 
     if let Some(coords) = coords_2d_to_append {
-        let coordinates = parts.coordinates_mut();
         let Some(existing) = &mut coordinates.coords_2d else {
             return Err(OperationError::InvalidInput {
                 operation: &WITH_HYDROGENS_SPEC,
@@ -1155,7 +1488,6 @@ fn apply_add_hs_assignment(
         existing.extend(coords);
     }
     if !conformer_coords_to_append.is_empty() {
-        let coordinates = parts.coordinates_mut();
         for (conformer, coords) in coordinates
             .conformers_3d
             .iter_mut()
@@ -1167,13 +1499,17 @@ fn apply_add_hs_assignment(
         }
     }
 
-    parts.clear_cache(WITH_HYDROGENS_SPEC.needs_update);
-    parts.record_appended_topology_mapping(
+    let mapping = TopologyMapping::with_appended(
         old_atom_count,
         old_bond_count,
         added_atom_count,
         added_bond_count,
     );
+    properties.remap_topology(&mapping);
+
+    parts.record_topology_edit(TopologyEditKind::Appending)?;
+    parts.record_topology_mapping(mapping);
+    parts.clear_cache(WITH_HYDROGENS_SPEC.needs_update());
     Ok(changed)
 }
 
@@ -1211,19 +1547,19 @@ fn add_hs_terminal_coords<'a>(
     is_3d: bool,
 ) -> Result<Vec<[f64; 3]>, OperationError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/AddHs.cpp :: void setTerminalAtomCoords(ROMol &mol, unsigned int idx, unsigned int otherIdx)
-    // RDKit✔️❌: void setTerminalAtomCoords(ROMol &mol, unsigned int idx,
-    // RDKit✔️❌:                            unsigned int otherIdx) {
-    // RDKit✔️❌:   PRECONDITION(otherIdx != idx, "degenerate atoms");
-    // RDKit✔️❌:   Atom *atom = mol.getAtomWithIdx(idx);
-    // RDKit✔️❌:   PRECONDITION(mol.getAtomDegree(atom) == 1, "bad atom degree");
-    // RDKit✔️❌:   const Bond *bond = mol.getBondBetweenAtoms(otherIdx, idx);
-    // RDKit✔️❌:   PRECONDITION(bond, "no bond between atoms");
-    // RDKit✔️❌:   const Atom *otherAtom = mol.getAtomWithIdx(otherIdx);
+    // RDKit✔️✔️: void setTerminalAtomCoords(ROMol &mol, unsigned int idx,
+    // RDKit✔️✔️:                            unsigned int otherIdx) {
+    // RDKit✔️✔️:   PRECONDITION(otherIdx != idx, "degenerate atoms");
+    // RDKit✔️✔️:   Atom *atom = mol.getAtomWithIdx(idx);
+    // RDKit✔️✔️:   PRECONDITION(mol.getAtomDegree(atom) == 1, "bad atom degree");
+    // RDKit✔️✔️:   const Bond *bond = mol.getBondBetweenAtoms(otherIdx, idx);
+    // RDKit✔️✔️:   PRECONDITION(bond, "no bond between atoms");
+    // RDKit✔️✔️:   const Atom *otherAtom = mol.getAtomWithIdx(otherIdx);
     // RDKit✔️✔️:   double bondLength =
     // RDKit✔️✔️:       PeriodicTable::getTable()->getRb0(1) +
     // RDKit✔️✔️:       PeriodicTable::getTable()->getRb0(otherAtom->getAtomicNum());
     // RDKit✔️✔️:   RDGeom::Point3D dirVect(0, 0, 0);
-    // RDKit✔️❌:   switch (otherAtom->getDegree()) {
+    // RDKit✔️✔️:   switch (otherAtom->getDegree()) {
     // COSMolKit computes the same sequential coordinate assignment here, then
     // writes the finished coordinates through OpParts after topology mutation.
     let old_atom_count = molecule.num_atoms();
@@ -1282,6 +1618,30 @@ fn add_hs_set_terminal_atom_coord<'a>(
     other_index: usize,
     is_3d: bool,
 ) -> Result<[f64; 3], OperationError> {
+    if atom_index == other_index {
+        return Err(OperationError::InvalidInput {
+            operation: &WITH_HYDROGENS_SPEC,
+            message: "AddHs terminal coordinate assignment received degenerate atoms",
+        });
+    }
+    let atom_neighbors = adjacency
+        .get(atom_index)
+        .ok_or(OperationError::InvalidInput {
+            operation: &WITH_HYDROGENS_SPEC,
+            message: "AddHs terminal coordinate assignment references an out-of-range atom",
+        })?;
+    if atom_neighbors.len() != 1 {
+        return Err(OperationError::InvalidInput {
+            operation: &WITH_HYDROGENS_SPEC,
+            message: "AddHs terminal coordinate assignment requires terminal degree one",
+        });
+    }
+    if atom_neighbors[0].0 != other_index {
+        return Err(OperationError::InvalidInput {
+            operation: &WITH_HYDROGENS_SPEC,
+            message: "AddHs terminal coordinate assignment requires a bond to the heavy atom",
+        });
+    }
     let other_atom = molecule
         .atoms()
         .get(other_index)
@@ -1626,20 +1986,39 @@ fn without_hydrogens_apply(
     sanitize: bool,
 ) -> Result<OpOutcome, OperationError> {
     let operation = parts.spec;
-    let assignment = parts
-        .read_parts()
+    let mut topology = parts.begin_topology_mut()?;
+    let mut coordinates = parts.begin_coordinates_mut()?;
+    let mut properties = parts.begin_properties_mut()?;
+    let view =
+        parts.read_parts_for_blocks(topology.clone(), coordinates.clone(), properties.clone())?;
+    let assignment = MoleculeReadParts::from_molecule(&view)
         .remove_hs_assignment(params, sanitize)
         .map_err(|source| OperationError::RemoveHydrogens { operation, source })?;
 
-    let mut changed = apply_remove_hs_assignment(parts, &assignment)?;
-    if assignment.sanitize_after_removal {
-        changed |= sanitize_after_remove_hs_removal(parts)?;
+    let mut changed = apply_remove_hs_assignment(parts, &mut topology, &assignment)?;
+    let atoms_to_remove = assignment.atoms_to_remove.clone();
+    if atoms_to_remove.is_empty() {
+        let atom_count = topology.atoms.len();
+        let bond_count = topology.bonds.len();
+        parts.record_topology_edit(TopologyEditKind::Compacting)?;
+        parts.record_topology_mapping(TopologyMapping::identity(atom_count, bond_count));
+        parts.clear_cache(WITHOUT_HYDROGENS_SPEC.needs_update());
+    } else {
+        let mapping = topology.remove_atoms_with_mapping(&atoms_to_remove);
+        coordinates.remap_topology(&mapping);
+        properties.remap_topology(&mapping);
+        parts.record_topology_mapping(mapping);
+        parts.record_topology_edit(TopologyEditKind::Compacting)?;
+        parts.clear_cache(WITHOUT_HYDROGENS_SPEC.needs_update());
+        changed = true;
     }
-    parts.mark_states_handled(
-        DerivedStateSet::VALENCE
-            .union(DerivedStateSet::AROMATICITY)
-            .union(DerivedStateSet::STEREO),
-    );
+    if assignment.sanitize_after_removal {
+        changed |=
+            sanitize_after_remove_hs_removal(parts, &mut topology, &coordinates, &properties)?;
+    }
+    parts.commit_topology(topology)?;
+    parts.commit_coordinates(coordinates)?;
+    parts.commit_properties(properties)?;
 
     Ok(if changed {
         OpOutcome::Changed
@@ -1652,6 +2031,7 @@ fn without_hydrogens_apply(
 
 fn apply_remove_hs_assignment(
     parts: &mut OpParts<'_>,
+    topology: &mut TopologyBlock,
     assignment: &crate::hydrogens::RemoveHsAssignment,
 ) -> Result<bool, OperationError> {
     let operation = parts.spec;
@@ -1664,7 +2044,6 @@ fn apply_remove_hs_assignment(
         || !assignment.sgroup_updates.is_empty();
 
     if has_local_updates {
-        let topology = parts.topology_mut();
         for update in &assignment.atom_explicit_hydrogen_updates {
             let Some(atom) = topology.atoms.get_mut(update.atom.index()) else {
                 return Err(OperationError::InvalidInput {
@@ -1793,205 +2172,72 @@ fn apply_remove_hs_assignment(
             }
         }
     }
-
-    if assignment.atoms_to_remove.is_empty() {
-        parts.record_identity_topology_mapping();
-        parts.clear_cache(WITHOUT_HYDROGENS_SPEC.needs_update);
-        return Ok(has_local_updates);
-    }
-
-    parts.remove_atoms(&assignment.atoms_to_remove)?;
-    Ok(true)
+    Ok(has_local_updates)
 }
 
-fn sanitize_after_remove_hs_removal(parts: &mut OpParts<'_>) -> Result<bool, OperationError> {
+fn sanitize_after_remove_hs_removal(
+    parts: &mut OpParts<'_>,
+    topology: &mut TopologyBlock,
+    coordinates: &CoordinateBlock,
+    properties: &MoleculeProperties,
+) -> Result<bool, OperationError> {
     // BEGIN RDKIT CPP BODY MolOps::removeHs sanitize-after-removal
-    // RDKit❗❗:   if (!atomsToRemove.empty() && ps.removeNonimplicit && sanitize) {
-    // RDKit❗❗:     sanitizeMol(mol);
-    // RDKit❗❗:   }
-    // COSMolKit executes only the sanitize branches currently modeled by the core and fails
-    // closed when the molecule needs a not-yet-ported sanitize operation.
-    let cleanup = sanitize_cleanup_assignment(parts.read_parts()).map_err(|source| {
-        OperationError::Valence {
-            operation: &WITHOUT_HYDROGENS_SPEC,
-            source,
-        }
-    })?;
-    let cleanup_changed = cleanup_changes_molecule(parts.read_parts(), &cleanup);
-    if cleanup_changed {
-        apply_sanitize_cleanup_assignment(parts.topology_mut(), cleanup);
-    }
-    let organometallics =
-        sanitize_organometallic_cleanup_assignment(parts.read_parts()).map_err(|source| {
-            OperationError::Valence {
-                operation: &WITHOUT_HYDROGENS_SPEC,
-                source,
-            }
-        })?;
-    let organometallics_changed =
-        organometallic_cleanup_changes_molecule(parts.read_parts(), &organometallics);
-    if organometallics_changed {
-        apply_sanitize_organometallic_cleanup_assignment(parts.topology_mut(), organometallics);
-    }
-    if parts
-        .read_parts()
-        .bonds()
-        .iter()
-        .any(|bond| bond.is_aromatic() || bond.order() == crate::BondOrder::Aromatic)
-        || parts
-            .read_parts()
-            .atoms()
-            .iter()
-            .any(crate::Atom::is_aromatic)
-    {
-        return Err(OperationError::Unsupported {
-            operation: &WITHOUT_HYDROGENS_SPEC,
-            reason: "removeHs sanitize-after-removal requires aromatic sanitize branches not yet ported for this operation",
-        });
-    }
-    let adjacency = crate::AdjacencyList::try_from_topology(
-        parts.read_parts().num_atoms(),
-        parts.read_parts().bonds(),
-    )
-    .map_err(|source| OperationError::InvalidInput {
-        operation: &WITHOUT_HYDROGENS_SPEC,
-        message: match source {
-            crate::AdjacencyError::BondAtomOutOfRange { .. } => {
-                "topology bond atom index out of range while recomputing remove-H adjacency"
-            }
-        },
-    })?;
-    parts.set_adjacency_cache(adjacency);
-
-    let valence = parts
-        .read_parts()
-        .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
-        .map_err(|source| OperationError::Valence {
-            operation: &WITHOUT_HYDROGENS_SPEC,
-            source,
-        })?;
-    parts.set_valence_cache(valence);
-
-    let rings =
-        parts
-            .read_parts()
-            .symmetrize_sssr()
-            .map_err(|source| OperationError::RingFinding {
-                operation: &WITHOUT_HYDROGENS_SPEC,
-                source,
-            })?;
-    parts.set_rings_cache(rings);
-
-    let radicals =
-        parts
-            .read_parts()
-            .assign_radicals()
-            .map_err(|source| OperationError::Valence {
-                operation: &WITHOUT_HYDROGENS_SPEC,
-                source,
-            })?;
-    let radicals_changed = parts
-        .read_parts()
-        .atoms()
-        .iter()
-        .zip(radicals.iter().copied())
-        .any(|(atom, radical)| atom.radical_electrons() != radical);
-    if radicals_changed {
-        let topology = parts.topology_mut();
-        for (atom, radical) in topology.atoms.iter_mut().zip(radicals) {
-            atom.set_radical_electrons(radical);
-        }
-        let valence = parts
-            .read_parts()
-            .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
-            .map_err(|source| OperationError::Valence {
-                operation: &WITHOUT_HYDROGENS_SPEC,
-                source,
-            })?;
-        parts.set_valence_cache(valence);
-    }
-    let conjugation = sanitize_conjugation_assignment(parts.read_parts()).map_err(|source| {
-        OperationError::Valence {
-            operation: &WITHOUT_HYDROGENS_SPEC,
-            source,
-        }
-    })?;
-    let conjugation_changed = parts
-        .read_parts()
-        .bonds()
-        .iter()
-        .zip(conjugation.iter().copied())
-        .any(|(bond, is_conjugated)| bond.is_conjugated() != is_conjugated);
-    if conjugation_changed {
-        let topology = parts.topology_mut();
-        for (bond, is_conjugated) in topology.bonds.iter_mut().zip(conjugation) {
-            bond.set_conjugated(is_conjugated);
-        }
-    }
-    let hybridization =
-        sanitize_hybridization_assignment(parts.read_parts()).map_err(|source| {
-            OperationError::Valence {
-                operation: &WITHOUT_HYDROGENS_SPEC,
-                source,
-            }
-        })?;
-    let hybridization_changed = parts
-        .read_parts()
-        .atoms()
-        .iter()
-        .zip(hybridization.iter().copied())
-        .any(|(atom, hybridization)| atom.hybridization() != hybridization);
-    if hybridization_changed {
-        let topology = parts.topology_mut();
-        for (atom, hybridization) in topology.atoms.iter_mut().zip(hybridization) {
-            atom.set_hybridization(hybridization);
-        }
-    }
-    parts.mark_aromaticity_valid();
+    // RDKit✔️✔️:   if (!atomsToRemove.empty() && ps.removeNonimplicit && sanitize) {
+    // RDKit✔️✔️:     sanitizeMol(mol);
+    // RDKit✔️✔️:   }
+    let changed = run_sanitize_pipeline_on_topology(
+        parts,
+        topology,
+        Some(coordinates),
+        Some(properties),
+        crate::SanitizeOps::ALL,
+        &WITHOUT_HYDROGENS_SPEC,
+    )?;
     // END RDKIT CPP BODY MolOps::removeHs sanitize-after-removal
-    Ok(cleanup_changed
-        || organometallics_changed
-        || radicals_changed
-        || conjugation_changed
-        || hybridization_changed)
+    Ok(changed)
 }
 
 #[mol_op_body(with_kekulized_bonds, parts)]
 fn with_kekulized_bonds_impl(clear_aromatic_flags: bool) -> Result<OpOutcome, OperationError> {
-    if parts.read_parts().derived_cache().rings.is_none() {
-        let rings =
-            parts
-                .read_parts()
-                .symmetrize_sssr()
-                .map_err(|source| OperationError::RingFinding {
-                    operation: &WITH_KEKULIZED_BONDS_SPEC,
-                    source,
-                })?;
-        parts.set_rings_cache(rings);
-    }
-    let ring_info = parts
-        .read_parts()
+    // RDKit✔️✔️: void kekulizeMol(ROMol &mol, bool clearAromaticFlags = false,
+    // RDKit✔️✔️:                  bool canonical = true) {
+    // RDKit✔️✔️:   auto &wmol = static_cast<RWMol &>(mol);
+    // RDKit✔️✔️:   MolOps::Kekulize(wmol, clearAromaticFlags, canonical);
+    // RDKit✔️✔️: }
+    let mut topology = parts.begin_topology_mut()?;
+    let view = parts.read_parts_for_topology(topology.clone())?;
+    let rings = MoleculeReadParts::from_molecule(&view)
+        .symmetrize_sssr()
+        .map_err(|source| OperationError::RingFinding {
+            operation: &WITH_KEKULIZED_BONDS_SPEC,
+            source,
+        })?;
+    parts.set_rings_cache(rings);
+    let view = parts.read_parts_for_topology(topology.clone())?;
+    let ring_info = MoleculeReadParts::from_molecule(&view)
         .derived_cache()
         .rings
         .as_ref()
-        .expect("rings were recomputed immediately above");
-    let assignment = parts
-        .read_parts()
-        .kekulize_assignment(Some(ring_info), clear_aromatic_flags, false, 100)
+        .expect("rings were recomputed immediately above")
+        .clone();
+    let assignment = MoleculeReadParts::from_molecule(&view)
+        .kekulize_assignment(Some(&ring_info), clear_aromatic_flags, true, 100)
         .map_err(|source| OperationError::Kekulize {
             operation: &WITH_KEKULIZED_BONDS_SPEC,
             source,
         })?;
 
-    let changed = crate::kekulize::apply_kekulize_assignment(parts.topology_mut(), &assignment);
-    parts.clear_cache(DerivedState::AROMATICITY);
-    let valence = parts
-        .read_parts()
+    let changed = crate::kekulize::apply_kekulize_assignment(&mut topology, &assignment);
+    let view = parts.read_parts_for_topology(topology.clone())?;
+    let valence = MoleculeReadParts::from_molecule(&view)
         .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
         .map_err(|source| OperationError::Valence {
             operation: &WITH_KEKULIZED_BONDS_SPEC,
             source,
         })?;
+    parts.commit_topology(topology)?;
+    parts.record_topology_edit(TopologyEditKind::Local)?;
+    parts.clear_cache(DerivedState::AROMATICITY);
     parts.set_valence_cache(valence);
     parts.clear_cache(DerivedState::DRAWING | DerivedState::FINGERPRINT);
     Ok(if changed {
@@ -2006,117 +2252,268 @@ fn with_kekulized_bonds_impl(clear_aromatic_flags: bool) -> Result<OpOutcome, Op
 #[mol_op_body(sanitized, parts)]
 fn sanitized_impl(ops: crate::SanitizeOps) -> Result<OpOutcome, OperationError> {
     let mut parts = parts;
+    let changed = run_sanitize_pipeline(&mut parts, ops, &SANITIZED_SPEC)?;
+    Ok(if changed {
+        OpOutcome::Changed
+    } else {
+        OpOutcome::NoOp {
+            reason: "requested sanitize steps only updated derived state",
+        }
+    })
+}
+
+fn sanitize_error(
+    operation: &'static MoleculeOpSpec,
+    step: crate::SanitizeStep,
+    message: String,
+    unsupported: Option<crate::UnsupportedFeatureError>,
+) -> OperationError {
+    OperationError::Sanitize {
+        operation,
+        source: crate::SanitizeError {
+            step,
+            message,
+            unsupported,
+        },
+    }
+}
+
+fn sanitize_invalid_input_error(
+    operation: &'static MoleculeOpSpec,
+    step: crate::SanitizeStep,
+    message: &'static str,
+) -> OperationError {
+    sanitize_error(operation, step, message.to_string(), None)
+}
+
+fn sanitize_valence_error(
+    operation: &'static MoleculeOpSpec,
+    step: crate::SanitizeStep,
+    source: crate::ValenceError,
+) -> OperationError {
+    sanitize_error(operation, step, source.to_string(), None)
+}
+
+fn sanitize_ring_finding_error(
+    operation: &'static MoleculeOpSpec,
+    step: crate::SanitizeStep,
+    source: crate::RingFindingError,
+) -> OperationError {
+    sanitize_error(operation, step, source.to_string(), None)
+}
+
+fn sanitize_kekulize_error(
+    operation: &'static MoleculeOpSpec,
+    step: crate::SanitizeStep,
+    source: crate::KekulizeError,
+) -> OperationError {
+    sanitize_error(operation, step, source.to_string(), None)
+}
+
+fn sanitize_aromaticity_error(
+    operation: &'static MoleculeOpSpec,
+    step: crate::SanitizeStep,
+    source: crate::AromaticityError,
+) -> OperationError {
+    sanitize_error(operation, step, source.to_string(), None)
+}
+
+fn sanitize_stage<T, E>(
+    step: crate::SanitizeStep,
+    stage: impl FnOnce() -> Result<T, E>,
+    map_error: impl FnOnce(crate::SanitizeStep, E) -> OperationError,
+) -> Result<T, OperationError> {
+    stage().map_err(|source| map_error(step, source))
+}
+
+fn sanitize_properties_stage(
+    parts: &mut OpParts<'_>,
+    topology: &TopologyBlock,
+    coordinates: Option<&CoordinateBlock>,
+    properties: Option<&MoleculeProperties>,
+    strict: bool,
+    operation: &'static MoleculeOpSpec,
+) -> Result<crate::ValenceAssignment, OperationError> {
+    sanitize_stage(
+        crate::SanitizeStep::Properties,
+        || {
+            sanitize_recompute_property_cache(
+                parts,
+                topology,
+                coordinates,
+                properties,
+                strict,
+                crate::SanitizeStep::Properties,
+                operation,
+            )
+        },
+        |_step, error| error,
+    )
+}
+
+fn sanitize_recompute_property_cache(
+    parts: &mut OpParts<'_>,
+    topology: &TopologyBlock,
+    coordinates: Option<&CoordinateBlock>,
+    properties: Option<&MoleculeProperties>,
+    strict: bool,
+    step: crate::SanitizeStep,
+    operation: &'static MoleculeOpSpec,
+) -> Result<crate::ValenceAssignment, OperationError> {
+    let view = parts.read_parts_for_optional_blocks(topology.clone(), coordinates, properties)?;
+    let valence = MoleculeReadParts::from_molecule(&view)
+        .assign_valence_with_options(crate::ValenceModel::RdkitLike, strict)
+        .map_err(|source| sanitize_valence_error(operation, step, source))?;
+    parts.set_valence_cache(valence.clone());
+    Ok(valence)
+}
+
+fn run_sanitize_pipeline(
+    parts: &mut OpParts<'_>,
+    ops: crate::SanitizeOps,
+    operation: &'static MoleculeOpSpec,
+) -> Result<bool, OperationError> {
+    let mut topology = parts.begin_topology_mut()?;
+    let changed =
+        run_sanitize_pipeline_on_topology(parts, &mut topology, None, None, ops, operation)?;
+    parts.commit_topology(topology)?;
+    parts.record_topology_edit(TopologyEditKind::Local)?;
+    Ok(changed)
+}
+
+fn run_sanitize_pipeline_on_topology(
+    parts: &mut OpParts<'_>,
+    topology: &mut TopologyBlock,
+    coordinates: Option<&CoordinateBlock>,
+    properties: Option<&MoleculeProperties>,
+    ops: crate::SanitizeOps,
+    operation: &'static MoleculeOpSpec,
+) -> Result<bool, OperationError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::sanitizeMol
-    // RDKit❗✔️: void sanitizeMol(RWMol &mol) {
-    // RDKit❗✔️:   unsigned int failedOp = 0;
-    // RDKit❗✔️:   sanitizeMol(mol, failedOp, SANITIZE_ALL);
-    // RDKit❗✔️: }
-    // RDKit❗✔️: void sanitizeMol(RWMol &mol, unsigned int &operationThatFailed,
-    // RDKit❗✔️:                  unsigned int sanitizeOps) {
-    // RDKit❗✔️:   // clear out any cached properties
-    // RDKit❗✔️:   mol.clearComputedProps();
-    parts.clear_cache(SANITIZED_SPEC.needs_update);
+    // RDKit✔️✔️: void sanitizeMol(RWMol &mol) {
+    // RDKit✔️✔️:   unsigned int failedOp = 0;
+    // RDKit✔️✔️:   sanitizeMol(mol, failedOp, SANITIZE_ALL);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: void sanitizeMol(RWMol &mol, unsigned int &operationThatFailed,
+    // RDKit✔️✔️:                  unsigned int sanitizeOps) {
+    // RDKit✔️✔️:   // clear out any cached properties
+    // RDKit✔️✔️:   mol.clearComputedProps();
+    parts.clear_cache(SANITIZED_SPEC.needs_update());
+    macro_rules! sanitize_read {
+        ($read:ident => $body:expr) => {{
+            let view = parts
+                .read_parts_for_optional_blocks((*topology).clone(), coordinates, properties)
+                .expect("sanitize working topology should satisfy molecule invariants");
+            let $read = MoleculeReadParts::from_molecule(&view);
+            $body
+        }};
+    }
 
     let mut changed = false;
     let property_cache_strict = ops.contains(crate::SanitizeOps::PROPERTIES);
 
-    // RDKit✔️❌:   operationThatFailed = SANITIZE_CLEANUP;
-    // RDKit✔️❌:   if (sanitizeOps & operationThatFailed) {
-    // RDKit✔️❌:     // clean up things like nitro groups
-    // RDKit✔️❌:     cleanUp(mol);
-    // RDKit✔️❌:   }
+    // RDKit✔️✔️:   operationThatFailed = SANITIZE_CLEANUP;
+    // RDKit✔️✔️:   if (sanitizeOps & operationThatFailed) {
+    // RDKit✔️✔️:     // clean up things like nitro groups
+    // RDKit✔️✔️:     cleanUp(mol);
+    // RDKit✔️✔️:   }
     if ops.contains(crate::SanitizeOps::CLEANUP) {
         let cleanup = sanitize_stage(
             crate::SanitizeStep::Cleanup,
-            || sanitize_cleanup_assignment(parts.read_parts()),
-            sanitize_valence_error,
+            || sanitize_read!(read => sanitize_cleanup_assignment(read)),
+            |step, source| sanitize_valence_error(operation, step, source),
         )?;
-        let cleanup_changed = cleanup_changes_molecule(parts.read_parts(), &cleanup);
+        let cleanup_changed = sanitize_read!(read => cleanup_changes_molecule(read, &cleanup));
         if cleanup_changed {
-            apply_sanitize_cleanup_assignment(parts.topology_mut(), cleanup);
+            apply_sanitize_cleanup_assignment(topology, cleanup);
         }
         changed |= cleanup_changed;
     }
 
-    // RDKit✔️❌:   operationThatFailed = SANITIZE_CLEANUP_ORGANOMETALLICS;
-    // RDKit✔️❌:   if (sanitizeOps & operationThatFailed) {
-    // RDKit✔️❌:     cleanUpOrganometallics(mol);
-    // RDKit✔️❌:   }
+    // RDKit✔️✔️:   operationThatFailed = SANITIZE_CLEANUP_ORGANOMETALLICS;
+    // RDKit✔️✔️:   if (sanitizeOps & operationThatFailed) {
+    // RDKit✔️✔️:     cleanUpOrganometallics(mol);
+    // RDKit✔️✔️:   }
     if ops.contains(crate::SanitizeOps::CLEANUP_ORGANOMETALLICS) {
         let organometallics = sanitize_stage(
             crate::SanitizeStep::CleanupOrganometallics,
-            || sanitize_organometallic_cleanup_assignment(parts.read_parts()),
-            sanitize_valence_error,
+            || sanitize_read!(read => sanitize_organometallic_cleanup_assignment(read)),
+            |step, source| sanitize_valence_error(operation, step, source),
         )?;
         let organometallics_changed =
-            organometallic_cleanup_changes_molecule(parts.read_parts(), &organometallics);
+            sanitize_read!(read => organometallic_cleanup_changes_molecule(read, &organometallics));
         if organometallics_changed {
-            apply_sanitize_organometallic_cleanup_assignment(parts.topology_mut(), organometallics);
+            apply_sanitize_organometallic_cleanup_assignment(topology, organometallics);
         }
         changed |= organometallics_changed;
     }
 
-    // RDKit❗✔️:   operationThatFailed = SANITIZE_PROPERTIES;
-    // RDKit❗✔️:   if (sanitizeOps & operationThatFailed) {
-    // RDKit❗✔️:     mol.updatePropertyCache(true);
-    // RDKit❗✔️:   } else {
-    // RDKit❗✔️:     mol.updatePropertyCache(false);
-    // RDKit❗✔️:   }
-    let valence = sanitize_properties_stage(&mut *parts, property_cache_strict)?;
-    let adjust_hydrogens_original_implicit = valence.implicit_hydrogens.clone();
-
-    // RDKit❗✔️:   operationThatFailed = SANITIZE_SYMMRINGS;
-    // RDKit❗✔️:   if (sanitizeOps & operationThatFailed) {
-    // RDKit❗✔️:     VECT_INT_VECT arings;
-    // RDKit❗✔️:     MolOps::symmetrizeSSSR(mol, arings);
-    // RDKit❗✔️:   }
+    // RDKit✔️✔️:   operationThatFailed = SANITIZE_PROPERTIES;
+    // RDKit✔️✔️:   if (sanitizeOps & operationThatFailed) {
+    // RDKit✔️✔️:     mol.updatePropertyCache(true);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     mol.updatePropertyCache(false);
+    // RDKit✔️✔️:   }
+    let valence = sanitize_properties_stage(
+        parts,
+        topology,
+        coordinates,
+        properties,
+        property_cache_strict,
+        operation,
+    )?;
+    // RDKit✔️✔️:   operationThatFailed = SANITIZE_SYMMRINGS;
+    // RDKit✔️✔️:   if (sanitizeOps & operationThatFailed) {
+    // RDKit✔️✔️:     VECT_INT_VECT arings;
+    // RDKit✔️✔️:     MolOps::symmetrizeSSSR(mol, arings);
+    // RDKit✔️✔️:   }
     if ops.contains(crate::SanitizeOps::SYMMRINGS) {
         let rings = sanitize_stage(
             crate::SanitizeStep::SymmRings,
-            || parts.read_parts().symmetrize_sssr(),
-            sanitize_ring_finding_error,
+            || sanitize_read!(read => read.symmetrize_sssr()),
+            |step, source| sanitize_ring_finding_error(operation, step, source),
         )?;
         parts.set_rings_cache(rings);
     }
 
-    // RDKit✔️❌:   operationThatFailed = SANITIZE_KEKULIZE;
-    // RDKit✔️❌:   if (sanitizeOps & operationThatFailed) {
-    // RDKit✔️❌:     Kekulize(mol, true, false);
-    // RDKit✔️❌:   }
+    // RDKit✔️✔️:   operationThatFailed = SANITIZE_KEKULIZE;
+    // RDKit✔️✔️:   if (sanitizeOps & operationThatFailed) {
+    // RDKit✔️✔️:     Kekulize(mol, true, false);
+    // RDKit✔️✔️:   }
     if ops.contains(crate::SanitizeOps::KEKULIZE) {
-        if parts.read_parts().derived_cache().rings.is_none() {
+        if sanitize_read!(read => read.derived_cache().rings.is_none()) {
             let rings = sanitize_stage(
                 crate::SanitizeStep::Kekulize,
-                || parts.read_parts().symmetrize_sssr(),
-                sanitize_ring_finding_error,
+                || sanitize_read!(read => read.symmetrize_sssr()),
+                |step, source| sanitize_ring_finding_error(operation, step, source),
             )?;
             parts.set_rings_cache(rings);
         }
-        let ring_info = parts
-            .read_parts()
-            .derived_cache()
-            .rings
-            .as_ref()
-            .expect("rings were recomputed immediately above");
+        let ring_info = sanitize_read!(read => {
+            read.derived_cache()
+                .rings
+                .as_ref()
+                .expect("rings were recomputed immediately above")
+                .clone()
+        });
         let assignment = sanitize_stage(
             crate::SanitizeStep::Kekulize,
-            || {
-                parts
-                    .read_parts()
-                    .kekulize_assignment(Some(ring_info), true, false, 100)
-            },
-            sanitize_kekulize_error,
+            || sanitize_read!(read => read.kekulize_assignment(Some(&ring_info), true, false, 100)),
+            |step, source| sanitize_kekulize_error(operation, step, source),
         )?;
-        let kekulize_changed =
-            crate::kekulize::apply_kekulize_assignment(parts.topology_mut(), &assignment);
+        let kekulize_changed = crate::kekulize::apply_kekulize_assignment(topology, &assignment);
         if kekulize_changed {
             sanitize_stage(
                 crate::SanitizeStep::Kekulize,
                 || {
                     sanitize_recompute_property_cache(
-                        &mut *parts,
+                        parts,
+                        topology,
+                        coordinates,
+                        properties,
                         property_cache_strict,
                         crate::SanitizeStep::Kekulize,
+                        operation,
                     )
                 },
                 |_step, error| error,
@@ -2128,100 +2525,69 @@ fn sanitized_impl(ops: crate::SanitizeOps) -> Result<OpOutcome, OperationError> 
         changed |= kekulize_changed;
     }
 
-    // RDKit❗✔️:   operationThatFailed = SANITIZE_FINDRADICALS;
-    // RDKit❗✔️:   if (sanitizeOps & operationThatFailed) {
-    // RDKit❗✔️:     assignRadicals(mol);
-    // RDKit❗✔️:   }
+    // RDKit✔️✔️:   operationThatFailed = SANITIZE_FINDRADICALS;
+    // RDKit✔️✔️:   if (sanitizeOps & operationThatFailed) {
+    // RDKit✔️✔️:     assignRadicals(mol);
+    // RDKit✔️✔️:   }
     if ops.contains(crate::SanitizeOps::FIND_RADICALS) {
         let radicals = sanitize_stage(
             crate::SanitizeStep::FindRadicals,
-            || parts.read_parts().assign_radicals(),
-            sanitize_valence_error,
+            || sanitize_read!(read => read.assign_radicals()),
+            |step, source| sanitize_valence_error(operation, step, source),
         )?;
-        let radicals_changed = parts
-            .read_parts()
+        let radicals_changed = sanitize_read!(read => read
             .atoms()
             .iter()
             .zip(radicals.iter().copied())
-            .any(|(atom, radical)| atom.radical_electrons() != radical);
+            .any(|(atom, radical)| atom.radical_electrons() != radical));
         if radicals_changed {
-            let topology = parts.topology_mut();
             for (atom, radical) in topology.atoms.iter_mut().zip(radicals) {
                 atom.set_radical_electrons(radical);
             }
-            sanitize_stage(
-                crate::SanitizeStep::FindRadicals,
-                || {
-                    sanitize_recompute_property_cache(
-                        &mut *parts,
-                        property_cache_strict,
-                        crate::SanitizeStep::FindRadicals,
-                    )
-                },
-                |_step, error| error,
-            )?;
         }
         changed |= radicals_changed;
     }
 
-    // RDKit❗✔️:   operationThatFailed = SANITIZE_SETAROMATICITY;
-    // RDKit❗✔️:   if (sanitizeOps & operationThatFailed) {
-    // RDKit❗✔️:     setAromaticity(mol);
-    // RDKit❗✔️:   }
+    // RDKit✔️✔️:   operationThatFailed = SANITIZE_SETAROMATICITY;
+    // RDKit✔️✔️:   if (sanitizeOps & operationThatFailed) {
+    // RDKit✔️✔️:     setAromaticity(mol);
+    // RDKit✔️✔️:   }
     if ops.contains(crate::SanitizeOps::SET_AROMATICITY) {
-        if parts.read_parts().derived_cache().rings.is_none() {
+        if sanitize_read!(read => read.derived_cache().rings.is_none()) {
             let rings = sanitize_stage(
                 crate::SanitizeStep::SetAromaticity,
-                || parts.read_parts().symmetrize_sssr(),
-                sanitize_ring_finding_error,
+                || sanitize_read!(read => read.symmetrize_sssr()),
+                |step, source| sanitize_ring_finding_error(operation, step, source),
             )?;
             parts.set_rings_cache(rings);
         }
         let assignment = sanitize_stage(
             crate::SanitizeStep::SetAromaticity,
-            || {
-                parts
-                    .read_parts()
-                    .set_aromaticity(crate::AromaticityModel::Default)
-            },
-            sanitize_aromaticity_error,
+            || sanitize_read!(read => read.set_aromaticity(crate::AromaticityModel::Default)),
+            |step, source| sanitize_aromaticity_error(operation, step, source),
         )?;
+        for (atom, is_aromatic) in topology
+            .atoms
+            .iter_mut()
+            .zip(assignment.atom_aromatic.iter().copied())
         {
-            let topology = parts.topology_mut();
-            for (atom, is_aromatic) in topology
-                .atoms
-                .iter_mut()
-                .zip(assignment.atom_aromatic.iter().copied())
+            atom.set_aromatic(is_aromatic);
+        }
+        for (bond, is_aromatic) in topology
+            .bonds
+            .iter_mut()
+            .zip(assignment.bond_aromatic.iter().copied())
+        {
+            bond.set_aromatic(is_aromatic);
+            if is_aromatic
+                && matches!(
+                    bond.order(),
+                    crate::BondOrder::Single | crate::BondOrder::Double
+                )
             {
-                atom.set_aromatic(is_aromatic);
-            }
-            for (bond, is_aromatic) in topology
-                .bonds
-                .iter_mut()
-                .zip(assignment.bond_aromatic.iter().copied())
-            {
-                bond.set_aromatic(is_aromatic);
-                if is_aromatic
-                    && matches!(
-                        bond.order(),
-                        crate::BondOrder::Single | crate::BondOrder::Double
-                    )
-                {
-                    bond.set_order(crate::BondOrder::Aromatic);
-                }
+                bond.set_order(crate::BondOrder::Aromatic);
             }
         }
-        sanitize_stage(
-            crate::SanitizeStep::SetAromaticity,
-            || {
-                sanitize_recompute_property_cache(
-                    &mut *parts,
-                    property_cache_strict,
-                    crate::SanitizeStep::SetAromaticity,
-                )
-            },
-            |_step, error| error,
-        )?;
         parts.mark_aromaticity_valid();
         parts.clear_cache(DerivedState::DRAWING | DerivedState::FINGERPRINT);
         changed = true;
@@ -2234,17 +2600,15 @@ fn sanitized_impl(ops: crate::SanitizeOps) -> Result<OpOutcome, OperationError> 
     if ops.contains(crate::SanitizeOps::SET_CONJUGATION) {
         let conjugation = sanitize_stage(
             crate::SanitizeStep::SetConjugation,
-            || sanitize_conjugation_assignment(parts.read_parts()),
-            sanitize_valence_error,
+            || sanitize_read!(read => sanitize_conjugation_assignment(read)),
+            |step, source| sanitize_valence_error(operation, step, source),
         )?;
-        let conjugation_changed = parts
-            .read_parts()
+        let conjugation_changed = sanitize_read!(read => read
             .bonds()
             .iter()
             .zip(conjugation.iter().copied())
-            .any(|(bond, is_conjugated)| bond.is_conjugated() != is_conjugated);
+            .any(|(bond, is_conjugated)| bond.is_conjugated() != is_conjugated));
         if conjugation_changed {
-            let topology = parts.topology_mut();
             for (bond, is_conjugated) in topology.bonds.iter_mut().zip(conjugation) {
                 bond.set_conjugated(is_conjugated);
             }
@@ -2260,17 +2624,15 @@ fn sanitized_impl(ops: crate::SanitizeOps) -> Result<OpOutcome, OperationError> 
     if ops.contains(crate::SanitizeOps::SET_HYBRIDIZATION) {
         let hybridization = sanitize_stage(
             crate::SanitizeStep::SetHybridization,
-            || sanitize_hybridization_assignment(parts.read_parts()),
-            sanitize_valence_error,
+            || sanitize_read!(read => sanitize_hybridization_assignment(read)),
+            |step, source| sanitize_valence_error(operation, step, source),
         )?;
-        let hybridization_changed = parts
-            .read_parts()
+        let hybridization_changed = sanitize_read!(read => read
             .atoms()
             .iter()
             .zip(hybridization.iter().copied())
-            .any(|(atom, hybridization)| atom.hybridization() != hybridization);
+            .any(|(atom, hybridization)| atom.hybridization() != hybridization));
         if hybridization_changed {
-            let topology = parts.topology_mut();
             for (atom, hybridization) in topology.atoms.iter_mut().zip(hybridization) {
                 atom.set_hybridization(hybridization);
             }
@@ -2284,30 +2646,30 @@ fn sanitized_impl(ops: crate::SanitizeOps) -> Result<OpOutcome, OperationError> 
     // RDKit✔️✔️:     cleanupAtropisomers(mol);
     // RDKit✔️✔️:   }
     if ops.contains(crate::SanitizeOps::CLEANUP_ATROPISOMERS) {
-        if parts.read_parts().derived_cache().rings.is_none() {
+        if sanitize_read!(read => read.derived_cache().rings.is_none()) {
             let rings = sanitize_stage(
                 crate::SanitizeStep::CleanupAtropisomers,
-                || parts.read_parts().symmetrize_sssr(),
-                sanitize_ring_finding_error,
+                || sanitize_read!(read => read.symmetrize_sssr()),
+                |step, source| sanitize_ring_finding_error(operation, step, source),
             )?;
             parts.set_rings_cache(rings);
         }
-        let ring_info = parts
-            .read_parts()
-            .derived_cache()
-            .rings
-            .as_ref()
-            .expect("rings were recomputed immediately above");
+        let ring_info = sanitize_read!(read => {
+            read.derived_cache()
+                .rings
+                .as_ref()
+                .expect("rings were recomputed immediately above")
+                .clone()
+        });
         let atropisomer_cleanup =
-            sanitize_cleanup_atropisomers_assignment(parts.read_parts(), ring_info);
-        let atropisomer_cleanup_changed = atropisomer_cleanup.iter().any(|(bond, _)| {
-            parts.read_parts().bonds()[bond.index()].stereo() != crate::BondStereo::None
+            sanitize_read!(read => sanitize_cleanup_atropisomers_assignment(read, &ring_info));
+        let atropisomer_cleanup_changed = sanitize_read!(read => {
+            atropisomer_cleanup
+                .iter()
+                .any(|(bond, _)| read.bonds()[bond.index()].stereo() != crate::BondStereo::None)
         });
         if atropisomer_cleanup_changed {
-            apply_sanitize_cleanup_atropisomers_assignment(
-                parts.topology_mut(),
-                &atropisomer_cleanup,
-            );
+            apply_sanitize_cleanup_atropisomers_assignment(topology, &atropisomer_cleanup);
             parts.clear_cache(
                 DerivedState::STEREO | DerivedState::DRAWING | DerivedState::FINGERPRINT,
             );
@@ -2322,13 +2684,13 @@ fn sanitized_impl(ops: crate::SanitizeOps) -> Result<OpOutcome, OperationError> 
     if ops.contains(crate::SanitizeOps::CLEANUP_CHIRALITY) {
         let chirality_cleanup = sanitize_stage(
             crate::SanitizeStep::CleanupChirality,
-            || sanitize_cleanup_chirality_assignment(parts.read_parts()),
-            sanitize_valence_error,
+            || sanitize_read!(read => sanitize_cleanup_chirality_assignment(read)),
+            |step, source| sanitize_valence_error(operation, step, source),
         )?;
         let chirality_cleanup_changed =
-            cleanup_chirality_changes_molecule(parts.read_parts(), &chirality_cleanup);
+            sanitize_read!(read => cleanup_chirality_changes_molecule(read, &chirality_cleanup));
         if chirality_cleanup_changed {
-            apply_sanitize_cleanup_chirality_assignment(parts.topology_mut(), &chirality_cleanup);
+            apply_sanitize_cleanup_chirality_assignment(topology, &chirality_cleanup);
             parts.clear_cache(
                 DerivedState::STEREO | DerivedState::DRAWING | DerivedState::FINGERPRINT,
             );
@@ -2344,145 +2706,33 @@ fn sanitized_impl(ops: crate::SanitizeOps) -> Result<OpOutcome, OperationError> 
         let hydrogen_adjustment = sanitize_stage(
             crate::SanitizeStep::AdjustHydrogens,
             || {
-                sanitize_adjust_hydrogens_assignment(
-                    parts.read_parts(),
-                    &adjust_hydrogens_original_implicit,
-                )
+                sanitize_read!(read => {
+                    sanitize_adjust_hydrogens_assignment(read)
+                })
             },
-            sanitize_valence_error,
+            |step, source| sanitize_valence_error(operation, step, source),
         )?;
         let hydrogen_adjustment_changed =
-            adjust_hydrogens_changes_molecule(parts.read_parts(), &hydrogen_adjustment);
+            sanitize_read!(read => adjust_hydrogens_changes_molecule(read, &hydrogen_adjustment));
         if hydrogen_adjustment_changed {
-            apply_sanitize_adjust_hydrogens_assignment(parts.topology_mut(), &hydrogen_adjustment);
-            // RDKit reruns the property cache after adjustHs so the updated
-            // explicit-H counts become the post-sanitize cached baseline.
-            sanitize_stage(
-                crate::SanitizeStep::AdjustHydrogens,
-                || {
-                    sanitize_recompute_property_cache(
-                        &mut *parts,
-                        property_cache_strict,
-                        crate::SanitizeStep::AdjustHydrogens,
-                    )
-                },
-                |_step, error| error,
-            )?;
+            apply_sanitize_adjust_hydrogens_assignment(topology, &hydrogen_adjustment);
+            parts.clear_cache(DerivedState::VALENCE);
             parts.clear_cache(DerivedState::DRAWING | DerivedState::FINGERPRINT);
         }
         changed |= hydrogen_adjustment_changed;
     }
 
-    // RDKit❗✔️:   operationThatFailed = SANITIZE_PROPERTIES;
-    // RDKit❗✔️:   if (sanitizeOps & operationThatFailed) {
-    // RDKit❗✔️:     mol.updatePropertyCache(true);
-    // RDKit❗✔️:   }
+    // RDKit✔️✔️:   operationThatFailed = SANITIZE_PROPERTIES;
+    // RDKit✔️✔️:   if (sanitizeOps & operationThatFailed) {
+    // RDKit✔️✔️:     mol.updatePropertyCache(true);
+    // RDKit✔️✔️:   }
     if ops.contains(crate::SanitizeOps::PROPERTIES) {
-        sanitize_properties_stage(&mut *parts, true)?;
+        sanitize_properties_stage(parts, topology, coordinates, properties, true, operation)?;
     }
-    // RDKit❗✔️:   operationThatFailed = 0;
-    // RDKit❗✔️: }
+    // RDKit✔️✔️:   operationThatFailed = 0;
+    // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION MolOps::sanitizeMol
-    Ok(if changed {
-        OpOutcome::Changed
-    } else {
-        OpOutcome::NoOp {
-            reason: "requested sanitize steps only updated derived state",
-        }
-    })
-}
-
-fn sanitize_error(
-    step: crate::SanitizeStep,
-    message: String,
-    unsupported: Option<crate::UnsupportedFeatureError>,
-) -> OperationError {
-    OperationError::Sanitize {
-        operation: &SANITIZED_SPEC,
-        source: crate::SanitizeError {
-            step,
-            message,
-            unsupported,
-        },
-    }
-}
-
-fn sanitize_invalid_input_error(
-    step: crate::SanitizeStep,
-    message: &'static str,
-) -> OperationError {
-    sanitize_error(step, message.to_string(), None)
-}
-
-fn sanitize_valence_error(
-    step: crate::SanitizeStep,
-    source: crate::ValenceError,
-) -> OperationError {
-    sanitize_error(step, source.to_string(), None)
-}
-
-fn sanitize_ring_finding_error(
-    step: crate::SanitizeStep,
-    source: crate::RingFindingError,
-) -> OperationError {
-    sanitize_error(step, source.to_string(), None)
-}
-
-fn sanitize_kekulize_error(
-    step: crate::SanitizeStep,
-    source: crate::KekulizeError,
-) -> OperationError {
-    sanitize_error(step, source.to_string(), None)
-}
-
-fn sanitize_aromaticity_error(
-    step: crate::SanitizeStep,
-    source: crate::AromaticityError,
-) -> OperationError {
-    sanitize_error(step, source.to_string(), None)
-}
-
-fn sanitize_stage<T, E>(
-    step: crate::SanitizeStep,
-    stage: impl FnOnce() -> Result<T, E>,
-    map_error: impl FnOnce(crate::SanitizeStep, E) -> OperationError,
-) -> Result<T, OperationError> {
-    stage().map_err(|source| map_error(step, source))
-}
-
-fn sanitize_properties_stage(
-    parts: &mut OpParts<'_>,
-    strict: bool,
-) -> Result<crate::ValenceAssignment, OperationError> {
-    sanitize_stage(
-        crate::SanitizeStep::Properties,
-        || sanitize_recompute_property_cache(parts, strict, crate::SanitizeStep::Properties),
-        |_step, error| error,
-    )
-}
-
-fn sanitize_recompute_property_cache(
-    parts: &mut OpParts<'_>,
-    strict: bool,
-    step: crate::SanitizeStep,
-) -> Result<crate::ValenceAssignment, OperationError> {
-    let adjacency = crate::AdjacencyList::try_from_topology(
-        parts.read_parts().num_atoms(),
-        parts.read_parts().bonds(),
-    )
-    .map_err(|source| match source {
-        crate::AdjacencyError::BondAtomOutOfRange { .. } => sanitize_invalid_input_error(
-            step,
-            "topology bond atom index out of range while recomputing adjacency",
-        ),
-    })?;
-    parts.set_adjacency_cache(adjacency);
-    let valence = parts
-        .read_parts()
-        .assign_valence_with_options(crate::ValenceModel::RdkitLike, strict)
-        .map_err(|source| sanitize_valence_error(step, source))?;
-    parts.set_valence_cache(valence.clone());
-    Ok(valence)
+    Ok(changed)
 }
 
 fn sanitize_conjugation_assignment(
@@ -2889,6 +3139,7 @@ fn sanitize_cleanup_assignment(
     read_parts: MoleculeReadParts<'_>,
 ) -> Result<SanitizeCleanupAssignment, crate::ValenceError> {
     let molecule = read_parts;
+    let adjacency = sanitize_adjacency(molecule)?;
     let mut assignment = SanitizeCleanupAssignment {
         atom_formal_charges: molecule
             .atoms()
@@ -2898,13 +3149,21 @@ fn sanitize_cleanup_assignment(
         bond_orders: molecule.bonds().iter().map(crate::Bond::order).collect(),
     };
 
-    sanitize_nitrogens_cleanup_assignment(molecule, &mut assignment)?;
+    sanitize_nitrogens_cleanup_assignment(molecule, &adjacency, &mut assignment)?;
     for atom in molecule.atoms() {
         match atom.atomic_number() {
-            15 => sanitize_phosphorus_cleanup_assignment(molecule, atom.id(), &mut assignment)?,
-            17 | 35 | 53 => {
-                sanitize_halogen_cleanup_assignment(molecule, atom.id(), &mut assignment)?
-            }
+            15 => sanitize_phosphorus_cleanup_assignment(
+                molecule,
+                &adjacency,
+                atom.id(),
+                &mut assignment,
+            )?,
+            17 | 35 | 53 => sanitize_halogen_cleanup_assignment(
+                molecule,
+                &adjacency,
+                atom.id(),
+                &mut assignment,
+            )?,
             _ => {}
         }
     }
@@ -2914,47 +3173,48 @@ fn sanitize_cleanup_assignment(
 
 fn sanitize_nitrogens_cleanup_assignment<'a>(
     molecule: impl MoleculeReadAccess<'a>,
+    adjacency: &crate::AdjacencyList,
     assignment: &mut SanitizeCleanupAssignment,
 ) -> Result<(), crate::ValenceError> {
     // BEGIN RDKIT CPP FUNCTION nitrogensCleanup
-    // RDKit✔️❌: void nitrogensCleanup(RWMol &mol) {
-    // RDKit✔️❌:   boost::dynamic_bitset<> nitrogensToConsider(mol.getNumAtoms());
+    // RDKit✔️✔️: void nitrogensCleanup(RWMol &mol) {
+    // RDKit✔️✔️:   boost::dynamic_bitset<> nitrogensToConsider(mol.getNumAtoms());
     let mut nitrogens_to_consider = Vec::new();
 
-    // RDKit✔️❌:   for (auto atom : mol.atoms()) {
-    // RDKit✔️❌:     if (atom->getAtomicNum() != 7) {
-    // RDKit✔️❌:       continue;
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:     if (atom->getFormalCharge()) {
-    // RDKit✔️❌:       continue;
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:     if (atom->calcExplicitValence(false) != 5) {
-    // RDKit✔️❌:       continue;
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:     nitrogensToConsider.set(atom->getIdx());
+    // RDKit✔️✔️:   for (auto atom : mol.atoms()) {
+    // RDKit✔️✔️:     if (atom->getAtomicNum() != 7) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (atom->getFormalCharge()) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (atom->calcExplicitValence(false) != 5) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     nitrogensToConsider.set(atom->getIdx());
     for atom in molecule.atoms() {
         if atom.atomic_number() != 7 || assignment.atom_formal_charges[atom.id().index()] != 0 {
             continue;
         }
-        if sanitize_cleanup_explicit_valence(molecule, assignment, atom.id())? != 5 {
+        if sanitize_cleanup_explicit_valence(molecule, adjacency, assignment, atom.id())? != 5 {
             continue;
         }
         nitrogens_to_consider.push(atom.id());
 
-        // RDKit✔️❌:     bool updateNeeded = false;
-        // RDKit✔️❌:     for (const auto nbr : mol.atomNeighbors(atom)) {
-        // RDKit✔️❌:       if ((nbr->getAtomicNum() == 8) && (nbr->getFormalCharge() == 0) &&
-        // RDKit✔️❌:           (mol.getBondBetweenAtoms(aid, nbr->getIdx())->getBondType() ==
-        // RDKit✔️❌:            Bond::DOUBLE)) {
-        // RDKit✔️❌:         auto b = mol.getBondBetweenAtoms(aid, nbr->getIdx());
-        // RDKit✔️❌:         b->setBondType(Bond::SINGLE);
-        // RDKit✔️❌:         atom->setFormalCharge(1);
-        // RDKit✔️❌:         nbr->setFormalCharge(-1);
-        // RDKit✔️❌:         updateNeeded = true;
-        // RDKit✔️❌:         break;
-        // RDKit✔️❌:       }
-        // RDKit✔️❌:     }
-        for bond_index in sanitize_cleanup_incident_bonds(molecule, atom.id()) {
+        // RDKit✔️✔️:     bool updateNeeded = false;
+        // RDKit✔️✔️:     for (const auto nbr : mol.atomNeighbors(atom)) {
+        // RDKit✔️✔️:       if ((nbr->getAtomicNum() == 8) && (nbr->getFormalCharge() == 0) &&
+        // RDKit✔️✔️:           (mol.getBondBetweenAtoms(aid, nbr->getIdx())->getBondType() ==
+        // RDKit✔️✔️:            Bond::DOUBLE)) {
+        // RDKit✔️✔️:         auto b = mol.getBondBetweenAtoms(aid, nbr->getIdx());
+        // RDKit✔️✔️:         b->setBondType(Bond::SINGLE);
+        // RDKit✔️✔️:         atom->setFormalCharge(1);
+        // RDKit✔️✔️:         nbr->setFormalCharge(-1);
+        // RDKit✔️✔️:         updateNeeded = true;
+        // RDKit✔️✔️:         break;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        for bond_index in sanitize_cleanup_incident_bonds(adjacency, atom.id()) {
             let bond = &molecule.bonds()[bond_index];
             let neighbor = sanitize_cleanup_other_atom(bond, atom.id());
             let neighbor_atom = &molecule.atoms()[neighbor.index()];
@@ -2970,23 +3230,23 @@ fn sanitize_nitrogens_cleanup_assignment<'a>(
         }
     }
 
-    // RDKit✔️❌:   for (auto aid = nitrogensToConsider.find_first();
-    // RDKit✔️❌:        aid != boost::dynamic_bitset<>::npos;
-    // RDKit✔️❌:        aid = nitrogensToConsider.find_next(aid)) {
+    // RDKit✔️✔️:   for (auto aid = nitrogensToConsider.find_first();
+    // RDKit✔️✔️:        aid != boost::dynamic_bitset<>::npos;
+    // RDKit✔️✔️:        aid = nitrogensToConsider.find_next(aid)) {
     for atom in nitrogens_to_consider {
-        // RDKit✔️❌:     for (const auto nbr : mol.atomNeighbors(atom)) {
-        // RDKit✔️❌:       if ((nbr->getAtomicNum() == 7) && (nbr->getFormalCharge() == 0) &&
-        // RDKit✔️❌:           (mol.getBondBetweenAtoms(aid, nbr->getIdx())->getBondType() ==
-        // RDKit✔️❌:            Bond::TRIPLE)) {
-        // RDKit✔️❌:         auto b = mol.getBondBetweenAtoms(aid, nbr->getIdx());
-        // RDKit✔️❌:         b->setBondType(Bond::DOUBLE);
-        // RDKit✔️❌:         atom->setFormalCharge(1);
-        // RDKit✔️❌:         nbr->setFormalCharge(-1);
-        // RDKit✔️❌:         updateNeeded = true;
-        // RDKit✔️❌:         break;
-        // RDKit✔️❌:       }
-        // RDKit✔️❌:     }
-        for bond_index in sanitize_cleanup_incident_bonds(molecule, atom) {
+        // RDKit✔️✔️:     for (const auto nbr : mol.atomNeighbors(atom)) {
+        // RDKit✔️✔️:       if ((nbr->getAtomicNum() == 7) && (nbr->getFormalCharge() == 0) &&
+        // RDKit✔️✔️:           (mol.getBondBetweenAtoms(aid, nbr->getIdx())->getBondType() ==
+        // RDKit✔️✔️:            Bond::TRIPLE)) {
+        // RDKit✔️✔️:         auto b = mol.getBondBetweenAtoms(aid, nbr->getIdx());
+        // RDKit✔️✔️:         b->setBondType(Bond::DOUBLE);
+        // RDKit✔️✔️:         atom->setFormalCharge(1);
+        // RDKit✔️✔️:         nbr->setFormalCharge(-1);
+        // RDKit✔️✔️:         updateNeeded = true;
+        // RDKit✔️✔️:         break;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        for bond_index in sanitize_cleanup_incident_bonds(adjacency, atom) {
             let bond = &molecule.bonds()[bond_index];
             let neighbor = sanitize_cleanup_other_atom(bond, atom);
             let neighbor_atom = &molecule.atoms()[neighbor.index()];
@@ -3007,32 +3267,33 @@ fn sanitize_nitrogens_cleanup_assignment<'a>(
 
 fn sanitize_phosphorus_cleanup_assignment<'a>(
     molecule: impl MoleculeReadAccess<'a>,
+    adjacency: &crate::AdjacencyList,
     atom: AtomId,
     assignment: &mut SanitizeCleanupAssignment,
 ) -> Result<(), crate::ValenceError> {
     // BEGIN RDKIT CPP FUNCTION phosphorusCleanup
-    // RDKit✔️❌: void phosphorusCleanup(RWMol &mol, Atom *atom) {
-    // RDKit✔️❌:   if (atom->getFormalCharge()) {
-    // RDKit✔️❌:     return;
-    // RDKit✔️❌:   }
+    // RDKit✔️✔️: void phosphorusCleanup(RWMol &mol, Atom *atom) {
+    // RDKit✔️✔️:   if (atom->getFormalCharge()) {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
     if assignment.atom_formal_charges[atom.index()] != 0 {
         return Ok(());
     }
-    // RDKit✔️❌:   if (atom->calcExplicitValence(false) == 5 && atom->getDegree() == 3) {
-    if sanitize_cleanup_explicit_valence(molecule, assignment, atom)? != 5
-        || sanitize_cleanup_degree(molecule, atom) != 3
+    // RDKit✔️✔️:   if (atom->calcExplicitValence(false) == 5 && atom->getDegree() == 3) {
+    if sanitize_cleanup_explicit_valence(molecule, adjacency, assignment, atom)? != 5
+        || sanitize_cleanup_degree(adjacency, atom) != 3
     {
         return Ok(());
     }
 
-    // RDKit✔️❌:     Bond *dbl_to_O = nullptr;
-    // RDKit✔️❌:     Atom *O_atom = nullptr;
-    // RDKit✔️❌:     bool hasDoubleToCorN = false;
+    // RDKit✔️✔️:     Bond *dbl_to_O = nullptr;
+    // RDKit✔️✔️:     Atom *O_atom = nullptr;
+    // RDKit✔️✔️:     bool hasDoubleToCorN = false;
     let mut double_to_oxygen = None;
     let mut oxygen_atom = None;
     let mut has_double_to_carbon_or_nitrogen = false;
-    // RDKit✔️❌:     for (const auto nbr : mol.atomNeighbors(atom)) {
-    for bond_index in sanitize_cleanup_incident_bonds(molecule, atom) {
+    // RDKit✔️✔️:     for (const auto nbr : mol.atomNeighbors(atom)) {
+    for bond_index in sanitize_cleanup_incident_bonds(adjacency, atom) {
         let bond = &molecule.bonds()[bond_index];
         let neighbor = sanitize_cleanup_other_atom(bond, atom);
         let neighbor_atom = &molecule.atoms()[neighbor.index()];
@@ -3040,31 +3301,31 @@ fn sanitize_phosphorus_cleanup_assignment<'a>(
             && assignment.atom_formal_charges[neighbor.index()] == 0
             && assignment.bond_orders[bond_index] == crate::BondOrder::Double
         {
-            // RDKit✔️❌:       if ((nbr->getAtomicNum() == 8) && (nbr->getFormalCharge() == 0) &&
-            // RDKit✔️❌:           (mol.getBondBetweenAtoms(aid, nbr->getIdx())->getBondType() ==
-            // RDKit✔️❌:            Bond::DOUBLE)) {
-            // RDKit✔️❌:         dbl_to_O = mol.getBondBetweenAtoms(aid, nbr->getIdx());
-            // RDKit✔️❌:         O_atom = nbr;
+            // RDKit✔️✔️:       if ((nbr->getAtomicNum() == 8) && (nbr->getFormalCharge() == 0) &&
+            // RDKit✔️✔️:           (mol.getBondBetweenAtoms(aid, nbr->getIdx())->getBondType() ==
+            // RDKit✔️✔️:            Bond::DOUBLE)) {
+            // RDKit✔️✔️:         dbl_to_O = mol.getBondBetweenAtoms(aid, nbr->getIdx());
+            // RDKit✔️✔️:         O_atom = nbr;
             double_to_oxygen = Some(bond_index);
             oxygen_atom = Some(neighbor);
         } else if matches!(neighbor_atom.atomic_number(), 6 | 7)
-            && sanitize_cleanup_degree(molecule, neighbor) >= 2
+            && sanitize_cleanup_degree(adjacency, neighbor) >= 2
             && assignment.bond_orders[bond_index] == crate::BondOrder::Double
         {
-            // RDKit✔️❌:       } else if ((nbr->getAtomicNum() == 6 || nbr->getAtomicNum() == 7) &&
-            // RDKit✔️❌:                  (nbr->getDegree() >= 2) &&
-            // RDKit✔️❌:                  (mol.getBondBetweenAtoms(aid, nbr->getIdx())->getBondType() ==
-            // RDKit✔️❌:                   Bond::DOUBLE)) {
-            // RDKit✔️❌:         hasDoubleToCorN = true;
+            // RDKit✔️✔️:       } else if ((nbr->getAtomicNum() == 6 || nbr->getAtomicNum() == 7) &&
+            // RDKit✔️✔️:                  (nbr->getDegree() >= 2) &&
+            // RDKit✔️✔️:                  (mol.getBondBetweenAtoms(aid, nbr->getIdx())->getBondType() ==
+            // RDKit✔️✔️:                   Bond::DOUBLE)) {
+            // RDKit✔️✔️:         hasDoubleToCorN = true;
             has_double_to_carbon_or_nitrogen = true;
         }
     }
 
-    // RDKit✔️❌:     if (hasDoubleToCorN && dbl_to_O != nullptr) {
-    // RDKit✔️❌:       O_atom->setFormalCharge(-1);
-    // RDKit✔️❌:       dbl_to_O->setBondType(Bond::SINGLE);
-    // RDKit✔️❌:       atom->setFormalCharge(1);
-    // RDKit✔️❌:     }
+    // RDKit✔️✔️:     if (hasDoubleToCorN && dbl_to_O != nullptr) {
+    // RDKit✔️✔️:       O_atom->setFormalCharge(-1);
+    // RDKit✔️✔️:       dbl_to_O->setBondType(Bond::SINGLE);
+    // RDKit✔️✔️:       atom->setFormalCharge(1);
+    // RDKit✔️✔️:     }
     if has_double_to_carbon_or_nitrogen {
         if let (Some(bond_index), Some(oxygen)) = (double_to_oxygen, oxygen_atom) {
             assignment.atom_formal_charges[oxygen.index()] = -1;
@@ -3078,26 +3339,28 @@ fn sanitize_phosphorus_cleanup_assignment<'a>(
 
 fn sanitize_halogen_cleanup_assignment<'a>(
     molecule: impl MoleculeReadAccess<'a>,
+    adjacency: &crate::AdjacencyList,
     atom: AtomId,
     assignment: &mut SanitizeCleanupAssignment,
 ) -> Result<(), crate::ValenceError> {
     // BEGIN RDKIT CPP FUNCTION halogenCleanup
-    // RDKit✔️❌: void halogenCleanup(RWMol &mol, Atom *atom) {
-    // RDKit✔️❌:   int ev = atom->calcExplicitValence(false);
-    // RDKit✔️❌:   if (atom->getFormalCharge() == 0 && (ev == 7 || ev == 5 || ev == 3)) {
-    let explicit_valence = sanitize_cleanup_explicit_valence(molecule, assignment, atom)?;
+    // RDKit✔️✔️: void halogenCleanup(RWMol &mol, Atom *atom) {
+    // RDKit✔️✔️:   int ev = atom->calcExplicitValence(false);
+    // RDKit✔️✔️:   if (atom->getFormalCharge() == 0 && (ev == 7 || ev == 5 || ev == 3)) {
+    let explicit_valence =
+        sanitize_cleanup_explicit_valence(molecule, adjacency, assignment, atom)?;
     if assignment.atom_formal_charges[atom.index()] != 0 || !matches!(explicit_valence, 3 | 5 | 7) {
         return Ok(());
     }
 
-    // RDKit✔️❌:     bool neighborsAllO = true;
-    // RDKit✔️❌:     for (const auto nbr : mol.atomNeighbors(atom)) {
-    // RDKit✔️❌:       if (nbr->getAtomicNum() != 8) {
-    // RDKit✔️❌:         neighborsAllO = false;
-    // RDKit✔️❌:         break;
-    // RDKit✔️❌:       }
-    // RDKit✔️❌:     }
-    if !sanitize_cleanup_incident_bonds(molecule, atom)
+    // RDKit✔️✔️:     bool neighborsAllO = true;
+    // RDKit✔️✔️:     for (const auto nbr : mol.atomNeighbors(atom)) {
+    // RDKit✔️✔️:       if (nbr->getAtomicNum() != 8) {
+    // RDKit✔️✔️:         neighborsAllO = false;
+    // RDKit✔️✔️:         break;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    if !sanitize_cleanup_incident_bonds(adjacency, atom)
         .into_iter()
         .all(|bond_index| {
             let neighbor = sanitize_cleanup_other_atom(&molecule.bonds()[bond_index], atom);
@@ -3107,20 +3370,20 @@ fn sanitize_halogen_cleanup_assignment<'a>(
         return Ok(());
     }
 
-    // RDKit✔️❌:     if (neighborsAllO) {
-    // RDKit✔️❌:       int formalCharge = 0;
-    // RDKit✔️❌:       for (auto bond : mol.atomBonds(atom)) {
-    // RDKit✔️❌:         if (bond->getBondType() == Bond::DOUBLE) {
-    // RDKit✔️❌:           bond->setBondType(Bond::SINGLE);
-    // RDKit✔️❌:           auto otherAtom = bond->getOtherAtom(atom);
-    // RDKit✔️❌:           formalCharge++;
-    // RDKit✔️❌:           otherAtom->setFormalCharge(-1);
-    // RDKit✔️❌:           otherAtom->calcExplicitValence(false);
-    // RDKit✔️❌:         }
-    // RDKit✔️❌:       }
-    // RDKit✔️❌:       atom->setFormalCharge(formalCharge);
+    // RDKit✔️✔️:     if (neighborsAllO) {
+    // RDKit✔️✔️:       int formalCharge = 0;
+    // RDKit✔️✔️:       for (auto bond : mol.atomBonds(atom)) {
+    // RDKit✔️✔️:         if (bond->getBondType() == Bond::DOUBLE) {
+    // RDKit✔️✔️:           bond->setBondType(Bond::SINGLE);
+    // RDKit✔️✔️:           auto otherAtom = bond->getOtherAtom(atom);
+    // RDKit✔️✔️:           formalCharge++;
+    // RDKit✔️✔️:           otherAtom->setFormalCharge(-1);
+    // RDKit✔️✔️:           otherAtom->calcExplicitValence(false);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       atom->setFormalCharge(formalCharge);
     let mut formal_charge = 0;
-    for bond_index in sanitize_cleanup_incident_bonds(molecule, atom) {
+    for bond_index in sanitize_cleanup_incident_bonds(adjacency, atom) {
         if assignment.bond_orders[bond_index] == crate::BondOrder::Double {
             assignment.bond_orders[bond_index] = crate::BondOrder::Single;
             let other_atom = sanitize_cleanup_other_atom(&molecule.bonds()[bond_index], atom);
@@ -3135,11 +3398,12 @@ fn sanitize_halogen_cleanup_assignment<'a>(
 
 fn sanitize_cleanup_explicit_valence<'a>(
     molecule: impl MoleculeReadAccess<'a>,
+    adjacency: &crate::AdjacencyList,
     assignment: &SanitizeCleanupAssignment,
     atom: AtomId,
 ) -> Result<i32, crate::ValenceError> {
     let mut accum = f64::from(molecule.atoms()[atom.index()].explicit_hydrogens());
-    for bond_index in sanitize_cleanup_incident_bonds(molecule, atom) {
+    for bond_index in sanitize_cleanup_incident_bonds(adjacency, atom) {
         let mut bond = molecule.bonds()[bond_index].clone();
         bond.set_order(assignment.bond_orders[bond_index]);
         accum += crate::valence::bond_valence_contrib(&bond, atom)?;
@@ -3147,24 +3411,16 @@ fn sanitize_cleanup_explicit_valence<'a>(
     Ok((accum + 0.1) as i32)
 }
 
-fn sanitize_cleanup_degree<'a>(molecule: impl MoleculeReadAccess<'a>, atom: AtomId) -> usize {
-    sanitize_cleanup_incident_bonds(molecule, atom).len()
+fn sanitize_cleanup_degree(adjacency: &crate::AdjacencyList, atom: AtomId) -> usize {
+    adjacency.neighbors_of(atom.index()).len()
 }
 
-fn sanitize_cleanup_incident_bonds<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
-    atom: AtomId,
-) -> Vec<usize> {
-    // The retained RDKit✔️❌ markers in cleanUp() are intentional:
-    // this helper rescans the full bond table and allocates a fresh index list
-    // per query, whereas RDKit iterates adjacency directly from atom
-    // neighbors/bonds. Behavior is modeled, but local inspection still shows
-    // an obvious performance disadvantage in the current Rust shape.
-    molecule
-        .bonds()
+fn sanitize_cleanup_incident_bonds(adjacency: &crate::AdjacencyList, atom: AtomId) -> Vec<usize> {
+    // RDKit✔️✔️: cleanUp() neighbors/bonds helper equivalent
+    adjacency
+        .neighbors_of(atom.index())
         .iter()
-        .enumerate()
-        .filter_map(|(index, bond)| (bond.begin() == atom || bond.end() == atom).then_some(index))
+        .map(|neighbor| neighbor.bond.index())
         .collect()
 }
 
@@ -3229,10 +3485,10 @@ fn sanitize_organometallic_cleanup_assignment(
     };
 
     // BEGIN RDKIT CPP FUNCTION MolOps::cleanUpOrganometallics
-    // RDKit✔️❌: void cleanUpOrganometallics(RWMol &mol) {
-    // RDKit✔️❌:   bool needsFixing = false;
-    // RDKit✔️❌:   for (const auto atom : mol.atoms()) {
-    // RDKit✔️❌:     if (isHypervalentNonMetal(atom) && !noDative(atom)) {
+    // RDKit✔️✔️: void cleanUpOrganometallics(RWMol &mol) {
+    // RDKit✔️✔️:   bool needsFixing = false;
+    // RDKit✔️✔️:   for (const auto atom : mol.atoms()) {
+    // RDKit✔️✔️:     if (isHypervalentNonMetal(atom) && !noDative(atom)) {
     let valence = molecule.assign_valence_with_options(crate::ValenceModel::RdkitLike, false)?;
     let adjacency = crate::AdjacencyList::try_from_topology(molecule.num_atoms(), molecule.bonds())
         .map_err(|_| crate::ValenceError::UnsupportedBranch {
@@ -3244,46 +3500,50 @@ fn sanitize_organometallic_cleanup_assignment(
         if sanitize_is_hypervalent_nonmetal(molecule, &adjacency, &valence, atom.id())?
             && !sanitize_no_dative(atom)
         {
-            // RDKit✔️❌:       for (auto bond : mol.atomBonds(atom)) {
-            // RDKit✔️❌:         if (bond->getBondType() == Bond::BondType::SINGLE &&
-            // RDKit✔️❌:             QueryOps::isMetal(*bond->getOtherAtom(atom))) {
-            // RDKit✔️❌:           needsFixing = true;
-            // RDKit✔️❌:           break;
-            // RDKit✔️❌:         }
-            // RDKit✔️❌:       }
-            needs_fixing =
-                !sanitize_organometallic_single_bonded_metals(molecule, &assignment, atom.id())
-                    .is_empty();
+            // RDKit✔️✔️:       for (auto bond : mol.atomBonds(atom)) {
+            // RDKit✔️✔️:         if (bond->getBondType() == Bond::BondType::SINGLE &&
+            // RDKit✔️✔️:             QueryOps::isMetal(*bond->getOtherAtom(atom))) {
+            // RDKit✔️✔️:           needsFixing = true;
+            // RDKit✔️✔️:           break;
+            // RDKit✔️✔️:         }
+            // RDKit✔️✔️:       }
+            needs_fixing = !sanitize_organometallic_single_bonded_metals(
+                molecule,
+                &adjacency,
+                &assignment,
+                atom.id(),
+            )
+            .is_empty();
         }
         if needs_fixing {
             break;
         }
     }
-    // RDKit✔️❌:   if (!needsFixing) {
-    // RDKit✔️❌:     return;
-    // RDKit✔️❌:   }
+    // RDKit✔️✔️:   if (!needsFixing) {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
     if !needs_fixing {
         return Ok(assignment);
     }
 
-    // RDKit✔️❌:   mol.updatePropertyCache(false);
-    // RDKit✔️❌:   std::vector<unsigned int> ranks(mol.getNumAtoms());
-    // RDKit✔️❌:   RDKit::Canon::rankMolAtoms(mol, ranks);
+    // RDKit✔️✔️:   mol.updatePropertyCache(false);
+    // RDKit✔️✔️:   std::vector<unsigned int> ranks(mol.getNumAtoms());
+    // RDKit✔️✔️:   RDKit::Canon::rankMolAtoms(mol, ranks);
     let ranks = MoleculeReadAccess::rank_mol_atoms(molecule).map_err(|_| {
         crate::ValenceError::UnsupportedBranch {
             reason: "organometallic cleanup canonical ranking failed",
         }
     })?;
-    // RDKit✔️❌:   std::sort(atom_ranks.begin(), atom_ranks.end(),
-    // RDKit✔️❌:             [](const std::pair<int, int> &p1, std::pair<int, int> &p2) -> bool {
-    // RDKit✔️❌:               return p1.second < p2.second;
-    // RDKit✔️❌:             });
+    // RDKit✔️✔️:   std::sort(atom_ranks.begin(), atom_ranks.end(),
+    // RDKit✔️✔️:             [](const std::pair<int, int> &p1, std::pair<int, int> &p2) -> bool {
+    // RDKit✔️✔️:               return p1.second < p2.second;
+    // RDKit✔️✔️:             });
     let mut atom_order: Vec<usize> = (0..molecule.num_atoms()).collect();
     atom_order.sort_by_key(|atom| ranks[*atom]);
-    // RDKit✔️❌:   for (auto ar : atom_ranks) {
-    // RDKit✔️❌:     auto atom = mol.getAtomWithIdx(ar.first);
-    // RDKit✔️❌:     metalBondCleanup(mol, atom, ranks);
-    // RDKit✔️❌:   }
+    // RDKit✔️✔️:   for (auto ar : atom_ranks) {
+    // RDKit✔️✔️:     auto atom = mol.getAtomWithIdx(ar.first);
+    // RDKit✔️✔️:     metalBondCleanup(mol, atom, ranks);
+    // RDKit✔️✔️:   }
     for atom_index in atom_order {
         sanitize_metal_bond_cleanup_assignment(
             molecule,
@@ -3308,57 +3568,60 @@ fn sanitize_metal_bond_cleanup_assignment<'a>(
     assignment: &mut SanitizeOrganometallicCleanupAssignment,
 ) -> Result<(), crate::ValenceError> {
     // BEGIN RDKIT CPP FUNCTION metalBondCleanup
-    // RDKit✔️❌: void metalBondCleanup(RWMol &mol, Atom *atom,
-    // RDKit✔️❌:                       const std::vector<unsigned int> &ranks) {
-    // RDKit✔️❌:   if (isHypervalentNonMetal(atom) && !noDative(atom)) {
+    // RDKit✔️✔️: void metalBondCleanup(RWMol &mol, Atom *atom,
+    // RDKit✔️✔️:                       const std::vector<unsigned int> &ranks) {
+    // RDKit✔️✔️:   if (isHypervalentNonMetal(atom) && !noDative(atom)) {
     if !sanitize_is_hypervalent_nonmetal(molecule, adjacency, valence, atom)?
         || sanitize_no_dative(&molecule.atoms()[atom.index()])
     {
         return Ok(());
     }
 
-    // RDKit✔️❌:     std::vector<Atom *> metals;
-    // RDKit✔️❌:     for (auto bond : mol.atomBonds(atom)) {
-    // RDKit✔️❌:       if (bond->getBondType() == Bond::BondType::SINGLE &&
-    // RDKit✔️❌:           QueryOps::isMetal(*bond->getOtherAtom(atom))) {
-    // RDKit✔️❌:         metals.push_back(bond->getOtherAtom(atom));
-    // RDKit✔️❌:       }
-    // RDKit✔️❌:     }
-    let mut metals = sanitize_organometallic_single_bonded_metals(molecule, assignment, atom);
+    // RDKit✔️✔️:     std::vector<Atom *> metals;
+    // RDKit✔️✔️:     for (auto bond : mol.atomBonds(atom)) {
+    // RDKit✔️✔️:       if (bond->getBondType() == Bond::BondType::SINGLE &&
+    // RDKit✔️✔️:           QueryOps::isMetal(*bond->getOtherAtom(atom))) {
+    // RDKit✔️✔️:         metals.push_back(bond->getOtherAtom(atom));
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    let mut metals =
+        sanitize_organometallic_single_bonded_metals(molecule, adjacency, assignment, atom);
     if metals.is_empty() {
         return Ok(());
     }
 
-    // RDKit✔️❌:       std::sort(metals.begin(), metals.end(),
-    // RDKit✔️❌:                 [&](const Atom *a1, const Atom *a2) -> bool {
-    // RDKit✔️❌:                   int nda1 = numDativeBonds(a1);
-    // RDKit✔️❌:                   int nda2 = numDativeBonds(a2);
-    // RDKit✔️❌:                   if (nda1 == nda2) {
-    // RDKit✔️❌:                     return ranks[a1->getIdx()] > ranks[a2->getIdx()];
-    // RDKit✔️❌:                   } else {
-    // RDKit✔️❌:                     return nda1 < nda2;
-    // RDKit✔️❌:                   }
-    // RDKit✔️❌:                 });
+    // RDKit✔️✔️:       std::sort(metals.begin(), metals.end(),
+    // RDKit✔️✔️:                 [&](const Atom *a1, const Atom *a2) -> bool {
+    // RDKit✔️✔️:                   int nda1 = numDativeBonds(a1);
+    // RDKit✔️✔️:                   int nda2 = numDativeBonds(a2);
+    // RDKit✔️✔️:                   if (nda1 == nda2) {
+    // RDKit✔️✔️:                     return ranks[a1->getIdx()] > ranks[a2->getIdx()];
+    // RDKit✔️✔️:                   } else {
+    // RDKit✔️✔️:                     return nda1 < nda2;
+    // RDKit✔️✔️:                   }
+    // RDKit✔️✔️:                 });
     metals.sort_by(|left, right| {
-        let left_dative = sanitize_num_dative_bonds(molecule, assignment, *left);
-        let right_dative = sanitize_num_dative_bonds(molecule, assignment, *right);
+        let left_dative = sanitize_num_dative_bonds(adjacency, assignment, *left);
+        let right_dative = sanitize_num_dative_bonds(adjacency, assignment, *right);
         left_dative
             .cmp(&right_dative)
             .then_with(|| ranks[right.index()].cmp(&ranks[left.index()]))
     });
     let metal = metals[0];
 
-    // RDKit✔️❌:       auto bond =
-    // RDKit✔️❌:           mol.getBondBetweenAtoms(atom->getIdx(), metals.front()->getIdx());
-    // RDKit✔️❌:       if (bond) {
-    // RDKit✔️❌:         bond->setBondType(RDKit::Bond::BondType::DATIVE);
-    // RDKit✔️❌:         bond->setBeginAtom(atom);
-    // RDKit✔️❌:         bond->setEndAtom(metals.front());
-    // RDKit✔️❌:       }
-    if let Some(bond_index) = molecule.bonds().iter().position(|bond| {
-        (bond.begin() == atom && bond.end() == metal)
-            || (bond.begin() == metal && bond.end() == atom)
-    }) {
+    // RDKit✔️✔️:       auto bond =
+    // RDKit✔️✔️:           mol.getBondBetweenAtoms(atom->getIdx(), metals.front()->getIdx());
+    // RDKit✔️✔️:       if (bond) {
+    // RDKit✔️✔️:         bond->setBondType(RDKit::Bond::BondType::DATIVE);
+    // RDKit✔️✔️:         bond->setBeginAtom(atom);
+    // RDKit✔️✔️:         bond->setEndAtom(metals.front());
+    // RDKit✔️✔️:       }
+    if let Some(bond_index) = adjacency
+        .neighbors_of(atom.index())
+        .iter()
+        .find(|neighbor| neighbor.atom_index == metal.index())
+        .map(|neighbor| neighbor.bond.index())
+    {
         assignment.bond_orders[bond_index] = crate::BondOrder::Dative;
         assignment.bond_endpoints[bond_index] = (atom, metal);
     }
@@ -3373,37 +3636,37 @@ fn sanitize_is_hypervalent_nonmetal<'a>(
     atom: AtomId,
 ) -> Result<bool, crate::ValenceError> {
     // BEGIN RDKIT CPP FUNCTION isHypervalentNonMetal
-    // RDKit✔️❌: bool isHypervalentNonMetal(Atom *atom) {
-    // RDKit✔️❌:   if (QueryOps::isMetal(*atom)) {
-    // RDKit✔️❌:     return false;
-    // RDKit✔️❌:   }
+    // RDKit✔️✔️: bool isHypervalentNonMetal(Atom *atom) {
+    // RDKit✔️✔️:   if (QueryOps::isMetal(*atom)) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
     let atom_data = &molecule.atoms()[atom.index()];
     if is_metal_atomic_number(atom_data.atomic_number()) {
         return Ok(false);
     }
-    // RDKit✔️❌:   int ev = atom->getValence(Atom::ValenceType::EXPLICIT);
+    // RDKit✔️✔️:   int ev = atom->getValence(Atom::ValenceType::EXPLICIT);
     let explicit_valence = valence.explicit_valence[atom.index()];
-    // RDKit✔️❌:   int effAtomicNum = atom->getAtomicNum() - atom->getFormalCharge();
+    // RDKit✔️✔️:   int effAtomicNum = atom->getAtomicNum() - atom->getFormalCharge();
     let effective_atomic_number =
         i16::from(atom_data.atomic_number()) - i16::from(atom_data.formal_charge());
-    // RDKit✔️❌:   if (effAtomicNum <= 0) {
-    // RDKit✔️❌:     return false;
-    // RDKit✔️❌:   }
+    // RDKit✔️✔️:   if (effAtomicNum <= 0) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
     if effective_atomic_number <= 0 {
         return Ok(false);
     }
-    // RDKit✔️❌:   const auto &otherValens =
-    // RDKit✔️❌:       PeriodicTable::getTable()->getValenceList(effAtomicNum);
+    // RDKit✔️✔️:   const auto &otherValens =
+    // RDKit✔️✔️:       PeriodicTable::getTable()->getValenceList(effAtomicNum);
     let Some(valences) = crate::rdkit_valence_list(effective_atomic_number as u8)? else {
         return Ok(false);
     };
     let Some(&max_valence) = valences.last() else {
         return Ok(false);
     };
-    // RDKit✔️❌:   if (maxV > 0 && (ev > maxV || (ev == maxV && atom->getIsAromatic() &&
-    // RDKit✔️❌:                                  atom->getTotalDegree() == 4))) {
-    // RDKit✔️❌:     return true;
-    // RDKit✔️❌:   }
+    // RDKit✔️✔️:   if (maxV > 0 && (ev > maxV || (ev == maxV && atom->getIsAromatic() &&
+    // RDKit✔️✔️:                                  atom->getTotalDegree() == 4))) {
+    // RDKit✔️✔️:     return true;
+    // RDKit✔️✔️:   }
     if max_valence > 0
         && (explicit_valence > max_valence
             || (explicit_valence == max_valence
@@ -3412,25 +3675,21 @@ fn sanitize_is_hypervalent_nonmetal<'a>(
     {
         return Ok(true);
     }
-    // RDKit✔️❌:   return false;
-    // RDKit✔️❌: }
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION isHypervalentNonMetal
     Ok(false)
 }
 
-fn sanitize_num_dative_bonds<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+fn sanitize_num_dative_bonds(
+    adjacency: &crate::AdjacencyList,
     assignment: &SanitizeOrganometallicCleanupAssignment,
     atom: AtomId,
 ) -> usize {
-    molecule
-        .bonds()
+    adjacency
+        .neighbors_of(atom.index())
         .iter()
-        .enumerate()
-        .filter(|(index, bond)| {
-            sanitize_is_dative_bond(assignment.bond_orders[*index])
-                && (bond.begin() == atom || bond.end() == atom)
-        })
+        .filter(|neighbor| sanitize_is_dative_bond(assignment.bond_orders[neighbor.bond.index()]))
         .count()
 }
 
@@ -3440,25 +3699,19 @@ fn sanitize_no_dative(atom: &crate::Atom) -> bool {
 
 fn sanitize_organometallic_single_bonded_metals<'a>(
     molecule: impl MoleculeReadAccess<'a>,
+    adjacency: &crate::AdjacencyList,
     assignment: &SanitizeOrganometallicCleanupAssignment,
     atom: AtomId,
 ) -> Vec<AtomId> {
-    // The retained RDKit✔️❌ markers in cleanUpOrganometallics()/metalBondCleanup()
-    // are intentional: this helper rescans the full bond table and allocates a
-    // fresh candidate vector per donor atom, while RDKit iterates atom-bond
-    // adjacency directly. The behavior is modeled, but local inspection still
-    // shows an obvious performance disadvantage in the current Rust shape.
-    molecule
-        .bonds()
+    // RDKit✔️✔️: cleanUpOrganometallics()/metalBondCleanup() single-bonded metal helper
+    adjacency
+        .neighbors_of(atom.index())
         .iter()
-        .enumerate()
-        .filter_map(|(index, bond)| {
-            if assignment.bond_orders[index] != crate::BondOrder::Single
-                || (bond.begin() != atom && bond.end() != atom)
-            {
+        .filter_map(|neighbor| {
+            if assignment.bond_orders[neighbor.bond.index()] != crate::BondOrder::Single {
                 return None;
             }
-            let other = sanitize_cleanup_other_atom(bond, atom);
+            let other = AtomId::new(neighbor.atom_index);
             is_metal_atomic_number(molecule.atoms()[other.index()].atomic_number()).then_some(other)
         })
         .collect()
@@ -3738,7 +3991,6 @@ fn apply_sanitize_cleanup_chirality_assignment(
 
 fn sanitize_adjust_hydrogens_assignment(
     read_parts: MoleculeReadParts<'_>,
-    original_implicit_hydrogens: &[i32],
 ) -> Result<Vec<u8>, crate::ValenceError> {
     let molecule = read_parts;
     // BEGIN RDKIT CPP FUNCTION adjustHs
@@ -3748,6 +4000,7 @@ fn sanitize_adjust_hydrogens_assignment(
     // RDKit✔️✔️:     atom->calcExplicitValence(false);
     // RDKit✔️✔️:     int origExplicitV = atom->getNumExplicitHs();
     // RDKit✔️✔️:     int newImplicitV = atom->calcImplicitValence(false);
+    let original_valence = sanitize_valence_facts(molecule)?;
     let current_valence =
         molecule.assign_valence_with_options(crate::ValenceModel::RdkitLike, false)?;
     let mut explicit_hydrogens = molecule
@@ -3757,7 +4010,7 @@ fn sanitize_adjust_hydrogens_assignment(
         .collect::<Vec<_>>();
 
     for atom in molecule.atoms() {
-        let original_implicit = original_implicit_hydrogens[atom.id().index()];
+        let original_implicit = original_valence.implicit_hydrogens[atom.id().index()];
         let new_implicit = current_valence.implicit_hydrogens[atom.id().index()];
         // RDKit✔️✔️:     if (newImplicitV < origImplicitV) {
         // RDKit✔️✔️:       atom->setNumExplicitHs(origExplicitV + (origImplicitV - newImplicitV));
@@ -3816,21 +4069,8 @@ fn is_metal_atomic_number(atomic_number: u8) -> bool {
 
 #[mol_op_body(assigned_valence, parts)]
 fn assigned_valence_impl() -> Result<OpOutcome, OperationError> {
-    let adjacency = crate::AdjacencyList::try_from_topology(
-        parts.read_parts().num_atoms(),
-        parts.read_parts().bonds(),
-    )
-    .map_err(|source| OperationError::InvalidInput {
-        operation: &ASSIGNED_VALENCE_SPEC,
-        message: match source {
-            crate::AdjacencyError::BondAtomOutOfRange { .. } => {
-                "topology bond atom index out of range while recomputing adjacency"
-            }
-        },
-    })?;
-    parts.set_adjacency_cache(adjacency);
-    let valence = parts
-        .read_parts()
+    let read = parts.begin_topology_read()?;
+    let valence = read
         .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
         .map_err(|source| OperationError::Valence {
             operation: &ASSIGNED_VALENCE_SPEC,
@@ -3842,120 +4082,80 @@ fn assigned_valence_impl() -> Result<OpOutcome, OperationError> {
 
 #[mol_op_body(assigned_rings, parts)]
 fn assigned_rings_impl() -> Result<OpOutcome, OperationError> {
-    let adjacency = crate::AdjacencyList::try_from_topology(
-        parts.read_parts().num_atoms(),
-        parts.read_parts().bonds(),
-    )
-    .map_err(|source| OperationError::InvalidInput {
-        operation: &ASSIGNED_RINGS_SPEC,
-        message: match source {
-            crate::AdjacencyError::BondAtomOutOfRange { .. } => {
-                "topology bond atom index out of range while recomputing adjacency"
-            }
-        },
-    })?;
-    parts.set_adjacency_cache(adjacency);
-    let rings =
-        parts
-            .read_parts()
-            .symmetrize_sssr()
-            .map_err(|source| OperationError::RingFinding {
-                operation: &ASSIGNED_RINGS_SPEC,
-                source,
-            })?;
+    let read = parts.begin_topology_read()?;
+    let rings = read
+        .symmetrize_sssr()
+        .map_err(|source| OperationError::RingFinding {
+            operation: &ASSIGNED_RINGS_SPEC,
+            source,
+        })?;
     parts.set_rings_cache(rings);
     Ok(OpOutcome::Changed)
 }
 
 #[mol_op_body(assigned_ring_families, parts)]
 fn assigned_ring_families_impl() -> Result<OpOutcome, OperationError> {
-    let adjacency = crate::AdjacencyList::try_from_topology(
-        parts.read_parts().num_atoms(),
-        parts.read_parts().bonds(),
-    )
-    .map_err(|source| OperationError::InvalidInput {
-        operation: &ASSIGNED_RING_FAMILIES_SPEC,
-        message: match source {
-            crate::AdjacencyError::BondAtomOutOfRange { .. } => {
-                "topology bond atom index out of range while recomputing adjacency"
-            }
-        },
-    })?;
-    parts.set_adjacency_cache(adjacency);
-    let ring_families = parts
-        .read_parts()
-        .find_ring_families(false, false)
-        .map_err(|source| OperationError::RingFinding {
-            operation: &ASSIGNED_RING_FAMILIES_SPEC,
-            source,
-        })?;
+    let read = parts.begin_topology_read()?;
+    let ring_families =
+        read.find_ring_families(false, false)
+            .map_err(|source| OperationError::RingFinding {
+                operation: &ASSIGNED_RING_FAMILIES_SPEC,
+                source,
+            })?;
     parts.set_ring_families_cache(ring_families);
     Ok(OpOutcome::Changed)
 }
 
 #[mol_op_body(assigned_aromaticity, parts)]
 fn assigned_aromaticity_impl() -> Result<OpOutcome, OperationError> {
-    let adjacency = crate::AdjacencyList::try_from_topology(
-        parts.read_parts().num_atoms(),
-        parts.read_parts().bonds(),
-    )
-    .map_err(|source| OperationError::InvalidInput {
-        operation: &ASSIGNED_AROMATICITY_SPEC,
-        message: match source {
-            crate::AdjacencyError::BondAtomOutOfRange { .. } => {
-                "topology bond atom index out of range while recomputing adjacency"
-            }
-        },
-    })?;
-    parts.set_adjacency_cache(adjacency);
-    let rings =
-        parts
-            .read_parts()
-            .symmetrize_sssr()
-            .map_err(|source| OperationError::RingFinding {
-                operation: &ASSIGNED_AROMATICITY_SPEC,
-                source,
-            })?;
+    let mut topology = parts.begin_topology_mut()?;
+    let view = parts.read_parts_for_topology(topology.clone())?;
+    let read = MoleculeReadParts::from_molecule(&view);
+    let rings = read
+        .symmetrize_sssr()
+        .map_err(|source| OperationError::RingFinding {
+            operation: &ASSIGNED_AROMATICITY_SPEC,
+            source,
+        })?;
     parts.set_rings_cache(rings);
-    let assignment = parts
-        .read_parts()
+    let view = parts.read_parts_for_topology(topology.clone())?;
+    let assignment = MoleculeReadParts::from_molecule(&view)
         .set_aromaticity(crate::AromaticityModel::Default)
         .map_err(|source| OperationError::Aromaticity {
             operation: &ASSIGNED_AROMATICITY_SPEC,
             source,
         })?;
+    for (atom, is_aromatic) in topology
+        .atoms
+        .iter_mut()
+        .zip(assignment.atom_aromatic.iter().copied())
     {
-        let topology = parts.topology_mut();
-        for (atom, is_aromatic) in topology
-            .atoms
-            .iter_mut()
-            .zip(assignment.atom_aromatic.iter().copied())
+        atom.set_aromatic(is_aromatic);
+    }
+    for (bond, is_aromatic) in topology
+        .bonds
+        .iter_mut()
+        .zip(assignment.bond_aromatic.iter().copied())
+    {
+        bond.set_aromatic(is_aromatic);
+        if is_aromatic
+            && matches!(
+                bond.order(),
+                crate::BondOrder::Single | crate::BondOrder::Double
+            )
         {
-            atom.set_aromatic(is_aromatic);
-        }
-        for (bond, is_aromatic) in topology
-            .bonds
-            .iter_mut()
-            .zip(assignment.bond_aromatic.iter().copied())
-        {
-            bond.set_aromatic(is_aromatic);
-            if is_aromatic
-                && matches!(
-                    bond.order(),
-                    crate::BondOrder::Single | crate::BondOrder::Double
-                )
-            {
-                bond.set_order(crate::BondOrder::Aromatic);
-            }
+            bond.set_order(crate::BondOrder::Aromatic);
         }
     }
-    let valence = parts
-        .read_parts()
+    let view = parts.read_parts_for_topology(topology.clone())?;
+    let valence = MoleculeReadParts::from_molecule(&view)
         .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
         .map_err(|source| OperationError::Valence {
             operation: &ASSIGNED_AROMATICITY_SPEC,
             source,
         })?;
+    parts.commit_topology(topology)?;
+    parts.record_topology_edit(TopologyEditKind::Local)?;
     parts.set_valence_cache(valence);
     parts.mark_aromaticity_valid();
     parts.clear_cache(DerivedState::DRAWING | DerivedState::FINGERPRINT);
@@ -3964,49 +4164,38 @@ fn assigned_aromaticity_impl() -> Result<OpOutcome, OperationError> {
 
 #[mol_op_body(assigned_radicals, parts)]
 fn assigned_radicals_impl() -> Result<OpOutcome, OperationError> {
-    let adjacency = crate::AdjacencyList::try_from_topology(
-        parts.read_parts().num_atoms(),
-        parts.read_parts().bonds(),
-    )
-    .map_err(|source| OperationError::InvalidInput {
-        operation: &ASSIGNED_RADICALS_SPEC,
-        message: match source {
-            crate::AdjacencyError::BondAtomOutOfRange { .. } => {
-                "topology bond atom index out of range while recomputing adjacency"
-            }
-        },
-    })?;
-    parts.set_adjacency_cache(adjacency);
-    let radicals =
-        parts
-            .read_parts()
-            .assign_radicals()
-            .map_err(|source| OperationError::Valence {
-                operation: &ASSIGNED_RADICALS_SPEC,
-                source,
-            })?;
+    let mut topology = parts.begin_topology_mut()?;
+    let view = parts.read_parts_for_topology(topology.clone())?;
+    let read = MoleculeReadParts::from_molecule(&view);
 
-    let changed = parts
-        .read_parts()
+    let radicals = read
+        .assign_radicals()
+        .map_err(|source| OperationError::Valence {
+            operation: &ASSIGNED_RADICALS_SPEC,
+            source,
+        })?;
+
+    let changed = read
         .atoms()
         .iter()
         .zip(radicals.iter().copied())
         .any(|(atom, radical)| atom.radical_electrons() != radical);
 
     if changed {
-        let topology = parts.topology_mut();
         for (atom, radical) in topology.atoms.iter_mut().zip(radicals) {
             atom.set_radical_electrons(radical);
         }
     }
 
-    let valence = parts
-        .read_parts()
+    let view = parts.read_parts_for_topology(topology.clone())?;
+    let valence = MoleculeReadParts::from_molecule(&view)
         .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
         .map_err(|source| OperationError::Valence {
             operation: &ASSIGNED_RADICALS_SPEC,
             source,
         })?;
+    parts.commit_topology(topology)?;
+    parts.record_topology_edit(TopologyEditKind::Local)?;
     parts.set_valence_cache(valence);
     Ok(OpOutcome::Changed)
 }
@@ -4014,7 +4203,7 @@ fn assigned_radicals_impl() -> Result<OpOutcome, OperationError> {
 #[mol_op_body(with_2d_coordinates, parts)]
 fn with_2d_coordinates_impl() -> Result<OpOutcome, OperationError> {
     let (atoms, bonds) = {
-        let read = parts.read_parts();
+        let read = parts.begin_topology_read()?;
         (read.atoms(), read.bonds())
     };
     let coords =
@@ -4034,8 +4223,9 @@ fn with_2d_coordinates_impl() -> Result<OpOutcome, OperationError> {
                 }
             }
         })?;
-    let coord_block = parts.coordinates_mut();
+    let mut coord_block = parts.begin_coordinates_mut()?;
     coord_block.coords_2d = Some(coords);
+    parts.commit_coordinates(coord_block)?;
     parts.clear_cache(DerivedState::DRAWING);
     Ok(OpOutcome::Changed)
 }
@@ -4053,30 +4243,53 @@ mod tests {
         domain: OperationDomain::Topology,
         kind: MoleculeOpKind::Weak,
         topology_edit: TopologyEditKind::None,
+        access: BlockAccess::new(BlockSet::NONE, BlockSet::DERIVED_CACHE),
         may_mutate: BlockSet::DERIVED_CACHE,
         auto_remap: BlockSet::NONE,
-        must_handle: DerivedStateSet::NONE,
-        needs_update: DerivedState::VALENCE,
+        derived_effects: DerivedEffects::new(
+            DerivedState::NONE,                               // recompute
+            DerivedState::NONE,                               // preserve
+            DerivedState::VALENCE.union(DerivedState::RINGS), // invalidate: needs_update target + clear-permitted
+        ),
         requires_mapping: MappingRequirement::None,
-        report: OperationReportSet::NONE,
         allows_noop: true,
         support: SupportStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
         io_roundtrip: false,
     };
 
-    const TEST_MUST_HANDLE_VALENCE_SPEC: MoleculeOpSpec = MoleculeOpSpec {
-        method: "test_must_handle_valence",
-        impl_fn: "test_must_handle_valence_impl",
+    const TEST_RECOMPUTE_VALENCE_SPEC: MoleculeOpSpec = MoleculeOpSpec {
+        method: "test_recompute_valence",
+        impl_fn: "test_recompute_valence_impl",
         domain: OperationDomain::Topology,
         kind: MoleculeOpKind::Weak,
         topology_edit: TopologyEditKind::None,
+        access: BlockAccess::new(BlockSet::NONE, BlockSet::DERIVED_CACHE),
         may_mutate: BlockSet::DERIVED_CACHE,
         auto_remap: BlockSet::NONE,
-        must_handle: DerivedStateSet::VALENCE,
-        needs_update: DerivedState::VALENCE,
+        derived_effects: DerivedEffects::new(
+            DerivedState::VALENCE, // recompute
+            DerivedState::NONE,    // preserve
+            DerivedState::NONE,    // invalidate
+        ),
         requires_mapping: MappingRequirement::None,
-        report: OperationReportSet::NONE,
+        allows_noop: true,
+        support: SupportStatus::Experimental,
+        parity: ParityPolicy::NotApplicable,
+        io_roundtrip: false,
+    };
+
+    const TEST_OVERLAPPING_ACCESS_SPEC: MoleculeOpSpec = MoleculeOpSpec {
+        method: "test_overlapping_access",
+        impl_fn: "test_overlapping_access_impl",
+        domain: OperationDomain::Topology,
+        kind: MoleculeOpKind::Weak,
+        topology_edit: TopologyEditKind::Local,
+        access: BlockAccess::new(BlockSet::TOPOLOGY, BlockSet::TOPOLOGY),
+        may_mutate: BlockSet::TOPOLOGY,
+        auto_remap: BlockSet::NONE,
+        derived_effects: DerivedEffects::NONE,
+        requires_mapping: MappingRequirement::None,
         allows_noop: true,
         support: SupportStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
@@ -4090,6 +4303,51 @@ mod tests {
         assert!(!ops_source.contains(concat!("read_parts", ".", "molecule")));
         assert!(!ops_source.contains(concat!(".", "molecule", "()")));
         assert!(!read_parts_source.contains(concat!("pub(crate) fn ", "molecule")));
+    }
+
+    #[test]
+    fn begin_topology_mut_rejects_second_begin() {
+        let molecule = crate::Molecule::new();
+        let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC);
+        let _topology = parts
+            .begin_topology_mut()
+            .expect("first topology begin should succeed");
+        let err = match parts.begin_topology_mut() {
+            Ok(_) => panic!("second topology begin must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(err, OperationError::InvalidInput { message, .. } if message.contains("same writable block twice"))
+        );
+    }
+
+    #[test]
+    fn begin_topology_mut_rejects_second_begin_before_commit() {
+        let molecule = crate::Molecule::new();
+        let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC);
+        let _topology = parts
+            .begin_topology_mut()
+            .expect("first topology begin should succeed");
+        let err = match parts.begin_topology_mut() {
+            Ok(_) => panic!("second topology begin must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(err, OperationError::InvalidInput { message, .. } if message.contains("same writable block twice"))
+        );
+    }
+
+    #[test]
+    fn begin_access_rejects_overlapping_read_and_write_blocks() {
+        let molecule = crate::Molecule::new();
+        let mut parts = OpParts::new(&molecule, &TEST_OVERLAPPING_ACCESS_SPEC);
+        let err = match parts.begin_topology_mut() {
+            Ok(_) => panic!("overlapping read/write access must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(err, OperationError::InvalidInput { message, .. } if message.contains("both read and write"))
+        );
     }
 
     #[test]
@@ -4345,6 +4603,43 @@ mod tests {
     }
 
     #[test]
+    fn add_hs_terminal_coords_rejects_degenerate_or_nonterminal_virtual_atom_like_rdkit() {
+        let mut builder = crate::MoleculeBuilder::new();
+        let a0 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let a1 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        builder
+            .add_bond(crate::BondSpec::new(a0, a1, crate::BondOrder::Single))
+            .unwrap();
+        builder
+            .add_3d_conformer(vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+            .unwrap();
+        let molecule = builder.build().unwrap();
+        let adjacency = vec![vec![(1, None), (2, None)], vec![(0, None)], vec![(0, None)]];
+
+        let degenerate = add_hs_set_terminal_atom_coord(
+            MoleculeReadParts::from_molecule(&molecule),
+            &adjacency,
+            molecule.conformers_3d()[0].coords(),
+            0,
+            0,
+            true,
+        )
+        .unwrap_err();
+        assert!(degenerate.to_string().contains("degenerate atoms"));
+
+        let nonterminal = add_hs_set_terminal_atom_coord(
+            MoleculeReadParts::from_molecule(&molecule),
+            &adjacency,
+            molecule.conformers_3d()[0].coords(),
+            0,
+            1,
+            true,
+        )
+        .unwrap_err();
+        assert!(nonterminal.to_string().contains("degree one"));
+    }
+
+    #[test]
     fn with_hydrogens_with_params_materializes_add_coords_branch() {
         let mut builder = crate::MoleculeBuilder::new();
         builder.add_atom(crate::AtomSpec::new(crate::Element::C));
@@ -4393,6 +4688,17 @@ mod tests {
     }
 
     #[test]
+    fn with_hydrogens_commits_topology_with_rebuilt_adjacency_for_valence_followups() {
+        let molecule = crate::Molecule::from_smiles("C=C").unwrap();
+
+        let result = molecule.with_hydrogens().unwrap();
+        let assignment = crate::assign_valence(&result, crate::ValenceModel::RdkitLike).unwrap();
+
+        assert_eq!(assignment.explicit_valence, vec![4, 4, 1, 1, 1, 1]);
+        assert_eq!(assignment.implicit_hydrogens, vec![0, 0, 0, 0, 0, 0]);
+    }
+
+    #[test]
     fn with_hydrogens_replays_tracked_isotopes_and_clears_tracking_property() {
         let mut builder = crate::MoleculeBuilder::new();
         let nitrogen = builder.add_atom(
@@ -4407,7 +4713,7 @@ mod tests {
         assert_eq!(result.atoms()[nitrogen.index()].prop("_isotopicHs"), None);
         assert_eq!(
             result.atoms()[nitrogen.index()].tracked_isotopic_hydrogens(),
-            &[]
+            &[] as &[u16]
         );
         assert_eq!(result.atoms()[nitrogen.index()].explicit_hydrogens(), 0);
         assert_eq!(
@@ -4437,11 +4743,31 @@ mod tests {
             ..crate::hydrogens::AddHsAssignment::default()
         };
         let mut parts = OpParts::new(&molecule, &WITH_HYDROGENS_SPEC);
+        let mut topology = parts.begin_topology_mut().unwrap();
+        let mut coordinates = parts.begin_coordinates_mut().unwrap();
+        let mut properties = parts.begin_properties_mut().unwrap();
 
-        let changed = apply_add_hs_assignment(&mut parts, &assignment).unwrap();
+        let changed = apply_add_hs_assignment(
+            &mut parts,
+            &mut topology,
+            &mut coordinates,
+            &mut properties,
+            &assignment,
+        )
+        .unwrap();
+        parts.commit_topology(topology).unwrap();
+        parts.commit_coordinates(coordinates).unwrap();
+        parts.commit_properties(properties).unwrap();
+        parts
+            .prove_preserved(
+                DerivedState::RINGS | DerivedState::RING_FAMILIES,
+                PreservationProof::LeafAtomAppend,
+            )
+            .unwrap();
+        let result = parts.finish(OpOutcome::Changed).unwrap();
 
         assert!(changed);
-        let info = parts.topology().atoms[1].pdb_residue_info().unwrap();
+        let info = result.atoms()[1].pdb_residue_info().unwrap();
         assert_eq!(info.atom_name(), " H1 ");
         assert_eq!(info.serial_number(), 12);
         assert_eq!(info.residue_name(), "GLY");
@@ -4486,13 +4812,31 @@ mod tests {
             ..crate::hydrogens::AddHsAssignment::default()
         };
         let mut parts = OpParts::new(&molecule, &WITH_HYDROGENS_SPEC);
+        let mut topology = parts.begin_topology_mut().unwrap();
+        let mut coordinates = parts.begin_coordinates_mut().unwrap();
+        let mut properties = parts.begin_properties_mut().unwrap();
 
-        let changed = apply_add_hs_assignment(&mut parts, &assignment).unwrap();
+        let changed = apply_add_hs_assignment(
+            &mut parts,
+            &mut topology,
+            &mut coordinates,
+            &mut properties,
+            &assignment,
+        )
+        .unwrap();
+        parts.commit_topology(topology).unwrap();
+        parts.commit_coordinates(coordinates).unwrap();
+        parts.commit_properties(properties).unwrap();
+        parts
+            .prove_preserved(
+                DerivedState::RINGS | DerivedState::RING_FAMILIES,
+                PreservationProof::LeafAtomAppend,
+            )
+            .unwrap();
+        let result = parts.finish(OpOutcome::Changed).unwrap();
 
         assert!(changed);
-        let info = parts.topology().atoms[hydrogen.index()]
-            .pdb_residue_info()
-            .unwrap();
+        let info = result.atoms()[hydrogen.index()].pdb_residue_info().unwrap();
         assert_eq!(info.atom_name(), " H1 ");
         assert_eq!(info.serial_number(), 12);
         assert_eq!(info.residue_name(), "GLY");
@@ -4627,6 +4971,61 @@ mod tests {
     }
 
     #[test]
+    fn without_hydrogens_with_sanitize_runs_full_sanitize_on_aromatic_result() {
+        let molecule = crate::Molecule::from_smiles_with_sanitize("c1ccccc1", false)
+            .unwrap()
+            .with_hydrogens()
+            .unwrap();
+        let original = molecule.clone();
+
+        let result = molecule.without_hydrogens_with_sanitize(true).unwrap();
+
+        assert_eq!(molecule, original);
+        assert_eq!(result.num_atoms(), 6);
+        assert!(result.atoms().iter().all(crate::Atom::is_aromatic));
+        assert!(
+            result
+                .bonds()
+                .iter()
+                .all(|bond| bond.is_aromatic() && bond.order() == crate::BondOrder::Aromatic)
+        );
+        assert!(result.derived_cache().valence.is_some());
+        assert!(result.derived_cache().rings.is_some());
+    }
+
+    #[test]
+    fn without_hydrogens_without_sanitize_skips_full_sanitize_pipeline() {
+        let molecule = crate::Molecule::from_smiles_with_sanitize("c1ccccc1", false)
+            .unwrap()
+            .with_hydrogens()
+            .unwrap();
+
+        let result = molecule.without_hydrogens_with_sanitize(false).unwrap();
+
+        assert_eq!(result.num_atoms(), 6);
+        assert!(result.derived_cache().valence.is_none());
+        assert!(result.derived_cache().rings.is_none());
+    }
+
+    #[test]
+    fn with_hydrogens_preserves_existing_ring_caches_by_leaf_append_proof() {
+        let molecule = crate::Molecule::from_smiles_with_sanitize("C1CCCCC1", false)
+            .unwrap()
+            .with_assigned_rings()
+            .unwrap()
+            .with_assigned_ring_families()
+            .unwrap();
+        let rings_before = molecule.derived_cache().rings.clone();
+        let ring_families_before = molecule.derived_cache().ring_families.clone();
+
+        let result = molecule.with_hydrogens().unwrap();
+
+        assert_eq!(result.derived_cache().rings, rings_before);
+        assert_eq!(result.derived_cache().ring_families, ring_families_before);
+        assert!(result.derived_cache().valence.is_none());
+    }
+
+    #[test]
     fn sanitized_supported_subset_updates_cache_through_operation_pipeline() {
         let molecule = crate::Molecule::from_smiles_with_sanitize("CCO", false).unwrap();
         let original = molecule.clone();
@@ -4641,7 +5040,6 @@ mod tests {
 
         assert_eq!(molecule, original);
         let cache = result.derived_cache();
-        assert!(cache.adjacency.is_some());
         assert!(cache.valence.is_some());
         assert!(cache.rings.is_some());
         assert!(cache.ring_families.is_none());
@@ -4692,6 +5090,22 @@ mod tests {
                 .count(),
             3
         );
+        assert!(result.derived_cache().rings.is_some());
+    }
+
+    #[test]
+    fn sanitized_kekulize_materializes_ring_cache_without_explicit_symmrings_step_like_rdkit() {
+        let molecule = crate::Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+
+        let result = molecule
+            .sanitized_with_ops(crate::SanitizeOps::KEKULIZE)
+            .unwrap();
+
+        assert!(result.derived_cache().rings.is_some());
+        assert!(result.bonds().iter().all(|bond| matches!(
+            bond.order(),
+            crate::BondOrder::Single | crate::BondOrder::Double
+        )));
     }
 
     #[test]
@@ -4759,7 +5173,7 @@ mod tests {
                     reason: "helper step mapping regression",
                 })
             },
-            sanitize_valence_error,
+            |step, source| sanitize_valence_error(&SANITIZED_SPEC, step, source),
         )
         .unwrap_err();
 
@@ -4840,6 +5254,51 @@ mod tests {
     }
 
     #[test]
+    fn sanitized_nitrogens_cleanup_rewrites_neutral_nitrogen_triple_bond_branch_like_rdkit() {
+        let mut builder = crate::MoleculeBuilder::new();
+        let carbon_one = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let nitrogen_center = builder.add_atom(crate::AtomSpec::new(crate::Element::N));
+        let carbon_two = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let nitrogen_terminal = builder.add_atom(crate::AtomSpec::new(crate::Element::N));
+        builder
+            .add_bond(crate::BondSpec::new(
+                carbon_one,
+                nitrogen_center,
+                crate::BondOrder::Single,
+            ))
+            .unwrap();
+        builder
+            .add_bond(crate::BondSpec::new(
+                nitrogen_center,
+                carbon_two,
+                crate::BondOrder::Single,
+            ))
+            .unwrap();
+        let triple_bond = builder
+            .add_bond(crate::BondSpec::new(
+                nitrogen_center,
+                nitrogen_terminal,
+                crate::BondOrder::Triple,
+            ))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        let result = molecule
+            .sanitized_with_ops(crate::SanitizeOps::CLEANUP)
+            .unwrap();
+
+        assert_eq!(result.atoms()[nitrogen_center.index()].formal_charge(), 1);
+        assert_eq!(
+            result.atoms()[nitrogen_terminal.index()].formal_charge(),
+            -1
+        );
+        assert_eq!(
+            result.bonds()[triple_bond.index()].order(),
+            crate::BondOrder::Double
+        );
+    }
+
+    #[test]
     fn sanitized_cleanup_converts_phosphorus_oxo_like_rdkit() {
         let phosphorus_element =
             crate::Element::from_atomic_number(15).expect("phosphorus atomic number is valid");
@@ -4891,6 +5350,56 @@ mod tests {
     }
 
     #[test]
+    fn sanitized_phosphorus_cleanup_leaves_double_oxo_without_double_cn_branch_unchanged_like_rdkit()
+     {
+        let phosphorus_element =
+            crate::Element::from_atomic_number(15).expect("phosphorus atomic number is valid");
+        let mut builder = crate::MoleculeBuilder::new();
+        let phosphorus = builder.add_atom(crate::AtomSpec::new(phosphorus_element));
+        let oxygen_one = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
+        let oxygen_two = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
+        let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let bond_one = builder
+            .add_bond(crate::BondSpec::new(
+                phosphorus,
+                oxygen_one,
+                crate::BondOrder::Double,
+            ))
+            .unwrap();
+        let bond_two = builder
+            .add_bond(crate::BondSpec::new(
+                phosphorus,
+                oxygen_two,
+                crate::BondOrder::Double,
+            ))
+            .unwrap();
+        builder
+            .add_bond(crate::BondSpec::new(
+                phosphorus,
+                carbon,
+                crate::BondOrder::Single,
+            ))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        let result = molecule
+            .sanitized_with_ops(crate::SanitizeOps::CLEANUP)
+            .unwrap();
+
+        assert_eq!(result.atoms()[phosphorus.index()].formal_charge(), 0);
+        assert_eq!(result.atoms()[oxygen_one.index()].formal_charge(), 0);
+        assert_eq!(result.atoms()[oxygen_two.index()].formal_charge(), 0);
+        assert_eq!(
+            result.bonds()[bond_one.index()].order(),
+            crate::BondOrder::Double
+        );
+        assert_eq!(
+            result.bonds()[bond_two.index()].order(),
+            crate::BondOrder::Double
+        );
+    }
+
+    #[test]
     fn sanitized_cleanup_converts_hypervalent_halogen_oxo_like_rdkit() {
         let chlorine =
             crate::Element::from_atomic_number(17).expect("chlorine atomic number is valid");
@@ -4927,6 +5436,105 @@ mod tests {
                 .iter()
                 .all(|bond| bond.order() == crate::BondOrder::Single)
         );
+    }
+
+    #[test]
+    fn sanitized_halogen_cleanup_skips_non_oxo_neighbor_branch_like_rdkit() {
+        let chlorine =
+            crate::Element::from_atomic_number(17).expect("chlorine atomic number is valid");
+        let mut builder = crate::MoleculeBuilder::new();
+        let center = builder.add_atom(crate::AtomSpec::new(chlorine));
+        let oxygen = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
+        let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let double_bond = builder
+            .add_bond(crate::BondSpec::new(
+                center,
+                oxygen,
+                crate::BondOrder::Double,
+            ))
+            .unwrap();
+        builder
+            .add_bond(crate::BondSpec::new(
+                center,
+                carbon,
+                crate::BondOrder::Single,
+            ))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        let result = molecule
+            .sanitized_with_ops(crate::SanitizeOps::CLEANUP)
+            .unwrap();
+
+        assert_eq!(result.atoms()[center.index()].formal_charge(), 0);
+        assert_eq!(result.atoms()[oxygen.index()].formal_charge(), 0);
+        assert_eq!(
+            result.bonds()[double_bond.index()].order(),
+            crate::BondOrder::Double
+        );
+    }
+
+    #[test]
+    fn cleanup_incident_bonds_returns_only_local_bond_indices() {
+        let mut builder = crate::MoleculeBuilder::new();
+        let a0 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let a1 = builder.add_atom(crate::AtomSpec::new(crate::Element::N));
+        let a2 = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
+        let a3 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        builder
+            .add_bond(crate::BondSpec::new(a0, a1, crate::BondOrder::Single))
+            .unwrap();
+        let center_left = builder
+            .add_bond(crate::BondSpec::new(a1, a2, crate::BondOrder::Double))
+            .unwrap();
+        let center_right = builder
+            .add_bond(crate::BondSpec::new(a1, a3, crate::BondOrder::Single))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+        let adjacency = sanitize_adjacency(&molecule).unwrap();
+
+        let incident = sanitize_cleanup_incident_bonds(&adjacency, a1);
+
+        assert_eq!(incident, vec![0, center_left.index(), center_right.index()]);
+    }
+
+    #[test]
+    fn cleanup_incident_bonds_explicit_valence_uses_assignment_bond_orders() {
+        let mut builder = crate::MoleculeBuilder::new();
+        let nitrogen = builder.add_atom(crate::AtomSpec::new(crate::Element::N));
+        let oxygen = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
+        let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let oxygen_bond = builder
+            .add_bond(crate::BondSpec::new(
+                nitrogen,
+                oxygen,
+                crate::BondOrder::Double,
+            ))
+            .unwrap();
+        builder
+            .add_bond(crate::BondSpec::new(
+                nitrogen,
+                carbon,
+                crate::BondOrder::Single,
+            ))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+        let adjacency = sanitize_adjacency(&molecule).unwrap();
+        let mut assignment = SanitizeCleanupAssignment {
+            atom_formal_charges: molecule
+                .atoms()
+                .iter()
+                .map(crate::Atom::formal_charge)
+                .collect(),
+            bond_orders: molecule.bonds().iter().map(crate::Bond::order).collect(),
+        };
+        assignment.bond_orders[oxygen_bond.index()] = crate::BondOrder::Single;
+
+        let valence =
+            sanitize_cleanup_explicit_valence(&molecule, &adjacency, &assignment, nitrogen)
+                .unwrap();
+
+        assert_eq!(valence, 2);
     }
 
     #[test]
@@ -5036,6 +5644,221 @@ mod tests {
         assert_eq!(donor_to_open.order(), crate::BondOrder::Dative);
         assert_eq!(donor_to_open.begin(), donor);
         assert_eq!(donor_to_open.end(), metal_open);
+    }
+
+    #[test]
+    fn sanitized_organometallic_cleanup_skips_non_hypervalent_donor_like_rdkit() {
+        let iron = crate::Element::from_atomic_number(26).expect("iron atomic number is valid");
+        let mut builder = crate::MoleculeBuilder::new();
+        let oxygen =
+            builder.add_atom(crate::AtomSpec::new(crate::Element::O).with_no_implicit(true));
+        let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let metal = builder.add_atom(crate::AtomSpec::new(iron));
+        builder
+            .add_bond(crate::BondSpec::new(
+                oxygen,
+                carbon,
+                crate::BondOrder::Single,
+            ))
+            .unwrap();
+        let metal_bond = builder
+            .add_bond(crate::BondSpec::new(
+                oxygen,
+                metal,
+                crate::BondOrder::Single,
+            ))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        let result = molecule
+            .sanitized_with_ops(crate::SanitizeOps::CLEANUP_ORGANOMETALLICS)
+            .unwrap();
+
+        assert_eq!(
+            result.bonds()[metal_bond.index()].order(),
+            crate::BondOrder::Single
+        );
+    }
+
+    #[test]
+    fn metal_bond_cleanup_prefers_higher_rank_when_dative_counts_tie() {
+        let iron = crate::Element::from_atomic_number(26).expect("iron atomic number is valid");
+        let mut builder = crate::MoleculeBuilder::new();
+        let donor = builder.add_atom(crate::AtomSpec::new(crate::Element::N));
+        let c1 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let c2 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let c3 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let metal_plain = builder.add_atom(crate::AtomSpec::new(iron));
+        let metal_substituted = builder.add_atom(crate::AtomSpec::new(iron));
+        let hydrogen = builder.add_atom(crate::AtomSpec::new(crate::Element::H));
+        for neighbor in [c1, c2, c3, metal_plain, metal_substituted] {
+            builder
+                .add_bond(crate::BondSpec::new(
+                    donor,
+                    neighbor,
+                    crate::BondOrder::Single,
+                ))
+                .unwrap();
+        }
+        builder
+            .add_bond(crate::BondSpec::new(
+                metal_substituted,
+                hydrogen,
+                crate::BondOrder::Single,
+            ))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+        let adjacency = sanitize_adjacency(&molecule).unwrap();
+        let valence = molecule
+            .assign_valence_with_options(crate::ValenceModel::RdkitLike, false)
+            .unwrap();
+        let ranks = molecule.rank_mol_atoms().unwrap();
+        let mut assignment = SanitizeOrganometallicCleanupAssignment {
+            bond_orders: molecule.bonds().iter().map(crate::Bond::order).collect(),
+            bond_endpoints: molecule
+                .bonds()
+                .iter()
+                .map(|bond| (bond.begin(), bond.end()))
+                .collect(),
+        };
+
+        sanitize_metal_bond_cleanup_assignment(
+            &molecule,
+            &adjacency,
+            &valence,
+            &ranks,
+            donor,
+            &mut assignment,
+        )
+        .unwrap();
+
+        let chosen_metal = assignment
+            .bond_endpoints
+            .iter()
+            .zip(assignment.bond_orders.iter())
+            .find_map(|(&(begin, end), &order)| {
+                (order == crate::BondOrder::Dative && begin == donor).then_some(end)
+            })
+            .unwrap();
+        let expected = [metal_plain, metal_substituted]
+            .into_iter()
+            .max_by_key(|atom| ranks[atom.index()])
+            .unwrap();
+        assert_eq!(chosen_metal, expected);
+    }
+
+    #[test]
+    fn hypervalent_nonmetal_predicate_matches_metal_and_aromatic_degree_four_branches() {
+        let carbon = crate::Element::C;
+        let iron = crate::Element::from_atomic_number(26).unwrap();
+
+        let mut aromatic_builder = crate::MoleculeBuilder::new();
+        let sulfur_atom = aromatic_builder.add_atom(
+            crate::AtomSpec::new(carbon)
+                .with_aromatic(true)
+                .with_no_implicit(true),
+        );
+        let mut aromatic_neighbors = Vec::new();
+        for _ in 0..4 {
+            let carbon = aromatic_builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+            aromatic_builder
+                .add_bond(crate::BondSpec::new(
+                    sulfur_atom,
+                    carbon,
+                    crate::BondOrder::Single,
+                ))
+                .unwrap();
+            aromatic_neighbors.push(carbon);
+        }
+        let aromatic = aromatic_builder.build().unwrap();
+        let aromatic_adj = sanitize_adjacency(&aromatic).unwrap();
+        let aromatic_valence = aromatic
+            .assign_valence_with_options(crate::ValenceModel::RdkitLike, false)
+            .unwrap();
+
+        assert!(
+            sanitize_is_hypervalent_nonmetal(
+                &aromatic,
+                &aromatic_adj,
+                &aromatic_valence,
+                sulfur_atom
+            )
+            .unwrap()
+        );
+
+        let mut metal_builder = crate::MoleculeBuilder::new();
+        let metal_atom = metal_builder.add_atom(crate::AtomSpec::new(iron));
+        let ligand = metal_builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        metal_builder
+            .add_bond(crate::BondSpec::new(
+                metal_atom,
+                ligand,
+                crate::BondOrder::Single,
+            ))
+            .unwrap();
+        let metal_molecule = metal_builder.build().unwrap();
+        let metal_adj = sanitize_adjacency(&metal_molecule).unwrap();
+        let metal_valence = metal_molecule
+            .assign_valence_with_options(crate::ValenceModel::RdkitLike, false)
+            .unwrap();
+
+        assert!(
+            !sanitize_is_hypervalent_nonmetal(
+                &metal_molecule,
+                &metal_adj,
+                &metal_valence,
+                metal_atom
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn single_bonded_metals_filters_non_single_and_non_metal_neighbors() {
+        let iron = crate::Element::from_atomic_number(26).unwrap();
+        let mut builder = crate::MoleculeBuilder::new();
+        let donor = builder.add_atom(crate::AtomSpec::new(crate::Element::N));
+        let metal_single = builder.add_atom(crate::AtomSpec::new(iron));
+        let metal_rewritten = builder.add_atom(crate::AtomSpec::new(iron));
+        let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let keep_bond = builder
+            .add_bond(crate::BondSpec::new(
+                donor,
+                metal_single,
+                crate::BondOrder::Single,
+            ))
+            .unwrap();
+        let rewritten_bond = builder
+            .add_bond(crate::BondSpec::new(
+                donor,
+                metal_rewritten,
+                crate::BondOrder::Single,
+            ))
+            .unwrap();
+        builder
+            .add_bond(crate::BondSpec::new(
+                donor,
+                carbon,
+                crate::BondOrder::Single,
+            ))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+        let adjacency = sanitize_adjacency(&molecule).unwrap();
+        let mut assignment = SanitizeOrganometallicCleanupAssignment {
+            bond_orders: molecule.bonds().iter().map(crate::Bond::order).collect(),
+            bond_endpoints: molecule
+                .bonds()
+                .iter()
+                .map(|bond| (bond.begin(), bond.end()))
+                .collect(),
+        };
+        assignment.bond_orders[rewritten_bond.index()] = crate::BondOrder::Dative;
+
+        let metals =
+            sanitize_organometallic_single_bonded_metals(&molecule, &adjacency, &assignment, donor);
+
+        assert_eq!(metals, vec![metal_single]);
+        assert_eq!(keep_bond.index(), 0);
     }
 
     #[test]
@@ -5172,6 +5995,40 @@ mod tests {
             crate::ChiralTag::Tetrahedral
         );
         assert_eq!(result.atoms()[0].chiral_permutation(), Some(0));
+    }
+
+    #[test]
+    fn sanitized_cleanup_chirality_resets_square_planar_permutation_above_limit_like_rdkit() {
+        let mut builder = crate::MoleculeBuilder::new();
+        let center = builder.add_atom(
+            crate::AtomSpec::new(crate::Element::C)
+                .with_no_implicit(true)
+                .with_chiral_tag(crate::ChiralTag::SquarePlanar)
+                .with_chiral_permutation(7),
+        );
+        let left = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let right = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        builder
+            .add_bond(crate::BondSpec::new(center, left, crate::BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(crate::BondSpec::new(
+                center,
+                right,
+                crate::BondOrder::Single,
+            ))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        let result = molecule
+            .sanitized_with_ops(crate::SanitizeOps::CLEANUP_CHIRALITY)
+            .unwrap();
+
+        assert_eq!(
+            result.atoms()[center.index()].chiral_tag(),
+            crate::ChiralTag::SquarePlanar
+        );
+        assert_eq!(result.atoms()[center.index()].chiral_permutation(), Some(0));
     }
 
     #[test]
@@ -5411,6 +6268,27 @@ mod tests {
     }
 
     #[test]
+    fn sanitized_find_radicals_recomputes_property_cache_after_topology_state_update() {
+        let mut builder = crate::MoleculeBuilder::new();
+        builder.add_atom(
+            crate::AtomSpec::new(crate::Element::C)
+                .with_no_implicit(true)
+                .with_explicit_hydrogens(3),
+        );
+        let molecule = builder.build().unwrap();
+
+        let result = molecule
+            .sanitized_with_ops(crate::SanitizeOps::FIND_RADICALS)
+            .unwrap();
+
+        assert_eq!(result.atoms()[0].radical_electrons(), 1);
+        let expected =
+            crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, false)
+                .unwrap();
+        assert_eq!(result.derived_cache().valence, Some(expected));
+    }
+
+    #[test]
     fn sanitize_adjust_hydrogens_assignment_requested_step_does_not_mutate_source() {
         let molecule = crate::Molecule::from_smiles_with_sanitize("CCO", false).unwrap();
         let original = molecule.clone();
@@ -5421,9 +6299,6 @@ mod tests {
 
         assert_eq!(molecule, original);
         assert_eq!(result.num_atoms(), molecule.num_atoms());
-        assert!(molecule.derived_cache().valence.is_none());
-        assert!(molecule.derived_cache().rings.is_none());
-        assert!(molecule.derived_cache().ring_families.is_none());
     }
 
     #[test]
@@ -5451,6 +6326,24 @@ mod tests {
                 .implicit_hydrogens[0],
             0
         );
+    }
+
+    #[test]
+    fn sanitize_adjust_hydrogens_assignment_preserves_existing_explicit_hydrogen_when_delta_is_zero()
+     {
+        let mut builder = crate::MoleculeBuilder::new();
+        builder.add_atom(
+            crate::AtomSpec::new(crate::Element::N)
+                .with_no_implicit(true)
+                .with_explicit_hydrogens(1),
+        );
+        let molecule = builder.build().unwrap();
+
+        let result = molecule
+            .sanitized_with_ops(crate::SanitizeOps::ADJUST_HYDROGENS)
+            .unwrap();
+
+        assert_eq!(result.atoms()[0].explicit_hydrogens(), 1);
     }
 
     #[test]
@@ -5512,46 +6405,33 @@ mod tests {
 
     #[cfg(feature = "op-contracts")]
     #[test]
-    #[should_panic(expected = "attempted to mutate a block outside its registry permissions")]
-    fn op_parts_panics_on_permission_violation_under_strict_checks() {
+    fn op_parts_rejects_permission_violation_under_strict_checks() {
         let molecule = crate::Molecule::new();
         let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC);
-        let _ = parts.coordinates_mut();
-    }
-
-    #[cfg(feature = "op-contracts")]
-    #[test]
-    #[should_panic(expected = "attempted to mutate a block outside its registry permissions")]
-    fn op_parts_panics_when_derived_cache_mutation_is_not_registered() {
-        let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &WITH_2D_COORDINATES_SPEC);
-        let _ = parts.derived_cache_mut();
+        let err = parts
+            .begin_coordinates_mut()
+            .expect_err("coordinate begin should be rejected");
+        assert!(
+            matches!(err, OperationError::InvalidInput { message, .. } if message.contains("outside its registry access"))
+        );
     }
 
     #[test]
     fn needs_update_clears_matching_derived_cache_entries() {
         let molecule = crate::Molecule::new();
         let mut parts = OpParts::new(&molecule, &SANITIZED_SPEC);
-        {
-            let cache = parts.derived_cache_mut();
-            cache.adjacency = Some(crate::AdjacencyList::from_topology(0, &[]));
-            cache.valence = Some(crate::ValenceAssignment {
-                explicit_valence: Vec::new(),
-                implicit_hydrogens: Vec::new(),
-            });
-            cache.rings = Some(crate::RingInfo::new(crate::RingFindType::SymmSssr, 0, 0));
-            cache.ring_families = Some(crate::RingInfo::new(crate::RingFindType::SymmSssr, 0, 0));
-            cache.aromaticity_valid = true;
-            cache.stereo_valid = true;
-        }
+        parts.set_valence_cache(crate::ValenceAssignment {
+            explicit_valence: Vec::new(),
+            implicit_hydrogens: Vec::new(),
+        });
+        parts.mark_aromaticity_valid();
 
-        parts.clear_cache(SANITIZED_SPEC.needs_update | DerivedState::ADJACENCY);
+        parts.clear_cache(SANITIZED_SPEC.needs_update());
         let result = parts
             .finish(OpOutcome::Changed)
             .expect("cache invalidation should satisfy operation contract");
 
         let cache = result.derived_cache();
-        assert!(cache.adjacency.is_none());
         assert!(cache.valence.is_none());
         assert!(cache.rings.is_none());
         assert!(cache.ring_families.is_none());
@@ -5563,27 +6443,16 @@ mod tests {
     fn needs_update_accepts_cache_updates_without_prior_clear() {
         let molecule = crate::Molecule::new();
         let mut parts = OpParts::new(&molecule, &SANITIZED_SPEC);
-        {
-            let cache = parts.derived_cache_mut();
-            cache.valence = Some(crate::ValenceAssignment {
-                explicit_valence: Vec::new(),
-                implicit_hydrogens: Vec::new(),
-            });
-            cache.rings = Some(crate::RingInfo::new(crate::RingFindType::SymmSssr, 0, 0));
-            cache.ring_families = Some(crate::RingInfo::new(crate::RingFindType::SymmSssr, 0, 0));
-            cache.aromaticity_valid = true;
-            cache.stereo_valid = true;
-        }
 
+        parts.set_rings_cache(crate::RingInfo::new(crate::RingFindType::SymmSssr, 0, 0));
         parts.set_valence_cache(crate::ValenceAssignment {
             explicit_valence: Vec::new(),
             implicit_hydrogens: Vec::new(),
         });
         parts.mark_aromaticity_valid();
-        parts.mark_stereo_handled();
         parts.clear_cache(
-            DerivedState::RINGS
-                | DerivedState::RING_FAMILIES
+            DerivedState::RING_FAMILIES
+                | DerivedState::STEREO
                 | DerivedState::DRAWING
                 | DerivedState::FINGERPRINT,
         );
@@ -5593,10 +6462,10 @@ mod tests {
 
         let cache = result.derived_cache();
         assert!(cache.valence.is_some());
-        assert!(cache.rings.is_none());
+        assert!(cache.rings.is_some());
         assert!(cache.ring_families.is_none());
         assert!(cache.aromaticity_valid);
-        assert!(cache.stereo_valid);
+        assert!(!cache.stereo_valid);
     }
 
     #[cfg(feature = "op-contracts")]
@@ -5642,28 +6511,79 @@ mod tests {
 
     #[cfg(feature = "op-contracts")]
     #[test]
-    fn finish_rejects_cleared_cache_when_must_handle_requires_update() {
+    fn finish_rejects_declared_preservation_without_proof() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &TEST_MUST_HANDLE_VALENCE_SPEC);
+        let mut parts = OpParts::new(&molecule, &WITH_HYDROGENS_SPEC);
+        let topology = parts.begin_topology_mut().unwrap();
+        let coordinates = parts.begin_coordinates_mut().unwrap();
+        let properties = parts.begin_properties_mut().unwrap();
 
-        parts.clear_cache(DerivedState::VALENCE);
+        parts.commit_topology(topology).unwrap();
+        parts.commit_coordinates(coordinates).unwrap();
+        parts.commit_properties(properties).unwrap();
+        parts
+            .record_topology_edit(TopologyEditKind::Appending)
+            .unwrap();
+        parts.record_topology_mapping(TopologyMapping::with_appended(0, 0, 0, 0));
+        parts.clear_cache(WITH_HYDROGENS_SPEC.needs_update());
+
         let err = parts
             .finish(OpOutcome::Changed)
-            .expect_err("must_handle valence requires an update path, not just clear");
+            .expect_err("declared preserve states require an explicit preservation proof");
 
         assert!(matches!(
             err,
             OperationError::InvalidInput {
-                message: "operation body did not handle every required derived state",
+                message: "operation body did not prove every declared preserved derived state",
+                ..
+            }
+        ));
+    }
+
+    #[cfg(feature = "op-contracts")]
+    #[test]
+    fn leaf_append_preservation_proof_rejects_non_leaf_appended_atom() {
+        let mut builder = crate::MoleculeBuilder::new();
+        builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let molecule = builder.build().unwrap();
+        let mut parts = OpParts::new(&molecule, &WITH_HYDROGENS_SPEC);
+        let mut topology = parts.begin_topology_mut().unwrap();
+        let coordinates = parts.begin_coordinates_mut().unwrap();
+        let properties = parts.begin_properties_mut().unwrap();
+
+        let appended = AtomId::new(topology.atoms.len());
+        topology.atoms.push(crate::Atom::from_spec(
+            appended,
+            crate::AtomSpec::new(crate::Element::H),
+        ));
+        parts.commit_topology(topology).unwrap();
+        parts.commit_coordinates(coordinates).unwrap();
+        parts.commit_properties(properties).unwrap();
+        parts
+            .record_topology_edit(TopologyEditKind::Appending)
+            .unwrap();
+        parts.record_topology_mapping(TopologyMapping::with_appended(1, 0, 1, 0));
+
+        let err = parts
+            .prove_preserved(
+                DerivedState::RINGS | DerivedState::RING_FAMILIES,
+                PreservationProof::LeafAtomAppend,
+            )
+            .expect_err("an appended atom with no appended leaf bond must not preserve rings");
+
+        assert!(matches!(
+            err,
+            OperationError::InvalidInput {
+                message: "leaf-append preservation proof requires every appended atom to be a degree-one leaf",
                 ..
             }
         ));
     }
 
     #[test]
-    fn finish_accepts_update_path_for_needs_update_and_must_handle() {
+    fn finish_accepts_update_path_for_recompute() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &TEST_MUST_HANDLE_VALENCE_SPEC);
+        let mut parts = OpParts::new(&molecule, &TEST_RECOMPUTE_VALENCE_SPEC);
 
         parts.set_valence_cache(crate::ValenceAssignment {
             explicit_valence: Vec::new(),
@@ -5671,7 +6591,7 @@ mod tests {
         });
         let result = parts
             .finish(OpOutcome::Changed)
-            .expect("setting valence cache should satisfy both needs_update and must_handle");
+            .expect("setting valence cache should satisfy recompute requirement");
 
         assert_eq!(
             result.derived_cache().valence,
@@ -5685,7 +6605,7 @@ mod tests {
 
     #[cfg(feature = "op-contracts")]
     #[test]
-    #[should_panic(expected = "attempted to mutate a block outside its registry permissions")]
+    #[should_panic(expected = "cache clear permission violation")]
     fn clear_cache_panics_without_derived_cache_permission_when_cache_is_touched() {
         let molecule = crate::Molecule::new();
         let mut parts = OpParts::new(&molecule, &WITH_2D_COORDINATES_SPEC);
@@ -5709,22 +6629,47 @@ mod tests {
             .expect("without op-contracts, needs_update checks are disabled");
     }
 
+    #[cfg(feature = "op-contracts")]
+    #[test]
+    #[should_panic(expected = "cache write permission violation")]
+    fn set_valence_cache_panics_without_requires_or_recompute() {
+        // WITH_2D_COORDINATES_SPEC has no requires/recompute — set_valence_cache must panic
+        let molecule = crate::Molecule::new();
+        let mut parts = OpParts::new(&molecule, &WITH_2D_COORDINATES_SPEC);
+        parts.set_valence_cache(crate::ValenceAssignment {
+            explicit_valence: Vec::new(),
+            implicit_hydrogens: Vec::new(),
+        });
+    }
+
+    #[cfg(feature = "op-contracts")]
+    #[test]
+    #[should_panic(expected = "cache clear permission violation")]
+    fn clear_cache_panics_without_invalidate_or_recompute() {
+        // TEST_RECOMPUTE_VALENCE_SPEC has VALENCE in recompute (not invalidate)
+        // RINGS is in neither invalidate nor recompute — clear_cache(DerivedState::RINGS) must panic
+        let molecule = crate::Molecule::new();
+        let mut parts = OpParts::new(&molecule, &TEST_RECOMPUTE_VALENCE_SPEC);
+        parts.clear_cache(DerivedState::RINGS);
+    }
+
     #[test]
     fn op_parts_cow_mutation_changes_result_without_changing_source() {
         let molecule = crate::Molecule::new();
         let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC);
 
-        {
-            let topology = parts.topology_mut();
-            topology.atoms.push(crate::Atom::from_spec(
-                crate::AtomId::new(0),
-                crate::AtomSpec::new(crate::Element::C),
-            ));
-        }
-        let valence = parts
-            .read_parts()
+        let mut topology = parts.begin_topology_mut().unwrap();
+        topology.atoms.push(crate::Atom::from_spec(
+            crate::AtomId::new(0),
+            crate::AtomSpec::new(crate::Element::C),
+        ));
+        let view = parts.read_parts_for_topology(topology.clone()).unwrap();
+        let valence = MoleculeReadParts::from_molecule(&view)
             .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
             .unwrap();
+        parts.commit_topology(topology).unwrap();
+        parts.record_topology_edit(TopologyEditKind::Local).unwrap();
+        parts.set_rings_cache(crate::RingInfo::new(crate::RingFindType::SymmSssr, 1, 0));
         parts.set_valence_cache(valence);
         parts.clear_cache(DerivedState::AROMATICITY);
         parts.clear_cache(DerivedState::DRAWING | DerivedState::FINGERPRINT);
@@ -5739,7 +6684,7 @@ mod tests {
     }
 
     #[test]
-    fn strong_remove_atoms_atomically_remaps_coordinates_and_records_mapping() {
+    fn compacting_edit_uses_begin_commit_blocks_and_records_mapping() {
         let mut builder = crate::Molecule::builder();
         let c0 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let o1 = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
@@ -5773,8 +6718,16 @@ mod tests {
         let original = molecule.clone();
 
         let mut parts = OpParts::new(&molecule, &WITHOUT_HYDROGENS_SPEC);
-        assert_eq!(parts.topology().atoms.len(), 3);
-        let mapping = parts.remove_atoms(&[o1]).unwrap();
+        let mut topology = parts.begin_topology_mut().unwrap();
+        let mut coordinates = parts.begin_coordinates_mut().unwrap();
+        let mut properties = parts.begin_properties_mut().unwrap();
+        let mapping = topology.remove_atoms_with_mapping(&[o1]);
+        coordinates.remap_topology(&mapping);
+        properties.remap_topology(&mapping);
+        parts
+            .record_topology_edit(TopologyEditKind::Compacting)
+            .unwrap();
+        parts.record_topology_mapping(mapping.clone());
         assert_eq!(
             mapping.atoms().old_to_new(),
             &[
@@ -5784,13 +6737,10 @@ mod tests {
             ]
         );
         assert_eq!(mapping.bonds().old_to_new(), &[None, None]);
-        let valence = parts
-            .read_parts()
-            .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
-            .unwrap();
-        parts.set_valence_cache(valence);
-        parts.mark_aromaticity_valid();
-        parts.mark_stereo_handled();
+        parts.clear_cache(WITHOUT_HYDROGENS_SPEC.needs_update());
+        parts.commit_topology(topology).unwrap();
+        parts.commit_coordinates(coordinates).unwrap();
+        parts.commit_properties(properties).unwrap();
 
         let result = parts
             .finish(OpOutcome::Changed)
@@ -5835,14 +6785,20 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let mut parts = OpParts::new(&molecule, &WITHOUT_HYDROGENS_SPEC);
-        parts.remove_atoms(&[n2]).unwrap();
-        let valence = parts
-            .read_parts()
-            .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
+        let mut topology = parts.begin_topology_mut().unwrap();
+        let mut coordinates = parts.begin_coordinates_mut().unwrap();
+        let mut properties = parts.begin_properties_mut().unwrap();
+        let mapping = topology.remove_atoms_with_mapping(&[n2]);
+        coordinates.remap_topology(&mapping);
+        properties.remap_topology(&mapping);
+        parts
+            .record_topology_edit(TopologyEditKind::Compacting)
             .unwrap();
-        parts.set_valence_cache(valence);
-        parts.mark_aromaticity_valid();
-        parts.mark_stereo_handled();
+        parts.record_topology_mapping(mapping);
+        parts.clear_cache(WITHOUT_HYDROGENS_SPEC.needs_update());
+        parts.commit_topology(topology).unwrap();
+        parts.commit_coordinates(coordinates).unwrap();
+        parts.commit_properties(properties).unwrap();
 
         let result = parts
             .finish(OpOutcome::Changed)
@@ -5900,12 +6856,38 @@ mod tests {
     }
 
     #[test]
-    fn compacting_topology_edit_is_rejected_for_weak_operations() {
+    fn compacting_topology_edit_record_is_rejected_for_weak_operations() {
         let molecule = crate::Molecule::new();
         let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC);
         let err = parts
-            .remove_atoms(&[crate::AtomId::new(0)])
-            .expect_err("weak operations must not compact topology");
+            .record_topology_edit(TopologyEditKind::Compacting)
+            .expect_err("weak operations must not record compacting topology edits");
         assert!(matches!(err, OperationError::InvalidInput { .. }));
+    }
+
+    #[test]
+    fn with_kekulized_bonds_uses_rdkit_wrapper_canonical_default_for_benzene() {
+        let molecule = crate::Molecule::from_smiles("C1=CC=CC=C1").unwrap();
+
+        let kekulized = molecule.with_kekulized_bonds(false).unwrap();
+        let bond_orders = kekulized
+            .bonds()
+            .iter()
+            .map(|bond| bond.order())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            bond_orders,
+            vec![
+                crate::BondOrder::Single,
+                crate::BondOrder::Double,
+                crate::BondOrder::Single,
+                crate::BondOrder::Double,
+                crate::BondOrder::Single,
+                crate::BondOrder::Double
+            ]
+        );
+        assert!(kekulized.bonds().iter().all(|bond| bond.is_aromatic()));
+        assert!(kekulized.atoms().iter().all(|atom| atom.is_aromatic()));
     }
 }

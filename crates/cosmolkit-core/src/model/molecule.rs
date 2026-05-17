@@ -256,12 +256,25 @@ impl SdfPropertyList {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TopologyBlock {
     pub(crate) atoms: Vec<Atom>,
     pub(crate) bonds: Vec<Bond>,
+    pub(crate) adjacency: crate::AdjacencyList,
     pub(crate) substance_groups: Vec<SubstanceGroup>,
     pub(crate) stereo_groups: Vec<StereoGroup>,
+}
+
+impl Default for TopologyBlock {
+    fn default() -> Self {
+        Self {
+            atoms: Vec::new(),
+            bonds: Vec::new(),
+            adjacency: crate::AdjacencyList::from_topology(0, &[]),
+            substance_groups: Vec::new(),
+            stereo_groups: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -278,7 +291,6 @@ pub(crate) struct CoordinateBlock {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct DerivedCacheBlock {
-    pub(crate) adjacency: Option<crate::AdjacencyList>,
     pub(crate) rings: Option<crate::RingInfo>,
     pub(crate) ring_families: Option<crate::RingInfo>,
     pub(crate) valence: Option<crate::ValenceAssignment>,
@@ -288,9 +300,6 @@ pub(crate) struct DerivedCacheBlock {
 
 impl DerivedCacheBlock {
     pub(crate) fn invalidate(&mut self, states: crate::DerivedState) {
-        if states.contains(crate::DerivedState::ADJACENCY) {
-            self.adjacency = None;
-        }
         if states.contains(crate::DerivedState::VALENCE) {
             self.valence = None;
         }
@@ -525,6 +534,7 @@ impl TopologyBlock {
 
         self.atoms = atoms;
         self.bonds = bonds;
+        self.adjacency = crate::AdjacencyList::from_topology(self.atoms.len(), &self.bonds);
 
         TopologyMapping {
             atoms: AtomMapping {
@@ -598,15 +608,35 @@ impl Molecule {
     }
 
     pub(crate) fn from_blocks(
-        topology: TopologyBlock,
+        mut topology: TopologyBlock,
         coordinates: CoordinateBlock,
         properties: MoleculeProperties,
     ) -> Result<Self, InvariantError> {
+        topology.adjacency =
+            crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
         let molecule = Self {
             topology: Arc::new(topology),
             coordinates: Arc::new(coordinates),
             properties: Arc::new(properties),
             derived_cache: Arc::new(DerivedCacheBlock::default()),
+        };
+        enforce_molecule_invariants(&molecule)?;
+        Ok(molecule)
+    }
+
+    pub(crate) fn from_operation_blocks(
+        mut topology: TopologyBlock,
+        coordinates: CoordinateBlock,
+        properties: MoleculeProperties,
+        derived_cache: DerivedCacheBlock,
+    ) -> Result<Self, InvariantError> {
+        topology.adjacency =
+            crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
+        let molecule = Self {
+            topology: Arc::new(topology),
+            coordinates: Arc::new(coordinates),
+            properties: Arc::new(properties),
+            derived_cache: Arc::new(derived_cache),
         };
         enforce_molecule_invariants(&molecule)?;
         Ok(molecule)
@@ -802,6 +832,10 @@ impl Molecule {
         Arc::make_mut(&mut self.topology)
     }
 
+    pub(crate) fn replace_topology_block(&mut self, topology: TopologyBlock) {
+        self.topology = Arc::new(topology);
+    }
+
     #[allow(dead_code)]
     pub(crate) fn coordinate_block(&self) -> &CoordinateBlock {
         &self.coordinates
@@ -810,6 +844,10 @@ impl Molecule {
     #[allow(dead_code)]
     pub(crate) fn coordinate_block_mut(&mut self) -> &mut CoordinateBlock {
         Arc::make_mut(&mut self.coordinates)
+    }
+
+    pub(crate) fn replace_coordinate_block(&mut self, coordinates: CoordinateBlock) {
+        self.coordinates = Arc::new(coordinates);
     }
 
     #[allow(dead_code)]
@@ -825,5 +863,9 @@ impl Molecule {
     #[allow(dead_code)]
     pub(crate) fn properties_mut(&mut self) -> &mut MoleculeProperties {
         Arc::make_mut(&mut self.properties)
+    }
+
+    pub(crate) fn replace_properties(&mut self, properties: MoleculeProperties) {
+        self.properties = Arc::new(properties);
     }
 }

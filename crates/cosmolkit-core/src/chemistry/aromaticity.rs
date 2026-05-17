@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     AdjacencyList, Atom, AtomId, Bond, BondOrder, Molecule, RingFindingError, RingInfo,
-    ValenceAssignment, ValenceError, ValenceModel, assign_valence, symmetrize_sssr,
+    ValenceAssignment, ValenceError, ValenceModel, assign_valence, read_parts::MoleculeReadParts,
+    symmetrize_sssr,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,35 +40,24 @@ type RingNeighborMap = BTreeMap<usize, Vec<usize>>;
 const MAX_FUSED_AROMATIC_RING_SIZE: usize = 24;
 
 struct AromaticityContext<'a> {
-    molecule: &'a Molecule,
+    atoms: &'a [Atom],
+    bonds: &'a [Bond],
     rings: &'a RingInfo,
-    adjacency: AdjacencyList,
+    adjacency: &'a AdjacencyList,
     valence: ValenceAssignment,
 }
 
 impl<'a> AromaticityContext<'a> {
     fn new(
-        molecule: &'a Molecule,
+        atoms: &'a [Atom],
+        bonds: &'a [Bond],
+        adjacency: &'a AdjacencyList,
         rings: &'a RingInfo,
+        valence: ValenceAssignment,
     ) -> Result<AromaticityContext<'a>, AromaticityError> {
-        let adjacency = molecule
-            .derived_cache()
-            .adjacency
-            .clone()
-            .map_or_else(
-                || AdjacencyList::try_from_topology(molecule.num_atoms(), molecule.bonds()),
-                Ok,
-            )
-            .map_err(|_| AromaticityError::UnsupportedBranch {
-                reason: "topology bond atom index out of range",
-            })?;
-        let valence = molecule
-            .derived_cache()
-            .valence
-            .clone()
-            .map_or_else(|| assign_valence(molecule, ValenceModel::RdkitLike), Ok)?;
         Ok(Self {
-            molecule,
+            atoms,
+            bonds,
             rings,
             adjacency,
             valence,
@@ -75,8 +65,7 @@ impl<'a> AromaticityContext<'a> {
     }
 
     fn atom(&self, atom: AtomId) -> Result<&'a Atom, AromaticityError> {
-        self.molecule
-            .atoms()
+        self.atoms
             .get(atom.index())
             .ok_or(AromaticityError::InvariantViolation {
                 message: "atom index out of range",
@@ -89,11 +78,11 @@ impl<'a> AromaticityContext<'a> {
             .neighbors_of(atom.index())
             .iter()
             .map(|neighbor| {
-                self.molecule.bonds().get(neighbor.bond.index()).ok_or(
-                    AromaticityError::InvariantViolation {
+                self.bonds
+                    .get(neighbor.bond.index())
+                    .ok_or(AromaticityError::InvariantViolation {
                         message: "bond index out of range",
-                    },
-                )
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?)
     }
@@ -127,7 +116,7 @@ impl<'a> AromaticityContext<'a> {
             .neighbors_of(begin.index())
             .iter()
             .find(|neighbor| neighbor.atom_index == end.index())
-            .and_then(|neighbor| self.molecule.bonds().get(neighbor.bond.index()))
+            .and_then(|neighbor| self.bonds.get(neighbor.bond.index()))
     }
 }
 
@@ -147,6 +136,38 @@ pub fn set_aromaticity(
     molecule: &Molecule,
     model: AromaticityModel,
 ) -> Result<AromaticityAssignment, AromaticityError> {
+    set_aromaticity_from_parts(
+        molecule.atoms(),
+        molecule.bonds(),
+        &molecule.topology_block().adjacency,
+        molecule.derived_cache().rings.as_ref(),
+        molecule.derived_cache().valence.as_ref(),
+        model,
+    )
+}
+
+pub(crate) fn set_aromaticity_from_read_parts(
+    read: MoleculeReadParts<'_>,
+    model: AromaticityModel,
+) -> Result<AromaticityAssignment, AromaticityError> {
+    set_aromaticity_from_parts(
+        read.atoms(),
+        read.bonds(),
+        read.adjacency(),
+        read.derived_cache().rings.as_ref(),
+        read.derived_cache().valence.as_ref(),
+        model,
+    )
+}
+
+pub(crate) fn set_aromaticity_from_parts(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    cached_rings: Option<&RingInfo>,
+    cached_valence: Option<&ValenceAssignment>,
+    model: AromaticityModel,
+) -> Result<AromaticityAssignment, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::setAromaticity
     // RDKit✔️✔️: int setAromaticity(RWMol &mol, AromaticityModel model, int (*func)(RWMol &)) {
     // RDKit✔️✔️:   // This function used to check if the input molecule came
@@ -160,11 +181,19 @@ pub fn set_aromaticity(
     // RDKit✔️✔️:   } else {
     // RDKit✔️✔️:     MolOps::symmetrizeSSSR(mol, srings);
     // RDKit✔️✔️:   }
-    let rings = molecule
-        .derived_cache()
-        .rings
-        .clone()
-        .map_or_else(|| symmetrize_sssr(molecule), Ok)?;
+    let owned_rings;
+    let rings = if let Some(rings) = cached_rings {
+        rings
+    } else {
+        owned_rings = crate::rings::symmetrize_sssr_with_options_from_parts(
+            atoms.len(),
+            bonds,
+            adjacency,
+            false,
+            false,
+        )?;
+        &owned_rings
+    };
     // RDKit✔️✔️:
     // RDKit✔️✔️:   int res;
     // RDKit✔️✔️:   switch (model) {
@@ -173,21 +202,41 @@ pub fn set_aromaticity(
         // RDKit✔️✔️:     case AROMATICITY_RDKIT:
         // RDKit✔️✔️:       res = aromaticityHelper(mol, srings, 0, 0, true);
         // RDKit✔️✔️:       break;
-        AromaticityModel::Default | AromaticityModel::Rdkit => {
-            aromaticity_helper(molecule, &rings, 0, 0, true)
-        }
+        AromaticityModel::Default | AromaticityModel::Rdkit => aromaticity_helper_from_parts(
+            atoms,
+            bonds,
+            adjacency,
+            cached_valence,
+            rings,
+            0,
+            0,
+            true,
+        ),
         // RDKit✔️✔️:     case AROMATICITY_SIMPLE:
         // RDKit✔️✔️:       res = aromaticityHelper(mol, srings, 5, 6, false);
         // RDKit✔️✔️:       break;
-        AromaticityModel::Simple => aromaticity_helper(molecule, &rings, 5, 6, false),
+        AromaticityModel::Simple => aromaticity_helper_from_parts(
+            atoms,
+            bonds,
+            adjacency,
+            cached_valence,
+            rings,
+            5,
+            6,
+            false,
+        ),
         // RDKit✔️✔️:     case AROMATICITY_MDL:
         // RDKit✔️✔️:       res = mdlAromaticityHelper(mol, srings);
         // RDKit✔️✔️:       break;
-        AromaticityModel::Mdl => mdl_aromaticity_helper(molecule, &rings),
+        AromaticityModel::Mdl => {
+            mdl_aromaticity_helper_from_parts(atoms, bonds, adjacency, cached_valence, rings)
+        }
         // RDKit✔️✔️:     case AROMATICITY_MMFF94:
         // RDKit✔️✔️:       res = mmff94AromaticityHelper(mol, srings);
         // RDKit✔️✔️:       break;
-        AromaticityModel::Mmff94 => mmff94_aromaticity_helper(molecule, &rings),
+        AromaticityModel::Mmff94 => {
+            mmff94_aromaticity_helper_from_parts(atoms, bonds, adjacency, cached_valence, rings)
+        }
         // RDKit✔️✔️:     case AROMATICITY_CUSTOM:
         // RDKit✔️✔️:       PRECONDITION(
         // RDKit✔️✔️:           func,
@@ -209,6 +258,28 @@ pub fn set_aromaticity(
 #[allow(dead_code)]
 fn aromaticity_helper(
     molecule: &Molecule,
+    rings: &RingInfo,
+    min_ring_size: usize,
+    max_ring_size: usize,
+    include_fused: bool,
+) -> Result<AromaticityAssignment, AromaticityError> {
+    aromaticity_helper_from_parts(
+        molecule.atoms(),
+        molecule.bonds(),
+        &molecule.topology_block().adjacency,
+        molecule.derived_cache().valence.as_ref(),
+        rings,
+        min_ring_size,
+        max_ring_size,
+        include_fused,
+    )
+}
+
+fn aromaticity_helper_from_parts(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    cached_valence: Option<&ValenceAssignment>,
     rings: &RingInfo,
     min_ring_size: usize,
     max_ring_size: usize,
@@ -333,18 +404,29 @@ fn aromaticity_helper(
     // END RDKIT CPP FUNCTION aromaticityHelper
     if rings.num_rings() == 0 {
         return Ok(AromaticityAssignment {
-            atom_aromatic: vec![false; molecule.num_atoms()],
-            bond_aromatic: vec![false; molecule.num_bonds()],
+            atom_aromatic: vec![false; atoms.len()],
+            bond_aromatic: vec![false; bonds.len()],
             aromatic_ring_count: 0,
         });
     }
-    let context = AromaticityContext::new(molecule, rings)?;
-    let mut atom_aromatic = vec![false; molecule.num_atoms()];
-    let mut bond_aromatic = vec![false; molecule.num_bonds()];
+    let valence = if let Some(valence) = cached_valence {
+        valence.clone()
+    } else {
+        crate::valence::assign_valence_with_options_from_parts(
+            atoms,
+            bonds,
+            adjacency,
+            ValenceModel::RdkitLike,
+            true,
+        )?
+    };
+    let context = AromaticityContext::new(atoms, bonds, adjacency, rings, valence)?;
+    let mut atom_aromatic = vec![false; atoms.len()];
+    let mut bond_aromatic = vec![false; bonds.len()];
     let mut aromatic_ring_count = 0usize;
-    let mut atom_candidates = vec![false; molecule.num_atoms()];
-    let mut atom_seen = vec![false; molecule.num_atoms()];
-    let mut electron_donors = vec![ElectronDonorType::None; molecule.num_atoms()];
+    let mut atom_candidates = vec![false; atoms.len()];
+    let mut atom_seen = vec![false; atoms.len()];
+    let mut electron_donors = vec![ElectronDonorType::None; atoms.len()];
     let mut candidate_rings = Vec::new();
 
     for ring in rings.atom_rings() {
@@ -396,7 +478,7 @@ fn aromaticity_helper(
         for ring_index in 0..candidate_rings.len() {
             let fused = vec![ring_index];
             apply_huckel_to_fused(
-                molecule.num_atoms(),
+                atoms.len(),
                 &candidate_rings,
                 &bond_rings,
                 &fused,
@@ -405,7 +487,7 @@ fn aromaticity_helper(
                 &mut aromatic_ring_count,
                 6,
                 min_ring_size,
-                molecule.bonds(),
+                bonds,
                 &mut atom_aromatic,
                 &mut bond_aromatic,
             )?;
@@ -419,7 +501,7 @@ fn aromaticity_helper(
             let mut fused = Vec::new();
             pick_fused_rings(current, &neighbor_map, &mut fused, &mut fused_done, 0)?;
             apply_huckel_to_fused(
-                molecule.num_atoms(),
+                atoms.len(),
                 &candidate_rings,
                 &bond_rings,
                 &fused,
@@ -428,7 +510,7 @@ fn aromaticity_helper(
                 &mut aromatic_ring_count,
                 6,
                 0,
-                molecule.bonds(),
+                bonds,
                 &mut atom_aromatic,
                 &mut bond_aromatic,
             )?;
@@ -647,6 +729,22 @@ fn mdl_aromaticity_helper(
     molecule: &Molecule,
     rings: &RingInfo,
 ) -> Result<AromaticityAssignment, AromaticityError> {
+    mdl_aromaticity_helper_from_parts(
+        molecule.atoms(),
+        molecule.bonds(),
+        &molecule.topology_block().adjacency,
+        molecule.derived_cache().valence.as_ref(),
+        rings,
+    )
+}
+
+fn mdl_aromaticity_helper_from_parts(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    cached_valence: Option<&ValenceAssignment>,
+    rings: &RingInfo,
+) -> Result<AromaticityAssignment, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION mdlAromaticityHelper
     // RDKit✔️✔️: int mdlAromaticityHelper(RWMol &mol, const VECT_INT_VECT &srings) {
     // RDKit✔️✔️:   int narom = 0;
@@ -663,12 +761,28 @@ fn mdl_aromaticity_helper(
     // RDKit✔️✔️:   aromaticity_helper(molecule, rings, 0, 0, true)
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION mdlAromaticityHelper
-    aromaticity_helper(molecule, rings, 0, 0, true)
+    aromaticity_helper_from_parts(atoms, bonds, adjacency, cached_valence, rings, 0, 0, true)
 }
 
 #[allow(dead_code)]
 fn mmff94_aromaticity_helper(
     molecule: &Molecule,
+    rings: &RingInfo,
+) -> Result<AromaticityAssignment, AromaticityError> {
+    mmff94_aromaticity_helper_from_parts(
+        molecule.atoms(),
+        molecule.bonds(),
+        &molecule.topology_block().adjacency,
+        molecule.derived_cache().valence.as_ref(),
+        rings,
+    )
+}
+
+fn mmff94_aromaticity_helper_from_parts(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    cached_valence: Option<&ValenceAssignment>,
     rings: &RingInfo,
 ) -> Result<AromaticityAssignment, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION mmff94AromaticityHelper
@@ -707,7 +821,7 @@ fn mmff94_aromaticity_helper(
     // RDKit✔️✔️:   return narom;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION mmff94AromaticityHelper
-    let result = set_mmff_aromaticity(molecule, rings)?;
+    let result = set_mmff_aromaticity_from_parts(atoms, bonds, adjacency, cached_valence, rings)?;
     // Count aromatic rings
     let mut aromatic_ring_count = 1usize;
     for ring in rings.atom_rings() {
@@ -725,6 +839,22 @@ fn mmff94_aromaticity_helper(
 #[allow(dead_code)]
 fn set_mmff_aromaticity(
     molecule: &Molecule,
+    rings: &RingInfo,
+) -> Result<AromaticityAssignment, AromaticityError> {
+    set_mmff_aromaticity_from_parts(
+        molecule.atoms(),
+        molecule.bonds(),
+        &molecule.topology_block().adjacency,
+        molecule.derived_cache().valence.as_ref(),
+        rings,
+    )
+}
+
+fn set_mmff_aromaticity_from_parts(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    cached_valence: Option<&ValenceAssignment>,
     rings: &RingInfo,
 ) -> Result<AromaticityAssignment, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::setMMFFAromaticity
@@ -901,8 +1031,19 @@ fn set_mmff_aromaticity(
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION MolOps::setMMFFAromaticity
-    let context = AromaticityContext::new(molecule, rings)?;
-    let num_atoms = molecule.num_atoms();
+    let valence = if let Some(valence) = cached_valence {
+        valence.clone()
+    } else {
+        crate::valence::assign_valence_with_options_from_parts(
+            atoms,
+            bonds,
+            adjacency,
+            ValenceModel::RdkitLike,
+            false,
+        )?
+    };
+    let context = AromaticityContext::new(atoms, bonds, adjacency, rings, valence)?;
+    let num_atoms = atoms.len();
     let atom_rings = rings.atom_rings();
     let ring_count = atom_rings.len();
 
@@ -1056,7 +1197,7 @@ fn set_mmff_aromaticity(
 
     // Build aromaticity assignment
     let mut atom_aromatic = vec![false; num_atoms];
-    let mut bond_aromatic = vec![false; molecule.num_bonds()];
+    let mut bond_aromatic = vec![false; bonds.len()];
     let mut aromatic_ring_count = 0usize;
 
     // Mark bonds as aromatic for each aromatic ring
@@ -2136,7 +2277,6 @@ mod tests {
         let molecule = Molecule::from_smiles_with_sanitize("CCO", false).unwrap();
         let result = molecule.with_assigned_aromaticity().unwrap();
 
-        assert!(result.derived_cache().adjacency.is_some());
         assert!(result.derived_cache().rings.is_some());
         assert!(result.derived_cache().valence.is_some());
         assert!(result.derived_cache().aromaticity_valid);

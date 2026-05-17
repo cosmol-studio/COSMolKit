@@ -102,8 +102,7 @@ impl_fn
 domain
 kind
 may_mutate
-must_handle
-needs_update
+derived_effects
 requires_mapping
 allows_noop
 feature
@@ -142,18 +141,22 @@ Do not add per-operation parts structs or manual capability combinations.
 OpParts::new clones Molecule cheaply by cloning Arc-backed blocks.
 It must not eagerly clone topology, coordinates, properties, conformers, caches,
 or other large molecule data.
-Large block cloning happens only through COW accessors such as topology_mut().
+Large block cloning happens only through registry-checked begin methods such as
+`begin_topology_mut()`.
 ```
 
 Operation bodies must access mutable molecule state only through `OpParts`
 methods:
 
 ```text
-topology()
-topology_mut()
-coordinates_mut()
-properties_mut()
-remove_atoms(...)
+begin_topology_mut()
+commit_topology(...)
+begin_coordinates_mut()
+commit_coordinates(...)
+begin_properties_mut()
+commit_properties(...)
+record_topology_edit(...)
+record_topology_mapping(...)
 recompute_aromaticity()
 recompute_valence()
 recompute_stereo()
@@ -165,13 +168,13 @@ finish(...)
 not add chemistry, perception, sanitization, or operation-specific behavior to
 `OpParts`. New operation behavior belongs in the operation `impl_fn` or in a
 domain module called by that `impl_fn`; `OpParts` should only apply state
-changes, perform COW access, remap registered blocks, record reports, and
-validate the operation contract.
+changes, perform COW access, remap registered blocks, record topology mapping
+artifacts, record derived-state effects, and validate the operation contract.
 
-`topology_mut()` is only for local topology-state edits that do not change atom
-or bond table length, ordering, or identity. Examples include changing bond
-order, aromatic flags, charges, isotope state, query state, or other local
-atom/bond attributes.
+`begin_topology_mut()` / `commit_topology(...)` are used for local
+topology-state edits that do not change atom or bond table length, ordering, or
+identity. Examples include changing bond order, aromatic flags, charges,
+isotope state, query state, or other local atom/bond attributes.
 
 The same boundary applies to `BioOpParts`: BioStructure operation bodies should
 compute selection/transform intent and call explicit migration primitives such
@@ -198,13 +201,12 @@ need exists. The detailed rule is in
 plan is in
 [`pdb_mmcif_gemmi_primary_plan.md`](./pdb_mmcif_gemmi_primary_plan.md).
 
-Compacting or renumbering topology edits must not be hand-written as a sequence
-of `topology_mut()`, coordinate remap, property remap, report, and invalidation
-steps. Operations that remove atoms/bonds, compact topology, renumber atoms, or
-merge molecules must use dedicated `OpParts` APIs such as `remove_atoms(...)`.
-Those APIs are responsible for producing `TopologyMapping`, remapping every
-registry-required block, recording reports, and invalidating registry-required
-derived state.
+Compacting, appending, or renumbering topology edits must use the operation
+begin/commit discipline. Operation bodies begin each registry write-owned block
+once, mutate the owned local blocks, commit them once, and record the declared
+topology edit, topology mapping artifact, and cache/handled-state effects
+through `OpParts`. They must not mutate `Molecule` internals directly or mix
+whole-molecule read views with independently writable blocks.
 
 The registry contract for strong topology edits must declare the state migration
 surface explicitly:
@@ -213,7 +215,6 @@ surface explicitly:
 topology_edit: compacting
 auto_remap: [coordinates]
 requires_mapping: required
-report: [atom_mapping, bond_mapping]
 ```
 
 In development and CI, `OpParts` checks `MoleculeOpSpec::may_mutate` with
@@ -229,5 +230,6 @@ accessors and COW storage model; it only omits development checks.
 - [`policy_invariants.md`](./policy_invariants.md): project policy invariants
 - [`testing_contract.md`](./testing_contract.md): policy-to-test mapping
 - [`topology_operations.md`](./topology_operations.md): topology operation rules
-- [`Macro-ControlledStateMigrationDesign.md`](./Macro-ControlledStateMigrationDesign.md): registry and macro-controlled operation design
+- [`operation_system_standard.md`](./operation_system_standard.md): normative
+  operation registry, `OpParts`, COW, and state-migration standard
 - [`PARITY_TESTING_CONTRACT.md`](./PARITY_TESTING_CONTRACT.md): RDKit parity testing contract

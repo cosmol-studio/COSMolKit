@@ -198,6 +198,11 @@ pub enum SmilesWriteError {
         permutation: u32,
         limit: u32,
     },
+    #[error("invalid ring stereochemistry state on atom {atom}: {requirement}")]
+    InvalidRingStereoState {
+        atom: usize,
+        requirement: &'static str,
+    },
     #[error("internal SMILES writer invariant violated in {stage}: {message}")]
     InvariantViolation {
         stage: &'static str,
@@ -209,8 +214,9 @@ pub enum SmilesWriteError {
 struct SmilesWriteContext {
     atom_output_order: Vec<AtomId>,
     bond_output_order: Vec<BondId>,
-    ring_closure_digits: BTreeMap<BondId, usize>,
-    ring_closures_to_erase: Vec<BondId>,
+    ring_closure_digits: BTreeMap<usize, usize>,
+    ring_closures_to_erase: Vec<usize>,
+    chiral_tag_overrides: BTreeMap<AtomId, ChiralTag>,
     chiral_inversions: BTreeSet<AtomId>,
     chiral_permutations: BTreeMap<AtomId, u32>,
     broken_chiral_atoms: BTreeSet<AtomId>,
@@ -256,7 +262,7 @@ impl CxWriteScope {
 enum MolStackElem {
     Atom(AtomId),
     Bond(BondId, AtomId),
-    Ring(BondId),
+    Ring { bond: BondId, ring_idx: usize },
     BranchOpen,
     BranchClose,
 }
@@ -264,6 +270,8 @@ enum MolStackElem {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct CanonicalTraversalResult {
     stack: Vec<MolStackElem>,
+    traversal_ring_closure_bonds: Vec<bool>,
+    chiral_tag_overrides: BTreeMap<AtomId, ChiralTag>,
     chiral_inversions: BTreeSet<AtomId>,
     chiral_permutations: BTreeMap<AtomId, u32>,
     broken_chiral_atoms: BTreeSet<AtomId>,
@@ -456,20 +464,11 @@ fn mol_to_smiles_with_mode(
         return Ok(String::new());
     }
 
-    // Apply kekulization if requested, so that aromatic flags are cleared
-    // and bond orders are resolved before fragment planning.
-    let mut molecule = if params.do_kekule {
-        kekulize_for_smiles(molecule)?
-    } else {
-        molecule.clone()
-    };
+    let mut molecule = molecule.clone();
 
     let mut context = SmilesWriteContext::default();
     let mut fragment_results = Vec::new();
     let mut working_params = params.clone();
-    // do_kekule already handled; disable to prevent double-processing in
-    // prepare functions.
-    working_params.do_kekule = false;
 
     let saved_atom_maps = match mode {
         SmilesOutputMode::PlainSmiles => {
@@ -489,18 +488,47 @@ fn mol_to_smiles_with_mode(
     };
 
     let fragment_plans = collect_fragment_write_plans(&molecule, &working_params)?;
+    let fragment_ranks = fragment_plans
+        .iter()
+        .map(|plan| rank_fragment_atoms_for_smiles(&molecule, plan, &working_params, mode))
+        .collect::<Result<Vec<_>, _>>()?;
+    // RDKit✔️✔️:       if (params.ignoreAtomMapNumbers) {
+    // RDKit✔️✔️:         for (auto atom : tmol->atoms()) {
+    // RDKit✔️✔️:           atom->setAtomMapNum(atomMapNums[atom->getIdx()]);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    //
+    // RDKit restores atom maps immediately after canonical traversal ranking
+    // and before FragmentSmilesConstruct(), whose doKekule branch calls
+    // KekulizeFragment(). That means canonical kekulization still ranks with
+    // the original atom maps even when ignoreAtomMapNumbers=true.
     if working_params.canonical {
         restore_atom_maps_after_canonical_smiles(&mut molecule, saved_atom_maps.as_deref());
     }
-    for plan in &fragment_plans {
-        fragment_results.push(write_fragment_smiles(
+    if params.do_kekule {
+        molecule = kekulize_for_smiles(&molecule)?;
+    }
+    // do_kekule already handled on the working molecule; keep the rest of the
+    // writer on the post-kekulization topology without re-running that stage.
+    working_params.do_kekule = false;
+    for (plan, ranks) in fragment_plans.iter().zip(fragment_ranks.iter()) {
+        if working_params.canonical {
+            restore_atom_maps_after_canonical_smiles(&mut molecule, saved_atom_maps.as_deref());
+        }
+        fragment_results.push(write_fragment_smiles_with_ranks(
             &mut molecule,
             plan,
+            &ranks,
             &working_params,
-            mode,
             SmilesWriteOverrides::default(),
             &mut context,
         )?);
+        if working_params.canonical && saved_atom_maps.is_some() {
+            let _ = stash_and_clear_atom_maps_for_smiles(&mut molecule, &working_params);
+        }
+    }
+    if working_params.canonical {
+        restore_atom_maps_after_canonical_smiles(&mut molecule, saved_atom_maps.as_deref());
     }
 
     let mut result = assemble_fragment_smiles(fragment_results, &working_params, &mut context)?;
@@ -570,9 +598,12 @@ fn prepare_plain_smiles_molecule(
     if is_minimal_plain_smiles_path(params) && validate_minimal_plain_smiles_molecule(molecule) {
         return Ok(saved_atom_maps);
     }
+    clear_fragment_temp_molecule_computed_stereo_props_for_writer(molecule);
     update_property_cache_for_smiles(molecule)?;
     if params.do_isomeric_smiles {
-        assign_stereochemistry_for_smiles(molecule, params.clean_stereo)?;
+        if molecule.prop("_StereochemDone").is_none() {
+            assign_stereochemistry_for_smiles(molecule, params.clean_stereo)?;
+        }
     }
     // Kekulization is handled upstream in mol_to_smiles_with_mode before
     // this function is called.
@@ -584,6 +615,10 @@ fn prepare_plain_smiles_molecule(
     }
     if !params.include_dative_bonds {
         normalize_dative_bonds_for_plain_smiles(molecule)?;
+    }
+    if !params.do_isomeric_smiles {
+        // RDKit plain non-isomeric SMILES suppresses bond-direction output.
+        crate::notation::smiles::clear_all_bond_dir_flags(molecule);
     }
     remove_plain_smiles_only_cx_state(molecule)?;
     Ok(saved_atom_maps)
@@ -602,16 +637,21 @@ fn prepare_cx_smiles_molecule(
         // CX still needs CX-specific cleanup below; the fast path only skips
         // property/stereo preparation for the simplest typed molecule state.
     } else {
+        clear_fragment_temp_molecule_computed_stereo_props_for_writer(molecule);
         update_property_cache_for_smiles(molecule)?;
         if params.do_isomeric_smiles {
-            assign_stereochemistry_for_smiles(molecule, params.clean_stereo)?;
+            if molecule.prop("_StereochemDone").is_none() {
+                assign_stereochemistry_for_smiles(molecule, params.clean_stereo)?;
+            }
         }
     }
     normalize_dative_bonds_for_cx_smiles(molecule)?;
     normalize_hydrogen_bonds_for_cx_smiles(molecule)?;
     apply_cx_bond_direction_policy(molecule, restore_bond_dirs)?;
     if params.clean_stereo {
-        assign_stereochemistry_for_smiles(molecule, true)?;
+        if molecule.prop("_StereochemDone").is_none() {
+            assign_stereochemistry_for_smiles(molecule, true)?;
+        }
         cleanup_stereo_groups_for_cx_smiles(molecule)?;
     }
     if include_stereo_groups {
@@ -736,6 +776,17 @@ fn write_fragment_smiles(
     context: &mut SmilesWriteContext,
 ) -> Result<FragmentWriteResult, SmilesWriteError> {
     let ranks = rank_fragment_atoms_for_smiles(molecule, plan, params, mode)?;
+    write_fragment_smiles_with_ranks(molecule, plan, &ranks, params, overrides, context)
+}
+
+fn write_fragment_smiles_with_ranks(
+    molecule: &mut Molecule,
+    plan: &FragmentWritePlan,
+    ranks: &[usize],
+    params: &SmilesWriteParams,
+    overrides: SmilesWriteOverrides<'_>,
+    context: &mut SmilesWriteContext,
+) -> Result<FragmentWriteResult, SmilesWriteError> {
     let start_atom = choose_fragment_start_atom(plan, &ranks, params)?;
     fragment_smiles_construct(
         molecule, plan, start_atom, &ranks, params, overrides, context,
@@ -758,9 +809,17 @@ fn fragment_smiles_construct(
     }
     let traversal =
         canonicalize_fragment_stack(molecule, plan, start_atom, ranks, params, overrides)?;
-    if params.do_isomeric_smiles {
-        canonicalize_double_bond_directions_for_writer(molecule, &traversal.stack)?;
-    }
+    canonicalize_double_bond_directions_for_writer(
+        molecule,
+        &traversal.stack,
+        &traversal.traversal_ring_closure_bonds,
+    )?;
+    context.chiral_tag_overrides.extend(
+        traversal
+            .chiral_tag_overrides
+            .iter()
+            .map(|(atom, tag)| (*atom, *tag)),
+    );
     context
         .chiral_inversions
         .extend(traversal.chiral_inversions.iter().copied());
@@ -782,12 +841,21 @@ fn rank_fragment_atoms_for_smiles(
     params: &SmilesWriteParams,
     mode: SmilesOutputMode,
 ) -> Result<Vec<usize>, SmilesWriteError> {
+    // BEGIN RDKIT CPP FUNCTION SmilesWrite non-canonical rank initialization
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       std::iota(ranks.begin(), ranks.end(), 0);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < tmol.getNumAtoms(); ++i) {
+    // RDKit✔️✔️:       ranks[i] = i;
+    // RDKit✔️✔️:     }
+    // END RDKIT CPP FUNCTION SmilesWrite non-canonical rank initialization
     // RDKit canonical mode still computes canonical ranks when rootedAtAtom
     // is provided; rootedAtAtom only overrides traversal start.
     if params.canonical && !params.do_random {
         return rank_mol_atoms_for_smiles(molecule, plan, params, mode);
     }
-    Ok((0..plan.atoms.len()).collect())
+    let _ = molecule;
+    Ok(plan.atoms.iter().map(|atom| atom.index()).collect())
 }
 
 fn rank_mol_atoms_for_smiles(
@@ -798,13 +866,29 @@ fn rank_mol_atoms_for_smiles(
 ) -> Result<Vec<usize>, SmilesWriteError> {
     let _stage = SmilesPlanStage::LongTermCanonicalRanking;
     let _ = mode;
+    // BEGIN RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles canonical rank options
+    // RDKit✔️✔️:       const bool includeChiralPresence = false;
+    // RDKit✔️✔️:       const bool includeIsotopes = params.doIsomericSmiles;
+    // RDKit✔️✔️:       ;
+    // RDKit✔️✔️:       const bool includeChirality = params.doIsomericSmiles;
+    // RDKit✔️✔️:       ;
+    // RDKit✔️✔️:       const bool includeStereoGroups = params.doIsomericSmiles;
+    // RDKit✔️✔️:       ;
+    // RDKit✔️✔️:       const bool useNonStereoRanks = false;
+    // RDKit✔️✔️:       const bool includeAtomMaps = true;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       Canon::rankMolAtoms(*tmol, ranks, breakTies, includeChirality,
+    // RDKit✔️✔️:                           includeIsotopes, includeAtomMaps,
+    // RDKit✔️✔️:                           includeChiralPresence, includeStereoGroups,
+    // RDKit✔️✔️:                           useNonStereoRanks);
+    // END RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles canonical rank options
     let ranks = crate::canon_rank::rank_mol_atoms_with_options(
         molecule,
         crate::canon_rank::CanonicalRankOptions {
             break_ties: true,
             include_chirality: params.do_isomeric_smiles,
-            include_isotopes: true,
-            include_atom_maps: !params.ignore_atom_map_numbers,
+            include_isotopes: params.do_isomeric_smiles,
+            include_atom_maps: true,
             include_chiral_presence: false,
             include_stereo_groups: params.do_isomeric_smiles,
             use_non_stereo_ranks: false,
@@ -882,6 +966,7 @@ fn canonicalize_fragment_stack(
         start_atom,
         ranks,
         params.do_isomeric_smiles,
+        params.clean_stereo,
         params.do_random,
         overrides.bond_symbols,
     )
@@ -957,8 +1042,8 @@ fn write_mol_stack(
                 }
                 result.bond_ordering.push(bond);
             }
-            MolStackElem::Ring(bond) => {
-                write_ring_closure(&mut result.smiles, bond, context)?;
+            MolStackElem::Ring { ring_idx, .. } => {
+                write_ring_closure(&mut result.smiles, ring_idx, context)?;
             }
             MolStackElem::BranchOpen => {
                 result.smiles.push('(');
@@ -1228,7 +1313,15 @@ pub fn get_atom_smiles(
     params: &SmilesWriteParams,
 ) -> Result<String, SmilesWriteError> {
     validate_atom_index(molecule, atom)?;
-    get_atom_smiles_impl(molecule, AtomId::new(atom), params, false, None, false)
+    get_atom_smiles_impl(
+        molecule,
+        AtomId::new(atom),
+        params,
+        None,
+        false,
+        None,
+        false,
+    )
 }
 
 fn get_atom_smiles_with_context(
@@ -1241,6 +1334,7 @@ fn get_atom_smiles_with_context(
         molecule,
         atom,
         params,
+        context.chiral_tag_overrides.get(&atom).copied(),
         context.chiral_inversions.contains(&atom),
         context.chiral_permutations.get(&atom).copied(),
         context.broken_chiral_atoms.contains(&atom),
@@ -1251,6 +1345,7 @@ fn get_atom_smiles_impl(
     molecule: &Molecule,
     atom_id: AtomId,
     params: &SmilesWriteParams,
+    chiral_tag_override: Option<ChiralTag>,
     invert_chirality: bool,
     chiral_permutation_override: Option<u32>,
     broken_chirality: bool,
@@ -1334,6 +1429,7 @@ fn get_atom_smiles_impl(
         get_atom_chirality_info_with_inversion(
             molecule,
             atom_id,
+            chiral_tag_override,
             invert_chirality,
             chiral_permutation_override,
         )?
@@ -1654,6 +1750,12 @@ fn total_num_hydrogens_for_writer(molecule: &Molecule, atom_id: AtomId) -> u32 {
         .unwrap_or(0)
         .max(0) as u32;
     explicit + implicit
+}
+
+fn total_valence_for_writer(molecule: &Molecule, atom_id: AtomId) -> Option<i32> {
+    molecule.derived_cache().valence.as_ref().map(|valence| {
+        valence.explicit_valence[atom_id.index()] + valence.implicit_hydrogens[atom_id.index()]
+    })
 }
 
 #[must_use]
@@ -2037,6 +2139,12 @@ fn write_cx_atom_props(molecule: &Molecule, atom_order: &[AtomId]) -> String {
         let is_attachment_point =
             atom.atomic_number() == 0 && atom.prop("_fromAttachPoint").is_some();
         for (prop_name, prop_value) in atom.props() {
+            // RDKit getPropList(includePrivate=false, includeComputed=false)
+            // excludes underscore-prefixed writer-internal/cache props from
+            // CX atomProp emission.
+            if prop_name.starts_with('_') {
+                continue;
+            }
             if skip.contains(&prop_name.as_str()) || prop_name == "molAtomMapNumber" {
                 continue;
             }
@@ -3150,18 +3258,20 @@ fn writer_sgroup_parent_value(sgroup: &crate::SubstanceGroup) -> Option<usize> {
 fn get_atom_chirality_info_with_inversion(
     molecule: &Molecule,
     atom: AtomId,
+    chiral_tag_override: Option<ChiralTag>,
     invert: bool,
     permutation_override: Option<u32>,
 ) -> Result<String, SmilesWriteError> {
     let atom = &molecule.atoms()[atom.index()];
+    let base_chiral_tag = chiral_tag_override.unwrap_or_else(|| atom.chiral_tag());
     let chiral_tag = if invert {
-        match atom.chiral_tag() {
+        match base_chiral_tag {
             ChiralTag::TetrahedralCw => ChiralTag::TetrahedralCcw,
             ChiralTag::TetrahedralCcw => ChiralTag::TetrahedralCw,
             other => other,
         }
     } else {
-        atom.chiral_tag()
+        base_chiral_tag
     };
     match chiral_tag {
         ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw => {
@@ -3299,18 +3409,35 @@ fn atom_needs_bracket(
     {
         return Ok(true);
     }
-    // Check for non-standard valence (RDKit: nonStandard = totalValence != defaultVs.front() && totalNumHs)
+    // RDKit✔️✔️:   const INT_VECT &defaultVs = PeriodicTable::getTable()->getValenceList(num);
+    // RDKit✔️✔️:   int totalValence = atom->getTotalValence();
+    // RDKit✔️✔️:   bool nonStandard = false;
+    // RDKit✔️✔️:   if (atom->getNumRadicalElectrons()) {
+    // RDKit✔️✔️:     nonStandard = true;
+    // RDKit✔️✔️:   } else if ((num == 7 || num == 15) && atom->getIsAromatic() &&
+    // RDKit✔️✔️:              atom->getNumExplicitHs()) {
+    // RDKit✔️✔️:     nonStandard = true;
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     nonStandard = (totalValence != defaultVs.front() && atom->getTotalNumHs());
+    // RDKit✔️✔️:   }
     if let Ok(Some(valence_list)) = crate::valence::rdkit_valence_list(atom.atomic_number()) {
         if let Some(&default_valence) = valence_list.first() {
-            let mut explicit_val = 0i32;
-            for bond in molecule.bonds() {
-                if bond.begin() == atom_id || bond.end() == atom_id {
-                    explicit_val +=
-                        crate::valence::bond_valence_contrib(bond, atom_id)?.round() as i32;
-                }
-            }
-            let total_hs = i32::from(atom.explicit_hydrogens());
-            if explicit_val + total_hs != default_valence && total_hs > 0 {
+            let total_valence = total_valence_for_writer(molecule, atom_id).unwrap_or_else(|| {
+                molecule
+                    .bonds()
+                    .iter()
+                    .fold(i32::from(atom.explicit_hydrogens()), |acc, bond| {
+                        if bond.begin() == atom_id || bond.end() == atom_id {
+                            acc + crate::valence::bond_valence_contrib(bond, atom_id)
+                                .unwrap_or(0.0)
+                                .round() as i32
+                        } else {
+                            acc
+                        }
+                    })
+            });
+            let total_hs = total_num_hydrogens_for_writer(molecule, atom_id) as i32;
+            if total_valence != default_valence && total_hs > 0 {
                 return Ok(true);
             }
         }
@@ -3358,42 +3485,320 @@ fn rdkit_query_ops_is_metal(atomic_number: u8) -> bool {
 }
 
 fn update_property_cache_for_smiles(molecule: &mut Molecule) -> Result<(), SmilesWriteError> {
-    // RDKit updates each fragment atom's property cache before writer decisions.
-    // COSMolKit stores the equivalent valence state in the derived cache, so the
-    // writer prepares its local working copy through the registered operations.
-    // Ring information is also needed for unsanitized writer-side stereo cleanup,
-    // because RDKit suppresses double-bond stereo in rings smaller than the
-    // configured minimum even when the input parser left directional marks on
-    // the bond neighborhood.
+    // BEGIN RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles writer property-cache prep
+    // RDKit✔️✔️: for (auto atom : tmol->atoms()) {
+    // RDKit✔️✔️:   atom->updatePropertyCache(false);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles writer property-cache prep
+    // BEGIN RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles ring-info lifetime
+    // RDKit✔️✔️: // writer prep here updates atom property cache only; it does not
+    // RDKit✔️✔️: // proactively recompute ring info. Traversal/ranking code consults the
+    // RDKit✔️✔️: // molecule's existing RingInfo and only computes fast rings on demand in
+    // RDKit✔️✔️: // specific canonical-ranking paths.
+    // END RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles ring-info lifetime
     *molecule = molecule.with_assigned_valence()?;
-    *molecule = molecule.with_assigned_rings()?;
     Ok(())
+}
+
+fn clear_fragment_temp_molecule_computed_stereo_props_for_writer(molecule: &mut Molecule) {
+    // BEGIN RDKIT CPP FUNCTION MolOps::getMolFrags fragment temporary molecule path
+    // RDKit❗✔️: if (comp.size() == 1 || ...) {
+    // RDKit❗✔️:   SubsetOptions opts{.sanitize = sanitizeFrags,
+    // RDKit❗✔️:                      .clearComputedProps = true,
+    // RDKit❗✔️:                      .copyCoordinates = copyConformers,
+    // RDKit❗✔️:                      .method = SubsetMethod::BONDS_BETWEEN_ATOMS};
+    // RDKit❗✔️:   auto submol = copyMolSubset(mol, atoms, info, opts);
+    // RDKit❗✔️: } else {
+    // RDKit❗✔️:   frag->beginBatchEdit();
+    // RDKit❗✔️:   ...
+    // RDKit❗✔️:   frag->commitBatchEdit();
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION MolOps::getMolFrags fragment temporary molecule path
+    // BEGIN RDKIT CPP FUNCTION RWMol::removeAtom / commitBatchEdit computed prop reset
+    // RDKit❗✔️: // clear computed properties and reset our ring info structure
+    // RDKit❗✔️: // they are pretty likely to be wrong now:
+    // RDKit❗✔️: if (clearProps) {
+    // RDKit❗✔️:   clearComputedProps(true);
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION RWMol::removeAtom / commitBatchEdit computed prop reset
+    // BEGIN RDKIT CPP FUNCTION ROMol::clearComputedProps
+    // RDKit❗✔️: void ROMol::clearComputedProps(bool includeRings) const {
+    // RDKit❗✔️:   if (includeRings) {
+    // RDKit❗✔️:     this->dp_ringInfo->reset();
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   RDProps::clearComputedProps();
+    // RDKit❗✔️:   for (auto atom : atoms()) {
+    // RDKit❗✔️:     atom->clearComputedProps();
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   for (auto bond : bonds()) {
+    // RDKit❗✔️:     bond->clearComputedProps();
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION ROMol::clearComputedProps
+    let fragment_count = crate::notation::fragment::get_fragment_atom_mapping(molecule)
+        .iter()
+        .copied()
+        .max()
+        .map_or(0, |max_fragment| max_fragment + 1);
+    if fragment_count <= 1 {
+        return;
+    }
+
+    molecule.properties_mut().clear_prop("_StereochemDone");
+    for atom in &mut molecule.topology_block_mut().atoms {
+        atom.clear_prop("_CIPCode");
+        atom.clear_prop("_CIPRank");
+        atom.clear_prop("_ChiralityPossible");
+        atom.clear_prop("_ringStereochemCand");
+        atom.clear_prop("_ringStereoAtoms");
+    }
+    for bond in &mut molecule.topology_block_mut().bonds {
+        bond.clear_prop("_CIPCode");
+    }
 }
 
 fn assign_stereochemistry_for_smiles(
     molecule: &mut Molecule,
     clean_stereo: bool,
 ) -> Result<(), SmilesWriteError> {
+    // BEGIN RDKIT CPP FUNCTION Chirality::assignStereochemistry dispatcher tail
+    // RDKit❗✔️: void assignStereochemistry(ROMol &mol, bool cleanIt, bool force,
+    // RDKit❗✔️:                            bool flagPossibleStereoCenters) {
+    // RDKit❗✔️:   if (!force && mol.hasProp(common_properties::_StereochemDone)) {
+    // RDKit❗✔️:     return;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   ...
+    // RDKit❗✔️:   mol.setProp(common_properties::_StereochemDone, 1, true);
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION Chirality::assignStereochemistry dispatcher tail
     // RDKit calls assignStereochemistry() on the temporary writer molecule
     // unless stereochemistry was already prepared. COSMolKit's current stereo
     // assignment reads typed state and validates/detects writer-visible stereo;
     // future ports can make this mutating without changing the writer contract.
-    let _ = clean_stereo;
+    // BEGIN RDKIT CPP FUNCTION Chirality::stereoPerception cleanIt prelude
+    // RDKit❗✔️: void stereoPerception(ROMol &mol, bool cleanIt,
+    // RDKit❗✔️:                       bool flagPossibleStereoCenters) {
+    // RDKit❗✔️:   if (cleanIt) {
+    // RDKit❗✔️:     for (auto atom : mol.atoms()) {
+    // RDKit❗✔️:       atom->clearProp(common_properties::_CIPCode);
+    // RDKit❗✔️:       atom->clearProp(common_properties::_ChiralityPossible);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     for (auto bond : mol.bonds()) {
+    // RDKit❗✔️:       bond->clearProp(common_properties::_CIPCode);
+    // RDKit❗✔️:       if (bond->getBondDir() == Bond::BondDir::EITHERDOUBLE) {
+    // RDKit❗✔️:         bond->setStereo(Bond::BondStereo::STEREOANY);
+    // RDKit❗✔️:         bond->getStereoAtoms().clear();
+    // RDKit❗✔️:         bond->setBondDir(Bond::BondDir::NONE);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   // we need cis/trans markers on the double bonds... set those now:
+    // RDKit❗✔️:   MolOps::setBondStereoFromDirections(mol);
+    // RDKit❗✔️:   ...
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION Chirality::stereoPerception cleanIt prelude
+    //
+    // This ports the writer-visible `cleanIt` property reset and EITHERDOUBLE
+    // normalization exactly. The downstream `findPotentialStereo()` /
+    // `updateDoubleBondStereo()` pipeline is still only partially reproduced by
+    // the current typed-state helpers below, so the behavior marker remains `❗`.
+    if clean_stereo {
+        for atom in &mut molecule.topology_block_mut().atoms {
+            atom.clear_prop("_CIPCode");
+            atom.clear_prop("_ChiralityPossible");
+        }
+        for bond in &mut molecule.topology_block_mut().bonds {
+            bond.clear_prop("_CIPCode");
+            if bond.direction() == BondDirection::EitherDouble {
+                bond.set_stereo(BondStereo::Any);
+                bond.set_stereo_atoms(None);
+                bond.set_direction(BondDirection::None);
+            }
+        }
+    }
+    ensure_fast_rings_for_writer_stereo_perception(molecule)?;
     crate::stereo::assign_stereochemistry(molecule)?;
     assign_double_bond_stereo_for_writer_working_copy(molecule)?;
+    let ranks = crate::stereo::assign_atom_cip_ranks(molecule)?;
+    for (atom_idx, cip_code) in crate::stereo::assign_atom_chiral_codes(molecule, &ranks)? {
+        if let Some(atom_mut) = molecule.topology_block_mut().atoms.get_mut(atom_idx) {
+            atom_mut.set_prop("_CIPCode", cip_code);
+        }
+    }
+    for (atom_idx, rank) in ranks.iter().copied().enumerate() {
+        if let Some(atom_mut) = molecule.topology_block_mut().atoms.get_mut(atom_idx) {
+            atom_mut.set_prop("_CIPRank", rank.to_string());
+        }
+    }
+    if clean_stereo {
+        apply_clean_stereo_ring_special_cases_for_writer(molecule, &ranks)?;
+    }
+    molecule.properties_mut().set_prop("_StereochemDone", "1");
     Ok(())
+}
+
+fn ensure_fast_rings_for_writer_stereo_perception(
+    molecule: &mut Molecule,
+) -> Result<(), SmilesWriteError> {
+    // BEGIN RDKIT CPP FUNCTION Chirality::legacyStereoPerception ring prelude
+    // RDKit✔️✔️: void legacyStereoPerception(ROMol &mol, bool cleanIt,
+    // RDKit✔️✔️:                             bool flagPossibleStereoCenters) {
+    // RDKit✔️✔️:   mol.clearProp("_needsDetectBondStereo");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // later we're going to need ring information, get it now if we don't
+    // RDKit✔️✔️:   // have it already:
+    // RDKit✔️✔️:   // NOTE, if called from the SMART code, the ring info will be DUMMY, and
+    // RDKit✔️✔️:   // contains no information
+    // RDKit✔️✔️:   if (!mol.getRingInfo()->isFindFastOrBetter()) {
+    // RDKit✔️✔️:     MolOps::fastFindRings(mol);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION Chirality::legacyStereoPerception ring prelude
+    if molecule
+        .derived_cache()
+        .rings
+        .as_ref()
+        .is_some_and(crate::RingInfo::is_find_fast_or_better)
+    {
+        return Ok(());
+    }
+    let rings = crate::fast_find_rings(molecule)?;
+    molecule.derived_cache_mut().rings = Some(rings);
+    Ok(())
+}
+
+fn apply_clean_stereo_ring_special_cases_for_writer(
+    molecule: &mut Molecule,
+    ranks: &[u32],
+) -> Result<(), SmilesWriteError> {
+    // BEGIN RDKIT CPP FUNCTION legacyStereoPerception cleanIt ring special cases
+    // RDKit❗✔️: if (cleanIt) {
+    // RDKit❗✔️:   for (auto atom : mol.atoms()) {
+    // RDKit❗✔️:     if (atom->hasProp(common_properties::_ringStereochemCand)) {
+    // RDKit❗✔️:       atom->clearProp(common_properties::_ringStereochemCand);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (atom->hasProp(common_properties::_ringStereoAtoms)) {
+    // RDKit❗✔️:       atom->clearProp(common_properties::_ringStereoAtoms);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   boost::dynamic_bitset<> possibleSpecialCases(mol.getNumAtoms());
+    // RDKit❗✔️:   Chirality::findChiralAtomSpecialCases(mol, possibleSpecialCases, atomRanks);
+    // RDKit❗✔️:   for (auto atom : mol.atoms()) {
+    // RDKit❗✔️:     if (atom->getChiralTag() != Atom::CHI_UNSPECIFIED &&
+    // RDKit❗✔️:         !Chirality::hasNonTetrahedralStereo(atom) &&
+    // RDKit❗✔️:         !atom->hasProp(common_properties::_CIPCode) &&
+    // RDKit❗✔️:         (!possibleSpecialCases[atom->getIdx()] ||
+    // RDKit❗✔️:          !atom->hasProp(common_properties::_ringStereoAtoms))) {
+    // RDKit❗✔️:       atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit❗✔️:       ...
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION legacyStereoPerception cleanIt ring special cases
+    for atom in &mut molecule.topology_block_mut().atoms {
+        atom.clear_prop("_ringStereochemCand");
+        atom.clear_prop("_ringStereoAtoms");
+    }
+
+    let special_cases = crate::stereo::find_chiral_atom_special_cases(molecule, ranks)?;
+    let special_case_atoms = special_cases
+        .iter()
+        .map(|case| case.atom_idx)
+        .collect::<BTreeSet<_>>();
+    for case in &special_cases {
+        if let Some(atom_mut) = molecule.topology_block_mut().atoms.get_mut(case.atom_idx) {
+            atom_mut.set_prop("_ringStereochemCand", "1");
+            atom_mut.set_prop(
+                "_ringStereoAtoms",
+                serialize_ring_stereo_atoms(&case.ring_stereo_atoms),
+            );
+        }
+    }
+
+    let atom_ids = molecule
+        .atoms()
+        .iter()
+        .map(|atom| atom.id())
+        .collect::<Vec<_>>();
+    for atom_id in atom_ids {
+        let atom = &molecule.atoms()[atom_id.index()];
+        if atom.chiral_tag() == ChiralTag::Unspecified
+            || crate::stereo::has_non_tetrahedral_stereo(atom)
+            || atom.prop("_CIPCode").is_some()
+            || (special_case_atoms.contains(&atom_id.index())
+                && atom.prop("_ringStereoAtoms").is_some())
+        {
+            continue;
+        }
+
+        if let Some(atom_mut) = molecule.topology_block_mut().atoms.get_mut(atom_id.index()) {
+            atom_mut.set_chiral_tag(ChiralTag::Unspecified);
+            if atom_mut.explicit_hydrogens() == 1
+                && atom_mut.formal_charge() == 0
+                && !atom_mut.is_aromatic()
+            {
+                atom_mut.set_explicit_hydrogens(0);
+                atom_mut.set_no_implicit(false);
+            }
+        }
+    }
+    *molecule = molecule.with_assigned_valence()?;
+    Ok(())
+}
+
+pub(crate) fn serialize_ring_stereo_atoms(ring_stereo_atoms: &[(bool, usize)]) -> String {
+    ring_stereo_atoms
+        .iter()
+        .map(|(same_orientation, atom_idx)| {
+            let signed = if *same_orientation {
+                *atom_idx as i32 + 1
+            } else {
+                -(*atom_idx as i32 + 1)
+            };
+            signed.to_string()
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn parse_ring_stereo_atoms_prop(encoded: &str) -> Option<Vec<(bool, usize)>> {
+    let mut result = Vec::new();
+    for token in encoded.split(',').filter(|token| !token.is_empty()) {
+        let entry = token.parse::<i32>().ok()?;
+        if entry == 0 {
+            return None;
+        }
+        let atom_idx = entry.unsigned_abs() as usize - 1;
+        result.push((entry > 0, atom_idx));
+    }
+    Some(result)
+}
+
+fn writer_ring_stereo_atoms(
+    atom: &crate::Atom,
+    atom_id: AtomId,
+) -> Result<Option<Vec<(bool, usize)>>, SmilesWriteError> {
+    let Some(encoded) = atom.prop("_ringStereoAtoms") else {
+        if atom.prop("_ringStereochemCand").is_some() {
+            return Err(SmilesWriteError::InvalidRingStereoState {
+                atom: atom_id.index(),
+                requirement: "`_ringStereochemCand` requires `_ringStereoAtoms`",
+            });
+        }
+        return Ok(None);
+    };
+    parse_ring_stereo_atoms_prop(encoded)
+        .ok_or(SmilesWriteError::InvalidRingStereoState {
+            atom: atom_id.index(),
+            requirement: "`_ringStereoAtoms` must be a valid encoded ring-neighbor list",
+        })
+        .map(Some)
 }
 
 fn assign_double_bond_stereo_for_writer_working_copy(
     molecule: &mut Molecule,
 ) -> Result<(), SmilesWriteError> {
     // BEGIN RDKIT CPP FUNCTION Chirality::assignStereochemistry double-bond section
-    // RDKit✔️✔️: for (auto bond : mol.bonds()) {
-    // RDKit✔️✔️:   if (bond->getBondType() == Bond::BondType::DOUBLE &&
-    // RDKit✔️✔️:       bond->getStereo() > Bond::BondStereo::STEREOANY) {
-    // RDKit✔️✔️:     bond->setStereo(Bond::BondStereo::STEREONONE);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
     // RDKit✔️✔️: assignBondStereoCodes(mol, atomRanks);
     // RDKit✔️✔️: if (bond->getStereo() == Bond::STEREONONE) {
     // RDKit✔️✔️:   ... find directed neighbor bonds around double bond ...
@@ -3401,25 +3806,6 @@ fn assign_double_bond_stereo_for_writer_working_copy(
     // RDKit✔️✔️:   bond->setStereo(Bond::STEREOE or Bond::STEREOZ);
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Chirality::assignStereochemistry double-bond section
-    let mut cleared = false;
-    for bond in &mut molecule.topology_block_mut().bonds {
-        if bond.order() == BondOrder::Double
-            && matches!(
-                bond.stereo(),
-                BondStereo::E | BondStereo::Z | BondStereo::Cis | BondStereo::Trans
-            )
-        {
-            bond.set_stereo(BondStereo::None);
-            bond.set_stereo_atoms(None);
-            cleared = true;
-        }
-    }
-    if cleared {
-        molecule
-            .derived_cache_mut()
-            .invalidate(crate::DerivedState::STEREO | crate::DerivedState::DRAWING);
-    }
-
     let ranks = crate::stereo::assign_atom_cip_ranks(molecule)?;
     let (assignments, changed) = crate::stereo::assign_bond_stereo_codes(molecule, &ranks);
     if !changed {
@@ -3503,41 +3889,76 @@ fn cleanup_stereo_groups_for_cx_smiles(molecule: &mut Molecule) -> Result<(), Sm
 /// Run operation-routed kekulization on the molecule and return a new
 /// `Molecule` with resolved bond orders and cleared aromatic flags.
 ///
-/// This currently uses the registered `with_kekulized_bonds` operation. The
-/// operation keeps mutation protocol-compliant, but it is not a full
-/// `Kekulize(mol, true, true, 100)` equivalence claim.
+/// The writer's `do_kekule=true` path is source-aligned to RDKit's
+/// `Kekulize(mol, true, true, 100)` behavior: it uses canonical fragment
+/// ranking when resolving aromatic systems before SMILES traversal.
 fn kekulize_for_smiles(molecule: &Molecule) -> Result<Molecule, SmilesWriteError> {
-    Ok(molecule.with_kekulized_bonds(true)?)
+    // BEGIN RDKIT CPP FUNCTION details::KekulizeFragment
+    // RDKit✔️✔️:     VECT_INT_VECT allringsSSSR;
+    // RDKit✔️✔️:     if (!mol.getRingInfo()->isInitialized()) {
+    // RDKit✔️✔️:       MolOps::findSSSR(mol, allringsSSSR);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     const VECT_INT_VECT &allrings =
+    // RDKit✔️✔️:         allringsSSSR.empty() ? mol.getRingInfo()->atomRings() : allringsSSSR;
+    // END RDKIT CPP FUNCTION details::KekulizeFragment
+    let assignment = crate::kekulize::kekulize_assignment(
+        molecule,
+        molecule.derived_cache().rings.as_ref(),
+        true,
+        true,
+        100,
+    )?;
+    let mut kekulized = molecule.clone();
+    crate::kekulize::apply_kekulize_assignment(kekulized.topology_block_mut(), &assignment);
+    // RDKit✔️✔️:         if ((atom->getAtomicNum() == 7 || atom->getAtomicNum() == 15) &&
+    // RDKit✔️✔️:             atom->getFormalCharge() == 0 && atom->getNumExplicitHs() == 1) {
+    // RDKit✔️✔️:           atom->setNoImplicit(false);
+    // RDKit✔️✔️:           atom->setNumExplicitHs(0);
+    // RDKit✔️✔️:           atom->updatePropertyCache(false);
+    // RDKit✔️✔️:         }
+    //
+    // COSMolKit stores RDKit's property-cache-derived implicit hydrogen state
+    // in `derived_cache.valence` instead of per-atom mutable cache fields.
+    // After applying the kekulize assignment, refresh that cache so
+    // `GetAtomSmiles()`-equivalent total-H reads see the post-kekulization
+    // atom state.
+    kekulized.derived_cache_mut().valence = Some(crate::valence::assign_valence_with_options(
+        &kekulized,
+        crate::ValenceModel::RdkitLike,
+        false,
+    )?);
+    Ok(kekulized)
 }
 
 fn normalize_dative_bonds_for_plain_smiles(
     molecule: &mut Molecule,
 ) -> Result<(), SmilesWriteError> {
-    // RDKit mutates the temporary writer RWMol and replaces dative bonds with
-    // single bonds when includeDativeBonds=false. This mutation is scoped to the
-    // cloned writer working copy, not the caller's molecule.
-    let mut changed = false;
+    // RDKit✔️✔️:     if (doingCXSmiles || !params.includeDativeBonds) {
+    // RDKit✔️✔️:       for (auto bond : tmol->bonds()) {
+    // RDKit✔️✔️:         if (bond->getBondType() == Bond::DATIVE) {
+    // RDKit✔️✔️:           // we are intentionally only handling DATIVE here. The other weird
+    // RDKit✔️✔️:           // RDKit dative alternatives really shouldn't ever show up.
+    // RDKit✔️✔️:           bond->setBondType(Bond::SINGLE);
+    // RDKit✔️✔️:           // update the explicit valence of the begin atom since the implicit
+    // RDKit✔️✔️:           // valence will no longer be properly perceived
+    // RDKit✔️✔️:           bond->getBeginAtom()->calcExplicitValence(false);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
     for bond in &mut molecule.topology_block_mut().bonds {
-        if matches!(
-            bond.order(),
-            crate::BondOrder::Dative
-                | crate::BondOrder::DativeOne
-                | crate::BondOrder::DativeLeft
-                | crate::BondOrder::DativeRight
-        ) {
+        if bond.order() == crate::BondOrder::Dative {
             bond.set_order(crate::BondOrder::Single);
-            changed = true;
         }
     }
-    if changed {
-        molecule.derived_cache_mut().invalidate(
-            crate::DerivedState::VALENCE
-                | crate::DerivedState::AROMATICITY
-                | crate::DerivedState::STEREO
-                | crate::DerivedState::DRAWING
-                | crate::DerivedState::FINGERPRINT,
-        );
-    }
+    // COSMolKit's writer currently stores RDKit property-cache-derived valence
+    // state in `derived_cache.valence`. Recomputing that cache from the
+    // topology-mutated working copy changes the observable writer behavior for
+    // former dative donors (`N->O` becomes `[NH3]O` instead of RDKit's `NO`).
+    //
+    // RDKit updates only the begin atom's internal explicit-valence cache here;
+    // it does not rebuild a whole-molecule valence assignment for the writer
+    // working copy. Preserving the existing derived valence cache matches the
+    // current RDKit writer state boundary for the modeled input space.
     Ok(())
 }
 
@@ -3682,6 +4103,7 @@ fn canonical_dfs_traversal(
     start_atom: AtomId,
     ranks: &[usize],
     do_isomeric_smiles: bool,
+    clean_stereo: bool,
     do_random: bool,
     bond_symbols: Option<&[String]>,
 ) -> Result<CanonicalTraversalResult, SmilesWriteError> {
@@ -3773,10 +4195,12 @@ fn canonical_dfs_traversal(
         bonds_in_play: &[bool],
     ) -> Vec<(BondId, AtomId)> {
         let mut incident = molecule
-            .bonds()
+            .topology_block()
+            .adjacency
+            .neighbors_of(atom.index())
             .iter()
-            .filter(|bond| bonds_in_play[bond.id().index()])
-            .filter_map(|bond| bond_other_atom(bond, atom).map(|other| (bond.id(), other)))
+            .filter(|neighbor| bonds_in_play[neighbor.bond.index()])
+            .map(|neighbor| (neighbor.bond, AtomId::new(neighbor.atom_index)))
             .map(|(bond, other)| {
                 let rank = if do_random {
                     next_random_smiles_u64() as i64
@@ -3878,7 +4302,6 @@ fn canonical_dfs_traversal(
         parent_bond: Option<BondId>,
         do_random: bool,
         colors: &mut [Color],
-        visited_bonds: &mut [bool],
         atom_ring_closures: &mut [Vec<BondId>],
         rank_by_atom: &[usize],
         ring_info: &crate::RingInfo,
@@ -3901,7 +4324,6 @@ fn canonical_dfs_traversal(
             }
             match colors[other.index()] {
                 Color::White => {
-                    visited_bonds[bond.index()] = true;
                     dfs_find_cycles(
                         molecule,
                         plan,
@@ -3909,7 +4331,6 @@ fn canonical_dfs_traversal(
                         Some(bond),
                         do_random,
                         colors,
-                        visited_bonds,
                         atom_ring_closures,
                         rank_by_atom,
                         ring_info,
@@ -3918,11 +4339,8 @@ fn canonical_dfs_traversal(
                     );
                 }
                 Color::Grey => {
-                    if !visited_bonds[bond.index()] {
-                        visited_bonds[bond.index()] = true;
-                        atom_ring_closures[other.index()].push(bond);
-                        atom_ring_closures[atom.index()].push(bond);
-                    }
+                    atom_ring_closures[other.index()].push(bond);
+                    atom_ring_closures[atom.index()].push(bond);
                 }
                 Color::Black => {}
             }
@@ -3938,14 +4356,16 @@ fn canonical_dfs_traversal(
         do_random: bool,
         colors: &mut [Color],
         atom_ring_closures: &[Vec<BondId>],
-        opened_ring_bonds: &mut BTreeSet<BondId>,
+        cycles_available: &mut [bool],
+        traversal_ring_indices: &mut [Option<usize>],
+        traversal_ring_closure_bonds: &mut [bool],
         rank_by_atom: &[usize],
         ring_info: &crate::RingInfo,
         bond_symbols: Option<&[String]>,
         stack: &mut Vec<MolStackElem>,
         atom_traversal_bond_order: &mut [Vec<BondId>],
         bonds_in_play: &[bool],
-    ) {
+    ) -> Result<(), SmilesWriteError> {
         let mut seen_from_here = vec![false; molecule.num_atoms()];
         seen_from_here[atom.index()] = true;
         stack.push(MolStackElem::Atom(atom));
@@ -3955,18 +4375,34 @@ fn canonical_dfs_traversal(
             trav_list.push(parent_bond);
         }
 
+        let mut rings_closed = Vec::new();
         for &bond in &atom_ring_closures[atom.index()] {
             trav_list.push(bond);
             if let Some(other) = bond_other_atom(&molecule.bonds()[bond.index()], atom) {
                 seen_from_here[other.index()] = true;
             }
-            if opened_ring_bonds.contains(&bond) {
+            if let Some(ring_idx) = traversal_ring_indices[bond.index()] {
                 stack.push(MolStackElem::Bond(bond, atom));
-                stack.push(MolStackElem::Ring(bond));
+                stack.push(MolStackElem::Ring { bond, ring_idx });
+                rings_closed.push(ring_idx - 1);
             } else {
-                opened_ring_bonds.insert(bond);
-                stack.push(MolStackElem::Ring(bond));
+                let Some(lowest_ring_idx) =
+                    cycles_available.iter().position(|available| *available)
+                else {
+                    return invariant_stage_error(
+                        SmilesPlanStage::ShortTermBondWriter,
+                        "write_ring_closure() could not allocate a free ring index",
+                    );
+                };
+                cycles_available[lowest_ring_idx] = false;
+                let ring_idx = lowest_ring_idx + 1;
+                traversal_ring_indices[bond.index()] = Some(ring_idx);
+                traversal_ring_closure_bonds[bond.index()] = true;
+                stack.push(MolStackElem::Ring { bond, ring_idx });
             }
+        }
+        for ring_idx in rings_closed {
+            cycles_available[ring_idx] = true;
         }
 
         let children = sorted_incident_bonds(
@@ -4002,36 +4438,49 @@ fn canonical_dfs_traversal(
                 do_random,
                 colors,
                 atom_ring_closures,
-                opened_ring_bonds,
+                cycles_available,
+                traversal_ring_indices,
+                traversal_ring_closure_bonds,
                 rank_by_atom,
                 ring_info,
                 bond_symbols,
                 stack,
                 atom_traversal_bond_order,
                 bonds_in_play,
-            );
+            )?;
             if is_branch {
                 stack.push(MolStackElem::BranchClose);
             }
         }
         atom_traversal_bond_order[atom.index()] = trav_list;
         colors[atom.index()] = Color::Black;
+        Ok(())
     }
 
     let mut cycle_colors = vec![Color::White; molecule.num_atoms()];
     let mut atom_ring_closures = vec![Vec::new(); molecule.num_atoms()];
-    let mut visited_bonds = vec![false; molecule.num_bonds()];
     let mut stack = Vec::new();
     let mut atom_traversal_bond_order = vec![Vec::new(); molecule.num_atoms()];
     let mut rank_by_atom = vec![usize::MAX; molecule.num_atoms()];
     let mut bonds_in_play = vec![false; molecule.num_bonds()];
+    let mut traversal_ring_closure_bonds = vec![false; molecule.num_bonds()];
     for (idx, atom) in plan.atoms.iter().enumerate() {
         rank_by_atom[atom.index()] = ranks[idx];
     }
     for bond in &plan.bonds {
         bonds_in_play[bond.index()] = true;
     }
-    let ring_info = crate::symmetrize_sssr(molecule)?;
+    // BEGIN RDKIT CPP FUNCTION Canon::canonicalDFSTraversal ring-info requirement
+    // RDKit❗✔️: traversal only queries `numBondRings()` / `numAtomRings()` from
+    // RDKit❗✔️: a `fastFindRings()`-or-better RingInfo. It does not require
+    // RDKit❗✔️: symmetrized SSSR membership here.
+    // END RDKIT CPP FUNCTION Canon::canonicalDFSTraversal ring-info requirement
+    let ring_info = molecule
+        .derived_cache()
+        .rings
+        .clone()
+        .filter(|rings| rings.is_find_fast_or_better())
+        .unwrap_or(crate::fast_find_rings(molecule)?);
 
     dfs_find_cycles(
         molecule,
@@ -4040,7 +4489,6 @@ fn canonical_dfs_traversal(
         None,
         do_random,
         &mut cycle_colors,
-        &mut visited_bonds,
         &mut atom_ring_closures,
         &rank_by_atom,
         &ring_info,
@@ -4048,7 +4496,8 @@ fn canonical_dfs_traversal(
         &bonds_in_play,
     );
     let mut stack_colors = vec![Color::White; molecule.num_atoms()];
-    let mut opened_ring_bonds = BTreeSet::new();
+    let mut cycles_available = vec![true; molecule.num_bonds().max(1)];
+    let mut traversal_ring_indices = vec![None; molecule.num_bonds()];
     dfs_build_stack(
         molecule,
         plan,
@@ -4057,14 +4506,16 @@ fn canonical_dfs_traversal(
         do_random,
         &mut stack_colors,
         &atom_ring_closures,
-        &mut opened_ring_bonds,
+        &mut cycles_available,
+        &mut traversal_ring_indices,
+        &mut traversal_ring_closure_bonds,
         &rank_by_atom,
         &ring_info,
         bond_symbols,
         &mut stack,
         &mut atom_traversal_bond_order,
         &bonds_in_play,
-    );
+    )?;
     let chiral_adjustments = if do_isomeric_smiles {
         compute_writer_chiral_adjustments(
             molecule,
@@ -4072,6 +4523,8 @@ fn canonical_dfs_traversal(
             start_atom,
             &atom_ring_closures,
             &atom_traversal_bond_order,
+            &stack,
+            clean_stereo,
         )?
     } else {
         WriterChiralAdjustments::default()
@@ -4090,14 +4543,225 @@ fn canonical_dfs_traversal(
 
     Ok(CanonicalTraversalResult {
         stack,
+        traversal_ring_closure_bonds,
+        chiral_tag_overrides: chiral_adjustments.chiral_tag_overrides,
         chiral_inversions: chiral_adjustments.chiral_inversions,
         chiral_permutations: chiral_adjustments.chiral_permutations,
         broken_chiral_atoms: chiral_adjustments.broken_chiral_atoms,
     })
 }
 
+#[cfg(test)]
+fn debug_atom_ring_closures_for_writer(
+    molecule: &Molecule,
+    plan: &FragmentWritePlan,
+    start_atom: AtomId,
+    ranks: &[usize],
+    bond_symbols: Option<&[String]>,
+) -> Result<(crate::RingInfo, Vec<Vec<BondId>>), SmilesWriteError> {
+    fn gboost_hash_range_debug(bytes: &[u8]) -> u32 {
+        let mut seed = 0u32;
+        for byte in bytes {
+            seed ^= u32::from(*byte)
+                .wrapping_add(0x9e37_79b9)
+                .wrapping_add(seed << 6)
+                .wrapping_add(seed >> 2);
+        }
+        seed
+    }
+
+    fn rdkit_bond_order_rank_debug(order: BondOrder) -> i64 {
+        match order {
+            BondOrder::Null | BondOrder::Unspecified => 0,
+            BondOrder::Single => 1,
+            BondOrder::Double => 2,
+            BondOrder::Triple => 3,
+            BondOrder::Quadruple => 4,
+            BondOrder::Quintuple => 5,
+            BondOrder::Hextuple => 6,
+            BondOrder::OneAndHalf => 7,
+            BondOrder::TwoAndHalf => 8,
+            BondOrder::ThreeAndHalf => 9,
+            BondOrder::FourAndHalf => 10,
+            BondOrder::FiveAndHalf => 11,
+            BondOrder::Aromatic => 12,
+            BondOrder::Ionic => 13,
+            BondOrder::Hydrogen => 14,
+            BondOrder::ThreeCenter => 15,
+            BondOrder::DativeOne => 16,
+            BondOrder::Dative => 17,
+            BondOrder::DativeLeft => 18,
+            BondOrder::DativeRight => 19,
+            BondOrder::Other => 20,
+            BondOrder::Zero => 21,
+        }
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum DebugColor {
+        White,
+        Grey,
+        Black,
+    }
+
+    fn sorted_incident_bonds_debug(
+        molecule: &Molecule,
+        atom: AtomId,
+        rank_by_atom: &[usize],
+        colors: &[DebugColor],
+        ring_info: &crate::RingInfo,
+        bond_symbols: Option<&[String]>,
+        bonds_in_play: &[bool],
+    ) -> Vec<(BondId, AtomId)> {
+        let mut incident = molecule
+            .topology_block()
+            .adjacency
+            .neighbors_of(atom.index())
+            .iter()
+            .filter(|neighbor| bonds_in_play[neighbor.bond.index()])
+            .map(|neighbor| (neighbor.bond, AtomId::new(neighbor.atom_index)))
+            .map(|(bond, other)| {
+                let mut rank = rank_by_atom[other.index()] as i64;
+                let bond_order_rank =
+                    rdkit_bond_order_rank_debug(molecule.bonds()[bond.index()].order());
+                if colors[other.index()] == DebugColor::Grey {
+                    rank -= (CANON_MAX_BONDTYPE + 1) * CANON_MAX_NATOMS * CANON_MAX_NATOMS;
+                    if let Some(symbols) = bond_symbols {
+                        rank += i64::from(
+                            gboost_hash_range_debug(symbols[bond.index()].as_bytes()) % 5000,
+                        ) * CANON_MAX_NATOMS;
+                    } else {
+                        rank += (CANON_MAX_BONDTYPE - bond_order_rank) * CANON_MAX_NATOMS;
+                    }
+                } else if ring_info.num_bond_rings(bond) > 0 {
+                    if let Some(symbols) = bond_symbols {
+                        rank += i64::from(
+                            gboost_hash_range_debug(symbols[bond.index()].as_bytes()) % 5000,
+                        ) * CANON_MAX_NATOMS
+                            * CANON_MAX_NATOMS;
+                    } else {
+                        rank += (CANON_MAX_BONDTYPE - bond_order_rank)
+                            * CANON_MAX_NATOMS
+                            * CANON_MAX_NATOMS;
+                    }
+                }
+                (rank, bond, other)
+            })
+            .collect::<Vec<_>>();
+        incident.sort_by_key(|(rank, _, _)| *rank);
+        incident
+            .into_iter()
+            .map(|(_, bond, other)| (bond, other))
+            .collect()
+    }
+
+    fn dfs_find_cycles_debug(
+        molecule: &Molecule,
+        atom: AtomId,
+        parent_bond: Option<BondId>,
+        colors: &mut [DebugColor],
+        atom_ring_closures: &mut [Vec<BondId>],
+        rank_by_atom: &[usize],
+        ring_info: &crate::RingInfo,
+        bond_symbols: Option<&[String]>,
+        bonds_in_play: &[bool],
+    ) {
+        colors[atom.index()] = DebugColor::Grey;
+        let possibles = sorted_incident_bonds_debug(
+            molecule,
+            atom,
+            rank_by_atom,
+            colors,
+            ring_info,
+            bond_symbols,
+            bonds_in_play,
+        );
+        eprint!("debug_dfsFindCycles atom={} possibles", atom.index());
+        for (bond, other) in &possibles {
+            let mut rank = rank_by_atom[other.index()] as i64;
+            let bond_order_rank =
+                rdkit_bond_order_rank_debug(molecule.bonds()[bond.index()].order());
+            if colors[other.index()] == DebugColor::Grey {
+                rank -= (CANON_MAX_BONDTYPE + 1) * CANON_MAX_NATOMS * CANON_MAX_NATOMS;
+                if let Some(symbols) = bond_symbols {
+                    rank +=
+                        i64::from(gboost_hash_range_debug(symbols[bond.index()].as_bytes()) % 5000)
+                            * CANON_MAX_NATOMS;
+                } else {
+                    rank += (CANON_MAX_BONDTYPE - bond_order_rank) * CANON_MAX_NATOMS;
+                }
+            } else if ring_info.num_bond_rings(*bond) > 0 {
+                if let Some(symbols) = bond_symbols {
+                    rank +=
+                        i64::from(gboost_hash_range_debug(symbols[bond.index()].as_bytes()) % 5000)
+                            * CANON_MAX_NATOMS
+                            * CANON_MAX_NATOMS;
+                } else {
+                    rank += (CANON_MAX_BONDTYPE - bond_order_rank)
+                        * CANON_MAX_NATOMS
+                        * CANON_MAX_NATOMS;
+                }
+            }
+            eprint!(" ({},r={},b={})", other.index(), rank, bond.index());
+        }
+        eprintln!();
+        for (bond, other) in possibles {
+            if Some(bond) == parent_bond {
+                continue;
+            }
+            match colors[other.index()] {
+                DebugColor::White => dfs_find_cycles_debug(
+                    molecule,
+                    other,
+                    Some(bond),
+                    colors,
+                    atom_ring_closures,
+                    rank_by_atom,
+                    ring_info,
+                    bond_symbols,
+                    bonds_in_play,
+                ),
+                DebugColor::Grey => {
+                    atom_ring_closures[other.index()].push(bond);
+                    atom_ring_closures[atom.index()].push(bond);
+                }
+                DebugColor::Black => {}
+            }
+        }
+        colors[atom.index()] = DebugColor::Black;
+    }
+
+    let mut rank_by_atom = vec![usize::MAX; molecule.num_atoms()];
+    for (idx, atom) in plan.atoms.iter().enumerate() {
+        rank_by_atom[atom.index()] = ranks[idx];
+    }
+    let bonds_in_play = {
+        let mut value = vec![false; molecule.num_bonds()];
+        for bond in &plan.bonds {
+            value[bond.index()] = true;
+        }
+        value
+    };
+    let ring_info = crate::fast_find_rings(molecule)?;
+    let mut colors = vec![DebugColor::White; molecule.num_atoms()];
+    let mut atom_ring_closures = vec![Vec::new(); molecule.num_atoms()];
+    dfs_find_cycles_debug(
+        molecule,
+        start_atom,
+        None,
+        &mut colors,
+        &mut atom_ring_closures,
+        &rank_by_atom,
+        &ring_info,
+        bond_symbols,
+        &bonds_in_play,
+    );
+    Ok((ring_info, atom_ring_closures))
+}
+
 #[derive(Debug, Default)]
 struct WriterChiralAdjustments {
+    chiral_tag_overrides: BTreeMap<AtomId, ChiralTag>,
     chiral_inversions: BTreeSet<AtomId>,
     chiral_permutations: BTreeMap<AtomId, u32>,
     broken_chiral_atoms: BTreeSet<AtomId>,
@@ -4109,6 +4773,8 @@ fn compute_writer_chiral_adjustments(
     start_atom: AtomId,
     atom_ring_closures: &[Vec<BondId>],
     atom_traversal_bond_order: &[Vec<BondId>],
+    stack: &[MolStackElem],
+    _clean_stereo: bool,
 ) -> Result<WriterChiralAdjustments, SmilesWriteError> {
     // BEGIN RDKIT CPP FUNCTION Canon::canonicalizeFragment chiral traversal section
     // RDKit✔️✔️: std::vector<INT_LIST> atomTraversalBondOrder(nAtoms);
@@ -4122,8 +4788,19 @@ fn compute_writer_chiral_adjustments(
     // RDKit✔️✔️: if (nSwaps % 2) { numSwapsChiralAtoms.set(atom->getIdx()); }
     // RDKit✔️✔️: atomPermutationIndices[atom->getIdx()] = perm;
     // END RDKIT CPP FUNCTION Canon::canonicalizeFragment chiral traversal section
+    // BEGIN RDKIT CPP FUNCTION Canon::canonicalizeFragment chiral post-processing section
+    // RDKit✔️✔️: std::vector<unsigned int> atomVisitOrders(mol.getNumAtoms());
+    // RDKit✔️✔️: for (const auto &msI : molStack) { if (msI.type == MOL_STACK_ATOM) atomVisitOrders[...] = pos; ++pos; }
+    // RDKit✔️✔️: boost::dynamic_bitset<> ringStereoChemAdjusted(nAtoms);
+    // RDKit✔️✔️: if (msI.obj.atom->hasProp(common_properties::_ringStereoAtoms)) { ... setChiralTag(CCW) ... }
+    // RDKit✔️✔️: else if (msI.obj.atom->getPropIfPresent("_stereoGroup", sgidx) && mol.getStereoGroups().size() > sgidx) { ... }
+    // RDKit✔️✔️: else { if (numSwapsChiralAtoms[idx]) atom->invertChirality(); else if (atomPermutationIndices[idx]) atom->setProp(_chiralPermutation, ...); }
+    // END RDKIT CPP FUNCTION Canon::canonicalizeFragment chiral post-processing section
+    let plan_atoms = plan.atoms.iter().copied().collect::<BTreeSet<_>>();
     let plan_bonds = plan.bonds.iter().copied().collect::<BTreeSet<_>>();
     let mut adjustments = WriterChiralAdjustments::default();
+    let mut num_swaps_chiral_atoms = vec![false; molecule.num_atoms()];
+    let mut atom_permutation_indices = vec![0_u32; molecule.num_atoms()];
 
     for atom_id in &plan.atoms {
         let atom = &molecule.atoms()[atom_id.index()];
@@ -4158,7 +4835,7 @@ fn compute_writer_chiral_adjustments(
                     swaps = swaps.saturating_add(1);
                 }
                 if swaps % 2 == 1 {
-                    adjustments.chiral_inversions.insert(*atom_id);
+                    num_swaps_chiral_atoms[atom_id.index()] = true;
                 }
             }
             ChiralTag::SquarePlanar | ChiralTag::TrigonalBipyramidal | ChiralTag::Octahedral => {
@@ -4175,15 +4852,146 @@ fn compute_writer_chiral_adjustments(
                     crate::UnsupportedFeatureError::from_spec(&crate::SMILES_WRITE_FEATURE)
                 })?;
                 if permutation != 0 {
-                    adjustments
-                        .chiral_permutations
-                        .insert(*atom_id, permutation);
+                    atom_permutation_indices[atom_id.index()] = permutation;
                 }
             }
             _ => {}
         }
     }
+
+    let stereo_group_by_atom = molecule
+        .stereo_groups()
+        .iter()
+        .enumerate()
+        .flat_map(|(group_idx, group)| {
+            group
+                .atoms()
+                .iter()
+                .copied()
+                .map(move |atom_id| (atom_id, group_idx))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut atom_visit_orders = vec![usize::MAX; molecule.num_atoms()];
+    for (pos, element) in stack.iter().enumerate() {
+        if let MolStackElem::Atom(atom_id) = element {
+            atom_visit_orders[atom_id.index()] = pos;
+        }
+    }
+    let mut ring_stereo_chem_adjusted = vec![false; molecule.num_atoms()];
+    for element in stack {
+        let MolStackElem::Atom(atom_id) = element else {
+            continue;
+        };
+        let atom = &molecule.atoms()[atom_id.index()];
+        if atom.chiral_tag() == ChiralTag::Unspecified
+            || adjustments.broken_chiral_atoms.contains(atom_id)
+        {
+            continue;
+        }
+
+        let ring_stereo_atoms = writer_ring_stereo_atoms(atom, *atom_id)?;
+        if let Some(ring_stereo_atoms) = ring_stereo_atoms {
+            if !ring_stereo_chem_adjusted[atom_id.index()] {
+                adjustments
+                    .chiral_tag_overrides
+                    .insert(*atom_id, ChiralTag::TetrahedralCcw);
+                ring_stereo_chem_adjusted[atom_id.index()] = true;
+            }
+            let source_tag = adjustments
+                .chiral_tag_overrides
+                .get(atom_id)
+                .copied()
+                .unwrap_or_else(|| atom.chiral_tag());
+            for (same_orientation, neighbor_idx) in ring_stereo_atoms {
+                let neighbor = AtomId::new(neighbor_idx);
+                if !plan_atoms.contains(&neighbor)
+                    || ring_stereo_chem_adjusted[neighbor_idx]
+                    || atom_visit_orders[neighbor_idx] <= atom_visit_orders[atom_id.index()]
+                {
+                    continue;
+                }
+                let mut neighbor_tag = source_tag;
+                if !same_orientation {
+                    neighbor_tag = invert_tetrahedral_chiral_tag(neighbor_tag);
+                }
+                if num_swaps_chiral_atoms[atom_id.index()] {
+                    if !num_swaps_chiral_atoms[neighbor_idx] {
+                        neighbor_tag = invert_tetrahedral_chiral_tag(neighbor_tag);
+                    }
+                } else if num_swaps_chiral_atoms[neighbor_idx] {
+                    neighbor_tag = invert_tetrahedral_chiral_tag(neighbor_tag);
+                }
+                adjustments
+                    .chiral_tag_overrides
+                    .insert(neighbor, neighbor_tag);
+                ring_stereo_chem_adjusted[neighbor_idx] = true;
+            }
+        } else if let Some(group_idx) = stereo_group_by_atom.get(atom_id).copied() {
+            if let Some(group) = molecule.stereo_groups().get(group_idx) {
+                let swap_it = matches!(
+                    adjustments
+                        .chiral_tag_overrides
+                        .get(atom_id)
+                        .copied()
+                        .unwrap_or_else(|| atom.chiral_tag()),
+                    ChiralTag::TetrahedralCw
+                );
+                if swap_it {
+                    let current = adjustments
+                        .chiral_tag_overrides
+                        .get(atom_id)
+                        .copied()
+                        .unwrap_or_else(|| atom.chiral_tag());
+                    adjustments
+                        .chiral_tag_overrides
+                        .insert(*atom_id, invert_tetrahedral_chiral_tag(current));
+                }
+                if swap_it || num_swaps_chiral_atoms[atom_id.index()] {
+                    for other_atom in group.atoms() {
+                        if *other_atom == *atom_id || !plan_atoms.contains(other_atom) {
+                            continue;
+                        }
+                        let current = adjustments
+                            .chiral_tag_overrides
+                            .get(other_atom)
+                            .copied()
+                            .unwrap_or_else(|| molecule.atoms()[other_atom.index()].chiral_tag());
+                        adjustments
+                            .chiral_tag_overrides
+                            .insert(*other_atom, invert_tetrahedral_chiral_tag(current));
+                    }
+                }
+            }
+        } else {
+            match atom.chiral_tag() {
+                ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw => {
+                    if num_swaps_chiral_atoms[atom_id.index()] {
+                        adjustments.chiral_inversions.insert(*atom_id);
+                    }
+                }
+                ChiralTag::SquarePlanar
+                | ChiralTag::TrigonalBipyramidal
+                | ChiralTag::Octahedral => {
+                    let permutation = atom_permutation_indices[atom_id.index()];
+                    if permutation != 0 {
+                        adjustments
+                            .chiral_permutations
+                            .insert(*atom_id, permutation);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
     Ok(adjustments)
+}
+
+fn invert_tetrahedral_chiral_tag(chiral_tag: ChiralTag) -> ChiralTag {
+    match chiral_tag {
+        ChiralTag::TetrahedralCw => ChiralTag::TetrahedralCcw,
+        ChiralTag::TetrahedralCcw => ChiralTag::TetrahedralCw,
+        other => other,
+    }
 }
 
 fn insert_implicit_nontetrahedral_neighbors_for_writer(
@@ -4215,11 +5023,19 @@ fn insert_implicit_nontetrahedral_neighbors_for_writer(
 }
 
 fn incident_bonds(molecule: &Molecule, atom: AtomId) -> Vec<BondId> {
+    // BEGIN RDKIT CPP FUNCTION ROMol::atomBonds
+    // RDKit✔️✔️: CXXBondIterator<const MolGraph, Bond *const, MolGraph::out_edge_iterator>
+    // RDKit✔️✔️: atomBonds(Atom const *at) const {
+    // RDKit✔️✔️:   auto pr = getAtomBonds(at);
+    // RDKit✔️✔️:   return {&d_graph, pr.first, pr.second};
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION ROMol::atomBonds
     molecule
-        .bonds()
+        .topology_block()
+        .adjacency
+        .neighbors_of(atom.index())
         .iter()
-        .filter(|bond| bond.begin() == atom || bond.end() == atom)
-        .map(|bond| bond.id())
+        .map(|neighbor| neighbor.bond)
         .collect()
 }
 
@@ -4395,6 +5211,7 @@ fn atom_query_has_single_h_count_for_writer(query: &QueryNode<AtomQueryPredicate
 fn canonicalize_double_bond_directions_for_writer(
     molecule: &mut Molecule,
     stack: &[MolStackElem],
+    traversal_ring_closure_bonds: &[bool],
 ) -> Result<(), SmilesWriteError> {
     // BEGIN RDKIT CPP FUNCTION Canon::canonicalizeFragment double-bond direction section
     // RDKit✔️✔️: std::vector<unsigned int> atomVisitOrders(mol.getNumAtoms());
@@ -4418,7 +5235,6 @@ fn canonicalize_double_bond_directions_for_writer(
     // END RDKIT CPP FUNCTION Canon::canonicalizeFragment double-bond direction section
     let mut atom_visit_orders = vec![usize::MAX; molecule.num_atoms()];
     let mut bond_visit_orders = vec![usize::MAX; molecule.num_bonds()];
-    let mut traversal_ring_closure_bonds = vec![false; molecule.num_bonds()];
     for (pos, item) in stack.iter().enumerate() {
         match *item {
             MolStackElem::Atom(atom) => atom_visit_orders[atom.index()] = pos,
@@ -4432,13 +5248,14 @@ fn canonicalize_double_bond_directions_for_writer(
                         .set_direction(BondDirection::None);
                 }
             }
-            MolStackElem::Ring(bond) => traversal_ring_closure_bonds[bond.index()] = true,
+            MolStackElem::Ring { .. } => {}
             MolStackElem::BranchOpen | MolStackElem::BranchClose => {}
         }
     }
 
     let mut bond_dir_counts = vec![0i8; molecule.num_bonds()];
     let mut atom_dir_counts = vec![0i8; molecule.num_atoms()];
+    let cip_ranks = crate::stereo::assign_atom_cip_ranks(molecule).ok();
     canonicalize_double_bonds_for_writer(
         molecule,
         &bond_visit_orders,
@@ -4447,6 +5264,7 @@ fn canonicalize_double_bond_directions_for_writer(
         &mut bond_dir_counts,
         &mut atom_dir_counts,
         stack,
+        cip_ranks.as_deref(),
     );
     remove_unwanted_bond_dir_specs_for_writer(
         molecule,
@@ -4475,6 +5293,7 @@ fn canonicalize_double_bonds_for_writer(
     bond_dir_counts: &mut [i8],
     atom_dir_counts: &mut [i8],
     stack: &[MolStackElem],
+    cip_ranks: Option<&[u32]>,
 ) {
     // BEGIN RDKIT CPP FUNCTION Canon::canonicalizeDoubleBonds
     // RDKit✔️✔️: for (auto &msI : molStack) {
@@ -4489,13 +5308,16 @@ fn canonicalize_double_bonds_for_writer(
     // RDKit✔️✔️: }
     // RDKit✔️✔️: while (!q.empty()) { Canon::canonicalizeDoubleBond(...); }
     // END RDKIT CPP FUNCTION Canon::canonicalizeDoubleBonds
+    let mut stereo_bond_neighbors = BTreeMap::<BondId, Vec<BondId>>::new();
     let mut candidates = Vec::new();
     for item in stack {
         let MolStackElem::Bond(bond, _) = *item else {
             continue;
         };
         let bond_ref = &molecule.bonds()[bond.index()];
-        if !is_writer_stereo_double_bond(bond_ref) {
+        if !is_writer_stereo_double_bond(bond_ref)
+            || !writer_double_bond_has_distinguishable_ends(molecule, bond, cip_ranks)
+        {
             if bond_ref.order() == BondOrder::Double {
                 let bond_mut = &mut molecule.topology_block_mut().bonds[bond.index()];
                 bond_mut.set_stereo_atoms(None);
@@ -4503,7 +5325,9 @@ fn canonicalize_double_bonds_for_writer(
             }
             continue;
         }
-        let stereo_nbrs = neighboring_stereo_double_bonds_for_writer(molecule, bond);
+        let mut stereo_nbrs = neighboring_stereo_double_bonds_for_writer(molecule, bond);
+        stereo_nbrs.sort_by_key(|neighbor| bond_visit_orders[neighbor.index()]);
+        stereo_bond_neighbors.insert(bond, stereo_nbrs.clone());
         candidates.push((
             usize::MAX - stereo_nbrs.len(),
             bond_visit_orders[bond.index()],
@@ -4532,7 +5356,7 @@ fn canonicalize_double_bonds_for_writer(
                 atom_dir_counts,
             );
             seen[bond.index()] = true;
-            for nbr in neighboring_stereo_double_bonds_for_writer(molecule, bond) {
+            for &nbr in stereo_bond_neighbors.get(&bond).into_iter().flatten() {
                 if !seen[nbr.index()] {
                     queue.push_back(nbr);
                 }
@@ -5169,6 +5993,19 @@ fn remove_redundant_bond_dir_specs_for_writer(
     atom_dir_counts: &mut [i8],
 ) {
     // BEGIN RDKIT CPP FUNCTION Canon::removeRedundantBondDirSpecs / clearBondDirs
+    // RDKit✔️✔️: auto clearBondDirsFromAtom = [&mol, &bondDirCounts, &atomDirCounts](
+    // RDKit✔️✔️:                                  Bond *tBond, const Atom *atom) {
+    // RDKit✔️✔️:   if (atomDirCounts[atom->getIdx()] < 2) {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   for (auto bond : mol.atomBonds(atom)) {
+    // RDKit✔️✔️:     if (bond != tBond && bond->getBondType() == Bond::DOUBLE &&
+    // RDKit✔️✔️:         bond->getStereo() > Bond::STEREOANY) {
+    // RDKit✔️✔️:       clearBondDirs(mol, tBond, atom, bondDirCounts, atomDirCounts);
+    // RDKit✔️✔️:       return;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: };
     // RDKit✔️✔️: if (canHaveDirection(*tBond) && bondDirCounts[tBond->getIdx()]) {
     // RDKit✔️✔️:   clearBondDirsFromAtom(tBond, canonBeginAtom);
     // RDKit✔️✔️:   clearBondDirsFromAtom(tBond, canonEndAtom);
@@ -5180,29 +6017,65 @@ fn remove_redundant_bond_dir_specs_for_writer(
         let MolStackElem::Bond(t_bond, atom_to_left) = *item else {
             continue;
         };
-        if can_have_direction_for_writer(molecule.bonds()[t_bond.index()].order())
-            && bond_dir_counts[t_bond.index()] > 0
+        let t_bond_ref = &molecule.bonds()[t_bond.index()];
+        if can_have_direction_for_writer(t_bond_ref.order()) && bond_dir_counts[t_bond.index()] > 0
         {
-            clear_bond_dirs_from_atom_for_writer(
+            let canon_begin_atom = atom_to_left;
+            let Some(canon_end_atom) = bond_other_atom(t_bond_ref, atom_to_left) else {
+                continue;
+            };
+
+            clear_redundant_bond_dirs_from_atom_for_writer(
                 molecule,
                 t_bond,
-                atom_to_left,
+                canon_begin_atom,
                 bond_dir_counts,
                 atom_dir_counts,
             );
-            let Some(other) = bond_other_atom(&molecule.bonds()[t_bond.index()], atom_to_left)
-            else {
-                continue;
-            };
-            clear_bond_dirs_from_atom_for_writer(
+            clear_redundant_bond_dirs_from_atom_for_writer(
                 molecule,
                 t_bond,
-                other,
+                canon_end_atom,
                 bond_dir_counts,
                 atom_dir_counts,
             );
         } else if molecule.bonds()[t_bond.index()].direction() != BondDirection::None {
             molecule.topology_block_mut().bonds[t_bond.index()].set_direction(BondDirection::None);
+        }
+    }
+}
+
+fn clear_redundant_bond_dirs_from_atom_for_writer(
+    molecule: &mut Molecule,
+    ref_bond: BondId,
+    atom: AtomId,
+    bond_dir_counts: &mut [i8],
+    atom_dir_counts: &mut [i8],
+) {
+    if atom_dir_counts[atom.index()] < 2 {
+        return;
+    }
+    for bond in incident_bonds(molecule, atom) {
+        if bond != ref_bond
+            && molecule.bonds()[bond.index()].order() == BondOrder::Double
+            && matches!(
+                molecule.bonds()[bond.index()].stereo(),
+                BondStereo::Z
+                    | BondStereo::E
+                    | BondStereo::Cis
+                    | BondStereo::Trans
+                    | BondStereo::AtropCw
+                    | BondStereo::AtropCcw
+            )
+        {
+            clear_bond_dirs_from_atom_for_writer(
+                molecule,
+                ref_bond,
+                atom,
+                bond_dir_counts,
+                atom_dir_counts,
+            );
+            return;
         }
     }
 }
@@ -5214,6 +6087,38 @@ fn clear_bond_dirs_from_atom_for_writer(
     bond_dir_counts: &mut [i8],
     atom_dir_counts: &mut [i8],
 ) {
+    // BEGIN RDKIT CPP FUNCTION clearBondDirs
+    // RDKit✔️✔️: void clearBondDirs(ROMol &mol, Bond *refBond, const Atom *fromAtom,
+    // RDKit✔️✔️:                    std::vector<int8_t> &bondDirCounts,
+    // RDKit✔️✔️:                    std::vector<int8_t> &atomDirCounts) {
+    // RDKit✔️✔️:   auto clearDirection = [&atomDirCounts, &bondDirCounts](Bond *bond,
+    // RDKit✔️✔️:                                                          const Atom *fromAtom) {
+    // RDKit✔️✔️:     --bondDirCounts[bond->getIdx()];
+    // RDKit✔️✔️:     if (!bondDirCounts[bond->getIdx()]) {
+    // RDKit✔️✔️:       bond->setBondDir(Bond::NONE);
+    // RDKit✔️✔️:       --atomDirCounts[fromAtom->getIdx()];
+    // RDKit✔️✔️:       if (auto otherAtom = bond->getOtherAtom(fromAtom);
+    // RDKit✔️✔️:           atomDirCounts[otherAtom->getIdx()]) {
+    // RDKit✔️✔️:         --atomDirCounts[otherAtom->getIdx()];
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   };
+    // RDKit✔️✔️:   for (auto oBond : mol.atomBonds(fromAtom)) {
+    // RDKit✔️✔️:     if (oBond != refBond && canHaveDirection(*oBond)) {
+    // RDKit✔️✔️:       if ((bondDirCounts[oBond->getIdx()] >=
+    // RDKit✔️✔️:            bondDirCounts[refBond->getIdx()]) &&
+    // RDKit✔️✔️:           atomDirCounts[oBond->getBeginAtomIdx()] != 1 &&
+    // RDKit✔️✔️:           atomDirCounts[oBond->getEndAtomIdx()] != 1) {
+    // RDKit✔️✔️:         clearDirection(oBond, fromAtom);
+    // RDKit✔️✔️:       } else if (atomDirCounts[refBond->getBeginAtomIdx()] != 1 &&
+    // RDKit✔️✔️:                  atomDirCounts[refBond->getEndAtomIdx()] != 1) {
+    // RDKit✔️✔️:         clearDirection(refBond, fromAtom);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION clearBondDirs
     if atom_dir_counts[atom.index()] < 2 {
         return;
     }
@@ -5225,8 +6130,6 @@ fn clear_bond_dirs_from_atom_for_writer(
         }
         let ref_count = bond_dir_counts[ref_bond.index()];
         let other_count = bond_dir_counts[other_bond.index()];
-        let ref_begin = molecule.bonds()[ref_bond.index()].begin();
-        let ref_end = molecule.bonds()[ref_bond.index()].end();
         let other_begin = molecule.bonds()[other_bond.index()].begin();
         let other_end = molecule.bonds()[other_bond.index()].end();
         if other_count >= ref_count
@@ -5240,14 +6143,18 @@ fn clear_bond_dirs_from_atom_for_writer(
                 bond_dir_counts,
                 atom_dir_counts,
             );
-        } else if atom_dir_counts[ref_begin.index()] != 1 && atom_dir_counts[ref_end.index()] != 1 {
-            clear_direction_counted_for_writer(
-                molecule,
-                ref_bond,
-                atom,
-                bond_dir_counts,
-                atom_dir_counts,
-            );
+        } else {
+            let ref_begin = molecule.bonds()[ref_bond.index()].begin();
+            let ref_end = molecule.bonds()[ref_bond.index()].end();
+            if atom_dir_counts[ref_begin.index()] != 1 && atom_dir_counts[ref_end.index()] != 1 {
+                clear_direction_counted_for_writer(
+                    molecule,
+                    ref_bond,
+                    atom,
+                    bond_dir_counts,
+                    atom_dir_counts,
+                );
+            }
         }
         break;
     }
@@ -5297,7 +6204,6 @@ fn neighboring_stereo_double_bonds_for_writer(
             }
         }
     }
-    out.sort_by_key(|bond| bond.index());
     out
 }
 
@@ -5313,16 +6219,16 @@ fn get_reference_direction_for_writer(
     target_is_flipped: bool,
 ) -> BondDirection {
     // BEGIN RDKIT CPP FUNCTION getReferenceDirection
-    // RDKit✔️✔️: if (dblBond.getStereo() == Bond::STEREOE ||
-    // RDKit✔️✔️:     dblBond.getStereo() == Bond::STEREOTRANS) {
-    // RDKit✔️✔️:   dir = refControllingBond.getBondDir();
-    // RDKit✔️✔️: } else if (dblBond.getStereo() == Bond::STEREOZ ||
-    // RDKit✔️✔️:            dblBond.getStereo() == Bond::STEREOCIS) {
-    // RDKit✔️✔️:   dir = flipStereoBondDir(refControllingBond.getBondDir());
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: if (refAtom.getDegree() == 3 && ... stereoAtoms ... ) { dir = flipStereoBondDir(dir); }
-    // RDKit✔️✔️: if (targetAtom.getDegree() == 3 && ... stereoAtoms ... ) { dir = flipStereoBondDir(dir); }
-    // RDKit✔️✔️: if (refIsFlipped != targetIsFlipped) { dir = flipStereoBondDir(dir); }
+    // RDKit❗✔️: if (dblBond.getStereo() == Bond::STEREOE ||
+    // RDKit❗✔️:     dblBond.getStereo() == Bond::STEREOTRANS) {
+    // RDKit❗✔️:   dir = refControllingBond.getBondDir();
+    // RDKit❗✔️: } else if (dblBond.getStereo() == Bond::STEREOZ ||
+    // RDKit❗✔️:            dblBond.getStereo() == Bond::STEREOCIS) {
+    // RDKit❗✔️:   dir = flipStereoBondDir(refControllingBond.getBondDir());
+    // RDKit❗✔️: }
+    // RDKit❗✔️: if (refAtom.getDegree() == 3 && ... stereoAtoms ... ) { dir = flipStereoBondDir(dir); }
+    // RDKit❗✔️: if (targetAtom.getDegree() == 3 && ... stereoAtoms ... ) { dir = flipStereoBondDir(dir); }
+    // RDKit❗✔️: if (refIsFlipped != targetIsFlipped) { dir = flipStereoBondDir(dir); }
     // END RDKIT CPP FUNCTION getReferenceDirection
     let dbl = &molecule.bonds()[dbl_bond.index()];
     let mut dir = match dbl.stereo() {
@@ -5366,11 +6272,11 @@ fn set_direction_from_neighboring_bond_for_writer(
     target_flipped: bool,
 ) {
     // BEGIN RDKIT CPP FUNCTION setDirectionFromNeighboringBond
-    // RDKit✔️✔️: auto dir = sourceBond.getBondDir();
-    // RDKit✔️✔️: if (isSourceBondFlipped == isTargetBondFlipped) {
-    // RDKit✔️✔️:   dir = flipStereoBondDir(dir);
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: targetBond.setBondDir(dir);
+    // RDKit❗✔️: auto dir = sourceBond.getBondDir();
+    // RDKit❗✔️: if (isSourceBondFlipped == isTargetBondFlipped) {
+    // RDKit❗✔️:   dir = flipStereoBondDir(dir);
+    // RDKit❗✔️: }
+    // RDKit❗✔️: targetBond.setBondDir(dir);
     // END RDKIT CPP FUNCTION setDirectionFromNeighboringBond
     let mut dir = molecule.bonds()[source.index()].direction();
     if source_flipped == target_flipped {
@@ -5387,9 +6293,9 @@ fn same_side_dirs_are_compatible_for_writer(
     second_flipped: bool,
 ) -> bool {
     // BEGIN RDKIT CPP FUNCTION sameSideDirsAreCompatible
-    // RDKit✔️✔️: auto dirsShouldMatch = isFirstBondFlipped != isSecondBondFlipped;
-    // RDKit✔️✔️: auto dirsMatch = firstBond.getBondDir() == secondBond.getBondDir();
-    // RDKit✔️✔️: return dirsMatch == dirsShouldMatch;
+    // RDKit❗✔️: auto dirsShouldMatch = isFirstBondFlipped != isSecondBondFlipped;
+    // RDKit❗✔️: auto dirsMatch = firstBond.getBondDir() == secondBond.getBondDir();
+    // RDKit❗✔️: return dirsMatch == dirsShouldMatch;
     // END RDKIT CPP FUNCTION sameSideDirsAreCompatible
     let dirs_should_match = first_flipped != second_flipped;
     let dirs_match =
@@ -5438,6 +6344,37 @@ fn is_writer_stereo_double_bond(bond: &Bond) -> bool {
         && bond.stereo_atoms().is_some()
 }
 
+fn writer_double_bond_has_distinguishable_ends(
+    molecule: &Molecule,
+    dbl_bond: BondId,
+    cip_ranks: Option<&[u32]>,
+) -> bool {
+    let Some(ranks) = cip_ranks else {
+        return true;
+    };
+    let bond = &molecule.bonds()[dbl_bond.index()];
+    for atom in [bond.begin(), bond.end()] {
+        let neighbors = incident_bonds(molecule, atom)
+            .into_iter()
+            .filter(|candidate| *candidate != dbl_bond)
+            .filter_map(|candidate| bond_other_atom(&molecule.bonds()[candidate.index()], atom))
+            .collect::<Vec<_>>();
+        if neighbors.len() == 2 {
+            // BEGIN RDKIT CPP FUNCTION Chirality::findAtomNeighborDirHelper duplicate-neighbor check
+            // RDKit✔️✔️: if (neighbors.size() == 2 &&
+            // RDKit✔️✔️:     ranks[neighbors[0].first] == ranks[neighbors[1].first]) {
+            // RDKit✔️✔️:   // the two substituents are identical, no stereochemistry here:
+            // RDKit✔️✔️:   neighbors.clear();
+            // RDKit✔️✔️: }
+            // END RDKIT CPP FUNCTION Chirality::findAtomNeighborDirHelper duplicate-neighbor check
+            if ranks.get(neighbors[0].index()) == ranks.get(neighbors[1].index()) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 fn can_have_direction_for_writer(order: BondOrder) -> bool {
     matches!(order, BondOrder::Single | BondOrder::Aromatic)
 }
@@ -5460,12 +6397,12 @@ fn set_bond_direction(molecule: &mut Molecule, bond: BondId, direction: BondDire
 
 fn write_ring_closure(
     smiles: &mut String,
-    bond: BondId,
+    ring_idx: usize,
     context: &mut SmilesWriteContext,
 ) -> Result<(), SmilesWriteError> {
-    if let Some(digit) = context.ring_closure_digits.get(&bond).copied() {
+    if let Some(digit) = context.ring_closure_digits.get(&ring_idx).copied() {
         write_ring_index(smiles, digit);
-        context.ring_closures_to_erase.push(bond);
+        context.ring_closures_to_erase.push(ring_idx);
         return Ok(());
     }
 
@@ -5488,7 +6425,7 @@ fn write_ring_closure(
             );
         }
     };
-    context.ring_closure_digits.insert(bond, digit);
+    context.ring_closure_digits.insert(ring_idx, digit);
     write_ring_index(smiles, digit);
     Ok(())
 }
@@ -5963,6 +6900,28 @@ mod tests {
     }
 
     #[test]
+    fn prepare_plain_smiles_molecule_clears_dummy_atom_maps_for_canonical_ranking() {
+        let molecule = Molecule::from_smiles_with_sanitize("[*:7]C[CH3:1]", false).unwrap();
+        let mut working = molecule.clone();
+        let params = SmilesWriteParams {
+            ignore_atom_map_numbers: true,
+            ..Default::default()
+        };
+
+        let saved = prepare_plain_smiles_molecule(&mut working, &params).unwrap();
+
+        assert_eq!(saved, Some(vec![Some(7), None, Some(1)]));
+        assert_eq!(
+            working
+                .atoms()
+                .iter()
+                .map(|atom| atom.atom_map())
+                .collect::<Vec<_>>(),
+            vec![None, None, None]
+        );
+    }
+
+    #[test]
     fn mol_to_smiles_ignore_atom_map_numbers_matches_rdkit_canonical_split_behavior() {
         let molecule = Molecule::from_smiles_with_sanitize("[CH3:7][CH2:3][CH3:1]", false).unwrap();
         let noncanonical = SmilesWriteParams {
@@ -5983,6 +6942,92 @@ mod tests {
         assert!(canonical_smiles.contains(":7"));
         assert!(canonical_smiles.contains(":3"));
         assert!(canonical_smiles.contains(":1"));
+    }
+
+    #[test]
+    fn mol_to_smiles_ignore_atom_map_numbers_matches_rdkit_dummy_map_ordering() {
+        let molecule = Molecule::from_smiles_with_sanitize("[*:1]C", false).unwrap();
+        let noncanonical = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            clean_stereo: false,
+            canonical: false,
+            ignore_atom_map_numbers: true,
+            ..Default::default()
+        };
+        let canonical = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            clean_stereo: false,
+            canonical: true,
+            ignore_atom_map_numbers: true,
+            ..Default::default()
+        };
+
+        assert_eq!(mol_to_smiles(&molecule, &noncanonical).unwrap(), "*C");
+        assert_eq!(mol_to_smiles(&molecule, &canonical).unwrap(), "[*:1]C");
+    }
+
+    #[test]
+    fn mol_to_smiles_do_kekule_handles_exocyclic_aryl_substituent_like_rdkit_row_88() {
+        let molecule =
+            Molecule::from_smiles("O=C1N(/N=C(/C)C1=NN/C2=C/C(OC)=CC=C2)C=3C=CC=CC=3").unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            do_kekule: true,
+            canonical: false,
+            clean_stereo: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            mol_to_smiles(&molecule, &params).unwrap(),
+            "O=C1N(C2=CC=CC=C2)N=C(C)C1=NNC1=CC(OC)=CC=C1"
+        );
+    }
+
+    #[test]
+    fn writer_nonisomeric_explicit_bonds_clears_imine_direction_marks_like_rdkit_row_88() {
+        let molecule =
+            Molecule::from_smiles("O=C1N(/N=C(/C)C1=NN/C2=C/C(OC)=CC=C2)C=3C=CC=CC=3").unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            canonical: false,
+            clean_stereo: false,
+            all_bonds_explicit: true,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            mol_to_smiles(&molecule, &params).unwrap(),
+            "O=C1-N(-c2:c:c:c:c:c:2)-N=C(-C)-C-1=N-N-c1:c:c(-O-C):c:c:c:1"
+        );
+    }
+
+    #[test]
+    fn choose_fragment_start_atom_prefers_terminal_dummy_like_rdkit() {
+        let molecule = Molecule::from_smiles_with_sanitize("*C", false).unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            clean_stereo: false,
+            ..Default::default()
+        };
+        let plan = collect_fragment_write_plans(&molecule, &params)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        let ranks = rank_fragment_atoms_for_smiles(
+            &molecule,
+            &plan,
+            &params,
+            SmilesOutputMode::PlainSmiles,
+        )
+        .unwrap();
+
+        assert_eq!(ranks, vec![0, 1]);
+        assert_eq!(
+            choose_fragment_start_atom(&plan, &ranks, &params).unwrap(),
+            AtomId::new(0)
+        );
     }
 
     #[test]
@@ -6202,6 +7247,8 @@ mod tests {
             AtomId::new(1),
             &vec![Vec::new(); molecule.num_atoms()],
             &vec![Vec::new(); molecule.num_atoms()],
+            &[],
+            false,
         )
         .unwrap();
 
@@ -6225,6 +7272,55 @@ mod tests {
         assert_eq!(
             mol_fragment_to_smiles(&molecule, &params, &[0, 1, 2, 3], None, None, None).unwrap(),
             "C[C@H](F)C"
+        );
+    }
+
+    #[test]
+    fn writer_uses_parser_persisted_ring_stereo_props_without_local_reconstruction() {
+        let molecule =
+            Molecule::from_smiles_with_sanitize("C1[C@H](F)CC[C@H](Cl)C1", true).unwrap();
+        let params = SmilesWriteParams {
+            canonical: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            mol_to_smiles(&molecule, &params).unwrap(),
+            "C1[C@H](F)CC[C@H](Cl)C1"
+        );
+    }
+
+    #[test]
+    fn writer_rejects_ring_stereo_candidate_missing_ring_neighbors_prop() {
+        let mut molecule =
+            Molecule::from_smiles_with_sanitize("C1[C@H](F)CC[C@H](Cl)C1", true).unwrap();
+        molecule.topology_block_mut().atoms[1].clear_prop("_ringStereoAtoms");
+
+        let error = mol_to_smiles(&molecule, &SmilesWriteParams::default()).unwrap_err();
+
+        assert_eq!(
+            error,
+            SmilesWriteError::InvalidRingStereoState {
+                atom: 1,
+                requirement: "`_ringStereochemCand` requires `_ringStereoAtoms`",
+            }
+        );
+    }
+
+    #[test]
+    fn writer_rejects_malformed_ring_stereo_neighbors_prop() {
+        let mut molecule =
+            Molecule::from_smiles_with_sanitize("C1[C@H](F)CC[C@H](Cl)C1", true).unwrap();
+        molecule.topology_block_mut().atoms[1].set_prop("_ringStereoAtoms", "0");
+
+        let error = mol_to_smiles(&molecule, &SmilesWriteParams::default()).unwrap_err();
+
+        assert_eq!(
+            error,
+            SmilesWriteError::InvalidRingStereoState {
+                atom: 1,
+                requirement: "`_ringStereoAtoms` must be a valid encoded ring-neighbor list",
+            }
         );
     }
 
@@ -6462,6 +7558,12 @@ mod tests {
             include_dative_bonds: false,
             ..Default::default()
         };
+
+        let mut working = molecule.clone();
+        let _ = prepare_plain_smiles_molecule(&mut working, &params).unwrap();
+        assert_eq!(working.bonds()[0].order(), BondOrder::Single);
+        assert_eq!(total_num_hydrogens_for_writer(&working, AtomId::new(0)), 3);
+        assert_eq!(total_valence_for_writer(&working, AtomId::new(0)), Some(3));
 
         assert_eq!(mol_to_smiles(&molecule, &params).unwrap(), "NO");
         assert_eq!(molecule.bonds()[0].order(), BondOrder::Dative);
@@ -6756,6 +7858,143 @@ mod tests {
     }
 
     #[test]
+    fn writer_rooted_terminal_double_bond_directions_match_rdkit_without_isomeric_smiles() {
+        let mol = Molecule::from_smiles_with_sanitize("F/C=C\\F", true).unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            canonical: false,
+            clean_stereo: false,
+            all_bonds_explicit: true,
+            rooted_at_atom: Some(3),
+            ..Default::default()
+        };
+
+        assert_eq!(mol_to_smiles(&mol, &params).unwrap(), "F/C=C\\F");
+    }
+
+    #[test]
+    fn writer_preserves_rdkit_fused_ring_closure_digit_order_in_canonical_kekule_mode() {
+        let mol = Molecule::from_smiles("Clc1ccc2ccc3cccc4ccc1c2c34").unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            do_kekule: true,
+            canonical: true,
+            clean_stereo: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            mol_to_smiles(&mol, &params).unwrap(),
+            "ClC1=C2C=CC3=CC=CC4=CC=C(C=C1)C2=C43"
+        );
+    }
+
+    #[test]
+    fn writer_kekule_all_hydrogens_explicit_preserves_pyrrolic_hydrogen_like_rdkit() {
+        let mol = Molecule::from_smiles("[nH]1cccc1").unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            do_kekule: true,
+            canonical: false,
+            clean_stereo: false,
+            all_hydrogens_explicit: true,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            mol_to_smiles(&mol, &params).unwrap(),
+            "[NH]1[CH]=[CH][CH]=[CH]1"
+        );
+    }
+
+    #[test]
+    fn writer_does_not_bracket_standard_aromatic_carbons_like_rdkit() {
+        let mol = Molecule::from_smiles("c1ccccc1").unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            canonical: false,
+            clean_stereo: false,
+            ..Default::default()
+        };
+
+        assert!(!atom_needs_bracket(&mol, AtomId::new(0), "", &params).unwrap());
+        assert_eq!(mol_to_smiles(&mol, &params).unwrap(), "c1ccccc1");
+    }
+
+    #[test]
+    fn writer_preserves_unbracketed_aromatic_ring_segment_like_rdkit_row_142() {
+        let mol = Molecule::from_smiles("C12(C(C)c3ccccc3)NCC(C1(C)C)CC2").unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            do_kekule: false,
+            canonical: false,
+            clean_stereo: false,
+            include_dative_bonds: false,
+            ignore_atom_map_numbers: false,
+            ..Default::default()
+        };
+
+        let smiles = mol_to_smiles(&mol, &params).unwrap();
+        assert!(smiles.contains("c3ccccc3"), "got: {smiles}");
+        assert!(!smiles.contains("[cH]"), "got: {smiles}");
+    }
+
+    #[test]
+    fn writer_restores_atom_maps_before_kekulize_like_rdkit_row_142() {
+        let input = "[C:12]12([CH:62]([CH3:65])[c:61]3[cH:64][cH:67][cH:68][cH:66][cH:63]3)[CH:20]4[c:30]5[c:40]6[c:49]7[c:57]8[c:60]([c:59]9[c:55]([c:47]([c:44]([c:52]9[c:51]([c:43]%10[c:35]%11[c:25]%12[c:19]%13%14)[c:53]8[c:45]%11[c:39]6[c:29]4%13)[c:34]([c:24]%15[c:15]%16[c:7]%17[c:3]%18%19)[c:33]%10[c:23]%16[c:16]%12[c:8]%18[c:11]%14[c:5]1%20)[c:37]([c:36]%21[c:26]%22[c:18]%23[c:10]%24[c:13]%25[c:6]%26%27)[c:27]%15[c:17]%22[c:9]%17[c:4]%24[c:1]%19[c:2]%20%26)[c:54]([c:46]%21[c:38]%28[c:28]%23[c:21]%25%29)[c:56]%30[c:48]%28[c:41]%31[c:31]%29[c:22]%32[c:14]2%27)[c:58]%30[c:50]7[c:42]%31[c:32]5%32";
+        let mut molecule = Molecule::from_smiles(input).unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            do_kekule: true,
+            canonical: true,
+            clean_stereo: false,
+            include_dative_bonds: false,
+            ignore_atom_map_numbers: true,
+            rooted_at_atom: Some(molecule.num_atoms() - 1),
+            ..Default::default()
+        };
+
+        let saved_atom_maps = prepare_plain_smiles_molecule(&mut molecule, &params).unwrap();
+        let plan = collect_fragment_write_plans(&molecule, &params)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        let _ranks = rank_fragment_atoms_for_smiles(
+            &molecule,
+            &plan,
+            &params,
+            SmilesOutputMode::PlainSmiles,
+        )
+        .unwrap();
+        restore_atom_maps_after_canonical_smiles(&mut molecule, saved_atom_maps.as_deref());
+        let kekulized = kekulize_for_smiles(&molecule).unwrap();
+
+        assert_eq!(kekulized.bonds()[11].order(), BondOrder::Double);
+        assert_eq!(kekulized.bonds()[72].order(), BondOrder::Single);
+    }
+
+    #[test]
+    fn writer_kekule_ignoring_dative_bonds_matches_rdkit_metal_porphyrin_branch() {
+        let mol = Molecule::from_smiles(
+            "O=C(O[Na])CC1=C(C(C(O[Na])=O)=C(C)C2=CC3=[N]4C(C(C=O)=C3CC)=CC5=C(C=C)C(C)=C6[N-]75)[N-]2[Cu+2]47[N](C8=C6)=C1C(C8C)CCC(O[Na])=O",
+        )
+        .unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            do_kekule: true,
+            canonical: false,
+            clean_stereo: false,
+            include_dative_bonds: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            mol_to_smiles(&mol, &params).unwrap(),
+            "O=C([O][Na])CC1=C2[N]3[Cu+2]45[N]6C(=CC7=C(C)C(C([O][Na])=O)=C1[N-]74)C(CC)=C(C=O)C6=CC1=C(C=C)C(C)=C([N-]15)C=C3C(C)C2CCC([O][Na])=O"
+        );
+    }
+
     fn writer_cleans_nonstereo_double_bond_direction_specs_like_rdkit() {
         let mol = Molecule::from_smiles_with_sanitize("C/C=C(/C)C", true).unwrap();
         let params = SmilesWriteParams {
@@ -6861,18 +8100,47 @@ mod tests {
         };
 
         let fixtures = [
-            ("C1/C=C/C2CCCCC2C1", "C1=CC2CCCCC2CC1"),
-            ("C1/C=C\\C2CCCCC2C1", "C1=CC2CCCCC2CC1"),
-            ("C1C/C=C/CC2CCCCC12", "C1=CCC2CCCCC2CC1"),
-            ("C1/C=C/C2=C/CCCC2C1", "C1=CC2=CCCCC2CC1"),
-            ("C1/C=C\\C2=C/CCCC2C1", "C1=CC2=CCCCC2CC1"),
-            ("C1/C=C/C=C/CC2CCCCC12", "C1=C/CC2CCCCC2C/C=C/1"),
-            ("C1/C=C\\C=C/CC2CCCCC12", "C1=C\\CC2CCCCC2C\\C=C/1"),
-            ("C1/C=C/C=C\\CC2CCCCC12", "C1=C\\CC2CCCCC2C/C=C/1"),
+            ("C1/C=C/C2CCCCC2C1", "C1=CC2CCCCC2CC1", "C1=C/C2CCCCC2CC/1"),
+            (
+                "C1/C=C\\C2CCCCC2C1",
+                "C1=CC2CCCCC2CC1",
+                "C1=C\\C2CCCCC2CC/1",
+            ),
+            (
+                "C1C/C=C/CC2CCCCC12",
+                "C1=CCC2CCCCC2CC1",
+                "C1=C/CC2CCCCC2CC/1",
+            ),
+            (
+                "C1/C=C/C2=C/CCCC2C1",
+                "C1=CC2=CCCCC2CC1",
+                "C1=C2/C=C/CCC2CCC1",
+            ),
+            (
+                "C1/C=C\\C2=C/CCCC2C1",
+                "C1=CC2=CCCCC2CC1",
+                "C1=C2/C=C\\CCC2CCC1",
+            ),
+            (
+                "C1/C=C/C=C/CC2CCCCC12",
+                "C1=C/CC2CCCCC2C/C=C/1",
+                "C1=C/CC2CCCCC2C/C=C/1",
+            ),
+            (
+                "C1/C=C\\C=C/CC2CCCCC12",
+                "C1=C\\CC2CCCCC2C\\C=C/1",
+                "C1=C\\CC2CCCCC2C\\C=C/1",
+            ),
+            (
+                "C1/C=C/C=C\\CC2CCCCC12",
+                "C1=C\\CC2CCCCC2C/C=C/1",
+                "C1=C\\CC2CCCCC2C/C=C/1",
+            ),
         ];
 
-        for (input, expected) in fixtures {
-            for sanitize in [true, false] {
+        for (input, expected_sanitized, expected_unsanitized) in fixtures {
+            for (sanitize, expected) in [(true, expected_sanitized), (false, expected_unsanitized)]
+            {
                 let mol = Molecule::from_smiles_with_sanitize(input, sanitize).unwrap();
                 assert_eq!(
                     mol_to_smiles(&mol, &params).unwrap(),
@@ -6881,6 +8149,310 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn prepare_plain_smiles_molecule_initializes_fast_ring_info_for_fused_ring_stereo_like_rdkit() {
+        let input = "C1/C=C/C2=C/CCCC2C1";
+        let mut molecule = Molecule::from_smiles_with_sanitize(input, false).unwrap();
+        let params = SmilesWriteParams {
+            canonical: true,
+            clean_stereo: false,
+            ..Default::default()
+        };
+
+        let _saved_atom_maps = prepare_plain_smiles_molecule(&mut molecule, &params).unwrap();
+        assert!(
+            molecule
+                .derived_cache()
+                .rings
+                .as_ref()
+                .is_some_and(crate::RingInfo::is_find_fast_or_better)
+        );
+    }
+
+    #[test]
+    #[ignore = "debug helper for upstream/rust checkpoint alignment"]
+    fn debug_probe_rust_writer_fused_ring_chain() {
+        let input = "C1/C=C/C2=C/CCCC2C1";
+        let params = SmilesWriteParams {
+            canonical: true,
+            clean_stereo: false,
+            ..Default::default()
+        };
+
+        let focus = [0usize, 1usize, 2usize, 3usize, 4usize];
+        let print_state = |name: &str, mol: &Molecule| {
+            eprintln!(
+                "checkpoint={name} rings_initialized={} is_symm_sssr={} stereo_done={}",
+                mol.derived_cache().rings.is_some(),
+                mol.derived_cache()
+                    .rings
+                    .as_ref()
+                    .is_some_and(crate::RingInfo::is_symm_sssr),
+                mol.prop("_StereochemDone").is_some()
+            );
+            for bond_idx in focus {
+                let bond = &mol.bonds()[bond_idx];
+                let ring_count = mol
+                    .derived_cache()
+                    .rings
+                    .as_ref()
+                    .map(|ri| ri.num_bond_rings(BondId::new(bond_idx)))
+                    .unwrap_or(0);
+                let min_ring = mol
+                    .derived_cache()
+                    .rings
+                    .as_ref()
+                    .map(|ri| ri.min_bond_ring_size(BondId::new(bond_idx)))
+                    .unwrap_or(0);
+                eprintln!(
+                    "bond {} {}-{} dir={:?} stereo={:?} stereo_atoms={:?} ring_count={} min_ring={}",
+                    bond_idx,
+                    bond.begin().index(),
+                    bond.end().index(),
+                    bond.direction(),
+                    bond.stereo(),
+                    bond.stereo_atoms(),
+                    ring_count,
+                    min_ring
+                );
+            }
+        };
+
+        let mut raw = Molecule::from_smiles_with_sanitize(input, false).unwrap();
+        print_state("raw_parse", &raw);
+
+        update_property_cache_for_smiles(&mut raw).unwrap();
+        print_state("post_update_property_cache", &raw);
+
+        let mut ringed = raw.clone();
+        ensure_fast_rings_for_writer_stereo_perception(&mut ringed).unwrap();
+        print_state("post_fast_find_rings", &ringed);
+
+        let mut assigned = ringed.clone();
+        assign_stereochemistry_for_smiles(&mut assigned, false).unwrap();
+        print_state("post_assign_stereochemistry", &assigned);
+
+        eprintln!(
+            "checkpoint=final_output smiles={}",
+            mol_to_smiles(
+                &Molecule::from_smiles_with_sanitize(input, false).unwrap(),
+                &params
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    #[ignore = "debug helper for upstream/rust checkpoint alignment"]
+    fn debug_probe_rust_writer_row_91() {
+        let input = "O=C1/C(CC[C@@H](C)C1)=C(C)/C";
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            do_kekule: false,
+            canonical: false,
+            clean_stereo: false,
+            all_bonds_explicit: true,
+            all_hydrogens_explicit: false,
+            include_dative_bonds: false,
+            ignore_atom_map_numbers: false,
+            ..Default::default()
+        };
+
+        let focus = [0usize, 1usize, 2usize, 3usize, 4usize];
+        let print_state = |name: &str, mol: &Molecule| {
+            eprintln!(
+                "checkpoint={name} rings_initialized={} is_symm_sssr={} stereo_done={}",
+                mol.derived_cache().rings.is_some(),
+                mol.derived_cache()
+                    .rings
+                    .as_ref()
+                    .is_some_and(crate::RingInfo::is_symm_sssr),
+                mol.prop("_StereochemDone").is_some()
+            );
+            for bond_idx in focus {
+                let bond = &mol.bonds()[bond_idx];
+                let ring_count = mol
+                    .derived_cache()
+                    .rings
+                    .as_ref()
+                    .map(|ri| ri.num_bond_rings(BondId::new(bond_idx)))
+                    .unwrap_or(0);
+                let min_ring = mol
+                    .derived_cache()
+                    .rings
+                    .as_ref()
+                    .map(|ri| ri.min_bond_ring_size(BondId::new(bond_idx)))
+                    .unwrap_or(0);
+                eprintln!(
+                    "bond {} {}-{} order={:?} dir={:?} stereo={:?} stereo_atoms={:?} ring_count={} min_ring={}",
+                    bond_idx,
+                    bond.begin().index(),
+                    bond.end().index(),
+                    bond.order(),
+                    bond.direction(),
+                    bond.stereo(),
+                    bond.stereo_atoms(),
+                    ring_count,
+                    min_ring
+                );
+            }
+        };
+
+        let mut raw = Molecule::from_smiles_with_sanitize(input, false).unwrap();
+        print_state("raw_parse", &raw);
+
+        update_property_cache_for_smiles(&mut raw).unwrap();
+        print_state("post_update_property_cache", &raw);
+
+        let mut ringed = raw.clone();
+        ensure_fast_rings_for_writer_stereo_perception(&mut ringed).unwrap();
+        print_state("post_fast_find_rings", &ringed);
+
+        let mut assigned = ringed.clone();
+        assign_stereochemistry_for_smiles(&mut assigned, false).unwrap();
+        print_state("post_assign_stereochemistry", &assigned);
+
+        eprintln!(
+            "checkpoint=final_output smiles={}",
+            mol_to_smiles(
+                &Molecule::from_smiles_with_sanitize(input, false).unwrap(),
+                &params
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    #[ignore = "debug helper for upstream/rust checkpoint alignment"]
+    fn debug_probe_rust_writer_row_91_traversal_state() {
+        let input = "O=C1/C(CC[C@@H](C)C1)=C(C)/C";
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            do_kekule: false,
+            canonical: false,
+            clean_stereo: false,
+            all_bonds_explicit: true,
+            all_hydrogens_explicit: false,
+            include_dative_bonds: false,
+            ignore_atom_map_numbers: false,
+            ..Default::default()
+        };
+
+        let mut molecule = Molecule::from_smiles_with_sanitize(input, false).unwrap();
+        let _ = prepare_plain_smiles_molecule(&mut molecule, &params).unwrap();
+        let plans = collect_fragment_write_plans(&molecule, &params).unwrap();
+        let plan = &plans[0];
+        let ranks =
+            rank_fragment_atoms_for_smiles(&molecule, plan, &params, SmilesOutputMode::PlainSmiles)
+                .unwrap();
+        let start_atom = choose_fragment_start_atom(plan, &ranks, &params).unwrap();
+        let traversal = canonicalize_fragment_stack(
+            &molecule,
+            plan,
+            start_atom,
+            &ranks,
+            &params,
+            SmilesWriteOverrides::default(),
+        )
+        .unwrap();
+        eprintln!(
+            "checkpoint=post_traversal bond1_dir={:?} bond1_stereo={:?} stack_len={}",
+            molecule.bonds()[1].direction(),
+            molecule.bonds()[1].stereo(),
+            traversal.stack.len()
+        );
+        for item in &traversal.stack {
+            match *item {
+                MolStackElem::Bond(bond, atom_to_left) => {
+                    if bond.index() == 1 {
+                        eprintln!(
+                            "stack_bond1 atom_to_left={} dir={:?} stereo={:?} stereo_atoms={:?}",
+                            atom_to_left.index(),
+                            molecule.bonds()[1].direction(),
+                            molecule.bonds()[1].stereo(),
+                            molecule.bonds()[1].stereo_atoms()
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+        let result = write_mol_stack(
+            &molecule,
+            &traversal.stack,
+            &params,
+            SmilesWriteOverrides::default(),
+            &mut SmilesWriteContext::default(),
+        )
+        .unwrap();
+        eprintln!("checkpoint=post_write smiles={}", result.smiles);
+    }
+
+    #[test]
+    #[ignore = "debug helper for upstream/rust checkpoint alignment"]
+    fn debug_probe_rust_writer_row_91_direction_canonicalization() {
+        let input = "O=C1/C(CC[C@@H](C)C1)=C(C)/C";
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            do_kekule: false,
+            canonical: false,
+            clean_stereo: false,
+            all_bonds_explicit: true,
+            all_hydrogens_explicit: false,
+            include_dative_bonds: false,
+            ignore_atom_map_numbers: false,
+            ..Default::default()
+        };
+
+        let mut molecule = Molecule::from_smiles_with_sanitize(input, false).unwrap();
+        let _ = prepare_plain_smiles_molecule(&mut molecule, &params).unwrap();
+        let plan = collect_fragment_write_plans(&molecule, &params)
+            .unwrap()
+            .remove(0);
+        let ranks = rank_fragment_atoms_for_smiles(
+            &molecule,
+            &plan,
+            &params,
+            SmilesOutputMode::PlainSmiles,
+        )
+        .unwrap();
+        let start_atom = choose_fragment_start_atom(&plan, &ranks, &params).unwrap();
+        let traversal = canonicalize_fragment_stack(
+            &molecule,
+            &plan,
+            start_atom,
+            &ranks,
+            &params,
+            SmilesWriteOverrides::default(),
+        )
+        .unwrap();
+        let mut canonicalized = molecule.clone();
+        canonicalize_double_bond_directions_for_writer(
+            &mut canonicalized,
+            &traversal.stack,
+            &traversal.traversal_ring_closure_bonds,
+        )
+        .unwrap();
+        eprintln!(
+            "checkpoint=post_direction_canonicalization bond1_dir={:?} bond7_dir={:?} bond8_dir={:?}",
+            canonicalized.bonds()[1].direction(),
+            canonicalized.bonds()[7].direction(),
+            canonicalized.bonds()[8].direction()
+        );
+        eprintln!(
+            "checkpoint=post_direction_canonicalization_smiles={}",
+            write_mol_stack(
+                &canonicalized,
+                &traversal.stack,
+                &params,
+                SmilesWriteOverrides::default(),
+                &mut SmilesWriteContext::default(),
+            )
+            .unwrap()
+            .smiles
+        );
     }
 
     #[test]
@@ -6924,6 +8496,42 @@ mod tests {
     }
 
     #[test]
+    fn remove_redundant_bond_dir_specs_requires_neighboring_stereo_double_bond_like_rdkit() {
+        let mut builder = crate::MoleculeBuilder::new();
+        let a0 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let a1 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let a2 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let ref_bond = builder
+            .add_bond(
+                crate::BondSpec::new(a0, a1, BondOrder::Single)
+                    .with_direction(BondDirection::EndUpRight),
+            )
+            .unwrap();
+        let _dbl_bond = builder
+            .add_bond(crate::BondSpec::new(a1, a2, BondOrder::Single))
+            .unwrap();
+        let mut molecule = builder.build().unwrap();
+        let stack = vec![
+            MolStackElem::Atom(a0),
+            MolStackElem::Bond(ref_bond, a0),
+            MolStackElem::Atom(a1),
+        ];
+        let mut bond_dir_counts = vec![1i8, 0i8];
+        let mut atom_dir_counts = vec![2i8, 2i8, 2i8];
+
+        remove_redundant_bond_dir_specs_for_writer(
+            &mut molecule,
+            &stack,
+            &mut bond_dir_counts,
+            &mut atom_dir_counts,
+        );
+
+        assert_eq!(molecule.bonds()[0].direction(), BondDirection::EndUpRight);
+        assert_eq!(bond_dir_counts, vec![1, 0]);
+        assert_eq!(atom_dir_counts, vec![2, 2, 2]);
+    }
+
+    #[test]
     fn writer_canonical_fragment_scope_preserves_aromatic_fused_ring_form_like_rdkit_row_94() {
         let mol = Molecule::from_smiles_with_sanitize(
             "Cl.Cl.COc1ccc2nccc([C@@H](O)[C@@H]3C[C@@H]4CCN3C[C@@H]4C=C)c2c1",
@@ -6935,6 +8543,212 @@ mod tests {
         assert_eq!(
             mol_to_smiles(&mol, &params).unwrap(),
             "C=C[C@H]1CN2CC[C@H]1C[C@H]2[C@H](O)c1ccnc2ccc(OC)cc12.Cl.Cl"
+        );
+    }
+
+    #[test]
+    fn writer_plain_nonisomeric_row_91_matches_rdkit_after_direction_cleanup() {
+        let mol =
+            Molecule::from_smiles_with_sanitize("O=C1/C(CC[C@@H](C)C1)=C(C)/C", false).unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            do_kekule: false,
+            canonical: false,
+            clean_stereo: false,
+            all_bonds_explicit: true,
+            all_hydrogens_explicit: false,
+            include_dative_bonds: false,
+            ignore_atom_map_numbers: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            mol_to_smiles(&mol, &params).unwrap(),
+            "O=C1-C(=C(-C)-C)-C-C-C(-C)-C-1"
+        );
+    }
+
+    #[test]
+    #[ignore = "debug helper for upstream/rust checkpoint alignment"]
+    fn debug_probe_rust_writer_row_91_direction_cleanup_substeps() {
+        let input = "O=C1/C(CC[C@@H](C)C1)=C(C)/C";
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            do_kekule: false,
+            canonical: false,
+            clean_stereo: false,
+            all_bonds_explicit: true,
+            all_hydrogens_explicit: false,
+            include_dative_bonds: false,
+            ignore_atom_map_numbers: false,
+            ..Default::default()
+        };
+
+        let mut molecule = Molecule::from_smiles_with_sanitize(input, false).unwrap();
+        let _ = prepare_plain_smiles_molecule(&mut molecule, &params).unwrap();
+        let plan = collect_fragment_write_plans(&molecule, &params)
+            .unwrap()
+            .remove(0);
+        let ranks = rank_fragment_atoms_for_smiles(
+            &molecule,
+            &plan,
+            &params,
+            SmilesOutputMode::PlainSmiles,
+        )
+        .unwrap();
+        let start_atom = choose_fragment_start_atom(&plan, &ranks, &params).unwrap();
+        let traversal = canonicalize_fragment_stack(
+            &molecule,
+            &plan,
+            start_atom,
+            &ranks,
+            &params,
+            SmilesWriteOverrides::default(),
+        )
+        .unwrap();
+        let mut canonicalized = molecule.clone();
+        let mut atom_visit_orders = vec![usize::MAX; canonicalized.num_atoms()];
+        let mut bond_visit_orders = vec![usize::MAX; canonicalized.num_bonds()];
+        for (pos, item) in traversal.stack.iter().enumerate() {
+            match *item {
+                MolStackElem::Atom(atom) => atom_visit_orders[atom.index()] = pos,
+                MolStackElem::Bond(bond, _) => {
+                    bond_visit_orders[bond.index()] = pos;
+                    if matches!(
+                        canonicalized.bonds()[bond.index()].direction(),
+                        BondDirection::EndDownRight | BondDirection::EndUpRight
+                    ) {
+                        canonicalized.topology_block_mut().bonds[bond.index()]
+                            .set_direction(BondDirection::None);
+                    }
+                }
+                MolStackElem::Ring { .. }
+                | MolStackElem::BranchOpen
+                | MolStackElem::BranchClose => {}
+            }
+        }
+
+        let mut bond_dir_counts = vec![0i8; canonicalized.num_bonds()];
+        let mut atom_dir_counts = vec![0i8; canonicalized.num_atoms()];
+        let cip_ranks = crate::stereo::assign_atom_cip_ranks(&canonicalized).ok();
+        canonicalize_double_bonds_for_writer(
+            &mut canonicalized,
+            &bond_visit_orders,
+            &atom_visit_orders,
+            &traversal.traversal_ring_closure_bonds,
+            &mut bond_dir_counts,
+            &mut atom_dir_counts,
+            &traversal.stack,
+            cip_ranks.as_deref(),
+        );
+        eprintln!(
+            "checkpoint=after_double_bonds bond1_dir={:?} bond7_dir={:?} bond8_dir={:?} bond_dir_counts={:?} atom_dir_counts={:?}",
+            canonicalized.bonds()[1].direction(),
+            canonicalized.bonds()[7].direction(),
+            canonicalized.bonds()[8].direction(),
+            bond_dir_counts,
+            atom_dir_counts
+        );
+        remove_unwanted_bond_dir_specs_for_writer(
+            &mut canonicalized,
+            &traversal.stack,
+            &mut bond_dir_counts,
+            &mut atom_dir_counts,
+            &bond_visit_orders,
+        );
+        eprintln!(
+            "checkpoint=after_remove_unwanted bond1_dir={:?} bond7_dir={:?} bond8_dir={:?} bond_dir_counts={:?} atom_dir_counts={:?}",
+            canonicalized.bonds()[1].direction(),
+            canonicalized.bonds()[7].direction(),
+            canonicalized.bonds()[8].direction(),
+            bond_dir_counts,
+            atom_dir_counts
+        );
+        let bond1_begin = canonicalized.bonds()[1].begin();
+        let bond1_end = canonicalized.bonds()[1].end();
+        let bond8_end = canonicalized.bonds()[8].end();
+        eprintln!(
+            "checkpoint=before_manual_clear atom1_neighbors={:?} atom4_neighbors={:?} atom8_neighbors={:?}",
+            incident_bonds(&canonicalized, bond1_begin)
+                .iter()
+                .map(|bond| (
+                    bond.index(),
+                    canonicalized.bonds()[bond.index()].order(),
+                    canonicalized.bonds()[bond.index()].direction()
+                ))
+                .collect::<Vec<_>>(),
+            incident_bonds(&canonicalized, bond1_end)
+                .iter()
+                .map(|bond| (
+                    bond.index(),
+                    canonicalized.bonds()[bond.index()].order(),
+                    canonicalized.bonds()[bond.index()].direction()
+                ))
+                .collect::<Vec<_>>(),
+            incident_bonds(&canonicalized, bond8_end)
+                .iter()
+                .map(|bond| (
+                    bond.index(),
+                    canonicalized.bonds()[bond.index()].order(),
+                    canonicalized.bonds()[bond.index()].direction()
+                ))
+                .collect::<Vec<_>>()
+        );
+        clear_bond_dirs_from_atom_for_writer(
+            &mut canonicalized,
+            BondId::new(1),
+            bond1_begin,
+            &mut bond_dir_counts,
+            &mut atom_dir_counts,
+        );
+        eprintln!(
+            "checkpoint=after_manual_clear_bond1_begin bond1_dir={:?} bond7_dir={:?} bond8_dir={:?} bond_dir_counts={:?} atom_dir_counts={:?}",
+            canonicalized.bonds()[1].direction(),
+            canonicalized.bonds()[7].direction(),
+            canonicalized.bonds()[8].direction(),
+            bond_dir_counts,
+            atom_dir_counts
+        );
+        clear_bond_dirs_from_atom_for_writer(
+            &mut canonicalized,
+            BondId::new(1),
+            bond1_end,
+            &mut bond_dir_counts,
+            &mut atom_dir_counts,
+        );
+        eprintln!(
+            "checkpoint=after_manual_clear_bond1_end bond1_dir={:?} bond7_dir={:?} bond8_dir={:?} bond_dir_counts={:?} atom_dir_counts={:?}",
+            canonicalized.bonds()[1].direction(),
+            canonicalized.bonds()[7].direction(),
+            canonicalized.bonds()[8].direction(),
+            bond_dir_counts,
+            atom_dir_counts
+        );
+        remove_redundant_bond_dir_specs_for_writer(
+            &mut canonicalized,
+            &traversal.stack,
+            &mut bond_dir_counts,
+            &mut atom_dir_counts,
+        );
+        eprintln!(
+            "checkpoint=after_remove_redundant bond1_dir={:?} bond7_dir={:?} bond8_dir={:?} bond_dir_counts={:?} atom_dir_counts={:?}",
+            canonicalized.bonds()[1].direction(),
+            canonicalized.bonds()[7].direction(),
+            canonicalized.bonds()[8].direction(),
+            bond_dir_counts,
+            atom_dir_counts
+        );
+        eprintln!(
+            "checkpoint=post_write smiles={}",
+            write_mol_stack(
+                &canonicalized,
+                &traversal.stack,
+                &params,
+                SmilesWriteOverrides::default(),
+                &mut SmilesWriteContext::default(),
+            )
+            .unwrap()
+            .smiles
         );
     }
 
@@ -7886,6 +9700,402 @@ mod tests {
         assert_eq!(
             build_bond_smiles(&molecule, BondId::new(0), c, &params).unwrap(),
             get_molecule_bond_smiles(&molecule, 0, Some(c.index()), &params).unwrap()
+        );
+    }
+
+    #[test]
+    fn writer_rooted_ring_stereo_centers_follow_rdkit_canonicalize_fragment_postprocessing() {
+        let molecule = Molecule::from_smiles(
+            "O=C(NC[C@]12C[C@H]3C[C@H](C[C@H](C3)C1)C2)[C@@H]1C[C@H]2c3ccccc3[C@@H]1c1ccccc12",
+        )
+        .unwrap();
+        let params = SmilesWriteParams {
+            canonical: false,
+            clean_stereo: false,
+            rooted_at_atom: Some(molecule.num_atoms() - 1),
+            include_dative_bonds: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            molecule.to_smiles_with_params(&params).unwrap(),
+            "c12c(cccc1)[C@H]1[C@H](C(=O)NC[C@]34C[C@H]5C[C@H](C[C@H](C5)C3)C4)C[C@@H]2c2ccccc21"
+        );
+    }
+
+    #[test]
+    fn writer_noncanonical_explicit_bonds_preserves_rdkit_neighboring_stereo_bond_order() {
+        let molecule = Molecule::from_smiles(
+            "C=C1/C(C[C@@H](O)CC1)=C\\C=C2[C@@]3([H])[C@@](CCC\\2)(C)[C@]([C@H](C)/C=C/[C@H](C)C(C)C)([H])CC3",
+        )
+        .unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            canonical: false,
+            clean_stereo: false,
+            all_bonds_explicit: true,
+            include_dative_bonds: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            molecule.to_smiles_with_params(&params).unwrap(),
+            "C=C1/C(=C\\C=C2\\C3-C(-C)(-C-C-C-2)-C(-C(-C)/C=C/C(-C)-C(-C)-C)-C-C-3)-C-C(-O)-C-C-1"
+        );
+    }
+
+    #[test]
+    fn writer_nonisomeric_explicit_bonds_clears_invalid_cx_ring_double_bond_stereo_like_rdkit_row_87()
+     {
+        let molecule = Molecule::from_smiles("O=C1OCC(=C1c1ccccc1)c1ccccc1 |c:4|").unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            canonical: false,
+            clean_stereo: false,
+            all_bonds_explicit: true,
+            include_dative_bonds: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            molecule.to_smiles_with_params(&params).unwrap(),
+            "O=C1-O-C-C(-c2:c:c:c:c:c:2)=C-1-c1:c:c:c:c:c:1"
+        );
+    }
+
+    #[test]
+    fn writer_preserves_non_ring_aromatic_bridge_as_explicit_single_like_rdkit_biphenyl() {
+        let molecule = Molecule::from_smiles("c1ccccc1c1ccccc1").unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            canonical: true,
+            clean_stereo: false,
+            include_dative_bonds: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            molecule.to_smiles_with_params(&params).unwrap(),
+            "c1ccc(-c2ccccc2)cc1"
+        );
+    }
+
+    #[test]
+    fn writer_emits_single_bridge_between_aromatic_rings_like_rdkit_row_90() {
+        let molecule =
+            Molecule::from_smiles("CCOC(=O)c1c(N/C=C\\2/C(=NC(=NC2=O)S)O)scc1c1ccc(cc1)Br")
+                .unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            canonical: false,
+            clean_stereo: false,
+            include_dative_bonds: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            molecule.to_smiles_with_params(&params).unwrap(),
+            "CCOC(=O)c1c(NC=C2C(O)=NC(S)=NC2=O)scc1-c1ccc(Br)cc1"
+        );
+    }
+
+    #[test]
+    fn writer_does_not_emit_cleared_tetrahedral_tag_like_rdkit_row_92() {
+        let molecule = Molecule::from_smiles(
+            "O/C1=C/C=C/C=C1/CN3CCN(CC=2C=CC=CC=2O)[C@]3([H])C=4/C=C(/OC)C(=CC=4)OC",
+        )
+        .unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: true,
+            canonical: false,
+            clean_stereo: false,
+            include_dative_bonds: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            molecule.to_smiles_with_params(&params).unwrap(),
+            "Oc1ccccc1CN1CCN(Cc2ccccc2O)C1c1cc(OC)c(OC)cc1"
+        );
+    }
+
+    #[test]
+    fn writer_preserves_ring_special_case_stereo_like_rdkit_row_83() {
+        let molecule = Molecule::from_smiles(
+            "O=C(NC[C@]12C[C@H]3C[C@H](C[C@H](C3)C1)C2)[C@@H]1C[C@H]2c3ccccc3[C@@H]1c1ccccc12",
+        )
+        .unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: true,
+            canonical: false,
+            clean_stereo: false,
+            include_dative_bonds: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            molecule.to_smiles_with_params(&params).unwrap(),
+            "O=C(NC[C@]12C[C@H]3C[C@H](C[C@H](C3)C1)C2)[C@@H]1C[C@H]2c3ccccc3[C@@H]1c1ccccc12"
+        );
+    }
+
+    #[test]
+    fn writer_preserves_ring_closure_double_bond_directions_like_rdkit_row_106() {
+        let molecule =
+            Molecule::from_smiles("O=C(N(C(S/1)=S)CCC(O)=O)C1=C\\C2=CC=C(C3=CC=C(C=C3)Cl)O2")
+                .unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            canonical: false,
+            clean_stereo: false,
+            all_bonds_explicit: true,
+            include_dative_bonds: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            molecule.to_smiles_with_params(&params).unwrap(),
+            "O=C1-N(-C-C-C(-O)=O)-C(=S)-S/C-1=C\\c1:c:c:c(-c2:c:c:c(-Cl):c:c:2):o:1"
+        );
+    }
+
+    #[test]
+    fn writer_preserves_bridgehead_tetrahedral_stereo_like_rdkit_row_110() {
+        let molecule = Molecule::from_smiles(
+            "[H]Cl.NC[C@@H]1O[C@@H](CC2=C(O)C(O)=CC=C12)C34C[C@H](C5)C[C@H](C[C@H]5C4)C3",
+        )
+        .unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: true,
+            canonical: false,
+            clean_stereo: false,
+            include_dative_bonds: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            molecule.to_smiles_with_params(&params).unwrap(),
+            "Cl.NC[C@@H]1O[C@H](C23C[C@@H]4C[C@@H](C[C@@H](C4)C2)C3)Cc2c(O)c(O)ccc21"
+        );
+    }
+
+    #[test]
+    #[ignore = "debug helper for RDKit row 121 traversal parity"]
+    fn debug_row_121_noncanonical_traversal() {
+        let mut molecule = Molecule::from_smiles(
+            "O=C(O[Na])CC1=C(C(C(O[Na])=O)=C(C)C2=CC3=[N]4C(C(C=O)=C3CC)=CC5=C(C=C)C(C)=C6[N-]75)[N-]2[Cu+2]47[N](C8=C6)=C1C(C8C)CCC(O[Na])=O",
+        )
+        .unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            canonical: false,
+            clean_stereo: false,
+            include_dative_bonds: false,
+            ..Default::default()
+        };
+        let mut working_params = params.clone();
+        let _saved_atom_maps =
+            prepare_plain_smiles_molecule(&mut molecule, &working_params).unwrap();
+        working_params.do_kekule = false;
+        let plan = collect_fragment_write_plans(&molecule, &working_params)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        let ranks = rank_fragment_atoms_for_smiles(
+            &molecule,
+            &plan,
+            &working_params,
+            SmilesOutputMode::PlainSmiles,
+        )
+        .unwrap();
+        molecule = kekulize_for_smiles(&molecule).unwrap();
+        let start_atom = choose_fragment_start_atom(&plan, &ranks, &working_params).unwrap();
+        let traversal = canonicalize_fragment_stack(
+            &molecule,
+            &plan,
+            start_atom,
+            &ranks,
+            &working_params,
+            SmilesWriteOverrides::default(),
+        )
+        .unwrap();
+        let (ring_info, atom_ring_closures) =
+            debug_atom_ring_closures_for_writer(&molecule, &plan, start_atom, &ranks, None)
+                .unwrap();
+        let mut rank_by_atom = vec![usize::MAX; molecule.num_atoms()];
+        for (idx, atom) in plan.atoms.iter().enumerate() {
+            rank_by_atom[atom.index()] = ranks[idx];
+        }
+        for atom_idx in [0usize, 1, 4, 5, 6, 14, 17, 35, 33, 26] {
+            let neighbors = molecule
+                .topology_block()
+                .adjacency
+                .neighbors_of(atom_idx)
+                .iter()
+                .map(|nbr| (nbr.atom_index, nbr.bond.index()))
+                .collect::<Vec<_>>();
+            eprintln!("neighbors[{atom_idx}]={neighbors:?}");
+        }
+        for bond_idx in [17usize, 32, 33, 35, 48, 49, 50, 51, 52, 53, 54, 55] {
+            eprintln!(
+                "bond_rings[{bond_idx}]={}",
+                ring_info.num_bond_rings(BondId::new(bond_idx))
+            );
+        }
+        for atom_idx in [17usize, 18, 22, 16, 32, 33, 34, 35, 36, 37, 38, 39, 41] {
+            let closures = atom_ring_closures[atom_idx]
+                .iter()
+                .map(|bond| bond.index())
+                .collect::<Vec<_>>();
+            eprintln!("atom_ring_closures[{atom_idx}]={closures:?}");
+        }
+        for atom_idx in [17usize, 35, 33, 26, 32, 36, 39, 40] {
+            let atom = AtomId::new(atom_idx);
+            let mut seen_from_here = vec![false; molecule.num_atoms()];
+            seen_from_here[atom_idx] = true;
+            for bond in &atom_ring_closures[atom_idx] {
+                let bond = &molecule.bonds()[bond.index()];
+                let other = if bond.begin() == atom {
+                    bond.end()
+                } else {
+                    bond.begin()
+                };
+                seen_from_here[other.index()] = true;
+            }
+            let children = molecule
+                .topology_block()
+                .adjacency
+                .neighbors_of(atom_idx)
+                .iter()
+                .map(|nbr| (BondId::new(nbr.bond.index()), AtomId::new(nbr.atom_index)))
+                .filter(|(bond, other)| !seen_from_here[other.index()] && Some(*bond) != None)
+                .map(|(bond, other)| {
+                    let mut rank = rank_by_atom[other.index()] as i64;
+                    let bond_order_rank = match molecule.bonds()[bond.index()].order() {
+                        BondOrder::Null | BondOrder::Unspecified => 0,
+                        BondOrder::Single => 1,
+                        BondOrder::Double => 2,
+                        BondOrder::Triple => 3,
+                        BondOrder::Quadruple => 4,
+                        BondOrder::Quintuple => 5,
+                        BondOrder::Hextuple => 6,
+                        BondOrder::OneAndHalf => 7,
+                        BondOrder::TwoAndHalf => 8,
+                        BondOrder::ThreeAndHalf => 9,
+                        BondOrder::FourAndHalf => 10,
+                        BondOrder::FiveAndHalf => 11,
+                        BondOrder::Aromatic => 12,
+                        BondOrder::Ionic => 13,
+                        BondOrder::Hydrogen => 14,
+                        BondOrder::ThreeCenter => 15,
+                        BondOrder::DativeOne => 16,
+                        BondOrder::Dative => 17,
+                        BondOrder::DativeLeft => 18,
+                        BondOrder::DativeRight => 19,
+                        BondOrder::Other => 20,
+                        BondOrder::Zero => 21,
+                    };
+                    if ring_info.num_bond_rings(bond) > 0 {
+                        rank += (CANON_MAX_BONDTYPE - bond_order_rank)
+                            * CANON_MAX_NATOMS
+                            * CANON_MAX_NATOMS;
+                    }
+                    (rank, bond.index(), other.index())
+                })
+                .collect::<Vec<_>>();
+            eprintln!("children_pre_sort[{atom_idx}]={children:?}");
+        }
+        eprintln!("start_atom={}", start_atom.index());
+        eprintln!("stack={:#?}", traversal.stack);
+    }
+
+    #[test]
+    #[ignore = "debug helper for RDKit row 142 canonical kekule traversal parity"]
+    fn debug_row_142_canonical_kekule_root_last_traversal() {
+        let input = "[C:12]12([CH:62]([CH3:65])[c:61]3[cH:64][cH:67][cH:68][cH:66][cH:63]3)[CH:20]4[c:30]5[c:40]6[c:49]7[c:57]8[c:60]([c:59]9[c:55]([c:47]([c:44]([c:52]9[c:51]([c:43]%10[c:35]%11[c:25]%12[c:19]%13%14)[c:53]8[c:45]%11[c:39]6[c:29]4%13)[c:34]([c:24]%15[c:15]%16[c:7]%17[c:3]%18%19)[c:33]%10[c:23]%16[c:16]%12[c:8]%18[c:11]%14[c:5]1%20)[c:37]([c:36]%21[c:26]%22[c:18]%23[c:10]%24[c:13]%25[c:6]%26%27)[c:27]%15[c:17]%22[c:9]%17[c:4]%24[c:1]%19[c:2]%20%26)[c:54]([c:46]%21[c:38]%28[c:28]%23[c:21]%25%29)[c:56]%30[c:48]%28[c:41]%31[c:31]%29[c:22]%32[c:14]2%27)[c:58]%30[c:50]7[c:42]%31[c:32]5%32";
+        let mut molecule = Molecule::from_smiles(input).unwrap();
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: false,
+            do_kekule: true,
+            canonical: true,
+            clean_stereo: false,
+            include_dative_bonds: false,
+            ignore_atom_map_numbers: true,
+            rooted_at_atom: Some(molecule.num_atoms() - 1),
+            ..Default::default()
+        };
+        let mut working_params = params.clone();
+        let _saved_atom_maps =
+            prepare_plain_smiles_molecule(&mut molecule, &working_params).unwrap();
+        let plan = collect_fragment_write_plans(&molecule, &working_params)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        let ranks = rank_fragment_atoms_for_smiles(
+            &molecule,
+            &plan,
+            &working_params,
+            SmilesOutputMode::PlainSmiles,
+        )
+        .unwrap();
+        molecule = kekulize_for_smiles(&molecule).unwrap();
+        working_params.do_kekule = false;
+        let start_atom = choose_fragment_start_atom(&plan, &ranks, &working_params).unwrap();
+        let traversal = canonicalize_fragment_stack(
+            &molecule,
+            &plan,
+            start_atom,
+            &ranks,
+            &working_params,
+            SmilesWriteOverrides::default(),
+        )
+        .unwrap();
+        let cached_rings = molecule.derived_cache().rings.clone();
+        let fast_rings = crate::fast_find_rings(&molecule).unwrap();
+        let (_, atom_ring_closures) =
+            debug_atom_ring_closures_for_writer(&molecule, &plan, start_atom, &ranks, None)
+                .unwrap();
+        eprintln!("start_atom={}", start_atom.index());
+        eprintln!("ranks={ranks:?}");
+        if let Some(rings) = &cached_rings {
+            eprintln!(
+                "cached find_type={:?} b11={} b72={}",
+                rings.find_type(),
+                rings.num_bond_rings(BondId::new(11)),
+                rings.num_bond_rings(BondId::new(72))
+            );
+        } else {
+            eprintln!("cached find_type=None");
+        }
+        eprintln!(
+            "fast find_type={:?} b11={} b72={}",
+            fast_rings.find_type(),
+            fast_rings.num_bond_rings(BondId::new(11)),
+            fast_rings.num_bond_rings(BondId::new(72))
+        );
+        eprintln!(
+            "bond orders b11={:?} b72={:?}",
+            molecule.bonds()[11].order(),
+            molecule.bonds()[72].order()
+        );
+        eprintln!("atom11 closures={:?}", atom_ring_closures[11]);
+        eprintln!("atom27 closures={:?}", atom_ring_closures[27]);
+        eprint!("stack");
+        for item in &traversal.stack {
+            match item {
+                MolStackElem::Atom(atom) => eprint!(" A{}", atom.index()),
+                MolStackElem::Bond(bond, left) => eprint!(" B{}@L{}", bond.index(), left.index()),
+                MolStackElem::Ring { bond: _, ring_idx } => eprint!(" R{ring_idx}"),
+                MolStackElem::BranchOpen => eprint!(" ("),
+                MolStackElem::BranchClose => eprint!(" )"),
+            }
+        }
+        eprintln!();
+        eprintln!(
+            "output={}",
+            molecule.to_smiles_with_params(&params).unwrap()
         );
     }
 }

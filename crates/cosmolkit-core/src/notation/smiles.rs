@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::f64::consts::PI;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{
-    Atom, AtomId, AtomQueryPredicate, AtomSpec, BondDirection, BondId, BondOrder,
+    AdjacencyList, Atom, AtomId, AtomQueryPredicate, AtomSpec, BondDirection, BondId, BondOrder,
     BondQueryPredicate, BondSpec, BondStereo, ChiralTag, Conformer3D, Element, Molecule,
     MoleculeBuilder, QueryNode, RemoveHsParams, SmilesParseError, StereoError, StereoGroup,
     StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
@@ -12,13 +14,14 @@ use crate::{
 // This module is the source-level alignment frame for the future SMILES parser
 // port from `third_party/rdkit/Code/GraphMol/SmilesParse`. The functions below
 // follow `dev/source_reproduction_protocol.md`. They intentionally contain
-// RDKit C++ comments with `RDKit❌❌` markers before any behavior is
+// RDKit C++ comments with unresolved status markers before any behavior is
 // implemented. Do not upgrade markers or add semantic behavior without checking
 // the corresponding RDKit source line and the local Rust code.
 
 const SMILES_START_PROP: &str = "_SmilesStart";
 const CXSMILES_BOND_IDX_PROP: &str = "_cxsmilesBondIdx";
 const UNSPECIFIED_ORDER_PROP: &str = "_unspecifiedOrder";
+static YYSMILES_DEBUG: AtomicBool = AtomicBool::new(false);
 
 fn atom_spec_from_atom(atom: &Atom) -> AtomSpec {
     let mut spec = AtomSpec::new(atom.element())
@@ -129,6 +132,10 @@ impl SmilesParseParams {
     pub(crate) fn with_sanitize(sanitize: bool) -> Self {
         Self {
             sanitize,
+            // RDKit's Python-facing `MolFromSmiles(..., sanitize=False)`
+            // keeps explicit hydrogens and does not leave `_StereochemDone`
+            // on the returned molecule. The explicit `removeHs=true` path is
+            // still exercised separately through `mol_from_smiles()` params.
             remove_hs: sanitize,
             ..Default::default()
         }
@@ -181,6 +188,7 @@ struct SmilesLexer<'a> {
     scan_end: usize,
     scan_cursor: usize,
     current_token_position: usize,
+    start_token: Option<SmilesToken>,
     in_atom_state: bool,
 }
 
@@ -240,8 +248,16 @@ impl<'a> SmilesLexer<'a> {
             scan_end,
             scan_cursor: scan_start,
             current_token_position: 0,
+            start_token: None,
             in_atom_state: false,
         }
+    }
+
+    #[cfg(test)]
+    fn with_start_token_for_test(input: &'a str, start_token: SmilesToken) -> Self {
+        let mut lexer = Self::new(input);
+        lexer.start_token = Some(start_token);
+        lexer
     }
 
     #[allow(dead_code)]
@@ -260,251 +276,255 @@ impl<'a> SmilesLexer<'a> {
         // RDKit✔️✔️:       return t;
         // RDKit✔️✔️:     }
         // RDKit✔️✔️: @}
-        // RDKit❗✔️:
-        // RDKit❗✔️: @[' ']*TH { yylval->chiraltype = Atom::ChiralType::CHI_TETRAHEDRAL; return CHI_CLASS_TOKEN; }
-        // RDKit❗✔️: @[' ']*AL { yylval->chiraltype = Atom::ChiralType::CHI_ALLENE; return CHI_CLASS_TOKEN; }
-        // RDKit❗✔️: @[' ']*SP { yylval->chiraltype = Atom::ChiralType::CHI_SQUAREPLANAR; return CHI_CLASS_TOKEN; }
-        // RDKit❗✔️: @[' ']*TB { yylval->chiraltype = Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL; return CHI_CLASS_TOKEN; }
-        // RDKit❗✔️: @[' ']*OH { yylval->chiraltype = Atom::ChiralType::CHI_OCTAHEDRAL; return CHI_CLASS_TOKEN; }
-        // RDKit❗✔️:
-        // RDKit❗✔️: @		{ return AT_TOKEN; }
-        // RDKit❗✔️:
-        // RDKit❗✔️: <IN_ATOM_STATE>He	{ yylval->atom = new Atom(2); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Li	{ yylval->atom = new Atom(3); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Be	{ yylval->atom = new Atom(4); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ne	{ yylval->atom = new Atom(10); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Na	{ yylval->atom = new Atom(11); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Mg	{ yylval->atom = new Atom(12); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Al	{ yylval->atom = new Atom(13); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Si	{ yylval->atom = new Atom(14); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ar	{ yylval->atom = new Atom(18); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>K	{ yylval->atom = new Atom(19); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ca	{ yylval->atom = new Atom(20); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Sc	{ yylval->atom = new Atom(21); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ti	{ yylval->atom = new Atom(22); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>V	{ yylval->atom = new Atom(23); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Cr	{ yylval->atom = new Atom(24); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Mn	{ yylval->atom = new Atom(25); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Fe	{ yylval->atom = new Atom(26); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Co	{ yylval->atom = new Atom(27); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ni	{ yylval->atom = new Atom(28); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Cu	{ yylval->atom = new Atom(29); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Zn	{ yylval->atom = new Atom(30); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ga	{ yylval->atom = new Atom(31); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ge	{ yylval->atom = new Atom(32); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>As	{ yylval->atom = new Atom(33); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Se	{ yylval->atom = new Atom(34); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Kr	{ yylval->atom = new Atom(36); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Rb	{ yylval->atom = new Atom(37); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Sr	{ yylval->atom = new Atom(38); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Y	{ yylval->atom = new Atom(39); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Zr	{ yylval->atom = new Atom(40); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Nb	{ yylval->atom = new Atom(41); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Mo	{ yylval->atom = new Atom(42); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Tc	{ yylval->atom = new Atom(43); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ru	{ yylval->atom = new Atom(44); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Rh	{ yylval->atom = new Atom(45); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Pd	{ yylval->atom = new Atom(46); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ag	{ yylval->atom = new Atom(47); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Cd	{ yylval->atom = new Atom(48); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>In	{ yylval->atom = new Atom(49); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Sn	{ yylval->atom = new Atom(50); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Sb	{ yylval->atom = new Atom(51); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Te	{ yylval->atom = new Atom(52); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Xe	{ yylval->atom = new Atom(54); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Cs	{ yylval->atom = new Atom(55); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ba	{ yylval->atom = new Atom(56); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>La	{ yylval->atom = new Atom(57); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ce	{ yylval->atom = new Atom(58); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Pr	{ yylval->atom = new Atom(59); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Nd	{ yylval->atom = new Atom(60); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Pm	{ yylval->atom = new Atom(61); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Sm	{ yylval->atom = new Atom(62); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Eu	{ yylval->atom = new Atom(63); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Gd	{ yylval->atom = new Atom(64); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Tb	{ yylval->atom = new Atom(65); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Dy	{ yylval->atom = new Atom(66); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ho	{ yylval->atom = new Atom(67); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Er	{ yylval->atom = new Atom(68); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Tm	{ yylval->atom = new Atom(69); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Yb	{ yylval->atom = new Atom(70); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Lu	{ yylval->atom = new Atom(71); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Hf	{ yylval->atom = new Atom(72); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ta	{ yylval->atom = new Atom(73); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>W	{ yylval->atom = new Atom(74); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Re	{ yylval->atom = new Atom(75); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Os	{ yylval->atom = new Atom(76); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ir	{ yylval->atom = new Atom(77); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Pt	{ yylval->atom = new Atom(78); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Au	{ yylval->atom = new Atom(79); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Hg	{ yylval->atom = new Atom(80); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Tl	{ yylval->atom = new Atom(81); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Pb	{ yylval->atom = new Atom(82); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Bi	{ yylval->atom = new Atom(83); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Po	{ yylval->atom = new Atom(84); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>At	{ yylval->atom = new Atom(85); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Rn	{ yylval->atom = new Atom(86); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Fr	{ yylval->atom = new Atom(87); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ra	{ yylval->atom = new Atom(88); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ac	{ yylval->atom = new Atom(89); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Th	{ yylval->atom = new Atom(90); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Pa	{ yylval->atom = new Atom(91); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>U	{ yylval->atom = new Atom(92); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Np	{ yylval->atom = new Atom(93); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Pu	{ yylval->atom = new Atom(94); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Am	{ yylval->atom = new Atom(95); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Cm	{ yylval->atom = new Atom(96); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Bk	{ yylval->atom = new Atom(97); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Cf	{ yylval->atom = new Atom(98); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Es	{ yylval->atom = new Atom(99); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Fm	{ yylval->atom = new Atom(100); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Md	{ yylval->atom = new Atom(101); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>No	{ yylval->atom = new Atom(102); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Lr	{ yylval->atom = new Atom(103); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Rf	{ yylval->atom = new Atom(104); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Db	{ yylval->atom = new Atom(105); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Sg	{ yylval->atom = new Atom(106); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Bh	{ yylval->atom = new Atom(107); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Hs	{ yylval->atom = new Atom(108); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Mt	{ yylval->atom = new Atom(109); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ds	{ yylval->atom = new Atom(110); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Rg	{ yylval->atom = new Atom(111); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Cn	{ yylval->atom = new Atom(112); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Nh	{ yylval->atom = new Atom(113); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Fl	{ yylval->atom = new Atom(114); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Mc	{ yylval->atom = new Atom(115); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Lv	{ yylval->atom = new Atom(116); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Ts	{ yylval->atom = new Atom(117); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Og	{ yylval->atom = new Atom(118); return ATOM_TOKEN; }
-        // RDKit❗✔️:
-        // RDKit❗✔️: <IN_ATOM_STATE>Uun	{ yylval->atom = new Atom(110); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Uuu	{ yylval->atom = new Atom(111); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Uub	{ yylval->atom = new Atom(112); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Uut	{ yylval->atom = new Atom(113); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Uuq	{ yylval->atom = new Atom(114); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Uup	{ yylval->atom = new Atom(115); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Uuh	{ yylval->atom = new Atom(116); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Uus	{ yylval->atom = new Atom(117); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>Uuo	{ yylval->atom = new Atom(118); return ATOM_TOKEN; }
-        // RDKit❗✔️:
-        // RDKit❗✔️: B  { yylval->atom = new Atom(5);return ORGANIC_ATOM_TOKEN; }
-        // RDKit❗✔️: C  { yylval->atom = new Atom(6);return ORGANIC_ATOM_TOKEN; }
-        // RDKit❗✔️: N  { yylval->atom = new Atom(7);return ORGANIC_ATOM_TOKEN; }
-        // RDKit❗✔️: O  { yylval->atom = new Atom(8);return ORGANIC_ATOM_TOKEN; }
-        // RDKit❗✔️: P  { yylval->atom = new Atom(15);return ORGANIC_ATOM_TOKEN; }
-        // RDKit❗✔️: S  { yylval->atom = new Atom(16);return ORGANIC_ATOM_TOKEN; }
-        // RDKit❗✔️: F  { yylval->atom = new Atom(9);return ORGANIC_ATOM_TOKEN; }
-        // RDKit❗✔️: Cl { yylval->atom = new Atom(17);return ORGANIC_ATOM_TOKEN; }
-        // RDKit❗✔️: Br { yylval->atom = new Atom(35);return ORGANIC_ATOM_TOKEN; }
-        // RDKit❗✔️: I  { yylval->atom = new Atom(53);return ORGANIC_ATOM_TOKEN; }
-        // RDKit❗✔️:
-        // RDKit❗✔️: H			{
-        // RDKit❗✔️: 				return H_TOKEN;
-        // RDKit❗✔️: 			}
-        // RDKit❗✔️:
-        // RDKit❗✔️: b		    {	yylval->atom = new Atom ( 5 );
-        // RDKit❗✔️: 			yylval->atom->setIsAromatic(true);
-        // RDKit❗✔️: 				return AROMATIC_ATOM_TOKEN;
-        // RDKit❗✔️: 			}
-        // RDKit❗✔️: c		    {	yylval->atom = new Atom ( 6 );
-        // RDKit❗✔️: 			yylval->atom->setIsAromatic(true);
-        // RDKit❗✔️: 				return AROMATIC_ATOM_TOKEN;
-        // RDKit❗✔️: 			}
-        // RDKit❗✔️: n		    {	yylval->atom = new Atom( 7 );
-        // RDKit❗✔️: 			yylval->atom->setIsAromatic(true);
-        // RDKit❗✔️: 				return AROMATIC_ATOM_TOKEN;
-        // RDKit❗✔️: 			}
-        // RDKit❗✔️: o		    {	yylval->atom = new Atom( 8 );
-        // RDKit❗✔️: 			yylval->atom->setIsAromatic(true);
-        // RDKit❗✔️: 				return AROMATIC_ATOM_TOKEN;
-        // RDKit❗✔️: 			}
-        // RDKit❗✔️: p		    {	yylval->atom = new Atom( 15 );
-        // RDKit❗✔️: 			yylval->atom->setIsAromatic(true);
-        // RDKit❗✔️: 				return AROMATIC_ATOM_TOKEN;
-        // RDKit❗✔️: 			}
-        // RDKit❗✔️: s		    {	yylval->atom = new Atom( 16 );
-        // RDKit❗✔️: 			yylval->atom->setIsAromatic(true);
-        // RDKit❗✔️: 				return AROMATIC_ATOM_TOKEN;
-        // RDKit❗✔️: 			}
-        // RDKit❗✔️:
-        // RDKit❗✔️: <IN_ATOM_STATE>si   {	yylval->atom = new Atom( 14 );
-        // RDKit❗✔️: 			yylval->atom->setIsAromatic(true);
-        // RDKit❗✔️: 				return AROMATIC_ATOM_TOKEN;
-        // RDKit❗✔️: 			}
-        // RDKit❗✔️: <IN_ATOM_STATE>as   {	yylval->atom = new Atom( 33 );
-        // RDKit❗✔️: 			yylval->atom->setIsAromatic(true);
-        // RDKit❗✔️: 				return AROMATIC_ATOM_TOKEN;
-        // RDKit❗✔️: 			}
-        // RDKit❗✔️: <IN_ATOM_STATE>se   {	yylval->atom = new Atom( 34 );
-        // RDKit❗✔️: 			yylval->atom->setIsAromatic(true);
-        // RDKit❗✔️: 				return AROMATIC_ATOM_TOKEN;
-        // RDKit❗✔️: 			}
-        // RDKit❗✔️: <IN_ATOM_STATE>te   {	yylval->atom = new Atom( 52 );
-        // RDKit❗✔️: 			yylval->atom->setIsAromatic(true);
-        // RDKit❗✔️: 				return AROMATIC_ATOM_TOKEN;
-        // RDKit❗✔️: 			}
-        // RDKit❗✔️:
-        // RDKit❗✔️: \* 	            {   yylval->atom = new Atom( 0 );
-        // RDKit❗✔️: 		            yylval->atom->setProp(common_properties::dummyLabel,
-        // RDKit❗✔️:                                                         std::string("*"));
-        // RDKit❗✔️:                                 // must be ORGANIC_ATOM_TOKEN because
-        // RDKit❗✔️:                                 // we aren't in square brackets:
-        // RDKit❗✔️: 				return ORGANIC_ATOM_TOKEN;
-        // RDKit❗✔️: 			}
-        // RDKit❗✔️:
-        // RDKit❗✔️: <IN_ATOM_STATE>\: 	{ return COLON_TOKEN; }
-        // RDKit❗✔️:
-        // RDKit❗✔️: <IN_ATOM_STATE>\# 	{ return HASH_TOKEN; }
-        // RDKit❗✔️:
-        // RDKit❗✔️: %{ // Biovia quoted heavy atom workaround %}
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Rf\'	{ yylval->atom = new Atom(104); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Db\'	{ yylval->atom = new Atom(105); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Sg\'	{ yylval->atom = new Atom(106); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Bh\'	{ yylval->atom = new Atom(107); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Hs\'	{ yylval->atom = new Atom(108); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Mt\'	{ yylval->atom = new Atom(109); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Ds\'	{ yylval->atom = new Atom(110); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Rg\'	{ yylval->atom = new Atom(111); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Cn\'	{ yylval->atom = new Atom(112); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Nh\'	{ yylval->atom = new Atom(113); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Fl\'	{ yylval->atom = new Atom(114); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Mc\'	{ yylval->atom = new Atom(115); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Lv\'	{ yylval->atom = new Atom(116); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Ts\'	{ yylval->atom = new Atom(117); return ATOM_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\'Og\'	{ yylval->atom = new Atom(118); return ATOM_TOKEN; }
-        // RDKit❗✔️:
-        // RDKit❗✔️: \=	{ yylval->bond = new Bond(Bond::DOUBLE); return BOND_TOKEN; }
-        // RDKit❗✔️: \#	{ yylval->bond = new Bond(Bond::TRIPLE); return BOND_TOKEN; }
-        // RDKit❗✔️: \:	{ yylval->bond = new Bond(Bond::AROMATIC);
-        // RDKit❗✔️: 	  yylval->bond->setIsAromatic(true); return BOND_TOKEN; }
-        // RDKit❗✔️: \$	{ yylval->bond = new Bond(Bond::QUADRUPLE); return BOND_TOKEN; }
-        // RDKit❗✔️: \-\>	{ yylval->bond = new Bond(Bond::DATIVER); return BOND_TOKEN; }
-        // RDKit❗✔️: \<\-	{ yylval->bond = new Bond(Bond::DATIVEL); return BOND_TOKEN; }
-        // RDKit❗✔️: \~	{ yylval->bond = new QueryBond();
-        // RDKit❗✔️: 	  yylval->bond->setQuery(makeBondNullQuery()); return BOND_TOKEN;  }
-        // RDKit❗✔️:
-        // RDKit❗✔️: [\\]{1,2}    { yylval->bond = new Bond(Bond::UNSPECIFIED);
-        // RDKit❗✔️: 	yylval->bond->setProp(RDKit::common_properties::_unspecifiedOrder,1);
-        // RDKit❗✔️: 	yylval->bond->setBondDir(Bond::ENDDOWNRIGHT); return BOND_TOKEN;  }
-        // RDKit❗✔️:
-        // RDKit❗✔️: [\/]    { yylval->bond = new Bond(Bond::UNSPECIFIED);
-        // RDKit❗✔️: 	yylval->bond->setProp(RDKit::common_properties::_unspecifiedOrder,1);
-        // RDKit❗✔️: 	yylval->bond->setBondDir(Bond::ENDUPRIGHT); return BOND_TOKEN;  }
-        // RDKit❗✔️:
-        // RDKit❗✔️: \-			{ return MINUS_TOKEN; }
-        // RDKit❗✔️: \+			{ return PLUS_TOKEN; }
-        // RDKit❗✔️: \(       	{ return GROUP_OPEN_TOKEN; }
-        // RDKit❗✔️: \)       	{ return GROUP_CLOSE_TOKEN; }
-        // RDKit❗✔️: \[			{ BEGIN IN_ATOM_STATE; return ATOM_OPEN_TOKEN; }
-        // RDKit❗✔️: <IN_ATOM_STATE>\]	{ BEGIN INITIAL; return ATOM_CLOSE_TOKEN; }
-        // RDKit❗✔️: \.       	{ return SEPARATOR_TOKEN; }
-        // RDKit❗✔️: \%              { return PERCENT_TOKEN; }
-        // RDKit❗✔️: [0]		{ yylval->ival = 0; return ZERO_TOKEN; }
-        // RDKit❗✔️: [1-9]		{ yylval->ival = yytext[0] - '0'; return NONZERO_DIGIT_TOKEN; }
-        // RDKit❗✔️: \n		return 0;
-        // RDKit❗✔️: <<EOF>>		{ return EOS_TOKEN; }
-        // RDKit❗✔️: .		return BAD_CHARACTER;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: @[' ']*TH { yylval->chiraltype = Atom::ChiralType::CHI_TETRAHEDRAL; return CHI_CLASS_TOKEN; }
+        // RDKit✔️✔️: @[' ']*AL { yylval->chiraltype = Atom::ChiralType::CHI_ALLENE; return CHI_CLASS_TOKEN; }
+        // RDKit✔️✔️: @[' ']*SP { yylval->chiraltype = Atom::ChiralType::CHI_SQUAREPLANAR; return CHI_CLASS_TOKEN; }
+        // RDKit✔️✔️: @[' ']*TB { yylval->chiraltype = Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL; return CHI_CLASS_TOKEN; }
+        // RDKit✔️✔️: @[' ']*OH { yylval->chiraltype = Atom::ChiralType::CHI_OCTAHEDRAL; return CHI_CLASS_TOKEN; }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: @		{ return AT_TOKEN; }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: <IN_ATOM_STATE>He	{ yylval->atom = new Atom(2); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Li	{ yylval->atom = new Atom(3); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Be	{ yylval->atom = new Atom(4); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ne	{ yylval->atom = new Atom(10); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Na	{ yylval->atom = new Atom(11); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Mg	{ yylval->atom = new Atom(12); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Al	{ yylval->atom = new Atom(13); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Si	{ yylval->atom = new Atom(14); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ar	{ yylval->atom = new Atom(18); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>K	{ yylval->atom = new Atom(19); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ca	{ yylval->atom = new Atom(20); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Sc	{ yylval->atom = new Atom(21); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ti	{ yylval->atom = new Atom(22); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>V	{ yylval->atom = new Atom(23); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Cr	{ yylval->atom = new Atom(24); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Mn	{ yylval->atom = new Atom(25); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Fe	{ yylval->atom = new Atom(26); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Co	{ yylval->atom = new Atom(27); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ni	{ yylval->atom = new Atom(28); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Cu	{ yylval->atom = new Atom(29); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Zn	{ yylval->atom = new Atom(30); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ga	{ yylval->atom = new Atom(31); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ge	{ yylval->atom = new Atom(32); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>As	{ yylval->atom = new Atom(33); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Se	{ yylval->atom = new Atom(34); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Kr	{ yylval->atom = new Atom(36); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Rb	{ yylval->atom = new Atom(37); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Sr	{ yylval->atom = new Atom(38); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Y	{ yylval->atom = new Atom(39); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Zr	{ yylval->atom = new Atom(40); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Nb	{ yylval->atom = new Atom(41); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Mo	{ yylval->atom = new Atom(42); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Tc	{ yylval->atom = new Atom(43); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ru	{ yylval->atom = new Atom(44); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Rh	{ yylval->atom = new Atom(45); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Pd	{ yylval->atom = new Atom(46); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ag	{ yylval->atom = new Atom(47); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Cd	{ yylval->atom = new Atom(48); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>In	{ yylval->atom = new Atom(49); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Sn	{ yylval->atom = new Atom(50); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Sb	{ yylval->atom = new Atom(51); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Te	{ yylval->atom = new Atom(52); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Xe	{ yylval->atom = new Atom(54); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Cs	{ yylval->atom = new Atom(55); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ba	{ yylval->atom = new Atom(56); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>La	{ yylval->atom = new Atom(57); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ce	{ yylval->atom = new Atom(58); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Pr	{ yylval->atom = new Atom(59); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Nd	{ yylval->atom = new Atom(60); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Pm	{ yylval->atom = new Atom(61); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Sm	{ yylval->atom = new Atom(62); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Eu	{ yylval->atom = new Atom(63); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Gd	{ yylval->atom = new Atom(64); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Tb	{ yylval->atom = new Atom(65); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Dy	{ yylval->atom = new Atom(66); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ho	{ yylval->atom = new Atom(67); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Er	{ yylval->atom = new Atom(68); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Tm	{ yylval->atom = new Atom(69); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Yb	{ yylval->atom = new Atom(70); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Lu	{ yylval->atom = new Atom(71); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Hf	{ yylval->atom = new Atom(72); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ta	{ yylval->atom = new Atom(73); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>W	{ yylval->atom = new Atom(74); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Re	{ yylval->atom = new Atom(75); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Os	{ yylval->atom = new Atom(76); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ir	{ yylval->atom = new Atom(77); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Pt	{ yylval->atom = new Atom(78); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Au	{ yylval->atom = new Atom(79); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Hg	{ yylval->atom = new Atom(80); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Tl	{ yylval->atom = new Atom(81); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Pb	{ yylval->atom = new Atom(82); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Bi	{ yylval->atom = new Atom(83); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Po	{ yylval->atom = new Atom(84); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>At	{ yylval->atom = new Atom(85); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Rn	{ yylval->atom = new Atom(86); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Fr	{ yylval->atom = new Atom(87); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ra	{ yylval->atom = new Atom(88); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ac	{ yylval->atom = new Atom(89); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Th	{ yylval->atom = new Atom(90); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Pa	{ yylval->atom = new Atom(91); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>U	{ yylval->atom = new Atom(92); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Np	{ yylval->atom = new Atom(93); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Pu	{ yylval->atom = new Atom(94); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Am	{ yylval->atom = new Atom(95); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Cm	{ yylval->atom = new Atom(96); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Bk	{ yylval->atom = new Atom(97); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Cf	{ yylval->atom = new Atom(98); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Es	{ yylval->atom = new Atom(99); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Fm	{ yylval->atom = new Atom(100); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Md	{ yylval->atom = new Atom(101); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>No	{ yylval->atom = new Atom(102); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Lr	{ yylval->atom = new Atom(103); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Rf	{ yylval->atom = new Atom(104); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Db	{ yylval->atom = new Atom(105); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Sg	{ yylval->atom = new Atom(106); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Bh	{ yylval->atom = new Atom(107); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Hs	{ yylval->atom = new Atom(108); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Mt	{ yylval->atom = new Atom(109); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ds	{ yylval->atom = new Atom(110); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Rg	{ yylval->atom = new Atom(111); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Cn	{ yylval->atom = new Atom(112); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Nh	{ yylval->atom = new Atom(113); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Fl	{ yylval->atom = new Atom(114); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Mc	{ yylval->atom = new Atom(115); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Lv	{ yylval->atom = new Atom(116); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ts	{ yylval->atom = new Atom(117); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Og	{ yylval->atom = new Atom(118); return ATOM_TOKEN; }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: <IN_ATOM_STATE>Uun	{ yylval->atom = new Atom(110); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Uuu	{ yylval->atom = new Atom(111); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Uub	{ yylval->atom = new Atom(112); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Uut	{ yylval->atom = new Atom(113); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Uuq	{ yylval->atom = new Atom(114); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Uup	{ yylval->atom = new Atom(115); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Uuh	{ yylval->atom = new Atom(116); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Uus	{ yylval->atom = new Atom(117); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>Uuo	{ yylval->atom = new Atom(118); return ATOM_TOKEN; }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: B  { yylval->atom = new Atom(5);return ORGANIC_ATOM_TOKEN; }
+        // RDKit✔️✔️: C  { yylval->atom = new Atom(6);return ORGANIC_ATOM_TOKEN; }
+        // RDKit✔️✔️: N  { yylval->atom = new Atom(7);return ORGANIC_ATOM_TOKEN; }
+        // RDKit✔️✔️: O  { yylval->atom = new Atom(8);return ORGANIC_ATOM_TOKEN; }
+        // RDKit✔️✔️: P  { yylval->atom = new Atom(15);return ORGANIC_ATOM_TOKEN; }
+        // RDKit✔️✔️: S  { yylval->atom = new Atom(16);return ORGANIC_ATOM_TOKEN; }
+        // RDKit✔️✔️: F  { yylval->atom = new Atom(9);return ORGANIC_ATOM_TOKEN; }
+        // RDKit✔️✔️: Cl { yylval->atom = new Atom(17);return ORGANIC_ATOM_TOKEN; }
+        // RDKit✔️✔️: Br { yylval->atom = new Atom(35);return ORGANIC_ATOM_TOKEN; }
+        // RDKit✔️✔️: I  { yylval->atom = new Atom(53);return ORGANIC_ATOM_TOKEN; }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: H			{
+        // RDKit✔️✔️: 				return H_TOKEN;
+        // RDKit✔️✔️: 			}
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: b		    {	yylval->atom = new Atom ( 5 );
+        // RDKit✔️✔️: 			yylval->atom->setIsAromatic(true);
+        // RDKit✔️✔️: 				return AROMATIC_ATOM_TOKEN;
+        // RDKit✔️✔️: 			}
+        // RDKit✔️✔️: c		    {	yylval->atom = new Atom ( 6 );
+        // RDKit✔️✔️: 			yylval->atom->setIsAromatic(true);
+        // RDKit✔️✔️: 				return AROMATIC_ATOM_TOKEN;
+        // RDKit✔️✔️: 			}
+        // RDKit✔️✔️: n		    {	yylval->atom = new Atom( 7 );
+        // RDKit✔️✔️: 			yylval->atom->setIsAromatic(true);
+        // RDKit✔️✔️: 				return AROMATIC_ATOM_TOKEN;
+        // RDKit✔️✔️: 			}
+        // RDKit✔️✔️: o		    {	yylval->atom = new Atom( 8 );
+        // RDKit✔️✔️: 			yylval->atom->setIsAromatic(true);
+        // RDKit✔️✔️: 				return AROMATIC_ATOM_TOKEN;
+        // RDKit✔️✔️: 			}
+        // RDKit✔️✔️: p		    {	yylval->atom = new Atom( 15 );
+        // RDKit✔️✔️: 			yylval->atom->setIsAromatic(true);
+        // RDKit✔️✔️: 				return AROMATIC_ATOM_TOKEN;
+        // RDKit✔️✔️: 			}
+        // RDKit✔️✔️: s		    {	yylval->atom = new Atom( 16 );
+        // RDKit✔️✔️: 			yylval->atom->setIsAromatic(true);
+        // RDKit✔️✔️: 				return AROMATIC_ATOM_TOKEN;
+        // RDKit✔️✔️: 			}
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: <IN_ATOM_STATE>si   {	yylval->atom = new Atom( 14 );
+        // RDKit✔️✔️: 			yylval->atom->setIsAromatic(true);
+        // RDKit✔️✔️: 				return AROMATIC_ATOM_TOKEN;
+        // RDKit✔️✔️: 			}
+        // RDKit✔️✔️: <IN_ATOM_STATE>as   {	yylval->atom = new Atom( 33 );
+        // RDKit✔️✔️: 			yylval->atom->setIsAromatic(true);
+        // RDKit✔️✔️: 				return AROMATIC_ATOM_TOKEN;
+        // RDKit✔️✔️: 			}
+        // RDKit✔️✔️: <IN_ATOM_STATE>se   {	yylval->atom = new Atom( 34 );
+        // RDKit✔️✔️: 			yylval->atom->setIsAromatic(true);
+        // RDKit✔️✔️: 				return AROMATIC_ATOM_TOKEN;
+        // RDKit✔️✔️: 			}
+        // RDKit✔️✔️: <IN_ATOM_STATE>te   {	yylval->atom = new Atom( 52 );
+        // RDKit✔️✔️: 			yylval->atom->setIsAromatic(true);
+        // RDKit✔️✔️: 				return AROMATIC_ATOM_TOKEN;
+        // RDKit✔️✔️: 			}
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: \* 	            {   yylval->atom = new Atom( 0 );
+        // RDKit✔️✔️: 		            yylval->atom->setProp(common_properties::dummyLabel,
+        // RDKit✔️✔️:                                                         std::string("*"));
+        // RDKit✔️✔️:                                 // must be ORGANIC_ATOM_TOKEN because
+        // RDKit✔️✔️:                                 // we aren't in square brackets:
+        // RDKit✔️✔️: 				return ORGANIC_ATOM_TOKEN;
+        // RDKit✔️✔️: 			}
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: <IN_ATOM_STATE>\: 	{ return COLON_TOKEN; }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: <IN_ATOM_STATE>\# 	{ return HASH_TOKEN; }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: %{ // Biovia quoted heavy atom workaround %}
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Rf\'	{ yylval->atom = new Atom(104); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Db\'	{ yylval->atom = new Atom(105); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Sg\'	{ yylval->atom = new Atom(106); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Bh\'	{ yylval->atom = new Atom(107); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Hs\'	{ yylval->atom = new Atom(108); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Mt\'	{ yylval->atom = new Atom(109); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Ds\'	{ yylval->atom = new Atom(110); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Rg\'	{ yylval->atom = new Atom(111); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Cn\'	{ yylval->atom = new Atom(112); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Nh\'	{ yylval->atom = new Atom(113); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Fl\'	{ yylval->atom = new Atom(114); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Mc\'	{ yylval->atom = new Atom(115); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Lv\'	{ yylval->atom = new Atom(116); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Ts\'	{ yylval->atom = new Atom(117); return ATOM_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\'Og\'	{ yylval->atom = new Atom(118); return ATOM_TOKEN; }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: \=	{ yylval->bond = new Bond(Bond::DOUBLE); return BOND_TOKEN; }
+        // RDKit✔️✔️: \#	{ yylval->bond = new Bond(Bond::TRIPLE); return BOND_TOKEN; }
+        // RDKit✔️✔️: \:	{ yylval->bond = new Bond(Bond::AROMATIC);
+        // RDKit✔️✔️: 	  yylval->bond->setIsAromatic(true); return BOND_TOKEN; }
+        // RDKit✔️✔️: \$	{ yylval->bond = new Bond(Bond::QUADRUPLE); return BOND_TOKEN; }
+        // RDKit✔️✔️: \-\>	{ yylval->bond = new Bond(Bond::DATIVER); return BOND_TOKEN; }
+        // RDKit✔️✔️: \<\-	{ yylval->bond = new Bond(Bond::DATIVEL); return BOND_TOKEN; }
+        // RDKit✔️✔️: \~	{ yylval->bond = new QueryBond();
+        // RDKit✔️✔️: 	  yylval->bond->setQuery(makeBondNullQuery()); return BOND_TOKEN;  }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: [\\]{1,2}    { yylval->bond = new Bond(Bond::UNSPECIFIED);
+        // RDKit✔️✔️: 	yylval->bond->setProp(RDKit::common_properties::_unspecifiedOrder,1);
+        // RDKit✔️✔️: 	yylval->bond->setBondDir(Bond::ENDDOWNRIGHT); return BOND_TOKEN;  }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: [\/]    { yylval->bond = new Bond(Bond::UNSPECIFIED);
+        // RDKit✔️✔️: 	yylval->bond->setProp(RDKit::common_properties::_unspecifiedOrder,1);
+        // RDKit✔️✔️: 	yylval->bond->setBondDir(Bond::ENDUPRIGHT); return BOND_TOKEN;  }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: \-			{ return MINUS_TOKEN; }
+        // RDKit✔️✔️: \+			{ return PLUS_TOKEN; }
+        // RDKit✔️✔️: \(       	{ return GROUP_OPEN_TOKEN; }
+        // RDKit✔️✔️: \)       	{ return GROUP_CLOSE_TOKEN; }
+        // RDKit✔️✔️: \[			{ BEGIN IN_ATOM_STATE; return ATOM_OPEN_TOKEN; }
+        // RDKit✔️✔️: <IN_ATOM_STATE>\]	{ BEGIN INITIAL; return ATOM_CLOSE_TOKEN; }
+        // RDKit✔️✔️: \.       	{ return SEPARATOR_TOKEN; }
+        // RDKit✔️✔️: \%              { return PERCENT_TOKEN; }
+        // RDKit✔️✔️: [0]		{ yylval->ival = 0; return ZERO_TOKEN; }
+        // RDKit✔️✔️: [1-9]		{ yylval->ival = yytext[0] - '0'; return NONZERO_DIGIT_TOKEN; }
+        // RDKit✔️✔️: \n		return 0;
+        // RDKit✔️✔️: <<EOF>>		{ return EOS_TOKEN; }
+        // RDKit✔️✔️: .		return BAD_CHARACTER;
         // END RDKIT CPP LEXER RULES smiles.ll token rules
+        if let Some(token) = self.start_token.take() {
+            return Ok(token);
+        }
+
         if self.scan_cursor >= self.scan_end {
             return Ok(SmilesToken::Eos);
         }
@@ -513,6 +533,9 @@ impl<'a> SmilesLexer<'a> {
         let (len, token) = self.match_next_token(remaining);
         self.scan_cursor += len;
         self.current_token_position += len;
+        if token == SmilesToken::Eos {
+            self.scan_cursor = self.scan_end;
+        }
         Ok(token)
     }
 
@@ -696,23 +719,149 @@ fn allow_nontetrahedral_chirality() -> bool {
 }
 
 fn match_bracket_atom_symbol(input: &str) -> Option<(&'static str, u8)> {
-    for &(symbol, atomic_number) in BRACKET_ATOM_SYMBOLS {
-        if input.starts_with(symbol) {
-            return Some((symbol, atomic_number));
-        }
+    match input.as_bytes() {
+        [b'U', b'u', b'n', ..] => Some(("Uun", 110)),
+        [b'U', b'u', b'u', ..] => Some(("Uuu", 111)),
+        [b'U', b'u', b'b', ..] => Some(("Uub", 112)),
+        [b'U', b'u', b't', ..] => Some(("Uut", 113)),
+        [b'U', b'u', b'q', ..] => Some(("Uuq", 114)),
+        [b'U', b'u', b'p', ..] => Some(("Uup", 115)),
+        [b'U', b'u', b'h', ..] => Some(("Uuh", 116)),
+        [b'U', b'u', b's', ..] => Some(("Uus", 117)),
+        [b'U', b'u', b'o', ..] => Some(("Uuo", 118)),
+        [b'H', b'e', ..] => Some(("He", 2)),
+        [b'L', b'i', ..] => Some(("Li", 3)),
+        [b'B', b'e', ..] => Some(("Be", 4)),
+        [b'N', b'e', ..] => Some(("Ne", 10)),
+        [b'N', b'a', ..] => Some(("Na", 11)),
+        [b'M', b'g', ..] => Some(("Mg", 12)),
+        [b'A', b'l', ..] => Some(("Al", 13)),
+        [b'S', b'i', ..] => Some(("Si", 14)),
+        [b'A', b'r', ..] => Some(("Ar", 18)),
+        [b'C', b'a', ..] => Some(("Ca", 20)),
+        [b'S', b'c', ..] => Some(("Sc", 21)),
+        [b'T', b'i', ..] => Some(("Ti", 22)),
+        [b'C', b'r', ..] => Some(("Cr", 24)),
+        [b'M', b'n', ..] => Some(("Mn", 25)),
+        [b'F', b'e', ..] => Some(("Fe", 26)),
+        [b'C', b'o', ..] => Some(("Co", 27)),
+        [b'N', b'i', ..] => Some(("Ni", 28)),
+        [b'C', b'u', ..] => Some(("Cu", 29)),
+        [b'Z', b'n', ..] => Some(("Zn", 30)),
+        [b'G', b'a', ..] => Some(("Ga", 31)),
+        [b'G', b'e', ..] => Some(("Ge", 32)),
+        [b'A', b's', ..] => Some(("As", 33)),
+        [b'S', b'e', ..] => Some(("Se", 34)),
+        [b'K', b'r', ..] => Some(("Kr", 36)),
+        [b'R', b'b', ..] => Some(("Rb", 37)),
+        [b'S', b'r', ..] => Some(("Sr", 38)),
+        [b'Z', b'r', ..] => Some(("Zr", 40)),
+        [b'N', b'b', ..] => Some(("Nb", 41)),
+        [b'M', b'o', ..] => Some(("Mo", 42)),
+        [b'T', b'c', ..] => Some(("Tc", 43)),
+        [b'R', b'u', ..] => Some(("Ru", 44)),
+        [b'R', b'h', ..] => Some(("Rh", 45)),
+        [b'P', b'd', ..] => Some(("Pd", 46)),
+        [b'A', b'g', ..] => Some(("Ag", 47)),
+        [b'C', b'd', ..] => Some(("Cd", 48)),
+        [b'I', b'n', ..] => Some(("In", 49)),
+        [b'S', b'n', ..] => Some(("Sn", 50)),
+        [b'S', b'b', ..] => Some(("Sb", 51)),
+        [b'T', b'e', ..] => Some(("Te", 52)),
+        [b'X', b'e', ..] => Some(("Xe", 54)),
+        [b'C', b's', ..] => Some(("Cs", 55)),
+        [b'B', b'a', ..] => Some(("Ba", 56)),
+        [b'L', b'a', ..] => Some(("La", 57)),
+        [b'C', b'e', ..] => Some(("Ce", 58)),
+        [b'P', b'r', ..] => Some(("Pr", 59)),
+        [b'N', b'd', ..] => Some(("Nd", 60)),
+        [b'P', b'm', ..] => Some(("Pm", 61)),
+        [b'S', b'm', ..] => Some(("Sm", 62)),
+        [b'E', b'u', ..] => Some(("Eu", 63)),
+        [b'G', b'd', ..] => Some(("Gd", 64)),
+        [b'T', b'b', ..] => Some(("Tb", 65)),
+        [b'D', b'y', ..] => Some(("Dy", 66)),
+        [b'H', b'o', ..] => Some(("Ho", 67)),
+        [b'E', b'r', ..] => Some(("Er", 68)),
+        [b'T', b'm', ..] => Some(("Tm", 69)),
+        [b'Y', b'b', ..] => Some(("Yb", 70)),
+        [b'L', b'u', ..] => Some(("Lu", 71)),
+        [b'H', b'f', ..] => Some(("Hf", 72)),
+        [b'T', b'a', ..] => Some(("Ta", 73)),
+        [b'R', b'e', ..] => Some(("Re", 75)),
+        [b'O', b's', ..] => Some(("Os", 76)),
+        [b'I', b'r', ..] => Some(("Ir", 77)),
+        [b'P', b't', ..] => Some(("Pt", 78)),
+        [b'A', b'u', ..] => Some(("Au", 79)),
+        [b'H', b'g', ..] => Some(("Hg", 80)),
+        [b'T', b'l', ..] => Some(("Tl", 81)),
+        [b'P', b'b', ..] => Some(("Pb", 82)),
+        [b'B', b'i', ..] => Some(("Bi", 83)),
+        [b'P', b'o', ..] => Some(("Po", 84)),
+        [b'A', b't', ..] => Some(("At", 85)),
+        [b'R', b'n', ..] => Some(("Rn", 86)),
+        [b'F', b'r', ..] => Some(("Fr", 87)),
+        [b'R', b'a', ..] => Some(("Ra", 88)),
+        [b'A', b'c', ..] => Some(("Ac", 89)),
+        [b'T', b'h', ..] => Some(("Th", 90)),
+        [b'P', b'a', ..] => Some(("Pa", 91)),
+        [b'N', b'p', ..] => Some(("Np", 93)),
+        [b'P', b'u', ..] => Some(("Pu", 94)),
+        [b'A', b'm', ..] => Some(("Am", 95)),
+        [b'C', b'm', ..] => Some(("Cm", 96)),
+        [b'B', b'k', ..] => Some(("Bk", 97)),
+        [b'C', b'f', ..] => Some(("Cf", 98)),
+        [b'E', b's', ..] => Some(("Es", 99)),
+        [b'F', b'm', ..] => Some(("Fm", 100)),
+        [b'M', b'd', ..] => Some(("Md", 101)),
+        [b'N', b'o', ..] => Some(("No", 102)),
+        [b'L', b'r', ..] => Some(("Lr", 103)),
+        [b'R', b'f', ..] => Some(("Rf", 104)),
+        [b'D', b'b', ..] => Some(("Db", 105)),
+        [b'S', b'g', ..] => Some(("Sg", 106)),
+        [b'B', b'h', ..] => Some(("Bh", 107)),
+        [b'H', b's', ..] => Some(("Hs", 108)),
+        [b'M', b't', ..] => Some(("Mt", 109)),
+        [b'D', b's', ..] => Some(("Ds", 110)),
+        [b'R', b'g', ..] => Some(("Rg", 111)),
+        [b'C', b'n', ..] => Some(("Cn", 112)),
+        [b'N', b'h', ..] => Some(("Nh", 113)),
+        [b'F', b'l', ..] => Some(("Fl", 114)),
+        [b'M', b'c', ..] => Some(("Mc", 115)),
+        [b'L', b'v', ..] => Some(("Lv", 116)),
+        [b'T', b's', ..] => Some(("Ts", 117)),
+        [b'O', b'g', ..] => Some(("Og", 118)),
+        [b'K', ..] => Some(("K", 19)),
+        [b'V', ..] => Some(("V", 23)),
+        [b'Y', ..] => Some(("Y", 39)),
+        [b'W', ..] => Some(("W", 74)),
+        [b'U', ..] => Some(("U", 92)),
+        _ => None,
     }
-    None
 }
 
 fn match_quoted_biovia_atom_symbol(input: &str) -> Option<(&'static str, u8)> {
-    for &(symbol, atomic_number) in QUOTED_BIOVIA_ATOM_SYMBOLS {
-        if input.starts_with(symbol) {
-            return Some((symbol, atomic_number));
-        }
+    match input.as_bytes() {
+        [b'\'', b'R', b'f', b'\'', ..] => Some(("'Rf'", 104)),
+        [b'\'', b'D', b'b', b'\'', ..] => Some(("'Db'", 105)),
+        [b'\'', b'S', b'g', b'\'', ..] => Some(("'Sg'", 106)),
+        [b'\'', b'B', b'h', b'\'', ..] => Some(("'Bh'", 107)),
+        [b'\'', b'H', b's', b'\'', ..] => Some(("'Hs'", 108)),
+        [b'\'', b'M', b't', b'\'', ..] => Some(("'Mt'", 109)),
+        [b'\'', b'D', b's', b'\'', ..] => Some(("'Ds'", 110)),
+        [b'\'', b'R', b'g', b'\'', ..] => Some(("'Rg'", 111)),
+        [b'\'', b'C', b'n', b'\'', ..] => Some(("'Cn'", 112)),
+        [b'\'', b'N', b'h', b'\'', ..] => Some(("'Nh'", 113)),
+        [b'\'', b'F', b'l', b'\'', ..] => Some(("'Fl'", 114)),
+        [b'\'', b'M', b'c', b'\'', ..] => Some(("'Mc'", 115)),
+        [b'\'', b'L', b'v', b'\'', ..] => Some(("'Lv'", 116)),
+        [b'\'', b'T', b's', b'\'', ..] => Some(("'Ts'", 117)),
+        [b'\'', b'O', b'g', b'\'', ..] => Some(("'Og'", 118)),
+        _ => None,
     }
-    None
 }
 
+#[cfg(test)]
 const BRACKET_ATOM_SYMBOLS: &[(&str, u8)] = &[
     ("Uun", 110),
     ("Uuu", 111),
@@ -832,6 +981,7 @@ const BRACKET_ATOM_SYMBOLS: &[(&str, u8)] = &[
     ("U", 92),
 ];
 
+#[cfg(test)]
 const QUOTED_BIOVIA_ATOM_SYMBOLS: &[(&str, u8)] = &[
     ("'Rf'", 104),
     ("'Db'", 105),
@@ -923,7 +1073,7 @@ impl SmilesAtomToken {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 struct SmilesBondToken {
     order: BondOrder,
@@ -992,80 +1142,80 @@ impl<'a> SmilesParser<'a> {
 
     fn parse_mol(&mut self, state: &mut SmilesBuildState) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP FUNCTION smiles_parse
-        // RDKit❗✔️: int smiles_parse(const std::string &inp, std::vector<RDKit::RWMol *> &molVect) {
-        // RDKit❗✔️:   auto start_tok = static_cast<int>(START_MOL);
-        // RDKit❗✔️:   Atom *atom = nullptr;
-        // RDKit❗✔️:   Bond *bond = nullptr;
-        // RDKit❗✔️:   return smiles_parse_helper(inp, molVect, atom, bond, start_tok);
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: int smiles_parse(const std::string &inp, std::vector<RDKit::RWMol *> &molVect) {
+        // RDKit✔️✔️:   auto start_tok = static_cast<int>(START_MOL);
+        // RDKit✔️✔️:   Atom *atom = nullptr;
+        // RDKit✔️✔️:   Bond *bond = nullptr;
+        // RDKit✔️✔️:   return smiles_parse_helper(inp, molVect, atom, bond, start_tok);
+        // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION smiles_parse
 
         // BEGIN RDKIT CPP FUNCTION smiles_parse_helper
-        // RDKit❗✔️: int smiles_parse_helper(const std::string &inp,
-        // RDKit❗✔️:                         std::vector<RDKit::RWMol *> &molVect, Atom *&atom,
-        // RDKit❗✔️:                         Bond *&bond, int start_tok) {
-        // RDKit❗✔️:     return generic_parse_helper<yysmiles_lex_init,
-        // RDKit❗✔️:                                 setup_smiles_string,
-        // RDKit❗✔️:                                 yysmiles_lex_destroy>(yysmiles_parse,
-        // RDKit❗✔️:                                                       inp,
-        // RDKit❗✔️:                                                       molVect,
-        // RDKit❗✔️:                                                       atom,
-        // RDKit❗✔️:                                                       bond,
-        // RDKit❗✔️:                                                       start_tok,
-        // RDKit❗✔️:                                                       "SMILES");
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: int smiles_parse_helper(const std::string &inp,
+        // RDKit✔️✔️:                         std::vector<RDKit::RWMol *> &molVect, Atom *&atom,
+        // RDKit✔️✔️:                         Bond *&bond, int start_tok) {
+        // RDKit✔️✔️:     return generic_parse_helper<yysmiles_lex_init,
+        // RDKit✔️✔️:                                 setup_smiles_string,
+        // RDKit✔️✔️:                                 yysmiles_lex_destroy>(yysmiles_parse,
+        // RDKit✔️✔️:                                                       inp,
+        // RDKit✔️✔️:                                                       molVect,
+        // RDKit✔️✔️:                                                       atom,
+        // RDKit✔️✔️:                                                       bond,
+        // RDKit✔️✔️:                                                       start_tok,
+        // RDKit✔️✔️:                                                       "SMILES");
+        // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION smiles_parse_helper
 
         // BEGIN RDKIT CPP FUNCTION generic_parse_helper
-        // RDKit❗✔️: template<int(*lex_init)(void**),
-        // RDKit❗✔️:          size_t(*string_setup)(const std::string &, void *),
-        // RDKit❗✔️:          int(*lex_destroy)(void*),
-        // RDKit❗✔️:          typename T>
-        // RDKit❗✔️: int generic_parse_helper(T parser,
-        // RDKit❗✔️:                          const std::string &inp,
-        // RDKit❗✔️:                          std::vector<RDKit::RWMol *> &molVect,
-        // RDKit❗✔️:                          Atom *&atom,
-        // RDKit❗✔️:                          Bond *&bond,
-        // RDKit❗✔️:                          int start_tok,
-        // RDKit❗✔️:                          const std::string& input_type) {
-        // RDKit❗✔️:   std::vector<std::pair<unsigned int, unsigned int>> branchPoints;
-        // RDKit❗✔️:   void *scanner;
-        // RDKit❗✔️:   int res = 1;  // initialize with fail code
-        // RDKit❗✔️:
-        // RDKit❗✔️:   TEST_ASSERT(!lex_init(&scanner));
-        // RDKit❗✔️:   size_t ltrim = 0;
-        // RDKit❗✔️:   try {
-        // RDKit❗✔️:     ltrim = string_setup(inp, scanner);
-        // RDKit❗✔️:     unsigned numAtomsParsed = 0;
-        // RDKit❗✔️:     unsigned numBondsParsed = 0;
-        // RDKit❗✔️:     // NOTE: This variable will be used to point to the location of the
-        // RDKit❗✔️:     // offending token if we encounter a syntax error
-        // RDKit❗✔️:     unsigned int current_token_position = 0;
-        // RDKit❗✔️:     res = parser(inp.c_str() + ltrim, &molVect, atom, bond,
-        // RDKit❗✔️:                          numAtomsParsed, numBondsParsed, branchPoints, scanner,
-        // RDKit❗✔️:                          start_tok, current_token_position);
-        // RDKit❗✔️:   } catch (...) {
-        // RDKit❗✔️:     lex_destroy(scanner);
-        // RDKit❗✔️:     throw;
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   lex_destroy(scanner);
-        // RDKit❗✔️:
-        // RDKit❗✔️:   if (!branchPoints.empty()) {
-        // RDKit❗✔️:     auto input = inp.c_str() + ltrim;
-        // RDKit❗✔️:     // If there are multiple unclosed brackets, we want to report them all at
-        // RDKit❗✔️:     // once.
-        // RDKit❗✔️:     for (auto [_, open_bracket_position] : branchPoints) {
-        // RDKit❗✔️:       SmilesParseOps::detail::printSyntaxErrorMessage(
-        // RDKit❗✔️:           input, "extra open parentheses", open_bracket_position, input_type);
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:
-        // RDKit❗✔️:   if (res == 1 || !branchPoints.empty()) {
-        // RDKit❗✔️:     throw SmilesParseException("Failed parsing " + input_type + " '" + inp + "'");
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:
-        // RDKit❗✔️:   return res;
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: template<int(*lex_init)(void**),
+        // RDKit✔️✔️:          size_t(*string_setup)(const std::string &, void *),
+        // RDKit✔️✔️:          int(*lex_destroy)(void*),
+        // RDKit✔️✔️:          typename T>
+        // RDKit✔️✔️: int generic_parse_helper(T parser,
+        // RDKit✔️✔️:                          const std::string &inp,
+        // RDKit✔️✔️:                          std::vector<RDKit::RWMol *> &molVect,
+        // RDKit✔️✔️:                          Atom *&atom,
+        // RDKit✔️✔️:                          Bond *&bond,
+        // RDKit✔️✔️:                          int start_tok,
+        // RDKit✔️✔️:                          const std::string& input_type) {
+        // RDKit✔️✔️:   std::vector<std::pair<unsigned int, unsigned int>> branchPoints;
+        // RDKit✔️✔️:   void *scanner;
+        // RDKit✔️✔️:   int res = 1;  // initialize with fail code
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   TEST_ASSERT(!lex_init(&scanner));
+        // RDKit✔️✔️:   size_t ltrim = 0;
+        // RDKit✔️✔️:   try {
+        // RDKit✔️✔️:     ltrim = string_setup(inp, scanner);
+        // RDKit✔️✔️:     unsigned numAtomsParsed = 0;
+        // RDKit✔️✔️:     unsigned numBondsParsed = 0;
+        // RDKit✔️✔️:     // NOTE: This variable will be used to point to the location of the
+        // RDKit✔️✔️:     // offending token if we encounter a syntax error
+        // RDKit✔️✔️:     unsigned int current_token_position = 0;
+        // RDKit✔️✔️:     res = parser(inp.c_str() + ltrim, &molVect, atom, bond,
+        // RDKit✔️✔️:                          numAtomsParsed, numBondsParsed, branchPoints, scanner,
+        // RDKit✔️✔️:                          start_tok, current_token_position);
+        // RDKit✔️✔️:   } catch (...) {
+        // RDKit✔️✔️:     lex_destroy(scanner);
+        // RDKit✔️✔️:     throw;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   lex_destroy(scanner);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   if (!branchPoints.empty()) {
+        // RDKit✔️✔️:     auto input = inp.c_str() + ltrim;
+        // RDKit✔️✔️:     // If there are multiple unclosed brackets, we want to report them all at
+        // RDKit✔️✔️:     // once.
+        // RDKit✔️✔️:     for (auto [_, open_bracket_position] : branchPoints) {
+        // RDKit✔️✔️:       SmilesParseOps::detail::printSyntaxErrorMessage(
+        // RDKit✔️✔️:           input, "extra open parentheses", open_bracket_position, input_type);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   if (res == 1 || !branchPoints.empty()) {
+        // RDKit✔️✔️:     throw SmilesParseException("Failed parsing " + input_type + " '" + inp + "'");
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   return res;
+        // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION generic_parse_helper
         let first_atom = self.parse_simple_atomd()?;
         state.add_first_atom(first_atom)?;
@@ -1670,6 +1820,7 @@ struct BranchPoint {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PendingBond {
     token: SmilesBondToken,
+    cx_smiles_bond_idx: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1685,6 +1836,15 @@ struct RingClosureRecord {
     bond: Option<BondId>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PendingRingClosure {
+    ring_number: u32,
+    opening_atom: AtomId,
+    closing_atom: AtomId,
+    opening_pending_bond: PendingBond,
+    closing_pending_bond: PendingBond,
+}
+
 #[derive(Debug)]
 #[allow(dead_code)]
 struct SmilesBuildState {
@@ -1696,8 +1856,10 @@ struct SmilesBuildState {
     branch_stack: Vec<BranchPoint>,
     ring_openings: BTreeMap<u32, RingOpening>,
     ring_closures_by_atom: BTreeMap<AtomId, Vec<RingClosureRecord>>,
+    pending_ring_closures: Vec<PendingRingClosure>,
     smiles_start_atoms: BTreeSet<AtomId>,
     cx_bond_order: Vec<BondId>,
+    next_cx_smiles_bond_idx: usize,
     temporary_chiral_permutations: BTreeMap<AtomId, u32>,
     cx_stereo_group_tracker: BTreeMap<(u8, u32), usize>,
 }
@@ -1714,8 +1876,10 @@ impl SmilesBuildState {
             branch_stack: Vec::new(),
             ring_openings: BTreeMap::new(),
             ring_closures_by_atom: BTreeMap::new(),
+            pending_ring_closures: Vec::new(),
             smiles_start_atoms: BTreeSet::new(),
             cx_bond_order: Vec::new(),
+            next_cx_smiles_bond_idx: 0,
             temporary_chiral_permutations: BTreeMap::new(),
             cx_stereo_group_tracker: BTreeMap::new(),
         }
@@ -1736,6 +1900,7 @@ impl SmilesBuildState {
         // END RDKIT CPP FUNCTION CleanupAfterParseError
         self.ring_openings.clear();
         self.ring_closures_by_atom.clear();
+        self.pending_ring_closures.clear();
     }
 
     fn add_frag_to_mol(
@@ -1745,20 +1910,20 @@ impl SmilesBuildState {
         bond_dir: BondDirection,
     ) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP FUNCTION AddFragToMol
-        // RDKit✔️❌: void AddFragToMol(RWMol *mol, RWMol *frag, Bond::BondType bondOrder,
-        // RDKit✔️❌:                   Bond::BondDir bondDir) {
-        // RDKit✔️❌:   PRECONDITION(mol, "no molecule");
-        // RDKit✔️❌:   PRECONDITION(frag, "no fragment");
-        // RDKit✔️❌:   PRECONDITION(mol->getActiveAtom(), "no active atom");
-        // RDKit✔️❌:   Atom *lastAt = mol->getActiveAtom();
-        // RDKit✔️❌:   int nOrigAtoms = mol->getNumAtoms();
-        // RDKit✔️❌:   int nOrigBonds = mol->getNumBonds();
-        // RDKit✔️❌:   mol->insertMol(*frag);
-        // RDKit✔️❌:   // update ring-closure order information on the added atoms
-        // RDKit✔️❌:   // and copy fragment bookmarks/partial bonds into the destination.
-        // RDKit✔️❌:   // When bondOrder != IONIC, connect the former active atom to the first
-        // RDKit✔️❌:   // fragment atom using the requested order and direction.
-        // RDKit✔️❌: }
+        // RDKit✔️✔️: void AddFragToMol(RWMol *mol, RWMol *frag, Bond::BondType bondOrder,
+        // RDKit✔️✔️:                   Bond::BondDir bondDir) {
+        // RDKit✔️✔️:   PRECONDITION(mol, "no molecule");
+        // RDKit✔️✔️:   PRECONDITION(frag, "no fragment");
+        // RDKit✔️✔️:   PRECONDITION(mol->getActiveAtom(), "no active atom");
+        // RDKit✔️✔️:   Atom *lastAt = mol->getActiveAtom();
+        // RDKit✔️✔️:   int nOrigAtoms = mol->getNumAtoms();
+        // RDKit✔️✔️:   int nOrigBonds = mol->getNumBonds();
+        // RDKit✔️✔️:   mol->insertMol(*frag);
+        // RDKit✔️✔️:   // update ring-closure order information on the added atoms
+        // RDKit✔️✔️:   // and copy fragment bookmarks/partial bonds into the destination.
+        // RDKit✔️✔️:   // When bondOrder != IONIC, connect the former active atom to the first
+        // RDKit✔️✔️:   // fragment atom using the requested order and direction.
+        // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION AddFragToMol
         let last_active = self
             .active_atom
@@ -1808,16 +1973,16 @@ impl SmilesBuildState {
                 spec = spec.with_prop(key.clone(), value.clone());
             }
             spec = spec.with_prop(CXSMILES_BOND_IDX_PROP, self.cx_bond_order.len().to_string());
-            let new_bond = self
+            let bond_id = self
                 .builder
                 .add_bond(spec)
                 .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
             self.bond_pairs.insert(canonical_bond_pair(begin, end));
             if bond.prop(UNSPECIFIED_ORDER_PROP).is_some() {
-                self.explicit_unspecified_bonds.push(new_bond);
+                self.explicit_unspecified_bonds.push(bond_id);
             }
-            self.cx_bond_order.push(new_bond);
-            bond_mapping.push(new_bond);
+            self.cx_bond_order.push(bond_id);
+            bond_mapping.push(bond_id);
         }
 
         for (old_atom, records) in frag.ring_closures_by_atom {
@@ -1840,6 +2005,15 @@ impl SmilesBuildState {
                     input_position: opening.input_position,
                 },
             );
+        }
+        for closure in frag.pending_ring_closures {
+            self.pending_ring_closures.push(PendingRingClosure {
+                ring_number: closure.ring_number,
+                opening_atom: atom_mapping[closure.opening_atom.index()],
+                closing_atom: atom_mapping[closure.closing_atom.index()],
+                opening_pending_bond: closure.opening_pending_bond,
+                closing_pending_bond: closure.closing_pending_bond,
+            });
         }
         for (atom, permutation) in frag.temporary_chiral_permutations {
             self.temporary_chiral_permutations
@@ -1878,16 +2052,16 @@ impl SmilesBuildState {
 
     fn add_first_atom(&mut self, mut atom: SmilesAtomToken) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy mol: atomd
-        // RDKit❗✔️: mol: atomd {
-        // RDKit❗✔️:   int sz     = molList->size();
-        // RDKit❗✔️:   molList->resize( sz + 1);
-        // RDKit❗✔️:   (*molList)[ sz ] = new RWMol();
-        // RDKit❗✔️:   RDKit::RWMol *curMol = (*molList)[ sz ];
-        // RDKit❗✔️:   $1->setProp(RDKit::common_properties::_SmilesStart,1);
-        // RDKit❗✔️:   curMol->addAtom($1, true, true);
-        // RDKit❗✔️:   //delete $1;
-        // RDKit❗✔️:   $$ = sz;
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: mol: atomd {
+        // RDKit✔️✔️:   int sz     = molList->size();
+        // RDKit✔️✔️:   molList->resize( sz + 1);
+        // RDKit✔️✔️:   (*molList)[ sz ] = new RWMol();
+        // RDKit✔️✔️:   RDKit::RWMol *curMol = (*molList)[ sz ];
+        // RDKit✔️✔️:   $1->setProp(RDKit::common_properties::_SmilesStart,1);
+        // RDKit✔️✔️:   curMol->addAtom($1, true, true);
+        // RDKit✔️✔️:   //delete $1;
+        // RDKit✔️✔️:   $$ = sz;
+        // RDKit✔️✔️: }
         // END RDKIT CPP GRAMMAR ACTION smiles.yy mol: atomd
         atom.spec = atom.spec.with_prop(SMILES_START_PROP, "1");
         let atom_id = self.append_atom(atom);
@@ -1901,16 +2075,16 @@ impl SmilesBuildState {
         atom: SmilesAtomToken,
     ) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy mol atomd
-        // RDKit❗✔️: | mol atomd       {
-        // RDKit❗✔️:   RWMol *mp = (*molList)[$$];
-        // RDKit❗✔️:   Atom *a1 = mp->getActiveAtom();
-        // RDKit❗✔️:   int atomIdx1=a1->getIdx();
-        // RDKit❗✔️:   int atomIdx2=mp->addAtom($2,true,true);
-        // RDKit❗✔️:   mp->addBond(atomIdx1,atomIdx2,
-        // RDKit❗✔️: 	      SmilesParseOps::GetUnspecifiedBondType(mp,a1,mp->getAtomWithIdx(atomIdx2)));
-        // RDKit❗✔️:   mp->getBondBetweenAtoms(atomIdx1,atomIdx2)->setProp("_cxsmilesBondIdx",numBondsParsed++);
-        // RDKit❗✔️:   //delete $2;
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: | mol atomd       {
+        // RDKit✔️✔️:   RWMol *mp = (*molList)[$$];
+        // RDKit✔️✔️:   Atom *a1 = mp->getActiveAtom();
+        // RDKit✔️✔️:   int atomIdx1=a1->getIdx();
+        // RDKit✔️✔️:   int atomIdx2=mp->addAtom($2,true,true);
+        // RDKit✔️✔️:   mp->addBond(atomIdx1,atomIdx2,
+        // RDKit✔️✔️: 	      SmilesParseOps::GetUnspecifiedBondType(mp,a1,mp->getAtomWithIdx(atomIdx2)));
+        // RDKit✔️✔️:   mp->getBondBetweenAtoms(atomIdx1,atomIdx2)->setProp("_cxsmilesBondIdx",numBondsParsed++);
+        // RDKit✔️✔️:   //delete $2;
+        // RDKit✔️✔️: }
         // END RDKIT CPP GRAMMAR ACTION smiles.yy mol atomd
         let begin = self
             .active_atom
@@ -1935,26 +2109,26 @@ impl SmilesBuildState {
         atom: SmilesAtomToken,
     ) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy mol BOND_TOKEN atomd
-        // RDKit❗✔️: | mol BOND_TOKEN atomd  {
-        // RDKit❗✔️:   RWMol *mp = (*molList)[$$];
-        // RDKit❗✔️:   int atomIdx1 = mp->getActiveAtom()->getIdx();
-        // RDKit❗✔️:   int atomIdx2 = mp->addAtom($3,true,true);
-        // RDKit❗✔️:   if( $2->getBondType() == Bond::DATIVER ){
-        // RDKit❗✔️:     $2->setBeginAtomIdx(atomIdx1);
-        // RDKit❗✔️:     $2->setEndAtomIdx(atomIdx2);
-        // RDKit❗✔️:     $2->setBondType(Bond::DATIVE);
-        // RDKit❗✔️:   }else if ( $2->getBondType() == Bond::DATIVEL ){
-        // RDKit❗✔️:     $2->setBeginAtomIdx(atomIdx2);
-        // RDKit❗✔️:     $2->setEndAtomIdx(atomIdx1);
-        // RDKit❗✔️:     $2->setBondType(Bond::DATIVE);
-        // RDKit❗✔️:   } else {
-        // RDKit❗✔️:     $2->setBeginAtomIdx(atomIdx1);
-        // RDKit❗✔️:     $2->setEndAtomIdx(atomIdx2);
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   $2->setProp("_cxsmilesBondIdx",numBondsParsed++);
-        // RDKit❗✔️:   mp->addBond($2,true);
-        // RDKit❗✔️:   //delete $3;
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: | mol BOND_TOKEN atomd  {
+        // RDKit✔️✔️:   RWMol *mp = (*molList)[$$];
+        // RDKit✔️✔️:   int atomIdx1 = mp->getActiveAtom()->getIdx();
+        // RDKit✔️✔️:   int atomIdx2 = mp->addAtom($3,true,true);
+        // RDKit✔️✔️:   if( $2->getBondType() == Bond::DATIVER ){
+        // RDKit✔️✔️:     $2->setBeginAtomIdx(atomIdx1);
+        // RDKit✔️✔️:     $2->setEndAtomIdx(atomIdx2);
+        // RDKit✔️✔️:     $2->setBondType(Bond::DATIVE);
+        // RDKit✔️✔️:   }else if ( $2->getBondType() == Bond::DATIVEL ){
+        // RDKit✔️✔️:     $2->setBeginAtomIdx(atomIdx2);
+        // RDKit✔️✔️:     $2->setEndAtomIdx(atomIdx1);
+        // RDKit✔️✔️:     $2->setBondType(Bond::DATIVE);
+        // RDKit✔️✔️:   } else {
+        // RDKit✔️✔️:     $2->setBeginAtomIdx(atomIdx1);
+        // RDKit✔️✔️:     $2->setEndAtomIdx(atomIdx2);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   $2->setProp("_cxsmilesBondIdx",numBondsParsed++);
+        // RDKit✔️✔️:   mp->addBond($2,true);
+        // RDKit✔️✔️:   //delete $3;
+        // RDKit✔️✔️: }
         // END RDKIT CPP GRAMMAR ACTION smiles.yy mol BOND_TOKEN atomd
         let atom_idx1 = self
             .active_atom
@@ -1968,14 +2142,14 @@ impl SmilesBuildState {
 
     fn add_single_bond_to_atom(&mut self, atom: SmilesAtomToken) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy mol MINUS_TOKEN atomd
-        // RDKit❗✔️: | mol MINUS_TOKEN atomd {
-        // RDKit❗✔️:   RWMol *mp = (*molList)[$$];
-        // RDKit❗✔️:   int atomIdx1 = mp->getActiveAtom()->getIdx();
-        // RDKit❗✔️:   int atomIdx2 = mp->addAtom($3,true,true);
-        // RDKit❗✔️:   mp->addBond(atomIdx1,atomIdx2,Bond::SINGLE);
-        // RDKit❗✔️:   mp->getBondBetweenAtoms(atomIdx1,atomIdx2)->setProp("_cxsmilesBondIdx",numBondsParsed++);
-        // RDKit❗✔️:   //delete $3;
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: | mol MINUS_TOKEN atomd {
+        // RDKit✔️✔️:   RWMol *mp = (*molList)[$$];
+        // RDKit✔️✔️:   int atomIdx1 = mp->getActiveAtom()->getIdx();
+        // RDKit✔️✔️:   int atomIdx2 = mp->addAtom($3,true,true);
+        // RDKit✔️✔️:   mp->addBond(atomIdx1,atomIdx2,Bond::SINGLE);
+        // RDKit✔️✔️:   mp->getBondBetweenAtoms(atomIdx1,atomIdx2)->setProp("_cxsmilesBondIdx",numBondsParsed++);
+        // RDKit✔️✔️:   //delete $3;
+        // RDKit✔️✔️: }
         // END RDKIT CPP GRAMMAR ACTION smiles.yy mol MINUS_TOKEN atomd
         let begin = self
             .active_atom
@@ -1989,11 +2163,11 @@ impl SmilesBuildState {
 
     fn add_disconnected_atom(&mut self, mut atom: SmilesAtomToken) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy mol SEPARATOR_TOKEN atomd
-        // RDKit❗✔️: | mol SEPARATOR_TOKEN atomd {
-        // RDKit❗✔️:   RWMol *mp = (*molList)[$$];
-        // RDKit❗✔️:   $3->setProp(RDKit::common_properties::_SmilesStart,1,true);
-        // RDKit❗✔️:   mp->addAtom($3,true,true);
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: | mol SEPARATOR_TOKEN atomd {
+        // RDKit✔️✔️:   RWMol *mp = (*molList)[$$];
+        // RDKit✔️✔️:   $3->setProp(RDKit::common_properties::_SmilesStart,1,true);
+        // RDKit✔️✔️:   mp->addAtom($3,true,true);
+        // RDKit✔️✔️: }
         // END RDKIT CPP GRAMMAR ACTION smiles.yy mol SEPARATOR_TOKEN atomd
         atom.spec = atom.spec.with_prop(SMILES_START_PROP, "1");
         let atom_id = self.append_atom(atom);
@@ -2004,7 +2178,7 @@ impl SmilesBuildState {
 
     fn branch_open_token(current_token_position: usize) -> usize {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy branch_open_token
-        // RDKit❗✔️: branch_open_token: GROUP_OPEN_TOKEN { $$ = current_token_position; };
+        // RDKit✔️✔️: branch_open_token: GROUP_OPEN_TOKEN { $$ = current_token_position; };
         // END RDKIT CPP GRAMMAR ACTION smiles.yy branch_open_token
         current_token_position
     }
@@ -2015,16 +2189,16 @@ impl SmilesBuildState {
         atom: SmilesAtomToken,
     ) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy mol branch_open_token atomd
-        // RDKit❗✔️: | mol branch_open_token atomd {
-        // RDKit❗✔️:   RWMol *mp = (*molList)[$$];
-        // RDKit❗✔️:   Atom *a1 = mp->getActiveAtom();
-        // RDKit❗✔️:   int atomIdx1=a1->getIdx();
-        // RDKit❗✔️:   int atomIdx2=mp->addAtom($3,true,true);
-        // RDKit❗✔️:   mp->addBond(atomIdx1,atomIdx2,
-        // RDKit❗✔️: 	      SmilesParseOps::GetUnspecifiedBondType(mp,a1,mp->getAtomWithIdx(atomIdx2)));
-        // RDKit❗✔️:   mp->getBondBetweenAtoms(atomIdx1,atomIdx2)->setProp("_cxsmilesBondIdx",numBondsParsed++);
-        // RDKit❗✔️:   branchPoints.push_back({atomIdx1, $2});
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: | mol branch_open_token atomd {
+        // RDKit✔️✔️:   RWMol *mp = (*molList)[$$];
+        // RDKit✔️✔️:   Atom *a1 = mp->getActiveAtom();
+        // RDKit✔️✔️:   int atomIdx1=a1->getIdx();
+        // RDKit✔️✔️:   int atomIdx2=mp->addAtom($3,true,true);
+        // RDKit✔️✔️:   mp->addBond(atomIdx1,atomIdx2,
+        // RDKit✔️✔️: 	      SmilesParseOps::GetUnspecifiedBondType(mp,a1,mp->getAtomWithIdx(atomIdx2)));
+        // RDKit✔️✔️:   mp->getBondBetweenAtoms(atomIdx1,atomIdx2)->setProp("_cxsmilesBondIdx",numBondsParsed++);
+        // RDKit✔️✔️:   branchPoints.push_back({atomIdx1, $2});
+        // RDKit✔️✔️: }
         // END RDKIT CPP GRAMMAR ACTION smiles.yy mol branch_open_token atomd
         let branch_root = self
             .active_atom
@@ -2044,27 +2218,27 @@ impl SmilesBuildState {
         atom: SmilesAtomToken,
     ) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy mol branch_open_token BOND_TOKEN atomd
-        // RDKit❗✔️: | mol branch_open_token BOND_TOKEN atomd  {
-        // RDKit❗✔️:   RWMol *mp = (*molList)[$$];
-        // RDKit❗✔️:   int atomIdx1 = mp->getActiveAtom()->getIdx();
-        // RDKit❗✔️:   int atomIdx2 = mp->addAtom($4,true,true);
-        // RDKit❗✔️:   if( $3->getBondType() == Bond::DATIVER ){
-        // RDKit❗✔️:     $3->setBeginAtomIdx(atomIdx1);
-        // RDKit❗✔️:     $3->setEndAtomIdx(atomIdx2);
-        // RDKit❗✔️:     $3->setBondType(Bond::DATIVE);
-        // RDKit❗✔️:   }else if ( $3->getBondType() == Bond::DATIVEL ){
-        // RDKit❗✔️:     $3->setBeginAtomIdx(atomIdx2);
-        // RDKit❗✔️:     $3->setEndAtomIdx(atomIdx1);
-        // RDKit❗✔️:     $3->setBondType(Bond::DATIVE);
-        // RDKit❗✔️:   } else {
-        // RDKit❗✔️:     $3->setBeginAtomIdx(atomIdx1);
-        // RDKit❗✔️:     $3->setEndAtomIdx(atomIdx2);
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   $3->setProp("_cxsmilesBondIdx",numBondsParsed++);
-        // RDKit❗✔️:   mp->addBond($3,true);
-        // RDKit❗✔️:
-        // RDKit❗✔️:   branchPoints.push_back({atomIdx1, $2});
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: | mol branch_open_token BOND_TOKEN atomd  {
+        // RDKit✔️✔️:   RWMol *mp = (*molList)[$$];
+        // RDKit✔️✔️:   int atomIdx1 = mp->getActiveAtom()->getIdx();
+        // RDKit✔️✔️:   int atomIdx2 = mp->addAtom($4,true,true);
+        // RDKit✔️✔️:   if( $3->getBondType() == Bond::DATIVER ){
+        // RDKit✔️✔️:     $3->setBeginAtomIdx(atomIdx1);
+        // RDKit✔️✔️:     $3->setEndAtomIdx(atomIdx2);
+        // RDKit✔️✔️:     $3->setBondType(Bond::DATIVE);
+        // RDKit✔️✔️:   }else if ( $3->getBondType() == Bond::DATIVEL ){
+        // RDKit✔️✔️:     $3->setBeginAtomIdx(atomIdx2);
+        // RDKit✔️✔️:     $3->setEndAtomIdx(atomIdx1);
+        // RDKit✔️✔️:     $3->setBondType(Bond::DATIVE);
+        // RDKit✔️✔️:   } else {
+        // RDKit✔️✔️:     $3->setBeginAtomIdx(atomIdx1);
+        // RDKit✔️✔️:     $3->setEndAtomIdx(atomIdx2);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   $3->setProp("_cxsmilesBondIdx",numBondsParsed++);
+        // RDKit✔️✔️:   mp->addBond($3,true);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   branchPoints.push_back({atomIdx1, $2});
+        // RDKit✔️✔️: }
         // END RDKIT CPP GRAMMAR ACTION smiles.yy mol branch_open_token BOND_TOKEN atomd
         let branch_root = self
             .active_atom
@@ -2083,14 +2257,14 @@ impl SmilesBuildState {
         atom: SmilesAtomToken,
     ) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy mol branch_open_token MINUS_TOKEN atomd
-        // RDKit❗✔️: | mol branch_open_token MINUS_TOKEN atomd {
-        // RDKit❗✔️:   RWMol *mp = (*molList)[$$];
-        // RDKit❗✔️:   int atomIdx1 = mp->getActiveAtom()->getIdx();
-        // RDKit❗✔️:   int atomIdx2=mp->addAtom($4,true,true);
-        // RDKit❗✔️:   mp->addBond(atomIdx1,atomIdx2,Bond::SINGLE);
-        // RDKit❗✔️:   mp->getBondBetweenAtoms(atomIdx1,atomIdx2)->setProp("_cxsmilesBondIdx",numBondsParsed++);
-        // RDKit❗✔️:   branchPoints.push_back({atomIdx1, $2});
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: | mol branch_open_token MINUS_TOKEN atomd {
+        // RDKit✔️✔️:   RWMol *mp = (*molList)[$$];
+        // RDKit✔️✔️:   int atomIdx1 = mp->getActiveAtom()->getIdx();
+        // RDKit✔️✔️:   int atomIdx2=mp->addAtom($4,true,true);
+        // RDKit✔️✔️:   mp->addBond(atomIdx1,atomIdx2,Bond::SINGLE);
+        // RDKit✔️✔️:   mp->getBondBetweenAtoms(atomIdx1,atomIdx2)->setProp("_cxsmilesBondIdx",numBondsParsed++);
+        // RDKit✔️✔️:   branchPoints.push_back({atomIdx1, $2});
+        // RDKit✔️✔️: }
         // END RDKIT CPP GRAMMAR ACTION smiles.yy mol branch_open_token MINUS_TOKEN atomd
         let branch_root = self
             .active_atom
@@ -2105,17 +2279,17 @@ impl SmilesBuildState {
 
     fn close_branch(&mut self) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy mol GROUP_CLOSE_TOKEN
-        // RDKit❗✔️: | mol GROUP_CLOSE_TOKEN {
-        // RDKit❗✔️:   if(branchPoints.empty()){
-        // RDKit❗✔️:      yyerror(input,molList,branchPoints,scanner,start_token,current_token_position,"extra close parentheses");
-        // RDKit❗✔️:      yyErrorCleanup(molList);
-        // RDKit❗✔️:      YYABORT;
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   RWMol *mp = (*molList)[$$];
-        // RDKit❗✔️:
-        // RDKit❗✔️:   mp->setActiveAtom(branchPoints.back().first);
-        // RDKit❗✔️:   branchPoints.pop_back();
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: | mol GROUP_CLOSE_TOKEN {
+        // RDKit✔️✔️:   if(branchPoints.empty()){
+        // RDKit✔️✔️:      yyerror(input,molList,branchPoints,scanner,start_token,current_token_position,"extra close parentheses");
+        // RDKit✔️✔️:      yyErrorCleanup(molList);
+        // RDKit✔️✔️:      YYABORT;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   RWMol *mp = (*molList)[$$];
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   mp->setActiveAtom(branchPoints.back().first);
+        // RDKit✔️✔️:   branchPoints.pop_back();
+        // RDKit✔️✔️: }
         // END RDKIT CPP GRAMMAR ACTION smiles.yy mol GROUP_CLOSE_TOKEN
         let branch_point = self
             .branch_stack
@@ -2127,26 +2301,26 @@ impl SmilesBuildState {
 
     fn add_ring_marker(&mut self, ring_number: u32) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy mol ring_number
-        // RDKit❗✔️: | mol ring_number {
-        // RDKit❗✔️:   RWMol * mp = (*molList)[$$];
-        // RDKit❗✔️:   Atom *atom=mp->getActiveAtom();
-        // RDKit❗✔️:   mp->setAtomBookmark(atom,$2);
-        // RDKit❗✔️:
-        // RDKit❗✔️:   Bond *newB = mp->createPartialBond(atom->getIdx(),
-        // RDKit❗✔️: 				     Bond::UNSPECIFIED);
-        // RDKit❗✔️:   mp->setBondBookmark(newB,$2);
-        // RDKit❗✔️:   newB->setProp(RDKit::common_properties::_unspecifiedOrder,1);
-        // RDKit❗✔️:   if(!(mp->getAllBondsWithBookmark($2).size()%2)){
-        // RDKit❗✔️:     newB->setProp("_cxsmilesBondIdx",numBondsParsed++);
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:
-        // RDKit❗✔️:   SmilesParseOps::CheckRingClosureBranchStatus(atom,mp);
-        // RDKit❗✔️:
-        // RDKit❗✔️:   INT_VECT tmp;
-        // RDKit❗✔️:   atom->getPropIfPresent(RDKit::common_properties::_RingClosures,tmp);
-        // RDKit❗✔️:   tmp.push_back(-($2+1));
-        // RDKit❗✔️:   atom->setProp(RDKit::common_properties::_RingClosures,tmp);
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: | mol ring_number {
+        // RDKit✔️✔️:   RWMol * mp = (*molList)[$$];
+        // RDKit✔️✔️:   Atom *atom=mp->getActiveAtom();
+        // RDKit✔️✔️:   mp->setAtomBookmark(atom,$2);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   Bond *newB = mp->createPartialBond(atom->getIdx(),
+        // RDKit✔️✔️: 				     Bond::UNSPECIFIED);
+        // RDKit✔️✔️:   mp->setBondBookmark(newB,$2);
+        // RDKit✔️✔️:   newB->setProp(RDKit::common_properties::_unspecifiedOrder,1);
+        // RDKit✔️✔️:   if(!(mp->getAllBondsWithBookmark($2).size()%2)){
+        // RDKit✔️✔️:     newB->setProp("_cxsmilesBondIdx",numBondsParsed++);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   SmilesParseOps::CheckRingClosureBranchStatus(atom,mp);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   INT_VECT tmp;
+        // RDKit✔️✔️:   atom->getPropIfPresent(RDKit::common_properties::_RingClosures,tmp);
+        // RDKit✔️✔️:   tmp.push_back(-($2+1));
+        // RDKit✔️✔️:   atom->setProp(RDKit::common_properties::_RingClosures,tmp);
+        // RDKit✔️✔️: }
         // END RDKIT CPP GRAMMAR ACTION smiles.yy mol ring_number
         let pending_bond = PendingBond {
             token: SmilesBondToken {
@@ -2156,6 +2330,7 @@ impl SmilesBuildState {
                 explicit_unspecified_order: true,
                 is_null_query: false,
             },
+            cx_smiles_bond_idx: None,
         };
         self.add_ring_marker_with_pending_bond(ring_number, pending_bond)
     }
@@ -2166,54 +2341,61 @@ impl SmilesBuildState {
         ring_number: u32,
     ) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy mol BOND_TOKEN ring_number
-        // RDKit❗✔️: | mol BOND_TOKEN ring_number {
-        // RDKit❗✔️:   RWMol * mp = (*molList)[$$];
-        // RDKit❗✔️:   Atom *atom=mp->getActiveAtom();
-        // RDKit❗✔️:   Bond *newB = mp->createPartialBond(atom->getIdx(),
-        // RDKit❗✔️: 				     $2->getBondType());
-        // RDKit❗✔️:   if($2->hasProp(RDKit::common_properties::_unspecifiedOrder)){
-        // RDKit❗✔️:     newB->setProp(RDKit::common_properties::_unspecifiedOrder,1);
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   newB->setBondDir($2->getBondDir());
-        // RDKit❗✔️:   mp->setAtomBookmark(atom,$3);
-        // RDKit❗✔️:   mp->setBondBookmark(newB,$3);
-        // RDKit❗✔️:   if(!(mp->getAllBondsWithBookmark($3).size()%2)){
-        // RDKit❗✔️:     newB->setProp("_cxsmilesBondIdx",numBondsParsed++);
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   SmilesParseOps::CheckRingClosureBranchStatus(atom,mp);
-        // RDKit❗✔️:   INT_VECT tmp;
-        // RDKit❗✔️:   atom->getPropIfPresent(RDKit::common_properties::_RingClosures,tmp);
-        // RDKit❗✔️:   tmp.push_back(-($3+1));
-        // RDKit❗✔️:   atom->setProp(RDKit::common_properties::_RingClosures,tmp);
-        // RDKit❗✔️:   delete $2;
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: | mol BOND_TOKEN ring_number {
+        // RDKit✔️✔️:   RWMol * mp = (*molList)[$$];
+        // RDKit✔️✔️:   Atom *atom=mp->getActiveAtom();
+        // RDKit✔️✔️:   Bond *newB = mp->createPartialBond(atom->getIdx(),
+        // RDKit✔️✔️: 				     $2->getBondType());
+        // RDKit✔️✔️:   if($2->hasProp(RDKit::common_properties::_unspecifiedOrder)){
+        // RDKit✔️✔️:     newB->setProp(RDKit::common_properties::_unspecifiedOrder,1);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   newB->setBondDir($2->getBondDir());
+        // RDKit✔️✔️:   mp->setAtomBookmark(atom,$3);
+        // RDKit✔️✔️:   mp->setBondBookmark(newB,$3);
+        // RDKit✔️✔️:   if(!(mp->getAllBondsWithBookmark($3).size()%2)){
+        // RDKit✔️✔️:     newB->setProp("_cxsmilesBondIdx",numBondsParsed++);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   SmilesParseOps::CheckRingClosureBranchStatus(atom,mp);
+        // RDKit✔️✔️:   INT_VECT tmp;
+        // RDKit✔️✔️:   atom->getPropIfPresent(RDKit::common_properties::_RingClosures,tmp);
+        // RDKit✔️✔️:   tmp.push_back(-($3+1));
+        // RDKit✔️✔️:   atom->setProp(RDKit::common_properties::_RingClosures,tmp);
+        // RDKit✔️✔️:   delete $2;
+        // RDKit✔️✔️: }
         // END RDKIT CPP GRAMMAR ACTION smiles.yy mol BOND_TOKEN ring_number
-        self.add_ring_marker_with_pending_bond(ring_number, PendingBond { token: bond })
+        self.add_ring_marker_with_pending_bond(
+            ring_number,
+            PendingBond {
+                token: bond,
+                cx_smiles_bond_idx: None,
+            },
+        )
     }
 
     fn add_single_bond_ring_marker(&mut self, ring_number: u32) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy mol MINUS_TOKEN ring_number
-        // RDKit❗✔️: | mol MINUS_TOKEN ring_number {
-        // RDKit❗✔️:   RWMol * mp = (*molList)[$$];
-        // RDKit❗✔️:   Atom *atom=mp->getActiveAtom();
-        // RDKit❗✔️:   Bond *newB = mp->createPartialBond(atom->getIdx(),
-        // RDKit❗✔️: 				     Bond::SINGLE);
-        // RDKit❗✔️:   mp->setAtomBookmark(atom,$3);
-        // RDKit❗✔️:   mp->setBondBookmark(newB,$3);
-        // RDKit❗✔️:   if(!(mp->getAllBondsWithBookmark($3).size()%2)){
-        // RDKit❗✔️:     newB->setProp("_cxsmilesBondIdx",numBondsParsed++);
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   SmilesParseOps::CheckRingClosureBranchStatus(atom,mp);
-        // RDKit❗✔️:   INT_VECT tmp;
-        // RDKit❗✔️:   atom->getPropIfPresent(RDKit::common_properties::_RingClosures,tmp);
-        // RDKit❗✔️:   tmp.push_back(-($3+1));
-        // RDKit❗✔️:   atom->setProp(RDKit::common_properties::_RingClosures,tmp);
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: | mol MINUS_TOKEN ring_number {
+        // RDKit✔️✔️:   RWMol * mp = (*molList)[$$];
+        // RDKit✔️✔️:   Atom *atom=mp->getActiveAtom();
+        // RDKit✔️✔️:   Bond *newB = mp->createPartialBond(atom->getIdx(),
+        // RDKit✔️✔️: 				     Bond::SINGLE);
+        // RDKit✔️✔️:   mp->setAtomBookmark(atom,$3);
+        // RDKit✔️✔️:   mp->setBondBookmark(newB,$3);
+        // RDKit✔️✔️:   if(!(mp->getAllBondsWithBookmark($3).size()%2)){
+        // RDKit✔️✔️:     newB->setProp("_cxsmilesBondIdx",numBondsParsed++);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   SmilesParseOps::CheckRingClosureBranchStatus(atom,mp);
+        // RDKit✔️✔️:   INT_VECT tmp;
+        // RDKit✔️✔️:   atom->getPropIfPresent(RDKit::common_properties::_RingClosures,tmp);
+        // RDKit✔️✔️:   tmp.push_back(-($3+1));
+        // RDKit✔️✔️:   atom->setProp(RDKit::common_properties::_RingClosures,tmp);
+        // RDKit✔️✔️: }
         // END RDKIT CPP GRAMMAR ACTION smiles.yy mol MINUS_TOKEN ring_number
         self.add_ring_marker_with_pending_bond(
             ring_number,
             PendingBond {
                 token: SmilesBondToken::new(BondOrder::Single),
+                cx_smiles_bond_idx: None,
             },
         )
     }
@@ -2221,32 +2403,41 @@ impl SmilesBuildState {
     fn add_ring_marker_with_pending_bond(
         &mut self,
         ring_number: u32,
-        pending_bond: PendingBond,
+        mut pending_bond: PendingBond,
     ) -> Result<(), SmilesParseError> {
+        // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy ring closure _cxsmilesBondIdx assignment
+        // RDKit✔️✔️:   if(!(mp->getAllBondsWithBookmark($2).size()%2)){
+        // RDKit✔️✔️:     newB->setProp("_cxsmilesBondIdx",numBondsParsed++);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   if(!(mp->getAllBondsWithBookmark($3).size()%2)){
+        // RDKit✔️✔️:     newB->setProp("_cxsmilesBondIdx",numBondsParsed++);
+        // RDKit✔️✔️:   }
+        // END RDKIT CPP GRAMMAR ACTION smiles.yy ring closure _cxsmilesBondIdx assignment
         let atom = self
             .active_atom
             .ok_or_else(|| SmilesParseError::ParseError("no active atom".to_string()))?;
         self.check_ring_closure_branch_status(atom)?;
+        if self.ring_openings.contains_key(&ring_number) {
+            pending_bond.cx_smiles_bond_idx = Some(self.next_cx_smiles_bond_idx);
+            self.next_cx_smiles_bond_idx += 1;
+        }
         if let Some(opening) = self.ring_openings.remove(&ring_number) {
             let opening_pending_bond = opening.pending_bond.ok_or_else(|| {
                 SmilesParseError::ParseError(format!("missing ring bond {ring_number}"))
             })?;
-            let bond_id =
-                self.close_ring_opening(opening.atom, atom, opening_pending_bond, pending_bond)?;
-            if let Some(records) = self.ring_closures_by_atom.get_mut(&opening.atom)
-                && let Some(record) = records
-                    .iter_mut()
-                    .rev()
-                    .find(|record| record.ring_number == ring_number && record.bond.is_none())
-            {
-                record.bond = Some(bond_id);
-            }
+            self.pending_ring_closures.push(PendingRingClosure {
+                ring_number,
+                opening_atom: opening.atom,
+                closing_atom: atom,
+                opening_pending_bond,
+                closing_pending_bond: pending_bond,
+            });
             self.ring_closures_by_atom
                 .entry(atom)
                 .or_default()
                 .push(RingClosureRecord {
                     ring_number,
-                    bond: Some(bond_id),
+                    bond: None,
                 });
         } else {
             self.ring_openings.insert(
@@ -2275,22 +2466,28 @@ impl SmilesBuildState {
         opening_pending_bond: PendingBond,
         current_pending_bond: PendingBond,
     ) -> Result<BondId, SmilesParseError> {
-        // BEGIN RDKIT CPP FUNCTION CloseMolRings bond selection section
-        // RDKit❗✔️:           // figure out which (if either) bond has a specified type, we'll
-        // RDKit❗✔️:           // keep that one.  We also need to update the end atom index to
-        // RDKit❗✔️:           // match FIX: daylight barfs when you give it multiple specs for the
-        // RDKit❗✔️:           // closure
-        // RDKit❗✔️:           //   bond, we'll just take the first one and ignore others
-        // RDKit❗✔️:           //   NOTE: we used to do this the other way (take the last
-        // RDKit❗✔️:           //   specification),
-        // RDKit❗✔️:           //   but that turned out to be troublesome in odd cases like
-        // RDKit❗✔️:           //   C1CC11CC1.
-        // RDKit❗✔️:           if (!bond1->hasProp(common_properties::_unspecifiedOrder)) {
-        // RDKit❗✔️:             matchedBond = bond1;
-        // RDKit❗✔️:           } else {
-        // RDKit❗✔️:             matchedBond = bond2;
-        // RDKit❗✔️:           }
-        // END RDKIT CPP FUNCTION CloseMolRings bond selection section
+        // BEGIN RDKIT CPP FUNCTION CloseMolRings bond selection + bond orientation section
+        // RDKit✔️✔️:           // figure out which (if either) bond has a specified type, we'll
+        // RDKit✔️✔️:           // keep that one.  We also need to update the end atom index to
+        // RDKit✔️✔️:           // match FIX: daylight barfs when you give it multiple specs for the
+        // RDKit✔️✔️:           // closure
+        // RDKit✔️✔️:           //   bond, we'll just take the first one and ignore others
+        // RDKit✔️✔️:           //   NOTE: we used to do this the other way (take the last
+        // RDKit✔️✔️:           //   specification),
+        // RDKit✔️✔️:           //   but that turned out to be troublesome in odd cases like
+        // RDKit✔️✔️:           //   C1CC11CC1.
+        // RDKit✔️✔️:           if (!bond1->hasProp(common_properties::_unspecifiedOrder)) {
+        // RDKit✔️✔️:             matchedBond = bond1;
+        // RDKit✔️✔️:             matchedBond->setEndAtomIdx(atom2->getIdx());
+        // RDKit✔️✔️:           } else {
+        // RDKit✔️✔️:             matchedBond = bond2;
+        // RDKit✔️✔️:             matchedBond->setEndAtomIdx(atom1->getIdx());
+        // RDKit✔️✔️:           }
+        // END RDKIT CPP FUNCTION CloseMolRings bond selection + bond orientation section
+        //
+        // Rust stores pending bond specs as a fixed-size value token
+        // (`BondOrder`/`BondDirection`/bool flags only), so choosing the
+        // retained token here remains O(1) with no heap allocation.
         if opening_atom == closing_atom {
             return Err(SmilesParseError::ParseError(format!(
                 "duplicated ring closure bonds atom {} to itself",
@@ -2317,36 +2514,71 @@ impl SmilesBuildState {
             .get(closing_atom.index())
             .copied()
             .unwrap_or(false);
-        let mut token = if opening_pending_bond.token.explicit_unspecified_order {
-            current_pending_bond.token
+        let use_closing_token = opening_pending_bond.token.explicit_unspecified_order;
+        let opening_token = opening_pending_bond.token;
+        let closing_token = current_pending_bond.token;
+        let mut token = if use_closing_token {
+            closing_token
         } else {
-            opening_pending_bond.token
+            opening_token
+        };
+        let (begin_atom, end_atom) = if use_closing_token {
+            (closing_atom, opening_atom)
+        } else {
+            (opening_atom, closing_atom)
+        };
+        token.direction = if use_closing_token {
+            swap_bond_direction_if_needed(
+                token.direction,
+                opening_token.direction,
+                closing_atom,
+                opening_atom,
+            )
+        } else {
+            swap_bond_direction_if_needed(
+                token.direction,
+                closing_token.direction,
+                opening_atom,
+                closing_atom,
+            )
         };
         if token.order == BondOrder::Unspecified {
             token.order = get_unspecified_bond_type_for_atoms(opening_aromatic, closing_aromatic);
             token.explicit_unspecified_order = false;
         }
-        let bond_id = self.add_bond_from_token(opening_atom, closing_atom, token)?;
+        // BEGIN RDKIT CPP FUNCTION CloseMolRings _cxsmilesBondIdx transfer
+        // RDKit✔️✔️:          // we use the _cxsmilesBondIdx value from the second one, if it's
+        // RDKit✔️✔️:          // there
+        // RDKit✔️✔️:          if (bond2->hasProp("_cxsmilesBondIdx")) {
+        // RDKit✔️✔️:            bond1->setProp("_cxsmilesBondIdx",
+        // RDKit✔️✔️:                           bond2->getProp<unsigned int>("_cxsmilesBondIdx"));
+        // RDKit✔️✔️:          }
+        // END RDKIT CPP FUNCTION CloseMolRings _cxsmilesBondIdx transfer
+        let cx_smiles_bond_idx = current_pending_bond
+            .cx_smiles_bond_idx
+            .or(opening_pending_bond.cx_smiles_bond_idx);
+        let bond_id =
+            self.add_bond_from_token_with_cx_idx(begin_atom, end_atom, token, cx_smiles_bond_idx)?;
         self.cx_bond_order.push(bond_id);
         Ok(bond_id)
     }
 
     fn check_ring_closure_branch_status(&mut self, atom: AtomId) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP FUNCTION CheckRingClosureBranchStatus
-        // RDKit❗✔️: void CheckRingClosureBranchStatus(RDKit::Atom *atom, RDKit::RWMol *mp) {
-        // RDKit❗✔️:   // github #786 and #1652: if the ring closure comes after a branch,
-        // RDKit❗✔️:   // the stereochem is wrong.
-        // RDKit❗✔️:   PRECONDITION(atom, "bad atom");
-        // RDKit❗✔️:   PRECONDITION(mp, "bad mol");
-        // RDKit❗✔️:   if (atom->getIdx() != mp->getNumAtoms(true) - 1 &&
-        // RDKit❗✔️:       (atom->getDegree() == 1 ||
-        // RDKit❗✔️:        (atom->getDegree() == 2 && atom->getIdx() != 0) ||
-        // RDKit❗✔️:        (atom->getDegree() == 3 && atom->getIdx() == 0)) &&
-        // RDKit❗✔️:       (atom->getChiralTag() == Atom::CHI_TETRAHEDRAL_CW ||
-        // RDKit❗✔️:        atom->getChiralTag() == Atom::CHI_TETRAHEDRAL_CCW)) {
-        // RDKit❗✔️:     atom->invertChirality();
-        // RDKit❗✔️:   }
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: void CheckRingClosureBranchStatus(RDKit::Atom *atom, RDKit::RWMol *mp) {
+        // RDKit✔️✔️:   // github #786 and #1652: if the ring closure comes after a branch,
+        // RDKit✔️✔️:   // the stereochem is wrong.
+        // RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
+        // RDKit✔️✔️:   PRECONDITION(mp, "bad mol");
+        // RDKit✔️✔️:   if (atom->getIdx() != mp->getNumAtoms(true) - 1 &&
+        // RDKit✔️✔️:       (atom->getDegree() == 1 ||
+        // RDKit✔️✔️:        (atom->getDegree() == 2 && atom->getIdx() != 0) ||
+        // RDKit✔️✔️:        (atom->getDegree() == 3 && atom->getIdx() == 0)) &&
+        // RDKit✔️✔️:       (atom->getChiralTag() == Atom::CHI_TETRAHEDRAL_CW ||
+        // RDKit✔️✔️:        atom->getChiralTag() == Atom::CHI_TETRAHEDRAL_CCW)) {
+        // RDKit✔️✔️:     atom->invertChirality();
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION CheckRingClosureBranchStatus
         let num_atoms = self.builder.atoms().len();
         let degree = self.atom_degree(atom);
@@ -2376,29 +2608,25 @@ impl SmilesBuildState {
     }
 
     fn atom_degree(&self, atom: AtomId) -> usize {
-        self.builder
-            .bonds()
-            .iter()
-            .filter(|bond| bond.begin() == atom || bond.end() == atom)
-            .count()
+        self.builder.degree(atom)
     }
 
     fn finish_parse(&mut self) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP FUNCTION toMol post-parse section
-        // RDKit❗✔️:     func(inp, molVect);
-        // RDKit❗✔️:     if (!molVect.empty()) {
-        // RDKit❗✔️:       res.reset(molVect[0]);
-        // RDKit❗✔️:       SmilesParseOps::CloseMolRings(res.get(), false);
-        // RDKit❗✔️:       SmilesParseOps::CheckChiralitySpecifications(res.get(), true);
-        // RDKit❗✔️:       SmilesParseOps::SetUnspecifiedBondTypes(res.get());
-        // RDKit❗✔️:       SmilesParseOps::AdjustAtomChiralityFlags(res.get());
-        // RDKit❗✔️:       // No sense leaving this bookmark intact:
-        // RDKit❗✔️:       if (res->hasAtomBookmark(ci_RIGHTMOST_ATOM)) {
-        // RDKit❗✔️:         res->clearAtomBookmark(ci_RIGHTMOST_ATOM);
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:       molVect[0] = nullptr;  // NOTE: to avoid leaks on failures, this should
-        // RDKit❗✔️:                              // occur last in this if.
-        // RDKit❗✔️:     }
+        // RDKit✔️✔️:     func(inp, molVect);
+        // RDKit✔️✔️:     if (!molVect.empty()) {
+        // RDKit✔️✔️:       res.reset(molVect[0]);
+        // RDKit✔️✔️:       SmilesParseOps::CloseMolRings(res.get(), false);
+        // RDKit✔️✔️:       SmilesParseOps::CheckChiralitySpecifications(res.get(), true);
+        // RDKit✔️✔️:       SmilesParseOps::SetUnspecifiedBondTypes(res.get());
+        // RDKit✔️✔️:       SmilesParseOps::AdjustAtomChiralityFlags(res.get());
+        // RDKit✔️✔️:       // No sense leaving this bookmark intact:
+        // RDKit✔️✔️:       if (res->hasAtomBookmark(ci_RIGHTMOST_ATOM)) {
+        // RDKit✔️✔️:         res->clearAtomBookmark(ci_RIGHTMOST_ATOM);
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       molVect[0] = nullptr;  // NOTE: to avoid leaks on failures, this should
+        // RDKit✔️✔️:                              // occur last in this if.
+        // RDKit✔️✔️:     }
         // END RDKIT CPP FUNCTION toMol post-parse section
         self.close_mol_rings()?;
         self.check_chirality_specifications()?;
@@ -2409,19 +2637,55 @@ impl SmilesBuildState {
 
     fn close_mol_rings(&mut self) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP FUNCTION CloseMolRings
-        // RDKit❗✔️: void CloseMolRings(RWMol *mol, bool toleratePartials) {
-        // RDKit❗✔️:   //  Here's what we want to do here:
-        // RDKit❗✔️:   //    loop through the molecule's atom bookmarks
-        // RDKit❗✔️:   //    for each bookmark:
-        // RDKit❗✔️:   //       connect pairs of atoms sharing that bookmark
-        // RDKit❗✔️:   //          left to right (in the order in which they were
-        // RDKit❗✔️:   //          inserted into the molecule).
-        // RDKit❗✔️:   //       whilst doing this, we have to be cognizant of the fact that
-        // RDKit❗✔️:   //          there may well be partial bonds in the molecule which need
-        // RDKit❗✔️:   //          to be tied in as well.  WOO HOO! IT'S A BIG MESS!
-        // RDKit❗✔️:   PRECONDITION(mol, "no molecule");
-        // RDKit❗✔️: };
+        // RDKit✔️✔️: void CloseMolRings(RWMol *mol, bool toleratePartials) {
+        // RDKit✔️✔️:   //  Here's what we want to do here:
+        // RDKit✔️✔️:   //    loop through the molecule's atom bookmarks
+        // RDKit✔️✔️:   //    for each bookmark:
+        // RDKit✔️✔️:   //       connect pairs of atoms sharing that bookmark
+        // RDKit✔️✔️:   //          left to right (in the order in which they were
+        // RDKit✔️✔️:   //          inserted into the molecule).
+        // RDKit✔️✔️:   //       whilst doing this, we have to be cognizant of the fact that
+        // RDKit✔️✔️:   //          there may well be partial bonds in the molecule which need
+        // RDKit✔️✔️:   //          to be tied in as well.  WOO HOO! IT'S A BIG MESS!
+        // RDKit✔️✔️:   PRECONDITION(mol, "no molecule");
+        // RDKit✔️✔️: };
         // END RDKIT CPP FUNCTION CloseMolRings
+        // BEGIN RDKIT CPP FUNCTION CloseMolRings matched-closure realization
+        // RDKit❗✔️: while (bookmarkIt != mol->getAtomBookmarks()->end()) {
+        // RDKit❗✔️:   ...
+        // RDKit❗✔️:   // connect pairs of atoms sharing that bookmark
+        // RDKit❗✔️:   // left to right (in the order in which they were inserted)
+        // RDKit❗✔️:   RWMol::BOND_PTR_LIST bonds = mol->getAllBondsWithBookmark(bookmark.first);
+        // RDKit❗✔️:   ...
+        // RDKit❗✔️:   bondIdx = mol->addBond(matchedBond, true);
+        // RDKit❗✔️:   ...
+        // RDKit❗✔️:   *closurePos = bondIdx - 1;
+        // RDKit❗✔️: }
+        // END RDKIT CPP FUNCTION CloseMolRings matched-closure realization
+        let mut pending_ring_closures = std::mem::take(&mut self.pending_ring_closures);
+        pending_ring_closures.sort_by_key(|closure| closure.ring_number);
+        for closure in pending_ring_closures {
+            let bond_id = self.close_ring_opening(
+                closure.opening_atom,
+                closure.closing_atom,
+                closure.opening_pending_bond,
+                closure.closing_pending_bond,
+            )?;
+            if let Some(records) = self.ring_closures_by_atom.get_mut(&closure.opening_atom)
+                && let Some(record) = records.iter_mut().find(|record| {
+                    record.ring_number == closure.ring_number && record.bond.is_none()
+                })
+            {
+                record.bond = Some(bond_id);
+            }
+            if let Some(records) = self.ring_closures_by_atom.get_mut(&closure.closing_atom)
+                && let Some(record) = records.iter_mut().find(|record| {
+                    record.ring_number == closure.ring_number && record.bond.is_none()
+                })
+            {
+                record.bond = Some(bond_id);
+            }
+        }
         if self.ring_openings.is_empty() {
             return Ok(());
         }
@@ -2545,56 +2809,56 @@ impl SmilesBuildState {
 
     fn adjust_atom_chirality_flags(&mut self) -> Result<(), SmilesParseError> {
         // BEGIN RDKIT CPP FUNCTION AdjustAtomChiralityFlags
-        // RDKit❗✔️: void AdjustAtomChiralityFlags(RWMol *mol) {
-        // RDKit❗✔️:   PRECONDITION(mol, "no molecule");
-        // RDKit❗✔️:   for (auto atom : mol->atoms()) {
-        // RDKit❗✔️:     Atom::ChiralType chiralType = atom->getChiralTag();
-        // RDKit❗✔️:     if (chiralType == Atom::CHI_TETRAHEDRAL_CW ||
-        // RDKit❗✔️:         chiralType == Atom::CHI_TETRAHEDRAL_CCW) {
-        // RDKit❗✔️:       INT_LIST bondOrdering;
-        // RDKit❗✔️:       unsigned int numClosures = GetBondOrdering(bondOrdering, mol, atom);
-        // RDKit❗✔️:
-        // RDKit❗✔️:       // ok, we now have the SMILES ordering of the bonds, figure out the
-        // RDKit❗✔️:       // permutation order.
-        // RDKit❗✔️:       //
-        // RDKit❗✔️:       //  This whole thing is necessary because the ring-closure bonds
-        // RDKit❗✔️:       //  in the SMILES come before the bonds to the other neighbors, but
-        // RDKit❗✔️:       //  they come after the neighbors in the molecule we build.
-        // RDKit❗✔️:       //  A crude example:
-        // RDKit❗✔️:       //   in F[C@](Cl)(Br)I the C-Cl bond is index 1 in both SMILES
-        // RDKit❗✔️:       //         and as built
-        // RDKit❗✔️:       //   in F[C@]1(Br)I.Cl1 the C-Cl bond is index 1 in the SMILES
-        // RDKit❗✔️:       //         and index 3 as built.
-        // RDKit❗✔️:       //
-        // RDKit❗✔️:       int nSwaps = atom->getPerturbationOrder(bondOrdering);
-        // RDKit❗✔️:       // FIX: explain this one:
-        // RDKit❗✔️:       // At least part of what's going on here for degree 3 atoms:
-        // RDKit❗✔️:       //   - The first part: if we're at the beginning of the SMILES and have
-        // RDKit❗✔️:       //      an explicit H, we need to add a swap.
-        // RDKit❗✔️:       //      This is to reflect that [C@](Cl)(F)C is equivalent to Cl[C@@](F)C
-        // RDKit❗✔️:       //      but [C@H](Cl)(F)C is fine as-is (The H-C bond is the one you look
-        // RDKit❗✔️:       //      down).
-        // RDKit❗✔️:       //   - The second part is more complicated and deals with situations like
-        // RDKit❗✔️:       //      F[C@]1CCO1. In this case we otherwise end up looking like we need
-        // RDKit❗✔️:       //      to invert the chirality, which is bogus. The chirality here needs
-        // RDKit❗✔️:       //      to remain @ just as it does in F[C@](Cl)CCO1
-        // RDKit❗✔️:       //   - We have to be careful with the second part to not sweep things like
-        // RDKit❗✔️:       //      C[S@]2(=O).Cl2 into the same bin (was github #760). We detect
-        // RDKit❗✔️:       //      those cases by looking for unsaturated atoms
-        // RDKit❗✔️:       //
-        // RDKit❗✔️:       if (Canon::chiralAtomNeedsTagInversion(
-        // RDKit❗✔️:               *mol, atom, atom->hasProp(common_properties::_SmilesStart),
-        // RDKit❗✔️:               numClosures)) {
-        // RDKit❗✔️:         ++nSwaps;
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:       // std::cerr << "nswaps " << atom->getIdx() << " " << nSwaps
-        // RDKit❗✔️:       //           << std::endl;
-        // RDKit❗✔️:       // std::copy(bondOrdering.begin(), bondOrdering.end(),
-        // RDKit❗✔️:       //           std::ostream_iterator<int>(std::cerr, ", "));
-        // RDKit❗✔️:       // std::cerr << std::endl;
-        // RDKit❗✔️:       if (nSwaps % 2) {
-        // RDKit❗✔️:         atom->invertChirality();
-        // RDKit❗✔️:       }
+        // RDKit✔️✔️: void AdjustAtomChiralityFlags(RWMol *mol) {
+        // RDKit✔️✔️:   PRECONDITION(mol, "no molecule");
+        // RDKit✔️✔️:   for (auto atom : mol->atoms()) {
+        // RDKit✔️✔️:     Atom::ChiralType chiralType = atom->getChiralTag();
+        // RDKit✔️✔️:     if (chiralType == Atom::CHI_TETRAHEDRAL_CW ||
+        // RDKit✔️✔️:         chiralType == Atom::CHI_TETRAHEDRAL_CCW) {
+        // RDKit✔️✔️:       INT_LIST bondOrdering;
+        // RDKit✔️✔️:       unsigned int numClosures = GetBondOrdering(bondOrdering, mol, atom);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       // ok, we now have the SMILES ordering of the bonds, figure out the
+        // RDKit✔️✔️:       // permutation order.
+        // RDKit✔️✔️:       //
+        // RDKit✔️✔️:       //  This whole thing is necessary because the ring-closure bonds
+        // RDKit✔️✔️:       //  in the SMILES come before the bonds to the other neighbors, but
+        // RDKit✔️✔️:       //  they come after the neighbors in the molecule we build.
+        // RDKit✔️✔️:       //  A crude example:
+        // RDKit✔️✔️:       //   in F[C@](Cl)(Br)I the C-Cl bond is index 1 in both SMILES
+        // RDKit✔️✔️:       //         and as built
+        // RDKit✔️✔️:       //   in F[C@]1(Br)I.Cl1 the C-Cl bond is index 1 in the SMILES
+        // RDKit✔️✔️:       //         and index 3 as built.
+        // RDKit✔️✔️:       //
+        // RDKit✔️✔️:       int nSwaps = atom->getPerturbationOrder(bondOrdering);
+        // RDKit✔️✔️:       // FIX: explain this one:
+        // RDKit✔️✔️:       // At least part of what's going on here for degree 3 atoms:
+        // RDKit✔️✔️:       //   - The first part: if we're at the beginning of the SMILES and have
+        // RDKit✔️✔️:       //      an explicit H, we need to add a swap.
+        // RDKit✔️✔️:       //      This is to reflect that [C@](Cl)(F)C is equivalent to Cl[C@@](F)C
+        // RDKit✔️✔️:       //      but [C@H](Cl)(F)C is fine as-is (The H-C bond is the one you look
+        // RDKit✔️✔️:       //      down).
+        // RDKit✔️✔️:       //   - The second part is more complicated and deals with situations like
+        // RDKit✔️✔️:       //      F[C@]1CCO1. In this case we otherwise end up looking like we need
+        // RDKit✔️✔️:       //      to invert the chirality, which is bogus. The chirality here needs
+        // RDKit✔️✔️:       //      to remain @ just as it does in F[C@](Cl)CCO1
+        // RDKit✔️✔️:       //   - We have to be careful with the second part to not sweep things like
+        // RDKit✔️✔️:       //      C[S@]2(=O).Cl2 into the same bin (was github #760). We detect
+        // RDKit✔️✔️:       //      those cases by looking for unsaturated atoms
+        // RDKit✔️✔️:       //
+        // RDKit✔️✔️:       if (Canon::chiralAtomNeedsTagInversion(
+        // RDKit✔️✔️:               *mol, atom, atom->hasProp(common_properties::_SmilesStart),
+        // RDKit✔️✔️:               numClosures)) {
+        // RDKit✔️✔️:         ++nSwaps;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       // std::cerr << "nswaps " << atom->getIdx() << " " << nSwaps
+        // RDKit✔️✔️:       //           << std::endl;
+        // RDKit✔️✔️:       // std::copy(bondOrdering.begin(), bondOrdering.end(),
+        // RDKit✔️✔️:       //           std::ostream_iterator<int>(std::cerr, ", "));
+        // RDKit✔️✔️:       // std::cerr << std::endl;
+        // RDKit✔️✔️:       if (nSwaps % 2) {
+        // RDKit✔️✔️:         atom->invertChirality();
+        // RDKit✔️✔️:       }
         // RDKit✔️✔️:     } else if (chiralType == Atom::CHI_SQUAREPLANAR ||
         // RDKit✔️✔️:                chiralType == Atom::CHI_TRIGONALBIPYRAMIDAL ||
         // RDKit✔️✔️:                chiralType == Atom::CHI_OCTAHEDRAL) {
@@ -2616,8 +2880,8 @@ impl SmilesBuildState {
         // RDKit✔️✔️:       atom->setProp(common_properties::_chiralPermutation,
         // RDKit✔️✔️:                     Chirality::getChiralPermutation(atom, bonds, true));
         // RDKit✔️✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️: }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION AdjustAtomChiralityFlags
         let atom_ids: Vec<AtomId> = self.builder.atoms().iter().map(|atom| atom.id()).collect();
         let mut atoms_to_invert = Vec::new();
@@ -2726,18 +2990,17 @@ impl SmilesBuildState {
             .collect();
         let mut neighbors = Vec::<(usize, i32)>::new();
         neighbors.push((atom_id.index(), -1));
-        for bond in self.builder.bonds() {
+        for &bond_id in self.builder.neighbor_bonds(atom_id) {
+            let bond = self
+                .builder
+                .bond(bond_id)
+                .ok_or_else(|| SmilesParseError::ParseError(format!("missing bond {bond_id}")))?;
             let neighbor = if bond.begin() == atom_id {
-                Some(bond.end())
-            } else if bond.end() == atom_id {
-                Some(bond.begin())
+                bond.end()
             } else {
-                None
+                bond.begin()
             };
-            let Some(neighbor) = neighbor else {
-                continue;
-            };
-            let bond_idx = bond.id().index() as i32;
+            let bond_idx = bond_id.index() as i32;
             if !ring_closures.contains(&bond_idx) {
                 neighbors.push((neighbor.index(), bond_idx));
             }
@@ -2764,45 +3027,45 @@ impl SmilesBuildState {
         probe: &[i32],
     ) -> Result<usize, SmilesParseError> {
         // BEGIN RDKIT CPP FUNCTION Atom::getPerturbationOrder / countSwapsToInterconvert
-        // RDKit❗✔️: int Atom::getPerturbationOrder(const INT_LIST &probe) const {
-        // RDKit❗✔️:   INT_LIST ref;
-        // RDKit❗✔️:   for (const auto bnd : getOwningMol().atomBonds(this)) {
-        // RDKit❗✔️:     ref.push_back(bnd->getIdx());
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   return static_cast<int>(countSwapsToInterconvert(probe, ref));
-        // RDKit❗✔️: }
-        // RDKit❗✔️: unsigned int countSwapsToInterconvert(const T &ref, T probe) {
-        // RDKit❗✔️:   PRECONDITION(ref.size() == probe.size(), "size mismatch");
-        // RDKit❗✔️:   typename T::const_iterator refIt = ref.begin();
-        // RDKit❗✔️:   typename T::iterator probeIt = probe.begin();
-        // RDKit❗✔️:   typename T::iterator probeIt2;
-        // RDKit❗✔️:   unsigned int nSwaps = 0;
-        // RDKit❗✔️:   while (refIt != ref.end()) {
-        // RDKit❗✔️:     if ((*probeIt) != (*refIt)) {
-        // RDKit❗✔️:       bool foundIt = false;
-        // RDKit❗✔️:       probeIt2 = probeIt;
-        // RDKit❗✔️:       while ((*probeIt2) != (*refIt) && probeIt2 != probe.end()) {
-        // RDKit❗✔️:         ++probeIt2;
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:       if (probeIt2 != probe.end()) {
-        // RDKit❗✔️:         foundIt = true;
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:       CHECK_INVARIANT(foundIt, "could not find probe element");
-        // RDKit❗✔️:       std::swap(*probeIt, *probeIt2);
-        // RDKit❗✔️:       nSwaps++;
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:     ++probeIt;
-        // RDKit❗✔️:     ++refIt;
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   return nSwaps;
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: int Atom::getPerturbationOrder(const INT_LIST &probe) const {
+        // RDKit✔️✔️:   INT_LIST ref;
+        // RDKit✔️✔️:   for (const auto bnd : getOwningMol().atomBonds(this)) {
+        // RDKit✔️✔️:     ref.push_back(bnd->getIdx());
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return static_cast<int>(countSwapsToInterconvert(probe, ref));
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: unsigned int countSwapsToInterconvert(const T &ref, T probe) {
+        // RDKit✔️✔️:   PRECONDITION(ref.size() == probe.size(), "size mismatch");
+        // RDKit✔️✔️:   typename T::const_iterator refIt = ref.begin();
+        // RDKit✔️✔️:   typename T::iterator probeIt = probe.begin();
+        // RDKit✔️✔️:   typename T::iterator probeIt2;
+        // RDKit✔️✔️:   unsigned int nSwaps = 0;
+        // RDKit✔️✔️:   while (refIt != ref.end()) {
+        // RDKit✔️✔️:     if ((*probeIt) != (*refIt)) {
+        // RDKit✔️✔️:       bool foundIt = false;
+        // RDKit✔️✔️:       probeIt2 = probeIt;
+        // RDKit✔️✔️:       while ((*probeIt2) != (*refIt) && probeIt2 != probe.end()) {
+        // RDKit✔️✔️:         ++probeIt2;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       if (probeIt2 != probe.end()) {
+        // RDKit✔️✔️:         foundIt = true;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       CHECK_INVARIANT(foundIt, "could not find probe element");
+        // RDKit✔️✔️:       std::swap(*probeIt, *probeIt2);
+        // RDKit✔️✔️:       nSwaps++;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     ++probeIt;
+        // RDKit✔️✔️:     ++refIt;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return nSwaps;
+        // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION Atom::getPerturbationOrder / countSwapsToInterconvert
         let mut storage_order = self
             .builder
-            .bonds()
+            .neighbor_bonds(atom_id)
             .iter()
-            .filter(|bond| bond.begin() == atom_id || bond.end() == atom_id)
-            .map(|bond| bond.id().index() as i32)
+            .copied()
+            .map(|bond_id| bond_id.index() as i32)
             .collect::<Vec<_>>();
         if probe.len() != storage_order.len() {
             return Err(SmilesParseError::ParseError("size mismatch".to_string()));
@@ -2833,15 +3096,15 @@ impl SmilesBuildState {
         num_closures: usize,
     ) -> Result<bool, SmilesParseError> {
         // BEGIN RDKIT CPP FUNCTION Canon::chiralAtomNeedsTagInversion
-        // RDKit❗✔️: bool chiralAtomNeedsTagInversion(const RDKit::ROMol &mol,
-        // RDKit❗✔️:                                  const RDKit::Atom *atom, bool isAtomFirst,
-        // RDKit❗✔️:                                  size_t numClosures) {
-        // RDKit❗✔️:   PRECONDITION(atom, "bad atom");
-        // RDKit❗✔️:   return atom->getDegree() == 3 &&
-        // RDKit❗✔️:          ((isAtomFirst && atom->getNumExplicitHs() == 1) ||
-        // RDKit❗✔️:           (!details::atomHasFourthValence(atom) && numClosures == 1 &&
-        // RDKit❗✔️:            !details::isUnsaturated(atom, mol)));
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: bool chiralAtomNeedsTagInversion(const RDKit::ROMol &mol,
+        // RDKit✔️✔️:                                  const RDKit::Atom *atom, bool isAtomFirst,
+        // RDKit✔️✔️:                                  size_t numClosures) {
+        // RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
+        // RDKit✔️✔️:   return atom->getDegree() == 3 &&
+        // RDKit✔️✔️:          ((isAtomFirst && atom->getNumExplicitHs() == 1) ||
+        // RDKit✔️✔️:           (!details::atomHasFourthValence(atom) && numClosures == 1 &&
+        // RDKit✔️✔️:            !details::isUnsaturated(atom, mol)));
+        // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION Canon::chiralAtomNeedsTagInversion
         let atom = self
             .builder
@@ -2859,17 +3122,17 @@ impl SmilesBuildState {
 
     fn atom_has_fourth_valence(&self, atom_id: AtomId) -> Result<bool, SmilesParseError> {
         // BEGIN RDKIT CPP FUNCTION Canon::details::atomHasFourthValence
-        // RDKit❗❗: bool atomHasFourthValence(const Atom *atom) {
-        // RDKit❗✔️:   if (atom->getNumExplicitHs() == 1 ||
-        // RDKit❗✔️:       (!atom->needsUpdatePropertyCache() &&
-        // RDKit❗✔️:        atom->getValence(Atom::ValenceType::IMPLICIT) == 1)) {
-        // RDKit❗✔️:     return true;
-        // RDKit❗✔️:   }
+        // RDKit✔️✔️: bool atomHasFourthValence(const Atom *atom) {
+        // RDKit✔️✔️:   if (atom->getNumExplicitHs() == 1 ||
+        // RDKit✔️✔️:       (!atom->needsUpdatePropertyCache() &&
+        // RDKit✔️✔️:        atom->getValence(Atom::ValenceType::IMPLICIT) == 1)) {
+        // RDKit✔️✔️:     return true;
+        // RDKit✔️✔️:   }
         // RDKit✔️✔️:   if (atom->hasQuery()) {
         // RDKit✔️✔️:     return hasSingleHQuery(atom->getQuery());
         // RDKit✔️✔️:   }
-        // RDKit❗✔️:   return false;
-        // RDKit❗❗: }
+        // RDKit✔️✔️:   return false;
+        // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION Canon::details::atomHasFourthValence
         //
         // NOTE: COSMolKit does not implement per-atom property cache
@@ -2888,22 +3151,26 @@ impl SmilesBuildState {
 
     fn is_unsaturated(&self, atom_id: AtomId) -> bool {
         // BEGIN RDKIT CPP FUNCTION Canon::details::isUnsaturated
-        // RDKit❗✔️: bool isUnsaturated(const Atom *atom, const ROMol &mol) {
-        // RDKit❗✔️:   for (auto bond : mol.atomBonds(atom)) {
-        // RDKit❗✔️:     // can't just check for single bonds, because dative bonds also have an
-        // RDKit❗✔️:     // order of 1
-        // RDKit❗✔️:     if (bond->getBondTypeAsDouble() > 1) {
-        // RDKit❗✔️:       return true;
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   return false;
-        // RDKit❗✔️: }
+        // RDKit✔️✔️: bool isUnsaturated(const Atom *atom, const ROMol &mol) {
+        // RDKit✔️✔️:   for (auto bond : mol.atomBonds(atom)) {
+        // RDKit✔️✔️:     // can't just check for single bonds, because dative bonds also have an
+        // RDKit✔️✔️:     // order of 1
+        // RDKit✔️✔️:     if (bond->getBondTypeAsDouble() > 1) {
+        // RDKit✔️✔️:       return true;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return false;
+        // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION Canon::details::isUnsaturated
         self.builder
-            .bonds()
+            .neighbor_bonds(atom_id)
             .iter()
-            .filter(|bond| bond.begin() == atom_id || bond.end() == atom_id)
-            .any(|bond| bond_order_as_double(bond.order()) > 1.0)
+            .copied()
+            .any(|bond_id| {
+                self.builder
+                    .bond(bond_id)
+                    .is_some_and(|bond| bond_order_as_double(bond.order()) > 1.0)
+            })
     }
 
     fn nontetrahedral_chiral_permutation(
@@ -3005,11 +3272,9 @@ impl SmilesBuildState {
         };
         let mut order = vec![-1isize; self.builder.bonds().len()];
         let mut nbr_idx = 0isize;
-        for bond in self.builder.bonds() {
-            if bond.begin() == atom_id || bond.end() == atom_id {
-                order[bond.id().index()] = nbr_idx;
-                nbr_idx += 1;
-            }
+        for &bond_id in self.builder.neighbor_bonds(atom_id) {
+            order[bond_id.index()] = nbr_idx;
+            nbr_idx += 1;
         }
         let mut nbr_perm = (0..nbr_idx).collect::<Vec<_>>();
         let mut probe_perm = Vec::with_capacity(probe.len());
@@ -3059,8 +3324,10 @@ impl SmilesBuildState {
             && self.branch_stack.is_empty()
             && self.ring_openings.is_empty()
             && self.ring_closures_by_atom.is_empty()
+            && self.pending_ring_closures.is_empty()
             && self.smiles_start_atoms.is_empty()
             && self.cx_bond_order.is_empty()
+            && self.next_cx_smiles_bond_idx == 0
             && self.temporary_chiral_permutations.is_empty()
     }
 
@@ -3077,7 +3344,8 @@ impl SmilesBuildState {
         end: AtomId,
         order: BondOrder,
     ) -> Result<BondId, SmilesParseError> {
-        let bond_idx = self.cx_bond_order.len().to_string();
+        let bond_idx = self.next_cx_smiles_bond_idx.to_string();
+        self.next_cx_smiles_bond_idx += 1;
         let spec = BondSpec::new(begin, end, order)
             .with_aromatic(order == BondOrder::Aromatic)
             .with_prop(CXSMILES_BOND_IDX_PROP, bond_idx);
@@ -3095,15 +3363,30 @@ impl SmilesBuildState {
         atom_idx2: AtomId,
         bond: SmilesBondToken,
     ) -> Result<BondId, SmilesParseError> {
+        self.add_bond_from_token_with_cx_idx(atom_idx1, atom_idx2, bond, None)
+    }
+
+    fn add_bond_from_token_with_cx_idx(
+        &mut self,
+        atom_idx1: AtomId,
+        atom_idx2: AtomId,
+        bond: SmilesBondToken,
+        cx_smiles_bond_idx: Option<usize>,
+    ) -> Result<BondId, SmilesParseError> {
         let (begin, end, order) = match bond.order {
             BondOrder::DativeRight => (atom_idx1, atom_idx2, BondOrder::Dative),
             BondOrder::DativeLeft => (atom_idx2, atom_idx1, BondOrder::Dative),
             other => (atom_idx1, atom_idx2, other),
         };
+        let cx_smiles_bond_idx = cx_smiles_bond_idx.unwrap_or_else(|| {
+            let idx = self.next_cx_smiles_bond_idx;
+            self.next_cx_smiles_bond_idx += 1;
+            idx
+        });
         let mut spec = BondSpec::new(begin, end, order)
             .with_aromatic(bond.is_aromatic || order == BondOrder::Aromatic)
             .with_direction(bond.direction)
-            .with_prop(CXSMILES_BOND_IDX_PROP, self.cx_bond_order.len().to_string());
+            .with_prop(CXSMILES_BOND_IDX_PROP, cx_smiles_bond_idx.to_string());
         if bond.explicit_unspecified_order {
             spec = spec.with_prop(UNSPECIFIED_ORDER_PROP, "1");
         }
@@ -3131,28 +3414,28 @@ impl SmilesBuildState {
 
     fn cleanup_after_parsing(&mut self) {
         // BEGIN RDKIT CPP FUNCTION CleanupAfterParsing
-        // RDKit❗✔️: void CleanupAfterParsing(RWMol *mol) {
-        // RDKit❗✔️:   PRECONDITION(mol, "no molecule");
-        // RDKit❗✔️:   for (auto atom : mol->atoms()) {
-        // RDKit❗✔️:     atom->clearProp(common_properties::_RingClosures);
-        // RDKit❗✔️:     atom->clearProp(common_properties::_SmilesStart);
-        // RDKit❗✔️:     std::string label;
-        // RDKit❗✔️:     if (atom->getAtomicNum() == 0 &&
-        // RDKit❗✔️:         atom->getPropIfPresent(common_properties::atomLabel, label)) {
-        // RDKit❗✔️:       // marvinsketch can output higher labels than _AP1 and _AP2, but they
-        // RDKit❗✔️:       // aren't part of the MOL file spec so we don't treat them as attachment
-        // RDKit❗✔️:       // points
-        // RDKit❗✔️:       if (label == "_AP1") {
-        // RDKit❗✔️:         atom->setProp(common_properties::_fromAttachPoint, 1);
-        // RDKit❗✔️:       } else if (label == "_AP2") {
-        // RDKit❗✔️:         atom->setProp(common_properties::_fromAttachPoint, 2);
-        // RDKit❗✔️:       }
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   for (auto bond : mol->bonds()) {
-        // RDKit❗✔️:     bond->clearProp(common_properties::_unspecifiedOrder);
-        // RDKit❗✔️:     bond->clearProp("_cxsmilesBondIdx");
-        // RDKit❗✔️:   }
+        // RDKit✔️✔️: void CleanupAfterParsing(RWMol *mol) {
+        // RDKit✔️✔️:   PRECONDITION(mol, "no molecule");
+        // RDKit✔️✔️:   for (auto atom : mol->atoms()) {
+        // RDKit✔️✔️:     atom->clearProp(common_properties::_RingClosures);
+        // RDKit✔️✔️:     atom->clearProp(common_properties::_SmilesStart);
+        // RDKit✔️✔️:     std::string label;
+        // RDKit✔️✔️:     if (atom->getAtomicNum() == 0 &&
+        // RDKit✔️✔️:         atom->getPropIfPresent(common_properties::atomLabel, label)) {
+        // RDKit✔️✔️:       // marvinsketch can output higher labels than _AP1 and _AP2, but they
+        // RDKit✔️✔️:       // aren't part of the MOL file spec so we don't treat them as attachment
+        // RDKit✔️✔️:       // points
+        // RDKit✔️✔️:       if (label == "_AP1") {
+        // RDKit✔️✔️:         atom->setProp(common_properties::_fromAttachPoint, 1);
+        // RDKit✔️✔️:       } else if (label == "_AP2") {
+        // RDKit✔️✔️:         atom->setProp(common_properties::_fromAttachPoint, 2);
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   for (auto bond : mol->bonds()) {
+        // RDKit✔️✔️:     bond->clearProp(common_properties::_unspecifiedOrder);
+        // RDKit✔️✔️:     bond->clearProp("_cxsmilesBondIdx");
+        // RDKit✔️✔️:   }
         // RDKit✔️✔️:   for (auto sg : RDKit::getSubstanceGroups(*mol)) {
         // RDKit✔️✔️:     sg.clearProp("_cxsmilesindex");
         // RDKit✔️✔️:   }
@@ -3215,28 +3498,32 @@ pub(crate) fn mol_from_smiles(
     params: &SmilesParseParams,
 ) -> Result<Molecule, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION MolFromSmiles
-    // RDKit❗✔️: std::unique_ptr<RWMol> MolFromSmiles(const std::string &smiles,
-    // RDKit❗✔️:                                      const SmilesParserParams &params) {
-    // RDKit❗✔️:   // Calling MolFromSmiles in a multithreaded context is generally safe *unless*
-    // RDKit❗✔️:   // the value of debugParse is different for different threads. The if
-    // RDKit❗✔️:   // statement below avoids a TSAN warning in the case where multiple threads
-    // RDKit❗✔️:   // all use the same value for debugParse.
-    // RDKit❗✔️:   if (yysmiles_debug != params.debugParse) {
-    // RDKit❗✔️:     yysmiles_debug = params.debugParse;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:
-    // RDKit❗✔️:   std::string lsmiles, name, cxPart;
-    // RDKit❗✔️:   preprocessSmiles(smiles, params, lsmiles, name, cxPart);
-    // RDKit❗✔️:   // strip any leading/trailing whitespace:
-    // RDKit❗✔️:   // boost::trim_if(smi,boost::is_any_of(" \t\r\n"));
-    // RDKit❗✔️:   auto res = toMol(lsmiles, smiles_parse, lsmiles);
-    // RDKit❗✔️:   if (!res) {
-    // RDKit❗✔️:     return res;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   handleCXPartAndName(res.get(), params, cxPart, name);
-    // RDKit❗✔️:   return res;
-    // RDKit❗✔️: };
+    // RDKit✔️✔️: std::unique_ptr<RWMol> MolFromSmiles(const std::string &smiles,
+    // RDKit✔️✔️:                                      const SmilesParserParams &params) {
+    // RDKit✔️✔️:   // Calling MolFromSmiles in a multithreaded context is generally safe *unless*
+    // RDKit✔️✔️:   // the value of debugParse is different for different threads. The if
+    // RDKit✔️✔️:   // statement below avoids a TSAN warning in the case where multiple threads
+    // RDKit✔️✔️:   // all use the same value for debugParse.
+    // RDKit✔️✔️:   if (yysmiles_debug != params.debugParse) {
+    // RDKit✔️✔️:     yysmiles_debug = params.debugParse;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   std::string lsmiles, name, cxPart;
+    // RDKit✔️✔️:   preprocessSmiles(smiles, params, lsmiles, name, cxPart);
+    // RDKit✔️✔️:   // strip any leading/trailing whitespace:
+    // RDKit✔️✔️:   // boost::trim_if(smi,boost::is_any_of(" \t\r\n"));
+    // RDKit✔️✔️:   auto res = toMol(lsmiles, smiles_parse, lsmiles);
+    // RDKit✔️✔️:   if (!res) {
+    // RDKit✔️✔️:     return res;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   handleCXPartAndName(res.get(), params, cxPart, name);
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: };
     // END RDKIT CPP FUNCTION MolFromSmiles
+    if YYSMILES_DEBUG.load(Ordering::Relaxed) != params.debug_parse {
+        YYSMILES_DEBUG.store(params.debug_parse, Ordering::Relaxed);
+    }
+
     let preprocessed = preprocess_smiles(smiles, params)?;
     let mut state = to_mol(&preprocessed.smiles)?;
     handle_cx_part_and_name(
@@ -3251,38 +3538,11 @@ pub(crate) fn mol_from_smiles(
     // RDKit MolOps::sanitizeMol runs through the registered operations.
     // COSMolKit applies equivalent operations on the built Molecule.
     if params.sanitize {
-        // Kekulize aromatic bonds (RDKit step 1)
-        if mol
-            .bonds()
-            .iter()
-            .any(|b| b.order() == crate::BondOrder::Aromatic)
-        {
-            mol = mol
-                .with_kekulized_bonds(false)
-                .map_err(|e: crate::OperationError| {
-                    SmilesParseError::ParseError(format!(
-                        "kekulization during sanitize failed: {e}"
-                    ))
-                })?;
-        }
-        // Assign valence and radicals (RDKit step 2-3)
-        mol = mol
-            .with_assigned_valence()
-            .map_err(|e: crate::OperationError| {
-                SmilesParseError::ParseError(format!(
-                    "valence assignment during sanitize failed: {e}"
-                ))
-            })?;
-        // Assign aromaticity (RDKit step 4 — re-perceives on Kekulé form)
-        mol = mol
-            .with_assigned_aromaticity()
-            .map_err(|e: crate::OperationError| {
-                SmilesParseError::ParseError(format!(
-                    "aromaticity assignment during sanitize failed: {e}"
-                ))
-            })?;
-        // Assign stereochemistry from bond directions (RDKit final step)
-        let _ = crate::smiles::assign_double_bond_stereo_from_directions(&mut mol);
+        mol = mol.sanitized_with_ops(crate::SanitizeOps::ALL).map_err(
+            |e: crate::OperationError| {
+                SmilesParseError::ParseError(format!("sanitize during smiles parse failed: {e}"))
+            },
+        )?;
     }
 
     let (first_2d_conf_id, first_3d_conf_id) = first_2d_and_3d_conformer_ids(&mol);
@@ -3404,9 +3664,13 @@ pub(crate) fn mol_from_smiles(
             if first_2d_conf_id.is_some() || first_3d_conf_id.is_some() {
                 clear_single_bond_dir_flags(&mut mol, false);
             }
-            let _ = crate::smiles::assign_double_bond_stereo_from_directions(&mut mol);
+            let _ = set_double_bond_neighbor_directions_impl(
+                &mut mol,
+                first_2d_conf_id.or(first_3d_conf_id),
+            );
         }
         mol.properties_mut().clear_prop("_needsDetectBondStereo");
+        let _ = assign_stereochemistry_cleanup_subset(&mut mol, true);
     } else {
         // RDKit github #337 path: after atom stereo perception, wedge-style
         // single-bond directions are no longer needed, but the CX double-bond
@@ -3414,13 +3678,13 @@ pub(crate) fn mol_from_smiles(
         clear_single_bond_dir_flags(&mut mol, true);
     }
 
-    // RDKit❗✔️: _NeedsQueryScan query completion
-    // RDKit❗✔️: if (res->hasProp(common_properties::_NeedsQueryScan)) {
-    // RDKit❗✔️:   if (!params.sanitize) {
-    // RDKit❗✔️:     MolOps::fastFindRings(*res);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   QueryOps::completeMolQueries(*res, 0xDEADBEEF);
-    // RDKit❗✔️: }
+    // RDKit✔️✔️: _NeedsQueryScan query completion
+    // RDKit✔️✔️: if (res->hasProp(common_properties::_NeedsQueryScan)) {
+    // RDKit✔️✔️:   if (!params.sanitize) {
+    // RDKit✔️✔️:     MolOps::fastFindRings(*res);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   QueryOps::completeMolQueries(*res, 0xDEADBEEF);
+    // RDKit✔️✔️: }
     // COSMolKit: for the currently modeled SMILES CX query-scan inputs, this
     // completes both `rb:*` and `s:*` sentinel placeholders and clears
     // `_NeedsQueryScan` once no unresolved scan work remains.
@@ -3435,6 +3699,384 @@ pub(crate) fn mol_from_smiles(
     }
 
     Ok(mol)
+}
+
+pub(crate) fn assign_stereochemistry_cleanup_subset(
+    mol: &mut Molecule,
+    clean_it: bool,
+) -> Result<(), StereoError> {
+    // BEGIN RDKIT CPP FUNCTION assignStereochemistry cleanup subset
+    // RDKit❗✔️: void assignStereochemistry(ROMol &mol, bool cleanIt, bool force,
+    // RDKit❗✔️:                            bool flagPossibleStereoCenters) {
+    // RDKit❗✔️:   ...
+    // RDKit❗✔️:   mol.setProp(common_properties::_StereochemDone, 1, true);
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION assignStereochemistry cleanup subset
+    ensure_valence_for_stereo(mol)?;
+    assign_double_bond_stereo_after_smiles_parse(mol, clean_it)?;
+    mol.properties_mut().set_prop("_StereochemDone", "1");
+    Ok(())
+}
+
+fn assign_double_bond_stereo_after_smiles_parse(
+    mol: &mut Molecule,
+    clean_it: bool,
+) -> Result<(), StereoError> {
+    // BEGIN RDKIT CPP FUNCTION MolFromSmiles final stereochemistry assignment subset
+    // RDKit❗❌: if (res && (params.sanitize || params.removeHs)) {
+    // RDKit❗❌:   if (res->hasProp(detail::_needsDetectBondStereo)) {
+    // RDKit❗❌:     if (conf || conf3d) {
+    // RDKit❗❌:       MolOps::clearSingleBondDirFlags(*res);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     MolOps::setDoubleBondNeighborDirections(*res, conf ? conf : conf3d);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   res->clearProp(detail::_needsDetectBondStereo);
+    // RDKit❗❌:   MolOps::assignStereochemistry(*res, cleanIt, force, flagPossible);
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION MolFromSmiles final stereochemistry assignment subset
+    // RDKit❗✔️: if (!mol.getRingInfo()->isSymmSssr()) {
+    // RDKit❗✔️:   RDKit::MolOps::symmetrizeSSSR(mol);
+    // RDKit❗✔️: }
+    ensure_symm_sssr_for_double_bond_stereo(mol)?;
+    // RDKit✔️✔️: mol.clearProp("_needsDetectBondStereo");
+    //
+    // `setBondStereoFromDirections()` is not part of RDKit's
+    // legacyStereoPerception() parser finalization path for coordinate-free
+    // SMILES. Double-bond stereo remains unassigned here until the
+    // fixed-point `assignBondStereoCodes()` loop below consumes the raw single-
+    // bond directions together with CIP ranks.
+    //
+    // COSMolKit does not yet port full assignStereochemistry(). For the
+    // no-coordinate SMILES parse path, this subset reproduces:
+    // 1. cleanIt small-ring double-bond cleanup
+    // 2. legacy fixed-point assignAtomChiralCodes()/assignBondStereoCodes()
+    //    assignment for direction-marked double bonds and dependent atom CIP labels
+    //
+    // We intentionally do not assign double-bond stereo directly from raw
+    // neighboring directions on every double bond. RDKit gates final
+    // assignment through assignBondStereoCodes(), which also checks the
+    // substituent distinguishability implied by CIP ranks.
+    //
+    // BEGIN RDKIT CPP FUNCTION assignStereochemistry cleanIt small-ring double-bond section
+    // RDKit❗✔️: if (cleanIt) {
+    // RDKit❗✔️:   // enforce no stereo on small rings
+    // RDKit❗✔️:   if ((bond->getBondType() == Bond::DOUBLE ||
+    // RDKit❗✔️:        bond->getBondType() == Bond::AROMATIC) &&
+    // RDKit❗✔️:       !shouldDetectDoubleBondStereo(bond)) {
+    // RDKit❗✔️:     if (bond->getBondDir() == Bond::EITHERDOUBLE) {
+    // RDKit❗✔️:       bond->setBondDir(Bond::NONE);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (bond->getStereo() != Bond::STEREONONE) {
+    // RDKit❗✔️:       bond->setStereo(Bond::STEREONONE);
+    // RDKit❗✔️:       bond->getStereoAtoms().clear();
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     continue;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION assignStereochemistry cleanIt small-ring double-bond section
+    //
+    // RDKit's MolFromSmiles() finalization enters assignStereochemistry()
+    // with `cleanIt=true` whenever the `(params.sanitize || params.removeHs)`
+    // branch runs. The public SMILES parser defaults `removeHs=true`, so
+    // sanitize=false inputs still take this cleanup path.
+    if clean_it {
+        // This local subset only ports the small-ring double-bond cleanup
+        // branch plus the no-coordinate assignBondCisTrans path. Full
+        // assignStereochemistry() still remains broader than the currently
+        // modeled SMILES parse finalization.
+        let bond_ids: Vec<BondId> = mol.bonds().iter().map(|bond| bond.id()).collect();
+        for bond_id in bond_ids.iter().copied() {
+            let Some(snapshot) = mol.bonds().get(bond_id.index()).cloned() else {
+                continue;
+            };
+            if !matches!(snapshot.order(), BondOrder::Double | BondOrder::Aromatic) {
+                continue;
+            }
+            let should_detect = crate::stereo::should_detect_double_bond_stereo(mol, bond_id)?;
+            if let Some(bond_mut) = mol.topology_block_mut().bonds.get_mut(bond_id.index()) {
+                if !should_detect {
+                    if bond_mut.direction() == BondDirection::EitherDouble {
+                        bond_mut.set_direction(BondDirection::None);
+                    }
+                    if bond_mut.stereo() != BondStereo::None {
+                        bond_mut.set_stereo(BondStereo::None);
+                        bond_mut.set_stereo_atoms(None);
+                    }
+                    continue;
+                } else if snapshot.order() == BondOrder::Double {
+                    // BEGIN RDKIT CPP FUNCTION assignStereochemistry cleanIt
+                    // BEGIN RDKIT CPP FUNCTION double-bond reset branch
+                    // RDKit✔️✔️: } else if (bond->getBondType() == Bond::DOUBLE) {
+                    // RDKit✔️✔️:   if (bond->getBondDir() == Bond::EITHERDOUBLE) {
+                    // RDKit✔️✔️:     bond->setStereo(Bond::STEREOANY);
+                    // RDKit✔️✔️:     bond->getStereoAtoms().clear();
+                    // RDKit✔️✔️:     bond->setBondDir(Bond::NONE);
+                    // RDKit✔️✔️:   } else if (bond->getStereo() != Bond::STEREOANY) {
+                    // RDKit✔️✔️:     bond->setStereo(Bond::STEREONONE);
+                    // RDKit✔️✔️:     bond->getStereoAtoms().clear();
+                    // RDKit✔️✔️:   }
+                    // RDKit✔️✔️: }
+                    // END RDKIT CPP FUNCTION assignStereochemistry cleanIt
+                    // END RDKIT CPP FUNCTION double-bond reset branch
+                    if bond_mut.direction() == BondDirection::EitherDouble {
+                        bond_mut.set_stereo(BondStereo::Any);
+                        bond_mut.set_stereo_atoms(None);
+                        bond_mut.set_direction(BondDirection::None);
+                    } else if bond_mut.stereo() != BondStereo::Any {
+                        bond_mut.set_stereo(BondStereo::None);
+                        bond_mut.set_stereo_atoms(None);
+                    }
+                }
+            }
+        }
+    }
+    // BEGIN RDKIT CPP FUNCTION legacyStereoPerception fixed-point assignment loop subset
+    // RDKit❗✔️: UINT_VECT atomRanks;
+    // RDKit❗✔️: bool keepGoing = hasStereoAtoms | hasStereoBonds;
+    // RDKit❗✔️: bool changedStereoAtoms, changedStereoBonds;
+    // RDKit❗✔️: while (keepGoing) {
+    // RDKit❗✔️:   if (hasStereoAtoms || hasPotentialStereoAtoms) {
+    // RDKit❗✔️:     std::tie(hasStereoAtoms, changedStereoAtoms) =
+    // RDKit❗✔️:         Chirality::assignAtomChiralCodes(mol, atomRanks, flagPossibleStereoCenters);
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     changedStereoAtoms = false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (hasStereoBonds || hasPotentialStereoBonds) {
+    // RDKit❗✔️:     std::tie(hasStereoBonds, changedStereoBonds) =
+    // RDKit❗✔️:         Chirality::assignBondStereoCodes(mol, atomRanks);
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     changedStereoBonds = false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   keepGoing = (hasStereoAtoms || hasStereoBonds) &&
+    // RDKit❗✔️:               (changedStereoAtoms || changedStereoBonds);
+    // RDKit❗✔️:   if (keepGoing) {
+    // RDKit❗✔️:     Chirality::rerankAtoms(mol, atomRanks);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION legacyStereoPerception fixed-point assignment loop subset
+    let mut ranks = crate::stereo::assign_atom_cip_ranks(mol)?;
+    loop {
+        // BEGIN RDKIT CPP FUNCTION assignAtomChiralCodes subset
+        // RDKit❗✔️: std::pair<bool, bool> assignAtomChiralCodes(ROMol &mol, UINT_VECT &ranks,
+        // RDKit❗✔️:                                             bool flagPossibleStereoCenters) {
+        // RDKit❗✔️:   for (auto atom : mol.atoms()) {
+        // RDKit❗✔️:     if (atom->hasProp(common_properties::_CIPCode)) { continue; }
+        // RDKit❗✔️:     if (!ranks.size()) { assignAtomCIPRanks(mol, ranks); }
+        // RDKit❗✔️:     auto [legalCenter, hasDupes] = isAtomPotentialChiralCenter(atom, mol, ranks, nbrs);
+        // RDKit❗✔️:     if (legalCenter && !hasDupes && tag != CHI_UNSPECIFIED && tag != CHI_OTHER) {
+        // RDKit❗✔️:       int nSwaps = atom->getPerturbationOrder(nbrIndices);
+        // RDKit❗✔️:       if (nbrIndices.size() == 3 && atom->getTotalNumHs() == 1) { ++nSwaps; }
+        // RDKit❗✔️:       if (nSwaps % 2) { ... flip tag ... }
+        // RDKit❗✔️:       atom->setProp(common_properties::_CIPCode, cipCode);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // END RDKIT CPP FUNCTION assignAtomChiralCodes subset
+        let atom_assignments = crate::stereo::assign_atom_chiral_codes(mol, &ranks)?;
+        let atom_changed = !atom_assignments.is_empty();
+        for (atom_idx, cip_code) in atom_assignments {
+            if let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(atom_idx) {
+                atom_mut.set_prop("_CIPCode", cip_code);
+            }
+        }
+
+        // BEGIN RDKIT CPP FUNCTION assignBondStereoCodes subset
+        // RDKit❗✔️: std::pair<bool, bool> assignBondStereoCodes(ROMol &mol, UINT_VECT &ranks) {
+        // RDKit❗✔️:   for (auto dblBond : mol.bonds()) {
+        // RDKit❗✔️:     if (dblBond->getBondType() == Bond::BondType::DOUBLE) {
+        // RDKit❗✔️:       if (dblBond->getStereo() != Bond::BondStereo::STEREONONE) {
+        // RDKit❗✔️:         continue;
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       if (!ranks.size()) {
+        // RDKit❗✔️:         assignAtomCIPRanks(mol, ranks);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       ... find highest-ranked directionality on each side ...
+        // RDKit❗✔️:       ... only assign stereo when neighbor ranking distinguishes the bond ...
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // END RDKIT CPP FUNCTION assignBondStereoCodes subset
+        let (assignments, _changed) = crate::stereo::assign_bond_stereo_codes(mol, &ranks);
+        let bond_changed = !assignments.is_empty();
+        for (bond_idx, stereo, begin_control, end_control) in assignments {
+            let Some(bond_mut) = mol.topology_block_mut().bonds.get_mut(bond_idx) else {
+                continue;
+            };
+            if bond_mut.stereo() != BondStereo::None {
+                continue;
+            }
+            bond_mut.set_stereo_atoms(Some([AtomId::new(begin_control), AtomId::new(end_control)]));
+            bond_mut.set_stereo(match stereo {
+                crate::stereo::DoubleBondStereo::E => BondStereo::Trans,
+                crate::stereo::DoubleBondStereo::Z => BondStereo::Cis,
+                crate::stereo::DoubleBondStereo::Unknown => BondStereo::Any,
+            });
+        }
+
+        if !(atom_changed || bond_changed) {
+            break;
+        }
+        ranks = crate::stereo::rerank_atoms(mol, &ranks)?;
+    }
+    // BEGIN RDKIT CPP FUNCTION assignStereochemistry cleanIt atom cleanup subset
+    // RDKit❗✔️:   boost::dynamic_bitset<> possibleSpecialCases(mol.getNumAtoms());
+    // RDKit❗✔️:   Chirality::findChiralAtomSpecialCases(mol, possibleSpecialCases, atomRanks);
+    // RDKit❗✔️:   for (auto atom : mol.atoms()) {
+    // RDKit❗✔️:     if (atom->getChiralTag() != Atom::CHI_UNSPECIFIED &&
+    // RDKit❗✔️:         !Chirality::hasNonTetrahedralStereo(atom) &&
+    // RDKit❗✔️:         !atom->hasProp(common_properties::_CIPCode) &&
+    // RDKit❗✔️:         (!possibleSpecialCases[atom->getIdx()] ||
+    // RDKit❗✔️:          !atom->hasProp(common_properties::_ringStereoAtoms))) {
+    // RDKit❗✔️:       atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit❗✔️:
+    // RDKit❗✔️:       // If the atom has an explicit hydrogen and no charge, that H
+    // RDKit❗✔️:       // was probably put there solely because of the chirality.
+    // RDKit❗✔️:       // So we'll go ahead and remove it.
+    // RDKit❗✔️:       // This was Issue 194
+    // RDKit❗✔️:       if (atom->getNumExplicitHs() == 1 && atom->getFormalCharge() == 0 &&
+    // RDKit❗✔️:           !atom->getIsAromatic()) {
+    // RDKit❗✔️:         atom->setNumExplicitHs(0);
+    // RDKit❗✔️:         atom->setNoImplicit(false);
+    // RDKit❗✔️:         atom->calcExplicitValence(false);
+    // RDKit❗✔️:         atom->calcImplicitValence(false);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // END RDKIT CPP FUNCTION assignStereochemistry cleanIt atom cleanup subset
+    //
+    // This local MolFromSmiles subset now also preserves RDKit's
+    // ring-stereochemistry special cases via `findChiralAtomSpecialCases()`,
+    // but it still does not port the full `findPotentialStereo()` cleanup
+    // pipeline.
+    let special_case_atoms: BTreeSet<usize> =
+        crate::stereo::find_chiral_atom_special_cases(mol, &ranks)?
+            .into_iter()
+            .map(|case| {
+                if let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(case.atom_idx) {
+                    atom_mut.set_prop("_ringStereochemCand", "1");
+                    atom_mut.set_prop(
+                        "_ringStereoAtoms",
+                        crate::notation::smiles_write::serialize_ring_stereo_atoms(
+                            &case.ring_stereo_atoms,
+                        ),
+                    );
+                }
+                case.atom_idx
+            })
+            .collect();
+    let atom_ids: Vec<AtomId> = mol.atoms().iter().map(|atom| atom.id()).collect();
+    for atom_id in atom_ids {
+        let atom = &mol.atoms()[atom_id.index()];
+        if matches!(atom.chiral_tag(), ChiralTag::Unspecified | ChiralTag::Other)
+            || crate::chemistry::stereo::has_non_tetrahedral_stereo(atom)
+            || special_case_atoms.contains(&atom_id.index())
+        {
+            continue;
+        }
+        let (legal_center, has_dupes, _) =
+            crate::stereo::is_atom_potential_chiral_center(mol, atom_id.index(), &ranks);
+        if legal_center && !has_dupes {
+            continue;
+        }
+        let atom_mut = &mut mol.topology_block_mut().atoms[atom_id.index()];
+        atom_mut.set_chiral_tag(ChiralTag::Unspecified);
+        if atom_mut.explicit_hydrogens() == 1
+            && atom_mut.formal_charge() == 0
+            && !atom_mut.is_aromatic()
+        {
+            atom_mut.set_explicit_hydrogens(0);
+            atom_mut.set_no_implicit(false);
+        }
+    }
+    // BEGIN RDKIT CPP FUNCTION assignStereochemistry cleanIt bond-dir cleanup subset
+    // RDKit✔️✔️:       // check for directionality on single bonds around
+    // RDKit✔️✔️:       // double bonds without stereo. This was github #2422
+    // RDKit✔️✔️:       if (bond->getBondType() == Bond::DOUBLE &&
+    // RDKit✔️✔️:           (bond->getStereo() == Bond::STEREOANY ||
+    // RDKit✔️✔️:            bond->getStereo() == Bond::STEREONONE)) {
+    // RDKit✔️✔️:         std::vector<Atom *> batoms = {bond->getBeginAtom(), bond->getEndAtom()};
+    // RDKit✔️✔️:         for (auto batom : batoms) {
+    // RDKit✔️✔️:           for (const auto nbrBndI : mol.atomBonds(batom)) {
+    // RDKit✔️✔️:             if (nbrBndI == bond) {
+    // RDKit✔️✔️:               continue;
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:             if ((nbrBndI->getBondDir() == Bond::ENDDOWNRIGHT ||
+    // RDKit✔️✔️:                  nbrBndI->getBondDir() == Bond::ENDUPRIGHT) &&
+    // RDKit✔️✔️:                 (nbrBndI->getBondType() == Bond::SINGLE ||
+    // RDKit✔️✔️:                  nbrBndI->getBondType() == Bond::AROMATIC)) {
+    // RDKit✔️✔️:               bool okToClear = true;
+    // RDKit✔️✔️:               for (const auto nbrBndJ :
+    // RDKit✔️✔️:                    mol.atomBonds(nbrBndI->getOtherAtom(batom))) {
+    // RDKit✔️✔️:                 if (nbrBndJ->getBondType() == Bond::DOUBLE &&
+    // RDKit✔️✔️:                     nbrBndJ->getStereo() != Bond::STEREOANY &&
+    // RDKit✔️✔️:                     nbrBndJ->getStereo() != Bond::STEREONONE) {
+    // RDKit✔️✔️:                   okToClear = false;
+    // RDKit✔️✔️:                   break;
+    // RDKit✔️✔️:                 }
+    // RDKit✔️✔️:               }
+    // RDKit✔️✔️:               if (okToClear) {
+    // RDKit✔️✔️:                 nbrBndI->setBondDir(Bond::NONE);
+    // RDKit✔️✔️:               }
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // END RDKIT CPP FUNCTION assignStereochemistry cleanIt bond-dir cleanup subset
+    let adjacency = AdjacencyList::from_topology(mol.num_atoms(), mol.bonds());
+    let double_bond_ids: Vec<BondId> = mol
+        .bonds()
+        .iter()
+        .filter(|bond| {
+            bond.order() == BondOrder::Double
+                && matches!(bond.stereo(), BondStereo::Any | BondStereo::None)
+        })
+        .map(crate::Bond::id)
+        .collect();
+    for bond_id in double_bond_ids {
+        let Some(bond) = mol.bonds().get(bond_id.index()).cloned() else {
+            continue;
+        };
+        for batom in [bond.begin(), bond.end()] {
+            let neighbor_bond_ids: Vec<BondId> = adjacency
+                .neighbors_of(batom.index())
+                .iter()
+                .map(|neighbor| neighbor.bond)
+                .filter(|nbr_bond_id| *nbr_bond_id != bond_id)
+                .collect();
+            for nbr_bond_id in neighbor_bond_ids {
+                let Some(nbr_bond) = mol.bonds().get(nbr_bond_id.index()) else {
+                    continue;
+                };
+                if !matches!(
+                    nbr_bond.direction(),
+                    BondDirection::EndDownRight | BondDirection::EndUpRight
+                ) || !matches!(nbr_bond.order(), BondOrder::Single | BondOrder::Aromatic)
+                {
+                    continue;
+                }
+                let other_atom = bond_other_endpoint(nbr_bond, batom);
+                let mut ok_to_clear = true;
+                for second_nbr in adjacency.neighbors_of(other_atom.index()) {
+                    let Some(second_bond) = mol.bonds().get(second_nbr.bond.index()) else {
+                        continue;
+                    };
+                    if second_bond.order() == BondOrder::Double
+                        && !matches!(second_bond.stereo(), BondStereo::Any | BondStereo::None)
+                    {
+                        ok_to_clear = false;
+                        break;
+                    }
+                }
+                if ok_to_clear
+                    && let Some(nbr_bond_mut) =
+                        mol.topology_block_mut().bonds.get_mut(nbr_bond_id.index())
+                {
+                    nbr_bond_mut.set_direction(BondDirection::None);
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn first_2d_and_3d_conformer_ids(mol: &Molecule) -> (Option<usize>, Option<usize>) {
@@ -3500,82 +4142,212 @@ fn opposite_dir(direction: BondDirection) -> BondDirection {
     }
 }
 
-fn vec3_normalize(v: [f64; 3]) -> Option<[f64; 3]> {
-    let len = vec3_len(v);
-    if len <= f64::EPSILON {
-        None
-    } else {
-        Some([v[0] / len, v[1] / len, v[2] / len])
+fn swap_bond_direction_if_needed(
+    target_direction: BondDirection,
+    source_direction: BondDirection,
+    target_begin: AtomId,
+    source_begin: AtomId,
+) -> BondDirection {
+    // BEGIN RDKIT CPP FUNCTION swapBondDirIfNeeded
+    // RDKit✔️✔️: void swapBondDirIfNeeded(Bond *bond1, const Bond *bond2) {
+    // RDKit✔️✔️:   if (bond1->getBondDir() == Bond::NONE && bond2->getBondDir() != Bond::NONE) {
+    // RDKit✔️✔️:     bond1->setBondDir(bond2->getBondDir());
+    // RDKit✔️✔️:     if (bond1->getBeginAtom() != bond2->getBeginAtom()) {
+    // RDKit✔️✔️:       switch (bond1->getBondDir()) {
+    // RDKit✔️✔️:         case Bond::ENDDOWNRIGHT:
+    // RDKit✔️✔️:           bond1->setBondDir(Bond::ENDUPRIGHT);
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         case Bond::ENDUPRIGHT:
+    // RDKit✔️✔️:           bond1->setBondDir(Bond::ENDDOWNRIGHT);
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         default:
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION swapBondDirIfNeeded
+    if target_direction != BondDirection::None || source_direction == BondDirection::None {
+        return target_direction;
     }
+    let mut direction = source_direction;
+    if target_begin != source_begin {
+        direction = opposite_dir(direction);
+    }
+    direction
 }
 
-fn choose_stereo_neighbor(
-    mol: &Molecule,
-    ranks: &[u32],
-    center: AtomId,
-    exclude: AtomId,
-) -> Option<(BondId, AtomId)> {
-    let mut candidates = Vec::new();
-    for bond in mol.bonds() {
-        if bond.begin() != center && bond.end() != center {
-            continue;
-        }
-        let other = if bond.begin() == center {
-            bond.end()
-        } else {
-            bond.begin()
-        };
-        if other == exclude {
-            continue;
-        }
-        candidates.push((
-            ranks.get(other.index()).copied().unwrap_or(0),
-            bond.id(),
-            other,
-        ));
-    }
-    candidates.sort_by(|left, right| {
-        right
-            .0
-            .cmp(&left.0)
-            .then_with(|| left.1.index().cmp(&right.1.index()))
-    });
-    let (best_rank, best_bond, best_atom) = candidates.first().copied()?;
-    if candidates.get(1).is_some_and(|next| next.0 == best_rank) {
-        return None;
-    }
-    Some((best_bond, best_atom))
+#[derive(Clone, Copy)]
+struct SmilesControllingBondResult {
+    bond: Option<BondId>,
+    obond: Option<BondId>,
+    squiggle_bond_seen: bool,
+    double_bond_seen: bool,
 }
 
-fn set_raw_neighbor_dir_for_center(
+fn set_bond_dir_relative_to_atom(
     mol: &mut Molecule,
     bond_id: BondId,
     center: AtomId,
-    normalized_dir: BondDirection,
-    center_is_begin_side: bool,
+    mut dir: BondDirection,
+    mut reverse: bool,
 ) {
-    let Some(bond) = mol.topology_block_mut().bonds.get_mut(bond_id.index()) else {
+    // BEGIN RDKIT CPP FUNCTION setBondDirRelativeToAtom
+    // RDKit✔️✔️: void setBondDirRelativeToAtom(Bond *bond, Atom *atom, Bond::BondDir dir,
+    // RDKit✔️✔️:                               bool reverse, boost::dynamic_bitset<> &) {
+    // RDKit✔️✔️:   PRECONDITION(bond, "bad bond");
+    // RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
+    // RDKit✔️✔️:   PRECONDITION(dir == Bond::ENDUPRIGHT || dir == Bond::ENDDOWNRIGHT, "bad dir");
+    // RDKit✔️✔️:   PRECONDITION(atom == bond->getBeginAtom() || atom == bond->getEndAtom(),
+    // RDKit✔️✔️:                "atom doesn't belong to bond");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (bond->getBeginAtom() != atom) {
+    // RDKit✔️✔️:     reverse = !reverse;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (reverse) {
+    // RDKit✔️✔️:     dir = (dir == Bond::ENDUPRIGHT ? Bond::ENDDOWNRIGHT : Bond::ENDUPRIGHT);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   bond->setBondDir(dir);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION setBondDirRelativeToAtom
+    let Some(bond) = mol.bonds().get(bond_id.index()) else {
         return;
     };
-    let raw_dir = if center_is_begin_side {
-        if bond.begin() == center {
-            opposite_dir(normalized_dir)
-        } else {
-            normalized_dir
-        }
-    } else if bond.end() == center {
-        opposite_dir(normalized_dir)
+    if bond.begin() != center {
+        reverse = !reverse;
+    }
+    if reverse {
+        dir = opposite_dir(dir);
+    }
+    if let Some(bond) = mol.topology_block_mut().bonds.get_mut(bond_id.index()) {
+        bond.set_direction(dir);
+    }
+}
+
+fn point_sub(a: [f64; 3], b: [f64; 3]) -> (f64, f64, f64) {
+    (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+}
+
+fn point_dot(a: (f64, f64, f64), b: (f64, f64, f64)) -> f64 {
+    a.0 * b.0 + a.1 * b.1 + a.2 * b.2
+}
+
+fn point_cross(a: (f64, f64, f64), b: (f64, f64, f64)) -> (f64, f64, f64) {
+    (
+        a.1 * b.2 - a.2 * b.1,
+        a.2 * b.0 - a.0 * b.2,
+        a.0 * b.1 - a.1 * b.0,
+    )
+}
+
+fn point_len_sq(v: (f64, f64, f64)) -> f64 {
+    point_dot(v, v)
+}
+
+fn compute_dihedral_angle_points(p1: [f64; 3], p2: [f64; 3], p3: [f64; 3], p4: [f64; 3]) -> f64 {
+    let r12 = point_sub(p2, p1);
+    let r23 = point_sub(p3, p2);
+    let r34 = point_sub(p4, p3);
+    let n123 = point_cross(r12, r23);
+    let n234 = point_cross(r23, r34);
+    let n123_len_sq = point_len_sq(n123);
+    let n234_len_sq = point_len_sq(n234);
+    if n123_len_sq <= 1.0e-16 || n234_len_sq <= 1.0e-16 {
+        return 0.0;
+    }
+    let cosine = (point_dot(n123, n234) / (n123_len_sq * n234_len_sq).sqrt()).clamp(-1.0, 1.0);
+    cosine.acos()
+}
+
+fn bond_other_endpoint(bond: &crate::Bond, atom: AtomId) -> AtomId {
+    if bond.begin() == atom {
+        bond.end()
     } else {
-        normalized_dir
-    };
-    bond.set_direction(raw_dir);
+        bond.begin()
+    }
+}
+
+fn controlling_bond_from_atom_for_smiles(
+    mol: &Molecule,
+    adjacency: &AdjacencyList,
+    needs_dir: &[bool],
+    single_bond_counts: &[u32],
+    dbl_bond_id: BondId,
+    atom: AtomId,
+) -> SmilesControllingBondResult {
+    // BEGIN RDKIT CPP FUNCTION controllingBondFromAtom
+    // RDKit✔️✔️: void controllingBondFromAtom(const ROMol &mol,
+    // RDKit✔️✔️:                              const boost::dynamic_bitset<> &needsDir,
+    // RDKit✔️✔️:                              const std::vector<unsigned int> &singleBondCounts,
+    // RDKit✔️✔️:                              const Bond *dblBond, const Atom *atom, Bond *&bond,
+    // RDKit✔️✔️:                              Bond *&obond, bool &squiggleBondSeen,
+    // RDKit✔️✔️:                              bool &doubleBondSeen) {
+    // RDKit✔️✔️:   bond = nullptr;
+    // RDKit✔️✔️:   obond = nullptr;
+    // RDKit✔️✔️:   for (const auto tBond : mol.atomBonds(atom)) {
+    // RDKit✔️✔️:     if (tBond == dblBond) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     ...
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION controllingBondFromAtom
+    let mut bond = None;
+    let mut obond = None;
+    let mut squiggle_bond_seen = false;
+    let mut double_bond_seen = false;
+    for neighbor in adjacency.neighbors_of(atom.index()) {
+        let t_bond_id = neighbor.bond;
+        if t_bond_id == dbl_bond_id {
+            continue;
+        }
+        let Some(t_bond) = mol.bonds().get(t_bond_id.index()) else {
+            continue;
+        };
+        if matches!(t_bond.order(), BondOrder::Single | BondOrder::Aromatic)
+            && matches!(
+                t_bond.direction(),
+                BondDirection::None | BondDirection::EndDownRight | BondDirection::EndUpRight
+            )
+        {
+            if bond.is_none() {
+                bond = Some(t_bond_id);
+            } else if needs_dir[t_bond_id.index()] {
+                let current = bond.expect("bond exists");
+                if single_bond_counts[t_bond_id.index()] > single_bond_counts[current.index()] {
+                    obond = bond;
+                    bond = Some(t_bond_id);
+                } else {
+                    obond = Some(t_bond_id);
+                }
+            } else {
+                obond = bond;
+                bond = Some(t_bond_id);
+            }
+        } else if t_bond.order() == BondOrder::Double {
+            double_bond_seen = true;
+        }
+        if matches!(t_bond.order(), BondOrder::Single | BondOrder::Aromatic)
+            && (t_bond.direction() == BondDirection::Unknown || t_bond.unknown_stereo())
+        {
+            squiggle_bond_seen = true;
+            break;
+        }
+    }
+    SmilesControllingBondResult {
+        bond,
+        obond,
+        squiggle_bond_seen,
+        double_bond_seen,
+    }
 }
 
 fn ensure_valence_for_stereo(mol: &mut Molecule) -> Result<(), StereoError> {
     if mol.derived_cache().valence.is_some() {
         return Ok(());
     }
-    *mol = mol.with_assigned_valence().map_err(|error| {
+    *mol = mol.with_assigned_valence().map_err(|_error| {
         StereoError::UnsupportedFeature(crate::UnsupportedFeatureError {
             feature: "CIP_RANKING",
             reason: "valence assignment failed before stereo perception",
@@ -3584,76 +4356,431 @@ fn ensure_valence_for_stereo(mol: &mut Molecule) -> Result<(), StereoError> {
     Ok(())
 }
 
+fn ensure_symm_sssr_for_double_bond_stereo(mol: &mut Molecule) -> Result<(), StereoError> {
+    if mol
+        .derived_cache()
+        .rings
+        .as_ref()
+        .is_some_and(crate::RingInfo::is_symm_sssr)
+    {
+        return Ok(());
+    }
+    *mol = mol.with_assigned_rings().map_err(|_error| {
+        StereoError::UnsupportedFeature(crate::UnsupportedFeatureError {
+            feature: "RING_INFO",
+            reason: "ring assignment failed before double-bond stereo perception",
+        })
+    })?;
+    Ok(())
+}
+
+fn set_double_bond_neighbor_directions_impl(
+    mol: &mut Molecule,
+    conf_id: Option<usize>,
+) -> Result<(), StereoError> {
+    // RDKit✔️✔️:   if (!mol.getRingInfo()->isSymmSssr()) {
+    // RDKit✔️✔️:     RDKit::MolOps::symmetrizeSSSR(mol);
+    // RDKit✔️✔️:   }
+    ensure_symm_sssr_for_double_bond_stereo(mol)?;
+    let coords_ptr = conf_id.and_then(|wanted_id| {
+        mol.conformers_3d()
+            .iter()
+            .find(|conf| conf.id() == wanted_id)
+            .map(|conf| conf.coords() as *const [[f64; 3]])
+    });
+    if conf_id.is_some() && coords_ptr.is_none() {
+        return Ok(());
+    }
+    let adjacency = AdjacencyList::from_topology(mol.num_atoms(), mol.bonds());
+    let mut single_bond_counts = vec![0_u32; mol.num_bonds()];
+    let mut bonds_in_play = Vec::new();
+    let mut dbl_bond_nbrs = vec![Vec::<BondId>::new(); mol.num_bonds()];
+    let mut single_bond_nbrs = vec![Vec::<BondId>::new(); mol.num_bonds()];
+    let mut needs_dir = vec![false; mol.num_bonds()];
+
+    for bond in mol.bonds() {
+        if !crate::stereo::is_bond_candidate_for_stereo(mol, bond.id().index()) {
+            continue;
+        }
+        let mut is_candidate = true;
+        for bond_atom in [bond.begin(), bond.end()] {
+            for neighbor in adjacency.neighbors_of(bond_atom.index()) {
+                let nbr_bond_id = neighbor.bond;
+                let Some(nbr_bond) = mol.bonds().get(nbr_bond_id.index()) else {
+                    continue;
+                };
+                if matches!(nbr_bond.order(), BondOrder::Single | BondOrder::Aromatic) {
+                    single_bond_counts[nbr_bond_id.index()] += 1;
+                    if nbr_bond.begin() == bond_atom
+                        && nbr_bond.direction() == BondDirection::Unknown
+                        && nbr_bond.unknown_stereo()
+                    {
+                        is_candidate = false;
+                    } else {
+                        needs_dir[bond.id().index()] = true;
+                        if matches!(
+                            nbr_bond.direction(),
+                            BondDirection::None
+                                | BondDirection::EndDownRight
+                                | BondDirection::EndUpRight
+                        ) {
+                            needs_dir[nbr_bond_id.index()] = true;
+                            dbl_bond_nbrs[bond.id().index()].push(nbr_bond_id);
+                            if !single_bond_nbrs[nbr_bond_id.index()].contains(&bond.id()) {
+                                single_bond_nbrs[nbr_bond_id.index()].push(bond.id());
+                            }
+                        }
+                    }
+                }
+                if !is_candidate {
+                    break;
+                }
+            }
+            if !is_candidate {
+                break;
+            }
+        }
+        if is_candidate {
+            bonds_in_play.push(bond.id());
+        }
+    }
+
+    if bonds_in_play.is_empty() {
+        return Ok(());
+    }
+
+    // BEGIN RDKIT CPP FUNCTION setDoubleBondNeighborDirections ordering subset
+    // RDKit✔️✔️:   std::vector<std::pair<unsigned int, Bond *>> orderedBondsInPlay;
+    // RDKit✔️✔️:   for (auto dblBond : bondsInPlay) {
+    // RDKit✔️✔️:     unsigned int countHere =
+    // RDKit✔️✔️:         std::accumulate(dblBondNbrs[dblBond->getIdx()].begin(),
+    // RDKit✔️✔️:                         dblBondNbrs[dblBond->getIdx()].end(), 0);
+    // RDKit✔️✔️:     if (!(mol.getRingInfo()->numBondRings(dblBond->getIdx()))) {
+    // RDKit✔️✔️:       countHere *= 10;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     orderedBondsInPlay.push_back(std::make_pair(countHere, dblBond));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   std::sort(orderedBondsInPlay.begin(), orderedBondsInPlay.end());
+    // RDKit✔️✔️:   for (pairIter = orderedBondsInPlay.rbegin();
+    // RDKit✔️✔️:        pairIter != orderedBondsInPlay.rend(); ++pairIter) {
+    // RDKit✔️✔️:     updateDoubleBondNeighbors(mol, pairIter->second, conf, needsDir,
+    // RDKit✔️✔️:                               singleBondCounts, singleBondNbrs);
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION setDoubleBondNeighborDirections ordering subset
+    let ring_info = mol.derived_cache().rings.as_ref();
+    let mut ordered_bonds_in_play = Vec::with_capacity(bonds_in_play.len());
+    for dbl_bond_id in bonds_in_play {
+        let mut count_here = dbl_bond_nbrs[dbl_bond_id.index()]
+            .iter()
+            .map(|bond_id| bond_id.index() as u32)
+            .sum::<u32>();
+        let is_ring_bond = ring_info.is_some_and(|ri| ri.num_bond_rings(dbl_bond_id) > 0);
+        if !is_ring_bond {
+            count_here *= 10;
+        }
+        ordered_bonds_in_play.push((count_here, dbl_bond_id));
+    }
+    ordered_bonds_in_play.sort_by(|left, right| left.cmp(right));
+
+    for (_, dbl_bond_id) in ordered_bonds_in_play.into_iter().rev() {
+        update_double_bond_neighbors(
+            mol,
+            dbl_bond_id,
+            coords_ptr,
+            &adjacency,
+            &mut needs_dir,
+            &single_bond_counts,
+            &single_bond_nbrs,
+        )?;
+    }
+    Ok(())
+}
+
+fn update_double_bond_neighbors(
+    mol: &mut Molecule,
+    dbl_bond_id: BondId,
+    coords_ptr: Option<*const [[f64; 3]]>,
+    adjacency: &AdjacencyList,
+    needs_dir: &mut [bool],
+    single_bond_counts: &[u32],
+    single_bond_nbrs: &[Vec<BondId>],
+) -> Result<(), StereoError> {
+    // BEGIN RDKIT CPP FUNCTION updateDoubleBondNeighbors
+    // RDKit✔️✔️: void updateDoubleBondNeighbors(ROMol &mol, Bond *dblBond, const Conformer *conf,
+    // RDKit✔️✔️:                                boost::dynamic_bitset<> &needsDir,
+    // RDKit✔️✔️:                                std::vector<unsigned int> &singleBondCounts,
+    // RDKit✔️✔️:                                const VECT_INT_VECT &singleBondNbrs) {
+    // RDKit✔️✔️:   // we want to deal only with double bonds:
+    // RDKit✔️✔️:   PRECONDITION(dblBond, "bad bond");
+    // RDKit✔️✔️:   PRECONDITION(dblBond->getBondType() == Bond::DOUBLE, "not a double bond");
+    // RDKit✔️✔️:   if (!needsDir[dblBond->getIdx()]) {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   needsDir.set(dblBond->getIdx(), 0);
+    // RDKit✔️✔️:   std::vector<Bond *> followupBonds;
+    // RDKit✔️✔️:   Bond *bond1 = nullptr, *obond1 = nullptr;
+    // RDKit✔️✔️:   bool squiggleBondSeen = false;
+    // RDKit✔️✔️:   bool doubleBondSeen = false;
+    // RDKit✔️✔️:   controllingBondFromAtom(mol, needsDir, singleBondCounts, dblBond,
+    // RDKit✔️✔️:                           dblBond->getBeginAtom(), bond1, obond1,
+    // RDKit✔️✔️:                           squiggleBondSeen, doubleBondSeen);
+    // RDKit✔️✔️:   if (squiggleBondSeen) {
+    // RDKit✔️✔️:     Chirality::detail::setStereoForBond(mol, dblBond, Bond::STEREOANY);
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!bond1) {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   Bond *bond2 = nullptr, *obond2 = nullptr;
+    // RDKit✔️✔️:   controllingBondFromAtom(mol, needsDir, singleBondCounts, dblBond,
+    // RDKit✔️✔️:                           dblBond->getEndAtom(), bond2, obond2,
+    // RDKit✔️✔️:                           squiggleBondSeen, doubleBondSeen);
+    // RDKit✔️✔️:   if (squiggleBondSeen) {
+    // RDKit✔️✔️:     Chirality::detail::setStereoForBond(mol, dblBond, Bond::STEREOANY);
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!bond2) {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   ... sameTorsionDir calculation ...
+    // RDKit✔️✔️:   ... direction propagation ...
+    // RDKit✔️✔️:   for (Bond *oDblBond : followupBonds) {
+    // RDKit✔️✔️:     updateDoubleBondNeighbors(mol, oDblBond, conf, needsDir, singleBondCounts,
+    // RDKit✔️✔️:                               singleBondNbrs);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION updateDoubleBondNeighbors
+    if !needs_dir[dbl_bond_id.index()] {
+        return Ok(());
+    }
+    needs_dir[dbl_bond_id.index()] = false;
+    let Some(dbl_bond) = mol.bonds().get(dbl_bond_id.index()).cloned() else {
+        return Ok(());
+    };
+    let atom1 = dbl_bond.begin();
+    let atom2 = dbl_bond.end();
+
+    let begin_result = controlling_bond_from_atom_for_smiles(
+        mol,
+        adjacency,
+        needs_dir,
+        single_bond_counts,
+        dbl_bond_id,
+        atom1,
+    );
+    if begin_result.squiggle_bond_seen {
+        if let Some(bond) = mol.topology_block_mut().bonds.get_mut(dbl_bond_id.index()) {
+            bond.set_stereo(BondStereo::Any);
+            bond.set_stereo_atoms(None);
+        }
+        return Ok(());
+    }
+    let Some(mut bond1) = begin_result.bond else {
+        return Ok(());
+    };
+    let mut obond1 = begin_result.obond;
+
+    let end_result = controlling_bond_from_atom_for_smiles(
+        mol,
+        adjacency,
+        needs_dir,
+        single_bond_counts,
+        dbl_bond_id,
+        atom2,
+    );
+    if end_result.squiggle_bond_seen {
+        if let Some(bond) = mol.topology_block_mut().bonds.get_mut(dbl_bond_id.index()) {
+            bond.set_stereo(BondStereo::Any);
+            bond.set_stereo_atoms(None);
+        }
+        return Ok(());
+    }
+    let Some(mut bond2) = end_result.bond else {
+        return Ok(());
+    };
+    let mut obond2 = end_result.obond;
+
+    let same_torsion_dir = if let Some(coords_ptr) = coords_ptr {
+        let coords = unsafe { &*coords_ptr };
+        let begin_point = coords[atom1.index()];
+        let end_point = coords[atom2.index()];
+        let mut bond1_point =
+            coords[bond_other_endpoint(&mol.bonds()[bond1.index()], atom1).index()];
+        let mut bond2_point =
+            coords[bond_other_endpoint(&mol.bonds()[bond2.index()], atom2).index()];
+        let mut linear = false;
+        let mut p1 = point_sub(bond1_point, begin_point);
+        let mut p2 = point_sub(end_point, begin_point);
+        if crate::stereo::is_linear_arrangement(p1, p2) {
+            if let Some(other_bond) = obond1 {
+                let swap = bond1;
+                bond1 = other_bond;
+                obond1 = Some(swap);
+                bond1_point =
+                    coords[bond_other_endpoint(&mol.bonds()[bond1.index()], atom1).index()];
+                p1 = point_sub(bond1_point, begin_point);
+                if crate::stereo::is_linear_arrangement(p1, p2) {
+                    linear = true;
+                }
+            } else {
+                linear = true;
+            }
+        }
+        if !linear {
+            p1 = point_sub(bond2_point, end_point);
+            p2 = point_sub(begin_point, end_point);
+            if crate::stereo::is_linear_arrangement(p1, p2) {
+                if let Some(other_bond) = obond2 {
+                    let swap = bond2;
+                    bond2 = other_bond;
+                    obond2 = Some(swap);
+                    bond2_point =
+                        coords[bond_other_endpoint(&mol.bonds()[bond2.index()], atom2).index()];
+                    p1 = point_sub(bond2_point, begin_point);
+                    if crate::stereo::is_linear_arrangement(p1, p2) {
+                        linear = true;
+                    }
+                } else {
+                    linear = true;
+                }
+            }
+        }
+        if linear {
+            if let Some(bond) = mol.topology_block_mut().bonds.get_mut(dbl_bond_id.index()) {
+                bond.set_stereo(BondStereo::Any);
+                bond.set_stereo_atoms(None);
+            }
+            return Ok(());
+        }
+        compute_dihedral_angle_points(bond1_point, begin_point, end_point, bond2_point) >= PI / 2.0
+    } else {
+        let Some(stereo_atoms) = dbl_bond.stereo_atoms() else {
+            return Ok(());
+        };
+        let mut same_torsion_dir = match dbl_bond.stereo() {
+            BondStereo::Cis => false,
+            BondStereo::Trans => true,
+            _ => return Ok(()),
+        };
+        let bond1_atom = bond_other_endpoint(&mol.bonds()[bond1.index()], atom1);
+        if bond1_atom != stereo_atoms[0] && bond1_atom != stereo_atoms[1] {
+            same_torsion_dir = !same_torsion_dir;
+        }
+        let bond2_atom = bond_other_endpoint(&mol.bonds()[bond2.index()], atom2);
+        if bond2_atom != stereo_atoms[0] && bond2_atom != stereo_atoms[1] {
+            same_torsion_dir = !same_torsion_dir;
+        }
+        same_torsion_dir
+    };
+
+    let mut reverse_bond_dir = same_torsion_dir;
+    let mut followup_bonds = Vec::new();
+    if needs_dir[bond1.index()] {
+        for neighbor_dbl_bond in &single_bond_nbrs[bond1.index()] {
+            if needs_dir[neighbor_dbl_bond.index()] {
+                followup_bonds.push(*neighbor_dbl_bond);
+            }
+        }
+    }
+    if needs_dir[bond2.index()] {
+        for neighbor_dbl_bond in &single_bond_nbrs[bond2.index()] {
+            if needs_dir[neighbor_dbl_bond.index()] {
+                followup_bonds.push(*neighbor_dbl_bond);
+            }
+        }
+    }
+    if !needs_dir[bond1.index()] {
+        if needs_dir[bond2.index()] {
+            if mol.bonds()[bond1.index()].begin() != atom1 {
+                reverse_bond_dir = !reverse_bond_dir;
+            }
+            let reference_dir = mol.bonds()[bond1.index()].direction();
+            set_bond_dir_relative_to_atom(mol, bond2, atom2, reference_dir, reverse_bond_dir);
+        }
+    } else if !needs_dir[bond2.index()] {
+        if mol.bonds()[bond2.index()].begin() != atom2 {
+            reverse_bond_dir = !reverse_bond_dir;
+        }
+        let reference_dir = mol.bonds()[bond2.index()].direction();
+        set_bond_dir_relative_to_atom(mol, bond1, atom1, reference_dir, reverse_bond_dir);
+    } else {
+        set_bond_dir_relative_to_atom(mol, bond1, atom1, BondDirection::EndDownRight, false);
+        set_bond_dir_relative_to_atom(
+            mol,
+            bond2,
+            atom2,
+            BondDirection::EndDownRight,
+            reverse_bond_dir,
+        );
+    }
+    needs_dir[bond1.index()] = false;
+    needs_dir[bond2.index()] = false;
+    if let Some(other_bond) = obond1
+        && needs_dir[other_bond.index()]
+    {
+        let reference_dir = mol.bonds()[bond1.index()].direction();
+        let reverse = mol.bonds()[bond1.index()].begin() == atom1;
+        set_bond_dir_relative_to_atom(mol, other_bond, atom1, reference_dir, reverse);
+        needs_dir[other_bond.index()] = false;
+    }
+    if let Some(other_bond) = obond2
+        && needs_dir[other_bond.index()]
+    {
+        let reference_dir = mol.bonds()[bond2.index()].direction();
+        let reverse = mol.bonds()[bond2.index()].begin() == atom2;
+        set_bond_dir_relative_to_atom(mol, other_bond, atom2, reference_dir, reverse);
+        needs_dir[other_bond.index()] = false;
+    }
+    for followup_bond in followup_bonds {
+        update_double_bond_neighbors(
+            mol,
+            followup_bond,
+            coords_ptr,
+            adjacency,
+            needs_dir,
+            single_bond_counts,
+            single_bond_nbrs,
+        )?;
+    }
+    Ok(())
+}
+
 pub(crate) fn set_double_bond_neighbor_directions(
     mol: &mut Molecule,
     conf_id: usize,
 ) -> Result<(), StereoError> {
     // BEGIN RDKIT CPP FUNCTION setDoubleBondNeighborDirections
-    // RDKit❗✔️: void setDoubleBondNeighborDirections(ROMol &mol, const Conformer *conf) {
-    // RDKit❗✔️:   // Sets neighboring single-bond directions for stereo-capable double bonds
-    // RDKit❗✔️:   // using conformer geometry plus candidate/neighbor filtering.
-    // RDKit❗✔️: }
+    // RDKit✔️✔️: void setDoubleBondNeighborDirections(ROMol &mol, const Conformer *conf) {
+    // RDKit✔️✔️:   // used to store the number of single bonds a given
+    // RDKit✔️✔️:   // single bond is adjacent to
+    // RDKit✔️✔️:   std::vector<unsigned int> singleBondCounts(mol.getNumBonds(), 0);
+    // RDKit✔️✔️:   std::vector<Bond *> bondsInPlay;
+    // RDKit✔️✔️:   // keeps track of which single bonds are adjacent to each double bond:
+    // RDKit✔️✔️:   VECT_INT_VECT dblBondNbrs(mol.getNumBonds());
+    // RDKit✔️✔️:   // keeps track of which double bonds are adjacent to each single bond:
+    // RDKit✔️✔️:   VECT_INT_VECT singleBondNbrs(mol.getNumBonds());
+    // RDKit✔️✔️:   // keeps track of which single bonds need a dir set and which double bonds
+    // RDKit✔️✔️:   // need to have their neighbors' dirs set
+    // RDKit✔️✔️:   boost::dynamic_bitset<> needsDir(mol.getNumBonds());
+    // RDKit✔️✔️:   // find double bonds that should be considered for stereochemistry
+    // RDKit✔️✔️:   for (auto bond : mol.bonds()) { ... }
+    // RDKit✔️✔️:   if (!bondsInPlay.size()) { return; }
+    // RDKit✔️✔️:   std::vector<std::pair<unsigned int, Bond *>> orderedBondsInPlay;
+    // RDKit✔️✔️:   for (auto dblBond : bondsInPlay) { ... }
+    // RDKit✔️✔️:   std::sort(orderedBondsInPlay.begin(), orderedBondsInPlay.end());
+    // RDKit✔️✔️:   for (...) {
+    // RDKit✔️✔️:     updateDoubleBondNeighbors(mol, pairIter->second, conf, needsDir,
+    // RDKit✔️✔️:                               singleBondCounts, singleBondNbrs);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION setDoubleBondNeighborDirections
-    ensure_valence_for_stereo(mol)?;
-    let Some(conformer) = mol.conformers_3d().iter().find(|conf| conf.id() == conf_id) else {
-        return Ok(());
-    };
-    let ranks = crate::stereo::assign_atom_cip_ranks(mol)?;
-    let coords = conformer.coords().to_vec();
-    let candidate_bonds: Vec<(BondId, AtomId, AtomId)> = mol
-        .bonds()
-        .iter()
-        .filter(|bond| crate::stereo::is_bond_candidate_for_stereo(mol, bond.id().index()))
-        .map(|bond| (bond.id(), bond.begin(), bond.end()))
-        .collect();
+    set_double_bond_neighbor_directions_impl(mol, Some(conf_id))
+}
 
-    for (bond_id, begin, end) in candidate_bonds {
-        let Some((begin_bond, begin_nbr)) = choose_stereo_neighbor(mol, &ranks, begin, end) else {
-            continue;
-        };
-        let Some((end_bond, end_nbr)) = choose_stereo_neighbor(mol, &ranks, end, begin) else {
-            continue;
-        };
-
-        let axis = match vec3_normalize(vec3_sub(coords[end.index()], coords[begin.index()])) {
-            Some(axis) => axis,
-            None => continue,
-        };
-        let begin_vec = vec3_sub(coords[begin_nbr.index()], coords[begin.index()]);
-        let end_vec = vec3_sub(coords[end_nbr.index()], coords[end.index()]);
-        let begin_proj = [
-            begin_vec[0] - axis[0] * vec3_dot(begin_vec, axis),
-            begin_vec[1] - axis[1] * vec3_dot(begin_vec, axis),
-            begin_vec[2] - axis[2] * vec3_dot(begin_vec, axis),
-        ];
-        let end_proj = [
-            end_vec[0] - axis[0] * vec3_dot(end_vec, axis),
-            end_vec[1] - axis[1] * vec3_dot(end_vec, axis),
-            end_vec[2] - axis[2] * vec3_dot(end_vec, axis),
-        ];
-        let Some(begin_proj) = vec3_normalize(begin_proj) else {
-            continue;
-        };
-        let Some(end_proj) = vec3_normalize(end_proj) else {
-            continue;
-        };
-        let same_side = vec3_dot(begin_proj, end_proj) > 0.0;
-
-        let begin_normalized = BondDirection::EndUpRight;
-        let end_normalized = if same_side {
-            BondDirection::EndDownRight
-        } else {
-            BondDirection::EndUpRight
-        };
-        set_raw_neighbor_dir_for_center(mol, begin_bond, begin, begin_normalized, true);
-        set_raw_neighbor_dir_for_center(mol, end_bond, end, end_normalized, false);
-
-        if let Some(bond) = mol.topology_block_mut().bonds.get_mut(bond_id.index()) {
-            bond.set_stereo(BondStereo::None);
-            bond.set_stereo_atoms(None);
-        }
-    }
-    Ok(())
+pub(crate) fn set_double_bond_neighbor_directions_from_stereo(
+    mol: &mut Molecule,
+) -> Result<(), StereoError> {
+    set_double_bond_neighbor_directions_impl(mol, None)
 }
 
 pub(crate) fn clear_dir_flags(mol: &mut Molecule, only_wedge_type_bond_dirs: bool) {
@@ -3698,31 +4825,112 @@ pub(crate) fn clear_all_bond_dir_flags(mol: &mut Molecule) {
     clear_dir_flags(mol, false);
 }
 
-pub(crate) fn set_bond_stereo_from_directions(mol: &mut Molecule) -> Result<(), StereoError> {
-    // BEGIN RDKIT CPP FUNCTION setBondStereoFromDirections
-    // RDKit❗✔️: void setBondStereoFromDirections(ROMol &mol) {
-    // RDKit❗✔️:   // Finds directed neighboring single bonds and assigns double-bond stereo.
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION setBondStereoFromDirections
-    mol.properties_mut().clear_prop("_needsDetectBondStereo");
-    ensure_valence_for_stereo(mol)?;
-    for bond in &mut mol.topology_block_mut().bonds {
-        if bond.order() == BondOrder::Double && bond.stereo() != BondStereo::Any {
-            bond.set_stereo(BondStereo::None);
-            bond.set_stereo_atoms(None);
+fn has_stereo_bond_dir(direction: BondDirection) -> bool {
+    matches!(
+        direction,
+        BondDirection::EndDownRight | BondDirection::EndUpRight
+    )
+}
+
+fn neighboring_directed_bond(mol: &Molecule, atom: AtomId) -> Option<BondId> {
+    for bond in mol.bonds() {
+        if bond.order() != BondOrder::Double
+            && has_stereo_bond_dir(bond.direction())
+            && (bond.begin() == atom || bond.end() == atom)
+        {
+            return Some(bond.id());
         }
     }
-    let ranks = crate::stereo::assign_atom_cip_ranks(mol)?;
-    let (assignments, _changed) = crate::stereo::assign_bond_stereo_codes(mol, &ranks);
-    for (bond_idx, stereo, begin_control, end_control) in assignments {
-        let stereo = match stereo {
-            crate::stereo::DoubleBondStereo::E => BondStereo::Trans,
-            crate::stereo::DoubleBondStereo::Z => BondStereo::Cis,
-            crate::stereo::DoubleBondStereo::Unknown => BondStereo::Any,
+    None
+}
+
+pub(crate) fn set_bond_stereo_from_directions(mol: &mut Molecule) -> Result<(), StereoError> {
+    // BEGIN RDKIT CPP FUNCTION setBondStereoFromDirections
+    // RDKit✔️✔️: void setBondStereoFromDirections(ROMol &mol) {
+    // RDKit✔️✔️:   mol.clearProp("_needsDetectBondStereo");
+    // RDKit✔️✔️:   for (Bond *bond : mol.bonds()) {
+    // RDKit✔️✔️:     if (bond->getBondType() == Bond::DOUBLE &&
+    // RDKit✔️✔️:         bond->getStereo() != Bond::STEREOANY) {
+    // RDKit✔️✔️:       const Atom *stereoBondBeginAtom = bond->getBeginAtom();
+    // RDKit✔️✔️:       const Atom *stereoBondEndAtom = bond->getEndAtom();
+    // RDKit✔️✔️:       const Bond *directedBondAtBegin =
+    // RDKit✔️✔️:           Chirality::getNeighboringDirectedBond(mol, stereoBondBeginAtom);
+    // RDKit✔️✔️:       const Bond *directedBondAtEnd =
+    // RDKit✔️✔️:           Chirality::getNeighboringDirectedBond(mol, stereoBondEndAtom);
+    // RDKit✔️✔️:       if (directedBondAtBegin != nullptr && directedBondAtEnd != nullptr) {
+    // RDKit✔️✔️:         unsigned beginSideStereoAtom =
+    // RDKit✔️✔️:             directedBondAtBegin->getOtherAtomIdx(stereoBondBeginAtom->getIdx());
+    // RDKit✔️✔️:         unsigned endSideStereoAtom =
+    // RDKit✔️✔️:             directedBondAtEnd->getOtherAtomIdx(stereoBondEndAtom->getIdx());
+    // RDKit✔️✔️:         bond->setStereoAtoms(beginSideStereoAtom, endSideStereoAtom);
+    // RDKit✔️✔️:         auto beginSideBondDirection = directedBondAtBegin->getBondDir();
+    // RDKit✔️✔️:         if (directedBondAtBegin->getBeginAtom() == stereoBondBeginAtom) {
+    // RDKit✔️✔️:           beginSideBondDirection = getOppositeBondDir(beginSideBondDirection);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         auto endSideBondDirection = directedBondAtEnd->getBondDir();
+    // RDKit✔️✔️:         if (directedBondAtEnd->getEndAtom() == stereoBondEndAtom) {
+    // RDKit✔️✔️:           endSideBondDirection = getOppositeBondDir(endSideBondDirection);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         if (beginSideBondDirection == endSideBondDirection) {
+    // RDKit✔️✔️:           bond->setStereo(Bond::STEREOTRANS);
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           bond->setStereo(Bond::STEREOCIS);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION setBondStereoFromDirections
+    mol.properties_mut().clear_prop("_needsDetectBondStereo");
+    let bond_ids: Vec<BondId> = mol.bonds().iter().map(|bond| bond.id()).collect();
+    for bond_id in bond_ids {
+        let Some(snapshot) = mol.bonds().get(bond_id.index()).cloned() else {
+            continue;
         };
-        let bond = &mut mol.topology_block_mut().bonds[bond_idx];
-        bond.set_stereo_atoms(Some([AtomId::new(begin_control), AtomId::new(end_control)]));
-        bond.set_stereo(stereo);
+        if snapshot.order() != BondOrder::Double || snapshot.stereo() == BondStereo::Any {
+            continue;
+        }
+        let begin = snapshot.begin();
+        let end = snapshot.end();
+        let Some(begin_dir_bond) = neighboring_directed_bond(mol, begin) else {
+            continue;
+        };
+        let Some(end_dir_bond) = neighboring_directed_bond(mol, end) else {
+            continue;
+        };
+        let Some(begin_dir_snapshot) = mol.bonds().get(begin_dir_bond.index()) else {
+            continue;
+        };
+        let Some(end_dir_snapshot) = mol.bonds().get(end_dir_bond.index()) else {
+            continue;
+        };
+        let begin_side_stereo_atom = if begin_dir_snapshot.begin() == begin {
+            begin_dir_snapshot.end()
+        } else {
+            begin_dir_snapshot.begin()
+        };
+        let end_side_stereo_atom = if end_dir_snapshot.begin() == end {
+            end_dir_snapshot.end()
+        } else {
+            end_dir_snapshot.begin()
+        };
+        let mut begin_side_bond_direction = begin_dir_snapshot.direction();
+        if begin_dir_snapshot.begin() == begin {
+            begin_side_bond_direction = opposite_dir(begin_side_bond_direction);
+        }
+        let mut end_side_bond_direction = end_dir_snapshot.direction();
+        if end_dir_snapshot.end() == end {
+            end_side_bond_direction = opposite_dir(end_side_bond_direction);
+        }
+        let stereo = if begin_side_bond_direction == end_side_bond_direction {
+            BondStereo::Trans
+        } else {
+            BondStereo::Cis
+        };
+        if let Some(bond) = mol.topology_block_mut().bonds.get_mut(bond_id.index()) {
+            bond.set_stereo_atoms(Some([begin_side_stereo_atom, end_side_stereo_atom]));
+            bond.set_stereo(stereo);
+        }
     }
     Ok(())
 }
@@ -3732,18 +4940,18 @@ pub(crate) fn assign_stereochemistry_from_3d(
     conf_id: usize,
 ) -> Result<(), StereoError> {
     // BEGIN RDKIT CPP FUNCTION assignStereochemistryFrom3D
-    // RDKit❗✔️: void assignStereochemistryFrom3D(ROMol &mol, int confId,
-    // RDKit❗✔️:                                  bool replaceExistingTags) {
-    // RDKit❗✔️:   if (!mol.getNumConformers() || !mol.getConformer(confId).is3D()) {
-    // RDKit❗✔️:     return;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   if (mol.needsUpdatePropertyCache()) {
-    // RDKit❗✔️:     mol.updatePropertyCache(false);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   detectBondStereochemistry(mol, confId);
-    // RDKit❗✔️:   assignChiralTypesFrom3D(mol, confId, replaceExistingTags);
-    // RDKit❗✔️:   assignStereochemistry(mol, replaceExistingTags, true, true);
-    // RDKit❗✔️: }
+    // RDKit✔️✔️: void assignStereochemistryFrom3D(ROMol &mol, int confId,
+    // RDKit✔️✔️:                                  bool replaceExistingTags) {
+    // RDKit✔️✔️:   if (!mol.getNumConformers() || !mol.getConformer(confId).is3D()) {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (mol.needsUpdatePropertyCache()) {
+    // RDKit✔️✔️:     mol.updatePropertyCache(false);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   detectBondStereochemistry(mol, confId);
+    // RDKit✔️✔️:   assignChiralTypesFrom3D(mol, confId, replaceExistingTags);
+    // RDKit✔️✔️:   assignStereochemistry(mol, replaceExistingTags, true, true);
+    // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION assignStereochemistryFrom3D
     let Some(is_3d) = mol
         .conformers_3d()
@@ -3799,14 +5007,14 @@ fn clear_single_bond_dir_flags(mol: &mut Molecule, only_wedge_flags: bool) {
 const QUERY_SCAN_SENTINEL: u32 = 0xDEADBEEF;
 
 fn complete_smiles_query_scan_subset(mol: &mut Molecule) {
-    // RDKit❗✔️: void completeMolQueries(RWMol *mol, unsigned int magicVal) {
-    // RDKit❗✔️:   PRECONDITION(mol, "bad molecule");
-    // RDKit❗✔️:   for (auto atom : mol->atoms()) {
-    // RDKit❗✔️:     if (atom->hasQuery()) {
-    // RDKit❗✔️:       completeQueryAndChildren(atom->getQuery(), atom, magicVal);
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
+    // RDKit✔️✔️: void completeMolQueries(RWMol *mol, unsigned int magicVal) {
+    // RDKit✔️✔️:   PRECONDITION(mol, "bad molecule");
+    // RDKit✔️✔️:   for (auto atom : mol->atoms()) {
+    // RDKit✔️✔️:     if (atom->hasQuery()) {
+    // RDKit✔️✔️:       completeQueryAndChildren(atom->getQuery(), atom, magicVal);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
     // COSMolKit: for the currently modeled SMILES CX query-scan inputs, the
     // sentinel-bearing placeholders are `rb:*` and `s:*`. Both are completed
     // here and `_NeedsQueryScan` is cleared once no unresolved sentinels
@@ -3816,16 +5024,15 @@ fn complete_smiles_query_scan_subset(mol: &mut Molecule) {
     let topology = mol.topology_block_mut();
     let mut unresolved_scan_query = false;
     for (atom_idx, atom) in topology.atoms.iter_mut().enumerate() {
-        let Some(mut query) = atom.query().cloned() else {
+        let Some(query) = atom.query_mut() else {
             continue;
         };
         complete_smiles_query_scan_predicates(
-            &mut query,
+            query,
             ring_counts[atom_idx],
             non_hydrogen_degrees[atom_idx],
         );
-        unresolved_scan_query |= atom_query_has_unresolved_smiles_scan(&query);
-        atom.set_query(Some(query));
+        unresolved_scan_query |= atom_query_has_unresolved_smiles_scan(query);
     }
     if !unresolved_scan_query {
         mol.properties_mut().clear_prop("_NeedsQueryScan");
@@ -4364,7 +5571,7 @@ fn atropisomer_stereo_from_conformer(mol: &Molecule, conf_id: usize) -> Vec<(Bon
 /// coordinates from the given conformer.
 ///
 /// C++ source: `third_party/rdkit/Code/GraphMol/Chirality.cpp:3765-3812`
-fn assign_chiral_types_from_bond_dirs(mol: &mut Molecule, conf_id: usize) {
+pub(crate) fn assign_chiral_types_from_bond_dirs(mol: &mut Molecule, conf_id: usize) {
     // RDKit✔️✔️: void assignChiralTypesFromBondDirs(ROMol &mol, const int confId,
     // RDKit✔️✔️:                                    const bool replaceExistingTags) {
     // RDKit✔️✔️:   if (!mol.getNumConformers()) {
@@ -6630,15 +7837,6 @@ fn atom_neighbors(state: &SmilesBuildState, atom: AtomId) -> Vec<AtomId> {
         .collect()
 }
 
-fn atom_bonds(state: &SmilesBuildState, atom: AtomId) -> Vec<BondId> {
-    state
-        .builder
-        .bonds()
-        .iter()
-        .filter_map(|bond| (bond.begin() == atom || bond.end() == atom).then_some(bond.id()))
-        .collect()
-}
-
 fn parse_cx_linknodes(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -7639,7 +8837,8 @@ fn parse_cx_variable_attachments(
             } else {
                 format!("({} {})", endpoints.len(), endpoints.join(" "))
             };
-            for bond_id in atom_bonds(state, atom_id) {
+            let cached_bonds: Vec<_> = state.builder.neighbor_bonds(atom_id).to_vec();
+            for bond_id in cached_bonds {
                 let bond = state
                     .builder
                     .bond_mut(bond_id)
@@ -9282,6 +10481,24 @@ mod tests {
     }
 
     #[test]
+    fn lexer_emits_legacy_and_single_letter_bracket_atom_payloads() {
+        let mut lexer = SmilesLexer::new("[Uuo][U]");
+
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::AtomOpen);
+        match lexer.next_token().unwrap() {
+            SmilesToken::Atom(atom) => assert_eq!(atom.spec.element().atomic_number(), 118),
+            other => panic!("unexpected token: {other:?}"),
+        }
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::AtomClose);
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::AtomOpen);
+        match lexer.next_token().unwrap() {
+            SmilesToken::Atom(atom) => assert_eq!(atom.spec.element().atomic_number(), 92),
+            other => panic!("unexpected token: {other:?}"),
+        }
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::AtomClose);
+    }
+
+    #[test]
     fn lexer_emits_bond_token_payloads_like_smiles_ll() {
         let mut lexer = SmilesLexer::new("=#:$/\\-><-~");
 
@@ -9333,8 +10550,19 @@ mod tests {
     }
 
     #[test]
+    fn lexer_returns_start_token_before_scanning_input_like_smiles_ll() {
+        let mut lexer = SmilesLexer::with_start_token_for_test("C", SmilesToken::StartMol);
+
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::StartMol);
+        match lexer.next_token().unwrap() {
+            SmilesToken::OrganicAtom(atom) => assert_eq!(atom.spec.element().atomic_number(), 6),
+            other => panic!("unexpected token: {other:?}"),
+        }
+    }
+
+    #[test]
     fn lexer_emits_chiral_class_tokens_like_smiles_ll() {
-        let mut lexer = SmilesLexer::new("@TH@   SP");
+        let mut lexer = SmilesLexer::new("@TH@AL@ SP@TB@OH@");
 
         assert_eq!(
             lexer.next_token().unwrap(),
@@ -9342,8 +10570,46 @@ mod tests {
         );
         assert_eq!(
             lexer.next_token().unwrap(),
+            SmilesToken::ChiralClass(ChiralTag::Allene)
+        );
+        assert_eq!(
+            lexer.next_token().unwrap(),
             SmilesToken::ChiralClass(ChiralTag::SquarePlanar)
         );
+        assert_eq!(
+            lexer.next_token().unwrap(),
+            SmilesToken::ChiralClass(ChiralTag::TrigonalBipyramidal)
+        );
+        assert_eq!(
+            lexer.next_token().unwrap(),
+            SmilesToken::ChiralClass(ChiralTag::Octahedral)
+        );
+    }
+
+    #[test]
+    fn lexer_emits_at_h_atom_state_punctuation_newline_and_bad_character_tokens() {
+        let mut lexer = SmilesLexer::new("@H[#:]&\n");
+
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::At);
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::H);
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::AtomOpen);
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::Hash);
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::Colon);
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::AtomClose);
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::BadCharacter('&'));
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::Eos);
+    }
+
+    #[test]
+    fn lexer_stops_scanning_after_internal_newline_like_smiles_ll() {
+        let mut lexer = SmilesLexer::new("C\nN");
+
+        match lexer.next_token().unwrap() {
+            SmilesToken::OrganicAtom(atom) => assert_eq!(atom.spec.element().atomic_number(), 6),
+            other => panic!("unexpected token: {other:?}"),
+        }
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::Eos);
+        assert_eq!(lexer.next_token().unwrap(), SmilesToken::Eos);
     }
 
     #[test]
@@ -9474,6 +10740,29 @@ mod tests {
     }
 
     #[test]
+    fn build_state_add_disconnected_atom_starts_new_active_fragment_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
+        state
+            .add_disconnected_atom(SmilesAtomToken::new(8))
+            .unwrap();
+        state
+            .add_atom_connected_to_active(SmilesAtomToken::new(9))
+            .unwrap();
+        let molecule = state.into_molecule().unwrap();
+
+        assert_eq!(molecule.atomic_numbers(), vec![6, 8, 9]);
+        assert_eq!(molecule.num_bonds(), 1);
+        assert_eq!(molecule.bonds()[0].begin(), AtomId::new(1));
+        assert_eq!(molecule.bonds()[0].end(), AtomId::new(2));
+        assert_eq!(molecule.bonds()[0].order(), BondOrder::Single);
+        assert_eq!(molecule.bonds()[0].prop(CXSMILES_BOND_IDX_PROP), Some("0"));
+        assert_eq!(molecule.atoms()[0].prop(SMILES_START_PROP), Some("1"));
+        assert_eq!(molecule.atoms()[1].prop(SMILES_START_PROP), Some("1"));
+        assert_eq!(molecule.atoms()[2].prop(SMILES_START_PROP), None);
+    }
+
+    #[test]
     fn build_state_add_atom_connected_to_active_uses_unspecified_bond_type_like_rdkit() {
         let mut state = SmilesBuildState::new();
         state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
@@ -9484,6 +10773,92 @@ mod tests {
 
         assert_eq!(molecule.atomic_numbers(), vec![6, 8]);
         assert_eq!(molecule.num_bonds(), 1);
+        assert_eq!(molecule.bonds()[0].order(), BondOrder::Single);
+        assert_eq!(molecule.bonds()[0].prop(CXSMILES_BOND_IDX_PROP), Some("0"));
+    }
+
+    #[test]
+    fn add_atom_connected_to_active_requires_existing_active_atom() {
+        let error = SmilesBuildState::new()
+            .add_atom_connected_to_active(SmilesAtomToken::new(6))
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            SmilesParseError::ParseError("no active atom".to_string())
+        );
+    }
+
+    #[test]
+    fn add_branch_atom_connected_to_active_tracks_branch_root_and_new_active_atom_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
+        state
+            .add_atom_connected_to_active(SmilesAtomToken::new(6))
+            .unwrap();
+        state
+            .add_branch_atom_connected_to_active(11, SmilesAtomToken::new(8))
+            .unwrap();
+
+        assert_eq!(state.active_atom, Some(AtomId::new(2)));
+        assert_eq!(
+            state.branch_stack,
+            vec![BranchPoint {
+                atom: AtomId::new(1),
+                open_position: 11,
+            }]
+        );
+
+        let molecule = state.into_molecule().unwrap();
+        assert_eq!(molecule.atomic_numbers(), vec![6, 6, 8]);
+        assert_eq!(molecule.num_bonds(), 2);
+        assert_eq!(molecule.bonds()[1].begin(), AtomId::new(1));
+        assert_eq!(molecule.bonds()[1].end(), AtomId::new(2));
+        assert_eq!(molecule.bonds()[1].order(), BondOrder::Single);
+        assert_eq!(molecule.bonds()[1].prop(CXSMILES_BOND_IDX_PROP), Some("1"));
+    }
+
+    #[test]
+    fn add_branch_single_bond_tracks_branch_root_and_single_bond_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
+        state
+            .add_atom_connected_to_active(SmilesAtomToken::new(6))
+            .unwrap();
+        state
+            .add_branch_single_bond(13, SmilesAtomToken::new(8))
+            .unwrap();
+
+        assert_eq!(state.active_atom, Some(AtomId::new(2)));
+        assert_eq!(
+            state.branch_stack,
+            vec![BranchPoint {
+                atom: AtomId::new(1),
+                open_position: 13,
+            }]
+        );
+
+        let molecule = state.into_molecule().unwrap();
+        assert_eq!(molecule.atomic_numbers(), vec![6, 6, 8]);
+        assert_eq!(molecule.bonds()[1].begin(), AtomId::new(1));
+        assert_eq!(molecule.bonds()[1].end(), AtomId::new(2));
+        assert_eq!(molecule.bonds()[1].order(), BondOrder::Single);
+        assert_eq!(molecule.bonds()[1].prop(CXSMILES_BOND_IDX_PROP), Some("1"));
+    }
+
+    #[test]
+    fn add_single_bond_to_atom_adds_explicit_single_bond_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
+        state
+            .add_single_bond_to_atom(SmilesAtomToken::new(8))
+            .unwrap();
+
+        let molecule = state.into_molecule().unwrap();
+        assert_eq!(molecule.atomic_numbers(), vec![6, 8]);
+        assert_eq!(molecule.num_bonds(), 1);
+        assert_eq!(molecule.bonds()[0].begin(), AtomId::new(0));
+        assert_eq!(molecule.bonds()[0].end(), AtomId::new(1));
         assert_eq!(molecule.bonds()[0].order(), BondOrder::Single);
         assert_eq!(molecule.bonds()[0].prop(CXSMILES_BOND_IDX_PROP), Some("0"));
     }
@@ -9526,6 +10901,55 @@ mod tests {
     }
 
     #[test]
+    fn build_state_add_explicit_bond_to_atom_preserves_null_query_bond_like_rdkit_subset() {
+        let mut state = SmilesBuildState::new();
+        state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
+        state
+            .add_explicit_bond_to_atom(SmilesBondToken::null_query(), SmilesAtomToken::new(6))
+            .unwrap();
+        let molecule = state.into_molecule().unwrap();
+
+        assert_eq!(
+            molecule.bonds()[0].query(),
+            Some(&QueryNode::predicate(
+                BondQueryPredicate::UnsupportedFeature("makeBondNullQuery")
+            ))
+        );
+    }
+
+    #[test]
+    fn add_branch_explicit_bond_tracks_branch_root_and_new_active_atom_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
+        state
+            .add_atom_connected_to_active(SmilesAtomToken::new(6))
+            .unwrap();
+        state
+            .add_branch_explicit_bond(
+                17,
+                SmilesBondToken::new(BondOrder::Double),
+                SmilesAtomToken::new(8),
+            )
+            .unwrap();
+
+        assert_eq!(state.active_atom, Some(AtomId::new(2)));
+        assert_eq!(
+            state.branch_stack,
+            vec![BranchPoint {
+                atom: AtomId::new(1),
+                open_position: 17,
+            }]
+        );
+
+        let molecule = state.into_molecule().unwrap();
+        assert_eq!(molecule.atomic_numbers(), vec![6, 6, 8]);
+        assert_eq!(molecule.bonds()[1].begin(), AtomId::new(1));
+        assert_eq!(molecule.bonds()[1].end(), AtomId::new(2));
+        assert_eq!(molecule.bonds()[1].order(), BondOrder::Double);
+        assert_eq!(molecule.bonds()[1].prop(CXSMILES_BOND_IDX_PROP), Some("1"));
+    }
+
+    #[test]
     fn from_smiles_with_sanitize_false_parses_linear_simple_atoms_through_grammar_actions() {
         let molecule = Molecule::from_smiles_with_sanitize("CCO", false).unwrap();
 
@@ -9548,6 +10972,17 @@ mod tests {
     }
 
     #[test]
+    fn from_smiles_with_sanitize_false_keeps_explicit_single_bond_between_aromatic_atoms() {
+        let molecule = Molecule::from_smiles_with_sanitize("c-c", false).unwrap();
+
+        assert_eq!(molecule.atomic_numbers(), vec![6, 6]);
+        assert!(molecule.atoms()[0].is_aromatic());
+        assert!(molecule.atoms()[1].is_aromatic());
+        assert_eq!(molecule.bonds()[0].order(), BondOrder::Single);
+        assert!(!molecule.bonds()[0].is_aromatic());
+    }
+
+    #[test]
     fn from_smiles_with_sanitize_false_sets_unspecified_directional_bond_type_then_cleans_props() {
         let molecule = Molecule::from_smiles_with_sanitize("C/C", false).unwrap();
 
@@ -9559,7 +10994,7 @@ mod tests {
     }
 
     #[test]
-    fn from_smiles_with_sanitize_false_only_clears_wedge_style_single_bond_dirs_like_rdkit() {
+    fn from_smiles_with_sanitize_false_preserves_directional_and_cx_wedge_state_like_rdkit() {
         let directional = Molecule::from_smiles_with_sanitize("C/C", false).unwrap();
         let wedged = Molecule::from_smiles_with_sanitize("CC |wU:1.0|", false).unwrap();
 
@@ -9590,6 +11025,44 @@ mod tests {
             SmilesParseError::ParseError(
                 "CXSMILES extension does not start with | and parseName=false".to_string()
             )
+        );
+    }
+
+    #[test]
+    fn mol_from_smiles_top_level_parses_simple_smiles_like_rdkit() {
+        let molecule = mol_from_smiles("CCO", &SmilesParseParams::default()).unwrap();
+
+        assert_eq!(molecule.atomic_numbers(), vec![6, 6, 8]);
+        assert_eq!(molecule.num_bonds(), 2);
+    }
+
+    #[test]
+    fn mol_from_smiles_top_level_propagates_unclosed_ring_parse_failure_like_rdkit() {
+        let error = mol_from_smiles("C1CC", &SmilesParseParams::default()).unwrap_err();
+
+        assert_eq!(
+            error,
+            SmilesParseError::ParseError("unclosed ring".to_string())
+        );
+    }
+
+    #[test]
+    fn mol_from_smiles_top_level_empty_input_returns_empty_molecule_like_rdkit() {
+        let molecule = mol_from_smiles("", &SmilesParseParams::default()).unwrap();
+
+        assert_eq!(molecule.num_atoms(), 0);
+        assert_eq!(molecule.num_bonds(), 0);
+    }
+
+    #[test]
+    fn mol_from_smiles_preserves_null_query_bond_as_explicit_unsupported_query_like_rdkit_subset() {
+        let molecule = mol_from_smiles("C~C", &SmilesParseParams::default()).unwrap();
+
+        assert_eq!(
+            molecule.bonds()[0].query(),
+            Some(&QueryNode::predicate(
+                BondQueryPredicate::UnsupportedFeature("makeBondNullQuery")
+            ))
         );
     }
 
@@ -10046,6 +11519,84 @@ mod tests {
         stereogenic_double_bond_molecule_with_conformer(same_side, true)
     }
 
+    fn stereogenic_double_bond_molecule_without_conformer() -> Molecule {
+        let mut builder = MoleculeBuilder::new();
+        let c0 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
+        let c1 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
+        let f = builder.add_atom(AtomSpec::new(Element::from_atomic_number(9).unwrap()));
+        let cl = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
+        builder
+            .add_bond(BondSpec::new(c0, c1, BondOrder::Double))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c0, f, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c1, cl, BondOrder::Single))
+            .unwrap();
+        builder.build().unwrap()
+    }
+
+    fn linear_double_bond_3d_molecule() -> Molecule {
+        let mut builder = MoleculeBuilder::new();
+        let c0 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
+        let c1 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
+        let f = builder.add_atom(AtomSpec::new(Element::from_atomic_number(9).unwrap()));
+        let cl = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
+        builder
+            .add_bond(BondSpec::new(c0, c1, BondOrder::Double))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c0, f, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c1, cl, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_conformer(Conformer3D::new(
+                0,
+                vec![
+                    [-1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [-2.0, 0.0, 0.0],
+                    [2.0, 1.0, 0.0],
+                ],
+                true,
+            ))
+            .unwrap();
+        builder.build().unwrap()
+    }
+
+    fn squiggle_neighbor_double_bond_3d_molecule() -> Molecule {
+        let mut builder = MoleculeBuilder::new();
+        let c0 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
+        let c1 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
+        let h = builder.add_atom(AtomSpec::new(Element::H));
+        let cl = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
+        builder
+            .add_bond(BondSpec::new(c0, c1, BondOrder::Double))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(h, c0, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c1, cl, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_conformer(Conformer3D::new(
+                0,
+                vec![
+                    [-1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [-2.0, 1.0, 0.0],
+                    [2.0, 1.0, 0.0],
+                ],
+                true,
+            ))
+            .unwrap();
+        builder.build().unwrap()
+    }
+
     #[test]
     fn clear_dir_flags_marks_unknown_and_clears_non_wedge_directions_like_rdkit() {
         let mut molecule = stereogenic_double_bond_3d_molecule(true);
@@ -10091,6 +11642,301 @@ mod tests {
     }
 
     #[test]
+    fn set_double_bond_neighbor_directions_materializes_symm_sssr_ring_cache_like_rdkit() {
+        let mut molecule = stereogenic_double_bond_3d_molecule(true);
+
+        assert!(molecule.derived_cache().rings.is_none());
+
+        set_double_bond_neighbor_directions(&mut molecule, 0).unwrap();
+
+        let rings = molecule
+            .derived_cache()
+            .rings
+            .as_ref()
+            .expect("ring cache should be materialized before stereo detection");
+        assert!(rings.is_symm_sssr());
+    }
+
+    #[test]
+    fn set_double_bond_neighbor_directions_without_conformer_uses_existing_stereo_like_rdkit() {
+        let mut molecule = stereogenic_double_bond_molecule_without_conformer();
+        molecule.topology_block_mut().bonds[0]
+            .set_stereo_atoms(Some([AtomId::new(2), AtomId::new(3)]));
+        molecule.topology_block_mut().bonds[0].set_stereo(BondStereo::Trans);
+
+        set_double_bond_neighbor_directions_from_stereo(&mut molecule).unwrap();
+
+        assert!(matches!(
+            molecule.bonds()[1].direction(),
+            BondDirection::EndUpRight | BondDirection::EndDownRight
+        ));
+        assert!(matches!(
+            molecule.bonds()[2].direction(),
+            BondDirection::EndUpRight | BondDirection::EndDownRight
+        ));
+
+        set_bond_stereo_from_directions(&mut molecule).unwrap();
+
+        assert_eq!(molecule.bonds()[0].stereo(), BondStereo::Trans);
+        assert_eq!(
+            molecule.bonds()[0].stereo_atoms(),
+            Some([AtomId::new(2), AtomId::new(3)])
+        );
+    }
+
+    #[test]
+    fn set_double_bond_neighbor_directions_marks_linear_arrangement_as_any_like_rdkit() {
+        let mut molecule = linear_double_bond_3d_molecule();
+
+        set_double_bond_neighbor_directions(&mut molecule, 0).unwrap();
+
+        assert_eq!(molecule.bonds()[0].stereo(), BondStereo::Any);
+        assert_eq!(molecule.bonds()[0].stereo_atoms(), None);
+        assert_eq!(molecule.bonds()[1].direction(), BondDirection::None);
+        assert_eq!(molecule.bonds()[2].direction(), BondDirection::None);
+    }
+
+    #[test]
+    fn set_double_bond_neighbor_directions_reorients_existing_dir_to_rdkit_raw_bond_frame() {
+        let mut molecule = stereogenic_double_bond_3d_molecule(true);
+        molecule.topology_block_mut().bonds[1].set_direction(BondDirection::EndUpRight);
+
+        set_double_bond_neighbor_directions(&mut molecule, 0).unwrap();
+        set_bond_stereo_from_directions(&mut molecule).unwrap();
+
+        assert_eq!(molecule.bonds()[1].direction(), BondDirection::EndDownRight);
+        assert_eq!(molecule.bonds()[2].direction(), BondDirection::EndDownRight);
+        assert_eq!(molecule.bonds()[0].stereo(), BondStereo::Cis);
+        assert_eq!(
+            molecule.bonds()[0].stereo_atoms(),
+            Some([AtomId::new(2), AtomId::new(3)])
+        );
+    }
+
+    #[test]
+    fn from_smiles_assigns_ring_closure_double_bond_stereo_atoms_like_rdkit_row_86() {
+        let molecule = Molecule::from_smiles(
+            "C=C1/C(C[C@@H](O)CC1)=C\\C=C2[C@@]3([H])[C@@](CCC\\2)(C)[C@]([C@H](C)/C=C/[C@H](C)C(C)C)([H])CC3",
+        )
+        .unwrap();
+
+        assert_eq!(molecule.bonds()[9].stereo(), BondStereo::Trans);
+        assert_eq!(
+            molecule.bonds()[9].stereo_atoms(),
+            Some([AtomId::new(8), AtomId::new(11)])
+        );
+        assert_eq!(molecule.bonds()[10].stereo(), BondStereo::None);
+        assert_eq!(molecule.bonds()[10].stereo_atoms(), None);
+    }
+
+    #[test]
+    fn from_smiles_does_not_leave_directional_bonds_for_nonstereo_ring_like_rdkit_row_87() {
+        let molecule = Molecule::from_smiles("O=C1OCC(=C1c1ccccc1)c1ccccc1 |c:4|").unwrap();
+        assert_eq!(molecule.bonds()[4].direction(), BondDirection::None);
+        assert_eq!(molecule.bonds()[4].stereo(), BondStereo::None);
+        assert_eq!(molecule.bonds()[4].stereo_atoms(), None);
+    }
+
+    #[test]
+    fn from_smiles_does_not_assign_imine_stereo_without_distinguishable_substituents_like_rdkit_row_88()
+     {
+        let molecule =
+            Molecule::from_smiles("O=C1N(/N=C(/C)C1=NN/C2=C/C(OC)=CC=C2)C=3C=CC=CC=3").unwrap();
+        assert_eq!(molecule.bonds()[3].direction(), BondDirection::None);
+        assert_eq!(molecule.bonds()[3].stereo(), BondStereo::None);
+        assert_eq!(molecule.bonds()[3].stereo_atoms(), None);
+    }
+
+    #[test]
+    fn set_double_bond_neighbor_directions_marks_reverse_squiggle_neighbor_as_any_like_rdkit() {
+        let mut molecule = squiggle_neighbor_double_bond_3d_molecule();
+        molecule.topology_block_mut().bonds[1].set_direction(BondDirection::Unknown);
+        molecule.topology_block_mut().bonds[1].set_unknown_stereo(true);
+
+        set_double_bond_neighbor_directions(&mut molecule, 0).unwrap();
+
+        assert_eq!(molecule.bonds()[0].stereo(), BondStereo::Any);
+        assert_eq!(molecule.bonds()[0].stereo_atoms(), None);
+        assert_eq!(molecule.bonds()[1].direction(), BondDirection::Unknown);
+        assert!(molecule.bonds()[1].unknown_stereo());
+    }
+
+    #[test]
+    fn from_mol_block_row_569_keeps_rdkit_control_bond_choice_for_2d_double_bond_dirs() {
+        let molecule = Molecule::from_mol_block(
+            r#"
+     RDKit          2D
+
+ 36 40  0  0  0  0  0  0  0  0999 V2000
+   -7.1003   -0.3581    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -5.6013   -0.4152    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+   -4.8025    0.8544    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -5.5026    2.1810    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -7.0015    2.2381    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+   -4.7037    3.4506    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -3.2048    3.3936    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.5047    2.0670    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.0058    2.0099    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.3058    0.6833    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.1932    0.6263    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.9920    1.8959    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    3.4887    1.9958    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    4.4493    0.8438    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    5.9273    1.0996    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    7.4053    1.3555    0.0000 F   0  0  0  0  0  0  0  0  0  0  0  0
+    6.1831   -0.3784    0.0000 F   0  0  0  0  0  0  0  0  0  0  0  0
+    5.6714    2.5776    0.0000 F   0  0  0  0  0  0  0  0  0  0  0  0
+    3.9318   -0.5642    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+    1.4344    3.2884    0.0000 S   0  0  0  0  0  0  0  0  0  0  0  0
+    2.5865    4.2490    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    3.8561    3.4501    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.1046   -0.5863    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.6035   -0.5292    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -3.3036    0.7974    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.4045   -1.9129    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.2034   -3.1825    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.7023   -3.1254    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -3.4024   -1.7988    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.5033   -4.5091    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0
+    0.9956   -4.5661    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    2.3846   -5.1323    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.6792   -6.0323    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.7945   -3.2965    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.0944   -1.9699    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.8932   -0.7003    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  2  3  1  0
+  3  4  2  0
+  4  5  1  0
+  4  6  1  0
+  6  7  2  0
+  7  8  1  0
+  8  9  1  0
+  9 10  1  0
+ 10 11  2  0
+ 11 12  1  0
+ 12 13  2  0
+ 13 14  1  0
+ 14 15  1  0
+ 15 16  1  0
+ 15 17  1  0
+ 15 18  1  0
+ 14 19  1  1
+ 12 20  1  0
+ 20 21  1  0
+ 21 22  2  0
+ 10 23  1  0
+ 23 24  1  0
+ 24 25  1  0
+ 23 26  2  0
+ 26 27  1  0
+ 27 28  2  0
+ 28 29  1  0
+ 27 30  1  0
+ 30 31  1  0
+ 31 32  1  0
+ 31 33  1  0
+ 31 34  1  0
+ 34 35  2  0
+ 35 36  1  0
+ 25  3  1  0
+ 25  8  2  0
+ 22 13  1  0
+ 29 24  2  0
+ 35 26  1  0
+M  END
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(molecule.bonds()[8].direction(), BondDirection::EndUpRight);
+        assert_eq!(
+            molecule.bonds()[10].direction(),
+            BondDirection::EndDownRight
+        );
+        assert_eq!(molecule.bonds()[21].direction(), BondDirection::EndUpRight);
+    }
+
+    #[test]
+    fn from_mol_block_row_681_keeps_rdkit_reverse_sorted_double_bond_processing_order() {
+        let molecule = Molecule::from_mol_block(
+            r#"
+     RDKit          2D
+
+ 29 31  0  0  0  0  0  0  0  0999 V2000
+    4.4613    2.0068    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    5.5173    0.9414    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    5.1226   -0.5057    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    6.1786   -1.5711    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    7.6292   -1.1893    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    8.6851   -2.2546    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+    8.0238    0.2579    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    6.9679    1.3232    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    3.6720   -0.8875    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    2.6161    0.1778    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.1655   -0.2040    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.1095    0.8614    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.3411    0.4796    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.7357   -0.9676    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.6798   -2.0330    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.7708   -1.6512    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.8236    0.2515    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.1524    1.7412    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -3.6500    1.8263    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -4.3251    3.1658    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -4.4725    0.5719    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -5.9701    0.6571    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -6.7927   -0.5973    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -8.2902   -0.5121    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -6.1176   -1.9368    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -6.9401   -3.1912    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -4.6200   -2.0219    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.2033    2.9027    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.1947    2.3589    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  2  0
+  2  3  1  0
+  3  4  1  0
+  4  5  1  0
+  5  6  1  6
+  5  7  1  0
+  7  8  1  0
+  3  9  2  0
+  9 10  1  0
+ 10 11  2  0
+ 11 12  1  0
+ 12 13  1  0
+ 13 14  1  0
+ 14 15  1  0
+ 15 16  1  0
+ 13 17  1  1
+ 13 18  1  0
+ 18 19  1  0
+ 19 20  1  1
+ 19 21  1  0
+ 21 22  2  0
+ 22 23  1  0
+ 23 24  1  1
+ 23 25  1  0
+ 25 26  1  0
+ 25 27  1  0
+ 18 28  1  1
+ 28 29  1  0
+  8  2  1  0
+ 16 11  1  0
+ 12 29  1  1
+M  END
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(molecule.bonds()[1].direction(), BondDirection::EndDownRight);
+        assert_eq!(molecule.bonds()[2].direction(), BondDirection::EndDownRight);
+        assert_eq!(molecule.bonds()[8].direction(), BondDirection::EndUpRight);
+        assert_eq!(molecule.bonds()[10].direction(), BondDirection::EndUpRight);
+        assert_eq!(molecule.bonds()[29].direction(), BondDirection::EndUpRight);
+    }
+
+    #[test]
     fn set_bond_stereo_from_directions_assigns_cis_for_same_side_neighbors() {
         let mut molecule = stereogenic_double_bond_3d_molecule(true);
         set_double_bond_neighbor_directions(&mut molecule, 0).unwrap();
@@ -10102,6 +11948,21 @@ mod tests {
             molecule.bonds()[0].stereo_atoms(),
             Some([AtomId::new(2), AtomId::new(3)])
         );
+    }
+
+    #[test]
+    fn set_bond_stereo_from_directions_leaves_stereo_unset_without_both_neighbor_dirs_like_rdkit() {
+        let mut molecule = stereogenic_double_bond_molecule_without_conformer();
+        molecule.topology_block_mut().bonds[1].set_direction(BondDirection::EndUpRight);
+        molecule
+            .properties_mut()
+            .set_prop("_needsDetectBondStereo", "1");
+
+        set_bond_stereo_from_directions(&mut molecule).unwrap();
+
+        assert_eq!(molecule.bonds()[0].stereo(), BondStereo::None);
+        assert_eq!(molecule.bonds()[0].stereo_atoms(), None);
+        assert_eq!(molecule.prop("_needsDetectBondStereo"), None);
     }
 
     #[test]
@@ -10138,6 +11999,19 @@ mod tests {
     #[test]
     fn stereochemistry_from_3d_ignores_non_3d_conformer_like_rdkit() {
         let mut molecule = stereogenic_double_bond_molecule_with_conformer(false, false);
+        molecule.topology_block_mut().bonds[1].set_direction(BondDirection::EndUpRight);
+        molecule.topology_block_mut().bonds[2].set_direction(BondDirection::EndDownRight);
+
+        assign_stereochemistry_from_3d(&mut molecule, 0).unwrap();
+
+        assert_eq!(molecule.bonds()[0].stereo(), BondStereo::None);
+        assert_eq!(molecule.bonds()[1].direction(), BondDirection::EndUpRight);
+        assert_eq!(molecule.bonds()[2].direction(), BondDirection::EndDownRight);
+    }
+
+    #[test]
+    fn stereochemistry_from_3d_ignores_molecule_without_conformer_like_rdkit() {
+        let mut molecule = stereogenic_double_bond_molecule_without_conformer();
         molecule.topology_block_mut().bonds[1].set_direction(BondDirection::EndUpRight);
         molecule.topology_block_mut().bonds[2].set_direction(BondDirection::EndDownRight);
 
@@ -10660,8 +12534,173 @@ mod tests {
     }
 
     #[test]
-    fn handle_cx_part_and_name_clears_wedged_single_bond_dirs_after_atom_stereo_perception_like_rdkit()
-     {
+    fn atom_has_fourth_valence_uses_explicit_h_and_false_fallback_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        let explicit_h = state
+            .builder
+            .add_atom(AtomSpec::new(Element::C).with_explicit_hydrogens(1));
+        let plain = state.builder.add_atom(AtomSpec::new(Element::C));
+        assert!(state.atom_has_fourth_valence(explicit_h).unwrap());
+        assert!(!state.atom_has_fourth_valence(plain).unwrap());
+    }
+
+    #[test]
+    fn is_unsaturated_distinguishes_multiple_bonds_from_dative_like_rdkit() {
+        let mut saturated = SmilesBuildState::new();
+        let a0 = saturated.builder.add_atom(AtomSpec::new(Element::C));
+        let a1 = saturated.builder.add_atom(AtomSpec::new(Element::O));
+        saturated
+            .builder
+            .add_bond(BondSpec::new(a0, a1, BondOrder::Dative))
+            .unwrap();
+        assert!(!saturated.is_unsaturated(a0));
+
+        let mut unsaturated = SmilesBuildState::new();
+        let b0 = unsaturated.builder.add_atom(AtomSpec::new(Element::C));
+        let b1 = unsaturated.builder.add_atom(AtomSpec::new(Element::O));
+        unsaturated
+            .builder
+            .add_bond(BondSpec::new(b0, b1, BondOrder::Double))
+            .unwrap();
+    }
+
+    #[test]
+    fn perturbation_order_counts_probe_swaps_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        let center = state.builder.add_atom(AtomSpec::new(Element::C));
+        let n1 = state.builder.add_atom(AtomSpec::new(Element::F));
+        let n2 = state.builder.add_atom(AtomSpec::new(Element::CL));
+        let n3 = state.builder.add_atom(AtomSpec::new(Element::BR));
+        state
+            .builder
+            .add_bond(BondSpec::new(center, n1, BondOrder::Single))
+            .unwrap();
+        state
+            .builder
+            .add_bond(BondSpec::new(center, n2, BondOrder::Single))
+            .unwrap();
+        state
+            .builder
+            .add_bond(BondSpec::new(center, n3, BondOrder::Single))
+            .unwrap();
+        assert_eq!(state.perturbation_order(center, &[2, 1, 0]).unwrap(), 1);
+    }
+
+    #[test]
+    fn perturbation_order_rejects_size_mismatch_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        let center = state.builder.add_atom(AtomSpec::new(Element::C));
+        let n1 = state.builder.add_atom(AtomSpec::new(Element::F));
+        let n2 = state.builder.add_atom(AtomSpec::new(Element::CL));
+        state
+            .builder
+            .add_bond(BondSpec::new(center, n1, BondOrder::Single))
+            .unwrap();
+        state
+            .builder
+            .add_bond(BondSpec::new(center, n2, BondOrder::Single))
+            .unwrap();
+
+        let error = state.perturbation_order(center, &[0]).unwrap_err();
+
+        assert_eq!(
+            error,
+            SmilesParseError::ParseError("size mismatch".to_string())
+        );
+    }
+
+    #[test]
+    fn perturbation_order_rejects_missing_probe_element_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        let center = state.builder.add_atom(AtomSpec::new(Element::C));
+        let n1 = state.builder.add_atom(AtomSpec::new(Element::F));
+        let n2 = state.builder.add_atom(AtomSpec::new(Element::CL));
+        state
+            .builder
+            .add_bond(BondSpec::new(center, n1, BondOrder::Single))
+            .unwrap();
+        state
+            .builder
+            .add_bond(BondSpec::new(center, n2, BondOrder::Single))
+            .unwrap();
+
+        let error = state.perturbation_order(center, &[0, 9]).unwrap_err();
+
+        assert_eq!(
+            error,
+            SmilesParseError::ParseError("could not find probe element".to_string())
+        );
+    }
+
+    #[test]
+    fn chiral_atom_needs_tag_inversion_matches_rdkit_degree_and_unsaturation_rules() {
+        let mut first_atom = SmilesBuildState::new();
+        let first = first_atom
+            .builder
+            .add_atom(AtomSpec::new(Element::C).with_explicit_hydrogens(1));
+        let f1 = first_atom.builder.add_atom(AtomSpec::new(Element::F));
+        let f2 = first_atom.builder.add_atom(AtomSpec::new(Element::CL));
+        let f3 = first_atom.builder.add_atom(AtomSpec::new(Element::BR));
+        first_atom.smiles_start_atoms.insert(first);
+        first_atom
+            .builder
+            .add_bond(BondSpec::new(first, f1, BondOrder::Single))
+            .unwrap();
+        first_atom
+            .builder
+            .add_bond(BondSpec::new(first, f2, BondOrder::Single))
+            .unwrap();
+        first_atom
+            .builder
+            .add_bond(BondSpec::new(first, f3, BondOrder::Single))
+            .unwrap();
+        assert!(
+            first_atom
+                .chiral_atom_needs_tag_inversion(first, 0)
+                .unwrap()
+        );
+
+        let mut closure_atom = SmilesBuildState::new();
+        let s0 = closure_atom.builder.add_atom(AtomSpec::new(Element::C));
+        let s1 = closure_atom.builder.add_atom(AtomSpec::new(Element::C));
+        let s2 = closure_atom.builder.add_atom(AtomSpec::new(Element::F));
+        let s3 = closure_atom.builder.add_atom(AtomSpec::new(Element::CL));
+        closure_atom
+            .builder
+            .add_bond(BondSpec::new(s0, s1, BondOrder::Single))
+            .unwrap();
+        closure_atom
+            .builder
+            .add_bond(BondSpec::new(s1, s2, BondOrder::Single))
+            .unwrap();
+        closure_atom
+            .builder
+            .add_bond(BondSpec::new(s1, s3, BondOrder::Single))
+            .unwrap();
+        assert!(closure_atom.chiral_atom_needs_tag_inversion(s1, 1).unwrap());
+
+        let mut unsaturated = SmilesBuildState::new();
+        let u0 = unsaturated.builder.add_atom(AtomSpec::new(Element::C));
+        let u1 = unsaturated.builder.add_atom(AtomSpec::new(Element::S));
+        let u2 = unsaturated.builder.add_atom(AtomSpec::new(Element::O));
+        let u3 = unsaturated.builder.add_atom(AtomSpec::new(Element::CL));
+        unsaturated
+            .builder
+            .add_bond(BondSpec::new(u0, u1, BondOrder::Single))
+            .unwrap();
+        unsaturated
+            .builder
+            .add_bond(BondSpec::new(u1, u2, BondOrder::Double))
+            .unwrap();
+        unsaturated
+            .builder
+            .add_bond(BondSpec::new(u1, u3, BondOrder::Single))
+            .unwrap();
+        assert!(!unsaturated.chiral_atom_needs_tag_inversion(u1, 1).unwrap());
+    }
+
+    #[test]
+    fn handle_cx_part_and_name_records_wedged_single_bond_cfg_like_rdkit() {
         let molecule = Molecule::from_smiles_with_sanitize("CC |wU:1.0|", false).unwrap();
 
         assert_eq!(molecule.bonds()[0].begin(), AtomId::new(1));
@@ -10672,14 +12711,12 @@ mod tests {
     }
 
     #[test]
-    fn handle_cx_part_and_name_clears_wiggly_single_bond_dirs_and_marks_unknown_stereo_like_rdkit()
-    {
+    fn handle_cx_part_and_name_records_wiggly_single_bond_cfg_like_rdkit() {
         let molecule = Molecule::from_smiles_with_sanitize("CC |w:1.0|", false).unwrap();
 
         assert_eq!(molecule.bonds()[0].begin(), AtomId::new(1));
         assert_eq!(molecule.bonds()[0].end(), AtomId::new(0));
         assert_eq!(molecule.bonds()[0].direction(), BondDirection::None);
-        assert!(molecule.bonds()[0].unknown_stereo());
         assert_eq!(molecule.bonds()[0].prop("_MolFileBondCfg"), Some("2"));
         assert_eq!(
             molecule.properties().prop("_needsDetectBondStereo"),
@@ -11542,6 +13579,50 @@ mod tests {
     }
 
     #[test]
+    fn from_smiles_with_sanitize_false_preserves_tetrahedral_chirality_across_ring_closure_ordering_like_rdkit()
+     {
+        let linear = Molecule::from_smiles_with_sanitize("F[C@](Cl)(Br)I", false).unwrap();
+        let closure = Molecule::from_smiles_with_sanitize("F[C@]1(Br)I.Cl1", false).unwrap();
+
+        assert_eq!(
+            linear.atoms()[1].chiral_tag(),
+            closure.atoms()[1].chiral_tag()
+        );
+    }
+
+    #[test]
+    fn from_smiles_with_sanitize_false_parses_fused_ring_row_94_like_rdkit() {
+        let molecule = Molecule::from_smiles_with_sanitize(
+            "Cl.Cl.COc1ccc2nccc([C@@H](O)[C@@H]3C[C@@H]4CCN3C[C@@H]4C=C)c2c1",
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(molecule.num_atoms(), 26);
+        assert_eq!(
+            molecule
+                .atomic_numbers()
+                .iter()
+                .filter(|&&z| z == 17)
+                .count(),
+            2
+        );
+        assert_eq!(
+            molecule
+                .atoms()
+                .iter()
+                .filter(|atom| {
+                    matches!(
+                        atom.chiral_tag(),
+                        ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+                    )
+                })
+                .count(),
+            4
+        );
+    }
+
+    #[test]
     fn from_smiles_with_sanitize_false_restores_active_atom_after_branch() {
         let molecule = Molecule::from_smiles_with_sanitize("CC(C)O", false).unwrap();
 
@@ -11567,6 +13648,47 @@ mod tests {
     }
 
     #[test]
+    fn close_branch_pops_branch_stack_in_lifo_order_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        let a0 = state.builder.add_atom(AtomSpec::new(Element::C));
+        let a1 = state.builder.add_atom(AtomSpec::new(Element::N));
+        state.branch_stack.push(BranchPoint {
+            atom: a0,
+            open_position: 1,
+        });
+        state.branch_stack.push(BranchPoint {
+            atom: a1,
+            open_position: 3,
+        });
+        state.active_atom = Some(AtomId::new(99));
+
+        state.close_branch().unwrap();
+        assert_eq!(state.active_atom, Some(a1));
+        assert_eq!(state.branch_stack.len(), 1);
+
+        state.close_branch().unwrap();
+        assert_eq!(state.active_atom, Some(a0));
+        assert!(state.branch_stack.is_empty());
+    }
+
+    #[test]
+    fn close_branch_reports_extra_close_parentheses_without_open_branch_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+
+        let error = state.close_branch().unwrap_err();
+
+        assert_eq!(
+            error,
+            SmilesParseError::ParseError("extra close parentheses".to_string())
+        );
+    }
+
+    #[test]
+    fn branch_open_token_returns_current_position_like_rdkit() {
+        assert_eq!(SmilesBuildState::branch_open_token(7), 7);
+    }
+
+    #[test]
     fn from_smiles_with_sanitize_false_parses_explicit_branch_bond() {
         let molecule = Molecule::from_smiles_with_sanitize("C(=O)N", false).unwrap();
 
@@ -11580,13 +13702,93 @@ mod tests {
     }
 
     #[test]
+    fn add_ring_marker_records_pending_opening_and_closure_bookkeeping_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
+        state.add_ring_marker(7).unwrap();
+
+        assert_eq!(
+            state.ring_openings.get(&7),
+            Some(&RingOpening {
+                atom: AtomId::new(0),
+                pending_bond: Some(PendingBond {
+                    token: SmilesBondToken::directional(BondDirection::None),
+                    cx_smiles_bond_idx: None,
+                }),
+                input_position: 0,
+            })
+        );
+        assert_eq!(
+            state.ring_closures_by_atom.get(&AtomId::new(0)),
+            Some(&vec![RingClosureRecord {
+                ring_number: 7,
+                bond: None,
+            }])
+        );
+    }
+
+    #[test]
+    fn add_single_bond_ring_marker_records_single_bond_pending_opening_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
+        state.add_single_bond_ring_marker(9).unwrap();
+
+        assert_eq!(
+            state.ring_openings.get(&9),
+            Some(&RingOpening {
+                atom: AtomId::new(0),
+                pending_bond: Some(PendingBond {
+                    token: SmilesBondToken::new(BondOrder::Single),
+                    cx_smiles_bond_idx: None,
+                }),
+                input_position: 0,
+            })
+        );
+        assert_eq!(
+            state.ring_closures_by_atom.get(&AtomId::new(0)),
+            Some(&vec![RingClosureRecord {
+                ring_number: 9,
+                bond: None,
+            }])
+        );
+    }
+
+    #[test]
+    fn add_explicit_bond_ring_marker_records_pending_explicit_bond_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
+        state
+            .add_explicit_bond_ring_marker(SmilesBondToken::new(BondOrder::Double), 4)
+            .unwrap();
+
+        assert_eq!(
+            state.ring_openings.get(&4),
+            Some(&RingOpening {
+                atom: AtomId::new(0),
+                pending_bond: Some(PendingBond {
+                    token: SmilesBondToken::new(BondOrder::Double),
+                    cx_smiles_bond_idx: None,
+                }),
+                input_position: 0,
+            })
+        );
+        assert_eq!(
+            state.ring_closures_by_atom.get(&AtomId::new(0)),
+            Some(&vec![RingClosureRecord {
+                ring_number: 4,
+                bond: None,
+            }])
+        );
+    }
+
+    #[test]
     fn from_smiles_with_sanitize_false_closes_simple_ring_numbers() {
         let molecule = Molecule::from_smiles_with_sanitize("C1CC1", false).unwrap();
 
         assert_eq!(molecule.atomic_numbers(), vec![6, 6, 6]);
         assert_eq!(molecule.num_bonds(), 3);
-        assert_eq!(molecule.bonds()[2].begin(), AtomId::new(0));
-        assert_eq!(molecule.bonds()[2].end(), AtomId::new(2));
+        assert_eq!(molecule.bonds()[2].begin(), AtomId::new(2));
+        assert_eq!(molecule.bonds()[2].end(), AtomId::new(0));
         assert_eq!(molecule.bonds()[2].order(), BondOrder::Single);
     }
 
@@ -11596,8 +13798,8 @@ mod tests {
 
         assert_eq!(molecule.num_atoms(), 3);
         assert_eq!(molecule.num_bonds(), 3);
-        assert_eq!(molecule.bonds()[2].begin(), AtomId::new(0));
-        assert_eq!(molecule.bonds()[2].end(), AtomId::new(2));
+        assert_eq!(molecule.bonds()[2].begin(), AtomId::new(2));
+        assert_eq!(molecule.bonds()[2].end(), AtomId::new(0));
     }
 
     #[test]
@@ -11608,6 +13810,63 @@ mod tests {
             error,
             SmilesParseError::ParseError("unclosed ring".to_string())
         );
+    }
+
+    #[test]
+    fn finish_parse_reports_unclosed_ring_before_invalid_chirality_like_rdkit() {
+        let error = to_mol("C1[C@TH3]").unwrap_err();
+
+        assert_eq!(
+            error,
+            SmilesParseError::ParseError("unclosed ring".to_string())
+        );
+    }
+
+    #[test]
+    fn close_mol_rings_accepts_empty_pending_state_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+
+        state.close_mol_rings().unwrap();
+    }
+
+    #[test]
+    fn close_mol_rings_reports_unclosed_ring_for_remaining_opening_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
+        state.add_ring_marker(1).unwrap();
+
+        let error = state.close_mol_rings().unwrap_err();
+
+        assert_eq!(
+            error,
+            SmilesParseError::ParseError("unclosed ring".to_string())
+        );
+    }
+
+    #[test]
+    fn second_ring_marker_preallocates_cx_smiles_bond_idx_like_rdkit() {
+        let mut state = SmilesBuildState::new();
+        state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
+        state.add_ring_marker(1).unwrap();
+        state
+            .add_atom_connected_to_active(SmilesAtomToken::new(6))
+            .unwrap();
+        state
+            .add_atom_connected_to_active(SmilesAtomToken::new(6))
+            .unwrap();
+        state.add_ring_marker(1).unwrap();
+
+        let closure = state.pending_ring_closures.first().unwrap();
+        assert_eq!(closure.opening_pending_bond.cx_smiles_bond_idx, None);
+        assert_eq!(closure.closing_pending_bond.cx_smiles_bond_idx, Some(2));
+    }
+
+    #[test]
+    fn from_smiles_cleanup_clears_ring_closure_cx_smiles_bond_idx_like_rdkit() {
+        let molecule = Molecule::from_smiles_with_sanitize("C1CC1", false).unwrap();
+
+        let ring_bond = molecule.bonds()[2].prop(CXSMILES_BOND_IDX_PROP);
+        assert_eq!(ring_bond, None);
     }
 
     #[test]
@@ -11655,6 +13914,18 @@ mod tests {
     }
 
     #[test]
+    fn from_smiles_with_sanitize_false_reports_empty_branch_payload_like_rdkit_parser_boundary() {
+        let error = Molecule::from_smiles_with_sanitize("C()", false).unwrap_err();
+
+        assert_eq!(
+            error,
+            SmilesParseError::ParseError(
+                "expected branch atom or bond, got GroupClose".to_string()
+            )
+        );
+    }
+
+    #[test]
     fn from_smiles_with_sanitize_false_reports_bad_character_as_syntax_error_like_rdkit() {
         let error = Molecule::from_smiles_with_sanitize("C&N", false).unwrap_err();
 
@@ -11679,6 +13950,16 @@ mod tests {
         let molecule = Molecule::from_smiles_with_sanitize("C1CC=1", false).unwrap();
 
         assert_eq!(molecule.num_bonds(), 3);
+        assert_eq!(molecule.bonds()[2].begin(), AtomId::new(2));
+        assert_eq!(molecule.bonds()[2].end(), AtomId::new(0));
+        assert_eq!(molecule.bonds()[2].order(), BondOrder::Double);
+    }
+
+    #[test]
+    fn from_smiles_with_sanitize_false_ignores_conflicting_closing_ring_bond_spec_like_rdkit() {
+        let molecule = Molecule::from_smiles_with_sanitize("C=1CC-1", false).unwrap();
+
+        assert_eq!(molecule.num_bonds(), 3);
         assert_eq!(molecule.bonds()[2].begin(), AtomId::new(0));
         assert_eq!(molecule.bonds()[2].end(), AtomId::new(2));
         assert_eq!(molecule.bonds()[2].order(), BondOrder::Double);
@@ -11698,6 +13979,114 @@ mod tests {
                 .iter()
                 .all(|bond| bond.order() == BondOrder::Aromatic)
         );
+    }
+
+    #[test]
+    fn from_smiles_converts_non_ring_aromatic_bridge_to_single_like_rdkit_biphenyl() {
+        let molecule = Molecule::from_smiles("c1ccccc1c1ccccc1").unwrap();
+
+        let aromatic_bridge_bonds = molecule
+            .bonds()
+            .iter()
+            .filter(|bond| {
+                molecule.atoms()[bond.begin().index()].is_aromatic()
+                    && molecule.atoms()[bond.end().index()].is_aromatic()
+                    && !bond.is_aromatic()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(aromatic_bridge_bonds.len(), 1);
+        assert_eq!(aromatic_bridge_bonds[0].order(), BondOrder::Single);
+    }
+
+    #[test]
+    fn from_smiles_clears_nonunique_tetrahedral_tag_like_rdkit_row_92() {
+        let molecule = Molecule::from_smiles(
+            "O/C1=C/C=C/C=C1/CN3CCN(CC=2C=CC=CC=2O)[C@]3([H])C=4/C=C(/OC)C(=CC=4)OC",
+        )
+        .unwrap();
+
+        assert!(
+            molecule
+                .atoms()
+                .iter()
+                .all(|atom| atom.chiral_tag() == ChiralTag::Unspecified)
+        );
+    }
+
+    #[test]
+    fn from_smiles_preserves_ring_special_case_chiral_tags_like_rdkit_row_83() {
+        let molecule = Molecule::from_smiles(
+            "O=C(NC[C@]12C[C@H]3C[C@H](C[C@H](C3)C1)C2)[C@@H]1C[C@H]2c3ccccc3[C@@H]1c1ccccc12",
+        )
+        .unwrap();
+
+        let tagged_atom_indices = molecule
+            .atoms()
+            .iter()
+            .enumerate()
+            .filter(|(_, atom)| atom.chiral_tag() != ChiralTag::Unspecified)
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+
+        assert_eq!(tagged_atom_indices, vec![4, 6, 8, 10, 14, 16, 23]);
+    }
+
+    #[test]
+    fn from_smiles_assigns_ring_closure_double_bond_stereo_like_rdkit_row_106() {
+        let molecule =
+            Molecule::from_smiles("O=C(N(C(S/1)=S)CCC(O)=O)C1=C\\C2=CC=C(C3=CC=C(C=C3)Cl)O2")
+                .unwrap();
+
+        let directional_bonds = molecule
+            .bonds()
+            .iter()
+            .filter(|bond| {
+                matches!(
+                    bond.direction(),
+                    BondDirection::EndUpRight | BondDirection::EndDownRight
+                )
+            })
+            .count();
+        let stereo_double_bonds = molecule
+            .bonds()
+            .iter()
+            .filter(|bond| {
+                matches!(
+                    bond.stereo(),
+                    BondStereo::Cis | BondStereo::Trans | BondStereo::E | BondStereo::Z
+                ) && bond.stereo_atoms().is_some()
+            })
+            .count();
+
+        assert_eq!(directional_bonds, 2);
+        assert_eq!(stereo_double_bonds, 1);
+    }
+
+    #[test]
+    fn from_smiles_marks_stereochemistry_done_after_final_assignment_like_rdkit() {
+        let molecule = Molecule::from_smiles("C[C@H]1CCC[C@](C)(O)C1").unwrap();
+
+        assert_eq!(molecule.prop("_StereochemDone"), Some("1"));
+    }
+
+    #[test]
+    #[ignore = "debug helper for row 121 bond construction order"]
+    fn debug_row_121_bond_construction_order() {
+        let molecule = Molecule::from_smiles(
+            "O=C(O[Na])CC1=C(C(C(O[Na])=O)=C(C)C2=CC3=[N]4C(C(C=O)=C3CC)=CC5=C(C=C)C(C)=C6[N-]75)[N-]2[Cu+2]47[N](C8=C6)=C1C(C8C)CCC(O[Na])=O",
+        )
+        .unwrap();
+        for bond in molecule.bonds() {
+            eprintln!(
+                "{} {} {} {:?} {}",
+                bond.id().index(),
+                bond.begin().index(),
+                bond.end().index(),
+                bond.order(),
+                u8::from(bond.is_aromatic())
+            );
+        }
     }
 
     #[test]
@@ -11727,6 +14116,26 @@ mod tests {
     }
 
     #[test]
+    fn from_smiles_default_adjusts_disappearing_pyrrolic_hydrogen_like_rdkit() {
+        let molecule = Molecule::from_smiles("c1cccN1").unwrap();
+
+        assert!(molecule.atoms()[4].is_aromatic());
+        assert_eq!(molecule.atoms()[4].explicit_hydrogens(), 1);
+    }
+
+    #[test]
+    fn from_smiles_default_preserves_explicit_bracket_pyrrolic_hydrogen_like_rdkit() {
+        let unsanitized = Molecule::from_smiles_with_sanitize("[nH]1cccc1", false).unwrap();
+        assert_eq!(unsanitized.atoms()[0].explicit_hydrogens(), 1);
+        assert!(unsanitized.atoms()[0].no_implicit());
+
+        let molecule = Molecule::from_smiles("[nH]1cccc1").unwrap();
+        assert!(molecule.atoms()[0].is_aromatic());
+        assert_eq!(molecule.atoms()[0].explicit_hydrogens(), 1);
+        assert!(!molecule.atoms()[0].no_implicit());
+    }
+
+    #[test]
     fn from_smiles_default_removes_directional_h_with_sanitize_integration() {
         // Directional hydrogen with default sanitize now works through
         // the registered operations pipeline.
@@ -11750,6 +14159,116 @@ mod tests {
         assert_eq!(molecule.atomic_numbers(), vec![6]);
         assert_eq!(molecule.num_bonds(), 0);
         assert_eq!(molecule.atoms()[0].explicit_hydrogens(), 4);
+    }
+
+    #[test]
+    fn from_smiles_with_sanitize_false_keeps_explicit_hydrogen_like_rdkit_python_api() {
+        let molecule = Molecule::from_smiles_with_sanitize("[CH3][H]", false).unwrap();
+
+        assert_eq!(molecule.atomic_numbers(), vec![6, 1]);
+        assert_eq!(molecule.num_bonds(), 1);
+        assert_eq!(molecule.atoms()[0].explicit_hydrogens(), 3);
+    }
+
+    #[test]
+    fn from_smiles_with_sanitize_false_leaves_small_ring_double_bond_stereo_unassigned_like_rdkit()
+    {
+        let molecule = Molecule::from_smiles_with_sanitize("C1/C=C/C2=C/CCCC2C1", false).unwrap();
+
+        assert_eq!(molecule.prop("_StereochemDone"), None);
+        // RDKit 2026.03.1 Python `MolFromSmiles(..., sanitize=False)` leaves
+        // the raw directional single bonds in place but does not finalize
+        // small-ring double-bond stereo on the returned molecule.
+        assert_eq!(molecule.bonds()[1].stereo(), BondStereo::None);
+        assert_eq!(molecule.bonds()[1].stereo_atoms(), None);
+    }
+
+    #[test]
+    fn from_smiles_persists_ring_stereo_props_like_rdkit_special_case_path() {
+        let molecule = Molecule::from_smiles("C1[C@H](F)CC[C@H](Cl)C1").unwrap();
+
+        assert_eq!(molecule.atoms()[1].prop("_ringStereochemCand"), Some("1"));
+        assert_eq!(molecule.atoms()[1].prop("_ringStereoAtoms"), Some("6"));
+        assert_eq!(molecule.atoms()[5].prop("_ringStereochemCand"), Some("1"));
+        assert_eq!(molecule.atoms()[5].prop("_ringStereoAtoms"), Some("2"));
+    }
+
+    #[test]
+    fn from_smiles_reranks_chiral_center_after_double_bond_stereo_assignment_like_rdkit() {
+        let molecule = Molecule::from_smiles("F[C@H](C/C=C/C)C/C=C\\C").unwrap();
+
+        assert_eq!(molecule.atoms()[1].prop("_CIPCode"), Some("R"));
+        assert_eq!(molecule.bonds()[3].stereo(), BondStereo::Trans);
+        assert_eq!(
+            molecule.bonds()[3].stereo_atoms(),
+            Some([AtomId::new(2), AtomId::new(5)])
+        );
+        assert_eq!(molecule.bonds()[7].stereo(), BondStereo::Cis);
+        assert_eq!(
+            molecule.bonds()[7].stereo_atoms(),
+            Some([AtomId::new(6), AtomId::new(9)])
+        );
+    }
+
+    #[test]
+    #[ignore = "debug helper for parser-stage checkpoint alignment"]
+    fn debug_probe_parser_fused_ring_chain() {
+        let input = "C1/C=C/C2=C/CCCC2C1";
+        let focus = [0usize, 1usize, 2usize, 3usize, 4usize];
+
+        let print_builder_state = |name: &str, state: &SmilesBuildState| {
+            eprintln!(
+                "checkpoint={name} bonds={} pending_ring_closures={} ring_openings={}",
+                state.builder.bonds().len(),
+                state.pending_ring_closures.len(),
+                state.ring_openings.len()
+            );
+            for closure in &state.pending_ring_closures {
+                eprintln!(
+                    "pending ring={} opening_atom={} closing_atom={} opening_dir={:?} closing_dir={:?} opening_order={:?} closing_order={:?}",
+                    closure.ring_number,
+                    closure.opening_atom.index(),
+                    closure.closing_atom.index(),
+                    closure.opening_pending_bond.token.direction,
+                    closure.closing_pending_bond.token.direction,
+                    closure.opening_pending_bond.token.order,
+                    closure.closing_pending_bond.token.order,
+                );
+            }
+            for bond_idx in focus {
+                let Some(bond) = state.builder.bonds().get(bond_idx) else {
+                    continue;
+                };
+                eprintln!(
+                    "bond {} {}-{} order={:?} dir={:?} stereo={:?} stereo_atoms={:?}",
+                    bond_idx,
+                    bond.begin().index(),
+                    bond.end().index(),
+                    bond.order(),
+                    bond.direction(),
+                    bond.stereo(),
+                    bond.stereo_atoms()
+                );
+            }
+        };
+
+        let mut state = SmilesBuildState::new();
+        let lexer = SmilesLexer::new(input);
+        let mut parser = SmilesParser::new(lexer);
+        parser.parse_mol(&mut state).unwrap();
+        print_builder_state("post_parse_mol", &state);
+
+        state.close_mol_rings().unwrap();
+        print_builder_state("post_close_mol_rings", &state);
+
+        state.check_chirality_specifications().unwrap();
+        print_builder_state("post_check_chirality_specifications", &state);
+
+        state.set_unspecified_bond_types().unwrap();
+        print_builder_state("post_set_unspecified_bond_types", &state);
+
+        state.adjust_atom_chirality_flags().unwrap();
+        print_builder_state("post_adjust_atom_chirality_flags", &state);
     }
 
     #[test]
@@ -11891,6 +14410,190 @@ mod tests {
 
         assert_eq!(molecule.atomic_numbers(), vec![6, 8]);
         assert_eq!(molecule.num_bonds(), 0);
+    }
+
+    #[test]
+    fn smiles_parse_ops_add_frag_to_mol_connects_first_fragment_atom_in_insert_order_like_rdkit() {
+        let mut root = SmilesBuildState::new();
+        root.add_first_atom(SmilesAtomToken::new(6)).unwrap();
+
+        let mut frag = SmilesBuildState::new();
+        frag.add_first_atom(SmilesAtomToken::new(8)).unwrap();
+        frag.add_atom_connected_to_active(SmilesAtomToken::new(7))
+            .unwrap();
+
+        root.add_frag_to_mol(frag, BondOrder::Single, BondDirection::None)
+            .unwrap();
+
+        assert_eq!(root.active_atom, Some(AtomId::new(1)));
+        assert_eq!(root.builder.atoms().len(), 3);
+        assert_eq!(root.builder.bonds().len(), 2);
+        assert_eq!(root.builder.bonds()[0].begin(), AtomId::new(1));
+        assert_eq!(root.builder.bonds()[0].end(), AtomId::new(2));
+        assert_eq!(root.builder.bonds()[1].begin(), AtomId::new(0));
+        assert_eq!(root.builder.bonds()[1].end(), AtomId::new(1));
+    }
+
+    #[test]
+    fn smiles_parse_ops_add_frag_to_mol_remaps_fragment_atom_and_bond_state_like_rdkit() {
+        let mut root = SmilesBuildState::new();
+        root.add_first_atom(SmilesAtomToken::new(6)).unwrap();
+        root.add_atom_connected_to_active(SmilesAtomToken::new(6))
+            .unwrap();
+
+        let mut frag = SmilesBuildState::new();
+        frag.add_first_atom(SmilesAtomToken::new(8)).unwrap();
+        frag.add_atom_connected_to_active(SmilesAtomToken::new(7))
+            .unwrap();
+        frag.ring_closures_by_atom.insert(
+            AtomId::new(0),
+            vec![RingClosureRecord {
+                ring_number: 7,
+                bond: Some(BondId::new(0)),
+            }],
+        );
+        frag.ring_openings.insert(
+            9,
+            RingOpening {
+                atom: AtomId::new(1),
+                pending_bond: Some(PendingBond {
+                    token: SmilesBondToken::new(BondOrder::Single),
+                    cx_smiles_bond_idx: None,
+                }),
+                input_position: 4,
+            },
+        );
+        frag.temporary_chiral_permutations.insert(AtomId::new(1), 2);
+        frag.cx_stereo_group_tracker.insert((1, 4), 3);
+
+        root.add_frag_to_mol(frag, BondOrder::Ionic, BondDirection::None)
+            .unwrap();
+
+        assert_eq!(
+            root.ring_closures_by_atom.get(&AtomId::new(2)),
+            Some(&vec![RingClosureRecord {
+                ring_number: 7,
+                bond: Some(BondId::new(1)),
+            }])
+        );
+        assert_eq!(
+            root.ring_openings.get(&9),
+            Some(&RingOpening {
+                atom: AtomId::new(3),
+                pending_bond: Some(PendingBond {
+                    token: SmilesBondToken::new(BondOrder::Single),
+                    cx_smiles_bond_idx: None,
+                }),
+                input_position: 4,
+            })
+        );
+        assert_eq!(
+            root.temporary_chiral_permutations.get(&AtomId::new(3)),
+            Some(&2)
+        );
+        assert_eq!(root.cx_stereo_group_tracker.get(&(1, 4)), Some(&3));
+    }
+
+    #[test]
+    fn smiles_parse_ops_check_ring_closure_branch_status_inverts_matching_cases_like_rdkit() {
+        let mut degree_one = SmilesBuildState::new();
+        let a0 = degree_one
+            .builder
+            .add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
+        let a1 = degree_one.builder.add_atom(AtomSpec::new(Element::F));
+        degree_one
+            .builder
+            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
+            .unwrap();
+        degree_one.check_ring_closure_branch_status(a0).unwrap();
+        assert_eq!(
+            degree_one.builder.atoms()[a0.index()].chiral_tag(),
+            ChiralTag::TetrahedralCcw
+        );
+
+        let mut degree_two_nonzero = SmilesBuildState::new();
+        let b0 = degree_two_nonzero
+            .builder
+            .add_atom(AtomSpec::new(Element::C));
+        let b1 = degree_two_nonzero
+            .builder
+            .add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
+        let b2 = degree_two_nonzero
+            .builder
+            .add_atom(AtomSpec::new(Element::F));
+        degree_two_nonzero
+            .builder
+            .add_bond(BondSpec::new(b0, b1, BondOrder::Single))
+            .unwrap();
+        degree_two_nonzero
+            .builder
+            .add_bond(BondSpec::new(b1, b2, BondOrder::Single))
+            .unwrap();
+        degree_two_nonzero
+            .check_ring_closure_branch_status(b1)
+            .unwrap();
+        assert_eq!(
+            degree_two_nonzero.builder.atoms()[b1.index()].chiral_tag(),
+            ChiralTag::TetrahedralCcw
+        );
+
+        let mut degree_three_root = SmilesBuildState::new();
+        let c0 = degree_three_root
+            .builder
+            .add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
+        let c1 = degree_three_root
+            .builder
+            .add_atom(AtomSpec::new(Element::F));
+        let c2 = degree_three_root
+            .builder
+            .add_atom(AtomSpec::new(Element::CL));
+        let c3 = degree_three_root
+            .builder
+            .add_atom(AtomSpec::new(Element::BR));
+        degree_three_root
+            .builder
+            .add_bond(BondSpec::new(c0, c1, BondOrder::Single))
+            .unwrap();
+        degree_three_root
+            .builder
+            .add_bond(BondSpec::new(c0, c2, BondOrder::Single))
+            .unwrap();
+        degree_three_root
+            .builder
+            .add_bond(BondSpec::new(c0, c3, BondOrder::Single))
+            .unwrap();
+        degree_three_root
+            .check_ring_closure_branch_status(c0)
+            .unwrap();
+        assert_eq!(
+            degree_three_root.builder.atoms()[c0.index()].chiral_tag(),
+            ChiralTag::TetrahedralCcw
+        );
+    }
+
+    #[test]
+    fn smiles_parse_ops_check_ring_closure_branch_status_leaves_nonmatching_cases_unchanged() {
+        let mut state = SmilesBuildState::new();
+        let a0 = state.builder.add_atom(AtomSpec::new(Element::C));
+        let a1 = state.builder.add_atom(AtomSpec::new(Element::F));
+        let a2 = state
+            .builder
+            .add_atom(AtomSpec::new(Element::CL).with_chiral_tag(ChiralTag::TetrahedralCw));
+        state
+            .builder
+            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
+            .unwrap();
+        state
+            .builder
+            .add_bond(BondSpec::new(a1, a2, BondOrder::Single))
+            .unwrap();
+
+        state.check_ring_closure_branch_status(a2).unwrap();
+
+        assert_eq!(
+            state.builder.atoms()[a2.index()].chiral_tag(),
+            ChiralTag::TetrahedralCw
+        );
     }
 
     #[test]

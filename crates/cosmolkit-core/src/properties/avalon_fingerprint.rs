@@ -472,11 +472,7 @@ pub fn avalon_fingerprint(
     }
 
     // Build adjacency list.
-    let adjacency = molecule
-        .derived_cache()
-        .adjacency
-        .clone()
-        .unwrap_or_else(|| AdjacencyList::from_topology(molecule.num_atoms(), molecule.bonds()));
+    let adjacency = molecule.topology_block().adjacency.clone();
 
     // Determine starting atoms.
     let start_atoms: Vec<usize> = match &params.from_atoms {

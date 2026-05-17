@@ -9,19 +9,23 @@ pub struct DerivedState(u32);
 
 impl DerivedState {
     pub const NONE: Self = Self(0);
-    pub const ADJACENCY: Self = Self(1 << 0);
-    pub const RINGS: Self = Self(1 << 1);
-    pub const RING_FAMILIES: Self = Self(1 << 2);
-    pub const VALENCE: Self = Self(1 << 3);
-    pub const AROMATICITY: Self = Self(1 << 4);
-    pub const STEREO: Self = Self(1 << 5);
-    pub const COORDINATES: Self = Self(1 << 6);
-    pub const DRAWING: Self = Self(1 << 7);
-    pub const FINGERPRINT: Self = Self(1 << 8);
+    pub const RINGS: Self = Self(1 << 0);
+    pub const RING_FAMILIES: Self = Self(1 << 1);
+    pub const VALENCE: Self = Self(1 << 2);
+    pub const AROMATICITY: Self = Self(1 << 3);
+    pub const STEREO: Self = Self(1 << 4);
+    pub const COORDINATES: Self = Self(1 << 5);
+    pub const DRAWING: Self = Self(1 << 6);
+    pub const FINGERPRINT: Self = Self(1 << 7);
 
     #[must_use]
     pub const fn contains(self, other: Self) -> bool {
         (self.0 & other.0) == other.0
+    }
+
+    #[must_use]
+    pub const fn intersects(self, other: Self) -> bool {
+        (self.0 & other.0) != 0
     }
 
     #[must_use]
@@ -35,9 +39,13 @@ impl DerivedState {
     }
 
     #[must_use]
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+
+    #[must_use]
     pub const fn touches_cache(self) -> bool {
-        self.contains(Self::ADJACENCY)
-            || self.contains(Self::RINGS)
+        self.contains(Self::RINGS)
             || self.contains(Self::RING_FAMILIES)
             || self.contains(Self::VALENCE)
             || self.contains(Self::AROMATICITY)

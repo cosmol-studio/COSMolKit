@@ -15,6 +15,14 @@ use crate::{
 pub struct MoleculeBuilder {
     atoms: Vec<Atom>,
     bonds: Vec<Bond>,
+    /// Build-time adjacency list, auto-maintained by `add_bond` and
+    /// `add_atom`. Eliminates the need for callers to manually track
+    /// adjacency during incremental construction (cf. SMILES parser's
+    /// removed `atom_bonds`).
+    ///
+    /// `adjacency[i]` contains the `BondId`s of all bonds incident to
+    /// atom `i`.  Invariant: `adjacency.len() == atoms.len()`.
+    adjacency: Vec<Vec<BondId>>,
     substance_groups: Vec<SubstanceGroup>,
     stereo_groups: Vec<StereoGroup>,
     coords_2d: Option<Vec<[f64; 2]>>,
@@ -34,14 +42,32 @@ impl MoleculeBuilder {
         if let Some(coords) = &mut self.coords_2d {
             coords.push([0.0, 0.0]);
         }
+        self.adjacency.push(Vec::new());
         id
     }
 
     pub fn add_bond(&mut self, spec: BondSpec) -> Result<BondId, MoleculeBuildError> {
         validate_bond_spec(self.atoms.len(), &spec)?;
         let id = BondId::new(self.bonds.len());
+        let begin = spec.begin();
+        let end = spec.end();
         self.bonds.push(Bond::from_spec(id, spec));
+        self.adjacency[begin.index()].push(id);
+        self.adjacency[end.index()].push(id);
         Ok(id)
+    }
+
+    /// Returns the number of bonds incident to `atom`.
+    pub fn degree(&self, atom: AtomId) -> usize {
+        self.adjacency.get(atom.index()).map_or(0, Vec::len)
+    }
+
+    /// Returns the bonds incident to `atom`.
+    pub fn neighbor_bonds(&self, atom: AtomId) -> &[BondId] {
+        self.adjacency
+            .get(atom.index())
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     pub(crate) fn bond(&self, bond: BondId) -> Option<&Bond> {
@@ -114,6 +140,11 @@ impl MoleculeBuilder {
 
         self.atoms = atoms;
         self.bonds = bonds;
+        self.adjacency = vec![Vec::new(); self.atoms.len()];
+        for bond in &self.bonds {
+            self.adjacency[bond.begin().index()].push(bond.id());
+            self.adjacency[bond.end().index()].push(bond.id());
+        }
         if let Some(coords) = &mut self.coords_2d {
             let old_coords = std::mem::take(coords);
             *coords = old_coords
@@ -259,6 +290,7 @@ impl MoleculeBuilder {
             TopologyBlock {
                 atoms: self.atoms,
                 bonds: self.bonds,
+                adjacency: crate::AdjacencyList::default(),
                 substance_groups: self.substance_groups,
                 stereo_groups: self.stereo_groups,
             },

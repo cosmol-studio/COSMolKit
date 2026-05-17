@@ -1949,6 +1949,7 @@ mod tests {
         let topology = crate::molecule::TopologyBlock {
             atoms: base.atoms().to_vec(),
             bonds: base.bonds().to_vec(),
+            adjacency: crate::AdjacencyList::default(),
             substance_groups: vec![],
             stereo_groups: vec![],
         };

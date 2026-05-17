@@ -14,7 +14,10 @@
 
 use std::collections::HashSet;
 
-use crate::{AtomId, BondId, BondStereo, ChiralTag, Molecule};
+use crate::{
+    AtomId, BondId, BondStereo, ChiralTag, Molecule, stereo::assign_atom_cip_ranks,
+    stereo::is_atom_potential_chiral_center,
+};
 
 // ──────────────────────────────────────────────
 // Error type
@@ -177,18 +180,44 @@ struct StereoBond {
 // RDKit✔️✔️:   }
 // RDKit✔️✔️: }
 
+// BEGIN RDKIT CPP FUNCTION buildFlippers atom tetrahedral branch
+// RDKit❗✔️:   auto sis = Chirality::findPotentialStereo(d_mol, true, true);
+// RDKit❗✔️:   for (const auto &si : sis) {
+// RDKit❗✔️:     if (d_options.onlyUnassigned &&
+// RDKit❗✔️:         si.specified != Chirality::StereoSpecified::Unknown &&
+// RDKit❗✔️:         si.specified != Chirality::StereoSpecified::Unspecified) {
+// RDKit❗✔️:       continue;
+// RDKit❗✔️:     }
+// RDKit❗✔️:     if (si.type == Chirality::StereoType::Atom_Tetrahedral) {
+// RDKit❗✔️:       d_flippers.push_back(std::unique_ptr<details::Flipper>(
+// RDKit❗✔️:           new details::AtomFlipper(d_mol, si)));
+// RDKit❗✔️:     }
+// RDKit❗✔️:   }
+// END RDKIT CPP FUNCTION buildFlippers atom tetrahedral branch
+//
+// COSMolKit does not yet expose a full `findPotentialStereo()` port that returns
+// `StereoInfo` records. For tetrahedral centers, this function reproduces the
+// same selection boundary using the already ported CIP-rank generation plus
+// `isAtomPotentialChiralCenter()`. That closes the previous gap where the
+// enumerator only saw atoms with pre-existing tetrahedral tags and missed
+// RDKit-valid centers with implicit-hydrogen stereochemistry.
 /// Find all tetrahedral stereo centers in a molecule.
-///
-/// Identifies atoms that have explicit chiral tags (TetrahedralCw or
-/// TetrahedralCcw) and are thus eligible for enumeration.
 fn find_tetrahedral_centers(mol: &Molecule) -> Vec<TetrahedralCenter> {
+    let ranks = assign_atom_cip_ranks(mol).unwrap_or_default();
     mol.atoms()
         .iter()
-        .filter(|atom| {
+        .filter_map(|atom| {
+            let idx = atom.id().index();
             let tag = atom.chiral_tag();
-            tag == ChiralTag::TetrahedralCw || tag == ChiralTag::TetrahedralCcw
+            let explicit_tagged =
+                tag == ChiralTag::TetrahedralCw || tag == ChiralTag::TetrahedralCcw;
+            let (legal_center, has_dupes, _) = is_atom_potential_chiral_center(mol, idx, &ranks);
+            if legal_center && !has_dupes && (explicit_tagged || !ranks.is_empty()) {
+                Some(TetrahedralCenter { atom: atom.id() })
+            } else {
+                None
+            }
         })
-        .map(|atom| TetrahedralCenter { atom: atom.id() })
         .collect()
 }
 
@@ -973,8 +1002,9 @@ mod tests {
 
     fn make_test_mol() -> Molecule {
         // CHClBrI - a single tetrahedral center molecule
-        // SMILES: Cl[C@](Br)(I) (with explicit chirality)
-        Molecule::from_smiles("Cl[C@](Br)I").expect("failed to parse test SMILES")
+        // Use an explicit hydrogen so this fixture exercises enumerator logic
+        // without depending on the separate shorthand-chirality parse boundary.
+        Molecule::from_smiles("Cl[C@H](Br)I").expect("failed to parse test SMILES")
     }
 
     fn make_meso_mol() -> Molecule {

@@ -670,6 +670,11 @@ impl AtomSpec {
     }
 
     #[must_use]
+    pub(crate) fn query_mut(&mut self) -> Option<&mut QueryNode<AtomQueryPredicate>> {
+        self.query.as_mut()
+    }
+
+    #[must_use]
     pub fn props(&self) -> &BTreeMap<String, String> {
         &self.props
     }
@@ -835,6 +840,11 @@ impl Atom {
     #[must_use]
     pub const fn query(&self) -> Option<&QueryNode<AtomQueryPredicate>> {
         self.query.as_ref()
+    }
+
+    #[must_use]
+    pub(crate) fn query_mut(&mut self) -> Option<&mut QueryNode<AtomQueryPredicate>> {
+        self.query.as_mut()
     }
 
     #[must_use]

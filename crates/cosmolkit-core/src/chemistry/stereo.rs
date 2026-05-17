@@ -9,6 +9,10 @@ use std::collections::HashSet;
 pub enum StereoError {
     #[error(transparent)]
     UnsupportedFeature(#[from] crate::UnsupportedFeatureError),
+    #[error(transparent)]
+    RingFinding(#[from] crate::RingFindingError),
+    #[error("{0}")]
+    InvariantViolation(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,13 +155,7 @@ pub fn tetrahedral_stereo(molecule: &Molecule) -> Result<Vec<TetrahedralStereo>,
     // Atoms with ChiralTag::TetrahedralCw or TetrahedralCcw are stereo
     // centers. The four ligands are the explicit neighbors plus an
     // implicit hydrogen if degree < 4.
-    let adjacency = molecule
-        .derived_cache()
-        .adjacency
-        .clone()
-        .unwrap_or_else(|| {
-            crate::AdjacencyList::from_topology(molecule.num_atoms(), molecule.bonds())
-        });
+    let adjacency = molecule.topology_block().adjacency.clone();
     let valence = molecule.derived_cache().valence.as_ref();
 
     let mut result = Vec::new();
@@ -215,52 +213,28 @@ pub fn tetrahedral_stereo(molecule: &Molecule) -> Result<Vec<TetrahedralStereo>,
     Ok(result)
 }
 
-// RDKit❗✔️: bool shouldDetectDoubleBondStereo(const ROMol &mol, const Bond *bond) {
-// RDKit❗✔️:   // Checks if a double bond could have E/Z stereoisomers
-// RDKit❗✔️:   // by testing for distinguishable substituents on both ends
-// RDKit❗✔️: }
+// RDKit✔️✔️: bool shouldDetectDoubleBondStereo(const Bond *bond) {
+// RDKit✔️✔️:   const RingInfo *ri = bond->getOwningMol().getRingInfo();
+// RDKit✔️✔️:   return (!ri->numBondRings(bond->getIdx()) ||
+// RDKit✔️✔️:           ri->minBondRingSize(bond->getIdx()) >=
+// RDKit✔️✔️:               Chirality::minRingSizeForDoubleBondStereo);
+// RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION: shouldDetectDoubleBondStereo (Chirality.cpp)
 //
-// COSMolKit implements the same logic: a double bond has E/Z potential
-// if both carbon atoms have at least 2 distinct substituents.
+// RDKit's helper is only the ring-size gate. Neighbor distinctness is checked
+// later in assignBondStereoCodes()/findPotentialStereoBonds().
 pub fn should_detect_double_bond_stereo(
     molecule: &Molecule,
     bond: BondId,
 ) -> Result<bool, StereoError> {
-    // RDKit checks if a double bond has distinguishable substituents
-    // on both ends. This is a simplified check: a double bond has E/Z
-    // potential if both carbon atoms have 2 distinct substituents.
     let bond = &molecule.bonds()[bond.index()];
     if bond.order() != crate::BondOrder::Double && bond.order() != crate::BondOrder::Aromatic {
         return Ok(false);
     }
-
-    let begin = bond.begin();
-    let end = bond.end();
-
-    let begin_nbrs: Vec<AtomId> = molecule
-        .bonds()
-        .iter()
-        .filter(|b| b.begin() == begin || b.end() == begin)
-        .map(|b| {
-            if b.begin() == begin {
-                b.end()
-            } else {
-                b.begin()
-            }
-        })
-        .filter(|&a| a != end)
-        .collect();
-
-    let end_nbrs: Vec<AtomId> = molecule
-        .bonds()
-        .iter()
-        .filter(|b| b.begin() == end || b.end() == end)
-        .map(|b| if b.begin() == end { b.end() } else { b.begin() })
-        .filter(|&a| a != begin)
-        .collect();
-
-    Ok(begin_nbrs.len() >= 2 && end_nbrs.len() >= 2)
+    let Some(ri) = molecule.derived_cache().rings.as_ref() else {
+        return Ok(true);
+    };
+    Ok(ri.num_bond_rings(bond.id()) == 0 || ri.min_bond_ring_size(bond.id()) >= 8)
 }
 
 /// RDKit❗✔️: assignStereochemistry — main stereochemistry perception entry point
@@ -845,11 +819,7 @@ pub fn assign_atom_cip_ranks(mol: &Molecule) -> Result<Vec<u32>, StereoError> {
     let invars = build_cip_invariants(mol);
     let mut ranks = vec![0u32; n];
 
-    let adjacency = mol
-        .derived_cache()
-        .adjacency
-        .clone()
-        .unwrap_or_else(|| crate::AdjacencyList::from_topology(mol.num_atoms(), mol.bonds()));
+    let adjacency = mol.topology_block().adjacency.clone();
     let valence = mol.derived_cache().valence.clone().ok_or_else(|| {
         StereoError::UnsupportedFeature(crate::UnsupportedFeatureError {
             feature: "CIP_RANKING",
@@ -884,15 +854,19 @@ pub fn assign_atom_cip_ranks(mol: &Molecule) -> Result<Vec<u32>, StereoError> {
 // RDKit❗✔️: }
 // END RDKIT CPP FUNCTION assignAtomChiralCodes
 ///
-/// Assign CIP labels (R/S) to chiral centers using ChiralTag + chiral_permutation.
-/// COSMolKit❗: does not call isAtomPotentialChiralCenter. Relies on
-/// already-set ChiralTag and chiral_permutation from SMILES/SDF parsing.
-/// COSMolKit❗: does not handle flagPossibleStereoCenters.
+/// Assign CIP labels (R/S) to chiral centers using ChiralTag plus the
+/// current rank-ordered bond permutation, matching RDKit's
+/// `Atom::getPerturbationOrder()`-based path.
 pub fn assign_atom_chiral_codes(
     mol: &Molecule,
     ranks: &[u32],
 ) -> Result<Vec<(usize, String)>, StereoError> {
     let mut labels = Vec::new();
+    let implicit_hydrogens = mol
+        .derived_cache()
+        .valence
+        .as_ref()
+        .map(|valence| valence.implicit_hydrogens.as_slice());
     for atom in mol.atoms() {
         let tag = atom.chiral_tag();
         if matches!(tag, ChiralTag::Unspecified | ChiralTag::Other) {
@@ -903,38 +877,28 @@ pub fn assign_atom_chiral_codes(
             continue;
         }
         let idx = atom.id().index();
-        let neighbours: Vec<usize> = mol
-            .bonds()
-            .iter()
-            .filter(|b| b.begin().index() == idx || b.end().index() == idx)
-            .map(|b| {
-                if b.begin().index() == idx {
-                    b.end().index()
-                } else {
-                    b.begin().index()
-                }
-            })
-            .collect();
-        let degree = neighbours.len();
-
-        // Must have 4 ligands for tetrahedral
-        if degree + atom.explicit_hydrogens() as usize != 4 {
+        let (legal_center, has_dupes, mut nbrs) = is_atom_potential_chiral_center(mol, idx, ranks);
+        if !legal_center || has_dupes {
             continue;
         }
+        nbrs.sort_by_key(|(rank, neighbor_idx)| (*rank, *neighbor_idx));
+        let nbr_bond_indices = nbrs
+            .iter()
+            .map(|(_, bond_idx)| *bond_idx)
+            .collect::<Vec<_>>();
 
-        // Use permutation to compute nSwaps (number of swaps from reference ordering)
-        // The chiral_permutation encodes the current neighbor ordering.
-        // From smiles_write.rs logic:
-        // CW + even perm → @@ → clockwise → R (if highest priority is first)
-        // CW + odd perm → @ → anticlockwise → S
-        // CCW + even perm → @ → anticlockwise → S
-        // CCW + odd perm → @@ → clockwise → R
-        let perm = atom.chiral_permutation().unwrap_or(0);
-        let n_swaps_mod2 = perm % 2;
-
-        // Determine the CIP code from tag and n_swaps
+        let total_hs = atom.explicit_hydrogens() as usize
+            + implicit_hydrogens
+                .and_then(|counts| counts.get(idx))
+                .copied()
+                .unwrap_or(0)
+                .max(0) as usize;
+        let mut n_swaps = perturbation_order_from_bond_indices(mol, idx, &nbr_bond_indices)?;
+        if nbrs.len() == 3 && total_hs == 1 {
+            n_swaps = n_swaps.saturating_add(1);
+        }
         let mut effective_tag = tag;
-        if n_swaps_mod2 == 1 {
+        if n_swaps % 2 == 1 {
             effective_tag = match tag {
                 ChiralTag::TetrahedralCw => ChiralTag::TetrahedralCcw,
                 ChiralTag::TetrahedralCcw => ChiralTag::TetrahedralCw,
@@ -1471,13 +1435,10 @@ fn is_atom_bridgehead(mol: &Molecule, atom_idx: usize) -> bool {
 #[must_use]
 pub fn atom_is_candidate_for_ring_stereochem(
     mol: &Molecule,
+    ri: &crate::RingInfo,
     atom_idx: usize,
     cip_ranks: &[u32],
 ) -> bool {
-    let ri = match mol.derived_cache().rings.as_ref() {
-        Some(ri) => ri,
-        None => return false,
-    };
     if !ri.is_initialized() {
         return false;
     }
@@ -1561,18 +1522,18 @@ pub fn atom_is_candidate_for_ring_stereochem(
 /// that are ring stereocenters and their inter-relationships.
 /// Each entry contains the atom index, its chiral tag, and a list of
 /// `(same_orientation, other_atom_idx)` cross-references.
-#[must_use]
 pub fn find_chiral_atom_special_cases(
     mol: &Molecule,
     cip_ranks: &[u32],
-) -> Vec<ChiralAtomSpecialCase> {
-    let ri = match mol.derived_cache().rings.as_ref() {
-        Some(ri) => ri,
-        None => return Vec::new(),
+) -> Result<Vec<ChiralAtomSpecialCase>, StereoError> {
+    let symm_rings = match mol.derived_cache().rings.as_ref() {
+        Some(ri) if ri.is_initialized() && ri.is_symm_sssr() => None,
+        _ => Some(crate::symmetrize_sssr(mol)?),
     };
-    if !ri.is_initialized() {
-        return Vec::new();
-    }
+    let ri = symm_rings
+        .as_ref()
+        .or_else(|| mol.derived_cache().rings.as_ref())
+        .expect("symmetrize_sssr() must produce initialized ring info");
 
     let n_atoms = mol.num_atoms();
     let n_bonds = mol.bonds().len();
@@ -1591,15 +1552,15 @@ pub fn find_chiral_atom_special_cases(
         }
         let tag = atom.chiral_tag();
         if tag == ChiralTag::Unspecified || tag == ChiralTag::Other {
-            atoms_seen[idx] = true;
             continue;
         }
-        if !ri.num_atom_rings(atom.id()) > 0 {
-            atoms_seen[idx] = true;
+        if atom.prop("_CIPCode").is_some() {
             continue;
         }
-        if !atom_is_candidate_for_ring_stereochem(mol, idx, cip_ranks) {
-            atoms_seen[idx] = true;
+        if ri.num_atom_rings(atom.id()) == 0 {
+            continue;
+        }
+        if !atom_is_candidate_for_ring_stereochem(mol, ri, idx, cip_ranks) {
             continue;
         }
 
@@ -1642,8 +1603,9 @@ pub fn find_chiral_atom_special_cases(
             let rtag = ratom.chiral_tag();
             if rtag != ChiralTag::Unspecified
                 && rtag != ChiralTag::Other
+                && ratom.prop("_CIPCode").is_none()
                 && ri.num_atom_rings(ratom.id()) > 0
-                && atom_is_candidate_for_ring_stereochem(mol, ratom_idx, cip_ranks)
+                && atom_is_candidate_for_ring_stereochem(mol, ri, ratom_idx, cip_ranks)
             {
                 let same = if rtag == tag { 1i32 } else { -1i32 };
                 ring_stereo_atoms.push((same * (ratom_idx as i32 + 1), ratom_idx));
@@ -1707,7 +1669,7 @@ pub fn find_chiral_atom_special_cases(
         atoms_seen[idx] = true;
     }
 
-    result
+    Ok(result)
 }
 
 /// Return the opposite tetrahedral chiral tag.
@@ -3033,12 +2995,12 @@ fn find_atom_neighbor_dir_helper(
 }
 
 // BEGIN RDKIT CPP FUNCTION: isAtomPotentialChiralCenter (Chirality.cpp:1651-1736)
-// RDKit✔️✔️: std::pair<bool, bool> isAtomPotentialChiralCenter(
-// RDKit✔️✔️:     const Atom *atom, const ROMol &mol, const UINT_VECT &ranks,
-// RDKit✔️✔️:     Chirality::INT_PAIR_VECT &nbrs) {
-// RDKit✔️✔️:   // Check if an atom could be a tetrahedral chiral center.
-// RDKit✔️✔️:   // Returns (legal_center, has_duplicates). Populates nbrs with (rank, bond_idx).
-// RDKit✔️✔️: }
+// RDKit❗✔️: std::pair<bool, bool> isAtomPotentialChiralCenter(
+// RDKit❗✔️:     const Atom *atom, const ROMol &mol, const UINT_VECT &ranks,
+// RDKit❗✔️:     Chirality::INT_PAIR_VECT &nbrs) {
+// RDKit❗✔️:   // Check if an atom could be a tetrahedral chiral center.
+// RDKit❗✔️:   // Returns (legal_center, has_duplicates). Populates nbrs with (rank, bond_idx).
+// RDKit❗✔️: }
 // END RDKIT CPP FUNCTION: isAtomPotentialChiralCenter
 /// Check if an atom could be a tetrahedral chiral center.
 /// Returns (legal_center, has_duplicates, neighbors: Vec<(rank, idx)>).
@@ -3059,7 +3021,16 @@ pub fn is_atom_potential_chiral_center(
 
     // Non-zero degree (exclude bonds that don't affect chirality)
     let nz_degree = atom_nonzero_degree(mol, atom_idx);
-    let total_nz_degree = nz_degree + atom.explicit_hydrogens() as usize;
+    let implicit_hydrogens = mol
+        .derived_cache()
+        .valence
+        .as_ref()
+        .and_then(|valence| valence.implicit_hydrogens.get(atom_idx))
+        .copied()
+        .unwrap_or(0)
+        .max(0) as usize;
+    let total_num_hs = atom.explicit_hydrogens() as usize + implicit_hydrogens;
+    let total_nz_degree = nz_degree + total_num_hs;
 
     if total_nz_degree > 4 {
         // we only know tetrahedral chirality
@@ -3072,7 +3043,7 @@ pub fn is_atom_potential_chiral_center(
         legal_center = false;
     } else if nz_degree == 3 {
         // Check if exactly one H neighbor using explicit_hydrogens
-        if atom.explicit_hydrogens() as usize == 1 {
+        if total_num_hs == 1 {
             // three-coordinate with exactly one H
             // if it has a protium neighbor, not stereogenic
             if has_protium_neighbor(mol, atom_idx) {
@@ -3113,10 +3084,10 @@ pub fn is_atom_potential_chiral_center(
             } else {
                 b.begin().index()
             };
+            nbrs.push((ranks[other_idx], b.id().index()));
             if !bond_affects_atom_chirality(b, atom_idx) {
                 continue;
             }
-            nbrs.push((ranks[other_idx], other_idx));
             let rank = ranks[other_idx] as usize;
             if rank < codes_seen.len() {
                 if codes_seen[rank] {
@@ -3129,6 +3100,44 @@ pub fn is_atom_potential_chiral_center(
     }
 
     (legal_center, has_dupes, nbrs)
+}
+
+fn perturbation_order_from_bond_indices(
+    mol: &Molecule,
+    atom_idx: usize,
+    probe: &[usize],
+) -> Result<u32, StereoError> {
+    let reference = mol
+        .topology_block()
+        .adjacency
+        .neighbors_of(atom_idx)
+        .iter()
+        .map(|neighbor| neighbor.bond.index())
+        .collect::<Vec<_>>();
+    if probe.len() != reference.len() {
+        return Err(StereoError::InvariantViolation(
+            "Atom::getPerturbationOrder probe/reference length mismatch".to_string(),
+        ));
+    }
+    let mut work = probe.to_vec();
+    let mut swaps = 0_u32;
+    for (idx, expected) in reference.iter().copied().enumerate() {
+        if work[idx] == expected {
+            continue;
+        }
+        let Some(found_idx) = work[idx..]
+            .iter()
+            .position(|bond_idx| *bond_idx == expected)
+            .map(|offset| idx + offset)
+        else {
+            return Err(StereoError::InvariantViolation(
+                "Atom::getPerturbationOrder expected bond missing from probe order".to_string(),
+            ));
+        };
+        work.swap(idx, found_idx);
+        swaps = swaps.saturating_add(1);
+    }
+    Ok(swaps)
 }
 
 /// Check if a bond affects the chirality of an atom.
@@ -3313,7 +3322,46 @@ pub fn assign_legacy_cip_labels(
 
 // BEGIN RDKIT CPP FUNCTION: assignBondCisTrans (Chirality.cpp:1980-2063)
 // RDKit✔️✔️: void assignBondCisTrans(ROMol &mol, const StereoInfo &sinfo) {
-// RDKit✔️✔️:   // E/Z assignment from 2D bond direction using controlling atoms.
+// RDKit✔️✔️:   bool begFirstNeighbor = true;
+// RDKit✔️✔️:   auto begBond = mol.getBondBetweenAtoms(dblBond->getBeginAtomIdx(),
+// RDKit✔️✔️:                                          sinfo.controllingAtoms[0]);
+// RDKit✔️✔️:   auto begDir = begBond->getBondDir();
+// RDKit✔️✔️:   if (begDir != Bond::BondDir::ENDDOWNRIGHT &&
+// RDKit✔️✔️:       begDir != Bond::BondDir::ENDUPRIGHT) {
+// RDKit✔️✔️:     begFirstNeighbor = false;
+// RDKit✔️✔️:     if (sinfo.controllingAtoms[1] != Atom::NOATOM) {
+// RDKit✔️✔️:       begBond = mol.getBondBetweenAtoms(dblBond->getBeginAtomIdx(),
+// RDKit✔️✔️:                                         sinfo.controllingAtoms[1]);
+// RDKit✔️✔️:       begDir = begBond->getBondDir();
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   if (begBond->getBeginAtomIdx() != dblBond->getBeginAtomIdx()) {
+// RDKit✔️✔️:     begDir = begDir == Bond::BondDir::ENDDOWNRIGHT
+// RDKit✔️✔️:                  ? Bond::BondDir::ENDUPRIGHT
+// RDKit✔️✔️:                  : Bond::BondDir::ENDDOWNRIGHT;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   bool endFirstNeighbor = true;
+// RDKit✔️✔️:   auto endBond = mol.getBondBetweenAtoms(dblBond->getEndAtomIdx(),
+// RDKit✔️✔️:                                          sinfo.controllingAtoms[2]);
+// RDKit✔️✔️:   auto endDir = endBond->getBondDir();
+// RDKit✔️✔️:   if (endDir != Bond::BondDir::ENDDOWNRIGHT &&
+// RDKit✔️✔️:       endDir != Bond::BondDir::ENDUPRIGHT) {
+// RDKit✔️✔️:     endFirstNeighbor = false;
+// RDKit✔️✔️:     if (sinfo.controllingAtoms[3] != Atom::NOATOM) {
+// RDKit✔️✔️:       endBond = mol.getBondBetweenAtoms(dblBond->getEndAtomIdx(),
+// RDKit✔️✔️:                                         sinfo.controllingAtoms[3]);
+// RDKit✔️✔️:       endDir = endBond->getBondDir();
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   if (endBond->getBeginAtomIdx() != dblBond->getEndAtomIdx()) {
+// RDKit✔️✔️:     endDir = endDir == Bond::BondDir::ENDDOWNRIGHT
+// RDKit✔️✔️:                  ? Bond::BondDir::ENDUPRIGHT
+// RDKit✔️✔️:                  : Bond::BondDir::ENDDOWNRIGHT;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   bool sameDir = begDir == endDir;
+// RDKit✔️✔️:   if (begFirstNeighbor ^ endFirstNeighbor) {
+// RDKit✔️✔️:     sameDir = !sameDir;
+// RDKit✔️✔️:   }
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION: assignBondCisTrans
 /// Assign cis/trans (E/Z) to a double bond from 2D bond directions.
@@ -3352,12 +3400,14 @@ pub fn assign_bond_cis_trans(
     // Find the direction bond at the beginning
     let mut beg_first = true;
     let mut beg_dir = None;
+    let mut beg_dir_bond_idx = None;
     if let Some(beg_ctrl) = controlling_atoms[0] {
         if let Some(bi) = bond_between_atoms(mol, beg_atom, beg_ctrl) {
             let b = &mol.bonds()[bi];
             let d = b.direction();
             if d == crate::BondDirection::EndDownRight || d == crate::BondDirection::EndUpRight {
                 beg_dir = Some(d);
+                beg_dir_bond_idx = Some(bi);
             }
         }
     }
@@ -3370,35 +3420,37 @@ pub fn assign_bond_cis_trans(
                 if d == crate::BondDirection::EndDownRight || d == crate::BondDirection::EndUpRight
                 {
                     beg_dir = Some(d);
+                    beg_dir_bond_idx = Some(bi);
                 }
             }
         }
     }
     let mut beg_dir = beg_dir?;
+    let beg_dir_bond_idx = beg_dir_bond_idx?;
 
     // Normalize direction
-    if let Some(beg_ctrl) = controlling_atoms[0].or(controlling_atoms[1]) {
-        if let Some(bi) = bond_between_atoms(mol, beg_atom, beg_ctrl) {
-            let b = &mol.bonds()[bi];
-            if b.begin().index() != beg_atom {
-                beg_dir = match beg_dir {
-                    crate::BondDirection::EndDownRight => crate::BondDirection::EndUpRight,
-                    crate::BondDirection::EndUpRight => crate::BondDirection::EndDownRight,
-                    d => d,
-                };
-            }
+    {
+        let b = &mol.bonds()[beg_dir_bond_idx];
+        if b.begin().index() != beg_atom {
+            beg_dir = match beg_dir {
+                crate::BondDirection::EndDownRight => crate::BondDirection::EndUpRight,
+                crate::BondDirection::EndUpRight => crate::BondDirection::EndDownRight,
+                d => d,
+            };
         }
     }
 
     // Find the direction bond at the end
     let mut end_first = true;
     let mut end_dir = None;
+    let mut end_dir_bond_idx = None;
     if let Some(end_ctrl) = controlling_atoms[2] {
         if let Some(bi) = bond_between_atoms(mol, end_atom, end_ctrl) {
             let b = &mol.bonds()[bi];
             let d = b.direction();
             if d == crate::BondDirection::EndDownRight || d == crate::BondDirection::EndUpRight {
                 end_dir = Some(d);
+                end_dir_bond_idx = Some(bi);
             }
         }
     }
@@ -3411,23 +3463,23 @@ pub fn assign_bond_cis_trans(
                 if d == crate::BondDirection::EndDownRight || d == crate::BondDirection::EndUpRight
                 {
                     end_dir = Some(d);
+                    end_dir_bond_idx = Some(bi);
                 }
             }
         }
     }
     let mut end_dir = end_dir?;
+    let end_dir_bond_idx = end_dir_bond_idx?;
 
     // Normalize direction
-    if let Some(end_ctrl) = controlling_atoms[2].or(controlling_atoms[3]) {
-        if let Some(bi) = bond_between_atoms(mol, end_atom, end_ctrl) {
-            let b = &mol.bonds()[bi];
-            if b.begin().index() != end_atom {
-                end_dir = match end_dir {
-                    crate::BondDirection::EndDownRight => crate::BondDirection::EndUpRight,
-                    crate::BondDirection::EndUpRight => crate::BondDirection::EndDownRight,
-                    d => d,
-                };
-            }
+    {
+        let b = &mol.bonds()[end_dir_bond_idx];
+        if b.begin().index() != end_atom {
+            end_dir = match end_dir {
+                crate::BondDirection::EndDownRight => crate::BondDirection::EndUpRight,
+                crate::BondDirection::EndUpRight => crate::BondDirection::EndDownRight,
+                d => d,
+            };
         }
     }
 
@@ -3495,8 +3547,8 @@ pub fn rerank_atoms(mol: &Molecule, current_ranks: &[u32]) -> Result<Vec<u32>, S
             }
             if b.order() == crate::BondOrder::Double {
                 match b.stereo() {
-                    crate::BondStereo::E => inv += 1,
-                    crate::BondStereo::Z => inv += 2,
+                    crate::BondStereo::E | crate::BondStereo::Trans => inv += 1,
+                    crate::BondStereo::Z | crate::BondStereo::Cis => inv += 2,
                     _ => {}
                 }
             }
@@ -3507,11 +3559,7 @@ pub fn rerank_atoms(mol: &Molecule, current_ranks: &[u32]) -> Result<Vec<u32>, S
 
     // Use CIP iteration with the supplemented invariants as seeds
     let mut new_ranks = vec![0u32; n];
-    let adjacency = mol
-        .derived_cache()
-        .adjacency
-        .clone()
-        .unwrap_or_else(|| crate::AdjacencyList::from_topology(mol.num_atoms(), mol.bonds()));
+    let adjacency = mol.topology_block().adjacency.clone();
     let valence = mol.derived_cache().valence.clone().ok_or_else(|| {
         StereoError::UnsupportedFeature(crate::UnsupportedFeatureError {
             feature: "CIP_RANKING",
@@ -3601,3 +3649,57 @@ fn is_opposite_bonds(mol: &Molecule, _atom_idx: usize, _bond_a: usize, _bond_b: 
 }
 
 // ── End Chirality functions ──────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        StereoError, assign_atom_cip_ranks, is_atom_potential_chiral_center,
+        perturbation_order_from_bond_indices,
+    };
+    use crate::Molecule;
+
+    #[test]
+    fn implicit_hydrogen_tetrahedral_center_is_potentially_chiral_like_rdkit() {
+        let mol = Molecule::from_smiles("Cl[C@H](Br)I").expect("failed to parse test SMILES");
+        let ranks = assign_atom_cip_ranks(&mol).expect("failed to assign CIP ranks");
+        let center = mol
+            .atoms()
+            .iter()
+            .position(|atom| atom.atomic_number() == 6)
+            .expect("failed to find tetrahedral carbon");
+        let (legal_center, has_dupes, _nbrs) =
+            is_atom_potential_chiral_center(&mol, center, &ranks);
+        assert!(
+            legal_center,
+            "implicit-H tetrahedral carbon must remain a legal center"
+        );
+        assert!(
+            !has_dupes,
+            "distinct halogen substituents must not collapse to duplicate ranks"
+        );
+    }
+
+    #[test]
+    fn perturbation_order_rejects_probe_reference_length_mismatch() {
+        let mol = Molecule::from_smiles("CC").expect("failed to parse test SMILES");
+        let error = perturbation_order_from_bond_indices(&mol, 0, &[]).unwrap_err();
+        assert_eq!(
+            error,
+            StereoError::InvariantViolation(
+                "Atom::getPerturbationOrder probe/reference length mismatch".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn perturbation_order_rejects_missing_probe_bond() {
+        let mol = Molecule::from_smiles("CC").expect("failed to parse test SMILES");
+        let error = perturbation_order_from_bond_indices(&mol, 0, &[99]).unwrap_err();
+        assert_eq!(
+            error,
+            StereoError::InvariantViolation(
+                "Atom::getPerturbationOrder expected bond missing from probe order".to_string()
+            )
+        );
+    }
+}

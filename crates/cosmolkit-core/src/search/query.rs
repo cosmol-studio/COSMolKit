@@ -166,20 +166,10 @@ pub enum SmartsParseError {
 // Cache helpers (build adjacency / ring info on-the-fly when not cached)
 // ---------------------------------------------------------------------------
 
-/// RDKit✔️❌: Returns an `AdjacencyList` for `mol`, using the cached copy if
-/// available. When the cache is absent we build a fresh list from bonds — this
-/// is O(bonds) and slightly slower than the direct cached access in RDKit
-/// (which stores adjacency inline in the ROMol). The extra allocation is
-/// acceptable for query matching which is already O(atoms × query depth).
+/// RDKit✔️❌: Returns an `AdjacencyList` for `mol`.
+/// COSMolKit stores adjacency inline in topology instead of in a derived cache.
 fn ensure_adjacency(mol: &Molecule) -> AdjacencyList {
-    // RDKit✔️❌: RDKit stores adjacency inline as ROMol member `d_adjList`. In
-    // COSMolKit the cache is optional; we build on-the-fly when absent.
-    if let Some(cached) = &mol.derived_cache().adjacency {
-        return cached.clone();
-    }
-    // Build fresh from bonds
-    AdjacencyList::try_from_topology(mol.num_atoms(), mol.bonds())
-        .expect("adjacency construction from valid molecule must not fail")
+    mol.topology_block().adjacency.clone()
 }
 
 /// RDKit✔️❌: Returns a `RingInfo` for `mol`, using the cached copy if

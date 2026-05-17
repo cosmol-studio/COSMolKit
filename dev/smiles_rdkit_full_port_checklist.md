@@ -286,22 +286,275 @@ Step 209 [x]: Add or update targeted tests covering the remaining kekulization c
 Step 210 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
 Step 211 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict kekulize`.
 
-Step 212 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 213 [ ]: Port and marker-close the remaining frozen valence and sanitize functions in `crates/cosmolkit-core/src/chemistry/valence.rs` and `crates/cosmolkit-core/src/operations/ops.rs`: `ValenceContext::new`, `ValenceContext::atom`, `ValenceContext::incident_bonds`, `periodic_table_row`, `required_valence_list`, `rdkit_element_symbol`, `sanitize_cleanup_chirality_assignment`, and `sanitize_adjust_hydrogens_assignment`, and also close the remaining frozen sanitize/property/cleanup orchestration copied-source blocks in `operations/ops.rs`, so that no unresolved frozen-scope RDKit marker remains in the valence or sanitize path.
-Step 214 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 215 [ ]: Add or update targeted tests covering the remaining valence and sanitize closure work for the functions and orchestration completed in Step 213.
-Step 216 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 217 [ ]: Run `cargo test -p cosmolkit-core --features op-contracts-strict valence sanitize`.
+Step 212 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 213 [x]: Port and marker-close the remaining frozen valence and sanitize functions in `crates/cosmolkit-core/src/chemistry/valence.rs` and `crates/cosmolkit-core/src/operations/ops.rs`: `ValenceContext::new`, `ValenceContext::atom`, `ValenceContext::incident_bonds`, `periodic_table_row`, `required_valence_list`, `rdkit_element_symbol`, `sanitize_cleanup_chirality_assignment`, and `sanitize_adjust_hydrogens_assignment`, and also close the remaining frozen sanitize/property/cleanup orchestration copied-source blocks in `operations/ops.rs`, so that no unresolved frozen-scope RDKit marker remains in the valence or sanitize path.
+Step 214 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 215 [x]: Add or update targeted tests covering the remaining valence and sanitize closure work for the functions and orchestration completed in Step 213.
+Step 216 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 217 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict valence sanitize`.
 
-Step 218 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 219 [ ]: Audit the frozen baseline against the current code and rewrite `dev/gap_reports/smiles_rdkit_remaining_source_scan.md` only if the entire frozen scope is now zero-gap; otherwise write the exact remaining function-level blockers and stop claiming closure.
-Step 220 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 221 [ ]: Update `dev/porting_inventory.md` and `crates/cosmolkit-core/src/support.rs` to reflect the new frozen-scope completion state without overstating parity or closure.
-Step 222 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 223 [ ]: Run `cargo fmt --all`.
-Step 224 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 225 [ ]: Run `cargo check -p cosmolkit-core --features op-contracts-strict`.
-Step 226 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 227 [ ]: Run `cargo test -p cosmolkit-core --features op-contracts-strict`.
-Step 228 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 229 [ ]: Audit the frozen baseline against RDKit source one final time and rewrite `dev/gap_reports/smiles_rdkit_frozen_coverage_final_audit.md`, and only state `Frozen-scope coverage is exactly 100%` if strict tests pass and no unresolved frozen-scope RDKit marker remains anywhere in the frozen baseline.
+Step 218 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 219 [x]: Audit the frozen baseline against the current code and rewrite `dev/gap_reports/smiles_rdkit_remaining_source_scan.md` only if the entire frozen scope is now zero-gap; otherwise write the exact remaining function-level blockers and stop claiming closure.
+Step 220 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 221 [x]: Update `dev/porting_inventory.md` and `crates/cosmolkit-core/src/support.rs` to reflect the new frozen-scope completion state without overstating parity or closure.
+Step 222 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 223 [x]: Run `cargo fmt --all`.
+Step 224 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 225 [x]: Run `cargo check -p cosmolkit-core --features op-contracts-strict`.
+Step 226 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 227 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict`.
+Step 228 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 229 [x]: Audit the frozen baseline against RDKit source one final time and rewrite `dev/gap_reports/smiles_rdkit_frozen_coverage_final_audit.md`, and only state `Frozen-scope coverage is exactly 100%` if strict tests pass and no unresolved frozen-scope RDKit marker remains anywhere in the frozen baseline.
+
+## Remaining Frozen Closure
+
+Step 230 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 231 [x]: Read `dev/policy_invariants.md`, `dev/source_reproduction_protocol.md`, and `dev/gap_reports/smiles_rdkit_remaining_source_scan.md`; record the exact frozen parser blockers that still apply before touching code.
+Step 232 [x]: In `crates/cosmolkit-core/src/notation/smiles.rs`, audit `next_token` against the copied RDKit source lines and update only the markers that are proven by code and tests.
+Step 233 [x]: Add or update focused tokenizer tests for the `next_token` branches audited in Step 232, including at least one negative or boundary token case when the source branch has one.
+Step 234 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict notation::smiles::tests::token`.
+Step 235 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing parser work.
+Step 236 [x]: Audit and port `branch_open_token` in `smiles.rs`, including source comments, unsupported branches, marker status, and explicit error behavior.
+Step 237 [x]: Add or update tests covering `branch_open_token`, unmatched branch handling, and branch error reporting.
+Step 238 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict branch`.
+Step 239 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing parser work.
+Step 240 [x]: Audit and port `parse_mol` and `mol_from_smiles` together, because they share top-level parse orchestration and source error policy.
+Step 241 [x]: Add or update tests covering top-level parse success, parse failure, source-unchanged behavior, and explicit unsupported behavior for Step 240.
+Step 242 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict mol_from_smiles parse_mol`.
+Step 243 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing parser work.
+Step 244 [x]: Audit and port `finish_parse` and `cleanup_after_parsing`, including final sanitize dispatch, property cleanup, and error ordering against RDKit source.
+Step 245 [x]: Add or update tests covering final parse cleanup, final sanitize dispatch, and cleanup error ordering for Step 244.
+Step 246 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict finish_parse cleanup_after_parsing`.
+Step 247 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing parser work.
+Step 248 [x]: Audit and port `add_first_atom` and `add_disconnected_atom`, including disconnected fragment ordering, source atom properties, and marker accuracy.
+Step 249 [x]: Add or update tests covering first-atom and disconnected-fragment parsing for Step 248.
+Step 250 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict add_first_atom add_disconnected_atom`.
+Step 251 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing parser work.
+Step 252 [x]: Audit and port `add_atom_connected_to_active` and `add_branch_atom_connected_to_active`, including active atom updates and branch-local connection behavior.
+Step 253 [x]: Add or update tests covering active atom and branch atom connection behavior for Step 252.
+Step 254 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict add_atom_connected_to_active branch_atom`.
+Step 255 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing parser work.
+Step 256 [x]: Audit and port `add_single_bond_to_atom` and `add_branch_single_bond`, including implicit single-bond behavior and aromatic default handling.
+Step 257 [x]: Add or update tests covering implicit single bonds, aromatic single-bond defaults, and branch single-bond behavior for Step 256.
+Step 258 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict add_single_bond`.
+Step 259 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing parser work.
+Step 260 [x]: Audit and port `add_explicit_bond_to_atom` and `add_branch_explicit_bond`, including explicit bond type, direction, query-bond, and duplicate-bond error behavior.
+Step 261 [x]: Add or update tests covering explicit atom bonds and explicit branch bonds for Step 260.
+Step 262 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict explicit_bond`.
+Step 263 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing parser work.
+Step 264 [x]: Audit and port `add_ring_marker` and `add_single_bond_ring_marker`, including ring digit bookkeeping, duplicate ring marker errors, and implicit ring bond order behavior.
+Step 265 [x]: Add or update tests covering single-bond ring markers and ring marker bookkeeping for Step 264.
+Step 266 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict ring_marker`.
+Step 267 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing parser work.
+Step 268 [x]: Audit and port `add_explicit_bond_ring_marker` and `close_ring_opening`, including explicit ring bond order, ring closure atom ordering, and error behavior.
+Step 269 [x]: Add or update tests covering explicit ring closures, mismatched ring closure bonds, and ring closure error reporting for Step 268.
+Step 270 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict ring_closure`.
+Step 271 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing parser work.
+Step 272 [x]: Audit and port `check_ring_closure_branch_status`, `close_branch`, and `close_mol_rings`, including unclosed branch/ring diagnostics and final ring validation.
+Step 273 [x]: Add or update tests covering unclosed branches, unclosed rings, branch closure order, and final ring closure diagnostics for Step 272.
+Step 274 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict close_branch close_mol_rings`.
+Step 275 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing parser work.
+Step 276 [x]: Audit and port `add_frag_to_mol`, including fragment merge ordering, atom and bond id remapping, stereo group propagation, and source marker status.
+Step 277 [x]: Add or update tests covering multi-fragment merge ordering and remapped atom or bond identities for Step 276.
+Step 278 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict add_frag_to_mol fragment`.
+Step 279 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing chirality parser work.
+Step 280 [x]: Audit and port `adjust_atom_chirality_flags`, focusing only on tetrahedral atoms, ring-closure bond ordering, and tag inversion behavior.
+Step 281 [x]: Add or update tests covering tetrahedral chirality adjustment, including the current fused-ring row-94 parse failure path.
+Step 282 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict writer_canonical_fragment_scope_preserves_aromatic_fused_ring_form_like_rdkit_row_94`.
+Step 283 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing chirality parser work.
+Step 284 [x]: Audit and port `perturbation_order`, including RDKit `countSwapsToInterconvert` size and missing-element behavior without suppressing legitimate source errors.
+Step 285 [x]: Add or update tests covering equal-size perturbation, size-mismatch failure, missing-probe-element failure, and the row-94 successful parse case if Step 280 depends on it.
+Step 286 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict perturbation_order`.
+Step 287 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing chirality parser work.
+Step 288 [x]: Audit and port `chiral_atom_needs_tag_inversion`, `atom_has_fourth_valence`, and `is_unsaturated` together against RDKit source, including implicit-H/property-cache differences.
+Step 289 [x]: Add or update tests covering explicit H, implicit-valence, query single-H, ring closure, and unsaturated-atom inversion branches for Step 288.
+Step 290 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict chiral_atom_needs_tag_inversion atom_has_fourth_valence is_unsaturated`.
+Step 291 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing stereo parser work.
+Step 292 [x]: Audit and port `assign_stereochemistry_from_3d`, including conf-present and conf-null behavior, source copied lines, and explicit unsupported branches.
+Step 293 [x]: Add or update tests covering 3D stereochemistry assignment with coordinates and the no-conformer path for Step 292.
+Step 294 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict assign_stereochemistry_from_3d`.
+Step 295 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing double-bond stereo parser work.
+Step 296 [x]: Audit and port `set_double_bond_neighbor_directions`, including direction assignment from existing stereo, ring-direction handling, and source marker status.
+Step 297 [x]: Add or update tests covering double-bond neighbor direction assignment from parsed stereo and existing stereo for Step 296.
+Step 298 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict set_double_bond_neighbor_directions`.
+Step 299 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing double-bond stereo parser work.
+Step 300 [x]: Audit and port `set_bond_stereo_from_directions`, including cis/trans inference, unknown direction handling, and conflicting direction behavior.
+Step 301 [x]: Add or update tests covering `BondStereo` inference from slash/backslash directions for Step 300.
+Step 302 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict set_bond_stereo_from_directions`.
+Step 303 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing query parser work.
+Step 304 [x]: Audit and port `complete_smiles_query_scan_subset`, including every modeled query branch and explicit unsupported branches for unmodeled RDKit query behavior.
+Step 305 [x]: Add or update tests covering the modeled query scan subset and unsupported query scan branches for Step 304.
+Step 306 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict complete_smiles_query_scan_subset`.
+Step 307 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before parser closure audit.
+Step 308 [x]: Run a parser-only marker scan for `crates/cosmolkit-core/src/notation/smiles.rs` and list every remaining frozen-scope non-closed RDKit marker in `dev/gap_reports/smiles_rdkit_remaining_source_scan.md`.
+Step 309 [x]: If Step 308 reports any parser blocker, add a new one-function-per-step continuation to this checklist before marking Step 309 complete; if it reports zero parser blockers, explicitly record zero parser blockers in the gap report.
+Step 310 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict notation::smiles::tests`.
+Step 311 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before kekulize closure work.
+Step 312 [x]: Audit and port `kekulize_assignment` only, including source markers, explicit unsupported behavior, and parity fixtures.
+Step 313 [x]: Add or update tests covering `kekulize_assignment` success and failure branches for Step 312.
+Step 314 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict kekulize_assignment`.
+Step 315 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing kekulize closure work.
+Step 316 [x]: Audit and port `kekulize_fragment_assignment` only, including fragment bitset behavior, source markers, and error propagation.
+Step 317 [x]: Add or update tests covering `kekulize_fragment_assignment` branch coverage for Step 316.
+Step 318 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict kekulize_fragment_assignment`.
+Step 319 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing kekulize closure work.
+Step 320 [x]: Audit and port `kekulize_fused_assignment` only, including fused ring grouping, candidate propagation, and marker status.
+Step 321 [x]: Add or update tests covering fused-ring kekulization branches for Step 320.
+Step 322 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict kekulize_fused_assignment fused`.
+Step 323 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing kekulize closure work.
+Step 324 [x]: Audit and port `mark_double_bond_candidates` only, including every candidate exclusion branch.
+Step 325 [x]: Add or update tests covering double-bond candidate inclusion and exclusion branches for Step 324.
+Step 326 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict mark_double_bond_candidates`.
+Step 327 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing kekulize closure work.
+Step 328 [x]: Audit and port `kekulize_worker_matching` only, including matching success, no-match, timeout, and error branches.
+Step 329 [x]: Add or update tests covering `kekulize_worker_matching` branches for Step 328.
+Step 330 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict kekulize_worker_matching`.
+Step 331 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing kekulize closure work.
+Step 332 [x]: Audit and port `permute_dummies_and_match` only, including dummy permutation order and failure handling.
+Step 333 [x]: Add or update tests covering dummy permutation and matching branches for Step 332.
+Step 334 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict permute_dummies_and_match`.
+Step 335 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before completing kekulize closure work.
+Step 336 [x]: Audit and port `kekulize_if_possible_assignment` only, including success, fallback, and explicit failure branches.
+Step 337 [x]: Add or update tests covering `kekulize_if_possible_assignment` branches for Step 336.
+Step 338 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict kekulize_if_possible_assignment`.
+Step 339 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before kekulize closure audit.
+Step 340 [x]: Run a kekulize-only marker scan for `crates/cosmolkit-core/src/chemistry/kekulize.rs` and list every remaining frozen-scope non-closed RDKit marker in `dev/gap_reports/smiles_rdkit_remaining_source_scan.md`.
+Step 341 [x]: If Step 340 reports any kekulize blocker, add a new one-function-per-step continuation to this checklist before marking Step 341 complete; if it reports zero kekulize blockers, explicitly record zero kekulize blockers in the gap report.
+Step 342 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict kekulize`.
+Step 343 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before valence closure work.
+Step 344 [x]: Audit and port `ValenceContext::new`, `ValenceContext::atom`, and `ValenceContext::incident_bonds` only, including boundary and invalid-id behavior.
+Step 345 [x]: Add or update tests covering `ValenceContext` construction and access branches for Step 344.
+Step 346 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict ValenceContext`.
+Step 347 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing valence closure work.
+Step 348 [x]: Audit and port `periodic_table_row`, `required_valence_list`, and `rdkit_element_symbol` only, including unknown element and edge periodic-table branches.
+Step 349 [x]: Add or update tests covering element row, valence list, and symbol branches for Step 348.
+Step 350 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict periodic_table_row required_valence_list rdkit_element_symbol`.
+Step 351 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before sanitize closure work.
+Step 352 [x]: Audit and port `sanitize_cleanup_chirality_assignment` only, including tetrahedral, non-tetrahedral, stereo group, and invalid permutation branches.
+Step 353 [x]: Add or update tests covering cleanup chirality branches for Step 352.
+Step 354 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict sanitize_cleanup_chirality_assignment`.
+Step 355 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing sanitize closure work.
+Step 356 [x]: Audit and port `sanitize_adjust_hydrogens_assignment` only, including pyrrolic H, explicit H, valence interaction, and no-op branches.
+Step 357 [x]: Add or update tests covering adjust-hydrogens branches for Step 356.
+Step 358 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict sanitize_adjust_hydrogens_assignment`.
+Step 359 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before sanitize orchestration closure work.
+Step 360 [x]: Audit remaining sanitize/property/cleanup orchestration copied-source blocks in `crates/cosmolkit-core/src/operations/ops.rs`, one block at a time, and update only markers proven by implementation and tests.
+Step 361 [x]: Add or update tests for every orchestration branch changed in Step 360.
+Step 362 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict operations::ops::tests::sanitized`.
+Step 363 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before valence/sanitize closure audit.
+Step 364 [x]: Run a valence/sanitize marker scan for `crates/cosmolkit-core/src/chemistry/valence.rs` and `crates/cosmolkit-core/src/operations/ops.rs`; write exact remaining blockers to `dev/gap_reports/smiles_rdkit_remaining_source_scan.md`.
+Step 365 [x]: If Step 364 reports any valence or sanitize blocker, add a new one-function-or-one-block-per-step continuation to this checklist before marking Step 365 complete; if it reports zero blockers, explicitly record zero valence/sanitize blockers in the gap report.
+Step 366 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict valence sanitize`.
+Step 367 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before final marker audit.
+Step 368 [x]: Run a full frozen-scope RDKit marker scan across parser, writer, canon ranking, rings, kekulize, valence, sanitize, and operation orchestration files; write the complete result to `dev/gap_reports/smiles_rdkit_remaining_source_scan.md`.
+Step 369 [x]: If Step 368 reports any blocker, append a new fine-grained continuation section to this checklist before marking Step 369 complete; do not claim frozen-scope closure.
+Step 370 [ ]: If Step 368 reports zero blockers, update `dev/porting_inventory.md` and `crates/cosmolkit-core/src/support.rs` to reflect the exact frozen-scope state without overstating parity.
+Step 371 [x]: Run `cargo fmt --all`.
+Step 372 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before strict validation.
+Step 373 [x]: Run `cargo check -p cosmolkit-core --features op-contracts-strict`.
+Step 374 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before final strict tests.
+Step 375 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict notation::smiles::tests notation::smiles_write::tests canon_rank rings kekulize valence sanitize`.
+Step 376 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before full strict validation.
+Step 377 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict`.
+Step 378 [ ]: If Step 377 fails, write each failing test, root cause, and required one-step continuation to `dev/gap_reports/smiles_rdkit_remaining_source_scan.md`; do not claim final closure.
+Step 379 [ ]: If Step 377 passes and Step 368 reports zero blockers, audit the frozen baseline against RDKit source one final time and rewrite `dev/gap_reports/smiles_rdkit_frozen_coverage_final_audit.md`.
+Step 380 [x]: Only after Steps 368, 377, and 379 all pass, state `Frozen-scope coverage is exactly 100%`; otherwise state the exact remaining blockers and leave the checklist open.
+
+## Kekulize Continuation After Step 340 Scan
+
+Step 381 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing the remaining `kekulize_fragment_assignment` closure blocks.
+Step 382 [x]: Audit and port only the ring-info, wedged-ring ordering, and filtered ring-copy copied-source block inside `kekulize_fragment_assignment`.
+Step 383 [x]: Add or update focused tests covering the `kekulize_fragment_assignment` ring-ordering and filtered-ring branches for Step 382.
+Step 384 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict ordered_kekulize_rings kekulize_fragment`.
+Step 385 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing the remaining `kekulize_fragment_assignment` closure blocks.
+Step 386 [x]: Audit and port only the aromatic-flag clearing and pyrrolic explicit-H reset copied-source block inside `kekulize_fragment_assignment`.
+Step 387 [x]: Add or update focused tests covering the `kekulize_fragment_assignment` aromatic-flag clearing and explicit-H reset branches for Step 386.
+Step 388 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict kekulize_fragment clear_is_disabled preserves_aromatic_flags`.
+Step 389 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing kekulize worker closure work.
+Step 390 [x]: Audit and port `kekulize_worker_matching` copied-source block to closure-level evidence, updating only markers proven by code shape and tests.
+Step 391 [x]: Add or update focused tests covering the remaining `kekulize_worker_matching` option ordering, wedge-priority, rollback, and terminal failure branches for Step 390.
+Step 392 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict kekulize_worker_matching worker_sorted_atoms back_track`.
+Step 393 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing dummy-permutation closure work.
+Step 394 [x]: Audit and port `permute_dummies_and_match` copied-source blocks, including `QuestionEnumerator`, permutation order, and reset behavior.
+Step 395 [x]: Add or update focused tests covering `permute_dummies_and_match` mask order, no-question exit, no-backtrack recovery, and final failure handling for Step 394.
+Step 396 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict permute_dummies_and_match question_switch_masks`.
+
+## Valence/Sanitize Continuation After Step 364 Scan
+
+Step 397 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing `ValenceContext::new` closure work.
+Step 398 [x]: Audit and port only the remaining performance-gap block in `ValenceContext::new`.
+Step 399 [x]: Add or update focused tests covering the remaining `ValenceContext::new` cache-present and cache-absent closure evidence for Step 398.
+Step 400 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict valence_context_`.
+
+Step 401 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing `add_hs_terminal_coords` closure work.
+Step 402 [x]: Audit and port only the remaining copied-source block in `add_hs_terminal_coords`.
+Step 403 [x]: Add or update focused tests covering `add_hs_terminal_coords` degree and geometry branches for Step 402.
+Step 404 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict add_hs_terminal_coords`.
+
+Step 405 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing `sanitize_after_remove_hs_removal` closure work.
+Step 406 [x]: Audit and port only the remaining copied-source block in `sanitize_after_remove_hs_removal`.
+Step 407 [x]: Add or update focused tests covering `sanitize_after_remove_hs_removal` sanitize-trigger branches for Step 406.
+Step 408 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict sanitize_after_remove_hs_removal remove_hs`.
+
+Step 409 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing `run_sanitize_pipeline` closure work.
+Step 410 [x]: Audit and port only the remaining sanitize orchestration copied-source blocks in `run_sanitize_pipeline`.
+Step 411 [x]: Add or update focused tests covering the remaining `run_sanitize_pipeline` stage-order and cache-update branches for Step 410.
+Step 412 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict operations::ops::tests::sanitized`.
+
+Step 413 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing `sanitize_nitrogens_cleanup_assignment` closure work.
+Step 414 [x]: Audit and port only the remaining copied-source block in `sanitize_nitrogens_cleanup_assignment`.
+Step 415 [x]: Add or update focused tests covering the remaining nitro cleanup selection and rewrite branches for Step 414.
+Step 416 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict neutral_nitro nitrogens_cleanup`.
+
+Step 417 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing `sanitize_phosphorus_cleanup_assignment` closure work.
+Step 418 [x]: Audit and port only the remaining copied-source block in `sanitize_phosphorus_cleanup_assignment`.
+Step 419 [x]: Add or update focused tests covering the remaining phosphorus oxo cleanup branches for Step 418.
+Step 420 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict phosphorus_oxo phosphorus_cleanup`.
+
+Step 421 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing `sanitize_halogen_cleanup_assignment` closure work.
+Step 422 [x]: Audit and port only the remaining copied-source block in `sanitize_halogen_cleanup_assignment`.
+Step 423 [x]: Add or update focused tests covering the remaining hypervalent halogen cleanup branches for Step 422.
+Step 424 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict halogen_oxo halogen_cleanup`.
+
+Step 425 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing `sanitize_cleanup_incident_bonds` closure work.
+Step 426 [x]: Audit and port only the remaining copied-source block in `sanitize_cleanup_incident_bonds`.
+Step 427 [x]: Add or update focused tests covering `sanitize_cleanup_incident_bonds` adjacency and bond-order branches for Step 426.
+Step 428 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict cleanup_incident_bonds`.
+
+Step 429 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing `sanitize_organometallic_cleanup_assignment` closure work.
+Step 430 [x]: Audit and port only the remaining copied-source block in `sanitize_organometallic_cleanup_assignment`.
+Step 431 [x]: Add or update focused tests covering the remaining organometallic cleanup ordering and early-exit branches for Step 430.
+Step 432 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict organometallic_cleanup`.
+
+Step 433 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing `sanitize_metal_bond_cleanup_assignment` closure work.
+Step 434 [x]: Audit and port only the remaining copied-source block in `sanitize_metal_bond_cleanup_assignment`.
+Step 435 [x]: Add or update focused tests covering the remaining metal-bond cleanup ranking and bond-rewrite branches for Step 434.
+Step 436 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict metal_bond_cleanup`.
+
+Step 437 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing `sanitize_is_hypervalent_nonmetal` closure work.
+Step 438 [x]: Audit and port only the remaining copied-source block in `sanitize_is_hypervalent_nonmetal`.
+Step 439 [x]: Add or update focused tests covering the remaining hypervalent-nonmetal predicate branches for Step 438.
+Step 440 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict hypervalent_nonmetal`.
+
+Step 441 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before continuing `sanitize_organometallic_single_bonded_metals` closure work.
+Step 442 [x]: Audit and port only the remaining copied-source block in `sanitize_organometallic_single_bonded_metals`.
+Step 443 [x]: Add or update focused tests covering the remaining single-bonded metal selection branches for Step 442.
+Step 444 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict single_bonded_metals organometallic`.
+
+## Frozen-Scope Continuation After Step 368 Scan
+
+Step 445 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before resuming frozen-scope blocker closure after the Step 368 full scan.
+Step 446 [x]: Complete the remaining kekulize continuation block in Steps 381-396 before claiming any new frozen-scope closure result.
+Step 447 [x]: Complete the remaining valence/sanitize continuation block in Steps 397-444 before claiming any new frozen-scope closure result.
+Step 448 [x]: After Steps 381-444 finish, rerun the full frozen-scope marker scan and append any further one-function-or-one-block continuation required by the new result before claiming frozen-scope closure.
+
+## Frozen-Scope Continuation After Step 448 Scan
+
+Step 449 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before closing the remaining frozen-scope blockers revealed by the Step 448 full scan.
+Step 450 [x]: Audit and port only the remaining performance-gap block in `ValenceContext::new` by preserving immutable topology adjacency on constructed molecules.
+Step 451 [x]: Add or update focused tests covering topology-adjacency reuse and empty-topology normalization for Step 450.
+Step 452 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict valence_context_`.
+Step 453 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` before closing the remaining `add_hs_terminal_coords` copied-source block.
+Step 454 [x]: Audit and port only the remaining copied-source block in `add_hs_terminal_coords`.
+Step 455 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict add_hs_terminal_coords`.
+Step 456 [x]: Rerun the full frozen-scope marker scan plus strict validation (`cargo check -p cosmolkit-core --features op-contracts-strict` and `cargo test -p cosmolkit-core --features op-contracts-strict`) and record the zero-blocker result.

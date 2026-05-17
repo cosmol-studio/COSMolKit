@@ -88,7 +88,7 @@ operation/support contracts.
    - `dev/README.md`
    - `dev/policy_invariants.md`
    - `dev/topology_operations.md` for molecule operation edits
-   - `dev/Macro-ControlledStateMigrationDesign.md` for operation registry edits
+   - `dev/operation_system_standard.md` for operation registry edits
    - `dev/testing_contract.md` for validation policy
 
 7. **Topology changes go through registered operations** and `OpParts`. Free

@@ -2,6 +2,7 @@
 
 use crate::{
     AdjacencyList, Atom, AtomId, Bond, BondOrder, BondQueryPredicate, Molecule, QueryNode,
+    read_parts::MoleculeReadParts,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,105 +39,61 @@ struct AtomValenceState {
     implicit_valence: i32,
 }
 
-enum ValenceAdjacency<'a> {
-    Borrowed(&'a AdjacencyList),
-    Owned(AdjacencyList),
+pub(crate) fn assign_valence_state_for_atom_from_parts(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    atom_id: AtomId,
+    strict: bool,
+) -> Result<(i32, i32), ValenceError> {
+    let state = atom_update_property_cache(atoms, bonds, adjacency, atom_id, strict)?;
+    Ok((state.explicit_valence, state.implicit_valence))
 }
 
-impl<'a> ValenceAdjacency<'a> {
-    fn as_ref(&self) -> &AdjacencyList {
-        match self {
-            Self::Borrowed(adjacency) => adjacency,
-            Self::Owned(adjacency) => adjacency,
-        }
-    }
-}
-
-// RDKit stores graph adjacency in the molecule and `atomBonds()` iterates it
-// directly. COSMolKit now models adjacency as an operation-managed derived
-// cache. Pure read-only valence entry points borrow that cache when present and
-// otherwise build an ephemeral adjacency view without mutating the molecule.
-struct ValenceContext<'a> {
-    molecule: &'a Molecule,
-    adjacency: ValenceAdjacency<'a>,
-}
-
-impl<'a> ValenceContext<'a> {
-    fn new(molecule: &'a Molecule) -> Result<Self, ValenceError> {
-        // BEGIN RDKIT CPP ADAPTER ValenceContext::new
-        // RDKit❗✔️: // ROMol stores graph adjacency internally and valence code reads it
-        // RDKit❗✔️: // through getAtomWithIdx()/atomBonds() without materializing a separate view.
-        // RDKit❗✔️: // COSMolKit borrows the derived adjacency cache when available and otherwise
-        // RDKit❗✔️: // builds an ephemeral read-only adjacency snapshot for parity-preserving lookup.
-        // END RDKIT CPP ADAPTER ValenceContext::new
-        let adjacency = match molecule.derived_cache().adjacency.as_ref() {
-            Some(adjacency) => ValenceAdjacency::Borrowed(adjacency),
-            None => ValenceAdjacency::Owned(
-                AdjacencyList::try_from_topology(molecule.num_atoms(), molecule.bonds()).map_err(
-                    |_| ValenceError::UnsupportedBranch {
-                        reason: "topology bond atom index out of range",
-                    },
-                )?,
-            ),
-        };
-        Ok(Self {
-            molecule,
-            adjacency,
+fn atom_from_parts(atoms: &[Atom], atom_id: AtomId) -> Result<&Atom, ValenceError> {
+    // BEGIN RDKIT CPP FUNCTION ROMol::getAtomWithIdx
+    // RDKit✔️✔️: //! returns a pointer to a particular Atom
+    // RDKit✔️✔️: Atom *getAtomWithIdx(unsigned int idx);
+    // RDKit✔️✔️: //! \overload
+    // RDKit✔️✔️: const Atom *getAtomWithIdx(unsigned int idx) const;
+    // END RDKIT CPP FUNCTION ROMol::getAtomWithIdx
+    atoms
+        .get(atom_id.index())
+        .ok_or(ValenceError::UnsupportedBranch {
+            reason: "atom index out of range",
         })
-    }
+}
 
-    fn atoms(&self) -> &'a [Atom] {
-        self.molecule.atoms()
+fn incident_bonds_from_parts<'a>(
+    atom_count: usize,
+    bonds: &'a [Bond],
+    adjacency: &'a AdjacencyList,
+    atom_id: AtomId,
+) -> Result<impl Iterator<Item = &'a Bond> + 'a, ValenceError> {
+    // BEGIN RDKIT CPP FUNCTION ROMol::atomBonds
+    // RDKit✔️✔️: CXXBondIterator<const MolGraph, Bond *const, MolGraph::out_edge_iterator>
+    // RDKit✔️✔️: atomBonds(Atom const *at) const {
+    // RDKit✔️✔️:   auto pr = getAtomBonds(at);
+    // RDKit✔️✔️:   return {&d_graph, pr.first, pr.second};
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION ROMol::atomBonds
+    if atom_id.index() >= atom_count {
+        return Err(ValenceError::UnsupportedBranch {
+            reason: "atom index out of range",
+        });
     }
-
-    fn bonds(&self) -> &'a [Bond] {
-        self.molecule.bonds()
+    let neighbors = adjacency.neighbors_of(atom_id.index());
+    if neighbors
+        .iter()
+        .any(|neighbor| neighbor.bond.index() >= bonds.len())
+    {
+        return Err(ValenceError::UnsupportedBranch {
+            reason: "topology adjacency bond index out of range",
+        });
     }
-
-    fn atom(&self, atom_id: AtomId) -> Result<&'a Atom, ValenceError> {
-        // BEGIN RDKIT CPP FUNCTION ROMol::getAtomWithIdx
-        // RDKit❗✔️: //! returns a pointer to a particular Atom
-        // RDKit❗✔️: Atom *getAtomWithIdx(unsigned int idx);
-        // RDKit❗✔️: //! \overload
-        // RDKit❗✔️: const Atom *getAtomWithIdx(unsigned int idx) const;
-        // END RDKIT CPP FUNCTION ROMol::getAtomWithIdx
-        self.molecule
-            .atoms()
-            .get(atom_id.index())
-            .ok_or(ValenceError::UnsupportedBranch {
-                reason: "atom index out of range",
-            })
-    }
-
-    fn incident_bonds(
-        &self,
-        atom_id: AtomId,
-    ) -> Result<impl Iterator<Item = &'a Bond> + '_, ValenceError> {
-        // BEGIN RDKIT CPP FUNCTION ROMol::atomBonds
-        // RDKit❗✔️: CXXBondIterator<const MolGraph, Bond *const, MolGraph::out_edge_iterator>
-        // RDKit❗✔️: atomBonds(Atom const *at) const {
-        // RDKit❗✔️:   auto pr = getAtomBonds(at);
-        // RDKit❗✔️:   return {&d_graph, pr.first, pr.second};
-        // RDKit❗✔️: }
-        // END RDKIT CPP FUNCTION ROMol::atomBonds
-        if atom_id.index() >= self.molecule.num_atoms() {
-            return Err(ValenceError::UnsupportedBranch {
-                reason: "atom index out of range",
-            });
-        }
-        let neighbors = self.adjacency.as_ref().neighbors_of(atom_id.index());
-        if neighbors
-            .iter()
-            .any(|neighbor| neighbor.bond.index() >= self.molecule.num_bonds())
-        {
-            return Err(ValenceError::UnsupportedBranch {
-                reason: "adjacency cache bond index out of range",
-            });
-        }
-        Ok(neighbors
-            .iter()
-            .map(|neighbor| &self.molecule.bonds()[neighbor.bond.index()]))
-    }
+    Ok(neighbors
+        .iter()
+        .map(move |neighbor| &bonds[neighbor.bond.index()]))
 }
 
 pub fn rdkit_valence_list(atomic_number: u8) -> Result<Option<&'static [i32]>, ValenceError> {
@@ -144,6 +101,18 @@ pub fn rdkit_valence_list(atomic_number: u8) -> Result<Option<&'static [i32]>, V
 }
 
 pub fn assign_radicals(molecule: &Molecule) -> Result<Vec<u8>, ValenceError> {
+    assign_radicals_from_parts(
+        molecule.atoms(),
+        molecule.bonds(),
+        &molecule.topology_block().adjacency,
+    )
+}
+
+pub(crate) fn assign_radicals_from_parts(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+) -> Result<Vec<u8>, ValenceError> {
     // COSMolKit uses value-style molecule state. This helper computes the
     // radical-electron values that RDKit writes into RWMol atoms; the registered
     // operation applies them atomically through OpParts.
@@ -155,14 +124,12 @@ pub fn assign_radicals(molecule: &Molecule) -> Result<Vec<u8>, ValenceError> {
     // RDKit✔️✔️:     if (!atom->getNoImplicit() || !atom->getAtomicNum()) {
     // RDKit✔️✔️:       continue;
     // RDKit✔️✔️:     }
-    let context = ValenceContext::new(molecule)?;
-    let mut radicals = context
-        .atoms()
+    let mut radicals = atoms
         .iter()
         .map(Atom::radical_electrons)
         .collect::<Vec<_>>();
 
-    for atom in context.atoms() {
+    for atom in atoms {
         if !atom.no_implicit() || atom.atomic_number() == 0 {
             continue;
         }
@@ -188,7 +155,7 @@ pub fn assign_radicals(molecule: &Molecule) -> Result<Vec<u8>, ValenceError> {
             // RDKit✔️✔️:       accum += atom->getNumExplicitHs();
             // RDKit✔️✔️:       int totalValence = static_cast<int>(accum + 0.1);
             let mut accum = 0.0;
-            for bond in context.incident_bonds(atom.id())? {
+            for bond in incident_bonds_from_parts(atoms.len(), bonds, adjacency, atom.id())? {
                 accum += bond_valence_contrib(bond, atom.id())?;
             }
             accum += f64::from(atom.explicit_hydrogens());
@@ -251,7 +218,10 @@ pub fn assign_radicals(molecule: &Molecule) -> Result<Vec<u8>, ValenceError> {
             // RDKit✔️✔️:       // radicals:
             // RDKit✔️✔️:       if (atom->getDegree() > 0) {
             // RDKit✔️✔️:         atom->setNumRadicalElectrons(0);
-            if context.incident_bonds(atom.id())?.next().is_some() {
+            if incident_bonds_from_parts(atoms.len(), bonds, adjacency, atom.id())?
+                .next()
+                .is_some()
+            {
                 0
             } else {
                 // RDKit✔️✔️:       } else {
@@ -305,8 +275,24 @@ pub fn assign_valence_with_options(
     model: ValenceModel,
     strict: bool,
 ) -> Result<ValenceAssignment, ValenceError> {
+    assign_valence_with_options_from_parts(
+        molecule.atoms(),
+        molecule.bonds(),
+        &molecule.topology_block().adjacency,
+        model,
+        strict,
+    )
+}
+
+pub(crate) fn assign_valence_with_options_from_parts(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    model: ValenceModel,
+    strict: bool,
+) -> Result<ValenceAssignment, ValenceError> {
     match model {
-        ValenceModel::RdkitLike => romol_update_property_cache(molecule, strict),
+        ValenceModel::RdkitLike => romol_update_property_cache(atoms, bonds, adjacency, strict),
     }
 }
 
@@ -314,12 +300,18 @@ pub fn atom_has_valence_violation(
     molecule: &Molecule,
     atom_id: AtomId,
 ) -> Result<bool, ValenceError> {
-    let context = ValenceContext::new(molecule)?;
-    atom_has_valence_violation_impl(&context, atom_id)
+    atom_has_valence_violation_from_parts(
+        molecule.atoms(),
+        molecule.bonds(),
+        &molecule.topology_block().adjacency,
+        atom_id,
+    )
 }
 
 fn romol_update_property_cache(
-    molecule: &Molecule,
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
     strict: bool,
 ) -> Result<ValenceAssignment, ValenceError> {
     // BEGIN RDKIT CPP FUNCTION ROMol::updatePropertyCache
@@ -332,15 +324,14 @@ fn romol_update_property_cache(
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION ROMol::updatePropertyCache
-    let context = ValenceContext::new(molecule)?;
-    let mut explicit_valence = Vec::with_capacity(molecule.num_atoms());
-    let mut implicit_hydrogens = Vec::with_capacity(molecule.num_atoms());
-    for atom in context.atoms() {
-        let state = atom_update_property_cache(&context, atom.id(), strict)?;
+    let mut explicit_valence = Vec::with_capacity(atoms.len());
+    let mut implicit_hydrogens = Vec::with_capacity(atoms.len());
+    for atom in atoms {
+        let state = atom_update_property_cache(atoms, bonds, adjacency, atom.id(), strict)?;
         explicit_valence.push(state.explicit_valence);
         implicit_hydrogens.push(state.implicit_valence);
     }
-    for bond in context.bonds() {
+    for bond in bonds {
         bond_update_property_cache(bond, strict);
     }
     Ok(ValenceAssignment {
@@ -350,7 +341,9 @@ fn romol_update_property_cache(
 }
 
 fn atom_update_property_cache(
-    context: &ValenceContext<'_>,
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
     atom_id: AtomId,
     strict: bool,
 ) -> Result<AtomValenceState, ValenceError> {
@@ -360,8 +353,9 @@ fn atom_update_property_cache(
     // RDKit✔️✔️:   calcImplicitValence(strict);
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Atom::updatePropertyCache
-    let explicit_valence = atom_calc_explicit_valence(context, atom_id, strict)?;
-    let implicit_valence = atom_calc_implicit_valence(context, atom_id, explicit_valence, strict)?;
+    let explicit_valence = atom_calc_explicit_valence(atoms, bonds, adjacency, atom_id, strict)?;
+    let implicit_valence =
+        atom_calc_implicit_valence(atoms, bonds, adjacency, atom_id, explicit_valence, strict)?;
     Ok(AtomValenceState {
         explicit_valence,
         implicit_valence,
@@ -376,7 +370,9 @@ fn bond_update_property_cache(_bond: &Bond, strict: bool) {
 }
 
 fn atom_calc_explicit_valence(
-    context: &ValenceContext<'_>,
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
     atom_id: AtomId,
     strict: bool,
 ) -> Result<i32, ValenceError> {
@@ -387,11 +383,23 @@ fn atom_calc_explicit_valence(
     // RDKit✔️✔️:   return d_explicitValence;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Atom::calcExplicitValence
-    calculate_explicit_valence(context, atom_id, strict, false)
+    calculate_explicit_valence(atoms, bonds, adjacency, atom_id, strict, false)
+}
+
+pub(crate) fn assign_explicit_valence_for_atom_from_parts(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    atom_id: AtomId,
+    strict: bool,
+) -> Result<i32, ValenceError> {
+    atom_calc_explicit_valence(atoms, bonds, adjacency, atom_id, strict)
 }
 
 fn atom_calc_implicit_valence(
-    context: &ValenceContext<'_>,
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
     atom_id: AtomId,
     explicit_valence: i32,
     strict: bool,
@@ -406,11 +414,21 @@ fn atom_calc_implicit_valence(
     // RDKit✔️✔️:   return d_implicitValence;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Atom::calcImplicitValence
-    calculate_implicit_valence(context, atom_id, explicit_valence, strict, false)
+    calculate_implicit_valence(
+        atoms,
+        bonds,
+        adjacency,
+        atom_id,
+        explicit_valence,
+        strict,
+        false,
+    )
 }
 
 fn calculate_explicit_valence(
-    context: &ValenceContext<'_>,
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
     atom_id: AtomId,
     strict: bool,
     check_it: bool,
@@ -424,9 +442,9 @@ fn calculate_explicit_valence(
     // RDKit✔️✔️:     accum += bnd->getValenceContrib(&atom);
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   accum += atom.getNumExplicitHs();
-    let atom = context.atom(atom_id)?;
+    let atom = atom_from_parts(atoms, atom_id)?;
     let mut accum = 0.0;
-    for bond in context.incident_bonds(atom_id)? {
+    for bond in incident_bonds_from_parts(atoms.len(), bonds, adjacency, atom_id)? {
         accum += bond_valence_contrib(bond, atom_id)?;
     }
     accum += f64::from(atom.explicit_hydrogens());
@@ -462,7 +480,9 @@ fn calculate_explicit_valence(
     // RDKit✔️✔️:     // "v" here is one of the allowed valences. For example:
     // RDKit✔️✔️:     //    sulfur here : O=c1ccs(=O)cc1
     // RDKit✔️✔️:     //    nitrogen here : c1cccn1C
-    if accum > f64::from(default_valence) && is_aromatic_atom(context, atom_id)? {
+    if accum > f64::from(default_valence)
+        && is_aromatic_atom_from_parts(atoms, bonds, adjacency, atom_id)?
+    {
         // RDKit✔️✔️:     int pval = dv;
         // RDKit✔️✔️:     for (auto val : valens) {
         // RDKit✔️✔️:       if (val == -1) {
@@ -584,7 +604,9 @@ fn calculate_explicit_valence(
 }
 
 fn calculate_implicit_valence(
-    context: &ValenceContext<'_>,
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
     atom_id: AtomId,
     explicit_valence: i32,
     strict: bool,
@@ -595,7 +617,7 @@ fn calculate_implicit_valence(
     // RDKit✔️✔️:   if (atom.df_noImplicit) {
     // RDKit✔️✔️:     return 0;
     // RDKit✔️✔️:   }
-    let atom = context.atom(atom_id)?;
+    let atom = atom_from_parts(atoms, atom_id)?;
     if atom.no_implicit() {
         return Ok(0);
     }
@@ -617,7 +639,7 @@ fn calculate_implicit_valence(
     // RDKit✔️✔️:       return 0;
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    for bond in context.incident_bonds(atom_id)? {
+    for bond in incident_bonds_from_parts(atoms.len(), bonds, adjacency, atom_id)? {
         if bond.query().is_some_and(has_complex_bond_type_query) {
             return Ok(0);
         }
@@ -724,7 +746,7 @@ fn calculate_implicit_valence(
     let res;
     // RDKit✔️✔️:   // if we have an aromatic case treat it differently
     // RDKit✔️✔️:   if (isAromaticAtom(atom)) {
-    if is_aromatic_atom(context, atom_id)? {
+    if is_aromatic_atom_from_parts(atoms, bonds, adjacency, atom_id)? {
         // RDKit✔️✔️:     if (explicitPlusRadV <= dv) {
         // RDKit✔️✔️:       res = dv - explicitPlusRadV;
         // RDKit✔️✔️:     } else {
@@ -846,7 +868,9 @@ fn calculate_implicit_valence(
 }
 
 fn atom_has_valence_violation_impl(
-    context: &ValenceContext<'_>,
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
     atom_id: AtomId,
 ) -> Result<bool, ValenceError> {
     // BEGIN RDKIT CPP FUNCTION Atom::hasValenceViolation
@@ -858,11 +882,10 @@ fn atom_has_valence_violation_impl(
     // RDKit✔️✔️:       std::any_of(bonds.begin(), bonds.end(), is_query)) {
     // RDKit✔️✔️:     return false;
     // RDKit✔️✔️:   }
-    let atom = context.atom(atom_id)?;
+    let atom = atom_from_parts(atoms, atom_id)?;
     if atom.atomic_number() == 0
         || atom.query().is_some()
-        || context
-            .incident_bonds(atom_id)?
+        || incident_bonds_from_parts(atoms.len(), bonds, adjacency, atom_id)?
             .any(|bond| bond.query().is_some())
     {
         return Ok(false);
@@ -919,21 +942,56 @@ fn atom_has_valence_violation_impl(
     // END RDKIT CPP FUNCTION Atom::hasValenceViolation
     let strict = false;
     let check_it = true;
-    let explicit = calculate_explicit_valence(context, atom_id, strict, check_it)?;
+    let explicit = calculate_explicit_valence(atoms, bonds, adjacency, atom_id, strict, check_it)?;
     if explicit == -1 {
         return Ok(true);
     }
-    let implicit = calculate_implicit_valence(context, atom_id, explicit, strict, check_it)?;
+    let implicit =
+        calculate_implicit_valence(atoms, bonds, adjacency, atom_id, explicit, strict, check_it)?;
     Ok(implicit == -1)
 }
 
-fn is_aromatic_atom(context: &ValenceContext<'_>, atom_id: AtomId) -> Result<bool, ValenceError> {
+pub(crate) fn atom_has_valence_violation_from_parts(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    atom_id: AtomId,
+) -> Result<bool, ValenceError> {
+    atom_has_valence_violation_impl(atoms, bonds, adjacency, atom_id)
+}
+
+pub(crate) fn assign_valence_with_options_from_read_parts(
+    read: MoleculeReadParts<'_>,
+    model: ValenceModel,
+    strict: bool,
+) -> Result<ValenceAssignment, ValenceError> {
+    assign_valence_with_options_from_parts(
+        read.atoms(),
+        read.bonds(),
+        &read.topology().adjacency,
+        model,
+        strict,
+    )
+}
+
+pub(crate) fn assign_radicals_from_read_parts(
+    read: MoleculeReadParts<'_>,
+) -> Result<Vec<u8>, ValenceError> {
+    assign_radicals_from_parts(read.atoms(), read.bonds(), &read.topology().adjacency)
+}
+
+fn is_aromatic_atom_from_parts(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    atom_id: AtomId,
+) -> Result<bool, ValenceError> {
     // BEGIN RDKIT CPP FUNCTION isAromaticAtom
     // RDKit✔️✔️: bool isAromaticAtom(const Atom &atom) {
     // RDKit✔️✔️:   if (atom.getIsAromatic()) {
     // RDKit✔️✔️:     return true;
     // RDKit✔️✔️:   }
-    let atom = context.atom(atom_id)?;
+    let atom = atom_from_parts(atoms, atom_id)?;
     if atom.is_aromatic() {
         return Ok(true);
     }
@@ -945,7 +1003,7 @@ fn is_aromatic_atom(context: &ValenceContext<'_>, atom_id: AtomId) -> Result<boo
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    for bond in context.incident_bonds(atom_id)? {
+    for bond in incident_bonds_from_parts(atoms.len(), bonds, adjacency, atom_id)? {
         if bond.is_aromatic() || bond.order() == BondOrder::Aromatic {
             return Ok(true);
         }
@@ -2277,7 +2335,7 @@ fn invalid_valence_with_message(atom: &Atom, message: String) -> ValenceError {
     }
 }
 
-fn rdkit_element_symbol(atomic_number: u8) -> Result<&'static str, ValenceError> {
+pub(crate) fn rdkit_element_symbol(atomic_number: u8) -> Result<&'static str, ValenceError> {
     // BEGIN RDKIT CPP FUNCTION PeriodicTable::getElementSymbol / atomicData::Symbol
     // RDKit✔️✔️: std::string getElementSymbol(UINT atomicNumber) const {
     // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
@@ -2322,31 +2380,60 @@ mod tests {
     }
 
     #[test]
-    fn valence_context_atom_and_incident_bonds_follow_topology_like_rdkit() {
+    fn valence_parts_atom_and_incident_bonds_follow_topology_like_rdkit() {
         let molecule = Molecule::from_smiles_with_sanitize("CCO", false).unwrap();
-        let context = super::ValenceContext::new(&molecule).unwrap();
-
-        assert_eq!(context.atom(AtomId::new(1)).unwrap().atomic_number(), 6);
         assert_eq!(
-            context
-                .incident_bonds(AtomId::new(1))
+            super::atom_from_parts(molecule.atoms(), AtomId::new(1))
                 .unwrap()
-                .map(|bond| bond.id().index())
-                .collect::<Vec<_>>(),
+                .atomic_number(),
+            6
+        );
+        assert_eq!(
+            super::incident_bonds_from_parts(
+                molecule.num_atoms(),
+                molecule.bonds(),
+                &molecule.topology_block().adjacency,
+                AtomId::new(1),
+            )
+            .unwrap()
+            .map(|bond| bond.id().index())
+            .collect::<Vec<_>>(),
             vec![0, 1]
         );
     }
 
     #[test]
-    fn valence_context_reports_out_of_range_atom_access() {
-        let molecule = Molecule::from_smiles_with_sanitize("C", false).unwrap();
-        let context = super::ValenceContext::new(&molecule).unwrap();
-
+    fn valence_parts_use_topology_adjacency_without_cached_derived_cache() {
+        let molecule = Molecule::from_smiles_with_sanitize("CCO", false).unwrap();
         assert_eq!(
-            context.atom(AtomId::new(1)).unwrap_err().to_string(),
+            super::incident_bonds_from_parts(
+                molecule.num_atoms(),
+                molecule.bonds(),
+                &molecule.topology_block().adjacency,
+                AtomId::new(0),
+            )
+            .unwrap()
+            .map(|bond| bond.id().index())
+            .collect::<Vec<_>>(),
+            vec![0]
+        );
+    }
+
+    #[test]
+    fn valence_parts_report_out_of_range_atom_access() {
+        let molecule = Molecule::from_smiles_with_sanitize("C", false).unwrap();
+        assert_eq!(
+            super::atom_from_parts(molecule.atoms(), AtomId::new(1))
+                .unwrap_err()
+                .to_string(),
             "unsupported valence branch: atom index out of range"
         );
-        match context.incident_bonds(AtomId::new(1)) {
+        match super::incident_bonds_from_parts(
+            molecule.num_atoms(),
+            molecule.bonds(),
+            &molecule.topology_block().adjacency,
+            AtomId::new(1),
+        ) {
             Err(error) => assert_eq!(
                 error.to_string(),
                 "unsupported valence branch: atom index out of range"
@@ -2356,10 +2443,31 @@ mod tests {
     }
 
     #[test]
+    fn valence_parts_do_not_depend_on_cached_adjacency_from_registered_operation() {
+        let molecule = Molecule::from_smiles_with_sanitize("CCO", false)
+            .unwrap()
+            .with_assigned_valence()
+            .unwrap();
+        assert_eq!(
+            super::incident_bonds_from_parts(
+                molecule.num_atoms(),
+                molecule.bonds(),
+                &molecule.topology_block().adjacency,
+                AtomId::new(1),
+            )
+            .unwrap()
+            .map(|bond| bond.id().index())
+            .collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+    }
+
+    #[test]
     fn periodic_table_row_and_required_valence_list_match_rdkit_entries() {
         assert_eq!(super::periodic_table_row(0), Some(0));
         assert_eq!(super::periodic_table_row(1), Some(1));
         assert_eq!(super::periodic_table_row(92), Some(7));
+        assert_eq!(super::periodic_table_row(118), Some(7));
         assert_eq!(super::periodic_table_row(119), None);
 
         assert_eq!(super::required_valence_list(0).unwrap(), &[-1]);
@@ -2674,13 +2782,25 @@ mod tests {
     #[test]
     fn calculate_explicit_valence_handles_hypervalent_anion_like_rdkit() {
         let molecule = Molecule::from_smiles_with_sanitize("[S-](F)(F)(F)(F)F", false).unwrap();
-        let context = super::ValenceContext::new(&molecule).unwrap();
-
-        let explicit =
-            super::calculate_explicit_valence(&context, AtomId::new(0), false, false).unwrap();
+        let explicit = super::calculate_explicit_valence(
+            molecule.atoms(),
+            molecule.bonds(),
+            &molecule.topology_block().adjacency,
+            AtomId::new(0),
+            false,
+            false,
+        )
+        .unwrap();
         assert_eq!(explicit, 5);
         assert_eq!(
-            super::atom_calc_explicit_valence(&context, AtomId::new(0), true).unwrap(),
+            super::atom_calc_explicit_valence(
+                molecule.atoms(),
+                molecule.bonds(),
+                &molecule.topology_block().adjacency,
+                AtomId::new(0),
+                true,
+            )
+            .unwrap(),
             5
         );
     }
@@ -2688,10 +2808,15 @@ mod tests {
     #[test]
     fn calculate_explicit_valence_returns_check_it_sentinel_for_overvalent_atom() {
         let molecule = Molecule::from_smiles_with_sanitize("C(=O)(=O)(=O)", false).unwrap();
-        let context = super::ValenceContext::new(&molecule).unwrap();
-
-        let explicit =
-            super::calculate_explicit_valence(&context, AtomId::new(0), false, true).unwrap();
+        let explicit = super::calculate_explicit_valence(
+            molecule.atoms(),
+            molecule.bonds(),
+            &molecule.topology_block().adjacency,
+            AtomId::new(0),
+            false,
+            true,
+        )
+        .unwrap();
         assert_eq!(explicit, -1);
     }
 
@@ -2700,38 +2825,80 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         builder.add_atom(AtomSpec::new(Element::H).with_formal_charge(2));
         let molecule = builder.build().unwrap();
-        let context = super::ValenceContext::new(&molecule).unwrap();
-
-        let strict_error =
-            super::calculate_implicit_valence(&context, AtomId::new(0), 0, true, false)
-                .unwrap_err();
+        let strict_error = super::calculate_implicit_valence(
+            molecule.atoms(),
+            molecule.bonds(),
+            &molecule.topology_block().adjacency,
+            AtomId::new(0),
+            0,
+            true,
+            false,
+        )
+        .unwrap_err();
         assert_eq!(
             strict_error.to_string(),
             "Unreasonable formal charge on atom # 0."
         );
 
-        let non_strict =
-            super::calculate_implicit_valence(&context, AtomId::new(0), 0, false, false).unwrap();
+        let non_strict = super::calculate_implicit_valence(
+            molecule.atoms(),
+            molecule.bonds(),
+            &molecule.topology_block().adjacency,
+            AtomId::new(0),
+            0,
+            false,
+            false,
+        )
+        .unwrap();
         assert_eq!(non_strict, 0);
 
-        let check_it =
-            super::calculate_implicit_valence(&context, AtomId::new(0), 0, false, true).unwrap();
+        let check_it = super::calculate_implicit_valence(
+            molecule.atoms(),
+            molecule.bonds(),
+            &molecule.topology_block().adjacency,
+            AtomId::new(0),
+            0,
+            false,
+            true,
+        )
+        .unwrap();
         assert_eq!(check_it, -1);
     }
 
     #[test]
     fn calculate_implicit_valence_handles_hypervalent_anion_like_rdkit() {
         let molecule = Molecule::from_smiles_with_sanitize("[S-](F)(F)(F)(F)F", false).unwrap();
-        let context = super::ValenceContext::new(&molecule).unwrap();
-        let explicit =
-            super::calculate_explicit_valence(&context, AtomId::new(0), false, false).unwrap();
+        let explicit = super::calculate_explicit_valence(
+            molecule.atoms(),
+            molecule.bonds(),
+            &molecule.topology_block().adjacency,
+            AtomId::new(0),
+            false,
+            false,
+        )
+        .unwrap();
 
-        let implicit =
-            super::calculate_implicit_valence(&context, AtomId::new(0), explicit, false, false)
-                .unwrap();
+        let implicit = super::calculate_implicit_valence(
+            molecule.atoms(),
+            molecule.bonds(),
+            &molecule.topology_block().adjacency,
+            AtomId::new(0),
+            explicit,
+            false,
+            false,
+        )
+        .unwrap();
         assert_eq!(implicit, 0);
         assert_eq!(
-            super::atom_calc_implicit_valence(&context, AtomId::new(0), explicit, true).unwrap(),
+            super::atom_calc_implicit_valence(
+                molecule.atoms(),
+                molecule.bonds(),
+                &molecule.topology_block().adjacency,
+                AtomId::new(0),
+                explicit,
+                true,
+            )
+            .unwrap(),
             0
         );
     }
@@ -2863,10 +3030,16 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         builder.add_atom(AtomSpec::new(Element::H).with_formal_charge(-120));
         let molecule = builder.build().unwrap();
-        let context = super::ValenceContext::new(&molecule).unwrap();
-
         assert!(atom_has_valence_violation(&molecule, AtomId::new(0)).unwrap());
-        assert!(super::atom_has_valence_violation_impl(&context, AtomId::new(0)).unwrap());
+        assert!(
+            super::atom_has_valence_violation_impl(
+                molecule.atoms(),
+                molecule.bonds(),
+                &molecule.topology_block().adjacency,
+                AtomId::new(0),
+            )
+            .unwrap()
+        );
     }
 
     #[test]
@@ -2945,11 +3118,7 @@ mod tests {
         let result = molecule.with_assigned_valence().unwrap();
 
         assert_eq!(molecule, original);
-        let adjacency = result
-            .derived_cache()
-            .adjacency
-            .as_ref()
-            .expect("assigned valence operation should materialize adjacency cache");
+        let adjacency = &result.topology_block().adjacency;
         assert_eq!(adjacency.neighbors_of(0).len(), 1);
         assert_eq!(adjacency.neighbors_of(1).len(), 2);
         assert_eq!(adjacency.neighbors_of(2).len(), 1);
@@ -2991,11 +3160,7 @@ mod tests {
 
         assert_eq!(molecule, original);
         assert_eq!(result.atoms()[0].radical_electrons(), 1);
-        let adjacency = result
-            .derived_cache()
-            .adjacency
-            .as_ref()
-            .expect("assigned radicals operation should materialize adjacency cache");
+        let adjacency = &result.topology_block().adjacency;
         assert_eq!(adjacency.neighbors_of(0).len(), 0);
         assert_eq!(
             result.derived_cache().valence,

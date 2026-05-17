@@ -3,9 +3,10 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::{
-    AtomId, BondDirection, BondId, BondOrder, Molecule, RingFindingError, RingInfo, ValenceError,
-    ValenceModel, assign_valence_with_options, canon_rank::FragmentRankScope,
-    canon_rank::rank_fragment_atoms_for_kekulize, molecule::TopologyBlock, symmetrize_sssr,
+    AtomId, BondDirection, BondId, BondOrder, Molecule, RingFindingError, RingInfo,
+    ValenceAssignment, ValenceError, ValenceModel, canon_rank::FragmentRankScope,
+    canon_rank::rank_fragment_atoms_for_kekulize, molecule::TopologyBlock,
+    read_parts::MoleculeReadParts,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -65,14 +66,18 @@ struct KekulizeRing {
 }
 
 impl KekulizeAssignment {
-    fn empty(molecule: &Molecule) -> Self {
+    fn empty(num_atoms: usize, num_bonds: usize) -> Self {
+        Self::with_sizes(num_atoms, num_bonds)
+    }
+
+    fn with_sizes(num_atoms: usize, num_bonds: usize) -> Self {
         Self {
-            bond_orders: vec![None; molecule.num_bonds()],
-            bond_aromatic_flags: vec![None; molecule.num_bonds()],
-            bond_directions: vec![None; molecule.num_bonds()],
-            atom_aromatic_flags: vec![None; molecule.num_atoms()],
-            atom_explicit_hydrogens: vec![None; molecule.num_atoms()],
-            atom_no_implicit: vec![None; molecule.num_atoms()],
+            bond_orders: vec![None; num_bonds],
+            bond_aromatic_flags: vec![None; num_bonds],
+            bond_directions: vec![None; num_bonds],
+            atom_aromatic_flags: vec![None; num_atoms],
+            atom_explicit_hydrogens: vec![None; num_atoms],
+            atom_no_implicit: vec![None; num_atoms],
         }
     }
 
@@ -159,12 +164,12 @@ pub(crate) fn apply_kekulize_assignment(
     changed
 }
 
-fn kekulize_is_aromatic_atom(molecule: &Molecule, atom: AtomId) -> bool {
-    let atom_data = &molecule.atoms()[atom.index()];
+fn topology_is_aromatic_atom(topology: &TopologyBlock, atom: AtomId) -> bool {
+    let atom_data = &topology.atoms[atom.index()];
     if atom_data.is_aromatic() {
         return true;
     }
-    molecule.bonds().iter().any(|bond| {
+    topology.bonds.iter().any(|bond| {
         (bond.begin() == atom || bond.end() == atom)
             && (bond.is_aromatic() || bond.order() == BondOrder::Aromatic)
     })
@@ -177,6 +182,45 @@ fn kekulize_is_aromatic_bond(bond: &crate::Bond) -> bool {
 pub(crate) fn kekulize_assignment(
     molecule: &Molecule,
     rings: Option<&RingInfo>,
+    clear_aromatic_flags: bool,
+    canonical: bool,
+    max_backtracks: usize,
+) -> Result<KekulizeAssignment, KekulizeError> {
+    kekulize_assignment_from_parts_with_valence(
+        molecule.topology_block(),
+        molecule.stereo_groups(),
+        rings,
+        molecule.derived_cache().valence.as_ref(),
+        clear_aromatic_flags,
+        canonical,
+        max_backtracks,
+    )
+}
+
+pub(crate) fn kekulize_assignment_from_parts(
+    topology: &TopologyBlock,
+    stereo_groups: &[crate::stereo::StereoGroup],
+    rings: Option<&RingInfo>,
+    clear_aromatic_flags: bool,
+    canonical: bool,
+    max_backtracks: usize,
+) -> Result<KekulizeAssignment, KekulizeError> {
+    kekulize_assignment_from_parts_with_valence(
+        topology,
+        stereo_groups,
+        rings,
+        None,
+        clear_aromatic_flags,
+        canonical,
+        max_backtracks,
+    )
+}
+
+fn kekulize_assignment_from_parts_with_valence(
+    topology: &TopologyBlock,
+    stereo_groups: &[crate::stereo::StereoGroup],
+    rings: Option<&RingInfo>,
+    cached_valence: Option<&ValenceAssignment>,
     clear_aromatic_flags: bool,
     canonical: bool,
     max_backtracks: usize,
@@ -196,17 +240,30 @@ pub(crate) fn kekulize_assignment(
     let rings = if let Some(rings) = rings {
         rings
     } else {
-        // RDKit initializes ring info lazily here; the value-style port keeps
-        // the same observable behavior by materializing an owned ring snapshot
-        // only when the caller did not provide one.
-        owned_rings = symmetrize_sssr(molecule)?;
+        // RDKit✔️✔️:     VECT_INT_VECT allringsSSSR;
+        // RDKit✔️✔️:     if (!mol.getRingInfo()->isInitialized()) {
+        // RDKit✔️✔️:       MolOps::findSSSR(mol, allringsSSSR);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     const VECT_INT_VECT &allrings =
+        // RDKit✔️✔️:         allringsSSSR.empty() ? mol.getRingInfo()->atomRings() : allringsSSSR;
+        //
+        // The value-style port has no mutable RingInfo on-molecule, so when the
+        // caller does not provide rings we must materialize the same SSSR-level
+        // snapshot RDKit would compute here, not SymmSSSR.
+        owned_rings = crate::rings::find_sssr_from_parts(
+            topology.atoms.len(),
+            &topology.bonds,
+            &topology.adjacency,
+        )?;
         &owned_rings
     };
-    let atoms_to_use = vec![true; molecule.num_atoms()];
-    let bonds_to_use = vec![true; molecule.num_bonds()];
+    let atoms_to_use = vec![true; topology.atoms.len()];
+    let bonds_to_use = vec![true; topology.bonds.len()];
     kekulize_fragment_assignment(
-        molecule,
+        topology,
+        stereo_groups,
         rings,
+        cached_valence,
         &atoms_to_use,
         bonds_to_use,
         clear_aromatic_flags,
@@ -215,15 +272,35 @@ pub(crate) fn kekulize_assignment(
     )
 }
 
+pub(crate) fn kekulize_assignment_from_read_parts(
+    read: MoleculeReadParts<'_>,
+    rings: Option<&RingInfo>,
+    clear_aromatic_flags: bool,
+    canonical: bool,
+    max_backtracks: usize,
+) -> Result<KekulizeAssignment, KekulizeError> {
+    kekulize_assignment_from_parts(
+        read.topology(),
+        read.stereo_groups(),
+        rings,
+        clear_aromatic_flags,
+        canonical,
+        max_backtracks,
+    )
+}
+
 pub(crate) fn kekulize_fragment_assignment(
-    molecule: &Molecule,
+    topology: &TopologyBlock,
+    stereo_groups: &[crate::stereo::StereoGroup],
     rings: &RingInfo,
+    cached_valence: Option<&ValenceAssignment>,
     atoms_to_use: &[bool],
     mut bonds_to_use: Vec<bool>,
     clear_aromatic_flags: bool,
     canonical: bool,
     max_backtracks: usize,
 ) -> Result<KekulizeAssignment, KekulizeError> {
+    let trace_kekulize = std::env::var_os("COSMOLKIT_TRACE_KEKULIZE").is_some();
     // BEGIN RDKIT CPP FUNCTION details::KekulizeFragment
     // RDKit✔️✔️: void KekulizeFragment(RWMol &mol, const boost::dynamic_bitset<> &atomsToUse,
     // RDKit✔️✔️:                       boost::dynamic_bitset<> bondsToUse, bool markAtomsBonds,
@@ -235,13 +312,13 @@ pub(crate) fn kekulize_fragment_assignment(
     // RDKit✔️✔️:   if (atomsToUse.none()) {
     // RDKit✔️✔️:     return;
     // RDKit✔️✔️:   }
-    if atoms_to_use.len() != molecule.num_atoms() || bonds_to_use.len() != molecule.num_bonds() {
+    if atoms_to_use.len() != topology.atoms.len() || bonds_to_use.len() != topology.bonds.len() {
         return Err(KekulizeError::FragmentBitsetSizeMismatch {
             atoms: atoms_to_use.len(),
             bonds: bonds_to_use.len(),
         });
     }
-    let mut assignment = KekulizeAssignment::empty(molecule);
+    let mut assignment = KekulizeAssignment::with_sizes(topology.atoms.len(), topology.bonds.len());
     if !atoms_to_use.iter().any(|selected| *selected) {
         return Ok(assignment);
     }
@@ -257,7 +334,7 @@ pub(crate) fn kekulize_fragment_assignment(
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     let mut found_aromatic = false;
-    for bond in molecule.bonds() {
+    for bond in &topology.bonds {
         if bonds_to_use[bond.id().index()] {
             if bond
                 .query()
@@ -277,11 +354,21 @@ pub(crate) fn kekulize_fragment_assignment(
     // RDKit✔️✔️:       foundAromatic = true;
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    let pre_kek_valence = assign_valence_with_options(molecule, ValenceModel::RdkitLike, false)?;
-    if molecule
-        .atoms()
+    let pre_kek_valence = if let Some(valence) = cached_valence {
+        valence.clone()
+    } else {
+        crate::valence::assign_valence_with_options_from_parts(
+            &topology.atoms,
+            &topology.bonds,
+            &topology.adjacency,
+            ValenceModel::RdkitLike,
+            false,
+        )?
+    };
+    if topology
+        .atoms
         .iter()
-        .any(|atom| kekulize_is_aromatic_atom(molecule, atom.id()))
+        .any(|atom| topology_is_aromatic_atom(topology, atom.id()))
     {
         found_aromatic = true;
     }
@@ -297,12 +384,16 @@ pub(crate) fn kekulize_fragment_assignment(
     // RDKit✔️✔️:   }
     let atom_ranks = if canonical {
         rank_fragment_atoms_for_kekulize(
-            molecule,
+            topology,
+            stereo_groups,
             FragmentRankScope::new(atoms_to_use, &bonds_to_use),
         )?
     } else {
-        (0..molecule.num_atoms()).collect::<Vec<_>>()
+        (0..topology.atoms.len()).collect::<Vec<_>>()
     };
+    if trace_kekulize {
+        eprintln!("kekulize-fragment atomRanks={atom_ranks:?}");
+    }
 
     // RDKit✔️✔️:   if (bondsToUse.any()) {
     // RDKit✔️✔️:     if (!mol.getRingInfo()->isInitialized()) {
@@ -318,7 +409,7 @@ pub(crate) fn kekulize_fragment_assignment(
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     let mut wedged_atoms = BTreeSet::new();
-    for bond in molecule.bonds() {
+    for bond in &topology.bonds {
         if bonds_to_use[bond.id().index()]
             && matches!(
                 bond.direction(),
@@ -388,8 +479,33 @@ pub(crate) fn kekulize_fragment_assignment(
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:     arings = std::move(aringsRemaining);
     let kekulize_rings =
-        ordered_kekulize_rings(molecule, rings, atoms_to_use, &bonds_to_use, &wedged_atoms);
+        ordered_kekulize_rings(topology, rings, atoms_to_use, &bonds_to_use, &wedged_atoms);
     let ring_systems = fused_ring_systems(&kekulize_rings);
+    if trace_kekulize {
+        eprintln!(
+            "kekulize-rings arings={:?}",
+            kekulize_rings
+                .iter()
+                .map(|ring| ring
+                    .atoms
+                    .iter()
+                    .map(|atom| atom.index())
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
+        eprintln!(
+            "kekulize-rings brings={:?}",
+            kekulize_rings
+                .iter()
+                .map(|ring| ring
+                    .bonds
+                    .iter()
+                    .map(|bond| bond.index())
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
+        eprintln!("kekulize-rings fused={ring_systems:?}");
+    }
     for system in ring_systems {
         let ring_bond_set = system
             .iter()
@@ -401,17 +517,18 @@ pub(crate) fn kekulize_fragment_assignment(
             .collect::<BTreeSet<_>>();
 
         if ring_bond_set.iter().any(|bond| {
-            let bond = &molecule.bonds()[bond.index()];
+            let bond = &topology.bonds[bond.index()];
             kekulize_is_aromatic_bond(bond)
         }) || ring_atom_set
             .iter()
-            .any(|atom| kekulize_is_aromatic_atom(molecule, *atom))
+            .any(|atom| topology_is_aromatic_atom(topology, *atom))
         {
             kekulize_fused_assignment(
-                molecule,
+                topology,
                 rings,
                 &kekulize_rings,
                 &system,
+                &pre_kek_valence,
                 &atom_ranks,
                 max_backtracks,
                 &mut assignment,
@@ -430,12 +547,12 @@ pub(crate) fn kekulize_fragment_assignment(
     if clear_aromatic_flags {
         let full_molecule_scope = atoms_to_use.iter().all(|selected| *selected)
             && bonds_to_use.iter().all(|selected| *selected);
-        for bond in molecule.bonds() {
+        for bond in &topology.bonds {
             if bonds_to_use[bond.id().index()] && bond.is_aromatic() {
                 assignment.bond_aromatic_flags[bond.id().index()] = Some(false);
             }
         }
-        for atom in molecule.atoms() {
+        for atom in &topology.atoms {
             if atoms_to_use[atom.id().index()] && atom.is_aromatic() {
                 if full_molecule_scope && rings.num_atom_rings(atom.id()) == 0 {
                     return Err(KekulizeError::NonRingAromaticAtom { atom: atom.id() });
@@ -455,10 +572,27 @@ pub(crate) fn kekulize_fragment_assignment(
             }
         }
     }
-    let mut kekulized = molecule.clone();
-    apply_kekulize_assignment(kekulized.topology_block_mut(), &assignment);
-    let post_kek_valence = assign_valence_with_options(&kekulized, ValenceModel::RdkitLike, false)?;
-    for atom in molecule.atoms() {
+    let mut topology_after = topology.clone();
+    apply_kekulize_assignment(&mut topology_after, &assignment);
+    let mut post_kek_valence = pre_kek_valence.clone();
+    for atom in &topology_after.atoms {
+        let idx = atom.id().index();
+        if assignment.atom_explicit_hydrogens[idx].is_some()
+            || assignment.atom_no_implicit[idx].is_some()
+        {
+            let (explicit_valence, implicit_hydrogens) =
+                crate::valence::assign_valence_state_for_atom_from_parts(
+                    &topology_after.atoms,
+                    &topology_after.bonds,
+                    &topology_after.adjacency,
+                    atom.id(),
+                    false,
+                )?;
+            post_kek_valence.explicit_valence[idx] = explicit_valence;
+            post_kek_valence.implicit_hydrogens[idx] = implicit_hydrogens;
+        }
+    }
+    for atom in &topology.atoms {
         let idx = atom.id().index();
         let before =
             pre_kek_valence.explicit_valence[idx] + pre_kek_valence.implicit_hydrogens[idx];
@@ -478,10 +612,11 @@ pub(crate) fn kekulize_fragment_assignment(
 }
 
 fn kekulize_fused_assignment(
-    molecule: &Molecule,
+    topology: &TopologyBlock,
     rings: &RingInfo,
     kekulize_rings: &[KekulizeRing],
     fused_ring_indices: &[usize],
+    valence: &ValenceAssignment,
     atom_ranks: &[usize],
     max_backtracks: usize,
     assignment: &mut KekulizeAssignment,
@@ -497,10 +632,11 @@ fn kekulize_fused_assignment(
     // RDKit✔️✔️:   boost::dynamic_bitset<> dBndAdds(nbnds);
     // RDKit✔️✔️:   markDbondCands(mol, allAtms, dBndCands, questions, done);
     let state = mark_double_bond_candidates(
-        molecule,
+        topology,
         rings,
         kekulize_rings,
         fused_ring_indices,
+        valence,
         assignment,
     )?;
 
@@ -508,7 +644,7 @@ fn kekulize_fused_assignment(
     // RDKit✔️✔️:       kekulizeWorker(mol, allAtms, dBndCands, dBndAdds, done, atomRanks,
     // RDKit✔️✔️:                      maxBackTracks);
     let matched_bonds = if let Some(matched_bonds) = kekulize_worker_matching(
-        molecule,
+        topology,
         &state,
         &state.done,
         atom_ranks,
@@ -517,7 +653,7 @@ fn kekulize_fused_assignment(
     ) {
         matched_bonds
     } else if let Some(matched_bonds) = permute_dummies_and_match(
-        molecule,
+        topology,
         &state,
         &state.questions,
         atom_ranks,
@@ -537,7 +673,7 @@ fn kekulize_fused_assignment(
             BondOrder::Single
         });
         if matched_bonds.contains(&bond)
-            && molecule.bonds()[bond.index()].direction() != BondDirection::None
+            && topology.bonds[bond.index()].direction() != BondDirection::None
         {
             assignment.bond_directions[bond.index()] = Some(BondDirection::None);
         }
@@ -551,10 +687,11 @@ fn kekulize_fused_assignment(
 }
 
 fn mark_double_bond_candidates(
-    molecule: &Molecule,
+    topology: &TopologyBlock,
     rings: &RingInfo,
     kekulize_rings: &[KekulizeRing],
     fused_ring_indices: &[usize],
+    valence: &ValenceAssignment,
     assignment: &mut KekulizeAssignment,
 ) -> Result<KekulizeCandidateState, KekulizeError> {
     // BEGIN RDKIT CPP FUNCTION markDbondCands
@@ -575,19 +712,10 @@ fn mark_double_bond_candidates(
             }
         }
     }
-    let mut ring_bonds = Vec::new();
-    let mut seen_bonds = BTreeSet::new();
-    for &ring_idx in fused_ring_indices {
-        for &bond_id in &kekulize_rings[ring_idx].bonds {
-            if seen_bonds.insert(bond_id) {
-                ring_bonds.push(bond_id);
-            }
-        }
-    }
     let all_atom_set = all_atoms.iter().copied().collect::<BTreeSet<_>>();
     if !all_atoms.iter().any(|atom| {
-        molecule.atoms()[atom.index()].atomic_number() == 0
-            || kekulize_is_aromatic_atom(molecule, *atom)
+        topology.atoms[atom.index()].atomic_number() == 0
+            || topology_is_aromatic_atom(topology, *atom)
     }) {
         return Ok(KekulizeCandidateState {
             all_atoms,
@@ -597,7 +725,6 @@ fn mark_double_bond_candidates(
             done: Vec::new(),
         });
     }
-    let valence = assign_valence_with_options(molecule, ValenceModel::RdkitLike, false)?;
     let fused_source_ring_set = fused_ring_indices
         .iter()
         .map(|&ring_idx| kekulize_rings[ring_idx].source_ring)
@@ -607,7 +734,7 @@ fn mark_double_bond_candidates(
         let mut ring_is_candidate = false;
         let source_ring = kekulize_rings[ring_idx].source_ring;
         for atom in &rings.atom_rings()[source_ring] {
-            if kekulize_is_aromatic_atom(molecule, *atom) && rings.num_atom_rings(*atom) == 1 {
+            if topology_is_aromatic_atom(topology, *atom) && rings.num_atom_rings(*atom) == 1 {
                 ring_is_candidate = true;
                 break;
             }
@@ -618,43 +745,45 @@ fn mark_double_bond_candidates(
     }
     let mut candidate_atoms = BTreeSet::<AtomId>::new();
     let mut aromatic_edges = Vec::<(BondId, AtomId, AtomId)>::new();
+    let mut seen_make_single = BTreeSet::<BondId>::new();
     let mut questions = Vec::<AtomId>::new();
     let mut done = Vec::<AtomId>::new();
     // RDKit✔️✔️:   std::vector<Bond *> makeSingle;
-    for bond_id in ring_bonds {
-        let bond = &molecule.bonds()[bond_id.index()];
-        if kekulize_is_aromatic_bond(bond)
-            && matches!(
-                bond.order(),
-                BondOrder::Single | BondOrder::Double | BondOrder::Aromatic
-            )
-        {
-            assignment.bond_orders[bond_id.index()] = Some(BondOrder::Single);
-            aromatic_edges.push((bond_id, bond.begin(), bond.end()));
-        }
-    }
     for &atom_id in &all_atoms {
-        let atom = &molecule.atoms()[atom_id.index()];
-        if atom.atomic_number() != 0 && !kekulize_is_aromatic_atom(molecule, atom_id) {
+        let atom = &topology.atoms[atom_id.index()];
+        if atom.atomic_number() != 0 && !topology_is_aromatic_atom(topology, atom_id) {
             done.push(atom_id);
             continue;
         }
         let mut sbo = 0i32;
         let mut n_to_ignore = 0usize;
         let mut non_ar_non_dummy_nbr = 0usize;
-        for bond in molecule.bonds().iter().filter(|bond| {
-            (bond.begin() == atom_id && all_atom_set.contains(&bond.end()))
-                || (bond.end() == atom_id && all_atom_set.contains(&bond.begin()))
-        }) {
+        for bond in topology
+            .bonds
+            .iter()
+            .filter(|bond| bond.begin() == atom_id || bond.end() == atom_id)
+        {
             let other = if bond.begin() == atom_id {
                 bond.end()
             } else {
                 bond.begin()
             };
-            let other_atom = &molecule.atoms()[other.index()];
-            if other_atom.atomic_number() != 0 && !kekulize_is_aromatic_atom(molecule, other) {
+            let other_atom = &topology.atoms[other.index()];
+            if all_atom_set.contains(&other)
+                && other_atom.atomic_number() != 0
+                && !topology_is_aromatic_atom(topology, other)
+            {
                 non_ar_non_dummy_nbr += 1;
             }
+            // RDKit✔️✔️:       if (bond->getIsAromatic() && (bond->getBondType() == Bond::SINGLE ||
+            // RDKit✔️✔️:                                     bond->getBondType() == Bond::DOUBLE ||
+            // RDKit✔️✔️:                                     bond->getBondType() == Bond::AROMATIC)) {
+            // RDKit✔️✔️:         ++sbo;
+            // RDKit✔️✔️:         // mark this bond to be marked single later
+            // RDKit✔️✔️:         // we don't want to do right now because it can screw-up the
+            // RDKit✔️✔️:         // valence calculation to determine the number of hydrogens below
+            // RDKit✔️✔️:         makeSingle.push_back(bond);
+            // RDKit✔️✔️:       } else {
             if kekulize_is_aromatic_bond(bond)
                 && matches!(
                     bond.order(),
@@ -662,6 +791,10 @@ fn mark_double_bond_candidates(
                 )
             {
                 sbo += 1;
+                if seen_make_single.insert(bond.id()) {
+                    assignment.bond_orders[bond.id().index()] = Some(BondOrder::Single);
+                    aromatic_edges.push((bond.id(), bond.begin(), bond.end()));
+                }
             } else {
                 let bond_contrib =
                     crate::valence::bond_valence_contrib(bond, atom_id)?.round() as i32;
@@ -704,8 +837,8 @@ fn mark_double_bond_candidates(
             valence.explicit_valence[atom_id.index()] + valence.implicit_hydrogens[atom_id.index()];
         let n_radicals = i32::from(atom.radical_electrons());
         let total_degree = i32::try_from(
-            molecule
-                .bonds()
+            topology
+                .bonds
                 .iter()
                 .filter(|bond| bond.begin() == atom_id || bond.end() == atom_id)
                 .count(),
@@ -759,13 +892,14 @@ fn mark_double_bond_candidates(
 }
 
 fn kekulize_worker_matching(
-    molecule: &Molecule,
+    topology: &TopologyBlock,
     state: &KekulizeCandidateState,
     initial_done: &[AtomId],
     atom_ranks: &[usize],
     max_backtracks: usize,
     switched_off: &BTreeSet<AtomId>,
 ) -> Option<BTreeSet<BondId>> {
+    let trace_kekulize = std::env::var_os("COSMOLKIT_TRACE_KEKULIZE").is_some();
     // BEGIN RDKIT CPP FUNCTION kekulizeWorker
     // RDKit✔️✔️: bool kekulizeWorker(RWMol &mol, const INT_VECT &allAtms,
     // RDKit✔️✔️:                     boost::dynamic_bitset<> dBndCands,
@@ -923,37 +1057,72 @@ fn kekulize_worker_matching(
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION kekulizeWorker
     let all_atom_set = state.all_atoms.iter().copied().collect::<BTreeSet<_>>();
-    let aromatic_edge_ids = state
-        .aromatic_edges
-        .iter()
-        .map(|(bond, _, _)| *bond)
-        .collect::<BTreeSet<_>>();
-    let mut adjacency = BTreeMap::<AtomId, Vec<(AtomId, BondId)>>::new();
-    for bond in molecule.bonds() {
+    let mut aromatic_edge_ids = vec![false; topology.bonds.len()];
+    for (bond, _, _) in &state.aromatic_edges {
+        aromatic_edge_ids[bond.index()] = true;
+    }
+    let mut adjacency = vec![Vec::<(AtomId, BondId)>::new(); topology.atoms.len()];
+    for bond in &topology.bonds {
         let begin = bond.begin();
         let end = bond.end();
         if all_atom_set.contains(&begin) && all_atom_set.contains(&end) {
-            adjacency.entry(begin).or_default().push((end, bond.id()));
-            adjacency.entry(end).or_default().push((begin, bond.id()));
+            adjacency[begin.index()].push((end, bond.id()));
+            adjacency[end.index()].push((begin, bond.id()));
         }
     }
-    for neighbors in adjacency.values_mut() {
+    for neighbors in &mut adjacency {
         neighbors.sort_by_key(|(atom, _)| (atom_ranks[atom.index()], atom.index()));
     }
 
-    let sorted_atoms = worker_sorted_atoms(molecule, &state.all_atoms, &all_atom_set, atom_ranks);
+    let sorted_atoms = worker_sorted_atoms(topology, &state.all_atoms, &all_atom_set, atom_ranks);
+    if trace_kekulize {
+        eprintln!(
+            "kekulize-worker sortedAtms={:?}",
+            sorted_atoms
+                .iter()
+                .map(|atom| atom.index())
+                .collect::<Vec<_>>()
+        );
+        eprintln!(
+            "kekulize-worker allAtms={:?} done={:?} candidates={:?} questions={:?}",
+            state
+                .all_atoms
+                .iter()
+                .map(|atom| atom.index())
+                .collect::<Vec<_>>(),
+            initial_done
+                .iter()
+                .map(|atom| atom.index())
+                .collect::<Vec<_>>(),
+            state
+                .candidate_atoms
+                .iter()
+                .map(|atom| atom.index())
+                .collect::<Vec<_>>(),
+            state
+                .questions
+                .iter()
+                .map(|atom| atom.index())
+                .collect::<Vec<_>>()
+        );
+    }
 
-    let mut d_bnd_cands = vec![false; molecule.num_atoms()];
+    let mut d_bnd_cands = vec![false; topology.atoms.len()];
     for atom in &state.candidate_atoms {
         if !switched_off.contains(atom) {
             d_bnd_cands[atom.index()] = true;
         }
     }
-    let mut d_bnd_adds = vec![false; molecule.num_bonds()];
-    let mut local_bonds_added = vec![false; molecule.num_bonds()];
+    let mut d_bnd_adds = vec![false; topology.bonds.len()];
+    let mut local_bonds_added = vec![false; topology.bonds.len()];
     let mut done = initial_done.to_vec();
+    let mut done_flags = vec![false; topology.atoms.len()];
+    for atom in &done {
+        done_flags[atom.index()] = true;
+    }
     let mut astack = VecDeque::<AtomId>::new();
-    let mut options = BTreeMap::<AtomId, VecDeque<AtomId>>::new();
+    let mut astack_flags = vec![false; topology.atoms.len()];
+    let mut options = BTreeMap::<AtomId, VecDeque<(AtomId, BondId)>>::new();
     let mut last_opt = None::<AtomId>;
     let mut btmoves = Vec::<AtomId>::new();
     let mut matched = BTreeSet::<BondId>::new();
@@ -961,59 +1130,47 @@ fn kekulize_worker_matching(
 
     while done.len() < sorted_atoms.len() || !astack.is_empty() {
         let curr = if let Some(curr) = astack.pop_front() {
+            astack_flags[curr.index()] = false;
             curr
         } else {
             sorted_atoms
                 .iter()
                 .copied()
-                .find(|atom| !done.contains(atom))
+                .find(|atom| !done_flags[atom.index()])
                 .expect("starting point not found")
         };
         done.push(curr);
+        done_flags[curr.index()] = true;
         let c_cand = d_bnd_cands[curr.index()];
         let mut opts = if let Some(saved) = options.get(&curr) {
             saved.clone()
         } else {
             let mut lstack = VecDeque::new();
-            let mut opts_v = Vec::new();
-            let mut wedged_opts_v = Vec::new();
-            let mut nbrs = adjacency
-                .get(&curr)
-                .map(|neighbors| {
-                    neighbors
-                        .iter()
-                        .filter_map(|(nbr, _)| (!done.contains(nbr)).then_some(*nbr))
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            nbrs.sort_by_key(|atom| (atom_ranks[atom.index()], atom.index()));
-            for nbr_idx in nbrs {
-                let nbr_bond = adjacency
-                    .get(&curr)
-                    .and_then(|neighbors| {
-                        neighbors
-                            .iter()
-                            .find_map(|(nbr, bond)| (*nbr == nbr_idx).then_some(*bond))
-                    })
-                    .expect("bond between neighbor atoms not found");
-                if !astack.contains(&nbr_idx) {
-                    lstack.push_back(nbr_idx);
+            let mut opts_v = Vec::<(AtomId, BondId)>::new();
+            let mut wedged_opts_v = Vec::<(AtomId, BondId)>::new();
+            for &(nbr_idx, nbr_bond) in &adjacency[curr.index()] {
+                if done_flags[nbr_idx.index()] {
+                    continue;
                 }
-                let bond = &molecule.bonds()[nbr_bond.index()];
+                if !astack_flags[nbr_idx.index()] {
+                    lstack.push_back(nbr_idx);
+                    astack_flags[nbr_idx.index()] = true;
+                }
+                let bond = &topology.bonds[nbr_bond.index()];
                 if c_cand
                     && d_bnd_cands[nbr_idx.index()]
-                    && (aromatic_edge_ids.contains(&nbr_bond)
+                    && (aromatic_edge_ids[nbr_bond.index()]
                         || kekulize_is_aromatic_bond(bond)
-                        || molecule.atoms()[curr.index()].atomic_number() == 0
-                        || molecule.atoms()[nbr_idx.index()].atomic_number() == 0)
+                        || topology.atoms[curr.index()].atomic_number() == 0
+                        || topology.atoms[nbr_idx.index()].atomic_number() == 0)
                 {
                     if matches!(
                         bond.direction(),
                         BondDirection::BeginWedge | BondDirection::BeginDash
                     ) {
-                        wedged_opts_v.push(nbr_idx);
+                        wedged_opts_v.push((nbr_idx, nbr_bond));
                     } else {
-                        opts_v.push(nbr_idx);
+                        opts_v.push((nbr_idx, nbr_bond));
                     }
                 }
             }
@@ -1023,21 +1180,33 @@ fn kekulize_worker_matching(
             astack.extend(lstack);
             computed
         };
+        if trace_kekulize {
+            eprintln!(
+                "kekulize-worker step curr={} cCand={} opts={:?} astack={:?} done={:?}",
+                curr.index(),
+                c_cand,
+                opts.iter()
+                    .map(|(atom, bond)| (atom.index(), bond.index()))
+                    .collect::<Vec<_>>(),
+                astack.iter().map(|atom| atom.index()).collect::<Vec<_>>(),
+                done.iter().map(|atom| atom.index()).collect::<Vec<_>>()
+            );
+        }
         if c_cand {
-            if let Some(ncnd) = opts.pop_front() {
-                let bond_id = adjacency
-                    .get(&curr)
-                    .and_then(|neighbors| {
-                        neighbors
-                            .iter()
-                            .find_map(|(nbr, bond)| (*nbr == ncnd).then_some(*bond))
-                    })
-                    .expect("bond between current atom and option atom not found");
+            if let Some((ncnd, bond_id)) = opts.pop_front() {
                 d_bnd_cands[curr.index()] = false;
                 d_bnd_cands[ncnd.index()] = false;
                 d_bnd_adds[bond_id.index()] = true;
                 local_bonds_added[bond_id.index()] = true;
                 matched.insert(bond_id);
+                if trace_kekulize {
+                    eprintln!(
+                        "kekulize-worker add curr={} ncnd={} bond={}",
+                        curr.index(),
+                        ncnd.index(),
+                        bond_id.index()
+                    );
+                }
                 if options.contains_key(&curr) {
                     if opts.is_empty() {
                         options.remove(&curr);
@@ -1051,15 +1220,25 @@ fn kekulize_worker_matching(
                     btmoves.push(curr);
                     options.insert(curr, opts);
                 }
-            } else if molecule.atoms()[curr.index()].atomic_number() != 0 {
+            } else if topology.atoms[curr.index()].atomic_number() != 0 {
                 if let Some(last_opt_atom) = last_opt {
                     if num_bt < max_backtracks {
+                        if trace_kekulize {
+                            eprintln!(
+                                "kekulize-worker backtrack curr={} lastOpt={} numBT={}",
+                                curr.index(),
+                                last_opt_atom.index(),
+                                num_bt
+                            );
+                        }
                         back_track(
-                            molecule,
+                            topology,
                             &mut options,
                             last_opt_atom,
                             &mut done,
+                            &mut done_flags,
                             &mut astack,
+                            &mut astack_flags,
                             &mut d_bnd_cands,
                             &mut d_bnd_adds,
                             &mut matched,
@@ -1088,7 +1267,7 @@ fn kekulize_worker_matching(
 }
 
 fn permute_dummies_and_match(
-    molecule: &Molecule,
+    topology: &TopologyBlock,
     state: &KekulizeCandidateState,
     questions: &[AtomId],
     atom_ranks: &[usize],
@@ -1157,7 +1336,7 @@ fn permute_dummies_and_match(
     }
     for switched_off in question_switch_masks(questions) {
         if let Some(matched) = kekulize_worker_matching(
-            molecule,
+            topology,
             state,
             &[],
             atom_ranks,
@@ -1171,11 +1350,13 @@ fn permute_dummies_and_match(
 }
 
 fn back_track(
-    molecule: &Molecule,
-    _options: &mut BTreeMap<AtomId, VecDeque<AtomId>>,
+    topology: &TopologyBlock,
+    _options: &mut BTreeMap<AtomId, VecDeque<(AtomId, BondId)>>,
     last_opt: AtomId,
     done: &mut Vec<AtomId>,
+    done_flags: &mut [bool],
     aqueue: &mut VecDeque<AtomId>,
+    astack_flags: &mut [bool],
     d_bnd_cands: &mut [bool],
     d_bnd_adds: &mut [bool],
     matched: &mut BTreeSet<BondId>,
@@ -1222,7 +1403,13 @@ fn back_track(
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   done = tdone;
-    for bond in molecule.bonds() {
+    for atom in done.iter().skip(split) {
+        done_flags[atom.index()] = false;
+    }
+    for atom in done[split..].iter().rev() {
+        astack_flags[atom.index()] = true;
+    }
+    for bond in &topology.bonds {
         let bi = bond.id().index();
         if d_bnd_adds[bi] {
             let aid1 = bond.begin();
@@ -1241,13 +1428,13 @@ fn back_track(
 }
 
 fn worker_sorted_atoms(
-    molecule: &Molecule,
+    topology: &TopologyBlock,
     all_atoms: &[AtomId],
     all_atom_set: &BTreeSet<AtomId>,
     atom_ranks: &[usize],
 ) -> Vec<AtomId> {
     let mut wedge_end_atoms = BTreeSet::new();
-    for bond in molecule.bonds() {
+    for bond in &topology.bonds {
         if matches!(
             bond.direction(),
             BondDirection::BeginWedge | BondDirection::BeginDash
@@ -1571,7 +1758,7 @@ fn rdkit_is_early_atom(atomic_number: u8) -> bool {
 }
 
 fn ordered_kekulize_rings(
-    molecule: &Molecule,
+    topology: &TopologyBlock,
     rings: &RingInfo,
     atoms_to_use: &[bool],
     bonds_to_use: &[bool],
@@ -1584,10 +1771,10 @@ fn ordered_kekulize_rings(
         let bonds = &rings.bond_rings()[ring_idx];
         let contains_non_dummy = atoms
             .iter()
-            .all(|atom| atom.index() < molecule.num_atoms() && atoms_to_use[atom.index()])
+            .all(|atom| atom.index() < topology.atoms.len() && atoms_to_use[atom.index()])
             && atoms
                 .iter()
-                .any(|atom| molecule.atoms()[atom.index()].atomic_number() != 0);
+                .any(|atom| topology.atoms[atom.index()].atomic_number() != 0);
         if !contains_non_dummy {
             continue;
         }
@@ -1617,6 +1804,82 @@ fn ordered_kekulize_rings(
 }
 
 fn fused_ring_systems(rings: &[KekulizeRing]) -> Vec<Vec<usize>> {
+    // BEGIN RDKIT CPP FUNCTION RingUtils::makeRingNeighborMap
+    // RDKit✔️✔️: void makeRingNeighborMap(const VECT_INT_VECT &brings,
+    // RDKit✔️✔️:                          INT_INT_VECT_MAP &neighMap, unsigned int maxSize,
+    // RDKit✔️✔️:                          unsigned int maxOverlapSize) {
+    // RDKit✔️✔️:   auto nrings = rdcast<int>(brings.size());
+    // RDKit✔️✔️:   for (i = 0; i < nrings; ++i) {
+    // RDKit✔️✔️:     neighMap[i];
+    // RDKit✔️✔️:     ring1 = brings[i];
+    // RDKit✔️✔️:     for (j = i + 1; j < nrings; ++j) {
+    // RDKit✔️✔️:       INT_VECT inter;
+    // RDKit✔️✔️:       Intersect(ring1, brings[j], inter);
+    // RDKit✔️✔️:       if (inter.size() > 0 &&
+    // RDKit✔️✔️:           (!maxOverlapSize || inter.size() <= maxOverlapSize)) {
+    // RDKit✔️✔️:         neighMap[i].push_back(j);
+    // RDKit✔️✔️:         neighMap[j].push_back(i);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RingUtils::makeRingNeighborMap
+    let mut neighbor_map = vec![Vec::<usize>::new(); rings.len()];
+    for left in 0..rings.len() {
+        for right in (left + 1)..rings.len() {
+            if rings_share_bond(rings, left, right) {
+                neighbor_map[left].push(right);
+                neighbor_map[right].push(left);
+            }
+        }
+    }
+
+    // BEGIN RDKIT CPP FUNCTION RingUtils::pickFusedRings
+    // RDKit✔️✔️: void pickFusedRings(int curr, const INT_INT_VECT_MAP &neighMap, INT_VECT &res,
+    // RDKit✔️✔️:                     boost::dynamic_bitset<> &done, int depth) {
+    // RDKit✔️✔️:   auto pos = neighMap.find(curr);
+    // RDKit✔️✔️:   done[curr] = 1;
+    // RDKit✔️✔️:   res.push_back(curr);
+    // RDKit✔️✔️:   const auto &neighs = pos->second;
+    // RDKit✔️✔️:   for (int neigh : neighs) {
+    // RDKit✔️✔️:     if (!done[neigh]) {
+    // RDKit✔️✔️:       pickFusedRings(neigh, neighMap, res, done, depth + 1);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RingUtils::pickFusedRings
+    let mut systems = Vec::<Vec<usize>>::new();
+    let mut done = vec![false; rings.len()];
+    let mut curr = 0usize;
+    while curr < rings.len() {
+        let mut fused = Vec::new();
+        pick_fused_rings_rdkit_order(curr, &neighbor_map, &mut fused, &mut done);
+        systems.push(fused);
+
+        let Some(next) = done.iter().position(|is_done| !*is_done) else {
+            break;
+        };
+        curr = next;
+    }
+    systems
+}
+
+fn pick_fused_rings_rdkit_order(
+    curr: usize,
+    neighbor_map: &[Vec<usize>],
+    result: &mut Vec<usize>,
+    done: &mut [bool],
+) {
+    done[curr] = true;
+    result.push(curr);
+    for &neighbor in &neighbor_map[curr] {
+        if !done[neighbor] {
+            pick_fused_rings_rdkit_order(neighbor, neighbor_map, result, done);
+        }
+    }
+}
+
+fn fused_ring_systems_stack_order_for_tests(rings: &[KekulizeRing]) -> Vec<Vec<usize>> {
     let mut systems = Vec::<Vec<usize>>::new();
     let mut seen = vec![false; rings.len()];
     for start in 0..rings.len() {
@@ -1652,7 +1915,161 @@ mod tests {
     use super::*;
     use crate::{
         AtomSpec, BondOrder, BondQueryPredicate, BondSpec, Element, MoleculeBuilder, QueryNode,
+        symmetrize_sssr,
     };
+
+    fn kekulize_fragment_assignment(
+        molecule: &Molecule,
+        rings: &RingInfo,
+        atoms_to_use: &[bool],
+        bonds_to_use: Vec<bool>,
+        clear_aromatic_flags: bool,
+        canonical: bool,
+        max_backtracks: usize,
+    ) -> Result<KekulizeAssignment, KekulizeError> {
+        super::kekulize_fragment_assignment(
+            molecule.topology_block(),
+            molecule.stereo_groups(),
+            rings,
+            None,
+            atoms_to_use,
+            bonds_to_use,
+            clear_aromatic_flags,
+            canonical,
+            max_backtracks,
+        )
+    }
+
+    fn ordered_kekulize_rings(
+        molecule: &Molecule,
+        rings: &RingInfo,
+        atoms_to_use: &[bool],
+        bonds_to_use: &[bool],
+        wedged_atoms: &BTreeSet<AtomId>,
+    ) -> Vec<KekulizeRing> {
+        super::ordered_kekulize_rings(
+            molecule.topology_block(),
+            rings,
+            atoms_to_use,
+            bonds_to_use,
+            wedged_atoms,
+        )
+    }
+
+    fn mark_double_bond_candidates(
+        molecule: &Molecule,
+        rings: &RingInfo,
+        kekulize_rings: &[KekulizeRing],
+        fused_ring_indices: &[usize],
+        assignment: &mut KekulizeAssignment,
+    ) -> Result<KekulizeCandidateState, KekulizeError> {
+        let valence = crate::valence::assign_valence(&molecule, crate::ValenceModel::RdkitLike)?;
+        super::mark_double_bond_candidates(
+            molecule.topology_block(),
+            rings,
+            kekulize_rings,
+            fused_ring_indices,
+            &valence,
+            assignment,
+        )
+    }
+
+    fn kekulize_fused_assignment(
+        molecule: &Molecule,
+        rings: &RingInfo,
+        kekulize_rings: &[KekulizeRing],
+        fused_ring_indices: &[usize],
+        atom_ranks: &[usize],
+        max_backtracks: usize,
+        assignment: &mut KekulizeAssignment,
+    ) -> Result<(), KekulizeError> {
+        let valence = crate::valence::assign_valence(&molecule, crate::ValenceModel::RdkitLike)?;
+        super::kekulize_fused_assignment(
+            molecule.topology_block(),
+            rings,
+            kekulize_rings,
+            fused_ring_indices,
+            &valence,
+            atom_ranks,
+            max_backtracks,
+            assignment,
+        )
+    }
+
+    fn kekulize_worker_matching(
+        molecule: &Molecule,
+        state: &KekulizeCandidateState,
+        initial_done: &[AtomId],
+        atom_ranks: &[usize],
+        max_backtracks: usize,
+        switched_off: &BTreeSet<AtomId>,
+    ) -> Option<BTreeSet<BondId>> {
+        super::kekulize_worker_matching(
+            molecule.topology_block(),
+            state,
+            initial_done,
+            atom_ranks,
+            max_backtracks,
+            switched_off,
+        )
+    }
+
+    fn permute_dummies_and_match(
+        molecule: &Molecule,
+        state: &KekulizeCandidateState,
+        questions: &[AtomId],
+        atom_ranks: &[usize],
+        max_backtracks: usize,
+    ) -> Option<BTreeSet<BondId>> {
+        super::permute_dummies_and_match(
+            molecule.topology_block(),
+            state,
+            questions,
+            atom_ranks,
+            max_backtracks,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn back_track(
+        molecule: &Molecule,
+        options: &mut BTreeMap<AtomId, VecDeque<(AtomId, BondId)>>,
+        last_opt: AtomId,
+        done: &mut Vec<AtomId>,
+        done_flags: &mut [bool],
+        aqueue: &mut VecDeque<AtomId>,
+        astack_flags: &mut [bool],
+        d_bnd_cands: &mut [bool],
+        d_bnd_adds: &mut [bool],
+        matched: &mut BTreeSet<BondId>,
+    ) {
+        super::back_track(
+            molecule.topology_block(),
+            options,
+            last_opt,
+            done,
+            done_flags,
+            aqueue,
+            astack_flags,
+            d_bnd_cands,
+            d_bnd_adds,
+            matched,
+        );
+    }
+
+    fn worker_sorted_atoms(
+        molecule: &Molecule,
+        all_atoms: &[AtomId],
+        all_atom_set: &BTreeSet<AtomId>,
+        atom_ranks: &[usize],
+    ) -> Vec<AtomId> {
+        super::worker_sorted_atoms(
+            molecule.topology_block(),
+            all_atoms,
+            all_atom_set,
+            atom_ranks,
+        )
+    }
 
     fn build_fused_aromatic_naphthalene(atom_is_aromatic: bool) -> Molecule {
         let mut builder = MoleculeBuilder::new();
@@ -1766,6 +2183,63 @@ mod tests {
     }
 
     #[test]
+    fn kekulize_assignment_preserves_aromatic_flags_when_clear_is_disabled_like_rdkit() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+
+        let assignment = kekulize_assignment(&molecule, None, false, false, 100).unwrap();
+
+        let double_bonds = molecule
+            .bonds()
+            .iter()
+            .filter(|bond| assignment.bond_order(bond.id()) == Some(BondOrder::Double))
+            .count();
+        let single_bonds = molecule
+            .bonds()
+            .iter()
+            .filter(|bond| assignment.bond_order(bond.id()) == Some(BondOrder::Single))
+            .count();
+
+        assert_eq!(double_bonds, 3);
+        assert_eq!(single_bonds, 3);
+        assert!(
+            molecule
+                .bonds()
+                .iter()
+                .all(|bond| assignment.bond_aromatic_flag(bond.id()).is_none())
+        );
+        assert!(
+            molecule
+                .atoms()
+                .iter()
+                .all(|atom| assignment.atom_aromatic_flag(atom.id()).is_none())
+        );
+    }
+
+    #[test]
+    fn kekulize_assignment_noncanonical_keeps_atom_index_seed_for_benzene_like_rdkit_core_api() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+
+        let assignment = kekulize_assignment(&molecule, None, false, false, 100).unwrap();
+        let bond_orders = molecule
+            .bonds()
+            .iter()
+            .map(|bond| assignment.bond_order(bond.id()).unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            bond_orders,
+            vec![
+                BondOrder::Double,
+                BondOrder::Single,
+                BondOrder::Double,
+                BondOrder::Single,
+                BondOrder::Double,
+                BondOrder::Single
+            ]
+        );
+    }
+
+    #[test]
     fn kekulize_assignment_fragment_returns_empty_when_atoms_to_use_is_empty_like_rdkit() {
         let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
         let rings = symmetrize_sssr(&molecule).unwrap();
@@ -1829,6 +2303,28 @@ mod tests {
     }
 
     #[test]
+    fn kekulize_fragment_rejects_bond_mask_size_mismatch_like_rdkit() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+        let rings = symmetrize_sssr(&molecule).unwrap();
+
+        let error = kekulize_fragment_assignment(
+            &molecule,
+            &rings,
+            &[true; 6],
+            vec![true; 5],
+            true,
+            false,
+            100,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            KekulizeError::FragmentBitsetSizeMismatch { atoms: 6, bonds: 5 }
+        ));
+    }
+
+    #[test]
     fn kekulize_fragment_filters_out_rings_outside_selected_atom_mask_like_rdkit() {
         let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
         let rings = symmetrize_sssr(&molecule).unwrap();
@@ -1847,6 +2343,33 @@ mod tests {
         .unwrap();
 
         assert!(assignment.bond_orders.iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn kekulize_fragment_clears_pyrrolic_explicit_hydrogen_state_like_rdkit() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1cc[nH]c1", false).unwrap();
+        let rings = symmetrize_sssr(&molecule).unwrap();
+        let pyrrolic = molecule
+            .atoms()
+            .iter()
+            .find(|atom| atom.atomic_number() == 7)
+            .map(|atom| atom.id())
+            .unwrap();
+
+        let assignment = kekulize_fragment_assignment(
+            &molecule,
+            &rings,
+            &vec![true; molecule.num_atoms()],
+            vec![true; molecule.num_bonds()],
+            true,
+            false,
+            100,
+        )
+        .unwrap();
+
+        assert_eq!(assignment.atom_aromatic_flag(pyrrolic), Some(false));
+        assert_eq!(assignment.atom_no_implicit(pyrrolic), Some(false));
+        assert_eq!(assignment.atom_explicit_hydrogens(pyrrolic), Some(0));
     }
 
     #[test]
@@ -1883,6 +2406,28 @@ mod tests {
             .filter(|bond| assignment.bond_order(bond.id()) == Some(BondOrder::Double))
             .count();
         assert_eq!(double_bonds, 3);
+    }
+
+    #[test]
+    fn kekulize_if_possible_preserves_aromatic_flags_when_clear_is_disabled() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+
+        let assignment = kekulize_if_possible_assignment(&molecule, false, false, 100)
+            .unwrap()
+            .unwrap();
+
+        assert!(
+            molecule
+                .bonds()
+                .iter()
+                .all(|bond| assignment.bond_aromatic_flag(bond.id()).is_none())
+        );
+        assert!(
+            molecule
+                .atoms()
+                .iter()
+                .all(|atom| assignment.atom_aromatic_flag(atom.id()).is_none())
+        );
     }
 
     #[test]
@@ -2021,6 +2566,36 @@ mod tests {
     }
 
     #[test]
+    fn ordered_kekulize_rings_rotates_wedged_ring_start_atom_like_rdkit() {
+        let mut builder = MoleculeBuilder::new();
+        let ring = (0..4)
+            .map(|_| builder.add_atom(AtomSpec::new(Element::C).with_aromatic(true)))
+            .collect::<Vec<_>>();
+        for idx in 0..4 {
+            let mut bond = BondSpec::new(ring[idx], ring[(idx + 1) % 4], BondOrder::Aromatic)
+                .with_aromatic(true);
+            if idx == 2 {
+                bond = bond.with_direction(crate::BondDirection::BeginDash);
+            }
+            builder.add_bond(bond).unwrap();
+        }
+        let molecule = builder.build().unwrap();
+        let rings = symmetrize_sssr(&molecule).unwrap();
+        let wedged_atoms = std::iter::once(ring[2]).collect::<std::collections::BTreeSet<_>>();
+
+        let ordered = ordered_kekulize_rings(
+            &molecule,
+            &rings,
+            &vec![true; molecule.num_atoms()],
+            &vec![true; molecule.num_bonds()],
+            &wedged_atoms,
+        );
+
+        assert_eq!(ordered.len(), 1);
+        assert_eq!(ordered[0].atoms[0], ring[2]);
+    }
+
+    #[test]
     fn canonical_kekulize_handles_stereo_ranking_branch() {
         let mut builder = MoleculeBuilder::new();
         let atoms = (0..6)
@@ -2113,7 +2688,7 @@ mod tests {
      {
         let molecule = build_fused_dummy_aromatic_naphthalene();
         let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
-        let mut assignment = KekulizeAssignment::empty(&molecule);
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
 
         let state = mark_double_bond_candidates(
             &molecule,
@@ -2137,7 +2712,7 @@ mod tests {
             molecule.topology_block_mut().bonds[bond_idx].set_order(BondOrder::Single);
         }
         let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
-        let mut assignment = KekulizeAssignment::empty(&molecule);
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
 
         let state = mark_double_bond_candidates(
             &molecule,
@@ -2163,7 +2738,7 @@ mod tests {
             bond.set_order(BondOrder::Single);
         }
         let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
-        let mut assignment = KekulizeAssignment::empty(&molecule);
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
 
         let state = mark_double_bond_candidates(
             &molecule,
@@ -2203,7 +2778,7 @@ mod tests {
             &vec![true; molecule.num_bonds()],
             &std::collections::BTreeSet::new(),
         );
-        let mut assignment = KekulizeAssignment::empty(&molecule);
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
 
         let error = kekulize_fused_assignment(
             &molecule,
@@ -2229,20 +2804,67 @@ mod tests {
     }
 
     #[test]
+    fn kekulize_fused_assignment_sets_bond_orders_and_clears_directions_like_rdkit() {
+        let mut molecule = build_fused_aromatic_naphthalene(true);
+        for bond in molecule.topology_block_mut().bonds.iter_mut() {
+            bond.set_direction(BondDirection::BeginWedge);
+        }
+        let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
+
+        kekulize_fused_assignment(
+            &molecule,
+            &rings,
+            &kekulize_rings,
+            &ring_systems[0],
+            &(0..molecule.num_atoms()).collect::<Vec<_>>(),
+            100,
+            &mut assignment,
+        )
+        .unwrap();
+
+        let assigned_orders = molecule
+            .bonds()
+            .iter()
+            .filter_map(|bond| assignment.bond_order(bond.id()))
+            .collect::<Vec<_>>();
+        let num_doubles = assigned_orders
+            .iter()
+            .filter(|order| **order == BondOrder::Double)
+            .count();
+        let num_singles = assigned_orders
+            .iter()
+            .filter(|order| **order == BondOrder::Single)
+            .count();
+
+        assert_eq!(num_doubles, 5);
+        assert_eq!(num_singles, 6);
+        assert!(molecule.bonds().iter().any(|bond| {
+            assignment.bond_order(bond.id()) == Some(BondOrder::Double)
+                && assignment.bond_direction(bond.id()) == Some(BondDirection::None)
+        }));
+    }
+
+    #[test]
     fn back_track_rolls_back_local_bonds_and_keeps_saved_options_like_rdkit() {
         let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
         let mut options = std::collections::BTreeMap::from([
             (
                 AtomId::new(1),
-                std::collections::VecDeque::from([AtomId::new(3)]),
+                std::collections::VecDeque::from([(AtomId::new(3), BondId::new(2))]),
             ),
             (
                 AtomId::new(2),
-                std::collections::VecDeque::from([AtomId::new(4)]),
+                std::collections::VecDeque::from([(AtomId::new(4), BondId::new(3))]),
             ),
         ]);
         let mut done = vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)];
+        let mut done_flags = vec![false; molecule.num_atoms()];
+        for atom in &done {
+            done_flags[atom.index()] = true;
+        }
         let mut aqueue = std::collections::VecDeque::new();
+        let mut astack_flags = vec![false; molecule.num_atoms()];
         let mut d_bnd_cands = vec![false; molecule.num_atoms()];
         let mut d_bnd_adds = vec![false; molecule.num_bonds()];
         d_bnd_adds[0] = true;
@@ -2256,17 +2878,24 @@ mod tests {
             &mut options,
             AtomId::new(1),
             &mut done,
+            &mut done_flags,
             &mut aqueue,
+            &mut astack_flags,
             &mut d_bnd_cands,
             &mut d_bnd_adds,
             &mut matched,
         );
 
         assert_eq!(done, vec![AtomId::new(0)]);
+        assert!(done_flags[0]);
+        assert!(!done_flags[1]);
+        assert!(!done_flags[2]);
         assert_eq!(
             aqueue.into_iter().collect::<Vec<_>>(),
             vec![AtomId::new(1), AtomId::new(2)]
         );
+        assert!(astack_flags[1]);
+        assert!(astack_flags[2]);
         assert!(d_bnd_adds[0]);
         assert!(!d_bnd_adds[1]);
         assert!(matched.contains(&BondId::new(0)));
@@ -2275,27 +2904,38 @@ mod tests {
         assert!(d_bnd_cands[2]);
         assert_eq!(
             options.get(&AtomId::new(1)).cloned(),
-            Some(std::collections::VecDeque::from([AtomId::new(3)]))
+            Some(std::collections::VecDeque::from([(
+                AtomId::new(3),
+                BondId::new(2),
+            )]))
         );
         assert_eq!(
             options.get(&AtomId::new(2)).cloned(),
-            Some(std::collections::VecDeque::from([AtomId::new(4)]))
+            Some(std::collections::VecDeque::from([(
+                AtomId::new(4),
+                BondId::new(3),
+            )]))
         );
     }
 
     #[test]
     fn kekulize_if_possible_worker_back_track_keeps_saved_options_for_replay() {
         let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
-        let expected = std::collections::VecDeque::from([AtomId::new(3)]);
+        let expected = std::collections::VecDeque::from([(AtomId::new(3), BondId::new(2))]);
         let mut options = std::collections::BTreeMap::from([
             (AtomId::new(1), expected.clone()),
             (
                 AtomId::new(2),
-                std::collections::VecDeque::from([AtomId::new(4)]),
+                std::collections::VecDeque::from([(AtomId::new(4), BondId::new(3))]),
             ),
         ]);
         let mut done = vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)];
+        let mut done_flags = vec![false; molecule.num_atoms()];
+        for atom in &done {
+            done_flags[atom.index()] = true;
+        }
         let mut aqueue = std::collections::VecDeque::new();
+        let mut astack_flags = vec![false; molecule.num_atoms()];
         let mut d_bnd_cands = vec![false; molecule.num_atoms()];
         let mut d_bnd_adds = vec![false; molecule.num_bonds()];
         d_bnd_adds[0] = true;
@@ -2306,7 +2946,9 @@ mod tests {
             &mut options,
             AtomId::new(1),
             &mut done,
+            &mut done_flags,
             &mut aqueue,
+            &mut astack_flags,
             &mut d_bnd_cands,
             &mut d_bnd_adds,
             &mut matched,
@@ -2320,7 +2962,7 @@ mod tests {
     fn kekulize_if_possible_permutes_dummy_candidates_after_initial_worker_failure() {
         let molecule = Molecule::from_smiles_with_sanitize("*1cccc1", false).unwrap();
         let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
-        let mut assignment = KekulizeAssignment::empty(&molecule);
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
         let state = mark_double_bond_candidates(
             &molecule,
             &rings,
@@ -2348,6 +2990,150 @@ mod tests {
             Some(2),
             "{permuted:?}"
         );
+    }
+
+    #[test]
+    fn permute_dummies_and_match_can_recover_without_backtracking_via_mask_switch() {
+        let molecule = Molecule::from_smiles_with_sanitize("*1cccc1", false).unwrap();
+        let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
+        let state = mark_double_bond_candidates(
+            &molecule,
+            &rings,
+            &kekulize_rings,
+            &ring_systems[0],
+            &mut assignment,
+        )
+        .unwrap();
+        let atom_ranks = (0..molecule.num_atoms()).collect::<Vec<_>>();
+
+        let permuted =
+            permute_dummies_and_match(&molecule, &state, &state.questions, &atom_ranks, 0);
+
+        assert_eq!(permuted.as_ref().map(|matched| matched.len()), Some(2));
+    }
+
+    #[test]
+    fn permute_dummies_and_match_returns_none_after_exhausting_all_switch_masks() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+        let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
+        let state = mark_double_bond_candidates(
+            &molecule,
+            &rings,
+            &kekulize_rings,
+            &ring_systems[0],
+            &mut assignment,
+        )
+        .unwrap();
+        let atom_ranks = (0..molecule.num_atoms()).collect::<Vec<_>>();
+
+        let permuted =
+            permute_dummies_and_match(&molecule, &state, &[AtomId::new(0)], &atom_ranks, 100);
+
+        assert!(permuted.is_none());
+    }
+
+    #[test]
+    fn kekulize_worker_matching_succeeds_for_plain_aromatic_cycle() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+        let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
+        let state = mark_double_bond_candidates(
+            &molecule,
+            &rings,
+            &kekulize_rings,
+            &ring_systems[0],
+            &mut assignment,
+        )
+        .unwrap();
+        let atom_ranks = (0..molecule.num_atoms()).collect::<Vec<_>>();
+
+        let matched = kekulize_worker_matching(
+            &molecule,
+            &state,
+            &state.done,
+            &atom_ranks,
+            100,
+            &std::collections::BTreeSet::new(),
+        );
+
+        assert_eq!(matched.as_ref().map(|set| set.len()), Some(3));
+    }
+
+    #[test]
+    fn kekulize_worker_matching_returns_none_when_backtracks_are_exhausted() {
+        let molecule = Molecule::from_smiles_with_sanitize("*1cccc1", false).unwrap();
+        let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
+        let state = mark_double_bond_candidates(
+            &molecule,
+            &rings,
+            &kekulize_rings,
+            &ring_systems[0],
+            &mut assignment,
+        )
+        .unwrap();
+        let atom_ranks = (0..molecule.num_atoms()).collect::<Vec<_>>();
+
+        let matched = kekulize_worker_matching(
+            &molecule,
+            &state,
+            &state.done,
+            &atom_ranks,
+            0,
+            &std::collections::BTreeSet::new(),
+        );
+
+        assert!(matched.is_none());
+    }
+
+    #[test]
+    fn kekulize_worker_matching_returns_empty_match_when_candidates_are_switched_off() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+        let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
+        let state = mark_double_bond_candidates(
+            &molecule,
+            &rings,
+            &kekulize_rings,
+            &ring_systems[0],
+            &mut assignment,
+        )
+        .unwrap();
+        let atom_ranks = (0..molecule.num_atoms()).collect::<Vec<_>>();
+        let switched_off = state.candidate_atoms.clone();
+
+        let matched = kekulize_worker_matching(
+            &molecule,
+            &state,
+            &state.done,
+            &atom_ranks,
+            100,
+            &switched_off,
+        );
+
+        assert_eq!(matched, Some(std::collections::BTreeSet::new()));
+    }
+
+    #[test]
+    fn permute_dummies_and_match_returns_none_without_questions() {
+        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
+        let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
+        let state = mark_double_bond_candidates(
+            &molecule,
+            &rings,
+            &kekulize_rings,
+            &ring_systems[0],
+            &mut assignment,
+        )
+        .unwrap();
+        let atom_ranks = (0..molecule.num_atoms()).collect::<Vec<_>>();
+
+        let matched = permute_dummies_and_match(&molecule, &state, &[], &atom_ranks, 100);
+
+        assert!(matched.is_none());
     }
 
     #[test]
@@ -2385,6 +3171,13 @@ mod tests {
     }
 
     #[test]
+    fn question_switch_masks_returns_empty_for_no_questions() {
+        let masks = question_switch_masks(&[]);
+
+        assert!(masks.is_empty());
+    }
+
+    #[test]
     fn worker_sorted_atoms_prioritizes_wedge_end_atoms_before_rank() {
         let mut builder = MoleculeBuilder::new();
         let atoms = (0..3)
@@ -2410,6 +3203,81 @@ mod tests {
         let sorted = worker_sorted_atoms(&molecule, &all_atoms, &all_atom_set, &[2, 10, 0]);
 
         assert_eq!(sorted, vec![atoms[1], atoms[2], atoms[0]]);
+    }
+
+    #[test]
+    fn worker_sorted_atoms_uses_rank_order_when_no_wedge_bias_exists() {
+        let mut builder = MoleculeBuilder::new();
+        let atoms = (0..3)
+            .map(|_| builder.add_atom(AtomSpec::new(Element::C).with_aromatic(true)))
+            .collect::<Vec<_>>();
+        builder
+            .add_bond(BondSpec::new(atoms[0], atoms[1], BondOrder::Aromatic).with_aromatic(true))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(atoms[1], atoms[2], BondOrder::Aromatic).with_aromatic(true))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+        let all_atoms = vec![atoms[0], atoms[1], atoms[2]];
+        let all_atom_set = all_atoms
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>();
+
+        let sorted = worker_sorted_atoms(&molecule, &all_atoms, &all_atom_set, &[2, 0, 1]);
+
+        assert_eq!(sorted, vec![atoms[1], atoms[2], atoms[0]]);
+    }
+
+    #[test]
+    fn mark_double_bond_candidates_detects_dummy_and_aromatic_fused_state() {
+        let molecule = build_fused_dummy_aromatic_naphthalene();
+        let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
+
+        let state = mark_double_bond_candidates(
+            &molecule,
+            &rings,
+            &kekulize_rings,
+            &ring_systems[0],
+            &mut assignment,
+        )
+        .unwrap();
+
+        assert!(!state.aromatic_edges.is_empty());
+        assert!(!state.candidate_atoms.is_empty());
+        assert!(!state.questions.is_empty());
+        assert!(
+            state
+                .candidate_atoms
+                .contains(&AtomId::new(molecule.atoms().len() - 1))
+        );
+    }
+
+    #[test]
+    fn mark_double_bond_candidates_excludes_non_aromatic_ring_bond_from_aromatic_edges() {
+        let mut molecule = build_fused_dummy_aromatic_naphthalene();
+        molecule.topology_block_mut().bonds[0].set_aromatic(false);
+        molecule.topology_block_mut().bonds[0].set_order(BondOrder::Single);
+        let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
+
+        let state = mark_double_bond_candidates(
+            &molecule,
+            &rings,
+            &kekulize_rings,
+            &ring_systems[0],
+            &mut assignment,
+        )
+        .unwrap();
+
+        assert!(
+            !state
+                .aromatic_edges
+                .iter()
+                .any(|(bond, _, _)| *bond == BondId::new(0))
+        );
+        assert_eq!(assignment.bond_order(BondId::new(0)), None);
     }
 
     #[test]
@@ -2442,6 +3310,90 @@ mod tests {
         assert_eq!(assignment.bond_aromatic_flag(BondId::new(0)), None);
         assert_eq!(assignment.bond_aromatic_flag(BondId::new(1)), Some(false));
         assert_eq!(assignment.bond_aromatic_flag(BondId::new(2)), Some(false));
+    }
+
+    #[test]
+    fn mark_double_bond_candidates_keeps_exocyclic_aryl_carbon_kekulizable_like_rdkit() {
+        let molecule =
+            Molecule::from_smiles("O=C1N(/N=C(/C)C1=NN/C2=C/C(OC)=CC=C2)C=3C=CC=CC=3").unwrap();
+        let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
+        let phenyl_system = ring_systems
+            .iter()
+            .find(|system| {
+                system.iter().any(|&ring_idx| {
+                    kekulize_rings[ring_idx]
+                        .atoms
+                        .iter()
+                        .any(|atom| atom.index() == 17)
+                })
+            })
+            .unwrap();
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
+
+        let state = mark_double_bond_candidates(
+            &molecule,
+            &rings,
+            &kekulize_rings,
+            phenyl_system,
+            &mut assignment,
+        )
+        .unwrap();
+
+        assert!(state.candidate_atoms.contains(&AtomId::new(17)));
+        assert!(kekulize_assignment(&molecule, None, true, true, 100).is_ok());
+    }
+
+    #[test]
+    fn mark_double_bond_candidates_excludes_aromatic_nh_in_row_134_like_rdkit() {
+        let molecule = Molecule::from_smiles(
+            "CC1=C(/C=C2\\C(C)=C3/C(C)=C(/C=C4\\C(C)=C5/C(CCC(=O)O)=C(C(C)=C5N4)C=C6\\C(CCC(=O)O)=C(C)C(=C6N2)C=C1)N3)C=C(\\C=C)C",
+        )
+        .unwrap();
+        let (rings, kekulize_rings, ring_systems) = fused_ring_inputs(&molecule);
+        let porphyrin_system = ring_systems
+            .iter()
+            .find(|system| {
+                system.iter().any(|&ring_idx| {
+                    kekulize_rings[ring_idx]
+                        .atoms
+                        .iter()
+                        .any(|atom| matches!(atom.index(), 26 | 39 | 42))
+                })
+            })
+            .unwrap();
+        let mut assignment = KekulizeAssignment::empty(molecule.num_atoms(), molecule.num_bonds());
+
+        let state = mark_double_bond_candidates(
+            &molecule,
+            &rings,
+            &kekulize_rings,
+            porphyrin_system,
+            &mut assignment,
+        )
+        .unwrap();
+
+        assert!(!state.candidate_atoms.contains(&AtomId::new(26)));
+        assert!(!state.candidate_atoms.contains(&AtomId::new(39)));
+        assert!(!state.candidate_atoms.contains(&AtomId::new(42)));
+    }
+
+    #[test]
+    fn kekulize_assignment_handles_row_134_porhyrin_like_rdkit() {
+        let molecule = Molecule::from_smiles(
+            "CC1=C(/C=C2\\C(C)=C3/C(C)=C(/C=C4\\C(C)=C5/C(CCC(=O)O)=C(C(C)=C5N4)C=C6\\C(CCC(=O)O)=C(C)C(=C6N2)C=C1)N3)C=C(\\C=C)C",
+        )
+        .unwrap();
+
+        assert!(kekulize_assignment(&molecule, None, true, true, 100).is_ok());
+        assert!(kekulize_assignment(&molecule, None, true, false, 100).is_ok());
+    }
+
+    fn kekulize_assignment_handles_pyrrolic_five_membered_ring_like_rdkit() {
+        let molecule = Molecule::from_smiles("[nH]1cccc1").unwrap();
+
+        assert_eq!(molecule.atoms()[0].explicit_hydrogens(), 1);
+        assert!(kekulize_assignment(&molecule, None, true, true, 100).is_ok());
+        assert!(kekulize_assignment(&molecule, None, true, false, 100).is_ok());
     }
 
     #[test]

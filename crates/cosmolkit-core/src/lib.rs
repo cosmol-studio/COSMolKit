@@ -93,16 +93,17 @@ pub use molecule::{
 };
 pub use ops::{
     ASSIGNED_AROMATICITY_SPEC, ASSIGNED_RING_FAMILIES_SPEC, ASSIGNED_RINGS_SPEC,
-    ASSIGNED_VALENCE_SPEC, BlockSet, DerivedStateSet, InvariantCheckSet, MOLECULE_OPS,
+    ASSIGNED_VALENCE_SPEC, BlockAccess, BlockSet, InvariantCheckSet, MOLECULE_OPS,
     MappingRequirement, MoleculeOpKind, MoleculeOpSpec, OPERATION_INVARIANT_MATRIX, OpOutcome,
-    OperationDomain, OperationError, OperationInvariantEntry, OperationReportSet, OperationTrace,
-    PARITY_MATRIX, ParityMatrixEntry, ParityPolicy, SANITIZED_SPEC, SUPPORT_MATRIX,
-    SupportMatrixEntry, TopologyEditKind, WITH_2D_COORDINATES_SPEC, WITH_HYDROGENS_SPEC,
-    WITH_KEKULIZED_BONDS_SPEC, WITHOUT_HYDROGENS_SPEC, WITHOUT_HYDROGENS_WITH_PARAMS_SPEC,
+    OperationDomain, OperationError, OperationInvariantEntry, OperationTrace, PARITY_MATRIX,
+    ParityMatrixEntry, ParityPolicy, SANITIZED_SPEC, SUPPORT_MATRIX, SupportMatrixEntry,
+    TopologyEditKind, WITH_2D_COORDINATES_SPEC, WITH_HYDROGENS_SPEC, WITH_KEKULIZED_BONDS_SPEC,
+    WITHOUT_HYDROGENS_SPEC, WITHOUT_HYDROGENS_WITH_PARAMS_SPEC,
 };
 pub use query::{AtomQueryPredicate, BondQueryPredicate, QueryNode, SmartsParseError};
 pub use rings::{
-    RingFindType, RingFindingError, RingInfo, find_ring_families, find_sssr, symmetrize_sssr,
+    RingFindType, RingFindingError, RingInfo, fast_find_rings, find_ring_families, find_sssr,
+    symmetrize_sssr,
 };
 pub use sanitize::{SanitizeError, SanitizeOps, SanitizeStep, detect_chemistry_problems};
 pub use sgroup::{

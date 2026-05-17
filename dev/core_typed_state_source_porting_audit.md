@@ -12,7 +12,7 @@ checked README source-porting items complete.
 - Normative documents reread before this audit:
   `dev/README.md`, `dev/policy_invariants.md`,
   `dev/topology_operations.md`,
-  `dev/Macro-ControlledStateMigrationDesign.md`, and
+  `dev/operation_system_standard.md`, and
   `dev/testing_contract.md`.
 - Inspected modules:
   `atom.rs`, `bond.rs`, `molecule.rs`, `derived.rs`, `stereo.rs`,

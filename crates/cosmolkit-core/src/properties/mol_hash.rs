@@ -46,13 +46,7 @@ pub fn mol_murcko_scaffold(mol: &Molecule) -> Result<Molecule, HashError> {
     let mut working = builder.build()?;
 
     loop {
-        let adjacency = working
-            .derived_cache()
-            .adjacency
-            .clone()
-            .unwrap_or_else(|| {
-                crate::AdjacencyList::from_topology(working.num_atoms(), working.bonds())
-            });
+        let adjacency = working.topology_block().adjacency.clone();
 
         let mut removal_indices: Vec<usize> = Vec::new();
         for (idx, _atom) in working.atoms().iter().enumerate() {
@@ -159,11 +153,7 @@ pub fn mol_net_scaffold(mol: &Molecule) -> Result<Molecule, HashError> {
     }
 
     let n = mol.num_atoms();
-    let adjacency = mol
-        .derived_cache()
-        .adjacency
-        .clone()
-        .unwrap_or_else(|| crate::AdjacencyList::from_topology(n, mol.bonds()));
+    let adjacency = mol.topology_block().adjacency.clone();
 
     // Determine which atoms are in a ring
     let ri = mol.derived_cache().rings.as_ref();
@@ -269,11 +259,7 @@ pub fn mol_hash_with_ranks(mol: &Molecule, ranks: &[u32]) -> Result<u64, HashErr
     }
 
     let n = mol.num_atoms();
-    let adjacency = mol
-        .derived_cache()
-        .adjacency
-        .clone()
-        .unwrap_or_else(|| crate::AdjacencyList::from_topology(n, mol.bonds()));
+    let adjacency = mol.topology_block().adjacency.clone();
 
     let ri = mol.derived_cache().rings.as_ref();
 

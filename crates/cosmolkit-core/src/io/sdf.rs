@@ -257,6 +257,7 @@ struct CountsLine {
 struct ParsedMolBlock {
     molecule: Molecule,
     header: MolHeader,
+    chirality_possible: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2058,10 +2059,11 @@ fn mol_from_mol_data_stream<R: BufRead>(
             parse_v3000_ctab(reader, header, counts, line_number, params)
         }
     }?;
-    let molecule = finish_mol_processing(parsed.molecule, false, params)?;
+    let molecule = finish_mol_processing(parsed.molecule, parsed.chirality_possible, params)?;
     Ok(ParsedMolBlock {
         molecule,
         header: parsed.header,
+        chirality_possible: parsed.chirality_possible,
     })
 }
 
@@ -2295,7 +2297,6 @@ fn parse_mol_header<R: BufRead>(
     *line_number += 1;
     let comments = read_rdkit_line(reader)?.unwrap_or_default();
 
-    let _is_3d_label = info.len() >= 22 && matches!(rdkit_substr(&info, 20, 2), "3d" | "3D");
     let _ = params;
     Ok(MolHeader {
         name: Some(name),
@@ -2303,6 +2304,39 @@ fn parse_mol_header<R: BufRead>(
         comments,
         ctab_version: CtabVersion::V2000,
     })
+}
+
+fn molfile_info_marks_3d(info: &str) -> bool {
+    info.len() >= 22 && matches!(rdkit_substr(info, 20, 2), "3d" | "3D")
+}
+
+fn calculate_rdkit_3d_flag(marked_3d: bool, coords: &[[f64; 3]], chirality_possible: bool) -> bool {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: calculate3dFlag
+    // RDKit✔️✔️: int marked3d = 0;
+    // RDKit✔️✔️: if (mol.getPropIfPresent(common_properties::_3DConf, marked3d)) {
+    // RDKit✔️✔️:   mol.clearProp(common_properties::_3DConf);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: bool nonzeroZ = hasNonZeroZCoords(conf);
+    // RDKit✔️✔️: if (!nonzeroZ && marked3d == 1) {
+    // RDKit✔️✔️:   if (chiralityPossible) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: } else if (marked3d == 0 && nonzeroZ) {
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: return nonzeroZ;
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: calculate3dFlag
+    let nonzero_z = coords.iter().any(|coord| coord[2] != 0.0);
+    if !nonzero_z && marked_3d {
+        if chirality_possible {
+            return false;
+        }
+        return true;
+    } else if !marked_3d && nonzero_z {
+        return true;
+    }
+    nonzero_z
 }
 
 fn parse_counts_line(
@@ -2654,6 +2688,12 @@ fn parse_v2000_ctab<R: BufRead>(
         parse_v2000_atom_block(reader, counts.atom_count, line_number, params)?
     };
     let mut bond_lines = parse_v2000_bond_block(reader, counts.bond_count, line_number, params)?;
+    let chirality_possible = bond_lines.iter().any(|bond| {
+        !matches!(
+            bond.spec.direction(),
+            BondDirection::None | BondDirection::Unknown
+        )
+    });
 
     for bond in &bond_lines {
         if bond.spec.order() == BondOrder::Aromatic {
@@ -2689,7 +2729,11 @@ fn parse_v2000_ctab<R: BufRead>(
         .iter()
         .map(|atom| atom.coord_3d)
         .collect::<Vec<_>>();
-    let is_3d = !coords.is_empty() && coords.iter().any(|coord| coord[2] != 0.0);
+    let is_3d = calculate_rdkit_3d_flag(
+        molfile_info_marks_3d(&header.info),
+        &coords,
+        chirality_possible,
+    );
 
     let mut builder = MoleculeBuilder::new();
     if let Some(name) = header.name.as_deref().filter(|name| !name.is_empty()) {
@@ -2713,12 +2757,21 @@ fn parse_v2000_ctab<R: BufRead>(
             .add_substance_group(substance_group)
             .map_err(molecule_build_error)?;
     }
+    if !is_3d && !coords.is_empty() {
+        builder
+            .set_2d_coordinates(coords.iter().map(|coord| [coord[0], coord[1]]).collect())
+            .map_err(molecule_build_error)?;
+    }
     builder
         .add_conformer(Conformer3D::new(0, coords, is_3d))
         .map_err(molecule_build_error)?;
     let molecule = builder.build().map_err(molecule_build_error)?;
 
-    Ok(ParsedMolBlock { molecule, header })
+    Ok(ParsedMolBlock {
+        molecule,
+        header,
+        chirality_possible,
+    })
 }
 
 fn parse_v2000_atom_block<R: BufRead>(
@@ -3136,6 +3189,28 @@ fn parse_v2000_atom_line(
 
     if let Some(mol_parity) = mol_parity {
         spec = spec.with_mol_parity(mol_parity);
+    }
+
+    if line.len() >= 48 && rdkit_substr(line, 45, 3) != "  0" {
+        let stereo_care = parse_rdkit_int(rdkit_substr(line, 45, 3), true).map_err(|_| {
+            SdfReadError::Parse(format!(
+                "Cannot convert '{}' to int on line {line_number}",
+                rdkit_substr(line, 45, 3)
+            ))
+        })?;
+        spec = spec.with_prop("molStereoCare".to_string(), stereo_care.to_string());
+    }
+
+    if line.len() >= 51 && rdkit_substr(line, 48, 3) != "  0" {
+        let tot_valence = parse_rdkit_int(rdkit_substr(line, 48, 3), true).map_err(|_| {
+            SdfReadError::Parse(format!(
+                "Cannot convert '{}' to int on line {line_number}",
+                rdkit_substr(line, 48, 3)
+            ))
+        })?;
+        if tot_valence != 0 {
+            spec = spec.with_prop("molTotValence".to_string(), tot_valence.to_string());
+        }
     }
 
     if let Some(mol_inversion_flag) = mol_inversion_flag {
@@ -6788,6 +6863,12 @@ fn parse_v3000_ctab<R: BufRead>(
     } else {
         parse_v3000_bond_block(reader, v3000_counts.bond_count, line_number, params)?
     };
+    let chirality_possible = bond_lines.iter().any(|bond| {
+        !matches!(
+            bond.spec.direction(),
+            BondDirection::None | BondDirection::Unknown
+        )
+    });
 
     let mut atom_id_by_mol_idx = BTreeMap::new();
     let mut bond_id_by_mol_idx = BTreeMap::new();
@@ -6969,7 +7050,16 @@ fn parse_v3000_ctab<R: BufRead>(
         ));
     }
 
-    let is_3d = coords.iter().any(|coord| coord[2] != 0.0);
+    let is_3d = calculate_rdkit_3d_flag(
+        molfile_info_marks_3d(&header.info),
+        &coords,
+        chirality_possible,
+    );
+    if !is_3d && !coords.is_empty() {
+        builder
+            .set_2d_coordinates(coords.iter().map(|coord| [coord[0], coord[1]]).collect())
+            .map_err(molecule_build_error)?;
+    }
     builder
         .add_conformer(Conformer3D::new(0, coords, is_3d))
         .map_err(molecule_build_error)?;
@@ -6984,7 +7074,11 @@ fn parse_v3000_ctab<R: BufRead>(
             .map_err(molecule_build_error)?;
     }
     let molecule = builder.build().map_err(molecule_build_error)?;
-    Ok(ParsedMolBlock { molecule, header })
+    Ok(ParsedMolBlock {
+        molecule,
+        header,
+        chirality_possible,
+    })
 }
 
 fn parse_v3000_counts_line(
@@ -7616,9 +7710,7 @@ fn parse_v3000_atom_symbol(
             .with_no_implicit(true)),
         "D" => Ok(AtomSpec::new(Element::H).with_isotope(2)),
         "T" => Ok(AtomSpec::new(Element::H).with_isotope(3)),
-        "R" | "R#" => Ok(AtomSpec::new(Element::DUMMY)
-            .with_query(QueryNode::predicate(AtomQueryPredicate::RGroupLabel(0)))
-            .with_prop("_MolFileRLabel", token.to_string())),
+        "R" | "R#" => Ok(AtomSpec::new(Element::DUMMY).with_prop("dummyLabel", token.to_string())),
         _ if token.starts_with('R')
             && token.len() <= 3
             && token[1..].chars().all(|char| char.is_ascii_digit()) =>
@@ -7626,10 +7718,7 @@ fn parse_v3000_atom_symbol(
             let number = token[1..].parse::<u32>().unwrap_or(0);
             Ok(AtomSpec::new(Element::DUMMY)
                 .with_isotope(number as u16)
-                .with_query(QueryNode::predicate(AtomQueryPredicate::RGroupLabel(
-                    number,
-                )))
-                .with_prop("_MolFileRLabel", token.to_string()))
+                .with_prop("dummyLabel", token.to_string()))
         }
         "A" | "Q" | "L" | "LP" => Ok(AtomSpec::new(Element::DUMMY)
             .with_query(QueryNode::predicate(AtomQueryPredicate::MolFileAlias(
@@ -10124,6 +10213,7 @@ fn finish_mol_processing(
             molecule = sanitize_cleanup_for_sdf_remove_hs(molecule, params)?;
             molecule = detect_bond_stereochemistry(molecule, params)?;
             molecule = remove_hs_after_sdf_parse(molecule, params)?;
+            molecule = sanitize_after_sdf_parse(molecule, params)?;
         } else {
             molecule = sanitize_after_sdf_parse(molecule, params)?;
             molecule = detect_bond_stereochemistry(molecule, params)?;
@@ -10890,15 +10980,60 @@ fn assign_chiral_types_from_bond_dirs(
     molecule: Molecule,
     params: SdfReadParams,
 ) -> Result<Molecule, SdfReadError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Chirality.cpp :: void assignChiralTypesFromBondDirs
+    // RDKit✔️❌:   if (!mol.getNumConformers()) {
+    // RDKit✔️❌:     return;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   auto conf = mol.getConformer(confId);
+    // RDKit✔️❌:   boost::dynamic_bitset<> atomsSet(mol.getNumAtoms(), 0);
+    // RDKit✔️❌:   for (auto &bond : mol.bonds()) {
+    // RDKit✔️❌:     const Bond::BondDir dir = bond->getBondDir();
+    // RDKit✔️❌:     Atom *atom = bond->getBeginAtom();
+    // RDKit✔️❌:     if (dir == Bond::UNKNOWN) {
+    // RDKit✔️❌:       if (atomsSet[atom->getIdx()] || replaceExistingTags) {
+    // RDKit✔️❌:         atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit✔️❌:         atomsSet.set(atom->getIdx());
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       if (dir == Bond::BEGINWEDGE || dir == Bond::BEGINDASH) {
+    // RDKit✔️❌:         if (atomsSet[atom->getIdx()] ||
+    // RDKit✔️❌:             (!replaceExistingTags &&
+    // RDKit✔️❌:              atom->getChiralTag() != Atom::CHI_UNSPECIFIED)) {
+    // RDKit✔️❌:           continue;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         if (atom->needsUpdatePropertyCache()) {
+    // RDKit✔️❌:           atom->updatePropertyCache(false);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         Atom::ChiralType code =
+    // RDKit✔️❌:             Chirality::atomChiralTypeFromBondDirPseudo3D(mol, bond, &conf)
+    // RDKit✔️❌:                 .value_or(Atom::ChiralType::CHI_UNSPECIFIED);
+    // RDKit✔️❌:         if (code != Atom::ChiralType::CHI_UNSPECIFIED) {
+    // RDKit✔️❌:           atomsSet.set(atom->getIdx());
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         atom->setChiralTag(code);
+    // RDKit✔️❌:         if (atom->getDegree() == 3 && !atom->getNumExplicitHs() &&
+    // RDKit✔️❌:             atom->getNumImplicitHs() == 1) {
+    // RDKit✔️❌:           atom->setNumExplicitHs(1);
+    // RDKit✔️❌:           atom->updatePropertyCache();
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Chirality.cpp :: void assignChiralTypesFromBondDirs
     let _ = params;
-    if molecule.bonds().iter().any(|bond| {
+    if !molecule.bonds().iter().any(|bond| {
         matches!(
             bond.direction(),
             BondDirection::BeginWedge | BondDirection::BeginDash | BondDirection::Unknown
         )
     }) {
-        return unsupported_feature(&STEREO_FEATURE);
+        return Ok(molecule);
     }
+    let Some(conf_id) = molecule.conformers_3d().first().map(|conf| conf.id()) else {
+        return Ok(molecule);
+    };
+    let mut molecule = molecule;
+    crate::smiles::assign_chiral_types_from_bond_dirs(&mut molecule, conf_id);
     Ok(molecule)
 }
 
@@ -10981,30 +11116,18 @@ fn detect_bond_stereochemistry(
 ) -> Result<Molecule, SdfReadError> {
     // BEGIN RDKIT CPP BODY: detect_bond_stereochemistry
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Chirality.cpp :: void detectBondStereochemistry
-    // RDKit✔️✔️:   if (!mol.getNumConformers()) {
-    // RDKit✔️✔️:     return;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   const Conformer &conf = mol.getConformer(confId);
-    // RDKit✔️✔️:   setDoubleBondNeighborDirections(mol, &conf);
+    // RDKit✔️❌:   if (!mol.getNumConformers()) {
+    // RDKit✔️❌:     return;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   const Conformer &conf = mol.getConformer(confId);
+    // RDKit✔️❌:   setDoubleBondNeighborDirections(mol, &conf);
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Chirality.cpp :: void detectBondStereochemistry
     // END RDKIT CPP BODY: detect_bond_stereochemistry
 
     let _ = params;
-    let Some(conf_id) = molecule
-        .conformers_3d()
-        .iter()
-        .find(|conf| conf.is_3d())
-        .map(|conf| conf.id())
-    else {
+    let Some(conf_id) = molecule.conformers_3d().first().map(|conf| conf.id()) else {
         return Ok(molecule);
     };
-    if !molecule
-        .bonds()
-        .iter()
-        .any(|bond| crate::stereo::is_bond_candidate_for_stereo(&molecule, bond.id().index()))
-    {
-        return Ok(molecule);
-    }
     let mut molecule = molecule;
     crate::smiles::set_double_bond_neighbor_directions(&mut molecule, conf_id).map_err(|err| {
         SdfReadError::Parse(format!("double-bond stereo detection failed: {err}"))
@@ -11211,18 +11334,11 @@ fn assign_stereochemistry_after_sdf_parse(
 ) -> Result<Molecule, SdfReadError> {
     let _ = params;
     let mut molecule = molecule;
-    if let Some(conf_id) = molecule
-        .conformers_3d()
-        .iter()
-        .find(|conf| conf.is_3d())
-        .map(|conf| conf.id())
-    {
-        crate::smiles::assign_stereochemistry_from_3d(&mut molecule, conf_id).map_err(|err| {
-            SdfReadError::Parse(format!(
-                "post-parse stereochemistry assignment failed: {err}"
-            ))
-        })?;
-    }
+    crate::smiles::assign_stereochemistry_cleanup_subset(&mut molecule, true).map_err(|err| {
+        SdfReadError::Parse(format!(
+            "post-parse stereochemistry assignment failed: {err}"
+        ))
+    })?;
     Ok(molecule)
 }
 
@@ -11240,6 +11356,13 @@ mod tests {
         format!(
             "{:>10.4}{:>10.4}{:>10.4} {:<3}{:>2}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}",
             1.25, -2.5, 0.75, symbol, mass, charge, 0, h_count, 0, 0, 0, 0, 0, atom_map
+        )
+    }
+
+    fn v2000_atom_line_at(symbol: &str, x: f64, y: f64, z: f64) -> String {
+        format!(
+            "{x:>10.4}{y:>10.4}{z:>10.4} {symbol:<3}{:>2}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}",
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         )
     }
 
@@ -12300,6 +12423,62 @@ M  END
     }
 
     #[test]
+    fn sdf_sanitize_after_remove_hs_aromatizes_kekule_benzene_from_v3000() {
+        let input = concat!(
+            "\n",
+            "     RDKit          2D\n",
+            "\n",
+            "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+            "M  V30 BEGIN CTAB\n",
+            "M  V30 COUNTS 6 6 0 0 0\n",
+            "M  V30 BEGIN ATOM\n",
+            "M  V30 1 C 1.500000 0.000000 0.000000 0\n",
+            "M  V30 2 C 0.750000 -1.299038 0.000000 0\n",
+            "M  V30 3 C -0.750000 -1.299038 0.000000 0\n",
+            "M  V30 4 C -1.500000 0.000000 0.000000 0\n",
+            "M  V30 5 C -0.750000 1.299038 0.000000 0\n",
+            "M  V30 6 C 0.750000 1.299038 0.000000 0\n",
+            "M  V30 END ATOM\n",
+            "M  V30 BEGIN BOND\n",
+            "M  V30 1 1 1 2\n",
+            "M  V30 2 2 2 3\n",
+            "M  V30 3 1 3 4\n",
+            "M  V30 4 2 4 5\n",
+            "M  V30 5 1 5 6\n",
+            "M  V30 6 2 6 1\n",
+            "M  V30 END BOND\n",
+            "M  V30 END CTAB\n",
+            "M  END\n",
+            "$$$$\n",
+        );
+
+        let record = read_sdf_from_str_with_params(
+            input,
+            SdfReadParams {
+                sanitize: true,
+                remove_hs: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert!(
+            record
+                .molecule
+                .atoms()
+                .iter()
+                .all(|atom| atom.is_aromatic())
+        );
+        assert!(
+            record
+                .molecule
+                .bonds()
+                .iter()
+                .all(|bond| bond.is_aromatic() && bond.order() == BondOrder::Aromatic)
+        );
+    }
+
+    #[test]
     fn sdf_assigns_stereogenic_double_bond_detection_from_shared_3d_path() {
         let mut builder = MoleculeBuilder::new();
         let c0 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
@@ -12351,27 +12530,268 @@ M  END
     }
 
     #[test]
-    fn sdf_rejects_wedged_bond_chirality_until_stereo_port_exists() {
+    fn sdf_assigns_wedged_bond_chirality_from_shared_2d_path() {
         let mut builder = MoleculeBuilder::new();
-        let a0 = builder.add_atom(AtomSpec::new(Element::C));
-        let a1 = builder.add_atom(AtomSpec::new(Element::O));
+        let center = builder.add_atom(AtomSpec::new(Element::C));
+        let fluorine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(9).unwrap()));
+        let chlorine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
+        let bromine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(35).unwrap()));
         builder
             .add_bond(
-                BondSpec::new(a0, a1, BondOrder::Single).with_direction(BondDirection::BeginWedge),
+                BondSpec::new(center, fluorine, BondOrder::Single)
+                    .with_direction(BondDirection::BeginWedge),
             )
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(center, chlorine, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(center, bromine, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_conformer(Conformer3D::new(
+                0,
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [-1.0, -1.0, 0.0],
+                ],
+                false,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let error =
-            assign_chiral_types_from_bond_dirs(molecule, SdfReadParams::default()).unwrap_err();
+        let molecule =
+            assign_chiral_types_from_bond_dirs(molecule, SdfReadParams::default()).unwrap();
+
+        assert_ne!(
+            molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
+        assert_eq!(molecule.atoms()[0].explicit_hydrogens(), 1);
+    }
+
+    #[test]
+    fn sdf_detect_bond_stereochemistry_uses_first_2d_conformer_like_rdkit() {
+        let mut builder = MoleculeBuilder::new();
+        let c0 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
+        let c1 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
+        let f = builder.add_atom(AtomSpec::new(Element::from_atomic_number(9).unwrap()));
+        let cl = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
+        builder
+            .add_bond(BondSpec::new(c0, c1, BondOrder::Double))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c0, f, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c1, cl, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_conformer(Conformer3D::new(
+                0,
+                vec![
+                    [-1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [-1.0, 1.0, 0.0],
+                    [1.0, -1.0, 0.0],
+                ],
+                false,
+            ))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        let molecule = detect_bond_stereochemistry(
+            molecule,
+            SdfReadParams {
+                sanitize: false,
+                remove_hs: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         assert!(matches!(
-            error,
-            SdfReadError::UnsupportedFeature(UnsupportedFeatureError {
-                feature: "stereo.perception",
-                ..
-            })
+            molecule.bonds()[1].direction(),
+            BondDirection::EndUpRight | BondDirection::EndDownRight
         ));
+        assert!(matches!(
+            molecule.bonds()[2].direction(),
+            BondDirection::EndUpRight | BondDirection::EndDownRight
+        ));
+    }
+
+    #[test]
+    fn sdf_reader_preserves_2d_coords_in_coords_2d_like_rdkit() {
+        let input = concat!(
+            "\n",
+            "     RDKit          2D\n",
+            "\n",
+            "  4  3  0  0  0  0  0  0  0  0999 V2000\n",
+            "   -1.9796   -0.1365    0.0000 F   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "   -0.5994    0.4508    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "    0.5994   -0.4508    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "    1.9796    0.1365    0.0000 F   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "  1  2  1  0\n",
+            "  2  3  2  0\n",
+            "  3  4  1  0\n",
+            "M  END\n",
+            "$$$$\n",
+        );
+
+        let record = read_sdf_from_str(input).unwrap();
+        let coords_2d = record
+            .molecule
+            .coords_2d()
+            .expect("2D coords should be stored");
+        assert_eq!(
+            coords_2d,
+            &[
+                [-1.9796, -0.1365],
+                [-0.5994, 0.4508],
+                [0.5994, -0.4508],
+                [1.9796, 0.1365],
+            ]
+        );
+        let conformer = record
+            .molecule
+            .conformers_3d()
+            .first()
+            .expect("2D input should still preserve the source conformer");
+        assert!(!conformer.is_3d());
+        assert_eq!(
+            record.molecule.source_coordinate_dim(),
+            Some(crate::CoordinateDimension::TwoD)
+        );
+    }
+
+    #[test]
+    fn sdf_reader_keeps_3d_source_dim_for_zero_z_v3000_like_rdkit_calculate3dflag() {
+        let input = concat!(
+            "\n",
+            "     RDKit          3D\n",
+            "\n",
+            "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+            "M  V30 BEGIN CTAB\n",
+            "M  V30 COUNTS 3 2 0 0 0\n",
+            "M  V30 BEGIN ATOM\n",
+            "M  V30 1 C 1.233224 -0.184393 0.000000 0\n",
+            "M  V30 2 C -0.112065 0.430195 -0.000000 0\n",
+            "M  V30 3 O -1.121159 -0.245802 -0.000000 0\n",
+            "M  V30 END ATOM\n",
+            "M  V30 BEGIN BOND\n",
+            "M  V30 1 1 1 2\n",
+            "M  V30 2 2 2 3\n",
+            "M  V30 END BOND\n",
+            "M  V30 END CTAB\n",
+            "M  END\n",
+            "$$$$\n",
+        );
+
+        let record = read_sdf_from_str(input).unwrap();
+        let conformer = record
+            .molecule
+            .conformers_3d()
+            .first()
+            .expect("3D source should preserve conformer");
+        assert!(conformer.is_3d());
+        assert!(conformer.coords()[1][2].is_sign_negative());
+        assert!(conformer.coords()[2][2].is_sign_negative());
+        assert_eq!(
+            record.molecule.source_coordinate_dim(),
+            Some(crate::CoordinateDimension::ThreeD)
+        );
+    }
+
+    #[test]
+    fn sdf_reader_treats_v3000_r_token_as_dummy_label_not_rgp_like_rdkit() {
+        let input = concat!(
+            "\n",
+            "     RDKit          2D\n",
+            "\n",
+            "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+            "M  V30 BEGIN CTAB\n",
+            "M  V30 COUNTS 2 1 0 0 0\n",
+            "M  V30 BEGIN ATOM\n",
+            "M  V30 1 R -0.750000 0.000000 0.000000 1 VAL=1\n",
+            "M  V30 2 C 0.750000 -0.000000 0.000000 0\n",
+            "M  V30 END ATOM\n",
+            "M  V30 BEGIN BOND\n",
+            "M  V30 1 1 1 2\n",
+            "M  V30 END BOND\n",
+            "M  V30 END CTAB\n",
+            "M  END\n",
+            "$$$$\n",
+        );
+
+        let record = read_sdf_from_str(input).unwrap();
+        let atom = &record.molecule.atoms()[0];
+        assert_eq!(atom.atomic_number(), 0);
+        assert_eq!(atom.prop("dummyLabel"), Some("R"));
+        assert_eq!(atom.prop("_MolFileRLabel"), None);
+    }
+
+    #[test]
+    fn sdf_finish_processing_assigns_double_bond_stereo_from_2d_coords_like_rdkit() {
+        let input = concat!(
+            "\n",
+            "     RDKit          2D\n",
+            "\n",
+            "  4  3  0  0  0  0  0  0  0  0999 V2000\n",
+            "   -1.9796   -0.1365    0.0000 F   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "   -0.5994    0.4508    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "    0.5994   -0.4508    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "    1.9796    0.1365    0.0000 F   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "  1  2  1  0\n",
+            "  2  3  2  0\n",
+            "  3  4  1  0\n",
+            "M  END\n",
+            "$$$$\n",
+        );
+
+        let record = read_sdf_from_str(input).unwrap();
+        assert_ne!(record.molecule.bonds()[0].direction(), BondDirection::None);
+        assert_eq!(
+            record.molecule.bonds()[0].direction(),
+            record.molecule.bonds()[2].direction()
+        );
+        assert_eq!(record.molecule.bonds()[1].stereo(), BondStereo::Trans);
+        assert_eq!(
+            record.molecule.bonds()[1].stereo_atoms(),
+            Some([AtomId::new(0), AtomId::new(3)])
+        );
+    }
+
+    #[test]
+    fn molblock_reader_assigns_wedged_atom_chirality_from_2d_bond_dirs_like_rdkit() {
+        let input = format!(
+            "wedged\n  COSMolKit          2D\ncomment\n  4  3  0  0  0  0            999 V2000\n{}\n{}\n{}\n{}\n{}\n{}\n{}\nM  END\n$$$$\n",
+            v2000_atom_line_at("C", 0.0, 0.0, 0.0),
+            v2000_atom_line_at("F", 1.0, 0.0, 0.0),
+            v2000_atom_line_at("Cl", 0.0, 1.0, 0.0),
+            v2000_atom_line_at("Br", -1.0, -1.0, 0.0),
+            v2000_bond_line(1, 2, 1, 1, 0),
+            v2000_bond_line(1, 3, 1, 0, 0),
+            v2000_bond_line(1, 4, 1, 0, 0),
+        );
+
+        let record = read_sdf_from_str_with_params(
+            &input,
+            SdfReadParams {
+                sanitize: false,
+                remove_hs: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_ne!(
+            record.molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
+        assert_eq!(record.molecule.atoms()[0].explicit_hydrogens(), 1);
+        assert_eq!(record.molecule.bonds()[0].direction(), BondDirection::None);
     }
 
     #[test]
@@ -12416,6 +12836,31 @@ M  END
 
         assert_ne!(
             molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
+    }
+
+    #[test]
+    fn sdf_finish_processing_clears_false_3d_tetrahedral_tag_like_rdkit() {
+        let input = concat!(
+            "\n",
+            "     RDKit          3D\n",
+            "\n",
+            "  4  3  0  0  0  0  0  0  0  0999 V2000\n",
+            "   -1.1465   -0.8248   -0.1082 C   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "    0.0043    0.0355    0.3412 C   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "    1.3209   -0.5515   -0.1115 C   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "   -0.1786    1.3409   -0.1215 O   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "  1  2  1  0\n",
+            "  2  3  1  0\n",
+            "  2  4  1  0\n",
+            "M  END\n",
+            "$$$$\n",
+        );
+
+        let record = read_sdf_from_str(input).unwrap();
+        assert_eq!(
+            record.molecule.atoms()[1].chiral_tag(),
             crate::ChiralTag::Unspecified
         );
     }

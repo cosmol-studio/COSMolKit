@@ -1,5 +1,5 @@
 use crate::{
-    Atom, AtomId, Bond, Molecule, MoleculeProperties,
+    AdjacencyList, Atom, AtomId, Bond, Molecule, MoleculeProperties,
     molecule::{CoordinateBlock, DerivedCacheBlock, TopologyBlock},
     sgroup::SubstanceGroup,
     stereo::StereoGroup,
@@ -40,6 +40,11 @@ impl<'a> MoleculeReadParts<'a> {
     #[must_use]
     pub(crate) fn bonds(self) -> &'a [Bond] {
         self.molecule.bonds()
+    }
+
+    #[must_use]
+    pub(crate) fn adjacency(self) -> &'a AdjacencyList {
+        &self.molecule.topology_block().adjacency
     }
 
     #[must_use]
@@ -89,7 +94,10 @@ impl<'a> MoleculeReadParts<'a> {
     }
 
     fn with_molecule_read<R>(self, f: impl FnOnce(&Molecule) -> R) -> R {
-        f(self.molecule)
+        let _ = (self, f);
+        panic!(
+            "MoleculeReadParts is the registered-operation read capability surface. Raw &Molecule escape is forbidden by the current ops design. Add narrow accessors or explicit dependency plumbing instead of using with_molecule_read()."
+        )
     }
 
     pub(crate) fn add_hs_assignment(
@@ -112,17 +120,15 @@ impl<'a> MoleculeReadParts<'a> {
         model: crate::ValenceModel,
         strict: bool,
     ) -> Result<crate::ValenceAssignment, crate::ValenceError> {
-        self.with_molecule_read(|molecule| {
-            crate::assign_valence_with_options(molecule, model, strict)
-        })
+        crate::valence::assign_valence_with_options_from_read_parts(self, model, strict)
     }
 
     pub(crate) fn assign_radicals(self) -> Result<Vec<u8>, crate::ValenceError> {
-        self.with_molecule_read(crate::assign_radicals)
+        crate::valence::assign_radicals_from_read_parts(self)
     }
 
     pub(crate) fn symmetrize_sssr(self) -> Result<crate::RingInfo, crate::RingFindingError> {
-        self.with_molecule_read(crate::symmetrize_sssr)
+        crate::rings::symmetrize_sssr_from_read_parts(self)
     }
 
     pub(crate) fn find_ring_families(
@@ -130,16 +136,18 @@ impl<'a> MoleculeReadParts<'a> {
         include_dative_bonds: bool,
         include_hydrogen_bonds: bool,
     ) -> Result<crate::RingInfo, crate::RingFindingError> {
-        self.with_molecule_read(|molecule| {
-            crate::find_ring_families(molecule, include_dative_bonds, include_hydrogen_bonds)
-        })
+        crate::rings::find_ring_families_from_read_parts(
+            self,
+            include_dative_bonds,
+            include_hydrogen_bonds,
+        )
     }
 
     pub(crate) fn set_aromaticity(
         self,
         model: crate::AromaticityModel,
     ) -> Result<crate::AromaticityAssignment, crate::AromaticityError> {
-        self.with_molecule_read(|molecule| crate::set_aromaticity(molecule, model))
+        crate::aromaticity::set_aromaticity_from_read_parts(self, model)
     }
 
     pub(crate) fn kekulize_assignment(
@@ -149,18 +157,16 @@ impl<'a> MoleculeReadParts<'a> {
         mark_atoms_bonds: bool,
         max_backtracks: usize,
     ) -> Result<crate::kekulize::KekulizeAssignment, crate::KekulizeError> {
-        self.with_molecule_read(|molecule| {
-            crate::kekulize::kekulize_assignment(
-                molecule,
-                ring_info,
-                clear_aromatic_flags,
-                mark_atoms_bonds,
-                max_backtracks,
-            )
-        })
+        crate::kekulize::kekulize_assignment_from_read_parts(
+            self,
+            ring_info,
+            clear_aromatic_flags,
+            mark_atoms_bonds,
+            max_backtracks,
+        )
     }
 
     pub(crate) fn rank_mol_atoms(self) -> Result<Vec<usize>, crate::KekulizeError> {
-        self.with_molecule_read(crate::canon_rank::rank_mol_atoms)
+        crate::canon_rank::rank_mol_atoms_from_read_parts(self)
     }
 }

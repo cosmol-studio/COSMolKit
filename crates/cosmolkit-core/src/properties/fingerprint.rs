@@ -229,11 +229,7 @@ pub fn morgan_fingerprint_with_output(
     }
 
     // Build or borrow the adjacency list for neighbor traversal.
-    let adjacency = molecule
-        .derived_cache()
-        .adjacency
-        .clone()
-        .unwrap_or_else(|| AdjacencyList::from_topology(molecule.num_atoms(), molecule.bonds()));
+    let adjacency = molecule.topology_block().adjacency.clone();
 
     // Compute initial per-atom invariants.
     let mut invariants = compute_initial_invariants(molecule, &adjacency, params)?;
@@ -878,11 +874,7 @@ pub fn topological_fingerprint(
     }
 
     // Build adjacency list if not cached.
-    let adjacency = molecule
-        .derived_cache()
-        .adjacency
-        .clone()
-        .unwrap_or_else(|| AdjacencyList::from_topology(molecule.num_atoms(), molecule.bonds()));
+    let adjacency = molecule.topology_block().adjacency.clone();
 
     let num_atoms = molecule.num_atoms();
     let atoms = molecule.atoms();
@@ -1045,11 +1037,7 @@ pub fn maccs_fingerprint(molecule: &Molecule, params: &MaccsFingerprintParams) -
     let num_bonds = molecule.num_bonds();
 
     // Build adjacency if available (for neighbor traversal)
-    let adjacency = molecule
-        .derived_cache()
-        .adjacency
-        .clone()
-        .unwrap_or_else(|| AdjacencyList::from_topology(num_atoms, bonds));
+    let adjacency = molecule.topology_block().adjacency.clone();
 
     let ring_info = molecule.derived_cache().rings.as_ref();
 
@@ -4742,9 +4730,8 @@ mod tests {
     }
 
     #[test]
-    fn morgan_fingerprint_computes_adjacency_on_the_fly_if_cache_empty() {
-        let mut mol = benzene();
-        mol.derived_cache_mut().adjacency = None;
+    fn morgan_fingerprint_uses_topology_adjacency_without_derived_cache() {
+        let mol = benzene();
         let fp = morgan_fingerprint(&mol, &default_morgan_params(2, 2048)).unwrap();
         assert!(!fp.on_bits().is_empty());
     }

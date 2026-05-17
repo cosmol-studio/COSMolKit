@@ -1,13 +1,15 @@
 //! MolBlock writer implementation.
 
 use std::borrow::Cow;
+use std::collections::BTreeMap;
+use std::f64::consts::PI;
 
 use crate::{
-    Atom, AtomQueryPredicate, Bond, BondDirection, BondOrder, BondQueryPredicate, BondStereo,
-    ChiralTag, CoordinateDimension, QueryNode, SGroupBondRole, SGroupBracketStyle,
+    Atom, AtomId, AtomQueryPredicate, Bond, BondDirection, BondId, BondOrder, BondQueryPredicate,
+    BondStereo, ChiralTag, CoordinateDimension, QueryNode, SGroupBondRole, SGroupBracketStyle,
     SGroupConnection, SGroupData, StereoGroupKind, SubstanceGroup, SubstanceGroupKind,
 };
-use crate::{Molecule, UnsupportedFeatureError};
+use crate::{Molecule, RingInfo, UnsupportedFeatureError, find_sssr};
 
 const MIN_V2000_COORD: f64 = -100_000.0;
 const MAX_V2000_COORD: f64 = 1_000_000.0;
@@ -126,23 +128,20 @@ pub fn mol_to_mol_block_with_params(
     // RDKit❗✔️: v3KParams.forceV3000 = true;
     // RDKit❗✔️: return MolToMolBlock(mol, v3KParams, confId);
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/FileWriters.h :: MolToMolBlock inline overloads
+    let selection = if params.force_2d {
+        CoordinateSelection::TwoD
+    } else {
+        CoordinateSelection::Auto
+    };
     match params.format {
         SdfFormat::V2000 => {
-            if params.force_2d {
-                mol_to_v2000_block_with_params(molecule, CoordinateSelection::TwoD, params)
+            if should_auto_upgrade_to_v3000(molecule) {
+                mol_to_v3000_block_with_params(molecule, selection, params)
             } else {
-                mol_to_v2000_block_with_params(molecule, CoordinateSelection::Auto, params)
+                mol_to_v2000_block_with_params(molecule, selection, params)
             }
         }
-        SdfFormat::V3000 => mol_to_v3000_block_with_params(
-            molecule,
-            if params.force_2d {
-                CoordinateSelection::TwoD
-            } else {
-                CoordinateSelection::Auto
-            },
-            params,
-        ),
+        SdfFormat::V3000 => mol_to_v3000_block_with_params(molecule, selection, params),
     }
 }
 
@@ -176,26 +175,51 @@ pub fn mol_to_3d_sdf_record(
     Ok(append_sdf_record_fields(block, molecule))
 }
 
+fn should_auto_upgrade_to_v3000(molecule: &Molecule) -> bool {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: outputMolToMolBlock auto-V3000 selection
+    // RDKit✔️✔️: bool hasDative = false;
+    // RDKit✔️✔️: for (const auto bond : tmol.bonds()) { if (bond->getBondType() == Bond::DATIVE) { hasDative = true; break; } }
+    // RDKit✔️✔️: if (whichFormat == MolFileFormat::unspecified &&
+    // RDKit✔️✔️:     (coordMagnitudeTooLargeForV2K || hasDative || nAtoms > 999 ||
+    // RDKit✔️✔️:      nBonds > 999 || nSGroups > 999 || !tmol.getStereoGroups().empty())) {
+    // RDKit✔️✔️:   isV3000 = true;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: outputMolToMolBlock auto-V3000 selection
+    molecule
+        .bonds()
+        .iter()
+        .any(|bond| bond.order() == BondOrder::Dative)
+        || molecule.num_atoms() > 999
+        || molecule.num_bonds() > 999
+        || molecule.substance_groups().len() > 999
+        || !molecule.stereo_groups().is_empty()
+}
+
 /// Prepared molecule with aromatic-bond bookkeeping.
 /// Before kekulization, the set of bonds that were aromatic is recorded so
-/// the molfile bond line can emit bond type 4 for those bonds (matching
-/// RDKit's `prepareMol` → `aromaticBonds` bookkeeping).
+/// crossed-bond stereo output can be suppressed for those bonds after
+/// kekulization (matching RDKit's `prepareMol` → `aromaticBonds`
+/// bookkeeping).
 struct PreparedMol<'a> {
     molecule: Cow<'a, Molecule>,
     /// Indices (in the bond table) of bonds that were aromatic before
     /// kekulization. After kekulization, these should still be written
     /// as bond type 4 (aromatic) in the molfile output.
     aromatic_bonds: Vec<usize>,
+    selected: SelectedCoordinates,
 }
 
 fn prepare_mol_for_writing<'a>(
     molecule: &'a Molecule,
     params: &MolBlockWriteParams,
+    selection: CoordinateSelection,
 ) -> Result<PreparedMol<'a>, MolWriteError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: prepareMol
     // RDKit❗✔️: RWMol trwmol(mol);
-    // RDKit❗✔️: if (params.kekulize) { MolOps::KekulizeIfPossible(trwmol, true); }
-    // RDKit❗✔️: if (params.includeStereo) { wedgeBonds = Chirality::pickBondsToWedge(...); }
+    // RDKit❗✔️: if (params.kekulize && trwmol.getNumBonds()) { ... MolOps::Kekulize(trwmol); }
+    // RDKit✔️✔️: if (params.includeStereo && !trwmol.getNumConformers()) {
+    // RDKit✔️✔️:   RDDepict::compute2DCoords(trwmol);
+    // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: prepareMol
     // Record aromatic bonds before kekulization.
     let aromatic_bonds: Vec<usize> = molecule
@@ -205,17 +229,286 @@ fn prepare_mol_for_writing<'a>(
         .filter(|(_, bond)| bond.is_aromatic() || bond.order() == BondOrder::Aromatic)
         .map(|(idx, _)| idx)
         .collect();
-    if params.kekulize {
-        Ok(PreparedMol {
-            molecule: Cow::Owned(molecule.with_kekulized_bonds(true)?),
-            aromatic_bonds,
-        })
+
+    let mut mol = if params.kekulize {
+        Cow::Owned(molecule.with_kekulized_bonds(true)?)
     } else {
-        Ok(PreparedMol {
-            molecule: Cow::Borrowed(molecule),
-            aromatic_bonds,
-        })
+        Cow::Borrowed(molecule)
+    };
+
+    let mut selected = select_coordinates(mol.as_ref(), selection)?;
+    if params.include_stereo && selected.coords.is_none() {
+        let coords_2d =
+            crate::coordinates::compute_2d_coords(mol.atoms(), mol.bonds()).map_err(|source| {
+                MolWriteError::Value(format!(
+                    "compute2DCoords failed during MolBlock write: {source}"
+                ))
+            })?;
+        let coord_block = mol.to_mut().coordinate_block_mut();
+        coord_block.coords_2d = Some(coords_2d);
+        coord_block.source_coordinate_dim = Some(CoordinateDimension::TwoD);
+        selected = select_coordinates(mol.as_ref(), CoordinateSelection::TwoD)?;
     }
+
+    // outputMolToMolBlock() always calls pickBondsToWedge() before serializing
+    // bond lines; this is not gated on includeStereo.
+    let ring_info = match mol.derived_cache().rings.as_ref() {
+        Some(ri) if ri.is_sssr_or_better() => ri.clone(),
+        _ => find_sssr(&mol).map_err(|e| MolWriteError::Value(e.to_string()))?,
+    };
+
+    // BEGIN RDKIT CPP CALL third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: outputMolToMolBlock
+    // RDKit❗✔️: auto wedgeBonds = Chirality::pickBondsToWedge(tmol, nullptr, conf);
+    let wedge_bonds = pick_bonds_to_wedge(&mol, &ring_info);
+
+    if !wedge_bonds.is_empty() {
+        let mol_mut = mol.to_mut();
+        // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: wedgeMolBonds
+        // RDKit❗✔️: auto wedgeBonds = Chirality::pickBondsToWedge(mol, params, conf);
+        // RDKit❗✔️: for (const auto &[wbi, wedgeInfo] : wedgeBonds) {
+        // RDKit❗✔️:   auto bond = mol.getBondWithIdx(wbi);
+        // RDKit❗✔️:   auto dir =
+        // RDKit❗✔️:       detail::determineBondWedgeState(bond, wedgeInfo->getIdx(), conf);
+        // RDKit❗✔️:   if (dir == Bond::BEGINWEDGE || dir == Bond::BEGINDASH) {
+        // RDKit❗✔️:     bond->setBondDir(dir);
+        // RDKit❗✔️:     if (static_cast<unsigned int>(wedgeInfo->getIdx()) !=
+        // RDKit❗✔️:         bond->getBeginAtomIdx()) {
+        // RDKit❗✔️:       auto tmp = bond->getBeginAtomIdx();
+        // RDKit❗✔️:       bond->setBeginAtomIdx(bond->getEndAtomIdx());
+        // RDKit❗✔️:       bond->setEndAtomIdx(tmp);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: wedgeMolBonds
+        let mut dirs: Vec<(usize, BondDirection, usize)> = Vec::new();
+        for (&bond_idx, &chiral_atom_idx) in &wedge_bonds {
+            if let Some(bond) = mol_mut.bonds().get(bond_idx) {
+                let dir = determine_bond_wedge_state(
+                    mol_mut,
+                    bond,
+                    chiral_atom_idx,
+                    selected.coords.as_deref(),
+                )?;
+                if matches!(dir, BondDirection::BeginWedge | BondDirection::BeginDash) {
+                    dirs.push((bond_idx, dir, chiral_atom_idx));
+                }
+            }
+        }
+        for (bond_idx, dir, chiral_atom_idx) in dirs {
+            if let Some(bond) = mol_mut.topology_block_mut().bonds.get_mut(bond_idx) {
+                bond.set_direction(dir);
+                if bond.begin().index() != chiral_atom_idx {
+                    bond.set_endpoints(bond.end(), bond.begin());
+                }
+            }
+        }
+    }
+
+    Ok(PreparedMol {
+        molecule: mol,
+        aromatic_bonds,
+        selected,
+    })
+}
+
+// BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: determineBondWedgeState
+// RDKit❗✔️: Bond::BondDir determineBondWedgeState(const Bond *bond,
+// RDKit❗✔️:                                       unsigned int fromAtomIdx,
+// RDKit❗✔️:                                       const Conformer *conf) {
+fn determine_bond_wedge_state(
+    molecule: &Molecule,
+    bond: &Bond,
+    from_atom_idx: usize,
+    coords: Option<&[[f64; 3]]>,
+) -> Result<BondDirection, MolWriteError> {
+    // RDKit❗✔️: auto res = bond->getBondDir();
+    let mut res = bond.direction();
+    // RDKit❗✔️: if (!conf) { return res; }
+    let Some(coords) = coords else {
+        return Ok(res);
+    };
+    if bond.order() != BondOrder::Single {
+        return Ok(res);
+    }
+
+    // RDKit❗✔️: if (bond->getBeginAtom()->getIdx() == fromAtomIdx) {
+    // RDKit❗✔️:   atom = bond->getBeginAtom();
+    // RDKit❗✔️:   bondAtom = bond->getEndAtom();
+    // RDKit❗✔️: } else {
+    // RDKit❗✔️:   atom = bond->getEndAtom();
+    // RDKit❗✔️:   bondAtom = bond->getBeginAtom();
+    // RDKit❗✔️: }
+    let (atom_idx, bond_atom_idx) = if bond.begin().index() == from_atom_idx {
+        (bond.begin().index(), bond.end().index())
+    } else if bond.end().index() == from_atom_idx {
+        (bond.end().index(), bond.begin().index())
+    } else {
+        return Ok(res);
+    };
+    let atom = &molecule.atoms()[atom_idx];
+
+    // RDKit❗✔️: auto chiralType = atom->getChiralTag();
+    // RDKit❗✔️: TEST_ASSERT(chiralType == Atom::CHI_TETRAHEDRAL_CW ||
+    // RDKit❗✔️:             chiralType == Atom::CHI_TETRAHEDRAL_CCW);
+    let chiral_type = atom.chiral_tag();
+    if !matches!(
+        chiral_type,
+        ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+    ) {
+        return Ok(res);
+    }
+
+    let center_loc = *coords.get(atom_idx).ok_or_else(|| {
+        MolWriteError::Value("wedge-state coordinate count does not match atom count".to_string())
+    })?;
+    let bond_atom_loc = *coords.get(bond_atom_idx).ok_or_else(|| {
+        MolWriteError::Value("wedge-state coordinate count does not match atom count".to_string())
+    })?;
+    // RDKit❗✔️: centerLoc.z = 0.0;
+    // RDKit❗✔️: tmpPt.z = 0.0;
+    let center_loc = [center_loc[0], center_loc[1], 0.0];
+    let bond_atom_loc = [bond_atom_loc[0], bond_atom_loc[1], 0.0];
+
+    // RDKit❗✔️: refVect = centerLoc.directionVector(tmpPt);
+    let Some(ref_vect) = normalized_direction(center_loc, bond_atom_loc) else {
+        return Ok(res);
+    };
+
+    // RDKit❗✔️: neighborBondIndices.push_back(bond->getIdx());
+    // RDKit❗✔️: neighborBondAngles.push_back(0.0);
+    let mut neighbor_bond_indices = vec![bond.id().index()];
+    let mut neighbor_bond_angles = vec![0.0];
+    // RDKit❗✔️: for (const auto nbrBond : mol->atomBonds(atom)) {
+    for (nbr_bond_idx, other_atom_idx) in atom_bonds(molecule, atom_idx) {
+        if nbr_bond_idx == bond.id().index() {
+            continue;
+        }
+        let other_loc = *coords.get(other_atom_idx).ok_or_else(|| {
+            MolWriteError::Value(
+                "wedge-state coordinate count does not match atom count".to_string(),
+            )
+        })?;
+        let other_loc = [other_loc[0], other_loc[1], 0.0];
+        // RDKit❗✔️: tmpVect = centerLoc.directionVector(tmpPt);
+        let Some(tmp_vect) = normalized_direction(center_loc, other_loc) else {
+            return Ok(res);
+        };
+        // RDKit❗✔️: auto angle = refVect.signedAngleTo(tmpVect);
+        // RDKit❗✔️: if (angle < 0.0) { angle += 2. * M_PI; }
+        let mut angle = signed_angle_2d(ref_vect, tmp_vect);
+        if angle < 0.0 {
+            angle += 2.0 * PI;
+        }
+        // RDKit❗✔️: while (angleIt != neighborBondAngles.end() && angle > (*angleIt)) {
+        let insert_idx = neighbor_bond_angles
+            .iter()
+            .position(|existing| angle <= *existing)
+            .unwrap_or(neighbor_bond_angles.len());
+        neighbor_bond_angles.insert(insert_idx, angle);
+        neighbor_bond_indices.insert(insert_idx, nbr_bond_idx);
+    }
+
+    // RDKit❗✔️: int nSwaps = atom->getPerturbationOrder(neighborBondIndices);
+    let mut n_swaps =
+        molfile_perturbation_order_from_bond_indices(molecule, atom_idx, &neighbor_bond_indices)?;
+
+    // RDKit❗✔️: if (neighborBondAngles.size() == 3) {
+    // RDKit❗✔️:   double angle1 = (*angleIt);
+    // RDKit❗✔️:   double angle2 = (*angleIt);
+    // RDKit❗✔️:   constexpr double angleTol = M_PI * 1.9 / 180.;
+    // RDKit❗✔️:   if (angle2 - angle1 >= (M_PI - angleTol)) { nSwaps++; }
+    // RDKit❗✔️: }
+    if neighbor_bond_angles.len() == 3 {
+        let angle1 = neighbor_bond_angles[1];
+        let angle2 = neighbor_bond_angles[2];
+        let angle_tol = PI * 1.9 / 180.0;
+        if angle2 - angle1 >= (PI - angle_tol) {
+            n_swaps = n_swaps.saturating_add(1);
+        }
+    }
+
+    // RDKit❗✔️: if (chiralType == Atom::CHI_TETRAHEDRAL_CCW) {
+    // RDKit❗✔️:   if (nSwaps % 2 == 1) { res = Bond::BEGINDASH; }
+    // RDKit❗✔️:   else { res = Bond::BEGINWEDGE; }
+    // RDKit❗✔️: } else {
+    // RDKit❗✔️:   if (nSwaps % 2 == 1) { res = Bond::BEGINWEDGE; }
+    // RDKit❗✔️:   else { res = Bond::BEGINDASH; }
+    // RDKit❗✔️: }
+    match chiral_type {
+        ChiralTag::TetrahedralCcw => {
+            res = if n_swaps % 2 == 1 {
+                BondDirection::BeginDash
+            } else {
+                BondDirection::BeginWedge
+            };
+        }
+        ChiralTag::TetrahedralCw => {
+            res = if n_swaps % 2 == 1 {
+                BondDirection::BeginWedge
+            } else {
+                BondDirection::BeginDash
+            };
+        }
+        _ => {}
+    }
+
+    Ok(res)
+}
+// END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: determineBondWedgeState
+
+fn normalized_direction(from: [f64; 3], to: [f64; 3]) -> Option<[f64; 3]> {
+    let dx = to[0] - from[0];
+    let dy = to[1] - from[1];
+    let dz = to[2] - from[2];
+    let len = (dx * dx + dy * dy + dz * dz).sqrt();
+    if len == 0.0 {
+        return None;
+    }
+    Some([dx / len, dy / len, dz / len])
+}
+
+fn signed_angle_2d(reference: [f64; 3], other: [f64; 3]) -> f64 {
+    let cross_z = reference[0] * other[1] - reference[1] * other[0];
+    let dot = reference[0] * other[0] + reference[1] * other[1] + reference[2] * other[2];
+    cross_z.atan2(dot)
+}
+
+fn molfile_perturbation_order_from_bond_indices(
+    molecule: &Molecule,
+    atom_idx: usize,
+    probe: &[usize],
+) -> Result<u32, MolWriteError> {
+    let reference = molecule
+        .topology_block()
+        .adjacency
+        .neighbors_of(atom_idx)
+        .iter()
+        .map(|neighbor| neighbor.bond.index())
+        .collect::<Vec<_>>();
+    if probe.len() != reference.len() {
+        return Err(MolWriteError::Value(
+            "Atom::getPerturbationOrder probe/reference length mismatch".to_string(),
+        ));
+    }
+    let mut work = probe.to_vec();
+    let mut swaps = 0_u32;
+    for (idx, expected) in reference.iter().copied().enumerate() {
+        if work[idx] == expected {
+            continue;
+        }
+        let Some(found_idx) = work[idx..]
+            .iter()
+            .position(|bond_idx| *bond_idx == expected)
+            .map(|offset| idx + offset)
+        else {
+            return Err(MolWriteError::Value(
+                "Atom::getPerturbationOrder expected bond missing from probe order".to_string(),
+            ));
+        };
+        work.swap(idx, found_idx);
+        swaps = swaps.saturating_add(1);
+    }
+    Ok(swaps)
 }
 
 fn mol_to_v3000_block_with_params(
@@ -234,11 +527,11 @@ fn mol_to_v3000_block_with_params(
     // RDKit❗✔️: appendEnhancedStereoGroups(res, tmol, wedgeBonds);
     // RDKit❗✔️: res += "M  V30 END CTAB\n";
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: outputMolToMolBlock / FileParserUtils::getV3000CTAB
-    let prepared = prepare_mol_for_writing(molecule, params)?;
+    let prepared = prepare_mol_for_writing(molecule, params, selection)?;
     let molecule = prepared.molecule.as_ref();
     let aromatic_bonds = &prepared.aromatic_bonds;
+    let selected = &prepared.selected;
     validate_v3000_writer_subset(molecule, params.include_stereo)?;
-    let selected = select_coordinates(molecule, selection)?;
     let chiral_flag = molfile_chiral_flag(molecule)?;
     let generated_sgroups = v3000_generated_zbo_sgroups(molecule);
 
@@ -292,6 +585,7 @@ fn mol_to_v3000_block_with_params(
         out.push_str("M  V30 BEGIN BOND\n");
         for bond in molecule.bonds() {
             out.push_str(&v3000_bond_line(
+                molecule,
                 bond,
                 params.include_stereo,
                 aromatic_bonds,
@@ -373,11 +667,11 @@ fn mol_to_v2000_block_with_params(
     // RDKit❗✔️: res += "M  END\n";
     // RDKit❗✔️: return res;
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: MolToV2KMolBlock / outputMolToMolBlock
-    let prepared = prepare_mol_for_writing(molecule, params)?;
+    let prepared = prepare_mol_for_writing(molecule, params, selection)?;
     let molecule = prepared.molecule.as_ref();
     let aromatic_bonds = &prepared.aromatic_bonds;
+    let selected = &prepared.selected;
     validate_v2000_writer_subset(molecule, params.include_stereo)?;
-    let selected = select_coordinates(molecule, selection)?;
     validate_v2000_coordinate_range(selected.coords.as_deref())?;
     let chiral_flag = molfile_chiral_flag(molecule)?;
 
@@ -426,6 +720,7 @@ fn mol_to_v2000_block_with_params(
     }
     for bond in molecule.bonds() {
         out.push_str(&v2000_bond_line(
+            molecule,
             bond,
             params.include_stereo,
             aromatic_bonds,
@@ -799,18 +1094,7 @@ fn validate_v2000_writer_subset(
                 }
             }
         }
-        // parity and charge emission are now implemented (get_atom_parity_flag, chg encoding).
-        // Only reject mol_parity and mol_inversion_flag which are SDF-source artifacts
-        // that should not appear in a V2000 write path.
-        if include_stereo && (atom.mol_parity().is_some() || atom.mol_inversion_flag().is_some()) {
-            return Err(MolWriteError::UnsupportedSubset(
-                "atom stereochemistry MolBlock writing is not ported",
-            ));
-        }
-        if (atom.explicit_hydrogens() != 0 && atom.prop("_ZBO_H").is_none())
-            || atom.implicit_hydrogen()
-            || !atom.tracked_isotopic_hydrogens().is_empty()
-        {
+        if !atom.tracked_isotopic_hydrogens().is_empty() {
             return Err(MolWriteError::UnsupportedSubset(
                 "collapsed hydrogen MolBlock writing is not ported",
             ));
@@ -835,13 +1119,8 @@ fn validate_v2000_writer_subset(
             }
         }
         if include_stereo {
-            v2000_bond_stereo_code(bond)?;
-            if (bond.stereo() != BondStereo::None
-                && !(bond.direction() == BondDirection::EitherDouble
-                    && bond.stereo() == BondStereo::Any))
-                || bond.stereo_atoms().is_some()
-                || bond.unknown_stereo()
-            {
+            v2000_bond_stereo_code(molecule, bond)?;
+            if bond.unknown_stereo() {
                 return Err(MolWriteError::UnsupportedSubset(
                     "bond stereochemistry MolBlock writing is not ported",
                 ));
@@ -875,17 +1154,12 @@ fn validate_v3000_writer_subset(
                 }
             }
         }
-        if include_stereo
-            && (atom.chiral_permutation().is_some()
-                || atom.unknown_stereo()
-                || atom.mol_parity().is_some()
-                || atom.mol_inversion_flag().is_some())
-        {
+        if include_stereo && atom.unknown_stereo() {
             return Err(MolWriteError::UnsupportedSubset(
                 "atom stereochemistry V3000 writing is not ported",
             ));
         }
-        if atom.implicit_hydrogen() || !atom.tracked_isotopic_hydrogens().is_empty() {
+        if !atom.tracked_isotopic_hydrogens().is_empty() {
             return Err(MolWriteError::UnsupportedSubset(
                 "collapsed hydrogen V3000 writing is not ported",
             ));
@@ -910,13 +1184,8 @@ fn validate_v3000_writer_subset(
             }
         }
         if include_stereo {
-            v3000_bond_cfg_code(bond)?;
-            if (bond.stereo() != BondStereo::None
-                && !(bond.direction() == BondDirection::EitherDouble
-                    && bond.stereo() == BondStereo::Any))
-                || bond.stereo_atoms().is_some()
-                || bond.unknown_stereo()
-            {
+            v3000_bond_cfg_code(molecule, bond)?;
+            if bond.unknown_stereo() {
                 return Err(MolWriteError::UnsupportedSubset(
                     "bond stereochemistry V3000 writing is not ported",
                 ));
@@ -998,39 +1267,12 @@ fn v2000_atom_line(
     // RDKit❗✔️:          totValence, rxnComponentType, rxnComponentNumber, atomMapNumber,
     // RDKit❗✔️:          inversionFlag, exactChangeFlag);
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetMolFileAtomProperties / GetMolFileAtomLine
-    let symbol = v2000_atom_symbol(atom)?;
+    let symbol = v2000_atom_symbol(atom, true)?;
     let atom_idx = atom.id().index();
     let parity_flag = parity_flags.get(atom_idx).copied().unwrap_or(0);
-    // RDKit charge codes: 0=0, 1=+3, 2=+2, 3=+1, 4=radical, 5=-1, 6=-2, 7=-3
-    let chg = match atom.formal_charge() {
-        -3 => 7,
-        -2 => 6,
-        -1 => 5,
-        0 => 0,
-        1 => 3,
-        2 => 2,
-        3 => 1,
-        _ => 0,
-    };
-    let tot_valence = if has_non_default_valence(atom) {
-        // RDKit: for degree-0 atoms (isolated ions/metals), use 15.
-        // Otherwise emit total_valence % 15.
-        let degree = molecule
-            .derived_cache()
-            .adjacency
-            .as_ref()
-            .map_or(0, |adj| adj.neighbors_of(atom_idx).len() as u32);
-        if degree == 0 { 15 } else { 0u32 }
-    } else {
-        0u32
-    };
-    let mass_diff = atom.isotope().map_or(0i32, |iso| {
-        iso as i32
-            - MOLFILE_ATOMIC_WEIGHT
-                .get(atom.atomic_number() as usize)
-                .copied()
-                .unwrap_or(0)
-    });
+    let chg = 0;
+    let tot_valence = molfile_total_valence_field(molecule, atom)?;
+    let mass_diff = 0i32;
     let h_count = atom
         .prop("_MolFileHCount")
         .and_then(|v| v.parse::<i32>().ok())
@@ -1040,7 +1282,7 @@ fn v2000_atom_line(
         .and_then(|v| v.parse::<i32>().ok())
         .unwrap_or(0);
     Ok(format!(
-        "{:>10.4}{:>10.4}{:>10.4} {:>3}{:>2}{:>3}{:>3}{:>3}{:>3}{:>3}  0{:>3}{:>3}{:>3}{:>3}{:>3}",
+        "{:>10.4}{:>10.4}{:>10.4} {}{:>2}{:>3}{:>3}{:>3}{:>3}{:>3}  0{:>3}{:>3}{:>3}{:>3}{:>3}",
         coord[0],
         coord[1],
         coord[2],
@@ -1075,14 +1317,12 @@ fn v2000_atom_line(
 // END RDKIT FUNCTION getAtomParityFlag
 fn get_atom_parity_flag(molecule: &Molecule, atom: &Atom, coords_3d: &[[f64; 3]]) -> u32 {
     let atom_idx = atom.id().index();
-    if !(atom.chiral_tag() == ChiralTag::TetrahedralCw
-        || atom.chiral_tag() == ChiralTag::TetrahedralCcw)
-    {
+    if matches!(atom.chiral_tag(), ChiralTag::Unspecified | ChiralTag::Other) {
         return 0;
     }
-    let adjacency = molecule.derived_cache().adjacency.as_ref().unwrap();
+    let adjacency = &molecule.topology_block().adjacency;
     let neighbors = adjacency.neighbors_of(atom_idx);
-    if neighbors.len() < 3 {
+    if !(3..=4).contains(&neighbors.len()) {
         return 0;
     }
     // Compute vectors from the center atom to each neighbor.
@@ -1123,28 +1363,248 @@ fn get_atom_parity_flag(molecule: &Molecule, atom: &Atom, coords_3d: &[[f64; 3]]
 }
 
 // RDKit✔️✔️: bool hasNonDefaultValence(const Atom *atom) {
-// RDKit✔️✔️:   if (atom->getNumRadicalElectrons() != 0) { return true; }
-// RDKit✔️✔️:   if (atom->hasQuery() || atom->needsUpdatePropertyCache()) { return false; }
-// RDKit✔️✔️:   return ... (check against default valence)
+// RDKit✔️✔️:   if (atom->getNumRadicalElectrons() != 0) {
+// RDKit✔️✔️:     return true;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   // for queries and atoms which don't have computed properties, the answer is
+// RDKit✔️✔️:   // always no:
+// RDKit✔️✔️:   if (atom->hasQuery() || atom->needsUpdatePropertyCache()) {
+// RDKit✔️✔️:     return false;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   if (atom->getAtomicNum() == 1 ||
+// RDKit✔️✔️:       SmilesWrite ::inOrganicSubset(atom->getAtomicNum())) {
+// RDKit✔️✔️:     // for the ones we "know", we may have to specify the valence if it's
+// RDKit✔️✔️:     // not the default value
+// RDKit✔️✔️:     auto effAtomicNum = atom->getAtomicNum() - atom->getFormalCharge();
+// RDKit✔️✔️:     return atom->getNoImplicit() &&
+// RDKit✔️✔️:            (static_cast<int>(atom->getValence(Atom::ValenceType::EXPLICIT)) !=
+// RDKit✔️✔️:             PeriodicTable::getTable()->getDefaultValence(effAtomicNum));
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   return true;
 // RDKit✔️✔️: }
 // END RDKIT FUNCTION hasNonDefaultValence
-//
-// Simplified: returns true whenever the atom has radicals, a query, an explicit
-// valence override, or a non-zero number of radical electrons.
-#[allow(clippy::unnecessary_wraps)]
-fn has_non_default_valence(atom: &Atom) -> bool {
+fn has_non_default_valence(
+    molecule: &Molecule,
+    atom: &Atom,
+    valence: &crate::ValenceAssignment,
+) -> Result<bool, MolWriteError> {
     if atom.radical_electrons() != 0 {
-        return true;
+        return Ok(true);
     }
     if atom.query().is_some() {
-        return false;
+        return Ok(false);
     }
-    // COSMolKit doesn't model explicit valence overrides yet, so this
-    // always returns false for now.
-    false
+    if atom.atomic_number() == 1
+        || crate::notation::smiles_write::in_organic_subset(atom.atomic_number()).unwrap_or(false)
+    {
+        let effective_atomic_num =
+            i32::from(atom.atomic_number()) - i32::from(atom.formal_charge());
+        let default_valence = u8::try_from(effective_atomic_num)
+            .ok()
+            .and_then(|atomic_number| {
+                crate::chemistry::valence::rdkit_default_valence(atomic_number).ok()
+            })
+            .unwrap_or(-1);
+        let explicit_valence = valence.explicit_valence[atom.id().index()];
+        return Ok(atom.no_implicit() && explicit_valence != default_valence);
+    }
+    let _ = molecule;
+    Ok(true)
+}
+
+fn molblock_valence_assignment(
+    molecule: &Molecule,
+) -> Result<crate::ValenceAssignment, MolWriteError> {
+    match molecule.derived_cache().valence.as_ref() {
+        Some(valence) => Ok(valence.clone()),
+        None => crate::assign_valence_with_options(molecule, crate::ValenceModel::RdkitLike, false)
+            .map_err(|source| {
+                MolWriteError::Value(format!("MolBlock valence assignment failed: {source}"))
+            }),
+    }
+}
+
+fn molfile_total_valence_field(molecule: &Molecule, atom: &Atom) -> Result<u32, MolWriteError> {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetMolFileAtomProperties valence branch
+    // RDKit✔️✔️: totValence = 0;
+    // RDKit✔️✔️: if (hasNonDefaultValence(atom)) {
+    // RDKit✔️✔️:   if (atom->getTotalDegree() == 0) {
+    // RDKit✔️✔️:     totValence = 15;
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     totValence = atom->getTotalValence() % 15;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetMolFileAtomProperties valence branch
+    let valence = molblock_valence_assignment(molecule).map_err(|source| {
+        MolWriteError::Value(format!(
+            "MolBlock VAL field assignment failed for atom {}: {source}",
+            atom.id().index()
+        ))
+    })?;
+    if let Some(value) = atom
+        .prop("molTotValence")
+        .and_then(|value| value.parse::<i32>().ok())
+    {
+        return Ok(match value {
+            -1 => 15,
+            value if value > 0 => value as u32,
+            _ => 0,
+        });
+    }
+    if !has_non_default_valence(molecule, atom, &valence)? {
+        return Ok(0);
+    }
+    let degree = molecule
+        .topology_block()
+        .adjacency
+        .neighbors_of(atom.id().index())
+        .len() as u32;
+    if degree == 0 {
+        Ok(15)
+    } else {
+        let total_valence = valence.explicit_valence[atom.id().index()]
+            + valence.implicit_hydrogens[atom.id().index()].max(0);
+        Ok((total_valence as u32) % 15)
+    }
+}
+
+fn should_be_crossed_bond_for_writer(
+    molecule: &Molecule,
+    bond: &Bond,
+) -> Result<bool, MolWriteError> {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: shouldBeACrossedBond
+    // RDKit✔️✔️: if (bond->getStereo() == Bond::STEREOANY) { ... return true; }
+    // RDKit✔️✔️: if (bond->getStereo() != Bond::BondStereo::STEREONONE) { return false; }
+    // RDKit✔️✔️: if (!Chirality::detail::isBondPotentialStereoBond(bond)) { return false; }
+    // RDKit✔️✔️: if (bond->getBondDir() == Bond::EITHERDOUBLE) { return true; }
+    // RDKit✔️✔️: if (beginAtom->getDegree() > 1 && endAtom->getDegree() > 1 &&
+    // RDKit✔️✔️:     (beginAtom->getTotalValence() - beginAtom->getTotalDegree()) == 1 &&
+    // RDKit✔️✔️:     (endAtom->getTotalValence() - endAtom->getTotalDegree()) == 1) {
+    // RDKit❗✔️:   if (canBeStereoBond(bond)) { return true; }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: return false;
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: shouldBeACrossedBond
+    if bond.order() != BondOrder::Double {
+        return Ok(false);
+    }
+
+    let begin_idx = bond.begin().index();
+    let end_idx = bond.end().index();
+    let adjacency = &molecule.topology_block().adjacency;
+
+    if bond.stereo() == BondStereo::Any {
+        for neighbor in adjacency.neighbors_of(begin_idx) {
+            let nbr_bond = &molecule.bonds()[neighbor.bond.index()];
+            if nbr_bond.direction() == BondDirection::Unknown
+                && nbr_bond.begin().index() == begin_idx
+            {
+                return Ok(false);
+            }
+        }
+        for neighbor in adjacency.neighbors_of(end_idx) {
+            let nbr_bond = &molecule.bonds()[neighbor.bond.index()];
+            if nbr_bond.direction() == BondDirection::Unknown && nbr_bond.begin().index() == end_idx
+            {
+                return Ok(false);
+            }
+        }
+        return Ok(true);
+    }
+    if bond.stereo() != BondStereo::None {
+        return Ok(false);
+    }
+    if !crate::stereo::is_bond_candidate_for_stereo(molecule, bond.id().index()) {
+        return Ok(false);
+    }
+    if bond.direction() == BondDirection::EitherDouble {
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+fn can_be_stereo_bond_for_writer(molecule: &Molecule, bond: &Bond) -> Result<bool, MolWriteError> {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: canBeStereoBond
+    // RDKit✔️✔️: if (bond->getBondType() != Bond::BondType::DOUBLE &&
+    // RDKit✔️✔️:     bond->getBondType() != Bond::BondType::AROMATIC) { return false; }
+    // RDKit✔️✔️: for (const auto atom : {beginAtom, endAtom}) {
+    // RDKit✔️✔️:   std::vector<int> nbrRanks;
+    // RDKit✔️✔️:   for (auto nbrBond : bond->getOwningMol().atomBonds(atom)) {
+    // RDKit✔️✔️:     if (nbrBond == bond) { continue; }
+    // RDKit✔️✔️:     if (nbrBond->getBondType() == Bond::SINGLE) {
+    // RDKit✔️✔️:       if (nbrBond->getBondDir() == Bond::ENDUPRIGHT ||
+    // RDKit✔️✔️:           nbrBond->getBondDir() == Bond::ENDDOWNRIGHT) { return false; }
+    // RDKit✔️✔️:       if (nbrBond->getBondDir() == Bond::BondDir::UNKNOWN &&
+    // RDKit✔️✔️:           nbrBond->getBeginAtom() == atom) { return false; }
+    // RDKit❗✔️:       if (rank >= 0 && rank already seen) { return false; } else { nbrRanks.push_back(rank); }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: return true;
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: canBeStereoBond
+    if !matches!(bond.order(), BondOrder::Double | BondOrder::Aromatic) {
+        return Ok(false);
+    }
+    let adjacency = &molecule.topology_block().adjacency;
+    let mut computed_cip_ranks: Option<Vec<u32>> = None;
+    for atom_idx in [bond.begin().index(), bond.end().index()] {
+        let mut nbr_ranks = Vec::new();
+        for neighbor in adjacency.neighbors_of(atom_idx) {
+            if neighbor.bond == bond.id() {
+                continue;
+            }
+            let nbr_bond = &molecule.bonds()[neighbor.bond.index()];
+            if nbr_bond.order() != BondOrder::Single {
+                continue;
+            }
+            if matches!(
+                nbr_bond.direction(),
+                BondDirection::EndUpRight | BondDirection::EndDownRight
+            ) {
+                return Ok(false);
+            }
+            if nbr_bond.direction() == BondDirection::Unknown
+                && nbr_bond.begin().index() == atom_idx
+            {
+                return Ok(false);
+            }
+            let other_atom = &molecule.atoms()[neighbor.atom_index];
+            let rank = other_atom
+                .prop("_ChiralAtomRank")
+                .or_else(|| other_atom.prop("_CIPRank"))
+                .and_then(|value| value.parse::<i32>().ok())
+                .or_else(|| {
+                    if computed_cip_ranks.is_none() {
+                        computed_cip_ranks = Some(
+                            crate::stereo::assign_atom_cip_ranks(molecule)
+                                .map_err(|source| {
+                                    MolWriteError::Value(format!(
+                                        "MolBlock CIP rank assignment failed: {source}"
+                                    ))
+                                })
+                                .ok()?,
+                        );
+                    }
+                    computed_cip_ranks
+                        .as_ref()
+                        .and_then(|ranks| ranks.get(neighbor.atom_index))
+                        .copied()
+                        .map(|rank| rank as i32)
+                })
+                .unwrap_or(-1);
+            if rank >= 0 {
+                if nbr_ranks.contains(&rank) {
+                    return Ok(false);
+                }
+                nbr_ranks.push(rank);
+            }
+        }
+    }
+    Ok(true)
 }
 
 fn v2000_bond_line(
+    molecule: &Molecule,
     bond: &Bond,
     include_stereo: bool,
     aromatic_bonds: &[usize],
@@ -1158,18 +1618,12 @@ fn v2000_bond_line(
     // RDKit❗✔️: ss << std::setw(3) << symbol;
     // RDKit❗✔️: ss << " " << std::setw(2) << dirCode;
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: BondGetMolFileSymbol / GetMolFileBondLine
-    let stereo_code = if include_stereo {
-        v2000_bond_stereo_code(bond)?
-    } else {
-        0
-    };
-    // Use aromatic bond override: bonds that were aromatic before
-    // kekulization should be written as type 4 in the molfile.
-    let type_code = if aromatic_bonds.contains(&bond.id().index()) {
-        4
-    } else {
-        v2000_bond_type_code(bond)?
-    };
+    let mut stereo_code = v2000_bond_stereo_code(molecule, bond)?;
+    // RDKit✔️✔️: do not cross bonds which were aromatic before kekulization.
+    if aromatic_bonds.contains(&bond.id().index()) && stereo_code == 3 {
+        stereo_code = 0;
+    }
+    let type_code = v2000_bond_type_code(bond)?;
     let mut line = format!(
         "{:>3}{:>3}{:>3} {:>2}",
         bond.begin().index() + 1,
@@ -1183,7 +1637,27 @@ fn v2000_bond_line(
     Ok(line)
 }
 
-fn v2000_bond_stereo_code(bond: &Bond) -> Result<u32, MolWriteError> {
+fn v2000_bond_stereo_code(molecule: &Molecule, bond: &Bond) -> Result<u32, MolWriteError> {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: GetMolFileBondStereoInfo
+    // RDKit❗✔️: reverse = false;
+    // RDKit❗✔️: dir = Bond::NONE;
+    // RDKit❗✔️: if (canHaveDirection(*bond)) { dir = determineBondWedgeState(...); }
+    // RDKit❗✔️: else if (bond->getBondType() == Bond::DOUBLE) {
+    // RDKit❗✔️:   if (Chirality::shouldBeACrossedBond(bond)) { dir = Bond::BondDir::EITHERDOUBLE; }
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: GetMolFileBondStereoInfo
+    //
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: BondGetDirCode
+    // RDKit✔️✔️: switch (dir) {
+    // RDKit✔️✔️:   case Bond::NONE: res = 0; break;
+    // RDKit✔️✔️:   case Bond::BEGINWEDGE: res = 1; break;
+    // RDKit✔️✔️:   case Bond::BEGINDASH: res = 6; break;
+    // RDKit✔️✔️:   case Bond::UNKNOWN: res = 4; break;
+    // RDKit✔️✔️:   case Bond::BondDir::EITHERDOUBLE: res = 3; break;
+    // RDKit✔️✔️:   default: break;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: BondGetDirCode
+    //
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetMolFileBondLine stereo dirCode branch
     // RDKit❗✔️: BEGINWEDGE -> 1
     // RDKit❗✔️: EITHERDOUBLE double bond -> 3
@@ -1191,24 +1665,39 @@ fn v2000_bond_stereo_code(bond: &Bond) -> Result<u32, MolWriteError> {
     // RDKit❗✔️: BEGINDASH -> 6
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetMolFileBondLine stereo dirCode branch
     Ok(match bond.direction() {
-        BondDirection::None => 0,
-        BondDirection::BeginWedge if v2000_bond_type_code(bond)? == 1 => 1,
-        BondDirection::BeginDash if v2000_bond_type_code(bond)? == 1 => 6,
-        BondDirection::EitherDouble
-            if v2000_bond_type_code(bond)? == 2 && bond.stereo() == BondStereo::Any =>
+        BondDirection::None
+            if v2000_bond_type_code(bond)? == 2
+                && should_be_crossed_bond_for_writer(molecule, bond)? =>
         {
             3
         }
+        BondDirection::None => 0,
+        BondDirection::BeginWedge if v2000_bond_type_code(bond)? == 1 => 1,
+        BondDirection::BeginDash if v2000_bond_type_code(bond)? == 1 => 6,
+        BondDirection::EitherDouble if v2000_bond_type_code(bond)? == 2 => 3,
         BondDirection::Unknown if v2000_bond_type_code(bond)? == 1 => 4,
-        _ => {
-            return Err(MolWriteError::UnsupportedSubset(
-                "bond stereochemistry MolBlock writing is not ported",
-            ));
-        }
+        BondDirection::EndUpRight | BondDirection::EndDownRight => 0,
+        _ => 0,
     })
 }
 
 fn v2000_bond_type_code(bond: &Bond) -> Result<u32, MolWriteError> {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: BondGetMolFileSymbol
+    // RDKit✔️✔️: int res = 0;
+    // RDKit❗✔️: if (bond->hasQuery()) { res = getQueryBondSymbol(bond); }
+    // RDKit✔️✔️: if (!res) {
+    // RDKit✔️✔️:   switch (bond->getBondType()) {
+    // RDKit✔️✔️:     case Bond::SINGLE: ... res = bond->getIsAromatic() ? 4 : 1; break;
+    // RDKit✔️✔️:     case Bond::DOUBLE: ... res = bond->getIsAromatic() ? 4 : 2; break;
+    // RDKit✔️✔️:     case Bond::TRIPLE: res = 3; break;
+    // RDKit✔️✔️:     case Bond::AROMATIC: res = 4; break;
+    // RDKit✔️✔️:     case Bond::ZERO: res = 1; break;
+    // RDKit✔️✔️:     case Bond::DATIVE: res = 9; break;
+    // RDKit✔️✔️:     default: break;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: return res;
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: BondGetMolFileSymbol
     if let Some(code) = v2000_bond_query_symbol(bond) {
         return Ok(code);
     }
@@ -1219,9 +1708,7 @@ fn v2000_bond_type_code(bond: &Bond) -> Result<u32, MolWriteError> {
         BondOrder::Aromatic => Ok(4),
         BondOrder::Zero => Ok(1),
         BondOrder::Dative => Ok(9),
-        _ => Err(MolWriteError::UnsupportedSubset(
-            "bond order MolBlock writing is not ported",
-        )),
+        _ => Ok(0),
     }
 }
 
@@ -1242,10 +1729,12 @@ fn v3000_atom_line(
     // RDKit❗✔️: if (chg != 0) { ss << " CHG=" << chg; }
     // RDKit❗✔️: if (isotope != 0 && !isAtomRGroup(*atom)) { ss << " MASS=" << mass; }
     // RDKit❗✔️: if (nRadEs != 0 && atom->getTotalDegree() != 0) { ... ss << " RAD=" << nRadEs; }
+    // RDKit❗✔️: if (totValence != 0) { if (totValence == 15) { ss << " VAL=-1"; } else { ss << " VAL=" << totValence; } }
     // RDKit❗✔️: if (symbol == "R#") { ... ss << " RGROUPS=(1 " << rLabel << ")"; }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetV3000MolFileAtomLine
     let symbol = v3000_atom_symbol(atom)?;
     let parity_flag = parity_flags.get(atom.id().index()).copied().unwrap_or(0);
+    let tot_valence = molfile_total_valence_field(molecule, atom)?;
     let mut out = format!("M  V30 {} {}", atom.id().index() + 1, symbol);
     out.push_str(&format!(
         " {0:.1$} {2:.1$} {3:.1$} {4}",
@@ -1270,6 +1759,13 @@ fn v3000_atom_line(
     if electrons != 0 && atom_degree(molecule, atom.id().index()) != 0 {
         let code = if electrons % 2 == 1 { 2 } else { 3 };
         out.push_str(&format!(" RAD={code}"));
+    }
+    if tot_valence != 0 {
+        if tot_valence == 15 {
+            out.push_str(" VAL=-1");
+        } else {
+            out.push_str(&format!(" VAL={tot_valence}"));
+        }
     }
     if atom.prop("_MolFileRLabel").is_some() {
         let label = atom
@@ -1324,10 +1820,11 @@ fn v3000_atom_symbol(atom: &Atom) -> Result<String, MolWriteError> {
         }
         return Ok(value);
     }
-    Ok(v2000_atom_symbol(atom)?.to_string())
+    Ok(v2000_atom_symbol(atom, false)?)
 }
 
 fn v3000_bond_line(
+    molecule: &Molecule,
     bond: &Bond,
     include_stereo: bool,
     aromatic_bonds: &[usize],
@@ -1343,11 +1840,7 @@ fn v3000_bond_line(
     // RDKit❗✔️: if (bond->getPropIfPresent(common_properties::_MolFileBondEndPts, sprop) && sprop != "0") { ss << " ENDPTS=" << sprop; }
     // RDKit❗✔️: if (bond->getPropIfPresent(common_properties::_MolFileBondAttach, sprop) && sprop != "0") { ss << " ATTACH=" << sprop; }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetV3000MolFileBondLine
-    let type_code = if aromatic_bonds.contains(&bond.id().index()) {
-        4
-    } else {
-        v3000_bond_type_code(bond)?
-    };
+    let type_code = v3000_bond_type_code(bond)?;
     let mut out = format!(
         "M  V30 {} {} {} {}",
         bond.id().index() + 1,
@@ -1355,7 +1848,14 @@ fn v3000_bond_line(
         bond.begin().index() + 1,
         bond.end().index() + 1
     );
-    if include_stereo && let Some(cfg) = v3000_bond_cfg_code(bond)? {
+    let mut cfg = v3000_bond_cfg_code(molecule, bond)?;
+    if aromatic_bonds.contains(&bond.id().index())
+        && bond.direction() == BondDirection::EitherDouble
+        && cfg == Some(2)
+    {
+        cfg = None;
+    }
+    if let Some(cfg) = cfg {
         out.push_str(&format!(" CFG={cfg}"));
     }
     if let Some(topology) = v2000_bond_topology_code(bond) {
@@ -1368,7 +1868,27 @@ fn v3000_bond_line(
     Ok(out)
 }
 
-fn v3000_bond_cfg_code(bond: &Bond) -> Result<Option<u32>, MolWriteError> {
+fn v3000_bond_cfg_code(molecule: &Molecule, bond: &Bond) -> Result<Option<u32>, MolWriteError> {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: GetMolFileBondStereoInfo
+    // RDKit❗✔️: reverse = false;
+    // RDKit❗✔️: dir = Bond::NONE;
+    // RDKit❗✔️: if (canHaveDirection(*bond)) { dir = determineBondWedgeState(...); }
+    // RDKit❗✔️: else if (bond->getBondType() == Bond::DOUBLE) {
+    // RDKit❗✔️:   if (Chirality::shouldBeACrossedBond(bond)) { dir = Bond::BondDir::EITHERDOUBLE; }
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: GetMolFileBondStereoInfo
+    //
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: BondGetDirCode
+    // RDKit✔️✔️: switch (dir) {
+    // RDKit✔️✔️:   case Bond::NONE: res = 0; break;
+    // RDKit✔️✔️:   case Bond::BEGINWEDGE: res = 1; break;
+    // RDKit✔️✔️:   case Bond::BEGINDASH: res = 6; break;
+    // RDKit✔️✔️:   case Bond::UNKNOWN: res = 4; break;
+    // RDKit✔️✔️:   case Bond::BondDir::EITHERDOUBLE: res = 3; break;
+    // RDKit✔️✔️:   default: break;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: BondGetDirCode
+    //
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetV3000MolFileBondLine stereo CFG branch
     // RDKit❗✔️: BEGINWEDGE -> CFG=1
     // RDKit❗✔️: UNKNOWN single bond -> CFG=2
@@ -1376,16 +1896,19 @@ fn v3000_bond_cfg_code(bond: &Bond) -> Result<Option<u32>, MolWriteError> {
     // RDKit❗✔️: BEGINDASH -> CFG=3
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetV3000MolFileBondLine stereo CFG branch
     Ok(match bond.direction() {
+        BondDirection::None
+            if v3000_bond_type_code(bond)? == 2
+                && should_be_crossed_bond_for_writer(molecule, bond)? =>
+        {
+            Some(2)
+        }
         BondDirection::None => None,
         BondDirection::BeginWedge => Some(1),
         BondDirection::BeginDash => Some(3),
         BondDirection::Unknown if v3000_bond_type_code(bond)? == 1 => Some(2),
         BondDirection::EitherDouble if v3000_bond_type_code(bond)? == 2 => Some(2),
-        _ => {
-            return Err(MolWriteError::UnsupportedSubset(
-                "bond stereochemistry V3000 writing is not ported",
-            ));
-        }
+        BondDirection::EndUpRight | BondDirection::EndDownRight => None,
+        _ => None,
     })
 }
 
@@ -1398,6 +1921,23 @@ fn append_v3000_bond_prop(out: &mut String, bond: &Bond, prop: &str, label: &str
 }
 
 fn v3000_bond_type_code(bond: &Bond) -> Result<u32, MolWriteError> {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetV3000BondCode
+    // RDKit✔️✔️: int res = 0;
+    // RDKit❗✔️: if (bond->hasQuery()) { res = getQueryBondSymbol(bond); }
+    // RDKit✔️✔️: if (!res) {
+    // RDKit✔️✔️:   switch (bond->getBondType()) {
+    // RDKit✔️✔️:     case Bond::SINGLE: ... res = bond->getIsAromatic() ? 4 : 1; break;
+    // RDKit✔️✔️:     case Bond::DOUBLE: ... res = bond->getIsAromatic() ? 4 : 2; break;
+    // RDKit✔️✔️:     case Bond::TRIPLE: res = 3; break;
+    // RDKit✔️✔️:     case Bond::AROMATIC: res = 4; break;
+    // RDKit✔️✔️:     case Bond::DATIVE: res = 9; break;
+    // RDKit✔️✔️:     case Bond::HYDROGEN: res = 10; break;
+    // RDKit✔️✔️:     case Bond::ZERO: res = 1; break;
+    // RDKit✔️✔️:     default: res = 0; break;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: return res;
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetV3000BondCode
     if let Some(code) = v2000_bond_query_symbol(bond) {
         return Ok(code);
     }
@@ -1409,9 +1949,7 @@ fn v3000_bond_type_code(bond: &Bond) -> Result<u32, MolWriteError> {
         BondOrder::Zero => Ok(1),
         BondOrder::Dative => Ok(9),
         BondOrder::Hydrogen => Ok(10),
-        _ => Err(MolWriteError::UnsupportedSubset(
-            "bond order V3000 writing is not ported",
-        )),
+        _ => Ok(0),
     }
 }
 
@@ -2660,23 +3198,43 @@ fn append_sdf_record_fields(mut block: String, molecule: &Molecule) -> String {
     block
 }
 
-fn v2000_atom_symbol(atom: &Atom) -> Result<&'static str, MolWriteError> {
+fn v2000_atom_symbol(atom: &Atom, pad_with_spaces: bool) -> Result<String, MolWriteError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: AtomGetMolFileSymbol
     // RDKit❗✔️: if (atom->hasProp(common_properties::_MolFileRLabel)) { res = "R#"; }
     // RDKit❗✔️: else if (atom->getAtomicNum()) { res = atom->getSymbol(); }
+    // RDKit❗✔️: else if (atom->hasProp(common_properties::dummyLabel)) { ... if (symb == "*") { res = "R"; } else if (symb == "X") { res = "R"; } else if (symb == "Xa") { res = "R1"; } ... else { res = symb; } }
     // RDKit❗✔️: else { if (hasComplexQuery(atom)) { if (isAtomListQuery(atom)) { res = "L"; } else { res = "*"; } } else { res = "R"; } }
     // RDKit❗✔️: if (padWithSpaces) { while (res.size() < 3) { res += " "; } }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: AtomGetMolFileSymbol
-    if atom.prop("_MolFileRLabel").is_some() {
-        return Ok("R#");
+    let mut symbol = if atom.prop("_MolFileRLabel").is_some() {
+        "R#".to_string()
+    } else if atom.atomic_number() != 0 {
+        molfile_atom_symbol(atom.atomic_number())?.to_string()
+    } else if let Some(dummy_label) = atom.prop("dummyLabel") {
+        match dummy_label {
+            "*" | "X" => "R".to_string(),
+            "Xa" => "R1".to_string(),
+            "Xb" => "R2".to_string(),
+            "Xc" => "R3".to_string(),
+            "Xd" => "R4".to_string(),
+            "Xf" => "R5".to_string(),
+            "Xg" => "R6".to_string(),
+            "Xh" => "R7".to_string(),
+            "Xi" => "R8".to_string(),
+            "Xj" => "R9".to_string(),
+            other => other.to_string(),
+        }
+    } else if v2000_atom_list_query(atom).is_some() {
+        "L".to_string()
+    } else {
+        molfile_atom_symbol(atom.atomic_number())?.to_string()
+    };
+    if pad_with_spaces {
+        while symbol.len() < 3 {
+            symbol.push(' ');
+        }
     }
-    if atom.atomic_number() != 0 {
-        return molfile_atom_symbol(atom.atomic_number());
-    }
-    if v2000_atom_list_query(atom).is_some() {
-        return Ok("L");
-    }
-    molfile_atom_symbol(atom.atomic_number())
+    Ok(symbol)
 }
 
 fn v2000_atom_list_query(atom: &Atom) -> Option<(&[u8], bool)> {
@@ -2818,6 +3376,330 @@ fn molfile_atom_symbol(atomic_number: u8) -> Result<&'static str, MolWriteError>
     }
 }
 
+// ── Wedge bond helpers (RDKit source-level port) ────────────────────────────
+
+/// ADAPTED FROM draw.rs: neighbours of an atom
+fn atom_neighbors(mol: &Molecule, atom_idx: usize) -> Vec<usize> {
+    let mut ns = Vec::new();
+    for b in mol.bonds() {
+        if b.begin().index() == atom_idx {
+            ns.push(b.end().index());
+        } else if b.end().index() == atom_idx {
+            ns.push(b.begin().index());
+        }
+    }
+    ns
+}
+
+/// Bonds incident to an atom, returns Vec of (bond_idx, other_atom_idx).
+fn atom_bonds(mol: &Molecule, atom_idx: usize) -> Vec<(usize, usize)> {
+    let mut res = Vec::new();
+    for (i, b) in mol.bonds().iter().enumerate() {
+        if b.begin().index() == atom_idx {
+            res.push((i, b.end().index()));
+        } else if b.end().index() == atom_idx {
+            res.push((i, b.begin().index()));
+        }
+    }
+    res
+}
+
+/// Counts of stereo-spectified double bonds around an atom.
+///
+/// BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: getDoubleBondPresence
+/// RDKit❌❌: std::tuple<unsigned int, unsigned int, unsigned int> getDoubleBondPresence(
+/// RDKit❌❌:     const ROMol &mol, const Atom &atom) {
+fn get_double_bond_presence(mol: &Molecule, atom_idx: usize) -> (u32, u32, u32) {
+    let mut has_double = 0u32;
+    let mut has_known_double = 0u32;
+    let mut has_any_double = 0u32;
+    for b in mol.bonds() {
+        if b.begin().index() != atom_idx && b.end().index() != atom_idx {
+            continue;
+        }
+        // RDKit❌❌: if (bond->getBondType() == Bond::BondType::DOUBLE) {
+        if b.order() == BondOrder::Double {
+            has_double += 1;
+            // RDKit❌❌: if (bond->getStereo() == Bond::BondStereo::STEREOANY) {
+            if b.stereo() == BondStereo::Any {
+                has_any_double += 1;
+            // RDKit❌❌: } else if (bond->getStereo() > Bond::BondStereo::STEREOANY) {
+            } else if matches!(
+                b.stereo(),
+                BondStereo::Z | BondStereo::E | BondStereo::Cis | BondStereo::Trans
+            ) {
+                has_known_double += 1;
+            }
+        }
+    }
+    // RDKit❌❌: return std::make_tuple(hasDouble, hasKnownDouble, hasAnyDouble);
+    (has_double, has_known_double, has_any_double)
+}
+/// END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: getDoubleBondPresence
+
+/// Rank chiral atoms by the number of chiral neighbors / Hs they have.
+///
+/// BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: countChiralNbrs
+/// RDKit❌❌: std::pair<bool, INT_VECT> countChiralNbrs(const ROMol &mol, int noNbrs) {
+fn count_chiral_nbrs(mol: &Molecule, no_nbrs: i32) -> (bool, Vec<i32>) {
+    // RDKit❌❌: INT_VECT nChiralNbrs(mol.getNumAtoms(), noNbrs);
+    let mut n_chiral_nbrs = vec![no_nbrs; mol.num_atoms()];
+
+    // RDKit❌❌: // start by looking for bonds that are already wedged
+    for bond in mol.bonds() {
+        // RDKit❌❌: if (bond->getBondDir() == Bond::BEGINWEDGE ||
+        // RDKit❌❌:     bond->getBondDir() == Bond::BEGINDASH ||
+        // RDKit❌❌:     bond->getBondDir() == Bond::UNKNOWN) {
+        let already_wedged = matches!(
+            bond.direction(),
+            BondDirection::BeginWedge | BondDirection::BeginDash | BondDirection::Unknown
+        );
+        if !already_wedged {
+            continue;
+        }
+        // RDKit❌❌: if (bond->getBeginAtom()->getChiralTag() == Atom::CHI_TETRAHEDRAL_CW ||
+        // RDKit❌❌:     bond->getBeginAtom()->getChiralTag() == Atom::CHI_TETRAHEDRAL_CCW) {
+        if mol.atom(bond.begin()).is_some_and(|a| {
+            matches!(
+                a.chiral_tag(),
+                ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+            )
+        }) {
+            // RDKit❌❌: nChiralNbrs[bond->getBeginAtomIdx()] = noNbrs + 1;
+            n_chiral_nbrs[bond.begin().index()] = no_nbrs + 1;
+        // RDKit❌❌: } else if (bond->getEndAtom()->getChiralTag() == Atom::CHI_TETRAHEDRAL_CW ||
+        // RDKit❌❌:                bond->getEndAtom()->getChiralTag() == Atom::CHI_TETRAHEDRAL_CCW) {
+        } else if mol.atom(bond.end()).is_some_and(|a| {
+            matches!(
+                a.chiral_tag(),
+                ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+            )
+        }) {
+            // RDKit❌❌: nChiralNbrs[bond->getEndAtomIdx()] = noNbrs + 1;
+            n_chiral_nbrs[bond.end().index()] = no_nbrs + 1;
+        }
+    }
+
+    // RDKit❌❌: // now rank atoms by the number of chiral neighbors or Hs they have:
+    // RDKit❌❌: bool chiNbrs = false;
+    let mut chi_nbrs = false;
+    for (idx, at) in mol.atoms().iter().enumerate() {
+        // RDKit❌❌: if (nChiralNbrs[at->getIdx()] > noNbrs) { continue; }
+        if n_chiral_nbrs[idx] > no_nbrs {
+            continue;
+        }
+        // RDKit❌❌: auto type = at->getChiralTag();
+        // RDKit❌❌: if (type != Atom::CHI_TETRAHEDRAL_CW && type != Atom::CHI_TETRAHEDRAL_CCW) {
+        // RDKit❌❌:   continue;
+        // RDKit❌❌: }
+        if !matches!(
+            at.chiral_tag(),
+            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+        ) {
+            continue;
+        }
+        // RDKit❌❌: nChiralNbrs[at->getIdx()] = 0;
+        n_chiral_nbrs[idx] = 0;
+        // RDKit❌❌: chiNbrs = true;
+        chi_nbrs = true;
+        // RDKit❌❌: for (const auto nat : mol.atomNeighbors(at)) {
+        for nbr_idx in atom_neighbors(mol, idx) {
+            let Some(nat) = mol.atom(AtomId::new(nbr_idx)) else {
+                continue;
+            };
+            // RDKit❌❌: if (nat->getAtomicNum() == 1) {
+            // RDKit❌❌:   nChiralNbrs[at->getIdx()] -= 10;
+            // RDKit❌❌:   continue;
+            // RDKit❌❌: }
+            if nat.atomic_number() == 1 {
+                n_chiral_nbrs[idx] -= 10;
+                continue;
+            }
+            // RDKit❌❌: type = nat->getChiralTag();
+            // RDKit❌❌: if (type != Atom::CHI_TETRAHEDRAL_CW &&
+            // RDKit❌❌:     type != Atom::CHI_TETRAHEDRAL_CCW) {
+            // RDKit❌❌:   continue;
+            // RDKit❌❌: }
+            if !matches!(
+                nat.chiral_tag(),
+                ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+            ) {
+                continue;
+            }
+            // RDKit❌❌: nChiralNbrs[at->getIdx()] -= 1;
+            n_chiral_nbrs[idx] -= 1;
+        }
+    }
+    // RDKit❌❌: return std::make_pair(chiNbrs, nChiralNbrs);
+    (chi_nbrs, n_chiral_nbrs)
+}
+/// END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: countChiralNbrs
+
+/// Pick a single bond to wedge at a chiral center.
+///
+/// BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: pickBondToWedge
+/// RDKit❌❌: int pickBondToWedge(
+/// RDKit❌❌:     const Atom *atom, const ROMol &mol, const INT_VECT &nChiralNbrs,
+/// RDKit❌❌:     const std::map<int, std::unique_ptr<Chirality::WedgeInfoBase>> &wedgeBonds,
+/// RDKit❌❌:     int noNbrs) {
+fn pick_bond_to_wedge(
+    mol: &Molecule,
+    atom_idx: usize,
+    n_chiral_nbrs: &[i32],
+    wedge_bonds: &BTreeMap<usize, usize>,
+    no_nbrs: i32,
+    ring_info: &RingInfo,
+) -> Option<usize> {
+    // RDKit❌❌: std::vector<std::pair<int, int>> nbrScores;
+    let mut nbr_scores: Vec<(i32, usize)> = Vec::new();
+
+    for (bid, oaidx) in atom_bonds(mol, atom_idx) {
+        let Some(bond) = mol.bonds().get(bid) else {
+            continue;
+        };
+        // RDKit❌❌: if (bond->getBondType() != Bond::SINGLE) { continue; }
+        if bond.order() != BondOrder::Single {
+            continue;
+        }
+
+        // RDKit❌❌: if (wedgeBonds.find(bid) == wedgeBonds.end()) {
+        if wedge_bonds.contains_key(&bid) {
+            continue;
+        }
+
+        // RDKit❌❌: auto *oatom = bond->getOtherAtom(atom);
+        let Some(oatom) = mol.atom(AtomId::new(oaidx)) else {
+            continue;
+        };
+
+        // RDKit❌❌: if (oatom->getAtomicNum() == 1) {
+        if oatom.atomic_number() == 1 {
+            // RDKit❌❌: nbrScores.emplace_back(-1000000, bid);
+            nbr_scores.push((-1_000_000, bid));
+            continue;
+        }
+
+        // RDKit❌❌: int nbrScore = oatom->getAtomicNum() + 100 * oatom->getDegree() +
+        // RDKit❌❌:                1000 * ((oatom->getChiralTag() != Atom::CHI_UNSPECIFIED));
+        let degree = atom_degree(mol, oaidx);
+        let chiral_penalty = if oatom.chiral_tag() != ChiralTag::Unspecified {
+            1
+        } else {
+            0
+        };
+        let mut nbr_score = i32::from(oatom.atomic_number())
+            + 100 * i32::try_from(degree).unwrap_or(0)
+            + 1000 * chiral_penalty;
+
+        // RDKit❌❌: int oIdx = oatom->getIdx();
+        // RDKit❌❌: if (nChiralNbrs[oIdx] < noNbrs) {
+        if n_chiral_nbrs[oaidx] < no_nbrs {
+            // RDKit❌❌: nbrScore -= 100000 * nChiralNbrs[oIdx];
+            nbr_score -= 100_000 * n_chiral_nbrs[oaidx];
+        }
+
+        // RDKit❌❌: nbrScore += 10000 * mol.getRingInfo()->numAtomRings(oIdx);
+        nbr_score +=
+            10_000 * i32::try_from(ring_info.num_atom_rings(AtomId::new(oaidx))).unwrap_or(0);
+        // RDKit❌❌: nbrScore += 20000 * mol.getRingInfo()->numBondRings(bid);
+        nbr_score +=
+            20_000 * i32::try_from(ring_info.num_bond_rings(BondId::new(bid))).unwrap_or(0);
+
+        // RDKit❌❌: auto [hasDoubleBond, hasKnownDoubleBond, hasAnyDoubleBond] =
+        // RDKit❌❌:     getDoubleBondPresence(mol, *oatom);
+        let (has_db, has_known_db, has_any_db) = get_double_bond_presence(mol, oaidx);
+        // RDKit❌❌: nbrScore += 11000 * hasDoubleBond;
+        nbr_score += 11_000 * i32::try_from(has_db).unwrap_or(0);
+        // RDKit❌❌: nbrScore += 12000 * hasKnownDoubleBond;
+        nbr_score += 12_000 * i32::try_from(has_known_db).unwrap_or(0);
+        // RDKit❌❌: nbrScore += 23000 * hasAnyDoubleBond;
+        nbr_score += 23_000 * i32::try_from(has_any_db).unwrap_or(0);
+
+        // RDKit❌❌: if (oatom->hasProp(common_properties::_fromAttachPoint)) {
+        if oatom.prop("_fromAttachPoint").is_some() {
+            // RDKit❌❌: nbrScore += 500000;
+            nbr_score += 500_000;
+        }
+
+        // RDKit❌❌: nbrScores.emplace_back(nbrScore, bid);
+        nbr_scores.push((nbr_score, bid));
+    }
+
+    // RDKit❌❌: if (nbrScores.empty()) { return -1; }
+    // RDKit❌❌: auto minPr = std::min_element(nbrScores.begin(), nbrScores.end());
+    // RDKit❌❌: return minPr->second;
+    nbr_scores
+        .iter()
+        .min_by_key(|(score, _)| *score)
+        .map(|(_, bid)| *bid)
+}
+/// END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: pickBondToWedge
+
+/// Orchestrator: return map of bond_idx → chiral_center_atom_idx for wedging.
+///
+/// BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: pickBondsToWedge
+/// RDKit❌❌: std::map<int, std::unique_ptr<Chirality::WedgeInfoBase>> pickBondsToWedge(
+/// RDKit❌❌:     const ROMol &mol, const BondWedgingParameters *params,
+/// RDKit❌❌:     const Conformer *conf) {
+fn pick_bonds_to_wedge(mol: &Molecule, ring_info: &RingInfo) -> BTreeMap<usize, usize> {
+    // RDKit❌❌: std::vector<unsigned int> indices(mol.getNumAtoms());
+    // RDKit❌❌: std::iota(indices.begin(), indices.end(), 0);
+    let mut indices: Vec<usize> = (0..mol.num_atoms()).collect();
+    // RDKit❌❌: static int noNbrs = 100;
+    const NO_NBRS: i32 = 100;
+
+    // RDKit❌❌: auto [chiNbrs, nChiralNbrs] = detail::countChiralNbrs(mol, noNbrs);
+    let (chi_nbrs, n_chiral_nbrs) = count_chiral_nbrs(mol, NO_NBRS);
+
+    // RDKit❌❌: if (chiNbrs) {
+    // RDKit❌❌:   std::sort(indices.begin(), indices.end(),
+    // RDKit❌❌:             [&nChiralNbrs = nChiralNbrs](auto i1, auto i2) {
+    // RDKit❌❌:                 return nChiralNbrs[i1] < nChiralNbrs[i2];
+    // RDKit❌❌:             });
+    // RDKit❌❌: }
+    if chi_nbrs {
+        indices.sort_by_key(|&i| n_chiral_nbrs[i]);
+    }
+
+    // RDKit❌❌: std::map<int, std::unique_ptr<Chirality::WedgeInfoBase>> wedgeInfo;
+    let mut wedge_info: BTreeMap<usize, usize> = BTreeMap::new();
+
+    // RDKit❌❌: for (auto idx : indices) {
+    for &idx in &indices {
+        // RDKit❌❌: if (nChiralNbrs[idx] > noNbrs) { continue; }
+        if n_chiral_nbrs[idx] > NO_NBRS {
+            continue;
+        }
+
+        let Some(atom) = mol.atom(AtomId::new(idx)) else {
+            continue;
+        };
+        // RDKit❌❌: auto type = atom->getChiralTag();
+        // RDKit❌❌: if (type != Atom::CHI_TETRAHEDRAL_CW && type != Atom::CHI_TETRAHEDRAL_CCW) {
+        // RDKit❌❌:   break;
+        // RDKit❌❌: }
+        if !matches!(
+            atom.chiral_tag(),
+            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+        ) {
+            break;
+        }
+
+        // RDKit❌❌: auto bnd1 = detail::pickBondToWedge(atom, mol, nChiralNbrs, wedgeInfo, noNbrs);
+        let bnd1 = pick_bond_to_wedge(mol, idx, &n_chiral_nbrs, &wedge_info, NO_NBRS, ring_info);
+
+        // RDKit❌❌: if (bnd1 >= 0) {
+        if let Some(bond_idx) = bnd1 {
+            // RDKit❌❌: wedgeInfo[bnd1] = std::move(wi);
+            wedge_info.insert(bond_idx, idx);
+        }
+    }
+
+    // RDKit❌❌: return wedgeInfo;
+    wedge_info
+}
+/// END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: pickBondsToWedge
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2840,6 +3722,33 @@ mod tests {
                 .with_prop("molFileAlias", "AliasLabel"),
         );
         builder.set_2d_coordinates(vec![[1.25, -2.5]]).unwrap();
+        builder.build().unwrap()
+    }
+
+    fn ethene_molecule() -> Molecule {
+        let mut builder = Molecule::builder().with_name("ethene");
+        let a0 = builder.add_atom(AtomSpec::new(Element::C));
+        let a1 = builder.add_atom(AtomSpec::new(Element::C));
+        builder
+            .add_bond(BondSpec::new(a0, a1, BondOrder::Double))
+            .unwrap();
+        builder
+            .set_2d_coordinates(vec![[-0.75, 0.0], [0.75, -0.0]])
+            .unwrap();
+        builder.build().unwrap()
+    }
+
+    fn sodium_chloride_molecule() -> Molecule {
+        let mut builder = Molecule::builder().with_name("salt");
+        builder.add_atom(
+            AtomSpec::new(Element::from_atomic_number(11).unwrap()).with_formal_charge(1),
+        );
+        builder.add_atom(
+            AtomSpec::new(Element::from_atomic_number(17).unwrap()).with_formal_charge(-1),
+        );
+        builder
+            .set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]])
+            .unwrap();
         builder.build().unwrap()
     }
 
@@ -3080,12 +3989,353 @@ mod tests {
 
         assert!(block.starts_with("charged\n  COSMolKit          2D\n\n"));
         assert!(block.contains("  1  0  0  0  0  0  0  0  0  0999 V2000\n"));
-        assert!(block.contains("    1.2500   -2.5000    0.0000   C"));
+        assert!(block.contains("    1.2500   -2.5000    0.0000 C   0"));
         assert!(block.contains("M  CHG  1   1  -1\n"));
         assert!(block.contains("M  ISO  1   1  13\n"));
         assert!(block.contains("V    1 payload\n"));
         assert!(block.contains("A    1\nAliasLabel\n"));
         assert!(block.ends_with("M  END\n"));
+    }
+
+    #[test]
+    fn mol_to_v2000_block_pads_atom_symbol_like_rdkit_atomgetmolfilesymbol() {
+        let molecule = ethene_molecule();
+
+        let block = mol_to_v2000_block(&molecule).unwrap();
+
+        assert!(
+            block.contains(
+                "   -0.7500    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n"
+            )
+        );
+        assert!(
+            block.contains(
+                "    0.7500   -0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n"
+            )
+        );
+    }
+
+    #[test]
+    fn mol_to_v2000_block_writes_isolated_ion_valence_like_rdkit_getmolfileatomproperties() {
+        let molecule = sodium_chloride_molecule();
+
+        let block = mol_to_v2000_block(&molecule).unwrap();
+
+        assert!(
+            block.contains(
+                "    0.0000    0.0000    0.0000 Na  0  0  0  0  0 15  0  0  0  0  0  0\n"
+            )
+        );
+        assert!(
+            block.contains(
+                "    1.0000    0.0000    0.0000 Cl  0  0  0  0  0  0  0  0  0  0  0  0\n"
+            )
+        );
+        assert!(block.contains("M  CHG  2   1   1   2  -1\n"));
+    }
+
+    #[test]
+    fn mol_to_v3000_block_writes_isolated_ion_valence_like_rdkit_getv3000molfileatomline() {
+        let molecule = sodium_chloride_molecule();
+
+        let block = mol_to_v3000_block(&molecule).unwrap();
+
+        assert!(block.contains("M  V30 1 Na 0.000000 0.000000 0.000000 0 CHG=1 VAL=-1\n"));
+        assert!(block.contains("M  V30 2 Cl 1.000000 0.000000 0.000000 0 CHG=-1\n"));
+    }
+
+    #[test]
+    fn molfile_total_valence_field_tracks_rdkit_r_dummy_after_v3000_read() {
+        let input = concat!(
+            "\n",
+            "     RDKit          2D\n",
+            "\n",
+            "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+            "M  V30 BEGIN CTAB\n",
+            "M  V30 COUNTS 2 1 0 0 0\n",
+            "M  V30 BEGIN ATOM\n",
+            "M  V30 1 R -0.750000 0.000000 0.000000 1 VAL=1\n",
+            "M  V30 2 C 0.750000 -0.000000 0.000000 0\n",
+            "M  V30 END ATOM\n",
+            "M  V30 BEGIN BOND\n",
+            "M  V30 1 1 1 2\n",
+            "M  V30 END BOND\n",
+            "M  V30 END CTAB\n",
+            "M  END\n",
+        );
+
+        let record = crate::io::molfile::read_mol_record_from_str(input).unwrap();
+        let molecule = &record.molecule;
+        let atom = &molecule.atoms()[0];
+
+        assert_eq!(atom.atomic_number(), 0);
+        assert_eq!(atom.prop("dummyLabel"), Some("R"));
+        assert_eq!(atom.prop("_MolFileRLabel"), None);
+        assert_eq!(atom.atom_map(), Some(1));
+        assert_eq!(atom.query(), None);
+        assert!(atom.no_implicit());
+        assert_eq!(atom.explicit_hydrogens(), 0);
+        assert_eq!(molecule.topology_block().adjacency.neighbors_of(0).len(), 1);
+        assert_eq!(molecule.bonds()[0].order(), BondOrder::Single);
+        let valence = molblock_valence_assignment(molecule).unwrap();
+        assert!(has_non_default_valence(molecule, atom, &valence).unwrap());
+        assert_eq!(molfile_total_valence_field(molecule, atom).unwrap(), 1);
+    }
+
+    #[test]
+    fn molblock_writer_marks_rdkit_sulfur_valence_six_in_organic_subset_case() {
+        let input = concat!(
+            "\n",
+            "     RDKit          2D\n",
+            "\n",
+            "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+            "M  V30 BEGIN CTAB\n",
+            "M  V30 COUNTS 27 29 0 0 0\n",
+            "M  V30 BEGIN ATOM\n",
+            "M  V30 1 O 2.914477 -0.465275 0.000000 0\n",
+            "M  V30 2 S 3.048886 1.028691 0.000000 0 VAL=6\n",
+            "M  V30 3 O 3.183296 2.522657 0.000000 0\n",
+            "M  V30 4 C 1.554921 1.163100 0.000000 0\n",
+            "M  V30 5 C 0.691536 -0.063507 0.000000 0\n",
+            "M  V30 6 C -0.802430 0.070902 0.000000 0\n",
+            "M  V30 7 O -1.433011 1.431919 0.000000 0\n",
+            "M  V30 8 N -1.665815 -1.155706 0.000000 0\n",
+            "M  V30 9 C -3.159781 -1.021296 0.000000 0\n",
+            "M  V30 10 C -3.790362 0.339721 0.000000 0\n",
+            "M  V30 11 C -5.284328 0.474130 0.000000 0\n",
+            "M  V30 12 C -6.147713 -0.752477 0.000000 0\n",
+            "M  V30 13 N -7.641679 -0.618068 0.000000 0\n",
+            "M  V30 14 C -8.272260 0.742949 0.000000 0\n",
+            "M  V30 15 O -7.408875 1.969557 0.000000 0\n",
+            "M  V30 16 C -9.766226 0.877359 0.000000 0\n",
+            "M  V30 17 C -5.517132 -2.113494 0.000000 0\n",
+            "M  V30 18 C -4.023166 -2.247904 0.000000 0\n",
+            "M  V30 19 C 4.542852 0.894281 0.000000 0\n",
+            "M  V30 20 C 5.406237 2.120889 0.000000 0\n",
+            "M  V30 21 C 6.900203 1.986480 0.000000 0\n",
+            "M  V30 22 C 7.530784 0.625463 0.000000 0\n",
+            "M  V30 23 C 6.667399 -0.601145 0.000000 0\n",
+            "M  V30 24 N 7.001229 -2.063526 0.000000 0\n",
+            "M  V30 25 O 5.713581 -2.832918 0.000000 0\n",
+            "M  V30 26 N 4.583941 -1.846047 0.000000 0\n",
+            "M  V30 27 C 5.173433 -0.466736 0.000000 0\n",
+            "M  V30 END ATOM\n",
+            "M  V30 BEGIN BOND\n",
+            "M  V30 1 2 1 2\n",
+            "M  V30 2 2 2 3\n",
+            "M  V30 3 1 2 4\n",
+            "M  V30 4 1 4 5\n",
+            "M  V30 5 1 5 6\n",
+            "M  V30 6 2 6 7\n",
+            "M  V30 7 1 6 8\n",
+            "M  V30 8 1 8 9\n",
+            "M  V30 9 1 9 10\n",
+            "M  V30 10 2 10 11\n",
+            "M  V30 11 1 11 12\n",
+            "M  V30 12 1 12 13\n",
+            "M  V30 13 1 13 14\n",
+            "M  V30 14 2 14 15\n",
+            "M  V30 15 1 14 16\n",
+            "M  V30 16 2 12 17\n",
+            "M  V30 17 1 17 18\n",
+            "M  V30 18 1 2 19\n",
+            "M  V30 19 2 19 20\n",
+            "M  V30 20 1 20 21\n",
+            "M  V30 21 2 21 22\n",
+            "M  V30 22 1 22 23\n",
+            "M  V30 23 2 23 24\n",
+            "M  V30 24 1 24 25\n",
+            "M  V30 25 1 25 26\n",
+            "M  V30 26 2 26 27\n",
+            "M  V30 27 2 18 9\n",
+            "M  V30 28 1 27 19\n",
+            "M  V30 29 1 27 23\n",
+            "M  V30 END BOND\n",
+            "M  V30 END CTAB\n",
+            "M  END\n",
+        );
+
+        let record = crate::io::molfile::read_mol_record_from_str(input).unwrap();
+        let molecule = &record.molecule;
+
+        let v2000 = mol_to_v2000_block(molecule).unwrap();
+        let v3000 = mol_to_v3000_block(molecule).unwrap();
+
+        assert!(
+            v2000.contains(
+                "    3.0489    1.0287    0.0000 S   0  0  0  0  0  6  0  0  0  0  0  0\n"
+            )
+        );
+        assert!(v3000.contains("M  V30 2 S 3.048886 1.028691 0.000000 0 VAL=6\n"));
+    }
+
+    #[test]
+    fn molblock_writer_emits_cfg_for_rdkit_nontetrahedral_cu_center_in_3d_v3000_case() {
+        let input = concat!(
+            "\n",
+            "     RDKit          3D\n",
+            "\n",
+            "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+            "M  V30 BEGIN CTAB\n",
+            "M  V30 COUNTS 49 56 0 0 0\n",
+            "M  V30 BEGIN ATOM\n",
+            "M  V30 1 O 1.773199 -2.434971 -1.968751 0\n",
+            "M  V30 2 C 2.960214 -2.358387 -1.523438 0\n",
+            "M  V30 3 O 4.024209 -3.031780 -2.108819 0\n",
+            "M  V30 4 Na 3.703515 -4.215160 -3.771975 0 VAL=1\n",
+            "M  V30 5 C 3.196494 -1.521121 -0.344202 0\n",
+            "M  V30 6 C 1.995702 -0.866080 0.176991 0\n",
+            "M  V30 7 C 1.020444 -1.534533 0.916017 0\n",
+            "M  V30 8 C 1.218857 -2.565929 1.848886 0\n",
+            "M  V30 9 C 2.440536 -3.313019 2.031054 0\n",
+            "M  V30 10 O 3.396304 -2.876893 2.920297 0\n",
+            "M  V30 11 Na 5.116837 -3.996632 3.127426 0 VAL=1\n",
+            "M  V30 12 O 2.658233 -4.375695 1.383407 0\n",
+            "M  V30 13 C -0.000843 -2.712686 2.552710 0\n",
+            "M  V30 14 C -0.280146 -3.681137 3.638974 0\n",
+            "M  V30 15 C -0.887759 -1.764946 2.018356 0\n",
+            "M  V30 16 C -2.092602 -1.343302 2.531843 0\n",
+            "M  V30 17 C -2.932462 -0.429252 1.995405 0\n",
+            "M  V30 18 N -2.756374 0.258420 0.898218 0\n",
+            "M  V30 19 C -3.790520 0.874731 0.426566 0\n",
+            "M  V30 20 C -4.865061 0.591442 1.367697 0\n",
+            "M  V30 21 C -6.222541 1.104323 1.252495 0\n",
+            "M  V30 22 O -7.074951 0.808646 2.127270 0\n",
+            "M  V30 23 C -4.354470 -0.201504 2.326318 0\n",
+            "M  V30 24 C -5.062290 -0.752115 3.501864 0\n",
+            "M  V30 25 C -4.398848 -0.277176 4.787976 0\n",
+            "M  V30 26 C -3.830809 1.399467 -0.806225 0\n",
+            "M  V30 27 C -3.025408 0.993357 -1.894058 0\n",
+            "M  V30 28 C -3.210553 1.122385 -3.276505 0\n",
+            "M  V30 29 C -4.452100 1.449439 -3.922945 0\n",
+            "M  V30 30 C -4.477517 1.531397 -5.223528 0\n",
+            "M  V30 31 C -1.958483 0.868145 -3.896666 0\n",
+            "M  V30 32 C -1.663773 0.890404 -5.348214 0\n",
+            "M  V30 33 C -1.070687 0.596398 -2.867414 0\n",
+            "M  V30 34 N -1.759441 0.672006 -1.777402 0 CHG=-1\n",
+            "M  V30 35 N -0.217195 -1.170504 1.099634 0 CHG=-1\n",
+            "M  V30 36 Cu -1.002261 0.310774 0.008258 0 CHG=2 VAL=4\n",
+            "M  V30 37 N 0.690956 0.827364 -0.556579 0\n",
+            "M  V30 38 C 0.977701 1.315867 -1.799854 0\n",
+            "M  V30 39 C 0.326220 0.553642 -2.774122 0\n",
+            "M  V30 40 C 1.879333 0.504370 -0.105601 0\n",
+            "M  V30 41 C 2.629189 1.759753 -0.214384 0\n",
+            "M  V30 42 C 1.918814 2.387942 -1.490749 0\n",
+            "M  V30 43 C 2.948260 2.617556 -2.547185 0\n",
+            "M  V30 44 C 4.079729 1.585089 -0.454607 0\n",
+            "M  V30 45 C 4.714563 2.960733 -0.541839 0\n",
+            "M  V30 46 C 4.439139 3.615664 0.780770 0\n",
+            "M  V30 47 O 4.900111 4.911501 1.028356 0\n",
+            "M  V30 48 Na 4.576947 5.881101 2.787487 0 VAL=1\n",
+            "M  V30 49 O 3.801588 3.030910 1.680790 0\n",
+            "M  V30 END ATOM\n",
+            "M  V30 BEGIN BOND\n",
+            "M  V30 1 2 1 2\n",
+            "M  V30 2 1 2 3\n",
+            "M  V30 3 1 3 4\n",
+            "M  V30 4 1 2 5\n",
+            "M  V30 5 1 5 6\n",
+            "M  V30 6 2 6 7\n",
+            "M  V30 7 1 7 8\n",
+            "M  V30 8 1 8 9\n",
+            "M  V30 9 1 9 10\n",
+            "M  V30 10 1 10 11\n",
+            "M  V30 11 2 9 12\n",
+            "M  V30 12 2 8 13\n",
+            "M  V30 13 1 13 14\n",
+            "M  V30 14 1 13 15\n",
+            "M  V30 15 2 15 16\n",
+            "M  V30 16 1 16 17\n",
+            "M  V30 17 2 17 18\n",
+            "M  V30 18 1 18 19\n",
+            "M  V30 19 1 19 20\n",
+            "M  V30 20 1 20 21\n",
+            "M  V30 21 2 21 22\n",
+            "M  V30 22 2 20 23\n",
+            "M  V30 23 1 23 24\n",
+            "M  V30 24 1 24 25\n",
+            "M  V30 25 2 19 26\n",
+            "M  V30 26 1 26 27\n",
+            "M  V30 27 2 27 28\n",
+            "M  V30 28 1 28 29\n",
+            "M  V30 29 2 29 30\n",
+            "M  V30 30 1 28 31\n",
+            "M  V30 31 1 31 32\n",
+            "M  V30 32 2 31 33\n",
+            "M  V30 33 1 33 34\n",
+            "M  V30 34 1 7 35\n",
+            "M  V30 35 9 35 36\n",
+            "M  V30 36 9 37 36\n",
+            "M  V30 37 1 37 38\n",
+            "M  V30 38 2 38 39\n",
+            "M  V30 39 2 37 40\n",
+            "M  V30 40 1 40 41\n",
+            "M  V30 41 1 41 42\n",
+            "M  V30 42 1 42 43\n",
+            "M  V30 43 1 41 44\n",
+            "M  V30 44 1 44 45\n",
+            "M  V30 45 1 45 46\n",
+            "M  V30 46 1 46 47\n",
+            "M  V30 47 1 47 48\n",
+            "M  V30 48 2 46 49\n",
+            "M  V30 49 1 40 6\n",
+            "M  V30 50 1 35 15\n",
+            "M  V30 51 1 23 17\n",
+            "M  V30 52 9 18 36\n",
+            "M  V30 53 1 34 27\n",
+            "M  V30 54 1 39 33\n",
+            "M  V30 55 9 34 36\n",
+            "M  V30 56 1 42 38\n",
+            "M  V30 END BOND\n",
+            "M  V30 END CTAB\n",
+            "M  END\n",
+        );
+
+        let record = crate::io::molfile::read_mol_record_from_str(input).unwrap();
+        let block = mol_to_v3000_block(&record.molecule).unwrap();
+
+        assert!(block.contains("M  V30 36 Cu -1.002261 0.310774 0.008258 0 CFG=2 CHG=2 VAL=4\n"));
+    }
+
+    #[test]
+    fn molblock_writer_accepts_rdkit_collapsed_hydrogen_roundtrip_from_v3000_source() {
+        let input = concat!(
+            "\n",
+            "     RDKit          2D\n",
+            "\n",
+            "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+            "M  V30 BEGIN CTAB\n",
+            "M  V30 COUNTS 4 3 0 0 0\n",
+            "M  V30 BEGIN ATOM\n",
+            "M  V30 1 C -1.299038 -0.750000 0.000000 7 MASS=13\n",
+            "M  V30 2 C 0.000000 0.000000 0.000000 0\n",
+            "M  V30 3 F 1.299038 -0.750000 0.000000 0\n",
+            "M  V30 4 Cl 0.000000 1.500000 0.000000 0\n",
+            "M  V30 END ATOM\n",
+            "M  V30 BEGIN BOND\n",
+            "M  V30 1 1 2 1 CFG=1\n",
+            "M  V30 2 1 2 3\n",
+            "M  V30 3 1 2 4\n",
+            "M  V30 END BOND\n",
+            "M  V30 END CTAB\n",
+            "M  END\n",
+        );
+
+        let record = crate::io::molfile::read_mol_record_from_str(input).unwrap();
+        let molecule = &record.molecule;
+
+        let v2000 = mol_to_v2000_block(molecule).unwrap();
+        let v3000 = mol_to_v3000_block(molecule).unwrap();
+
+        assert!(
+            v2000.contains(
+                "   -1.2990   -0.7500    0.0000 C   0  0  0  0  0  0  0  0  0  7  0  0\n"
+            )
+        );
+        assert!(v2000.contains("  2  1  1  1\n"));
+        assert!(v2000.contains("M  ISO  1   1  13\n"));
+        assert!(v3000.contains("M  V30 1 C -1.299038 -0.750000 0.000000 7 MASS=13\n"));
+        assert!(v3000.contains("M  V30 1 1 2 1 CFG=1\n"));
     }
 
     #[test]
@@ -3111,6 +4361,186 @@ mod tests {
 
         assert!(block.contains("  COSMolKit          2D\n"));
         assert!(record.ends_with(">  <ID>  \ncmpd-1\n\n$$$$\n"));
+    }
+
+    #[test]
+    fn molblock_write_params_auto_upgrade_dative_molecule_to_v3000_like_rdkit() {
+        let mut builder = Molecule::builder().with_name("dative");
+        let n1 = builder.add_atom(AtomSpec::new(Element::N));
+        let cu = builder.add_atom(AtomSpec::new(Element::from_atomic_number(29).unwrap()));
+        let n2 = builder.add_atom(AtomSpec::new(Element::N));
+        builder
+            .add_bond(BondSpec::new(n1, cu, BondOrder::Dative))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(n2, cu, BondOrder::Dative))
+            .unwrap();
+        builder
+            .set_2d_coordinates(vec![[-1.5, 0.0], [0.0, 0.0], [1.5, 0.0]])
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        let block = mol_to_mol_block_with_params(
+            &molecule,
+            &MolBlockWriteParams {
+                format: SdfFormat::V2000,
+                force_2d: true,
+                kekulize: false,
+                include_stereo: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert!(block.contains("999 V3000\n"));
+        assert!(block.contains("M  V30 1 9 1 2\n"));
+        assert!(block.contains("M  V30 2 9 3 2\n"));
+    }
+
+    #[test]
+    fn molblock_writer_emits_zero_bond_code_for_rdkit_quadruple_bond_case() {
+        let mut builder = Molecule::builder().with_name("quadruple");
+        let rh1 = builder.add_atom(AtomSpec::new(Element::from_atomic_number(45).unwrap()));
+        let rh2 = builder.add_atom(AtomSpec::new(Element::from_atomic_number(45).unwrap()));
+        builder.atom_mut(rh1).unwrap().set_formal_charge(-1);
+        builder.atom_mut(rh2).unwrap().set_formal_charge(-1);
+        builder
+            .add_bond(BondSpec::new(rh1, rh2, BondOrder::Quadruple))
+            .unwrap();
+        builder
+            .set_2d_coordinates(vec![[-0.75, 0.0], [0.75, 0.0]])
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        let v2000 = mol_to_mol_block_with_params(
+            &molecule,
+            &MolBlockWriteParams {
+                format: SdfFormat::V2000,
+                force_2d: true,
+                include_stereo: false,
+                kekulize: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let v3000 = mol_to_mol_block_with_params(
+            &molecule,
+            &MolBlockWriteParams {
+                format: SdfFormat::V3000,
+                force_2d: true,
+                include_stereo: false,
+                kekulize: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert!(v2000.contains("  1  2  0  0\n"));
+        assert!(v3000.contains("M  V30 1 0 1 2\n"));
+    }
+
+    #[test]
+    fn molblock_writer_uses_cached_total_valence_for_rdkit_sih_case() {
+        let input = concat!(
+            "\n",
+            "     RDKit          3D\n",
+            "\n",
+            "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+            "M  V30 BEGIN CTAB\n",
+            "M  V30 COUNTS 4 3 0 0 0\n",
+            "M  V30 BEGIN ATOM\n",
+            "M  V30 1 C -0.879252 -1.519843 -0.145444 0\n",
+            "M  V30 2 Si 0.008612 0.002178 0.440476 0 VAL=4\n",
+            "M  V30 3 C 1.774885 -0.007414 -0.148732 0\n",
+            "M  V30 4 C -0.904244 1.525079 -0.146301 0\n",
+            "M  V30 END ATOM\n",
+            "M  V30 BEGIN BOND\n",
+            "M  V30 1 1 1 2\n",
+            "M  V30 2 1 2 3\n",
+            "M  V30 3 1 2 4\n",
+            "M  V30 END BOND\n",
+            "M  V30 END CTAB\n",
+            "M  END\n",
+        );
+
+        let record = crate::io::molfile::read_mol_record_from_str(input).unwrap();
+        let molecule = &record.molecule;
+
+        let v2000 = mol_to_mol_block_with_params(
+            molecule,
+            &MolBlockWriteParams {
+                format: SdfFormat::V2000,
+                include_stereo: false,
+                kekulize: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let v3000 = mol_to_mol_block_with_params(
+            molecule,
+            &MolBlockWriteParams {
+                format: SdfFormat::V3000,
+                include_stereo: false,
+                kekulize: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert!(v2000.contains("    0.0086    0.0022    0.4405 Si  0  0  0  0  0  4"));
+        assert!(v3000.contains("M  V30 2 Si 0.008612 0.002178 0.440476 0 VAL=4\n"));
+    }
+
+    #[test]
+    fn molblock_writer_marks_rdkit_unspecified_double_bond_as_crossed() {
+        let input = concat!(
+            "\n",
+            "     RDKit          2D\n",
+            "\n",
+            "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+            "M  V30 BEGIN CTAB\n",
+            "M  V30 COUNTS 4 3 0 0 0\n",
+            "M  V30 BEGIN ATOM\n",
+            "M  V30 1 F 1.979613 -0.136500 0.000000 0\n",
+            "M  V30 2 C 0.599379 0.450827 0.000000 0\n",
+            "M  V30 3 C -0.599379 -0.450827 0.000000 0\n",
+            "M  V30 4 Cl -1.979613 0.136500 0.000000 0\n",
+            "M  V30 END ATOM\n",
+            "M  V30 BEGIN BOND\n",
+            "M  V30 1 1 1 2\n",
+            "M  V30 2 2 2 3 CFG=2\n",
+            "M  V30 3 1 3 4\n",
+            "M  V30 END BOND\n",
+            "M  V30 END CTAB\n",
+            "M  END\n",
+        );
+
+        let record = crate::io::molfile::read_mol_record_from_str(input).unwrap();
+        let molecule = &record.molecule;
+
+        let v2000 = mol_to_mol_block_with_params(
+            molecule,
+            &MolBlockWriteParams {
+                format: SdfFormat::V2000,
+                include_stereo: false,
+                kekulize: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let v3000 = mol_to_mol_block_with_params(
+            molecule,
+            &MolBlockWriteParams {
+                format: SdfFormat::V3000,
+                include_stereo: false,
+                kekulize: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert!(v2000.contains("  2  3  2  3\n"));
+        assert!(v3000.contains("M  V30 2 2 2 3 CFG=2\n"));
     }
 
     #[test]
@@ -3144,18 +4574,19 @@ mod tests {
         )
         .unwrap();
 
-        // prepareMol aromatic-bond bookkeeping: bonds that were aromatic
-        // before kekulization are still written as type 4, matching RDKit.
-        assert!(kekulized.lines().any(|line| line.starts_with("  1  2  4")));
+        // RDKit prepareMol() kekulizes the temporary molecule when requested;
+        // the original aromatic molecule remains unchanged.
+        assert!(kekulized.lines().any(|line| line.starts_with("  1  2  1")));
         assert!(aromatic.lines().any(|line| line.starts_with("  1  2  4")));
         assert!(molecule.bonds().iter().all(|bond| bond.is_aromatic()));
     }
 
     #[test]
-    fn molblock_write_params_include_stereo_false_skips_unported_stereo_state() {
+    fn molblock_write_params_include_stereo_false_still_writes_existing_non_parity_output() {
         let molecule = chiral_state_molecule();
-        // chiral_tag alone is no longer rejected — parity flag emission is implemented.
-        // Both include_stereo=true and include_stereo=false should now succeed.
+        // RDKit's includeStereo flag does not suppress existing atom-line output here.
+        // With 2D coordinates and no wedge bond information, both code paths succeed
+        // and serialize the same atom record.
         let stereo = mol_to_mol_block_with_params(
             &molecule,
             &MolBlockWriteParams {
@@ -3178,8 +4609,8 @@ mod tests {
         )
         .unwrap();
 
-        assert!(stereo.contains("    0.0000    0.0000    0.0000   C"));
-        assert!(no_stereo.contains("    0.0000    0.0000    0.0000   C"));
+        assert!(stereo.contains("    0.0000    0.0000    0.0000 C   0"));
+        assert!(no_stereo.contains("    0.0000    0.0000    0.0000 C   0"));
         assert!(stereo.ends_with("M  END\n"));
         assert!(no_stereo.ends_with("M  END\n"));
     }
@@ -3204,7 +4635,7 @@ mod tests {
 
         let block = mol_to_v2000_block(&molecule).unwrap();
 
-        assert!(block.contains("    0.0000    0.0000    0.0000   L"));
+        assert!(block.contains("    0.0000    0.0000    0.0000 L   0"));
         assert!(block.contains("V    1 [#6,#7]\n"));
         assert!(block.contains("M  ALS   1  2 F C   N   \n"));
         assert!(block.contains("M  ALS   2  2 T O   S   \n"));
@@ -3251,8 +4682,8 @@ mod tests {
 
         assert!(block.contains("  1  2  1  1\n"));
         assert!(block.contains("  2  3  2  3\n"));
-        assert!(without_stereo.contains("  1  2  1  0\n"));
-        assert!(without_stereo.contains("  2  3  2  0\n"));
+        assert!(without_stereo.contains("  1  2  1  1\n"));
+        assert!(without_stereo.contains("  2  3  2  3\n"));
     }
 
     #[test]
@@ -3347,6 +4778,75 @@ mod tests {
     }
 
     #[test]
+    fn mol_to_v3000_block_roundtrips_rdkit_atom_cfg_and_bond_cfg_from_3d_source() {
+        let input = concat!(
+            "\n",
+            "     RDKit          3D\n",
+            "\n",
+            "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+            "M  V30 BEGIN CTAB\n",
+            "M  V30 COUNTS 4 3 0 0 0\n",
+            "M  V30 BEGIN ATOM\n",
+            "M  V30 1 C -0.892286 -1.105272 -0.093154 7 MASS=13\n",
+            "M  V30 2 C -0.086565 0.078288 0.363403 0 CFG=2\n",
+            "M  V30 3 F -0.620779 1.215600 -0.194045 0\n",
+            "M  V30 4 Cl 1.599630 -0.188615 -0.076204 0\n",
+            "M  V30 END ATOM\n",
+            "M  V30 BEGIN BOND\n",
+            "M  V30 1 1 2 1 CFG=3\n",
+            "M  V30 2 1 2 3\n",
+            "M  V30 3 1 2 4\n",
+            "M  V30 END BOND\n",
+            "M  V30 END CTAB\n",
+            "M  END\n",
+        );
+
+        let record = crate::io::molfile::read_mol_record_from_str(input).unwrap();
+        let block = mol_to_v3000_block(&record.molecule).unwrap();
+
+        assert!(block.contains("M  V30 2 C -0.086565 0.078288 0.363403 0 CFG=2\n"));
+        assert!(block.contains("M  V30 1 1 2 1 CFG=3\n"));
+        assert!(block.contains("M  V30 1 C -0.892286 -1.105272 -0.093154 7 MASS=13\n"));
+    }
+
+    #[test]
+    fn molblock_writer_ignores_raw_double_bond_neighbor_dirs_in_molfile_output() {
+        let input = concat!(
+            "\n",
+            "     RDKit          2D\n",
+            "\n",
+            "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+            "M  V30 BEGIN CTAB\n",
+            "M  V30 COUNTS 4 3 0 0 0\n",
+            "M  V30 BEGIN ATOM\n",
+            "M  V30 1 F -1.979613 -0.136500 0.000000 0\n",
+            "M  V30 2 C -0.599379 0.450827 0.000000 0\n",
+            "M  V30 3 C 0.599379 -0.450827 0.000000 0\n",
+            "M  V30 4 F 1.979613 0.136500 0.000000 0\n",
+            "M  V30 END ATOM\n",
+            "M  V30 BEGIN BOND\n",
+            "M  V30 1 1 1 2\n",
+            "M  V30 2 2 2 3\n",
+            "M  V30 3 1 3 4\n",
+            "M  V30 END BOND\n",
+            "M  V30 END CTAB\n",
+            "M  END\n",
+        );
+
+        let record = crate::io::molfile::read_mol_record_from_str(input).unwrap();
+        let v2000 = mol_to_v2000_block(&record.molecule).unwrap();
+        let v3000 = mol_to_v3000_block(&record.molecule).unwrap();
+
+        assert!(v2000.contains("  1  2  1  0\n"));
+        assert!(v2000.contains("  2  3  2  0\n"));
+        assert!(v2000.contains("  3  4  1  0\n"));
+        assert!(v3000.contains("M  V30 1 1 1 2\n"));
+        assert!(v3000.contains("M  V30 2 2 2 3\n"));
+        assert!(v3000.contains("M  V30 3 1 3 4\n"));
+        assert!(!v3000.contains("CFG="));
+    }
+
+    #[test]
     fn mol_to_v3000_block_writes_sgroup_lines() {
         let molecule = sgroup_molecule();
 
@@ -3422,5 +4922,114 @@ mod tests {
         assert!(block.contains("M  V30 MDLV30/STEABS ATOMS=(1 1)\n"));
         assert!(block.contains("M  V30 MDLV30/STEREL2 ATOMS=(1 2)\n"));
         assert!(block.contains("M  V30 END COLLECTION\n"));
+    }
+
+    #[test]
+    fn mol_to_v2000_block_infers_wedge_from_chiral_tag_without_coordinates() {
+        // Build a chiral center with 4 explicit non-H neighbors, NO coordinates.
+        // pick_bonds_to_wedge should select the bond to the lowest-scored neighbor
+        // (lowest atomic number wins when degree and chirality are equal).
+        let mut builder = Molecule::builder().with_name("no-coords-wedge");
+        let c_chiral =
+            builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
+        let c_me = builder.add_atom(AtomSpec::new(Element::C));
+        let n = builder.add_atom(AtomSpec::new(Element::N));
+        let o = builder.add_atom(AtomSpec::new(Element::O));
+        let f = builder.add_atom(AtomSpec::new(Element::F));
+        builder
+            .add_bond(BondSpec::new(c_chiral, c_me, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c_chiral, n, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c_chiral, o, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c_chiral, f, BondOrder::Single))
+            .unwrap();
+        // Deliberately no coordinates
+        let molecule = builder.build().unwrap();
+        assert!(molecule.coords_2d().is_none());
+
+        let block = mol_to_mol_block_with_params(
+            &molecule,
+            &MolBlockWriteParams {
+                format: SdfFormat::V2000,
+                include_stereo: true,
+                kekulize: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert!(block.starts_with("no-coords-wedge\n  COSMolKit          2D\n\n"));
+        let first_atom_line = block.lines().nth(4).unwrap_or_default();
+        assert_ne!(
+            first_atom_line,
+            "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0"
+        );
+        // The C-methyl bond (atom 1 → 2, added first) has the lowest atomic
+        // number (6 vs 7/8/9) so pick_bond_to_wedge scores it lowest.
+        // TetrahedralCw → BeginWedge → stereo code 1.
+        // V2000 bond format: "{:>3}{:>3}{:>3} {:>2}" → stereo at [10..12].
+        let has_wedge = block
+            .lines()
+            .any(|l| l.starts_with("  1  2") && l.len() >= 12 && l[10..12].trim() == "1");
+        assert!(
+            has_wedge,
+            "expected BeginWedge (code 1) on bond 1-2 in output:\n{block}"
+        );
+    }
+
+    #[test]
+    fn mol_to_v2000_block_infers_dash_from_chiral_tag_ccw_without_coordinates() {
+        // Same molecule as above but with TetrahedralCcw → BeginDash → code 6.
+        let mut builder = Molecule::builder().with_name("no-coords-dash");
+        let c_chiral =
+            builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCcw));
+        let c_me = builder.add_atom(AtomSpec::new(Element::C));
+        let n = builder.add_atom(AtomSpec::new(Element::N));
+        let o = builder.add_atom(AtomSpec::new(Element::O));
+        let f = builder.add_atom(AtomSpec::new(Element::F));
+        builder
+            .add_bond(BondSpec::new(c_chiral, c_me, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c_chiral, n, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c_chiral, o, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c_chiral, f, BondOrder::Single))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+        assert!(molecule.coords_2d().is_none());
+
+        let block = mol_to_mol_block_with_params(
+            &molecule,
+            &MolBlockWriteParams {
+                format: SdfFormat::V2000,
+                include_stereo: true,
+                kekulize: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert!(block.starts_with("no-coords-dash\n  COSMolKit          2D\n\n"));
+        let first_atom_line = block.lines().nth(4).unwrap_or_default();
+        assert_ne!(
+            first_atom_line,
+            "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0"
+        );
+        let has_dash = block
+            .lines()
+            .any(|l| l.starts_with("  1  2") && l.len() >= 12 && l[10..12].trim() == "6");
+        assert!(
+            has_dash,
+            "expected BeginDash (code 6) on bond 1-2 in output:\n{block}"
+        );
     }
 }
