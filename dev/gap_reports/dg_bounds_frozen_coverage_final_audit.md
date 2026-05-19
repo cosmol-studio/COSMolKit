@@ -1,6 +1,6 @@
 # DG Bounds Frozen Coverage Final Audit
 
-Date: 2026-05-17
+Date: 2026-05-18
 
 ## Final Conclusion
 
@@ -11,9 +11,12 @@ That `100%` statement is scoped and means:
 
 1. every baseline direct RDKit DG bounds helper/function has a source-backed
    Rust implementation,
-2. the previously blocking matrix-layout, triangle-smoothing, and wrapper
+2. the direct baseline inventory now explicitly includes
+   `DGeomHelpers::_getAtomStereo(...)` and its copied source anchor,
+3. the current targeted strict validation for that added direct helper passes,
+4. the previously blocking matrix-layout, triangle-smoothing, and wrapper
    default gaps are closed,
-3. the local strict DG bounds validation slice passes.
+5. the local strict DG bounds validation slice passes.
 
 It does **not** mean the entire `cosmolkit-core` crate is globally free of
 non-DG failures.
@@ -46,19 +49,32 @@ The frozen DG bounds verdict is:
 ### Source rescan
 
 `dev/gap_reports/dg_bounds_remaining_source_scan.md` now records zero remaining
-direct gaps for the selected DG bounds baseline.
+direct first-axis gaps for the selected DG bounds baseline, including the
+explicit `_getAtomStereo(...)` entry added in the final baseline refresh.
 
 ### Local DG validation
 
 Executed command:
 
 ```bash
-cargo test -p cosmolkit-core --features op-contracts-strict distgeom -- --nocapture
+cargo test -p cosmolkit-core --features op-contracts-strict get_atom_stereo -- --nocapture
 ```
 
 Result at freeze time:
 
-- `66 passed; 0 failed`
+- `3 passed; 0 failed`
+- `1003 filtered out`
+
+For completeness, the literal Step 157 checklist command was rerun and remains
+invalid in `cargo test`:
+
+```bash
+cargo test -p cosmolkit-core --features op-contracts-strict distgeom get_atom_stereo -- --nocapture
+```
+
+Observed result:
+
+- `error: unexpected argument 'get_atom_stereo' found`
 
 ### Final project-level validation commands executed
 

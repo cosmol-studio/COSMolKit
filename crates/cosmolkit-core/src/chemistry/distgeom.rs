@@ -65,47 +65,93 @@ fn uff_params_for_label(label: &str) -> Option<UffAtomicParams> {
 /// RDKit❗✔️: VDW radii from RDKit PeriodicTable::getRvdw
 fn vdw_radius(atomic_num: u8) -> f64 {
     match atomic_num {
-        1 => 1.2,       // H
-        2 => 1.4,       // He
-        3 => 1.82,      // Li
-        4 => 1.7,       // Be
-        5 => 2.08,      // B
-        6 => 1.7,       // C
-        7 => 1.55,      // N
-        8 => 1.52,      // O
-        9 => 1.47,      // F
-        10 => 1.54,     // Ne
-        11 => 2.27,     // Na
-        12 => 1.73,     // Mg
-        13 => 2.0,      // Al
-        14 => 2.1,      // Si
-        15 => 1.8,      // P
-        16 => 1.8,      // S
-        17 => 1.75,     // Cl
-        18 => 1.88,     // Ar
-        19 => 2.75,     // K
-        20 => 2.0,      // Ca
-        21..=29 => 2.0, // Sc-Cu
-        30 => 1.39,     // Zn
-        31 => 1.87,     // Ga
-        32 => 2.0,      // Ge
-        33 => 1.85,     // As
-        34 => 1.9,      // Se
-        35 => 1.85,     // Br
-        36 => 2.02,     // Kr
-        37 => 2.0,      // Rb
-        38 => 2.0,      // Sr
-        39..=47 => 2.0, // Y-Ag
-        48 => 1.58,     // Cd
-        49 => 1.93,     // In
-        50 => 2.17,     // Sn
-        51 => 2.0,      // Sb
-        52 => 2.06,     // Te
-        53 => 1.98,     // I
-        54 => 2.16,     // Xe
-        55 => 2.0,      // Cs
-        56 => 2.0,      // Ba
-        _ => 2.0,       // default
+        0 => 0.0,   // *
+        1 => 1.2,   // H
+        2 => 1.4,   // He
+        3 => 2.2,   // Li
+        4 => 1.9,   // Be
+        5 => 1.8,   // B
+        6 => 1.7,   // C
+        7 => 1.6,   // N
+        8 => 1.55,  // O
+        9 => 1.5,   // F
+        10 => 1.54, // Ne
+        11 => 2.4,  // Na
+        12 => 2.2,  // Mg
+        13 => 2.1,  // Al
+        14 => 2.1,  // Si
+        15 => 1.95, // P
+        16 => 1.8,  // S
+        17 => 1.8,  // Cl
+        18 => 1.88, // Ar
+        19 => 2.8,  // K
+        20 => 2.4,  // Ca
+        21 => 2.3,  // Sc
+        22 => 2.15, // Ti
+        23 => 2.05, // V
+        24 => 2.05, // Cr
+        25 => 2.05, // Mn
+        26 => 2.05, // Fe
+        27 => 2.0,  // Co
+        28 => 2.0,  // Ni
+        29 => 2.0,  // Cu
+        30 => 2.1,  // Zn
+        31 => 2.1,  // Ga
+        32 => 2.1,  // Ge
+        33 => 2.05, // As
+        34 => 1.9,  // Se
+        35 => 1.9,  // Br
+        36 => 2.02, // Kr
+        37 => 2.9,  // Rb
+        38 => 2.55, // Sr
+        39 => 2.4,  // Y
+        40 => 2.3,  // Zr
+        41 => 2.15, // Nb
+        42 => 2.1,  // Mo
+        43 => 2.05, // Tc
+        44 => 2.05, // Ru
+        45 => 2.0,  // Rh
+        46 => 2.05, // Pd
+        47 => 2.1,  // Ag
+        48 => 2.2,  // Cd
+        49 => 2.2,  // In
+        50 => 2.25, // Sn
+        51 => 2.2,  // Sb
+        52 => 2.1,  // Te
+        53 => 2.1,  // I
+        54 => 2.16, // Xe
+        55 => 3.0,  // Cs
+        56 => 2.7,  // Ba
+        57 => 2.5,  // La
+        58 => 2.48, // Ce
+        59 => 2.47, // Pr
+        60 => 2.45, // Nd
+        61 => 2.43, // Pm
+        62 => 2.42, // Sm
+        63 => 2.4,  // Eu
+        64 => 2.38, // Gd
+        65 => 2.37, // Tb
+        66 => 2.35, // Dy
+        67 => 2.33, // Ho
+        68 => 2.32, // Er
+        69 => 2.3,  // Tm
+        70 => 2.28, // Yb
+        71 => 2.27, // Lu
+        72 => 2.25, // Hf
+        73 => 2.2,  // Ta
+        74 => 2.1,  // W
+        75 => 2.05, // Re
+        76 => 2.0,  // Os
+        77 => 2.0,  // Ir
+        78 => 2.05, // Pt
+        79 => 2.1,  // Au
+        80 => 2.05, // Hg
+        81 => 2.2,  // Tl
+        82 => 2.3,  // Pb
+        83 => 2.3,  // Bi
+        84 => 2.0,  // Po
+        85 => 2.0,  // At
+        _ => 2.0,   // default
     }
 }
 
@@ -455,13 +501,63 @@ fn total_num_hydrogens_for_distgeom(
 }
 
 // BEGIN RDKIT CPP FUNCTION UFF::Tools::addAtomChargeFlags (AtomTyper.cpp:23-257)
-// RDKit❗✔️: void addAtomChargeFlags(const Atom *atom, std::string &atomKey,
-// RDKit❗✔️:                         bool tolerateChargeMismatch) {
-// RDKit❗✔️:   int totalValence = atom->getTotalValence();
-// RDKit❗✔️:   int fc = atom->getFormalCharge();
-// RDKit❗✔️:   switch (atom->getAtomicNum()) { ... }
-// RDKit❗✔️:   if (atom->getAtomicNum() >= 57 && atom->getAtomicNum() <= 71) { ... }
-// RDKit❗✔️: }
+// RDKit✔️✔️: void addAtomChargeFlags(const Atom *atom, std::string &atomKey,
+// RDKit✔️✔️:                         bool tolerateChargeMismatch) {
+// RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
+// RDKit✔️✔️:   int totalValence = atom->getTotalValence();
+// RDKit✔️✔️:   int fc = atom->getFormalCharge();
+// RDKit✔️✔️:   // FIX: come up with some way of handling metals here
+// RDKit✔️✔️:   switch (atom->getAtomicNum()) {
+// RDKit✔️✔️:     case 29:  // Cu
+// RDKit✔️✔️:     case 47:  // Ag
+// RDKit✔️✔️:       if (totalValence == 1 || fc == 1 || tolerateChargeMismatch) { atomKey += "+1"; }
+// RDKit✔️✔️:       break;
+// RDKit✔️✔️:     case 4: case 20: case 25: case 26: case 28: case 46: case 78:
+// RDKit✔️✔️:       if (totalValence == 2 || fc == 2 || tolerateChargeMismatch) { atomKey += "+2"; }
+// RDKit✔️✔️:       break;
+// RDKit✔️✔️:     case 21: case 24: case 27: case 79: case 89: case 96: case 97:
+// RDKit✔️✔️:     case 98: case 99: case 100: case 101: case 102: case 103:
+// RDKit✔️✔️:       if (totalValence == 3 || fc == 3 || tolerateChargeMismatch) { atomKey += "+3"; }
+// RDKit✔️✔️:       break;
+// RDKit✔️✔️:     case 2: case 18: case 22: case 36: case 54: case 90: case 91:
+// RDKit✔️✔️:     case 92: case 93: case 94: case 95:
+// RDKit✔️✔️:       if (totalValence == 4 || fc == 4 || tolerateChargeMismatch) { atomKey += "+4"; }
+// RDKit✔️✔️:       break;
+// RDKit✔️✔️:     case 23: case 41: case 43: case 73:
+// RDKit✔️✔️:       if (totalValence == 5 || fc == 5 || tolerateChargeMismatch) { atomKey += "+5"; }
+// RDKit✔️✔️:       break;
+// RDKit✔️✔️:     case 42:
+// RDKit✔️✔️:       if (totalValence == 6 || fc == 6 || tolerateChargeMismatch) { atomKey += "+6"; }
+// RDKit✔️✔️:       break;
+// RDKit✔️✔️:     case 12: switch (totalValence) { case 2: atomKey += "+2"; break; default: if (tolerateChargeMismatch) { atomKey += "+2"; } } break;
+// RDKit✔️✔️:     case 13: if (totalValence != 3) { } break;
+// RDKit✔️✔️:     case 14: if (totalValence != 4) { } break;
+// RDKit✔️✔️:     case 15: switch (totalValence) { case 3: atomKey += "+3"; break; case 5: atomKey += "+5"; break; default: if (tolerateChargeMismatch) { atomKey += "+5"; } } break;
+// RDKit✔️✔️:     case 16: if (atom->getHybridization() != Atom::SP2) { switch (totalValence) { case 2: atomKey += "+2"; break; case 4: atomKey += "+4"; break; case 6: atomKey += "+6"; break; default: if (tolerateChargeMismatch) { atomKey += "+6"; } } } break;
+// RDKit✔️✔️:     case 30: switch (totalValence) { case 2: atomKey += "+2"; break; default: if (tolerateChargeMismatch) { atomKey += "+2"; } } break;
+// RDKit✔️✔️:     case 31: switch (totalValence) { case 3: atomKey += "+3"; break; default: if (tolerateChargeMismatch) { atomKey += "+3"; } } break;
+// RDKit✔️✔️:     case 33: switch (totalValence) { case 3: atomKey += "+3"; break; default: if (tolerateChargeMismatch) { atomKey += "+3"; } } break;
+// RDKit✔️✔️:     case 34: switch (totalValence) { case 2: atomKey += "+2"; break; default: if (tolerateChargeMismatch) { atomKey += "+2"; } } break;
+// RDKit✔️✔️:     case 48: switch (totalValence) { case 2: atomKey += "+2"; break; default: if (tolerateChargeMismatch) { atomKey += "+2"; } } break;
+// RDKit✔️✔️:     case 49: switch (totalValence) { case 3: atomKey += "+3"; break; default: if (tolerateChargeMismatch) { atomKey += "+3"; } } break;
+// RDKit✔️✔️:     case 51: switch (totalValence) { case 3: atomKey += "+3"; break; default: if (tolerateChargeMismatch) { atomKey += "+3"; } } break;
+// RDKit✔️✔️:     case 52: switch (totalValence) { case 2: atomKey += "+2"; break; default: if (tolerateChargeMismatch) { atomKey += "+2"; } } break;
+// RDKit✔️✔️:     case 75: if (tolerateChargeMismatch) { if (atomKey == "Re6") { atomKey = "Re6+5"; } else if (atomKey == "Re3") { atomKey = "Re3+7"; } } break;
+// RDKit✔️✔️:     case 80: switch (totalValence) { case 2: atomKey += "+2"; break; default: if (tolerateChargeMismatch) { atomKey += "+2"; } } break;
+// RDKit✔️✔️:     case 81: case 82: case 83:
+// RDKit✔️✔️:       switch (totalValence) { case 3: atomKey += "+3"; break; default: if (tolerateChargeMismatch) { atomKey += "+3"; } }
+// RDKit✔️✔️:       break;
+// RDKit✔️✔️:     case 84:
+// RDKit✔️✔️:       switch (totalValence) { case 2: atomKey += "+2"; break; default: if (tolerateChargeMismatch) { atomKey += "+2"; } }
+// RDKit✔️✔️:       break;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   if (atom->getAtomicNum() >= 57 && atom->getAtomicNum() <= 71) {
+// RDKit✔️✔️:     switch (totalValence) {
+// RDKit✔️✔️:       case 6: atomKey += "+3"; break;
+// RDKit✔️✔️:       default: if (tolerateChargeMismatch) { atomKey += "+3"; }
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:   }
+// RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION UFF::Tools::addAtomChargeFlags
 fn add_atom_charge_flags_for_uff(
     atom_index: usize,
@@ -469,22 +565,54 @@ fn add_atom_charge_flags_for_uff(
     assignment: &crate::ValenceAssignment,
     atom_key: &mut String,
     hybridizations: &[Hybridization],
+    tolerate_charge_mismatch: bool,
 ) {
     let atom = &mol.atoms()[atom_index];
     let total_valence = atom_total_valence_for_uff(mol, assignment, atom_index);
-    let _formal_charge = atom.formal_charge();
+    let formal_charge = atom.formal_charge();
     match atom.atomic_number() {
-        29 | 47 => atom_key.push_str("+1"),
-        4 | 20 | 25 | 26 | 28 | 46 | 78 => atom_key.push_str("+2"),
-        21 | 24 | 27 | 79 | 89 | 96..=103 => atom_key.push_str("+3"),
-        2 | 18 | 22 | 36 | 54 | 90 | 91 | 92 | 93 | 94 | 95 => atom_key.push_str("+4"),
-        23 | 41 | 43 | 73 => atom_key.push_str("+5"),
-        42 => atom_key.push_str("+6"),
-        12 | 30 | 48 => atom_key.push_str("+2"),
+        29 | 47 => {
+            if total_valence == 1 || formal_charge == 1 || tolerate_charge_mismatch {
+                atom_key.push_str("+1");
+            }
+        }
+        4 | 20 | 25 | 26 | 28 | 46 | 78 => {
+            if total_valence == 2 || formal_charge == 2 || tolerate_charge_mismatch {
+                atom_key.push_str("+2");
+            }
+        }
+        21 | 24 | 27 | 79 | 89 | 96..=103 => {
+            if total_valence == 3 || formal_charge == 3 || tolerate_charge_mismatch {
+                atom_key.push_str("+3");
+            }
+        }
+        2 | 18 | 22 | 36 | 54 | 90 | 91 | 92 | 93 | 94 | 95 => {
+            if total_valence == 4 || formal_charge == 4 || tolerate_charge_mismatch {
+                atom_key.push_str("+4");
+            }
+        }
+        23 | 41 | 43 | 73 => {
+            if total_valence == 5 || formal_charge == 5 || tolerate_charge_mismatch {
+                atom_key.push_str("+5");
+            }
+        }
+        42 => {
+            if total_valence == 6 || formal_charge == 6 || tolerate_charge_mismatch {
+                atom_key.push_str("+6");
+            }
+        }
+        12 => match total_valence {
+            2 => atom_key.push_str("+2"),
+            _ if tolerate_charge_mismatch => atom_key.push_str("+2"),
+            _ => {}
+        },
+        13 => {}
+        14 => {}
         15 => match total_valence {
             3 => atom_key.push_str("+3"),
             5 => atom_key.push_str("+5"),
-            _ => atom_key.push_str("+5"),
+            _ if tolerate_charge_mismatch => atom_key.push_str("+5"),
+            _ => {}
         },
         16 => {
             if hybridizations[atom_index] != Hybridization::Sp2 {
@@ -492,36 +620,86 @@ fn add_atom_charge_flags_for_uff(
                     2 => atom_key.push_str("+2"),
                     4 => atom_key.push_str("+4"),
                     6 => atom_key.push_str("+6"),
-                    _ => atom_key.push_str("+6"),
+                    _ if tolerate_charge_mismatch => atom_key.push_str("+6"),
+                    _ => {}
                 }
             }
         }
-        31 | 33 | 49 | 51 | 81 | 82 | 83 => atom_key.push_str("+3"),
-        34 | 52 | 84 => atom_key.push_str("+2"),
+        30 | 34 | 48 | 52 | 80 | 84 => match total_valence {
+            2 => atom_key.push_str("+2"),
+            _ if tolerate_charge_mismatch => atom_key.push_str("+2"),
+            _ => {}
+        },
+        31 | 33 | 49 | 51 | 81 | 82 | 83 => match total_valence {
+            3 => atom_key.push_str("+3"),
+            _ if tolerate_charge_mismatch => atom_key.push_str("+3"),
+            _ => {}
+        },
         75 => {
-            if atom_key == "Re6" {
-                *atom_key = "Re6+5".to_string();
-            } else if atom_key == "Re3" {
-                *atom_key = "Re3+7".to_string();
+            if tolerate_charge_mismatch {
+                if atom_key == "Re6" {
+                    *atom_key = "Re6+5".to_string();
+                } else if atom_key == "Re3" {
+                    *atom_key = "Re3+7".to_string();
+                }
             }
         }
-        _ => {
-            if (57..=71).contains(&atom.atomic_number()) {
-                atom_key.push_str("+3");
-            }
+        _ => {}
+    }
+    if (57..=71).contains(&atom.atomic_number()) {
+        match total_valence {
+            6 => atom_key.push_str("+3"),
+            _ if tolerate_charge_mismatch => atom_key.push_str("+3"),
+            _ => {}
         }
     }
 }
 
-// BEGIN RDKIT CPP FUNCTION UFF::Tools::getAtomLabel (AtomTyper.cpp:259-505)
-// RDKit❗✔️: std::string getAtomLabel(const Atom *atom) {
-// RDKit❗✔️:   int atNum = atom->getAtomicNum();
-// RDKit❗✔️:   std::string atomKey = atom->getSymbol();
-// RDKit❗✔️:   if (atomKey.size() == 1) { atomKey += '_'; }
-// RDKit❗✔️:   if (atNum) { ... switch(atom->getHybridization()) ... }
-// RDKit❗✔️:   addAtomChargeFlags(atom, atomKey);
-// RDKit❗✔️:   return atomKey;
-// RDKit❗✔️: }
+// BEGIN RDKIT CPP FUNCTION UFF::Tools::getAtomLabel (AtomTyper.cpp:259-318)
+// RDKit✔️✔️: std::string getAtomLabel(const Atom *atom) {
+// RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
+// RDKit✔️✔️:   int atNum = atom->getAtomicNum();
+// RDKit✔️✔️:   std::string atomKey = atom->getSymbol();
+// RDKit✔️✔️:   if (atomKey.size() == 1) {
+// RDKit✔️✔️:     atomKey += '_';
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   PeriodicTable *table = PeriodicTable::getTable();
+// RDKit✔️✔️:   if (atNum) {
+// RDKit✔️✔️:     if (table->getDefaultValence(atNum) == -1 ||
+// RDKit✔️✔️:         (table->getNouterElecs(atNum) != 1 &&
+// RDKit✔️✔️:          table->getNouterElecs(atNum) != 7)) {
+// RDKit✔️✔️:       switch (atom->getAtomicNum()) {
+// RDKit✔️✔️:         case 12: case 13: case 14: case 15: case 50: case 51:
+// RDKit✔️✔️:         case 52: case 81: case 82: case 83: case 84:
+// RDKit✔️✔️:           atomKey += '3';
+// RDKit✔️✔️:           break;
+// RDKit✔️✔️:         case 80:
+// RDKit✔️✔️:           atomKey += '1';
+// RDKit✔️✔️:           break;
+// RDKit✔️✔️:         default:
+// RDKit✔️✔️:           switch (atom->getHybridization()) {
+// RDKit✔️✔️:             case Atom::S: break;
+// RDKit✔️✔️:             case Atom::SP: atomKey += '1'; break;
+// RDKit✔️✔️:             case Atom::SP2:
+// RDKit✔️✔️:               if ((atom->getIsAromatic() || MolOps::atomHasConjugatedBond(atom)) &&
+// RDKit✔️✔️:                   (atNum == 6 || atNum == 7 || atNum == 8 || atNum == 16)) {
+// RDKit✔️✔️:                 atomKey += 'R';
+// RDKit✔️✔️:               } else {
+// RDKit✔️✔️:                 atomKey += '2';
+// RDKit✔️✔️:               }
+// RDKit✔️✔️:               break;
+// RDKit✔️✔️:             case Atom::SP3: atomKey += '3'; break;
+// RDKit✔️✔️:             case Atom::SP2D: atomKey += '4'; break;
+// RDKit✔️✔️:             case Atom::SP3D: atomKey += '5'; break;
+// RDKit✔️✔️:             case Atom::SP3D2: atomKey += '6'; break;
+// RDKit✔️✔️:             default: break;
+// RDKit✔️✔️:           }
+// RDKit✔️✔️:       }
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   addAtomChargeFlags(atom, atomKey);
+// RDKit✔️✔️:   return atomKey;
+// RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION UFF::Tools::getAtomLabel
 fn get_atom_label_for_uff(
     mol: &Molecule,
@@ -569,7 +747,14 @@ fn get_atom_label_for_uff(
             }
         }
     }
-    add_atom_charge_flags_for_uff(atom_index, mol, assignment, &mut atom_key, hybridizations);
+    add_atom_charge_flags_for_uff(
+        atom_index,
+        mol,
+        assignment,
+        &mut atom_key,
+        hybridizations,
+        true,
+    );
     Ok(atom_key)
 }
 
@@ -619,46 +804,126 @@ fn ideal_bond_angle(hybridization: &crate::Hybridization, ring_size: Option<usiz
 }
 
 // ──────────────────────────────────────────────
-// Topological distance (BFS shortest path length)
+// Topological distance matrix
 // ──────────────────────────────────────────────
 
-/// RDKit❗✔️: compute shortest topological path lengths between all atom pairs
-fn compute_topological_distances(mol: &Molecule) -> Vec<Vec<i32>> {
-    let n = mol.atoms().len();
-    let mut dist = vec![vec![i32::MAX / 2; n]; n];
-    for i in 0..n {
-        dist[i][i] = 0;
+const LOCAL_INF_DIST: f64 = 1.0e8;
+
+// BEGIN RDKIT CPP FUNCTION RDKit::MolOps::getDistanceMat (Matrices.cpp:167-222)
+// RDKit✔️✔️: double *getDistanceMat(const ROMol &mol, bool useBO, bool useAtomWts,
+// RDKit✔️✔️:                        bool force, const char *propNamePrefix) {
+// RDKit✔️✔️:   int nAts = mol.getNumAtoms();
+// RDKit✔️✔️:   auto *dMat = new double[nAts * nAts];
+// RDKit✔️✔️:   int i, j;
+// RDKit✔️✔️:   // initialize off diagonals to LOCAL_INF and diagonals to 0
+// RDKit✔️✔️:   for (i = 0; i < nAts * nAts; i++) {
+// RDKit✔️✔️:     dMat[i] = LOCAL_INF;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   for (i = 0; i < nAts; i++) {
+// RDKit✔️✔️:     dMat[i * nAts + i] = 0.0;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   while (firstB != lastB) {
+// RDKit✔️✔️:     const Bond *bond = mol[*firstB];
+// RDKit✔️✔️:     i = bond->getBeginAtomIdx();
+// RDKit✔️✔️:     j = bond->getEndAtomIdx();
+// RDKit✔️✔️:     double contrib;
+// RDKit✔️✔️:     if (useBO) { ... } else { contrib = 1.0; }
+// RDKit✔️✔️:     dMat[i * nAts + j] = contrib;
+// RDKit✔️✔️:     dMat[j * nAts + i] = contrib;
+// RDKit✔️✔️:     ++firstB;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   auto *pathMat = new int[nAts * nAts];
+// RDKit✔️✔️:   memset(static_cast<void *>(pathMat), 0, nAts * nAts * sizeof(int));
+// RDKit✔️✔️:   FloydWarshall(nAts, dMat, pathMat);
+// RDKit✔️✔️:   return dMat;
+// RDKit✔️✔️: };
+// END RDKIT CPP FUNCTION RDKit::MolOps::getDistanceMat
+//
+// BEGIN RDKIT CPP FUNCTION RDKit::FloydWarshall (Matrices.cpp:35-87)
+// RDKit✔️✔️: template <class T>
+// RDKit✔️✔️: void FloydWarshall(int dim, T *adjMat, int *pathMat) {
+// RDKit✔️✔️:   for (i = 0; i < dim; i++) {
+// RDKit✔️✔️:     int itab = i * dim;
+// RDKit✔️✔️:     for (j = 0; j < dim; j++) {
+// RDKit✔️✔️:       if (i == j || adjMat[itab + j] == LOCAL_INF) {
+// RDKit✔️✔️:         pathMat[itab + j] = -1;
+// RDKit✔️✔️:       } else {
+// RDKit✔️✔️:         pathMat[itab + j] = i;
+// RDKit✔️✔️:       }
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   for (k = 0; k < dim; k++) {
+// RDKit✔️✔️:     int ktab = k * dim;
+// RDKit✔️✔️:     for (i = 0; i < dim; i++) {
+// RDKit✔️✔️:       int itab = i * dim;
+// RDKit✔️✔️:       for (j = 0; j < dim; j++) {
+// RDKit✔️✔️:         T v1 = lastD[itab + j];
+// RDKit✔️✔️:         T v2 = lastD[itab + k] + lastD[ktab + j];
+// RDKit✔️✔️:         if (v1 <= v2) {
+// RDKit✔️✔️:           currD[itab + j] = v1;
+// RDKit✔️✔️:           currP[itab + j] = lastP[itab + j];
+// RDKit✔️✔️:         } else {
+// RDKit✔️✔️:           currD[itab + j] = v2;
+// RDKit✔️✔️:           currP[itab + j] = lastP[ktab + j];
+// RDKit✔️✔️:         }
+// RDKit✔️✔️:       }
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:   }
+// RDKit✔️✔️: }
+// END RDKIT CPP FUNCTION RDKit::FloydWarshall
+fn compute_topological_distances(mol: &Molecule) -> Vec<f64> {
+    let n_atoms = mol.num_atoms();
+    let mut last_dist = vec![LOCAL_INF_DIST; n_atoms * n_atoms];
+    let mut last_path = vec![0_i32; n_atoms * n_atoms];
+
+    for i in 0..n_atoms {
+        last_dist[i * n_atoms + i] = 0.0;
     }
     for bond in mol.bonds() {
-        let b = bond.begin().index();
-        let e = bond.end().index();
-        dist[b][e] = 1;
-        dist[e][b] = 1;
+        let i = bond.begin().index();
+        let j = bond.end().index();
+        last_dist[i * n_atoms + j] = 1.0;
+        last_dist[j * n_atoms + i] = 1.0;
     }
-    // Floyd-Warshall for all-pairs shortest path
-    for k in 0..n {
-        for i in 0..n {
-            for j in 0..n {
-                let nd = dist[i][k].saturating_add(dist[k][j]);
-                if nd < dist[i][j] {
-                    dist[i][j] = nd;
-                }
+
+    for i in 0..n_atoms {
+        let itab = i * n_atoms;
+        for j in 0..n_atoms {
+            if i == j || last_dist[itab + j] == LOCAL_INF_DIST {
+                last_path[itab + j] = -1;
+            } else {
+                last_path[itab + j] = i as i32;
             }
         }
     }
-    dist
+
+    let mut curr_dist = vec![0.0; n_atoms * n_atoms];
+    let mut curr_path = vec![0_i32; n_atoms * n_atoms];
+    for k in 0..n_atoms {
+        let ktab = k * n_atoms;
+        for i in 0..n_atoms {
+            let itab = i * n_atoms;
+            for j in 0..n_atoms {
+                let v1 = last_dist[itab + j];
+                let v2 = last_dist[itab + k] + last_dist[ktab + j];
+                if v1 <= v2 {
+                    curr_dist[itab + j] = v1;
+                    curr_path[itab + j] = last_path[itab + j];
+                } else {
+                    curr_dist[itab + j] = v2;
+                    curr_path[itab + j] = last_path[ktab + j];
+                }
+            }
+        }
+        std::mem::swap(&mut curr_dist, &mut last_dist);
+        std::mem::swap(&mut curr_path, &mut last_path);
+    }
+
+    last_dist
 }
 
 fn flatten_topological_distances_matrix(mol: &Molecule) -> Vec<f64> {
-    let topo = compute_topological_distances(mol);
-    let n = mol.num_atoms();
-    let mut flat = vec![0.0; n * n];
-    for i in 0..n {
-        for j in 0..n {
-            flat[i * n + j] = topo[i][j] as f64;
-        }
-    }
-    flat
+    compute_topological_distances(mol)
 }
 
 // ──────────────────────────────────────────────
@@ -759,6 +1024,20 @@ impl BoundsMatrix {
         }
     }
 
+    // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setUpperBoundIfBetter (BoundsMatrix.h:57-62)
+    // RDKit✔️✔️: inline void setUpperBoundIfBetter(unsigned int i, unsigned int j,
+    // RDKit✔️✔️:                                     double val) {
+    // RDKit✔️✔️:   if ((val < getUpperBound(i, j)) && (val > getLowerBound(i, j))) {
+    // RDKit✔️✔️:     setUpperBound(i, j, val);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setUpperBoundIfBetter
+    fn set_upper_if_better(&mut self, i: usize, j: usize, val: f64) {
+        if val < self.get_upper(i, j) && val > self.get_lower(i, j) {
+            self.set_upper(i, j, val);
+        }
+    }
+
     // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBound (BoundsMatrix.h:65-72)
     // RDKit✔️✔️: inline void setLowerBound(unsigned int i, unsigned int j, double val) {
     // RDKit✔️✔️:   CHECK_INVARIANT(val >= 0.0, "Negative lower bound");
@@ -778,6 +1057,20 @@ impl BoundsMatrix {
         }
     }
 
+    // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBoundIfBetter (BoundsMatrix.h:76-81)
+    // RDKit✔️✔️: inline void setLowerBoundIfBetter(unsigned int i, unsigned int j,
+    // RDKit✔️✔️:                                     double val) {
+    // RDKit✔️✔️:   if ((val > getLowerBound(i, j)) && (val < getUpperBound(i, j))) {
+    // RDKit✔️✔️:     setLowerBound(i, j, val);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBoundIfBetter
+    fn set_lower_if_better(&mut self, i: usize, j: usize, val: f64) {
+        if val > self.get_lower(i, j) && val < self.get_upper(i, j) {
+            self.set_lower(i, j, val);
+        }
+    }
+
     // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::getLowerBound (BoundsMatrix.h:84-90)
     // RDKit✔️✔️: inline double getLowerBound(unsigned int i, unsigned int j) const {
     // RDKit✔️✔️:   if (i < j) {
@@ -793,6 +1086,30 @@ impl BoundsMatrix {
         } else {
             self.get_val(i, j)
         }
+    }
+
+    // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::checkValid (BoundsMatrix.h:94-103)
+    // RDKit✔️✔️: inline bool checkValid() const {
+    // RDKit✔️✔️:   unsigned int i, j;
+    // RDKit✔️✔️:   for (i = 1; i < d_nRows; i++) {
+    // RDKit✔️✔️:     for (j = 0; j < i; j++) {
+    // RDKit✔️✔️:       if (getUpperBound(i, j) < getLowerBound(i, j)) {
+    // RDKit✔️✔️:         return false;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::checkValid
+    fn check_valid(&self) -> bool {
+        for i in 1..self.n {
+            for j in 0..i {
+                if self.get_upper(i, j) < self.get_lower(i, j) {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     fn num_rows(&self) -> usize {
@@ -887,116 +1204,129 @@ impl BoundsMatrix {
         }
     }
 
-    // BEGIN RDKIT CPP FUNCTION DistGeom::triangleSmoothBounds (TriangleSmooth.cpp:15-61)
-    // RDKit✔️❌: bool triangleSmoothBounds(BoundsMatrix *boundsMat, double tol) {
-    // RDKit✔️❌:   auto npt = boundsMat->numRows();
-    // RDKit✔️❌:   for (auto k = 0u; k < npt; k++) {
-    // RDKit✔️❌:     for (auto i = 0u; i < npt - 1; i++) {
-    // RDKit✔️❌:       if (i == k) {
-    // RDKit✔️❌:         continue;
-    // RDKit✔️❌:       }
-    // RDKit✔️❌:       auto ii = i;
-    // RDKit✔️❌:       auto ik = k;
-    // RDKit✔️❌:       if (ii > ik) {
-    // RDKit✔️❌:         std::swap(ii, ik);
-    // RDKit✔️❌:       }
-    // RDKit✔️❌:
-    // RDKit✔️❌:       const auto Uik = boundsMat->getValUnchecked(ii, ik);  // upper bound
-    // RDKit✔️❌:       const auto Lik = boundsMat->getValUnchecked(ik, ii);  // lower bound
-    // RDKit✔️❌:       for (auto j = i + 1; j < npt; j++) {
-    // RDKit✔️❌:         if (j == k) {
-    // RDKit✔️❌:           continue;
-    // RDKit✔️❌:         }
-    // RDKit✔️❌:         auto jj = j;
-    // RDKit✔️❌:         auto jk = k;
-    // RDKit✔️❌:         if (jj > jk) {
-    // RDKit✔️❌:           std::swap(jj, jk);
-    // RDKit✔️❌:         }
-    // RDKit✔️❌:         const auto Ukj = boundsMat->getValUnchecked(jj, jk);  // upper bound
-    // RDKit✔️❌:         const auto sumUikUkj = Uik + Ukj;
-    // RDKit✔️❌:         if (boundsMat->getValUnchecked(i, j) > sumUikUkj) {
-    // RDKit✔️❌:           // adjust the upper bound
-    // RDKit✔️❌:           boundsMat->setValUnchecked(i, j, sumUikUkj);
-    // RDKit✔️❌:         }
-    // RDKit✔️❌:
-    // RDKit✔️❌:         const auto diffLikUjk = Lik - Ukj;
-    // RDKit✔️❌:         const auto diffLjkUik = boundsMat->getValUnchecked(jk, jj) - Uik;
-    // RDKit✔️❌:         if (boundsMat->getValUnchecked(j, i) < diffLikUjk) {
-    // RDKit✔️❌:           // adjust the lower bound
-    // RDKit✔️❌:           boundsMat->setValUnchecked(j, i, diffLikUjk);
-    // RDKit✔️❌:         } else if (boundsMat->getValUnchecked(j, i) < diffLjkUik) {
-    // RDKit✔️❌:           // adjust the lower bound
-    // RDKit✔️❌:           boundsMat->setValUnchecked(j, i, diffLjkUik);
-    // RDKit✔️❌:         }
-    // RDKit✔️❌:         const auto lBound = boundsMat->getValUnchecked(j, i);
-    // RDKit✔️❌:         const auto uBound = boundsMat->getValUnchecked(i, j);
-    // RDKit✔️❌:         if (tol > 0. && (lBound - uBound) / lBound > 0. &&
-    // RDKit✔️❌:             (lBound - uBound) / lBound < tol) {
-    // RDKit✔️❌:           // adjust the upper bound
-    // RDKit✔️❌:           boundsMat->setValUnchecked(i, j, lBound);
-    // RDKit✔️❌:         } else if (lBound - uBound > 0.) {
-    // RDKit✔️❌:           return false;
-    // RDKit✔️❌:         }
-    // RDKit✔️❌:       }
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   return true;
-    // RDKit✔️❌: }
-    // END RDKIT CPP FUNCTION DistGeom::triangleSmoothBounds
-    //
-    // Performance note: the Rust port keeps RDKit's O(n^3) control flow and
-    // raw-triangle access pattern, but `Vec<Vec<f64>>` is less cache-friendly
-    // than RDKit's contiguous square-matrix backing.
     fn triangle_smooth(&mut self, tol: f64) -> bool {
-        let npt = self.num_rows();
-        if npt < 2 {
-            return true;
-        }
-
-        for k in 0..npt {
-            for i in 0..(npt - 1) {
-                if i == k {
-                    continue;
-                }
-                let (ii, ik) = if i > k { (k, i) } else { (i, k) };
-
-                let uik = self.get_val(ii, ik);
-                let lik = self.get_val(ik, ii);
-                for j in (i + 1)..npt {
-                    if j == k {
-                        continue;
-                    }
-                    let (jj, jk) = if j > k { (k, j) } else { (j, k) };
-                    let ukj = self.get_val(jj, jk);
-                    let sum_uik_ukj = uik + ukj;
-                    if self.get_val(i, j) > sum_uik_ukj {
-                        self.set_val(i, j, sum_uik_ukj);
-                    }
-
-                    let diff_lik_ujk = lik - ukj;
-                    let diff_ljk_uik = self.get_val(jk, jj) - uik;
-                    if self.get_val(j, i) < diff_lik_ujk {
-                        self.set_val(j, i, diff_lik_ujk);
-                    } else if self.get_val(j, i) < diff_ljk_uik {
-                        self.set_val(j, i, diff_ljk_uik);
-                    }
-                    let l_bound = self.get_val(j, i);
-                    let u_bound = self.get_val(i, j);
-                    let rel_gap = (l_bound - u_bound) / l_bound;
-                    if tol > 0.0 && rel_gap > 0.0 && rel_gap < tol {
-                        self.set_val(i, j, l_bound);
-                    } else if l_bound - u_bound > 0.0 {
-                        return false;
-                    }
-                }
-            }
-        }
-        true
+        triangle_smooth_bounds_ptr(self, tol)
     }
 
     fn to_vec_vec(self) -> Vec<Vec<f64>> {
         self.data
     }
+}
+
+// BEGIN RDKIT CPP FUNCTION DistGeom::triangleSmoothBounds (TriangleSmooth.cpp:11-13)
+// RDKit✔️✔️: bool triangleSmoothBounds(BoundsMatPtr boundsMat, double tol) {
+// RDKit✔️✔️:   return triangleSmoothBounds(boundsMat.get(), tol);
+// RDKit✔️✔️: }
+// END RDKIT CPP FUNCTION DistGeom::triangleSmoothBounds
+fn triangle_smooth_bounds_shared(bounds_mat: &mut BoundsMatrix, tol: f64) -> bool {
+    triangle_smooth_bounds_ptr(bounds_mat, tol)
+}
+
+// BEGIN RDKIT CPP FUNCTION DistGeom::triangleSmoothBounds (TriangleSmooth.cpp:14-61)
+// RDKit✔️❌: bool triangleSmoothBounds(BoundsMatrix *boundsMat, double tol) {
+// RDKit✔️❌:   auto npt = boundsMat->numRows();
+// RDKit✔️❌:   for (auto k = 0u; k < npt; k++) {
+// RDKit✔️❌:     for (auto i = 0u; i < npt - 1; i++) {
+// RDKit✔️❌:       if (i == k) {
+// RDKit✔️❌:         continue;
+// RDKit✔️❌:       }
+// RDKit✔️❌:       auto ii = i;
+// RDKit✔️❌:       auto ik = k;
+// RDKit✔️❌:       if (ii > ik) {
+// RDKit✔️❌:         std::swap(ii, ik);
+// RDKit✔️❌:       }
+// RDKit✔️❌:
+// RDKit✔️❌:       const auto Uik = boundsMat->getValUnchecked(ii, ik);  // upper bound
+// RDKit✔️❌:       const auto Lik = boundsMat->getValUnchecked(ik, ii);  // lower bound
+// RDKit✔️❌:       for (auto j = i + 1; j < npt; j++) {
+// RDKit✔️❌:         if (j == k) {
+// RDKit✔️❌:           continue;
+// RDKit✔️❌:         }
+// RDKit✔️❌:         auto jj = j;
+// RDKit✔️❌:         auto jk = k;
+// RDKit✔️❌:         if (jj > jk) {
+// RDKit✔️❌:           std::swap(jj, jk);
+// RDKit✔️❌:         }
+// RDKit✔️❌:         const auto Ukj = boundsMat->getValUnchecked(jj, jk);  // upper bound
+// RDKit✔️❌:         const auto sumUikUkj = Uik + Ukj;
+// RDKit✔️❌:         if (boundsMat->getValUnchecked(i, j) > sumUikUkj) {
+// RDKit✔️❌:           // adjust the upper bound
+// RDKit✔️❌:           boundsMat->setValUnchecked(i, j, sumUikUkj);
+// RDKit✔️❌:         }
+// RDKit✔️❌:
+// RDKit✔️❌:         const auto diffLikUjk = Lik - Ukj;
+// RDKit✔️❌:         const auto diffLjkUik = boundsMat->getValUnchecked(jk, jj) - Uik;
+// RDKit✔️❌:         if (boundsMat->getValUnchecked(j, i) < diffLikUjk) {
+// RDKit✔️❌:           // adjust the lower bound
+// RDKit✔️❌:           boundsMat->setValUnchecked(j, i, diffLikUjk);
+// RDKit✔️❌:         } else if (boundsMat->getValUnchecked(j, i) < diffLjkUik) {
+// RDKit✔️❌:           // adjust the lower bound
+// RDKit✔️❌:           boundsMat->setValUnchecked(j, i, diffLjkUik);
+// RDKit✔️❌:         }
+// RDKit✔️❌:         const auto lBound = boundsMat->getValUnchecked(j, i);
+// RDKit✔️❌:         const auto uBound = boundsMat->getValUnchecked(i, j);
+// RDKit✔️❌:         if (tol > 0. && (lBound - uBound) / lBound > 0. &&
+// RDKit✔️❌:             (lBound - uBound) / lBound < tol) {
+// RDKit✔️❌:           // adjust the upper bound
+// RDKit✔️❌:           boundsMat->setValUnchecked(i, j, lBound);
+// RDKit✔️❌:         } else if (lBound - uBound > 0.) {
+// RDKit✔️❌:           return false;
+// RDKit✔️❌:         }
+// RDKit✔️❌:       }
+// RDKit✔️❌:     }
+// RDKit✔️❌:   }
+// RDKit✔️❌:   return true;
+// RDKit✔️❌: }
+// END RDKIT CPP FUNCTION DistGeom::triangleSmoothBounds
+//
+// Performance note: the Rust port keeps RDKit's O(n^3) control flow and
+// raw-triangle access pattern, but `Vec<Vec<f64>>` is less cache-friendly
+// than RDKit's contiguous square-matrix backing.
+fn triangle_smooth_bounds_ptr(bounds_mat: &mut BoundsMatrix, tol: f64) -> bool {
+    let npt = bounds_mat.num_rows();
+    if npt < 2 {
+        return true;
+    }
+
+    for k in 0..npt {
+        for i in 0..(npt - 1) {
+            if i == k {
+                continue;
+            }
+            let (ii, ik) = if i > k { (k, i) } else { (i, k) };
+
+            let uik = bounds_mat.get_val(ii, ik);
+            let lik = bounds_mat.get_val(ik, ii);
+            for j in (i + 1)..npt {
+                if j == k {
+                    continue;
+                }
+                let (jj, jk) = if j > k { (k, j) } else { (j, k) };
+                let ukj = bounds_mat.get_val(jj, jk);
+                let sum_uik_ukj = uik + ukj;
+                if bounds_mat.get_val(i, j) > sum_uik_ukj {
+                    bounds_mat.set_val(i, j, sum_uik_ukj);
+                }
+
+                let diff_lik_ujk = lik - ukj;
+                let diff_ljk_uik = bounds_mat.get_val(jk, jj) - uik;
+                if bounds_mat.get_val(j, i) < diff_lik_ujk {
+                    bounds_mat.set_val(j, i, diff_lik_ujk);
+                } else if bounds_mat.get_val(j, i) < diff_ljk_uik {
+                    bounds_mat.set_val(j, i, diff_ljk_uik);
+                }
+                let l_bound = bounds_mat.get_val(j, i);
+                let u_bound = bounds_mat.get_val(i, j);
+                let rel_gap = (l_bound - u_bound) / l_bound;
+                if tol > 0.0 && rel_gap > 0.0 && rel_gap < tol {
+                    bounds_mat.set_val(i, j, l_bound);
+                } else if l_bound - u_bound > 0.0 {
+                    return false;
+                }
+            }
+        }
+    }
+    true
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::initBoundsMat (BoundsMatrixBuilder.cpp:1792-1800)
@@ -1064,34 +1394,64 @@ fn is_bond_in_ring_of_size(ring_info: &crate::RingInfo, bond_idx: usize, size: u
 // 1-2 distance bounds
 // ──────────────────────────────────────────────
 
-/// RDKit❗✔️: set12Bounds — bond-length derived 1-2 bounds
+/// RDKit✔️❗: set12Bounds — bond-length derived 1-2 bounds
 //
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::set12Bounds (BoundsMatrixBuilder.cpp:238-295)
-// RDKit❗✔️: void set12Bounds(const ROMol &mol, DistGeom::BoundsMatPtr mmat,
-// RDKit❗✔️:                  ComputedData &accumData) {
-// RDKit❗✔️:   auto [atomParams, foundAll] = UFF::getAtomTypes(mol);
-// RDKit❗✔️:   boost::dynamic_bitset<> squishAtoms(mol.getNumAtoms());
-// RDKit❗✔️:   for (const auto bond : mol.bonds()) {
-// RDKit❗✔️:     if (bond->getIsConjugated() &&
-// RDKit❗✔️:         (bond->getBeginAtom()->getAtomicNum() > 10 ||
-// RDKit❗✔️:          bond->getEndAtom()->getAtomicNum() > 10)) { ... }
-// RDKit❗✔️:   }
-// RDKit❗✔️:   for (const auto bond : mol.bonds()) {
-// RDKit❗✔️:     auto bl = ForceFields::UFF::Utils::calcBondRestLength(
-// RDKit❗✔️:         bOrder, atomParams[begId], atomParams[endId]);
-// RDKit❗✔️:     double extraSquish = 0.0;
-// RDKit❗✔️:     if (squishAtoms[begId] || squishAtoms[endId]) extraSquish = 0.2;
-// RDKit❗✔️:     accumData.bondLengths[bond->getIdx()] = bl;
-// RDKit❗✔️:     mmat->setUpperBound(begId, endId, bl + extraSquish + DIST12_DELTA);
-// RDKit❗✔️:     mmat->setLowerBound(begId, endId, bl - extraSquish - DIST12_DELTA);
-// RDKit❗✔️:   }
-// RDKit❗✔️: }
+// RDKit✔️❗: void set12Bounds(const ROMol &mol, DistGeom::BoundsMatPtr mmat,
+// RDKit✔️❗:                  ComputedData &accumData) {
+// RDKit✔️❗:   unsigned int npt = mmat->numRows();
+// RDKit✔️❗:   CHECK_INVARIANT(npt == mol.getNumAtoms(), "Wrong size metric matrix");
+// RDKit✔️❗:   CHECK_INVARIANT(accumData.bondLengths.size() >= mol.getNumBonds(),
+// RDKit✔️❗:                   "Wrong size accumData");
+// RDKit✔️❗:   auto [atomParams, foundAll] = UFF::getAtomTypes(mol);
+// RDKit✔️❗:   CHECK_INVARIANT(atomParams.size() == mol.getNumAtoms(),
+// RDKit✔️❗:                   "parameter vector size mismatch");
+// RDKit✔️❗:   boost::dynamic_bitset<> squishAtoms(mol.getNumAtoms());
+// RDKit✔️❗:   for (const auto bond : mol.bonds()) {
+// RDKit✔️❗:     if (bond->getIsConjugated() &&
+// RDKit✔️❗:         (bond->getBeginAtom()->getAtomicNum() > 10 ||
+// RDKit✔️❗:          bond->getEndAtom()->getAtomicNum() > 10) &&
+// RDKit✔️❗:         mol.getRingInfo() && mol.getRingInfo()->isInitialized() &&
+// RDKit✔️❗:         mol.getRingInfo()->isBondInRingOfSize(bond->getIdx(), 5)) {
+// RDKit✔️❗:       squishAtoms.set(bond->getBeginAtomIdx());
+// RDKit✔️❗:       squishAtoms.set(bond->getEndAtomIdx());
+// RDKit✔️❗:     }
+// RDKit✔️❗:   }
+// RDKit✔️❗:   for (const auto bond : mol.bonds()) {
+// RDKit✔️❗:     auto begId = bond->getBeginAtomIdx();
+// RDKit✔️❗:     auto endId = bond->getEndAtomIdx();
+// RDKit✔️❗:     auto bOrder = bond->getBondTypeAsDouble();
+// RDKit✔️❗:     if (atomParams[begId] && atomParams[endId] && bOrder > 0) {
+// RDKit✔️❗:       auto bl = ForceFields::UFF::Utils::calcBondRestLength(
+// RDKit✔️❗:           bOrder, atomParams[begId], atomParams[endId]);
+// RDKit✔️❗:       double extraSquish = 0.0;
+// RDKit✔️❗:       if (squishAtoms[begId] || squishAtoms[endId]) {
+// RDKit✔️❗:         extraSquish = 0.2;  // empirical
+// RDKit✔️❗:       }
+// RDKit✔️❗:       accumData.bondLengths[bond->getIdx()] = bl;
+// RDKit✔️❗:       mmat->setUpperBound(begId, endId, bl + extraSquish + DIST12_DELTA);
+// RDKit✔️❗:       mmat->setLowerBound(begId, endId, bl - extraSquish - DIST12_DELTA);
+// RDKit✔️❗:     } else {
+// RDKit✔️❗:       auto vw1 = PeriodicTable::getTable()->getRvdw(
+// RDKit✔️❗:           mol.getAtomWithIdx(begId)->getAtomicNum());
+// RDKit✔️❗:       auto vw2 = PeriodicTable::getTable()->getRvdw(
+// RDKit✔️❗:           mol.getAtomWithIdx(endId)->getAtomicNum());
+// RDKit✔️❗:       auto bl = (vw1 + vw2) / 2;
+// RDKit✔️❗:       accumData.bondLengths[bond->getIdx()] = bl;
+// RDKit✔️❗:       mmat->setUpperBound(begId, endId, 1.5 * bl);
+// RDKit✔️❗:       mmat->setLowerBound(begId, endId, .5 * bl);
+// RDKit✔️❗:     }
+// RDKit✔️❗:     unsigned int pid =
+// RDKit✔️❗:         std::min(begId, endId) * mol.getNumAtoms() + std::max(begId, endId);
+// RDKit✔️❗:     accumData.visited12Bounds.set(pid);
+// RDKit✔️❗:   }
+// RDKit✔️❗: }
 // END RDKIT CPP FUNCTION DGeomHelpers::set12Bounds
 //
-// Rust implementation uses estimate_bond_length (topology-based) instead of
-// UFF atom types. The squish logic for conjugated 5-ring heteroatoms matches.
-// This is a structural adaptation: UFF bond lengths require UFF atom typing
-// which COSMolKit does not have.
+// Rust maps RDKit's UFF atom typing through `get_atom_label_for_uff()` and
+// `uff_params_for_label()`. Local review found comparable asymptotic work but
+// left perf unresolved because the Rust path materializes extra intermediate
+// vectors for valence-derived hybridization and conjugation state.
 fn set_12_bounds(
     mol: &Molecule,
     mmat: &mut BoundsMatrix,
@@ -1140,48 +1500,6 @@ fn set_12_bounds(
         atom_params.push(uff_params_for_label(&label));
     }
 
-    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::set12Bounds (BoundsMatrixBuilder.cpp:228-295)
-    // RDKit✔️❗: void set12Bounds(const ROMol &mol, DistGeom::BoundsMatPtr mmat,
-    // RDKit✔️❗:                  ComputedData &accumData) {
-    // RDKit✔️❗:   unsigned int npt = mmat->numRows();
-    // RDKit✔️❗:   CHECK_INVARIANT(npt == mol.getNumAtoms(), "Wrong size metric matrix");
-    // RDKit✔️❗:   CHECK_INVARIANT(accumData.bondLengths.size() >= mol.getNumBonds(),
-    // RDKit✔️❗:                   "Wrong size accumData");
-    // RDKit✔️❗:   auto [atomParams, foundAll] = UFF::getAtomTypes(mol);
-    // RDKit✔️❗:   CHECK_INVARIANT(atomParams.size() == mol.getNumAtoms(),
-    // RDKit✔️❗:                   "parameter vector size mismatch");
-    // RDKit✔️❗:   boost::dynamic_bitset<> squishAtoms(mol.getNumAtoms());
-    // RDKit✔️❗:   for (const auto bond : mol.bonds()) { ... conjugated 5-ring squish ... }
-    // RDKit✔️❗:   for (const auto bond : mol.bonds()) {
-    // RDKit✔️❗:     auto begId = bond->getBeginAtomIdx();
-    // RDKit✔️❗:     auto endId = bond->getEndAtomIdx();
-    // RDKit✔️❗:     auto bOrder = bond->getBondTypeAsDouble();
-    // RDKit✔️❗:     if (atomParams[begId] && atomParams[endId] && bOrder > 0) {
-    // RDKit✔️❗:       auto bl = ForceFields::UFF::Utils::calcBondRestLength(
-    // RDKit✔️❗:           bOrder, atomParams[begId], atomParams[endId]);
-    // RDKit✔️❗:       double extraSquish = 0.0;
-    // RDKit✔️❗:       if (squishAtoms[begId] || squishAtoms[endId]) {
-    // RDKit✔️❗:         extraSquish = 0.2;  // empirical
-    // RDKit✔️❗:       }
-    // RDKit✔️❗:       accumData.bondLengths[bond->getIdx()] = bl;
-    // RDKit✔️❗:       mmat->setUpperBound(begId, endId, bl + extraSquish + DIST12_DELTA);
-    // RDKit✔️❗:       mmat->setLowerBound(begId, endId, bl - extraSquish - DIST12_DELTA);
-    // RDKit✔️❗:     } else {
-    // RDKit✔️❗:       auto vw1 = PeriodicTable::getTable()->getRvdw(
-    // RDKit✔️❗:           mol.getAtomWithIdx(begId)->getAtomicNum());
-    // RDKit✔️❗:       auto vw2 = PeriodicTable::getTable()->getRvdw(
-    // RDKit✔️❗:           mol.getAtomWithIdx(endId)->getAtomicNum());
-    // RDKit✔️❗:       auto bl = (vw1 + vw2) / 2;
-    // RDKit✔️❗:       accumData.bondLengths[bond->getIdx()] = bl;
-    // RDKit✔️❗:       mmat->setUpperBound(begId, endId, 1.5 * bl);
-    // RDKit✔️❗:       mmat->setLowerBound(begId, endId, .5 * bl);
-    // RDKit✔️❗:     }
-    // RDKit✔️❗:     unsigned int pid =
-    // RDKit✔️❗:         std::min(begId, endId) * mol.getNumAtoms() + std::max(begId, endId);
-    // RDKit✔️❗:     accumData.visited12Bounds.set(pid);
-    // RDKit✔️❗:   }
-    // RDKit✔️❗: }
-    // END RDKIT CPP FUNCTION DGeomHelpers::set12Bounds
     let mut squish_atoms = vec![false; mol.atoms().len()];
     let ring_info = mol.derived_cache().rings.as_ref();
     for (bond_index, bond) in mol.bonds().iter().enumerate() {
@@ -1241,10 +1559,15 @@ fn set_12_bounds(
 // 1-3 distance bounds
 // ──────────────────────────────────────────────
 
-/// RDKit❗✔️: compute 1-3 distance from two bond lengths and an angle
+// BEGIN RDKIT CPP FUNCTION RDGeom::compute13Dist (Geometry/Utils.h:24-27)
+// RDKit✔️✔️: inline double compute13Dist(double d1, double d2, double angle) {
+// RDKit✔️✔️:   double res = d1 * d1 + d2 * d2 - 2 * d1 * d2 * cos(angle);
+// RDKit✔️✔️:   return sqrt(res);
+// RDKit✔️✔️: }
+// END RDKIT CPP FUNCTION RDGeom::compute13Dist
 fn compute_13_dist(bl1: f64, bl2: f64, angle: f64) -> f64 {
-    // RDKit❗✔️: RDGeom::compute13Dist via law of cosines
-    (bl1 * bl1 + bl2 * bl2 - 2.0 * bl1 * bl2 * angle.cos()).sqrt()
+    let res = bl1 * bl1 + bl2 * bl2 - 2.0 * bl1 * bl2 * angle.cos();
+    res.sqrt()
 }
 
 // BEGIN RDKIT CPP FUNCTION RDGeom::compute14Dist3D (Geometry/Utils.h:50-65)
@@ -1518,17 +1841,50 @@ fn bond_pair_shared_atom(
     aid as usize
 }
 
-/// RDKit❗✔️: _getAtomStereo — get the effective stereo for a bond given 1-4 atoms
+// BEGIN RDKIT CPP FUNCTION DGeomHelpers::_getAtomStereo (BoundsMatrixBuilder.cpp:660-681)
+// RDKit✔️✔️: Bond::BondStereo _getAtomStereo(const Bond *bnd, unsigned int aid1,
+// RDKit✔️✔️:                                 unsigned int aid4) {
+// RDKit✔️✔️:   auto stype = bnd->getStereo();
+// RDKit✔️✔️:   if (stype > Bond::STEREOANY && bnd->getStereoAtoms().size() >= 2) {
+// RDKit✔️✔️:     const auto &stAtoms = bnd->getStereoAtoms();
+// RDKit✔️✔️:     if ((static_cast<unsigned int>(stAtoms[0]) != aid1) ^
+// RDKit✔️✔️:         (static_cast<unsigned int>(stAtoms[1]) != aid4)) {
+// RDKit✔️✔️:       switch (stype) {
+// RDKit✔️✔️:         case Bond::STEREOZ:
+// RDKit✔️✔️:           stype = Bond::STEREOE;
+// RDKit✔️✔️:           break;
+// RDKit✔️✔️:         case Bond::STEREOE:
+// RDKit✔️✔️:           stype = Bond::STEREOZ;
+// RDKit✔️✔️:           break;
+// RDKit✔️✔️:         case Bond::STEREOCIS:
+// RDKit✔️✔️:           stype = Bond::STEREOTRANS;
+// RDKit✔️✔️:           break;
+// RDKit✔️✔️:         case Bond::STEREOTRANS:
+// RDKit✔️✔️:           stype = Bond::STEREOCIS;
+// RDKit✔️✔️:           break;
+// RDKit✔️✔️:         default:
+// RDKit✔️✔️:           break;
+// RDKit✔️✔️:       }
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   return stype;
+// RDKit✔️✔️: }
+// END RDKIT CPP FUNCTION DGeomHelpers::_getAtomStereo
 fn get_atom_stereo(bond: &Bond, aid1: usize, aid4: usize) -> BondStereo {
     let mut stype = bond.stereo();
-    if let Some(ref stereo_atoms) = bond.stereo_atoms() {
+    if matches!(
+        stype,
+        BondStereo::Z | BondStereo::E | BondStereo::Cis | BondStereo::Trans
+    ) && bond.stereo_atoms().is_some_and(|atoms| atoms.len() >= 2)
+    {
+        let stereo_atoms = bond.stereo_atoms().expect("checked stereo atoms");
         let needs_flip = (stereo_atoms[0].index() != aid1) ^ (stereo_atoms[1].index() != aid4);
         if needs_flip {
             stype = match stype {
-                BondStereo::Cis => BondStereo::Trans,
-                BondStereo::Trans => BondStereo::Cis,
                 BondStereo::Z => BondStereo::E,
                 BondStereo::E => BondStereo::Z,
+                BondStereo::Cis => BondStereo::Trans,
+                BondStereo::Trans => BondStereo::Cis,
                 other => other,
             };
         }
@@ -1563,32 +1919,63 @@ fn set_ring_angle(mol: &Molecule, aid2: usize, ring_size: usize) -> f64 {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DGeomHelpers::_setRingAngle
     let hyb = mol.atoms()[aid2].hybridization();
-    ideal_bond_angle(&hyb, Some(ring_size))
+    let deg_to_rad = std::f64::consts::PI / 180.0;
+    if (hyb == Hybridization::Sp2 && ring_size <= 8) || ring_size == 3 || ring_size == 4 {
+        std::f64::consts::PI * (1.0 - 2.0 / ring_size as f64)
+    } else if hyb == Hybridization::Sp3 {
+        if ring_size == 5 {
+            104.0 * deg_to_rad
+        } else {
+            109.5 * deg_to_rad
+        }
+    } else if hyb == Hybridization::Sp3d {
+        105.0 * deg_to_rad
+    } else if hyb == Hybridization::Sp3d2 {
+        90.0 * deg_to_rad
+    } else {
+        120.0 * deg_to_rad
+    }
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::set13Bounds (BoundsMatrixBuilder.cpp:417-654)
-// RDKit✔️❌: void set13Bounds(const ROMol &mol, DistGeom::BoundsMatPtr mmat,
-// RDKit✔️❌:                  ComputedData &accumData) {
-// RDKit✔️❌:   auto npt = mmat->numRows();
-// RDKit✔️❌:   CHECK_INVARIANT(npt == mol.getNumAtoms(), "Wrong size metric matrix");
-// RDKit✔️❌:   CHECK_INVARIANT(accumData.bondAngles->numRows() == mol.getNumBonds(),
-// RDKit✔️❌:                   "Wrong size bond angle matrix");
-// RDKit✔️❌:   CHECK_INVARIANT(accumData.bondAdj->numRows() == mol.getNumBonds(),
-// RDKit✔️❌:                   "Wrong size bond adjacency matrix");
-// RDKit✔️❌:   const auto rinfo = mol.getRingInfo();
-// RDKit✔️❌:   CHECK_INVARIANT(rinfo, "");
-// RDKit✔️❌:   auto atomRings = rinfo->atomRings();
-// RDKit✔️❌:   std::sort(atomRings.begin(), atomRings.end(), lessVector);
-// RDKit✔️❌:   INT_VECT visited(npt, 0);
-// RDKit✔️❌:   DOUBLE_VECT angleTaken(npt, 0.0);
-// RDKit✔️❌:   auto nb = mol.getNumBonds();
-// RDKit✔️❌:   BIT_SET donePaths(nb * nb);
-// RDKit✔️❌:   // first deal with all rings and atoms in them
-// RDKit✔️❌:   for (const auto &ringi : atomRings) { ... }
-// RDKit✔️❌:   // now deal with the remaining atoms
-// RDKit✔️❌:   for (aid2 = 0; aid2 < npt; aid2++) { ... }
-// RDKit✔️❌: }
+// RDKit✔️❗: void set13Bounds(const ROMol &mol, DistGeom::BoundsMatPtr mmat,
+// RDKit✔️❗:                  ComputedData &accumData) {
+// RDKit✔️❗:   auto npt = mmat->numRows();
+// RDKit✔️❗:   CHECK_INVARIANT(npt == mol.getNumAtoms(), "Wrong size metric matrix");
+// RDKit✔️❗:   CHECK_INVARIANT(accumData.bondAngles->numRows() == mol.getNumBonds(),
+// RDKit✔️❗:                   "Wrong size bond angle matrix");
+// RDKit✔️❗:   CHECK_INVARIANT(accumData.bondAdj->numRows() == mol.getNumBonds(),
+// RDKit✔️❗:                   "Wrong size bond adjacency matrix");
+// RDKit✔️❗:   // Since most of the special cases arise out of ring system, we will do
+// RDKit✔️❗:   // the following here:
+// RDKit✔️❗:   // - Loop over all the rings and set the 13 distances between atoms in
+// RDKit✔️❗:   // these rings.
+// RDKit✔️❗:   //   While doing this keep track of the ring atoms that have already been
+// RDKit✔️❗:   //   used as the center atom.
+// RDKit✔️❗:   // - Set the 13 distance between atoms that have a ring atom in between;
+// RDKit✔️❗:   // these can be either non-ring atoms,
+// RDKit✔️❗:   //   or a ring atom and a non-ring atom, or ring atoms that belong to
+// RDKit✔️❗:   //   different simple rings
+// RDKit✔️❗:   // - finally set all other 13 distances
+// RDKit✔️❗:   const auto rinfo = mol.getRingInfo();
+// RDKit✔️❗:   CHECK_INVARIANT(rinfo, "");
+// RDKit✔️❗:   auto atomRings = rinfo->atomRings();
+// RDKit✔️❗:   std::sort(atomRings.begin(), atomRings.end(), lessVector);
+// RDKit✔️❗:   INT_VECT visited(npt, 0);
+// RDKit✔️❗:   DOUBLE_VECT angleTaken(npt, 0.0);
+// RDKit✔️❗:   auto nb = mol.getNumBonds();
+// RDKit✔️❗:   BIT_SET donePaths(nb * nb);
+// RDKit✔️❗:   // first deal with all rings and atoms in them
+// RDKit✔️❗:   for (const auto &ringi : atomRings) { ... }
+// RDKit✔️❗:   // now deal with the remaining atoms
+// RDKit✔️❗:   for (aid2 = 0; aid2 < npt; aid2++) { ... }
+// RDKit✔️❗: }
 // END RDKIT CPP FUNCTION DGeomHelpers::set13Bounds
+//
+// Local review kept the second marker unresolved because this Rust port still
+// performs repeated bond lookups through `bond_between_idx_simple()` inside the
+// nested loops where RDKit iterates directly over bond iterators and matrix
+// cells.
 fn set_13_bounds(mol: &Molecule, mmat: &mut BoundsMatrix, accum_data: &mut ComputedData) {
     let npt = mmat.num_rows();
     assert_eq!(npt, mol.atoms().len(), "Wrong size metric matrix");
@@ -1802,15 +2189,17 @@ fn total_num_hydrogens_rdkit_like(mol: &Molecule, atom_idx: usize) -> Option<u32
 // RDKit✔️❌: void _record14Path(const ROMol &mol, unsigned int bid1, unsigned int bid2,
 // RDKit✔️❌:                    unsigned int bid3, ComputedData &accumData) {
 // RDKit✔️❌:   const Atom *atm2 = mol.getAtomWithIdx(accumData.bondAdj->getVal(bid1, bid2));
+// RDKit✔️❌:   PRECONDITION(atm2, "");
 // RDKit✔️❌:   Atom::HybridizationType ahyb2 = atm2->getHybridization();
 // RDKit✔️❌:   const Atom *atm3 = mol.getAtomWithIdx(accumData.bondAdj->getVal(bid2, bid3));
+// RDKit✔️❌:   PRECONDITION(atm3, "");
 // RDKit✔️❌:   Atom::HybridizationType ahyb3 = atm3->getHybridization();
 // RDKit✔️❌:   unsigned int nb = mol.getNumBonds();
 // RDKit✔️❌:   Path14Configuration path14;
 // RDKit✔️❌:   path14.bid1 = bid1;
 // RDKit✔️❌:   path14.bid2 = bid2;
 // RDKit✔️❌:   path14.bid3 = bid3;
-// RDKit✔️❌:   if ((ahyb2 == Atom::SP2) && (ahyb3 == Atom::SP2)) {
+// RDKit✔️❌:   if ((ahyb2 == Atom::SP2) && (ahyb3 == Atom::SP2)) {  // FIX: check for trans
 // RDKit✔️❌:     path14.type = Path14Configuration::CIS;
 // RDKit✔️❌:     accumData.cisPaths.insert(static_cast<unsigned long>(bid1) * nb * nb +
 // RDKit✔️❌:                               bid2 * nb + bid3);
@@ -1822,6 +2211,10 @@ fn total_num_hydrogens_rdkit_like(mol: &Molecule, atom_idx: usize) -> Option<u32
 // RDKit✔️❌:   accumData.paths14.push_back(path14);
 // RDKit✔️❌: }
 // END RDKIT CPP FUNCTION DGeomHelpers::_record14Path
+//
+// Performance note: the Rust path-flag store uses `Vec<u64>` with linear
+// duplicate checks, so behavior matches RDKit but insertion cost is worse than
+// RDKit's set-based storage.
 fn record_14_path(
     mol: &Molecule,
     bid1: usize,
@@ -1855,8 +2248,65 @@ fn record_14_path(
 // RDKit✔️❌: void _setInRing14Bounds(const ROMol &mol, const Bond *bnd1, const Bond *bnd2,
 // RDKit✔️❌:                         const Bond *bnd3, ComputedData &accumData,
 // RDKit✔️❌:                         DistGeom::BoundsMatPtr mmat, double *dmat,
-// RDKit✔️❌:                         int ringSize) { ... }
+// RDKit✔️❌:                         int ringSize) {
+// RDKit✔️❌:   PRECONDITION(bnd1, "");
+// RDKit✔️❌:   PRECONDITION(bnd2, "");
+// RDKit✔️❌:   PRECONDITION(bnd3, "");
+// RDKit✔️❌:   unsigned int bid1, bid2, bid3;
+// RDKit✔️❌:   bid1 = bnd1->getIdx();
+// RDKit✔️❌:   bid2 = bnd2->getIdx();
+// RDKit✔️❌:   bid3 = bnd3->getIdx();
+// RDKit✔️❌:   const Atom *atm2 = mol.getAtomWithIdx(accumData.bondAdj->getVal(bid1, bid2));
+// RDKit✔️❌:   PRECONDITION(atm2, "");
+// RDKit✔️❌:   Atom::HybridizationType ahyb2 = atm2->getHybridization();
+// RDKit✔️❌:   const Atom *atm3 = mol.getAtomWithIdx(accumData.bondAdj->getVal(bid2, bid3));
+// RDKit✔️❌:   PRECONDITION(atm3, "");
+// RDKit✔️❌:   Atom::HybridizationType ahyb3 = atm3->getHybridization();
+// RDKit✔️❌:   unsigned int aid1 = bnd1->getOtherAtomIdx(atm2->getIdx());
+// RDKit✔️❌:   unsigned int aid4 = bnd3->getOtherAtomIdx(atm3->getIdx());
+// RDKit✔️❌:   const unsigned int pid =
+// RDKit✔️❌:       std::min(aid1, aid4) * mol.getNumAtoms() + std::max(aid1, aid4);
+// RDKit✔️❌:   if (accumData.visitedBound(pid, DistType::DIST13)) {
+// RDKit✔️❌:     return;
+// RDKit✔️❌:   }
+// RDKit✔️❌:   if (dmat[std::max(aid1, aid4) * mmat->numRows() + std::min(aid1, aid4)] < 2.9) {
+// RDKit✔️❌:     return;
+// RDKit✔️❌:   }
+// RDKit✔️❌:   double bl1 = accumData.bondLengths[bid1];
+// RDKit✔️❌:   double bl2 = accumData.bondLengths[bid2];
+// RDKit✔️❌:   double bl3 = accumData.bondLengths[bid3];
+// RDKit✔️❌:   double ba12 = accumData.bondAngles->getVal(bid1, bid2);
+// RDKit✔️❌:   double ba23 = accumData.bondAngles->getVal(bid2, bid3);
+// RDKit✔️❌:   CHECK_INVARIANT(ba12 > 0.0, "");
+// RDKit✔️❌:   CHECK_INVARIANT(ba23 > 0.0, "");
+// RDKit✔️❌:   double dl, du;
+// RDKit✔️❌:   unsigned int nb = mol.getNumBonds();
+// RDKit✔️❌:   Path14Configuration path14;
+// RDKit✔️❌:   path14.bid1 = bid1;
+// RDKit✔️❌:   path14.bid2 = bid2;
+// RDKit✔️❌:   path14.bid3 = bid3;
+// RDKit✔️❌:   Bond::BondStereo stype = _getAtomStereo(bnd2, aid1, aid4);
+// RDKit✔️❌:   bool preferCis = false;
+// RDKit✔️❌:   bool preferTrans = false;
+// RDKit✔️❌:   if (ringSize <= 8 && (ahyb2 == Atom::SP2) && (ahyb3 == Atom::SP2) &&
+// RDKit✔️❌:       (stype != Bond::STEREOE && stype != Bond::STEREOTRANS)) { ... }
+// RDKit✔️❌:   else if (stype == Bond::STEREOZ || stype == Bond::STEREOCIS) { ... }
+// RDKit✔️❌:   else if (stype == Bond::STEREOE || stype == Bond::STEREOTRANS) { ... }
+// RDKit✔️❌:   if (preferCis) { ... cisPaths insert ... }
+// RDKit✔️❌:   else if (preferTrans) { ... transPaths insert ... }
+// RDKit✔️❌:   else { path14.type = Path14Configuration::OTHER; }
+// RDKit✔️❌:   accumData.paths14.push_back(path14);
+// RDKit✔️❌:   if (preferCis) { ... compute14DistCis +- GEN_DIST_TOL ... }
+// RDKit✔️❌:   else if (preferTrans) { ... compute14DistTrans +- GEN_DIST_TOL ... }
+// RDKit✔️❌:   else { ... cis/trans envelope with DIST12_DELTA widening ... }
+// RDKit✔️❌:   accumData.visited14Bounds.set(pid);
+// RDKit✔️❌:   _checkAndSetBounds(aid1, aid4, dl, du, mmat);
+// RDKit✔️❌: }
 // END RDKIT CPP FUNCTION DGeomHelpers::_setInRing14Bounds
+//
+// Performance note: behavior matches the RDKit source path, but the Rust
+// implementation still uses linear path-flag storage and helper-based bond
+// access, so this remains slower in hot paths.
 fn set_in_ring_14_bounds(
     mol: &Molecule,
     bid1: usize,
@@ -1979,7 +2429,51 @@ fn set_in_ring_14_bounds(
 // RDKit✔️❌: void _setTwoInSameRing14Bounds(const ROMol &mol, const Bond *bnd1,
 // RDKit✔️❌:                                const Bond *bnd2, const Bond *bnd3,
 // RDKit✔️❌:                                ComputedData &accumData,
-// RDKit✔️❌:                                DistGeom::BoundsMatPtr mmat, double *dmat) { ... }
+// RDKit✔️❌:                                DistGeom::BoundsMatPtr mmat, double *dmat) {
+// RDKit✔️❌:   PRECONDITION(bnd1, "");
+// RDKit✔️❌:   PRECONDITION(bnd2, "");
+// RDKit✔️❌:   PRECONDITION(bnd3, "");
+// RDKit✔️❌:   unsigned int bid1, bid2, bid3;
+// RDKit✔️❌:   bid1 = bnd1->getIdx();
+// RDKit✔️❌:   bid2 = bnd2->getIdx();
+// RDKit✔️❌:   bid3 = bnd3->getIdx();
+// RDKit✔️❌:   const Atom *atm2 = mol.getAtomWithIdx(accumData.bondAdj->getVal(bid1, bid2));
+// RDKit✔️❌:   PRECONDITION(atm2, "");
+// RDKit✔️❌:   const Atom *atm3 = mol.getAtomWithIdx(accumData.bondAdj->getVal(bid2, bid3));
+// RDKit✔️❌:   PRECONDITION(atm3, "");
+// RDKit✔️❌:   unsigned int aid1 = bnd1->getOtherAtomIdx(atm2->getIdx());
+// RDKit✔️❌:   unsigned int aid4 = bnd3->getOtherAtomIdx(atm3->getIdx());
+// RDKit✔️❌:   const unsigned int pid =
+// RDKit✔️❌:       std::min(aid1, aid4) * mol.getNumAtoms() + std::max(aid1, aid4);
+// RDKit✔️❌:   if (accumData.visitedBound(pid, DistType::DIST13)) { return; }
+// RDKit✔️❌:   if (dmat[std::max(aid1, aid4) * mmat->numRows() + std::min(aid1, aid4)] < 2.9) {
+// RDKit✔️❌:     return;
+// RDKit✔️❌:   }
+// RDKit✔️❌:   if (mol.getBondBetweenAtoms(aid1, atm3->getIdx()) ||
+// RDKit✔️❌:       mol.getBondBetweenAtoms(aid4, atm2->getIdx())) {
+// RDKit✔️❌:     return;
+// RDKit✔️❌:   }
+// RDKit✔️❌:   Atom::HybridizationType ahyb3 = atm3->getHybridization();
+// RDKit✔️❌:   Atom::HybridizationType ahyb2 = atm2->getHybridization();
+// RDKit✔️❌:   double bl1 = accumData.bondLengths[bid1];
+// RDKit✔️❌:   double bl2 = accumData.bondLengths[bid2];
+// RDKit✔️❌:   double bl3 = accumData.bondLengths[bid3];
+// RDKit✔️❌:   double ba12 = accumData.bondAngles->getVal(bid1, bid2);
+// RDKit✔️❌:   double ba23 = accumData.bondAngles->getVal(bid2, bid3);
+// RDKit✔️❌:   CHECK_INVARIANT(ba12 > 0.0, "");
+// RDKit✔️❌:   CHECK_INVARIANT(ba23 > 0.0, "");
+// RDKit✔️❌:   double dl, du;
+// RDKit✔️❌:   Path14Configuration path14;
+// RDKit✔️❌:   unsigned int nb = mol.getNumBonds();
+// RDKit✔️❌:   path14.bid1 = bid1;
+// RDKit✔️❌:   path14.bid2 = bid2;
+// RDKit✔️❌:   path14.bid3 = bid3;
+// RDKit✔️❌:   if ((ahyb2 == Atom::SP2) && (ahyb3 == Atom::SP2)) { ... trans-only branch ... }
+// RDKit✔️❌:   else { ... cis/trans envelope with strain swap and widening ... }
+// RDKit✔️❌:   _checkAndSetBounds(aid1, aid4, dl, du, mmat);
+// RDKit✔️❌:   accumData.paths14.push_back(path14);
+// RDKit✔️❌:   accumData.visited14Bounds.set(pid);
+// RDKit✔️❌: }
 // END RDKIT CPP FUNCTION DGeomHelpers::_setTwoInSameRing14Bounds
 fn set_two_in_same_ring_14_bounds(
     mol: &Molecule,
@@ -2060,6 +2554,11 @@ fn set_two_in_same_ring_14_bounds(
 // RDKit✔️✔️:                                const Bond *bnd2, const Bond *bnd3,
 // RDKit✔️✔️:                                ComputedData &accumData,
 // RDKit✔️✔️:                                DistGeom::BoundsMatPtr mmat, double *dmat) {
+// RDKit✔️✔️:   // this turns out to be very similar to all bonds in the same ring
+// RDKit✔️✔️:   // situation.
+// RDKit✔️✔️:   // There is probably some fine tuning that can be done when the atoms a2
+// RDKit✔️✔️:   // and a3 are not sp2 hybridized, but we will not worry about that now;
+// RDKit✔️✔️:   // simple use 0-180 deg for non-sp2 cases.
 // RDKit✔️✔️:   _setInRing14Bounds(mol, bnd1, bnd2, bnd3, accumData, mmat, dmat, 0);
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION DGeomHelpers::_setTwoInDiffRing14Bounds
@@ -2080,6 +2579,7 @@ fn set_two_in_diff_ring_14_bounds(
 // RDKit✔️✔️:                                const Bond *bnd2, const Bond *bnd3,
 // RDKit✔️✔️:                                ComputedData &accumData,
 // RDKit✔️✔️:                                DistGeom::BoundsMatPtr mmat, double *dmat) {
+// RDKit✔️✔️:   // once this turns out to be similar to bonds in the same ring
 // RDKit✔️✔️:   _setInRing14Bounds(mol, bnd1, bnd2, bnd3, accumData, mmat, dmat, 0);
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION DGeomHelpers::_setShareRingBond14Bounds
@@ -2135,7 +2635,61 @@ fn check_macrocycle_two_in_same_ring_amide_ester_14(
 // RDKit✔️❌:                                          const Bond *bnd2, const Bond *bnd3,
 // RDKit✔️❌:                                          ComputedData &accumData,
 // RDKit✔️❌:                                          DistGeom::BoundsMatPtr mmat,
-// RDKit✔️❌:                                          double *dmat) { ... }
+// RDKit✔️❌:                                          double *dmat) {
+// RDKit✔️❌:   unsigned int bid1, bid2, bid3;
+// RDKit✔️❌:   bid1 = bnd1->getIdx();
+// RDKit✔️❌:   bid2 = bnd2->getIdx();
+// RDKit✔️❌:   bid3 = bnd3->getIdx();
+// RDKit✔️❌:   const Atom *atm2 = mol.getAtomWithIdx(accumData.bondAdj->getVal(bid1, bid2));
+// RDKit✔️❌:   const Atom *atm3 = mol.getAtomWithIdx(accumData.bondAdj->getVal(bid2, bid3));
+// RDKit✔️❌:   unsigned int aid1 = bnd1->getOtherAtomIdx(atm2->getIdx());
+// RDKit✔️❌:   unsigned int aid4 = bnd3->getOtherAtomIdx(atm3->getIdx());
+// RDKit✔️❌:   const Atom *atm1 = mol.getAtomWithIdx(aid1);
+// RDKit✔️❌:   const Atom *atm4 = mol.getAtomWithIdx(aid4);
+// RDKit✔️❌:   const unsigned int pid =
+// RDKit✔️❌:       std::min(aid1, aid4) * mol.getNumAtoms() + std::max(aid1, aid4);
+// RDKit✔️❌:   if (accumData.visitedBound(pid, DistType::DIST13)) {
+// RDKit✔️❌:     // if this is already a 1-3 or 1-2 distance; do not overwrite
+// RDKit✔️❌:     return;
+// RDKit✔️❌:   }
+// RDKit✔️❌:   if (dmat[std::max(aid1, aid4) * mmat->numRows() + std::min(aid1, aid4)] < 2.9) {
+// RDKit✔️❌:     return;
+// RDKit✔️❌:   }
+// RDKit✔️❌:   if (mol.getBondBetweenAtoms(aid1, atm3->getIdx()) ||
+// RDKit✔️❌:       mol.getBondBetweenAtoms(aid4, atm2->getIdx())) {
+// RDKit✔️❌:     return;
+// RDKit✔️❌:   }
+// RDKit✔️❌:   double bl1 = accumData.bondLengths[bid1];
+// RDKit✔️❌:   double bl2 = accumData.bondLengths[bid2];
+// RDKit✔️❌:   double bl3 = accumData.bondLengths[bid3];
+// RDKit✔️❌:   double ba12 = accumData.bondAngles->getVal(bid1, bid2);
+// RDKit✔️❌:   double ba23 = accumData.bondAngles->getVal(bid2, bid3);
+// RDKit✔️❌:   Path14Configuration path14;
+// RDKit✔️❌:   path14.bid1 = bid1;
+// RDKit✔️❌:   path14.bid2 = bid2;
+// RDKit✔️❌:   path14.bid3 = bid3;
+// RDKit✔️❌:   if ((_checkMacrocycleTwoInSameRingAmideEster14(bnd1, bnd3, atm1, atm2, atm3,
+// RDKit✔️❌:                                                  atm4)) ||
+// RDKit✔️❌:       (_checkMacrocycleTwoInSameRingAmideEster14(bnd3, bnd1, atm4, atm3, atm2,
+// RDKit✔️❌:                                                  atm1))) {
+// RDKit✔️❌:     dl = RDGeom::compute14DistCis(bl1, bl2, bl3, ba12, ba23);
+// RDKit✔️❌:     path14.type = Path14Configuration::CIS;
+// RDKit✔️❌:   } else {
+// RDKit✔️❌:     // here we will assume anything is possible
+// RDKit✔️❌:     dl = RDGeom::compute14DistCis(bl1, bl2, bl3, ba12, ba23);
+// RDKit✔️❌:     du = RDGeom::compute14DistTrans(bl1, bl2, bl3, ba12, ba23);
+// RDKit✔️❌:     // in highly-strained situations these can get mixed up:
+// RDKit✔️❌:     if (du < dl) {
+// RDKit✔️❌:       double tmpD = dl;
+// RDKit✔️❌:       dl = du;
+// RDKit✔️❌:       du = tmpD;
+// RDKit✔️❌:     }
+// RDKit✔️❌:     path14.type = Path14Configuration::OTHER;
+// RDKit✔️❌:   }
+// RDKit✔️❌:   _checkAndSetBounds(aid1, aid4, dl, du, mmat);
+// RDKit✔️❌:   accumData.paths14.push_back(path14);
+// RDKit✔️❌:   accumData.visited14Bounds.set(pid);
+// RDKit✔️❌: }
 // END RDKIT CPP FUNCTION DGeomHelpers::_setMacrocycleTwoInSameRing14Bounds
 fn set_macrocycle_two_in_same_ring_14_bounds(
     mol: &Molecule,
@@ -2146,6 +2700,8 @@ fn set_macrocycle_two_in_same_ring_14_bounds(
     mmat: &mut BoundsMatrix,
     dmat: &[f64],
 ) {
+    // Behavior matches RDKit, but duplicate path recording and bond/neighbor lookup
+    // still go through Vec-backed helpers instead of RDKit's set and adjacency types.
     let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2);
     let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3);
     let bnd1 = &mol.bonds()[bid1];
@@ -2220,7 +2776,79 @@ fn set_macrocycle_two_in_same_ring_14_bounds(
 // RDKit✔️❌:                                          const Bond *bnd2, const Bond *bnd3,
 // RDKit✔️❌:                                          ComputedData &accumData,
 // RDKit✔️❌:                                          DistGeom::BoundsMatPtr mmat,
-// RDKit✔️❌:                                          double *) { ... }
+// RDKit✔️❌:                                          double *) {
+// RDKit✔️❌:   // This is adapted from `_setChain14Bounds`, with changes on how trans amide
+// RDKit✔️❌:   // is handled
+// RDKit✔️❌:   unsigned int bid1, bid2, bid3;
+// RDKit✔️❌:   bid1 = bnd1->getIdx();
+// RDKit✔️❌:   bid2 = bnd2->getIdx();
+// RDKit✔️❌:   bid3 = bnd3->getIdx();
+// RDKit✔️❌:   const Atom *atm2 = mol.getAtomWithIdx(accumData.bondAdj->getVal(bid1, bid2));
+// RDKit✔️❌:   const Atom *atm3 = mol.getAtomWithIdx(accumData.bondAdj->getVal(bid2, bid3));
+// RDKit✔️❌:   unsigned int aid1 = bnd1->getOtherAtomIdx(atm2->getIdx());
+// RDKit✔️❌:   unsigned int aid4 = bnd3->getOtherAtomIdx(atm3->getIdx());
+// RDKit✔️❌:   const unsigned int pid =
+// RDKit✔️❌:       std::min(aid1, aid4) * mol.getNumAtoms() + std::max(aid1, aid4);
+// RDKit✔️❌:   if (accumData.visitedBound(pid, DistType::DIST13)) {
+// RDKit✔️❌:     // if this is already a 1-3 or 1-2 distance; do not overwrite
+// RDKit✔️❌:     return;
+// RDKit✔️❌:   }
+// RDKit✔️❌:   bool setTheBound = true;
+// RDKit✔️❌:   // if the middle bond is double
+// RDKit✔️❌:   switch (bnd2->getBondType()) {
+// RDKit✔️❌:     case Bond::DOUBLE:
+// RDKit✔️❌:       // if any of the other bonds are double - the torsion angle is zero
+// RDKit✔️❌:       // this is CC=C=C situation
+// RDKit✔️❌:       if ((bnd1->getBondType() == Bond::DOUBLE) ||
+// RDKit✔️❌:           (bnd3->getBondType() == Bond::DOUBLE)) {
+// RDKit✔️❌:         path14.type = Path14Configuration::CIS;
+// RDKit✔️❌:       } else if (bnd2->getStereo() > Bond::STEREOANY) {
+// RDKit✔️❌:         Bond::BondStereo stype = _getAtomStereo(bnd2, aid1, aid4);
+// RDKit✔️❌:         if (stype == Bond::STEREOZ || stype == Bond::STEREOCIS) {
+// RDKit✔️❌:           path14.type = Path14Configuration::CIS;
+// RDKit✔️❌:         } else {
+// RDKit✔️❌:           path14.type = Path14Configuration::TRANS;
+// RDKit✔️❌:         }
+// RDKit✔️❌:       } else {
+// RDKit✔️❌:         // double bond with no stereo setting can be 0 or 180
+// RDKit✔️❌:         path14.type = Path14Configuration::OTHER;
+// RDKit✔️❌:       }
+// RDKit✔️❌:       break;
+// RDKit✔️❌:     case Bond::SINGLE:
+// RDKit✔️❌:       if ((atm2->getAtomicNum() == 16) && (atm3->getAtomicNum() == 16) &&
+// RDKit✔️❌:           (atm2->getDegree() == 2) && (atm3->getDegree() == 2)) {
+// RDKit✔️❌:         path14.type = Path14Configuration::OTHER;
+// RDKit✔️❌:       } else if ((_checkMacrocycleAllInSameRingAmideEster14(
+// RDKit✔️❌:                      mol, bnd1, bnd3, atm1, atm2, atm3, atm4)) ||
+// RDKit✔️❌:                  (_checkMacrocycleAllInSameRingAmideEster14(
+// RDKit✔️❌:                      mol, bnd3, bnd1, atm4, atm3, atm2, atm1))) {
+// RDKit✔️❌:         // we saw that the currently defined max distance for trans
+// RDKit✔️❌:         // is still a bit too short, thus we add an additional 0.1,
+// RDKit✔️❌:         // which is the max that works without triangular smoothing error
+// RDKit✔️❌:         path14.type = Path14Configuration::TRANS;
+// RDKit✔️❌:       } else if ((_checkAmideEster15(mol, bnd1, bnd3, atm1, atm2, atm3, atm4)) ||
+// RDKit✔️❌:                  (_checkAmideEster15(mol, bnd3, bnd1, atm4, atm3, atm2, atm1))) {
+// RDKit✔️❌:         // amide is cis, we're trans:
+// RDKit✔️❌:         if (atm2->getAtomicNum() == 7 && atm2->getDegree() == 3 &&
+// RDKit✔️❌:             atm1->getAtomicNum() == 1 && atm2->getTotalNumHs(true) == 1) {
+// RDKit✔️❌:           // secondary amide, this is the H
+// RDKit✔️❌:           setTheBound = false;
+// RDKit✔️❌:         } else {
+// RDKit✔️❌:           path14.type = Path14Configuration::TRANS;
+// RDKit✔️❌:         }
+// RDKit✔️❌:       } else {
+// RDKit✔️❌:         path14.type = Path14Configuration::OTHER;
+// RDKit✔️❌:       }
+// RDKit✔️❌:       break;
+// RDKit✔️❌:     default:
+// RDKit✔️❌:       path14.type = Path14Configuration::OTHER;
+// RDKit✔️❌:   }
+// RDKit✔️❌:   if (setTheBound) {
+// RDKit✔️❌:     _checkAndSetBounds(aid1, aid4, dl, du, mmat);
+// RDKit✔️❌:     accumData.paths14.push_back(path14);
+// RDKit✔️❌:     accumData.visited14Bounds.set(pid);
+// RDKit✔️❌:   }
+// RDKit✔️❌: }
 // END RDKIT CPP FUNCTION DGeomHelpers::_setMacrocycleAllInSameRing14Bounds
 fn set_macrocycle_all_in_same_ring_14_bounds(
     mol: &Molecule,
@@ -2230,6 +2858,9 @@ fn set_macrocycle_all_in_same_ring_14_bounds(
     accum_data: &mut ComputedData,
     mmat: &mut BoundsMatrix,
 ) {
+    // Behavior matches RDKit's branch structure, including the +0.1 trans-amide
+    // widening and secondary-amide-H suppression branch, but helper lookups are
+    // still repeated over Vec-backed adjacency data.
     let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2);
     let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3);
     let bnd1 = &mol.bonds()[bid1];
@@ -2369,7 +3000,64 @@ fn set_macrocycle_all_in_same_ring_14_bounds(
 // RDKit✔️❌: void _setChain14Bounds(const ROMol &mol, const Bond *bnd1, const Bond *bnd2,
 // RDKit✔️❌:                        const Bond *bnd3, ComputedData &accumData,
 // RDKit✔️❌:                        DistGeom::BoundsMatPtr mmat, double *,
-// RDKit✔️❌:                        bool forceTransAmides) { ... }
+// RDKit✔️❌:                        bool forceTransAmides) {
+// RDKit✔️❌:   const unsigned int pid =
+// RDKit✔️❌:       std::min(aid1, aid4) * mol.getNumAtoms() + std::max(aid1, aid4);
+// RDKit✔️❌:   if (accumData.visitedBound(pid, DistType::DIST13)) {
+// RDKit✔️❌:     return;
+// RDKit✔️❌:   }
+// RDKit✔️❌:   bool setTheBound = true;
+// RDKit✔️❌:   switch (bnd2->getBondType()) {
+// RDKit✔️❌:     case Bond::DOUBLE:
+// RDKit✔️❌:       // if any of the other bonds are double - the torsion angle is zero
+// RDKit✔️❌:       // this is CC=C=C situation
+// RDKit✔️❌:       if ((bnd1->getBondType() == Bond::DOUBLE) ||
+// RDKit✔️❌:           (bnd3->getBondType() == Bond::DOUBLE)) {
+// RDKit✔️❌:         path14.type = Path14Configuration::CIS;
+// RDKit✔️❌:       } else if (bnd2->getStereo() > Bond::STEREOANY) {
+// RDKit✔️❌:         Bond::BondStereo stype = _getAtomStereo(bnd2, aid1, aid4);
+// RDKit✔️❌:         if (stype == Bond::STEREOZ || stype == Bond::STEREOCIS) {
+// RDKit✔️❌:           path14.type = Path14Configuration::CIS;
+// RDKit✔️❌:         } else {
+// RDKit✔️❌:           path14.type = Path14Configuration::TRANS;
+// RDKit✔️❌:         }
+// RDKit✔️❌:       } else {
+// RDKit✔️❌:         // double bond with no stereo setting can be 0 or 180
+// RDKit✔️❌:         path14.type = Path14Configuration::OTHER;
+// RDKit✔️❌:       }
+// RDKit✔️❌:       break;
+// RDKit✔️❌:     case Bond::SINGLE:
+// RDKit✔️❌:       if ((atm2->getAtomicNum() == 16) && (atm3->getAtomicNum() == 16) &&
+// RDKit✔️❌:           (atm2->getDegree() == 2) && (atm3->getDegree() == 2)) {
+// RDKit✔️❌:         // this is *S-S* situation
+// RDKit✔️❌:         path14.type = Path14Configuration::OTHER;
+// RDKit✔️❌:       } else if ((_checkAmideEster14(bnd1, bnd3, atm1, atm2, atm3, atm4)) ||
+// RDKit✔️❌:                  (_checkAmideEster14(bnd3, bnd1, atm4, atm3, atm2, atm1))) {
+// RDKit✔️❌:         if (forceTransAmides) {
+// RDKit✔️❌:           // secondary amide H is trans to O; otherwise use cis
+// RDKit✔️❌:         } else {
+// RDKit✔️❌:           path14.type = Path14Configuration::OTHER;
+// RDKit✔️❌:         }
+// RDKit✔️❌:       } else if ((_checkAmideEster15(mol, bnd1, bnd3, atm1, atm2, atm3, atm4)) ||
+// RDKit✔️❌:                  (_checkAmideEster15(mol, bnd3, bnd1, atm4, atm3, atm2, atm1))) {
+// RDKit✔️❌:         if (forceTransAmides) {
+// RDKit✔️❌:           // secondary amide H is cis to atom 5; otherwise use trans
+// RDKit✔️❌:         } else {
+// RDKit✔️❌:           path14.type = Path14Configuration::OTHER;
+// RDKit✔️❌:         }
+// RDKit✔️❌:       } else {
+// RDKit✔️❌:         path14.type = Path14Configuration::OTHER;
+// RDKit✔️❌:       }
+// RDKit✔️❌:       break;
+// RDKit✔️❌:     default:
+// RDKit✔️❌:       path14.type = Path14Configuration::OTHER;
+// RDKit✔️❌:   }
+// RDKit✔️❌:   if (setTheBound) {
+// RDKit✔️❌:     _checkAndSetBounds(aid1, aid4, dl, du, mmat);
+// RDKit✔️❌:     accumData.paths14.push_back(path14);
+// RDKit✔️❌:     accumData.visited14Bounds.set(pid);
+// RDKit✔️❌:   }
+// RDKit✔️❌: }
 // END RDKIT CPP FUNCTION DGeomHelpers::_setChain14Bounds
 fn set_chain_14_bounds(
     mol: &Molecule,
@@ -2380,6 +3068,9 @@ fn set_chain_14_bounds(
     mmat: &mut BoundsMatrix,
     force_trans_amides: bool,
 ) {
+    // Behavior matches RDKit's branch matrix, but path flags use Vec dedup scans
+    // instead of RDKit set containers and several helper predicates rescan local
+    // adjacency/state on each branch.
     let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2);
     let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3);
     let bnd1 = &mol.bonds()[bid1];
@@ -2581,11 +3272,15 @@ fn set_chain_14_bounds(
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_checkH2NX3H1OX2 (BoundsMatrixBuilder.cpp:845-856)
 // RDKit✔️❌: bool _checkH2NX3H1OX2(const Atom *atm) {
 // RDKit✔️❌:   if ((atm->getAtomicNum() == 6) && (atm->getTotalNumHs(true) == 2)) {
+// RDKit✔️❌:     // CH2
 // RDKit✔️❌:     return true;
 // RDKit✔️❌:   } else if ((atm->getAtomicNum() == 8) && (atm->getTotalNumHs(true) == 0)) {
+// RDKit✔️❌:     // OX2
 // RDKit✔️❌:     return true;
 // RDKit✔️❌:   } else if ((atm->getAtomicNum() == 7) && (atm->getDegree() == 3) &&
 // RDKit✔️❌:              (atm->getTotalNumHs(true) == 1)) {
+// RDKit✔️❌:     // FIX: assuming hydrogen is not in the graph
+// RDKit✔️❌:     // this is NX3H1 situation
 // RDKit✔️❌:     return true;
 // RDKit✔️❌:   }
 // RDKit✔️❌:   return false;
@@ -2593,6 +3288,8 @@ fn set_chain_14_bounds(
 // END RDKIT CPP FUNCTION DGeomHelpers::_checkH2NX3H1OX2
 fn check_h2_nx3_h1_ox2(mol: &Molecule, atom_idx: usize) -> bool {
     let atom = &mol.atoms()[atom_idx];
+    // Behavior matches RDKit, but this helper recomputes total H count and neighbor
+    // degree through Rust-side scans instead of RDKit's cached atom state.
     let Some(total_hs) = total_num_hydrogens_rdkit_like(mol, atom_idx) else {
         return false;
     };
@@ -2606,7 +3303,9 @@ fn check_h2_nx3_h1_ox2(mol: &Molecule, atom_idx: usize) -> bool {
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_checkNhChChNh (BoundsMatrixBuilder.cpp:858-866)
 // RDKit✔️❌: bool _checkNhChChNh(const Atom *atm1, const Atom *atm2, const Atom *atm3,
 // RDKit✔️❌:                     const Atom *atm4) {
+// RDKit✔️❌:   // checking for [!#1]~$ch!@$ch~[!#1], where ch = [CH2,NX3H1,OX2] situation
 // RDKit✔️❌:   if ((atm1->getAtomicNum() != 1) && (atm4->getAtomicNum() != 1)) {
+// RDKit✔️❌:     // end atom not hydrogens
 // RDKit✔️❌:     if ((_checkH2NX3H1OX2(atm2)) && (_checkH2NX3H1OX2(atm3))) {
 // RDKit✔️❌:       return true;
 // RDKit✔️❌:     }
@@ -2662,7 +3361,51 @@ fn check_amide_ester_14(
 // RDKit✔️❌:                                                const Bond *, const Atom *atm1,
 // RDKit✔️❌:                                                const Atom *atm2,
 // RDKit✔️❌:                                                const Atom *atm3,
-// RDKit✔️❌:                                                const Atom *atm4) { ... }
+// RDKit✔️❌:                                                const Atom *atm4) {
+// RDKit✔️❌:   //   This is a re-write of `_checkAmideEster14` with more explicit logic
+// RDKit✔️❌:   //   on the checks It is interesting that we find with this function we
+// RDKit✔️❌:   //   get better macrocycle sampling than `_checkAmideEster14`
+// RDKit✔️❌:   unsigned int a2Num = atm2->getAtomicNum();
+// RDKit✔️❌:   unsigned int a3Num = atm3->getAtomicNum();
+// RDKit✔️❌:
+// RDKit✔️❌:   if (a3Num != 6) {
+// RDKit✔️❌:     return false;
+// RDKit✔️❌:   }
+// RDKit✔️❌:
+// RDKit✔️❌:   if (a2Num == 7 || a2Num == 8) {
+// RDKit✔️❌:     if (mol.getAtomDegree(atm2) == 3 && mol.getAtomDegree(atm3) == 3) {
+// RDKit✔️❌:       for (auto nbrIdx :
+// RDKit✔️❌:            boost::make_iterator_range(mol.getAtomNeighbors(atm2))) {
+// RDKit✔️❌:         if (nbrIdx != atm1->getIdx() && nbrIdx != atm3->getIdx()) {
+// RDKit✔️❌:           const auto &res = mol.getAtomWithIdx(nbrIdx);
+// RDKit✔️❌:           const auto &resbnd = mol.getBondBetweenAtoms(atm2->getIdx(), nbrIdx);
+// RDKit✔️❌:           if ((res->getAtomicNum() != 6 &&
+// RDKit✔️❌:                res->getAtomicNum() != 1) ||  // check is (methylated)amide
+// RDKit✔️❌:               resbnd->getBondType() != Bond::SINGLE) {
+// RDKit✔️❌:             return false;
+// RDKit✔️❌:           }
+// RDKit✔️❌:           break;
+// RDKit✔️❌:         }
+// RDKit✔️❌:       }
+// RDKit✔️❌:
+// RDKit✔️❌:       for (auto nbrIdx :
+// RDKit✔️❌:            boost::make_iterator_range(mol.getAtomNeighbors(atm3))) {
+// RDKit✔️❌:         if (nbrIdx != atm2->getIdx() && nbrIdx != atm4->getIdx()) {
+// RDKit✔️❌:           const auto &res = mol.getAtomWithIdx(nbrIdx);
+// RDKit✔️❌:           const auto &resbnd = mol.getBondBetweenAtoms(atm3->getIdx(), nbrIdx);
+// RDKit✔️❌:           if (res->getAtomicNum() != 8 ||  // check for the carbonyl oxygen
+// RDKit✔️❌:               resbnd->getBondType() != Bond::DOUBLE) {
+// RDKit✔️❌:             return false;
+// RDKit✔️❌:           }
+// RDKit✔️❌:           break;
+// RDKit✔️❌:         }
+// RDKit✔️❌:       }
+// RDKit✔️❌:
+// RDKit✔️❌:       return true;
+// RDKit✔️❌:     }
+// RDKit✔️❌:   }
+// RDKit✔️❌:   return false;
+// RDKit✔️❌: }
 // END RDKIT CPP FUNCTION DGeomHelpers::_checkMacrocycleAllInSameRingAmideEster14
 fn check_macrocycle_all_in_same_ring_amide_ester_14(
     mol: &Molecule,
@@ -2673,6 +3416,8 @@ fn check_macrocycle_all_in_same_ring_amide_ester_14(
 ) -> bool {
     let a2_num = mol.atoms()[atm2].atomic_number();
     let a3_num = mol.atoms()[atm3].atomic_number();
+    // Behavior matches RDKit's explicit neighbor scans, but our helper still
+    // performs repeated adjacency and bond lookups over Vec-backed structures.
     if a3_num != 6 {
         return false;
     }
@@ -2765,6 +3510,8 @@ fn check_amide_ester_15(
     atm3: usize,
 ) -> bool {
     let a2_num = mol.atoms()[atm2].atomic_number();
+    // Behavior matches RDKit, but total-H lookup and nested carbonyl detection
+    // still require repeated Rust-side scans.
     let total_hs_atm2 = total_num_hydrogens_rdkit_like(mol, atm2).unwrap_or(0);
     ((a2_num == 8) || (a2_num == 7 && total_hs_atm2 == 1))
         && mol.bonds()[bnd1_idx].order() == BondOrder::Single
@@ -3115,6 +3862,8 @@ fn set_15_bounds_helper(
     bid3: usize,
     kind: Path14Kind,
 ) {
+    // Behavior matches RDKit's 1-5 branch matrix, but cis/trans path flags are
+    // still searched in Vec-backed stores with linear duplicate checks.
     // RDKit❗✔️: Get shared atoms via bond adjacency matrix
     let aid2 = accum_data.get_bond_adj(nb, bid1, bid2) as usize;
     let aid1 = if mol.bonds()[bid1].begin().index() == aid2 {
@@ -3277,15 +4026,26 @@ fn set_14_bounds(
     // RDKit❗✔️:   CHECK_INVARIANT(npt == mol.getNumAtoms(), "Wrong size metric matrix");
     // RDKit❗✔️:   const size_t MAX_NUM_BONDS = static_cast<size_t>(
     // RDKit❗✔️:       std::pow(std::numeric_limits<std::uint64_t>::max(), 1. / 3));
-    // RDKit❗✔️:   if (mol.getNumBonds() >= MAX_NUM_BONDS) { throw ...; }
+    // RDKit❗✔️:   if (mol.getNumBonds() >= MAX_NUM_BONDS) {
+    // RDKit❗✔️:     throw ValueErrorException(
+    // RDKit❗✔️:         "Too many bonds in the molecule, cannot compute 1-4 bounds");
+    // RDKit❗✔️:   }
     // RDKit❗✔️:   const auto rinfo = mol.getRingInfo();
     // RDKit❗✔️:   const auto &bondRings = rinfo->bondRings();
     // RDKit❗✔️:   std::unordered_set<unsigned int> bidIsMacrocycle;
     // RDKit❗✔️:   std::unordered_set<std::uint64_t> ringBondPairs;
     // RDKit❗✔️:   std::unordered_set<std::uint64_t> donePaths;
     // RDKit❗✔️:   std::uint64_t nb = mol.getNumBonds();
-    // RDKit❗✔️:   for (const auto &bring : bondRings) { ... }
-    // RDKit❗✔️:   for (const auto bond : mol.bonds()) { ... }
+    // RDKit❗✔️:   // first we will deal with 1-4 atoms that belong to the same ring
+    // RDKit❗✔️:   for (const auto &bring : bondRings) {
+    // RDKit❗✔️:     ... same-ring dispatch to _setMacrocycleAllInSameRing14Bounds,
+    // RDKit❗✔️:         _setInRing14Bounds, or _record14Path ...
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   for (const auto bond : mol.bonds()) {
+    // RDKit❗✔️:     ... donePaths gate, then dispatch to _setMacrocycleTwoInSameRing14Bounds,
+    // RDKit❗✔️:         _setTwoInSameRing14Bounds, _setTwoInDiffRing14Bounds,
+    // RDKit❗✔️:         _setShareRingBond14Bounds, or _setChain14Bounds ...
+    // RDKit❗✔️:   }
     // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION DGeomHelpers::set14Bounds
     let npt = mmat.num_rows();
@@ -3766,14 +4526,14 @@ fn set_topol_bounds_with_outputs(
 // RDKit✔️❌:   auto *res = (PyArrayObject *)PyArray_SimpleNew(2, dims, NPY_DOUBLE);
 // RDKit✔️❌:   memcpy(static_cast<void *>(PyArray_DATA(res)),
 // RDKit✔️❌:          static_cast<void *>(mat->getData()), nats * nats * sizeof(double));
-// RDKit✔️❌:
 // RDKit✔️❌:   return PyArray_Return(res);
 // RDKit✔️❌: }
 // END RDKIT CPP FUNCTION RDKit::getMolBoundsMatrix
 //
-// Performance note: the Rust wrapper preserves RDKit's control flow and raw
-// matrix export semantics, but materializing `Vec<Vec<f64>>` is less efficient
-// than RDKit's direct NumPy buffer handoff from contiguous storage.
+// Local performance review keeps the second marker at `❌`: the Rust wrapper
+// matches RDKit's control flow and default flag wiring, but it must allocate a
+// nested `Vec<Vec<f64>>` and copy row-by-row from `BoundsMatrix` instead of
+// handing a single contiguous allocation directly to NumPy with `memcpy()`.
 pub fn dg_bounds_matrix_with_options(
     molecule: &Molecule,
     set15bounds: bool,
@@ -3789,7 +4549,7 @@ pub fn dg_bounds_matrix_with_options(
         set15bounds,
         scale_vdw,
         use_macrocycle14config,
-        false,
+        true,
         true,
         true,
     )?;

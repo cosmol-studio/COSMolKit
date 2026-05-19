@@ -257,8 +257,11 @@ pub const DG_BOUNDS_FEATURE: FeatureSpec = FeatureSpec {
            source-backed across the selected RDKit baseline: raw BoundsMatrix upper/lower triangle storage, \
            triangle smoothing, 1-2/1-3/1-4/1-5 bound setting, VDW lower bounds, collectBondsAndAngles, \
            both setTopolBounds overloads, and GetMoleculeBoundsMatrix-style wrapper defaults are implemented \
-           with focused strict tests. This is a port-closure statement for the audited DG bounds scope, not \
-           a blanket RDKit parity guarantee for every possible molecule/input outside that baseline.",
+           with focused strict tests. The final DG bounds audit found no remaining first-axis `RDKit❌*` \
+           gap in the audited call chain, but deliberate `RDKit✔️❌`, `RDKit✔️❗`, and `RDKit❗✔️` markers \
+           remain visible for performance and helper-abstraction caveats. This is a port-closure statement \
+           for the audited DG bounds scope, not a blanket RDKit parity guarantee for every possible \
+           molecule/input outside that baseline.",
 };
 
 pub const BIO_SELECTION_FEATURE: FeatureSpec = FeatureSpec {

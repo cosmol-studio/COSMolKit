@@ -1,10 +1,10 @@
 # DG Bounds RDKit Remaining Source Scan
 
-Date: 2026-05-17
+Date: 2026-05-18
 
 ## Purpose
 
-This report re-audits the DG bounds port after checklist steps `1-139`.
+This report re-audits the DG bounds port after checklist steps `1-159`.
 
 The audit baseline is the DG bounds call graph intentionally tracked by
 `dev/dg_bounds_rdkit_full_port_checklist.md`:
@@ -20,8 +20,19 @@ The audited Rust implementation lives in:
 
 ## Current Verdict
 
-Within the selected DG bounds scope, remaining direct source gaps are now
-**zero**.
+Within the selected DG bounds scope, there is no remaining known first-axis
+`RDKit❌*` gap in the active call chain, but the file is **not marker-clean**.
+
+The exact state is:
+
+1. remaining `RDKit✔️❌` markers disclose known performance/data-structure
+   costs,
+2. remaining `RDKit✔️❗` markers disclose unresolved local performance
+   equivalence,
+3. remaining `RDKit❗✔️` markers disclose conservative helper/source-framing
+   approximations,
+4. therefore this scope should be treated as behaviorally source-backed for
+   the audited baseline, not as zero-gap blanket RDKit parity.
 
 That verdict is limited to the baseline defined by the checklist:
 
@@ -32,8 +43,8 @@ That verdict is limited to the baseline defined by the checklist:
 5. the public `getMolBoundsMatrix(...)` wrapper behavior mapped to
    `dg_bounds_matrix_with_options()` / `dg_bounds_matrix()`
 
-This report does **not** make any RDKit parity claim beyond source-backed port
-closure plus local targeted tests.
+This report does **not** make any RDKit parity claim beyond the audited DG
+bounds baseline plus local targeted tests.
 
 ## Source-Closed Coverage
 
@@ -77,24 +88,25 @@ anchors and corresponding behavior/tests in the current DG bounds scope:
 27. `DGeomHelpers::_checkMacrocycleAllInSameRingAmideEster14(...)`
 28. `DGeomHelpers::_isCarbonyl(...)`
 29. `DGeomHelpers::_checkAmideEster15(...)`
-30. `DGeomHelpers::_setChain14Bounds(...)`
-31. `DGeomHelpers::_checkMacrocycleTwoInSameRingAmideEster14(...)`
-32. `DGeomHelpers::_setMacrocycleTwoInSameRing14Bounds(...)`
-33. `DGeomHelpers::_setMacrocycleAllInSameRing14Bounds(...)`
-34. `DGeomHelpers::set14Bounds(...)`
-35. `DGeomHelpers::_compute15DistsCisCis(...)`
-36. `DGeomHelpers::_compute15DistsCisTrans(...)`
-37. `DGeomHelpers::_compute15DistsTransTrans(...)`
-38. `DGeomHelpers::_compute15DistsTransCis(...)`
-39. `DGeomHelpers::_set15BoundsHelper(...)`
-40. `DGeomHelpers::set15Bounds(...)`
-41. `DGeomHelpers::collectBondsAndAngles(...)`
-42. `DGeomHelpers::setTopolBounds(...)` first overload
-43. `DGeomHelpers::setTopolBounds(...)` second overload
+30. `DGeomHelpers::_getAtomStereo(...)`
+31. `DGeomHelpers::_setChain14Bounds(...)`
+32. `DGeomHelpers::_checkMacrocycleTwoInSameRingAmideEster14(...)`
+33. `DGeomHelpers::_setMacrocycleTwoInSameRing14Bounds(...)`
+34. `DGeomHelpers::_setMacrocycleAllInSameRing14Bounds(...)`
+35. `DGeomHelpers::set14Bounds(...)`
+36. `DGeomHelpers::_compute15DistsCisCis(...)`
+37. `DGeomHelpers::_compute15DistsCisTrans(...)`
+38. `DGeomHelpers::_compute15DistsTransTrans(...)`
+39. `DGeomHelpers::_compute15DistsTransCis(...)`
+40. `DGeomHelpers::_set15BoundsHelper(...)`
+41. `DGeomHelpers::set15Bounds(...)`
+42. `DGeomHelpers::collectBondsAndAngles(...)`
+43. `DGeomHelpers::setTopolBounds(...)` first overload
+44. `DGeomHelpers::setTopolBounds(...)` second overload
 
 ### `rdDistGeom.cpp`
 
-44. `RDKit::getMolBoundsMatrix(...)`
+45. `RDKit::getMolBoundsMatrix(...)`
 
 ## Resolved Historical Blockers
 
@@ -114,6 +126,25 @@ The previous blocking gaps are now closed:
 4. Legacy local `distgeom` tests that still assumed the pre-port matrix/export
    semantics were updated to assert the current source-backed DG bounds path.
 
+## Remaining Marker Summary
+
+The final audit in
+`dev/gap_reports/dg_bounds_source_closure_final_audit.md` should be treated as
+the authoritative function-by-function verdict. The main remaining marker
+classes are:
+
+1. `triangleSmoothBounds(...)` and `getMolBoundsMatrix(...)` wrapper/export:
+   behavior confirmed, performance explicitly worse in Rust.
+2. `set12Bounds(...)` and `set13Bounds(...)`: behavior confirmed, performance
+   not upgraded to `✔️`.
+3. 1-4 helper family (`_record14Path`, `_setInRing14Bounds`,
+   `_setTwoInSameRing14Bounds`, `_setMacrocycleTwoInSameRing14Bounds`,
+   `_setMacrocycleAllInSameRing14Bounds`, `_setChain14Bounds`): behavior
+   confirmed, with deliberate `✔️❌` performance markers.
+4. helper abstractions such as `vdw_radius(...)`, `ideal_bond_angle(...)`,
+   `set_lower_bound_vdw(...)`, `set_14_bounds(...)`, and `set_15_bounds(...)`:
+   conservative `❗✔️` markers remain visible.
+
 ## Scope Boundary Notes
 
 The following RDKit functions are **not** treated as remaining DG bounds gaps in
@@ -132,25 +163,26 @@ first-class Rust surfaces, this report must be regenerated.
 
 ## Validation Used For This Rescan
 
-The local targeted validation relevant to this audit is:
+The local targeted validation relevant to the Step 153-157 closure update is:
 
 ```bash
-cargo test -p cosmolkit-core --features op-contracts-strict distgeom -- --nocapture
+cargo test -p cosmolkit-core --features op-contracts-strict get_atom_stereo -- --nocapture
 ```
 
 Result at audit time:
 
-- `66 passed; 0 failed`
+- `2 passed; 0 failed`
+- `1003 filtered out`
 
-## Zero-Gap Status
+## Closure Status
 
-For the DG bounds baseline tracked by the checklist, zero-gap status is
-**granted**.
+For the DG bounds baseline tracked by the checklist, source-backed behavioral
+closure is granted for the currently modeled input state space, with residual
+marker caveats.
 
 That means:
 
-1. every baseline direct helper/function has a source-backed Rust
-   implementation,
-2. the matrix-layer and smoothing-layer semantics that previously blocked
-   closure are now ported,
-3. the local strict `distgeom` test slice passes after the legacy test repair.
+1. every baseline direct helper/function has an active Rust implementation,
+2. no known first-axis `❌` gap remains in the audited call chain,
+3. residual marker debt is limited to explicit performance/abstraction caveats,
+4. the local strict `_getAtomStereo` validation slice passes.

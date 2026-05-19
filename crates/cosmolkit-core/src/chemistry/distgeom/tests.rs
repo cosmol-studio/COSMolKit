@@ -257,15 +257,68 @@ fn find_dispatch_triple(
 }
 
 fn flatten_topological_distances(mol: &Molecule) -> Vec<f64> {
-    let topo = compute_topological_distances(mol);
-    let n = mol.num_atoms();
-    let mut flat = vec![0.0; n * n];
-    for i in 0..n {
-        for j in 0..n {
-            flat[i * n + j] = topo[i][j] as f64;
+    compute_topological_distances(mol)
+}
+
+fn single_atom_molecule(spec: AtomSpec) -> Molecule {
+    let mut builder = MoleculeBuilder::new();
+    builder.add_atom(spec);
+    builder.build().expect("single atom molecule")
+}
+
+fn uff_atom_label(mol: &Molecule, atom_index: usize) -> String {
+    let assignment = assign_valence(mol, ValenceModel::RdkitLike).expect("valence");
+    let mut atom_degree = vec![0usize; mol.num_atoms()];
+    for bond in mol.bonds() {
+        atom_degree[bond.begin().index()] += 1;
+        atom_degree[bond.end().index()] += 1;
+    }
+    let conjugated = compute_conjugated_bonds_for_uff(mol, &assignment, &atom_degree);
+    let mut atom_has_conjugated_bond = vec![false; mol.num_atoms()];
+    for (bond_index, bond) in mol.bonds().iter().enumerate() {
+        if conjugated[bond_index] {
+            atom_has_conjugated_bond[bond.begin().index()] = true;
+            atom_has_conjugated_bond[bond.end().index()] = true;
         }
     }
-    flat
+    let hybridizations =
+        compute_hybridizations_for_uff(mol, &assignment, &atom_degree, &atom_has_conjugated_bond);
+    get_atom_label_for_uff(
+        mol,
+        &assignment,
+        &hybridizations,
+        &atom_has_conjugated_bond,
+        atom_index,
+    )
+    .expect("UFF atom label")
+}
+
+#[test]
+fn topological_distance_matches_rdkit_shortest_path_lengths_for_chain() {
+    let mol = Molecule::from_smiles("CCCC").expect("butane");
+    let dist = compute_topological_distances(&mol);
+    let n = mol.num_atoms();
+
+    assert_eq!(dist[0], 0.0);
+    assert_eq!(dist[1], 1.0);
+    assert_eq!(dist[2], 2.0);
+    assert_eq!(dist[3], 3.0);
+    assert_eq!(dist[3 * n], 3.0);
+    assert_eq!(dist[1 * n + 3], 2.0);
+}
+
+#[test]
+fn topological_distance_keeps_local_inf_for_disconnected_pairs() {
+    let mut builder = MoleculeBuilder::new();
+    builder.add_atom(AtomSpec::new(Element::C));
+    builder.add_atom(AtomSpec::new(Element::O));
+    let mol = builder.build().expect("disconnected atoms");
+    let dist = compute_topological_distances(&mol);
+
+    assert_eq!(dist[0], 0.0);
+    assert_eq!(dist[3], 0.0);
+    assert_eq!(dist[1], LOCAL_INF_DIST);
+    assert_eq!(dist[2], LOCAL_INF_DIST);
 }
 
 #[test]
@@ -372,6 +425,51 @@ fn bounds_matrix_export_preserves_rdkit_raw_triangle_layout() {
 }
 
 #[test]
+fn bounds_matrix_set_upper_if_better_only_tightens_within_current_interval() {
+    let mut mmat = BoundsMatrix::new(2);
+    mmat.set_lower(0, 1, 1.2);
+    mmat.set_upper(0, 1, 3.4);
+
+    mmat.set_upper_if_better(0, 1, 2.6);
+    assert_eq!(mmat.get_upper(0, 1), 2.6);
+
+    mmat.set_upper_if_better(0, 1, 2.9);
+    assert_eq!(mmat.get_upper(0, 1), 2.6);
+
+    mmat.set_upper_if_better(0, 1, 1.0);
+    assert_eq!(mmat.get_upper(0, 1), 2.6);
+}
+
+#[test]
+fn bounds_matrix_set_lower_if_better_only_raises_within_current_interval() {
+    let mut mmat = BoundsMatrix::new(2);
+    mmat.set_lower(0, 1, 1.2);
+    mmat.set_upper(0, 1, 3.4);
+
+    mmat.set_lower_if_better(0, 1, 2.1);
+    assert_eq!(mmat.get_lower(0, 1), 2.1);
+
+    mmat.set_lower_if_better(0, 1, 1.8);
+    assert_eq!(mmat.get_lower(0, 1), 2.1);
+
+    mmat.set_lower_if_better(0, 1, 3.6);
+    assert_eq!(mmat.get_lower(0, 1), 2.1);
+}
+
+#[test]
+fn bounds_matrix_check_valid_detects_crossed_bounds() {
+    let mut valid = BoundsMatrix::new(3);
+    valid.set_lower(0, 2, 1.3);
+    valid.set_upper(0, 2, 2.8);
+    assert!(valid.check_valid());
+
+    let mut invalid = BoundsMatrix::new(3);
+    invalid.set_lower(0, 2, 2.9);
+    invalid.set_upper(0, 2, 2.1);
+    assert!(!invalid.check_valid());
+}
+
+#[test]
 fn check_and_set_bounds_sets_uninitialized_pair_conservatively() {
     let mut mmat = BoundsMatrix::new(3);
 
@@ -459,6 +557,18 @@ fn set12_bounds_falls_back_to_vdw_when_uff_params_are_missing() {
     assert!((accum_data.bond_lengths[0] - expected).abs() < 1e-9);
     assert!((mmat.get_lower(0, 1) - (0.5 * expected)).abs() < 1e-9);
     assert!((mmat.get_upper(0, 1) - (1.5 * expected)).abs() < 1e-9);
+}
+
+#[test]
+fn set12_bounds_marks_visited_pid_using_sorted_atom_indices() {
+    let mol = Molecule::from_smiles_with_sanitize("CCO", false).expect("ethanol skeleton");
+
+    let (_mmat, accum_data) = run_set12_bounds(&mol);
+    let n = mol.num_atoms();
+
+    assert!(accum_data.visited12_bounds[1]);
+    assert!(accum_data.visited12_bounds[n + 2]);
+    assert!(!accum_data.visited12_bounds[2]);
 }
 
 #[test]
@@ -555,6 +665,86 @@ fn total_num_hydrogens_for_distgeom_counts_neighbor_hydrogens_like_rdkit() {
 }
 
 #[test]
+fn atom_charge_flags_adds_default_copper_charge_from_formal_charge() {
+    let mol = single_atom_molecule(
+        AtomSpec::new(Element::CU)
+            .with_formal_charge(1)
+            .with_no_implicit(true),
+    );
+    let assignment = assign_valence(&mol, ValenceModel::RdkitLike).expect("valence");
+    let hybridizations = vec![Hybridization::Unspecified];
+    let mut atom_key = "Cu".to_string();
+
+    add_atom_charge_flags_for_uff(0, &mol, &assignment, &mut atom_key, &hybridizations, false);
+
+    assert_eq!(atom_key, "Cu+1");
+}
+
+#[test]
+fn atom_charge_flags_adds_lanthanide_plus_three_when_tolerating_mismatch() {
+    let mol = single_atom_molecule(
+        AtomSpec::new(Element::CE)
+            .with_hybridization(Hybridization::Sp3d2)
+            .with_no_implicit(true),
+    );
+    let assignment = assign_valence(&mol, ValenceModel::RdkitLike).expect("valence");
+    let hybridizations = vec![Hybridization::Sp3d2];
+    let mut atom_key = "Ce".to_string();
+
+    add_atom_charge_flags_for_uff(0, &mol, &assignment, &mut atom_key, &hybridizations, true);
+
+    assert_eq!(atom_key, "Ce+3");
+}
+
+#[test]
+fn atom_charge_flags_rewrites_rhenium_special_labels_when_tolerating_mismatch() {
+    let mol = single_atom_molecule(
+        AtomSpec::new(Element::RE)
+            .with_hybridization(Hybridization::Sp3d)
+            .with_no_implicit(true),
+    );
+    let assignment = assign_valence(&mol, ValenceModel::RdkitLike).expect("valence");
+    let hybridizations = vec![Hybridization::Sp3d];
+    let mut atom_key = "Re6".to_string();
+
+    add_atom_charge_flags_for_uff(0, &mol, &assignment, &mut atom_key, &hybridizations, true);
+
+    assert_eq!(atom_key, "Re6+5");
+}
+
+#[test]
+fn atom_label_uses_sp2_suffix_for_nonaromatic_alkene_carbon() {
+    let mol = Molecule::from_smiles("C=C").expect("ethene");
+
+    let label = uff_atom_label(&mol, 0);
+
+    assert_eq!(label, "C_2");
+}
+
+#[test]
+fn atom_label_uses_aromatic_r_suffix_for_benzene_carbon() {
+    let mol = Molecule::from_smiles("c1ccccc1").expect("benzene");
+
+    let label = uff_atom_label(&mol, 0);
+
+    assert_eq!(label, "C_R");
+}
+
+#[test]
+fn atom_label_composes_charge_flags_after_base_label() {
+    let mol = single_atom_molecule(
+        AtomSpec::new(Element::CU)
+            .with_formal_charge(1)
+            .with_no_implicit(true),
+    );
+
+    let label = uff_atom_label(&mol, 0);
+
+    assert!(label.starts_with("Cu"));
+    assert!(label.ends_with("+1"));
+}
+
+#[test]
 fn set_lower_bound_vdw_scales_15_16_and_longer_paths_like_rdkit() {
     let mut builder = MoleculeBuilder::new();
     for _ in 0..7 {
@@ -613,6 +803,20 @@ fn set_ring_angle_matches_rdkit_ring_hybridization_special_cases() {
 
     assert!((tri - std::f64::consts::PI / 3.0).abs() < 1e-9);
     assert!((five - (104.0_f64.to_radians())).abs() < 1e-9);
+}
+
+#[test]
+fn compute13_dist_returns_bond_sum_for_linear_angle() {
+    let dist = compute_13_dist(1.4, 1.5, std::f64::consts::PI);
+
+    assert!((dist - 2.9).abs() < 1e-9);
+}
+
+#[test]
+fn compute13_dist_returns_bond_difference_for_zero_angle() {
+    let dist = compute_13_dist(1.5, 1.4, 0.0);
+
+    assert!((dist - 0.1).abs() < 1e-9);
 }
 
 #[test]
@@ -746,6 +950,27 @@ fn set_13_bounds_distributes_remaining_fused_ring_angle_like_rdkit() {
 }
 
 #[test]
+fn set_13_bounds_uses_wide_bounds_for_non_ring_degree_five_center() {
+    let mol = Molecule::from_smiles("FP(F)(F)(F)F").expect("PF5-like");
+    let center = mol
+        .atoms()
+        .iter()
+        .position(|atom| atom.atomic_number() == 15)
+        .expect("phosphorus center");
+    let ligands: Vec<usize> = neighbors_for_atom(&mol, center);
+    assert_eq!(ligands.len(), 5);
+
+    let (mmat, accum_data) = run_set13_bounds(&mol);
+    let bid1 = bond_between_idx_simple(&mol, center, ligands[0]).expect("P-F1");
+    let bid2 = bond_between_idx_simple(&mol, center, ligands[1]).expect("P-F2");
+    let dmax = accum_data.bond_lengths[bid1] + accum_data.bond_lengths[bid2];
+
+    assert!((mmat.get_lower(ligands[0], ligands[1]) - 1.0).abs() < 1e-9);
+    assert!((mmat.get_upper(ligands[0], ligands[1]) - (dmax * 1.2)).abs() < 1e-9);
+    assert!(accum_data.visited13_bounds[ligands[0] * mol.num_atoms() + ligands[1]]);
+}
+
+#[test]
 fn chain_and_carbonyl_classification_helpers_follow_rdkit_patterns() {
     let propane = Molecule::from_smiles("CCC").expect("propane");
     assert!(check_h2_nx3_h1_ox2(&propane, 1));
@@ -828,6 +1053,48 @@ fn amide_ester_classification_helpers_match_ester_patterns() {
         bnd3_single,
         single_hetero,
         carbonyl,
+    ));
+
+    let tertiary_amide = Molecule::from_smiles("CN(C)C(=O)C").expect("tertiary amide");
+    let tertiary_carbonyl = tertiary_amide
+        .atoms()
+        .iter()
+        .enumerate()
+        .find_map(|(idx, _)| is_carbonyl(&tertiary_amide, idx).then_some(idx))
+        .expect("tertiary amide carbonyl");
+    let tertiary_nitrogen = neighbors_for_atom(&tertiary_amide, tertiary_carbonyl)
+        .into_iter()
+        .find(|&nbr| {
+            let bond_idx =
+                bond_between_idx_simple(&tertiary_amide, tertiary_carbonyl, nbr).expect("bond");
+            tertiary_amide.bonds()[bond_idx].order() == BondOrder::Single
+                && tertiary_amide.atoms()[nbr].atomic_number() == 7
+        })
+        .expect("amide nitrogen");
+    let tertiary_atom1 = neighbors_for_atom(&tertiary_amide, tertiary_nitrogen)
+        .into_iter()
+        .find(|&nbr| nbr != tertiary_carbonyl)
+        .expect("substituent carbon");
+    let tertiary_bnd1 = bond_between_idx_simple(&tertiary_amide, tertiary_atom1, tertiary_nitrogen)
+        .expect("tertiary bond1");
+    let tertiary_side = neighbors_for_atom(&tertiary_amide, tertiary_carbonyl)
+        .into_iter()
+        .find(|&nbr| {
+            let bond_idx =
+                bond_between_idx_simple(&tertiary_amide, tertiary_carbonyl, nbr).expect("bond");
+            tertiary_amide.bonds()[bond_idx].order() == BondOrder::Single
+                && nbr != tertiary_nitrogen
+        })
+        .expect("carbonyl side");
+    let tertiary_bnd3 = bond_between_idx_simple(&tertiary_amide, tertiary_carbonyl, tertiary_side)
+        .expect("tertiary bond3");
+
+    assert!(!check_amide_ester_15(
+        &tertiary_amide,
+        tertiary_bnd1,
+        tertiary_bnd3,
+        tertiary_nitrogen,
+        tertiary_carbonyl,
     ));
 }
 
@@ -1006,6 +1273,20 @@ fn set_macrocycle_all_in_same_ring_14_bounds_uses_trans_plus_point_one_for_macro
     ) + 0.1;
     assert!((mmat.get_lower(atom1, atm4) - (expected - GEN_DIST_TOL)).abs() < 1e-9);
     assert!((mmat.get_upper(atom1, atm4) - (expected + GEN_DIST_TOL)).abs() < 1e-9);
+}
+
+#[test]
+fn set_macrocycle_all_in_same_ring_14_bounds_uses_other_for_plain_macrocycle_chain() {
+    let mol = Molecule::from_smiles("C1CCCCCCCCC1").expect("cyclodecane");
+    let (mut mmat, mut accum_data, _) = run_set14_same_ring_pass_only(&mol, true);
+    let (bid1, bid2, bid3, _) =
+        find_same_ring_dispatch_triple(&mol, true).expect("macrocycle path");
+
+    let before_paths = accum_data.paths14.len();
+    set_macrocycle_all_in_same_ring_14_bounds(&mol, bid1, bid2, bid3, &mut accum_data, &mut mmat);
+
+    let path = accum_data.paths14.get(before_paths).expect("new path");
+    assert_eq!(path.kind, Path14Kind::Other);
 }
 
 #[test]
@@ -1231,6 +1512,28 @@ fn record_14_path_marks_sp2_sp2_ring_paths_as_cis() {
         path14_id(mol.num_bonds(), bid1, bid2, bid3)
     ));
     assert!(has_path_flag(
+        &accum_data.cis_paths,
+        path14_id(mol.num_bonds(), bid3, bid2, bid1)
+    ));
+}
+
+#[test]
+fn record_14_path_uses_other_for_non_sp2_path_without_cis_flags() {
+    let mol = Molecule::from_smiles("CCCC").expect("butane");
+    let (_mmat, mut accum_data) = run_set13_bounds(&mol);
+    let bid1 = bond_between_idx_simple(&mol, 0, 1).expect("0-1");
+    let bid2 = bond_between_idx_simple(&mol, 1, 2).expect("1-2");
+    let bid3 = bond_between_idx_simple(&mol, 2, 3).expect("2-3");
+
+    record_14_path(&mol, bid1, bid2, bid3, &mut accum_data);
+
+    let path = accum_data.paths14.last().expect("path");
+    assert_eq!(path.kind, Path14Kind::Other);
+    assert!(!has_path_flag(
+        &accum_data.cis_paths,
+        path14_id(mol.num_bonds(), bid1, bid2, bid3)
+    ));
+    assert!(!has_path_flag(
         &accum_data.cis_paths,
         path14_id(mol.num_bonds(), bid3, bid2, bid1)
     ));
@@ -1548,6 +1851,52 @@ fn set_15_bounds_helper_uses_reversed_other_branch_formula_for_cis_path() {
 
     assert!((mmat.get_lower(0, 4) - expected_lower).abs() < 1e-12);
     assert!((mmat.get_upper(0, 4) - expected_upper).abs() < 1e-12);
+    assert!(accum_data.set15_atoms[0 * na + 4]);
+    assert!(accum_data.set15_atoms[4 * na + 0]);
+}
+
+#[test]
+fn set_15_bounds_helper_uses_reversed_other_branch_formula_for_trans_path() {
+    let mol = Molecule::from_smiles("CCCCC").expect("pentane");
+    let (mut mmat, mut accum_data) = run_set13_bounds(&mol);
+    let dmat = flatten_topological_distances(&mol);
+    let nb = mol.num_bonds();
+    let na = mol.num_atoms();
+    let bid1 = bond_between_idx_simple(&mol, 0, 1).expect("0-1");
+    let bid2 = bond_between_idx_simple(&mol, 1, 2).expect("1-2");
+    let bid3 = bond_between_idx_simple(&mol, 2, 3).expect("2-3");
+    let bid4 = bond_between_idx_simple(&mol, 3, 4).expect("3-4");
+    let path_id = bid2 as u64 * nb as u64 * nb as u64 + bid3 as u64 * nb as u64 + bid4 as u64;
+    record_path_flag(&mut accum_data.trans_paths, path_id);
+
+    set_15_bounds_helper(
+        &mol,
+        &mut mmat,
+        &mut accum_data,
+        &dmat,
+        nb,
+        na,
+        bid1,
+        bid2,
+        bid3,
+        Path14Kind::Other,
+    );
+
+    let d1 = accum_data.bond_lengths[bid1];
+    let d2 = accum_data.bond_lengths[bid2];
+    let d3 = accum_data.bond_lengths[bid3];
+    let d4 = accum_data.bond_lengths[bid4];
+    let ang12 = accum_data.get_bond_angle(nb, bid1, bid2);
+    let ang23 = accum_data.get_bond_angle(nb, bid2, bid3);
+    let ang34 = accum_data.get_bond_angle(nb, bid3, bid4);
+    let expected_lower =
+        compute_15_dist_trans_cis(d4, d3, d2, d1, ang34, ang23, ang12) - DIST15_TOL;
+    let expected_upper =
+        compute_15_dist_trans_trans(d4, d3, d2, d1, ang34, ang23, ang12) + DIST15_TOL;
+
+    assert!((mmat.get_lower(0, 4) - expected_lower).abs() < 1e-12);
+    assert!((mmat.get_upper(0, 4) - expected_upper).abs() < 1e-12);
+    assert!(!has_path_flag(&accum_data.cis_paths, path_id));
     assert!(accum_data.set15_atoms[0 * na + 4]);
     assert!(accum_data.set15_atoms[4 * na + 0]);
 }
@@ -2007,6 +2356,135 @@ fn dg_bounds_matrix_with_options_can_skip_triangle_smoothing() {
 
     assert_eq!(unsmoothed, manual_unsmoothed.data);
     assert_eq!(smoothed, manual_smoothed.data);
+}
+
+#[test]
+fn dg_bounds_matrix_with_options_forwards_macrocycle14config_like_rdkit_wrapper() {
+    let mol = Molecule::from_smiles("C1CCCCCCCCC1").expect("cyclodecane");
+    let wrapper_without_macrocycle =
+        dg_bounds_matrix_with_options(&mol, true, false, false, false).expect("wrapper plain");
+    let wrapper_with_macrocycle =
+        dg_bounds_matrix_with_options(&mol, true, false, false, true).expect("wrapper macrocycle");
+
+    let mut manual_without_macrocycle = BoundsMatrix::new(mol.num_atoms());
+    set_topol_bounds(
+        &mol,
+        &mut manual_without_macrocycle,
+        true,
+        false,
+        false,
+        false,
+        true,
+        true,
+    )
+    .expect("manual plain");
+
+    let mut manual_with_macrocycle = BoundsMatrix::new(mol.num_atoms());
+    set_topol_bounds(
+        &mol,
+        &mut manual_with_macrocycle,
+        true,
+        false,
+        true,
+        false,
+        true,
+        true,
+    )
+    .expect("manual macrocycle");
+
+    assert_eq!(wrapper_without_macrocycle, manual_without_macrocycle.data);
+    assert_eq!(wrapper_with_macrocycle, manual_with_macrocycle.data);
+}
+
+#[test]
+fn get_atom_stereo_preserves_stereo_when_stereo_atoms_match_query_order() {
+    let mut builder = MoleculeBuilder::new();
+    let a0 = builder.add_atom(AtomSpec::new(Element::C));
+    let a1 = builder.add_atom(AtomSpec::new(Element::C));
+    let a2 = builder.add_atom(AtomSpec::new(Element::C));
+    let a3 = builder.add_atom(AtomSpec::new(Element::C));
+    builder
+        .add_bond(
+            BondSpec::new(a1, a2, BondOrder::Double)
+                .with_stereo(BondStereo::Cis)
+                .with_stereo_atoms(a0, a3),
+        )
+        .expect("double bond");
+    let mol = builder.build().expect("build");
+
+    assert_eq!(
+        get_atom_stereo(&mol.bonds()[0], a0.index(), a3.index()),
+        BondStereo::Cis
+    );
+}
+
+#[test]
+fn get_atom_stereo_flips_stereo_when_stereo_atoms_reverse_query_order() {
+    let mut builder = MoleculeBuilder::new();
+    let a0 = builder.add_atom(AtomSpec::new(Element::C));
+    let a1 = builder.add_atom(AtomSpec::new(Element::C));
+    let a2 = builder.add_atom(AtomSpec::new(Element::C));
+    let a3 = builder.add_atom(AtomSpec::new(Element::C));
+    builder
+        .add_bond(
+            BondSpec::new(a1, a2, BondOrder::Double)
+                .with_stereo(BondStereo::Cis)
+                .with_stereo_atoms(a0, a3),
+        )
+        .expect("double bond");
+    let mol = builder.build().expect("build");
+
+    assert_eq!(
+        get_atom_stereo(&mol.bonds()[0], a3.index(), a0.index()),
+        BondStereo::Cis
+    );
+}
+
+#[test]
+fn get_atom_stereo_flips_stereo_when_single_end_mismatches() {
+    let mut builder = MoleculeBuilder::new();
+    let a0 = builder.add_atom(AtomSpec::new(Element::C));
+    let a1 = builder.add_atom(AtomSpec::new(Element::C));
+    let a2 = builder.add_atom(AtomSpec::new(Element::C));
+    let a3 = builder.add_atom(AtomSpec::new(Element::C));
+    builder
+        .add_bond(
+            BondSpec::new(a1, a2, BondOrder::Double)
+                .with_stereo(BondStereo::Cis)
+                .with_stereo_atoms(a0, a3),
+        )
+        .expect("double bond");
+    let mol = builder.build().expect("build");
+
+    assert_eq!(
+        get_atom_stereo(&mol.bonds()[0], a3.index(), a3.index()),
+        BondStereo::Trans
+    );
+}
+
+#[test]
+fn triangle_smooth_shared_forwarding_matches_pointer_entrypoint() {
+    let mut via_ptr = BoundsMatrix {
+        data: vec![vec![0.0; 3]; 3],
+        n: 3,
+    };
+    via_ptr.set_lower(0, 1, 0.5);
+    via_ptr.set_upper(0, 1, 1.0);
+    via_ptr.set_lower(1, 2, 4.0);
+    via_ptr.set_upper(1, 2, 5.0);
+    via_ptr.set_lower(0, 2, 1.0);
+    via_ptr.set_upper(0, 2, 10.0);
+
+    let mut via_shared = BoundsMatrix {
+        data: via_ptr.data.clone(),
+        n: via_ptr.n,
+    };
+
+    let ptr_result = triangle_smooth_bounds_ptr(&mut via_ptr, 0.0);
+    let shared_result = triangle_smooth_bounds_shared(&mut via_shared, 0.0);
+
+    assert_eq!(ptr_result, shared_result);
+    assert_eq!(via_ptr.data, via_shared.data);
 }
 
 #[test]
