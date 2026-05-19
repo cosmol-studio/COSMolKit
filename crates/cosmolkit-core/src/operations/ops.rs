@@ -1326,9 +1326,11 @@ molecule_ops! {
         parity_profile: "assign_radicals_rdkit",
     }
 
-    op with_2d_coordinates() {
-        method: with_2d_coordinates,
+    op with_2d_coordinates(params: crate::With2DCoordinatesParams) {
+        method: with_2d_coordinates_with_params,
         impl_fn: with_2d_coordinates_impl,
+        default_method: with_2d_coordinates,
+        default_args: [crate::With2DCoordinatesParams::default()],
         domain: coordinate,
         kind: weak,
         topology_edit: none,
@@ -1541,30 +1543,41 @@ fn assigned_radicals_impl() -> Result<OpOutcome, OperationError> {
 }
 
 #[mol_op_body(with_2d_coordinates, parts)]
-fn with_2d_coordinates_impl() -> Result<OpOutcome, OperationError> {
+fn with_2d_coordinates_impl(
+    params: crate::With2DCoordinatesParams,
+) -> Result<OpOutcome, OperationError> {
     let (atoms, bonds) = {
         let read = parts.begin_topology_read()?;
         (read.atoms(), read.bonds())
     };
-    let coords =
-        crate::coordinates::compute_2d_coords(atoms, bonds).map_err(|source| match source {
-            crate::coordinates::Coordinate2DError::InvalidInput(message) => {
-                OperationError::InvalidInput {
-                    operation: &WITH_2D_COORDINATES_SPEC,
-                    message,
-                }
+    let coords = crate::coordinates::compute_2d_coords_with_params(
+        atoms,
+        bonds,
+        &params.as_compute_params(),
+    )
+    .map_err(|source| match source {
+        crate::coordinates::Coordinate2DError::InvalidInput(message) => {
+            OperationError::InvalidInput {
+                operation: &WITH_2D_COORDINATES_SPEC,
+                message,
             }
-            crate::coordinates::Coordinate2DError::UnsupportedFeature(_) => {
-                OperationError::UnsupportedFeature {
-                    operation: &WITH_2D_COORDINATES_SPEC,
-                    source: crate::UnsupportedFeatureError::from_spec(
-                        &crate::COORDINATE_2D_FEATURE,
-                    ),
-                }
+        }
+        crate::coordinates::Coordinate2DError::UnsupportedFeature(_) => {
+            OperationError::UnsupportedFeature {
+                operation: &WITH_2D_COORDINATES_SPEC,
+                source: crate::UnsupportedFeatureError::from_spec(&crate::COORDINATE_2D_FEATURE),
             }
-        })?;
+        }
+    })?;
     let mut coord_block = parts.begin_coordinates_mut()?;
-    coord_block.coords_2d = Some(coords);
+    if params.clear_confs {
+        coord_block.conformers_2d.clear();
+    }
+    coord_block.conformers_2d.push(crate::Conformer2D::new(
+        coord_block.conformers_2d.len(),
+        coords,
+    ));
+    coord_block.source_coordinate_dim = Some(crate::CoordinateDimension::TwoD);
     parts.commit_coordinates(coord_block)?;
     parts.clear_cache(DerivedState::DRAWING);
     Ok(OpOutcome::Changed)
@@ -1819,6 +1832,33 @@ mod tests {
         ));
 
         assert_eq!(molecule, original);
+    }
+
+    #[test]
+    fn with_2d_coordinates_with_params_preserves_source_and_uses_parameterized_surface() {
+        let mut builder = crate::MoleculeBuilder::new();
+        let a0 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let a1 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        builder
+            .add_bond(crate::BondSpec::new(a0, a1, crate::BondOrder::Single))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+        let original = molecule.clone();
+
+        let result = molecule
+            .with_2d_coordinates_with_params(crate::With2DCoordinatesParams {
+                force_rdkit: true,
+                use_ring_templates: true,
+                ..crate::With2DCoordinatesParams::default()
+            })
+            .unwrap();
+
+        assert_eq!(molecule, original);
+        assert_eq!(result.conformers_2d().len(), 1);
+        assert_eq!(
+            result.source_coordinate_dim(),
+            Some(crate::CoordinateDimension::TwoD)
+        );
     }
 
     #[test]

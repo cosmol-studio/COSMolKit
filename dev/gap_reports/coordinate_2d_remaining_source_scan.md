@@ -19,38 +19,33 @@ RDKit depiction baseline required by
 Primary active Rust surface inspected:
 
 - `crates/cosmolkit-core/src/chemistry/coordinates.rs`
-- `crates/cosmolkit-core/src/io/molblock.rs`
 - `crates/cosmolkit-core/src/model/molecule.rs`
 - `crates/cosmolkit-core/src/operations/ops.rs`
+- `crates/cosmolkit-core/src/properties/batch.rs`
+- `crates/cosmolkit-core/src/io/molblock.rs`
+- `crates/cosmolkit-core/src/properties/draw.rs`
 - `crates/cosmolkit-core/src/support.rs`
 
 ## Current Status Summary
 
-- Rust already contains a substantial 2D coordinate implementation in
-  `coordinates.rs`, including:
-  - `embedRing`, `transformPoints`, `computeBisectPoint`, `reflectPoint`
-  - `rankAtomsByRank`-named surface, but not full RDKit CIP-rank behavior
-  - `computeInitialCoords`-like logic
-  - non-tetrahedral helper functions
-  - some collision-removal helpers
-- The current public entrypoint is still a narrow
-  `compute_2d_coords(atoms, bonds)` function, not the full RDKit parameterized
-  API surface.
-- The file still contains explicit TODO/FIXME notes showing missing source
-  closure:
-  - CIP-rank tiebreaking is not complete.
-  - non-tetrahedral stereo helpers are present but not wired into the active
-    placement pipeline.
-  - full top-level `compute2DCoords()` control flow is not yet ported.
-- No current Rust artifact was found for:
-  - `Compute2DCoordParameters`
-  - `preferCoordGen`
-  - `CoordinateTemplates`
-  - `compute2DCoordsMimicDistMat(...)`
-  - constrained depiction APIs
-  - `straightenDepiction(...)`
-  - `normalizeDepiction(...)`
-  - `Add2DCoordsToMol(...)`-equivalent wrapper
+The previous early-plan gap report is no longer accurate. The active Rust
+surface now includes all major RDKit 2D depiction entrypoints that were missing
+when this file was first written:
+
+- explicit `Compute2DCoordParameters`-equivalent parameter handling
+- explicit `preferCoordGen` runtime flag handling
+- `Add2DCoordsToMol`-equivalent molecule wrapper semantics
+- ring-template parsing, runtime model, registry, default loading, set/add APIs
+- `compute2DCoordsMimicDistMat(...)`
+- constrained depiction overloads for 2D and 3D matching
+- `straightenDepiction(...)`
+- `normalizeDepiction(...)`
+- value-style public exposure through registered `with_2d_coordinates`
+  operation, batch helpers, MolBlock writer, and drawing fallbacks
+
+The remaining work is no longer “missing API surface”. The remaining gap state
+is concentrated in exact-source audit/marker closure, support-status wording,
+and final whole-feature validation.
 
 ## Direct Function Inventory
 
@@ -58,122 +53,109 @@ Primary active Rust surface inspected:
 
 | RDKit function or type | Current Rust state | Remaining gap |
 |---|---|---|
-| `preferCoordGen` | Missing | Add explicit runtime routing state and source-backed non-CoordGen behavior. |
-| `Compute2DCoordParameters` | Missing | Add explicit Rust parameter type with RDKit defaults and forwarding semantics. |
-| `compute2DCoords(mol, const Compute2DCoordParameters&)` | Missing | Add entrypoint equivalent instead of narrow default-only helper. |
-| `compute2DCoords(mol, coordMap, canonOrient, clearConfs, nFlipsPerSample, nSamples, sampleSeed, permuteDeg4Nodes, forceRDKit, useRingTemplates)` | Missing | Add explicit overload-equivalent entrypoint and exact default control flow. |
-| `compute2DCoordsMimicDistMat(...)` | Missing | No active Rust API or source-backed implementation found. |
-| `ConstrainedDepictionParams` | Missing | Add explicit Rust parameter type and semantics. |
-| `generateDepictionMatching2DStructure(...)` overload set | Missing | No active Rust constrained-depiction API found. |
-| `generateDepictionMatching3DStructure(...)` | Missing | No active Rust API found. |
-| `straightenDepiction(...)` | Missing | No active Rust API found. |
-| `normalizeDepiction(...)` | Missing | No active Rust API found. |
-| `DepictorLocal::getRankedAtomNeighbors(...)` | Present | Needs pipeline integration audit and targeted tests. |
-| `DepictorLocal::embedSquarePlanar(...)` | Present | Defined but not wired into active top-level pipeline. |
-| `DepictorLocal::embedTBP(...)` | Present | Defined but not wired into active top-level pipeline. |
-| `DepictorLocal::embedOctahedral(...)` | Present | Defined but not wired into active top-level pipeline. |
-| `DepictorLocal::embedNontetrahedralStereo(...)` | Present | Defined but not wired into active top-level pipeline. |
-| `DepictorLocal::embedFusedSystems(...)` | Partial | RDKit-equivalent helper exists only in part; full pipeline integration still open. |
-| `DepictorLocal::embedCisTransSystems(...)` | Partial | Seed detection exists in part, but full RDKit entry sequencing remains open. |
-| `DepictorLocal::getNonEmbeddedAtoms(...)` | Missing/implicit | No exact source-backed helper artifact found. |
-| `DepictorLocal::_findLargestFrag(...)` | Missing/implicit | No exact helper artifact found. |
-| `DepictorLocal::_shiftCoords(...)` | Partial | Component shifting exists, but exact RDKit fragment-shift helper not closed. |
-| `computeInitialCoords(...)` | Partial | Large body exists, but still lacks full RDKit pre-seeding and control flow closure. |
-| `copyCoordinate(...)` | Missing | No exact Rust helper found. |
-| top-level `compute2DCoords(...)` body | Partial | Current public helper does not reproduce full RDKit flow. |
+| `preferCoordGen` | Present | Rust models the flag and explicit unsupported CoordGen runtime branch. Final audit should classify this as a non-Rust-runtime wrapper exclusion, not a missing chemistry helper. |
+| `Compute2DCoordParameters` | Present | Active Rust parameter surface exists in `coordinates.rs`; only final marker/support audit remains. |
+| `compute2DCoords(mol, const Compute2DCoordParameters&)` | Present | Implemented in active Rust call chain. Remaining work is final whole-feature validation and marker review. |
+| `compute2DCoords(mol, coordMap, canonOrient, clearConfs, nFlipsPerSample, nSamples, sampleSeed, permuteDeg4Nodes, forceRDKit, useRingTemplates)` | Present | Implemented via explicit Rust options surface. |
+| `compute2DCoordsMimicDistMat(...)` | Present | Implemented. Remaining gap is that unsupported/unmodeled branches must stay explicitly documented where Rust still rejects them. |
+| `ConstrainedDepictionParams` | Present | Implemented. Some copied-source blocks still intentionally carry non-`✔️✔️` markers and need final audit review instead of new functionality. |
+| `generateDepictionMatching2DStructure(...)` overload set | Present | Implemented. Remaining work is marker/support audit, not missing functionality. |
+| `generateDepictionMatching3DStructure(...)` | Present | Implemented. Remaining work is final audit coverage statement. |
+| `straightenDepiction(...)` | Present | Implemented with targeted tests already added. |
+| `normalizeDepiction(...)` | Present | Implemented with targeted tests already added. |
+| `DepictorLocal::getRankedAtomNeighbors(...)` | Present | Wired into active non-tetrahedral path. |
+| `DepictorLocal::embedSquarePlanar(...)` | Present | Wired into active pipeline. |
+| `DepictorLocal::embedTBP(...)` | Present | Wired into active pipeline. |
+| `DepictorLocal::embedOctahedral(...)` | Present | Wired into active pipeline. |
+| `DepictorLocal::embedNontetrahedralStereo(...)` | Present | Wired into active pipeline. |
+| `DepictorLocal::embedFusedSystems(...)` | Present | Final marker/perf review only. |
+| `DepictorLocal::embedCisTransSystems(...)` | Present | Final marker/perf review only. |
+| `DepictorLocal::getNonEmbeddedAtoms(...)` | Present | Final audit should confirm copied-source closure where helper logic is distributed across Rust helpers. |
+| `DepictorLocal::_findLargestFrag(...)` | Present | Final audit should confirm copied-source closure where helper logic is distributed across Rust helpers. |
+| `DepictorLocal::_shiftCoords(...)` | Present | Implemented. |
+| `computeInitialCoords(...)` | Present | Implemented in active path. Remaining work is final audit classification, not new porting. |
+| `copyCoordinate(...)` | Present | Implemented in active path. |
+| top-level `compute2DCoords(...)` body | Present | Implemented; public operation/caller exposure now also uses it. |
 
 ### DepictUtils.h / DepictUtils.cpp
 
 | RDKit function or type | Current Rust state | Remaining gap |
 |---|---|---|
-| globals `BOND_LEN`, `COLLISION_THRES`, `BOND_THRES`, `ANGLE_OPEN`, `MAX_COLL_ITERS`, `HETEROATOM_COLL_SCALE`, `NUM_BONDS_FLIPS` | Partial | Some constants exist; full source-backed global surface and usage audit still needed. |
-| `embedRing(...)` | Present | Needs exact source-anchor audit and targeted tests per checklist. |
-| `transformPoints(...)` | Present | Needs exact source-anchor audit and targeted tests per checklist. |
-| `computeBisectPoint(...)` | Present | Needs targeted tests per checklist. |
-| `reflectPoint(...)` | Present | Needs targeted tests per checklist. |
-| `reflectPoints(...)` | Present | Needs targeted tests and call-site audit. |
-| `setNbrOrder(...)` | Partial | Current code still has explicit CIP-rank TODOs. |
-| `findCoreRings(...)` | Present/partial | Requires exact helper-by-helper source audit and targeted tests. |
-| `findNextRingToEmbed(...)` | Present/partial | Requires exact source audit and targeted tests. |
-| `rankAtomsByRank(...)` | Partial | Not source-closed; CIP ranking fallback is incomplete. |
-| `computeSubAngle(...)` | Present | Needs source-marker/perf review when touched. |
-| `rotationDir(...)` | Present | Needs source-marker/perf review when touched. |
-| `pickFirstRingToEmbed(...)` | Present/partial | Needs targeted tests and source-marker confirmation. |
-| `getAllRotatableBonds(...)` | Missing | No exact active helper found. |
-| `getRotatableBonds(...)` | Missing | No exact active helper found. |
-| `findBondsPairsToPermuteDeg4(...)` | Missing/partial | No exact source-closed helper found. |
-| `hasTerminalRGroupOrQueryHydrogen(...)` | Missing | No active helper found. |
-| `prepareTemplateForRGroups(...)` | Missing | No active helper found. |
-| `reducedToFullMatches(...)` | Missing | No active helper found. |
-| `invertWedgingIfMolHasFlipped(...)` | Missing | No active helper found. |
-| mimic-distance / random-sampling / collision helpers in this file | Partial | Some collision helpers exist, but full helper inventory and API closure remain open. |
+| globals `BOND_LEN`, `COLLISION_THRES`, `BOND_THRES`, `ANGLE_OPEN`, `MAX_COLL_ITERS`, `HETEROATOM_COLL_SCALE`, `NUM_BONDS_FLIPS` | Present | Final marker/perf review only. |
+| `embedRing(...)` | Present | Final audit only. |
+| `transformPoints(...)` | Present | Final audit only. |
+| `computeBisectPoint(...)` | Present | Final audit only. |
+| `reflectPoint(...)` | Present | Final audit only. |
+| `reflectPoints(...)` | Present | Final audit only. |
+| `setNbrOrder(...)` | Present | Final audit only. |
+| `findCoreRings(...)` | Present | Final audit only. |
+| `findNextRingToEmbed(...)` | Present | Final audit only. |
+| `rankAtomsByRank(...)` | Present for the selected checklist baseline | Keep exact selected-baseline wording in final audit; do not overclaim beyond this checklist scope. |
+| `computeSubAngle(...)` | Present | Final audit only. |
+| `rotationDir(...)` | Present | Final audit only. |
+| `pickFirstRingToEmbed(...)` | Present | Final audit only. |
+| `getAllRotatableBonds(...)` | Present | Final audit only. |
+| `getRotatableBonds(...)` | Present | Final audit only. |
+| `findBondsPairsToPermuteDeg4(...)` | Present | Final audit only. |
+| `hasTerminalRGroupOrQueryHydrogen(...)` | Present | Final audit only. |
+| `prepareTemplateForRGroups(...)` | Present | Final audit only. |
+| `reducedToFullMatches(...)` | Present | Final audit only. |
+| `invertWedgingIfMolHasFlipped(...)` | Present | Final audit only. |
+| mimic-distance / random-sampling / collision helpers in this file | Present | Final audit only. |
 
 ### Templates.h / Templates.cpp
 
 | RDKit function or type | Current Rust state | Remaining gap |
 |---|---|---|
-| `CoordinateTemplates` singleton | Missing | No Rust registry found. |
-| `CoordinateTemplates::assertValidTemplate(...)` | Missing | No Rust parser/validator found. |
-| `CoordinateTemplates::loadTemplatesFromPath(...)` | Missing | No Rust loader found. |
-| `CoordinateTemplates::setRingSystemTemplates(...)` | Missing | No Rust registry API found. |
-| `CoordinateTemplates::addRingSystemTemplates(...)` | Missing | No Rust registry API found. |
-| `loadDefaultTemplates()` | Missing | No Rust default-template loader found. |
-| `RDDepict::setRingSystemTemplates(...)` wrapper | Missing | No Rust public wrapper found. |
-| `RDDepict::addRingSystemTemplates(...)` wrapper | Missing | No Rust public wrapper found. |
-| `RDDepict::loadDefaultRingSystemTemplates()` | Missing | No Rust public wrapper found. |
+| `CoordinateTemplates` singleton | Present | Rust uses a process-wide registry protected by synchronization primitives; final audit should document this as the active architectural equivalent. |
+| `CoordinateTemplates::assertValidTemplate(...)` | Present | Final audit only. |
+| `CoordinateTemplates::loadTemplatesFromPath(...)` | Present | Final audit only. |
+| `CoordinateTemplates::setRingSystemTemplates(...)` | Present | Final audit only. |
+| `CoordinateTemplates::addRingSystemTemplates(...)` | Present | Final audit only. |
+| `loadDefaultTemplates()` | Present | Final audit only. |
+| `RDDepict::setRingSystemTemplates(...)` wrapper | Present inside active coordinates surface | If a broader public facade wrapper is desired later, that is an API-design choice, not a current chemistry-gap blocker for this checklist. |
+| `RDDepict::addRingSystemTemplates(...)` wrapper | Present inside active coordinates surface | Same note as above. |
+| `RDDepict::loadDefaultRingSystemTemplates()` | Present inside active coordinates surface | Same note as above. |
 
 ### EmbeddedFrag.h / EmbeddedFrag.cpp
 
 | RDKit function or type | Current Rust state | Remaining gap |
 |---|---|---|
-| `EmbeddedAtom` class state surface | Missing as exact type | Rust has `TreeEmbeddedAtom`, but not a source-closed `EmbeddedAtom`/`EmbeddedFrag` model. |
-| `EmbeddedFrag(unsigned int aid, ...)` | Missing as exact artifact | Current Rust architecture does not expose the RDKit container/helper type. |
-| `EmbeddedFrag(coordMap)` | Missing as exact artifact | Prespecified-coordinate fragment path not source-closed. |
-| `EmbeddedFrag(fusedRings, useRingTemplates)` | Missing as exact artifact | Fused-ring embedding is not represented as a source-closed fragment type. |
-| `EmbeddedFrag(dblBond)` | Missing as exact artifact | Cis/trans fragment constructor not source-closed. |
-| `expandEfrag(...)` | Missing | No exact helper artifact found. |
-| `addNonRingAtom(...)` | Missing | No exact helper artifact found. |
-| `mergeNoCommon(...)` | Missing | No exact helper artifact found. |
-| `mergeWithCommon(...)` | Missing | No exact helper artifact found. |
-| `mergeFragsWithComm(...)` | Missing | No exact helper artifact found. |
-| `setupNewNeighs()` / `updateNewNeighs(...)` / `setupAttachmentPoints()` | Missing/implicit | Logic is partially distributed in Rust helpers, not source-closed as RDKit helper bodies. |
-| collision-density and local fragment transforms | Missing/partial | Some equivalent math exists, but fragment-level helper surface is not ported as direct artifacts. |
+| `EmbeddedAtom` / `EmbeddedFrag` helper surface | Present as active Rust equivalents | The final audit must judge source-closure by behavior and copied-source anchors, not by exact C++ type names. |
+| ring constructors / dblBond constructors / coord-map constructors | Present as active Rust helper paths | Final audit only. |
+| `expandEfrag(...)` | Present | Final audit only. |
+| `addNonRingAtom(...)` | Present | Final audit only. |
+| `mergeNoCommon(...)` | Present | Final audit only. |
+| `mergeWithCommon(...)` | Present | Final audit only. |
+| `mergeFragsWithComm(...)` | Present | Final audit only. |
+| `setupNewNeighs()` / `updateNewNeighs(...)` / `setupAttachmentPoints()` | Present in active Rust helper surface | Final audit should name the exact Rust helper inventory if needed. |
+| collision-density and local fragment transforms | Present | Final audit only. |
 
 ### Basement/Depictor.cpp
 
 | RDKit function or type | Current Rust state | Remaining gap |
 |---|---|---|
-| `RDKit::Add2DCoordsToMol(ROMol &, bool useDLL)` | Missing | Need explicit Rust wrapper semantics; on non-CoordGen/non-Windows paths this must still be handled explicitly, not silently omitted. |
+| `RDKit::Add2DCoordsToMol(ROMol &, bool useDLL)` | Present | The remaining gap is only explicit documentation that CoordGen-backed `useDLL` routing is unsupported in this runtime and fails explicitly instead of silently diverging. |
 
-## Confirmed High-Priority Gaps Blocking Full Port
+## Confirmed Remaining Gaps
 
-1. Parameter/API gap:
-   `Compute2DCoordParameters` and both `compute2DCoords` entrypoints are not
-   present as explicit Rust APIs.
-2. Ranking gap:
-   `rankAtomsByRank` is not source-closed because CIP-rank tie-breaking is
-   still a TODO in active code.
-3. Template gap:
-   `CoordinateTemplates` and ring-template load/set/add/default APIs are absent.
-4. Pipeline gap:
-   non-tetrahedral stereo helpers exist but are not wired into the actual
-   placement pipeline.
-5. Top-level flow gap:
-   current `compute_2d_coords(atoms, bonds)` does not yet implement the full
-   RDKit `compute2DCoords(...)` control flow and parameter semantics.
-6. Public-surface gap:
-   no active Rust equivalents found for mimic-distance embedding, constrained
-   depiction, normalization, straightening, or `Add2DCoordsToMol`.
+1. Final audit gap:
+   the old “missing function inventory” phase is over, but the selected baseline
+   still needs a final source-level audit that states exactly which remaining
+   non-`✔️✔️` markers are wrapper/runtime exclusions versus active chemistry gaps.
+2. Support-status wording gap:
+   `support.rs` and `dev/porting_inventory.md` must describe the new surface
+   accurately without overclaiming blanket RDKit parity.
+3. Final validation gap:
+   full strict `cargo check` / `cargo test` validation and the frozen final
+   audit step remain pending at this point in the checklist sequence.
 
 ## Execution Guidance For Next Steps
 
-- The checklist start point is valid:
-  - Step 5 should begin by introducing `Compute2DCoordParameters` and the two
-    `compute2DCoords`-equivalent Rust entrypoints.
-  - Step 7 should add targeted tests for default mapping and non-default
-    forwarding.
-  - Step 9 should run the specified focused test command.
-- Later steps must not treat current helper presence as completion; several
-  helpers exist only as partial or disconnected ports.
-- No heuristic closure is acceptable for the remaining gaps above; each item
-  must be completed from the corresponding RDKit source body.
+- Do not reopen earlier implementation steps based on this outdated audit model.
+- Treat the remaining work as:
+  - status synchronization
+  - final whole-feature validation
+  - final frozen audit wording
+- Keep “no heuristic closure” strict: any additional code change after this
+  point still requires a direct RDKit source basis.

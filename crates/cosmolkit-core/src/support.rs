@@ -108,7 +108,7 @@ pub const COORDINATE_2D_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::TopologyOperation,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Generate 2D coordinates while preserving molecule value semantics. Invalid inputs and unported depiction branches fail explicitly.",
+    docs: "Experimental RDKit-aligned 2D depiction surface with value semantics. The active Rust path includes parameterized compute2DCoords entrypoints, preferCoordGen/forceRDKit routing, ring-template registry loading, mimic-distance embedding, constrained 2D/3D depiction matching, normalize/straighten helpers, and registered with_2d_coordinates exposure used by batch, MolBlock, and drawing callers. CoordGen-backed runtime branches are not available in this build and fail explicitly instead of silently diverging; final whole-surface audit/validation remains tracked separately.",
 };
 
 pub const SANITIZE_FEATURE: FeatureSpec = FeatureSpec {

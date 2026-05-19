@@ -23,9 +23,76 @@ pub enum CoordinateDimension {
     ThreeD,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Conformer2D {
+    id: usize,
+    coords: Vec<[f64; 2]>,
+    props: BTreeMap<String, String>,
+}
+
+impl Conformer2D {
+    #[must_use]
+    pub fn new(id: usize, coords: Vec<[f64; 2]>) -> Self {
+        Self {
+            id,
+            coords,
+            props: BTreeMap::new(),
+        }
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> usize {
+        self.id
+    }
+
+    #[must_use]
+    pub fn coords(&self) -> &[[f64; 2]] {
+        &self.coords
+    }
+
+    pub fn coords_mut(&mut self) -> &mut [[f64; 2]] {
+        &mut self.coords
+    }
+
+    #[must_use]
+    pub fn props(&self) -> &BTreeMap<String, String> {
+        &self.props
+    }
+
+    #[must_use]
+    pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.props.insert(key.into(), value.into());
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_id(mut self, id: usize) -> Self {
+        self.id = id;
+        self
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn remapped_to_kept_atoms(&self, kept_old_indices: &[usize], id: usize) -> Self {
+        let coords = kept_old_indices
+            .iter()
+            .filter_map(|old_idx| self.coords.get(*old_idx).copied())
+            .collect();
+        Self {
+            id,
+            coords,
+            props: self.props.clone(),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn push_coord(&mut self, coord: [f64; 2]) {
+        self.coords.push(coord);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ConformerStore {
-    pub coords_2d: Option<Vec<[f64; 2]>>,
+    pub conformers_2d: Vec<Conformer2D>,
     pub conformers_3d: Vec<Conformer3D>,
     pub source_coordinate_dim: Option<CoordinateDimension>,
 }
@@ -85,6 +152,12 @@ impl Conformer3D {
     #[must_use]
     pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.props.insert(key.into(), value.into());
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_id(mut self, id: usize) -> Self {
+        self.id = id;
         self
     }
 
@@ -279,12 +352,12 @@ impl Default for TopologyBlock {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct CoordinateBlock {
-    /// One optional 2D coordinate row per atom.
+    /// Zero or more 2D conformers.
     ///
     /// Coordinates are stored in the same atom-index order as `TopologyBlock`.
     /// Any operation changing atom indices must remap or drop this block through
     /// a topology report. Do not mutate this block directly from operation code.
-    pub(crate) coords_2d: Option<Vec<[f64; 2]>>,
+    pub(crate) conformers_2d: Vec<Conformer2D>,
     pub(crate) conformers_3d: Vec<Conformer3D>,
     pub(crate) source_coordinate_dim: Option<CoordinateDimension>,
 }
@@ -552,32 +625,25 @@ impl TopologyBlock {
 impl CoordinateBlock {
     #[allow(dead_code)]
     pub(crate) fn remap_topology(&mut self, mapping: &TopologyMapping) {
-        if let Some(coords_2d) = &self.coords_2d {
-            self.coords_2d = Some(
-                mapping
-                    .atoms
-                    .new_to_old
-                    .iter()
-                    .filter_map(|old_atom| {
-                        old_atom.and_then(|atom| coords_2d.get(atom.index()).copied())
-                    })
-                    .collect(),
-            );
-        }
+        let kept_old_indices: Vec<_> = mapping
+            .atoms
+            .new_to_old
+            .iter()
+            .filter_map(|old_atom| old_atom.map(AtomId::index))
+            .collect();
+
+        self.conformers_2d = self
+            .conformers_2d
+            .iter()
+            .enumerate()
+            .map(|(id, conformer)| conformer.remapped_to_kept_atoms(&kept_old_indices, id))
+            .collect();
 
         self.conformers_3d = self
             .conformers_3d
             .iter()
             .enumerate()
-            .map(|(id, conformer)| {
-                let kept_old_indices: Vec<_> = mapping
-                    .atoms
-                    .new_to_old
-                    .iter()
-                    .filter_map(|old_atom| old_atom.map(AtomId::index))
-                    .collect();
-                conformer.remapped_to_kept_atoms(&kept_old_indices, id)
-            })
+            .map(|(id, conformer)| conformer.remapped_to_kept_atoms(&kept_old_indices, id))
             .collect();
     }
 }
@@ -674,7 +740,15 @@ impl Molecule {
 
     #[must_use]
     pub fn coords_2d(&self) -> Option<&[[f64; 2]]> {
-        self.coordinates.coords_2d.as_deref()
+        self.coordinates
+            .conformers_2d
+            .first()
+            .map(Conformer2D::coords)
+    }
+
+    #[must_use]
+    pub fn conformers_2d(&self) -> &[Conformer2D] {
+        &self.coordinates.conformers_2d
     }
 
     #[must_use]

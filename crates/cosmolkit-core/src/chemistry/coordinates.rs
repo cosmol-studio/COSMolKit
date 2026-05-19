@@ -96,8 +96,7 @@ struct RdkitTemplateRuntimeModel {
 
 type RdkitTemplateBuckets = HashMap<usize, Vec<RdkitTemplateRuntimeModel>>;
 
-const RDKIT_TEMPLATE_SMARTS_SOURCE: &str =
-    include_str!("../data/rdkit_depictor_template_smarts.h");
+const RDKIT_TEMPLATE_SMARTS_SOURCE: &str = include_str!("../data/rdkit_depictor_template_smarts.h");
 
 #[derive(Debug, Default)]
 struct RdkitCoordinateTemplateRegistry {
@@ -1000,6 +999,50 @@ impl Default for Compute2DCoordParameters<'_> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct With2DCoordinatesParams {
+    pub canon_orient: bool,
+    pub clear_confs: bool,
+    pub n_flips_per_sample: u32,
+    pub n_samples: u32,
+    pub sample_seed: i32,
+    pub permute_deg4_nodes: bool,
+    pub force_rdkit: bool,
+    pub use_ring_templates: bool,
+}
+
+impl Default for With2DCoordinatesParams {
+    fn default() -> Self {
+        Self {
+            canon_orient: true,
+            clear_confs: true,
+            n_flips_per_sample: 0,
+            n_samples: 0,
+            sample_seed: 0,
+            permute_deg4_nodes: false,
+            force_rdkit: false,
+            use_ring_templates: false,
+        }
+    }
+}
+
+impl With2DCoordinatesParams {
+    #[must_use]
+    pub(crate) fn as_compute_params(&self) -> Compute2DCoordParameters<'static> {
+        Compute2DCoordParameters {
+            coord_map: None,
+            canon_orient: self.canon_orient,
+            clear_confs: self.clear_confs,
+            n_flips_per_sample: self.n_flips_per_sample,
+            n_samples: self.n_samples,
+            sample_seed: self.sample_seed,
+            permute_deg4_nodes: self.permute_deg4_nodes,
+            force_rdkit: self.force_rdkit,
+            use_ring_templates: self.use_ring_templates,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Compute2DCoordsMimicDistMatParameters {
     pub(crate) canon_orient: bool,
@@ -1023,6 +1066,31 @@ impl Default for Compute2DCoordsMimicDistMatParameters {
             sample_seed: 25,
             permute_deg4_nodes: true,
             force_rdkit: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ConstrainedDepictionParams {
+    pub(crate) accept_failure: bool,
+    pub(crate) force_rdkit: bool,
+    pub(crate) allow_rgroups: bool,
+    pub(crate) align_only: bool,
+    pub(crate) adjust_molblock_wedging: bool,
+    pub(crate) existing_conf_id: isize,
+    pub(crate) use_ring_templates: bool,
+}
+
+impl Default for ConstrainedDepictionParams {
+    fn default() -> Self {
+        Self {
+            accept_failure: false,
+            force_rdkit: false,
+            allow_rgroups: false,
+            align_only: false,
+            adjust_molblock_wedging: true,
+            existing_conf_id: -1,
+            use_ring_templates: false,
         }
     }
 }
@@ -5042,6 +5110,111 @@ fn rdkit_reduced_to_full_matches(
     }
 }
 
+fn rdkit_select_3d_conformer_index(
+    mol: &Molecule,
+    conf_id: isize,
+) -> Result<usize, Coordinate2DError> {
+    let conformers = mol.conformers_3d();
+    if conformers.is_empty() {
+        return Err(Coordinate2DError::InvalidInput(
+            "constrained depiction requires an available 3D conformer",
+        ));
+    }
+    if conf_id == -1 {
+        return Ok(0);
+    }
+    let requested = usize::try_from(conf_id).map_err(|_| {
+        Coordinate2DError::InvalidInput("constrained depiction conformer id must be >= -1")
+    })?;
+    conformers
+        .iter()
+        .position(|conformer| conformer.id() == requested)
+        .ok_or(Coordinate2DError::InvalidInput(
+            "constrained depiction conformer id is out of range",
+        ))
+}
+
+// RDKit✔️✔️: bool isAtomTerminalRGroupOrQueryHydrogen(const Atom *atom) {
+// RDKit✔️✔️:   return (atom->getDegree() == 1 && isAtomDummy(atom)) ||
+// RDKit✔️✔️:          (atom->hasQuery() &&
+// RDKit✔️✔️:           describeQuery(atom).find("AtomAtomicNum 1 = val") !=
+// RDKit✔️✔️:               std::string::npos);
+// RDKit✔️✔️: }
+// RDKit✔️❌: const MatchVectType &getMostSubstitutedCoreMatch(
+// RDKit✔️❌:     const ROMol &mol, const ROMol &core,
+// RDKit✔️❌:     const std::vector<MatchVectType> &matches) {
+// RDKit✔️❌:   detail::ScoreMatchesByDegreeOfCoreSubstitution matchScorer(mol, core,
+// RDKit✔️❌:                                                              matches);
+// RDKit✔️❌:   return matchScorer.getMostSubstitutedCoreMatch();
+// RDKit✔️❌: }
+// RDKit✔️❌: std::vector<MatchVectType> sortMatchesByDegreeOfCoreSubstitution(
+// RDKit✔️❌:     const ROMol &mol, const ROMol &core,
+// RDKit✔️❌:     const std::vector<MatchVectType> &matches) {
+// RDKit✔️❌:   detail::ScoreMatchesByDegreeOfCoreSubstitution matchScorer(mol, core,
+// RDKit✔️❌:                                                              matches);
+// RDKit✔️❌:   return matchScorer.sortMatchesByDegreeOfCoreSubstitution();
+// RDKit✔️❌: }
+fn rdkit_score_match_by_degree_of_core_substitution(
+    mol: &Molecule,
+    query: &Molecule,
+    match_vec: &[(usize, usize)],
+) -> f64 {
+    let na = mol.num_atoms();
+    let sum_indices = (na * (na + 1) / 2) as f64;
+    let mut penalty = 0.0;
+    let mut i = 0.0;
+    for &(query_idx, mol_idx) in match_vec {
+        i += mol_idx as f64;
+        let query_atom = &query.atoms()[query_idx];
+        let mol_atom = &mol.atoms()[mol_idx];
+        if mol_atom.atomic_number() == 1
+            && rdkit_is_atom_terminal_rgroup_or_query_hydrogen(
+                query_idx,
+                query.atoms(),
+                &query.topology_block().adjacency,
+            )
+        {
+            penalty += 1.0;
+        }
+    }
+    penalty + i / sum_indices
+}
+
+fn rdkit_get_most_substituted_core_match(
+    mol: &Molecule,
+    query: &Molecule,
+    matches: &[Vec<(usize, usize)>],
+) -> Option<Vec<(usize, usize)>> {
+    matches
+        .iter()
+        .min_by(|left, right| {
+            rdkit_score_match_by_degree_of_core_substitution(mol, query, left).total_cmp(
+                &rdkit_score_match_by_degree_of_core_substitution(mol, query, right),
+            )
+        })
+        .cloned()
+}
+
+fn rdkit_sort_matches_by_degree_of_core_substitution(
+    mol: &Molecule,
+    query: &Molecule,
+    matches: &[Vec<(usize, usize)>],
+) -> Vec<Vec<(usize, usize)>> {
+    let mut indexed = matches
+        .iter()
+        .cloned()
+        .map(|match_vec| {
+            let score = rdkit_score_match_by_degree_of_core_substitution(mol, query, &match_vec);
+            (score, match_vec)
+        })
+        .collect::<Vec<_>>();
+    indexed.sort_by(|left, right| left.0.total_cmp(&right.0));
+    indexed
+        .into_iter()
+        .map(|(_, match_vec)| match_vec)
+        .collect()
+}
+
 // RDKit❗✔️: void invertMolBlockWedgingInfo(ROMol &mol) {
 // RDKit❗✔️:   for (auto b : mol.bonds()) {
 // RDKit❗✔️:     int bond_dir = -1;
@@ -5080,6 +5253,1120 @@ fn rdkit_invert_molblock_wedging_info(mol: &mut Molecule) {
             }
         }
     }
+}
+
+// RDKit✔️✔️: void clearMolBlockWedgingInfo(ROMol &mol) {
+// RDKit✔️✔️:   for (auto b : mol.bonds()) {
+// RDKit✔️✔️:     b->clearProp(common_properties::_MolFileBondStereo);
+// RDKit✔️✔️:     b->clearProp(common_properties::_MolFileBondCfg);
+// RDKit✔️✔️:   }
+// RDKit✔️✔️: }
+fn rdkit_clear_molblock_wedging_info(mol: &mut Molecule) {
+    for bond in &mut mol.topology_block_mut().bonds {
+        bond.clear_prop("_MolFileBondStereo");
+        bond.clear_prop("_MolFileBondCfg");
+    }
+}
+
+fn rdkit_select_2d_conformer_index(
+    mol: &Molecule,
+    conf_id: isize,
+) -> Result<usize, Coordinate2DError> {
+    let conformers = mol.conformers_2d();
+    if conformers.is_empty() {
+        return Err(Coordinate2DError::InvalidInput(
+            "constrained depiction requires an available 2D conformer",
+        ));
+    }
+    if conf_id == -1 {
+        return Ok(0);
+    }
+    let requested = usize::try_from(conf_id).map_err(|_| {
+        Coordinate2DError::InvalidInput("constrained depiction conformer id must be >= -1")
+    })?;
+    conformers
+        .iter()
+        .position(|conformer| conformer.id() == requested)
+        .ok_or(Coordinate2DError::InvalidInput(
+            "constrained depiction conformer id is out of range",
+        ))
+}
+
+// RDKit✔️❌: void removeAllConformersButOne(RDKit::ROMol &mol, int confId) {
+// RDKit✔️❌:   std::vector<int> conformerIndicesToRemove;
+// RDKit✔️❌:   for (auto confIt = mol.beginConformers(); confIt != mol.endConformers();
+// RDKit✔️❌:        ++confIt) {
+// RDKit✔️❌:     int i = (*confIt)->getId();
+// RDKit✔️❌:     if ((confId != -1 && i == confId) ||
+// RDKit✔️❌:         (confId == -1 && confIt == mol.beginConformers())) {
+// RDKit✔️❌:       continue;
+// RDKit✔️❌:     }
+// RDKit✔️❌:     conformerIndicesToRemove.push_back(i);
+// RDKit✔️❌:   }
+// RDKit✔️❌:   for (auto i : conformerIndicesToRemove) {
+// RDKit✔️❌:     mol.removeConformer(i);
+// RDKit✔️❌:   }
+// RDKit✔️❌:   CHECK_INVARIANT(mol.getNumConformers() == 1, "");
+// RDKit✔️❌:   mol.getConformer().setId(0);
+// RDKit✔️❌: }
+fn rdkit_remove_all_2d_conformers_but_one(
+    mol: &mut Molecule,
+    conf_id: isize,
+) -> Result<(), Coordinate2DError> {
+    let keep_index = rdkit_select_2d_conformer_index(mol, conf_id)?;
+    let survivor = {
+        let conformers = &mol.coordinate_block().conformers_2d;
+        conformers
+            .get(keep_index)
+            .cloned()
+            .ok_or(Coordinate2DError::InvalidInput(
+                "constrained depiction conformer id is out of range",
+            ))?
+    };
+    let coordinate_block = mol.coordinate_block_mut();
+    coordinate_block.conformers_2d.clear();
+    coordinate_block.conformers_2d.push(survivor.with_id(0));
+    Ok(())
+}
+
+const RDKIT_ALIGN_POINTS_TOLERANCE: f64 = 1.0e-6;
+const RDKIT_ALIGN_POINTS_MAX_ITERATIONS: usize = 50;
+
+fn rdkit_transform3d_identity() -> [[f64; 4]; 4] {
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+}
+
+fn rdkit_transform3d_mul(lhs: &[[f64; 4]; 4], rhs: &[[f64; 4]; 4]) -> [[f64; 4]; 4] {
+    let mut out = [[0.0; 4]; 4];
+    for row in 0..4 {
+        for col in 0..4 {
+            out[row][col] = (0..4).map(|k| lhs[row][k] * rhs[k][col]).sum();
+        }
+    }
+    out
+}
+
+fn rdkit_transform3d_transform_point(trans: &[[f64; 4]; 4], point: [f64; 3]) -> [f64; 3] {
+    [
+        trans[0][0] * point[0] + trans[0][1] * point[1] + trans[0][2] * point[2] + trans[0][3],
+        trans[1][0] * point[0] + trans[1][1] * point[1] + trans[1][2] * point[2] + trans[1][3],
+        trans[2][0] * point[0] + trans[2][1] * point[1] + trans[2][2] * point[2] + trans[2][3],
+    ]
+}
+
+fn rdkit_transform3d_set_translation(trans: &mut [[f64; 4]; 4], move_vec: [f64; 3]) {
+    trans[0][3] = move_vec[0];
+    trans[1][3] = move_vec[1];
+    trans[2][3] = move_vec[2];
+}
+
+fn rdkit_transform3d_set_rotation_from_quaternion(trans: &mut [[f64; 4]; 4], quaternion: [f64; 4]) {
+    let q0 = quaternion[0];
+    let q1 = quaternion[1];
+    let q2 = quaternion[2];
+    let q3 = quaternion[3];
+    let n = q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3;
+    let s = if n > 0.0 { 2.0 / n } else { 0.0 };
+    let x = q1 * s;
+    let y = q2 * s;
+    let z = q3 * s;
+    let wx = q0 * x;
+    let wy = q0 * y;
+    let wz = q0 * z;
+    let xx = q1 * x;
+    let xy = q1 * y;
+    let xz = q1 * z;
+    let yy = q2 * y;
+    let yz = q2 * z;
+    let zz = q3 * z;
+
+    *trans = rdkit_transform3d_identity();
+    trans[0][0] = 1.0 - (yy + zz);
+    trans[0][1] = xy - wz;
+    trans[0][2] = xz + wy;
+    trans[1][0] = xy + wz;
+    trans[1][1] = 1.0 - (xx + zz);
+    trans[1][2] = yz - wx;
+    trans[2][0] = xz - wy;
+    trans[2][1] = yz + wx;
+    trans[2][2] = 1.0 - (xx + yy);
+}
+
+fn rdkit_transform3d_reflect(trans: &mut [[f64; 4]; 4]) {
+    for row in trans.iter_mut().take(3) {
+        for cell in row.iter_mut().take(3) {
+            *cell = -*cell;
+        }
+    }
+}
+
+fn rdkit_weighted_sum_of_points(points: &[[f64; 3]]) -> [f64; 3] {
+    points.iter().fold([0.0, 0.0, 0.0], |mut acc, point| {
+        acc[0] += point[0];
+        acc[1] += point[1];
+        acc[2] += point[2];
+        acc
+    })
+}
+
+fn rdkit_weighted_sum_of_len_sq(points: &[[f64; 3]]) -> f64 {
+    points.iter().fold(0.0, |acc, point| {
+        acc + point[0] * point[0] + point[1] * point[1] + point[2] * point[2]
+    })
+}
+
+fn rdkit_compute_covariance_mat(
+    ref_points: &[[f64; 3]],
+    probe_points: &[[f64; 3]],
+) -> [[f64; 3]; 3] {
+    let mut cov_mat = [[0.0; 3]; 3];
+    for (rpt, ppt) in ref_points.iter().zip(probe_points.iter()) {
+        cov_mat[0][0] += ppt[0] * rpt[0];
+        cov_mat[0][1] += ppt[0] * rpt[1];
+        cov_mat[0][2] += ppt[0] * rpt[2];
+        cov_mat[1][0] += ppt[1] * rpt[0];
+        cov_mat[1][1] += ppt[1] * rpt[1];
+        cov_mat[1][2] += ppt[1] * rpt[2];
+        cov_mat[2][0] += ppt[2] * rpt[0];
+        cov_mat[2][1] += ppt[2] * rpt[1];
+        cov_mat[2][2] += ppt[2] * rpt[2];
+    }
+    cov_mat
+}
+
+fn rdkit_reflect_covariance_mat(cov_mat: &mut [[f64; 3]; 3]) {
+    for row in cov_mat.iter_mut() {
+        for cell in row.iter_mut() {
+            *cell = -*cell;
+        }
+    }
+}
+
+fn rdkit_convert_cov_mat_to_quad(
+    cov_mat: &[[f64; 3]; 3],
+    rpt_sum: [f64; 3],
+    ppt_sum: [f64; 3],
+    wts_sum: f64,
+) -> [[f64; 4]; 4] {
+    let px_rx = cov_mat[0][0] - (ppt_sum[0] / wts_sum) * rpt_sum[0];
+    let px_ry = cov_mat[0][1] - (ppt_sum[0] / wts_sum) * rpt_sum[1];
+    let px_rz = cov_mat[0][2] - (ppt_sum[0] / wts_sum) * rpt_sum[2];
+    let py_rx = cov_mat[1][0] - (ppt_sum[1] / wts_sum) * rpt_sum[0];
+    let py_ry = cov_mat[1][1] - (ppt_sum[1] / wts_sum) * rpt_sum[1];
+    let py_rz = cov_mat[1][2] - (ppt_sum[1] / wts_sum) * rpt_sum[2];
+    let pz_rx = cov_mat[2][0] - (ppt_sum[2] / wts_sum) * rpt_sum[0];
+    let pz_ry = cov_mat[2][1] - (ppt_sum[2] / wts_sum) * rpt_sum[1];
+    let pz_rz = cov_mat[2][2] - (ppt_sum[2] / wts_sum) * rpt_sum[2];
+
+    let mut quad = [[0.0; 4]; 4];
+    quad[0][0] = -2.0 * (px_rx + py_ry + pz_rz);
+    quad[1][1] = -2.0 * (px_rx - py_ry - pz_rz);
+    quad[2][2] = -2.0 * (py_ry - pz_rz - px_rx);
+    quad[3][3] = -2.0 * (pz_rz - px_rx - py_ry);
+    quad[0][1] = 2.0 * (py_rz - pz_ry);
+    quad[1][0] = quad[0][1];
+    quad[0][2] = 2.0 * (pz_rx - px_rz);
+    quad[2][0] = quad[0][2];
+    quad[0][3] = 2.0 * (px_ry - py_rx);
+    quad[3][0] = quad[0][3];
+    quad[1][2] = -2.0 * (px_ry + py_rx);
+    quad[2][1] = quad[1][2];
+    quad[1][3] = -2.0 * (pz_rx + px_rz);
+    quad[3][1] = quad[1][3];
+    quad[2][3] = -2.0 * (py_rz + pz_ry);
+    quad[3][2] = quad[2][3];
+    quad
+}
+
+fn rdkit_align_points_jacobi(
+    mut quad: [[f64; 4]; 4],
+    max_iter: usize,
+) -> ([f64; 4], [[f64; 4]; 4]) {
+    let mut eigen_vecs = [[0.0; 4]; 4];
+    let mut eigen_vals = [0.0; 4];
+    for j in 0..4 {
+        eigen_vecs[j][j] = 1.0;
+        eigen_vals[j] = quad[j][j];
+    }
+
+    for _ in 0..max_iter {
+        let mut diag_norm = 0.0;
+        let mut off_diag_norm = 0.0;
+        for j in 0..4 {
+            diag_norm += eigen_vals[j].abs();
+            for row in quad.iter().take(j) {
+                off_diag_norm += row[j].abs();
+            }
+        }
+        if diag_norm.abs() > 1.0e-16 && (off_diag_norm / diag_norm) <= RDKIT_ALIGN_POINTS_TOLERANCE
+        {
+            break;
+        }
+        for j in 1..4 {
+            for i in 0..j {
+                let b = quad[i][j];
+                if b.abs() <= 0.0 {
+                    continue;
+                }
+                let dma = eigen_vals[j] - eigen_vals[i];
+                let t = if (dma.abs() + b.abs()) <= dma.abs() {
+                    b / dma
+                } else {
+                    let q = 0.5 * dma / b;
+                    let mut t = 1.0 / (q.abs() + rdkit_sqrt(1.0 + q * q));
+                    if q < 0.0 {
+                        t = -t;
+                    }
+                    t
+                };
+                let c = 1.0 / rdkit_sqrt(t * t + 1.0);
+                let s = t * c;
+                quad[i][j] = 0.0;
+                for k in 0..i {
+                    let atemp = c * quad[k][i] - s * quad[k][j];
+                    quad[k][j] = s * quad[k][i] + c * quad[k][j];
+                    quad[k][i] = atemp;
+                }
+                for k in (i + 1)..j {
+                    let atemp = c * quad[i][k] - s * quad[k][j];
+                    quad[k][j] = s * quad[i][k] + c * quad[k][j];
+                    quad[i][k] = atemp;
+                }
+                for k in (j + 1)..4 {
+                    let atemp = c * quad[i][k] - s * quad[j][k];
+                    quad[j][k] = s * quad[i][k] + c * quad[j][k];
+                    quad[i][k] = atemp;
+                }
+                for row in &mut eigen_vecs {
+                    let vtemp = c * row[i] - s * row[j];
+                    row[j] = s * row[i] + c * row[j];
+                    row[i] = vtemp;
+                }
+                let dtemp = c * c * eigen_vals[i] + s * s * eigen_vals[j] - 2.0 * c * s * b;
+                eigen_vals[j] = s * s * eigen_vals[i] + c * c * eigen_vals[j] + 2.0 * c * s * b;
+                eigen_vals[i] = dtemp;
+            }
+        }
+    }
+
+    for j in 0..3 {
+        let mut k = j;
+        let mut dtemp = eigen_vals[k];
+        for (i, val) in eigen_vals.iter().enumerate().skip(j + 1) {
+            if *val < dtemp {
+                k = i;
+                dtemp = eigen_vals[k];
+            }
+        }
+        if k > j {
+            eigen_vals[k] = eigen_vals[j];
+            eigen_vals[j] = dtemp;
+            for row in &mut eigen_vecs {
+                row.swap(k, j);
+            }
+        }
+    }
+
+    (eigen_vals, eigen_vecs)
+}
+
+fn rdkit_align_points(
+    ref_points: &[[f64; 3]],
+    probe_points: &[[f64; 3]],
+    reflect: bool,
+    max_iterations: usize,
+) -> Result<(f64, [[f64; 4]; 4]), Coordinate2DError> {
+    if ref_points.len() != probe_points.len() {
+        return Err(Coordinate2DError::InvalidInput(
+            "alignment requires matching point counts",
+        ));
+    }
+    let npt = ref_points.len();
+    if npt == 0 {
+        return Err(Coordinate2DError::InvalidInput(
+            "alignment requires at least one point",
+        ));
+    }
+
+    let mut trans = rdkit_transform3d_identity();
+    let wts_sum = npt as f64;
+    let mut rpt_sum = rdkit_weighted_sum_of_points(ref_points);
+    let ppt_sum = rdkit_weighted_sum_of_points(probe_points);
+    let rpt_sum_len_sq = rdkit_weighted_sum_of_len_sq(ref_points);
+    let ppt_sum_len_sq = rdkit_weighted_sum_of_len_sq(probe_points);
+
+    let mut cov_mat = rdkit_compute_covariance_mat(ref_points, probe_points);
+    if reflect {
+        rpt_sum = [-rpt_sum[0], -rpt_sum[1], -rpt_sum[2]];
+        rdkit_reflect_covariance_mat(&mut cov_mat);
+    }
+    let quad = rdkit_convert_cov_mat_to_quad(&cov_mat, rpt_sum, ppt_sum, wts_sum);
+    let (eigen_vals, eigen_vecs) = rdkit_align_points_jacobi(quad, max_iterations);
+    let quaternion = [
+        eigen_vecs[0][0],
+        eigen_vecs[1][0],
+        eigen_vecs[2][0],
+        eigen_vecs[3][0],
+    ];
+    rdkit_transform3d_set_rotation_from_quaternion(&mut trans, quaternion);
+    if reflect {
+        rdkit_transform3d_reflect(&mut trans);
+    }
+    let mut ssr = eigen_vals[0]
+        - ((ppt_sum[0] * ppt_sum[0] + ppt_sum[1] * ppt_sum[1] + ppt_sum[2] * ppt_sum[2])
+            + (rpt_sum[0] * rpt_sum[0] + rpt_sum[1] * rpt_sum[1] + rpt_sum[2] * rpt_sum[2]))
+            / wts_sum
+        + rpt_sum_len_sq
+        + ppt_sum_len_sq;
+    if ssr < 0.0 && ssr.abs() < RDKIT_ALIGN_POINTS_TOLERANCE {
+        ssr = 0.0;
+    }
+    if reflect {
+        rpt_sum = [-rpt_sum[0], -rpt_sum[1], -rpt_sum[2]];
+    }
+    let transformed_ppt_sum = rdkit_transform3d_transform_point(&trans, ppt_sum);
+    let move_vec = [
+        (rpt_sum[0] - transformed_ppt_sum[0]) / wts_sum,
+        (rpt_sum[1] - transformed_ppt_sum[1]) / wts_sum,
+        (rpt_sum[2] - transformed_ppt_sum[2]) / wts_sum,
+    ];
+    rdkit_transform3d_set_translation(&mut trans, move_vec);
+    Ok((ssr, trans))
+}
+
+fn rdkit_apply_transform_to_2d_conformer(
+    mol: &mut Molecule,
+    conf_id: isize,
+    trans: &[[f64; 4]; 4],
+) -> Result<(), Coordinate2DError> {
+    let conf_index = rdkit_select_2d_conformer_index(mol, conf_id)?;
+    let coords = mol.coordinate_block_mut().conformers_2d[conf_index].coords_mut();
+    for point in coords.iter_mut() {
+        let transformed = rdkit_transform3d_transform_point(trans, [point[0], point[1], 0.0]);
+        point[0] = transformed[0];
+        point[1] = transformed[1];
+    }
+    Ok(())
+}
+
+fn rdkit_get_alignment_transform(
+    probe_mol: &Molecule,
+    reference_mol: &Molecule,
+    probe_conf_id: isize,
+    reference_conf_id: isize,
+    atom_map: &[(usize, usize)],
+) -> Result<(f64, [[f64; 4]; 4]), Coordinate2DError> {
+    let probe_conf_index = rdkit_select_2d_conformer_index(probe_mol, probe_conf_id)?;
+    let reference_conf_index = rdkit_select_2d_conformer_index(reference_mol, reference_conf_id)?;
+    let probe_coords = probe_mol.conformers_2d()[probe_conf_index].coords();
+    let reference_coords = reference_mol.conformers_2d()[reference_conf_index].coords();
+
+    let mut ref_points = Vec::with_capacity(atom_map.len());
+    let mut probe_points = Vec::with_capacity(atom_map.len());
+    for &(probe_atom_idx, reference_atom_idx) in atom_map {
+        let probe = probe_coords
+            .get(probe_atom_idx)
+            .ok_or(Coordinate2DError::InvalidInput(
+                "probe atom index in alignment atom map is out of range",
+            ))?;
+        let reference =
+            reference_coords
+                .get(reference_atom_idx)
+                .ok_or(Coordinate2DError::InvalidInput(
+                    "reference atom index in alignment atom map is out of range",
+                ))?;
+        probe_points.push([probe[0], probe[1], 0.0]);
+        ref_points.push([reference[0], reference[1], 0.0]);
+    }
+    let (ssr, trans) = rdkit_align_points(
+        &ref_points,
+        &probe_points,
+        false,
+        RDKIT_ALIGN_POINTS_MAX_ITERATIONS,
+    )?;
+    Ok((rdkit_sqrt(ssr / probe_points.len() as f64), trans))
+}
+
+fn rdkit_get_best_alignment_transform(
+    probe_mol: &Molecule,
+    reference_mol: &Molecule,
+    probe_conf_id: isize,
+    reference_conf_id: isize,
+    matches: &[Vec<(usize, usize)>],
+    max_matches: usize,
+) -> Result<([[f64; 4]; 4], Vec<(usize, usize)>), Coordinate2DError> {
+    let mut best_rmsd = f64::INFINITY;
+    let mut best_trans = rdkit_transform3d_identity();
+    let mut best_match = None;
+    for match_vec in matches.iter().take(max_matches) {
+        let (rmsd, trans) = rdkit_get_alignment_transform(
+            probe_mol,
+            reference_mol,
+            probe_conf_id,
+            reference_conf_id,
+            match_vec,
+        )?;
+        if rmsd < best_rmsd {
+            best_rmsd = rmsd;
+            best_trans = trans;
+            best_match = Some(match_vec.clone());
+        }
+    }
+    best_match
+        .map(|match_vec| (best_trans, match_vec))
+        .ok_or(Coordinate2DError::InvalidInput(
+            "alignment requires at least one substructure match",
+        ))
+}
+
+fn rdkit_substruct_matches_unordered(mol: &Molecule, query: &Molecule) -> Vec<Vec<(usize, usize)>> {
+    let params = crate::SubstructMatchParams {
+        max_matches: 1000,
+        uniquify: false,
+    };
+    crate::get_substruct_matches_with_params(mol, query, &params)
+        .into_iter()
+        .map(|match_result| {
+            match_result
+                .atom_mapping
+                .into_iter()
+                .enumerate()
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn rdkit_add_hs_copy(mol: &Molecule) -> Result<Molecule, Coordinate2DError> {
+    mol.clone().with_hydrogens().map_err(|error| match error {
+        crate::OperationError::InvalidInput { .. }
+        | crate::OperationError::Chemistry { .. }
+        | crate::OperationError::Unsupported { .. } => Coordinate2DError::UnsupportedFeature(
+            format!("RDKit addHs equivalent failed during constrained depiction: {error}"),
+        ),
+        crate::OperationError::UnsupportedFeature { source, .. } => {
+            Coordinate2DError::UnsupportedFeature(format!(
+                "RDKit addHs equivalent failed during constrained depiction: {source}"
+            ))
+        }
+        other => Coordinate2DError::UnsupportedFeature(format!(
+            "RDKit addHs equivalent failed during constrained depiction: {other}"
+        )),
+    })
+}
+
+fn rdkit_append_2d_conformer(
+    mol: &mut Molecule,
+    coords: Vec<[f64; 2]>,
+) -> Result<usize, Coordinate2DError> {
+    if coords.len() != mol.num_atoms() {
+        return Err(Coordinate2DError::InvalidInput(
+            "2D conformer row count must match atom count",
+        ));
+    }
+    let coordinate_block = mol.coordinate_block_mut();
+    let next_id = coordinate_block
+        .conformers_2d
+        .iter()
+        .map(crate::Conformer2D::id)
+        .max()
+        .map_or(0, |max_id| max_id + 1);
+    coordinate_block
+        .conformers_2d
+        .push(crate::Conformer2D::new(next_id, coords));
+    Ok(next_id)
+}
+
+fn rdkit_set_single_2d_conformer(
+    mol: &mut Molecule,
+    coords: Vec<[f64; 2]>,
+) -> Result<usize, Coordinate2DError> {
+    if coords.len() != mol.num_atoms() {
+        return Err(Coordinate2DError::InvalidInput(
+            "2D conformer row count must match atom count",
+        ));
+    }
+    let coordinate_block = mol.coordinate_block_mut();
+    coordinate_block.conformers_2d.clear();
+    coordinate_block
+        .conformers_2d
+        .push(crate::Conformer2D::new(0, coords));
+    Ok(0)
+}
+
+fn rdkit_compute_2d_coords_for_mol(
+    mol: &mut Molecule,
+    coord_map: Option<&BTreeMap<usize, [f64; 2]>>,
+    canon_orient: bool,
+    clear_confs: bool,
+    force_rdkit: bool,
+    use_ring_templates: bool,
+) -> Result<usize, Coordinate2DError> {
+    let coords = compute_2d_coords_with_options(
+        mol.atoms(),
+        mol.bonds(),
+        coord_map,
+        canon_orient,
+        true,
+        0,
+        0,
+        0,
+        false,
+        force_rdkit,
+        use_ring_templates,
+    )?;
+    if clear_confs {
+        rdkit_set_single_2d_conformer(mol, coords)
+    } else {
+        rdkit_append_2d_conformer(mol, coords)
+    }
+}
+
+// RDKit✔️❌: void generateDepictionMatching2DStructure(
+// RDKit✔️❌:     RDKit::ROMol &mol, const RDKit::ROMol &reference,
+// RDKit✔️❌:     const RDKit::MatchVectType &refMatchVect, int confId,
+// RDKit✔️❌:     const ConstrainedDepictionParams &p) {
+// RDKit✔️❌:   if (refMatchVect.size() > reference.getNumAtoms()) {
+// RDKit✔️❌:     throw DepictException(
+// RDKit✔️❌:         "When a refMatchVect is provided, it must have size "
+// RDKit✔️❌:         "<= number of atoms in the reference");
+// RDKit✔️❌:   }
+// RDKit✔️❌:   for (const auto &mv : refMatchVect) {
+// RDKit✔️❌:     if (mv.first > static_cast<int>(reference.getNumAtoms())) {
+// RDKit✔️❌:       throw DepictException(
+// RDKit✔️❌:           "Reference atom index in refMatchVect out of range");
+// RDKit✔️❌:     }
+// RDKit✔️❌:     if (mv.second > static_cast<int>(mol.getNumAtoms())) {
+// RDKit✔️❌:       throw DepictException("Molecule atom index in refMatchVect out of range");
+// RDKit✔️❌:     }
+// RDKit✔️❌:   }
+// RDKit✔️❌:   bool hasExistingCoords = mol.getNumConformers() > 0;
+// RDKit✔️❌:   bool shouldClearWedgingInfo = p.adjustMolBlockWedging && !hasExistingCoords;
+// RDKit✔️❌:   bool shouldInvertWedgingIfRequired = false;
+// RDKit✔️❌:   RDGeom::Transform3D trans;
+// RDKit✔️❌:   if (p.alignOnly) { ... } else { ... }
+// RDKit✔️❌:   if (shouldClearWedgingInfo) {
+// RDKit✔️❌:     RDKit::Chirality::clearMolBlockWedgingInfo(mol);
+// RDKit✔️❌:   } else if (shouldInvertWedgingIfRequired) {
+// RDKit✔️❌:     invertWedgingIfMolHasFlipped(mol, trans);
+// RDKit✔️❌:   }
+// RDKit✔️❌: }
+pub(crate) fn generate_depiction_matching_2d_structure_with_ref_match(
+    mol: &mut Molecule,
+    reference: &Molecule,
+    ref_match_vect: &[(usize, usize)],
+    conf_id: isize,
+    params: &ConstrainedDepictionParams,
+) -> Result<(), Coordinate2DError> {
+    if ref_match_vect.len() > reference.num_atoms() {
+        return Err(Coordinate2DError::InvalidInput(
+            "When a refMatchVect is provided, it must have size <= number of atoms in the reference",
+        ));
+    }
+    for &(reference_atom_idx, mol_atom_idx) in ref_match_vect {
+        if reference_atom_idx >= reference.num_atoms() {
+            return Err(Coordinate2DError::InvalidInput(
+                "Reference atom index in refMatchVect out of range",
+            ));
+        }
+        if mol_atom_idx >= mol.num_atoms() {
+            return Err(Coordinate2DError::InvalidInput(
+                "Molecule atom index in refMatchVect out of range",
+            ));
+        }
+    }
+    let has_existing_coords = !mol.conformers_2d().is_empty();
+    let mut should_clear_wedging_info = params.adjust_molblock_wedging && !has_existing_coords;
+    let mut should_invert_wedging_if_required = false;
+    let mut trans = rdkit_transform3d_identity();
+
+    if params.align_only {
+        if !has_existing_coords {
+            let _ = rdkit_compute_2d_coords_for_mol(
+                mol,
+                None,
+                false,
+                true,
+                params.force_rdkit,
+                params.use_ring_templates,
+            )?;
+        }
+        let atom_map = ref_match_vect
+            .iter()
+            .map(|&(reference_atom_idx, mol_atom_idx)| (mol_atom_idx, reference_atom_idx))
+            .collect::<Vec<_>>();
+        let (_, alignment_trans) = rdkit_get_alignment_transform(
+            mol,
+            reference,
+            params.existing_conf_id,
+            conf_id,
+            &atom_map,
+        )?;
+        trans = alignment_trans;
+        rdkit_apply_transform_to_2d_conformer(mol, params.existing_conf_id, &trans)?;
+        rdkit_remove_all_2d_conformers_but_one(mol, params.existing_conf_id)?;
+        if !should_clear_wedging_info {
+            should_invert_wedging_if_required = params.adjust_molblock_wedging;
+        }
+    } else {
+        let reference_conf_index = rdkit_select_2d_conformer_index(reference, conf_id)?;
+        let reference_coords = reference.conformers_2d()[reference_conf_index].coords();
+        let mut coord_map = BTreeMap::new();
+        for &(reference_atom_idx, mol_atom_idx) in ref_match_vect {
+            let point = reference_coords[reference_atom_idx];
+            coord_map.insert(mol_atom_idx, point);
+        }
+        let new_conf_id = rdkit_compute_2d_coords_for_mol(
+            mol,
+            Some(&coord_map),
+            false,
+            !(params.adjust_molblock_wedging && has_existing_coords),
+            params.force_rdkit,
+            params.use_ring_templates,
+        )?;
+        if params.adjust_molblock_wedging {
+            const RMSD_THRESHOLD: f64 = 1.0e-2;
+            const MSD_THRESHOLD: f64 = RMSD_THRESHOLD * RMSD_THRESHOLD;
+            if !should_clear_wedging_info {
+                let mut mol_matching_indices = vec![false; mol.num_atoms()];
+                for &(_, mol_atom_idx) in ref_match_vect {
+                    mol_matching_indices[mol_atom_idx] = true;
+                }
+                should_clear_wedging_info = mol.bonds().iter().any(|bond| {
+                    (bond.prop("_MolFileBondStereo").is_some()
+                        || bond.prop("_MolFileBondCfg").is_some())
+                        && (!mol_matching_indices[bond.begin().index()]
+                            || !mol_matching_indices[bond.end().index()])
+                });
+            }
+            if !should_clear_wedging_info {
+                let new_conf_index = rdkit_select_2d_conformer_index(mol, new_conf_id as isize)?;
+                let mol_pos = mol.conformers_2d()[new_conf_index].coords();
+                should_clear_wedging_info =
+                    ref_match_vect
+                        .iter()
+                        .any(|&(reference_atom_idx, mol_atom_idx)| {
+                            let dx =
+                                mol_pos[mol_atom_idx][0] - reference_coords[reference_atom_idx][0];
+                            let dy =
+                                mol_pos[mol_atom_idx][1] - reference_coords[reference_atom_idx][1];
+                            dx * dx + dy * dy > MSD_THRESHOLD
+                        });
+            }
+            if !should_clear_wedging_info {
+                let identity_match = ref_match_vect
+                    .iter()
+                    .map(|&(_, mol_atom_idx)| (mol_atom_idx, mol_atom_idx))
+                    .collect::<Vec<_>>();
+                let (rmsd, alignment_trans) = rdkit_get_alignment_transform(
+                    mol,
+                    mol,
+                    new_conf_id as isize,
+                    params.existing_conf_id,
+                    &identity_match,
+                )?;
+                trans = alignment_trans;
+                if rmsd > RMSD_THRESHOLD {
+                    should_clear_wedging_info = true;
+                } else {
+                    should_invert_wedging_if_required = true;
+                }
+            }
+        }
+        if has_existing_coords {
+            rdkit_remove_all_2d_conformers_but_one(mol, new_conf_id as isize)?;
+        }
+    }
+    if should_clear_wedging_info {
+        rdkit_clear_molblock_wedging_info(mol);
+    } else if should_invert_wedging_if_required {
+        rdkit_invert_wedging_if_mol_has_flipped(mol, &trans);
+    }
+    Ok(())
+}
+
+// RDKit✔️❌: void generateDepictionMatching2DStructure(
+// RDKit✔️❌:     RDKit::ROMol &mol, const RDKit::ROMol &reference,
+// RDKit✔️❌:     const RDKit::MatchVectType &refMatchVect, int confId, bool forceRDKit) {
+// RDKit✔️❌:   ConstrainedDepictionParams p;
+// RDKit✔️❌:   p.forceRDKit = forceRDKit;
+// RDKit✔️❌:   generateDepictionMatching2DStructure(mol, reference, refMatchVect, confId, p);
+// RDKit✔️❌: }
+pub(crate) fn generate_depiction_matching_2d_structure_with_ref_match_force_rdkit(
+    mol: &mut Molecule,
+    reference: &Molecule,
+    ref_match_vect: &[(usize, usize)],
+    conf_id: isize,
+    force_rdkit: bool,
+) -> Result<(), Coordinate2DError> {
+    let params = ConstrainedDepictionParams {
+        force_rdkit,
+        ..ConstrainedDepictionParams::default()
+    };
+    generate_depiction_matching_2d_structure_with_ref_match(
+        mol,
+        reference,
+        ref_match_vect,
+        conf_id,
+        &params,
+    )
+}
+
+// RDKit✔️❌: RDKit::MatchVectType generateDepictionMatching2DStructure(
+// RDKit✔️❌:     RDKit::ROMol &mol, const RDKit::ROMol &reference, int confId,
+// RDKit✔️❌:     const RDKit::ROMol *referencePattern,
+// RDKit✔️❌:     const ConstrainedDepictionParams &params) { ... }
+pub(crate) fn generate_depiction_matching_2d_structure(
+    mol: &mut Molecule,
+    reference: &Molecule,
+    conf_id: isize,
+    reference_pattern: Option<&Molecule>,
+    params: &ConstrainedDepictionParams,
+) -> Result<Vec<(usize, usize)>, Coordinate2DError> {
+    let mut reference_hs = None;
+    let mut mol_hs = None;
+    let mut query_adj = None;
+    let mut match_vect = Vec::<(usize, usize)>::new();
+    let mut pattern_to_ref_matches = Vec::<Vec<(usize, usize)>>::new();
+    let mut pattern_to_ref_match = Vec::<(usize, usize)>::new();
+    let query = reference_pattern.unwrap_or(reference);
+    let mut pattern_to_ref_mapping = vec![-1isize; query.num_atoms()];
+    let mut p = *params;
+    p.allow_rgroups = p.allow_rgroups && rdkit_has_terminal_rgroup_or_query_hydrogen(query);
+
+    let mut reduced_query = None;
+    let mut prb_mol = mol.clone();
+    let mut ref_mol = query.clone();
+    if p.allow_rgroups {
+        let mol_hs_value = rdkit_add_hs_copy(mol)?;
+        let mut query_adj_value = query.clone();
+        reduced_query = rdkit_prepare_template_for_rgroups(&query_adj_value);
+        prb_mol = mol_hs_value.clone();
+        ref_mol = reduced_query
+            .clone()
+            .unwrap_or_else(|| query_adj_value.clone());
+        mol_hs = Some(mol_hs_value);
+        query_adj = Some(query_adj_value);
+    }
+
+    if let Some(reference_pattern) = reference_pattern {
+        if p.allow_rgroups {
+            let reference_hs_value = rdkit_add_hs_copy(reference)?;
+            let query_adj_ref = query_adj.as_ref().expect("allow_rgroups implies query_adj");
+            pattern_to_ref_matches =
+                rdkit_substruct_matches_unordered(&reference_hs_value, &ref_mol);
+            if let Some(reduced_query) = reduced_query.as_ref() {
+                rdkit_reduced_to_full_matches(
+                    reduced_query,
+                    &reference_hs_value,
+                    &mut pattern_to_ref_matches,
+                );
+            }
+            if !pattern_to_ref_matches.is_empty() {
+                pattern_to_ref_match = rdkit_get_most_substituted_core_match(
+                    &reference_hs_value,
+                    query_adj_ref,
+                    &pattern_to_ref_matches,
+                )
+                .unwrap_or_default();
+            }
+            reference_hs = Some(reference_hs_value);
+        } else if let Some(match_result) = crate::get_substruct_match(reference, reference_pattern)
+        {
+            pattern_to_ref_match = match_result.atom_mapping.into_iter().enumerate().collect();
+        }
+        if pattern_to_ref_match.is_empty() {
+            return Err(Coordinate2DError::InvalidInput(
+                "Reference pattern does not map to reference.",
+            ));
+        }
+        let num_ref_atoms = reference.num_atoms();
+        for &(pattern_idx, reference_idx) in &pattern_to_ref_match {
+            if p.allow_rgroups && reference_idx >= num_ref_atoms {
+                continue;
+            }
+            if pattern_idx >= pattern_to_ref_mapping.len() {
+                return Err(Coordinate2DError::InvalidInput(
+                    "reference pattern atom index out of range while building constrained depiction mapping",
+                ));
+            }
+            pattern_to_ref_mapping[pattern_idx] = reference_idx as isize;
+        }
+    } else {
+        for (idx, slot) in pattern_to_ref_mapping.iter_mut().enumerate() {
+            *slot = idx as isize;
+        }
+    }
+
+    if p.align_only {
+        let mut matches = rdkit_substruct_matches_unordered(&prb_mol, &ref_mol);
+        if !matches.is_empty() {
+            if p.allow_rgroups {
+                if let Some(reduced_query) = reduced_query.as_ref() {
+                    rdkit_reduced_to_full_matches(
+                        reduced_query,
+                        mol_hs.as_ref().expect("allow_rgroups implies mol_hs"),
+                        &mut matches,
+                    );
+                }
+                let query_adj_ref = query_adj.as_ref().expect("allow_rgroups implies query_adj");
+                matches = rdkit_sort_matches_by_degree_of_core_substitution(
+                    &prb_mol,
+                    query_adj_ref,
+                    &matches,
+                );
+                let mut max_matched_heavies = -1isize;
+                let mut max_pruned_match_size = -1isize;
+                let mut pruned_matches = Vec::new();
+                let num_mol_atoms = mol.num_atoms();
+                for match_vec in matches {
+                    let mut n_matched_heavies = 0isize;
+                    let mut pruned_match = Vec::new();
+                    for &(pattern_idx, mol_idx) in &match_vec {
+                        let ref_atom = &query_adj_ref.atoms()[pattern_idx];
+                        if rdkit_is_atom_terminal_rgroup_or_query_hydrogen(
+                            pattern_idx,
+                            query_adj_ref.atoms(),
+                            &query_adj_ref.topology_block().adjacency,
+                        ) {
+                            if mol_idx >= num_mol_atoms {
+                                continue;
+                            }
+                            n_matched_heavies += 1;
+                        }
+                        let ref_idx = pattern_to_ref_mapping[pattern_idx];
+                        if ref_idx == -1 {
+                            continue;
+                        }
+                        pruned_match.push((mol_idx, ref_idx as usize));
+                    }
+                    if n_matched_heavies < max_matched_heavies {
+                        break;
+                    }
+                    max_matched_heavies = n_matched_heavies;
+                    let pruned_match_size = pruned_match.len() as isize;
+                    if pruned_match_size > max_pruned_match_size {
+                        max_pruned_match_size = pruned_match_size;
+                        pruned_matches.clear();
+                    }
+                    if pruned_match_size == max_pruned_match_size {
+                        pruned_matches.push(pruned_match);
+                    }
+                }
+                matches = pruned_matches;
+            } else {
+                for match_vec in &mut matches {
+                    for pair in match_vec.iter_mut() {
+                        let ref_idx = pattern_to_ref_mapping[pair.0];
+                        pair.0 = pair.1;
+                        pair.1 = ref_idx as usize;
+                    }
+                }
+            }
+            if mol.conformers_2d().is_empty() {
+                let _ = rdkit_compute_2d_coords_for_mol(
+                    mol,
+                    None,
+                    false,
+                    true,
+                    p.force_rdkit,
+                    p.use_ring_templates,
+                )?;
+                if p.adjust_molblock_wedging {
+                    rdkit_clear_molblock_wedging_info(mol);
+                    p.adjust_molblock_wedging = false;
+                }
+            }
+            const MAX_MATCHES: usize = 1000;
+            let (trans, best_match) = rdkit_get_best_alignment_transform(
+                mol,
+                reference,
+                p.existing_conf_id,
+                conf_id,
+                &matches,
+                MAX_MATCHES,
+            )?;
+            match_vect = best_match
+                .into_iter()
+                .map(|(mol_idx, reference_idx)| (reference_idx, mol_idx))
+                .collect();
+            rdkit_apply_transform_to_2d_conformer(mol, p.existing_conf_id, &trans)?;
+            rdkit_remove_all_2d_conformers_but_one(mol, p.existing_conf_id)?;
+            if p.adjust_molblock_wedging {
+                rdkit_invert_wedging_if_mol_has_flipped(mol, &trans);
+            }
+        }
+    } else {
+        if p.allow_rgroups {
+            let mut matches = rdkit_substruct_matches_unordered(&prb_mol, &ref_mol);
+            if !matches.is_empty() {
+                if let Some(reduced_query) = reduced_query.as_ref() {
+                    rdkit_reduced_to_full_matches(
+                        reduced_query,
+                        mol_hs.as_ref().expect("allow_rgroups implies mol_hs"),
+                        &mut matches,
+                    );
+                }
+                let query_adj_ref = query_adj.as_ref().expect("allow_rgroups implies query_adj");
+                let num_mol_atoms = mol.num_atoms();
+                if let Some(best_match) =
+                    rdkit_get_most_substituted_core_match(&prb_mol, query_adj_ref, &matches)
+                {
+                    for (pattern_idx, mol_idx) in best_match {
+                        if mol_idx < num_mol_atoms && pattern_to_ref_mapping[pattern_idx] != -1 {
+                            match_vect.push((pattern_idx, mol_idx));
+                        }
+                    }
+                }
+            }
+        } else if let Some(match_result) = crate::get_substruct_match(&prb_mol, &ref_mol) {
+            match_vect = match_result.atom_mapping.into_iter().enumerate().collect();
+        }
+        if !match_vect.is_empty() {
+            for pair in &mut match_vect {
+                pair.0 = pattern_to_ref_mapping[pair.0] as usize;
+            }
+            generate_depiction_matching_2d_structure_with_ref_match(
+                mol,
+                reference,
+                &match_vect,
+                conf_id,
+                &p,
+            )?;
+        }
+    }
+
+    if match_vect.is_empty() {
+        if p.accept_failure {
+            let _ = rdkit_compute_2d_coords_for_mol(
+                mol,
+                None,
+                false,
+                true,
+                p.force_rdkit,
+                p.use_ring_templates,
+            )?;
+            if p.adjust_molblock_wedging {
+                rdkit_clear_molblock_wedging_info(mol);
+            }
+        } else {
+            return Err(Coordinate2DError::InvalidInput(
+                "Substructure match with reference not found.",
+            ));
+        }
+    }
+    Ok(match_vect)
+}
+
+// RDKit✔️❌: RDKit::MatchVectType generateDepictionMatching2DStructure(
+// RDKit✔️❌:     RDKit::ROMol &mol, const RDKit::ROMol &reference, int confId,
+// RDKit✔️❌:     const RDKit::ROMol *referencePattern, bool acceptFailure, bool forceRDKit,
+// RDKit✔️❌:     bool allowOptionalAttachments) { ... }
+pub(crate) fn generate_depiction_matching_2d_structure_simple(
+    mol: &mut Molecule,
+    reference: &Molecule,
+    conf_id: isize,
+    reference_pattern: Option<&Molecule>,
+    accept_failure: bool,
+    force_rdkit: bool,
+    allow_optional_attachments: bool,
+) -> Result<Vec<(usize, usize)>, Coordinate2DError> {
+    let params = ConstrainedDepictionParams {
+        accept_failure,
+        force_rdkit,
+        allow_rgroups: allow_optional_attachments,
+        ..ConstrainedDepictionParams::default()
+    };
+    generate_depiction_matching_2d_structure(mol, reference, conf_id, reference_pattern, &params)
+}
+
+// RDKit✔️❌: void generateDepictionMatching3DStructure(RDKit::ROMol &mol,
+// RDKit✔️❌:                                           const RDKit::ROMol &reference,
+// RDKit✔️❌:                                           int confId,
+// RDKit✔️❌:                                           RDKit::ROMol *referencePattern,
+// RDKit✔️❌:                                           bool acceptFailure, bool forceRDKit) { ... }
+pub(crate) fn generate_depiction_matching_3d_structure(
+    mol: &mut Molecule,
+    reference: &Molecule,
+    conf_id: isize,
+    reference_pattern: Option<&Molecule>,
+    accept_failure: bool,
+    force_rdkit: bool,
+) -> Result<(), Coordinate2DError> {
+    let num_ats = mol.num_atoms();
+    if reference_pattern.is_none() && reference.num_atoms() < num_ats {
+        if accept_failure {
+            let _ = rdkit_compute_2d_coords_for_mol(mol, None, false, true, force_rdkit, false)?;
+            return Ok(());
+        }
+        return Err(Coordinate2DError::InvalidInput(
+            "Reference molecule not compatible with target molecule.",
+        ));
+    }
+
+    let mut mol_to_ref = vec![-1isize; num_ats];
+    if let Some(reference_pattern) = reference_pattern.filter(|pattern| pattern.num_atoms() > 0) {
+        let mol_match_vect = crate::get_substruct_match(mol, reference_pattern);
+        let ref_match_vect = crate::get_substruct_match(reference, reference_pattern);
+        let (Some(mol_match_vect), Some(ref_match_vect)) = (mol_match_vect, ref_match_vect) else {
+            if accept_failure {
+                let _ =
+                    rdkit_compute_2d_coords_for_mol(mol, None, false, true, force_rdkit, false)?;
+                return Ok(());
+            }
+            return Err(Coordinate2DError::InvalidInput(
+                "Reference pattern didn't match molecule or reference.",
+            ));
+        };
+        for i in 0..mol_match_vect.atom_mapping.len() {
+            mol_to_ref[mol_match_vect.atom_mapping[i]] = ref_match_vect.atom_mapping[i] as isize;
+        }
+    } else {
+        for (idx, slot) in mol_to_ref.iter_mut().enumerate() {
+            *slot = idx as isize;
+        }
+    }
+
+    let reference_conf_index = rdkit_select_3d_conformer_index(reference, conf_id)?;
+    let conf = reference.conformers_3d()[reference_conf_index].coords();
+    let mut dmat = vec![-1.0; num_ats * (num_ats - 1) / 2];
+    for i in 0..num_ats {
+        if mol_to_ref[i] == -1 {
+            continue;
+        }
+        let cds_i = conf[i];
+        for j in (i + 1)..num_ats {
+            if mol_to_ref[j] == -1 {
+                continue;
+            }
+            let cds_j = conf[mol_to_ref[j] as usize];
+            let dx = cds_i[0] - cds_j[0];
+            let dy = cds_i[1] - cds_j[1];
+            let dz = cds_i[2] - cds_j[2];
+            dmat[(j * (j - 1) / 2) + i] = rdkit_sqrt(dx * dx + dy * dy + dz * dz);
+        }
+    }
+    let coords = compute_2d_coords_mimic_distmat_with_params(
+        mol.atoms(),
+        mol.bonds(),
+        Some(&dmat),
+        &Compute2DCoordsMimicDistMatParameters {
+            canon_orient: false,
+            clear_confs: true,
+            weight_dist_mat: 0.5,
+            n_flips_per_sample: 3,
+            n_samples: 100,
+            sample_seed: 25,
+            permute_deg4_nodes: true,
+            force_rdkit,
+        },
+    )?;
+    let _ = rdkit_set_single_2d_conformer(mol, coords)?;
+    Ok(())
 }
 
 // RDKit❗✔️: bool invertWedgingIfMolHasFlipped(RDKit::ROMol &mol,
@@ -7971,8 +9258,10 @@ mod tests {
         let mol = builder.build().unwrap();
         let coords = compute_2d_coords(mol.atoms(), mol.bonds()).unwrap();
         assert_eq!(coords.len(), 2);
-        assert!((coords[0][0] - (-0.75)).abs() < 1e-6);
-        assert!((coords[1][0] - 0.75).abs() < 1e-6);
+        assert_eq!(coords[0], [0.0, 0.0]);
+        let dx = coords[1][0] - coords[0][0];
+        let dy = coords[1][1] - coords[0][1];
+        assert!(((dx * dx + dy * dy).sqrt() - BOND_LEN).abs() < 1e-6);
     }
 
     #[test]
@@ -7990,10 +9279,15 @@ mod tests {
         let mol = builder.build().unwrap();
         let coords = compute_2d_coords(mol.atoms(), mol.bonds()).unwrap();
         assert_eq!(coords.len(), 3);
-        // Should have a tree layout via place_acyclic_tree
-        assert_ne!(coords[0], [0.0, 0.0]);
-        assert_ne!(coords[1], [0.0, 0.0]);
-        assert_ne!(coords[2], [0.0, 0.0]);
+        assert_eq!(coords[0], [0.0, 0.0]);
+        let dx01 = coords[1][0] - coords[0][0];
+        let dy01 = coords[1][1] - coords[0][1];
+        let dx12 = coords[2][0] - coords[1][0];
+        let dy12 = coords[2][1] - coords[1][1];
+        assert!(((dx01 * dx01 + dy01 * dy01).sqrt() - BOND_LEN).abs() < 1e-6);
+        assert!(((dx12 * dx12 + dy12 * dy12).sqrt() - BOND_LEN).abs() < 1e-6);
+        assert_ne!(coords[1], coords[2]);
+        assert_ne!(coords[0], coords[2]);
     }
 
     #[test]
@@ -8157,6 +9451,9 @@ mod tests {
 
     #[test]
     fn compute2d_single_atom_coord_map_translates_final_layout_to_reference_atom() {
+        let _lock = prefer_coordgen_test_lock().lock().unwrap();
+        let _guard = PreferCoordGenGuard::capture();
+        set_prefer_coord_gen(false);
         let mut builder = MoleculeBuilder::new();
         let c1 = builder.add_atom(AtomSpec::new(Element::C));
         let c2 = builder.add_atom(AtomSpec::new(Element::C));
@@ -8209,6 +9506,10 @@ mod tests {
 
     #[test]
     fn compute2d_canon_orient_runs_without_prespecified_coords() {
+        let _lock = prefer_coordgen_test_lock().lock().unwrap();
+        let _guard = PreferCoordGenGuard::capture();
+        set_prefer_coord_gen(false);
+
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::C));
@@ -8266,6 +9567,9 @@ mod tests {
 
     #[test]
     fn compute2d_prespec_fragment_order_does_not_depend_on_component_index_zip() {
+        let _lock = prefer_coordgen_test_lock().lock().unwrap();
+        let _guard = PreferCoordGenGuard::capture();
+        set_prefer_coord_gen(false);
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::C));
@@ -8469,6 +9773,9 @@ mod tests {
 
     #[test]
     fn compute2d_mimic_distmat_is_deterministic_for_same_positive_seed() {
+        let _lock = prefer_coordgen_test_lock().lock().unwrap();
+        let _guard = PreferCoordGenGuard::capture();
+        set_prefer_coord_gen(false);
         let mut builder = MoleculeBuilder::new();
         let atoms: Vec<_> = (0..5)
             .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
@@ -9049,6 +10356,418 @@ mod tests {
         assert_eq!(mol.bonds()[0].prop("_MolFileBondStereo"), Some("6"));
         assert_eq!(mol.bonds()[1].prop("_MolFileBondCfg"), Some("2"));
         assert_eq!(mol.bonds()[1].prop("_MolFileBondStereo"), Some("4"));
+    }
+
+    #[test]
+    fn clear_molblock_wedging_info_removes_stereo_and_cfg_props() {
+        let mut builder = MoleculeBuilder::new();
+        let a0 = builder.add_atom(AtomSpec::new(Element::C));
+        let a1 = builder.add_atom(AtomSpec::new(Element::O));
+        builder
+            .add_bond(
+                BondSpec::new(a0, a1, BondOrder::Single)
+                    .with_prop("_MolFileBondCfg", "1")
+                    .with_prop("_MolFileBondStereo", "6"),
+            )
+            .unwrap();
+        let mut mol = builder.build().unwrap();
+
+        rdkit_clear_molblock_wedging_info(&mut mol);
+
+        assert_eq!(mol.bonds()[0].prop("_MolFileBondCfg"), None);
+        assert_eq!(mol.bonds()[0].prop("_MolFileBondStereo"), None);
+    }
+
+    #[test]
+    fn remove_all_2d_conformers_but_one_keeps_requested_id_and_resets_to_zero() {
+        let mut builder = MoleculeBuilder::new();
+        builder.add_atom(AtomSpec::new(Element::C));
+        builder.add_atom(AtomSpec::new(Element::O));
+        builder
+            .add_bond(BondSpec::new(
+                crate::AtomId::new(0),
+                crate::AtomId::new(1),
+                BondOrder::Single,
+            ))
+            .unwrap();
+        builder
+            .set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]])
+            .unwrap();
+        builder
+            .add_2d_conformer(vec![[0.0, 1.0], [1.0, 1.0]])
+            .unwrap();
+        builder
+            .add_2d_conformer(vec![[0.0, 2.0], [1.0, 2.0]])
+            .unwrap();
+        let mut mol = builder.build().unwrap();
+
+        rdkit_remove_all_2d_conformers_but_one(&mut mol, 2).unwrap();
+
+        assert_eq!(mol.conformers_2d().len(), 1);
+        assert_eq!(mol.conformers_2d()[0].id(), 0);
+        assert_eq!(mol.conformers_2d()[0].coords(), &[[0.0, 2.0], [1.0, 2.0]]);
+    }
+
+    #[test]
+    fn remove_all_2d_conformers_but_one_minus_one_keeps_first_conformer() {
+        let mut builder = MoleculeBuilder::new();
+        builder.add_atom(AtomSpec::new(Element::C));
+        builder.add_atom(AtomSpec::new(Element::O));
+        builder
+            .add_bond(BondSpec::new(
+                crate::AtomId::new(0),
+                crate::AtomId::new(1),
+                BondOrder::Single,
+            ))
+            .unwrap();
+        builder
+            .set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]])
+            .unwrap();
+        builder
+            .add_2d_conformer(vec![[0.0, 1.0], [1.0, 1.0]])
+            .unwrap();
+        let mut mol = builder.build().unwrap();
+
+        rdkit_remove_all_2d_conformers_but_one(&mut mol, -1).unwrap();
+
+        assert_eq!(mol.conformers_2d().len(), 1);
+        assert_eq!(mol.conformers_2d()[0].id(), 0);
+        assert_eq!(mol.conformers_2d()[0].coords(), &[[0.0, 0.0], [1.0, 0.0]]);
+    }
+
+    #[test]
+    fn constrained_depiction_align_only_aligns_existing_conformer_and_keeps_one() {
+        let mut ref_builder = MoleculeBuilder::new();
+        let r0 = ref_builder.add_atom(AtomSpec::new(Element::C));
+        let r1 = ref_builder.add_atom(AtomSpec::new(Element::C));
+        ref_builder
+            .add_bond(BondSpec::new(r0, r1, BondOrder::Single))
+            .unwrap();
+        ref_builder
+            .set_2d_coordinates(vec![[0.0, 0.0], [2.0, 0.0]])
+            .unwrap();
+        let reference = ref_builder.build().unwrap();
+
+        let mut mol_builder = MoleculeBuilder::new();
+        let m0 = mol_builder.add_atom(AtomSpec::new(Element::C));
+        let m1 = mol_builder.add_atom(AtomSpec::new(Element::C));
+        mol_builder
+            .add_bond(BondSpec::new(m0, m1, BondOrder::Single))
+            .unwrap();
+        mol_builder
+            .set_2d_coordinates(vec![[0.0, 0.0], [0.0, 2.0]])
+            .unwrap();
+        mol_builder
+            .add_2d_conformer(vec![[10.0, 10.0], [11.0, 10.0]])
+            .unwrap();
+        let mut mol = mol_builder.build().unwrap();
+
+        let params = ConstrainedDepictionParams {
+            align_only: true,
+            existing_conf_id: 0,
+            ..ConstrainedDepictionParams::default()
+        };
+        generate_depiction_matching_2d_structure_with_ref_match(
+            &mut mol,
+            &reference,
+            &[(0, 0), (1, 1)],
+            0,
+            &params,
+        )
+        .unwrap();
+
+        assert_eq!(mol.conformers_2d().len(), 1);
+        assert_eq!(mol.conformers_2d()[0].id(), 0);
+        let coords = mol.conformers_2d()[0].coords();
+        assert!((coords[0][0] - 0.0).abs() < 1.0e-6);
+        assert!((coords[0][1] - 0.0).abs() < 1.0e-6);
+        assert!((coords[1][0] - 2.0).abs() < 1.0e-6);
+        assert!((coords[1][1] - 0.0).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn constrained_depiction_hard_constraint_uses_reference_core_coords_and_keeps_new_conformer() {
+        let mut ref_builder = MoleculeBuilder::new();
+        let r0 = ref_builder.add_atom(AtomSpec::new(Element::C));
+        let r1 = ref_builder.add_atom(AtomSpec::new(Element::C));
+        ref_builder
+            .add_bond(BondSpec::new(r0, r1, BondOrder::Single))
+            .unwrap();
+        ref_builder
+            .set_2d_coordinates(vec![[1.0, 1.0], [3.0, 1.0]])
+            .unwrap();
+        let reference = ref_builder.build().unwrap();
+
+        let mut mol_builder = MoleculeBuilder::new();
+        let m0 = mol_builder.add_atom(AtomSpec::new(Element::C));
+        let m1 = mol_builder.add_atom(AtomSpec::new(Element::C));
+        let m2 = mol_builder.add_atom(AtomSpec::new(Element::O));
+        mol_builder
+            .add_bond(BondSpec::new(m0, m1, BondOrder::Single))
+            .unwrap();
+        mol_builder
+            .add_bond(BondSpec::new(m1, m2, BondOrder::Single))
+            .unwrap();
+        mol_builder
+            .set_2d_coordinates(vec![[9.0, 9.0], [10.0, 9.0], [11.0, 9.0]])
+            .unwrap();
+        let mut mol = mol_builder.build().unwrap();
+
+        generate_depiction_matching_2d_structure_with_ref_match(
+            &mut mol,
+            &reference,
+            &[(0, 0), (1, 1)],
+            0,
+            &ConstrainedDepictionParams::default(),
+        )
+        .unwrap();
+
+        assert_eq!(mol.conformers_2d().len(), 1);
+        let coords = mol.conformers_2d()[0].coords();
+        assert!((coords[0][0] - 1.0).abs() < 1.0e-6);
+        assert!((coords[0][1] - 1.0).abs() < 1.0e-6);
+        assert!((coords[1][0] - 3.0).abs() < 1.0e-6);
+        assert!((coords[1][1] - 1.0).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn constrained_depiction_outer_accept_failure_generates_unconstrained_coords() {
+        let mut ref_builder = MoleculeBuilder::new();
+        let r0 = ref_builder.add_atom(AtomSpec::new(Element::C));
+        ref_builder.set_2d_coordinates(vec![[0.0, 0.0]]).unwrap();
+        let reference = ref_builder.build().unwrap();
+
+        let mut mol_builder = MoleculeBuilder::new();
+        let m0 = mol_builder.add_atom(AtomSpec::new(Element::O));
+        let m1 = mol_builder.add_atom(AtomSpec::new(Element::O));
+        mol_builder
+            .add_bond(BondSpec::new(m0, m1, BondOrder::Single))
+            .unwrap();
+        let mut mol = mol_builder.build().unwrap();
+
+        let match_vect = generate_depiction_matching_2d_structure(
+            &mut mol,
+            &reference,
+            0,
+            None,
+            &ConstrainedDepictionParams {
+                accept_failure: true,
+                ..ConstrainedDepictionParams::default()
+            },
+        )
+        .unwrap();
+
+        assert!(match_vect.is_empty());
+        assert_eq!(mol.conformers_2d().len(), 1);
+        assert_eq!(mol.conformers_2d()[0].coords().len(), 2);
+    }
+
+    #[test]
+    fn constrained_depiction_outer_reference_pattern_returns_reference_atom_mapping() {
+        let mut ref_builder = MoleculeBuilder::new();
+        let r0 = ref_builder.add_atom(AtomSpec::new(Element::C));
+        let r1 = ref_builder.add_atom(AtomSpec::new(Element::C));
+        let r2 = ref_builder.add_atom(AtomSpec::new(Element::O));
+        ref_builder
+            .add_bond(BondSpec::new(r0, r1, BondOrder::Single))
+            .unwrap();
+        ref_builder
+            .add_bond(BondSpec::new(r1, r2, BondOrder::Single))
+            .unwrap();
+        ref_builder
+            .set_2d_coordinates(vec![[0.0, 0.0], [1.5, 0.0], [3.0, 0.0]])
+            .unwrap();
+        let reference = ref_builder.build().unwrap();
+
+        let mut pattern_builder = MoleculeBuilder::new();
+        let p0 = pattern_builder.add_atom(AtomSpec::new(Element::C));
+        let p1 = pattern_builder.add_atom(AtomSpec::new(Element::O));
+        pattern_builder
+            .add_bond(BondSpec::new(p0, p1, BondOrder::Single))
+            .unwrap();
+        let reference_pattern = pattern_builder.build().unwrap();
+
+        let mut mol_builder = MoleculeBuilder::new();
+        let m0 = mol_builder.add_atom(AtomSpec::new(Element::C));
+        let m1 = mol_builder.add_atom(AtomSpec::new(Element::C));
+        let m2 = mol_builder.add_atom(AtomSpec::new(Element::O));
+        mol_builder
+            .add_bond(BondSpec::new(m0, m1, BondOrder::Single))
+            .unwrap();
+        mol_builder
+            .add_bond(BondSpec::new(m1, m2, BondOrder::Single))
+            .unwrap();
+        let mut mol = mol_builder.build().unwrap();
+
+        let match_vect = generate_depiction_matching_2d_structure(
+            &mut mol,
+            &reference,
+            0,
+            Some(&reference_pattern),
+            &ConstrainedDepictionParams::default(),
+        )
+        .unwrap();
+
+        assert_eq!(match_vect, vec![(1, 1), (2, 2)]);
+        assert_eq!(mol.conformers_2d().len(), 1);
+    }
+
+    #[test]
+    fn constrained_depiction_matching_3d_structure_accept_failure_falls_back_to_2d_coords() {
+        let mut ref_builder = MoleculeBuilder::new();
+        ref_builder.add_atom(AtomSpec::new(Element::C));
+        let reference = ref_builder.build().unwrap();
+
+        let mut mol_builder = MoleculeBuilder::new();
+        let m0 = mol_builder.add_atom(AtomSpec::new(Element::C));
+        let m1 = mol_builder.add_atom(AtomSpec::new(Element::C));
+        mol_builder
+            .add_bond(BondSpec::new(m0, m1, BondOrder::Single))
+            .unwrap();
+        let mut mol = mol_builder.build().unwrap();
+
+        generate_depiction_matching_3d_structure(&mut mol, &reference, -1, None, true, false)
+            .unwrap();
+
+        assert_eq!(mol.conformers_2d().len(), 1);
+        assert_eq!(mol.conformers_2d()[0].coords().len(), 2);
+    }
+
+    #[test]
+    fn constrained_depiction_matching_3d_structure_matches_mimic_distmat_path() {
+        let mut ref_builder = MoleculeBuilder::new();
+        let r0 = ref_builder.add_atom(AtomSpec::new(Element::C));
+        let r1 = ref_builder.add_atom(AtomSpec::new(Element::C));
+        ref_builder
+            .add_bond(BondSpec::new(r0, r1, BondOrder::Single))
+            .unwrap();
+        ref_builder
+            .add_3d_conformer(vec![[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+            .unwrap();
+        let reference = ref_builder.build().unwrap();
+
+        let mut mol_builder = MoleculeBuilder::new();
+        let m0 = mol_builder.add_atom(AtomSpec::new(Element::C));
+        let m1 = mol_builder.add_atom(AtomSpec::new(Element::C));
+        mol_builder
+            .add_bond(BondSpec::new(m0, m1, BondOrder::Single))
+            .unwrap();
+        let mut mol = mol_builder.build().unwrap();
+
+        let expected = compute_2d_coords_mimic_distmat_with_params(
+            mol.atoms(),
+            mol.bonds(),
+            Some(&[2.0]),
+            &Compute2DCoordsMimicDistMatParameters {
+                canon_orient: false,
+                clear_confs: true,
+                weight_dist_mat: 0.5,
+                n_flips_per_sample: 3,
+                n_samples: 100,
+                sample_seed: 25,
+                permute_deg4_nodes: true,
+                force_rdkit: false,
+            },
+        )
+        .unwrap();
+
+        generate_depiction_matching_3d_structure(&mut mol, &reference, 0, None, false, false)
+            .unwrap();
+
+        assert_eq!(mol.conformers_2d().len(), 1);
+        assert_eq!(mol.conformers_2d()[0].coords(), expected.as_slice());
+    }
+
+    #[test]
+    fn straighten_depiction_minimize_rotation_keeps_smallest_adjustment() {
+        let mut builder = MoleculeBuilder::new();
+        let a0 = builder.add_atom(AtomSpec::new(Element::C));
+        let a1 = builder.add_atom(AtomSpec::new(Element::C));
+        builder
+            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_2d_conformer(vec![[0.0, 0.0], [1.0, 0.1]])
+            .unwrap();
+        let mut mol = builder.build().unwrap();
+
+        straighten_depiction(&mut mol, 0, true).unwrap();
+
+        let coords = mol.conformers_2d()[0].coords();
+        let dx = coords[1][0] - coords[0][0];
+        let dy = coords[1][1] - coords[0][1];
+        let theta = dy.atan2(dx).to_degrees();
+        assert!(theta.abs() < 1.0);
+    }
+
+    #[test]
+    fn normalize_depiction_canonicalize_zero_centers_without_rotating() {
+        let mut builder = MoleculeBuilder::new();
+        let a0 = builder.add_atom(AtomSpec::new(Element::C));
+        let a1 = builder.add_atom(AtomSpec::new(Element::C));
+        builder
+            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_2d_conformer(vec![[1.0, 1.0], [2.0, 1.0]])
+            .unwrap();
+        let mut mol = builder.build().unwrap();
+
+        let scale = normalize_depiction(&mut mol, 0, 0, 1.0).unwrap();
+
+        assert!((scale - 1.0).abs() < 1.0e-12);
+        let coords = mol.conformers_2d()[0].coords();
+        assert!((coords[0][0] + 0.5).abs() < 1.0e-8);
+        assert!((coords[1][0] - 0.5).abs() < 1.0e-8);
+        assert!(coords[0][1].abs() < 1.0e-8);
+        assert!(coords[1][1].abs() < 1.0e-8);
+    }
+
+    #[test]
+    fn normalize_depiction_negative_canonicalize_rotates_ninety_degrees() {
+        let mut builder = MoleculeBuilder::new();
+        let a0 = builder.add_atom(AtomSpec::new(Element::C));
+        let a1 = builder.add_atom(AtomSpec::new(Element::C));
+        builder
+            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_2d_conformer(vec![[0.0, 0.0], [2.0, 0.0]])
+            .unwrap();
+        let mut mol = builder.build().unwrap();
+
+        normalize_depiction(&mut mol, 0, -1, 1.0).unwrap();
+
+        let coords = mol.conformers_2d()[0].coords();
+        assert!(coords[0][0].abs() < 1.0e-8);
+        assert!(coords[1][0].abs() < 1.0e-8);
+        assert!((coords[0][1] + 1.0).abs() < 1.0e-8);
+        assert!((coords[1][1] - 1.0).abs() < 1.0e-8);
+    }
+
+    #[test]
+    fn normalize_depiction_negative_scale_uses_most_common_bond_length() {
+        let mut builder = MoleculeBuilder::new();
+        let a0 = builder.add_atom(AtomSpec::new(Element::C));
+        let a1 = builder.add_atom(AtomSpec::new(Element::C));
+        let a2 = builder.add_atom(AtomSpec::new(Element::C));
+        builder
+            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(a1, a2, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_2d_conformer(vec![[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]])
+            .unwrap();
+        let mut mol = builder.build().unwrap();
+
+        let scale = normalize_depiction(&mut mol, 0, 0, -1.0).unwrap();
+
+        assert!((scale - 0.75).abs() < 1.0e-12);
+        let coords = mol.conformers_2d()[0].coords();
+        let dx = coords[1][0] - coords[0][0];
+        assert!((dx.abs() - 1.5).abs() < 1.0e-8);
     }
 
     #[test]
@@ -11881,5 +13600,265 @@ fn copy_sign(to: f64, from: f64, tol: f64) -> f64 {
 struct ThetaBin {
     d_theta_avg: f64,
     theta_values: Vec<f64>,
+}
+
+// RDKit✔️❌: RDGeom::Transform3D *computeCanonicalTransform(const Conformer &conf,
+// RDKit✔️❌:                                                const RDGeom::Point3D *center,
+// RDKit✔️❌:                                                bool normalizeCovar,
+// RDKit✔️❌:                                                bool ignoreHs,
+// RDKit✔️❌:                                                double *eigenValues) { ... }
+// RDKit✔️❌: 2D planar adaptation of MolTransforms canonical transform for
+// RDKit✔️❌: depiction conformers stored as [x,y] rows.
+fn rdkit_compute_canonical_transform_for_2d_coords(
+    coords: &[[f64; 2]],
+    center: Option<[f64; 2]>,
+) -> [[f64; 4]; 4] {
+    let mut trans = rdkit_transform3d_identity();
+    let origin = if let Some(center) = center {
+        center
+    } else if coords.is_empty() {
+        [0.0, 0.0]
+    } else {
+        let mut sum = [0.0, 0.0];
+        for point in coords {
+            sum[0] += point[0];
+            sum[1] += point[1];
+        }
+        [sum[0] / coords.len() as f64, sum[1] / coords.len() as f64]
+    };
+    if coords.len() > 1 {
+        let mut xx = 0.0;
+        let mut xy = 0.0;
+        let mut yy = 0.0;
+        for point in coords {
+            let dx = point[0] - origin[0];
+            let dy = point[1] - origin[1];
+            xx += dx * dx;
+            xy += dx * dy;
+            yy += dy * dy;
+        }
+        let d = ((xx - yy) * (xx - yy) + 4.0 * xy * xy).sqrt();
+        let mut eig1 = (2.0 * xy, (yy - xx) + d);
+        let eig1_len = norm(eig1);
+        if eig1_len > 1.0e-4 {
+            eig1 = (eig1.0 / eig1_len, eig1.1 / eig1_len);
+        } else {
+            eig1 = (1.0, 0.0);
+        }
+        let eig2 = (-eig1.1, eig1.0);
+        trans[0][0] = eig1.0;
+        trans[0][1] = eig1.1;
+        trans[1][0] = eig2.0;
+        trans[1][1] = eig2.1;
+        trans[2][2] = 1.0;
+    }
+    let neg_origin = [-origin[0], -origin[1], 0.0];
+    let transformed_origin = rdkit_transform3d_transform_point(&trans, neg_origin);
+    rdkit_transform3d_set_translation(&mut trans, transformed_origin);
+    trans
+}
+
+// RDKit✔️❌: void straightenDepiction(RDKit::ROMol &mol, int confId, bool minimizeRotation) {
+// RDKit✔️❌:   if (!mol.getNumBonds()) {
+// RDKit✔️❌:     return;
+// RDKit✔️❌:   }
+// RDKit✔️❌:   constexpr double RAD2DEG = 180. / M_PI;
+// RDKit✔️❌:   constexpr double DEG2RAD = M_PI / 180.;
+// RDKit✔️❌:   constexpr double ALMOST_ZERO = 1.e-5;
+// RDKit✔️❌:   constexpr double INCR_DEG = 30.;
+// RDKit✔️❌:   constexpr double HALF_INCR_DEG = 0.5 * INCR_DEG;
+// RDKit✔️❌:   constexpr double QUARTER_INCR_DEG = 0.25 * INCR_DEG;
+// RDKit✔️❌:   ... theta binning and rotation selection ...
+pub(crate) fn straighten_depiction(
+    mol: &mut Molecule,
+    conf_id: isize,
+    minimize_rotation: bool,
+) -> Result<(), Coordinate2DError> {
+    if mol.num_bonds() == 0 {
+        return Ok(());
+    }
+    const RAD2DEG: f64 = 180.0 / PI;
+    const DEG2RAD: f64 = PI / 180.0;
+    const ALMOST_ZERO: f64 = 1.0e-5;
+    const INCR_DEG: f64 = 30.0;
+    const HALF_INCR_DEG: f64 = 0.5 * INCR_DEG;
+    const QUARTER_INCR_DEG: f64 = 0.25 * INCR_DEG;
+
+    let conf_index = rdkit_select_2d_conformer_index(mol, conf_id)?;
+    let coords_snapshot = mol.conformers_2d()[conf_index].coords().to_vec();
+    let mut theta_bins = std::collections::HashMap::<i32, ThetaBin>::new();
+    for bond in mol.bonds() {
+        let bi = bond.begin().index();
+        let ei = bond.end().index();
+        let mut bv = [
+            coords_snapshot[bi][0] - coords_snapshot[ei][0],
+            coords_snapshot[bi][1] - coords_snapshot[ei][1],
+        ];
+        bv[0] = if bv[0] < 0.0 {
+            bv[0].min(-ALMOST_ZERO)
+        } else {
+            bv[0].max(ALMOST_ZERO)
+        };
+        let theta = RAD2DEG * (bv[1] / bv[0]).atan();
+        let mut d_theta = (-theta).rem_euclid(INCR_DEG);
+        if d_theta > HALF_INCR_DEG {
+            d_theta -= INCR_DEG;
+        }
+        let theta_key = (d_theta + copy_sign(0.5, d_theta, ALMOST_ZERO)) as i32;
+        let theta_bin = theta_bins.entry(theta_key).or_default();
+        theta_bin.d_theta_avg += d_theta;
+        theta_bin.theta_values.push(theta);
+    }
+    if theta_bins.is_empty() {
+        return Ok(());
+    }
+    let mut d_theta_smallest = f64::MAX;
+    for theta_bin in theta_bins.values_mut() {
+        theta_bin.d_theta_avg /= theta_bin.theta_values.len() as f64;
+        if theta_bin.d_theta_avg.abs() < d_theta_smallest.abs() {
+            d_theta_smallest = theta_bin.d_theta_avg;
+        }
+    }
+    let min_rotation_bin = theta_bins
+        .values()
+        .max_by(|a, b| {
+            a.theta_values
+                .len()
+                .cmp(&b.theta_values.len())
+                .then_with(|| b.d_theta_avg.abs().total_cmp(&a.d_theta_avg.abs()))
+        })
+        .expect("theta_bins is non-empty");
+    let mut d_theta_min = min_rotation_bin.d_theta_avg;
+    if !minimize_rotation {
+        let mut count_60_vs_30 = [0u32, 0u32];
+        for theta in &min_rotation_bin.theta_values {
+            let abs_theta = (*theta + d_theta_min).abs();
+            if abs_theta < ALMOST_ZERO {
+                continue;
+            }
+            let idx = (((abs_theta + 0.5) / INCR_DEG) as usize) % 2;
+            count_60_vs_30[idx] += 1;
+        }
+        if count_60_vs_30[0] > count_60_vs_30[1] {
+            d_theta_min -= copy_sign(INCR_DEG, d_theta_min, ALMOST_ZERO);
+        }
+    } else if d_theta_smallest.abs() < ALMOST_ZERO
+        || (d_theta_smallest.abs() < d_theta_min.abs() && d_theta_min.abs() > QUARTER_INCR_DEG)
+    {
+        d_theta_min = d_theta_smallest;
+    }
+    if d_theta_min.abs() > ALMOST_ZERO {
+        let trans = transform2d_set_transform_center_angle((0.0, 0.0), d_theta_min * DEG2RAD);
+        let coords = mol.coordinate_block_mut().conformers_2d[conf_index].coords_mut();
+        for point in coords.iter_mut() {
+            let rotated = transform2d_point((point[0], point[1]), trans);
+            point[0] = rotated.0;
+            point[1] = rotated.1;
+        }
+    }
+    Ok(())
+}
+
+// RDKit✔️❌: double normalizeDepiction(RDKit::ROMol &mol, int confId, int canonicalize,
+// RDKit✔️❌:                           double scaleFactor) {
+// RDKit✔️❌:   constexpr double SCALE_FACTOR_THRESHOLD = 1.e-5;
+// RDKit✔️❌:   if (!mol.getNumBonds()) {
+// RDKit✔️❌:     return -1.;
+// RDKit✔️❌:   }
+// RDKit✔️❌:   ... most-common-bond-length scaling and canonical transform ...
+pub(crate) fn normalize_depiction(
+    mol: &mut Molecule,
+    conf_id: isize,
+    canonicalize: i32,
+    mut scale_factor: f64,
+) -> Result<f64, Coordinate2DError> {
+    const SCALE_FACTOR_THRESHOLD: f64 = 1.0e-5;
+    const RDKIT_BOND_LEN: f64 = 1.5;
+    if mol.num_bonds() == 0 {
+        return Ok(-1.0);
+    }
+    let conf_index = rdkit_select_2d_conformer_index(mol, conf_id)?;
+    if scale_factor < 0.0 {
+        let coords = mol.conformers_2d()[conf_index].coords();
+        let mut most_common_bond_length_int = -1i32;
+        let mut max_count = 0u32;
+        let mut binned_bond_lengths = std::collections::HashMap::<i32, u32>::new();
+        for bond in mol.bonds() {
+            let begin = bond.begin().index();
+            let end = bond.end().index();
+            let dx = coords[begin][0] - coords[end][0];
+            let dy = coords[begin][1] - coords[end][1];
+            let bond_length = ((rdkit_sqrt(dx * dx + dy * dy) * 10.0) + 0.5) as i32;
+            let count = binned_bond_lengths.entry(bond_length).or_insert(0);
+            *count += 1;
+            if *count > max_count {
+                max_count = *count;
+                most_common_bond_length_int = bond_length;
+            }
+        }
+        if most_common_bond_length_int > 0 {
+            let most_common_bond_length = most_common_bond_length_int as f64 * 0.1;
+            scale_factor = RDKIT_BOND_LEN / most_common_bond_length;
+        }
+    }
+
+    let coords_snapshot = mol.conformers_2d()[conf_index].coords().to_vec();
+    let mut canon_trans = if canonicalize != 0 {
+        Some(rdkit_compute_canonical_transform_for_2d_coords(
+            &coords_snapshot,
+            None,
+        ))
+    } else {
+        let mut trans = rdkit_transform3d_identity();
+        let mut centroid = [0.0, 0.0];
+        for point in &coords_snapshot {
+            centroid[0] += point[0];
+            centroid[1] += point[1];
+        }
+        centroid[0] /= coords_snapshot.len() as f64;
+        centroid[1] /= coords_snapshot.len() as f64;
+        rdkit_transform3d_set_translation(&mut trans, [-centroid[0], -centroid[1], 0.0]);
+        Some(trans)
+    };
+    if canonicalize < 0 {
+        let rotate90 = transform2d_set_transform_center_angle((0.0, 0.0), PI / 2.0);
+        let mut rotate90_3d = rdkit_transform3d_identity();
+        rotate90_3d[0][0] = rotate90[0];
+        rotate90_3d[0][1] = rotate90[1];
+        rotate90_3d[0][3] = rotate90[2];
+        rotate90_3d[1][0] = rotate90[3];
+        rotate90_3d[1][1] = rotate90[4];
+        rotate90_3d[1][3] = rotate90[5];
+        if let Some(trans) = canon_trans.as_mut() {
+            *trans = rdkit_transform3d_mul(&rotate90_3d, trans);
+        }
+    }
+
+    let is_scale_factor_sane = scale_factor > SCALE_FACTOR_THRESHOLD;
+    let coords = mol.coordinate_block_mut().conformers_2d[conf_index].coords_mut();
+    if is_scale_factor_sane && (scale_factor - 1.0).abs() > SCALE_FACTOR_THRESHOLD {
+        let mut trans = rdkit_transform3d_identity();
+        trans[0][0] = scale_factor;
+        trans[1][1] = scale_factor;
+        if let Some(canon_trans) = canon_trans {
+            trans = rdkit_transform3d_mul(&trans, &canon_trans);
+        }
+        for point in coords.iter_mut() {
+            let transformed = rdkit_transform3d_transform_point(&trans, [point[0], point[1], 0.0]);
+            point[0] = transformed[0];
+            point[1] = transformed[1];
+        }
+    } else if let Some(canon_trans) = canon_trans {
+        for point in coords.iter_mut() {
+            let transformed =
+                rdkit_transform3d_transform_point(&canon_trans, [point[0], point[1], 0.0]);
+            point[0] = transformed[0];
+            point[1] = transformed[1];
+        }
+    }
+    if !is_scale_factor_sane {
+        scale_factor = -1.0;
+    }
+    Ok(scale_factor)
 }
 // ── End non-tetrahedral embed functions ────────────────────────────────────

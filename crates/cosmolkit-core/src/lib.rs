@@ -70,6 +70,7 @@ pub use bio_ops::{
 };
 pub use bond::{Bond, BondDirection, BondId, BondOrder, BondSpec, BondStereo};
 pub use builder::MoleculeBuilder;
+pub use coordinates::With2DCoordinatesParams;
 pub use derived::DerivedState;
 pub use distgeom::DgBoundsError;
 pub use draw::{PreparedDrawAtom, PreparedDrawBond, PreparedDrawMolecule, SvgDrawError};
@@ -87,9 +88,9 @@ pub use io::sdf::{SdfDataset, SdfRecordMetadata};
 pub use kekulize::KekulizeError;
 pub use mol_pickler::{PickleError, mol_from_binary, mol_to_binary};
 pub use molecule::{
-    AtomMapping, BondMapping, Conformer3D, ConformerStore, CoordinateDimension, Molecule,
-    MoleculeProperties, PropertyStore, SdfPropertyList, SdfPropertyListTarget, SmilesParseError,
-    SmilesWriteError, TopologyMapping,
+    AtomMapping, BondMapping, Conformer2D, Conformer3D, ConformerStore, CoordinateDimension,
+    Molecule, MoleculeProperties, PropertyStore, SdfPropertyList, SdfPropertyListTarget,
+    SmilesParseError, SmilesWriteError, TopologyMapping,
 };
 pub use ops::{
     ASSIGNED_AROMATICITY_SPEC, ASSIGNED_RING_FAMILIES_SPEC, ASSIGNED_RINGS_SPEC,

@@ -1954,7 +1954,7 @@ mod tests {
             stereo_groups: vec![],
         };
         let coord_block = crate::molecule::CoordinateBlock {
-            coords_2d: None,
+            conformers_2d: vec![],
             conformers_3d: vec![],
             source_coordinate_dim: None,
         };

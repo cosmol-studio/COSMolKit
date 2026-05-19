@@ -271,6 +271,16 @@ impl MoleculeBatch {
         )
     }
 
+    pub fn with_2d_coordinates_with_params(
+        &self,
+        params: crate::With2DCoordinatesParams,
+        errors: BatchErrorMode,
+    ) -> Result<Self, BatchValidationError> {
+        self.transform("batch.with_2d_coordinates", errors, move |molecule| {
+            molecule.with_2d_coordinates_with_params(params)
+        })
+    }
+
     fn transform(
         &self,
         operation: &'static str,
@@ -598,6 +608,30 @@ mod tests {
         // "N" (1 atom) — strict subset handles single atoms, succeeds
         assert_eq!(transformed.valid_mask(), vec![true, true]);
         assert_eq!(transformed.errors().len(), 0);
+    }
+
+    #[test]
+    fn batch_with_2d_coordinates_with_params_delegates_to_parameterized_operation() {
+        let smiles = vec!["CC".to_string()];
+        let batch = MoleculeBatch::from_smiles_list(&smiles);
+
+        let transformed = batch
+            .with_2d_coordinates_with_params(
+                crate::With2DCoordinatesParams {
+                    force_rdkit: true,
+                    use_ring_templates: true,
+                    ..crate::With2DCoordinatesParams::default()
+                },
+                BatchErrorMode::Strict,
+            )
+            .unwrap();
+
+        let record = transformed.get(0).unwrap();
+        let mol = match record {
+            BatchRecord::Molecule(mol) => mol,
+            BatchRecord::Error(err) => panic!("unexpected batch error: {err:?}"),
+        };
+        assert_eq!(mol.conformers_2d().len(), 1);
     }
 
     #[test]

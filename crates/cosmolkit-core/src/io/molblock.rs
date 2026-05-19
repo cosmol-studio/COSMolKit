@@ -238,15 +238,12 @@ fn prepare_mol_for_writing<'a>(
 
     let mut selected = select_coordinates(mol.as_ref(), selection)?;
     if params.include_stereo && selected.coords.is_none() {
-        let coords_2d =
-            crate::coordinates::compute_2d_coords(mol.atoms(), mol.bonds()).map_err(|source| {
-                MolWriteError::Value(format!(
-                    "compute2DCoords failed during MolBlock write: {source}"
-                ))
-            })?;
-        let coord_block = mol.to_mut().coordinate_block_mut();
-        coord_block.coords_2d = Some(coords_2d);
-        coord_block.source_coordinate_dim = Some(CoordinateDimension::TwoD);
+        let generated = mol.as_ref().with_2d_coordinates().map_err(|source| {
+            MolWriteError::Value(format!(
+                "compute2DCoords failed during MolBlock write: {source}"
+            ))
+        })?;
+        mol = Cow::Owned(generated);
         selected = select_coordinates(mol.as_ref(), CoordinateSelection::TwoD)?;
     }
 

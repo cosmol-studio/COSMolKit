@@ -89,7 +89,7 @@ authoritative when this file disagrees with code.
 
 | Checked Item | Entry Point | Feature | Status | Current Gaps |
 |---|---|---|---|---|
-| 2D coordinate generation | `coordinates.rs`, `ops.rs`, `Molecule::with_2d_coordinates` | `COORDINATE_2D_FEATURE` | substantial | Unsupported branch audit and functional test breadth. |
+| 2D coordinate generation | `coordinates.rs`, `ops.rs`, `Molecule::with_2d_coordinates` | `COORDINATE_2D_FEATURE` | substantial | The selected RDKit 2D depiction baseline is now broadly ported in active Rust: parameterized `compute2DCoords` entrypoints, `preferCoordGen`/`forceRDKit` routing, ring-template registry/loaders, mimic-distance embedding, constrained 2D/3D depiction matching, normalization/straightening, and value-style exposure through registered operations, batch helpers, MolBlock writing, and drawing fallbacks are all present. Remaining work is final source-audit closure, support-status wording, and whole-feature strict validation. |
 | SVG drawing | `draw.rs`, `Molecule::to_svg` | `DRAWING_FEATURE` | substantial | Annotation overlays (CIP codes, notes, SGroups, brackets, variable bonds, links, highlights, close-contacts), SVG metadata/data-tag/class attributes all ported. Representative output tests and support-status consistency. |
 | PNG rendering | `draw.rs`, `Molecule::to_png` | `DRAWING_FEATURE` | substantial | PNG byte-generation tests and batch export integration. |
 | Embedded Noto Sans font | `draw.rs`, `assets/fonts/NotoSans-Regular.ttf` | `DRAWING_FEATURE` | implemented | Keep asset path and packaging assumptions audited. |

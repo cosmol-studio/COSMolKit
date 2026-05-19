@@ -897,6 +897,22 @@ fn molblock_write_params_include_stereo_false_still_writes_existing_non_parity_o
 }
 
 #[test]
+fn molblock_writer_generates_missing_2d_coords_via_registered_operation() {
+    let mut builder = Molecule::builder().with_name("needs-2d");
+    let a0 = builder.add_atom(AtomSpec::new(Element::C));
+    let a1 = builder.add_atom(AtomSpec::new(Element::C));
+    builder
+        .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
+        .unwrap();
+    let mol = builder.build().unwrap();
+
+    let block = mol_to_v2000_block(&mol).unwrap();
+
+    assert!(block.contains("V2000"));
+    assert!(block.contains("  2  1 "));
+}
+
+#[test]
 fn mol_to_v2000_block_writes_rgroup_pxa_and_zero_bond_extensions() {
     let molecule = zbo_extension_molecule();
 

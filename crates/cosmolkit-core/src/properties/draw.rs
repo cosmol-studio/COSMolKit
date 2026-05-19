@@ -1387,12 +1387,15 @@ impl DrawMol {
         let at_cds: Vec<DVec2> = if let Some(coords) = mol.coords_2d() {
             coords.iter().map(|pt| DVec2::new(pt[0], -pt[1])).collect()
         } else {
-            // Generate 2D coordinates
-            let coords =
-                crate::coordinates::compute_2d_coords(mol.atoms(), mol.bonds()).map_err(|e| {
-                    SvgDrawError::CoordinateGeneration(format!("compute2DCoords failed: {e}"))
-                })?;
-            coords.iter().map(|pt| DVec2::new(pt[0], -pt[1])).collect()
+            let generated = mol.with_2d_coordinates().map_err(|e| {
+                SvgDrawError::CoordinateGeneration(format!("compute2DCoords failed: {e}"))
+            })?;
+            generated
+                .coords_2d()
+                .expect("with_2d_coordinates must materialize a 2D conformer")
+                .iter()
+                .map(|pt| DVec2::new(pt[0], -pt[1]))
+                .collect()
         };
 
         let valence = assign_valence(mol, ValenceModel::RdkitLike)
@@ -4961,5 +4964,25 @@ mod tests {
             svg.contains("<line") || svg.contains("<path"),
             "SVG should contain bond geometry"
         );
+    }
+
+    #[test]
+    fn draw_svg_generates_missing_2d_coords_via_registered_operation() {
+        use crate::atom::{AtomSpec, Element};
+        use crate::bond::BondSpec;
+        use crate::builder::MoleculeBuilder;
+
+        let mut builder = MoleculeBuilder::new();
+        let a0 = builder.add_atom(AtomSpec::new(Element::C));
+        let a1 = builder.add_atom(AtomSpec::new(Element::C));
+        builder
+            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
+            .unwrap();
+        let mol = builder.build().unwrap();
+
+        let svg = mol_to_svg(&mol, 300, 300).unwrap();
+
+        assert!(svg.contains("</svg>"));
+        assert!(svg.contains("<line") || svg.contains("<path"));
     }
 }

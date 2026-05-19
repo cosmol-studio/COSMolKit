@@ -296,37 +296,37 @@ Step 116 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_proto
 Step 117 [ ]: Run `cargo test -p cosmolkit-core --features op-contracts-strict coordinates constrained_2d_matchvect remove_all_conformers -- --nocapture`.
 
 Step 118 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 119 [ ]: Port `generateDepictionMatching2DStructure(ROMol &, const ROMol &, const MatchVectType &, int, bool)`, `generateDepictionMatching2DStructure(ROMol &, const ROMol &, int, const ROMol *, const ConstrainedDepictionParams &)`, `generateDepictionMatching2DStructure(ROMol &, const ROMol &, int, const ROMol *, bool, bool, bool)`, and `generateDepictionMatching3DStructure(...)` completely, including overload-specific matching and reference-pattern semantics.
+Step 119 [x]: Port `generateDepictionMatching2DStructure(ROMol &, const ROMol &, const MatchVectType &, int, bool)`, `generateDepictionMatching2DStructure(ROMol &, const ROMol &, int, const ROMol *, const ConstrainedDepictionParams &)`, `generateDepictionMatching2DStructure(ROMol &, const ROMol &, int, const ROMol *, bool, bool, bool)`, and `generateDepictionMatching3DStructure(...)` completely, including overload-specific matching and reference-pattern semantics.
 Step 120 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 121 [ ]: Add or update targeted tests for the remaining constrained-2D overloads and `generateDepictionMatching3DStructure(...)`, including reference-pattern and accept-failure branches.
+Step 121 [x]: Add or update targeted tests for the remaining constrained-2D overloads and `generateDepictionMatching3DStructure(...)`, including reference-pattern and accept-failure branches.
 Step 122 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 123 [ ]: Run `cargo test -p cosmolkit-core --features op-contracts-strict coordinates constrained_2d_overloads constrained_3d -- --nocapture`.
+Step 123 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict coordinates constrained_2d_overloads constrained_3d -- --nocapture`.
 
 Step 124 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 125 [ ]: Port `straightenDepiction(...)` and `normalizeDepiction(...)` exactly, including angle histogram/binning, minimum-rotation handling, canonicalization control, and bond-length normalization scaling.
+Step 125 [x]: Port `straightenDepiction(...)` and `normalizeDepiction(...)` exactly, including angle histogram/binning, minimum-rotation handling, canonicalization control, and bond-length normalization scaling.
 Step 126 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 127 [ ]: Add or update targeted tests for `straightenDepiction(...)` and `normalizeDepiction(...)`, including `minimizeRotation`, `canonicalize`, and explicit `scaleFactor` behavior.
+Step 127 [x]: Add or update targeted tests for `straightenDepiction(...)` and `normalizeDepiction(...)`, including `minimizeRotation`, `canonicalize`, and explicit `scaleFactor` behavior.
 Step 128 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 129 [ ]: Run `cargo test -p cosmolkit-core --features op-contracts-strict coordinates straighten_depiction normalize_depiction -- --nocapture`.
+Step 129 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict coordinates straighten_depiction normalize_depiction -- --nocapture`.
 
-Step 130 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 131 [ ]: Port the public Rust exposure for the completed RDKit 2D depiction surface through `Molecule` APIs, registered operations, batch helpers, and existing `molblock`/drawing callers so they use the completed parameterized implementation instead of the current narrow default-only path.
-Step 132 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 133 [ ]: Add or update targeted tests for public `with_2d_coordinates` operation behavior, value semantics, batch behavior, and the call sites that previously depended on the old default-only coordinate path.
-Step 134 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 135 [ ]: Run `cargo test -p cosmolkit-core --features op-contracts-strict with_2d_coordinates batch.with_2d_coordinates molblock draw -- --nocapture`.
+Step 130 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 131 [x]: Port the public Rust exposure for the completed RDKit 2D depiction surface through `Molecule` APIs, registered operations, batch helpers, and existing `molblock`/drawing callers so they use the completed parameterized implementation instead of the current narrow default-only path.
+Step 132 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 133 [x]: Add or update targeted tests for public `with_2d_coordinates` operation behavior, value semantics, batch behavior, and the call sites that previously depended on the old default-only coordinate path.
+Step 134 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 135 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict with_2d_coordinates batch.with_2d_coordinates molblock draw -- --nocapture`.
 
-Step 136 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 137 [ ]: Audit the complete 2D depiction baseline against RDKit source again after the implementation steps and rewrite `dev/gap_reports/coordinate_2d_remaining_source_scan.md` with the exact remaining gap state and direct helper inventory.
-Step 138 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 139 [ ]: Update `dev/porting_inventory.md` and `crates/cosmolkit-core/src/support.rs` to reflect the exact 2D coordinate generation port-completion state without unsupported parity overclaims.
+Step 136 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 137 [x]: Audit the complete 2D depiction baseline against RDKit source again after the implementation steps and rewrite `dev/gap_reports/coordinate_2d_remaining_source_scan.md` with the exact remaining gap state and direct helper inventory.
+Step 138 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 139 [x]: Update `dev/porting_inventory.md` and `crates/cosmolkit-core/src/support.rs` to reflect the exact 2D coordinate generation port-completion state without unsupported parity overclaims.
 
-Step 140 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 141 [ ]: Run `cargo fmt --all`.
-Step 142 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 143 [ ]: Run `cargo check -p cosmolkit-core --features op-contracts-strict`.
-Step 144 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 145 [ ]: Run `cargo test -p cosmolkit-core --features op-contracts-strict`.
+Step 140 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 141 [x]: Run `cargo fmt --all`.
+Step 142 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 143 [x]: Run `cargo check -p cosmolkit-core --features op-contracts-strict`.
+Step 144 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 145 [x]: Run `cargo test -p cosmolkit-core --features op-contracts-strict`.
 
-Step 146 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 147 [ ]: Audit the final 2D coordinate generation baseline against RDKit source and write `dev/gap_reports/coordinate_2d_frozen_coverage_final_audit.md` stating whether the 2D depiction port is now at or near `100%` coverage for the selected baseline and listing any residual non-chemistry wrapper exclusions explicitly.
+Step 146 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
+Step 147 [x]: Audit the final 2D coordinate generation baseline against RDKit source and write `dev/gap_reports/coordinate_2d_frozen_coverage_final_audit.md` stating whether the 2D depiction port is now at or near `100%` coverage for the selected baseline and listing any residual non-chemistry wrapper exclusions explicitly.

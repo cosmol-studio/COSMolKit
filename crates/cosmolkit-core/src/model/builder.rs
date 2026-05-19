@@ -1,7 +1,7 @@
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 
 use crate::{
-    Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, BondStereo, Conformer3D, Molecule,
+    Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, BondStereo, Conformer2D, Conformer3D, Molecule,
     MoleculeBuildError, MoleculeProperties, StereoGroup, SubstanceGroup,
     molecule::{CoordinateBlock, TopologyBlock},
 };
@@ -25,7 +25,7 @@ pub struct MoleculeBuilder {
     adjacency: Vec<Vec<BondId>>,
     substance_groups: Vec<SubstanceGroup>,
     stereo_groups: Vec<StereoGroup>,
-    coords_2d: Option<Vec<[f64; 2]>>,
+    conformers_2d: Vec<Conformer2D>,
     conformers_3d: Vec<Conformer3D>,
     properties: MoleculeProperties,
 }
@@ -39,8 +39,8 @@ impl MoleculeBuilder {
     pub fn add_atom(&mut self, spec: AtomSpec) -> AtomId {
         let id = AtomId::new(self.atoms.len());
         self.atoms.push(Atom::from_spec(id, spec));
-        if let Some(coords) = &mut self.coords_2d {
-            coords.push([0.0, 0.0]);
+        for conformer in &mut self.conformers_2d {
+            conformer.push_coord([0.0, 0.0]);
         }
         self.adjacency.push(Vec::new());
         id
@@ -145,13 +145,14 @@ impl MoleculeBuilder {
             self.adjacency[bond.begin().index()].push(bond.id());
             self.adjacency[bond.end().index()].push(bond.id());
         }
-        if let Some(coords) = &mut self.coords_2d {
-            let old_coords = std::mem::take(coords);
-            *coords = old_coords
+        for conformer in &mut self.conformers_2d {
+            let old_coords = conformer.coords().to_vec();
+            let coords = old_coords
                 .into_iter()
                 .enumerate()
                 .filter_map(|(idx, coord)| (!remove[idx]).then_some(coord))
                 .collect();
+            *conformer = Conformer2D::new(conformer.id(), coords);
         }
         for conformer in &mut self.conformers_3d {
             let old_coords = conformer.coords().to_vec();
@@ -172,8 +173,21 @@ impl MoleculeBuilder {
                 atom_count: self.atoms.len(),
             });
         }
-        self.coords_2d = Some(coords);
+        self.conformers_2d.clear();
+        self.conformers_2d.push(Conformer2D::new(0, coords));
         Ok(())
+    }
+
+    pub fn add_2d_conformer(&mut self, coords: Vec<[f64; 2]>) -> Result<usize, MoleculeBuildError> {
+        if coords.len() != self.atoms.len() {
+            return Err(MoleculeBuildError::CoordinateRowCount {
+                rows: coords.len(),
+                atom_count: self.atoms.len(),
+            });
+        }
+        let id = self.conformers_2d.len();
+        self.conformers_2d.push(Conformer2D::new(id, coords));
+        Ok(id)
     }
 
     pub fn add_3d_conformer(&mut self, coords: Vec<[f64; 3]>) -> Result<usize, MoleculeBuildError> {
@@ -281,7 +295,7 @@ impl MoleculeBuilder {
         }
         let source_coordinate_dim = if self.conformers_3d.iter().any(Conformer3D::is_3d) {
             Some(crate::CoordinateDimension::ThreeD)
-        } else if self.coords_2d.is_some() || !self.conformers_3d.is_empty() {
+        } else if !self.conformers_2d.is_empty() || !self.conformers_3d.is_empty() {
             Some(crate::CoordinateDimension::TwoD)
         } else {
             None
@@ -295,7 +309,7 @@ impl MoleculeBuilder {
                 stereo_groups: self.stereo_groups,
             },
             CoordinateBlock {
-                coords_2d: self.coords_2d,
+                conformers_2d: self.conformers_2d,
                 conformers_3d: self.conformers_3d,
                 source_coordinate_dim,
             },

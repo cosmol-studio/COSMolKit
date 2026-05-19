@@ -60,13 +60,13 @@ pub(crate) fn check_molecule_invariants(molecule: &Molecule) -> Result<(), Invar
         }
     }
 
-    if let Some(coords) = molecule.coords_2d()
-        && coords.len() != atom_count
-    {
-        return Err(InvariantError::CoordinateRowCount {
-            rows: coords.len(),
-            atom_count,
-        });
+    for conformer in molecule.conformers_2d() {
+        if conformer.coords().len() != atom_count {
+            return Err(InvariantError::CoordinateRowCount {
+                rows: conformer.coords().len(),
+                atom_count,
+            });
+        }
     }
 
     for conformer in molecule.conformers_3d() {

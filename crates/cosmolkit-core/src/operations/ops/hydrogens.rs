@@ -131,13 +131,15 @@ pub(super) fn apply_add_hs_assignment(
     }
 
     if let Some(coords) = coords_2d_to_append {
-        let Some(existing) = &mut coordinates.coords_2d else {
+        let Some(existing) = coordinates.conformers_2d.first_mut() else {
             return Err(OperationError::InvalidInput {
                 operation: &WITH_HYDROGENS_SPEC,
                 message: "AddHs lost 2D coordinate block while appending hydrogen coordinates",
             });
         };
-        existing.extend(coords);
+        for coord in coords {
+            existing.push_coord(coord);
+        }
     }
     if !conformer_coords_to_append.is_empty() {
         for (conformer, coords) in coordinates
