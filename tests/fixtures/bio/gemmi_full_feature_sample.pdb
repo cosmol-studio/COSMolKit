@@ -1,0 +1,35 @@
+HEADER    OXIDOREDUCTASE                          01-JAN-00   1ABC
+AUTHOR    A.-B.DOE
+SEQRES   1 A    7  ALA GLY SER THR TYR VAL LEU
+SEQRES   2 A    7  ASP
+CRYST1   10.000   11.000   12.000  90.00  90.00 120.00 P 21 21 21    4
+SCALE1      0.100000  0.000000  0.000000        1.00000
+SCALE2      0.000000  0.050000  0.000000        2.00000
+SCALE3      0.000000  0.000000  0.033333        3.00000
+ORIGX1      1.000000  0.000000  0.000000        4.00000
+ORIGX2      0.000000  1.000000  0.000000        5.00000
+ORIGX3      0.000000  0.000000  1.000000        6.00000
+MTRIX1   1  1.000000  0.000000  0.000000        0.00000    1
+MTRIX2   1  0.000000  1.000000  0.000000        0.00000    1
+MTRIX3   1  0.000000  0.000000  1.000000        0.00000    1
+MTRIX1   2  1.000000  0.000000  0.000000        1.00000    0
+MTRIX2   2  0.000000  1.000000  0.000000        2.00000    0
+MTRIX3   2  0.000000  0.000000  1.000000        3.00000    0
+HELIX    1 AA1 ALA A   55  TYR A   59  5                                   5
+SHEET    1 AA1 7 TYR A  20  THR A  21  0
+SHEET    2 AA1 7 LYS A 156  PRO A 161 -1  O  CYS A 157   N  TYR A  20
+ATOM      1  SG  CYS A   3       0.000   0.000   0.000  1.00 20.00           S
+ATOM      2  SG  CYS A   4       2.000   0.000   0.000  1.00 20.00           S
+ATOM      3  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
+HETATM    4  O   HOH A   2       6.900   0.000   0.000  1.00 20.00           O
+HETATM    5 ZN1A  ZN A   1       5.000   0.000   0.000  1.00 20.00          ZN
+TER
+TER
+SSBOND   1 CYS A   3    CYS A   4                          1555   1555  2.03
+CISPEP        A     3       A     4          0        12.34
+LINK        ZN1A ZN A    1                 O   HOHA    2   1555   1555   2.00
+MODRES      MSEA     5  MET  SELENOMETHIONINE                           MODID001
+HETNAM     QWE                                                         LONGCODE
+DBREF      A      1     9 UNP    Q12345   SAMPLE_ID       11     19
+DBREF1     A      1     9 UNP                  SAMPLE_IDENTIFIER
+DBREF2     A      Q12345LONGACCESSION               101         109

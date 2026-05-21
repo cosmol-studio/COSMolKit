@@ -862,6 +862,13 @@ impl Molecule {
         crate::distgeom::dg_bounds_matrix(self)
     }
 
+    pub fn avalon_fingerprint(
+        &self,
+        params: &crate::avalon_fingerprint::AvalonFingerprintParams,
+    ) -> Result<crate::Fingerprint, crate::FingerprintError> {
+        crate::avalon_fingerprint::avalon_fingerprint(self, params)
+    }
+
     pub fn morgan_fingerprint(
         &self,
         params: &crate::MorganFingerprintParams,
@@ -876,12 +883,54 @@ impl Molecule {
         crate::fingerprint::morgan_fingerprint_with_output(self, params)
     }
 
+    pub fn topological_fingerprint(
+        &self,
+        params: &crate::fingerprint::TopologicalFingerprintParams,
+    ) -> crate::Fingerprint {
+        crate::fingerprint::topological_fingerprint(self, params)
+    }
+
+    pub fn maccs_fingerprint(
+        &self,
+        params: &crate::fingerprint::MaccsFingerprintParams,
+    ) -> crate::Fingerprint {
+        crate::fingerprint::maccs_fingerprint(self, params)
+    }
+
+    pub fn hash(&self) -> Result<u64, crate::mol_hash::HashError> {
+        crate::mol_hash::mol_hash(self)
+    }
+
+    pub fn hash_with_ranks(&self, ranks: &[u32]) -> Result<u64, crate::mol_hash::HashError> {
+        crate::mol_hash::mol_hash_with_ranks(self, ranks)
+    }
+
+    pub fn fragments(&self) -> Result<Vec<Molecule>, crate::fragment::FragmentError> {
+        crate::fragment::get_mol_frags(self)
+    }
+
+    pub fn largest_fragment(&self) -> Result<Molecule, crate::fragment::FragmentError> {
+        crate::fragment::get_largest_fragment(self)
+    }
+
+    pub fn murcko_scaffold(&self) -> Result<Molecule, crate::mol_hash::HashError> {
+        crate::mol_hash::mol_murcko_scaffold(self)
+    }
+
+    pub fn net_scaffold(&self) -> Result<Molecule, crate::mol_hash::HashError> {
+        crate::mol_hash::mol_net_scaffold(self)
+    }
+
     pub fn to_svg(&self, width: u32, height: u32) -> Result<String, crate::SvgDrawError> {
         crate::draw::mol_to_svg(self, width, height)
     }
 
     pub fn to_png(&self, width: u32, height: u32) -> Result<Vec<u8>, crate::SvgDrawError> {
         crate::draw::mol_to_png(self, width, height)
+    }
+
+    pub fn to_pdb_block(&self, conf_id: i32, flavor: u32) -> String {
+        crate::pdb_writer::mol_to_pdb_block(self, conf_id, flavor)
     }
 
     pub fn prepared_for_drawing_parity(
@@ -892,6 +941,10 @@ impl Molecule {
 
     pub fn tetrahedral_stereo(&self) -> Result<Vec<crate::TetrahedralStereo>, crate::StereoError> {
         crate::stereo::tetrahedral_stereo(self)
+    }
+
+    pub fn perceive_stereochemistry(&self) -> Result<(), crate::StereoError> {
+        crate::stereo::perceive_stereochemistry(self)
     }
 
     #[allow(dead_code)]
@@ -941,5 +994,169 @@ impl Molecule {
 
     pub(crate) fn replace_properties(&mut self, properties: MoleculeProperties) {
         self.properties = Arc::new(properties);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Molecule;
+    use crate::avalon_fingerprint::{AvalonFingerprintParams, avalon_fingerprint};
+    use crate::fingerprint::{MaccsFingerprintParams, TopologicalFingerprintParams};
+    use crate::{
+        AtomSpec, BondOrder, BondSpec, Conformer3D, Element, MoleculeBuilder,
+        assign_stereochemistry, fragment, mol_hash, pdb_writer, perceive_stereochemistry,
+    };
+
+    #[test]
+    fn molecule_fragment_helpers_match_module_functions() {
+        let mol = Molecule::from_smiles("CC.C").expect("failed to parse fragments test molecule");
+
+        let via_method = mol.fragments().expect("method fragments");
+        let via_module = fragment::get_mol_frags(&mol).expect("module fragments");
+
+        assert_eq!(via_method, via_module);
+    }
+
+    #[test]
+    fn molecule_largest_fragment_helper_matches_module_function() {
+        let mol = Molecule::from_smiles("CC.C").expect("failed to parse fragments test molecule");
+
+        let via_method = mol.largest_fragment().expect("method largest fragment");
+        let via_module = fragment::get_largest_fragment(&mol).expect("module largest fragment");
+
+        assert_eq!(via_method, via_module);
+    }
+
+    #[test]
+    fn molecule_scaffold_helpers_match_module_functions() {
+        let mol = Molecule::from_smiles("Cc1ccccc1").expect("failed to parse scaffold molecule");
+
+        let murcko_method = mol.murcko_scaffold().expect("method murcko scaffold");
+        let murcko_module =
+            crate::mol_hash::mol_murcko_scaffold(&mol).expect("module murcko scaffold");
+        let net_method = mol.net_scaffold().expect("method net scaffold");
+        let net_module = crate::mol_hash::mol_net_scaffold(&mol).expect("module net scaffold");
+
+        assert_eq!(murcko_method, murcko_module);
+        assert_eq!(net_method, net_module);
+    }
+
+    #[test]
+    fn molecule_fingerprint_helpers_match_module_functions() {
+        let mol = Molecule::from_smiles("CCO").expect("failed to parse fingerprint molecule");
+
+        let avalon_params = AvalonFingerprintParams::default();
+        let topological_params = TopologicalFingerprintParams::default();
+        let maccs_params = MaccsFingerprintParams::default();
+
+        assert_eq!(
+            mol.avalon_fingerprint(&avalon_params)
+                .expect("method avalon fingerprint"),
+            avalon_fingerprint(&mol, &avalon_params).expect("module avalon fingerprint")
+        );
+        assert_eq!(
+            mol.topological_fingerprint(&topological_params),
+            crate::fingerprint::topological_fingerprint(&mol, &topological_params)
+        );
+        assert_eq!(
+            mol.maccs_fingerprint(&maccs_params),
+            crate::fingerprint::maccs_fingerprint(&mol, &maccs_params)
+        );
+    }
+
+    #[test]
+    fn molecule_hash_helpers_match_module_functions() {
+        let mol = Molecule::from_smiles("Cl[C@H](Br)I").expect("failed to parse hash molecule");
+        let ranks = crate::stereo::assign_atom_cip_ranks(&mol).expect("cip ranks");
+
+        assert_eq!(
+            mol.hash().expect("method hash"),
+            mol_hash::mol_hash(&mol).expect("module hash")
+        );
+        assert_eq!(
+            mol.hash_with_ranks(&ranks).expect("method hash with ranks"),
+            mol_hash::mol_hash_with_ranks(&mol, &ranks).expect("module hash with ranks")
+        );
+    }
+
+    #[test]
+    fn molecule_pdb_helper_matches_module_function() {
+        let mol = Molecule::from_smiles("CO").expect("failed to parse pdb molecule");
+
+        assert_eq!(
+            mol.to_pdb_block(-1, 0),
+            pdb_writer::mol_to_pdb_block(&mol, -1, 0)
+        );
+    }
+
+    #[test]
+    fn molecule_perceive_stereochemistry_matches_module_function() {
+        let mol = Molecule::from_smiles("Cl[C@H](Br)I").expect("failed to parse stereo molecule");
+
+        assert_eq!(
+            mol.perceive_stereochemistry(),
+            perceive_stereochemistry(&mol)
+        );
+        #[allow(deprecated)]
+        {
+            assert_eq!(assign_stereochemistry(&mol), perceive_stereochemistry(&mol));
+        }
+    }
+
+    #[test]
+    fn molecule_pdb_helper_uses_conformer_index_selection() {
+        let mut builder = MoleculeBuilder::new();
+        builder.add_atom(AtomSpec::new(Element::O));
+        builder
+            .add_conformer(Conformer3D::new(7, vec![[1.0, 2.0, 3.0]], true))
+            .expect("failed to add conformer");
+        let mol = builder.build().expect("failed to build conformer molecule");
+
+        let block = mol.to_pdb_block(0, 0);
+        assert_eq!(
+            block,
+            "HETATM    1  O1  UNL     1      +1.000  +2.000  +3.000  1.00  0.00           O  \nEND\n"
+        );
+    }
+
+    #[test]
+    fn molecule_perceive_stereochemistry_is_read_only() {
+        let mol = Molecule::from_smiles("F/C=C/F").expect("failed to parse stereo molecule");
+        let before = mol.to_smiles(true).expect("smiles before");
+        let _ = mol
+            .perceive_stereochemistry()
+            .expect("perceive stereochemistry");
+        let after = mol.to_smiles(true).expect("smiles after");
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn molecule_topological_fingerprint_helper_matches_module_function_with_custom_params() {
+        let mut builder = MoleculeBuilder::new();
+        let c1 = builder.add_atom(AtomSpec::new(Element::C));
+        let c2 = builder.add_atom(AtomSpec::new(Element::C));
+        let o = builder.add_atom(AtomSpec::new(Element::O));
+        builder
+            .add_bond(BondSpec::new(c1, c2, BondOrder::Single))
+            .expect("failed to add c-c bond");
+        builder
+            .add_bond(BondSpec::new(c2, o, BondOrder::Single))
+            .expect("failed to add c-o bond");
+        let mol = builder
+            .build()
+            .expect("failed to build fingerprint molecule");
+        let params = TopologicalFingerprintParams {
+            min_path: 1,
+            max_path: 2,
+            n_bits: 512,
+            n_bits_per_hash: 3,
+            use_bond_types: false,
+            from_atoms: Some(vec![0]),
+            ignore_atoms: Some(vec![2]),
+        };
+        assert_eq!(
+            mol.topological_fingerprint(&params),
+            crate::fingerprint::topological_fingerprint(&mol, &params)
+        );
     }
 }

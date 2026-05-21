@@ -129,6 +129,113 @@ pub(super) fn assign_double_bond_stereo_after_smiles_parse(
             }
         }
     }
+    // BEGIN RDKIT CPP FUNCTION legacyStereoPerception keepGoing gate subset
+    // RDKit❗✔️: bool hasStereoAtoms = false;
+    // RDKit❗✔️: bool hasPotentialStereoAtoms = false;
+    // RDKit❗✔️: for (auto atom : mol.atoms()) {
+    // RDKit❗✔️:   if (cleanIt) {
+    // RDKit❗✔️:     if (atom->hasProp(common_properties::_CIPCode)) {
+    // RDKit❗✔️:       atom->clearProp(common_properties::_CIPCode);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (atom->hasProp(common_properties::_ChiralityPossible)) {
+    // RDKit❗✔️:       atom->clearProp(common_properties::_ChiralityPossible);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (!hasStereoAtoms && atom->getChiralTag() != Atom::CHI_UNSPECIFIED &&
+    // RDKit❗✔️:       atom->getChiralTag() != Atom::CHI_OTHER) {
+    // RDKit❗✔️:     hasStereoAtoms = true;
+    // RDKit❗✔️:   } else if (!hasPotentialStereoAtoms) {
+    // RDKit❗✔️:     UINT_VECT ranks;
+    // RDKit❗✔️:     Chirality::INT_PAIR_VECT nbrs;
+    // RDKit❗✔️:     hasPotentialStereoAtoms =
+    // RDKit❗✔️:         isAtomPotentialChiralCenter(atom, mol, ranks, nbrs).first;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // RDKit❗✔️: bool hasStereoBonds = false;
+    // RDKit❗✔️: bool hasPotentialStereoBonds = false;
+    // RDKit❗✔️: for (auto bond : mol.bonds()) {
+    // RDKit❗✔️:   ...
+    // RDKit❗✔️:   if (!hasStereoBonds && bond->getBondType() == Bond::DOUBLE) {
+    // RDKit❗✔️:     bool isSpecified = false;
+    // RDKit❗✔️:     ...
+    // RDKit❗✔️:     if (!hasPotentialStereoBonds && !isSpecified &&
+    // RDKit❗✔️:         shouldDetectDoubleBondStereo(bond)) {
+    // RDKit❗✔️:       hasPotentialStereoBonds = true;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (!cleanIt && hasStereoBonds && hasPotentialStereoBonds) {
+    // RDKit❗✔️:     break;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // RDKit❗✔️: bool keepGoing = hasStereoAtoms | hasStereoBonds;
+    // RDKit❗✔️: if (!keepGoing) {
+    // RDKit❗✔️:   keepGoing = flagPossibleStereoCenters &&
+    // RDKit❗✔️:               (hasPotentialStereoAtoms || hasPotentialStereoBonds);
+    // RDKit❗✔️: }
+    let atom_ids: Vec<AtomId> = mol.atoms().iter().map(|atom| atom.id()).collect();
+    let mut has_stereo_atoms = false;
+    let mut has_potential_stereo_atoms = false;
+    for atom_id in atom_ids.iter().copied() {
+        if clean_it && let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(atom_id.index())
+        {
+            atom_mut.clear_prop("_CIPCode");
+            atom_mut.clear_prop("_ChiralityPossible");
+        }
+        let atom = &mol.atoms()[atom_id.index()];
+        if !has_stereo_atoms
+            && !matches!(atom.chiral_tag(), ChiralTag::Unspecified | ChiralTag::Other)
+        {
+            has_stereo_atoms = true;
+        } else if !has_potential_stereo_atoms {
+            has_potential_stereo_atoms =
+                crate::stereo::is_atom_potential_chiral_center(mol, atom_id.index(), &[]).0;
+        }
+    }
+    let mut has_stereo_bonds = false;
+    let mut has_potential_stereo_bonds = false;
+    let bond_ids: Vec<BondId> = mol.bonds().iter().map(|bond| bond.id()).collect();
+    for bond_id in bond_ids.iter().copied() {
+        let Some(bond) = mol.bonds().get(bond_id.index()) else {
+            continue;
+        };
+        if !has_stereo_bonds && bond.order() == BondOrder::Double {
+            let mut is_specified = false;
+            for batom in [bond.begin(), bond.end()] {
+                for nbr in mol.topology_block().adjacency.neighbors_of(batom.index()) {
+                    let Some(nbond) = mol.bonds().get(nbr.bond.index()) else {
+                        continue;
+                    };
+                    if matches!(
+                        nbond.direction(),
+                        BondDirection::EndDownRight | BondDirection::EndUpRight
+                    ) {
+                        has_stereo_bonds = true;
+                        is_specified = true;
+                        break;
+                    }
+                }
+                if has_stereo_bonds {
+                    break;
+                }
+            }
+            if !has_potential_stereo_bonds
+                && !is_specified
+                && crate::stereo::should_detect_double_bond_stereo(mol, bond_id)?
+            {
+                has_potential_stereo_bonds = true;
+            }
+        }
+        if !clean_it && has_stereo_bonds && has_potential_stereo_bonds {
+            break;
+        }
+    }
+    let flag_possible_stereo_centers = true;
+    let mut keep_going = has_stereo_atoms || has_stereo_bonds;
+    if !keep_going {
+        keep_going = flag_possible_stereo_centers
+            && (has_potential_stereo_atoms || has_potential_stereo_bonds);
+    }
+
     // BEGIN RDKIT CPP FUNCTION legacyStereoPerception fixed-point assignment loop subset
     // RDKit❗✔️: UINT_VECT atomRanks;
     // RDKit❗✔️: bool keepGoing = hasStereoAtoms | hasStereoBonds;
@@ -153,8 +260,16 @@ pub(super) fn assign_double_bond_stereo_after_smiles_parse(
     // RDKit❗✔️:   }
     // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION legacyStereoPerception fixed-point assignment loop subset
-    let mut ranks = crate::stereo::assign_atom_cip_ranks(mol)?;
-    loop {
+    let mut ranks = Vec::new();
+    while keep_going {
+        if ranks.is_empty()
+            && (has_stereo_atoms
+                || has_potential_stereo_atoms
+                || has_stereo_bonds
+                || has_potential_stereo_bonds)
+        {
+            ranks = crate::stereo::assign_atom_cip_ranks_in_place(mol)?;
+        }
         // BEGIN RDKIT CPP FUNCTION assignAtomChiralCodes subset
         // RDKit❗✔️: std::pair<bool, bool> assignAtomChiralCodes(ROMol &mol, UINT_VECT &ranks,
         // RDKit❗✔️:                                             bool flagPossibleStereoCenters) {
@@ -171,13 +286,20 @@ pub(super) fn assign_double_bond_stereo_after_smiles_parse(
         // RDKit❗✔️:   }
         // RDKit❗✔️: }
         // END RDKIT CPP FUNCTION assignAtomChiralCodes subset
-        let atom_assignments = crate::stereo::assign_atom_chiral_codes(mol, &ranks)?;
-        let atom_changed = !atom_assignments.is_empty();
-        for (atom_idx, cip_code) in atom_assignments {
-            if let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(atom_idx) {
-                atom_mut.set_prop("_CIPCode", cip_code);
+        let atom_changed = if has_stereo_atoms || has_potential_stereo_atoms {
+            let (unassigned_atoms, atom_assignments, atom_changed) =
+                crate::stereo::assign_atom_chiral_codes(mol, &ranks)?;
+            for (atom_idx, cip_code) in atom_assignments {
+                if let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(atom_idx) {
+                    atom_mut.set_prop("_CIPCode", cip_code);
+                }
             }
-        }
+            has_stereo_atoms = unassigned_atoms;
+            atom_changed
+        } else {
+            has_stereo_atoms = false;
+            false
+        };
 
         // BEGIN RDKIT CPP FUNCTION assignBondStereoCodes subset
         // RDKit❗✔️: std::pair<bool, bool> assignBondStereoCodes(ROMol &mol, UINT_VECT &ranks) {
@@ -195,27 +317,34 @@ pub(super) fn assign_double_bond_stereo_after_smiles_parse(
         // RDKit❗✔️:   }
         // RDKit❗✔️: }
         // END RDKIT CPP FUNCTION assignBondStereoCodes subset
-        let (assignments, _changed) = crate::stereo::assign_bond_stereo_codes(mol, &ranks);
-        let bond_changed = !assignments.is_empty();
-        for (bond_idx, stereo, begin_control, end_control) in assignments {
-            let Some(bond_mut) = mol.topology_block_mut().bonds.get_mut(bond_idx) else {
-                continue;
-            };
-            if bond_mut.stereo() != BondStereo::None {
-                continue;
+        let bond_changed = if has_stereo_bonds || has_potential_stereo_bonds {
+            let (unassigned_bonds, assignments, bond_changed) =
+                crate::stereo::assign_bond_stereo_codes(mol, &ranks);
+            for (bond_idx, stereo, begin_control, end_control) in assignments {
+                let Some(bond_mut) = mol.topology_block_mut().bonds.get_mut(bond_idx) else {
+                    continue;
+                };
+                if bond_mut.stereo() != BondStereo::None {
+                    continue;
+                }
+                bond_mut
+                    .set_stereo_atoms(Some([AtomId::new(begin_control), AtomId::new(end_control)]));
+                bond_mut.set_stereo(match stereo {
+                    crate::stereo::DoubleBondStereo::E => BondStereo::Trans,
+                    crate::stereo::DoubleBondStereo::Z => BondStereo::Cis,
+                    crate::stereo::DoubleBondStereo::Unknown => BondStereo::Any,
+                });
             }
-            bond_mut.set_stereo_atoms(Some([AtomId::new(begin_control), AtomId::new(end_control)]));
-            bond_mut.set_stereo(match stereo {
-                crate::stereo::DoubleBondStereo::E => BondStereo::Trans,
-                crate::stereo::DoubleBondStereo::Z => BondStereo::Cis,
-                crate::stereo::DoubleBondStereo::Unknown => BondStereo::Any,
-            });
+            has_stereo_bonds = unassigned_bonds;
+            bond_changed
+        } else {
+            has_stereo_bonds = false;
+            false
+        };
+        keep_going = (has_stereo_atoms || has_stereo_bonds) && (atom_changed || bond_changed);
+        if keep_going {
+            ranks = crate::stereo::rerank_atoms_in_place(mol, &ranks)?;
         }
-
-        if !(atom_changed || bond_changed) {
-            break;
-        }
-        ranks = crate::stereo::rerank_atoms(mol, &ranks)?;
     }
     // BEGIN RDKIT CPP FUNCTION assignStereochemistry cleanIt atom cleanup subset
     // RDKit❗✔️:   boost::dynamic_bitset<> possibleSpecialCases(mol.getNumAtoms());

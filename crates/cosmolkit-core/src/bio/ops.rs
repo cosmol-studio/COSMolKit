@@ -722,14 +722,32 @@ mod tests {
             atom_span: RowSpan::new(0, 1),
             name: ResidueName([b'A', b'L', b'A', 0], 3),
             kind: ResidueKind::AminoAcid,
-            source: ResidueSourceIds { seq_id: None },
+            entity_kind: EntityKind::Unknown,
+            source: ResidueSourceIds {
+                seq_id: None,
+                label_seq_id: None,
+                segment_id: None,
+                subchain_id: None,
+                label_entity_id: None,
+            },
+            het_flag: None,
+            sifts_unp: None,
         });
         s.residues.push(ResidueRow {
             chain_id: ChainId::new(0),
             atom_span: RowSpan::new(1, 1),
             name: ResidueName([b'H', b'O', b'H', 0], 3),
             kind: ResidueKind::Water,
-            source: ResidueSourceIds { seq_id: None },
+            entity_kind: EntityKind::Unknown,
+            source: ResidueSourceIds {
+                seq_id: None,
+                label_seq_id: None,
+                segment_id: None,
+                subchain_id: None,
+                label_entity_id: None,
+            },
+            het_flag: None,
+            sifts_unp: None,
         });
         s.atoms.push(AtomRow {
             residue_id: ResidueId::new(0),
@@ -740,6 +758,9 @@ mod tests {
             b_iso: None,
             formal_charge: None,
             anisou: None,
+            calc_flag: BioCalcFlag::NotSet,
+            tls_group_id: None,
+            fraction: None,
             source: AtomSourceIds { serial: None },
         });
         s.atoms.push(AtomRow {
@@ -751,6 +772,9 @@ mod tests {
             b_iso: None,
             formal_charge: None,
             anisou: None,
+            calc_flag: BioCalcFlag::NotSet,
+            tls_group_id: None,
+            fraction: None,
             source: AtomSourceIds { serial: None },
         });
         s.coordinates.positions = vec![[1.0, 0.0, 0.0], [5.0, 0.0, 0.0]];

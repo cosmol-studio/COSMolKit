@@ -45,10 +45,21 @@ use std::io::{BufRead, BufReader};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{OnceLock, RwLock};
 
+unsafe extern "C" {
+    #[link_name = "cos"]
+    fn c_libm_cos(x: f64) -> f64;
+    #[link_name = "sin"]
+    fn c_libm_sin(x: f64) -> f64;
+    #[link_name = "acos"]
+    fn c_libm_acos(x: f64) -> f64;
+    #[link_name = "sqrt"]
+    fn c_libm_sqrt(x: f64) -> f64;
+}
+
 use crate::ChiralTag;
 use crate::Molecule;
 use crate::atom::Atom;
-use crate::bond::{Bond, BondOrder, BondStereo};
+use crate::bond::{Bond, BondDirection, BondOrder, BondStereo};
 use crate::builder::MoleculeBuilder;
 use crate::search::smarts_parse::parse_smarts;
 use crate::search::substruct::get_substruct_match;
@@ -1101,22 +1112,24 @@ impl Default for ConstrainedDepictionParams {
 
 /// RDKit❗✔️: cos wrapper — matches RDKit's cos usage in depiction geometry
 fn rdkit_cos(x: f64) -> f64 {
-    x.cos()
+    // RDKit depiction code calls <cmath> directly; use the same C libm entry
+    // points here instead of Rust intrinsics to reduce last-bit drift.
+    unsafe { c_libm_cos(x) }
 }
 
 /// RDKit❗✔️: sin wrapper — matches RDKit's sin usage in depiction geometry
 fn rdkit_sin(x: f64) -> f64 {
-    x.sin()
+    unsafe { c_libm_sin(x) }
 }
 
 /// RDKit❗✔️: acos wrapper — matches RDKit's acos usage in depiction geometry
 fn rdkit_acos(x: f64) -> f64 {
-    x.acos()
+    unsafe { c_libm_acos(x) }
 }
 
 /// RDKit❗✔️: sqrt wrapper — matches RDKit's sqrt usage in depiction geometry
 fn rdkit_sqrt(x: f64) -> f64 {
-    x.sqrt()
+    unsafe { c_libm_sqrt(x) }
 }
 
 /// RDKit❗✔️: 2D vector norm — RDKit Point2D::length() equivalent
@@ -1124,14 +1137,15 @@ fn norm(v: (f64, f64)) -> f64 {
     rdkit_sqrt(v.0 * v.0 + v.1 * v.1)
 }
 
-/// RDKit❗✔️: 2D vector normalization — RDKit Point2D::normalize() equivalent
+const RDKIT_ZERO_TOLERANCE: f64 = 1.0e-16;
+
+/// RDKit✔️✔️: 2D vector normalization — RDKit Point2D::normalize() equivalent
 fn normalize(v: (f64, f64)) -> (f64, f64) {
     let n = norm(v);
-    if n < 1e-12 {
-        (0.0, 0.0)
-    } else {
-        (v.0 / n, v.1 / n)
+    if n < RDKIT_ZERO_TOLERANCE {
+        panic!("Cannot normalize a zero length vector");
     }
+    (v.0 / n, v.1 / n)
 }
 
 /// RDKit❗✔️: 2D vector rotation — RDKit Transform2D::Rotate equivalent
@@ -1141,24 +1155,23 @@ fn rotate(v: (f64, f64), angle: f64) -> (f64, f64) {
     (v.0 * c - v.1 * s, v.0 * s + v.1 * c)
 }
 
-/// RDKit❗✔️: rotate point around center — RDKit Transform2D rotation
+/// RDKit✔️✔️: rotate point around center — RDKit Transform2D rotation
 fn rotate_around(p: (f64, f64), center: (f64, f64), angle: f64) -> (f64, f64) {
-    let v = (p.0 - center.0, p.1 - center.1);
-    let r = rotate(v, angle);
-    (center.0 + r.0, center.1 + r.1)
+    let trans = transform2d_set_transform_center_angle(center, angle);
+    transform2d_point(p, trans)
 }
 
-/// RDKit❗✔️: computeAngle() geometry helper used by EmbeddedFrag
+/// RDKit✔️✔️: computeAngle() geometry helper used by EmbeddedFrag
 fn compute_angle(center: (f64, f64), p1: (f64, f64), p2: (f64, f64)) -> f64 {
-    let v1 = (p1.0 - center.0, p1.1 - center.1);
-    let v2 = (p2.0 - center.0, p2.1 - center.1);
-    let d1 = norm(v1);
-    let d2 = norm(v2);
-    if d1 <= 1e-12 || d2 <= 1e-12 {
-        return PI;
+    let t1 = normalize((p1.0 - center.0, p1.1 - center.1));
+    let t2 = normalize((p2.0 - center.0, p2.1 - center.1));
+    let mut dot_prod = t1.0 * t2.0 + t1.1 * t2.1;
+    if dot_prod < -1.0 {
+        dot_prod = -1.0;
+    } else if dot_prod > 1.0 {
+        dot_prod = 1.0;
     }
-    let c = ((v1.0 * v2.0 + v1.1 * v2.1) / (d1 * d2)).clamp(-1.0, 1.0);
-    rdkit_acos(c)
+    rdkit_acos(dot_prod)
 }
 
 /// RDKit❗✔️: computeNormal() geometry helper used by EmbeddedFrag
@@ -1193,6 +1206,111 @@ fn transform2d_mul3(lhs: [f64; 9], rhs: [f64; 9]) -> [f64; 9] {
     out
 }
 
+#[derive(Clone, Copy)]
+struct RdkitTransform2D {
+    data: [f64; 9],
+}
+
+impl RdkitTransform2D {
+    fn identity() -> Self {
+        let mut out = Self { data: [0.0; 9] };
+        out.data[0] = 1.0;
+        out.data[4] = 1.0;
+        out.data[8] = 1.0;
+        out
+    }
+
+    fn assign(&mut self, other: Self) {
+        self.data = other.data;
+    }
+
+    fn mul_assign(&mut self, rhs: Self) {
+        self.data = transform2d_mul3(self.data, rhs.data);
+    }
+
+    fn set_translation(&mut self, pt: (f64, f64)) {
+        let mut i = 2usize;
+        self.data[i] = pt.0;
+        i += 3;
+        self.data[i] = pt.1;
+        i += 3;
+        self.data[i] = 1.0;
+    }
+
+    fn transform_point(&self, pt: (f64, f64)) -> (f64, f64) {
+        (
+            self.data[0] * pt.0 + self.data[1] * pt.1 + self.data[2],
+            self.data[3] * pt.0 + self.data[4] * pt.1 + self.data[5],
+        )
+    }
+
+    fn set_transform_center_angle(pt: (f64, f64), angle: f64) -> Self {
+        let mut this = Self::identity();
+        let mut trans1 = Self::identity();
+        trans1.set_translation((-pt.0, -pt.1));
+        this.data[0] = rdkit_cos(angle);
+        this.data[1] = -rdkit_sin(angle);
+        this.data[3] = rdkit_sin(angle);
+        this.data[4] = rdkit_cos(angle);
+        this.mul_assign(trans1);
+
+        let mut trans2 = Self::identity();
+        trans2.set_translation(pt);
+        trans2.mul_assign(this);
+        this.assign(trans2);
+        this
+    }
+
+    fn set_transform_two_point(
+        ref1: (f64, f64),
+        ref2: (f64, f64),
+        pt1: (f64, f64),
+        pt2: (f64, f64),
+    ) -> Self {
+        let rvec = (ref2.0 - ref1.0, ref2.1 - ref1.1);
+        let pvec = (pt2.0 - pt1.0, pt2.1 - pt1.1);
+        let dp = rvec.0 * pvec.0 + rvec.1 * pvec.1;
+        let lp = norm(rvec) * norm(pvec);
+        if lp <= 0.0 {
+            return Self::identity();
+        }
+
+        let mut cval = dp / lp;
+        if cval < -1.0 {
+            cval = -1.0;
+        } else if cval > 1.0 {
+            cval = 1.0;
+        }
+        let mut ang = rdkit_acos(cval);
+        let cross = pvec.0 * rvec.1 - pvec.1 * rvec.0;
+        if cross < 0.0 {
+            ang *= -1.0;
+        }
+
+        let mut this = Self::identity();
+        this.data[0] = rdkit_cos(ang);
+        this.data[1] = -rdkit_sin(ang);
+        this.data[3] = rdkit_sin(ang);
+        this.data[4] = rdkit_cos(ang);
+
+        let npt1 = this.transform_point(pt1);
+        this.data[2] = ref1.0 - npt1.0;
+        this.data[5] = ref1.1 - npt1.1;
+        this
+    }
+
+    fn to_affine(self) -> [f64; 6] {
+        [
+            self.data[0],
+            self.data[1],
+            self.data[2],
+            self.data[3],
+            self.data[4],
+            self.data[5],
+        ]
+    }
+}
+
 #[allow(dead_code)]
 /// RDKit❗✔️: convert 3×3 matrix to affine 2×6 — RDKit Transform2D::toAffine
 fn transform2d_to_affine(data: [f64; 9]) -> [f64; 6] {
@@ -1202,21 +1320,7 @@ fn transform2d_to_affine(data: [f64; 9]) -> [f64; 6] {
 #[allow(dead_code)]
 /// RDKit❗✔️: set rotation+translation from center+angle — RDKit Transform2D::setTransform
 fn transform2d_set_transform_center_angle(pt: (f64, f64), angle: f64) -> [f64; 6] {
-    let trans1 = [1.0, 0.0, -pt.0, 0.0, 1.0, -pt.1, 0.0, 0.0, 1.0];
-    let rot = [
-        rdkit_cos(angle),
-        -rdkit_sin(angle),
-        0.0,
-        rdkit_sin(angle),
-        rdkit_cos(angle),
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-    ];
-    let this = transform2d_mul3(rot, trans1);
-    let trans2 = [1.0, 0.0, pt.0, 0.0, 1.0, pt.1, 0.0, 0.0, 1.0];
-    transform2d_to_affine(transform2d_mul3(trans2, this))
+    RdkitTransform2D::set_transform_center_angle(pt, angle).to_affine()
 }
 
 /// RDKit❗✔️: apply affine transform to point — RDKit Transform2D::transformPoint
@@ -1234,32 +1338,7 @@ fn transform2d_set_transform_two_point(
     pt1: (f64, f64),
     pt2: (f64, f64),
 ) -> [f64; 6] {
-    let rvec = (ref2.0 - ref1.0, ref2.1 - ref1.1);
-    let pvec = (pt2.0 - pt1.0, pt2.1 - pt1.1);
-    let dp = rvec.0 * pvec.0 + rvec.1 * pvec.1;
-    let lp = norm(rvec) * norm(pvec);
-    if lp <= 0.0 {
-        return [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
-    }
-    let mut cval = dp / lp;
-    cval = cval.clamp(-1.0, 1.0);
-    let mut ang = rdkit_acos(cval);
-    let cross = pvec.0 * rvec.1 - pvec.1 * rvec.0;
-    if cross < 0.0 {
-        ang *= -1.0;
-    }
-    let mut data = [
-        rdkit_cos(ang),
-        -rdkit_sin(ang),
-        0.0,
-        rdkit_sin(ang),
-        rdkit_cos(ang),
-        0.0,
-    ];
-    let npt1 = transform2d_point(pt1, data);
-    data[2] = ref1.0 - npt1.0;
-    data[5] = ref1.1 - npt1.1;
-    data
+    RdkitTransform2D::set_transform_two_point(ref1, ref2, pt1, pt2).to_affine()
 }
 
 fn rdkit_embed_ring(ring: &[usize]) -> RdkitIntPoint2DMap {
@@ -2273,17 +2352,62 @@ impl RdkitEmbeddedFrag {
     }
 
     fn canonicalize_orientation(&mut self) {
+        // BEGIN RDKIT CPP FUNCTION: EmbeddedFrag::canonicalizeOrientation() (EmbeddedFrag.cpp)
+        // RDKit✔️✔️: void EmbeddedFrag::canonicalizeOrientation() {
+        // RDKit✔️✔️:   if (d_eatoms.size() <= 1) {
+        // RDKit✔️✔️:     return;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   RDGeom::Point2D cent(0.0, 0.0);
+        // RDKit✔️✔️:   for (const auto &elem : d_eatoms) {
+        // RDKit✔️✔️:     cent += elem.second.loc;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   cent *= (1.0 / d_eatoms.size());
+        // RDKit✔️✔️:   double xx = 0.0;
+        // RDKit✔️✔️:   double xy = 0.0;
+        // RDKit✔️✔️:   double yy = 0.0;
+        // RDKit✔️✔️:   for (auto &elem : d_eatoms) {
+        // RDKit✔️✔️:     elem.second.loc -= cent;
+        // RDKit✔️✔️:     xx += (elem.second.loc.x) * (elem.second.loc.x);
+        // RDKit✔️✔️:     xy += (elem.second.loc.x) * (elem.second.loc.y);
+        // RDKit✔️✔️:     yy += (elem.second.loc.y) * (elem.second.loc.y);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   RDGeom::Point2D eig1, eig2;
+        // RDKit✔️✔️:   auto d = (xx - yy) * (xx - yy) + 4 * xy * xy;
+        // RDKit✔️✔️:   d = sqrt(d);
+        // RDKit✔️✔️:   eig1.x = 2 * xy;
+        // RDKit✔️✔️:   eig1.y = (yy - xx) + d;
+        // RDKit✔️✔️:   if (eig1.length() <= 1e-4) {
+        // RDKit✔️✔️:     return;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   auto eVal1 = (xx + yy + d) / 2;
+        // RDKit✔️✔️:   eig1.normalize();
+        // RDKit✔️✔️:   eig2.x = 2 * xy;
+        // RDKit✔️✔️:   eig2.y = (yy - xx) - d;
+        // RDKit✔️✔️:   auto eVal2 = (xx + yy - d) / 2;
+        // RDKit✔️✔️:   if (eig2.length() > 1e-4) {
+        // RDKit✔️✔️:     eig2.normalize();
+        // RDKit✔️✔️:     if (eVal2 > eVal1) {
+        // RDKit✔️✔️:       std::swap(eig1, eig2);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   RDGeom::Transform2D trans;
+        // RDKit✔️✔️:   trans.setVal(0, 0, eig1.x);
+        // RDKit✔️✔️:   trans.setVal(1, 0, -eig1.y);
+        // RDKit✔️✔️:   trans.setVal(0, 1, eig1.y);
+        // RDKit✔️✔️:   trans.setVal(1, 1, eig1.x);
+        // RDKit✔️✔️:   this->Transform(trans);
+        // RDKit✔️✔️: }
         if self.eatoms.len() <= 1 {
             return;
         }
-        let n = self.eatoms.len() as f64;
         let mut cent = (0.0f64, 0.0f64);
         for st in self.eatoms.values() {
             cent.0 += st.loc.0;
             cent.1 += st.loc.1;
         }
-        cent.0 /= n;
-        cent.1 /= n;
+        let scale = 1.0 / self.eatoms.len() as f64;
+        cent.0 *= scale;
+        cent.1 *= scale;
 
         let (mut xx, mut xy, mut yy) = (0.0f64, 0.0f64, 0.0f64);
         for st in self.eatoms.values_mut() {
@@ -2306,21 +2430,68 @@ impl RdkitEmbeddedFrag {
         let mut eig2 = (2.0 * xy, (yy - xx) - d);
         let e_val2 = (xx + yy - d) / 2.0;
         let eig2_len = norm(eig2);
-        if eig2_len <= 1.0e-4 {
-            eig2 = (-eig1.1, eig1.0);
-        } else {
+        if eig2_len > 1.0e-4 {
             eig2 = (eig2.0 / eig2_len, eig2.1 / eig2_len);
+            if e_val2 > e_val1 {
+                std::mem::swap(&mut eig1, &mut eig2);
+            }
         }
-        if e_val2 > e_val1 {
-            std::mem::swap(&mut eig1, &mut eig2);
+        if debug_depict_row_active(58) {
+            eprintln!(
+                "COSMOL_CANON centroid=({:.17},{:.17}) bits=({:#018x},{:#018x}) xx={:.17} xy={:.17} yy={:.17} d={:.17} eig1=({:.17},{:.17}) eig2=({:.17},{:.17}) e1={:.17} e2={:.17}",
+                cent.0,
+                cent.1,
+                cent.0.to_bits(),
+                cent.1.to_bits(),
+                xx,
+                xy,
+                yy,
+                d,
+                eig1.0,
+                eig1.1,
+                eig2.0,
+                eig2.1,
+                e_val1,
+                e_val2
+            );
+            for (aid, st) in self.eatoms.iter().take(6) {
+                eprintln!(
+                    "COSMOL_CANON_PRE atom={} loc=({:.17},{:.17}) bits=({:#018x},{:#018x})",
+                    aid,
+                    st.loc.0,
+                    st.loc.1,
+                    st.loc.0.to_bits(),
+                    st.loc.1.to_bits()
+                );
+            }
         }
-        let trans = [eig1.0, eig2.0, eig1.1, eig2.1, 0.0, 0.0];
+        let trans = [eig1.0, eig1.1, 0.0, -eig1.1, eig1.0, 0.0];
         self.transform(trans);
-
-        if let Some((px, nx, py, ny)) = self.compute_box() {
-            if py + ny > px + nx {
-                let rot = [0.0, -1.0, 1.0, 0.0, 0.0, 0.0];
-                self.transform(rot);
+        if debug_depict_row_active(58) {
+            eprintln!(
+                "COSMOL_CANON_TRANS data=[{:.17},{:.17},{:.17},{:.17},{:.17},{:.17}] bits=[{:#018x},{:#018x},{:#018x},{:#018x},{:#018x},{:#018x}]",
+                trans[0],
+                trans[1],
+                trans[2],
+                trans[3],
+                trans[4],
+                trans[5],
+                trans[0].to_bits(),
+                trans[1].to_bits(),
+                trans[2].to_bits(),
+                trans[3].to_bits(),
+                trans[4].to_bits(),
+                trans[5].to_bits()
+            );
+            for (aid, st) in self.eatoms.iter().take(6) {
+                eprintln!(
+                    "COSMOL_CANON_POST atom={} loc=({:.17},{:.17}) bits=({:#018x},{:#018x})",
+                    aid,
+                    st.loc.0,
+                    st.loc.1,
+                    st.loc.0.to_bits(),
+                    st.loc.1.to_bits()
+                );
             }
         }
     }
@@ -2726,8 +2897,8 @@ impl RdkitEmbeddedFrag {
         if !flip_end {
             std::mem::swap(&mut beg_aid, &mut end_aid);
         }
-        let beg_loc = self.eatoms[&beg_aid].loc;
-        let end_loc = self.eatoms[&end_aid].loc;
+        let mut beg_loc = self.eatoms[&beg_aid].loc;
+        let mut end_loc = self.eatoms[&end_aid].loc;
         let mut end_side_aids = Vec::new();
         recurse_atom_one_side(end_aid, beg_aid, adjacency, &mut end_side_aids);
         let n_atoms_fixed = self.eatoms.values().filter(|st| st.df_fixed).count();
@@ -2757,6 +2928,12 @@ impl RdkitEmbeddedFrag {
                 let temp = rdkit_reflect_point(temp, beg_loc, end_loc);
                 st.normal = (temp.0 - st.loc.0, temp.1 - st.loc.1);
                 st.ccw = !st.ccw;
+                if aid == beg_aid {
+                    beg_loc = st.loc;
+                }
+                if aid == end_aid {
+                    end_loc = st.loc;
+                }
             }
         }
     }
@@ -2850,7 +3027,7 @@ impl RdkitEmbeddedFrag {
         comp: &[usize],
         adjacency: &[Vec<usize>],
     ) {
-        let dmat = self.compute_dist_mat(atoms.len());
+        let dmat = component_graph_distance_matrix(atoms.len(), comp, adjacency);
         let mut colls = self.find_collisions(atoms, bonds, adjacency, &dmat, true);
         let mut done_bonds = BTreeMap::<usize, usize>::new();
         let mut iter = 0usize;
@@ -3208,7 +3385,6 @@ impl RdkitEmbeddedFrag {
                 }
             }
         }
-
         for (&aid, ost) in &other.eatoms {
             if !common.contains(&aid) {
                 self.eatoms.insert(aid, ost.clone());
@@ -3374,8 +3550,11 @@ impl RdkitEmbeddedFrag {
             self.merge_ring(&emb_ring, common_atom_ids.len(), &pin_atoms);
             done_rings.push(next_id);
         }
+        // RDKit✔️✔️: constructor path for fused rings returns to embedFusedSystems(),
+        // RDKit✔️✔️: which then calls setupNewNeighs() only. setupAttachmentPoints()
+        // RDKit✔️✔️: is intentionally not run here because ring traversal order has
+        // RDKit✔️✔️: already initialized nbr1/nbr2/angle for ring atoms.
         self.setup_new_neighs(atoms, bonds, adjacency, degree, cip_ranks);
-        self.setup_attachment_points(adjacency);
         Some(())
     }
 }
@@ -3507,6 +3686,21 @@ fn build_rdkit_molecule_from_slices(
             "RDKit whole-molecule finalization failed: {error}"
         ))
     })
+}
+
+fn build_rdkit_depict_molecule_from_slices(
+    atoms: &[Atom],
+    bonds: &[Bond],
+) -> Result<Molecule, Coordinate2DError> {
+    let mut molecule = build_rdkit_molecule_from_slices(atoms, bonds)?;
+    let valence = crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false)
+        .map_err(|error| {
+            Coordinate2DError::UnsupportedFeature(format!(
+                "RDKit updatePropertyCache(false) equivalent failed during 2D coordinate generation: {error}"
+            ))
+        })?;
+    molecule.derived_cache_mut().valence = Some(valence);
+    Ok(molecule)
 }
 
 fn rdkit_atom_to_spec(atom: &Atom) -> AtomSpec {
@@ -3706,17 +3900,16 @@ fn rdkit_ring_radius(ring_size: usize, bond_len: f64) -> f64 {
 // RDKit✔️❌: adapted for new-core API
 fn rdkit_num_bonds_plus_lone_pairs(
     atomic_num: u8,
-    degree: usize,
+    graph_degree: usize,
+    explicit_hydrogens: u8,
     explicit_valence: i32,
     implicit_hydrogens: i32,
     radical_electrons: u8,
     formal_charge: i8,
+    zero_or_outgoing_dative_bonds: usize,
 ) -> Option<i32> {
-    // Atomic number for the periodic-table outer-electron lookup.
-    let deg = degree as i32 + implicit_hydrogens;
-
-    // Zero-charge not-adjustment per the old-core version (which also uses
-    // formal_charge for the nouter-based calculation below).
+    let deg = graph_degree as i32 + i32::from(explicit_hydrogens) + implicit_hydrogens
+        - zero_or_outgoing_dative_bonds as i32;
 
     if atomic_num <= 1 {
         return Some(deg);
@@ -3844,8 +4037,90 @@ fn rdkit_hybridizations_for_depict(
     bonds: &[Bond],
     degree: &[usize],
 ) -> Result<Vec<RdkitHybridization>, Coordinate2DError> {
-    // Valence computed inline from bond orders below.
-    // Radicals: set to 0 (no radical info without full molecule).
+    // RDKit✔️❌: void setHybridization(ROMol &mol) {
+    // RDKit✔️❌:   for (auto atom : mol.atoms()) {
+    // RDKit✔️❌:     if (atom->getAtomicNum() == 0) {
+    // RDKit✔️❌:       atom->setHybridization(Atom::UNSPECIFIED);
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       switch (atom->getChiralTag()) {
+    // RDKit✔️❌:         case Atom::ChiralType::CHI_TETRAHEDRAL:
+    // RDKit✔️❌:         case Atom::ChiralType::CHI_TETRAHEDRAL_CW:
+    // RDKit✔️❌:         case Atom::ChiralType::CHI_TETRAHEDRAL_CCW:
+    // RDKit✔️❌:           if (atom->getTotalDegree() == 4) {
+    // RDKit✔️❌:             atom->setHybridization(Atom::HybridizationType::SP3);
+    // RDKit✔️❌:             continue;
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         case Atom::ChiralType::CHI_SQUAREPLANAR:
+    // RDKit✔️❌:           if (atom->getTotalDegree() <= 4 && atom->getTotalDegree() >= 2) {
+    // RDKit✔️❌:             atom->setHybridization(Atom::HybridizationType::SP2D);
+    // RDKit✔️❌:             continue;
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         case Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL:
+    // RDKit✔️❌:           if (atom->getTotalDegree() <= 5 && atom->getTotalDegree() >= 2) {
+    // RDKit✔️❌:             atom->setHybridization(Atom::HybridizationType::SP3D);
+    // RDKit✔️❌:             continue;
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         case Atom::ChiralType::CHI_OCTAHEDRAL:
+    // RDKit✔️❌:           if (atom->getTotalDegree() <= 6 && atom->getTotalDegree() >= 2) {
+    // RDKit✔️❌:             atom->setHybridization(Atom::HybridizationType::SP3D2);
+    // RDKit✔️❌:             continue;
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         default:
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       int norbs;
+    // RDKit✔️❌:       if (atom->getAtomicNum() < 89) {
+    // RDKit✔️❌:         norbs = numBondsPlusLonePairs(atom);
+    // RDKit✔️❌:       } else {
+    // RDKit✔️❌:         norbs = atom->getTotalDegree();
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       switch (norbs) {
+    // RDKit✔️❌:         case 0:
+    // RDKit✔️❌:         case 1:
+    // RDKit✔️❌:           atom->setHybridization(Atom::S);
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         case 2:
+    // RDKit✔️❌:           atom->setHybridization(Atom::SP);
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         case 3:
+    // RDKit✔️❌:           atom->setHybridization(Atom::SP2);
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         case 4:
+    // RDKit✔️❌:           if (atom->getTotalDegree() > 3 ||
+    // RDKit✔️❌:               !MolOps::atomHasConjugatedBond(atom)) {
+    // RDKit✔️❌:             atom->setHybridization(Atom::SP3);
+    // RDKit✔️❌:           } else {
+    // RDKit✔️❌:             atom->setHybridization(Atom::SP2);
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         case 5:
+    // RDKit✔️❌:           atom->setHybridization(Atom::SP3D);
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         case 6:
+    // RDKit✔️❌:           atom->setHybridization(Atom::SP3D2);
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         default:
+    // RDKit✔️❌:           atom->setHybridization(Atom::UNSPECIFIED);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    let depict_mol = build_rdkit_depict_molecule_from_slices(atoms, bonds)?;
+    let assignment =
+        crate::assign_valence(&depict_mol, crate::ValenceModel::RdkitLike).map_err(|error| {
+            Coordinate2DError::UnsupportedFeature(format!(
+                "RDKit hybridization valence assignment failed: {error}"
+            ))
+        })?;
+    let radicals = crate::assign_radicals(&depict_mol).map_err(|error| {
+        Coordinate2DError::UnsupportedFeature(format!(
+            "RDKit hybridization radical assignment failed: {error}"
+        ))
+    })?;
 
     let mut out = Vec::with_capacity(atoms.len());
     for (idx, atom) in atoms.iter().enumerate() {
@@ -3854,31 +4129,47 @@ fn rdkit_hybridizations_for_depict(
             continue;
         }
 
-        // Compute explicit valence from bond orders.
-        let mut explicit_val_from_bonds = 0i32;
-        for bond in bonds {
-            if bond.begin().index() == idx || bond.end().index() == idx {
-                let contrib = match bond.order() {
-                    BondOrder::Single | BondOrder::Dative => 1,
-                    BondOrder::Double => 2,
-                    BondOrder::Triple => 3,
-                    BondOrder::Quadruple => 4,
-                    BondOrder::Aromatic => 2,
-                    _ => 0,
-                };
-                explicit_val_from_bonds += contrib;
+        let total_degree = degree[idx] as i32
+            + i32::from(atom.explicit_hydrogens())
+            + assignment.implicit_hydrogens[idx];
+        match atom.chiral_tag() {
+            ChiralTag::Tetrahedral | ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+                if total_degree == 4 =>
+            {
+                out.push(RdkitHybridization::Sp3);
+                continue;
             }
+            ChiralTag::TrigonalBipyramidal if (2..=5).contains(&total_degree) => {
+                out.push(RdkitHybridization::Sp3d);
+                continue;
+            }
+            ChiralTag::Octahedral if (2..=6).contains(&total_degree) => {
+                out.push(RdkitHybridization::Sp3d2);
+                continue;
+            }
+            _ => {}
         }
+
+        let zero_or_outgoing_dative_bonds = bonds
+            .iter()
+            .filter(|bond| {
+                let touches_atom = bond.begin().index() == idx || bond.end().index() == idx;
+                touches_atom
+                    && (matches!(bond.order(), BondOrder::Zero)
+                        || (matches!(bond.order(), BondOrder::Dative) && bond.end().index() != idx))
+            })
+            .count();
 
         let norbs = if atom.atomic_number() < 89 {
             rdkit_num_bonds_plus_lone_pairs(
                 atom.atomic_number(),
                 degree[idx],
-                // Use the maximum of bond-derived and assignment's explicit valence
-                explicit_val_from_bonds,
-                0,
-                0,
+                atom.explicit_hydrogens(),
+                assignment.explicit_valence[idx] as i32,
+                assignment.implicit_hydrogens[idx],
+                radicals[idx],
                 atom.formal_charge(),
+                zero_or_outgoing_dative_bonds,
             )
             .ok_or_else(|| {
                 Coordinate2DError::UnsupportedFeature(format!(
@@ -3886,7 +4177,10 @@ fn rdkit_hybridizations_for_depict(
                 ))
             })?
         } else {
-            degree[idx] as i32 + atom.explicit_hydrogens() as i32 + 0 as i32
+            degree[idx] as i32
+                + atom.explicit_hydrogens() as i32
+                + assignment.implicit_hydrogens[idx]
+                - zero_or_outgoing_dative_bonds as i32
         };
         // Fallback: if norbs is 0 or negative (lookup failure), use Unspecified
         if norbs <= 0 {
@@ -3894,11 +4188,21 @@ fn rdkit_hybridizations_for_depict(
             continue;
         }
 
+        let has_conjugated_bond = bonds.iter().any(|bond| {
+            (bond.begin().index() == idx || bond.end().index() == idx) && bond.is_conjugated()
+        });
+
         out.push(match norbs {
             0 | 1 => RdkitHybridization::S,
             2 => RdkitHybridization::Sp,
             3 => RdkitHybridization::Sp2,
-            4 => RdkitHybridization::Sp3,
+            4 => {
+                if total_degree > 3 || !has_conjugated_bond {
+                    RdkitHybridization::Sp3
+                } else {
+                    RdkitHybridization::Sp2
+                }
+            }
             5 => RdkitHybridization::Sp3d,
             6 => RdkitHybridization::Sp3d2,
             _ => RdkitHybridization::Unspecified,
@@ -3918,12 +4222,12 @@ fn rdkit_hybridizations_for_depict(
 // RDKit✔️✔️:   for (const auto aid : commAtms) {
 // RDKit✔️✔️:     unsigned int rank = aid;
 // RDKit✔️✔️:     const auto at = mol.getAtomWithIdx(aid);
-// RDKit✔️✔️:     if (!at->getPropIfPresent(RDKit::common_properties::_CIPRank, rank)) {
-// RDKit✔️✔️:       if (at->getPropIfPresent(RDKit::common_properties::_ChiralAtomRank, rank)) {
-// RDKit✔️✔️:         rank = mol.getNumAtoms() - rank;
-// RDKit✔️✔️:       }
-// RDKit✔️✔️:       rank += mol.getNumAtoms() * getAtomDepictRank(at);
-// RDKit✔️✔️:     }
+// RDKit❗✔️:     if (!at->getPropIfPresent(RDKit::common_properties::_CIPRank, rank)) {
+// RDKit❗✔️:       if (at->getPropIfPresent(RDKit::common_properties::_ChiralAtomRank, rank)) {
+// RDKit❗✔️:         rank = mol.getNumAtoms() - rank;
+// RDKit❗✔️:       }
+// RDKit❗✔️:       rank += mol.getNumAtoms() * getAtomDepictRank(at);
+// RDKit❗✔️:     }
 // RDKit✔️✔️:     rankAid.emplace_back(rank, aid);
 // RDKit✔️✔️:   }
 // RDKit✔️✔️:   if (ascending) {
@@ -3946,13 +4250,25 @@ fn rdkit_rank_atoms_by_rank_into(
     ascending: bool,
 ) {
     let natms = atom_slice.len() as u32;
+    let use_cip_ranks_fallback = cip_ranks.iter().any(|&rank| rank != 0);
     let mut rank_aid: Vec<(u32, usize)> = Vec::with_capacity(order.len());
     for &aid in order.iter() {
         let mut rank = aid as u32;
-        if let Some(&cip_rank) = cip_ranks.get(aid) {
+        let atom = &atom_slice[aid];
+        if let Some(cip_rank) = atom
+            .prop("_CIPRank")
+            .and_then(|value| value.parse::<u32>().ok())
+        {
             rank = cip_rank;
+        } else if let Some(chiral_rank) = atom
+            .prop("_ChiralAtomRank")
+            .and_then(|value| value.parse::<u32>().ok())
+        {
+            rank = natms - chiral_rank;
+        } else if use_cip_ranks_fallback && aid < cip_ranks.len() {
+            rank = cip_ranks[aid];
         } else {
-            rank += natms * atom_depict_rank(atom_slice[aid].atomic_number(), degree[aid]) as u32;
+            rank += natms * atom_depict_rank(atom.atomic_number(), degree[aid]) as u32;
         }
         rank_aid.push((rank, aid));
     }
@@ -4654,16 +4970,11 @@ fn find_closest_pair(
     num_atoms: usize,
     dmat: &[f64],
 ) -> (usize, usize) {
-    let _ = num_atoms;
-    let idx = |a: usize, b: usize| {
-        let (hi, lo) = if a > b { (a, b) } else { (b, a) };
-        (hi * (hi - 1) / 2) + lo
-    };
     let candidates = [
-        (dmat[idx(beg1, beg2)], (beg1, beg2)),
-        (dmat[idx(beg1, end2)], (beg1, end2)),
-        (dmat[idx(end1, beg2)], (end1, beg2)),
-        (dmat[idx(end1, end2)], (end1, end2)),
+        (dmat[beg1 * num_atoms + beg2], (beg1, beg2)),
+        (dmat[beg1 * num_atoms + end2], (beg1, end2)),
+        (dmat[end1 * num_atoms + beg2], (end1, beg2)),
+        (dmat[end1 * num_atoms + end2], (end1, end2)),
     ];
     let mut best = candidates[0];
     for candidate in candidates.iter().skip(1) {
@@ -8805,11 +9116,15 @@ fn rdkit_compute_initial_efrags_strict(
         .map(|i| atom_depict_rank(atoms[i].atomic_number(), degree[i]) as i32)
         .collect();
     let stereo_mol = build_rdkit_molecule_from_slices(atoms, bonds)?;
-    let ring_info = crate::symmetrize_sssr(&stereo_mol).map_err(|error| {
-        Coordinate2DError::UnsupportedFeature(format!(
-            "RDKit symmetrizeSSSR equivalent failed during 2D coordinate generation: {error}"
-        ))
-    })?;
+    // BEGIN RDKIT CPP FUNCTION: computeInitialCoords ring finding (RDDepictor.cpp)
+    // RDKit✔️✔️:   bool includeDativeBonds = true;
+    // RDKit✔️✔️:   RDKit::MolOps::symmetrizeSSSR(mol, arings, includeDativeBonds);
+    let ring_info =
+        crate::rings::symmetrize_sssr_with_options(&stereo_mol, true, false).map_err(|error| {
+            Coordinate2DError::UnsupportedFeature(format!(
+                "RDKit symmetrizeSSSR equivalent failed during 2D coordinate generation: {error}"
+            ))
+        })?;
     let arings: Vec<Vec<usize>> = ring_info
         .atom_rings()
         .iter()
@@ -8911,7 +9226,16 @@ fn rdkit_compute_initial_efrags_strict(
             &degree,
             cip_ranks,
         );
-        efrags[idx] = curr;
+        // RDKit✔️❌: std::list iterators remain valid across erases of other
+        // RDKit✔️❌: fragments during expandEfrag(). The Vec-backed port keeps a
+        // RDKit✔️❌: placeholder at the current slot and restores the expanded
+        // RDKit✔️❌: fragment into that placeholder even if earlier erases shift
+        // RDKit✔️❌: its index left.
+        if let Some(slot) = efrags.iter().position(|frag| frag.eatoms.is_empty()) {
+            efrags[slot] = curr;
+        } else {
+            efrags.push(curr);
+        }
         mri = find_largest_frag(&efrags);
     }
 
@@ -8936,6 +9260,41 @@ fn efrag_component_atom_ids(efrag: &RdkitEmbeddedFrag) -> Vec<usize> {
     comp
 }
 
+fn debug_depict_row_active(row: usize) -> bool {
+    std::env::var("COSMOLKIT_DEBUG_DEPICT_ROW")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        == Some(row)
+}
+
+fn debug_print_efrag_stage(label: &str, efrags: &[RdkitEmbeddedFrag]) {
+    if !debug_depict_row_active(58) {
+        return;
+    }
+    eprintln!("COSMOL_STAGE label={} count={}", label, efrags.len());
+    for (frag_idx, frag) in efrags.iter().enumerate() {
+        let mut atom_ids: Vec<usize> = frag.get_embedded_atoms().keys().copied().collect();
+        atom_ids.sort_unstable();
+        eprintln!(
+            "COSMOL_STAGE frag={} size={} atoms={:?}",
+            frag_idx,
+            atom_ids.len(),
+            atom_ids
+        );
+        for atom_id in atom_ids {
+            let state = &frag.get_embedded_atoms()[&atom_id];
+            eprintln!(
+                "COSMOL_STAGE atom={} loc=({:.17},{:.17}) bits=({:#018x},{:#018x})",
+                atom_id,
+                state.loc.0,
+                state.loc.1,
+                state.loc.0.to_bits(),
+                state.loc.1.to_bits()
+            );
+        }
+    }
+}
+
 // ── Public API (staged entry point) ─────────────────────────────────────────
 
 fn require_default_compute_2d_coord_parameters(
@@ -8947,6 +9306,85 @@ fn require_default_compute_2d_coord_parameters(
         ));
     }
     Ok(())
+}
+
+// BEGIN RDKIT CPP FUNCTION: Chirality::legacyStereoPerception keepGoing gate (Chirality.cpp)
+// RDKit✔️✔️: bool hasStereoAtoms = false;
+// RDKit✔️✔️: for (auto atom : mol.atoms()) {
+// RDKit✔️✔️:   if (!hasStereoAtoms && atom->getChiralTag() != Atom::CHI_UNSPECIFIED &&
+// RDKit✔️✔️:       atom->getChiralTag() != Atom::CHI_OTHER) {
+// RDKit✔️✔️:     hasStereoAtoms = true;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️: }
+// RDKit✔️✔️: bool hasStereoBonds = false;
+// RDKit✔️✔️: for (auto bond : mol.bonds()) {
+// RDKit✔️✔️:   if (!hasStereoBonds && bond->getBondType() == Bond::DOUBLE) {
+// RDKit✔️✔️:     for (auto nbond : mol.atomBonds(bond->getBeginAtom())) {
+// RDKit✔️✔️:       if (nbond->getBondDir() == Bond::ENDDOWNRIGHT ||
+// RDKit✔️✔️:           nbond->getBondDir() == Bond::ENDUPRIGHT) {
+// RDKit✔️✔️:         hasStereoBonds = true;
+// RDKit✔️✔️:         break;
+// RDKit✔️✔️:       }
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:     if (!hasStereoBonds) {
+// RDKit✔️✔️:       for (auto nbond : mol.atomBonds(bond->getEndAtom())) {
+// RDKit✔️✔️:         if (nbond->getBondDir() == Bond::ENDDOWNRIGHT ||
+// RDKit✔️✔️:             nbond->getBondDir() == Bond::ENDUPRIGHT) {
+// RDKit✔️✔️:           hasStereoBonds = true;
+// RDKit✔️✔️:           break;
+// RDKit✔️✔️:         }
+// RDKit✔️✔️:       }
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:   }
+// RDKit✔️✔️: }
+// RDKit✔️✔️: bool keepGoing = hasStereoAtoms | hasStereoBonds;
+// RDKit✔️✔️: if (!keepGoing) {
+// RDKit✔️✔️:   keepGoing = flagPossibleStereoCenters &&
+// RDKit✔️✔️:               (hasPotentialStereoAtoms || hasPotentialStereoBonds);
+// RDKit✔️✔️: }
+fn rdkit_depict_ordering_needs_cip_ranks(depict_mol: &Molecule) -> bool {
+    let atoms = depict_mol.atoms();
+    let bonds = depict_mol.bonds();
+    let has_stereo_atoms = atoms.iter().any(|atom| {
+        atom.chiral_tag() != ChiralTag::Unspecified && atom.chiral_tag() != ChiralTag::Other
+    });
+    if has_stereo_atoms {
+        return true;
+    }
+    let has_stereo_bonds = bonds.iter().any(|bond| {
+        if bond.order() != BondOrder::Double {
+            return false;
+        }
+        let begin = bond.begin().index();
+        let end = bond.end().index();
+        bonds.iter().any(|nbond| {
+            (nbond.begin().index() == begin
+                || nbond.end().index() == begin
+                || nbond.begin().index() == end
+                || nbond.end().index() == end)
+                && matches!(
+                    nbond.direction(),
+                    BondDirection::EndDownRight | BondDirection::EndUpRight
+                )
+        })
+    });
+    if has_stereo_bonds {
+        return true;
+    }
+    false
+}
+
+fn rdkit_depict_ordering_cip_ranks(
+    depict_mol: &mut Molecule,
+) -> Result<Vec<u32>, Coordinate2DError> {
+    if !rdkit_depict_ordering_needs_cip_ranks(depict_mol) {
+        return Ok(Vec::new());
+    }
+    crate::stereo::assign_atom_cip_ranks_in_place(depict_mol).map_err(|error| {
+        Coordinate2DError::UnsupportedFeature(format!(
+            "RDKit assignStereochemistry()/assignAtomCIPRanks equivalent failed during 2D coordinate generation: {error}"
+        ))
+    })
 }
 
 /// Compute RDKit-compatible 2D coordinates for a molecule using the currently
@@ -8961,8 +9399,8 @@ fn compute_2d_coords_default_path(
             "empty molecule has no 2D coordinates",
         ));
     }
-
-    let cip_ranks = vec![0u32; n];
+    let mut depict_mol = build_rdkit_depict_molecule_from_slices(atoms, bonds)?;
+    let cip_ranks = rdkit_depict_ordering_cip_ranks(&mut depict_mol)?;
 
     let mut efrags = rdkit_compute_initial_efrags_strict(atoms, bonds, &cip_ranks, None, false)?;
     shift_coords(&mut efrags);
@@ -9068,8 +9506,8 @@ pub(crate) fn compute_2d_coords_with_params(
             "empty molecule has no 2D coordinates",
         ));
     }
-
-    let cip_ranks = vec![0u32; n];
+    let mut depict_mol = build_rdkit_depict_molecule_from_slices(atoms, bonds)?;
+    let cip_ranks = rdkit_depict_ordering_cip_ranks(&mut depict_mol)?;
     let mut adjacency = vec![Vec::<usize>::new(); n];
     for bond in bonds {
         adjacency[bond.begin().index()].push(bond.end().index());
@@ -9082,6 +9520,7 @@ pub(crate) fn compute_2d_coords_with_params(
         params.coord_map,
         params.use_ring_templates,
     )?;
+    debug_print_efrag_stage("initial", &efrags);
 
     for frag in &mut efrags {
         let comp = efrag_component_atom_ids(frag);
@@ -9107,6 +9546,7 @@ pub(crate) fn compute_2d_coords_with_params(
         frag.remove_collisions_open_angles(atoms, bonds, &comp, &adjacency);
         frag.remove_collisions_shorten_bonds(atoms, bonds, &comp, &adjacency);
     }
+    debug_print_efrag_stage("post_cleanup", &efrags);
     if params
         .coord_map
         .is_none_or(|coord_map| coord_map.is_empty())
@@ -9115,8 +9555,10 @@ pub(crate) fn compute_2d_coords_with_params(
         for frag in &mut efrags {
             frag.canonicalize_orientation();
         }
+        debug_print_efrag_stage("canonicalize", &efrags);
     }
     shift_coords(&mut efrags);
+    debug_print_efrag_stage("shift", &efrags);
     let mut coords = copy_coordinate_from_efrags(n, &efrags);
     if let Some(coord_map) = params.coord_map.filter(|coord_map| coord_map.len() == 1) {
         let (&ref_idx, &ref_pos) = coord_map.iter().next().expect("single-entry coordMap");
@@ -9903,9 +10345,9 @@ mod tests {
     #[test]
     fn rank_atoms_uses_cip_ranks_before_depict_rank() {
         let mut builder = MoleculeBuilder::new();
-        let c = builder.add_atom(AtomSpec::new(Element::C));
-        let o = builder.add_atom(AtomSpec::new(Element::O));
-        let n = builder.add_atom(AtomSpec::new(Element::N));
+        let c = builder.add_atom(AtomSpec::new(Element::C).with_prop("_CIPRank", "30"));
+        let o = builder.add_atom(AtomSpec::new(Element::O).with_prop("_CIPRank", "10"));
+        let n = builder.add_atom(AtomSpec::new(Element::N).with_prop("_CIPRank", "20"));
         builder
             .add_bond(BondSpec::new(c, o, BondOrder::Single))
             .unwrap();
@@ -9916,6 +10358,20 @@ mod tests {
         let degree = vec![2usize, 1, 1];
         let order = rdkit_rank_atoms_by_rank(mol.atoms(), &[0, 1, 2], &degree, &[30, 10, 20], true);
         assert_eq!(order, vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn rank_atoms_falls_back_to_explicit_cip_rank_vector_when_props_are_absent() {
+        let mut builder = MoleculeBuilder::new();
+        let c = builder.add_atom(AtomSpec::new(Element::C));
+        let h = builder.add_atom(AtomSpec::new(Element::H));
+        builder
+            .add_bond(BondSpec::new(c, h, BondOrder::Single))
+            .unwrap();
+        let mol = builder.build().unwrap();
+        let degree = vec![1usize, 1];
+        let order = rdkit_rank_atoms_by_rank(mol.atoms(), &[0, 1], &degree, &[20, 10], true);
+        assert_eq!(order, vec![1, 0]);
     }
 
     #[test]
@@ -13575,6 +14031,19 @@ fn shift_coords(efrags: &mut [RdkitEmbeddedFrag]) {
     let Some((mut xmax, xmin, mut ymax, ymin)) = efrags[0].compute_box() else {
         return;
     };
+    if std::env::var("COSMOLKIT_DEBUG_DEPICT_ROW").ok().as_deref() == Some("58") {
+        eprintln!(
+            "COSMOL_SHIFT frag=0 box=({:.17},{:.17},{:.17},{:.17}) bits=({:#018x},{:#018x},{:#018x},{:#018x})",
+            xmax,
+            xmin,
+            ymax,
+            ymin,
+            xmax.to_bits(),
+            xmin.to_bits(),
+            ymax.to_bits(),
+            ymin.to_bits()
+        );
+    }
     for efrag in efrags.iter_mut().skip(1) {
         let Some((xp, xn, yp, yn)) = efrag.compute_box() else {
             continue;
@@ -13587,6 +14056,24 @@ fn shift_coords(efrags: &mut [RdkitEmbeddedFrag]) {
         } else {
             shift.1 = ymax + yn + 1.0;
             ymax += yp + yn + 1.0;
+        }
+        if std::env::var("COSMOLKIT_DEBUG_DEPICT_ROW").ok().as_deref() == Some("58") {
+            eprintln!(
+                "COSMOL_SHIFT frag=next xshift={} box=({:.17},{:.17},{:.17},{:.17}) shift=({:.17},{:.17}) bits=({:#018x},{:#018x},{:#018x},{:#018x}) ({:#018x},{:#018x})",
+                xshift,
+                xp,
+                xn,
+                yp,
+                yn,
+                shift.0,
+                shift.1,
+                xp.to_bits(),
+                xn.to_bits(),
+                yp.to_bits(),
+                yn.to_bits(),
+                shift.0.to_bits(),
+                shift.1.to_bits()
+            );
         }
         efrag.translate(shift);
     }

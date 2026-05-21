@@ -2106,6 +2106,40 @@ mod tests {
     }
 
     #[test]
+    fn with_hydrogens_clears_atom_cip_ranks_like_rdkit_addhs() {
+        let smiles =
+            "O=C(NC[C@]12C[C@H]3C[C@H](C[C@H](C3)C1)C2)[C@@H]1C[C@H]2c3ccccc3[C@@H]1c1ccccc12";
+        let molecule = crate::Molecule::from_smiles(smiles).unwrap();
+        assert!(
+            molecule
+                .atoms()
+                .iter()
+                .any(|atom| atom.prop("_CIPRank").is_some()),
+            "SMILES sanitize path should assign legacy _CIPRank before AddHs"
+        );
+
+        let result = molecule
+            .with_hydrogens_with_params(crate::AddHsParams {
+                only_on_atoms: Some(
+                    [4usize, 6, 8, 10, 14, 16, 23]
+                        .into_iter()
+                        .map(crate::AtomId::new)
+                        .collect(),
+                ),
+                ..crate::AddHsParams::default()
+            })
+            .unwrap();
+
+        assert!(
+            result
+                .atoms()
+                .iter()
+                .all(|atom| atom.prop("_CIPRank").is_none()),
+            "RDKit AddHs clears atom _CIPRank computed props before depiction"
+        );
+    }
+
+    #[test]
     fn add_hs_operation_materializes_typed_pdb_residue_info() {
         let mut builder = crate::MoleculeBuilder::new();
         let nitrogen = builder.add_atom(crate::AtomSpec::new(crate::Element::N));

@@ -249,63 +249,74 @@ fn prepare_mol_for_writing<'a>(
 
     // outputMolToMolBlock() always calls pickBondsToWedge() before serializing
     // bond lines; this is not gated on includeStereo.
-    let ring_info = match mol.derived_cache().rings.as_ref() {
-        Some(ri) if ri.is_sssr_or_better() => ri.clone(),
-        _ => find_sssr(&mol).map_err(|e| MolWriteError::Value(e.to_string()))?,
-    };
-
-    // BEGIN RDKIT CPP CALL third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: outputMolToMolBlock
-    // RDKit❗✔️: auto wedgeBonds = Chirality::pickBondsToWedge(tmol, nullptr, conf);
-    let wedge_bonds = pick_bonds_to_wedge(&mol, &ring_info);
-
-    if !wedge_bonds.is_empty() {
-        let mol_mut = mol.to_mut();
-        // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: wedgeMolBonds
-        // RDKit❗✔️: auto wedgeBonds = Chirality::pickBondsToWedge(mol, params, conf);
-        // RDKit❗✔️: for (const auto &[wbi, wedgeInfo] : wedgeBonds) {
-        // RDKit❗✔️:   auto bond = mol.getBondWithIdx(wbi);
-        // RDKit❗✔️:   auto dir =
-        // RDKit❗✔️:       detail::determineBondWedgeState(bond, wedgeInfo->getIdx(), conf);
-        // RDKit❗✔️:   if (dir == Bond::BEGINWEDGE || dir == Bond::BEGINDASH) {
-        // RDKit❗✔️:     bond->setBondDir(dir);
-        // RDKit❗✔️:     if (static_cast<unsigned int>(wedgeInfo->getIdx()) !=
-        // RDKit❗✔️:         bond->getBeginAtomIdx()) {
-        // RDKit❗✔️:       auto tmp = bond->getBeginAtomIdx();
-        // RDKit❗✔️:       bond->setBeginAtomIdx(bond->getEndAtomIdx());
-        // RDKit❗✔️:       bond->setEndAtomIdx(tmp);
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️: }
-        // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: wedgeMolBonds
-        let mut dirs: Vec<(usize, BondDirection, usize)> = Vec::new();
-        for (&bond_idx, &chiral_atom_idx) in &wedge_bonds {
-            if let Some(bond) = mol_mut.bonds().get(bond_idx) {
-                let dir = determine_bond_wedge_state(
-                    mol_mut,
-                    bond,
-                    chiral_atom_idx,
-                    selected.coords.as_deref(),
-                )?;
-                if matches!(dir, BondDirection::BeginWedge | BondDirection::BeginDash) {
-                    dirs.push((bond_idx, dir, chiral_atom_idx));
-                }
-            }
-        }
-        for (bond_idx, dir, chiral_atom_idx) in dirs {
-            if let Some(bond) = mol_mut.topology_block_mut().bonds.get_mut(bond_idx) {
-                bond.set_direction(dir);
-                if bond.begin().index() != chiral_atom_idx {
-                    bond.set_endpoints(bond.end(), bond.begin());
-                }
-            }
-        }
-    }
+    wedge_molecule_bonds_like_rdkit(mol.to_mut(), selected.coords.as_deref())?;
 
     Ok(PreparedMol {
         molecule: mol,
         aromatic_bonds,
         selected,
     })
+}
+
+pub(crate) fn wedge_molecule_bonds_like_rdkit(
+    molecule: &mut Molecule,
+    coords: Option<&[[f64; 3]]>,
+) -> Result<(), MolWriteError> {
+    // BEGIN RDKIT CPP CALL third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: outputMolToMolBlock
+    // RDKit❗✔️: auto wedgeBonds = Chirality::pickBondsToWedge(tmol, nullptr, conf);
+    let ring_info = match molecule.derived_cache().rings.as_ref() {
+        Some(ri) if ri.is_sssr_or_better() => ri.clone(),
+        _ => find_sssr(molecule).map_err(|e| MolWriteError::Value(e.to_string()))?,
+    };
+    let wedge_bonds = pick_bonds_to_wedge(molecule, &ring_info);
+
+    if wedge_bonds.is_empty() {
+        return Ok(());
+    }
+
+    let owned_coords;
+    let coords = if let Some(coords) = coords {
+        Some(coords)
+    } else {
+        owned_coords = select_coordinates(molecule, CoordinateSelection::Auto)?;
+        owned_coords.coords.as_deref()
+    };
+
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: wedgeMolBonds
+    // RDKit❗✔️: auto wedgeBonds = Chirality::pickBondsToWedge(mol, params, conf);
+    // RDKit❗✔️: for (const auto &[wbi, wedgeInfo] : wedgeBonds) {
+    // RDKit❗✔️:   auto bond = mol.getBondWithIdx(wbi);
+    // RDKit❗✔️:   auto dir =
+    // RDKit❗✔️:       detail::determineBondWedgeState(bond, wedgeInfo->getIdx(), conf);
+    // RDKit❗✔️:   if (dir == Bond::BEGINWEDGE || dir == Bond::BEGINDASH) {
+    // RDKit❗✔️:     bond->setBondDir(dir);
+    // RDKit❗✔️:     if (static_cast<unsigned int>(wedgeInfo->getIdx()) !=
+    // RDKit❗✔️:         bond->getBeginAtomIdx()) {
+    // RDKit❗✔️:       auto tmp = bond->getBeginAtomIdx();
+    // RDKit❗✔️:       bond->setBeginAtomIdx(bond->getEndAtomIdx());
+    // RDKit❗✔️:       bond->setEndAtomIdx(tmp);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: wedgeMolBonds
+    let mut dirs: Vec<(usize, BondDirection, usize)> = Vec::new();
+    for (&bond_idx, &chiral_atom_idx) in &wedge_bonds {
+        if let Some(bond) = molecule.bonds().get(bond_idx) {
+            let dir = determine_bond_wedge_state(molecule, bond, chiral_atom_idx, coords)?;
+            if matches!(dir, BondDirection::BeginWedge | BondDirection::BeginDash) {
+                dirs.push((bond_idx, dir, chiral_atom_idx));
+            }
+        }
+    }
+    for (bond_idx, dir, chiral_atom_idx) in dirs {
+        if let Some(bond) = molecule.topology_block_mut().bonds.get_mut(bond_idx) {
+            bond.set_direction(dir);
+            if bond.begin().index() != chiral_atom_idx {
+                bond.set_endpoints(bond.end(), bond.begin());
+            }
+        }
+    }
+    Ok(())
 }
 
 // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: determineBondWedgeState

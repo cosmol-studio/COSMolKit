@@ -3401,9 +3401,7 @@ impl SmilesBuildState {
             spec = spec.with_prop(UNSPECIFIED_ORDER_PROP, "1");
         }
         if bond.is_null_query {
-            spec = spec.with_query(QueryNode::predicate(
-                BondQueryPredicate::UnsupportedFeature("makeBondNullQuery"),
-            ));
+            spec = spec.with_query(QueryNode::predicate(BondQueryPredicate::Any));
         }
         let bond_id = self
             .builder

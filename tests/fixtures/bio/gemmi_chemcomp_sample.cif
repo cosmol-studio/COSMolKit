@@ -1,0 +1,10 @@
+data_GLY
+_chem_comp.id GLY
+loop_
+_chem_comp_atom.atom_id
+_chem_comp_atom.type_symbol
+_chem_comp_atom.charge
+_chem_comp_atom.x
+_chem_comp_atom.y
+_chem_comp_atom.z
+N N 0 1.0 2.0 3.0

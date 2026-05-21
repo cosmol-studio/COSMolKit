@@ -80,6 +80,9 @@ mod tests {
             b_iso: None,
             formal_charge: None,
             anisou: None,
+            calc_flag: BioCalcFlag::NotSet,
+            tls_group_id: None,
+            fraction: None,
             source: AtomSourceIds { serial: None },
         }
     }
@@ -90,7 +93,16 @@ mod tests {
             atom_span: RowSpan::new(start, len),
             name: ResidueName([b'A', b'L', b'A', 0], 3),
             kind: ResidueKind::AminoAcid,
-            source: ResidueSourceIds { seq_id: None },
+            entity_kind: EntityKind::Unknown,
+            source: ResidueSourceIds {
+                seq_id: None,
+                label_seq_id: None,
+                segment_id: None,
+                subchain_id: None,
+                label_entity_id: None,
+            },
+            het_flag: None,
+            sifts_unp: None,
         }
     }
 

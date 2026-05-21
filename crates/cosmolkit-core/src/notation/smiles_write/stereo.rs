@@ -400,7 +400,8 @@ pub(super) fn assign_stereochemistry_for_smiles(
     crate::stereo::assign_stereochemistry(molecule)?;
     assign_double_bond_stereo_for_writer_working_copy(molecule)?;
     let ranks = crate::stereo::assign_atom_cip_ranks(molecule)?;
-    for (atom_idx, cip_code) in crate::stereo::assign_atom_chiral_codes(molecule, &ranks)? {
+    let (_, atom_labels, _) = crate::stereo::assign_atom_chiral_codes(molecule, &ranks)?;
+    for (atom_idx, cip_code) in atom_labels {
         if let Some(atom_mut) = molecule.topology_block_mut().atoms.get_mut(atom_idx) {
             atom_mut.set_prop("_CIPCode", cip_code);
         }
@@ -587,7 +588,7 @@ pub(super) fn assign_double_bond_stereo_for_writer_working_copy(
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Chirality::assignStereochemistry double-bond section
     let ranks = crate::stereo::assign_atom_cip_ranks(molecule)?;
-    let (assignments, changed) = crate::stereo::assign_bond_stereo_codes(molecule, &ranks);
+    let (_, assignments, changed) = crate::stereo::assign_bond_stereo_codes(molecule, &ranks);
     if !changed {
         return Ok(());
     }

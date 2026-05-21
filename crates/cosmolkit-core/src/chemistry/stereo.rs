@@ -251,7 +251,7 @@ pub fn should_detect_double_bond_stereo(
 /// ring handling, and double-bond stereochemistry. When `params.flagPossible`
 /// is true, RDKit tags atoms that COULD be chiral (even if not explicitly
 /// marked); this is not yet implemented.
-pub fn assign_stereochemistry(molecule: &Molecule) -> Result<(), StereoError> {
+pub fn perceive_stereochemistry(molecule: &Molecule) -> Result<(), StereoError> {
     // tetrahedral detection from typed state — already functional
     let _ = tetrahedral_stereo(molecule)?;
     // Double-bond stereo detection from bond direction data
@@ -259,6 +259,13 @@ pub fn assign_stereochemistry(molecule: &Molecule) -> Result<(), StereoError> {
         let _ = should_detect_double_bond_stereo(molecule, bond.id())?;
     }
     Ok(())
+}
+
+#[deprecated(
+    note = "assign_stereochemistry() is read-only; use perceive_stereochemistry() for the explicit public API name"
+)]
+pub fn assign_stereochemistry(molecule: &Molecule) -> Result<(), StereoError> {
+    perceive_stereochemistry(molecule)
 }
 
 // ──────────────────────────────────────────────
@@ -832,6 +839,28 @@ pub fn assign_atom_cip_ranks(mol: &Molecule) -> Result<Vec<u32>, StereoError> {
     Ok(ranks)
 }
 
+// BEGIN RDKIT CPP FUNCTION assignAtomCIPRanks writeback (Chirality.cpp:1341-1344)
+// RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+// RDKit✔️✔️:     mol[i]->setProp(common_properties::_CIPRank, ranks[i], 1);
+// RDKit✔️✔️:   }
+fn write_atom_cip_ranks_to_props(mol: &mut Molecule, ranks: &[u32]) {
+    for (i, rank) in ranks.iter().copied().enumerate() {
+        if let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(i) {
+            atom_mut.set_prop("_CIPRank", rank.to_string());
+        }
+    }
+}
+
+/// RDKit✔️✔️: assignAtomCIPRanks() plus atom-property writeback.
+///
+/// The `_CIPRank` writeback path remains crate-internal until stereochemistry
+/// metadata persistence is modeled as approved public molecule state.
+pub(crate) fn assign_atom_cip_ranks_in_place(mol: &mut Molecule) -> Result<Vec<u32>, StereoError> {
+    let ranks = assign_atom_cip_ranks(mol)?;
+    write_atom_cip_ranks_to_props(mol, &ranks);
+    Ok(ranks)
+}
+
 // BEGIN RDKIT CPP FUNCTION assignAtomChiralCodes (Chirality.cpp:1741-1821)
 // RDKit❗✔️: std::pair<bool, bool> assignAtomChiralCodes(ROMol &mol, UINT_VECT &ranks,
 // RDKit❗✔️:                                             bool flagPossibleStereoCenters) {
@@ -857,11 +886,15 @@ pub fn assign_atom_cip_ranks(mol: &Molecule) -> Result<Vec<u32>, StereoError> {
 /// Assign CIP labels (R/S) to chiral centers using ChiralTag plus the
 /// current rank-ordered bond permutation, matching RDKit's
 /// `Atom::getPerturbationOrder()`-based path.
+///
+/// Returns `(unassigned_atoms_remain, labels, changed_any_atom)`.
 pub fn assign_atom_chiral_codes(
     mol: &Molecule,
     ranks: &[u32],
-) -> Result<Vec<(usize, String)>, StereoError> {
+) -> Result<(bool, Vec<(usize, String)>, bool), StereoError> {
     let mut labels = Vec::new();
+    let mut atom_changed = false;
+    let mut unassigned_atoms = 0usize;
     let implicit_hydrogens = mol
         .derived_cache()
         .valence
@@ -878,6 +911,9 @@ pub fn assign_atom_chiral_codes(
         }
         let idx = atom.id().index();
         let (legal_center, has_dupes, mut nbrs) = is_atom_potential_chiral_center(mol, idx, ranks);
+        if legal_center {
+            unassigned_atoms += 1;
+        }
         if !legal_center || has_dupes {
             continue;
         }
@@ -912,9 +948,11 @@ pub fn assign_atom_chiral_codes(
             _ => continue,
         };
 
+        atom_changed = true;
+        unassigned_atoms = unassigned_atoms.saturating_sub(1);
         labels.push((idx, cip_code.to_string()));
     }
-    Ok(labels)
+    Ok((unassigned_atoms > 0, labels, atom_changed))
 }
 
 // ──────────────────────────────────────────────
@@ -3190,13 +3228,14 @@ fn has_protium_neighbor(mol: &Molecule, atom_idx: usize) -> bool {
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION: assignBondStereoCodes
 /// Assign E/Z stereo codes to double bonds from CIP ranks and bond directions.
-/// Returns (Vec<(bond_idx, DoubleBondStereo, begin_ctrl, end_ctrl)>, changed).
+/// Returns `(unassigned_bonds_remain, assignments, changed_any_bond)`.
 pub fn assign_bond_stereo_codes(
     mol: &Molecule,
     ranks: &[u32],
-) -> (Vec<(usize, DoubleBondStereo, usize, usize)>, bool) {
+) -> (bool, Vec<(usize, DoubleBondStereo, usize, usize)>, bool) {
     let mut results: Vec<(usize, DoubleBondStereo, usize, usize)> = Vec::new();
     let mut changed = false;
+    let mut unassigned_bonds = 0usize;
 
     for dbl_bond in mol.bonds() {
         let dbl_idx = dbl_bond.id().index();
@@ -3218,6 +3257,7 @@ pub fn assign_bond_stereo_codes(
         if (beg_deg != 2 && beg_deg != 3) || (end_deg != 2 && end_deg != 3) {
             continue;
         }
+        unassigned_bonds += 1;
 
         let mut has_explicit_unknown = false;
 
@@ -3273,10 +3313,11 @@ pub fn assign_bond_stereo_codes(
             };
             results.push((dbl_idx, stereo, beg_ctrl, end_ctrl));
             changed = true;
+            unassigned_bonds = unassigned_bonds.saturating_sub(1);
         }
     }
 
-    (results, changed)
+    (unassigned_bonds > 0, results, changed)
 }
 
 // BEGIN RDKIT CPP FUNCTION: assignLegacyCIPLabels (Chirality.cpp:1966-1979)
@@ -3312,10 +3353,10 @@ pub fn assign_legacy_cip_labels(
         Vec::new()
     };
 
-    let atom_labels = assign_atom_chiral_codes(mol, &ranks)?;
+    let (_, atom_labels, _) = assign_atom_chiral_codes(mol, &ranks)?;
 
     // Assign bond stereo codes
-    let (bond_results, _) = assign_bond_stereo_codes(mol, &ranks);
+    let (_, bond_results, _) = assign_bond_stereo_codes(mol, &ranks);
 
     Ok((atom_labels, bond_results))
 }
@@ -3570,6 +3611,20 @@ pub fn rerank_atoms(mol: &Molecule, current_ranks: &[u32]) -> Result<Vec<u32>, S
     iterate_cip_ranks(mol, &invars, &mut new_ranks, true, &adjacency, &valence);
 
     Ok(new_ranks)
+}
+
+// BEGIN RDKIT CPP FUNCTION rerankAtoms writeback (Chirality.cpp:2106-2109)
+// RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); i++) {
+// RDKit✔️✔️:     mol.getAtomWithIdx(i)->setProp(common_properties::_CIPRank, ranks[i]);
+// RDKit✔️✔️:   }
+/// RDKit✔️✔️: rerankAtoms() plus atom-property writeback.
+pub fn rerank_atoms_in_place(
+    mol: &mut Molecule,
+    current_ranks: &[u32],
+) -> Result<Vec<u32>, StereoError> {
+    let ranks = rerank_atoms(mol, current_ranks)?;
+    write_atom_cip_ranks_to_props(mol, &ranks);
+    Ok(ranks)
 }
 
 // BEGIN RDKIT CPP FUNCTION: assignAtomChiralTagsFromStructure (Chirality.cpp)

@@ -55,13 +55,19 @@ crates/cosmolkit-core/src/io/bio.rs
 The current public functions are:
 
 ```text
+read_bio_structure_from_str
+read_bio_structure_from_str_with_format
 read_pdb_coordinate_subset_from_str
 read_pdb_coordinate_subset_from_str_with_params
 read_mmcif_atom_site_subset_from_str
 ```
 
-These names are intentionally subset-scoped. They must not be renamed into
-complete PDB/mmCIF support until the code actually implements complete support.
+`read_bio_structure_from_str(...)` and
+`read_bio_structure_from_str_with_format(...)` are the canonical public
+dispatch entry points for Gemmi-aligned structural reads. The older
+`*_subset_*` names remain available for API stability, but they now forward
+into the same closed structural reader surface rather than a smaller
+coordinate-only subset.
 
 ## RDKit PDB/mmCIF Scope
 

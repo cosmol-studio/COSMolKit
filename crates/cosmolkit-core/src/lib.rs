@@ -54,10 +54,11 @@ pub use batch::{
     BatchRecordError, BatchValidationError, MoleculeBatch, batch_progress_bar,
 };
 pub use bio::{
-    AltLocLabel, AtomName, AtomRow, AtomSourceIds, BioMetadata, BioStructure, ChainKind, ChainRow,
-    ChainSourceIds, CoordinateBlock, CrystalCell, CrystalInfo, EntityKind, EntityRow,
-    EntitySourceIds, ModelRow, PolymerKind, ResidueKind, ResidueName, ResidueRow, RowSpan,
-    classify_residue_name,
+    AltLocLabel, AtomName, AtomRow, AtomSourceIds, BioAssembly, BioCisPep, BioConnection,
+    BioConnectionType, BioCoorFormat, BioMetadata, BioModRes, BioNcsOperator, BioStructure,
+    BioTransform, ChainKind, ChainRow, ChainSourceIds, CoordinateBlock, CrystalCell, CrystalInfo,
+    EntityKind, EntityRow, EntitySourceIds, ModelRow, PolymerKind, ResidueKind, ResidueName,
+    ResidueRow, RowSpan, classify_residue_name,
 };
 pub use bio::{
     AtomId as BioAtomId, ChainId as BioChainId, EntityId as BioEntityId, ModelId as BioModelId,
@@ -81,7 +82,8 @@ pub use fingerprint::{
 };
 pub use hydrogens::{AddHsParams, AddHydrogensError, RemoveHsParams, RemoveHydrogensError};
 pub use io::bio::{
-    BioPdbReadParams, BioReadError, read_mmcif_atom_site_subset_from_str,
+    BioPdbReadParams, BioReadError, read_bio_structure_from_str,
+    read_bio_structure_from_str_with_format, read_mmcif_atom_site_subset_from_str,
     read_pdb_coordinate_subset_from_str, read_pdb_coordinate_subset_from_str_with_params,
 };
 pub use io::sdf::{SdfDataset, SdfRecordMetadata};
@@ -118,7 +120,7 @@ pub use smiles_write::{
 };
 pub use stereo::{
     DoubleBondStereo, LigandRef, StereoError, StereoGroup, StereoGroupKind, TetrahedralStereo,
-    assign_stereochemistry,
+    assign_stereochemistry, perceive_stereochemistry,
 };
 pub use substruct::{
     SubstructMatchParams, SubstructMatchResult, get_substruct_match, get_substruct_matches,

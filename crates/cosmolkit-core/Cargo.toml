@@ -22,10 +22,11 @@ op-contracts = []
 op-contracts-strict = ["runtime-invariants", "op-contracts"]
 
 [dependencies]
-cosmolkit-macros = { version = "0.2.0-beta.1", path = "../cosmolkit-macros" }
-cosmolkit-ringdecomposer = { version = "0.2.0-beta.1", path = "../cosmolkit-ringdecomposer" }
+cosmolkit-macros = { version = "0.2.0-beta.2", path = "../cosmolkit-macros" }
+cosmolkit-ringdecomposer = { version = "0.2.0-beta.2", path = "../cosmolkit-ringdecomposer" }
 glam = "0.32.1"
 log = "0.4.29"
+serde_json = "1"
 thiserror = "2.0.18"
 tiny-skia = "0.12.0"
 usvg = "0.47"
@@ -33,5 +34,4 @@ resvg = "0.47"
 
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 tempfile = "3"

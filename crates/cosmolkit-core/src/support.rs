@@ -215,7 +215,7 @@ pub const BIO_PDB_COORDINATE_SUBSET_READ_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::Io,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Experimental Gemmi-aligned PDB coordinate subset reader into BioStructure. This is the structural IO path and the required front end for future RDKit-compatible molecule input. The reader models ATOM/HETATM, MODEL/ENDMDL, ANISOU, residue identity, atom identity, element, charge, occupancy, B factor, coordinates, SEQRES entities, selected header metadata, AUTHOR, and CRYST1. Connectivity, TER/entity splitting semantics, secondary-structure, and other unported records are not complete PDB support.",
+    docs: "Experimental Gemmi-aligned PDB structural reader into BioStructure. This is the structural IO path and the required front end for future RDKit-compatible molecule input. The public feature name keeps the historical subset label for API stability, but the current reader surface covers ATOM/HETATM, MODEL/ENDMDL, ANISOU, residue and chain identity, TER semantics, SEQRES entities, DBREF, SSBOND/LINK/CISPEP, MODRES, selected header metadata, AUTHOR, CRYST1, SCALE, ORIGX, and MTRIX/NCS records. Remaining unsupported Gemmi branches fail explicitly and stay marked in io::bio.",
 };
 
 pub const BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE: FeatureSpec = FeatureSpec {
@@ -223,7 +223,7 @@ pub const BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::Io,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Experimental Gemmi-aligned mmCIF _atom_site subset reader into BioStructure. This is the structural IO path and the required front end for any future molecule compatibility input. The reader also models _entity, _entity_poly, _entity_poly_seq, and _struct_asym enough to link chains to entities and preserve polymer sequence. RDKit-derived mmCIF parser work remains deferred unless a Molecule compatibility need is approved. It is not complete mmCIF structure semantics; unsupported source branches remain visible in io::bio.",
+    docs: "Experimental Gemmi-aligned mmCIF/mmJSON structural reader into BioStructure. This is the structural IO path and the required front end for any future molecule compatibility input. The public feature name keeps the historical atom-site subset label for API stability, but the current reader surface also covers mmJSON dispatch, _entity, _entity_poly, _entity_poly_seq, _struct_ref/_struct_ref_seq, _struct_asym, _struct_conn, _struct_mon_prot_cis, _pdbx_struct_mod_residue, _pdbx_struct_assembly*, _pdbx_sifts_xref_db, _struct_ncs_oper, crystallographic transforms, and chem-comp CIF handoff through the same dispatch path. RDKit-derived macromolecular parser work remains deferred unless a Molecule compatibility need is approved. Remaining unsupported Gemmi branches fail explicitly and stay marked in io::bio.",
 };
 
 pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[

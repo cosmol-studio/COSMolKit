@@ -47,6 +47,18 @@ pub(super) fn apply_add_hs_assignment(
     properties: &mut MoleculeProperties,
     assignment: &crate::hydrogens::AddHsAssignment,
 ) -> Result<bool, OperationError> {
+    // BEGIN RDKIT CPP FUNCTION MolOps::addHs(RWMol&, const AddHsParameters&, const UINT_VECT*)
+    // RDKit❗✔️:   mol.clearComputedProps(false);
+    // RDKit❗✔️:   ...
+    // RDKit❗✔️:     newAt->clearComputedProps();
+    //
+    // COSMolKit does not yet model RDProps' computed-property registry, so the
+    // AddHs subset clears the atom-level computed stereo rank property that is
+    // observably consumed by the depictor path.
+    for atom in &mut topology.atoms {
+        atom.clear_prop("_CIPRank");
+    }
+
     let old_atom_count = topology.atoms.len();
     let old_bond_count = topology.bonds.len();
     let added_atom_count = assignment.hydrogens_to_add.len();

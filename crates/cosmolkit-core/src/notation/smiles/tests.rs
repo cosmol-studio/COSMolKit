@@ -524,7 +524,7 @@ fn build_state_add_explicit_directional_bond_preserves_unspecified_order_marker(
 }
 
 #[test]
-fn build_state_add_explicit_bond_to_atom_preserves_null_query_bond_like_rdkit_subset() {
+fn build_state_add_explicit_bond_to_atom_maps_null_query_bond_to_any_like_rdkit_subset() {
     let mut state = SmilesBuildState::new();
     state.add_first_atom(SmilesAtomToken::new(6)).unwrap();
     state
@@ -534,9 +534,7 @@ fn build_state_add_explicit_bond_to_atom_preserves_null_query_bond_like_rdkit_su
 
     assert_eq!(
         molecule.bonds()[0].query(),
-        Some(&QueryNode::predicate(
-            BondQueryPredicate::UnsupportedFeature("makeBondNullQuery")
-        ))
+        Some(&QueryNode::predicate(BondQueryPredicate::Any))
     );
 }
 
@@ -678,14 +676,12 @@ fn mol_from_smiles_top_level_empty_input_returns_empty_molecule_like_rdkit() {
 }
 
 #[test]
-fn mol_from_smiles_preserves_null_query_bond_as_explicit_unsupported_query_like_rdkit_subset() {
+fn mol_from_smiles_maps_null_query_bond_to_any_query_for_rdkit_v2000_roundtrip() {
     let molecule = mol_from_smiles("C~C", &SmilesParseParams::default()).unwrap();
 
     assert_eq!(
         molecule.bonds()[0].query(),
-        Some(&QueryNode::predicate(
-            BondQueryPredicate::UnsupportedFeature("makeBondNullQuery")
-        ))
+        Some(&QueryNode::predicate(BondQueryPredicate::Any))
     );
 }
 
@@ -3743,6 +3739,20 @@ fn from_smiles_default_removes_directional_h_with_sanitize_integration() {
     // the registered operations pipeline.
     let molecule = Molecule::from_smiles("[H]/C=C").unwrap();
     assert!(!molecule.atoms().is_empty(), "should parse successfully");
+}
+
+#[test]
+fn from_smiles_assigns_rdkit_legacy_cip_ranks_for_acetic_acid() {
+    let molecule = Molecule::from_smiles("CC(=O)O").unwrap();
+    let observed = molecule
+        .atoms()
+        .iter()
+        .map(|atom| {
+            atom.prop("_CIPRank")
+                .and_then(|value| value.parse::<u32>().ok())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(observed, vec![Some(0), Some(1), Some(3), Some(2)]);
 }
 
 #[test]
