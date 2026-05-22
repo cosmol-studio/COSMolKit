@@ -1553,7 +1553,7 @@ impl PySdfDataset {
         })
     }
 
-    #[cfg_attr(feature = "stubgen", gen_stub(override_return_type(type_repr = "typing.Union[SdfRecord, MoleculeBatch]", imports = ("typing"))))]
+    #[gen_stub(override_return_type(type_repr = "typing.Union[SdfRecord, MoleculeBatch]", imports = ("typing")))]
     fn __getitem__(&self, py: Python<'_>, key: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         match sdf_indices_from_key(self.inner.len(), key)? {
             Err(index) => {
@@ -1669,10 +1669,7 @@ impl PySdfDatasetIterator {
         slf
     }
 
-    #[cfg_attr(
-        feature = "stubgen",
-        gen_stub(override_return_type(type_repr = "SdfRecord"))
-    )]
+    #[gen_stub(override_return_type(type_repr = "SdfRecord"))]
     fn __next__(&mut self) -> PyResult<Option<PySdfRecord>> {
         if self.position >= self.dataset.len() {
             return Ok(None);
@@ -1695,10 +1692,7 @@ impl PySdfBatchIterator {
         slf
     }
 
-    #[cfg_attr(
-        feature = "stubgen",
-        gen_stub(override_return_type(type_repr = "MoleculeBatch"))
-    )]
+    #[gen_stub(override_return_type(type_repr = "MoleculeBatch"))]
     fn __next__(&mut self) -> PyResult<Option<MoleculeBatch>> {
         if self.position >= self.dataset.len() {
             if let Some(progress_bar) = self.progress_bar.take() {
@@ -1733,10 +1727,7 @@ impl PySdfReaderBatchIterator {
         slf
     }
 
-    #[cfg_attr(
-        feature = "stubgen",
-        gen_stub(override_return_type(type_repr = "MoleculeBatch"))
-    )]
+    #[gen_stub(override_return_type(type_repr = "MoleculeBatch"))]
     fn __next__(&mut self) -> PyResult<Option<MoleculeBatch>> {
         let start = self.index;
         let result = sdf_batch_from_reader(&mut self.reader, start, self.size, self.errors)
@@ -2346,7 +2337,7 @@ n_jobs : int, optional
     #[doc = r#"
 Return distance-geometry bounds matrices for all valid records.
 "#]
-    #[cfg_attr(feature = "stubgen", gen_stub(override_return_type(type_repr = "builtins.list[typing.Optional[numpy.ndarray[typing.Any, typing.Any]]]", imports = ("builtins", "typing", "numpy"))))]
+    #[gen_stub(override_return_type(type_repr = "builtins.list[typing.Optional[numpy.ndarray[typing.Any, typing.Any]]]", imports = ("builtins", "typing", "numpy")))]
     fn dg_bounds_matrix_list<'py>(
         &self,
         py: Python<'py>,
@@ -2844,10 +2835,10 @@ Valid records become ``Molecule`` objects and invalid records become ``None``.
         ))
     }
 
-    #[cfg_attr(feature = "stubgen", gen_stub(override_return_type(type_repr = "typing.Iterator[typing.Optional[Molecule]]", imports = ("typing"))))]
-    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
+    #[gen_stub(override_return_type(type_repr = "typing.Iterator[typing.Optional[Molecule]]", imports = ("typing")))]
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let list = PyList::new(py, self.records_as_molecules())?;
-        PyIterator::from_object(list.as_any())
+        Ok(PyIterator::from_object(list.as_any())?.into_any())
     }
 
     fn __len__(&self) -> usize {
@@ -3354,25 +3345,25 @@ Return whether the molecule has 2D coordinates.
         self.inner.coords_2d().is_some()
     }
 
-    #[cfg_attr(feature = "stubgen", gen_stub(override_return_type(type_repr = "numpy.ndarray[typing.Any, typing.Any]", imports = ("numpy", "typing"))))]
+    #[gen_stub(override_return_type(type_repr = "numpy.ndarray[typing.Any, typing.Any]", imports = ("numpy", "typing")))]
     #[doc = r#"
 Return 2D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
 
 The z column is zero-filled.
 "#]
-    fn coords_2d<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    fn coords_2d<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let Some(coords) = self.inner.coords_2d() else {
             return Err(PyValueError::new_err(
                 "no 2D coordinates present; call with_2d_coords() first",
             ));
         };
         let rows: Vec<Vec<f64>> = coords.iter().map(|p| vec![p[0], p[1], 0.0]).collect();
-        PyArray2::from_vec2(py, &rows)
+        PyArray2::from_vec2(py, &rows).map(|array| array.into_any())
             .map_err(|err| PyValueError::new_err(format!("Molecule.coords_2d failed: {err}")))
     }
 
     #[pyo3(signature = (conformer_index=0))]
-    #[cfg_attr(feature = "stubgen", gen_stub(override_return_type(type_repr = "numpy.ndarray[typing.Any, typing.Any]", imports = ("numpy", "typing"))))]
+    #[gen_stub(override_return_type(type_repr = "numpy.ndarray[typing.Any, typing.Any]", imports = ("numpy", "typing")))]
     #[doc = r#"
 Return 3D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
 "#]
@@ -3380,7 +3371,7 @@ Return 3D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
         &self,
         py: Python<'py>,
         conformer_index: usize,
-    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    ) -> PyResult<Bound<'py, PyAny>> {
         let Some(coords) = self.inner.conformers_3d().get(conformer_index) else {
             return Err(PyValueError::new_err(format!(
                 "no 3D conformer present at index {conformer_index}"
@@ -3391,19 +3382,21 @@ Return 3D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
             .iter()
             .map(|p| vec![p[0], p[1], p[2]])
             .collect();
-        PyArray2::from_vec2(py, &rows)
+        PyArray2::from_vec2(py, &rows).map(|array| array.into_any())
             .map_err(|err| PyValueError::new_err(format!("Molecule.coords_3d failed: {err}")))
     }
 
-    #[cfg_attr(feature = "stubgen", gen_stub(override_return_type(type_repr = "numpy.ndarray[typing.Any, typing.Any]", imports = ("numpy", "typing"))))]
+    #[gen_stub(override_return_type(type_repr = "numpy.ndarray[typing.Any, typing.Any]", imports = ("numpy", "typing")))]
     #[doc = r#"
 Return the distance-geometry bounds matrix as a NumPy array.
 "#]
-    fn dg_bounds_matrix<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    fn dg_bounds_matrix<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let rows = self.inner.dg_bounds_matrix().map_err(|err| {
             PyValueError::new_err(format!("Molecule.dg_bounds_matrix failed: {err}"))
         })?;
-        PyArray2::from_vec2(py, &rows).map_err(|err| {
+        PyArray2::from_vec2(py, &rows)
+            .map(|array| array.into_any())
+            .map_err(|err| {
             PyValueError::new_err(format!("Molecule.dg_bounds_matrix failed: {err}"))
         })
     }
@@ -4014,8 +4007,8 @@ Serialize the molecule to COSMolKit binary form.
     #[doc = r#"
 Deserialize a molecule from COSMolKit binary data.
 "#]
-    fn mol_from_binary(_cls: &Bound<'_, PyType>, data: &[u8]) -> PyResult<Self> {
-        let inner = cosmolkit_core::mol_from_binary(data).map_err(pickle_pyerr)?;
+    fn mol_from_binary(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyBytes>) -> PyResult<Self> {
+        let inner = cosmolkit_core::mol_from_binary(data.as_bytes()).map_err(pickle_pyerr)?;
         Ok(Self { inner })
     }
 
@@ -4304,10 +4297,7 @@ impl Atom {
     fn formal_charge(&self) -> i8 {
         self.formal_charge
     }
-    #[cfg_attr(
-        feature = "stubgen",
-        gen_stub(override_return_type(type_repr = "ChiralTag"))
-    )]
+    #[gen_stub(override_return_type(type_repr = "ChiralTag"))]
     fn chiral_tag<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "ChiralTag", self.chiral_tag_code)
     }
@@ -4380,10 +4370,7 @@ impl Bond {
     fn end_atom_idx(&self) -> usize {
         self.end_atom_idx
     }
-    #[cfg_attr(
-        feature = "stubgen",
-        gen_stub(override_return_type(type_repr = "BondOrder"))
-    )]
+    #[gen_stub(override_return_type(type_repr = "BondOrder"))]
     fn bond_type<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "BondOrder", self.bond_type_code)
     }
@@ -4393,10 +4380,7 @@ impl Bond {
     fn bond_type_name(&self) -> String {
         self.bond_type_name.clone()
     }
-    #[cfg_attr(
-        feature = "stubgen",
-        gen_stub(override_return_type(type_repr = "BondDirection"))
-    )]
+    #[gen_stub(override_return_type(type_repr = "BondDirection"))]
     fn bond_dir<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "BondDirection", self.bond_dir_code)
     }
@@ -4406,10 +4390,7 @@ impl Bond {
     fn bond_dir_name(&self) -> String {
         self.bond_dir_name.clone()
     }
-    #[cfg_attr(
-        feature = "stubgen",
-        gen_stub(override_return_type(type_repr = "BondStereo"))
-    )]
+    #[gen_stub(override_return_type(type_repr = "BondStereo"))]
     fn stereo<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "BondStereo", self.stereo_code)
     }
@@ -4853,6 +4834,7 @@ impl From<cosmolkit_core::PreparedDrawBond> for PreparedDrawBond {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl PreparedDrawBond {
     fn index(&self) -> usize {
@@ -4864,10 +4846,7 @@ impl PreparedDrawBond {
     fn end_atom(&self) -> usize {
         self.end_atom
     }
-    #[cfg_attr(
-        feature = "stubgen",
-        gen_stub(override_return_type(type_repr = "BondOrder"))
-    )]
+    #[gen_stub(override_return_type(type_repr = "BondOrder"))]
     fn bond_order<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "BondOrder", self.bond_order_code)
     }
@@ -4877,10 +4856,7 @@ impl PreparedDrawBond {
     fn is_aromatic(&self) -> bool {
         self.is_aromatic
     }
-    #[cfg_attr(
-        feature = "stubgen",
-        gen_stub(override_return_type(type_repr = "BondDirection"))
-    )]
+    #[gen_stub(override_return_type(type_repr = "BondDirection"))]
     fn direction<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         enum_member(py, "BondDirection", self.direction_code)
     }

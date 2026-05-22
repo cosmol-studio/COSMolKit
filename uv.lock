@@ -170,7 +170,7 @@ wheels = [
 
 [[package]]
 name = "cosmolkit-dev"
-version = "0.1.3"
+version = "0.0.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
