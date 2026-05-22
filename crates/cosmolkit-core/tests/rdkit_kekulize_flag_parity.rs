@@ -25,7 +25,7 @@ fn load_golden() -> Vec<KekulizeFlagRecord> {
     let path = repo_root().join("tests/golden/kekulize_clear_flags_false.jsonl");
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate with tests/scripts/gen_rdkit_kekulize_flags_golden.py: {err}",
+            "failed to open {}; regenerate all RDKit goldens with `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`: {err}",
             path.display()
         )
     });
@@ -214,5 +214,98 @@ fn kekulize_clear_flags_false_matches_rdkit_golden() {
                 batch_idx
             );
         }
+    }
+}
+
+#[test]
+fn kekulize_clear_flags_false_matches_rdkit_golden_in_parallel_batch() {
+    let records = load_golden();
+    let smiles = records
+        .iter()
+        .map(|record| record.smiles.clone())
+        .collect::<Vec<_>>();
+    let batch = MoleculeBatch::from_smiles_list(&smiles).with_parallel_jobs(Some(4));
+    let batch = batch
+        .with_kekulized_bonds_with_options(false, BatchErrorMode::KeepErrors, Some(4), Some(false))
+        .expect("parallel batch clearAromaticFlags=false kekulize should keep row errors");
+
+    assert_eq!(batch.len(), records.len());
+    for (row_idx, (record, batch_record)) in records.iter().zip(batch.iter()).enumerate() {
+        if !record.parse_ok || !record.kekulize_ok {
+            assert!(
+                matches!(batch_record, BatchRecord::Error(_)),
+                "parallel batch clearAromaticFlags=false kekulize should fail at row {} ({})",
+                row_idx + 1,
+                record.smiles
+            );
+            continue;
+        }
+
+        let BatchRecord::Molecule(batch_mol) = batch_record else {
+            panic!(
+                "parallel batch clearAromaticFlags=false kekulize missing at row {} ({})",
+                row_idx + 1,
+                record.smiles
+            );
+        };
+        let expected_atom_is_aromatic = record.atom_is_aromatic.as_ref().unwrap_or_else(|| {
+            panic!(
+                "row {} ({}) missing atom_is_aromatic after successful RDKit kekulize",
+                row_idx + 1,
+                record.smiles
+            )
+        });
+        let expected_bond_types = record.bond_types.as_ref().unwrap_or_else(|| {
+            panic!(
+                "row {} ({}) missing bond_types after successful RDKit kekulize",
+                row_idx + 1,
+                record.smiles
+            )
+        });
+        let expected_bond_is_aromatic = record.bond_is_aromatic.as_ref().unwrap_or_else(|| {
+            panic!(
+                "row {} ({}) missing bond_is_aromatic after successful RDKit kekulize",
+                row_idx + 1,
+                record.smiles
+            )
+        });
+
+        let actual_atom_is_aromatic: Vec<bool> = batch_mol
+            .atoms()
+            .iter()
+            .map(|atom| atom.is_aromatic())
+            .collect();
+        let actual_bond_types: Vec<&'static str> = batch_mol
+            .bonds()
+            .iter()
+            .map(|bond| bond_type_name(bond.order()))
+            .collect();
+        let actual_bond_is_aromatic: Vec<bool> = batch_mol
+            .bonds()
+            .iter()
+            .map(|bond| bond.is_aromatic())
+            .collect();
+
+        assert_eq!(
+            actual_atom_is_aromatic,
+            *expected_atom_is_aromatic,
+            "parallel batch atom aromatic flags mismatch at row {} ({})",
+            row_idx + 1,
+            record.smiles
+        );
+        assert_eq!(
+            actual_bond_types,
+            *expected_bond_types,
+            "parallel batch bond types mismatch at row {} ({})",
+            row_idx + 1,
+            record.smiles
+        );
+        assert_eq!(
+            actual_bond_is_aromatic,
+            *expected_bond_is_aromatic,
+            "parallel batch bond aromatic flags mismatch at row {} ({})",
+            row_idx + 1,
+            record.smiles
+        );
     }
 }

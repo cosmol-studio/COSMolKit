@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
-use cosmolkit_core::{BondOrder, Molecule, PreparedDrawMolecule};
+use cosmolkit_core::{BondOrder, Molecule, MoleculeBatch, PreparedDrawMolecule};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -40,7 +40,7 @@ fn load_golden() -> Vec<PreparedDrawRecord> {
     let path = repo_root().join("tests/golden/prepared_draw_molecule.jsonl");
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate with tests/scripts/gen_rdkit_prepared_draw_golden.py: {err}",
+            "failed to open {}; regenerate all RDKit goldens with `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`: {err}",
             path.display()
         )
     });
@@ -128,6 +128,47 @@ fn prepared_draw_molecule_matches_rdkit_golden() {
             );
         }
         assert_prepared_draw_matches(row_idx, record, &actual);
+    }
+}
+
+#[test]
+fn prepared_draw_molecule_matches_rdkit_golden_in_parallel_batch() {
+    let records = load_golden();
+    let smiles = records
+        .iter()
+        .map(|record| record.smiles.clone())
+        .collect::<Vec<_>>();
+    let batch = MoleculeBatch::from_smiles_list(&smiles).with_parallel_jobs(Some(4));
+    let actual = batch
+        .prepare_for_drawing_parity_list()
+        .expect("parallel batch prepared draw parity should collect without molecule draw errors");
+
+    assert_eq!(actual.len(), records.len());
+    for (row_idx, (record, actual)) in records.iter().zip(actual.iter()).enumerate() {
+        if !record.rdkit_ok {
+            assert!(
+                record.error.is_some(),
+                "row {} ({}) is rdkit not ok but has no error",
+                row_idx + 1,
+                record.smiles
+            );
+            assert!(
+                actual.is_none(),
+                "parallel batch prepared draw should not produce row {} ({})",
+                row_idx + 1,
+                record.smiles
+            );
+            continue;
+        }
+
+        let actual = actual.as_ref().unwrap_or_else(|| {
+            panic!(
+                "parallel batch prepared draw missing row {} ({})",
+                row_idx + 1,
+                record.smiles
+            )
+        });
+        assert_prepared_draw_matches(row_idx, record, actual);
     }
 }
 

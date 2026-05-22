@@ -1,12 +1,12 @@
 name: coverage
 
 on:
-    # push:
-    #     branches:
-    #         - main
-    # pull_request:
-    #     branches:
-    #         - main
+    push:
+        branches:
+            - main
+    pull_request:
+        branches:
+            - main
     workflow_dispatch:
 
 permissions:
@@ -14,7 +14,6 @@ permissions:
 
 jobs:
     rust-coverage:
-        if: ${{ false }}
         runs-on: ubuntu-latest
 
         steps:
@@ -45,12 +44,18 @@ jobs:
               run: |
                   .venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4
 
-            - name: Run Rust tests with coverage instrumentation
+            - name: Run cosmolkit-core tests with coverage instrumentation
               id: cov_run
               continue-on-error: true
               run: |
                   cargo llvm-cov clean --workspace
-                  cargo llvm-cov --workspace --exclude cosmolkit-py --all-features --no-report
+                  cargo llvm-cov -p cosmolkit-core --features op-contracts-strict --no-report
+
+            - name: Run exhaustive SMILES writer parity with coverage instrumentation
+              id: smiles_writer_full
+              continue-on-error: true
+              run: |
+                  cargo llvm-cov -p cosmolkit-core --features op-contracts-strict --test rdkit_smiles_writer_parity --no-report -- --ignored smiles_writer_matches_rdkit_golden_across_param_branches
 
             - name: Generate HTML coverage report
               if: always()
@@ -80,7 +85,7 @@ jobs:
                   verbose: true
 
             - name: Fail workflow if tests failed
-              if: steps.cov_run.outcome == 'failure'
+              if: steps.cov_run.outcome == 'failure' || steps.smiles_writer_full.outcome == 'failure'
               run: |
                   echo "Rust tests failed. Coverage artifacts were still generated and uploaded."
                   exit 1

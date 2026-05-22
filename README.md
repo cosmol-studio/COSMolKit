@@ -18,9 +18,22 @@
   </a>
 </p>
 
+COSMolKit is a Python molecular toolkit backed by a Rust core. It provides
+value-style molecule operations, SMILES and SDF workflows, 2D depiction,
+fingerprints, batch processing, and protein-focused structural biology APIs.
+
+The library is built around explicit behavior: supported operations return
+structured results, unsupported behavior fails visibly, and public molecule
+transforms return new values instead of mutating their inputs.
+
+COSMolKit is designed for array-oriented structural data access, keeping
+molecular data efficient and natural for NumPy, PyTorch, and model-building
+workflows.
+
 ## Documentation
 
-Current Python documentation: <https://kit.cosmol.org/>
+- Python documentation: <https://kit.cosmol.org/>
+- Rust and development notes: [`crates/cosmolkit/README.md`](crates/cosmolkit/README.md)
 
 ## Installation
 
@@ -28,45 +41,34 @@ Current Python documentation: <https://kit.cosmol.org/>
 pip install cosmolkit
 ```
 
-## Overview
+## Core Concepts
 
-**COSMolKit** is a Rust-native cheminformatics and structural biology toolkit for molecules, SMILES/SDF/MolBlock parsing, molecular graphs, conformers, coordinates, and AI-ready batch workflows.
+- **Value-style molecules:** methods such as `with_hydrogens()`,
+  `without_hydrogens()`, `with_kekulized_bonds()`, and `with_2d_coords()`
+  return new molecule values.
+- **Explicit errors:** invalid input and unsupported behavior are surfaced as
+  errors instead of silent fallbacks.
+- **Batch-native processing:** `MoleculeBatch` keeps input order, supports
+  structured per-record failures, and can run batch transforms and exports with
+  configurable parallelism.
+- **Array-friendly data access:** coordinates, bounds matrices, fingerprints,
+  and graph features are exposed in forms that fit Python numerical workflows.
 
-It currently focuses on a chemistry core whose selected features are tested for RDKit-compatible behavior: SMILES parsing/writing, atom and bond feature inspection, hydrogen transforms, Kekulization, stereochemistry checks, distance-geometry bounds, Morgan fingerprints, SDF output, and 2D depiction.
+### Value-Style Transformations
 
-COSMolKit is designed around ndarray-oriented structural data access, keeping molecular data efficient and natural for NumPy and PyTorch workflows.
-
-### Copy-on-Write style transformations
-
-COSMolKit uses deterministic, Copy-on-Write style APIs: normal molecule operations return new objects and do not mutate their inputs. This follows the modern pandas 3.0 / Polars direction of explicit dataflow instead of hidden inplace mutation. See the pandas Copy-on-Write migration guide for the related dataframe design: <https://pandas.pydata.org/docs/dev/user_guide/migration.html>.
+Normal molecule operations return new objects and do not mutate their inputs.
+This follows the same explicit-dataflow direction as modern dataframe libraries:
+users can reason about each transformation as a new value while the Rust core can
+share unchanged internal storage efficiently.
 
 ```python
+from cosmolkit import Molecule
+
 mol = Molecule.from_smiles("CCO")
 mol_h = mol.with_hydrogens()
 
 assert mol is not mol_h
 ```
-
-Explicit mutation is separated into editing workflows such as `Molecule.edit()`. Internally, unchanged topology / conformer / property data can be shared so value-style transformations remain efficient.
-
-## Current Status
-
-COSMolKit is currently undergoing a core redesign. The redesigned implementation
-lives in `crates/cosmolkit-core/`; the previous implementation has been moved to
-`crates/cosmolkit-core-old/` and is retained as reference material during the
-migration. Some README sections may still describe the pre-redesign API or
-completed legacy parity work while the new core is being rebuilt.
-
-COSMolKit is in early active development. The implementation is intentionally a subset and is expanded by adding well-tested behavior rather than by broad API cloning.
-
-- **Core layout:** `cosmolkit-core` contains chemistry perception, IO, drawing, and biomolecular primitives; `cosmolkit` is the Rust facade crate; `python/` contains the PyO3 package.
-- **RDKit reference:** RDKit 2026.03.1 is the active compatibility reference for selected behaviors, with `third_party/rdkit` pinned to `Release_2026_03_1` (`351f8f378f8ad6bbd517980c38896e66bf907af8`).
-- **Gemmi reference:** Gemmi is the planned reproduction target for future macromolecular PDB/mmCIF parsing work, with `third_party/gemmi` pinned to `v0.7.5` (`5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e`).
-- **Parity coverage:** current tests cover graph features, add-H / remove-H roundtrips, tetrahedral stereo geometry, DG bounds matrices, Morgan fingerprint branches, Kekulization branches, SMILES writer branches, V2000 molblock output, direct MOL/molblock reading, and SDF V2000/V3000 roundtrips.
-- **Query import status:** MOL/SDF parsing now preserves a structured internal representation for supported RDKit query atom/bond features such as `HCOUNT`, `UNSAT`, `RBCNT`, `TOPO`, hydrogen bonds, and unknown single-bond directions. Public query-inspection APIs are still intentionally deferred.
-- **Batch-native workflows:** `MoleculeBatch` APIs support ordered molecule construction, Python-style indexing and iteration, parallel transforms, image/SDF export, custom export filenames, and structured error handling for high-throughput datasets.
-- **Python bindings:** the package exposes SMILES parsing/writing with RDKit-style writer options, `Molecule.from_rdkit()`, enum-valued graph/stereo inspection, value-style transforms, explicit `coords_2d()` / `coords_3d()` access, 2D/3D SDF IO for molecules with stored coordinates, DG bounds, Morgan fingerprints, SVG/PNG rendering, batch processing, and explicit editing.
-- **AI direction:** planned COSMolKit-native APIs include model-ready graph export, internal coordinates, torsion/chirality-aware diffusion helpers, and molecular tokenization. See `dev/ai_native_features.md`.
 
 ## Python Quick Start
 
@@ -75,173 +77,205 @@ from cosmolkit import Molecule, MoleculeBatch
 
 mol = Molecule.from_smiles("c1ccccc1O")
 mol_2d = mol.with_2d_coords()
+
+print(mol_2d.to_smiles())
+print(mol_2d.coords_2d())
+
+svg = mol_2d.to_svg(width=400, height=300)
 mol_2d.write_png("phenol.png", width=400, height=300)
 
 fp = mol.fingerprint_morgan(radius=2, n_bits=2048)
 print(fp.on_bits())
 
-smiles = ["CCO", "c1ccccc1", "CC(=O)O"]
-batch = MoleculeBatch.from_smiles_list(smiles, sanitize=True, errors="keep").with_parallel_jobs(8)
+batch = (
+    MoleculeBatch.from_smiles_list(
+        ["CCO", "c1ccccc1", "CC(=O)O"],
+        sanitize=True,
+        errors="keep",
+    )
+    .with_parallel_jobs(8)
+    .with_progress_bar(False)
+)
 
 prepared = batch.add_hydrogens(errors="keep").compute_2d_coords(errors="keep")
-fps = prepared.fingerprint_morgan_list(n_bits=2048)
+print(prepared.valid_mask())
+print(prepared.to_smiles_list())
+
 prepared.to_images(
     "molecule_images",
     format="png",
     size=(300, 300),
-    errors="skip",
+    errors="keep_errors",
     filenames=["ethanol", "benzene", "acetate"],
 )
 ```
 
-For more Python examples, see `python/README.md` and `python/examples/`.
+## Protein Structures
+
+Use `Protein` when the workflow is focused on protein chains rather than the
+full structural table.
+
+```python
+from cosmolkit import Protein
+
+protein = Protein.from_pdb("1crn.pdb")
+
+print(protein.num_chains())
+print(protein.num_residues())
+print(protein.num_atoms())
+
+for chain in protein.chains():
+    print(chain.index(), chain.kind(), len(chain))
+    for residue in chain.residues():
+        print(residue.name(), residue.kind(), len(residue))
+```
+
+For lower-level structural workflows, COSMolKit also exposes `BioStructure`
+types in Rust and Python.
+
+## SDF and Dataset Workflows
+
+`SdfDataset` builds a lightweight index of SDF record byte ranges, so individual
+records and chunks can be read without loading an entire file into memory.
+
+```python
+from cosmolkit import SdfDataset
+
+dataset = SdfDataset.open("library.sdf")
+print(len(dataset))
+
+record = dataset[0]
+mol = record.molecule()
+
+for batch in dataset.batches(size=1024, errors="keep_errors", n_jobs=8):
+    smiles = batch.to_smiles_list()
+```
+
+## Feature Areas
+
+- Molecular graph construction and inspection
+- SMILES parsing and writing
+- MOL/SDF reading and writing
+- Hydrogen transforms and Kekulization
+- Sanitization and chemistry problem detection
+- 2D coordinate generation and SVG/PNG depiction
+- Morgan and Avalon fingerprints
+- Distance-geometry bounds matrices
+- Substructure matching and SMARTS parsing
+- Ordered batch transforms and exports
+- PDB/mmCIF parsing and protein projection APIs
+- Support-status metadata for public features
 
 ## Design Principles
 
-- **RDKit-compatible core behavior:** parity matters for molecular facts such as valence handling, aromaticity, Kekulization, stereochemistry, and file output.
-- **Modern public API:** normal transformations are value-style and deterministic; explicit mutation belongs in editing workflows.
-- **Rust-first performance:** heavy logic lives in Rust and is exposed to Python through PyO3 without leaking mutation ambiguity to users.
-- **ndarray-oriented structural data access:** molecular data should be exposed through efficient array views that fit naturally into NumPy and PyTorch workflows.
-- **Batch-native throughput:** large molecule collections should be processed as ordered batches with Rust-side parallel scheduling, minimal Python-loop overhead, and traceable per-record failures.
-- **AI-ready extensions:** RDKit compatibility is the correctness floor, while COSMolKit-native graph, geometry, torsion, diffusion, and token APIs are the API ceiling.
+COSMolKit aims to be Python-friendly, batch-friendly, and suitable for
+model-building workflows.
+
+- Correctness comes before breadth.
+- Public transforms use value semantics.
+- Mutation-capable workflows are explicit.
+- Unsupported chemistry should fail clearly.
+- RDKit-compatible behavior is the correctness floor for supported
+  cheminformatics features.
+- High-throughput APIs should preserve input order and expose per-record
+  failures.
+
+## Examples
+
+Python examples live in `python/examples/`.
 
 ## Roadmap
 
-### Phase 1 — Chemistry Core
-**Goal:** keep the small core correct before expanding breadth
+Status labels:
 
-- ✅ Atom / Bond / Molecule data model
-- ✅ adjacency representation
-- ✅ bond order + formal charge support
-- ✅ SMILES parser
-- ✅ ring perception
-- ✅ valence handling
-- ✅ Kekulization
-- ✅ SMILES writer
-- ✅ atom and bond feature extraction
-- ✅ explicit hydrogen expansion
-- ✅ tetrahedral stereo ordered-ligand representation
-- ✅ DG bounds matrix generation
-- ✅ molblock V2000 coordinate/topology handling
-- ✅ explicit COW sanitization pipeline
-- ✅ RDKit-style `SanitizeMol()` flags, errors, conjugation, hybridization, atropisomer cleanup, and raw SDF sanitize control
-- ✅ RDKit-style Morgan fingerprint core with bit-vector, Tanimoto, generator, count-simulation, custom-invariant, and AdditionalOutput branches
+- ✅ available in the public Python API
+- 🧪 implemented or partially available, still being hardened
+- 🚧 planned / not yet public
 
-### Phase 2 — Chemical File I/O
-**Goal:** make molecule import/export usable beyond SMILES
+### Chemistry Core
 
-- ✅ MOL reader
-- ✅ SDF reader with robust multi-record handling
-- ✅ SDF writer with strict RDKit-compatible V2000/V3000 output
-- ✅ SMILES output via RDKit-parity writer branches
-- [ ] batch molecule loading
-- [ ] format validation tools with precise error reporting
+Goal: keep the supported molecular core correct before expanding breadth.
 
-### Phase 2.5 — Batch-Native Processing
-**Goal:** make high-throughput molecule preparation and export a core product identity
+- ✅ Molecule, atom, and bond graph model
+- ✅ SMILES parsing
+- ✅ SMILES writing with RDKit-style writer options for supported branches
+- ✅ Ring perception, valence handling, aromaticity, and Kekulization
+- ✅ Hydrogen addition and removal
+- ✅ Sanitization for supported chemistry workflows
+- ✅ Stereochemistry inspection for supported atom and bond states
+- ✅ Distance-geometry bounds matrices
+- ✅ Morgan fingerprints and Tanimoto similarity
+- 🧪 Avalon fingerprints
+- 🧪 Substructure matching and SMARTS parsing
+- 🚧 Broader descriptor APIs such as formula, molecular weight, and ring
+  statistics
 
-- ✅ `MoleculeBatch.from_smiles_list()` with input-order preservation
-- ✅ batch transformations for sanitize, add/remove hydrogens, Kekulization, and 2D coordinates
-- ✅ Rust-side parallel scheduling with configurable `n_jobs`
-- ✅ batch-level default parallelism with `MoleculeBatch.with_parallel_jobs()`
-- ✅ structured batch errors with `errors="raise" | "keep" | "skip"` and Python `BatchErrorMode` / `BatchErrorType` enums
-- ✅ validity masks, error summaries, and JSON/CSV error reports
-- ✅ Python-style iteration, integer indexing, slicing, index-list selection, and boolean-mask selection
-- ✅ parallel SDF and image export for large molecule collections, including per-record filenames
+### File I/O and Depiction
 
-### Phase 3 — Python API and User Workflows
-**Goal:** expose the verified Rust core through a practical Python interface
+Goal: make common molecule import, export, and visualization workflows usable
+from Python.
 
-- ✅ PyO3 package scaffold
-- ✅ `Molecule.from_smiles()`
-- ✅ `Molecule.from_rdkit()`
-- ✅ atom and bond graph access
-- ✅ enum-valued bond order, bond direction, bond stereo, and chiral tag access
-- ✅ `Molecule.with_hydrogens()`
-- ✅ `Molecule.without_hydrogens()`
-- ✅ `Molecule.with_kekulized_bonds()`
-- ✅ `Molecule.tetrahedral_stereo()`
-- ✅ `Molecule.with_2d_coords()`
-- ✅ `Molecule.to_smiles()` with RDKit-style writer options
-- ✅ SDF read/write bindings
-- ✅ SVG/PNG rendering and file export
-- ✅ explicit `Molecule.edit()` workflow
-- ✅ explicit `Molecule.sanitize()` and `sanitize` construction flags for supported SMILES workflows
-- ✅ `Molecule.fingerprint_morgan()` and `Molecule.fingerprint_morgan_with_output()` bindings
-- ✅ generated Python stubs for Morgan fingerprint classes and methods
-- [ ] `Molecule` pickle roundtrip support for Python persistence and multiprocessing workflows
-- [ ] stable graph-extraction helpers for ML workflows
-- [ ] full `SanitizeMol()`-style error parity and catch-errors API
-
-### Phase 4 — Query, Descriptors, and Computation
-**Goal:** enable practical filtering and analysis
-
-- ✅ distance-geometry bounds matrix parity
-- ✅ Morgan fingerprint generation and Tanimoto similarity metrics
-- ✅ internal query-atom / query-bond storage for supported MOL/SDF parser branches
-- [ ] topological fingerprint generation
-- [ ] 3D conformer generation and embedding APIs
-- [ ] atom selection API
-- [ ] bond selection API
-- [ ] neighborhood queries
-- [ ] connected component analysis
-- [ ] substructure matching
-- [ ] public Rust query inspection API
-- [ ] Python query inspection / matching API
-- [ ] molecular formula
-- [ ] molecular weight
-- [ ] ring statistics
-
-Query API note: internal query AST support exists to preserve RDKit MOL/SDF semantics during parsing. Public inspection and matching APIs are still pending design, especially for Python users.
-
-### Phase 5 — 2D Coordinates and Drawing
-**Goal:** provide RDKit-drawer-like molecule depiction
-
+- ✅ MOL/SDF reading
+- ✅ SDF dataset indexing for large files
+- ✅ SDF writing for supported V2000/V3000 branches
 - ✅ 2D coordinate generation
-- ✅ SVG molecule drawer
-- ✅ PNG rendering path for Python users
-- ✅ embedded Noto Sans font for PNG rendering
-- [ ] atom and bond annotation overlays
-- [ ] stereochemistry-aware wedge/dash depiction
-- [ ] visual regression tests for generated drawings
+- ✅ SVG drawing
+- ✅ PNG export
+- 🧪 RDKit-style visual parity testing for supported depiction output
+- 🚧 Annotation overlays and richer drawing customization
+- 🚧 3D conformer generation and embedding APIs
 
-### Phase 6 — Biomolecular Structure Support
-**Goal:** cover core Biopython-like structure functionality
+### Batch-Native Workflows
 
-- [ ] PDB parser
-- [ ] mmCIF parser
-- [ ] Structure / Model / Chain / Residue / Atom hierarchy
-- [ ] alternate location handling
-- [ ] insertion code handling
-- [ ] HETATM parsing
-- [ ] ligand extraction
-- [ ] residue and chain selection utilities
-- [ ] residue neighborhood queries
+Goal: make high-throughput molecule preparation and export a core product
+identity.
 
-### Phase 7 — WASM and Browser Integration
-**Goal:** enable browser-native chemistry workflows
+- ✅ Ordered `MoleculeBatch.from_smiles_list()`
+- ✅ Batch transforms for sanitization, hydrogens, Kekulization, and 2D
+  coordinates
+- ✅ Configurable parallelism with `with_parallel_jobs()`
+- ✅ Configurable progress display with `with_progress_bar()`
+- ✅ Per-record errors, valid masks, and error reports
+- ✅ Batch SMILES, image, and SDF export paths
+- 🧪 Golden parity tests for parallel batch behavior
+- 🚧 More streaming and chunked dataset workflows
 
-- [ ] WASM compilation target
-- [ ] JS bindings
-- [ ] in-browser SMILES/SDF parsing
-- [ ] lightweight molecule processing
-- [ ] integration with visualization tools
+### Protein and Structural Biology
 
-### Phase 8 — AI-Native Molecular Representations
-**Goal:** expose model-ready molecular data structures for modern ML workflows
+Goal: provide practical Biopython-like structure workflows without forcing users
+through low-level structural tables.
 
-- [ ] versioned `Molecule.to_graph()` export with `cosmol-v1` node and edge feature schemas
-- [ ] optional graph fields for coordinates, chirality, torsions, rings, fragments, and rotatable bonds
-- [ ] Python output adapters for NumPy dictionaries and graph-learning libraries
-- [ ] `Molecule.to_internal_coordinates()` and `InternalCoordinates.to_cartesian()` APIs
-- [ ] Z-matrix and bond-angle-torsion tree support
-- [ ] ring-aware internal coordinates and torsion graph metadata
-- [ ] torsion/chirality-aware diffusion utilities with periodic angle losses and sin/cos encodings
-- [ ] chirality-preserving reconstruction checks and ring torsion constraints
-- [ ] `Molecule.to_tokens()` with versioned graph, fragment, torsion, 3D geometry, and pharmacophore token schemes
+- ✅ `Protein.from_pdb()` / `Protein.from_mmcif()` high-level entry points
+- ✅ Protein chain, residue, and atom iteration
+- ✅ Protein-only projection from broader structural data
+- 🧪 PDB/mmCIF structural parsing
+- 🧪 Lower-level `BioStructure` access for advanced workflows
+- 🚧 Selection utilities for chains, residues, atoms, and neighborhoods
+- 🚧 Ligand, nucleic-acid, and mixed-structure ergonomic APIs
 
-Design sketch: `dev/ai_native_features.md`
+### Python API and ML Readiness
+
+Goal: expose verified Rust-backed behavior through a practical Python interface.
+
+- ✅ Value-style molecule transformations
+- ✅ Graph, coordinate, fingerprint, and bounds-matrix accessors
+- ✅ Python examples for drawing, SDF-to-SMILES, batch processing, and proteins
+- 🧪 Type stubs and documentation coverage
+- 🚧 Stable model-ready graph exports
+- 🚧 NumPy / PyTorch oriented adapters
+- 🚧 Molecular tokenization and AI-native geometry helpers
+
+### Browser and Deployment
+
+Goal: support lightweight chemistry workflows outside native Python processes.
+
+- 🚧 WASM compilation target
+- 🚧 JavaScript bindings
+- 🚧 Browser-native SMILES/SDF parsing and depiction
 
 ## Respect for RDKit
 
-COSMolKit is developed with deep respect for RDKit and the broader open-source cheminformatics community. The goal is an independent Rust-native implementation that preserves interoperability and behavioral compatibility where appropriate, while offering a more deterministic Python API and AI-native extension surface.
+COSMolKit is developed with deep respect for RDKit and the broader open-source
+cheminformatics community. The goal is an independent Rust-native implementation
+that preserves interoperability and behavioral compatibility where appropriate,
+while offering a more deterministic Python API and AI-native extension surface.

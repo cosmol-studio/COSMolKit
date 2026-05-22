@@ -313,7 +313,7 @@ fn ensure_golden_exists(golden_path: &PathBuf) {
     assert!(
         golden_path.exists(),
         "missing RDKit graph feature golden: {}. Generate it before running tests:\n\
-         uv sync --group dev && .venv/bin/python tests/scripts/gen_rdkit_graph_features.py --input tests/smiles.smi --output tests/golden/graph_features.jsonl",
+         uv sync --group dev && .venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4",
         golden_path.display()
     );
 }
@@ -2352,6 +2352,172 @@ fn graph_features_match_rdkit_golden_for_flag_possible_stereo_centers_branch() {
             (false, Ok(_)) => {
                 panic!(
                     "expected parse failure at row {} ({})",
+                    idx + 1,
+                    record.smiles
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules_in_parallel_batch()
+{
+    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let smiles = golden
+        .iter()
+        .map(|record| record.smiles.clone())
+        .collect::<Vec<_>>();
+    let batch = MoleculeBatch::from_smiles_list(&smiles).with_parallel_jobs(Some(4));
+    let batch_with_h = batch
+        .add_hydrogens_with_options(BatchErrorMode::KeepErrors, Some(4), Some(false))
+        .expect("parallel batch add_hydrogens should keep row errors");
+
+    for (idx, ((record, batch_record), batch_with_h_record)) in golden
+        .iter()
+        .zip(batch.iter())
+        .zip(batch_with_h.iter())
+        .enumerate()
+    {
+        match (record.rdkit_ok, batch_record) {
+            (true, BatchRecord::Molecule(batch_mol)) => {
+                let direct_expected = record.direct.as_ref().expect("direct missing");
+                let (batch_atoms, batch_bonds) = extract_ours_features(&batch_mol);
+                compare_features(
+                    &batch_atoms,
+                    &batch_bonds,
+                    direct_expected,
+                    idx + 1,
+                    &record.smiles,
+                    "parallel_batch_direct",
+                );
+
+                let with_h_expected = record.with_hs.as_ref().expect("with_hs missing");
+                let BatchRecord::Molecule(batch_with_h_mol) = batch_with_h_record else {
+                    panic!(
+                        "parallel batch explicit-hydrogen graph feature missing at row {} ({})",
+                        idx + 1,
+                        record.smiles
+                    );
+                };
+                let (batch_atoms, batch_bonds) = extract_ours_features(&batch_with_h_mol);
+                compare_features(
+                    &batch_atoms,
+                    &batch_bonds,
+                    with_h_expected,
+                    idx + 1,
+                    &record.smiles,
+                    "parallel_batch_with_hs",
+                );
+            }
+            (false, BatchRecord::Error(_)) => {}
+            (true, BatchRecord::Error(err)) => {
+                panic!(
+                    "parallel batch unexpected parse error at row {} ({}): {}",
+                    idx + 1,
+                    record.smiles,
+                    err.message
+                );
+            }
+            (false, BatchRecord::Molecule(_)) => {
+                panic!(
+                    "parallel batch expected parse failure at row {} ({})",
+                    idx + 1,
+                    record.smiles
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn graph_features_match_rdkit_golden_for_addhs_removehs_roundtrip_branch_in_parallel_batch() {
+    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let smiles = golden
+        .iter()
+        .map(|record| record.smiles.clone())
+        .collect::<Vec<_>>();
+    let batch = MoleculeBatch::from_smiles_list(&smiles)
+        .with_parallel_jobs(Some(4))
+        .add_hydrogens_with_options(BatchErrorMode::KeepErrors, Some(4), Some(false))
+        .expect("parallel batch add_hydrogens should keep row errors")
+        .remove_hydrogens_with_options(BatchErrorMode::KeepErrors, Some(4), Some(false))
+        .expect("parallel batch remove_hydrogens should keep row errors");
+
+    for (idx, (record, batch_record)) in golden.iter().zip(batch.iter()).enumerate() {
+        match (record.rdkit_ok, batch_record) {
+            (true, BatchRecord::Molecule(batch_mol)) => {
+                let expected = record
+                    .addhs_removehs
+                    .as_ref()
+                    .expect("addhs_removehs missing");
+                let (batch_atoms, batch_bonds) = extract_ours_features(&batch_mol);
+                compare_features(
+                    &batch_atoms,
+                    &batch_bonds,
+                    expected,
+                    idx + 1,
+                    &record.smiles,
+                    "parallel_batch_addhs_removehs",
+                );
+            }
+            (false, BatchRecord::Error(_)) => {}
+            (true, BatchRecord::Error(err)) => {
+                panic!(
+                    "parallel batch unexpected add/remove hydrogens error at row {} ({}): {}",
+                    idx + 1,
+                    record.smiles,
+                    err.message
+                );
+            }
+            (false, BatchRecord::Molecule(_)) => {
+                panic!(
+                    "parallel batch expected parse failure at row {} ({})",
+                    idx + 1,
+                    record.smiles
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn graph_features_match_rdkit_golden_for_flag_possible_stereo_centers_branch_in_parallel_batch() {
+    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let smiles = golden
+        .iter()
+        .map(|record| record.smiles.clone())
+        .collect::<Vec<_>>();
+    let batch = MoleculeBatch::from_smiles_list(&smiles).with_parallel_jobs(Some(4));
+
+    for (idx, (record, batch_record)) in golden.iter().zip(batch.iter()).enumerate() {
+        match (record.rdkit_ok, batch_record) {
+            (true, BatchRecord::Molecule(batch_mol)) => {
+                let expected = record
+                    .possible_stereo
+                    .as_ref()
+                    .expect("possible_stereo missing");
+                let (batch_atoms, batch_bonds) = extract_possible_stereo_features(batch_mol);
+                compare_possible_stereo_features(
+                    &batch_atoms,
+                    &batch_bonds,
+                    expected,
+                    idx + 1,
+                    &record.smiles,
+                );
+            }
+            (false, BatchRecord::Error(_)) => {}
+            (true, BatchRecord::Error(err)) => {
+                panic!(
+                    "parallel batch unexpected parse error at row {} ({}): {}",
+                    idx + 1,
+                    record.smiles,
+                    err.message
+                );
+            }
+            (false, BatchRecord::Molecule(_)) => {
+                panic!(
+                    "parallel batch expected parse failure at row {} ({})",
                     idx + 1,
                     record.smiles
                 );

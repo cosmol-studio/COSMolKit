@@ -1,11 +1,29 @@
-use std::path::Path;
-
-use crate::{Molecule, SmilesWriteParams};
+use crate::io::molblock::{self, SdfFormat};
+use crate::io::sdf::{
+    SdfCoordinateMode, SdfDataset, SdfReader, read_sdf_from_str_with_coordinate_mode,
+};
+use crate::{Molecule, PreparedDrawMolecule, SmilesWriteParams};
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+use rayon::prelude::*;
+use std::collections::HashSet;
+use std::fs::{self, File};
+use std::io::{BufRead, Write};
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BatchErrorMode {
     Strict,
     KeepErrors,
+}
+
+impl BatchErrorMode {
+    const fn keep_record_errors(self) -> bool {
+        matches!(self, Self::KeepErrors)
+    }
+
+    const fn raise_on_errors(self) -> bool {
+        matches!(self, Self::Strict)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,7 +53,8 @@ pub enum BatchRecord {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct MoleculeBatch {
     records: Vec<BatchRecord>,
-    n_jobs: usize,
+    n_jobs: Option<usize>,
+    progress_bar: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -53,81 +72,143 @@ pub struct BatchValidationError {
 
 pub type BatchProgress<'a> = Option<&'a (dyn Fn() + Sync)>;
 
-pub struct BatchProgressBar;
+pub struct BatchProgressBar {
+    inner: ProgressBar,
+}
 
 impl BatchProgressBar {
     #[must_use]
-    pub fn new(_total: usize, _message: impl Into<String>) -> Self {
-        Self
+    pub fn new(total: usize, message: impl Into<String>) -> Self {
+        let progress_bar = ProgressBar::with_draw_target(
+            Some(total as u64),
+            ProgressDrawTarget::stderr_with_hz(20),
+        );
+        let style = ProgressStyle::with_template(
+            "{spinner:.green} {msg} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len}",
+        )
+        .unwrap_or_else(|_| ProgressStyle::default_bar());
+        progress_bar.set_style(style);
+        progress_bar.set_message(message.into());
+        Self {
+            inner: progress_bar,
+        }
     }
 
+    #[must_use]
     pub fn callback(&self) -> Box<dyn Fn() + Sync + '_> {
-        Box::new(|| {})
+        Box::new(|| self.inner.inc(1))
     }
 
-    pub fn inc(&self, _delta: u64) {}
+    pub fn inc(&self, delta: u64) {
+        self.inner.inc(delta);
+    }
 
-    pub fn finish(&self) {}
+    pub fn finish(&self) {
+        self.inner.finish();
+    }
 }
 
 pub fn batch_progress_bar(total: usize, message: impl Into<String>) -> BatchProgressBar {
     BatchProgressBar::new(total, message)
 }
 
+fn tick_progress(progress: BatchProgress<'_>) {
+    if let Some(progress) = progress {
+        progress();
+    }
+}
+
 impl MoleculeBatch {
     #[must_use]
     pub fn new(records: Vec<BatchRecord>) -> Self {
-        Self { records, n_jobs: 1 }
+        Self {
+            records,
+            n_jobs: None,
+            progress_bar: None,
+        }
     }
 
-    /// Set the number of parallel jobs for batch processing.
-    ///
-    /// This is a design placeholder for future parallel execution. The actual
-    /// threading/rayon integration is deferred; this sets the target degree of
-    /// parallelism that transforms and exports will use when threading support
-    /// is wired in.
     #[must_use]
-    pub fn with_parallel_jobs(mut self, n_jobs: usize) -> Self {
-        self.n_jobs = n_jobs.max(1);
+    pub fn with_parallel_jobs(mut self, n_jobs: Option<usize>) -> Self {
+        self.n_jobs = n_jobs.map(|value| value.max(1));
         self
     }
 
-    /// Return the configured number of parallel jobs.
     #[must_use]
-    pub fn parallel_jobs(&self) -> usize {
+    pub fn parallel_jobs(&self) -> Option<usize> {
         self.n_jobs
     }
 
-    /// Return a reference to the record at the given index, or `None` if out of bounds.
+    #[must_use]
+    pub fn with_progress_bar(mut self, progress_bar: Option<bool>) -> Self {
+        self.progress_bar = progress_bar;
+        self
+    }
+
+    #[must_use]
+    pub fn progress_bar(&self) -> Option<bool> {
+        self.progress_bar
+    }
+
+    fn effective_progress_bar(&self, progress_bar: Option<bool>) -> bool {
+        progress_bar.or(self.progress_bar).unwrap_or(false)
+    }
+
+    fn effective_parallel_jobs(&self, n_jobs: Option<usize>) -> Option<usize> {
+        n_jobs.or(self.n_jobs).map(|value| value.max(1))
+    }
+
+    fn with_progress_bar_for<R>(
+        &self,
+        progress_bar: Option<bool>,
+        total: usize,
+        message: &'static str,
+        f: impl FnOnce(BatchProgress<'_>) -> R,
+    ) -> R {
+        if self.effective_progress_bar(progress_bar) {
+            let progress_bar = batch_progress_bar(total, message);
+            let callback = progress_bar.callback();
+            let result = f(Some(&*callback));
+            progress_bar.finish();
+            result
+        } else {
+            f(None)
+        }
+    }
+
+    fn run_with_parallel_jobs<R: Send>(
+        &self,
+        n_jobs: Option<usize>,
+        f: impl FnOnce() -> R + Send,
+    ) -> R {
+        match self.effective_parallel_jobs(n_jobs) {
+            Some(n_jobs) => rayon::ThreadPoolBuilder::new()
+                .num_threads(n_jobs)
+                .build()
+                .expect("batch rayon thread pool build must succeed")
+                .install(f),
+            None => f(),
+        }
+    }
+
     #[must_use]
     pub fn get(&self, index: usize) -> Option<&BatchRecord> {
         self.records.get(index)
     }
 
-    /// Iterate over all records in order.
     pub fn iter(&self) -> impl Iterator<Item = &BatchRecord> {
         self.records.iter()
     }
 
-    /// Return a human-readable summary of all errors in the batch.
-    ///
-    /// Returns an empty string when there are no errors.
     #[must_use]
     pub fn error_summary(&self) -> String {
-        let errors: Vec<_> = self
-            .records
-            .iter()
-            .filter_map(|record| match record {
-                BatchRecord::Error(error) => Some(error.clone()),
-                BatchRecord::Molecule(_) => None,
-            })
-            .collect();
+        let errors = self.errors();
         if errors.is_empty() {
             return String::new();
         }
         let total = self.records.len();
         let valid = total - errors.len();
-        let mut lines = Vec::with_capacity(errors.len() + 2);
+        let mut lines = Vec::with_capacity(errors.len() + 1);
         lines.push(format!(
             "Batch error summary: {} errors out of {} records ({} valid)",
             errors.len(),
@@ -143,28 +224,16 @@ impl MoleculeBatch {
         lines.join("\n")
     }
 
-    /// Return a structured error report.
-    ///
-    /// Each entry pairs the index with the error details: `(index, operation, message)`.
     #[must_use]
     pub fn error_report(&self) -> Vec<(usize, &'static str, String)> {
-        self.records
-            .iter()
-            .filter_map(|record| match record {
-                BatchRecord::Error(error) => {
-                    Some((error.index, error.operation, error.message.clone()))
-                }
-                BatchRecord::Molecule(_) => None,
-            })
+        self.errors()
+            .into_iter()
+            .map(|error| (error.index, error.operation, error.message))
             .collect()
     }
 
+    #[must_use]
     pub fn from_smiles_list(smiles: &[String]) -> Self {
-        // BEGIN COSMolKit SOURCE-PORT FRAME README checked batch.from_smiles_list
-        // preserve input order
-        // keep per-record errors as typed batch records
-        // do not add batch-specific chemistry; delegate parsing to Molecule::from_smiles
-        // END COSMolKit SOURCE-PORT FRAME README checked batch.from_smiles_list
         Self {
             records: smiles
                 .iter()
@@ -178,8 +247,141 @@ impl MoleculeBatch {
                     )),
                 })
                 .collect(),
-            n_jobs: 1,
+            n_jobs: None,
+            progress_bar: None,
         }
+    }
+
+    pub fn from_smiles_list_with_sanitize(
+        smiles: &[String],
+        sanitize: bool,
+        errors: BatchErrorMode,
+    ) -> Result<Self, BatchValidationError> {
+        let records = smiles
+            .par_iter()
+            .enumerate()
+            .filter_map(|(index, smiles)| {
+                match Molecule::from_smiles_with_sanitize(smiles, sanitize) {
+                    Ok(molecule) => Some(BatchRecord::Molecule(molecule)),
+                    Err(error) => {
+                        let record = BatchRecord::Error(BatchRecordError::new(
+                            index,
+                            "batch.from_smiles_list",
+                            error.to_string(),
+                        ));
+                        if errors.keep_record_errors() {
+                            Some(record)
+                        } else {
+                            Some(record)
+                        }
+                    }
+                }
+            })
+            .collect();
+        Self::from_records_with_mode(records, errors)
+    }
+
+    pub fn read_sdf_records_from_str(
+        sdf_text: &str,
+        coordinate_mode: SdfCoordinateMode,
+        errors: BatchErrorMode,
+    ) -> Result<Self, BatchValidationError> {
+        let records = split_sdf_record_strings(sdf_text);
+        let batch_records = records
+            .par_iter()
+            .enumerate()
+            .map(|(index, sdf)| {
+                match read_sdf_from_str_with_coordinate_mode(sdf, coordinate_mode) {
+                    Ok(record) => BatchRecord::Molecule(record.molecule),
+                    Err(error) => BatchRecord::Error(BatchRecordError::new(
+                        index,
+                        "batch.read_sdf_records_from_str",
+                        error.to_string(),
+                    )),
+                }
+            })
+            .collect();
+        Self::from_records_with_mode(batch_records, errors)
+    }
+
+    pub fn read_sdf_records_from_reader<R: BufRead>(
+        reader: R,
+        coordinate_mode: SdfCoordinateMode,
+        errors: BatchErrorMode,
+    ) -> Result<Self, BatchValidationError> {
+        Self::read_sdf_records_from_reader_with_progress(reader, coordinate_mode, errors, None)
+    }
+
+    pub fn read_sdf_records_from_reader_with_progress<R: BufRead>(
+        reader: R,
+        coordinate_mode: SdfCoordinateMode,
+        errors: BatchErrorMode,
+        progress: BatchProgress<'_>,
+    ) -> Result<Self, BatchValidationError> {
+        let mut reader = SdfReader::with_coordinate_mode(reader, coordinate_mode);
+        let mut records = Vec::new();
+        let mut index = 0usize;
+        loop {
+            match reader.next_record() {
+                Ok(Some(record)) => {
+                    records.push(BatchRecord::Molecule(record.molecule));
+                    index += 1;
+                    tick_progress(progress);
+                }
+                Ok(None) => break,
+                Err(error) => {
+                    records.push(BatchRecord::Error(BatchRecordError::new(
+                        index,
+                        "batch.read_sdf_records_from_reader",
+                        error.to_string(),
+                    )));
+                    index += 1;
+                    tick_progress(progress);
+                }
+            }
+        }
+        Self::from_records_with_mode(records, errors)
+    }
+
+    pub fn read_sdf_dataset_with_progress(
+        dataset: &SdfDataset,
+        errors: BatchErrorMode,
+        progress: BatchProgress<'_>,
+    ) -> Result<Self, BatchValidationError> {
+        let mut records = Vec::with_capacity(dataset.len());
+        for index in 0..dataset.len() {
+            match dataset.record(index) {
+                Ok(record) => records.push(BatchRecord::Molecule(record.molecule)),
+                Err(error) => records.push(BatchRecord::Error(BatchRecordError::new(
+                    index,
+                    "batch.read_sdf_dataset",
+                    error.to_string(),
+                ))),
+            }
+            tick_progress(progress);
+        }
+        Self::from_records_with_mode(records, errors)
+    }
+
+    pub fn from_records_with_mode(
+        records: Vec<BatchRecord>,
+        errors: BatchErrorMode,
+    ) -> Result<Self, BatchValidationError> {
+        let error_count = records
+            .iter()
+            .filter(|record| matches!(record, BatchRecord::Error(_)))
+            .count();
+        if errors.raise_on_errors() && error_count != 0 {
+            return Err(BatchValidationError {
+                errors: error_count,
+                reason: None,
+            });
+        }
+        Ok(Self {
+            records,
+            n_jobs: None,
+            progress_bar: None,
+        })
     }
 
     #[must_use]
@@ -205,15 +407,18 @@ impl MoleculeBatch {
         self.records
             .iter()
             .filter_map(|record| match record {
-                BatchRecord::Error(error) => Some(error.clone()),
                 BatchRecord::Molecule(_) => None,
+                BatchRecord::Error(error) => Some(error.clone()),
             })
             .collect()
     }
 
     #[must_use]
     pub fn valid_count(&self) -> usize {
-        self.valid_mask().into_iter().filter(|valid| *valid).count()
+        self.records
+            .iter()
+            .filter(|record| matches!(record, BatchRecord::Molecule(_)))
+            .count()
     }
 
     #[must_use]
@@ -231,23 +436,20 @@ impl MoleculeBatch {
                 .cloned()
                 .collect(),
             n_jobs: self.n_jobs,
+            progress_bar: self.progress_bar,
         }
     }
 
     pub fn sanitized(&self, errors: BatchErrorMode) -> Result<Self, BatchValidationError> {
-        self.transform("batch.sanitized", errors, Molecule::sanitized)
+        self.sanitize_with_options(errors, None, None)
     }
 
     pub fn with_hydrogens(&self, errors: BatchErrorMode) -> Result<Self, BatchValidationError> {
-        self.transform("batch.with_hydrogens", errors, Molecule::with_hydrogens)
+        self.add_hydrogens_with_options(errors, None, None)
     }
 
     pub fn without_hydrogens(&self, errors: BatchErrorMode) -> Result<Self, BatchValidationError> {
-        self.transform(
-            "batch.without_hydrogens",
-            errors,
-            Molecule::without_hydrogens,
-        )
+        self.remove_hydrogens_with_options(errors, None, None)
     }
 
     pub fn with_kekulized_bonds(
@@ -255,20 +457,14 @@ impl MoleculeBatch {
         clear_aromatic_flags: bool,
         errors: BatchErrorMode,
     ) -> Result<Self, BatchValidationError> {
-        self.transform("batch.with_kekulized_bonds", errors, |molecule| {
-            molecule.with_kekulized_bonds(clear_aromatic_flags)
-        })
+        self.with_kekulized_bonds_with_options(clear_aromatic_flags, errors, None, None)
     }
 
     pub fn with_2d_coordinates(
         &self,
         errors: BatchErrorMode,
     ) -> Result<Self, BatchValidationError> {
-        self.transform(
-            "batch.with_2d_coordinates",
-            errors,
-            Molecule::with_2d_coordinates,
-        )
+        self.with_2d_coordinates_with_options(errors, None, None)
     }
 
     pub fn with_2d_coordinates_with_params(
@@ -276,45 +472,251 @@ impl MoleculeBatch {
         params: crate::With2DCoordinatesParams,
         errors: BatchErrorMode,
     ) -> Result<Self, BatchValidationError> {
-        self.transform("batch.with_2d_coordinates", errors, move |molecule| {
-            molecule.with_2d_coordinates_with_params(params)
-        })
+        self.with_2d_coordinates_with_params_and_options(params, errors, None, None)
     }
 
-    fn transform(
+    pub fn sanitize_with_options(
+        &self,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Self, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Sanitizing molecules",
+            |progress| {
+                self.transform_with_options(
+                    "batch.sanitized",
+                    errors,
+                    Molecule::sanitized,
+                    progress,
+                    n_jobs,
+                )
+            },
+        )
+    }
+
+    pub fn add_hydrogens_with_options(
+        &self,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Self, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Adding hydrogens",
+            |progress| {
+                self.transform_with_options(
+                    "batch.with_hydrogens",
+                    errors,
+                    Molecule::with_hydrogens,
+                    progress,
+                    n_jobs,
+                )
+            },
+        )
+    }
+
+    pub fn remove_hydrogens_with_options(
+        &self,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Self, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Removing hydrogens",
+            |progress| {
+                self.transform_with_options(
+                    "batch.without_hydrogens",
+                    errors,
+                    Molecule::without_hydrogens,
+                    progress,
+                    n_jobs,
+                )
+            },
+        )
+    }
+
+    pub fn with_kekulized_bonds_with_options(
+        &self,
+        clear_aromatic_flags: bool,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Self, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Kekulizing molecules",
+            |progress| {
+                self.transform_with_options(
+                    "batch.with_kekulized_bonds",
+                    errors,
+                    move |molecule| molecule.with_kekulized_bonds(clear_aromatic_flags),
+                    progress,
+                    n_jobs,
+                )
+            },
+        )
+    }
+
+    pub fn with_2d_coordinates_with_options(
+        &self,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Self, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing 2D coordinates",
+            |progress| {
+                self.transform_with_options(
+                    "batch.with_2d_coordinates",
+                    errors,
+                    Molecule::with_2d_coordinates,
+                    progress,
+                    n_jobs,
+                )
+            },
+        )
+    }
+
+    pub fn with_2d_coordinates_with_params_and_options(
+        &self,
+        params: crate::With2DCoordinatesParams,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Self, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing 2D coordinates",
+            |progress| {
+                self.transform_with_options(
+                    "batch.with_2d_coordinates",
+                    errors,
+                    move |molecule| molecule.with_2d_coordinates_with_params(params),
+                    progress,
+                    n_jobs,
+                )
+            },
+        )
+    }
+
+    pub fn add_hydrogens_with_progress(
+        &self,
+        errors: BatchErrorMode,
+        progress: BatchProgress<'_>,
+    ) -> Result<Self, BatchValidationError> {
+        self.transform_with_options(
+            "batch.with_hydrogens",
+            errors,
+            Molecule::with_hydrogens,
+            progress,
+            None,
+        )
+    }
+
+    pub fn remove_hydrogens_with_progress(
+        &self,
+        errors: BatchErrorMode,
+        progress: BatchProgress<'_>,
+    ) -> Result<Self, BatchValidationError> {
+        self.transform_with_options(
+            "batch.without_hydrogens",
+            errors,
+            Molecule::without_hydrogens,
+            progress,
+            None,
+        )
+    }
+
+    pub fn sanitize_with_progress(
+        &self,
+        errors: BatchErrorMode,
+        progress: BatchProgress<'_>,
+    ) -> Result<Self, BatchValidationError> {
+        self.transform_with_options(
+            "batch.sanitized",
+            errors,
+            Molecule::sanitized,
+            progress,
+            None,
+        )
+    }
+
+    pub fn kekulize_with_sanitize_and_progress(
+        &self,
+        clear_aromatic_flags: bool,
+        errors: BatchErrorMode,
+        progress: BatchProgress<'_>,
+    ) -> Result<Self, BatchValidationError> {
+        self.transform_with_options(
+            "batch.with_kekulized_bonds",
+            errors,
+            move |molecule| molecule.with_kekulized_bonds(clear_aromatic_flags),
+            progress,
+            None,
+        )
+    }
+
+    pub fn compute_2d_coords_with_progress(
+        &self,
+        errors: BatchErrorMode,
+        progress: BatchProgress<'_>,
+    ) -> Result<Self, BatchValidationError> {
+        self.transform_with_options(
+            "batch.with_2d_coordinates",
+            errors,
+            Molecule::with_2d_coordinates,
+            progress,
+            None,
+        )
+    }
+
+    fn transform_with_options<F>(
         &self,
         operation: &'static str,
         errors: BatchErrorMode,
-        mut transform: impl FnMut(&Molecule) -> Result<Molecule, crate::OperationError>,
-    ) -> Result<Self, BatchValidationError> {
-        // BEGIN COSMolKit SOURCE-PORT FRAME README checked batch transformations
-        // preserve input order
-        // keep batch as orchestration over registered molecule operations
-        // never mutate source batch records in place
-        // keep or raise per-record errors according to BatchErrorMode
-        // END COSMolKit SOURCE-PORT FRAME README checked batch transformations
-        let mut records = Vec::with_capacity(self.records.len());
-        let mut error_count = 0_usize;
-        for (index, record) in self.records.iter().enumerate() {
-            match record {
-                BatchRecord::Molecule(molecule) => match transform(molecule) {
-                    Ok(molecule) => records.push(BatchRecord::Molecule(molecule)),
-                    Err(error) => {
-                        error_count += 1;
-                        records.push(BatchRecord::Error(BatchRecordError::new(
-                            index,
-                            operation,
-                            error.to_string(),
-                        )));
-                    }
-                },
-                BatchRecord::Error(error) => {
-                    error_count += 1;
-                    records.push(BatchRecord::Error(error.clone()));
-                }
-            }
-        }
-        if errors == BatchErrorMode::Strict && error_count != 0 {
+        transform: F,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Self, BatchValidationError>
+    where
+        F: Fn(&Molecule) -> Result<Molecule, crate::OperationError> + Sync + Send,
+    {
+        let records: Vec<BatchRecord> = self.run_with_parallel_jobs(n_jobs, || {
+            self.records
+                .par_iter()
+                .enumerate()
+                .map(|(index, record)| {
+                    let out = match record {
+                        BatchRecord::Molecule(molecule) => match transform(molecule) {
+                            Ok(molecule) => BatchRecord::Molecule(molecule),
+                            Err(error) => BatchRecord::Error(BatchRecordError::new(
+                                index,
+                                operation,
+                                error.to_string(),
+                            )),
+                        },
+                        BatchRecord::Error(error) => BatchRecord::Error(error.clone()),
+                    };
+                    tick_progress(progress);
+                    out
+                })
+                .collect()
+        });
+        let error_count = records
+            .iter()
+            .filter(|record| matches!(record, BatchRecord::Error(_)))
+            .count();
+        if errors.raise_on_errors() && error_count != 0 {
             return Err(BatchValidationError {
                 errors: error_count,
                 reason: None,
@@ -323,6 +725,7 @@ impl MoleculeBatch {
         Ok(Self {
             records,
             n_jobs: self.n_jobs,
+            progress_bar: self.progress_bar,
         })
     }
 
@@ -330,26 +733,7 @@ impl MoleculeBatch {
         &self,
         errors: BatchErrorMode,
     ) -> Result<Vec<String>, BatchValidationError> {
-        let mut results = Vec::with_capacity(self.records.len());
-        let mut error_count = 0_usize;
-        for (index, record) in self.records.iter().enumerate() {
-            match record {
-                BatchRecord::Molecule(molecule) => {
-                    results.push(molecule.to_smiles(true).unwrap_or_else(|_| "?".to_string()));
-                }
-                BatchRecord::Error(_) => {
-                    error_count += 1;
-                    results.push("?".to_string());
-                }
-            }
-        }
-        if errors == BatchErrorMode::Strict && error_count != 0 {
-            return Err(BatchValidationError {
-                errors: error_count,
-                reason: None,
-            });
-        }
-        Ok(results)
+        self.to_smiles_list_with_options(errors, None, None)
     }
 
     pub fn to_smiles_list_with_params(
@@ -357,105 +741,324 @@ impl MoleculeBatch {
         params: &SmilesWriteParams,
         errors: BatchErrorMode,
     ) -> Result<Vec<String>, BatchValidationError> {
-        let mut results = Vec::with_capacity(self.records.len());
-        let mut error_count = 0_usize;
-        for (index, record) in self.records.iter().enumerate() {
-            match record {
-                BatchRecord::Molecule(molecule) => match molecule.to_smiles_with_params(params) {
-                    Ok(s) => results.push(s),
-                    Err(e) => {
-                        error_count += 1;
-                        if errors == BatchErrorMode::Strict {
-                            return Err(BatchValidationError {
-                                errors: error_count,
-                                reason: None,
-                            });
+        self.to_smiles_list_with_params_and_options(params, errors, None, None)
+    }
+
+    pub fn to_smiles_list_with_options(
+        &self,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<String>, BatchValidationError> {
+        let params = SmilesWriteParams::default();
+        self.to_smiles_list_with_params_and_options(&params, errors, n_jobs, progress_bar)
+    }
+
+    pub fn to_smiles_list_with_params_and_options(
+        &self,
+        params: &SmilesWriteParams,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<String>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Writing SMILES",
+            |progress| {
+                let outcomes: Vec<Result<String, ()>> = self.run_with_parallel_jobs(n_jobs, || {
+                    self.records
+                        .par_iter()
+                        .map(|record| {
+                            let out = match record {
+                                BatchRecord::Molecule(molecule) => {
+                                    molecule.to_smiles_with_params(params).map_err(|_| ())
+                                }
+                                BatchRecord::Error(_) => Err(()),
+                            };
+                            tick_progress(progress);
+                            out
+                        })
+                        .collect()
+                });
+                let mut results = Vec::with_capacity(outcomes.len());
+                let mut error_count = 0usize;
+                for outcome in outcomes {
+                    match outcome {
+                        Ok(smiles) => results.push(smiles),
+                        Err(()) => {
+                            error_count += 1;
+                            results.push("?".to_string());
                         }
-                        results.push("?".to_string());
                     }
-                },
-                BatchRecord::Error(_) => {
-                    error_count += 1;
-                    if errors == BatchErrorMode::Strict {
-                        return Err(BatchValidationError {
-                            errors: error_count,
-                            reason: None,
-                        });
-                    }
-                    results.push("?".to_string());
                 }
+                if errors.raise_on_errors() && error_count != 0 {
+                    return Err(BatchValidationError {
+                        errors: error_count,
+                        reason: None,
+                    });
+                }
+                Ok(results)
+            },
+        )
+    }
+
+    pub fn to_smiles_list_with_params_and_progress(
+        &self,
+        params: &SmilesWriteParams,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<String>>, BatchValidationError> {
+        self.collect_optional_values_with_options(
+            |molecule| {
+                molecule
+                    .to_smiles_with_params(params)
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            None,
+        )
+    }
+
+    pub fn dg_bounds_matrix_list_with_progress(
+        &self,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<Vec<Vec<f64>>>>, BatchValidationError> {
+        self.collect_optional_values_with_options(
+            |molecule| {
+                molecule
+                    .dg_bounds_matrix()
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            None,
+        )
+    }
+
+    pub fn morgan_fingerprint_list_with_progress(
+        &self,
+        params: &crate::MorganFingerprintParams,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        self.collect_optional_values_with_options(
+            |molecule| {
+                molecule
+                    .morgan_fingerprint(params)
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            None,
+        )
+    }
+
+    pub fn morgan_fingerprint_with_output_list_with_progress(
+        &self,
+        params: &crate::MorganFingerprintParams,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::MorganFingerprintOutput>>, BatchValidationError> {
+        self.collect_optional_values_with_options(
+            |molecule| {
+                molecule
+                    .morgan_fingerprint_with_output(params)
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            None,
+        )
+    }
+
+    pub fn to_svg_list_with_options(
+        &self,
+        width: u32,
+        height: u32,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<String>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Drawing SVG molecules",
+            |progress| {
+                self.collect_optional_values_with_options(
+                    |molecule| {
+                        molecule
+                            .to_svg(width, height)
+                            .map_err(|error| error.to_string())
+                    },
+                    progress,
+                    n_jobs,
+                )
+            },
+        )
+    }
+
+    pub fn to_svg_list_with_progress(
+        &self,
+        width: u32,
+        height: u32,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<String>>, BatchValidationError> {
+        self.collect_optional_values_with_options(
+            |molecule| {
+                molecule
+                    .to_svg(width, height)
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            None,
+        )
+    }
+
+    pub fn prepare_for_drawing_parity_list(
+        &self,
+    ) -> Result<Vec<Option<PreparedDrawMolecule>>, BatchValidationError> {
+        self.collect_optional_values_with_options(
+            |molecule| {
+                molecule
+                    .prepared_for_drawing_parity()
+                    .map_err(|error| error.to_string())
+            },
+            None,
+            None,
+        )
+    }
+
+    fn collect_optional_values_with_options<T, F>(
+        &self,
+        collect: F,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<T>>, BatchValidationError>
+    where
+        T: Send,
+        F: Fn(&Molecule) -> Result<T, String> + Sync + Send,
+    {
+        let pairs: Vec<(Option<T>, bool)> = self.run_with_parallel_jobs(n_jobs, || {
+            self.records
+                .par_iter()
+                .map(|record| {
+                    let out = match record {
+                        BatchRecord::Molecule(molecule) => match collect(molecule) {
+                            Ok(value) => (Some(value), false),
+                            Err(_) => (None, true),
+                        },
+                        BatchRecord::Error(_) => (None, false),
+                    };
+                    tick_progress(progress);
+                    out
+                })
+                .collect()
+        });
+        let mut values = Vec::with_capacity(pairs.len());
+        let mut error_count = 0usize;
+        for (value, errored) in pairs {
+            values.push(value);
+            if errored {
+                error_count += 1;
             }
         }
-        if errors == BatchErrorMode::Strict && error_count != 0 {
+        if error_count != 0 {
             return Err(BatchValidationError {
                 errors: error_count,
                 reason: None,
             });
         }
-        Ok(results)
+        Ok(values)
     }
 
-    /// Write molecular images (PNG) for valid records.
-    ///
-    /// `filenames` is an optional list of filenames (without directory prefix).
-    /// When provided, its length must equal the batch length; `BatchRecord::Error`
-    /// entries still consume a slot in the filenames list (the corresponding file
-    /// is skipped). When `None`, filenames are generated as `mol_{index}.png`.
     pub fn write_images(
         &self,
         output_dir: impl AsRef<Path>,
         errors: BatchErrorMode,
         filenames: Option<&[String]>,
     ) -> Result<BatchExportReport, BatchValidationError> {
-        let dir = output_dir.as_ref();
-        std::fs::create_dir_all(dir).map_err(|e| BatchValidationError {
+        self.write_images_with_options(
+            output_dir.as_ref(),
+            "png",
+            500,
+            500,
+            errors,
+            filenames,
+            None,
+            None,
+        )
+    }
+
+    pub fn write_images_with_options(
+        &self,
+        output_dir: &Path,
+        format: &str,
+        width: u32,
+        height: u32,
+        errors: BatchErrorMode,
+        filenames: Option<&[String]>,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<BatchExportReport, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Writing molecule images",
+            |progress| {
+                self.write_images_with_runtime(
+                    output_dir, format, width, height, errors, filenames, progress, n_jobs,
+                )
+            },
+        )
+    }
+
+    pub fn write_images_with_progress(
+        &self,
+        output_dir: &Path,
+        format: &str,
+        width: u32,
+        height: u32,
+        errors: BatchErrorMode,
+        filenames: Option<&[String]>,
+        progress: BatchProgress<'_>,
+    ) -> Result<BatchExportReport, BatchValidationError> {
+        self.write_images_with_runtime(
+            output_dir, format, width, height, errors, filenames, progress, None,
+        )
+    }
+
+    fn write_images_with_runtime(
+        &self,
+        output_dir: &Path,
+        format: &str,
+        width: u32,
+        height: u32,
+        errors: BatchErrorMode,
+        filenames: Option<&[String]>,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<BatchExportReport, BatchValidationError> {
+        fs::create_dir_all(output_dir).map_err(|_| BatchValidationError {
             errors: 1,
             reason: Some(crate::UnsupportedFeatureError {
                 feature: "batch.write_images",
                 reason: "directory creation failed",
             }),
         })?;
-
-        if let Some(names) = filenames {
-            if names.len() != self.records.len() {
-                return Err(BatchValidationError {
-                    errors: 1,
-                    reason: Some(crate::UnsupportedFeatureError {
-                        feature: "batch.write_images",
-                        reason: "filenames length must match batch length",
-                    }),
-                });
-            }
-        }
-
-        let mut written = 0_usize;
-        let mut skipped = 0_usize;
-        for (index, record) in self.records.iter().enumerate() {
-            match record {
-                BatchRecord::Molecule(molecule) => {
-                    let filename = match filenames {
-                        Some(names) => dir.join(&names[index]),
-                        None => dir.join(format!("mol_{}.png", index)),
+        let paths = output_paths(output_dir, self.records.len(), format, filenames)?;
+        let outcomes: Vec<bool> = self.run_with_parallel_jobs(n_jobs, || {
+            self.records
+                .par_iter()
+                .enumerate()
+                .map(|(index, record)| {
+                    let ok = match record {
+                        BatchRecord::Molecule(molecule) => {
+                            write_one_image(molecule, &paths[index], format, width, height).is_ok()
+                        }
+                        BatchRecord::Error(_) => false,
                     };
-                    match crate::draw::mol_to_png(molecule, 500, 500) {
-                        Ok(png_bytes) => {
-                            if std::fs::write(&filename, &png_bytes).is_ok() {
-                                written += 1;
-                            } else {
-                                skipped += 1;
-                            }
-                        }
-                        Err(_) => {
-                            skipped += 1;
-                        }
-                    }
-                }
-                BatchRecord::Error(_) => {
-                    skipped += 1;
-                }
-            }
-        }
-        if errors == BatchErrorMode::Strict && skipped != 0 {
+                    tick_progress(progress);
+                    ok
+                })
+                .collect()
+        });
+        let written = outcomes.into_iter().filter(|ok| *ok).count();
+        let skipped = self.records.len() - written;
+        if errors.raise_on_errors() && skipped != 0 {
             return Err(BatchValidationError {
                 errors: skipped,
                 reason: None,
@@ -464,45 +1067,79 @@ impl MoleculeBatch {
         Ok(BatchExportReport { written, skipped })
     }
 
-    /// Write all valid molecules as a multi-record SDF file.
-    ///
-    /// Each valid `BatchRecord::Molecule` is written as a separate SDF record
-    /// using the V2000 format with 2D coordinates. Error records are skipped.
     pub fn write_sdf(
         &self,
         output_path: impl AsRef<Path>,
         errors: BatchErrorMode,
     ) -> Result<BatchExportReport, BatchValidationError> {
-        let path = output_path.as_ref();
+        self.write_sdf_with_options(output_path.as_ref(), SdfFormat::V2000, errors, None, None)
+    }
 
-        let mut sdf_content = String::new();
-        let mut written = 0_usize;
-        let mut skipped = 0_usize;
+    pub fn write_sdf_with_options(
+        &self,
+        output_path: &Path,
+        format: SdfFormat,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<BatchExportReport, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Writing SDF records",
+            |progress| self.write_sdf_with_runtime(output_path, format, errors, progress, n_jobs),
+        )
+    }
 
-        for (index, record) in self.records.iter().enumerate() {
-            match record {
-                BatchRecord::Molecule(molecule) => {
-                    match crate::io::molblock::mol_to_sdf_record_with_params(
-                        molecule,
-                        &crate::io::molblock::MolBlockWriteParams::default(),
-                    ) {
-                        Ok(record_str) => {
-                            sdf_content.push_str(&record_str);
-                            written += 1;
+    pub fn write_sdf_with_progress(
+        &self,
+        output_path: &Path,
+        format: SdfFormat,
+        errors: BatchErrorMode,
+        progress: BatchProgress<'_>,
+    ) -> Result<BatchExportReport, BatchValidationError> {
+        self.write_sdf_with_runtime(output_path, format, errors, progress, None)
+    }
+
+    fn write_sdf_with_runtime(
+        &self,
+        output_path: &Path,
+        format: SdfFormat,
+        errors: BatchErrorMode,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<BatchExportReport, BatchValidationError> {
+        let outcomes: Vec<Result<String, ()>> = self.run_with_parallel_jobs(n_jobs, || {
+            self.records
+                .par_iter()
+                .map(|record| {
+                    let out = match record {
+                        BatchRecord::Molecule(molecule) => {
+                            molecule_to_sdf_record_string(molecule, format).map_err(|_| ())
                         }
-                        Err(_) => {
-                            skipped += 1;
-                        }
-                    }
-                }
-                BatchRecord::Error(_) => {
-                    skipped += 1;
-                }
+                        BatchRecord::Error(_) => Err(()),
+                    };
+                    tick_progress(progress);
+                    out
+                })
+                .collect()
+        });
+        let mut blocks = Vec::new();
+        let mut skipped = 0usize;
+        for outcome in outcomes {
+            match outcome {
+                Ok(block) => blocks.push(block),
+                Err(()) => skipped += 1,
             }
         }
-
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| BatchValidationError {
+        if errors.raise_on_errors() && skipped != 0 {
+            return Err(BatchValidationError {
+                errors: skipped,
+                reason: None,
+            });
+        }
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent).map_err(|_| BatchValidationError {
                 errors: 1,
                 reason: Some(crate::UnsupportedFeatureError {
                     feature: "batch.write_sdf",
@@ -510,16 +1147,97 @@ impl MoleculeBatch {
                 }),
             })?;
         }
-
-        std::fs::write(path, &sdf_content).map_err(|e| BatchValidationError {
+        let mut file = File::create(output_path).map_err(|_| BatchValidationError {
             errors: 1,
             reason: Some(crate::UnsupportedFeatureError {
                 feature: "batch.write_sdf",
-                reason: &"file write failed",
+                reason: "file create failed",
             }),
         })?;
+        for block in &blocks {
+            file.write_all(block.as_bytes())
+                .map_err(|_| BatchValidationError {
+                    errors: 1,
+                    reason: Some(crate::UnsupportedFeatureError {
+                        feature: "batch.write_sdf",
+                        reason: "file write failed",
+                    }),
+                })?;
+        }
+        Ok(BatchExportReport {
+            written: blocks.len(),
+            skipped,
+        })
+    }
 
-        if errors == BatchErrorMode::Strict && skipped != 0 {
+    pub fn write_sdf_files_with_progress(
+        &self,
+        output_dir: &Path,
+        format: SdfFormat,
+        errors: BatchErrorMode,
+        filenames: Option<&[String]>,
+        progress: BatchProgress<'_>,
+    ) -> Result<BatchExportReport, BatchValidationError> {
+        self.write_sdf_files_with_runtime(output_dir, format, errors, filenames, progress, None)
+    }
+
+    pub fn write_sdf_files_with_options(
+        &self,
+        output_dir: &Path,
+        format: SdfFormat,
+        errors: BatchErrorMode,
+        filenames: Option<&[String]>,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<BatchExportReport, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Writing SDF files",
+            |progress| {
+                self.write_sdf_files_with_runtime(
+                    output_dir, format, errors, filenames, progress, n_jobs,
+                )
+            },
+        )
+    }
+
+    fn write_sdf_files_with_runtime(
+        &self,
+        output_dir: &Path,
+        format: SdfFormat,
+        errors: BatchErrorMode,
+        filenames: Option<&[String]>,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<BatchExportReport, BatchValidationError> {
+        fs::create_dir_all(output_dir).map_err(|_| BatchValidationError {
+            errors: 1,
+            reason: Some(crate::UnsupportedFeatureError {
+                feature: "batch.write_sdf_files",
+                reason: "directory creation failed",
+            }),
+        })?;
+        let paths = output_paths(output_dir, self.records.len(), "sdf", filenames)?;
+        let outcomes: Vec<bool> = self.run_with_parallel_jobs(n_jobs, || {
+            self.records
+                .par_iter()
+                .enumerate()
+                .map(|(index, record)| {
+                    let ok = match record {
+                        BatchRecord::Molecule(molecule) => {
+                            write_one_sdf_file(molecule, &paths[index], format).is_ok()
+                        }
+                        BatchRecord::Error(_) => false,
+                    };
+                    tick_progress(progress);
+                    ok
+                })
+                .collect()
+        });
+        let written = outcomes.into_iter().filter(|ok| *ok).count();
+        let skipped = self.records.len() - written;
+        if errors.raise_on_errors() && skipped != 0 {
             return Err(BatchValidationError {
                 errors: skipped,
                 reason: None,
@@ -529,6 +1247,134 @@ impl MoleculeBatch {
     }
 }
 
+fn write_one_image(
+    molecule: &Molecule,
+    path: &Path,
+    format: &str,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    match format {
+        "svg" => {
+            let svg = molecule
+                .to_svg(width, height)
+                .map_err(|error| error.to_string())?;
+            fs::write(path, svg).map_err(|error| error.to_string())
+        }
+        "png" => {
+            let png = molecule
+                .to_png(width, height)
+                .map_err(|error| error.to_string())?;
+            fs::write(path, png).map_err(|error| error.to_string())
+        }
+        other => Err(format!(
+            "unsupported image format '{other}', expected 'png' or 'svg'"
+        )),
+    }
+}
+
+fn write_one_sdf_file(molecule: &Molecule, path: &Path, format: SdfFormat) -> Result<(), String> {
+    let block = molecule_to_sdf_record_string(molecule, format)?;
+    fs::write(path, block).map_err(|error| error.to_string())
+}
+
+fn molecule_to_sdf_record_string(molecule: &Molecule, format: SdfFormat) -> Result<String, String> {
+    let params = molblock::MolBlockWriteParams {
+        format,
+        force_2d: molecule.coords_2d().is_some(),
+        ..Default::default()
+    };
+    molblock::mol_to_sdf_record_with_params(molecule, &params).map_err(|error| error.to_string())
+}
+
+fn output_paths(
+    out_dir: &Path,
+    total: usize,
+    extension: &str,
+    filenames: Option<&[String]>,
+) -> Result<Vec<PathBuf>, BatchValidationError> {
+    if let Some(filenames) = filenames
+        && filenames.len() != total
+    {
+        return Err(BatchValidationError {
+            errors: 1,
+            reason: Some(crate::UnsupportedFeatureError {
+                feature: "batch.output_paths",
+                reason: "filenames length must match batch length",
+            }),
+        });
+    }
+    let mut seen = HashSet::new();
+    let mut paths = Vec::with_capacity(total);
+    for index in 0..total {
+        let filename = match filenames.and_then(|names| names.get(index)) {
+            Some(raw) => {
+                normalize_output_filename(raw, extension).map_err(|_| BatchValidationError {
+                    errors: 1,
+                    reason: Some(crate::UnsupportedFeatureError {
+                        feature: "batch.output_paths",
+                        reason: "invalid filename",
+                    }),
+                })?
+            }
+            None => format!("mol_{index}.{extension}"),
+        };
+        if !seen.insert(filename.clone()) {
+            return Err(BatchValidationError {
+                errors: 1,
+                reason: Some(crate::UnsupportedFeatureError {
+                    feature: "batch.output_paths",
+                    reason: "duplicate output filename",
+                }),
+            });
+        }
+        paths.push(out_dir.join(filename));
+    }
+    Ok(paths)
+}
+
+fn normalize_output_filename(raw: &str, extension: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("filename must not be empty".to_string());
+    }
+    let path = Path::new(trimmed);
+    if path.is_absolute() {
+        return Err("filename must be relative to the output directory".to_string());
+    }
+    let components = path.components().collect::<Vec<_>>();
+    if components.len() != 1 || !matches!(components[0], Component::Normal(_)) {
+        return Err("filename must not include path separators or '..'".to_string());
+    }
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "filename must be valid UTF-8".to_string())?;
+    match path.extension().and_then(|value| value.to_str()) {
+        Some(actual) if actual.eq_ignore_ascii_case(extension) => Ok(file_name.to_string()),
+        Some(actual) => Err(format!(
+            "filename extension '.{actual}' does not match expected '.{extension}'"
+        )),
+        None => Ok(format!("{file_name}.{extension}")),
+    }
+}
+
+fn split_sdf_record_strings(sdf_text: &str) -> Vec<String> {
+    let mut records = Vec::new();
+    let mut current = String::new();
+    for line in sdf_text.lines() {
+        current.push_str(line);
+        current.push('\n');
+        if line.trim_end() == "$$$$" {
+            records.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.trim().is_empty() {
+        records.push(current);
+    }
+    records
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -536,9 +1382,7 @@ mod tests {
     #[test]
     fn from_smiles_list_preserves_order_and_keeps_record_errors() {
         let smiles = vec!["CCO".to_string(), "C1".to_string(), "N".to_string()];
-
         let batch = MoleculeBatch::from_smiles_list(&smiles);
-
         assert_eq!(batch.len(), 3);
         assert_eq!(batch.valid_mask(), vec![true, false, true]);
         assert_eq!(batch.valid_count(), 2);
@@ -552,326 +1396,102 @@ mod tests {
     #[test]
     fn filter_valid_preserves_surviving_input_order() {
         let smiles = vec!["C".to_string(), "C1".to_string(), "O".to_string()];
-
         let filtered = MoleculeBatch::from_smiles_list(&smiles).filter_valid();
-
         assert_eq!(filtered.len(), 2);
         assert_eq!(filtered.valid_mask(), vec![true, true]);
     }
 
     #[test]
-    fn batch_transforms_delegate_to_registered_ops_and_keep_errors_in_order() {
-        let smiles = vec!["CCO".to_string(), "C1".to_string(), "N".to_string()];
-        let batch = MoleculeBatch::from_smiles_list(&smiles);
-
-        let transformed = batch
-            .with_kekulized_bonds(true, BatchErrorMode::KeepErrors)
-            .unwrap();
-
-        assert_eq!(transformed.len(), 3);
-        assert_eq!(transformed.valid_mask(), vec![true, false, true]);
-        assert_eq!(transformed.errors()[0].index, 1);
-    }
-
-    #[test]
-    fn batch_transform_strict_reports_existing_or_operation_errors() {
-        let smiles = vec!["C1CC1".to_string(), "C1".to_string()];
-        let batch = MoleculeBatch::from_smiles_list(&smiles);
-
-        let existing_error = batch
-            .sanitized(BatchErrorMode::Strict)
-            .expect_err("strict mode should reject existing record errors");
-
-        // "C1CC1" (cyclopropane) — coordinate computation now handles rings
-        // "C1" was filtered out by the sanitization check above
-        let operation_ok = batch
-            .filter_valid()
-            .with_2d_coordinates(BatchErrorMode::Strict);
-
-        assert_eq!(existing_error.errors, 1);
-        assert!(
-            operation_ok.is_ok(),
-            "coord computation now succeeds for cyclopropane"
-        );
-    }
-
-    #[test]
-    fn batch_transform_keep_errors_records_coordinate_errors() {
-        let smiles = vec!["C1CC1".to_string(), "N".to_string()];
-        let batch = MoleculeBatch::from_smiles_list(&smiles);
-
-        let transformed = batch
-            .with_2d_coordinates(BatchErrorMode::KeepErrors)
-            .unwrap();
-
-        // "C1CC1" (cyclopropane) — rings are now handled by the ported SSSR algorithm
-        // "N" (1 atom) — strict subset handles single atoms, succeeds
-        assert_eq!(transformed.valid_mask(), vec![true, true]);
-        assert_eq!(transformed.errors().len(), 0);
-    }
-
-    #[test]
-    fn batch_with_2d_coordinates_with_params_delegates_to_parameterized_operation() {
-        let smiles = vec!["CC".to_string()];
-        let batch = MoleculeBatch::from_smiles_list(&smiles);
-
-        let transformed = batch
-            .with_2d_coordinates_with_params(
-                crate::With2DCoordinatesParams {
-                    force_rdkit: true,
-                    use_ring_templates: true,
-                    ..crate::With2DCoordinatesParams::default()
-                },
-                BatchErrorMode::Strict,
-            )
-            .unwrap();
-
-        let record = transformed.get(0).unwrap();
-        let mol = match record {
-            BatchRecord::Molecule(mol) => mol,
-            BatchRecord::Error(err) => panic!("unexpected batch error: {err:?}"),
-        };
-        assert_eq!(mol.conformers_2d().len(), 1);
-    }
-
-    #[test]
-    fn with_parallel_jobs_default_is_one() {
+    fn batch_configuration_defaults_are_none() {
         let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string()]);
-        assert_eq!(batch.parallel_jobs(), 1);
+        assert_eq!(batch.parallel_jobs(), None);
+        assert_eq!(batch.progress_bar(), None);
     }
 
     #[test]
-    fn with_parallel_jobs_sets_and_gets_value() {
-        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string()]).with_parallel_jobs(4);
-        assert_eq!(batch.parallel_jobs(), 4);
+    fn batch_configuration_can_be_set_and_cleared() {
+        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string()])
+            .with_parallel_jobs(Some(4))
+            .with_progress_bar(Some(true));
+        assert_eq!(batch.parallel_jobs(), Some(4));
+        assert_eq!(batch.progress_bar(), Some(true));
+
+        let cleared = batch.with_parallel_jobs(None).with_progress_bar(None);
+        assert_eq!(cleared.parallel_jobs(), None);
+        assert_eq!(cleared.progress_bar(), None);
     }
 
     #[test]
-    fn with_parallel_jobs_clamps_to_at_least_one() {
-        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string()]).with_parallel_jobs(0);
-        assert_eq!(batch.parallel_jobs(), 1);
+    fn batch_configuration_is_preserved_across_transforms() {
+        let batch = MoleculeBatch::from_smiles_list(&["CC".to_string()])
+            .with_parallel_jobs(Some(2))
+            .with_progress_bar(Some(false));
+
+        let transformed = batch
+            .with_2d_coordinates(BatchErrorMode::Strict)
+            .expect("2d coordinates should succeed");
+
+        assert_eq!(transformed.parallel_jobs(), Some(2));
+        assert_eq!(transformed.progress_bar(), Some(false));
     }
 
     #[test]
-    fn with_parallel_jobs_preserved_across_filter_valid() {
+    fn batch_configuration_is_preserved_across_filter_valid() {
         let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string(), "C1".to_string()])
-            .with_parallel_jobs(8);
+            .with_parallel_jobs(Some(8))
+            .with_progress_bar(Some(true));
+
         let filtered = batch.filter_valid();
-        assert_eq!(filtered.parallel_jobs(), 8);
+
+        assert_eq!(filtered.parallel_jobs(), Some(8));
+        assert_eq!(filtered.progress_bar(), Some(true));
     }
 
     #[test]
-    fn get_returns_record_at_index() {
-        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string(), "N".to_string()]);
-        let rec0 = batch.get(0);
-        assert!(rec0.is_some());
-        assert!(matches!(rec0.unwrap(), BatchRecord::Molecule(_)));
-        let rec1 = batch.get(1);
-        assert!(rec1.is_some());
-        assert!(matches!(rec1.unwrap(), BatchRecord::Molecule(_)));
+    fn transform_options_preserve_batch_configuration() {
+        let batch = MoleculeBatch::from_smiles_list(&["CC".to_string()])
+            .with_parallel_jobs(Some(4))
+            .with_progress_bar(Some(true));
+
+        let transformed = batch
+            .with_2d_coordinates_with_options(BatchErrorMode::Strict, Some(1), Some(false))
+            .expect("2d coordinates should succeed");
+
+        assert_eq!(transformed.parallel_jobs(), Some(4));
+        assert_eq!(transformed.progress_bar(), Some(true));
     }
 
     #[test]
-    fn get_returns_none_for_out_of_bounds() {
-        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string()]);
-        assert!(batch.get(5).is_none());
-        assert!(batch.get(usize::MAX).is_none());
-    }
-
-    #[test]
-    fn iter_yields_all_records_in_order() {
-        let smiles = vec!["CCO".to_string(), "C1".to_string(), "N".to_string()];
-        let batch = MoleculeBatch::from_smiles_list(&smiles);
-        let records: Vec<&BatchRecord> = batch.iter().collect();
-        assert_eq!(records.len(), 3);
-        assert!(matches!(records[0], BatchRecord::Molecule(_)));
-        assert!(matches!(records[1], BatchRecord::Error(_)));
-        assert!(matches!(records[2], BatchRecord::Molecule(_)));
-    }
-
-    #[test]
-    fn error_summary_empty_when_no_errors() {
-        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string(), "N".to_string()]);
-        let summary = batch.error_summary();
-        assert!(summary.is_empty());
-    }
-
-    #[test]
-    fn error_summary_includes_counts_and_details() {
-        let batch = MoleculeBatch::from_smiles_list(&[
-            "CCO".to_string(),
-            "C1".to_string(),
-            "N".to_string(),
-        ]);
-        let summary = batch.error_summary();
-        assert!(summary.contains("1 errors out of 3 records"));
-        assert!(summary.contains("2 valid"));
-        assert!(summary.contains("[1]"));
-        assert!(summary.contains("batch.from_smiles_list"));
-    }
-
-    #[test]
-    fn error_report_returns_structured_tuples() {
-        let batch = MoleculeBatch::from_smiles_list(&[
-            "CCO".to_string(),
-            "C1".to_string(),
-            "N".to_string(),
-        ]);
-        let report = batch.error_report();
-        assert_eq!(report.len(), 1);
-        assert_eq!(report[0].0, 1);
-        assert_eq!(report[0].1, "batch.from_smiles_list");
-    }
-
-    #[test]
-    fn write_images_custom_filenames() {
-        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string(), "N".to_string()]);
-        let dir = tempfile::tempdir().unwrap();
-        let filenames = vec!["first.png".to_string(), "second.png".to_string()];
-        let report = batch
-            .write_images(dir.path(), BatchErrorMode::KeepErrors, Some(&filenames))
-            .unwrap();
-        assert_eq!(report.written, 2);
-        assert!(dir.path().join("first.png").exists());
-        assert!(dir.path().join("second.png").exists());
-    }
-
-    #[test]
-    fn write_images_custom_filenames_error_records_slot() {
-        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string(), "C1".to_string()]);
-        let dir = tempfile::tempdir().unwrap();
-        let filenames = vec!["ok.png".to_string(), "bad.png".to_string()];
-        let report = batch
-            .write_images(dir.path(), BatchErrorMode::KeepErrors, Some(&filenames))
-            .unwrap();
-        // Only one valid molecule, but bad.png slot also reserved
-        assert_eq!(report.written, 1);
-        assert_eq!(report.skipped, 1);
-        assert!(dir.path().join("ok.png").exists());
-        assert!(!dir.path().join("bad.png").exists());
-    }
-
-    #[test]
-    fn write_images_custom_filenames_requires_correct_length() {
-        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string(), "N".to_string()]);
-        let dir = tempfile::tempdir().unwrap();
-        let filenames = vec!["only.png".to_string()];
-        let result = batch.write_images(dir.path(), BatchErrorMode::KeepErrors, Some(&filenames));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn write_images_no_filenames_uses_default_index_names() {
-        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string(), "N".to_string()]);
-        let dir = tempfile::tempdir().unwrap();
-        let report = batch
-            .write_images(dir.path(), BatchErrorMode::KeepErrors, None)
-            .unwrap();
-        assert_eq!(report.written, 2);
-        assert!(dir.path().join("mol_0.png").exists());
-        assert!(dir.path().join("mol_1.png").exists());
-    }
-
-    #[test]
-    fn write_sdf_writes_multi_record_sdf() {
-        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string(), "N".to_string()]);
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("output.sdf");
-        let report = batch.write_sdf(&path, BatchErrorMode::KeepErrors).unwrap();
-        assert_eq!(report.written, 2);
-        assert_eq!(report.skipped, 0);
-        let content = std::fs::read_to_string(&path).unwrap();
-        // Each SDF record ends with $$$$
-        assert_eq!(content.matches("$$$$").count(), 2);
-        // Both molecules appear (count V2000 headers)
-        assert_eq!(content.matches("V2000").count(), 2);
-    }
-
-    #[test]
-    fn write_sdf_skips_error_records() {
-        let batch = MoleculeBatch::from_smiles_list(&[
-            "CCO".to_string(),
-            "C1".to_string(),
-            "N".to_string(),
-        ]);
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("output.sdf");
-        let report = batch.write_sdf(&path, BatchErrorMode::KeepErrors).unwrap();
-        // C1 is invalid, so only 2 written
-        assert_eq!(report.written, 2);
-        assert_eq!(report.skipped, 1);
-        let content = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(content.matches("$$$$").count(), 2);
-    }
-
-    #[test]
-    fn write_sdf_strict_reports_skipped_records() {
-        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string(), "C1".to_string()]);
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("output.sdf");
-        let result = batch.write_sdf(&path, BatchErrorMode::Strict);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().errors, 1);
-    }
-
-    #[test]
-    fn write_sdf_empty_batch() {
-        let batch = MoleculeBatch::new(vec![]);
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("output.sdf");
-        let report = batch.write_sdf(&path, BatchErrorMode::KeepErrors).unwrap();
-        assert_eq!(report.written, 0);
-        assert_eq!(report.skipped, 0);
-        let content = std::fs::read_to_string(&path).unwrap();
-        assert!(content.is_empty());
-    }
-
-    #[test]
-    fn error_summary_escape_does_not_panic() {
-        let batch = MoleculeBatch::new(vec![BatchRecord::Error(BatchRecordError::new(
-            42,
-            "test.op",
-            "something went wrong: Ω≈ç√∫",
-        ))]);
-        let summary = batch.error_summary();
-        assert!(summary.contains("42"));
-        assert!(summary.contains("test.op"));
-    }
-
-    #[test]
-    fn write_sdf_creates_parent_directory() {
-        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string()]);
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("subdir").join("nested").join("output.sdf");
-        let report = batch.write_sdf(&path, BatchErrorMode::KeepErrors).unwrap();
-        assert_eq!(report.written, 1);
-        assert!(path.exists());
-    }
-
-    #[test]
-    fn to_smiles_list_with_params_keep_errors_preserves_record_slots() {
-        let batch = MoleculeBatch::from_smiles_list(&[
-            "CCO".to_string(),
-            "C1".to_string(),
-            "N".to_string(),
-        ]);
+    fn smiles_writer_options_use_batch_runtime_overrides_without_mutating_batch_defaults() {
+        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string(), "CC".to_string()])
+            .with_parallel_jobs(Some(2))
+            .with_progress_bar(Some(true));
 
         let smiles = batch
-            .to_smiles_list_with_params(&SmilesWriteParams::default(), BatchErrorMode::KeepErrors)
-            .unwrap();
+            .to_smiles_list_with_options(BatchErrorMode::Strict, Some(1), Some(false))
+            .expect("smiles writing should succeed");
 
-        assert_eq!(smiles.len(), 3);
-        assert_eq!(smiles[1], "?");
+        assert_eq!(smiles, vec!["CCO".to_string(), "CC".to_string()]);
+        assert_eq!(batch.parallel_jobs(), Some(2));
+        assert_eq!(batch.progress_bar(), Some(true));
     }
 
     #[test]
-    fn to_smiles_list_with_params_strict_rejects_existing_error_slots() {
-        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string(), "C1".to_string()]);
+    fn svg_collection_options_use_batch_runtime_overrides_without_mutating_batch_defaults() {
+        let batch = MoleculeBatch::from_smiles_list(&["CCO".to_string()])
+            .with_progress_bar(Some(true))
+            .with_parallel_jobs(Some(2));
 
-        let error = batch
-            .to_smiles_list_with_params(&SmilesWriteParams::default(), BatchErrorMode::Strict)
-            .unwrap_err();
+        let prepared = batch
+            .with_2d_coordinates_with_options(BatchErrorMode::Strict, Some(1), Some(false))
+            .expect("2d coordinates should succeed");
+        let svgs = prepared
+            .to_svg_list_with_options(320, 240, Some(1), Some(false))
+            .expect("svg export should succeed");
 
-        assert_eq!(error.errors, 1);
+        assert_eq!(svgs.len(), 1);
+        assert!(svgs[0].as_ref().is_some_and(|svg| svg.contains("<svg")));
+        assert_eq!(prepared.parallel_jobs(), Some(2));
+        assert_eq!(prepared.progress_bar(), Some(true));
     }
 }

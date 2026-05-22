@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
-use cosmolkit_core::Molecule;
+use cosmolkit_core::{Molecule, MoleculeBatch};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -23,7 +23,7 @@ fn load_golden() -> Vec<SvgDrawRecord> {
     let path = repo_root().join("tests/golden/svg_drawer.jsonl");
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate with tests/scripts/gen_rdkit_svg_golden.py: {err}",
+            "failed to open {}; regenerate all RDKit goldens with `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`: {err}",
             path.display()
         )
     });
@@ -154,6 +154,71 @@ fn svg_drawer_matches_rdkit_golden_except_tool_identifiers() {
             normalized_actual,
             normalized_expected,
             "SVG mismatch at row {} ({}) after normalizing tool identifiers",
+            row_idx + 1,
+            record.smiles
+        );
+    }
+}
+
+#[test]
+fn svg_drawer_matches_rdkit_golden_except_tool_identifiers_in_parallel_batch() {
+    let records = load_golden();
+    let smiles = records
+        .iter()
+        .map(|record| record.smiles.clone())
+        .collect::<Vec<_>>();
+    let batch = MoleculeBatch::from_smiles_list(&smiles).with_parallel_jobs(Some(4));
+    let actual_svgs = batch
+        .to_svg_list_with_options(300, 300, Some(4), Some(false))
+        .expect("parallel batch SVG drawing should collect without draw errors");
+
+    assert_eq!(actual_svgs.len(), records.len());
+    for (row_idx, (record, actual_svg)) in records.iter().zip(actual_svgs.iter()).enumerate() {
+        if !record.rdkit_ok {
+            assert!(
+                record.error.is_some(),
+                "row {} ({}) is rdkit not ok but has no error",
+                row_idx + 1,
+                record.smiles
+            );
+            assert!(
+                actual_svg.is_none(),
+                "parallel batch SVG should not produce row {} ({})",
+                row_idx + 1,
+                record.smiles
+            );
+            continue;
+        }
+
+        assert_eq!(
+            (record.width, record.height),
+            (300, 300),
+            "parallel batch SVG golden has unexpected dimensions at row {} ({})",
+            row_idx + 1,
+            record.smiles
+        );
+        let actual_svg = actual_svg.as_ref().unwrap_or_else(|| {
+            panic!(
+                "parallel batch SVG missing row {} ({})",
+                row_idx + 1,
+                record.smiles
+            )
+        });
+        let expected_svg = record.svg.as_ref().unwrap_or_else(|| {
+            panic!(
+                "row {} ({}) is rdkit ok but has no svg payload",
+                row_idx + 1,
+                record.smiles
+            )
+        });
+        let normalized_actual = normalize_svg_tool_identifiers(actual_svg);
+        let normalized_expected = normalize_svg_tool_identifiers(expected_svg);
+        maybe_dump_svg_debug(row_idx, &normalized_expected, &normalized_actual);
+
+        assert_eq!(
+            normalized_actual,
+            normalized_expected,
+            "parallel batch SVG mismatch at row {} ({}) after normalizing tool identifiers",
             row_idx + 1,
             record.smiles
         );

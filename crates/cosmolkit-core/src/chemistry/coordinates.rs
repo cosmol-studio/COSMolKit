@@ -1,4 +1,4 @@
-//! 2D coordinate generation ported from the old-core RDKit depiction algorithm.
+//! 2D coordinate generation ported from the RDKit depiction algorithm.
 //!
 //! Source reproduction protocol: dev/source_reproduction_protocol.md
 //!
@@ -7,7 +7,7 @@
 //!   RDKit✔️❌: adapted for new-core API, same algorithm
 //!   RDKit❗✔️: algorithm-equivalent via different architecture
 //!
-//! Source layout (old-core `molblock.rs`, line numbers):
+//! Source layout (`molblock.rs`, line numbers):
 //!
 //!   Types + helpers (~33 – 55)   norm, normalize, rotate, cos/sin/sqrt
 //!   TreeEmbeddedAtom             ~825
@@ -10988,6 +10988,9 @@ mod tests {
 
     #[test]
     fn constrained_depiction_outer_accept_failure_generates_unconstrained_coords() {
+        let _lock = prefer_coordgen_test_lock().lock().unwrap();
+        let _guard = PreferCoordGenGuard::capture();
+        set_prefer_coord_gen(false);
         let mut ref_builder = MoleculeBuilder::new();
         let r0 = ref_builder.add_atom(AtomSpec::new(Element::C));
         ref_builder.set_2d_coordinates(vec![[0.0, 0.0]]).unwrap();
@@ -11020,6 +11023,9 @@ mod tests {
 
     #[test]
     fn constrained_depiction_outer_reference_pattern_returns_reference_atom_mapping() {
+        let _lock = prefer_coordgen_test_lock().lock().unwrap();
+        let _guard = PreferCoordGenGuard::capture();
+        set_prefer_coord_gen(false);
         let mut ref_builder = MoleculeBuilder::new();
         let r0 = ref_builder.add_atom(AtomSpec::new(Element::C));
         let r1 = ref_builder.add_atom(AtomSpec::new(Element::C));
@@ -11070,6 +11076,9 @@ mod tests {
 
     #[test]
     fn constrained_depiction_matching_3d_structure_accept_failure_falls_back_to_2d_coords() {
+        let _lock = prefer_coordgen_test_lock().lock().unwrap();
+        let _guard = PreferCoordGenGuard::capture();
+        set_prefer_coord_gen(false);
         let mut ref_builder = MoleculeBuilder::new();
         ref_builder.add_atom(AtomSpec::new(Element::C));
         let reference = ref_builder.build().unwrap();

@@ -187,6 +187,68 @@ def test_fingerprint_and_stereo_outputs_are_structurally_reasonable():
     assert result.fingerprint().n_bits() == 256
     assert len(additional.atom_counts()) == len(chiral)
     assert isinstance(additional.bit_info_map(), dict)
+    assert chiral.avalon_fingerprint(n_bits=256).n_bits() == 256
+    assert chiral.topological_fingerprint(n_bits=256).n_bits() == 256
+    assert chiral.maccs_fingerprint().n_bits() == 166
+    chiral.perceive_stereochemistry()
+
+
+def test_fragment_hash_pickle_and_scaffold_bindings_are_available():
+    disconnected = cosmolkit.Molecule.from_smiles("CC.O")
+    fragments = disconnected.fragments()
+    assert len(fragments) == 2
+    assert sorted(fragment.to_smiles() for fragment in fragments) == ["CC", "O"]
+    assert disconnected.largest_fragment().to_smiles() == "CC"
+
+    aromatic = cosmolkit.Molecule.from_smiles("c1ccccc1CCO")
+    assert isinstance(aromatic.hash(), int)
+    assert isinstance(aromatic.hash_with_ranks([0] * len(aromatic)), int)
+    assert aromatic.murcko_scaffold().num_atoms() > 0
+    assert aromatic.net_scaffold().num_atoms() > 0
+
+    payload = aromatic.mol_to_binary()
+    restored_method = cosmolkit.Molecule.mol_from_binary(payload)
+    restored_fn = cosmolkit.mol_from_binary(payload)
+    assert restored_method.to_smiles() == aromatic.to_smiles()
+    assert restored_fn.to_smiles() == aromatic.to_smiles()
+    assert cosmolkit.mol_to_binary(aromatic) == payload
+    assert cosmolkit.version() == cosmolkit.__version__
+
+
+def test_draw_and_substructure_bindings_are_available():
+    mol = cosmolkit.Molecule.from_smiles("c1ccccc1O").with_2d_coords()
+    png = mol.to_png(width=200, height=150)
+    assert bytes(png).startswith(b"\x89PNG\r\n\x1a\n")
+
+    prepared = mol.prepared_for_drawing_parity()
+    assert len(prepared.atoms()) == len(mol)
+    assert len(prepared.bonds()) == mol.num_bonds()
+    assert prepared.atoms()[0].atomic_number() > 0
+    assert prepared.bonds()[0].bond_order().name in {
+        "SINGLE",
+        "DOUBLE",
+        "TRIPLE",
+        "AROMATIC",
+        "DATIVE",
+        "HYDROGEN",
+        "ZERO",
+    }
+
+    pdb_block = mol.to_pdb_block()
+    assert isinstance(pdb_block, str)
+    assert "HETATM" in pdb_block or "ATOM" in pdb_block
+
+    query = cosmolkit.Molecule.from_smiles("c1ccccc1")
+    assert cosmolkit.has_substruct_match(mol, query) is True
+    first = cosmolkit.get_substruct_match(mol, query)
+    assert first is not None
+    assert len(first.atom_mapping()) == len(query)
+    matches = cosmolkit.get_substruct_matches(mol, query)
+    assert len(matches) >= 1
+    matches_limited = cosmolkit.get_substruct_matches_with_params(
+        mol, query, max_matches=1, uniquify=True
+    )
+    assert len(matches_limited) == 1
 
 
 def test_batch_api_combinations_preserve_order_shapes_and_record_alignment():

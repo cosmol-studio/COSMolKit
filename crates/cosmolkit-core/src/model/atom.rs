@@ -237,7 +237,7 @@ impl fmt::Display for AtomId {
     }
 }
 
-/// Minimal element identity for the redesigned core.
+/// Minimal element identity for the core.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Element {
     atomic_number: u8,

@@ -313,9 +313,8 @@ fn load_golden() -> Vec<GoldenRecord> {
 fn ensure_golden_exists(golden_path: &Path) {
     assert!(
         golden_path.exists(),
-        "missing {}; regenerate with .venv/bin/python tests/scripts/gen_rdkit_v2000_minimal_golden.py --input tests/smiles.smi --output {}",
+        "missing {}; regenerate all RDKit goldens with `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`",
         golden_path.display(),
-        golden_path.display()
     );
 }
 

@@ -6,15 +6,15 @@ single API call.
 
 .. code-block:: python
 
-   from cosmolkit import BatchErrorMode, BatchErrorType, BatchValidationError, MoleculeBatch
+   from cosmolkit import BatchErrorMode, BatchValidationError, MoleculeBatch
 
    batch = MoleculeBatch.from_smiles_list(
        ["CCO", "c1ccccc1", "not-smiles"],
-       errors=BatchErrorMode.KEEP,
+       errors=BatchErrorMode.KEEP_ERRORS,
    ).with_parallel_jobs(8)
 
-   prepared = batch.add_hydrogens(errors=BatchErrorMode.KEEP).compute_2d_coords(
-       errors=BatchErrorMode.KEEP,
+   prepared = batch.add_hydrogens(errors=BatchErrorMode.KEEP_ERRORS).compute_2d_coords(
+       errors=BatchErrorMode.KEEP_ERRORS,
    )
 
    print(prepared.valid_mask())
@@ -26,28 +26,26 @@ Error Handling
 Batch APIs accept ``errors``:
 
 - ``"raise"`` raises an exception when a record fails.
-- ``"keep"`` keeps failed records and exposes structured errors.
-- ``"skip"`` omits failed records from the returned result or export.
+- ``"keep"`` / ``"keep_errors"`` keeps failed records and exposes structured
+  errors. Export methods write valid records and count invalid records as
+  skipped in the returned report.
 
 String modes remain supported, but Python callers can also pass
-``BatchErrorMode`` enum members. Per-record ``BatchError.error_type()`` returns
-a ``BatchErrorType`` enum member, so matching does not depend on spelling a
-string:
+``BatchErrorMode`` enum members. Per-record ``BatchError`` values expose the
+input index, operation name, and message:
 
 .. code-block:: python
 
    for error in batch.errors():
-       if error.error_type() == BatchErrorType.SMILES_PARSE:
-           print(error.index(), error.error_type().name, error.message())
+       print(error.index(), error.operation(), error.message())
 
    try:
-       MoleculeBatch.from_smiles_list(["C1CC"], errors=BatchErrorMode.RAISE)
+       MoleculeBatch.from_smiles_list(["C1CC"], errors=BatchErrorMode.STRICT)
    except BatchValidationError as exc:
-       for error in exc.errors():
-           print(error.error_type(), error.error_type_name())
+       print(exc.error_count)
 
-Read-only maps such as ``BATCH_ERROR_TYPE_MAP`` and ``BATCH_ERROR_MODE_MAP``
-convert external string names to enum members when needed.
+The read-only ``BATCH_ERROR_MODE_MAP`` converts external string names to enum
+members when needed.
 
 Batch Values
 ------------
@@ -80,7 +78,7 @@ Export Images
        "molecule_images",
        format="png",
        size=(300, 300),
-       errors="skip",
+       errors="keep",
        filenames=["ethanol.png", "benzene.png", "invalid.png"],
        report_path="image_errors.json",
    )
@@ -99,7 +97,7 @@ Export SDF
    report = prepared.to_sdf(
        "prepared.sdf",
        format="v2000",
-       errors="skip",
+       errors="keep",
        report_path="sdf_errors.csv",
    )
 
@@ -111,7 +109,7 @@ file:
    report = prepared.to_sdf_files(
        "prepared_records",
        format="v2000",
-       errors="skip",
+       errors="keep",
        filenames=["ethanol", "benzene.sdf", "invalid.sdf"],
    )
 

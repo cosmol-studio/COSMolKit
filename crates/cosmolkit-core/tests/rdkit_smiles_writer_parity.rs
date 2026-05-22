@@ -4,7 +4,9 @@ use std::io::{BufRead, BufReader};
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 
-use cosmolkit_core::{Molecule, SmilesWriteError, SmilesWriteParams};
+use cosmolkit_core::{
+    BatchErrorMode, Molecule, MoleculeBatch, SmilesWriteError, SmilesWriteParams,
+};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -44,7 +46,7 @@ fn load_golden() -> Vec<SmilesWriterRecord> {
     let path = repo_root().join("tests/golden/smiles_writer.jsonl");
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate with tests/scripts/gen_rdkit_smiles_writer_golden.py: {err}",
+            "failed to open {}; regenerate all RDKit goldens with `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`: {err}",
             path.display()
         )
     });
@@ -303,6 +305,86 @@ fn smiles_writer_golden_has_one_record_per_smiles() {
 #[test]
 fn smiles_writer_matches_rdkit_golden_for_common_param_branches() {
     run_smiles_writer_parity(Some(common_branch_names()));
+}
+
+#[test]
+fn smiles_writer_matches_rdkit_golden_for_common_root_none_param_branches_in_parallel_batch() {
+    let records = load_golden();
+    let smiles = records
+        .iter()
+        .map(|record| record.smiles.clone())
+        .collect::<Vec<_>>();
+    let batch = MoleculeBatch::from_smiles_list(&smiles).with_parallel_jobs(Some(4));
+    let template_mol = Molecule::from_smiles("CC").expect("template molecule should parse");
+
+    for branch_name in common_branch_names() {
+        let first_branch = records
+            .iter()
+            .find_map(|record| record.branches.get(*branch_name))
+            .unwrap_or_else(|| panic!("missing common branch {branch_name}"));
+        if first_branch.params.rooted_at_atom.is_some() {
+            continue;
+        }
+        let params = branch_params(first_branch, &template_mol);
+        let actual = batch
+            .to_smiles_list_with_params_and_options(
+                &params,
+                BatchErrorMode::KeepErrors,
+                Some(4),
+                Some(false),
+            )
+            .unwrap_or_else(|err| {
+                panic!("parallel batch SMILES writer failed for branch {branch_name}: {err}")
+            });
+
+        assert_eq!(actual.len(), records.len());
+        for (row_idx, (record, actual_smiles)) in records.iter().zip(actual.iter()).enumerate() {
+            if !record.rdkit_ok {
+                assert!(
+                    record.error.is_some(),
+                    "row {} ({}) is rdkit not ok but has no error",
+                    row_idx + 1,
+                    record.smiles
+                );
+                continue;
+            }
+            let expected_branch = record.branches.get(*branch_name).unwrap_or_else(|| {
+                panic!(
+                    "row {} ({}) missing common branch {}",
+                    row_idx + 1,
+                    record.smiles,
+                    branch_name
+                )
+            });
+            if !expected_branch.ok {
+                assert_eq!(
+                    actual_smiles,
+                    "?",
+                    "parallel batch branch {} should keep error marker at row {} ({})",
+                    branch_name,
+                    row_idx + 1,
+                    record.smiles
+                );
+                continue;
+            }
+            let expected = expected_branch.smiles.as_ref().unwrap_or_else(|| {
+                panic!(
+                    "row {} ({}) branch {}: RDKit branch ok but missing smiles",
+                    row_idx + 1,
+                    record.smiles,
+                    branch_name
+                )
+            });
+            assert_eq!(
+                actual_smiles,
+                expected,
+                "parallel batch SMILES mismatch at row {} ({}) branch {}",
+                row_idx + 1,
+                record.smiles,
+                branch_name
+            );
+        }
+    }
 }
 
 #[test]

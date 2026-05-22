@@ -9,7 +9,7 @@ return a new ``Molecule`` and leave the original object unchanged:
 
 .. code-block:: python
 
-   from cosmolkit import BatchErrorMode, BatchErrorType, BondOrder, ChiralTag, Molecule
+   from cosmolkit import BatchErrorMode, BondOrder, ChiralTag, Molecule
 
    mol = Molecule.from_smiles("CCO")
    mol_h = mol.with_hydrogens()
@@ -95,18 +95,17 @@ Process a list of molecules:
 
 .. code-block:: python
 
-   from cosmolkit import BatchErrorMode, BatchErrorType, MoleculeBatch
+   from cosmolkit import BatchErrorMode, MoleculeBatch
 
    batch = MoleculeBatch.from_smiles_list(
        ["CCO", "c1ccccc1", "not-smiles"],
-       errors=BatchErrorMode.KEEP,
+       errors="keep",
    ).with_parallel_jobs(8)
 
    for error in batch.errors():
-       if error.error_type() == BatchErrorType.SMILES_PARSE:
-           print(error.index(), error.message())
+       print(error.index(), error.operation(), error.message())
 
-   prepared = batch.compute_2d_coords(errors=BatchErrorMode.KEEP)
+   prepared = batch.compute_2d_coords(errors=BatchErrorMode.KEEP_ERRORS)
    fingerprints = prepared.fingerprint_morgan_list(n_bits=2048)
 
    print(prepared.valid_mask())

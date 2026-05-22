@@ -11,6 +11,7 @@ use std::marker::PhantomData;
 
 pub mod invariants;
 pub mod ops;
+pub mod protein;
 
 // ---------------------------------------------------------------------------
 // Stable row IDs

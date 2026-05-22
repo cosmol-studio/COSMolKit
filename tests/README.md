@@ -32,36 +32,21 @@ RDKit parity tests are strict source-level reproduction tests against `third_par
 2. Regenerate all RDKit golden files through the single entrypoint:
    - `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`
    - omit `--jobs` to use the script default (`min(4, cpu_count, generator_count)`), or pass a larger value for a local high-core machine
-3. Regenerate one specific golden manually when you are working on a single parity surface:
-   - `.venv/bin/python tests/scripts/gen_rdkit_graph_features.py --input tests/smiles.smi --output tests/golden/graph_features.jsonl`
-   - `.venv/bin/python tests/scripts/gen_rdkit_v2000_minimal_golden.py --input tests/smiles.smi --output tests/golden/molblock_v2000_minimal.jsonl`
-   - `.venv/bin/python tests/scripts/gen_rdkit_kekulize_molblock_golden.py --input tests/smiles.smi --output tests/golden/molblock_v2000_kekulized.jsonl`
-   - `.venv/bin/python tests/scripts/gen_rdkit_kekulize_flags_golden.py --input tests/smiles.smi --output tests/golden/kekulize_clear_flags_false.jsonl`
-   - `.venv/bin/python tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py --input tests/smiles.smi --output tests/golden/tetrahedral_stereo_geometry.jsonl`
-   - `.venv/bin/python tests/scripts/gen_rdkit_smiles_writer_golden.py --input tests/smiles.smi --output tests/golden/smiles_writer.jsonl`
-   - `.venv/bin/python tests/scripts/gen_rdkit_isomeric_smiles_golden.py --input tests/smiles.smi --output tests/golden/isomeric_smiles.jsonl`
-   - `.venv/bin/python tests/scripts/gen_rdkit_dg_bounds_golden.py --input tests/smiles.smi --output tests/golden/dg_bounds_matrix.jsonl`
-   - `.venv/bin/python tests/scripts/gen_rdkit_morgan_fingerprint_golden.py --input tests/smiles.smi --output tests/golden/morgan_fingerprint.jsonl`
-   - `.venv/bin/python tests/scripts/gen_rdkit_svg_golden.py --input tests/smiles.smi --output tests/golden/svg_drawer.jsonl`
-   - `.venv/bin/python tests/scripts/gen_rdkit_prepared_draw_golden.py --input tests/smiles.smi --output tests/golden/prepared_draw_molecule.jsonl`
-   - `.venv/bin/python tests/scripts/gen_rdkit_sdf_write_golden.py --input tests/smiles.smi --output tests/golden/sdf_write.jsonl`
-   - `.venv/bin/python tests/scripts/gen_rdkit_sdf_read_golden.py --input tests/smiles.smi --output tests/golden/sdf_read.jsonl`
-   - `.venv/bin/python tests/scripts/gen_rdkit_molfile_read_golden.py --input tests/smiles.smi --output tests/golden/molfile_read.jsonl`
-3. (Optional) Install local COSMolKit Python build into the same env for direct comparison:
+3. Do not regenerate committed golden files through individual generator scripts.
+   The per-surface scripts are implementation details of the unified entrypoint;
+   using one-off outputs as committed baselines risks drift between parity
+   surfaces.
+4. (Optional) Install local COSMolKit Python build into the same env for direct comparison:
    - `.venv/bin/maturin develop --manifest-path python/Cargo.toml`
-4. Run Rust tests:
-   - `cargo test`
-   - `cargo test -p cosmolkit-core`
-   - `cargo test -p cosmolkit`
-5. Run one-off feature parity check for a single SMILES (ours vs RDKit):
-   - `cargo run -p cosmolkit-core --example feature_parity -- "C[C@H](F)Cl"`
-6. Generate one-off minimal SDF output:
-   - `cargo run -p cosmolkit-core --example minimal_sdf -- "CCO"`
+5. Run core tests:
+   - `cargo test -p cosmolkit-core --features op-contracts-strict`
+6. Run the exhaustive SMILES writer branch matrix when checking full writer parity:
+   - `cargo test -p cosmolkit-core --features op-contracts-strict --test rdkit_smiles_writer_parity smiles_writer_matches_rdkit_golden_across_param_branches -- --ignored`
 
 Notes:
-- `cargo test` never generates RDKit golden files. If a golden file is missing, the test fails with the exact Python generator command to run first.
+- `cargo test` never generates RDKit golden files. If a golden file is missing, regenerate all RDKit goldens with the single entrypoint before running Rust tests.
 - CI regenerates all RDKit Python golden files through `tests/scripts/gen_all_rdkit_goldens.py` immediately after `uv sync --group dev` and before running Rust tests.
-- `tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py` asserts `rdkit == 2026.3.1` before generating ETKDG geometry golden so test conditions do not drift silently.
+- The unified golden generator includes an RDKit version assertion for ETKDG geometry goldens so test conditions do not drift silently.
 
 ## Future Workflow (Gemmi Macromolecular Parsing)
 

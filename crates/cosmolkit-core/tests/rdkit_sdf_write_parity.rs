@@ -45,7 +45,7 @@ fn load_golden() -> Vec<SdfWriteRecord> {
     let path = repo_root().join("tests/golden/sdf_write.jsonl");
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate with tests/scripts/gen_rdkit_sdf_write_golden.py: {err}",
+            "failed to open {}; regenerate all RDKit goldens with `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`: {err}",
             path.display()
         )
     });

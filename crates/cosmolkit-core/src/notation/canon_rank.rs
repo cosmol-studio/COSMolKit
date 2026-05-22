@@ -2482,8 +2482,8 @@ fn compare_ring_atoms_concerning_num_neighbors_for_kekulize(
                 // RDKit✔️✔️:             ringInfo->numAtomRings(atom.atom->getIdx()) < 1) {
                 // RDKit✔️✔️:           continue;
                 // RDKit✔️✔️:         }
-                // symmetrize_sssr() always returns initialized RingInfo in the
-                // redesigned core, so only the ring-membership branch remains.
+                // symmetrize_sssr() always returns initialized RingInfo here,
+                // so only the ring-membership branch remains.
                 if view.rings.num_atom_rings(AtomId::new(nidx)) < 1 {
                     continue;
                 }

@@ -60,7 +60,7 @@ fn ensure_golden_exists() {
     assert!(
         path.exists(),
         "missing RDKit molfile read golden: {}. Generate it before running tests:\n\
-         uv sync --group dev && .venv/bin/python tests/scripts/gen_rdkit_molfile_read_golden.py --input tests/smiles.smi --output tests/golden/molfile_read.jsonl",
+         uv sync --group dev && .venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4",
         path.display()
     );
 }

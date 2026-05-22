@@ -1,8 +1,7 @@
-//! COSMolKit core, redesigned around value-style molecule state.
+//! COSMolKit core built around value-style molecule state.
 //!
-//! This crate intentionally starts small. The previous implementation has been
-//! moved to `crates/cosmolkit-core-old` and is reference material only; it must
-//! not be used as a dependency for this crate.
+//! This crate is the active molecular graph, state, operation, IO, and chemistry
+//! core. Reference-only crates must not be used as dependencies for this crate.
 //!
 //! # Non-negotiable architecture rules
 //!
@@ -52,6 +51,9 @@ pub use atom::{Atom, AtomId, AtomPdbResidueInfo, AtomSpec, ChiralTag, Element, H
 pub use batch::{
     BatchErrorMode, BatchExportReport, BatchProgress, BatchProgressBar, BatchRecord,
     BatchRecordError, BatchValidationError, MoleculeBatch, batch_progress_bar,
+};
+pub use bio::protein::{
+    Protein, ProteinAtomRef, ProteinChainRef, ProteinResidueRef, ProteinSelectionSummary,
 };
 pub use bio::{
     AltLocLabel, AtomName, AtomRow, AtomSourceIds, BioAssembly, BioCisPep, BioConnection,
