@@ -1331,7 +1331,7 @@ fn from_smiles_assigns_ring_closure_double_bond_stereo_atoms_like_rdkit_row_86()
         )
         .unwrap();
 
-    assert_eq!(molecule.bonds()[9].stereo(), BondStereo::Trans);
+    assert_eq!(molecule.bonds()[9].stereo(), BondStereo::E);
     assert_eq!(
         molecule.bonds()[9].stereo_atoms(),
         Some([AtomId::new(8), AtomId::new(11)])
@@ -3809,12 +3809,12 @@ fn from_smiles_reranks_chiral_center_after_double_bond_stereo_assignment_like_rd
     let molecule = Molecule::from_smiles("F[C@H](C/C=C/C)C/C=C\\C").unwrap();
 
     assert_eq!(molecule.atoms()[1].prop("_CIPCode"), Some("R"));
-    assert_eq!(molecule.bonds()[3].stereo(), BondStereo::Trans);
+    assert_eq!(molecule.bonds()[3].stereo(), BondStereo::E);
     assert_eq!(
         molecule.bonds()[3].stereo_atoms(),
         Some([AtomId::new(2), AtomId::new(5)])
     );
-    assert_eq!(molecule.bonds()[7].stereo(), BondStereo::Cis);
+    assert_eq!(molecule.bonds()[7].stereo(), BondStereo::Z);
     assert_eq!(
         molecule.bonds()[7].stereo_atoms(),
         Some([AtomId::new(6), AtomId::new(9)])

@@ -330,8 +330,8 @@ pub(super) fn assign_double_bond_stereo_after_smiles_parse(
                 bond_mut
                     .set_stereo_atoms(Some([AtomId::new(begin_control), AtomId::new(end_control)]));
                 bond_mut.set_stereo(match stereo {
-                    crate::stereo::DoubleBondStereo::E => BondStereo::Trans,
-                    crate::stereo::DoubleBondStereo::Z => BondStereo::Cis,
+                    crate::stereo::DoubleBondStereo::E => BondStereo::E,
+                    crate::stereo::DoubleBondStereo::Z => BondStereo::Z,
                     crate::stereo::DoubleBondStereo::Unknown => BondStereo::Any,
                 });
             }
@@ -1093,8 +1093,8 @@ pub(super) fn update_double_bond_neighbors(
             return Ok(());
         };
         let mut same_torsion_dir = match dbl_bond.stereo() {
-            BondStereo::Cis => false,
-            BondStereo::Trans => true,
+            BondStereo::Z | BondStereo::Cis => false,
+            BondStereo::E | BondStereo::Trans => true,
             _ => return Ok(()),
         };
         let bond1_atom = bond_other_endpoint(&mol.bonds()[bond1.index()], atom1);
@@ -2815,7 +2815,7 @@ pub(super) fn rdkit_total_hs(
 ///
 /// Note: this is the tetrahedral-only port. The non-tetrahedral path
 /// (`assignNontetrahedralChiralTypeFrom3D`) is deferred.
-pub(super) fn assign_chiral_types_from_3d(mol: &mut Molecule, conf_id: usize) {
+pub(crate) fn assign_chiral_types_from_3d(mol: &mut Molecule, conf_id: usize) {
     // RDKit✔️✔️: void assignChiralTypesFrom3D(ROMol &mol, int confId, bool replaceExistingTags) {
     // RDKit✔️✔️:   const double ZERO_VOLUME_TOL = 0.1;
     // RDKit✔️✔️:   if (!mol.getNumConformers()) {

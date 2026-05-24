@@ -1,8 +1,10 @@
+#[cfg(test)]
+use crate::draw::PreparedDrawMolecule;
 use crate::io::molblock::{self, SdfFormat};
 use crate::io::sdf::{
-    SdfCoordinateMode, SdfDataset, SdfReader, read_sdf_from_str_with_coordinate_mode,
+    SdfCoordinateMode, SdfDataset, SdfReadParams, SdfReader, read_sdf_from_str_with_coordinate_mode,
 };
-use crate::{Molecule, PreparedDrawMolecule, SmilesWriteParams};
+use crate::{Molecule, SmilesWriteParams};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rayon::prelude::*;
 use std::collections::HashSet;
@@ -61,13 +63,67 @@ pub struct MoleculeBatch {
 pub struct BatchExportReport {
     pub written: usize,
     pub skipped: usize,
+    pub failed: usize,
+    pub errors: Vec<BatchRecordError>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("batch validation failed with {errors} errors")]
+#[error("batch validation failed with {errors} errors{message_suffix}")]
 pub struct BatchValidationError {
     pub errors: usize,
     pub reason: Option<crate::UnsupportedFeatureError>,
+    pub record_errors: Vec<BatchRecordError>,
+    #[doc(hidden)]
+    pub message_suffix: String,
+}
+
+impl BatchValidationError {
+    pub fn from_record_errors(record_errors: Vec<BatchRecordError>) -> Self {
+        let message_suffix = record_errors
+            .first()
+            .map(|error| format!("; first error at {}: {}", error.operation, error.message))
+            .unwrap_or_default();
+        Self {
+            errors: record_errors.len(),
+            reason: None,
+            record_errors,
+            message_suffix,
+        }
+    }
+
+    pub fn unsupported(feature: &'static str, reason: &'static str) -> Self {
+        Self {
+            errors: 1,
+            reason: Some(crate::UnsupportedFeatureError { feature, reason }),
+            record_errors: Vec::new(),
+            message_suffix: format!("; {feature}: {reason}"),
+        }
+    }
+
+    pub fn simple(errors: usize, operation: &'static str, message: impl Into<String>) -> Self {
+        let message = message.into();
+        let record_errors = if errors == 0 {
+            Vec::new()
+        } else {
+            vec![BatchRecordError::new(0, operation, message.clone())]
+        };
+        Self {
+            errors,
+            reason: None,
+            record_errors,
+            message_suffix: format!("; first error at {operation}: {message}"),
+        }
+    }
+}
+
+fn record_errors_from_records(records: &[BatchRecord]) -> Vec<BatchRecordError> {
+    records
+        .iter()
+        .filter_map(|record| match record {
+            BatchRecord::Molecule(_) => None,
+            BatchRecord::Error(error) => Some(error.clone()),
+        })
+        .collect()
 }
 
 pub type BatchProgress<'a> = Option<&'a (dyn Fn() + Sync)>;
@@ -332,7 +388,7 @@ impl MoleculeBatch {
                 Err(error) => {
                     records.push(BatchRecord::Error(BatchRecordError::new(
                         index,
-                        "batch.read_sdf_records_from_reader",
+                        "read_sdf",
                         error.to_string(),
                     )));
                     index += 1;
@@ -348,9 +404,23 @@ impl MoleculeBatch {
         errors: BatchErrorMode,
         progress: BatchProgress<'_>,
     ) -> Result<Self, BatchValidationError> {
+        Self::read_sdf_dataset_with_params_and_progress(
+            dataset,
+            SdfReadParams::default(),
+            errors,
+            progress,
+        )
+    }
+
+    pub fn read_sdf_dataset_with_params_and_progress(
+        dataset: &SdfDataset,
+        params: SdfReadParams,
+        errors: BatchErrorMode,
+        progress: BatchProgress<'_>,
+    ) -> Result<Self, BatchValidationError> {
         let mut records = Vec::with_capacity(dataset.len());
         for index in 0..dataset.len() {
-            match dataset.record(index) {
+            match dataset.record_with_params(index, params) {
                 Ok(record) => records.push(BatchRecord::Molecule(record.molecule)),
                 Err(error) => records.push(BatchRecord::Error(BatchRecordError::new(
                     index,
@@ -367,15 +437,11 @@ impl MoleculeBatch {
         records: Vec<BatchRecord>,
         errors: BatchErrorMode,
     ) -> Result<Self, BatchValidationError> {
-        let error_count = records
-            .iter()
-            .filter(|record| matches!(record, BatchRecord::Error(_)))
-            .count();
-        if errors.raise_on_errors() && error_count != 0 {
-            return Err(BatchValidationError {
-                errors: error_count,
-                reason: None,
-            });
+        if errors.raise_on_errors() {
+            let record_errors = record_errors_from_records(&records);
+            if !record_errors.is_empty() {
+                return Err(BatchValidationError::from_record_errors(record_errors));
+            }
         }
         Ok(Self {
             records,
@@ -712,15 +778,11 @@ impl MoleculeBatch {
                 })
                 .collect()
         });
-        let error_count = records
-            .iter()
-            .filter(|record| matches!(record, BatchRecord::Error(_)))
-            .count();
-        if errors.raise_on_errors() && error_count != 0 {
-            return Err(BatchValidationError {
-                errors: error_count,
-                reason: None,
-            });
+        if errors.raise_on_errors() {
+            let record_errors = record_errors_from_records(&records);
+            if !record_errors.is_empty() {
+                return Err(BatchValidationError::from_record_errors(record_errors));
+            }
         }
         Ok(Self {
             records,
@@ -766,37 +828,42 @@ impl MoleculeBatch {
             self.records.len(),
             "Writing SMILES",
             |progress| {
-                let outcomes: Vec<Result<String, ()>> = self.run_with_parallel_jobs(n_jobs, || {
-                    self.records
-                        .par_iter()
-                        .map(|record| {
-                            let out = match record {
-                                BatchRecord::Molecule(molecule) => {
-                                    molecule.to_smiles_with_params(params).map_err(|_| ())
-                                }
-                                BatchRecord::Error(_) => Err(()),
-                            };
-                            tick_progress(progress);
-                            out
-                        })
-                        .collect()
-                });
+                let outcomes: Vec<Result<String, BatchRecordError>> =
+                    self.run_with_parallel_jobs(n_jobs, || {
+                        self.records
+                            .par_iter()
+                            .enumerate()
+                            .map(|(index, record)| {
+                                let out = match record {
+                                    BatchRecord::Molecule(molecule) => {
+                                        molecule.to_smiles_with_params(params).map_err(|error| {
+                                            BatchRecordError::new(
+                                                index,
+                                                "to_smiles",
+                                                error.to_string(),
+                                            )
+                                        })
+                                    }
+                                    BatchRecord::Error(error) => Err(error.clone()),
+                                };
+                                tick_progress(progress);
+                                out
+                            })
+                            .collect()
+                    });
                 let mut results = Vec::with_capacity(outcomes.len());
-                let mut error_count = 0usize;
+                let mut record_errors = Vec::new();
                 for outcome in outcomes {
                     match outcome {
                         Ok(smiles) => results.push(smiles),
-                        Err(()) => {
-                            error_count += 1;
+                        Err(error) => {
+                            record_errors.push(error);
                             results.push("?".to_string());
                         }
                     }
                 }
-                if errors.raise_on_errors() && error_count != 0 {
-                    return Err(BatchValidationError {
-                        errors: error_count,
-                        reason: None,
-                    });
+                if errors.raise_on_errors() && !record_errors.is_empty() {
+                    return Err(BatchValidationError::from_record_errors(record_errors));
                 }
                 Ok(results)
             },
@@ -809,6 +876,7 @@ impl MoleculeBatch {
         progress: BatchProgress<'_>,
     ) -> Result<Vec<Option<String>>, BatchValidationError> {
         self.collect_optional_values_with_options(
+            "to_smiles",
             |molecule| {
                 molecule
                     .to_smiles_with_params(params)
@@ -824,6 +892,7 @@ impl MoleculeBatch {
         progress: BatchProgress<'_>,
     ) -> Result<Vec<Option<Vec<Vec<f64>>>>, BatchValidationError> {
         self.collect_optional_values_with_options(
+            "batch.dg_bounds_matrix",
             |molecule| {
                 molecule
                     .dg_bounds_matrix()
@@ -840,6 +909,7 @@ impl MoleculeBatch {
         progress: BatchProgress<'_>,
     ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
         self.collect_optional_values_with_options(
+            "batch.morgan_fingerprint",
             |molecule| {
                 molecule
                     .morgan_fingerprint(params)
@@ -856,6 +926,7 @@ impl MoleculeBatch {
         progress: BatchProgress<'_>,
     ) -> Result<Vec<Option<crate::MorganFingerprintOutput>>, BatchValidationError> {
         self.collect_optional_values_with_options(
+            "batch.morgan_fingerprint_with_output",
             |molecule| {
                 molecule
                     .morgan_fingerprint_with_output(params)
@@ -879,6 +950,7 @@ impl MoleculeBatch {
             "Drawing SVG molecules",
             |progress| {
                 self.collect_optional_values_with_options(
+                    "batch.to_svg",
                     |molecule| {
                         molecule
                             .to_svg(width, height)
@@ -898,6 +970,7 @@ impl MoleculeBatch {
         progress: BatchProgress<'_>,
     ) -> Result<Vec<Option<String>>, BatchValidationError> {
         self.collect_optional_values_with_options(
+            "batch.to_svg",
             |molecule| {
                 molecule
                     .to_svg(width, height)
@@ -908,10 +981,12 @@ impl MoleculeBatch {
         )
     }
 
-    pub fn prepare_for_drawing_parity_list(
+    #[cfg(test)]
+    pub(crate) fn prepare_for_drawing_parity_list(
         &self,
     ) -> Result<Vec<Option<PreparedDrawMolecule>>, BatchValidationError> {
         self.collect_optional_values_with_options(
+            "batch.prepare_for_drawing_parity",
             |molecule| {
                 molecule
                     .prepared_for_drawing_parity()
@@ -924,6 +999,7 @@ impl MoleculeBatch {
 
     fn collect_optional_values_with_options<T, F>(
         &self,
+        operation: &'static str,
         collect: F,
         progress: BatchProgress<'_>,
         n_jobs: Option<usize>,
@@ -932,35 +1008,36 @@ impl MoleculeBatch {
         T: Send,
         F: Fn(&Molecule) -> Result<T, String> + Sync + Send,
     {
-        let pairs: Vec<(Option<T>, bool)> = self.run_with_parallel_jobs(n_jobs, || {
-            self.records
-                .par_iter()
-                .map(|record| {
-                    let out = match record {
-                        BatchRecord::Molecule(molecule) => match collect(molecule) {
-                            Ok(value) => (Some(value), false),
-                            Err(_) => (None, true),
-                        },
-                        BatchRecord::Error(_) => (None, false),
-                    };
-                    tick_progress(progress);
-                    out
-                })
-                .collect()
-        });
+        let pairs: Vec<(Option<T>, Option<BatchRecordError>)> =
+            self.run_with_parallel_jobs(n_jobs, || {
+                self.records
+                    .par_iter()
+                    .enumerate()
+                    .map(|(index, record)| {
+                        let out = match record {
+                            BatchRecord::Molecule(molecule) => match collect(molecule) {
+                                Ok(value) => (Some(value), None),
+                                Err(error) => {
+                                    (None, Some(BatchRecordError::new(index, operation, error)))
+                                }
+                            },
+                            BatchRecord::Error(_) => (None, None),
+                        };
+                        tick_progress(progress);
+                        out
+                    })
+                    .collect()
+            });
         let mut values = Vec::with_capacity(pairs.len());
-        let mut error_count = 0usize;
-        for (value, errored) in pairs {
+        let mut record_errors = Vec::new();
+        for (value, error) in pairs {
             values.push(value);
-            if errored {
-                error_count += 1;
+            if let Some(error) = error {
+                record_errors.push(error);
             }
         }
-        if error_count != 0 {
-            return Err(BatchValidationError {
-                errors: error_count,
-                reason: None,
-            });
+        if !record_errors.is_empty() {
+            return Err(BatchValidationError::from_record_errors(record_errors));
         }
         Ok(values)
     }
@@ -1032,39 +1109,52 @@ impl MoleculeBatch {
         progress: BatchProgress<'_>,
         n_jobs: Option<usize>,
     ) -> Result<BatchExportReport, BatchValidationError> {
-        fs::create_dir_all(output_dir).map_err(|_| BatchValidationError {
-            errors: 1,
-            reason: Some(crate::UnsupportedFeatureError {
-                feature: "batch.write_images",
-                reason: "directory creation failed",
-            }),
+        fs::create_dir_all(output_dir).map_err(|_| {
+            BatchValidationError::unsupported("batch.write_images", "directory creation failed")
         })?;
         let paths = output_paths(output_dir, self.records.len(), format, filenames)?;
-        let outcomes: Vec<bool> = self.run_with_parallel_jobs(n_jobs, || {
-            self.records
-                .par_iter()
-                .enumerate()
-                .map(|(index, record)| {
-                    let ok = match record {
-                        BatchRecord::Molecule(molecule) => {
-                            write_one_image(molecule, &paths[index], format, width, height).is_ok()
-                        }
-                        BatchRecord::Error(_) => false,
-                    };
-                    tick_progress(progress);
-                    ok
-                })
-                .collect()
-        });
-        let written = outcomes.into_iter().filter(|ok| *ok).count();
-        let skipped = self.records.len() - written;
-        if errors.raise_on_errors() && skipped != 0 {
-            return Err(BatchValidationError {
-                errors: skipped,
-                reason: None,
+        let outcomes: Vec<Result<bool, BatchRecordError>> =
+            self.run_with_parallel_jobs(n_jobs, || {
+                self.records
+                    .par_iter()
+                    .enumerate()
+                    .map(|(index, record)| {
+                        let out = match record {
+                            BatchRecord::Molecule(molecule) => {
+                                write_one_image(molecule, &paths[index], format, width, height)
+                                    .map(|()| true)
+                                    .map_err(|error| {
+                                        BatchRecordError::new(index, "batch.write_images", error)
+                                    })
+                            }
+                            BatchRecord::Error(_) => Ok(false),
+                        };
+                        tick_progress(progress);
+                        out
+                    })
+                    .collect()
             });
+        let mut written = 0usize;
+        let mut skipped = 0usize;
+        let mut record_errors = Vec::new();
+        for outcome in outcomes {
+            match outcome {
+                Ok(true) => written += 1,
+                Ok(false) => skipped += 1,
+                Err(error) => record_errors.push(error),
+            }
         }
-        Ok(BatchExportReport { written, skipped })
+        if errors.raise_on_errors() && (skipped != 0 || !record_errors.is_empty()) {
+            let mut all_errors = record_errors.clone();
+            all_errors.extend(record_errors_from_records(&self.records));
+            return Err(BatchValidationError::from_record_errors(all_errors));
+        }
+        Ok(BatchExportReport {
+            written,
+            skipped,
+            failed: record_errors.len(),
+            errors: record_errors,
+        })
     }
 
     pub fn write_sdf(
@@ -1109,64 +1199,54 @@ impl MoleculeBatch {
         progress: BatchProgress<'_>,
         n_jobs: Option<usize>,
     ) -> Result<BatchExportReport, BatchValidationError> {
-        let outcomes: Vec<Result<String, ()>> = self.run_with_parallel_jobs(n_jobs, || {
-            self.records
-                .par_iter()
-                .map(|record| {
-                    let out = match record {
-                        BatchRecord::Molecule(molecule) => {
-                            molecule_to_sdf_record_string(molecule, format).map_err(|_| ())
-                        }
-                        BatchRecord::Error(_) => Err(()),
-                    };
-                    tick_progress(progress);
-                    out
-                })
-                .collect()
-        });
+        let outcomes: Vec<Result<String, BatchRecordError>> =
+            self.run_with_parallel_jobs(n_jobs, || {
+                self.records
+                    .par_iter()
+                    .enumerate()
+                    .map(|(index, record)| {
+                        let out = match record {
+                            BatchRecord::Molecule(molecule) => {
+                                molecule_to_sdf_record_string(molecule, format).map_err(|error| {
+                                    BatchRecordError::new(index, "batch.write_sdf", error)
+                                })
+                            }
+                            BatchRecord::Error(error) => Err(error.clone()),
+                        };
+                        tick_progress(progress);
+                        out
+                    })
+                    .collect()
+            });
         let mut blocks = Vec::new();
-        let mut skipped = 0usize;
+        let mut record_errors = Vec::new();
         for outcome in outcomes {
             match outcome {
                 Ok(block) => blocks.push(block),
-                Err(()) => skipped += 1,
+                Err(error) => record_errors.push(error),
             }
         }
-        if errors.raise_on_errors() && skipped != 0 {
-            return Err(BatchValidationError {
-                errors: skipped,
-                reason: None,
-            });
+        if errors.raise_on_errors() && !record_errors.is_empty() {
+            return Err(BatchValidationError::from_record_errors(record_errors));
         }
         if let Some(parent) = output_path.parent() {
-            fs::create_dir_all(parent).map_err(|_| BatchValidationError {
-                errors: 1,
-                reason: Some(crate::UnsupportedFeatureError {
-                    feature: "batch.write_sdf",
-                    reason: "directory creation failed",
-                }),
+            fs::create_dir_all(parent).map_err(|_| {
+                BatchValidationError::unsupported("batch.write_sdf", "directory creation failed")
             })?;
         }
-        let mut file = File::create(output_path).map_err(|_| BatchValidationError {
-            errors: 1,
-            reason: Some(crate::UnsupportedFeatureError {
-                feature: "batch.write_sdf",
-                reason: "file create failed",
-            }),
+        let mut file = File::create(output_path).map_err(|_| {
+            BatchValidationError::unsupported("batch.write_sdf", "file create failed")
         })?;
         for block in &blocks {
-            file.write_all(block.as_bytes())
-                .map_err(|_| BatchValidationError {
-                    errors: 1,
-                    reason: Some(crate::UnsupportedFeatureError {
-                        feature: "batch.write_sdf",
-                        reason: "file write failed",
-                    }),
-                })?;
+            file.write_all(block.as_bytes()).map_err(|_| {
+                BatchValidationError::unsupported("batch.write_sdf", "file write failed")
+            })?;
         }
         Ok(BatchExportReport {
             written: blocks.len(),
-            skipped,
+            skipped: record_errors.len(),
+            failed: 0,
+            errors: Vec::new(),
         })
     }
 
@@ -1211,39 +1291,52 @@ impl MoleculeBatch {
         progress: BatchProgress<'_>,
         n_jobs: Option<usize>,
     ) -> Result<BatchExportReport, BatchValidationError> {
-        fs::create_dir_all(output_dir).map_err(|_| BatchValidationError {
-            errors: 1,
-            reason: Some(crate::UnsupportedFeatureError {
-                feature: "batch.write_sdf_files",
-                reason: "directory creation failed",
-            }),
+        fs::create_dir_all(output_dir).map_err(|_| {
+            BatchValidationError::unsupported("batch.write_sdf_files", "directory creation failed")
         })?;
         let paths = output_paths(output_dir, self.records.len(), "sdf", filenames)?;
-        let outcomes: Vec<bool> = self.run_with_parallel_jobs(n_jobs, || {
-            self.records
-                .par_iter()
-                .enumerate()
-                .map(|(index, record)| {
-                    let ok = match record {
-                        BatchRecord::Molecule(molecule) => {
-                            write_one_sdf_file(molecule, &paths[index], format).is_ok()
-                        }
-                        BatchRecord::Error(_) => false,
-                    };
-                    tick_progress(progress);
-                    ok
-                })
-                .collect()
-        });
-        let written = outcomes.into_iter().filter(|ok| *ok).count();
-        let skipped = self.records.len() - written;
-        if errors.raise_on_errors() && skipped != 0 {
-            return Err(BatchValidationError {
-                errors: skipped,
-                reason: None,
+        let outcomes: Vec<Result<bool, BatchRecordError>> =
+            self.run_with_parallel_jobs(n_jobs, || {
+                self.records
+                    .par_iter()
+                    .enumerate()
+                    .map(|(index, record)| {
+                        let out = match record {
+                            BatchRecord::Molecule(molecule) => {
+                                write_one_sdf_file(molecule, &paths[index], format)
+                                    .map(|()| true)
+                                    .map_err(|error| {
+                                        BatchRecordError::new(index, "batch.write_sdf_files", error)
+                                    })
+                            }
+                            BatchRecord::Error(_) => Ok(false),
+                        };
+                        tick_progress(progress);
+                        out
+                    })
+                    .collect()
             });
+        let mut written = 0usize;
+        let mut skipped = 0usize;
+        let mut record_errors = Vec::new();
+        for outcome in outcomes {
+            match outcome {
+                Ok(true) => written += 1,
+                Ok(false) => skipped += 1,
+                Err(error) => record_errors.push(error),
+            }
         }
-        Ok(BatchExportReport { written, skipped })
+        if errors.raise_on_errors() && (skipped != 0 || !record_errors.is_empty()) {
+            let mut all_errors = record_errors.clone();
+            all_errors.extend(record_errors_from_records(&self.records));
+            return Err(BatchValidationError::from_record_errors(all_errors));
+        }
+        Ok(BatchExportReport {
+            written,
+            skipped,
+            failed: record_errors.len(),
+            errors: record_errors,
+        })
     }
 }
 
@@ -1296,37 +1389,25 @@ fn output_paths(
     if let Some(filenames) = filenames
         && filenames.len() != total
     {
-        return Err(BatchValidationError {
-            errors: 1,
-            reason: Some(crate::UnsupportedFeatureError {
-                feature: "batch.output_paths",
-                reason: "filenames length must match batch length",
-            }),
-        });
+        return Err(BatchValidationError::unsupported(
+            "batch.output_paths",
+            "filenames length must match batch length",
+        ));
     }
     let mut seen = HashSet::new();
     let mut paths = Vec::with_capacity(total);
     for index in 0..total {
         let filename = match filenames.and_then(|names| names.get(index)) {
-            Some(raw) => {
-                normalize_output_filename(raw, extension).map_err(|_| BatchValidationError {
-                    errors: 1,
-                    reason: Some(crate::UnsupportedFeatureError {
-                        feature: "batch.output_paths",
-                        reason: "invalid filename",
-                    }),
-                })?
-            }
+            Some(raw) => normalize_output_filename(raw, extension).map_err(|_| {
+                BatchValidationError::unsupported("batch.output_paths", "invalid filename")
+            })?,
             None => format!("mol_{index}.{extension}"),
         };
         if !seen.insert(filename.clone()) {
-            return Err(BatchValidationError {
-                errors: 1,
-                reason: Some(crate::UnsupportedFeatureError {
-                    feature: "batch.output_paths",
-                    reason: "duplicate output filename",
-                }),
-            });
+            return Err(BatchValidationError::unsupported(
+                "batch.output_paths",
+                "duplicate output filename",
+            ));
         }
         paths.push(out_dir.join(filename));
     }

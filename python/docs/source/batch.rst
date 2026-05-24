@@ -10,11 +10,11 @@ single API call.
 
    batch = MoleculeBatch.from_smiles_list(
        ["CCO", "c1ccccc1", "not-smiles"],
-       errors=BatchErrorMode.KEEP_ERRORS,
+       errors=BatchErrorMode.KEEP,
    ).with_parallel_jobs(8)
 
-   prepared = batch.add_hydrogens(errors=BatchErrorMode.KEEP_ERRORS).compute_2d_coords(
-       errors=BatchErrorMode.KEEP_ERRORS,
+   prepared = batch.add_hydrogens(errors=BatchErrorMode.KEEP).compute_2d_coords(
+       errors=BatchErrorMode.KEEP,
    )
 
    print(prepared.valid_mask())
@@ -26,9 +26,9 @@ Error Handling
 Batch APIs accept ``errors``:
 
 - ``"raise"`` raises an exception when a record fails.
-- ``"keep"`` / ``"keep_errors"`` keeps failed records and exposes structured
-  errors. Export methods write valid records and count invalid records as
-  skipped in the returned report.
+- ``"keep"`` keeps failed records and exposes structured errors. Export methods
+  write valid records and count invalid records as skipped in the returned
+  report.
 
 String modes remain supported, but Python callers can also pass
 ``BatchErrorMode`` enum members. Per-record ``BatchError`` values expose the
@@ -40,7 +40,7 @@ input index, operation name, and message:
        print(error.index(), error.operation(), error.message())
 
    try:
-       MoleculeBatch.from_smiles_list(["C1CC"], errors=BatchErrorMode.STRICT)
+       MoleculeBatch.from_smiles_list(["C1CC"], errors=BatchErrorMode.RAISE)
    except BatchValidationError as exc:
        print(exc.error_count)
 

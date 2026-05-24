@@ -86,7 +86,7 @@ RDKit atoms:
 
 .. code-block:: python
 
-   from cosmolkit import ChiralTag
+   from cosmolkit import ChiralTag, Molecule
 
    mol = Molecule.from_smiles("F[C@H](Cl)Br")
 

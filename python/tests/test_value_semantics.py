@@ -13,6 +13,12 @@ def assert_coordinate_rows_match_atoms(mol: cosmolkit.Molecule) -> None:
         assert mol.coords_3d(conformer_index).shape == (atom_count, 3)
 
 
+def require_valid_molecules(batch: cosmolkit.MoleculeBatch) -> list[cosmolkit.Molecule]:
+    molecules = list(batch)
+    assert all(mol is not None for mol in molecules)
+    return [mol for mol in molecules if mol is not None]
+
+
 def test_with_2d_coords_returns_new_molecule_without_mutating_input():
     mol = cosmolkit.Molecule.from_smiles("CCO")
 
@@ -212,6 +218,54 @@ $$$$
     assert np.allclose(mol_3d.coords_3d(), np.array([[0.0, 0.0, 0.0]]))
 
 
+def test_sdf_coordinate_dim_is_applied_to_file_dataset_reader_and_batch(tmp_path: Path):
+    sdf = """flat
+     COSMolKit      2D
+
+  1  0  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+$$$$
+"""
+    path = tmp_path / "flat.sdf"
+    path.write_text(sdf)
+
+    single = cosmolkit.Molecule.read_sdf(str(path), coordinate_dim="3d")
+    from_file = cosmolkit.MoleculeBatch.read_sdf(
+        str(path), errors="raise", n_jobs=1, coordinate_dim="3d"
+    )[0]
+    from_file_progress = cosmolkit.MoleculeBatch.read_sdf(
+        str(path), errors="raise", progress_bar=True, coordinate_dim="3d"
+    )[0]
+    from_text_batch = cosmolkit.MoleculeBatch.read_sdf_records_from_str(
+        sdf, errors="raise", n_jobs=1, coordinate_dim="3d"
+    )[0]
+    dataset = cosmolkit.SdfDataset.open(str(path), coordinate_dim="3d")
+    from_dataset_index = dataset[0].molecule()
+    from_dataset_iter = next(iter(dataset)).molecule()
+    from_dataset_batch = next(dataset.batches(size=1, errors="raise"))[0]
+    from_reader_batch = next(
+        cosmolkit.SdfReader.open(str(path), coordinate_dim="3d").batches(
+            size=1, errors="raise"
+        )
+    )[0]
+
+    molecules = [
+        single,
+        from_file,
+        from_file_progress,
+        from_text_batch,
+        from_dataset_index,
+        from_dataset_iter,
+        from_dataset_batch,
+        from_reader_batch,
+    ]
+    for mol in molecules:
+        assert mol is not None
+        assert mol.num_conformers() == 1
+        assert np.allclose(mol.coords_3d(), np.array([[0.0, 0.0, 0.0]]))
+
+
 def test_molecule_batch_read_sdf_reads_file_records(tmp_path: Path):
     sdf = """ethane
      COSMolKit      2D
@@ -237,8 +291,12 @@ $$$$
 
     assert len(batch) == 2
     assert batch.valid_mask() == [True, True]
-    assert len(batch[0]) == 2
-    assert len(batch[1]) == 1
+    first = batch[0]
+    second = batch[1]
+    assert first is not None
+    assert second is not None
+    assert len(first) == 2
+    assert len(second) == 1
 
 
 def test_molecule_batch_read_sdf_progress_bar_reads_file_records(tmp_path: Path):
@@ -307,6 +365,17 @@ $$$$
     head = ds[:2]
     assert len(head) == 2
     assert head.valid_mask() == [True, True]
+    masked = ds[[True, False, True]]
+    assert len(masked) == 2
+    assert [mol.to_smiles() for mol in require_valid_molecules(masked)] == ["C", "N"]
+    selected = ds[[2, 0]]
+    assert [mol.to_smiles() for mol in require_valid_molecules(selected)] == ["N", "C"]
+    with pytest.raises(TypeError, match="scalar boolean"):
+        ds[True]
+    with pytest.raises(TypeError, match="must not mix bool and int"):
+        ds[[True, 1]]
+    with pytest.raises(IndexError, match="boolean mask length"):
+        ds[[True, False]]
     assert [record.title() for record in ds] == ["carbon", "oxygen", "nitrogen"]
 
     batches = list(ds.batches(size=2, errors="raise"))
@@ -316,6 +385,25 @@ $$$$
 
     reader_batches = list(cosmolkit.SdfReader.open(str(path)).batches(size=2))
     assert [len(batch) for batch in reader_batches] == [2, 1]
+
+
+def test_protein_from_pdb_str_projects_protein_chains():
+    pdb = """\
+ATOM      1  N   ALA A   1      11.104  13.207   9.900  1.00 20.00           N  
+ATOM      2  CA  ALA A   1      12.210  13.912  10.555  1.00 20.00           C  
+ATOM      3  C   ALA A   1      13.470  13.079  10.413  1.00 20.00           C  
+HETATM    4  O   HOH A   2      18.000  10.000   8.000  1.00 10.00           O  
+HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C  
+"""
+    protein = cosmolkit.Protein.from_pdb_str(pdb)
+
+    assert protein.num_chains() == 1
+    assert protein.num_residues() == 1
+    assert protein.num_atoms() == 3
+    chain = protein[0]
+    assert chain.kind() == "Protein"
+    assert [residue.name() for residue in chain.residues()] == ["ALA"]
+    assert [residue.kind() for residue in chain.residues()] == ["AminoAcid"]
 
 
 def test_molecule_batch_read_sdf_file_error_modes(tmp_path: Path):
@@ -340,9 +428,9 @@ $$$$
     assert len(kept) == 2
     assert kept.valid_mask() == [True, False]
     assert kept.errors()[0].index() == 1
-    assert kept.errors()[0].stage() == "read_sdf"
+    assert kept.errors()[0].operation() == "read_sdf"
 
-    skipped = cosmolkit.MoleculeBatch.read_sdf(str(path), errors="skip", n_jobs=1)
+    skipped = cosmolkit.MoleculeBatch.read_sdf(str(path), errors="keep", n_jobs=1).filter_valid()
     assert len(skipped) == 1
     assert skipped.valid_mask() == [True]
 
@@ -563,8 +651,8 @@ def test_molecule_batch_keeps_errors_and_filters_valid_records(tmp_path: Path):
     assert batch.errors()[0].index() == 1
     assert batch.filter_valid().to_smiles_list() == ["CCO"]
 
-    report = batch.compute_2d_coords(errors="skip", n_jobs=2).to_sdf(
-        str(tmp_path / "valid.sdf"), errors="skip", n_jobs=2
+    report = batch.compute_2d_coords(errors="keep", n_jobs=2).to_sdf(
+        str(tmp_path / "valid.sdf"), errors="keep", n_jobs=2
     )
     assert report.success() == 1
     assert report.failed() == 0
@@ -581,7 +669,7 @@ def test_molecule_batch_exports_use_custom_filenames(tmp_path: Path):
     image_report = batch.to_images(
         str(tmp_path / "images"),
         format="svg",
-        errors="skip",
+        errors="keep",
         filenames=["ethanol", "bad.svg", None],
     )
     assert image_report.success() == 2
@@ -591,14 +679,14 @@ def test_molecule_batch_exports_use_custom_filenames(tmp_path: Path):
     sdf_report = batch.to_sdf_files(
         str(tmp_path / "sdf"),
         format="v2000",
-        errors="skip",
+        errors="keep",
         filenames=["ethanol", "bad.sdf", None],
     )
     assert sdf_report.success() == 2
     assert (tmp_path / "sdf" / "ethanol.sdf").exists()
     assert (tmp_path / "sdf" / "000002.sdf").exists()
 
-    with pytest.raises(cosmolkit.BatchValidationError, match="FilenameError"):
+    with pytest.raises(cosmolkit.BatchValidationError, match="invalid filename"):
         batch.to_images(str(tmp_path / "bad"), format="svg", filenames=["../x", None, None])
 
 
@@ -625,8 +713,10 @@ def test_molecule_batch_parallel_smiles_writer_options():
         "[13CH3:7][C@H](F)Cl",
     ]
     assert batch.to_smiles_list(all_bonds_explicit=True, n_jobs=2)[0] == "C-[*:1]"
-    with pytest.raises(cosmolkit.BatchValidationError, match="tetrahedral stereo"):
-        _ = batch.to_smiles_list(rooted_at_atom=0, n_jobs=2)
+    assert batch.to_smiles_list(rooted_at_atom=0, n_jobs=2) == [
+        "[*:1]C",
+        "[13CH3:7][C@H](F)Cl",
+    ]
     first_valid = batch.filter_valid()[0]
     assert first_valid is not None
     assert first_valid.to_smiles(rooted_at_atom=0) == "[*:1]C"
@@ -638,12 +728,11 @@ def test_molecule_batch_raise_aggregates_errors():
 
     assert "batch validation failed" in str(excinfo.value)
     errors = excinfo.value.errors()
-    assert [error.error_type() for error in errors] == [
-        cosmolkit.BatchErrorType.SMILES_PARSE,
-        cosmolkit.BatchErrorType.SMILES_PARSE,
+    assert [error.operation() for error in errors] == [
+        "batch.from_smiles_list",
+        "batch.from_smiles_list",
     ]
-    assert errors[0].error_type_code() == int(cosmolkit.BatchErrorType.SMILES_PARSE)
-    assert errors[0].error_type_name() == "SmilesParseError"
+    assert all(error.message() for error in errors)
 
 
 def test_batch_errors_expose_intenum_types_and_mode_enum_is_accepted():
@@ -655,13 +744,14 @@ def test_batch_errors_expose_intenum_types_and_mode_enum_is_accepted():
 
     errors = batch.errors()
     assert len(errors) == 1
-    assert errors[0].error_type() == cosmolkit.BatchErrorType.SMILES_PARSE
-    assert errors[0].error_type_name() == "SmilesParseError"
-    assert errors[0].as_dict()[3] == ("error_type", "SmilesParseError")
-    assert cosmolkit.BATCH_ERROR_TYPE_MAP["SmilesParseError"] == (
-        cosmolkit.BatchErrorType.SMILES_PARSE
-    )
+    assert errors[0].operation() == "batch.from_smiles_list"
+    assert errors[0].message() == "unclosed ring"
+    assert errors[0].as_dict() == [
+        ("index", "1"),
+        ("operation", "batch.from_smiles_list"),
+        ("message", errors[0].message()),
+    ]
     assert cosmolkit.BATCH_ERROR_MODE_MAP["keep"] == cosmolkit.BatchErrorMode.KEEP
 
-    filtered = batch.compute_2d_coords(errors=cosmolkit.BatchErrorMode.SKIP)
+    filtered = batch.filter_valid().compute_2d_coords(errors=cosmolkit.BatchErrorMode.KEEP)
     assert len(filtered) == 1

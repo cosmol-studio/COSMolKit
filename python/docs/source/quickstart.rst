@@ -38,7 +38,9 @@ Inspect atoms and bonds:
 
 .. code-block:: python
 
-   from cosmolkit import BondOrder
+   from cosmolkit import BondOrder, Molecule
+
+   mol = Molecule.from_smiles("c1ccccc1O")
 
    for atom in mol.atoms():
        print(atom.idx(), atom.atomic_num(), atom.is_aromatic())
@@ -105,7 +107,7 @@ Process a list of molecules:
    for error in batch.errors():
        print(error.index(), error.operation(), error.message())
 
-   prepared = batch.compute_2d_coords(errors=BatchErrorMode.KEEP_ERRORS)
+   prepared = batch.compute_2d_coords(errors=BatchErrorMode.KEEP)
    fingerprints = prepared.fingerprint_morgan_list(n_bits=2048)
 
    print(prepared.valid_mask())

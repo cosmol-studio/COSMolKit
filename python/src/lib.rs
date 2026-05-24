@@ -22,14 +22,28 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use pyo3_stub_gen_derive::remove_gen_stub;
 use rayon::ThreadPoolBuilder;
 
+fn parse_coordinate_mode(value: Option<&str>) -> PyResult<cosmolkit_core::SdfCoordinateMode> {
+    let Some(value) = value else {
+        return Ok(cosmolkit_core::SdfCoordinateMode::Preserve);
+    };
+    match value.to_ascii_lowercase().as_str() {
+        "auto" => Ok(cosmolkit_core::SdfCoordinateMode::Preserve),
+        "2d" => Ok(cosmolkit_core::SdfCoordinateMode::Require2D),
+        "3d" => Ok(cosmolkit_core::SdfCoordinateMode::Require3D),
+        _ => Err(PyValueError::new_err(format!(
+            "unsupported coordinate_dim '{value}', expected one of: auto, 2d, 3d"
+        ))),
+    }
+}
+
 fn parse_batch_error_mode(errors: Option<&Bound<'_, PyAny>>) -> PyResult<BatchErrorMode> {
     let Some(errors) = errors else {
         return Ok(BatchErrorMode::Strict);
     };
     if let Ok(value) = errors.extract::<String>() {
         return match value.to_ascii_lowercase().as_str() {
-            "strict" | "raise" => Ok(BatchErrorMode::Strict),
-            "keep" | "keep_errors" => Ok(BatchErrorMode::KeepErrors),
+            "raise" => Ok(BatchErrorMode::Strict),
+            "keep" => Ok(BatchErrorMode::KeepErrors),
             _ => Err(PyValueError::new_err(format!(
                 "unsupported errors mode '{value}', expected one of: raise, keep"
             ))),
@@ -39,7 +53,7 @@ fn parse_batch_error_mode(errors: Option<&Bound<'_, PyAny>>) -> PyResult<BatchEr
         1 => Ok(BatchErrorMode::Strict),
         2 => Ok(BatchErrorMode::KeepErrors),
         value => Err(PyValueError::new_err(format!(
-            "unsupported errors mode code {value}, expected BatchErrorMode.STRICT or KEEP_ERRORS"
+            "unsupported errors mode code {value}, expected BatchErrorMode.RAISE or KEEP"
         ))),
     }
 }
@@ -127,9 +141,11 @@ fn batch_validation_pyerr(error: cosmolkit_core::BatchValidationError) -> PyErr 
     Python::attach(|py| {
         let error_count = error.errors;
         let reason = error.reason.map(|value| value.to_string());
+        let record_errors: Vec<PyBatchError> =
+            error.record_errors.into_iter().map(Into::into).collect();
         match (|| -> PyResult<Bound<'_, PyAny>> {
             let cls = py.import("cosmolkit")?.getattr("BatchValidationError")?;
-            cls.call1((message, error_count, reason))
+            cls.call1((message, error_count, reason, record_errors))
         })() {
             Ok(instance) => PyErr::from_value(instance),
             Err(error) => error,
@@ -143,6 +159,15 @@ fn fingerprint_pyerr(error: cosmolkit_core::FingerprintError) -> PyErr {
 
 fn svg_draw_pyerr(error: cosmolkit_core::SvgDrawError) -> PyErr {
     PyValueError::new_err(error.to_string())
+}
+
+fn pdb_molecule_pyerr(error: cosmolkit_core::PdbMoleculeConversionError) -> PyErr {
+    match error {
+        cosmolkit_core::PdbMoleculeConversionError::Unsupported(message) => {
+            PyNotImplementedError::new_err(message)
+        }
+        other => PyValueError::new_err(other.to_string()),
+    }
 }
 
 fn fragment_pyerr(error: cosmolkit_core::fragment::FragmentError) -> PyErr {
@@ -362,16 +387,41 @@ fn write_batch_report(path: &str, report: &cosmolkit_core::BatchExportReport) ->
         .unwrap_or("json")
         .to_ascii_lowercase();
     let content = if ext == "csv" {
-        let content = format!("written,skipped\n{},{}\n", report.written, report.skipped);
-        content
+        format!(
+            "written,skipped,failed\n{},{},{}\n",
+            report.written, report.skipped, report.failed
+        )
     } else {
         format!(
-            "{{\n  \"written\": {},\n  \"skipped\": {}\n}}\n",
-            report.written, report.skipped
+            "{{\n  \"written\": {},\n  \"skipped\": {},\n  \"failed\": {}\n}}\n",
+            report.written, report.skipped, report.failed
         )
     };
     fs::write(&expanded_path, content)
         .map_err(|err| PyValueError::new_err(format!("write error report failed: {err}")))
+}
+
+fn complete_batch_filenames(
+    filenames: Option<Vec<Option<String>>>,
+    total: usize,
+    extension: &str,
+) -> PyResult<Option<Vec<String>>> {
+    let Some(filenames) = filenames else {
+        return Ok(None);
+    };
+    if filenames.len() != total {
+        return Err(PyValueError::new_err(format!(
+            "filenames length must match batch length: expected {total}, got {}",
+            filenames.len()
+        )));
+    }
+    Ok(Some(
+        filenames
+            .into_iter()
+            .enumerate()
+            .map(|(index, filename)| filename.unwrap_or_else(|| format!("{index:06}.{extension}")))
+            .collect(),
+    ))
 }
 
 fn to_python_tetrahedral_stereo(
@@ -570,6 +620,32 @@ fn add_int_enum_with_map_keys(
     Ok(())
 }
 
+fn add_int_enum_with_map_aliases(
+    m: &Bound<'_, PyModule>,
+    enum_name: &str,
+    map_name: &str,
+    members: &[(&str, i64)],
+    map_aliases: &[(&str, &str)],
+) -> PyResult<()> {
+    let py = m.py();
+    let enum_module = py.import("enum")?;
+    let int_enum = enum_module.getattr("IntEnum")?;
+    let member_dict = PyDict::new(py);
+    for (name, value) in members {
+        member_dict.set_item(name, value)?;
+    }
+    let enum_cls = int_enum.call1((enum_name, member_dict))?;
+    m.add(enum_name, &enum_cls)?;
+
+    let enum_map = PyDict::new(py);
+    for (map_key, member_name) in map_aliases {
+        enum_map.set_item(map_key, enum_cls.getattr(member_name)?)?;
+    }
+    let proxy = PyMappingProxy::new(py, enum_map.cast::<PyMapping>()?);
+    m.add(map_name, proxy)?;
+    Ok(())
+}
+
 fn add_public_enums(m: &Bound<'_, PyModule>) -> PyResult<()> {
     add_int_enum(
         m,
@@ -581,9 +657,23 @@ fn add_public_enums(m: &Bound<'_, PyModule>) -> PyResult<()> {
             ("DOUBLE", 2),
             ("TRIPLE", 3),
             ("QUADRUPLE", 4),
-            ("AROMATIC", 5),
-            ("DATIVE", 6),
-            ("HYDROGEN", 7),
+            ("QUINTUPLE", 5),
+            ("HEXTUPLE", 6),
+            ("ONEANDAHALF", 7),
+            ("TWOANDAHALF", 8),
+            ("THREEANDAHALF", 9),
+            ("FOURANDAHALF", 10),
+            ("FIVEANDAHALF", 11),
+            ("AROMATIC", 12),
+            ("IONIC", 13),
+            ("DATIVE", 14),
+            ("DATIVEONE", 15),
+            ("DATIVEL", 16),
+            ("DATIVER", 17),
+            ("HYDROGEN", 18),
+            ("THREECENTER", 19),
+            ("OTHER", 20),
+            ("ZERO", 21),
         ],
     )?;
     add_int_enum(
@@ -592,20 +682,43 @@ fn add_public_enums(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "BOND_DIRECTION_MAP",
         &[
             ("NONE", 0),
-            ("ENDUPRIGHT", 1),
-            ("ENDDOWNRIGHT", 2),
-            ("UNKNOWN", 3),
+            ("BEGINWEDGE", 1),
+            ("BEGINDASH", 2),
+            ("ENDUPRIGHT", 3),
+            ("ENDDOWNRIGHT", 4),
+            ("EITHERDOUBLE", 5),
+            ("UNKNOWN", 6),
         ],
     )?;
-    add_int_enum(
+    add_int_enum_with_map_aliases(
         m,
         "BondStereo",
         "BOND_STEREO_MAP",
         &[
-            ("STEREONONE", 0),
-            ("STEREOANY", 1),
-            ("STEREOCIS", 2),
-            ("STEREOTRANS", 3),
+            ("NONE", 0),
+            ("ANY", 1),
+            ("Z", 2),
+            ("E", 3),
+            ("CIS", 4),
+            ("TRANS", 5),
+            ("ATROP_CW", 6),
+            ("ATROP_CCW", 7),
+        ],
+        &[
+            ("NONE", "NONE"),
+            ("STEREONONE", "NONE"),
+            ("ANY", "ANY"),
+            ("STEREOANY", "ANY"),
+            ("Z", "Z"),
+            ("STEREOZ", "Z"),
+            ("E", "E"),
+            ("STEREOE", "E"),
+            ("CIS", "CIS"),
+            ("TRANS", "TRANS"),
+            ("ATROP_CW", "ATROP_CW"),
+            ("STEREOATROPCW", "ATROP_CW"),
+            ("ATROP_CCW", "ATROP_CCW"),
+            ("STEREOATROPCCW", "ATROP_CCW"),
         ],
     )?;
     add_int_enum(
@@ -616,14 +729,19 @@ fn add_public_enums(m: &Bound<'_, PyModule>) -> PyResult<()> {
             ("CHI_UNSPECIFIED", 0),
             ("CHI_TETRAHEDRAL_CW", 1),
             ("CHI_TETRAHEDRAL_CCW", 2),
-            ("CHI_TRIGONALBIPYRAMIDAL", 3),
+            ("CHI_OTHER", 3),
+            ("CHI_TETRAHEDRAL", 4),
+            ("CHI_ALLENE", 5),
+            ("CHI_SQUAREPLANAR", 6),
+            ("CHI_TRIGONALBIPYRAMIDAL", 7),
+            ("CHI_OCTAHEDRAL", 8),
         ],
     )?;
     add_int_enum_with_map_keys(
         m,
         "BatchErrorMode",
         "BATCH_ERROR_MODE_MAP",
-        &[("STRICT", 1, "strict"), ("KEEP_ERRORS", 2, "keep_errors")],
+        &[("RAISE", 1, "raise"), ("KEEP", 2, "keep")],
     )
 }
 
@@ -635,13 +753,14 @@ fn add_batch_validation_error_class(m: &Bound<'_, PyModule>) -> PyResult<()> {
 class BatchValidationError(ValueError):
     __module__ = "cosmolkit"
 
-    def __init__(self, message, error_count=0, reason=None):
+    def __init__(self, message, error_count=0, reason=None, record_errors=None):
         super().__init__(message)
         self.error_count = int(error_count)
         self.reason = reason
+        self._errors = list(record_errors or [])
 
     def errors(self):
-        return self.error_count
+        return list(self._errors)
 "#;
     py.import("builtins")?
         .getattr("exec")?
@@ -877,10 +996,10 @@ fn rdkit_bond_direction_from_name(name: &str) -> PyResult<cosmolkit_core::BondDi
 
 fn rdkit_bond_stereo_from_name(name: &str) -> PyResult<cosmolkit_core::BondStereo> {
     match name {
-        "NONE" => Ok(cosmolkit_core::BondStereo::None),
-        "ANY" => Ok(cosmolkit_core::BondStereo::Any),
-        "Z" | "STEREOCIS" => Ok(cosmolkit_core::BondStereo::Z),
-        "E" | "STEREOTRANS" => Ok(cosmolkit_core::BondStereo::E),
+        "NONE" | "STEREONONE" => Ok(cosmolkit_core::BondStereo::None),
+        "ANY" | "STEREOANY" => Ok(cosmolkit_core::BondStereo::Any),
+        "Z" | "STEREOZ" => Ok(cosmolkit_core::BondStereo::Z),
+        "E" | "STEREOE" => Ok(cosmolkit_core::BondStereo::E),
         "CIS" => Ok(cosmolkit_core::BondStereo::Cis),
         "TRANS" => Ok(cosmolkit_core::BondStereo::Trans),
         "ATROP_CW" => Ok(cosmolkit_core::BondStereo::AtropCw),
@@ -916,7 +1035,7 @@ struct Molecule {
 #[pyclass(from_py_object)]
 #[derive(Clone)]
 #[doc = r#"
-A protein-focused structural subset projected from BioStructure.
+A protein-focused structural value.
 
 ``Protein`` is the default high-level protein API. It keeps amino-acid
 residues and excludes ligands, nucleic acids, and waters by default.
@@ -1006,7 +1125,7 @@ struct Bond {
 #[doc = r#"
 A per-record batch processing error.
 
-Batch methods can keep invalid records when ``errors="keep_errors"`` is used. In
+Batch methods can keep invalid records when ``errors="keep"`` is used. In
 that case, ``MoleculeBatch.errors()`` returns ``BatchError`` objects describing
 the input index, operation, and message.
 "#]
@@ -1059,6 +1178,7 @@ metadata inspection, or chunked processing matter.
 "#]
 struct PySdfDataset {
     inner: cosmolkit_core::SdfDataset,
+    coordinate_mode: cosmolkit_core::SdfCoordinateMode,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
@@ -1080,6 +1200,7 @@ struct PySdfReader {
 #[pyclass(name = "SdfDatasetIterator", skip_from_py_object)]
 struct PySdfDatasetIterator {
     dataset: cosmolkit_core::SdfDataset,
+    coordinate_mode: cosmolkit_core::SdfCoordinateMode,
     position: usize,
 }
 
@@ -1087,6 +1208,7 @@ struct PySdfDatasetIterator {
 #[pyclass(name = "SdfBatchIterator", skip_from_py_object)]
 struct PySdfBatchIterator {
     dataset: cosmolkit_core::SdfDataset,
+    coordinate_mode: cosmolkit_core::SdfCoordinateMode,
     position: usize,
     size: usize,
     errors: BatchErrorMode,
@@ -1126,6 +1248,8 @@ structured errors for records that could not be exported.
 struct PyBatchExportReport {
     written: usize,
     skipped: usize,
+    failed: usize,
+    errors: Vec<PyBatchError>,
 }
 
 impl From<cosmolkit_core::BatchExportReport> for PyBatchExportReport {
@@ -1133,6 +1257,8 @@ impl From<cosmolkit_core::BatchExportReport> for PyBatchExportReport {
         Self {
             written: report.written,
             skipped: report.skipped,
+            failed: report.failed,
+            errors: report.errors.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -1150,7 +1276,7 @@ transform molecules return a new batch.
 Parameters such as ``errors`` control invalid-record handling:
 
 - ``"raise"`` raises an exception when any record fails.
-- ``"keep"`` / ``"keep_errors"`` keeps failed records and exposes them through
+- ``"keep"`` keeps failed records and exposes them through
   ``errors()``. Export methods write valid records and count invalid records as
   skipped in the returned report.
 
@@ -1337,6 +1463,11 @@ fn sdf_record_py(index: usize, record: cosmolkit_core::io::sdf::SdfRecord) -> Py
 }
 
 fn sdf_indices_from_key(len: usize, key: &Bound<'_, PyAny>) -> PyResult<Result<Vec<usize>, usize>> {
+    if key.is_exact_instance_of::<PyBool>() {
+        return Err(PyTypeError::new_err(
+            "SdfDataset scalar boolean indices are not supported; use an integer index, slice, integer list, or boolean mask sequence",
+        ));
+    }
     if let Ok(index) = key.extract::<isize>() {
         let len_i = len as isize;
         let index = if index < 0 { len_i + index } else { index };
@@ -1355,9 +1486,41 @@ fn sdf_indices_from_key(len: usize, key: &Bound<'_, PyAny>) -> PyResult<Result<V
         }
         return Ok(Ok(out));
     }
-    let raw_indices = key.extract::<Vec<isize>>()?;
-    let mut out = Vec::with_capacity(raw_indices.len());
-    for index in raw_indices {
+    let items = key.extract::<Vec<Py<PyAny>>>()?;
+    if items.is_empty() {
+        return Ok(Ok(Vec::new()));
+    }
+
+    let py = key.py();
+    let bool_mask = items
+        .iter()
+        .all(|item| item.bind(py).is_exact_instance_of::<PyBool>());
+    if bool_mask {
+        if items.len() != len {
+            return Err(PyIndexError::new_err(format!(
+                "boolean mask length {} does not match SdfDataset length {}",
+                items.len(),
+                len
+            )));
+        }
+        let mut out = Vec::new();
+        for (index, item) in items.iter().enumerate() {
+            if item.bind(py).extract::<bool>()? {
+                out.push(index);
+            }
+        }
+        return Ok(Ok(out));
+    }
+
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        let item = item.bind(py);
+        if item.is_exact_instance_of::<PyBool>() {
+            return Err(PyTypeError::new_err(
+                "SdfDataset index lists must not mix bool and int values",
+            ));
+        }
+        let index = item.extract::<isize>()?;
         let len_i = len as isize;
         let index = if index < 0 { len_i + index } else { index };
         if index < 0 || index >= len_i {
@@ -1370,14 +1533,19 @@ fn sdf_indices_from_key(len: usize, key: &Bound<'_, PyAny>) -> PyResult<Result<V
 
 fn sdf_batch_from_range(
     dataset: &cosmolkit_core::SdfDataset,
+    coordinate_mode: cosmolkit_core::SdfCoordinateMode,
     start: usize,
     end: usize,
     errors: BatchErrorMode,
     progress_bar: Option<&cosmolkit_core::BatchProgressBar>,
 ) -> Result<cosmolkit_core::MoleculeBatch, cosmolkit_core::BatchValidationError> {
     let mut records = Vec::with_capacity(end.saturating_sub(start));
+    let params = cosmolkit_core::SdfReadParams {
+        coordinate_mode,
+        ..Default::default()
+    };
     for index in start..end {
-        match dataset.record(index) {
+        match dataset.record_with_params(index, params) {
             Ok(record) => records.push(BatchRecord::Molecule(record.molecule)),
             Err(error) => {
                 let record_error = BatchRecordError::new(index, "read_sdf", error.to_string());
@@ -1397,11 +1565,16 @@ fn sdf_batch_from_range(
 
 fn sdf_batch_from_indices(
     dataset: &cosmolkit_core::SdfDataset,
+    coordinate_mode: cosmolkit_core::SdfCoordinateMode,
     indices: Vec<usize>,
 ) -> Result<cosmolkit_core::MoleculeBatch, cosmolkit_core::BatchValidationError> {
     let mut records = Vec::with_capacity(indices.len());
+    let params = cosmolkit_core::SdfReadParams {
+        coordinate_mode,
+        ..Default::default()
+    };
     for index in indices {
-        match dataset.record(index) {
+        match dataset.record_with_params(index, params) {
             Ok(record) => records.push(BatchRecord::Molecule(record.molecule)),
             Err(error) => records.push(BatchRecord::Error(BatchRecordError::new(
                 index,
@@ -1464,6 +1637,24 @@ impl PySdfRecordMetadata {
     fn byte_len(&self) -> u64 {
         self.inner.byte_len
     }
+
+    fn byte_range(&self) -> (u64, u64) {
+        (
+            self.inner.byte_offset,
+            self.inner.byte_offset + self.inner.byte_len,
+        )
+    }
+
+    fn line_range(&self) -> (usize, usize) {
+        (
+            self.inner.line_offset,
+            self.inner.line_offset + self.inner.line_len,
+        )
+    }
+
+    fn title(&self) -> Option<String> {
+        self.inner.title.clone()
+    }
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
@@ -1472,6 +1663,10 @@ impl PySdfRecordMetadata {
 impl PySdfRecord {
     fn index(&self) -> usize {
         self.index
+    }
+
+    fn title(&self) -> Option<String> {
+        self.molecule.properties().name().map(ToOwned::to_owned)
     }
 
     fn molecule(&self) -> Molecule {
@@ -1496,14 +1691,16 @@ impl PySdfRecord {
 #[pymethods]
 impl PySdfDataset {
     #[classmethod]
-    #[pyo3(signature = (path, index=None, build=None))]
+    #[pyo3(signature = (path, index=None, build=None, coordinate_dim="auto"))]
     fn open(
         _cls: &Bound<'_, PyType>,
         path: &str,
         index: Option<&Bound<'_, PyAny>>,
         build: Option<&str>,
+        coordinate_dim: &str,
     ) -> PyResult<Self> {
         let expanded_path = expand_user_path(path)?;
+        let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
         if let Some(build) = build
             && !matches!(build, "auto" | "always" | "never")
         {
@@ -1524,10 +1721,16 @@ impl PySdfDataset {
         }
         let inner = cosmolkit_core::SdfDataset::open_with_params(
             expanded_path,
-            cosmolkit_core::io::sdf::SdfReadParams::default(),
+            cosmolkit_core::SdfReadParams {
+                coordinate_mode,
+                ..Default::default()
+            },
         )
         .map_err(|err| PyValueError::new_err(format!("SdfDataset.open failed: {err}")))?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner,
+            coordinate_mode,
+        })
     }
 
     fn __len__(&self) -> usize {
@@ -1557,14 +1760,23 @@ impl PySdfDataset {
     fn __getitem__(&self, py: Python<'_>, key: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         match sdf_indices_from_key(self.inner.len(), key)? {
             Err(index) => {
-                let record = self.inner.record(index).map_err(|err| {
-                    PyValueError::new_err(format!("SdfDataset read failed: {err}"))
-                })?;
+                let record = self
+                    .inner
+                    .record_with_params(
+                        index,
+                        cosmolkit_core::SdfReadParams {
+                            coordinate_mode: self.coordinate_mode,
+                            ..Default::default()
+                        },
+                    )
+                    .map_err(|err| {
+                        PyValueError::new_err(format!("SdfDataset read failed: {err}"))
+                    })?;
                 Ok(Py::new(py, sdf_record_py(index, record))?.into_any())
             }
             Ok(indices) => {
-                let inner =
-                    sdf_batch_from_indices(&self.inner, indices).map_err(batch_validation_pyerr)?;
+                let inner = sdf_batch_from_indices(&self.inner, self.coordinate_mode, indices)
+                    .map_err(batch_validation_pyerr)?;
                 Ok(Py::new(
                     py,
                     MoleculeBatch {
@@ -1581,6 +1793,7 @@ impl PySdfDataset {
     fn __iter__(&self) -> PySdfDatasetIterator {
         PySdfDatasetIterator {
             dataset: self.inner.clone(),
+            coordinate_mode: self.coordinate_mode,
             position: 0,
         }
     }
@@ -1608,6 +1821,7 @@ impl PySdfDataset {
             maybe_batch_progress_bar(progress_bar, self.inner.len(), "read_sdf_batches");
         Ok(PySdfBatchIterator {
             dataset: self.inner.clone(),
+            coordinate_mode: self.coordinate_mode,
             position: 0,
             size,
             errors,
@@ -1622,11 +1836,11 @@ impl PySdfDataset {
 #[pymethods]
 impl PySdfReader {
     #[classmethod]
-    #[pyo3(signature = (path))]
-    fn open(_cls: &Bound<'_, PyType>, path: &str) -> PyResult<Self> {
+    #[pyo3(signature = (path, coordinate_dim="auto"))]
+    fn open(_cls: &Bound<'_, PyType>, path: &str, coordinate_dim: &str) -> PyResult<Self> {
         Ok(Self {
             path: expand_user_path(path)?,
-            coordinate_mode: cosmolkit_core::io::sdf::SdfCoordinateMode::Preserve,
+            coordinate_mode: parse_coordinate_mode(Some(coordinate_dim))?,
         })
     }
 
@@ -1678,7 +1892,13 @@ impl PySdfDatasetIterator {
         self.position += 1;
         let record = self
             .dataset
-            .record(index)
+            .record_with_params(
+                index,
+                cosmolkit_core::SdfReadParams {
+                    coordinate_mode: self.coordinate_mode,
+                    ..Default::default()
+                },
+            )
             .map_err(|err| PyValueError::new_err(format!("SdfDataset read failed: {err}")))?;
         Ok(Some(sdf_record_py(index, record)))
     }
@@ -1705,6 +1925,7 @@ impl PySdfBatchIterator {
         self.position = end;
         let inner = sdf_batch_from_range(
             &self.dataset,
+            self.coordinate_mode,
             start,
             end,
             self.errors,
@@ -1751,7 +1972,7 @@ impl PyBatchExportReport {
 Return the total number of records considered for export.
 "#]
     fn total(&self) -> usize {
-        self.written + self.skipped
+        self.written + self.skipped + self.failed
     }
 
     #[doc = r#"
@@ -1765,20 +1986,20 @@ Return the number of records exported successfully.
 Return the number of records that failed during export.
 "#]
     fn failed(&self) -> usize {
-        self.skipped
+        self.failed
     }
 
     #[doc = r#"
 Return structured errors for failed records.
 "#]
     fn errors(&self) -> Vec<PyBatchError> {
-        Vec::new()
+        self.errors.clone()
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "BatchExportReport(written={}, skipped={})",
-            self.written, self.skipped
+            "BatchExportReport(written={}, skipped={}, failed={})",
+            self.written, self.skipped, self.failed
         )
     }
 }
@@ -1799,7 +2020,7 @@ smiles : list[str]
 sanitize : bool, optional
     Optional molecule preparation flag. COSMolKit applies the available
     preparation behavior during construction.
-errors : {"raise", "keep", "keep_errors"}, optional
+errors : {"raise", "keep"}, optional
     Invalid-record handling mode. The default is ``"raise"``.
 n_jobs : int, optional
     Number of worker threads to use. ``None`` uses the default scheduler.
@@ -1830,7 +2051,7 @@ MoleculeBatch
     }
 
     #[classmethod]
-    #[pyo3(signature = (sdf_text, errors=None, n_jobs=None))]
+    #[pyo3(signature = (sdf_text, errors=None, n_jobs=None, coordinate_dim="auto"))]
     #[doc = r#"
 Read all molecule records from an SDF string.
 
@@ -1838,23 +2059,27 @@ Parameters
 ----------
 sdf_text : str
     SDF text containing one or more records.
-errors : {"raise", "keep", "keep_errors"}, optional
+errors : {"raise", "keep"}, optional
     Invalid-record handling mode. The default is ``"raise"``.
 n_jobs : int, optional
     Number of worker threads to use.
+coordinate_dim : {"auto", "2d", "3d"}, optional
+    Coordinate interpretation mode. ``"auto"`` preserves the molfile header.
 "#]
     fn read_sdf_records_from_str(
         _cls: &Bound<'_, PyType>,
         sdf_text: &str,
         errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
+        coordinate_dim: &str,
     ) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
+        let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
         let sdf_text = sdf_text.to_owned();
         run_batch_with_n_jobs(n_jobs, move || {
             cosmolkit_core::MoleculeBatch::read_sdf_records_from_str(
                 &sdf_text,
-                cosmolkit_core::io::sdf::SdfCoordinateMode::Preserve,
+                coordinate_mode,
                 mode,
             )
             .map(|inner| Self {
@@ -1867,7 +2092,7 @@ n_jobs : int, optional
     }
 
     #[classmethod]
-    #[pyo3(signature = (path, errors=None, n_jobs=None, progress_bar=false))]
+    #[pyo3(signature = (path, errors=None, n_jobs=None, progress_bar=false, coordinate_dim="auto"))]
     #[doc = r#"
 Read all molecule records from an SDF file into a batch.
 
@@ -1875,13 +2100,15 @@ Parameters
 ----------
 path : str
     SDF file path.
-errors : {"raise", "keep", "keep_errors"}, optional
+errors : {"raise", "keep"}, optional
     Invalid-record handling mode. The default is ``"raise"``.
 n_jobs : int, optional
     Number of worker threads to use for batch construction.
 progress_bar : bool, optional
     Show a Rust-side progress bar while records are parsed. This builds a
     lightweight record index first so the total is known.
+coordinate_dim : {"auto", "2d", "3d"}, optional
+    Coordinate interpretation mode. ``"auto"`` preserves the molfile header.
 "#]
     fn read_sdf(
         _cls: &Bound<'_, PyType>,
@@ -1889,19 +2116,30 @@ progress_bar : bool, optional
         errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
         progress_bar: bool,
+        coordinate_dim: &str,
     ) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
+        let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
         let expanded_path = expand_user_path(path)?;
         if progress_bar {
             let dataset = cosmolkit_core::SdfDataset::open_with_params(
                 &expanded_path,
-                cosmolkit_core::io::sdf::SdfReadParams::default(),
+                cosmolkit_core::SdfReadParams {
+                    coordinate_mode,
+                    ..Default::default()
+                },
             )
             .map_err(|err| PyValueError::new_err(format!("read_sdf index failed: {err}")))?;
             validate_n_jobs(n_jobs)?;
             return with_batch_progress_bar(true, dataset.len(), "read_sdf", |callback| {
-                cosmolkit_core::MoleculeBatch::read_sdf_dataset_with_progress(
-                    &dataset, mode, callback,
+                cosmolkit_core::MoleculeBatch::read_sdf_dataset_with_params_and_progress(
+                    &dataset,
+                    cosmolkit_core::SdfReadParams {
+                        coordinate_mode,
+                        ..Default::default()
+                    },
+                    mode,
+                    callback,
                 )
                 .map(|inner| Self {
                     inner,
@@ -1913,20 +2151,15 @@ progress_bar : bool, optional
         }
         run_batch_with_n_jobs(n_jobs, move || {
             let file = File::open(&expanded_path).map_err(|error| {
-                cosmolkit_core::BatchValidationError {
-                    errors: 1,
-                    reason: Some(cosmolkit_core::UnsupportedFeatureError {
-                        feature: "read_sdf",
-                        reason: Box::leak(
-                            format!("open failed for {}: {error}", expanded_path.display())
-                                .into_boxed_str(),
-                        ),
-                    }),
-                }
+                cosmolkit_core::BatchValidationError::simple(
+                    1,
+                    "read_sdf",
+                    format!("open failed for {}: {error}", expanded_path.display()),
+                )
             })?;
             cosmolkit_core::MoleculeBatch::read_sdf_records_from_reader(
                 BufReader::new(file),
-                cosmolkit_core::io::sdf::SdfCoordinateMode::Preserve,
+                coordinate_mode,
                 mode,
             )
             .map(|inner| Self {
@@ -2070,7 +2303,7 @@ Parameters
 ----------
 strict : bool, optional
     Optional strictness flag for available validation steps.
-errors : {"raise", "keep", "keep_errors"}, optional
+errors : {"raise", "keep"}, optional
     Invalid-record handling mode.
 n_jobs : int, optional
     Number of worker threads to use.
@@ -2624,7 +2857,7 @@ size : tuple[int, int], optional
     Output image size as ``(width, height)``.
 n_jobs : int, optional
     Number of worker threads to use.
-errors : {"raise", "keep", "keep_errors"}, optional
+errors : {"raise", "keep"}, optional
     Export error handling mode.
 report_path : str, optional
     Write a JSON or CSV error report.
@@ -2645,13 +2878,14 @@ BatchExportReport
         n_jobs: Option<usize>,
         errors: Option<&Bound<'_, PyAny>>,
         report_path: Option<&str>,
-        filenames: Option<Vec<String>>,
+        filenames: Option<Vec<Option<String>>>,
         progress_bar: Option<bool>,
     ) -> PyResult<PyBatchExportReport> {
         let mode = parse_batch_error_mode(errors)?;
         let image_format = format.unwrap_or("png").to_string();
         let (width, height) = size.unwrap_or((300, 300));
         let out_dir = expand_user_path(out_dir)?;
+        let filenames = complete_batch_filenames(filenames, self.inner.len(), &image_format)?;
         let inner = &self.inner;
         let progress_bar = maybe_batch_progress_bar(
             self.effective_progress_bar(progress_bar),
@@ -2695,7 +2929,7 @@ path : str
     Output SDF path.
 format : {"auto", "v2000", "v3000"}, optional
     SDF output format.
-errors : {"raise", "keep", "keep_errors"}, optional
+errors : {"raise", "keep"}, optional
     Export error handling mode.
 n_jobs : int, optional
     Number of worker threads to use.
@@ -2749,7 +2983,7 @@ out_dir : str
     Output directory.
 format : {"auto", "v2000", "v3000"}, optional
     SDF output format.
-errors : {"raise", "keep", "keep_errors"}, optional
+errors : {"raise", "keep"}, optional
     Export error handling mode.
 n_jobs : int, optional
     Number of worker threads to use.
@@ -2766,12 +3000,13 @@ filenames : list[str | None], optional
         errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
         report_path: Option<&str>,
-        filenames: Option<Vec<String>>,
+        filenames: Option<Vec<Option<String>>>,
         progress_bar: Option<bool>,
     ) -> PyResult<PyBatchExportReport> {
         let mode = parse_batch_error_mode(errors)?;
         let sdf_format = parse_sdf_format(format)?;
         let out_dir = expand_user_path(out_dir)?;
+        let filenames = complete_batch_filenames(filenames, self.inner.len(), "sdf")?;
         let inner = &self.inner;
         let progress_bar = maybe_batch_progress_bar(
             self.effective_progress_bar(progress_bar),
@@ -2896,6 +3131,102 @@ Use ``Molecule.from_smiles("CCO")`` to create a molecule and
     }
 
     #[classmethod]
+    #[pyo3(signature = (text, *, sanitize=true, remove_hs=true, flavor=0, proximity_bonding=true))]
+    #[doc = r#"
+Create a molecule from a PDB block.
+
+This follows the COSMolKit core PDB molecule conversion profile, which is
+designed to match RDKit ``Chem.MolFromPDBBlock`` for modeled molecule state.
+Structural parsing is handled by COSMolKit's structure reader before molecule
+conversion.
+
+Parameters
+----------
+text : str
+    PDB block text.
+sanitize : bool
+    Whether to sanitize after PDB molecule construction.
+remove_hs : bool
+    Whether sanitization should remove hydrogens.
+flavor : int
+    RDKit-compatible PDB parser flavor bit mask.
+proximity_bonding : bool
+    Whether to add proximity bonds using RDKit's PDB proximity-bond algorithm.
+
+Returns
+-------
+Molecule
+    Parsed molecule.
+"#]
+    fn from_pdb_block(
+        _cls: &Bound<'_, PyType>,
+        text: &str,
+        sanitize: bool,
+        remove_hs: bool,
+        flavor: u32,
+        proximity_bonding: bool,
+    ) -> PyResult<Self> {
+        let profile = cosmolkit_core::RdkitPdbMolProfile {
+            sanitize,
+            remove_hs,
+            flavor,
+            proximity_bonding,
+        };
+        let inner = cosmolkit_core::Molecule::from_pdb_block_with_options(text, profile)
+            .map_err(pdb_molecule_pyerr)?;
+        Ok(Self { inner })
+    }
+
+    #[classmethod]
+    #[pyo3(signature = (text, *, sanitize=true, remove_hs=true, flavor=0, proximity_bonding=true))]
+    #[doc = r#"
+Create a molecule from an mmCIF block.
+
+This uses COSMolKit's mmCIF structure reader, then applies the same
+RDKit-compatible molecule conversion profile used by ``Molecule.from_pdb_block``.
+RDKit does not provide a direct ``Chem.MolFromMMCIFBlock`` oracle; this API is a
+COSMolKit mmCIF structural reader layered into the RDKit-compatible PDB molecule
+conversion state.
+
+Parameters
+----------
+text : str
+    mmCIF block text.
+sanitize : bool
+    Whether to sanitize after molecule construction.
+remove_hs : bool
+    Whether sanitization should remove hydrogens.
+flavor : int
+    RDKit-compatible PDB parser flavor bit mask applied during molecule
+    conversion.
+proximity_bonding : bool
+    Whether to add proximity bonds using RDKit's PDB proximity-bond algorithm.
+
+Returns
+-------
+Molecule
+    Parsed molecule.
+"#]
+    fn from_mmcif_block(
+        _cls: &Bound<'_, PyType>,
+        text: &str,
+        sanitize: bool,
+        remove_hs: bool,
+        flavor: u32,
+        proximity_bonding: bool,
+    ) -> PyResult<Self> {
+        let profile = cosmolkit_core::RdkitPdbMolProfile {
+            sanitize,
+            remove_hs,
+            flavor,
+            proximity_bonding,
+        };
+        let inner = cosmolkit_core::Molecule::from_mmcif_block_with_options(text, profile)
+            .map_err(pdb_molecule_pyerr)?;
+        Ok(Self { inner })
+    }
+
+    #[classmethod]
     #[pyo3(signature = (rdmol, sanitize=None))]
     #[doc = r#"
 Create a molecule from an RDKit molecule object.
@@ -2903,7 +3234,7 @@ Create a molecule from an RDKit molecule object.
 Parameters
 ----------
 rdmol : object
-    An object compatible with RDKit's molecule API.
+    An object exposing RDKit's molecule API.
 sanitize : bool, optional
     Optional molecule preparation flag.
 
@@ -3052,7 +3383,7 @@ Molecule
     }
 
     #[classmethod]
-    #[pyo3(signature = (path, sanitize=None))]
+    #[pyo3(signature = (path, sanitize=None, coordinate_dim="auto"))]
     #[doc = r#"
 Read the first molecule record from an SDF file.
 
@@ -3062,16 +3393,21 @@ path : str
     SDF file path.
 sanitize : bool, optional
     Optional molecule preparation flag.
+coordinate_dim : {"auto", "2d", "3d"}, optional
+    Coordinate interpretation mode. ``"auto"`` preserves the molfile header.
 "#]
-    fn read_sdf(_cls: &Bound<'_, PyType>, path: &str, sanitize: Option<bool>) -> PyResult<Self> {
+    fn read_sdf(
+        _cls: &Bound<'_, PyType>,
+        path: &str,
+        sanitize: Option<bool>,
+        coordinate_dim: &str,
+    ) -> PyResult<Self> {
         reject_unsanitized_mol_reader(sanitize)?;
         let expanded_path = expand_user_path(path)?;
+        let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
         let file = File::open(&expanded_path)
             .map_err(|e| PyValueError::new_err(format!("read_sdf open failed: {e}")))?;
-        let mut reader = SdfReader::with_coordinate_mode(
-            BufReader::new(file),
-            cosmolkit_core::io::sdf::SdfCoordinateMode::Preserve,
-        );
+        let mut reader = SdfReader::with_coordinate_mode(BufReader::new(file), coordinate_mode);
         let Some(record) = reader
             .next_record()
             .map_err(|e| PyValueError::new_err(format!("read_sdf parse failed: {e:?}")))?
@@ -3084,7 +3420,7 @@ sanitize : bool, optional
     }
 
     #[classmethod]
-    #[pyo3(signature = (path, sanitize=None))]
+    #[pyo3(signature = (path, sanitize=None, coordinate_dim="auto"))]
     #[doc = r#"
 Read one molecule from an MDL molfile.
 
@@ -3094,19 +3430,33 @@ path : str
     Molfile path.
 sanitize : bool, optional
     Optional molecule preparation flag.
+coordinate_dim : {"auto", "2d", "3d"}, optional
+    Coordinate interpretation mode. ``"auto"`` preserves the molfile header.
 "#]
-    fn read_mol(_cls: &Bound<'_, PyType>, path: &str, sanitize: Option<bool>) -> PyResult<Self> {
+    fn read_mol(
+        _cls: &Bound<'_, PyType>,
+        path: &str,
+        sanitize: Option<bool>,
+        coordinate_dim: &str,
+    ) -> PyResult<Self> {
         reject_unsanitized_mol_reader(sanitize)?;
         let expanded_path = expand_user_path(path)?;
-        let record = cosmolkit_core::io::molfile::read_mol_file(&expanded_path)
-            .map_err(|e| PyValueError::new_err(format!("read_mol failed: {e:?}")))?;
+        let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
+        let record = cosmolkit_core::io::molfile::read_mol_file_with_params(
+            &expanded_path,
+            cosmolkit_core::SdfReadParams {
+                coordinate_mode,
+                ..Default::default()
+            },
+        )
+        .map_err(|e| PyValueError::new_err(format!("read_mol failed: {e}")))?;
         Ok(Self {
             inner: record.molecule,
         })
     }
 
     #[classmethod]
-    #[pyo3(signature = (mol_text, sanitize=None))]
+    #[pyo3(signature = (mol_text, sanitize=None, coordinate_dim="auto"))]
     #[doc = r#"
 Read one molecule from an MDL molfile string.
 "#]
@@ -3114,17 +3464,25 @@ Read one molecule from an MDL molfile string.
         _cls: &Bound<'_, PyType>,
         mol_text: &str,
         sanitize: Option<bool>,
+        coordinate_dim: &str,
     ) -> PyResult<Self> {
         reject_unsanitized_mol_reader(sanitize)?;
-        let record = cosmolkit_core::io::molfile::read_mol_record_from_str(mol_text)
-            .map_err(|e| PyValueError::new_err(format!("read_mol_from_str failed: {e:?}")))?;
+        let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
+        let record = cosmolkit_core::io::molfile::read_mol_record_from_str_with_params(
+            mol_text,
+            cosmolkit_core::SdfReadParams {
+                coordinate_mode,
+                ..Default::default()
+            },
+        )
+        .map_err(|e| PyValueError::new_err(format!("read_mol_from_str failed: {e:?}")))?;
         Ok(Self {
             inner: record.molecule,
         })
     }
 
     #[classmethod]
-    #[pyo3(signature = (sdf_text, sanitize=None))]
+    #[pyo3(signature = (sdf_text, sanitize=None, coordinate_dim="auto"))]
     #[doc = r#"
 Read one molecule from an SDF record string.
 "#]
@@ -3132,10 +3490,15 @@ Read one molecule from an SDF record string.
         _cls: &Bound<'_, PyType>,
         sdf_text: &str,
         sanitize: Option<bool>,
+        coordinate_dim: &str,
     ) -> PyResult<Self> {
         reject_unsanitized_mol_reader(sanitize)?;
-        let record = cosmolkit_core::io::sdf::read_sdf_from_str(sdf_text)
-            .map_err(|e| PyValueError::new_err(format!("read_sdf_from_str failed: {e:?}")))?;
+        let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
+        let record = cosmolkit_core::io::sdf::read_sdf_from_str_with_coordinate_mode(
+            sdf_text,
+            coordinate_mode,
+        )
+        .map_err(|e| PyValueError::new_err(format!("read_sdf_from_str failed: {e:?}")))?;
         Ok(Self {
             inner: record.molecule,
         })
@@ -3358,7 +3721,8 @@ The z column is zero-filled.
             ));
         };
         let rows: Vec<Vec<f64>> = coords.iter().map(|p| vec![p[0], p[1], 0.0]).collect();
-        PyArray2::from_vec2(py, &rows).map(|array| array.into_any())
+        PyArray2::from_vec2(py, &rows)
+            .map(|array| array.into_any())
             .map_err(|err| PyValueError::new_err(format!("Molecule.coords_2d failed: {err}")))
     }
 
@@ -3382,7 +3746,8 @@ Return 3D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
             .iter()
             .map(|p| vec![p[0], p[1], p[2]])
             .collect();
-        PyArray2::from_vec2(py, &rows).map(|array| array.into_any())
+        PyArray2::from_vec2(py, &rows)
+            .map(|array| array.into_any())
             .map_err(|err| PyValueError::new_err(format!("Molecule.coords_3d failed: {err}")))
     }
 
@@ -3397,8 +3762,8 @@ Return the distance-geometry bounds matrix as a NumPy array.
         PyArray2::from_vec2(py, &rows)
             .map(|array| array.into_any())
             .map_err(|err| {
-            PyValueError::new_err(format!("Molecule.dg_bounds_matrix failed: {err}"))
-        })
+                PyValueError::new_err(format!("Molecule.dg_bounds_matrix failed: {err}"))
+            })
     }
 
     #[pyo3(signature = (width=300, height=300))]
@@ -3976,16 +4341,6 @@ Return a PDB block string.
 "#]
     fn to_pdb_block(&self, conf_id: i32, flavor: u32) -> String {
         self.inner.to_pdb_block(conf_id, flavor)
-    }
-
-    #[doc = r#"
-Return the prepared drawing parity snapshot.
-"#]
-    fn prepared_for_drawing_parity(&self) -> PyResult<PreparedDrawMolecule> {
-        self.inner
-            .prepared_for_drawing_parity()
-            .map(Into::into)
-            .map_err(svg_draw_pyerr)
     }
 
     #[doc = r#"
@@ -4767,138 +5122,6 @@ Return the Morgan additional output collected by ``fingerprint_morgan_with_outpu
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(skip_from_py_object)]
 #[derive(Clone)]
-struct PreparedDrawAtom {
-    index: usize,
-    atomic_number: usize,
-    x: f64,
-    y: f64,
-}
-
-impl From<cosmolkit_core::PreparedDrawAtom> for PreparedDrawAtom {
-    fn from(value: cosmolkit_core::PreparedDrawAtom) -> Self {
-        Self {
-            index: value.index,
-            atomic_number: value.atomic_number as usize,
-            x: value.x,
-            y: value.y,
-        }
-    }
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
-#[pymethods]
-impl PreparedDrawAtom {
-    fn index(&self) -> usize {
-        self.index
-    }
-    fn atomic_number(&self) -> usize {
-        self.atomic_number
-    }
-    fn x(&self) -> f64 {
-        self.x
-    }
-    fn y(&self) -> f64 {
-        self.y
-    }
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(skip_from_py_object)]
-#[derive(Clone)]
-struct PreparedDrawBond {
-    index: usize,
-    begin_atom: usize,
-    end_atom: usize,
-    bond_order_name: String,
-    bond_order_code: i64,
-    is_aromatic: bool,
-    direction_name: String,
-    direction_code: i64,
-    rdkit_direction_name: String,
-}
-
-impl From<cosmolkit_core::PreparedDrawBond> for PreparedDrawBond {
-    fn from(value: cosmolkit_core::PreparedDrawBond) -> Self {
-        Self {
-            index: value.index,
-            begin_atom: value.begin_atom,
-            end_atom: value.end_atom,
-            bond_order_name: bond_order_name(value.bond_order).to_string(),
-            bond_order_code: bond_order_code(value.bond_order),
-            is_aromatic: value.is_aromatic,
-            direction_name: bond_direction_name(value.direction).to_string(),
-            direction_code: bond_direction_code(value.direction),
-            rdkit_direction_name: value.rdkit_direction_name,
-        }
-    }
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
-#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
-#[pymethods]
-impl PreparedDrawBond {
-    fn index(&self) -> usize {
-        self.index
-    }
-    fn begin_atom(&self) -> usize {
-        self.begin_atom
-    }
-    fn end_atom(&self) -> usize {
-        self.end_atom
-    }
-    #[gen_stub(override_return_type(type_repr = "BondOrder"))]
-    fn bond_order<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        enum_member(py, "BondOrder", self.bond_order_code)
-    }
-    fn bond_order_name(&self) -> String {
-        self.bond_order_name.clone()
-    }
-    fn is_aromatic(&self) -> bool {
-        self.is_aromatic
-    }
-    #[gen_stub(override_return_type(type_repr = "BondDirection"))]
-    fn direction<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        enum_member(py, "BondDirection", self.direction_code)
-    }
-    fn direction_name(&self) -> String {
-        self.direction_name.clone()
-    }
-    fn rdkit_direction_name(&self) -> String {
-        self.rdkit_direction_name.clone()
-    }
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(skip_from_py_object)]
-#[derive(Clone)]
-struct PreparedDrawMolecule {
-    atoms: Vec<PreparedDrawAtom>,
-    bonds: Vec<PreparedDrawBond>,
-}
-
-impl From<cosmolkit_core::PreparedDrawMolecule> for PreparedDrawMolecule {
-    fn from(value: cosmolkit_core::PreparedDrawMolecule) -> Self {
-        Self {
-            atoms: value.atoms.into_iter().map(Into::into).collect(),
-            bonds: value.bonds.into_iter().map(Into::into).collect(),
-        }
-    }
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
-#[pymethods]
-impl PreparedDrawMolecule {
-    fn atoms(&self) -> Vec<PreparedDrawAtom> {
-        self.atoms.clone()
-    }
-    fn bonds(&self) -> Vec<PreparedDrawBond> {
-        self.bonds.clone()
-    }
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(skip_from_py_object)]
-#[derive(Clone)]
 struct SubstructMatchResult {
     atom_mapping: Vec<usize>,
     bond_mapping: Vec<usize>,
@@ -5003,9 +5226,6 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Fingerprint>()?;
     m.add_class::<MorganAdditionalOutput>()?;
     m.add_class::<MorganFingerprintResult>()?;
-    m.add_class::<PreparedDrawAtom>()?;
-    m.add_class::<PreparedDrawBond>()?;
-    m.add_class::<PreparedDrawMolecule>()?;
     m.add_class::<SubstructMatchResult>()?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(mol_to_binary, m)?)?;

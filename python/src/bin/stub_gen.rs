@@ -23,6 +23,8 @@ fn main() -> Result<()> {
     text = expose_batch_validation_error(text);
     text = expose_batch_error_mode_inputs(text);
     text = expose_batch_getitem_overloads(text);
+    text = expose_sdf_dataset_getitem_overloads(text);
+    text = expose_module_functions(text);
     fs::write(pyi_path, text)?;
 
     Ok(())
@@ -60,6 +62,61 @@ fn expose_batch_getitem_overloads(mut text: String) -> String {
     text
 }
 
+fn expose_sdf_dataset_getitem_overloads(mut text: String) -> String {
+    let overloads = r#"    @typing.overload
+    def __getitem__(self, index: builtins.int) -> SdfRecord: ...
+    @typing.overload
+    def __getitem__(self, index: builtins.slice) -> MoleculeBatch: ...
+    @typing.overload
+    def __getitem__(self, index: typing.Sequence[builtins.bool]) -> MoleculeBatch: ...
+    @typing.overload
+    def __getitem__(self, index: typing.Sequence[builtins.int]) -> MoleculeBatch: ..."#;
+    text = text.replace(
+        "    def __getitem__(self, key: typing.Any) -> typing.Union[SdfRecord, MoleculeBatch]: ...",
+        overloads,
+    );
+    text
+}
+
+fn expose_module_functions(mut text: String) -> String {
+    for name in [
+        "__version__",
+        "version",
+        "mol_to_binary",
+        "mol_from_binary",
+        "has_substruct_match",
+        "get_substruct_match",
+        "get_substruct_matches",
+        "get_substruct_matches_with_params",
+    ] {
+        let export = format!("    \"{name}\",\n");
+        if !text.contains(&export) {
+            text = text.replace(
+                "    \"SubstructMatchResult\",\n",
+                &format!("    \"SubstructMatchResult\",\n{export}"),
+            );
+        }
+    }
+
+    if !text.contains("__version__: builtins.str") {
+        let declarations = r#"__version__: builtins.str
+def version() -> builtins.str: ...
+def mol_to_binary(mol: Molecule) -> bytes: ...
+def mol_from_binary(data: bytes) -> Molecule: ...
+def has_substruct_match(mol: Molecule, query: Molecule) -> builtins.bool: ...
+def get_substruct_match(mol: Molecule, query: Molecule) -> typing.Optional[SubstructMatchResult]: ...
+def get_substruct_matches(mol: Molecule, query: Molecule) -> builtins.list[SubstructMatchResult]: ...
+def get_substruct_matches_with_params(mol: Molecule, query: Molecule, max_matches: builtins.int = ..., uniquify: builtins.bool = ...) -> builtins.list[SubstructMatchResult]: ...
+
+"#;
+        text = text.replace(
+            "@typing.final\nclass SubstructMatchResult:",
+            &format!("{declarations}@typing.final\nclass SubstructMatchResult:"),
+        );
+    }
+    text
+}
+
 fn expose_chem_enums(mut text: String) -> String {
     if !text.contains("import enum\n") {
         text = text.replace("import builtins\n", "import builtins\nimport enum\n");
@@ -71,13 +128,11 @@ fn expose_chem_enums(mut text: String) -> String {
         "BondStereo",
         "ChiralTag",
         "BatchErrorMode",
-        "BatchErrorType",
         "BOND_ORDER_MAP",
         "BOND_DIRECTION_MAP",
         "BOND_STEREO_MAP",
         "CHIRAL_TAG_MAP",
         "BATCH_ERROR_MODE_MAP",
-        "BATCH_ERROR_TYPE_MAP",
     ] {
         let export = format!("    \"{name}\",\n");
         if !text.contains(&export) {
@@ -92,63 +147,67 @@ class BondOrder(enum.IntEnum):
     DOUBLE = 2
     TRIPLE = 3
     QUADRUPLE = 4
-    AROMATIC = 5
-    DATIVE = 6
-    HYDROGEN = 7
+    QUINTUPLE = 5
+    HEXTUPLE = 6
+    ONEANDAHALF = 7
+    TWOANDAHALF = 8
+    THREEANDAHALF = 9
+    FOURANDAHALF = 10
+    FIVEANDAHALF = 11
+    AROMATIC = 12
+    IONIC = 13
+    DATIVE = 14
+    DATIVEONE = 15
+    DATIVEL = 16
+    DATIVER = 17
+    HYDROGEN = 18
+    THREECENTER = 19
+    OTHER = 20
+    ZERO = 21
 
 @typing.final
 class BondDirection(enum.IntEnum):
     NONE = 0
-    ENDUPRIGHT = 1
-    ENDDOWNRIGHT = 2
-    UNKNOWN = 3
+    BEGINWEDGE = 1
+    BEGINDASH = 2
+    ENDUPRIGHT = 3
+    ENDDOWNRIGHT = 4
+    EITHERDOUBLE = 5
+    UNKNOWN = 6
 
 @typing.final
 class BondStereo(enum.IntEnum):
-    STEREONONE = 0
-    STEREOANY = 1
-    STEREOCIS = 2
-    STEREOTRANS = 3
+    NONE = 0
+    ANY = 1
+    Z = 2
+    E = 3
+    CIS = 4
+    TRANS = 5
+    ATROP_CW = 6
+    ATROP_CCW = 7
 
 @typing.final
 class ChiralTag(enum.IntEnum):
     CHI_UNSPECIFIED = 0
     CHI_TETRAHEDRAL_CW = 1
     CHI_TETRAHEDRAL_CCW = 2
-    CHI_TRIGONALBIPYRAMIDAL = 3
+    CHI_OTHER = 3
+    CHI_TETRAHEDRAL = 4
+    CHI_ALLENE = 5
+    CHI_SQUAREPLANAR = 6
+    CHI_TRIGONALBIPYRAMIDAL = 7
+    CHI_OCTAHEDRAL = 8
 
 @typing.final
 class BatchErrorMode(enum.IntEnum):
     RAISE = 1
     KEEP = 2
-    SKIP = 3
-
-@typing.final
-class BatchErrorType(enum.IntEnum):
-    UNKNOWN = 0
-    SMILES_PARSE = 1
-    SDF_READ = 2
-    ADD_HYDROGENS = 3
-    REMOVE_HYDROGENS = 4
-    SANITIZE = 5
-    KEKULIZE = 6
-    COORDINATE_GENERATION = 7
-    SMILES_WRITE = 8
-    DISTANCE_GEOMETRY = 9
-    FINGERPRINT = 10
-    SVG_DRAW = 11
-    PREPARED_DRAW = 12
-    SDF_WRITE = 13
-    IMAGE_EXPORT = 14
-    IO = 15
-    FILENAME = 16
 
 BOND_ORDER_MAP: typing.Mapping[builtins.str, BondOrder]
 BOND_DIRECTION_MAP: typing.Mapping[builtins.str, BondDirection]
 BOND_STEREO_MAP: typing.Mapping[builtins.str, BondStereo]
 CHIRAL_TAG_MAP: typing.Mapping[builtins.str, ChiralTag]
 BATCH_ERROR_MODE_MAP: typing.Mapping[builtins.str, BatchErrorMode]
-BATCH_ERROR_TYPE_MAP: typing.Mapping[builtins.str, BatchErrorType]
 
 "#;
     let existing_enum_defs = r#"@typing.final
@@ -158,61 +217,67 @@ class BondOrder(enum.IntEnum):
     DOUBLE = 2
     TRIPLE = 3
     QUADRUPLE = 4
-    AROMATIC = 5
-    DATIVE = 6
+    QUINTUPLE = 5
+    HEXTUPLE = 6
+    ONEANDAHALF = 7
+    TWOANDAHALF = 8
+    THREEANDAHALF = 9
+    FOURANDAHALF = 10
+    FIVEANDAHALF = 11
+    AROMATIC = 12
+    IONIC = 13
+    DATIVE = 14
+    DATIVEONE = 15
+    DATIVEL = 16
+    DATIVER = 17
+    HYDROGEN = 18
+    THREECENTER = 19
+    OTHER = 20
+    ZERO = 21
 
 @typing.final
 class BondDirection(enum.IntEnum):
     NONE = 0
-    ENDUPRIGHT = 1
-    ENDDOWNRIGHT = 2
+    BEGINWEDGE = 1
+    BEGINDASH = 2
+    ENDUPRIGHT = 3
+    ENDDOWNRIGHT = 4
+    EITHERDOUBLE = 5
+    UNKNOWN = 6
 
 @typing.final
 class BondStereo(enum.IntEnum):
-    STEREONONE = 0
-    STEREOANY = 1
-    STEREOCIS = 2
-    STEREOTRANS = 3
+    NONE = 0
+    ANY = 1
+    Z = 2
+    E = 3
+    CIS = 4
+    TRANS = 5
+    ATROP_CW = 6
+    ATROP_CCW = 7
 
 @typing.final
 class ChiralTag(enum.IntEnum):
     CHI_UNSPECIFIED = 0
     CHI_TETRAHEDRAL_CW = 1
     CHI_TETRAHEDRAL_CCW = 2
-    CHI_TRIGONALBIPYRAMIDAL = 3
+    CHI_OTHER = 3
+    CHI_TETRAHEDRAL = 4
+    CHI_ALLENE = 5
+    CHI_SQUAREPLANAR = 6
+    CHI_TRIGONALBIPYRAMIDAL = 7
+    CHI_OCTAHEDRAL = 8
 
 @typing.final
 class BatchErrorMode(enum.IntEnum):
     RAISE = 1
     KEEP = 2
-    SKIP = 3
-
-@typing.final
-class BatchErrorType(enum.IntEnum):
-    UNKNOWN = 0
-    SMILES_PARSE = 1
-    SDF_READ = 2
-    ADD_HYDROGENS = 3
-    REMOVE_HYDROGENS = 4
-    SANITIZE = 5
-    KEKULIZE = 6
-    COORDINATE_GENERATION = 7
-    SMILES_WRITE = 8
-    DISTANCE_GEOMETRY = 9
-    FINGERPRINT = 10
-    SVG_DRAW = 11
-    PREPARED_DRAW = 12
-    SDF_WRITE = 13
-    IMAGE_EXPORT = 14
-    IO = 15
-    FILENAME = 16
 
 BOND_ORDER_MAP: typing.Mapping[builtins.str, BondOrder]
 BOND_DIRECTION_MAP: typing.Mapping[builtins.str, BondDirection]
 BOND_STEREO_MAP: typing.Mapping[builtins.str, BondStereo]
 CHIRAL_TAG_MAP: typing.Mapping[builtins.str, ChiralTag]
 BATCH_ERROR_MODE_MAP: typing.Mapping[builtins.str, BatchErrorMode]
-BATCH_ERROR_TYPE_MAP: typing.Mapping[builtins.str, BatchErrorType]
 
 "#;
     if text.contains(existing_enum_defs) {
@@ -222,9 +287,22 @@ BATCH_ERROR_TYPE_MAP: typing.Mapping[builtins.str, BatchErrorType]
             "@typing.final\nclass Atom:",
             &format!("{enum_defs}@typing.final\nclass Atom:"),
         );
+    } else {
+        text = replace_existing_chem_enum_block(text, enum_defs);
     }
 
     text
+}
+
+fn replace_existing_chem_enum_block(text: String, enum_defs: &str) -> String {
+    let Some(start) = text.find("@typing.final\nclass BondOrder(enum.IntEnum):") else {
+        return text;
+    };
+    let Some(after_start) = text[start..].find("@typing.final\nclass Atom:") else {
+        return text;
+    };
+    let end = start + after_start;
+    format!("{}{}{}", &text[..start], enum_defs, &text[end..])
 }
 
 fn expose_batch_validation_error(mut text: String) -> String {

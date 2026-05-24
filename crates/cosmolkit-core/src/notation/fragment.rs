@@ -251,11 +251,15 @@ fn atom_to_spec(atom: &Atom) -> AtomSpec {
         .with_explicit_hydrogens(atom.explicit_hydrogens())
         .with_chiral_tag(atom.chiral_tag())
         .with_aromatic(atom.is_aromatic())
-        .with_isotope(atom.isotope().unwrap_or(0))
-        .with_atom_map(atom.atom_map().unwrap_or(0))
         .with_no_implicit(atom.no_implicit())
         .with_radical_electrons(atom.radical_electrons())
         .with_hybridization(atom.hybridization());
+    if let Some(isotope) = atom.isotope() {
+        spec = spec.with_isotope(isotope);
+    }
+    if let Some(atom_map) = atom.atom_map() {
+        spec = spec.with_atom_map(atom_map);
+    }
     if let Some(chiral_perm) = atom.chiral_permutation() {
         spec = spec.with_chiral_permutation(chiral_perm);
     }

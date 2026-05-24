@@ -1587,10 +1587,10 @@ fn legacy_rdkit_cip_reranks_with_legacy_stereo_and_assignment(
             continue;
         }
         let contrib = match bond.stereo() {
-            BondStereo::Trans => 1,
-            BondStereo::Cis => 2,
+            BondStereo::Trans | BondStereo::E => 1,
+            BondStereo::Cis | BondStereo::Z => 2,
             BondStereo::None | BondStereo::Any => 0,
-            BondStereo::Z | BondStereo::E | BondStereo::AtropCw | BondStereo::AtropCcw => {
+            BondStereo::AtropCw | BondStereo::AtropCcw => {
                 panic!(
                     "legacy RDKit stereo rerank does not support bond stereo {:?}",
                     bond.stereo()

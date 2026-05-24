@@ -86,6 +86,9 @@ pub struct SdfRecordMetadata {
     pub index: usize,
     pub byte_offset: u64,
     pub byte_len: u64,
+    pub line_offset: usize,
+    pub line_len: usize,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -833,6 +836,15 @@ fn build_sdf_index<R: BufRead>(
             index: raw.index,
             byte_offset: raw.byte_offset,
             byte_len: raw.byte_len,
+            line_offset: raw.start_line,
+            line_len: raw.text.bytes().filter(|byte| *byte == b'\n').count(),
+            title: raw
+                .text
+                .lines()
+                .next()
+                .map(strip_terminal_cr)
+                .filter(|title| !title.is_empty())
+                .map(ToOwned::to_owned),
         });
         next_index += 1;
     }
@@ -10339,11 +10351,17 @@ mod tests {
                     index: 0,
                     byte_offset: 0,
                     byte_len: "mol\nM  END\n$$$$\n".len() as u64,
+                    line_offset: 0,
+                    line_len: 3,
+                    title: Some("mol".to_string()),
                 },
                 SdfRecordMetadata {
                     index: 1,
                     byte_offset: "mol\nM  END\n$$$$\n".len() as u64,
                     byte_len: "next\nM  END\n$$$$\n".len() as u64,
+                    line_offset: 3,
+                    line_len: 3,
+                    title: Some("next".to_string()),
                 },
             ]
         );
@@ -11526,7 +11544,7 @@ M  END
             record.molecule.bonds()[0].direction(),
             record.molecule.bonds()[2].direction()
         );
-        assert_eq!(record.molecule.bonds()[1].stereo(), BondStereo::Trans);
+        assert_eq!(record.molecule.bonds()[1].stereo(), BondStereo::E);
         assert_eq!(
             record.molecule.bonds()[1].stereo_atoms(),
             Some([AtomId::new(0), AtomId::new(3)])

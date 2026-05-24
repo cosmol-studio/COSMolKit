@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable
 from pathlib import Path
 
 from cosmolkit import MoleculeBatch, SdfDataset, SdfReader
@@ -43,7 +44,7 @@ def default_sdf_path() -> Path:
     return path
 
 
-def summarize_batches(batches) -> tuple[int, int, int]:
+def summarize_batches(batches: Iterable[MoleculeBatch]) -> tuple[int, int, int]:
     batch_count = 0
     record_count = 0
     valid_count = 0
@@ -71,14 +72,14 @@ def main() -> None:
     print("indexed records:", len(dataset))
 
     first_meta = dataset.metadata(0)
-    print("first title:", first_meta.title())
-    print("first byte range:", first_meta.byte_range())
-    print("first line range:", first_meta.line_range())
+    print("first metadata index:", first_meta.index())
+    print("first byte offset:", first_meta.byte_offset())
+    print("first byte length:", first_meta.byte_len())
 
     first = dataset[0]
     last = dataset[-1]
-    print("first record title:", first.title())
-    print("last record title:", last.title())
+    print("first record index:", first.index())
+    print("last record index:", last.index())
     print("first supplier_id:", first.data_field("supplier_id"))
 
     head = dataset[: min(2, len(dataset))]
@@ -109,6 +110,7 @@ def main() -> None:
             str(path),
             errors="keep",
             progress_bar=args.progress_bar,
+            coordinate_dim="auto",
         )
         print("whole-file batch records:", len(all_records))
         print("whole-file valid records:", sum(all_records.valid_mask()))

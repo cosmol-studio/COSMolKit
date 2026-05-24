@@ -98,6 +98,51 @@ impl MoleculeBuilder {
         &mut self.bonds
     }
 
+    pub(crate) fn bond_between_atoms(&self, begin: AtomId, end: AtomId) -> Option<BondId> {
+        let begin_bonds = self.adjacency.get(begin.index())?;
+        begin_bonds.iter().copied().find(|bond_id| {
+            let bond = &self.bonds[bond_id.index()];
+            (bond.begin() == begin && bond.end() == end)
+                || (bond.begin() == end && bond.end() == begin)
+        })
+    }
+
+    pub(crate) fn set_bond_order(
+        &mut self,
+        bond: BondId,
+        order: crate::BondOrder,
+    ) -> Result<(), MoleculeBuildError> {
+        let Some(bond) = self.bonds.get_mut(bond.index()) else {
+            return Err(MoleculeBuildError::InvalidMoleculeState {
+                message: "bond index out of range while setting bond order".to_string(),
+            });
+        };
+        bond.set_order(order);
+        Ok(())
+    }
+
+    pub(crate) fn remove_bond_between_atoms(
+        &mut self,
+        begin: AtomId,
+        end: AtomId,
+    ) -> Option<BondId> {
+        let bond_id = self.bond_between_atoms(begin, end)?;
+        self.remove_bond_for_construction(bond_id);
+        Some(bond_id)
+    }
+
+    fn remove_bond_for_construction(&mut self, bond_to_remove: BondId) {
+        self.bonds.remove(bond_to_remove.index());
+        for (index, bond) in self.bonds.iter_mut().enumerate() {
+            bond.set_id_for_construction(BondId::new(index));
+        }
+        self.adjacency = vec![Vec::new(); self.atoms.len()];
+        for bond in &self.bonds {
+            self.adjacency[bond.begin().index()].push(bond.id());
+            self.adjacency[bond.end().index()].push(bond.id());
+        }
+    }
+
     pub(crate) fn remove_atoms_for_construction(
         &mut self,
         atoms_to_remove: &[AtomId],
@@ -218,6 +263,10 @@ impl MoleculeBuilder {
 
     pub(crate) fn conformers_3d_len(&self) -> usize {
         self.conformers_3d.len()
+    }
+
+    pub(crate) fn conformers_3d(&self) -> &[Conformer3D] {
+        &self.conformers_3d
     }
 
     pub fn add_substance_group(

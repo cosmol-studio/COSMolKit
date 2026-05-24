@@ -30,15 +30,6 @@ def _rdkit_mol_or_skip(smiles):
     return rd_mol
 
 
-def _normalized_rdkit_bond_stereo(stereo):
-    name = str(stereo)
-    if name == "STEREOE":
-        return "STEREOTRANS"
-    if name == "STEREOZ":
-        return "STEREOCIS"
-    return name
-
-
 def _topology_signature(mol):
     atoms = [
         (
@@ -130,7 +121,7 @@ def _rdkit_signature(rd_mol):
                 "AROMATIC" if bond.GetIsAromatic() else str(bond.GetBondType())
             ],
             cosmolkit.BOND_DIRECTION_MAP[str(bond.GetBondDir())],
-            cosmolkit.BOND_STEREO_MAP[_normalized_rdkit_bond_stereo(bond.GetStereo())],
+            cosmolkit.BOND_STEREO_MAP[str(bond.GetStereo())],
             tuple(bond.GetStereoAtoms()),
             bond.GetIsAromatic(),
         )
@@ -159,15 +150,15 @@ def test_atom_and_bond_feature_enums_are_intenum_values():
     assert bond.bond_type() == cosmolkit.BondOrder.DOUBLE
     assert bond.bond_type_code() == int(cosmolkit.BondOrder.DOUBLE)
     assert bond.bond_dir() == cosmolkit.BondDirection.NONE
-    assert bond.stereo() == cosmolkit.BondStereo.STEREONONE
+    assert bond.stereo() == cosmolkit.BondStereo.NONE
     assert cosmolkit.BOND_ORDER_MAP["DOUBLE"] == cosmolkit.BondOrder.DOUBLE
     assert not hasattr(bond, "order")
 
 
 def test_public_bond_enums_include_hydrogen_and_unknown_members():
-    assert cosmolkit.BondOrder.HYDROGEN == 7
+    assert cosmolkit.BondOrder.HYDROGEN == 18
     assert cosmolkit.BOND_ORDER_MAP["HYDROGEN"] == cosmolkit.BondOrder.HYDROGEN
-    assert cosmolkit.BondDirection.UNKNOWN == 3
+    assert cosmolkit.BondDirection.UNKNOWN == 6
     assert (
         cosmolkit.BOND_DIRECTION_MAP["UNKNOWN"] == cosmolkit.BondDirection.UNKNOWN
     )
@@ -189,13 +180,7 @@ def test_from_rdkit_matches_direct_cosmolkit_smiles(smiles):
     direct = cosmolkit.Molecule.from_smiles(smiles)
     bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
 
-    try:
-        assert bridged.to_smiles(canonical=True) == direct.to_smiles(canonical=True)
-    except NotImplementedError as bridged_error:
-        with pytest.raises(NotImplementedError, match="unsupported path"):
-            direct.to_smiles(canonical=True)
-        assert "unsupported path" in str(bridged_error)
-    assert bridged.to_smiles(canonical=False) == direct.to_smiles(canonical=False)
+    assert _feature_signature(bridged) == _feature_signature(direct)
 
 
 def _add_conformer(rd_mol, coords, is_3d):

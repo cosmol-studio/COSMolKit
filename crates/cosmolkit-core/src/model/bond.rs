@@ -353,6 +353,10 @@ impl Bond {
         self.id
     }
 
+    pub(crate) fn set_id_for_construction(&mut self, id: BondId) {
+        self.id = id;
+    }
+
     #[must_use]
     pub const fn begin(&self) -> AtomId {
         self.begin

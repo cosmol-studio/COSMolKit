@@ -114,6 +114,34 @@ For multi-record strings, use the batch API:
 
    batch = MoleculeBatch.read_sdf_records_from_str(sdf_text, coordinate_dim="auto")
 
+PDB and mmCIF Blocks
+--------------------
+
+Use ``Molecule.from_pdb_block()`` when you want a molecule state comparable to
+RDKit ``Chem.MolFromPDBBlock`` for the modeled conversion profile:
+
+.. code-block:: python
+
+   pdb_mol = Molecule.from_pdb_block(
+       pdb_text,
+       sanitize=True,
+       remove_hs=True,
+       proximity_bonding=True,
+   )
+
+Use ``Molecule.from_mmcif_block()`` for mmCIF structural text. COSMolKit reads
+the mmCIF structure and then applies the same molecule-conversion profile used
+by ``from_pdb_block()``:
+
+.. code-block:: python
+
+   cif_mol = Molecule.from_mmcif_block(
+       cif_text,
+       sanitize=True,
+       remove_hs=True,
+       proximity_bonding=True,
+   )
+
 Coordinate Arrays
 -----------------
 

@@ -1230,6 +1230,11 @@ fn validate_v2000_coordinate_range(coords: Option<&[[f64; 3]]>) -> Result<(), Mo
 }
 
 fn molfile_info_line(molecule: &Molecule, label: Option<&'static str>) -> String {
+    if let Some(label) = label {
+        let mut line = format!("  {:>8}{:>10}", "COSMolKit", "");
+        line.push_str(label);
+        return line;
+    }
     if let Some(info) = molecule.prop("_MolFileInfo") {
         return info.to_string();
     }
@@ -1237,9 +1242,6 @@ fn molfile_info_line(molecule: &Molecule, label: Option<&'static str>) -> String
         return info.to_string();
     }
     let mut line = format!("  {:>8}{:>10}", "COSMolKit", "");
-    if let Some(label) = label {
-        line.push_str(label);
-    }
     line
 }
 

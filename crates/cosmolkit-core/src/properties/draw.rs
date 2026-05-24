@@ -63,12 +63,12 @@ pub enum SvgDrawError {
 }
 
 // ──────────────────────────────────────────────
-// Public snapshot types (used by facade crate)
+// Test-only snapshot types for RDKit prepared-drawing parity.
 // ──────────────────────────────────────────────
 
 /// Atom snapshot after drawing preparation.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PreparedDrawAtom {
+pub(crate) struct PreparedDrawAtom {
     pub index: usize,
     pub atomic_number: u8,
     pub x: f64,
@@ -77,7 +77,7 @@ pub struct PreparedDrawAtom {
 
 /// Bond snapshot after drawing preparation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PreparedDrawBond {
+pub(crate) struct PreparedDrawBond {
     pub index: usize,
     pub begin_atom: usize,
     pub end_atom: usize,
@@ -89,7 +89,7 @@ pub struct PreparedDrawBond {
 
 /// Molecule snapshot after drawing preparation.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PreparedDrawMolecule {
+pub(crate) struct PreparedDrawMolecule {
     pub atoms: Vec<PreparedDrawAtom>,
     pub bonds: Vec<PreparedDrawBond>,
 }
@@ -7736,7 +7736,7 @@ fn prepare_molecule_for_svg_drawing(molecule: &Molecule) -> Result<Molecule, Svg
 }
 
 /// Prepare molecule snapshot for drawing parity comparison.
-pub fn prepare_mol_for_drawing_parity(
+pub(crate) fn prepare_mol_for_drawing_parity(
     molecule: &Molecule,
 ) -> Result<PreparedDrawMolecule, SvgDrawError> {
     let prepared = prepare_molecule_for_drawing(molecule, true)?;

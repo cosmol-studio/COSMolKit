@@ -837,10 +837,24 @@ impl Molecule {
         .molecule)
     }
 
+    pub fn from_mol_block_with_params(
+        _block: &str,
+        params: crate::io::sdf::SdfReadParams,
+    ) -> Result<Self, crate::io::sdf::SdfReadError> {
+        Ok(crate::io::sdf::read_sdf_from_str_with_params(_block, params)?.molecule)
+    }
+
     pub fn from_mol_file(
         _path: impl AsRef<std::path::Path>,
     ) -> Result<Self, crate::io::sdf::SdfReadError> {
         Ok(crate::io::molfile::read_mol_file(_path)?.molecule)
+    }
+
+    pub fn from_mol_file_with_params(
+        _path: impl AsRef<std::path::Path>,
+        params: crate::io::sdf::SdfReadParams,
+    ) -> Result<Self, crate::io::sdf::SdfReadError> {
+        Ok(crate::io::molfile::read_mol_file_with_params(_path, params)?.molecule)
     }
 
     pub fn to_smiles(&self, isomeric_smiles: bool) -> Result<String, SmilesWriteError> {
@@ -933,9 +947,9 @@ impl Molecule {
         crate::pdb_writer::mol_to_pdb_block(self, conf_id, flavor)
     }
 
-    pub fn prepared_for_drawing_parity(
+    pub(crate) fn prepared_for_drawing_parity(
         &self,
-    ) -> Result<crate::PreparedDrawMolecule, crate::SvgDrawError> {
+    ) -> Result<crate::draw::PreparedDrawMolecule, crate::SvgDrawError> {
         crate::draw::prepare_mol_for_drawing_parity(self)
     }
 
@@ -1015,6 +1029,28 @@ mod tests {
         let via_module = fragment::get_mol_frags(&mol).expect("module fragments");
 
         assert_eq!(via_method, via_module);
+    }
+
+    #[test]
+    fn molecule_fragments_do_not_materialize_absent_isotope_or_atom_map_as_zero() {
+        let mol = Molecule::from_smiles("CC.O").expect("failed to parse fragments test molecule");
+        let smiles: Vec<_> = mol
+            .fragments()
+            .expect("method fragments")
+            .into_iter()
+            .map(|fragment| fragment.to_smiles(true).expect("fragment smiles"))
+            .collect();
+
+        assert_eq!(smiles, vec!["CC", "O"]);
+    }
+
+    #[test]
+    fn molecule_tetrahedral_stereo_reports_smiles_chiral_center() {
+        let mol = Molecule::from_smiles("F[C@H](Cl)Br").expect("failed to parse chiral molecule");
+        let stereo = mol.tetrahedral_stereo().expect("tetrahedral stereo");
+
+        assert_eq!(stereo.len(), 1);
+        assert_eq!(stereo[0].center.index(), 1);
     }
 
     #[test]

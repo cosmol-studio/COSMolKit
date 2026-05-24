@@ -2,5 +2,5 @@ API Reference
 =============
 
 .. automodule:: cosmolkit
-   :members: Molecule, Atom, Bond, BondOrder, BondDirection, BondStereo, ChiralTag, MoleculeBatch, BatchErrorMode, Fingerprint, MorganAdditionalOutput, MorganFingerprintResult, BatchError, BatchExportReport, MoleculeEdit, BatchValidationError
+   :members: Molecule, Atom, Bond, BondOrder, BondDirection, BondStereo, ChiralTag, MoleculeBatch, BatchErrorMode, Fingerprint, MorganAdditionalOutput, MorganFingerprintResult, BatchError, BatchExportReport, MoleculeEdit, Protein, ProteinChain, ProteinResidue, ProteinAtom, SdfDataset, SdfReader, SdfRecord, SdfRecordMetadata, BatchValidationError
    :no-show-inheritance:

@@ -319,6 +319,7 @@ fn project_protein_bio_structure(source: &BioStructure) -> BioStructure {
             let mut copied_chain = chain.clone();
             copied_chain.model_id = ModelId::new(structure.models.len() as u32);
             copied_chain.residue_span = RowSpan::new(residue_start, residue_len);
+            copied_chain.kind = ChainKind::Protein;
             structure.chains.push(copied_chain);
         }
 
@@ -363,6 +364,10 @@ HETATM    7  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
         assert_eq!(protein.num_chains(), 1);
         assert_eq!(protein.num_residues(), 2);
         assert_eq!(protein.num_atoms(), 5);
+        assert_eq!(
+            protein.chain(0).expect("projected protein chain").kind(),
+            ChainKind::Protein
+        );
         assert!(
             protein
                 .as_bio_structure()

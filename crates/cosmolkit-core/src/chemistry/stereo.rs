@@ -175,9 +175,10 @@ pub fn tetrahedral_stereo(molecule: &Molecule) -> Result<Vec<TetrahedralStereo>,
         let implicit_hs = valence
             .and_then(|v| v.implicit_hydrogens.get(center.index()).copied())
             .unwrap_or(0) as usize;
+        let hydrogen_ligands = atom.explicit_hydrogens() as usize + implicit_hs;
 
         // Must have 4 ligands total (explicit + implicit)
-        if degree + implicit_hs != 4 {
+        if degree + hydrogen_ligands != 4 {
             continue;
         }
 

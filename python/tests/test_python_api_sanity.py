@@ -220,23 +220,46 @@ def test_draw_and_substructure_bindings_are_available():
     png = mol.to_png(width=200, height=150)
     assert bytes(png).startswith(b"\x89PNG\r\n\x1a\n")
 
-    prepared = mol.prepared_for_drawing_parity()
-    assert len(prepared.atoms()) == len(mol)
-    assert len(prepared.bonds()) == mol.num_bonds()
-    assert prepared.atoms()[0].atomic_number() > 0
-    assert prepared.bonds()[0].bond_order().name in {
-        "SINGLE",
-        "DOUBLE",
-        "TRIPLE",
-        "AROMATIC",
-        "DATIVE",
-        "HYDROGEN",
-        "ZERO",
-    }
-
     pdb_block = mol.to_pdb_block()
     assert isinstance(pdb_block, str)
     assert "HETATM" in pdb_block or "ATOM" in pdb_block
+
+    pdb_mol = cosmolkit.Molecule.from_pdb_block(
+        """\
+HETATM    1  C1  LIG A   1       0.000   0.000   0.000  1.00 10.00           C  
+HETATM    2  O1  LIG A   1       1.200   0.000   0.000  1.00 10.00           O  
+""",
+        sanitize=False,
+        remove_hs=False,
+        proximity_bonding=True,
+    )
+    assert pdb_mol.num_atoms() == 2
+    assert pdb_mol.num_bonds() == 1
+
+    mmcif_mol = cosmolkit.Molecule.from_mmcif_block(
+        """\
+data_demo
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+HETATM 1 C C1 . LIG A 1 0.000 0.000 0.000
+HETATM 2 O O1 . LIG A 1 1.200 0.000 0.000
+""",
+        sanitize=False,
+        remove_hs=False,
+        proximity_bonding=True,
+    )
+    assert mmcif_mol.num_atoms() == 2
+    assert mmcif_mol.num_bonds() == 1
 
     query = cosmolkit.Molecule.from_smiles("c1ccccc1")
     assert cosmolkit.has_substruct_match(mol, query) is True
@@ -265,7 +288,7 @@ def test_batch_api_combinations_preserve_order_shapes_and_record_alignment():
     assert batch.valid_mask() == [True, True, False, True]
     assert batch.valid_count() == 3
     assert batch.invalid_count() == 1
-    assert batch.errors()[0].error_type() == cosmolkit.BatchErrorType.SMILES_PARSE
+    assert batch.errors()[0].operation() == "batch.from_smiles_list"
 
     selected = batch[[0, 3]]
     assert len(selected) == 2
@@ -301,13 +324,13 @@ def test_batch_api_combinations_preserve_order_shapes_and_record_alignment():
         img_report = prepared.to_images(
             str(td_path / "images"),
             format="svg",
-            errors="skip",
+            errors="keep",
             filenames=["ethanol.svg", "benzene.svg", None, "chiral.svg"],
         )
         sdf_report = prepared.to_sdf_files(
             str(td_path / "sdf"),
             format="v2000",
-            errors="skip",
+            errors="keep",
             filenames=["ethanol.sdf", "benzene.sdf", None, "chiral.sdf"],
         )
         assert img_report.total() == 4
@@ -324,4 +347,4 @@ def test_from_rdkit_roundtrip_keeps_expected_stereo_when_rdkit_is_available():
     assert rd_mol is not None
     bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
     assert bridged.to_smiles(canonical=False) == "C/C=C/C"
-    assert bridged.bonds()[1].stereo() == cosmolkit.BondStereo.STEREOTRANS
+    assert bridged.bonds()[1].stereo() == cosmolkit.BondStereo.E

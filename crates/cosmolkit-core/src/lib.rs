@@ -76,7 +76,7 @@ pub use builder::MoleculeBuilder;
 pub use coordinates::With2DCoordinatesParams;
 pub use derived::DerivedState;
 pub use distgeom::DgBoundsError;
-pub use draw::{PreparedDrawAtom, PreparedDrawBond, PreparedDrawMolecule, SvgDrawError};
+pub use draw::SvgDrawError;
 pub use error::{InvariantError, MoleculeBuildError};
 pub use fingerprint::{
     Fingerprint, FingerprintError, MorganAdditionalOutput, MorganAtomInvariantsGenerator,
@@ -88,7 +88,11 @@ pub use io::bio::{
     read_bio_structure_from_str_with_format, read_mmcif_atom_site_subset_from_str,
     read_pdb_coordinate_subset_from_str, read_pdb_coordinate_subset_from_str_with_params,
 };
-pub use io::sdf::{SdfDataset, SdfRecordMetadata};
+pub use io::pdb_molecule::{
+    PdbMoleculeConversionError, RdkitPdbMolProfile, bio_structure_to_rdkit_pdb_molecule,
+    molecule_from_mmcif_block_with_options, molecule_from_pdb_block_with_options,
+};
+pub use io::sdf::{SdfCoordinateMode, SdfDataset, SdfReadParams, SdfRecordMetadata};
 pub use kekulize::KekulizeError;
 pub use mol_pickler::{PickleError, mol_from_binary, mol_to_binary};
 pub use molecule::{

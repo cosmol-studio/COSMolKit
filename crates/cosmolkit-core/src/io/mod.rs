@@ -20,6 +20,7 @@ pub mod bio;
 mod gemmi_spacegroup_table;
 pub mod molblock;
 pub mod molfile;
+pub mod pdb_molecule;
 pub mod pdb_writer;
 pub mod sdf;
 

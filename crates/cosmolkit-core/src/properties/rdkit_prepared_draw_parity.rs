@@ -2,7 +2,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
-use cosmolkit_core::{BondOrder, Molecule, MoleculeBatch, PreparedDrawMolecule};
+use crate::draw::PreparedDrawMolecule;
+use crate::{BondOrder, Molecule, MoleculeBatch};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]

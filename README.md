@@ -33,7 +33,7 @@ workflows.
 ## Documentation
 
 - Python documentation: <https://kit.cosmol.org/>
-- Rust and development notes: [`crates/cosmolkit/README.md`](crates/cosmolkit/README.md)
+- Rust and development notes: [`crates/cosmolkit/README.md`]([crates/cosmolkit/README.md](https://github.com/cosmol-studio/COSMolKit/blob/main/crates/cosmolkit/README.md))
 
 ## Installation
 
@@ -105,7 +105,7 @@ prepared.to_images(
     "molecule_images",
     format="png",
     size=(300, 300),
-    errors="keep_errors",
+    errors="keep",
     filenames=["ethanol", "benzene", "acetate"],
 )
 ```
@@ -130,9 +130,6 @@ for chain in protein.chains():
         print(residue.name(), residue.kind(), len(residue))
 ```
 
-For lower-level structural workflows, COSMolKit also exposes `BioStructure`
-types in Rust and Python.
-
 ## SDF and Dataset Workflows
 
 `SdfDataset` builds a lightweight index of SDF record byte ranges, so individual
@@ -147,7 +144,7 @@ print(len(dataset))
 record = dataset[0]
 mol = record.molecule()
 
-for batch in dataset.batches(size=1024, errors="keep_errors", n_jobs=8):
+for batch in dataset.batches(size=1024, errors="keep", n_jobs=8):
     smiles = batch.to_smiles_list()
 ```
 
@@ -163,7 +160,7 @@ for batch in dataset.batches(size=1024, errors="keep_errors", n_jobs=8):
 - Distance-geometry bounds matrices
 - Substructure matching and SMARTS parsing
 - Ordered batch transforms and exports
-- PDB/mmCIF parsing and protein projection APIs
+- PDB/mmCIF molecule-block parsing and protein projection APIs
 - Support-status metadata for public features
 
 ## Design Principles
@@ -175,7 +172,7 @@ model-building workflows.
 - Public transforms use value semantics.
 - Mutation-capable workflows are explicit.
 - Unsupported chemistry should fail clearly.
-- RDKit-compatible behavior is the correctness floor for supported
+- RDKit-parity behavior is the correctness floor for supported
   cheminformatics features.
 - High-throughput APIs should preserve input order and expose per-record
   failures.
@@ -218,6 +215,9 @@ from Python.
 - ✅ MOL/SDF reading
 - ✅ SDF dataset indexing for large files
 - ✅ SDF writing for supported V2000/V3000 branches
+- ✅ PDB block to molecule conversion
+- ✅ mmCIF block to molecule conversion through the same molecule-conversion
+  profile
 - ✅ 2D coordinate generation
 - ✅ SVG drawing
 - ✅ PNG export
@@ -249,7 +249,6 @@ through low-level structural tables.
 - ✅ Protein chain, residue, and atom iteration
 - ✅ Protein-only projection from broader structural data
 - 🧪 PDB/mmCIF structural parsing
-- 🧪 Lower-level `BioStructure` access for advanced workflows
 - 🚧 Selection utilities for chains, residues, atoms, and neighborhoods
 - 🚧 Ligand, nucleic-acid, and mixed-structure ergonomic APIs
 
@@ -277,5 +276,5 @@ Goal: support lightweight chemistry workflows outside native Python processes.
 
 COSMolKit is developed with deep respect for RDKit and the broader open-source
 cheminformatics community. The goal is an independent Rust-native implementation
-that preserves interoperability and behavioral compatibility where appropriate,
-while offering a more deterministic Python API and AI-native extension surface.
+that preserves interoperability and RDKit-parity behavior where appropriate,
+while offering a deterministic Python API and AI-native extension surface.
