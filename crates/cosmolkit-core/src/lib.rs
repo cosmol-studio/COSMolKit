@@ -93,6 +93,7 @@ pub use io::pdb_molecule::{
     molecule_from_mmcif_block_with_options, molecule_from_pdb_block_with_options,
 };
 pub use io::sdf::{SdfCoordinateMode, SdfDataset, SdfReadParams, SdfRecordMetadata};
+pub use io::xyz::{XyzReadError, read_xyz_from_str};
 pub use kekulize::KekulizeError;
 pub use mol_pickler::{PickleError, mol_from_binary, mol_to_binary};
 pub use molecule::{

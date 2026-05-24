@@ -30,6 +30,7 @@ GENERATORS: list[tuple[str, str]] = [
     ("gen_rdkit_sdf_write_golden.py", "sdf_write.jsonl"),
     ("gen_rdkit_sdf_read_golden.py", "sdf_read.jsonl"),
     ("gen_rdkit_molfile_read_golden.py", "molfile_read.jsonl"),
+    ("gen_rdkit_xyz_read_golden.py", "xyz_read.jsonl"),
 ]
 
 

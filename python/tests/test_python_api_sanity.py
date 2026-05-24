@@ -261,6 +261,29 @@ HETATM 2 O O1 . LIG A 1 1.200 0.000 0.000
     assert mmcif_mol.num_atoms() == 2
     assert mmcif_mol.num_bonds() == 1
 
+    xyz_mol = cosmolkit.Molecule.from_xyz_block(
+        """\
+3
+water
+O 0.000 0.000 0.000
+H 0.758 0.000 0.504
+H -0.758 0.000 0.504
+"""
+    )
+    assert xyz_mol.num_atoms() == 3
+    assert xyz_mol.num_bonds() == 0
+    assert xyz_mol.num_conformers() == 1
+    assert np.allclose(
+        xyz_mol.coords_3d(),
+        np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [0.758, 0.0, 0.504],
+                [-0.758, 0.0, 0.504],
+            ]
+        ),
+    )
+
     query = cosmolkit.Molecule.from_smiles("c1ccccc1")
     assert cosmolkit.has_substruct_match(mol, query) is True
     first = cosmolkit.get_substruct_match(mol, query)

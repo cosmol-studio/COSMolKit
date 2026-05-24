@@ -57,6 +57,20 @@ impl MoleculeBuilder {
         Ok(id)
     }
 
+    pub fn set_atom_formal_charge(
+        &mut self,
+        atom: AtomId,
+        formal_charge: i8,
+    ) -> Result<(), MoleculeBuildError> {
+        let Some(atom) = self.atoms.get_mut(atom.index()) else {
+            return Err(MoleculeBuildError::InvalidMoleculeState {
+                message: "atom index out of range while setting formal charge".to_string(),
+            });
+        };
+        atom.set_formal_charge(formal_charge);
+        Ok(())
+    }
+
     /// Returns the number of bonds incident to `atom`.
     pub fn degree(&self, atom: AtomId) -> usize {
         self.adjacency.get(atom.index()).map_or(0, Vec::len)
@@ -400,6 +414,96 @@ impl MoleculeBuilder {
                 message: other.to_string(),
             },
         })
+    }
+}
+
+impl Molecule {
+    #[must_use]
+    pub fn to_builder(&self) -> MoleculeBuilder {
+        let mut builder = MoleculeBuilder::new();
+
+        for atom in self.atoms() {
+            let mut spec = AtomSpec::new(atom.element())
+                .with_formal_charge(atom.formal_charge())
+                .with_explicit_hydrogens(atom.explicit_hydrogens())
+                .with_chiral_tag(atom.chiral_tag())
+                .with_unknown_stereo(atom.unknown_stereo())
+                .with_implicit_hydrogen(atom.implicit_hydrogen())
+                .with_tracked_isotopic_hydrogens(atom.tracked_isotopic_hydrogens().to_vec())
+                .with_aromatic(atom.is_aromatic())
+                .with_no_implicit(atom.no_implicit())
+                .with_radical_electrons(atom.radical_electrons())
+                .with_hybridization(atom.hybridization());
+            if let Some(chiral_permutation) = atom.chiral_permutation() {
+                spec = spec.with_chiral_permutation(chiral_permutation);
+            }
+            if let Some(mol_parity) = atom.mol_parity() {
+                spec = spec.with_mol_parity(mol_parity);
+            }
+            if let Some(mol_inversion_flag) = atom.mol_inversion_flag() {
+                spec = spec.with_mol_inversion_flag(mol_inversion_flag);
+            }
+            if let Some(isotope) = atom.isotope() {
+                spec = spec.with_isotope(isotope);
+            }
+            if let Some(atom_map) = atom.atom_map() {
+                spec = spec.with_atom_map(atom_map);
+            }
+            if let Some(query) = atom.query().cloned() {
+                spec = spec.with_query(query);
+            }
+            if let Some(info) = atom.pdb_residue_info().cloned() {
+                spec = spec.with_pdb_residue_info(info);
+            }
+            for (key, value) in atom.props() {
+                spec = spec.with_prop(key.clone(), value.clone());
+            }
+            builder.add_atom(spec);
+        }
+
+        for bond in self.bonds() {
+            let mut spec = BondSpec::new(bond.begin(), bond.end(), bond.order())
+                .with_aromatic(bond.is_aromatic())
+                .with_conjugated(bond.is_conjugated())
+                .with_direction(bond.direction())
+                .with_stereo(bond.stereo())
+                .with_unknown_stereo(bond.unknown_stereo());
+            if let Some([begin_ref, end_ref]) = bond.stereo_atoms() {
+                spec = spec.with_stereo_atoms(begin_ref, end_ref);
+            }
+            if let Some(query) = bond.query().cloned() {
+                spec = spec.with_query(query);
+            }
+            for (key, value) in bond.props() {
+                spec = spec.with_prop(key.clone(), value.clone());
+            }
+            builder
+                .add_bond(spec)
+                .expect("existing molecule bond topology must be buildable");
+        }
+
+        for conformer in self.conformers_2d() {
+            builder
+                .add_2d_conformer(conformer.coords().to_vec())
+                .expect("existing molecule 2D conformer row count must be valid");
+        }
+        for conformer in self.conformers_3d() {
+            builder
+                .add_conformer(conformer.clone())
+                .expect("existing molecule 3D conformer row count must be valid");
+        }
+        for substance_group in self.substance_groups() {
+            builder
+                .add_substance_group(substance_group.clone())
+                .expect("existing molecule substance group must be buildable");
+        }
+        for stereo_group in self.stereo_groups() {
+            builder
+                .add_stereo_group(stereo_group.clone())
+                .expect("existing molecule stereo group must be buildable");
+        }
+
+        builder.with_properties(self.properties().clone())
     }
 }
 

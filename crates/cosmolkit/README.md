@@ -81,6 +81,7 @@ cargo run -p cosmolkit-core --example draw_svg
 cargo run -p cosmolkit-core --example draw_png
 cargo run -p cosmolkit-core --example sdf_to_smiles
 cargo run -p cosmolkit --example protein_from_pdb
+cargo run -p cosmolkit --example read_xyz
 ```
 
 ## Development

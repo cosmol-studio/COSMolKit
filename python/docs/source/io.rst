@@ -142,6 +142,20 @@ by ``from_pdb_block()``:
        proximity_bonding=True,
    )
 
+XYZ Blocks
+----------
+
+Use ``Molecule.from_xyz_block()`` when you want to read atom identities and
+Cartesian coordinates from XYZ text:
+
+.. code-block:: python
+
+   xyz_mol = Molecule.from_xyz_block(xyz_text)
+
+XYZ input contains coordinates but no bond table, so the returned molecule has
+atoms and one 3D conformer without inferred bonds. This matches COSMolKit's
+RDKit-aligned ``MolFromXYZBlock`` profile.
+
 Coordinate Arrays
 -----------------
 

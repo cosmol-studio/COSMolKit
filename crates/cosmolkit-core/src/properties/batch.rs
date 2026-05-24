@@ -19,10 +19,6 @@ pub enum BatchErrorMode {
 }
 
 impl BatchErrorMode {
-    const fn keep_record_errors(self) -> bool {
-        matches!(self, Self::KeepErrors)
-    }
-
     const fn raise_on_errors(self) -> bool {
         matches!(self, Self::Strict)
     }
@@ -174,6 +170,37 @@ fn tick_progress(progress: BatchProgress<'_>) {
     }
 }
 
+fn with_progress_bar_for_option<R>(
+    progress_bar: Option<bool>,
+    total: usize,
+    message: &'static str,
+    f: impl FnOnce(BatchProgress<'_>) -> R,
+) -> R {
+    if progress_bar.unwrap_or(false) {
+        let progress_bar = batch_progress_bar(total, message);
+        let callback = progress_bar.callback();
+        let result = f(Some(&*callback));
+        progress_bar.finish();
+        result
+    } else {
+        f(None)
+    }
+}
+
+fn run_with_parallel_jobs_option<R: Send>(
+    n_jobs: Option<usize>,
+    f: impl FnOnce() -> R + Send,
+) -> R {
+    match n_jobs.map(|value| value.max(1)) {
+        Some(n_jobs) => rayon::ThreadPoolBuilder::new()
+            .num_threads(n_jobs)
+            .build()
+            .expect("batch rayon thread pool build must succeed")
+            .install(f),
+        None => f(),
+    }
+}
+
 impl MoleculeBatch {
     #[must_use]
     pub fn new(records: Vec<BatchRecord>) -> Self {
@@ -313,28 +340,37 @@ impl MoleculeBatch {
         sanitize: bool,
         errors: BatchErrorMode,
     ) -> Result<Self, BatchValidationError> {
-        let records = smiles
-            .par_iter()
-            .enumerate()
-            .filter_map(|(index, smiles)| {
-                match Molecule::from_smiles_with_sanitize(smiles, sanitize) {
-                    Ok(molecule) => Some(BatchRecord::Molecule(molecule)),
-                    Err(error) => {
-                        let record = BatchRecord::Error(BatchRecordError::new(
-                            index,
-                            "batch.from_smiles_list",
-                            error.to_string(),
-                        ));
-                        if errors.keep_record_errors() {
-                            Some(record)
-                        } else {
-                            Some(record)
-                        }
-                    }
-                }
-            })
-            .collect();
-        Self::from_records_with_mode(records, errors)
+        Self::from_smiles_list_with_sanitize_and_options(smiles, sanitize, errors, None, None)
+    }
+
+    pub fn from_smiles_list_with_sanitize_and_options(
+        smiles: &[String],
+        sanitize: bool,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Self, BatchValidationError> {
+        with_progress_bar_for_option(progress_bar, smiles.len(), "Parsing SMILES", |progress| {
+            let records = run_with_parallel_jobs_option(n_jobs, || {
+                smiles
+                    .par_iter()
+                    .enumerate()
+                    .map(|(index, smiles)| {
+                        let out = match Molecule::from_smiles_with_sanitize(smiles, sanitize) {
+                            Ok(molecule) => BatchRecord::Molecule(molecule),
+                            Err(error) => BatchRecord::Error(BatchRecordError::new(
+                                index,
+                                "batch.from_smiles_list",
+                                error.to_string(),
+                            )),
+                        };
+                        tick_progress(progress);
+                        out
+                    })
+                    .collect()
+            });
+            Self::from_records_with_mode(records, errors)
+        })
     }
 
     pub fn read_sdf_records_from_str(
@@ -342,22 +378,46 @@ impl MoleculeBatch {
         coordinate_mode: SdfCoordinateMode,
         errors: BatchErrorMode,
     ) -> Result<Self, BatchValidationError> {
+        Self::read_sdf_records_from_str_with_options(sdf_text, coordinate_mode, errors, None, None)
+    }
+
+    pub fn read_sdf_records_from_str_with_options(
+        sdf_text: &str,
+        coordinate_mode: SdfCoordinateMode,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Self, BatchValidationError> {
         let records = split_sdf_record_strings(sdf_text);
-        let batch_records = records
-            .par_iter()
-            .enumerate()
-            .map(|(index, sdf)| {
-                match read_sdf_from_str_with_coordinate_mode(sdf, coordinate_mode) {
-                    Ok(record) => BatchRecord::Molecule(record.molecule),
-                    Err(error) => BatchRecord::Error(BatchRecordError::new(
-                        index,
-                        "batch.read_sdf_records_from_str",
-                        error.to_string(),
-                    )),
-                }
-            })
-            .collect();
-        Self::from_records_with_mode(batch_records, errors)
+        with_progress_bar_for_option(
+            progress_bar,
+            records.len(),
+            "Reading SDF records",
+            |progress| {
+                let batch_records = run_with_parallel_jobs_option(n_jobs, || {
+                    records
+                        .par_iter()
+                        .enumerate()
+                        .map(|(index, sdf)| {
+                            let out = match read_sdf_from_str_with_coordinate_mode(
+                                sdf,
+                                coordinate_mode,
+                            ) {
+                                Ok(record) => BatchRecord::Molecule(record.molecule),
+                                Err(error) => BatchRecord::Error(BatchRecordError::new(
+                                    index,
+                                    "batch.read_sdf_records_from_str",
+                                    error.to_string(),
+                                )),
+                            };
+                            tick_progress(progress);
+                            out
+                        })
+                        .collect()
+                });
+                Self::from_records_with_mode(batch_records, errors)
+            },
+        )
     }
 
     pub fn read_sdf_records_from_reader<R: BufRead>(
@@ -365,7 +425,25 @@ impl MoleculeBatch {
         coordinate_mode: SdfCoordinateMode,
         errors: BatchErrorMode,
     ) -> Result<Self, BatchValidationError> {
-        Self::read_sdf_records_from_reader_with_progress(reader, coordinate_mode, errors, None)
+        Self::read_sdf_records_from_reader_with_options(reader, coordinate_mode, errors, None, None)
+    }
+
+    pub fn read_sdf_records_from_reader_with_options<R: BufRead>(
+        reader: R,
+        coordinate_mode: SdfCoordinateMode,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Self, BatchValidationError> {
+        let _ = n_jobs;
+        with_progress_bar_for_option(progress_bar, 0, "Reading SDF records", |progress| {
+            Self::read_sdf_records_from_reader_with_progress(
+                reader,
+                coordinate_mode,
+                errors,
+                progress,
+            )
+        })
     }
 
     pub fn read_sdf_records_from_reader_with_progress<R: BufRead>(
@@ -418,18 +496,52 @@ impl MoleculeBatch {
         errors: BatchErrorMode,
         progress: BatchProgress<'_>,
     ) -> Result<Self, BatchValidationError> {
-        let mut records = Vec::with_capacity(dataset.len());
-        for index in 0..dataset.len() {
-            match dataset.record_with_params(index, params) {
-                Ok(record) => records.push(BatchRecord::Molecule(record.molecule)),
-                Err(error) => records.push(BatchRecord::Error(BatchRecordError::new(
-                    index,
-                    "batch.read_sdf_dataset",
-                    error.to_string(),
-                ))),
-            }
-            tick_progress(progress);
-        }
+        Self::read_sdf_dataset_with_params_and_runtime(dataset, params, errors, progress, None)
+    }
+
+    pub fn read_sdf_dataset_with_params_and_options(
+        dataset: &SdfDataset,
+        params: SdfReadParams,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Self, BatchValidationError> {
+        with_progress_bar_for_option(
+            progress_bar,
+            dataset.len(),
+            "Reading SDF dataset",
+            |progress| {
+                Self::read_sdf_dataset_with_params_and_runtime(
+                    dataset, params, errors, progress, n_jobs,
+                )
+            },
+        )
+    }
+
+    fn read_sdf_dataset_with_params_and_runtime(
+        dataset: &SdfDataset,
+        params: SdfReadParams,
+        errors: BatchErrorMode,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Self, BatchValidationError> {
+        let records = run_with_parallel_jobs_option(n_jobs, || {
+            (0..dataset.len())
+                .into_par_iter()
+                .map(|index| {
+                    let out = match dataset.record_with_params(index, params) {
+                        Ok(record) => BatchRecord::Molecule(record.molecule),
+                        Err(error) => BatchRecord::Error(BatchRecordError::new(
+                            index,
+                            "batch.read_sdf_dataset",
+                            error.to_string(),
+                        )),
+                    };
+                    tick_progress(progress);
+                    out
+                })
+                .collect()
+        });
         Self::from_records_with_mode(records, errors)
     }
 
@@ -875,6 +987,31 @@ impl MoleculeBatch {
         params: &SmilesWriteParams,
         progress: BatchProgress<'_>,
     ) -> Result<Vec<Option<String>>, BatchValidationError> {
+        self.to_smiles_optional_list_with_params_and_runtime(params, progress, None)
+    }
+
+    pub fn to_smiles_optional_list_with_params_and_options(
+        &self,
+        params: &SmilesWriteParams,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<String>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Writing SMILES",
+            |progress| {
+                self.to_smiles_optional_list_with_params_and_runtime(params, progress, n_jobs)
+            },
+        )
+    }
+
+    fn to_smiles_optional_list_with_params_and_runtime(
+        &self,
+        params: &SmilesWriteParams,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<String>>, BatchValidationError> {
         self.collect_optional_values_with_options(
             "to_smiles",
             |molecule| {
@@ -883,13 +1020,34 @@ impl MoleculeBatch {
                     .map_err(|error| error.to_string())
             },
             progress,
-            None,
+            n_jobs,
         )
     }
 
     pub fn dg_bounds_matrix_list_with_progress(
         &self,
         progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<Vec<Vec<f64>>>>, BatchValidationError> {
+        self.dg_bounds_matrix_list_with_runtime(progress, None)
+    }
+
+    pub fn dg_bounds_matrix_list_with_options(
+        &self,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<Vec<Vec<f64>>>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing distance-geometry bounds",
+            |progress| self.dg_bounds_matrix_list_with_runtime(progress, n_jobs),
+        )
+    }
+
+    fn dg_bounds_matrix_list_with_runtime(
+        &self,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
     ) -> Result<Vec<Option<Vec<Vec<f64>>>>, BatchValidationError> {
         self.collect_optional_values_with_options(
             "batch.dg_bounds_matrix",
@@ -899,7 +1057,7 @@ impl MoleculeBatch {
                     .map_err(|error| error.to_string())
             },
             progress,
-            None,
+            n_jobs,
         )
     }
 
@@ -907,6 +1065,29 @@ impl MoleculeBatch {
         &self,
         params: &crate::MorganFingerprintParams,
         progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        self.morgan_fingerprint_list_with_runtime(params, progress, None)
+    }
+
+    pub fn morgan_fingerprint_list_with_options(
+        &self,
+        params: &crate::MorganFingerprintParams,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing Morgan fingerprints",
+            |progress| self.morgan_fingerprint_list_with_runtime(params, progress, n_jobs),
+        )
+    }
+
+    fn morgan_fingerprint_list_with_runtime(
+        &self,
+        params: &crate::MorganFingerprintParams,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
     ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
         self.collect_optional_values_with_options(
             "batch.morgan_fingerprint",
@@ -916,7 +1097,7 @@ impl MoleculeBatch {
                     .map_err(|error| error.to_string())
             },
             progress,
-            None,
+            n_jobs,
         )
     }
 
@@ -924,6 +1105,31 @@ impl MoleculeBatch {
         &self,
         params: &crate::MorganFingerprintParams,
         progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::MorganFingerprintOutput>>, BatchValidationError> {
+        self.morgan_fingerprint_with_output_list_with_runtime(params, progress, None)
+    }
+
+    pub fn morgan_fingerprint_with_output_list_with_options(
+        &self,
+        params: &crate::MorganFingerprintParams,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<crate::MorganFingerprintOutput>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing Morgan fingerprints",
+            |progress| {
+                self.morgan_fingerprint_with_output_list_with_runtime(params, progress, n_jobs)
+            },
+        )
+    }
+
+    fn morgan_fingerprint_with_output_list_with_runtime(
+        &self,
+        params: &crate::MorganFingerprintParams,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
     ) -> Result<Vec<Option<crate::MorganFingerprintOutput>>, BatchValidationError> {
         self.collect_optional_values_with_options(
             "batch.morgan_fingerprint_with_output",
@@ -933,7 +1139,7 @@ impl MoleculeBatch {
                     .map_err(|error| error.to_string())
             },
             progress,
-            None,
+            n_jobs,
         )
     }
 
@@ -948,18 +1154,7 @@ impl MoleculeBatch {
             progress_bar,
             self.records.len(),
             "Drawing SVG molecules",
-            |progress| {
-                self.collect_optional_values_with_options(
-                    "batch.to_svg",
-                    |molecule| {
-                        molecule
-                            .to_svg(width, height)
-                            .map_err(|error| error.to_string())
-                    },
-                    progress,
-                    n_jobs,
-                )
-            },
+            |progress| self.to_svg_list_with_runtime(width, height, progress, n_jobs),
         )
     }
 
@@ -969,6 +1164,16 @@ impl MoleculeBatch {
         height: u32,
         progress: BatchProgress<'_>,
     ) -> Result<Vec<Option<String>>, BatchValidationError> {
+        self.to_svg_list_with_runtime(width, height, progress, None)
+    }
+
+    fn to_svg_list_with_runtime(
+        &self,
+        width: u32,
+        height: u32,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<String>>, BatchValidationError> {
         self.collect_optional_values_with_options(
             "batch.to_svg",
             |molecule| {
@@ -977,7 +1182,7 @@ impl MoleculeBatch {
                     .map_err(|error| error.to_string())
             },
             progress,
-            None,
+            n_jobs,
         )
     }
 

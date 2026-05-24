@@ -20,7 +20,6 @@ use pyo3_stub_gen::define_stub_info_gatherer;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 #[cfg(not(feature = "stubgen"))]
 use pyo3_stub_gen_derive::remove_gen_stub;
-use rayon::ThreadPoolBuilder;
 
 fn parse_coordinate_mode(value: Option<&str>) -> PyResult<cosmolkit_core::SdfCoordinateMode> {
     let Some(value) = value else {
@@ -84,26 +83,6 @@ fn make_smiles_write_params(
     }
 }
 
-fn run_batch_with_n_jobs<T, F>(
-    n_jobs: Option<usize>,
-    f: F,
-) -> PyResult<Result<T, cosmolkit_core::BatchValidationError>>
-where
-    T: Send,
-    F: FnOnce() -> Result<T, cosmolkit_core::BatchValidationError> + Send,
-{
-    match n_jobs {
-        Some(0) => Err(PyValueError::new_err("n_jobs must be >= 1")),
-        Some(1) => Ok(f()),
-        Some(n) => Ok(ThreadPoolBuilder::new()
-            .num_threads(n)
-            .build()
-            .map_err(|err| PyValueError::new_err(format!("failed to build rayon pool: {err}")))?
-            .install(f)),
-        None => Ok(f()),
-    }
-}
-
 fn validate_n_jobs(n_jobs: Option<usize>) -> PyResult<Option<usize>> {
     if matches!(n_jobs, Some(0)) {
         return Err(PyValueError::new_err("n_jobs must be >= 1"));
@@ -117,23 +96,6 @@ fn maybe_batch_progress_bar(
     message: impl Into<String>,
 ) -> Option<cosmolkit_core::BatchProgressBar> {
     enabled.then(|| cosmolkit_core::batch_progress_bar(total, message))
-}
-
-fn with_batch_progress_bar<R>(
-    enabled: bool,
-    total: usize,
-    message: impl Into<String>,
-    f: impl for<'a> FnOnce(Option<&'a (dyn Fn() + Sync)>) -> R,
-) -> R {
-    if enabled {
-        let progress_bar = cosmolkit_core::batch_progress_bar(total, message);
-        let callback = progress_bar.callback();
-        let result = f(Some(&*callback));
-        progress_bar.finish();
-        result
-    } else {
-        f(None)
-    }
 }
 
 fn batch_validation_pyerr(error: cosmolkit_core::BatchValidationError) -> PyErr {
@@ -184,61 +146,6 @@ fn pickle_pyerr(error: cosmolkit_core::PickleError) -> PyErr {
 
 fn stereo_pyerr(error: cosmolkit_core::StereoError) -> PyErr {
     PyValueError::new_err(error.to_string())
-}
-
-fn molecule_to_builder(molecule: &cosmolkit_core::Molecule) -> cosmolkit_core::MoleculeBuilder {
-    let mut builder = cosmolkit_core::MoleculeBuilder::new();
-    for atom in molecule.atoms() {
-        let mut spec = cosmolkit_core::AtomSpec::new(atom.element())
-            .with_formal_charge(atom.formal_charge())
-            .with_explicit_hydrogens(atom.explicit_hydrogens())
-            .with_chiral_tag(atom.chiral_tag())
-            .with_unknown_stereo(atom.unknown_stereo())
-            .with_aromatic(atom.is_aromatic())
-            .with_no_implicit(atom.no_implicit())
-            .with_radical_electrons(atom.radical_electrons());
-        if let Some(isotope) = atom.isotope() {
-            spec = spec.with_isotope(isotope);
-        }
-        if let Some(atom_map) = atom.atom_map() {
-            spec = spec.with_atom_map(atom_map);
-        }
-        for (key, value) in atom.props() {
-            spec = spec.with_prop(key.clone(), value.clone());
-        }
-        builder.add_atom(spec);
-    }
-    for bond in molecule.bonds() {
-        let mut spec = cosmolkit_core::BondSpec::new(bond.begin(), bond.end(), bond.order())
-            .with_aromatic(bond.is_aromatic())
-            .with_conjugated(bond.is_conjugated())
-            .with_direction(bond.direction())
-            .with_stereo(bond.stereo())
-            .with_unknown_stereo(bond.unknown_stereo());
-        if let Some([begin_ref, end_ref]) = bond.stereo_atoms() {
-            spec = spec.with_stereo_atoms(begin_ref, end_ref);
-        }
-        for (key, value) in bond.props() {
-            spec = spec.with_prop(key.clone(), value.clone());
-        }
-        let _ = builder.add_bond(spec);
-    }
-    if let Some(coords) = molecule.coords_2d() {
-        let _ = builder.set_2d_coordinates(coords.to_vec());
-    }
-    for conformer in molecule.conformers_3d() {
-        let _ = builder.add_3d_conformer(conformer.coords().to_vec());
-    }
-    if let Some(name) = molecule.properties().name() {
-        builder = builder.with_name(name);
-    }
-    for (key, value) in molecule.properties().sdf_data_fields() {
-        builder = builder.with_sdf_data_field(key.clone(), value.clone());
-    }
-    for (key, value) in molecule.properties().props() {
-        builder = builder.with_property(key.clone(), value.clone());
-    }
-    builder
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -419,7 +326,7 @@ fn complete_batch_filenames(
         filenames
             .into_iter()
             .enumerate()
-            .map(|(index, filename)| filename.unwrap_or_else(|| format!("{index:06}.{extension}")))
+            .map(|(index, filename)| filename.unwrap_or_else(|| format!("mol_{index}.{extension}")))
             .collect(),
     ))
 }
@@ -443,138 +350,6 @@ fn to_python_tetrahedral_stereo(
             (stereo.center.index(), ligands)
         })
         .collect())
-}
-
-fn bond_order_name(order: cosmolkit_core::BondOrder) -> &'static str {
-    match order {
-        cosmolkit_core::BondOrder::Null | cosmolkit_core::BondOrder::Unspecified => "UNSPECIFIED",
-        cosmolkit_core::BondOrder::Single => "SINGLE",
-        cosmolkit_core::BondOrder::Double => "DOUBLE",
-        cosmolkit_core::BondOrder::Triple => "TRIPLE",
-        cosmolkit_core::BondOrder::Quadruple => "QUADRUPLE",
-        cosmolkit_core::BondOrder::Quintuple => "QUINTUPLE",
-        cosmolkit_core::BondOrder::Hextuple => "HEXTUPLE",
-        cosmolkit_core::BondOrder::OneAndHalf => "ONEANDAHALF",
-        cosmolkit_core::BondOrder::TwoAndHalf => "TWOANDAHALF",
-        cosmolkit_core::BondOrder::ThreeAndHalf => "THREEANDAHALF",
-        cosmolkit_core::BondOrder::FourAndHalf => "FOURANDAHALF",
-        cosmolkit_core::BondOrder::FiveAndHalf => "FIVEANDAHALF",
-        cosmolkit_core::BondOrder::Aromatic => "AROMATIC",
-        cosmolkit_core::BondOrder::Ionic => "IONIC",
-        cosmolkit_core::BondOrder::Dative => "DATIVE",
-        cosmolkit_core::BondOrder::DativeOne => "DATIVEONE",
-        cosmolkit_core::BondOrder::DativeLeft => "DATIVEL",
-        cosmolkit_core::BondOrder::DativeRight => "DATIVER",
-        cosmolkit_core::BondOrder::Hydrogen => "HYDROGEN",
-        cosmolkit_core::BondOrder::ThreeCenter => "THREECENTER",
-        cosmolkit_core::BondOrder::Other => "OTHER",
-        cosmolkit_core::BondOrder::Zero => "ZERO",
-    }
-}
-
-fn bond_order_code(order: cosmolkit_core::BondOrder) -> i64 {
-    match order {
-        cosmolkit_core::BondOrder::Null | cosmolkit_core::BondOrder::Unspecified => 0,
-        cosmolkit_core::BondOrder::Single => 1,
-        cosmolkit_core::BondOrder::Double => 2,
-        cosmolkit_core::BondOrder::Triple => 3,
-        cosmolkit_core::BondOrder::Quadruple => 4,
-        cosmolkit_core::BondOrder::Quintuple => 5,
-        cosmolkit_core::BondOrder::Hextuple => 6,
-        cosmolkit_core::BondOrder::OneAndHalf => 7,
-        cosmolkit_core::BondOrder::TwoAndHalf => 8,
-        cosmolkit_core::BondOrder::ThreeAndHalf => 9,
-        cosmolkit_core::BondOrder::FourAndHalf => 10,
-        cosmolkit_core::BondOrder::FiveAndHalf => 11,
-        cosmolkit_core::BondOrder::Aromatic => 12,
-        cosmolkit_core::BondOrder::Ionic => 13,
-        cosmolkit_core::BondOrder::Dative => 14,
-        cosmolkit_core::BondOrder::DativeOne => 15,
-        cosmolkit_core::BondOrder::DativeLeft => 16,
-        cosmolkit_core::BondOrder::DativeRight => 17,
-        cosmolkit_core::BondOrder::Hydrogen => 18,
-        cosmolkit_core::BondOrder::ThreeCenter => 19,
-        cosmolkit_core::BondOrder::Other => 20,
-        cosmolkit_core::BondOrder::Zero => 21,
-    }
-}
-
-fn chiral_tag_name(tag: cosmolkit_core::ChiralTag) -> &'static str {
-    match tag {
-        cosmolkit_core::ChiralTag::Unspecified => "CHI_UNSPECIFIED",
-        cosmolkit_core::ChiralTag::TetrahedralCw => "CHI_TETRAHEDRAL_CW",
-        cosmolkit_core::ChiralTag::TetrahedralCcw => "CHI_TETRAHEDRAL_CCW",
-        cosmolkit_core::ChiralTag::Other => "CHI_OTHER",
-        cosmolkit_core::ChiralTag::Tetrahedral => "CHI_TETRAHEDRAL",
-        cosmolkit_core::ChiralTag::Allene => "CHI_ALLENE",
-        cosmolkit_core::ChiralTag::SquarePlanar => "CHI_SQUAREPLANAR",
-        cosmolkit_core::ChiralTag::TrigonalBipyramidal => "CHI_TRIGONALBIPYRAMIDAL",
-        cosmolkit_core::ChiralTag::Octahedral => "CHI_OCTAHEDRAL",
-    }
-}
-
-fn chiral_tag_code(tag: cosmolkit_core::ChiralTag) -> i64 {
-    match tag {
-        cosmolkit_core::ChiralTag::Unspecified => 0,
-        cosmolkit_core::ChiralTag::TetrahedralCw => 1,
-        cosmolkit_core::ChiralTag::TetrahedralCcw => 2,
-        cosmolkit_core::ChiralTag::Other => 3,
-        cosmolkit_core::ChiralTag::Tetrahedral => 4,
-        cosmolkit_core::ChiralTag::Allene => 5,
-        cosmolkit_core::ChiralTag::SquarePlanar => 6,
-        cosmolkit_core::ChiralTag::TrigonalBipyramidal => 7,
-        cosmolkit_core::ChiralTag::Octahedral => 8,
-    }
-}
-
-fn bond_direction_name(direction: cosmolkit_core::BondDirection) -> &'static str {
-    match direction {
-        cosmolkit_core::BondDirection::None => "NONE",
-        cosmolkit_core::BondDirection::BeginWedge => "BEGINWEDGE",
-        cosmolkit_core::BondDirection::BeginDash => "BEGINDASH",
-        cosmolkit_core::BondDirection::EndUpRight => "ENDUPRIGHT",
-        cosmolkit_core::BondDirection::EndDownRight => "ENDDOWNRIGHT",
-        cosmolkit_core::BondDirection::EitherDouble => "EITHERDOUBLE",
-        cosmolkit_core::BondDirection::Unknown => "UNKNOWN",
-    }
-}
-
-fn bond_direction_code(direction: cosmolkit_core::BondDirection) -> i64 {
-    match direction {
-        cosmolkit_core::BondDirection::None => 0,
-        cosmolkit_core::BondDirection::BeginWedge => 1,
-        cosmolkit_core::BondDirection::BeginDash => 2,
-        cosmolkit_core::BondDirection::EndUpRight => 3,
-        cosmolkit_core::BondDirection::EndDownRight => 4,
-        cosmolkit_core::BondDirection::EitherDouble => 5,
-        cosmolkit_core::BondDirection::Unknown => 6,
-    }
-}
-
-fn bond_stereo_name(stereo: cosmolkit_core::BondStereo) -> &'static str {
-    match stereo {
-        cosmolkit_core::BondStereo::None => "NONE",
-        cosmolkit_core::BondStereo::Any => "ANY",
-        cosmolkit_core::BondStereo::Z => "Z",
-        cosmolkit_core::BondStereo::E => "E",
-        cosmolkit_core::BondStereo::Cis => "CIS",
-        cosmolkit_core::BondStereo::Trans => "TRANS",
-        cosmolkit_core::BondStereo::AtropCw => "ATROP_CW",
-        cosmolkit_core::BondStereo::AtropCcw => "ATROP_CCW",
-    }
-}
-
-fn bond_stereo_code(stereo: cosmolkit_core::BondStereo) -> i64 {
-    match stereo {
-        cosmolkit_core::BondStereo::None => 0,
-        cosmolkit_core::BondStereo::Any => 1,
-        cosmolkit_core::BondStereo::Z => 2,
-        cosmolkit_core::BondStereo::E => 3,
-        cosmolkit_core::BondStereo::Cis => 4,
-        cosmolkit_core::BondStereo::Trans => 5,
-        cosmolkit_core::BondStereo::AtropCw => 6,
-        cosmolkit_core::BondStereo::AtropCcw => 7,
-    }
 }
 
 fn enum_member<'py>(py: Python<'py>, enum_name: &str, code: i64) -> PyResult<Bound<'py, PyAny>> {
@@ -1288,25 +1063,11 @@ same worker count should apply to later batch operations.
 "#]
 struct MoleculeBatch {
     inner: cosmolkit_core::MoleculeBatch,
-    parallel_jobs: Option<usize>,
-    progress_bar: Option<bool>,
 }
 
 impl MoleculeBatch {
-    fn effective_n_jobs(&self, n_jobs: Option<usize>) -> Option<usize> {
-        n_jobs.or(self.parallel_jobs)
-    }
-
-    fn effective_progress_bar(&self, progress_bar: Option<bool>) -> bool {
-        progress_bar.or(self.progress_bar).unwrap_or(false)
-    }
-
     fn with_inner(&self, inner: cosmolkit_core::MoleculeBatch) -> Self {
-        Self {
-            inner,
-            parallel_jobs: self.parallel_jobs,
-            progress_bar: self.progress_bar,
-        }
+        Self { inner }
     }
 
     fn records_as_molecules(&self) -> Vec<Option<Molecule>> {
@@ -1334,11 +1095,10 @@ impl MoleculeBatch {
             .iter()
             .filter_map(|index| self.inner.get(*index).cloned())
             .collect();
-        Self {
-            inner: cosmolkit_core::MoleculeBatch::new(records),
-            parallel_jobs: self.parallel_jobs,
-            progress_bar: self.progress_bar,
-        }
+        let inner = cosmolkit_core::MoleculeBatch::new(records)
+            .with_parallel_jobs(self.inner.parallel_jobs())
+            .with_progress_bar(self.inner.progress_bar());
+        Self { inner }
     }
 
     fn selected_batch_pyobject(&self, py: Python<'_>, indices: &[usize]) -> PyResult<Py<PyAny>> {
@@ -1777,15 +1537,7 @@ impl PySdfDataset {
             Ok(indices) => {
                 let inner = sdf_batch_from_indices(&self.inner, self.coordinate_mode, indices)
                     .map_err(batch_validation_pyerr)?;
-                Ok(Py::new(
-                    py,
-                    MoleculeBatch {
-                        inner,
-                        parallel_jobs: None,
-                        progress_bar: None,
-                    },
-                )?
-                .into_any())
+                Ok(Py::new(py, MoleculeBatch { inner })?.into_any())
             }
         }
     }
@@ -1933,9 +1685,7 @@ impl PySdfBatchIterator {
         )
         .map_err(batch_validation_pyerr)?;
         Ok(Some(MoleculeBatch {
-            inner,
-            parallel_jobs: self.n_jobs,
-            progress_bar: None,
+            inner: inner.with_parallel_jobs(self.n_jobs),
         }))
     }
 }
@@ -1958,9 +1708,7 @@ impl PySdfReaderBatchIterator {
         };
         self.index = next_index;
         Ok(Some(MoleculeBatch {
-            inner,
-            parallel_jobs: self.n_jobs,
-            progress_bar: None,
+            inner: inner.with_parallel_jobs(self.n_jobs),
         }))
     }
 }
@@ -2039,15 +1787,15 @@ MoleculeBatch
     ) -> PyResult<Self> {
         let sanitize = sanitize.unwrap_or(true);
         let mode = parse_batch_error_mode(errors)?;
-        run_batch_with_n_jobs(n_jobs, move || {
-            cosmolkit_core::MoleculeBatch::from_smiles_list_with_sanitize(&smiles, sanitize, mode)
-                .map(|inner| Self {
-                    inner,
-                    parallel_jobs: None,
-                    progress_bar: None,
-                })
-        })?
-        .map_err(batch_validation_pyerr)
+        let inner = cosmolkit_core::MoleculeBatch::from_smiles_list_with_sanitize_and_options(
+            &smiles,
+            sanitize,
+            mode,
+            validate_n_jobs(n_jobs)?,
+            None,
+        )
+        .map_err(batch_validation_pyerr)?;
+        Ok(Self { inner })
     }
 
     #[classmethod]
@@ -2075,20 +1823,15 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
     ) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
         let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
-        let sdf_text = sdf_text.to_owned();
-        run_batch_with_n_jobs(n_jobs, move || {
-            cosmolkit_core::MoleculeBatch::read_sdf_records_from_str(
-                &sdf_text,
-                coordinate_mode,
-                mode,
-            )
-            .map(|inner| Self {
-                inner,
-                parallel_jobs: None,
-                progress_bar: None,
-            })
-        })?
-        .map_err(batch_validation_pyerr)
+        let inner = cosmolkit_core::MoleculeBatch::read_sdf_records_from_str_with_options(
+            sdf_text,
+            coordinate_mode,
+            mode,
+            validate_n_jobs(n_jobs)?,
+            None,
+        )
+        .map_err(batch_validation_pyerr)?;
+        Ok(Self { inner })
     }
 
     #[classmethod]
@@ -2130,45 +1873,34 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
                 },
             )
             .map_err(|err| PyValueError::new_err(format!("read_sdf index failed: {err}")))?;
-            validate_n_jobs(n_jobs)?;
-            return with_batch_progress_bar(true, dataset.len(), "read_sdf", |callback| {
-                cosmolkit_core::MoleculeBatch::read_sdf_dataset_with_params_and_progress(
-                    &dataset,
-                    cosmolkit_core::SdfReadParams {
-                        coordinate_mode,
-                        ..Default::default()
-                    },
-                    mode,
-                    callback,
-                )
-                .map(|inner| Self {
-                    inner,
-                    parallel_jobs: None,
-                    progress_bar: None,
-                })
-            })
-            .map_err(batch_validation_pyerr);
-        }
-        run_batch_with_n_jobs(n_jobs, move || {
-            let file = File::open(&expanded_path).map_err(|error| {
-                cosmolkit_core::BatchValidationError::simple(
-                    1,
-                    "read_sdf",
-                    format!("open failed for {}: {error}", expanded_path.display()),
-                )
-            })?;
-            cosmolkit_core::MoleculeBatch::read_sdf_records_from_reader(
-                BufReader::new(file),
-                coordinate_mode,
+            let inner = cosmolkit_core::MoleculeBatch::read_sdf_dataset_with_params_and_options(
+                &dataset,
+                cosmolkit_core::SdfReadParams {
+                    coordinate_mode,
+                    ..Default::default()
+                },
                 mode,
+                validate_n_jobs(n_jobs)?,
+                Some(true),
             )
-            .map(|inner| Self {
-                inner,
-                parallel_jobs: None,
-                progress_bar: None,
-            })
-        })?
-        .map_err(batch_validation_pyerr)
+            .map_err(batch_validation_pyerr)?;
+            return Ok(Self { inner });
+        }
+        let file = File::open(&expanded_path).map_err(|error| {
+            PyValueError::new_err(format!(
+                "read_sdf open failed for {}: {error}",
+                expanded_path.display()
+            ))
+        })?;
+        let inner = cosmolkit_core::MoleculeBatch::read_sdf_records_from_reader_with_options(
+            BufReader::new(file),
+            coordinate_mode,
+            mode,
+            validate_n_jobs(n_jobs)?,
+            None,
+        )
+        .map_err(batch_validation_pyerr)?;
+        Ok(Self { inner })
     }
 
     #[pyo3(signature = (n_jobs))]
@@ -2180,9 +1912,10 @@ Pass ``None`` to clear the batch-level default and let rayon decide. Method-leve
 "#]
     fn with_parallel_jobs(&self, n_jobs: Option<usize>) -> PyResult<Self> {
         Ok(Self {
-            inner: self.inner.clone(),
-            parallel_jobs: validate_n_jobs(n_jobs)?,
-            progress_bar: self.progress_bar,
+            inner: self
+                .inner
+                .clone()
+                .with_parallel_jobs(validate_n_jobs(n_jobs)?),
         })
     }
 
@@ -2190,7 +1923,7 @@ Pass ``None`` to clear the batch-level default and let rayon decide. Method-leve
 Return the batch-level default worker count, or ``None`` when unset.
 "#]
     fn parallel_jobs(&self) -> Option<usize> {
-        self.parallel_jobs
+        self.inner.parallel_jobs()
     }
 
     #[pyo3(signature = (progress_bar))]
@@ -2202,9 +1935,7 @@ arguments still override this setting for that one call.
 "#]
     fn with_progress_bar(&self, progress_bar: Option<bool>) -> Self {
         Self {
-            inner: self.inner.clone(),
-            parallel_jobs: self.parallel_jobs,
-            progress_bar,
+            inner: self.inner.clone().with_progress_bar(progress_bar),
         }
     }
 
@@ -2212,7 +1943,7 @@ arguments still override this setting for that one call.
 Return the batch-level progress-bar default, or ``None`` when unset.
 "#]
     fn progress_bar(&self) -> Option<bool> {
-        self.progress_bar
+        self.inner.progress_bar()
     }
 
     #[pyo3(signature = (errors=None, n_jobs=None, progress_bar=None))]
@@ -2226,33 +1957,11 @@ Return a new batch with explicit hydrogens added to each valid molecule.
         progress_bar: Option<bool>,
     ) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
-        let inner = &self.inner;
-        let parallel_jobs = self.parallel_jobs;
-        let progress_bar_setting = self.progress_bar;
-        let progress_bar = maybe_batch_progress_bar(
-            self.effective_progress_bar(progress_bar),
-            self.inner.len(),
-            "add_hydrogens",
-        );
-        let result = {
-            let progress = progress_bar
-                .as_ref()
-                .map(cosmolkit_core::BatchProgressBar::callback);
-            let progress = progress.as_deref();
-            run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
-                inner
-                    .add_hydrogens_with_progress(mode, progress)
-                    .map(|inner| Self {
-                        inner,
-                        parallel_jobs,
-                        progress_bar: progress_bar_setting,
-                    })
-            })
-        };
-        if let Some(progress_bar) = progress_bar.as_ref() {
-            progress_bar.finish();
-        }
-        result?.map_err(batch_validation_pyerr)
+        let inner = self
+            .inner
+            .add_hydrogens_with_options(mode, validate_n_jobs(n_jobs)?, progress_bar)
+            .map_err(batch_validation_pyerr)?;
+        Ok(Self { inner })
     }
 
     #[pyo3(signature = (errors=None, n_jobs=None, progress_bar=None))]
@@ -2266,33 +1975,11 @@ Return a new batch with explicit hydrogens removed from each valid molecule.
         progress_bar: Option<bool>,
     ) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
-        let inner = &self.inner;
-        let parallel_jobs = self.parallel_jobs;
-        let progress_bar_setting = self.progress_bar;
-        let progress_bar = maybe_batch_progress_bar(
-            self.effective_progress_bar(progress_bar),
-            self.inner.len(),
-            "remove_hydrogens",
-        );
-        let result = {
-            let progress = progress_bar
-                .as_ref()
-                .map(cosmolkit_core::BatchProgressBar::callback);
-            let progress = progress.as_deref();
-            run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
-                inner
-                    .remove_hydrogens_with_progress(mode, progress)
-                    .map(|inner| Self {
-                        inner,
-                        parallel_jobs,
-                        progress_bar: progress_bar_setting,
-                    })
-            })
-        };
-        if let Some(progress_bar) = progress_bar.as_ref() {
-            progress_bar.finish();
-        }
-        result?.map_err(batch_validation_pyerr)
+        let inner = self
+            .inner
+            .remove_hydrogens_with_options(mode, validate_n_jobs(n_jobs)?, progress_bar)
+            .map_err(batch_validation_pyerr)?;
+        Ok(Self { inner })
     }
 
     #[pyo3(signature = (strict=None, errors=None, n_jobs=None, progress_bar=None))]
@@ -2317,33 +2004,11 @@ n_jobs : int, optional
     ) -> PyResult<Self> {
         reject_non_strict_sanitize(strict)?;
         let mode = parse_batch_error_mode(errors)?;
-        let inner = &self.inner;
-        let parallel_jobs = self.parallel_jobs;
-        let progress_bar_setting = self.progress_bar;
-        let progress_bar = maybe_batch_progress_bar(
-            self.effective_progress_bar(progress_bar),
-            self.inner.len(),
-            "sanitize",
-        );
-        let result = {
-            let progress = progress_bar
-                .as_ref()
-                .map(cosmolkit_core::BatchProgressBar::callback);
-            let progress = progress.as_deref();
-            run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
-                inner
-                    .sanitize_with_progress(mode, progress)
-                    .map(|inner| Self {
-                        inner,
-                        parallel_jobs,
-                        progress_bar: progress_bar_setting,
-                    })
-            })
-        };
-        if let Some(progress_bar) = progress_bar.as_ref() {
-            progress_bar.finish();
-        }
-        result?.map_err(batch_validation_pyerr)
+        let inner = self
+            .inner
+            .sanitize_with_options(mode, validate_n_jobs(n_jobs)?, progress_bar)
+            .map_err(batch_validation_pyerr)?;
+        Ok(Self { inner })
     }
 
     #[pyo3(signature = (sanitize=None, errors=None, n_jobs=None, progress_bar=None))]
@@ -2359,33 +2024,16 @@ Return a new batch with aromatic bonds converted to an explicit Kekule form.
     ) -> PyResult<Self> {
         let sanitize = sanitize.unwrap_or(true);
         let mode = parse_batch_error_mode(errors)?;
-        let inner = &self.inner;
-        let parallel_jobs = self.parallel_jobs;
-        let progress_bar_setting = self.progress_bar;
-        let progress_bar = maybe_batch_progress_bar(
-            self.effective_progress_bar(progress_bar),
-            self.inner.len(),
-            "kekulize",
-        );
-        let result = {
-            let progress = progress_bar
-                .as_ref()
-                .map(cosmolkit_core::BatchProgressBar::callback);
-            let progress = progress.as_deref();
-            run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
-                inner
-                    .kekulize_with_sanitize_and_progress(sanitize, mode, progress)
-                    .map(|inner| Self {
-                        inner,
-                        parallel_jobs,
-                        progress_bar: progress_bar_setting,
-                    })
-            })
-        };
-        if let Some(progress_bar) = progress_bar.as_ref() {
-            progress_bar.finish();
-        }
-        result?.map_err(batch_validation_pyerr)
+        let inner = self
+            .inner
+            .with_kekulized_bonds_with_options(
+                sanitize,
+                mode,
+                validate_n_jobs(n_jobs)?,
+                progress_bar,
+            )
+            .map_err(batch_validation_pyerr)?;
+        Ok(Self { inner })
     }
 
     #[pyo3(signature = (errors=None, n_jobs=None, progress_bar=None))]
@@ -2399,33 +2047,11 @@ Return a new batch with 2D coordinates computed for each valid molecule.
         progress_bar: Option<bool>,
     ) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
-        let inner = &self.inner;
-        let parallel_jobs = self.parallel_jobs;
-        let progress_bar_setting = self.progress_bar;
-        let progress_bar = maybe_batch_progress_bar(
-            self.effective_progress_bar(progress_bar),
-            self.inner.len(),
-            "compute_2d_coords",
-        );
-        let result = {
-            let progress = progress_bar
-                .as_ref()
-                .map(cosmolkit_core::BatchProgressBar::callback);
-            let progress = progress.as_deref();
-            run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
-                inner
-                    .compute_2d_coords_with_progress(mode, progress)
-                    .map(|inner| Self {
-                        inner,
-                        parallel_jobs,
-                        progress_bar: progress_bar_setting,
-                    })
-            })
-        };
-        if let Some(progress_bar) = progress_bar.as_ref() {
-            progress_bar.finish();
-        }
-        result?.map_err(batch_validation_pyerr)
+        let inner = self
+            .inner
+            .with_2d_coordinates_with_options(mode, validate_n_jobs(n_jobs)?, progress_bar)
+            .map_err(batch_validation_pyerr)?;
+        Ok(Self { inner })
     }
 
     #[doc = r#"
@@ -2534,7 +2160,6 @@ n_jobs : int, optional
         n_jobs: Option<usize>,
         progress_bar: Option<bool>,
     ) -> PyResult<Vec<Option<String>>> {
-        let inner = &self.inner;
         let params = make_smiles_write_params(
             isomeric_smiles,
             canonical,
@@ -2546,24 +2171,13 @@ n_jobs : int, optional
             ignore_atom_map_numbers,
             rooted_at_atom,
         );
-        let progress_bar = maybe_batch_progress_bar(
-            self.effective_progress_bar(progress_bar),
-            self.inner.len(),
-            "to_smiles_list",
-        );
-        let result = {
-            let progress = progress_bar
-                .as_ref()
-                .map(cosmolkit_core::BatchProgressBar::callback);
-            let progress = progress.as_deref();
-            run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
-                inner.to_smiles_list_with_params_and_progress(&params, progress)
-            })
-        };
-        if let Some(progress_bar) = progress_bar.as_ref() {
-            progress_bar.finish();
-        }
-        result?.map_err(batch_validation_pyerr)
+        self.inner
+            .to_smiles_optional_list_with_params_and_options(
+                &params,
+                validate_n_jobs(n_jobs)?,
+                progress_bar,
+            )
+            .map_err(batch_validation_pyerr)
     }
 
     #[pyo3(signature = (n_jobs=None, progress_bar=None))]
@@ -2577,25 +2191,10 @@ Return distance-geometry bounds matrices for all valid records.
         n_jobs: Option<usize>,
         progress_bar: Option<bool>,
     ) -> PyResult<Bound<'py, PyList>> {
-        let inner = &self.inner;
-        let progress_bar = maybe_batch_progress_bar(
-            self.effective_progress_bar(progress_bar),
-            self.inner.len(),
-            "dg_bounds_matrix_list",
-        );
-        let result = {
-            let progress = progress_bar
-                .as_ref()
-                .map(cosmolkit_core::BatchProgressBar::callback);
-            let progress = progress.as_deref();
-            run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
-                inner.dg_bounds_matrix_list_with_progress(progress)
-            })
-        };
-        if let Some(progress_bar) = progress_bar.as_ref() {
-            progress_bar.finish();
-        }
-        let values = result?.map_err(batch_validation_pyerr)?;
+        let values = self
+            .inner
+            .dg_bounds_matrix_list_with_options(validate_n_jobs(n_jobs)?, progress_bar)
+            .map_err(batch_validation_pyerr)?;
         let out = PyList::empty(py);
         for value in values {
             if let Some(matrix) = value {
@@ -2683,32 +2282,15 @@ Invalid records are returned as ``None`` in their original positions.
             num_bits_per_feature,
             false,
         )?;
-        let inner = &self.inner;
-        let progress_bar = maybe_batch_progress_bar(
-            self.effective_progress_bar(progress_bar),
-            self.inner.len(),
-            "fingerprint_morgan_list",
-        );
-        let result = {
-            let progress = progress_bar
-                .as_ref()
-                .map(cosmolkit_core::BatchProgressBar::callback);
-            let progress = progress.as_deref();
-            run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
-                inner
-                    .morgan_fingerprint_list_with_progress(&params, progress)
-                    .map(|values| {
-                        values
-                            .into_iter()
-                            .map(|value| value.map(|inner| Fingerprint { inner }))
-                            .collect()
-                    })
+        self.inner
+            .morgan_fingerprint_list_with_options(&params, validate_n_jobs(n_jobs)?, progress_bar)
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.map(|inner| Fingerprint { inner }))
+                    .collect()
             })
-        };
-        if let Some(progress_bar) = progress_bar.as_ref() {
-            progress_bar.finish();
-        }
-        result?.map_err(batch_validation_pyerr)
+            .map_err(batch_validation_pyerr)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2783,32 +2365,19 @@ Invalid records are returned as ``None`` in their original positions.
             num_bits_per_feature,
             true,
         )?;
-        let inner = &self.inner;
-        let progress_bar = maybe_batch_progress_bar(
-            self.effective_progress_bar(progress_bar),
-            self.inner.len(),
-            "fingerprint_morgan_with_output_list",
-        );
-        let result = {
-            let progress = progress_bar
-                .as_ref()
-                .map(cosmolkit_core::BatchProgressBar::callback);
-            let progress = progress.as_deref();
-            run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
-                inner
-                    .morgan_fingerprint_with_output_list_with_progress(&params, progress)
-                    .map(|values| {
-                        values
-                            .into_iter()
-                            .map(|value| value.map(Into::into))
-                            .collect()
-                    })
+        self.inner
+            .morgan_fingerprint_with_output_list_with_options(
+                &params,
+                validate_n_jobs(n_jobs)?,
+                progress_bar,
+            )
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.map(Into::into))
+                    .collect()
             })
-        };
-        if let Some(progress_bar) = progress_bar.as_ref() {
-            progress_bar.finish();
-        }
-        result?.map_err(batch_validation_pyerr)
+            .map_err(batch_validation_pyerr)
     }
 
     #[pyo3(signature = (width=300, height=300, n_jobs=None, progress_bar=None))]
@@ -2822,25 +2391,9 @@ Render each valid molecule to an SVG string.
         n_jobs: Option<usize>,
         progress_bar: Option<bool>,
     ) -> PyResult<Vec<Option<String>>> {
-        let inner = &self.inner;
-        let progress_bar = maybe_batch_progress_bar(
-            self.effective_progress_bar(progress_bar),
-            self.inner.len(),
-            "to_svg_list",
-        );
-        let result = {
-            let progress = progress_bar
-                .as_ref()
-                .map(cosmolkit_core::BatchProgressBar::callback);
-            let progress = progress.as_deref();
-            run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
-                inner.to_svg_list_with_progress(width, height, progress)
-            })
-        };
-        if let Some(progress_bar) = progress_bar.as_ref() {
-            progress_bar.finish();
-        }
-        result?.map_err(batch_validation_pyerr)
+        self.inner
+            .to_svg_list_with_options(width, height, validate_n_jobs(n_jobs)?, progress_bar)
+            .map_err(batch_validation_pyerr)
     }
 
     #[pyo3(signature = (out_dir, format=None, size=None, n_jobs=None, errors=None, report_path=None, filenames=None, progress_bar=None))]
@@ -2886,33 +2439,19 @@ BatchExportReport
         let (width, height) = size.unwrap_or((300, 300));
         let out_dir = expand_user_path(out_dir)?;
         let filenames = complete_batch_filenames(filenames, self.inner.len(), &image_format)?;
-        let inner = &self.inner;
-        let progress_bar = maybe_batch_progress_bar(
-            self.effective_progress_bar(progress_bar),
-            self.inner.len(),
-            "to_images",
-        );
-        let result = {
-            let progress = progress_bar
-                .as_ref()
-                .map(cosmolkit_core::BatchProgressBar::callback);
-            let progress = progress.as_deref();
-            run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
-                inner.write_images_with_progress(
-                    out_dir.as_path(),
-                    &image_format,
-                    width,
-                    height,
-                    mode,
-                    filenames.as_deref(),
-                    progress,
-                )
-            })
-        };
-        if let Some(progress_bar) = progress_bar.as_ref() {
-            progress_bar.finish();
-        }
-        let report = result?.map_err(batch_validation_pyerr)?;
+        let report = self
+            .inner
+            .write_images_with_options(
+                out_dir.as_path(),
+                &image_format,
+                width,
+                height,
+                mode,
+                filenames.as_deref(),
+                validate_n_jobs(n_jobs)?,
+                progress_bar,
+            )
+            .map_err(batch_validation_pyerr)?;
         if let Some(path) = report_path {
             write_batch_report(path, &report)?;
         }
@@ -2948,25 +2487,16 @@ report_path : str, optional
         let mode = parse_batch_error_mode(errors)?;
         let sdf_format = parse_sdf_format(format)?;
         let path = expand_user_path(path)?;
-        let inner = &self.inner;
-        let progress_bar = maybe_batch_progress_bar(
-            self.effective_progress_bar(progress_bar),
-            self.inner.len(),
-            "to_sdf",
-        );
-        let result = {
-            let progress = progress_bar
-                .as_ref()
-                .map(cosmolkit_core::BatchProgressBar::callback);
-            let progress = progress.as_deref();
-            run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
-                inner.write_sdf_with_progress(path.as_path(), sdf_format, mode, progress)
-            })
-        };
-        if let Some(progress_bar) = progress_bar.as_ref() {
-            progress_bar.finish();
-        }
-        let report = result?.map_err(batch_validation_pyerr)?;
+        let report = self
+            .inner
+            .write_sdf_with_options(
+                path.as_path(),
+                sdf_format,
+                mode,
+                validate_n_jobs(n_jobs)?,
+                progress_bar,
+            )
+            .map_err(batch_validation_pyerr)?;
         if let Some(report_path) = report_path {
             write_batch_report(report_path, &report)?;
         }
@@ -3007,31 +2537,17 @@ filenames : list[str | None], optional
         let sdf_format = parse_sdf_format(format)?;
         let out_dir = expand_user_path(out_dir)?;
         let filenames = complete_batch_filenames(filenames, self.inner.len(), "sdf")?;
-        let inner = &self.inner;
-        let progress_bar = maybe_batch_progress_bar(
-            self.effective_progress_bar(progress_bar),
-            self.inner.len(),
-            "to_sdf_files",
-        );
-        let result = {
-            let progress = progress_bar
-                .as_ref()
-                .map(cosmolkit_core::BatchProgressBar::callback);
-            let progress = progress.as_deref();
-            run_batch_with_n_jobs(self.effective_n_jobs(n_jobs), move || {
-                inner.write_sdf_files_with_progress(
-                    out_dir.as_path(),
-                    sdf_format,
-                    mode,
-                    filenames.as_deref(),
-                    progress,
-                )
-            })
-        };
-        if let Some(progress_bar) = progress_bar.as_ref() {
-            progress_bar.finish();
-        }
-        let report = result?.map_err(batch_validation_pyerr)?;
+        let report = self
+            .inner
+            .write_sdf_files_with_options(
+                out_dir.as_path(),
+                sdf_format,
+                mode,
+                filenames.as_deref(),
+                validate_n_jobs(n_jobs)?,
+                progress_bar,
+            )
+            .map_err(batch_validation_pyerr)?;
         if let Some(report_path) = report_path {
             write_batch_report(report_path, &report)?;
         }
@@ -3086,8 +2602,8 @@ Valid records become ``Molecule`` objects and invalid records become ``None``.
             self.inner.len(),
             self.inner.valid_count(),
             self.inner.invalid_count(),
-            self.parallel_jobs,
-            self.progress_bar
+            self.inner.parallel_jobs(),
+            self.inner.progress_bar()
         )
     }
 }
@@ -3223,6 +2739,31 @@ Molecule
         };
         let inner = cosmolkit_core::Molecule::from_mmcif_block_with_options(text, profile)
             .map_err(pdb_molecule_pyerr)?;
+        Ok(Self { inner })
+    }
+
+    #[classmethod]
+    #[doc = r#"
+Create a molecule from an XYZ block.
+
+XYZ contains atom identities and Cartesian coordinates only. This follows
+COSMolKit core's RDKit-aligned ``MolFromXYZBlock`` behavior: atoms and one 3D
+conformer are parsed, and bonds are not inferred.
+
+Parameters
+----------
+text : str
+    XYZ block text.
+
+Returns
+-------
+Molecule
+    Parsed molecule with zero bonds and a 3D conformer when the atom count is
+    nonzero.
+"#]
+    fn from_xyz_block(_cls: &Bound<'_, PyType>, text: &str) -> PyResult<Self> {
+        let inner = cosmolkit_core::Molecule::from_xyz_block(text)
+            .map_err(|err| PyValueError::new_err(err.to_string()))?;
         Ok(Self { inner })
     }
 
@@ -3574,8 +3115,8 @@ Return read-only atom feature records.
                 idx: atom.id().index(),
                 atomic_num: atom.atomic_number() as usize,
                 formal_charge: atom.formal_charge(),
-                chiral_tag_name: chiral_tag_name(atom.chiral_tag()).to_string(),
-                chiral_tag_code: chiral_tag_code(atom.chiral_tag()),
+                chiral_tag_name: atom.chiral_tag().rdkit_name().to_string(),
+                chiral_tag_code: atom.chiral_tag().python_code(),
                 isotope: atom.isotope(),
                 atom_map_num: atom.atom_map(),
                 is_aromatic: atom.is_aromatic(),
@@ -3612,12 +3153,12 @@ Return read-only bond feature records.
                 idx: bond.id().index(),
                 begin_atom_idx: bond.begin().index(),
                 end_atom_idx: bond.end().index(),
-                bond_type_name: bond_order_name(bond.order()).to_string(),
-                bond_type_code: bond_order_code(bond.order()),
-                bond_dir_name: bond_direction_name(bond.direction()).to_string(),
-                bond_dir_code: bond_direction_code(bond.direction()),
-                stereo_name: bond_stereo_name(bond.stereo()).to_string(),
-                stereo_code: bond_stereo_code(bond.stereo()),
+                bond_type_name: bond.order().rdkit_name().to_string(),
+                bond_type_code: bond.order().python_code(),
+                bond_dir_name: bond.direction().rdkit_name().to_string(),
+                bond_dir_code: bond.direction().python_code(),
+                stereo_name: bond.stereo().rdkit_name().to_string(),
+                stereo_code: bond.stereo().python_code(),
                 stereo_atoms: bond
                     .stereo_atoms()
                     .map(|refs| refs.map(|id| id.index()).to_vec())
@@ -3996,7 +3537,7 @@ as one new molecule value.
 "#]
     fn edit(&self) -> MoleculeEdit {
         MoleculeEdit {
-            builder: molecule_to_builder(&self.inner),
+            builder: self.inner.to_builder(),
         }
     }
 
@@ -4857,7 +4398,7 @@ Set an atom formal charge.
     fn set_atom_charge(&mut self, atom_index: usize, charge: i32) -> PyResult<()> {
         let charge =
             i8::try_from(charge).map_err(|_| PyValueError::new_err("charge out of i8 range"))?;
-        let mut built = self
+        let built = self
             .builder
             .clone()
             .build()
@@ -4865,64 +4406,10 @@ Set an atom formal charge.
         if atom_index >= built.num_atoms() {
             return Err(PyValueError::new_err("atom index out of range"));
         }
-        let source_atom = &built.atoms()[atom_index];
-        let mut rebuilt = molecule_to_builder(&built);
-        let mut atom_spec = cosmolkit_core::AtomSpec::new(source_atom.element())
-            .with_formal_charge(charge)
-            .with_explicit_hydrogens(source_atom.explicit_hydrogens())
-            .with_chiral_tag(source_atom.chiral_tag())
-            .with_unknown_stereo(source_atom.unknown_stereo())
-            .with_aromatic(source_atom.is_aromatic())
-            .with_no_implicit(source_atom.no_implicit())
-            .with_radical_electrons(source_atom.radical_electrons());
-        if let Some(isotope) = source_atom.isotope() {
-            atom_spec = atom_spec.with_isotope(isotope);
-        }
-        if let Some(atom_map) = source_atom.atom_map() {
-            atom_spec = atom_spec.with_atom_map(atom_map);
-        }
-        let mut fresh = cosmolkit_core::MoleculeBuilder::new();
-        for (idx, atom) in built.atoms().iter().enumerate() {
-            if idx == atom_index {
-                fresh.add_atom(atom_spec.clone());
-                continue;
-            }
-            let mut spec = cosmolkit_core::AtomSpec::new(atom.element())
-                .with_formal_charge(atom.formal_charge())
-                .with_explicit_hydrogens(atom.explicit_hydrogens())
-                .with_chiral_tag(atom.chiral_tag())
-                .with_unknown_stereo(atom.unknown_stereo())
-                .with_aromatic(atom.is_aromatic())
-                .with_no_implicit(atom.no_implicit())
-                .with_radical_electrons(atom.radical_electrons());
-            if let Some(isotope) = atom.isotope() {
-                spec = spec.with_isotope(isotope);
-            }
-            if let Some(atom_map) = atom.atom_map() {
-                spec = spec.with_atom_map(atom_map);
-            }
-            for (key, value) in atom.props() {
-                spec = spec.with_prop(key.clone(), value.clone());
-            }
-            fresh.add_atom(spec);
-        }
-        for bond in built.bonds() {
-            let mut spec = cosmolkit_core::BondSpec::new(bond.begin(), bond.end(), bond.order())
-                .with_aromatic(bond.is_aromatic())
-                .with_conjugated(bond.is_conjugated())
-                .with_direction(bond.direction())
-                .with_stereo(bond.stereo())
-                .with_unknown_stereo(bond.unknown_stereo());
-            if let Some([begin_ref, end_ref]) = bond.stereo_atoms() {
-                spec = spec.with_stereo_atoms(begin_ref, end_ref);
-            }
-            for (key, value) in bond.props() {
-                spec = spec.with_prop(key.clone(), value.clone());
-            }
-            let _ = fresh.add_bond(spec);
-        }
-        self.builder = fresh;
-        let _ = rebuilt;
+        self.builder = built.to_builder();
+        self.builder
+            .set_atom_formal_charge(cosmolkit_core::AtomId::new(atom_index), charge)
+            .map_err(|err| PyValueError::new_err(err.to_string()))?;
         Ok(())
     }
 

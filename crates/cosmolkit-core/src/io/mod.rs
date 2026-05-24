@@ -23,6 +23,7 @@ pub mod molfile;
 pub mod pdb_molecule;
 pub mod pdb_writer;
 pub mod sdf;
+pub mod xyz;
 
 pub fn dependency_versions() -> Result<(&'static str, &'static str), UnsupportedFeatureError> {
     Err(UnsupportedFeatureError::from_spec(&MOLBLOCK_IO_FEATURE))

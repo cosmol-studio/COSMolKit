@@ -674,7 +674,7 @@ def test_molecule_batch_exports_use_custom_filenames(tmp_path: Path):
     )
     assert image_report.success() == 2
     assert (tmp_path / "images" / "ethanol.svg").exists()
-    assert (tmp_path / "images" / "000002.svg").exists()
+    assert (tmp_path / "images" / "mol_2.svg").exists()
 
     sdf_report = batch.to_sdf_files(
         str(tmp_path / "sdf"),
@@ -684,7 +684,7 @@ def test_molecule_batch_exports_use_custom_filenames(tmp_path: Path):
     )
     assert sdf_report.success() == 2
     assert (tmp_path / "sdf" / "ethanol.sdf").exists()
-    assert (tmp_path / "sdf" / "000002.sdf").exists()
+    assert (tmp_path / "sdf" / "mol_2.sdf").exists()
 
     with pytest.raises(cosmolkit.BatchValidationError, match="invalid filename"):
         batch.to_images(str(tmp_path / "bad"), format="svg", filenames=["../x", None, None])

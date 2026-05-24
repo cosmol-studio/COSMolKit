@@ -857,6 +857,10 @@ impl Molecule {
         Ok(crate::io::molfile::read_mol_file_with_params(_path, params)?.molecule)
     }
 
+    pub fn from_xyz_block(block: &str) -> Result<Self, crate::io::xyz::XyzReadError> {
+        crate::io::xyz::read_xyz_from_str(block)
+    }
+
     pub fn to_smiles(&self, isomeric_smiles: bool) -> Result<String, SmilesWriteError> {
         let params = crate::SmilesWriteParams {
             do_isomeric_smiles: isomeric_smiles,

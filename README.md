@@ -33,7 +33,7 @@ workflows.
 ## Documentation
 
 - Python documentation: <https://kit.cosmol.org/>
-- Rust and development notes: [`crates/cosmolkit/README.md`]([crates/cosmolkit/README.md](https://github.com/cosmol-studio/COSMolKit/blob/main/crates/cosmolkit/README.md))
+- Rust and development notes: [`crates/cosmolkit/README.md`](crates/cosmolkit/README.md)
 
 ## Installation
 
@@ -153,6 +153,7 @@ for batch in dataset.batches(size=1024, errors="keep", n_jobs=8):
 - Molecular graph construction and inspection
 - SMILES parsing and writing
 - MOL/SDF reading and writing
+- XYZ block reading
 - Hydrogen transforms and Kekulization
 - Sanitization and chemistry problem detection
 - 2D coordinate generation and SVG/PNG depiction
@@ -213,6 +214,7 @@ Goal: make common molecule import, export, and visualization workflows usable
 from Python.
 
 - ✅ MOL/SDF reading
+- ✅ XYZ block reading
 - ✅ SDF dataset indexing for large files
 - ✅ SDF writing for supported V2000/V3000 branches
 - ✅ PDB block to molecule conversion

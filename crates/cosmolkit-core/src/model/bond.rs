@@ -58,6 +58,34 @@ pub enum BondOrder {
 
 impl BondOrder {
     #[must_use]
+    pub const fn python_code(self) -> i64 {
+        match self {
+            Self::Null | Self::Unspecified => 0,
+            Self::Single => 1,
+            Self::Double => 2,
+            Self::Triple => 3,
+            Self::Quadruple => 4,
+            Self::Quintuple => 5,
+            Self::Hextuple => 6,
+            Self::OneAndHalf => 7,
+            Self::TwoAndHalf => 8,
+            Self::ThreeAndHalf => 9,
+            Self::FourAndHalf => 10,
+            Self::FiveAndHalf => 11,
+            Self::Aromatic => 12,
+            Self::Ionic => 13,
+            Self::Dative => 14,
+            Self::DativeOne => 15,
+            Self::DativeLeft => 16,
+            Self::DativeRight => 17,
+            Self::Hydrogen => 18,
+            Self::ThreeCenter => 19,
+            Self::Other => 20,
+            Self::Zero => 21,
+        }
+    }
+
+    #[must_use]
     pub const fn rdkit_name(self) -> &'static str {
         match self {
             Self::Null | Self::Unspecified => "UNSPECIFIED",
@@ -125,6 +153,34 @@ pub enum BondDirection {
     Unknown,
 }
 
+impl BondDirection {
+    #[must_use]
+    pub const fn python_code(self) -> i64 {
+        match self {
+            Self::None => 0,
+            Self::BeginWedge => 1,
+            Self::BeginDash => 2,
+            Self::EndUpRight => 3,
+            Self::EndDownRight => 4,
+            Self::EitherDouble => 5,
+            Self::Unknown => 6,
+        }
+    }
+
+    #[must_use]
+    pub const fn rdkit_name(self) -> &'static str {
+        match self {
+            Self::None => "NONE",
+            Self::BeginWedge => "BEGINWEDGE",
+            Self::BeginDash => "BEGINDASH",
+            Self::EndUpRight => "ENDUPRIGHT",
+            Self::EndDownRight => "ENDDOWNRIGHT",
+            Self::EitherDouble => "EITHERDOUBLE",
+            Self::Unknown => "UNKNOWN",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BondStereo {
     None,
@@ -135,6 +191,36 @@ pub enum BondStereo {
     Trans,
     AtropCw,
     AtropCcw,
+}
+
+impl BondStereo {
+    #[must_use]
+    pub const fn python_code(self) -> i64 {
+        match self {
+            Self::None => 0,
+            Self::Any => 1,
+            Self::Z => 2,
+            Self::E => 3,
+            Self::Cis => 4,
+            Self::Trans => 5,
+            Self::AtropCw => 6,
+            Self::AtropCcw => 7,
+        }
+    }
+
+    #[must_use]
+    pub const fn rdkit_name(self) -> &'static str {
+        match self {
+            Self::None => "NONE",
+            Self::Any => "ANY",
+            Self::Z => "Z",
+            Self::E => "E",
+            Self::Cis => "CIS",
+            Self::Trans => "TRANS",
+            Self::AtropCw => "ATROP_CW",
+            Self::AtropCcw => "ATROP_CCW",
+        }
+    }
 }
 
 /// Bond construction payload. Builders assign `BondId`.
