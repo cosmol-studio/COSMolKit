@@ -748,20 +748,169 @@ fn mdl_aromaticity_helper_from_parts(
     // BEGIN RDKIT CPP FUNCTION mdlAromaticityHelper
     // RDKit✔️✔️: int mdlAromaticityHelper(RWMol &mol, const VECT_INT_VECT &srings) {
     // RDKit✔️✔️:   int narom = 0;
-    // RDKit✔️✔️:   // MDL aromaticity uses stricter rules: only one-electron donors,
-    // RDKit✔️✔️:   // only C/N, no third row, no triple bonds, no exocyclic multiple bonds.
-    // RDKit✔️✔️:   // In COSMolKit we delegate to the general aromaticity helper since
-    // RDKit✔️✔️:   // it already correctly handles the same Huckel-based detection.
+    // RDKit✔️✔️:   // loop over all the atoms in the rings that can be candidates
+    // RDKit✔️✔️:   // for aromaticity
+    // RDKit✔️✔️:   int natoms = mol.getNumAtoms();
+    // RDKit✔️✔️:   boost::dynamic_bitset<> acands(natoms);
+    // RDKit✔️✔️:   boost::dynamic_bitset<> aseen(natoms);
+    // RDKit✔️✔️:   VECT_EDON_TYPE edon(natoms);
     // RDKit✔️✔️:
-    // RDKit✔️✔️:   // Call the general aromaticity helper; the MDL-specific filtering
-    // RDKit✔️✔️:   // (OneElectronDonorType only, strict isAtomCandForArom flags) is a
-    // RDKit✔️✔️:   // subset of the general algorithm's capabilities.
+    // RDKit✔️✔️:   VECT_INT_VECT cRings;
+    // RDKit✔️✔️:   for (auto &sring : srings) {
+    // RDKit✔️✔️:     bool allAromatic = true;
+    // RDKit✔️✔️:     bool allDummy = true;
     // RDKit✔️✔️:
-    // RDKit✔️✔️:   // minRingSize=6, maxRingSize=0 (no max), includeFused=true
-    // RDKit✔️✔️:   aromaticity_helper(molecule, rings, 0, 0, true)
+    // RDKit✔️✔️:     for (auto firstIdx : sring) {
+    // RDKit✔️✔️:       const auto at = mol.getAtomWithIdx(firstIdx);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       if (allDummy && at->getAtomicNum() != 0) {
+    // RDKit✔️✔️:         allDummy = false;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       if (aseen[firstIdx]) {
+    // RDKit✔️✔️:         if (!acands[firstIdx]) {
+    // RDKit✔️✔️:           allAromatic = false;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       aseen[firstIdx] = 1;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       edon[firstIdx] = getAtomDonorTypeArom(at, false);
+    // RDKit✔️✔️:       if (edon[firstIdx] != OneElectronDonorType) {
+    // RDKit✔️✔️:         allAromatic = false;
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       const bool allowThirdRow = false;
+    // RDKit✔️✔️:       const bool allowTripleBonds = false;
+    // RDKit✔️✔️:       const bool allowHigherExceptions = false;
+    // RDKit✔️✔️:       const bool onlyCorN = true;
+    // RDKit✔️✔️:       const bool allowExocyclicMultipleBonds = false;
+    // RDKit✔️✔️:       acands[firstIdx] = isAtomCandForArom(
+    // RDKit✔️✔️:           at, edon[firstIdx], allowThirdRow, allowTripleBonds,
+    // RDKit✔️✔️:           allowHigherExceptions, onlyCorN, allowExocyclicMultipleBonds);
+    // RDKit✔️✔️:       if (!acands[firstIdx]) {
+    // RDKit✔️✔️:         allAromatic = false;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (allAromatic && !allDummy) {
+    // RDKit✔️✔️:       cRings.push_back(sring);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   VECT_INT_VECT brings;
+    // RDKit✔️✔️:   RingUtils::convertToBonds(cRings, brings, mol);
+    // RDKit✔️✔️:   INT_INT_VECT_MAP neighMap;
+    // RDKit✔️✔️:   RingUtils::makeRingNeighborMap(brings, neighMap, maxFusedAromaticRingSize, 1);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   while (curr < cnrs) {
+    // RDKit✔️✔️:     RingUtils::pickFusedRings(curr, neighMap, fused, fusDone);
+    // RDKit✔️✔️:     const unsigned int maxFused = 6;
+    // RDKit✔️✔️:     const unsigned int minRingSize = 6;
+    // RDKit✔️✔️:     applyHuckelToFused(mol, cRings, brings, fused, edon, neighMap, narom,
+    // RDKit✔️✔️:                        maxFused, bondsByIdx, minRingSize);
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION mdlAromaticityHelper
-    aromaticity_helper_from_parts(atoms, bonds, adjacency, cached_valence, rings, 0, 0, true)
+    if rings.num_rings() == 0 {
+        return Ok(AromaticityAssignment {
+            atom_aromatic: vec![false; atoms.len()],
+            bond_aromatic: vec![false; bonds.len()],
+            aromatic_ring_count: 0,
+        });
+    }
+    let valence = if let Some(valence) = cached_valence {
+        valence.clone()
+    } else {
+        crate::valence::assign_valence_with_options_from_parts(
+            atoms,
+            bonds,
+            adjacency,
+            ValenceModel::RdkitLike,
+            true,
+        )?
+    };
+    let context = AromaticityContext::new(atoms, bonds, adjacency, rings, valence)?;
+    let mut atom_aromatic = vec![false; atoms.len()];
+    let mut bond_aromatic = vec![false; bonds.len()];
+    let mut aromatic_ring_count = 0usize;
+    let mut atom_candidates = vec![false; atoms.len()];
+    let mut atom_seen = vec![false; atoms.len()];
+    let mut electron_donors = vec![ElectronDonorType::None; atoms.len()];
+    let mut candidate_rings = Vec::new();
+
+    for ring in rings.atom_rings() {
+        let mut all_aromatic = true;
+        let mut all_dummy = true;
+        for &atom_id in ring {
+            let atom = context.atom(atom_id)?;
+            if all_dummy && atom.atomic_number() != 0 {
+                all_dummy = false;
+            }
+            if atom_seen[atom_id.index()] {
+                if !atom_candidates[atom_id.index()] {
+                    all_aromatic = false;
+                }
+                continue;
+            }
+            atom_seen[atom_id.index()] = true;
+            electron_donors[atom_id.index()] =
+                get_atom_donor_type_aromaticity(&context, atom_id, false)?;
+            if electron_donors[atom_id.index()] != ElectronDonorType::One {
+                all_aromatic = false;
+                continue;
+            }
+            atom_candidates[atom_id.index()] = is_atom_candidate_for_aromaticity(
+                &context,
+                atom_id,
+                electron_donors[atom_id.index()],
+                false,
+                false,
+                false,
+                true,
+                false,
+            )?;
+            if !atom_candidates[atom_id.index()] {
+                all_aromatic = false;
+            }
+        }
+        if all_aromatic && !all_dummy {
+            candidate_rings.push(ring.iter().map(|atom| atom.index()).collect::<Vec<_>>());
+        }
+    }
+
+    let bond_rings = convert_candidate_rings_to_bonds(&context, &candidate_rings)?;
+    let neighbor_map = make_ring_neighbor_map(&bond_rings, MAX_FUSED_AROMATIC_RING_SIZE, 1);
+    let ring_count = candidate_rings.len();
+    let mut current = 0usize;
+    let mut fused_done = vec![false; ring_count];
+    while current < ring_count {
+        let mut fused = Vec::new();
+        pick_fused_rings(current, &neighbor_map, &mut fused, &mut fused_done, 0)?;
+        apply_huckel_to_fused(
+            atoms.len(),
+            &candidate_rings,
+            &bond_rings,
+            &fused,
+            &electron_donors,
+            &neighbor_map,
+            &mut aromatic_ring_count,
+            6,
+            6,
+            bonds,
+            &mut atom_aromatic,
+            &mut bond_aromatic,
+        )?;
+
+        let Some(next) = fused_done.iter().position(|done| !*done) else {
+            break;
+        };
+        current = next;
+    }
+
+    Ok(AromaticityAssignment {
+        atom_aromatic,
+        bond_aromatic,
+        aromatic_ring_count,
+    })
 }
 
 #[allow(dead_code)]

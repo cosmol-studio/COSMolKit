@@ -41,6 +41,51 @@ def test_from_smiles_sanitize_flag_and_molecule_sanitize_are_value_style():
     assert raw is not sanitized
 
 
+def test_in_place_molecule_methods_mutate_receiver_and_return_none():
+    mol = cosmolkit.Molecule.from_smiles("CCO")
+
+    result = mol.add_hydrogens_()
+
+    assert result is None
+    assert mol.num_atoms() == 9
+    assert mol.num_bonds() == 8
+
+    assert mol.compute_2d_coords_() is None
+    assert mol.has_2d_coords()
+
+    assert mol.remove_hydrogens_(sanitize=False) is None
+    assert mol.num_atoms() == 3
+    assert mol.num_bonds() == 2
+
+
+def test_in_place_molecule_methods_preserve_shared_python_values():
+    mol = cosmolkit.Molecule.from_smiles("CCO")
+    shared = mol.with_2d_coords()
+
+    mol.add_hydrogens_()
+
+    assert shared.num_atoms() == 3
+    assert shared.num_bonds() == 2
+    assert mol.num_atoms() == 9
+    assert mol.num_bonds() == 8
+
+
+def test_in_place_sanitize_and_kekulize_methods_match_value_methods():
+    raw = cosmolkit.Molecule.from_smiles("CN(=O)=O", sanitize=False)
+    expected = raw.sanitize()
+
+    raw.sanitize_()
+
+    assert raw.to_smiles() == expected.to_smiles()
+
+    benzene = cosmolkit.Molecule.from_smiles("c1ccccc1")
+    expected_kekule = benzene.with_kekulized_bonds(sanitize=False)
+
+    benzene.kekulize_(sanitize=False)
+
+    assert benzene.to_smiles(kekule=True) == expected_kekule.to_smiles(kekule=True)
+
+
 def test_sdf_sanitize_false_is_not_silently_ignored():
     sdf = """ethane
      COSMolKit      2D

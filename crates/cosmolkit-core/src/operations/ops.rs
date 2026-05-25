@@ -483,6 +483,7 @@ impl OperationTrace {
     }
 }
 
+#[cfg(feature = "op-contracts")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BlockLifecycle {
     Available,
@@ -490,13 +491,84 @@ enum BlockLifecycle {
     Committed,
 }
 
+#[cfg(feature = "op-contracts")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ContractSourceSnapshot {
+    atom_count: usize,
+    bond_endpoints: Vec<(AtomId, AtomId)>,
+}
+
+#[cfg(feature = "op-contracts")]
+impl ContractSourceSnapshot {
+    fn from_molecule(molecule: &Molecule) -> Self {
+        Self {
+            atom_count: molecule.num_atoms(),
+            bond_endpoints: molecule
+                .bonds()
+                .iter()
+                .map(|bond| (bond.begin(), bond.end()))
+                .collect(),
+        }
+    }
+
+    const fn num_atoms(&self) -> usize {
+        self.atom_count
+    }
+
+    fn num_bonds(&self) -> usize {
+        self.bond_endpoints.len()
+    }
+
+    fn bond_endpoint(&self, index: usize) -> Option<(AtomId, AtomId)> {
+        self.bond_endpoints.get(index).copied()
+    }
+}
+
+#[cfg(feature = "op-contracts")]
+enum ContractSource<'a> {
+    Borrowed(&'a Molecule),
+    Snapshot(ContractSourceSnapshot),
+}
+
+#[cfg(feature = "op-contracts")]
+impl ContractSource<'_> {
+    fn num_atoms(&self) -> usize {
+        match self {
+            Self::Borrowed(molecule) => molecule.num_atoms(),
+            Self::Snapshot(snapshot) => snapshot.num_atoms(),
+        }
+    }
+
+    fn num_bonds(&self) -> usize {
+        match self {
+            Self::Borrowed(molecule) => molecule.num_bonds(),
+            Self::Snapshot(snapshot) => snapshot.num_bonds(),
+        }
+    }
+
+    fn bond_endpoint(&self, index: usize) -> Option<(AtomId, AtomId)> {
+        match self {
+            Self::Borrowed(molecule) => molecule
+                .bonds()
+                .get(index)
+                .map(|bond| (bond.begin(), bond.end())),
+            Self::Snapshot(snapshot) => snapshot.bond_endpoint(index),
+        }
+    }
+}
+
 pub struct OpParts<'a> {
     spec: &'static MoleculeOpSpec,
-    source: &'a Molecule,
+    #[cfg(feature = "op-contracts")]
+    contract_source: ContractSource<'a>,
     working: Molecule,
+    in_place_target: Option<&'a mut Molecule>,
     topology_mapping: Option<TopologyMapping>,
+    #[cfg(feature = "op-contracts")]
     topology_lifecycle: BlockLifecycle,
+    #[cfg(feature = "op-contracts")]
     coordinates_lifecycle: BlockLifecycle,
+    #[cfg(feature = "op-contracts")]
     properties_lifecycle: BlockLifecycle,
 
     #[cfg(feature = "op-contracts")]
@@ -507,11 +579,49 @@ impl<'a> OpParts<'a> {
     pub(crate) fn new(source: &'a Molecule, spec: &'static MoleculeOpSpec) -> Self {
         Self {
             spec,
-            source,
+            #[cfg(feature = "op-contracts")]
+            contract_source: ContractSource::Borrowed(source),
             working: source.clone(),
+            in_place_target: None,
             topology_mapping: None,
+            #[cfg(feature = "op-contracts")]
             topology_lifecycle: BlockLifecycle::Available,
+            #[cfg(feature = "op-contracts")]
             coordinates_lifecycle: BlockLifecycle::Available,
+            #[cfg(feature = "op-contracts")]
+            properties_lifecycle: BlockLifecycle::Available,
+            #[cfg(feature = "op-contracts")]
+            trace: OperationTrace {
+                touched_blocks: BlockSet::NONE,
+                claimed_write_blocks: BlockSet::NONE,
+                recorded_topology_edit: TopologyEditKind::None,
+                remapped_blocks: BlockSet::NONE,
+                preserved_cache: DerivedState::NONE,
+                read_cache: DerivedState::NONE,
+                cleared_cache: DerivedState::NONE,
+                updated_cache: DerivedState::NONE,
+                outcome: None,
+            },
+        }
+    }
+
+    pub(crate) fn new_in_place(target: &'a mut Molecule, spec: &'static MoleculeOpSpec) -> Self {
+        #[cfg(feature = "op-contracts")]
+        let contract_source =
+            ContractSource::Snapshot(ContractSourceSnapshot::from_molecule(target));
+        let working = std::mem::take(target);
+        Self {
+            spec,
+            #[cfg(feature = "op-contracts")]
+            contract_source,
+            working,
+            in_place_target: Some(target),
+            topology_mapping: None,
+            #[cfg(feature = "op-contracts")]
+            topology_lifecycle: BlockLifecycle::Available,
+            #[cfg(feature = "op-contracts")]
+            coordinates_lifecycle: BlockLifecycle::Available,
+            #[cfg(feature = "op-contracts")]
             properties_lifecycle: BlockLifecycle::Available,
             #[cfg(feature = "op-contracts")]
             trace: OperationTrace {
@@ -536,13 +646,16 @@ impl<'a> OpParts<'a> {
     // apply state changes, and record contract effects.
     pub(crate) fn begin_topology_read(&self) -> Result<MoleculeReadParts<'_>, OperationError> {
         self.validate_access_spec()?;
-        if !self.spec.access.read().contains(BlockSet::TOPOLOGY)
-            || self.spec.access.write().contains(BlockSet::TOPOLOGY)
+        #[cfg(feature = "op-contracts")]
         {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "operation attempted to read topology outside its registry read access",
-            });
+            if !self.spec.access.read().contains(BlockSet::TOPOLOGY)
+                || self.spec.access.write().contains(BlockSet::TOPOLOGY)
+            {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "operation attempted to read topology outside its registry read access",
+                });
+            }
         }
         Ok(MoleculeReadParts::from_molecule(&self.working))
     }
@@ -592,69 +705,108 @@ impl<'a> OpParts<'a> {
 
     pub(crate) fn begin_topology_mut(&mut self) -> Result<TopologyBlock, OperationError> {
         self.begin_block_mut(BlockSet::TOPOLOGY)?;
-        self.topology_lifecycle = BlockLifecycle::Begun;
-        Ok(self.working.topology_block().clone())
+        #[cfg(feature = "op-contracts")]
+        {
+            self.topology_lifecycle = BlockLifecycle::Begun;
+        }
+        Ok(if self.in_place_target.is_some() {
+            self.working.take_topology_block_or_clone()
+        } else {
+            self.working.topology_block().clone()
+        })
     }
 
     pub(crate) fn commit_topology(
         &mut self,
         mut topology: TopologyBlock,
     ) -> Result<(), OperationError> {
-        if self.topology_lifecycle != BlockLifecycle::Begun {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "topology block was not begun before commit",
-            });
+        #[cfg(feature = "op-contracts")]
+        {
+            if self.topology_lifecycle != BlockLifecycle::Begun {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "topology block was not begun before commit",
+                });
+            }
         }
         topology.adjacency =
             crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
         self.record_mutation(BlockSet::TOPOLOGY);
         self.working.replace_topology_block(topology);
-        self.topology_lifecycle = BlockLifecycle::Committed;
+        #[cfg(feature = "op-contracts")]
+        {
+            self.topology_lifecycle = BlockLifecycle::Committed;
+        }
         Ok(())
     }
 
     pub(crate) fn begin_coordinates_mut(&mut self) -> Result<CoordinateBlock, OperationError> {
         self.begin_block_mut(BlockSet::COORDINATES)?;
-        self.coordinates_lifecycle = BlockLifecycle::Begun;
-        Ok(self.working.coordinate_block().clone())
+        #[cfg(feature = "op-contracts")]
+        {
+            self.coordinates_lifecycle = BlockLifecycle::Begun;
+        }
+        Ok(if self.in_place_target.is_some() {
+            self.working.take_coordinate_block_or_clone()
+        } else {
+            self.working.coordinate_block().clone()
+        })
     }
 
     pub(crate) fn commit_coordinates(
         &mut self,
         coordinates: CoordinateBlock,
     ) -> Result<(), OperationError> {
-        if self.coordinates_lifecycle != BlockLifecycle::Begun {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "coordinate block was not begun before commit",
-            });
+        #[cfg(feature = "op-contracts")]
+        {
+            if self.coordinates_lifecycle != BlockLifecycle::Begun {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "coordinate block was not begun before commit",
+                });
+            }
         }
         self.record_mutation(BlockSet::COORDINATES);
         self.working.replace_coordinate_block(coordinates);
-        self.coordinates_lifecycle = BlockLifecycle::Committed;
+        #[cfg(feature = "op-contracts")]
+        {
+            self.coordinates_lifecycle = BlockLifecycle::Committed;
+        }
         Ok(())
     }
 
     pub(crate) fn begin_properties_mut(&mut self) -> Result<MoleculeProperties, OperationError> {
         self.begin_block_mut(BlockSet::PROPERTIES)?;
-        self.properties_lifecycle = BlockLifecycle::Begun;
-        Ok(self.working.properties().clone())
+        #[cfg(feature = "op-contracts")]
+        {
+            self.properties_lifecycle = BlockLifecycle::Begun;
+        }
+        Ok(if self.in_place_target.is_some() {
+            self.working.take_properties_or_clone()
+        } else {
+            self.working.properties().clone()
+        })
     }
 
     pub(crate) fn commit_properties(
         &mut self,
         properties: MoleculeProperties,
     ) -> Result<(), OperationError> {
-        if self.properties_lifecycle != BlockLifecycle::Begun {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "properties block was not begun before commit",
-            });
+        #[cfg(feature = "op-contracts")]
+        {
+            if self.properties_lifecycle != BlockLifecycle::Begun {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "properties block was not begun before commit",
+                });
+            }
         }
         self.record_mutation(BlockSet::PROPERTIES);
         self.working.replace_properties(properties);
-        self.properties_lifecycle = BlockLifecycle::Committed;
+        #[cfg(feature = "op-contracts")]
+        {
+            self.properties_lifecycle = BlockLifecycle::Committed;
+        }
         Ok(())
     }
 
@@ -662,26 +814,30 @@ impl<'a> OpParts<'a> {
         &mut self,
         kind: TopologyEditKind,
     ) -> Result<(), OperationError> {
-        if kind == TopologyEditKind::Local
-            && matches!(
-                self.spec.topology_edit,
-                TopologyEditKind::Appending
-                    | TopologyEditKind::Compacting
-                    | TopologyEditKind::Renumbering
-                    | TopologyEditKind::Merge
-            )
-        {
-            return Ok(());
-        }
-        if self.spec.topology_edit != kind {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "recorded topology edit does not match registry declaration",
-            });
-        }
         #[cfg(feature = "op-contracts")]
         {
+            if kind == TopologyEditKind::Local
+                && matches!(
+                    self.spec.topology_edit,
+                    TopologyEditKind::Appending
+                        | TopologyEditKind::Compacting
+                        | TopologyEditKind::Renumbering
+                        | TopologyEditKind::Merge
+                )
+            {
+                return Ok(());
+            }
+            if self.spec.topology_edit != kind {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "recorded topology edit does not match registry declaration",
+                });
+            }
             self.trace.recorded_topology_edit = kind;
+        }
+        #[cfg(not(feature = "op-contracts"))]
+        {
+            let _ = kind;
         }
         Ok(())
     }
@@ -810,23 +966,31 @@ impl<'a> OpParts<'a> {
         states: DerivedState,
         proof: PreservationProof,
     ) -> Result<(), OperationError> {
-        if !self.spec.derived_effects.preserve().contains(states) {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "operation attempted to prove preservation for undeclared derived states",
-            });
-        }
-        match proof {
-            PreservationProof::LeafAtomAppend => self.validate_leaf_atom_append_preservation()?,
-        }
         #[cfg(feature = "op-contracts")]
         {
+            if !self.spec.derived_effects.preserve().contains(states) {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "operation attempted to prove preservation for undeclared derived states",
+                });
+            }
+            match proof {
+                PreservationProof::LeafAtomAppend => {
+                    self.validate_leaf_atom_append_preservation()?
+                }
+            }
             self.trace.preserved_cache |= states;
+        }
+        #[cfg(not(feature = "op-contracts"))]
+        {
+            let _ = states;
+            let _ = proof;
         }
         Ok(())
     }
 
     pub(crate) fn finish(self, outcome: OpOutcome) -> Result<Molecule, OperationError> {
+        debug_assert!(self.in_place_target.is_none());
         #[cfg(feature = "op-contracts")]
         {
             let mut this = self;
@@ -853,6 +1017,58 @@ impl<'a> OpParts<'a> {
         }
     }
 
+    pub(crate) fn abort_in_place(mut self) {
+        let Some(target) = self.in_place_target.take() else {
+            return;
+        };
+        *target = self.working;
+    }
+
+    pub(crate) fn finish_in_place(self, outcome: OpOutcome) -> Result<(), OperationError> {
+        #[cfg(feature = "op-contracts")]
+        {
+            let mut this = self;
+            this.trace.outcome = Some(outcome);
+            let validation = this.validate_contract().and_then(|()| {
+                enforce_molecule_invariants(&this.working).map_err(|failure| {
+                    OperationError::InvariantViolation {
+                        operation: this.spec,
+                        failure,
+                    }
+                })
+            });
+            let target = this
+                .in_place_target
+                .take()
+                .ok_or(OperationError::InvalidInput {
+                    operation: this.spec,
+                    message: "in-place operation was finished without an in-place target",
+                })?;
+            *target = this.working;
+            validation
+        }
+        #[cfg(not(feature = "op-contracts"))]
+        {
+            let mut this = self;
+            let _ = outcome;
+            let validation = enforce_molecule_invariants(&this.working).map_err(|failure| {
+                OperationError::InvariantViolation {
+                    operation: this.spec,
+                    failure,
+                }
+            });
+            let target = this
+                .in_place_target
+                .take()
+                .ok_or(OperationError::InvalidInput {
+                    operation: this.spec,
+                    message: "in-place operation was finished without an in-place target",
+                })?;
+            *target = this.working;
+            validation
+        }
+    }
+
     fn record_mutation(&mut self, block: BlockSet) {
         #[cfg(feature = "op-contracts")]
         {
@@ -869,6 +1085,7 @@ impl<'a> OpParts<'a> {
         }
     }
 
+    #[cfg(feature = "op-contracts")]
     fn validate_access_spec(&self) -> Result<(), OperationError> {
         if self.spec.access.has_overlapping_read_write() {
             return Err(OperationError::InvalidInput {
@@ -885,35 +1102,44 @@ impl<'a> OpParts<'a> {
         Ok(())
     }
 
+    #[cfg(not(feature = "op-contracts"))]
+    fn validate_access_spec(&self) -> Result<(), OperationError> {
+        Ok(())
+    }
+
     fn begin_block_mut(&mut self, block: BlockSet) -> Result<(), OperationError> {
         self.validate_access_spec()?;
-        if !self.spec.access.can_write(block) {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "operation attempted to write a block outside its registry access",
-            });
-        }
-        let lifecycle = if block == BlockSet::TOPOLOGY {
-            self.topology_lifecycle
-        } else if block == BlockSet::COORDINATES {
-            self.coordinates_lifecycle
-        } else if block == BlockSet::PROPERTIES {
-            self.properties_lifecycle
-        } else {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "operation attempted to begin an unknown block",
-            });
-        };
-        if lifecycle != BlockLifecycle::Available {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "operation attempted to begin the same writable block twice",
-            });
-        }
         #[cfg(feature = "op-contracts")]
         {
+            if !self.spec.access.can_write(block) {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "operation attempted to write a block outside its registry access",
+                });
+            }
+            let lifecycle = if block == BlockSet::TOPOLOGY {
+                self.topology_lifecycle
+            } else if block == BlockSet::COORDINATES {
+                self.coordinates_lifecycle
+            } else if block == BlockSet::PROPERTIES {
+                self.properties_lifecycle
+            } else {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "operation attempted to begin an unknown block",
+                });
+            };
+            if lifecycle != BlockLifecycle::Available {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "operation attempted to begin the same writable block twice",
+                });
+            }
             self.trace.claimed_write_blocks = self.trace.claimed_write_blocks.union(block);
+        }
+        #[cfg(not(feature = "op-contracts"))]
+        {
+            let _ = block;
         }
         Ok(())
     }
@@ -929,6 +1155,7 @@ impl<'a> OpParts<'a> {
         }
     }
 
+    #[cfg(feature = "op-contracts")]
     fn validate_leaf_atom_append_preservation(&self) -> Result<(), OperationError> {
         if self.spec.topology_edit != TopologyEditKind::Appending {
             return Err(OperationError::InvalidInput {
@@ -942,8 +1169,8 @@ impl<'a> OpParts<'a> {
                 message: "leaf-append preservation proof requires a topology mapping",
             });
         };
-        let old_atom_count = self.source.num_atoms();
-        let old_bond_count = self.source.num_bonds();
+        let old_atom_count = self.contract_source.num_atoms();
+        let old_bond_count = self.contract_source.num_bonds();
         if mapping.atoms().old_to_new().len() != old_atom_count
             || mapping.bonds().old_to_new().len() != old_bond_count
             || mapping.atoms().new_to_old().len() != self.working.num_atoms()
@@ -971,9 +1198,15 @@ impl<'a> OpParts<'a> {
             }
         }
         for old_idx in 0..old_bond_count {
-            let before = &self.source.bonds()[old_idx];
+            let Some((before_begin, before_end)) = self.contract_source.bond_endpoint(old_idx)
+            else {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "leaf-append preservation proof found missing source bond endpoint",
+                });
+            };
             let after = &self.working.bonds()[old_idx];
-            if before.begin() != after.begin() || before.end() != after.end() {
+            if before_begin != after.begin() || before_end != after.end() {
                 return Err(OperationError::InvalidInput {
                     operation: self.spec,
                     message: "leaf-append preservation proof detected changed old bond endpoints",
@@ -1095,6 +1328,9 @@ molecule_ops! {
         impl_fn: with_hydrogens_impl,
         default_method: with_hydrogens,
         default_args: [crate::hydrogens::AddHsParams::default()],
+        inplace: true,
+        inplace_method: add_hydrogens_with_params_,
+        default_inplace_method: add_hydrogens_,
         domain: topology,
         kind: strong,
         topology_edit: appending,
@@ -1120,6 +1356,9 @@ molecule_ops! {
         impl_fn: without_hydrogens_impl,
         default_method: without_hydrogens,
         default_args: [true],
+        inplace: true,
+        inplace_method: remove_hydrogens_with_sanitize_,
+        default_inplace_method: remove_hydrogens_,
         domain: topology,
         kind: strong,
         topology_edit: compacting,
@@ -1143,6 +1382,8 @@ molecule_ops! {
     op without_hydrogens_with_params(params: crate::hydrogens::RemoveHsParams, sanitize: bool) {
         method: without_hydrogens_with_params,
         impl_fn: without_hydrogens_with_params_impl,
+        inplace: true,
+        inplace_method: remove_hydrogens_with_params_,
         domain: topology,
         kind: strong,
         topology_edit: compacting,
@@ -1166,6 +1407,8 @@ molecule_ops! {
     op with_kekulized_bonds(clear_aromatic_flags: bool) {
         method: with_kekulized_bonds,
         impl_fn: with_kekulized_bonds_impl,
+        inplace: true,
+        inplace_method: kekulize_,
         domain: topology,
         kind: weak,
         topology_edit: local,
@@ -1191,6 +1434,9 @@ molecule_ops! {
         impl_fn: sanitized_impl,
         default_method: sanitized,
         default_args: [crate::SanitizeOps::ALL],
+        inplace: true,
+        inplace_method: sanitize_with_ops_,
+        default_inplace_method: sanitize_,
         domain: topology,
         kind: weak,
         topology_edit: local,
@@ -1214,6 +1460,8 @@ molecule_ops! {
     op assigned_valence() {
         method: with_assigned_valence,
         impl_fn: assigned_valence_impl,
+        inplace: true,
+        inplace_method: assign_valence_,
         domain: topology,
         kind: weak,
         topology_edit: none,
@@ -1237,6 +1485,8 @@ molecule_ops! {
     op assigned_rings() {
         method: with_assigned_rings,
         impl_fn: assigned_rings_impl,
+        inplace: true,
+        inplace_method: assign_rings_,
         domain: topology,
         kind: weak,
         topology_edit: none,
@@ -1260,6 +1510,8 @@ molecule_ops! {
     op assigned_ring_families() {
         method: with_assigned_ring_families,
         impl_fn: assigned_ring_families_impl,
+        inplace: true,
+        inplace_method: assign_ring_families_,
         domain: topology,
         kind: weak,
         topology_edit: none,
@@ -1283,6 +1535,8 @@ molecule_ops! {
     op assigned_aromaticity() {
         method: with_assigned_aromaticity,
         impl_fn: assigned_aromaticity_impl,
+        inplace: true,
+        inplace_method: assign_aromaticity_,
         domain: topology,
         kind: weak,
         topology_edit: local,
@@ -1306,6 +1560,8 @@ molecule_ops! {
     op assigned_radicals() {
         method: with_assigned_radicals,
         impl_fn: assigned_radicals_impl,
+        inplace: true,
+        inplace_method: assign_radicals_,
         domain: topology,
         kind: weak,
         topology_edit: local,
@@ -1331,6 +1587,9 @@ molecule_ops! {
         impl_fn: with_2d_coordinates_impl,
         default_method: with_2d_coordinates,
         default_args: [crate::With2DCoordinatesParams::default()],
+        inplace: true,
+        inplace_method: compute_2d_coordinates_with_params_,
+        default_inplace_method: compute_2d_coordinates_,
         domain: coordinate,
         kind: weak,
         topology_edit: none,
@@ -1658,6 +1917,7 @@ mod tests {
         assert!(!read_parts_source.contains(concat!("pub(crate) fn ", "molecule")));
     }
 
+    #[cfg(feature = "op-contracts")]
     #[test]
     fn begin_topology_mut_rejects_second_begin() {
         let molecule = crate::Molecule::new();
@@ -1674,6 +1934,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "op-contracts")]
     #[test]
     fn begin_topology_mut_rejects_second_begin_before_commit() {
         let molecule = crate::Molecule::new();
@@ -1690,6 +1951,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "op-contracts")]
     #[test]
     fn begin_access_rejects_overlapping_read_and_write_blocks() {
         let molecule = crate::Molecule::new();
@@ -1884,6 +2146,30 @@ mod tests {
             result.coords_2d(),
             Some(&[[0.5, 1.0], [0.5, 1.0], [0.5, 1.0], [0.5, 1.0], [0.5, 1.0]][..])
         );
+    }
+
+    #[test]
+    fn add_hydrogens_in_place_matches_value_operation() {
+        let molecule = crate::Molecule::from_smiles("CCO").unwrap();
+        let expected = molecule.with_hydrogens().unwrap();
+
+        let mut in_place = molecule.clone();
+        in_place.add_hydrogens_().unwrap();
+
+        assert_eq!(in_place, expected);
+    }
+
+    #[test]
+    fn add_hydrogens_in_place_preserves_shared_source_value() {
+        let mut molecule = crate::Molecule::from_smiles("CCO").unwrap();
+        let shared = molecule.clone();
+
+        molecule.add_hydrogens_().unwrap();
+
+        assert_eq!(shared.num_atoms(), 3);
+        assert_eq!(shared.num_bonds(), 2);
+        assert_eq!(molecule.num_atoms(), 9);
+        assert_eq!(molecule.num_bonds(), 8);
     }
 
     #[test]
@@ -4269,6 +4555,7 @@ mod tests {
         assert_eq!(result.atoms()[carbon.index()].explicit_hydrogens(), 0);
     }
 
+    #[cfg(feature = "op-contracts")]
     #[test]
     fn compacting_topology_edit_record_is_rejected_for_weak_operations() {
         let molecule = crate::Molecule::new();

@@ -24,7 +24,8 @@ fingerprints, batch processing, and protein-focused structural biology APIs.
 
 The library is built around explicit behavior: supported operations return
 structured results, unsupported behavior fails visibly, and public molecule
-transforms return new values instead of mutating their inputs.
+transforms are explicit about whether they return new values or mutate in
+place.
 
 COSMolKit is designed for array-oriented structural data access, keeping
 molecular data efficient and natural for NumPy, PyTorch, and model-building
@@ -46,6 +47,8 @@ pip install cosmolkit
 - **Value-style molecules:** methods such as `with_hydrogens()`,
   `without_hydrogens()`, `with_kekulized_bonds()`, and `with_2d_coords()`
   return new molecule values.
+- **Explicit mutation:** in-place `Molecule` operations always end with `_`.
+  The trailing underscore has no other public `Molecule` meaning.
 - **Explicit errors:** invalid input and unsupported behavior are surfaced as
   errors instead of silent fallbacks.
 - **Batch-native processing:** `MoleculeBatch` keeps input order, supports
@@ -58,7 +61,7 @@ pip install cosmolkit
 
 Normal molecule operations return new objects and do not mutate their inputs.
 This follows the same explicit-dataflow direction as modern dataframe libraries:
-users can reason about each transformation as a new value while the Rust core can
+users can reason about each transformation as a new value while COSMolKit can
 share unchanged internal storage efficiently.
 
 ```python
@@ -256,7 +259,7 @@ through low-level structural tables.
 
 ### Python API and ML Readiness
 
-Goal: expose verified Rust-backed behavior through a practical Python interface.
+Goal: expose verified molecular behavior through a practical Python interface.
 
 - ✅ Value-style molecule transformations
 - ✅ Graph, coordinate, fingerprint, and bounds-matrix accessors

@@ -981,6 +981,14 @@ impl Molecule {
         self.topology = Arc::new(topology);
     }
 
+    pub(crate) fn take_topology_block_or_clone(&mut self) -> TopologyBlock {
+        let block = std::mem::replace(&mut self.topology, Arc::new(TopologyBlock::default()));
+        match Arc::try_unwrap(block) {
+            Ok(block) => block,
+            Err(block) => (*block).clone(),
+        }
+    }
+
     #[allow(dead_code)]
     pub(crate) fn coordinate_block(&self) -> &CoordinateBlock {
         &self.coordinates
@@ -993,6 +1001,14 @@ impl Molecule {
 
     pub(crate) fn replace_coordinate_block(&mut self, coordinates: CoordinateBlock) {
         self.coordinates = Arc::new(coordinates);
+    }
+
+    pub(crate) fn take_coordinate_block_or_clone(&mut self) -> CoordinateBlock {
+        let block = std::mem::replace(&mut self.coordinates, Arc::new(CoordinateBlock::default()));
+        match Arc::try_unwrap(block) {
+            Ok(block) => block,
+            Err(block) => (*block).clone(),
+        }
     }
 
     #[allow(dead_code)]
@@ -1012,6 +1028,17 @@ impl Molecule {
 
     pub(crate) fn replace_properties(&mut self, properties: MoleculeProperties) {
         self.properties = Arc::new(properties);
+    }
+
+    pub(crate) fn take_properties_or_clone(&mut self) -> MoleculeProperties {
+        let block = std::mem::replace(
+            &mut self.properties,
+            Arc::new(MoleculeProperties::default()),
+        );
+        match Arc::try_unwrap(block) {
+            Ok(block) => block,
+            Err(block) => (*block).clone(),
+        }
     }
 }
 

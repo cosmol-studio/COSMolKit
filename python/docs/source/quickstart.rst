@@ -22,6 +22,14 @@ This is an intentional difference from common RDKit Python usage. Do not assume
 that a transform mutates the existing object; always keep the returned
 ``Molecule``.
 
+In-place molecule operations are explicit and always end with ``_``:
+
+.. code-block:: python
+
+   mol = Molecule.from_smiles("CCO")
+   mol.add_hydrogens_()
+   mol.compute_2d_coords_()
+
 Create a molecule from SMILES and export a depiction:
 
 .. code-block:: python

@@ -43,6 +43,9 @@ struct OpFields {
     parity_profile: Option<LitStr>,
     default_method: Option<Ident>,
     default_args: Vec<Expr>,
+    inplace: Option<LitBool>,
+    inplace_method: Option<Ident>,
+    default_inplace_method: Option<Ident>,
 }
 
 #[derive(Default)]
@@ -145,6 +148,9 @@ impl Parse for OpEntry {
                 "parity_profile" => fields.parity_profile = Some(content.parse()?),
                 "default_method" => fields.default_method = Some(content.parse()?),
                 "default_args" => fields.default_args = parse_expr_list(&content)?,
+                "inplace" => fields.inplace = Some(content.parse()?),
+                "inplace_method" => fields.inplace_method = Some(content.parse()?),
+                "default_inplace_method" => fields.default_inplace_method = Some(content.parse()?),
                 "rdkit_parity" => {
                     return Err(syn::Error::new(
                         key.span(),
@@ -336,6 +342,12 @@ fn expand_molecule_ops(registry: MoleculeOpsInput) -> TokenStream {
         if let Some(method) = expanded.default_method {
             methods.push(method);
         }
+        if let Some(method) = expanded.inplace_method {
+            methods.push(method);
+        }
+        if let Some(method) = expanded.default_inplace_method {
+            methods.push(method);
+        }
     }
 
     quote! {
@@ -372,6 +384,8 @@ struct ExpandedOp {
     parity_entry: Option<proc_macro2::TokenStream>,
     method: proc_macro2::TokenStream,
     default_method: Option<proc_macro2::TokenStream>,
+    inplace_method: Option<proc_macro2::TokenStream>,
+    default_inplace_method: Option<proc_macro2::TokenStream>,
 }
 
 fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
@@ -404,6 +418,11 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         .fields
         .io_roundtrip
         .map_or_else(|| parse_quote!(false), |value| value);
+    let inplace_enabled = op.fields.inplace.as_ref().is_some_and(|value| value.value);
+    let inplace_method_ident = op.fields.inplace_method.clone();
+    let default_inplace_method_ident = op.fields.default_inplace_method.clone();
+    let default_method_ident = op.fields.default_method.clone();
+    let default_args_for_inplace = op.fields.default_args.clone();
 
     let spec_ident = format_ident!("{}_SPEC", op.name.to_string().to_ascii_uppercase());
     let method_name = method.to_string();
@@ -490,11 +509,55 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         }
     };
 
+    let inplace_method_name = inplace_method_ident
+        .clone()
+        .unwrap_or_else(|| format_ident!("{}_", method));
+    let inplace_method = if inplace_enabled {
+        Some(quote! {
+            pub fn #inplace_method_name(&mut self, #params) -> Result<(), crate::ops::OperationError> {
+                if matches!(
+                    crate::ops::#spec_ident.support,
+                    crate::SupportStatus::Unsupported { .. }
+                ) {
+                    return Err(crate::ops::OperationError::UnsupportedFeature {
+                        operation: &crate::ops::#spec_ident,
+                        source: crate::UnsupportedFeatureError::from_spec(&crate::#feature),
+                    });
+                }
+                let mut parts = crate::ops::OpParts::new_in_place(self, &crate::ops::#spec_ident);
+                let outcome = match #impl_fn(&mut parts, #(#call_args),*) {
+                    Ok(outcome) => outcome,
+                    Err(error) => {
+                        parts.abort_in_place();
+                        return Err(error);
+                    }
+                };
+                parts.finish_in_place(outcome)
+            }
+        })
+    } else {
+        None
+    };
+
     let default_method = if let Some(default_method) = op.fields.default_method {
         let default_args = op.fields.default_args;
         Some(quote! {
             pub fn #default_method(&self) -> Result<crate::molecule::Molecule, crate::ops::OperationError> {
                 self.#method(#(#default_args),*)
+            }
+        })
+    } else {
+        None
+    };
+
+    let default_inplace_method = if inplace_enabled
+        && let Some(default_method) = default_method_ident
+    {
+        let default_inplace_method =
+            default_inplace_method_ident.unwrap_or_else(|| format_ident!("{}_", default_method));
+        Some(quote! {
+            pub fn #default_inplace_method(&mut self) -> Result<(), crate::ops::OperationError> {
+                self.#inplace_method_name(#(#default_args_for_inplace),*)
             }
         })
     } else {
@@ -509,6 +572,8 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         parity_entry,
         method: method_def,
         default_method,
+        inplace_method,
+        default_inplace_method,
     })
 }
 

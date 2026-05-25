@@ -35,6 +35,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## Molecule Operations
+
+Normal `Molecule` operations return new values and leave the receiver
+unchanged:
+
+```rust
+let mol = Molecule::from_smiles("CCO")?;
+let with_h = mol.with_hydrogens()?;
+assert_ne!(mol.num_atoms(), with_h.num_atoms());
+```
+
+In-place operations are explicit and always end with `_`:
+
+```rust
+let mut mol = Molecule::from_smiles("CCO")?;
+mol.add_hydrogens_()?;
+mol.sanitize_()?;
+```
+
+The trailing underscore is reserved for in-place mutation on public `Molecule`
+methods; it has no other meaning. In-place operations prioritize avoiding the
+operation-system working-copy clone when molecule blocks are uniquely owned. If
+an in-place operation returns an error, the receiver is not guaranteed to equal
+its pre-call value; use the non-mutating operation when failure-preserving value
+semantics are required.
+
 ## Protein Structures
 
 ```rust

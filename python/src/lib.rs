@@ -796,6 +796,9 @@ Transformation methods such as ``with_hydrogens()``, ``without_hydrogens()``,
 ``with_kekulized_bonds()``, and ``with_2d_coords()`` return new molecule values.
 The original molecule is left unchanged.
 
+In-place methods mutate the receiver and always end with ``_``. COSMolKit
+reserves the trailing underscore for this single public ``Molecule`` meaning.
+
 Examples
 --------
 Create molecules with ``Molecule.from_smiles()``, transform them with value
@@ -3056,6 +3059,19 @@ Return a new molecule with explicit hydrogens added.
         Ok(Self { inner: out })
     }
 
+    #[doc = r#"
+Add explicit hydrogens in place.
+
+All public in-place ``Molecule`` methods end with ``_``. If this method returns
+an error, the receiver is not guaranteed to equal its pre-call value; use
+``with_hydrogens()`` when failure-preserving value semantics are required.
+"#]
+    fn add_hydrogens_(&mut self) -> PyResult<()> {
+        self.inner
+            .add_hydrogens_()
+            .map_err(|err| PyValueError::new_err(format!("add_hydrogens_ failed: {err:?}")))
+    }
+
     #[pyo3(signature = (sanitize=None))]
     #[doc = r#"
 Return a new molecule with explicit hydrogens removed.
@@ -3070,6 +3086,16 @@ Return a new molecule with explicit hydrogens removed.
 
     #[pyo3(signature = (sanitize=None))]
     #[doc = r#"
+Remove explicit hydrogens in place.
+"#]
+    fn remove_hydrogens_(&mut self, sanitize: Option<bool>) -> PyResult<()> {
+        self.inner
+            .remove_hydrogens_with_sanitize_(sanitize.unwrap_or(true))
+            .map_err(|err| PyValueError::new_err(format!("remove_hydrogens_ failed: {err:?}")))
+    }
+
+    #[pyo3(signature = (sanitize=None))]
+    #[doc = r#"
 Return a new molecule with aromatic bonds converted to an explicit Kekule form.
 "#]
     fn with_kekulized_bonds(&self, sanitize: Option<bool>) -> PyResult<Self> {
@@ -3080,6 +3106,16 @@ Return a new molecule with aromatic bonds converted to an explicit Kekule form.
                 PyValueError::new_err(format!("with_kekulized_bonds failed: {err:?}"))
             })?;
         Ok(Self { inner: out })
+    }
+
+    #[pyo3(signature = (sanitize=None))]
+    #[doc = r#"
+Convert aromatic bonds to an explicit Kekule form in place.
+"#]
+    fn kekulize_(&mut self, sanitize: Option<bool>) -> PyResult<()> {
+        self.inner
+            .kekulize_(sanitize.unwrap_or(true))
+            .map_err(|err| PyValueError::new_err(format!("kekulize_ failed: {err:?}")))
     }
 
     #[doc = r#"
@@ -3222,6 +3258,15 @@ Return a new molecule with 2D coordinates.
             .with_2d_coordinates()
             .map_err(|err| PyValueError::new_err(format!("with_2d_coords failed: {err}")))?;
         Ok(Self { inner: out })
+    }
+
+    #[doc = r#"
+Compute 2D coordinates in place.
+"#]
+    fn compute_2d_coords_(&mut self) -> PyResult<()> {
+        self.inner
+            .compute_2d_coordinates_()
+            .map_err(|err| PyValueError::new_err(format!("compute_2d_coords_ failed: {err}")))
     }
 
     #[doc = r#"
@@ -3914,6 +3959,14 @@ Deserialize a molecule from COSMolKit binary data.
         self.inner
             .sanitized()
             .map(|inner| Self { inner })
+            .map_err(|err| PyValueError::new_err(err.to_string()))
+    }
+
+    #[pyo3(signature = (strict=None))]
+    fn sanitize_(&mut self, strict: Option<bool>) -> PyResult<()> {
+        reject_non_strict_sanitize(strict)?;
+        self.inner
+            .sanitize_()
             .map_err(|err| PyValueError::new_err(err.to_string()))
     }
 

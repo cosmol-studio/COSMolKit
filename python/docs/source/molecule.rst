@@ -27,6 +27,31 @@ Common transformations include:
 - ``with_kekulized_bonds()``
 - ``with_2d_coords()``
 
+In-Place Operations
+-------------------
+
+Performance-sensitive code can opt into explicit in-place mutation. Every
+public ``Molecule`` in-place method ends with ``_``; the trailing underscore has
+no other ``Molecule`` API meaning.
+
+.. code-block:: python
+
+   mol = Molecule.from_smiles("CCO")
+   mol.add_hydrogens_()
+   mol.compute_2d_coords_()
+
+Common in-place operations include:
+
+- ``add_hydrogens_()``
+- ``remove_hydrogens_()``
+- ``kekulize_()``
+- ``sanitize_()``
+- ``compute_2d_coords_()``
+
+If an in-place method returns an error, the molecule is not guaranteed to equal
+its pre-call value. Use the value-style method when failure-preserving behavior
+is required.
+
 SMILES Output
 -------------
 
