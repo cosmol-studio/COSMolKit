@@ -45,7 +45,7 @@ pip install cosmolkit
 ## Core Concepts
 
 - **Value-style molecules:** methods such as `with_hydrogens()`,
-  `without_hydrogens()`, `with_kekulized_bonds()`, and `with_2d_coords()`
+  `without_hydrogens()`, `with_kekulized_bonds()`, and `with_2d_coordinates()`
   return new molecule values.
 - **Explicit mutation:** in-place `Molecule` operations always end with `_`.
   The trailing underscore has no other public `Molecule` meaning.
@@ -79,7 +79,7 @@ assert mol is not mol_h
 from cosmolkit import Molecule, MoleculeBatch
 
 mol = Molecule.from_smiles("c1ccccc1O")
-mol_2d = mol.with_2d_coords()
+mol_2d = mol.with_2d_coordinates()
 
 print(mol_2d.to_smiles())
 print(mol_2d.coords_2d())
@@ -100,7 +100,7 @@ batch = (
     .with_progress_bar(False)
 )
 
-prepared = batch.add_hydrogens(errors="keep").compute_2d_coords(errors="keep")
+prepared = batch.with_hydrogens(errors="keep").with_2d_coordinates(errors="keep")
 print(prepared.valid_mask())
 print(prepared.to_smiles_list())
 

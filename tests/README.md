@@ -10,6 +10,7 @@
 - `golden/smiles_writer.jsonl` RDKit baseline for `MolToSmiles()` parity across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches
 - `golden/isomeric_smiles.jsonl` RDKit baseline for focused isomeric SMILES parity cases
 - `golden/dg_bounds_matrix.jsonl` RDKit baseline for distance-geometry bounds matrix parity
+- `golden/forcefield_params.jsonl` RDKit baseline for UFF/MMFF parameter coverage, initial energy/gradient, and single-/multi-conformer force-field optimization parity
 - `golden/morgan_fingerprint.jsonl` RDKit baseline for Morgan fingerprint bit-vector and adjacent-row Tanimoto parity across radius, bit-count, chirality, bond-type, count-simulation, custom-invariant, generator, and AdditionalOutput branches
 - `golden/svg_drawer.jsonl` RDKit baseline for `MolDraw2DSVG` output parity
 - `golden/prepared_draw_molecule.jsonl` RDKit baseline for `PrepareMolForDrawing(kekulize=True, addChiralHs=True, wedgeBonds=True, forceCoords=True)` prepared atom coordinates and bond directions
@@ -85,6 +86,19 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 - `dg_bounds_matrix_matches_rdkit_golden`
 - strict RDKit parity coverage for distance-geometry bounds generation
 
+`crates/cosmolkit-core/tests/rdkit_forcefield_params_parity.rs` contains:
+- `forcefield_params_golden_has_one_record_per_smiles_library_entry`
+- `uff_has_all_molecule_params_matches_rdkit_golden`
+- `mmff_has_all_molecule_params_matches_rdkit_golden`
+- `mmff_atom_types_match_rdkit_golden`
+- `forcefield_initial_energy_matches_rdkit_golden_for_first_embedded_row`
+- `forcefield_initial_gradient_matches_rdkit_golden_for_first_embedded_row`
+- `uff_single_conformer_final_coordinates_match_rdkit_golden_for_first_embedded_row`
+- `mmff_single_conformer_final_coordinates_match_rdkit_golden_for_first_embedded_row`
+- `uff_multi_conformer_final_coordinates_match_rdkit_golden_for_first_embedded_row`
+- `mmff_multi_conformer_final_coordinates_match_rdkit_golden_for_first_embedded_row`
+- strict RDKit parity coverage for UFF/MMFF parameter coverage, initial energy/gradient, and single-/multi-conformer optimization on the shared corpus
+
 `crates/cosmolkit-core/tests/rdkit_morgan_fingerprint_parity.rs` contains:
 - `morgan_fingerprint_golden_has_one_record_per_smiles`
 - `morgan_fingerprint_matches_rdkit_golden_across_param_branches`
@@ -118,6 +132,7 @@ Current status:
 - `cosmolkit-core` graph-feature parity is currently passing on the shared corpus (direct + explicit-H comparisons).
 - tetrahedral stereo ordered-ligand geometry validation is currently passing against RDKit ETKDGv3 (`seed=42`) on all chiral corpus entries.
 - DG bounds matrix parity is currently passing on the shared corpus.
+- force-field parameter parity is currently passing on the shared corpus across UFF/MMFF parameter coverage, initial energy/gradient, and single-/multi-conformer optimization branches.
 - Morgan fingerprint parity is currently passing on the shared corpus across the supported RDKit-style bit-vector branches, and the Python binding smoke/parity tests pass against RDKit for representative parameter combinations.
 - SMILES writer parity is currently passing on the shared corpus across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches.
 - strict V2000 molblock coordinate/topology parity is currently passing on the shared corpus.

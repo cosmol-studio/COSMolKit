@@ -28,7 +28,7 @@ In-place molecule operations are explicit and always end with ``_``:
 
    mol = Molecule.from_smiles("CCO")
    mol.add_hydrogens_()
-   mol.compute_2d_coords_()
+   mol.compute_2d_coordinates_()
 
 Create a molecule from SMILES and export a depiction:
 
@@ -37,7 +37,7 @@ Create a molecule from SMILES and export a depiction:
    from cosmolkit import Molecule
 
    mol = Molecule.from_smiles("c1ccccc1O")
-   drawn = mol.with_2d_coords()
+   drawn = mol.with_2d_coordinates()
 
    print(mol.to_smiles())
    drawn.write_png("python/examples/output/phenol.png", width=400, height=300)
@@ -81,7 +81,7 @@ Access coordinates as NumPy arrays:
 
 .. code-block:: python
 
-   mol2d = Molecule.from_smiles("CCO").with_2d_coords()
+   mol2d = Molecule.from_smiles("CCO").with_2d_coordinates()
    coords = mol2d.coords_2d()
 
    print(coords.shape)
@@ -115,7 +115,7 @@ Process a list of molecules:
    for error in batch.errors():
        print(error.index(), error.operation(), error.message())
 
-   prepared = batch.compute_2d_coords(errors=BatchErrorMode.KEEP)
+   prepared = batch.with_2d_coordinates(errors=BatchErrorMode.KEEP)
    fingerprints = prepared.fingerprint_morgan_list(n_bits=2048)
 
    print(prepared.valid_mask())

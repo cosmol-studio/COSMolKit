@@ -7,6 +7,7 @@ pub mod aromaticity;
 pub mod atropisomer;
 pub mod coordinates;
 pub mod distgeom;
+pub mod forcefield;
 pub mod hydrogens;
 pub mod kekulize;
 pub mod mol_transforms;

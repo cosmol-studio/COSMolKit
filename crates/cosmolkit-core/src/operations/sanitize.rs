@@ -102,7 +102,7 @@ pub fn detect_chemistry_problems(
         if !ops.contains(*stage_ops) {
             continue;
         }
-        match working.sanitized_with_ops(*stage_ops) {
+        match working.sanitize_with_ops(*stage_ops) {
             Ok(updated) => working = updated,
             Err(crate::OperationError::Sanitize { source, .. }) => problems.push(source),
             Err(crate::OperationError::UnsupportedFeature { source, .. }) => {

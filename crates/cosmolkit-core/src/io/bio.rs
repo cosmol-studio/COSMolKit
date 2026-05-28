@@ -540,31 +540,9 @@ impl PdbAtomRecord {
     }
 }
 
-/// Reads the Gemmi-aligned PDB structural reader surface into a `BioStructure`.
-///
-/// The historical function name is kept for API stability. Unported PDB source
-/// branches remain marked in this module's Gemmi source frame.
-pub fn read_pdb_coordinate_subset_from_str(text: &str) -> Result<BioStructure, BioReadError> {
-    read_pdb_coordinate_subset_from_str_with_params(text, BioPdbReadParams::default())
-}
-
-/// Reads a Gemmi-aligned `BioStructure` from text using the requested format.
-pub fn read_bio_structure_from_str_with_format(
-    text: &str,
-    path: &str,
-    format: BioCoorFormat,
-) -> Result<BioStructure, BioReadError> {
-    read_structure_from_memory(text, path, format)
-}
-
-/// Reads a Gemmi-aligned `BioStructure` from text by detecting PDB vs mmCIF.
-pub fn read_bio_structure_from_str(text: &str, path: &str) -> Result<BioStructure, BioReadError> {
-    read_structure_from_memory(text, path, BioCoorFormat::Detect)
-}
-
 /// Reads the Gemmi-aligned PDB structural reader surface with explicit record
 /// rejection policy for still-unported source branches.
-pub fn read_pdb_coordinate_subset_from_str_with_params(
+pub(crate) fn read_pdb_bio_structure_from_str_with_params(
     text: &str,
     params: BioPdbReadParams,
 ) -> Result<BioStructure, BioReadError> {
@@ -1832,7 +1810,7 @@ fn make_structure_from_doc(
     read_mmcif_atom_site_subset_from_document(document)
 }
 
-fn read_structure_from_memory(
+pub(crate) fn read_structure_from_memory(
     data: &str,
     path: &str,
     format: BioCoorFormat,
@@ -1844,7 +1822,7 @@ fn read_structure_from_memory(
         other => other,
     };
     match format {
-        BioCoorFormat::Pdb => read_pdb_coordinate_subset_from_str(data),
+        BioCoorFormat::Pdb => BioStructure::from_pdb_str(data),
         BioCoorFormat::Mmcif => make_structure_from_doc(&parse_cif_document(data)?, true),
         BioCoorFormat::Mmjson => {
             let document = read_mmjson_document(data, path)?;
@@ -8451,7 +8429,7 @@ mod tests {
         let pdb =
             "ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  \n";
 
-        let structure = read_pdb_coordinate_subset_from_str(&pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
         assert_eq!(structure.num_models(), 1);
         assert_eq!(structure.num_chains(), 1);
@@ -8476,7 +8454,7 @@ mod tests {
         let pdb =
             "HETATM   22  O  AHOH B  10       1.000   2.000   3.000  1.00 10.00           O  \n";
 
-        let structure = read_pdb_coordinate_subset_from_str(&pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
         assert_eq!(structure.residues[0].kind, ResidueKind::Water);
         assert_eq!(structure.atoms[0].altloc, Some(AltLocLabel(b'A')));
@@ -8485,11 +8463,11 @@ mod tests {
     #[test]
     fn reads_pdb_anisou_for_previous_atom() {
         let pdb = "\
-ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  
-ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C  
+ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
+ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
 ";
 
-        let structure = read_pdb_coordinate_subset_from_str(&pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
         assert_eq!(
             structure.atoms[0].anisou,
@@ -8502,7 +8480,7 @@ ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
         let pdb =
             "ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00              \n";
 
-        let structure = read_pdb_coordinate_subset_from_str(&pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
         assert_eq!(structure.atoms[0].element, Element::C);
     }
@@ -8511,10 +8489,10 @@ ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
     fn reads_pdb_seqres_entity_sequence_and_links_chain() {
         let pdb = "\
 SEQRES   1 A    5  ALA GLY SER THR TYR
-ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  
+ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
 ";
 
-        let structure = read_pdb_coordinate_subset_from_str(pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(pdb).unwrap();
 
         assert_eq!(structure.num_entities(), 1);
         assert_eq!(structure.entities[0].kind, EntityKind::Polymer);
@@ -8529,7 +8507,7 @@ ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
     fn reads_pdb_header_title_authors_cryst1_and_matrices() {
         let pdb = format!(
             "\
-HEADER    OXIDOREDUCTASE                          28-MAR-07   2XYZ              
+HEADER    OXIDOREDUCTASE                          28-MAR-07   2XYZ
 TITLE     EXAMPLE
 TITLE    2 STRUCTURE
 KEYWDS    TEST,
@@ -8544,14 +8522,14 @@ AUTHOR   2 SMITH
 {}
 {}
 {}
-CRYST1   10.000   20.000   30.000  90.00 100.00 120.00 P 1           2          
+CRYST1   10.000   20.000   30.000  90.00 100.00 120.00 P 1           2
 {}
 {}
 {}
 {}
 {}
 {}
-ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  
+ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
 ",
             format!(
                 "SCALE1    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}",
@@ -8603,7 +8581,7 @@ ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
             ),
         );
 
-        let structure = read_pdb_coordinate_subset_from_str(&pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(&pdb).unwrap();
         let metadata = structure.metadata();
         let crystal = structure.crystal().unwrap();
 
@@ -8662,12 +8640,12 @@ ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
     #[test]
     fn strict_pdb_mode_rejects_unported_records() {
         let pdb = "\
-ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  
+ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
 HELIX    1   1 ALA A    7  GLY A    8  1                                   2
 LINK         O   HOH A 201                 ZN   ZN A 301     1555   1555  2.10
 ";
 
-        let err = read_pdb_coordinate_subset_from_str_with_params(
+        let err = BioStructure::from_pdb_str_with_params(
             &pdb,
             BioPdbReadParams {
                 reject_unported_records: true,
@@ -8681,16 +8659,27 @@ LINK         O   HOH A 201                 ZN   ZN A 301     1555   1555  2.10
 
     #[test]
     fn reads_pdb_helix_and_sheet_secondary_structure_records() {
-        let pdb = "\
-SEQRES   1 A    7  ALA GLY SER THR TYR VAL LEU
-SEQRES   2 A    7  ASP
-HELIX    1 AA1 ALA A   55  TYR A   59  5                                   5    
-SHEET    1 AA1 7 TYR A  20  THR A  21  0                                        
-SHEET    2 AA1 7 LYS A 156  PRO A 161 -1  O  CYS A 157   N  TYR A  20           
-ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  
-";
+        let pdb = [
+            "SEQRES   1 A    7  ALA GLY SER THR TYR VAL LEU".to_string(),
+            "SEQRES   2 A    7  ASP".to_string(),
+            format!(
+                "{:<80}",
+                "HELIX    1 AA1 ALA A   55  TYR A   59  5                                   5"
+            ),
+            format!("{:<80}", "SHEET    1 AA1 7 TYR A  20  THR A  21  0"),
+            format!(
+                "{:<80}",
+                "SHEET    2 AA1 7 LYS A 156  PRO A 161 -1  O  CYS A 157   N  TYR A  20"
+            ),
+            format!(
+                "{:<80}",
+                "ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C"
+            ),
+        ]
+        .join("\n")
+            + "\n";
 
-        let structure = read_pdb_coordinate_subset_from_str(pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
         assert_eq!(
             structure.entities[0].sequence,
@@ -8759,17 +8748,17 @@ ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
 
         let pdb = format!(
             "\
-ATOM      1  SG  CYS A   3       0.000   0.000   0.000  1.00 20.00           S  
-ATOM      2  SG  CYS A   4       2.000   0.000   0.000  1.00 20.00           S  
-HETATM    3 ZN1A  ZN A   1       5.000   0.000   0.000  1.00 20.00          ZN  
-ATOM      4  O   HOH A   2       6.900   0.000   0.000  1.00 20.00           O  
+ATOM      1  SG  CYS A   3       0.000   0.000   0.000  1.00 20.00           S
+ATOM      2  SG  CYS A   4       2.000   0.000   0.000  1.00 20.00           S
+HETATM    3 ZN1A  ZN A   1       5.000   0.000   0.000  1.00 20.00          ZN
+ATOM      4  O   HOH A   2       6.900   0.000   0.000  1.00 20.00           O
 SSBOND   1 CYS A   3    CYS A   4                          1555   1555  2.03
 {cispep}
 {link}
 "
         );
 
-        let structure = read_pdb_coordinate_subset_from_str(&pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
         assert!(structure.deferred_conn_records.is_empty());
         assert_eq!(structure.connections.len(), 2);
@@ -8824,8 +8813,8 @@ SSBOND   1 CYS A   3    CYS A   4                          1555   1555  2.03
 
         let pdb = format!(
             "\
-ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 20.00           C  
-ATOM      2  O   HOH A   2       1.000   0.000   0.000  1.00 20.00           O  
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 20.00           C
+ATOM      2  O   HOH A   2       1.000   0.000   0.000  1.00 20.00           O
 TER
 TER
 {modres}
@@ -8836,7 +8825,7 @@ TER
 "
         );
 
-        let structure = read_pdb_coordinate_subset_from_str(&pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
         assert_eq!(structure.ter_status, 'e');
         assert_eq!(structure.residues[0].entity_kind, EntityKind::Unknown);
@@ -8951,9 +8940,9 @@ TER
 
     #[test]
     fn pdb_finish_inserts_empty_model_normalizes_authors_and_gates_remarks() {
-        let structure = read_pdb_coordinate_subset_from_str(
+        let structure = BioStructure::from_pdb_str(
             "\
-HEADER    HYDROLASE                               01-JAN-00   1ABC              
+HEADER    HYDROLASE                               01-JAN-00   1ABC
 AUTHOR    A.-B.DOE
 REMARK 300 REMARK: DETAIL
 ",
@@ -8969,11 +8958,11 @@ REMARK 300 REMARK: DETAIL
         );
         assert!(structure.crystal().is_none());
 
-        let skipped = read_pdb_coordinate_subset_from_str_with_params(
+        let skipped = BioStructure::from_pdb_str_with_params(
             "\
 AUTHOR    A.B.DOE
 REMARK 300 REMARK: SHOULD NOT APPEAR
-ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  
+ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
 ",
             BioPdbReadParams {
                 skip_remarks: true,
@@ -8989,10 +8978,10 @@ ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
     fn pdb_finish_sets_non_p1_spacegroup_cell_images_from_gemmi_spacegroup_ops() {
         let pdb = "\
 CRYST1   10.000   11.000   12.000  90.00  90.00 120.00 P 21 21 21    4
-ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 20.00           C  
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 20.00           C
 ";
 
-        let structure = read_pdb_coordinate_subset_from_str(pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(pdb).unwrap();
         let crystal = structure.crystal().unwrap();
         let sg = find_spacegroup_by_name("P 21 21 21", 90.0, 120.0, None).unwrap();
 
@@ -9007,12 +8996,12 @@ ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 20.00           C
     fn pdb_finish_backfills_first_model_polymer_subchains_to_entities() {
         let pdb = "\
 SEQRES   1 A    2  ALA GLY
-ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 20.00           C  
-ATOM      2  CA  GLY A   2       1.000   0.000   0.000  1.00 20.00           C  
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 20.00           C
+ATOM      2  CA  GLY A   2       1.000   0.000   0.000  1.00 20.00           C
 TER
 ";
 
-        let structure = read_pdb_coordinate_subset_from_str(pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(pdb).unwrap();
         assert_eq!(structure.entities.len(), 1);
         assert_eq!(structure.entities[0].kind, EntityKind::Polymer);
         assert_eq!(structure.entities[0].subchains[0].as_str(), "Axp");
@@ -9771,12 +9760,12 @@ _symmetry.space_group_name_H-M .
     #[test]
     fn pdb_connection_helpers_complete_ssbond_picks_shortest_matching_altloc_pair() {
         let pdb = "\
-ATOM      1  SD ACYS A   1       0.000   0.000   0.000  1.00 20.00           S  
-ATOM      2  SD BCYS A   1      20.000   0.000   0.000  1.00 20.00           S  
-ATOM      3  SD ACYS A   2       1.500   0.000   0.000  1.00 20.00           S  
-ATOM      4  SD BCYS A   2      30.000   0.000   0.000  1.00 20.00           S  
+ATOM      1  SD ACYS A   1       0.000   0.000   0.000  1.00 20.00           S
+ATOM      2  SD BCYS A   1      20.000   0.000   0.000  1.00 20.00           S
+ATOM      3  SD ACYS A   2       1.500   0.000   0.000  1.00 20.00           S
+ATOM      4  SD BCYS A   2      30.000   0.000   0.000  1.00 20.00           S
 ";
-        let structure = read_pdb_coordinate_subset_from_str(pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(pdb).unwrap();
         let mut connection = BioConnection {
             partner1: BioAtomAddress {
                 chain_name: "A".to_string(),
@@ -9827,12 +9816,12 @@ ATOM      4  SD BCYS A   2      30.000   0.000   0.000  1.00 20.00           S
     #[test]
     fn pdb_connection_helpers_process_conn_types_link_and_cispep_records() {
         let pdb = "\
-HETATM    1 ZN1A  ZN A   1       0.000   0.000   0.000  1.00 20.00          ZN  
-ATOM      2  O   HOH A   2       2.000   0.000   0.000  1.00 20.00           O  
-ATOM      3  C1  LIG A   3       5.000   0.000   0.000  1.00 20.00           C  
-ATOM      4  O1  LIG A   4       6.000   0.000   0.000  1.00 20.00           O  
+HETATM    1 ZN1A  ZN A   1       0.000   0.000   0.000  1.00 20.00          ZN
+ATOM      2  O   HOH A   2       2.000   0.000   0.000  1.00 20.00           O
+ATOM      3  C1  LIG A   3       5.000   0.000   0.000  1.00 20.00           C
+ATOM      4  O1  LIG A   4       6.000   0.000   0.000  1.00 20.00           O
 ";
-        let mut structure = read_pdb_coordinate_subset_from_str(pdb).unwrap();
+        let mut structure = BioStructure::from_pdb_str(pdb).unwrap();
         let mut metal_link = " ".repeat(80);
         metal_link.replace_range(0..4, "LINK");
         metal_link.replace_range(12..16, "ZN1A");
@@ -9921,7 +9910,7 @@ ATOM      4  O1  LIG A   4       6.000   0.000   0.000  1.00 20.00           O
     fn pdb_option_guards_normalize_max_line_length_and_track_non_ascii() {
         let pdb = "ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  \u{0080}\n";
 
-        let structure = read_pdb_coordinate_subset_from_str_with_params(
+        let structure = BioStructure::from_pdb_str_with_params(
             &pdb,
             BioPdbReadParams {
                 max_line_length: 0,
@@ -9937,25 +9926,21 @@ ATOM      4  O1  LIG A   4       6.000   0.000   0.000  1.00 20.00           O
 
     #[test]
     fn pdb_option_guards_detect_cif_and_mmjson_and_skip_remarks() {
-        let cif_err = read_pdb_coordinate_subset_from_str_with_params(
-            "data_demo\n",
-            BioPdbReadParams::default(),
-        )
-        .unwrap_err();
+        let cif_err =
+            BioStructure::from_pdb_str_with_params("data_demo\n", BioPdbReadParams::default())
+                .unwrap_err();
         assert!(matches!(cif_err, BioReadError::Parse { .. }));
 
-        let json_err = read_pdb_coordinate_subset_from_str_with_params(
-            "{\"data_\":1}\n",
-            BioPdbReadParams::default(),
-        )
-        .unwrap_err();
+        let json_err =
+            BioStructure::from_pdb_str_with_params("{\"data_\":1}\n", BioPdbReadParams::default())
+                .unwrap_err();
         assert!(matches!(json_err, BioReadError::Parse { .. }));
 
         let pdb = "\
 REMARK 300 REMARK: SKIP ME
-ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  
+ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
 ";
-        let structure = read_pdb_coordinate_subset_from_str_with_params(
+        let structure = BioStructure::from_pdb_str_with_params(
             pdb,
             BioPdbReadParams {
                 skip_remarks: true,
@@ -9972,13 +9957,13 @@ ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
         let pdb = "\
 REMARK 300 FIRST DETAIL\r
 REMARK 350 SECOND DETAIL
-ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  
-ATOM      2  CB  ALA A   7      12.104  13.207   9.900  1.00 20.00           C  
+ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
+ATOM      2  CB  ALA A   7      12.104  13.207   9.900  1.00 20.00           C
 CONECT    1    2    3    0    4
 CONECT    2    1
 ";
 
-        let structure = read_pdb_coordinate_subset_from_str(pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(pdb).unwrap();
 
         assert_eq!(
             structure.raw_remarks,
@@ -9994,19 +9979,19 @@ CONECT    2    1
 
     #[test]
     fn pdb_model_control_flow_handles_implicit_models_duplicate_numbers_and_endmdl() {
-        let implicit = read_pdb_coordinate_subset_from_str(
+        let implicit = BioStructure::from_pdb_str(
             "ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  \n",
         )
         .unwrap();
         assert_eq!(implicit.models[0].source_model_number, Some(1));
 
-        let with_endmdl = read_pdb_coordinate_subset_from_str(
+        let with_endmdl = BioStructure::from_pdb_str(
             "\
 MODEL        1
-ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  
+ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
 ENDMDL
 MODEL        2
-ATOM      2  CA  GLY B   8      12.104  13.207   9.900  1.00 20.00           C  
+ATOM      2  CA  GLY B   8      12.104  13.207   9.900  1.00 20.00           C
 END
 ",
         )
@@ -10014,10 +9999,10 @@ END
         assert_eq!(with_endmdl.num_models(), 2);
         assert_eq!(with_endmdl.models[1].source_model_number, Some(2));
 
-        let duplicate = read_pdb_coordinate_subset_from_str(
+        let duplicate = BioStructure::from_pdb_str(
             "\
 MODEL        1
-ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  
+ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
 ENDMDL
 MODEL        1
 ",
@@ -10028,9 +10013,9 @@ MODEL        1
 
     #[test]
     fn pdb_model_control_flow_rejects_non_adjacent_anisou() {
-        let err = read_pdb_coordinate_subset_from_str(
+        let err = BioStructure::from_pdb_str(
             "\
-ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C  
+ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
 ",
         )
         .unwrap_err();
@@ -10069,7 +10054,7 @@ ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
 
         let pdb = format!("{atom1}\n{atom2}\n{atom3}\n");
 
-        let structure = read_pdb_coordinate_subset_from_str(&pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
         assert_eq!(structure.num_residues(), 2);
         assert_eq!(structure.residues[0].source.segment_id, Some(*b"SEG1"));
@@ -10107,7 +10092,7 @@ ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
 
         let pdb = format!("{atom1}\n{atom2}\n{atom3}\n");
 
-        let structure = read_pdb_coordinate_subset_from_str(&pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
         assert_eq!(structure.num_residues(), 2);
         assert_eq!(
@@ -10155,11 +10140,11 @@ ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
         het.replace_range(76..78, " O");
 
         let pdb = format!("{atom}\nTER\n{het}\n");
-        let structure = read_pdb_coordinate_subset_from_str(&pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(&pdb).unwrap();
         assert_eq!(structure.residues[1].kind, ResidueKind::Water);
         assert_eq!(structure.residues[1].entity_kind, EntityKind::Water);
 
-        let split = read_pdb_coordinate_subset_from_str_with_params(
+        let split = BioStructure::from_pdb_str_with_params(
             &pdb,
             BioPdbReadParams {
                 split_chain_on_ter: true,
@@ -10201,7 +10186,7 @@ ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
         het.replace_range(76..78, "ZN");
 
         let pdb = format!("{atom}\nTER\n{het}\n");
-        let structure = read_pdb_coordinate_subset_from_str_with_params(
+        let structure = BioStructure::from_pdb_str_with_params(
             &pdb,
             BioPdbReadParams {
                 ignore_ter: true,
@@ -10232,7 +10217,7 @@ ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
         atom.replace_range(54..60, "  1.00");
         atom.replace_range(60..66, " 20.00");
 
-        let structure = read_pdb_coordinate_subset_from_str(&format!("{atom}\n")).unwrap();
+        let structure = BioStructure::from_pdb_str(&format!("{atom}\n")).unwrap();
 
         assert_eq!(structure.atoms.len(), 1);
         assert_eq!(structure.atoms[0].element.atomic_number(), 1);
@@ -10267,7 +10252,7 @@ ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
         atom3.replace_range(76..78, " N");
 
         let pdb = format!("{atom1}\n{atom2}\n{atom3}\n");
-        let structure = read_pdb_coordinate_subset_from_str(&pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
         assert_eq!(structure.num_residues(), 2);
         assert_eq!(structure.residues[0].atom_span.start, 0);
@@ -10283,11 +10268,11 @@ ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
 
     #[test]
     fn pdb_model_control_flow_rejects_implicit_model_number_collision() {
-        let err = read_pdb_coordinate_subset_from_str(
+        let err = BioStructure::from_pdb_str(
             "\
 MODEL        2
 ENDMDL
-ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  
+ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
 ",
         )
         .unwrap_err();
@@ -10326,7 +10311,7 @@ ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
         het.replace_range(76..78, "ZN");
 
         let pdb = format!("{atom1}\n{atom2}\nTER\n{het}\n");
-        let structure = read_pdb_coordinate_subset_from_str(&pdb).unwrap();
+        let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
         assert_eq!(structure.num_chains(), 1);
         assert_eq!(structure.num_residues(), 3);

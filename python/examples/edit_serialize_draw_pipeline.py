@@ -26,7 +26,7 @@ phenol = editor.commit(sanitize=True)
 
 payload = phenol.mol_to_binary()
 restored = Molecule.mol_from_binary(payload)
-prepared = restored.with_2d_coords()
+prepared = restored.with_2d_coordinates()
 
 print("base smiles:", base.to_smiles())
 print("edited smiles:", phenol.to_smiles())

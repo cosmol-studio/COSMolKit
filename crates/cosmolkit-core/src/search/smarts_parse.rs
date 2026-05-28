@@ -376,7 +376,7 @@ fn tokenize(input: &str) -> Result<Vec<(Token, usize)>, SmartsParseError> {
             }
 
             // Bond specifiers (single characters)
-            '-' | '=' | '#' | ':' | '~' => {
+            '-' | '=' | '#' | ':' | '~' | '@' => {
                 tokens.push((Token::BondSpec(ch), i));
                 i += 1;
             }
@@ -401,6 +401,10 @@ fn tokenize(input: &str) -> Result<Vec<(Token, usize)>, SmartsParseError> {
 
             // Logical operators
             '&' => {
+                tokens.push((Token::And, i));
+                i += 1;
+            }
+            ';' => {
                 tokens.push((Token::And, i));
                 i += 1;
             }
@@ -590,7 +594,7 @@ impl<'a> SmartsParser<'a> {
                 (Token::CloseBracket, _) => break,
 
                 // Bond spec followed by atom
-                (Token::BondSpec(_), _) => {
+                (Token::BondSpec(_), _) | (Token::Not, _) | (Token::And, _) => {
                     let bond = self.parse_bond()?;
                     bond_queries.push(bond);
                     let atom = self.parse_atom()?;
@@ -804,6 +808,42 @@ impl<'a> SmartsParser<'a> {
             ));
         }
 
+        // Recursive SMARTS: $(...)
+        // RDKit✔️✔️: recursive SMARTS primitives are preserved as query atoms.
+        if ch == '$' {
+            if chars.get(i + 1) != Some(&'(') {
+                return Err(SmartsParseError::InvalidAtomPrimitive {
+                    position: i,
+                    detail: "expected '(' after '$'".to_string(),
+                });
+            }
+            let mut depth = 1usize;
+            let mut end = i + 2;
+            while end < len && depth > 0 {
+                match chars[end] {
+                    '(' => depth += 1,
+                    ')' => depth -= 1,
+                    _ => {}
+                }
+                end += 1;
+            }
+            if depth != 0 {
+                return Err(SmartsParseError::UnclosedParenthesis(i + 1));
+            }
+            let recursive_smarts: String = chars[i..end].iter().collect();
+            let mut consumed = end;
+            if chars.get(consumed) == Some(&'_') {
+                consumed += 1;
+                while consumed < len && chars[consumed].is_ascii_digit() {
+                    consumed += 1;
+                }
+            }
+            return Ok((
+                QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(recursive_smarts)),
+                consumed,
+            ));
+        }
+
         // Formal charge: +N or -N
         // RDKit✔️✔️: smarts.yy — PLUS_TOKEN NUMBER | MINUS_TOKEN NUMBER
         if ch == '+' {
@@ -880,12 +920,12 @@ impl<'a> SmartsParser<'a> {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len);
             if num == 0 {
                 return Ok((
-                    QueryNode::Predicate(AtomQueryPredicate::TotalDegree(0)),
+                    QueryNode::Predicate(AtomQueryPredicate::ImplicitHydrogenCount(1)),
                     consumed,
                 ));
             }
             return Ok((
-                QueryNode::Predicate(AtomQueryPredicate::TotalDegree(num as u8)),
+                QueryNode::Predicate(AtomQueryPredicate::ImplicitHydrogenCount(num as u8)),
                 consumed,
             ));
         }
@@ -903,6 +943,10 @@ impl<'a> SmartsParser<'a> {
             ));
         }
         if ch == 'r' {
+            if chars.get(i + 1) == Some(&'{') {
+                let (predicate, consumed) = self.parse_ring_size_range(chars, i + 2, len)?;
+                return Ok((predicate, consumed));
+            }
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len);
             if num == 0 {
                 return Ok((QueryNode::Predicate(AtomQueryPredicate::InRing), consumed));
@@ -926,6 +970,19 @@ impl<'a> SmartsParser<'a> {
             ));
         }
 
+        // Ring connectivity: x or x<N>
+        // RDKit✔️✔️: lowercase x matches atom ring-bond count.
+        if ch == 'x' {
+            let (num, consumed) = self.parse_optional_number(chars, i + 1, len);
+            if num == 0 {
+                return Ok((QueryNode::Predicate(AtomQueryPredicate::Any), consumed));
+            }
+            return Ok((
+                QueryNode::Predicate(AtomQueryPredicate::NumRingBonds(num as u8)),
+                consumed,
+            ));
+        }
+
         // Degree: D or D<N>
         // RDKit✔️✔️: smarts.yy — D_TOKEN (optional NUMBER)
         if ch == 'D' {
@@ -939,6 +996,25 @@ impl<'a> SmartsParser<'a> {
             ));
         }
 
+        // Hybridization: ^1, ^2, ^3, ...
+        // RDKit✔️✔️: caret hybridization primitives map to explicit hybridization predicates.
+        if ch == '^' {
+            let (num, consumed) = self.parse_number(chars, i + 1, len)?;
+            let hybridization = match num {
+                1 => crate::Hybridization::S,
+                2 => crate::Hybridization::Sp,
+                3 => crate::Hybridization::Sp2,
+                4 => crate::Hybridization::Sp3,
+                5 => crate::Hybridization::Sp3d,
+                6 => crate::Hybridization::Sp3d2,
+                _ => crate::Hybridization::Other,
+            };
+            return Ok((
+                QueryNode::Predicate(AtomQueryPredicate::HybridizationMatch(hybridization)),
+                consumed,
+            ));
+        }
+
         // Valence/connectivity: v or v<N>
         // RDKit✔️✔️: smarts.yy — v_TOKEN (optional NUMBER)
         if ch == 'v' {
@@ -948,6 +1024,16 @@ impl<'a> SmartsParser<'a> {
             }
             return Ok((
                 QueryNode::Predicate(AtomQueryPredicate::TotalDegree(num as u8)),
+                consumed,
+            ));
+        }
+
+        // Atom map number: :<N>
+        // RDKit✔️✔️: bracket atom map property used for SMARTS match indexing.
+        if ch == ':' {
+            let (num, consumed) = self.parse_number(chars, i + 1, len)?;
+            return Ok((
+                QueryNode::Predicate(AtomQueryPredicate::AtomMapNumber(num)),
                 consumed,
             ));
         }
@@ -1031,6 +1117,64 @@ impl<'a> SmartsParser<'a> {
         })
     }
 
+    fn parse_ring_size_range(
+        &self,
+        chars: &[char],
+        start: usize,
+        len: usize,
+    ) -> Result<(QueryNode<AtomQueryPredicate>, usize), SmartsParseError> {
+        let mut pos = start;
+        let lower = if pos < len && chars[pos].is_ascii_digit() {
+            let (num, consumed) = self.parse_number(chars, pos, len)?;
+            pos = consumed;
+            Some(num as u8)
+        } else {
+            None
+        };
+        if chars.get(pos) != Some(&'-') {
+            return Err(SmartsParseError::InvalidAtomPrimitive {
+                position: start.saturating_sub(2),
+                detail: "expected '-' in ring-size range".to_string(),
+            });
+        }
+        pos += 1;
+        let upper = if pos < len && chars[pos].is_ascii_digit() {
+            let (num, consumed) = self.parse_number(chars, pos, len)?;
+            pos = consumed;
+            Some(num as u8)
+        } else {
+            None
+        };
+        if chars.get(pos) != Some(&'}') {
+            return Err(SmartsParseError::InvalidAtomPrimitive {
+                position: start.saturating_sub(2),
+                detail: "expected '}' to close ring-size range".to_string(),
+            });
+        }
+        pos += 1;
+
+        let predicate = match (lower, upper) {
+            (Some(min), Some(max)) => QueryNode::And(vec![
+                QueryNode::Predicate(AtomQueryPredicate::SmallestRingSizeGreaterEqual(min)),
+                QueryNode::Predicate(AtomQueryPredicate::SmallestRingSizeLessEqual(max)),
+            ]),
+            (Some(min), None) => {
+                QueryNode::Predicate(AtomQueryPredicate::SmallestRingSizeGreaterEqual(min))
+            }
+            (None, Some(max)) => {
+                QueryNode::Predicate(AtomQueryPredicate::SmallestRingSizeLessEqual(max))
+            }
+            (None, None) => {
+                return Err(SmartsParseError::InvalidAtomPrimitive {
+                    position: start.saturating_sub(2),
+                    detail: "empty ring-size range".to_string(),
+                });
+            }
+        };
+
+        Ok((predicate, pos))
+    }
+
     /// Parse a number from position i. Returns (value, consumed_index).
     fn parse_number(
         &self,
@@ -1069,19 +1213,63 @@ impl<'a> SmartsParser<'a> {
     /// Parse a bond specifier.
     ///
     /// RDKit source: smarts.yy — bond → BOND_TOKEN
-    /// RDKit✔️✔️: Bond specifiers: -, =, #, :, ~, /, \\
+    /// RDKit❗✔️: Supports the CrystalFF parameter-table bond combinations
+    /// `!@`, `@`, and `;` in addition to the basic bond specifiers.
     fn parse_bond(&mut self) -> Result<QueryNode<BondQueryPredicate>, SmartsParseError> {
-        match self.peek() {
-            (Token::BondSpec(ch), _) => {
-                let query = bond_spec_to_query(*ch);
-                self.advance();
-                Ok(query)
+        let mut negate_next = false;
+        let mut predicates = Vec::new();
+        let mut consumed_any = false;
+        let mut logical_or = false;
+
+        while matches!(
+            self.peek(),
+            (Token::BondSpec(_), _) | (Token::Not, _) | (Token::And, _) | (Token::Or, _)
+        ) {
+            match self.peek() {
+                (Token::Not, _) => {
+                    consumed_any = true;
+                    negate_next = !negate_next;
+                    self.advance();
+                }
+                (Token::And, _) => {
+                    consumed_any = true;
+                    self.advance();
+                }
+                (Token::Or, _) => {
+                    consumed_any = true;
+                    logical_or = true;
+                    self.advance();
+                }
+                (Token::BondSpec(ch), _) => {
+                    consumed_any = true;
+                    let query = bond_spec_to_query(*ch);
+                    self.advance();
+                    let query = if negate_next {
+                        negate_next = false;
+                        QueryNode::not(query)
+                    } else {
+                        query
+                    };
+                    predicates.push(query);
+                }
+                _ => break,
             }
-            (tok, pos) => Err(SmartsParseError::UnexpectedCharacter {
-                position: *pos,
-                character: format!("{:?}", tok).chars().next().unwrap_or('?'),
+        }
+
+        let predicates = predicates
+            .into_iter()
+            .filter(|query| *query != QueryNode::Predicate(BondQueryPredicate::Any))
+            .collect::<Vec<_>>();
+        match predicates.len() {
+            0 if consumed_any => Ok(QueryNode::Predicate(BondQueryPredicate::Any)),
+            0 => Err(SmartsParseError::UnexpectedCharacter {
+                position: self.pos_info(),
+                character: '?',
                 context: "expected bond specifier".to_string(),
             }),
+            len if logical_or && len > 1 => Ok(QueryNode::Or(predicates)),
+            1 => Ok(predicates.into_iter().next().expect("single bond query")),
+            _ => Ok(QueryNode::And(predicates)),
         }
     }
 }
@@ -1169,6 +1357,7 @@ fn bond_spec_to_query(ch: char) -> QueryNode<BondQueryPredicate> {
         '=' => QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Double)),
         '#' => QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Triple)),
         ':' => QueryNode::Predicate(BondQueryPredicate::IsAromatic(true)),
+        '@' => QueryNode::Predicate(BondQueryPredicate::IsInRing(true)),
         '~' => QueryNode::Predicate(BondQueryPredicate::Any),
         '/' => QueryNode::Predicate(BondQueryPredicate::Direction(
             crate::BondDirection::EndUpRight,

@@ -1198,6 +1198,7 @@ fn set_mmff_aromaticity_from_parts(
 
     let mut arom_bit_vect = vec![false; num_atoms];
     let mut arom_ring_bit_vect = vec![false; ring_count];
+    let mut current_atom_aromatic = atoms.iter().map(Atom::is_aromatic).collect::<Vec<_>>();
     let mut arom_rings_all_set = false;
     let mut n_arom_set: i32 = 0;
     let mut old_n_arom_set: i32 = -1;
@@ -1281,7 +1282,7 @@ fn set_mmff_aromaticity_from_parts(
                     // If double bonded: check if neighbor is aromatic
                     if nbr_bond.order() == BondOrder::Double {
                         // Check if neighbor atom is already marked aromatic
-                        if arom_bit_vect[nbr_idx] {
+                        if current_atom_aromatic[nbr_idx] {
                             pi_e += 1;
                         } else {
                             exo_double_bond = true;
@@ -1324,6 +1325,7 @@ fn set_mmff_aromaticity_from_parts(
                 arom_ring_bit_vect[ring_idx] = true;
                 for atom_id in ring {
                     arom_bit_vect[atom_id.index()] = true;
+                    current_atom_aromatic[atom_id.index()] = true;
                 }
             }
         }

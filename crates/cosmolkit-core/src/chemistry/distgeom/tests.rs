@@ -1,5 +1,6 @@
 use super::*;
 use crate::builder::MoleculeBuilder;
+use crate::chemistry::forcefield::uff::atom_typer::add_atom_charge_flags_for_uff;
 use crate::{AtomSpec, BondSpec, Element, Molecule, ValenceModel, assign_valence};
 
 fn run_set12_bounds(mol: &Molecule) -> (BoundsMatrix, ComputedData) {
@@ -673,9 +674,17 @@ fn atom_charge_flags_adds_default_copper_charge_from_formal_charge() {
     );
     let assignment = assign_valence(&mol, ValenceModel::RdkitLike).expect("valence");
     let hybridizations = vec![Hybridization::Unspecified];
+    let total_valence = atom_total_valence_for_uff(&mol, &assignment, 0);
     let mut atom_key = "Cu".to_string();
 
-    add_atom_charge_flags_for_uff(0, &mol, &assignment, &mut atom_key, &hybridizations, false);
+    add_atom_charge_flags_for_uff(
+        &mol.atoms()[0],
+        0,
+        total_valence,
+        &mut atom_key,
+        hybridizations[0],
+        false,
+    );
 
     assert_eq!(atom_key, "Cu+1");
 }
@@ -689,9 +698,17 @@ fn atom_charge_flags_adds_lanthanide_plus_three_when_tolerating_mismatch() {
     );
     let assignment = assign_valence(&mol, ValenceModel::RdkitLike).expect("valence");
     let hybridizations = vec![Hybridization::Sp3d2];
+    let total_valence = atom_total_valence_for_uff(&mol, &assignment, 0);
     let mut atom_key = "Ce".to_string();
 
-    add_atom_charge_flags_for_uff(0, &mol, &assignment, &mut atom_key, &hybridizations, true);
+    add_atom_charge_flags_for_uff(
+        &mol.atoms()[0],
+        0,
+        total_valence,
+        &mut atom_key,
+        hybridizations[0],
+        true,
+    );
 
     assert_eq!(atom_key, "Ce+3");
 }
@@ -705,9 +722,17 @@ fn atom_charge_flags_rewrites_rhenium_special_labels_when_tolerating_mismatch() 
     );
     let assignment = assign_valence(&mol, ValenceModel::RdkitLike).expect("valence");
     let hybridizations = vec![Hybridization::Sp3d];
+    let total_valence = atom_total_valence_for_uff(&mol, &assignment, 0);
     let mut atom_key = "Re6".to_string();
 
-    add_atom_charge_flags_for_uff(0, &mol, &assignment, &mut atom_key, &hybridizations, true);
+    add_atom_charge_flags_for_uff(
+        &mol.atoms()[0],
+        0,
+        total_valence,
+        &mut atom_key,
+        hybridizations[0],
+        true,
+    );
 
     assert_eq!(atom_key, "Re6+5");
 }

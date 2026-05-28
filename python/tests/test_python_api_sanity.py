@@ -75,7 +75,7 @@ def test_smiles_and_value_semantics_preserve_expected_graph_features():
 
 def test_coordinate_and_sdf_roundtrip_behaviors_are_consistent():
     base = cosmolkit.Molecule.from_smiles("CCO")
-    mol2d = base.with_2d_coords()
+    mol2d = base.with_2d_coordinates()
     assert not base.has_2d_coords()
     assert mol2d.has_2d_coords()
     assert mol2d.num_conformers() == 0
@@ -115,7 +115,7 @@ $$$$
     assert restored3d.num_conformers() == 1
     assert np.allclose(restored3d.coords_3d(), mol3d.coords_3d())
 
-    both = mol3d.with_2d_coords()
+    both = mol3d.with_2d_coordinates()
     assert both.has_2d_coords()
     assert both.num_conformers() == 1
     assert_coord_rows_match_atoms(both)
@@ -153,7 +153,7 @@ def test_editing_commit_boundary_matches_sanitize_behavior():
 
 
 def test_read_mol_rejects_sdf_record_separator_but_accepts_plain_mol(tmp_path: Path):
-    mol2d = cosmolkit.Molecule.from_smiles("CCO").with_2d_coords()
+    mol2d = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
     mol_path = tmp_path / "ethanol.mol"
     mol2d.write_sdf(str(mol_path), format="v2000")
 
@@ -216,7 +216,7 @@ def test_fragment_hash_pickle_and_scaffold_bindings_are_available():
 
 
 def test_draw_and_substructure_bindings_are_available():
-    mol = cosmolkit.Molecule.from_smiles("c1ccccc1O").with_2d_coords()
+    mol = cosmolkit.Molecule.from_smiles("c1ccccc1O").with_2d_coordinates()
     png = mol.to_png(width=200, height=150)
     assert bytes(png).startswith(b"\x89PNG\r\n\x1a\n")
 
@@ -320,7 +320,7 @@ def test_batch_api_combinations_preserve_order_shapes_and_record_alignment():
     masked = batch[batch.valid_mask()]
     assert len(masked) == 3
 
-    prepared = batch.add_hydrogens(errors="keep").compute_2d_coords(errors="keep")
+    prepared = batch.with_hydrogens(errors="keep").with_2d_coordinates(errors="keep")
     assert prepared.valid_mask() == [True, True, False, True]
     mols = prepared.to_list()
     assert mols[2] is None

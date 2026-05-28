@@ -750,6 +750,10 @@ fn tokenize(smarts: &str) -> Result<Vec<(SmartsToken, usize)>, SmartsParseError>
                 tokens.push((SmartsToken::BondSpec(ch), i));
                 i += 1;
             }
+            '@' => {
+                tokens.push((SmartsToken::BondSpec('@'), i));
+                i += 1;
+            }
             '/' => {
                 tokens.push((SmartsToken::BondSpec('/'), i));
                 i += 1;
@@ -771,6 +775,10 @@ fn tokenize(smarts: &str) -> Result<Vec<(SmartsToken, usize)>, SmartsParseError>
 
             // Logical operators
             '&' => {
+                tokens.push((SmartsToken::And, i));
+                i += 1;
+            }
+            ';' => {
                 tokens.push((SmartsToken::And, i));
                 i += 1;
             }
@@ -890,6 +898,8 @@ impl<'a> SmartsParser<'a> {
                 (SmartsToken::CloseParen, _) => break,
                 // Bond spec followed by atom
                 (SmartsToken::BondSpec(_), _)
+                | (SmartsToken::Not, _)
+                | (SmartsToken::And, _)
                 | (SmartsToken::RingClosureDigit(_), _)
                 | (SmartsToken::RingClosurePercent(_), _)
                 | (SmartsToken::OpenParen, _) => {
@@ -980,11 +990,47 @@ impl<'a> SmartsParser<'a> {
         &mut self,
         atom_queries: &mut Vec<QueryNode<AtomQueryPredicate>>,
     ) -> Result<QueryNode<BondQueryPredicate>, SmartsParseError> {
+        let mut negate_next = false;
+        let mut predicates = Vec::new();
+
         match self.peek() {
-            (SmartsToken::BondSpec(ch), _) => {
-                let query = bond_spec_to_query(*ch);
-                self.advance();
-                Ok(query)
+            (SmartsToken::BondSpec(_), _) | (SmartsToken::Not, _) | (SmartsToken::And, _) => {
+                while matches!(
+                    self.peek(),
+                    (SmartsToken::BondSpec(_), _) | (SmartsToken::Not, _) | (SmartsToken::And, _)
+                ) {
+                    match self.peek() {
+                        (SmartsToken::Not, _) => {
+                            negate_next = !negate_next;
+                            self.advance();
+                        }
+                        (SmartsToken::And, _) => {
+                            self.advance();
+                        }
+                        (SmartsToken::BondSpec(ch), _) => {
+                            let query = bond_spec_to_query(*ch);
+                            self.advance();
+                            let query = if negate_next {
+                                negate_next = false;
+                                QueryNode::not(query)
+                            } else {
+                                query
+                            };
+                            predicates.push(query);
+                        }
+                        _ => break,
+                    }
+                }
+
+                let predicates = predicates
+                    .into_iter()
+                    .filter(|query| *query != QueryNode::Predicate(BondQueryPredicate::Any))
+                    .collect::<Vec<_>>();
+                match predicates.len() {
+                    0 => Ok(QueryNode::Predicate(BondQueryPredicate::Any)),
+                    1 => Ok(predicates.into_iter().next().expect("single bond query")),
+                    _ => Ok(QueryNode::And(predicates)),
+                }
             }
             (SmartsToken::RingClosureDigit(n), _) | (SmartsToken::RingClosurePercent(n), _) => {
                 let num = *n;
@@ -1079,6 +1125,7 @@ fn bond_spec_to_query(ch: char) -> QueryNode<BondQueryPredicate> {
         '=' => QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Double)),
         '#' => QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Triple)),
         ':' => QueryNode::Predicate(BondQueryPredicate::IsAromatic(true)),
+        '@' => QueryNode::Predicate(BondQueryPredicate::IsInRing(true)),
         '~' => QueryNode::Predicate(BondQueryPredicate::Any),
         '/' => QueryNode::Predicate(BondQueryPredicate::Direction(
             crate::BondDirection::EndUpRight,

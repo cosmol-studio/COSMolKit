@@ -4,7 +4,7 @@ import numpy as np
 
 from cosmolkit import Molecule
 
-mol = Molecule.from_smiles("c1ccccc1O").with_2d_coords()
+mol = Molecule.from_smiles("c1ccccc1O").with_2d_coordinates()
 
 coords = mol.coords_2d()
 bounds = mol.dg_bounds_matrix()

@@ -793,7 +793,7 @@ A molecule value.
 
 ``Molecule`` stores atoms, bonds, stereochemistry, and optional coordinate data.
 Transformation methods such as ``with_hydrogens()``, ``without_hydrogens()``,
-``with_kekulized_bonds()``, and ``with_2d_coords()`` return new molecule values.
+``with_kekulized_bonds()``, and ``with_2d_coordinates()`` return new molecule values.
 The original molecule is left unchanged.
 
 In-place methods mutate the receiver and always end with ``_``. COSMolKit
@@ -802,8 +802,8 @@ reserves the trailing underscore for this single public ``Molecule`` meaning.
 Examples
 --------
 Create molecules with ``Molecule.from_smiles()``, transform them with value
-methods such as ``with_2d_coords()``, then export strings, arrays, or depiction
-files.
+methods such as ``with_2d_coordinates()``, then export strings, arrays, or
+depiction files.
 "#]
 struct Molecule {
     inner: cosmolkit_core::Molecule,
@@ -1953,7 +1953,7 @@ Return the batch-level progress-bar default, or ``None`` when unset.
     #[doc = r#"
 Return a new batch with explicit hydrogens added to each valid molecule.
 "#]
-    fn add_hydrogens(
+    fn with_hydrogens(
         &self,
         errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
@@ -1962,7 +1962,7 @@ Return a new batch with explicit hydrogens added to each valid molecule.
         let mode = parse_batch_error_mode(errors)?;
         let inner = self
             .inner
-            .add_hydrogens_with_options(mode, validate_n_jobs(n_jobs)?, progress_bar)
+            .with_hydrogens_with_options(mode, validate_n_jobs(n_jobs)?, progress_bar)
             .map_err(batch_validation_pyerr)?;
         Ok(Self { inner })
     }
@@ -1971,7 +1971,7 @@ Return a new batch with explicit hydrogens added to each valid molecule.
     #[doc = r#"
 Return a new batch with explicit hydrogens removed from each valid molecule.
 "#]
-    fn remove_hydrogens(
+    fn without_hydrogens(
         &self,
         errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
@@ -1980,7 +1980,7 @@ Return a new batch with explicit hydrogens removed from each valid molecule.
         let mode = parse_batch_error_mode(errors)?;
         let inner = self
             .inner
-            .remove_hydrogens_with_options(mode, validate_n_jobs(n_jobs)?, progress_bar)
+            .without_hydrogens_with_options(mode, validate_n_jobs(n_jobs)?, progress_bar)
             .map_err(batch_validation_pyerr)?;
         Ok(Self { inner })
     }
@@ -2014,23 +2014,23 @@ n_jobs : int, optional
         Ok(Self { inner })
     }
 
-    #[pyo3(signature = (sanitize=None, errors=None, n_jobs=None, progress_bar=None))]
+    #[pyo3(signature = (clear_aromatic_flags=None, errors=None, n_jobs=None, progress_bar=None))]
     #[doc = r#"
 Return a new batch with aromatic bonds converted to an explicit Kekule form.
 "#]
     fn with_kekulized_bonds(
         &self,
-        sanitize: Option<bool>,
+        clear_aromatic_flags: Option<bool>,
         errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
         progress_bar: Option<bool>,
     ) -> PyResult<Self> {
-        let sanitize = sanitize.unwrap_or(true);
+        let clear_aromatic_flags = clear_aromatic_flags.unwrap_or(true);
         let mode = parse_batch_error_mode(errors)?;
         let inner = self
             .inner
             .with_kekulized_bonds_with_options(
-                sanitize,
+                clear_aromatic_flags,
                 mode,
                 validate_n_jobs(n_jobs)?,
                 progress_bar,
@@ -2043,7 +2043,7 @@ Return a new batch with aromatic bonds converted to an explicit Kekule form.
     #[doc = r#"
 Return a new batch with 2D coordinates computed for each valid molecule.
 "#]
-    fn compute_2d_coords(
+    fn with_2d_coordinates(
         &self,
         errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
@@ -2918,7 +2918,7 @@ Molecule
             .build()
             .map_err(|err| PyValueError::new_err(format!("from_rdkit build failed: {err}")))?;
         let inner = if matches!(sanitize, Some(true)) {
-            mol.sanitized()
+            mol.sanitize()
                 .map_err(|err| PyValueError::new_err(err.to_string()))?
         } else {
             mol
@@ -3094,27 +3094,27 @@ Remove explicit hydrogens in place.
             .map_err(|err| PyValueError::new_err(format!("remove_hydrogens_ failed: {err:?}")))
     }
 
-    #[pyo3(signature = (sanitize=None))]
+    #[pyo3(signature = (clear_aromatic_flags=None))]
     #[doc = r#"
 Return a new molecule with aromatic bonds converted to an explicit Kekule form.
 "#]
-    fn with_kekulized_bonds(&self, sanitize: Option<bool>) -> PyResult<Self> {
+    fn with_kekulized_bonds(&self, clear_aromatic_flags: Option<bool>) -> PyResult<Self> {
         let out = self
             .inner
-            .with_kekulized_bonds(sanitize.unwrap_or(true))
+            .with_kekulized_bonds(clear_aromatic_flags.unwrap_or(true))
             .map_err(|err| {
                 PyValueError::new_err(format!("with_kekulized_bonds failed: {err:?}"))
             })?;
         Ok(Self { inner: out })
     }
 
-    #[pyo3(signature = (sanitize=None))]
+    #[pyo3(signature = (clear_aromatic_flags=None))]
     #[doc = r#"
 Convert aromatic bonds to an explicit Kekule form in place.
 "#]
-    fn kekulize_(&mut self, sanitize: Option<bool>) -> PyResult<()> {
+    fn kekulize_(&mut self, clear_aromatic_flags: Option<bool>) -> PyResult<()> {
         self.inner
-            .kekulize_(sanitize.unwrap_or(true))
+            .kekulize_(clear_aromatic_flags.unwrap_or(true))
             .map_err(|err| PyValueError::new_err(format!("kekulize_ failed: {err:?}")))
     }
 
@@ -3252,32 +3252,21 @@ represented as ``None``.
     #[doc = r#"
 Return a new molecule with 2D coordinates.
 "#]
-    fn with_2d_coords(&self) -> PyResult<Self> {
-        let out = self
-            .inner
-            .with_2d_coordinates()
-            .map_err(|err| PyValueError::new_err(format!("with_2d_coords failed: {err}")))?;
-        Ok(Self { inner: out })
-    }
-
-    #[doc = r#"
-Compute 2D coordinates in place.
-"#]
-    fn compute_2d_coords_(&mut self) -> PyResult<()> {
-        self.inner
-            .compute_2d_coordinates_()
-            .map_err(|err| PyValueError::new_err(format!("compute_2d_coords_ failed: {err}")))
-    }
-
-    #[doc = r#"
-Return a new molecule with 2D coordinates.
-"#]
     fn with_2d_coordinates(&self) -> PyResult<Self> {
         let out = self
             .inner
             .with_2d_coordinates()
             .map_err(|err| PyValueError::new_err(format!("with_2d_coordinates failed: {err}")))?;
         Ok(Self { inner: out })
+    }
+
+    #[doc = r#"
+Compute 2D coordinates in place.
+"#]
+    fn compute_2d_coordinates_(&mut self) -> PyResult<()> {
+        self.inner
+            .compute_2d_coordinates_()
+            .map_err(|err| PyValueError::new_err(format!("compute_2d_coordinates_ failed: {err}")))
     }
 
     #[doc = r#"
@@ -3303,7 +3292,7 @@ The z column is zero-filled.
     fn coords_2d<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let Some(coords) = self.inner.coords_2d() else {
             return Err(PyValueError::new_err(
-                "no 2D coordinates present; call with_2d_coords() first",
+                "no 2D coordinates present; call with_2d_coordinates() first",
             ));
         };
         let rows: Vec<Vec<f64>> = coords.iter().map(|p| vec![p[0], p[1], 0.0]).collect();
@@ -3957,7 +3946,7 @@ Deserialize a molecule from COSMolKit binary data.
     fn sanitize(&self, strict: Option<bool>) -> PyResult<Self> {
         reject_non_strict_sanitize(strict)?;
         self.inner
-            .sanitized()
+            .sanitize()
             .map(|inner| Self { inner })
             .map_err(|err| PyValueError::new_err(err.to_string()))
     }
@@ -4476,7 +4465,7 @@ Commit staged edits and return a new molecule.
                 .clone()
                 .build()
                 .map_err(|err| PyValueError::new_err(err.to_string()))?
-                .sanitized()
+                .sanitize()
                 .map_err(|err| PyValueError::new_err(err.to_string()))?
         } else {
             self.builder

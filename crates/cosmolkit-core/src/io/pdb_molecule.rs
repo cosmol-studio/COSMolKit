@@ -56,7 +56,7 @@ pub fn molecule_from_pdb_block_with_options(
     text: &str,
     profile: RdkitPdbMolProfile,
 ) -> Result<Molecule, PdbMoleculeConversionError> {
-    let structure = crate::io::bio::read_pdb_coordinate_subset_from_str(text)?;
+    let structure = BioStructure::from_pdb_str(text)?;
     bio_structure_to_rdkit_pdb_molecule(&structure, profile)
 }
 
@@ -150,7 +150,7 @@ pub fn bio_structure_to_rdkit_pdb_molecule(
     basic_pdb_cleanup_like_rdkit(&mut builder);
     let mut molecule = builder.build()?;
     if profile.sanitize {
-        molecule = molecule.sanitized()?;
+        molecule = molecule.sanitize()?;
     }
     if profile.remove_hs {
         molecule = molecule.without_hydrogens()?;
@@ -1706,8 +1706,8 @@ mod tests {
     #[test]
     fn rdkit_pdb_molecule_conversion_retains_atom_and_hetatm_records() {
         let pdb = "\
-ATOM      1  N   ALA A   1      11.104  13.207   9.900  1.00 20.00           N  
-HETATM    2  O   HOH B   2      12.000  14.000   8.000  0.50 10.00           O  
+ATOM      1  N   ALA A   1      11.104  13.207   9.900  1.00 20.00           N
+HETATM    2  O   HOH B   2      12.000  14.000   8.000  0.50 10.00           O
 ";
         let mol = Molecule::from_pdb_block_with_options(pdb, no_proximity_profile()).unwrap();
 
@@ -1726,9 +1726,9 @@ HETATM    2  O   HOH B   2      12.000  14.000   8.000  0.50 10.00           O
     #[test]
     fn rdkit_pdb_molecule_conversion_filters_altloc_like_rdkit_default_flavor() {
         let pdb = "\
-ATOM      1  CA AALA A   1      11.104  13.207   9.900  1.00 20.00           C  
-ATOM      2  CA BALA A   1      12.104  13.207   9.900  1.00 20.00           C  
-ATOM      3  CA 1ALA A   1      13.104  13.207   9.900  1.00 20.00           C  
+ATOM      1  CA AALA A   1      11.104  13.207   9.900  1.00 20.00           C
+ATOM      2  CA BALA A   1      12.104  13.207   9.900  1.00 20.00           C
+ATOM      3  CA 1ALA A   1      13.104  13.207   9.900  1.00 20.00           C
 ";
         let mol = Molecule::from_pdb_block_with_options(pdb, no_proximity_profile()).unwrap();
 
@@ -1745,8 +1745,8 @@ ATOM      3  CA 1ALA A   1      13.104  13.207   9.900  1.00 20.00           C
     #[test]
     fn rdkit_pdb_molecule_conversion_flavor_one_keeps_altlocs() {
         let pdb = "\
-ATOM      1  CA AALA A   1      11.104  13.207   9.900  1.00 20.00           C  
-ATOM      2  CA BALA A   1      12.104  13.207   9.900  1.00 20.00           C  
+ATOM      1  CA AALA A   1      11.104  13.207   9.900  1.00 20.00           C
+ATOM      2  CA BALA A   1      12.104  13.207   9.900  1.00 20.00           C
 ";
         let mol = Molecule::from_pdb_block_with_options(
             pdb,
@@ -1763,8 +1763,8 @@ ATOM      2  CA BALA A   1      12.104  13.207   9.900  1.00 20.00           C
     #[test]
     fn rdkit_pdb_molecule_conversion_applies_conect_duplicate_bond_orders() {
         let pdb = "\
-HETATM    1  C1  LIG A   1       0.000   0.000   0.000  1.00 10.00           C  
-HETATM    2  O1  LIG A   1       1.200   0.000   0.000  1.00 10.00           O  
+HETATM    1  C1  LIG A   1       0.000   0.000   0.000  1.00 10.00           C
+HETATM    2  O1  LIG A   1       1.200   0.000   0.000  1.00 10.00           O
 CONECT    1    2    2
 ";
         let mol = Molecule::from_pdb_block_with_options(pdb, no_proximity_profile()).unwrap();
@@ -1776,8 +1776,8 @@ CONECT    1    2    2
     #[test]
     fn rdkit_pdb_molecule_conversion_adds_proximity_bonds_like_rdkit() {
         let pdb = "\
-HETATM    1  C1  LIG A   1       0.000   0.000   0.000  1.00 10.00           C  
-HETATM    2  O1  LIG A   1       1.200   0.000   0.000  1.00 10.00           O  
+HETATM    1  C1  LIG A   1       0.000   0.000   0.000  1.00 10.00           C
+HETATM    2  O1  LIG A   1       1.200   0.000   0.000  1.00 10.00           O
 ";
         let mol = Molecule::from_pdb_block_with_options(
             pdb,
@@ -1797,8 +1797,8 @@ HETATM    2  O1  LIG A   1       1.200   0.000   0.000  1.00 10.00           O
     #[test]
     fn rdkit_pdb_molecule_conversion_default_proximity_ignores_h_h_contacts() {
         let pdb = "\
-HETATM    1  H1  LIG A   1       0.000   0.000   0.000  1.00 10.00           H  
-HETATM    2  H2  LIG A   1       0.700   0.000   0.000  1.00 10.00           H  
+HETATM    1  H1  LIG A   1       0.000   0.000   0.000  1.00 10.00           H
+HETATM    2  H2  LIG A   1       0.700   0.000   0.000  1.00 10.00           H
 ";
         let mol = Molecule::from_pdb_block_with_options(
             pdb,
@@ -1817,8 +1817,8 @@ HETATM    2  H2  LIG A   1       0.700   0.000   0.000  1.00 10.00           H
     #[test]
     fn rdkit_pdb_molecule_conversion_blacklisted_explicit_conect_becomes_zero_bond() {
         let pdb = "\
-HETATM    1 FE   HEM A   1       0.000   0.000   0.000  1.00 10.00          FE  
-HETATM    2  O   HOH B   2       2.000   0.000   0.000  1.00 10.00           O  
+HETATM    1 FE   HEM A   1       0.000   0.000   0.000  1.00 10.00          FE
+HETATM    2  O   HOH B   2       2.000   0.000   0.000  1.00 10.00           O
 CONECT    1    2
 ";
         let mol = Molecule::from_pdb_block_with_options(pdb, no_proximity_profile()).unwrap();
@@ -1830,8 +1830,8 @@ CONECT    1    2
     #[test]
     fn rdkit_pdb_molecule_conversion_flavor_eight_applies_standard_residue_double_bonds() {
         let pdb = "\
-ATOM      1  C   ALA A   1       0.000   0.000   0.000  1.00 10.00           C  
-ATOM      2  O   ALA A   1       1.200   0.000   0.000  1.00 10.00           O  
+ATOM      1  C   ALA A   1       0.000   0.000   0.000  1.00 10.00           C
+ATOM      2  O   ALA A   1       1.200   0.000   0.000  1.00 10.00           O
 CONECT    1    2
 ";
         let mol = Molecule::from_pdb_block_with_options(

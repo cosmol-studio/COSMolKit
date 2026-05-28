@@ -1,31 +1,25 @@
-"""COSMolKit usage: reading 3D SDF coordinates.
+"""COSMolKit usage: reading 3D molfile coordinates.
 
-COSMolKit can preserve 3D coordinates from SDF records. 3D embedding,
+COSMolKit can preserve 3D coordinates from molfile/SDF records. 3D embedding,
 optimization, and alignment are not exposed as Python APIs yet.
 """
 
 from cosmolkit import Molecule
 
-sdf = """methane_3d
+molblock = """ethane_heavy_atoms_3d
   COSMolKit      3D
 
-  5  4  0  0  0  0  0  0  0  0999 V2000
-    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
-    0.6291    0.6291    0.6291 H   0  0  0  0  0  0  0  0  0  0  0  0
-   -0.6291   -0.6291    0.6291 H   0  0  0  0  0  0  0  0  0  0  0  0
-   -0.6291    0.6291   -0.6291 H   0  0  0  0  0  0  0  0  0  0  0  0
-    0.6291   -0.6291   -0.6291 H   0  0  0  0  0  0  0  0  0  0  0  0
+  2  1  0  0  0  0            999 V2000
+   -0.7700    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.7700    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
   1  2  1  0
-  1  3  1  0
-  1  4  1  0
-  1  5  1  0
 M  END
-$$$$
 """
 
-mol = Molecule.read_sdf_from_str(sdf, coordinate_dim="3d")
+mol = Molecule.read_mol_from_str(molblock, coordinate_dim="3d")
 coords = mol.coords_3d()
 
 print("atoms:", mol.num_atoms())
+print("bonds:", mol.num_bonds())
 print("3d coords shape:", coords.shape)
 print("centroid:", coords.mean(axis=0))

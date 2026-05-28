@@ -1,9 +1,6 @@
 use std::path::PathBuf;
 
-use cosmolkit_core::{
-    BioConnectionType, BioCoorFormat, EntityKind, read_bio_structure_from_str,
-    read_bio_structure_from_str_with_format,
-};
+use cosmolkit_core::{BioConnectionType, BioCoorFormat, BioStructure, EntityKind};
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -18,7 +15,7 @@ fn fixture_text(name: &str) -> String {
 
 #[test]
 fn pdb_fixture_exercises_gemmi_aligned_structural_records() {
-    let structure = read_bio_structure_from_str(
+    let structure = BioStructure::from_structure_str(
         &fixture_text("gemmi_full_feature_sample.pdb"),
         "gemmi_full_feature_sample.pdb",
     )
@@ -56,7 +53,7 @@ fn pdb_fixture_exercises_gemmi_aligned_structural_records() {
 
 #[test]
 fn mmcif_fixture_exercises_gemmi_aligned_structural_categories() {
-    let structure = read_bio_structure_from_str(
+    let structure = BioStructure::from_structure_str(
         &fixture_text("gemmi_full_feature_sample.cif"),
         "gemmi_full_feature_sample.cif",
     )
@@ -95,7 +92,7 @@ fn mmcif_fixture_exercises_gemmi_aligned_structural_categories() {
 
 #[test]
 fn chemcomp_fixture_enters_public_structural_dispatch_surface() {
-    let structure = read_bio_structure_from_str_with_format(
+    let structure = BioStructure::from_str_with_format(
         &fixture_text("gemmi_chemcomp_sample.cif"),
         "gemmi_chemcomp_sample.cif",
         BioCoorFormat::Mmcif,
@@ -128,7 +125,7 @@ fn structural_dispatch_surface_reads_mmjson_through_public_surface() {
     }
   }
 }"#;
-    let structure = read_bio_structure_from_str(mmjson, "sample.json").unwrap();
+    let structure = BioStructure::from_structure_str(mmjson, "sample.json").unwrap();
     assert_eq!(structure.input_format(), BioCoorFormat::Mmjson);
     assert_eq!(structure.name(), "demo");
     assert_eq!(structure.num_atoms(), 1);

@@ -84,7 +84,7 @@ raises if the molecule has no 3D coordinates.
 
 .. code-block:: python
 
-   mol = Molecule.from_smiles("CCO").with_2d_coords()
+   mol = Molecule.from_smiles("CCO").with_2d_coordinates()
    mol.write_sdf(
        "python/examples/output/ethanol.sdf",
        format="v2000",
@@ -164,7 +164,7 @@ arrays:
 
 .. code-block:: python
 
-   mol = Molecule.from_smiles("c1ccccc1O").with_2d_coords()
+   mol = Molecule.from_smiles("c1ccccc1O").with_2d_coordinates()
 
    coords = mol.coords_2d()
    bounds = mol.dg_bounds_matrix()
@@ -177,7 +177,7 @@ Depiction Files
 
 .. code-block:: python
 
-   mol = Molecule.from_smiles("c1ccccc1O").with_2d_coords()
+   mol = Molecule.from_smiles("c1ccccc1O").with_2d_coordinates()
 
    mol.write_svg("python/examples/output/phenol.svg", width=400, height=300)
    mol.write_png("python/examples/output/phenol.png", width=400, height=300)

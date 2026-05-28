@@ -50,6 +50,27 @@ pub(crate) fn assign_valence_state_for_atom_from_parts(
     Ok((state.explicit_valence, state.implicit_valence))
 }
 
+pub(crate) fn assign_implicit_valence_for_atom_from_parts_with_explicit_valence(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    atom_id: AtomId,
+    explicit_valence: i32,
+    strict: bool,
+) -> Result<i32, ValenceError> {
+    // BEGIN RDKIT CPP FUNCTION Atom::calcImplicitValence
+    // RDKit✔️✔️: int Atom::calcImplicitValence(bool strict) {
+    // RDKit✔️✔️:   if (d_explicitValence == -1) {
+    // RDKit✔️✔️:     calcExplicitValence(strict);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   bool checkIt = false;
+    // RDKit✔️✔️:   d_implicitValence = calculateImplicitValence(*this, strict, checkIt);
+    // RDKit✔️✔️:   return d_implicitValence;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION Atom::calcImplicitValence
+    atom_calc_implicit_valence(atoms, bonds, adjacency, atom_id, explicit_valence, strict)
+}
+
 fn atom_from_parts(atoms: &[Atom], atom_id: AtomId) -> Result<&Atom, ValenceError> {
     // BEGIN RDKIT CPP FUNCTION ROMol::getAtomWithIdx
     // RDKit✔️✔️: //! returns a pointer to a particular Atom

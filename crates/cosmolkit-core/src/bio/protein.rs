@@ -2,10 +2,6 @@ use crate::bio::{
     AtomId, AtomRow, BioStructure, ChainId, ChainKind, ChainRow, CoordinateBlock, ModelId,
     ModelRow, ResidueId, ResidueKind, ResidueRow, RowSpan,
 };
-use crate::io::bio::{
-    read_bio_structure_from_str, read_bio_structure_from_str_with_format,
-    read_pdb_coordinate_subset_from_str,
-};
 use crate::{BioCoorFormat, BioReadError};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,7 +36,7 @@ pub struct ProteinAtomRef<'a> {
 
 impl Protein {
     #[must_use]
-    pub fn from_bio_structure(structure: &BioStructure) -> Self {
+    pub fn project_from_bio_structure(structure: &BioStructure) -> Self {
         Self {
             structure: project_protein_bio_structure(structure),
         }
@@ -57,8 +53,8 @@ impl Protein {
     }
 
     pub fn from_pdb_str(text: &str) -> Result<Self, BioReadError> {
-        let structure = read_pdb_coordinate_subset_from_str(text)?;
-        Ok(Self::from_bio_structure(&structure))
+        let structure = BioStructure::from_pdb_str(text)?;
+        Ok(Self::project_from_bio_structure(&structure))
     }
 
     pub fn from_pdb(path: &str) -> Result<Self, BioReadError> {
@@ -86,13 +82,13 @@ impl Protein {
         path: &str,
         format: BioCoorFormat,
     ) -> Result<Self, BioReadError> {
-        let structure = read_bio_structure_from_str_with_format(text, path, format)?;
-        Ok(Self::from_bio_structure(&structure))
+        let structure = BioStructure::from_str_with_format(text, path, format)?;
+        Ok(Self::project_from_bio_structure(&structure))
     }
 
     pub fn from_structure_str(text: &str, path: &str) -> Result<Self, BioReadError> {
-        let structure = read_bio_structure_from_str(text, path)?;
-        Ok(Self::from_bio_structure(&structure))
+        let structure = BioStructure::from_structure_str(text, path)?;
+        Ok(Self::project_from_bio_structure(&structure))
     }
 
     #[must_use]
@@ -343,22 +339,21 @@ fn project_protein_bio_structure(source: &BioStructure) -> BioStructure {
 mod tests {
     use super::*;
     use crate::bio::ResidueKind;
-    use crate::read_pdb_coordinate_subset_from_str;
 
     const MIXED_PDB: &str = "\
-ATOM      1  N   MET A   1      11.104  13.207   9.900  1.00 20.00           N  
-ATOM      2  CA  MET A   1      12.210  13.912  10.555  1.00 20.00           C  
-ATOM      3  C   MET A   1      13.470  13.079  10.413  1.00 20.00           C  
-ATOM      4  N   GLY A   2      14.530  13.650  10.980  1.00 20.00           N  
-ATOM      5  CA  GLY A   2      15.790  12.920  10.910  1.00 20.00           C  
-HETATM    6  O   HOH A   3      18.000  10.000   8.000  1.00 10.00           O  
-HETATM    7  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C  
+ATOM      1  N   MET A   1      11.104  13.207   9.900  1.00 20.00           N
+ATOM      2  CA  MET A   1      12.210  13.912  10.555  1.00 20.00           C
+ATOM      3  C   MET A   1      13.470  13.079  10.413  1.00 20.00           C
+ATOM      4  N   GLY A   2      14.530  13.650  10.980  1.00 20.00           N
+ATOM      5  CA  GLY A   2      15.790  12.920  10.910  1.00 20.00           C
+HETATM    6  O   HOH A   3      18.000  10.000   8.000  1.00 10.00           O
+HETATM    7  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
 ";
 
     #[test]
     fn protein_projection_keeps_only_amino_acid_residues() {
-        let structure = read_pdb_coordinate_subset_from_str(MIXED_PDB).unwrap();
-        let protein = Protein::from_bio_structure(&structure);
+        let structure = BioStructure::from_pdb_str(MIXED_PDB).unwrap();
+        let protein = Protein::project_from_bio_structure(&structure);
 
         assert_eq!(protein.num_models(), 1);
         assert_eq!(protein.num_chains(), 1);
@@ -379,8 +374,8 @@ HETATM    7  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
 
     #[test]
     fn protein_chain_residue_atom_navigation_is_hierarchical() {
-        let structure = read_pdb_coordinate_subset_from_str(MIXED_PDB).unwrap();
-        let protein = Protein::from_bio_structure(&structure);
+        let structure = BioStructure::from_pdb_str(MIXED_PDB).unwrap();
+        let protein = Protein::project_from_bio_structure(&structure);
         let chain = protein.chain(0).expect("projected protein chain");
 
         let residues: Vec<_> = chain.residues().collect();

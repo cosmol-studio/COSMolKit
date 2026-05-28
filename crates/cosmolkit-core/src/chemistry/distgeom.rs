@@ -12,6 +12,10 @@
 //! - **1-4 bounds**: torsion-angle ranges
 //! - **VDW lower bounds**: Van der Waals radii for non-bonded pairs
 
+#[cfg(test)]
+use crate::chemistry::forcefield::uff::atom_typer::get_atom_label_for_uff as source_get_atom_label_for_uff;
+use crate::chemistry::forcefield::uff::atom_typer::get_atom_types_for_uff;
+use crate::chemistry::forcefield::uff::params::AtomicParams;
 use crate::chemistry::stereo::{get_ideal_angle_between_ligands, has_non_tetrahedral_stereo};
 use crate::{
     Atom, AtomId, Bond, BondId, BondOrder, BondStereo, Hybridization, Molecule, ValenceModel,
@@ -46,16 +50,6 @@ pub enum DgBoundsError {
     GenerationFailed(String),
     #[error(transparent)]
     UnsupportedFeature(#[from] crate::UnsupportedFeatureError),
-}
-
-#[derive(Debug, Copy, Clone)]
-struct UffAtomicParams {
-    r1: f64,
-    gmp_xi: f64,
-}
-
-fn uff_params_for_label(label: &str) -> Option<UffAtomicParams> {
-    cosmolkit_macros::rdkit_uff_param_match!("src/data/rdkit_uff_params.tsv", label)
 }
 
 // ──────────────────────────────────────────────
@@ -500,207 +494,7 @@ fn total_num_hydrogens_for_distgeom(
     res
 }
 
-// BEGIN RDKIT CPP FUNCTION UFF::Tools::addAtomChargeFlags (AtomTyper.cpp:23-257)
-// RDKit✔️✔️: void addAtomChargeFlags(const Atom *atom, std::string &atomKey,
-// RDKit✔️✔️:                         bool tolerateChargeMismatch) {
-// RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
-// RDKit✔️✔️:   int totalValence = atom->getTotalValence();
-// RDKit✔️✔️:   int fc = atom->getFormalCharge();
-// RDKit✔️✔️:   // FIX: come up with some way of handling metals here
-// RDKit✔️✔️:   switch (atom->getAtomicNum()) {
-// RDKit✔️✔️:     case 29:  // Cu
-// RDKit✔️✔️:     case 47:  // Ag
-// RDKit✔️✔️:       if (totalValence == 1 || fc == 1 || tolerateChargeMismatch) { atomKey += "+1"; }
-// RDKit✔️✔️:       break;
-// RDKit✔️✔️:     case 4: case 20: case 25: case 26: case 28: case 46: case 78:
-// RDKit✔️✔️:       if (totalValence == 2 || fc == 2 || tolerateChargeMismatch) { atomKey += "+2"; }
-// RDKit✔️✔️:       break;
-// RDKit✔️✔️:     case 21: case 24: case 27: case 79: case 89: case 96: case 97:
-// RDKit✔️✔️:     case 98: case 99: case 100: case 101: case 102: case 103:
-// RDKit✔️✔️:       if (totalValence == 3 || fc == 3 || tolerateChargeMismatch) { atomKey += "+3"; }
-// RDKit✔️✔️:       break;
-// RDKit✔️✔️:     case 2: case 18: case 22: case 36: case 54: case 90: case 91:
-// RDKit✔️✔️:     case 92: case 93: case 94: case 95:
-// RDKit✔️✔️:       if (totalValence == 4 || fc == 4 || tolerateChargeMismatch) { atomKey += "+4"; }
-// RDKit✔️✔️:       break;
-// RDKit✔️✔️:     case 23: case 41: case 43: case 73:
-// RDKit✔️✔️:       if (totalValence == 5 || fc == 5 || tolerateChargeMismatch) { atomKey += "+5"; }
-// RDKit✔️✔️:       break;
-// RDKit✔️✔️:     case 42:
-// RDKit✔️✔️:       if (totalValence == 6 || fc == 6 || tolerateChargeMismatch) { atomKey += "+6"; }
-// RDKit✔️✔️:       break;
-// RDKit✔️✔️:     case 12: switch (totalValence) { case 2: atomKey += "+2"; break; default: if (tolerateChargeMismatch) { atomKey += "+2"; } } break;
-// RDKit✔️✔️:     case 13: if (totalValence != 3) { } break;
-// RDKit✔️✔️:     case 14: if (totalValence != 4) { } break;
-// RDKit✔️✔️:     case 15: switch (totalValence) { case 3: atomKey += "+3"; break; case 5: atomKey += "+5"; break; default: if (tolerateChargeMismatch) { atomKey += "+5"; } } break;
-// RDKit✔️✔️:     case 16: if (atom->getHybridization() != Atom::SP2) { switch (totalValence) { case 2: atomKey += "+2"; break; case 4: atomKey += "+4"; break; case 6: atomKey += "+6"; break; default: if (tolerateChargeMismatch) { atomKey += "+6"; } } } break;
-// RDKit✔️✔️:     case 30: switch (totalValence) { case 2: atomKey += "+2"; break; default: if (tolerateChargeMismatch) { atomKey += "+2"; } } break;
-// RDKit✔️✔️:     case 31: switch (totalValence) { case 3: atomKey += "+3"; break; default: if (tolerateChargeMismatch) { atomKey += "+3"; } } break;
-// RDKit✔️✔️:     case 33: switch (totalValence) { case 3: atomKey += "+3"; break; default: if (tolerateChargeMismatch) { atomKey += "+3"; } } break;
-// RDKit✔️✔️:     case 34: switch (totalValence) { case 2: atomKey += "+2"; break; default: if (tolerateChargeMismatch) { atomKey += "+2"; } } break;
-// RDKit✔️✔️:     case 48: switch (totalValence) { case 2: atomKey += "+2"; break; default: if (tolerateChargeMismatch) { atomKey += "+2"; } } break;
-// RDKit✔️✔️:     case 49: switch (totalValence) { case 3: atomKey += "+3"; break; default: if (tolerateChargeMismatch) { atomKey += "+3"; } } break;
-// RDKit✔️✔️:     case 51: switch (totalValence) { case 3: atomKey += "+3"; break; default: if (tolerateChargeMismatch) { atomKey += "+3"; } } break;
-// RDKit✔️✔️:     case 52: switch (totalValence) { case 2: atomKey += "+2"; break; default: if (tolerateChargeMismatch) { atomKey += "+2"; } } break;
-// RDKit✔️✔️:     case 75: if (tolerateChargeMismatch) { if (atomKey == "Re6") { atomKey = "Re6+5"; } else if (atomKey == "Re3") { atomKey = "Re3+7"; } } break;
-// RDKit✔️✔️:     case 80: switch (totalValence) { case 2: atomKey += "+2"; break; default: if (tolerateChargeMismatch) { atomKey += "+2"; } } break;
-// RDKit✔️✔️:     case 81: case 82: case 83:
-// RDKit✔️✔️:       switch (totalValence) { case 3: atomKey += "+3"; break; default: if (tolerateChargeMismatch) { atomKey += "+3"; } }
-// RDKit✔️✔️:       break;
-// RDKit✔️✔️:     case 84:
-// RDKit✔️✔️:       switch (totalValence) { case 2: atomKey += "+2"; break; default: if (tolerateChargeMismatch) { atomKey += "+2"; } }
-// RDKit✔️✔️:       break;
-// RDKit✔️✔️:   }
-// RDKit✔️✔️:   if (atom->getAtomicNum() >= 57 && atom->getAtomicNum() <= 71) {
-// RDKit✔️✔️:     switch (totalValence) {
-// RDKit✔️✔️:       case 6: atomKey += "+3"; break;
-// RDKit✔️✔️:       default: if (tolerateChargeMismatch) { atomKey += "+3"; }
-// RDKit✔️✔️:     }
-// RDKit✔️✔️:   }
-// RDKit✔️✔️: }
-// END RDKIT CPP FUNCTION UFF::Tools::addAtomChargeFlags
-fn add_atom_charge_flags_for_uff(
-    atom_index: usize,
-    mol: &Molecule,
-    assignment: &crate::ValenceAssignment,
-    atom_key: &mut String,
-    hybridizations: &[Hybridization],
-    tolerate_charge_mismatch: bool,
-) {
-    let atom = &mol.atoms()[atom_index];
-    let total_valence = atom_total_valence_for_uff(mol, assignment, atom_index);
-    let formal_charge = atom.formal_charge();
-    match atom.atomic_number() {
-        29 | 47 => {
-            if total_valence == 1 || formal_charge == 1 || tolerate_charge_mismatch {
-                atom_key.push_str("+1");
-            }
-        }
-        4 | 20 | 25 | 26 | 28 | 46 | 78 => {
-            if total_valence == 2 || formal_charge == 2 || tolerate_charge_mismatch {
-                atom_key.push_str("+2");
-            }
-        }
-        21 | 24 | 27 | 79 | 89 | 96..=103 => {
-            if total_valence == 3 || formal_charge == 3 || tolerate_charge_mismatch {
-                atom_key.push_str("+3");
-            }
-        }
-        2 | 18 | 22 | 36 | 54 | 90 | 91 | 92 | 93 | 94 | 95 => {
-            if total_valence == 4 || formal_charge == 4 || tolerate_charge_mismatch {
-                atom_key.push_str("+4");
-            }
-        }
-        23 | 41 | 43 | 73 => {
-            if total_valence == 5 || formal_charge == 5 || tolerate_charge_mismatch {
-                atom_key.push_str("+5");
-            }
-        }
-        42 => {
-            if total_valence == 6 || formal_charge == 6 || tolerate_charge_mismatch {
-                atom_key.push_str("+6");
-            }
-        }
-        12 => match total_valence {
-            2 => atom_key.push_str("+2"),
-            _ if tolerate_charge_mismatch => atom_key.push_str("+2"),
-            _ => {}
-        },
-        13 => {}
-        14 => {}
-        15 => match total_valence {
-            3 => atom_key.push_str("+3"),
-            5 => atom_key.push_str("+5"),
-            _ if tolerate_charge_mismatch => atom_key.push_str("+5"),
-            _ => {}
-        },
-        16 => {
-            if hybridizations[atom_index] != Hybridization::Sp2 {
-                match total_valence {
-                    2 => atom_key.push_str("+2"),
-                    4 => atom_key.push_str("+4"),
-                    6 => atom_key.push_str("+6"),
-                    _ if tolerate_charge_mismatch => atom_key.push_str("+6"),
-                    _ => {}
-                }
-            }
-        }
-        30 | 34 | 48 | 52 | 80 | 84 => match total_valence {
-            2 => atom_key.push_str("+2"),
-            _ if tolerate_charge_mismatch => atom_key.push_str("+2"),
-            _ => {}
-        },
-        31 | 33 | 49 | 51 | 81 | 82 | 83 => match total_valence {
-            3 => atom_key.push_str("+3"),
-            _ if tolerate_charge_mismatch => atom_key.push_str("+3"),
-            _ => {}
-        },
-        75 => {
-            if tolerate_charge_mismatch {
-                if atom_key == "Re6" {
-                    *atom_key = "Re6+5".to_string();
-                } else if atom_key == "Re3" {
-                    *atom_key = "Re3+7".to_string();
-                }
-            }
-        }
-        _ => {}
-    }
-    if (57..=71).contains(&atom.atomic_number()) {
-        match total_valence {
-            6 => atom_key.push_str("+3"),
-            _ if tolerate_charge_mismatch => atom_key.push_str("+3"),
-            _ => {}
-        }
-    }
-}
-
-// BEGIN RDKIT CPP FUNCTION UFF::Tools::getAtomLabel (AtomTyper.cpp:259-318)
-// RDKit✔️✔️: std::string getAtomLabel(const Atom *atom) {
-// RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
-// RDKit✔️✔️:   int atNum = atom->getAtomicNum();
-// RDKit✔️✔️:   std::string atomKey = atom->getSymbol();
-// RDKit✔️✔️:   if (atomKey.size() == 1) {
-// RDKit✔️✔️:     atomKey += '_';
-// RDKit✔️✔️:   }
-// RDKit✔️✔️:   PeriodicTable *table = PeriodicTable::getTable();
-// RDKit✔️✔️:   if (atNum) {
-// RDKit✔️✔️:     if (table->getDefaultValence(atNum) == -1 ||
-// RDKit✔️✔️:         (table->getNouterElecs(atNum) != 1 &&
-// RDKit✔️✔️:          table->getNouterElecs(atNum) != 7)) {
-// RDKit✔️✔️:       switch (atom->getAtomicNum()) {
-// RDKit✔️✔️:         case 12: case 13: case 14: case 15: case 50: case 51:
-// RDKit✔️✔️:         case 52: case 81: case 82: case 83: case 84:
-// RDKit✔️✔️:           atomKey += '3';
-// RDKit✔️✔️:           break;
-// RDKit✔️✔️:         case 80:
-// RDKit✔️✔️:           atomKey += '1';
-// RDKit✔️✔️:           break;
-// RDKit✔️✔️:         default:
-// RDKit✔️✔️:           switch (atom->getHybridization()) {
-// RDKit✔️✔️:             case Atom::S: break;
-// RDKit✔️✔️:             case Atom::SP: atomKey += '1'; break;
-// RDKit✔️✔️:             case Atom::SP2:
-// RDKit✔️✔️:               if ((atom->getIsAromatic() || MolOps::atomHasConjugatedBond(atom)) &&
-// RDKit✔️✔️:                   (atNum == 6 || atNum == 7 || atNum == 8 || atNum == 16)) {
-// RDKit✔️✔️:                 atomKey += 'R';
-// RDKit✔️✔️:               } else {
-// RDKit✔️✔️:                 atomKey += '2';
-// RDKit✔️✔️:               }
-// RDKit✔️✔️:               break;
-// RDKit✔️✔️:             case Atom::SP3: atomKey += '3'; break;
-// RDKit✔️✔️:             case Atom::SP2D: atomKey += '4'; break;
-// RDKit✔️✔️:             case Atom::SP3D: atomKey += '5'; break;
-// RDKit✔️✔️:             case Atom::SP3D2: atomKey += '6'; break;
-// RDKit✔️✔️:             default: break;
-// RDKit✔️✔️:           }
-// RDKit✔️✔️:       }
-// RDKit✔️✔️:     }
-// RDKit✔️✔️:   }
-// RDKit✔️✔️:   addAtomChargeFlags(atom, atomKey);
-// RDKit✔️✔️:   return atomKey;
-// RDKit✔️✔️: }
-// END RDKIT CPP FUNCTION UFF::Tools::getAtomLabel
+#[cfg(test)]
 fn get_atom_label_for_uff(
     mol: &Molecule,
     assignment: &crate::ValenceAssignment,
@@ -709,56 +503,24 @@ fn get_atom_label_for_uff(
     atom_index: usize,
 ) -> Result<String, DgBoundsError> {
     let atom = &mol.atoms()[atom_index];
-    let mut atom_key = crate::chemistry::valence::rdkit_element_symbol(atom.atomic_number())
-        .map_err(|err| {
-            DgBoundsError::GenerationFailed(format!(
-                "UFF atom symbol lookup failed for atomic number {}: {err}",
-                atom.atomic_number()
-            ))
-        })?
-        .to_string();
-    if atom_key.len() == 1 {
-        atom_key.push('_');
-    }
-    if atom.atomic_number() != 0 {
-        let nouter = rdkit_n_outer_electrons(atom.atomic_number()).unwrap_or(0);
-        if rdkit_default_valence(atom.atomic_number()) == Some(-1) || (nouter != 1 && nouter != 7) {
-            match atom.atomic_number() {
-                12 | 13 | 14 | 15 | 50 | 51 | 52 | 81 | 82 | 83 | 84 => atom_key.push('3'),
-                80 => atom_key.push('1'),
-                _ => match hybridizations[atom_index] {
-                    Hybridization::S => {}
-                    Hybridization::Sp => atom_key.push('1'),
-                    Hybridization::Sp2 => {
-                        if (atom.is_aromatic() || atom_has_conjugated_bond[atom_index])
-                            && matches!(atom.atomic_number(), 6 | 7 | 8 | 16)
-                        {
-                            atom_key.push('R');
-                        } else {
-                            atom_key.push('2');
-                        }
-                    }
-                    Hybridization::Sp3 => atom_key.push('3'),
-                    Hybridization::Sp2d => atom_key.push('4'),
-                    Hybridization::Sp3d => atom_key.push('5'),
-                    Hybridization::Sp3d2 => atom_key.push('6'),
-                    Hybridization::Unspecified | Hybridization::Other => {}
-                },
-            }
-        }
-    }
-    add_atom_charge_flags_for_uff(
+    let total_valence = atom_total_valence_for_uff(mol, assignment, atom_index);
+    source_get_atom_label_for_uff(
+        atom,
         atom_index,
-        mol,
-        assignment,
-        &mut atom_key,
-        hybridizations,
+        total_valence,
+        hybridizations[atom_index],
+        atom_has_conjugated_bond[atom_index],
         true,
-    );
-    Ok(atom_key)
+    )
+    .map_err(|err| {
+        DgBoundsError::GenerationFailed(format!(
+            "UFF atom symbol lookup failed for atomic number {}: {err}",
+            atom.atomic_number()
+        ))
+    })
 }
 
-fn calc_bond_rest_length(bond_order: f64, end1: &UffAtomicParams, end2: &UffAtomicParams) -> f64 {
+fn calc_bond_rest_length(bond_order: f64, end1: &AtomicParams, end2: &AtomicParams) -> f64 {
     let ri = end1.r1;
     let rj = end2.r1;
     let r_bo = -UFF_LAMBDA * (ri + rj) * bond_order.ln();
@@ -1449,9 +1211,9 @@ fn is_bond_in_ring_of_size(ring_info: &crate::RingInfo, bond_idx: usize, size: u
 // END RDKIT CPP FUNCTION DGeomHelpers::set12Bounds
 //
 // Rust maps RDKit's UFF atom typing through `get_atom_label_for_uff()` and
-// `uff_params_for_label()`. Local review found comparable asymptotic work but
-// left perf unresolved because the Rust path materializes extra intermediate
-// vectors for valence-derived hybridization and conjugation state.
+// `get_atom_types_for_uff()`. Local review found comparable asymptotic work
+// but left perf unresolved because the Rust path materializes extra
+// intermediate vectors for valence-derived hybridization and conjugation state.
 fn set_12_bounds(
     mol: &Molecule,
     mmat: &mut BoundsMatrix,
@@ -1488,17 +1250,18 @@ fn set_12_bounds(
     }
     let hybridizations =
         compute_hybridizations_for_uff(mol, &assignment, &atom_degree, &atom_has_conjugated_bond);
-    let mut atom_params = Vec::with_capacity(mol.atoms().len());
-    for atom_index in 0..mol.atoms().len() {
-        let label = get_atom_label_for_uff(
-            mol,
-            &assignment,
-            &hybridizations,
-            &atom_has_conjugated_bond,
-            atom_index,
-        )?;
-        atom_params.push(uff_params_for_label(&label));
-    }
+    let total_valences = (0..mol.atoms().len())
+        .map(|atom_index| atom_total_valence_for_uff(mol, &assignment, atom_index))
+        .collect::<Vec<_>>();
+    let (atom_params, _found_all) = get_atom_types_for_uff(
+        mol,
+        &total_valences,
+        &hybridizations,
+        &atom_has_conjugated_bond,
+    )
+    .map_err(|err| {
+        DgBoundsError::GenerationFailed(format!("RDKit UFF atom typing failed: {err}"))
+    })?;
 
     let mut squish_atoms = vec![false; mol.atoms().len()];
     let ring_info = mol.derived_cache().rings.as_ref();

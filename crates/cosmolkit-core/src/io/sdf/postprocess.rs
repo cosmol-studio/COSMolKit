@@ -1040,7 +1040,7 @@ fn sanitize_cleanup_for_sdf_remove_hs(
     // COSMolKit routes the cleanup subset through the registered sanitize operation.
     let _ = params;
     let molecule = molecule
-        .sanitized_with_ops(crate::SanitizeOps::CLEANUP)
+        .sanitize_with_ops(crate::SanitizeOps::CLEANUP)
         .map_err(molecule_operation_error)?;
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void finishMolProcessing
     Ok(molecule)
@@ -1054,7 +1054,7 @@ fn sanitize_after_sdf_parse(
     // RDKit✔️❌:       MolOps::sanitizeMol(*res);
     // COSMolKit routes full default sanitization through the registered sanitize operation.
     let _ = params;
-    let molecule = molecule.sanitized().map_err(molecule_operation_error)?;
+    let molecule = molecule.sanitize().map_err(molecule_operation_error)?;
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void finishMolProcessing
     Ok(molecule)
 }

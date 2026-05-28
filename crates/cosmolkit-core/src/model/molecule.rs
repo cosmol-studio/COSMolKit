@@ -654,6 +654,32 @@ impl CoordinateBlock {
 ///
 /// Existing molecules are transformed through registered operations. This type
 /// intentionally does not expose mutable storage accessors.
+///
+/// # Examples
+///
+/// Build a molecule from SMILES and create a transformed value:
+///
+/// ```
+/// use cosmolkit_core::Molecule;
+///
+/// let mol = Molecule::from_smiles("CCO").unwrap();
+/// let named = mol.with_name("ethanol");
+///
+/// assert_eq!(mol.properties().name(), None);
+/// assert_eq!(named.properties().name(), Some("ethanol"));
+/// ```
+///
+/// Use explicit in-place operations when mutation is intended:
+///
+/// ```
+/// use cosmolkit_core::Molecule;
+///
+/// let mut mol = Molecule::from_smiles("c1ccccc1").unwrap();
+/// mol.kekulize_(true).unwrap();
+/// mol.sanitize_().unwrap();
+///
+/// assert_eq!(mol.num_atoms(), 6);
+/// ```
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Molecule {
     topology: Arc<TopologyBlock>,

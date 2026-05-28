@@ -3,7 +3,7 @@
 import numpy as np
 from cosmolkit import Molecule
 
-mol = Molecule.from_smiles("CCO", sanitize=True).with_2d_coords()
+mol = Molecule.from_smiles("CCO", sanitize=True).with_2d_coordinates()
 coords = mol.coords_2d()
 print("coords shape:", coords.shape)
 print("centroid:", coords.mean(axis=0))

@@ -17,10 +17,10 @@ Audit sources:
 The Gemmi-aligned structural reader closure requested by
 `dev/pdb_mmcif_gemmi_full_port_checklist.md` is now exposed through:
 
-- `read_bio_structure_from_str(...)`
-- `read_bio_structure_from_str_with_format(...)`
-- `read_pdb_coordinate_subset_from_str(...)`
-- `read_pdb_coordinate_subset_from_str_with_params(...)`
+- `BioStructure::from_structure_str(...)`
+- `BioStructure::from_str_with_format(...)`
+- `BioStructure::from_pdb_str(...)`
+- `BioStructure::from_pdb_str_with_params(...)`
 - `read_mmcif_atom_site_subset_from_str(...)`
 
 Fixture-backed integration coverage now exercises full-path PDB, mmCIF, and
@@ -43,7 +43,7 @@ These are the remaining visible gaps after checklist Step 255.
 
 ### PDB stream parser control flow
 
-Location: `read_pdb_coordinate_subset_from_str_with_params(...)`
+Location: `BioStructure::from_pdb_str_with_params(...)`
 
 - duplicate implicit-model rejection for `ATOM/HETATM between models`
 
@@ -64,7 +64,7 @@ Location: `PdbBioBuilder::finish(...)`
 
 ### PDB stream parser structural control flow
 
-Location: `read_pdb_coordinate_subset_from_str_with_params(...)`
+Location: `BioStructure::from_pdb_str_with_params(...)`
 
 - implicit model creation path
 - chain creation/reset path

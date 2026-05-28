@@ -25,7 +25,7 @@ Common transformations include:
 - ``with_hydrogens()``
 - ``without_hydrogens()``
 - ``with_kekulized_bonds()``
-- ``with_2d_coords()``
+- ``with_2d_coordinates()``
 
 In-Place Operations
 -------------------
@@ -38,7 +38,7 @@ no other ``Molecule`` API meaning.
 
    mol = Molecule.from_smiles("CCO")
    mol.add_hydrogens_()
-   mol.compute_2d_coords_()
+   mol.compute_2d_coordinates_()
 
 Common in-place operations include:
 
@@ -46,7 +46,7 @@ Common in-place operations include:
 - ``remove_hydrogens_()``
 - ``kekulize_()``
 - ``sanitize_()``
-- ``compute_2d_coords_()``
+- ``compute_2d_coordinates_()``
 
 If an in-place method returns an error, the molecule is not guaranteed to equal
 its pre-call value. Use the value-style method when failure-preserving behavior
@@ -96,7 +96,7 @@ Molecules with 2D coordinates can be exported as SVG or PNG:
 
 .. code-block:: python
 
-   mol = Molecule.from_smiles("c1ccccc1O").with_2d_coords()
+   mol = Molecule.from_smiles("c1ccccc1O").with_2d_coordinates()
 
    svg = mol.to_svg(width=400, height=300)
    mol.write_svg("python/examples/output/phenol.svg", width=400, height=300)

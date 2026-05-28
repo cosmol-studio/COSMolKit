@@ -3547,7 +3547,7 @@ pub(crate) fn mol_from_smiles(
     // RDKit MolOps::sanitizeMol runs through the registered operations.
     // COSMolKit applies equivalent operations on the built Molecule.
     if params.sanitize {
-        mol = mol.sanitized_with_ops(crate::SanitizeOps::ALL).map_err(
+        mol = mol.sanitize_with_ops(crate::SanitizeOps::ALL).map_err(
             |e: crate::OperationError| {
                 SmilesParseError::ParseError(format!("sanitize during smiles parse failed: {e}"))
             },

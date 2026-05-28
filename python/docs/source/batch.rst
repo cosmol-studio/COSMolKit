@@ -13,7 +13,7 @@ single API call.
        errors=BatchErrorMode.KEEP,
    ).with_parallel_jobs(8)
 
-   prepared = batch.add_hydrogens(errors=BatchErrorMode.KEEP).compute_2d_coords(
+   prepared = batch.with_hydrogens(errors=BatchErrorMode.KEEP).with_2d_coordinates(
        errors=BatchErrorMode.KEEP,
    )
 
@@ -189,7 +189,7 @@ this configuration step does not duplicate the molecular data.
 .. code-block:: python
 
    configured = batch.with_parallel_jobs(8)
-   prepared = configured.compute_2d_coords(errors="keep")
+   prepared = configured.with_2d_coordinates(errors="keep")
    smiles = prepared.to_smiles_list()
 
 Method-level ``n_jobs`` still overrides the batch default for a single call:
@@ -206,7 +206,7 @@ batch default for one call:
 .. code-block:: python
 
    tracked = batch.with_parallel_jobs(8).with_progress_bar(True)
-   prepared = tracked.compute_2d_coords(errors="keep")
+   prepared = tracked.with_2d_coordinates(errors="keep")
    smiles = prepared.to_smiles_list(progress_bar=False)
 
 Pass ``None`` to clear the batch-level default and let rayon choose:

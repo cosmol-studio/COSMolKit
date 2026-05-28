@@ -19,6 +19,49 @@
 //! agent is not allowed to "just make it work". The agent must stop and confirm
 //! the design exception with the human author before editing code that violates
 //! these standards.
+//!
+//! # Examples
+//!
+//! Value-style operations return a new molecule and leave the receiver
+//! unchanged:
+//!
+//! ```
+//! use cosmolkit_core::Molecule;
+//!
+//! let mol = Molecule::from_smiles("CCO").unwrap();
+//! let with_hydrogens = mol.with_hydrogens().unwrap();
+//!
+//! assert_eq!(mol.num_atoms(), 3);
+//! assert!(with_hydrogens.num_atoms() > mol.num_atoms());
+//! ```
+//!
+//! Public in-place molecule operations end with `_` and mutate the receiver:
+//!
+//! ```
+//! use cosmolkit_core::Molecule;
+//!
+//! let mut mol = Molecule::from_smiles("CCO").unwrap();
+//! let expected_atoms = mol.with_hydrogens().unwrap().num_atoms();
+//!
+//! mol.add_hydrogens_().unwrap();
+//!
+//! assert_eq!(mol.num_atoms(), expected_atoms);
+//! ```
+//!
+//! Coordinate operations follow the same value-style and in-place split:
+//!
+//! ```
+//! use cosmolkit_core::Molecule;
+//!
+//! let mol = Molecule::from_smiles("c1ccccc1").unwrap();
+//! let with_coords = mol.with_2d_coordinates().unwrap();
+//! assert!(mol.coords_2d().is_none());
+//! assert_eq!(with_coords.coords_2d().unwrap().len(), with_coords.num_atoms());
+//!
+//! let mut in_place = Molecule::from_smiles("CCO").unwrap();
+//! in_place.compute_2d_coordinates_().unwrap();
+//! assert_eq!(in_place.coords_2d().unwrap().len(), in_place.num_atoms());
+//! ```
 
 pub mod bio;
 pub mod chemistry;
@@ -73,6 +116,32 @@ pub use bio_ops::{
 };
 pub use bond::{Bond, BondDirection, BondId, BondOrder, BondSpec, BondStereo};
 pub use builder::MoleculeBuilder;
+pub use chemistry::forcefield::mmff::{
+    MMFF_MOL_PROPERTIES_FEATURE, MmffAngle, MmffAngleCollection, MmffAtomProperties, MmffBond,
+    MmffBondCollection, MmffChg, MmffChgCollection, MmffDef, MmffDefCollection, MmffDfsbCollection,
+    MmffMolProperties, MmffMolPropertiesError, MmffOop, MmffOopCollection,
+    MmffOptimizeMoleculeConfResult, MmffOptimizeMoleculeConfsResult, MmffOptimizeMoleculeResult,
+    MmffParamError, MmffPbci, MmffPbciCollection, MmffProp, MmffPropCollection, MmffPublicApiError,
+    MmffStbn, MmffStbnCollection, MmffTor, MmffTorCollection, MmffVariant, MmffVdw,
+    MmffVdwCollection, MmffVdwRijstarEps, mmff_has_all_molecule_params,
+    mmff_initial_gradient_for_parity, mmff_optimize_molecule, mmff_optimize_molecule_confs,
+    mmff_sanitize_ops, sanitize_mmff_mol,
+};
+pub use chemistry::forcefield::uff::{
+    UffAngle, UffBond, UffInv, UffOptimizeMoleculeConfResult, UffOptimizeMoleculeConfsResult,
+    UffOptimizeMoleculeResult, UffPublicApiError, UffTor, UffVdw, get_uff_angle_bend_params,
+    get_uff_bond_stretch_params, get_uff_inversion_params, get_uff_torsion_params,
+    get_uff_vdw_params, uff_has_all_molecule_params, uff_initial_gradient_for_parity,
+    uff_optimize_molecule, uff_optimize_molecule_confs,
+};
+pub use chemistry::forcefield::{
+    AngleConstraintContrib, AngleConstraintContribs, AngleConstraintContribsParams, DihedralOutput,
+    DistanceConstraintContrib, DistanceConstraintContribs, DistanceConstraintContribsParams,
+    ForceField, ForceFieldContrib, ForceFieldSnapshot, ForceFieldVec3, PositionConstraintContrib,
+    TorsionAngleContribM6, TorsionAngleContribs, TorsionAngleContribsParams,
+    TorsionConstraintContrib, calc_torsion_energy, compute_dihedral_from_flat,
+    compute_dihedral_from_points, compute_dihedral_from_position_vec, normalize_angle_deg,
+};
 pub use coordinates::With2DCoordinatesParams;
 pub use derived::DerivedState;
 pub use distgeom::DgBoundsError;
@@ -83,11 +152,7 @@ pub use fingerprint::{
     MorganBondInvariantsGenerator, MorganFingerprintOutput, MorganFingerprintParams,
 };
 pub use hydrogens::{AddHsParams, AddHydrogensError, RemoveHsParams, RemoveHydrogensError};
-pub use io::bio::{
-    BioPdbReadParams, BioReadError, read_bio_structure_from_str,
-    read_bio_structure_from_str_with_format, read_mmcif_atom_site_subset_from_str,
-    read_pdb_coordinate_subset_from_str, read_pdb_coordinate_subset_from_str_with_params,
-};
+pub use io::bio::{BioPdbReadParams, BioReadError, read_mmcif_atom_site_subset_from_str};
 pub use io::pdb_molecule::{
     PdbMoleculeConversionError, RdkitPdbMolProfile, bio_structure_to_rdkit_pdb_molecule,
     molecule_from_mmcif_block_with_options, molecule_from_pdb_block_with_options,
@@ -106,7 +171,7 @@ pub use ops::{
     ASSIGNED_VALENCE_SPEC, BlockAccess, BlockSet, InvariantCheckSet, MOLECULE_OPS,
     MappingRequirement, MoleculeOpKind, MoleculeOpSpec, OPERATION_INVARIANT_MATRIX, OpOutcome,
     OperationDomain, OperationError, OperationInvariantEntry, OperationTrace, PARITY_MATRIX,
-    ParityMatrixEntry, ParityPolicy, SANITIZED_SPEC, SUPPORT_MATRIX, SupportMatrixEntry,
+    ParityMatrixEntry, ParityPolicy, SANITIZE_SPEC, SUPPORT_MATRIX, SupportMatrixEntry,
     TopologyEditKind, WITH_2D_COORDINATES_SPEC, WITH_HYDROGENS_SPEC, WITH_KEKULIZED_BONDS_SPEC,
     WITHOUT_HYDROGENS_SPEC, WITHOUT_HYDROGENS_WITH_PARAMS_SPEC,
 };

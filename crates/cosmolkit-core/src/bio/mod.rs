@@ -857,6 +857,41 @@ impl BioStructure {
         Self::default()
     }
 
+    /// Reads a Gemmi-aligned PDB structural record stream into a `BioStructure`.
+    pub fn from_pdb_str(text: &str) -> Result<Self, crate::io::bio::BioReadError> {
+        Self::from_pdb_str_with_params(text, crate::io::bio::BioPdbReadParams::default())
+    }
+
+    /// Reads a Gemmi-aligned PDB structural record stream with explicit PDB reader parameters.
+    pub fn from_pdb_str_with_params(
+        text: &str,
+        params: crate::io::bio::BioPdbReadParams,
+    ) -> Result<Self, crate::io::bio::BioReadError> {
+        crate::io::bio::read_pdb_bio_structure_from_str_with_params(text, params)
+    }
+
+    /// Reads a Gemmi-aligned mmCIF structural document into a `BioStructure`.
+    pub fn from_mmcif_str(text: &str, path: &str) -> Result<Self, crate::io::bio::BioReadError> {
+        Self::from_str_with_format(text, path, BioCoorFormat::Mmcif)
+    }
+
+    /// Reads a Gemmi-aligned structure by detecting the input format from text.
+    pub fn from_structure_str(
+        text: &str,
+        path: &str,
+    ) -> Result<Self, crate::io::bio::BioReadError> {
+        Self::from_str_with_format(text, path, BioCoorFormat::Detect)
+    }
+
+    /// Reads a Gemmi-aligned structure using the requested coordinate format.
+    pub fn from_str_with_format(
+        text: &str,
+        path: &str,
+        format: BioCoorFormat,
+    ) -> Result<Self, crate::io::bio::BioReadError> {
+        crate::io::bio::read_structure_from_memory(text, path, format)
+    }
+
     #[must_use]
     pub fn num_atoms(&self) -> usize {
         self.atoms.len()

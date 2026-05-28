@@ -16,7 +16,7 @@ Audit sources:
 
 `io::bio` currently exposes two subset readers:
 
-- `read_pdb_coordinate_subset_from_str(...)`
+- `BioStructure::from_pdb_str(...)`
 - `read_mmcif_atom_site_subset_from_str(...)`
 
 They already reproduce part of Gemmi's PDB atom/ANISOU, SEQRES, HEADER/TITLE/KEYWDS/EXPDTA/AUTHOR/CRYST1, and mmCIF `_atom_site` / `_entity*` / `_struct_asym` behavior. They do not yet close the full Gemmi structural reader surface. The remaining work is still substantial and is concentrated in:

@@ -31,7 +31,7 @@ SEED_SMILES = [
 def build_seed_sdf(path: Path) -> None:
     records: list[str] = []
     for idx, smiles in enumerate(SEED_SMILES):
-        mol = Molecule.from_smiles(smiles, sanitize=True).with_2d_coords()
+        mol = Molecule.from_smiles(smiles, sanitize=True).with_2d_coordinates()
         record = mol.to_2d_sdf_string(format="v2000")
         record = record.replace(
             "$$$$\n",
@@ -62,7 +62,7 @@ for index in range(len(dataset)):
     )
 
 selected = dataset[[0, 2, 4]]
-selected = selected.compute_2d_coords(
+selected = selected.with_2d_coordinates(
     errors=BatchErrorMode.KEEP,
     n_jobs=2,
 )
@@ -76,7 +76,7 @@ for index, fingerprint in enumerate(fps):
 
 all_chunks: list[MoleculeBatch] = []
 for chunk in dataset.batches(size=2, errors=BatchErrorMode.KEEP, n_jobs=2):
-    prepared = chunk.sanitize(errors=BatchErrorMode.KEEP).compute_2d_coords(
+    prepared = chunk.sanitize(errors=BatchErrorMode.KEEP).with_2d_coordinates(
         errors=BatchErrorMode.KEEP,
     )
     all_chunks.append(prepared)

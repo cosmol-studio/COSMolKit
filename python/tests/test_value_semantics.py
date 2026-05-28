@@ -19,10 +19,10 @@ def require_valid_molecules(batch: cosmolkit.MoleculeBatch) -> list[cosmolkit.Mo
     return [mol for mol in molecules if mol is not None]
 
 
-def test_with_2d_coords_returns_new_molecule_without_mutating_input():
+def test_with_2d_coordinates_returns_new_molecule_without_mutating_input():
     mol = cosmolkit.Molecule.from_smiles("CCO")
 
-    mol_2d = mol.with_2d_coords()
+    mol_2d = mol.with_2d_coordinates()
 
     assert mol is not mol_2d
     assert mol.num_conformers() == 0
@@ -50,7 +50,7 @@ def test_in_place_molecule_methods_mutate_receiver_and_return_none():
     assert mol.num_atoms() == 9
     assert mol.num_bonds() == 8
 
-    assert mol.compute_2d_coords_() is None
+    assert mol.compute_2d_coordinates_() is None
     assert mol.has_2d_coords()
 
     assert mol.remove_hydrogens_(sanitize=False) is None
@@ -60,7 +60,7 @@ def test_in_place_molecule_methods_mutate_receiver_and_return_none():
 
 def test_in_place_molecule_methods_preserve_shared_python_values():
     mol = cosmolkit.Molecule.from_smiles("CCO")
-    shared = mol.with_2d_coords()
+    shared = mol.with_2d_coordinates()
 
     mol.add_hydrogens_()
 
@@ -79,9 +79,9 @@ def test_in_place_sanitize_and_kekulize_methods_match_value_methods():
     assert raw.to_smiles() == expected.to_smiles()
 
     benzene = cosmolkit.Molecule.from_smiles("c1ccccc1")
-    expected_kekule = benzene.with_kekulized_bonds(sanitize=False)
+    expected_kekule = benzene.with_kekulized_bonds(clear_aromatic_flags=False)
 
-    benzene.kekulize_(sanitize=False)
+    benzene.kekulize_(clear_aromatic_flags=False)
 
     assert benzene.to_smiles(kekule=True) == expected_kekule.to_smiles(kekule=True)
 
@@ -125,7 +125,7 @@ def test_molecule_batch_sanitize_flag_and_transform_are_not_noops():
 
 
 def test_structural_array_access_returns_numpy_arrays():
-    mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coords()
+    mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
 
     coords = mol.coords_2d()
     bounds = mol.dg_bounds_matrix()
@@ -175,7 +175,7 @@ $$$$
 
 
 def test_molfile_read_matches_single_record_without_sdf_separator(tmp_path: Path):
-    mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coords()
+    mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
     mol_text = mol.to_2d_sdf_string(format="v2000").replace("$$$$\n", "")
 
     parsed = cosmolkit.Molecule.read_mol_from_str(mol_text, coordinate_dim="2d")
@@ -190,7 +190,7 @@ def test_molfile_read_matches_single_record_without_sdf_separator(tmp_path: Path
 
 
 def test_structural_array_access_supports_numpy_operations():
-    mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coords()
+    mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
 
     coords = mol.coords_2d()
     bounds = mol.dg_bounds_matrix()
@@ -206,7 +206,7 @@ def test_structural_array_access_supports_numpy_operations():
 
 def test_structural_array_access_can_bridge_to_torch_if_installed():
     torch = pytest.importorskip("torch")
-    mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coords()
+    mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
 
     tensor = torch.from_numpy(mol.coords_2d())
 
@@ -512,20 +512,20 @@ $$$$
     assert removed_2d.coords_2d().shape == (2, 3)
     assert np.allclose(removed_2d.coords_2d(), np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]))
 
-    both = mol_3d.with_2d_coords().without_hydrogens(sanitize=False)
+    both = mol_3d.with_2d_coordinates().without_hydrogens(sanitize=False)
     assert len(both) == 2
     assert both.coords_2d().shape == (2, 3)
     assert both.coords_3d().shape == (2, 3)
 
 
 def test_public_transforms_keep_coordinate_rows_aligned_with_atoms():
-    base_2d = cosmolkit.Molecule.from_smiles("CCO").with_2d_coords()
+    base_2d = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
     assert_coordinate_rows_match_atoms(base_2d)
     assert_coordinate_rows_match_atoms(base_2d.with_hydrogens())
     assert_coordinate_rows_match_atoms(base_2d.sanitize())
 
-    benzene = cosmolkit.Molecule.from_smiles("c1ccccc1").with_2d_coords()
-    assert_coordinate_rows_match_atoms(benzene.with_kekulized_bonds(sanitize=False))
+    benzene = cosmolkit.Molecule.from_smiles("c1ccccc1").with_2d_coordinates()
+    assert_coordinate_rows_match_atoms(benzene.with_kekulized_bonds(clear_aromatic_flags=False))
 
     sdf = """interleaved_h
   COSMolKit  3D
@@ -545,14 +545,14 @@ $$$$
     assert_coordinate_rows_match_atoms(base_3d)
     assert_coordinate_rows_match_atoms(base_3d.without_hydrogens(sanitize=False))
 
-    base_both = base_3d.with_2d_coords()
+    base_both = base_3d.with_2d_coordinates()
     assert_coordinate_rows_match_atoms(base_both)
     assert_coordinate_rows_match_atoms(base_both.without_hydrogens(sanitize=False))
 
     batch = cosmolkit.MoleculeBatch.read_sdf_records_from_str(
         sdf, coordinate_dim="3d", errors="raise", n_jobs=2
     )
-    batch_removed = batch.remove_hydrogens(errors="raise", n_jobs=2)
+    batch_removed = batch.without_hydrogens(errors="raise", n_jobs=2)
     first_removed = batch_removed[0]
     assert first_removed is not None
     assert_coordinate_rows_match_atoms(first_removed)
@@ -564,7 +564,7 @@ def test_molecule_batch_processes_in_order_and_preserves_single_molecule_inputs(
         ["CCO", "c1ccccc1", "CC(=O)O"], errors="keep", n_jobs=2
     )
 
-    prepared = batch.add_hydrogens(errors="keep", n_jobs=2).compute_2d_coords(
+    prepared = batch.with_hydrogens(errors="keep", n_jobs=2).with_2d_coordinates(
         errors="keep", n_jobs=2
     )
 
@@ -592,7 +592,7 @@ def test_molecule_batch_parallel_jobs_are_value_style_and_inherited():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(["CCO", "CC"], errors="keep")
 
     configured = batch.with_parallel_jobs(2)
-    prepared = configured.add_hydrogens(errors="keep").compute_2d_coords(errors="keep")
+    prepared = configured.with_hydrogens(errors="keep").with_2d_coordinates(errors="keep")
 
     assert batch.parallel_jobs() is None
     assert configured.parallel_jobs() == 2
@@ -609,7 +609,7 @@ def test_molecule_batch_progress_bar_is_value_style_and_overridable():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(["CCO", "CC"], errors="keep")
 
     configured = batch.with_progress_bar(True)
-    prepared = configured.compute_2d_coords(errors="keep", progress_bar=False)
+    prepared = configured.with_2d_coordinates(errors="keep", progress_bar=False)
 
     assert batch.progress_bar() is None
     assert configured.progress_bar() is True
@@ -696,7 +696,7 @@ def test_molecule_batch_keeps_errors_and_filters_valid_records(tmp_path: Path):
     assert batch.errors()[0].index() == 1
     assert batch.filter_valid().to_smiles_list() == ["CCO"]
 
-    report = batch.compute_2d_coords(errors="keep", n_jobs=2).to_sdf(
+    report = batch.with_2d_coordinates(errors="keep", n_jobs=2).to_sdf(
         str(tmp_path / "valid.sdf"), errors="keep", n_jobs=2
     )
     assert report.success() == 1
@@ -708,7 +708,7 @@ def test_molecule_batch_exports_use_custom_filenames(tmp_path: Path):
     batch = (
         cosmolkit.MoleculeBatch.from_smiles_list(["CCO", "C1CC", "CC"], errors="keep")
         .with_parallel_jobs(2)
-        .compute_2d_coords(errors="keep")
+        .with_2d_coordinates(errors="keep")
     )
 
     image_report = batch.to_images(
@@ -798,5 +798,5 @@ def test_batch_errors_expose_intenum_types_and_mode_enum_is_accepted():
     ]
     assert cosmolkit.BATCH_ERROR_MODE_MAP["keep"] == cosmolkit.BatchErrorMode.KEEP
 
-    filtered = batch.filter_valid().compute_2d_coords(errors=cosmolkit.BatchErrorMode.KEEP)
+    filtered = batch.filter_valid().with_2d_coordinates(errors=cosmolkit.BatchErrorMode.KEEP)
     assert len(filtered) == 1

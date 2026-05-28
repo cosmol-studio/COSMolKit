@@ -1,15 +1,15 @@
 use std::{env, fs};
 
-use cosmolkit::{BioStructure, ResidueKind, read_pdb_coordinate_subset_from_str};
+use cosmolkit::{BioStructure, ResidueKind};
 
 const DEMO_PDB: &str = "\
-ATOM      1  N   MET A   1      11.104  13.207   9.900  1.00 20.00           N  
-ATOM      2  CA  MET A   1      12.210  13.912  10.555  1.00 20.00           C  
-ATOM      3  C   MET A   1      13.470  13.079  10.413  1.00 20.00           C  
-ATOM      4  N   MSE A   2      14.530  13.650  10.980  1.00 20.00           N  
-ATOM      5  CA  MSE A   2      15.790  12.920  10.910  1.00 20.00           C  
-ATOM      6  C   MSE A   2      16.720  13.340   9.770  1.00 20.00           C  
-HETATM    7  O   HOH A   3      18.000  10.000   8.000  1.00 10.00           O  
+ATOM      1  N   MET A   1      11.104  13.207   9.900  1.00 20.00           N
+ATOM      2  CA  MET A   1      12.210  13.912  10.555  1.00 20.00           C
+ATOM      3  C   MET A   1      13.470  13.079  10.413  1.00 20.00           C
+ATOM      4  N   MSE A   2      14.530  13.650  10.980  1.00 20.00           N
+ATOM      5  CA  MSE A   2      15.790  12.920  10.910  1.00 20.00           C
+ATOM      6  C   MSE A   2      16.720  13.340   9.770  1.00 20.00           C
+HETATM    7  O   HOH A   3      18.000  10.000   8.000  1.00 10.00           O
 ";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(path) => fs::read_to_string(path)?,
         None => DEMO_PDB.to_string(),
     };
-    let structure = read_pdb_coordinate_subset_from_str(&pdb)?;
+    let structure = BioStructure::from_pdb_str(&pdb)?;
 
     for alpha_carbon in alpha_carbons(&structure) {
         println!(

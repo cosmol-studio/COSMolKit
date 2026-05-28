@@ -30,7 +30,7 @@ print("valid mask:", batch.valid_mask())
 for error in batch.errors():
     print("parse error:", error.index(), error.operation(), error.message())
 
-prepared = batch.add_hydrogens(errors=BatchErrorMode.KEEP).compute_2d_coords(
+prepared = batch.with_hydrogens(errors=BatchErrorMode.KEEP).with_2d_coordinates(
     errors=BatchErrorMode.KEEP
 )
 

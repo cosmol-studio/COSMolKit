@@ -875,7 +875,7 @@ fn coordinate_free_atropisomer_candidate(direction: BondDirection) -> Molecule {
     builder
         .build()
         .unwrap()
-        .sanitized_with_ops(crate::SanitizeOps::ALL)
+        .sanitize_with_ops(crate::SanitizeOps::ALL)
         .unwrap()
 }
 
@@ -950,7 +950,7 @@ fn conformer_backed_atropisomer_candidate(is_3d: bool) -> Molecule {
     builder
         .build()
         .unwrap()
-        .sanitized_with_ops(crate::SanitizeOps::ALL)
+        .sanitize_with_ops(crate::SanitizeOps::ALL)
         .unwrap()
 }
 

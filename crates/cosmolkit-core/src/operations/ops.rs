@@ -1429,10 +1429,10 @@ molecule_ops! {
         parity_profile: "kekulize_clear_aromatic_flags",
     }
 
-    op sanitized(ops: crate::SanitizeOps) {
-        method: sanitized_with_ops,
-        impl_fn: sanitized_impl,
-        default_method: sanitized,
+    op sanitize(ops: crate::SanitizeOps) {
+        method: sanitize_with_ops,
+        impl_fn: sanitize_impl,
+        default_method: sanitize,
         default_args: [crate::SanitizeOps::ALL],
         inplace: true,
         inplace_method: sanitize_with_ops_,
@@ -2078,10 +2078,8 @@ mod tests {
         let molecule = crate::Molecule::new();
         let original = molecule.clone();
 
-        let sanitized = molecule.sanitized().unwrap();
-        let sanitized_with_all = molecule
-            .sanitized_with_ops(crate::SanitizeOps::ALL)
-            .unwrap();
+        let sanitized = molecule.sanitize().unwrap();
+        let sanitized_with_all = molecule.sanitize_with_ops(crate::SanitizeOps::ALL).unwrap();
 
         assert_eq!(sanitized.num_atoms(), 0);
         assert_eq!(sanitized_with_all.num_atoms(), 0);
@@ -2736,7 +2734,7 @@ mod tests {
             | crate::SanitizeOps::SET_AROMATICITY
             | crate::SanitizeOps::SET_CONJUGATION;
 
-        let result = molecule.sanitized_with_ops(ops).unwrap();
+        let result = molecule.sanitize_with_ops(ops).unwrap();
 
         assert_eq!(molecule, original);
         let cache = result.derived_cache();
@@ -2750,7 +2748,7 @@ mod tests {
     fn sanitized_set_aromaticity_recomputes_valence_after_aromatic_bond_updates() {
         let molecule = crate::Molecule::from_smiles_with_sanitize("C1=CC=CC=C1", false).unwrap();
         let result = molecule
-            .sanitized_with_ops(
+            .sanitize_with_ops(
                 crate::SanitizeOps::PROPERTIES
                     | crate::SanitizeOps::SYMMRINGS
                     | crate::SanitizeOps::SET_AROMATICITY,
@@ -2774,7 +2772,7 @@ mod tests {
         let molecule = crate::Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::SYMMRINGS | crate::SanitizeOps::KEKULIZE)
+            .sanitize_with_ops(crate::SanitizeOps::SYMMRINGS | crate::SanitizeOps::KEKULIZE)
             .unwrap();
 
         assert!(result.bonds().iter().all(|bond| !bond.is_aromatic()));
@@ -2798,7 +2796,7 @@ mod tests {
         let molecule = crate::Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::KEKULIZE)
+            .sanitize_with_ops(crate::SanitizeOps::KEKULIZE)
             .unwrap();
 
         assert!(result.derived_cache().rings.is_some());
@@ -2813,7 +2811,7 @@ mod tests {
         let molecule = crate::Molecule::from_smiles_with_sanitize("c", false).unwrap();
 
         let err = molecule
-            .sanitized_with_ops(crate::SanitizeOps::KEKULIZE)
+            .sanitize_with_ops(crate::SanitizeOps::KEKULIZE)
             .unwrap_err();
 
         match err {
@@ -2830,7 +2828,7 @@ mod tests {
         let molecule = crate::Molecule::from_smiles_with_sanitize("C(=O)(=O)(=O)", false).unwrap();
 
         let err = molecule
-            .sanitized_with_ops(crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::KEKULIZE)
+            .sanitize_with_ops(crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::KEKULIZE)
             .unwrap_err();
 
         match err {
@@ -2847,7 +2845,7 @@ mod tests {
         let molecule = crate::Molecule::from_smiles_with_sanitize("C(=O)(=O)(=O)", false).unwrap();
 
         let err = molecule
-            .sanitized_with_ops(
+            .sanitize_with_ops(
                 crate::SanitizeOps::PROPERTIES
                     | crate::SanitizeOps::KEKULIZE
                     | crate::SanitizeOps::SET_AROMATICITY
@@ -2873,7 +2871,7 @@ mod tests {
                     reason: "helper step mapping regression",
                 })
             },
-            |step, source| sanitize_valence_error(&SANITIZED_SPEC, step, source),
+            |step, source| sanitize_valence_error(&SANITIZE_SPEC, step, source),
         )
         .unwrap_err();
 
@@ -2891,7 +2889,7 @@ mod tests {
         let molecule = crate::Molecule::from_smiles_with_sanitize("C(=O)(=O)(=O)", false).unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::NONE)
+            .sanitize_with_ops(crate::SanitizeOps::NONE)
             .unwrap();
         let expected =
             crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, false)
@@ -2931,7 +2929,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP)
             .unwrap();
 
         assert_eq!(result.atoms()[nitrogen.index()].formal_charge(), 1);
@@ -2984,7 +2982,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP)
             .unwrap();
 
         assert_eq!(result.atoms()[nitrogen_center.index()].formal_charge(), 1);
@@ -3039,7 +3037,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP)
             .unwrap();
 
         assert_eq!(result.atoms()[phosphorus.index()].formal_charge(), 1);
@@ -3083,7 +3081,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP)
             .unwrap();
 
         assert_eq!(result.atoms()[phosphorus.index()].formal_charge(), 0);
@@ -3124,7 +3122,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP)
             .unwrap();
 
         assert_eq!(result.atoms()[center.index()].formal_charge(), 1);
@@ -3163,7 +3161,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP)
             .unwrap();
 
         assert_eq!(result.atoms()[center.index()].formal_charge(), 0);
@@ -3258,7 +3256,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP_ORGANOMETALLICS)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP_ORGANOMETALLICS)
             .unwrap();
         let metal_bond = result
             .bonds()
@@ -3320,7 +3318,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP_ORGANOMETALLICS)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP_ORGANOMETALLICS)
             .unwrap();
 
         let donor_to_busy = result
@@ -3371,7 +3369,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP_ORGANOMETALLICS)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP_ORGANOMETALLICS)
             .unwrap();
 
         assert_eq!(
@@ -3575,7 +3573,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP_ATROPISOMERS)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP_ATROPISOMERS)
             .unwrap();
 
         assert_eq!(result.bonds()[0].stereo(), crate::BondStereo::None);
@@ -3618,7 +3616,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP_ATROPISOMERS)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP_ATROPISOMERS)
             .unwrap();
 
         assert_eq!(
@@ -3639,7 +3637,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP_CHIRALITY)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP_CHIRALITY)
             .unwrap();
 
         assert_eq!(
@@ -3665,7 +3663,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP_CHIRALITY)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP_CHIRALITY)
             .unwrap();
 
         assert_eq!(
@@ -3687,7 +3685,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP_CHIRALITY)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP_CHIRALITY)
             .unwrap();
 
         assert_eq!(
@@ -3721,7 +3719,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP_CHIRALITY)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP_CHIRALITY)
             .unwrap();
 
         assert_eq!(
@@ -3759,7 +3757,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::CLEANUP_CHIRALITY)
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP_CHIRALITY)
             .unwrap();
 
         assert_eq!(
@@ -3775,9 +3773,7 @@ mod tests {
         let molecule = crate::Molecule::from_smiles_with_sanitize("C=CC=C", false).unwrap();
 
         let result = molecule
-            .sanitized_with_ops(
-                crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_CONJUGATION,
-            )
+            .sanitize_with_ops(crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_CONJUGATION)
             .unwrap();
 
         assert!(result.bonds().iter().all(crate::Bond::is_conjugated));
@@ -3788,7 +3784,7 @@ mod tests {
         let molecule = crate::Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::SET_CONJUGATION)
+            .sanitize_with_ops(crate::SanitizeOps::SET_CONJUGATION)
             .unwrap();
 
         assert!(result.bonds().iter().all(crate::Bond::is_conjugated));
@@ -3799,9 +3795,7 @@ mod tests {
         let molecule = crate::Molecule::from_smiles_with_sanitize("NC=O", false).unwrap();
 
         let result = molecule
-            .sanitized_with_ops(
-                crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_CONJUGATION,
-            )
+            .sanitize_with_ops(crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_CONJUGATION)
             .unwrap();
 
         assert_eq!(result.num_bonds(), 2);
@@ -3813,7 +3807,7 @@ mod tests {
         let molecule = crate::Molecule::from_smiles_with_sanitize("CCO", false).unwrap();
 
         let result = molecule
-            .sanitized_with_ops(
+            .sanitize_with_ops(
                 crate::SanitizeOps::PROPERTIES
                     | crate::SanitizeOps::SET_CONJUGATION
                     | crate::SanitizeOps::SET_HYBRIDIZATION,
@@ -3845,7 +3839,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(
+            .sanitize_with_ops(
                 crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_HYBRIDIZATION,
             )
             .unwrap();
@@ -3881,7 +3875,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(
+            .sanitize_with_ops(
                 crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_HYBRIDIZATION,
             )
             .unwrap();
@@ -3912,7 +3906,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(
+            .sanitize_with_ops(
                 crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_HYBRIDIZATION,
             )
             .unwrap();
@@ -3928,7 +3922,7 @@ mod tests {
         let molecule = crate::Molecule::from_smiles_with_sanitize("NC=O", false).unwrap();
 
         let result = molecule
-            .sanitized_with_ops(
+            .sanitize_with_ops(
                 crate::SanitizeOps::PROPERTIES
                     | crate::SanitizeOps::SET_CONJUGATION
                     | crate::SanitizeOps::SET_HYBRIDIZATION,
@@ -3956,7 +3950,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(
+            .sanitize_with_ops(
                 crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_HYBRIDIZATION,
             )
             .unwrap();
@@ -3978,7 +3972,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::FIND_RADICALS)
+            .sanitize_with_ops(crate::SanitizeOps::FIND_RADICALS)
             .unwrap();
 
         assert_eq!(result.atoms()[0].radical_electrons(), 1);
@@ -3994,7 +3988,7 @@ mod tests {
         let original = molecule.clone();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::ADJUST_HYDROGENS)
+            .sanitize_with_ops(crate::SanitizeOps::ADJUST_HYDROGENS)
             .unwrap();
 
         assert_eq!(molecule, original);
@@ -4006,7 +4000,7 @@ mod tests {
         let molecule = crate::Molecule::from_smiles_with_sanitize("N1C=CC=C1", false).unwrap();
 
         let result = molecule
-            .sanitized_with_ops(
+            .sanitize_with_ops(
                 crate::SanitizeOps::PROPERTIES
                     | crate::SanitizeOps::SYMMRINGS
                     | crate::SanitizeOps::KEKULIZE
@@ -4040,7 +4034,7 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::ADJUST_HYDROGENS)
+            .sanitize_with_ops(crate::SanitizeOps::ADJUST_HYDROGENS)
             .unwrap();
 
         assert_eq!(result.atoms()[0].explicit_hydrogens(), 1);
@@ -4052,7 +4046,7 @@ mod tests {
         let molecule = crate::Molecule::from_smiles_with_sanitize("CCO", false).unwrap();
 
         let result = molecule
-            .sanitized_with_ops(crate::SanitizeOps::ADJUST_HYDROGENS)
+            .sanitize_with_ops(crate::SanitizeOps::ADJUST_HYDROGENS)
             .unwrap();
 
         let explicit_hs = result
@@ -4119,14 +4113,14 @@ mod tests {
     #[test]
     fn needs_update_clears_matching_derived_cache_entries() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &SANITIZED_SPEC);
+        let mut parts = OpParts::new(&molecule, &SANITIZE_SPEC);
         parts.set_valence_cache(crate::ValenceAssignment {
             explicit_valence: Vec::new(),
             implicit_hydrogens: Vec::new(),
         });
         parts.mark_aromaticity_valid();
 
-        parts.clear_cache(SANITIZED_SPEC.needs_update());
+        parts.clear_cache(SANITIZE_SPEC.needs_update());
         let result = parts
             .finish(OpOutcome::Changed)
             .expect("cache invalidation should satisfy operation contract");
@@ -4142,7 +4136,7 @@ mod tests {
     #[test]
     fn needs_update_accepts_cache_updates_without_prior_clear() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &SANITIZED_SPEC);
+        let mut parts = OpParts::new(&molecule, &SANITIZE_SPEC);
 
         parts.set_rings_cache(crate::RingInfo::new(crate::RingFindType::SymmSssr, 0, 0));
         parts.set_valence_cache(crate::ValenceAssignment {

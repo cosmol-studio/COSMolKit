@@ -2370,7 +2370,7 @@ fn graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules_
         .collect::<Vec<_>>();
     let batch = MoleculeBatch::from_smiles_list(&smiles).with_parallel_jobs(Some(4));
     let batch_with_h = batch
-        .add_hydrogens_with_options(BatchErrorMode::KeepErrors, Some(4), Some(false))
+        .with_hydrogens_with_options(BatchErrorMode::KeepErrors, Some(4), Some(false))
         .expect("parallel batch add_hydrogens should keep row errors");
 
     for (idx, ((record, batch_record), batch_with_h_record)) in golden
@@ -2439,9 +2439,9 @@ fn graph_features_match_rdkit_golden_for_addhs_removehs_roundtrip_branch_in_para
         .collect::<Vec<_>>();
     let batch = MoleculeBatch::from_smiles_list(&smiles)
         .with_parallel_jobs(Some(4))
-        .add_hydrogens_with_options(BatchErrorMode::KeepErrors, Some(4), Some(false))
+        .with_hydrogens_with_options(BatchErrorMode::KeepErrors, Some(4), Some(false))
         .expect("parallel batch add_hydrogens should keep row errors")
-        .remove_hydrogens_with_options(BatchErrorMode::KeepErrors, Some(4), Some(false))
+        .without_hydrogens_with_options(BatchErrorMode::KeepErrors, Some(4), Some(false))
         .expect("parallel batch remove_hydrogens should keep row errors");
 
     for (idx, (record, batch_record)) in golden.iter().zip(batch.iter()).enumerate() {

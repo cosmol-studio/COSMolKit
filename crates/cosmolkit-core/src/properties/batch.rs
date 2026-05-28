@@ -618,16 +618,16 @@ impl MoleculeBatch {
         }
     }
 
-    pub fn sanitized(&self, errors: BatchErrorMode) -> Result<Self, BatchValidationError> {
+    pub fn sanitize(&self, errors: BatchErrorMode) -> Result<Self, BatchValidationError> {
         self.sanitize_with_options(errors, None, None)
     }
 
     pub fn with_hydrogens(&self, errors: BatchErrorMode) -> Result<Self, BatchValidationError> {
-        self.add_hydrogens_with_options(errors, None, None)
+        self.with_hydrogens_with_options(errors, None, None)
     }
 
     pub fn without_hydrogens(&self, errors: BatchErrorMode) -> Result<Self, BatchValidationError> {
-        self.remove_hydrogens_with_options(errors, None, None)
+        self.without_hydrogens_with_options(errors, None, None)
     }
 
     pub fn with_kekulized_bonds(
@@ -665,9 +665,9 @@ impl MoleculeBatch {
             "Sanitizing molecules",
             |progress| {
                 self.transform_with_options(
-                    "batch.sanitized",
+                    "batch.sanitize",
                     errors,
-                    Molecule::sanitized,
+                    Molecule::sanitize,
                     progress,
                     n_jobs,
                 )
@@ -675,7 +675,7 @@ impl MoleculeBatch {
         )
     }
 
-    pub fn add_hydrogens_with_options(
+    pub fn with_hydrogens_with_options(
         &self,
         errors: BatchErrorMode,
         n_jobs: Option<usize>,
@@ -697,7 +697,7 @@ impl MoleculeBatch {
         )
     }
 
-    pub fn remove_hydrogens_with_options(
+    pub fn without_hydrogens_with_options(
         &self,
         errors: BatchErrorMode,
         n_jobs: Option<usize>,
@@ -787,7 +787,7 @@ impl MoleculeBatch {
         )
     }
 
-    pub fn add_hydrogens_with_progress(
+    pub fn with_hydrogens_with_progress(
         &self,
         errors: BatchErrorMode,
         progress: BatchProgress<'_>,
@@ -801,7 +801,7 @@ impl MoleculeBatch {
         )
     }
 
-    pub fn remove_hydrogens_with_progress(
+    pub fn without_hydrogens_with_progress(
         &self,
         errors: BatchErrorMode,
         progress: BatchProgress<'_>,
@@ -820,16 +820,10 @@ impl MoleculeBatch {
         errors: BatchErrorMode,
         progress: BatchProgress<'_>,
     ) -> Result<Self, BatchValidationError> {
-        self.transform_with_options(
-            "batch.sanitized",
-            errors,
-            Molecule::sanitized,
-            progress,
-            None,
-        )
+        self.transform_with_options("batch.sanitize", errors, Molecule::sanitize, progress, None)
     }
 
-    pub fn kekulize_with_sanitize_and_progress(
+    pub fn with_kekulized_bonds_with_progress(
         &self,
         clear_aromatic_flags: bool,
         errors: BatchErrorMode,
@@ -844,7 +838,7 @@ impl MoleculeBatch {
         )
     }
 
-    pub fn compute_2d_coords_with_progress(
+    pub fn with_2d_coordinates_with_progress(
         &self,
         errors: BatchErrorMode,
         progress: BatchProgress<'_>,

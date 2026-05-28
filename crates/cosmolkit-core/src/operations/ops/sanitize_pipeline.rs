@@ -1,9 +1,9 @@
 use super::*;
 
-#[mol_op_body(sanitized, parts)]
-pub(super) fn sanitized_impl(ops: crate::SanitizeOps) -> Result<OpOutcome, OperationError> {
+#[mol_op_body(sanitize, parts)]
+pub(super) fn sanitize_impl(ops: crate::SanitizeOps) -> Result<OpOutcome, OperationError> {
     let mut parts = parts;
-    let changed = run_sanitize_pipeline(&mut parts, ops, &SANITIZED_SPEC)?;
+    let changed = run_sanitize_pipeline(&mut parts, ops, &SANITIZE_SPEC)?;
     Ok(if changed {
         OpOutcome::Changed
     } else {
@@ -149,7 +149,7 @@ pub(super) fn run_sanitize_pipeline_on_topology(
     // RDKit✔️✔️:                  unsigned int sanitizeOps) {
     // RDKit✔️✔️:   // clear out any cached properties
     // RDKit✔️✔️:   mol.clearComputedProps();
-    parts.clear_cache(SANITIZED_SPEC.needs_update());
+    parts.clear_cache(SANITIZE_SPEC.needs_update());
     macro_rules! sanitize_read {
         ($read:ident => $body:expr) => {{
             let view = parts
