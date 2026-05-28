@@ -1,8 +1,5 @@
 //! Source-backed RDKit CrystalFF torsion-preference helpers.
 
-use std::collections::BTreeMap;
-use std::sync::OnceLock;
-
 use crate::SmartsParseError;
 use crate::search::smarts_parse::{SmartsMolecule, parse_smarts};
 use crate::{
@@ -10,8 +7,11 @@ use crate::{
     Hybridization, Molecule, MoleculeBuilder, QueryNode, RingInfo, SubstructMatchParams,
     get_substruct_matches_with_params, symmetrize_sssr,
 };
+use std::collections::BTreeMap;
 
 const MIN_MACROCYCLE_SIZE: usize = 9;
+
+include!(concat!(env!("OUT_DIR"), "/crystalff_defaults_generated.rs"));
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CrystalffTorsionPreferencesError {
@@ -530,188 +530,20 @@ pub fn get_experimental_torsions_without_bonds(
     )
 }
 
-const TORSION_PREFERENCES_V1_CPP: &str = include_str!(
-    "../../../../../../third_party/rdkit/Code/GraphMol/ForceFieldHelpers/CrystalFF/torsionPreferences_v1.in"
-);
-const TORSION_PREFERENCES_V2_CPP: &str = include_str!(
-    "../../../../../../third_party/rdkit/Code/GraphMol/ForceFieldHelpers/CrystalFF/torsionPreferences_v2.in"
-);
-const TORSION_PREFERENCES_SMALL_RINGS_CPP: &str = include_str!(
-    "../../../../../../third_party/rdkit/Code/GraphMol/ForceFieldHelpers/CrystalFF/torsionPreferences_smallrings.in"
-);
-const TORSION_PREFERENCES_MACROCYCLES_CPP: &str = include_str!(
-    "../../../../../../third_party/rdkit/Code/GraphMol/ForceFieldHelpers/CrystalFF/torsionPreferences_macrocycles.in"
-);
-
 fn torsion_preferences_v1() -> Result<&'static str, CrystalffTorsionPreferencesError> {
-    static VALUE: OnceLock<Result<String, CrystalffTorsionPreferencesError>> = OnceLock::new();
-    cached_param_string(VALUE.get_or_init(|| {
-        decode_cpp_string_constant(TORSION_PREFERENCES_V1_CPP, "torsionPreferencesV1")
-    }))
+    Ok(TORSION_PREFERENCES_V1)
 }
 
 fn torsion_preferences_v2() -> Result<&'static str, CrystalffTorsionPreferencesError> {
-    static VALUE: OnceLock<Result<String, CrystalffTorsionPreferencesError>> = OnceLock::new();
-    cached_param_string(VALUE.get_or_init(|| {
-        decode_cpp_string_constant(TORSION_PREFERENCES_V2_CPP, "torsionPreferencesV2")
-    }))
+    Ok(TORSION_PREFERENCES_V2)
 }
 
 fn torsion_preferences_small_rings() -> Result<&'static str, CrystalffTorsionPreferencesError> {
-    static VALUE: OnceLock<Result<String, CrystalffTorsionPreferencesError>> = OnceLock::new();
-    cached_param_string(VALUE.get_or_init(|| {
-        decode_cpp_string_constant(
-            TORSION_PREFERENCES_SMALL_RINGS_CPP,
-            "torsionPreferencesSmallRings",
-        )
-    }))
+    Ok(TORSION_PREFERENCES_SMALL_RINGS)
 }
 
 fn torsion_preferences_macrocycles() -> Result<&'static str, CrystalffTorsionPreferencesError> {
-    static VALUE: OnceLock<Result<String, CrystalffTorsionPreferencesError>> = OnceLock::new();
-    cached_param_string(VALUE.get_or_init(|| {
-        decode_cpp_string_constant(
-            TORSION_PREFERENCES_MACROCYCLES_CPP,
-            "torsionPreferencesMacrocycles",
-        )
-    }))
-}
-
-fn cached_param_string(
-    value: &'static Result<String, CrystalffTorsionPreferencesError>,
-) -> Result<&'static str, CrystalffTorsionPreferencesError> {
-    match value {
-        Ok(value) => Ok(value.as_str()),
-        Err(err) => Err(err.clone()),
-    }
-}
-
-fn decode_cpp_string_constant(
-    cpp_source: &str,
-    constant_name: &'static str,
-) -> Result<String, CrystalffTorsionPreferencesError> {
-    let header = format!("const std::string {constant_name} =");
-    let header_pos = cpp_source
-        .find(&header)
-        .ok_or(CrystalffTorsionPreferencesError::InvalidParameterSourceFormat { constant_name })?;
-    let rest = &cpp_source[header_pos + header.len()..];
-    let initializer_end = find_cpp_initializer_terminator(rest, constant_name)?;
-    let initializer = &rest[..initializer_end];
-    let mut decoded = String::new();
-    let chars: Vec<char> = initializer.chars().collect();
-    let mut i = 0usize;
-    let mut saw_any_literal = false;
-
-    while i < chars.len() {
-        if chars[i] == '/' && chars.get(i + 1) == Some(&'/') {
-            i += 2;
-            while i < chars.len() && chars[i] != '\n' {
-                i += 1;
-            }
-            continue;
-        }
-
-        if chars[i] == '/' && chars.get(i + 1) == Some(&'*') {
-            i += 2;
-            while i + 1 < chars.len() && !(chars[i] == '*' && chars[i + 1] == '/') {
-                i += 1;
-            }
-            i = (i + 2).min(chars.len());
-            continue;
-        }
-
-        if chars[i] == '"' {
-            saw_any_literal = true;
-            i += 1;
-            loop {
-                let Some(&ch) = chars.get(i) else {
-                    return Err(
-                        CrystalffTorsionPreferencesError::UnterminatedQuotedLiteral {
-                            constant_name,
-                        },
-                    );
-                };
-                match ch {
-                    '"' => {
-                        i += 1;
-                        break;
-                    }
-                    '\\' => {
-                        i += 1;
-                        let Some(&escape) = chars.get(i) else {
-                            return Err(CrystalffTorsionPreferencesError::TrailingEscape {
-                                constant_name,
-                            });
-                        };
-                        match escape {
-                            'n' => decoded.push('\n'),
-                            '\\' => decoded.push('\\'),
-                            '"' => decoded.push('"'),
-                            other => {
-                                return Err(
-                                    CrystalffTorsionPreferencesError::UnsupportedEscapeSequence {
-                                        constant_name,
-                                        escape: other,
-                                    },
-                                );
-                            }
-                        }
-                        i += 1;
-                    }
-                    other => {
-                        decoded.push(other);
-                        i += 1;
-                    }
-                }
-            }
-            continue;
-        }
-
-        i += 1;
-    }
-
-    if !saw_any_literal {
-        return Err(
-            CrystalffTorsionPreferencesError::InvalidParameterSourceFormat { constant_name },
-        );
-    }
-
-    Ok(decoded)
-}
-
-fn find_cpp_initializer_terminator(
-    source: &str,
-    constant_name: &'static str,
-) -> Result<usize, CrystalffTorsionPreferencesError> {
-    let mut in_string = false;
-    let mut escaped = false;
-
-    for (idx, ch) in source.char_indices() {
-        if in_string {
-            if escaped {
-                escaped = false;
-                continue;
-            }
-            match ch {
-                '\\' => escaped = true,
-                '"' => in_string = false,
-                _ => {}
-            }
-            continue;
-        }
-
-        match ch {
-            '"' => in_string = true,
-            ';' => return Ok(idx),
-            _ => {}
-        }
-    }
-
-    if in_string {
-        return Err(CrystalffTorsionPreferencesError::UnterminatedQuotedLiteral { constant_name });
-    }
-
-    Err(CrystalffTorsionPreferencesError::InvalidParameterSourceFormat { constant_name })
+    Ok(TORSION_PREFERENCES_MACROCYCLES)
 }
 
 fn parse_exp_torsion_angle_line(

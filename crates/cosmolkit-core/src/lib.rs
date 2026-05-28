@@ -153,6 +153,11 @@ pub use fingerprint::{
 };
 pub use hydrogens::{AddHsParams, AddHydrogensError, RemoveHsParams, RemoveHydrogensError};
 pub use io::bio::{BioPdbReadParams, BioReadError, read_mmcif_atom_site_subset_from_str};
+pub use io::mol2::{
+    Mol2ReadError, Mol2ReadParams, Mol2Record, Mol2Type, mol_from_mol2_block_like_rdkit,
+    mol_from_mol2_data_stream_like_rdkit, mol_from_mol2_file_like_rdkit, read_mol2_file,
+    read_mol2_file_with_params, read_mol2_from_str, read_mol2_from_str_with_params,
+};
 pub use io::pdb_molecule::{
     PdbMoleculeConversionError, RdkitPdbMolProfile, bio_structure_to_rdkit_pdb_molecule,
     molecule_from_mmcif_block_with_options, molecule_from_pdb_block_with_options,

@@ -489,11 +489,38 @@ macro_rules! mol_symbol_atomic_numbers {
             symbol: &str,
             strict_parsing: bool,
         ) -> Result<u8, SdfReadError> {
-            let atomic_number = match symbol {
+            fn exact_atomic_number(symbol: &str) -> Option<u8> {
+                let atomic_number = match symbol {
                 $($zero_alias)|+ => 0,
                 $($hydrogen_alias)|+ => 1,
                 $($symbol => $atomic_number,)+
-                _ if !strict_parsing => 0,
+                    _ => return None,
+                };
+                Some(atomic_number)
+            }
+
+            let normalized_symbol;
+            let lookup_symbol = if exact_atomic_number(symbol).is_none()
+                && symbol.len() == 2
+                && symbol.as_bytes()[1].is_ascii_uppercase()
+            {
+                // RDKit✔️✔️: std::string tCopy(symb);
+                // RDKit✔️✔️: if (symb.size() == 2 && symb[1] >= 'A' && symb[1] <= 'Z') {
+                // RDKit✔️✔️:   tCopy[1] = static_cast<char>(tolower(symb[1]));
+                // RDKit✔️✔️: }
+                normalized_symbol = format!(
+                    "{}{}",
+                    &symbol[..1],
+                    (symbol.as_bytes()[1] as char).to_ascii_lowercase()
+                );
+                normalized_symbol.as_str()
+            } else {
+                symbol
+            };
+
+            let atomic_number = match exact_atomic_number(lookup_symbol) {
+                Some(atomic_number) => atomic_number,
+                None if !strict_parsing => 0,
                 _ => {
                     return Err(SdfReadError::Parse(format!(
                         "Element '{}' not found",
@@ -2707,19 +2734,6 @@ fn parse_v2000_ctab<R: BufRead>(
         )
     });
 
-    for bond in &bond_lines {
-        if bond.spec.order() == BondOrder::Aromatic {
-            for atom_id in [bond.spec.begin(), bond.spec.end()] {
-                let atom = atom_lines.get_mut(atom_id.index()).ok_or_else(|| {
-                    SdfReadError::Parse(format!(
-                        "Bond endpoint {} out of range while applying aromatic flags",
-                        atom_id.index() + 1
-                    ))
-                })?;
-                atom.spec = atom.spec.clone().with_aromatic(true);
-            }
-        }
-    }
     let mut property_state = V2000PropertyState {
         first_charge_line: true,
         sgroups: BTreeMap::new(),
@@ -3168,11 +3182,23 @@ fn parse_v2000_atom_line(
         None
     };
 
-    let atomic_number = atomic_number_from_mol_symbol(symbol, params.strict_parsing)?;
-    let mut spec = AtomSpec::new(Element::from_atomic_number(atomic_number).unwrap());
+    let complex_query = molfile_complex_atom_query(symbol);
+    let atomic_number = if complex_query.is_some() {
+        0
+    } else {
+        atomic_number_from_mol_symbol(symbol, params.strict_parsing)?
+    };
+    let mut spec = if atomic_number == 0 {
+        AtomSpec::new(Element::DUMMY)
+    } else {
+        AtomSpec::new(Element::from_atomic_number(atomic_number).unwrap())
+    };
     let mut query: Option<QueryNode<AtomQueryPredicate>> = None;
 
-    if matches!(symbol, "*" | "R") {
+    if let Some(complex_query) = complex_query {
+        query = Some(complex_query);
+        spec = spec.with_no_implicit(true);
+    } else if matches!(symbol, "*" | "R") {
         query = Some(QueryNode::predicate(AtomQueryPredicate::Any));
         spec = spec.with_no_implicit(true);
     } else if symbol == "D" {
@@ -3274,6 +3300,62 @@ fn parse_v2000_atom_line(
         spec,
         coord_3d: [x, y, z],
     })
+}
+
+fn molfile_complex_atom_query(symbol: &str) -> Option<QueryNode<AtomQueryPredicate>> {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/QueryOps.cpp :: convertComplexNameToQuery
+    // RDKit✔️✔️: void convertComplexNameToQuery(Atom *query, std::string_view symb) {
+    // RDKit✔️✔️:   if (symb == "Q") {
+    // RDKit✔️✔️:     query->setQuery(makeQAtomQuery());
+    // RDKit✔️✔️:   } else if (symb == "QH") {
+    // RDKit✔️✔️:     query->setQuery(makeQHAtomQuery());
+    // RDKit✔️✔️:   } else if (symb == "A") {
+    // RDKit✔️✔️:     query->setQuery(makeAAtomQuery());
+    // RDKit✔️✔️:   } else if (symb == "AH") {
+    // RDKit✔️✔️:     query->setQuery(makeAHAtomQuery());
+    // RDKit✔️✔️:   } else if (symb == "X") {
+    // RDKit✔️✔️:     query->setQuery(makeXAtomQuery());
+    // RDKit✔️✔️:   } else if (symb == "XH") {
+    // RDKit✔️✔️:     query->setQuery(makeXHAtomQuery());
+    // RDKit✔️✔️:   } else if (symb == "M") {
+    // RDKit✔️✔️:     query->setQuery(makeMAtomQuery());
+    // RDKit✔️✔️:   } else if (symb == "MH") {
+    // RDKit✔️✔️:     query->setQuery(makeMHAtomQuery());
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     ASSERT_INVARIANT(0, "bad complex query symbol");
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/QueryOps.cpp :: convertComplexNameToQuery
+    let halogens = vec![9, 17, 35, 53, 85];
+    let mh_excluded = vec![
+        0, 2, 5, 6, 7, 8, 9, 10, 14, 15, 16, 17, 18, 33, 34, 35, 36, 52, 53, 54, 85, 86,
+    ];
+    match symbol {
+        "A" => Some(QueryNode::not(QueryNode::predicate(
+            AtomQueryPredicate::AtomicNumber(1),
+        ))),
+        "AH" => Some(QueryNode::predicate(AtomQueryPredicate::Any)),
+        "Q" => Some(QueryNode::not(QueryNode::or(vec![
+            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(1)),
+        ]))),
+        "QH" => Some(QueryNode::not(QueryNode::predicate(
+            AtomQueryPredicate::AtomicNumber(6),
+        ))),
+        "X" => Some(QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(
+            halogens,
+        ))),
+        "XH" => Some(QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(
+            [halogens, vec![1]].concat(),
+        ))),
+        "M" => Some(QueryNode::predicate(AtomQueryPredicate::AtomicNumberNotIn(
+            [mh_excluded, vec![1]].concat(),
+        ))),
+        "MH" => Some(QueryNode::predicate(AtomQueryPredicate::AtomicNumberNotIn(
+            mh_excluded,
+        ))),
+        _ => None,
+    }
 }
 
 fn parse_v2000_bond_block<R: BufRead>(
@@ -4374,6 +4456,49 @@ fn parse_marvin_smarts_line(
     line_number: usize,
     atoms: &mut [V2000AtomLine],
 ) -> Result<(), SdfReadError> {
+    // BEGIN RDKIT CPP BODY: parse_marvin_smarts_line
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void ParseMarvinSmartsLine
+    // RDKit✔️✔️:   if (text.substr(0, 10) != "M  MRV SMA") {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   unsigned int idx;
+    // RDKit✔️✔️:   std::string idxTxt = text.substr(atomNumStart, smartsStart - atomNumStart);
+    // RDKit✔️✔️:   try {
+    // RDKit✔️✔️:     idx = FileParserUtils::stripSpacesAndCast<unsigned int>(idxTxt) - 1;
+    // RDKit✔️✔️:   } catch (boost::bad_lexical_cast &) {
+    // RDKit✔️✔️:     std::ostringstream errout;
+    // RDKit✔️✔️:     errout << "Cannot convert '" << idxTxt << "' to an atom index on line "
+    // RDKit✔️✔️:            << line;
+    // RDKit✔️✔️:     throw FileParseException(errout.str());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   URANGE_CHECK(idx, mol->getNumAtoms());
+    // RDKit✔️✔️:   std::string sma = text.substr(smartsStart);
+    // RDKit✔️✔️:   Atom *at = mol->getAtomWithIdx(idx);
+    // RDKit✔️✔️:   at->setProp(common_properties::MRV_SMA, sma);
+    // RDKit✔️✔️:   RWMol *m = nullptr;
+    // RDKit✔️✔️:   try {
+    // RDKit✔️✔️:     m = SmartsToMol(sma);
+    // RDKit✔️✔️:   } catch (...) {
+    // RDKit✔️✔️:     // Is this ever used?
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (m) {
+    // RDKit✔️✔️:     QueryAtom::QUERYATOM_QUERY *query = new RecursiveStructureQuery(m);
+    // RDKit✔️✔️:     if (!at->hasQuery()) {
+    // RDKit✔️✔️:       QueryAtom qAt(*at);
+    // RDKit✔️✔️:       int oidx = at->getIdx();
+    // RDKit✔️✔️:       mol->replaceAtom(oidx, &qAt);
+    // RDKit✔️✔️:       at = mol->getAtomWithIdx(oidx);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     at->expandQuery(query, Queries::COMPOSITE_AND);
+    // RDKit✔️✔️:     at->setProp(common_properties::_MolFileAtomQuery, 1);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     std::ostringstream errout;
+    // RDKit✔️✔️:     errout << "Cannot parse smarts: '" << sma << "' on line " << line;
+    // RDKit✔️✔️:     throw FileParseException(errout.str());
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void ParseMarvinSmartsLine
+    // END RDKIT CPP BODY: parse_marvin_smarts_line
+
     if rdkit_substr(line, 0, 10) != "M  MRV SMA" {
         return Ok(());
     }
@@ -4387,6 +4512,11 @@ fn parse_marvin_smarts_line(
     })?;
     let sma = line.get(smarts_start..).unwrap_or_default();
     let atom = atom_line_mut(atoms, atom_index, line_number)?;
+    crate::search::smarts_parse::parse_smarts(sma).map_err(|_| {
+        SdfReadError::Parse(format!(
+            "Cannot parse smarts: '{sma}' on line {line_number}"
+        ))
+    })?;
     atom.spec = atom
         .spec
         .clone()
@@ -9100,10 +9230,30 @@ fn parse_v3000_sgroup_block<R: BufRead>(
         )));
     }
 
+    // RDKit✔️✔️:   // SGroups successfully parsed, now add them to the molecule
+    // RDKit✔️✔️:   for (const auto &sg : sGroupMap) {
+    // RDKit✔️✔️:     if (sg.second.getIsValid()) {
+    // RDKit✔️✔️:       addSubstanceGroup(*mol, sg.second);
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       BOOST_LOG(rdWarningLog) << "SGroup " << sg.first
+    // RDKit✔️✔️:                               << " is invalid and will be ignored" << std::endl;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    //
+    // RDKit iterates the ordered sGroupMap, so COSMolKit's index-backed
+    // SubstanceGroupId values must be assigned from that final insertion
+    // order, not from the order the V3000 lines appeared in.
     let id_by_sequence_id = sgroups
-        .iter()
-        .map(|(sequence_id, sgroup)| (*sequence_id, sgroup.id()))
+        .keys()
+        .enumerate()
+        .map(|(index, sequence_id)| (*sequence_id, SubstanceGroupId::new(index)))
         .collect::<BTreeMap<_, _>>();
+    for (sequence_id, id) in &id_by_sequence_id {
+        let sgroup = sgroups
+            .get_mut(sequence_id)
+            .ok_or_else(|| SdfReadError::Parse(format!("SGroup {sequence_id} missing")))?;
+        sgroup.set_id(*id);
+    }
     for (sequence_id, parent_sequence_id) in parent_by_sequence_id {
         let parent = *id_by_sequence_id.get(&parent_sequence_id).ok_or_else(|| {
             SdfReadError::Parse(format!("Invalid PARENT label found on line {line_number}"))
@@ -10942,7 +11092,7 @@ M  END
     }
 
     #[test]
-    fn parse_v2000_ctab_marks_atoms_on_aromatic_bonds_like_rdkit() {
+    fn parse_v2000_ctab_marks_only_bond_aromatic_for_molfile_type_4_like_rdkit() {
         let input = format!(
             "{}\n{}\n{}\nM  END\n",
             v2000_atom_line("C", 0, 0, 0, 0),
@@ -10975,8 +11125,8 @@ M  END
 
         assert_eq!(parsed.molecule.bonds()[0].order(), BondOrder::Aromatic);
         assert!(parsed.molecule.bonds()[0].is_aromatic());
-        assert!(parsed.molecule.atoms()[0].is_aromatic());
-        assert!(parsed.molecule.atoms()[1].is_aromatic());
+        assert!(!parsed.molecule.atoms()[0].is_aromatic());
+        assert!(!parsed.molecule.atoms()[1].is_aromatic());
     }
 
     #[test]

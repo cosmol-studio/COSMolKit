@@ -137,10 +137,9 @@ Do not place RDKit molecule construction rules inside the Gemmi structural
 parser. Keep the parser source-mapped to Gemmi and keep RDKit behavior in the
 conversion or molecule compatibility layer.
 
-Do not expose `crates/cosmolkit-core/src/unported/pdb_parser.rs` or
-`crates/cosmolkit-core/src/unported/mmcif_parser.rs` as public modules. They remain
-quarantine placeholders unless they are repurposed into private compatibility
-helpers that still obey this plan.
+The historical quarantine parser files have been removed. Keep any future
+compatibility helpers private and source-backed, and do not reintroduce
+parallel public parser modules.
 
 ## Execution Order
 

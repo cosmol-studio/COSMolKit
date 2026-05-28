@@ -152,20 +152,94 @@ def test_editing_commit_boundary_matches_sanitize_behavior():
     assert valid.to_smiles(canonical=False) == "CCO"
 
 
-def test_read_mol_rejects_sdf_record_separator_but_accepts_plain_mol(tmp_path: Path):
+def test_read_mol_stops_at_m_end_and_ignores_trailing_sdf_text(tmp_path: Path):
     mol2d = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
     mol_path = tmp_path / "ethanol.mol"
-    mol2d.write_sdf(str(mol_path), format="v2000")
+    sdf_text = mol2d.to_2d_sdf_string(format="v2000").replace(
+        "$$$$\n",
+        ">  <supplier_id>\nD008\n\n$$$$\n",
+    )
+    _ = mol_path.write_text(sdf_text, encoding="utf-8")
 
-    with pytest.raises(ValueError, match="Extra non-molfile content after M  END"):
-        cosmolkit.Molecule.read_mol(str(mol_path), coordinate_dim="2d")
+    from_text = cosmolkit.Molecule.read_mol_from_str(sdf_text, coordinate_dim="2d")
+    from_file = cosmolkit.Molecule.read_mol(str(mol_path), coordinate_dim="2d")
 
-    mol_text = mol_path.read_text(encoding="utf-8").replace("$$$$\n", "")
-    mol_path.write_text(mol_text, encoding="utf-8")
-    reread = cosmolkit.Molecule.read_mol(str(mol_path), coordinate_dim="2d")
-    assert reread.has_2d_coords()
-    assert len(reread) == len(mol2d)
-    assert_coord_rows_match_atoms(reread)
+    assert from_text.to_smiles() == "CCO"
+    assert from_file.to_smiles() == "CCO"
+    assert from_text.has_2d_coords()
+    assert from_file.has_2d_coords()
+    assert len(from_file) == len(mol2d)
+    assert_coord_rows_match_atoms(from_file)
+
+
+def test_molfile_atomic_symbol_normalizes_uppercase_second_letter():
+    mol_text = """brtest
+  COSMolKit      2D
+
+  3  2  0  0  0  0            999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.5000    0.0000    0.0000 BR  0  0  0  0  0  0  0  0  0  0  0  0
+   -1.5000    0.0000    0.0000 Br  0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  1  3  1  0
+M  END
+"""
+    mol = cosmolkit.Molecule.read_mol_from_str(mol_text, coordinate_dim="2d")
+
+    assert [atom.atomic_num() for atom in mol.atoms()] == [6, 35, 35]
+
+
+def test_molfile_invalid_mrv_sma_rejects_record():
+    mol_text = """invalid_mrv_sma
+  COSMolKit      2D
+
+  1  0  0  0  0  0            999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+M  MRV SMA   1 MyDogHasFleas
+M  END
+"""
+    with pytest.raises(ValueError, match="Cannot parse smarts"):
+        _ = cosmolkit.Molecule.read_mol_from_str(mol_text, coordinate_dim="2d")
+
+
+def test_read_mol2_from_str_and_file(tmp_path: Path):
+    mol2_text = """@<TRIPOS>MOLECULE
+ethanol
+9 8
+SMALL
+NO_CHARGES
+@<TRIPOS>ATOM
+1 C1 0.0 0.0 0.0 C.3
+2 C2 1.5 0.0 0.0 C.3
+3 O1 3.0 0.0 0.0 O.3
+4 H1 -0.5 0.9 0.0 H
+5 H2 -0.5 -0.9 0.0 H
+6 H3 0.0 0.0 1.0 H
+7 H4 1.5 0.9 0.0 H
+8 H5 1.5 0.0 1.0 H
+9 H6 3.5 0.0 0.8 H
+@<TRIPOS>BOND
+1 1 2 1
+2 2 3 1
+3 1 4 1
+4 1 5 1
+5 1 6 1
+6 2 7 1
+7 2 8 1
+8 3 9 1
+"""
+    from_text = cosmolkit.Molecule.read_mol2_from_str(mol2_text)
+    assert from_text.to_smiles() == "CCO"
+    assert from_text.num_conformers() == 1
+
+    path = tmp_path / "ethanol.mol2"
+    _ = path.write_text(mol2_text, encoding="utf-8")
+    from_file = cosmolkit.Molecule.read_mol2(str(path))
+    assert from_file.to_smiles() == "CCO"
+    assert from_file.num_conformers() == 1
+
+    with pytest.raises(ValueError, match="unsupported MOL2 variant"):
+        _ = cosmolkit.Molecule.read_mol2_from_str(mol2_text, variant="tripos")
 
 
 def test_fingerprint_and_stereo_outputs_are_structurally_reasonable():
@@ -191,6 +265,18 @@ def test_fingerprint_and_stereo_outputs_are_structurally_reasonable():
     assert chiral.topological_fingerprint(n_bits=256).n_bits() == 256
     assert chiral.maccs_fingerprint().n_bits() == 166
     chiral.perceive_stereochemistry()
+
+
+def test_smarts_parser_is_exposed_as_python_metadata():
+    query = cosmolkit.parse_smarts("[#6]-O")
+
+    assert query.num_atoms() == 2
+    assert query.num_bonds() == 1
+    assert query.ring_closures() == []
+    assert "SmartsMolecule" in repr(query)
+
+    with pytest.raises(ValueError, match="SMARTS|smarts|bracket"):
+        _ = cosmolkit.parse_smarts("[#6")
 
 
 def test_fragment_hash_pickle_and_scaffold_bindings_are_available():

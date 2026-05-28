@@ -137,6 +137,9 @@ for chain in protein.chains():
 
 `SdfDataset` builds a lightweight index of SDF record byte ranges, so individual
 records and chunks can be read without loading an entire file into memory.
+Molfile-only readers such as `Molecule.read_mol()` follow RDKit
+`MolFromMolBlock` boundaries: they stop after the first `M  END` line and leave
+trailing SDF data fields to the SDF APIs.
 
 ```python
 from cosmolkit import SdfDataset
@@ -156,13 +159,14 @@ for batch in dataset.batches(size=1024, errors="keep", n_jobs=8):
 - Molecular graph construction and inspection
 - SMILES parsing and writing
 - MOL/SDF reading and writing
+- MOL2 reading with RDKit-style `Mol2ParserParams`
 - XYZ block reading
 - Hydrogen transforms and Kekulization
 - Sanitization and chemistry problem detection
 - 2D coordinate generation and SVG/PNG depiction
 - Morgan and Avalon fingerprints
 - Distance-geometry bounds matrices
-- Substructure matching and SMARTS parsing
+- Substructure matching and SMARTS parse metadata
 - Ordered batch transforms and exports
 - PDB/mmCIF molecule-block parsing and protein projection APIs
 - Support-status metadata for public features
@@ -205,9 +209,9 @@ Goal: keep the supported molecular core correct before expanding breadth.
 - ✅ Sanitization for supported chemistry workflows
 - ✅ Stereochemistry inspection for supported atom and bond states
 - ✅ Distance-geometry bounds matrices
-- ✅ Morgan fingerprints and Tanimoto similarity
+- 🧪 Morgan fingerprints and Tanimoto similarity
 - 🧪 Avalon fingerprints
-- 🧪 Substructure matching and SMARTS parsing
+- 🧪 Substructure matching and Python SMARTS parse metadata
 - 🚧 Broader descriptor APIs such as formula, molecular weight, and ring
   statistics
 
@@ -217,6 +221,7 @@ Goal: make common molecule import, export, and visualization workflows usable
 from Python.
 
 - ✅ MOL/SDF reading
+- ✅ MOL2 reading
 - ✅ XYZ block reading
 - ✅ SDF dataset indexing for large files
 - ✅ SDF writing for supported V2000/V3000 branches

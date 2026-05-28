@@ -1,12 +1,11 @@
 //! Source-backed RDKit MMFF parameter structures.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::num::{ParseFloatError, ParseIntError};
-use std::sync::OnceLock;
 
-const RDKIT_MMFF_PARAMS_CPP: &str =
-    include_str!("../../../../../../third_party/rdkit/Code/ForceField/MMFF/Params.cpp");
+include!(concat!(env!("OUT_DIR"), "/mmff_defaults_generated.rs"));
 
 /// MMFF atom type equivalence levels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -324,8 +323,14 @@ impl std::error::Error for MmffParamError {}
 /// MMFF atom type equivalence definition collection.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MmffDefCollection {
-    source_mmff_def: String,
-    params: Vec<MmffDef>,
+    source_mmff_def: Cow<'static, str>,
+    params: MmffDefStorage,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum MmffDefStorage {
+    Static(&'static [(u8, MmffDef)]),
+    Owned(Vec<MmffDef>),
 }
 
 impl MmffDefCollection {
@@ -335,11 +340,15 @@ impl MmffDefCollection {
         // RDKit✔️✔️:     mmffDef = defaultMMFFDef;
         // RDKit✔️✔️:   }
         let source_mmff_def = if mmff_def.is_empty() {
-            default_mmff_def()?.to_owned()
+            Cow::Borrowed(default_mmff_def()?)
         } else {
-            mmff_def.to_owned()
+            Cow::Owned(mmff_def.to_owned())
         };
-        let params = parse_mmff_def(&source_mmff_def)?;
+        let params = if mmff_def.is_empty() {
+            MmffDefStorage::Static(DEFAULT_MMFF_DEF_ROWS)
+        } else {
+            MmffDefStorage::Owned(parse_mmff_def(source_mmff_def.as_ref())?)
+        };
         Ok(Self {
             source_mmff_def,
             params,
@@ -347,15 +356,21 @@ impl MmffDefCollection {
     }
 
     pub fn source_mmff_def(&self) -> &str {
-        &self.source_mmff_def
+        self.source_mmff_def.as_ref()
     }
 
     pub fn len(&self) -> usize {
-        self.params.len()
+        match &self.params {
+            MmffDefStorage::Static(params) => params.len(),
+            MmffDefStorage::Owned(params) => params.len(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.params.is_empty()
+        match &self.params {
+            MmffDefStorage::Static(params) => params.is_empty(),
+            MmffDefStorage::Owned(params) => params.is_empty(),
+        }
     }
 
     pub fn get(&self, atom_type: u32) -> Option<&MmffDef> {
@@ -369,10 +384,24 @@ impl MmffDefCollection {
         // RDKit✔️✔️:                 : nullptr);
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:   }
-        if atom_type != 0 && (atom_type as usize) <= self.params.len() {
-            self.params.get(atom_type as usize - 1)
-        } else {
-            None
+        match &self.params {
+            MmffDefStorage::Static(params) => {
+                if atom_type == 0 {
+                    None
+                } else {
+                    params
+                        .binary_search_by_key(&(atom_type as u8), |(key, _)| *key)
+                        .ok()
+                        .map(|idx| &params[idx].1)
+                }
+            }
+            MmffDefStorage::Owned(params) => {
+                if atom_type != 0 && (atom_type as usize) <= params.len() {
+                    params.get(atom_type as usize - 1)
+                } else {
+                    None
+                }
+            }
         }
     }
 }
@@ -380,9 +409,17 @@ impl MmffDefCollection {
 /// MMFF atom-type property collection.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MmffPropCollection {
-    source_mmff_prop: String,
-    params: Vec<MmffProp>,
-    i_atom_type: Vec<u8>,
+    source_mmff_prop: Cow<'static, str>,
+    params: MmffPropStorage,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum MmffPropStorage {
+    Static(&'static [(u8, MmffProp)]),
+    Owned {
+        params: Vec<MmffProp>,
+        i_atom_type: Vec<u8>,
+    },
 }
 
 impl MmffPropCollection {
@@ -392,28 +429,41 @@ impl MmffPropCollection {
         // RDKit✔️✔️:     mmffProp = defaultMMFFProp;
         // RDKit✔️✔️:   }
         let source_mmff_prop = if mmff_prop.is_empty() {
-            default_mmff_prop()?.to_owned()
+            Cow::Borrowed(default_mmff_prop()?)
         } else {
-            mmff_prop.to_owned()
+            Cow::Owned(mmff_prop.to_owned())
         };
-        let (params, i_atom_type) = parse_mmff_prop(&source_mmff_prop)?;
+        let params = if mmff_prop.is_empty() {
+            MmffPropStorage::Static(DEFAULT_MMFF_PROP_ROWS)
+        } else {
+            let (params, i_atom_type) = parse_mmff_prop(source_mmff_prop.as_ref())?;
+            MmffPropStorage::Owned {
+                params,
+                i_atom_type,
+            }
+        };
         Ok(Self {
             source_mmff_prop,
             params,
-            i_atom_type,
         })
     }
 
     pub fn source_mmff_prop(&self) -> &str {
-        &self.source_mmff_prop
+        self.source_mmff_prop.as_ref()
     }
 
     pub fn len(&self) -> usize {
-        self.params.len()
+        match &self.params {
+            MmffPropStorage::Static(params) => params.len(),
+            MmffPropStorage::Owned { params, .. } => params.len(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.params.is_empty()
+        match &self.params {
+            MmffPropStorage::Static(params) => params.is_empty(),
+            MmffPropStorage::Owned { params, .. } => params.is_empty(),
+        }
     }
 
     pub fn get(&self, atom_type: u32) -> Option<&MmffProp> {
@@ -429,16 +479,23 @@ impl MmffPropCollection {
         // RDKit✔️✔️:                 : nullptr);
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:   }
-        let lower = self
-            .i_atom_type
-            .partition_point(|&probe| u32::from(probe) < atom_type);
-        let upper = self
-            .i_atom_type
-            .partition_point(|&probe| u32::from(probe) <= atom_type);
-        if lower != upper {
-            self.params.get(lower)
-        } else {
-            None
+        match &self.params {
+            MmffPropStorage::Static(params) => params
+                .binary_search_by_key(&(atom_type as u8), |(key, _)| *key)
+                .ok()
+                .map(|idx| &params[idx].1),
+            MmffPropStorage::Owned {
+                params,
+                i_atom_type,
+            } => {
+                let lower = i_atom_type.partition_point(|&probe| u32::from(probe) < atom_type);
+                let upper = i_atom_type.partition_point(|&probe| u32::from(probe) <= atom_type);
+                if lower != upper {
+                    params.get(lower)
+                } else {
+                    None
+                }
+            }
         }
     }
 }
@@ -446,8 +503,14 @@ impl MmffPropCollection {
 /// MMFF partial bond charge increment collection.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MmffPbciCollection {
-    source_mmff_pbci: String,
-    params: Vec<MmffPbci>,
+    source_mmff_pbci: Cow<'static, str>,
+    params: MmffPbciStorage,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum MmffPbciStorage {
+    Static(&'static [(u8, MmffPbci)]),
+    Owned(Vec<MmffPbci>),
 }
 
 impl MmffPbciCollection {
@@ -457,11 +520,15 @@ impl MmffPbciCollection {
         // RDKit✔️✔️:     mmffPBCI = defaultMMFFPBCI;
         // RDKit✔️✔️:   }
         let source_mmff_pbci = if mmff_pbci.is_empty() {
-            default_mmff_pbci()?.to_owned()
+            Cow::Borrowed(default_mmff_pbci()?)
         } else {
-            mmff_pbci.to_owned()
+            Cow::Owned(mmff_pbci.to_owned())
         };
-        let params = parse_mmff_pbci(&source_mmff_pbci)?;
+        let params = if mmff_pbci.is_empty() {
+            MmffPbciStorage::Static(DEFAULT_MMFF_PBCI_ROWS)
+        } else {
+            MmffPbciStorage::Owned(parse_mmff_pbci(source_mmff_pbci.as_ref())?)
+        };
         Ok(Self {
             source_mmff_pbci,
             params,
@@ -469,15 +536,21 @@ impl MmffPbciCollection {
     }
 
     pub fn source_mmff_pbci(&self) -> &str {
-        &self.source_mmff_pbci
+        self.source_mmff_pbci.as_ref()
     }
 
     pub fn len(&self) -> usize {
-        self.params.len()
+        match &self.params {
+            MmffPbciStorage::Static(params) => params.len(),
+            MmffPbciStorage::Owned(params) => params.len(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.params.is_empty()
+        match &self.params {
+            MmffPbciStorage::Static(params) => params.is_empty(),
+            MmffPbciStorage::Owned(params) => params.is_empty(),
+        }
     }
 
     pub fn get(&self, atom_type: u32) -> Option<&MmffPbci> {
@@ -491,10 +564,21 @@ impl MmffPbciCollection {
         // RDKit✔️✔️:                 : nullptr);
         // RDKit✔️✔️: #endif
         // RDKit✔️✔️:   }
-        if atom_type != 0 && (atom_type as usize) <= self.params.len() {
-            self.params.get(atom_type as usize - 1)
-        } else {
-            None
+        match &self.params {
+            MmffPbciStorage::Static(params) => {
+                if atom_type != 0 && (atom_type as usize) <= params.len() {
+                    params.get(atom_type as usize - 1).map(|(_, param)| param)
+                } else {
+                    None
+                }
+            }
+            MmffPbciStorage::Owned(params) => {
+                if atom_type != 0 && (atom_type as usize) <= params.len() {
+                    params.get(atom_type as usize - 1)
+                } else {
+                    None
+                }
+            }
         }
     }
 }
@@ -502,11 +586,19 @@ impl MmffPbciCollection {
 /// MMFF bond-charge-increment collection.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MmffChgCollection {
-    source_mmff_chg: String,
-    params: Vec<MmffChg>,
-    bond_type: Vec<u8>,
-    i_atom_type: Vec<u8>,
-    j_atom_type: Vec<u8>,
+    source_mmff_chg: Cow<'static, str>,
+    params: MmffChgStorage,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum MmffChgStorage {
+    Static(&'static [(u8, u8, u8, MmffChg)]),
+    Owned {
+        params: Vec<MmffChg>,
+        bond_type: Vec<u8>,
+        i_atom_type: Vec<u8>,
+        j_atom_type: Vec<u8>,
+    },
 }
 
 impl MmffChgCollection {
@@ -516,30 +608,43 @@ impl MmffChgCollection {
         // RDKit✔️✔️:     mmffChg = defaultMMFFChg;
         // RDKit✔️✔️:   }
         let source_mmff_chg = if mmff_chg.is_empty() {
-            default_mmff_chg()?.to_owned()
+            Cow::Borrowed(default_mmff_chg()?)
         } else {
-            mmff_chg.to_owned()
+            Cow::Owned(mmff_chg.to_owned())
         };
-        let parsed = parse_mmff_chg(&source_mmff_chg)?;
+        let params = if mmff_chg.is_empty() {
+            MmffChgStorage::Static(DEFAULT_MMFF_CHG_ROWS)
+        } else {
+            let parsed = parse_mmff_chg(source_mmff_chg.as_ref())?;
+            MmffChgStorage::Owned {
+                params: parsed.params,
+                bond_type: parsed.bond_type,
+                i_atom_type: parsed.i_atom_type,
+                j_atom_type: parsed.j_atom_type,
+            }
+        };
         Ok(Self {
             source_mmff_chg,
-            params: parsed.params,
-            bond_type: parsed.bond_type,
-            i_atom_type: parsed.i_atom_type,
-            j_atom_type: parsed.j_atom_type,
+            params,
         })
     }
 
     pub fn source_mmff_chg(&self) -> &str {
-        &self.source_mmff_chg
+        self.source_mmff_chg.as_ref()
     }
 
     pub fn len(&self) -> usize {
-        self.params.len()
+        match &self.params {
+            MmffChgStorage::Static(params) => params.len(),
+            MmffChgStorage::Owned { params, .. } => params.len(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.params.is_empty()
+        match &self.params {
+            MmffChgStorage::Static(params) => params.is_empty(),
+            MmffChgStorage::Owned { params, .. } => params.is_empty(),
+        }
     }
 
     pub fn get_mmff_chg_params(
@@ -569,6 +674,29 @@ impl MmffChgCollection {
             sign = 1;
         }
 
+        if let MmffChgStorage::Static(params) = &self.params {
+            let key = (
+                bond_type as u8,
+                can_i_atom_type as u8,
+                can_j_atom_type as u8,
+            );
+            let param = params
+                .binary_search_by_key(&key, |(bond, i_atom, j_atom, _)| (*bond, *i_atom, *j_atom))
+                .ok()
+                .map(|idx| &params[idx].3);
+            return (sign, param);
+        }
+
+        let MmffChgStorage::Owned {
+            params,
+            bond_type: bond_types,
+            i_atom_type: i_atom_types,
+            j_atom_type: j_atom_types,
+        } = &self.params
+        else {
+            unreachable!("static MMFFChg storage returned above")
+        };
+
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:     const auto res1 = d_params[bondType].find(canIAtomType);
         // RDKit❌❌:     if (res1 != d_params[bondType].end()) {
@@ -580,12 +708,9 @@ impl MmffChgCollection {
         // RDKit✔️✔️: #else
         // RDKit✔️✔️:     auto bounds =
         // RDKit✔️✔️:         std::equal_range(d_iAtomType.begin(), d_iAtomType.end(), canIAtomType);
-        let Some((i_begin, i_end)) = equal_range_u8(
-            &self.i_atom_type,
-            0,
-            self.i_atom_type.len(),
-            can_i_atom_type,
-        ) else {
+        let Some((i_begin, i_end)) =
+            equal_range_u8(i_atom_types, 0, i_atom_types.len(), can_i_atom_type)
+        else {
             // RDKit✔️✔️:     return std::make_pair(sign, mmffChgParams);
             return (sign, None);
         };
@@ -595,8 +720,7 @@ impl MmffChgCollection {
         // RDKit✔️✔️:           d_jAtomType.begin() + (bounds.first - d_iAtomType.begin()),
         // RDKit✔️✔️:           d_jAtomType.begin() + (bounds.second - d_iAtomType.begin()),
         // RDKit✔️✔️:           canJAtomType);
-        let Some((j_begin, j_end)) =
-            equal_range_u8(&self.j_atom_type, i_begin, i_end, can_j_atom_type)
+        let Some((j_begin, j_end)) = equal_range_u8(j_atom_types, i_begin, i_end, can_j_atom_type)
         else {
             return (sign, None);
         };
@@ -606,8 +730,7 @@ impl MmffChgCollection {
         // RDKit✔️✔️:             d_bondType.begin() + (bounds.first - d_jAtomType.begin()),
         // RDKit✔️✔️:             d_bondType.begin() + (bounds.second - d_jAtomType.begin()),
         // RDKit✔️✔️:             bondType);
-        let Some((bond_begin, _bond_end)) =
-            equal_range_u8(&self.bond_type, j_begin, j_end, bond_type)
+        let Some((bond_begin, _bond_end)) = equal_range_u8(bond_types, j_begin, j_end, bond_type)
         else {
             return (sign, None);
         };
@@ -621,18 +744,26 @@ impl MmffChgCollection {
         // RDKit✔️✔️:
         // RDKit✔️✔️:     return std::make_pair(sign, mmffChgParams);
         // RDKit✔️✔️:   }
-        (sign, self.params.get(bond_begin))
+        (sign, params.get(bond_begin))
     }
 }
 
 /// MMFF bond-stretching parameter collection.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MmffBondCollection {
-    source_mmff_bond: String,
-    params: Vec<MmffBond>,
-    bond_type: Vec<u8>,
-    i_atom_type: Vec<u8>,
-    j_atom_type: Vec<u8>,
+    source_mmff_bond: Cow<'static, str>,
+    params: MmffBondStorage,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum MmffBondStorage {
+    Static(&'static [(u8, u8, u8, MmffBond)]),
+    Owned {
+        params: Vec<MmffBond>,
+        bond_type: Vec<u8>,
+        i_atom_type: Vec<u8>,
+        j_atom_type: Vec<u8>,
+    },
 }
 
 impl MmffBondCollection {
@@ -642,30 +773,43 @@ impl MmffBondCollection {
         // RDKit✔️✔️:     mmffBond = defaultMMFFBond;
         // RDKit✔️✔️:   }
         let source_mmff_bond = if mmff_bond.is_empty() {
-            default_mmff_bond()?.to_owned()
+            Cow::Borrowed(default_mmff_bond()?)
         } else {
-            mmff_bond.to_owned()
+            Cow::Owned(mmff_bond.to_owned())
         };
-        let parsed = parse_mmff_bond(&source_mmff_bond)?;
+        let params = if mmff_bond.is_empty() {
+            MmffBondStorage::Static(DEFAULT_MMFF_BOND_ROWS)
+        } else {
+            let parsed = parse_mmff_bond(source_mmff_bond.as_ref())?;
+            MmffBondStorage::Owned {
+                params: parsed.params,
+                bond_type: parsed.bond_type,
+                i_atom_type: parsed.i_atom_type,
+                j_atom_type: parsed.j_atom_type,
+            }
+        };
         Ok(Self {
             source_mmff_bond,
-            params: parsed.params,
-            bond_type: parsed.bond_type,
-            i_atom_type: parsed.i_atom_type,
-            j_atom_type: parsed.j_atom_type,
+            params,
         })
     }
 
     pub fn source_mmff_bond(&self) -> &str {
-        &self.source_mmff_bond
+        self.source_mmff_bond.as_ref()
     }
 
     pub fn len(&self) -> usize {
-        self.params.len()
+        match &self.params {
+            MmffBondStorage::Static(params) => params.len(),
+            MmffBondStorage::Owned { params, .. } => params.len(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.params.is_empty()
+        match &self.params {
+            MmffBondStorage::Static(params) => params.is_empty(),
+            MmffBondStorage::Owned { params, .. } => params.is_empty(),
+        }
     }
 
     pub fn get(&self, bond_type: u32, atom_type: u32, nbr_atom_type: u32) -> Option<&MmffBond> {
@@ -686,6 +830,28 @@ impl MmffBondCollection {
             can_nbr_atom_type = atom_type;
         }
 
+        if let MmffBondStorage::Static(params) = &self.params {
+            let key = (
+                bond_type as u8,
+                can_atom_type as u8,
+                can_nbr_atom_type as u8,
+            );
+            return params
+                .binary_search_by_key(&key, |(bond, atom, nbr_atom, _)| (*bond, *atom, *nbr_atom))
+                .ok()
+                .map(|idx| &params[idx].3);
+        }
+
+        let MmffBondStorage::Owned {
+            params,
+            bond_type: bond_types,
+            i_atom_type: i_atom_types,
+            j_atom_type: j_atom_types,
+        } = &self.params
+        else {
+            unreachable!("static MMFFBond storage returned above")
+        };
+
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:     const auto res1 = d_params.find(bondType);
         // RDKit❌❌:     std::map<const unsigned int,
@@ -703,23 +869,21 @@ impl MmffBondCollection {
         // RDKit✔️✔️: #else
         // RDKit✔️✔️:     auto bounds =
         // RDKit✔️✔️:         std::equal_range(d_iAtomType.begin(), d_iAtomType.end(), canAtomType);
-        let (i_begin, i_end) =
-            equal_range_u8(&self.i_atom_type, 0, self.i_atom_type.len(), can_atom_type)?;
+        let (i_begin, i_end) = equal_range_u8(i_atom_types, 0, i_atom_types.len(), can_atom_type)?;
 
         // RDKit✔️✔️:     if (bounds.first != bounds.second) {
         // RDKit✔️✔️:       bounds = std::equal_range(
         // RDKit✔️✔️:           d_jAtomType.begin() + (bounds.first - d_iAtomType.begin()),
         // RDKit✔️✔️:           d_jAtomType.begin() + (bounds.second - d_iAtomType.begin()),
         // RDKit✔️✔️:           canNbrAtomType);
-        let (j_begin, j_end) =
-            equal_range_u8(&self.j_atom_type, i_begin, i_end, can_nbr_atom_type)?;
+        let (j_begin, j_end) = equal_range_u8(j_atom_types, i_begin, i_end, can_nbr_atom_type)?;
 
         // RDKit✔️✔️:       if (bounds.first != bounds.second) {
         // RDKit✔️✔️:         bounds = std::equal_range(
         // RDKit✔️✔️:             d_bondType.begin() + (bounds.first - d_jAtomType.begin()),
         // RDKit✔️✔️:             d_bondType.begin() + (bounds.second - d_jAtomType.begin()),
         // RDKit✔️✔️:             bondType);
-        let (bond_begin, _bond_end) = equal_range_u8(&self.bond_type, j_begin, j_end, bond_type)?;
+        let (bond_begin, _bond_end) = equal_range_u8(bond_types, j_begin, j_end, bond_type)?;
 
         // RDKit✔️✔️:         if (bounds.first != bounds.second) {
         // RDKit✔️✔️:           mmffBondParams = &d_params[bounds.first - d_bondType.begin()];
@@ -730,19 +894,27 @@ impl MmffBondCollection {
         // RDKit✔️✔️:
         // RDKit✔️✔️:     return mmffBondParams;
         // RDKit✔️✔️:   }
-        self.params.get(bond_begin)
+        params.get(bond_begin)
     }
 }
 
 /// MMFF angle-bending parameter collection.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MmffAngleCollection {
-    source_mmff_angle: String,
-    params: Vec<MmffAngle>,
-    angle_type: Vec<u8>,
-    i_atom_type: Vec<u8>,
-    j_atom_type: Vec<u8>,
-    k_atom_type: Vec<u8>,
+    source_mmff_angle: Cow<'static, str>,
+    params: MmffAngleStorage,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum MmffAngleStorage {
+    Static(&'static [(u8, u8, u8, u8, MmffAngle)]),
+    Owned {
+        params: Vec<MmffAngle>,
+        angle_type: Vec<u8>,
+        i_atom_type: Vec<u8>,
+        j_atom_type: Vec<u8>,
+        k_atom_type: Vec<u8>,
+    },
 }
 
 impl MmffAngleCollection {
@@ -756,31 +928,44 @@ impl MmffAngleCollection {
         // RDKit✔️✔️:     }
         // RDKit✔️✔️:   }
         let source_mmff_angle = if mmff_angle.is_empty() {
-            default_mmff_angle()?.to_owned()
+            Cow::Borrowed(default_mmff_angle()?)
         } else {
-            mmff_angle.to_owned()
+            Cow::Owned(mmff_angle.to_owned())
         };
-        let parsed = parse_mmff_angle(&source_mmff_angle)?;
+        let params = if mmff_angle.is_empty() {
+            MmffAngleStorage::Static(DEFAULT_MMFF_ANGLE_ROWS)
+        } else {
+            let parsed = parse_mmff_angle(source_mmff_angle.as_ref())?;
+            MmffAngleStorage::Owned {
+                params: parsed.params,
+                angle_type: parsed.angle_type,
+                i_atom_type: parsed.i_atom_type,
+                j_atom_type: parsed.j_atom_type,
+                k_atom_type: parsed.k_atom_type,
+            }
+        };
         Ok(Self {
             source_mmff_angle,
-            params: parsed.params,
-            angle_type: parsed.angle_type,
-            i_atom_type: parsed.i_atom_type,
-            j_atom_type: parsed.j_atom_type,
-            k_atom_type: parsed.k_atom_type,
+            params,
         })
     }
 
     pub fn source_mmff_angle(&self) -> &str {
-        &self.source_mmff_angle
+        self.source_mmff_angle.as_ref()
     }
 
     pub fn len(&self) -> usize {
-        self.params.len()
+        match &self.params {
+            MmffAngleStorage::Static(params) => params.len(),
+            MmffAngleStorage::Owned { params, .. } => params.len(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.params.is_empty()
+        match &self.params {
+            MmffAngleStorage::Static(params) => params.is_empty(),
+            MmffAngleStorage::Owned { params, .. } => params.is_empty(),
+        }
     }
 
     pub fn get(
@@ -799,6 +984,42 @@ impl MmffAngleCollection {
         // RDKit✔️✔️:     const MMFFAngle *mmffAngleParams = nullptr;
         // RDKit✔️✔️:     unsigned int iter = 0;
         let mut iter = 0_usize;
+
+        if let MmffAngleStorage::Static(params) = &self.params {
+            let i_def = mmff_def.get(i_atom_type)?;
+            let k_def = mmff_def.get(k_atom_type)?;
+            while iter < 4 {
+                let mut can_i_atom_type = u32::from(i_def.eq_level[iter]);
+                let mut can_k_atom_type = u32::from(k_def.eq_level[iter]);
+                if can_i_atom_type > can_k_atom_type {
+                    std::mem::swap(&mut can_i_atom_type, &mut can_k_atom_type);
+                }
+                let key = (
+                    angle_type as u8,
+                    can_i_atom_type as u8,
+                    j_atom_type as u8,
+                    can_k_atom_type as u8,
+                );
+                if let Ok(idx) =
+                    params.binary_search_by_key(&key, |(angle, i, j, k, _)| (*angle, *i, *j, *k))
+                {
+                    return Some(&params[idx].4);
+                }
+                iter += 1;
+            }
+            return None;
+        }
+
+        let MmffAngleStorage::Owned {
+            params,
+            angle_type: angle_types,
+            i_atom_type: i_atom_types,
+            j_atom_type: j_atom_types,
+            k_atom_type: k_atom_types,
+        } = &self.params
+        else {
+            unreachable!("static MMFFAngle storage returned above")
+        };
 
         // RDKit✔️✔️: // For bending of the i-j-k angle, a five-stage process based
         // RDKit✔️✔️: // in the level combinations 1-1-1,2-2-2,3-2-3,4-2-4, and
@@ -829,8 +1050,7 @@ impl MmffAngleCollection {
         // RDKit✔️✔️: #else
         // RDKit✔️✔️:     auto jBounds =
         // RDKit✔️✔️:         std::equal_range(d_jAtomType.begin(), d_jAtomType.end(), jAtomType);
-        let (j_begin, j_end) =
-            equal_range_u8(&self.j_atom_type, 0, self.j_atom_type.len(), j_atom_type)?;
+        let (j_begin, j_end) = equal_range_u8(j_atom_types, 0, j_atom_types.len(), j_atom_type)?;
 
         let i_def = mmff_def.get(i_atom_type)?;
         let k_def = mmff_def.get(k_atom_type)?;
@@ -854,7 +1074,7 @@ impl MmffAngleCollection {
             // RDKit✔️✔️:             d_iAtomType.begin() + (jBounds.second - d_jAtomType.begin()),
             // RDKit✔️✔️:             canIAtomType);
             if let Some((i_begin, i_end)) =
-                equal_range_u8(&self.i_atom_type, j_begin, j_end, can_i_atom_type)
+                equal_range_u8(i_atom_types, j_begin, j_end, can_i_atom_type)
             {
                 // RDKit✔️✔️:         if (bounds.first != bounds.second) {
                 // RDKit✔️✔️:           bounds = std::equal_range(
@@ -862,7 +1082,7 @@ impl MmffAngleCollection {
                 // RDKit✔️✔️:               d_kAtomType.begin() + (bounds.second - d_iAtomType.begin()),
                 // RDKit✔️✔️:               canKAtomType);
                 if let Some((k_begin, k_end)) =
-                    equal_range_u8(&self.k_atom_type, i_begin, i_end, can_k_atom_type)
+                    equal_range_u8(k_atom_types, i_begin, i_end, can_k_atom_type)
                 {
                     // RDKit✔️✔️:           if (bounds.first != bounds.second) {
                     // RDKit✔️✔️:             bounds = std::equal_range(
@@ -870,7 +1090,7 @@ impl MmffAngleCollection {
                     // RDKit✔️✔️:                 d_angleType.begin() + (bounds.second - d_kAtomType.begin()),
                     // RDKit✔️✔️:                 angleType);
                     if let Some((angle_begin, _angle_end)) =
-                        equal_range_u8(&self.angle_type, k_begin, k_end, angle_type)
+                        equal_range_u8(angle_types, k_begin, k_end, angle_type)
                     {
                         // RDKit✔️✔️:             if (bounds.first != bounds.second) {
                         // RDKit✔️✔️:               mmffAngleParams = &d_params[bounds.first - d_angleType.begin()];
@@ -884,7 +1104,7 @@ impl MmffAngleCollection {
                         // RDKit✔️✔️:
                         // RDKit✔️✔️:     return mmffAngleParams;
                         // RDKit✔️✔️:   }
-                        return self.params.get(angle_begin);
+                        return params.get(angle_begin);
                     }
                 }
             }
@@ -897,12 +1117,20 @@ impl MmffAngleCollection {
 /// MMFF stretch-bend parameter collection.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MmffStbnCollection {
-    source_mmff_stbn: String,
-    params: Vec<MmffStbn>,
-    stretch_bend_type: Vec<u8>,
-    i_atom_type: Vec<u8>,
-    j_atom_type: Vec<u8>,
-    k_atom_type: Vec<u8>,
+    source_mmff_stbn: Cow<'static, str>,
+    params: MmffStbnStorage,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum MmffStbnStorage {
+    Static(&'static [(u8, u8, u8, u8, MmffStbn)]),
+    Owned {
+        params: Vec<MmffStbn>,
+        stretch_bend_type: Vec<u8>,
+        i_atom_type: Vec<u8>,
+        j_atom_type: Vec<u8>,
+        k_atom_type: Vec<u8>,
+    },
 }
 
 impl MmffStbnCollection {
@@ -912,31 +1140,44 @@ impl MmffStbnCollection {
         // RDKit✔️✔️:     mmffStbn = defaultMMFFStbn;
         // RDKit✔️✔️:   }
         let source_mmff_stbn = if mmff_stbn.is_empty() {
-            default_mmff_stbn()?.to_owned()
+            Cow::Borrowed(default_mmff_stbn()?)
         } else {
-            mmff_stbn.to_owned()
+            Cow::Owned(mmff_stbn.to_owned())
         };
-        let parsed = parse_mmff_stbn(&source_mmff_stbn)?;
+        let params = if mmff_stbn.is_empty() {
+            MmffStbnStorage::Static(DEFAULT_MMFF_STBN_ROWS)
+        } else {
+            let parsed = parse_mmff_stbn(source_mmff_stbn.as_ref())?;
+            MmffStbnStorage::Owned {
+                params: parsed.params,
+                stretch_bend_type: parsed.stretch_bend_type,
+                i_atom_type: parsed.i_atom_type,
+                j_atom_type: parsed.j_atom_type,
+                k_atom_type: parsed.k_atom_type,
+            }
+        };
         Ok(Self {
             source_mmff_stbn,
-            params: parsed.params,
-            stretch_bend_type: parsed.stretch_bend_type,
-            i_atom_type: parsed.i_atom_type,
-            j_atom_type: parsed.j_atom_type,
-            k_atom_type: parsed.k_atom_type,
+            params,
         })
     }
 
     pub fn source_mmff_stbn(&self) -> &str {
-        &self.source_mmff_stbn
+        self.source_mmff_stbn.as_ref()
     }
 
     pub fn len(&self) -> usize {
-        self.params.len()
+        match &self.params {
+            MmffStbnStorage::Static(params) => params.len(),
+            MmffStbnStorage::Owned { params, .. } => params.len(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.params.is_empty()
+        match &self.params {
+            MmffStbnStorage::Static(params) => params.is_empty(),
+            MmffStbnStorage::Owned { params, .. } => params.is_empty(),
+        }
     }
 
     pub fn get_mmff_stbn_params(
@@ -977,6 +1218,31 @@ impl MmffStbnCollection {
             swap = bond_type1 < bond_type2;
         }
 
+        if let MmffStbnStorage::Static(params) = &self.params {
+            let key = (
+                can_stretch_bend_type as u8,
+                can_i_atom_type as u8,
+                j_atom_type as u8,
+                can_k_atom_type as u8,
+            );
+            let param = params
+                .binary_search_by_key(&key, |(stbn, i, j, k, _)| (*stbn, *i, *j, *k))
+                .ok()
+                .map(|idx| &params[idx].4);
+            return (swap, param);
+        }
+
+        let MmffStbnStorage::Owned {
+            params,
+            stretch_bend_type: stretch_bend_types,
+            i_atom_type: i_atom_types,
+            j_atom_type: j_atom_types,
+            k_atom_type: k_atom_types,
+        } = &self.params
+        else {
+            unreachable!("static MMFFStbn storage returned above")
+        };
+
         // RDKit✔️✔️: #ifdef RDKIT_MMFF_PARAMS_USE_STD_MAP
         // RDKit❌❌:     const auto res1 = d_params.find(canStretchBendType);
         // RDKit❌❌:     if (res1 != d_params.end()) {
@@ -995,7 +1261,7 @@ impl MmffStbnCollection {
         // RDKit✔️✔️:     auto jBounds =
         // RDKit✔️✔️:         std::equal_range(d_jAtomType.begin(), d_jAtomType.end(), jAtomType);
         let Some((j_begin, j_end)) =
-            equal_range_u8(&self.j_atom_type, 0, self.j_atom_type.len(), j_atom_type)
+            equal_range_u8(j_atom_types, 0, j_atom_types.len(), j_atom_type)
         else {
             // RDKit✔️✔️:     return std::make_pair(swap, mmffStbnParams);
             return (swap, None);
@@ -1006,8 +1272,7 @@ impl MmffStbnCollection {
         // RDKit✔️✔️:           d_iAtomType.begin() + (jBounds.first - d_jAtomType.begin()),
         // RDKit✔️✔️:           d_iAtomType.begin() + (jBounds.second - d_jAtomType.begin()),
         // RDKit✔️✔️:           canIAtomType);
-        let Some((i_begin, i_end)) =
-            equal_range_u8(&self.i_atom_type, j_begin, j_end, can_i_atom_type)
+        let Some((i_begin, i_end)) = equal_range_u8(i_atom_types, j_begin, j_end, can_i_atom_type)
         else {
             return (swap, None);
         };
@@ -1017,8 +1282,7 @@ impl MmffStbnCollection {
         // RDKit✔️✔️:             d_kAtomType.begin() + (bounds.first - d_iAtomType.begin()),
         // RDKit✔️✔️:             d_kAtomType.begin() + (bounds.second - d_iAtomType.begin()),
         // RDKit✔️✔️:             canKAtomType);
-        let Some((k_begin, k_end)) =
-            equal_range_u8(&self.k_atom_type, i_begin, i_end, can_k_atom_type)
+        let Some((k_begin, k_end)) = equal_range_u8(k_atom_types, i_begin, i_end, can_k_atom_type)
         else {
             return (swap, None);
         };
@@ -1028,12 +1292,9 @@ impl MmffStbnCollection {
         // RDKit✔️✔️:               d_stretchBendType.begin() + (bounds.first - d_kAtomType.begin()),
         // RDKit✔️✔️:               d_stretchBendType.begin() + (bounds.second - d_kAtomType.begin()),
         // RDKit✔️✔️:               canStretchBendType);
-        let Some((stbn_begin, _stbn_end)) = equal_range_u8(
-            &self.stretch_bend_type,
-            k_begin,
-            k_end,
-            can_stretch_bend_type,
-        ) else {
+        let Some((stbn_begin, _stbn_end)) =
+            equal_range_u8(stretch_bend_types, k_begin, k_end, can_stretch_bend_type)
+        else {
             return (swap, None);
         };
 
@@ -1048,15 +1309,21 @@ impl MmffStbnCollection {
         // RDKit✔️✔️:
         // RDKit✔️✔️:     return std::make_pair(swap, mmffStbnParams);
         // RDKit✔️✔️:   }
-        (swap, self.params.get(stbn_begin))
+        (swap, params.get(stbn_begin))
     }
 }
 
 /// MMFF default stretch-bend parameter collection.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MmffDfsbCollection {
-    source_mmff_dfsb: String,
-    params: BTreeMap<u32, BTreeMap<u32, BTreeMap<u32, MmffStbn>>>,
+    source_mmff_dfsb: Cow<'static, str>,
+    params: MmffDfsbStorage,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum MmffDfsbStorage {
+    Static(&'static [(u32, u32, u32, MmffStbn)]),
+    Owned(BTreeMap<u32, BTreeMap<u32, BTreeMap<u32, MmffStbn>>>),
 }
 
 impl MmffDfsbCollection {
@@ -1066,11 +1333,15 @@ impl MmffDfsbCollection {
         // RDKit✔️✔️:     mmffDfsb = defaultMMFFDfsb;
         // RDKit✔️✔️:   }
         let source_mmff_dfsb = if mmff_dfsb.is_empty() {
-            default_mmff_dfsb()?.to_owned()
+            Cow::Borrowed(default_mmff_dfsb()?)
         } else {
-            mmff_dfsb.to_owned()
+            Cow::Owned(mmff_dfsb.to_owned())
         };
-        let params = parse_mmff_dfsb(&source_mmff_dfsb)?;
+        let params = if mmff_dfsb.is_empty() {
+            MmffDfsbStorage::Static(DEFAULT_MMFF_DFSB_ROWS)
+        } else {
+            MmffDfsbStorage::Owned(parse_mmff_dfsb(source_mmff_dfsb.as_ref())?)
+        };
         Ok(Self {
             source_mmff_dfsb,
             params,
@@ -1078,18 +1349,24 @@ impl MmffDfsbCollection {
     }
 
     pub fn source_mmff_dfsb(&self) -> &str {
-        &self.source_mmff_dfsb
+        self.source_mmff_dfsb.as_ref()
     }
 
     pub fn len(&self) -> usize {
-        self.params
-            .values()
-            .map(|row2| row2.values().map(BTreeMap::len).sum::<usize>())
-            .sum()
+        match &self.params {
+            MmffDfsbStorage::Static(params) => params.len(),
+            MmffDfsbStorage::Owned(params) => params
+                .values()
+                .map(|row2| row2.values().map(BTreeMap::len).sum::<usize>())
+                .sum(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.params.is_empty()
+        match &self.params {
+            MmffDfsbStorage::Static(params) => params.is_empty(),
+            MmffDfsbStorage::Owned(params) => params.is_empty(),
+        }
     }
 
     pub fn get_mmff_dfsb_params(
@@ -1134,25 +1411,44 @@ impl MmffDfsbCollection {
         // RDKit✔️✔️:
         // RDKit✔️✔️:     return std::make_pair(swap, mmffDfsbParams);
         // RDKit✔️✔️:   }
-        (
-            swap,
-            self.params
+        let params = match &self.params {
+            MmffDfsbStorage::Static(params) => params
+                .binary_search_by_key(
+                    &(
+                        can_periodic_table_row1,
+                        periodic_table_row2,
+                        can_periodic_table_row3,
+                    ),
+                    |(row1, row2, row3, _)| (*row1, *row2, *row3),
+                )
+                .ok()
+                .map(|idx| &params[idx].3),
+            MmffDfsbStorage::Owned(params) => params
                 .get(&can_periodic_table_row1)
                 .and_then(|row2| row2.get(&periodic_table_row2))
                 .and_then(|row3| row3.get(&can_periodic_table_row3)),
-        )
+        };
+        (swap, params)
     }
 }
 
 /// MMFF out-of-plane bending parameter collection.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MmffOopCollection {
-    source_mmff_oop: String,
-    params: Vec<MmffOop>,
-    i_atom_type: Vec<u8>,
-    j_atom_type: Vec<u8>,
-    k_atom_type: Vec<u8>,
-    l_atom_type: Vec<u8>,
+    source_mmff_oop: Cow<'static, str>,
+    params: MmffOopStorage,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum MmffOopStorage {
+    Static(&'static [(u8, u8, u8, u8, MmffOop)]),
+    Owned {
+        params: Vec<MmffOop>,
+        i_atom_type: Vec<u8>,
+        j_atom_type: Vec<u8>,
+        k_atom_type: Vec<u8>,
+        l_atom_type: Vec<u8>,
+    },
 }
 
 impl MmffOopCollection {
@@ -1163,34 +1459,51 @@ impl MmffOopCollection {
         // RDKit✔️✔️:   }
         let source_mmff_oop = if mmff_oop.is_empty() {
             if is_mmffs {
-                default_mmffs_oop()?.to_owned()
+                Cow::Borrowed(default_mmffs_oop()?)
             } else {
-                default_mmff_oop()?.to_owned()
+                Cow::Borrowed(default_mmff_oop()?)
             }
         } else {
-            mmff_oop.to_owned()
+            Cow::Owned(mmff_oop.to_owned())
         };
-        let parsed = parse_mmff_oop(&source_mmff_oop)?;
+        let params = if mmff_oop.is_empty() {
+            if is_mmffs {
+                MmffOopStorage::Static(DEFAULT_MMFFS_OOP_ROWS)
+            } else {
+                MmffOopStorage::Static(DEFAULT_MMFF_OOP_ROWS)
+            }
+        } else {
+            let parsed = parse_mmff_oop(source_mmff_oop.as_ref())?;
+            MmffOopStorage::Owned {
+                params: parsed.params,
+                i_atom_type: parsed.i_atom_type,
+                j_atom_type: parsed.j_atom_type,
+                k_atom_type: parsed.k_atom_type,
+                l_atom_type: parsed.l_atom_type,
+            }
+        };
         Ok(Self {
             source_mmff_oop,
-            params: parsed.params,
-            i_atom_type: parsed.i_atom_type,
-            j_atom_type: parsed.j_atom_type,
-            k_atom_type: parsed.k_atom_type,
-            l_atom_type: parsed.l_atom_type,
+            params,
         })
     }
 
     pub fn source_mmff_oop(&self) -> &str {
-        &self.source_mmff_oop
+        self.source_mmff_oop.as_ref()
     }
 
     pub fn len(&self) -> usize {
-        self.params.len()
+        match &self.params {
+            MmffOopStorage::Static(params) => params.len(),
+            MmffOopStorage::Owned { params, .. } => params.len(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.params.is_empty()
+        match &self.params {
+            MmffOopStorage::Static(params) => params.is_empty(),
+            MmffOopStorage::Owned { params, .. } => params.is_empty(),
+        }
     }
 
     pub fn get_mmff_oop_params(
@@ -1225,8 +1538,43 @@ impl MmffOopCollection {
         // RDKit✔️✔️: #else
         // RDKit✔️✔️:     auto jBounds =
         // RDKit✔️✔️:         std::equal_range(d_jAtomType.begin(), d_jAtomType.end(), jAtomType);
-        let (j_begin, j_end) =
-            equal_range_u8(&self.j_atom_type, 0, self.j_atom_type.len(), j_atom_type)?;
+        if let MmffOopStorage::Static(params) = &self.params {
+            let mut iter = 0_usize;
+            while iter < 4 {
+                let mut can_ikl_atom_type = [
+                    u32::from(mmff_def.get(i_atom_type)?.eq_level[iter]),
+                    u32::from(mmff_def.get(k_atom_type)?.eq_level[iter]),
+                    u32::from(mmff_def.get(l_atom_type)?.eq_level[iter]),
+                ];
+                can_ikl_atom_type.sort_unstable();
+                let key = (
+                    can_ikl_atom_type[0] as u8,
+                    j_atom_type as u8,
+                    can_ikl_atom_type[1] as u8,
+                    can_ikl_atom_type[2] as u8,
+                );
+                if let Ok(idx) =
+                    params.binary_search_by_key(&key, |(i, j, k, l, _)| (*i, *j, *k, *l))
+                {
+                    return Some(&params[idx].4);
+                }
+                iter += 1;
+            }
+            return None;
+        }
+
+        let MmffOopStorage::Owned {
+            params,
+            i_atom_type: i_atom_types,
+            j_atom_type: j_atom_types,
+            k_atom_type: k_atom_types,
+            l_atom_type: l_atom_types,
+        } = &self.params
+        else {
+            unreachable!("static MMFFOop storage returned above")
+        };
+
+        let (j_begin, j_end) = equal_range_u8(j_atom_types, 0, j_atom_types.len(), j_atom_type)?;
 
         // RDKit✔️✔️:     if (jBounds.first != jBounds.second) {
         // RDKit✔️✔️:       while ((iter < 4) && (!mmffOopParams)) {
@@ -1248,7 +1596,7 @@ impl MmffOopCollection {
             // RDKit✔️✔️:             d_iAtomType.begin() + (jBounds.second - d_jAtomType.begin()),
             // RDKit✔️✔️:             canIKLAtomType[0]);
             if let Some((i_begin, i_end)) =
-                equal_range_u8(&self.i_atom_type, j_begin, j_end, can_ikl_atom_type[0])
+                equal_range_u8(i_atom_types, j_begin, j_end, can_ikl_atom_type[0])
             {
                 // RDKit✔️✔️:         if (bounds.first != bounds.second) {
                 // RDKit✔️✔️:           bounds = std::equal_range(
@@ -1256,7 +1604,7 @@ impl MmffOopCollection {
                 // RDKit✔️✔️:               d_kAtomType.begin() + (bounds.second - d_iAtomType.begin()),
                 // RDKit✔️✔️:               canIKLAtomType[1]);
                 if let Some((k_begin, k_end)) =
-                    equal_range_u8(&self.k_atom_type, i_begin, i_end, can_ikl_atom_type[1])
+                    equal_range_u8(k_atom_types, i_begin, i_end, can_ikl_atom_type[1])
                 {
                     // RDKit✔️✔️:           if (bounds.first != bounds.second) {
                     // RDKit✔️✔️:             bounds = std::equal_range(
@@ -1264,12 +1612,12 @@ impl MmffOopCollection {
                     // RDKit✔️✔️:                 d_lAtomType.begin() + (bounds.second - d_kAtomType.begin()),
                     // RDKit✔️✔️:                 canIKLAtomType[2]);
                     if let Some((l_begin, _l_end)) =
-                        equal_range_u8(&self.l_atom_type, k_begin, k_end, can_ikl_atom_type[2])
+                        equal_range_u8(l_atom_types, k_begin, k_end, can_ikl_atom_type[2])
                     {
                         // RDKit✔️✔️:             if (bounds.first != bounds.second) {
                         // RDKit✔️✔️:               mmffOopParams = &d_params[bounds.first - d_lAtomType.begin()];
                         // RDKit✔️✔️:             }
-                        return self.params.get(l_begin);
+                        return params.get(l_begin);
                     }
                     // RDKit✔️✔️:           }
                 }
@@ -1292,13 +1640,21 @@ impl MmffOopCollection {
 /// MMFF torsion parameter collection.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MmffTorCollection {
-    source_mmff_tor: String,
-    params: Vec<MmffTor>,
-    tor_type: Vec<u8>,
-    i_atom_type: Vec<u8>,
-    j_atom_type: Vec<u8>,
-    k_atom_type: Vec<u8>,
-    l_atom_type: Vec<u8>,
+    source_mmff_tor: Cow<'static, str>,
+    params: MmffTorStorage,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum MmffTorStorage {
+    Static(&'static [(u8, u8, u8, u8, u8, MmffTor)]),
+    Owned {
+        params: Vec<MmffTor>,
+        tor_type: Vec<u8>,
+        i_atom_type: Vec<u8>,
+        j_atom_type: Vec<u8>,
+        k_atom_type: Vec<u8>,
+        l_atom_type: Vec<u8>,
+    },
 }
 
 impl MmffTorCollection {
@@ -1309,35 +1665,52 @@ impl MmffTorCollection {
         // RDKit✔️✔️:   }
         let source_mmff_tor = if mmff_tor.is_empty() {
             if is_mmffs {
-                default_mmffs_tor()?.to_owned()
+                Cow::Borrowed(default_mmffs_tor()?)
             } else {
-                default_mmff_tor()?.to_owned()
+                Cow::Borrowed(default_mmff_tor()?)
             }
         } else {
-            mmff_tor.to_owned()
+            Cow::Owned(mmff_tor.to_owned())
         };
-        let parsed = parse_mmff_tor(&source_mmff_tor)?;
+        let params = if mmff_tor.is_empty() {
+            if is_mmffs {
+                MmffTorStorage::Static(DEFAULT_MMFFS_TOR_ROWS)
+            } else {
+                MmffTorStorage::Static(DEFAULT_MMFF_TOR_ROWS)
+            }
+        } else {
+            let parsed = parse_mmff_tor(source_mmff_tor.as_ref())?;
+            MmffTorStorage::Owned {
+                params: parsed.params,
+                tor_type: parsed.tor_type,
+                i_atom_type: parsed.i_atom_type,
+                j_atom_type: parsed.j_atom_type,
+                k_atom_type: parsed.k_atom_type,
+                l_atom_type: parsed.l_atom_type,
+            }
+        };
         Ok(Self {
             source_mmff_tor,
-            params: parsed.params,
-            tor_type: parsed.tor_type,
-            i_atom_type: parsed.i_atom_type,
-            j_atom_type: parsed.j_atom_type,
-            k_atom_type: parsed.k_atom_type,
-            l_atom_type: parsed.l_atom_type,
+            params,
         })
     }
 
     pub fn source_mmff_tor(&self) -> &str {
-        &self.source_mmff_tor
+        self.source_mmff_tor.as_ref()
     }
 
     pub fn len(&self) -> usize {
-        self.params.len()
+        match &self.params {
+            MmffTorStorage::Static(params) => params.len(),
+            MmffTorStorage::Owned { params, .. } => params.len(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.params.is_empty()
+        match &self.params {
+            MmffTorStorage::Static(params) => params.is_empty(),
+            MmffTorStorage::Owned { params, .. } => params.is_empty(),
+        }
     }
 
     pub fn get_mmff_tor_params(
@@ -1360,6 +1733,78 @@ impl MmffTorCollection {
         // RDKit✔️✔️:     unsigned int lWildCard = 0;
         // RDKit✔️✔️:     unsigned int canTorType = torType.first;
         // RDKit✔️✔️:     unsigned int maxIter = 5;
+        if let MmffTorStorage::Static(params) = &self.params {
+            let mut mmff_tor_params = None;
+            let mut iter = 0_usize;
+            let mut can_tor_type = tor_type.0;
+            let mut max_iter = 5_usize;
+            while ((iter < max_iter) && (mmff_tor_params.is_none() || max_iter == 4))
+                || ((iter == 4) && (tor_type.0 == 5) && (tor_type.1 != 0))
+            {
+                if (max_iter == 5) && (iter == 4) {
+                    max_iter = 4;
+                    iter = 0;
+                    can_tor_type = tor_type.1;
+                }
+                let mut i_wild_card = iter;
+                let mut l_wild_card = iter;
+                if iter == 1 {
+                    i_wild_card = 1;
+                    l_wild_card = 3;
+                } else if iter == 2 {
+                    i_wild_card = 3;
+                    l_wild_card = 1;
+                }
+                let Some(i_def) = mmff_def.get(i_atom_type) else {
+                    return (can_tor_type, None);
+                };
+                let Some(l_def) = mmff_def.get(l_atom_type) else {
+                    return (can_tor_type, None);
+                };
+                let mut can_i_atom_type = u32::from(i_def.eq_level[i_wild_card]);
+                let mut can_j_atom_type = j_atom_type;
+                let mut can_k_atom_type = k_atom_type;
+                let mut can_l_atom_type = u32::from(l_def.eq_level[l_wild_card]);
+                if can_j_atom_type > can_k_atom_type {
+                    std::mem::swap(&mut can_j_atom_type, &mut can_k_atom_type);
+                    std::mem::swap(&mut can_i_atom_type, &mut can_l_atom_type);
+                } else if (can_j_atom_type == can_k_atom_type)
+                    && (can_i_atom_type > can_l_atom_type)
+                {
+                    std::mem::swap(&mut can_i_atom_type, &mut can_l_atom_type);
+                }
+                let key = (
+                    can_tor_type as u8,
+                    can_i_atom_type as u8,
+                    can_j_atom_type as u8,
+                    can_k_atom_type as u8,
+                    can_l_atom_type as u8,
+                );
+                if let Ok(idx) =
+                    params.binary_search_by_key(&key, |(tor, i, j, k, l, _)| (*tor, *i, *j, *k, *l))
+                {
+                    mmff_tor_params = Some(&params[idx].5);
+                    if max_iter == 4 {
+                        break;
+                    }
+                }
+                iter += 1;
+            }
+            return (can_tor_type, mmff_tor_params);
+        }
+
+        let MmffTorStorage::Owned {
+            params,
+            tor_type: tor_types,
+            i_atom_type: i_atom_types,
+            j_atom_type: j_atom_types,
+            k_atom_type: k_atom_types,
+            l_atom_type: l_atom_types,
+        } = &self.params
+        else {
+            unreachable!("static MMFFTor storage returned above")
+        };
+
         let mut mmff_tor_params = None;
         let mut iter = 0_usize;
         let mut can_tor_type = tor_type.0;
@@ -1467,19 +1912,16 @@ impl MmffTorCollection {
             // RDKit✔️✔️: #else
             // RDKit✔️✔️:       auto jBounds = std::equal_range(d_jAtomType.begin(), d_jAtomType.end(),
             // RDKit✔️✔️:                                       canJAtomType);
-            if let Some((j_begin, j_end)) = equal_range_u8(
-                &self.j_atom_type,
-                0,
-                self.j_atom_type.len(),
-                can_j_atom_type,
-            ) {
+            if let Some((j_begin, j_end)) =
+                equal_range_u8(j_atom_types, 0, j_atom_types.len(), can_j_atom_type)
+            {
                 // RDKit✔️✔️:       if (jBounds.first != jBounds.second) {
                 // RDKit✔️✔️:         auto bounds = std::equal_range(
                 // RDKit✔️✔️:             d_kAtomType.begin() + (jBounds.first - d_jAtomType.begin()),
                 // RDKit✔️✔️:             d_kAtomType.begin() + (jBounds.second - d_jAtomType.begin()),
                 // RDKit✔️✔️:             canKAtomType);
                 if let Some((k_begin, k_end)) =
-                    equal_range_u8(&self.k_atom_type, j_begin, j_end, can_k_atom_type)
+                    equal_range_u8(k_atom_types, j_begin, j_end, can_k_atom_type)
                 {
                     // RDKit✔️✔️:         if (bounds.first != bounds.second) {
                     // RDKit✔️✔️:           bounds = std::equal_range(
@@ -1487,7 +1929,7 @@ impl MmffTorCollection {
                     // RDKit✔️✔️:               d_iAtomType.begin() + (bounds.second - d_kAtomType.begin()),
                     // RDKit✔️✔️:               canIAtomType);
                     if let Some((i_begin, i_end)) =
-                        equal_range_u8(&self.i_atom_type, k_begin, k_end, can_i_atom_type)
+                        equal_range_u8(i_atom_types, k_begin, k_end, can_i_atom_type)
                     {
                         // RDKit✔️✔️:           if (bounds.first != bounds.second) {
                         // RDKit✔️✔️:             bounds = std::equal_range(
@@ -1495,7 +1937,7 @@ impl MmffTorCollection {
                         // RDKit✔️✔️:                 d_lAtomType.begin() + (bounds.second - d_iAtomType.begin()),
                         // RDKit✔️✔️:                 canLAtomType);
                         if let Some((l_begin, l_end)) =
-                            equal_range_u8(&self.l_atom_type, i_begin, i_end, can_l_atom_type)
+                            equal_range_u8(l_atom_types, i_begin, i_end, can_l_atom_type)
                         {
                             // RDKit✔️✔️:             if (bounds.first != bounds.second) {
                             // RDKit✔️✔️:               bounds = std::equal_range(
@@ -1503,11 +1945,11 @@ impl MmffTorCollection {
                             // RDKit✔️✔️:                   d_torType.begin() + (bounds.second - d_lAtomType.begin()),
                             // RDKit✔️✔️:                   canTorType);
                             if let Some((tor_begin, _tor_end)) =
-                                equal_range_u8(&self.tor_type, l_begin, l_end, can_tor_type)
+                                equal_range_u8(tor_types, l_begin, l_end, can_tor_type)
                             {
                                 // RDKit✔️✔️:               if (bounds.first != bounds.second) {
                                 // RDKit✔️✔️:                 mmffTorParams = &d_params[bounds.first - d_torType.begin()];
-                                mmff_tor_params = self.params.get(tor_begin);
+                                mmff_tor_params = params.get(tor_begin);
                                 // RDKit✔️✔️:                 if (maxIter == 4) {
                                 // RDKit✔️✔️:                   break;
                                 // RDKit✔️✔️:                 }
@@ -1538,14 +1980,22 @@ impl MmffTorCollection {
 /// MMFF non-bonded Van der Waals parameter collection.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MmffVdwCollection {
-    source_mmff_vdw: String,
+    source_mmff_vdw: Cow<'static, str>,
     power: f64,
     b: f64,
     beta: f64,
     darad: f64,
     daeps: f64,
-    params: Vec<MmffVdw>,
-    atom_type: Vec<u8>,
+    params: MmffVdwStorage,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum MmffVdwStorage {
+    Static(&'static [(u8, MmffVdw)]),
+    Owned {
+        params: Vec<MmffVdw>,
+        atom_type: Vec<u8>,
+    },
 }
 
 impl MmffVdwCollection {
@@ -1555,25 +2005,39 @@ impl MmffVdwCollection {
         // RDKit✔️✔️:     mmffVdW = defaultMMFFVdW;
         // RDKit✔️✔️:   }
         let source_mmff_vdw = if mmff_vdw.is_empty() {
-            default_mmff_vdw()?.to_owned()
+            Cow::Borrowed(default_mmff_vdw()?)
         } else {
-            mmff_vdw.to_owned()
+            Cow::Owned(mmff_vdw.to_owned())
         };
-        let parsed = parse_mmff_vdw(&source_mmff_vdw)?;
-        Ok(Self {
-            source_mmff_vdw,
-            power: parsed.power,
-            b: parsed.b,
-            beta: parsed.beta,
-            darad: parsed.darad,
-            daeps: parsed.daeps,
-            params: parsed.params,
-            atom_type: parsed.atom_type,
-        })
+        if mmff_vdw.is_empty() {
+            Ok(Self {
+                source_mmff_vdw,
+                power: DEFAULT_MMFF_VDW_POWER,
+                b: DEFAULT_MMFF_VDW_B,
+                beta: DEFAULT_MMFF_VDW_BETA,
+                darad: DEFAULT_MMFF_VDW_DARAD,
+                daeps: DEFAULT_MMFF_VDW_DAEPS,
+                params: MmffVdwStorage::Static(DEFAULT_MMFF_VDW_ROWS),
+            })
+        } else {
+            let parsed = parse_mmff_vdw(source_mmff_vdw.as_ref())?;
+            Ok(Self {
+                source_mmff_vdw,
+                power: parsed.power,
+                b: parsed.b,
+                beta: parsed.beta,
+                darad: parsed.darad,
+                daeps: parsed.daeps,
+                params: MmffVdwStorage::Owned {
+                    params: parsed.params,
+                    atom_type: parsed.atom_type,
+                },
+            })
+        }
     }
 
     pub fn source_mmff_vdw(&self) -> &str {
-        &self.source_mmff_vdw
+        self.source_mmff_vdw.as_ref()
     }
 
     pub fn power(&self) -> f64 {
@@ -1597,11 +2061,17 @@ impl MmffVdwCollection {
     }
 
     pub fn len(&self) -> usize {
-        self.params.len()
+        match &self.params {
+            MmffVdwStorage::Static(params) => params.len(),
+            MmffVdwStorage::Owned { params, .. } => params.len(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.params.is_empty()
+        match &self.params {
+            MmffVdwStorage::Static(params) => params.is_empty(),
+            MmffVdwStorage::Owned { params, .. } => params.is_empty(),
+        }
     }
 
     pub fn get(&self, atom_type: u32) -> Option<&MmffVdw> {
@@ -1612,15 +2082,26 @@ impl MmffVdwCollection {
         // RDKit✔️✔️: #else
         // RDKit✔️✔️:     auto bounds =
         // RDKit✔️✔️:         std::equal_range(d_atomType.begin(), d_atomType.end(), atomType);
-        let (atom_begin, _atom_end) =
-            equal_range_u8(&self.atom_type, 0, self.atom_type.len(), atom_type)?;
+        match &self.params {
+            MmffVdwStorage::Static(params) => params
+                .binary_search_by_key(&(atom_type as u8), |(key, _)| *key)
+                .ok()
+                .map(|idx| &params[idx].1),
+            MmffVdwStorage::Owned {
+                params,
+                atom_type: atom_types,
+            } => {
+                let (atom_begin, _atom_end) =
+                    equal_range_u8(atom_types, 0, atom_types.len(), atom_type)?;
 
-        // RDKit✔️✔️:     return ((bounds.first != bounds.second)
-        // RDKit✔️✔️:                 ? &d_params[bounds.first - d_atomType.begin()]
-        // RDKit✔️✔️:                 : nullptr);
-        // RDKit✔️✔️: #endif
-        // RDKit✔️✔️:   }
-        self.params.get(atom_begin)
+                // RDKit✔️✔️:     return ((bounds.first != bounds.second)
+                // RDKit✔️✔️:                 ? &d_params[bounds.first - d_atomType.begin()]
+                // RDKit✔️✔️:                 : nullptr);
+                // RDKit✔️✔️: #endif
+                // RDKit✔️✔️:   }
+                params.get(atom_begin)
+            }
+        }
     }
 }
 
@@ -1689,223 +2170,55 @@ struct ParsedMmffVdw {
 }
 
 pub fn default_mmff_def() -> Result<&'static str, MmffParamError> {
-    static DATA: OnceLock<Result<String, MmffParamError>> = OnceLock::new();
-    DATA.get_or_init(|| extract_default_string("defaultMMFFDef"))
-        .as_deref()
-        .map_err(Clone::clone)
+    Ok(DEFAULT_MMFF_DEF)
 }
 
 pub fn default_mmff_prop() -> Result<&'static str, MmffParamError> {
-    static DATA: OnceLock<Result<String, MmffParamError>> = OnceLock::new();
-    DATA.get_or_init(|| extract_default_string("defaultMMFFProp"))
-        .as_deref()
-        .map_err(Clone::clone)
+    Ok(DEFAULT_MMFF_PROP)
 }
 
 pub fn default_mmff_pbci() -> Result<&'static str, MmffParamError> {
-    static DATA: OnceLock<Result<String, MmffParamError>> = OnceLock::new();
-    DATA.get_or_init(|| extract_default_string("defaultMMFFPBCI"))
-        .as_deref()
-        .map_err(Clone::clone)
+    Ok(DEFAULT_MMFF_PBCI)
 }
 
 pub fn default_mmff_chg() -> Result<&'static str, MmffParamError> {
-    static DATA: OnceLock<Result<String, MmffParamError>> = OnceLock::new();
-    DATA.get_or_init(|| extract_default_string("defaultMMFFChg"))
-        .as_deref()
-        .map_err(Clone::clone)
+    Ok(DEFAULT_MMFF_CHG)
 }
 
 pub fn default_mmff_bond() -> Result<&'static str, MmffParamError> {
-    static DATA: OnceLock<Result<String, MmffParamError>> = OnceLock::new();
-    DATA.get_or_init(|| extract_default_string("defaultMMFFBond"))
-        .as_deref()
-        .map_err(Clone::clone)
+    Ok(DEFAULT_MMFF_BOND)
 }
 
 pub fn default_mmff_angle() -> Result<&'static str, MmffParamError> {
-    static DATA: OnceLock<Result<String, MmffParamError>> = OnceLock::new();
-    DATA.get_or_init(|| extract_default_string_array("defaultMMFFAngleData"))
-        .as_deref()
-        .map_err(Clone::clone)
+    Ok(DEFAULT_MMFF_ANGLE)
 }
 
 pub fn default_mmff_stbn() -> Result<&'static str, MmffParamError> {
-    static DATA: OnceLock<Result<String, MmffParamError>> = OnceLock::new();
-    DATA.get_or_init(|| extract_default_string("defaultMMFFStbn"))
-        .as_deref()
-        .map_err(Clone::clone)
+    Ok(DEFAULT_MMFF_STBN)
 }
 
 pub fn default_mmff_dfsb() -> Result<&'static str, MmffParamError> {
-    static DATA: OnceLock<Result<String, MmffParamError>> = OnceLock::new();
-    DATA.get_or_init(|| extract_default_string("defaultMMFFDfsb"))
-        .as_deref()
-        .map_err(Clone::clone)
+    Ok(DEFAULT_MMFF_DFSB)
 }
 
 pub fn default_mmff_oop() -> Result<&'static str, MmffParamError> {
-    static DATA: OnceLock<Result<String, MmffParamError>> = OnceLock::new();
-    DATA.get_or_init(|| extract_default_string("defaultMMFFOop"))
-        .as_deref()
-        .map_err(Clone::clone)
+    Ok(DEFAULT_MMFF_OOP)
 }
 
 pub fn default_mmffs_oop() -> Result<&'static str, MmffParamError> {
-    static DATA: OnceLock<Result<String, MmffParamError>> = OnceLock::new();
-    DATA.get_or_init(|| extract_default_string("defaultMMFFsOop"))
-        .as_deref()
-        .map_err(Clone::clone)
+    Ok(DEFAULT_MMFFS_OOP)
 }
 
 pub fn default_mmff_tor() -> Result<&'static str, MmffParamError> {
-    static DATA: OnceLock<Result<String, MmffParamError>> = OnceLock::new();
-    DATA.get_or_init(|| extract_default_string("defaultMMFFTor"))
-        .as_deref()
-        .map_err(Clone::clone)
+    Ok(DEFAULT_MMFF_TOR)
 }
 
 pub fn default_mmffs_tor() -> Result<&'static str, MmffParamError> {
-    static DATA: OnceLock<Result<String, MmffParamError>> = OnceLock::new();
-    DATA.get_or_init(|| extract_default_string("defaultMMFFsTor"))
-        .as_deref()
-        .map_err(Clone::clone)
+    Ok(DEFAULT_MMFFS_TOR)
 }
 
 pub fn default_mmff_vdw() -> Result<&'static str, MmffParamError> {
-    static DATA: OnceLock<Result<String, MmffParamError>> = OnceLock::new();
-    DATA.get_or_init(|| extract_default_string("defaultMMFFVdW"))
-        .as_deref()
-        .map_err(Clone::clone)
-}
-
-fn extract_default_string(symbol: &'static str) -> Result<String, MmffParamError> {
-    // RDKit✔️❌: extern const std::string defaultMMFFDef;
-    // RDKit✔️❌: const std::string defaultMMFFDef =
-    // RDKit✔️❌: extern const std::string defaultMMFFProp;
-    // RDKit✔️❌: const std::string defaultMMFFProp =
-    // RDKit✔️❌: extern const std::string defaultMMFFPBCI;
-    // RDKit✔️❌: const std::string defaultMMFFPBCI =
-    // RDKit✔️❌: extern const std::string defaultMMFFChg;
-    // RDKit✔️❌: const std::string defaultMMFFChg =
-    // RDKit✔️❌: extern const std::string defaultMMFFBond;
-    // RDKit✔️❌: const std::string defaultMMFFBond =
-    // RDKit✔️❌: extern const std::string defaultMMFFStbn;
-    // RDKit✔️❌: const std::string defaultMMFFStbn =
-    // RDKit✔️❌: extern const std::string defaultMMFFDfsb;
-    // RDKit✔️❌: const std::string defaultMMFFDfsb =
-    // RDKit✔️❌: extern const std::string defaultMMFFOop;
-    // RDKit✔️❌: const std::string defaultMMFFOop =
-    // RDKit✔️❌: extern const std::string defaultMMFFsOop;
-    // RDKit✔️❌: const std::string defaultMMFFsOop =
-    // RDKit✔️❌: extern const std::string defaultMMFFTor;
-    // RDKit✔️❌: const std::string defaultMMFFTor =
-    // RDKit✔️❌: extern const std::string defaultMMFFsTor;
-    // RDKit✔️❌: const std::string defaultMMFFsTor =
-    // RDKit✔️❌: extern const std::string defaultMMFFVdW;
-    // RDKit✔️❌: const std::string defaultMMFFVdW =
-    // Rust extracts RDKit's adjacent C++ string literals once from the
-    // vendored source file. This preserves table bytes but does more startup
-    // work than RDKit's compiled static string.
-    let mut in_default_data = false;
-    let mut data = String::new();
-    for line in RDKIT_MMFF_PARAMS_CPP.lines() {
-        if !in_default_data {
-            if line.contains(&format!("const std::string {symbol} =")) {
-                in_default_data = true;
-            }
-            continue;
-        }
-        let trimmed = line.trim();
-        if trimmed == ";" {
-            return Ok(data);
-        }
-        if !trimmed.starts_with('"') {
-            return Err(MmffParamError::MalformedDefaultData {
-                symbol,
-                line: line.to_owned(),
-            });
-        }
-        data.push_str(&decode_cpp_string_literal_line(symbol, trimmed)?);
-        if trimmed.ends_with(';') {
-            return Ok(data);
-        }
-    }
-    Err(MmffParamError::MissingDefaultData { symbol })
-}
-
-fn extract_default_string_array(symbol: &'static str) -> Result<String, MmffParamError> {
-    // RDKit✔️❌: extern const std::string defaultMMFFAngleData[];
-    // RDKit✔️❌: const std::string defaultMMFFAngleData[] = {
-    // RDKit✔️❌:     while (defaultMMFFAngleData[i] != "EOS") {
-    // RDKit✔️❌:       mmffAngle += defaultMMFFAngleData[i];
-    // RDKit✔️❌:       ++i;
-    // RDKit✔️❌:     }
-    // Rust extracts RDKit's C++ array string literals once from the vendored
-    // source file. This preserves table bytes but does more startup work than
-    // RDKit's compiled static string array.
-    let mut in_default_data = false;
-    let mut data = String::new();
-    for line in RDKIT_MMFF_PARAMS_CPP.lines() {
-        if !in_default_data {
-            if line.contains(&format!("const std::string {symbol}[] = {{")) {
-                in_default_data = true;
-            }
-            continue;
-        }
-        let trimmed = line.trim();
-        if trimmed == "\"EOS\"};" {
-            return Ok(data);
-        }
-        if !trimmed.starts_with('"') {
-            return Err(MmffParamError::MalformedDefaultData {
-                symbol,
-                line: line.to_owned(),
-            });
-        }
-        data.push_str(&decode_cpp_string_literal_line(symbol, trimmed)?);
-    }
-    Err(MmffParamError::MissingDefaultData { symbol })
-}
-
-fn decode_cpp_string_literal_line(
-    symbol: &'static str,
-    line: &str,
-) -> Result<String, MmffParamError> {
-    let Some(end_quote) = line.rfind('"') else {
-        return Err(MmffParamError::MalformedDefaultData {
-            symbol,
-            line: line.to_owned(),
-        });
-    };
-    let literal = &line[1..end_quote];
-    let mut decoded = String::new();
-    let mut chars = literal.chars();
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            decoded.push(ch);
-            continue;
-        }
-        let Some(escaped) = chars.next() else {
-            return Err(MmffParamError::MalformedDefaultData {
-                symbol,
-                line: line.to_owned(),
-            });
-        };
-        match escaped {
-            'n' => decoded.push('\n'),
-            't' => decoded.push('\t'),
-            '"' => decoded.push('"'),
-            '\\' => decoded.push('\\'),
-            other => {
-                return Err(MmffParamError::MalformedDefaultData {
-                    symbol,
-                    line: format!("unsupported escape \\{other} in {line}"),
-                });
-            }
-        }
-    }
-    Ok(decoded)
+    Ok(DEFAULT_MMFF_VDW)
 }
 
 fn parse_mmff_def(mmff_def: &str) -> Result<Vec<MmffDef>, MmffParamError> {
@@ -2841,27 +3154,6 @@ fn parse_f64(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const RDKIT_MMFF_PARAMS_H: &str =
-        include_str!("../../../../../../third_party/rdkit/Code/ForceField/MMFF/Params.h");
-    const RDKIT_MMFF_ATOM_TYPER_H: &str = include_str!(
-        "../../../../../../third_party/rdkit/Code/GraphMol/ForceFieldHelpers/MMFF/AtomTyper.h"
-    );
-    const RDKIT_MMFF_ATOM_TYPER_CPP: &str = include_str!(
-        "../../../../../../third_party/rdkit/Code/GraphMol/ForceFieldHelpers/MMFF/AtomTyper.cpp"
-    );
-
-    #[test]
-    fn mmff_formal_charge_collection_absence_matches_rdkit_source_inventory() {
-        assert!(!RDKIT_MMFF_PARAMS_H.contains("MMFFFormalChargeCollection"));
-        assert!(!RDKIT_MMFF_PARAMS_CPP.contains("MMFFFormalChargeCollection"));
-        assert!(!RDKIT_MMFF_PARAMS_H.contains("FormalChargeCollection"));
-        assert!(!RDKIT_MMFF_PARAMS_CPP.contains("FormalChargeCollection"));
-        assert!(RDKIT_MMFF_ATOM_TYPER_H.contains("mmffFormalCharge"));
-        assert!(RDKIT_MMFF_ATOM_TYPER_H.contains("getMMFFFormalCharge"));
-        assert!(RDKIT_MMFF_ATOM_TYPER_H.contains("setMMFFFormalCharge"));
-        assert!(RDKIT_MMFF_ATOM_TYPER_CPP.contains("setMMFFFormalCharge"));
-    }
 
     #[test]
     fn mmff_mmffdefcollection_loads_default_definition_table() {

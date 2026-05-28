@@ -7734,6 +7734,9 @@ mod tests {
 
     #[test]
     fn compute2d_mimic_distmat_ignores_negative_entries_and_matches_missing_reference() {
+        let _lock = prefer_coordgen_test_lock().lock().unwrap();
+        let _guard = PreferCoordGenGuard::capture();
+        set_prefer_coord_gen(false);
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::C));

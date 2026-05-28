@@ -8,7 +8,7 @@ protein structure APIs from `cosmolkit-core`.
 
 - Rust API documentation: <https://docs.rs/cosmolkit/latest/cosmolkit/>
 - Core source layout: [`../cosmolkit-core/src/README.md`](../cosmolkit-core/src/README.md)
-- Python package notes: [`../../python/README.md`](../../python/README.md)
+- Python package notes: [`../../README.md`](../../README.md)
 - Development policy and operation rules: [`../../dev/README.md`](../../dev/README.md)
 
 ## Installation

@@ -2,6 +2,7 @@
 
 - `fixtures/chem/` chemistry test molecules and expected outputs
 - `fixtures/bio/` structure biology test inputs and expected outputs
+- `fixtures/mol2/rdkit/` copied RDKit MOL2 parser fixtures used by MOL2 read parity; this avoids requiring CI to see `third_party/rdkit` as a checked-out submodule when regenerating goldens
 - `smiles.smi` shared SMILES corpus for graph-feature and molblock parity tests
 - `golden/graph_features.jsonl` RDKit baseline for atom, bond, valence, stereo, and CIP graph-feature parity
 - `golden/molblock_v2000_minimal.jsonl` RDKit baseline for minimal V2000 mol block body parity
@@ -17,6 +18,7 @@
 - `golden/sdf_write.jsonl` RDKit baseline for MolBlock/SDF write parity across 2D/3D, V2000/V3000, stereo, and kekulize branches
 - `golden/sdf_read.jsonl` RDKit baseline for SDF read parity across 2D/3D, V2000/V3000, stereo-marker, and coordinate-inferred branches
 - `golden/molfile_read.jsonl` RDKit baseline for direct `.mol`/molblock read parity across the same CTAB branch matrix without SDF record separators or data fields
+- `golden/mol2_read.jsonl` RDKit baseline for MOL2 read parity over copied RDKit MOL2 fixtures, covering parser parameters, topology, atom/bond fields, 3D coordinates, chirality, and SMILES output
 - `golden/xyz_read.jsonl` RDKit baseline for XYZ block read parity: atom identities, one 3D conformer, coordinates, and no inferred bonds
 - `corpus/topology/core.csv` target contract corpus for topology-changing operation invariant tests
 - `corpus/topology/cow_small.csv` small COW-only topology corpus; do not run broad parity matrices just to prove value isolation
@@ -50,15 +52,15 @@ Notes:
 - CI regenerates all RDKit Python golden files through `tests/scripts/gen_all_rdkit_goldens.py` immediately after `uv sync --group dev` and before running Rust tests.
 - The unified golden generator includes an RDKit version assertion for ETKDG geometry goldens so test conditions do not drift silently.
 
-## Future Workflow (Gemmi Macromolecular Parsing)
+## Gemmi Macromolecular Parsing
 
-Gemmi `v0.7.5` is the planned source-level reproduction target for future PDB/mmCIF macromolecular parsing. The source reference is `third_party/gemmi` pinned to `5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e`. When this parser work starts, keep Gemmi comparison fixtures explicit and separate from RDKit chemistry parity fixtures.
+Gemmi `v0.7.5` is the source-level reproduction target for PDB/mmCIF macromolecular parsing. The source reference is `third_party/gemmi` pinned to `5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e`. Gemmi comparison fixtures are explicit and separate from RDKit chemistry parity fixtures.
 
 ## Topology Operation Invariants
 
-`crates/cosmolkit-core/tests/topology_operation_invariants.rs` is the target contract for every topology-changing operation. It intentionally assumes a future internal test API under `cosmolkit_core::testing::topology` and operation entry points such as `with_hydrogens_with_report()`, `remove_atom_with_report()`, and `renumber_atoms_with_report()`.
+The topology invariant corpus and xfail records live under `tests/corpus/topology/` and `tests/known_failures/topology_invariants.jsonl`. They describe the target contract for topology-changing operations and are used by operation-system development work.
 
-Every `_with_report()` operation must return the transformed molecule plus atom/bond mappings and policy metadata. The invariant runner verifies graph structure, conformer alignment, cache freshness, stereo reference validity, property preservation/remapping, copy-on-write isolation, optional I/O roundtrip, and optional RDKit parity.
+The target `_with_report()` operation design returns the transformed molecule plus atom/bond mappings and policy metadata. The invariant runner is intended to verify graph structure, conformer alignment, cache freshness, stereo reference validity, property preservation/remapping, copy-on-write isolation, optional I/O roundtrip, and optional RDKit parity.
 
 COW is a sub-invariant, not a reason to run the whole RDKit parity corpus. Use `corpus/topology/cow_small.csv` for value-isolation coverage and `corpus/topology/core.csv` for the full topology operation contract.
 
@@ -111,7 +113,7 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 - `smiles_writer_matches_rdkit_golden_across_param_branches`
 - strict RDKit parity coverage for `MolToSmiles()` across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches
 
-`crates/cosmolkit-core/tests/rdkit_svg_drawer_parity.rs` contains:
+`crates/cosmolkit-core/tests/rdkit_svg_draw_parity.rs` contains:
 - `svg_drawer_golden_has_one_record_per_smiles`
 - `svg_drawer_matches_rdkit_golden`
 - strict RDKit parity coverage for the Python-exposed `MolDraw2DSVG(..., noFreetype=True)` final SVG string
@@ -128,6 +130,12 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 - `molfile_read_chirality_matches_rdkit_for_markers_and_coordinates`
 - `molfile_read_to_smiles_matches_rdkit_canonical_and_noncanonical`
 
+`crates/cosmolkit-core/tests/rdkit_mol2_read_parity.rs` contains:
+- `mol2_read_golden_covers_expected_case_matrix`
+- `mol2_read_topology_atom_and_bond_fields_match_rdkit`
+- `mol2_read_coordinates_and_chirality_match_rdkit`
+- `mol2_read_to_smiles_matches_rdkit_canonical_and_noncanonical`
+
 Current status:
 - `cosmolkit-core` graph-feature parity is currently passing on the shared corpus (direct + explicit-H comparisons).
 - tetrahedral stereo ordered-ligand geometry validation is currently passing against RDKit ETKDGv3 (`seed=42`) on all chiral corpus entries.
@@ -136,7 +144,6 @@ Current status:
 - Morgan fingerprint parity is currently passing on the shared corpus across the supported RDKit-style bit-vector branches, and the Python binding smoke/parity tests pass against RDKit for representative parameter combinations.
 - SMILES writer parity is currently passing on the shared corpus across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches.
 - strict V2000 molblock coordinate/topology parity is currently passing on the shared corpus.
+- MOL2 read parity is currently passing against copied RDKit MOL2 parser fixtures for the generated MOL2 golden.
 - SVG drawer parity is currently passing against RDKit final SVG goldens for the shared corpus.
-- `cargo test` is currently green for the full workspace, including `cosmolkit-core`, `cosmolkit`, `cosmolkit-macros`, and `cosmolkit-py`.
-- `.venv/bin/pytest` is currently green for the Python test suite, including Morgan fingerprint binding parity.
 - Temporary stress check result: random sampling 1000 SMILES from `core_comp_lib.csv` with regenerated RDKit goldens still exposes unresolved molblock parity gaps (details logged under `tmp/rust_test_core_comp_lib_sample1000_with_regen_errors.txt`).

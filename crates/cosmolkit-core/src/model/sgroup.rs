@@ -454,6 +454,10 @@ impl SubstanceGroup {
         self.rdkit_sequence_id = Some(rdkit_sequence_id);
     }
 
+    pub(crate) fn set_id(&mut self, id: SubstanceGroupId) {
+        self.id = id;
+    }
+
     #[allow(dead_code)]
     pub(crate) fn set_label(&mut self, label: impl Into<String>) {
         self.label = Some(label.into());

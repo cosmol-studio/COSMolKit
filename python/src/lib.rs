@@ -148,6 +148,10 @@ fn stereo_pyerr(error: cosmolkit_core::StereoError) -> PyErr {
     PyValueError::new_err(error.to_string())
 }
 
+fn smarts_parse_pyerr(error: cosmolkit_core::SmartsParseError) -> PyErr {
+    PyValueError::new_err(error.to_string())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn make_morgan_fingerprint_params(
     radius: u32,
@@ -284,6 +288,15 @@ fn reject_unsanitized_mol_reader(sanitize: Option<bool>) -> PyResult<()> {
         ));
     }
     Ok(())
+}
+
+fn parse_mol2_variant(variant: &str) -> PyResult<cosmolkit_core::Mol2Type> {
+    match variant.to_ascii_lowercase().as_str() {
+        "corina" => Ok(cosmolkit_core::Mol2Type::Corina),
+        _ => Err(PyValueError::new_err(format!(
+            "unsupported MOL2 variant '{variant}', expected 'corina'"
+        ))),
+    }
 }
 
 fn write_batch_report(path: &str, report: &cosmolkit_core::BatchExportReport) -> PyResult<()> {
@@ -2931,6 +2944,10 @@ Molecule
     #[doc = r#"
 Read the first molecule record from an SDF file.
 
+This uses the SDF reader, so SDF data fields after the molfile ``M  END`` line
+are parsed as record metadata. Use ``read_mol()`` for RDKit
+``MolFromMolBlock``-style molfile-only parsing.
+
 Parameters
 ----------
 path : str
@@ -2968,6 +2985,11 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
     #[doc = r#"
 Read one molecule from an MDL molfile.
 
+The parser follows RDKit ``MolFromMolBlock`` record boundaries: it reads the
+molfile CTAB through the first ``M  END`` line and ignores unread trailing text,
+including SDF data fields and ``$$$$`` record separators. Use ``read_sdf()`` or
+``SdfDataset`` when SDF data fields must be parsed.
+
 Parameters
 ----------
 path : str
@@ -3003,6 +3025,11 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
     #[pyo3(signature = (mol_text, sanitize=None, coordinate_dim="auto"))]
     #[doc = r#"
 Read one molecule from an MDL molfile string.
+
+The parser follows RDKit ``MolFromMolBlock`` record boundaries: it reads the
+molfile CTAB through the first ``M  END`` line and ignores unread trailing text,
+including SDF data fields and ``$$$$`` record separators. Use
+``read_sdf_from_str()`` when SDF data fields must be parsed.
 "#]
     fn read_mol_from_str(
         _cls: &Bound<'_, PyType>,
@@ -3029,6 +3056,10 @@ Read one molecule from an MDL molfile string.
     #[pyo3(signature = (sdf_text, sanitize=None, coordinate_dim="auto"))]
     #[doc = r#"
 Read one molecule from an SDF record string.
+
+This uses the SDF reader, so data fields after the molfile ``M  END`` line are
+parsed as SDF record metadata. Use ``read_mol_from_str()`` for RDKit
+``MolFromMolBlock``-style molfile-only parsing that ignores trailing SDF text.
 "#]
     fn read_sdf_from_str(
         _cls: &Bound<'_, PyType>,
@@ -3043,6 +3074,91 @@ Read one molecule from an SDF record string.
             coordinate_mode,
         )
         .map_err(|e| PyValueError::new_err(format!("read_sdf_from_str failed: {e:?}")))?;
+        Ok(Self {
+            inner: record.molecule,
+        })
+    }
+
+    #[classmethod]
+    #[pyo3(signature = (path, *, sanitize=true, remove_hs=true, variant="corina", cleanup_substructures=true))]
+    #[doc = r#"
+Read one molecule from a Tripos MOL2 file.
+
+The reader follows the source-ported RDKit ``Mol2FileToMol``/``MolFromMol2File``
+profile. The exposed parameters map to RDKit ``Mol2ParserParams``:
+``sanitize``, ``removeHs``, ``variant``, and ``cleanupSubstructures``. The only
+currently supported variant is ``"corina"``, matching RDKit's public enum.
+
+Parameters
+----------
+path : str
+    MOL2 file path.
+sanitize : bool, optional
+    Run RDKit-style MOL2 sanitization after parsing.
+remove_hs : bool, optional
+    Remove explicit hydrogens during MOL2 finalization.
+variant : {"corina"}, optional
+    MOL2 atom-type definition profile.
+cleanup_substructures : bool, optional
+    Run RDKit-style cleanup of common MOL2 substructures before charge
+    assignment when formal charges are not present.
+"#]
+    fn read_mol2(
+        _cls: &Bound<'_, PyType>,
+        path: &str,
+        sanitize: bool,
+        remove_hs: bool,
+        variant: &str,
+        cleanup_substructures: bool,
+    ) -> PyResult<Self> {
+        let expanded_path = expand_user_path(path)?;
+        let params = cosmolkit_core::Mol2ReadParams {
+            sanitize,
+            remove_hs,
+            variant: parse_mol2_variant(variant)?,
+            cleanup_substructures,
+        };
+        let Some(record) = cosmolkit_core::read_mol2_file_with_params(&expanded_path, params)
+            .map_err(|e| PyValueError::new_err(format!("read_mol2 failed: {e}")))?
+        else {
+            return Err(PyValueError::new_err("read_mol2 found no molecule record"));
+        };
+        Ok(Self {
+            inner: record.molecule,
+        })
+    }
+
+    #[classmethod]
+    #[pyo3(signature = (mol2_text, *, sanitize=true, remove_hs=true, variant="corina", cleanup_substructures=true))]
+    #[doc = r#"
+Read one molecule from a Tripos MOL2 string.
+
+The reader follows the source-ported RDKit ``Mol2BlockToMol``/``MolFromMol2Block``
+profile. The exposed parameters map to RDKit ``Mol2ParserParams``:
+``sanitize``, ``removeHs``, ``variant``, and ``cleanupSubstructures``. The only
+currently supported variant is ``"corina"``, matching RDKit's public enum.
+"#]
+    fn read_mol2_from_str(
+        _cls: &Bound<'_, PyType>,
+        mol2_text: &str,
+        sanitize: bool,
+        remove_hs: bool,
+        variant: &str,
+        cleanup_substructures: bool,
+    ) -> PyResult<Self> {
+        let params = cosmolkit_core::Mol2ReadParams {
+            sanitize,
+            remove_hs,
+            variant: parse_mol2_variant(variant)?,
+            cleanup_substructures,
+        };
+        let Some(record) = cosmolkit_core::read_mol2_from_str_with_params(mol2_text, params)
+            .map_err(|e| PyValueError::new_err(format!("read_mol2_from_str failed: {e}")))?
+        else {
+            return Err(PyValueError::new_err(
+                "read_mol2_from_str found no molecule record",
+            ));
+        };
         Ok(Self {
             inner: record.molecule,
         })
@@ -4649,6 +4765,41 @@ Return the Morgan additional output collected by ``fingerprint_morgan_with_outpu
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "SmartsMolecule", skip_from_py_object)]
+#[derive(Clone)]
+struct PySmartsMolecule {
+    inner: cosmolkit_core::smarts_parse::SmartsMolecule,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl PySmartsMolecule {
+    /// Return the number of atom query nodes in the SMARTS pattern.
+    fn num_atoms(&self) -> usize {
+        self.inner.num_atoms()
+    }
+
+    /// Return the number of bond query nodes in the SMARTS pattern.
+    fn num_bonds(&self) -> usize {
+        self.inner.bond_queries.len()
+    }
+
+    /// Return ring-closure records as ``(closure_number, atom_index)`` tuples.
+    fn ring_closures(&self) -> Vec<(u8, usize)> {
+        self.inner.ring_closures.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "SmartsMolecule(num_atoms={}, num_bonds={}, ring_closures={})",
+            self.num_atoms(),
+            self.num_bonds(),
+            self.inner.ring_closures.len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(skip_from_py_object)]
 #[derive(Clone)]
 struct SubstructMatchResult {
@@ -4691,6 +4842,12 @@ fn mol_to_binary<'py>(py: Python<'py>, mol: &Molecule) -> PyResult<Bound<'py, Py
 fn mol_from_binary(data: &[u8]) -> PyResult<Molecule> {
     let inner = cosmolkit_core::mol_from_binary(data).map_err(pickle_pyerr)?;
     Ok(Molecule { inner })
+}
+
+#[pyfunction]
+fn parse_smarts(smarts: &str) -> PyResult<PySmartsMolecule> {
+    let inner = cosmolkit_core::smarts_parse::parse_smarts(smarts).map_err(smarts_parse_pyerr)?;
+    Ok(PySmartsMolecule { inner })
 }
 
 #[pyfunction]
@@ -4755,10 +4912,12 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Fingerprint>()?;
     m.add_class::<MorganAdditionalOutput>()?;
     m.add_class::<MorganFingerprintResult>()?;
+    m.add_class::<PySmartsMolecule>()?;
     m.add_class::<SubstructMatchResult>()?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(mol_to_binary, m)?)?;
     m.add_function(wrap_pyfunction!(mol_from_binary, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_smarts, m)?)?;
     m.add_function(wrap_pyfunction!(has_substruct_match, m)?)?;
     m.add_function(wrap_pyfunction!(get_substruct_match, m)?)?;
     m.add_function(wrap_pyfunction!(get_substruct_matches, m)?)?;

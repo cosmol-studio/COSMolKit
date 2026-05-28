@@ -38,9 +38,20 @@ pub fn read_mol_record_from_str_with_params(
     s: &str,
     params: SdfReadParams,
 ) -> Result<MolFileRecord, SdfReadError> {
-    reject_extra_molfile_content(s)?;
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: MolFromMolBlock
+    // RDKit✔️✔️: std::unique_ptr<RWMol> MolFromMolBlock(const std::string &molBlock,
+    // RDKit✔️✔️:                                        const MolFileParserParams &params) {
+    // RDKit✔️✔️:   std::istringstream inStream(molBlock);
+    // RDKit✔️✔️:   unsigned int line = 0;
+    // RDKit✔️✔️:   return MolFromMolDataStream(inStream, line, params);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: MolFromMolBlock
+    //
+    // RDKit's MolFromMolBlock does not parse unread text after the CTAB; it
+    // lets MolFromMolDataStream return after M END.
+    let mol_block = mol_block_through_m_end(s);
     let record = crate::io::sdf::read_sdf_from_str_with_params(
-        s,
+        mol_block,
         SdfReadParams {
             process_property_lists: false,
             ..params
@@ -53,28 +64,18 @@ pub fn read_mol_record_from_str_with_params(
     })
 }
 
-fn reject_extra_molfile_content(s: &str) -> Result<(), SdfReadError> {
-    let mut offset = 0usize;
-    for line in s.split_inclusive('\n') {
-        let line_without_newline = line.trim_end_matches(['\r', '\n']);
-        let end_offset = offset + line.len();
-        if line_without_newline == "M  END" {
-            if s[end_offset..].trim().is_empty() {
-                return Ok(());
-            }
-            return Err(SdfReadError::Parse(
-                "Extra non-molfile content after M  END".to_string(),
-            ));
+fn mol_block_through_m_end(input: &str) -> &str {
+    let mut end = input.len();
+    let mut offset = 0;
+    for line in input.split_inclusive('\n') {
+        let content = line.trim_end_matches('\n').trim_end_matches('\r');
+        offset += line.len();
+        if content == "M  END" {
+            end = offset;
+            break;
         }
-        offset = end_offset;
     }
-    if s.lines()
-        .last()
-        .is_some_and(|line| line.trim_end_matches('\r') == "M  END")
-    {
-        return Ok(());
-    }
-    Ok(())
+    &input[..end]
 }
 
 #[cfg(test)]
@@ -119,8 +120,8 @@ M  END
     }
 
     #[test]
-    fn molfile_reader_rejects_sdf_record_separator_after_m_end() {
-        let err = read_mol_record_from_str(&format!("{FLAT_MOL}$$$$\n")).unwrap_err();
-        assert!(err.to_string().contains("Extra non-molfile content"));
+    fn molfile_reader_accepts_sdf_record_separator_after_m_end_like_rdkit() {
+        let record = read_mol_record_from_str(&format!("{FLAT_MOL}$$$$\n")).unwrap();
+        assert_eq!(record.molecule.num_atoms(), 1);
     }
 }

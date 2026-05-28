@@ -1684,6 +1684,44 @@ impl MmffMolProperties {
     }
 }
 
+fn mmff_is_atom_in_aromatic_ring_of_size(
+    mol: &Molecule,
+    ring_info: &RingInfo,
+    atom_id: AtomId,
+    ring_size: usize,
+) -> bool {
+    // BEGIN RDKIT CPP METHOD RDKit::MMFF::RingMembershipSize::isAtomInAromaticRingOfSize (AtomTyper.cpp:174-188)
+    // RDKit✔️✔️: bool RingMembershipSize::isAtomInAromaticRingOfSize(
+    // RDKit✔️✔️:     const Atom *atom, const unsigned int ringSize) const {
+    // RDKit✔️✔️:   auto it = d_ringSizeMembershipMap.find(ringSize);
+    // RDKit✔️✔️:   bool isAromatic = (it != d_ringSizeMembershipMap.end());
+    // RDKit✔️✔️:   if (isAromatic) {
+    // RDKit✔️✔️:     auto it2 = it->second.find(atom->getIdx());
+    // RDKit✔️✔️:     isAromatic = (it2 != it->second.end());
+    // RDKit✔️✔️:     if (isAromatic) {
+    // RDKit✔️✔️:       isAromatic = it2->second.getIsInAromaticRing();
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return isAromatic;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP METHOD RDKit::MMFF::RingMembershipSize::isAtomInAromaticRingOfSize
+    ring_info
+        .atom_rings()
+        .iter()
+        .filter(|ring| ring.len() == ring_size && ring.contains(&atom_id))
+        .any(|ring| {
+            ring.iter().enumerate().all(|(idx, begin)| {
+                let end = ring[(idx + 1) % ring.len()];
+                mol.topology_block()
+                    .adjacency
+                    .neighbors_of(begin.index())
+                    .iter()
+                    .find(|neighbor| neighbor.atom_index == end.index())
+                    .is_some_and(|neighbor| mol.bonds()[neighbor.bond.index()].is_aromatic())
+            })
+        })
+}
+
 fn set_mmff_heavy_atom_type(
     mol: &Molecule,
     ring_info: &RingInfo,
@@ -1820,7 +1858,7 @@ fn set_mmff_heavy_atom_type(
         // RDKit❌❌:           break;
         // RDKit❌❌:       }
         // RDKit❗✔️:     }
-        if ring_info.is_atom_in_ring_of_size(atom.id(), 5) {
+        if mmff_is_atom_in_aromatic_ring_of_size(mol, ring_info, atom.id(), 5) {
             let mut alpha_het = Vec::<AtomId>::new();
             let mut beta_het = Vec::<AtomId>::new();
             if matches!(atom.atomic_number(), 6 | 7) {
@@ -1830,9 +1868,7 @@ fn set_mmff_heavy_atom_type(
                     .neighbors_of(atom.id().index())
                 {
                     let nbr_atom = &mol.atoms()[neighbor.atom_index];
-                    if !nbr_atom.is_aromatic()
-                        || !ring_info.is_atom_in_ring_of_size(nbr_atom.id(), 5)
-                    {
+                    if !mmff_is_atom_in_aromatic_ring_of_size(mol, ring_info, nbr_atom.id(), 5) {
                         continue;
                     }
                     if ring_info.are_atoms_in_same_ring_of_size(atom.id(), nbr_atom.id(), 5)
@@ -1860,8 +1896,7 @@ fn set_mmff_heavy_atom_type(
                             continue;
                         }
                         let nbr2_atom = &mol.atoms()[neighbor2.atom_index];
-                        if !nbr2_atom.is_aromatic()
-                            || !ring_info.is_atom_in_ring_of_size(nbr2_atom.id(), 5)
+                        if !mmff_is_atom_in_aromatic_ring_of_size(mol, ring_info, nbr2_atom.id(), 5)
                         {
                             continue;
                         }
@@ -1922,14 +1957,20 @@ fn set_mmff_heavy_atom_type(
                                 {
                                     n_formal_charge += 1;
                                 }
-                                if nbr_atom.is_aromatic()
-                                    && ring_info.is_atom_in_ring_of_size(nbr_atom.id(), 5)
-                                {
+                                if mmff_is_atom_in_aromatic_ring_of_size(
+                                    mol,
+                                    ring_info,
+                                    nbr_atom.id(),
+                                    5,
+                                ) {
                                     n_in_aromatic_5_ring += 1;
                                 }
-                                if nbr_atom.is_aromatic()
-                                    && ring_info.is_atom_in_ring_of_size(nbr_atom.id(), 6)
-                                {
+                                if mmff_is_atom_in_aromatic_ring_of_size(
+                                    mol,
+                                    ring_info,
+                                    nbr_atom.id(),
+                                    6,
+                                ) {
                                     n_in_aromatic_6_ring += 1;
                                 }
                             }
@@ -2097,6 +2138,25 @@ fn set_mmff_heavy_atom_type(
         //
         // RDKit❗✔️:     switch (atom->getAtomicNum()) {
         match atom.atomic_number() {
+            // RDKit✔️✔️:       // Lithium
+            // RDKit✔️✔️:       case 3:
+            3 => {
+                let graph_degree = mol
+                    .topology_block()
+                    .adjacency
+                    .neighbors_of(atom.id().index())
+                    .len();
+                // RDKit✔️✔️:         if (atom->getDegree() == 0) {
+                if graph_degree == 0 {
+                    // RDKit✔️✔️:           // LI+
+                    // RDKit✔️✔️:           // Lithium cation
+                    // RDKit✔️✔️:           atomType = 92;
+                    atom_type = 92;
+                    // RDKit✔️✔️:           break;
+                }
+                // RDKit✔️✔️:         }
+                // RDKit✔️✔️:         break;
+            }
             // RDKit❗✔️:       // Carbon
             // RDKit❗✔️:       case 6:
             6 => {
@@ -2405,9 +2465,64 @@ fn set_mmff_heavy_atom_type(
                     // RDKit❗✔️:           if ((atom->getValence(Atom::ValenceType::EXPLICIT) +
                     // RDKit❗✔️:                atom->getNumImplicitHs()) >= 4) {
                     if total_bond_order >= 4 {
-                        // The doubleBondedCN scan remains intentionally
-                        // unsupported until its full RDKit source block is
-                        // ported in place.
+                        // RDKit✔️✔️:             bool doubleBondedCN = false;
+                        let mut double_bonded_cn = false;
+                        // RDKit✔️✔️:             boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
+                        // RDKit✔️✔️:             for (; nbrIdx != endNbrs; ++nbrIdx) {
+                        for neighbor in mol
+                            .topology_block()
+                            .adjacency
+                            .neighbors_of(atom.id().index())
+                        {
+                            // RDKit✔️✔️:               const Atom *nbrAtom = mol[*nbrIdx];
+                            let nbr_atom = &mol.atoms()[neighbor.atom_index];
+                            let nbr_bond = &mol.bonds()[neighbor.bond.index()];
+                            // RDKit✔️✔️:               // find if there is a double-bonded nitrogen,
+                            // RDKit✔️✔️:               // or a carbon which is not bonded to other
+                            // RDKit✔️✔️:               // nitrogen atoms with 3 neighbors
+                            // RDKit✔️✔️:               if ((mol.getBondBetweenAtoms(nbrAtom->getIdx(), atom->getIdx()))
+                            // RDKit✔️✔️:                       ->getBondType() == Bond::DOUBLE) {
+                            if nbr_bond.order() == BondOrder::Double {
+                                // RDKit✔️✔️:                 doubleBondedCN = ((nbrAtom->getAtomicNum() == 7) ||
+                                // RDKit✔️✔️:                                   (nbrAtom->getAtomicNum() == 6));
+                                double_bonded_cn =
+                                    nbr_atom.atomic_number() == 7 || nbr_atom.atomic_number() == 6;
+                                // RDKit✔️✔️:                 if (nbrAtom->getAtomicNum() == 6) {
+                                if nbr_atom.atomic_number() == 6 {
+                                    // RDKit✔️✔️:                   boost::tie(nbr2Idx, end2Nbrs) = mol.getAtomNeighbors(nbrAtom);
+                                    // RDKit✔️✔️:                   for (; doubleBondedCN && (nbr2Idx != end2Nbrs); ++nbr2Idx) {
+                                    for neighbor2 in mol
+                                        .topology_block()
+                                        .adjacency
+                                        .neighbors_of(neighbor.atom_index)
+                                    {
+                                        if !double_bonded_cn {
+                                            break;
+                                        }
+                                        // RDKit✔️✔️:                     const Atom *nbr2Atom = mol[*nbr2Idx];
+                                        let nbr2_atom = &mol.atoms()[neighbor2.atom_index];
+                                        // RDKit✔️✔️:                     if (nbr2Atom->getIdx() == atom->getIdx()) {
+                                        if neighbor2.atom_index == atom.id().index() {
+                                            // RDKit✔️✔️:                       continue;
+                                            continue;
+                                        }
+                                        // RDKit✔️✔️:                     }
+                                        // RDKit✔️✔️:                     doubleBondedCN = (!((nbr2Atom->getAtomicNum() == 7) &&
+                                        // RDKit✔️✔️:                                         (nbr2Atom->getTotalDegree() == 3)));
+                                        double_bonded_cn = !(nbr2_atom.atomic_number() == 7
+                                            && mmff_total_degree(
+                                                mol,
+                                                implicit_hydrogens,
+                                                neighbor2.atom_index,
+                                            )? == 3);
+                                    }
+                                    // RDKit✔️✔️:                   }
+                                }
+                                // RDKit✔️✔️:                 }
+                            }
+                            // RDKit✔️✔️:               }
+                        }
+                        // RDKit✔️✔️:             }
                         // RDKit❗✔️:             // if there is a single terminal oxygen
                         // RDKit❗✔️:             if (nTermObondedToN == 1) {
                         if n_term_o_bonded_to_n == 1 {
@@ -2429,18 +2544,21 @@ fn set_mmff_heavy_atom_type(
                             // RDKit❗✔️:               break;
                         }
                         // RDKit❗✔️:             }
-                        // RDKit❌❌:             // if the carbon bonded to ipso is bonded to 1 nitrogen
-                        // RDKit❌❌:             // with 3 neighbors, that nitrogen is ipso (>N+=C)
-                        // RDKit❌❌:             // alternatively, if there is no carbon but ipso is
-                        // RDKit❌❌:             // double bonded to nitrogen, we have >N+=N
-                        // RDKit❌❌:             if (doubleBondedCN) {
-                        // RDKit❌❌:               // N+=C
-                        // RDKit❌❌:               // Iminium nitrogen
-                        // RDKit❌❌:               // N+=N
-                        // RDKit❌❌:               // Positively charged nitrogen doubly bonded to N
-                        // RDKit❌❌:               atomType = 54;
-                        // RDKit❌❌:               break;
-                        // RDKit❌❌:             }
+                        // RDKit✔️✔️:             // if the carbon bonded to ipso is bonded to 1 nitrogen
+                        // RDKit✔️✔️:             // with 3 neighbors, that nitrogen is ipso (>N+=C)
+                        // RDKit✔️✔️:             // alternatively, if there is no carbon but ipso is
+                        // RDKit✔️✔️:             // double bonded to nitrogen, we have >N+=N
+                        // RDKit✔️✔️:             if (doubleBondedCN) {
+                        if atom_type == 0 && double_bonded_cn {
+                            // RDKit✔️✔️:               // N+=C
+                            // RDKit✔️✔️:               // Iminium nitrogen
+                            // RDKit✔️✔️:               // N+=N
+                            // RDKit✔️✔️:               // Positively charged nitrogen doubly bonded to N
+                            // RDKit✔️✔️:               atomType = 54;
+                            atom_type = 54;
+                            // RDKit✔️✔️:               break;
+                        }
+                        // RDKit✔️✔️:             }
                     }
                     // RDKit❗✔️:           }
                     // The following total-bond-order >= 3 delocalized-lone-pair
@@ -2828,24 +2946,26 @@ fn set_mmff_heavy_atom_type(
                                 is_nso2_or_nso3_or_ncn = true;
                             }
                             // RDKit❗✔️:               }
-                            // RDKit❌❌:               // if neighbor carbon is amidinium
-                            // RDKit❌❌:               if (isNCNplus) {
+                            // RDKit✔️✔️:               // if neighbor carbon is amidinium
+                            // RDKit✔️✔️:               if (isNCNplus) {
                             if is_ncn_plus {
-                                // RDKit❌❌:                 // NCN+
-                                // RDKit❌❌:                 // Either nitrogen in N+=C-N
-                                // RDKit❌❌:                 atomType = 55;
-                                // RDKit❌❌:                 break;
+                                // RDKit✔️✔️:                 // NCN+
+                                // RDKit✔️✔️:                 // Either nitrogen in N+=C-N
+                                // RDKit✔️✔️:                 atomType = 55;
+                                atom_type = 55;
+                                // RDKit✔️✔️:                 break;
                             }
-                            // RDKit❌❌:               }
-                            // RDKit❌❌:               // if neighbor carbon is guanidinium
-                            // RDKit❌❌:               if (isNGDplus) {
-                            if is_ngd_plus {
-                                // RDKit❌❌:                 // NGD+
-                                // RDKit❌❌:                 // Guanidinium nitrogen
-                                // RDKit❌❌:                 atomType = 56;
-                                // RDKit❌❌:                 break;
+                            // RDKit✔️✔️:               }
+                            // RDKit✔️✔️:               // if neighbor carbon is guanidinium
+                            // RDKit✔️✔️:               if (isNGDplus) {
+                            if atom_type == 0 && is_ngd_plus {
+                                // RDKit✔️✔️:                 // NGD+
+                                // RDKit✔️✔️:                 // Guanidinium nitrogen
+                                // RDKit✔️✔️:                 atomType = 56;
+                                atom_type = 56;
+                                // RDKit✔️✔️:                 break;
                             }
-                            // RDKit❌❌:               }
+                            // RDKit✔️✔️:               }
                             // RDKit❗✔️:               // if neighbor carbon is not bonded to oxygen or sulfur
                             // RDKit❗✔️:               // and is not cyano, there two possibilities:
                             // RDKit❗✔️:               // 1) ipso nitrogen is bonded to benzene carbon while no oxygen
@@ -2859,7 +2979,8 @@ fn set_mmff_heavy_atom_type(
                             // RDKit❗✔️:                     (elementDoubleBondedToC == 7) ||
                             // RDKit❗✔️:                     (elementDoubleBondedToC == 15) ||
                             // RDKit❗✔️:                     (elementTripleBondedToC == 6)))) {
-                            if ((!is_nco_or_ncs) && (!is_nso2_or_nso3_or_ncn))
+                            if atom_type == 0
+                                && ((!is_nco_or_ncs) && (!is_nso2_or_nso3_or_ncn))
                                 && (((n_o_bonded_to_c == 0)
                                     && (n_s_bonded_to_c == 0)
                                     && is_nbr_benzene_c)
@@ -2955,54 +3076,59 @@ fn set_mmff_heavy_atom_type(
                     // RDKit❗✔️:           if ((atom->getValence(Atom::ValenceType::EXPLICIT) +
                     // RDKit❗✔️:                atom->getNumImplicitHs()) == 3) {
                     if atom_type == 0 && total_bond_order == 3 {
-                        // RDKit❌❌:             // loop over neighbors
-                        // RDKit❌❌:             bool isNitroso = false;
-                        // RDKit❌❌:             bool isImineOrAzo = false;
+                        // RDKit✔️✔️:             // loop over neighbors
+                        // RDKit✔️✔️:             bool isNitroso = false;
+                        let mut is_nitroso = false;
+                        // RDKit✔️✔️:             bool isImineOrAzo = false;
                         let mut is_imine_or_azo = false;
-                        // RDKit❗✔️:             boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
-                        // RDKit❗✔️:             for (; nbrIdx != endNbrs; ++nbrIdx) {
+                        // RDKit✔️✔️:             boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
+                        // RDKit✔️✔️:             for (; nbrIdx != endNbrs; ++nbrIdx) {
                         for neighbor in mol
                             .topology_block()
                             .adjacency
                             .neighbors_of(atom.id().index())
                         {
-                            // RDKit❗✔️:               const Atom *nbrAtom = mol[*nbrIdx];
+                            // RDKit✔️✔️:               const Atom *nbrAtom = mol[*nbrIdx];
                             let nbr_atom = &mol.atoms()[neighbor.atom_index];
                             let nbr_bond = &mol.bonds()[neighbor.bond.index()];
-                            // RDKit❗✔️:               // if the neighbor is double bonded (-N=)
-                            // RDKit❗✔️:               if ((mol.getBondBetweenAtoms(atom->getIdx(), nbrAtom->getIdx()))
-                            // RDKit❗✔️:                       ->getBondType() == Bond::DOUBLE) {
+                            // RDKit✔️✔️:               // if the neighbor is double bonded (-N=)
+                            // RDKit✔️✔️:               if ((mol.getBondBetweenAtoms(atom->getIdx(), nbrAtom->getIdx()))
+                            // RDKit✔️✔️:                       ->getBondType() == Bond::DOUBLE) {
                             if nbr_bond.order() == BondOrder::Double {
-                                // RDKit❌❌:                 // if it is terminal oxygen (-N=O)
-                                // RDKit❌❌:                 isNitroso =
-                                // RDKit❌❌:                     ((nbrAtom->getAtomicNum() == 8) && (nTermObondedToN == 1));
-                                // RDKit❗✔️:                 // if it is carbon or nitrogen (-N=N-, -N=C<),
-                                // RDKit❗✔️:                 // ipso is imine or azo
-                                // RDKit❗✔️:                 isImineOrAzo = ((nbrAtom->getAtomicNum() == 6) ||
-                                // RDKit❗✔️:                                 (nbrAtom->getAtomicNum() == 7));
+                                // RDKit✔️✔️:                 // if it is terminal oxygen (-N=O)
+                                // RDKit✔️✔️:                 isNitroso =
+                                // RDKit✔️✔️:                     ((nbrAtom->getAtomicNum() == 8) && (nTermObondedToN == 1));
+                                is_nitroso =
+                                    nbr_atom.atomic_number() == 8 && n_term_o_bonded_to_n == 1;
+                                // RDKit✔️✔️:                 // if it is carbon or nitrogen (-N=N-, -N=C<),
+                                // RDKit✔️✔️:                 // ipso is imine or azo
+                                // RDKit✔️✔️:                 isImineOrAzo = ((nbrAtom->getAtomicNum() == 6) ||
+                                // RDKit✔️✔️:                                 (nbrAtom->getAtomicNum() == 7));
                                 is_imine_or_azo = matches!(nbr_atom.atomic_number(), 6 | 7);
                             }
-                            // RDKit❗✔️:               }
+                            // RDKit✔️✔️:               }
                         }
-                        // RDKit❗✔️:             }
-                        // RDKit❌❌:             if (isNitroso && (!isImineOrAzo)) {
-                        // RDKit❌❌:               // N=O
-                        // RDKit❌❌:               // Nitrogen in nitroso group
-                        // RDKit❌❌:               atomType = 46;
-                        // RDKit❌❌:               break;
-                        // RDKit❌❌:             }
-                        // RDKit❗✔️:             if (isImineOrAzo) {
-                        if is_imine_or_azo {
-                            // RDKit❗✔️:               // N=C
-                            // RDKit❗✔️:               // Imine nitrogen
-                            // RDKit❗✔️:               // N=N
-                            // RDKit❗✔️:               // Azo-group nitrogen
-                            // RDKit❗✔️:               atomType = 9;
+                        // RDKit✔️✔️:             }
+                        // RDKit✔️✔️:             if (isNitroso && (!isImineOrAzo)) {
+                        if is_nitroso && !is_imine_or_azo {
+                            // RDKit✔️✔️:               // N=O
+                            // RDKit✔️✔️:               // Nitrogen in nitroso group
+                            // RDKit✔️✔️:               atomType = 46;
+                            atom_type = 46;
+                            // RDKit✔️✔️:               break;
+                            // RDKit✔️✔️:             }
+                        } else if is_imine_or_azo {
+                            // RDKit✔️✔️:             if (isImineOrAzo) {
+                            // RDKit✔️✔️:               // N=C
+                            // RDKit✔️✔️:               // Imine nitrogen
+                            // RDKit✔️✔️:               // N=N
+                            // RDKit✔️✔️:               // Azo-group nitrogen
+                            // RDKit✔️✔️:               atomType = 9;
                             atom_type = 9;
-                            // RDKit❗✔️:               break;
+                            // RDKit✔️✔️:               break;
                         }
-                        // RDKit❗✔️:             }
-                        // RDKit❗✔️:           }
+                        // RDKit✔️✔️:             }
+                        // RDKit✔️✔️:           }
                     }
                     // RDKit✔️✔️:           // total bond order >= 2
                     // RDKit✔️✔️:           if ((atom->getValence(Atom::ValenceType::EXPLICIT) +
@@ -3205,16 +3331,19 @@ fn set_mmff_heavy_atom_type(
                     .adjacency
                     .neighbors_of(atom.id().index())
                     .len();
-                // RDKit❌❌:         // 3 neighbors
-                // RDKit❌❌:         if (atom->getTotalDegree() == 3) {
-                // RDKit❌❌:           // O+
-                // RDKit❌❌:           // Oxonium oxygen
-                // RDKit❌❌:           atomType = 49;
-                // RDKit❌❌:           break;
-                // RDKit❌❌:         }
+                // RDKit✔️✔️:         // 3 neighbors
+                // RDKit✔️✔️:         if (atom->getTotalDegree() == 3) {
+                if total_degree == 3 {
+                    // RDKit✔️✔️:           // O+
+                    // RDKit✔️✔️:           // Oxonium oxygen
+                    // RDKit✔️✔️:           atomType = 49;
+                    atom_type = 49;
+                    // RDKit✔️✔️:           break;
+                }
+                // RDKit✔️✔️:         }
                 // RDKit❗✔️:         // 2 neighbors
                 // RDKit❗✔️:         if (atom->getTotalDegree() == 2) {
-                if total_degree == 2 {
+                if atom_type == 0 && total_degree == 2 {
                     // RDKit❗✔️:           if ((atom->getValence(Atom::ValenceType::EXPLICIT) +
                     // RDKit❗✔️:                atom->getNumImplicitHs()) == 3) {
                     if total_bond_order == 3 {
@@ -3646,6 +3775,25 @@ fn set_mmff_heavy_atom_type(
                 // RDKit❗✔️:         }
                 // RDKit❌❌:         break;
             }
+            // RDKit✔️✔️:       // Magnesium
+            // RDKit✔️✔️:       case 12:
+            12 => {
+                let graph_degree = mol
+                    .topology_block()
+                    .adjacency
+                    .neighbors_of(atom.id().index())
+                    .len();
+                // RDKit✔️✔️:         if (atom->getDegree() == 0) {
+                if graph_degree == 0 {
+                    // RDKit✔️✔️:           // MG+2
+                    // RDKit✔️✔️:           // Dipositive magnesium cation
+                    // RDKit✔️✔️:           atomType = 99;
+                    atom_type = 99;
+                    // RDKit✔️✔️:           break;
+                }
+                // RDKit✔️✔️:         }
+                // RDKit✔️✔️:         break;
+            }
             // RDKit✔️✔️:       // Silicon
             // RDKit✔️✔️:       case 14:
             14 => {
@@ -3675,27 +3823,19 @@ fn set_mmff_heavy_atom_type(
                     atom_type = 25;
                     // RDKit❗✔️:           break;
                 } else if total_degree == 3 {
-                    // RDKit❌❌:         if (atom->getTotalDegree() == 3) {
-                    // RDKit❌❌:           // P
-                    // RDKit❌❌:           // Phosphorus in phosphines
-                    // RDKit❌❌:           atomType = 26;
-                    // RDKit❌❌:           break;
-                    return Err(UnsupportedFeatureError {
-                        feature: MMFF_MOL_PROPERTIES_FEATURE.name,
-                        reason: "RDKit MMFF phosphorus totalDegree 3 atom typing is not ported yet",
-                    }
-                    .into());
+                    // RDKit✔️✔️:         if (atom->getTotalDegree() == 3) {
+                    // RDKit✔️✔️:           // P
+                    // RDKit✔️✔️:           // Phosphorus in phosphines
+                    // RDKit✔️✔️:           atomType = 26;
+                    atom_type = 26;
+                    // RDKit✔️✔️:           break;
                 } else if total_degree == 2 {
-                    // RDKit❌❌:         if (atom->getTotalDegree() == 2) {
-                    // RDKit❌❌:           // -P=C
-                    // RDKit❌❌:           // Phosphorus doubly bonded to C
-                    // RDKit❌❌:           atomType = 75;
-                    // RDKit❌❌:           break;
-                    return Err(UnsupportedFeatureError {
-                        feature: MMFF_MOL_PROPERTIES_FEATURE.name,
-                        reason: "RDKit MMFF phosphorus totalDegree 2 atom typing is not ported yet",
-                    }
-                    .into());
+                    // RDKit✔️✔️:         if (atom->getTotalDegree() == 2) {
+                    // RDKit✔️✔️:           // -P=C
+                    // RDKit✔️✔️:           // Phosphorus doubly bonded to C
+                    // RDKit✔️✔️:           atomType = 75;
+                    atom_type = 75;
+                    // RDKit✔️✔️:           break;
                 }
                 // RDKit❌❌:         break;
             }
@@ -3711,63 +3851,101 @@ fn set_mmff_heavy_atom_type(
                 // RDKit❗✔️:         // 3  or 4 neighbors
                 // RDKit❗✔️:         if ((atom->getTotalDegree() == 3) || (atom->getTotalDegree() == 4)) {
                 if total_degree == 3 || total_degree == 4 {
-                    // RDKit❌❌:           unsigned int nOorNbondedToS = 0;
-                    // RDKit❌❌:           unsigned int nSbondedToS = 0;
-                    // RDKit❌❌:           bool isCDoubleBondedToS = false;
-                    // RDKit❌❌:           // loop over neighbors
-                    // RDKit❌❌:           boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
-                    // RDKit❌❌:           for (; nbrIdx != endNbrs; ++nbrIdx) {
-                    // RDKit❌❌:             const Atom *nbrAtom = mol[*nbrIdx];
-                    // RDKit❌❌:             // check if ipso sulfur is double-bonded to carbon
-                    // RDKit❌❌:             if ((nbrAtom->getAtomicNum() == 6) &&
-                    // RDKit❌❌:                 ((mol.getBondBetweenAtoms(atom->getIdx(), nbrAtom->getIdx()))
-                    // RDKit❌❌:                      ->getBondType() == Bond::DOUBLE)) {
-                    // RDKit❌❌:               isCDoubleBondedToS = true;
-                    // RDKit❌❌:             }
-                    // RDKit❌❌:             // if the neighbor is terminal oxygen/sulfur
-                    // RDKit❌❌:             // or secondary nitrogen, increment the respective counter
-                    // RDKit❌❌:             if (((nbrAtom->getDegree() == 1) &&
-                    // RDKit❌❌:                  (nbrAtom->getAtomicNum() == 8)) ||
-                    // RDKit❌❌:                 ((nbrAtom->getTotalDegree() == 2) &&
-                    // RDKit❌❌:                  (nbrAtom->getAtomicNum() == 7))) {
-                    // RDKit❌❌:               ++nOorNbondedToS;
-                    // RDKit❌❌:             }
-                    // RDKit❌❌:             if ((nbrAtom->getDegree() == 1) &&
-                    // RDKit❌❌:                 (nbrAtom->getAtomicNum() == 16)) {
-                    // RDKit❌❌:               ++nSbondedToS;
-                    // RDKit❌❌:             }
-                    // RDKit❌❌:           }
+                    // RDKit✔️✔️:           unsigned int nOorNbondedToS = 0;
+                    let mut n_o_or_n_bonded_to_s = 0_u32;
+                    // RDKit✔️✔️:           unsigned int nSbondedToS = 0;
+                    let mut n_s_bonded_to_s = 0_u32;
+                    // RDKit✔️✔️:           bool isCDoubleBondedToS = false;
+                    let mut is_c_double_bonded_to_s = false;
+                    // RDKit✔️✔️:           // loop over neighbors
+                    // RDKit✔️✔️:           boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
+                    // RDKit✔️✔️:           for (; nbrIdx != endNbrs; ++nbrIdx) {
+                    for neighbor in mol
+                        .topology_block()
+                        .adjacency
+                        .neighbors_of(atom.id().index())
+                    {
+                        // RDKit✔️✔️:             const Atom *nbrAtom = mol[*nbrIdx];
+                        let nbr_atom = &mol.atoms()[neighbor.atom_index];
+                        let nbr_bond = &mol.bonds()[neighbor.bond.index()];
+                        let nbr_graph_degree = mol
+                            .topology_block()
+                            .adjacency
+                            .neighbors_of(neighbor.atom_index)
+                            .len();
+                        let nbr_total_degree =
+                            mmff_total_degree(mol, implicit_hydrogens, neighbor.atom_index)?;
+                        // RDKit✔️✔️:             // check if ipso sulfur is double-bonded to carbon
+                        // RDKit✔️✔️:             if ((nbrAtom->getAtomicNum() == 6) &&
+                        // RDKit✔️✔️:                 ((mol.getBondBetweenAtoms(atom->getIdx(), nbrAtom->getIdx()))
+                        // RDKit✔️✔️:                      ->getBondType() == Bond::DOUBLE)) {
+                        if nbr_atom.atomic_number() == 6 && nbr_bond.order() == BondOrder::Double {
+                            // RDKit✔️✔️:               isCDoubleBondedToS = true;
+                            is_c_double_bonded_to_s = true;
+                            // RDKit✔️✔️:             }
+                        }
+                        // RDKit✔️✔️:             // if the neighbor is terminal oxygen/sulfur
+                        // RDKit✔️✔️:             // or secondary nitrogen, increment the respective counter
+                        // RDKit✔️✔️:             if (((nbrAtom->getDegree() == 1) &&
+                        // RDKit✔️✔️:                  (nbrAtom->getAtomicNum() == 8)) ||
+                        // RDKit✔️✔️:                 ((nbrAtom->getTotalDegree() == 2) &&
+                        // RDKit✔️✔️:                  (nbrAtom->getAtomicNum() == 7))) {
+                        if (nbr_graph_degree == 1 && nbr_atom.atomic_number() == 8)
+                            || (nbr_total_degree == 2 && nbr_atom.atomic_number() == 7)
+                        {
+                            // RDKit✔️✔️:               ++nOorNbondedToS;
+                            n_o_or_n_bonded_to_s += 1;
+                            // RDKit✔️✔️:             }
+                        }
+                        // RDKit✔️✔️:             if ((nbrAtom->getDegree() == 1) &&
+                        // RDKit✔️✔️:                 (nbrAtom->getAtomicNum() == 16)) {
+                        if nbr_graph_degree == 1 && nbr_atom.atomic_number() == 16 {
+                            // RDKit✔️✔️:               ++nSbondedToS;
+                            n_s_bonded_to_s += 1;
+                            // RDKit✔️✔️:             }
+                        }
+                        // RDKit✔️✔️:           }
+                    }
                     // RDKit❗✔️:           // if ipso sulfur has 3 neighbors and is bonded to
                     // RDKit❗✔️:           // two atoms of oxygen/nitrogen and double-bonded
                     // RDKit❗✔️:           // to carbon, or if it has 4 neighbors
                     // RDKit❗✔️:           if (((atom->getTotalDegree() == 3) && (nOorNbondedToS == 2) &&
-                    // RDKit❗✔️:                (isCDoubleBondedToS)) ||
-                    // RDKit✔️🔝:               (atom->getTotalDegree() == 4)) {
-                    if total_degree == 4 {
-                        // For totalDegree 4, RDKit's preceding neighbor scan cannot affect this branch.
-                        // Skipping that scan preserves source behavior for this modeled state and is less work.
-                        // RDKit✔️🔝:             // =SO2
-                        // RDKit✔️🔝:             // Sulfone sulfur, doubly bonded to carbon
-                        // RDKit✔️🔝:             atomType = 18;
+                    // RDKit✔️✔️:                (isCDoubleBondedToS)) ||
+                    // RDKit✔️✔️:               (atom->getTotalDegree() == 4)) {
+                    if (total_degree == 3 && n_o_or_n_bonded_to_s == 2 && is_c_double_bonded_to_s)
+                        || total_degree == 4
+                    {
+                        // RDKit✔️✔️:             // =SO2
+                        // RDKit✔️✔️:             // Sulfone sulfur, doubly bonded to carbon
+                        // RDKit✔️✔️:             atomType = 18;
                         atom_type = 18;
-                        // RDKit✔️🔝:             break;
+                        // RDKit✔️✔️:             break;
                     }
-                    // RDKit❗✔️:           }
-                    // RDKit❌❌:           // if ipso sulfur is bonded to both oxygen/nitrogen and sulfur
-                    // RDKit❌❌:           if ((nOorNbondedToS && nSbondedToS) ||
-                    // RDKit❌❌:               ((nOorNbondedToS == 2) && (!isCDoubleBondedToS))) {
-                    // RDKit❌❌:             // SSOM
-                    // RDKit❌❌:             // Tricoordinate sulfur in anionic thiosulfinate group
-                    // RDKit❌❌:             atomType = 73;
-                    // RDKit❌❌:             break;
-                    // RDKit❌❌:           }
-                    // RDKit❌❌:           // otherwise ipso sulfur is double bonded to oxygen or nitrogen
-                    // RDKit❌❌:           // S=O
-                    // RDKit❌❌:           // Sulfoxide sulfur
-                    // RDKit❌❌:           // >S=N
-                    // RDKit❌❌:           // Tricoordinate sulfur doubly bonded to N
-                    // RDKit❌❌:           atomType = 17;
-                    // RDKit❌❌:           break;
+                    // RDKit✔️✔️:           }
+                    // RDKit✔️✔️:           // if ipso sulfur is bonded to both oxygen/nitrogen and sulfur
+                    // RDKit✔️✔️:           if ((nOorNbondedToS && nSbondedToS) ||
+                    // RDKit✔️✔️:               ((nOorNbondedToS == 2) && (!isCDoubleBondedToS))) {
+                    if atom_type == 0
+                        && ((n_o_or_n_bonded_to_s != 0 && n_s_bonded_to_s != 0)
+                            || (n_o_or_n_bonded_to_s == 2 && !is_c_double_bonded_to_s))
+                    {
+                        // RDKit✔️✔️:             // SSOM
+                        // RDKit✔️✔️:             // Tricoordinate sulfur in anionic thiosulfinate group
+                        // RDKit✔️✔️:             atomType = 73;
+                        atom_type = 73;
+                        // RDKit✔️✔️:             break;
+                    }
+                    // RDKit✔️✔️:           }
+                    // RDKit✔️✔️:           // otherwise ipso sulfur is double bonded to oxygen or nitrogen
+                    // RDKit✔️✔️:           // S=O
+                    // RDKit✔️✔️:           // Sulfoxide sulfur
+                    // RDKit✔️✔️:           // >S=N
+                    // RDKit✔️✔️:           // Tricoordinate sulfur doubly bonded to N
+                    // RDKit✔️✔️:           atomType = 17;
+                    if atom_type == 0 {
+                        atom_type = 17;
+                    }
+                    // RDKit✔️✔️:           break;
                     // RDKit❌❌:         }
                 }
                 // RDKit❗✔️:         // 2 neighbors
@@ -3903,29 +4081,45 @@ fn set_mmff_heavy_atom_type(
                     .adjacency
                     .neighbors_of(atom.id().index())
                     .len();
-                // RDKit❌❌:         // 4 neighbors
-                // RDKit❌❌:         if (atom->getTotalDegree() == 4) {
-                // RDKit❌❌:           // loop over neighbors and count the number
-                // RDKit❌❌:           // of bonded oxygens
-                // RDKit❌❌:           unsigned int nObondedToCl = 0;
-                // RDKit❌❌:           boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
-                // RDKit❌❌:           for (; nbrIdx != endNbrs; ++nbrIdx) {
-                // RDKit❌❌:             const Atom *nbrAtom = mol[*nbrIdx];
-                // RDKit❌❌:             if (nbrAtom->getAtomicNum() == 8) {
-                // RDKit❌❌:               ++nObondedToCl;
-                // RDKit❌❌:             }
-                // RDKit❌❌:           }
-                // RDKit❌❌:           // if there are 4 oxygens
-                // RDKit❌❌:           if (nObondedToCl == 4) {
-                // RDKit❌❌:             // CLO4
-                // RDKit❌❌:             // Perchlorate anione chlorine
-                // RDKit❌❌:             atomType = 77;
-                // RDKit❌❌:             break;
-                // RDKit❌❌:           }
-                // RDKit❌❌:         }
+                // RDKit✔️✔️:         // 4 neighbors
+                // RDKit✔️✔️:         if (atom->getTotalDegree() == 4) {
+                if total_degree == 4 {
+                    // RDKit✔️✔️:           // loop over neighbors and count the number
+                    // RDKit✔️✔️:           // of bonded oxygens
+                    // RDKit✔️✔️:           unsigned int nObondedToCl = 0;
+                    let mut n_o_bonded_to_cl = 0_u32;
+                    // RDKit✔️✔️:           boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
+                    // RDKit✔️✔️:           for (; nbrIdx != endNbrs; ++nbrIdx) {
+                    for neighbor in mol
+                        .topology_block()
+                        .adjacency
+                        .neighbors_of(atom.id().index())
+                    {
+                        // RDKit✔️✔️:             const Atom *nbrAtom = mol[*nbrIdx];
+                        let nbr_atom = &mol.atoms()[neighbor.atom_index];
+                        // RDKit✔️✔️:             if (nbrAtom->getAtomicNum() == 8) {
+                        if nbr_atom.atomic_number() == 8 {
+                            // RDKit✔️✔️:               ++nObondedToCl;
+                            n_o_bonded_to_cl += 1;
+                            // RDKit✔️✔️:             }
+                        }
+                        // RDKit✔️✔️:           }
+                    }
+                    // RDKit✔️✔️:           // if there are 4 oxygens
+                    // RDKit✔️✔️:           if (nObondedToCl == 4) {
+                    if n_o_bonded_to_cl == 4 {
+                        // RDKit✔️✔️:             // CLO4
+                        // RDKit✔️✔️:             // Perchlorate anione chlorine
+                        // RDKit✔️✔️:             atomType = 77;
+                        atom_type = 77;
+                        // RDKit✔️✔️:             break;
+                    }
+                    // RDKit✔️✔️:           }
+                    // RDKit✔️✔️:         }
+                }
                 // RDKit❗✔️:         // 1 neighbor
                 // RDKit❗✔️:         if (atom->getTotalDegree() == 1) {
-                if total_degree == 1 {
+                if atom_type == 0 && total_degree == 1 {
                     // RDKit❗✔️:           // Cl
                     // RDKit❗✔️:           // Chlorine
                     // RDKit❗✔️:           atomType = 12;
@@ -3943,6 +4137,127 @@ fn set_mmff_heavy_atom_type(
                 }
                 // RDKit❗✔️:         }
                 // RDKit❌❌:         break;
+            }
+            // RDKit✔️✔️:       // Potassium
+            // RDKit✔️✔️:       case 19:
+            19 => {
+                let graph_degree = mol
+                    .topology_block()
+                    .adjacency
+                    .neighbors_of(atom.id().index())
+                    .len();
+                // RDKit✔️✔️:         if (atom->getDegree() == 0) {
+                if graph_degree == 0 {
+                    // RDKit✔️✔️:           // K+
+                    // RDKit✔️✔️:           // Potassium cation
+                    // RDKit✔️✔️:           atomType = 94;
+                    atom_type = 94;
+                    // RDKit✔️✔️:           break;
+                }
+                // RDKit✔️✔️:         }
+                // RDKit✔️✔️:         break;
+            }
+            // RDKit✔️✔️:       // Calcium
+            // RDKit✔️✔️:       case 20:
+            20 => {
+                let graph_degree = mol
+                    .topology_block()
+                    .adjacency
+                    .neighbors_of(atom.id().index())
+                    .len();
+                // RDKit✔️✔️:         if (atom->getDegree() == 0) {
+                if graph_degree == 0 {
+                    // RDKit✔️✔️:           // CA+2
+                    // RDKit✔️✔️:           // Dipositive calcium cation
+                    // RDKit✔️✔️:           atomType = 96;
+                    atom_type = 96;
+                    // RDKit✔️✔️:           break;
+                }
+                // RDKit✔️✔️:         }
+                // RDKit✔️✔️:         break;
+            }
+            // RDKit✔️✔️:       // Iron
+            // RDKit✔️✔️:       case 26:
+            26 => {
+                let graph_degree = mol
+                    .topology_block()
+                    .adjacency
+                    .neighbors_of(atom.id().index())
+                    .len();
+                // RDKit✔️✔️:         if (atom->getDegree() == 0) {
+                if graph_degree == 0 {
+                    // RDKit✔️✔️:           if (atom->getFormalCharge() == 2) {
+                    if atom.formal_charge() == 2 {
+                        // RDKit✔️✔️:             // FE+2
+                        // RDKit✔️✔️:             // Dipositive iron cation
+                        // RDKit✔️✔️:             atomType = 87;
+                        atom_type = 87;
+                        // RDKit✔️✔️:             break;
+                    }
+                    // RDKit✔️✔️:           }
+                    // RDKit✔️✔️:           if (atom->getFormalCharge() == 3) {
+                    if atom_type == 0 && atom.formal_charge() == 3 {
+                        // RDKit✔️✔️:             // FE+3
+                        // RDKit✔️✔️:             // Tripositive iron cation
+                        // RDKit✔️✔️:             atomType = 88;
+                        atom_type = 88;
+                        // RDKit✔️✔️:             break;
+                    }
+                    // RDKit✔️✔️:           }
+                }
+                // RDKit✔️✔️:         }
+                // RDKit✔️✔️:         break;
+            }
+            // RDKit✔️✔️:       // Copper
+            // RDKit✔️✔️:       case 29:
+            29 => {
+                let graph_degree = mol
+                    .topology_block()
+                    .adjacency
+                    .neighbors_of(atom.id().index())
+                    .len();
+                // RDKit✔️✔️:         if (atom->getDegree() == 0) {
+                if graph_degree == 0 {
+                    // RDKit✔️✔️:           if (atom->getFormalCharge() == 1) {
+                    if atom.formal_charge() == 1 {
+                        // RDKit✔️✔️:             // CU+1
+                        // RDKit✔️✔️:             // Monopositive copper cation
+                        // RDKit✔️✔️:             atomType = 97;
+                        atom_type = 97;
+                        // RDKit✔️✔️:             break;
+                    }
+                    // RDKit✔️✔️:           }
+                    // RDKit✔️✔️:           if (atom->getFormalCharge() == 2) {
+                    if atom_type == 0 && atom.formal_charge() == 2 {
+                        // RDKit✔️✔️:             // CU+2
+                        // RDKit✔️✔️:             // Dipositive copper cation
+                        // RDKit✔️✔️:             atomType = 98;
+                        atom_type = 98;
+                        // RDKit✔️✔️:             break;
+                    }
+                    // RDKit✔️✔️:           }
+                }
+                // RDKit✔️✔️:         }
+                // RDKit✔️✔️:         break;
+            }
+            // RDKit✔️✔️:       // Zinc
+            // RDKit✔️✔️:       case 30:
+            30 => {
+                let graph_degree = mol
+                    .topology_block()
+                    .adjacency
+                    .neighbors_of(atom.id().index())
+                    .len();
+                // RDKit✔️✔️:         if (atom->getDegree() == 0) {
+                if graph_degree == 0 {
+                    // RDKit✔️✔️:           // ZN+2
+                    // RDKit✔️✔️:           // Dipositive zinc cation
+                    // RDKit✔️✔️:           atomType = 95;
+                    atom_type = 95;
+                    // RDKit✔️✔️:           break;
+                }
+                // RDKit✔️✔️:         }
+                // RDKit✔️✔️:         break;
             }
             // RDKit❗✔️:       // Bromine
             // RDKit❗✔️:       case 35:

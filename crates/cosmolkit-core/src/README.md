@@ -15,8 +15,9 @@ This crate is organized by ownership boundary, not by porting order.
 - `bio/`: `BioStructure`, biomolecular invariants, and BioStructure operations.
 - `io/`: file-format readers/writers. Structural PDB/mmCIF goes through
   `io::bio`; molecule molblock/SDF code stays in `io::molblock` and `io::sdf`.
-- `unported/`: quarantined stubs for modules that are intentionally not active.
-  Do not re-export or call these files as implementation shortcuts.
+- Historical `unported/` quarantine modules have been deleted. Do not
+  reintroduce parallel inactive stubs or use deleted quarantine paths as
+  implementation shortcuts.
 
 `lib.rs` keeps root-level compatibility re-exports such as `crate::atom`,
 `crate::ops`, and `crate::smiles_write`. New code should prefer the domain

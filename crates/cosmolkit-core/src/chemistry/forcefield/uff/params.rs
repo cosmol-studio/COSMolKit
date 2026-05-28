@@ -5,8 +5,7 @@ use std::fmt;
 use std::num::ParseFloatError;
 use std::sync::{Arc, OnceLock, RwLock};
 
-const RDKIT_UFF_PARAMS_CPP: &str =
-    include_str!("../../../../../../third_party/rdkit/Code/ForceField/UFF/Params.cpp");
+include!(concat!(env!("OUT_DIR"), "/uff_defaults_generated.rs"));
 
 // RDKit✔️✔️: constexpr double DEG2RAD = M_PI / 180.0;
 pub const DEG2RAD: f64 = std::f64::consts::PI / 180.0;
@@ -113,7 +112,13 @@ pub struct AtomicParams {
 #[derive(Debug)]
 pub struct ParamCollection {
     source_param_data: String,
-    params: BTreeMap<String, AtomicParams>,
+    params: ParamStorage,
+}
+
+#[derive(Debug)]
+enum ParamStorage {
+    Static(&'static [(&'static str, AtomicParams)]),
+    Owned(BTreeMap<String, AtomicParams>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,6 +170,20 @@ impl fmt::Display for UffParamError {
 impl std::error::Error for UffParamError {}
 
 impl ParamCollection {
+    fn new_default_from_generated() -> Self {
+        // RDKit✔️🔝: const std::string defaultParamData =
+        // RDKit✔️🔝:     "#Atom	r1	theta0	x1	D1	zeta	Z1	Vi	Uj	"
+        // RDKit✔️🔝:     "Xi	Hard	Radius\n"
+        // RDKit✔️🔝:     "H_	0.354	180	2.886	0.044	12	0.712	0	0	"
+        // Default RDKit table bytes are decoded at build time and emitted as
+        // static Rust data. This preserves the source table and removes
+        // runtime source scanning plus numeric parsing for the default path.
+        Self {
+            source_param_data: UFF_DEFAULT_PARAM_DATA.to_owned(),
+            params: ParamStorage::Static(UFF_DEFAULT_ATOMIC_PARAMS),
+        }
+    }
+
     fn new_from_source(param_data: &str) -> Result<Self, UffParamError> {
         // RDKit✔️✔️: ParamCollection::ParamCollection(std::string paramData) {
         // RDKit✔️✔️:   if (paramData.empty()) {
@@ -178,7 +197,7 @@ impl ParamCollection {
         let params = parse_param_data(&source_param_data)?;
         Ok(Self {
             source_param_data,
-            params,
+            params: ParamStorage::Owned(params),
         })
     }
 
@@ -188,6 +207,13 @@ impl ParamCollection {
         // RDKit✔️✔️:   const ParamCollection *res = &(param_flyweight(paramData).get());
         // RDKit✔️✔️:   return res;
         // RDKit✔️✔️: }
+        if param_data.is_empty() {
+            static DEFAULT: OnceLock<Arc<ParamCollection>> = OnceLock::new();
+            return Ok(Arc::clone(
+                DEFAULT.get_or_init(|| Arc::new(Self::new_default_from_generated())),
+            ));
+        }
+
         let registry = param_collection_registry();
         {
             let guard = registry
@@ -214,11 +240,17 @@ impl ParamCollection {
     }
 
     pub fn len(&self) -> usize {
-        self.params.len()
+        match &self.params {
+            ParamStorage::Static(params) => params.len(),
+            ParamStorage::Owned(params) => params.len(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.params.is_empty()
+        match &self.params {
+            ParamStorage::Static(params) => params.is_empty(),
+            ParamStorage::Owned(params) => params.is_empty(),
+        }
     }
 
     pub fn get(&self, symbol: &str) -> Option<&AtomicParams> {
@@ -230,7 +262,13 @@ impl ParamCollection {
         // RDKit✔️✔️:   }
         // RDKit✔️✔️:   return nullptr;
         // RDKit✔️✔️: }
-        self.params.get(symbol)
+        match &self.params {
+            ParamStorage::Static(params) => params
+                .binary_search_by(|(candidate, _)| candidate.cmp(&symbol))
+                .ok()
+                .map(|idx| &params[idx].1),
+            ParamStorage::Owned(params) => params.get(symbol),
+        }
     }
 }
 
@@ -240,77 +278,7 @@ fn param_collection_registry() -> &'static RwLock<HashMap<String, Arc<ParamColle
 }
 
 pub fn default_param_data() -> Result<&'static str, UffParamError> {
-    static DATA: OnceLock<Result<String, UffParamError>> = OnceLock::new();
-    DATA.get_or_init(extract_default_param_data)
-        .as_deref()
-        .map_err(Clone::clone)
-}
-
-fn extract_default_param_data() -> Result<String, UffParamError> {
-    // RDKit✔️❌: const std::string defaultParamData =
-    // RDKit✔️❌:     "#Atom	r1	theta0	x1	D1	zeta	Z1	Vi	Uj	"
-    // RDKit✔️❌:     "Xi	Hard	Radius\n"
-    // Rust extracts RDKit's adjacent C++ string literals once from the
-    // vendored source file. This preserves the table bytes but does more
-    // startup work than RDKit's compiled static string.
-    let mut in_default_data = false;
-    let mut data = String::new();
-    for line in RDKIT_UFF_PARAMS_CPP.lines() {
-        if !in_default_data {
-            if line.contains("const std::string defaultParamData =") {
-                in_default_data = true;
-            }
-            continue;
-        }
-        let trimmed = line.trim();
-        if trimmed == ";" {
-            return Ok(data);
-        }
-        if !trimmed.starts_with('"') {
-            return Err(UffParamError::MalformedDefaultParamData {
-                line: line.to_owned(),
-            });
-        }
-        data.push_str(&decode_cpp_string_literal_line(trimmed)?);
-        if trimmed.ends_with(';') {
-            return Ok(data);
-        }
-    }
-    Err(UffParamError::MissingDefaultParamData)
-}
-
-fn decode_cpp_string_literal_line(line: &str) -> Result<String, UffParamError> {
-    let Some(end_quote) = line.rfind('"') else {
-        return Err(UffParamError::MalformedDefaultParamData {
-            line: line.to_owned(),
-        });
-    };
-    let literal = &line[1..end_quote];
-    let mut decoded = String::new();
-    let mut chars = literal.chars();
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            decoded.push(ch);
-            continue;
-        }
-        let Some(escaped) = chars.next() else {
-            return Err(UffParamError::MalformedDefaultParamData {
-                line: line.to_owned(),
-            });
-        };
-        match escaped {
-            'n' => decoded.push('\n'),
-            't' => decoded.push('\t'),
-            '"' => decoded.push('"'),
-            '\\' => decoded.push('\\'),
-            other => {
-                return Err(UffParamError::MalformedDefaultParamData {
-                    line: format!("unsupported escape \\{other} in {line}"),
-                });
-            }
-        }
-    }
-    Ok(decoded)
+    Ok(UFF_DEFAULT_PARAM_DATA)
 }
 
 fn parse_param_data(param_data: &str) -> Result<BTreeMap<String, AtomicParams>, UffParamError> {
@@ -548,7 +516,7 @@ mod tests {
         params.insert("C_3".to_string(), expected);
         let collection = ParamCollection {
             source_param_data: String::new(),
-            params,
+            params: ParamStorage::Owned(params),
         };
 
         assert_eq!(collection.get("C_3"), Some(&expected));
@@ -560,7 +528,7 @@ mod tests {
         params.insert("C_3".to_string(), sample_atomic_params(10.0));
         let collection = ParamCollection {
             source_param_data: String::new(),
-            params,
+            params: ParamStorage::Owned(params),
         };
 
         assert_eq!(collection.get("N_3"), None);

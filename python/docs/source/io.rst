@@ -77,6 +77,12 @@ Read a single-record MDL molfile with the same CTAB parser:
    mol = Molecule.read_mol("input.mol", coordinate_dim="auto")
    mol = Molecule.read_mol_from_str(mol_text, coordinate_dim="2d")
 
+``Molecule.read_mol()`` and ``Molecule.read_mol_from_str()`` follow RDKit
+``MolFromMolBlock`` boundaries: they parse the molfile CTAB through the first
+``M  END`` line and ignore unread trailing text, including SDF data fields and
+``$$$$`` record separators. Use ``Molecule.read_sdf()``, ``SdfDataset``, or
+``SdfReader`` when those SDF data fields are part of the requested input.
+
 Write a molecule to SDF. SDF writing is explicit about the coordinate source:
 ``write_sdf()`` and ``to_2d_sdf_string()`` export 2D coordinates, generating
 them when needed; ``to_3d_sdf_string()`` exports an existing 3D conformer and
@@ -100,6 +106,10 @@ SDF Strings
    text = mol.to_2d_sdf_string(format="v2000", include_stereo=True, kekulize=True)
    restored = Molecule.read_sdf_from_str(text, coordinate_dim="2d")
 
+``Molecule.read_sdf_from_str()`` uses the SDF record parser and therefore
+validates and parses data fields after ``M  END``. For molfile-only string input
+where trailing SDF text should be ignored, use ``Molecule.read_mol_from_str()``.
+
 Use ``to_3d_sdf_string()`` when you explicitly want to export an existing 3D
 conformer. The molecule must already have 3D coordinates.
 
@@ -113,6 +123,27 @@ For multi-record strings, use the batch API:
 .. code-block:: python
 
    batch = MoleculeBatch.read_sdf_records_from_str(sdf_text, coordinate_dim="auto")
+
+MOL2 Files
+----------
+
+Read Tripos MOL2 input with the source-ported RDKit ``Mol2FileToMol`` and
+``Mol2BlockToMol`` profile:
+
+.. code-block:: python
+
+   mol = Molecule.read_mol2("input.mol2")
+   mol = Molecule.read_mol2_from_str(
+       mol2_text,
+       sanitize=True,
+       remove_hs=True,
+       variant="corina",
+       cleanup_substructures=True,
+   )
+
+The MOL2 reader exposes RDKit's ``Mol2ParserParams`` controls. ``variant`` is
+currently limited to ``"corina"``, the only variant present in RDKit's public
+MOL2 enum for this parser.
 
 PDB and mmCIF Blocks
 --------------------

@@ -95,6 +95,14 @@ pub const MOLBLOCK_IO_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Experimental V2000/V3000 MolBlock/SDF writer with parity flag, bond-stereo, SGroup, RGroup, alias, value lines, and aromatic-bond bookkeeping. Reader has partial V2000 parsing. The writer and reader remain dependent on explicit valence/kekulize/ring state management. Unsupported branches (complex SMARTS queries, atropisomer wedge-bonds) fail closed.",
 };
 
+pub const MOL2_READ_FEATURE: FeatureSpec = FeatureSpec {
+    name: "mol2.read",
+    category: FeatureCategory::Io,
+    status: SupportStatus::Experimental,
+    parity_sensitive: true,
+    docs: "RDKit-compatible Tripos MOL2 reading is source-ported from `Mol2FileParser.cpp` for the exposed `Mol2FileToMol`/`Mol2BlockToMol` profile, including `Mol2ParserParams` controls for sanitize, removeHs, CORINA variant, and cleanupSubstructures. The feature remains experimental while broader fixture parity and marker audit work continues.",
+};
+
 pub const HYDROGENS_FEATURE: FeatureSpec = FeatureSpec {
     name: "molecule.hydrogens",
     category: FeatureCategory::TopologyOperation,
@@ -230,6 +238,7 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &SMILES_PARSE_FEATURE,
     &SMILES_WRITE_FEATURE,
     &MOLBLOCK_IO_FEATURE,
+    &MOL2_READ_FEATURE,
     &HYDROGENS_FEATURE,
     &COORDINATE_2D_FEATURE,
     &SANITIZE_FEATURE,

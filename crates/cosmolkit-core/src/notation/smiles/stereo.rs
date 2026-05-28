@@ -2027,6 +2027,10 @@ pub(crate) fn assign_chiral_types_from_bond_dirs(mol: &mut Molecule, conf_id: us
     let mut atoms_set = vec![false; n_atoms];
     let replace_existing_tags = true; // Called from MolFromSmiles with default true
     let bond_range = 0..mol.num_bonds();
+    let implicit_hydrogens =
+        crate::assign_valence_with_options(mol, crate::ValenceModel::RdkitLike, false)
+            .ok()
+            .map(|valence| valence.implicit_hydrogens);
 
     // Phase 1: collect bonds that might need chiral assignment.
     // We collect indices first to avoid borrow conflicts between reading
@@ -2098,7 +2102,7 @@ pub(crate) fn assign_chiral_types_from_bond_dirs(mol: &mut Molecule, conf_id: us
         // RDKit✔️✔️:           atom->setNumExplicitHs(1);
         // RDKit✔️✔️:           atom->updatePropertyCache();
         // RDKit✔️✔️:         }
-        // COSMolKit: compute degree as bond count to this atom
+        // COSMolKit: compute degree as bond count to this atom.
         let deg = mol
             .bonds()
             .iter()
@@ -2109,12 +2113,11 @@ pub(crate) fn assign_chiral_types_from_bond_dirs(mol: &mut Molecule, conf_id: us
                 let atom = &mol.topology_block().atoms[begin_idx];
                 atom.explicit_hydrogens() > 0
             };
-            let no_implicit = {
-                let atom = &mol.topology_block().atoms[begin_idx];
-                atom.no_implicit()
-            };
-            if !has_explicit && !no_implicit {
-                // 3-coordinate, no explicit H, implicit H exists
+            let has_one_implicit_h = implicit_hydrogens
+                .as_ref()
+                .and_then(|hydrogens| hydrogens.get(begin_idx))
+                .is_some_and(|hydrogens| *hydrogens == 1);
+            if !has_explicit && has_one_implicit_h {
                 chiral_assignments.push((begin_idx, None)); // marker for explicit H update
             }
         }
@@ -2127,7 +2130,7 @@ pub(crate) fn assign_chiral_types_from_bond_dirs(mol: &mut Molecule, conf_id: us
             atoms[idx].set_chiral_tag(tag);
         } else {
             // marker for explicit H update
-            if atoms[idx].explicit_hydrogens() == 0 && !atoms[idx].no_implicit() {
+            if atoms[idx].explicit_hydrogens() == 0 {
                 atoms[idx].set_explicit_hydrogens(1);
             }
         }

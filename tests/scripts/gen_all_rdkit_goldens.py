@@ -23,6 +23,7 @@ GENERATORS: list[tuple[str, str]] = [
     ("gen_rdkit_tetrahedral_stereo_geometry.py", "tetrahedral_stereo_geometry.jsonl"),
     ("gen_rdkit_dg_bounds_golden.py", "dg_bounds_matrix.jsonl"),
     ("gen_rdkit_forcefield_params_golden.py", "forcefield_params.jsonl"),
+    ("gen_rdkit_mmff_builtin_golden.py", "mmff_builtin.jsonl"),
     ("gen_rdkit_smiles_writer_golden.py", "smiles_writer.jsonl"),
     ("gen_rdkit_isomeric_smiles_golden.py", "isomeric_smiles.jsonl"),
     ("gen_rdkit_svg_golden.py", "svg_drawer.jsonl"),
@@ -30,8 +31,13 @@ GENERATORS: list[tuple[str, str]] = [
     ("gen_rdkit_morgan_fingerprint_golden.py", "morgan_fingerprint.jsonl"),
     ("gen_rdkit_sdf_write_golden.py", "sdf_write.jsonl"),
     ("gen_rdkit_sdf_read_golden.py", "sdf_read.jsonl"),
+    ("gen_rdkit_mol2_read_golden.py", "mol2_read.jsonl"),
     ("gen_rdkit_molfile_read_golden.py", "molfile_read.jsonl"),
     ("gen_rdkit_xyz_read_golden.py", "xyz_read.jsonl"),
+    (
+        "gen_rdkit_builtin_fixture_migration_golden.py",
+        "rdkit_builtin_fixture_migration.jsonl",
+    ),
 ]
 
 

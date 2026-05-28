@@ -135,3 +135,29 @@ When code needs COSMolKit's ordered-ligand tetrahedral representation, use
    mol = Molecule.from_smiles("F[C@H](Cl)Br")
 
    print(mol.tetrahedral_stereo())
+
+Substructure And SMARTS
+-----------------------
+
+Substructure matching functions accept molecule queries:
+
+.. code-block:: python
+
+   import cosmolkit
+
+   mol = Molecule.from_smiles("CCO")
+   query = Molecule.from_smiles("CO")
+
+   print(cosmolkit.has_substruct_match(mol, query))
+   print(cosmolkit.get_substruct_match(mol, query).atom_mapping())
+
+``parse_smarts()`` exposes the Rust SMARTS parser as parse metadata. It returns
+a ``SmartsMolecule`` query-tree value; direct SMARTS query matching is not yet a
+Python API.
+
+.. code-block:: python
+
+   smarts = cosmolkit.parse_smarts("[#6]-O")
+
+   print(smarts.num_atoms())
+   print(smarts.num_bonds())

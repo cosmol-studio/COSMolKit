@@ -77,6 +77,12 @@ Read and write SDF:
    mol = Molecule.read_sdf("input.sdf", coordinate_dim="auto")
    mol.write_sdf("python/examples/output/output.sdf", format="v2000")
 
+Read MOL2:
+
+.. code-block:: python
+
+   mol = Molecule.read_mol2("input.mol2")
+
 Access coordinates as NumPy arrays:
 
 .. code-block:: python
@@ -100,6 +106,17 @@ Generate a Morgan fingerprint:
 
 ``on_bits()`` returns the sparse bit indexes set inside the fixed-length binary
 fingerprint. It is not a dense neural embedding.
+
+Parse SMARTS metadata:
+
+.. code-block:: python
+
+   import cosmolkit
+
+   query = cosmolkit.parse_smarts("[#6]-O")
+
+   print(query.num_atoms())
+   print(query.num_bonds())
 
 Process a list of molecules:
 

@@ -639,27 +639,6 @@ mod tests {
     }
 
     #[test]
-    fn uff_anglebend_source_inventory_rejects_missing_calc_angle_bend_energy() {
-        let header =
-            include_str!("../../../../../../third_party/rdkit/Code/ForceField/UFF/AngleBend.h");
-        let source =
-            include_str!("../../../../../../third_party/rdkit/Code/ForceField/UFF/AngleBend.cpp");
-        let report = include_str!(
-            "../../../../../../dev/gap_reports/rdkit_uff_anglebend_missing_calc_angle_bend_energy.md"
-        );
-
-        assert!(!header.contains("calcAngleBendEnergy"));
-        assert!(!source.contains("calcAngleBendEnergy"));
-        assert!(report.contains("does not"));
-        assert!(report.contains("MMFF"));
-        assert!(report.contains("must not be used as a substitute"));
-        assert!(report.contains("calcAngleForceConstant"));
-        assert!(report.contains("calcAngleBendGrad"));
-        assert!(report.contains("getEnergyTerm"));
-        assert!(report.contains("getThetaDeriv"));
-    }
-
-    #[test]
     fn uff_anglebendcontrib_constructor_stores_indices_owner_force_and_order0_coefficients() {
         let ff = force_field();
         let (at1, at2, at3) = params();

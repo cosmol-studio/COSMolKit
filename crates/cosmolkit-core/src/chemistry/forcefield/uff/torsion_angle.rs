@@ -681,31 +681,6 @@ mod tests {
     }
 
     #[test]
-    fn uff_torsionanglecontrib_source_inventory_rejects_missing_calc_torsion_energy() {
-        let header =
-            include_str!("../../../../../../third_party/rdkit/Code/ForceField/UFF/TorsionAngle.h");
-        let source = include_str!(
-            "../../../../../../third_party/rdkit/Code/ForceField/UFF/TorsionAngle.cpp"
-        );
-        let report = include_str!(
-            "../../../../../../dev/gap_reports/rdkit_uff_torsionangle_missing_calc_torsion_energy.md"
-        );
-
-        assert!(!header.contains("calcTorsionEnergy"));
-        assert!(!source.contains("calcTorsionEnergy"));
-        assert!(report.contains("has no `calcTorsionEnergy` source symbol"));
-        assert!(report.contains("Do not create a Rust `calc_torsion_energy` helper"));
-        assert!(report.contains("calculateCosTorsion"));
-        assert!(report.contains("calcTorsionGrad"));
-        assert!(report.contains("equation17"));
-        assert!(report.contains("isInGroup6"));
-        assert!(report.contains("calcTorsionParams"));
-        assert!(report.contains("getEnergy"));
-        assert!(report.contains("getGrad"));
-        assert!(report.contains("getThetaDeriv"));
-    }
-
-    #[test]
     fn uff_torsionanglecontrib_constructor_stores_owner_and_indices() {
         let ff = force_field();
         let at2 = atomic_params(2.0, 1.5);
