@@ -22,8 +22,8 @@ op-contracts = []
 op-contracts-strict = ["runtime-invariants", "op-contracts"]
 
 [dependencies]
-cosmolkit-macros = { version = "0.2.4", path = "../cosmolkit-macros" }
-cosmolkit-ringdecomposer = { version = "0.2.4", path = "../cosmolkit-ringdecomposer" }
+cosmolkit-macros = { version = "0.2.5", path = "../cosmolkit-macros" }
+cosmolkit-ringdecomposer = { version = "0.2.5", path = "../cosmolkit-ringdecomposer" }
 glam = "0.33.0"
 indicatif = "0.18"
 libc = "0.2"

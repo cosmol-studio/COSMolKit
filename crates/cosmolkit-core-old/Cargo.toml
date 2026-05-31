@@ -20,7 +20,7 @@ topology-contract-tests = []
 
 [dependencies]
 console = "0.16"
-cosmolkit-macros = { path = "../cosmolkit-macros", version = "0.2.4" }
+cosmolkit-macros = { path = "../cosmolkit-macros", version = "0.2.5" }
 glam = "0.32.1"
 indicatif = "0.18"
 rayon = "1.12.0"
