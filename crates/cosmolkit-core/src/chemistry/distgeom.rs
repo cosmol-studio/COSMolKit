@@ -430,7 +430,7 @@ fn embedder_generate_initial_coords<R: RdkitDoubleRng>(
     embed_params: &EmbedParameters,
     dist_mat: &mut SymmMatrix,
     rng: &mut R,
-) -> bool {
+) -> Result<bool, DgBoundsError> {
     // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::generateInitialCoords (Embedder.cpp:479-520)
     // RDKit✔️✔️: bool generateInitialCoords(RDGeom::PointPtrVect *positions,
     // RDKit✔️✔️:                            const detail::EmbedArgs &eargs,
@@ -470,23 +470,22 @@ fn embedder_generate_initial_coords<R: RdkitDoubleRng>(
     // RDKit✔️✔️:   return gotCoords;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::generateInitialCoords
-    let got_coords;
-    if !embed_params.use_random_coords {
+    let got_coords = if !embed_params.use_random_coords {
         let _largest_distance = pick_random_dist_mat_with_rng(eargs.mmat, dist_mat, rng);
-        got_coords = compute_initial_coords_with_rng(
+        compute_initial_coords_with_rng(
             dist_mat,
             positions,
             rng,
             embed_params.rand_neg_eig,
             embed_params.num_zero_fail as usize,
-        );
+        )?
     } else {
         let box_size = if embed_params.box_size_mult > 0.0 {
             5.0 * embed_params.box_size_mult
         } else {
             -embed_params.box_size_mult
         };
-        got_coords = compute_random_coords_with_rng(positions, box_size, rng);
+        let got_coords = compute_random_coords_with_rng(positions, box_size, rng);
         if let Some(coord_map) = &embed_params.coord_map {
             for (idx, mapped_point) in coord_map {
                 let point = &mut positions[*idx as usize];
@@ -498,8 +497,9 @@ fn embedder_generate_initial_coords<R: RdkitDoubleRng>(
                 }
             }
         }
-    }
-    got_coords
+        got_coords
+    };
+    Ok(got_coords)
 }
 
 fn copy_forcefield_positions_to_point_vectors(field: &ForceField, positions: &mut [Vec<f64>]) {
@@ -1166,7 +1166,7 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
     embed_params: &mut EmbedParameters,
     end_time: Option<Instant>,
     rng: &mut R,
-) -> bool {
+) -> Result<bool, DgBoundsError> {
     let mut got_coords = false;
     let mut iter = 0_u32;
     let mut dist_mat = SymmMatrix::new(positions.len());
@@ -1196,7 +1196,7 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
         }
 
         got_coords =
-            embedder_generate_initial_coords(positions, eargs, embed_params, &mut dist_mat, rng);
+            embedder_generate_initial_coords(positions, eargs, embed_params, &mut dist_mat, rng)?;
         if !got_coords {
             if trace_row64 {
                 println!("row64_embed_points iter={iter} stage=initial_coords ok=0");
@@ -1304,7 +1304,7 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
         }
     }
 
-    got_coords
+    Ok(got_coords)
 }
 
 fn embedder_embed_points(
@@ -1313,7 +1313,7 @@ fn embedder_embed_points(
     embed_params: &mut EmbedParameters,
     seed: i32,
     end_time: Option<Instant>,
-) -> bool {
+) -> Result<bool, DgBoundsError> {
     // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::embedPoints (Embedder.cpp:838-1030)
     // RDKit✔️✔️: bool embedPoints(RDGeom::PointPtrVect *positions, detail::EmbedArgs eargs,
     // RDKit✔️✔️:                  EmbedParameters &embedParams, int seed, TimePoint *end_time) {
@@ -1455,7 +1455,7 @@ fn embedder_embed_points(
         embed_params.basin_thresh = 1.0e8;
     }
 
-    if seed > -1 {
+    let got_coords = if seed > -1 {
         let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(seed);
         embedder_embed_points_with_rng(positions, &eargs, embed_params, end_time, &mut rng)
     } else {
@@ -1468,7 +1468,8 @@ fn embedder_embed_points(
                 &mut *rng.borrow_mut(),
             )
         })
-    }
+    }?;
+    Ok(got_coords)
 }
 
 fn embedder_find_double_bonds(
@@ -2762,7 +2763,7 @@ fn embedder_embed_helper(
     eargs: &mut EmbedHelperArgs<'_>,
     params: &mut EmbedParameters,
     end_time: Option<Instant>,
-) {
+) -> Result<(), DgBoundsError> {
     // BEGIN RDKIT CPP FUNCTION DGeomHelpers::detail::embedHelper_ (Embedder.cpp:1356-1447)
     // RDKit✔️✔️: void embedHelper_(int threadId, int numThreads, EmbedArgs *eargs,
     // RDKit✔️✔️:                   EmbedParameters *params, TimePoint *end_time) {
@@ -2797,7 +2798,7 @@ fn embedder_embed_helper(
         if let Some(deadline) = end_time
             && Instant::now() > deadline
         {
-            return;
+            return Ok(());
         }
 
         // RDKit✔️✔️:     if (rdcast<int>(ci % numThreads) != threadId) {
@@ -2827,7 +2828,7 @@ fn embedder_embed_helper(
             params,
             new_seed,
             end_time,
-        );
+        )?;
 
         // RDKit✔️✔️:     // copy the coordinates into the correct conformer
         // RDKit✔️✔️:     if (gotCoords) {
@@ -2864,6 +2865,7 @@ fn embedder_embed_helper(
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DGeomHelpers::detail::embedHelper_
+    Ok(())
 }
 
 // ──────────────────────────────────────────────
@@ -2884,6 +2886,10 @@ pub enum DgBoundsError {
     UnsupportedEtVersion,
     #[error("coordinate block update failed: {0}")]
     CoordinateUpdateFailed(String),
+    #[error(
+        "RDKit clock-derived implicit conformer seed is unsupported on wasm32; set EmbedParameters.random_seed to a non-negative explicit seed"
+    )]
+    WasmImplicitClockSeedUnsupported,
     #[error(transparent)]
     UnsupportedFeature(#[from] crate::UnsupportedFeatureError),
 }
@@ -5858,15 +5864,25 @@ impl RdkitDistgeomMinStdRand {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" {
     fn clock() -> libc::clock_t;
 }
 
-fn rdkit_clock_seed() -> i32 {
+#[cfg(not(target_arch = "wasm32"))]
+fn rdkit_clock_seed() -> Result<i32, DgBoundsError> {
     // BEGIN RDKIT CPP CLOCK SEED SOURCE C library clock() use in conformer generation
     // RDKit✔️✔️: clock()
     // END RDKIT CPP CLOCK SEED SOURCE
-    unsafe { clock() as i32 }
+    Ok(unsafe { clock() as i32 })
+}
+
+#[cfg(target_arch = "wasm32")]
+fn rdkit_clock_seed() -> Result<i32, DgBoundsError> {
+    // BEGIN RDKIT CPP CLOCK SEED SOURCE C library clock() use in conformer generation
+    // RDKit❌✔️: clock()
+    // END RDKIT CPP CLOCK SEED SOURCE
+    Err(DgBoundsError::WasmImplicitClockSeedUnsupported)
 }
 
 impl RdkitDoubleRng for RdkitDistgeomMinStdRand {
@@ -6131,7 +6147,7 @@ fn rdkit_vector_normalize(data: &mut [f64]) {
     }
 }
 
-fn rdkit_vector_set_to_random(size: usize, seed: i32) -> Vec<f64> {
+fn rdkit_vector_set_to_random(size: usize, seed: i32) -> Result<Vec<f64>, DgBoundsError> {
     // BEGIN RDKIT CPP METHOD RDNumeric::Vector::setToRandom (Vector.h:267-287)
     // RDKit✔️✔️: void setToRandom(unsigned int seed = 0) {
     // RDKit✔️✔️:   // we want to get our own RNG here instead of using the global
@@ -6159,12 +6175,12 @@ fn rdkit_vector_set_to_random(size: usize, seed: i32) -> Vec<f64> {
     let effective_seed = if seed > 0 {
         seed
     } else {
-        rdkit_clock_seed().wrapping_add(1)
+        rdkit_clock_seed()?.wrapping_add(1)
     };
     let mut rng = RdkitDistgeomMinStdRand::new(effective_seed);
     let mut data = (0..size).map(|_| rng.next_unit_f64()).collect::<Vec<_>>();
     rdkit_vector_normalize(&mut data);
-    data
+    Ok(data)
 }
 
 fn power_eigen_solver(
@@ -6173,7 +6189,7 @@ fn power_eigen_solver(
     eigen_values: &mut [f64],
     mut eigen_vectors: Option<&mut DoubleMatrix>,
     seed: i32,
-) -> bool {
+) -> Result<bool, DgBoundsError> {
     // BEGIN RDKIT CPP FUNCTION RDNumeric::EigenSolvers::powerEigenSolver (PowerEigenSolver.cpp:20-100)
     // RDKit✔️✔️: bool powerEigenSolver(unsigned int numEig, DoubleSymmMatrix &mat,
     // RDKit✔️✔️:                       DoubleVector &eigenValues, DoubleMatrix *eigenVectors,
@@ -6217,7 +6233,7 @@ fn power_eigen_solver(
     // RDKit✔️✔️:   if (seed <= 0) {
     // RDKit✔️✔️:     seed = clock();
     // RDKit✔️✔️:   }
-    let mut effective_seed = if seed > 0 { seed } else { rdkit_clock_seed() };
+    let mut effective_seed = if seed > 0 { seed } else { rdkit_clock_seed()? };
     let mut converged = false;
     let mut z = vec![0.0; n];
     for (ei, eig_value_slot) in eigen_values.iter_mut().enumerate().take(num_eig) {
@@ -6227,7 +6243,7 @@ fn power_eigen_solver(
         // RDKit✔️✔️:     v.setToRandom(seed);
         let mut eig_val = -HUGE_EIGVAL;
         effective_seed += ei as i32;
-        let mut v = rdkit_vector_set_to_random(n, effective_seed);
+        let mut v = rdkit_vector_set_to_random(n, effective_seed)?;
 
         converged = false;
         for _iter in 0..MAX_ITERATIONS {
@@ -6308,7 +6324,7 @@ fn power_eigen_solver(
     }
     // RDKit✔️✔️:   return converged;
     // RDKit✔️✔️: }
-    converged
+    Ok(converged)
 }
 
 fn compute_initial_coords(
@@ -6317,7 +6333,7 @@ fn compute_initial_coords(
     rand_neg_eig: bool,
     num_zero_fail: usize,
     seed: i32,
-) -> bool {
+) -> Result<bool, DgBoundsError> {
     // BEGIN RDKIT CPP FUNCTION DistGeom::computeInitialCoords seed overload (DistGeomUtils.cpp:70-80)
     // RDKit✔️✔️: bool computeInitialCoords(const RDNumeric::SymmMatrix<double> &distMat,
     // RDKit✔️✔️:                           RDGeom::PointPtrVect &positions, bool randNegEig,
@@ -6352,7 +6368,7 @@ fn compute_initial_coords_with_rng<R: RdkitDoubleRng>(
     rng: &mut R,
     rand_neg_eig: bool,
     num_zero_fail: usize,
-) -> bool {
+) -> Result<bool, DgBoundsError> {
     // BEGIN RDKIT CPP FUNCTION DistGeom::computeInitialCoords RNG overload (DistGeomUtils.cpp:81-164)
     // RDKit✔️✔️: bool computeInitialCoords(const RDNumeric::SymmMatrix<double> &distMat,
     // RDKit✔️✔️:                           RDGeom::PointPtrVect &positions,
@@ -6467,7 +6483,7 @@ fn compute_initial_coords_with_rng<R: RdkitDoubleRng>(
                     payload, i, first_fail_val
                 );
             }
-            return false;
+            return Ok(false);
         }
     }
     if trace_row64 {
@@ -6510,7 +6526,7 @@ fn compute_initial_coords_with_rng<R: RdkitDoubleRng>(
         &mut eig_vals,
         Some(&mut eig_vecs),
         (sum_sq_d2 * n as f64) as i32,
-    );
+    )?;
     if trace_row64 {
         let payload = eig_vals
             .iter()
@@ -6587,10 +6603,10 @@ fn compute_initial_coords_with_rng<R: RdkitDoubleRng>(
     // RDKit✔️✔️:     return false;
     // RDKit✔️✔️:   }
     if found_neg && !rand_neg_eig {
-        return false;
+        return Ok(false);
     }
     if zero_eigs >= num_zero_fail && n > 3 {
-        return false;
+        return Ok(false);
     }
 
     // RDKit✔️✔️:   for (unsigned int i = 0; i < N; i++) {
@@ -6615,7 +6631,7 @@ fn compute_initial_coords_with_rng<R: RdkitDoubleRng>(
             }
         }
     }
-    true
+    Ok(true)
 }
 
 fn compute_random_coords(positions: &mut [Vec<f64>], box_size: f64, seed: i32) -> bool {
@@ -11310,7 +11326,7 @@ pub fn embed_multiple_confs(
         // RDKit✔️✔️:     }
         // RDKit✔️✔️:     else { ... dispatch thread ids ... }
         for thread_id in 0..num_threads {
-            embedder_embed_helper(thread_id, num_threads, &mut helper_args, params, end_time);
+            embedder_embed_helper(thread_id, num_threads, &mut helper_args, params, end_time)?;
         }
 
         // RDKit✔️✔️:     if (end_time != nullptr && Clock::now() > *end_time) {

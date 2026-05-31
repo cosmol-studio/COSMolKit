@@ -11,7 +11,7 @@ name = "cosmolkit"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cosmolkit-core = { version = "0.2.5", path = "../crates/cosmolkit-core" }
+cosmolkit-core = { version = "0.2.6", path = "../crates/cosmolkit-core" }
 pyo3-stub-gen = { version = "0.22.2", default-features = false, optional = true }
 pyo3 = { version = "0.28.3", default-features = false }
 pyo3-stub-gen-derive = "0.22.2"

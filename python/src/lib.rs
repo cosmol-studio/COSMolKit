@@ -3600,6 +3600,8 @@ The original ``Molecule`` value is left unchanged.
     #[doc = r#"
 Add explicit hydrogens in place.
 
+This is the in-place version of ``with_hydrogens()``.
+
 All public in-place ``Molecule`` methods end with ``_``. If this method returns
 an error, the receiver is not guaranteed to equal its pre-call value; use
 ``with_hydrogens()`` when failure-preserving value semantics are required.
@@ -3627,6 +3629,8 @@ The original ``Molecule`` value is left unchanged.
     #[pyo3(signature = (sanitize=None))]
     #[doc = r#"
 Remove explicit hydrogens in place.
+
+This is the in-place version of ``without_hydrogens()``.
 "#]
     fn remove_hydrogens_(&mut self, sanitize: Option<bool>) -> PyResult<()> {
         self.inner
@@ -3653,6 +3657,8 @@ The original ``Molecule`` value is left unchanged.
     #[pyo3(signature = (clear_aromatic_flags=None))]
     #[doc = r#"
 Convert aromatic bonds to an explicit Kekule form in place.
+
+This is the in-place version of ``with_kekulized_bonds()``.
 "#]
     fn kekulize_(&mut self, clear_aromatic_flags: Option<bool>) -> PyResult<()> {
         self.inner
@@ -3804,6 +3810,8 @@ Return a new molecule with 2D coordinates.
 
     #[doc = r#"
 Compute 2D coordinates in place.
+
+This is the in-place version of ``with_2d_coordinates()``.
 "#]
     fn compute_2d_coordinates_(&mut self) -> PyResult<()> {
         self.inner
@@ -3832,6 +3840,8 @@ Molecule
     #[pyo3(signature = (params=None))]
     #[doc = r#"
 Generate one 3D conformer in place.
+
+This is the in-place version of ``with_3d_conformer()``.
 "#]
     fn embed_3d_conformer_(
         &mut self,
@@ -3868,6 +3878,8 @@ without relying on side effects on the input ``EmbedParameters`` object.
     #[pyo3(signature = (params=None))]
     #[doc = r#"
 Generate one 3D conformer in place and return the embedding result object.
+
+This is the in-place version of ``with_3d_conformer_result()``.
 "#]
     fn embed_3d_conformer_result_(
         &mut self,
@@ -3905,6 +3917,8 @@ Molecule
     #[pyo3(signature = (num_confs, params=None))]
     #[doc = r#"
 Generate multiple 3D conformers in place.
+
+This is the in-place version of ``with_3d_conformers()``.
 "#]
     fn embed_3d_conformers_(
         &mut self,
@@ -3947,6 +3961,8 @@ reconstructing that state manually.
     #[pyo3(signature = (num_confs, params=None))]
     #[doc = r#"
 Generate multiple 3D conformers in place and return the embedding result object.
+
+This is the in-place version of ``with_3d_conformers_result()``.
 "#]
     fn embed_3d_conformers_result_(
         &mut self,
