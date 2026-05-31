@@ -19,7 +19,27 @@
 //! - RDKit❗✔️: approximately implemented, perf-equivalent
 //! - RDKit❌❌: not yet ported
 
+use crate::chemistry::forcefield::crystalff::build_crystalff_query_molecule;
+use crate::search::query::{
+    QueryMatchContext, atom_predicate_matches_with_context, bond_predicate_matches_with_context,
+    build_query_match_context,
+};
 use crate::{Atom, AtomQueryPredicate, Bond, BondOrder, BondQueryPredicate, Molecule};
+use std::collections::BTreeMap;
+use std::env;
+use std::time::Instant;
+
+fn row61_torsion349_substruct_trace_enabled(
+    mol: &Molecule,
+    query: &Molecule,
+    params: &SubstructMatchParams,
+) -> bool {
+    env::var("RDKIT_ROW61_TRACE").ok().as_deref() == Some("1")
+        && mol.num_atoms() == 26
+        && query.num_atoms() == 5
+        && query.num_bonds() == 4
+        && !params.uniquify
+}
 
 // ---------------------------------------------------------------------------
 // Result types
@@ -42,6 +62,8 @@ pub struct SubstructMatchParams {
     /// Whether to uniquify results (default: true).
     pub uniquify: bool,
 }
+
+type RecursiveQueryMatchCache = BTreeMap<String, Vec<bool>>;
 
 impl Default for SubstructMatchParams {
     fn default() -> Self {
@@ -151,7 +173,7 @@ impl Vf2Graph {
 /// formal charge, and query atom queries. We implement the non-query
 /// subset here. Full SMARTS/QueryNode evaluation is blocked on
 /// MatchSubqueries porting.
-fn atom_matches(query_atom: &Atom, mol_atom: &Atom) -> bool {
+fn atom_matches(query_atom: &Atom, query_mol: &Molecule, mol_atom: &Atom, mol: &Molecule) -> bool {
     // RDKit source (atomCompat, approx):
     //   if (query->hasQuery()) {
     //     return query->Match(mol);
@@ -166,9 +188,31 @@ fn atom_matches(query_atom: &Atom, mol_atom: &Atom) -> bool {
     //       query->getFormalCharge() != 0) return false;
     //   return true;
 
-    // RDKit❗✔️: If the query atom has a query predicate tree, try to evaluate.
+    // RDKit❗✔️: If the query atom has a query predicate tree, evaluate it
+    // through the non-cached path. The recursive-SMARTS cached path is wired
+    // separately through `atom_matches_with_recursive_cache()`.
     if let Some(query_node) = query_atom.query() {
-        return evaluate_atom_query(query_node, mol_atom);
+        let query_ctx = build_query_match_context(mol);
+        return match query_node {
+            crate::QueryNode::Predicate(pred) => {
+                atom_query_predicate_matches_for_substruct(mol_atom, pred, mol, None, &query_ctx)
+            }
+            crate::QueryNode::And(children) => children.iter().all(|child| match child {
+                crate::QueryNode::Predicate(pred) => atom_query_predicate_matches_for_substruct(
+                    mol_atom, pred, mol, None, &query_ctx,
+                ),
+                _ => evaluate_atom_query(child, mol_atom, mol, None, &query_ctx),
+            }),
+            crate::QueryNode::Or(children) => children.iter().any(|child| match child {
+                crate::QueryNode::Predicate(pred) => atom_query_predicate_matches_for_substruct(
+                    mol_atom, pred, mol, None, &query_ctx,
+                ),
+                _ => evaluate_atom_query(child, mol_atom, mol, None, &query_ctx),
+            }),
+            crate::QueryNode::Not(child) => {
+                !evaluate_atom_query(child, mol_atom, mol, None, &query_ctx)
+            }
+        };
     }
 
     let q_an = query_atom.atomic_number();
@@ -197,7 +241,71 @@ fn atom_matches(query_atom: &Atom, mol_atom: &Atom) -> bool {
         return false;
     }
 
+    let _ = query_mol;
     true
+}
+
+fn recursive_smarts_root_matches(
+    atom: &Atom,
+    recursive_smarts: &str,
+    mol: &Molecule,
+    recursive_cache: Option<&RecursiveQueryMatchCache>,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION detail::MatchSubqueries / detail::RecursiveMatcher (SubstructMatch.cpp:613-712 via QueryOps.h RecursiveStructureQuery)
+    // RDKit❗✔️: RecursiveStructureQuery(ROMol const *query, unsigned int serialNumber = 0)
+    // RDKit❗✔️:   unsigned int res = RecursiveMatcher(mol, *queryMol, matchStarts,
+    // RDKit❗✔️:                                       subqueryMap, params, locked);
+    // RDKit❗✔️:   if (res) {
+    // RDKit❗✔️:     for (int &matchStart : matchStarts) {
+    // RDKit❗✔️:       rsq->insert(matchStart);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (!query.hasProp(common_properties::_queryRootAtom)) {
+    // RDKit❗✔️:     matches.push_back(pairs.begin()->second);
+    // RDKit❗✔️:   }
+    if let Some(cache) = recursive_cache
+        && let Some(match_starts) = cache.get(recursive_smarts)
+    {
+        return match_starts
+            .get(atom.id().index())
+            .copied()
+            .unwrap_or(false);
+    }
+
+    let Some(inner) = recursive_smarts
+        .strip_prefix("$(")
+        .and_then(|value| value.strip_suffix(')'))
+    else {
+        return false;
+    };
+    let Ok(query) = build_crystalff_query_molecule(inner) else {
+        return false;
+    };
+    substruct_match_impl(
+        mol,
+        &query,
+        &SubstructMatchParams {
+            max_matches: 1000,
+            uniquify: false,
+        },
+    )
+    .into_iter()
+    .any(|matched| matched.atom_mapping.first().copied() == Some(atom.id().index()))
+}
+
+fn atom_query_predicate_matches_for_substruct(
+    atom: &Atom,
+    pred: &AtomQueryPredicate,
+    mol: &Molecule,
+    recursive_cache: Option<&RecursiveQueryMatchCache>,
+    query_ctx: &QueryMatchContext,
+) -> bool {
+    match pred {
+        AtomQueryPredicate::RecursiveSmarts(recursive_smarts) => {
+            recursive_smarts_root_matches(atom, recursive_smarts, mol, recursive_cache)
+        }
+        _ => atom_predicate_matches_with_context(atom, pred, mol, query_ctx),
+    }
 }
 
 /// RDKit❗✔️: Partial evaluation of an atom query node.
@@ -205,23 +313,26 @@ fn atom_matches(query_atom: &Atom, mol_atom: &Atom) -> bool {
 /// Only the basic predicates (AtomicNumber, IsAromatic, FormalCharge,
 /// Isotope) are implemented. Recursive, RGroup, and SMARTS queries
 /// are not yet supported.
-fn evaluate_atom_query(query: &crate::QueryNode<AtomQueryPredicate>, atom: &Atom) -> bool {
-    use AtomQueryPredicate as AQP;
+fn evaluate_atom_query(
+    query: &crate::QueryNode<AtomQueryPredicate>,
+    atom: &Atom,
+    mol: &Molecule,
+    recursive_cache: Option<&RecursiveQueryMatchCache>,
+    query_ctx: &QueryMatchContext,
+) -> bool {
     match query {
-        crate::QueryNode::Predicate(pred) => match pred {
-            AQP::Any => true,
-            AQP::AtomicNumber(an) => *an == atom.atomic_number(),
-            AQP::AtomicNumberIn(ans) => ans.contains(&atom.atomic_number()),
-            AQP::AtomicNumberNotIn(ans) => !ans.contains(&atom.atomic_number()),
-            AQP::FormalCharge(fc) => *fc == atom.formal_charge(),
-            AQP::Isotope(iso) => *iso == atom.isotope().unwrap_or(0),
-            AQP::IsAromatic(aromatic) => *aromatic == atom.is_aromatic(),
-            // All unimplemented predicates return true (open match) for now
-            _ => true,
-        },
-        crate::QueryNode::And(children) => children.iter().all(|c| evaluate_atom_query(c, atom)),
-        crate::QueryNode::Or(children) => children.iter().any(|c| evaluate_atom_query(c, atom)),
-        crate::QueryNode::Not(child) => !evaluate_atom_query(child, atom),
+        crate::QueryNode::Predicate(pred) => {
+            atom_query_predicate_matches_for_substruct(atom, pred, mol, recursive_cache, query_ctx)
+        }
+        crate::QueryNode::And(children) => children
+            .iter()
+            .all(|c| evaluate_atom_query(c, atom, mol, recursive_cache, query_ctx)),
+        crate::QueryNode::Or(children) => children
+            .iter()
+            .any(|c| evaluate_atom_query(c, atom, mol, recursive_cache, query_ctx)),
+        crate::QueryNode::Not(child) => {
+            !evaluate_atom_query(child, atom, mol, recursive_cache, query_ctx)
+        }
     }
 }
 
@@ -258,7 +369,7 @@ fn evaluate_atom_query(query: &crate::QueryNode<AtomQueryPredicate>, atom: &Atom
 ///
 /// Handles bond order matching with aromatic fallback rules.
 /// Query bonds via BondQueryPredicate are deferred.
-fn bond_matches(query_bond: &Bond, mol_bond: &Bond) -> bool {
+fn bond_matches(query_bond: &Bond, query_mol: &Molecule, mol_bond: &Bond, mol: &Molecule) -> bool {
     // RDKit source (bondCompat, approx):
     //   if (qBnd->hasQuery()) return qBnd->Match(mBnd);
     //   if (qBnd->getIsAromatic() && mBnd->getIsAromatic()) return true;
@@ -266,7 +377,8 @@ fn bond_matches(query_bond: &Bond, mol_bond: &Bond) -> bool {
 
     // RDKit❗✔️: If query bond has a query predicate tree, try to evaluate.
     if let Some(query_node) = query_bond.query() {
-        return evaluate_bond_query(query_node, mol_bond);
+        let query_ctx = build_query_match_context(mol);
+        return evaluate_bond_query(query_node, mol_bond, mol, &query_ctx);
     }
 
     let q_aromatic = query_bond.is_aromatic();
@@ -296,23 +408,28 @@ fn bond_matches(query_bond: &Bond, mol_bond: &Bond) -> bool {
         return true;
     }
 
+    let _ = query_mol;
     false
 }
 
 /// RDKit❗✔️: Partial evaluation of a bond query node.
-fn evaluate_bond_query(query: &crate::QueryNode<BondQueryPredicate>, bond: &Bond) -> bool {
-    use BondQueryPredicate as BQP;
+fn evaluate_bond_query(
+    query: &crate::QueryNode<BondQueryPredicate>,
+    bond: &Bond,
+    mol: &Molecule,
+    query_ctx: &QueryMatchContext,
+) -> bool {
     match query {
-        crate::QueryNode::Predicate(pred) => match pred {
-            BQP::Any => true,
-            BQP::Order(order) => *order == bond.order(),
-            BQP::IsAromatic(aromatic) => *aromatic == bond.is_aromatic(),
-            // All unimplemented predicates return true (open match) for now
-            _ => true,
-        },
-        crate::QueryNode::And(children) => children.iter().all(|c| evaluate_bond_query(c, bond)),
-        crate::QueryNode::Or(children) => children.iter().any(|c| evaluate_bond_query(c, bond)),
-        crate::QueryNode::Not(child) => !evaluate_bond_query(child, bond),
+        crate::QueryNode::Predicate(pred) => {
+            bond_predicate_matches_with_context(bond, pred, mol, query_ctx)
+        }
+        crate::QueryNode::And(children) => children
+            .iter()
+            .all(|c| evaluate_bond_query(c, bond, mol, query_ctx)),
+        crate::QueryNode::Or(children) => children
+            .iter()
+            .any(|c| evaluate_bond_query(c, bond, mol, query_ctx)),
+        crate::QueryNode::Not(child) => !evaluate_bond_query(child, bond, mol, query_ctx),
     }
 }
 
@@ -365,6 +482,9 @@ struct Vf2Pair {
     n1: NodeId,
     n2: NodeId,
     hasiter: bool,
+    /// VF2+ source atom in the mol graph (g2) whose adjacency drives the
+    /// neighbor iterator.
+    nbr_node: NodeId,
     /// VF2+ neighbor iterator over mol graph (g2) neighbors.
     nbr_cursor: usize,
     nbr_end: usize,
@@ -376,6 +496,7 @@ impl Vf2Pair {
             n1: NULL_NODE,
             n2: NULL_NODE,
             hasiter: false,
+            nbr_node: NULL_NODE,
             nbr_cursor: 0,
             nbr_end: 0,
         }
@@ -401,16 +522,16 @@ struct NodeInfo {
     out_deg: usize,
 }
 
-// RDKit✔️✔️: nodeInfoComp1 — sort by out-degree then in-degree.
+// RDKit✔️✔️: nodeInfoComp1 — sort ascending by out-degree then in-degree.
 fn node_info_cmp1(a: &NodeInfo, b: &NodeInfo) -> std::cmp::Ordering {
     // RDKit✔️✔️: if (a.out < b.out) { return true; }
     // RDKit✔️✔️: if (a.out > b.out) { return false; }
     // RDKit✔️✔️: if (a.in < b.in) { return true; }
     // RDKit✔️✔️: if (a.in > b.in) { return false; }
     // RDKit✔️✔️: return false;
-    b.out_deg
-        .cmp(&a.out_deg)
-        .then_with(|| b.in_deg.cmp(&a.in_deg))
+    a.out_deg
+        .cmp(&b.out_deg)
+        .then_with(|| a.in_deg.cmp(&b.in_deg))
 }
 
 // RDKit source (vf2.hpp):
@@ -424,9 +545,8 @@ fn node_info_cmp1(a: &NodeInfo, b: &NodeInfo) -> std::cmp::Ordering {
 //     return 0;
 //   }
 
-// RDKit✔️✔️: nodeInfoComp2 — sort by frequency (out=run count, in=valence sum).
-//   Nodes with higher valence (in) come first; among equal, higher frequency
-//   (out = number of nodes sharing same degree) comes first.
+// RDKit✔️✔️: nodeInfoComp2 — sort ascending by frequency (out=run count) then
+//   valence (in=valence sum), except zero-valence nodes sort after non-zero.
 fn node_info_cmp2(a: &NodeInfo, b: &NodeInfo) -> std::cmp::Ordering {
     // RDKit✔️✔️: if (!a.in && b.in) return 1;
     // RDKit✔️✔️: if (a.in && !b.in) return -1;
@@ -441,9 +561,9 @@ fn node_info_cmp2(a: &NodeInfo, b: &NodeInfo) -> std::cmp::Ordering {
     // RDKit✔️✔️: if (a.in < b.in) return -1;
     // RDKit✔️✔️: if (a.in > b.in) return 1;
     // RDKit✔️✔️: return 0;
-    b.out_deg
-        .cmp(&a.out_deg)
-        .then_with(|| b.in_deg.cmp(&a.in_deg))
+    a.out_deg
+        .cmp(&b.out_deg)
+        .then_with(|| a.in_deg.cmp(&b.in_deg))
 }
 
 // RDKit source (vf2.hpp), SortNodesByFrequency:
@@ -482,7 +602,7 @@ fn sort_nodes_by_frequency(g: &Vf2Graph) -> Vec<NodeId> {
             }
         })
         .collect();
-    vect.sort_by(node_info_cmp1);
+    vect.sort_unstable_by(node_info_cmp1);
 
     // RDKit✔️✔️:   unsigned int run = 1;
     // RDKit✔️✔️:   for (unsigned int i = 0; i < vect.size(); i += run) {
@@ -510,7 +630,7 @@ fn sort_nodes_by_frequency(g: &Vf2Graph) -> Vec<NodeId> {
     }
 
     // RDKit✔️✔️:   std::sort(vect.begin(), vect.end(), nodeInfoComp2);
-    vect.sort_by(node_info_cmp2);
+    vect.sort_unstable_by(node_info_cmp2);
 
     // RDKit✔️✔️:   node_id *nodes = new node_id[vect.size()];
     // RDKit✔️✔️:   for (unsigned int i = 0; i < vect.size(); ++i) {
@@ -613,6 +733,10 @@ impl<'a> Vf2SubState<'a> {
         }
     }
 
+    fn debug_order(&self) -> Option<&[NodeId]> {
+        self.order.as_deref()
+    }
+
     // RDKit source (vf2.hpp):
     //   bool IsGoal() { return core_len == n1; }
     //   bool IsDead() { return n1 > n2 || t1_len > t2_len; }
@@ -666,9 +790,9 @@ impl<'a> Vf2SubState<'a> {
     /// RDKit✔️❌: NextPair — find the next candidate pair (n1 from query,
     ///   n2 from mol) to try matching.
     ///
-    /// Uses terminal-set-based iteration from vf2.hpp. VF2+ neighbor
-    /// iterator optimization is partially ported (skipped for simplicity;
-    /// the terminal set iteration is correct).
+    /// Uses terminal-set-based iteration from vf2.hpp, including the VF2+
+    /// neighbor iterator that restricts mol-side candidates to neighbors of
+    /// the already-mapped terminal predecessor.
     fn next_pair(&self, pair: &mut Vf2Pair) -> bool {
         // RDKit✔️✔️: if (pair.n1 == NULL_NODE) pair.n1 = 0;
         // RDKit✔️✔️: if (pair.n2 == NULL_NODE) pair.n2 = 0;
@@ -695,7 +819,40 @@ impl<'a> Vf2SubState<'a> {
                 pair.n1 += 1;
                 pair.n2 = 0;
             }
-            // VF2+ logic is skipped (pair.hasiter stays false).
+            // RDKit✔️✔️: /* Initialize VF2 Plus neighbor iterator.
+            // RDKit✔️✔️:  * The next query node (pair.n1) has been selected from the terminal
+            // RDKit✔️✔️:  * set and is therefore adjacent to an already mapped atom (in
+            // RDKit✔️✔️:  * core_1). Rather than select pair.n2 from all atoms (0...n2) we can
+            // RDKit✔️✔️:  * select it from the neighbors of this mapped atom (0...deg(nbor))
+            // RDKit✔️✔️:  * since it must also be adajcent to this mapped atom!
+            // RDKit✔️✔️:  */
+            // RDKit✔️✔️: if (!pair.hasiter) {
+            // RDKit✔️✔️:   boost::tie(n1iter_beg, n1iter_end) =
+            // RDKit✔️✔️:       boost::adjacent_vertices(pair.n1, *g1);
+            // RDKit✔️✔️:   while (n1iter_beg != n1iter_end && core_1[*n1iter_beg] == NULL_NODE) {
+            // RDKit✔️✔️:     ++n1iter_beg;
+            // RDKit✔️✔️:   }
+            // RDKit✔️✔️:   assert(n1iter_beg != n1iter_end);
+            // RDKit✔️✔️:   boost::tie(pair.nbrbeg, pair.nbrend) =
+            // RDKit✔️✔️:       boost::adjacent_vertices(core_1[*n1iter_beg], *g2);
+            // RDKit✔️✔️:   pair.hasiter = true;
+            // RDKit✔️✔️: }
+            if !pair.hasiter {
+                let mut mapped_terminal_neighbor = NULL_NODE;
+                for &(query_neighbor, _) in self.g1.out_edges(pair.n1) {
+                    if self.core_1[query_neighbor] != NULL_NODE {
+                        mapped_terminal_neighbor = self.core_1[query_neighbor];
+                        break;
+                    }
+                }
+                debug_assert_ne!(mapped_terminal_neighbor, NULL_NODE);
+                if mapped_terminal_neighbor != NULL_NODE {
+                    pair.nbr_node = mapped_terminal_neighbor;
+                    pair.nbr_cursor = 0;
+                    pair.nbr_end = self.g2.out_edges(mapped_terminal_neighbor).len();
+                    pair.hasiter = true;
+                }
+            }
         } else if pair.n1 == 0 {
             // RDKit✔️✔️: } else if (pair.n1 == 0 && order != nullptr) {
             if let Some(order) = &self.order {
@@ -736,15 +893,25 @@ impl<'a> Vf2SubState<'a> {
         }
 
         // --- Select mol node (n2) ---
-        // VF2+ iterator not used (pair.hasiter stays false in our port).
         // RDKit✔️✔️: if (pair.hasiter) { ... }
         if pair.hasiter {
-            // VF2+ neighbor iterator: advance to next unmatched neighbor.
-            while pair.nbr_cursor < pair.nbr_end && self.core_2[pair.nbr_cursor] != NULL_NODE {
+            // RDKit✔️✔️: while (pair.nbrbeg < pair.nbrend && core_2[*pair.nbrbeg] != NULL_NODE) {
+            // RDKit✔️✔️:   ++pair.nbrbeg;
+            // RDKit✔️✔️: }
+            let neighbors = self.g2.out_edges(pair.nbr_node);
+            while pair.nbr_cursor < pair.nbr_end
+                && self.core_2[neighbors[pair.nbr_cursor].0] != NULL_NODE
+            {
                 pair.nbr_cursor += 1;
             }
+            // RDKit✔️✔️: if (pair.nbrbeg < pair.nbrend) {
+            // RDKit✔️✔️:   pair.n2 = *pair.nbrbeg;
+            // RDKit✔️✔️:   ++pair.nbrbeg;
+            // RDKit✔️✔️: } else {
+            // RDKit✔️✔️:   pair.n2 = n2;
+            // RDKit✔️✔️: }
             if pair.nbr_cursor < pair.nbr_end {
-                pair.n2 = pair.nbr_cursor;
+                pair.n2 = neighbors[pair.nbr_cursor].0;
                 pair.nbr_cursor += 1;
             } else {
                 pair.n2 = self.n2;
@@ -770,7 +937,18 @@ impl<'a> Vf2SubState<'a> {
         }
 
         // RDKit✔️✔️: return pair.n1 < n1 && pair.n2 < n2;
-        pair.n1 < self.n1 && pair.n2 < self.n2
+        let ok = pair.n1 < self.n1 && pair.n2 < self.n2;
+        if ok
+            && env::var("RDKIT_ROW61_TRACE").ok().as_deref() == Some("1")
+            && self.n1 == 5
+            && self.n2 == 26
+        {
+            println!(
+                "row61_substruct_next_pair core_len={} t1_len={} t2_len={} hasiter={} n1={} n2={}",
+                self.core_len, self.t1_len, self.t2_len, pair.hasiter, pair.n1, pair.n2
+            );
+        }
+        ok
     }
 
     // RDKit source (vf2.hpp), IsFeasiblePair:
@@ -1232,27 +1410,72 @@ fn vf2_match_all(
 ///
 /// Simplified version of RDKit's MolMatchFinalCheckFunctor.
 /// Chirality checking and enhanced stereo are deferred.
-fn final_match_check(
-    c2: &[NodeId],
+fn match_mask(atom_mapping: &[usize], mol_num_atoms: usize) -> Vec<bool> {
+    let mut mask = vec![false; mol_num_atoms];
+    for &ma in atom_mapping {
+        if ma < mol_num_atoms {
+            mask[ma] = true;
+        }
+    }
+    mask
+}
+
+fn rdkit_order_and_uniquify_matches(
+    mut results: Vec<SubstructMatchResult>,
     mol_num_atoms: usize,
     params: &SubstructMatchParams,
-    seen_matches: &mut Vec<Vec<bool>>,
-) -> bool {
-    // RDKit❗✔️: If uniquify, build a bitmask of matched mol atoms and deduplicate.
+) -> Vec<SubstructMatchResult> {
+    // RDKit source (SubstructMatch.cpp):
+    //   bool tryToInsert(std::set<MatchVectType> &matches, const MatchVectType &match,
+    //   const SubstructMatchParameters &params) {
+    //     if (matches.size() == params.maxMatches) {
+    //       return false;
+    //     }
+    //     if (!params.uniquify) {
+    //       matches.insert(match);
+    //     } else {
+    //       insertIfNeeded(matches, match);
+    //     }
+    //     return true;
+    //   }
+    // RDKit source (SubstructMatch.cpp):
+    //   bool insertIfNeeded(std::set<MatchVectType> &matches, const MatchVectType &m) {
+    //     bool shouldInsert = true;
+    //     ...
+    //     if (matchAsSet == existingMatchAsSet) {
+    //       if (m < *it) {
+    //         matches.erase(it);
+    //       } else {
+    //         shouldInsert = false;
+    //       }
+    //       break;
+    //     }
+    //     ...
+    //   }
+    // RDKit source (SubstructMatch.cpp):
+    //   return std::vector<MatchVectType>(matches.begin(), matches.end());
     if params.uniquify {
-        let mut match_mask = vec![false; mol_num_atoms];
-        for &ma in c2 {
-            if ma < mol_num_atoms {
-                match_mask[ma] = true;
+        let mut uniquified: Vec<(Vec<bool>, SubstructMatchResult)> = Vec::new();
+        for result in results.drain(..) {
+            let mask = match_mask(&result.atom_mapping, mol_num_atoms);
+            if let Some((_, existing)) = uniquified
+                .iter_mut()
+                .find(|(existing_mask, _)| *existing_mask == mask)
+            {
+                if result.atom_mapping < existing.atom_mapping {
+                    *existing = result;
+                }
+            } else {
+                uniquified.push((mask, result));
             }
         }
-        if seen_matches.contains(&match_mask) {
-            return false;
-        }
-        // RDKit❗✔️: Chirality checking deferred — always accept if we get here.
-        seen_matches.push(match_mask);
+        results = uniquified.into_iter().map(|(_, result)| result).collect();
+        results.sort_by(|lhs, rhs| lhs.atom_mapping.cmp(&rhs.atom_mapping));
     }
-    true
+    if results.len() > params.max_matches {
+        results.truncate(params.max_matches);
+    }
+    results
 }
 
 // ---------------------------------------------------------------------------
@@ -1320,13 +1543,90 @@ fn build_bond_mapping(
 /// RDKit's `SubstructMatch()` from SubstructMatch.cpp (lines 481-525).
 ///
 /// Returns all matches (up to params.max_matches).
-fn substruct_match_impl(
+fn collect_recursive_smarts_from_atom_query(
+    query: &crate::QueryNode<AtomQueryPredicate>,
+    recursive_smarts: &mut Vec<String>,
+) {
+    match query {
+        crate::QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(smarts)) => {
+            recursive_smarts.push(smarts.clone());
+        }
+        crate::QueryNode::Predicate(_) => {}
+        crate::QueryNode::And(children) | crate::QueryNode::Or(children) => {
+            for child in children {
+                collect_recursive_smarts_from_atom_query(child, recursive_smarts);
+            }
+        }
+        crate::QueryNode::Not(child) => {
+            collect_recursive_smarts_from_atom_query(child, recursive_smarts);
+        }
+    }
+}
+
+fn populate_recursive_query_match_cache(
+    mol: &Molecule,
+    query: &Molecule,
+    recursive_cache: &mut RecursiveQueryMatchCache,
+) {
+    let mut recursive_smarts = Vec::new();
+    for atom in query.atoms() {
+        if let Some(query_node) = atom.query() {
+            collect_recursive_smarts_from_atom_query(query_node, &mut recursive_smarts);
+        }
+    }
+    recursive_smarts.sort();
+    recursive_smarts.dedup();
+
+    for recursive_smarts in recursive_smarts {
+        if recursive_cache.contains_key(&recursive_smarts) {
+            continue;
+        }
+        let Some(inner) = recursive_smarts
+            .strip_prefix("$(")
+            .and_then(|value| value.strip_suffix(')'))
+        else {
+            recursive_cache.insert(recursive_smarts, vec![false; mol.num_atoms()]);
+            continue;
+        };
+        let Ok(inner_query) = build_crystalff_query_molecule(inner) else {
+            recursive_cache.insert(recursive_smarts, vec![false; mol.num_atoms()]);
+            continue;
+        };
+        populate_recursive_query_match_cache(mol, &inner_query, recursive_cache);
+        let matches = substruct_match_impl_with_recursive_cache(
+            mol,
+            &inner_query,
+            &SubstructMatchParams {
+                max_matches: 1000,
+                uniquify: false,
+            },
+            Some(recursive_cache),
+        );
+        let mut match_starts = vec![false; mol.num_atoms()];
+        for matched in matches {
+            if let Some(&root_atom_idx) = matched.atom_mapping.first()
+                && root_atom_idx != NULL_NODE
+                && root_atom_idx < match_starts.len()
+            {
+                match_starts[root_atom_idx] = true;
+            }
+        }
+        recursive_cache.insert(recursive_smarts, match_starts);
+    }
+}
+
+fn substruct_match_impl_with_recursive_cache(
     mol: &Molecule,
     query: &Molecule,
     params: &SubstructMatchParams,
+    recursive_cache: Option<&RecursiveQueryMatchCache>,
 ) -> Vec<SubstructMatchResult> {
     let m_num_atoms = mol.num_atoms();
     let q_num_atoms = query.num_atoms();
+    let trace_row64_substruct =
+        env::var("RDKIT_ROW64_SUBSTRUCT_TRACE").ok().as_deref() == Some("1") && m_num_atoms == 106;
+    let trace_row61_torsion349 = row61_torsion349_substruct_trace_enabled(mol, query, params);
+    let query_ctx = build_query_match_context(mol);
 
     // RDKit source (SubstructMatch.cpp):
     //   if (!mNumAtoms || !qNumAtoms || qNumAtoms > mNumAtoms) {
@@ -1337,8 +1637,10 @@ fn substruct_match_impl(
     }
 
     // Build VF2 graphs.
+    let graph_start = trace_row64_substruct.then(Instant::now);
     let q_graph = build_vf2_graph(query);
     let m_graph = build_vf2_graph(mol);
+    let graph_elapsed = graph_start.map(|start| start.elapsed().as_secs_f64());
 
     // Build atom matching closure.
     // RDKit source:
@@ -1348,23 +1650,37 @@ fn substruct_match_impl(
     let atom_fn = |qi: usize, mj: usize| -> bool {
         let qa = &query.atoms()[qi];
         let ma = &mol.atoms()[mj];
-        atom_matches(qa, ma)
+        atom_matches_with_recursive_cache(qa, query, ma, mol, recursive_cache, &query_ctx)
     };
 
     let bond_fn = |qei: usize, mei: usize| -> bool {
         let qb = &query.bonds()[qei];
         let mb = &mol.bonds()[mei];
-        bond_matches(qb, mb)
+        if let Some(query_node) = qb.query() {
+            evaluate_bond_query(query_node, mb, mol, &query_ctx)
+        } else {
+            bond_matches(qb, query, mb, mol)
+        }
     };
 
     // RDKit source:
     //   bool found = boost::vf2_all(query.getTopology(), mol.getTopology(),
     //                               atomLabeler, bondLabeler, matchChecker,
     //                               pms, params.maxMatches);
-    let mut state = Vf2SubState::new(&q_graph, &m_graph, /*sort_nodes=*/ true);
+    let mut state = Vf2SubState::new(&q_graph, &m_graph, /*sort_nodes=*/ false);
+    if trace_row61_torsion349 {
+        println!(
+            "row61_substruct_begin q_num_atoms={} q_num_bonds={} m_num_atoms={} order={:?}",
+            q_num_atoms,
+            query.num_bonds(),
+            m_num_atoms,
+            state.debug_order()
+        );
+    }
     let mut raw_matches: Vec<(Vec<NodeId>, Vec<NodeId>)> = Vec::new();
     let check_fn = |_c1: &[NodeId], _c2: &[NodeId]| -> bool { true };
 
+    let vf2_start = trace_row64_substruct.then(Instant::now);
     vf2_match_all(
         &mut state,
         &atom_fn,
@@ -1373,6 +1689,16 @@ fn substruct_match_impl(
         &mut raw_matches,
         params.max_matches,
     );
+    if let Some(vf2_start) = vf2_start {
+        println!(
+            "row64_substruct_core q_atoms={} q_bonds={} graph_build={:.6} vf2={:.6} raw_matches={}",
+            q_num_atoms,
+            query.num_bonds(),
+            graph_elapsed.unwrap_or(0.0),
+            vf2_start.elapsed().as_secs_f64(),
+            raw_matches.len()
+        );
+    }
 
     // RDKit source (SubstructMatch.cpp):
     //   if (found) {
@@ -1387,16 +1713,11 @@ fn substruct_match_impl(
     //     }
     //   }
     let mut results: Vec<SubstructMatchResult> = Vec::new();
-    let mut seen_masks: Vec<Vec<bool>> = Vec::new();
 
     for (c1, c2) in &raw_matches {
-        // Run final check with uniquification.
-        if !final_match_check(c2, m_num_atoms, params, &mut seen_masks) {
-            // Already seen — remove from seen_masks since final_match_check already pushed.
-            seen_masks.pop();
-            continue;
+        if trace_row61_torsion349 {
+            println!("row61_substruct_raw_core c1={c1:?} c2={c2:?}");
         }
-
         // Build atom_mapping: query_atom_index -> mol_atom_index.
         // RDKit uses MatchVectType (vector<pair<int,int>>) where
         // pair.second is the mol atom index and pair.first is query atom index.
@@ -1436,12 +1757,81 @@ fn substruct_match_impl(
                 .collect(),
             bond_mapping,
         });
-
-        if results.len() >= params.max_matches {
-            break;
-        }
     }
 
+    rdkit_order_and_uniquify_matches(results, m_num_atoms, params)
+}
+
+fn atom_matches_with_recursive_cache(
+    query_atom: &Atom,
+    query_mol: &Molecule,
+    mol_atom: &Atom,
+    mol: &Molecule,
+    recursive_cache: Option<&RecursiveQueryMatchCache>,
+    query_ctx: &QueryMatchContext,
+) -> bool {
+    if let Some(query_node) = query_atom.query() {
+        return match query_node {
+            crate::QueryNode::Predicate(pred) => atom_query_predicate_matches_for_substruct(
+                mol_atom,
+                pred,
+                mol,
+                recursive_cache,
+                query_ctx,
+            ),
+            crate::QueryNode::And(children) => children.iter().all(|child| match child {
+                crate::QueryNode::Predicate(pred) => atom_query_predicate_matches_for_substruct(
+                    mol_atom,
+                    pred,
+                    mol,
+                    recursive_cache,
+                    query_ctx,
+                ),
+                _ => evaluate_atom_query(child, mol_atom, mol, recursive_cache, query_ctx),
+            }),
+            crate::QueryNode::Or(children) => children.iter().any(|child| match child {
+                crate::QueryNode::Predicate(pred) => atom_query_predicate_matches_for_substruct(
+                    mol_atom,
+                    pred,
+                    mol,
+                    recursive_cache,
+                    query_ctx,
+                ),
+                _ => evaluate_atom_query(child, mol_atom, mol, recursive_cache, query_ctx),
+            }),
+            crate::QueryNode::Not(child) => {
+                !evaluate_atom_query(child, mol_atom, mol, recursive_cache, query_ctx)
+            }
+        };
+    }
+    atom_matches(query_atom, query_mol, mol_atom, mol)
+}
+
+fn substruct_match_impl(
+    mol: &Molecule,
+    query: &Molecule,
+    params: &SubstructMatchParams,
+) -> Vec<SubstructMatchResult> {
+    let trace_row64_substruct = env::var("RDKIT_ROW64_SUBSTRUCT_TRACE").ok().as_deref()
+        == Some("1")
+        && mol.num_atoms() == 106;
+    let recursive_cache_start = trace_row64_substruct.then(Instant::now);
+    let mut recursive_cache = RecursiveQueryMatchCache::new();
+    populate_recursive_query_match_cache(mol, query, &mut recursive_cache);
+    let recursive_cache_elapsed = recursive_cache_start.map(|start| start.elapsed().as_secs_f64());
+    let match_start = trace_row64_substruct.then(Instant::now);
+    let results =
+        substruct_match_impl_with_recursive_cache(mol, query, params, Some(&recursive_cache));
+    if let Some(match_start) = match_start {
+        println!(
+            "row64_substruct_timing q_atoms={} q_bonds={} recursive_cache={:.6} match_core={:.6} matches={}",
+            query.num_atoms(),
+            query.num_bonds(),
+            recursive_cache_elapsed.unwrap_or(0.0),
+            match_start.elapsed().as_secs_f64(),
+            results.len()
+        );
+    }
     results
 }
 
@@ -1669,7 +2059,10 @@ mod tests {
         let mol = builder.build().expect("build");
         let q_atom = &mol.atoms()[0];
         let m_atom = &mol.atoms()[1];
-        assert!(atom_matches(q_atom, m_atom), "two carbons should match");
+        assert!(
+            atom_matches(q_atom, &mol, m_atom, &mol),
+            "two carbons should match"
+        );
     }
 
     #[test]
@@ -1688,7 +2081,7 @@ mod tests {
         let c_atom = &mol.atoms()[0]; // C
         let o_atom = &mol.atoms()[1]; // O
         assert!(
-            !atom_matches(c_atom, o_atom),
+            !atom_matches(c_atom, &mol, o_atom, &mol),
             "C should not match O via basic atomic number check"
         );
     }
@@ -1702,7 +2095,7 @@ mod tests {
             .add_bond(crate::BondSpec::new(c0, c1, BondOrder::Single))
             .expect("add bond");
         let mol = builder.build().expect("build");
-        assert!(bond_matches(&mol.bonds()[0], &mol.bonds()[0]));
+        assert!(bond_matches(&mol.bonds()[0], &mol, &mol.bonds()[0], &mol));
     }
 
     #[test]

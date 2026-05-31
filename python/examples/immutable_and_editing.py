@@ -1,4 +1,4 @@
-"""COSMolKit usage: immutable-first transforms + explicit edit context."""
+"""Public Python API example: value-style transforms and explicit editing."""
 
 from cosmolkit import Molecule
 

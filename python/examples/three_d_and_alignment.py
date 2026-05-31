@@ -1,8 +1,4 @@
-"""COSMolKit usage: reading 3D molfile coordinates.
-
-COSMolKit can preserve 3D coordinates from molfile/SDF records. 3D embedding,
-optimization, and alignment are not exposed as Python APIs yet.
-"""
+"""Public Python API example: reading 3D molfile coordinates."""
 
 from cosmolkit import Molecule
 

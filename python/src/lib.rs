@@ -152,6 +152,14 @@ fn smarts_parse_pyerr(error: cosmolkit_core::SmartsParseError) -> PyErr {
     PyValueError::new_err(error.to_string())
 }
 
+fn forcefield_pyerr(error: impl std::fmt::Display) -> PyErr {
+    PyValueError::new_err(error.to_string())
+}
+
+fn distgeom_pyerr(error: impl std::fmt::Display) -> PyErr {
+    PyValueError::new_err(error.to_string())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn make_morgan_fingerprint_params(
     radius: u32,
@@ -804,10 +812,14 @@ fn rdkit_bond_stereo_from_name(name: &str) -> PyResult<cosmolkit_core::BondStere
 #[doc = r#"
 A molecule value.
 
-``Molecule`` stores atoms, bonds, stereochemistry, and optional coordinate data.
-Transformation methods such as ``with_hydrogens()``, ``without_hydrogens()``,
-``with_kekulized_bonds()``, and ``with_2d_coordinates()`` return new molecule values.
-The original molecule is left unchanged.
+``Molecule`` stores atoms, bonds, stereochemistry, and optional coordinate
+data. Transformation methods such as ``with_hydrogens()``,
+``without_hydrogens()``, ``with_kekulized_bonds()``, and
+``with_2d_coordinates()`` return new molecule values. The original molecule is
+left unchanged.
+
+Internally COSMolKit uses copy-on-write storage to share unchanged molecular
+data efficiently, but the public Python contract is value semantics.
 
 In-place methods mutate the receiver and always end with ``_``. COSMolKit
 reserves the trailing underscore for this single public ``Molecule`` meaning.
@@ -820,6 +832,414 @@ depiction files.
 "#]
 struct Molecule {
     inner: cosmolkit_core::Molecule,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "EmbedParameters", skip_from_py_object)]
+#[derive(Clone)]
+struct PyEmbedParameters {
+    inner: cosmolkit_core::EmbedParameters,
+}
+
+impl PyEmbedParameters {
+    fn from_inner(inner: cosmolkit_core::EmbedParameters) -> Self {
+        Self { inner }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyEmbedParameters {
+    #[new]
+    fn new() -> Self {
+        Self::from_inner(cosmolkit_core::EmbedParameters::default())
+    }
+
+    #[staticmethod]
+    fn dg() -> Self {
+        Self::from_inner(cosmolkit_core::EmbedParameters::default())
+    }
+
+    #[staticmethod]
+    fn kdg() -> Self {
+        Self::from_inner(cosmolkit_core::EmbedParameters::kdg())
+    }
+
+    #[staticmethod]
+    fn etdg() -> Self {
+        Self::from_inner(cosmolkit_core::EmbedParameters::etdg())
+    }
+
+    #[staticmethod]
+    fn etdg_v2() -> Self {
+        Self::from_inner(cosmolkit_core::EmbedParameters::etdg_v2())
+    }
+
+    #[staticmethod]
+    fn etkdg() -> Self {
+        Self::from_inner(cosmolkit_core::EmbedParameters::etkdg())
+    }
+
+    #[staticmethod]
+    fn etkdg_v2() -> Self {
+        Self::from_inner(cosmolkit_core::EmbedParameters::etkdg_v2())
+    }
+
+    #[staticmethod]
+    fn etkdg_v3() -> Self {
+        Self::from_inner(cosmolkit_core::EmbedParameters::etkdg_v3())
+    }
+
+    #[staticmethod]
+    fn sr_etkdg_v3() -> Self {
+        Self::from_inner(cosmolkit_core::EmbedParameters::sr_etkdg_v3())
+    }
+
+    #[getter]
+    fn random_seed(&self) -> i32 {
+        self.inner.random_seed
+    }
+
+    #[setter]
+    fn set_random_seed(&mut self, value: i32) {
+        self.inner.random_seed = value;
+    }
+
+    #[getter]
+    fn max_iterations(&self) -> u32 {
+        self.inner.max_iterations
+    }
+
+    #[setter]
+    fn set_max_iterations(&mut self, value: u32) {
+        self.inner.max_iterations = value;
+    }
+
+    #[getter]
+    fn num_threads(&self) -> i32 {
+        self.inner.num_threads
+    }
+
+    #[setter]
+    fn set_num_threads(&mut self, value: i32) {
+        self.inner.num_threads = value;
+    }
+
+    #[getter]
+    fn box_size_mult(&self) -> f64 {
+        self.inner.box_size_mult
+    }
+
+    #[setter]
+    fn set_box_size_mult(&mut self, value: f64) {
+        self.inner.box_size_mult = value;
+    }
+
+    #[getter]
+    fn rand_neg_eig(&self) -> bool {
+        self.inner.rand_neg_eig
+    }
+
+    #[setter]
+    fn set_rand_neg_eig(&mut self, value: bool) {
+        self.inner.rand_neg_eig = value;
+    }
+
+    #[getter]
+    fn num_zero_fail(&self) -> u32 {
+        self.inner.num_zero_fail
+    }
+
+    #[setter]
+    fn set_num_zero_fail(&mut self, value: u32) {
+        self.inner.num_zero_fail = value;
+    }
+
+    #[getter]
+    fn coord_map(&self) -> Option<BTreeMap<i32, (f64, f64, f64)>> {
+        self.inner.coord_map.as_ref().map(|coord_map| {
+            coord_map
+                .iter()
+                .map(|(&idx, point)| (idx, (point.x, point.y, point.z)))
+                .collect()
+        })
+    }
+
+    #[setter]
+    fn set_coord_map(&mut self, value: Option<BTreeMap<i32, (f64, f64, f64)>>) {
+        self.inner.coord_map = value.map(|coord_map| {
+            coord_map
+                .into_iter()
+                .map(|(idx, (x, y, z))| (idx, cosmolkit_core::ForceFieldVec3::new(x, y, z)))
+                .collect()
+        });
+    }
+
+    #[getter]
+    fn optimizer_force_tol(&self) -> f64 {
+        self.inner.optimizer_force_tol
+    }
+
+    #[setter]
+    fn set_optimizer_force_tol(&mut self, value: f64) {
+        self.inner.optimizer_force_tol = value;
+    }
+
+    #[getter]
+    fn ignore_smoothing_failures(&self) -> bool {
+        self.inner.ignore_smoothing_failures
+    }
+
+    #[setter]
+    fn set_ignore_smoothing_failures(&mut self, value: bool) {
+        self.inner.ignore_smoothing_failures = value;
+    }
+
+    #[getter]
+    fn prune_rms_thresh(&self) -> f64 {
+        self.inner.prune_rms_thresh
+    }
+
+    #[setter]
+    fn set_prune_rms_thresh(&mut self, value: f64) {
+        self.inner.prune_rms_thresh = value;
+    }
+
+    #[getter]
+    fn clear_confs(&self) -> bool {
+        self.inner.clear_confs
+    }
+
+    #[setter]
+    fn set_clear_confs(&mut self, value: bool) {
+        self.inner.clear_confs = value;
+    }
+
+    #[getter]
+    fn use_random_coords(&self) -> bool {
+        self.inner.use_random_coords
+    }
+
+    #[setter]
+    fn set_use_random_coords(&mut self, value: bool) {
+        self.inner.use_random_coords = value;
+    }
+
+    #[getter]
+    fn enforce_chirality(&self) -> bool {
+        self.inner.enforce_chirality
+    }
+
+    #[setter]
+    fn set_enforce_chirality(&mut self, value: bool) {
+        self.inner.enforce_chirality = value;
+    }
+
+    #[getter]
+    fn use_exp_torsion_angle_prefs(&self) -> bool {
+        self.inner.use_exp_torsion_angle_prefs
+    }
+
+    #[setter]
+    fn set_use_exp_torsion_angle_prefs(&mut self, value: bool) {
+        self.inner.use_exp_torsion_angle_prefs = value;
+    }
+
+    #[getter]
+    fn use_basic_knowledge(&self) -> bool {
+        self.inner.use_basic_knowledge
+    }
+
+    #[setter]
+    fn set_use_basic_knowledge(&mut self, value: bool) {
+        self.inner.use_basic_knowledge = value;
+    }
+
+    #[getter]
+    fn verbose(&self) -> bool {
+        self.inner.verbose
+    }
+
+    #[setter]
+    fn set_verbose(&mut self, value: bool) {
+        self.inner.verbose = value;
+    }
+
+    #[getter]
+    fn basin_thresh(&self) -> f64 {
+        self.inner.basin_thresh
+    }
+
+    #[setter]
+    fn set_basin_thresh(&mut self, value: f64) {
+        self.inner.basin_thresh = value;
+    }
+
+    #[getter]
+    fn only_heavy_atoms_for_rms(&self) -> bool {
+        self.inner.only_heavy_atoms_for_rms
+    }
+
+    #[setter]
+    fn set_only_heavy_atoms_for_rms(&mut self, value: bool) {
+        self.inner.only_heavy_atoms_for_rms = value;
+    }
+
+    #[getter]
+    fn et_version(&self) -> u32 {
+        self.inner.et_version
+    }
+
+    #[setter]
+    fn set_et_version(&mut self, value: u32) {
+        self.inner.et_version = value;
+    }
+
+    #[getter]
+    fn embed_fragments_separately(&self) -> bool {
+        self.inner.embed_fragments_separately
+    }
+
+    #[setter]
+    fn set_embed_fragments_separately(&mut self, value: bool) {
+        self.inner.embed_fragments_separately = value;
+    }
+
+    #[getter]
+    fn use_small_ring_torsions(&self) -> bool {
+        self.inner.use_small_ring_torsions
+    }
+
+    #[setter]
+    fn set_use_small_ring_torsions(&mut self, value: bool) {
+        self.inner.use_small_ring_torsions = value;
+    }
+
+    #[getter]
+    fn use_macrocycle_torsions(&self) -> bool {
+        self.inner.use_macrocycle_torsions
+    }
+
+    #[setter]
+    fn set_use_macrocycle_torsions(&mut self, value: bool) {
+        self.inner.use_macrocycle_torsions = value;
+    }
+
+    #[getter]
+    fn use_macrocycle14config(&self) -> bool {
+        self.inner.use_macrocycle14config
+    }
+
+    #[setter]
+    fn set_use_macrocycle14config(&mut self, value: bool) {
+        self.inner.use_macrocycle14config = value;
+    }
+
+    #[getter]
+    fn timeout(&self) -> u32 {
+        self.inner.timeout
+    }
+
+    #[setter]
+    fn set_timeout(&mut self, value: u32) {
+        self.inner.timeout = value;
+    }
+
+    #[getter]
+    fn cpci(&self) -> Option<BTreeMap<(u32, u32), f64>> {
+        self.inner.cpci.clone()
+    }
+
+    #[setter]
+    fn set_cpci(&mut self, value: Option<BTreeMap<(u32, u32), f64>>) {
+        self.inner.cpci = value;
+    }
+
+    #[getter]
+    fn force_trans_amides(&self) -> bool {
+        self.inner.force_trans_amides
+    }
+
+    #[setter]
+    fn set_force_trans_amides(&mut self, value: bool) {
+        self.inner.force_trans_amides = value;
+    }
+
+    #[getter]
+    fn use_symmetry_for_pruning(&self) -> bool {
+        self.inner.use_symmetry_for_pruning
+    }
+
+    #[setter]
+    fn set_use_symmetry_for_pruning(&mut self, value: bool) {
+        self.inner.use_symmetry_for_pruning = value;
+    }
+
+    #[getter]
+    fn bounds_mat_force_scaling(&self) -> f64 {
+        self.inner.bounds_mat_force_scaling
+    }
+
+    #[setter]
+    fn set_bounds_mat_force_scaling(&mut self, value: f64) {
+        self.inner.bounds_mat_force_scaling = value;
+    }
+
+    #[getter]
+    fn track_failures(&self) -> bool {
+        self.inner.track_failures
+    }
+
+    #[setter]
+    fn set_track_failures(&mut self, value: bool) {
+        self.inner.track_failures = value;
+    }
+
+    #[getter]
+    fn failures(&self) -> Vec<u32> {
+        self.inner.failures.clone()
+    }
+
+    #[getter]
+    fn enable_sequential_random_seeds(&self) -> bool {
+        self.inner.enable_sequential_random_seeds
+    }
+
+    #[setter]
+    fn set_enable_sequential_random_seeds(&mut self, value: bool) {
+        self.inner.enable_sequential_random_seeds = value;
+    }
+
+    #[getter]
+    fn symmetrize_conjugated_terminal_groups_for_pruning(&self) -> bool {
+        self.inner.symmetrize_conjugated_terminal_groups_for_pruning
+    }
+
+    #[setter]
+    fn set_symmetrize_conjugated_terminal_groups_for_pruning(&mut self, value: bool) {
+        self.inner.symmetrize_conjugated_terminal_groups_for_pruning = value;
+    }
+
+    fn update_from_json(&mut self, json: &str) -> PyResult<()> {
+        self.inner.update_from_json(json).map_err(|err| {
+            PyValueError::new_err(format!("EmbedParameters.update_from_json failed: {err}"))
+        })
+    }
+
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "EmbedParameters(random_seed={}, num_threads={}, prune_rms_thresh={}, clear_confs={})",
+            self.inner.random_seed,
+            self.inner.num_threads,
+            self.inner.prune_rms_thresh,
+            self.inner.clear_confs
+        )
+    }
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
@@ -3166,6 +3586,8 @@ currently supported variant is ``"corina"``, matching RDKit's public enum.
 
     #[doc = r#"
 Return a new molecule with explicit hydrogens added.
+
+The original ``Molecule`` value is left unchanged.
 "#]
     fn with_hydrogens(&self) -> PyResult<Self> {
         let out = self
@@ -3191,6 +3613,8 @@ an error, the receiver is not guaranteed to equal its pre-call value; use
     #[pyo3(signature = (sanitize=None))]
     #[doc = r#"
 Return a new molecule with explicit hydrogens removed.
+
+The original ``Molecule`` value is left unchanged.
 "#]
     fn without_hydrogens(&self, sanitize: Option<bool>) -> PyResult<Self> {
         let out = self
@@ -3213,6 +3637,8 @@ Remove explicit hydrogens in place.
     #[pyo3(signature = (clear_aromatic_flags=None))]
     #[doc = r#"
 Return a new molecule with aromatic bonds converted to an explicit Kekule form.
+
+The original ``Molecule`` value is left unchanged.
 "#]
     fn with_kekulized_bonds(&self, clear_aromatic_flags: Option<bool>) -> PyResult<Self> {
         let out = self
@@ -3385,6 +3811,153 @@ Compute 2D coordinates in place.
             .map_err(|err| PyValueError::new_err(format!("compute_2d_coordinates_ failed: {err}")))
     }
 
+    #[pyo3(signature = (params=None))]
+    #[doc = r#"
+Return a new molecule with one generated 3D conformer.
+
+Parameters
+----------
+params : EmbedParameters, optional
+    Distance-geometry embedding parameters. The default is ``EmbedParameters.etkdg_v3()``.
+
+Returns
+-------
+Molecule
+    A new molecule value containing one additional 3D conformer.
+"#]
+    fn with_3d_conformer(&self, params: Option<PyRefMut<'_, PyEmbedParameters>>) -> PyResult<Self> {
+        Ok(self.with_3d_conformer_result(params)?.molecule)
+    }
+
+    #[pyo3(signature = (params=None))]
+    #[doc = r#"
+Generate one 3D conformer in place.
+"#]
+    fn embed_3d_conformer_(
+        &mut self,
+        params: Option<PyRefMut<'_, PyEmbedParameters>>,
+    ) -> PyResult<()> {
+        self.inner = self.embed_3d_conformer_result_(params)?.molecule.inner;
+        Ok(())
+    }
+
+    #[pyo3(signature = (params=None))]
+    #[doc = r#"
+Return an embedding result object for one generated 3D conformer.
+
+The result keeps the embedded molecule, the returned conformer id, and the
+final parameter snapshot so callers can inspect status and failure counters
+without relying on side effects on the input ``EmbedParameters`` object.
+"#]
+    fn with_3d_conformer_result(
+        &self,
+        mut params: Option<PyRefMut<'_, PyEmbedParameters>>,
+    ) -> PyResult<EmbedMoleculeResult> {
+        let mut embed_params = params
+            .as_ref()
+            .map(|value| value.inner.clone())
+            .unwrap_or_else(cosmolkit_core::EmbedParameters::etkdg_v3);
+        let result = cosmolkit_core::embed_molecule_result(&self.inner, &mut embed_params)
+            .map_err(distgeom_pyerr)?;
+        if let Some(value) = params.as_mut() {
+            value.inner = embed_params.clone();
+        }
+        Ok(result.into())
+    }
+
+    #[pyo3(signature = (params=None))]
+    #[doc = r#"
+Generate one 3D conformer in place and return the embedding result object.
+"#]
+    fn embed_3d_conformer_result_(
+        &mut self,
+        params: Option<PyRefMut<'_, PyEmbedParameters>>,
+    ) -> PyResult<EmbedMoleculeResult> {
+        let result = self.with_3d_conformer_result(params)?;
+        self.inner = result.molecule.inner.clone();
+        Ok(result)
+    }
+
+    #[pyo3(signature = (num_confs, params=None))]
+    #[doc = r#"
+Return a new molecule with multiple generated 3D conformers.
+
+Parameters
+----------
+num_confs : int
+    Number of conformers to request.
+params : EmbedParameters, optional
+    Distance-geometry embedding parameters.
+
+Returns
+-------
+Molecule
+    A new molecule value containing the generated 3D conformers.
+"#]
+    fn with_3d_conformers(
+        &self,
+        num_confs: u32,
+        params: Option<PyRefMut<'_, PyEmbedParameters>>,
+    ) -> PyResult<Self> {
+        Ok(self.with_3d_conformers_result(num_confs, params)?.molecule)
+    }
+
+    #[pyo3(signature = (num_confs, params=None))]
+    #[doc = r#"
+Generate multiple 3D conformers in place.
+"#]
+    fn embed_3d_conformers_(
+        &mut self,
+        num_confs: u32,
+        params: Option<PyRefMut<'_, PyEmbedParameters>>,
+    ) -> PyResult<()> {
+        self.inner = self
+            .embed_3d_conformers_result_(num_confs, params)?
+            .molecule
+            .inner;
+        Ok(())
+    }
+
+    #[pyo3(signature = (num_confs, params=None))]
+    #[doc = r#"
+Return an embedding result object for multiple generated 3D conformers.
+
+The result keeps the embedded molecule, the kept conformer ids, and the final
+parameter snapshot so callers can inspect pruning and tracked failures without
+reconstructing that state manually.
+"#]
+    fn with_3d_conformers_result(
+        &self,
+        num_confs: u32,
+        mut params: Option<PyRefMut<'_, PyEmbedParameters>>,
+    ) -> PyResult<EmbedMultipleConfsResult> {
+        let mut embed_params = params
+            .as_ref()
+            .map(|value| value.inner.clone())
+            .unwrap_or_else(cosmolkit_core::EmbedParameters::etkdg_v3);
+        let result =
+            cosmolkit_core::embed_multiple_confs_result(&self.inner, num_confs, &mut embed_params)
+                .map_err(distgeom_pyerr)?;
+        if let Some(value) = params.as_mut() {
+            value.inner = embed_params.clone();
+        }
+        Ok(result.into())
+    }
+
+    #[pyo3(signature = (num_confs, params=None))]
+    #[doc = r#"
+Generate multiple 3D conformers in place and return the embedding result object.
+"#]
+    fn embed_3d_conformers_result_(
+        &mut self,
+        num_confs: u32,
+        params: Option<PyRefMut<'_, PyEmbedParameters>>,
+    ) -> PyResult<EmbedMultipleConfsResult> {
+        let result = self.with_3d_conformers_result(num_confs, params)?;
+        self.inner = result.molecule.inner.clone();
+        Ok(result)
+    }
+
     #[doc = r#"
 Return the number of stored 3D conformers.
 "#]
@@ -3442,9 +4015,116 @@ Return 3D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
             .map_err(|err| PyValueError::new_err(format!("Molecule.coords_3d failed: {err}")))
     }
 
+    #[doc = r#"
+Return whether UFF parameters are available for every atom in this molecule.
+"#]
+    fn has_uff_params(&self) -> PyResult<bool> {
+        cosmolkit_core::uff_has_all_molecule_params(&self.inner).map_err(forcefield_pyerr)
+    }
+
+    #[pyo3(signature = (max_iters=1000, vdw_thresh=10.0, conf_id=-1, ignore_interfrag_interactions=true))]
+    #[doc = r#"
+Return a UFF optimization result with a new optimized molecule value.
+
+The source molecule is not mutated. The molecule must already contain a 3D
+conformer, for example from a 3D SDF, MOL, MOL2, or XYZ input.
+"#]
+    fn with_uff_optimized(
+        &self,
+        max_iters: usize,
+        vdw_thresh: f64,
+        conf_id: isize,
+        ignore_interfrag_interactions: bool,
+    ) -> PyResult<UffOptimizeMoleculeResult> {
+        uff_optimize_molecule(
+            self,
+            max_iters,
+            vdw_thresh,
+            conf_id,
+            ignore_interfrag_interactions,
+        )
+    }
+
+    #[pyo3(signature = (num_threads=1, max_iters=1000, vdw_thresh=10.0, ignore_interfrag_interactions=true))]
+    #[doc = r#"
+Return UFF optimization results for all 3D conformers as a new molecule value.
+"#]
+    fn with_uff_optimized_confs(
+        &self,
+        num_threads: i32,
+        max_iters: usize,
+        vdw_thresh: f64,
+        ignore_interfrag_interactions: bool,
+    ) -> PyResult<UffOptimizeMoleculeConfsResult> {
+        uff_optimize_molecule_confs(
+            self,
+            num_threads,
+            max_iters,
+            vdw_thresh,
+            ignore_interfrag_interactions,
+        )
+    }
+
+    #[doc = r#"
+Return whether MMFF94 parameters are available for this molecule.
+"#]
+    fn has_mmff_params(&self) -> PyResult<bool> {
+        cosmolkit_core::mmff_has_all_molecule_params(&self.inner).map_err(forcefield_pyerr)
+    }
+
+    #[pyo3(signature = (mmff_variant="MMFF94", max_iters=200, non_bonded_thresh=100.0, conf_id=-1, ignore_interfrag_interactions=true))]
+    #[doc = r#"
+Return an MMFF optimization result with a new optimized molecule value.
+
+The source molecule is not mutated. The molecule must already contain a 3D
+conformer. Supported variants follow the Rust core parser, including
+``"MMFF94"`` and ``"MMFF94S"``.
+"#]
+    fn with_mmff_optimized(
+        &self,
+        mmff_variant: &str,
+        max_iters: usize,
+        non_bonded_thresh: f64,
+        conf_id: isize,
+        ignore_interfrag_interactions: bool,
+    ) -> PyResult<MmffOptimizeMoleculeResult> {
+        mmff_optimize_molecule(
+            self,
+            mmff_variant,
+            max_iters,
+            non_bonded_thresh,
+            conf_id,
+            ignore_interfrag_interactions,
+        )
+    }
+
+    #[pyo3(signature = (num_threads=1, max_iters=1000, mmff_variant="MMFF94", non_bonded_thresh=10.0, ignore_interfrag_interactions=true))]
+    #[doc = r#"
+Return MMFF optimization results for all 3D conformers as a new molecule value.
+"#]
+    fn with_mmff_optimized_confs(
+        &self,
+        num_threads: i32,
+        max_iters: usize,
+        mmff_variant: &str,
+        non_bonded_thresh: f64,
+        ignore_interfrag_interactions: bool,
+    ) -> PyResult<MmffOptimizeMoleculeConfsResult> {
+        mmff_optimize_molecule_confs(
+            self,
+            num_threads,
+            max_iters,
+            mmff_variant,
+            non_bonded_thresh,
+            ignore_interfrag_interactions,
+        )
+    }
+
     #[gen_stub(override_return_type(type_repr = "numpy.ndarray[typing.Any, typing.Any]", imports = ("numpy", "typing")))]
     #[doc = r#"
 Return the distance-geometry bounds matrix as a NumPy array.
+
+The returned array uses shape ``(num_atoms, num_atoms)``.
 "#]
     fn dg_bounds_matrix<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let rows = self.inner.dg_bounds_matrix().map_err(|err| {
@@ -3583,7 +4263,7 @@ rooted_at_atom : int, optional
 
     #[pyo3(signature = (path, format=None, include_stereo=true, kekulize=true))]
     #[doc = r#"
-Write the molecule as an SDF file.
+Write the molecule as one SDF record.
 "#]
     fn write_sdf(
         &self,
@@ -3640,7 +4320,7 @@ The molecule must already have a 3D conformer, for example from a 3D SDF record.
 
     #[pyo3(signature = (directory, file_name=None, format=None, include_stereo=true, kekulize=true))]
     #[doc = r#"
-Write the molecule to an SDF file inside a directory.
+Write the molecule as one SDF record inside a directory.
 
 Returns
 -------
@@ -4765,6 +5445,400 @@ Return the Morgan additional output collected by ``fingerprint_morgan_with_outpu
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct EmbedMoleculeResult {
+    molecule: Molecule,
+    conf_id: i32,
+    params: PyEmbedParameters,
+}
+
+impl From<cosmolkit_core::EmbedMoleculeResult> for EmbedMoleculeResult {
+    fn from(value: cosmolkit_core::EmbedMoleculeResult) -> Self {
+        Self {
+            molecule: Molecule {
+                inner: value.molecule,
+            },
+            conf_id: value.conf_id,
+            params: PyEmbedParameters::from_inner(value.params),
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl EmbedMoleculeResult {
+    #[doc = r#"
+Return the embedded molecule value.
+"#]
+    fn molecule(&self) -> Molecule {
+        self.molecule.clone()
+    }
+
+    #[doc = r#"
+Return the generated conformer id, or ``-1`` when embedding did not produce a conformer.
+"#]
+    fn conf_id(&self) -> i32 {
+        self.conf_id
+    }
+
+    #[doc = r#"
+Return whether embedding produced a conformer.
+"#]
+    fn ok(&self) -> bool {
+        self.conf_id >= 0
+    }
+
+    #[doc = r#"
+Return the final embedding parameters snapshot, including tracked failures.
+"#]
+    fn params(&self) -> PyEmbedParameters {
+        self.params.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "EmbedMoleculeResult(conf_id={}, ok={})",
+            self.conf_id,
+            self.conf_id >= 0
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct EmbedMultipleConfsResult {
+    molecule: Molecule,
+    conf_ids: Vec<i32>,
+    requested_num_confs: u32,
+    params: PyEmbedParameters,
+}
+
+impl From<cosmolkit_core::EmbedMultipleConfsResult> for EmbedMultipleConfsResult {
+    fn from(value: cosmolkit_core::EmbedMultipleConfsResult) -> Self {
+        Self {
+            molecule: Molecule {
+                inner: value.molecule,
+            },
+            conf_ids: value.conf_ids,
+            requested_num_confs: value.requested_num_confs,
+            params: PyEmbedParameters::from_inner(value.params),
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl EmbedMultipleConfsResult {
+    #[doc = r#"
+Return the embedded molecule value.
+"#]
+    fn molecule(&self) -> Molecule {
+        self.molecule.clone()
+    }
+
+    #[doc = r#"
+Return the conformer ids that were kept on the returned molecule.
+"#]
+    fn conf_ids(&self) -> Vec<i32> {
+        self.conf_ids.clone()
+    }
+
+    #[doc = r#"
+Return the requested conformer count.
+"#]
+    fn requested_num_confs(&self) -> u32 {
+        self.requested_num_confs
+    }
+
+    #[doc = r#"
+Return the number of conformers kept on the returned molecule.
+"#]
+    fn generated_count(&self) -> usize {
+        self.conf_ids.len()
+    }
+
+    #[doc = r#"
+Return the final embedding parameters snapshot, including tracked failures.
+"#]
+    fn params(&self) -> PyEmbedParameters {
+        self.params.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "EmbedMultipleConfsResult(requested_num_confs={}, generated_count={})",
+            self.requested_num_confs,
+            self.conf_ids.len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct UffOptimizeMoleculeResult {
+    molecule: Molecule,
+    needs_more: i32,
+    energy: f64,
+}
+
+impl From<cosmolkit_core::UffOptimizeMoleculeResult> for UffOptimizeMoleculeResult {
+    fn from(value: cosmolkit_core::UffOptimizeMoleculeResult) -> Self {
+        Self {
+            molecule: Molecule {
+                inner: value.molecule,
+            },
+            needs_more: value.needs_more,
+            energy: value.energy,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl UffOptimizeMoleculeResult {
+    #[doc = r#"
+Return the optimized molecule value.
+"#]
+    fn molecule(&self) -> Molecule {
+        self.molecule.clone()
+    }
+
+    #[doc = r#"
+Return whether another minimization pass would still be needed.
+"#]
+    fn needs_more(&self) -> bool {
+        self.needs_more > 0
+    }
+
+    #[doc = r#"
+Return the raw RDKit-style minimization status code.
+"#]
+    fn status_code(&self) -> i32 {
+        self.needs_more
+    }
+
+    #[doc = r#"
+Return the final UFF force-field energy.
+"#]
+    fn energy(&self) -> f64 {
+        self.energy
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "UffOptimizeMoleculeResult(needs_more={}, energy={})",
+            self.needs_more, self.energy
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct UffOptimizeMoleculeConfResult {
+    needs_more: i32,
+    energy: f64,
+}
+
+impl From<cosmolkit_core::UffOptimizeMoleculeConfResult> for UffOptimizeMoleculeConfResult {
+    fn from(value: cosmolkit_core::UffOptimizeMoleculeConfResult) -> Self {
+        Self {
+            needs_more: value.needs_more,
+            energy: value.energy,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl UffOptimizeMoleculeConfResult {
+    fn needs_more(&self) -> bool {
+        self.needs_more > 0
+    }
+
+    fn status_code(&self) -> i32 {
+        self.needs_more
+    }
+
+    fn energy(&self) -> f64 {
+        self.energy
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "UffOptimizeMoleculeConfResult(needs_more={}, energy={})",
+            self.needs_more, self.energy
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct UffOptimizeMoleculeConfsResult {
+    molecule: Molecule,
+    conformer_results: Vec<UffOptimizeMoleculeConfResult>,
+}
+
+impl From<cosmolkit_core::UffOptimizeMoleculeConfsResult> for UffOptimizeMoleculeConfsResult {
+    fn from(value: cosmolkit_core::UffOptimizeMoleculeConfsResult) -> Self {
+        Self {
+            molecule: Molecule {
+                inner: value.molecule,
+            },
+            conformer_results: value
+                .conformer_results
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl UffOptimizeMoleculeConfsResult {
+    fn molecule(&self) -> Molecule {
+        self.molecule.clone()
+    }
+
+    fn conformer_results(&self) -> Vec<UffOptimizeMoleculeConfResult> {
+        self.conformer_results.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "UffOptimizeMoleculeConfsResult(conformers={})",
+            self.conformer_results.len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct MmffOptimizeMoleculeResult {
+    molecule: Molecule,
+    needs_more: i32,
+}
+
+impl From<cosmolkit_core::MmffOptimizeMoleculeResult> for MmffOptimizeMoleculeResult {
+    fn from(value: cosmolkit_core::MmffOptimizeMoleculeResult) -> Self {
+        Self {
+            molecule: Molecule {
+                inner: value.molecule,
+            },
+            needs_more: value.needs_more,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl MmffOptimizeMoleculeResult {
+    fn molecule(&self) -> Molecule {
+        self.molecule.clone()
+    }
+
+    fn needs_more(&self) -> bool {
+        self.needs_more > 0
+    }
+
+    fn status_code(&self) -> i32 {
+        self.needs_more
+    }
+
+    fn __repr__(&self) -> String {
+        format!("MmffOptimizeMoleculeResult(needs_more={})", self.needs_more)
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct MmffOptimizeMoleculeConfResult {
+    needs_more: i32,
+    energy: f64,
+}
+
+impl From<cosmolkit_core::MmffOptimizeMoleculeConfResult> for MmffOptimizeMoleculeConfResult {
+    fn from(value: cosmolkit_core::MmffOptimizeMoleculeConfResult) -> Self {
+        Self {
+            needs_more: value.needs_more,
+            energy: value.energy,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl MmffOptimizeMoleculeConfResult {
+    fn needs_more(&self) -> bool {
+        self.needs_more > 0
+    }
+
+    fn status_code(&self) -> i32 {
+        self.needs_more
+    }
+
+    fn energy(&self) -> f64 {
+        self.energy
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "MmffOptimizeMoleculeConfResult(needs_more={}, energy={})",
+            self.needs_more, self.energy
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct MmffOptimizeMoleculeConfsResult {
+    molecule: Molecule,
+    conformer_results: Vec<MmffOptimizeMoleculeConfResult>,
+}
+
+impl From<cosmolkit_core::MmffOptimizeMoleculeConfsResult> for MmffOptimizeMoleculeConfsResult {
+    fn from(value: cosmolkit_core::MmffOptimizeMoleculeConfsResult) -> Self {
+        Self {
+            molecule: Molecule {
+                inner: value.molecule,
+            },
+            conformer_results: value
+                .conformer_results
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl MmffOptimizeMoleculeConfsResult {
+    fn molecule(&self) -> Molecule {
+        self.molecule.clone()
+    }
+
+    fn conformer_results(&self) -> Vec<MmffOptimizeMoleculeConfResult> {
+        self.conformer_results.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "MmffOptimizeMoleculeConfsResult(conformers={})",
+            self.conformer_results.len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(name = "SmartsMolecule", skip_from_py_object)]
 #[derive(Clone)]
 struct PySmartsMolecule {
@@ -4833,21 +5907,158 @@ fn version() -> &'static str {
 }
 
 #[pyfunction]
+#[doc = r#"
+Serialize a molecule to COSMolKit binary bytes.
+
+Use ``mol_to_binary()`` / ``mol_from_binary()`` or the matching ``Molecule``
+methods when you need an exact COSMolKit round-trip format instead of text IO.
+"#]
 fn mol_to_binary<'py>(py: Python<'py>, mol: &Molecule) -> PyResult<Bound<'py, PyBytes>> {
     let data = cosmolkit_core::mol_to_binary(&mol.inner).map_err(pickle_pyerr)?;
     Ok(PyBytes::new(py, &data))
 }
 
 #[pyfunction]
+#[doc = r#"
+Deserialize a molecule from COSMolKit binary bytes.
+"#]
 fn mol_from_binary(data: &[u8]) -> PyResult<Molecule> {
     let inner = cosmolkit_core::mol_from_binary(data).map_err(pickle_pyerr)?;
     Ok(Molecule { inner })
 }
 
 #[pyfunction]
+#[doc = r#"
+Parse SMARTS text into a ``SmartsMolecule`` query-tree value.
+
+This exposes SMARTS parse metadata in Python. Direct SMARTS query matching is
+not yet a Python API.
+"#]
 fn parse_smarts(smarts: &str) -> PyResult<PySmartsMolecule> {
     let inner = cosmolkit_core::smarts_parse::parse_smarts(smarts).map_err(smarts_parse_pyerr)?;
     Ok(PySmartsMolecule { inner })
+}
+
+#[pyfunction]
+#[doc = r#"
+Return whether UFF parameters are available for every atom in a molecule.
+"#]
+fn uff_has_all_molecule_params(mol: &Molecule) -> PyResult<bool> {
+    cosmolkit_core::uff_has_all_molecule_params(&mol.inner).map_err(forcefield_pyerr)
+}
+
+#[pyfunction]
+#[pyo3(signature = (mol, max_iters=1000, vdw_thresh=10.0, conf_id=-1, ignore_interfrag_interactions=true))]
+#[doc = r#"
+Optimize one existing 3D conformer with UFF and return a result object.
+
+The input molecule is not mutated.
+"#]
+fn uff_optimize_molecule(
+    mol: &Molecule,
+    max_iters: usize,
+    vdw_thresh: f64,
+    conf_id: isize,
+    ignore_interfrag_interactions: bool,
+) -> PyResult<UffOptimizeMoleculeResult> {
+    cosmolkit_core::uff_optimize_molecule(
+        &mol.inner,
+        max_iters,
+        vdw_thresh,
+        conf_id,
+        ignore_interfrag_interactions,
+    )
+    .map(Into::into)
+    .map_err(forcefield_pyerr)
+}
+
+#[pyfunction]
+#[pyo3(signature = (mol, num_threads=1, max_iters=1000, vdw_thresh=10.0, ignore_interfrag_interactions=true))]
+#[doc = r#"
+Optimize all existing 3D conformers with UFF and return a result object.
+
+The input molecule is not mutated.
+"#]
+fn uff_optimize_molecule_confs(
+    mol: &Molecule,
+    num_threads: i32,
+    max_iters: usize,
+    vdw_thresh: f64,
+    ignore_interfrag_interactions: bool,
+) -> PyResult<UffOptimizeMoleculeConfsResult> {
+    cosmolkit_core::uff_optimize_molecule_confs(
+        &mol.inner,
+        num_threads,
+        max_iters,
+        vdw_thresh,
+        ignore_interfrag_interactions,
+    )
+    .map(Into::into)
+    .map_err(forcefield_pyerr)
+}
+
+#[pyfunction]
+#[doc = r#"
+Return whether MMFF94 parameters are available for a molecule.
+"#]
+fn mmff_has_all_molecule_params(mol: &Molecule) -> PyResult<bool> {
+    cosmolkit_core::mmff_has_all_molecule_params(&mol.inner).map_err(forcefield_pyerr)
+}
+
+#[pyfunction]
+#[pyo3(signature = (mol, mmff_variant="MMFF94", max_iters=200, non_bonded_thresh=100.0, conf_id=-1, ignore_interfrag_interactions=true))]
+#[doc = r#"
+Optimize one existing 3D conformer with MMFF and return a result object.
+
+The input molecule is not mutated. Supported variants include ``"MMFF94"``
+and ``"MMFF94S"``.
+"#]
+fn mmff_optimize_molecule(
+    mol: &Molecule,
+    mmff_variant: &str,
+    max_iters: usize,
+    non_bonded_thresh: f64,
+    conf_id: isize,
+    ignore_interfrag_interactions: bool,
+) -> PyResult<MmffOptimizeMoleculeResult> {
+    cosmolkit_core::mmff_optimize_molecule(
+        &mol.inner,
+        mmff_variant,
+        max_iters,
+        non_bonded_thresh,
+        conf_id,
+        ignore_interfrag_interactions,
+    )
+    .map(Into::into)
+    .map_err(forcefield_pyerr)
+}
+
+#[pyfunction]
+#[pyo3(signature = (mol, num_threads=1, max_iters=1000, mmff_variant="MMFF94", non_bonded_thresh=10.0, ignore_interfrag_interactions=true))]
+#[doc = r#"
+Optimize all existing 3D conformers with MMFF and return a result object.
+
+The input molecule is not mutated. Supported variants include ``"MMFF94"``
+and ``"MMFF94S"``.
+"#]
+fn mmff_optimize_molecule_confs(
+    mol: &Molecule,
+    num_threads: i32,
+    max_iters: usize,
+    mmff_variant: &str,
+    non_bonded_thresh: f64,
+    ignore_interfrag_interactions: bool,
+) -> PyResult<MmffOptimizeMoleculeConfsResult> {
+    cosmolkit_core::mmff_optimize_molecule_confs(
+        &mol.inner,
+        num_threads,
+        max_iters,
+        mmff_variant,
+        non_bonded_thresh,
+        ignore_interfrag_interactions,
+    )
+    .map(Into::into)
+    .map_err(forcefield_pyerr)
 }
 
 #[pyfunction]
@@ -4892,6 +6103,7 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     add_public_enums(m)?;
     add_batch_validation_error_class(m)?;
     m.add_class::<Molecule>()?;
+    m.add_class::<PyEmbedParameters>()?;
     m.add_class::<Protein>()?;
     m.add_class::<ProteinChain>()?;
     m.add_class::<ProteinResidue>()?;
@@ -4912,12 +6124,26 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Fingerprint>()?;
     m.add_class::<MorganAdditionalOutput>()?;
     m.add_class::<MorganFingerprintResult>()?;
+    m.add_class::<EmbedMoleculeResult>()?;
+    m.add_class::<EmbedMultipleConfsResult>()?;
+    m.add_class::<UffOptimizeMoleculeResult>()?;
+    m.add_class::<UffOptimizeMoleculeConfResult>()?;
+    m.add_class::<UffOptimizeMoleculeConfsResult>()?;
+    m.add_class::<MmffOptimizeMoleculeResult>()?;
+    m.add_class::<MmffOptimizeMoleculeConfResult>()?;
+    m.add_class::<MmffOptimizeMoleculeConfsResult>()?;
     m.add_class::<PySmartsMolecule>()?;
     m.add_class::<SubstructMatchResult>()?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(mol_to_binary, m)?)?;
     m.add_function(wrap_pyfunction!(mol_from_binary, m)?)?;
     m.add_function(wrap_pyfunction!(parse_smarts, m)?)?;
+    m.add_function(wrap_pyfunction!(uff_has_all_molecule_params, m)?)?;
+    m.add_function(wrap_pyfunction!(uff_optimize_molecule, m)?)?;
+    m.add_function(wrap_pyfunction!(uff_optimize_molecule_confs, m)?)?;
+    m.add_function(wrap_pyfunction!(mmff_has_all_molecule_params, m)?)?;
+    m.add_function(wrap_pyfunction!(mmff_optimize_molecule, m)?)?;
+    m.add_function(wrap_pyfunction!(mmff_optimize_molecule_confs, m)?)?;
     m.add_function(wrap_pyfunction!(has_substruct_match, m)?)?;
     m.add_function(wrap_pyfunction!(get_substruct_match, m)?)?;
     m.add_function(wrap_pyfunction!(get_substruct_matches, m)?)?;

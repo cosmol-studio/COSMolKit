@@ -418,6 +418,27 @@ impl ForceFieldContrib for InversionContrib {
     }
 }
 
+impl ForceFieldContrib for InversionContribs {
+    fn copy(&self) -> Box<dyn ForceFieldContrib> {
+        // RDKit✔️✔️: InversionContribs *copy() const override {
+        // RDKit✔️✔️:   return new InversionContribs(*this);
+        // RDKit✔️✔️: }
+        Box::new(self.clone())
+    }
+
+    fn set_force_field(&mut self, ff: *const ForceField) {
+        self.owner = ff;
+    }
+
+    fn get_energy(&self, pos: &[f64]) -> f64 {
+        Self::get_energy(self, pos)
+    }
+
+    fn get_grad(&self, pos: &[f64], grad: &mut [f64]) {
+        Self::get_grad(self, pos, grad);
+    }
+}
+
 impl InversionContribs {
     #[must_use]
     pub fn new(owner: &ForceField) -> Self {

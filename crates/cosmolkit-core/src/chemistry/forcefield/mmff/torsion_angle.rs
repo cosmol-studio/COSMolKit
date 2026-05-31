@@ -28,7 +28,7 @@ fn clip_to_one(value: &mut f64) {
     *value = value.clamp(-1.0, 1.0);
 }
 
-fn calc_torsion_cos_phi(
+pub(crate) fn calc_torsion_cos_phi(
     i_point: ForceFieldVec3,
     j_point: ForceFieldVec3,
     k_point: ForceFieldVec3,

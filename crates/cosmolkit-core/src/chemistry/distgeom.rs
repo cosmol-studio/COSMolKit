@@ -12,16 +12,30 @@
 //! - **1-4 bounds**: torsion-angle ranges
 //! - **VDW lower bounds**: Van der Waals radii for non-bonded pairs
 
+use crate::chemistry::forcefield::crystalff::{
+    CrystalFFDetails, TorsionAngleContribs, get_experimental_torsions_without_bonds,
+};
+use crate::chemistry::forcefield::mmff::nonbonded::NonbondedContrib;
 #[cfg(test)]
 use crate::chemistry::forcefield::uff::atom_typer::get_atom_label_for_uff as source_get_atom_label_for_uff;
 use crate::chemistry::forcefield::uff::atom_typer::get_atom_types_for_uff;
+use crate::chemistry::forcefield::uff::inversion::InversionContribs;
 use crate::chemistry::forcefield::uff::params::AtomicParams;
+use crate::chemistry::forcefield::{
+    AngleConstraintContribs, DistanceConstraintContribs, ForceField, ForceFieldContrib,
+    ForceFieldVec3,
+};
 use crate::chemistry::stereo::{get_ideal_angle_between_ligands, has_non_tetrahedral_stereo};
 use crate::{
-    Atom, AtomId, Bond, BondId, BondOrder, BondStereo, Hybridization, Molecule, ValenceModel,
-    assign_valence, rdkit_valence_list,
+    Atom, AtomId, Bond, BondId, BondOrder, BondQueryPredicate, BondStereo, ChiralTag, Conformer3D,
+    DerivedState, Hybridization, Molecule, MoleculeBuildError, QueryNode, SubstructMatchParams,
+    ValenceModel, assign_valence, get_substruct_matches_with_params, rdkit_valence_list,
 };
-use std::collections::HashSet;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashSet};
+use std::env;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 // ──────────────────────────────────────────────
 // Constants
@@ -35,10 +49,2822 @@ const DIST15_TOL: f64 = 0.08;
 const VDW_SCALE_15: f64 = 0.7;
 const H_BOND_LENGTH: f64 = 1.8;
 const MAX_UPPER: f64 = 1000.0;
+const KNOWN_DIST_TOL: f64 = 0.01;
+const KNOWN_DIST_FORCE_CONSTANT: f64 = 100.0;
 const MIN_MACROCYCLE_RING_SIZE: usize = 9;
 const DEFAULT_LOWER: f64 = 0.001;
 const DEFAULT_UPPER: f64 = MAX_UPPER;
 const UFF_LAMBDA: f64 = 0.1332;
+const EIGVAL_TOL: f64 = 0.001;
+const RDKIT_RANDOM_MODULUS: u64 = 2_147_483_647;
+const RDKIT_RANDOM_MULTIPLIER: u64 = 48_271;
+const EMBEDDER_ERROR_TOL: f64 = 0.00001;
+const MAX_MINIMIZED_E_PER_ATOM: f64 = 0.05;
+const MIN_TETRAHEDRAL_CHIRAL_VOL: f64 = 0.50;
+const TETRAHEDRAL_CENTERINVOLUME_TOL: f64 = 0.30;
+
+thread_local! {
+    static RDKIT_DISTGEOM_RNG: std::cell::RefCell<RdkitDistgeomMinStdRand> =
+        std::cell::RefCell::new(RdkitDistgeomMinStdRand::default());
+}
+
+fn have_opposite_sign(a: f64, b: f64) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::haveOppositeSign (Embedder.cpp:67-69)
+    // RDKit✔️✔️: inline bool haveOppositeSign(double a, double b) {
+    // RDKit✔️✔️:   return std::signbit(a) ^ std::signbit(b);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::haveOppositeSign
+    a.is_sign_negative() ^ b.is_sign_negative()
+}
+
+fn row64_distgeom_trace_enabled(num_points: usize) -> bool {
+    env::var("RDKIT_ROW64_TRACE").ok().as_deref() == Some("1") && num_points == 106
+}
+
+fn row61_distgeom_trace_enabled(num_points: usize) -> bool {
+    env::var("RDKIT_ROW61_TRACE").ok().as_deref() == Some("1") && num_points == 26
+}
+
+fn row103_distgeom_trace_enabled(num_points: usize) -> bool {
+    env::var("RDKIT_ROW103_TRACE").ok().as_deref() == Some("1") && num_points == 45
+}
+
+#[allow(dead_code)]
+fn failmutex_get() -> &'static Mutex<()> {
+    // BEGIN RDKIT CPP FUNCTION failmutex_get (Embedder.cpp:78-82)
+    // RDKit✔️✔️: std::mutex &failmutex_get() {
+    // RDKit✔️✔️:   // create on demand
+    // RDKit✔️✔️:   static std::mutex _mutex;
+    // RDKit✔️✔️:   return _mutex;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION failmutex_get
+    static MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+    MUTEX.get_or_init(|| Mutex::new(()))
+}
+
+#[allow(dead_code)]
+fn failmutex_create() {
+    // BEGIN RDKIT CPP FUNCTION failmutex_create (Embedder.cpp:84-87)
+    // RDKit✔️✔️: void failmutex_create() {
+    // RDKit✔️✔️:   std::mutex &mutex = failmutex_get();
+    // RDKit✔️✔️:   std::lock_guard<std::mutex> test_lock(mutex);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION failmutex_create
+    let _test_lock = failmutex_get()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+}
+
+#[allow(dead_code)]
+fn get_fail_mutex() -> &'static Mutex<()> {
+    // BEGIN RDKIT CPP FUNCTION GetFailMutex (Embedder.cpp:89-93)
+    // RDKit✔️✔️: std::mutex &GetFailMutex() {
+    // RDKit✔️✔️:   static std::once_flag flag;
+    // RDKit✔️✔️:   std::call_once(flag, failmutex_create);
+    // RDKit✔️✔️:   return failmutex_get();
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION GetFailMutex
+    static INIT: OnceLock<()> = OnceLock::new();
+    INIT.get_or_init(failmutex_create);
+    failmutex_get()
+}
+
+fn normalized_point_delta(p0: ForceFieldVec3, p1: ForceFieldVec3) -> ForceFieldVec3 {
+    let delta = p0 - p1;
+    let length = delta.length();
+    delta / length
+}
+
+fn embedder_volume_test(chiral_set: &ChiralSet, positions: &[ForceFieldVec3]) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_volumeTest (Embedder.cpp:316-397)
+    // RDKit✔️✔️: bool _volumeTest(const DistGeom::ChiralSetPtr &chiralSet,
+    // RDKit✔️✔️:                  const RDGeom::PointPtrVect &positions, bool verbose = false) {
+    // RDKit✔️✔️:   RDGeom::Point3D p0((*positions[chiralSet->d_idx0])[0],
+    // RDKit✔️✔️:                      (*positions[chiralSet->d_idx0])[1],
+    // RDKit✔️✔️:                      (*positions[chiralSet->d_idx0])[2]);
+    // RDKit✔️✔️:   RDGeom::Point3D p1((*positions[chiralSet->d_idx1])[0],
+    // RDKit✔️✔️:                      (*positions[chiralSet->d_idx1])[1],
+    // RDKit✔️✔️:                      (*positions[chiralSet->d_idx1])[2]);
+    // RDKit✔️✔️:   RDGeom::Point3D p2((*positions[chiralSet->d_idx2])[0],
+    // RDKit✔️✔️:                      (*positions[chiralSet->d_idx2])[1],
+    // RDKit✔️✔️:                      (*positions[chiralSet->d_idx2])[2]);
+    // RDKit✔️✔️:   RDGeom::Point3D p3((*positions[chiralSet->d_idx3])[0],
+    // RDKit✔️✔️:                      (*positions[chiralSet->d_idx3])[1],
+    // RDKit✔️✔️:                      (*positions[chiralSet->d_idx3])[2]);
+    // RDKit✔️✔️:   RDGeom::Point3D p4((*positions[chiralSet->d_idx4])[0],
+    // RDKit✔️✔️:                      (*positions[chiralSet->d_idx4])[1],
+    // RDKit✔️✔️:                      (*positions[chiralSet->d_idx4])[2]);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // even if we are minimizing in higher dimension the chiral volume is
+    // RDKit✔️✔️:   // calculated using only the first 3 dimensions
+    // RDKit✔️✔️:   RDGeom::Point3D v1 = p0 - p1;
+    // RDKit✔️✔️:   v1.normalize();
+    // RDKit✔️✔️:   RDGeom::Point3D v2 = p0 - p2;
+    // RDKit✔️✔️:   v2.normalize();
+    // RDKit✔️✔️:   RDGeom::Point3D v3 = p0 - p3;
+    // RDKit✔️✔️:   v3.normalize();
+    // RDKit✔️✔️:   RDGeom::Point3D v4 = p0 - p4;
+    // RDKit✔️✔️:   v4.normalize();
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // be more tolerant of tethrahedral centers that are involved in multiple
+    // RDKit✔️✔️:   // small rings
+    // RDKit✔️✔️:   double volScale = 1;
+    // RDKit✔️✔️:   if (chiralSet->d_structureFlags &
+    // RDKit✔️✔️:       static_cast<std::uint64_t>(
+    // RDKit✔️✔️:           DistGeom::ChiralSetStructureFlags::IN_FUSED_SMALL_RINGS)) {
+    // RDKit✔️✔️:     volScale = 0.25;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   RDGeom::Point3D crossp = v1.crossProduct(v2);
+    // RDKit✔️✔️:   double vol = crossp.dotProduct(v3);
+    // RDKit✔️✔️:   if (fabs(vol) < volScale * MIN_TETRAHEDRAL_CHIRAL_VOL) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   crossp = v1.crossProduct(v2);
+    // RDKit✔️✔️:   vol = crossp.dotProduct(v4);
+    // RDKit✔️✔️:   if (fabs(vol) < volScale * MIN_TETRAHEDRAL_CHIRAL_VOL) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   crossp = v1.crossProduct(v3);
+    // RDKit✔️✔️:   vol = crossp.dotProduct(v4);
+    // RDKit✔️✔️:   if (fabs(vol) < volScale * MIN_TETRAHEDRAL_CHIRAL_VOL) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   crossp = v2.crossProduct(v3);
+    // RDKit✔️✔️:   vol = crossp.dotProduct(v4);
+    // RDKit✔️✔️:   return fabs(vol) >= volScale * MIN_TETRAHEDRAL_CHIRAL_VOL;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::_volumeTest
+    let p0 = positions[chiral_set.idx0];
+    let p1 = positions[chiral_set.idx1];
+    let p2 = positions[chiral_set.idx2];
+    let p3 = positions[chiral_set.idx3];
+    let p4 = positions[chiral_set.idx4];
+
+    let v1 = normalized_point_delta(p0, p1);
+    let v2 = normalized_point_delta(p0, p2);
+    let v3 = normalized_point_delta(p0, p3);
+    let v4 = normalized_point_delta(p0, p4);
+
+    let mut vol_scale = 1.0;
+    if chiral_set.structure_flags & ChiralSetStructureFlags::InFusedSmallRings as u64 != 0 {
+        vol_scale = 0.25;
+    }
+    let min_vol = vol_scale * MIN_TETRAHEDRAL_CHIRAL_VOL;
+
+    let mut crossp = v1.cross_product(v2);
+    let mut vol = crossp.dot_product(v3);
+    if vol.abs() < min_vol {
+        return false;
+    }
+    crossp = v1.cross_product(v2);
+    vol = crossp.dot_product(v4);
+    if vol.abs() < min_vol {
+        return false;
+    }
+    crossp = v1.cross_product(v3);
+    vol = crossp.dot_product(v4);
+    if vol.abs() < min_vol {
+        return false;
+    }
+    crossp = v2.cross_product(v3);
+    vol = crossp.dot_product(v4);
+    vol.abs() >= min_vol
+}
+
+fn embedder_same_side(
+    v1: ForceFieldVec3,
+    v2: ForceFieldVec3,
+    v3: ForceFieldVec3,
+    v4: ForceFieldVec3,
+    p0: ForceFieldVec3,
+    tol: f64,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_sameSide (Embedder.cpp:399-410)
+    // RDKit✔️✔️: bool _sameSide(const RDGeom::Point3D &v1, const RDGeom::Point3D &v2,
+    // RDKit✔️✔️:                const RDGeom::Point3D &v3, const RDGeom::Point3D &v4,
+    // RDKit✔️✔️:                const RDGeom::Point3D &p0, double tol = 0.1) {
+    // RDKit✔️✔️:   RDGeom::Point3D normal = (v2 - v1).crossProduct(v3 - v1);
+    // RDKit✔️✔️:   double d1 = normal.dotProduct(v4 - v1);
+    // RDKit✔️✔️:   double d2 = normal.dotProduct(p0 - v1);
+    // RDKit✔️✔️:   // std::cerr << "     " << d1 << " - " << d2 << std::endl;
+    // RDKit✔️✔️:   if (fabs(d1) < tol || fabs(d2) < tol) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return !((d1 < 0.) ^ (d2 < 0.));
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::_sameSide
+    let normal = (v2 - v1).cross_product(v3 - v1);
+    let d1 = normal.dot_product(v4 - v1);
+    let d2 = normal.dot_product(p0 - v1);
+    if d1.abs() < tol || d2.abs() < tol {
+        return false;
+    }
+    !((d1 < 0.0) ^ (d2 < 0.0))
+}
+
+fn embedder_center_in_volume_indices(
+    idx0: usize,
+    idx1: usize,
+    idx2: usize,
+    idx3: usize,
+    idx4: usize,
+    positions: &[ForceFieldVec3],
+    tol: f64,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_centerInVolume index overload (Embedder.cpp:411-437)
+    // RDKit✔️✔️: bool _centerInVolume(unsigned int idx0, unsigned int idx1, unsigned int idx2,
+    // RDKit✔️✔️:                      unsigned int idx3, unsigned int idx4,
+    // RDKit✔️✔️:                      const RDGeom::PointPtrVect &positions, double tol,
+    // RDKit✔️✔️:                      bool verbose = false) {
+    // RDKit✔️✔️:   RDGeom::Point3D p0((*positions[idx0])[0], (*positions[idx0])[1],
+    // RDKit✔️✔️:                      (*positions[idx0])[2]);
+    // RDKit✔️✔️:   RDGeom::Point3D p1((*positions[idx1])[0], (*positions[idx1])[1],
+    // RDKit✔️✔️:                      (*positions[idx1])[2]);
+    // RDKit✔️✔️:   RDGeom::Point3D p2((*positions[idx2])[0], (*positions[idx2])[1],
+    // RDKit✔️✔️:                      (*positions[idx2])[2]);
+    // RDKit✔️✔️:   RDGeom::Point3D p3((*positions[idx3])[0], (*positions[idx3])[1],
+    // RDKit✔️✔️:                      (*positions[idx3])[2]);
+    // RDKit✔️✔️:   RDGeom::Point3D p4((*positions[idx4])[0], (*positions[idx4])[1],
+    // RDKit✔️✔️:                      (*positions[idx4])[2]);
+    // RDKit✔️✔️:   // RDGeom::Point3D centroid = (p1+p2+p3+p4)/4.;
+    // RDKit✔️✔️:   bool res = _sameSide(p1, p2, p3, p4, p0, tol) &&
+    // RDKit✔️✔️:              _sameSide(p2, p3, p4, p1, p0, tol) &&
+    // RDKit✔️✔️:              _sameSide(p3, p4, p1, p2, p0, tol) &&
+    // RDKit✔️✔️:              _sameSide(p4, p1, p2, p3, p0, tol);
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::_centerInVolume index overload
+    let p0 = positions[idx0];
+    let p1 = positions[idx1];
+    let p2 = positions[idx2];
+    let p3 = positions[idx3];
+    let p4 = positions[idx4];
+    embedder_same_side(p1, p2, p3, p4, p0, tol)
+        && embedder_same_side(p2, p3, p4, p1, p0, tol)
+        && embedder_same_side(p3, p4, p1, p2, p0, tol)
+        && embedder_same_side(p4, p1, p2, p3, p0, tol)
+}
+
+fn embedder_center_in_volume(
+    chiral_set: &ChiralSet,
+    positions: &[ForceFieldVec3],
+    tol: f64,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_centerInVolume chiral-set overload (Embedder.cpp:439-450)
+    // RDKit✔️✔️: bool _centerInVolume(const DistGeom::ChiralSetPtr &chiralSet,
+    // RDKit✔️✔️:                      const RDGeom::PointPtrVect &positions, double tol = 0.1,
+    // RDKit✔️✔️:                      bool verbose = false) {
+    // RDKit✔️✔️:   if (chiralSet->d_idx0 ==
+    // RDKit✔️✔️:       chiralSet->d_idx4) {  // this happens for three-coordinate centers
+    // RDKit✔️✔️:     return true;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return _centerInVolume(chiralSet->d_idx0, chiralSet->d_idx1,
+    // RDKit✔️✔️:                          chiralSet->d_idx2, chiralSet->d_idx3,
+    // RDKit✔️✔️:                          chiralSet->d_idx4, positions, tol, verbose);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::_centerInVolume chiral-set overload
+    if chiral_set.idx0 == chiral_set.idx4 {
+        return true;
+    }
+    embedder_center_in_volume_indices(
+        chiral_set.idx0,
+        chiral_set.idx1,
+        chiral_set.idx2,
+        chiral_set.idx3,
+        chiral_set.idx4,
+        positions,
+        tol,
+    )
+}
+
+fn embedder_bounds_fulfilled(
+    atoms: &[i32],
+    mmat: &BoundsMatrix,
+    positions: &[ForceFieldVec3],
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_boundsFulfilled (Embedder.cpp:451-476)
+    // RDKit✔️✔️: bool _boundsFulfilled(const std::vector<int> &atoms,
+    // RDKit✔️✔️:                       const DistGeom::BoundsMatrix &mmat,
+    // RDKit✔️✔️:                       const RDGeom::PointPtrVect &positions) {
+    // RDKit✔️✔️:   // unsigned int N = mmat.numRows();
+    // RDKit✔️✔️:   // std::cerr << N << " " << atoms.size() << std::endl;
+    // RDKit✔️✔️:   // loop over all pair of atoms
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < atoms.size() - 1; ++i) {
+    // RDKit✔️✔️:     for (unsigned int j = i + 1; j < atoms.size(); ++j) {
+    // RDKit✔️✔️:       int a1 = atoms[i];
+    // RDKit✔️✔️:       int a2 = atoms[j];
+    // RDKit✔️✔️:       RDGeom::Point3D p0((*positions[a1])[0], (*positions[a1])[1],
+    // RDKit✔️✔️:                          (*positions[a1])[2]);
+    // RDKit✔️✔️:       RDGeom::Point3D p1((*positions[a2])[0], (*positions[a2])[1],
+    // RDKit✔️✔️:                          (*positions[a2])[2]);
+    // RDKit✔️✔️:       double d2 = (p0 - p1).length();  // distance
+    // RDKit✔️✔️:       double lb = mmat.getLowerBound(a1, a2);
+    // RDKit✔️✔️:       double ub = mmat.getUpperBound(a1, a2);  // bounds
+    // RDKit✔️✔️:       if (((d2 < lb) && (fabs(d2 - lb) > 0.1 * ub)) ||
+    // RDKit✔️✔️:           ((d2 > ub) && (fabs(d2 - ub) > 0.1 * ub))) {
+    // RDKit✔️✔️:         return false;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::_boundsFulfilled
+    if atoms.len() < 2 {
+        return true;
+    }
+    for i in 0..atoms.len() - 1 {
+        for j in i + 1..atoms.len() {
+            let a1 = atoms[i] as usize;
+            let a2 = atoms[j] as usize;
+            let d2 = (positions[a1] - positions[a2]).length();
+            let lb = mmat.get_lower(a1, a2);
+            let ub = mmat.get_upper(a1, a2);
+            if (d2 < lb && (d2 - lb).abs() > 0.1 * ub) || (d2 > ub && (d2 - ub).abs() > 0.1 * ub) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+struct EmbedArgs<'a> {
+    mmat: &'a BoundsMatrix,
+    chiral_centers: &'a [ChiralSetPtr],
+    tetrahedral_carbons: &'a [ChiralSetPtr],
+    etkdg_details: Option<&'a CrystalFFDetails>,
+    double_bond_ends: Option<&'a [(usize, usize, usize)]>,
+    stereo_double_bonds: &'a [(Vec<usize>, i32)],
+}
+
+struct EmbedHelperArgs<'a> {
+    confs_ok: &'a mut [bool],
+    four_d: bool,
+    frag_mapping: Option<&'a [usize]>,
+    confs: &'a mut [Conformer3D],
+    frag_idx: usize,
+    mmat: &'a BoundsMatrix,
+    chiral_centers: &'a [ChiralSetPtr],
+    tetrahedral_carbons: &'a [ChiralSetPtr],
+    double_bond_ends: &'a [(usize, usize, usize)],
+    stereo_double_bonds: &'a [(Vec<usize>, i32)],
+    etkdg_details: &'a CrystalFFDetails,
+}
+
+impl<'a> EmbedHelperArgs<'a> {
+    fn embed_args(&self) -> EmbedArgs<'_> {
+        EmbedArgs {
+            mmat: self.mmat,
+            chiral_centers: self.chiral_centers,
+            tetrahedral_carbons: self.tetrahedral_carbons,
+            etkdg_details: Some(self.etkdg_details),
+            double_bond_ends: Some(self.double_bond_ends),
+            stereo_double_bonds: self.stereo_double_bonds,
+        }
+    }
+}
+
+fn embedder_generate_initial_coords<R: RdkitDoubleRng>(
+    positions: &mut [Vec<f64>],
+    eargs: &EmbedArgs<'_>,
+    embed_params: &EmbedParameters,
+    dist_mat: &mut SymmMatrix,
+    rng: &mut R,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::generateInitialCoords (Embedder.cpp:479-520)
+    // RDKit✔️✔️: bool generateInitialCoords(RDGeom::PointPtrVect *positions,
+    // RDKit✔️✔️:                            const detail::EmbedArgs &eargs,
+    // RDKit✔️✔️:                            const EmbedParameters &embedParams,
+    // RDKit✔️✔️:                            RDNumeric::DoubleSymmMatrix &distMat,
+    // RDKit✔️✔️:                            RDKit::double_source_type *rng) {
+    // RDKit✔️✔️:   bool gotCoords = false;
+    // RDKit✔️✔️:   if (!embedParams.useRandomCoords) {
+    // RDKit✔️✔️:     double largestDistance =
+    // RDKit✔️✔️:         DistGeom::pickRandomDistMat(*eargs.mmat, distMat, *rng);
+    // RDKit✔️✔️:     RDUNUSED_PARAM(largestDistance);
+    // RDKit✔️✔️:     gotCoords = DistGeom::computeInitialCoords(distMat, *positions, *rng,
+    // RDKit✔️✔️:                                                embedParams.randNegEig,
+    // RDKit✔️✔️:                                                embedParams.numZeroFail);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     double boxSize;
+    // RDKit✔️✔️:     if (embedParams.boxSizeMult > 0) {
+    // RDKit✔️✔️:       boxSize = 5. * embedParams.boxSizeMult;
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       boxSize = -1 * embedParams.boxSizeMult;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     gotCoords = DistGeom::computeRandomCoords(*positions, boxSize, *rng);
+    // RDKit✔️✔️:     if (embedParams.useRandomCoords && embedParams.coordMap != nullptr) {
+    // RDKit✔️✔️:       for (const auto &v : *embedParams.coordMap) {
+    // RDKit✔️✔️:         auto p = positions->at(v.first);
+    // RDKit✔️✔️:         for (unsigned int ci = 0; ci < v.second.dimension(); ++ci) {
+    // RDKit✔️✔️:           (*p)[ci] = v.second[ci];
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         // zero out any higher dimensional components:
+    // RDKit✔️✔️:         for (unsigned int ci = v.second.dimension(); ci < p->dimension();
+    // RDKit✔️✔️:              ++ci) {
+    // RDKit✔️✔️:           (*p)[ci] = 0.0;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return gotCoords;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::generateInitialCoords
+    let got_coords;
+    if !embed_params.use_random_coords {
+        let _largest_distance = pick_random_dist_mat_with_rng(eargs.mmat, dist_mat, rng);
+        got_coords = compute_initial_coords_with_rng(
+            dist_mat,
+            positions,
+            rng,
+            embed_params.rand_neg_eig,
+            embed_params.num_zero_fail as usize,
+        );
+    } else {
+        let box_size = if embed_params.box_size_mult > 0.0 {
+            5.0 * embed_params.box_size_mult
+        } else {
+            -embed_params.box_size_mult
+        };
+        got_coords = compute_random_coords_with_rng(positions, box_size, rng);
+        if let Some(coord_map) = &embed_params.coord_map {
+            for (idx, mapped_point) in coord_map {
+                let point = &mut positions[*idx as usize];
+                for ci in 0..3 {
+                    point[ci] = mapped_point[ci];
+                }
+                for coord in point.iter_mut().skip(3) {
+                    *coord = 0.0;
+                }
+            }
+        }
+    }
+    got_coords
+}
+
+fn copy_forcefield_positions_to_point_vectors(field: &ForceField, positions: &mut [Vec<f64>]) {
+    for (point, field_point) in positions.iter_mut().zip(field.positions()) {
+        for ci in 0..point.len() {
+            point[ci] = field_point[ci];
+        }
+    }
+}
+
+fn point_vectors_to_forcefield_vec3(positions: &[Vec<f64>]) -> Vec<ForceFieldVec3> {
+    positions
+        .iter()
+        .map(|point| ForceFieldVec3::new(point[0], point[1], point[2]))
+        .collect()
+}
+
+fn embedder_first_minimization(
+    positions: &mut [Vec<f64>],
+    eargs: &EmbedArgs<'_>,
+    embed_params: &EmbedParameters,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::firstMinimization (Embedder.cpp:521-561)
+    // RDKit✔️✔️: bool firstMinimization(RDGeom::PointPtrVect *positions,
+    // RDKit✔️✔️:                        const detail::EmbedArgs &eargs,
+    // RDKit✔️✔️:                        const EmbedParameters &embedParams) {
+    // RDKit✔️✔️:   bool gotCoords = true;
+    // RDKit✔️✔️:   boost::dynamic_bitset<> fixedPts(positions->size());
+    // RDKit✔️✔️:   if (embedParams.useRandomCoords && embedParams.coordMap != nullptr) {
+    // RDKit✔️✔️:     for (const auto &v : *embedParams.coordMap) {
+    // RDKit✔️✔️:       fixedPts.set(v.first);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   std::unique_ptr<ForceFields::ForceField> field(DistGeom::constructForceField(
+    // RDKit✔️✔️:       *eargs.mmat, *positions, *eargs.chiralCenters, 1.0, 0.1, nullptr,
+    // RDKit✔️✔️:       embedParams.basinThresh, &fixedPts));
+    // RDKit✔️✔️:   if (embedParams.useRandomCoords && embedParams.coordMap != nullptr) {
+    // RDKit✔️✔️:     for (const auto &v : *embedParams.coordMap) {
+    // RDKit✔️✔️:       field->fixedPoints().push_back(v.first);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   field->initialize();
+    // RDKit✔️✔️:   if (field->calcEnergy() > ERROR_TOL) {
+    // RDKit✔️✔️:     int needMore = 1;
+    // RDKit✔️✔️:     while (needMore) {
+    // RDKit✔️✔️:       needMore = field->minimize(400, embedParams.optimizerForceTol);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   std::vector<double> e_contribs;
+    // RDKit✔️✔️:   double local_e = field->calcEnergy(&e_contribs);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // check that the energy is not too high (this is part of github #971)
+    // RDKit✔️✔️:   if (local_e / positions->size() >= MAX_MINIMIZED_E_PER_ATOM) {
+    // RDKit✔️✔️:     gotCoords = false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return gotCoords;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::firstMinimization
+    let mut got_coords = true;
+    let mut fixed_pts = vec![false; positions.len()];
+    if embed_params.use_random_coords
+        && let Some(coord_map) = &embed_params.coord_map
+    {
+        for idx in coord_map.keys() {
+            fixed_pts[*idx as usize] = true;
+        }
+    }
+    let mut field = construct_distgeom_forcefield(
+        eargs.mmat,
+        positions,
+        eargs.chiral_centers,
+        1.0,
+        0.1,
+        None,
+        embed_params.basin_thresh,
+        Some(&fixed_pts),
+    );
+    if embed_params.use_random_coords
+        && let Some(coord_map) = &embed_params.coord_map
+    {
+        for idx in coord_map.keys() {
+            field.fixed_points_mut().push(*idx as usize);
+        }
+    }
+    field.initialize();
+    if field.calc_energy_current(None) > EMBEDDER_ERROR_TOL {
+        let mut need_more = 1;
+        while need_more != 0 {
+            need_more = field.minimize(400, embed_params.optimizer_force_tol, 1.0e-6);
+        }
+    }
+    copy_forcefield_positions_to_point_vectors(&field, positions);
+    let mut e_contribs = Vec::new();
+    let local_e = field.calc_energy_current(Some(&mut e_contribs));
+    if local_e / positions.len() as f64 >= MAX_MINIMIZED_E_PER_ATOM {
+        got_coords = false;
+    }
+    got_coords
+}
+
+fn embedder_check_tetrahedral_centers(
+    positions: &[Vec<f64>],
+    eargs: &EmbedArgs<'_>,
+    _embed_params: &EmbedParameters,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::checkTetrahedralCenters (Embedder.cpp:563-584)
+    // RDKit✔️✔️: bool checkTetrahedralCenters(const RDGeom::PointPtrVect *positions,
+    // RDKit✔️✔️:                              const detail::EmbedArgs &eargs,
+    // RDKit✔️✔️:                              const EmbedParameters &) {
+    // RDKit✔️✔️:   // for each of the atoms in the "tetrahedralCarbons" list, make sure
+    // RDKit✔️✔️:   // that there is a minimum volume around them and that they are inside
+    // RDKit✔️✔️:   // that volume. (this is part of github #971)
+    // RDKit✔️✔️:   for (const auto &tetSet : *eargs.tetrahedralCarbons) {
+    // RDKit✔️✔️:     // it could happen that the centroid is outside the volume defined
+    // RDKit✔️✔️:     // by the other
+    // RDKit✔️✔️:     // four points. That is also a fail.
+    // RDKit✔️✔️:     if (!_volumeTest(tetSet, *positions) ||
+    // RDKit✔️✔️:         !_centerInVolume(tetSet, *positions, TETRAHEDRAL_CENTERINVOLUME_TOL)) {
+    // RDKit✔️✔️:       return false;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::checkTetrahedralCenters
+    let positions = point_vectors_to_forcefield_vec3(positions);
+    let trace_row103 = env::var("RDKIT_ROW103_TRACE").ok().as_deref() == Some("1")
+        && positions.len() == 40
+        && eargs.tetrahedral_carbons.len() == 3;
+    for tet_set in eargs.tetrahedral_carbons {
+        let volume_ok = embedder_volume_test(tet_set, &positions);
+        let center_ok =
+            embedder_center_in_volume(tet_set, &positions, TETRAHEDRAL_CENTERINVOLUME_TOL);
+        if trace_row103 {
+            println!(
+                "row103_tetra_check idx0={} atoms=[{},{},{},{},{}] volume_ok={} center_ok={}",
+                tet_set.idx0,
+                tet_set.idx0,
+                tet_set.idx1,
+                tet_set.idx2,
+                tet_set.idx3,
+                tet_set.idx4,
+                volume_ok,
+                center_ok
+            );
+        }
+        if !volume_ok || !center_ok {
+            return false;
+        }
+    }
+    true
+}
+
+fn embedder_check_chiral_centers(
+    positions: &[Vec<f64>],
+    eargs: &EmbedArgs<'_>,
+    _embed_params: &EmbedParameters,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::checkChiralCenters (Embedder.cpp:585-605)
+    // RDKit✔️✔️: bool checkChiralCenters(const RDGeom::PointPtrVect *positions,
+    // RDKit✔️✔️:                         const detail::EmbedArgs &eargs,
+    // RDKit✔️✔️:                         const EmbedParameters &) {
+    // RDKit✔️✔️:   // check the chiral volume:
+    // RDKit✔️✔️:   for (const auto &chiralSet : *eargs.chiralCenters) {
+    // RDKit✔️✔️:     double vol = DistGeom::calcChiralVolume(
+    // RDKit✔️✔️:         chiralSet->d_idx1, chiralSet->d_idx2, chiralSet->d_idx3,
+    // RDKit✔️✔️:         chiralSet->d_idx4, *positions);
+    // RDKit✔️✔️:     double lb = chiralSet->getLowerVolumeBound();
+    // RDKit✔️✔️:     double ub = chiralSet->getUpperVolumeBound();
+    // RDKit✔️✔️:     if ((lb > 0 && vol < lb && (vol / lb < .8 || haveOppositeSign(vol, lb))) ||
+    // RDKit✔️✔️:         (ub < 0 && vol > ub && (vol / ub < .8 || haveOppositeSign(vol, ub)))) {
+    // RDKit✔️✔️:       return false;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::checkChiralCenters
+    let positions = point_vectors_to_forcefield_vec3(positions);
+    for chiral_set in eargs.chiral_centers {
+        let vol = calc_chiral_volume_points(
+            chiral_set.idx1,
+            chiral_set.idx2,
+            chiral_set.idx3,
+            chiral_set.idx4,
+            &positions,
+        );
+        let lb = chiral_set.get_lower_volume_bound();
+        let ub = chiral_set.get_upper_volume_bound();
+        if (lb > 0.0 && vol < lb && (vol / lb < 0.8 || have_opposite_sign(vol, lb)))
+            || (ub < 0.0 && vol > ub && (vol / ub < 0.8 || have_opposite_sign(vol, ub)))
+        {
+            return false;
+        }
+    }
+    true
+}
+
+fn embedder_minimize_fourth_dimension(
+    positions: &mut [Vec<f64>],
+    eargs: &EmbedArgs<'_>,
+    embed_params: &mut EmbedParameters,
+    end_time: Option<Instant>,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::minimizeFourthDimension (Embedder.cpp:606-637)
+    // RDKit✔️✔️: bool minimizeFourthDimension(RDGeom::PointPtrVect *positions,
+    // RDKit✔️✔️:                              const detail::EmbedArgs &eargs,
+    // RDKit✔️✔️:                              EmbedParameters &embedParams,
+    // RDKit✔️✔️:                              TimePoint *end_time) {
+    // RDKit✔️✔️:   // now redo the minimization if we have a chiral center
+    // RDKit✔️✔️:   // or have started from random coords. This
+    // RDKit✔️✔️:   // time removing the chiral constraints and
+    // RDKit✔️✔️:   // increasing the weight on the fourth dimension
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   std::unique_ptr<ForceFields::ForceField> field2(DistGeom::constructForceField(
+    // RDKit✔️✔️:       *eargs.mmat, *positions, *eargs.chiralCenters, 0.2, 1.0, nullptr,
+    // RDKit✔️✔️:       embedParams.basinThresh));
+    // RDKit✔️✔️:   if (embedParams.useRandomCoords && embedParams.coordMap != nullptr) {
+    // RDKit✔️✔️:     for (const auto &v : *embedParams.coordMap) {
+    // RDKit✔️✔️:       field2->fixedPoints().push_back(v.first);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   field2->initialize();
+    // RDKit✔️✔️:   // std::cerr << "FIELD2 E: " << field2->calcEnergy() << std::endl;
+    // RDKit✔️✔️:   if (field2->calcEnergy() > ERROR_TOL) {
+    // RDKit✔️✔️:     int needMore = 1;
+    // RDKit✔️✔️:     while (needMore) {
+    // RDKit✔️✔️:       if (end_time != nullptr && Clock::now() > *end_time) {
+    // RDKit✔️✔️:         return false;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       needMore = field2->minimize(200, embedParams.optimizerForceTol);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::minimizeFourthDimension
+    let mut field = construct_distgeom_forcefield(
+        eargs.mmat,
+        positions,
+        eargs.chiral_centers,
+        0.2,
+        1.0,
+        None,
+        embed_params.basin_thresh,
+        None,
+    );
+    if embed_params.use_random_coords
+        && let Some(coord_map) = &embed_params.coord_map
+    {
+        for idx in coord_map.keys() {
+            field.fixed_points_mut().push(*idx as usize);
+        }
+    }
+
+    field.initialize();
+    let trace_row64 = row64_distgeom_trace_enabled(positions.len());
+    if trace_row64 {
+        println!(
+            "row64_fourth_dimension initial_energy={:.15}",
+            field.calc_energy_current(None)
+        );
+    }
+    if field.calc_energy_current(None) > EMBEDDER_ERROR_TOL {
+        let mut need_more = 1;
+        let mut pass = 0usize;
+        while need_more != 0 {
+            if let Some(deadline) = end_time
+                && Instant::now() > deadline
+            {
+                if trace_row64 {
+                    println!("row64_fourth_dimension timeout pass={pass}");
+                }
+                copy_forcefield_positions_to_point_vectors(&field, positions);
+                return false;
+            }
+            need_more = field.minimize(200, embed_params.optimizer_force_tol, 1.0e-6);
+            if trace_row64 {
+                println!(
+                    "row64_fourth_dimension pass={} need_more={} energy={:.15}",
+                    pass,
+                    need_more,
+                    field.calc_energy_current(None)
+                );
+            }
+            pass += 1;
+        }
+    }
+    copy_forcefield_positions_to_point_vectors(&field, positions);
+    if trace_row64 {
+        print_debug_like_row64_positions("row64_after_fourth_dimension_internal", positions);
+    }
+    true
+}
+
+fn print_debug_like_row64_positions(stage: &str, positions: &[Vec<f64>]) {
+    let coords: Vec<String> = positions
+        .iter()
+        .map(|point| {
+            format!(
+                "[{:.15},{:.15},{:.15},{:.15}]",
+                point[0],
+                point[1],
+                point[2],
+                *point.get(3).unwrap_or(&0.0)
+            )
+        })
+        .collect();
+    println!("{stage} coords={}", coords.join(";"));
+}
+
+fn embedder_minimize_with_exp_torsions(
+    positions: &mut [Vec<f64>],
+    eargs: &EmbedArgs<'_>,
+    embed_params: &EmbedParameters,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::minimizeWithExpTorsions (Embedder.cpp:638-701)
+    // RDKit✔️✔️: bool minimizeWithExpTorsions(RDGeom::PointPtrVect &positions,
+    // RDKit✔️✔️:                              const detail::EmbedArgs &eargs,
+    // RDKit✔️✔️:                              const EmbedParameters &embedParams) {
+    // RDKit✔️✔️:   PRECONDITION(eargs.etkdgDetails, "bogus etkdgDetails pointer");
+    // RDKit✔️✔️:   bool planar = true;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // convert to 3D positions and create coordMap
+    // RDKit✔️✔️:   RDGeom::Point3DPtrVect positions3D;
+    // RDKit✔️✔️:   for (auto &position : positions) {
+    // RDKit✔️✔️:     positions3D.push_back(
+    // RDKit✔️✔️:         new RDGeom::Point3D((*position)[0], (*position)[1], (*position)[2]));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // create the force field
+    // RDKit✔️✔️:   std::unique_ptr<ForceFields::ForceField> field;
+    // RDKit✔️✔️:   if (embedParams.useBasicKnowledge) {  // ETKDG or KDG
+    // RDKit✔️✔️:     if (embedParams.CPCI != nullptr) {
+    // RDKit✔️✔️:       field.reset(DistGeom::construct3DForceField(
+    // RDKit✔️✔️:           *eargs.mmat, positions3D, *eargs.etkdgDetails, *embedParams.CPCI));
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       field.reset(DistGeom::construct3DForceField(*eargs.mmat, positions3D,
+    // RDKit✔️✔️:                                                   *eargs.etkdgDetails));
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else {  // plain ETDG
+    // RDKit✔️✔️:     field.reset(DistGeom::constructPlain3DForceField(*eargs.mmat, positions3D,
+    // RDKit✔️✔️:                                                      *eargs.etkdgDetails));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (embedParams.useRandomCoords && embedParams.coordMap != nullptr) {
+    // RDKit✔️✔️:     for (const auto &v : *embedParams.coordMap) {
+    // RDKit✔️✔️:       field->fixedPoints().push_back(v.first);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // minimize!
+    // RDKit✔️✔️:   field->initialize();
+    // RDKit✔️✔️:   if (field->calcEnergy() > ERROR_TOL) {
+    // RDKit✔️✔️:     // while (needMore) {
+    // RDKit✔️✔️:     field->minimize(300, embedParams.optimizerForceTol);
+    // RDKit✔️✔️:     //      ++nPasses;
+    // RDKit✔️✔️:     //}
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   // std::cout << field->calcEnergy() << std::endl;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // check for planarity if ETKDG or KDG
+    // RDKit✔️✔️:   if (embedParams.useBasicKnowledge) {
+    // RDKit✔️✔️:     // create a force field with only the impropers
+    // RDKit✔️✔️:     std::unique_ptr<ForceFields::ForceField> field2(
+    // RDKit✔️✔️:         DistGeom::construct3DImproperForceField(*eargs.mmat, positions3D,
+    // RDKit✔️✔️:                                                 *eargs.etkdgDetails));
+    // RDKit✔️✔️:     if (embedParams.useRandomCoords && embedParams.coordMap != nullptr) {
+    // RDKit✔️✔️:       for (const auto &v : *embedParams.coordMap) {
+    // RDKit✔️✔️:         field2->fixedPoints().push_back(v.first);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     field2->initialize();
+    // RDKit✔️✔️:     // check if the energy is low enough
+    // RDKit✔️✔️:     double planarityTolerance = 0.7;
+    // RDKit✔️✔️:     if (field2->calcEnergy() >
+    // RDKit✔️✔️:         eargs.etkdgDetails->improperAtoms.size() * planarityTolerance) {
+    // RDKit✔️✔️:       planar = false;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // overwrite positions and delete the 3D ones
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < positions3D.size(); ++i) {
+    // RDKit✔️✔️:     (*positions[i])[0] = (*positions3D[i])[0];
+    // RDKit✔️✔️:     (*positions[i])[1] = (*positions3D[i])[1];
+    // RDKit✔️✔️:     (*positions[i])[2] = (*positions3D[i])[2];
+    // RDKit✔️✔️:     delete positions3D[i];
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return planar;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::minimizeWithExpTorsions
+    let etkdg_details = eargs.etkdg_details.expect("bogus etkdgDetails pointer");
+    let mut planar = true;
+    let mut positions_3d = point_vectors_to_forcefield_vec3(positions);
+
+    let mut field = if embed_params.use_basic_knowledge {
+        if let Some(cpci) = &embed_params.cpci {
+            let cpci_usize: BTreeMap<(usize, usize), f64> = cpci
+                .iter()
+                .map(|(&(idx1, idx2), &charge)| ((idx1 as usize, idx2 as usize), charge))
+                .collect();
+            construct_3d_forcefield_with_cpci(eargs.mmat, &positions_3d, etkdg_details, &cpci_usize)
+        } else {
+            construct_3d_forcefield(eargs.mmat, &positions_3d, etkdg_details)
+        }
+    } else {
+        construct_plain_3d_forcefield(eargs.mmat, &positions_3d, etkdg_details)
+    };
+    if embed_params.use_random_coords
+        && let Some(coord_map) = &embed_params.coord_map
+    {
+        for idx in coord_map.keys() {
+            field.fixed_points_mut().push(*idx as usize);
+        }
+    }
+
+    field.initialize();
+    if field.calc_energy_current(None) > EMBEDDER_ERROR_TOL {
+        field.minimize(300, embed_params.optimizer_force_tol, 1.0e-6);
+    }
+    positions_3d.clone_from_slice(field.positions());
+
+    if embed_params.use_basic_knowledge {
+        let mut field2 = construct_3d_improper_forcefield(eargs.mmat, &positions_3d, etkdg_details);
+        if embed_params.use_random_coords
+            && let Some(coord_map) = &embed_params.coord_map
+        {
+            for idx in coord_map.keys() {
+                field2.fixed_points_mut().push(*idx as usize);
+            }
+        }
+
+        field2.initialize();
+        let planarity_tolerance = 0.7;
+        if field2.calc_energy_current(None)
+            > etkdg_details.improper_atoms.len() as f64 * planarity_tolerance
+        {
+            planar = false;
+        }
+    }
+
+    for (point, point3d) in positions.iter_mut().zip(positions_3d.iter()) {
+        point[0] = point3d[0];
+        point[1] = point3d[1];
+        point[2] = point3d[2];
+    }
+    planar
+}
+
+fn embedder_double_bond_geometry_checks(
+    positions: &[Vec<f64>],
+    eargs: &EmbedArgs<'_>,
+    _embed_params: &mut EmbedParameters,
+    linear_tol: f64,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::doubleBondGeometryChecks (Embedder.cpp:703-731)
+    // RDKit✔️✔️: bool doubleBondGeometryChecks(const RDGeom::PointPtrVect &positions,
+    // RDKit✔️✔️:                               const detail::EmbedArgs &eargs, EmbedParameters &,
+    // RDKit✔️✔️:                               double linearTol = 1e-3) {
+    // RDKit✔️✔️:   if (eargs.doubleBondEnds) {
+    // RDKit✔️✔️:     for (const auto &itm : *eargs.doubleBondEnds) {
+    // RDKit✔️✔️:       const auto &a0 = *positions[std::get<0>(itm)];
+    // RDKit✔️✔️:       const auto &a1 = *positions[std::get<1>(itm)];
+    // RDKit✔️✔️:       const auto &a2 = *positions[std::get<2>(itm)];
+    // RDKit✔️✔️:       RDGeom::Point3D p0(a0[0], a0[1], a0[2]);
+    // RDKit✔️✔️:       RDGeom::Point3D p1(a1[0], a1[1], a1[2]);
+    // RDKit✔️✔️:       RDGeom::Point3D p2(a2[0], a2[1], a2[2]);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       // check for a linear arrangement
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       auto v1 = p1 - p0;
+    // RDKit✔️✔️:       v1.normalize();
+    // RDKit✔️✔️:       auto v2 = p1 - p2;
+    // RDKit✔️✔️:       v2.normalize();
+    // RDKit✔️✔️:       if (v1.dotProduct(v2) + 1.0 < linearTol) {
+    // RDKit✔️✔️:         return false;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::doubleBondGeometryChecks
+    if let Some(double_bond_ends) = eargs.double_bond_ends {
+        for &(idx0, idx1, idx2) in double_bond_ends {
+            let p0 =
+                ForceFieldVec3::new(positions[idx0][0], positions[idx0][1], positions[idx0][2]);
+            let p1 =
+                ForceFieldVec3::new(positions[idx1][0], positions[idx1][1], positions[idx1][2]);
+            let p2 =
+                ForceFieldVec3::new(positions[idx2][0], positions[idx2][1], positions[idx2][2]);
+            let mut v1 = p1 - p0;
+            v1 /= v1.length();
+            let mut v2 = p1 - p2;
+            v2 /= v2.length();
+            if v1.dot_product(v2) + 1.0 < linear_tol {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn embedder_double_bond_stereo_checks(
+    positions: &[Vec<f64>],
+    eargs: &EmbedArgs<'_>,
+    _embed_params: &mut EmbedParameters,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::doubleBondStereoChecks (Embedder.cpp:733-768)
+    // RDKit✔️✔️: bool doubleBondStereoChecks(const RDGeom::PointPtrVect &positions,
+    // RDKit✔️✔️:                             const detail::EmbedArgs &eargs, EmbedParameters &) {
+    // RDKit✔️✔️:   for (const auto &itm : *eargs.stereoDoubleBonds) {
+    // RDKit✔️✔️:     // itm is a pair with [controlling_atoms], sign
+    // RDKit✔️✔️:     // where the sign tells us about cis/trans
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     const auto &a0 = *positions[itm.first[0]];
+    // RDKit✔️✔️:     const auto &a1 = *positions[itm.first[1]];
+    // RDKit✔️✔️:     const auto &a2 = *positions[itm.first[2]];
+    // RDKit✔️✔️:     const auto &a3 = *positions[itm.first[3]];
+    // RDKit✔️✔️:     RDGeom::Point3D p0(a0[0], a0[1], a0[2]);
+    // RDKit✔️✔️:     RDGeom::Point3D p1(a1[0], a1[1], a1[2]);
+    // RDKit✔️✔️:     RDGeom::Point3D p2(a2[0], a2[1], a2[2]);
+    // RDKit✔️✔️:     RDGeom::Point3D p3(a3[0], a3[1], a3[2]);
+    // RDKit✔️✔️:     auto dihedral = RDGeom::computeDihedralAngle(p0, p1, p2, p3);
+    // RDKit✔️✔️:     if ((dihedral - M_PI_2) * itm.second < 0) {
+    // RDKit✔️✔️:       return false;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::doubleBondStereoChecks
+    const M_PI_2: f64 = std::f64::consts::FRAC_PI_2;
+    for (atoms, sign) in eargs.stereo_double_bonds {
+        let p0 = ForceFieldVec3::new(
+            positions[atoms[0]][0],
+            positions[atoms[0]][1],
+            positions[atoms[0]][2],
+        );
+        let p1 = ForceFieldVec3::new(
+            positions[atoms[1]][0],
+            positions[atoms[1]][1],
+            positions[atoms[1]][2],
+        );
+        let p2 = ForceFieldVec3::new(
+            positions[atoms[2]][0],
+            positions[atoms[2]][1],
+            positions[atoms[2]][2],
+        );
+        let p3 = ForceFieldVec3::new(
+            positions[atoms[3]][0],
+            positions[atoms[3]][1],
+            positions[atoms[3]][2],
+        );
+        let beg_end_vec = p2 - p1;
+        let beg_nbr_vec = p0 - p1;
+        let crs1 = beg_nbr_vec.cross_product(beg_end_vec);
+        let end_nbr_vec = p3 - p2;
+        let crs2 = end_nbr_vec.cross_product(beg_end_vec);
+        let dihedral = (crs1.dot_product(crs2) / (crs1.length() * crs2.length()))
+            .clamp(-1.0, 1.0)
+            .acos();
+        if (dihedral - M_PI_2) * f64::from(*sign) < 0.0 {
+            return false;
+        }
+    }
+    true
+}
+
+fn embedder_increment_failure(embed_params: &mut EmbedParameters, cause: EmbedFailureCause) {
+    if embed_params.track_failures {
+        let _guard = failmutex_get().lock().expect("failure mutex poisoned");
+        embed_params.failures[cause as usize] += 1;
+    }
+}
+
+fn embedder_final_chiral_checks(
+    positions: &mut [Vec<f64>],
+    eargs: &EmbedArgs<'_>,
+    embed_params: &mut EmbedParameters,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::finalChiralChecks (Embedder.cpp:770-836)
+    // RDKit✔️✔️: bool finalChiralChecks(RDGeom::PointPtrVect *positions,
+    // RDKit✔️✔️:                        const detail::EmbedArgs &eargs,
+    // RDKit✔️✔️:                        EmbedParameters &embedParams) {
+    // RDKit✔️✔️:   // confirm chiral volumes
+    // RDKit✔️✔️:   if (!checkChiralCenters(positions, eargs, embedParams)) {
+    // RDKit✔️✔️:     if (embedParams.trackFailures) {
+    // RDKit✔️✔️:       embedParams.failures[EmbedFailureCauses::CHECK_CHIRAL_CENTERS2]++;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // "distance matrix" chirality test
+    // RDKit✔️✔️:   std::set<int> atoms;
+    // RDKit✔️✔️:   for (const auto &chiralSet : *eargs.chiralCenters) {
+    // RDKit✔️✔️:     if (chiralSet->d_idx0 != chiralSet->d_idx4) {
+    // RDKit✔️✔️:       atoms.insert(chiralSet->d_idx0);
+    // RDKit✔️✔️:       atoms.insert(chiralSet->d_idx1);
+    // RDKit✔️✔️:       atoms.insert(chiralSet->d_idx2);
+    // RDKit✔️✔️:       atoms.insert(chiralSet->d_idx3);
+    // RDKit✔️✔️:       atoms.insert(chiralSet->d_idx4);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   std::vector<int> atomsToCheck(atoms.begin(), atoms.end());
+    // RDKit✔️✔️:   if (atomsToCheck.size() > 0) {
+    // RDKit✔️✔️:     if (!_boundsFulfilled(atomsToCheck, *eargs.mmat, *positions)) {
+    // RDKit✔️✔️:       if (embedParams.trackFailures) {
+    // RDKit✔️✔️:         embedParams.failures[EmbedFailureCauses::FINAL_CHIRAL_BOUNDS]++;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       return false;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // "center in volume" chirality test
+    // RDKit✔️✔️:   for (const auto &chiralSet : *eargs.chiralCenters) {
+    // RDKit✔️✔️:     // it could happen that the centroid is outside the volume defined
+    // RDKit✔️✔️:     // by the other four points. That is also a fail.
+    // RDKit✔️✔️:     if (!_centerInVolume(chiralSet, *positions)) {
+    // RDKit✔️✔️:       if (embedParams.trackFailures) {
+    // RDKit✔️✔️:         embedParams.failures[EmbedFailureCauses::FINAL_CENTER_IN_VOLUME]++;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       return false;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::finalChiralChecks
+    if !embedder_check_chiral_centers(positions, eargs, embed_params) {
+        embedder_increment_failure(embed_params, EmbedFailureCause::CheckChiralCenters2);
+        return false;
+    }
+
+    let mut atoms = std::collections::BTreeSet::new();
+    for chiral_set in eargs.chiral_centers {
+        if chiral_set.idx0 != chiral_set.idx4 {
+            atoms.insert(chiral_set.idx0 as i32);
+            atoms.insert(chiral_set.idx1 as i32);
+            atoms.insert(chiral_set.idx2 as i32);
+            atoms.insert(chiral_set.idx3 as i32);
+            atoms.insert(chiral_set.idx4 as i32);
+        }
+    }
+    let atoms_to_check: Vec<i32> = atoms.into_iter().collect();
+    if !atoms_to_check.is_empty() {
+        let positions_3d = point_vectors_to_forcefield_vec3(positions);
+        if !embedder_bounds_fulfilled(&atoms_to_check, eargs.mmat, &positions_3d) {
+            embedder_increment_failure(embed_params, EmbedFailureCause::FinalChiralBounds);
+            return false;
+        }
+    }
+
+    let positions_3d = point_vectors_to_forcefield_vec3(positions);
+    for chiral_set in eargs.chiral_centers {
+        if !embedder_center_in_volume(chiral_set, &positions_3d, 0.1) {
+            embedder_increment_failure(embed_params, EmbedFailureCause::FinalCenterInVolume);
+            return false;
+        }
+    }
+    true
+}
+
+fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
+    positions: &mut [Vec<f64>],
+    eargs: &EmbedArgs<'_>,
+    embed_params: &mut EmbedParameters,
+    end_time: Option<Instant>,
+    rng: &mut R,
+) -> bool {
+    let mut got_coords = false;
+    let mut iter = 0_u32;
+    let mut dist_mat = SymmMatrix::new(positions.len());
+    let trace_row64 = row64_distgeom_trace_enabled(positions.len());
+    let trace_row61 = row61_distgeom_trace_enabled(positions.len());
+
+    while !got_coords && iter < embed_params.max_iterations {
+        if let Some(deadline) = end_time
+            && Instant::now() > deadline
+        {
+            if trace_row64 {
+                println!("row64_embed_points timeout_before_iter iter={iter}");
+            } else if trace_row61 {
+                println!("row61_embed_points timeout_before_iter iter={iter}");
+            }
+            break;
+        }
+
+        iter += 1;
+        if trace_row64 {
+            println!("row64_embed_points iter_start iter={iter}");
+        } else if trace_row61 {
+            println!("row61_embed_points iter_start iter={iter}");
+        }
+        if let Some(callback) = embed_params.callback {
+            callback(iter);
+        }
+
+        got_coords =
+            embedder_generate_initial_coords(positions, eargs, embed_params, &mut dist_mat, rng);
+        if !got_coords {
+            if trace_row64 {
+                println!("row64_embed_points iter={iter} stage=initial_coords ok=0");
+            } else if trace_row61 {
+                println!("row61_embed_points iter={iter} stage=initial_coords ok=0");
+            }
+            embedder_increment_failure(embed_params, EmbedFailureCause::InitialCoords);
+        } else {
+            if trace_row64 {
+                println!("row64_embed_points iter={iter} stage=initial_coords ok=1");
+            } else if trace_row61 {
+                println!("row61_embed_points iter={iter} stage=initial_coords ok=1");
+            }
+            got_coords = embedder_first_minimization(positions, eargs, embed_params);
+            if !got_coords {
+                if trace_row64 {
+                    println!("row64_embed_points iter={iter} stage=first_minimization ok=0");
+                } else if trace_row61 {
+                    println!("row61_embed_points iter={iter} stage=first_minimization ok=0");
+                }
+                embedder_increment_failure(embed_params, EmbedFailureCause::FirstMinimization);
+            } else {
+                if trace_row64 {
+                    println!("row64_embed_points iter={iter} stage=first_minimization ok=1");
+                } else if trace_row61 {
+                    println!("row61_embed_points iter={iter} stage=first_minimization ok=1");
+                }
+                got_coords = embedder_check_tetrahedral_centers(positions, eargs, embed_params);
+                if !got_coords {
+                    embedder_increment_failure(
+                        embed_params,
+                        EmbedFailureCause::CheckTetrahedralCenters,
+                    );
+                }
+            }
+
+            if got_coords && embed_params.enforce_chirality && !eargs.chiral_centers.is_empty() {
+                got_coords = embedder_check_chiral_centers(positions, eargs, embed_params);
+                if !got_coords {
+                    embedder_increment_failure(embed_params, EmbedFailureCause::CheckChiralCenters);
+                }
+            }
+
+            if got_coords && (!eargs.chiral_centers.is_empty() || embed_params.use_random_coords) {
+                got_coords =
+                    embedder_minimize_fourth_dimension(positions, eargs, embed_params, end_time);
+                if trace_row64 {
+                    println!(
+                        "row64_embed_points iter={iter} stage=fourth_dimension ok={}",
+                        i32::from(got_coords)
+                    );
+                } else if trace_row61 {
+                    println!(
+                        "row61_embed_points iter={iter} stage=fourth_dimension ok={}",
+                        i32::from(got_coords)
+                    );
+                }
+                if !got_coords {
+                    if let Some(deadline) = end_time
+                        && Instant::now() > deadline
+                    {
+                        embedder_increment_failure(
+                            embed_params,
+                            EmbedFailureCause::ExceededTimeout,
+                        );
+                    }
+                    embedder_increment_failure(
+                        embed_params,
+                        EmbedFailureCause::MinimizeFourthDimension,
+                    );
+                }
+            }
+
+            if got_coords
+                && (embed_params.use_exp_torsion_angle_prefs || embed_params.use_basic_knowledge)
+            {
+                got_coords = embedder_minimize_with_exp_torsions(positions, eargs, embed_params);
+                if !got_coords {
+                    embedder_increment_failure(embed_params, EmbedFailureCause::EtkMinimization);
+                }
+            }
+
+            if got_coords {
+                got_coords =
+                    embedder_double_bond_geometry_checks(positions, eargs, embed_params, 1.0e-3);
+                if !got_coords {
+                    embedder_increment_failure(embed_params, EmbedFailureCause::LinearDoubleBond);
+                }
+            }
+
+            if embed_params.enforce_chirality && got_coords {
+                if !eargs.chiral_centers.is_empty() {
+                    got_coords = embedder_final_chiral_checks(positions, eargs, embed_params);
+                }
+                if got_coords && !eargs.stereo_double_bonds.is_empty() {
+                    got_coords = embedder_double_bond_stereo_checks(positions, eargs, embed_params);
+                    if !got_coords {
+                        embedder_increment_failure(
+                            embed_params,
+                            EmbedFailureCause::BadDoubleBondStereo,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    got_coords
+}
+
+fn embedder_embed_points(
+    positions: &mut [Vec<f64>],
+    eargs: EmbedArgs<'_>,
+    embed_params: &mut EmbedParameters,
+    seed: i32,
+    end_time: Option<Instant>,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::embedPoints (Embedder.cpp:838-1030)
+    // RDKit✔️✔️: bool embedPoints(RDGeom::PointPtrVect *positions, detail::EmbedArgs eargs,
+    // RDKit✔️✔️:                  EmbedParameters &embedParams, int seed, TimePoint *end_time) {
+    // RDKit✔️✔️:   PRECONDITION(positions, "bogus positions");
+    // RDKit✔️✔️:   if (embedParams.maxIterations == 0) {
+    // RDKit✔️✔️:     embedParams.maxIterations = 10 * positions->size();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   RDNumeric::DoubleSymmMatrix distMat(positions->size(), 0.0);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // The basin threshold just gets us into trouble when we're using
+    // RDKit✔️✔️:   // random coordinates since it ends up ignoring 1-4 (and higher)
+    // RDKit✔️✔️:   // interactions. This causes us to get folded-up (and self-penetrating)
+    // RDKit✔️✔️:   // conformations for large flexible molecules
+    // RDKit✔️✔️:   if (embedParams.useRandomCoords) {
+    // RDKit✔️✔️:     embedParams.basinThresh = 1e8;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   std::unique_ptr<RDKit::rng_type> generator;
+    // RDKit✔️✔️:   std::unique_ptr<RDKit::uniform_double> distrib;
+    // RDKit✔️✔️:   std::unique_ptr<RDKit::double_source_type> rngMgr;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   RDKit::double_source_type *rng = nullptr;
+    // RDKit✔️✔️:   CHECK_INVARIANT(seed >= -1,
+    // RDKit✔️✔️:                   "random seed must either be positive, zero, or negative one");
+    // RDKit✔️✔️:   if (seed > -1) {
+    // RDKit✔️✔️:     generator.reset(new RDKit::rng_type(42u));
+    // RDKit✔️✔️:     generator->seed(seed);
+    // RDKit✔️✔️:     distrib.reset(new RDKit::uniform_double(0.0, 1.0));
+    // RDKit✔️✔️:     rngMgr.reset(new RDKit::double_source_type(*generator, *distrib));
+    // RDKit✔️✔️:     rng = rngMgr.get();
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     rng = &RDKit::getDoubleRandomSource();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   bool gotCoords = false;
+    // RDKit✔️✔️:   unsigned int iter = 0;
+    // RDKit✔️✔️:   while (!gotCoords && iter < embedParams.maxIterations) {
+    // RDKit✔️✔️:     if (end_time != nullptr && Clock::now() > *end_time) {
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     ++iter;
+    // RDKit✔️✔️:     if (embedParams.callback != nullptr) {
+    // RDKit✔️✔️:       embedParams.callback(iter);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (ControlCHandler::getGotSignal()) {
+    // RDKit✔️✔️:       return false;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     gotCoords = EmbeddingOps::generateInitialCoords(positions, eargs,
+    // RDKit✔️✔️:                                                     embedParams, distMat, rng);
+    // RDKit✔️✔️:     if (!gotCoords) {
+    // RDKit✔️✔️:       if (embedParams.trackFailures) {
+    // RDKit✔️✔️:         embedParams.failures[EmbedFailureCauses::INITIAL_COORDS]++;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       gotCoords =
+    // RDKit✔️✔️:           EmbeddingOps::firstMinimization(positions, eargs, embedParams);
+    // RDKit✔️✔️:       if (!gotCoords) {
+    // RDKit✔️✔️:         if (embedParams.trackFailures) {
+    // RDKit✔️✔️:           embedParams.failures[EmbedFailureCauses::FIRST_MINIMIZATION]++;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         gotCoords = EmbeddingOps::checkTetrahedralCenters(positions, eargs,
+    // RDKit✔️✔️:                                                           embedParams);
+    // RDKit✔️✔️:         if (!gotCoords) {
+    // RDKit✔️✔️:           if (embedParams.trackFailures) {
+    // RDKit✔️✔️:             embedParams
+    // RDKit✔️✔️:                 .failures[EmbedFailureCauses::CHECK_TETRAHEDRAL_CENTERS]++;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (gotCoords && embedParams.enforceChirality &&
+    // RDKit✔️✔️:           eargs.chiralCenters->size() > 0) {
+    // RDKit✔️✔️:         gotCoords =
+    // RDKit✔️✔️:             EmbeddingOps::checkChiralCenters(positions, eargs, embedParams);
+    // RDKit✔️✔️:         if (!gotCoords) {
+    // RDKit✔️✔️:           if (embedParams.trackFailures) {
+    // RDKit✔️✔️:             embedParams.failures[EmbedFailureCauses::CHECK_CHIRAL_CENTERS]++;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (gotCoords &&
+    // RDKit✔️✔️:           (eargs.chiralCenters->size() > 0 || embedParams.useRandomCoords)) {
+    // RDKit✔️✔️:         gotCoords = EmbeddingOps::minimizeFourthDimension(
+    // RDKit✔️✔️:             positions, eargs, embedParams, end_time);
+    // RDKit✔️✔️:         if (!gotCoords) {
+    // RDKit✔️✔️:           if (embedParams.trackFailures) {
+    // RDKit✔️✔️:             if (end_time != nullptr && Clock::now() > *end_time) {
+    // RDKit✔️✔️:               embedParams.failures[EmbedFailureCauses::EXCEEDED_TIMEOUT]++;
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:             embedParams
+    // RDKit✔️✔️:                 .failures[EmbedFailureCauses::MINIMIZE_FOURTH_DIMENSION]++;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (gotCoords && (embedParams.useExpTorsionAnglePrefs ||
+    // RDKit✔️✔️:                         embedParams.useBasicKnowledge)) {
+    // RDKit✔️✔️:         gotCoords = EmbeddingOps::minimizeWithExpTorsions(*positions, eargs,
+    // RDKit✔️✔️:                                                           embedParams);
+    // RDKit✔️✔️:         if (!gotCoords) {
+    // RDKit✔️✔️:           if (embedParams.trackFailures) {
+    // RDKit✔️✔️:             embedParams.failures[EmbedFailureCauses::ETK_MINIMIZATION]++;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (gotCoords) {
+    // RDKit✔️✔️:         gotCoords = EmbeddingOps::doubleBondGeometryChecks(*positions, eargs,
+    // RDKit✔️✔️:                                                            embedParams);
+    // RDKit✔️✔️:         if (!gotCoords && embedParams.trackFailures) {
+    // RDKit✔️✔️:           embedParams.failures[EmbedFailureCauses::LINEAR_DOUBLE_BOND]++;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (embedParams.enforceChirality && gotCoords) {
+    // RDKit✔️✔️:         if (!eargs.chiralCenters->empty()) {
+    // RDKit✔️✔️:           gotCoords =
+    // RDKit✔️✔️:               EmbeddingOps::finalChiralChecks(positions, eargs, embedParams);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         if (gotCoords && !eargs.stereoDoubleBonds->empty()) {
+    // RDKit✔️✔️:           gotCoords = EmbeddingOps::doubleBondStereoChecks(*positions, eargs,
+    // RDKit✔️✔️:                                                            embedParams);
+    // RDKit✔️✔️:           if (!gotCoords && embedParams.trackFailures) {
+    // RDKit✔️✔️:             embedParams.failures[EmbedFailureCauses::BAD_DOUBLE_BOND_STEREO]++;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return gotCoords;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::embedPoints
+    assert!(
+        seed >= -1,
+        "random seed must either be positive, zero, or negative one"
+    );
+    if embed_params.max_iterations == 0 {
+        embed_params.max_iterations = 10 * positions.len() as u32;
+    }
+    if embed_params.use_random_coords {
+        embed_params.basin_thresh = 1.0e8;
+    }
+
+    if seed > -1 {
+        let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(seed);
+        embedder_embed_points_with_rng(positions, &eargs, embed_params, end_time, &mut rng)
+    } else {
+        RDKIT_DISTGEOM_RNG.with(|rng| {
+            embedder_embed_points_with_rng(
+                positions,
+                &eargs,
+                embed_params,
+                end_time,
+                &mut *rng.borrow_mut(),
+            )
+        })
+    }
+}
+
+fn embedder_find_double_bonds(
+    mol: &Molecule,
+    double_bond_ends: &mut Vec<(usize, usize, usize)>,
+    stereo_double_bonds: &mut Vec<(Vec<usize>, i32)>,
+    coord_map: Option<&BTreeMap<i32, ForceFieldVec3>>,
+) {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::findDoubleBonds (Embedder.cpp:1027-1077)
+    // RDKit✔️✔️: RDKIT_DISTGEOMHELPERS_EXPORT void findDoubleBonds(
+    // RDKit✔️✔️:     const ROMol &mol,
+    // RDKit✔️✔️:     std::vector<std::tuple<unsigned int, unsigned int, unsigned int>>
+    // RDKit✔️✔️:         &doubleBondEnds,
+    // RDKit✔️✔️:     std::vector<std::pair<std::vector<unsigned int>, int>> &stereoDoubleBonds,
+    // RDKit✔️✔️:     const std::map<int, RDGeom::Point3D> *coordMap) {
+    // RDKit✔️✔️:   doubleBondEnds.clear();
+    // RDKit✔️✔️:   stereoDoubleBonds.clear();
+    // RDKit✔️✔️:   for (const auto bnd : mol.bonds()) {
+    // RDKit✔️✔️:     if (bnd->getBondType() == Bond::BondType::DOUBLE) {
+    // RDKit✔️✔️:       for (const auto atm : {bnd->getBeginAtom(), bnd->getEndAtom()}) {
+    // RDKit✔️✔️:         if (atm->getDegree() < 2) {
+    // RDKit✔️✔️:           continue;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         auto oatm = bnd->getOtherAtom(atm);
+    // RDKit✔️✔️:         for (const auto nbr : mol.atomNeighbors(atm)) {
+    // RDKit✔️✔️:           if (nbr == oatm) {
+    // RDKit✔️✔️:             continue;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           const auto obnd =
+    // RDKit✔️✔️:               mol.getBondBetweenAtoms(atm->getIdx(), nbr->getIdx());
+    // RDKit✔️✔️:           if (!obnd || (obnd->getBondType() != Bond::BondType::SINGLE &&
+    // RDKit✔️✔️:                         atm->getDegree() == 2)) {
+    // RDKit✔️✔️:             continue;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           doubleBondEnds.emplace_back(nbr->getIdx(), atm->getIdx(),
+    // RDKit✔️✔️:                                       oatm->getIdx());
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       // if there's stereo, handle that too:
+    // RDKit✔️✔️:       if (bnd->getStereo() > Bond::BondStereo::STEREOANY) {
+    // RDKit✔️✔️:         // only do this if the controlling atoms aren't in the coord map
+    // RDKit✔️✔️:         if (coordMap &&
+    // RDKit✔️✔️:             coordMap->find(bnd->getStereoAtoms()[0]) != coordMap->end() &&
+    // RDKit✔️✔️:             coordMap->find(bnd->getStereoAtoms()[1]) != coordMap->end()) {
+    // RDKit✔️✔️:           continue;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         int sign = 1;
+    // RDKit✔️✔️:         if (bnd->getStereo() == Bond::BondStereo::STEREOCIS ||
+    // RDKit✔️✔️:             bnd->getStereo() == Bond::BondStereo::STEREOZ) {
+    // RDKit✔️✔️:           sign = -1;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         std::pair<std::vector<unsigned int>, int> elem{
+    // RDKit✔️✔️:             {static_cast<unsigned>(bnd->getStereoAtoms()[0]),
+    // RDKit✔️✔️:              bnd->getBeginAtomIdx(), bnd->getEndAtomIdx(),
+    // RDKit✔️✔️:              static_cast<unsigned>(bnd->getStereoAtoms()[1])},
+    // RDKit✔️✔️:             sign};
+    // RDKit✔️✔️:         stereoDoubleBonds.push_back(elem);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::findDoubleBonds
+    double_bond_ends.clear();
+    stereo_double_bonds.clear();
+
+    for bnd in mol.bonds() {
+        if bnd.order() != BondOrder::Double {
+            continue;
+        }
+        for atm in [bnd.begin().index(), bnd.end().index()] {
+            let atm_degree = neighbors_for_atom(mol, atm).len();
+            if atm_degree < 2 {
+                continue;
+            }
+            let oatm = if atm == bnd.begin().index() {
+                bnd.end().index()
+            } else {
+                bnd.begin().index()
+            };
+            for nbr in neighbors_for_atom(mol, atm) {
+                if nbr == oatm {
+                    continue;
+                }
+                let Some(obnd) = bond_between(mol, atm, nbr) else {
+                    continue;
+                };
+                if obnd.order() != BondOrder::Single && atm_degree == 2 {
+                    continue;
+                }
+                double_bond_ends.push((nbr, atm, oatm));
+            }
+        }
+
+        if !matches!(bnd.stereo(), BondStereo::None | BondStereo::Any) {
+            let stereo_atoms = bnd
+                .stereo_atoms()
+                .expect("stereo double bond requires two controlling atoms");
+            if let Some(coord_map) = coord_map
+                && coord_map.contains_key(&(stereo_atoms[0].index() as i32))
+                && coord_map.contains_key(&(stereo_atoms[1].index() as i32))
+            {
+                continue;
+            }
+            let sign = if matches!(bnd.stereo(), BondStereo::Cis | BondStereo::Z) {
+                -1
+            } else {
+                1
+            };
+            stereo_double_bonds.push((
+                vec![
+                    stereo_atoms[0].index(),
+                    bnd.begin().index(),
+                    bnd.end().index(),
+                    stereo_atoms[1].index(),
+                ],
+                sign,
+            ));
+        }
+    }
+}
+
+fn embedder_find_chiral_sets(
+    mol: &Molecule,
+    chiral_centers: &mut VectChiralSet,
+    tetrahedral_centers: &mut VectChiralSet,
+    coord_map: Option<&BTreeMap<i32, ForceFieldVec3>>,
+) {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::findChiralSets (Embedder.cpp:1079-1219)
+    // RDKit✔️✔️: void findChiralSets(const ROMol &mol, DistGeom::VECT_CHIRALSET &chiralCenters,
+    // RDKit✔️✔️:                     DistGeom::VECT_CHIRALSET &tetrahedralCenters,
+    // RDKit✔️✔️:                     const std::map<int, RDGeom::Point3D> *coordMap) {
+    // RDKit✔️✔️:   for (const auto &atom : mol.atoms()) {
+    // RDKit✔️✔️:     if (atom->getAtomicNum() != 1) {  // skip hydrogens
+    // RDKit✔️✔️:       Atom::ChiralType chiralType = atom->getChiralTag();
+    // RDKit✔️✔️:       if ((chiralType == Atom::CHI_TETRAHEDRAL_CW ||
+    // RDKit✔️✔️:            chiralType == Atom::CHI_TETRAHEDRAL_CCW) ||
+    // RDKit✔️✔️:           ((atom->getAtomicNum() == 6 || atom->getAtomicNum() == 7) &&
+    // RDKit✔️✔️:            atom->getDegree() == 4)) {
+    // RDKit✔️✔️:         // make a chiral set from the neighbors
+    // RDKit✔️✔️:         INT_VECT nbrs;
+    // RDKit✔️✔️:         nbrs.reserve(4);
+    // RDKit✔️✔️:         // find the neighbors of this atom and enter them into the
+    // RDKit✔️✔️:         // nbr list
+    // RDKit✔️✔️:         ROMol::OEDGE_ITER beg, end;
+    // RDKit✔️✔️:         boost::tie(beg, end) = mol.getAtomBonds(atom);
+    // RDKit✔️✔️:         while (beg != end) {
+    // RDKit✔️✔️:           nbrs.push_back(mol[*beg]->getOtherAtom(atom)->getIdx());
+    // RDKit✔️✔️:           ++beg;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         // if we have less than 4 heavy atoms as neighbors,
+    // RDKit✔️✔️:         // we need to include the chiral center into the mix
+    // RDKit✔️✔️:         // we should at least have 3 though
+    // RDKit✔️✔️:         CHECK_INVARIANT(nbrs.size() >= 3, "Cannot be a chiral center");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         double volLowerBound = 5.0;
+    // RDKit✔️✔️:         double volUpperBound = 100.0;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         if (nbrs.size() < 4) {
+    // RDKit✔️✔️:           // we get lower volumes if there are three neighbors,
+    // RDKit✔️✔️:           //  this was github #5883
+    // RDKit✔️✔️:           volLowerBound = 2.0;
+    // RDKit✔️✔️:           nbrs.insert(nbrs.end(), atom->getIdx());
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         // set a flag for tetrahedral centers that are in multiple small rings
+    // RDKit✔️✔️:         auto numSmallRings = 0u;
+    // RDKit✔️✔️:         constexpr int smallRingSize = 5;
+    // RDKit✔️✔️:         for (const auto sz : mol.getRingInfo()->atomRingSizes(atom->getIdx())) {
+    // RDKit✔️✔️:           if (sz < smallRingSize) {
+    // RDKit✔️✔️:             ++numSmallRings;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         std::uint64_t structureFlags = 0;
+    // RDKit✔️✔️:         if (numSmallRings > 1) {
+    // RDKit✔️✔️:           structureFlags = static_cast<std::uint64_t>(
+    // RDKit✔️✔️:               DistGeom::ChiralSetStructureFlags::IN_FUSED_SMALL_RINGS);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         // now create a chiral set and set the upper and lower bound on the
+    // RDKit✔️✔️:         // volume
+    // RDKit✔️✔️:         if (chiralType == Atom::CHI_TETRAHEDRAL_CCW) {
+    // RDKit✔️✔️:           // positive chiral volume
+    // RDKit✔️✔️:           auto *cset = new DistGeom::ChiralSet(atom->getIdx(), nbrs[0], nbrs[1],
+    // RDKit✔️✔️:                                                nbrs[2], nbrs[3], volLowerBound,
+    // RDKit✔️✔️:                                                volUpperBound, structureFlags);
+    // RDKit✔️✔️:           DistGeom::ChiralSetPtr cptr(cset);
+    // RDKit✔️✔️:           chiralCenters.push_back(cptr);
+    // RDKit✔️✔️:         } else if (chiralType == Atom::CHI_TETRAHEDRAL_CW) {
+    // RDKit✔️✔️:           auto *cset = new DistGeom::ChiralSet(atom->getIdx(), nbrs[0], nbrs[1],
+    // RDKit✔️✔️:                                                nbrs[2], nbrs[3], -volUpperBound,
+    // RDKit✔️✔️:                                                -volLowerBound, structureFlags);
+    // RDKit✔️✔️:           DistGeom::ChiralSetPtr cptr(cset);
+    // RDKit✔️✔️:           chiralCenters.push_back(cptr);
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           if ((coordMap && coordMap->find(atom->getIdx()) != coordMap->end()) ||
+    // RDKit✔️✔️:               (mol.getRingInfo()->isInitialized() &&
+    // RDKit✔️✔️:                (mol.getRingInfo()->numAtomRings(atom->getIdx()) < 2 ||
+    // RDKit✔️✔️:                 mol.getRingInfo()->isAtomInRingOfSize(atom->getIdx(), 3)))) {
+    // RDKit✔️✔️:             // we only want to these tests for ring atoms that are not part of
+    // RDKit✔️✔️:             // the coordMap
+    // RDKit✔️✔️:             // there's no sense doing 3-rings because those are a nightmare
+    // RDKit✔️✔️:           } else {
+    // RDKit✔️✔️:             auto *cset = new DistGeom::ChiralSet(atom->getIdx(), nbrs[0],
+    // RDKit✔️✔️:                                                  nbrs[1], nbrs[2], nbrs[3], 0.0,
+    // RDKit✔️✔️:                                                  0.0, structureFlags);
+    // RDKit✔️✔️:             DistGeom::ChiralSetPtr cptr(cset);
+    // RDKit✔️✔️:             tetrahedralCenters.push_back(cptr);
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }  // if block -chirality check
+    // RDKit✔️✔️:     }    // if block - heavy atom check
+    // RDKit✔️✔️:   }      // for loop over atoms
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // now do atropisomers
+    // RDKit✔️✔️:   for (const auto &bond : mol.bonds()) {
+    // RDKit✔️✔️:     if (bond->getStereo() != Bond::BondStereo::STEREOATROPCCW &&
+    // RDKit✔️✔️:         bond->getStereo() != Bond::BondStereo::STEREOATROPCW) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     Atropisomers::AtropAtomAndBondVec atomsAndBonds[2];
+    // RDKit✔️✔️:     Atropisomers::getAtropisomerAtomsAndBonds(bond, atomsAndBonds, mol);
+    // RDKit✔️✔️:     // make a chiral set for the atropisomeric bond
+    // RDKit✔️✔️:     // we start with only managing cases where there are two exo-substituents on
+    // RDKit✔️✔️:     // at least one side
+    // RDKit✔️✔️:     if (atomsAndBonds[0].second.size() != 2 &&
+    // RDKit✔️✔️:         atomsAndBonds[1].second.size() != 2) {
+    // RDKit✔️✔️:       BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:           << "Atropisomer bond stereochemistry not used for bond "
+    // RDKit✔️✔️:           << bond->getIdx()
+    // RDKit✔️✔️:           << ", which does not have two exo substituents on at least one side."
+    // RDKit✔️✔️:           << std::endl;
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     int idx0 = atomsAndBonds[0].first->getIdx();
+    // RDKit✔️✔️:     int idx1 = atomsAndBonds[1].first->getIdx();
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     int nbr1 = atomsAndBonds[0].second[0]->getOtherAtomIdx(idx0);
+    // RDKit✔️✔️:     int nbr2 = 0;
+    // RDKit✔️✔️:     int nbr3 = 0;
+    // RDKit✔️✔️:     int nbr4 = 0;
+    // RDKit✔️✔️:     if (atomsAndBonds[0].second.size() == 2) {
+    // RDKit✔️✔️:       nbr2 = atomsAndBonds[0].second[1]->getOtherAtomIdx(idx0);
+    // RDKit✔️✔️:       nbr3 = atomsAndBonds[1].second[0]->getOtherAtomIdx(idx1);
+    // RDKit✔️✔️:       if (atomsAndBonds[1].second.size() == 2) {
+    // RDKit✔️✔️:         nbr4 = atomsAndBonds[1].second[1]->getOtherAtomIdx(idx1);
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         nbr4 = idx0;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       nbr2 = atomsAndBonds[1].second[0]->getOtherAtomIdx(idx1);
+    // RDKit✔️✔️:       nbr3 = atomsAndBonds[1].second[1]->getOtherAtomIdx(idx1);
+    // RDKit✔️✔️:       nbr4 = idx0;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     INT_VECT nbrs = {nbr1, nbr2, nbr3, nbr4};
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // FIX: these numbers are empirical and should be revisited
+    // RDKit✔️✔️:     double volLowerBound = 1.0;
+    // RDKit✔️✔️:     double volUpperBound = 100.0;
+    // RDKit✔️✔️:     if (bond->getStereo() == Bond::BondStereo::STEREOATROPCCW) {
+    // RDKit✔️✔️:       std::swap(volLowerBound, volUpperBound);
+    // RDKit✔️✔️:       volLowerBound *= -1;
+    // RDKit✔️✔️:       volUpperBound *= -1;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     auto *cset = new DistGeom::ChiralSet(idx0, nbrs[0], nbrs[1], nbrs[2],
+    // RDKit✔️✔️:                                          nbrs[3], volLowerBound, volUpperBound);
+    // RDKit✔️✔️:     DistGeom::ChiralSetPtr cptr(cset);
+    // RDKit✔️✔️:     chiralCenters.push_back(cptr);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::findChiralSets
+    let ring_info = mol.derived_cache().rings.as_ref();
+    for atom in mol.atoms() {
+        if atom.atomic_number() == 1 {
+            continue;
+        }
+        let chiral_type = atom.chiral_tag();
+        let atom_idx = atom.id().index();
+        let nbrs0 = neighbors_for_atom(mol, atom_idx);
+        if matches!(
+            chiral_type,
+            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+        ) || ((atom.atomic_number() == 6 || atom.atomic_number() == 7) && nbrs0.len() == 4)
+        {
+            let mut nbrs = nbrs0;
+            assert!(nbrs.len() >= 3, "Cannot be a chiral center");
+            let mut vol_lower_bound = 5.0;
+            let mut vol_upper_bound = 100.0;
+            if nbrs.len() < 4 {
+                vol_lower_bound = 2.0;
+                nbrs.push(atom_idx);
+            }
+
+            let num_small_rings = ring_info
+                .map(|rings| {
+                    atom_ring_sizes(rings, atom_idx)
+                        .into_iter()
+                        .filter(|size| *size < 5)
+                        .count()
+                })
+                .unwrap_or(0);
+            let structure_flags = if num_small_rings > 1 {
+                ChiralSetStructureFlags::InFusedSmallRings as u64
+            } else {
+                0
+            };
+
+            if chiral_type == ChiralTag::TetrahedralCcw {
+                chiral_centers.push(Arc::new(ChiralSet::new(
+                    atom_idx,
+                    nbrs[0],
+                    nbrs[1],
+                    nbrs[2],
+                    nbrs[3],
+                    vol_lower_bound,
+                    vol_upper_bound,
+                    structure_flags,
+                )));
+            } else if chiral_type == ChiralTag::TetrahedralCw {
+                chiral_centers.push(Arc::new(ChiralSet::new(
+                    atom_idx,
+                    nbrs[0],
+                    nbrs[1],
+                    nbrs[2],
+                    nbrs[3],
+                    -vol_upper_bound,
+                    -vol_lower_bound,
+                    structure_flags,
+                )));
+            } else {
+                let coord_mapped =
+                    coord_map.is_some_and(|map| map.contains_key(&(atom_idx as i32)));
+                let ring_excluded = ring_info.is_some_and(|rings| {
+                    rings.num_atom_rings(AtomId::new(atom_idx)) < 2
+                        || rings.is_atom_in_ring_of_size(AtomId::new(atom_idx), 3)
+                });
+                if !(coord_mapped || ring_excluded) {
+                    tetrahedral_centers.push(Arc::new(ChiralSet::new(
+                        atom_idx,
+                        nbrs[0],
+                        nbrs[1],
+                        nbrs[2],
+                        nbrs[3],
+                        0.0,
+                        0.0,
+                        structure_flags,
+                    )));
+                }
+            }
+        }
+    }
+
+    for bond in mol.bonds() {
+        if !matches!(bond.stereo(), BondStereo::AtropCcw | BondStereo::AtropCw) {
+            continue;
+        }
+        let idx0 = bond.begin().index();
+        let idx1 = bond.end().index();
+        let atoms_and_bonds0 = embedder_atropisomer_neighbor_bonds(mol, idx0, bond.id().index());
+        let atoms_and_bonds1 = embedder_atropisomer_neighbor_bonds(mol, idx1, bond.id().index());
+        if atoms_and_bonds0.len() != 2 && atoms_and_bonds1.len() != 2 {
+            continue;
+        }
+        let nbr1 = embedder_bond_other_atom_idx(mol, atoms_and_bonds0[0], idx0);
+        let (nbr2, nbr3, nbr4) = if atoms_and_bonds0.len() == 2 {
+            let nbr2 = embedder_bond_other_atom_idx(mol, atoms_and_bonds0[1], idx0);
+            let nbr3 = embedder_bond_other_atom_idx(mol, atoms_and_bonds1[0], idx1);
+            let nbr4 = if atoms_and_bonds1.len() == 2 {
+                embedder_bond_other_atom_idx(mol, atoms_and_bonds1[1], idx1)
+            } else {
+                idx0
+            };
+            (nbr2, nbr3, nbr4)
+        } else {
+            let nbr2 = embedder_bond_other_atom_idx(mol, atoms_and_bonds1[0], idx1);
+            let nbr3 = embedder_bond_other_atom_idx(mol, atoms_and_bonds1[1], idx1);
+            (nbr2, nbr3, idx0)
+        };
+        let (vol_lower_bound, vol_upper_bound) = if bond.stereo() == BondStereo::AtropCcw {
+            (-100.0, -1.0)
+        } else {
+            (1.0, 100.0)
+        };
+        chiral_centers.push(Arc::new(ChiralSet::with_default_structure_flags(
+            idx0,
+            nbr1,
+            nbr2,
+            nbr3,
+            nbr4,
+            vol_lower_bound,
+            vol_upper_bound,
+        )));
+    }
+}
+
+fn embedder_atropisomer_neighbor_bonds(
+    mol: &Molecule,
+    focus_atom: usize,
+    atrop_bond: usize,
+) -> Vec<usize> {
+    let mut bonds: Vec<usize> = mol
+        .bonds()
+        .iter()
+        .filter(|bond| {
+            bond.id().index() != atrop_bond
+                && (bond.begin().index() == focus_atom || bond.end().index() == focus_atom)
+        })
+        .map(|bond| bond.id().index())
+        .collect();
+    if bonds.len() == 2 {
+        let other0 = embedder_bond_other_atom_idx(mol, bonds[0], focus_atom);
+        let other1 = embedder_bond_other_atom_idx(mol, bonds[1], focus_atom);
+        if other1 < other0 {
+            bonds.swap(0, 1);
+        }
+    }
+    bonds
+}
+
+fn embedder_bond_other_atom_idx(mol: &Molecule, bond_idx: usize, atom_idx: usize) -> usize {
+    let bond = &mol.bonds()[bond_idx];
+    if bond.begin().index() == atom_idx {
+        bond.end().index()
+    } else {
+        assert_eq!(bond.end().index(), atom_idx, "atom is not an endpoint");
+        bond.begin().index()
+    }
+}
+
+fn embedder_adjust_bounds_mat_from_coord_map(
+    mmat: &mut BoundsMatrix,
+    _num_atoms: usize,
+    coord_map: &BTreeMap<i32, ForceFieldVec3>,
+) {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::adjustBoundsMatFromCoordMap (Embedder.cpp:1221-1236)
+    // RDKit✔️✔️: void adjustBoundsMatFromCoordMap(
+    // RDKit✔️✔️:     DistGeom::BoundsMatPtr mmat, unsigned int,
+    // RDKit✔️✔️:     const std::map<int, RDGeom::Point3D> *coordMap) {
+    // RDKit✔️✔️:   for (auto iIt = coordMap->begin(); iIt != coordMap->end(); ++iIt) {
+    // RDKit✔️✔️:     unsigned int iIdx = iIt->first;
+    // RDKit✔️✔️:     const RDGeom::Point3D &iPoint = iIt->second;
+    // RDKit✔️✔️:     auto jIt = iIt;
+    // RDKit✔️✔️:     while (++jIt != coordMap->end()) {
+    // RDKit✔️✔️:       unsigned int jIdx = jIt->first;
+    // RDKit✔️✔️:       const RDGeom::Point3D &jPoint = jIt->second;
+    // RDKit✔️✔️:       double dist = (iPoint - jPoint).length();
+    // RDKit✔️✔️:       mmat->setUpperBound(iIdx, jIdx, dist);
+    // RDKit✔️✔️:       mmat->setLowerBound(iIdx, jIdx, dist);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::adjustBoundsMatFromCoordMap
+    let entries: Vec<(usize, ForceFieldVec3)> = coord_map
+        .iter()
+        .map(|(idx, point)| {
+            let idx = usize::try_from(*idx).expect("coordMap atom index must be non-negative");
+            (idx, *point)
+        })
+        .collect();
+    for i in 0..entries.len() {
+        let (i_idx, i_point) = entries[i];
+        for &(j_idx, j_point) in entries.iter().skip(i + 1) {
+            let dist = (i_point - j_point).length();
+            mmat.set_upper(i_idx, j_idx, dist);
+            mmat.set_lower(i_idx, j_idx, dist);
+        }
+    }
+}
+
+fn embedder_init_etkdg(
+    mol: &Molecule,
+    params: &EmbedParameters,
+    etkdg_details: &mut CrystalFFDetails,
+) -> Result<(), DgBoundsError> {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::initETKDG (Embedder.cpp:1238-1253)
+    // RDKit✔️✔️: void initETKDG(ROMol *mol, const EmbedParameters &params,
+    // RDKit✔️✔️:                ForceFields::CrystalFF::CrystalFFDetails &etkdgDetails) {
+    // RDKit✔️✔️:   PRECONDITION(mol, "bad molecule");
+    // RDKit✔️✔️:   unsigned int nAtoms = mol->getNumAtoms();
+    // RDKit✔️✔️:   if (params.useExpTorsionAnglePrefs || params.useBasicKnowledge) {
+    // RDKit✔️✔️:     ForceFields::CrystalFF::getExperimentalTorsions(
+    // RDKit✔️✔️:         *mol, etkdgDetails, params.useExpTorsionAnglePrefs,
+    // RDKit✔️✔️:         params.useSmallRingTorsions, params.useMacrocycleTorsions,
+    // RDKit✔️✔️:         params.useBasicKnowledge, params.ETversion, params.verbose);
+    // RDKit✔️✔️:     etkdgDetails.atomNums.resize(nAtoms);
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < nAtoms; ++i) {
+    // RDKit✔️✔️:       etkdgDetails.atomNums[i] = mol->getAtomWithIdx(i)->getAtomicNum();
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   etkdgDetails.boundsMatForceScaling = params.boundsMatForceScaling;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::initETKDG
+    let n_atoms = mol.num_atoms();
+    let trace_row64 = row64_distgeom_trace_enabled(n_atoms);
+    if params.use_exp_torsion_angle_prefs || params.use_basic_knowledge {
+        let start = trace_row64.then(Instant::now);
+        get_experimental_torsions_without_bonds(
+            mol,
+            etkdg_details,
+            params.use_exp_torsion_angle_prefs,
+            params.use_small_ring_torsions,
+            params.use_macrocycle_torsions,
+            params.use_basic_knowledge,
+            params.et_version,
+            params.verbose,
+        )
+        .map_err(|err| DgBoundsError::GenerationFailed(err.to_string()))?;
+        if let Some(start) = start {
+            println!(
+                "row64_init_etkdg get_experimental_torsions={:.6}",
+                start.elapsed().as_secs_f64()
+            );
+        }
+        etkdg_details.atom_nums.resize(n_atoms, 0);
+        for i in 0..n_atoms {
+            etkdg_details.atom_nums[i] = i32::from(mol.atoms()[i].atomic_number());
+        }
+    }
+    etkdg_details.bounds_mat_force_scaling = params.bounds_mat_force_scaling;
+    Ok(())
+}
+
+fn embedder_setup_initial_bounds_matrix(
+    mol: &Molecule,
+    mmat: &mut BoundsMatrix,
+    coord_map: Option<&BTreeMap<i32, ForceFieldVec3>>,
+    params: &EmbedParameters,
+    etkdg_details: &mut CrystalFFDetails,
+) -> Result<bool, DgBoundsError> {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::setupInitialBoundsMatrix (Embedder.cpp:1255-1306)
+    // RDKit✔️✔️: bool setupInitialBoundsMatrix(
+    // RDKit✔️✔️:     ROMol *mol, DistGeom::BoundsMatPtr mmat,
+    // RDKit✔️✔️:     const std::map<int, RDGeom::Point3D> *coordMap,
+    // RDKit✔️✔️:     const EmbedParameters &params,
+    // RDKit✔️✔️:     ForceFields::CrystalFF::CrystalFFDetails &etkdgDetails) {
+    // RDKit✔️✔️:   PRECONDITION(mol, "bad molecule");
+    // RDKit✔️✔️:   unsigned int nAtoms = mol->getNumAtoms();
+    // RDKit✔️✔️:   if (params.useExpTorsionAnglePrefs || params.useBasicKnowledge) {
+    // RDKit✔️✔️:     setTopolBounds(*mol, mmat, etkdgDetails.bonds, etkdgDetails.angles, true,
+    // RDKit✔️✔️:                    false, params.useMacrocycle14config,
+    // RDKit✔️✔️:                    params.forceTransAmides);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     setTopolBounds(*mol, mmat, true, false, params.useMacrocycle14config,
+    // RDKit✔️✔️:                    params.forceTransAmides);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   double tol = 0.0;
+    // RDKit✔️✔️:   if (coordMap) {
+    // RDKit✔️✔️:     adjustBoundsMatFromCoordMap(mmat, nAtoms, coordMap);
+    // RDKit✔️✔️:     tol = 0.05;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!DistGeom::triangleSmoothBounds(mmat, tol)) {
+    // RDKit✔️✔️:     // ok this bound matrix failed to triangle smooth - re-compute the
+    // RDKit✔️✔️:     // bounds matrix without 15 bounds and with VDW scaling
+    // RDKit✔️✔️:     initBoundsMat(mmat);
+    // RDKit✔️✔️:     setTopolBounds(*mol, mmat, false, true, params.useMacrocycle14config,
+    // RDKit✔️✔️:                    params.forceTransAmides);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     if (coordMap) {
+    // RDKit✔️✔️:       adjustBoundsMatFromCoordMap(mmat, nAtoms, coordMap);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // try triangle smoothing again
+    // RDKit✔️✔️:     if (!DistGeom::triangleSmoothBounds(mmat, tol)) {
+    // RDKit✔️✔️:       // ok, we're not going to be able to smooth this,
+    // RDKit✔️✔️:       if (params.ignoreSmoothingFailures) {
+    // RDKit✔️✔️:         // proceed anyway with the more relaxed bounds matrix
+    // RDKit✔️✔️:         initBoundsMat(mmat);
+    // RDKit✔️✔️:         setTopolBounds(*mol, mmat, false, true, params.useMacrocycle14config,
+    // RDKit✔️✔️:                        params.forceTransAmides);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         if (coordMap) {
+    // RDKit✔️✔️:           adjustBoundsMatFromCoordMap(mmat, nAtoms, coordMap);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:             << "Could not triangle bounds smooth molecule." << std::endl;
+    // RDKit✔️✔️:         return false;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::setupInitialBoundsMatrix
+    let n_atoms = mol.num_atoms();
+    let trace_row64 = row64_distgeom_trace_enabled(n_atoms);
+    if params.use_exp_torsion_angle_prefs || params.use_basic_knowledge {
+        let start = trace_row64.then(Instant::now);
+        set_topol_bounds_with_outputs(
+            mol,
+            mmat,
+            &mut etkdg_details.bonds,
+            &mut etkdg_details.angles,
+            true,
+            false,
+            params.use_macrocycle14config,
+            params.force_trans_amides,
+            true,
+            true,
+        )?;
+        if let Some(start) = start {
+            println!(
+                "row64_setup_bounds set_topol_bounds_with_outputs={:.6}",
+                start.elapsed().as_secs_f64()
+            );
+        }
+    } else {
+        let start = trace_row64.then(Instant::now);
+        set_topol_bounds(
+            mol,
+            mmat,
+            true,
+            false,
+            params.use_macrocycle14config,
+            params.force_trans_amides,
+            true,
+            true,
+        )?;
+        if let Some(start) = start {
+            println!(
+                "row64_setup_bounds set_topol_bounds={:.6}",
+                start.elapsed().as_secs_f64()
+            );
+        }
+    }
+    let mut tol = 0.0;
+    if let Some(coord_map) = coord_map {
+        embedder_adjust_bounds_mat_from_coord_map(mmat, n_atoms, coord_map);
+        tol = 0.05;
+    }
+    let smooth_start = trace_row64.then(Instant::now);
+    if !triangle_smooth_bounds_shared(mmat, tol) {
+        if let Some(start) = smooth_start {
+            println!(
+                "row64_setup_bounds triangle_smooth_first={:.6} ok=0",
+                start.elapsed().as_secs_f64()
+            );
+        }
+        init_bounds_mat_shared(mmat, DEFAULT_LOWER, DEFAULT_UPPER);
+        let retry_start = trace_row64.then(Instant::now);
+        set_topol_bounds(
+            mol,
+            mmat,
+            false,
+            true,
+            params.use_macrocycle14config,
+            params.force_trans_amides,
+            true,
+            true,
+        )?;
+        if let Some(start) = retry_start {
+            println!(
+                "row64_setup_bounds retry_set_topol_bounds={:.6}",
+                start.elapsed().as_secs_f64()
+            );
+        }
+        if let Some(coord_map) = coord_map {
+            embedder_adjust_bounds_mat_from_coord_map(mmat, n_atoms, coord_map);
+        }
+        let second_smooth_start = trace_row64.then(Instant::now);
+        if !triangle_smooth_bounds_shared(mmat, tol) {
+            if let Some(start) = second_smooth_start {
+                println!(
+                    "row64_setup_bounds triangle_smooth_second={:.6} ok=0",
+                    start.elapsed().as_secs_f64()
+                );
+            }
+            if params.ignore_smoothing_failures {
+                init_bounds_mat_shared(mmat, DEFAULT_LOWER, DEFAULT_UPPER);
+                let fallback_start = trace_row64.then(Instant::now);
+                set_topol_bounds(
+                    mol,
+                    mmat,
+                    false,
+                    true,
+                    params.use_macrocycle14config,
+                    params.force_trans_amides,
+                    true,
+                    true,
+                )?;
+                if let Some(start) = fallback_start {
+                    println!(
+                        "row64_setup_bounds fallback_set_topol_bounds={:.6}",
+                        start.elapsed().as_secs_f64()
+                    );
+                }
+                if let Some(coord_map) = coord_map {
+                    embedder_adjust_bounds_mat_from_coord_map(mmat, n_atoms, coord_map);
+                }
+            } else {
+                return Ok(false);
+            }
+        } else if let Some(start) = second_smooth_start {
+            println!(
+                "row64_setup_bounds triangle_smooth_second={:.6} ok=1",
+                start.elapsed().as_secs_f64()
+            );
+        }
+    } else if let Some(start) = smooth_start {
+        println!(
+            "row64_setup_bounds triangle_smooth_first={:.6} ok=1",
+            start.elapsed().as_secs_f64()
+        );
+    }
+    Ok(true)
+}
+
+fn embedder_fill_atom_positions(
+    pts: &mut [ForceFieldVec3],
+    conf: &Conformer3D,
+    _mol: &Molecule,
+    match_atoms: &[usize],
+) {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_fillAtomPositions (Embedder.cpp:1309-1315)
+    // RDKit✔️✔️: void _fillAtomPositions(RDGeom::Point3DConstPtrVect &pts, const Conformer &conf,
+    // RDKit✔️✔️:                         const ROMol &, const std::vector<unsigned int> &match) {
+    // RDKit✔️✔️:   PRECONDITION(pts.size() == match.size(), "bad pts size");
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < match.size(); i++) {
+    // RDKit✔️✔️:     pts[i] = &conf.getAtomPos(match[i]);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::_fillAtomPositions
+    assert_eq!(pts.len(), match_atoms.len(), "bad pts size");
+    for (i, &atom_idx) in match_atoms.iter().enumerate() {
+        let coord = conf.coords()[atom_idx];
+        pts[i] = ForceFieldVec3::new(coord[0], coord[1], coord[2]);
+    }
+}
+
+fn alignments_weighted_sum_of_points(points: &[ForceFieldVec3]) -> ForceFieldVec3 {
+    // BEGIN RDKIT CPP FUNCTION RDNumeric::Alignments::_weightedSumOfPoints unweighted path (AlignPoints.cpp:19-34)
+    // RDKit✔️✔️: RDGeom::Point3D _weightedSumOfPoints(const RDGeom::Point3DConstPtrVect &points,
+    // RDKit✔️✔️:                                      const DoubleVector *weights) {
+    // RDKit✔️✔️:   PRECONDITION(!weights || points.size() == weights->size(), "");
+    // RDKit✔️✔️:   RDGeom::Point3DConstPtrVect_CI pti;
+    // RDKit✔️✔️:   RDGeom::Point3D tmpPt, res;
+    // RDKit✔️✔️:   const double *wData = weights ? weights->getData() : nullptr;
+    // RDKit✔️✔️:   unsigned int i = 0;
+    // RDKit✔️✔️:   for (pti = points.begin(); pti != points.end(); pti++) {
+    // RDKit✔️✔️:     tmpPt = (*(*pti));
+    // RDKit✔️✔️:     if (weights) {
+    // RDKit✔️✔️:       tmpPt *= wData[i];
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     res += tmpPt;
+    // RDKit✔️✔️:     i++;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDNumeric::Alignments::_weightedSumOfPoints
+    points
+        .iter()
+        .copied()
+        .fold(ForceFieldVec3::default(), |acc, point| acc + point)
+}
+
+fn alignments_weighted_sum_of_len_sq(points: &[ForceFieldVec3]) -> f64 {
+    // BEGIN RDKIT CPP FUNCTION RDNumeric::Alignments::_weightedSumOfLenSq unweighted path (AlignPoints.cpp:36-49)
+    // RDKit✔️✔️: double _weightedSumOfLenSq(const RDGeom::Point3DConstPtrVect &points,
+    // RDKit✔️✔️:                            const DoubleVector *weights) {
+    // RDKit✔️✔️:   PRECONDITION(!weights || (points.size() == weights->size()), "");
+    // RDKit✔️✔️:   double res = 0.0;
+    // RDKit✔️✔️:   const double *wData = weights ? weights->getData() : nullptr;
+    // RDKit✔️✔️:   unsigned int i = 0;
+    // RDKit✔️✔️:   for (const auto &pti : points) {
+    // RDKit✔️✔️:     auto l = pti->lengthSq();
+    // RDKit✔️✔️:     if (weights) {
+    // RDKit✔️✔️:       l *= wData[i];
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     res += l;
+    // RDKit✔️✔️:     i++;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDNumeric::Alignments::_weightedSumOfLenSq
+    points.iter().map(|point| point.length_sq()).sum()
+}
+
+fn alignments_compute_covariance_mat(
+    ref_points: &[ForceFieldVec3],
+    probe_points: &[ForceFieldVec3],
+) -> [[f64; 3]; 3] {
+    // BEGIN RDKIT CPP FUNCTION RDNumeric::Alignments::_computeCovarianceMat unweighted path (AlignPoints.cpp:61-88)
+    // RDKit✔️✔️: void _computeCovarianceMat(const RDGeom::Point3DConstPtrVect &refPoints,
+    // RDKit✔️✔️:                            const RDGeom::Point3DConstPtrVect &probePoints,
+    // RDKit✔️✔️:                            const DoubleVector *weights, double covMat[3][3]) {
+    // RDKit✔️✔️:   memset(static_cast<void *>(covMat), 0, 9 * sizeof(double));
+    // RDKit✔️✔️:   unsigned int npt = refPoints.size();
+    // RDKit✔️✔️:   CHECK_INVARIANT(npt == probePoints.size(), "Number of points mismatch");
+    // RDKit✔️✔️:   CHECK_INVARIANT(!weights || (npt == weights->size()),
+    // RDKit✔️✔️:                   "Number of points and number of weights do not match");
+    // RDKit✔️✔️:   const double *wData = weights ? weights->getData() : nullptr;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   const RDGeom::Point3D *rpt, *ppt;
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < npt; i++) {
+    // RDKit✔️✔️:     rpt = refPoints[i];
+    // RDKit✔️✔️:     ppt = probePoints[i];
+    // RDKit✔️✔️:     double w = weights ? wData[i] : 1.0;
+    assert_eq!(
+        ref_points.len(),
+        probe_points.len(),
+        "Number of points mismatch"
+    );
+    let mut cov_mat = [[0.0; 3]; 3];
+    for (rpt, ppt) in ref_points.iter().zip(probe_points) {
+        let w = 1.0;
+        // RDKit✔️✔️:     covMat[0][0] += w * (ppt->x) * (rpt->x);
+        // RDKit✔️✔️:     covMat[0][1] += w * (ppt->x) * (rpt->y);
+        // RDKit✔️✔️:     covMat[0][2] += w * (ppt->x) * (rpt->z);
+        cov_mat[0][0] += w * ppt.x * rpt.x;
+        cov_mat[0][1] += w * ppt.x * rpt.y;
+        cov_mat[0][2] += w * ppt.x * rpt.z;
+        // RDKit✔️✔️:     covMat[1][0] += w * (ppt->y) * (rpt->x);
+        // RDKit✔️✔️:     covMat[1][1] += w * (ppt->y) * (rpt->y);
+        // RDKit✔️✔️:     covMat[1][2] += w * (ppt->y) * (rpt->z);
+        cov_mat[1][0] += w * ppt.y * rpt.x;
+        cov_mat[1][1] += w * ppt.y * rpt.y;
+        cov_mat[1][2] += w * ppt.y * rpt.z;
+        // RDKit✔️✔️:     covMat[2][0] += w * (ppt->z) * (rpt->x);
+        // RDKit✔️✔️:     covMat[2][1] += w * (ppt->z) * (rpt->y);
+        // RDKit✔️✔️:     covMat[2][2] += w * (ppt->z) * (rpt->z);
+        cov_mat[2][0] += w * ppt.z * rpt.x;
+        cov_mat[2][1] += w * ppt.z * rpt.y;
+        cov_mat[2][2] += w * ppt.z * rpt.z;
+    }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDNumeric::Alignments::_computeCovarianceMat
+    cov_mat
+}
+
+fn alignments_convert_cov_mat_to_quad(
+    cov_mat: [[f64; 3]; 3],
+    rpt_sum: ForceFieldVec3,
+    ppt_sum: ForceFieldVec3,
+    wts_sum: f64,
+) -> [[f64; 4]; 4] {
+    // BEGIN RDKIT CPP FUNCTION RDNumeric::Alignments::_covertCovMatToQuad (AlignPoints.cpp:90-129)
+    // RDKit✔️✔️: void _covertCovMatToQuad(const double covMat[3][3],
+    // RDKit✔️✔️:                          const RDGeom::Point3D &rptSum,
+    // RDKit✔️✔️:                          const RDGeom::Point3D &pptSum, double wtsSum,
+    // RDKit✔️✔️:                          double quad[4][4]) {
+    let temp = ppt_sum.x / wts_sum;
+    let px_rx = cov_mat[0][0] - temp * rpt_sum.x;
+    let px_ry = cov_mat[0][1] - temp * rpt_sum.y;
+    let px_rz = cov_mat[0][2] - temp * rpt_sum.z;
+
+    let temp = ppt_sum.y / wts_sum;
+    let py_rx = cov_mat[1][0] - temp * rpt_sum.x;
+    let py_ry = cov_mat[1][1] - temp * rpt_sum.y;
+    let py_rz = cov_mat[1][2] - temp * rpt_sum.z;
+
+    let temp = ppt_sum.z / wts_sum;
+    let pz_rx = cov_mat[2][0] - temp * rpt_sum.x;
+    let pz_ry = cov_mat[2][1] - temp * rpt_sum.y;
+    let pz_rz = cov_mat[2][2] - temp * rpt_sum.z;
+
+    let mut quad = [[0.0; 4]; 4];
+    // RDKit✔️✔️:   quad[0][0] = -2.0 * (PxRx + PyRy + PzRz);
+    quad[0][0] = -2.0 * (px_rx + py_ry + pz_rz);
+    quad[1][1] = -2.0 * (px_rx - py_ry - pz_rz);
+    quad[2][2] = -2.0 * (py_ry - pz_rz - px_rx);
+    quad[3][3] = -2.0 * (pz_rz - px_rx - py_ry);
+    quad[0][1] = 2.0 * (py_rz - pz_ry);
+    quad[1][0] = quad[0][1];
+    quad[0][2] = 2.0 * (pz_rx - px_rz);
+    quad[2][0] = quad[0][2];
+    quad[0][3] = 2.0 * (px_ry - py_rx);
+    quad[3][0] = quad[0][3];
+    quad[1][2] = -2.0 * (px_ry + py_rx);
+    quad[2][1] = quad[1][2];
+    quad[1][3] = -2.0 * (pz_rx + px_rz);
+    quad[3][1] = quad[1][3];
+    quad[2][3] = -2.0 * (py_rz + pz_ry);
+    quad[3][2] = quad[2][3];
+    // END RDKIT CPP FUNCTION RDNumeric::Alignments::_covertCovMatToQuad
+    quad
+}
+
+fn alignments_jacobi(
+    mut quad: [[f64; 4]; 4],
+    eigen_vals: &mut [f64; 4],
+    eigen_vecs: &mut [[f64; 4]; 4],
+    max_iter: u32,
+) -> u32 {
+    // BEGIN RDKIT CPP FUNCTION RDNumeric::Alignments::jacobi (AlignPoints.cpp:148-270)
+    // RDKit✔️✔️: unsigned int jacobi(double quad[4][4], double eigenVals[4],
+    // RDKit✔️✔️:                     double eigenVecs[4][4], unsigned int maxIter) {
+    const TOLERANCE: f64 = 1.0e-6;
+    for j in 0..=3 {
+        for row in eigen_vecs.iter_mut().take(4) {
+            row[j] = 0.0;
+        }
+        eigen_vecs[j][j] = 1.0;
+        eigen_vals[j] = quad[j][j];
+    }
+    let mut l = 0;
+    'outer: while l < max_iter {
+        let mut diag_norm = 0.0;
+        let mut off_diag_norm = 0.0;
+        for j in 0..=3 {
+            diag_norm += eigen_vals[j].abs();
+            for row in quad.iter().take(j) {
+                off_diag_norm += row[j].abs();
+            }
+        }
+        if diag_norm.abs() > 1.0e-16 && (off_diag_norm / diag_norm) <= TOLERANCE {
+            break 'outer;
+        }
+        for j in 1..=3 {
+            for i in 0..=j - 1 {
+                let b = quad[i][j];
+                if b.abs() > 0.0 {
+                    let dma = eigen_vals[j] - eigen_vals[i];
+                    let t = if dma.abs() + b.abs() <= dma.abs() {
+                        b / dma
+                    } else {
+                        let q = 0.5 * dma / b;
+                        let mut t = 1.0 / (q.abs() + (1.0 + q * q).sqrt());
+                        if q < 0.0 {
+                            t = -t;
+                        }
+                        t
+                    };
+                    let c = 1.0 / (t * t + 1.0).sqrt();
+                    let s = t * c;
+                    quad[i][j] = 0.0;
+                    for k in 0..i {
+                        let atemp = c * quad[k][i] - s * quad[k][j];
+                        quad[k][j] = s * quad[k][i] + c * quad[k][j];
+                        quad[k][i] = atemp;
+                    }
+                    for k in i + 1..=j - 1 {
+                        let atemp = c * quad[i][k] - s * quad[k][j];
+                        quad[k][j] = s * quad[i][k] + c * quad[k][j];
+                        quad[i][k] = atemp;
+                    }
+                    for k in j + 1..=3 {
+                        let atemp = c * quad[i][k] - s * quad[j][k];
+                        quad[j][k] = s * quad[i][k] + c * quad[j][k];
+                        quad[i][k] = atemp;
+                    }
+                    for row in eigen_vecs.iter_mut().take(4) {
+                        let vtemp = c * row[i] - s * row[j];
+                        row[j] = s * row[i] + c * row[j];
+                        row[i] = vtemp;
+                    }
+                    let dtemp = c * c * eigen_vals[i] + s * s * eigen_vals[j] - 2.0 * c * s * b;
+                    eigen_vals[j] = s * s * eigen_vals[i] + c * c * eigen_vals[j] + 2.0 * c * s * b;
+                    eigen_vals[i] = dtemp;
+                }
+            }
+        }
+        l += 1;
+    }
+    for j in 0..=2 {
+        let mut k = j;
+        let mut dtemp = eigen_vals[k];
+        for (i, &val) in eigen_vals.iter().enumerate().take(4).skip(j + 1) {
+            if val < dtemp {
+                k = i;
+                dtemp = val;
+            }
+        }
+        if k > j {
+            eigen_vals[k] = eigen_vals[j];
+            eigen_vals[j] = dtemp;
+            for row in eigen_vecs.iter_mut().take(4) {
+                let dtemp = row[k];
+                row[k] = row[j];
+                row[j] = dtemp;
+            }
+        }
+    }
+    // RDKit✔️✔️:   return l + 1;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDNumeric::Alignments::jacobi
+    l + 1
+}
+
+fn alignments_align_points_ssr(
+    ref_points: &[ForceFieldVec3],
+    probe_points: &[ForceFieldVec3],
+) -> f64 {
+    // BEGIN RDKIT CPP FUNCTION RDNumeric::Alignments::AlignPoints unweighted no-reflect SSR path (AlignPoints.cpp:272-329)
+    // RDKit✔️✔️: double AlignPoints(const RDGeom::Point3DConstPtrVect &refPoints,
+    // RDKit✔️✔️:                    const RDGeom::Point3DConstPtrVect &probePoints,
+    // RDKit✔️✔️:                    RDGeom::Transform3D &trans, const DoubleVector *weights,
+    // RDKit✔️✔️:                    bool reflect, unsigned int maxIterations) {
+    // RDKit✔️✔️:   unsigned int npt = refPoints.size();
+    // RDKit✔️✔️:   PRECONDITION(npt == probePoints.size(), "Mismatch in number of points");
+    assert_eq!(
+        ref_points.len(),
+        probe_points.len(),
+        "Mismatch in number of points"
+    );
+    let npt = ref_points.len();
+    let wts_sum = npt as f64;
+    let rpt_sum = alignments_weighted_sum_of_points(ref_points);
+    let ppt_sum = alignments_weighted_sum_of_points(probe_points);
+    let rpt_sum_len_sq = alignments_weighted_sum_of_len_sq(ref_points);
+    let ppt_sum_len_sq = alignments_weighted_sum_of_len_sq(probe_points);
+    let cov_mat = alignments_compute_covariance_mat(ref_points, probe_points);
+    let quad = alignments_convert_cov_mat_to_quad(cov_mat, rpt_sum, ppt_sum, wts_sum);
+    let mut eigen_vecs = [[0.0; 4]; 4];
+    let mut eigen_vals = [0.0; 4];
+    alignments_jacobi(quad, &mut eigen_vals, &mut eigen_vecs, 50);
+    // RDKit✔️✔️:   double ssr = eigenVals[0] - (pptSum.lengthSq() + rptSum.lengthSq()) / wtsSum +
+    // RDKit✔️✔️:                rptSumLenSq + pptSumLenSq;
+    let mut ssr = eigen_vals[0] - (ppt_sum.length_sq() + rpt_sum.length_sq()) / wts_sum
+        + rpt_sum_len_sq
+        + ppt_sum_len_sq;
+    if ssr < 0.0 && ssr.abs() < 1.0e-6 {
+        ssr = 0.0;
+    }
+    // RDKit✔️✔️:   return ssr;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDNumeric::Alignments::AlignPoints
+    ssr
+}
+
+fn embedder_is_conf_far_from_rest(
+    mol: &Molecule,
+    conf: &Conformer3D,
+    threshold: f64,
+    self_matches: &[Vec<usize>],
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_isConfFarFromRest (Embedder.cpp:1317-1344)
+    // RDKit✔️✔️: bool _isConfFarFromRest(
+    // RDKit✔️✔️:     const ROMol &mol, const Conformer &conf, double threshold,
+    // RDKit✔️✔️:     const std::vector<std::vector<unsigned int>> &selfMatches) {
+    // RDKit✔️✔️:   // NOTE: it is tempting to use some triangle inequality to prune
+    // RDKit✔️✔️:   // conformations here but some basic testing has shown very
+    // RDKit✔️✔️:   // little advantage and given that the time for pruning fades in
+    // RDKit✔️✔️:   // comparison to embedding - we will use a simple for loop below
+    // RDKit✔️✔️:   // over all conformation until we find a match
+    // RDKit✔️✔️:   RDGeom::Point3DConstPtrVect refPoints(selfMatches[0].size());
+    // RDKit✔️✔️:   RDGeom::Point3DConstPtrVect prbPoints(selfMatches[0].size());
+    // RDKit✔️✔️:   _fillAtomPositions(refPoints, conf, mol, selfMatches[0]);
+    assert!(!self_matches.is_empty(), "expected at least one self match");
+    let mut ref_points = vec![ForceFieldVec3::default(); self_matches[0].len()];
+    let mut prb_points = vec![ForceFieldVec3::default(); self_matches[0].len()];
+    embedder_fill_atom_positions(&mut ref_points, conf, mol, &self_matches[0]);
+    // RDKit✔️✔️:   double ssrThres = selfMatches[0].size() * threshold * threshold;
+    let ssr_thres = self_matches[0].len() as f64 * threshold * threshold;
+    // RDKit✔️✔️:   for (const auto &match : selfMatches) {
+    // RDKit✔️✔️:     for (auto confi = mol.beginConformers(); confi != mol.endConformers();
+    // RDKit✔️✔️:          ++confi) {
+    // RDKit✔️✔️:       _fillAtomPositions(prbPoints, *(*confi), mol, match);
+    // RDKit✔️✔️:       RDGeom::Transform3D trans;
+    // RDKit✔️✔️:       auto ssr =
+    // RDKit✔️✔️:           RDNumeric::Alignments::AlignPoints(refPoints, prbPoints, trans);
+    // RDKit✔️✔️:       if (ssr < ssrThres) {
+    // RDKit✔️✔️:         return false;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    for match_atoms in self_matches {
+        for existing in mol.conformers_3d() {
+            embedder_fill_atom_positions(&mut prb_points, existing, mol, match_atoms);
+            let ssr = alignments_align_points_ssr(&ref_points, &prb_points);
+            if ssr < ssr_thres {
+                return false;
+            }
+        }
+    }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::_isConfFarFromRest
+    true
+}
+
+fn molecule_without_hs_for_pruning(
+    mol: &Molecule,
+) -> Result<(Molecule, Vec<usize>), DgBoundsError> {
+    let hydrogens: Vec<_> = mol
+        .atoms()
+        .iter()
+        .filter_map(|atom| (atom.atomic_number() == 1).then_some(atom.id()))
+        .collect();
+    let mut builder = mol.to_builder();
+    let old_to_new = builder.remove_atoms_for_construction(&hydrogens);
+    let stripped = builder.build()?;
+    let new_to_old = old_to_new
+        .iter()
+        .enumerate()
+        .filter_map(|(old_idx, new_idx)| new_idx.map(|idx| (idx.index(), old_idx)))
+        .fold(
+            vec![0; stripped.num_atoms()],
+            |mut acc, (new_idx, old_idx)| {
+                acc[new_idx] = old_idx;
+                acc
+            },
+        );
+    Ok((stripped, new_to_old))
+}
+
+fn embedder_get_mol_self_matches(
+    mol: &Molecule,
+    params: &EmbedParameters,
+) -> Result<Vec<Vec<usize>>, DgBoundsError> {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::detail::getMolSelfMatches (Embedder.cpp:1449-1494)
+    // RDKit✔️✔️: std::vector<std::vector<unsigned int>> getMolSelfMatches(
+    // RDKit✔️✔️:     const ROMol &mol, const EmbedParameters &params) {
+    // RDKit✔️✔️:   std::vector<std::vector<unsigned int>> res;
+    let mut res = Vec::new();
+    // RDKit✔️✔️:   if (params.pruneRmsThresh && params.useSymmetryForPruning) {
+    if params.prune_rms_thresh != 0.0 && params.use_symmetry_for_pruning {
+        // RDKit✔️✔️:     RWMol tmol(mol);
+        // RDKit✔️✔️:     MolOps::RemoveHsParameters ps;
+        // RDKit✔️✔️:     bool sanitize = false;
+        // RDKit✔️✔️:     MolOps::removeHs(tmol, ps, sanitize);
+        let (tmol, stripped_to_original) = molecule_without_hs_for_pruning(mol)?;
+
+        // RDKit✔️✔️:     std::unique_ptr<RWMol> prbMolSymm;
+        // RDKit✔️✔️:     if (params.symmetrizeConjugatedTerminalGroupsForPruning) {
+        // RDKit✔️✔️:       prbMolSymm.reset(new RWMol(tmol));
+        // RDKit✔️✔️:       MolAlign::details::symmetrizeTerminalAtoms(*prbMolSymm);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     const auto &prbMolForMatch = prbMolSymm ? *prbMolSymm : tmol;
+        let prb_mol_symm = params
+            .symmetrize_conjugated_terminal_groups_for_pruning
+            .then(|| symmetrize_terminal_atoms_for_pruning(&tmol))
+            .transpose()?;
+        let prb_mol_for_match = prb_mol_symm.as_ref().unwrap_or(&tmol);
+
+        // RDKit✔️✔️:     SubstructMatchParameters sssps;
+        // RDKit✔️✔️:     sssps.maxMatches = 1;
+        // RDKit✔️✔️:     // provides the atom indices in the molecule corresponding
+        // RDKit✔️✔️:     // to the indices in the H-stripped version
+        // RDKit✔️✔️:     auto strippedMatch = SubstructMatch(mol, prbMolForMatch, sssps);
+        // RDKit✔️✔️:     CHECK_INVARIANT(strippedMatch.size() == 1, "expected match not found");
+        let stripped_match = stripped_to_original;
+
+        // RDKit✔️✔️:     sssps.maxMatches = 1000;
+        // RDKit✔️✔️:     sssps.uniquify = false;
+        // RDKit✔️✔️:     auto heavyAtomMatches = SubstructMatch(tmol, prbMolForMatch, sssps);
+        let sssps = SubstructMatchParams {
+            max_matches: 1000,
+            uniquify: false,
+        };
+        let heavy_atom_matches =
+            get_substruct_matches_with_params(&tmol, prb_mol_for_match, &sssps);
+        // RDKit✔️✔️:     for (const auto &match : heavyAtomMatches) {
+        // RDKit✔️✔️:       res.emplace_back(0);
+        // RDKit✔️✔️:       res.back().reserve(match.size());
+        // RDKit✔️✔️:       for (auto midx : match) {
+        // RDKit✔️✔️:         res.back().push_back(strippedMatch[0][midx.second].second);
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        for match_result in heavy_atom_matches {
+            let mut mapped = Vec::with_capacity(match_result.atom_mapping.len());
+            for &midx_second in &match_result.atom_mapping {
+                mapped.push(stripped_match[midx_second]);
+            }
+            res.push(mapped);
+        }
+    // RDKit✔️✔️:   } else if (params.onlyHeavyAtomsForRMS) {
+    } else if params.only_heavy_atoms_for_rms {
+        // RDKit✔️✔️:     res.emplace_back(0);
+        // RDKit✔️✔️:     for (const auto &at : mol.atoms()) {
+        // RDKit✔️✔️:       if (at->getAtomicNum() != 1) {
+        // RDKit✔️✔️:         res.back().push_back(at->getIdx());
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        let atoms = mol
+            .atoms()
+            .iter()
+            .filter_map(|atom| (atom.atomic_number() != 1).then_some(atom.id().index()))
+            .collect();
+        res.push(atoms);
+    // RDKit✔️✔️:   } else {
+    } else {
+        // RDKit✔️✔️:     res.emplace_back(0);
+        // RDKit✔️✔️:     res.back().reserve(mol.getNumAtoms());
+        // RDKit✔️✔️:     for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+        // RDKit✔️✔️:       res.back().push_back(i);
+        // RDKit✔️✔️:     }
+        res.push((0..mol.num_atoms()).collect());
+    }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::detail::getMolSelfMatches
+    Ok(res)
+}
+
+fn symmetrize_terminal_atoms_for_pruning(mol: &Molecule) -> Result<Molecule, DgBoundsError> {
+    // BEGIN RDKIT CPP FUNCTION MolAlign::details::symmetrizeTerminalAtoms (AlignMolecules.cpp:29-54)
+    // RDKit✔️✔️: void symmetrizeTerminalAtoms(RWMol &mol) {
+    // RDKit✔️✔️:   // clang-format off
+    // RDKit✔️✔️:   static const std::string qsmarts =
+    // RDKit✔️✔️:       "[{atomPattern};$([{atomPattern}]-[*]=[{atomPattern}]),$([{atomPattern}]=[*]-[{atomPattern}])]~[*]";
+    // RDKit✔️✔️:   static std::map<std::string, std::string> replacements = {
+    // RDKit✔️✔️:       {"{atomPattern}", "O,N;D1"}};
+    // RDKit✔️✔️:   // clang-format on
+    // RDKit✔️✔️:   static SmartsParserParams ps;
+    // RDKit✔️✔️:   ps.replacements = &replacements;
+    // RDKit✔️✔️:   static const std::unique_ptr<RWMol> qry{SmartsToMol(qsmarts, ps)};
+    // RDKit✔️✔️:   CHECK_INVARIANT(qry, "bad query pattern");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   auto matches = SubstructMatch(mol, *qry);
+    // RDKit✔️✔️:   if (matches.empty()) {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   QueryBond qb;
+    // RDKit✔️✔️:   qb.setQuery(makeSingleOrDoubleBondQuery());
+    // RDKit✔️✔️:   for (const auto &match : matches) {
+    // RDKit✔️✔️:     mol.getAtomWithIdx(match[0].second)->setFormalCharge(0);
+    // RDKit✔️✔️:     auto obond = mol.getBondBetweenAtoms(match[0].second, match[1].second);
+    // RDKit✔️✔️:     CHECK_INVARIANT(obond, "could not find expected bond");
+    // RDKit✔️✔️:     mol.replaceBond(obond->getIdx(), &qb);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION MolAlign::details::symmetrizeTerminalAtoms
+    let mut symmetrized = mol.clone();
+    let mut matched_pairs = Vec::new();
+    for atom_idx in 0..mol.num_atoms() {
+        if !matches_rdkit_terminal_atom_pattern(mol, atom_idx) {
+            continue;
+        }
+        let neighbors = neighbors_for_atom(mol, atom_idx);
+        debug_assert_eq!(neighbors.len(), 1);
+        let neighbor_idx = neighbors[0];
+        if matches_rdkit_terminal_group_symmetry_query(mol, atom_idx, neighbor_idx) {
+            matched_pairs.push((atom_idx, neighbor_idx));
+        }
+    }
+    if matched_pairs.is_empty() {
+        return Ok(symmetrized);
+    }
+
+    {
+        let topology = symmetrized.topology_block_mut();
+        for (terminal_atom_idx, neighbor_idx) in matched_pairs {
+            topology.atoms[terminal_atom_idx].set_formal_charge(0);
+            let Some(bond) = topology.bonds.iter_mut().find(|bond| {
+                (bond.begin().index() == terminal_atom_idx && bond.end().index() == neighbor_idx)
+                    || (bond.begin().index() == neighbor_idx
+                        && bond.end().index() == terminal_atom_idx)
+            }) else {
+                return Err(DgBoundsError::GenerationFailed(
+                    "MolAlign::details::symmetrizeTerminalAtoms could not find expected bond"
+                        .to_string(),
+                ));
+            };
+            bond.set_query(Some(QueryNode::predicate(BondQueryPredicate::OrderIn(
+                vec![BondOrder::Single, BondOrder::Double],
+            ))));
+        }
+    }
+    symmetrized
+        .derived_cache_mut()
+        .invalidate(DerivedState::VALENCE | DerivedState::AROMATICITY | DerivedState::STEREO);
+    Ok(symmetrized)
+}
+
+fn matches_rdkit_terminal_group_symmetry_query(
+    mol: &Molecule,
+    terminal_atom_idx: usize,
+    neighbor_idx: usize,
+) -> bool {
+    let Some(terminal_bond) = bond_between(mol, terminal_atom_idx, neighbor_idx) else {
+        return false;
+    };
+    let opposite_order = match terminal_bond.order() {
+        BondOrder::Single => BondOrder::Double,
+        BondOrder::Double => BondOrder::Single,
+        _ => return false,
+    };
+    for remote_terminal_idx in neighbors_for_atom(mol, neighbor_idx) {
+        if remote_terminal_idx == terminal_atom_idx
+            || !matches_rdkit_terminal_atom_pattern(mol, remote_terminal_idx)
+        {
+            continue;
+        }
+        if let Some(remote_bond) = bond_between(mol, neighbor_idx, remote_terminal_idx)
+            && remote_bond.order() == opposite_order
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn matches_rdkit_terminal_atom_pattern(mol: &Molecule, atom_idx: usize) -> bool {
+    let atom = &mol.atoms()[atom_idx];
+    matches!(atom.atomic_number(), 7 | 8) && neighbors_for_atom(mol, atom_idx).len() == 1
+}
+
+fn embedder_embed_helper(
+    thread_id: i32,
+    num_threads: i32,
+    eargs: &mut EmbedHelperArgs<'_>,
+    params: &mut EmbedParameters,
+    end_time: Option<Instant>,
+) {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::detail::embedHelper_ (Embedder.cpp:1356-1447)
+    // RDKit✔️✔️: void embedHelper_(int threadId, int numThreads, EmbedArgs *eargs,
+    // RDKit✔️✔️:                   EmbedParameters *params, TimePoint *end_time) {
+    // RDKit✔️✔️:   PRECONDITION(eargs, "bogus eargs");
+    // RDKit✔️✔️:   PRECONDITION(params, "bogus params");
+    // RDKit✔️✔️:   unsigned int nAtoms = eargs->mmat->numRows();
+    let n_atoms = eargs.mmat.num_rows();
+    // RDKit✔️✔️:   RDGeom::PointPtrVect positions(nAtoms);
+    // RDKit✔️✔️:   // we might thrown an exception in a callback
+    // RDKit✔️✔️:   // in order to avoid leaking the points we're working with
+    // RDKit✔️✔️:   // allocate them with unique_ptrs and then work with the naked
+    // RDKit✔️✔️:   // pointers from those
+    // RDKit✔️✔️:   std::vector<std::unique_ptr<RDGeom::Point>> positionsStore;
+    // RDKit✔️✔️:   positionsStore.reserve(nAtoms);
+    let dim = if eargs.four_d { 4 } else { 3 };
+    let mut positions = vec![vec![0.0; dim]; n_atoms];
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < nAtoms; ++i) {
+    // RDKit✔️✔️:     if (eargs->fourD) {
+    // RDKit✔️✔️:       positionsStore.emplace_back(new RDGeom::PointND(4));
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       positionsStore.emplace_back(new RDGeom::Point3D());
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     positions[i] = positionsStore[i].get();
+    // RDKit✔️✔️:   }
+
+    // RDKit✔️✔️:   for (size_t ci = 0; ci < eargs->confs->size(); ci++) {
+    for ci in 0..eargs.confs.len() {
+        // RDKit✔️✔️:     if (ControlCHandler::getGotSignal() ||
+        // RDKit✔️✔️:         (end_time != nullptr && Clock::now() > *end_time)) {
+        // RDKit✔️✔️:       return;
+        // RDKit✔️✔️:     }
+        if let Some(deadline) = end_time
+            && Instant::now() > deadline
+        {
+            return;
+        }
+
+        // RDKit✔️✔️:     if (rdcast<int>(ci % numThreads) != threadId) {
+        // RDKit✔️✔️:       continue;
+        // RDKit✔️✔️:     }
+        if (ci % num_threads as usize) as i32 != thread_id {
+            continue;
+        }
+        // RDKit✔️✔️:     if (!(*eargs->confsOk)[ci]) {
+        // RDKit✔️✔️:       // we call this function for each fragment in a molecule,
+        // RDKit✔️✔️:       // if one of the fragments has already failed, there's no
+        // RDKit✔️✔️:       // sense in embedding this one
+        // RDKit✔️✔️:       continue;
+        // RDKit✔️✔️:     }
+        if !eargs.confs_ok[ci] {
+            continue;
+        }
+
+        let new_seed = rdkit_embedder_conformer_seed(
+            params.random_seed,
+            ci,
+            params.enable_sequential_random_seeds,
+        );
+        let got_coords = embedder_embed_points(
+            &mut positions,
+            eargs.embed_args(),
+            params,
+            new_seed,
+            end_time,
+        );
+
+        // RDKit✔️✔️:     // copy the coordinates into the correct conformer
+        // RDKit✔️✔️:     if (gotCoords) {
+        if got_coords {
+            let conf = &mut eargs.confs[ci];
+            // RDKit✔️✔️:       unsigned int fragAtomIdx = 0;
+            let mut frag_atom_idx = 0;
+            // RDKit✔️✔️:       for (unsigned int i = 0; i < conf->getNumAtoms(); ++i) {
+            for i in 0..conf.coords().len() {
+                // RDKit✔️✔️:         if (!eargs->fragMapping ||
+                // RDKit✔️✔️:             (*eargs->fragMapping)[i] == static_cast<int>(eargs->fragIdx)) {
+                if eargs
+                    .frag_mapping
+                    .is_none_or(|mapping| mapping[i] == eargs.frag_idx)
+                {
+                    // RDKit✔️✔️:           conf->setAtomPos(i, RDGeom::Point3D((*positions[fragAtomIdx])[0],
+                    // RDKit✔️✔️:                                               (*positions[fragAtomIdx])[1],
+                    // RDKit✔️✔️:                                               (*positions[fragAtomIdx])[2]));
+                    conf.coords_mut()[i] = [
+                        positions[frag_atom_idx][0],
+                        positions[frag_atom_idx][1],
+                        positions[frag_atom_idx][2],
+                    ];
+                    // RDKit✔️✔️:           ++fragAtomIdx;
+                    frag_atom_idx += 1;
+                }
+            }
+        // RDKit✔️✔️:     } else {
+        } else {
+            // RDKit✔️✔️:       (*eargs->confsOk)[ci] = 0;
+            eargs.confs_ok[ci] = false;
+        }
+    }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::detail::embedHelper_
+}
 
 // ──────────────────────────────────────────────
 // Error type
@@ -48,8 +2874,1996 @@ const UFF_LAMBDA: f64 = 0.1332;
 pub enum DgBoundsError {
     #[error("distance bounds matrix generation failed: {0}")]
     GenerationFailed(String),
+    #[error("invalid embed parameters JSON: {0}")]
+    InvalidEmbedParametersJson(String),
+    #[error("molecule has no atoms")]
+    EmptyMolecule,
+    #[error(
+        "Only version 1 and 2 of the experimental torsion-angle preferences (ETversion) supported"
+    )]
+    UnsupportedEtVersion,
+    #[error("coordinate block update failed: {0}")]
+    CoordinateUpdateFailed(String),
     #[error(transparent)]
     UnsupportedFeature(#[from] crate::UnsupportedFeatureError),
+}
+
+impl From<MoleculeBuildError> for DgBoundsError {
+    fn from(value: MoleculeBuildError) -> Self {
+        Self::CoordinateUpdateFailed(value.to_string())
+    }
+}
+
+impl From<crate::RingFindingError> for DgBoundsError {
+    fn from(value: crate::RingFindingError) -> Self {
+        Self::GenerationFailed(value.to_string())
+    }
+}
+
+// ──────────────────────────────────────────────
+// Embedder status
+// ──────────────────────────────────────────────
+
+// BEGIN RDKIT CPP ENUM DGeomHelpers::EmbedFailureCauses (Embedder.h:25-39)
+// RDKit✔️✔️: enum EmbedFailureCauses {
+// RDKit✔️✔️:   INITIAL_COORDS = 0,
+// RDKit✔️✔️:   FIRST_MINIMIZATION = 1,
+// RDKit✔️✔️:   CHECK_TETRAHEDRAL_CENTERS = 2,
+// RDKit✔️✔️:   CHECK_CHIRAL_CENTERS = 3,
+// RDKit✔️✔️:   MINIMIZE_FOURTH_DIMENSION = 4,
+// RDKit✔️✔️:   ETK_MINIMIZATION = 5,
+// RDKit✔️✔️:   FINAL_CHIRAL_BOUNDS = 6,
+// RDKit✔️✔️:   FINAL_CENTER_IN_VOLUME = 7,
+// RDKit✔️✔️:   LINEAR_DOUBLE_BOND = 8,
+// RDKit✔️✔️:   BAD_DOUBLE_BOND_STEREO = 9,
+// RDKit✔️✔️:   CHECK_CHIRAL_CENTERS2 = 10,
+// RDKit✔️✔️:   EXCEEDED_TIMEOUT = 11,
+// RDKit✔️✔️:   END_OF_ENUM = 12,
+// RDKit✔️✔️: };
+// END RDKIT CPP ENUM DGeomHelpers::EmbedFailureCauses
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u32)]
+pub enum EmbedFailureCause {
+    InitialCoords = 0,
+    FirstMinimization = 1,
+    CheckTetrahedralCenters = 2,
+    CheckChiralCenters = 3,
+    MinimizeFourthDimension = 4,
+    EtkMinimization = 5,
+    FinalChiralBounds = 6,
+    FinalCenterInVolume = 7,
+    LinearDoubleBond = 8,
+    BadDoubleBondStereo = 9,
+    CheckChiralCenters2 = 10,
+    ExceededTimeout = 11,
+    EndOfEnum = 12,
+}
+
+impl EmbedFailureCause {
+    pub const ALL: [Self; 13] = [
+        Self::InitialCoords,
+        Self::FirstMinimization,
+        Self::CheckTetrahedralCenters,
+        Self::CheckChiralCenters,
+        Self::MinimizeFourthDimension,
+        Self::EtkMinimization,
+        Self::FinalChiralBounds,
+        Self::FinalCenterInVolume,
+        Self::LinearDoubleBond,
+        Self::BadDoubleBondStereo,
+        Self::CheckChiralCenters2,
+        Self::ExceededTimeout,
+        Self::EndOfEnum,
+    ];
+
+    #[must_use]
+    pub const fn rdkit_ordinal(self) -> u32 {
+        self as u32
+    }
+
+    #[must_use]
+    pub const fn from_rdkit_ordinal(value: u32) -> Option<Self> {
+        match value {
+            0 => Some(Self::InitialCoords),
+            1 => Some(Self::FirstMinimization),
+            2 => Some(Self::CheckTetrahedralCenters),
+            3 => Some(Self::CheckChiralCenters),
+            4 => Some(Self::MinimizeFourthDimension),
+            5 => Some(Self::EtkMinimization),
+            6 => Some(Self::FinalChiralBounds),
+            7 => Some(Self::FinalCenterInVolume),
+            8 => Some(Self::LinearDoubleBond),
+            9 => Some(Self::BadDoubleBondStereo),
+            10 => Some(Self::CheckChiralCenters2),
+            11 => Some(Self::ExceededTimeout),
+            12 => Some(Self::EndOfEnum),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn rdkit_name(self) -> &'static str {
+        match self {
+            Self::InitialCoords => "INITIAL_COORDS",
+            Self::FirstMinimization => "FIRST_MINIMIZATION",
+            Self::CheckTetrahedralCenters => "CHECK_TETRAHEDRAL_CENTERS",
+            Self::CheckChiralCenters => "CHECK_CHIRAL_CENTERS",
+            Self::MinimizeFourthDimension => "MINIMIZE_FOURTH_DIMENSION",
+            Self::EtkMinimization => "ETK_MINIMIZATION",
+            Self::FinalChiralBounds => "FINAL_CHIRAL_BOUNDS",
+            Self::FinalCenterInVolume => "FINAL_CENTER_IN_VOLUME",
+            Self::LinearDoubleBond => "LINEAR_DOUBLE_BOND",
+            Self::BadDoubleBondStereo => "BAD_DOUBLE_BOND_STEREO",
+            Self::CheckChiralCenters2 => "CHECK_CHIRAL_CENTERS2",
+            Self::ExceededTimeout => "EXCEEDED_TIMEOUT",
+            Self::EndOfEnum => "END_OF_ENUM",
+        }
+    }
+}
+
+// BEGIN RDKIT CPP STRUCT DGeomHelpers::EmbedParameters (Embedder.h:122-191)
+// RDKit✔️✔️: struct RDKIT_DISTGEOMHELPERS_EXPORT EmbedParameters {
+// RDKit✔️✔️:   unsigned int maxIterations{0};
+// RDKit✔️✔️:   int numThreads{1};
+// RDKit✔️✔️:   int randomSeed{-1};
+// RDKit✔️✔️:   bool clearConfs{true};
+// RDKit✔️✔️:   bool useRandomCoords{false};
+// RDKit✔️✔️:   double boxSizeMult{2.0};
+// RDKit✔️✔️:   bool randNegEig{true};
+// RDKit✔️✔️:   unsigned int numZeroFail{1};
+// RDKit✔️✔️:   const std::map<int, RDGeom::Point3D> *coordMap{nullptr};
+// RDKit✔️✔️:   double optimizerForceTol{1e-3};
+// RDKit✔️✔️:   bool ignoreSmoothingFailures{false};
+// RDKit✔️✔️:   bool enforceChirality{true};
+// RDKit✔️✔️:   bool useExpTorsionAnglePrefs{false};
+// RDKit✔️✔️:   bool useBasicKnowledge{false};
+// RDKit✔️✔️:   bool verbose{false};
+// RDKit✔️✔️:   double basinThresh{5.0};
+// RDKit✔️✔️:   double pruneRmsThresh{-1.0};
+// RDKit✔️✔️:   bool onlyHeavyAtomsForRMS{true};
+// RDKit✔️✔️:   unsigned int ETversion{2};
+// RDKit✔️✔️:   boost::shared_ptr<const DistGeom::BoundsMatrix> boundsMat;
+// RDKit✔️✔️:   bool embedFragmentsSeparately{true};
+// RDKit✔️✔️:   bool useSmallRingTorsions{false};
+// RDKit✔️✔️:   bool useMacrocycleTorsions{false};
+// RDKit✔️✔️:   bool useMacrocycle14config{false};
+// RDKit✔️✔️:   unsigned int timeout{0};
+// RDKit✔️✔️:   std::shared_ptr<std::map<std::pair<unsigned int, unsigned int>, double>> CPCI;
+// RDKit✔️✔️:   void (*callback)(unsigned int);
+// RDKit✔️✔️:   bool forceTransAmides{true};
+// RDKit✔️✔️:   bool useSymmetryForPruning{true};
+// RDKit✔️✔️:   double boundsMatForceScaling{1.0};
+// RDKit✔️✔️:   bool trackFailures{false};
+// RDKit✔️✔️:   std::vector<unsigned int> failures;
+// RDKit✔️✔️:   bool enableSequentialRandomSeeds{false};
+// RDKit✔️✔️:   bool symmetrizeConjugatedTerminalGroupsForPruning{true};
+#[derive(Clone)]
+pub struct EmbedParameters {
+    pub max_iterations: u32,
+    pub num_threads: i32,
+    pub random_seed: i32,
+    pub clear_confs: bool,
+    pub use_random_coords: bool,
+    pub box_size_mult: f64,
+    pub rand_neg_eig: bool,
+    pub num_zero_fail: u32,
+    pub coord_map: Option<BTreeMap<i32, ForceFieldVec3>>,
+    pub optimizer_force_tol: f64,
+    pub ignore_smoothing_failures: bool,
+    pub enforce_chirality: bool,
+    pub use_exp_torsion_angle_prefs: bool,
+    pub use_basic_knowledge: bool,
+    pub verbose: bool,
+    pub basin_thresh: f64,
+    pub prune_rms_thresh: f64,
+    pub only_heavy_atoms_for_rms: bool,
+    pub et_version: u32,
+    bounds_mat: Option<Arc<BoundsMatrix>>,
+    pub embed_fragments_separately: bool,
+    pub use_small_ring_torsions: bool,
+    pub use_macrocycle_torsions: bool,
+    pub use_macrocycle14config: bool,
+    pub timeout: u32,
+    pub cpci: Option<BTreeMap<(u32, u32), f64>>,
+    pub callback: Option<fn(u32)>,
+    pub force_trans_amides: bool,
+    pub use_symmetry_for_pruning: bool,
+    pub bounds_mat_force_scaling: f64,
+    pub track_failures: bool,
+    pub failures: Vec<u32>,
+    pub enable_sequential_random_seeds: bool,
+    pub symmetrize_conjugated_terminal_groups_for_pruning: bool,
+}
+
+#[derive(Clone)]
+pub struct EmbedMoleculeResult {
+    pub molecule: Molecule,
+    pub conf_id: i32,
+    pub params: EmbedParameters,
+}
+
+impl EmbedMoleculeResult {
+    #[must_use]
+    pub fn ok(&self) -> bool {
+        self.conf_id >= 0
+    }
+}
+
+#[derive(Clone)]
+pub struct EmbedMultipleConfsResult {
+    pub molecule: Molecule,
+    pub conf_ids: Vec<i32>,
+    pub requested_num_confs: u32,
+    pub params: EmbedParameters,
+}
+
+impl EmbedMultipleConfsResult {
+    #[must_use]
+    pub fn generated_count(&self) -> usize {
+        self.conf_ids.len()
+    }
+}
+
+impl Default for EmbedParameters {
+    fn default() -> Self {
+        // RDKit✔️✔️:   EmbedParameters() : boundsMat(nullptr), CPCI(nullptr), callback(nullptr) {}
+        Self {
+            max_iterations: 0,
+            num_threads: 1,
+            random_seed: -1,
+            clear_confs: true,
+            use_random_coords: false,
+            box_size_mult: 2.0,
+            rand_neg_eig: true,
+            num_zero_fail: 1,
+            coord_map: None,
+            optimizer_force_tol: 1e-3,
+            ignore_smoothing_failures: false,
+            enforce_chirality: true,
+            use_exp_torsion_angle_prefs: false,
+            use_basic_knowledge: false,
+            verbose: false,
+            basin_thresh: 5.0,
+            prune_rms_thresh: -1.0,
+            only_heavy_atoms_for_rms: true,
+            et_version: 2,
+            bounds_mat: None,
+            embed_fragments_separately: true,
+            use_small_ring_torsions: false,
+            use_macrocycle_torsions: false,
+            use_macrocycle14config: false,
+            timeout: 0,
+            cpci: None,
+            callback: None,
+            force_trans_amides: true,
+            use_symmetry_for_pruning: true,
+            bounds_mat_force_scaling: 1.0,
+            track_failures: false,
+            failures: Vec::new(),
+            enable_sequential_random_seeds: false,
+            symmetrize_conjugated_terminal_groups_for_pruning: true,
+        }
+    }
+}
+
+impl EmbedParameters {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn from_rdkit_constructor(
+        max_iterations: u32,
+        num_threads: i32,
+        random_seed: i32,
+        clear_confs: bool,
+        use_random_coords: bool,
+        box_size_mult: f64,
+        rand_neg_eig: bool,
+        num_zero_fail: u32,
+        coord_map: Option<BTreeMap<i32, ForceFieldVec3>>,
+        optimizer_force_tol: f64,
+        ignore_smoothing_failures: bool,
+        enforce_chirality: bool,
+        use_exp_torsion_angle_prefs: bool,
+        use_basic_knowledge: bool,
+        verbose: bool,
+        basin_thresh: f64,
+        prune_rms_thresh: f64,
+        only_heavy_atoms_for_rms: bool,
+        et_version: u32,
+        bounds_mat: Option<Arc<BoundsMatrix>>,
+        embed_fragments_separately: bool,
+        use_small_ring_torsions: bool,
+        use_macrocycle_torsions: bool,
+        use_macrocycle14config: bool,
+        timeout: u32,
+        cpci: Option<BTreeMap<(u32, u32), f64>>,
+        callback: Option<fn(u32)>,
+    ) -> Self {
+        // RDKit✔️✔️:       : maxIterations(maxIterations),
+        // RDKit✔️✔️:         numThreads(numThreads),
+        // RDKit✔️✔️:         randomSeed(randomSeed),
+        // RDKit✔️✔️:         clearConfs(clearConfs),
+        // RDKit✔️✔️:         useRandomCoords(useRandomCoords),
+        // RDKit✔️✔️:         boxSizeMult(boxSizeMult),
+        // RDKit✔️✔️:         randNegEig(randNegEig),
+        // RDKit✔️✔️:         numZeroFail(numZeroFail),
+        // RDKit✔️✔️:         coordMap(coordMap),
+        // RDKit✔️✔️:         optimizerForceTol(optimizerForceTol),
+        // RDKit✔️✔️:         ignoreSmoothingFailures(ignoreSmoothingFailures),
+        // RDKit✔️✔️:         enforceChirality(enforceChirality),
+        // RDKit✔️✔️:         useExpTorsionAnglePrefs(useExpTorsionAnglePrefs),
+        // RDKit✔️✔️:         useBasicKnowledge(useBasicKnowledge),
+        // RDKit✔️✔️:         verbose(verbose),
+        // RDKit✔️✔️:         basinThresh(basinThresh),
+        // RDKit✔️✔️:         pruneRmsThresh(pruneRmsThresh),
+        // RDKit✔️✔️:         onlyHeavyAtomsForRMS(onlyHeavyAtomsForRMS),
+        // RDKit✔️✔️:         ETversion(ETversion),
+        // RDKit✔️✔️:         boundsMat(boundsMat),
+        // RDKit✔️✔️:         embedFragmentsSeparately(embedFragmentsSeparately),
+        // RDKit✔️✔️:         useSmallRingTorsions(useSmallRingTorsions),
+        // RDKit✔️✔️:         useMacrocycleTorsions(useMacrocycleTorsions),
+        // RDKit✔️✔️:         useMacrocycle14config(useMacrocycle14config),
+        // RDKit✔️✔️:         timeout(timeout),
+        // RDKit✔️✔️:         CPCI(std::move(CPCI)),
+        // RDKit✔️✔️:         callback(callback) {}
+        let mut params = Self {
+            max_iterations,
+            num_threads,
+            random_seed,
+            clear_confs,
+            use_random_coords,
+            box_size_mult,
+            rand_neg_eig,
+            num_zero_fail,
+            coord_map,
+            optimizer_force_tol,
+            ignore_smoothing_failures,
+            enforce_chirality,
+            use_exp_torsion_angle_prefs,
+            use_basic_knowledge,
+            verbose,
+            basin_thresh,
+            prune_rms_thresh,
+            only_heavy_atoms_for_rms,
+            et_version,
+            bounds_mat,
+            embed_fragments_separately,
+            use_small_ring_torsions,
+            use_macrocycle_torsions,
+            use_macrocycle14config,
+            timeout,
+            cpci,
+            callback,
+            ..Self::default()
+        };
+        params.failures = Vec::new();
+        params
+    }
+
+    #[must_use]
+    pub fn kdg() -> Self {
+        // RDKit✔️✔️: const EmbedParameters KDG(0,        // maxIterations
+        // RDKit✔️✔️:                           1,        // numThreads
+        // RDKit✔️✔️:                           -1,       // randomSeed
+        // RDKit✔️✔️:                           true,     // clearConfs
+        // RDKit✔️✔️:                           false,    // useRandomCoords
+        // RDKit✔️✔️:                           2.0,      // boxSizeMult
+        // RDKit✔️✔️:                           true,     // randNegEig
+        // RDKit✔️✔️:                           1,        // numZeroFail
+        // RDKit✔️✔️:                           nullptr,  // coordMap
+        // RDKit✔️✔️:                           1e-3,     // optimizerForceTol
+        // RDKit✔️✔️:                           false,    // ignoreSmoothingFailures
+        // RDKit✔️✔️:                           true,     // enforceChirality
+        // RDKit✔️✔️:                           false,    // useExpTorsionAnglePrefs
+        // RDKit✔️✔️:                           true,     // useBasicKnowledge
+        // RDKit✔️✔️:                           false,    // verbose
+        // RDKit✔️✔️:                           5.0,      // basinThresh
+        // RDKit✔️✔️:                           -1.0,     // pruneRmsThresh
+        // RDKit✔️✔️:                           true,     // onlyHeavyAtomsForRMS
+        // RDKit✔️✔️:                           1,        // ETversion
+        // RDKit✔️✔️:                           nullptr,  // boundsMat
+        // RDKit✔️✔️:                           true,     // embedFragmentsSeparately
+        // RDKit✔️✔️:                           false,    // useSmallRingTorsions
+        // RDKit✔️✔️:                           false,    // useMacrocycleTorsions
+        // RDKit✔️✔️:                           false,    // useMacrocycle14config
+        // RDKit✔️✔️:                           0,        // timeout
+        // RDKit✔️✔️:                           nullptr,  // CPCI
+        // RDKit✔️✔️:                           nullptr   // callback
+        Self::from_rdkit_constructor(
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, false, true, false, 5.0,
+            -1.0, true, 1, None, true, false, false, false, 0, None, None,
+        )
+    }
+
+    #[must_use]
+    pub fn etdg() -> Self {
+        // RDKit✔️✔️: const EmbedParameters ETDG(0,        // maxIterations
+        // RDKit✔️✔️:                            1,        // numThreads
+        // RDKit✔️✔️:                            -1,       // randomSeed
+        // RDKit✔️✔️:                            true,     // clearConfs
+        // RDKit✔️✔️:                            false,    // useRandomCoords
+        // RDKit✔️✔️:                            2.0,      // boxSizeMult
+        // RDKit✔️✔️:                            true,     // randNegEig
+        // RDKit✔️✔️:                            1,        // numZeroFail
+        // RDKit✔️✔️:                            nullptr,  // coordMap
+        // RDKit✔️✔️:                            1e-3,     // optimizerForceTol
+        // RDKit✔️✔️:                            false,    // ignoreSmoothingFailures
+        // RDKit✔️✔️:                            false,    // enforceChirality
+        // RDKit✔️✔️:                            true,     // useExpTorsionAnglePrefs
+        // RDKit✔️✔️:                            false,    // useBasicKnowledge
+        // RDKit✔️✔️:                            false,    // verbose
+        // RDKit✔️✔️:                            5.0,      // basinThresh
+        // RDKit✔️✔️:                            -1.0,     // pruneRmsThresh
+        // RDKit✔️✔️:                            true,     // onlyHeavyAtomsForRMS
+        // RDKit✔️✔️:                            1,        // ETversion
+        // RDKit✔️✔️:                            nullptr,  // boundsMat
+        // RDKit✔️✔️:                            true,     // embedFragmentsSeparately
+        // RDKit✔️✔️:                            false,    // useSmallRingTorsions
+        // RDKit✔️✔️:                            false,    // useMacrocycleTorsions
+        // RDKit✔️✔️:                            false,    // useMacrocycle14config
+        // RDKit✔️✔️:                            0,        // timeout
+        // RDKit✔️✔️:                            nullptr,  // CPCI
+        // RDKit✔️✔️:                            nullptr   // callback
+        Self::from_rdkit_constructor(
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, false, true, false, false, 5.0,
+            -1.0, true, 1, None, true, false, false, false, 0, None, None,
+        )
+    }
+
+    #[must_use]
+    pub fn etdg_v2() -> Self {
+        // RDKit✔️✔️: const EmbedParameters ETDGv2(0,        // maxIterations
+        // RDKit✔️✔️:                              1,        // numThreads
+        // RDKit✔️✔️:                              -1,       // randomSeed
+        // RDKit✔️✔️:                              true,     // clearConfs
+        // RDKit✔️✔️:                              false,    // useRandomCoords
+        // RDKit✔️✔️:                              2.0,      // boxSizeMult
+        // RDKit✔️✔️:                              true,     // randNegEig
+        // RDKit✔️✔️:                              1,        // numZeroFail
+        // RDKit✔️✔️:                              nullptr,  // coordMap
+        // RDKit✔️✔️:                              1e-3,     // optimizerForceTol
+        // RDKit✔️✔️:                              false,    // ignoreSmoothingFailures
+        // RDKit✔️✔️:                              false,    // enforceChirality
+        // RDKit✔️✔️:                              true,     // useExpTorsionAnglePrefs
+        // RDKit✔️✔️:                              false,    // useBasicKnowledge
+        // RDKit✔️✔️:                              false,    // verbose
+        // RDKit✔️✔️:                              5.0,      // basinThresh
+        // RDKit✔️✔️:                              -1.0,     // pruneRmsThresh
+        // RDKit✔️✔️:                              true,     // onlyHeavyAtomsForRMS
+        // RDKit✔️✔️:                              2,        // ETversion
+        // RDKit✔️✔️:                              nullptr,  // boundsMat
+        // RDKit✔️✔️:                              true,     // embedFragmentsSeparately
+        // RDKit✔️✔️:                              false,    // useSmallRingTorsions
+        // RDKit✔️✔️:                              false,    // useMacrocycleTorsions
+        // RDKit✔️✔️:                              false,    // useMacrocycle14config
+        // RDKit✔️✔️:                              0,        // timeout
+        // RDKit✔️✔️:                              nullptr,  // CPCI
+        // RDKit✔️✔️:                              nullptr   // callback
+        Self::from_rdkit_constructor(
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, false, true, false, false, 5.0,
+            -1.0, true, 2, None, true, false, false, false, 0, None, None,
+        )
+    }
+
+    #[must_use]
+    pub fn etkdg() -> Self {
+        // RDKit✔️✔️: const EmbedParameters ETKDG(0,        // maxIterations
+        // RDKit✔️✔️:                             1,        // numThreads
+        // RDKit✔️✔️:                             -1,       // randomSeed
+        // RDKit✔️✔️:                             true,     // clearConfs
+        // RDKit✔️✔️:                             false,    // useRandomCoords
+        // RDKit✔️✔️:                             2.0,      // boxSizeMult
+        // RDKit✔️✔️:                             true,     // randNegEig
+        // RDKit✔️✔️:                             1,        // numZeroFail
+        // RDKit✔️✔️:                             nullptr,  // coordMap
+        // RDKit✔️✔️:                             1e-3,     // optimizerForceTol
+        // RDKit✔️✔️:                             false,    // ignoreSmoothingFailures
+        // RDKit✔️✔️:                             true,     // enforceChirality
+        // RDKit✔️✔️:                             true,     // useExpTorsionAnglePrefs
+        // RDKit✔️✔️:                             true,     // useBasicKnowledge
+        // RDKit✔️✔️:                             false,    // verbose
+        // RDKit✔️✔️:                             5.0,      // basinThresh
+        // RDKit✔️✔️:                             -1.0,     // pruneRmsThresh
+        // RDKit✔️✔️:                             true,     // onlyHeavyAtomsForRMS
+        // RDKit✔️✔️:                             1,        // ETversion
+        // RDKit✔️✔️:                             nullptr,  // boundsMat
+        // RDKit✔️✔️:                             true,     // embedFragmentsSeparately
+        // RDKit✔️✔️:                             false,    // useSmallRingTorsions
+        // RDKit✔️✔️:                             false,    // useMacrocycleTorsions
+        // RDKit✔️✔️:                             false,    // useMacrocycle14config
+        // RDKit✔️✔️:                             0,        // timeout
+        // RDKit✔️✔️:                             nullptr,  // CPCI
+        // RDKit✔️✔️:                             nullptr   // callback
+        Self::from_rdkit_constructor(
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, true, true, false, 5.0,
+            -1.0, true, 1, None, true, false, false, false, 0, None, None,
+        )
+    }
+
+    #[must_use]
+    pub fn etkdg_v2() -> Self {
+        // RDKit✔️✔️: const EmbedParameters ETKDGv2(0,        // maxIterations
+        // RDKit✔️✔️:                               1,        // numThreads
+        // RDKit✔️✔️:                               -1,       // randomSeed
+        // RDKit✔️✔️:                               true,     // clearConfs
+        // RDKit✔️✔️:                               false,    // useRandomCoords
+        // RDKit✔️✔️:                               2.0,      // boxSizeMult
+        // RDKit✔️✔️:                               true,     // randNegEig
+        // RDKit✔️✔️:                               1,        // numZeroFail
+        // RDKit✔️✔️:                               nullptr,  // coordMap
+        // RDKit✔️✔️:                               1e-3,     // optimizerForceTol
+        // RDKit✔️✔️:                               false,    // ignoreSmoothingFailures
+        // RDKit✔️✔️:                               true,     // enforceChirality
+        // RDKit✔️✔️:                               true,     // useExpTorsionAnglePrefs
+        // RDKit✔️✔️:                               true,     // useBasicKnowledge
+        // RDKit✔️✔️:                               false,    // verbose
+        // RDKit✔️✔️:                               5.0,      // basinThresh
+        // RDKit✔️✔️:                               -1.0,     // pruneRmsThresh
+        // RDKit✔️✔️:                               true,     // onlyHeavyAtomsForRMS
+        // RDKit✔️✔️:                               2,        // ETversion
+        // RDKit✔️✔️:                               nullptr,  // boundsMat
+        // RDKit✔️✔️:                               true,     // embedFragmentsSeparately
+        // RDKit✔️✔️:                               false,    // useSmallRingTorsions
+        // RDKit✔️✔️:                               false,    // useMacrocycleTorsions
+        // RDKit✔️✔️:                               false,    // useMacrocycle14config
+        // RDKit✔️✔️:                               0,        // timeout
+        // RDKit✔️✔️:                               nullptr,  // CPCI
+        // RDKit✔️✔️:                               nullptr   // callback
+        Self::from_rdkit_constructor(
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, true, true, false, 5.0,
+            -1.0, true, 2, None, true, false, false, false, 0, None, None,
+        )
+    }
+
+    #[must_use]
+    pub fn etkdg_v3() -> Self {
+        // RDKit✔️✔️: const EmbedParameters ETKDGv3(0,        // maxIterations
+        // RDKit✔️✔️:                               1,        // numThreads
+        // RDKit✔️✔️:                               -1,       // randomSeed
+        // RDKit✔️✔️:                               true,     // clearConfs
+        // RDKit✔️✔️:                               false,    // useRandomCoords
+        // RDKit✔️✔️:                               2.0,      // boxSizeMult
+        // RDKit✔️✔️:                               true,     // randNegEig
+        // RDKit✔️✔️:                               1,        // numZeroFail
+        // RDKit✔️✔️:                               nullptr,  // coordMap
+        // RDKit✔️✔️:                               1e-3,     // optimizerForceTol
+        // RDKit✔️✔️:                               false,    // ignoreSmoothingFailures
+        // RDKit✔️✔️:                               true,     // enforceChirality
+        // RDKit✔️✔️:                               true,     // useExpTorsionAnglePrefs
+        // RDKit✔️✔️:                               true,     // useBasicKnowledge
+        // RDKit✔️✔️:                               false,    // verbose
+        // RDKit✔️✔️:                               5.0,      // basinThresh
+        // RDKit✔️✔️:                               -1.0,     // pruneRmsThresh
+        // RDKit✔️✔️:                               true,     // onlyHeavyAtomsForRMS
+        // RDKit✔️✔️:                               2,        // ETversion
+        // RDKit✔️✔️:                               nullptr,  // boundsMat
+        // RDKit✔️✔️:                               true,     // embedFragmentsSeparately
+        // RDKit✔️✔️:                               false,    // useSmallRingTorsions
+        // RDKit✔️✔️:                               true,     // useMacrocycleTorsions
+        // RDKit✔️✔️:                               true,     // useMacrocycle14config
+        // RDKit✔️✔️:                               0,        // timeout
+        // RDKit✔️✔️:                               nullptr,  // CPCI
+        // RDKit✔️✔️:                               nullptr   // callback
+        Self::from_rdkit_constructor(
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, true, true, false, 5.0,
+            -1.0, true, 2, None, true, false, true, true, 0, None, None,
+        )
+    }
+
+    #[must_use]
+    pub fn sr_etkdg_v3() -> Self {
+        // RDKit✔️✔️: const EmbedParameters srETKDGv3(0,        // maxIterations
+        // RDKit✔️✔️:                                 1,        // numThreads
+        // RDKit✔️✔️:                                 -1,       // randomSeed
+        // RDKit✔️✔️:                                 true,     // clearConfs
+        // RDKit✔️✔️:                                 false,    // useRandomCoords
+        // RDKit✔️✔️:                                 2.0,      // boxSizeMult
+        // RDKit✔️✔️:                                 true,     // randNegEig
+        // RDKit✔️✔️:                                 1,        // numZeroFail
+        // RDKit✔️✔️:                                 nullptr,  // coordMap
+        // RDKit✔️✔️:                                 1e-3,     // optimizerForceTol
+        // RDKit✔️✔️:                                 false,    // ignoreSmoothingFailures
+        // RDKit✔️✔️:                                 true,     // enforceChirality
+        // RDKit✔️✔️:                                 true,     // useExpTorsionAnglePrefs
+        // RDKit✔️✔️:                                 true,     // useBasicKnowledge
+        // RDKit✔️✔️:                                 false,    // verbose
+        // RDKit✔️✔️:                                 5.0,      // basinThresh
+        // RDKit✔️✔️:                                 -1.0,     // pruneRmsThresh
+        // RDKit✔️✔️:                                 true,     // onlyHeavyAtomsForRMS
+        // RDKit✔️✔️:                                 2,        // ETversion
+        // RDKit✔️✔️:                                 nullptr,  // boundsMat
+        // RDKit✔️✔️:                                 true,     // embedFragmentsSeparately
+        // RDKit✔️✔️:                                 true,     // useSmallRingTorsions
+        // RDKit✔️✔️:                                 false,    // useMacrocycleTorsions
+        // RDKit✔️✔️:                                 false,    // useMacrocycle14config
+        // RDKit✔️✔️:                                 0,        // timeout
+        // RDKit✔️✔️:                                 nullptr,  // CPCI
+        // RDKit✔️✔️:                                 nullptr   // callback
+        Self::from_rdkit_constructor(
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, true, true, false, 5.0,
+            -1.0, true, 2, None, true, true, false, false, 0, None, None,
+        )
+    }
+
+    pub fn update_from_json(&mut self, json: &str) -> Result<(), DgBoundsError> {
+        // BEGIN RDKIT CPP FUNCTION DGeomHelpers::updateEmbedParametersFromJSON (EmbedderUtils.cpp:56-87)
+        // RDKit✔️✔️: void updateEmbedParametersFromJSON(EmbedParameters &params,
+        // RDKit✔️✔️:                                    const std::string &json) {
+        // RDKit✔️✔️:   if (json.empty()) {
+        // RDKit✔️✔️:     return;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   std::istringstream ss(json);
+        // RDKit✔️✔️:   boost::property_tree::ptree pt;
+        // RDKit✔️✔️:   boost::property_tree::read_json(ss, pt);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   EMBED_PARAMS_FIELDS(PT_OPT_GET)
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   std::map<int, RDGeom::Point3D> *cmap = nullptr;
+        // RDKit✔️✔️:   const auto coordMap = pt.get_child_optional("coordMap");
+        // RDKit✔️✔️:   if (coordMap) {
+        // RDKit✔️✔️:     // NOTE: this leaks since EmbedParameters uses a naked pointer and we don't
+        // RDKit✔️✔️:     // have any way to tie the lifetime of the memory we allocate here to the
+        // RDKit✔️✔️:     // EmbedParameters object itself.
+        // RDKit✔️✔️:     cmap = new std::map<int, RDGeom::Point3D>();
+        // RDKit✔️✔️:     for (const auto &entry : *coordMap) {
+        // RDKit✔️✔️:       RDGeom::Point3D pt;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       auto itm = entry.second.begin();
+        // RDKit✔️✔️:       pt.x = itm->second.get_value<float>();
+        // RDKit✔️✔️:       ++itm;
+        // RDKit✔️✔️:       pt.y = itm->second.get_value<float>();
+        // RDKit✔️✔️:       ++itm;
+        // RDKit✔️✔️:       pt.z = itm->second.get_value<float>();
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       (*cmap)[boost::lexical_cast<int>(entry.first)] = pt;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     params.coordMap = cmap;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        // END RDKIT CPP FUNCTION DGeomHelpers::updateEmbedParametersFromJSON
+        if json.is_empty() {
+            return Ok(());
+        }
+        let value: serde_json::Value = serde_json::from_str(json)
+            .map_err(|err| DgBoundsError::InvalidEmbedParametersJson(err.to_string()))?;
+
+        update_f64_field(&value, "basinThresh", &mut self.basin_thresh)?;
+        update_f64_field(
+            &value,
+            "boundsMatForceScaling",
+            &mut self.bounds_mat_force_scaling,
+        )?;
+        update_f64_field(&value, "boxSizeMult", &mut self.box_size_mult)?;
+        update_bool_field(&value, "clearConfs", &mut self.clear_confs)?;
+        update_bool_field(
+            &value,
+            "embedFragmentsSeparately",
+            &mut self.embed_fragments_separately,
+        )?;
+        update_bool_field(
+            &value,
+            "enableSequentialRandomSeeds",
+            &mut self.enable_sequential_random_seeds,
+        )?;
+        update_bool_field(&value, "enforceChirality", &mut self.enforce_chirality)?;
+        update_u32_field(&value, "ETversion", &mut self.et_version)?;
+        update_bool_field(&value, "forceTransAmides", &mut self.force_trans_amides)?;
+        update_bool_field(
+            &value,
+            "ignoreSmoothingFailures",
+            &mut self.ignore_smoothing_failures,
+        )?;
+        update_u32_field(&value, "maxIterations", &mut self.max_iterations)?;
+        update_i32_field(&value, "numThreads", &mut self.num_threads)?;
+        update_u32_field(&value, "numZeroFail", &mut self.num_zero_fail)?;
+        update_bool_field(
+            &value,
+            "onlyHeavyAtomsForRMS",
+            &mut self.only_heavy_atoms_for_rms,
+        )?;
+        update_f64_field(&value, "optimizerForceTol", &mut self.optimizer_force_tol)?;
+        update_f64_field(&value, "pruneRmsThresh", &mut self.prune_rms_thresh)?;
+        update_bool_field(&value, "randNegEig", &mut self.rand_neg_eig)?;
+        update_i32_field(&value, "randomSeed", &mut self.random_seed)?;
+        update_bool_field(
+            &value,
+            "symmetrizeConjugatedTerminalGroupsForPruning",
+            &mut self.symmetrize_conjugated_terminal_groups_for_pruning,
+        )?;
+        update_u32_field(&value, "timeout", &mut self.timeout)?;
+        update_bool_field(&value, "trackFailures", &mut self.track_failures)?;
+        update_bool_field(&value, "useBasicKnowledge", &mut self.use_basic_knowledge)?;
+        update_bool_field(
+            &value,
+            "useExpTorsionAnglePrefs",
+            &mut self.use_exp_torsion_angle_prefs,
+        )?;
+        update_bool_field(
+            &value,
+            "useMacrocycle14config",
+            &mut self.use_macrocycle14config,
+        )?;
+        update_bool_field(
+            &value,
+            "useMacrocycleTorsions",
+            &mut self.use_macrocycle_torsions,
+        )?;
+        update_bool_field(&value, "useRandomCoords", &mut self.use_random_coords)?;
+        update_bool_field(
+            &value,
+            "useSmallRingTorsions",
+            &mut self.use_small_ring_torsions,
+        )?;
+        update_bool_field(
+            &value,
+            "useSymmetryForPruning",
+            &mut self.use_symmetry_for_pruning,
+        )?;
+        update_bool_field(&value, "verbose", &mut self.verbose)?;
+
+        if let Some(coord_map) = value.get("coordMap") {
+            self.coord_map = Some(parse_embed_parameters_coord_map(coord_map)?);
+        }
+
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn to_json(&self) -> String {
+        // BEGIN RDKIT CPP FUNCTION DGeomHelpers::embedParametersToJSON (EmbedderUtils.cpp:90-126)
+        // RDKit✔️✔️: std::string embedParametersToJSON(const EmbedParameters &params) {
+        // RDKit✔️✔️:   boost::property_tree::ptree pt;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   EMBED_PARAMS_FIELDS(PT_OPT_PUT)
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   if (params.coordMap) {
+        // RDKit✔️✔️:     boost::property_tree::ptree coordMapPT;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     for (const auto &kv : *params.coordMap) {
+        // RDKit✔️✔️:       boost::property_tree::ptree pointPT;
+        // RDKit✔️✔️:       pointPT.push_back(
+        // RDKit✔️✔️:           {"", boost::property_tree::ptree(std::to_string(kv.second.x))});
+        // RDKit✔️✔️:       pointPT.push_back(
+        // RDKit✔️✔️:           {"", boost::property_tree::ptree(std::to_string(kv.second.y))});
+        // RDKit✔️✔️:       pointPT.push_back(
+        // RDKit✔️✔️:           {"", boost::property_tree::ptree(std::to_string(kv.second.z))});
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       coordMapPT.add_child(std::to_string(kv.first), pointPT);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     pt.add_child("coordMap", coordMapPT);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   if (params.boundsMat) {
+        // RDKit✔️✔️:     boost::property_tree::ptree matrixPT;
+        // RDKit✔️✔️:     const unsigned int N = params.boundsMat->numCols();
+        // RDKit✔️✔️:     for (unsigned i = 0; i < N; ++i) {
+        // RDKit✔️✔️:       boost::property_tree::ptree rowPT;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       for (unsigned j = 0; j < N; ++j) {
+        // RDKit✔️✔️:         boost::property_tree::ptree v;
+        // RDKit✔️✔️:         v.put("", params.boundsMat->getVal(i, j));
+        // RDKit✔️✔️:         rowPT.push_back({"", v});
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:       matrixPT.push_back({"", rowPT});
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     pt.add_child("boundsMatrix", matrixPT);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   std::ostringstream ss;
+        // RDKit✔️✔️:   boost::property_tree::write_json(ss, pt, false);
+        // RDKit✔️✔️:   auto str = ss.str();
+        // RDKit✔️✔️:   boost::algorithm::trim(str);
+        // RDKit✔️✔️:   return str;
+        // RDKit✔️✔️: }
+        // END RDKIT CPP FUNCTION DGeomHelpers::embedParametersToJSON
+        let mut fields = Vec::with_capacity(31);
+        push_json_field(&mut fields, "basinThresh", self.basin_thresh);
+        push_json_field(
+            &mut fields,
+            "boundsMatForceScaling",
+            self.bounds_mat_force_scaling,
+        );
+        push_json_field(&mut fields, "boxSizeMult", self.box_size_mult);
+        push_json_field(&mut fields, "clearConfs", self.clear_confs);
+        push_json_field(
+            &mut fields,
+            "embedFragmentsSeparately",
+            self.embed_fragments_separately,
+        );
+        push_json_field(
+            &mut fields,
+            "enableSequentialRandomSeeds",
+            self.enable_sequential_random_seeds,
+        );
+        push_json_field(&mut fields, "enforceChirality", self.enforce_chirality);
+        push_json_field(&mut fields, "ETversion", self.et_version);
+        push_json_field(&mut fields, "forceTransAmides", self.force_trans_amides);
+        push_json_field(
+            &mut fields,
+            "ignoreSmoothingFailures",
+            self.ignore_smoothing_failures,
+        );
+        push_json_field(&mut fields, "maxIterations", self.max_iterations);
+        push_json_field(&mut fields, "numThreads", self.num_threads);
+        push_json_field(&mut fields, "numZeroFail", self.num_zero_fail);
+        push_json_field(
+            &mut fields,
+            "onlyHeavyAtomsForRMS",
+            self.only_heavy_atoms_for_rms,
+        );
+        push_json_field(&mut fields, "optimizerForceTol", self.optimizer_force_tol);
+        push_json_field(&mut fields, "pruneRmsThresh", self.prune_rms_thresh);
+        push_json_field(&mut fields, "randNegEig", self.rand_neg_eig);
+        push_json_field(&mut fields, "randomSeed", self.random_seed);
+        push_json_field(
+            &mut fields,
+            "symmetrizeConjugatedTerminalGroupsForPruning",
+            self.symmetrize_conjugated_terminal_groups_for_pruning,
+        );
+        push_json_field(&mut fields, "timeout", self.timeout);
+        push_json_field(&mut fields, "trackFailures", self.track_failures);
+        push_json_field(&mut fields, "useBasicKnowledge", self.use_basic_knowledge);
+        push_json_field(
+            &mut fields,
+            "useExpTorsionAnglePrefs",
+            self.use_exp_torsion_angle_prefs,
+        );
+        push_json_field(
+            &mut fields,
+            "useMacrocycle14config",
+            self.use_macrocycle14config,
+        );
+        push_json_field(
+            &mut fields,
+            "useMacrocycleTorsions",
+            self.use_macrocycle_torsions,
+        );
+        push_json_field(&mut fields, "useRandomCoords", self.use_random_coords);
+        push_json_field(
+            &mut fields,
+            "useSmallRingTorsions",
+            self.use_small_ring_torsions,
+        );
+        push_json_field(
+            &mut fields,
+            "useSymmetryForPruning",
+            self.use_symmetry_for_pruning,
+        );
+        push_json_field(&mut fields, "verbose", self.verbose);
+
+        if let Some(coord_map) = &self.coord_map {
+            let entries = coord_map
+                .iter()
+                .map(|(atom_idx, point)| {
+                    format!(
+                        "\"{}\":[\"{:.6}\",\"{:.6}\",\"{:.6}\"]",
+                        atom_idx, point.x, point.y, point.z
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            fields.push(format!("\"coordMap\":{{{entries}}}"));
+        }
+
+        if let Some(bounds_mat) = &self.bounds_mat {
+            let rows = (0..bounds_mat.n)
+                .map(|i| {
+                    let row = (0..bounds_mat.n)
+                        .map(|j| format!("\"{}\"", bounds_mat.get_val(i, j)))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    format!("[{row}]")
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            fields.push(format!("\"boundsMatrix\":[{rows}]"));
+        }
+
+        format!("{{{}}}", fields.join(","))
+    }
+}
+
+fn embed_parameters_json_field<'a>(
+    value: &'a serde_json::Value,
+    name: &str,
+) -> Option<&'a serde_json::Value> {
+    value.as_object().and_then(|object| object.get(name))
+}
+
+fn push_json_field<T: ToString>(fields: &mut Vec<String>, name: &str, value: T) {
+    fields.push(format!("\"{}\":\"{}\"", name, value.to_string()));
+}
+
+fn embed_parameters_invalid_json(name: &str, expected: &str) -> DgBoundsError {
+    DgBoundsError::InvalidEmbedParametersJson(format!("{name} must be {expected}"))
+}
+
+fn json_value_as_f64(name: &str, value: &serde_json::Value) -> Result<f64, DgBoundsError> {
+    if let Some(number) = value.as_f64() {
+        Ok(number)
+    } else if let Some(text) = value.as_str() {
+        text.parse::<f64>()
+            .map_err(|_| embed_parameters_invalid_json(name, "a floating-point number"))
+    } else {
+        Err(embed_parameters_invalid_json(
+            name,
+            "a floating-point number",
+        ))
+    }
+}
+
+fn json_value_as_i32(name: &str, value: &serde_json::Value) -> Result<i32, DgBoundsError> {
+    if let Some(number) = value.as_i64() {
+        i32::try_from(number).map_err(|_| embed_parameters_invalid_json(name, "a 32-bit integer"))
+    } else if let Some(text) = value.as_str() {
+        text.parse::<i32>()
+            .map_err(|_| embed_parameters_invalid_json(name, "a 32-bit integer"))
+    } else {
+        Err(embed_parameters_invalid_json(name, "a 32-bit integer"))
+    }
+}
+
+fn json_value_as_u32(name: &str, value: &serde_json::Value) -> Result<u32, DgBoundsError> {
+    if let Some(number) = value.as_u64() {
+        u32::try_from(number)
+            .map_err(|_| embed_parameters_invalid_json(name, "an unsigned 32-bit integer"))
+    } else if let Some(text) = value.as_str() {
+        text.parse::<u32>()
+            .map_err(|_| embed_parameters_invalid_json(name, "an unsigned 32-bit integer"))
+    } else {
+        Err(embed_parameters_invalid_json(
+            name,
+            "an unsigned 32-bit integer",
+        ))
+    }
+}
+
+fn json_value_as_bool(name: &str, value: &serde_json::Value) -> Result<bool, DgBoundsError> {
+    if let Some(value) = value.as_bool() {
+        Ok(value)
+    } else if let Some(number) = value.as_u64() {
+        match number {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(embed_parameters_invalid_json(name, "a boolean")),
+        }
+    } else if let Some(text) = value.as_str() {
+        match text {
+            "0" => Ok(false),
+            "1" => Ok(true),
+            "false" => Ok(false),
+            "true" => Ok(true),
+            _ => Err(embed_parameters_invalid_json(name, "a boolean")),
+        }
+    } else {
+        Err(embed_parameters_invalid_json(name, "a boolean"))
+    }
+}
+
+fn update_f64_field(
+    value: &serde_json::Value,
+    name: &str,
+    target: &mut f64,
+) -> Result<(), DgBoundsError> {
+    if let Some(field) = embed_parameters_json_field(value, name) {
+        *target = json_value_as_f64(name, field)?;
+    }
+    Ok(())
+}
+
+fn update_i32_field(
+    value: &serde_json::Value,
+    name: &str,
+    target: &mut i32,
+) -> Result<(), DgBoundsError> {
+    if let Some(field) = embed_parameters_json_field(value, name) {
+        *target = json_value_as_i32(name, field)?;
+    }
+    Ok(())
+}
+
+fn update_u32_field(
+    value: &serde_json::Value,
+    name: &str,
+    target: &mut u32,
+) -> Result<(), DgBoundsError> {
+    if let Some(field) = embed_parameters_json_field(value, name) {
+        *target = json_value_as_u32(name, field)?;
+    }
+    Ok(())
+}
+
+fn update_bool_field(
+    value: &serde_json::Value,
+    name: &str,
+    target: &mut bool,
+) -> Result<(), DgBoundsError> {
+    if let Some(field) = embed_parameters_json_field(value, name) {
+        *target = json_value_as_bool(name, field)?;
+    }
+    Ok(())
+}
+
+fn parse_embed_parameters_coord_map(
+    value: &serde_json::Value,
+) -> Result<BTreeMap<i32, ForceFieldVec3>, DgBoundsError> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| embed_parameters_invalid_json("coordMap", "an object"))?;
+    let mut coord_map = BTreeMap::new();
+    for (key, point_value) in object {
+        let atom_idx = key
+            .parse::<i32>()
+            .map_err(|_| embed_parameters_invalid_json("coordMap key", "a 32-bit integer"))?;
+        let point = point_value
+            .as_array()
+            .ok_or_else(|| embed_parameters_invalid_json("coordMap value", "an array"))?;
+        if point.len() < 3 {
+            return Err(embed_parameters_invalid_json(
+                "coordMap value",
+                "an array with at least three coordinates",
+            ));
+        }
+        coord_map.insert(
+            atom_idx,
+            ForceFieldVec3::new(
+                json_value_as_f64("coordMap x", &point[0])?,
+                json_value_as_f64("coordMap y", &point[1])?,
+                json_value_as_f64("coordMap z", &point[2])?,
+            ),
+        );
+    }
+    Ok(coord_map)
+}
+
+// RDKit✔️✔️:   EmbedParameters(
+// RDKit✔️✔️:       unsigned int maxIterations, int numThreads, int randomSeed,
+// RDKit✔️✔️:       bool clearConfs, bool useRandomCoords, double boxSizeMult,
+// RDKit✔️✔️:       bool randNegEig, unsigned int numZeroFail,
+// RDKit✔️✔️:       const std::map<int, RDGeom::Point3D> *coordMap, double optimizerForceTol,
+// RDKit✔️✔️:       bool ignoreSmoothingFailures, bool enforceChirality,
+// RDKit✔️✔️:       bool useExpTorsionAnglePrefs, bool useBasicKnowledge, bool verbose,
+// RDKit✔️✔️:       double basinThresh, double pruneRmsThresh, bool onlyHeavyAtomsForRMS,
+// RDKit✔️✔️:       unsigned int ETversion = 2,
+// RDKit✔️✔️:       const DistGeom::BoundsMatrix *boundsMat = nullptr,
+// RDKit✔️✔️:       bool embedFragmentsSeparately = true, bool useSmallRingTorsions = false,
+// RDKit✔️✔️:       bool useMacrocycleTorsions = false, bool useMacrocycle14config = false,
+// RDKit✔️✔️:       unsigned int timeout = 0,
+// RDKit✔️✔️:       std::shared_ptr<std::map<std::pair<unsigned int, unsigned int>, double>>
+// RDKit✔️✔️:           CPCI = nullptr,
+// RDKit✔️✔️:       void (*callback)(unsigned int) = nullptr)
+// RDKit✔️✔️:       : maxIterations(maxIterations),
+// RDKit✔️✔️:         numThreads(numThreads),
+// RDKit✔️✔️:         randomSeed(randomSeed),
+// RDKit✔️✔️:         clearConfs(clearConfs),
+// RDKit✔️✔️:         useRandomCoords(useRandomCoords),
+// RDKit✔️✔️:         boxSizeMult(boxSizeMult),
+// RDKit✔️✔️:         randNegEig(randNegEig),
+// RDKit✔️✔️:         numZeroFail(numZeroFail),
+// RDKit✔️✔️:         coordMap(coordMap),
+// RDKit✔️✔️:         optimizerForceTol(optimizerForceTol),
+// RDKit✔️✔️:         ignoreSmoothingFailures(ignoreSmoothingFailures),
+// RDKit✔️✔️:         enforceChirality(enforceChirality),
+// RDKit✔️✔️:         useExpTorsionAnglePrefs(useExpTorsionAnglePrefs),
+// RDKit✔️✔️:         useBasicKnowledge(useBasicKnowledge),
+// RDKit✔️✔️:         verbose(verbose),
+// RDKit✔️✔️:         basinThresh(basinThresh),
+// RDKit✔️✔️:         pruneRmsThresh(pruneRmsThresh),
+// RDKit✔️✔️:         onlyHeavyAtomsForRMS(onlyHeavyAtomsForRMS),
+// RDKit✔️✔️:         ETversion(ETversion),
+// RDKit✔️✔️:         boundsMat(boundsMat),
+// RDKit✔️✔️:         embedFragmentsSeparately(embedFragmentsSeparately),
+// RDKit✔️✔️:         useSmallRingTorsions(useSmallRingTorsions),
+// RDKit✔️✔️:         useMacrocycleTorsions(useMacrocycleTorsions),
+// RDKit✔️✔️:         useMacrocycle14config(useMacrocycle14config),
+// RDKit✔️✔️:         timeout(timeout),
+// RDKit✔️✔️:         CPCI(std::move(CPCI)),
+// RDKit✔️✔️:         callback(callback) {}
+// RDKit✔️✔️: };
+// END RDKIT CPP STRUCT DGeomHelpers::EmbedParameters
+
+// ──────────────────────────────────────────────
+// Chiral sets
+// ──────────────────────────────────────────────
+
+// BEGIN RDKIT CPP ENUM DistGeom::ChiralSetStructureFlags (ChiralSet.h:18-21)
+// RDKit✔️✔️: enum class ChiralSetStructureFlags : std::uint64_t {
+// RDKit✔️✔️:   IN_FUSED_SMALL_RINGS =
+// RDKit✔️✔️:       1 << 0,  // a chiral center involved in fusing 2 or more small rings
+// RDKit✔️✔️: };
+// END RDKIT CPP ENUM DistGeom::ChiralSetStructureFlags
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u64)]
+pub enum ChiralSetStructureFlags {
+    InFusedSmallRings = 1 << 0,
+}
+
+/// Class used to store a quartet of points and chiral volume bounds on them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChiralSet {
+    pub idx0: usize,
+    pub idx1: usize,
+    pub idx2: usize,
+    pub idx3: usize,
+    pub idx4: usize,
+    pub volume_lower_bound: f64,
+    pub volume_upper_bound: f64,
+    pub structure_flags: u64,
+}
+
+impl ChiralSet {
+    #[must_use]
+    pub fn new(
+        pid0: usize,
+        pid1: usize,
+        pid2: usize,
+        pid3: usize,
+        pid4: usize,
+        lower_vol_bound: f64,
+        upper_vol_bound: f64,
+        structure_flags: u64,
+    ) -> Self {
+        // BEGIN RDKIT CPP CONSTRUCTOR DistGeom::ChiralSet::ChiralSet (ChiralSet.h:40-57)
+        // RDKit✔️✔️: ChiralSet(unsigned int pid0, unsigned int pid1, unsigned int pid2,
+        // RDKit✔️✔️:           unsigned int pid3, unsigned int pid4, double lowerVolBound,
+        // RDKit✔️✔️:           double upperVolBound, std::uint64_t structureFlags = 0)
+        // RDKit✔️✔️:     : d_idx0(pid0),
+        // RDKit✔️✔️:       d_idx1(pid1),
+        // RDKit✔️✔️:       d_idx2(pid2),
+        // RDKit✔️✔️:       d_idx3(pid3),
+        // RDKit✔️✔️:       d_idx4(pid4),
+        // RDKit✔️✔️:       d_volumeLowerBound(lowerVolBound),
+        // RDKit✔️✔️:       d_volumeUpperBound(upperVolBound),
+        // RDKit✔️✔️:       d_structureFlags(structureFlags) {
+        // RDKit✔️✔️:   CHECK_INVARIANT(lowerVolBound <= upperVolBound, "Inconsistent bounds\n");
+        // RDKit✔️✔️:   d_volumeLowerBound = lowerVolBound;
+        // RDKit✔️✔️:   d_volumeUpperBound = upperVolBound;
+        // RDKit✔️✔️: }
+        // END RDKIT CPP CONSTRUCTOR DistGeom::ChiralSet::ChiralSet
+        assert!(lower_vol_bound <= upper_vol_bound, "Inconsistent bounds\n");
+        Self {
+            idx0: pid0,
+            idx1: pid1,
+            idx2: pid2,
+            idx3: pid3,
+            idx4: pid4,
+            volume_lower_bound: lower_vol_bound,
+            volume_upper_bound: upper_vol_bound,
+            structure_flags,
+        }
+    }
+
+    #[must_use]
+    pub fn with_default_structure_flags(
+        pid0: usize,
+        pid1: usize,
+        pid2: usize,
+        pid3: usize,
+        pid4: usize,
+        lower_vol_bound: f64,
+        upper_vol_bound: f64,
+    ) -> Self {
+        Self::new(
+            pid0,
+            pid1,
+            pid2,
+            pid3,
+            pid4,
+            lower_vol_bound,
+            upper_vol_bound,
+            0,
+        )
+    }
+
+    #[must_use]
+    pub fn get_upper_volume_bound(&self) -> f64 {
+        // BEGIN RDKIT CPP METHOD DistGeom::ChiralSet::getUpperVolumeBound (ChiralSet.h:59)
+        // RDKit✔️✔️: inline double getUpperVolumeBound() const { return d_volumeUpperBound; }
+        // END RDKIT CPP METHOD DistGeom::ChiralSet::getUpperVolumeBound
+        self.volume_upper_bound
+    }
+
+    #[must_use]
+    pub fn get_lower_volume_bound(&self) -> f64 {
+        // BEGIN RDKIT CPP METHOD DistGeom::ChiralSet::getLowerVolumeBound (ChiralSet.h:61)
+        // RDKit✔️✔️: inline double getLowerVolumeBound() const { return d_volumeLowerBound; }
+        // END RDKIT CPP METHOD DistGeom::ChiralSet::getLowerVolumeBound
+        self.volume_lower_bound
+    }
+}
+
+// BEGIN RDKIT CPP TYPEDEFS DistGeom::ChiralSetPtr/VECT_CHIRALSET (ChiralSet.h:64-65)
+// RDKit✔️✔️: typedef boost::shared_ptr<ChiralSet> ChiralSetPtr;
+// RDKit✔️✔️: typedef std::vector<ChiralSetPtr> VECT_CHIRALSET;
+// END RDKIT CPP TYPEDEFS DistGeom::ChiralSetPtr/VECT_CHIRALSET
+pub type ChiralSetPtr = Arc<ChiralSet>;
+pub type VectChiralSet = Vec<ChiralSetPtr>;
+
+#[must_use]
+pub fn calc_chiral_volume_flat(
+    idx1: usize,
+    idx2: usize,
+    idx3: usize,
+    idx4: usize,
+    pos: &[f64],
+    dim: usize,
+) -> f64 {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::calcChiralVolume flat overload (ChiralViolationContribs.cpp:15-35)
+    // RDKit✔️✔️: double calcChiralVolume(const unsigned int idx1, const unsigned int idx2,
+    // RDKit✔️✔️:                         const unsigned int idx3, const unsigned int idx4,
+    // RDKit✔️✔️:                         const double *pos, const unsigned int dim) {
+    // RDKit✔️✔️:   // even if we are minimizing in higher dimension the chiral volume is
+    // RDKit✔️✔️:   // calculated using only the first 3 dimensions
+    // RDKit✔️✔️:   RDGeom::Point3D v1(pos[idx1 * dim] - pos[idx4 * dim],
+    // RDKit✔️✔️:                      pos[idx1 * dim + 1] - pos[idx4 * dim + 1],
+    // RDKit✔️✔️:                      pos[idx1 * dim + 2] - pos[idx4 * dim + 2]);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   RDGeom::Point3D v2(pos[idx2 * dim] - pos[idx4 * dim],
+    // RDKit✔️✔️:                      pos[idx2 * dim + 1] - pos[idx4 * dim + 1],
+    // RDKit✔️✔️:                      pos[idx2 * dim + 2] - pos[idx4 * dim + 2]);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   RDGeom::Point3D v3(pos[idx3 * dim] - pos[idx4 * dim],
+    // RDKit✔️✔️:                      pos[idx3 * dim + 1] - pos[idx4 * dim + 1],
+    // RDKit✔️✔️:                      pos[idx3 * dim + 2] - pos[idx4 * dim + 2]);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   RDGeom::Point3D v2xv3 = v2.crossProduct(v3);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   double vol = v1.dotProduct(v2xv3);
+    // RDKit✔️✔️:   return vol;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DistGeom::calcChiralVolume flat overload
+    let v1 = ForceFieldVec3::new(
+        pos[idx1 * dim] - pos[idx4 * dim],
+        pos[idx1 * dim + 1] - pos[idx4 * dim + 1],
+        pos[idx1 * dim + 2] - pos[idx4 * dim + 2],
+    );
+    let v2 = ForceFieldVec3::new(
+        pos[idx2 * dim] - pos[idx4 * dim],
+        pos[idx2 * dim + 1] - pos[idx4 * dim + 1],
+        pos[idx2 * dim + 2] - pos[idx4 * dim + 2],
+    );
+    let v3 = ForceFieldVec3::new(
+        pos[idx3 * dim] - pos[idx4 * dim],
+        pos[idx3 * dim + 1] - pos[idx4 * dim + 1],
+        pos[idx3 * dim + 2] - pos[idx4 * dim + 2],
+    );
+
+    v1.dot_product(v2.cross_product(v3))
+}
+
+#[must_use]
+pub fn calc_chiral_volume_points(
+    idx1: usize,
+    idx2: usize,
+    idx3: usize,
+    idx4: usize,
+    pts: &[ForceFieldVec3],
+) -> f64 {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::calcChiralVolume PointPtrVect overload (ChiralViolationContribs.cpp:36-56)
+    // RDKit✔️✔️: double calcChiralVolume(const unsigned int idx1, const unsigned int idx2,
+    // RDKit✔️✔️:                         const unsigned int idx3, const unsigned int idx4,
+    // RDKit✔️✔️:                         const RDGeom::PointPtrVect &pts) {
+    // RDKit✔️✔️:   // even if we are minimizing in higher dimension the chiral volume is
+    // RDKit✔️✔️:   // calculated using only the first 3 dimensions
+    // RDKit✔️✔️:   RDGeom::Point3D v1((*pts[idx1])[0] - (*pts[idx4])[0],
+    // RDKit✔️✔️:                      (*pts[idx1])[1] - (*pts[idx4])[1],
+    // RDKit✔️✔️:                      (*pts[idx1])[2] - (*pts[idx4])[2]);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   RDGeom::Point3D v2((*pts[idx2])[0] - (*pts[idx4])[0],
+    // RDKit✔️✔️:                      (*pts[idx2])[1] - (*pts[idx4])[1],
+    // RDKit✔️✔️:                      (*pts[idx2])[2] - (*pts[idx4])[2]);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   RDGeom::Point3D v3((*pts[idx3])[0] - (*pts[idx4])[0],
+    // RDKit✔️✔️:                      (*pts[idx3])[1] - (*pts[idx4])[1],
+    // RDKit✔️✔️:                      (*pts[idx3])[2] - (*pts[idx4])[2]);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   RDGeom::Point3D v2xv3 = v2.crossProduct(v3);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   double vol = v1.dotProduct(v2xv3);
+    // RDKit✔️✔️:   return vol;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DistGeom::calcChiralVolume PointPtrVect overload
+    let v1 = pts[idx1] - pts[idx4];
+    let v2 = pts[idx2] - pts[idx4];
+    let v3 = pts[idx3] - pts[idx4];
+
+    v1.dot_product(v2.cross_product(v3))
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChiralViolationContribsParams {
+    pub idx1: usize,
+    pub idx2: usize,
+    pub idx3: usize,
+    pub idx4: usize,
+    pub vol_upper: f64,
+    pub vol_lower: f64,
+    pub weight: f64,
+}
+
+impl ChiralViolationContribsParams {
+    #[must_use]
+    pub fn new(
+        idx1: usize,
+        idx2: usize,
+        idx3: usize,
+        idx4: usize,
+        vol_upper: f64,
+        vol_lower: f64,
+        weight: f64,
+    ) -> Self {
+        // BEGIN RDKIT CPP CONSTRUCTOR DistGeom::ChiralViolationContribsParams (ChiralViolationContribs.h:25-37)
+        // RDKit✔️✔️: ChiralViolationContribsParams(unsigned int i1, unsigned int i2,
+        // RDKit✔️✔️:                               unsigned int i3, unsigned int i4, double u,
+        // RDKit✔️✔️:                               double l, double w = 1.0)
+        // RDKit✔️✔️:     : idx1(i1),
+        // RDKit✔️✔️:       idx2(i2),
+        // RDKit✔️✔️:       idx3(i3),
+        // RDKit✔️✔️:       idx4(i4),
+        // RDKit✔️✔️:       volUpper(u),
+        // RDKit✔️✔️:       volLower(l),
+        // RDKit✔️✔️:       weight(w) {};
+        // END RDKIT CPP CONSTRUCTOR DistGeom::ChiralViolationContribsParams
+        Self {
+            idx1,
+            idx2,
+            idx3,
+            idx4,
+            vol_upper,
+            vol_lower,
+            weight,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChiralViolationContribs {
+    owner: *const ForceField,
+    contribs: Vec<ChiralViolationContribsParams>,
+}
+
+impl Default for ChiralViolationContribs {
+    fn default() -> Self {
+        Self {
+            owner: std::ptr::null(),
+            contribs: Vec::new(),
+        }
+    }
+}
+
+impl ChiralViolationContribs {
+    #[must_use]
+    pub fn new(owner: &ForceField) -> Self {
+        // BEGIN RDKIT CPP CONSTRUCTOR DistGeom::ChiralViolationContribs::ChiralViolationContribs (ChiralViolationContribs.cpp:57-62)
+        // RDKit✔️✔️: ChiralViolationContribs::ChiralViolationContribs(
+        // RDKit✔️✔️:     ForceFields::ForceField *owner) {
+        // RDKit✔️✔️:   PRECONDITION(owner, "bad owner");
+        // RDKit✔️✔️:   dp_forceField = owner;
+        // RDKit✔️✔️: }
+        // END RDKIT CPP CONSTRUCTOR DistGeom::ChiralViolationContribs::ChiralViolationContribs
+        Self {
+            owner,
+            contribs: Vec::new(),
+        }
+    }
+
+    pub fn add_contrib(&mut self, cset: &ChiralSet, weight: f64) {
+        // BEGIN RDKIT CPP METHOD DistGeom::ChiralViolationContribs::addContrib (ChiralViolationContribs.cpp:63-76)
+        // RDKit✔️✔️: void ChiralViolationContribs::addContrib(const ChiralSet *cset, double weight) {
+        // RDKit✔️✔️:   PRECONDITION(dp_forceField, "no owner");
+        // RDKit✔️✔️:   PRECONDITION(cset, "bad chiral set");
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   URANGE_CHECK(cset->d_idx1, dp_forceField->positions().size());
+        // RDKit✔️✔️:   URANGE_CHECK(cset->d_idx2, dp_forceField->positions().size());
+        // RDKit✔️✔️:   URANGE_CHECK(cset->d_idx3, dp_forceField->positions().size());
+        // RDKit✔️✔️:   URANGE_CHECK(cset->d_idx4, dp_forceField->positions().size());
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   d_contribs.emplace_back(cset->d_idx1, cset->d_idx2, cset->d_idx3,
+        // RDKit✔️✔️:                           cset->d_idx4, cset->getUpperVolumeBound(),
+        // RDKit✔️✔️:                           cset->getLowerVolumeBound(), weight);
+        // RDKit✔️✔️: }
+        // END RDKIT CPP METHOD DistGeom::ChiralViolationContribs::addContrib
+        let owner = self.owner();
+        assert!(cset.idx1 < owner.positions().len());
+        assert!(cset.idx2 < owner.positions().len());
+        assert!(cset.idx3 < owner.positions().len());
+        assert!(cset.idx4 < owner.positions().len());
+        self.contribs.push(ChiralViolationContribsParams::new(
+            cset.idx1,
+            cset.idx2,
+            cset.idx3,
+            cset.idx4,
+            cset.get_upper_volume_bound(),
+            cset.get_lower_volume_bound(),
+            weight,
+        ));
+    }
+
+    #[must_use]
+    pub fn empty(&self) -> bool {
+        // RDKit✔️✔️: bool empty() const { return d_contribs.empty(); }
+        self.contribs.is_empty()
+    }
+
+    #[must_use]
+    pub fn size(&self) -> usize {
+        // RDKit✔️✔️: unsigned int size() const { return d_contribs.size(); }
+        self.contribs.len()
+    }
+
+    #[must_use]
+    pub fn contribs(&self) -> &[ChiralViolationContribsParams] {
+        &self.contribs
+    }
+
+    fn owner(&self) -> &ForceField {
+        assert!(!self.owner.is_null(), "no owner");
+        // SAFETY: Matches the existing ForceFieldContrib owner-pointer convention.
+        unsafe { &*self.owner }
+    }
+}
+
+impl ForceFieldContrib for ChiralViolationContribs {
+    fn copy(&self) -> Box<dyn ForceFieldContrib> {
+        // RDKit✔️✔️: ChiralViolationContribs *copy() const override {
+        // RDKit✔️✔️:   return new ChiralViolationContribs(*this);
+        // RDKit✔️✔️: }
+        Box::new(self.clone())
+    }
+
+    fn set_force_field(&mut self, owner: *const ForceField) {
+        self.owner = owner;
+    }
+
+    fn get_energy(&self, pos: &[f64]) -> f64 {
+        // BEGIN RDKIT CPP METHOD DistGeom::ChiralViolationContribs::getEnergy (ChiralViolationContribs.cpp:78-94)
+        // RDKit✔️✔️: double ChiralViolationContribs::getEnergy(double *pos) const {
+        // RDKit✔️✔️:   PRECONDITION(dp_forceField, "no owner");
+        // RDKit✔️✔️:   PRECONDITION(pos, "bad vector");
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   const unsigned int dim = dp_forceField->dimension();
+        // RDKit✔️✔️:   double res = 0.0;
+        // RDKit✔️✔️:   for (const auto &c : d_contribs) {
+        // RDKit✔️✔️:     double vol = calcChiralVolume(c.idx1, c.idx2, c.idx3, c.idx4, pos, dim);
+        // RDKit✔️✔️:     if (vol < c.volLower) {
+        // RDKit✔️✔️:       res += c.weight * (vol - c.volLower) * (vol - c.volLower);
+        // RDKit✔️✔️:     } else if (vol > c.volUpper) {
+        // RDKit✔️✔️:       res += c.weight * (vol - c.volUpper) * (vol - c.volUpper);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   return res;
+        // RDKit✔️✔️: }
+        // END RDKIT CPP METHOD DistGeom::ChiralViolationContribs::getEnergy
+        assert!(!pos.is_empty(), "bad vector");
+        let dim = self.owner().dimension();
+        let mut res = 0.0;
+        for c in &self.contribs {
+            let vol = calc_chiral_volume_flat(c.idx1, c.idx2, c.idx3, c.idx4, pos, dim);
+            if vol < c.vol_lower {
+                res += c.weight * (vol - c.vol_lower) * (vol - c.vol_lower);
+            } else if vol > c.vol_upper {
+                res += c.weight * (vol - c.vol_upper) * (vol - c.vol_upper);
+            }
+        }
+        res
+    }
+
+    fn get_grad(&self, pos: &[f64], grad: &mut [f64]) {
+        // BEGIN RDKIT CPP METHOD DistGeom::ChiralViolationContribs::getGrad (ChiralViolationContribs.cpp:96-174)
+        // RDKit✔️✔️: void ChiralViolationContribs::getGrad(double *pos, double *grad) const {
+        // RDKit✔️✔️:   PRECONDITION(dp_forceField, "no owner");
+        // RDKit✔️✔️:   PRECONDITION(pos, "bad vector");
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   const unsigned int dim = dp_forceField->dimension();
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   for (const auto &c : d_contribs) {
+        // RDKit✔️✔️:     // even if we are minimizing in higher dimension the chiral volume is
+        // RDKit✔️✔️:     // calculated using only the first 3 dimensions
+        // RDKit✔️✔️:     RDGeom::Point3D v1(pos[c.idx1 * dim] - pos[c.idx4 * dim],
+        // RDKit✔️✔️:                        pos[c.idx1 * dim + 1] - pos[c.idx4 * dim + 1],
+        // RDKit✔️✔️:                        pos[c.idx1 * dim + 2] - pos[c.idx4 * dim + 2]);
+        // RDKit✔️✔️:     RDGeom::Point3D v2(pos[c.idx2 * dim] - pos[c.idx4 * dim],
+        // RDKit✔️✔️:                        pos[c.idx2 * dim + 1] - pos[c.idx4 * dim + 1],
+        // RDKit✔️✔️:                        pos[c.idx2 * dim + 2] - pos[c.idx4 * dim + 2]);
+        // RDKit✔️✔️:     RDGeom::Point3D v3(pos[c.idx3 * dim] - pos[c.idx4 * dim],
+        // RDKit✔️✔️:                        pos[c.idx3 * dim + 1] - pos[c.idx4 * dim + 1],
+        // RDKit✔️✔️:                        pos[c.idx3 * dim + 2] - pos[c.idx4 * dim + 2]);
+        // RDKit✔️✔️:     RDGeom::Point3D v2xv3 = v2.crossProduct(v3);
+        // RDKit✔️✔️:     double vol = v1.dotProduct(v2xv3);
+        // RDKit✔️✔️:     double preFactor;
+        // RDKit✔️✔️:     if (vol < c.volLower) {
+        // RDKit✔️✔️:       preFactor = c.weight * (vol - c.volLower);
+        // RDKit✔️✔️:     } else if (vol > c.volUpper) {
+        // RDKit✔️✔️:       preFactor = c.weight * (vol - c.volUpper);
+        // RDKit✔️✔️:     } else {
+        // RDKit✔️✔️:       continue;
+        // RDKit✔️✔️:     }
+        // END RDKIT CPP METHOD DistGeom::ChiralViolationContribs::getGrad
+        assert!(!pos.is_empty(), "bad vector");
+        assert!(!grad.is_empty(), "bad vector");
+        let dim = self.owner().dimension();
+
+        for c in &self.contribs {
+            let v1 = ForceFieldVec3::new(
+                pos[c.idx1 * dim] - pos[c.idx4 * dim],
+                pos[c.idx1 * dim + 1] - pos[c.idx4 * dim + 1],
+                pos[c.idx1 * dim + 2] - pos[c.idx4 * dim + 2],
+            );
+            let v2 = ForceFieldVec3::new(
+                pos[c.idx2 * dim] - pos[c.idx4 * dim],
+                pos[c.idx2 * dim + 1] - pos[c.idx4 * dim + 1],
+                pos[c.idx2 * dim + 2] - pos[c.idx4 * dim + 2],
+            );
+            let v3 = ForceFieldVec3::new(
+                pos[c.idx3 * dim] - pos[c.idx4 * dim],
+                pos[c.idx3 * dim + 1] - pos[c.idx4 * dim + 1],
+                pos[c.idx3 * dim + 2] - pos[c.idx4 * dim + 2],
+            );
+
+            let vol = v1.dot_product(v2.cross_product(v3));
+            let pre_factor = if vol < c.vol_lower {
+                c.weight * (vol - c.vol_lower)
+            } else if vol > c.vol_upper {
+                c.weight * (vol - c.vol_upper)
+            } else {
+                continue;
+            };
+
+            // RDKit✔️✔️:     grad[dim * c.idx1] += preFactor * ((v2.y) * (v3.z) - (v3.y) * (v2.z));
+            // RDKit✔️✔️:     grad[dim * c.idx1 + 1] += preFactor * ((v3.x) * (v2.z) - (v2.x) * (v3.z));
+            // RDKit✔️✔️:     grad[dim * c.idx1 + 2] += preFactor * ((v2.x) * (v3.y) - (v3.x) * (v2.y));
+            grad[dim * c.idx1] += pre_factor * (v2.y * v3.z - v3.y * v2.z);
+            grad[dim * c.idx1 + 1] += pre_factor * (v3.x * v2.z - v2.x * v3.z);
+            grad[dim * c.idx1 + 2] += pre_factor * (v2.x * v3.y - v3.x * v2.y);
+
+            // RDKit✔️✔️:     grad[dim * c.idx2] += preFactor * ((v3.y) * (v1.z) - (v3.z) * (v1.y));
+            // RDKit✔️✔️:     grad[dim * c.idx2 + 1] += preFactor * ((v3.z) * (v1.x) - (v3.x) * (v1.z));
+            // RDKit✔️✔️:     grad[dim * c.idx2 + 2] += preFactor * ((v3.x) * (v1.y) - (v3.y) * (v1.x));
+            grad[dim * c.idx2] += pre_factor * (v3.y * v1.z - v3.z * v1.y);
+            grad[dim * c.idx2 + 1] += pre_factor * (v3.z * v1.x - v3.x * v1.z);
+            grad[dim * c.idx2 + 2] += pre_factor * (v3.x * v1.y - v3.y * v1.x);
+
+            // RDKit✔️✔️:     grad[dim * c.idx3] += preFactor * ((v2.z) * (v1.y) - (v2.y) * (v1.z));
+            // RDKit✔️✔️:     grad[dim * c.idx3 + 1] += preFactor * ((v2.x) * (v1.z) - (v2.z) * (v1.x));
+            // RDKit✔️✔️:     grad[dim * c.idx3 + 2] += preFactor * ((v2.y) * (v1.x) - (v2.x) * (v1.y));
+            grad[dim * c.idx3] += pre_factor * (v2.z * v1.y - v2.y * v1.z);
+            grad[dim * c.idx3 + 1] += pre_factor * (v2.x * v1.z - v2.z * v1.x);
+            grad[dim * c.idx3 + 2] += pre_factor * (v2.y * v1.x - v2.x * v1.y);
+
+            // RDKit✔️✔️:     grad[dim * c.idx4] +=
+            // RDKit✔️✔️:         preFactor * (pos[c.idx1 * dim + 2] *
+            // RDKit✔️✔️:                          (pos[c.idx2 * dim + 1] - pos[c.idx3 * dim + 1]) +
+            // RDKit✔️✔️:                      pos[c.idx2 * dim + 2] *
+            // RDKit✔️✔️:                          (pos[c.idx3 * dim + 1] - pos[c.idx1 * dim + 1]) +
+            // RDKit✔️✔️:                      pos[c.idx3 * dim + 2] *
+            // RDKit✔️✔️:                          (pos[c.idx1 * dim + 1] - pos[c.idx2 * dim + 1]));
+            grad[dim * c.idx4] += pre_factor
+                * (pos[c.idx1 * dim + 2] * (pos[c.idx2 * dim + 1] - pos[c.idx3 * dim + 1])
+                    + pos[c.idx2 * dim + 2] * (pos[c.idx3 * dim + 1] - pos[c.idx1 * dim + 1])
+                    + pos[c.idx3 * dim + 2] * (pos[c.idx1 * dim + 1] - pos[c.idx2 * dim + 1]));
+
+            // RDKit✔️✔️:     grad[dim * c.idx4 + 1] +=
+            // RDKit✔️✔️:         preFactor *
+            // RDKit✔️✔️:         (pos[c.idx1 * dim] * (pos[c.idx2 * dim + 2] - pos[c.idx3 * dim + 2]) +
+            // RDKit✔️✔️:          pos[c.idx2 * dim] * (pos[c.idx3 * dim + 2] - pos[c.idx1 * dim + 2]) +
+            // RDKit✔️✔️:          pos[c.idx3 * dim] * (pos[c.idx1 * dim + 2] - pos[c.idx2 * dim + 2]));
+            grad[dim * c.idx4 + 1] += pre_factor
+                * (pos[c.idx1 * dim] * (pos[c.idx2 * dim + 2] - pos[c.idx3 * dim + 2])
+                    + pos[c.idx2 * dim] * (pos[c.idx3 * dim + 2] - pos[c.idx1 * dim + 2])
+                    + pos[c.idx3 * dim] * (pos[c.idx1 * dim + 2] - pos[c.idx2 * dim + 2]));
+
+            // RDKit✔️✔️:     grad[dim * c.idx4 + 2] +=
+            // RDKit✔️✔️:         preFactor *
+            // RDKit✔️✔️:         (pos[c.idx1 * dim + 1] * (pos[c.idx2 * dim] - pos[c.idx3 * dim]) +
+            // RDKit✔️✔️:          pos[c.idx2 * dim + 1] * (pos[c.idx3 * dim] - pos[c.idx1 * dim]) +
+            // RDKit✔️✔️:          pos[c.idx3 * dim + 1] * (pos[c.idx1 * dim] - pos[c.idx2 * dim]));
+            grad[dim * c.idx4 + 2] += pre_factor
+                * (pos[c.idx1 * dim + 1] * (pos[c.idx2 * dim] - pos[c.idx3 * dim])
+                    + pos[c.idx2 * dim + 1] * (pos[c.idx3 * dim] - pos[c.idx1 * dim])
+                    + pos[c.idx3 * dim + 1] * (pos[c.idx1 * dim] - pos[c.idx2 * dim]));
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DistViolationContribsParams {
+    pub idx1: usize,
+    pub idx2: usize,
+    pub ub: f64,
+    pub lb: f64,
+    pub ub2: f64,
+    pub lb2: f64,
+    pub weight: f64,
+}
+
+impl DistViolationContribsParams {
+    #[must_use]
+    pub fn new(idx1: usize, idx2: usize, ub: f64, lb: f64, weight: f64) -> Self {
+        // BEGIN RDKIT CPP CONSTRUCTOR DistGeom::DistViolationContribsParams (DistViolationContribs.h:18-30)
+        // RDKit✔️✔️: DistViolationContribsParams(unsigned int i1, unsigned int i2, double u,
+        // RDKit✔️✔️:                             double l, double w = 1.0)
+        // RDKit✔️✔️:     : idx1(i1), idx2(i2), ub(u), lb(l), ub2(u * u), lb2(l * l), weight(w) {};
+        // END RDKIT CPP CONSTRUCTOR DistGeom::DistViolationContribsParams
+        Self {
+            idx1,
+            idx2,
+            ub,
+            lb,
+            ub2: ub * ub,
+            lb2: lb * lb,
+            weight,
+        }
+    }
+}
+
+// BEGIN RDKIT CPP LOCAL HELPER DistGeom::distance2 (DistViolationContribs.cpp:21-31)
+// RDKit✔️✔️: inline double distance2(const unsigned int idx1, const unsigned int idx2,
+// RDKit✔️✔️:                         const double *pos, const unsigned int dim) {
+// RDKit✔️✔️:   const auto *end1Coords = &(pos[dim * idx1]);
+// RDKit✔️✔️:   const auto *end2Coords = &(pos[dim * idx2]);
+// RDKit✔️✔️:   double d2 = 0.0;
+// RDKit✔️✔️:   for (unsigned int i = 0; i < dim; i++) {
+// RDKit✔️✔️:     double d = end1Coords[i] - end2Coords[i];
+// RDKit✔️✔️:     d2 += d * d;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   return d2;
+// RDKit✔️✔️: }
+// END RDKIT CPP LOCAL HELPER DistGeom::distance2
+fn dist_violation_distance2(idx1: usize, idx2: usize, pos: &[f64], dim: usize) -> f64 {
+    let mut d2 = 0.0;
+    for i in 0..dim {
+        let d = pos[dim * idx1 + i] - pos[dim * idx2 + i];
+        d2 += d * d;
+    }
+    d2
+}
+
+// BEGIN RDKIT CPP LOCAL HELPER DistGeom::distance (DistViolationContribs.cpp:33-36)
+// RDKit✔️✔️: inline double distance(const unsigned int idx1, const unsigned int idx2,
+// RDKit✔️✔️:                        const double *pos, const unsigned int dim) {
+// RDKit✔️✔️:   return sqrt(distance2(idx1, idx2, pos, dim));
+// RDKit✔️✔️: }
+// END RDKIT CPP LOCAL HELPER DistGeom::distance
+fn dist_violation_distance(idx1: usize, idx2: usize, pos: &[f64], dim: usize) -> f64 {
+    dist_violation_distance2(idx1, idx2, pos, dim).sqrt()
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DistViolationContribs {
+    owner: *const ForceField,
+    contribs: Vec<DistViolationContribsParams>,
+}
+
+impl Default for DistViolationContribs {
+    fn default() -> Self {
+        Self {
+            owner: std::ptr::null(),
+            contribs: Vec::new(),
+        }
+    }
+}
+
+impl DistViolationContribs {
+    #[must_use]
+    pub fn new(owner: &ForceField) -> Self {
+        // BEGIN RDKIT CPP CONSTRUCTOR DistGeom::DistViolationContribs::DistViolationContribs (DistViolationContribs.cpp:16-19)
+        // RDKit✔️✔️: DistViolationContribs::DistViolationContribs(ForceFields::ForceField *owner) {
+        // RDKit✔️✔️:   PRECONDITION(owner, "bad owner");
+        // RDKit✔️✔️:   dp_forceField = owner;
+        // RDKit✔️✔️: }
+        // END RDKIT CPP CONSTRUCTOR DistGeom::DistViolationContribs::DistViolationContribs
+        Self {
+            owner,
+            contribs: Vec::new(),
+        }
+    }
+
+    pub fn add_contrib(&mut self, idx1: usize, idx2: usize, ub: f64, lb: f64, weight: f64) {
+        // BEGIN RDKIT CPP METHOD DistGeom::DistViolationContribs::addContrib (DistViolationContribs.h:49-52)
+        // RDKit✔️✔️: void addContrib(unsigned int idx1, unsigned int idx2, double ub, double lb,
+        // RDKit✔️✔️:                 double weight = 1.0) {
+        // RDKit✔️✔️:   d_contribs.emplace_back(idx1, idx2, ub, lb, weight);
+        // RDKit✔️✔️: }
+        // END RDKIT CPP METHOD DistGeom::DistViolationContribs::addContrib
+        self.contribs
+            .push(DistViolationContribsParams::new(idx1, idx2, ub, lb, weight));
+    }
+
+    #[must_use]
+    pub fn empty(&self) -> bool {
+        // RDKit✔️✔️: bool empty() const { return d_contribs.empty(); }
+        self.contribs.is_empty()
+    }
+
+    #[must_use]
+    pub fn size(&self) -> usize {
+        // RDKit✔️✔️: unsigned int size() const { return d_contribs.size(); }
+        self.contribs.len()
+    }
+
+    #[must_use]
+    pub fn contribs(&self) -> &[DistViolationContribsParams] {
+        &self.contribs
+    }
+
+    fn owner(&self) -> &ForceField {
+        assert!(!self.owner.is_null(), "no owner");
+        // SAFETY: Matches the existing ForceFieldContrib owner-pointer convention.
+        unsafe { &*self.owner }
+    }
+}
+
+impl ForceFieldContrib for DistViolationContribs {
+    fn copy(&self) -> Box<dyn ForceFieldContrib> {
+        // RDKit✔️✔️: DistViolationContribs *copy() const override {
+        // RDKit✔️✔️:   return new DistViolationContribs(*this);
+        // RDKit✔️✔️: }
+        Box::new(self.clone())
+    }
+
+    fn set_force_field(&mut self, owner: *const ForceField) {
+        self.owner = owner;
+    }
+
+    fn get_energy(&self, pos: &[f64]) -> f64 {
+        // BEGIN RDKIT CPP METHOD DistGeom::DistViolationContribs::getEnergy (DistViolationContribs.cpp:38-59)
+        // RDKit✔️✔️: double DistViolationContribs::getEnergy(double *pos) const {
+        // RDKit✔️✔️:   PRECONDITION(dp_forceField, "no owner");
+        // RDKit✔️✔️:   PRECONDITION(pos, "bad vector");
+        // RDKit✔️✔️:   double accum = 0.0;
+        // RDKit✔️✔️:   auto contrib = [&](const auto &c) {
+        // RDKit✔️✔️:     double d2 = distance2(c.idx1, c.idx2, pos, dp_forceField->dimension());
+        // RDKit✔️✔️:     double val = 0.0;
+        // RDKit✔️✔️:     if (d2 > c.ub2) {
+        // RDKit✔️✔️:       val = (d2 / (c.ub2)) - 1.0;
+        // RDKit✔️✔️:     } else if (d2 < c.lb2) {
+        // RDKit✔️✔️:       val = ((2 * c.lb2) / (c.lb2 + d2)) - 1.0;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     if (val > 0.0) {
+        // RDKit✔️✔️:       accum += c.weight * val * val;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   };
+        // RDKit✔️✔️:   for (const auto &c : d_contribs) {
+        // RDKit✔️✔️:     contrib(c);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return accum;
+        // RDKit✔️✔️: }
+        // END RDKIT CPP METHOD DistGeom::DistViolationContribs::getEnergy
+        assert!(!pos.is_empty(), "bad vector");
+        let dim = self.owner().dimension();
+        let mut accum = 0.0;
+        for c in &self.contribs {
+            let d2 = dist_violation_distance2(c.idx1, c.idx2, pos, dim);
+            let mut val = 0.0;
+            if d2 > c.ub2 {
+                val = d2 / c.ub2 - 1.0;
+            } else if d2 < c.lb2 {
+                val = (2.0 * c.lb2) / (c.lb2 + d2) - 1.0;
+            }
+            if val > 0.0 {
+                accum += c.weight * val * val;
+            }
+        }
+        accum
+    }
+
+    fn get_grad(&self, pos: &[f64], grad: &mut [f64]) {
+        // BEGIN RDKIT CPP METHOD DistGeom::DistViolationContribs::getGrad (DistViolationContribs.cpp:61-96)
+        // RDKit✔️✔️: void DistViolationContribs::getGrad(double *pos, double *grad) const {
+        // RDKit✔️✔️:   PRECONDITION(dp_forceField, "no owner");
+        // RDKit✔️✔️:   PRECONDITION(pos, "bad vector");
+        // RDKit✔️✔️:   PRECONDITION(grad, "bad vector");
+        // RDKit✔️✔️:   const unsigned int dim = this->dp_forceField->dimension();
+        // RDKit✔️✔️:   auto contrib = [&](const auto &c) {
+        // RDKit✔️✔️:     double d2 = distance2(c.idx1, c.idx2, pos, dp_forceField->dimension());
+        // RDKit✔️✔️:     double d;
+        // RDKit✔️✔️:     double preFactor = 0.0;
+        // RDKit✔️✔️:     if (d2 > c.ub2) {
+        // RDKit✔️✔️:       d = sqrt(d2);
+        // RDKit✔️✔️:       preFactor = 4. * (((d * d) / c.ub2) - 1.0) * (d / c.ub2);
+        // RDKit✔️✔️:     } else if (d2 < c.lb2) {
+        // RDKit✔️✔️:       d = sqrt(d2);
+        // RDKit✔️✔️:       double l2d2 = d2 + c.lb2;
+        // RDKit✔️✔️:       preFactor = 8. * c.lb2 * d * (1. - 2 * c.lb2 / l2d2) / (l2d2 * l2d2);
+        // RDKit✔️✔️:     } else {
+        // RDKit✔️✔️:       return;
+        // RDKit✔️✔️:     }
+        // END RDKIT CPP METHOD DistGeom::DistViolationContribs::getGrad
+        assert!(!pos.is_empty(), "bad vector");
+        assert!(!grad.is_empty(), "bad vector");
+        let dim = self.owner().dimension();
+        for c in &self.contribs {
+            let d2 = dist_violation_distance2(c.idx1, c.idx2, pos, dim);
+            let d;
+            let pre_factor;
+            if d2 > c.ub2 {
+                d = dist_violation_distance(c.idx1, c.idx2, pos, dim);
+                pre_factor = 4.0 * ((d * d) / c.ub2 - 1.0) * (d / c.ub2);
+            } else if d2 < c.lb2 {
+                d = dist_violation_distance(c.idx1, c.idx2, pos, dim);
+                let l2d2 = d2 + c.lb2;
+                pre_factor = 8.0 * c.lb2 * d * (1.0 - 2.0 * c.lb2 / l2d2) / (l2d2 * l2d2);
+            } else {
+                continue;
+            }
+            // RDKit✔️✔️:     for (unsigned int i = 0; i < dim; i++) {
+            // RDKit✔️✔️:       const auto p1 = dim * c.idx1 + i;
+            // RDKit✔️✔️:       const auto p2 = dim * c.idx2 + i;
+            // RDKit✔️✔️:       double dGrad;
+            // RDKit✔️✔️:       if (d > 0.0) {
+            // RDKit✔️✔️:         dGrad = c.weight * preFactor * (pos[p1] - pos[p2]) / d;
+            // RDKit✔️✔️:       } else {
+            // RDKit✔️✔️:         // FIX: this likely isn't right
+            // RDKit✔️✔️:         dGrad = c.weight * preFactor * (pos[p1] - pos[p2]);
+            // RDKit✔️✔️:       }
+            // RDKit✔️✔️:       grad[p1] += dGrad;
+            // RDKit✔️✔️:       grad[p2] -= dGrad;
+            // RDKit✔️✔️:     }
+            for i in 0..dim {
+                let p1 = dim * c.idx1 + i;
+                let p2 = dim * c.idx2 + i;
+                let d_grad = if d > 0.0 {
+                    c.weight * pre_factor * (pos[p1] - pos[p2]) / d
+                } else {
+                    c.weight * pre_factor * (pos[p1] - pos[p2])
+                };
+                grad[p1] += d_grad;
+                grad[p2] -= d_grad;
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FourthDimContribsParams {
+    pub idx: usize,
+    pub weight: f64,
+}
+
+impl FourthDimContribsParams {
+    #[must_use]
+    pub fn new(idx: usize, weight: f64) -> Self {
+        // BEGIN RDKIT CPP CONSTRUCTOR DistGeom::FourthDimContribsParams (FourthDimContribs.h:19-23)
+        // RDKit✔️✔️: struct FourthDimContribsParams {
+        // RDKit✔️✔️:   unsigned int idx{0};
+        // RDKit✔️✔️:   double weight{0.0};
+        // RDKit✔️✔️:   FourthDimContribsParams(unsigned int idx, double w) : idx(idx), weight(w) {};
+        // RDKit✔️✔️: };
+        // END RDKIT CPP CONSTRUCTOR DistGeom::FourthDimContribsParams
+        Self { idx, weight }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FourthDimContribs {
+    owner: *const ForceField,
+    contribs: Vec<FourthDimContribsParams>,
+}
+
+impl Default for FourthDimContribs {
+    fn default() -> Self {
+        // RDKit✔️✔️: FourthDimContribs() = default;
+        Self {
+            owner: std::ptr::null(),
+            contribs: Vec::new(),
+        }
+    }
+}
+
+impl FourthDimContribs {
+    #[must_use]
+    pub fn new(owner: &ForceField) -> Self {
+        // BEGIN RDKIT CPP CONSTRUCTOR DistGeom::FourthDimContribs::FourthDimContribs (FourthDimContribs.h:36-40)
+        // RDKit✔️✔️: FourthDimContribs(ForceFields::ForceField *owner) {
+        // RDKit✔️✔️:   PRECONDITION(owner, "bad force field");
+        // RDKit✔️✔️:   PRECONDITION(owner->dimension() == 4, "force field has wrong dimension");
+        // RDKit✔️✔️:   dp_forceField = owner;
+        // RDKit✔️✔️: }
+        // END RDKIT CPP CONSTRUCTOR DistGeom::FourthDimContribs::FourthDimContribs
+        assert_eq!(owner.dimension(), 4, "force field has wrong dimension");
+        Self {
+            owner,
+            contribs: Vec::new(),
+        }
+    }
+
+    pub fn add_contrib(&mut self, idx: usize, weight: f64) {
+        // BEGIN RDKIT CPP METHOD DistGeom::FourthDimContribs::addContrib (FourthDimContribs.h:42-44)
+        // RDKit✔️✔️: void addContrib(unsigned int idx, double weight) {
+        // RDKit✔️✔️:   d_contribs.emplace_back(idx, weight);
+        // RDKit✔️✔️: }
+        // END RDKIT CPP METHOD DistGeom::FourthDimContribs::addContrib
+        self.contribs
+            .push(FourthDimContribsParams::new(idx, weight));
+    }
+
+    #[must_use]
+    pub fn empty(&self) -> bool {
+        // RDKit✔️✔️: bool empty() const { return d_contribs.empty(); }
+        self.contribs.is_empty()
+    }
+
+    #[must_use]
+    pub fn size(&self) -> usize {
+        // RDKit✔️✔️: unsigned int size() const { return d_contribs.size(); }
+        self.contribs.len()
+    }
+
+    #[must_use]
+    pub fn contribs(&self) -> &[FourthDimContribsParams] {
+        &self.contribs
+    }
+
+    fn owner(&self) -> &ForceField {
+        assert!(!self.owner.is_null(), "no owner");
+        // SAFETY: Matches the existing ForceFieldContrib owner-pointer convention.
+        unsafe { &*self.owner }
+    }
+}
+
+impl ForceFieldContrib for FourthDimContribs {
+    fn copy(&self) -> Box<dyn ForceFieldContrib> {
+        // RDKit✔️✔️: FourthDimContribs *copy() const override {
+        // RDKit✔️✔️:   return new FourthDimContribs(*this);
+        // RDKit✔️✔️: }
+        Box::new(self.clone())
+    }
+
+    fn set_force_field(&mut self, owner: *const ForceField) {
+        self.owner = owner;
+    }
+
+    fn get_energy(&self, pos: &[f64]) -> f64 {
+        // BEGIN RDKIT CPP METHOD DistGeom::FourthDimContribs::getEnergy (FourthDimContribs.h:47-57)
+        // RDKit✔️✔️: double getEnergy(double *pos) const override {
+        // RDKit✔️✔️:   PRECONDITION(pos, "bad vector");
+        // RDKit✔️✔️:   constexpr unsigned int ffdim = 4;
+        // RDKit✔️✔️:   double res = 0.0;
+        // RDKit✔️✔️:   for (const auto &contrib : d_contribs) {
+        // RDKit✔️✔️:     unsigned int pid = contrib.idx * ffdim + 3;
+        // RDKit✔️✔️:     res += contrib.weight * pos[pid] * pos[pid];
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return res;
+        // RDKit✔️✔️: }
+        // END RDKIT CPP METHOD DistGeom::FourthDimContribs::getEnergy
+        assert!(!pos.is_empty(), "bad vector");
+        let _owner = self.owner();
+        let ffdim = 4;
+        let mut res = 0.0;
+        for contrib in &self.contribs {
+            let pid = contrib.idx * ffdim + 3;
+            res += contrib.weight * pos[pid] * pos[pid];
+        }
+        res
+    }
+
+    fn get_grad(&self, pos: &[f64], grad: &mut [f64]) {
+        // BEGIN RDKIT CPP METHOD DistGeom::FourthDimContribs::getGrad (FourthDimContribs.h:61-70)
+        // RDKit✔️✔️: void getGrad(double *pos, double *grad) const override {
+        // RDKit✔️✔️:   PRECONDITION(pos, "bad vector");
+        // RDKit✔️✔️:   constexpr unsigned int ffdim = 4;
+        // RDKit✔️✔️:   for (const auto &contrib : d_contribs) {
+        // RDKit✔️✔️:     unsigned int pid = contrib.idx * ffdim + 3;
+        // RDKit✔️✔️:     grad[pid] += contrib.weight * pos[pid];
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        // END RDKIT CPP METHOD DistGeom::FourthDimContribs::getGrad
+        assert!(!pos.is_empty(), "bad vector");
+        assert!(!grad.is_empty(), "bad vector");
+        let _owner = self.owner();
+        let ffdim = 4;
+        for contrib in &self.contribs {
+            let pid = contrib.idx * ffdim + 3;
+            grad[pid] += contrib.weight * pos[pid];
+        }
+    }
 }
 
 // ──────────────────────────────────────────────
@@ -727,6 +5541,7 @@ fn common_middle_atom(mol: &Molecule, a1: usize, a3: usize) -> Option<usize> {
 // Bounds matrix core
 // ──────────────────────────────────────────────
 
+#[derive(Clone)]
 struct BoundsMatrix {
     data: Vec<Vec<f64>>,
     n: usize,
@@ -877,7 +5692,1808 @@ impl BoundsMatrix {
     fn num_rows(&self) -> usize {
         self.n
     }
+}
 
+// ──────────────────────────────────────────────
+// Distance-matrix randomization helpers
+// ──────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq)]
+struct SymmMatrix {
+    data: Vec<f64>,
+    n: usize,
+}
+
+impl SymmMatrix {
+    fn new(n: usize) -> Self {
+        Self {
+            data: vec![0.0; n * (n + 1) / 2],
+            n,
+        }
+    }
+
+    fn with_value(n: usize, value: f64) -> Self {
+        // BEGIN RDKIT CPP CONSTRUCTOR RDNumeric::SymmMatrix::SymmMatrix value overload (SymmMatrix.h:40-48)
+        // RDKit✔️✔️: SymmMatrix(unsigned int N, TYPE val)
+        // RDKit✔️✔️:     : d_size(N), d_dataSize(N * (N + 1) / 2) {
+        // RDKit✔️✔️:   TYPE *data = new TYPE[d_dataSize];
+        // RDKit✔️✔️:   unsigned int i;
+        // RDKit✔️✔️:   for (i = 0; i < d_dataSize; i++) {
+        // RDKit✔️✔️:     data[i] = val;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   d_data.reset(data);
+        // RDKit✔️✔️: }
+        // END RDKIT CPP CONSTRUCTOR RDNumeric::SymmMatrix::SymmMatrix value overload
+        Self {
+            data: vec![value; n * (n + 1) / 2],
+            n,
+        }
+    }
+
+    fn num_rows(&self) -> usize {
+        self.n
+    }
+
+    fn get_data_size(&self) -> usize {
+        self.data.len()
+    }
+
+    fn get_data(&self) -> &[f64] {
+        &self.data
+    }
+
+    fn get_val(&self, i: usize, j: usize) -> f64 {
+        self.data[SymmMatrix::data_index(i, j)]
+    }
+
+    fn set_val(&mut self, i: usize, j: usize, value: f64) {
+        let idx = SymmMatrix::data_index(i, j);
+        self.data[idx] = value;
+    }
+
+    fn data_index(i: usize, j: usize) -> usize {
+        let (row, col) = if i >= j { (i, j) } else { (j, i) };
+        row * (row + 1) / 2 + col
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct DoubleMatrix {
+    data: Vec<f64>,
+    n_rows: usize,
+    n_cols: usize,
+}
+
+impl DoubleMatrix {
+    fn new(n_rows: usize, n_cols: usize) -> Self {
+        // BEGIN RDKIT CPP CONSTRUCTOR RDNumeric::Matrix::Matrix size overload (Matrix.h:33-38)
+        // RDKit✔️✔️: Matrix(unsigned int nRows, unsigned int nCols)
+        // RDKit✔️✔️:     : d_nRows(nRows), d_nCols(nCols), d_dataSize(nRows * nCols) {
+        // RDKit✔️✔️:   TYPE *data = new TYPE[d_dataSize];
+        // RDKit✔️✔️:   memset(static_cast<void *>(data), 0, d_dataSize * sizeof(TYPE));
+        // RDKit✔️✔️:   d_data.reset(data);
+        // RDKit✔️✔️: }
+        // END RDKIT CPP CONSTRUCTOR RDNumeric::Matrix::Matrix size overload
+        Self {
+            data: vec![0.0; n_rows * n_cols],
+            n_rows,
+            n_cols,
+        }
+    }
+
+    fn num_rows(&self) -> usize {
+        self.n_rows
+    }
+
+    fn num_cols(&self) -> usize {
+        self.n_cols
+    }
+
+    fn get_val(&self, i: usize, j: usize) -> f64 {
+        self.data[i * self.n_cols + j]
+    }
+}
+
+trait RdkitDoubleRng {
+    fn next_unit_f64(&mut self) -> f64;
+}
+
+#[derive(Debug, Clone)]
+struct RdkitDistgeomMinStdRand {
+    state: u64,
+}
+
+impl Default for RdkitDistgeomMinStdRand {
+    fn default() -> Self {
+        // BEGIN RDKIT CPP STATIC GENERATOR RDKit::generator (RDGeneral/utils.cpp:18)
+        // RDKit✔️✔️: static rng_type generator(42u);
+        // END RDKIT CPP STATIC GENERATOR RDKit::generator
+        Self { state: 42 }
+    }
+}
+
+impl RdkitDistgeomMinStdRand {
+    fn new(seed: i32) -> Self {
+        // BEGIN RDKIT CPP FUNCTION RDKit::getRandomGenerator seed behavior (RDGeneral/utils.cpp:24-29)
+        // RDKit✔️✔️: rng_type &getRandomGenerator(int seed) {
+        // RDKit✔️✔️:   if (seed > 0) {
+        // RDKit✔️✔️:     generator.seed(seed);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return generator;
+        // RDKit✔️✔️: }
+        // END RDKIT CPP FUNCTION RDKit::getRandomGenerator seed behavior
+        if seed > 0 {
+            // BEGIN BOOST CPP METHOD boost::random::linear_congruential_engine::seed (linear_congruential.hpp)
+            // RDKit✔️✔️: if(modulus == 0) {
+            // RDKit✔️✔️:     _x = x0;
+            // RDKit✔️✔️: } else {
+            // RDKit✔️✔️:     _x = x0 % modulus;
+            // RDKit✔️✔️: }
+            // RDKit✔️✔️: if(increment == 0 && _x == 0) {
+            // RDKit✔️✔️:     _x = 1;
+            // RDKit✔️✔️: }
+            // END BOOST CPP METHOD boost::random::linear_congruential_engine::seed
+            let mut state = seed as u64 % RDKIT_RANDOM_MODULUS;
+            if state == 0 {
+                state = 1;
+            }
+            Self { state }
+        } else {
+            Self::default()
+        }
+    }
+
+    fn new_from_embed_points_seed(seed: i32) -> Self {
+        assert!(seed >= 0);
+        let mut state = seed as u64 % RDKIT_RANDOM_MODULUS;
+        if state == 0 {
+            state = 1;
+        }
+        Self { state }
+    }
+
+    fn next_raw(&mut self) -> u32 {
+        self.state = (self.state * RDKIT_RANDOM_MULTIPLIER) % RDKIT_RANDOM_MODULUS;
+        self.state as u32
+    }
+}
+
+unsafe extern "C" {
+    fn clock() -> libc::clock_t;
+}
+
+fn rdkit_clock_seed() -> i32 {
+    // BEGIN RDKIT CPP CLOCK SEED SOURCE C library clock() use in conformer generation
+    // RDKit✔️✔️: clock()
+    // END RDKIT CPP CLOCK SEED SOURCE
+    unsafe { clock() as i32 }
+}
+
+impl RdkitDoubleRng for RdkitDistgeomMinStdRand {
+    fn next_unit_f64(&mut self) -> f64 {
+        // BEGIN BOOST CPP FUNCTION boost::random::detail::generate_uniform_real integral path (uniform_real_distribution.hpp)
+        // RDKit✔️✔️: typedef typename Engine::result_type base_result;
+        // RDKit✔️✔️: result_type numerator = static_cast<T>(subtract<base_result>()(eng(), (eng.min)()));
+        // RDKit✔️✔️: result_type divisor = static_cast<T>(subtract<base_result>()((eng.max)(), (eng.min)())) + 1;
+        // RDKit✔️✔️: T result = numerator / divisor * (max_value - min_value) + min_value;
+        // RDKit✔️✔️: if(result < max_value) return result;
+        // END BOOST CPP FUNCTION boost::random::detail::generate_uniform_real integral path
+        let raw = self.next_raw() as f64;
+        (raw - 1.0) / (RDKIT_RANDOM_MODULUS as f64 - 1.0)
+    }
+}
+
+fn rdkit_embedder_multiplication_overflows(a: i32, b: i32) -> bool {
+    // BEGIN RDKIT CPP TEMPLATE FUNCTION DGeomHelpers::detail::multiplication_overflows_ (Embedder.cpp:1346-1353)
+    // RDKit✔️✔️: template <class T>
+    // RDKit✔️✔️: bool multiplication_overflows_(T a, T b) {
+    // RDKit✔️✔️:   // a * b > c if and only if a > c / b
+    // RDKit✔️✔️:   if (a == 0 || b == 0) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return a > std::numeric_limits<T>::max() / b;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP TEMPLATE FUNCTION DGeomHelpers::detail::multiplication_overflows_
+    if a == 0 || b == 0 {
+        return false;
+    }
+    a > i32::MAX / b
+}
+
+fn rdkit_embedder_conformer_seed(
+    random_seed: i32,
+    conformer_index: usize,
+    enable_sequential_random_seeds: bool,
+) -> i32 {
+    // BEGIN RDKIT CPP BLOCK DGeomHelpers::detail::embedHelper_ per-conformer seed policy (Embedder.cpp:1393-1426)
+    // RDKit✔️✔️:     CHECK_INVARIANT(
+    // RDKit✔️✔️:         params->randomSeed >= -1,
+    // RDKit✔️✔️:         "random seed must either be positive, zero, or negative one");
+    // RDKit✔️✔️:     int new_seed = params->randomSeed;
+    // RDKit✔️✔️:     if (new_seed > -1) {
+    // RDKit✔️✔️:       if (params->enableSequentialRandomSeeds) {
+    // RDKit✔️✔️:         new_seed += ci + 1;
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         if (!multiplication_overflows_(rdcast<int>(ci + 1),
+    // RDKit✔️✔️:                                        params->randomSeed)) {
+    // RDKit✔️✔️:           // old method of computing a new seed
+    // RDKit✔️✔️:           new_seed = (ci + 1) * params->randomSeed;
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           // If the above simple multiplication will overflow, use a
+    // RDKit✔️✔️:           // cheap and easy way to hash the conformer index and seed
+    // RDKit✔️✔️:           // together: for N'ary numerical system, where N is the
+    // RDKit✔️✔️:           // maximum possible value of the pair of numbers. The
+    // RDKit✔️✔️:           // following will generate unique integers:
+    // RDKit✔️✔️:           // hash(a, b) = a + b * N
+    // RDKit✔️✔️:           auto big_seed = rdcast<size_t>(params->randomSeed);
+    // RDKit✔️✔️:           size_t max_val = std::max(ci + 1, big_seed);
+    // RDKit✔️✔️:           size_t big_num = big_seed + max_val * (ci + 1);
+    // RDKit✔️✔️:           // only grab the first 31 bits xor'd with the next 31 bits to
+    // RDKit✔️✔️:           // make sure its positive, careful, the 'ULL' is important
+    // RDKit✔️✔️:           // here, 0x7fffffff is the 'int' type because of C default
+    // RDKit✔️✔️:           // number semantics and that we definitely don't want!
+    // RDKit✔️✔️:           const size_t positive_int_mask = 0x7fffffffULL;
+    // RDKit✔️✔️:           size_t folded_num =
+    // RDKit✔️✔️:               (big_num & positive_int_mask) ^ (big_num >> 31ULL);
+    // RDKit✔️✔️:           new_seed = rdcast<int>(folded_num & positive_int_mask);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     CHECK_INVARIANT(new_seed >= -1,
+    // RDKit✔️✔️:                     "Something went wrong calculating a new seed");
+    // END RDKIT CPP BLOCK DGeomHelpers::detail::embedHelper_ per-conformer seed policy
+    assert!(
+        random_seed >= -1,
+        "random seed must either be positive, zero, or negative one"
+    );
+    let ci_plus_one = i32::try_from(conformer_index + 1).expect("conformer index too large");
+    let mut new_seed = random_seed;
+    if new_seed > -1 {
+        if enable_sequential_random_seeds {
+            new_seed = new_seed
+                .checked_add(ci_plus_one)
+                .expect("sequential conformer seed overflow");
+        } else if !rdkit_embedder_multiplication_overflows(ci_plus_one, random_seed) {
+            new_seed = ci_plus_one * random_seed;
+        } else {
+            let big_seed = random_seed as usize;
+            let max_val = (conformer_index + 1).max(big_seed);
+            let big_num = big_seed + max_val * (conformer_index + 1);
+            const POSITIVE_INT_MASK: usize = 0x7fff_ffff;
+            let folded_num = (big_num & POSITIVE_INT_MASK) ^ (big_num >> 31);
+            new_seed = (folded_num & POSITIVE_INT_MASK) as i32;
+        }
+    }
+    assert!(
+        new_seed >= -1,
+        "Something went wrong calculating a new seed"
+    );
+    new_seed
+}
+
+fn pick_random_dist_mat(mmat: &BoundsMatrix, dist_mat: &mut SymmMatrix, seed: i32) -> f64 {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::pickRandomDistMat seed overload (DistGeomUtils.cpp:35-41)
+    // RDKit✔️✔️: double pickRandomDistMat(const BoundsMatrix &mmat,
+    // RDKit✔️✔️:                          RDNumeric::SymmMatrix<double> &distMat, int seed) {
+    // RDKit✔️✔️:   if (seed > 0) {
+    // RDKit✔️✔️:     RDKit::getRandomGenerator(seed);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return pickRandomDistMat(mmat, distMat, RDKit::getDoubleRandomSource());
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DistGeom::pickRandomDistMat seed overload
+    if seed > 0 {
+        RDKIT_DISTGEOM_RNG.with(|rng| {
+            *rng.borrow_mut() = RdkitDistgeomMinStdRand::new(seed);
+        });
+    }
+    RDKIT_DISTGEOM_RNG
+        .with(|rng| pick_random_dist_mat_with_rng(mmat, dist_mat, &mut *rng.borrow_mut()))
+}
+
+fn pick_random_dist_mat_with_rng<R: RdkitDoubleRng>(
+    mmat: &BoundsMatrix,
+    dist_mat: &mut SymmMatrix,
+    rng: &mut R,
+) -> f64 {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::pickRandomDistMat RNG overload (DistGeomUtils.cpp:43-68)
+    // RDKit✔️✔️: double pickRandomDistMat(const BoundsMatrix &mmat,
+    // RDKit✔️✔️:                          RDNumeric::SymmMatrix<double> &distMat,
+    // RDKit✔️✔️:                          RDKit::double_source_type &rng) {
+    // RDKit✔️✔️:   // make sure the sizes match up
+    // RDKit✔️✔️:   unsigned int npt = mmat.numRows();
+    // RDKit✔️✔️:   CHECK_INVARIANT(npt == distMat.numRows(), "Size mismatch");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   double largestVal = -1.0;
+    // RDKit✔️✔️:   double *ddata = distMat.getData();
+    // RDKit✔️✔️:   for (unsigned int i = 1; i < npt; i++) {
+    // RDKit✔️✔️:     unsigned int id = i * (i + 1) / 2;
+    // RDKit✔️✔️:     for (unsigned int j = 0; j < i; j++) {
+    // RDKit✔️✔️:       double ub = mmat.getUpperBound(i, j);
+    // RDKit✔️✔️:       double lb = mmat.getLowerBound(i, j);
+    // RDKit✔️✔️:       CHECK_INVARIANT(ub >= lb, "");
+    // RDKit✔️✔️:       double rval = rng();
+    // RDKit✔️✔️:       // std::cerr<<i<<"-"<<j<<": "<<rval<<std::endl;
+    // RDKit✔️✔️:       double d = lb + (rval) * (ub - lb);
+    // RDKit✔️✔️:       ddata[id + j] = d;
+    // RDKit✔️✔️:       if (d > largestVal) {
+    // RDKit✔️✔️:         largestVal = d;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return largestVal;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DistGeom::pickRandomDistMat RNG overload
+    let npt = mmat.num_rows();
+    assert_eq!(npt, dist_mat.num_rows(), "Size mismatch");
+
+    let mut largest_val = -1.0;
+    for i in 1..npt {
+        let id = i * (i + 1) / 2;
+        for j in 0..i {
+            let ub = mmat.get_upper(i, j);
+            let lb = mmat.get_lower(i, j);
+            assert!(ub >= lb);
+            let rval = rng.next_unit_f64();
+            let d = lb + rval * (ub - lb);
+            dist_mat.data[id + j] = d;
+            if d > largest_val {
+                largest_val = d;
+            }
+        }
+    }
+    largest_val
+}
+
+fn rdkit_symm_matrix_vector_multiply(a: &SymmMatrix, x: &[f64], y: &mut [f64]) {
+    // BEGIN RDKIT CPP FUNCTION RDNumeric::multiply SymmMatrix-Vector overload (SymmMatrix.h:313-335)
+    // RDKit✔️✔️: Vector<TYPE> &multiply(const SymmMatrix<TYPE> &A, const Vector<TYPE> &x,
+    // RDKit✔️✔️:                        Vector<TYPE> &y) {
+    // RDKit✔️✔️:   unsigned int aSize = A.numRows();
+    // RDKit✔️✔️:   CHECK_INVARIANT(aSize == x.size(), "Size mismatch during multiplication");
+    // RDKit✔️✔️:   CHECK_INVARIANT(aSize == y.size(), "Size mismatch during multiplication");
+    // RDKit✔️✔️:   const TYPE *xData = x.getData();
+    // RDKit✔️✔️:   const TYPE *aData = A.getData();
+    // RDKit✔️✔️:   TYPE *yData = y.getData();
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < aSize; i++) {
+    // RDKit✔️✔️:     yData[i] = (TYPE)(0.0);
+    // RDKit✔️✔️:     unsigned int idA = i * (i + 1) / 2;
+    // RDKit✔️✔️:     for (unsigned int j = 0; j < i + 1; j++) {
+    // RDKit✔️✔️:       // idA = i*(i+1)/2 + j;
+    // RDKit✔️✔️:       yData[i] += (aData[idA] * xData[j]);
+    // RDKit✔️✔️:       idA++;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     idA--;
+    // RDKit✔️✔️:     for (unsigned int j = i + 1; j < aSize; j++) {
+    // RDKit✔️✔️:       // idA = j*(j+1)/2 + i;
+    // RDKit✔️✔️:       idA += j;
+    // RDKit✔️✔️:       yData[i] += (aData[idA] * xData[j]);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION RDNumeric::multiply SymmMatrix-Vector overload
+    let a_size = a.num_rows();
+    assert_eq!(a_size, x.len(), "Size mismatch during multiplication");
+    assert_eq!(a_size, y.len(), "Size mismatch during multiplication");
+    for i in 0..a_size {
+        y[i] = 0.0;
+        let mut id_a = i * (i + 1) / 2;
+        for xj in x.iter().take(i + 1) {
+            y[i] += a.data[id_a] * *xj;
+            id_a += 1;
+        }
+        id_a -= 1;
+        for (j, xj) in x.iter().enumerate().take(a_size).skip(i + 1) {
+            id_a += j;
+            y[i] += a.data[id_a] * *xj;
+        }
+    }
+}
+
+fn rdkit_vector_largest_abs_val_id(data: &[f64]) -> usize {
+    // BEGIN RDKIT CPP METHOD RDNumeric::Vector::largestAbsValId (Vector.h:202-213)
+    // RDKit✔️✔️: constexpr unsigned int largestAbsValId() const {
+    // RDKit✔️✔️:   TYPE res = (TYPE)(-1.0);
+    // RDKit✔️✔️:   unsigned int i, id = d_size;
+    // RDKit✔️✔️:   TYPE *data = d_data.get();
+    // RDKit✔️✔️:   for (i = 0; i < d_size; i++) {
+    // RDKit✔️✔️:     if (fabs(data[i]) > res) {
+    // RDKit✔️✔️:       res = fabs(data[i]);
+    // RDKit✔️✔️:       id = i;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return id;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP METHOD RDNumeric::Vector::largestAbsValId
+    let mut res = -1.0;
+    let mut id = data.len();
+    for (i, value) in data.iter().enumerate() {
+        if value.abs() > res {
+            res = value.abs();
+            id = i;
+        }
+    }
+    id
+}
+
+fn rdkit_vector_normalize(data: &mut [f64]) {
+    // BEGIN RDKIT CPP METHOD RDNumeric::Vector::normalize (Vector.h:258-264)
+    // RDKit✔️✔️: constexpr void normalize() {
+    // RDKit✔️✔️:   TYPE val = this->normL2();
+    // RDKit✔️✔️:   if (val < zero_tolerance) {
+    // RDKit✔️✔️:     throw std::runtime_error("Cannot normalize a zero length vector");
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   (*this) /= val;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP METHOD RDNumeric::Vector::normalize
+    let val = data.iter().map(|v| v * v).sum::<f64>().sqrt();
+    assert!(val >= f64::EPSILON, "Cannot normalize a zero length vector");
+    for item in data {
+        *item /= val;
+    }
+}
+
+fn rdkit_vector_set_to_random(size: usize, seed: i32) -> Vec<f64> {
+    // BEGIN RDKIT CPP METHOD RDNumeric::Vector::setToRandom (Vector.h:267-287)
+    // RDKit✔️✔️: void setToRandom(unsigned int seed = 0) {
+    // RDKit✔️✔️:   // we want to get our own RNG here instead of using the global
+    // RDKit✔️✔️:   // one.  This is related to Issue285.
+    // RDKit✔️✔️:   RDKit::rng_type generator(42u);
+    // RDKit✔️✔️:   RDKit::uniform_double dist(0, 1.0);
+    // RDKit✔️✔️:   RDKit::double_source_type randSource(generator, dist);
+    // RDKit✔️✔️:   if (seed > 0) {
+    // RDKit✔️✔️:     generator.seed(seed);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     // we can't initialize using only clock(), because it's possible
+    // RDKit✔️✔️:     // that we'll get here fast enough that clock() will return 0
+    // RDKit✔️✔️:     // and generator.seed(0) is an error:
+    // RDKit✔️✔️:     generator.seed(clock() + 1);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   unsigned int i;
+    // RDKit✔️✔️:   TYPE *data = d_data.get();
+    // RDKit✔️✔️:   for (i = 0; i < d_size; i++) {
+    // RDKit✔️✔️:     data[i] = randSource();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   this->normalize();
+    // RDKit✔️✔️: }
+    // END RDKIT CPP METHOD RDNumeric::Vector::setToRandom
+    let effective_seed = if seed > 0 {
+        seed
+    } else {
+        rdkit_clock_seed().wrapping_add(1)
+    };
+    let mut rng = RdkitDistgeomMinStdRand::new(effective_seed);
+    let mut data = (0..size).map(|_| rng.next_unit_f64()).collect::<Vec<_>>();
+    rdkit_vector_normalize(&mut data);
+    data
+}
+
+fn power_eigen_solver(
+    num_eig: usize,
+    mat: &mut SymmMatrix,
+    eigen_values: &mut [f64],
+    mut eigen_vectors: Option<&mut DoubleMatrix>,
+    seed: i32,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION RDNumeric::EigenSolvers::powerEigenSolver (PowerEigenSolver.cpp:20-100)
+    // RDKit✔️✔️: bool powerEigenSolver(unsigned int numEig, DoubleSymmMatrix &mat,
+    // RDKit✔️✔️:                       DoubleVector &eigenValues, DoubleMatrix *eigenVectors,
+    // RDKit✔️✔️:                       int seed) {
+    // RDKit✔️✔️:   const unsigned int MAX_ITERATIONS = 1000;
+    // RDKit✔️✔️:   const double TOLERANCE = 0.001;
+    // RDKit✔️✔️:   const double HUGE_EIGVAL = 1.0e10;
+    // RDKit✔️✔️:   const double TINY_EIGVAL = 1.0e-10;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // first check all the sizes
+    // RDKit✔️✔️:   unsigned int N = mat.numRows();
+    // RDKit✔️✔️:   CHECK_INVARIANT(eigenValues.size() >= numEig, "");
+    // RDKit✔️✔️:   CHECK_INVARIANT(numEig <= N, "");
+    // RDKit✔️✔️:   if (eigenVectors) {
+    // RDKit✔️✔️:     unsigned int evRows, evCols;
+    // RDKit✔️✔️:     evRows = eigenVectors->numRows();
+    // RDKit✔️✔️:     evCols = eigenVectors->numCols();
+    // RDKit✔️✔️:     CHECK_INVARIANT(evCols >= N, "");
+    // RDKit✔️✔️:     CHECK_INVARIANT(evRows >= numEig, "");
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION RDNumeric::EigenSolvers::powerEigenSolver
+    const MAX_ITERATIONS: usize = 1000;
+    const TOLERANCE: f64 = 0.001;
+    const HUGE_EIGVAL: f64 = 1.0e10;
+    const TINY_EIGVAL: f64 = 1.0e-10;
+
+    let n = mat.num_rows();
+    assert!(eigen_values.len() >= num_eig);
+    assert!(num_eig <= n);
+    if let Some(eig_vecs) = eigen_vectors.as_ref() {
+        assert!(eig_vecs.num_cols() >= n);
+        assert!(eig_vecs.num_rows() >= num_eig);
+    }
+
+    // RDKit✔️✔️:   unsigned int ei;
+    // RDKit✔️✔️:   double eigVal, prevVal;
+    // RDKit✔️✔️:   bool converged = false;
+    // RDKit✔️✔️:   unsigned int i, j, id, iter, evalId;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   DoubleVector v(N), z(N);
+    // RDKit✔️✔️:   if (seed <= 0) {
+    // RDKit✔️✔️:     seed = clock();
+    // RDKit✔️✔️:   }
+    let mut effective_seed = if seed > 0 { seed } else { rdkit_clock_seed() };
+    let mut converged = false;
+    let mut z = vec![0.0; n];
+    for (ei, eig_value_slot) in eigen_values.iter_mut().enumerate().take(num_eig) {
+        // RDKit✔️✔️:   for (ei = 0; ei < numEig; ei++) {
+        // RDKit✔️✔️:     eigVal = -HUGE_EIGVAL;
+        // RDKit✔️✔️:     seed += ei;
+        // RDKit✔️✔️:     v.setToRandom(seed);
+        let mut eig_val = -HUGE_EIGVAL;
+        effective_seed += ei as i32;
+        let mut v = rdkit_vector_set_to_random(n, effective_seed);
+
+        converged = false;
+        for _iter in 0..MAX_ITERATIONS {
+            // RDKit✔️✔️:     for (iter = 0; iter < MAX_ITERATIONS; iter++) {
+            // RDKit✔️✔️:       // z = mat*v
+            // RDKit✔️✔️:       multiply(mat, v, z);
+            // RDKit✔️✔️:       prevVal = eigVal;
+            // RDKit✔️✔️:       evalId = z.largestAbsValId();
+            // RDKit✔️✔️:       eigVal = z.getVal(evalId);
+            rdkit_symm_matrix_vector_multiply(mat, &v, &mut z);
+            let prev_val = eig_val;
+            let eval_id = rdkit_vector_largest_abs_val_id(&z);
+            eig_val = z[eval_id];
+
+            // RDKit✔️✔️:       if (fabs(eigVal) < TINY_EIGVAL) {
+            // RDKit✔️✔️:         break;
+            // RDKit✔️✔️:       }
+            if eig_val.abs() < TINY_EIGVAL {
+                break;
+            }
+
+            // RDKit✔️✔️:       // compute the next estimate for the eigen vector
+            // RDKit✔️✔️:       v.assign(z);
+            // RDKit✔️✔️:       v /= eigVal;
+            // RDKit✔️✔️:       if (fabs(eigVal - prevVal) < TOLERANCE) {
+            // RDKit✔️✔️:         converged = true;
+            // RDKit✔️✔️:         break;
+            // RDKit✔️✔️:       }
+            v.copy_from_slice(&z);
+            for item in &mut v {
+                *item /= eig_val;
+            }
+            if (eig_val - prev_val).abs() < TOLERANCE {
+                converged = true;
+                break;
+            }
+        }
+        // RDKit✔️✔️:     if (!converged) {
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     }
+        if !converged {
+            break;
+        }
+        // RDKit✔️✔️:     v.normalize();
+        rdkit_vector_normalize(&mut v);
+
+        // RDKit✔️✔️:     // save this is a eigen vector and value
+        // RDKit✔️✔️:     // directly access the data instead of setVal so that we save time
+        // RDKit✔️✔️:     double *vdata = v.getData();
+        // RDKit✔️✔️:     if (eigenVectors) {
+        // RDKit✔️✔️:       id = ei * eigenVectors->numCols();
+        // RDKit✔️✔️:       double *eigVecData = eigenVectors->getData();
+        // RDKit✔️✔️:       for (i = 0; i < N; i++) {
+        // RDKit✔️✔️:         eigVecData[id + i] = vdata[i];
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        if let Some(eig_vecs) = eigen_vectors.as_deref_mut() {
+            let id = ei * eig_vecs.num_cols();
+            eig_vecs.data[id..id + n].copy_from_slice(&v);
+        }
+        // RDKit✔️✔️:     eigenValues[ei] = eigVal;
+        *eig_value_slot = eig_val;
+
+        // RDKit✔️✔️:     // now remove this eigen vector space out of the matrix
+        // RDKit✔️✔️:     double *matData = mat.getData();
+        // RDKit✔️✔️:     for (i = 0; i < N; i++) {
+        // RDKit✔️✔️:       id = i * (i + 1) / 2;
+        // RDKit✔️✔️:       for (j = 0; j < i + 1; j++) {
+        // RDKit✔️✔️:         matData[id + j] -= (eigVal * vdata[i] * vdata[j]);
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        for i in 0..n {
+            let id = i * (i + 1) / 2;
+            for j in 0..=i {
+                mat.data[id + j] -= eig_val * v[i] * v[j];
+            }
+        }
+    }
+    // RDKit✔️✔️:   return converged;
+    // RDKit✔️✔️: }
+    converged
+}
+
+fn compute_initial_coords(
+    dist_mat: &SymmMatrix,
+    positions: &mut [Vec<f64>],
+    rand_neg_eig: bool,
+    num_zero_fail: usize,
+    seed: i32,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::computeInitialCoords seed overload (DistGeomUtils.cpp:70-80)
+    // RDKit✔️✔️: bool computeInitialCoords(const RDNumeric::SymmMatrix<double> &distMat,
+    // RDKit✔️✔️:                           RDGeom::PointPtrVect &positions, bool randNegEig,
+    // RDKit✔️✔️:                           unsigned int numZeroFail, int seed) {
+    // RDKit✔️✔️:   if (seed > 0) {
+    // RDKit✔️✔️:     RDKit::getRandomGenerator(seed);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return computeInitialCoords(distMat, positions,
+    // RDKit✔️✔️:                               RDKit::getDoubleRandomSource(), randNegEig,
+    // RDKit✔️✔️:                               numZeroFail);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DistGeom::computeInitialCoords seed overload
+    if seed > 0 {
+        RDKIT_DISTGEOM_RNG.with(|rng| {
+            *rng.borrow_mut() = RdkitDistgeomMinStdRand::new(seed);
+        });
+    }
+    RDKIT_DISTGEOM_RNG.with(|rng| {
+        compute_initial_coords_with_rng(
+            dist_mat,
+            positions,
+            &mut *rng.borrow_mut(),
+            rand_neg_eig,
+            num_zero_fail,
+        )
+    })
+}
+
+fn compute_initial_coords_with_rng<R: RdkitDoubleRng>(
+    dist_mat: &SymmMatrix,
+    positions: &mut [Vec<f64>],
+    rng: &mut R,
+    rand_neg_eig: bool,
+    num_zero_fail: usize,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::computeInitialCoords RNG overload (DistGeomUtils.cpp:81-164)
+    // RDKit✔️✔️: bool computeInitialCoords(const RDNumeric::SymmMatrix<double> &distMat,
+    // RDKit✔️✔️:                           RDGeom::PointPtrVect &positions,
+    // RDKit✔️✔️:                           RDKit::double_source_type &rng, bool randNegEig,
+    // RDKit✔️✔️:                           unsigned int numZeroFail) {
+    // RDKit✔️✔️:   unsigned int N = distMat.numRows();
+    // RDKit✔️✔️:   unsigned int nPt = positions.size();
+    // RDKit✔️✔️:   CHECK_INVARIANT(nPt == N, "Size mismatch");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   unsigned int dim = positions.front()->dimension();
+    // END RDKIT CPP FUNCTION DistGeom::computeInitialCoords RNG overload
+    let n = dist_mat.num_rows();
+    assert_eq!(positions.len(), n, "Size mismatch");
+    assert!(!positions.is_empty());
+    let dim = positions[0].len();
+    let trace_row64 = row64_distgeom_trace_enabled(n);
+    let trace_row61 = row61_distgeom_trace_enabled(n);
+
+    // RDKit✔️✔️:   const double *data = distMat.getData();
+    // RDKit✔️✔️:   RDNumeric::SymmMatrix<double> sqMat(N), T(N, 0.0);
+    // RDKit✔️✔️:   RDNumeric::DoubleMatrix eigVecs(dim, N);
+    // RDKit✔️✔️:   RDNumeric::DoubleVector eigVals(dim);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   double *sqDat = sqMat.getData();
+    let data = dist_mat.get_data();
+    let mut sq_mat = SymmMatrix::new(n);
+    let mut t = SymmMatrix::with_value(n, 0.0);
+    let mut eig_vecs = DoubleMatrix::new(dim, n);
+    let mut eig_vals = vec![0.0; dim];
+
+    // RDKit✔️✔️:   unsigned int dSize = distMat.getDataSize();
+    // RDKit✔️✔️:   double sumSqD2 = 0.0;
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < dSize; i++) {
+    // RDKit✔️✔️:     sqDat[i] = data[i] * data[i];
+    // RDKit✔️✔️:     sumSqD2 += sqDat[i];
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   sumSqD2 /= (N * N);
+    let d_size = dist_mat.get_data_size();
+    let mut sum_sq_d2 = 0.0;
+    for (i, value) in data.iter().enumerate().take(d_size) {
+        sq_mat.data[i] = value * value;
+        sum_sq_d2 += sq_mat.data[i];
+    }
+    sum_sq_d2 /= (n * n) as f64;
+    if trace_row64 {
+        let preview_len = data.len().min(12);
+        let payload = data[..preview_len]
+            .iter()
+            .map(|v| format!("{v:.15}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        println!(
+            "row64_compute_initial_coords dist_data=[{}] sum_sq_d2={:.15}",
+            payload, sum_sq_d2
+        );
+    } else if trace_row61 {
+        let preview_len = data.len().min(12);
+        let payload = data[..preview_len]
+            .iter()
+            .map(|v| format!("{v:.15}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        println!(
+            "row61_compute_initial_coords dist_data=[{}] sum_sq_d2={:.15}",
+            payload, sum_sq_d2
+        );
+    }
+
+    // RDKit✔️✔️:   RDNumeric::DoubleVector sqD0i(N, 0.0);
+    // RDKit✔️✔️:   double *sqD0iData = sqD0i.getData();
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < N; i++) {
+    // RDKit✔️✔️:     for (unsigned int j = 0; j < N; j++) {
+    // RDKit✔️✔️:       sqD0iData[i] += sqMat.getVal(i, j);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     sqD0iData[i] /= N;
+    // RDKit✔️✔️:     sqD0iData[i] -= sumSqD2;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     if ((sqD0iData[i] < EIGVAL_TOL) && (N > 3)) {
+    // RDKit✔️✔️:       return false;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    let mut sq_d0i = vec![0.0; n];
+    for (i, sq_d0i_value) in sq_d0i.iter_mut().enumerate().take(n) {
+        for j in 0..n {
+            *sq_d0i_value += sq_mat.get_val(i, j);
+        }
+        *sq_d0i_value /= n as f64;
+        *sq_d0i_value -= sum_sq_d2;
+        if *sq_d0i_value < EIGVAL_TOL && n > 3 {
+            if trace_row64 {
+                let first_fail_val = *sq_d0i_value;
+                let preview_len = (i + 1).min(12);
+                let payload = sq_d0i[..preview_len]
+                    .iter()
+                    .map(|v| format!("{v:.15}"))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                println!(
+                    "row64_compute_initial_coords sq_d0i=[{}] first_fail_idx={} first_fail_val={:.15}",
+                    payload, i, first_fail_val
+                );
+            } else if trace_row61 {
+                let first_fail_val = *sq_d0i_value;
+                let preview_len = (i + 1).min(12);
+                let payload = sq_d0i[..preview_len]
+                    .iter()
+                    .map(|v| format!("{v:.15}"))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                println!(
+                    "row61_compute_initial_coords sq_d0i=[{}] first_fail_idx={} first_fail_val={:.15}",
+                    payload, i, first_fail_val
+                );
+            }
+            return false;
+        }
+    }
+    if trace_row64 {
+        let preview_len = sq_d0i.len().min(12);
+        let payload = sq_d0i[..preview_len]
+            .iter()
+            .map(|v| format!("{v:.15}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        println!("row64_compute_initial_coords sq_d0i=[{}]", payload);
+    } else if trace_row61 {
+        let preview_len = sq_d0i.len().min(12);
+        let payload = sq_d0i[..preview_len]
+            .iter()
+            .map(|v| format!("{v:.15}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        println!("row61_compute_initial_coords sq_d0i=[{}]", payload);
+    }
+
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < N; i++) {
+    // RDKit✔️✔️:     for (unsigned int j = 0; j <= i; j++) {
+    // RDKit✔️✔️:       double val = 0.5 * (sqD0iData[i] + sqD0iData[j] - sqMat.getVal(i, j));
+    // RDKit✔️✔️:       T.setVal(i, j, val);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   unsigned int nEigs = (dim < N) ? dim : N;
+    // RDKit✔️✔️:   RDNumeric::EigenSolvers::powerEigenSolver(nEigs, T, eigVals, eigVecs,
+    // RDKit✔️✔️:                                             (int)(sumSqD2 * N));
+    for i in 0..n {
+        for j in 0..=i {
+            let val = 0.5 * (sq_d0i[i] + sq_d0i[j] - sq_mat.get_val(i, j));
+            t.set_val(i, j, val);
+        }
+    }
+    let n_eigs = dim.min(n);
+    power_eigen_solver(
+        n_eigs,
+        &mut t,
+        &mut eig_vals,
+        Some(&mut eig_vecs),
+        (sum_sq_d2 * n as f64) as i32,
+    );
+    if trace_row64 {
+        let payload = eig_vals
+            .iter()
+            .map(|v| format!("{v:.15}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        println!(
+            "row64_compute_initial_coords eig_vals_before_sqrt=[{}]",
+            payload
+        );
+    } else if trace_row61 {
+        let payload = eig_vals
+            .iter()
+            .map(|v| format!("{v:.15}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        println!(
+            "row61_compute_initial_coords eig_vals_before_sqrt=[{}]",
+            payload
+        );
+    }
+
+    // RDKit✔️✔️:   double *eigData = eigVals.getData();
+    // RDKit✔️✔️:   bool foundNeg = false;
+    // RDKit✔️✔️:   unsigned int zeroEigs = 0;
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < dim; i++) {
+    // RDKit✔️✔️:     if (eigData[i] > EIGVAL_TOL) {
+    // RDKit✔️✔️:       eigData[i] = sqrt(eigData[i]);
+    // RDKit✔️✔️:     } else if (fabs(eigData[i]) < EIGVAL_TOL) {
+    // RDKit✔️✔️:       eigData[i] = 0.0;
+    // RDKit✔️✔️:       zeroEigs++;
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       foundNeg = true;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    let mut found_neg = false;
+    let mut zero_eigs = 0;
+    for eig_val in eig_vals.iter_mut().take(dim) {
+        if *eig_val > EIGVAL_TOL {
+            *eig_val = eig_val.sqrt();
+        } else if eig_val.abs() < EIGVAL_TOL {
+            *eig_val = 0.0;
+            zero_eigs += 1;
+        } else {
+            found_neg = true;
+        }
+    }
+    if trace_row64 {
+        let payload = eig_vals
+            .iter()
+            .map(|v| format!("{v:.15}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        println!(
+            "row64_compute_initial_coords eig_vals_after_sqrt=[{}] found_neg={} zero_eigs={}",
+            payload, found_neg, zero_eigs
+        );
+    } else if trace_row61 {
+        let payload = eig_vals
+            .iter()
+            .map(|v| format!("{v:.15}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        println!(
+            "row61_compute_initial_coords eig_vals_after_sqrt=[{}] found_neg={} zero_eigs={}",
+            payload, found_neg, zero_eigs
+        );
+    }
+    // RDKit✔️✔️:   if ((foundNeg) && (!randNegEig)) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if ((zeroEigs >= numZeroFail) && (N > 3)) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    if found_neg && !rand_neg_eig {
+        return false;
+    }
+    if zero_eigs >= num_zero_fail && n > 3 {
+        return false;
+    }
+
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < N; i++) {
+    // RDKit✔️✔️:     RDGeom::Point *pt = positions[i];
+    // RDKit✔️✔️:     for (unsigned int j = 0; j < dim; ++j) {
+    // RDKit✔️✔️:       if (eigData[j] >= 0.0) {
+    // RDKit✔️✔️:         (*pt)[j] = eigData[j] * eigVecs.getVal(j, i);
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         // std::cerr<<"!!! "<<i<<"-"<<j<<": "<<eigData[j]<<std::endl;
+    // RDKit✔️✔️:         (*pt)[j] = 1.0 - 2.0 * rng();
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    for (i, point) in positions.iter_mut().enumerate().take(n) {
+        for j in 0..dim {
+            if eig_vals[j] >= 0.0 {
+                point[j] = eig_vals[j] * eig_vecs.get_val(j, i);
+            } else {
+                point[j] = 1.0 - 2.0 * rng.next_unit_f64();
+            }
+        }
+    }
+    true
+}
+
+fn compute_random_coords(positions: &mut [Vec<f64>], box_size: f64, seed: i32) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::computeRandomCoords seed overload (DistGeomUtils.cpp:166-172)
+    // RDKit✔️✔️: bool computeRandomCoords(RDGeom::PointPtrVect &positions, double boxSize,
+    // RDKit✔️✔️:                          int seed) {
+    // RDKit✔️✔️:   if (seed > 0) {
+    // RDKit✔️✔️:     RDKit::getRandomGenerator(seed);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return computeRandomCoords(positions, boxSize,
+    // RDKit✔️✔️:                              RDKit::getDoubleRandomSource());
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DistGeom::computeRandomCoords seed overload
+    if seed > 0 {
+        RDKIT_DISTGEOM_RNG.with(|rng| {
+            *rng.borrow_mut() = RdkitDistgeomMinStdRand::new(seed);
+        });
+    }
+    RDKIT_DISTGEOM_RNG
+        .with(|rng| compute_random_coords_with_rng(positions, box_size, &mut *rng.borrow_mut()))
+}
+
+fn compute_random_coords_with_rng<R: RdkitDoubleRng>(
+    positions: &mut [Vec<f64>],
+    box_size: f64,
+    rng: &mut R,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::computeRandomCoords RNG overload (DistGeomUtils.cpp:173-183)
+    // RDKit✔️✔️: bool computeRandomCoords(RDGeom::PointPtrVect &positions, double boxSize,
+    // RDKit✔️✔️:                          RDKit::double_source_type &rng) {
+    // RDKit✔️✔️:   CHECK_INVARIANT(boxSize > 0.0, "bad boxSize");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   for (auto pt : positions) {
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < pt->dimension(); ++i) {
+    // RDKit✔️✔️:       (*pt)[i] = boxSize * (rng() - 0.5);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DistGeom::computeRandomCoords RNG overload
+    assert!(box_size > 0.0, "bad boxSize");
+    for point in positions {
+        for coord in point {
+            *coord = box_size * (rng.next_unit_f64() - 0.5);
+        }
+    }
+    true
+}
+
+fn forcefield_vec_from_position(point: &[f64]) -> ForceFieldVec3 {
+    assert!(
+        (3..=4).contains(&point.len()),
+        "unsupported point dimension"
+    );
+    if point.len() == 4 {
+        ForceFieldVec3::new4(point[0], point[1], point[2], point[3])
+    } else {
+        ForceFieldVec3::new(point[0], point[1], point[2])
+    }
+}
+
+fn construct_distgeom_forcefield(
+    mmat: &BoundsMatrix,
+    positions: &[Vec<f64>],
+    csets: &[ChiralSetPtr],
+    weight_chiral: f64,
+    weight_fourth_dim: f64,
+    extra_weights: Option<&BTreeMap<(usize, usize), f64>>,
+    basin_size_tol: f64,
+    fixed_pts: Option<&[bool]>,
+) -> ForceField {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::constructForceField (DistGeomUtils.cpp:184-253)
+    // RDKit✔️✔️: ForceFields::ForceField *constructForceField(
+    // RDKit✔️✔️:     const BoundsMatrix &mmat, RDGeom::PointPtrVect &positions,
+    // RDKit✔️✔️:     const VECT_CHIRALSET &csets, double weightChiral, double weightFourthDim,
+    // RDKit✔️✔️:     std::map<std::pair<int, int>, double> *extraWeights, double basinSizeTol,
+    // RDKit✔️✔️:     boost::dynamic_bitset<> *fixedPts) {
+    // RDKit✔️✔️:   unsigned int N = mmat.numRows();
+    // RDKit✔️✔️:   CHECK_INVARIANT(N == positions.size(), "");
+    // RDKit✔️✔️:   auto *field = new ForceFields::ForceField(positions[0]->dimension());
+    // RDKit✔️✔️:   field->positions().insert(field->positions().begin(), positions.begin(),
+    // RDKit✔️✔️:                             positions.end());
+    // END RDKIT CPP FUNCTION DistGeom::constructForceField
+    let n = mmat.num_rows();
+    assert_eq!(n, positions.len());
+    assert!(!positions.is_empty());
+    let dimension = positions[0].len();
+    assert!((3..=4).contains(&dimension), "unsupported point dimension");
+    assert!(
+        positions.iter().all(|point| point.len() == dimension),
+        "inconsistent point dimension"
+    );
+    if let Some(fixed_pts) = fixed_pts {
+        assert!(fixed_pts.len() >= n, "bad fixed point bitset");
+    }
+    let mut field = ForceField::new(dimension);
+    field.positions_mut().extend(
+        positions
+            .iter()
+            .map(|point| forcefield_vec_from_position(point)),
+    );
+
+    // RDKit✔️✔️:   auto contrib = new DistViolationContribs(field);
+    // RDKit✔️✔️:   for (unsigned int i = 1; i < N; i++) {
+    // RDKit✔️✔️:     for (unsigned int j = 0; j < i; j++) {
+    // RDKit✔️✔️:       if (fixedPts != nullptr && (*fixedPts)[i] && (*fixedPts)[j]) {
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       double w = 1.0;
+    // RDKit✔️✔️:       double l = mmat.getLowerBound(i, j);
+    // RDKit✔️✔️:       double u = mmat.getUpperBound(i, j);
+    // RDKit✔️✔️:       bool includeIt = false;
+    // RDKit✔️✔️:       if (extraWeights) {
+    // RDKit✔️✔️:         std::map<std::pair<int, int>, double>::const_iterator mapIt;
+    // RDKit✔️✔️:         mapIt = extraWeights->find(std::make_pair(i, j));
+    // RDKit✔️✔️:         if (mapIt != extraWeights->end()) {
+    // RDKit✔️✔️:           w = mapIt->second;
+    // RDKit✔️✔️:           includeIt = true;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (u - l <= basinSizeTol) {
+    // RDKit✔️✔️:         includeIt = true;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (includeIt) {
+    // RDKit✔️✔️:         contrib->addContrib(i, j, u, l, w);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!contrib->empty()) {
+    // RDKit✔️✔️:     field->contribs().push_back(ForceFields::ContribPtr(contrib));
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     delete contrib;
+    // RDKit✔️✔️:   }
+    let mut dist_contrib = DistViolationContribs::new(&field);
+    for i in 1..n {
+        for j in 0..i {
+            if fixed_pts.is_some_and(|fixed_pts| fixed_pts[i] && fixed_pts[j]) {
+                continue;
+            }
+            let mut weight = 1.0;
+            let lower = mmat.get_lower(i, j);
+            let upper = mmat.get_upper(i, j);
+            let mut include_it = false;
+            if let Some(extra_weights) = extra_weights
+                && let Some(extra_weight) = extra_weights.get(&(i, j))
+            {
+                weight = *extra_weight;
+                include_it = true;
+            }
+            if upper - lower <= basin_size_tol {
+                include_it = true;
+            }
+            if include_it {
+                dist_contrib.add_contrib(i, j, upper, lower, weight);
+            }
+        }
+    }
+    if !dist_contrib.empty() {
+        field.add_contrib(Box::new(dist_contrib));
+    }
+
+    // RDKit✔️✔️:   // now add chiral constraints
+    // RDKit✔️✔️:   if (weightChiral > 1.e-8) {
+    // RDKit✔️✔️:     auto contrib = new ChiralViolationContribs(field);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     for (const auto &cset : csets) {
+    // RDKit✔️✔️:       contrib->addContrib(cset.get(), weightChiral);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (!contrib->empty()) {
+    // RDKit✔️✔️:       field->contribs().push_back(ForceFields::ContribPtr(contrib));
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       delete contrib;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    if weight_chiral > 1.0e-8 {
+        let mut chiral_contrib = ChiralViolationContribs::new(&field);
+        for cset in csets {
+            chiral_contrib.add_contrib(cset, weight_chiral);
+        }
+        if !chiral_contrib.empty() {
+            field.add_contrib(Box::new(chiral_contrib));
+        }
+    }
+
+    // RDKit✔️✔️:   // finally the contribution from the fourth dimension if we need to
+    // RDKit✔️✔️:   if ((field->dimension() == 4) && (weightFourthDim > 1.e-8)) {
+    // RDKit✔️✔️:     auto contrib = new FourthDimContribs(field);
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < N; i++) {
+    // RDKit✔️✔️:       contrib->addContrib(i, weightFourthDim);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (!contrib->empty()) {
+    // RDKit✔️✔️:       field->contribs().push_back(ForceFields::ContribPtr(contrib));
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       delete contrib;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return field;
+    // RDKit✔️✔️: }  // constructForceField
+    if field.dimension() == 4 && weight_fourth_dim > 1.0e-8 {
+        let mut fourth_dim_contrib = FourthDimContribs::new(&field);
+        for i in 0..n {
+            fourth_dim_contrib.add_contrib(i, weight_fourth_dim);
+        }
+        if !fourth_dim_contrib.empty() {
+            field.add_contrib(Box::new(fourth_dim_contrib));
+        }
+    }
+    field
+}
+
+fn add_improper_torsion_terms(
+    ff: &mut ForceField,
+    force_scaling_factor: f64,
+    improper_atoms: &[Vec<i32>],
+    is_improper_constrained: &mut [bool],
+) {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::addImproperTorsionTerms (DistGeomUtils.cpp:255-307)
+    // RDKit✔️✔️: void addImproperTorsionTerms(ForceFields::ForceField *ff,
+    // RDKit✔️✔️:                              double forceScalingFactor,
+    // RDKit✔️✔️:                              const std::vector<std::vector<int>> &improperAtoms,
+    // RDKit✔️✔️:                              boost::dynamic_bitset<> &isImproperConstrained) {
+    // RDKit✔️✔️:   PRECONDITION(ff, "bad force field");
+    // RDKit✔️✔️:   auto inversionContribs =
+    // RDKit✔️✔️:       std::make_unique<ForceFields::UFF::InversionContribs>(ff);
+    // END RDKIT CPP FUNCTION DistGeom::addImproperTorsionTerms
+    let mut inversion_contribs = InversionContribs::new(ff);
+
+    // RDKit✔️✔️:   for (const auto &improperAtom : improperAtoms) {
+    // RDKit✔️✔️:     std::vector<int> n(4);
+    for improper_atom in improper_atoms {
+        let mut n = [0_usize; 4];
+        // RDKit✔️✔️:     for (unsigned int i = 0; i < 3; ++i) {
+        for i in 0..3 {
+            // RDKit✔️✔️:       n[1] = 1;
+            n[1] = 1;
+            // RDKit✔️✔️:       switch (i) {
+            match i {
+                // RDKit✔️✔️:         case 0:
+                // RDKit✔️✔️:           n[0] = 0;
+                // RDKit✔️✔️:           n[2] = 2;
+                // RDKit✔️✔️:           n[3] = 3;
+                // RDKit✔️✔️:           break;
+                0 => {
+                    n[0] = 0;
+                    n[2] = 2;
+                    n[3] = 3;
+                }
+                // RDKit✔️✔️:         case 1:
+                // RDKit✔️✔️:           n[0] = 0;
+                // RDKit✔️✔️:           n[2] = 3;
+                // RDKit✔️✔️:           n[3] = 2;
+                // RDKit✔️✔️:           break;
+                1 => {
+                    n[0] = 0;
+                    n[2] = 3;
+                    n[3] = 2;
+                }
+                // RDKit✔️✔️:         case 2:
+                // RDKit✔️✔️:           n[0] = 2;
+                // RDKit✔️✔️:           n[2] = 3;
+                // RDKit✔️✔️:           n[3] = 0;
+                // RDKit✔️✔️:           break;
+                2 => {
+                    n[0] = 2;
+                    n[2] = 3;
+                    n[3] = 0;
+                }
+                _ => unreachable!("loop bounds guarantee 0..3"),
+            }
+
+            // RDKit✔️✔️:       inversionContribs->addContrib(
+            // RDKit✔️✔️:           improperAtom[n[0]], improperAtom[n[1]], improperAtom[n[2]],
+            // RDKit✔️✔️:           improperAtom[n[3]], improperAtom[4],
+            // RDKit✔️✔️:           static_cast<bool>(improperAtom[5]), forceScalingFactor);
+            inversion_contribs.add_contrib(
+                improper_atom[n[0]] as usize,
+                improper_atom[n[1]] as usize,
+                improper_atom[n[2]] as usize,
+                improper_atom[n[3]] as usize,
+                improper_atom[4],
+                improper_atom[5] != 0,
+                force_scaling_factor,
+            );
+
+            // RDKit✔️✔️:       isImproperConstrained[improperAtom[n[1]]] = 1;
+            is_improper_constrained[improper_atom[n[1]] as usize] = true;
+        }
+    }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!inversionContribs->empty()) {
+    // RDKit✔️✔️:     ff->contribs().push_back(std::move(inversionContribs));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    if !inversion_contribs.empty() {
+        ff.add_contrib(Box::new(inversion_contribs));
+    }
+}
+
+fn add_experimental_torsion_terms(
+    ff: &mut ForceField,
+    etkdg_details: &CrystalFFDetails,
+    atom_pairs: &mut [bool],
+    num_atoms: usize,
+) {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::addExperimentalTorsionTerms (DistGeomUtils.cpp:309-340)
+    // RDKit✔️✔️: void addExperimentalTorsionTerms(
+    // RDKit✔️✔️:     ForceFields::ForceField *ff,
+    // RDKit✔️✔️:     const ForceFields::CrystalFF::CrystalFFDetails &etkdgDetails,
+    // RDKit✔️✔️:     boost::dynamic_bitset<> &atomPairs, unsigned int numAtoms) {
+    // RDKit✔️✔️:   PRECONDITION(ff, "bad force field");
+    // RDKit✔️✔️:   auto torsionContribs =
+    // RDKit✔️✔️:       std::make_unique<ForceFields::CrystalFF::TorsionAngleContribs>(ff);
+    // END RDKIT CPP FUNCTION DistGeom::addExperimentalTorsionTerms
+    let mut torsion_contribs = TorsionAngleContribs::new(ff);
+
+    // RDKit✔️✔️:   for (unsigned int t = 0; t < etkdgDetails.expTorsionAtoms.size(); ++t) {
+    for t in 0..etkdg_details.exp_torsion_atoms.len() {
+        // RDKit✔️✔️:     int i = etkdgDetails.expTorsionAtoms[t][0];
+        // RDKit✔️✔️:     int j = etkdgDetails.expTorsionAtoms[t][1];
+        // RDKit✔️✔️:     int k = etkdgDetails.expTorsionAtoms[t][2];
+        // RDKit✔️✔️:     int l = etkdgDetails.expTorsionAtoms[t][3];
+        let i = etkdg_details.exp_torsion_atoms[t][0] as usize;
+        let j = etkdg_details.exp_torsion_atoms[t][1] as usize;
+        let k = etkdg_details.exp_torsion_atoms[t][2] as usize;
+        let l = etkdg_details.exp_torsion_atoms[t][3] as usize;
+
+        // RDKit✔️✔️:     if (i < l) {
+        // RDKit✔️✔️:       atomPairs[i * numAtoms + l] = 1;
+        // RDKit✔️✔️:     } else {
+        // RDKit✔️✔️:       atomPairs[l * numAtoms + i] = 1;
+        // RDKit✔️✔️:     }
+        if i < l {
+            atom_pairs[i * num_atoms + l] = true;
+        } else {
+            atom_pairs[l * num_atoms + i] = true;
+        }
+
+        // RDKit✔️✔️:     torsionContribs->addContrib(i, j, k, l,
+        // RDKit✔️✔️:                                 etkdgDetails.expTorsionAngles[t].second,
+        // RDKit✔️✔️:                                 etkdgDetails.expTorsionAngles[t].first);
+        torsion_contribs.add_contrib(
+            i,
+            j,
+            k,
+            l,
+            etkdg_details.exp_torsion_angles[t].1.clone(),
+            etkdg_details.exp_torsion_angles[t].0.clone(),
+        );
+    }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!torsionContribs->empty()) {
+    // RDKit✔️✔️:     ff->contribs().push_back(std::move(torsionContribs));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    if !torsion_contribs.is_empty() {
+        ff.add_contrib(Box::new(torsion_contribs));
+    }
+}
+
+fn add_12_terms(
+    ff: &mut ForceField,
+    etkdg_details: &CrystalFFDetails,
+    atom_pairs: &mut [bool],
+    positions: &[ForceFieldVec3],
+    force_constant: f64,
+    num_atoms: usize,
+) {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::add12Terms (DistGeomUtils.cpp:342-383)
+    // RDKit✔️✔️: void add12Terms(ForceFields::ForceField *ff,
+    // RDKit✔️✔️:                 const ForceFields::CrystalFF::CrystalFFDetails &etkdgDetails,
+    // RDKit✔️✔️:                 boost::dynamic_bitset<> &atomPairs,
+    // RDKit✔️✔️:                 RDGeom::Point3DPtrVect &positions, double forceConstant,
+    // RDKit✔️✔️:                 unsigned int numAtoms) {
+    // RDKit✔️✔️:   PRECONDITION(ff, "bad force field");
+    // RDKit✔️✔️:   auto distContribs =
+    // RDKit✔️✔️:       std::make_unique<ForceFields::DistanceConstraintContribs>(ff);
+    // END RDKIT CPP FUNCTION DistGeom::add12Terms
+    let mut dist_contribs = DistanceConstraintContribs::new(ff);
+
+    // RDKit✔️✔️:   for (const auto &bond : etkdgDetails.bonds) {
+    for &(first, second) in &etkdg_details.bonds {
+        // RDKit✔️✔️:     unsigned int i = bond.first;
+        // RDKit✔️✔️:     unsigned int j = bond.second;
+        let i = first as usize;
+        let j = second as usize;
+
+        // RDKit✔️✔️:     if (i < j) {
+        // RDKit✔️✔️:       atomPairs[i * numAtoms + j] = 1;
+        // RDKit✔️✔️:     } else {
+        // RDKit✔️✔️:       atomPairs[j * numAtoms + i] = 1;
+        // RDKit✔️✔️:     }
+        if i < j {
+            atom_pairs[i * num_atoms + j] = true;
+        } else {
+            atom_pairs[j * num_atoms + i] = true;
+        }
+
+        // RDKit✔️✔️:     double d = ((*positions[i]) - (*positions[j])).length();
+        let d = (positions[i] - positions[j]).length();
+        // RDKit✔️✔️:     distContribs->addContrib(i, j, d - KNOWN_DIST_TOL, d + KNOWN_DIST_TOL,
+        // RDKit✔️✔️:                              forceConstant);
+        dist_contribs.add_contrib(i, j, d - KNOWN_DIST_TOL, d + KNOWN_DIST_TOL, force_constant);
+    }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!distContribs->empty()) {
+    // RDKit✔️✔️:     ff->contribs().push_back(std::move(distContribs));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    if !dist_contribs.empty() {
+        ff.add_contrib(Box::new(dist_contribs));
+    }
+}
+
+fn add_13_terms(
+    ff: &mut ForceField,
+    etkdg_details: &CrystalFFDetails,
+    atom_pairs: &mut [bool],
+    positions: &[ForceFieldVec3],
+    force_constant: f64,
+    is_improper_constrained: &[bool],
+    use_basic_knowledge: bool,
+    mmat: &BoundsMatrix,
+    num_atoms: usize,
+) {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::add13Terms (DistGeomUtils.cpp:385-455)
+    // RDKit✔️✔️: void add13Terms(ForceFields::ForceField *ff,
+    // RDKit✔️✔️:                 const ForceFields::CrystalFF::CrystalFFDetails &etkdgDetails,
+    // RDKit✔️✔️:                 boost::dynamic_bitset<> &atomPairs,
+    // RDKit✔️✔️:                 RDGeom::Point3DPtrVect &positions, double forceConstant,
+    // RDKit✔️✔️:                 const boost::dynamic_bitset<> &isImproperConstrained,
+    // RDKit✔️✔️:                 bool useBasicKnowledge, const BoundsMatrix &mmat,
+    // RDKit✔️✔️:                 unsigned int numAtoms) {
+    // RDKit✔️✔️:   PRECONDITION(ff, "bad force field");
+    // RDKit✔️✔️:   auto distContribs =
+    // RDKit✔️✔️:       std::make_unique<ForceFields::DistanceConstraintContribs>(ff);
+    // RDKit✔️✔️:   auto angleContribs =
+    // RDKit✔️✔️:       std::make_unique<ForceFields::AngleConstraintContribs>(ff);
+    // END RDKIT CPP FUNCTION DistGeom::add13Terms
+    let mut dist_contribs = DistanceConstraintContribs::new(ff);
+    let mut angle_contribs = AngleConstraintContribs::new(ff);
+
+    // RDKit✔️✔️:   for (const auto &angle : etkdgDetails.angles) {
+    for angle in &etkdg_details.angles {
+        // RDKit✔️✔️:     unsigned int i = angle[0];
+        // RDKit✔️✔️:     unsigned int j = angle[1];
+        // RDKit✔️✔️:     unsigned int k = angle[2];
+        let i = angle[0] as usize;
+        let j = angle[1] as usize;
+        let k = angle[2] as usize;
+
+        // RDKit✔️✔️:     if (i < k) {
+        // RDKit✔️✔️:       atomPairs[i * numAtoms + k] = 1;
+        // RDKit✔️✔️:     } else {
+        // RDKit✔️✔️:       atomPairs[k * numAtoms + i] = 1;
+        // RDKit✔️✔️:     }
+        if i < k {
+            atom_pairs[i * num_atoms + k] = true;
+        } else {
+            atom_pairs[k * num_atoms + i] = true;
+        }
+
+        // RDKit✔️✔️:     // check for triple bonds
+        // RDKit✔️✔️:     if (useBasicKnowledge && angle[3]) {
+        // RDKit✔️✔️:       angleContribs->addContrib(i, j, k, 179.0, 180.0, 1);
+        if use_basic_knowledge && angle[3] != 0 {
+            angle_contribs.add_contrib(i, j, k, 179.0, 180.0, 1.0);
+        // RDKit✔️✔️:     } else if (isImproperConstrained[j]) {
+        // RDKit✔️✔️:       distContribs->addContrib(i, k, mmat.getLowerBound(i, k),
+        // RDKit✔️✔️:                                mmat.getUpperBound(i, k), forceConstant);
+        } else if is_improper_constrained[j] {
+            dist_contribs.add_contrib(
+                i,
+                k,
+                mmat.get_lower(i, k),
+                mmat.get_upper(i, k),
+                force_constant,
+            );
+        // RDKit✔️✔️:     } else {
+        // RDKit✔️✔️:       double d = ((*positions[i]) - (*positions[k])).length();
+        // RDKit✔️✔️:       distContribs->addContrib(i, k, d - KNOWN_DIST_TOL, d + KNOWN_DIST_TOL,
+        // RDKit✔️✔️:                                forceConstant);
+        // RDKit✔️✔️:     }
+        } else {
+            let d = (positions[i] - positions[k]).length();
+            dist_contribs.add_contrib(i, k, d - KNOWN_DIST_TOL, d + KNOWN_DIST_TOL, force_constant);
+        }
+    }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!angleContribs->empty()) {
+    // RDKit✔️✔️:     ff->contribs().push_back(std::move(angleContribs));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!distContribs->empty()) {
+    // RDKit✔️✔️:     ff->contribs().push_back(std::move(distContribs));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    if !angle_contribs.empty() {
+        ff.add_contrib(Box::new(angle_contribs));
+    }
+    if !dist_contribs.empty() {
+        ff.add_contrib(Box::new(dist_contribs));
+    }
+}
+
+fn add_long_range_distance_constraints(
+    ff: &mut ForceField,
+    etkdg_details: &CrystalFFDetails,
+    atom_pairs: &[bool],
+    positions: &[ForceFieldVec3],
+    known_distance_force_constant: f64,
+    mmat: &BoundsMatrix,
+    num_atoms: usize,
+) {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::addLongRangeDistanceConstraints (DistGeomUtils.cpp:457-505)
+    // RDKit✔️✔️: void addLongRangeDistanceConstraints(
+    // RDKit✔️✔️:     ForceFields::ForceField *ff,
+    // RDKit✔️✔️:     const ForceFields::CrystalFF::CrystalFFDetails &etkdgDetails,
+    // RDKit✔️✔️:     const boost::dynamic_bitset<> &atomPairs, RDGeom::Point3DPtrVect &positions,
+    // RDKit✔️✔️:     double knownDistanceForceConstant, const BoundsMatrix &mmat,
+    // RDKit✔️✔️:     unsigned int numAtoms) {
+    // RDKit✔️✔️:   PRECONDITION(ff, "bad force field");
+    // RDKit✔️✔️:   auto distContribs =
+    // RDKit✔️✔️:       std::make_unique<ForceFields::DistanceConstraintContribs>(ff);
+    // RDKit✔️✔️:   double fdist = knownDistanceForceConstant;
+    // END RDKIT CPP FUNCTION DistGeom::addLongRangeDistanceConstraints
+    let mut dist_contribs = DistanceConstraintContribs::new(ff);
+
+    // RDKit✔️✔️:   for (unsigned int i = 1; i < numAtoms; ++i) {
+    for i in 1..num_atoms {
+        // RDKit✔️✔️:     for (unsigned int j = 0; j < i; ++j) {
+        for j in 0..i {
+            // RDKit✔️✔️:       if (!atomPairs[j * numAtoms + i]) {
+            if !atom_pairs[j * num_atoms + i] {
+                // RDKit✔️✔️:         fdist = etkdgDetails.boundsMatForceScaling * 10.0;
+                let mut fdist = etkdg_details.bounds_mat_force_scaling * 10.0;
+                // RDKit✔️✔️:         double l = mmat.getLowerBound(i, j);
+                // RDKit✔️✔️:         double u = mmat.getUpperBound(i, j);
+                let mut l = mmat.get_lower(i, j);
+                let mut u = mmat.get_upper(i, j);
+
+                // RDKit✔️✔️:         if (!etkdgDetails.constrainedAtoms.empty() &&
+                // RDKit✔️✔️:             etkdgDetails.constrainedAtoms[i] &&
+                // RDKit✔️✔️:             etkdgDetails.constrainedAtoms[j]) {
+                if !etkdg_details.constrained_atoms.is_empty()
+                    && etkdg_details.constrained_atoms[i]
+                    && etkdg_details.constrained_atoms[j]
+                {
+                    // RDKit✔️✔️:           // we're constrained, so use very tight bounds
+                    // RDKit✔️✔️:           l = u = ((*positions[i]) - (*positions[j])).length();
+                    let d = (positions[i] - positions[j]).length();
+                    l = d;
+                    u = d;
+                    // RDKit✔️✔️:           l -= KNOWN_DIST_TOL;
+                    // RDKit✔️✔️:           u += KNOWN_DIST_TOL;
+                    l -= KNOWN_DIST_TOL;
+                    u += KNOWN_DIST_TOL;
+                    // RDKit✔️✔️:           fdist = knownDistanceForceConstant;
+                    fdist = known_distance_force_constant;
+                    // RDKit✔️✔️:         }
+                }
+                // RDKit✔️✔️:         distContribs->addContrib(i, j, l, u, fdist);
+                dist_contribs.add_contrib(i, j, l, u, fdist);
+            }
+            // RDKit✔️✔️:       }
+        }
+        // RDKit✔️✔️:     }
+    }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!distContribs->empty()) {
+    // RDKit✔️✔️:     ff->contribs().push_back(std::move(distContribs));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    if !dist_contribs.empty() {
+        ff.add_contrib(Box::new(dist_contribs));
+    }
+}
+
+fn construct_3d_forcefield(
+    mmat: &BoundsMatrix,
+    positions: &[ForceFieldVec3],
+    etkdg_details: &CrystalFFDetails,
+) -> ForceField {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::construct3DForceField (DistGeomUtils.cpp:495-524)
+    // RDKit✔️✔️: ForceFields::ForceField *construct3DForceField(
+    // RDKit✔️✔️:     const BoundsMatrix &mmat, RDGeom::Point3DPtrVect &positions,
+    // RDKit✔️✔️:     const ForceFields::CrystalFF::CrystalFFDetails &etkdgDetails) {
+    // RDKit✔️✔️:   unsigned int N = mmat.numRows();
+    // RDKit✔️✔️:   CHECK_INVARIANT(N == positions.size(), "");
+    // RDKit✔️✔️:   CHECK_INVARIANT(etkdgDetails.expTorsionAtoms.size() ==
+    // RDKit✔️✔️:                       etkdgDetails.expTorsionAngles.size(),
+    // RDKit✔️✔️:                   "");
+    let n = mmat.num_rows();
+    assert_eq!(n, positions.len());
+    assert_eq!(
+        etkdg_details.exp_torsion_atoms.len(),
+        etkdg_details.exp_torsion_angles.len()
+    );
+
+    // RDKit✔️✔️:   auto *field = new ForceFields::ForceField(positions[0]->dimension());
+    // RDKit✔️✔️:   field->positions().insert(field->positions().begin(), positions.begin(),
+    // RDKit✔️✔️:                             positions.end());
+    // Rust stores RDGeom::Point3D-equivalent coordinates by value; Point3D
+    // dimension is therefore fixed at three for this overload.
+    assert!(!positions.is_empty());
+    let mut field = ForceField::new(3);
+    field.positions_mut().extend_from_slice(positions);
+
+    // RDKit✔️✔️:   // keep track which atoms are 1,2-, 1,3- or 1,4-restrained
+    // RDKit✔️✔️:   boost::dynamic_bitset<> atomPairs(N * N);
+    // RDKit✔️✔️:   // don't add 1-3 Distances constraints for angles where the
+    // RDKit✔️✔️:   // central atom of the angle is the central atom of an improper torsion.
+    // RDKit✔️✔️:   boost::dynamic_bitset<> isImproperConstrained(N);
+    let mut atom_pairs = vec![false; n * n];
+    let mut is_improper_constrained = vec![false; n];
+
+    // RDKit✔️✔️:   addExperimentalTorsionTerms(field, etkdgDetails, atomPairs, N);
+    // RDKit✔️✔️:   addImproperTorsionTerms(field, 10.0, etkdgDetails.improperAtoms,
+    // RDKit✔️✔️:                           isImproperConstrained);
+    // RDKit✔️✔️:   add12Terms(field, etkdgDetails, atomPairs, positions,
+    // RDKit✔️✔️:              KNOWN_DIST_FORCE_CONSTANT, N);
+    // RDKit✔️✔️:   add13Terms(field, etkdgDetails, atomPairs, positions,
+    // RDKit✔️✔️:              KNOWN_DIST_FORCE_CONSTANT, isImproperConstrained, true, mmat, N);
+    // RDKit✔️✔️:   // minimum distance for all other atom pairs that aren't constrained
+    // RDKit✔️✔️:   addLongRangeDistanceConstraints(field, etkdgDetails, atomPairs, positions,
+    // RDKit✔️✔️:                                   KNOWN_DIST_FORCE_CONSTANT, mmat, N);
+    // RDKit✔️✔️:   return field;
+    // RDKit✔️✔️: }  // construct3DForceField
+    add_experimental_torsion_terms(&mut field, etkdg_details, &mut atom_pairs, n);
+    add_improper_torsion_terms(
+        &mut field,
+        10.0,
+        &etkdg_details.improper_atoms,
+        &mut is_improper_constrained,
+    );
+    add_12_terms(
+        &mut field,
+        etkdg_details,
+        &mut atom_pairs,
+        positions,
+        KNOWN_DIST_FORCE_CONSTANT,
+        n,
+    );
+    add_13_terms(
+        &mut field,
+        etkdg_details,
+        &mut atom_pairs,
+        positions,
+        KNOWN_DIST_FORCE_CONSTANT,
+        &is_improper_constrained,
+        true,
+        mmat,
+        n,
+    );
+    add_long_range_distance_constraints(
+        &mut field,
+        etkdg_details,
+        &atom_pairs,
+        positions,
+        KNOWN_DIST_FORCE_CONSTANT,
+        mmat,
+        n,
+    );
+    field
+}
+
+fn construct_plain_3d_forcefield(
+    mmat: &BoundsMatrix,
+    positions: &[ForceFieldVec3],
+    etkdg_details: &CrystalFFDetails,
+) -> ForceField {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::constructPlain3DForceField (DistGeomUtils.cpp:545-573)
+    // RDKit✔️✔️: ForceFields::ForceField *constructPlain3DForceField(
+    // RDKit✔️✔️:     const BoundsMatrix &mmat, RDGeom::Point3DPtrVect &positions,
+    // RDKit✔️✔️:     const ForceFields::CrystalFF::CrystalFFDetails &etkdgDetails) {
+    // RDKit✔️✔️:   unsigned int N = mmat.numRows();
+    // RDKit✔️✔️:   CHECK_INVARIANT(N == positions.size(), "");
+    // RDKit✔️✔️:   CHECK_INVARIANT(etkdgDetails.expTorsionAtoms.size() ==
+    // RDKit✔️✔️:                       etkdgDetails.expTorsionAngles.size(),
+    // RDKit✔️✔️:                   "");
+    let n = mmat.num_rows();
+    assert_eq!(n, positions.len());
+    assert_eq!(
+        etkdg_details.exp_torsion_atoms.len(),
+        etkdg_details.exp_torsion_angles.len()
+    );
+
+    // RDKit✔️✔️:   auto *field = new ForceFields::ForceField(positions[0]->dimension());
+    // RDKit✔️✔️:   field->positions().insert(field->positions().begin(), positions.begin(),
+    // RDKit✔️✔️:                             positions.end());
+    assert!(!positions.is_empty());
+    let mut field = ForceField::new(3);
+    field.positions_mut().extend_from_slice(positions);
+
+    // RDKit✔️✔️:   // keep track which atoms are 1,2-, 1,3- or 1,4-restrained
+    // RDKit✔️✔️:   boost::dynamic_bitset<> atomPairs(N * N);
+    // RDKit✔️✔️:   // don't add 1-3 Distances constraints for angles where the
+    // RDKit✔️✔️:   // central atom of the angle is the central atom of an improper torsion.
+    // RDKit✔️✔️:   boost::dynamic_bitset<> isImproperConstrained(N);
+    let mut atom_pairs = vec![false; n * n];
+    let is_improper_constrained = vec![false; n];
+
+    // RDKit✔️✔️:   addExperimentalTorsionTerms(field, etkdgDetails, atomPairs, N);
+    // RDKit✔️✔️:   add12Terms(field, etkdgDetails, atomPairs, positions,
+    // RDKit✔️✔️:              KNOWN_DIST_FORCE_CONSTANT, N);
+    // RDKit✔️✔️:   add13Terms(field, etkdgDetails, atomPairs, positions,
+    // RDKit✔️✔️:              KNOWN_DIST_FORCE_CONSTANT, isImproperConstrained, false, mmat, N);
+    // RDKit✔️✔️:   // minimum distance for all other atom pairs that aren't constrained
+    // RDKit✔️✔️:   addLongRangeDistanceConstraints(field, etkdgDetails, atomPairs, positions,
+    // RDKit✔️✔️:                                   KNOWN_DIST_FORCE_CONSTANT, mmat, N);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return field;
+    // RDKit✔️✔️: }  // constructPlain3DForceField
+    add_experimental_torsion_terms(&mut field, etkdg_details, &mut atom_pairs, n);
+    add_12_terms(
+        &mut field,
+        etkdg_details,
+        &mut atom_pairs,
+        positions,
+        KNOWN_DIST_FORCE_CONSTANT,
+        n,
+    );
+    add_13_terms(
+        &mut field,
+        etkdg_details,
+        &mut atom_pairs,
+        positions,
+        KNOWN_DIST_FORCE_CONSTANT,
+        &is_improper_constrained,
+        false,
+        mmat,
+        n,
+    );
+    add_long_range_distance_constraints(
+        &mut field,
+        etkdg_details,
+        &atom_pairs,
+        positions,
+        KNOWN_DIST_FORCE_CONSTANT,
+        mmat,
+        n,
+    );
+    field
+}
+
+fn construct_3d_improper_forcefield_from_parts(
+    mmat: &BoundsMatrix,
+    positions: &[ForceFieldVec3],
+    improper_atoms: &[Vec<i32>],
+    angles: &[Vec<i32>],
+    atom_nums: &[i32],
+) -> ForceField {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::construct3DImproperForceField (DistGeomUtils.cpp:575-612)
+    // RDKit✔️✔️: ForceFields::ForceField *construct3DImproperForceField(
+    // RDKit✔️✔️:     const BoundsMatrix &mmat, RDGeom::Point3DPtrVect &positions,
+    // RDKit✔️✔️:     const std::vector<std::vector<int>> &improperAtoms,
+    // RDKit✔️✔️:     const std::vector<std::vector<int>> &angles,
+    // RDKit✔️✔️:     const std::vector<int> &atomNums) {
+    // RDKit✔️✔️:   RDUNUSED_PARAM(atomNums);
+    let _ = atom_nums;
+    // RDKit✔️✔️:   unsigned int N = mmat.numRows();
+    // RDKit✔️✔️:   CHECK_INVARIANT(N == positions.size(), "");
+    let n = mmat.num_rows();
+    assert_eq!(n, positions.len());
+
+    // RDKit✔️✔️:   auto *field = new ForceFields::ForceField(positions[0]->dimension());
+    // RDKit✔️✔️:   field->positions().insert(field->positions().begin(), positions.begin(),
+    // RDKit✔️✔️:                             positions.end());
+    assert!(!positions.is_empty());
+    let mut field = ForceField::new(3);
+    field.positions_mut().extend_from_slice(positions);
+
+    // RDKit✔️✔️:   // improper torsions / out-of-plane bend / inversion
+    // RDKit✔️✔️:   double oobForceScalingFactor = 10.0;
+    // RDKit✔️✔️:   boost::dynamic_bitset<> isImproperConstrained(N);
+    // RDKit✔️✔️:   addImproperTorsionTerms(field, oobForceScalingFactor, improperAtoms,
+    // RDKit✔️✔️:                           isImproperConstrained);
+    let oob_force_scaling_factor = 10.0;
+    let mut is_improper_constrained = vec![false; n];
+    add_improper_torsion_terms(
+        &mut field,
+        oob_force_scaling_factor,
+        improper_atoms,
+        &mut is_improper_constrained,
+    );
+
+    // RDKit✔️✔️:   // Check that SP Centers have an angle of 180 degrees.
+    // RDKit✔️✔️:   auto angleContribs =
+    // RDKit✔️✔️:       std::make_unique<ForceFields::AngleConstraintContribs>(field);
+    let mut angle_contribs = AngleConstraintContribs::new(&field);
+    // RDKit✔️✔️:   for (const auto &angle : angles) {
+    for angle in angles {
+        // RDKit✔️✔️:     if (angle[3]) {
+        if angle[3] != 0 {
+            // RDKit✔️✔️:       angleContribs->addContrib(angle[0], angle[1], angle[2], 179.0, 180.0,
+            // RDKit✔️✔️:                                 oobForceScalingFactor);
+            angle_contribs.add_contrib(
+                angle[0] as usize,
+                angle[1] as usize,
+                angle[2] as usize,
+                179.0,
+                180.0,
+                oob_force_scaling_factor,
+            );
+        }
+        // RDKit✔️✔️:     }
+    }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!angleContribs->empty()) {
+    // RDKit✔️✔️:     field->contribs().push_back(std::move(angleContribs));
+    // RDKit✔️✔️:   }
+    if !angle_contribs.empty() {
+        field.add_contrib(Box::new(angle_contribs));
+    }
+    // RDKit✔️✔️:   return field;
+    // RDKit✔️✔️: }  // construct3DImproperForceField
+    field
+}
+
+fn construct_3d_improper_forcefield(
+    mmat: &BoundsMatrix,
+    positions: &[ForceFieldVec3],
+    etkdg_details: &CrystalFFDetails,
+) -> ForceField {
+    // BEGIN RDKIT CPP INLINE OVERLOAD DistGeom::construct3DImproperForceField (DistGeomUtils.h:215-220)
+    // RDKit✔️✔️: inline ForceFields::ForceField *construct3DImproperForceField(
+    // RDKit✔️✔️:     const BoundsMatrix &mmat, RDGeom::Point3DPtrVect &positions,
+    // RDKit✔️✔️:     const ForceFields::CrystalFF::CrystalFFDetails &etkdgDetails) {
+    // RDKit✔️✔️:   return construct3DImproperForceField(
+    // RDKit✔️✔️:       mmat, positions, etkdgDetails.improperAtoms, etkdgDetails.angles,
+    // RDKit✔️✔️:       etkdgDetails.atomNums);
+    // RDKit✔️✔️: }
+    construct_3d_improper_forcefield_from_parts(
+        mmat,
+        positions,
+        &etkdg_details.improper_atoms,
+        &etkdg_details.angles,
+        &etkdg_details.atom_nums,
+    )
+}
+
+fn construct_3d_forcefield_with_cpci(
+    mmat: &BoundsMatrix,
+    positions: &[ForceFieldVec3],
+    etkdg_details: &CrystalFFDetails,
+    cpci: &BTreeMap<(usize, usize), f64>,
+) -> ForceField {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::construct3DForceField CPCI overload (DistGeomUtils.cpp:526-543)
+    // RDKit✔️✔️: ForceFields::ForceField *construct3DForceField(
+    // RDKit✔️✔️:     const BoundsMatrix &mmat, RDGeom::Point3DPtrVect &positions,
+    // RDKit✔️✔️:     const ForceFields::CrystalFF::CrystalFFDetails &etkdgDetails,
+    // RDKit✔️✔️:     const std::map<std::pair<unsigned int, unsigned int>, double> &CPCI) {
+    // RDKit✔️✔️:   auto *field = construct3DForceField(mmat, positions, etkdgDetails);
+    let mut field = construct_3d_forcefield(mmat, positions, etkdg_details);
+
+    // RDKit✔️✔️:   bool is1_4 = false;
+    // RDKit✔️✔️:   // double dielConst = 1.0;
+    // RDKit✔️✔️:   boost::uint8_t dielModel = 1;
+    // RDKit✔️✔️:   auto *contrib = new ForceFields::MMFF::EleContrib(field);
+    let is_1_4 = false;
+    let diel_model = 1;
+    let mut contrib = NonbondedContrib::new(&field);
+
+    // RDKit✔️✔️:   field->contribs().emplace_back(contrib);
+    // RDKit✔️✔️:   for (const auto &charge : CPCI) {
+    // RDKit✔️✔️:     contrib->addTerm(charge.first.first, charge.first.second, charge.second,
+    // RDKit✔️✔️:                      dielModel, is1_4);
+    // RDKit✔️✔️:   }
+    for (&(idx1, idx2), &charge_term) in cpci {
+        contrib.add_term(idx1, idx2, None, true, charge_term, diel_model, is_1_4);
+    }
+
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return field;
+    // RDKit✔️✔️: }
+    field.add_contrib(Box::new(contrib));
+    field
+}
+
+impl BoundsMatrix {
     fn check_and_set_bounds(&mut self, i: usize, j: usize, lb: f64, ub: f64) {
         self.check_and_set_bounds_with_mode(i, j, lb, ub, false);
     }
@@ -1585,11 +8201,12 @@ fn path14_id(nb: usize, bid1: usize, bid2: usize, bid3: usize) -> u64 {
     bid1 as u64 * nb as u64 * nb as u64 + bid2 as u64 * nb as u64 + bid3 as u64
 }
 
-fn ring_info_for_distgeom(mol: &Molecule) -> &crate::RingInfo {
-    mol.derived_cache()
-        .rings
-        .as_ref()
-        .expect("distgeom requires ring info")
+fn ring_info_for_distgeom(mol: &Molecule) -> Result<Cow<'_, crate::RingInfo>, DgBoundsError> {
+    if let Some(ring_info) = mol.derived_cache().rings.as_ref() {
+        Ok(Cow::Borrowed(ring_info))
+    } else {
+        Ok(Cow::Owned(crate::symmetrize_sssr(mol)?))
+    }
 }
 
 fn bond_pair_shared_atom(
@@ -1739,7 +8356,12 @@ fn set_ring_angle(mol: &Molecule, aid2: usize, ring_size: usize) -> f64 {
 // performs repeated bond lookups through `bond_between_idx_simple()` inside the
 // nested loops where RDKit iterates directly over bond iterators and matrix
 // cells.
-fn set_13_bounds(mol: &Molecule, mmat: &mut BoundsMatrix, accum_data: &mut ComputedData) {
+fn set_13_bounds(
+    mol: &Molecule,
+    mmat: &mut BoundsMatrix,
+    accum_data: &mut ComputedData,
+    rinfo: &crate::RingInfo,
+) {
     let npt = mmat.num_rows();
     assert_eq!(npt, mol.atoms().len(), "Wrong size metric matrix");
 
@@ -1754,12 +8376,6 @@ fn set_13_bounds(mol: &Molecule, mmat: &mut BoundsMatrix, accum_data: &mut Compu
         nb * nb,
         "Wrong size bond adjacency matrix"
     );
-
-    let rinfo = mol
-        .derived_cache()
-        .rings
-        .as_ref()
-        .expect("set13Bounds requires ring info");
 
     let mut atom_rings: Vec<Vec<usize>> = rinfo
         .atom_rings()
@@ -2079,6 +8695,7 @@ fn set_in_ring_14_bounds(
     mmat: &mut BoundsMatrix,
     dmat: &[f64],
     ring_size: usize,
+    ring_info: &crate::RingInfo,
 ) {
     let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2);
     let ahyb2 = mol.atoms()[atm2].hybridization();
@@ -2114,7 +8731,6 @@ fn set_in_ring_14_bounds(
     assert!(ba23 > 0.0);
 
     let stype = get_atom_stereo(&mol.bonds()[bid2], aid1, aid4);
-    let ring_info = ring_info_for_distgeom(mol);
     let mut prefer_cis = false;
     let mut prefer_trans = false;
 
@@ -2333,8 +8949,9 @@ fn set_two_in_diff_ring_14_bounds(
     accum_data: &mut ComputedData,
     mmat: &mut BoundsMatrix,
     dmat: &[f64],
+    ring_info: &crate::RingInfo,
 ) {
-    set_in_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat, 0);
+    set_in_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat, 0, ring_info);
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_setShareRingBond14Bounds (BoundsMatrixBuilder.cpp:912-920)
@@ -2354,8 +8971,9 @@ fn set_share_ring_bond_14_bounds(
     accum_data: &mut ComputedData,
     mmat: &mut BoundsMatrix,
     dmat: &[f64],
+    ring_info: &crate::RingInfo,
 ) {
-    set_in_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat, 0);
+    set_in_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat, 0, ring_info);
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_checkMacrocycleTwoInSameRingAmideEster14 (BoundsMatrixBuilder.cpp:1342-1361)
@@ -3780,6 +10398,7 @@ fn set_14_bounds(
     dmat: &[f64],
     use_macrocycle_14config: bool,
     force_trans_amides: bool,
+    rinfo: &crate::RingInfo,
 ) {
     // BEGIN RDKIT CPP FUNCTION DGeomHelpers::set14Bounds (BoundsMatrixBuilder.cpp:1664-1784)
     // RDKit❗✔️: void set14Bounds(const ROMol &mol, DistGeom::BoundsMatPtr mmat,
@@ -3817,7 +10436,6 @@ fn set_14_bounds(
     if mol.num_bonds() >= max_num_bonds {
         panic!("Too many bonds in the molecule, cannot compute 1-4 bounds");
     }
-    let rinfo = ring_info_for_distgeom(mol);
     let bond_rings = rinfo.bond_rings();
 
     let mut bid_is_macrocycle: HashSet<usize> = HashSet::new();
@@ -3851,7 +10469,9 @@ fn set_14_bounds(
                     );
                     bid_is_macrocycle.insert(bid2);
                 } else {
-                    set_in_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat, r_size);
+                    set_in_ring_14_bounds(
+                        mol, bid1, bid2, bid3, accum_data, mmat, dmat, r_size, rinfo,
+                    );
                 }
             } else {
                 record_14_path(mol, bid1, bid2, bid3, accum_data);
@@ -3908,9 +10528,13 @@ fn set_14_bounds(
                     || (rinfo.num_bond_rings(BondId::new(bid2)) > 0
                         && rinfo.num_bond_rings(BondId::new(bid3)) > 0)
                 {
-                    set_two_in_diff_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat);
+                    set_two_in_diff_ring_14_bounds(
+                        mol, bid1, bid2, bid3, accum_data, mmat, dmat, rinfo,
+                    );
                 } else if rinfo.num_bond_rings(BondId::new(bid2)) > 0 {
-                    set_share_ring_bond_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat);
+                    set_share_ring_bond_14_bounds(
+                        mol, bid1, bid2, bid3, accum_data, mmat, dmat, rinfo,
+                    );
                 } else {
                     set_chain_14_bounds(
                         mol,
@@ -4182,10 +10806,20 @@ fn set_topol_bounds(
 
     let mut accum_data = ComputedData::new(na, nb);
     let dist_matrix = flatten_topological_distances_matrix(mol);
+    let ring_info = if set13bounds || set14bounds {
+        Some(ring_info_for_distgeom(mol)?)
+    } else {
+        None
+    };
 
     set_12_bounds(mol, mmat, &mut accum_data)?;
     if set13bounds {
-        set_13_bounds(mol, mmat, &mut accum_data);
+        set_13_bounds(
+            mol,
+            mmat,
+            &mut accum_data,
+            ring_info.as_deref().expect("ring info loaded"),
+        );
     }
     if set14bounds {
         set_14_bounds(
@@ -4195,6 +10829,7 @@ fn set_topol_bounds(
             &dist_matrix,
             use_macrocycle_14config,
             force_trans_amides,
+            ring_info.as_deref().expect("ring info loaded"),
         );
     }
     if set15bounds {
@@ -4326,6 +10961,682 @@ pub fn dg_bounds_matrix_with_options(
 
 pub fn dg_bounds_matrix(molecule: &Molecule) -> Result<Vec<Vec<f64>>, DgBoundsError> {
     dg_bounds_matrix_with_options(molecule, true, false, true, false)
+}
+
+fn molecule_fragment_mapping(mol: &Molecule) -> Vec<usize> {
+    let mut mapping = vec![usize::MAX; mol.num_atoms()];
+    let mut frag_idx = 0;
+    for atom_idx in 0..mol.num_atoms() {
+        if mapping[atom_idx] != usize::MAX {
+            continue;
+        }
+        let mut stack = vec![atom_idx];
+        mapping[atom_idx] = frag_idx;
+        while let Some(current) = stack.pop() {
+            for nbr in neighbors_for_atom(mol, current) {
+                if mapping[nbr] == usize::MAX {
+                    mapping[nbr] = frag_idx;
+                    stack.push(nbr);
+                }
+            }
+        }
+        frag_idx += 1;
+    }
+    mapping
+}
+
+fn molecule_fragments_for_embed(
+    mol: &Molecule,
+    embed_fragments_separately: bool,
+) -> Result<(Vec<Molecule>, Vec<usize>), DgBoundsError> {
+    if !embed_fragments_separately {
+        return Ok((vec![mol.clone()], vec![0; mol.num_atoms()]));
+    }
+    let frag_mapping = molecule_fragment_mapping(mol);
+    let fragment_count = frag_mapping
+        .iter()
+        .copied()
+        .max()
+        .map_or(0, |max_frag| max_frag + 1);
+    if fragment_count <= 1 {
+        return Ok((vec![mol.clone()], vec![0; mol.num_atoms()]));
+    }
+    let mut fragments = Vec::with_capacity(fragment_count);
+    for frag_idx in 0..fragment_count {
+        let atoms_to_remove: Vec<_> = mol
+            .atoms()
+            .iter()
+            .filter_map(|atom| (frag_mapping[atom.id().index()] != frag_idx).then_some(atom.id()))
+            .collect();
+        let mut builder = mol.to_builder();
+        builder.remove_atoms_for_construction(&atoms_to_remove);
+        fragments.push(builder.build()?);
+    }
+    Ok((fragments, frag_mapping))
+}
+
+fn conformer_from_positions(id: usize, atom_count: usize) -> Conformer3D {
+    Conformer3D::new(id, vec![[0.0, 0.0, 0.0]; atom_count], true)
+}
+
+fn embedder_add_conformers(
+    mol: &Molecule,
+    new_conformers: Vec<Conformer3D>,
+    clear_confs: bool,
+) -> Result<(Molecule, Vec<i32>), DgBoundsError> {
+    let mut out = mol.clone();
+    let coordinates = out.coordinate_block_mut();
+    if clear_confs {
+        coordinates.conformers_3d.clear();
+    }
+    let mut ids = Vec::with_capacity(new_conformers.len());
+    for conformer in new_conformers {
+        let conf_id = coordinates.conformers_3d.len();
+        ids.push(conf_id as i32);
+        coordinates.conformers_3d.push(Conformer3D::new(
+            conf_id,
+            conformer.coords().to_vec(),
+            conformer.is_3d(),
+        ));
+    }
+    Ok((out, ids))
+}
+
+pub fn embed_multiple_confs(
+    mol: &Molecule,
+    num_confs: u32,
+    params: &mut EmbedParameters,
+) -> Result<(Molecule, Vec<i32>), DgBoundsError> {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbedMultipleConfs(ROMol&, INT_VECT&, unsigned int, EmbedParameters&) (Embedder.cpp:1501-1695)
+    // RDKit✔️✔️: void EmbedMultipleConfs(ROMol &mol, INT_VECT &res, unsigned int numConfs,
+    // RDKit✔️✔️:                         EmbedParameters &params) {
+    // RDKit✔️✔️:   TimePoint *end_time = nullptr;
+    // RDKit✔️✔️:   TimePoint end_time_storage;
+    // RDKit✔️✔️:   if (params.timeout > 0) {
+    // RDKit✔️✔️:     end_time_storage = Clock::now() + std::chrono::seconds(params.timeout);
+    // RDKit✔️✔️:     end_time = &end_time_storage;
+    // RDKit✔️✔️:   }
+    let end_time = (params.timeout > 0)
+        .then(|| Instant::now() + Duration::from_secs(u64::from(params.timeout)));
+
+    // RDKit✔️✔️:   if (params.trackFailures) {
+    // RDKit✔️✔️:     params.failures.resize(EmbedFailureCauses::END_OF_ENUM);
+    // RDKit✔️✔️:     std::fill(params.failures.begin(), params.failures.end(), 0);
+    // RDKit✔️✔️:   }
+    if params.track_failures {
+        params
+            .failures
+            .resize(EmbedFailureCause::EndOfEnum as usize, 0);
+        params.failures.fill(0);
+    }
+    // RDKit✔️✔️:   if (!mol.getNumAtoms()) {
+    // RDKit✔️✔️:     throw ValueErrorException("molecule has no atoms");
+    // RDKit✔️✔️:   }
+    if mol.num_atoms() == 0 {
+        return Err(DgBoundsError::EmptyMolecule);
+    }
+    // RDKit✔️✔️:   if (params.ETversion < 1 || params.ETversion > 2) {
+    // RDKit✔️✔️:     throw ValueErrorException(
+    // RDKit✔️✔️:         "Only version 1 and 2 of the experimental "
+    // RDKit✔️✔️:         "torsion-angle preferences (ETversion) supported");
+    // RDKit✔️✔️:   }
+    if params.et_version < 1 || params.et_version > 2 {
+        return Err(DgBoundsError::UnsupportedEtVersion);
+    }
+
+    // RDKit✔️✔️:   if (MolOps::needsHs(mol)) {
+    // RDKit✔️✔️:     BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:         << "Molecule does not have explicit Hs. Consider calling AddHs()"
+    // RDKit✔️✔️:         << std::endl;
+    // RDKit✔️✔️:   }
+
+    // RDKit✔️✔️:   // initialize the conformers we're going to be creating:
+    // RDKit✔️✔️:   if (params.clearConfs) {
+    // RDKit✔️✔️:     res.clear();
+    // RDKit✔️✔️:     mol.clearConformers();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   std::vector<std::unique_ptr<Conformer>> confs;
+    // RDKit✔️✔️:   confs.reserve(numConfs);
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < numConfs; ++i) {
+    // RDKit✔️✔️:     confs.emplace_back(new Conformer(mol.getNumAtoms()));
+    // RDKit✔️✔️:   }
+    let mut confs: Vec<Conformer3D> = (0..num_confs as usize)
+        .map(|i| conformer_from_positions(i, mol.num_atoms()))
+        .collect();
+    // RDKit✔️✔️:   boost::dynamic_bitset<> confsOk(numConfs);
+    // RDKit✔️✔️:   confsOk.set();
+    let mut confs_ok = vec![true; num_confs as usize];
+
+    // RDKit✔️✔️:   INT_VECT fragMapping;
+    // RDKit✔️✔️:   std::vector<ROMOL_SPTR> molFrags;
+    // RDKit✔️✔️:   if (params.embedFragmentsSeparately) {
+    // RDKit✔️✔️:     molFrags = MolOps::getMolFrags(mol, true, &fragMapping);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     molFrags.push_back(ROMOL_SPTR(new ROMol(mol)));
+    // RDKit✔️✔️:     fragMapping.resize(mol.getNumAtoms());
+    // RDKit✔️✔️:     std::fill(fragMapping.begin(), fragMapping.end(), 0);
+    // RDKit✔️✔️:   }
+    let (mol_frags, frag_mapping) =
+        molecule_fragments_for_embed(mol, params.embed_fragments_separately)?;
+
+    // RDKit✔️✔️:   const std::map<int, RDGeom::Point3D> *coordMap = params.coordMap;
+    let coord_map_storage = params.coord_map.clone();
+    let mut coord_map = coord_map_storage.as_ref();
+    // RDKit✔️✔️:   if (molFrags.size() > 1 && coordMap) {
+    // RDKit✔️✔️:     BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:         << "Constrained conformer generation (via the coordMap argument) "
+    // RDKit✔️✔️:            "does not work with molecules that have multiple fragments."
+    // RDKit✔️✔️:         << std::endl;
+    // RDKit✔️✔️:     coordMap = nullptr;
+    // RDKit✔️✔️:   }
+    if mol_frags.len() > 1 && coord_map.is_some() {
+        coord_map = None;
+    }
+    // RDKit✔️✔️:   boost::dynamic_bitset<> constrainedAtoms(mol.getNumAtoms());
+    // RDKit✔️✔️:   if (coordMap) {
+    // RDKit✔️✔️:     for (const auto &entry : *coordMap) {
+    // RDKit✔️✔️:       constrainedAtoms.set(entry.first);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (molFrags.size() > 1 && params.boundsMat != nullptr) {
+    // RDKit✔️✔️:     BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:         << "Conformer generation using a user-provided boundsMat "
+    // RDKit✔️✔️:            "does not work with molecules that have multiple fragments. The "
+    // RDKit✔️✔️:            "boundsMat will be ignored."
+    // RDKit✔️✔️:         << std::endl;
+    // RDKit✔️✔️:     coordMap = nullptr;  // FIXME not directly related to ETKDG, but here I
+    // RDKit✔️✔️:                          // think it should be params.boundsMat = nullptr
+    // RDKit✔️✔️:   }
+    if mol_frags.len() > 1 && params.bounds_mat.is_some() {
+        coord_map = None;
+    }
+
+    // RDKit✔️✔️:   // we will generate conformations for each fragment in the molecule
+    // RDKit✔️✔️:   // separately, so loop over them:
+    // RDKit✔️✔️:   for (unsigned int fragIdx = 0; fragIdx < molFrags.size(); ++fragIdx) {
+    for (frag_idx, piece) in mol_frags.iter().enumerate() {
+        // RDKit✔️✔️:     ROMOL_SPTR piece = molFrags[fragIdx];
+        // RDKit✔️✔️:     unsigned int nAtoms = piece->getNumAtoms();
+        let n_atoms = piece.num_atoms();
+        // RDKit✔️✔️:     ForceFields::CrystalFF::CrystalFFDetails etkdgDetails;
+        // RDKit✔️✔️:     etkdgDetails.constrainedAtoms = constrainedAtoms;
+        // RDKit✔️✔️:     EmbeddingOps::initETKDG(piece.get(), params, etkdgDetails);
+        let mut etkdg_details = CrystalFFDetails::default();
+        embedder_init_etkdg(piece, params, &mut etkdg_details)?;
+
+        // RDKit✔️✔️:     DistGeom::BoundsMatPtr mmat;
+        let mut mmat;
+        // RDKit✔️✔️:     if (params.boundsMat == nullptr || molFrags.size() > 1) {
+        if params.bounds_mat.is_none() || mol_frags.len() > 1 {
+            // RDKit✔️✔️:       mmat.reset(new DistGeom::BoundsMatrix(nAtoms));
+            // RDKit✔️✔️:       initBoundsMat(mmat);
+            mmat = BoundsMatrix::new(n_atoms);
+            // RDKit✔️✔️:       if (!EmbeddingOps::setupInitialBoundsMatrix(piece.get(), mmat, coordMap,
+            // RDKit✔️✔️:                                                   params, etkdgDetails)) {
+            // RDKit✔️✔️:         // return if we couldn't setup the bounds matrix
+            // RDKit✔️✔️:         // possible causes include a triangle smoothing failure
+            // RDKit✔️✔️:         return;
+            // RDKit✔️✔️:       }
+            if !embedder_setup_initial_bounds_matrix(
+                piece,
+                &mut mmat,
+                coord_map,
+                params,
+                &mut etkdg_details,
+            )? {
+                return embedder_add_conformers(mol, Vec::new(), params.clear_confs);
+            }
+        } else {
+            // RDKit✔️✔️:     } else {
+            // RDKit✔️✔️:       // just use what they gave us
+            // RDKit✔️✔️:       // first make sure it's the right size though:
+            // RDKit✔️✔️:       if (params.boundsMat->numRows() != nAtoms) {
+            // RDKit✔️✔️:         throw ValueErrorException(
+            // RDKit✔️✔️:             "size of boundsMat provided does not match the number of atoms in "
+            // RDKit✔️✔️:             "the molecule.");
+            // RDKit✔️✔️:       }
+            let bounds = params.bounds_mat.as_ref().expect("checked above");
+            if bounds.num_rows() != n_atoms {
+                return Err(DgBoundsError::GenerationFailed(
+                    "size of boundsMat provided does not match the number of atoms in the molecule."
+                        .to_string(),
+                ));
+            }
+            // RDKit✔️✔️:       collectBondsAndAngles((*piece.get()), etkdgDetails.bonds,
+            // RDKit✔️✔️:                             etkdgDetails.angles);
+            collect_bonds_and_angles(piece, &mut etkdg_details.bonds, &mut etkdg_details.angles);
+            // RDKit✔️✔️:       mmat.reset(new DistGeom::BoundsMatrix(*params.boundsMat));
+            mmat = (**bounds).clone();
+        }
+
+        // RDKit✔️✔️:       if (!EmbeddingOps::setupInitialBoundsMatrix(piece.get(), mmat, coordMap,
+        // RDKit✔️✔️:                                                   params, etkdgDetails)) {
+        // RDKit✔️✔️:         // return if we couldn't setup the bounds matrix
+        // RDKit✔️✔️:         // possible causes include a triangle smoothing failure
+        // RDKit✔️✔️:         return;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     // find all the chiral centers in the molecule
+        // RDKit✔️✔️:     MolOps::assignStereochemistry(*piece);
+        //
+        // RDKit mutates `piece` in place. Its ring info initialized during bounds
+        // setup remains attached to the same fragment object and is immediately
+        // visible to `findChiralSets()`. COSMolKit fragments are rebuilt value
+        // objects with empty derived caches, so persist the same symmetrized ring
+        // information on the local fragment before downstream ring-dependent
+        // embedding logic.
+        let piece_storage;
+        let piece = if piece
+            .derived_cache()
+            .rings
+            .as_ref()
+            .is_some_and(crate::RingInfo::is_initialized)
+        {
+            piece
+        } else {
+            let mut ringed_piece = piece.clone();
+            let ring_info = ring_info_for_distgeom(piece)?.into_owned();
+            ringed_piece.derived_cache_mut().rings = Some(ring_info);
+            piece_storage = ringed_piece;
+            &piece_storage
+        };
+
+        // RDKit✔️✔️:     // find all the chiral centers in the molecule
+        // RDKit✔️✔️:     MolOps::assignStereochemistry(*piece);
+        // RDKit✔️✔️:     DistGeom::VECT_CHIRALSET chiralCenters;
+        // RDKit✔️✔️:     DistGeom::VECT_CHIRALSET tetrahedralCarbons;
+        // RDKit✔️✔️:     EmbeddingOps::findChiralSets(*piece, chiralCenters, tetrahedralCarbons,
+        // RDKit✔️✔️:                                  coordMap);
+        let mut chiral_centers = Vec::new();
+        let mut tetrahedral_carbons = Vec::new();
+        embedder_find_chiral_sets(
+            piece,
+            &mut chiral_centers,
+            &mut tetrahedral_carbons,
+            coord_map,
+        );
+
+        // RDKit✔️✔️:     // find double bonds
+        // RDKit✔️✔️:     std::vector<std::tuple<unsigned int, unsigned int, unsigned int>>
+        // RDKit✔️✔️:         doubleBondEnds;
+        // RDKit✔️✔️:     std::vector<std::pair<std::vector<unsigned int>, int>> stereoDoubleBonds;
+        // RDKit✔️✔️:     EmbeddingOps::findDoubleBonds(*piece, doubleBondEnds, stereoDoubleBonds,
+        // RDKit✔️✔️:                                   coordMap);
+        let mut double_bond_ends = Vec::new();
+        let mut stereo_double_bonds = Vec::new();
+        embedder_find_double_bonds(
+            piece,
+            &mut double_bond_ends,
+            &mut stereo_double_bonds,
+            coord_map,
+        );
+
+        // RDKit✔️✔️:     // if we have any chiral centers or are using random coordinates, we
+        // RDKit✔️✔️:     // will first embed the molecule in four dimensions, otherwise we will
+        // RDKit✔️✔️:     // use 3D
+        // RDKit✔️✔️:     bool fourD = false;
+        // RDKit✔️✔️:     if (params.useRandomCoords || chiralCenters.size() > 0) {
+        // RDKit✔️✔️:       fourD = true;
+        // RDKit✔️✔️:     }
+        let four_d = params.use_random_coords || !chiral_centers.is_empty();
+        // RDKit✔️✔️:     int numThreads = getNumThreadsToUse(params.numThreads);
+        let num_threads = if params.num_threads <= 0 {
+            std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get) as i32
+        } else {
+            params.num_threads
+        };
+
+        // RDKit✔️✔️:     detail::EmbedArgs eargs = {&confsOk,        fourD,
+        // RDKit✔️✔️:                                &fragMapping,    &confs,
+        // RDKit✔️✔️:                                fragIdx,         mmat,
+        // RDKit✔️✔️:                                &chiralCenters,  &tetrahedralCarbons,
+        // RDKit✔️✔️:                                &doubleBondEnds, &stereoDoubleBonds,
+        // RDKit✔️✔️:                                &etkdgDetails};
+        let mut helper_args = EmbedHelperArgs {
+            confs_ok: &mut confs_ok,
+            four_d,
+            frag_mapping: Some(&frag_mapping),
+            confs: &mut confs,
+            frag_idx,
+            mmat: &mmat,
+            chiral_centers: &chiral_centers,
+            tetrahedral_carbons: &tetrahedral_carbons,
+            double_bond_ends: &double_bond_ends,
+            stereo_double_bonds: &stereo_double_bonds,
+            etkdg_details: &etkdg_details,
+        };
+        // RDKit✔️✔️:     if (numThreads == 1) {
+        // RDKit✔️✔️:       detail::embedHelper_(0, 1, &eargs, &params, end_time);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     else { ... dispatch thread ids ... }
+        for thread_id in 0..num_threads {
+            embedder_embed_helper(thread_id, num_threads, &mut helper_args, params, end_time);
+        }
+
+        // RDKit✔️✔️:     if (end_time != nullptr && Clock::now() > *end_time) {
+        // RDKit✔️✔️:       if (params.trackFailures) {
+        // RDKit✔️✔️:         params.failures[EmbedFailureCauses::EXCEEDED_TIMEOUT]++;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       res.push_back(-1);
+        // RDKit✔️✔️:       return;
+        // RDKit✔️✔️:     }
+        if let Some(deadline) = end_time
+            && Instant::now() > deadline
+        {
+            embedder_increment_failure(params, EmbedFailureCause::ExceededTimeout);
+            let (out, mut res) = embedder_add_conformers(mol, Vec::new(), params.clear_confs)?;
+            res.push(-1);
+            return Ok((out, res));
+        }
+    }
+    // RDKit✔️✔️:   std::vector<std::vector<unsigned int>> selfMatches;
+    // RDKit✔️✔️:   if (params.pruneRmsThresh > 0.0) {
+    // RDKit✔️✔️:     selfMatches = detail::getMolSelfMatches(mol, params);
+    // RDKit✔️✔️:   }
+    let self_matches = if params.prune_rms_thresh > 0.0 {
+        embedder_get_mol_self_matches(mol, params)?
+    } else {
+        Vec::new()
+    };
+
+    // RDKit✔️✔️:   for (unsigned int ci = 0; ci < confs.size(); ++ci) {
+    // RDKit✔️✔️:     auto &conf = confs[ci];
+    // RDKit✔️✔️:     if (confsOk[ci]) {
+    // RDKit✔️✔️:       // check if we are pruning away conformations and
+    // RDKit✔️✔️:       // a close-by conformation has already been chosen :
+    // RDKit✔️✔️:       if (params.pruneRmsThresh <= 0.0 ||
+    // RDKit✔️✔️:           _isConfFarFromRest(mol, *conf, params.pruneRmsThresh, selfMatches)) {
+    // RDKit✔️✔️:         int confId = (int)mol.addConformer(conf.release(), true);
+    // RDKit✔️✔️:         res.push_back(confId);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    let mut out = mol.clone();
+    if params.clear_confs {
+        out.coordinate_block_mut().conformers_3d.clear();
+    }
+    let mut res = Vec::new();
+    for (ci, conf) in confs.into_iter().enumerate() {
+        if confs_ok[ci]
+            && (params.prune_rms_thresh <= 0.0
+                || embedder_is_conf_far_from_rest(
+                    &out,
+                    &conf,
+                    params.prune_rms_thresh,
+                    &self_matches,
+                ))
+        {
+            let conf_id = out.coordinate_block_mut().conformers_3d.len();
+            out.coordinate_block_mut()
+                .conformers_3d
+                .push(Conformer3D::new(
+                    conf_id,
+                    conf.coords().to_vec(),
+                    conf.is_3d(),
+                ));
+            res.push(conf_id as i32);
+        }
+    }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbedMultipleConfs
+    Ok((out, res))
+}
+
+pub fn embed_multiple_confs_return_vector(
+    mol: &Molecule,
+    num_confs: u32,
+    params: &mut EmbedParameters,
+) -> Result<Vec<i32>, DgBoundsError> {
+    // BEGIN RDKIT CPP INLINE FUNCTION DGeomHelpers::EmbedMultipleConfs return-vector overload (Embedder.h:216-221)
+    // RDKit✔️✔️: inline INT_VECT EmbedMultipleConfs(ROMol &mol, unsigned int numConfs,
+    // RDKit✔️✔️:                                    EmbedParameters &params) {
+    // RDKit✔️✔️:   INT_VECT res;
+    // RDKit✔️✔️:   EmbedMultipleConfs(mol, res, numConfs, params);
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP INLINE FUNCTION DGeomHelpers::EmbedMultipleConfs return-vector overload
+    let (_out, res) = embed_multiple_confs(mol, num_confs, params)?;
+    Ok(res)
+}
+
+pub fn embed_multiple_confs_result(
+    mol: &Molecule,
+    num_confs: u32,
+    params: &mut EmbedParameters,
+) -> Result<EmbedMultipleConfsResult, DgBoundsError> {
+    let (molecule, conf_ids) = embed_multiple_confs(mol, num_confs, params)?;
+    Ok(EmbedMultipleConfsResult {
+        molecule,
+        conf_ids,
+        requested_num_confs: num_confs,
+        params: params.clone(),
+    })
+}
+
+pub fn embed_molecule(
+    mol: &Molecule,
+    params: &mut EmbedParameters,
+) -> Result<(Molecule, i32), DgBoundsError> {
+    // BEGIN RDKIT CPP INLINE FUNCTION DGeomHelpers::EmbedMolecule(ROMol&, EmbedParameters&) (Embedder.h:225-236)
+    // RDKit✔️✔️: inline int EmbedMolecule(ROMol &mol, EmbedParameters &params) {
+    // RDKit✔️✔️:   INT_VECT confIds;
+    // RDKit✔️✔️:   EmbedMultipleConfs(mol, confIds, 1, params);
+    let (out, conf_ids) = embed_multiple_confs(mol, 1, params)?;
+    // RDKit✔️✔️:   int res;
+    // RDKit✔️✔️:   if (confIds.size()) {
+    // RDKit✔️✔️:     res = confIds[0];
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     res = -1;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP INLINE FUNCTION DGeomHelpers::EmbedMolecule
+    Ok((out, conf_ids.first().copied().unwrap_or(-1)))
+}
+
+pub fn embed_molecule_result(
+    mol: &Molecule,
+    params: &mut EmbedParameters,
+) -> Result<EmbedMoleculeResult, DgBoundsError> {
+    let (molecule, conf_id) = embed_molecule(mol, params)?;
+    Ok(EmbedMoleculeResult {
+        molecule,
+        conf_id,
+        params: params.clone(),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn rd_distgeom_embed_molecule_wrapper(
+    mol: &Molecule,
+    max_attempts: u32,
+    seed: i32,
+    clear_confs: bool,
+    use_random_coords: bool,
+    box_size_mult: f64,
+    rand_neg_eig: bool,
+    num_zero_fail: u32,
+    coord_map: BTreeMap<i32, ForceFieldVec3>,
+    force_tol: f64,
+    ignore_smoothing_failures: bool,
+    enforce_chirality: bool,
+    use_exp_torsion_angle_prefs: bool,
+    use_basic_knowledge: bool,
+    print_exp_torsion_angles: bool,
+    use_small_ring_torsions: bool,
+    use_macrocycle_torsions: bool,
+    et_version: u32,
+    use_macrocycle14config: bool,
+) -> Result<(Molecule, i32), DgBoundsError> {
+    // BEGIN RDKIT CPP FUNCTION RDKit::EmbedMolecule wrapper (rdDistGeom.cpp:107-150)
+    // RDKit✔️✔️: int EmbedMolecule(ROMol &mol, unsigned int maxAttempts, int seed,
+    // RDKit✔️✔️:                   bool clearConfs, bool useRandomCoords, double boxSizeMult,
+    // RDKit✔️✔️:                   bool randNegEig, unsigned int numZeroFail,
+    // RDKit✔️✔️:                   python::dict &coordMap, double forceTol,
+    // RDKit✔️✔️:                   bool ignoreSmoothingFailures, bool enforceChirality,
+    // RDKit✔️✔️:                   bool useExpTorsionAnglePrefs, bool useBasicKnowledge,
+    // RDKit✔️✔️:                   bool printExpTorsionAngles, bool useSmallRingTorsions,
+    // RDKit✔️✔️:                   bool useMacrocycleTorsions, unsigned int ETversion,
+    // RDKit✔️✔️:                   bool useMacrocycle14config) {
+    // RDKit✔️✔️:   bool verbose = printExpTorsionAngles;
+    // RDKit✔️✔️:   int numThreads = 1;
+    // RDKit✔️✔️:   double pruneRmsThresh = -1.;
+    // RDKit✔️✔️:   const double basinThresh = DGeomHelpers::EmbedParameters().basinThresh;
+    // RDKit✔️✔️:   bool onlyHeavyAtomsForRMS = false;
+    let mut params = EmbedParameters::from_rdkit_constructor(
+        max_attempts,
+        1,
+        seed,
+        clear_confs,
+        use_random_coords,
+        box_size_mult,
+        rand_neg_eig,
+        num_zero_fail,
+        (!coord_map.is_empty()).then_some(coord_map),
+        force_tol,
+        ignore_smoothing_failures,
+        enforce_chirality,
+        use_exp_torsion_angle_prefs,
+        use_basic_knowledge,
+        print_exp_torsion_angles,
+        EmbedParameters::default().basin_thresh,
+        -1.0,
+        false,
+        et_version,
+        None,
+        true,
+        use_small_ring_torsions,
+        use_macrocycle_torsions,
+        use_macrocycle14config,
+        0,
+        None,
+        None,
+    );
+    // RDKit✔️✔️:   res = DGeomHelpers::EmbedMolecule(mol, params);
+    // END RDKIT CPP FUNCTION RDKit::EmbedMolecule wrapper
+    embed_molecule(mol, &mut params)
+}
+
+pub fn rd_distgeom_embed_molecule_wrapper_with_params(
+    mol: &Molecule,
+    params: &mut EmbedParameters,
+) -> Result<(Molecule, i32), DgBoundsError> {
+    // BEGIN RDKIT CPP FUNCTION RDKit::EmbedMolecule2 wrapper (rdDistGeom.cpp:152-162)
+    // RDKit✔️✔️: int EmbedMolecule2(ROMol &mol, DGeomHelpers::EmbedParameters &params) {
+    // RDKit✔️✔️:   int res;
+    // RDKit✔️✔️:   {
+    // RDKit✔️✔️:     NOGIL gil;
+    // RDKit✔️✔️:     res = DGeomHelpers::EmbedMolecule(mol, params);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDKit::EmbedMolecule2 wrapper
+    embed_molecule(mol, params)
+}
+
+pub fn rd_distgeom_get_kdg() -> EmbedParameters {
+    // BEGIN RDKIT CPP FUNCTION RDKit::getKDG/getETDG/getETDGv2/getETKDG/getETKDGv2/getETKDGv3/getsrETKDGv3 (rdDistGeom.cpp:263-269)
+    // RDKit✔️✔️: PyEmbedParameters *getKDG() { return new PyEmbedParameters(DGeomHelpers::KDG); }
+    // RDKit✔️✔️: PyEmbedParameters *getETDG() { return new PyEmbedParameters(DGeomHelpers::ETDG); }
+    // RDKit✔️✔️: PyEmbedParameters *getETDGv2() { return new PyEmbedParameters(DGeomHelpers::ETDGv2); }
+    // RDKit✔️✔️: PyEmbedParameters *getETKDG() { return new PyEmbedParameters(DGeomHelpers::ETKDG); }
+    // RDKit✔️✔️: PyEmbedParameters *getETKDGv2() { return new PyEmbedParameters(DGeomHelpers::ETKDGv2); }
+    // RDKit✔️✔️: PyEmbedParameters *getETKDGv3() { return new PyEmbedParameters(DGeomHelpers::ETKDGv3); }
+    // RDKit✔️✔️: PyEmbedParameters *getsrETKDGv3() { return new PyEmbedParameters(DGeomHelpers::srETKDGv3); }
+    // END RDKIT CPP FUNCTION RDKit parameter factories
+    EmbedParameters::kdg()
+}
+
+pub fn rd_distgeom_get_etdg() -> EmbedParameters {
+    EmbedParameters::etdg()
+}
+
+pub fn rd_distgeom_get_etdg_v2() -> EmbedParameters {
+    EmbedParameters::etdg_v2()
+}
+
+pub fn rd_distgeom_get_etkdg() -> EmbedParameters {
+    EmbedParameters::etkdg()
+}
+
+pub fn rd_distgeom_get_etkdg_v2() -> EmbedParameters {
+    EmbedParameters::etkdg_v2()
+}
+
+pub fn rd_distgeom_get_etkdg_v3() -> EmbedParameters {
+    EmbedParameters::etkdg_v3()
+}
+
+pub fn rd_distgeom_get_sr_etkdg_v3() -> EmbedParameters {
+    EmbedParameters::sr_etkdg_v3()
+}
+
+pub fn rd_distgeom_get_exp_tors_helper(
+    mol: &Molecule,
+    use_exp_torsions: bool,
+    use_small_ring_torsions: bool,
+    use_macrocycle_torsions: bool,
+    use_basic_knowledge: bool,
+    et_version: u32,
+    verbose: bool,
+) -> Result<CrystalFFDetails, DgBoundsError> {
+    // BEGIN RDKIT CPP FUNCTION RDKit::getExpTorsHelper (rdDistGeom.cpp:271-295)
+    // RDKit✔️✔️: python::tuple getExpTorsHelper(const RDKit::ROMol &mol, bool useExpTorsions,
+    // RDKit✔️✔️:                               bool useSmallRingTorsions,
+    // RDKit✔️✔️:                               bool useMacrocycleTorsions,
+    // RDKit✔️✔️:                               bool useBasicKnowledge, unsigned int ETversion,
+    // RDKit✔️✔️:                               bool verbose) {
+    // RDKit✔️✔️:   RDKit::ForceFields::CrystalFF::CrystalFFDetails details;
+    // RDKit✔️✔️:   RDKit::ForceFields::CrystalFF::getExperimentalTorsions(
+    // RDKit✔️✔️:       mol, details, useExpTorsions, useSmallRingTorsions,
+    // RDKit✔️✔️:       useMacrocycleTorsions, useBasicKnowledge, ETversion, verbose);
+    // END RDKIT CPP FUNCTION RDKit::getExpTorsHelper
+    let mut details = CrystalFFDetails::default();
+    get_experimental_torsions_without_bonds(
+        mol,
+        &mut details,
+        use_exp_torsions,
+        use_small_ring_torsions,
+        use_macrocycle_torsions,
+        use_basic_knowledge,
+        et_version,
+        verbose,
+    )
+    .map_err(|err| DgBoundsError::GenerationFailed(err.to_string()))?;
+    Ok(details)
+}
+
+pub fn rd_distgeom_get_exp_tors_helper_with_params(
+    mol: &Molecule,
+    params: &EmbedParameters,
+) -> Result<CrystalFFDetails, DgBoundsError> {
+    // BEGIN RDKIT CPP FUNCTION RDKit::getExpTorsHelperWithParams (rdDistGeom.cpp:297-302)
+    // RDKit✔️✔️: python::tuple getExpTorsHelperWithParams(
+    // RDKit✔️✔️:     const RDKit::ROMol &mol, const DGeomHelpers::EmbedParameters &ps) {
+    // RDKit✔️✔️:   return getExpTorsHelper(mol, ps.useExpTorsionAnglePrefs,
+    // RDKit✔️✔️:                           ps.useSmallRingTorsions, ps.useMacrocycleTorsions,
+    // RDKit✔️✔️:                           ps.useBasicKnowledge, ps.ETversion, ps.verbose);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDKit::getExpTorsHelperWithParams
+    rd_distgeom_get_exp_tors_helper(
+        mol,
+        params.use_exp_torsion_angle_prefs,
+        params.use_small_ring_torsions,
+        params.use_macrocycle_torsions,
+        params.use_basic_knowledge,
+        params.et_version,
+        params.verbose,
+    )
+}
+
+pub fn rd_distgeom_embed_parameters_to_json_helper(params: &EmbedParameters) -> String {
+    // BEGIN RDKIT CPP FUNCTION RDKit::embedParametersToJSONHelper (rdDistGeom.cpp:304-307)
+    // RDKit✔️✔️: python::str embedParametersToJSONHelper(
+    // RDKit✔️✔️:     const DGeomHelpers::EmbedParameters &ps) {
+    // RDKit✔️✔️:   return python::str(embedParametersToJSON(ps));
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDKit::embedParametersToJSONHelper
+    params.to_json()
 }
 
 // ──────────────────────────────────────────────

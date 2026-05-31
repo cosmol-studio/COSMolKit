@@ -1,4 +1,4 @@
-"""COSMolKit usage: SDF dataset indexing and batch readers."""
+"""Public Python API example: SDF dataset indexing and batch readers."""
 
 from __future__ import annotations
 

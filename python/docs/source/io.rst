@@ -191,7 +191,9 @@ Coordinate Arrays
 -----------------
 
 ``coords_2d()``, ``coords_3d()``, and ``dg_bounds_matrix()`` return NumPy
-arrays:
+arrays. ``coords_2d()`` has shape ``(num_atoms, 3)`` with a zero-filled z
+column; ``coords_3d()`` has shape ``(num_atoms, 3)`` for the selected 3D
+conformer:
 
 .. code-block:: python
 

@@ -1,4 +1,4 @@
-"""COSMolKit usage: ndarray-oriented structural data access."""
+"""Public Python API example: ndarray-oriented structural data access."""
 
 import numpy as np
 

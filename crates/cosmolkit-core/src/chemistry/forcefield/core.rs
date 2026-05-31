@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::ops::{Add, Div, DivAssign, Index, IndexMut, Mul, Neg, Sub};
 
 const FUNCTOL: f64 = 1.0e-4;
@@ -5,18 +6,44 @@ const MOVETOL: f64 = 1.0e-7;
 const EPS: f64 = 3.0e-8;
 const TOLX: f64 = 4.0 * EPS;
 const MAXSTEP: f64 = 100.0;
+const ROW1_ITER1_CHECKPOINT_BITS: [u64; 18] = [
+    0x3fe475e01a824896,
+    0xbfdedf178888fe31,
+    0xbfbd3692c7d4e18a,
+    0xbfe5525f9ea5a52d,
+    0x3fe89829272a4cde,
+    0x3fde4fb92f4fe23d,
+    0x3ff650c540ee9981,
+    0xbfe16bc86d346ecd,
+    0xbfe1912ff74f169f,
+    0x3ff05cc01120f8d1,
+    0x3fed71cfd920a5eb,
+    0x3fe19bf52f5c05e2,
+    0xbff066948d8f75d9,
+    0xbff226a6db7818d0,
+    0x3fdb6ef8a69179f8,
+    0xbff5d8b1026e6e2b,
+    0x3fde3d51d03c598c,
+    0xbfe9434bca030132,
+];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ForceFieldVec3 {
     pub x: f64,
     pub y: f64,
     pub z: f64,
+    pub w: f64,
 }
 
 impl ForceFieldVec3 {
     #[must_use]
     pub const fn new(x: f64, y: f64, z: f64) -> Self {
-        Self { x, y, z }
+        Self { x, y, z, w: 0.0 }
+    }
+
+    #[must_use]
+    pub const fn new4(x: f64, y: f64, z: f64, w: f64) -> Self {
+        Self { x, y, z, w }
     }
 
     #[must_use]
@@ -49,6 +76,7 @@ impl ForceFieldVec3 {
             x: self.y * other.z - self.z * other.y,
             y: -self.x * other.z + self.z * other.x,
             z: self.x * other.y - self.y * other.x,
+            w: 0.0,
         }
     }
 }
@@ -61,6 +89,7 @@ impl Index<usize> for ForceFieldVec3 {
             0 => &self.x,
             1 => &self.y,
             2 => &self.z,
+            3 => &self.w,
             _ => panic!("Invalid index on Point3D"),
         }
     }
@@ -72,6 +101,7 @@ impl IndexMut<usize> for ForceFieldVec3 {
             0 => &mut self.x,
             1 => &mut self.y,
             2 => &mut self.z,
+            3 => &mut self.w,
             _ => panic!("Invalid index on Point3D"),
         }
     }
@@ -84,7 +114,12 @@ impl Add for ForceFieldVec3 {
         // RDKit✔️✔️: res.x = p1.x + p2.x;
         // RDKit✔️✔️: res.y = p1.y + p2.y;
         // RDKit✔️✔️: res.z = p1.z + p2.z;
-        Self::new(self.x + rhs.x, self.y + rhs.y, self.z + rhs.z)
+        Self::new4(
+            self.x + rhs.x,
+            self.y + rhs.y,
+            self.z + rhs.z,
+            self.w + rhs.w,
+        )
     }
 }
 
@@ -95,7 +130,12 @@ impl Sub for ForceFieldVec3 {
         // RDKit✔️✔️: res.x = p1.x - p2.x;
         // RDKit✔️✔️: res.y = p1.y - p2.y;
         // RDKit✔️✔️: res.z = p1.z - p2.z;
-        Self::new(self.x - rhs.x, self.y - rhs.y, self.z - rhs.z)
+        Self::new4(
+            self.x - rhs.x,
+            self.y - rhs.y,
+            self.z - rhs.z,
+            self.w - rhs.w,
+        )
     }
 }
 
@@ -106,7 +146,7 @@ impl Neg for ForceFieldVec3 {
         // RDKit✔️✔️: res.x *= -1.0;
         // RDKit✔️✔️: res.y *= -1.0;
         // RDKit✔️✔️: res.z *= -1.0;
-        Self::new(-self.x, -self.y, -self.z)
+        Self::new4(-self.x, -self.y, -self.z, -self.w)
     }
 }
 
@@ -117,7 +157,7 @@ impl Div<f64> for ForceFieldVec3 {
         // RDKit✔️✔️: res.x = p1.x / v;
         // RDKit✔️✔️: res.y = p1.y / v;
         // RDKit✔️✔️: res.z = p1.z / v;
-        Self::new(self.x / rhs, self.y / rhs, self.z / rhs)
+        Self::new4(self.x / rhs, self.y / rhs, self.z / rhs, self.w / rhs)
     }
 }
 
@@ -129,6 +169,7 @@ impl DivAssign<f64> for ForceFieldVec3 {
         self.x /= rhs;
         self.y /= rhs;
         self.z /= rhs;
+        self.w /= rhs;
     }
 }
 
@@ -136,7 +177,7 @@ impl Mul<f64> for ForceFieldVec3 {
     type Output = Self;
 
     fn mul(self, rhs: f64) -> Self::Output {
-        Self::new(self.x * rhs, self.y * rhs, self.z * rhs)
+        Self::new4(self.x * rhs, self.y * rhs, self.z * rhs, self.w * rhs)
     }
 }
 
@@ -280,7 +321,7 @@ pub struct ForceField {
     dimension: usize,
     initialized: bool,
     num_points: usize,
-    dist_mat: Vec<f64>,
+    dist_mat: RefCell<Vec<f64>>,
     positions: Vec<ForceFieldVec3>,
     contribs: Vec<Box<dyn ForceFieldContrib>>,
     fixed_points: Vec<usize>,
@@ -295,7 +336,7 @@ impl ForceField {
             dimension,
             initialized: false,
             num_points: 0,
-            dist_mat: Vec::new(),
+            dist_mat: RefCell::new(Vec::new()),
             positions: Vec::new(),
             contribs: Vec::new(),
             fixed_points: Vec::new(),
@@ -363,19 +404,19 @@ impl ForceField {
         // RDKit-style owner pointers before any energy or gradient evaluation.
         self.refresh_contrib_owners();
         self.initialized = false;
-        self.dist_mat.clear();
+        self.dist_mat.get_mut().clear();
         // RDKit✔️✔️: d_numPoints = d_positions.size();
         // RDKit✔️✔️: d_matSize = d_numPoints * (d_numPoints + 1) / 2;
         // RDKit✔️✔️: dp_distMat = new double[d_matSize];
         self.num_points = self.positions.len();
         self.mat_size = self.num_points * (self.num_points + 1) / 2;
-        self.dist_mat = vec![0.0; self.mat_size];
+        *self.dist_mat.get_mut() = vec![0.0; self.mat_size];
         self.init_distance_matrix();
         // RDKit✔️✔️: df_init = true;
         self.initialized = true;
     }
 
-    pub fn distance(&mut self, mut i: usize, mut j: usize, pos: Option<&[f64]>) -> f64 {
+    pub fn distance(&self, mut i: usize, mut j: usize, pos: Option<&[f64]>) -> f64 {
         // RDKit✔️✔️: PRECONDITION(df_init, "not initialized");
         // RDKit✔️✔️: URANGE_CHECK(i, d_numPoints);
         // RDKit✔️✔️: URANGE_CHECK(j, d_numPoints);
@@ -396,11 +437,12 @@ impl ForceField {
         assert!(mat_idx < self.mat_size, "Bad index");
         // RDKit✔️✔️: double &res = dp_distMat[idx];
         // RDKit✔️✔️: if (res < 0.0) {
-        if self.dist_mat[mat_idx] < 0.0 {
+        let mut dist_mat = self.dist_mat.borrow_mut();
+        if dist_mat[mat_idx] < 0.0 {
             let res = self.distance2_no_cache(i, j, pos).sqrt();
-            self.dist_mat[mat_idx] = res;
+            dist_mat[mat_idx] = res;
         }
-        self.dist_mat[mat_idx]
+        dist_mat[mat_idx]
     }
 
     pub fn distance_const(&self, i: usize, j: usize, pos: Option<&[f64]>) -> f64 {
@@ -545,8 +587,20 @@ impl ForceField {
             return;
         }
         // RDKit✔️✔️: (*contrib)->getGrad(pos, grad);
-        for contrib in &self.contribs {
+        let trace_row1_iter1 =
+            row1_bfgs_trace_enabled(pos.len()) && row1_iter1_checkpoint_pos_matches(pos);
+        for (idx, contrib) in self.contribs.iter().enumerate() {
             contrib.get_grad(pos, grad);
+            if trace_row1_iter1 {
+                let bits: Vec<String> = grad
+                    .iter()
+                    .map(|value| format!("{:#018x}", value.to_bits()))
+                    .collect();
+                println!(
+                    "[row1-calcgrad-cumulative] contrib_idx={idx} values=[{}]",
+                    bits.join(",")
+                );
+            }
         }
         self.zero_fixed_point_grads(grad);
     }
@@ -620,7 +674,7 @@ impl ForceField {
         // RDKit✔️✔️:                  d_matSize,
         // RDKit✔️✔️:              "matrix size mismatch");
         assert!(self.num_points != 0, "no points");
-        assert!(!self.dist_mat.is_empty(), "no distance matrix");
+        assert!(!self.dist_mat.borrow().is_empty(), "no distance matrix");
         assert!(
             self.num_points * (self.num_points + 1) / 2 <= self.mat_size,
             "matrix size mismatch"
@@ -630,6 +684,7 @@ impl ForceField {
         // RDKit✔️✔️: }
         for value in self
             .dist_mat
+            .borrow_mut()
             .iter_mut()
             .take(self.num_points * (self.num_points + 1) / 2)
         {
@@ -690,7 +745,7 @@ impl ForceField {
 
     #[must_use]
     pub fn dist_mat_value(&self, i: usize) -> f64 {
-        self.dist_mat[i]
+        self.dist_mat.borrow()[i]
     }
 }
 
@@ -704,7 +759,7 @@ impl Clone for ForceField {
             dimension: self.dimension,
             initialized: false,
             num_points: self.num_points,
-            dist_mat: Vec::new(),
+            dist_mat: RefCell::new(Vec::new()),
             positions: self.positions.clone(),
             contribs: Vec::new(),
             fixed_points: self.fixed_points.clone(),
@@ -734,7 +789,7 @@ impl Drop for ForceField {
         self.num_points = 0;
         self.positions.clear();
         self.contribs.clear();
-        self.dist_mat.clear();
+        self.dist_mat.get_mut().clear();
     }
 }
 
@@ -856,10 +911,16 @@ impl ForceFieldContrib for DistanceConstraintContrib {
         // RDKit✔️❌: PRECONDITION(dp_forceField, "no owner");
         // RDKit✔️✔️: PRECONDITION(pos, "bad vector");
         assert!(!pos.is_empty(), "bad vector");
-        // RDKit✔️❌: double dist = dp_forceField->distance(d_end1Idx, d_end2Idx, pos);
+        // RDKit✔️✔️: double dist = dp_forceField->distance(d_end1Idx, d_end2Idx, pos);
+        //
+        // COSMolKit stores cached distances from the initialized point set in
+        // `dist_mat`. For contrib evaluation against an explicit `pos` buffer,
+        // match RDKit's live-position behavior by recomputing the current pair
+        // distance instead of reusing the initialized cache entry.
         let dist = self
             .owner()
-            .distance_const(self.end1_idx, self.end2_idx, Some(pos));
+            .distance2(self.end1_idx, self.end2_idx, Some(pos))
+            .sqrt();
         // RDKit✔️✔️: double distTerm = 0.0;
         let mut dist_term = 0.0;
         // RDKit✔️✔️: if (dist < d_minLen) {
@@ -883,10 +944,14 @@ impl ForceFieldContrib for DistanceConstraintContrib {
         // RDKit✔️✔️: PRECONDITION(grad, "bad vector");
         assert!(!pos.is_empty(), "bad vector");
         assert!(!grad.is_empty(), "bad vector");
-        // RDKit✔️❌: double dist = dp_forceField->distance(d_end1Idx, d_end2Idx, pos);
+        // RDKit✔️✔️: double dist = dp_forceField->distance(d_end1Idx, d_end2Idx, pos);
+        //
+        // See `get_energy()`: gradients must use the current trial coordinates,
+        // not the initialization-time cached distance.
         let dist = self
             .owner()
-            .distance_const(self.end1_idx, self.end2_idx, Some(pos));
+            .distance2(self.end1_idx, self.end2_idx, Some(pos))
+            .sqrt();
         // RDKit✔️✔️: double preFactor = 0.0;
         // RDKit✔️✔️: if (dist < d_minLen) {
         // RDKit✔️✔️:   preFactor = dist - d_minLen;
@@ -2061,7 +2126,7 @@ impl ForceFieldContrib for TorsionConstraintContrib {
         // RDKit✔️✔️: double dE_dPhi = 2.0 * RAD2DEG * d_forceConstant * dihedralTerm;
         let d_e_d_phi = 2.0 * RAD2DEG * self.force_constant * dihedral_term;
         // RDKit✔️✔️: double d23 = dp_forceField->distance(d_at2Idx, d_at3Idx, pos);
-        let d23 = owner.distance_const(self.at2_idx, self.at3_idx, Some(pos));
+        let d23 = owner.distance(self.at2_idx, self.at3_idx, Some(pos));
         if d23 == 0.0 {
             return;
         }
@@ -2188,6 +2253,10 @@ fn calc_gradient_wrapper(ff: &ForceField, pos: &[f64], grad: &mut [f64]) -> f64 
     grad_scale
 }
 
+fn row1_bfgs_trace_enabled(dim: usize) -> bool {
+    dim == 18 && std::env::var("RDKIT_ROW1_TRACE").as_deref() == Ok("1")
+}
+
 fn bfgs_minimize<Energy, Gradient>(
     mut pos: Vec<f64>,
     grad_tol: f64,
@@ -2236,12 +2305,28 @@ where
         sum += pos[i] * pos[i];
     }
     // RDKit✔️✔️: double maxStep = MAXSTEP * std::max(sqrt(sum), static_cast<double>(dim));
-    let max_step = MAXSTEP * sum.sqrt().max(dim as f64);
+    let sqrt_sum = sum.sqrt();
+    let max_step = if sqrt_sum > dim as f64 {
+        MAXSTEP * sqrt_sum
+    } else {
+        MAXSTEP * dim as f64
+    };
     for iter in 1..=max_its {
+        if row1_bfgs_trace_enabled(dim) && iter <= 12 {
+            println!("[row1-dir] iter={iter} values={xi:?}");
+        }
         // RDKit✔️✔️: linearSearch(dim, pos, fp, grad.data(), xi.data(), newPos.get(), funcVal, func,
         // RDKit✔️✔️:              maxStep, status);
-        let (status, new_val) =
-            linear_search(&pos, fp, &grad, &mut xi, &mut new_pos, &mut func, max_step);
+        let (status, new_val) = linear_search(
+            iter,
+            &pos,
+            fp,
+            &grad,
+            &mut xi,
+            &mut new_pos,
+            &mut func,
+            max_step,
+        );
         // RDKit✔️✔️: CHECK_INVARIANT(status >= 0, "bad direction in linearSearch");
         assert!(status >= 0, "bad direction in linearSearch");
         let func_val = new_val;
@@ -2255,7 +2340,12 @@ where
         for i in 0..dim {
             xi[i] = new_pos[i] - pos[i];
             pos[i] = new_pos[i];
-            test = test.max(xi[i].abs() / pos[i].abs().max(1.0));
+            let abs_pos = pos[i].abs();
+            let denom = if abs_pos > 1.0 { abs_pos } else { 1.0 };
+            let temp = xi[i].abs() / denom;
+            if temp > test {
+                test = temp;
+            }
             d_grad[i] = grad[i];
         }
         // RDKit✔️✔️: if (test < TOLX) {
@@ -2272,15 +2362,27 @@ where
         }
         // RDKit✔️✔️: double gradScale = gradFunc(pos, grad.data());
         let grad_scale = grad_func(&pos, &mut grad);
+        if row1_bfgs_trace_enabled(dim) && iter <= 12 {
+            println!("[row1-grad] iter={iter} values={grad:?}");
+        }
         // RDKit✔️✔️: double term = std::max(funcVal * gradScale, 1.0);
-        let term = (func_val * grad_scale).max(1.0);
+        let func_term = func_val * grad_scale;
+        let term = if func_term > 1.0 { func_term } else { 1.0 };
         test = 0.0;
         // RDKit✔️✔️: double temp = fabs(grad[i]) * std::max(fabs(pos[i]), 1.0);
         // RDKit✔️✔️: test = std::max(test, temp);
         // RDKit✔️✔️: dGrad[i] = grad[i] - dGrad[i];
         for i in 0..dim {
-            test = test.max(grad[i].abs() * pos[i].abs().max(1.0));
+            let abs_pos = pos[i].abs();
+            let scale = if abs_pos > 1.0 { abs_pos } else { 1.0 };
+            let temp = grad[i].abs() * scale;
+            if temp > test {
+                test = temp;
+            }
             d_grad[i] = grad[i] - d_grad[i];
+        }
+        if row1_bfgs_trace_enabled(dim) && iter <= 12 {
+            println!("[row1-dgrad] iter={iter} values={d_grad:?}");
         }
         // RDKit✔️✔️: test /= term;
         test /= term;
@@ -2295,6 +2397,12 @@ where
                 });
             }
             return (0, pos);
+        }
+
+        if row1_bfgs_trace_enabled(dim) && iter <= 80 {
+            println!(
+                "[row1-bfgs] iter={iter} status={status} line_test={test:.17} gradScale={grad_scale:.17} fp={fp:.17}"
+            );
         }
         // RDKit✔️✔️: double fac = 0, fae = 0, sumDGrad = 0, sumXi = 0;
         let mut fac = 0.0;
@@ -2321,6 +2429,38 @@ where
             sum_d_grad += d_grad[i] * d_grad[i];
             sum_xi += xi[i] * xi[i];
         }
+        if row1_bfgs_trace_enabled(dim) && iter <= 12 {
+            println!("[row1-hdgrad] iter={iter} values={hess_d_grad:?}");
+            let invh_head = [
+                inv_hessian[0],
+                inv_hessian[1],
+                inv_hessian[2],
+                inv_hessian[18],
+                inv_hessian[19],
+                inv_hessian[20],
+            ];
+            println!("[row1-invh] iter={iter} values={invh_head:?}");
+            if iter <= 2 {
+                println!(
+                    "[row1-invh-row0] iter={iter} values={:?}",
+                    &inv_hessian[0..dim]
+                );
+                println!(
+                    "[row1-invh-row1] iter={iter} values={:?}",
+                    &inv_hessian[dim..(2 * dim)]
+                );
+                if iter == 1 {
+                    for row in 0..dim {
+                        let start = row * dim;
+                        let end = start + dim;
+                        println!(
+                            "[row1-invh-row{row}] iter={iter} values={:?}",
+                            &inv_hessian[start..end]
+                        );
+                    }
+                }
+            }
+        }
         // RDKit✔️✔️: if (fac > sqrt(EPS * sumDGrad * sumXi)) {
         if fac > (EPS * sum_d_grad * sum_xi).sqrt() {
             // RDKit✔️✔️: fac = 1.0 / fac;
@@ -2338,11 +2478,41 @@ where
                 let hdgi = fad * hess_d_grad[i];
                 let dgi = fae * d_grad[i];
                 for j in i..dim {
+                    let term1 = pxi * xi[j];
+                    let term2 = hdgi * hess_d_grad[j];
+                    let term3 = dgi * d_grad[j];
+                    if row1_bfgs_trace_enabled(dim) && iter == 1 && i == 13 && j == 13 {
+                        println!(
+                            "[row1-invh-update-bits] iter={iter} row=13 col=13 old_bits={:#018x} pxi_bits={:#018x} xj_bits={:#018x} hdgi_bits={:#018x} hdgj_bits={:#018x} dgi_bits={:#018x} dgj_bits={:#018x} term1_bits={:#018x} term2_bits={:#018x} term3_bits={:#018x}",
+                            inv_hessian[i * dim + j].to_bits(),
+                            pxi.to_bits(),
+                            xi[j].to_bits(),
+                            hdgi.to_bits(),
+                            hess_d_grad[j].to_bits(),
+                            dgi.to_bits(),
+                            d_grad[j].to_bits(),
+                            term1.to_bits(),
+                            term2.to_bits(),
+                            term3.to_bits()
+                        );
+                    }
                     inv_hessian[i * dim + j] +=
                         pxi * xi[j] - hdgi * hess_d_grad[j] + dgi * d_grad[j];
-                    inv_hessian[j * dim + i] = inv_hessian[i * dim + j];
+                    let updated = inv_hessian[i * dim + j];
+                    if row1_bfgs_trace_enabled(dim) && iter == 1 && i == 13 && j == 13 {
+                        println!(
+                            "[row1-invh-update-newbits] iter={iter} row=13 col=13 new_bits={:#018x}",
+                            updated.to_bits()
+                        );
+                    }
+                    inv_hessian[j * dim + i] = updated;
                 }
             }
+        }
+        if row1_bfgs_trace_enabled(dim) && iter <= 80 {
+            println!(
+                "[row1-bfgs-update] iter={iter} fac={fac:.17} fae={fae:.17} sumDGrad={sum_d_grad:.17} sumXi={sum_xi:.17}"
+            );
         }
         // RDKit✔️✔️: for (unsigned int i = 0; i < dim; i++) {
         // RDKit✔️✔️:   xi[i] = 0.0;
@@ -2354,6 +2524,24 @@ where
             xi[i] = 0.0;
             for j in 0..dim {
                 xi[i] -= inv_hessian[i * dim + j] * grad[j];
+            }
+        }
+        if row1_bfgs_trace_enabled(dim) && iter <= 2 {
+            println!("[row1-nextdir] iter={iter} values={xi:?}");
+            if iter <= 2 {
+                let mut accum = 0.0_f64;
+                let trace_row = if iter == 1 { 13 } else { 0 };
+                for j in 0..dim {
+                    let term = inv_hessian[trace_row * dim + j] * grad[j];
+                    accum -= term;
+                    println!(
+                        "[row1-nextdir-accum] iter={iter} row={trace_row} col={j} invh_bits={:#018x} grad_bits={:#018x} term_bits={:#018x} accum_bits={:#018x}",
+                        inv_hessian[trace_row * dim + j].to_bits(),
+                        grad[j].to_bits(),
+                        term.to_bits(),
+                        accum.to_bits()
+                    );
+                }
             }
         }
         // RDKit✔️✔️: if (snapshotVect && snapshotFreq && !(iter % snapshotFreq)) {
@@ -2372,6 +2560,7 @@ where
 }
 
 fn linear_search<Energy>(
+    outer_iter: usize,
     old_pt: &[f64],
     old_val: f64,
     grad: &[f64],
@@ -2392,7 +2581,11 @@ where
     // RDKit✔️✔️:   sum += dir[i] * dir[i];
     // RDKit✔️✔️: }
     // RDKit✔️✔️: sum = sqrt(sum);
-    let mut sum = dir.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let mut sum = 0.0;
+    for &value in dir.iter() {
+        sum += value * value;
+    }
+    sum = sum.sqrt();
     // RDKit✔️✔️: if (sum > maxStep) {
     // RDKit✔️✔️:   for (unsigned int i = 0; i < dim; i++) {
     // RDKit✔️✔️:     dir[i] *= maxStep / sum;
@@ -2407,7 +2600,10 @@ where
     // RDKit✔️✔️: for (unsigned int i = 0; i < dim; i++) {
     // RDKit✔️✔️:   slope += dir[i] * grad[i];
     // RDKit✔️✔️: }
-    let slope = dir.iter().zip(grad).map(|(d, g)| d * g).sum::<f64>();
+    let mut slope = 0.0;
+    for i in 0..dir.len() {
+        slope += dir[i] * grad[i];
+    }
     // RDKit✔️✔️: if (slope >= 0.0) {
     // RDKit✔️✔️:   return;
     // RDKit✔️✔️: }
@@ -2422,7 +2618,12 @@ where
     // RDKit✔️✔️: }
     let mut test = 0.0_f64;
     for i in 0..dir.len() {
-        test = test.max(dir[i].abs() / old_pt[i].abs().max(1.0));
+        let abs_old = old_pt[i].abs();
+        let denom = if abs_old > 1.0 { abs_old } else { 1.0 };
+        let temp = dir[i].abs() / denom;
+        if temp > test {
+            test = temp;
+        }
     }
     // RDKit✔️✔️: lambdaMin = MOVETOL / test;
     // RDKit✔️✔️: lambda = 1.0;
@@ -2445,17 +2646,50 @@ where
         for i in 0..dir.len() {
             new_pt[i] = old_pt[i] + lambda * dir[i];
         }
+        if row1_bfgs_trace_enabled(old_pt.len()) && outer_iter == 2 && it == 1 {
+            println!("[row1-linesearch-point] iter={outer_iter} inner_it={it} values={new_pt:?}");
+            let bits: Vec<String> = new_pt
+                .iter()
+                .map(|value| format!("{:#018x}", value.to_bits()))
+                .collect();
+            println!(
+                "[row1-linesearch-point-bits] iter={outer_iter} inner_it={it} values=[{}]",
+                bits.join(",")
+            );
+            for i in 0..old_pt.len() {
+                let scaled_dir = lambda * dir[i];
+                println!(
+                    "[row1-linesearch-operands] iter={outer_iter} inner_it={it} idx={i} old_bits={:#018x} dir_bits={:#018x} lambda_bits={:#018x} scaled_bits={:#018x} new_bits={:#018x}",
+                    old_pt[i].to_bits(),
+                    dir[i].to_bits(),
+                    lambda.to_bits(),
+                    scaled_dir.to_bits(),
+                    new_pt[i].to_bits(),
+                );
+            }
+        }
         // RDKit✔️✔️: newVal = func(newPt);
         new_val = func(new_pt);
         // RDKit✔️✔️: if (newVal - oldVal <= FUNCTOL * lambda * slope) {
         if new_val - old_val <= FUNCTOL * lambda * slope {
+            if row1_bfgs_trace_enabled(old_pt.len()) && outer_iter <= 80 {
+                println!(
+                    "[row1-linesearch] iter={outer_iter} inner_it={it} accept=1 lambda={lambda:.17} lambdaMin={lambda_min:.17} slope={slope:.17} oldVal={old_val:.17} newVal={new_val:.17}"
+                );
+            }
             // RDKit✔️✔️: resCode = 0;
             // RDKit✔️✔️: return;
             return (0, new_val);
         }
         let tmp_lambda = if it == 0 {
             // RDKit✔️✔️: tmpLambda = -slope / (2.0 * (newVal - oldVal - slope));
-            -slope / (2.0 * (new_val - old_val - slope))
+            let tmp_lambda = -slope / (2.0 * (new_val - old_val - slope));
+            if row1_bfgs_trace_enabled(old_pt.len()) && outer_iter <= 80 {
+                println!(
+                    "[row1-linesearch] iter={outer_iter} inner_it={it} accept=0 lambda={lambda:.17} lambdaMin={lambda_min:.17} slope={slope:.17} oldVal={old_val:.17} newVal={new_val:.17} tmpLambda={tmp_lambda:.17} branch=first"
+                );
+            }
+            tmp_lambda
         } else {
             // RDKit✔️✔️: double rhs1 = newVal - oldVal - lambda * slope;
             // RDKit✔️✔️: double rhs2 = val2 - oldVal - lambda2 * slope;
@@ -2466,9 +2700,17 @@ where
             // RDKit✔️✔️: double b = (-lambda2 * rhs1 / (lambda * lambda) +
             // RDKit✔️✔️:             lambda * rhs2 / (lambda2 * lambda2)) /
             // RDKit✔️✔️:            (lambda - lambda2);
-            let a = (rhs1 / (lambda * lambda) - rhs2 / (lambda2 * lambda2)) / (lambda - lambda2);
-            let b = (-lambda2 * rhs1 / (lambda * lambda) + lambda * rhs2 / (lambda2 * lambda2))
-                / (lambda - lambda2);
+            let lambda_sq = lambda * lambda;
+            let lambda2_sq = lambda2 * lambda2;
+            let a_num_lhs = rhs1 / lambda_sq;
+            let a_num_rhs = rhs2 / lambda2_sq;
+            let a_num = a_num_lhs - a_num_rhs;
+            let den = lambda - lambda2;
+            let a = a_num / den;
+            let b_num_lhs = -lambda2 * rhs1 / lambda_sq;
+            let b_num_rhs = lambda * rhs2 / lambda2_sq;
+            let b_num = b_num_lhs + b_num_rhs;
+            let b = b_num / den;
             let mut tmp_lambda = if a == 0.0 {
                 // RDKit✔️✔️: tmpLambda = -slope / (2.0 * b);
                 -slope / (2.0 * b)
@@ -2492,6 +2734,11 @@ where
             if tmp_lambda > 0.5 * lambda {
                 tmp_lambda = 0.5 * lambda;
             }
+            if row1_bfgs_trace_enabled(old_pt.len()) && outer_iter <= 80 {
+                println!(
+                    "[row1-linesearch] iter={outer_iter} inner_it={it} accept=0 lambda={lambda:.17} lambda2={lambda2:.17} lambdaMin={lambda_min:.17} slope={slope:.17} oldVal={old_val:.17} newVal={new_val:.17} val2={val2:.17} rhs1={rhs1:.17} rhs2={rhs2:.17} a={a:.17} b={b:.17} tmpLambda={tmp_lambda:.17}"
+                );
+            }
             tmp_lambda
         };
         // RDKit✔️✔️: lambda2 = lambda;
@@ -2499,7 +2746,12 @@ where
         // RDKit✔️✔️: lambda = std::max(tmpLambda, 0.1 * lambda);
         lambda2 = lambda;
         val2 = new_val;
-        lambda = tmp_lambda.max(0.1 * lambda);
+        let scaled_lambda = 0.1 * lambda;
+        lambda = if tmp_lambda > scaled_lambda {
+            tmp_lambda
+        } else {
+            scaled_lambda
+        };
         it += 1;
     }
     // RDKit✔️✔️: for (unsigned int i = 0; i < dim; i++) {
@@ -2511,6 +2763,14 @@ where
     sum = 0.0;
     let _ = sum;
     (res_code, new_val)
+}
+
+fn row1_iter1_checkpoint_pos_matches(pos: &[f64]) -> bool {
+    pos.len() == ROW1_ITER1_CHECKPOINT_BITS.len()
+        && pos
+            .iter()
+            .zip(ROW1_ITER1_CHECKPOINT_BITS)
+            .all(|(value, bits)| value.to_bits() == bits)
 }
 
 #[cfg(test)]
@@ -2807,11 +3067,11 @@ mod tests {
     fn forcefield_initialize_allocates_and_resets_distance_matrix() {
         let mut ff = simple_forcefield();
         assert_eq!(ff.mat_size, 3);
-        assert!(ff.dist_mat.iter().all(|value| *value == -1.0));
+        assert!(ff.dist_mat.borrow().iter().all(|value| *value == -1.0));
         ff.distance(0, 1, None);
-        assert!(ff.dist_mat.iter().any(|value| *value > 0.0));
+        assert!(ff.dist_mat.borrow().iter().any(|value| *value > 0.0));
         ff.initialize();
-        assert!(ff.dist_mat.iter().all(|value| *value == -1.0));
+        assert!(ff.dist_mat.borrow().iter().all(|value| *value == -1.0));
     }
 
     #[test]
@@ -2853,7 +3113,7 @@ mod tests {
         let mut ff = simple_forcefield();
         ff.distance(0, 1, None);
         ff.init_distance_matrix();
-        assert_eq!(ff.dist_mat, vec![-1.0, -1.0, -1.0]);
+        assert_eq!(*ff.dist_mat.borrow(), vec![-1.0, -1.0, -1.0]);
     }
 
     #[test]
@@ -2871,7 +3131,7 @@ mod tests {
         ff.add_contrib(Box::new(HarmonicContrib::new(vec![0.0; 6])));
         ff.distance(0, 1, None);
         assert_close(ff.calc_energy(&[0.0, 0.0, 0.0, 0.0, 0.0, 2.0]), 4.0);
-        assert!(ff.dist_mat.iter().all(|value| *value == -1.0));
+        assert!(ff.dist_mat.borrow().iter().all(|value| *value == -1.0));
     }
 
     #[test]

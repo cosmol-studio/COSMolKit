@@ -14,4 +14,5 @@ pub use core::{
 };
 pub use crystalff::{
     TorsionAngleContribM6, TorsionAngleContribs, TorsionAngleContribsParams, calc_torsion_energy,
+    calc_torsion_energy_m6,
 };

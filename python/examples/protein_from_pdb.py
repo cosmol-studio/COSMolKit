@@ -1,4 +1,4 @@
-"""Protein subset usage.
+"""Public Python API example: protein subset traversal.
 
 Usage:
     .venv/bin/python python/examples/protein_from_pdb.py

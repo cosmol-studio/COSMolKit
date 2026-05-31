@@ -8,6 +8,9 @@ use crate::{
     get_substruct_matches_with_params, symmetrize_sssr,
 };
 use std::collections::BTreeMap;
+use std::env;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 
 const MIN_MACROCYCLE_SIZE: usize = 9;
 
@@ -223,7 +226,7 @@ impl ExpTorsionAngleCollection {
         use_small_ring_torsions: bool,
         use_macrocycle_torsions: bool,
         param_data: &str,
-    ) -> Result<Self, CrystalffTorsionPreferencesError> {
+    ) -> Result<Arc<Self>, CrystalffTorsionPreferencesError> {
         // BEGIN RDKIT CPP METHOD ForceFields::CrystalFF::ExpTorsionAngleCollection::getParams (TorsionPreferences.cpp:72-100)
         // RDKit✔️✔️: const ExpTorsionAngleCollection *ExpTorsionAngleCollection::getParams(
         // RDKit✔️✔️:     unsigned int version, bool useSmallRingTorsions, bool useMacrocycleTorsions,
@@ -254,7 +257,13 @@ impl ExpTorsionAngleCollection {
         // RDKit✔️✔️:
         // RDKit✔️✔️:   return &(param_flyweight(params).get());
         // RDKit✔️✔️: }
-        let params = if param_data.is_empty() {
+        // BEGIN RDKIT CPP TYPEDEF ForceFields::CrystalFF::param_flyweight (TorsionPreferences.cpp:59-63)
+        // RDKit✔️✔️: typedef boost::flyweight<
+        // RDKit✔️✔️:     boost::flyweights::key_value<std::string, ExpTorsionAngleCollection>,
+        // RDKit✔️✔️:     boost::flyweights::no_tracking>
+        // RDKit✔️✔️:     param_flyweight;
+        // END RDKIT CPP TYPEDEF ForceFields::CrystalFF::param_flyweight
+        let mut params = if param_data.is_empty() {
             match version {
                 1 => torsion_preferences_v1()?,
                 2 => torsion_preferences_v2()?,
@@ -271,26 +280,39 @@ impl ExpTorsionAngleCollection {
             param_data.to_owned()
         };
 
-        let mut collection = Self::new(&params)?;
-
         if use_small_ring_torsions {
-            collection
-                .param_data
-                .push_str(torsion_preferences_small_rings()?);
-            let small_ring_collection = Self::new(torsion_preferences_small_rings()?)?;
-            collection.params.extend(small_ring_collection.params);
+            params.push_str(torsion_preferences_small_rings()?);
         }
 
         if use_macrocycle_torsions {
-            collection
-                .param_data
-                .push_str(torsion_preferences_macrocycles()?);
-            let macrocycle_collection = Self::new(torsion_preferences_macrocycles()?)?;
-            collection.params.extend(macrocycle_collection.params);
+            params.push_str(torsion_preferences_macrocycles()?);
         }
 
-        Ok(collection)
+        crystalff_param_flyweight(&params)
     }
+}
+
+fn crystalff_param_flyweight(
+    params: &str,
+) -> Result<Arc<ExpTorsionAngleCollection>, CrystalffTorsionPreferencesError> {
+    static PARAM_FLYWEIGHT: OnceLock<Mutex<BTreeMap<String, Arc<ExpTorsionAngleCollection>>>> =
+        OnceLock::new();
+
+    let cache = PARAM_FLYWEIGHT.get_or_init(|| Mutex::new(BTreeMap::new()));
+    {
+        let cache_guard = cache.lock().expect("torsion parameter cache poisoned");
+        if let Some(collection) = cache_guard.get(params) {
+            return Ok(Arc::clone(collection));
+        }
+    }
+
+    let collection = Arc::new(ExpTorsionAngleCollection::new(params)?);
+    let mut cache_guard = cache.lock().expect("torsion parameter cache poisoned");
+    Ok(Arc::clone(
+        cache_guard
+            .entry(params.to_owned())
+            .or_insert_with(|| Arc::clone(&collection)),
+    ))
 }
 
 pub fn get_experimental_torsions(
@@ -350,6 +372,22 @@ pub fn get_experimental_torsions(
                     reason: reason.to_owned(),
                 }
             })?;
+            let trace_row34_timing =
+                env::var("COSMOLKIT_ROW34_TORSION_TIMING").ok().as_deref() == Some("1") && na == 44;
+            let trace_row64_timing =
+                env::var("RDKIT_ROW64_TRACE").ok().as_deref() == Some("1") && na == 106;
+            if env::var("RDKIT_ROW61_TRACE").ok().as_deref() == Some("1")
+                && na == 26
+                && param.torsion_idx() == 349
+            {
+                println!(
+                    "row61_torsion349_begin smarts={} query_atoms={} query_bonds={}",
+                    param.smarts(),
+                    query_molecule.num_atoms(),
+                    query_molecule.num_bonds()
+                );
+            }
+            let match_start = (trace_row34_timing || trace_row64_timing).then(Instant::now);
             let matches = get_substruct_matches_with_params(
                 mol,
                 query_molecule,
@@ -358,6 +396,33 @@ pub fn get_experimental_torsions(
                     uniquify: false,
                 },
             );
+            if env::var("RDKIT_ROW61_TRACE").ok().as_deref() == Some("1")
+                && na == 26
+                && param.torsion_idx() == 349
+            {
+                for (match_idx, match_result) in matches.iter().enumerate() {
+                    println!(
+                        "row61_torsion349_raw_match idx={match_idx} atom_mapping={:?}",
+                        match_result.atom_mapping
+                    );
+                }
+            }
+            if let Some(start) = match_start {
+                let elapsed = start.elapsed().as_secs_f64();
+                if trace_row34_timing && elapsed >= 0.01 {
+                    println!(
+                        "row34_torsion_timing smarts={} elapsed={elapsed:.6} matches={}",
+                        param.smarts(),
+                        matches.len()
+                    );
+                } else if trace_row64_timing {
+                    println!(
+                        "row64_torsion_timing smarts={} elapsed={elapsed:.6} matches={}",
+                        param.smarts(),
+                        matches.len()
+                    );
+                }
+            }
             for match_result in matches {
                 let aid1 = match_result.atom_mapping[param.idx()[0]];
                 let aid2 = match_result.atom_mapping[param.idx()[1]];
@@ -399,6 +464,71 @@ pub fn get_experimental_torsions(
                             .unwrap_or(false)
                     {
                         continue;
+                    }
+                    if env::var("COSMOLKIT_ROW16_TORSION_TRACE").ok().as_deref() == Some("1")
+                        && na == 4
+                    {
+                        println!(
+                            "row16_torsion_match bond_idx={bid2} atoms={:?} torsion_idx={} smarts={} signs={:?} force_constants={:?}",
+                            vec![aid1, aid2, aid3, aid4],
+                            param.torsion_idx(),
+                            param.smarts(),
+                            param.signs(),
+                            param.force_constants()
+                        );
+                    }
+                    if env::var("RDKIT_ROW34_TRACE").ok().as_deref() == Some("1") && na == 44 {
+                        println!(
+                            "row34_torsion_match bond_idx={bid2} atoms={:?} torsion_idx={} smarts={} signs={:?} force_constants={:?} excluded={} already_done={}",
+                            vec![aid1, aid2, aid3, aid4],
+                            param.torsion_idx(),
+                            param.smarts(),
+                            param.signs(),
+                            param.force_constants(),
+                            excluded_bonds[bid2],
+                            done_bonds[bid2]
+                        );
+                    }
+                    if env::var("COSMOLKIT_ROW20_TORSION_MATCH_TRACE")
+                        .ok()
+                        .as_deref()
+                        == Some("1")
+                        && na == 13
+                    {
+                        println!(
+                            "row20_torsion_match bond_idx={bid2} atoms={:?} torsion_idx={} smarts={} signs={:?} force_constants={:?} excluded={} already_done={}",
+                            vec![aid1, aid2, aid3, aid4],
+                            param.torsion_idx(),
+                            param.smarts(),
+                            param.signs(),
+                            param.force_constants(),
+                            excluded_bonds[bid2],
+                            done_bonds[bid2]
+                        );
+                    }
+                    if env::var("RDKIT_ROW57_TRACE").ok().as_deref() == Some("1") && na == 27 {
+                        println!(
+                            "row57_torsion_match bond_idx={bid2} atoms={:?} torsion_idx={} smarts={} signs={:?} force_constants={:?} excluded={} already_done={}",
+                            vec![aid1, aid2, aid3, aid4],
+                            param.torsion_idx(),
+                            param.smarts(),
+                            param.signs(),
+                            param.force_constants(),
+                            excluded_bonds[bid2],
+                            done_bonds[bid2]
+                        );
+                    }
+                    if env::var("RDKIT_ROW61_TRACE").ok().as_deref() == Some("1") && na == 26 {
+                        println!(
+                            "row61_torsion_match bond_idx={bid2} atoms={:?} torsion_idx={} smarts={} signs={:?} force_constants={:?} excluded={} already_done={}",
+                            vec![aid1, aid2, aid3, aid4],
+                            param.torsion_idx(),
+                            param.smarts(),
+                            param.signs(),
+                            param.force_constants(),
+                            excluded_bonds[bid2],
+                            done_bonds[bid2]
+                        );
                     }
                     torsion_bonds.push((bid2, vec![aid1, aid2, aid3, aid4], param.clone()));
                     done_bonds[bid2] = true;
@@ -489,6 +619,13 @@ pub fn get_experimental_torsions(
                 }
             }
         }
+    }
+
+    if env::var("RDKIT_ROW61_TRACE").ok().as_deref() == Some("1") && na == 26 {
+        println!(
+            "row61_details exp_torsion_atoms={:?} exp_torsion_angles={:?} improper_atoms={:?}",
+            details.exp_torsion_atoms, details.exp_torsion_angles, details.improper_atoms
+        );
     }
 
     Ok(())
@@ -590,7 +727,10 @@ fn parse_exp_torsion_angle_line(
 
     let pattern = parse_smarts(&smarts);
     let query_molecule = build_crystalff_query_molecule(&smarts);
-    let idx = map_pattern_atom_indices(&smarts);
+    let idx = query_molecule.as_ref().map_or_else(
+        |_| map_pattern_atom_indices(&smarts),
+        map_query_atom_indices,
+    );
 
     Ok(ExpTorsionAngle {
         torsion_idx,
@@ -669,7 +809,7 @@ struct CrystalffTemplateBond {
     query: QueryNode<BondQueryPredicate>,
 }
 
-fn build_crystalff_query_molecule(smarts: &str) -> Result<Molecule, String> {
+pub(crate) fn build_crystalff_query_molecule(smarts: &str) -> Result<Molecule, String> {
     let parsed = parse_smarts(smarts).map_err(|error| error.to_string())?;
     let atom_queries = parsed.atom_queries;
     let bonds = expand_crystalff_smarts_bonds(smarts)?;
@@ -737,6 +877,13 @@ fn bond_order_for_query_probe(query: &QueryNode<BondQueryPredicate>) -> BondOrde
     }
 }
 
+fn unspecified_smarts_bond_query() -> QueryNode<BondQueryPredicate> {
+    QueryNode::Or(vec![
+        QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Single)),
+        QueryNode::Predicate(BondQueryPredicate::IsAromatic(true)),
+    ])
+}
+
 fn expand_crystalff_smarts_bonds(smarts: &str) -> Result<Vec<CrystalffTemplateBond>, String> {
     #[derive(Clone)]
     struct ParserState<'a> {
@@ -754,12 +901,10 @@ fn expand_crystalff_smarts_bonds(smarts: &str) -> Result<Vec<CrystalffTemplateBo
             '#' => QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Triple)),
             ':' => QueryNode::Predicate(BondQueryPredicate::IsAromatic(true)),
             '~' => QueryNode::Predicate(BondQueryPredicate::Any),
-            '/' => QueryNode::Predicate(BondQueryPredicate::Direction(
-                crate::BondDirection::EndUpRight,
-            )),
-            '\\' => QueryNode::Predicate(BondQueryPredicate::Direction(
-                crate::BondDirection::EndDownRight,
-            )),
+            // RDKit SMARTS `/` and `\` are directional stereo annotations, not
+            // standalone graph predicates in DescribeQuery(), but the parser
+            // still applies the single-or-aromatic base bond query.
+            '/' | '\\' => unspecified_smarts_bond_query(),
             _ => QueryNode::Predicate(BondQueryPredicate::Any),
         }
     }
@@ -845,7 +990,7 @@ fn expand_crystalff_smarts_bonds(smarts: &str) -> Result<Vec<CrystalffTemplateBo
                 Ok(simplify_bond_query(simplified))
             }
         } else {
-            Ok(QueryNode::Predicate(BondQueryPredicate::Any))
+            Ok(unspecified_smarts_bond_query())
         }
     }
 
@@ -1119,6 +1264,18 @@ fn map_pattern_atom_indices(smarts: &str) -> [usize; 4] {
     idx
 }
 
+fn map_query_atom_indices(query_molecule: &Molecule) -> [usize; 4] {
+    let mut idx = [0; 4];
+    for (atom_idx, atom) in query_molecule.atoms().iter().enumerate() {
+        if let Some(map_number) = atom.atom_map()
+            && (1..=4).contains(&map_number)
+        {
+            idx[usize::try_from(map_number - 1).expect("atom-map index fits usize")] = atom_idx;
+        }
+    }
+    idx
+}
+
 fn extract_atom_map_number(bracket_content: &str) -> Option<u32> {
     let colon_pos = bracket_content.rfind(':')?;
     let digits = &bracket_content[colon_pos + 1..];
@@ -1150,15 +1307,27 @@ fn organic_atom_token_len(chars: &[char], idx: usize) -> usize {
 mod tests {
     use super::{
         CrystalFFDetails, CrystalffTorsionPreferencesError, ExpTorsionAngleCollection,
-        get_experimental_torsions, get_experimental_torsions_without_bonds,
-        torsion_preferences_macrocycles, torsion_preferences_small_rings, torsion_preferences_v1,
-        torsion_preferences_v2,
+        build_crystalff_query_molecule, get_experimental_torsions,
+        get_experimental_torsions_without_bonds, torsion_preferences_macrocycles,
+        torsion_preferences_small_rings, torsion_preferences_v1, torsion_preferences_v2,
     };
-    use crate::Molecule;
+    use crate::search::query::{atom_matches_query, bond_matches_query};
+    use crate::{Molecule, SubstructMatchParams, get_substruct_matches_with_params};
+    use std::path::PathBuf;
 
     const VALID_BASE_PARAM_LINE: &str = "[C:1][C:2][C:3][C:4] 1 0 -1 0 1 0 -1 0 1 0 -1 0\n";
     const VALID_OVERRIDE_PARAM_LINE: &str =
         "[N:1][C:2][O:3][S:4] -1 1.1 1 1.2 -1 1.3 1 1.4 -1 1.5 1 1.6\n";
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    fn conformer_fixture_path(relative_path: &str) -> PathBuf {
+        repo_root()
+            .join("tests/fixtures/conformer_generation")
+            .join(relative_path)
+    }
 
     #[test]
     fn crystalff_exptorsionanglecollection_get_params_selects_version_1_table() {
@@ -1268,6 +1437,30 @@ mod tests {
     }
 
     #[test]
+    fn crystalff_query_default_bonds_do_not_match_azide_double_bond_chain() {
+        let mol = Molecule::from_smiles("[N-]=[N+]=N")
+            .expect("parse azide")
+            .with_hydrogens()
+            .expect("add hydrogens");
+        let query =
+            build_crystalff_query_molecule("[*:1][X3,X2:2]=[X3,X2:3][*:4]").expect("build query");
+
+        let matches = get_substruct_matches_with_params(
+            &mol,
+            &query,
+            &SubstructMatchParams {
+                max_matches: 1000,
+                uniquify: true,
+            },
+        );
+
+        assert!(
+            matches.is_empty(),
+            "implicit SMARTS bonds must remain single-or-aromatic, not match azide double bonds: {matches:?}"
+        );
+    }
+
+    #[test]
     fn crystalff_exptorsionanglecollection_constructor_retains_smarts_parse_result() {
         let params = ExpTorsionAngleCollection::new("CCCC 1 0 1 0 1 0 1 0 1 0 1 0\n").unwrap();
 
@@ -1303,6 +1496,25 @@ mod tests {
                 .unwrap();
 
         assert_eq!(params.params()[0].idx(), [0, 1, 0, 3]);
+    }
+
+    #[test]
+    fn crystalff_exptorsionanglecollection_constructor_maps_modeled_query_atoms() {
+        let params =
+            ExpTorsionAngleCollection::new("[C:1][$([C]):2][C:3][C:4] 1 0 1 0 1 0 1 0 1 0 1 0\n")
+                .unwrap();
+        let query_atom_count = params.params()[0]
+            .query_molecule()
+            .expect("query molecule")
+            .num_atoms();
+
+        assert_eq!(query_atom_count, 4);
+        assert!(
+            params.params()[0]
+                .idx()
+                .iter()
+                .all(|idx| *idx < query_atom_count)
+        );
     }
 
     #[test]
@@ -1455,7 +1667,10 @@ mod tests {
         )
         .expect("constrained torsion path");
 
-        assert!(torsion_bonds.is_empty());
+        assert!(
+            torsion_bonds.is_empty(),
+            "unexpected torsion matches: {torsion_bonds:?}"
+        );
         assert!(details.exp_torsion_atoms.is_empty());
         assert!(details.exp_torsion_angles.is_empty());
     }
@@ -1532,5 +1747,672 @@ mod tests {
         .expect_err("empty molecule should fail");
 
         assert_eq!(err, CrystalffTorsionPreferencesError::EmptyMolecule);
+    }
+
+    #[test]
+    fn crystalff_experimental_torsions_full_overload_covers_tables_and_policies() {
+        let pentane = Molecule::from_smiles("CCCCC").expect("pentane");
+        let mut details = CrystalFFDetails {
+            exp_torsion_atoms: vec![vec![99]],
+            exp_torsion_angles: vec![(vec![99], vec![99.0])],
+            improper_atoms: vec![vec![99]],
+            ..CrystalFFDetails::default()
+        };
+        let mut torsion_bonds = vec![(
+            99,
+            vec![99],
+            ExpTorsionAngleCollection::new("[C:1][C:2][C:3][C:4] 1 0 1 0 1 0 1 0 1 0 1 0\n")
+                .unwrap()
+                .params()[0]
+                .clone(),
+        )];
+
+        get_experimental_torsions(
+            &pentane,
+            &mut details,
+            &mut torsion_bonds,
+            true,
+            false,
+            false,
+            false,
+            2,
+            false,
+        )
+        .expect("pentane SMARTS torsion preferences");
+
+        assert_eq!(
+            details.exp_torsion_atoms,
+            vec![vec![0, 1, 2, 3], vec![1, 2, 3, 4]]
+        );
+        assert_eq!(details.exp_torsion_angles.len(), 2);
+        assert!(details.improper_atoms.is_empty());
+        assert_eq!(
+            torsion_bonds
+                .iter()
+                .map(|entry| entry.0)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+
+        let small_ring = Molecule::from_smiles("C1COCC1").expect("tetrahydrofuran-like ring");
+        get_experimental_torsions_without_bonds(
+            &small_ring,
+            &mut details,
+            true,
+            true,
+            false,
+            false,
+            1,
+            false,
+        )
+        .expect("small-ring optional torsion table");
+        assert!(!details.exp_torsion_atoms.is_empty());
+        assert_eq!(
+            details.exp_torsion_atoms.len(),
+            details.exp_torsion_angles.len()
+        );
+
+        let macrocycle = Molecule::from_smiles("C1COCCCCCCC1").expect("macrocycle");
+        get_experimental_torsions_without_bonds(
+            &macrocycle,
+            &mut details,
+            true,
+            false,
+            true,
+            false,
+            1,
+            false,
+        )
+        .expect("macrocycle optional torsion table");
+        assert!(!details.exp_torsion_atoms.is_empty());
+        assert_eq!(
+            details.exp_torsion_atoms.len(),
+            details.exp_torsion_angles.len()
+        );
+
+        let bridged =
+            Molecule::from_smiles("O[C@H]1C[C@H]2CC[C@]1(C)C2(C)C").expect("bridged ring");
+        get_experimental_torsions_without_bonds(
+            &bridged,
+            &mut details,
+            true,
+            true,
+            false,
+            false,
+            1,
+            false,
+        )
+        .expect("bridged-ring exclusion");
+        assert!(details.exp_torsion_atoms.is_empty());
+        assert!(details.exp_torsion_angles.is_empty());
+
+        let butane = Molecule::from_smiles("CCCC").expect("butane");
+        details.constrained_atoms = vec![true; butane.num_atoms()];
+        get_experimental_torsions(
+            &butane,
+            &mut details,
+            &mut torsion_bonds,
+            true,
+            false,
+            false,
+            false,
+            1,
+            false,
+        )
+        .expect("fully constrained torsion skip");
+        assert!(
+            torsion_bonds.is_empty(),
+            "unexpected torsion matches: {torsion_bonds:?}"
+        );
+        assert!(details.exp_torsion_atoms.is_empty());
+
+        let err = get_experimental_torsions_without_bonds(
+            &butane,
+            &mut details,
+            true,
+            false,
+            false,
+            false,
+            3,
+            false,
+        )
+        .expect_err("unsupported ETversion should fail");
+        assert_eq!(
+            err,
+            CrystalffTorsionPreferencesError::InvalidExperimentalTorsionVersion { version: 3 }
+        );
+    }
+
+    #[test]
+    fn crystalff_rdkit_simple_torsion_fixture_matches_rdkit_get_experimental_torsions() {
+        let path = conformer_fixture_path("rdkit/test_data/simple_torsion.etkdg.mol");
+        let text = std::fs::read_to_string(&path).expect("read RDKit simple_torsion.etkdg fixture");
+        let mol = crate::io::molfile::read_mol_record_from_str_with_params(
+            &text,
+            crate::io::sdf::SdfReadParams {
+                sanitize: true,
+                remove_hs: false,
+                process_property_lists: false,
+                ..Default::default()
+            },
+        )
+        .expect("parse RDKit simple_torsion.etkdg fixture")
+        .molecule;
+
+        let mut details = CrystalFFDetails::default();
+        let mut torsion_bonds = Vec::new();
+        get_experimental_torsions(
+            &mol,
+            &mut details,
+            &mut torsion_bonds,
+            true,
+            false,
+            false,
+            false,
+            2,
+            false,
+        )
+        .expect("simple_torsion.etkdg torsion preferences");
+
+        assert_eq!(torsion_bonds.len(), 1);
+        assert_eq!(torsion_bonds[0].0, 1);
+        assert_eq!(torsion_bonds[0].1, vec![0, 1, 2, 3]);
+        assert_eq!(torsion_bonds[0].2.torsion_idx(), 229);
+        assert_eq!(
+            torsion_bonds[0].2.smarts(),
+            "[!#1:1][CX4H2:2]!@;-[CX4H2:3][!#1:4]"
+        );
+        assert_eq!(details.exp_torsion_atoms, vec![vec![0, 1, 2, 3]]);
+        assert_eq!(
+            details.exp_torsion_angles,
+            vec![(vec![1, 1, 1, 1, 1, 1], vec![0.0, 0.0, 4.0, 0.0, 0.0, 0.0])]
+        );
+    }
+
+    #[test]
+    fn crystalff_rdkit_smallring_fixture_matches_rdkit_sr_etkdgv3_experimental_torsions() {
+        let path = conformer_fixture_path("rdkit/test_data/simple_torsion.smallring.etkdgv3.mol");
+        let text =
+            std::fs::read_to_string(&path).expect("read RDKit simple_torsion.smallring fixture");
+        let mol = crate::io::molfile::read_mol_record_from_str_with_params(
+            &text,
+            crate::io::sdf::SdfReadParams {
+                sanitize: true,
+                remove_hs: false,
+                process_property_lists: false,
+                ..Default::default()
+            },
+        )
+        .expect("parse RDKit simple_torsion.smallring fixture")
+        .molecule;
+
+        let mut details = CrystalFFDetails::default();
+        let mut torsion_bonds = Vec::new();
+        get_experimental_torsions(
+            &mol,
+            &mut details,
+            &mut torsion_bonds,
+            true,
+            true,
+            false,
+            false,
+            2,
+            false,
+        )
+        .expect("simple_torsion.smallring torsion preferences");
+
+        let actual: Vec<(usize, Vec<usize>, usize, String)> = torsion_bonds
+            .iter()
+            .map(|(bond_idx, atom_indices, angle)| {
+                (
+                    *bond_idx,
+                    atom_indices.clone(),
+                    angle.torsion_idx(),
+                    angle.smarts().to_owned(),
+                )
+            })
+            .collect();
+        let expected = vec![
+            (
+                1,
+                vec![0, 1, 2, 3],
+                392,
+                "[!#1;r{5-8}:1]@[CX4;r{5-8}:2]@;-[CX4;r{5-8}:3]@[!#1;r{5-8}:4]".to_owned(),
+            ),
+            (
+                4,
+                vec![0, 5, 4, 3],
+                392,
+                "[!#1;r{5-8}:1]@[CX4;r{5-8}:2]@;-[CX4;r{5-8}:3]@[!#1;r{5-8}:4]".to_owned(),
+            ),
+            (
+                5,
+                vec![1, 0, 5, 4],
+                392,
+                "[!#1;r{5-8}:1]@[CX4;r{5-8}:2]@;-[CX4;r{5-8}:3]@[!#1;r{5-8}:4]".to_owned(),
+            ),
+            (
+                2,
+                vec![1, 2, 3, 4],
+                392,
+                "[!#1;r{5-8}:1]@[CX4;r{5-8}:2]@;-[CX4;r{5-8}:3]@[!#1;r{5-8}:4]".to_owned(),
+            ),
+            (
+                0,
+                vec![2, 1, 0, 5],
+                392,
+                "[!#1;r{5-8}:1]@[CX4;r{5-8}:2]@;-[CX4;r{5-8}:3]@[!#1;r{5-8}:4]".to_owned(),
+            ),
+            (
+                3,
+                vec![2, 3, 4, 5],
+                392,
+                "[!#1;r{5-8}:1]@[CX4;r{5-8}:2]@;-[CX4;r{5-8}:3]@[!#1;r{5-8}:4]".to_owned(),
+            ),
+        ];
+        assert_eq!(actual, expected);
+        assert_eq!(
+            details.exp_torsion_atoms,
+            vec![
+                vec![0, 1, 2, 3],
+                vec![0, 5, 4, 3],
+                vec![1, 0, 5, 4],
+                vec![1, 2, 3, 4],
+                vec![2, 1, 0, 5],
+                vec![2, 3, 4, 5],
+            ]
+        );
+        assert_eq!(
+            details.exp_torsion_angles,
+            vec![
+                (vec![1, 1, 1, 1, 1, 1], vec![0.0, 0.0, 30.0, 0.0, 0.0, 0.0]),
+                (vec![1, 1, 1, 1, 1, 1], vec![0.0, 0.0, 30.0, 0.0, 0.0, 0.0]),
+                (vec![1, 1, 1, 1, 1, 1], vec![0.0, 0.0, 30.0, 0.0, 0.0, 0.0]),
+                (vec![1, 1, 1, 1, 1, 1], vec![0.0, 0.0, 30.0, 0.0, 0.0, 0.0]),
+                (vec![1, 1, 1, 1, 1, 1], vec![0.0, 0.0, 30.0, 0.0, 0.0, 0.0]),
+                (vec![1, 1, 1, 1, 1, 1], vec![0.0, 0.0, 30.0, 0.0, 0.0, 0.0]),
+            ]
+        );
+    }
+
+    #[test]
+    fn crystalff_simple_torsion_query_matches_fixture_like_rdkit() {
+        let path = conformer_fixture_path("rdkit/test_data/simple_torsion.etkdg.mol");
+        let text = std::fs::read_to_string(&path).expect("read RDKit simple_torsion.etkdg fixture");
+        let mol = crate::io::molfile::read_mol_record_from_str_with_params(
+            &text,
+            crate::io::sdf::SdfReadParams {
+                sanitize: true,
+                remove_hs: false,
+                process_property_lists: false,
+                ..Default::default()
+            },
+        )
+        .expect("parse RDKit simple_torsion.etkdg fixture")
+        .molecule;
+        let query = build_crystalff_query_molecule("[!#1:1][CX4H2:2]!@;-[CX4H2:3][!#1:4]")
+            .expect("build CrystalFF query");
+        let matches = get_substruct_matches_with_params(
+            &mol,
+            &query,
+            &SubstructMatchParams {
+                max_matches: 1000,
+                uniquify: false,
+            },
+        );
+
+        assert_eq!(
+            matches
+                .iter()
+                .map(|m| m.atom_mapping.clone())
+                .collect::<Vec<_>>(),
+            vec![vec![0, 1, 2, 3], vec![3, 2, 1, 0]]
+        );
+    }
+
+    #[test]
+    fn crystalff_aliphatic_carbon_query_does_not_match_row34_aromatic_carbon() {
+        let mol = Molecule::from_smiles("CCCC1CCC(c2ccc(OCC)cc2)CC1")
+            .expect("parse row34")
+            .with_hydrogens()
+            .expect("add hydrogens");
+        let query =
+            build_crystalff_query_molecule("[C:1][CX4:2]!@;-[CX3:3][c:4]").expect("build query");
+
+        let matches = get_substruct_matches_with_params(
+            &mol,
+            &query,
+            &SubstructMatchParams {
+                max_matches: 1000,
+                uniquify: false,
+            },
+        );
+
+        assert!(
+            !matches.iter().any(|m| m.atom_mapping == vec![5, 6, 7, 8]),
+            "aliphatic [CX3] must not match aromatic carbon in row34: {matches:?}"
+        );
+    }
+
+    #[test]
+    fn crystalff_carboxylate_query_does_not_match_neutral_row20_carboxylic_acid() {
+        let mol = Molecule::from_smiles("N[C@@H](C)C(=O)O")
+            .expect("parse row20")
+            .with_hydrogens()
+            .expect("add hydrogens");
+        let query = build_crystalff_query_molecule("[O:1]=[C:2]([O-])!@;-[CX4H1:3][H:4]")
+            .expect("build carboxylate query");
+
+        let matches = get_substruct_matches_with_params(
+            &mol,
+            &query,
+            &SubstructMatchParams {
+                max_matches: 1000,
+                uniquify: false,
+            },
+        );
+
+        assert!(
+            matches.is_empty(),
+            "carboxylate SMARTS must not match neutral row20 acid: {matches:?}"
+        );
+    }
+
+    #[test]
+    fn crystalff_recursive_carbonyl_query_matches_row57_hydrazide_torsion_like_rdkit() {
+        let mol = Molecule::from_smiles("CCCCCC(=O)NNC(N)=S")
+            .expect("parse row57")
+            .with_hydrogens()
+            .expect("add hydrogens");
+        let query = build_crystalff_query_molecule("[$(C=O):1][NX3:2]!@;-[!#1:3][!#1:4]")
+            .expect("build recursive carbonyl query");
+
+        let matches = get_substruct_matches_with_params(
+            &mol,
+            &query,
+            &SubstructMatchParams {
+                max_matches: 1000,
+                uniquify: false,
+            },
+        );
+
+        assert!(
+            matches.iter().any(|m| m.atom_mapping == vec![5, 7, 8, 9]),
+            "recursive carbonyl SMARTS must match row57 torsion [5,7,8,9]: {matches:?}"
+        );
+    }
+
+    #[test]
+    #[ignore = "debug helper for row34 torsion SMARTS parity investigation"]
+    fn debug_row34_hydrogen_torsion_query_matches() {
+        let smarts = "[a:1][c:2]!@;-[CX4H1:3][H:4]";
+        let mol = Molecule::from_smiles("CCCC1CCC(c2ccc(OCC)cc2)CC1")
+            .expect("parse row34")
+            .with_hydrogens()
+            .expect("add hydrogens");
+        let query = build_crystalff_query_molecule(smarts).expect("build CrystalFF query");
+
+        let matches = get_substruct_matches_with_params(
+            &mol,
+            &query,
+            &SubstructMatchParams {
+                max_matches: 1000,
+                uniquify: false,
+            },
+        );
+
+        println!("row34_debug_smarts={smarts}");
+        println!(
+            "row34_debug_matches={:?}",
+            matches
+                .iter()
+                .map(|m| m.atom_mapping.clone())
+                .collect::<Vec<_>>()
+        );
+
+        for (query_atom_idx, query_atom) in query.atoms().iter().enumerate() {
+            let matching_atoms: Vec<_> = mol
+                .atoms()
+                .iter()
+                .enumerate()
+                .filter_map(|(mol_atom_idx, mol_atom)| {
+                    query_atom.query().and_then(|query_node| {
+                        atom_matches_query(mol_atom, query_node, &mol).then_some(mol_atom_idx)
+                    })
+                })
+                .collect();
+            println!(
+                "row34_query_atom_matches query_atom_idx={query_atom_idx} query={:?} matches={matching_atoms:?}",
+                query_atom.query()
+            );
+        }
+
+        for (query_bond_idx, query_bond) in query.bonds().iter().enumerate() {
+            let matching_bonds: Vec<_> = mol
+                .bonds()
+                .iter()
+                .enumerate()
+                .filter_map(|(mol_bond_idx, mol_bond)| {
+                    query_bond.query().and_then(|query_node| {
+                        bond_matches_query(mol_bond, query_node, &mol).then_some(mol_bond_idx)
+                    })
+                })
+                .collect();
+            println!(
+                "row34_query_bond_matches query_bond_idx={query_bond_idx} query={:?} matches={matching_bonds:?}",
+                query_bond.query()
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "debug helper for row20 carboxylate torsion SMARTS parity investigation"]
+    fn debug_row20_carboxylate_torsion_query_matches() {
+        let smarts = "[O:1]=[C:2]([O-])!@;-[CX4H1:3][H:4]";
+        let mol = Molecule::from_smiles("N[C@@H](C)C(=O)O")
+            .expect("parse row20")
+            .with_hydrogens()
+            .expect("add hydrogens");
+        let query = build_crystalff_query_molecule(smarts).expect("build CrystalFF query");
+
+        let matches = get_substruct_matches_with_params(
+            &mol,
+            &query,
+            &SubstructMatchParams {
+                max_matches: 1000,
+                uniquify: false,
+            },
+        );
+
+        println!("row20_debug_smarts={smarts}");
+        println!(
+            "row20_debug_matches={:?}",
+            matches
+                .iter()
+                .map(|m| m.atom_mapping.clone())
+                .collect::<Vec<_>>()
+        );
+
+        for (query_atom_idx, query_atom) in query.atoms().iter().enumerate() {
+            let matching_atoms: Vec<_> = mol
+                .atoms()
+                .iter()
+                .enumerate()
+                .filter_map(|(mol_atom_idx, mol_atom)| {
+                    query_atom.query().and_then(|query_node| {
+                        atom_matches_query(mol_atom, query_node, &mol).then_some(mol_atom_idx)
+                    })
+                })
+                .collect();
+            println!(
+                "row20_query_atom_matches query_atom_idx={query_atom_idx} query={:?} matches={matching_atoms:?}",
+                query_atom.query()
+            );
+        }
+
+        for (query_bond_idx, query_bond) in query.bonds().iter().enumerate() {
+            let matching_bonds: Vec<_> = mol
+                .bonds()
+                .iter()
+                .enumerate()
+                .filter_map(|(mol_bond_idx, mol_bond)| {
+                    query_bond.query().and_then(|query_node| {
+                        bond_matches_query(mol_bond, query_node, &mol).then_some(mol_bond_idx)
+                    })
+                })
+                .collect();
+            println!(
+                "row20_query_bond_matches query_bond_idx={query_bond_idx} query={:?} matches={matching_bonds:?}",
+                query_bond.query()
+            );
+        }
+
+        for (mol_atom_idx, atom) in mol.atoms().iter().enumerate() {
+            println!(
+                "row20_mol_atom idx={mol_atom_idx} atomic_num={} formal_charge={} explicit_hs={} aromatic={} hyb={:?} atom_map={:?}",
+                atom.atomic_number(),
+                atom.formal_charge(),
+                atom.explicit_hydrogens(),
+                atom.is_aromatic(),
+                atom.hybridization(),
+                atom.atom_map()
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "debug helper for row89 recursive carbonyl torsion SMARTS parity investigation"]
+    fn debug_row89_recursive_carbonyl_torsion_query_matches() {
+        let smarts = "[$(C=O):1][NX3:2]!@;-[!#1:3][!#1:4]";
+        let mol = Molecule::from_smiles("COC(=O)c4ccccc4(NC(=O)n3c1ccccc1sc2ccccc23)")
+            .expect("parse row89")
+            .with_hydrogens()
+            .expect("add hydrogens");
+        let query = build_crystalff_query_molecule(smarts).expect("build CrystalFF query");
+
+        let matches = get_substruct_matches_with_params(
+            &mol,
+            &query,
+            &SubstructMatchParams {
+                max_matches: 1000,
+                uniquify: false,
+            },
+        );
+
+        println!("row89_debug_smarts={smarts}");
+        println!(
+            "row89_debug_query_idx={:?}",
+            super::map_query_atom_indices(&query)
+        );
+        println!(
+            "row89_debug_matches={:?}",
+            matches
+                .iter()
+                .map(|m| m.atom_mapping.clone())
+                .collect::<Vec<_>>()
+        );
+
+        for (query_atom_idx, query_atom) in query.atoms().iter().enumerate() {
+            let matching_atoms: Vec<_> = mol
+                .atoms()
+                .iter()
+                .enumerate()
+                .filter_map(|(mol_atom_idx, mol_atom)| {
+                    query_atom.query().and_then(|query_node| {
+                        atom_matches_query(mol_atom, query_node, &mol).then_some(mol_atom_idx)
+                    })
+                })
+                .collect();
+            println!(
+                "row89_query_atom_matches query_atom_idx={query_atom_idx} atom_map={:?} query={:?} matches={matching_atoms:?}",
+                query_atom.atom_map(),
+                query_atom.query()
+            );
+        }
+
+        for (query_bond_idx, query_bond) in query.bonds().iter().enumerate() {
+            let matching_bonds: Vec<_> = mol
+                .bonds()
+                .iter()
+                .enumerate()
+                .filter_map(|(mol_bond_idx, mol_bond)| {
+                    query_bond.query().and_then(|query_node| {
+                        bond_matches_query(mol_bond, query_node, &mol).then_some(mol_bond_idx)
+                    })
+                })
+                .collect();
+            println!(
+                "row89_query_bond_matches query_bond_idx={query_bond_idx} query={:?} matches={matching_bonds:?}",
+                query_bond.query()
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "debug helper for row61 torsion_idx=349 substructure parity investigation"]
+    fn debug_row61_torsion349_query_matches() {
+        let smarts = "[cH0:1][c:2]([cH0])!@;-[CX3:3]=[O:4]";
+        let mol = Molecule::from_smiles("COC(=O)c1cccc([N+](=O)[O-])c1C(=O)OC")
+            .expect("parse row61")
+            .with_hydrogens()
+            .expect("add hydrogens");
+        let query = build_crystalff_query_molecule(smarts).expect("build CrystalFF query");
+
+        let matches = get_substruct_matches_with_params(
+            &mol,
+            &query,
+            &SubstructMatchParams {
+                max_matches: 1000,
+                uniquify: false,
+            },
+        );
+
+        println!("row61_debug_smarts={smarts}");
+        println!(
+            "row61_debug_query_idx={:?}",
+            super::map_query_atom_indices(&query)
+        );
+        println!(
+            "row61_debug_matches={:?}",
+            matches
+                .iter()
+                .map(|m| m.atom_mapping.clone())
+                .collect::<Vec<_>>()
+        );
+
+        for (query_atom_idx, query_atom) in query.atoms().iter().enumerate() {
+            let matching_atoms: Vec<_> = mol
+                .atoms()
+                .iter()
+                .enumerate()
+                .filter_map(|(mol_atom_idx, mol_atom)| {
+                    query_atom.query().and_then(|query_node| {
+                        atom_matches_query(mol_atom, query_node, &mol).then_some(mol_atom_idx)
+                    })
+                })
+                .collect();
+            println!(
+                "row61_query_atom_matches query_atom_idx={query_atom_idx} atom_map={:?} query={:?} matches={matching_atoms:?}",
+                query_atom.atom_map(),
+                query_atom.query()
+            );
+        }
+
+        for (query_bond_idx, query_bond) in query.bonds().iter().enumerate() {
+            let matching_bonds: Vec<_> = mol
+                .bonds()
+                .iter()
+                .enumerate()
+                .filter_map(|(mol_bond_idx, mol_bond)| {
+                    query_bond.query().and_then(|query_node| {
+                        bond_matches_query(mol_bond, query_node, &mol).then_some(mol_bond_idx)
+                    })
+                })
+                .collect();
+            println!(
+                "row61_query_bond_matches query_bond_idx={query_bond_idx} query={:?} matches={matching_bonds:?}",
+                query_bond.query()
+            );
+        }
     }
 }

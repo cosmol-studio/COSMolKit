@@ -1,9 +1,10 @@
 Molecule Values
 ===============
 
-``Molecule`` objects behave as copy-on-write (COW) molecule values.
-Transformation methods return new molecule objects and leave the original
-object unchanged. This is intentionally different from common RDKit Python
+``Molecule`` objects behave as value-style molecule values. Transformation
+methods return new molecule objects and leave the original object unchanged.
+Internally COSMolKit uses copy-on-write (COW) storage to share unchanged data
+efficiently. This is intentionally different from common RDKit Python
 workflows, where code often mutates an existing molecule or ``RWMol`` directly.
 
 .. code-block:: python
@@ -136,6 +137,71 @@ When code needs COSMolKit's ordered-ligand tetrahedral representation, use
 
    print(mol.tetrahedral_stereo())
 
+Conformer Generation And Force-Field Optimization
+-------------------------------------------------
+
+Conformer generation APIs create native 3D conformers through the source-ported
+distance-geometry path. The default value-style operation uses ETKDGv3 and
+returns a new molecule value.
+
+.. code-block:: python
+
+   from cosmolkit import EmbedParameters, Molecule
+
+   mol = Molecule.from_smiles("CC(=O)NC").with_hydrogens()
+
+   params = EmbedParameters.etkdg_v3()
+   params.random_seed = 0xF00D
+   params.num_threads = 1
+   params.track_failures = True
+
+   embedded = mol.with_3d_conformer(params)
+
+   print(embedded.num_conformers())
+   print(embedded.coords_3d())
+   print(params.failures)
+
+For multi-conformer generation, explicit seeds are deterministic. RMS pruning,
+sequential seed expansion, and terminal-group symmetrization for pruning follow
+the source-ported RDKit path.
+
+.. code-block:: python
+
+   params = EmbedParameters.etkdg()
+   params.random_seed = 123
+   params.num_threads = 1
+   params.prune_rms_thresh = 0.5
+   params.enable_sequential_random_seeds = True
+
+   pruned = mol.with_3d_conformers(5, params)
+   print(pruned.num_conformers())
+
+UFF and MMFF optimization APIs operate on existing or generated 3D conformers
+and return new molecule values through result objects. They do not mutate the
+source molecule.
+
+.. code-block:: python
+
+   from cosmolkit import Molecule
+
+   mol = Molecule.from_smiles("CCO").with_hydrogens().with_3d_conformer()
+
+   if mol.has_uff_params():
+       result = mol.with_uff_optimized(max_iters=200)
+       optimized = result.molecule()
+
+       print(not result.needs_more())
+       print(result.status_code())
+       print(result.energy())
+       print(optimized.coords_3d())
+
+   if mol.has_mmff_params():
+       result = mol.with_mmff_optimized(mmff_variant="MMFF94", max_iters=200)
+       optimized = result.molecule()
+
+       print(not result.needs_more())
+       print(result.status_code())
+
 Substructure And SMARTS
 -----------------------
 
@@ -152,8 +218,8 @@ Substructure matching functions accept molecule queries:
    print(cosmolkit.get_substruct_match(mol, query).atom_mapping())
 
 ``parse_smarts()`` exposes the Rust SMARTS parser as parse metadata. It returns
-a ``SmartsMolecule`` query-tree value; direct SMARTS query matching is not yet a
-Python API.
+a ``SmartsMolecule`` query-tree value. Direct SMARTS query matching is not yet
+a Python API; Python substructure functions currently accept molecule queries.
 
 .. code-block:: python
 

@@ -1,4 +1,4 @@
-"""COSMolKit usage: parallel batch workflows."""
+"""Public Python API example: parallel batch workflows."""
 
 from pathlib import Path
 

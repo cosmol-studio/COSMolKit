@@ -9,7 +9,6 @@ protein structure APIs from `cosmolkit-core`.
 - Rust API documentation: <https://docs.rs/cosmolkit/latest/cosmolkit/>
 - Core source layout: [`../cosmolkit-core/src/README.md`](../cosmolkit-core/src/README.md)
 - Python package notes: [`../../README.md`](../../README.md)
-- Development policy and operation rules: [`../../dev/README.md`](../../dev/README.md)
 
 ## Installation
 
@@ -99,6 +98,73 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## Conformer Generation And Force Field Applications
+
+Native conformer generation uses RDKit-aligned distance-geometry parameters.
+The default value-style molecule operation uses ETKDGv3 and returns a new
+molecule value. Multi-conformer generation supports deterministic seeded runs,
+RMS pruning, and sequential seed expansion:
+
+```rust
+use cosmolkit::{EmbedParameters, Molecule};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let molecule = Molecule::from_smiles("CC(=O)NC")?.with_hydrogens()?;
+
+    let embedded = molecule.with_3d_conformer()?;
+    println!("{}", embedded.conformers_3d().len());
+
+    let mut params = EmbedParameters::etkdg();
+    params.random_seed = 123;
+    params.num_threads = 1;
+    params.prune_rms_thresh = 0.5;
+
+    let pruned = molecule.with_3d_conformers_with_params(5, params)?;
+    println!("{}", pruned.conformers_3d().len());
+    Ok(())
+}
+```
+
+Force-field APIs operate on molecules with existing 3D conformers and return
+new molecule values, so the input coordinates are left unchanged.
+
+```rust
+use cosmolkit::{
+    Molecule, mmff_has_all_molecule_params, mmff_optimize_molecule,
+    uff_has_all_molecule_params, uff_optimize_molecule,
+};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let molecule = Molecule::from_smiles("CCO")?.with_hydrogens()?.sanitize()?;
+
+    let mut builder = molecule.to_builder();
+    builder.add_3d_conformer(vec![
+        [0.000, 0.000, 0.000],
+        [1.540, 0.000, 0.000],
+        [2.100, 1.200, 0.000],
+        [-0.600, 0.900, 0.000],
+        [-0.600, -0.900, 0.000],
+        [0.000, 0.000, 1.000],
+        [1.900, -0.900, 0.000],
+        [1.700, 0.000, 1.000],
+        [2.900, 1.200, 0.000],
+    ])?;
+    let molecule = builder.build()?;
+
+    if uff_has_all_molecule_params(&molecule)? {
+        let result = uff_optimize_molecule(&molecule, 200, 10.0, -1, true)?;
+        println!("UFF energy: {:.6}", result.energy);
+    }
+
+    if mmff_has_all_molecule_params(&molecule)? {
+        let result = mmff_optimize_molecule(&molecule, "MMFF94", 200, 100.0, -1, true)?;
+        println!("MMFF94 needs_more: {}", result.needs_more);
+    }
+
+    Ok(())
+}
+```
+
 ## Examples
 
 ```bash
@@ -108,6 +174,8 @@ cargo run -p cosmolkit-core --example draw_png
 cargo run -p cosmolkit-core --example sdf_to_smiles
 cargo run -p cosmolkit --example protein_from_pdb
 cargo run -p cosmolkit --example read_xyz
+cargo run -p cosmolkit --example conformer_generation
+cargo run -p cosmolkit --example forcefield_optimization
 ```
 
 ## Development

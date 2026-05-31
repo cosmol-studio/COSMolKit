@@ -1,4 +1,4 @@
-"""COSMolKit usage: IO + basic properties."""
+"""Public Python API example: file IO and basic properties."""
 
 import numpy as np
 from cosmolkit import Molecule

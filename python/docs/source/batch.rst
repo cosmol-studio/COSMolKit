@@ -2,7 +2,8 @@ Batch Workflows
 ===============
 
 ``MoleculeBatch`` is an ordered collection for processing many molecules with a
-single API call.
+single API call. Valid records keep their original input order through
+transform, export, and filtering steps.
 
 .. code-block:: python
 
@@ -67,7 +68,8 @@ returned as ``Molecule`` objects and invalid kept records are returned as
 
 Integer indexing returns ``Molecule | None`` because kept invalid records are
 represented as ``None``. Slices, integer index lists, and boolean masks return a
-new ``MoleculeBatch`` and preserve the batch-level parallel job setting.
+new ``MoleculeBatch`` and preserve both input order and the batch-level
+parallel-job setting.
 
 Export Images
 -------------

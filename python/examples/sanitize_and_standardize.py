@@ -1,4 +1,4 @@
-"""COSMolKit usage: explicit sanitize and standardize steps."""
+"""Public Python API example: explicit sanitize and standardize steps."""
 
 from cosmolkit import Molecule
 

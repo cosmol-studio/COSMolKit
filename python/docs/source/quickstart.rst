@@ -1,11 +1,12 @@
 Quick Start
 ===========
 
-Copy-On-Write (COW) Molecule Values
------------------------------------
+Value-Style Molecule Values
+---------------------------
 
-COSMolKit molecules use copy-on-write (COW) value semantics. Transform methods
-return a new ``Molecule`` and leave the original object unchanged:
+COSMolKit molecules use value semantics. Transform methods return a new
+``Molecule`` and leave the original object unchanged. Internally the library
+uses copy-on-write (COW) storage to share unchanged data efficiently:
 
 .. code-block:: python
 
@@ -70,14 +71,14 @@ Inspect chiral tags without converting to an ordered tetrahedral record:
        if atom.chiral_tag() != ChiralTag.CHI_UNSPECIFIED:
            print(atom.idx(), atom.chiral_tag().name)
 
-Read and write SDF:
+Read and write the first SDF record:
 
 .. code-block:: python
 
    mol = Molecule.read_sdf("input.sdf", coordinate_dim="auto")
    mol.write_sdf("python/examples/output/output.sdf", format="v2000")
 
-Read MOL2:
+Read MOL2 with the RDKit-style parser profile:
 
 .. code-block:: python
 
@@ -91,6 +92,57 @@ Access coordinates as NumPy arrays:
    coords = mol2d.coords_2d()
 
    print(coords.shape)
+
+Generate a native 3D conformer with ETKDGv3:
+
+.. code-block:: python
+
+   from cosmolkit import EmbedParameters, Molecule
+
+   mol = Molecule.from_smiles("CC(=O)NC").with_hydrogens()
+   params = EmbedParameters.etkdg_v3()
+   params.random_seed = 0xF00D
+   params.num_threads = 1
+   params.track_failures = True
+
+   embedded = mol.with_3d_conformer(params)
+
+   print(embedded.num_conformers())
+   print(embedded.coords_3d().shape)
+   print(params.failures)
+
+Generate multiple conformers with RMS pruning:
+
+.. code-block:: python
+
+   params = EmbedParameters.etkdg()
+   params.random_seed = 123
+   params.num_threads = 1
+   params.prune_rms_thresh = 0.5
+   params.enable_sequential_random_seeds = True
+
+   conformers = mol.with_3d_conformers(5, params)
+   print(conformers.num_conformers())
+
+Optimize an existing 3D conformer with UFF:
+
+.. code-block:: python
+
+   mol = Molecule.read_sdf("input_3d.sdf", coordinate_dim="3d")
+
+   if mol.has_uff_params():
+       result = mol.with_uff_optimized(max_iters=200)
+       optimized = result.molecule()
+
+       print(not result.needs_more())
+       print(result.status_code())
+       print(result.energy())
+       print(optimized.coords_3d().shape)
+
+   if mol.has_mmff_params():
+       result = mol.with_mmff_optimized(mmff_variant="MMFF94", max_iters=200)
+       print(not result.needs_more())
+       print(result.status_code())
 
 Generate a Morgan fingerprint:
 
@@ -118,6 +170,9 @@ Parse SMARTS metadata:
    print(query.num_atoms())
    print(query.num_bonds())
 
+``parse_smarts()`` returns a ``SmartsMolecule`` parse tree value. Direct SMARTS
+query matching is not yet a Python API.
+
 Process a list of molecules:
 
 .. code-block:: python
@@ -126,7 +181,7 @@ Process a list of molecules:
 
    batch = MoleculeBatch.from_smiles_list(
        ["CCO", "c1ccccc1", "not-smiles"],
-       errors="keep",
+       errors=BatchErrorMode.KEEP,
    ).with_parallel_jobs(8)
 
    for error in batch.errors():
@@ -139,3 +194,7 @@ Process a list of molecules:
    print(prepared.to_smiles_list(canonical=True))
    print([mol.to_smiles() if mol is not None else None for mol in prepared])
    print([fp.on_bits() if fp is not None else None for fp in fingerprints])
+
+``MoleculeBatch`` preserves input order. When ``errors="keep"`` or
+``BatchErrorMode.KEEP`` is used, invalid records stay aligned with their input
+positions and appear as ``None`` in molecule-valued outputs.

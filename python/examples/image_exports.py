@@ -1,4 +1,4 @@
-"""COSMolKit usage: SVG string export + SVG/PNG file export."""
+"""Public Python API example: SVG string export plus SVG/PNG file export."""
 
 from pathlib import Path
 

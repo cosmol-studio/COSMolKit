@@ -141,10 +141,34 @@ pub struct MmffOptimizeMoleculeResult {
     pub needs_more: i32,
 }
 
+impl MmffOptimizeMoleculeResult {
+    #[must_use]
+    pub fn needs_more(&self) -> bool {
+        self.needs_more > 0
+    }
+
+    #[must_use]
+    pub fn status_code(&self) -> i32 {
+        self.needs_more
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MmffOptimizeMoleculeConfResult {
     pub needs_more: i32,
     pub energy: f64,
+}
+
+impl MmffOptimizeMoleculeConfResult {
+    #[must_use]
+    pub fn needs_more(&self) -> bool {
+        self.needs_more > 0
+    }
+
+    #[must_use]
+    pub fn status_code(&self) -> i32 {
+        self.needs_more
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

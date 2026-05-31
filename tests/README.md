@@ -3,6 +3,7 @@
 - `fixtures/chem/` chemistry test molecules and expected outputs
 - `fixtures/bio/` structure biology test inputs and expected outputs
 - `fixtures/mol2/rdkit/` copied RDKit MOL2 parser fixtures used by MOL2 read parity; this avoids requiring CI to see `third_party/rdkit` as a checked-out submodule when regenerating goldens
+- `fixtures/conformer_generation/rdkit/test_data/` copied RDKit conformer-generation fixtures used by conformer parity and golden regeneration; provenance is recorded in `fixtures/conformer_generation/rdkit_inventory.jsonl`
 - `smiles.smi` shared SMILES corpus for graph-feature and molblock parity tests
 - `golden/graph_features.jsonl` RDKit baseline for atom, bond, valence, stereo, and CIP graph-feature parity
 - `golden/molblock_v2000_minimal.jsonl` RDKit baseline for minimal V2000 mol block body parity
@@ -87,6 +88,12 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 - `dg_bounds_golden_has_one_record_per_smiles`
 - `dg_bounds_matrix_matches_rdkit_golden`
 - strict RDKit parity coverage for distance-geometry bounds generation
+
+`crates/cosmolkit-core/tests/rdkit_conformer_generation_library_parity.rs` contains:
+- `conformer_generation_library_golden_has_one_record_per_smiles`
+- `conformer_generation_library_matches_rdkit_golden_from_smiles_to_exact_coords`
+- corpus-wide RDKit golden coverage for the explicit path `SMILES -> AddHs -> ETKDGv3(seed=61453,numThreads=1,timeout=10) -> single conformer`
+- the exact-coordinate gate is currently marked `#[ignore]` and is run explicitly during conformer-port closure because the full `tests/smiles.smi` corpus is not yet row-closed to RDKit
 
 `crates/cosmolkit-core/tests/rdkit_forcefield_params_parity.rs` contains:
 - `forcefield_params_golden_has_one_record_per_smiles_library_entry`

@@ -319,6 +319,12 @@ pub enum OperationError {
         operation: &'static MoleculeOpSpec,
         message: &'static str,
     },
+    #[error("{operation}: distance-geometry error: {source}")]
+    DistanceGeometry {
+        operation: &'static MoleculeOpSpec,
+        #[source]
+        source: crate::DgBoundsError,
+    },
     #[error("{operation}: {source}")]
     UnsupportedFeature {
         operation: &'static MoleculeOpSpec,
@@ -1609,6 +1615,59 @@ molecule_ops! {
         invariant_profile: "coordinate_generation",
         parity_profile: "compute_2d_coords_default_rdkit",
     }
+
+    op with_3d_conformer(params: crate::EmbedParameters) {
+        method: with_3d_conformer_with_params,
+        impl_fn: with_3d_conformer_impl,
+        default_method: with_3d_conformer,
+        default_args: [crate::EmbedParameters::etkdg_v3()],
+        inplace: true,
+        inplace_method: embed_3d_conformer_with_params_,
+        default_inplace_method: embed_3d_conformer_,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology], write: [coordinates] },
+        may_mutate: [coordinates],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [],
+            invalidate: [drawing],
+        },
+        requires_mapping: none,
+        allows_noop: true,
+        feature: CONFORMER_GENERATION_FEATURE,
+        parity: required_when_supported,
+        io_roundtrip: true,
+        invariant_profile: "coordinate_generation_3d",
+        parity_profile: "embed_molecule_etkdgv3_rdkit",
+    }
+
+    op with_3d_conformers(num_confs: usize, params: crate::EmbedParameters) {
+        method: with_3d_conformers_with_params,
+        impl_fn: with_3d_conformers_impl,
+        inplace: true,
+        inplace_method: embed_3d_conformers_with_params_,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology], write: [coordinates] },
+        may_mutate: [coordinates],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [],
+            invalidate: [drawing],
+        },
+        requires_mapping: none,
+        allows_noop: true,
+        feature: CONFORMER_GENERATION_FEATURE,
+        parity: required_when_supported,
+        io_roundtrip: true,
+        invariant_profile: "coordinate_generation_3d_multi",
+        parity_profile: "embed_multiple_confs_rdkit",
+    }
 }
 
 mod hydrogens;
@@ -1842,6 +1901,57 @@ fn with_2d_coordinates_impl(
     Ok(OpOutcome::Changed)
 }
 
+#[mol_op_body(with_3d_conformer, parts)]
+fn with_3d_conformer_impl(mut params: crate::EmbedParameters) -> Result<OpOutcome, OperationError> {
+    let source = parts.working.clone();
+    let (embedded, id) =
+        crate::distgeom::embed_molecule(&source, &mut params).map_err(|source| {
+            OperationError::DistanceGeometry {
+                operation: &WITH_3D_CONFORMER_SPEC,
+                source,
+            }
+        })?;
+    let _coord_block = parts.begin_coordinates_mut()?;
+    let coord_block = embedded.coordinate_block().clone();
+    parts.commit_coordinates(coord_block)?;
+    parts.clear_cache(DerivedState::DRAWING);
+    if id < 0 {
+        Ok(OpOutcome::NoOp {
+            reason: "RDKit EmbedMolecule returned -1",
+        })
+    } else {
+        Ok(OpOutcome::Changed)
+    }
+}
+
+#[mol_op_body(with_3d_conformers, parts)]
+fn with_3d_conformers_impl(
+    num_confs: usize,
+    mut params: crate::EmbedParameters,
+) -> Result<OpOutcome, OperationError> {
+    let source = parts.working.clone();
+    let num_confs = u32::try_from(num_confs).map_err(|_| OperationError::InvalidInput {
+        operation: &WITH_3D_CONFORMERS_SPEC,
+        message: "num_confs does not fit in RDKit unsigned int parameter",
+    })?;
+    let (embedded, ids) = crate::distgeom::embed_multiple_confs(&source, num_confs, &mut params)
+        .map_err(|source| OperationError::DistanceGeometry {
+            operation: &WITH_3D_CONFORMERS_SPEC,
+            source,
+        })?;
+    let _coord_block = parts.begin_coordinates_mut()?;
+    let coord_block = embedded.coordinate_block().clone();
+    parts.commit_coordinates(coord_block)?;
+    parts.clear_cache(DerivedState::DRAWING);
+    if ids.is_empty() {
+        Ok(OpOutcome::NoOp {
+            reason: "RDKit EmbedMultipleConfs returned no conformer IDs",
+        })
+    } else {
+        Ok(OpOutcome::Changed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -1997,6 +2107,17 @@ mod tests {
         })
     }
 
+    fn support_feature_for(
+        operation: &'static MoleculeOpSpec,
+    ) -> Option<&'static crate::FeatureSpec> {
+        SUPPORT_MATRIX.iter().find_map(|entry| {
+            entry
+                .operation
+                .is_some_and(|candidate| same_operation(candidate, operation))
+                .then_some(entry.feature)
+        })
+    }
+
     fn invariant_matrix_contains(operation: &'static MoleculeOpSpec) -> bool {
         OPERATION_INVARIANT_MATRIX
             .iter()
@@ -2071,6 +2192,51 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn conformer_generation_operation_registry_exposes_3d_coordinate_generation() {
+        assert!(
+            MOLECULE_OPS
+                .iter()
+                .any(|operation| same_operation(operation, &WITH_3D_CONFORMER_SPEC))
+        );
+        assert!(
+            MOLECULE_OPS
+                .iter()
+                .any(|operation| same_operation(operation, &WITH_3D_CONFORMERS_SPEC))
+        );
+        assert_eq!(
+            support_feature_for(&WITH_3D_CONFORMER_SPEC).map(|feature| feature.name),
+            Some(crate::CONFORMER_GENERATION_FEATURE.name)
+        );
+        assert_eq!(
+            support_feature_for(&WITH_3D_CONFORMERS_SPEC).map(|feature| feature.name),
+            Some(crate::CONFORMER_GENERATION_FEATURE.name)
+        );
+        assert_eq!(WITH_3D_CONFORMER_SPEC.domain, OperationDomain::Coordinate);
+        assert_eq!(WITH_3D_CONFORMERS_SPEC.domain, OperationDomain::Coordinate);
+        assert!(support_matrix_contains(&WITH_3D_CONFORMER_SPEC));
+        assert!(support_matrix_contains(&WITH_3D_CONFORMERS_SPEC));
+        assert!(invariant_matrix_contains(&WITH_3D_CONFORMER_SPEC));
+        assert!(invariant_matrix_contains(&WITH_3D_CONFORMERS_SPEC));
+        assert!(parity_matrix_contains(&WITH_3D_CONFORMER_SPEC));
+        assert!(parity_matrix_contains(&WITH_3D_CONFORMERS_SPEC));
+
+        let molecule = crate::Molecule::from_smiles("CC").expect("ethane");
+        let generated = molecule
+            .with_3d_conformer()
+            .expect("default ETKDGv3 conformer");
+        assert!(molecule.conformers_3d().is_empty());
+        assert_eq!(generated.conformers_3d().len(), 1);
+
+        let mut params = crate::EmbedParameters::etkdg();
+        params.random_seed = 0xf00d;
+        params.num_threads = 1;
+        let generated_multi = molecule
+            .with_3d_conformers_with_params(2, params)
+            .expect("multi conformer generation");
+        assert_eq!(generated_multi.conformers_3d().len(), 2);
     }
 
     #[test]

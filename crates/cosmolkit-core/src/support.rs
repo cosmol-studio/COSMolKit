@@ -119,6 +119,14 @@ pub const COORDINATE_2D_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Experimental RDKit-aligned 2D depiction surface with value semantics. The active Rust path includes parameterized compute2DCoords entrypoints, preferCoordGen/forceRDKit routing, ring-template registry loading, mimic-distance embedding, constrained 2D/3D depiction matching, normalize/straighten helpers, and registered with_2d_coordinates exposure used by batch, MolBlock, and drawing callers. CoordGen-backed runtime branches are not available in this build and fail explicitly instead of silently diverging; final whole-surface audit/validation remains tracked separately.",
 };
 
+pub const CONFORMER_GENERATION_FEATURE: FeatureSpec = FeatureSpec {
+    name: "coordinates.3d.conformer_generation",
+    category: FeatureCategory::TopologyOperation,
+    status: SupportStatus::Experimental,
+    parity_sensitive: true,
+    docs: "Experimental RDKit-aligned distance-geometry conformer generation. The exposed surface uses the source-ported EmbedParameters presets, DG/KDG/ETDG/ETKDG entry points, source-backed seeded and unseeded RNG setup, deterministic explicit-seed single-conformer path, deterministic batch seed policy for multi-conformer generation, pruning, terminal-group symmetrization during symmetry-aware pruning, coordMap, CPCI, custom bounds-matrix size validation, stereo/chiral checks, macrocycle and small-ring torsion paths. Final marker audit: no first-axis `RDKit❌❌` block remains in the audited conformer-generation path; residual `RDKit✔️❌`, `RDKit✔️❗`, and `RDKit❗✔️` markers remain in the bounds-builder helper surface and should not be overstated as blanket parity closure.",
+};
+
 pub const SANITIZE_FEATURE: FeatureSpec = FeatureSpec {
     name: "molecule.sanitize",
     category: FeatureCategory::TopologyOperation,
@@ -241,6 +249,7 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &MOL2_READ_FEATURE,
     &HYDROGENS_FEATURE,
     &COORDINATE_2D_FEATURE,
+    &CONFORMER_GENERATION_FEATURE,
     &SANITIZE_FEATURE,
     &KEKULIZE_FEATURE,
     &FINGERPRINT_FEATURE,

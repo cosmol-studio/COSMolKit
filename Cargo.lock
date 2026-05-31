@@ -148,6 +148,7 @@ dependencies = [
  "cosmolkit-ringdecomposer",
  "glam",
  "indicatif",
+ "libc",
  "log",
  "rayon",
  "resvg",

@@ -22,6 +22,11 @@ GENERATORS: list[tuple[str, str]] = [
     ("gen_rdkit_graph_features.py", "graph_features.jsonl"),
     ("gen_rdkit_tetrahedral_stereo_geometry.py", "tetrahedral_stereo_geometry.jsonl"),
     ("gen_rdkit_dg_bounds_golden.py", "dg_bounds_matrix.jsonl"),
+    ("gen_rdkit_conformer_generation_golden.py", "conformer_generation.jsonl"),
+    (
+        "gen_rdkit_conformer_generation_library_golden.py",
+        "conformer_generation_library.jsonl",
+    ),
     ("gen_rdkit_forcefield_params_golden.py", "forcefield_params.jsonl"),
     ("gen_rdkit_mmff_builtin_golden.py", "mmff_builtin.jsonl"),
     ("gen_rdkit_smiles_writer_golden.py", "smiles_writer.jsonl"),

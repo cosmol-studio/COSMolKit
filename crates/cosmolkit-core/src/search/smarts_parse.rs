@@ -615,7 +615,7 @@ impl<'a> SmartsParser<'a> {
                             ring_closures.push((num, last_atom_idx));
                             self.ring_closure_targets.entry(num).or_insert((
                                 last_atom_idx,
-                                QueryNode::Predicate(BondQueryPredicate::Any),
+                                unspecified_smarts_bond_query(),
                                 bond_pos,
                             ));
                         }
@@ -643,10 +643,7 @@ impl<'a> SmartsParser<'a> {
                             }
                             // Bond from parent to first atom of branch
                             if saved_atoms < atom_queries.len() {
-                                bond_queries.insert(
-                                    saved_bonds,
-                                    QueryNode::Predicate(BondQueryPredicate::Any),
-                                );
+                                bond_queries.insert(saved_bonds, unspecified_smarts_bond_query());
                             }
                         }
                         (Token::Dot, _) => {
@@ -658,7 +655,7 @@ impl<'a> SmartsParser<'a> {
                         }
                         // Atom follows implicitly with default bond
                         _ => {
-                            bond_queries.push(QueryNode::Predicate(BondQueryPredicate::Any));
+                            bond_queries.push(unspecified_smarts_bond_query());
                             let atom = self.parse_atom()?;
                             atom_queries.push(atom);
                         }
@@ -715,10 +712,46 @@ impl<'a> SmartsParser<'a> {
     ) -> Result<QueryNode<AtomQueryPredicate>, SmartsParseError> {
         let chars: Vec<char> = content.chars().collect();
         let len = chars.len();
+        if let Some(query) = self.try_parse_hydrogen_atom(&chars, len)? {
+            return Ok(query);
+        }
         let mut i = 0;
-        let mut predicates: Vec<QueryNode<AtomQueryPredicate>> = Vec::new();
         let mut negate_next = false;
-        let mut logical_or = false;
+        let mut clauses: Vec<QueryNode<AtomQueryPredicate>> = Vec::new();
+        let mut current_or_terms: Vec<QueryNode<AtomQueryPredicate>> = Vec::new();
+        let mut current_term: Vec<QueryNode<AtomQueryPredicate>> = Vec::new();
+
+        fn finalize_term(
+            current_term: &mut Vec<QueryNode<AtomQueryPredicate>>,
+            current_or_terms: &mut Vec<QueryNode<AtomQueryPredicate>>,
+        ) {
+            if current_term.is_empty() {
+                return;
+            }
+            let term = if current_term.len() == 1 {
+                current_term.pop().expect("single atom-query term")
+            } else {
+                QueryNode::And(std::mem::take(current_term))
+            };
+            current_or_terms.push(term);
+        }
+
+        fn finalize_clause(
+            current_term: &mut Vec<QueryNode<AtomQueryPredicate>>,
+            current_or_terms: &mut Vec<QueryNode<AtomQueryPredicate>>,
+            clauses: &mut Vec<QueryNode<AtomQueryPredicate>>,
+        ) {
+            finalize_term(current_term, current_or_terms);
+            if current_or_terms.is_empty() {
+                return;
+            }
+            let clause = if current_or_terms.len() == 1 {
+                current_or_terms.pop().expect("single atom-query clause")
+            } else {
+                QueryNode::Or(std::mem::take(current_or_terms))
+            };
+            clauses.push(clause);
+        }
 
         while i < len {
             let ch = chars[i];
@@ -732,7 +765,7 @@ impl<'a> SmartsParser<'a> {
 
             // Handle logical OR (comma)
             if ch == ',' {
-                logical_or = true;
+                finalize_term(&mut current_term, &mut current_or_terms);
                 i += 1;
                 continue;
             }
@@ -745,6 +778,7 @@ impl<'a> SmartsParser<'a> {
 
             // Handle semicolon (AND)
             if ch == ';' {
+                finalize_clause(&mut current_term, &mut current_or_terms, &mut clauses);
                 i += 1;
                 continue;
             }
@@ -760,24 +794,100 @@ impl<'a> SmartsParser<'a> {
                 pred
             };
 
-            predicates.push(pred);
+            current_term.push(pred);
 
             i = consumed;
         }
 
+        finalize_clause(&mut current_term, &mut current_or_terms, &mut clauses);
+
         // Combine predicates
-        if predicates.is_empty() {
+        if clauses.is_empty() {
             // RDKit✔️✔️: Empty bracket [ ] matches any atom
             Ok(QueryNode::Predicate(AtomQueryPredicate::Any))
-        } else if logical_or && predicates.len() > 1 {
-            // RDKit✔️✔️: Comma-separated primitives are OR-ed
-            Ok(QueryNode::Or(predicates))
-        } else if predicates.len() == 1 {
-            Ok(predicates.into_iter().next().unwrap())
+        } else if clauses.len() == 1 {
+            Ok(clauses.into_iter().next().expect("single bracket clause"))
         } else {
-            // RDKit✔️✔️: Semicolon/ampersand-separated (or implicit) are AND-ed
-            Ok(QueryNode::And(predicates))
+            // RDKit source: smarts.yy precedence gives implicit/`&` high-precedence
+            // AND inside each comma term, comma OR inside a clause, and `;`
+            // low-precedence AND across clauses.
+            Ok(QueryNode::And(clauses))
         }
+    }
+
+    fn try_parse_hydrogen_atom(
+        &self,
+        chars: &[char],
+        len: usize,
+    ) -> Result<Option<QueryNode<AtomQueryPredicate>>, SmartsParseError> {
+        // BEGIN RDKIT CPP GRAMMAR hydrogen_atom (smarts.yy:428-486)
+        // RDKit✔️✔️: hydrogen_atom: ATOM_OPEN_TOKEN H_TOKEN ATOM_CLOSE_TOKEN
+        // RDKit✔️✔️: | ATOM_OPEN_TOKEN H_TOKEN COLON_TOKEN number ATOM_CLOSE_TOKEN
+        // RDKit✔️✔️: | ATOM_OPEN_TOKEN number H_TOKEN ATOM_CLOSE_TOKEN
+        // RDKit✔️✔️: | ATOM_OPEN_TOKEN number H_TOKEN COLON_TOKEN number ATOM_CLOSE_TOKEN
+        // RDKit✔️✔️: | ATOM_OPEN_TOKEN H_TOKEN charge_spec ATOM_CLOSE_TOKEN
+        // RDKit✔️✔️: | ATOM_OPEN_TOKEN H_TOKEN charge_spec COLON_TOKEN number ATOM_CLOSE_TOKEN
+        // RDKit✔️✔️: | ATOM_OPEN_TOKEN number H_TOKEN charge_spec ATOM_CLOSE_TOKEN
+        // RDKit✔️✔️: | ATOM_OPEN_TOKEN number H_TOKEN charge_spec COLON_TOKEN number ATOM_CLOSE_TOKEN
+        if len == 0 {
+            return Ok(None);
+        }
+        let mut pos = 0usize;
+        let mut isotope = None;
+        if chars[pos].is_ascii_digit() {
+            let (num, consumed) = self.parse_number(chars, pos, len)?;
+            isotope = Some(num as u16);
+            pos = consumed;
+        }
+        if pos >= len || chars[pos] != 'H' {
+            return Ok(None);
+        }
+        pos += 1;
+        if pos < len && chars[pos].is_ascii_digit() {
+            return Ok(None);
+        }
+
+        let mut formal_charge = None;
+        if pos < len && matches!(chars[pos], '+' | '-') {
+            let (pred, consumed) = self.parse_atom_primitive(chars, pos, len)?;
+            match pred {
+                QueryNode::Predicate(AtomQueryPredicate::FormalCharge(charge)) => {
+                    formal_charge = Some(charge);
+                    pos = consumed;
+                }
+                _ => return Ok(None),
+            }
+        }
+
+        let mut atom_map = None;
+        if pos < len && chars[pos] == ':' {
+            let (num, consumed) = self.parse_number(chars, pos + 1, len)?;
+            atom_map = Some(num);
+            pos = consumed;
+        }
+        if pos != len {
+            return Ok(None);
+        }
+
+        let mut clauses = vec![QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(1))];
+        if let Some(isotope) = isotope {
+            clauses.push(QueryNode::Predicate(AtomQueryPredicate::Isotope(isotope)));
+        }
+        if let Some(formal_charge) = formal_charge {
+            clauses.push(QueryNode::Predicate(AtomQueryPredicate::FormalCharge(
+                formal_charge,
+            )));
+        }
+        if let Some(atom_map) = atom_map {
+            clauses.push(QueryNode::Predicate(AtomQueryPredicate::AtomMapNumber(
+                atom_map,
+            )));
+        }
+        Ok(Some(if clauses.len() == 1 {
+            clauses.pop().expect("single hydrogen atom clause")
+        } else {
+            QueryNode::And(clauses)
+        }))
     }
 
     /// Parse a single atom primitive from the bracket content starting at position `i`.
@@ -856,8 +966,9 @@ impl<'a> SmartsParser<'a> {
                 ));
             }
             let (num, consumed) = self.parse_optional_number(chars, start, len);
+            let charge = if consumed == start { 1 } else { num as i8 };
             return Ok((
-                QueryNode::Predicate(AtomQueryPredicate::FormalCharge(num as i8)),
+                QueryNode::Predicate(AtomQueryPredicate::FormalCharge(charge)),
                 consumed,
             ));
         }
@@ -872,8 +983,9 @@ impl<'a> SmartsParser<'a> {
                 ));
             }
             let (num, consumed) = self.parse_optional_number(chars, start, len);
+            let charge = if consumed == start { -1 } else { -(num as i8) };
             return Ok((
-                QueryNode::Predicate(AtomQueryPredicate::FormalCharge(-(num as i8))),
+                QueryNode::Predicate(AtomQueryPredicate::FormalCharge(charge)),
                 consumed,
             ));
         }
@@ -900,14 +1012,14 @@ impl<'a> SmartsParser<'a> {
             ));
         }
 
-        // Hydrogen count: H or H<N>
-        // RDKit✔️✔️: smarts.yy — H_TOKEN (optional NUMBER)
+        // Hydrogen-count SMARTS queries: `h` or `h<N>`, `H` or `H<N>`
+        // RDKit✔️✔️: smarts.ll / smarts.yy split `h` into AtomHasImplicitH /
+        // RDKit✔️✔️: AtomImplicitHCount and `H` into AtomHCount.
         if ch == 'h' {
-            // RDKit✔️✔️: 'h' is implicit H count (SMARTS)
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len);
-            if num == 0 {
+            if consumed == i + 1 {
                 return Ok((
-                    QueryNode::Predicate(AtomQueryPredicate::ImplicitHydrogenCount(0)),
+                    QueryNode::Predicate(AtomQueryPredicate::HasImplicitHydrogen),
                     consumed,
                 ));
             }
@@ -918,14 +1030,14 @@ impl<'a> SmartsParser<'a> {
         }
         if ch == 'H' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len);
-            if num == 0 {
+            if consumed == i + 1 {
                 return Ok((
-                    QueryNode::Predicate(AtomQueryPredicate::ImplicitHydrogenCount(1)),
+                    QueryNode::Predicate(AtomQueryPredicate::HydrogenCount(1)),
                     consumed,
                 ));
             }
             return Ok((
-                QueryNode::Predicate(AtomQueryPredicate::ImplicitHydrogenCount(num as u8)),
+                QueryNode::Predicate(AtomQueryPredicate::HydrogenCount(num as u8)),
                 consumed,
             ));
         }
@@ -1001,12 +1113,12 @@ impl<'a> SmartsParser<'a> {
         if ch == '^' {
             let (num, consumed) = self.parse_number(chars, i + 1, len)?;
             let hybridization = match num {
-                1 => crate::Hybridization::S,
-                2 => crate::Hybridization::Sp,
-                3 => crate::Hybridization::Sp2,
-                4 => crate::Hybridization::Sp3,
-                5 => crate::Hybridization::Sp3d,
-                6 => crate::Hybridization::Sp3d2,
+                0 => crate::Hybridization::S,
+                1 => crate::Hybridization::Sp,
+                2 => crate::Hybridization::Sp2,
+                3 => crate::Hybridization::Sp3,
+                4 => crate::Hybridization::Sp3d,
+                5 => crate::Hybridization::Sp3d2,
                 _ => crate::Hybridization::Other,
             };
             return Ok((
@@ -1066,23 +1178,28 @@ impl<'a> SmartsParser<'a> {
         // RDKit✔️✔️: smarts.yy — element symbols (2-char or 1-char)
         if ch.is_ascii_uppercase() {
             let start = i;
-            let mut end = i + 1;
+            let end = i + 1;
             // Check for two-char element
             if end < len && chars[end].is_ascii_lowercase() {
                 let two_char: String = chars[start..=end].iter().collect();
                 if let Some(atomic_num) = element_symbol_to_atomic_number(&two_char) {
-                    return Ok((
-                        QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(atomic_num)),
-                        end + 1,
-                    ));
+                    let query = match two_char.as_str() {
+                        "B" | "C" | "N" | "O" | "P" | "S" | "F" | "Cl" | "Br" | "I" | "Si"
+                        | "As" | "Se" | "Te" | "H" => organic_element_to_query(&two_char),
+                        _ => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(atomic_num)),
+                    };
+                    return Ok((query, end + 1));
                 }
             }
             let one_char: String = chars[start..end].iter().collect();
             if let Some(atomic_num) = element_symbol_to_atomic_number(&one_char) {
-                return Ok((
-                    QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(atomic_num)),
-                    end,
-                ));
+                let query = match one_char.as_str() {
+                    "B" | "C" | "N" | "O" | "P" | "S" | "F" | "H" => {
+                        organic_element_to_query(&one_char)
+                    }
+                    _ => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(atomic_num)),
+                };
+                return Ok((query, end));
             }
             // Unknown symbol — treat as wildcard
             return Ok((QueryNode::Predicate(AtomQueryPredicate::Any), end));
@@ -1283,29 +1400,36 @@ impl<'a> SmartsParser<'a> {
 /// RDKit source: SmartsParse.cpp / smarts.ll organic atom handling.
 /// RDKit✔️✔️: Organic subset atoms: C, N, O, S, P, F, Cl, Br, I, *, B
 fn organic_element_to_query(name: &str) -> QueryNode<AtomQueryPredicate> {
+    fn atom_type_query(n: u8, aromatic: bool) -> QueryNode<AtomQueryPredicate> {
+        QueryNode::Predicate(AtomQueryPredicate::AtomType {
+            atomic_number: n,
+            aromatic,
+        })
+    }
+
     match name {
         // RDKit✔️✔️: * matches any atom
         "*" => QueryNode::Predicate(AtomQueryPredicate::Any),
         // RDKit✔️✔️: A = aliphatic (not aromatic)
         "A" => QueryNode::Predicate(AtomQueryPredicate::IsAromatic(false)),
-        // RDKit✔️✔️: Organic elements with their full implicit H count
-        "B" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(5)),
-        "C" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(6)),
-        "N" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(7)),
-        "O" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(8)),
-        "P" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(15)),
-        "S" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(16)),
-        "F" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(9)),
-        "Cl" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(17)),
-        "Br" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(35)),
-        "I" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(53)),
+        // RDKit✔️✔️: $$->setQuery(makeAtomTypeQuery($1,false));
+        "B" => atom_type_query(5, false),
+        "C" => atom_type_query(6, false),
+        "N" => atom_type_query(7, false),
+        "O" => atom_type_query(8, false),
+        "P" => atom_type_query(15, false),
+        "S" => atom_type_query(16, false),
+        "F" => atom_type_query(9, false),
+        "Cl" => atom_type_query(17, false),
+        "Br" => atom_type_query(35, false),
+        "I" => atom_type_query(53, false),
         // RDKit✔️✔️: SMARTS organic subset also includes metalloids as explicit
-        "Si" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(14)),
-        "As" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(33)),
-        "Se" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(34)),
-        "Te" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(52)),
+        "Si" => atom_type_query(14, false),
+        "As" => atom_type_query(33, false),
+        "Se" => atom_type_query(34, false),
+        "Te" => atom_type_query(52, false),
         // RDKit✔️✔️: Single-letter primitives that look like elements
-        "H" => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(1)),
+        "H" => atom_type_query(1, false),
         // RDKit✔️✔️: Unknown symbol — treat as Any
         _ => QueryNode::Predicate(AtomQueryPredicate::Any),
     }
@@ -1350,7 +1474,11 @@ fn aromatic_element_to_query(name: &str) -> QueryNode<AtomQueryPredicate> {
 /// Convert a bond specifier character to a bond query predicate.
 ///
 /// RDKit source: smarts.yy / smarts.ll bond handling.
-/// RDKit✔️✔️: -, =, #, :, ~, /, \\
+/// RDKit✔️❗: `-`, `=`, `#`, `:`, `~`, `@`, `!@` become graph-level bond
+/// RDKit✔️❗: predicates. SMARTS `/` and `\\` store directional stereo state on
+/// RDKit✔️❗: the query bond itself but do not add a graph-level bond query in
+/// RDKit✔️❗: `DescribeQuery()`, so default substructure matching must not
+/// RDKit✔️❗: require target single-bond direction tags for them.
 fn bond_spec_to_query(ch: char) -> QueryNode<BondQueryPredicate> {
     match ch {
         '-' => QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Single)),
@@ -1359,14 +1487,16 @@ fn bond_spec_to_query(ch: char) -> QueryNode<BondQueryPredicate> {
         ':' => QueryNode::Predicate(BondQueryPredicate::IsAromatic(true)),
         '@' => QueryNode::Predicate(BondQueryPredicate::IsInRing(true)),
         '~' => QueryNode::Predicate(BondQueryPredicate::Any),
-        '/' => QueryNode::Predicate(BondQueryPredicate::Direction(
-            crate::BondDirection::EndUpRight,
-        )),
-        '\\' => QueryNode::Predicate(BondQueryPredicate::Direction(
-            crate::BondDirection::EndDownRight,
-        )),
+        '/' | '\\' => unspecified_smarts_bond_query(),
         _ => QueryNode::Predicate(BondQueryPredicate::Any),
     }
+}
+
+fn unspecified_smarts_bond_query() -> QueryNode<BondQueryPredicate> {
+    QueryNode::Or(vec![
+        QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Single)),
+        QueryNode::Predicate(BondQueryPredicate::IsAromatic(true)),
+    ])
 }
 
 /// Look up the atomic number for an element symbol.
@@ -1567,7 +1697,10 @@ mod tests {
     fn test_organic_element_to_query() {
         assert_eq!(
             organic_element_to_query("C"),
-            QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(6))
+            QueryNode::Predicate(AtomQueryPredicate::AtomType {
+                atomic_number: 6,
+                aromatic: false,
+            })
         );
         assert_eq!(
             organic_element_to_query("*"),
@@ -1591,11 +1724,17 @@ mod tests {
         assert_eq!(mol.bond_queries.len(), 1);
         assert_eq!(
             mol.atom_queries[0],
-            QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(6))
+            QueryNode::Predicate(AtomQueryPredicate::AtomType {
+                atomic_number: 6,
+                aromatic: false,
+            })
         );
         assert_eq!(
             mol.bond_queries[0],
-            QueryNode::Predicate(BondQueryPredicate::Any)
+            QueryNode::Or(vec![
+                QueryNode::Predicate(BondQueryPredicate::Order(BondOrder::Single)),
+                QueryNode::Predicate(BondQueryPredicate::IsAromatic(true)),
+            ])
         );
     }
 
@@ -1615,6 +1754,32 @@ mod tests {
     fn test_bracket_with_charge() {
         let mol = parse_smarts("[N+]").unwrap();
         assert_eq!(mol.atom_queries.len(), 1);
+        assert_eq!(
+            mol.atom_queries[0],
+            QueryNode::And(vec![
+                QueryNode::Predicate(AtomQueryPredicate::AtomType {
+                    atomic_number: 7,
+                    aromatic: false,
+                }),
+                QueryNode::Predicate(AtomQueryPredicate::FormalCharge(1)),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_bracket_with_negative_charge_defaults_to_minus_one() {
+        let mol = parse_smarts("[O-]").unwrap();
+        assert_eq!(mol.atom_queries.len(), 1);
+        assert_eq!(
+            mol.atom_queries[0],
+            QueryNode::And(vec![
+                QueryNode::Predicate(AtomQueryPredicate::AtomType {
+                    atomic_number: 8,
+                    aromatic: false,
+                }),
+                QueryNode::Predicate(AtomQueryPredicate::FormalCharge(-1)),
+            ])
+        );
     }
 
     #[test]

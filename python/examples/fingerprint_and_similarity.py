@@ -1,4 +1,4 @@
-"""COSMolKit usage: Morgan fingerprints and Tanimoto similarity."""
+"""Public Python API example: Morgan fingerprints and Tanimoto similarity."""
 
 from cosmolkit import Molecule
 

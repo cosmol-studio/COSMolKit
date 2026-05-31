@@ -128,6 +128,182 @@ $$$$
     assert removed.coords_3d().shape == (1, 3)
 
 
+def test_forcefield_wrappers_optimize_existing_3d_conformer_by_value():
+    ethanol_3d = """ethanol_3d
+  COSMolKit      3D
+
+  9  8  0  0  0  0            999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.5400    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    2.1000    1.2000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.6000    0.9000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.6000   -0.9000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.0000    0.0000    1.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+    1.9000   -0.9000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+    1.7000    0.0000    1.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+    2.9000    1.2000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  2  3  1  0
+  1  4  1  0
+  1  5  1  0
+  1  6  1  0
+  2  7  1  0
+  2  8  1  0
+  3  9  1  0
+M  END
+"""
+    mol = cosmolkit.Molecule.read_mol_from_str(ethanol_3d, coordinate_dim="3d")
+    original_coords = mol.coords_3d().copy()
+
+    assert cosmolkit.uff_has_all_molecule_params(mol)
+    assert mol.has_uff_params()
+
+    result = mol.with_uff_optimized(max_iters=200)
+    optimized = result.molecule()
+
+    assert result.needs_more() is False
+    assert result.energy() >= 0.0
+    assert optimized is not mol
+    assert optimized.num_conformers() == 1
+    assert np.allclose(mol.coords_3d(), original_coords)
+    assert not np.allclose(optimized.coords_3d(), original_coords)
+
+    confs = cosmolkit.uff_optimize_molecule_confs(mol, max_iters=50)
+    assert len(confs.conformer_results()) == mol.num_conformers()
+    assert confs.molecule().num_conformers() == mol.num_conformers()
+
+    mmff_available = cosmolkit.mmff_has_all_molecule_params(mol)
+    assert mol.has_mmff_params() == mmff_available
+    if mmff_available:
+        mmff = mol.with_mmff_optimized(max_iters=50)
+        assert mmff.molecule().num_conformers() == 1
+        assert isinstance(mmff.needs_more(), bool)
+
+
+def test_conformer_generation_python_api_exposes_native_embedding_and_parameters():
+    base = cosmolkit.Molecule.from_smiles("CC(=O)NC").with_hydrogens()
+    params = cosmolkit.EmbedParameters.etkdg_v3()
+    params.random_seed = 0xF00D
+    params.num_threads = 1
+    params.max_iterations = 50
+    params.track_failures = True
+
+    result = base.with_3d_conformer_result(params)
+    embedded = result.molecule()
+
+    assert embedded is not base
+    assert base.num_conformers() == 0
+    assert embedded.num_conformers() == 1
+    assert embedded.coords_3d().shape == (len(embedded), 3)
+    assert result.conf_id() == 0
+    assert result.ok() is True
+    assert result.params().failures == params.failures
+    assert params.failures and sum(params.failures) == 0
+    assert params.et_version == 2
+    assert params.use_exp_torsion_angle_prefs is True
+    assert params.use_basic_knowledge is True
+    assert params.use_macrocycle_torsions is True
+    assert params.use_small_ring_torsions is False
+
+    multi_params = cosmolkit.EmbedParameters.etkdg()
+    multi_params.random_seed = 123
+    multi_params.num_threads = 1
+    multi_params.prune_rms_thresh = -1.0
+    multi_params.enable_sequential_random_seeds = True
+    multi_result = base.with_3d_conformers_result(3, multi_params)
+    multi = multi_result.molecule()
+    assert multi.num_conformers() == 3
+    assert multi_result.conf_ids() == [0, 1, 2]
+    assert multi_result.generated_count() == 3
+    assert multi_result.requested_num_confs() == 3
+    for conformer_index in range(multi.num_conformers()):
+        assert multi.coords_3d(conformer_index).shape == (len(multi), 3)
+
+    mutable = cosmolkit.Molecule.from_smiles("CCO").with_hydrogens()
+    mutable_params = cosmolkit.EmbedParameters.kdg()
+    mutable_params.random_seed = 77
+    mutable.embed_3d_conformer_(mutable_params)
+    assert mutable.num_conformers() == 1
+
+    json_params = cosmolkit.EmbedParameters.dg()
+    json_params.update_from_json(
+        '{"randomSeed": 17, "useRandomCoords": true, "boxSizeMult": 3.5, "forceTransAmides": false, "trackFailures": true}'
+    )
+    assert json_params.random_seed == 17
+    assert json_params.use_random_coords is True
+    assert json_params.box_size_mult == 3.5
+    assert json_params.force_trans_amides is False
+    assert json_params.track_failures is True
+    assert '"randomSeed":"17"' in json_params.to_json()
+
+    mapped_params = cosmolkit.EmbedParameters.etkdg_v3()
+    mapped_params.random_seed = 0xC0FFEE
+    mapped_params.num_threads = 1
+    mapped_params.use_random_coords = True
+    mapped_params.coord_map = {
+        0: (0.0, 0.0, 0.0),
+        1: (0.0, 0.0, 1.5),
+        2: (0.0, 1.5, 1.5),
+    }
+    mapped_params.cpci = {(0, 3): 0.5, (1, 4): -0.25}
+
+    assert mapped_params.coord_map == {
+        0: (0.0, 0.0, 0.0),
+        1: (0.0, 0.0, 1.5),
+        2: (0.0, 1.5, 1.5),
+    }
+    assert mapped_params.cpci == {(0, 3): 0.5, (1, 4): -0.25}
+
+    mapped = base.with_3d_conformer(mapped_params)
+    assert np.allclose(mapped.coords_3d()[0], [0.0, 0.0, 0.0])
+    assert np.allclose(mapped.coords_3d()[1], [0.0, 0.0, 1.5])
+    assert np.allclose(mapped.coords_3d()[2], [0.0, 1.5, 1.5])
+
+
+def test_conformer_generation_failure_tracking_and_forcefield_post_optimization():
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "tests/fixtures/rdkit_builtin/Code/GraphMol/DistGeomHelpers/chirality_failure_test.mol"
+    )
+    chiral = cosmolkit.Molecule.read_mol(str(fixture), coordinate_dim="auto", sanitize=True)
+    chiral_params = cosmolkit.EmbedParameters.etkdg_v3()
+    chiral_params.random_seed = 0xF00D
+    chiral_params.num_threads = 1
+    chiral_params.max_iterations = 50
+    chiral_params.track_failures = True
+
+    failed_result = chiral.with_3d_conformer_result(chiral_params)
+    failed = failed_result.molecule()
+
+    assert failed.num_conformers() == 0
+    assert failed_result.conf_id() == -1
+    assert failed_result.ok() is False
+    assert failed_result.params().failures == chiral_params.failures
+    assert chiral_params.failures
+    assert sum(chiral_params.failures) > 0
+
+    mol = cosmolkit.Molecule.from_smiles("CCO").with_hydrogens()
+    embed_params = cosmolkit.EmbedParameters.etkdg_v3()
+    embed_params.random_seed = 61453
+    embed_params.num_threads = 1
+    embedded = mol.with_3d_conformer(embed_params)
+    coords_before = embedded.coords_3d().copy()
+
+    uff = embedded.with_uff_optimized(max_iters=100)
+    assert uff.molecule().num_conformers() == 1
+    assert uff.energy() >= 0.0
+    assert isinstance(uff.needs_more(), bool)
+    assert uff.status_code() in (0, 1)
+    assert np.allclose(embedded.coords_3d(), coords_before)
+    assert not np.allclose(uff.molecule().coords_3d(), coords_before)
+
+    if embedded.has_mmff_params():
+        mmff = embedded.with_mmff_optimized(max_iters=50)
+        assert mmff.molecule().num_conformers() == 1
+        assert isinstance(mmff.needs_more(), bool)
+        assert mmff.status_code() in (-1, 0, 1)
+
+
 def test_editing_commit_boundary_matches_sanitize_behavior():
     invalid_editor = cosmolkit.Molecule.from_smiles("CC").edit()
     oxygen_a = invalid_editor.add_atom("O")

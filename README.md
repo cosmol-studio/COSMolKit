@@ -19,8 +19,9 @@
 </p>
 
 COSMolKit is a Python molecular toolkit backed by a Rust core. It provides
-value-style molecule operations, SMILES and SDF workflows, 2D depiction,
-fingerprints, batch processing, and protein-focused structural biology APIs.
+value-style molecule operations, SMILES/SDF/MOL2/XYZ workflows, 2D depiction,
+native 3D conformer generation, UFF/MMFF optimization, fingerprints, batch
+processing, and protein-focused structural biology APIs.
 
 The library is built around explicit behavior: supported operations return
 structured results, unsupported behavior fails visibly, and public molecule
@@ -34,7 +35,7 @@ workflows.
 ## Documentation
 
 - Python documentation: <https://kit.cosmol.org/>
-- Rust and development notes: [`crates/cosmolkit/README.md`](crates/cosmolkit/README.md)
+- Rust crate notes: [`crates/cosmolkit/README.md`](crates/cosmolkit/README.md)
 
 ## Installation
 
@@ -56,6 +57,8 @@ pip install cosmolkit
   configurable parallelism.
 - **Array-friendly data access:** coordinates, bounds matrices, fingerprints,
   and graph features are exposed in forms that fit Python numerical workflows.
+- **Source-backed 3D workflows:** conformer generation and UFF/MMFF
+  optimization are available through the public Python API.
 
 ### Value-Style Transformations
 
@@ -83,6 +86,9 @@ mol_2d = mol.with_2d_coordinates()
 
 print(mol_2d.to_smiles())
 print(mol_2d.coords_2d())
+
+mol_3d = mol.with_hydrogens().with_3d_conformer()
+print(mol_3d.coords_3d().shape)
 
 svg = mol_2d.to_svg(width=400, height=300)
 mol_2d.write_png("phenol.png", width=400, height=300)
@@ -154,6 +160,35 @@ for batch in dataset.batches(size=1024, errors="keep", n_jobs=8):
     smiles = batch.to_smiles_list()
 ```
 
+## Conformer Generation And Optimization
+
+```python
+from cosmolkit import EmbedParameters, Molecule
+
+mol = Molecule.from_smiles("CC(=O)NC").with_hydrogens()
+
+params = EmbedParameters.etkdg_v3()
+params.random_seed = 0xF00D
+params.num_threads = 1
+params.track_failures = True
+
+embedded = mol.with_3d_conformer(params)
+print(embedded.num_conformers())
+print(embedded.coords_3d().shape)
+print(params.failures)
+
+multi = mol.with_3d_conformers(5, params)
+print(multi.num_conformers())
+
+if embedded.has_uff_params():
+    uff = embedded.with_uff_optimized(max_iters=200)
+    print(uff.energy())
+
+if embedded.has_mmff_params():
+    mmff = embedded.with_mmff_optimized(max_iters=200)
+    print(mmff.needs_more())
+```
+
 ## Feature Areas
 
 - Molecular graph construction and inspection
@@ -164,6 +199,8 @@ for batch in dataset.batches(size=1024, errors="keep", n_jobs=8):
 - Hydrogen transforms and Kekulization
 - Sanitization and chemistry problem detection
 - 2D coordinate generation and SVG/PNG depiction
+- Native 3D conformer generation with DG/KDG/ETDG/ETKDG parameter presets
+- UFF/MMFF optimization of generated or imported 3D conformers
 - Morgan and Avalon fingerprints
 - Distance-geometry bounds matrices
 - Substructure matching and SMARTS parse metadata
@@ -209,6 +246,8 @@ Goal: keep the supported molecular core correct before expanding breadth.
 - ✅ Sanitization for supported chemistry workflows
 - ✅ Stereochemistry inspection for supported atom and bond states
 - ✅ Distance-geometry bounds matrices
+- ✅ Native 3D conformer generation and UFF/MMFF post-optimization for
+  supported molecules
 - 🧪 Morgan fingerprints and Tanimoto similarity
 - 🧪 Avalon fingerprints
 - 🧪 Substructure matching and Python SMARTS parse metadata
@@ -233,7 +272,7 @@ from Python.
 - ✅ PNG export
 - 🧪 RDKit-style visual parity testing for supported depiction output
 - 🚧 Annotation overlays and richer drawing customization
-- 🚧 3D conformer generation and embedding APIs
+- ✅ 3D conformer generation and embedding APIs
 
 ### Batch-Native Workflows
 

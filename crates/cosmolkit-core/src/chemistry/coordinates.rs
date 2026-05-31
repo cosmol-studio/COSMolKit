@@ -705,12 +705,10 @@ fn expand_template_smarts_bonds(smarts: &str) -> Result<Vec<TemplateGraphBond>, 
             '#' => crate::QueryNode::Predicate(crate::BondQueryPredicate::Order(BondOrder::Triple)),
             ':' => crate::QueryNode::Predicate(crate::BondQueryPredicate::IsAromatic(true)),
             '~' => crate::QueryNode::Predicate(crate::BondQueryPredicate::Any),
-            '/' => crate::QueryNode::Predicate(crate::BondQueryPredicate::Direction(
-                crate::BondDirection::EndUpRight,
-            )),
-            '\\' => crate::QueryNode::Predicate(crate::BondQueryPredicate::Direction(
-                crate::BondDirection::EndDownRight,
-            )),
+            // RDKit source: SMARTS `/` and `\` preserve directional stereo on
+            // the query bond but do not contribute an extra graph-level bond
+            // predicate during default substructure matching.
+            '/' | '\\' => crate::QueryNode::Predicate(crate::BondQueryPredicate::Any),
             _ => crate::QueryNode::Predicate(crate::BondQueryPredicate::Any),
         }
     }

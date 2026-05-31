@@ -4270,27 +4270,33 @@ fn read_mmcif_entity_and_sequence_info(
 
     if let Some(sequence_loop) = find_cif_loop(loops, "_entity_poly_seq.entity_id") {
         let width = checked_cif_loop_width(sequence_loop)?;
-        let entity_col = required_cif_col(sequence_loop, "_entity_poly_seq.entity_id")?;
-        let num_col = required_cif_col(sequence_loop, "_entity_poly_seq.num")?;
-        let mon_col = required_cif_col(sequence_loop, "_entity_poly_seq.mon_id")?;
-        for row in sequence_loop.values.chunks(width) {
-            let source_id = cif_optional(row[entity_col].value.as_str()).ok_or_else(|| {
-                missing_cif_value(row[entity_col].line_number, "_entity_poly_seq.entity_id")
-            })?;
-            let Some(entity_id) = builder.find_entity_by_source_id(source_id) else {
-                continue;
-            };
-            let pos = parse_decimal_i32(
-                &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
-                row[num_col].value.as_str(),
-                row[num_col].line_number,
+        if let Some([entity_col, num_col, mon_col]) = required_cif_table_cols(
+            sequence_loop,
+            [
+                "_entity_poly_seq.entity_id",
                 "_entity_poly_seq.num",
-            )? - 1;
-            if pos < 0 {
-                continue;
-            }
-            if let Some(residue_name) = cif_optional(row[mon_col].value.as_str()) {
-                builder.merge_entity_sequence_at(entity_id, pos as usize, residue_name);
+                "_entity_poly_seq.mon_id",
+            ],
+        ) {
+            for row in sequence_loop.values.chunks(width) {
+                let source_id = cif_optional(row[entity_col].value.as_str()).ok_or_else(|| {
+                    missing_cif_value(row[entity_col].line_number, "_entity_poly_seq.entity_id")
+                })?;
+                let Some(entity_id) = builder.find_entity_by_source_id(source_id) else {
+                    continue;
+                };
+                let pos = parse_decimal_i32(
+                    &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                    row[num_col].value.as_str(),
+                    row[num_col].line_number,
+                    "_entity_poly_seq.num",
+                )? - 1;
+                if pos < 0 {
+                    continue;
+                }
+                if let Some(residue_name) = cif_optional(row[mon_col].value.as_str()) {
+                    builder.merge_entity_sequence_at(entity_id, pos as usize, residue_name);
+                }
             }
         }
     }
@@ -4300,142 +4306,170 @@ fn read_mmcif_entity_and_sequence_info(
         find_cif_loop(loops, "_struct_ref_seq.ref_id"),
     ) {
         let ref_width = checked_cif_loop_width(struct_ref)?;
-        let ref_id = required_cif_col(struct_ref, "_struct_ref.id")?;
-        let ref_entity_id = required_cif_col(struct_ref, "_struct_ref.entity_id")?;
-        let ref_db_name = required_cif_col(struct_ref, "_struct_ref.db_name")?;
-        let ref_db_code = required_cif_col(struct_ref, "_struct_ref.db_code")?;
-        let ref_accession = optional_cif_col(struct_ref, "_struct_ref.pdbx_db_accession");
-        let ref_isoform = optional_cif_col(struct_ref, "_struct_ref.pdbx_db_isoform");
+        if let (
+            Some([ref_id, ref_entity_id, ref_db_name, ref_db_code]),
+            Some(
+                [
+                    seq_ref_id,
+                    seq_align_beg,
+                    seq_align_end,
+                    db_align_beg,
+                    db_align_end,
+                ],
+            ),
+        ) = (
+            required_cif_table_cols(
+                struct_ref,
+                [
+                    "_struct_ref.id",
+                    "_struct_ref.entity_id",
+                    "_struct_ref.db_name",
+                    "_struct_ref.db_code",
+                ],
+            ),
+            required_cif_table_cols(
+                struct_ref_seq,
+                [
+                    "_struct_ref_seq.ref_id",
+                    "_struct_ref_seq.seq_align_beg",
+                    "_struct_ref_seq.seq_align_end",
+                    "_struct_ref_seq.db_align_beg",
+                    "_struct_ref_seq.db_align_end",
+                ],
+            ),
+        ) {
+            let ref_accession = optional_cif_col(struct_ref, "_struct_ref.pdbx_db_accession");
+            let ref_isoform = optional_cif_col(struct_ref, "_struct_ref.pdbx_db_isoform");
 
-        let seq_ref_id = required_cif_col(struct_ref_seq, "_struct_ref_seq.ref_id")?;
-        let seq_align_beg = required_cif_col(struct_ref_seq, "_struct_ref_seq.seq_align_beg")?;
-        let seq_align_end = required_cif_col(struct_ref_seq, "_struct_ref_seq.seq_align_end")?;
-        let db_align_beg = required_cif_col(struct_ref_seq, "_struct_ref_seq.db_align_beg")?;
-        let db_align_end = required_cif_col(struct_ref_seq, "_struct_ref_seq.db_align_end")?;
-        let auth_seq_align_beg =
-            optional_cif_col(struct_ref_seq, "_struct_ref_seq.pdbx_auth_seq_align_beg");
-        let seq_align_beg_ins = optional_cif_col(
-            struct_ref_seq,
-            "_struct_ref_seq.pdbx_seq_align_beg_ins_code",
-        );
-        let auth_seq_align_end =
-            optional_cif_col(struct_ref_seq, "_struct_ref_seq.pdbx_auth_seq_align_end");
-        let seq_align_end_ins = optional_cif_col(
-            struct_ref_seq,
-            "_struct_ref_seq.pdbx_seq_align_end_ins_code",
-        );
-
-        let mut seen = Vec::<String>::new();
-        for seq_row in cif_loop_rows(struct_ref_seq)? {
-            let dedup = format!(
-                "{}\t{}\t{}\t{}\t{}",
-                seq_row[seq_ref_id].value.trim(),
-                seq_row[seq_align_beg].value.trim(),
-                seq_row[seq_align_end].value.trim(),
-                seq_row[db_align_beg].value.trim(),
-                seq_row[db_align_end].value.trim()
+            let auth_seq_align_beg =
+                optional_cif_col(struct_ref_seq, "_struct_ref_seq.pdbx_auth_seq_align_beg");
+            let seq_align_beg_ins = optional_cif_col(
+                struct_ref_seq,
+                "_struct_ref_seq.pdbx_seq_align_beg_ins_code",
             );
-            if seen.iter().any(|item| item == &dedup) {
-                continue;
-            }
-            seen.push(dedup);
+            let auth_seq_align_end =
+                optional_cif_col(struct_ref_seq, "_struct_ref_seq.pdbx_auth_seq_align_end");
+            let seq_align_end_ins = optional_cif_col(
+                struct_ref_seq,
+                "_struct_ref_seq.pdbx_seq_align_end_ins_code",
+            );
 
-            let Some(ref_row) = struct_ref.values.chunks(ref_width).find(|row| {
-                row.get(ref_id)
-                    .is_some_and(|token| token.value.trim() == seq_row[seq_ref_id].value.trim())
-            }) else {
-                continue;
-            };
-            let source_id = ref_row[ref_entity_id].value.trim();
-            let Some(entity_id) = builder.find_entity_by_source_id(source_id) else {
-                continue;
-            };
-            let entity = &mut builder.structure.entities[entity_id.index() as usize];
-            let mut dbref = BioEntityDbRef {
-                db_name: ref_row[ref_db_name].value.trim().to_string(),
-                id_code: ref_row[ref_db_code].value.trim().to_string(),
-                ..BioEntityDbRef::default()
-            };
-            if let Some(index) = ref_accession
-                && cif_row_has2(ref_row, index)
-            {
-                dbref.accession_code = ref_row[index].value.trim().to_string();
+            let mut seen = Vec::<String>::new();
+            for seq_row in cif_loop_rows(struct_ref_seq)? {
+                let dedup = format!(
+                    "{}\t{}\t{}\t{}\t{}",
+                    seq_row[seq_ref_id].value.trim(),
+                    seq_row[seq_align_beg].value.trim(),
+                    seq_row[seq_align_end].value.trim(),
+                    seq_row[db_align_beg].value.trim(),
+                    seq_row[db_align_end].value.trim()
+                );
+                if seen.iter().any(|item| item == &dedup) {
+                    continue;
+                }
+                seen.push(dedup);
+
+                let Some(ref_row) = struct_ref.values.chunks(ref_width).find(|row| {
+                    row.get(ref_id)
+                        .is_some_and(|token| token.value.trim() == seq_row[seq_ref_id].value.trim())
+                }) else {
+                    continue;
+                };
+                let source_id = ref_row[ref_entity_id].value.trim();
+                let Some(entity_id) = builder.find_entity_by_source_id(source_id) else {
+                    continue;
+                };
+                let entity = &mut builder.structure.entities[entity_id.index() as usize];
+                let mut dbref = BioEntityDbRef {
+                    db_name: ref_row[ref_db_name].value.trim().to_string(),
+                    id_code: ref_row[ref_db_code].value.trim().to_string(),
+                    ..BioEntityDbRef::default()
+                };
+                if let Some(index) = ref_accession
+                    && cif_row_has2(ref_row, index)
+                {
+                    dbref.accession_code = ref_row[index].value.trim().to_string();
+                }
+                if let Some(index) = ref_isoform
+                    && cif_row_has2(ref_row, index)
+                {
+                    dbref.isoform = ref_row[index].value.trim().to_string();
+                }
+                dbref.label_seq_begin = cif_optional(seq_row[seq_align_beg].value.as_str())
+                    .map(|value| {
+                        parse_decimal_i32(
+                            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                            value,
+                            seq_row[seq_align_beg].line_number,
+                            "_struct_ref_seq.seq_align_beg",
+                        )
+                    })
+                    .transpose()?;
+                dbref.label_seq_end = cif_optional(seq_row[seq_align_end].value.as_str())
+                    .map(|value| {
+                        parse_decimal_i32(
+                            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                            value,
+                            seq_row[seq_align_end].line_number,
+                            "_struct_ref_seq.seq_align_end",
+                        )
+                    })
+                    .transpose()?;
+                dbref.db_begin.seq_num = cif_optional(seq_row[db_align_beg].value.as_str())
+                    .map(|value| {
+                        parse_decimal_i32(
+                            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                            value,
+                            seq_row[db_align_beg].line_number,
+                            "_struct_ref_seq.db_align_beg",
+                        )
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+                dbref.db_end.seq_num = cif_optional(seq_row[db_align_end].value.as_str())
+                    .map(|value| {
+                        parse_decimal_i32(
+                            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                            value,
+                            seq_row[db_align_end].line_number,
+                            "_struct_ref_seq.db_align_end",
+                        )
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+                if let Some(index) = auth_seq_align_beg
+                    && cif_row_has2(seq_row, index)
+                    && let Some(seq_id) = make_seqid(
+                        seq_row[index].value.as_str(),
+                        seq_align_beg_ins.map(|idx| seq_row[idx].value.as_str()),
+                        seq_row[index].line_number,
+                    )?
+                {
+                    dbref.seq_begin = seq_id;
+                }
+                if let Some(index) = auth_seq_align_end
+                    && cif_row_has2(seq_row, index)
+                    && let Some(seq_id) = make_seqid(
+                        seq_row[index].value.as_str(),
+                        seq_align_end_ins.map(|idx| seq_row[idx].value.as_str()),
+                        seq_row[index].line_number,
+                    )?
+                {
+                    dbref.seq_end = seq_id;
+                }
+                entity.dbrefs.push(dbref);
             }
-            if let Some(index) = ref_isoform
-                && cif_row_has2(ref_row, index)
-            {
-                dbref.isoform = ref_row[index].value.trim().to_string();
-            }
-            dbref.label_seq_begin = cif_optional(seq_row[seq_align_beg].value.as_str())
-                .map(|value| {
-                    parse_decimal_i32(
-                        &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
-                        value,
-                        seq_row[seq_align_beg].line_number,
-                        "_struct_ref_seq.seq_align_beg",
-                    )
-                })
-                .transpose()?;
-            dbref.label_seq_end = cif_optional(seq_row[seq_align_end].value.as_str())
-                .map(|value| {
-                    parse_decimal_i32(
-                        &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
-                        value,
-                        seq_row[seq_align_end].line_number,
-                        "_struct_ref_seq.seq_align_end",
-                    )
-                })
-                .transpose()?;
-            dbref.db_begin.seq_num = cif_optional(seq_row[db_align_beg].value.as_str())
-                .map(|value| {
-                    parse_decimal_i32(
-                        &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
-                        value,
-                        seq_row[db_align_beg].line_number,
-                        "_struct_ref_seq.db_align_beg",
-                    )
-                })
-                .transpose()?
-                .unwrap_or_default();
-            dbref.db_end.seq_num = cif_optional(seq_row[db_align_end].value.as_str())
-                .map(|value| {
-                    parse_decimal_i32(
-                        &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
-                        value,
-                        seq_row[db_align_end].line_number,
-                        "_struct_ref_seq.db_align_end",
-                    )
-                })
-                .transpose()?
-                .unwrap_or_default();
-            if let Some(index) = auth_seq_align_beg
-                && cif_row_has2(seq_row, index)
-                && let Some(seq_id) = make_seqid(
-                    seq_row[index].value.as_str(),
-                    seq_align_beg_ins.map(|idx| seq_row[idx].value.as_str()),
-                    seq_row[index].line_number,
-                )?
-            {
-                dbref.seq_begin = seq_id;
-            }
-            if let Some(index) = auth_seq_align_end
-                && cif_row_has2(seq_row, index)
-                && let Some(seq_id) = make_seqid(
-                    seq_row[index].value.as_str(),
-                    seq_align_end_ins.map(|idx| seq_row[idx].value.as_str()),
-                    seq_row[index].line_number,
-                )?
-            {
-                dbref.seq_end = seq_id;
-            }
-            entity.dbrefs.push(dbref);
         }
     }
 
     if let Some(struct_asym_loop) = find_cif_loop(loops, "_struct_asym.id") {
         let width = checked_cif_loop_width(struct_asym_loop)?;
-        let id_col = required_cif_col(struct_asym_loop, "_struct_asym.id")?;
-        let entity_col = required_cif_col(struct_asym_loop, "_struct_asym.entity_id")?;
+        let Some([id_col, entity_col]) = required_cif_table_cols(
+            struct_asym_loop,
+            ["_struct_asym.id", "_struct_asym.entity_id"],
+        ) else {
+            return Ok(());
+        };
         for row in struct_asym_loop.values.chunks(width) {
             let source_id = cif_optional(row[entity_col].value.as_str()).ok_or_else(|| {
                 missing_cif_value(row[entity_col].line_number, "_struct_asym.entity_id")
@@ -4504,8 +4538,12 @@ fn import_shortened_ccd_codes_from_chem_comp(
     let Some(loop_) = find_cif_loop(loops, "_chem_comp.id") else {
         return Ok(());
     };
-    let id = required_cif_col(loop_, "_chem_comp.id")?;
-    let three_letter_code = required_cif_col(loop_, "_chem_comp.three_letter_code")?;
+    let Some(id) = optional_cif_col(loop_, "_chem_comp.id") else {
+        return Ok(());
+    };
+    let Some(three_letter_code) = optional_cif_col(loop_, "_chem_comp.three_letter_code") else {
+        return Ok(());
+    };
     for row in cif_loop_rows(loop_)? {
         let alias = row[id].value.trim();
         let long_id = row[three_letter_code].value.trim();
@@ -4529,8 +4567,12 @@ fn find_mmcif_polymer_kind(
         return Ok(PolymerKind::Unknown);
     };
     let width = checked_cif_loop_width(polymer_loop)?;
-    let entity_col = required_cif_col(polymer_loop, "_entity_poly.entity_id")?;
-    let type_col = required_cif_col(polymer_loop, "_entity_poly.type")?;
+    let Some([entity_col, type_col]) = required_cif_table_cols(
+        polymer_loop,
+        ["_entity_poly.entity_id", "_entity_poly.type"],
+    ) else {
+        return Ok(PolymerKind::Unknown);
+    };
     for row in polymer_loop.values.chunks(width) {
         if cif_optional(row[entity_col].value.as_str()) == Some(entity_id) {
             return Ok(cif_optional(row[type_col].value.as_str())
@@ -4592,6 +4634,14 @@ fn required_cif_col(loop_: &CifLoop, tag: &'static str) -> Result<usize, BioRead
 
 fn optional_cif_col(loop_: &CifLoop, tag: &str) -> Option<usize> {
     loop_.tags.iter().position(|candidate| candidate == tag)
+}
+
+fn required_cif_table_cols<const N: usize>(loop_: &CifLoop, tags: [&str; N]) -> Option<[usize; N]> {
+    let mut cols = [0usize; N];
+    for (index, tag) in tags.iter().enumerate() {
+        cols[index] = optional_cif_col(loop_, tag)?;
+    }
+    Some(cols)
 }
 
 fn cif_row_has2(row: &[CifToken], index: usize) -> bool {
@@ -4889,14 +4939,56 @@ fn get_anisotropic_u(loops: &[CifLoop]) -> Result<HashMap<String, [f32; 6]>, Bio
     let Some(loop_) = find_cif_loop(loops, "_atom_site_anisotrop.id") else {
         return Ok(HashMap::new());
     };
-    let id = required_cif_col(loop_, "_atom_site_anisotrop.id")?;
-    let u11 = required_cif_col(loop_, "_atom_site_anisotrop.U[1][1]")?;
+    let Some([id, u11, u22, u33, u12, u13, u23]) = required_cif_table_cols(
+        loop_,
+        [
+            "_atom_site_anisotrop.id",
+            "_atom_site_anisotrop.U[1][1]",
+            "_atom_site_anisotrop.U[2][2]",
+            "_atom_site_anisotrop.U[3][3]",
+            "_atom_site_anisotrop.U[1][2]",
+            "_atom_site_anisotrop.U[1][3]",
+            "_atom_site_anisotrop.U[2][3]",
+        ],
+    ) else {
+        return Ok(HashMap::new());
+    };
     let mut map = HashMap::new();
     for row in cif_loop_rows(loop_)? {
-        let smat = get_smat33(row, u11)?;
         map.insert(
             row[id].value.trim().to_string(),
-            [smat.u11, smat.u22, smat.u33, smat.u12, smat.u13, smat.u23],
+            [
+                parse_f32(
+                    row[u11].value.as_str(),
+                    row[u11].line_number,
+                    "_atom_site_anisotrop.U[1][1]",
+                )?,
+                parse_f32(
+                    row[u22].value.as_str(),
+                    row[u22].line_number,
+                    "_atom_site_anisotrop.U[2][2]",
+                )?,
+                parse_f32(
+                    row[u33].value.as_str(),
+                    row[u33].line_number,
+                    "_atom_site_anisotrop.U[3][3]",
+                )?,
+                parse_f32(
+                    row[u12].value.as_str(),
+                    row[u12].line_number,
+                    "_atom_site_anisotrop.U[1][2]",
+                )?,
+                parse_f32(
+                    row[u13].value.as_str(),
+                    row[u13].line_number,
+                    "_atom_site_anisotrop.U[1][3]",
+                )?,
+                parse_f32(
+                    row[u23].value.as_str(),
+                    row[u23].line_number,
+                    "_atom_site_anisotrop.U[2][3]",
+                )?,
+            ],
         );
     }
     Ok(map)
@@ -5094,16 +5186,33 @@ fn read_connectivity(loops: &[CifLoop], structure: &mut BioStructure) -> Result<
     let Some(loop_) = find_cif_loop(loops, "_struct_conn.id") else {
         return Ok(());
     };
-    let id = required_cif_col(loop_, "_struct_conn.id")?;
-    let conn_type_id = required_cif_col(loop_, "_struct_conn.conn_type_id")?;
+    let Some(
+        [
+            id,
+            conn_type_id,
+            ptnr1_label_comp_id,
+            ptnr2_label_comp_id,
+            ptnr1_label_atom_id,
+            ptnr2_label_atom_id,
+        ],
+    ) = required_cif_table_cols(
+        loop_,
+        [
+            "_struct_conn.id",
+            "_struct_conn.conn_type_id",
+            "_struct_conn.ptnr1_label_comp_id",
+            "_struct_conn.ptnr2_label_comp_id",
+            "_struct_conn.ptnr1_label_atom_id",
+            "_struct_conn.ptnr2_label_atom_id",
+        ],
+    )
+    else {
+        return Ok(());
+    };
     let ptnr1_auth_asym_id = optional_cif_col(loop_, "_struct_conn.ptnr1_auth_asym_id");
     let ptnr2_auth_asym_id = optional_cif_col(loop_, "_struct_conn.ptnr2_auth_asym_id");
     let ptnr1_label_asym_id = optional_cif_col(loop_, "_struct_conn.ptnr1_label_asym_id");
     let ptnr2_label_asym_id = optional_cif_col(loop_, "_struct_conn.ptnr2_label_asym_id");
-    let ptnr1_label_comp_id = required_cif_col(loop_, "_struct_conn.ptnr1_label_comp_id")?;
-    let ptnr2_label_comp_id = required_cif_col(loop_, "_struct_conn.ptnr2_label_comp_id")?;
-    let ptnr1_label_atom_id = required_cif_col(loop_, "_struct_conn.ptnr1_label_atom_id")?;
-    let ptnr2_label_atom_id = required_cif_col(loop_, "_struct_conn.ptnr2_label_atom_id")?;
     let ptnr1_label_alt_id = optional_cif_col(loop_, "_struct_conn.pdbx_ptnr1_label_alt_id");
     let ptnr2_label_alt_id = optional_cif_col(loop_, "_struct_conn.pdbx_ptnr2_label_alt_id");
     let ptnr1_auth_seq_id = optional_cif_col(loop_, "_struct_conn.ptnr1_auth_seq_id");
@@ -5264,9 +5373,16 @@ fn read_prot_cis(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), 
     let Some(loop_) = find_cif_loop(loops, "_struct_mon_prot_cis.pdbx_PDB_model_num") else {
         return Ok(());
     };
-    let model_num = required_cif_col(loop_, "_struct_mon_prot_cis.pdbx_PDB_model_num")?;
-    let auth_asym_id = required_cif_col(loop_, "_struct_mon_prot_cis.auth_asym_id")?;
-    let auth_seq_id = required_cif_col(loop_, "_struct_mon_prot_cis.auth_seq_id")?;
+    let Some([model_num, auth_asym_id, auth_seq_id]) = required_cif_table_cols(
+        loop_,
+        [
+            "_struct_mon_prot_cis.pdbx_PDB_model_num",
+            "_struct_mon_prot_cis.auth_asym_id",
+            "_struct_mon_prot_cis.auth_seq_id",
+        ],
+    ) else {
+        return Ok(());
+    };
     let ins_code = optional_cif_col(loop_, "_struct_mon_prot_cis.pdbx_PDB_ins_code");
     let label_comp_id = optional_cif_col(loop_, "_struct_mon_prot_cis.label_comp_id");
     let auth_comp_id = optional_cif_col(loop_, "_struct_mon_prot_cis.auth_comp_id");
@@ -5352,8 +5468,15 @@ fn read_struct_mod_residue(
     let Some(loop_) = find_cif_loop(loops, "_pdbx_struct_mod_residue.auth_asym_id") else {
         return Ok(());
     };
-    let auth_asym_id = required_cif_col(loop_, "_pdbx_struct_mod_residue.auth_asym_id")?;
-    let auth_seq_id = required_cif_col(loop_, "_pdbx_struct_mod_residue.auth_seq_id")?;
+    let Some([auth_asym_id, auth_seq_id]) = required_cif_table_cols(
+        loop_,
+        [
+            "_pdbx_struct_mod_residue.auth_asym_id",
+            "_pdbx_struct_mod_residue.auth_seq_id",
+        ],
+    ) else {
+        return Ok(());
+    };
     let pdb_ins_code = optional_cif_col(loop_, "_pdbx_struct_mod_residue.PDB_ins_code");
     let auth_comp_id = optional_cif_col(loop_, "_pdbx_struct_mod_residue.auth_comp_id");
     let label_comp_id = optional_cif_col(loop_, "_pdbx_struct_mod_residue.label_comp_id");
@@ -5885,32 +6008,68 @@ fn read_refinement_info(
 // END GEMMI CPP FUNCTION
 fn read_tls_info(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), BioReadError> {
     if let Some(loop_) = find_cif_loop(loops, "_pdbx_refine_tls.id") {
-        let id = required_cif_col(loop_, "_pdbx_refine_tls.id")?;
+        let Some(
+            [
+                id,
+                t11,
+                t22,
+                t33,
+                t12,
+                t13,
+                t23,
+                l11,
+                l22,
+                l33,
+                l12,
+                l13,
+                l23,
+                s11,
+                s12,
+                s13,
+                s21,
+                s22,
+                s23,
+                s31,
+                s32,
+                s33,
+                origin_x,
+                origin_y,
+                origin_z,
+            ],
+        ) = required_cif_table_cols(
+            loop_,
+            [
+                "_pdbx_refine_tls.id",
+                "_pdbx_refine_tls.T[1][1]",
+                "_pdbx_refine_tls.T[2][2]",
+                "_pdbx_refine_tls.T[3][3]",
+                "_pdbx_refine_tls.T[1][2]",
+                "_pdbx_refine_tls.T[1][3]",
+                "_pdbx_refine_tls.T[2][3]",
+                "_pdbx_refine_tls.L[1][1]",
+                "_pdbx_refine_tls.L[2][2]",
+                "_pdbx_refine_tls.L[3][3]",
+                "_pdbx_refine_tls.L[1][2]",
+                "_pdbx_refine_tls.L[1][3]",
+                "_pdbx_refine_tls.L[2][3]",
+                "_pdbx_refine_tls.S[1][1]",
+                "_pdbx_refine_tls.S[1][2]",
+                "_pdbx_refine_tls.S[1][3]",
+                "_pdbx_refine_tls.S[2][1]",
+                "_pdbx_refine_tls.S[2][2]",
+                "_pdbx_refine_tls.S[2][3]",
+                "_pdbx_refine_tls.S[3][1]",
+                "_pdbx_refine_tls.S[3][2]",
+                "_pdbx_refine_tls.S[3][3]",
+                "_pdbx_refine_tls.origin_x",
+                "_pdbx_refine_tls.origin_y",
+                "_pdbx_refine_tls.origin_z",
+            ],
+        )
+        else {
+            return Ok(());
+        };
         let pdbx_refine_id = optional_cif_col(loop_, "_pdbx_refine_tls.pdbx_refine_id");
-        let t11 = required_cif_col(loop_, "_pdbx_refine_tls.T[1][1]")?;
-        let t22 = required_cif_col(loop_, "_pdbx_refine_tls.T[2][2]")?;
-        let t33 = required_cif_col(loop_, "_pdbx_refine_tls.T[3][3]")?;
-        let t12 = required_cif_col(loop_, "_pdbx_refine_tls.T[1][2]")?;
-        let t13 = required_cif_col(loop_, "_pdbx_refine_tls.T[1][3]")?;
-        let t23 = required_cif_col(loop_, "_pdbx_refine_tls.T[2][3]")?;
-        let l11 = required_cif_col(loop_, "_pdbx_refine_tls.L[1][1]")?;
-        let l22 = required_cif_col(loop_, "_pdbx_refine_tls.L[2][2]")?;
-        let l33 = required_cif_col(loop_, "_pdbx_refine_tls.L[3][3]")?;
-        let l12 = required_cif_col(loop_, "_pdbx_refine_tls.L[1][2]")?;
-        let l13 = required_cif_col(loop_, "_pdbx_refine_tls.L[1][3]")?;
-        let l23 = required_cif_col(loop_, "_pdbx_refine_tls.L[2][3]")?;
-        let s11 = required_cif_col(loop_, "_pdbx_refine_tls.S[1][1]")?;
-        let s12 = required_cif_col(loop_, "_pdbx_refine_tls.S[1][2]")?;
-        let s13 = required_cif_col(loop_, "_pdbx_refine_tls.S[1][3]")?;
-        let s21 = required_cif_col(loop_, "_pdbx_refine_tls.S[2][1]")?;
-        let s22 = required_cif_col(loop_, "_pdbx_refine_tls.S[2][2]")?;
-        let s23 = required_cif_col(loop_, "_pdbx_refine_tls.S[2][3]")?;
-        let s31 = required_cif_col(loop_, "_pdbx_refine_tls.S[3][1]")?;
-        let s32 = required_cif_col(loop_, "_pdbx_refine_tls.S[3][2]")?;
-        let s33 = required_cif_col(loop_, "_pdbx_refine_tls.S[3][3]")?;
-        let origin_x = required_cif_col(loop_, "_pdbx_refine_tls.origin_x")?;
-        let origin_y = required_cif_col(loop_, "_pdbx_refine_tls.origin_y")?;
-        let origin_z = required_cif_col(loop_, "_pdbx_refine_tls.origin_z")?;
         for row in cif_loop_rows(loop_)? {
             if structure.metadata.refinement.is_empty() {
                 break;
@@ -6163,25 +6322,27 @@ fn read_experimental_info(
         }
     }
     if let Some(loop_) = find_cif_loop(loops, "_diffrn.id") {
-        let id = required_cif_col(loop_, "_diffrn.id")?;
-        let crystal_id = required_cif_col(loop_, "_diffrn.crystal_id")?;
-        let ambient_temp = optional_cif_col(loop_, "_diffrn.ambient_temp");
-        for row in cif_loop_rows(loop_)? {
-            let crystal_id_value = row[crystal_id].value.trim();
-            if let Some(crystal) = structure
-                .metadata
-                .experiment_crystals
-                .iter_mut()
-                .find(|crystal| crystal.id == crystal_id_value)
-            {
-                let mut diffraction = BioDiffractionInfo {
-                    id: row[id].value.trim().to_string(),
-                    ..BioDiffractionInfo::default()
-                };
-                if let Some(index) = ambient_temp {
-                    copy_optional_f64(row, index, &mut diffraction.temperature)?;
+        if let Some([id, crystal_id]) =
+            required_cif_table_cols(loop_, ["_diffrn.id", "_diffrn.crystal_id"])
+        {
+            let ambient_temp = optional_cif_col(loop_, "_diffrn.ambient_temp");
+            for row in cif_loop_rows(loop_)? {
+                let crystal_id_value = row[crystal_id].value.trim();
+                if let Some(crystal) = structure
+                    .metadata
+                    .experiment_crystals
+                    .iter_mut()
+                    .find(|crystal| crystal.id == crystal_id_value)
+                {
+                    let mut diffraction = BioDiffractionInfo {
+                        id: row[id].value.trim().to_string(),
+                        ..BioDiffractionInfo::default()
+                    };
+                    if let Some(index) = ambient_temp {
+                        copy_optional_f64(row, index, &mut diffraction.temperature)?;
+                    }
+                    crystal.diffractions.push(diffraction);
                 }
-                crystal.diffractions.push(diffraction);
             }
         }
     }
@@ -6443,19 +6604,43 @@ fn read_ncs_info(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), 
     let Some(loop_) = find_cif_loop(loops, "_struct_ncs_oper.matrix[1][1]") else {
         return Ok(());
     };
-    let matrix11 = required_cif_col(loop_, "_struct_ncs_oper.matrix[1][1]")?;
-    let matrix12 = required_cif_col(loop_, "_struct_ncs_oper.matrix[1][2]")?;
-    let matrix13 = required_cif_col(loop_, "_struct_ncs_oper.matrix[1][3]")?;
-    let vector1 = required_cif_col(loop_, "_struct_ncs_oper.vector[1]")?;
-    let matrix21 = required_cif_col(loop_, "_struct_ncs_oper.matrix[2][1]")?;
-    let matrix22 = required_cif_col(loop_, "_struct_ncs_oper.matrix[2][2]")?;
-    let matrix23 = required_cif_col(loop_, "_struct_ncs_oper.matrix[2][3]")?;
-    let vector2 = required_cif_col(loop_, "_struct_ncs_oper.vector[2]")?;
-    let matrix31 = required_cif_col(loop_, "_struct_ncs_oper.matrix[3][1]")?;
-    let matrix32 = required_cif_col(loop_, "_struct_ncs_oper.matrix[3][2]")?;
-    let matrix33 = required_cif_col(loop_, "_struct_ncs_oper.matrix[3][3]")?;
-    let vector3 = required_cif_col(loop_, "_struct_ncs_oper.vector[3]")?;
-    let id = required_cif_col(loop_, "_struct_ncs_oper.id")?;
+    let Some(
+        [
+            matrix11,
+            matrix12,
+            matrix13,
+            vector1,
+            matrix21,
+            matrix22,
+            matrix23,
+            vector2,
+            matrix31,
+            matrix32,
+            matrix33,
+            vector3,
+            id,
+        ],
+    ) = required_cif_table_cols(
+        loop_,
+        [
+            "_struct_ncs_oper.matrix[1][1]",
+            "_struct_ncs_oper.matrix[1][2]",
+            "_struct_ncs_oper.matrix[1][3]",
+            "_struct_ncs_oper.vector[1]",
+            "_struct_ncs_oper.matrix[2][1]",
+            "_struct_ncs_oper.matrix[2][2]",
+            "_struct_ncs_oper.matrix[2][3]",
+            "_struct_ncs_oper.vector[2]",
+            "_struct_ncs_oper.matrix[3][1]",
+            "_struct_ncs_oper.matrix[3][2]",
+            "_struct_ncs_oper.matrix[3][3]",
+            "_struct_ncs_oper.vector[3]",
+            "_struct_ncs_oper.id",
+        ],
+    )
+    else {
+        return Ok(());
+    };
     let code = optional_cif_col(loop_, "_struct_ncs_oper.code");
     for row in cif_loop_rows(loop_)? {
         let matrix_row = vec![
@@ -6497,77 +6682,126 @@ fn read_ncs_info(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), 
 fn read_assemblies(loops: &[CifLoop]) -> Result<Vec<BioAssembly>, BioReadError> {
     let mut oper_list = Vec::<BioAssemblyOperator>::new();
     if let Some(loop_) = find_cif_loop(loops, "_pdbx_struct_oper_list.id") {
-        let matrix11 = required_cif_col(loop_, "_pdbx_struct_oper_list.matrix[1][1]")?;
-        let matrix12 = required_cif_col(loop_, "_pdbx_struct_oper_list.matrix[1][2]")?;
-        let matrix13 = required_cif_col(loop_, "_pdbx_struct_oper_list.matrix[1][3]")?;
-        let vector1 = required_cif_col(loop_, "_pdbx_struct_oper_list.vector[1]")?;
-        let matrix21 = required_cif_col(loop_, "_pdbx_struct_oper_list.matrix[2][1]")?;
-        let matrix22 = required_cif_col(loop_, "_pdbx_struct_oper_list.matrix[2][2]")?;
-        let matrix23 = required_cif_col(loop_, "_pdbx_struct_oper_list.matrix[2][3]")?;
-        let vector2 = required_cif_col(loop_, "_pdbx_struct_oper_list.vector[2]")?;
-        let matrix31 = required_cif_col(loop_, "_pdbx_struct_oper_list.matrix[3][1]")?;
-        let matrix32 = required_cif_col(loop_, "_pdbx_struct_oper_list.matrix[3][2]")?;
-        let matrix33 = required_cif_col(loop_, "_pdbx_struct_oper_list.matrix[3][3]")?;
-        let vector3 = required_cif_col(loop_, "_pdbx_struct_oper_list.vector[3]")?;
-        let id = required_cif_col(loop_, "_pdbx_struct_oper_list.id")?;
-        let type_ = required_cif_col(loop_, "_pdbx_struct_oper_list.type")?;
-        for row in cif_loop_rows(loop_)? {
-            let matrix_row = vec![
-                row[matrix11].clone(),
-                row[matrix12].clone(),
-                row[matrix13].clone(),
-                row[vector1].clone(),
-                row[matrix21].clone(),
-                row[matrix22].clone(),
-                row[matrix23].clone(),
-                row[vector2].clone(),
-                row[matrix31].clone(),
-                row[matrix32].clone(),
-                row[matrix33].clone(),
-                row[vector3].clone(),
-            ];
-            oper_list.push(BioAssemblyOperator {
-                name: row[id].value.trim().to_string(),
-                type_: row[type_].value.trim().to_string(),
-                transform: get_transform_matrix(&matrix_row)?,
-            });
+        if let Some(
+            [
+                matrix11,
+                matrix12,
+                matrix13,
+                vector1,
+                matrix21,
+                matrix22,
+                matrix23,
+                vector2,
+                matrix31,
+                matrix32,
+                matrix33,
+                vector3,
+                id,
+                type_,
+            ],
+        ) = required_cif_table_cols(
+            loop_,
+            [
+                "_pdbx_struct_oper_list.matrix[1][1]",
+                "_pdbx_struct_oper_list.matrix[1][2]",
+                "_pdbx_struct_oper_list.matrix[1][3]",
+                "_pdbx_struct_oper_list.vector[1]",
+                "_pdbx_struct_oper_list.matrix[2][1]",
+                "_pdbx_struct_oper_list.matrix[2][2]",
+                "_pdbx_struct_oper_list.matrix[2][3]",
+                "_pdbx_struct_oper_list.vector[2]",
+                "_pdbx_struct_oper_list.matrix[3][1]",
+                "_pdbx_struct_oper_list.matrix[3][2]",
+                "_pdbx_struct_oper_list.matrix[3][3]",
+                "_pdbx_struct_oper_list.vector[3]",
+                "_pdbx_struct_oper_list.id",
+                "_pdbx_struct_oper_list.type",
+            ],
+        ) {
+            for row in cif_loop_rows(loop_)? {
+                let matrix_row = vec![
+                    row[matrix11].clone(),
+                    row[matrix12].clone(),
+                    row[matrix13].clone(),
+                    row[vector1].clone(),
+                    row[matrix21].clone(),
+                    row[matrix22].clone(),
+                    row[matrix23].clone(),
+                    row[vector2].clone(),
+                    row[matrix31].clone(),
+                    row[matrix32].clone(),
+                    row[matrix33].clone(),
+                    row[vector3].clone(),
+                ];
+                oper_list.push(BioAssemblyOperator {
+                    name: row[id].value.trim().to_string(),
+                    type_: row[type_].value.trim().to_string(),
+                    transform: get_transform_matrix(&matrix_row)?,
+                });
+            }
         }
     }
 
     let mut prop_rows = Vec::<Vec<CifToken>>::new();
     let mut prop_cols = None;
     if let Some(loop_) = find_cif_loop(loops, "_pdbx_struct_assembly_prop.biol_id") {
-        prop_cols = Some((
-            required_cif_col(loop_, "_pdbx_struct_assembly_prop.biol_id")?,
-            required_cif_col(loop_, "_pdbx_struct_assembly_prop.type")?,
-            required_cif_col(loop_, "_pdbx_struct_assembly_prop.value")?,
-        ));
-        for row in cif_loop_rows(loop_)? {
-            prop_rows.push(row.to_vec());
+        if let Some([biol_id, type_, value]) = required_cif_table_cols(
+            loop_,
+            [
+                "_pdbx_struct_assembly_prop.biol_id",
+                "_pdbx_struct_assembly_prop.type",
+                "_pdbx_struct_assembly_prop.value",
+            ],
+        ) {
+            prop_cols = Some((biol_id, type_, value));
+            for row in cif_loop_rows(loop_)? {
+                prop_rows.push(row.to_vec());
+            }
         }
     }
 
     let mut gen_rows = Vec::<Vec<CifToken>>::new();
     let mut gen_cols = None;
     if let Some(loop_) = find_cif_loop(loops, "_pdbx_struct_assembly_gen.assembly_id") {
-        gen_cols = Some((
-            required_cif_col(loop_, "_pdbx_struct_assembly_gen.assembly_id")?,
-            required_cif_col(loop_, "_pdbx_struct_assembly_gen.oper_expression")?,
-            required_cif_col(loop_, "_pdbx_struct_assembly_gen.asym_id_list")?,
-        ));
-        for row in cif_loop_rows(loop_)? {
-            gen_rows.push(row.to_vec());
+        if let Some([assembly_id, oper_expression, asym_id_list]) = required_cif_table_cols(
+            loop_,
+            [
+                "_pdbx_struct_assembly_gen.assembly_id",
+                "_pdbx_struct_assembly_gen.oper_expression",
+                "_pdbx_struct_assembly_gen.asym_id_list",
+            ],
+        ) {
+            gen_cols = Some((assembly_id, oper_expression, asym_id_list));
+            for row in cif_loop_rows(loop_)? {
+                gen_rows.push(row.to_vec());
+            }
         }
     }
 
     let Some(loop_) = find_cif_loop(loops, "_pdbx_struct_assembly.id") else {
         return Ok(Vec::new());
     };
-    let id = required_cif_col(loop_, "_pdbx_struct_assembly.id")?;
-    let details = required_cif_col(loop_, "_pdbx_struct_assembly.details")?;
-    let method_details = required_cif_col(loop_, "_pdbx_struct_assembly.method_details")?;
-    let oligomeric_details = required_cif_col(loop_, "_pdbx_struct_assembly.oligomeric_details")?;
-    let oligomeric_count = required_cif_col(loop_, "_pdbx_struct_assembly.oligomeric_count")?;
+    let Some(
+        [
+            id,
+            details,
+            method_details,
+            oligomeric_details,
+            oligomeric_count,
+        ],
+    ) = required_cif_table_cols(
+        loop_,
+        [
+            "_pdbx_struct_assembly.id",
+            "_pdbx_struct_assembly.details",
+            "_pdbx_struct_assembly.method_details",
+            "_pdbx_struct_assembly.oligomeric_details",
+            "_pdbx_struct_assembly.oligomeric_count",
+        ],
+    )
+    else {
+        return Ok(Vec::new());
+    };
     let mut assemblies = Vec::new();
     for row in cif_loop_rows(loop_)? {
         let mut assembly = BioAssembly {
@@ -6654,14 +6888,33 @@ fn read_sifts_unp(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(),
     let Some(loop_) = find_cif_loop(loops, "_pdbx_sifts_xref_db.entity_id") else {
         return Ok(());
     };
-    let entity_id = required_cif_col(loop_, "_pdbx_sifts_xref_db.entity_id")?;
-    let asym_id = required_cif_col(loop_, "_pdbx_sifts_xref_db.asym_id")?;
-    let seq_id_ordinal = required_cif_col(loop_, "_pdbx_sifts_xref_db.seq_id_ordinal")?;
-    let seq_id = required_cif_col(loop_, "_pdbx_sifts_xref_db.seq_id")?;
-    let observed = required_cif_col(loop_, "_pdbx_sifts_xref_db.observed")?;
-    let unp_res = required_cif_col(loop_, "_pdbx_sifts_xref_db.unp_res")?;
-    let unp_num = required_cif_col(loop_, "_pdbx_sifts_xref_db.unp_num")?;
-    let unp_acc = required_cif_col(loop_, "_pdbx_sifts_xref_db.unp_acc")?;
+    let Some(
+        [
+            entity_id,
+            asym_id,
+            seq_id_ordinal,
+            seq_id,
+            observed,
+            unp_res,
+            unp_num,
+            unp_acc,
+        ],
+    ) = required_cif_table_cols(
+        loop_,
+        [
+            "_pdbx_sifts_xref_db.entity_id",
+            "_pdbx_sifts_xref_db.asym_id",
+            "_pdbx_sifts_xref_db.seq_id_ordinal",
+            "_pdbx_sifts_xref_db.seq_id",
+            "_pdbx_sifts_xref_db.observed",
+            "_pdbx_sifts_xref_db.unp_res",
+            "_pdbx_sifts_xref_db.unp_num",
+            "_pdbx_sifts_xref_db.unp_acc",
+        ],
+    )
+    else {
+        return Ok(());
+    };
 
     for row in cif_loop_rows(loop_)? {
         if row[seq_id_ordinal].value.trim() != "1"
@@ -6757,14 +7010,32 @@ fn read_helices(loops: &[CifLoop]) -> Result<Vec<BioHelix>, BioReadError> {
     let Some(loop_) = find_cif_loop(loops, "_struct_conf.conf_type_id") else {
         return Ok(Vec::new());
     };
-    let conf_type_id = required_cif_col(loop_, "_struct_conf.conf_type_id")?;
-    let beg_auth_asym_id = required_cif_col(loop_, "_struct_conf.beg_auth_asym_id")?;
-    let beg_label_comp_id = required_cif_col(loop_, "_struct_conf.beg_label_comp_id")?;
-    let beg_auth_seq_id = required_cif_col(loop_, "_struct_conf.beg_auth_seq_id")?;
+    let Some(
+        [
+            conf_type_id,
+            beg_auth_asym_id,
+            beg_label_comp_id,
+            beg_auth_seq_id,
+            end_auth_asym_id,
+            end_label_comp_id,
+            end_auth_seq_id,
+        ],
+    ) = required_cif_table_cols(
+        loop_,
+        [
+            "_struct_conf.conf_type_id",
+            "_struct_conf.beg_auth_asym_id",
+            "_struct_conf.beg_label_comp_id",
+            "_struct_conf.beg_auth_seq_id",
+            "_struct_conf.end_auth_asym_id",
+            "_struct_conf.end_label_comp_id",
+            "_struct_conf.end_auth_seq_id",
+        ],
+    )
+    else {
+        return Ok(Vec::new());
+    };
     let pdbx_beg_pdb_ins_code = optional_cif_col(loop_, "_struct_conf.pdbx_beg_PDB_ins_code");
-    let end_auth_asym_id = required_cif_col(loop_, "_struct_conf.end_auth_asym_id")?;
-    let end_label_comp_id = required_cif_col(loop_, "_struct_conf.end_label_comp_id")?;
-    let end_auth_seq_id = required_cif_col(loop_, "_struct_conf.end_auth_seq_id")?;
     let pdbx_end_pdb_ins_code = optional_cif_col(loop_, "_struct_conf.pdbx_end_PDB_ins_code");
     let helix_class = optional_cif_col(loop_, "_struct_conf.pdbx_PDB_helix_class");
     let helix_length = optional_cif_col(loop_, "_struct_conf.pdbx_PDB_helix_length");
@@ -6882,15 +7153,34 @@ fn read_sheets(loops: &[CifLoop]) -> Result<Vec<BioSheet>, BioReadError> {
         }
     }
     if let Some(ranges) = find_cif_loop(loops, "_struct_sheet_range.sheet_id") {
-        let sheet_id = required_cif_col(ranges, "_struct_sheet_range.sheet_id")?;
-        let id = required_cif_col(ranges, "_struct_sheet_range.id")?;
-        let beg_auth_asym_id = required_cif_col(ranges, "_struct_sheet_range.beg_auth_asym_id")?;
-        let beg_label_comp_id = required_cif_col(ranges, "_struct_sheet_range.beg_label_comp_id")?;
-        let beg_auth_seq_id = required_cif_col(ranges, "_struct_sheet_range.beg_auth_seq_id")?;
+        let Some(
+            [
+                sheet_id,
+                id,
+                beg_auth_asym_id,
+                beg_label_comp_id,
+                beg_auth_seq_id,
+                end_auth_asym_id,
+                end_label_comp_id,
+                end_auth_seq_id,
+            ],
+        ) = required_cif_table_cols(
+            ranges,
+            [
+                "_struct_sheet_range.sheet_id",
+                "_struct_sheet_range.id",
+                "_struct_sheet_range.beg_auth_asym_id",
+                "_struct_sheet_range.beg_label_comp_id",
+                "_struct_sheet_range.beg_auth_seq_id",
+                "_struct_sheet_range.end_auth_asym_id",
+                "_struct_sheet_range.end_label_comp_id",
+                "_struct_sheet_range.end_auth_seq_id",
+            ],
+        )
+        else {
+            return Ok(sheets);
+        };
         let beg_ins = optional_cif_col(ranges, "_struct_sheet_range.pdbx_beg_PDB_ins_code");
-        let end_auth_asym_id = required_cif_col(ranges, "_struct_sheet_range.end_auth_asym_id")?;
-        let end_label_comp_id = required_cif_col(ranges, "_struct_sheet_range.end_label_comp_id")?;
-        let end_auth_seq_id = required_cif_col(ranges, "_struct_sheet_range.end_auth_seq_id")?;
         let end_ins = optional_cif_col(ranges, "_struct_sheet_range.pdbx_end_PDB_ins_code");
         for row in cif_loop_rows(ranges)? {
             let line_number = row[sheet_id].line_number;
@@ -6928,9 +7218,16 @@ fn read_sheets(loops: &[CifLoop]) -> Result<Vec<BioSheet>, BioReadError> {
         }
     }
     if let Some(order) = find_cif_loop(loops, "_struct_sheet_order.sheet_id") {
-        let sheet_id = required_cif_col(order, "_struct_sheet_order.sheet_id")?;
-        let range_id_2 = required_cif_col(order, "_struct_sheet_order.range_id_2")?;
-        let sense = required_cif_col(order, "_struct_sheet_order.sense")?;
+        let Some([sheet_id, range_id_2, sense]) = required_cif_table_cols(
+            order,
+            [
+                "_struct_sheet_order.sheet_id",
+                "_struct_sheet_order.range_id_2",
+                "_struct_sheet_order.sense",
+            ],
+        ) else {
+            return Ok(sheets);
+        };
         for row in cif_loop_rows(order)? {
             if let Some(sheet) = sheets
                 .iter_mut()
@@ -6954,26 +7251,39 @@ fn read_sheets(loops: &[CifLoop]) -> Result<Vec<BioSheet>, BioReadError> {
         }
     }
     if let Some(hbond) = find_cif_loop(loops, "_pdbx_struct_sheet_hbond.sheet_id") {
-        let sheet_id = required_cif_col(hbond, "_pdbx_struct_sheet_hbond.sheet_id")?;
-        let range_id_2 = required_cif_col(hbond, "_pdbx_struct_sheet_hbond.range_id_2")?;
-        let range_1_auth_asym_id =
-            required_cif_col(hbond, "_pdbx_struct_sheet_hbond.range_1_auth_asym_id")?;
-        let range_1_label_comp_id =
-            required_cif_col(hbond, "_pdbx_struct_sheet_hbond.range_1_label_comp_id")?;
-        let range_1_auth_seq_id =
-            required_cif_col(hbond, "_pdbx_struct_sheet_hbond.range_1_auth_seq_id")?;
+        let Some(
+            [
+                sheet_id,
+                range_id_2,
+                range_1_auth_asym_id,
+                range_1_label_comp_id,
+                range_1_auth_seq_id,
+                range_1_label_atom_id,
+                range_2_auth_asym_id,
+                range_2_label_comp_id,
+                range_2_auth_seq_id,
+                range_2_label_atom_id,
+            ],
+        ) = required_cif_table_cols(
+            hbond,
+            [
+                "_pdbx_struct_sheet_hbond.sheet_id",
+                "_pdbx_struct_sheet_hbond.range_id_2",
+                "_pdbx_struct_sheet_hbond.range_1_auth_asym_id",
+                "_pdbx_struct_sheet_hbond.range_1_label_comp_id",
+                "_pdbx_struct_sheet_hbond.range_1_auth_seq_id",
+                "_pdbx_struct_sheet_hbond.range_1_label_atom_id",
+                "_pdbx_struct_sheet_hbond.range_2_auth_asym_id",
+                "_pdbx_struct_sheet_hbond.range_2_label_comp_id",
+                "_pdbx_struct_sheet_hbond.range_2_auth_seq_id",
+                "_pdbx_struct_sheet_hbond.range_2_label_atom_id",
+            ],
+        )
+        else {
+            return Ok(sheets);
+        };
         let range_1_ins = optional_cif_col(hbond, "_pdbx_struct_sheet_hbond.range_1_PDB_ins_code");
-        let range_1_label_atom_id =
-            required_cif_col(hbond, "_pdbx_struct_sheet_hbond.range_1_label_atom_id")?;
-        let range_2_auth_asym_id =
-            required_cif_col(hbond, "_pdbx_struct_sheet_hbond.range_2_auth_asym_id")?;
-        let range_2_label_comp_id =
-            required_cif_col(hbond, "_pdbx_struct_sheet_hbond.range_2_label_comp_id")?;
-        let range_2_auth_seq_id =
-            required_cif_col(hbond, "_pdbx_struct_sheet_hbond.range_2_auth_seq_id")?;
         let range_2_ins = optional_cif_col(hbond, "_pdbx_struct_sheet_hbond.range_2_PDB_ins_code");
-        let range_2_label_atom_id =
-            required_cif_col(hbond, "_pdbx_struct_sheet_hbond.range_2_label_atom_id")?;
         for row in cif_loop_rows(hbond)? {
             let line_number = row[sheet_id].line_number;
             if let Some(sheet) = sheets
@@ -11477,6 +11787,141 @@ ATOM 1 C CA . ALA A 1 1 0.0 0.0 0.0
         assert_eq!(structure.num_models(), 1);
         assert_eq!(structure.input_format, BioCoorFormat::Mmcif);
         assert_eq!(structure.name, "demo");
+    }
+
+    #[test]
+    fn mmcif_make_structure_skips_incomplete_chem_comp_short_code_table() {
+        let cif = r#"
+data_demo
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+ATOM 1 C CA . ALA A 1 1 0.0 0.0 0.0
+loop_
+_chem_comp.id
+_chem_comp.name
+ALA Alanine
+"#;
+
+        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+
+        assert_eq!(structure.num_atoms(), 1);
+        assert!(structure.shortened_ccd_codes.is_empty());
+    }
+
+    #[test]
+    fn mmcif_make_structure_skips_incomplete_optional_gemmi_tables() {
+        let cif = r#"
+data_demo
+loop_
+_entity.id
+_entity.type
+1 polymer
+loop_
+_entity_poly.entity_id
+1
+loop_
+_entity_poly_seq.entity_id
+_entity_poly_seq.num
+1 1
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+ATOM 1 C CA . ALA A 1 1 0.0 0.0 0.0
+loop_
+_atom_site_anisotrop.id
+_atom_site_anisotrop.U[1][1]
+1 0.1
+loop_
+_struct_conn.id
+_struct_conn.conn_type_id
+conn1 disulf
+loop_
+_struct_mon_prot_cis.pdbx_PDB_model_num
+_struct_mon_prot_cis.auth_asym_id
+1 A
+loop_
+_pdbx_struct_mod_residue.auth_asym_id
+A
+loop_
+_struct_conf.conf_type_id
+_struct_conf.beg_auth_asym_id
+HELX_P A
+loop_
+_struct_sheet_range.sheet_id
+_struct_sheet_range.id
+S1 1
+loop_
+_struct_sheet_order.sheet_id
+_struct_sheet_order.range_id_2
+S1 1
+loop_
+_pdbx_struct_sheet_hbond.sheet_id
+_pdbx_struct_sheet_hbond.range_id_2
+S1 1
+loop_
+_pdbx_refine_tls.id
+_pdbx_refine_tls.T[1][1]
+1 0.1
+loop_
+_diffrn.id
+D1
+loop_
+_struct_ncs_oper.matrix[1][1]
+_struct_ncs_oper.matrix[1][2]
+1 0
+loop_
+_pdbx_struct_oper_list.id
+_pdbx_struct_oper_list.matrix[1][1]
+1 1
+loop_
+_pdbx_struct_assembly_prop.biol_id
+_pdbx_struct_assembly_prop.type
+1 ABSA
+loop_
+_pdbx_struct_assembly_gen.assembly_id
+_pdbx_struct_assembly_gen.oper_expression
+1 1
+loop_
+_pdbx_struct_assembly.id
+_pdbx_struct_assembly.details
+1 software_defined_assembly
+loop_
+_pdbx_sifts_xref_db.entity_id
+_pdbx_sifts_xref_db.asym_id
+1 A
+"#;
+
+        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+
+        assert_eq!(structure.num_atoms(), 1);
+        assert!(structure.connections.is_empty());
+        assert!(structure.cispeps.is_empty());
+        assert!(structure.mod_residues.is_empty());
+        assert!(structure.helices.is_empty());
+        assert!(structure.sheets.is_empty());
+        assert!(structure.assemblies.is_empty());
+        assert!(structure.ncs_operators.is_empty());
     }
 
     #[test]

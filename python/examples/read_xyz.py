@@ -1,4 +1,4 @@
-"""COSMolKit usage: read an XYZ block.
+"""Public Python API example: read an XYZ block.
 
 Usage:
     .venv/bin/python python/examples/read_xyz.py

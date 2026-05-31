@@ -1,4 +1,4 @@
-"""COSMolKit usage: SMILES export + DG bounds matrix."""
+"""Public Python API example: SMILES export and DG bounds matrices."""
 
 import numpy as np
 
