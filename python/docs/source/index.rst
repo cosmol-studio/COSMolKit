@@ -22,5 +22,6 @@ directly.
    molecule
    batch
    fingerprints
+   protein
    io
    api

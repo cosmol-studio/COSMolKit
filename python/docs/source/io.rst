@@ -148,10 +148,29 @@ MOL2 enum for this parser.
 PDB and mmCIF Blocks
 --------------------
 
+Use ``Protein.from_pdb()`` or ``Protein.from_pdb_str()`` when you want to read
+PDB data as a protein structural view:
+
+.. code-block:: python
+
+   from cosmolkit import Protein
+
+   protein = Protein.from_pdb("input.pdb")
+   protein = Protein.from_pdb_str(pdb_text)
+
+For mmCIF, use ``Protein.from_mmcif()`` or ``Protein.from_mmcif_str()``:
+
+.. code-block:: python
+
+   protein = Protein.from_mmcif("input.cif")
+   protein = Protein.from_mmcif_str(cif_text, path="input.cif")
+
 Use ``Molecule.from_pdb_block()`` when you want a molecule state comparable to
 RDKit ``Chem.MolFromPDBBlock`` for the modeled conversion profile:
 
 .. code-block:: python
+
+   from cosmolkit import Molecule
 
    pdb_mol = Molecule.from_pdb_block(
        pdb_text,

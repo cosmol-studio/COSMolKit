@@ -1250,6 +1250,10 @@ A protein-focused structural value.
 
 ``Protein`` is the default high-level protein API. It keeps amino-acid
 residues and excludes ligands, nucleic acids, and waters by default.
+
+Use ``Protein.from_pdb()`` for PDB files, ``Protein.from_pdb_str()`` for PDB
+text, ``Protein.from_mmcif()`` for mmCIF files, and
+``Protein.from_mmcif_str()`` for mmCIF text.
 "#]
 struct Protein {
     inner: cosmolkit_core::Protein,
@@ -4790,6 +4794,13 @@ Deserialize a molecule from COSMolKit binary data.
 #[pymethods]
 impl Protein {
     #[classmethod]
+    #[doc = r#"
+Read a PDB file as a protein-focused structural value.
+
+The returned ``Protein`` keeps amino-acid residues and exposes chain, residue,
+and atom traversal. Use ``Molecule.from_pdb_block()`` instead when the desired
+result is a RDKit-compatible molecule conversion.
+"#]
     fn from_pdb(_cls: &Bound<'_, PyType>, path: &str) -> PyResult<Self> {
         let path = expand_user_path(path)?;
         let inner = cosmolkit_core::Protein::from_pdb(
@@ -4801,6 +4812,11 @@ impl Protein {
     }
 
     #[classmethod]
+    #[doc = r#"
+Read PDB text as a protein-focused structural value.
+
+This is the in-memory counterpart to ``Protein.from_pdb()``.
+"#]
     fn from_pdb_str(_cls: &Bound<'_, PyType>, text: &str) -> PyResult<Self> {
         let inner = cosmolkit_core::Protein::from_pdb_str(text)
             .map_err(|err| PyValueError::new_err(err.to_string()))?;
@@ -4808,6 +4824,11 @@ impl Protein {
     }
 
     #[classmethod]
+    #[doc = r#"
+Read an mmCIF file as a protein-focused structural value.
+
+The result uses the same protein projection as ``Protein.from_pdb()``.
+"#]
     fn from_mmcif(_cls: &Bound<'_, PyType>, path: &str) -> PyResult<Self> {
         let path = expand_user_path(path)?;
         let inner = cosmolkit_core::Protein::from_mmcif(
@@ -4819,28 +4840,38 @@ impl Protein {
     }
 
     #[classmethod]
+    #[doc = r#"
+Read mmCIF text as a protein-focused structural value.
+
+``path`` is used for format context and diagnostic messages.
+"#]
     fn from_mmcif_str(_cls: &Bound<'_, PyType>, text: &str, path: Option<&str>) -> PyResult<Self> {
         let inner = cosmolkit_core::Protein::from_mmcif_str(text, path.unwrap_or("input.cif"))
             .map_err(|err| PyValueError::new_err(err.to_string()))?;
         Ok(Self { inner })
     }
 
+    #[doc = "Return the number of coordinate models in the protein structure."]
     fn num_models(&self) -> usize {
         self.inner.num_models()
     }
 
+    #[doc = "Return the number of protein chains."]
     fn num_chains(&self) -> usize {
         self.inner.num_chains()
     }
 
+    #[doc = "Return the number of protein residues."]
     fn num_residues(&self) -> usize {
         self.inner.num_residues()
     }
 
+    #[doc = "Return the number of protein atoms."]
     fn num_atoms(&self) -> usize {
         self.inner.num_atoms()
     }
 
+    #[doc = "Return the protein chains as ``ProteinChain`` views."]
     fn chains(&self) -> Vec<ProteinChain> {
         (0..self.inner.num_chains())
             .map(|index| ProteinChain {
@@ -4850,6 +4881,7 @@ impl Protein {
             .collect()
     }
 
+    #[doc = "Return all protein residues as ``ProteinResidue`` views."]
     fn residues(&self) -> Vec<ProteinResidue> {
         (0..self.inner.num_residues())
             .map(|index| ProteinResidue {
@@ -4859,6 +4891,7 @@ impl Protein {
             .collect()
     }
 
+    #[doc = "Return all protein atoms as ``ProteinAtom`` views."]
     fn atoms(&self) -> Vec<ProteinAtom> {
         (0..self.inner.num_atoms())
             .map(|index| ProteinAtom {
@@ -4897,10 +4930,12 @@ impl Protein {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ProteinChain {
+    #[doc = "Return the zero-based chain index."]
     fn index(&self) -> usize {
         self.index
     }
 
+    #[doc = "Return the chain kind, for example ``Protein``."]
     fn kind(&self) -> String {
         format!(
             "{:?}",
@@ -4911,6 +4946,7 @@ impl ProteinChain {
         )
     }
 
+    #[doc = "Return residues belonging to this chain."]
     fn residues(&self) -> Vec<ProteinResidue> {
         self.inner
             .chain(self.index)
@@ -4923,6 +4959,7 @@ impl ProteinChain {
             .collect()
     }
 
+    #[doc = "Return atoms belonging to this chain."]
     fn atoms(&self) -> Vec<ProteinAtom> {
         self.inner
             .chain(self.index)
@@ -4947,10 +4984,12 @@ impl ProteinChain {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ProteinResidue {
+    #[doc = "Return the zero-based residue index."]
     fn index(&self) -> usize {
         self.index
     }
 
+    #[doc = "Return the residue name, for example ``ALA``."]
     fn name(&self) -> String {
         self.inner
             .residues()
@@ -4960,6 +4999,7 @@ impl ProteinResidue {
             .to_string()
     }
 
+    #[doc = "Return the residue kind."]
     fn kind(&self) -> String {
         format!(
             "{:?}",
@@ -4971,6 +5011,7 @@ impl ProteinResidue {
         )
     }
 
+    #[doc = "Return atoms belonging to this residue."]
     fn atoms(&self) -> Vec<ProteinAtom> {
         self.inner
             .residues()
@@ -4997,10 +5038,12 @@ impl ProteinResidue {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ProteinAtom {
+    #[doc = "Return the zero-based atom index."]
     fn index(&self) -> usize {
         self.index
     }
 
+    #[doc = "Return the atomic number as a string."]
     fn element(&self) -> String {
         self.inner
             .atoms()
@@ -5012,6 +5055,7 @@ impl ProteinAtom {
             .to_string()
     }
 
+    #[doc = "Return the atom name, for example ``CA``."]
     fn name(&self) -> String {
         let name = self
             .inner
@@ -5024,6 +5068,7 @@ impl ProteinAtom {
         String::from_utf8_lossy(&name).trim().to_string()
     }
 
+    #[doc = "Return ``(x, y, z)`` coordinates, or ``None`` when absent."]
     fn position(&self) -> Option<(f32, f32, f32)> {
         self.inner
             .atoms()
