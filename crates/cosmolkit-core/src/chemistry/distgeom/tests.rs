@@ -687,7 +687,8 @@ fn debug_ethene_row1_etkdg_stage_trace() {
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
 
     let got_initial =
-        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng);
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     assert!(got_initial);
     print_debug_point_positions("after_generate_initial_coords", &positions);
 
@@ -813,7 +814,8 @@ fn debug_ethene_row1_mixed_forcefield_checkpoint_energy_breakdown() {
     let mut dist_mat = SymmMatrix::with_value(mol.num_atoms(), 0.0);
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
     let got_initial =
-        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng);
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     assert!(got_initial);
     let got_first = embedder_first_minimization(&mut positions, &eargs, &params);
     assert!(got_first);
@@ -1119,7 +1121,8 @@ fn debug_azide_row16_etkdg_stage_trace() {
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
 
     let got_initial =
-        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng);
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     assert!(got_initial);
     print_debug_point_positions("row16_after_generate_initial_coords", &positions);
 
@@ -1254,7 +1257,8 @@ fn debug_row34_etkdg_stage_trace() {
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
 
     let got_initial =
-        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng);
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     assert!(got_initial);
     print_debug_point_positions("row34_after_generate_initial_coords", &positions);
 
@@ -1389,7 +1393,8 @@ fn debug_row34_embed_points_failure_trace() {
         3
     };
     let mut positions = vec![vec![0.0; dim]; mol.num_atoms()];
-    let got_coords = embedder_embed_points(&mut positions, eargs, &mut params, 61453, None);
+    let got_coords = embedder_embed_points(&mut positions, eargs, &mut params, 61453, None)
+        .expect("embed points");
     println!("row34_embed_points_result got_coords={got_coords}");
     println!("row34_embed_points_failures={:?}", params.failures);
     if got_coords {
@@ -1464,7 +1469,8 @@ fn debug_row34_timeout_timing_trace() {
         3
     };
     let mut positions = vec![vec![0.0; dim]; mol.num_atoms()];
-    let got_coords = embedder_embed_points(&mut positions, eargs, &mut params, 61453, None);
+    let got_coords = embedder_embed_points(&mut positions, eargs, &mut params, 61453, None)
+        .expect("embed points");
     let t5 = Instant::now();
 
     let mut full_params = EmbedParameters::etkdg_v3();
@@ -1566,7 +1572,8 @@ fn debug_row20_etkdg_stage_trace() {
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
 
     let got_initial =
-        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng);
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     assert!(got_initial);
     print_debug_point_positions("row20_after_generate_initial_coords", &positions);
     let mut initial_ff = construct_distgeom_forcefield(
@@ -1759,7 +1766,8 @@ fn debug_row57_etkdg_stage_trace() {
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
 
     let got_initial =
-        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng);
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     assert!(got_initial);
     print_debug_point_positions("row57_after_generate_initial_coords", &positions);
     let mut initial_ff = construct_distgeom_forcefield(
@@ -1953,7 +1961,8 @@ fn debug_row60_etkdg_stage_trace() {
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
 
     let got_initial =
-        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng);
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     assert!(got_initial);
     print_debug_point_positions("row60_after_generate_initial_coords", &positions);
 
@@ -2125,7 +2134,8 @@ fn debug_row89_etkdg_stage_trace() {
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
 
     let got_initial =
-        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng);
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     println!("row89_after_generate_initial_coords ok={got_initial}");
     if got_initial {
         print_debug_point_positions("row89_after_generate_initial_coords", &positions);
@@ -2306,7 +2316,8 @@ fn debug_row61_etkdg_stage_trace() {
             &mut rng,
             params.rand_neg_eig,
             params.num_zero_fail as usize,
-        );
+        )
+        .expect("compute initial coords");
         println!("row61_iter{iter}_after_generate_initial_coords ok={got_initial}");
         if got_initial {
             print_debug_point_positions(
@@ -2460,7 +2471,8 @@ fn debug_row64_timeout_timing_trace() {
         3
     };
     let mut positions = vec![vec![0.0; dim]; mol.num_atoms()];
-    let got_coords = embedder_embed_points(&mut positions, eargs, &mut params, 61453, None);
+    let got_coords = embedder_embed_points(&mut positions, eargs, &mut params, 61453, None)
+        .expect("embed points");
     let t5 = Instant::now();
 
     let mut full_params = EmbedParameters::etkdg_v3();
@@ -2577,7 +2589,8 @@ fn debug_row64_etkdg_stage_trace() {
         &mut rng,
         params.rand_neg_eig,
         params.num_zero_fail as usize,
-    );
+    )
+    .expect("compute initial coords");
     println!("row64_after_compute_initial_coords ok={got_initial}");
     if got_initial {
         print_debug_point_positions("row64_after_generate_initial_coords", &positions);
@@ -2744,7 +2757,8 @@ fn debug_row103_etkdg_stage_trace() {
         &mut rng,
         params.rand_neg_eig,
         params.num_zero_fail as usize,
-    );
+    )
+    .expect("compute initial coords");
     println!("row103_after_compute_initial_coords ok={got_initial}");
     if got_initial {
         print_debug_point_positions("row103_after_generate_initial_coords", &positions);
@@ -3459,13 +3473,10 @@ fn embedder_generate_initial_coords_random_branch_applies_coord_map_and_zeroes_h
     let mut dist_mat = SymmMatrix::new(3);
     let mut rng = RdkitDistgeomMinStdRand::new(123);
 
-    assert!(embedder_generate_initial_coords(
-        &mut positions,
-        &eargs,
-        &params,
-        &mut dist_mat,
-        &mut rng
-    ));
+    assert!(
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords")
+    );
     assert_eq!(positions, expected_positions);
 }
 
@@ -3489,13 +3500,10 @@ fn embedder_generate_initial_coords_distance_matrix_branch_uses_bounds_matrix() 
     let mut dist_mat = SymmMatrix::new(2);
     let mut rng = RdkitDistgeomMinStdRand::new(222);
 
-    assert!(embedder_generate_initial_coords(
-        &mut positions,
-        &eargs,
-        &params,
-        &mut dist_mat,
-        &mut rng
-    ));
+    assert!(
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords")
+    );
     assert_eq!(dist_mat.get_val(0, 1), 2.0);
     let distance = ((positions[0][0] - positions[1][0]).powi(2)
         + (positions[0][1] - positions[1][1]).powi(2)
@@ -4098,13 +4106,9 @@ fn embedder_embed_points_sets_default_iterations_and_runs_callback() {
     };
     let mut positions = vec![vec![0.0; 3], vec![0.0; 3]];
 
-    assert!(embedder_embed_points(
-        &mut positions,
-        eargs,
-        &mut params,
-        0,
-        None
-    ));
+    assert!(
+        embedder_embed_points(&mut positions, eargs, &mut params, 0, None).expect("embed points")
+    );
     assert_eq!(params.max_iterations, 20);
     assert_eq!(EMBED_POINTS_CALLBACK_COUNT.load(Ordering::SeqCst), 1);
 }
@@ -4141,20 +4145,14 @@ fn embedder_embed_points_seed_zero_is_local_and_reproducible() {
         stereo_double_bonds: &[],
     };
 
-    assert!(embedder_embed_points(
-        &mut positions_a,
-        eargs_a,
-        &mut params_a,
-        0,
-        None
-    ));
-    assert!(embedder_embed_points(
-        &mut positions_b,
-        eargs_b,
-        &mut params_b,
-        0,
-        None
-    ));
+    assert!(
+        embedder_embed_points(&mut positions_a, eargs_a, &mut params_a, 0, None)
+            .expect("embed points")
+    );
+    assert!(
+        embedder_embed_points(&mut positions_b, eargs_b, &mut params_b, 0, None)
+            .expect("embed points")
+    );
     assert_eq!(positions_a, positions_b);
 }
 
@@ -4174,13 +4172,16 @@ fn embedder_embed_points_timeout_before_first_iteration_returns_false_without_ca
     let mut params = EmbedParameters::default();
     let mut positions = vec![vec![0.0; 3], vec![0.0; 3]];
 
-    assert!(!embedder_embed_points(
-        &mut positions,
-        eargs,
-        &mut params,
-        1,
-        Some(Instant::now() - Duration::from_secs(1))
-    ));
+    assert!(
+        !embedder_embed_points(
+            &mut positions,
+            eargs,
+            &mut params,
+            1,
+            Some(Instant::now() - Duration::from_secs(1))
+        )
+        .expect("embed points")
+    );
     assert_eq!(params.max_iterations, 20);
 }
 
@@ -4212,13 +4213,9 @@ fn embedder_embed_points_tracks_linear_double_bond_failure() {
     };
     let mut positions = vec![vec![0.0; 3], vec![0.0; 3], vec![0.0; 3]];
 
-    assert!(!embedder_embed_points(
-        &mut positions,
-        eargs,
-        &mut params,
-        7,
-        None
-    ));
+    assert!(
+        !embedder_embed_points(&mut positions, eargs, &mut params, 7, None).expect("embed points")
+    );
     assert_eq!(
         params.failures[EmbedFailureCause::LinearDoubleBond as usize],
         1
@@ -4891,7 +4888,7 @@ fn embedder_helper_uses_thread_scheduling_and_seed_policy() {
         etkdg_details: &details,
     };
 
-    embedder_embed_helper(1, 2, &mut args, &mut params, None);
+    embedder_embed_helper(1, 2, &mut args, &mut params, None).expect("embed helper");
 
     assert_eq!(args.confs[0].coords()[0], [0.0, 0.0, 0.0]);
     assert_ne!(args.confs[1].coords()[0], [0.0, 0.0, 0.0]);
@@ -5619,7 +5616,7 @@ fn embedder_conformer_seed_policy_matches_rdkit_overflow_hash_branch() {
 
 #[test]
 fn vector_set_to_random_clock_seeded_path_returns_normalized_vector() {
-    let vec = rdkit_vector_set_to_random(3, 0);
+    let vec = rdkit_vector_set_to_random(3, 0).expect("clock-seeded vector");
     let norm_sq = vec.iter().map(|value| value * value).sum::<f64>();
 
     assert_eq!(vec.len(), 3);
@@ -5632,7 +5629,7 @@ fn power_eigen_solver_accepts_clock_seeded_path() {
     let mut mat = symm_matrix_from_distances(1, &[(0, 0, 1.0)]);
     let mut eigen_values = vec![0.0; 1];
 
-    assert!(power_eigen_solver(1, &mut mat, &mut eigen_values, None, 0));
+    assert!(power_eigen_solver(1, &mut mat, &mut eigen_values, None, 0).expect("power solver"));
     assert!(eigen_values[0].is_finite());
 }
 
@@ -5704,13 +5701,10 @@ fn compute_initial_coords_embeds_two_point_distance() {
     let dist_mat = symm_matrix_from_distances(2, &[(1, 0, 2.0)]);
     let mut positions = vec![vec![0.0; 3], vec![0.0; 3]];
 
-    assert!(compute_initial_coords(
-        &dist_mat,
-        &mut positions,
-        false,
-        2,
-        11
-    ));
+    assert!(
+        compute_initial_coords(&dist_mat, &mut positions, false, 2, 11)
+            .expect("compute initial coords")
+    );
 
     assert_close(point_distance(&positions[0], &positions[1]), 2.0);
 }
@@ -5722,7 +5716,8 @@ fn compute_initial_coords_rng_overload_rejects_size_mismatch() {
     let mut rng = FixedDoubleRng::new(vec![0.25]);
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        compute_initial_coords_with_rng(&dist_mat, &mut positions, &mut rng, false, 2);
+        compute_initial_coords_with_rng(&dist_mat, &mut positions, &mut rng, false, 2)
+            .expect("compute initial coords");
     }));
 
     assert!(result.is_err());
@@ -5733,13 +5728,10 @@ fn compute_initial_coords_fails_when_zero_eigen_threshold_is_reached_for_more_th
     let dist_mat = SymmMatrix::new(4);
     let mut positions = vec![vec![0.0; 3]; 4];
 
-    assert!(!compute_initial_coords(
-        &dist_mat,
-        &mut positions,
-        false,
-        2,
-        17
-    ));
+    assert!(
+        !compute_initial_coords(&dist_mat, &mut positions, false, 2, 17)
+            .expect("compute initial coords")
+    );
 }
 
 #[test]
@@ -5747,13 +5739,10 @@ fn compute_initial_coords_fails_negative_eigenvalue_without_randomization() {
     let dist_mat = symm_matrix_from_distances(3, &[(1, 0, 1.0), (2, 0, 1.0), (2, 1, 3.0)]);
     let mut positions = vec![vec![0.0; 3]; 3];
 
-    assert!(!compute_initial_coords(
-        &dist_mat,
-        &mut positions,
-        false,
-        2,
-        19
-    ));
+    assert!(
+        !compute_initial_coords(&dist_mat, &mut positions, false, 2, 19)
+            .expect("compute initial coords")
+    );
 }
 
 #[test]
@@ -5762,13 +5751,10 @@ fn compute_initial_coords_randomizes_negative_eigenvalue_when_requested() {
     let mut positions = vec![vec![0.0; 3]; 3];
     let mut rng = FixedDoubleRng::new(vec![0.25, 0.75, 0.5, 0.125, 0.875, 0.625]);
 
-    assert!(compute_initial_coords_with_rng(
-        &dist_mat,
-        &mut positions,
-        &mut rng,
-        true,
-        2
-    ));
+    assert!(
+        compute_initial_coords_with_rng(&dist_mat, &mut positions, &mut rng, true, 2)
+            .expect("compute initial coords")
+    );
 
     assert!(positions.iter().flatten().all(|coord| coord.is_finite()));
 }
@@ -6771,13 +6757,10 @@ fn compute_initial_coords_power_solver_follows_source_seeded_diagonal_iteration(
     let mut eigen_values = vec![0.0; 2];
     let mut eigen_vectors = DoubleMatrix::new(2, 3);
 
-    assert!(power_eigen_solver(
-        2,
-        &mut mat,
-        &mut eigen_values,
-        Some(&mut eigen_vectors),
-        23
-    ));
+    assert!(
+        power_eigen_solver(2, &mut mat, &mut eigen_values, Some(&mut eigen_vectors), 23)
+            .expect("power solver")
+    );
 
     assert!((eigen_values[0] - 3.0).abs() < 1.0e-3);
     assert!((eigen_values[1] - 1.006_175_852_283_403_2).abs() < 1.0e-3);
