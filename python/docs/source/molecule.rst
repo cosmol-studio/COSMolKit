@@ -158,7 +158,7 @@ returns a new molecule value.
    embedded = mol.with_3d_conformer(params)
 
    print(embedded.num_conformers())
-   print(embedded.coords_3d())
+   print(embedded.coordinates_3d())
    print(params.failures)
 
 For multi-conformer generation, explicit seeds are deterministic. RMS pruning,
@@ -193,7 +193,7 @@ source molecule.
        print(not result.needs_more())
        print(result.status_code())
        print(result.energy())
-       print(optimized.coords_3d())
+       print(optimized.coordinates_3d())
 
    if mol.has_mmff_params():
        result = mol.with_mmff_optimized(mmff_variant="MMFF94", max_iters=200)

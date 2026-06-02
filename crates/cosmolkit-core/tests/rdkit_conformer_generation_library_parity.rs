@@ -191,14 +191,17 @@ fn conformer_generation_library_matches_rdkit_golden_under_fixed_iteration_budge
                     )
                 });
                 assert_eq!(
-                    actual_conf.coords().len(),
+                    actual_conf.coordinates().len(),
                     expected_coords.len(),
                     "row {} ({}) atom count mismatch after AddHs/embed",
                     row_idx + 1,
                     record.smiles
                 );
-                for (atom_idx, (actual_xyz, expected_xyz)) in
-                    actual_conf.coords().iter().zip(expected_coords).enumerate()
+                for (atom_idx, (actual_xyz, expected_xyz)) in actual_conf
+                    .coordinates()
+                    .iter()
+                    .zip(expected_coords)
+                    .enumerate()
                 {
                     for axis in 0..3 {
                         let a = actual_xyz[axis];

@@ -386,7 +386,7 @@ fn get_pdb_atom_line(
     // RDKit✔️✔️:   ss << "   0.000   0.000   0.000";
     // RDKit✔️✔️: }
     if let Some(conf3d) = conf {
-        let coords = conf3d.coords();
+        let coords = conf3d.coordinates();
         if atom.id().index() < coords.len() {
             let pos = coords[atom.id().index()];
             line.push_str(&format!("{:+8.3}{:+8.3}{:+8.3}", pos[0], pos[1], pos[2]));

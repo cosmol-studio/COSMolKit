@@ -1680,7 +1680,7 @@ fn mol_to_v2000_block_infers_wedge_from_chiral_tag_without_coordinates() {
         .unwrap();
     // Deliberately no coordinates
     let molecule = builder.build().unwrap();
-    assert!(molecule.coords_2d().is_none());
+    assert!(molecule.coordinates_2d().is_none());
 
     let block = mol_to_mol_block_with_params(
         &molecule,
@@ -1730,7 +1730,7 @@ fn mol_to_v2000_block_infers_dash_from_chiral_tag_ccw_without_coordinates() {
         .add_bond(BondSpec::new(c_chiral, f, BondOrder::Single))
         .unwrap();
     let molecule = builder.build().unwrap();
-    assert!(molecule.coords_2d().is_none());
+    assert!(molecule.coordinates_2d().is_none());
 
     let block = mol_to_mol_block_with_params(
         &molecule,

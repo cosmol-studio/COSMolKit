@@ -1023,7 +1023,7 @@ pub fn mol_to_binary(mol: &Molecule) -> Result<Vec<u8>, PickleError> {
     }
 
     // ── 2D Coordinates ──
-    if let Some(coords_2d) = mol.coords_2d() {
+    if let Some(coords_2d) = mol.coordinates_2d() {
         w.write_bool(true);
         if coords_2d.len() > u32::MAX as usize {
             return Err(PickleError::TooManyAtoms(coords_2d.len()));
@@ -1042,7 +1042,7 @@ pub fn mol_to_binary(mol: &Molecule) -> Result<Vec<u8>, PickleError> {
     w.write_u32(conformers.len() as u32);
     for conf in conformers {
         w.write_u32(conf.id() as u32);
-        let coords = conf.coords();
+        let coords = conf.coordinates();
         w.write_u32(coords.len() as u32);
         for &[x, y, z] in coords {
             w.write_f64(x);
@@ -1567,10 +1567,10 @@ pub fn mol_from_binary(data: &[u8]) -> Result<Molecule, PickleError> {
 
     // 3D conformers
     for conformer in &conformers_3d {
-        if conformer.coords().len() != atom_count {
+        if conformer.coordinates().len() != atom_count {
             return Err(PickleError::InvalidMolecule(format!(
                 "3D conformer row count mismatch: rows={}, atom_count={}",
-                conformer.coords().len(),
+                conformer.coordinates().len(),
                 atom_count
             )));
         }
@@ -1792,13 +1792,13 @@ mod tests {
             ])
             .unwrap();
         let mol = builder.build().expect("build methane with coords");
-        assert!(mol.coords_2d().is_some());
-        assert_eq!(mol.coords_2d().unwrap().len(), 5);
+        assert!(mol.coordinates_2d().is_some());
+        assert_eq!(mol.coordinates_2d().unwrap().len(), 5);
 
         let data = mol_to_binary(&mol).unwrap();
         let mol2 = mol_from_binary(&data).unwrap();
         assert_eq!(mol, mol2, "methane with 2D coords roundtrip failed");
-        assert!(mol2.coords_2d().is_some());
+        assert!(mol2.coordinates_2d().is_some());
     }
 
     #[test]

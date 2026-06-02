@@ -1289,7 +1289,7 @@ mod tests {
         params.timeout = 10;
         let (embedded, _) =
             crate::chemistry::distgeom::embed_molecule(&mol, &mut params).expect("embed");
-        let coords = embedded.conformers_3d()[0].coords();
+        let coords = embedded.conformers_3d()[0].coordinates();
         let mut ff = ForceField::new(3);
         for coord in coords {
             ff.positions_mut()

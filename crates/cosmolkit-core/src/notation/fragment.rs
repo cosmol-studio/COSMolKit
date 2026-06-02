@@ -219,7 +219,7 @@ fn build_fragment_molecule(
     // Copy conformers if requested
     // RDKit equivalent: getTheFrags lines 817-821
     if copy_conformers {
-        if let Some(coords_2d) = mol.coords_2d() {
+        if let Some(coords_2d) = mol.coordinates_2d() {
             let frag_coords: Vec<[f64; 2]> = fragment_atoms
                 .iter()
                 .filter_map(|old_idx| coords_2d.get(*old_idx).copied())
@@ -231,7 +231,7 @@ fn build_fragment_molecule(
         for conformer in mol.conformers_3d() {
             let frag_coords: Vec<[f64; 3]> = fragment_atoms
                 .iter()
-                .filter_map(|old_idx| conformer.coords().get(*old_idx).copied())
+                .filter_map(|old_idx| conformer.coordinates().get(*old_idx).copied())
                 .collect();
             if frag_coords.len() == num_frag_atoms {
                 builder.add_3d_conformer(frag_coords)?;

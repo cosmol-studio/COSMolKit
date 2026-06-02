@@ -10645,9 +10645,9 @@ mod tests {
             Some("ethanol-fragment")
         );
         assert_eq!(parsed.molecule.bonds()[0].order(), BondOrder::Single);
-        assert_eq!(parsed.molecule.conformers_3d()[0].coords().len(), 2);
+        assert_eq!(parsed.molecule.conformers_3d()[0].coordinates().len(), 2);
         assert_eq!(
-            parsed.molecule.conformers_3d()[0].coords()[0],
+            parsed.molecule.conformers_3d()[0].coordinates()[0],
             [1.25, -2.5, 0.75]
         );
         assert!(parsed.molecule.conformers_3d()[0].is_3d());
@@ -10716,7 +10716,7 @@ mod tests {
         assert_eq!(record.molecule.num_atoms(), 1);
         assert_eq!(record.molecule.num_bonds(), 0);
         assert_eq!(record.molecule.atoms()[0].atomic_number(), 6);
-        assert_eq!(record.molecule.conformers_3d()[0].coords().len(), 1);
+        assert_eq!(record.molecule.conformers_3d()[0].coordinates().len(), 1);
     }
 
     #[test]
@@ -10818,7 +10818,7 @@ $$$$
         );
         assert_eq!(record.molecule.bonds()[0].stereo(), BondStereo::Any);
         assert_eq!(
-            record.molecule.conformers_3d()[0].coords(),
+            record.molecule.conformers_3d()[0].coordinates(),
             &[[0.0, 0.0, 0.0], [1.25, 0.0, 0.5]]
         );
     }
@@ -11581,7 +11581,7 @@ M  END
         let record = read_sdf_from_str(input).unwrap();
         let coords_2d = record
             .molecule
-            .coords_2d()
+            .coordinates_2d()
             .expect("2D coords should be stored");
         assert_eq!(
             coords_2d,
@@ -11634,8 +11634,8 @@ M  END
             .first()
             .expect("3D source should preserve conformer");
         assert!(conformer.is_3d());
-        assert!(conformer.coords()[1][2].is_sign_negative());
-        assert!(conformer.coords()[2][2].is_sign_negative());
+        assert!(conformer.coordinates()[1][2].is_sign_negative());
+        assert!(conformer.coordinates()[2][2].is_sign_negative());
         assert_eq!(
             record.molecule.source_coordinate_dim(),
             Some(crate::CoordinateDimension::ThreeD)

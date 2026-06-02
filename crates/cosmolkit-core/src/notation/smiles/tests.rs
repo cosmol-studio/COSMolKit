@@ -809,9 +809,18 @@ fn handle_cx_part_and_name_parses_coordinates_like_rdkit() {
 
     assert_eq!(molecule.conformers_3d().len(), 1);
     assert!(molecule.conformers_3d()[0].is_3d());
-    assert_eq!(molecule.conformers_3d()[0].coords()[0], [0.0, 0.0, 0.0]);
-    assert_eq!(molecule.conformers_3d()[0].coords()[1], [1.0, 0.0, 0.0]);
-    assert_eq!(molecule.conformers_3d()[0].coords()[2], [2.0, 0.0, 0.5]);
+    assert_eq!(
+        molecule.conformers_3d()[0].coordinates()[0],
+        [0.0, 0.0, 0.0]
+    );
+    assert_eq!(
+        molecule.conformers_3d()[0].coordinates()[1],
+        [1.0, 0.0, 0.0]
+    );
+    assert_eq!(
+        molecule.conformers_3d()[0].coordinates()[2],
+        [2.0, 0.0, 0.5]
+    );
 }
 
 #[test]
@@ -2003,7 +2012,10 @@ fn parse_cx_coords_marks_2d_and_3d_conformers_like_rdkit_has_non_zero_z() {
     assert_eq!(molecule.conformers_3d().len(), 2);
     assert!(!molecule.conformers_3d()[0].is_3d());
     assert!(molecule.conformers_3d()[1].is_3d());
-    assert_eq!(molecule.conformers_3d()[1].coords()[2], [2.0, 0.0, 0.5]);
+    assert_eq!(
+        molecule.conformers_3d()[1].coordinates()[2],
+        [2.0, 0.0, 0.5]
+    );
 }
 
 #[test]

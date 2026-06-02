@@ -5948,7 +5948,7 @@ fn rdkit_apply_transform_to_2d_conformer(
     trans: &[[f64; 4]; 4],
 ) -> Result<(), Coordinate2DError> {
     let conf_index = rdkit_select_2d_conformer_index(mol, conf_id)?;
-    let coords = mol.coordinate_block_mut().conformers_2d[conf_index].coords_mut();
+    let coords = mol.coordinate_block_mut().conformers_2d[conf_index].coordinates_mut();
     for point in coords.iter_mut() {
         let transformed = rdkit_transform3d_transform_point(trans, [point[0], point[1], 0.0]);
         point[0] = transformed[0];
@@ -5966,8 +5966,8 @@ fn rdkit_get_alignment_transform(
 ) -> Result<(f64, [[f64; 4]; 4]), Coordinate2DError> {
     let probe_conf_index = rdkit_select_2d_conformer_index(probe_mol, probe_conf_id)?;
     let reference_conf_index = rdkit_select_2d_conformer_index(reference_mol, reference_conf_id)?;
-    let probe_coords = probe_mol.conformers_2d()[probe_conf_index].coords();
-    let reference_coords = reference_mol.conformers_2d()[reference_conf_index].coords();
+    let probe_coords = probe_mol.conformers_2d()[probe_conf_index].coordinates();
+    let reference_coords = reference_mol.conformers_2d()[reference_conf_index].coordinates();
 
     let mut ref_points = Vec::with_capacity(atom_map.len());
     let mut probe_points = Vec::with_capacity(atom_map.len());
@@ -6217,7 +6217,7 @@ pub(crate) fn generate_depiction_matching_2d_structure_with_ref_match(
         }
     } else {
         let reference_conf_index = rdkit_select_2d_conformer_index(reference, conf_id)?;
-        let reference_coords = reference.conformers_2d()[reference_conf_index].coords();
+        let reference_coords = reference.conformers_2d()[reference_conf_index].coordinates();
         let mut coord_map = BTreeMap::new();
         for &(reference_atom_idx, mol_atom_idx) in ref_match_vect {
             let point = reference_coords[reference_atom_idx];
@@ -6248,7 +6248,7 @@ pub(crate) fn generate_depiction_matching_2d_structure_with_ref_match(
             }
             if !should_clear_wedging_info {
                 let new_conf_index = rdkit_select_2d_conformer_index(mol, new_conf_id as isize)?;
-                let mol_pos = mol.conformers_2d()[new_conf_index].coords();
+                let mol_pos = mol.conformers_2d()[new_conf_index].coordinates();
                 should_clear_wedging_info =
                     ref_match_vect
                         .iter()
@@ -6635,7 +6635,7 @@ pub(crate) fn generate_depiction_matching_3d_structure(
     }
 
     let reference_conf_index = rdkit_select_3d_conformer_index(reference, conf_id)?;
-    let conf = reference.conformers_3d()[reference_conf_index].coords();
+    let conf = reference.conformers_3d()[reference_conf_index].coordinates();
     let mut dmat = vec![-1.0; num_ats * (num_ats - 1) / 2];
     for i in 0..num_ats {
         if mol_to_ref[i] == -1 {
@@ -8467,7 +8467,10 @@ mod tests {
 
         assert_eq!(mol.conformers_2d().len(), 1);
         assert_eq!(mol.conformers_2d()[0].id(), 0);
-        assert_eq!(mol.conformers_2d()[0].coords(), &[[0.0, 2.0], [1.0, 2.0]]);
+        assert_eq!(
+            mol.conformers_2d()[0].coordinates(),
+            &[[0.0, 2.0], [1.0, 2.0]]
+        );
     }
 
     #[test]
@@ -8494,7 +8497,10 @@ mod tests {
 
         assert_eq!(mol.conformers_2d().len(), 1);
         assert_eq!(mol.conformers_2d()[0].id(), 0);
-        assert_eq!(mol.conformers_2d()[0].coords(), &[[0.0, 0.0], [1.0, 0.0]]);
+        assert_eq!(
+            mol.conformers_2d()[0].coordinates(),
+            &[[0.0, 0.0], [1.0, 0.0]]
+        );
     }
 
     #[test]
@@ -8540,7 +8546,7 @@ mod tests {
 
         assert_eq!(mol.conformers_2d().len(), 1);
         assert_eq!(mol.conformers_2d()[0].id(), 0);
-        let coords = mol.conformers_2d()[0].coords();
+        let coords = mol.conformers_2d()[0].coordinates();
         assert!((coords[0][0] - 0.0).abs() < 1.0e-6);
         assert!((coords[0][1] - 0.0).abs() < 1.0e-6);
         assert!((coords[1][0] - 2.0).abs() < 1.0e-6);
@@ -8585,7 +8591,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(mol.conformers_2d().len(), 1);
-        let coords = mol.conformers_2d()[0].coords();
+        let coords = mol.conformers_2d()[0].coordinates();
         assert!((coords[0][0] - 1.0).abs() < 1.0e-6);
         assert!((coords[0][1] - 1.0).abs() < 1.0e-6);
         assert!((coords[1][0] - 3.0).abs() < 1.0e-6);
@@ -8624,7 +8630,7 @@ mod tests {
 
         assert!(match_vect.is_empty());
         assert_eq!(mol.conformers_2d().len(), 1);
-        assert_eq!(mol.conformers_2d()[0].coords().len(), 2);
+        assert_eq!(mol.conformers_2d()[0].coordinates().len(), 2);
     }
 
     #[test]
@@ -8701,7 +8707,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(mol.conformers_2d().len(), 1);
-        assert_eq!(mol.conformers_2d()[0].coords().len(), 2);
+        assert_eq!(mol.conformers_2d()[0].coordinates().len(), 2);
     }
 
     #[test]
@@ -8749,7 +8755,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(mol.conformers_2d().len(), 1);
-        assert_eq!(mol.conformers_2d()[0].coords(), expected.as_slice());
+        assert_eq!(mol.conformers_2d()[0].coordinates(), expected.as_slice());
     }
 
     #[test]
@@ -8767,7 +8773,7 @@ mod tests {
 
         straighten_depiction(&mut mol, 0, true).unwrap();
 
-        let coords = mol.conformers_2d()[0].coords();
+        let coords = mol.conformers_2d()[0].coordinates();
         let dx = coords[1][0] - coords[0][0];
         let dy = coords[1][1] - coords[0][1];
         let theta = dy.atan2(dx).to_degrees();
@@ -8790,7 +8796,7 @@ mod tests {
         let scale = normalize_depiction(&mut mol, 0, 0, 1.0).unwrap();
 
         assert!((scale - 1.0).abs() < 1.0e-12);
-        let coords = mol.conformers_2d()[0].coords();
+        let coords = mol.conformers_2d()[0].coordinates();
         assert!((coords[0][0] + 0.5).abs() < 1.0e-8);
         assert!((coords[1][0] - 0.5).abs() < 1.0e-8);
         assert!(coords[0][1].abs() < 1.0e-8);
@@ -8812,7 +8818,7 @@ mod tests {
 
         normalize_depiction(&mut mol, 0, -1, 1.0).unwrap();
 
-        let coords = mol.conformers_2d()[0].coords();
+        let coords = mol.conformers_2d()[0].coordinates();
         assert!(coords[0][0].abs() < 1.0e-8);
         assert!(coords[1][0].abs() < 1.0e-8);
         assert!((coords[0][1] + 1.0).abs() < 1.0e-8);
@@ -8839,7 +8845,7 @@ mod tests {
         let scale = normalize_depiction(&mut mol, 0, 0, -1.0).unwrap();
 
         assert!((scale - 0.75).abs() < 1.0e-12);
-        let coords = mol.conformers_2d()[0].coords();
+        let coords = mol.conformers_2d()[0].coordinates();
         let dx = coords[1][0] - coords[0][0];
         assert!((dx.abs() - 1.5).abs() < 1.0e-8);
     }
@@ -11790,7 +11796,7 @@ pub(crate) fn straighten_depiction(
     const QUARTER_INCR_DEG: f64 = 0.25 * INCR_DEG;
 
     let conf_index = rdkit_select_2d_conformer_index(mol, conf_id)?;
-    let coords_snapshot = mol.conformers_2d()[conf_index].coords().to_vec();
+    let coords_snapshot = mol.conformers_2d()[conf_index].coordinates().to_vec();
     let mut theta_bins = std::collections::HashMap::<i32, ThetaBin>::new();
     for bond in mol.bonds() {
         let bi = bond.begin().index();
@@ -11854,7 +11860,7 @@ pub(crate) fn straighten_depiction(
     }
     if d_theta_min.abs() > ALMOST_ZERO {
         let trans = transform2d_set_transform_center_angle((0.0, 0.0), d_theta_min * DEG2RAD);
-        let coords = mol.coordinate_block_mut().conformers_2d[conf_index].coords_mut();
+        let coords = mol.coordinate_block_mut().conformers_2d[conf_index].coordinates_mut();
         for point in coords.iter_mut() {
             let rotated = transform2d_point((point[0], point[1]), trans);
             point[0] = rotated.0;
@@ -11884,7 +11890,7 @@ pub(crate) fn normalize_depiction(
     }
     let conf_index = rdkit_select_2d_conformer_index(mol, conf_id)?;
     if scale_factor < 0.0 {
-        let coords = mol.conformers_2d()[conf_index].coords();
+        let coords = mol.conformers_2d()[conf_index].coordinates();
         let mut most_common_bond_length_int = -1i32;
         let mut max_count = 0u32;
         let mut binned_bond_lengths = std::collections::HashMap::<i32, u32>::new();
@@ -11907,7 +11913,7 @@ pub(crate) fn normalize_depiction(
         }
     }
 
-    let coords_snapshot = mol.conformers_2d()[conf_index].coords().to_vec();
+    let coords_snapshot = mol.conformers_2d()[conf_index].coordinates().to_vec();
     let mut canon_trans = if canonicalize != 0 {
         Some(rdkit_compute_canonical_transform_for_2d_coords(
             &coords_snapshot,
@@ -11940,7 +11946,7 @@ pub(crate) fn normalize_depiction(
     }
 
     let is_scale_factor_sane = scale_factor > SCALE_FACTOR_THRESHOLD;
-    let coords = mol.coordinate_block_mut().conformers_2d[conf_index].coords_mut();
+    let coords = mol.coordinate_block_mut().conformers_2d[conf_index].coordinates_mut();
     if is_scale_factor_sane && (scale_factor - 1.0).abs() > SCALE_FACTOR_THRESHOLD {
         let mut trans = rdkit_transform3d_identity();
         trans[0][0] = scale_factor;

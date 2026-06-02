@@ -30,7 +30,7 @@ def main() -> None:
     print("bonds:", mol.num_bonds())
     print("3d conformers:", mol.num_conformers())
     print("coords:")
-    print(mol.coords_3d())
+    print(mol.coordinates_3d())
 
 
 if __name__ == "__main__":

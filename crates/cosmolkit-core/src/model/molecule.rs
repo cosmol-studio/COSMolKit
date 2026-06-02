@@ -46,11 +46,11 @@ impl Conformer2D {
     }
 
     #[must_use]
-    pub fn coords(&self) -> &[[f64; 2]] {
+    pub fn coordinates(&self) -> &[[f64; 2]] {
         &self.coords
     }
 
-    pub fn coords_mut(&mut self) -> &mut [[f64; 2]] {
+    pub fn coordinates_mut(&mut self) -> &mut [[f64; 2]] {
         &mut self.coords
     }
 
@@ -130,12 +130,12 @@ impl Conformer3D {
     }
 
     #[must_use]
-    pub fn coords(&self) -> &[[f64; 3]] {
+    pub fn coordinates(&self) -> &[[f64; 3]] {
         &self.coords
     }
 
     /// Mutable access to coordinates (pub(crate) for conformer transforms).
-    pub fn coords_mut(&mut self) -> &mut [[f64; 3]] {
+    pub fn coordinates_mut(&mut self) -> &mut [[f64; 3]] {
         &mut self.coords
     }
 
@@ -765,11 +765,11 @@ impl Molecule {
     }
 
     #[must_use]
-    pub fn coords_2d(&self) -> Option<&[[f64; 2]]> {
+    pub fn coordinates_2d(&self) -> Option<&[[f64; 2]]> {
         self.coordinates
             .conformers_2d
             .first()
-            .map(Conformer2D::coords)
+            .map(Conformer2D::coordinates)
     }
 
     #[must_use]

@@ -72,7 +72,7 @@ pub(super) fn apply_add_hs_assignment(
         parts.read_parts_for_blocks(topology.clone(), coordinates.clone(), properties.clone())?;
     let read = MoleculeReadParts::from_molecule(&view);
     let coords_2d_to_append = read
-        .coords_2d()
+        .coordinates_2d()
         .map(|coords| add_hs_terminal_coords_2d(read, assignment, coords));
     let coords_2d_to_append = match coords_2d_to_append {
         Some(coords) => Some(coords?),
@@ -81,7 +81,7 @@ pub(super) fn apply_add_hs_assignment(
     let conformer_coords_to_append = read
         .conformers_3d()
         .iter()
-        .map(|conformer| add_hs_terminal_coords_3d(read, assignment, conformer.coords()))
+        .map(|conformer| add_hs_terminal_coords_3d(read, assignment, conformer.coordinates()))
         .collect::<Result<Vec<_>, _>>()?;
 
     for update in &assignment.atom_explicit_hydrogen_updates {

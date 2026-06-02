@@ -821,7 +821,7 @@ pub(super) fn set_double_bond_neighbor_directions_impl(
         mol.conformers_3d()
             .iter()
             .find(|conf| conf.id() == wanted_id)
-            .map(|conf| conf.coords() as *const [[f64; 3]])
+            .map(|conf| conf.coordinates() as *const [[f64; 3]])
     });
     if conf_id.is_some() && coords_ptr.is_none() {
         return Ok(());
@@ -1670,8 +1670,8 @@ pub(super) fn atrop_bond_frame_of_reference(
     // RDKit✔️✔️: xAxis = conf->getAtomPos(bond->getEndAtom()->getIdx()) -
     // RDKit✔️✔️:         conf->getAtomPos(bond->getBeginAtom()->getIdx());
     let mut x_axis = vec3_sub(
-        conformer.coords()[bond.end().index()],
-        conformer.coords()[bond.begin().index()],
+        conformer.coordinates()[bond.end().index()],
+        conformer.coordinates()[bond.begin().index()],
     );
     let x_len = vec3_len(x_axis);
     if x_len < REALLY_SMALL_BOND_LEN {
@@ -1721,16 +1721,16 @@ pub(super) fn atrop_projected_end_vector(
     const REALLY_SMALL_BOND_LEN: f64 = 1e-7;
     let other0 = atrop_other_atom(mol, nbr_bonds[0], focus_atom)?;
     let mut bond_vec = vec3_sub(
-        conformer.coords()[other0.index()],
-        conformer.coords()[focus_atom.index()],
+        conformer.coordinates()[other0.index()],
+        conformer.coordinates()[focus_atom.index()],
     );
     bond_vec = [0.0, vec3_dot(bond_vec, y_axis), vec3_dot(bond_vec, z_axis)];
 
     if nbr_bonds.len() == 2 {
         let other1 = atrop_other_atom(mol, nbr_bonds[1], focus_atom)?;
         let mut other_vec = vec3_sub(
-            conformer.coords()[other1.index()],
-            conformer.coords()[focus_atom.index()],
+            conformer.coordinates()[other1.index()],
+            conformer.coordinates()[focus_atom.index()],
         );
         other_vec = [
             0.0,
@@ -2842,7 +2842,7 @@ pub(crate) fn assign_chiral_types_from_3d(mol: &mut Molecule, conf_id: usize) {
     if !conformer.is_3d() {
         return;
     }
-    let coords = conformer.coords();
+    let coords = conformer.coordinates();
 
     // RDKit✔️✔️:   boost::dynamic_bitset<> explicitAtoms;
     // RDKit✔️✔️:   explicitAtoms.resize(mol.getNumAtoms(), 0);

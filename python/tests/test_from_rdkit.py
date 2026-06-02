@@ -205,23 +205,23 @@ def test_from_rdkit_copies_3d_conformers():
     bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
 
     assert bridged.num_conformers() == 1
-    assert np.allclose(bridged.coords_3d(), coords)
+    assert np.allclose(bridged.coordinates_3d(), coords)
 
 
 def test_from_rdkit_copies_multiple_3d_conformers_and_skips_2d():
     rd_mol = Chem.MolFromSmiles("CO")
-    coords_2d = np.array([[10.0, 11.0, 0.0], [12.0, 13.0, 0.0]])
-    coords_3d_a = np.array([[0.0, 0.1, 0.2], [1.0, 1.1, 1.2]])
-    coords_3d_b = np.array([[2.0, 2.1, 2.2], [3.0, 3.1, 3.2]])
-    _add_conformer(rd_mol, coords_2d, is_3d=False)
-    _add_conformer(rd_mol, coords_3d_a, is_3d=True)
-    _add_conformer(rd_mol, coords_3d_b, is_3d=True)
+    coordinates_2d = np.array([[10.0, 11.0, 0.0], [12.0, 13.0, 0.0]])
+    coordinates_3d_a = np.array([[0.0, 0.1, 0.2], [1.0, 1.1, 1.2]])
+    coordinates_3d_b = np.array([[2.0, 2.1, 2.2], [3.0, 3.1, 3.2]])
+    _add_conformer(rd_mol, coordinates_2d, is_3d=False)
+    _add_conformer(rd_mol, coordinates_3d_a, is_3d=True)
+    _add_conformer(rd_mol, coordinates_3d_b, is_3d=True)
 
     bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
 
     assert bridged.num_conformers() == 2
-    assert np.allclose(bridged.coords_3d(0), coords_3d_a)
-    assert np.allclose(bridged.coords_3d(1), coords_3d_b)
+    assert np.allclose(bridged.coordinates_3d(0), coordinates_3d_a)
+    assert np.allclose(bridged.coordinates_3d(1), coordinates_3d_b)
 
 
 def test_from_rdkit_does_not_copy_2d_conformer():
@@ -232,7 +232,7 @@ def test_from_rdkit_does_not_copy_2d_conformer():
 
     assert bridged.num_conformers() == 0
     with pytest.raises(ValueError, match="no 3D conformer"):
-        bridged.coords_3d()
+        bridged.coordinates_3d()
 
 
 def test_from_rdkit_rejects_non_object():

@@ -1083,7 +1083,7 @@ pub fn atom_chiral_type_from_bond_dir_pseudo_3d(
         return Some(ChiralTag::Unspecified);
     }
 
-    let coords = conformer.coords();
+    let coords = conformer.coordinates();
     let mut center_loc = coords[center_idx];
     center_loc[2] = 0.0;
     let mut ref_pt = coords[bond_atom_idx];

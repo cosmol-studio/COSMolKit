@@ -111,7 +111,7 @@ fn vendored_fixture_path(source: &str) -> PathBuf {
 fn conformer_coords(mol: &Molecule) -> Vec<Vec<[f64; 3]>> {
     mol.conformers_3d()
         .iter()
-        .map(|conformer| conformer.coords().to_vec())
+        .map(|conformer| conformer.coordinates().to_vec())
         .collect()
 }
 
@@ -119,7 +119,7 @@ fn assert_all_conformer_coords_finite(label: &str, mol: &Molecule) {
     assert!(
         mol.conformers_3d()
             .iter()
-            .flat_map(|conf| conf.coords().iter())
+            .flat_map(|conf| conf.coordinates().iter())
             .flat_map(|coord| coord.iter())
             .all(|value| value.is_finite()),
         "{label} produced non-finite conformer coordinates"
@@ -249,12 +249,12 @@ fn conformer_generation_single_parity_embeds_rdkit_simple_torsion_fixtures() {
         let conf = &embedded.conformers_3d()[0];
         assert!(conf.is_3d(), "{label} conformer should be 3D for {source}");
         assert_eq!(
-            conf.coords().len(),
+            conf.coordinates().len(),
             atom_count,
             "{label} conformer coordinate count should match atom count for {source}"
         );
         assert!(
-            conf.coords()
+            conf.coordinates()
                 .iter()
                 .flat_map(|coord| coord.iter())
                 .all(|value| value.is_finite()),
@@ -355,9 +355,9 @@ fn conformer_generation_parameter_parity_covers_public_parameter_controls() {
         .unwrap_or_else(|err| panic!("coordMap/random-coordinate embed failed: {err}"));
     assert_eq!(coord_id, 0);
     let coord_conf = &coord_embedded.conformers_3d()[0];
-    assert_eq!(coord_conf.coords()[0], [0.0, 0.0, 0.0]);
-    assert_eq!(coord_conf.coords()[1], [0.0, 0.0, 1.5]);
-    assert_eq!(coord_conf.coords()[2], [0.0, 1.5, 1.5]);
+    assert_eq!(coord_conf.coordinates()[0], [0.0, 0.0, 0.0]);
+    assert_eq!(coord_conf.coordinates()[1], [0.0, 0.0, 1.5]);
+    assert_eq!(coord_conf.coordinates()[2], [0.0, 1.5, 1.5]);
 
     let mut cpci_params = EmbedParameters::etkdg_v3();
     cpci_params.random_seed = 0xC0FFEE;

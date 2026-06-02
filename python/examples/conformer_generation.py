@@ -32,12 +32,12 @@ print("pruned conformers:", multi.num_conformers())
 print("kept conformer ids:", multi_result.conf_ids())
 
 if embedded.has_uff_params():
-    start = embedded.coords_3d().copy()
+    start = embedded.coordinates_3d().copy()
     uff = embedded.with_uff_optimized(max_iters=200)
     print("UFF converged:", not uff.needs_more())
     print("UFF status code:", uff.status_code())
     print("UFF energy:", uff.energy())
-    print("UFF moved coordinates:", not np.allclose(start, uff.molecule().coords_3d()))
+    print("UFF moved coordinates:", not np.allclose(start, uff.molecule().coordinates_3d()))
 
 if embedded.has_mmff_params():
     mmff = embedded.with_mmff_optimized(max_iters=200)

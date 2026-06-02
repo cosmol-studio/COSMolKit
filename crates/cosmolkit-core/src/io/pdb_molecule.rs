@@ -716,7 +716,7 @@ fn cleanup_multivalent_hydrogens_like_rdkit(builder: &mut MoleculeBuilder, flags
     let Some(conformer) = builder.conformers_3d().first() else {
         return;
     };
-    let coords = conformer.coords().to_vec();
+    let coords = conformer.coordinates().to_vec();
     let count = builder.atoms().len();
     for i in 0..count {
         let atom_id = AtomId::new(i);
@@ -850,7 +850,7 @@ fn connect_the_dots_like_rdkit(
     let Some(conformer) = builder.conformers_3d().first() else {
         return Ok(());
     };
-    let coords = conformer.coords().to_vec();
+    let coords = conformer.coordinates().to_vec();
     let mut hash_table = [-1_i32; HASHSIZE];
     let count = builder.atoms().len();
     let mut tmp = Vec::<ProximityEntry>::with_capacity(count);
@@ -1895,7 +1895,7 @@ HETATM 2 O O . HOH B 2 2 ? 12.000 14.000 8.000 1.00 20.00 2 HOH B O
         assert_eq!(second.residue_name(), "HOH");
         assert_eq!(second.chain_id(), "B");
         assert!(second.is_hetero_atom());
-        let coords = mol.conformers_3d()[0].coords();
+        let coords = mol.conformers_3d()[0].coordinates();
         for (actual, expected) in coords
             .iter()
             .zip([[11.104, 13.207, 9.9], [12.0, 14.0, 8.0]])

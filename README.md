@@ -85,10 +85,10 @@ mol = Molecule.from_smiles("c1ccccc1O")
 mol_2d = mol.with_2d_coordinates()
 
 print(mol_2d.to_smiles())
-print(mol_2d.coords_2d())
+print(mol_2d.coordinates_2d())
 
 mol_3d = mol.with_hydrogens().with_3d_conformer()
-print(mol_3d.coords_3d().shape)
+print(mol_3d.coordinates_3d().shape)
 
 svg = mol_2d.to_svg(width=400, height=300)
 mol_2d.write_png("phenol.png", width=400, height=300)
@@ -174,7 +174,7 @@ params.track_failures = True
 
 embedded = mol.with_3d_conformer(params)
 print(embedded.num_conformers())
-print(embedded.coords_3d().shape)
+print(embedded.coordinates_3d().shape)
 print(params.failures)
 
 multi = mol.with_3d_conformers(5, params)

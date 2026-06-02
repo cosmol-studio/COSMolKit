@@ -55,12 +55,12 @@
 //!
 //! let mol = Molecule::from_smiles("c1ccccc1").unwrap();
 //! let with_coords = mol.with_2d_coordinates().unwrap();
-//! assert!(mol.coords_2d().is_none());
-//! assert_eq!(with_coords.coords_2d().unwrap().len(), with_coords.num_atoms());
+//! assert!(mol.coordinates_2d().is_none());
+//! assert_eq!(with_coords.coordinates_2d().unwrap().len(), with_coords.num_atoms());
 //!
 //! let mut in_place = Molecule::from_smiles("CCO").unwrap();
 //! in_place.compute_2d_coordinates_().unwrap();
-//! assert_eq!(in_place.coords_2d().unwrap().len(), in_place.num_atoms());
+//! assert_eq!(in_place.coordinates_2d().unwrap().len(), in_place.num_atoms());
 //! ```
 
 pub mod bio;
@@ -97,6 +97,12 @@ pub use batch::{
 };
 pub use bio::protein::{
     Protein, ProteinAtomRef, ProteinChainRef, ProteinResidueRef, ProteinSelectionSummary,
+};
+pub use bio::resinfo::{
+    RESIDUE_INFO_TABLE, ResidueCode, ResidueInfo, ResidueInfoKind, ResidueInfoSequenceError,
+    UNKNOWN_TABULATED_RESIDUE_IDX, expand_one_letter, expand_one_letter_sequence,
+    expand_protein_one_letter, expand_protein_one_letter_string, find_tabulated_residue,
+    find_tabulated_residue_idx, get_residue_info, get_residue_info_checked, residue_code_from_name,
 };
 pub use bio::{
     AltLocLabel, AtomName, AtomRow, AtomSourceIds, BioAssembly, BioCisPep, BioConnection,

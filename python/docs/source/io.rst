@@ -209,16 +209,16 @@ RDKit-aligned ``MolFromXYZBlock`` profile.
 Coordinate Arrays
 -----------------
 
-``coords_2d()``, ``coords_3d()``, and ``dg_bounds_matrix()`` return NumPy
-arrays. ``coords_2d()`` has shape ``(num_atoms, 3)`` with a zero-filled z
-column; ``coords_3d()`` has shape ``(num_atoms, 3)`` for the selected 3D
+``coordinates_2d()``, ``coordinates_3d()``, and ``dg_bounds_matrix()`` return NumPy
+arrays. ``coordinates_2d()`` has shape ``(num_atoms, 3)`` with a zero-filled z
+column; ``coordinates_3d()`` has shape ``(num_atoms, 3)`` for the selected 3D
 conformer:
 
 .. code-block:: python
 
    mol = Molecule.from_smiles("c1ccccc1O").with_2d_coordinates()
 
-   coords = mol.coords_2d()
+   coords = mol.coordinates_2d()
    bounds = mol.dg_bounds_matrix()
 
    print(coords.shape)

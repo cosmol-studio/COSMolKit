@@ -1,3 +1,4 @@
+use crate::bio::resinfo::{ResidueCode, ResidueInfo};
 use crate::bio::{
     AtomId, AtomRow, BioStructure, ChainId, ChainKind, ChainRow, CoordinateBlock, ModelId,
     ModelRow, ResidueId, ResidueKind, ResidueRow, RowSpan,
@@ -204,6 +205,31 @@ impl<'a> ProteinResidueRef<'a> {
     #[must_use]
     pub fn name(self) -> &'a str {
         self.row().name.as_str()
+    }
+
+    #[must_use]
+    pub fn code(self) -> ResidueCode {
+        self.info().code
+    }
+
+    #[must_use]
+    pub fn info(self) -> ResidueInfo {
+        crate::bio::resinfo::find_tabulated_residue(self.name())
+    }
+
+    #[must_use]
+    pub fn one_letter_code(self) -> char {
+        self.info().one_letter_code
+    }
+
+    #[must_use]
+    pub fn fasta_code(self) -> char {
+        self.info().fasta_code()
+    }
+
+    #[must_use]
+    pub fn is_standard(self) -> bool {
+        self.info().is_standard()
     }
 
     #[must_use]

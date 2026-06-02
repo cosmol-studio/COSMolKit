@@ -4,7 +4,7 @@ Usage:
     .venv/bin/python python/examples/protein_from_pdb.py
 """
 
-from cosmolkit import Protein
+from cosmolkit import Protein, ResidueCode, ResidueInfoKind, expand_one_letter_sequence
 
 
 PDB = """\
@@ -28,4 +28,8 @@ residues = [residue for residue in first_chain.residues()]
 print("residue names:", [residue.name() for residue in residues])
 
 for residue in residues:
-    print(residue.name(), [atom.name() for atom in residue.atoms()])
+    if residue.code() == ResidueCode.MET:
+        print("found MET residue", residue.index(), residue.fasta_code())
+    print(residue.name(), residue.code(), [atom.name() for atom in residue.atoms()])
+
+print("expanded peptide:", expand_one_letter_sequence("ACD(MSE)", ResidueInfoKind.AA))

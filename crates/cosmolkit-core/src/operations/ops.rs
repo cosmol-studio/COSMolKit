@@ -2307,7 +2307,7 @@ mod tests {
                 .all(|atom| atom.atomic_number() == 1 && atom.implicit_hydrogen())
         );
         assert_eq!(
-            result.coords_2d(),
+            result.coordinates_2d(),
             Some(&[[0.5, 1.0], [0.5, 1.0], [0.5, 1.0], [0.5, 1.0], [0.5, 1.0]][..])
         );
     }
@@ -2352,7 +2352,7 @@ mod tests {
         let coords = add_hs_terminal_coords_2d(
             MoleculeReadParts::from_molecule(&molecule),
             &assignment,
-            molecule.coords_2d().unwrap(),
+            molecule.coordinates_2d().unwrap(),
         )
         .unwrap();
 
@@ -2382,7 +2382,7 @@ mod tests {
         let coords = add_hs_terminal_coords_3d(
             MoleculeReadParts::from_molecule(&molecule),
             &assignment,
-            molecule.conformers_3d()[0].coords(),
+            molecule.conformers_3d()[0].coordinates(),
         )
         .unwrap();
 
@@ -2425,7 +2425,7 @@ mod tests {
         let coords = add_hs_terminal_coords_3d(
             MoleculeReadParts::from_molecule(&molecule),
             &assignment,
-            molecule.conformers_3d()[0].coords(),
+            molecule.conformers_3d()[0].coordinates(),
         )
         .unwrap();
 
@@ -2449,7 +2449,7 @@ mod tests {
         let degenerate = add_hs_set_terminal_atom_coord(
             MoleculeReadParts::from_molecule(&molecule),
             &adjacency,
-            molecule.conformers_3d()[0].coords(),
+            molecule.conformers_3d()[0].coordinates(),
             0,
             0,
             true,
@@ -2460,7 +2460,7 @@ mod tests {
         let nonterminal = add_hs_set_terminal_atom_coord(
             MoleculeReadParts::from_molecule(&molecule),
             &adjacency,
-            molecule.conformers_3d()[0].coords(),
+            molecule.conformers_3d()[0].coordinates(),
             0,
             1,
             true,
@@ -2483,7 +2483,7 @@ mod tests {
         let result = molecule.with_hydrogens_with_params(params).unwrap();
 
         assert_eq!(result.num_atoms(), 5);
-        let coords = result.coords_2d().unwrap();
+        let coords = result.coordinates_2d().unwrap();
         assert_eq!(coords.len(), 5);
         assert_eq!(coords[0], [0.0, 0.0]);
         assert_eq!(coords[1], [1.0, 0.0]);
@@ -2735,7 +2735,7 @@ mod tests {
         assert_eq!(molecule, original);
         assert_eq!(result.num_atoms(), 1);
         assert_eq!(result.num_bonds(), 0);
-        assert_eq!(result.coords_2d(), Some(&[[0.0, 0.0]][..]));
+        assert_eq!(result.coordinates_2d(), Some(&[[0.0, 0.0]][..]));
         assert_eq!(
             result.atoms()[0]
                 .pdb_residue_info()
@@ -4247,7 +4247,7 @@ mod tests {
         assert_eq!(molecule, original);
         assert_eq!(result.atoms(), original.atoms());
         assert_eq!(result.bonds(), original.bonds());
-        assert_eq!(result.coords_2d(), original.coords_2d());
+        assert_eq!(result.coordinates_2d(), original.coordinates_2d());
         assert_eq!(result.conformers_3d(), original.conformers_3d());
         assert_eq!(
             result.source_coordinate_dim(),
@@ -4609,7 +4609,7 @@ mod tests {
         assert_eq!(molecule, original);
         assert_eq!(result.atomic_numbers(), vec![6, 7]);
         assert_eq!(result.num_bonds(), 0);
-        assert_eq!(result.coords_2d().unwrap(), &[[0.0, 0.0], [2.0, 0.0]]);
+        assert_eq!(result.coordinates_2d().unwrap(), &[[0.0, 0.0], [2.0, 0.0]]);
         assert_eq!(
             result.properties().sdf_property_lists()[0].values(),
             &[Some("c0".to_string()), Some("n2".to_string())]

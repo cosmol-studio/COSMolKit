@@ -65,7 +65,7 @@ fn conf_coords(mol: &Molecule, conf_id: usize) -> Result<&[[f64; 3]], MolTransfo
             id: conf_id,
             max: confs.len(),
         })?;
-    Ok(conf.coords())
+    Ok(conf.coordinates())
 }
 
 /// RDKit❗✔️: Extract mutable 3D coordinates from a specific conformer.
@@ -87,7 +87,7 @@ fn conf_coords_mut(
     )?;
     // We need mutable access to the inner Vec<[f64; 3]>.
     // Since Conformer3D's coords field is private, we rely on a pub(crate) method.
-    Ok(conf.coords_mut())
+    Ok(conf.coordinates_mut())
 }
 
 /// RDKit✔️✔️: 3D vector dot product — RDKit Point::dotProduct equivalent.

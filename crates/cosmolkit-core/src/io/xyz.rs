@@ -307,7 +307,10 @@ mod tests {
         assert_eq!(mol.atomic_numbers(), vec![6, 1, 1, 1, 1]);
         assert_eq!(mol.properties().prop("_FileComments"), Some("methane"));
         assert_eq!(mol.conformers_3d().len(), 1);
-        assert_eq!(mol.conformers_3d()[0].coords()[1], [-0.635, -0.635, 0.635]);
+        assert_eq!(
+            mol.conformers_3d()[0].coordinates()[1],
+            [-0.635, -0.635, 0.635]
+        );
     }
 
     #[test]
@@ -315,7 +318,7 @@ mod tests {
         let mol = read_xyz_from_str("1\n\nCL 1 2 3\n").expect("xyz parse");
 
         assert_eq!(mol.atomic_numbers(), vec![17]);
-        assert_eq!(mol.conformers_3d()[0].coords()[0], [1.0, 2.0, 3.0]);
+        assert_eq!(mol.conformers_3d()[0].coordinates()[0], [1.0, 2.0, 3.0]);
     }
 
     #[test]

@@ -205,7 +205,7 @@ impl MoleculeBuilder {
             self.adjacency[bond.end().index()].push(bond.id());
         }
         for conformer in &mut self.conformers_2d {
-            let old_coords = conformer.coords().to_vec();
+            let old_coords = conformer.coordinates().to_vec();
             let coords = old_coords
                 .into_iter()
                 .enumerate()
@@ -214,7 +214,7 @@ impl MoleculeBuilder {
             *conformer = Conformer2D::new(conformer.id(), coords);
         }
         for conformer in &mut self.conformers_3d {
-            let old_coords = conformer.coords().to_vec();
+            let old_coords = conformer.coordinates().to_vec();
             let coords = old_coords
                 .into_iter()
                 .enumerate()
@@ -265,9 +265,9 @@ impl MoleculeBuilder {
         &mut self,
         conformer: Conformer3D,
     ) -> Result<(), MoleculeBuildError> {
-        if conformer.coords().len() != self.atoms.len() {
+        if conformer.coordinates().len() != self.atoms.len() {
             return Err(MoleculeBuildError::ConformerRowCount {
-                rows: conformer.coords().len(),
+                rows: conformer.coordinates().len(),
                 atom_count: self.atoms.len(),
             });
         }
@@ -484,7 +484,7 @@ impl Molecule {
 
         for conformer in self.conformers_2d() {
             builder
-                .add_2d_conformer(conformer.coords().to_vec())
+                .add_2d_conformer(conformer.coordinates().to_vec())
                 .expect("existing molecule 2D conformer row count must be valid");
         }
         for conformer in self.conformers_3d() {
@@ -736,11 +736,11 @@ mod tests {
             Some(&QueryNode::predicate(BondQueryPredicate::Any))
         );
         assert_eq!(
-            molecule.coords_2d().unwrap(),
+            molecule.coordinates_2d().unwrap(),
             &[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
         );
         assert_eq!(
-            molecule.conformers_3d()[0].coords(),
+            molecule.conformers_3d()[0].coordinates(),
             &[[1.0, 2.0, 0.0], [3.0, 4.0, 0.5], [5.0, 6.0, 1.0]]
         );
         assert_eq!(

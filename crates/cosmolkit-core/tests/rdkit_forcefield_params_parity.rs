@@ -387,7 +387,7 @@ fn forcefield_initial_energy_matches_rdkit_golden_for_first_embedded_row() {
         record.smiles
     );
     assert_eq!(
-        mol.conformers_3d()[0].coords(),
+        mol.conformers_3d()[0].coordinates(),
         expected_coords.as_slice(),
         "row {} ({}) initial coordinates must be the RDKit golden coordinates",
         row_idx + 1,
@@ -579,7 +579,7 @@ fn uff_single_conformer_final_coordinates_match_rdkit_golden_for_first_embedded_
             record.smiles
         )
     });
-    let actual_coords = actual.molecule.conformers_3d()[0].coords();
+    let actual_coords = actual.molecule.conformers_3d()[0].coordinates();
     assert_coordinate_matrix_close(
         row_idx + 1,
         &record.smiles,
@@ -720,7 +720,7 @@ fn mmff_single_conformer_final_coordinates_match_rdkit_golden_for_first_embedded
             record.smiles
         )
     });
-    let actual_coords = actual.molecule.conformers_3d()[0].coords();
+    let actual_coords = actual.molecule.conformers_3d()[0].coordinates();
     assert_coordinate_matrix_close(
         row_idx + 1,
         &record.smiles,
@@ -811,7 +811,7 @@ fn uff_multi_conformer_final_coordinates_match_rdkit_golden_for_first_embedded_r
             row_idx + 1,
             &record.smiles,
             &format!("UFF multi-conformer initial conformer {conf_idx}"),
-            mol.conformers_3d()[conf_idx].coords(),
+            mol.conformers_3d()[conf_idx].coordinates(),
             expected_coords,
         );
     }
@@ -857,7 +857,7 @@ fn uff_multi_conformer_final_coordinates_match_rdkit_golden_for_first_embedded_r
             &format!("UFF multi-conformer final conformer {conf_idx}"),
             actual_result.needs_more,
             actual_result.energy,
-            actual.molecule.conformers_3d()[conf_idx].coords(),
+            actual.molecule.conformers_3d()[conf_idx].coordinates(),
             expected_result,
         );
     }
@@ -944,7 +944,7 @@ fn mmff_multi_conformer_final_coordinates_match_rdkit_golden_for_first_embedded_
             row_idx + 1,
             &record.smiles,
             &format!("MMFF multi-conformer initial conformer {conf_idx}"),
-            mol.conformers_3d()[conf_idx].coords(),
+            mol.conformers_3d()[conf_idx].coordinates(),
             expected_coords,
         );
     }
@@ -991,7 +991,7 @@ fn mmff_multi_conformer_final_coordinates_match_rdkit_golden_for_first_embedded_
             &format!("MMFF multi-conformer final conformer {conf_idx}"),
             actual_result.needs_more,
             actual_result.energy,
-            actual.molecule.conformers_3d()[conf_idx].coords(),
+            actual.molecule.conformers_3d()[conf_idx].coordinates(),
             expected_result,
         );
     }

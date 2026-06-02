@@ -305,7 +305,7 @@ fn mol2_read_coordinates_and_chirality_match_rdkit() {
             .molecule
             .conformers_3d()
             .first()
-            .map(|c| c.coords())
+            .map(|c| c.coordinates())
             .unwrap_or_else(|| {
                 panic!(
                     "row {} fixture {} case {} should preserve 3D coords",

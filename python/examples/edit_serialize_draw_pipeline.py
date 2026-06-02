@@ -32,7 +32,7 @@ print("base smiles:", base.to_smiles())
 print("edited smiles:", phenol.to_smiles())
 print("restored smiles:", restored.to_smiles())
 print("binary bytes:", len(payload))
-print("2d coords shape:", prepared.coords_2d().shape)
+print("2d coords shape:", prepared.coordinates_2d().shape)
 
 atoms = prepared.atoms()
 bonds = prepared.bonds()

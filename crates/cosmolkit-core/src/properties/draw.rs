@@ -2191,7 +2191,7 @@ impl DrawMol {
     ) -> Result<Self, SvgDrawError> {
         let prepared_mol = prepare_molecule_for_svg_drawing(mol)?;
 
-        let at_cds: Vec<DVec2> = if let Some(coords) = prepared_mol.coords_2d() {
+        let at_cds: Vec<DVec2> = if let Some(coords) = prepared_mol.coordinates_2d() {
             let mapped: Vec<DVec2> = coords.iter().map(|pt| DVec2::new(pt[0], -pt[1])).collect();
             if Self::debug_svg_row_active(58) {
                 for (idx, pt) in mapped.iter().enumerate() {
@@ -7741,7 +7741,7 @@ pub(crate) fn prepare_mol_for_drawing_parity(
 ) -> Result<PreparedDrawMolecule, SvgDrawError> {
     let prepared = prepare_molecule_for_drawing(molecule, true)?;
 
-    let coords = prepared.coords_2d().ok_or_else(|| {
+    let coords = prepared.coordinates_2d().ok_or_else(|| {
         SvgDrawError::CoordinateGeneration(
             "prepareMolForDrawing did not materialize a 2D conformer".to_string(),
         )

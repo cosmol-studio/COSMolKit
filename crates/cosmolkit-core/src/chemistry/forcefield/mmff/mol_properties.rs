@@ -314,7 +314,8 @@ pub fn mmff_optimize_molecule(
         // RDKit default ForceField::minimize(maxIts) forwards forceTol=1e-4 and energyTol=1e-6.
         needs_more = ff.minimize(max_iters, 1.0e-4, 1.0e-6);
         {
-            let coords = molecule.coordinate_block_mut().conformers_3d[conf_index].coords_mut();
+            let coords =
+                molecule.coordinate_block_mut().conformers_3d[conf_index].coordinates_mut();
             for (coord, position) in coords.iter_mut().zip(ff.positions()) {
                 *coord = [position.x, position.y, position.z];
             }
@@ -421,7 +422,7 @@ pub fn mmff_optimize_molecule_confs(
         // RDKit✔️❌:   for (ROMol::ConformerIterator cit = mol.beginConformers();
         // RDKit✔️❌:        cit != mol.endConformers(); ++cit, ++i) {
         for conf_index in 0..conformer_count {
-            let start_coords = molecule.conformers_3d()[conf_index].coords().to_vec();
+            let start_coords = molecule.conformers_3d()[conf_index].coordinates().to_vec();
             // RDKit✔️❌:     for (unsigned int aidx = 0; aidx < mol.getNumAtoms(); ++aidx) {
             // RDKit✔️❌:       ff.positions()[aidx] = &(*cit)->getAtomPos(aidx);
             ff.positions_mut().clear();
@@ -441,7 +442,8 @@ pub fn mmff_optimize_molecule_confs(
             // RDKit✔️❌:     res[i] = std::make_pair(needsMore, e);
             conformer_results[conf_index] = MmffOptimizeMoleculeConfResult { needs_more, energy };
             {
-                let coords = molecule.coordinate_block_mut().conformers_3d[conf_index].coords_mut();
+                let coords =
+                    molecule.coordinate_block_mut().conformers_3d[conf_index].coordinates_mut();
                 for (coord, position) in coords.iter_mut().zip(ff.positions()) {
                     *coord = [position.x, position.y, position.z];
                 }
@@ -5539,27 +5541,33 @@ mod tests {
             BondOrder::Single,
             vec![[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
         );
-        let original_coords = molecule.conformers_3d()[0].coords().to_vec();
+        let original_coords = molecule.conformers_3d()[0].coordinates().to_vec();
 
         let result = mmff_optimize_molecule(&molecule, "MMFF94", 25, 100.0, -1, true)
             .expect("typed MMFF molecule should optimize");
 
         assert_eq!(result.needs_more, 0);
-        assert_ne!(result.molecule.conformers_3d()[0].coords(), original_coords);
-        assert_eq!(molecule.conformers_3d()[0].coords(), original_coords);
+        assert_ne!(
+            result.molecule.conformers_3d()[0].coordinates(),
+            original_coords
+        );
+        assert_eq!(molecule.conformers_3d()[0].coordinates(), original_coords);
     }
 
     #[test]
     fn mmff_public_api_mmff_optimize_molecule_returns_minus_one_for_missing_atom_params() {
         let molecule = single_atom_with_3d_conformer(AtomSpec::new(Element::HE), [0.0, 0.0, 0.0]);
-        let original_coords = molecule.conformers_3d()[0].coords().to_vec();
+        let original_coords = molecule.conformers_3d()[0].coordinates().to_vec();
 
         let result = mmff_optimize_molecule(&molecule, "MMFF94", 25, 100.0, -1, true)
             .expect("missing MMFF atom typing should map to wrapper -1 result");
 
         assert_eq!(result.needs_more, -1);
-        assert_eq!(result.molecule.conformers_3d()[0].coords(), original_coords);
-        assert_eq!(molecule.conformers_3d()[0].coords(), original_coords);
+        assert_eq!(
+            result.molecule.conformers_3d()[0].coordinates(),
+            original_coords
+        );
+        assert_eq!(molecule.conformers_3d()[0].coordinates(), original_coords);
     }
 
     #[test]
@@ -5578,8 +5586,8 @@ mod tests {
 
         assert_eq!(result.needs_more, reference.needs_more);
         assert_eq!(
-            result.molecule.conformers_3d()[0].coords(),
-            reference.molecule.conformers_3d()[0].coords()
+            result.molecule.conformers_3d()[0].coordinates(),
+            reference.molecule.conformers_3d()[0].coordinates()
         );
     }
 
@@ -5604,13 +5612,16 @@ mod tests {
             BondOrder::Single,
             vec![[0.0, 0.0, 0.0], [2.5, 0.0, 0.0]],
         );
-        let original_coords = molecule.conformers_3d()[0].coords().to_vec();
+        let original_coords = molecule.conformers_3d()[0].coordinates().to_vec();
 
         let result = mmff_optimize_molecule(&molecule, "MMFF94", 0, 100.0, -1, true)
             .expect("empty-typed MMFF optimize should run");
 
         assert_eq!(result.needs_more, 1);
-        assert_eq!(result.molecule.conformers_3d()[0].coords(), original_coords);
+        assert_eq!(
+            result.molecule.conformers_3d()[0].coordinates(),
+            original_coords
+        );
     }
 
     #[test]
@@ -5622,16 +5633,22 @@ mod tests {
             vec![[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]],
             vec![[0.0, 0.0, 0.0], [2.5, 0.0, 0.0]],
         );
-        let first_coords = molecule.conformers_3d()[0].coords().to_vec();
-        let selected_coords = molecule.conformers_3d()[1].coords().to_vec();
+        let first_coords = molecule.conformers_3d()[0].coordinates().to_vec();
+        let selected_coords = molecule.conformers_3d()[1].coordinates().to_vec();
 
         let result = mmff_optimize_molecule(&molecule, "MMFF94", 25, 100.0, 7, true)
             .expect("MMFF optimize should preserve unselected conformers");
 
         assert_eq!(result.needs_more, 0);
-        assert_eq!(result.molecule.conformers_3d()[0].coords(), first_coords);
-        assert_ne!(result.molecule.conformers_3d()[1].coords(), selected_coords);
-        assert_eq!(molecule.conformers_3d()[1].coords(), selected_coords);
+        assert_eq!(
+            result.molecule.conformers_3d()[0].coordinates(),
+            first_coords
+        );
+        assert_ne!(
+            result.molecule.conformers_3d()[1].coordinates(),
+            selected_coords
+        );
+        assert_eq!(molecule.conformers_3d()[1].coordinates(), selected_coords);
     }
 
     #[test]
@@ -5644,8 +5661,8 @@ mod tests {
             vec![[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
             vec![[0.0, 0.0, 0.0], [2.3, 0.0, 0.0]],
         );
-        let original_first = molecule.conformers_3d()[0].coords().to_vec();
-        let original_second = molecule.conformers_3d()[1].coords().to_vec();
+        let original_first = molecule.conformers_3d()[0].coordinates().to_vec();
+        let original_second = molecule.conformers_3d()[1].coordinates().to_vec();
 
         let result = mmff_optimize_molecule_confs(&molecule, 1, 25, "MMFF94", 100.0, true)
             .expect("missing MMFF atom typing should return wrapper-style -1 results");
@@ -5657,16 +5674,22 @@ mod tests {
                 .iter()
                 .all(|entry| entry.needs_more == 0 && entry.energy.is_finite())
         );
-        assert_ne!(result.molecule.conformers_3d()[0].coords(), original_first);
-        assert_ne!(result.molecule.conformers_3d()[1].coords(), original_second);
-        assert_eq!(molecule.conformers_3d()[0].coords(), original_first);
-        assert_eq!(molecule.conformers_3d()[1].coords(), original_second);
+        assert_ne!(
+            result.molecule.conformers_3d()[0].coordinates(),
+            original_first
+        );
+        assert_ne!(
+            result.molecule.conformers_3d()[1].coordinates(),
+            original_second
+        );
+        assert_eq!(molecule.conformers_3d()[0].coordinates(), original_first);
+        assert_eq!(molecule.conformers_3d()[1].coordinates(), original_second);
     }
 
     #[test]
     fn mmff_public_api_mmff_optimize_molecule_confs_returns_minus_one_for_missing_atom_params() {
         let molecule = single_atom_with_3d_conformer(AtomSpec::new(Element::HE), [0.0, 0.0, 0.0]);
-        let original_coords = molecule.conformers_3d()[0].coords().to_vec();
+        let original_coords = molecule.conformers_3d()[0].coordinates().to_vec();
 
         let result = mmff_optimize_molecule_confs(&molecule, 1, 25, "MMFF94", 100.0, true)
             .expect("missing MMFF atom typing should map to wrapper -1 result");
@@ -5674,8 +5697,11 @@ mod tests {
         assert_eq!(result.conformer_results.len(), 1);
         assert_eq!(result.conformer_results[0].needs_more, -1);
         assert_eq!(result.conformer_results[0].energy, -1.0);
-        assert_eq!(result.molecule.conformers_3d()[0].coords(), original_coords);
-        assert_eq!(molecule.conformers_3d()[0].coords(), original_coords);
+        assert_eq!(
+            result.molecule.conformers_3d()[0].coordinates(),
+            original_coords
+        );
+        assert_eq!(molecule.conformers_3d()[0].coordinates(), original_coords);
     }
 
     #[test]
@@ -5698,12 +5724,12 @@ mod tests {
         assert_eq!(result.conformer_results.len(), 2);
         assert_eq!(result.conformer_results, reference.conformer_results);
         assert_eq!(
-            result.molecule.conformers_3d()[0].coords(),
-            reference.molecule.conformers_3d()[0].coords()
+            result.molecule.conformers_3d()[0].coordinates(),
+            reference.molecule.conformers_3d()[0].coordinates()
         );
         assert_eq!(
-            result.molecule.conformers_3d()[1].coords(),
-            reference.molecule.conformers_3d()[1].coords()
+            result.molecule.conformers_3d()[1].coordinates(),
+            reference.molecule.conformers_3d()[1].coordinates()
         );
     }
 
@@ -5745,7 +5771,7 @@ mod tests {
             BondOrder::Single,
             vec![[0.0, 0.0, 0.0], [2.5, 0.0, 0.0]],
         );
-        let original_coords = molecule.conformers_3d()[0].coords().to_vec();
+        let original_coords = molecule.conformers_3d()[0].coordinates().to_vec();
 
         let result = mmff_optimize_molecule_confs(&molecule, 1, 0, "MMFF94", 100.0, true)
             .expect("current modeled MMFF wrapper path should return -1 before minimization");
@@ -5753,7 +5779,10 @@ mod tests {
         assert_eq!(result.conformer_results.len(), 1);
         assert_eq!(result.conformer_results[0].needs_more, 1);
         assert!(result.conformer_results[0].energy.is_finite());
-        assert_eq!(result.molecule.conformers_3d()[0].coords(), original_coords);
+        assert_eq!(
+            result.molecule.conformers_3d()[0].coordinates(),
+            original_coords
+        );
     }
 
     #[test]
@@ -5765,17 +5794,23 @@ mod tests {
             vec![[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]],
             vec![[0.0, 0.0, 0.0], [2.5, 0.0, 0.0]],
         );
-        let first_coords = molecule.conformers_3d()[0].coords().to_vec();
-        let second_coords = molecule.conformers_3d()[1].coords().to_vec();
+        let first_coords = molecule.conformers_3d()[0].coordinates().to_vec();
+        let second_coords = molecule.conformers_3d()[1].coordinates().to_vec();
 
         let result = mmff_optimize_molecule_confs(&molecule, 1, 25, "MMFF94", 100.0, true)
             .expect("MMFF conformer optimization should preserve current modeled coordinates");
 
         assert_eq!(result.conformer_results.len(), 2);
-        assert_ne!(result.molecule.conformers_3d()[0].coords(), first_coords);
-        assert_ne!(result.molecule.conformers_3d()[1].coords(), second_coords);
-        assert_eq!(molecule.conformers_3d()[0].coords(), first_coords);
-        assert_eq!(molecule.conformers_3d()[1].coords(), second_coords);
+        assert_ne!(
+            result.molecule.conformers_3d()[0].coordinates(),
+            first_coords
+        );
+        assert_ne!(
+            result.molecule.conformers_3d()[1].coordinates(),
+            second_coords
+        );
+        assert_eq!(molecule.conformers_3d()[0].coordinates(), first_coords);
+        assert_eq!(molecule.conformers_3d()[1].coordinates(), second_coords);
     }
 
     #[test]

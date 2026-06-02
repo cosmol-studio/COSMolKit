@@ -1151,7 +1151,7 @@ pub(crate) fn construct_force_field_with_params(
     let conf_index = select_uff_conformer_index(mol, conf_id)?;
     let conf = &mol.conformers_3d()[conf_index];
     // RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); i++) {
-    for coords in conf.coords() {
+    for coords in conf.coordinates() {
         // RDKit✔️✔️:     res->positions().push_back(&conf.getAtomPos(i));
         res.positions_mut()
             .push(ForceFieldVec3::new(coords[0], coords[1], coords[2]));

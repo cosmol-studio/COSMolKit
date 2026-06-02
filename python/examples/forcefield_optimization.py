@@ -31,7 +31,7 @@ M  END
 """
 
 mol = Molecule.read_mol_from_str(ethanol_3d, coordinate_dim="3d")
-start = mol.coords_3d().copy()
+start = mol.coordinates_3d().copy()
 
 if mol.has_uff_params():
     result = mol.with_uff_optimized(max_iters=200)
@@ -40,7 +40,7 @@ if mol.has_uff_params():
     print("UFF converged:", not result.needs_more())
     print("UFF status code:", result.status_code())
     print("UFF energy:", result.energy())
-    print("coordinates changed:", not np.allclose(start, optimized.coords_3d()))
+    print("coordinates changed:", not np.allclose(start, optimized.coordinates_3d()))
 
 if mol.has_mmff_params():
     result = mol.with_mmff_optimized(max_iters=200)

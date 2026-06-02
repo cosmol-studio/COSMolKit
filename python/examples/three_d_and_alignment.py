@@ -13,7 +13,7 @@ M  END
 """
 
 mol = Molecule.read_mol_from_str(molblock, coordinate_dim="3d")
-coords = mol.coords_3d()
+coords = mol.coordinates_3d()
 
 print("atoms:", mol.num_atoms())
 print("bonds:", mol.num_bonds())

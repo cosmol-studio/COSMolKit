@@ -20,6 +20,7 @@ fn main() -> Result<()> {
         text = format!("{future_line}{text}");
     }
     text = expose_chem_enums(text);
+    text = expose_residue_enums_and_functions(text);
     text = expose_batch_validation_error(text);
     text = expose_batch_error_mode_inputs(text);
     text = expose_batch_getitem_overloads(text);
@@ -128,6 +129,110 @@ def get_substruct_matches_with_params(mol: Molecule, query: Molecule, max_matche
             &format!("{declarations}@typing.final\nclass SubstructMatchResult:"),
         );
     }
+    text
+}
+
+fn residue_stub_defs() -> String {
+    let source = fs::read_to_string("crates/cosmolkit-core/src/bio/resinfo.rs")
+        .or_else(|_| fs::read_to_string("../crates/cosmolkit-core/src/bio/resinfo.rs"))
+        .expect("read Rust ResidueCode enum for Python stub generation");
+    let start = source
+        .find("pub enum ResidueCode {")
+        .expect("find ResidueCode enum");
+    let rest = &source[start..];
+    let end = rest
+        .find("\n}\n\nimpl ResidueCode")
+        .expect("find ResidueCode enum end");
+    let mut out = String::from("@typing.final\nclass ResidueCode(enum.IntEnum):\n");
+    for raw_line in rest[..end].lines().skip(1) {
+        let line = raw_line.trim().trim_end_matches(',');
+        if line.is_empty() {
+            continue;
+        }
+        let Some((name, value)) = line.split_once('=') else {
+            continue;
+        };
+        out.push_str("    ");
+        out.push_str(name.trim());
+        out.push_str(" = ");
+        out.push_str(value.trim());
+        out.push('\n');
+    }
+    out.push_str("\n@typing.final\nclass ResidueInfoKind(enum.IntEnum):\n");
+    for (name, value) in [
+        ("UNKNOWN", 0),
+        ("AA", 1),
+        ("AAD", 2),
+        ("PAA", 3),
+        ("MAA", 4),
+        ("RNA", 5),
+        ("DNA", 6),
+        ("BUF", 7),
+        ("HOH", 8),
+        ("PYR", 9),
+        ("KET", 10),
+        ("ELS", 11),
+    ] {
+        out.push_str(&format!("    {name} = {value}\n"));
+    }
+    out.push_str("\nRESIDUE_CODE_MAP: typing.Mapping[builtins.str, ResidueCode]\n");
+    out.push_str("RESIDUE_INFO_KIND_MAP: typing.Mapping[builtins.str, ResidueInfoKind]\n\n");
+    out
+}
+
+fn expose_residue_enums_and_functions(mut text: String) -> String {
+    if !text.contains("import enum\n") {
+        text = text.replace("import builtins\n", "import builtins\nimport enum\n");
+    }
+
+    for name in [
+        "ResidueCode",
+        "ResidueInfoKind",
+        "RESIDUE_CODE_MAP",
+        "RESIDUE_INFO_KIND_MAP",
+        "ResidueInfo",
+        "find_tabulated_residue",
+        "find_tabulated_residue_idx",
+        "get_residue_info",
+        "residue_code_from_name",
+        "expand_one_letter",
+        "expand_protein_one_letter",
+        "expand_one_letter_sequence",
+        "expand_protein_one_letter_string",
+    ] {
+        let export = format!("    \"{name}\",\n");
+        if !text.contains(&export) {
+            text = text.replace("    \"Protein\",\n", &format!("{export}    \"Protein\",\n"));
+        }
+    }
+
+    let residue_defs = residue_stub_defs();
+    if !text.contains("class ResidueCode(enum.IntEnum)") {
+        text = text.replace(
+            "@typing.final\nclass BondOrder(enum.IntEnum):",
+            &format!("{residue_defs}@typing.final\nclass BondOrder(enum.IntEnum):"),
+        );
+    }
+
+    if !text.contains("def find_tabulated_residue(name: builtins.str) -> ResidueInfo") {
+        let functions = r#"def find_tabulated_residue(name: builtins.str) -> ResidueInfo: ...
+def find_tabulated_residue_idx(name: builtins.str) -> builtins.int: ...
+def get_residue_info(idx: builtins.int) -> ResidueInfo: ...
+def residue_code_from_name(name: builtins.str) -> ResidueCode: ...
+def expand_one_letter(code: builtins.str, kind: ResidueInfoKind) -> typing.Optional[builtins.str]: ...
+def expand_protein_one_letter(code: builtins.str) -> typing.Optional[builtins.str]: ...
+def expand_one_letter_sequence(seq: builtins.str, kind: ResidueInfoKind) -> builtins.list[builtins.str]: ...
+def expand_protein_one_letter_string(seq: builtins.str) -> builtins.list[builtins.str]: ...
+
+"#;
+        text = text.replace(
+            "def version() -> builtins.str: ...\n",
+            &format!("def version() -> builtins.str: ...\n{functions}"),
+        );
+    }
+
+    text = text.replace("def expand_one_letter(code: builtins.str, kind: builtins.int) -> typing.Optional[builtins.str]: ...", "def expand_one_letter(code: builtins.str, kind: ResidueInfoKind) -> typing.Optional[builtins.str]: ...");
+    text = text.replace("def expand_one_letter_sequence(seq: builtins.str, kind: builtins.int) -> builtins.list[builtins.str]: ...", "def expand_one_letter_sequence(seq: builtins.str, kind: ResidueInfoKind) -> builtins.list[builtins.str]: ...");
     text
 }
 

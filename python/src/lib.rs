@@ -378,6 +378,65 @@ fn enum_member<'py>(py: Python<'py>, enum_name: &str, code: i64) -> PyResult<Bou
     module.getattr(enum_name)?.call1((code,))
 }
 
+fn residue_info_kind_code(kind: cosmolkit_core::ResidueInfoKind) -> i64 {
+    kind as i64
+}
+
+fn residue_info_kind_name(kind: cosmolkit_core::ResidueInfoKind) -> &'static str {
+    match kind {
+        cosmolkit_core::ResidueInfoKind::Unknown => "UNKNOWN",
+        cosmolkit_core::ResidueInfoKind::Aa => "AA",
+        cosmolkit_core::ResidueInfoKind::Aad => "AAD",
+        cosmolkit_core::ResidueInfoKind::Paa => "PAA",
+        cosmolkit_core::ResidueInfoKind::Maa => "MAA",
+        cosmolkit_core::ResidueInfoKind::Rna => "RNA",
+        cosmolkit_core::ResidueInfoKind::Dna => "DNA",
+        cosmolkit_core::ResidueInfoKind::Buf => "BUF",
+        cosmolkit_core::ResidueInfoKind::Hoh => "HOH",
+        cosmolkit_core::ResidueInfoKind::Pyr => "PYR",
+        cosmolkit_core::ResidueInfoKind::Ket => "KET",
+        cosmolkit_core::ResidueInfoKind::Els => "ELS",
+    }
+}
+
+fn residue_info_kind_from_code(code: i64) -> PyResult<cosmolkit_core::ResidueInfoKind> {
+    match code {
+        0 => Ok(cosmolkit_core::ResidueInfoKind::Unknown),
+        1 => Ok(cosmolkit_core::ResidueInfoKind::Aa),
+        2 => Ok(cosmolkit_core::ResidueInfoKind::Aad),
+        3 => Ok(cosmolkit_core::ResidueInfoKind::Paa),
+        4 => Ok(cosmolkit_core::ResidueInfoKind::Maa),
+        5 => Ok(cosmolkit_core::ResidueInfoKind::Rna),
+        6 => Ok(cosmolkit_core::ResidueInfoKind::Dna),
+        7 => Ok(cosmolkit_core::ResidueInfoKind::Buf),
+        8 => Ok(cosmolkit_core::ResidueInfoKind::Hoh),
+        9 => Ok(cosmolkit_core::ResidueInfoKind::Pyr),
+        10 => Ok(cosmolkit_core::ResidueInfoKind::Ket),
+        11 => Ok(cosmolkit_core::ResidueInfoKind::Els),
+        _ => Err(PyValueError::new_err(format!(
+            "unsupported ResidueInfoKind code {code}"
+        ))),
+    }
+}
+
+fn residue_info_sequence_pyerr(error: cosmolkit_core::ResidueInfoSequenceError) -> PyErr {
+    PyValueError::new_err(error.to_string())
+}
+
+fn residue_code_enum_member<'py>(
+    py: Python<'py>,
+    code: cosmolkit_core::ResidueCode,
+) -> PyResult<Bound<'py, PyAny>> {
+    enum_member(py, "ResidueCode", i64::from(code.as_u16()))
+}
+
+fn residue_info_kind_enum_member<'py>(
+    py: Python<'py>,
+    kind: cosmolkit_core::ResidueInfoKind,
+) -> PyResult<Bound<'py, PyAny>> {
+    enum_member(py, "ResidueInfoKind", residue_info_kind_code(kind))
+}
+
 fn add_int_enum(
     m: &Bound<'_, PyModule>,
     enum_name: &str,
@@ -538,6 +597,74 @@ fn add_public_enums(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "BatchErrorMode",
         "BATCH_ERROR_MODE_MAP",
         &[("RAISE", 1, "raise"), ("KEEP", 2, "keep")],
+    )?;
+    let residue_code_members = cosmolkit_core::RESIDUE_INFO_TABLE
+        .iter()
+        .map(|info| (format!("{:?}", info.code), i64::from(info.code.as_u16())))
+        .collect::<Vec<_>>();
+    let residue_code_member_refs = residue_code_members
+        .iter()
+        .map(|(name, value)| (name.as_str(), *value))
+        .collect::<Vec<_>>();
+    let mut residue_code_aliases = cosmolkit_core::RESIDUE_INFO_TABLE
+        .iter()
+        .map(|info| (info.name.to_string(), format!("{:?}", info.code)))
+        .collect::<Vec<_>>();
+    residue_code_aliases.extend([
+        ("TRY".to_string(), "TRP".to_string()),
+        ("WAT".to_string(), "HOH".to_string()),
+        ("H2O".to_string(), "HOH".to_string()),
+        ("+A".to_string(), "DA".to_string()),
+        ("+C".to_string(), "DC".to_string()),
+        ("+G".to_string(), "DG".to_string()),
+        ("+I".to_string(), "DI".to_string()),
+        ("+T".to_string(), "DT".to_string()),
+        ("+U".to_string(), "DU".to_string()),
+        ("+N".to_string(), "DN".to_string()),
+    ]);
+    let residue_code_alias_refs = residue_code_aliases
+        .iter()
+        .map(|(key, name)| (key.as_str(), name.as_str()))
+        .collect::<Vec<_>>();
+    add_int_enum_with_map_aliases(
+        m,
+        "ResidueCode",
+        "RESIDUE_CODE_MAP",
+        &residue_code_member_refs,
+        &residue_code_alias_refs,
+    )?;
+    add_int_enum_with_map_aliases(
+        m,
+        "ResidueInfoKind",
+        "RESIDUE_INFO_KIND_MAP",
+        &[
+            ("UNKNOWN", 0),
+            ("AA", 1),
+            ("AAD", 2),
+            ("PAA", 3),
+            ("MAA", 4),
+            ("RNA", 5),
+            ("DNA", 6),
+            ("BUF", 7),
+            ("HOH", 8),
+            ("PYR", 9),
+            ("KET", 10),
+            ("ELS", 11),
+        ],
+        &[
+            ("UNKNOWN", "UNKNOWN"),
+            ("AA", "AA"),
+            ("AAD", "AAD"),
+            ("PAA", "PAA"),
+            ("MAA", "MAA"),
+            ("RNA", "RNA"),
+            ("DNA", "DNA"),
+            ("BUF", "BUF"),
+            ("HOH", "HOH"),
+            ("PYR", "PYR"),
+            ("KET", "KET"),
+            ("ELS", "ELS"),
+        ],
     )
 }
 
@@ -608,7 +735,7 @@ fn molecule_to_2d_sdf_record_string(
         kekulize,
         ..Default::default()
     };
-    let with_coords = if mol.coords_2d().is_some() {
+    let with_coords = if mol.coordinates_2d().is_some() {
         mol.clone()
     } else {
         mol.with_2d_coordinates()?
@@ -1273,6 +1400,19 @@ struct ProteinChain {
 struct ProteinResidue {
     inner: cosmolkit_core::Protein,
     index: usize,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "ResidueInfo", skip_from_py_object)]
+#[derive(Clone)]
+#[doc = r#"
+Gemmi-derived tabulated residue information.
+
+Use ``ResidueInfo.code()`` and ``ResidueInfo.kind()`` for enum matching instead
+of matching raw residue-name strings.
+"#]
+struct PyResidueInfo {
+    inner: cosmolkit_core::ResidueInfo,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
@@ -3988,8 +4128,8 @@ Return the number of stored 3D conformers.
     #[doc = r#"
 Return whether the molecule has 2D coordinates.
 "#]
-    fn has_2d_coords(&self) -> bool {
-        self.inner.coords_2d().is_some()
+    fn has_2d_coordinates(&self) -> bool {
+        self.inner.coordinates_2d().is_some()
     }
 
     #[gen_stub(override_return_type(type_repr = "numpy.ndarray[typing.Any, typing.Any]", imports = ("numpy", "typing")))]
@@ -3998,8 +4138,8 @@ Return 2D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
 
 The z column is zero-filled.
 "#]
-    fn coords_2d<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let Some(coords) = self.inner.coords_2d() else {
+    fn coordinates_2d<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let Some(coords) = self.inner.coordinates_2d() else {
             return Err(PyValueError::new_err(
                 "no 2D coordinates present; call with_2d_coordinates() first",
             ));
@@ -4007,7 +4147,7 @@ The z column is zero-filled.
         let rows: Vec<Vec<f64>> = coords.iter().map(|p| vec![p[0], p[1], 0.0]).collect();
         PyArray2::from_vec2(py, &rows)
             .map(|array| array.into_any())
-            .map_err(|err| PyValueError::new_err(format!("Molecule.coords_2d failed: {err}")))
+            .map_err(|err| PyValueError::new_err(format!("Molecule.coordinates_2d failed: {err}")))
     }
 
     #[pyo3(signature = (conformer_index=0))]
@@ -4015,7 +4155,7 @@ The z column is zero-filled.
     #[doc = r#"
 Return 3D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
 "#]
-    fn coords_3d<'py>(
+    fn coordinates_3d<'py>(
         &self,
         py: Python<'py>,
         conformer_index: usize,
@@ -4026,13 +4166,13 @@ Return 3D coordinates as a NumPy array with shape ``(num_atoms, 3)``.
             )));
         };
         let rows: Vec<Vec<f64>> = coords
-            .coords()
+            .coordinates()
             .iter()
             .map(|p| vec![p[0], p[1], p[2]])
             .collect();
         PyArray2::from_vec2(py, &rows)
             .map(|array| array.into_any())
-            .map_err(|err| PyValueError::new_err(format!("Molecule.coords_3d failed: {err}")))
+            .map_err(|err| PyValueError::new_err(format!("Molecule.coordinates_3d failed: {err}")))
     }
 
     #[doc = r#"
@@ -4781,10 +4921,10 @@ Deserialize a molecule from COSMolKit binary data.
 
     fn __repr__(&self) -> String {
         format!(
-            "Molecule(num_atoms={}, num_bonds={}, has_2d_coords={})",
+            "Molecule(num_atoms={}, num_bonds={}, has_2d_coordinates={})",
             self.inner.atoms().len(),
             self.inner.bonds().len(),
-            self.inner.coords_2d().is_some()
+            self.inner.coordinates_2d().is_some()
         )
     }
 }
@@ -4982,6 +5122,7 @@ impl ProteinChain {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl ProteinResidue {
     #[doc = "Return the zero-based residue index."]
@@ -5011,6 +5152,59 @@ impl ProteinResidue {
         )
     }
 
+    #[doc = "Return the Gemmi tabulated residue code as ``ResidueCode``."]
+    #[gen_stub(override_return_type(type_repr = "ResidueCode"))]
+    fn code<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let code = self
+            .inner
+            .residues()
+            .nth(self.index)
+            .expect("valid protein residue")
+            .code();
+        residue_code_enum_member(py, code)
+    }
+
+    #[doc = "Return the Gemmi-derived tabulated residue information."]
+    fn info(&self) -> PyResidueInfo {
+        PyResidueInfo {
+            inner: self
+                .inner
+                .residues()
+                .nth(self.index)
+                .expect("valid protein residue")
+                .info(),
+        }
+    }
+
+    #[doc = "Return Gemmi's one-letter code for this residue."]
+    fn one_letter_code(&self) -> String {
+        self.inner
+            .residues()
+            .nth(self.index)
+            .expect("valid protein residue")
+            .one_letter_code()
+            .to_string()
+    }
+
+    #[doc = "Return Gemmi's FASTA code for this residue."]
+    fn fasta_code(&self) -> String {
+        self.inner
+            .residues()
+            .nth(self.index)
+            .expect("valid protein residue")
+            .fasta_code()
+            .to_string()
+    }
+
+    #[doc = "Return whether Gemmi marks this residue as standard."]
+    fn is_standard(&self) -> bool {
+        self.inner
+            .residues()
+            .nth(self.index)
+            .expect("valid protein residue")
+            .is_standard()
+    }
+
     #[doc = "Return atoms belonging to this residue."]
     fn atoms(&self) -> Vec<ProteinAtom> {
         self.inner
@@ -5032,6 +5226,102 @@ impl ProteinResidue {
             .expect("valid protein residue")
             .atoms()
             .count()
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyResidueInfo {
+    #[doc = "Return the tabulated residue code as ``ResidueCode``."]
+    #[gen_stub(override_return_type(type_repr = "ResidueCode"))]
+    fn code<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        residue_code_enum_member(py, self.inner.code)
+    }
+
+    #[doc = "Return the tabulated residue name."]
+    fn name(&self) -> String {
+        self.inner.name.to_string()
+    }
+
+    #[doc = "Return the Gemmi residue-info kind as ``ResidueInfoKind``."]
+    #[gen_stub(override_return_type(type_repr = "ResidueInfoKind"))]
+    fn kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        residue_info_kind_enum_member(py, self.inner.kind)
+    }
+
+    #[doc = "Return the Gemmi residue-info kind name."]
+    fn kind_name(&self) -> String {
+        residue_info_kind_name(self.inner.kind).to_string()
+    }
+
+    fn linking_type(&self) -> u8 {
+        self.inner.linking_type
+    }
+
+    fn one_letter_code(&self) -> String {
+        self.inner.one_letter_code.to_string()
+    }
+
+    fn hydrogen_count(&self) -> u8 {
+        self.inner.hydrogen_count
+    }
+
+    fn weight(&self) -> f32 {
+        self.inner.weight
+    }
+
+    fn found(&self) -> bool {
+        self.inner.found()
+    }
+
+    fn is_water(&self) -> bool {
+        self.inner.is_water()
+    }
+
+    fn is_dna(&self) -> bool {
+        self.inner.is_dna()
+    }
+
+    fn is_rna(&self) -> bool {
+        self.inner.is_rna()
+    }
+
+    fn is_nucleic_acid(&self) -> bool {
+        self.inner.is_nucleic_acid()
+    }
+
+    fn is_amino_acid(&self) -> bool {
+        self.inner.is_amino_acid()
+    }
+
+    fn is_buffer_or_water(&self) -> bool {
+        self.inner.is_buffer_or_water()
+    }
+
+    fn is_standard(&self) -> bool {
+        self.inner.is_standard()
+    }
+
+    fn fasta_code(&self) -> String {
+        self.inner.fasta_code().to_string()
+    }
+
+    fn is_peptide_linking(&self) -> bool {
+        self.inner.is_peptide_linking()
+    }
+
+    fn is_na_linking(&self) -> bool {
+        self.inner.is_na_linking()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ResidueInfo(name='{}', code='{:?}', kind='{}')",
+            self.inner.name,
+            self.inner.code,
+            residue_info_kind_name(self.inner.kind)
+        )
     }
 }
 
@@ -6158,6 +6448,101 @@ fn get_substruct_matches_with_params(
         .collect()
 }
 
+#[pyfunction]
+#[doc = r#"
+Return Gemmi-derived tabulated residue information for a residue name.
+"#]
+fn find_tabulated_residue(name: &str) -> PyResidueInfo {
+    PyResidueInfo {
+        inner: cosmolkit_core::find_tabulated_residue(name),
+    }
+}
+
+#[pyfunction]
+#[doc = r#"
+Return the Gemmi tabulated residue index for a residue name.
+"#]
+fn find_tabulated_residue_idx(name: &str) -> usize {
+    cosmolkit_core::find_tabulated_residue_idx(name)
+}
+
+#[pyfunction]
+#[doc = r#"
+Return Gemmi-derived tabulated residue information by table index.
+"#]
+fn get_residue_info(idx: usize) -> PyResult<PyResidueInfo> {
+    let Some(inner) = cosmolkit_core::get_residue_info_checked(idx) else {
+        return Err(PyIndexError::new_err(format!(
+            "residue info index {idx} out of range"
+        )));
+    };
+    Ok(PyResidueInfo { inner })
+}
+
+#[pyfunction]
+#[doc = r#"
+Return the Gemmi tabulated residue code for a residue name.
+"#]
+fn residue_code_from_name<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
+    residue_code_enum_member(py, cosmolkit_core::residue_code_from_name(name))
+}
+
+#[pyfunction]
+#[doc = r#"
+Expand a deprecated Gemmi protein one-letter residue code alias.
+"#]
+fn expand_protein_one_letter(code: &str) -> PyResult<Option<String>> {
+    let mut chars = code.chars();
+    let Some(c) = chars.next() else {
+        return Err(PyValueError::new_err(
+            "code must contain exactly one character",
+        ));
+    };
+    if chars.next().is_some() {
+        return Err(PyValueError::new_err(
+            "code must contain exactly one character",
+        ));
+    }
+    Ok(cosmolkit_core::expand_protein_one_letter(c).map(str::to_string))
+}
+
+#[pyfunction]
+#[doc = r#"
+Expand a one-letter amino-acid, RNA, or DNA residue sequence using Gemmi's table.
+"#]
+fn expand_one_letter_sequence(seq: &str, kind: i64) -> PyResult<Vec<String>> {
+    let kind = residue_info_kind_from_code(kind)?;
+    cosmolkit_core::expand_one_letter_sequence(seq, kind).map_err(residue_info_sequence_pyerr)
+}
+
+#[pyfunction]
+#[doc = r#"
+Expand a deprecated Gemmi protein one-letter residue sequence alias.
+"#]
+fn expand_protein_one_letter_string(seq: &str) -> PyResult<Vec<String>> {
+    cosmolkit_core::expand_protein_one_letter_string(seq).map_err(residue_info_sequence_pyerr)
+}
+
+#[pyfunction]
+#[doc = r#"
+Expand a one-letter amino-acid, RNA, or DNA residue code using Gemmi's table.
+"#]
+fn expand_one_letter(code: &str, kind: i64) -> PyResult<Option<String>> {
+    let mut chars = code.chars();
+    let Some(c) = chars.next() else {
+        return Err(PyValueError::new_err(
+            "code must contain exactly one character",
+        ));
+    };
+    if chars.next().is_some() {
+        return Err(PyValueError::new_err(
+            "code must contain exactly one character",
+        ));
+    }
+    let kind = residue_info_kind_from_code(kind)?;
+    Ok(cosmolkit_core::expand_one_letter(c, kind).map(str::to_string))
+}
+
 #[pymodule]
 fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
@@ -6168,6 +6553,7 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Protein>()?;
     m.add_class::<ProteinChain>()?;
     m.add_class::<ProteinResidue>()?;
+    m.add_class::<PyResidueInfo>()?;
     m.add_class::<ProteinAtom>()?;
     m.add_class::<MoleculeBatch>()?;
     m.add_class::<PySdfDataset>()?;
@@ -6209,6 +6595,14 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_substruct_match, m)?)?;
     m.add_function(wrap_pyfunction!(get_substruct_matches, m)?)?;
     m.add_function(wrap_pyfunction!(get_substruct_matches_with_params, m)?)?;
+    m.add_function(wrap_pyfunction!(find_tabulated_residue, m)?)?;
+    m.add_function(wrap_pyfunction!(find_tabulated_residue_idx, m)?)?;
+    m.add_function(wrap_pyfunction!(get_residue_info, m)?)?;
+    m.add_function(wrap_pyfunction!(residue_code_from_name, m)?)?;
+    m.add_function(wrap_pyfunction!(expand_one_letter, m)?)?;
+    m.add_function(wrap_pyfunction!(expand_protein_one_letter, m)?)?;
+    m.add_function(wrap_pyfunction!(expand_one_letter_sequence, m)?)?;
+    m.add_function(wrap_pyfunction!(expand_protein_one_letter_string, m)?)?;
     Ok(())
 }
 

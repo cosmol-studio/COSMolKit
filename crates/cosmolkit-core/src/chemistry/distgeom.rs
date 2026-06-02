@@ -2192,7 +2192,7 @@ fn embedder_fill_atom_positions(
     // END RDKIT CPP FUNCTION DGeomHelpers::_fillAtomPositions
     assert_eq!(pts.len(), match_atoms.len(), "bad pts size");
     for (i, &atom_idx) in match_atoms.iter().enumerate() {
-        let coord = conf.coords()[atom_idx];
+        let coord = conf.coordinates()[atom_idx];
         pts[i] = ForceFieldVec3::new(coord[0], coord[1], coord[2]);
     }
 }
@@ -2837,7 +2837,7 @@ fn embedder_embed_helper(
             // RDKit✔️✔️:       unsigned int fragAtomIdx = 0;
             let mut frag_atom_idx = 0;
             // RDKit✔️✔️:       for (unsigned int i = 0; i < conf->getNumAtoms(); ++i) {
-            for i in 0..conf.coords().len() {
+            for i in 0..conf.coordinates().len() {
                 // RDKit✔️✔️:         if (!eargs->fragMapping ||
                 // RDKit✔️✔️:             (*eargs->fragMapping)[i] == static_cast<int>(eargs->fragIdx)) {
                 if eargs
@@ -2847,7 +2847,7 @@ fn embedder_embed_helper(
                     // RDKit✔️✔️:           conf->setAtomPos(i, RDGeom::Point3D((*positions[fragAtomIdx])[0],
                     // RDKit✔️✔️:                                               (*positions[fragAtomIdx])[1],
                     // RDKit✔️✔️:                                               (*positions[fragAtomIdx])[2]));
-                    conf.coords_mut()[i] = [
+                    conf.coordinates_mut()[i] = [
                         positions[frag_atom_idx][0],
                         positions[frag_atom_idx][1],
                         positions[frag_atom_idx][2],
@@ -11051,7 +11051,7 @@ fn embedder_add_conformers(
         ids.push(conf_id as i32);
         coordinates.conformers_3d.push(Conformer3D::new(
             conf_id,
-            conformer.coords().to_vec(),
+            conformer.coordinates().to_vec(),
             conformer.is_3d(),
         ));
     }
@@ -11387,7 +11387,7 @@ pub fn embed_multiple_confs(
                 .conformers_3d
                 .push(Conformer3D::new(
                     conf_id,
-                    conf.coords().to_vec(),
+                    conf.coordinates().to_vec(),
                     conf.is_3d(),
                 ));
             res.push(conf_id as i32);

@@ -580,7 +580,7 @@ fn debug_ethene_row1_mixed_forcefield_minimization_progress() {
     params.timeout = 10;
     let (embedded, _) = embed_molecule(&mol, &mut params).expect("etdg embed");
     let start: Vec<ForceFieldVec3> = embedded.conformers_3d()[0]
-        .coords()
+        .coordinates()
         .iter()
         .map(|c| ForceFieldVec3::new(c[0], c[1], c[2]))
         .collect();
@@ -4890,8 +4890,8 @@ fn embedder_helper_uses_thread_scheduling_and_seed_policy() {
 
     embedder_embed_helper(1, 2, &mut args, &mut params, None).expect("embed helper");
 
-    assert_eq!(args.confs[0].coords()[0], [0.0, 0.0, 0.0]);
-    assert_ne!(args.confs[1].coords()[0], [0.0, 0.0, 0.0]);
+    assert_eq!(args.confs[0].coordinates()[0], [0.0, 0.0, 0.0]);
+    assert_ne!(args.confs[1].coordinates()[0], [0.0, 0.0, 0.0]);
 }
 
 #[test]

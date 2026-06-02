@@ -1573,7 +1573,7 @@ fn write_one_sdf_file(molecule: &Molecule, path: &Path, format: SdfFormat) -> Re
 fn molecule_to_sdf_record_string(molecule: &Molecule, format: SdfFormat) -> Result<String, String> {
     let params = molblock::MolBlockWriteParams {
         format,
-        force_2d: molecule.coords_2d().is_some(),
+        force_2d: molecule.coordinates_2d().is_some(),
         ..Default::default()
     };
     molblock::mol_to_sdf_record_with_params(molecule, &params).map_err(|error| error.to_string())

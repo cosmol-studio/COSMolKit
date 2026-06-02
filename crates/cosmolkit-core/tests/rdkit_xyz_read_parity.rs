@@ -151,7 +151,7 @@ fn xyz_reader_matches_rdkit_golden_for_smiles_generated_xyz_blocks() {
             record.smiles
         );
         if !expected_coordinates.is_empty() {
-            let actual_coordinates = molecule.conformers_3d()[0].coords();
+            let actual_coordinates = molecule.conformers_3d()[0].coordinates();
             assert_eq!(
                 actual_coordinates.len(),
                 expected_coordinates.len(),

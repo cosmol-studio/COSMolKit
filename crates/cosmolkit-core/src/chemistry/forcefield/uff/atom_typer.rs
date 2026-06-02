@@ -753,7 +753,7 @@ pub fn uff_optimize_molecule(
     // RDKit❗✔️:   return res;
     let mut molecule = mol.clone();
     {
-        let coords = molecule.coordinate_block_mut().conformers_3d[conf_index].coords_mut();
+        let coords = molecule.coordinate_block_mut().conformers_3d[conf_index].coordinates_mut();
         for (coord, position) in coords.iter_mut().zip(ff.positions()) {
             *coord = [position.x, position.y, position.z];
         }
@@ -832,7 +832,7 @@ pub fn uff_optimize_molecule_confs(
     // RDKit✔️❌:   for (ROMol::ConformerIterator cit = mol.beginConformers();
     // RDKit✔️❌:        cit != mol.endConformers(); ++cit, ++i) {
     for conf_index in 0..conformer_count {
-        let start_coords = molecule.conformers_3d()[conf_index].coords().to_vec();
+        let start_coords = molecule.conformers_3d()[conf_index].coordinates().to_vec();
         // RDKit✔️❌:     for (unsigned int aidx = 0; aidx < mol.getNumAtoms(); ++aidx) {
         // RDKit✔️❌:       ff.positions()[aidx] = &(*cit)->getAtomPos(aidx);
         // RDKit stores pointers to the conformer rows; Rust owns ForceFieldVec3 values and
@@ -854,7 +854,8 @@ pub fn uff_optimize_molecule_confs(
         // RDKit✔️❌:     res[i] = std::make_pair(needsMore, e);
         conformer_results[conf_index] = UffOptimizeMoleculeConfResult { needs_more, energy };
         {
-            let coords = molecule.coordinate_block_mut().conformers_3d[conf_index].coords_mut();
+            let coords =
+                molecule.coordinate_block_mut().conformers_3d[conf_index].coordinates_mut();
             for (coord, position) in coords.iter_mut().zip(ff.positions()) {
                 *coord = [position.x, position.y, position.z];
             }
@@ -2652,16 +2653,19 @@ mod tests {
             BondOrder::Single,
             vec![[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
         );
-        let original_coords = mol.conformers_3d()[0].coords().to_vec();
+        let original_coords = mol.conformers_3d()[0].coordinates().to_vec();
 
         let result =
             uff_optimize_molecule(&mol, 25, 10.0, -1, true).expect("UFF optimize should run");
 
         assert!(matches!(result.needs_more, 0 | 1));
         assert!(result.energy.is_finite());
-        assert_eq!(mol.conformers_3d()[0].coords(), original_coords.as_slice());
+        assert_eq!(
+            mol.conformers_3d()[0].coordinates(),
+            original_coords.as_slice()
+        );
         assert_ne!(
-            result.molecule.conformers_3d()[0].coords(),
+            result.molecule.conformers_3d()[0].coordinates(),
             original_coords.as_slice()
         );
     }
@@ -2737,18 +2741,24 @@ mod tests {
             vec![[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]],
             vec![[0.0, 0.0, 0.0], [2.5, 0.0, 0.0]],
         );
-        let first_coords = mol.conformers_3d()[0].coords().to_vec();
-        let selected_coords = mol.conformers_3d()[1].coords().to_vec();
+        let first_coords = mol.conformers_3d()[0].coordinates().to_vec();
+        let selected_coords = mol.conformers_3d()[1].coordinates().to_vec();
 
         let result =
             uff_optimize_molecule(&mol, 25, 10.0, 7, true).expect("UFF optimize should run");
 
-        assert_eq!(result.molecule.conformers_3d()[0].coords(), first_coords);
+        assert_eq!(
+            result.molecule.conformers_3d()[0].coordinates(),
+            first_coords
+        );
         assert_ne!(
-            result.molecule.conformers_3d()[1].coords(),
+            result.molecule.conformers_3d()[1].coordinates(),
             selected_coords.as_slice()
         );
-        assert_eq!(mol.conformers_3d()[1].coords(), selected_coords.as_slice());
+        assert_eq!(
+            mol.conformers_3d()[1].coordinates(),
+            selected_coords.as_slice()
+        );
     }
 
     #[test]
@@ -2760,8 +2770,8 @@ mod tests {
             vec![[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
             vec![[0.0, 0.0, 0.0], [2.3, 0.0, 0.0]],
         );
-        let original_first = mol.conformers_3d()[0].coords().to_vec();
-        let original_second = mol.conformers_3d()[1].coords().to_vec();
+        let original_first = mol.conformers_3d()[0].coordinates().to_vec();
+        let original_second = mol.conformers_3d()[1].coordinates().to_vec();
 
         let result = uff_optimize_molecule_confs(&mol, 1, 25, 10.0, true)
             .expect("UFF conformer optimization should run");
@@ -2773,14 +2783,20 @@ mod tests {
                 .iter()
                 .all(|entry| matches!(entry.needs_more, 0 | 1) && entry.energy.is_finite())
         );
-        assert_eq!(mol.conformers_3d()[0].coords(), original_first.as_slice());
-        assert_eq!(mol.conformers_3d()[1].coords(), original_second.as_slice());
+        assert_eq!(
+            mol.conformers_3d()[0].coordinates(),
+            original_first.as_slice()
+        );
+        assert_eq!(
+            mol.conformers_3d()[1].coordinates(),
+            original_second.as_slice()
+        );
         assert_ne!(
-            result.molecule.conformers_3d()[0].coords(),
+            result.molecule.conformers_3d()[0].coordinates(),
             original_first.as_slice()
         );
         assert_ne!(
-            result.molecule.conformers_3d()[1].coords(),
+            result.molecule.conformers_3d()[1].coordinates(),
             original_second.as_slice()
         );
     }

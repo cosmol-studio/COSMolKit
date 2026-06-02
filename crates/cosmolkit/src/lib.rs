@@ -20,7 +20,7 @@
 //! mol.compute_2d_coordinates_().unwrap();
 //!
 //! assert!(mol.num_atoms() > 3);
-//! assert_eq!(mol.coords_2d().unwrap().len(), mol.num_atoms());
+//! assert_eq!(mol.coordinates_2d().unwrap().len(), mol.num_atoms());
 //! ```
 
 pub use cosmolkit_core as core;

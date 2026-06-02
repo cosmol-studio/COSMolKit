@@ -38,7 +38,7 @@ fn debug_ethene_with_h_embed_coords() {
         params.timeout = 10;
         let (embedded, status) = embed_molecule(&mol, &mut params).expect("embed");
         println!("preset={label} status={status}");
-        for coord in embedded.conformers_3d()[0].coords() {
+        for coord in embedded.conformers_3d()[0].coordinates() {
             println!("{coord:?}");
         }
     }

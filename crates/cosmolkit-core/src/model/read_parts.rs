@@ -63,8 +63,8 @@ impl<'a> MoleculeReadParts<'a> {
     }
 
     #[must_use]
-    pub(crate) fn coords_2d(self) -> Option<&'a [[f64; 2]]> {
-        self.molecule.coords_2d()
+    pub(crate) fn coordinates_2d(self) -> Option<&'a [[f64; 2]]> {
+        self.molecule.coordinates_2d()
     }
 
     #[must_use]

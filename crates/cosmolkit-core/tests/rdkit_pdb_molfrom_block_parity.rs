@@ -248,7 +248,7 @@ fn pdb_7sh6_molfrompdbblock_state_matches_rdkit() {
         .conformers_3d()
         .first()
         .expect("PDB MolFromPDBBlock result should have a 3D conformer")
-        .coords();
+        .coordinates();
     assert_eq!(coords.len(), oracle.coords.len(), "coordinate row mismatch");
 
     for (idx, (atom, expected)) in mol.atoms().iter().zip(&oracle.atoms).enumerate() {

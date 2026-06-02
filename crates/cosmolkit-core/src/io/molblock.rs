@@ -1006,7 +1006,7 @@ fn select_coordinates(
     match selection {
         CoordinateSelection::TwoD => {
             let coords = molecule
-                .coords_2d()
+                .coordinates_2d()
                 .ok_or(MolWriteError::UnsupportedSubset(
                     "2D coordinates are required for V2000 2D output",
                 ))?;
@@ -1034,13 +1034,13 @@ fn select_coordinates(
                     .ok_or(MolWriteError::UnsupportedSubset(
                         "3D conformer coordinates are required for V2000 3D output",
                     ))?;
-            if conformer.coords().len() != molecule.num_atoms() {
+            if conformer.coordinates().len() != molecule.num_atoms() {
                 return Err(MolWriteError::Value(
                     "3D coordinate count does not match atom count".to_string(),
                 ));
             }
             Ok(SelectedCoordinates {
-                coords: Some(conformer.coords().to_vec()),
+                coords: Some(conformer.coordinates().to_vec()),
                 is_3d: true,
                 label: Some("3D"),
             })
@@ -1053,7 +1053,7 @@ fn select_coordinates(
             {
                 return select_coordinates(molecule, CoordinateSelection::ThreeD);
             }
-            if molecule.coords_2d().is_some() {
+            if molecule.coordinates_2d().is_some() {
                 return select_coordinates(molecule, CoordinateSelection::TwoD);
             }
             if !molecule.conformers_3d().is_empty() {

@@ -259,7 +259,7 @@ fn assert_conformer_coords_match(
 fn conformer_coords(mol: &Molecule) -> Vec<Vec<[f64; 3]>> {
     mol.conformers_3d()
         .iter()
-        .map(|conformer| conformer.coords().to_vec())
+        .map(|conformer| conformer.coordinates().to_vec())
         .collect()
 }
 

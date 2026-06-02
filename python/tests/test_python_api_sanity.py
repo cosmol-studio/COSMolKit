@@ -41,12 +41,12 @@ def bond_signature(
 
 def assert_coord_rows_match_atoms(mol: cosmolkit.Molecule) -> None:
     atom_count = len(mol)
-    if mol.has_2d_coords():
-        coords2d = mol.coords_2d()
+    if mol.has_2d_coordinates():
+        coords2d = mol.coordinates_2d()
         assert coords2d.shape == (atom_count, 3), coords2d.shape
         assert np.allclose(coords2d[:, 2], 0.0)
     for conformer_index in range(mol.num_conformers()):
-        coords3d = mol.coords_3d(conformer_index)
+        coords3d = mol.coordinates_3d(conformer_index)
         assert coords3d.shape == (atom_count, 3), coords3d.shape
 
 
@@ -76,8 +76,8 @@ def test_smiles_and_value_semantics_preserve_expected_graph_features():
 def test_coordinate_and_sdf_roundtrip_behaviors_are_consistent():
     base = cosmolkit.Molecule.from_smiles("CCO")
     mol2d = base.with_2d_coordinates()
-    assert not base.has_2d_coords()
-    assert mol2d.has_2d_coords()
+    assert not base.has_2d_coordinates()
+    assert mol2d.has_2d_coordinates()
     assert mol2d.num_conformers() == 0
     assert_coord_rows_match_atoms(mol2d)
 
@@ -106,26 +106,26 @@ $$$$
 """
     mol3d = cosmolkit.Molecule.read_sdf_from_str(methane_3d, coordinate_dim="3d")
     assert mol3d.num_conformers() == 1
-    assert not mol3d.has_2d_coords()
+    assert not mol3d.has_2d_coordinates()
     assert_coord_rows_match_atoms(mol3d)
 
     sdf3d = mol3d.to_3d_sdf_string(format="v2000")
     assert "3D" in sdf3d.splitlines()[1]
     restored3d = cosmolkit.Molecule.read_sdf_from_str(sdf3d, coordinate_dim="3d")
     assert restored3d.num_conformers() == 1
-    assert np.allclose(restored3d.coords_3d(), mol3d.coords_3d())
+    assert np.allclose(restored3d.coordinates_3d(), mol3d.coordinates_3d())
 
     both = mol3d.with_2d_coordinates()
-    assert both.has_2d_coords()
+    assert both.has_2d_coordinates()
     assert both.num_conformers() == 1
     assert_coord_rows_match_atoms(both)
 
     removed = both.without_hydrogens(sanitize=False)
     assert len(removed) == 1
-    assert removed.has_2d_coords()
+    assert removed.has_2d_coordinates()
     assert removed.num_conformers() == 1
-    assert removed.coords_2d().shape == (1, 3)
-    assert removed.coords_3d().shape == (1, 3)
+    assert removed.coordinates_2d().shape == (1, 3)
+    assert removed.coordinates_3d().shape == (1, 3)
 
 
 def test_forcefield_wrappers_optimize_existing_3d_conformer_by_value():
@@ -153,7 +153,7 @@ def test_forcefield_wrappers_optimize_existing_3d_conformer_by_value():
 M  END
 """
     mol = cosmolkit.Molecule.read_mol_from_str(ethanol_3d, coordinate_dim="3d")
-    original_coords = mol.coords_3d().copy()
+    original_coords = mol.coordinates_3d().copy()
 
     assert cosmolkit.uff_has_all_molecule_params(mol)
     assert mol.has_uff_params()
@@ -165,8 +165,8 @@ M  END
     assert result.energy() >= 0.0
     assert optimized is not mol
     assert optimized.num_conformers() == 1
-    assert np.allclose(mol.coords_3d(), original_coords)
-    assert not np.allclose(optimized.coords_3d(), original_coords)
+    assert np.allclose(mol.coordinates_3d(), original_coords)
+    assert not np.allclose(optimized.coordinates_3d(), original_coords)
 
     confs = cosmolkit.uff_optimize_molecule_confs(mol, max_iters=50)
     assert len(confs.conformer_results()) == mol.num_conformers()
@@ -194,7 +194,7 @@ def test_conformer_generation_python_api_exposes_native_embedding_and_parameters
     assert embedded is not base
     assert base.num_conformers() == 0
     assert embedded.num_conformers() == 1
-    assert embedded.coords_3d().shape == (len(embedded), 3)
+    assert embedded.coordinates_3d().shape == (len(embedded), 3)
     assert result.conf_id() == 0
     assert result.ok() is True
     assert result.params().failures == params.failures
@@ -217,7 +217,7 @@ def test_conformer_generation_python_api_exposes_native_embedding_and_parameters
     assert multi_result.generated_count() == 3
     assert multi_result.requested_num_confs() == 3
     for conformer_index in range(multi.num_conformers()):
-        assert multi.coords_3d(conformer_index).shape == (len(multi), 3)
+        assert multi.coordinates_3d(conformer_index).shape == (len(multi), 3)
 
     mutable = cosmolkit.Molecule.from_smiles("CCO").with_hydrogens()
     mutable_params = cosmolkit.EmbedParameters.kdg()
@@ -255,9 +255,9 @@ def test_conformer_generation_python_api_exposes_native_embedding_and_parameters
     assert mapped_params.cpci == {(0, 3): 0.5, (1, 4): -0.25}
 
     mapped = base.with_3d_conformer(mapped_params)
-    assert np.allclose(mapped.coords_3d()[0], [0.0, 0.0, 0.0])
-    assert np.allclose(mapped.coords_3d()[1], [0.0, 0.0, 1.5])
-    assert np.allclose(mapped.coords_3d()[2], [0.0, 1.5, 1.5])
+    assert np.allclose(mapped.coordinates_3d()[0], [0.0, 0.0, 0.0])
+    assert np.allclose(mapped.coordinates_3d()[1], [0.0, 0.0, 1.5])
+    assert np.allclose(mapped.coordinates_3d()[2], [0.0, 1.5, 1.5])
 
 
 def test_conformer_generation_failure_tracking_and_forcefield_post_optimization():
@@ -287,15 +287,15 @@ def test_conformer_generation_failure_tracking_and_forcefield_post_optimization(
     embed_params.random_seed = 61453
     embed_params.num_threads = 1
     embedded = mol.with_3d_conformer(embed_params)
-    coords_before = embedded.coords_3d().copy()
+    coords_before = embedded.coordinates_3d().copy()
 
     uff = embedded.with_uff_optimized(max_iters=100)
     assert uff.molecule().num_conformers() == 1
     assert uff.energy() >= 0.0
     assert isinstance(uff.needs_more(), bool)
     assert uff.status_code() in (0, 1)
-    assert np.allclose(embedded.coords_3d(), coords_before)
-    assert not np.allclose(uff.molecule().coords_3d(), coords_before)
+    assert np.allclose(embedded.coordinates_3d(), coords_before)
+    assert not np.allclose(uff.molecule().coordinates_3d(), coords_before)
 
     if embedded.has_mmff_params():
         mmff = embedded.with_mmff_optimized(max_iters=50)
@@ -342,8 +342,8 @@ def test_read_mol_stops_at_m_end_and_ignores_trailing_sdf_text(tmp_path: Path):
 
     assert from_text.to_smiles() == "CCO"
     assert from_file.to_smiles() == "CCO"
-    assert from_text.has_2d_coords()
-    assert from_file.has_2d_coords()
+    assert from_text.has_2d_coordinates()
+    assert from_file.has_2d_coordinates()
     assert len(from_file) == len(mol2d)
     assert_coord_rows_match_atoms(from_file)
 
@@ -536,7 +536,7 @@ H -0.758 0.000 0.504
     assert xyz_mol.num_bonds() == 0
     assert xyz_mol.num_conformers() == 1
     assert np.allclose(
-        xyz_mol.coords_3d(),
+        xyz_mol.coordinates_3d(),
         np.array(
             [
                 [0.0, 0.0, 0.0],
@@ -586,7 +586,7 @@ def test_batch_api_combinations_preserve_order_shapes_and_record_alignment():
     assert prepared.valid_mask() == [True, True, False, True]
     mols = prepared.to_list()
     assert mols[2] is None
-    assert all(m is None or m.has_2d_coords() for m in mols)
+    assert all(m is None or m.has_2d_coordinates() for m in mols)
     for mol in mols:
         if mol is not None:
             assert_coord_rows_match_atoms(mol)

@@ -340,7 +340,7 @@ fn sdf_read_coordinates_match_rdkit_for_2d_and_3d_records() {
             .expect("rdkit_ok row should have positions");
 
         if record.dimension == "2D" {
-            let coords = parsed.molecule.coords_2d().unwrap_or_else(|| {
+            let coords = parsed.molecule.coordinates_2d().unwrap_or_else(|| {
                 panic!(
                     "row {} {} should preserve 2D coords",
                     row_idx + 1,
@@ -367,7 +367,7 @@ fn sdf_read_coordinates_match_rdkit_for_2d_and_3d_records() {
                 .molecule
                 .conformers_3d()
                 .first()
-                .map(|c| c.coords())
+                .map(|c| c.coordinates())
                 .unwrap_or_else(|| {
                     panic!(
                         "row {} {} should preserve 3D coords",
@@ -409,7 +409,7 @@ fn sdf_read_coordinates_match_rdkit_for_2d_and_3d_records() {
             .as_ref()
             .expect("rdkit_ok row should have positions");
         if record.dimension == "2D" {
-            let coords = molecule.coords_2d().unwrap_or_else(|| {
+            let coords = molecule.coordinates_2d().unwrap_or_else(|| {
                 panic!(
                     "batch row {} {} should preserve 2D coords",
                     row_idx + 1,
@@ -435,7 +435,7 @@ fn sdf_read_coordinates_match_rdkit_for_2d_and_3d_records() {
             let coords = molecule
                 .conformers_3d()
                 .first()
-                .map(|c| c.coords())
+                .map(|c| c.coordinates())
                 .unwrap_or_else(|| {
                     panic!(
                         "batch row {} {} should preserve 3D coords",

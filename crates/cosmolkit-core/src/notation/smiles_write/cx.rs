@@ -85,7 +85,7 @@ pub(super) fn write_cx_smiles_fields(
 
     if fields.contains(CxSmilesFields::BOND_CFG) {
         let include_coords =
-            fields.contains(CxSmilesFields::COORDS) && molecule.coords_2d().is_some();
+            fields.contains(CxSmilesFields::COORDS) && molecule.coordinates_2d().is_some();
         let bond_cfg = write_cx_bond_config_block(
             molecule,
             &scope.atom_order,
@@ -99,7 +99,7 @@ pub(super) fn write_cx_smiles_fields(
         append_to_cx(&ringbond_cistrans, &mut res);
     } else if fields.contains(CxSmilesFields::BOND_ATROPISOMER) {
         let include_coords =
-            fields.contains(CxSmilesFields::COORDS) && molecule.coords_2d().is_some();
+            fields.contains(CxSmilesFields::COORDS) && molecule.coordinates_2d().is_some();
         let bond_cfg = write_cx_bond_config_block(
             molecule,
             &scope.atom_order,
@@ -210,7 +210,7 @@ pub(super) fn quote_atomprop_string(text: &str) -> String {
 }
 
 pub(super) fn write_cx_coordinates(molecule: &Molecule, atom_order: &[AtomId]) -> String {
-    let coords = match molecule.coords_2d() {
+    let coords = match molecule.coordinates_2d() {
         Some(c) => c,
         None => return String::new(),
     };

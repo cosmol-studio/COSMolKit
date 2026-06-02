@@ -2688,7 +2688,7 @@ mod tests {
         assert_eq!(block.idx_corresp[1], None);
         assert_eq!(block.idx_corresp[2], Some(AtomId::new(1)));
         assert_eq!(
-            molecule.conformers_3d()[0].coords(),
+            molecule.conformers_3d()[0].coordinates(),
             &[[1.0, 2.0, 3.0], [7.0, 8.0, 9.0]]
         );
     }
@@ -2704,7 +2704,7 @@ mod tests {
         assert_eq!(molecule.conformers_3d()[0].id(), 0);
         assert!(molecule.conformers_3d()[0].is_3d());
         assert_eq!(
-            molecule.conformers_3d()[0].coords(),
+            molecule.conformers_3d()[0].coordinates(),
             &[[-1.25, 2.5, 0.0], [3.0, 4.5, -6.0]]
         );
     }
@@ -2754,7 +2754,7 @@ mod tests {
             2
         );
         assert_eq!(
-            molecule.conformers_3d()[0].coords(),
+            molecule.conformers_3d()[0].coordinates(),
             &[[1.0, 0.0, 0.0], [3.0, 0.0, 0.0]]
         );
     }
@@ -3077,7 +3077,7 @@ mod tests {
             Some("N.3")
         );
         assert_eq!(
-            record.molecule.conformers_3d()[0].coords()[1],
+            record.molecule.conformers_3d()[0].coordinates()[1],
             [1.0, 0.0, 0.0]
         );
     }

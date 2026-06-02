@@ -89,7 +89,7 @@ Access coordinates as NumPy arrays:
 .. code-block:: python
 
    mol2d = Molecule.from_smiles("CCO").with_2d_coordinates()
-   coords = mol2d.coords_2d()
+   coords = mol2d.coordinates_2d()
 
    print(coords.shape)
 
@@ -108,7 +108,7 @@ Generate a native 3D conformer with ETKDGv3:
    embedded = mol.with_3d_conformer(params)
 
    print(embedded.num_conformers())
-   print(embedded.coords_3d().shape)
+   print(embedded.coordinates_3d().shape)
    print(params.failures)
 
 Generate multiple conformers with RMS pruning:
@@ -137,7 +137,7 @@ Optimize an existing 3D conformer with UFF:
        print(not result.needs_more())
        print(result.status_code())
        print(result.energy())
-       print(optimized.coords_3d().shape)
+       print(optimized.coordinates_3d().shape)
 
    if mol.has_mmff_params():
        result = mol.with_mmff_optimized(mmff_variant="MMFF94", max_iters=200)
