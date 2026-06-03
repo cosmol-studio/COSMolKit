@@ -253,7 +253,8 @@ pub fn read_xyz_from_str(block: &str) -> Result<Molecule, XyzReadError> {
     // RDKit✔️✔️:   if (!comment.empty()) {
     // RDKit✔️✔️:     mol->setProp("_FileComments", comment);
     // RDKit✔️✔️:   }
-    let mut builder = MoleculeBuilder::new();
+    let mut builder =
+        MoleculeBuilder::new().with_topology_trust(crate::TopologyTrust::CoordinateOnly);
     let mut coords = Vec::with_capacity(num_atoms);
     if num_atoms > 0 && !comment.is_empty() {
         builder = builder.with_property("_FileComments", comment);

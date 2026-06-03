@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         println!(
             "optimized first atom: {:?}",
-            result.molecule.conformers_3d()[0].coords()[0]
+            result.molecule.conformers_3d()[0].coordinates()[0]
         );
     }
 
@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("MMFF94 needs_more={}", result.needs_more);
         println!(
             "optimized first atom: {:?}",
-            result.molecule.conformers_3d()[0].coords()[0]
+            result.molecule.conformers_3d()[0].coordinates()[0]
         );
     }
 

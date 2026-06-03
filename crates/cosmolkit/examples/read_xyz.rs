@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("3d conformers: {}", mol.conformers_3d().len());
 
     if let Some(conformer) = mol.conformers_3d().first() {
-        for (idx, (atom, coord)) in mol.atoms().iter().zip(conformer.coords()).enumerate() {
+        for (idx, (atom, coord)) in mol.atoms().iter().zip(conformer.coordinates()).enumerate() {
             println!(
                 "{idx}: Z={} x={:.3} y={:.3} z={:.3}",
                 atom.atomic_number(),

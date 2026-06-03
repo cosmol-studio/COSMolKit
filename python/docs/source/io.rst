@@ -204,7 +204,9 @@ Cartesian coordinates from XYZ text:
 
 XYZ input contains coordinates but no bond table, so the returned molecule has
 atoms and one 3D conformer without inferred bonds. This matches COSMolKit's
-RDKit-aligned ``MolFromXYZBlock`` profile.
+RDKit-aligned ``MolFromXYZBlock`` profile. Because the molecule is
+coordinate-only, topology-dependent operations such as adding hydrogens or
+ETKDG conformer generation require constructing a trusted bond graph first.
 
 Coordinate Arrays
 -----------------

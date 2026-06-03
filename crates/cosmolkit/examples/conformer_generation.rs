@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("single conformers={}", embedded.conformers_3d().len());
     println!(
         "single first atom={:?}",
-        embedded.conformers_3d()[0].coords()[0]
+        embedded.conformers_3d()[0].coordinates()[0]
     );
 
     let mut multi_params = EmbedParameters::etkdg();

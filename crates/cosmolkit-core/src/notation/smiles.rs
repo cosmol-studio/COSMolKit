@@ -3417,6 +3417,7 @@ impl SmilesBuildState {
 
     fn into_molecule(self) -> Result<Molecule, SmilesParseError> {
         self.builder
+            .with_topology_trust(crate::TopologyTrust::TrustedGraph)
             .build()
             .map_err(|error| SmilesParseError::ParseError(error.to_string()))
     }

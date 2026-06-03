@@ -3330,6 +3330,9 @@ XYZ contains atom identities and Cartesian coordinates only. This follows
 COSMolKit core's RDKit-aligned ``MolFromXYZBlock`` behavior: atoms and one 3D
 conformer are parsed, and bonds are not inferred.
 
+The returned molecule is coordinate-only. Topology-dependent operations such as
+adding hydrogens or ETKDG conformer generation require a trusted bond graph.
+
 Parameters
 ----------
 text : str

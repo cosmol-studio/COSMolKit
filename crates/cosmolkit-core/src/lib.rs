@@ -179,18 +179,18 @@ pub use kekulize::KekulizeError;
 pub use mol_pickler::{PickleError, mol_from_binary, mol_to_binary};
 pub use molecule::{
     AtomMapping, BondMapping, Conformer2D, Conformer3D, ConformerStore, CoordinateDimension,
-    Molecule, MoleculeProperties, PropertyStore, SdfPropertyList, SdfPropertyListTarget,
-    SmilesParseError, SmilesWriteError, TopologyMapping,
+    Molecule, MoleculeCapabilities, MoleculeProperties, PropertyStore, SdfPropertyList,
+    SdfPropertyListTarget, SmilesParseError, SmilesWriteError, TopologyMapping, TopologyTrust,
 };
 pub use ops::{
     ASSIGNED_AROMATICITY_SPEC, ASSIGNED_RING_FAMILIES_SPEC, ASSIGNED_RINGS_SPEC,
     ASSIGNED_VALENCE_SPEC, BlockAccess, BlockSet, InvariantCheckSet, MOLECULE_OPS,
     MappingRequirement, MoleculeOpKind, MoleculeOpSpec, OPERATION_INVARIANT_MATRIX, OpOutcome,
     OperationDomain, OperationError, OperationInvariantEntry, OperationTrace, PARITY_MATRIX,
-    ParityMatrixEntry, ParityPolicy, SANITIZE_SPEC, SUPPORT_MATRIX, SupportMatrixEntry,
-    TopologyEditKind, WITH_2D_COORDINATES_SPEC, WITH_3D_CONFORMER_SPEC, WITH_3D_CONFORMERS_SPEC,
-    WITH_HYDROGENS_SPEC, WITH_KEKULIZED_BONDS_SPEC, WITHOUT_HYDROGENS_SPEC,
-    WITHOUT_HYDROGENS_WITH_PARAMS_SPEC,
+    ParityMatrixEntry, ParityPolicy, SANITIZE_SPEC, SUPPORT_MATRIX, SemanticPrecondition,
+    SemanticPreconditionSet, SupportMatrixEntry, TopologyEditKind, WITH_2D_COORDINATES_SPEC,
+    WITH_3D_CONFORMER_SPEC, WITH_3D_CONFORMERS_SPEC, WITH_HYDROGENS_SPEC,
+    WITH_KEKULIZED_BONDS_SPEC, WITHOUT_HYDROGENS_SPEC, WITHOUT_HYDROGENS_WITH_PARAMS_SPEC,
 };
 pub use query::{AtomQueryPredicate, BondQueryPredicate, QueryNode, SmartsParseError};
 pub use rings::{

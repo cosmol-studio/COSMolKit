@@ -7518,8 +7518,10 @@ fn draw_radical_spot_svg(out: &mut String, centre: DVec2, radius: f64, atom_idx:
 /// equivalent: both produce RGBA pixel data from an SVG source.
 fn svg_to_png(svg: &str) -> Result<Vec<u8>, SvgDrawError> {
     let mut opt = usvg::Options::default();
-    opt.fontdb_mut()
-        .load_font_source(usvg::fontdb::Source::Binary(embedded_draw_font_data()));
+    opt.font_family = EMBEDDED_DRAW_FONT_FAMILY.to_owned();
+    let fontdb = opt.fontdb_mut();
+    fontdb.load_font_source(usvg::fontdb::Source::Binary(embedded_draw_font_data()));
+    fontdb.set_sans_serif_family(EMBEDDED_DRAW_FONT_FAMILY);
     let tree =
         usvg::Tree::from_str(svg, &opt).map_err(|err| SvgDrawError::SvgParse(err.to_string()))?;
     let size = tree.size().to_int_size();
@@ -7915,6 +7917,36 @@ mod tests {
         assert!(
             svg.contains("<line") || svg.contains("<path"),
             "SVG should contain bond geometry"
+        );
+    }
+
+    #[test]
+    fn svg_to_png_rasterizes_embedded_font_text() {
+        let svg = "<?xml version='1.0' encoding='iso-8859-1'?>\
+                   <svg version='1.1' baseProfile='full' xmlns='http://www.w3.org/2000/svg' \
+                   width='120px' height='80px' viewBox='0 0 120 80'>\
+                   <rect width='120' height='80' fill='#FFFFFF'/>\
+                   <text x='12' y='54' style='font-size:48px;font-style:normal;\
+                   font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;\
+                   text-anchor:start;fill:#000000'>O</text>\
+                   </svg>";
+
+        let png = svg_to_png(&svg).expect("text png rasterization");
+        let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("decode rendered png");
+        let text_pixels = pixmap
+            .pixels()
+            .iter()
+            .filter(|pixel| {
+                pixel.alpha() == 255
+                    && pixel.red() < 245
+                    && pixel.green() < 245
+                    && pixel.blue() < 245
+            })
+            .count();
+
+        assert!(
+            text_pixels > 0,
+            "embedded-font text should produce non-background pixels"
         );
     }
 

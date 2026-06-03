@@ -2791,7 +2791,10 @@ fn parse_v2000_ctab<R: BufRead>(
     builder
         .add_conformer(Conformer3D::new(0, coords, is_3d))
         .map_err(molecule_build_error)?;
-    let molecule = builder.build().map_err(molecule_build_error)?;
+    let molecule = builder
+        .with_topology_trust(crate::TopologyTrust::TrustedGraph)
+        .build()
+        .map_err(molecule_build_error)?;
 
     Ok(ParsedMolBlock {
         molecule,
@@ -7215,7 +7218,10 @@ fn parse_v3000_ctab<R: BufRead>(
             .add_stereo_group(stereo_group)
             .map_err(molecule_build_error)?;
     }
-    let molecule = builder.build().map_err(molecule_build_error)?;
+    let molecule = builder
+        .with_topology_trust(crate::TopologyTrust::TrustedGraph)
+        .build()
+        .map_err(molecule_build_error)?;
     Ok(ParsedMolBlock {
         molecule,
         header,

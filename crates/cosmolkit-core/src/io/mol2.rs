@@ -2155,6 +2155,7 @@ pub fn mol_from_mol2_data_stream_like_rdkit(
     };
 
     let molecule = builder
+        .with_topology_trust(crate::TopologyTrust::TrustedGraph)
         .build()
         .map_err(|err| Mol2ReadError::Parse(err.to_string()))?;
     Ok(Some(Mol2Record { molecule }))

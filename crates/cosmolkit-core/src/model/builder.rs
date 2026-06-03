@@ -3,7 +3,7 @@
 use crate::{
     Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, BondStereo, Conformer2D, Conformer3D, Molecule,
     MoleculeBuildError, MoleculeProperties, StereoGroup, SubstanceGroup,
-    molecule::{CoordinateBlock, TopologyBlock},
+    molecule::{CoordinateBlock, MoleculeCapabilities, TopologyBlock, TopologyTrust},
 };
 
 /// One-shot molecule construction API.
@@ -28,12 +28,16 @@ pub struct MoleculeBuilder {
     conformers_2d: Vec<Conformer2D>,
     conformers_3d: Vec<Conformer3D>,
     properties: MoleculeProperties,
+    capabilities: MoleculeCapabilities,
 }
 
 impl MoleculeBuilder {
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            capabilities: MoleculeCapabilities::new(TopologyTrust::TrustedGraph),
+            ..Self::default()
+        }
     }
 
     pub fn add_atom(&mut self, spec: AtomSpec) -> AtomId {
@@ -346,6 +350,16 @@ impl MoleculeBuilder {
         self
     }
 
+    #[must_use]
+    pub fn with_topology_trust(mut self, topology_trust: TopologyTrust) -> Self {
+        self.capabilities = self.capabilities.with_topology_trust(topology_trust);
+        self
+    }
+
+    pub(crate) fn set_topology_trust(&mut self, topology_trust: TopologyTrust) {
+        self.capabilities = self.capabilities.with_topology_trust(topology_trust);
+    }
+
     pub fn build(self) -> Result<Molecule, MoleculeBuildError> {
         for bond in &self.bonds {
             validate_bond_spec(self.atoms.len(), &bond_spec_from_bond(bond))?;
@@ -363,7 +377,7 @@ impl MoleculeBuilder {
         } else {
             None
         };
-        Molecule::from_blocks(
+        Molecule::from_blocks_with_capabilities(
             TopologyBlock {
                 atoms: self.atoms,
                 bonds: self.bonds,
@@ -377,6 +391,7 @@ impl MoleculeBuilder {
                 source_coordinate_dim,
             },
             self.properties,
+            self.capabilities,
         )
         .map_err(|err| match err {
             crate::InvariantError::InvalidBondEndpoint {
@@ -420,7 +435,7 @@ impl MoleculeBuilder {
 impl Molecule {
     #[must_use]
     pub fn to_builder(&self) -> MoleculeBuilder {
-        let mut builder = MoleculeBuilder::new();
+        let mut builder = MoleculeBuilder::new().with_topology_trust(self.topology_trust());
 
         for atom in self.atoms() {
             let mut spec = AtomSpec::new(atom.element())

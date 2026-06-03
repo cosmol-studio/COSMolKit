@@ -16,13 +16,13 @@ use crate::{
     CoordinateDimension, Hybridization, Molecule, SGroupAttachPoint, SGroupBondRole, SGroupBracket,
     SGroupBracketStyle, SGroupCState, SGroupConnection, SGroupData, SGroupDisplay, SdfPropertyList,
     SdfPropertyListTarget, StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId,
-    SubstanceGroupKind,
+    SubstanceGroupKind, TopologyTrust,
 };
 
 // ──────────────────────────────────────────────
 // Format version
 // ──────────────────────────────────────────────
-const PICKLE_VERSION: u8 = 1;
+const PICKLE_VERSION: u8 = 2;
 
 // ──────────────────────────────────────────────
 // Error type
@@ -950,6 +950,27 @@ fn read_stereo_group_kind(r: &mut PickleReader) -> Result<StereoGroupKind, Pickl
     }
 }
 
+fn write_topology_trust(w: &mut PickleWriter, trust: TopologyTrust) {
+    let code = match trust {
+        TopologyTrust::Unknown => 0,
+        TopologyTrust::TrustedGraph => 1,
+        TopologyTrust::CoordinateOnly => 2,
+    };
+    w.write_u8(code);
+}
+
+fn read_topology_trust(r: &mut PickleReader) -> Result<TopologyTrust, PickleError> {
+    match r.read_u8()? {
+        0 => Ok(TopologyTrust::Unknown),
+        1 => Ok(TopologyTrust::TrustedGraph),
+        2 => Ok(TopologyTrust::CoordinateOnly),
+        value => Err(PickleError::InvalidEnumValue {
+            value,
+            type_name: "TopologyTrust",
+        }),
+    }
+}
+
 fn write_stereo_group(w: &mut PickleWriter, sg: &StereoGroup) {
     // id
     if let Some(id) = sg.id() {
@@ -1059,6 +1080,9 @@ pub fn mol_to_binary(mol: &Molecule) -> Result<Vec<u8>, PickleError> {
         Some(CoordinateDimension::TwoD) => w.write_u8(1),
         Some(CoordinateDimension::ThreeD) => w.write_u8(2),
     }
+
+    // ── COSMolKit semantic capabilities ──
+    write_topology_trust(&mut w, mol.topology_trust());
 
     // ── Substance Groups ──
     let sgroups = mol.substance_groups();
@@ -1299,6 +1323,12 @@ pub fn mol_from_binary(data: &[u8]) -> Result<Molecule, PickleError> {
         _ => None,
     };
 
+    let topology_trust = if version >= 2 {
+        read_topology_trust(&mut r)?
+    } else {
+        TopologyTrust::TrustedGraph
+    };
+
     // ── Substance Groups ──
     let sgroup_count = r.read_u32()? as usize;
     let mut sgroups = Vec::with_capacity(sgroup_count);
@@ -1521,7 +1551,7 @@ pub fn mol_from_binary(data: &[u8]) -> Result<Molecule, PickleError> {
 
     // ── Build Molecule ──
     // Use MoleculeBuilder to construct the molecule
-    let mut builder = crate::MoleculeBuilder::new();
+    let mut builder = crate::MoleculeBuilder::new().with_topology_trust(topology_trust);
 
     for (_, spec) in &atom_specs {
         let _ = builder.add_atom(spec.clone());

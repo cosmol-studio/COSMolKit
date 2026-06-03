@@ -34,6 +34,7 @@ struct OpFields {
     may_mutate: Vec<Ident>,
     auto_remap: Vec<Ident>,
     derived_effects: Option<DerivedEffectFields>,
+    semantic_preconditions: Vec<Ident>,
     requires_mapping: Option<Ident>,
     allows_noop: Option<LitBool>,
     feature: Option<Path>,
@@ -111,6 +112,9 @@ impl Parse for OpEntry {
                 "auto_remap" => fields.auto_remap = parse_ident_list(&content)?,
                 "derived_effects" => {
                     fields.derived_effects = Some(parse_derived_effect_fields(&content)?)
+                }
+                "semantic_preconditions" => {
+                    fields.semantic_preconditions = parse_ident_list(&content)?
                 }
                 "must_handle" => {
                     return Err(syn::Error::new(
@@ -433,6 +437,8 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
     let access_expr = access_expr(&access)?;
     let may_mutate_expr = block_set_expr(&op.fields.may_mutate)?;
     let auto_remap_expr = block_set_expr(&op.fields.auto_remap)?;
+    let semantic_preconditions_expr =
+        semantic_precondition_set_expr(&op.fields.semantic_preconditions)?;
     let recompute_expr = derived_state_expr(&derived_effects.recompute)?;
     let preserve_expr = derived_state_expr(&derived_effects.preserve)?;
     let invalidate_expr = derived_state_expr(&derived_effects.invalidate)?;
@@ -456,6 +462,7 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
                 #preserve_expr,
                 #invalidate_expr,
             ),
+            semantic_preconditions: #semantic_preconditions_expr,
             requires_mapping: #mapping_expr,
             allows_noop: #allows_noop,
             support: crate::#feature.status,
@@ -503,7 +510,7 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
                     source: crate::UnsupportedFeatureError::from_spec(&crate::#feature),
                 });
             }
-            let mut parts = crate::ops::OpParts::new(self, &crate::ops::#spec_ident);
+            let mut parts = crate::ops::OpParts::new(self, &crate::ops::#spec_ident)?;
             let outcome = #impl_fn(&mut parts, #(#call_args),*)?;
             parts.finish(outcome)
         }
@@ -524,7 +531,7 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
                         source: crate::UnsupportedFeatureError::from_spec(&crate::#feature),
                     });
                 }
-                let mut parts = crate::ops::OpParts::new_in_place(self, &crate::ops::#spec_ident);
+                let mut parts = crate::ops::OpParts::new_in_place(self, &crate::ops::#spec_ident)?;
                 let outcome = match #impl_fn(&mut parts, #(#call_args),*) {
                     Ok(outcome) => outcome,
                     Err(error) => {
@@ -713,6 +720,28 @@ fn derived_state_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> 
             other => Err(syn::Error::new(
                 item.span(),
                 format!("unknown derived state `{other}`"),
+            )),
+        },
+    )
+}
+
+fn semantic_precondition_set_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> {
+    union_expr(
+        items,
+        quote!(crate::ops::SemanticPreconditionSet::NONE),
+        |item| match item.to_string().as_str() {
+            "trusted_bond_topology" | "TrustedBondTopology" => Ok(quote!(
+                crate::ops::SemanticPreconditionSet::TRUSTED_BOND_TOPOLOGY
+            )),
+            "hydrogen_ownership_represented" | "HydrogenOwnershipRepresented" => Ok(quote!(
+                crate::ops::SemanticPreconditionSet::HYDROGEN_OWNERSHIP_REPRESENTED
+            )),
+            "valence_computable" | "ValenceComputable" => Ok(quote!(
+                crate::ops::SemanticPreconditionSet::VALENCE_COMPUTABLE
+            )),
+            other => Err(syn::Error::new(
+                item.span(),
+                format!("unknown semantic precondition `{other}`"),
             )),
         },
     )

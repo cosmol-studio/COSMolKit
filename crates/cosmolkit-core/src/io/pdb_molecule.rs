@@ -148,6 +148,12 @@ pub fn bio_structure_to_rdkit_pdb_molecule(
     }
 
     basic_pdb_cleanup_like_rdkit(&mut builder);
+    let topology_trust = if profile.proximity_bonding || !builder.bonds().is_empty() {
+        crate::TopologyTrust::TrustedGraph
+    } else {
+        crate::TopologyTrust::CoordinateOnly
+    };
+    builder.set_topology_trust(topology_trust);
     let mut molecule = builder.build()?;
     if profile.sanitize {
         molecule = molecule.sanitize()?;

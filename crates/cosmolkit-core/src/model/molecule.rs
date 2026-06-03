@@ -23,6 +23,41 @@ pub enum CoordinateDimension {
     ThreeD,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TopologyTrust {
+    Unknown,
+    TrustedGraph,
+    CoordinateOnly,
+}
+
+impl Default for TopologyTrust {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MoleculeCapabilities {
+    topology_trust: TopologyTrust,
+}
+
+impl MoleculeCapabilities {
+    #[must_use]
+    pub const fn new(topology_trust: TopologyTrust) -> Self {
+        Self { topology_trust }
+    }
+
+    #[must_use]
+    pub const fn topology_trust(self) -> TopologyTrust {
+        self.topology_trust
+    }
+
+    #[must_use]
+    pub const fn with_topology_trust(self, topology_trust: TopologyTrust) -> Self {
+        Self { topology_trust }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Conformer2D {
     id: usize,
@@ -686,6 +721,7 @@ pub struct Molecule {
     coordinates: Arc<CoordinateBlock>,
     properties: Arc<MoleculeProperties>,
     derived_cache: Arc<DerivedCacheBlock>,
+    capabilities: Arc<MoleculeCapabilities>,
 }
 
 impl Molecule {
@@ -711,6 +747,26 @@ impl Molecule {
             coordinates: Arc::new(coordinates),
             properties: Arc::new(properties),
             derived_cache: Arc::new(DerivedCacheBlock::default()),
+            capabilities: Arc::new(MoleculeCapabilities::default()),
+        };
+        enforce_molecule_invariants(&molecule)?;
+        Ok(molecule)
+    }
+
+    pub(crate) fn from_blocks_with_capabilities(
+        mut topology: TopologyBlock,
+        coordinates: CoordinateBlock,
+        properties: MoleculeProperties,
+        capabilities: MoleculeCapabilities,
+    ) -> Result<Self, InvariantError> {
+        topology.adjacency =
+            crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
+        let molecule = Self {
+            topology: Arc::new(topology),
+            coordinates: Arc::new(coordinates),
+            properties: Arc::new(properties),
+            derived_cache: Arc::new(DerivedCacheBlock::default()),
+            capabilities: Arc::new(capabilities),
         };
         enforce_molecule_invariants(&molecule)?;
         Ok(molecule)
@@ -721,6 +777,7 @@ impl Molecule {
         coordinates: CoordinateBlock,
         properties: MoleculeProperties,
         derived_cache: DerivedCacheBlock,
+        capabilities: MoleculeCapabilities,
     ) -> Result<Self, InvariantError> {
         topology.adjacency =
             crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
@@ -729,6 +786,7 @@ impl Molecule {
             coordinates: Arc::new(coordinates),
             properties: Arc::new(properties),
             derived_cache: Arc::new(derived_cache),
+            capabilities: Arc::new(capabilities),
         };
         enforce_molecule_invariants(&molecule)?;
         Ok(molecule)
@@ -788,6 +846,16 @@ impl Molecule {
     }
 
     #[must_use]
+    pub fn capabilities(&self) -> MoleculeCapabilities {
+        *self.capabilities
+    }
+
+    #[must_use]
+    pub fn topology_trust(&self) -> TopologyTrust {
+        self.capabilities.topology_trust()
+    }
+
+    #[must_use]
     pub fn substance_groups(&self) -> &[SubstanceGroup] {
         &self.topology.substance_groups
     }
@@ -816,6 +884,7 @@ impl Molecule {
             coordinates: Arc::clone(&self.coordinates),
             properties: Arc::new(properties),
             derived_cache: Arc::clone(&self.derived_cache),
+            capabilities: Arc::clone(&self.capabilities),
         }
     }
 
@@ -828,6 +897,7 @@ impl Molecule {
             coordinates: Arc::clone(&self.coordinates),
             properties: Arc::new(properties),
             derived_cache: Arc::clone(&self.derived_cache),
+            capabilities: Arc::clone(&self.capabilities),
         }
     }
 
@@ -840,6 +910,7 @@ impl Molecule {
             coordinates: Arc::clone(&self.coordinates),
             properties: Arc::new(properties),
             derived_cache: Arc::clone(&self.derived_cache),
+            capabilities: Arc::clone(&self.capabilities),
         }
     }
 
@@ -1065,6 +1136,10 @@ impl Molecule {
             Ok(block) => block,
             Err(block) => (*block).clone(),
         }
+    }
+
+    pub(crate) fn capabilities_block(&self) -> MoleculeCapabilities {
+        *self.capabilities
     }
 }
 

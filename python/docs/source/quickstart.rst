@@ -111,6 +111,12 @@ Generate a native 3D conformer with ETKDGv3:
    print(embedded.coordinates_3d().shape)
    print(params.failures)
 
+``with_3d_conformer()`` follows RDKit's ETKDG behavior for trusted molecular
+graphs. A molecule without explicit hydrogens is embedded as a heavy-atom-only
+conformer; the operation does not fail and does not automatically add
+hydrogens. Add hydrogens first when you need all-atom geometry, force-field
+optimization, or hydrogen-bond-sensitive coordinates.
+
 Generate multiple conformers with RMS pruning:
 
 .. code-block:: python

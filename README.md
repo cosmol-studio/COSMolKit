@@ -189,6 +189,14 @@ if embedded.has_mmff_params():
     print(mmff.needs_more())
 ```
 
+`with_3d_conformer()` follows RDKit's ETKDG behavior for trusted molecular
+graphs: molecules without explicit hydrogens are embedded as heavy-atom-only
+conformers instead of failing or automatically adding hydrogens. Calling
+`with_hydrogens()` first is recommended for all-atom geometry, force-field
+optimization, and hydrogen-bond-sensitive workflows. Coordinate-only inputs
+such as XYZ blocks do not contain a bond topology and are not valid ETKDG
+inputs until a trusted graph has been constructed.
+
 ## Feature Areas
 
 - Molecular graph construction and inspection

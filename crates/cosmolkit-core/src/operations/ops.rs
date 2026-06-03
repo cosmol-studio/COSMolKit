@@ -19,6 +19,7 @@ use cosmolkit_macros::{mol_op_body, molecule_ops};
 
 use crate::{
     Atom, AtomId, Bond, DerivedState, InvariantError, Molecule, MoleculeProperties, SupportStatus,
+    TopologyTrust,
     invariants::enforce_molecule_invariants,
     molecule::{CoordinateBlock, DerivedCacheBlock, TopologyBlock, TopologyMapping},
 };
@@ -266,6 +267,43 @@ pub enum MappingRequirement {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SemanticPrecondition {
+    TrustedBondTopology,
+    HydrogenOwnershipRepresented,
+    ValenceComputable,
+}
+
+impl fmt::Display for SemanticPrecondition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TrustedBondTopology => f.write_str("trusted_bond_topology"),
+            Self::HydrogenOwnershipRepresented => f.write_str("hydrogen_ownership_represented"),
+            Self::ValenceComputable => f.write_str("valence_computable"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SemanticPreconditionSet(u8);
+
+impl SemanticPreconditionSet {
+    pub const NONE: Self = Self(0);
+    pub const TRUSTED_BOND_TOPOLOGY: Self = Self(1 << 0);
+    pub const HYDROGEN_OWNERSHIP_REPRESENTED: Self = Self(1 << 1);
+    pub const VALENCE_COMPUTABLE: Self = Self(1 << 2);
+
+    #[must_use]
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    #[must_use]
+    pub const fn contains(self, other: Self) -> bool {
+        (self.0 & other.0) == other.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MoleculeOpSpec {
     pub method: &'static str,
     pub impl_fn: &'static str,
@@ -276,6 +314,7 @@ pub struct MoleculeOpSpec {
     pub may_mutate: BlockSet,
     pub auto_remap: BlockSet,
     pub derived_effects: DerivedEffects,
+    pub semantic_preconditions: SemanticPreconditionSet,
     pub requires_mapping: MappingRequirement,
     pub allows_noop: bool,
     pub support: SupportStatus,
@@ -312,6 +351,12 @@ pub enum OperationError {
     #[error("{operation}: invalid input: {message}")]
     InvalidInput {
         operation: &'static MoleculeOpSpec,
+        message: &'static str,
+    },
+    #[error("{operation}: semantic precondition `{requirement}` failed: {message}")]
+    Precondition {
+        operation: &'static MoleculeOpSpec,
+        requirement: SemanticPrecondition,
         message: &'static str,
     },
     #[error("{operation}: chemistry error: {message}")]
@@ -582,8 +627,12 @@ pub struct OpParts<'a> {
 }
 
 impl<'a> OpParts<'a> {
-    pub(crate) fn new(source: &'a Molecule, spec: &'static MoleculeOpSpec) -> Self {
-        Self {
+    pub(crate) fn new(
+        source: &'a Molecule,
+        spec: &'static MoleculeOpSpec,
+    ) -> Result<Self, OperationError> {
+        validate_semantic_preconditions(source, spec)?;
+        Ok(Self {
             spec,
             #[cfg(feature = "op-contracts")]
             contract_source: ContractSource::Borrowed(source),
@@ -608,15 +657,19 @@ impl<'a> OpParts<'a> {
                 updated_cache: DerivedState::NONE,
                 outcome: None,
             },
-        }
+        })
     }
 
-    pub(crate) fn new_in_place(target: &'a mut Molecule, spec: &'static MoleculeOpSpec) -> Self {
+    pub(crate) fn new_in_place(
+        target: &'a mut Molecule,
+        spec: &'static MoleculeOpSpec,
+    ) -> Result<Self, OperationError> {
+        validate_semantic_preconditions(target, spec)?;
         #[cfg(feature = "op-contracts")]
         let contract_source =
             ContractSource::Snapshot(ContractSourceSnapshot::from_molecule(target));
         let working = std::mem::take(target);
-        Self {
+        Ok(Self {
             spec,
             #[cfg(feature = "op-contracts")]
             contract_source,
@@ -641,7 +694,7 @@ impl<'a> OpParts<'a> {
                 updated_cache: DerivedState::NONE,
                 outcome: None,
             },
-        }
+        })
     }
 
     // Agent guardrail:
@@ -685,6 +738,7 @@ impl<'a> OpParts<'a> {
             coordinates,
             properties,
             self.working.derived_cache().clone(),
+            self.working.capabilities_block(),
         )
         .map_err(|failure| OperationError::InvariantViolation {
             operation: self.spec,
@@ -1328,6 +1382,59 @@ impl<'a> OpParts<'a> {
     }
 }
 
+fn validate_semantic_preconditions(
+    molecule: &Molecule,
+    spec: &'static MoleculeOpSpec,
+) -> Result<(), OperationError> {
+    let preconditions = spec.semantic_preconditions;
+    if preconditions.contains(SemanticPreconditionSet::TRUSTED_BOND_TOPOLOGY)
+        && molecule.num_atoms() != 0
+        && molecule.topology_trust() != TopologyTrust::TrustedGraph
+    {
+        return Err(OperationError::Precondition {
+            operation: spec,
+            requirement: SemanticPrecondition::TrustedBondTopology,
+            message: "operation requires a molecule with trusted bond topology",
+        });
+    }
+    if preconditions.contains(SemanticPreconditionSet::HYDROGEN_OWNERSHIP_REPRESENTED)
+        && !hydrogen_ownership_is_represented(molecule)
+    {
+        return Err(OperationError::Precondition {
+            operation: spec,
+            requirement: SemanticPrecondition::HydrogenOwnershipRepresented,
+            message: "explicit hydrogen atoms must be connected to their owning heavy atoms",
+        });
+    }
+    Ok(())
+}
+
+fn hydrogen_ownership_is_represented(molecule: &Molecule) -> bool {
+    if !molecule
+        .atoms()
+        .iter()
+        .any(|atom| atom.atomic_number() != 1)
+    {
+        return true;
+    }
+    molecule
+        .atoms()
+        .iter()
+        .filter(|atom| atom.atomic_number() == 1)
+        .all(|atom| {
+            molecule
+                .topology_block()
+                .adjacency
+                .neighbors_of(atom.id().index())
+                .iter()
+                .any(|neighbor| {
+                    molecule
+                        .atom(AtomId::new(neighbor.atom_index))
+                        .is_some_and(|neighbor_atom| neighbor_atom.atomic_number() != 1)
+                })
+        })
+}
+
 molecule_ops! {
     op with_hydrogens(params: crate::hydrogens::AddHsParams) {
         method: with_hydrogens_with_params,
@@ -1348,6 +1455,11 @@ molecule_ops! {
             preserve: [rings, ring_families],
             invalidate: [valence, aromaticity, stereo, drawing, fingerprint],
         },
+        semantic_preconditions: [
+            trusted_bond_topology,
+            hydrogen_ownership_represented,
+            valence_computable,
+        ],
         requires_mapping: required,
         allows_noop: false,
         feature: HYDROGENS_FEATURE,
@@ -1602,6 +1714,7 @@ molecule_ops! {
         access: { read: [topology], write: [coordinates] },
         may_mutate: [coordinates],
         auto_remap: [],
+        semantic_preconditions: [trusted_bond_topology],
         derived_effects: {
             recompute: [],
             preserve: [],
@@ -1630,6 +1743,7 @@ molecule_ops! {
         access: { read: [topology], write: [coordinates] },
         may_mutate: [coordinates],
         auto_remap: [],
+        semantic_preconditions: [trusted_bond_topology],
         derived_effects: {
             recompute: [],
             preserve: [],
@@ -1655,6 +1769,7 @@ molecule_ops! {
         access: { read: [topology], write: [coordinates] },
         may_mutate: [coordinates],
         auto_remap: [],
+        semantic_preconditions: [trusted_bond_topology],
         derived_effects: {
             recompute: [],
             preserve: [],
@@ -1968,6 +2083,7 @@ mod tests {
         access: BlockAccess::new(BlockSet::NONE, BlockSet::DERIVED_CACHE),
         may_mutate: BlockSet::DERIVED_CACHE,
         auto_remap: BlockSet::NONE,
+        semantic_preconditions: SemanticPreconditionSet::NONE,
         derived_effects: DerivedEffects::new(
             DerivedState::NONE,                               // recompute
             DerivedState::NONE,                               // preserve
@@ -1989,6 +2105,7 @@ mod tests {
         access: BlockAccess::new(BlockSet::NONE, BlockSet::DERIVED_CACHE),
         may_mutate: BlockSet::DERIVED_CACHE,
         auto_remap: BlockSet::NONE,
+        semantic_preconditions: SemanticPreconditionSet::NONE,
         derived_effects: DerivedEffects::new(
             DerivedState::VALENCE, // recompute
             DerivedState::NONE,    // preserve
@@ -2010,6 +2127,7 @@ mod tests {
         access: BlockAccess::new(BlockSet::TOPOLOGY, BlockSet::TOPOLOGY),
         may_mutate: BlockSet::TOPOLOGY,
         auto_remap: BlockSet::NONE,
+        semantic_preconditions: SemanticPreconditionSet::NONE,
         derived_effects: DerivedEffects::NONE,
         requires_mapping: MappingRequirement::None,
         allows_noop: true,
@@ -2031,7 +2149,7 @@ mod tests {
     #[test]
     fn begin_topology_mut_rejects_second_begin() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC);
+        let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC).unwrap();
         let _topology = parts
             .begin_topology_mut()
             .expect("first topology begin should succeed");
@@ -2048,7 +2166,7 @@ mod tests {
     #[test]
     fn begin_topology_mut_rejects_second_begin_before_commit() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC);
+        let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC).unwrap();
         let _topology = parts
             .begin_topology_mut()
             .expect("first topology begin should succeed");
@@ -2065,7 +2183,7 @@ mod tests {
     #[test]
     fn begin_access_rejects_overlapping_read_and_write_blocks() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &TEST_OVERLAPPING_ACCESS_SPEC);
+        let mut parts = OpParts::new(&molecule, &TEST_OVERLAPPING_ACCESS_SPEC).unwrap();
         let err = match parts.begin_topology_mut() {
             Ok(_) => panic!("overlapping read/write access must be rejected"),
             Err(err) => err,
@@ -2606,7 +2724,7 @@ mod tests {
             }],
             ..crate::hydrogens::AddHsAssignment::default()
         };
-        let mut parts = OpParts::new(&molecule, &WITH_HYDROGENS_SPEC);
+        let mut parts = OpParts::new(&molecule, &WITH_HYDROGENS_SPEC).unwrap();
         let mut topology = parts.begin_topology_mut().unwrap();
         let mut coordinates = parts.begin_coordinates_mut().unwrap();
         let mut properties = parts.begin_properties_mut().unwrap();
@@ -2675,7 +2793,7 @@ mod tests {
             }],
             ..crate::hydrogens::AddHsAssignment::default()
         };
-        let mut parts = OpParts::new(&molecule, &WITH_HYDROGENS_SPEC);
+        let mut parts = OpParts::new(&molecule, &WITH_HYDROGENS_SPEC).unwrap();
         let mut topology = parts.begin_topology_mut().unwrap();
         let mut coordinates = parts.begin_coordinates_mut().unwrap();
         let mut properties = parts.begin_properties_mut().unwrap();
@@ -4267,7 +4385,7 @@ mod tests {
     #[test]
     fn op_parts_rejects_permission_violation_under_strict_checks() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC);
+        let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC).unwrap();
         let err = parts
             .begin_coordinates_mut()
             .expect_err("coordinate begin should be rejected");
@@ -4279,7 +4397,7 @@ mod tests {
     #[test]
     fn needs_update_clears_matching_derived_cache_entries() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &SANITIZE_SPEC);
+        let mut parts = OpParts::new(&molecule, &SANITIZE_SPEC).unwrap();
         parts.set_valence_cache(crate::ValenceAssignment {
             explicit_valence: Vec::new(),
             implicit_hydrogens: Vec::new(),
@@ -4302,7 +4420,7 @@ mod tests {
     #[test]
     fn needs_update_accepts_cache_updates_without_prior_clear() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &SANITIZE_SPEC);
+        let mut parts = OpParts::new(&molecule, &SANITIZE_SPEC).unwrap();
 
         parts.set_rings_cache(crate::RingInfo::new(crate::RingFindType::SymmSssr, 0, 0));
         parts.set_valence_cache(crate::ValenceAssignment {
@@ -4332,7 +4450,7 @@ mod tests {
     #[test]
     fn finish_rejects_missing_needs_update_handling() {
         let molecule = crate::Molecule::new();
-        let parts = OpParts::new(&molecule, &TEST_NEEDS_VALENCE_UPDATE_SPEC);
+        let parts = OpParts::new(&molecule, &TEST_NEEDS_VALENCE_UPDATE_SPEC).unwrap();
 
         let err = parts
             .finish(OpOutcome::NoOp {
@@ -4353,7 +4471,7 @@ mod tests {
     #[test]
     fn finish_rejects_unrelated_cache_clear_for_needs_update() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &TEST_NEEDS_VALENCE_UPDATE_SPEC);
+        let mut parts = OpParts::new(&molecule, &TEST_NEEDS_VALENCE_UPDATE_SPEC).unwrap();
 
         parts.clear_cache(DerivedState::RINGS);
         let err = parts
@@ -4373,7 +4491,7 @@ mod tests {
     #[test]
     fn finish_rejects_declared_preservation_without_proof() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &WITH_HYDROGENS_SPEC);
+        let mut parts = OpParts::new(&molecule, &WITH_HYDROGENS_SPEC).unwrap();
         let topology = parts.begin_topology_mut().unwrap();
         let coordinates = parts.begin_coordinates_mut().unwrap();
         let properties = parts.begin_properties_mut().unwrap();
@@ -4406,7 +4524,7 @@ mod tests {
         let mut builder = crate::MoleculeBuilder::new();
         builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let molecule = builder.build().unwrap();
-        let mut parts = OpParts::new(&molecule, &WITH_HYDROGENS_SPEC);
+        let mut parts = OpParts::new(&molecule, &WITH_HYDROGENS_SPEC).unwrap();
         let mut topology = parts.begin_topology_mut().unwrap();
         let coordinates = parts.begin_coordinates_mut().unwrap();
         let properties = parts.begin_properties_mut().unwrap();
@@ -4443,7 +4561,7 @@ mod tests {
     #[test]
     fn finish_accepts_update_path_for_recompute() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &TEST_RECOMPUTE_VALENCE_SPEC);
+        let mut parts = OpParts::new(&molecule, &TEST_RECOMPUTE_VALENCE_SPEC).unwrap();
 
         parts.set_valence_cache(crate::ValenceAssignment {
             explicit_valence: Vec::new(),
@@ -4468,7 +4586,7 @@ mod tests {
     #[should_panic(expected = "cache clear permission violation")]
     fn clear_cache_panics_without_derived_cache_permission_when_cache_is_touched() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &WITH_2D_COORDINATES_SPEC);
+        let mut parts = OpParts::new(&molecule, &WITH_2D_COORDINATES_SPEC).unwrap();
         parts.clear_cache(DerivedState::VALENCE);
     }
 
@@ -4477,13 +4595,13 @@ mod tests {
     fn op_contract_checks_are_disabled_without_feature() {
         let molecule = crate::Molecule::new();
 
-        let mut unauthorized = OpParts::new(&molecule, &WITH_2D_COORDINATES_SPEC);
+        let mut unauthorized = OpParts::new(&molecule, &WITH_2D_COORDINATES_SPEC).unwrap();
         unauthorized.clear_cache(DerivedState::VALENCE);
         unauthorized
             .finish(OpOutcome::Changed)
             .expect("without op-contracts, cache permission checks are disabled");
 
-        let missing_update = OpParts::new(&molecule, &TEST_NEEDS_VALENCE_UPDATE_SPEC);
+        let missing_update = OpParts::new(&molecule, &TEST_NEEDS_VALENCE_UPDATE_SPEC).unwrap();
         missing_update
             .finish(OpOutcome::Changed)
             .expect("without op-contracts, needs_update checks are disabled");
@@ -4495,7 +4613,7 @@ mod tests {
     fn set_valence_cache_panics_without_requires_or_recompute() {
         // WITH_2D_COORDINATES_SPEC has no requires/recompute — set_valence_cache must panic
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &WITH_2D_COORDINATES_SPEC);
+        let mut parts = OpParts::new(&molecule, &WITH_2D_COORDINATES_SPEC).unwrap();
         parts.set_valence_cache(crate::ValenceAssignment {
             explicit_valence: Vec::new(),
             implicit_hydrogens: Vec::new(),
@@ -4509,14 +4627,14 @@ mod tests {
         // TEST_RECOMPUTE_VALENCE_SPEC has VALENCE in recompute (not invalidate)
         // RINGS is in neither invalidate nor recompute — clear_cache(DerivedState::RINGS) must panic
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &TEST_RECOMPUTE_VALENCE_SPEC);
+        let mut parts = OpParts::new(&molecule, &TEST_RECOMPUTE_VALENCE_SPEC).unwrap();
         parts.clear_cache(DerivedState::RINGS);
     }
 
     #[test]
     fn op_parts_cow_mutation_changes_result_without_changing_source() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC);
+        let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC).unwrap();
 
         let mut topology = parts.begin_topology_mut().unwrap();
         topology.atoms.push(crate::Atom::from_spec(
@@ -4577,7 +4695,7 @@ mod tests {
         let molecule = builder.build().unwrap();
         let original = molecule.clone();
 
-        let mut parts = OpParts::new(&molecule, &WITHOUT_HYDROGENS_SPEC);
+        let mut parts = OpParts::new(&molecule, &WITHOUT_HYDROGENS_SPEC).unwrap();
         let mut topology = parts.begin_topology_mut().unwrap();
         let mut coordinates = parts.begin_coordinates_mut().unwrap();
         let mut properties = parts.begin_properties_mut().unwrap();
@@ -4644,7 +4762,7 @@ mod tests {
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let mut parts = OpParts::new(&molecule, &WITHOUT_HYDROGENS_SPEC);
+        let mut parts = OpParts::new(&molecule, &WITHOUT_HYDROGENS_SPEC).unwrap();
         let mut topology = parts.begin_topology_mut().unwrap();
         let mut coordinates = parts.begin_coordinates_mut().unwrap();
         let mut properties = parts.begin_properties_mut().unwrap();
@@ -4719,7 +4837,7 @@ mod tests {
     #[test]
     fn compacting_topology_edit_record_is_rejected_for_weak_operations() {
         let molecule = crate::Molecule::new();
-        let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC);
+        let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC).unwrap();
         let err = parts
             .record_topology_edit(TopologyEditKind::Compacting)
             .expect_err("weak operations must not record compacting topology edits");
