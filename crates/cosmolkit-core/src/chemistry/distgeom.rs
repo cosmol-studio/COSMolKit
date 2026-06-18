@@ -502,6 +502,188 @@ fn embedder_generate_initial_coords<R: RdkitDoubleRng>(
     Ok(got_coords)
 }
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum EmbedderTestStage {
+    InitialCoords,
+    FirstMinimized,
+    FourthDimensionCleaned,
+}
+
+#[cfg(test)]
+pub(crate) fn embedder_stage_coords_for_test(
+    mol: &Molecule,
+    params: &mut EmbedParameters,
+    stage: EmbedderTestStage,
+) -> Result<Molecule, DgBoundsError> {
+    let (mol_frags, frag_mapping) =
+        molecule_fragments_for_embed(mol, params.embed_fragments_separately)?;
+    let coord_map_storage = params.coord_map.clone();
+    let mut coord_map = coord_map_storage.as_ref();
+    if mol_frags.len() > 1 && coord_map.is_some() {
+        coord_map = None;
+    }
+
+    let mut new_conformers = Vec::new();
+
+    for (frag_idx, piece) in mol_frags.iter().enumerate() {
+        let n_atoms = piece.num_atoms();
+        let mut etkdg_details = CrystalFFDetails::default();
+        embedder_init_etkdg(piece, params, &mut etkdg_details)?;
+
+        let mut mmat;
+        if params.bounds_mat.is_none() || mol_frags.len() > 1 {
+            mmat = BoundsMatrix::new(n_atoms);
+            if !embedder_setup_initial_bounds_matrix(
+                piece,
+                &mut mmat,
+                coord_map,
+                params,
+                &mut etkdg_details,
+            )? {
+                continue;
+            }
+        } else {
+            let bounds = params.bounds_mat.as_ref().expect("checked above");
+            if bounds.num_rows() != n_atoms {
+                return Err(DgBoundsError::GenerationFailed(
+                    "size of boundsMat provided does not match the number of atoms in the molecule."
+                        .to_string(),
+                ));
+            }
+            collect_bonds_and_angles(piece, &mut etkdg_details.bonds, &mut etkdg_details.angles);
+            mmat = (**bounds).clone();
+        }
+
+        let piece_storage;
+        let piece = if piece
+            .derived_cache()
+            .rings
+            .as_ref()
+            .is_some_and(crate::RingInfo::is_initialized)
+        {
+            piece
+        } else {
+            let mut ringed_piece = piece.clone();
+            let ring_info = ring_info_for_distgeom(piece)?.into_owned();
+            ringed_piece.derived_cache_mut().rings = Some(ring_info);
+            piece_storage = ringed_piece;
+            &piece_storage
+        };
+
+        let mut chiral_centers = Vec::new();
+        let mut tetrahedral_carbons = Vec::new();
+        embedder_find_chiral_sets(
+            piece,
+            &mut chiral_centers,
+            &mut tetrahedral_carbons,
+            coord_map,
+        );
+
+        let mut double_bond_ends = Vec::new();
+        let mut stereo_double_bonds = Vec::new();
+        embedder_find_double_bonds(
+            piece,
+            &mut double_bond_ends,
+            &mut stereo_double_bonds,
+            coord_map,
+        );
+
+        let four_d = params.use_random_coords || !chiral_centers.is_empty();
+        let dim = if four_d { 4 } else { 3 };
+        let embed_args = EmbedArgs {
+            mmat: &mmat,
+            chiral_centers: &chiral_centers,
+            tetrahedral_carbons: &tetrahedral_carbons,
+            etkdg_details: Some(&etkdg_details),
+            double_bond_ends: Some(&double_bond_ends),
+            stereo_double_bonds: &stereo_double_bonds,
+        };
+        let mut positions = None;
+        let max_iterations = if params.max_iterations == 0 {
+            10 * n_atoms as u32
+        } else {
+            params.max_iterations
+        };
+        for iter in 0..max_iterations {
+            let mut attempt_positions = vec![vec![0.0; dim]; n_atoms];
+            let mut dist_mat = SymmMatrix::new(n_atoms);
+            let mut rng =
+                RdkitDistgeomMinStdRand::new_from_embed_points_seed(rdkit_embedder_conformer_seed(
+                    params.random_seed,
+                    iter as usize,
+                    params.enable_sequential_random_seeds,
+                ));
+            if !embedder_generate_initial_coords(
+                &mut attempt_positions,
+                &embed_args,
+                params,
+                &mut dist_mat,
+                &mut rng,
+            )? {
+                continue;
+            }
+            if matches!(stage, EmbedderTestStage::InitialCoords) {
+                positions = Some(attempt_positions);
+                break;
+            }
+
+            if !embedder_first_minimization(&mut attempt_positions, &embed_args, params) {
+                continue;
+            }
+            if matches!(stage, EmbedderTestStage::FirstMinimized) {
+                positions = Some(attempt_positions);
+                break;
+            }
+
+            if !embedder_check_tetrahedral_centers(&attempt_positions, &embed_args, params) {
+                continue;
+            }
+            if params.enforce_chirality
+                && !embed_args.chiral_centers.is_empty()
+                && !embedder_check_chiral_centers(&attempt_positions, &embed_args, params)
+            {
+                continue;
+            }
+            if (!embed_args.chiral_centers.is_empty() || params.use_random_coords)
+                && !embedder_minimize_fourth_dimension(
+                    &mut attempt_positions,
+                    &embed_args,
+                    params,
+                    None,
+                )
+            {
+                continue;
+            }
+            positions = Some(attempt_positions);
+            break;
+        }
+        let Some(positions) = positions else {
+            continue;
+        };
+
+        let mut conf = Conformer3D::new(frag_idx, vec![[0.0; 3]; n_atoms], true);
+        for i in 0..n_atoms {
+            conf.coordinates_mut()[i] = [positions[i][0], positions[i][1], positions[i][2]];
+        }
+        new_conformers.push((frag_idx, conf, frag_mapping.clone()));
+    }
+
+    let mut full_conformers = Vec::with_capacity(new_conformers.len());
+    for (frag_idx, conformer, mapping) in new_conformers {
+        let mut full = Conformer3D::new(frag_idx, vec![[0.0; 3]; mol.num_atoms()], true);
+        let mut frag_atom_idx = 0usize;
+        for i in 0..mol.num_atoms() {
+            if mapping.get(i).copied().unwrap_or_default() == frag_idx {
+                full.coordinates_mut()[i] = conformer.coordinates()[frag_atom_idx];
+                frag_atom_idx += 1;
+            }
+        }
+        full_conformers.push(full);
+    }
+    embedder_add_conformers(mol, full_conformers, params.clear_confs).map(|(mol, _)| mol)
+}
+
 fn copy_forcefield_positions_to_point_vectors(field: &ForceField, positions: &mut [Vec<f64>]) {
     for (point, field_point) in positions.iter_mut().zip(field.positions()) {
         for ci in 0..point.len() {
@@ -2486,6 +2668,28 @@ fn alignments_align_points_ssr(
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION RDNumeric::Alignments::AlignPoints
     ssr
+}
+
+#[cfg(test)]
+pub(crate) fn aligned_rmsd_for_test(ref_points: &[[f64; 3]], probe_points: &[[f64; 3]]) -> f64 {
+    assert_eq!(
+        ref_points.len(),
+        probe_points.len(),
+        "Mismatch in number of points"
+    );
+    assert!(
+        !ref_points.is_empty(),
+        "alignment requires at least one point"
+    );
+    let ref_points: Vec<_> = ref_points
+        .iter()
+        .map(|point| ForceFieldVec3::new(point[0], point[1], point[2]))
+        .collect();
+    let probe_points: Vec<_> = probe_points
+        .iter()
+        .map(|point| ForceFieldVec3::new(point[0], point[1], point[2]))
+        .collect();
+    (alignments_align_points_ssr(&ref_points, &probe_points) / ref_points.len() as f64).sqrt()
 }
 
 fn embedder_is_conf_far_from_rest(

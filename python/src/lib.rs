@@ -21,6 +21,8 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 #[cfg(not(feature = "stubgen"))]
 use pyo3_stub_gen_derive::remove_gen_stub;
 
+mod confseq_py;
+
 fn parse_coordinate_mode(value: Option<&str>) -> PyResult<cosmolkit_core::SdfCoordinateMode> {
     let Some(value) = value else {
         return Ok(cosmolkit_core::SdfCoordinateMode::Preserve);
@@ -957,8 +959,8 @@ Create molecules with ``Molecule.from_smiles()``, transform them with value
 methods such as ``with_2d_coordinates()``, then export strings, arrays, or
 depiction files.
 "#]
-struct Molecule {
-    inner: cosmolkit_core::Molecule,
+pub(crate) struct Molecule {
+    pub(crate) inner: cosmolkit_core::Molecule,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
@@ -6606,6 +6608,7 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(expand_protein_one_letter, m)?)?;
     m.add_function(wrap_pyfunction!(expand_one_letter_sequence, m)?)?;
     m.add_function(wrap_pyfunction!(expand_protein_one_letter_string, m)?)?;
+    confseq_py::add_confseq_module(m)?;
     Ok(())
 }
 

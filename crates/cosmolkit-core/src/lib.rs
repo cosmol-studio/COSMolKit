@@ -65,6 +65,7 @@
 
 pub mod bio;
 pub mod chemistry;
+pub mod confseq;
 pub mod io;
 pub mod model;
 pub mod notation;
@@ -148,6 +149,11 @@ pub use chemistry::forcefield::{
     TorsionConstraintContrib, calc_torsion_energy, calc_torsion_energy_m6,
     compute_dihedral_from_flat, compute_dihedral_from_points, compute_dihedral_from_position_vec,
     normalize_angle_deg,
+};
+pub use confseq::{
+    ConfSeqBaseConformerError, ConfSeqBatchDecodeResult, ConfSeqDecodeError, ConfSeqDecodeOptions,
+    ConfSeqTemplateBackend, decode_confseq, decode_confseq_batch,
+    decode_confseq_batch_with_options, decode_confseq_with_options,
 };
 pub use coordinates::With2DCoordinatesParams;
 pub use derived::DerivedState;

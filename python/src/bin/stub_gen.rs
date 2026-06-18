@@ -26,9 +26,35 @@ fn main() -> Result<()> {
     text = expose_batch_getitem_overloads(text);
     text = expose_sdf_dataset_getitem_overloads(text);
     text = expose_module_functions(text);
+    text = expose_confseq_module(text);
     fs::write(pyi_path, text)?;
 
     Ok(())
+}
+
+fn expose_confseq_module(mut text: String) -> String {
+    let export = "    \"confseq\",\n";
+    if !text.contains(export) {
+        text = text.replace(
+            "    \"__version__\",\n",
+            &format!("    \"__version__\",\n{export}"),
+        );
+    }
+
+    if !text.contains("class _ConfSeqModule(typing.Protocol):") {
+        let declarations = r#"class _ConfSeqModule(typing.Protocol):
+    def decode(self, in_smiles: builtins.str, confseq: builtins.str, *, optimize_with_uff: builtins.bool = ...) -> Molecule: ...
+    def decode_batch(self, in_smiles_list: builtins.list[builtins.str], confseq_list: builtins.list[builtins.str], *, errors: builtins.str = ..., n_jobs: typing.Optional[builtins.int] = ..., optimize_with_uff: builtins.bool = ...) -> builtins.list[typing.Optional[Molecule]]: ...
+
+confseq: _ConfSeqModule
+
+"#;
+        text = text.replace(
+            "__version__: builtins.str\n",
+            &format!("{declarations}__version__: builtins.str\n"),
+        );
+    }
+    text
 }
 
 fn expose_batch_error_mode_inputs(text: String) -> String {
