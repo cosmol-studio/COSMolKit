@@ -8328,6 +8328,21 @@ enum Path14Kind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DgPath14Kind {
+    Cis,
+    Trans,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct DgPath14Prior {
+    pub atoms: (usize, usize, usize, usize),
+    pub kind: DgPath14Kind,
+    pub lower_bound: f64,
+    pub upper_bound: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DistType {
     Dist12,
     Dist13,
@@ -11118,6 +11133,80 @@ fn set_topol_bounds_with_outputs(
     )?;
     collect_bonds_and_angles(mol, bonds, angles);
     Ok(())
+}
+
+pub(crate) fn dg_path14_priors(mol: &Molecule) -> Result<Vec<DgPath14Prior>, DgBoundsError> {
+    let nb = mol.num_bonds();
+    let na = mol.num_atoms();
+    if na == 0 {
+        return Err(DgBoundsError::GenerationFailed(
+            "molecule has no atoms".to_string(),
+        ));
+    }
+    let max_num_bonds = (u64::MAX as f64).cbrt() as usize;
+    if nb >= max_num_bonds {
+        return Err(DgBoundsError::GenerationFailed(
+            "Too many bonds in the molecule, cannot compute 1-4 bounds".to_string(),
+        ));
+    }
+
+    let mut mmat = BoundsMatrix::new(na);
+    let mut accum_data = ComputedData::new(na, nb);
+    let dist_matrix = flatten_topological_distances_matrix(mol);
+    let ring_info = ring_info_for_distgeom(mol)?;
+    set_12_bounds(mol, &mut mmat, &mut accum_data)?;
+    set_13_bounds(mol, &mut mmat, &mut accum_data, ring_info.as_ref());
+    set_14_bounds(
+        mol,
+        &mut mmat,
+        &mut accum_data,
+        &dist_matrix,
+        false,
+        true,
+        ring_info.as_ref(),
+    );
+
+    let mut priors = Vec::with_capacity(accum_data.paths14.len());
+    for path in accum_data.paths14 {
+        let Some((i, j)) = bond_atoms_for_path14_outer(mol, path.bid1, path.bid2) else {
+            continue;
+        };
+        let Some((k, l)) = bond_atoms_for_path14_outer(mol, path.bid3, path.bid2) else {
+            continue;
+        };
+        let kind = match path.kind {
+            Path14Kind::Cis => DgPath14Kind::Cis,
+            Path14Kind::Trans => DgPath14Kind::Trans,
+            Path14Kind::Other => DgPath14Kind::Other,
+        };
+        priors.push(DgPath14Prior {
+            atoms: (i, j, k, l),
+            kind,
+            lower_bound: mmat.get_lower(i, l),
+            upper_bound: mmat.get_upper(i, l),
+        });
+    }
+    Ok(priors)
+}
+
+fn bond_atoms_for_path14_outer(
+    mol: &Molecule,
+    outer_bond_idx: usize,
+    middle_bond_idx: usize,
+) -> Option<(usize, usize)> {
+    let outer = mol.bonds().get(outer_bond_idx)?;
+    let middle = mol.bonds().get(middle_bond_idx)?;
+    let outer_begin = outer.begin().index();
+    let outer_end = outer.end().index();
+    let middle_begin = middle.begin().index();
+    let middle_end = middle.end().index();
+    if outer_begin == middle_begin || outer_begin == middle_end {
+        Some((outer_end, outer_begin))
+    } else if outer_end == middle_begin || outer_end == middle_end {
+        Some((outer_begin, outer_end))
+    } else {
+        None
+    }
 }
 
 // ──────────────────────────────────────────────

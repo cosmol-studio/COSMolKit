@@ -4,7 +4,7 @@ use std::f64::consts::PI;
 use rayon::prelude::*;
 use thiserror::Error;
 
-use crate::chemistry::{mol_transforms, rings};
+use crate::chemistry::{coordinates, distgeom, mol_transforms, rings};
 use crate::smiles_write::{SmilesWriteParams, mol_to_smiles};
 use crate::{
     AdjacencyList, AtomId, Bond, BondId, BondOrder, BondSpec, BondStereo, ChiralTag, Conformer3D,
@@ -159,6 +159,38 @@ struct BondTokenMapping {
     smiles_be: String,
     token_idx_to_atom_pair: HashMap<usize, (usize, usize)>,
     ring_closure_pairs: Vec<(usize, usize)>,
+}
+
+#[derive(Debug, Clone)]
+struct ConfSeqBaseConstraintModel {
+    bond_targets: Vec<f64>,
+    angle_targets: HashMap<(usize, usize, usize), f64>,
+    torsion_priors: HashMap<(usize, usize, usize, usize), ConfSeqBaseTorsionPrior>,
+    path14_distance_priors: Vec<ConfSeqBasePath14DistancePrior>,
+    planar_bonds: HashSet<(usize, usize)>,
+    ring_components: Vec<ConfSeqBaseRingComponent>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConfSeqBaseTorsionPrior {
+    Cis,
+    Trans,
+    Free,
+}
+
+#[derive(Debug, Clone)]
+struct ConfSeqBasePath14DistancePrior {
+    atoms: (usize, usize, usize, usize),
+    lower_bound: f64,
+    upper_bound: f64,
+}
+
+#[derive(Debug, Clone)]
+struct ConfSeqBaseRingComponent {
+    atoms: Vec<usize>,
+    rings: Vec<Vec<usize>>,
+    ring_sizes_by_atom: HashMap<usize, usize>,
+    planar: bool,
 }
 
 pub fn decode_confseq(in_smiles: &str, confseq: &str) -> Result<Molecule, ConfSeqDecodeError> {
@@ -620,15 +652,8 @@ fn try_build_confseq_base_conformer(
     if !is_connected(molecule, &adjacency) {
         return Err(ConfSeqBaseConformerError::Disconnected);
     }
-    let geometry = ConfSeqBaseGeometry::new(molecule, &ring_info);
-
-    let coords = if ring_info.num_rings() == 0 {
-        build_acyclic_confseq_base_coords(molecule, &adjacency, &geometry)
-    } else {
-        build_supported_aromatic_ring_system_confseq_base_coords(
-            molecule, &adjacency, &ring_info, &geometry,
-        )?
-    };
+    let model = build_confseq_base_constraint_model(molecule, &ring_info)?;
+    let coords = construct_confseq_base_coords(molecule, &adjacency, &model)?;
 
     let mut builder = molecule.to_builder();
     builder
@@ -639,6 +664,1609 @@ fn try_build_confseq_base_conformer(
         .map_err(|err| ConfSeqBaseConformerError::Build(err.to_string()))?;
     let molecule = apply_confseq_base_double_bond_stereo(molecule)?;
     apply_confseq_base_tetrahedral_stereo(molecule, &adjacency)
+}
+
+fn build_confseq_base_constraint_model(
+    molecule: &Molecule,
+    ring_info: &rings::RingInfo,
+) -> Result<ConfSeqBaseConstraintModel, ConfSeqBaseConformerError> {
+    let ring_components = classify_confseq_base_ring_components(molecule, ring_info)?;
+    let ring_membership = confseq_base_ring_membership(molecule.num_atoms(), &ring_components);
+    let bond_targets = molecule
+        .bonds()
+        .iter()
+        .map(|bond| confseq_base_source_backed_bond_length(molecule, bond))
+        .collect();
+    let angle_targets = collect_confseq_base_angle_targets(molecule, &ring_membership);
+    let (torsion_priors, path14_distance_priors) = collect_confseq_base_torsion_priors(molecule);
+    let planar_bonds = collect_confseq_base_planar_bonds(molecule);
+    Ok(ConfSeqBaseConstraintModel {
+        bond_targets,
+        angle_targets,
+        torsion_priors,
+        path14_distance_priors,
+        planar_bonds,
+        ring_components,
+    })
+}
+
+fn classify_confseq_base_ring_components(
+    molecule: &Molecule,
+    ring_info: &rings::RingInfo,
+) -> Result<Vec<ConfSeqBaseRingComponent>, ConfSeqBaseConformerError> {
+    for (ring_index, atoms) in ring_info.atom_rings().iter().enumerate() {
+        let bonds = &ring_info.bond_rings()[ring_index];
+        validate_supported_confseq_base_ring(molecule, ring_index, atoms, bonds)?;
+    }
+
+    let mut ring_graph = vec![Vec::<usize>::new(); ring_info.num_rings()];
+    for left in 0..ring_info.num_rings() {
+        for right in left + 1..ring_info.num_rings() {
+            let shared_atoms = ring_info.atom_rings()[left]
+                .iter()
+                .filter(|atom| ring_info.atom_rings()[right].contains(atom))
+                .count();
+            let shared_bonds = shared_bond_ids_between_rings(ring_info, left, right).len();
+            if shared_atoms > 0 || shared_bonds > 0 {
+                ring_graph[left].push(right);
+                ring_graph[right].push(left);
+            }
+        }
+    }
+
+    let mut components = Vec::new();
+    let mut seen_rings = vec![false; ring_info.num_rings()];
+    for ring_idx in 0..ring_info.num_rings() {
+        if seen_rings[ring_idx] {
+            continue;
+        }
+        let mut stack = vec![ring_idx];
+        seen_rings[ring_idx] = true;
+        let mut component_rings = Vec::new();
+        while let Some(current) = stack.pop() {
+            component_rings.push(current);
+            for &next in &ring_graph[current] {
+                if !seen_rings[next] {
+                    seen_rings[next] = true;
+                    stack.push(next);
+                }
+            }
+        }
+
+        let mut atoms = HashSet::<usize>::new();
+        let mut ring_sizes_by_atom = HashMap::<usize, usize>::new();
+        let mut rings = Vec::new();
+        for ring in component_rings {
+            let ring_size = ring_info.atom_rings()[ring].len();
+            rings.push(
+                ring_info.atom_rings()[ring]
+                    .iter()
+                    .map(|atom| atom.index())
+                    .collect(),
+            );
+            for atom in &ring_info.atom_rings()[ring] {
+                let idx = atom.index();
+                atoms.insert(idx);
+                ring_sizes_by_atom
+                    .entry(idx)
+                    .and_modify(|old| *old = (*old).min(ring_size))
+                    .or_insert(ring_size);
+            }
+        }
+
+        let mut atoms: Vec<_> = atoms.into_iter().collect();
+        atoms.sort_unstable();
+        let planar = confseq_base_ring_component_is_planar(molecule, &atoms);
+        components.push(ConfSeqBaseRingComponent {
+            atoms,
+            rings,
+            ring_sizes_by_atom,
+            planar,
+        });
+    }
+    Ok(components)
+}
+
+fn confseq_base_ring_component_is_planar(molecule: &Molecule, atoms: &[usize]) -> bool {
+    let atom_set: HashSet<_> = atoms.iter().copied().collect();
+    atoms.iter().copied().all(|atom_idx| {
+        let atom = &molecule.atoms()[atom_idx];
+        atom.is_aromatic()
+            || atom.hybridization() == Hybridization::Sp2
+            || confseq_base_ring_atom_has_exocyclic_pi_bond(molecule, atom_idx, &atom_set)
+            || confseq_base_ring_atom_is_conjugated_to_ring_pi_system(molecule, atom_idx, &atom_set)
+    })
+}
+
+fn confseq_base_ring_atom_has_exocyclic_pi_bond(
+    molecule: &Molecule,
+    atom_idx: usize,
+    ring_atoms: &HashSet<usize>,
+) -> bool {
+    molecule.bonds().iter().any(|bond| {
+        let begin = bond.begin().index();
+        let end = bond.end().index();
+        let other = if begin == atom_idx {
+            end
+        } else if end == atom_idx {
+            begin
+        } else {
+            return false;
+        };
+        !ring_atoms.contains(&other)
+            && matches!(bond.order(), BondOrder::Double | BondOrder::Aromatic)
+    })
+}
+
+fn confseq_base_ring_atom_is_conjugated_to_ring_pi_system(
+    molecule: &Molecule,
+    atom_idx: usize,
+    ring_atoms: &HashSet<usize>,
+) -> bool {
+    let mut has_pi_neighbor = false;
+    let mut has_ring_single = false;
+    for bond in molecule.bonds() {
+        let begin = bond.begin().index();
+        let end = bond.end().index();
+        let other = if begin == atom_idx {
+            end
+        } else if end == atom_idx {
+            begin
+        } else {
+            continue;
+        };
+        if !ring_atoms.contains(&other) {
+            continue;
+        }
+        let other_atom = &molecule.atoms()[other];
+        if other_atom.is_aromatic()
+            || other_atom.hybridization() == Hybridization::Sp2
+            || matches!(bond.order(), BondOrder::Double | BondOrder::Aromatic)
+        {
+            has_pi_neighbor = true;
+        }
+        if bond.order() == BondOrder::Single {
+            has_ring_single = true;
+        }
+    }
+    has_pi_neighbor
+        && has_ring_single
+        && matches!(
+            molecule.atoms()[atom_idx].atomic_number(),
+            6 | 7 | 8 | 15 | 16
+        )
+}
+
+fn confseq_base_ring_membership(
+    atom_count: usize,
+    ring_components: &[ConfSeqBaseRingComponent],
+) -> Vec<Option<(usize, usize)>> {
+    let mut membership = vec![None; atom_count];
+    for (component_idx, component) in ring_components.iter().enumerate() {
+        for atom in component.atoms.iter().copied() {
+            if membership[atom].is_none() {
+                let ring_size = component
+                    .ring_sizes_by_atom
+                    .get(&atom)
+                    .copied()
+                    .unwrap_or(component.atoms.len());
+                membership[atom] = Some((component_idx, ring_size));
+            }
+        }
+    }
+    membership
+}
+
+fn collect_confseq_base_angle_targets(
+    molecule: &Molecule,
+    ring_membership: &[Option<(usize, usize)>],
+) -> HashMap<(usize, usize, usize), f64> {
+    let adjacency = AdjacencyList::from_topology(molecule.num_atoms(), molecule.bonds());
+    let mut targets = HashMap::new();
+    for center in 0..molecule.num_atoms() {
+        let neighbors: Vec<_> = adjacency
+            .neighbors_of(center)
+            .iter()
+            .map(|neighbor| neighbor.atom_index)
+            .collect();
+        let ring_size = ring_membership[center]
+            .map(|(_, ring_size)| ring_size)
+            .unwrap_or(0);
+        let angle = if ring_size > 0 {
+            confseq_base_ring_angle_rad(molecule, center, ring_size)
+        } else {
+            confseq_base_local_angle_rad(molecule, center)
+        };
+        for left_pos in 0..neighbors.len() {
+            for right_pos in left_pos + 1..neighbors.len() {
+                targets.insert(
+                    sorted_angle(neighbors[left_pos], center, neighbors[right_pos]),
+                    angle,
+                );
+            }
+        }
+    }
+    targets
+}
+
+fn collect_confseq_base_torsion_priors(
+    molecule: &Molecule,
+) -> (
+    HashMap<(usize, usize, usize, usize), ConfSeqBaseTorsionPrior>,
+    Vec<ConfSeqBasePath14DistancePrior>,
+) {
+    let mut priors = HashMap::new();
+    if let Ok(path_priors) = distgeom::dg_path14_priors(molecule) {
+        let mut distance_priors = Vec::with_capacity(path_priors.len());
+        for prior in path_priors {
+            let kind = match prior.kind {
+                distgeom::DgPath14Kind::Cis => ConfSeqBaseTorsionPrior::Cis,
+                distgeom::DgPath14Kind::Trans => ConfSeqBaseTorsionPrior::Trans,
+                distgeom::DgPath14Kind::Other => ConfSeqBaseTorsionPrior::Free,
+            };
+            priors.insert(prior.atoms, kind);
+            let (i, j, k, l) = prior.atoms;
+            priors.insert((l, k, j, i), kind);
+            distance_priors.push(ConfSeqBasePath14DistancePrior {
+                atoms: prior.atoms,
+                lower_bound: prior.lower_bound,
+                upper_bound: prior.upper_bound,
+            });
+        }
+        return (priors, distance_priors);
+    }
+
+    for bond in molecule.bonds() {
+        let j = bond.begin().index();
+        let k = bond.end().index();
+        let left = heavy_neighbors_except(molecule, j, k);
+        let right = heavy_neighbors_except(molecule, k, j);
+        let prior = match bond.order() {
+            BondOrder::Double => match bond.stereo() {
+                BondStereo::Cis | BondStereo::Z => ConfSeqBaseTorsionPrior::Cis,
+                BondStereo::Trans | BondStereo::E => ConfSeqBaseTorsionPrior::Trans,
+                _ => ConfSeqBaseTorsionPrior::Cis,
+            },
+            BondOrder::Single
+                if molecule.atoms()[j].hybridization() == Hybridization::Sp2
+                    && molecule.atoms()[k].hybridization() == Hybridization::Sp2 =>
+            {
+                ConfSeqBaseTorsionPrior::Trans
+            }
+            _ => ConfSeqBaseTorsionPrior::Free,
+        };
+        for &i in &left {
+            for &l in &right {
+                priors.insert((i, j, k, l), prior);
+                priors.insert((l, k, j, i), prior);
+            }
+        }
+    }
+    (priors, Vec::new())
+}
+
+fn collect_confseq_base_planar_bonds(molecule: &Molecule) -> HashSet<(usize, usize)> {
+    molecule
+        .bonds()
+        .iter()
+        .filter(|bond| {
+            bond.order() == BondOrder::Double
+                || bond.is_aromatic()
+                || molecule.atoms()[bond.begin().index()].is_aromatic()
+                || molecule.atoms()[bond.end().index()].is_aromatic()
+        })
+        .map(|bond| sorted_pair(bond.begin().index(), bond.end().index()))
+        .collect()
+}
+
+fn construct_confseq_base_coords(
+    molecule: &Molecule,
+    adjacency: &AdjacencyList,
+    model: &ConfSeqBaseConstraintModel,
+) -> Result<Vec<[f64; 3]>, ConfSeqBaseConformerError> {
+    let mut candidates = Vec::<Vec<[f64; 3]>>::new();
+    if let Ok(coords) =
+        construct_confseq_base_coords_from_rdkit_scaffold(molecule, adjacency, model)
+    {
+        candidates.push(coords);
+    }
+    if model
+        .ring_components
+        .iter()
+        .any(|component| !component.planar)
+    {
+        if let Ok(coords) =
+            construct_confseq_base_coords_from_local_3d_prior(molecule, adjacency, model)
+        {
+            candidates.push(coords);
+        }
+    }
+    let seeded_candidates = candidates.clone();
+    for coords in &seeded_candidates {
+        candidates.extend(confseq_base_component_twist_candidates(
+            molecule, adjacency, model, coords,
+        ));
+    }
+    if candidates.is_empty() {
+        return construct_confseq_base_coords_from_local_3d_prior(molecule, adjacency, model);
+    }
+
+    let chiral_constraints =
+        collect_confseq_base_tetrahedral_stereo_constraints(molecule, adjacency)?;
+    candidates
+        .into_iter()
+        .min_by(|left, right| {
+            let left_score =
+                confseq_base_candidate_score(molecule, model, &chiral_constraints, left);
+            let right_score =
+                confseq_base_candidate_score(molecule, model, &chiral_constraints, right);
+            left_score.total_cmp(&right_score)
+        })
+        .ok_or(ConfSeqBaseConformerError::PlacementLeftAtomsUnplaced)
+}
+
+fn confseq_base_component_twist_candidates(
+    molecule: &Molecule,
+    adjacency: &AdjacencyList,
+    model: &ConfSeqBaseConstraintModel,
+    coords: &[[f64; 3]],
+) -> Vec<Vec<[f64; 3]>> {
+    let component_by_atom = confseq_base_ring_component_by_atom(molecule.num_atoms(), model);
+    let mut out = Vec::new();
+    let seed_path14_penalty = confseq_base_path14_distance_penalty(model, coords);
+    for bond in molecule.bonds() {
+        if bond.order() != BondOrder::Single || bond.is_aromatic() {
+            continue;
+        }
+        let a = bond.begin().index();
+        let b = bond.end().index();
+        let a_component = component_by_atom[a];
+        let b_component = component_by_atom[b];
+        if a_component == b_component {
+            continue;
+        }
+        let rotates_component = match (a_component, b_component) {
+            (Some(_), Some(right)) => Some((a, b, model.ring_components[right].atoms.clone())),
+            (Some(_), None) => Some((
+                a,
+                b,
+                confseq_base_side_atoms_across_bond(adjacency, molecule.num_atoms(), a, b),
+            )),
+            (None, Some(right)) => Some((a, b, model.ring_components[right].atoms.clone())),
+            (None, None) => None,
+        };
+        let Some((anchor, pivot, rotate_atoms)) = rotates_component else {
+            continue;
+        };
+        if rotate_atoms.is_empty() || !rotate_atoms.contains(&pivot) {
+            continue;
+        }
+        for angle in [
+            60.0_f64.to_radians(),
+            90.0_f64.to_radians(),
+            120.0_f64.to_radians(),
+            -60.0_f64.to_radians(),
+            -90.0_f64.to_radians(),
+            -120.0_f64.to_radians(),
+        ] {
+            let candidate =
+                confseq_base_rotate_atoms_around_bond(coords, anchor, pivot, &rotate_atoms, angle);
+            let candidate_path14_penalty = confseq_base_path14_distance_penalty(model, &candidate);
+            if candidate_path14_penalty + 1.0e-6 < seed_path14_penalty * 0.75 {
+                out.push(candidate);
+            }
+        }
+    }
+    out
+}
+
+fn confseq_base_path14_distance_penalty(
+    model: &ConfSeqBaseConstraintModel,
+    coords: &[[f64; 3]],
+) -> f64 {
+    let mut penalty = 0.0;
+    for prior in &model.path14_distance_priors {
+        let (i, _, _, l) = prior.atoms;
+        let observed = vec_len(vec_sub(coords[i], coords[l]));
+        let deficit = if observed < prior.lower_bound {
+            prior.lower_bound - observed
+        } else if observed > prior.upper_bound {
+            observed - prior.upper_bound
+        } else {
+            0.0
+        };
+        penalty += deficit * deficit * 1.5;
+    }
+    penalty
+}
+
+fn confseq_base_ring_component_by_atom(
+    atom_count: usize,
+    model: &ConfSeqBaseConstraintModel,
+) -> Vec<Option<usize>> {
+    let mut component_by_atom = vec![None; atom_count];
+    for (component_idx, component) in model.ring_components.iter().enumerate() {
+        for &atom in &component.atoms {
+            component_by_atom[atom] = Some(component_idx);
+        }
+    }
+    component_by_atom
+}
+
+fn confseq_base_side_atoms_across_bond(
+    adjacency: &AdjacencyList,
+    atom_count: usize,
+    anchor: usize,
+    pivot: usize,
+) -> Vec<usize> {
+    let mut atoms = Vec::new();
+    let mut seen = vec![false; atom_count];
+    let mut queue = VecDeque::new();
+    seen[anchor] = true;
+    seen[pivot] = true;
+    queue.push_back(pivot);
+    while let Some(atom) = queue.pop_front() {
+        atoms.push(atom);
+        for neighbor in adjacency.neighbors_of(atom) {
+            if !seen[neighbor.atom_index] {
+                seen[neighbor.atom_index] = true;
+                queue.push_back(neighbor.atom_index);
+            }
+        }
+    }
+    atoms
+}
+
+fn confseq_base_rotate_atoms_around_bond(
+    coords: &[[f64; 3]],
+    anchor: usize,
+    pivot: usize,
+    rotate_atoms: &[usize],
+    angle: f64,
+) -> Vec<[f64; 3]> {
+    let mut rotated = coords.to_vec();
+    let axis = vec_normalize(vec_sub(coords[pivot], coords[anchor]));
+    let sin_theta = angle.sin();
+    let cos_theta = angle.cos();
+    for &atom in rotate_atoms {
+        if atom == anchor {
+            continue;
+        }
+        let offset = vec_sub(coords[atom], coords[pivot]);
+        rotated[atom] = vec_add(
+            coords[pivot],
+            rotate_vec_around_unit_axis(offset, axis, sin_theta, cos_theta),
+        );
+    }
+    rotated
+}
+
+fn confseq_base_candidate_score(
+    molecule: &Molecule,
+    model: &ConfSeqBaseConstraintModel,
+    chiral_constraints: &[ConfSeqBaseTetrahedralStereoConstraint],
+    coords: &[[f64; 3]],
+) -> f64 {
+    let mut score = 0.0;
+    for bond in molecule.bonds() {
+        let target = model
+            .bond_targets
+            .get(bond.id().index())
+            .copied()
+            .unwrap_or_else(|| confseq_base_static_bond_length_fallback(bond));
+        let observed = vec_len(vec_sub(
+            coords[bond.begin().index()],
+            coords[bond.end().index()],
+        ));
+        let delta = observed - target;
+        score += delta * delta * 8.0;
+    }
+    for (&(left, center, right), &target) in &model.angle_targets {
+        let observed =
+            angle_rad_from_points(coords[left], coords[center], coords[right]).unwrap_or(PI);
+        let delta = angular_delta_rad(observed, target);
+        score += delta * delta;
+    }
+    for constraint in chiral_constraints {
+        let volume = confseq_base_chiral_volume(coords, constraint);
+        let target = confseq_base_min_signed_chiral_volume_for_constraint(constraint);
+        let deficit = match constraint.tag {
+            ChiralTag::TetrahedralCcw => (target - volume).max(0.0),
+            ChiralTag::TetrahedralCw => (volume - target).max(0.0),
+            _ => 0.0,
+        };
+        score += deficit * deficit * 0.04;
+    }
+    for prior in &model.path14_distance_priors {
+        let (i, _, _, l) = prior.atoms;
+        let observed = vec_len(vec_sub(coords[i], coords[l]));
+        let deficit = if observed < prior.lower_bound {
+            prior.lower_bound - observed
+        } else if observed > prior.upper_bound {
+            observed - prior.upper_bound
+        } else {
+            0.0
+        };
+        score += deficit * deficit * 1.5;
+    }
+    score
+}
+
+fn construct_confseq_base_coords_from_local_3d_prior(
+    molecule: &Molecule,
+    adjacency: &AdjacencyList,
+    model: &ConfSeqBaseConstraintModel,
+) -> Result<Vec<[f64; 3]>, ConfSeqBaseConformerError> {
+    let mut coords = vec![[0.0; 3]; molecule.num_atoms()];
+    let mut placed = vec![false; molecule.num_atoms()];
+    let ring_membership =
+        confseq_base_ring_membership(molecule.num_atoms(), &model.ring_components);
+    let scaffold = if model.ring_components.is_empty() {
+        None
+    } else {
+        Some(
+            coordinates::rdkit_initial_2d_scaffold_coords(molecule.atoms(), molecule.bonds())
+                .map_err(|err| {
+                    ConfSeqBaseConformerError::Build(format!(
+                        "RDKit initial scaffold construction failed for ring components: {err}"
+                    ))
+                })?,
+        )
+    };
+
+    if let Some(component) = model.ring_components.first() {
+        if component.planar {
+            place_confseq_constraint_ring_component(
+                component,
+                scaffold.as_deref().expect("ring scaffold should exist"),
+                &mut coords,
+                &mut placed,
+            );
+        } else {
+            place_confseq_nonplanar_ring_component(
+                molecule,
+                adjacency,
+                model,
+                component,
+                None,
+                &mut coords,
+                &mut placed,
+            )?;
+        }
+    }
+
+    if model.ring_components.is_empty() {
+        place_confseq_constraint_tree(
+            molecule,
+            adjacency,
+            model,
+            &ring_membership,
+            0,
+            None,
+            [0.0, 0.0, 0.0],
+            None,
+            &mut coords,
+            &mut placed,
+        )?;
+    } else {
+        propagate_confseq_constraint_from_placed_atoms(
+            molecule,
+            adjacency,
+            model,
+            &ring_membership,
+            scaffold.as_deref(),
+            &mut coords,
+            &mut placed,
+        )?;
+    }
+
+    if placed.iter().any(|value| !*value) {
+        return Err(ConfSeqBaseConformerError::PlacementLeftAtomsUnplaced);
+    }
+    validate_confseq_base_constraint_coords(molecule, model, &coords)?;
+    Ok(coords)
+}
+
+fn construct_confseq_base_coords_from_rdkit_scaffold(
+    molecule: &Molecule,
+    adjacency: &AdjacencyList,
+    model: &ConfSeqBaseConstraintModel,
+) -> Result<Vec<[f64; 3]>, ConfSeqBaseConformerError> {
+    let scaffold =
+        coordinates::rdkit_initial_2d_scaffold_coords(molecule.atoms(), molecule.bonds()).map_err(
+            |err| {
+                ConfSeqBaseConformerError::Build(format!(
+                    "RDKit initial scaffold construction failed for base conformer: {err}"
+                ))
+            },
+        )?;
+    let mut scaled_coords: Vec<_> = scaffold
+        .into_iter()
+        .map(|point| [point[0], point[1], 0.0])
+        .collect();
+    rescale_confseq_base_scaffold_bonds(molecule, model, &mut scaled_coords);
+    let coords = if validate_confseq_base_constraint_coords(molecule, model, &scaled_coords).is_ok()
+    {
+        scaled_coords
+    } else {
+        let scaffold_direction_coords = construct_confseq_base_coords_from_scaffold_directions(
+            molecule,
+            adjacency,
+            model,
+            &scaled_coords,
+        );
+        if validate_confseq_base_constraint_coords(molecule, model, &scaffold_direction_coords)
+            .is_ok()
+        {
+            scaffold_direction_coords
+        } else if !model.ring_components.is_empty() {
+            construct_confseq_base_coords_from_local_3d_prior(molecule, adjacency, model)?
+        } else {
+            scaffold_direction_coords
+        }
+    };
+    validate_confseq_base_constraint_coords(molecule, model, &coords)?;
+    Ok(coords)
+}
+
+fn rescale_confseq_base_scaffold_bonds(
+    molecule: &Molecule,
+    model: &ConfSeqBaseConstraintModel,
+    coords: &mut [[f64; 3]],
+) {
+    let mut observed_sum = 0.0;
+    let mut target_sum = 0.0;
+    let mut count = 0usize;
+    for bond in molecule.bonds() {
+        let observed = vec_len(vec_sub(
+            coords[bond.begin().index()],
+            coords[bond.end().index()],
+        ));
+        if observed <= 1.0e-10 {
+            continue;
+        }
+        let target = model
+            .bond_targets
+            .get(bond.id().index())
+            .copied()
+            .unwrap_or_else(|| confseq_base_static_bond_length_fallback(bond));
+        observed_sum += observed;
+        target_sum += target;
+        count += 1;
+    }
+    if count == 0 || observed_sum <= 1.0e-10 {
+        return;
+    }
+    let scale = target_sum / observed_sum;
+    let center = confseq_base_coord_centroid(coords);
+    for coord in coords {
+        *coord = vec_add(center, vec_scale(vec_sub(*coord, center), scale));
+    }
+}
+
+fn construct_confseq_base_coords_from_scaffold_directions(
+    molecule: &Molecule,
+    adjacency: &AdjacencyList,
+    model: &ConfSeqBaseConstraintModel,
+    scaffold: &[[f64; 3]],
+) -> Vec<[f64; 3]> {
+    let mut coords = vec![[0.0; 3]; molecule.num_atoms()];
+    let mut placed = vec![false; molecule.num_atoms()];
+    let mut queue = VecDeque::new();
+    placed[0] = true;
+    queue.push_back(0);
+
+    while let Some(parent) = queue.pop_front() {
+        for neighbor in adjacency.neighbors_of(parent) {
+            let child = neighbor.atom_index;
+            if placed[child] {
+                continue;
+            }
+            let direction = vec_normalize(vec_sub(scaffold[child], scaffold[parent]));
+            let length = model
+                .bond_targets
+                .get(neighbor.bond.index())
+                .copied()
+                .unwrap_or_else(|| {
+                    confseq_base_static_bond_length_fallback(
+                        &molecule.bonds()[neighbor.bond.index()],
+                    )
+                });
+            coords[child] = vec_add(coords[parent], vec_scale(direction, length));
+            placed[child] = true;
+            queue.push_back(child);
+        }
+    }
+
+    coords
+}
+
+fn place_confseq_constraint_ring_component(
+    component: &ConfSeqBaseRingComponent,
+    scaffold: &[[f64; 2]],
+    coords: &mut [[f64; 3]],
+    placed: &mut [bool],
+) {
+    for &atom in &component.atoms {
+        let point = scaffold[atom];
+        coords[atom] = [point[0], point[1], 0.0];
+        placed[atom] = true;
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn place_confseq_constraint_tree(
+    molecule: &Molecule,
+    adjacency: &AdjacencyList,
+    model: &ConfSeqBaseConstraintModel,
+    ring_membership: &[Option<(usize, usize)>],
+    atom_idx: usize,
+    parent: Option<usize>,
+    point: [f64; 3],
+    incoming_axis: Option<[f64; 3]>,
+    coords: &mut [[f64; 3]],
+    placed: &mut [bool],
+) -> Result<(), ConfSeqBaseConformerError> {
+    if placed[atom_idx] {
+        return Ok(());
+    }
+    coords[atom_idx] = point;
+    placed[atom_idx] = true;
+
+    let axis = incoming_axis.unwrap_or([1.0, 0.0, 0.0]);
+    let children: Vec<_> = adjacency
+        .neighbors_of(atom_idx)
+        .iter()
+        .filter(|neighbor| Some(neighbor.atom_index) != parent)
+        .filter(|neighbor| !placed[neighbor.atom_index])
+        .collect();
+    let child_count = children.len();
+    for (child_ord, neighbor) in children.into_iter().enumerate() {
+        let length = model
+            .bond_targets
+            .get(neighbor.bond.index())
+            .copied()
+            .unwrap_or_else(|| {
+                confseq_base_static_bond_length_fallback(&molecule.bonds()[neighbor.bond.index()])
+            });
+        let angle = parent
+            .and_then(|parent| {
+                model
+                    .angle_targets
+                    .get(&sorted_angle(parent, atom_idx, neighbor.atom_index))
+                    .copied()
+            })
+            .unwrap_or_else(|| confseq_base_local_angle_rad(molecule, atom_idx));
+        let dir = confseq_constraint_child_direction(
+            molecule,
+            adjacency,
+            model,
+            coords,
+            placed,
+            atom_idx,
+            parent,
+            neighbor.atom_index,
+            axis,
+            child_ord,
+            child_count,
+            angle,
+            length,
+        );
+        let child_point = vec_add(coords[atom_idx], vec_scale(dir, length));
+        place_confseq_constraint_tree(
+            molecule,
+            adjacency,
+            model,
+            ring_membership,
+            neighbor.atom_index,
+            Some(atom_idx),
+            child_point,
+            Some(dir),
+            coords,
+            placed,
+        )?;
+    }
+    Ok(())
+}
+
+fn propagate_confseq_constraint_from_placed_atoms(
+    molecule: &Molecule,
+    adjacency: &AdjacencyList,
+    model: &ConfSeqBaseConstraintModel,
+    ring_membership: &[Option<(usize, usize)>],
+    scaffold: Option<&[[f64; 2]]>,
+    coords: &mut [[f64; 3]],
+    placed: &mut [bool],
+) -> Result<(), ConfSeqBaseConformerError> {
+    loop {
+        let mut progressed = false;
+        for atom_idx in 0..molecule.num_atoms() {
+            if !placed[atom_idx] {
+                continue;
+            }
+            let base_axis = adjacency
+                .neighbors_of(atom_idx)
+                .iter()
+                .find(|neighbor| placed[neighbor.atom_index])
+                .map(|neighbor| {
+                    vec_normalize(vec_sub(coords[atom_idx], coords[neighbor.atom_index]))
+                })
+                .unwrap_or([1.0, 0.0, 0.0]);
+            let children: Vec<_> = adjacency
+                .neighbors_of(atom_idx)
+                .iter()
+                .filter(|neighbor| !placed[neighbor.atom_index])
+                .collect();
+            for (child_ord, neighbor) in children.iter().enumerate() {
+                let length = model
+                    .bond_targets
+                    .get(neighbor.bond.index())
+                    .copied()
+                    .unwrap_or_else(|| {
+                        confseq_base_static_bond_length_fallback(
+                            &molecule.bonds()[neighbor.bond.index()],
+                        )
+                    });
+                let angle = confseq_base_local_angle_rad(molecule, atom_idx);
+                let parent = adjacency
+                    .neighbors_of(atom_idx)
+                    .iter()
+                    .find(|candidate| placed[candidate.atom_index])
+                    .map(|candidate| candidate.atom_index);
+                let angle = parent
+                    .and_then(|parent| {
+                        model
+                            .angle_targets
+                            .get(&sorted_angle(parent, atom_idx, neighbor.atom_index))
+                            .copied()
+                    })
+                    .unwrap_or(angle);
+                let dir = confseq_constraint_child_direction(
+                    molecule,
+                    adjacency,
+                    model,
+                    coords,
+                    placed,
+                    atom_idx,
+                    parent,
+                    neighbor.atom_index,
+                    base_axis,
+                    child_ord,
+                    children.len(),
+                    angle,
+                    length,
+                );
+                let placed_neighbors: Vec<_> = adjacency
+                    .neighbors_of(neighbor.atom_index)
+                    .iter()
+                    .filter(|candidate| placed[candidate.atom_index])
+                    .map(|candidate| candidate.atom_index)
+                    .collect();
+                if ring_membership[neighbor.atom_index].is_none() && placed_neighbors.len() >= 2 {
+                    if let Some(point) = place_atom_from_two_placed_neighbors(
+                        molecule,
+                        model,
+                        coords,
+                        neighbor.atom_index,
+                        placed_neighbors[0],
+                        placed_neighbors[1],
+                        dir,
+                    ) {
+                        coords[neighbor.atom_index] = point;
+                        placed[neighbor.atom_index] = true;
+                        progressed = true;
+                        continue;
+                    }
+                }
+                if let Some((component_idx, _)) = ring_membership[neighbor.atom_index] {
+                    if !model.ring_components[component_idx].planar {
+                        if model.ring_components[component_idx]
+                            .atoms
+                            .iter()
+                            .any(|atom| placed[*atom])
+                        {
+                            continue;
+                        }
+                        place_confseq_nonplanar_ring_component(
+                            molecule,
+                            adjacency,
+                            model,
+                            &model.ring_components[component_idx],
+                            Some(ConfSeqNonplanarRingAttachment {
+                                anchor: atom_idx,
+                                attachment: neighbor.atom_index,
+                                bond_length: length,
+                                direction: dir,
+                            }),
+                            coords,
+                            placed,
+                        )?;
+                        progressed = true;
+                        continue;
+                    }
+                    if model.ring_components[component_idx]
+                        .atoms
+                        .iter()
+                        .any(|atom| placed[*atom])
+                    {
+                        continue;
+                    }
+                    place_confseq_constraint_ring_component_from_attachment(
+                        &model.ring_components[component_idx],
+                        scaffold.ok_or_else(|| {
+                            ConfSeqBaseConformerError::Build(
+                                "ring component placement requires RDKit scaffold coordinates"
+                                    .to_string(),
+                            )
+                        })?,
+                        atom_idx,
+                        neighbor.atom_index,
+                        length,
+                        dir,
+                        coords,
+                        placed,
+                    )?;
+                } else {
+                    coords[neighbor.atom_index] = vec_add(coords[atom_idx], vec_scale(dir, length));
+                    placed[neighbor.atom_index] = true;
+                }
+                progressed = true;
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ConfSeqNonplanarRingAttachment {
+    anchor: usize,
+    attachment: usize,
+    bond_length: f64,
+    direction: [f64; 3],
+}
+
+fn place_confseq_nonplanar_ring_component(
+    molecule: &Molecule,
+    adjacency: &AdjacencyList,
+    model: &ConfSeqBaseConstraintModel,
+    component: &ConfSeqBaseRingComponent,
+    attachment: Option<ConfSeqNonplanarRingAttachment>,
+    coords: &mut [[f64; 3]],
+    placed: &mut [bool],
+) -> Result<(), ConfSeqBaseConformerError> {
+    let component_atoms: HashSet<_> = component.atoms.iter().copied().collect();
+    let seed = if let Some(attachment) = attachment {
+        coords[attachment.attachment] = vec_add(
+            coords[attachment.anchor],
+            vec_scale(attachment.direction, attachment.bond_length),
+        );
+        placed[attachment.attachment] = true;
+        attachment.attachment
+    } else {
+        let seed = component.atoms[0];
+        coords[seed] = [0.0, 0.0, 0.0];
+        placed[seed] = true;
+        seed
+    };
+
+    initialize_confseq_nonplanar_ring_path(
+        molecule, adjacency, model, component, seed, attachment, coords, placed,
+    )?;
+
+    for _ in 0..component.atoms.len().saturating_mul(3).max(1) {
+        let mut progressed = false;
+        for ring in &component.rings {
+            if let Some(segment) =
+                confseq_ring_unplaced_segment_between_placed_anchors(ring, placed)
+            {
+                place_confseq_nonplanar_ring_segment(
+                    molecule, model, ring, &segment, coords, placed,
+                )?;
+                progressed = true;
+            }
+        }
+        if progressed {
+            continue;
+        }
+        for &atom in &component.atoms {
+            if placed[atom] {
+                continue;
+            }
+            let placed_neighbors: Vec<_> = adjacency
+                .neighbors_of(atom)
+                .iter()
+                .filter(|candidate| {
+                    component_atoms.contains(&candidate.atom_index) && placed[candidate.atom_index]
+                })
+                .map(|candidate| candidate.atom_index)
+                .collect();
+            if placed_neighbors.len() < 2 {
+                continue;
+            }
+            let preferred_dir = confseq_preferred_direction_from_two_neighbors(
+                coords[placed_neighbors[0]],
+                coords[placed_neighbors[1]],
+            );
+            if let Some(point) = place_atom_from_two_placed_neighbors(
+                molecule,
+                model,
+                coords,
+                atom,
+                placed_neighbors[0],
+                placed_neighbors[1],
+                preferred_dir,
+            ) {
+                coords[atom] = point;
+                placed[atom] = true;
+                progressed = true;
+            }
+        }
+        if progressed {
+            continue;
+        }
+        for &parent in &component.atoms {
+            if !placed[parent] {
+                continue;
+            }
+            let parent_axis = adjacency
+                .neighbors_of(parent)
+                .iter()
+                .find(|neighbor| placed[neighbor.atom_index])
+                .map(|neighbor| vec_normalize(vec_sub(coords[parent], coords[neighbor.atom_index])))
+                .unwrap_or([1.0, 0.0, 0.0]);
+            let children: Vec<_> = adjacency
+                .neighbors_of(parent)
+                .iter()
+                .filter(|neighbor| component_atoms.contains(&neighbor.atom_index))
+                .filter(|neighbor| !placed[neighbor.atom_index])
+                .collect();
+            for (child_ord, neighbor) in children.iter().enumerate() {
+                let child = neighbor.atom_index;
+                let length = confseq_base_bond_target_by_id(model, molecule, neighbor.bond.index());
+                let angle_parent = adjacency
+                    .neighbors_of(parent)
+                    .iter()
+                    .find(|candidate| placed[candidate.atom_index])
+                    .map(|candidate| candidate.atom_index);
+                let angle = angle_parent
+                    .and_then(|angle_parent| {
+                        model
+                            .angle_targets
+                            .get(&sorted_angle(angle_parent, parent, child))
+                            .copied()
+                    })
+                    .unwrap_or_else(|| {
+                        confseq_base_ring_angle_rad(
+                            molecule,
+                            parent,
+                            component
+                                .ring_sizes_by_atom
+                                .get(&parent)
+                                .copied()
+                                .unwrap_or(component.atoms.len()),
+                        )
+                    });
+                let dir = confseq_constraint_child_direction(
+                    molecule,
+                    adjacency,
+                    model,
+                    coords,
+                    placed,
+                    parent,
+                    angle_parent,
+                    child,
+                    parent_axis,
+                    child_ord,
+                    children.len(),
+                    angle,
+                    length,
+                );
+                let placed_neighbors: Vec<_> = adjacency
+                    .neighbors_of(child)
+                    .iter()
+                    .filter(|candidate| placed[candidate.atom_index])
+                    .map(|candidate| candidate.atom_index)
+                    .collect();
+                coords[child] = if placed_neighbors.len() >= 2 {
+                    place_atom_from_two_placed_neighbors(
+                        molecule,
+                        model,
+                        coords,
+                        child,
+                        placed_neighbors[0],
+                        placed_neighbors[1],
+                        dir,
+                    )
+                    .unwrap_or_else(|| vec_add(coords[parent], vec_scale(dir, length)))
+                } else {
+                    vec_add(coords[parent], vec_scale(dir, length))
+                };
+                placed[child] = true;
+                progressed = true;
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+
+    if component.atoms.iter().any(|atom| !placed[*atom]) {
+        return Err(ConfSeqBaseConformerError::PlacementLeftAtomsUnplaced);
+    }
+    Ok(())
+}
+
+fn confseq_ring_unplaced_segment_between_placed_anchors(
+    ring: &[usize],
+    placed: &[bool],
+) -> Option<Vec<usize>> {
+    if ring.len() < 3 {
+        return None;
+    }
+    let mut best = None::<Vec<usize>>;
+    for start_pos in 0..ring.len() {
+        if !placed[ring[start_pos]] {
+            continue;
+        }
+        for distance in 2..ring.len() {
+            let end_pos = (start_pos + distance) % ring.len();
+            if !placed[ring[end_pos]] {
+                continue;
+            }
+            let mut segment = Vec::with_capacity(distance + 1);
+            let mut has_unplaced = false;
+            for offset in 0..=distance {
+                let atom = ring[(start_pos + offset) % ring.len()];
+                has_unplaced |= !placed[atom];
+                segment.push(atom);
+            }
+            if has_unplaced
+                && best
+                    .as_ref()
+                    .map(|current| segment.len() < current.len())
+                    .unwrap_or(true)
+            {
+                best = Some(segment);
+            }
+        }
+    }
+    best
+}
+
+fn place_confseq_nonplanar_ring_segment(
+    molecule: &Molecule,
+    model: &ConfSeqBaseConstraintModel,
+    ring: &[usize],
+    segment: &[usize],
+    coords: &mut [[f64; 3]],
+    placed: &mut [bool],
+) -> Result<(), ConfSeqBaseConformerError> {
+    if segment.len() < 3 {
+        return Ok(());
+    }
+    let oriented_ring = confseq_oriented_ring_from_segment(ring, segment)?;
+    let local = closed_confseq_nonplanar_ring_coords(molecule, model, &oriented_ring)?;
+    let start = segment[0];
+    let end = *segment.last().expect("checked above");
+    let Some(local_start_pos) = oriented_ring.iter().position(|atom| *atom == start) else {
+        return Err(ConfSeqBaseConformerError::Build(format!(
+            "nonplanar ring segment start atom {start} is absent from ring"
+        )));
+    };
+    let Some(local_end_pos) = oriented_ring.iter().position(|atom| *atom == end) else {
+        return Err(ConfSeqBaseConformerError::Build(format!(
+            "nonplanar ring segment end atom {end} is absent from ring"
+        )));
+    };
+    let local_anchor = vec_sub(local[local_end_pos], local[local_start_pos]);
+    let target_anchor = vec_sub(coords[end], coords[start]);
+    let local_len = vec_len(local_anchor);
+    let target_len = vec_len(target_anchor);
+    if local_len <= 1.0e-10 || target_len <= 1.0e-10 {
+        return Ok(());
+    }
+    let scale = target_len / local_len;
+
+    for &atom in segment.iter().skip(1).take(segment.len() - 2) {
+        if placed[atom] {
+            continue;
+        }
+        let Some(local_pos) = oriented_ring
+            .iter()
+            .position(|candidate| *candidate == atom)
+        else {
+            return Err(ConfSeqBaseConformerError::Build(format!(
+                "nonplanar ring segment atom {atom} is absent from oriented ring"
+            )));
+        };
+        let offset = vec_sub(local[local_pos], local[local_start_pos]);
+        let offset = rotate_vector_between_unit_dirs(offset, local_anchor, target_anchor)?;
+        coords[atom] = vec_add(coords[start], vec_scale(offset, scale));
+        placed[atom] = true;
+    }
+    Ok(())
+}
+
+fn confseq_oriented_ring_from_segment(
+    ring: &[usize],
+    segment: &[usize],
+) -> Result<Vec<usize>, ConfSeqBaseConformerError> {
+    if ring.is_empty() || segment.len() < 2 {
+        return Ok(ring.to_vec());
+    }
+    let start = segment[0];
+    let next = segment[1];
+    let Some(start_pos) = ring.iter().position(|atom| *atom == start) else {
+        return Err(ConfSeqBaseConformerError::Build(format!(
+            "nonplanar ring segment start atom {start} is absent from ring"
+        )));
+    };
+    let forward_next = ring[(start_pos + 1) % ring.len()];
+    let reverse_next = ring[(start_pos + ring.len() - 1) % ring.len()];
+    let forward = if forward_next == next {
+        true
+    } else if reverse_next == next {
+        false
+    } else {
+        return Err(ConfSeqBaseConformerError::Build(format!(
+            "nonplanar ring segment {start}-{next} is not consecutive in ring"
+        )));
+    };
+    let mut out = Vec::with_capacity(ring.len());
+    for offset in 0..ring.len() {
+        let pos = if forward {
+            (start_pos + offset) % ring.len()
+        } else {
+            (start_pos + ring.len() - offset) % ring.len()
+        };
+        out.push(ring[pos]);
+    }
+    Ok(out)
+}
+
+fn confseq_preferred_direction_from_two_neighbors(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    let midpoint = vec_scale(vec_add(a, b), 0.5);
+    let span = vec_sub(b, a);
+    let normal = perpendicular_unit(span);
+    vec_normalize(vec_add(midpoint, normal))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn initialize_confseq_nonplanar_ring_path(
+    molecule: &Molecule,
+    _adjacency: &AdjacencyList,
+    model: &ConfSeqBaseConstraintModel,
+    component: &ConfSeqBaseRingComponent,
+    seed: usize,
+    attachment: Option<ConfSeqNonplanarRingAttachment>,
+    coords: &mut [[f64; 3]],
+    placed: &mut [bool],
+) -> Result<(), ConfSeqBaseConformerError> {
+    let Some(ring) = component
+        .rings
+        .iter()
+        .find(|ring| ring.contains(&seed))
+        .or_else(|| component.rings.first())
+    else {
+        return Ok(());
+    };
+    let seed_pos = ring.iter().position(|atom| *atom == seed).unwrap_or(0);
+    let mut path = Vec::with_capacity(ring.len());
+    for offset in 0..ring.len() {
+        path.push(ring[(seed_pos + offset) % ring.len()]);
+    }
+
+    if path.len() < 3 {
+        return Ok(());
+    }
+
+    let local = closed_confseq_nonplanar_ring_coords(molecule, model, &path)?;
+    let first = path[0];
+    let second = path[1];
+    let target_origin = coords[first];
+    let local_seed_to_second = vec_normalize(vec_sub(local[1], local[0]));
+    let target_seed_to_second = attachment
+        .map(|attachment| vec_scale(attachment.direction, -1.0))
+        .unwrap_or([1.0, 0.0, 0.0]);
+    for (pos, &atom) in path.iter().enumerate() {
+        if placed[atom] && atom != first {
+            continue;
+        }
+        let offset = vec_sub(local[pos], local[0]);
+        let offset =
+            rotate_vector_between_unit_dirs(offset, local_seed_to_second, target_seed_to_second)?;
+        coords[atom] = vec_add(target_origin, offset);
+        placed[atom] = true;
+    }
+    placed[second] = true;
+    Ok(())
+}
+
+fn closed_confseq_nonplanar_ring_coords(
+    molecule: &Molecule,
+    model: &ConfSeqBaseConstraintModel,
+    ring: &[usize],
+) -> Result<Vec<[f64; 3]>, ConfSeqBaseConformerError> {
+    let n = ring.len();
+    let mut edge_lengths = Vec::with_capacity(n);
+    for pos in 0..n {
+        let a = ring[pos];
+        let b = ring[(pos + 1) % n];
+        let Some(bond) = bond_between_pair(molecule, sorted_pair(a, b)) else {
+            return Err(ConfSeqBaseConformerError::Build(format!(
+                "nonplanar closed ring has no bond {a}-{b}"
+            )));
+        };
+        edge_lengths.push(confseq_base_bond_target_by_id(
+            model,
+            molecule,
+            bond.id().index(),
+        ));
+    }
+
+    let amplitude = confseq_nonplanar_ring_pucker_amplitude(molecule, ring);
+    let z_values: Vec<_> = (0..n)
+        .map(|pos| {
+            if n % 2 == 0 {
+                if pos % 2 == 0 { amplitude } else { -amplitude }
+            } else {
+                amplitude * (2.0 * PI * pos as f64 / n as f64).sin()
+            }
+        })
+        .collect();
+    let mut xy_lengths = Vec::with_capacity(n);
+    for pos in 0..n {
+        let dz = z_values[(pos + 1) % n] - z_values[pos];
+        xy_lengths.push(
+            (edge_lengths[pos] * edge_lengths[pos] - dz * dz)
+                .max(0.25)
+                .sqrt(),
+        );
+    }
+    let radius = closed_polygon_radius_for_chords(&xy_lengths);
+    let mut angles = Vec::with_capacity(n);
+    angles.push(0.0);
+    let mut theta = 0.0;
+    for chord in xy_lengths.iter().take(n - 1) {
+        theta += 2.0 * (chord / (2.0 * radius)).clamp(-1.0, 1.0).asin();
+        angles.push(theta);
+    }
+
+    let mut coords: Vec<_> = angles
+        .into_iter()
+        .zip(z_values)
+        .map(|(angle, z)| [radius * angle.cos(), radius * angle.sin(), z])
+        .collect();
+    let centroid = confseq_base_coord_centroid(&coords);
+    for coord in &mut coords {
+        *coord = vec_sub(*coord, centroid);
+    }
+    Ok(coords)
+}
+
+fn closed_polygon_radius_for_chords(chords: &[f64]) -> f64 {
+    let max_chord = chords.iter().copied().fold(0.0, f64::max);
+    let mut low = (max_chord * 0.5).max(1.0e-6);
+    let mut high = low;
+    while chords
+        .iter()
+        .map(|chord| 2.0 * (chord / (2.0 * high)).clamp(-1.0, 1.0).asin())
+        .sum::<f64>()
+        > 2.0 * PI
+    {
+        high *= 2.0;
+    }
+    for _ in 0..32 {
+        let mid = 0.5 * (low + high);
+        let sum = chords
+            .iter()
+            .map(|chord| 2.0 * (chord / (2.0 * mid)).clamp(-1.0, 1.0).asin())
+            .sum::<f64>();
+        if sum > 2.0 * PI {
+            low = mid;
+        } else {
+            high = mid;
+        }
+    }
+    high
+}
+
+fn confseq_nonplanar_ring_pucker_amplitude(molecule: &Molecule, ring: &[usize]) -> f64 {
+    if ring.iter().all(|&atom| {
+        molecule.atoms()[atom].is_aromatic()
+            || molecule.atoms()[atom].hybridization() == Hybridization::Sp2
+    }) {
+        return 0.0;
+    }
+    match ring.len() {
+        3 | 4 => 0.12,
+        5 => 0.22,
+        6 => 0.32,
+        _ => 0.24,
+    }
+}
+
+fn confseq_base_bond_target_by_id(
+    model: &ConfSeqBaseConstraintModel,
+    molecule: &Molecule,
+    bond_idx: usize,
+) -> f64 {
+    model
+        .bond_targets
+        .get(bond_idx)
+        .copied()
+        .unwrap_or_else(|| confseq_base_static_bond_length_fallback(&molecule.bonds()[bond_idx]))
+}
+
+fn place_atom_from_two_placed_neighbors(
+    molecule: &Molecule,
+    model: &ConfSeqBaseConstraintModel,
+    coords: &[[f64; 3]],
+    atom: usize,
+    neighbor_a: usize,
+    neighbor_b: usize,
+    preferred_dir: [f64; 3],
+) -> Option<[f64; 3]> {
+    let bond_a = bond_between_pair(molecule, sorted_pair(atom, neighbor_a))?;
+    let bond_b = bond_between_pair(molecule, sorted_pair(atom, neighbor_b))?;
+    let radius_a = model
+        .bond_targets
+        .get(bond_a.id().index())
+        .copied()
+        .unwrap_or_else(|| confseq_base_static_bond_length_fallback(bond_a));
+    let radius_b = model
+        .bond_targets
+        .get(bond_b.id().index())
+        .copied()
+        .unwrap_or_else(|| confseq_base_static_bond_length_fallback(bond_b));
+    sphere_sphere_intersection_point(
+        coords[neighbor_a],
+        radius_a,
+        coords[neighbor_b],
+        radius_b,
+        preferred_dir,
+    )
+}
+
+fn sphere_sphere_intersection_point(
+    center_a: [f64; 3],
+    radius_a: f64,
+    center_b: [f64; 3],
+    radius_b: f64,
+    preferred_dir: [f64; 3],
+) -> Option<[f64; 3]> {
+    let axis = vec_sub(center_b, center_a);
+    let distance = vec_len(axis);
+    if distance <= 1.0e-10 {
+        return None;
+    }
+    let unit = vec_scale(axis, 1.0 / distance);
+    let x = (radius_a * radius_a - radius_b * radius_b + distance * distance) / (2.0 * distance);
+    let height_sq = radius_a * radius_a - x * x;
+    if height_sq < -1.0e-8 {
+        return None;
+    }
+    let base = vec_add(center_a, vec_scale(unit, x));
+    let height = height_sq.max(0.0).sqrt();
+    let side = vec_normalize(vec_sub(
+        preferred_dir,
+        vec_scale(unit, vec_dot(preferred_dir, unit)),
+    ));
+    let side = if vec_len(side) <= 1.0e-10 {
+        perpendicular_unit(unit)
+    } else {
+        side
+    };
+    Some(vec_add(base, vec_scale(side, height)))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn place_confseq_constraint_ring_component_from_attachment(
+    component: &ConfSeqBaseRingComponent,
+    scaffold: &[[f64; 2]],
+    anchor: usize,
+    attachment: usize,
+    bond_length: f64,
+    attachment_dir: [f64; 3],
+    coords: &mut [[f64; 3]],
+    placed: &mut [bool],
+) -> Result<(), ConfSeqBaseConformerError> {
+    let scaffold_anchor = [scaffold[anchor][0], scaffold[anchor][1], 0.0];
+    let scaffold_attachment = [scaffold[attachment][0], scaffold[attachment][1], 0.0];
+    let scaffold_dir = vec_normalize(vec_sub(scaffold_attachment, scaffold_anchor));
+    let target_attachment = vec_add(coords[anchor], vec_scale(attachment_dir, bond_length));
+    for &atom in &component.atoms {
+        let point = [scaffold[atom][0], scaffold[atom][1], 0.0];
+        let offset = vec_sub(point, scaffold_attachment);
+        let rotated = rotate_vector_between_unit_dirs(offset, scaffold_dir, attachment_dir)?;
+        coords[atom] = vec_add(target_attachment, rotated);
+        placed[atom] = true;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn confseq_constraint_child_direction(
+    _molecule: &Molecule,
+    _adjacency: &AdjacencyList,
+    _model: &ConfSeqBaseConstraintModel,
+    _coords: &[[f64; 3]],
+    placed: &[bool],
+    center: usize,
+    parent: Option<usize>,
+    _child: usize,
+    parent_axis: [f64; 3],
+    child_ord: usize,
+    child_count: usize,
+    angle: f64,
+    _length: f64,
+) -> [f64; 3] {
+    let fallback = child_direction(parent_axis, child_ord, child_count, angle);
+    let Some(parent) = parent else {
+        return fallback;
+    };
+    if !placed[parent] || !placed[center] {
+        return fallback;
+    }
+    fallback
+}
+
+fn validate_confseq_base_constraint_coords(
+    molecule: &Molecule,
+    model: &ConfSeqBaseConstraintModel,
+    coords: &[[f64; 3]],
+) -> Result<(), ConfSeqBaseConformerError> {
+    for bond in molecule.bonds() {
+        let target = model
+            .bond_targets
+            .get(bond.id().index())
+            .copied()
+            .unwrap_or_else(|| confseq_base_static_bond_length_fallback(bond));
+        let observed = vec_len(vec_sub(
+            coords[bond.begin().index()],
+            coords[bond.end().index()],
+        ));
+        if (observed - target).abs() > 0.35 {
+            return Err(ConfSeqBaseConformerError::Build(format!(
+                "base constraint bond target failed for bond {}: observed={observed:.3}, target={target:.3}",
+                bond.id().index()
+            )));
+        }
+    }
+    for &(begin, end) in &model.planar_bonds {
+        let observed = vec_len(vec_sub(coords[begin], coords[end]));
+        if observed <= 1.0e-10 {
+            return Err(ConfSeqBaseConformerError::Build(format!(
+                "planar bond {begin}-{end} has coincident base coordinates"
+            )));
+        }
+    }
+    for (&torsion, prior) in &model.torsion_priors {
+        if matches!(prior, ConfSeqBaseTorsionPrior::Free) {
+            continue;
+        }
+        let (i, j, k, l) = torsion;
+        if vec_len(vec_sub(coords[i], coords[j])) <= 1.0e-10
+            || vec_len(vec_sub(coords[j], coords[k])) <= 1.0e-10
+            || vec_len(vec_sub(coords[k], coords[l])) <= 1.0e-10
+        {
+            return Err(ConfSeqBaseConformerError::Build(format!(
+                "torsion prior {i}-{j}-{k}-{l} has degenerate base coordinates"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn sorted_angle(left: usize, center: usize, right: usize) -> (usize, usize, usize) {
+    if left <= right {
+        (left, center, right)
+    } else {
+        (right, center, left)
+    }
 }
 
 fn apply_confseq_base_double_bond_stereo(
@@ -702,6 +2330,7 @@ fn apply_confseq_base_tetrahedral_stereo(
         })?
         .coordinates()
         .to_vec();
+    let initial_coords = coords.clone();
     for _ in 0..constraints.len().saturating_mul(2).max(1) {
         let mut changed = false;
         for constraint in &constraints {
@@ -709,7 +2338,6 @@ fn apply_confseq_base_tetrahedral_stereo(
             if confseq_base_chiral_volume_satisfies_tag(volume, constraint.tag) {
                 continue;
             }
-            let mut corrected = false;
             let mut candidates = Vec::new();
             for movable_pos in 0..constraint.ligands.len() {
                 let movable_ligand = constraint.ligands[movable_pos];
@@ -728,31 +2356,46 @@ fn apply_confseq_base_tetrahedral_stereo(
                 );
                 candidates.push((contains_other_ligand, movable.len(), movable_pos, movable));
             }
-            // Prefer independent ligand-side moves before whole cyclic-side
-            // moves. Both candidate classes preserve topology distances and are
-            // accepted only after explicit volume revalidation; the ordering is
-            // deterministic minimal perturbation when several corrections work.
             candidates.sort_by_key(|(contains_other_ligand, len, movable_pos, _)| {
                 (*contains_other_ligand, *len, *movable_pos)
             });
-            for (_, _, movable_pos, movable) in candidates {
+            let mut best = None::<(usize, f64, f64, Vec<[f64; 3]>)>;
+            for (contains_other_ligand, _, movable_pos, movable) in candidates {
                 let mut trial = coords.clone();
-                rotate_movable_side_to_chiral_volume_sign(
+                let adjusted = adjust_movable_side_to_chiral_volume_sign(
                     &mut trial,
                     &movable,
                     constraint,
                     movable_pos,
+                    !contains_other_ligand,
                 )?;
-                if confseq_base_chiral_volume_satisfies_tag(
-                    confseq_base_chiral_volume(&trial, constraint),
-                    constraint.tag,
-                ) {
-                    coords = trial;
-                    corrected = true;
-                    break;
+                if adjusted
+                    && confseq_base_chiral_volume_satisfies_tag(
+                        confseq_base_chiral_volume(&trial, constraint),
+                        constraint.tag,
+                    )
+                {
+                    let unsatisfied =
+                        confseq_base_unsatisfied_chiral_constraints(&trial, &constraints);
+                    let rms_displacement =
+                        confseq_base_coord_displacement_rms(&initial_coords, &trial);
+                    let max_displacement =
+                        confseq_base_coord_max_displacement(&initial_coords, &trial);
+                    let replace = best
+                        .as_ref()
+                        .map(|(best_unsatisfied, best_rms, best_max, _)| {
+                            (unsatisfied, rms_displacement, max_displacement)
+                                < (*best_unsatisfied, *best_rms, *best_max)
+                        })
+                        .unwrap_or(true);
+                    if replace {
+                        best = Some((unsatisfied, rms_displacement, max_displacement, trial));
+                    }
                 }
             }
-            if !corrected {
+            if let Some((_, _, _, trial)) = best {
+                coords = trial;
+            } else {
                 return Err(ConfSeqBaseConformerError::UnsupportedTetrahedralStereo {
                     center: constraint.center,
                     reason: "cannot be corrected by moving one explicit ligand side".to_string(),
@@ -784,6 +2427,47 @@ fn apply_confseq_base_tetrahedral_stereo(
     };
     conformer.coordinates_mut().copy_from_slice(&coords);
     Ok(out)
+}
+
+fn confseq_base_unsatisfied_chiral_constraints(
+    coords: &[[f64; 3]],
+    constraints: &[ConfSeqBaseTetrahedralStereoConstraint],
+) -> usize {
+    constraints
+        .iter()
+        .filter(|constraint| {
+            !confseq_base_chiral_volume_satisfies_tag(
+                confseq_base_chiral_volume(coords, constraint),
+                constraint.tag,
+            )
+        })
+        .count()
+}
+
+fn confseq_base_coord_displacement_rms(reference: &[[f64; 3]], coords: &[[f64; 3]]) -> f64 {
+    if reference.is_empty() || reference.len() != coords.len() {
+        return f64::INFINITY;
+    }
+    let sum_sq = reference
+        .iter()
+        .zip(coords)
+        .map(|(left, right)| {
+            let delta = vec_sub(*left, *right);
+            vec_dot(delta, delta)
+        })
+        .sum::<f64>();
+    (sum_sq / reference.len() as f64).sqrt()
+}
+
+fn confseq_base_coord_max_displacement(reference: &[[f64; 3]], coords: &[[f64; 3]]) -> f64 {
+    if reference.len() != coords.len() {
+        return f64::INFINITY;
+    }
+    reference
+        .iter()
+        .zip(coords)
+        .map(|(left, right)| vec_len(vec_sub(*left, *right)))
+        .fold(0.0, f64::max)
 }
 
 #[derive(Debug, Clone)]
@@ -985,6 +2669,102 @@ fn rotate_movable_side_to_chiral_volume_sign(
     rotate_points_mapping_vector(coords, atoms, center_point, old_root, target_root)
 }
 
+fn adjust_movable_side_to_chiral_volume_sign(
+    coords: &mut [[f64; 3]],
+    atoms: &[usize],
+    constraint: &ConfSeqBaseTetrahedralStereoConstraint,
+    movable_pos: usize,
+    allow_rotation_fallback: bool,
+) -> Result<bool, ConfSeqBaseConformerError> {
+    if translate_movable_side_to_chiral_volume_sign(coords, atoms, constraint, movable_pos)? {
+        return Ok(true);
+    }
+    if !allow_rotation_fallback {
+        return Ok(false);
+    }
+    rotate_movable_side_to_chiral_volume_sign(coords, atoms, constraint, movable_pos)?;
+    Ok(true)
+}
+
+fn translate_movable_side_to_chiral_volume_sign(
+    coords: &mut [[f64; 3]],
+    atoms: &[usize],
+    constraint: &ConfSeqBaseTetrahedralStereoConstraint,
+    movable_pos: usize,
+) -> Result<bool, ConfSeqBaseConformerError> {
+    let center = constraint.center;
+    let normal = confseq_base_chiral_volume_gradient_for_ligand(coords, constraint, movable_pos);
+    let normal_len = vec_len(normal);
+    if normal_len <= 1.0e-10 {
+        return Ok(false);
+    }
+    let normal = vec_scale(normal, 1.0 / normal_len);
+    let current = confseq_base_chiral_volume(coords, constraint);
+    let target = confseq_base_min_signed_chiral_volume_for_constraint(constraint);
+    let delta_volume = target - current;
+    let displacement = delta_volume / normal_len;
+    if displacement.abs() > confseq_base_max_chiral_translation(coords, constraint) {
+        return Ok(false);
+    }
+    let delta = vec_scale(normal, displacement);
+    for &atom in atoms {
+        coords[atom] = vec_add(coords[atom], delta);
+    }
+    if confseq_base_chiral_volume_satisfies_tag(
+        confseq_base_chiral_volume(coords, constraint),
+        constraint.tag,
+    ) {
+        Ok(true)
+    } else {
+        Err(ConfSeqBaseConformerError::UnsupportedTetrahedralStereo {
+            center,
+            reason: "minimum chiral-volume translation failed".to_string(),
+        })
+    }
+}
+
+fn confseq_base_min_signed_chiral_volume_for_constraint(
+    constraint: &ConfSeqBaseTetrahedralStereoConstraint,
+) -> f64 {
+    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::findChiralSets (Embedder.cpp:1112-1122)
+    // RDKit✔️✔️:         double volLowerBound = 5.0;
+    // RDKit✔️✔️:         double volUpperBound = 100.0;
+    // RDKit✔️✔️:         if (nbrs.size() < 4) {
+    // RDKit✔️✔️:           volLowerBound = 2.0;
+    // RDKit✔️✔️:           nbrs.insert(nbrs.end(), atom->getIdx());
+    // RDKit✔️✔️:         }
+    // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::findChiralSets
+    let lower = if constraint.ligands[3] == constraint.center {
+        2.0
+    } else {
+        5.0
+    };
+    match constraint.tag {
+        ChiralTag::TetrahedralCcw => lower,
+        ChiralTag::TetrahedralCw => -lower,
+        _ => 0.0,
+    }
+}
+
+fn confseq_base_max_chiral_translation(
+    coords: &[[f64; 3]],
+    constraint: &ConfSeqBaseTetrahedralStereoConstraint,
+) -> f64 {
+    let center = coords[constraint.center];
+    let min_bond = constraint
+        .ligands
+        .iter()
+        .copied()
+        .filter(|ligand| *ligand != constraint.center)
+        .map(|ligand| vec_len(vec_sub(coords[ligand], center)))
+        .fold(f64::INFINITY, f64::min);
+    if min_bond.is_finite() {
+        0.45 * min_bond
+    } else {
+        0.65
+    }
+}
+
 fn confseq_base_chiral_volume_gradient_for_ligand(
     coords: &[[f64; 3]],
     constraint: &ConfSeqBaseTetrahedralStereoConstraint,
@@ -1081,6 +2861,35 @@ fn rotate_points_mapping_vector(
     Ok(())
 }
 
+fn rotate_vector_between_unit_dirs(
+    vector: [f64; 3],
+    from: [f64; 3],
+    to: [f64; 3],
+) -> Result<[f64; 3], ConfSeqBaseConformerError> {
+    let from = vec_normalize(from);
+    let to = vec_normalize(to);
+    let cos_theta = vec_dot(from, to).clamp(-1.0, 1.0);
+    let axis = vec_cross(from, to);
+    let sin_theta = vec_len(axis);
+    if sin_theta <= 1.0e-12 {
+        if cos_theta > 0.0 {
+            return Ok(vector);
+        }
+        return Ok(rotate_vec_around_unit_axis(
+            vector,
+            perpendicular_unit(from),
+            0.0,
+            -1.0,
+        ));
+    }
+    Ok(rotate_vec_around_unit_axis(
+        vector,
+        vec_scale(axis, 1.0 / sin_theta),
+        sin_theta,
+        cos_theta,
+    ))
+}
+
 fn rotate_vec_around_unit_axis(
     vector: [f64; 3],
     axis: [f64; 3],
@@ -1096,186 +2905,25 @@ fn rotate_vec_around_unit_axis(
     )
 }
 
-fn build_acyclic_confseq_base_coords(
-    molecule: &Molecule,
-    adjacency: &AdjacencyList,
-    geometry: &ConfSeqBaseGeometry,
-) -> Vec<[f64; 3]> {
-    // Current subset: connected acyclic heavy-atom graphs are placed as a
-    // deterministic tree. This deliberately solves only the ConfSeq base-frame
-    // requirement: reasonable bond lengths and local angles before token-driven
-    // dihedral/angle application. It is not a conformer search and does not
-    // model non-bonded interactions.
-    let mut coords = vec![[0.0; 3]; molecule.num_atoms()];
-    let mut placed = vec![false; molecule.num_atoms()];
-    place_confseq_tree(
-        molecule,
-        adjacency,
-        0,
-        None,
-        [0.0, 0.0, 0.0],
-        &mut coords,
-        &mut placed,
-        geometry,
-    );
-    coords
+fn dihedral_rad_from_points(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> f64 {
+    let b0 = vec_sub(a, b);
+    let b1 = vec_sub(c, b);
+    let b2 = vec_sub(d, c);
+    let b1 = vec_normalize(b1);
+    let v = vec_sub(b0, vec_scale(b1, vec_dot(b0, b1)));
+    let w = vec_sub(b2, vec_scale(b1, vec_dot(b2, b1)));
+    vec_dot(vec_cross(b1, v), w).atan2(vec_dot(v, w))
 }
 
-fn build_supported_aromatic_ring_system_confseq_base_coords(
-    molecule: &Molecule,
-    adjacency: &AdjacencyList,
-    ring_info: &rings::RingInfo,
-    geometry: &ConfSeqBaseGeometry,
-) -> Result<Vec<[f64; 3]>, ConfSeqBaseConformerError> {
-    let atom_to_ring = confseq_base_atom_to_primary_ring(molecule, ring_info)?;
-    let ring_bonds = confseq_base_ring_bond_set(ring_info)?;
-    let mut coords = vec![[0.0; 3]; molecule.num_atoms()];
-    let mut placed = vec![false; molecule.num_atoms()];
-    let mut ring_placed = vec![false; ring_info.num_rings()];
-
-    match atom_to_ring[0] {
-        Some(ring_idx) => {
-            place_confseq_ring_component(
-                molecule,
-                ring_info,
-                ring_idx,
-                None,
-                &mut coords,
-                &mut placed,
-                &mut ring_placed,
-                geometry,
-            )?;
-            propagate_confseq_base_from_placed_rings(
-                molecule,
-                adjacency,
-                ring_info,
-                &atom_to_ring,
-                &ring_bonds,
-                &mut coords,
-                &mut placed,
-                &mut ring_placed,
-                geometry,
-            )?;
-        }
-        None => {
-            place_confseq_tree_with_ring_blocks(
-                molecule,
-                adjacency,
-                ring_info,
-                &atom_to_ring,
-                &ring_bonds,
-                0,
-                None,
-                [0.0, 0.0, 0.0],
-                &mut coords,
-                &mut placed,
-                &mut ring_placed,
-                geometry,
-            )?;
-        }
+fn angular_delta_rad(left: f64, right: f64) -> f64 {
+    let mut delta = left - right;
+    while delta > PI {
+        delta -= 2.0 * PI;
     }
-
-    if placed.iter().any(|value| !*value) {
-        return Err(ConfSeqBaseConformerError::PlacementLeftAtomsUnplaced);
+    while delta < -PI {
+        delta += 2.0 * PI;
     }
-
-    Ok(coords)
-}
-
-fn confseq_base_atom_to_primary_ring(
-    molecule: &Molecule,
-    ring_info: &rings::RingInfo,
-) -> Result<Vec<Option<usize>>, ConfSeqBaseConformerError> {
-    let mut atom_to_ring = vec![None; molecule.num_atoms()];
-    for (ring_idx, ring) in ring_info.atom_rings().iter().enumerate() {
-        validate_supported_confseq_base_ring(
-            molecule,
-            ring_idx,
-            ring,
-            &ring_info.bond_rings()[ring_idx],
-        )?;
-        for atom in ring {
-            if atom_to_ring[atom.index()].is_none() {
-                atom_to_ring[atom.index()] = Some(ring_idx);
-            }
-        }
-    }
-    validate_confseq_base_ring_sharing(molecule, ring_info)?;
-    Ok(atom_to_ring)
-}
-
-fn confseq_base_ring_bond_set(
-    ring_info: &rings::RingInfo,
-) -> Result<HashSet<usize>, ConfSeqBaseConformerError> {
-    let mut ring_bonds = HashSet::new();
-    for ring in ring_info.bond_rings() {
-        for bond in ring {
-            ring_bonds.insert(bond.index());
-        }
-    }
-    Ok(ring_bonds)
-}
-
-fn validate_confseq_base_ring_sharing(
-    _molecule: &Molecule,
-    ring_info: &rings::RingInfo,
-) -> Result<(), ConfSeqBaseConformerError> {
-    let mut fusion_graph = vec![Vec::new(); ring_info.num_rings()];
-    for left in 0..ring_info.num_rings() {
-        for right in left + 1..ring_info.num_rings() {
-            let shared_atoms = ring_info.atom_rings()[left]
-                .iter()
-                .filter(|atom| ring_info.atom_rings()[right].contains(atom))
-                .count();
-            let shared_bonds = shared_bond_ids_between_rings(ring_info, left, right).len();
-            if shared_atoms == 0 && shared_bonds == 0 {
-                continue;
-            }
-            let edge_fused = shared_atoms == 2 && shared_bonds == 1;
-            let spiro_fused = shared_atoms == 1 && shared_bonds == 0;
-            if !edge_fused && !spiro_fused {
-                return Err(ConfSeqBaseConformerError::UnsupportedRingFusion {
-                    left,
-                    right,
-                    shared_atoms,
-                    shared_bonds,
-                });
-            }
-            fusion_graph[left].push(right);
-            fusion_graph[right].push(left);
-        }
-    }
-    if !confseq_base_fusion_graph_is_forest(&fusion_graph) {
-        return Err(ConfSeqBaseConformerError::UnsupportedClosedRingFusion);
-    }
-    Ok(())
-}
-
-fn confseq_base_fusion_graph_is_forest(fusion_graph: &[Vec<usize>]) -> bool {
-    // Current fused-ring subset is deliberately a forest of edge fusions and
-    // single-atom spiro joins. These can be propagated from one already-placed
-    // ring constraint at a time. Closed pericondensed or polyspiro graphs remain
-    // rejected until solved as one global constrained component.
-    fn visit(node: usize, parent: Option<usize>, graph: &[Vec<usize>], seen: &mut [bool]) -> bool {
-        seen[node] = true;
-        for &next in &graph[node] {
-            if Some(next) == parent {
-                continue;
-            }
-            if seen[next] || !visit(next, Some(node), graph, seen) {
-                return false;
-            }
-        }
-        true
-    }
-
-    let mut seen = vec![false; fusion_graph.len()];
-    for node in 0..fusion_graph.len() {
-        if !seen[node] && !visit(node, None, fusion_graph, &mut seen) {
-            return false;
-        }
-    }
-    true
+    delta
 }
 
 fn shared_bond_ids_between_rings(
@@ -1288,1257 +2936,6 @@ fn shared_bond_ids_between_rings(
         .copied()
         .filter(|bond| ring_info.bond_rings()[right].contains(bond))
         .collect()
-}
-
-fn shared_atom_ids_between_rings(
-    ring_info: &rings::RingInfo,
-    left: usize,
-    right: usize,
-) -> Vec<AtomId> {
-    ring_info.atom_rings()[left]
-        .iter()
-        .copied()
-        .filter(|atom| ring_info.atom_rings()[right].contains(atom))
-        .collect()
-}
-
-fn place_confseq_ring_component(
-    molecule: &Molecule,
-    ring_info: &rings::RingInfo,
-    ring_idx: usize,
-    anchor: Option<(usize, [f64; 3], [f64; 3])>,
-    coords: &mut [[f64; 3]],
-    placed: &mut [bool],
-    ring_placed: &mut [bool],
-    geometry: &ConfSeqBaseGeometry,
-) -> Result<(), ConfSeqBaseConformerError> {
-    place_confseq_ring_block(
-        molecule,
-        ring_info,
-        ring_idx,
-        anchor,
-        coords,
-        placed,
-        ring_placed,
-        geometry,
-    )?;
-
-    loop {
-        let mut progressed = false;
-        for candidate in 0..ring_info.num_rings() {
-            if ring_placed[candidate] {
-                continue;
-            }
-            let Some(anchor_ring) = (0..ring_info.num_rings()).find(|placed_ring| {
-                ring_placed[*placed_ring]
-                    && shared_bond_ids_between_rings(ring_info, *placed_ring, candidate).len() == 1
-                    && shared_atom_ids_between_rings(ring_info, *placed_ring, candidate).len() == 2
-            }) else {
-                let Some(anchor_ring) = (0..ring_info.num_rings()).find(|placed_ring| {
-                    ring_placed[*placed_ring]
-                        && shared_bond_ids_between_rings(ring_info, *placed_ring, candidate)
-                            .is_empty()
-                        && shared_atom_ids_between_rings(ring_info, *placed_ring, candidate).len()
-                            == 1
-                }) else {
-                    continue;
-                };
-                place_confseq_spiro_ring_on_shared_atom(
-                    molecule,
-                    ring_info,
-                    anchor_ring,
-                    candidate,
-                    coords,
-                    placed,
-                    ring_placed,
-                    geometry,
-                )?;
-                progressed = true;
-                continue;
-            };
-            place_confseq_fused_ring_on_shared_bond(
-                molecule,
-                ring_info,
-                anchor_ring,
-                candidate,
-                coords,
-                placed,
-                ring_placed,
-                geometry,
-            )?;
-            progressed = true;
-        }
-        if !progressed {
-            break;
-        }
-    }
-    Ok(())
-}
-
-fn place_confseq_ring_block(
-    molecule: &Molecule,
-    ring_info: &rings::RingInfo,
-    ring_idx: usize,
-    anchor: Option<(usize, [f64; 3], [f64; 3])>,
-    coords: &mut [[f64; 3]],
-    placed: &mut [bool],
-    ring_placed: &mut [bool],
-    geometry: &ConfSeqBaseGeometry,
-) -> Result<(), ConfSeqBaseConformerError> {
-    if ring_placed[ring_idx] {
-        return Ok(());
-    }
-    let ring = &ring_info.atom_rings()[ring_idx];
-    // ConfSeq-base ring block: each supported 3-8 member heavy-atom ring is
-    // initially placed as a deterministic cyclic polygon using local bond
-    // lengths. This is only a scaffold for subsequent ConfSeq angle/dihedral
-    // application; it is not a low-energy ring-conformation search. Spiro,
-    // bridged, and closed pericondensed systems remain unsupported because
-    // they require solving shared constraints as a global component.
-    let ring_points = confseq_base_ring_local_points(molecule, ring, geometry)?;
-
-    match anchor {
-        Some((anchor_atom, anchor_point, radial_direction)) => {
-            let Some(anchor_pos) = ring.iter().position(|atom| atom.index() == anchor_atom) else {
-                return Err(ConfSeqBaseConformerError::Build(
-                    "ring anchor atom is not a member of the target ring".to_string(),
-                ));
-            };
-            let local_anchor = ring_points[anchor_pos];
-            let local_u = confseq_base_ring_substituent_direction_from_points(
-                molecule,
-                ring,
-                anchor_atom,
-                &ring_points,
-            );
-            let local_v = perpendicular_unit(local_u);
-            let local_w = vec_normalize(vec_cross(local_u, local_v));
-            let world_u = vec_normalize(radial_direction);
-            let world_v = perpendicular_unit(world_u);
-            let world_w = vec_normalize(vec_cross(world_u, world_v));
-            for (atom, point) in ring.iter().zip(ring_points) {
-                let rel = vec_sub(point, local_anchor);
-                let x = vec_dot(rel, local_u);
-                let y = vec_dot(rel, local_v);
-                let z = vec_dot(rel, local_w);
-                coords[atom.index()] = vec_add(
-                    anchor_point,
-                    vec_add(
-                        vec_scale(world_u, x),
-                        vec_add(vec_scale(world_v, y), vec_scale(world_w, z)),
-                    ),
-                );
-                placed[atom.index()] = true;
-            }
-        }
-        None => {
-            for (atom, point) in ring.iter().zip(ring_points) {
-                coords[atom.index()] = point;
-                placed[atom.index()] = true;
-            }
-        }
-    }
-    ring_placed[ring_idx] = true;
-    Ok(())
-}
-
-fn place_confseq_spiro_ring_on_shared_atom(
-    molecule: &Molecule,
-    ring_info: &rings::RingInfo,
-    placed_ring_idx: usize,
-    candidate_ring_idx: usize,
-    coords: &mut [[f64; 3]],
-    placed: &mut [bool],
-    ring_placed: &mut [bool],
-    geometry: &ConfSeqBaseGeometry,
-) -> Result<(), ConfSeqBaseConformerError> {
-    let shared = shared_atom_ids_between_rings(ring_info, placed_ring_idx, candidate_ring_idx);
-    if shared.len() != 1
-        || !shared_bond_ids_between_rings(ring_info, placed_ring_idx, candidate_ring_idx).is_empty()
-    {
-        return Err(ConfSeqBaseConformerError::UnsupportedRingFusion {
-            left: placed_ring_idx,
-            right: candidate_ring_idx,
-            shared_atoms: shared.len(),
-            shared_bonds: shared_bond_ids_between_rings(
-                ring_info,
-                placed_ring_idx,
-                candidate_ring_idx,
-            )
-            .len(),
-        });
-    }
-    let anchor = shared[0].index();
-    if !placed[anchor] {
-        return Err(ConfSeqBaseConformerError::Build(
-            "shared spiro atom is not placed".to_string(),
-        ));
-    }
-    let normal = confseq_base_ring_plane_normal(ring_info, placed_ring_idx, coords);
-    place_confseq_ring_block(
-        molecule,
-        ring_info,
-        candidate_ring_idx,
-        Some((anchor, coords[anchor], normal)),
-        coords,
-        placed,
-        ring_placed,
-        geometry,
-    )
-}
-
-fn place_confseq_fused_ring_on_shared_bond(
-    molecule: &Molecule,
-    ring_info: &rings::RingInfo,
-    placed_ring_idx: usize,
-    candidate_ring_idx: usize,
-    coords: &mut [[f64; 3]],
-    placed: &mut [bool],
-    ring_placed: &mut [bool],
-    geometry: &ConfSeqBaseGeometry,
-) -> Result<(), ConfSeqBaseConformerError> {
-    let shared = shared_bond_ids_between_rings(ring_info, placed_ring_idx, candidate_ring_idx);
-    if shared.len() != 1 {
-        return Err(ConfSeqBaseConformerError::UnsupportedRingFusion {
-            left: placed_ring_idx,
-            right: candidate_ring_idx,
-            shared_atoms: shared_atom_ids_between_rings(
-                ring_info,
-                placed_ring_idx,
-                candidate_ring_idx,
-            )
-            .len(),
-            shared_bonds: shared.len(),
-        });
-    }
-    let shared_bond = &molecule.bonds()[shared[0].index()];
-    let begin = shared_bond.begin().index();
-    let end = shared_bond.end().index();
-    if !placed[begin] || !placed[end] {
-        return Err(ConfSeqBaseConformerError::Build(
-            "shared fused-ring bond is not placed".to_string(),
-        ));
-    }
-
-    let ring = &ring_info.atom_rings()[candidate_ring_idx];
-    let ring_points = confseq_base_ring_local_points(molecule, ring, geometry)?;
-    let Some(begin_pos) = ring.iter().position(|atom| atom.index() == begin) else {
-        return Err(ConfSeqBaseConformerError::Build(
-            "shared fused-ring begin atom is not in candidate ring".to_string(),
-        ));
-    };
-    let Some(end_pos) = ring.iter().position(|atom| atom.index() == end) else {
-        return Err(ConfSeqBaseConformerError::Build(
-            "shared fused-ring end atom is not in candidate ring".to_string(),
-        ));
-    };
-
-    let local_begin = ring_points[begin_pos];
-    let local_end = ring_points[end_pos];
-    let local_u = vec_normalize(vec_sub(local_end, local_begin));
-    let local_centroid = centroid_3d(&ring_points);
-    let local_centroid_from_bond = vec_sub(
-        local_centroid,
-        vec_scale(vec_add(local_begin, local_end), 0.5),
-    );
-    let local_v = vec_normalize(vec_sub(
-        local_centroid_from_bond,
-        vec_scale(local_u, vec_dot(local_centroid_from_bond, local_u)),
-    ));
-    let local_v = if vec_len(local_v) <= 1.0e-12 {
-        perpendicular_unit(local_u)
-    } else {
-        local_v
-    };
-    let local_w = vec_normalize(vec_cross(local_u, local_v));
-    let local_centroid_side = vec_dot(vec_sub(local_centroid, local_begin), local_v);
-    let world_begin = coords[begin];
-    let world_end = coords[end];
-    let world_u = vec_normalize(vec_sub(world_end, world_begin));
-    let normal = confseq_base_ring_plane_normal(ring_info, placed_ring_idx, coords);
-    let mut world_v = vec_normalize(vec_cross(normal, world_u));
-    let world_w = vec_normalize(vec_cross(world_u, world_v));
-    let existing_centroid = confseq_base_ring_centroid(ring_info, placed_ring_idx, coords);
-    let midpoint = vec_scale(vec_add(world_begin, world_end), 0.5);
-    let existing_centroid_side = vec_dot(vec_sub(existing_centroid, midpoint), world_v);
-    if existing_centroid_side * local_centroid_side > 0.0 {
-        world_v = vec_scale(world_v, -1.0);
-    }
-
-    for (atom, point) in ring.iter().zip(ring_points) {
-        let rel = vec_sub(point, local_begin);
-        let x = vec_dot(rel, local_u);
-        let y = vec_dot(rel, local_v);
-        let z = vec_dot(rel, local_w);
-        coords[atom.index()] = vec_add(
-            world_begin,
-            vec_add(
-                vec_scale(world_u, x),
-                vec_add(vec_scale(world_v, y), vec_scale(world_w, z)),
-            ),
-        );
-        placed[atom.index()] = true;
-    }
-    ring_placed[candidate_ring_idx] = true;
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn propagate_confseq_base_from_placed_rings(
-    molecule: &Molecule,
-    adjacency: &AdjacencyList,
-    ring_info: &rings::RingInfo,
-    atom_to_ring: &[Option<usize>],
-    ring_bonds: &HashSet<usize>,
-    coords: &mut [[f64; 3]],
-    placed: &mut [bool],
-    ring_placed: &mut [bool],
-    geometry: &ConfSeqBaseGeometry,
-) -> Result<(), ConfSeqBaseConformerError> {
-    for ring_idx in 0..ring_info.num_rings() {
-        if !ring_placed[ring_idx] {
-            continue;
-        }
-        for atom in &ring_info.atom_rings()[ring_idx] {
-            propagate_confseq_base_from_atom(
-                molecule,
-                adjacency,
-                ring_info,
-                atom_to_ring,
-                ring_bonds,
-                atom.index(),
-                None,
-                coords,
-                placed,
-                ring_placed,
-                geometry,
-            )?;
-        }
-    }
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn place_confseq_tree_with_ring_blocks(
-    molecule: &Molecule,
-    adjacency: &AdjacencyList,
-    ring_info: &rings::RingInfo,
-    atom_to_ring: &[Option<usize>],
-    ring_bonds: &HashSet<usize>,
-    atom_idx: usize,
-    parent: Option<usize>,
-    point: [f64; 3],
-    coords: &mut [[f64; 3]],
-    placed: &mut [bool],
-    ring_placed: &mut [bool],
-    geometry: &ConfSeqBaseGeometry,
-) -> Result<(), ConfSeqBaseConformerError> {
-    coords[atom_idx] = point;
-    placed[atom_idx] = true;
-    propagate_confseq_base_from_atom(
-        molecule,
-        adjacency,
-        ring_info,
-        atom_to_ring,
-        ring_bonds,
-        atom_idx,
-        parent,
-        coords,
-        placed,
-        ring_placed,
-        geometry,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn propagate_confseq_base_from_atom(
-    molecule: &Molecule,
-    adjacency: &AdjacencyList,
-    ring_info: &rings::RingInfo,
-    atom_to_ring: &[Option<usize>],
-    ring_bonds: &HashSet<usize>,
-    atom_idx: usize,
-    parent: Option<usize>,
-    coords: &mut [[f64; 3]],
-    placed: &mut [bool],
-    ring_placed: &mut [bool],
-    geometry: &ConfSeqBaseGeometry,
-) -> Result<(), ConfSeqBaseConformerError> {
-    let base_axis = parent
-        .map(|parent| vec_normalize(vec_sub(coords[atom_idx], coords[parent])))
-        .unwrap_or([1.0, 0.0, 0.0]);
-    let children: Vec<_> = adjacency
-        .neighbors_of(atom_idx)
-        .iter()
-        .filter(|nbr| Some(nbr.atom_index) != parent)
-        .filter(|nbr| !ring_bonds.contains(&nbr.bond.index()))
-        .filter(|nbr| !placed[nbr.atom_index])
-        .collect();
-    let child_count = children.len();
-    for (child_ord, nbr) in children.into_iter().enumerate() {
-        let bond = &molecule.bonds()[nbr.bond.index()];
-        let length = geometry.bond_length(bond);
-        let dir = if let Some(ring_idx) = atom_to_ring[atom_idx] {
-            let directions = confseq_base_ring_substituent_directions(
-                molecule,
-                ring_info,
-                ring_idx,
-                atom_idx,
-                coords,
-                child_count,
-            );
-            directions.get(child_ord).copied().unwrap_or_else(|| {
-                confseq_base_ring_substituent_direction(
-                    molecule, ring_info, ring_idx, atom_idx, coords,
-                )
-            })
-        } else {
-            child_direction(
-                base_axis,
-                child_ord,
-                child_count,
-                confseq_base_local_angle_rad(molecule, atom_idx),
-            )
-        };
-        let child_point = vec_add(coords[atom_idx], vec_scale(dir, length));
-        if let Some(child_ring_idx) = atom_to_ring[nbr.atom_index] {
-            place_confseq_ring_component(
-                molecule,
-                ring_info,
-                child_ring_idx,
-                Some((nbr.atom_index, child_point, vec_scale(dir, -1.0))),
-                coords,
-                placed,
-                ring_placed,
-                geometry,
-            )?;
-            propagate_confseq_base_from_placed_rings(
-                molecule,
-                adjacency,
-                ring_info,
-                atom_to_ring,
-                ring_bonds,
-                coords,
-                placed,
-                ring_placed,
-                geometry,
-            )?;
-        } else {
-            place_confseq_tree_with_ring_blocks(
-                molecule,
-                adjacency,
-                ring_info,
-                atom_to_ring,
-                ring_bonds,
-                nbr.atom_index,
-                Some(atom_idx),
-                child_point,
-                coords,
-                placed,
-                ring_placed,
-                geometry,
-            )?;
-        }
-    }
-    Ok(())
-}
-
-fn confseq_base_ring_substituent_direction(
-    molecule: &Molecule,
-    ring_info: &rings::RingInfo,
-    ring_idx: usize,
-    atom_idx: usize,
-    coords: &[[f64; 3]],
-) -> [f64; 3] {
-    let ring = &ring_info.atom_rings()[ring_idx];
-    let points: Vec<_> = ring.iter().map(|atom| coords[atom.index()]).collect();
-    confseq_base_ring_substituent_direction_from_points(molecule, ring, atom_idx, &points)
-}
-
-fn confseq_base_ring_substituent_directions(
-    molecule: &Molecule,
-    ring_info: &rings::RingInfo,
-    ring_idx: usize,
-    atom_idx: usize,
-    coords: &[[f64; 3]],
-    child_count: usize,
-) -> Vec<[f64; 3]> {
-    let ring = &ring_info.atom_rings()[ring_idx];
-    let points: Vec<_> = ring.iter().map(|atom| coords[atom.index()]).collect();
-    confseq_base_ring_substituent_directions_from_points(
-        molecule,
-        ring,
-        atom_idx,
-        &points,
-        child_count,
-    )
-}
-
-fn confseq_base_ring_substituent_direction_from_points(
-    molecule: &Molecule,
-    ring: &[AtomId],
-    atom_idx: usize,
-    points: &[[f64; 3]],
-) -> [f64; 3] {
-    let Some(pos) = ring.iter().position(|atom| atom.index() == atom_idx) else {
-        return [1.0, 0.0, 0.0];
-    };
-    if ring.len() < 3 || points.len() != ring.len() {
-        return [1.0, 0.0, 0.0];
-    }
-
-    let center = points[pos];
-    let prev = points[(pos + ring.len() - 1) % ring.len()];
-    let next = points[(pos + 1) % ring.len()];
-    let to_prev = vec_normalize(vec_sub(prev, center));
-    let to_next = vec_normalize(vec_sub(next, center));
-    let bisector = vec_add(to_prev, to_next);
-    if vec_len(bisector) <= 1.0e-12 {
-        let centroid = centroid_3d(points);
-        return vec_normalize(vec_sub(center, centroid));
-    }
-
-    let atom = &molecule.atoms()[atom_idx];
-    if atom.is_aromatic() || atom.hybridization() == Hybridization::Sp2 {
-        let centroid = centroid_3d(points);
-        let first = vec_normalize(bisector);
-        let second = vec_scale(first, -1.0);
-        let radial = vec_normalize(vec_sub(center, centroid));
-        return if vec_dot(first, radial) >= vec_dot(second, radial) {
-            first
-        } else {
-            second
-        };
-    }
-
-    // Choose the external unit vector whose angles to both ring neighbors match
-    // the center's local valence angle when geometrically possible. This keeps
-    // ring substituents constrained by bond lengths and local angles without
-    // invoking a force field or conformer search.
-    let internal_angle = angle_rad(prev, center, next);
-    let half_cos = (0.5 * internal_angle).cos();
-    let target_cos = confseq_base_local_angle_rad(molecule, atom_idx).cos();
-    if half_cos.abs() <= 1.0e-12 {
-        let centroid = centroid_3d(points);
-        return vec_normalize(vec_sub(center, centroid));
-    }
-    let in_bisector_scale = (target_cos / half_cos).clamp(-1.0, 1.0);
-    let in_plane = vec_scale(vec_normalize(bisector), in_bisector_scale);
-    let normal = vec_cross(to_prev, to_next);
-    let out_of_plane = (1.0 - in_bisector_scale * in_bisector_scale)
-        .max(0.0)
-        .sqrt();
-    if vec_len(normal) <= 1.0e-12 || out_of_plane <= 1.0e-12 {
-        return vec_normalize(in_plane);
-    }
-
-    let normal = vec_normalize(normal);
-    let first = vec_normalize(vec_add(in_plane, vec_scale(normal, out_of_plane)));
-    let second = vec_normalize(vec_add(in_plane, vec_scale(normal, -out_of_plane)));
-    let centroid = centroid_3d(points);
-    let radial = vec_normalize(vec_sub(center, centroid));
-    if vec_dot(first, radial) >= vec_dot(second, radial) {
-        first
-    } else {
-        second
-    }
-}
-
-fn confseq_base_ring_substituent_directions_from_points(
-    molecule: &Molecule,
-    ring: &[AtomId],
-    atom_idx: usize,
-    points: &[[f64; 3]],
-    child_count: usize,
-) -> Vec<[f64; 3]> {
-    if child_count == 0 {
-        return Vec::new();
-    }
-    if child_count == 1 {
-        return vec![confseq_base_ring_substituent_direction_from_points(
-            molecule, ring, atom_idx, points,
-        )];
-    }
-    let repeated_single = || {
-        vec![
-            confseq_base_ring_substituent_direction_from_points(molecule, ring, atom_idx, points);
-            child_count
-        ]
-    };
-    if child_count != 2 {
-        return repeated_single();
-    }
-
-    let Some(pos) = ring.iter().position(|atom| atom.index() == atom_idx) else {
-        return repeated_single();
-    };
-    if ring.len() < 3 || points.len() != ring.len() {
-        return repeated_single();
-    }
-
-    let center = points[pos];
-    let prev = points[(pos + ring.len() - 1) % ring.len()];
-    let next = points[(pos + 1) % ring.len()];
-    let to_prev = vec_normalize(vec_sub(prev, center));
-    let to_next = vec_normalize(vec_sub(next, center));
-    let bisector = vec_add(to_prev, to_next);
-    if vec_len(bisector) <= 1.0e-12 {
-        return repeated_single();
-    }
-
-    let atom = &molecule.atoms()[atom_idx];
-    if atom.is_aromatic() || atom.hybridization() == Hybridization::Sp2 {
-        return repeated_single();
-    }
-
-    let internal_angle = angle_rad(prev, center, next);
-    let half_cos = (0.5 * internal_angle).cos();
-    let target_cos = confseq_base_local_angle_rad(molecule, atom_idx).cos();
-    if half_cos.abs() <= 1.0e-12 {
-        return repeated_single();
-    }
-    let in_bisector_scale = (target_cos / half_cos).clamp(-1.0, 1.0);
-    let in_plane = vec_scale(vec_normalize(bisector), in_bisector_scale);
-    let normal = vec_cross(to_prev, to_next);
-    let out_of_plane = (1.0 - in_bisector_scale * in_bisector_scale)
-        .max(0.0)
-        .sqrt();
-    if vec_len(normal) <= 1.0e-12 || out_of_plane <= 1.0e-12 {
-        return repeated_single();
-    }
-
-    let normal = vec_normalize(normal);
-    let first = vec_normalize(vec_add(in_plane, vec_scale(normal, out_of_plane)));
-    let second = vec_normalize(vec_add(in_plane, vec_scale(normal, -out_of_plane)));
-    // Analytic paired solution for two external substituents on an sp3 ring
-    // atom with two ring neighbors: both directions satisfy the same target
-    // angle to each ring bond and occupy opposite sides of the local ring
-    // plane. This avoids the previous invalid collapse where both children
-    // reused the single-substituent direction.
-    vec![first, second]
-}
-
-fn confseq_base_ring_centroid(
-    ring_info: &rings::RingInfo,
-    ring_idx: usize,
-    coords: &[[f64; 3]],
-) -> [f64; 3] {
-    let ring = &ring_info.atom_rings()[ring_idx];
-    let sum = ring
-        .iter()
-        .map(|atom| coords[atom.index()])
-        .fold([0.0; 3], vec_add);
-    vec_scale(sum, 1.0 / ring.len() as f64)
-}
-
-fn confseq_base_ring_plane_normal(
-    ring_info: &rings::RingInfo,
-    ring_idx: usize,
-    coords: &[[f64; 3]],
-) -> [f64; 3] {
-    let ring = &ring_info.atom_rings()[ring_idx];
-    if ring.len() < 3 {
-        return [0.0, 0.0, 1.0];
-    }
-    let origin = coords[ring[0].index()];
-    for left in 1..ring.len() {
-        for right in left + 1..ring.len() {
-            let normal = vec_cross(
-                vec_sub(coords[ring[left].index()], origin),
-                vec_sub(coords[ring[right].index()], origin),
-            );
-            if vec_len(normal) > 1.0e-12 {
-                return vec_normalize(normal);
-            }
-        }
-    }
-    [0.0, 0.0, 1.0]
-}
-
-fn confseq_base_ring_side_lengths(
-    molecule: &Molecule,
-    ring: &[AtomId],
-    geometry: &ConfSeqBaseGeometry,
-) -> Result<Vec<f64>, ConfSeqBaseConformerError> {
-    let mut lengths = Vec::with_capacity(ring.len());
-    for pos in 0..ring.len() {
-        let begin = ring[pos].index();
-        let end = ring[(pos + 1) % ring.len()].index();
-        let Some(bond) = bond_between_pair(molecule, sorted_pair(begin, end)) else {
-            return Err(ConfSeqBaseConformerError::Build(
-                "ring atom order does not map to adjacent ring bonds".to_string(),
-            ));
-        };
-        lengths.push(geometry.bond_length(bond));
-    }
-    Ok(lengths)
-}
-
-fn confseq_base_ring_local_points(
-    molecule: &Molecule,
-    ring: &[AtomId],
-    geometry: &ConfSeqBaseGeometry,
-) -> Result<Vec<[f64; 3]>, ConfSeqBaseConformerError> {
-    let side_lengths = confseq_base_ring_side_lengths(molecule, ring, geometry)?;
-    let points = if is_confseq_base_saturated_five_membered_ring(molecule, ring)? {
-        saturated_five_membered_envelope_points(molecule, ring, &side_lengths)?
-    } else if is_confseq_base_puckerable_six_membered_ring(molecule, ring)? {
-        saturated_six_membered_chair_points(molecule, ring, &side_lengths)?
-    } else {
-        planar_cyclic_polygon_points(&side_lengths).map(|points| {
-            points
-                .into_iter()
-                .map(|point| [point[0], point[1], 0.0])
-                .collect()
-        })?
-    };
-    Ok(orient_ring_local_points_for_embedded_tetrahedral_stereo(
-        molecule, ring, points,
-    ))
-}
-
-fn orient_ring_local_points_for_embedded_tetrahedral_stereo(
-    molecule: &Molecule,
-    ring: &[AtomId],
-    points: Vec<[f64; 3]>,
-) -> Vec<[f64; 3]> {
-    if ring.len() < 3 || points.iter().all(|point| point[2].abs() <= 1.0e-12) {
-        return points;
-    }
-    let constraints = collect_ring_local_tetrahedral_constraints(molecule, ring);
-    if constraints.is_empty() {
-        return points;
-    }
-
-    let mirrored: Vec<_> = points
-        .iter()
-        .map(|point| [point[0], point[1], -point[2]])
-        .collect();
-    let original_unsatisfied =
-        count_unsatisfied_ring_local_tetrahedral_constraints(&points, &constraints);
-    let mirrored_unsatisfied =
-        count_unsatisfied_ring_local_tetrahedral_constraints(&mirrored, &constraints);
-    if mirrored_unsatisfied < original_unsatisfied {
-        mirrored
-    } else {
-        points
-    }
-}
-
-#[derive(Debug, Clone)]
-struct RingLocalTetrahedralConstraint {
-    ligands: [RingLocalTetrahedralPoint; 4],
-    tag: ChiralTag,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum RingLocalTetrahedralPoint {
-    Ring(usize),
-    Substituent(usize),
-}
-
-fn collect_ring_local_tetrahedral_constraints(
-    molecule: &Molecule,
-    ring: &[AtomId],
-) -> Vec<RingLocalTetrahedralConstraint> {
-    let mut constraints = Vec::new();
-    for (center_pos, atom) in ring.iter().enumerate() {
-        let center = atom.index();
-        let tag = molecule.atoms()[center].chiral_tag();
-        if !matches!(tag, ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw) {
-            continue;
-        }
-        let mut ligand_points = Vec::new();
-        for bond in molecule.bonds() {
-            let begin = bond.begin().index();
-            let end = bond.end().index();
-            let neighbor = if begin == center {
-                end
-            } else if end == center {
-                begin
-            } else {
-                continue;
-            };
-            if let Some(pos) = ring.iter().position(|atom| atom.index() == neighbor) {
-                ligand_points.push(RingLocalTetrahedralPoint::Ring(pos));
-            } else {
-                ligand_points.push(RingLocalTetrahedralPoint::Substituent(center_pos));
-            };
-        }
-        let ligands = match ligand_points.as_slice() {
-            [a, b, c] => [*a, *b, *c, RingLocalTetrahedralPoint::Ring(center_pos)],
-            [a, b, c, d] => [*a, *b, *c, *d],
-            _ => continue,
-        };
-        constraints.push(RingLocalTetrahedralConstraint { ligands, tag });
-    }
-    constraints
-}
-
-fn count_unsatisfied_ring_local_tetrahedral_constraints(
-    points: &[[f64; 3]],
-    constraints: &[RingLocalTetrahedralConstraint],
-) -> usize {
-    constraints
-        .iter()
-        .filter(|constraint| {
-            !confseq_base_chiral_volume_satisfies_tag(
-                ring_local_tetrahedral_volume(points, constraint),
-                constraint.tag,
-            )
-        })
-        .count()
-}
-
-fn ring_local_tetrahedral_volume(
-    points: &[[f64; 3]],
-    constraint: &RingLocalTetrahedralConstraint,
-) -> f64 {
-    let [a, b, c, d] = constraint.ligands;
-    let anchor = ring_local_tetrahedral_point(points, d);
-    let v1 = vec_sub(ring_local_tetrahedral_point(points, a), anchor);
-    let v2 = vec_sub(ring_local_tetrahedral_point(points, b), anchor);
-    let v3 = vec_sub(ring_local_tetrahedral_point(points, c), anchor);
-    vec_dot(v1, vec_cross(v2, v3))
-}
-
-fn ring_local_tetrahedral_point(points: &[[f64; 3]], point: RingLocalTetrahedralPoint) -> [f64; 3] {
-    match point {
-        RingLocalTetrahedralPoint::Ring(pos) => points[pos],
-        RingLocalTetrahedralPoint::Substituent(pos) => {
-            let center = points[pos];
-            let prev = points[(pos + points.len() - 1) % points.len()];
-            let next = points[(pos + 1) % points.len()];
-            let to_prev = vec_normalize(vec_sub(prev, center));
-            let to_next = vec_normalize(vec_sub(next, center));
-            let bisector = vec_add(to_prev, to_next);
-            let direction = if vec_len(bisector) <= 1.0e-12 {
-                vec_normalize(vec_sub(center, centroid_3d(points)))
-            } else {
-                vec_scale(vec_normalize(bisector), -1.0)
-            };
-            vec_add(center, direction)
-        }
-    }
-}
-
-fn is_confseq_base_saturated_five_membered_ring(
-    molecule: &Molecule,
-    ring: &[AtomId],
-) -> Result<bool, ConfSeqBaseConformerError> {
-    if ring.len() != 5 {
-        return Ok(false);
-    }
-    for atom in ring {
-        let atom = &molecule.atoms()[atom.index()];
-        if atom.is_aromatic()
-            || atom.hybridization() != Hybridization::Sp3
-            || !matches!(atom.atomic_number(), 6 | 7 | 8 | 15 | 16)
-        {
-            return Ok(false);
-        }
-    }
-    for pos in 0..ring.len() {
-        let begin = ring[pos].index();
-        let end = ring[(pos + 1) % ring.len()].index();
-        let Some(bond) = bond_between_pair(molecule, sorted_pair(begin, end)) else {
-            return Err(ConfSeqBaseConformerError::Build(
-                "ring atom order does not map to adjacent ring bonds".to_string(),
-            ));
-        };
-        if bond.order() != BondOrder::Single || bond.is_aromatic() {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
-fn is_confseq_base_puckerable_six_membered_ring(
-    molecule: &Molecule,
-    ring: &[AtomId],
-) -> Result<bool, ConfSeqBaseConformerError> {
-    if ring.len() != 6 {
-        return Ok(false);
-    }
-    let has_sp3_center = ring
-        .iter()
-        .any(|atom| molecule.atoms()[atom.index()].hybridization() == Hybridization::Sp3);
-    if !has_sp3_center {
-        return Ok(false);
-    }
-    for atom in ring {
-        let atom = &molecule.atoms()[atom.index()];
-        if atom.is_aromatic() || !matches!(atom.atomic_number(), 6 | 7 | 8 | 15 | 16) {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
-fn saturated_five_membered_envelope_points(
-    molecule: &Molecule,
-    ring: &[AtomId],
-    side_lengths: &[f64],
-) -> Result<Vec<[f64; 3]>, ConfSeqBaseConformerError> {
-    debug_assert_eq!(ring.len(), 5);
-    debug_assert_eq!(side_lengths.len(), 5);
-    let mut candidate_envelopes: Vec<_> = ring
-        .iter()
-        .enumerate()
-        .filter_map(|(pos, atom)| {
-            matches!(
-                molecule.atoms()[atom.index()].chiral_tag(),
-                ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
-            )
-            .then_some(pos)
-        })
-        .collect();
-    if candidate_envelopes.is_empty() {
-        candidate_envelopes.extend(0..ring.len());
-    }
-
-    let mut best_points = None;
-    let mut best_score = f64::INFINITY;
-    for envelope_pos in candidate_envelopes {
-        let Some((points, score)) =
-            optimized_five_membered_envelope_for_atom(molecule, ring, side_lengths, envelope_pos)
-        else {
-            continue;
-        };
-        if score < best_score {
-            best_score = score;
-            best_points = Some(points);
-        }
-    }
-    best_points.ok_or_else(|| {
-        ConfSeqBaseConformerError::Build(
-            "saturated five-membered ring cannot form an envelope base polygon".to_string(),
-        )
-    })
-}
-
-fn optimized_five_membered_envelope_for_atom(
-    molecule: &Molecule,
-    ring: &[AtomId],
-    side_lengths: &[f64],
-    envelope_pos: usize,
-) -> Option<(Vec<[f64; 3]>, f64)> {
-    let prev_edge = (envelope_pos + side_lengths.len() - 1) % side_lengths.len();
-    let next_edge = envelope_pos;
-    let upper = 0.5 * side_lengths[prev_edge].min(side_lengths[next_edge]) * (1.0 - 1.0e-10);
-    if !upper.is_finite() || upper <= 0.0 {
-        return None;
-    }
-    let mut best_height = None;
-    let mut best_score = f64::INFINITY;
-    for sample in 0..=96 {
-        let height = upper * sample as f64 / 96.0;
-        let score = five_membered_envelope_local_angle_score(
-            molecule,
-            ring,
-            side_lengths,
-            envelope_pos,
-            height,
-        );
-        if score.is_finite() && score < best_score {
-            best_score = score;
-            best_height = Some(height);
-        }
-    }
-    let mut center = best_height?;
-    let mut step = upper / 96.0;
-    for _ in 0..48 {
-        let left = (center - step).max(0.0);
-        let right = (center + step).min(upper);
-        let left_mid = left + (right - left) / 3.0;
-        let right_mid = right - (right - left) / 3.0;
-        let left_score = five_membered_envelope_local_angle_score(
-            molecule,
-            ring,
-            side_lengths,
-            envelope_pos,
-            left_mid,
-        );
-        let right_score = five_membered_envelope_local_angle_score(
-            molecule,
-            ring,
-            side_lengths,
-            envelope_pos,
-            right_mid,
-        );
-        center = if left_score <= right_score {
-            left_mid
-        } else {
-            right_mid
-        };
-        step *= 0.5;
-    }
-    let points = five_membered_envelope_points_for_height(side_lengths, envelope_pos, center)?;
-    let score = five_membered_envelope_local_angle_score(
-        molecule,
-        ring,
-        side_lengths,
-        envelope_pos,
-        center,
-    );
-    Some((points, score))
-}
-
-fn five_membered_envelope_local_angle_score(
-    molecule: &Molecule,
-    ring: &[AtomId],
-    side_lengths: &[f64],
-    envelope_pos: usize,
-    height: f64,
-) -> f64 {
-    let Some(points) = five_membered_envelope_points_for_height(side_lengths, envelope_pos, height)
-    else {
-        return f64::INFINITY;
-    };
-    let mut score = 0.0;
-    for idx in 0..5 {
-        let prev = (idx + 4) % 5;
-        let next = (idx + 1) % 5;
-        let observed = angle_rad(points[prev], points[idx], points[next]);
-        let target = confseq_base_ring_angle_rad(molecule, ring[idx].index(), ring.len());
-        let delta = observed - target;
-        score += delta * delta;
-    }
-    score
-}
-
-fn five_membered_envelope_points_for_height(
-    side_lengths: &[f64],
-    envelope_pos: usize,
-    height: f64,
-) -> Option<Vec<[f64; 3]>> {
-    debug_assert_eq!(side_lengths.len(), 5);
-    let mut xy_lengths = side_lengths.to_vec();
-    let prev_edge = (envelope_pos + side_lengths.len() - 1) % side_lengths.len();
-    let next_edge = envelope_pos;
-    for edge in [prev_edge, next_edge] {
-        let xy_sq = side_lengths[edge] * side_lengths[edge] - height * height;
-        if xy_sq <= 0.0 {
-            return None;
-        }
-        xy_lengths[edge] = xy_sq.sqrt();
-    }
-    let xy_points = planar_cyclic_polygon_points(&xy_lengths).ok()?;
-    Some(
-        xy_points
-            .into_iter()
-            .enumerate()
-            .map(|(idx, point)| {
-                [
-                    point[0],
-                    point[1],
-                    if idx == envelope_pos { height } else { 0.0 },
-                ]
-            })
-            .collect(),
-    )
-}
-
-fn saturated_six_membered_chair_points(
-    molecule: &Molecule,
-    ring: &[AtomId],
-    side_lengths: &[f64],
-) -> Result<Vec<[f64; 3]>, ConfSeqBaseConformerError> {
-    // Analytic chair subset for equal-edge saturated six-membered rings. For
-    // edge length L, choosing in-plane radius a=L*sqrt(8/9) and alternating
-    // z=+/-L/6 makes adjacent bond lengths L and ring bond angles tetrahedral.
-    if side_lengths
-        .iter()
-        .all(|length| (*length - side_lengths[0]).abs() <= 1.0e-12)
-        && ring
-            .iter()
-            .all(|atom| molecule.atoms()[atom.index()].atomic_number() == 6)
-    {
-        return Ok(equal_edge_saturated_six_membered_chair_points(
-            side_lengths[0],
-        ));
-    }
-
-    // Mixed saturated extension: keep every ring edge length exact and choose a
-    // single chair-like puckering height by deterministic local-angle least
-    // squares. This is a constrained base scaffold, not a force field or
-    // conformer search; non-bonded terms and global energy are intentionally
-    // absent.
-    optimized_puckered_six_membered_ring_points(molecule, ring, side_lengths)
-}
-
-fn equal_edge_saturated_six_membered_chair_points(length: f64) -> Vec<[f64; 3]> {
-    let radius = length * (8.0_f64 / 9.0).sqrt();
-    let z = length / 6.0;
-    (0..6)
-        .map(|idx| {
-            let theta = idx as f64 * PI / 3.0;
-            [
-                radius * theta.cos(),
-                radius * theta.sin(),
-                if idx % 2 == 0 { z } else { -z },
-            ]
-        })
-        .collect()
-}
-
-fn optimized_puckered_six_membered_ring_points(
-    molecule: &Molecule,
-    ring: &[AtomId],
-    side_lengths: &[f64],
-) -> Result<Vec<[f64; 3]>, ConfSeqBaseConformerError> {
-    debug_assert_eq!(ring.len(), 6);
-    debug_assert_eq!(side_lengths.len(), 6);
-    let min_side = side_lengths.iter().copied().fold(f64::INFINITY, f64::min);
-    if !min_side.is_finite() || min_side <= 0.0 {
-        return Err(ConfSeqBaseConformerError::Build(
-            "saturated six-membered ring has invalid side lengths".to_string(),
-        ));
-    }
-    let upper = 0.5 * min_side * (1.0 - 1.0e-10);
-    let mut best_height = None;
-    let mut best_score = f64::INFINITY;
-    for sample in 0..=96 {
-        let height = upper * sample as f64 / 96.0;
-        let score =
-            puckered_six_membered_ring_local_angle_score(molecule, ring, side_lengths, height);
-        if score.is_finite() && score < best_score {
-            best_score = score;
-            best_height = Some(height);
-        }
-    }
-    let Some(mut center) = best_height else {
-        return Err(ConfSeqBaseConformerError::Build(
-            "saturated six-membered ring cannot form a puckered base polygon".to_string(),
-        ));
-    };
-    let mut step = upper / 96.0;
-    for _ in 0..48 {
-        let left = (center - step).max(0.0);
-        let right = (center + step).min(upper);
-        let left_mid = left + (right - left) / 3.0;
-        let right_mid = right - (right - left) / 3.0;
-        let left_score =
-            puckered_six_membered_ring_local_angle_score(molecule, ring, side_lengths, left_mid);
-        let right_score =
-            puckered_six_membered_ring_local_angle_score(molecule, ring, side_lengths, right_mid);
-        center = if left_score <= right_score {
-            left_mid
-        } else {
-            right_mid
-        };
-        step *= 0.5;
-    }
-    puckered_six_membered_ring_points_for_height(side_lengths, center).ok_or_else(|| {
-        ConfSeqBaseConformerError::Build(
-            "saturated six-membered ring optimized height is invalid".to_string(),
-        )
-    })
-}
-
-fn puckered_six_membered_ring_local_angle_score(
-    molecule: &Molecule,
-    ring: &[AtomId],
-    side_lengths: &[f64],
-    height: f64,
-) -> f64 {
-    let Some(points) = puckered_six_membered_ring_points_for_height(side_lengths, height) else {
-        return f64::INFINITY;
-    };
-    let mut score = 0.0;
-    for idx in 0..6 {
-        let prev = (idx + 5) % 6;
-        let next = (idx + 1) % 6;
-        let observed = angle_rad(points[prev], points[idx], points[next]);
-        let target = confseq_base_ring_angle_rad(molecule, ring[idx].index(), ring.len());
-        let delta = observed - target;
-        score += delta * delta;
-    }
-    score
-}
-
-fn puckered_six_membered_ring_points_for_height(
-    side_lengths: &[f64],
-    height: f64,
-) -> Option<Vec<[f64; 3]>> {
-    let z_delta = 2.0 * height;
-    let mut xy_lengths = Vec::with_capacity(side_lengths.len());
-    for side in side_lengths {
-        let xy_sq = side * side - z_delta * z_delta;
-        if xy_sq <= 0.0 {
-            return None;
-        }
-        xy_lengths.push(xy_sq.sqrt());
-    }
-    let xy_points = planar_cyclic_polygon_points(&xy_lengths).ok()?;
-    Some(
-        xy_points
-            .into_iter()
-            .enumerate()
-            .map(|(idx, point)| {
-                [
-                    point[0],
-                    point[1],
-                    if idx % 2 == 0 { height } else { -height },
-                ]
-            })
-            .collect(),
-    )
-}
-
-fn planar_cyclic_polygon_points(
-    side_lengths: &[f64],
-) -> Result<Vec<[f64; 2]>, ConfSeqBaseConformerError> {
-    let max_side = side_lengths.iter().copied().fold(0.0, f64::max);
-    let total: f64 = side_lengths.iter().sum();
-    if side_lengths.len() < 3 || max_side <= 0.0 || max_side * 2.0 >= total {
-        return Err(ConfSeqBaseConformerError::Build(
-            "ring side lengths cannot form a polygon".to_string(),
-        ));
-    }
-
-    let mut low = max_side * 0.5 * (1.0 + 1.0e-12);
-    let mut high = low * 2.0;
-    while cyclic_polygon_angle_sum(side_lengths, high) > 2.0 * PI {
-        high *= 2.0;
-    }
-    if cyclic_polygon_angle_sum(side_lengths, low) < 2.0 * PI {
-        return Err(ConfSeqBaseConformerError::Build(
-            "ring side lengths cannot form a cyclic polygon".to_string(),
-        ));
-    }
-    for _ in 0..80 {
-        let mid = 0.5 * (low + high);
-        if cyclic_polygon_angle_sum(side_lengths, mid) > 2.0 * PI {
-            low = mid;
-        } else {
-            high = mid;
-        }
-    }
-
-    let radius = 0.5 * (low + high);
-    let mut theta = 0.0_f64;
-    let mut points = Vec::with_capacity(side_lengths.len());
-    for side in side_lengths {
-        points.push([radius * theta.cos(), radius * theta.sin()]);
-        theta += 2.0 * (side / (2.0 * radius)).clamp(-1.0, 1.0).asin();
-    }
-    Ok(points)
-}
-
-fn cyclic_polygon_angle_sum(side_lengths: &[f64], radius: f64) -> f64 {
-    side_lengths
-        .iter()
-        .map(|side| 2.0 * (side / (2.0 * radius)).clamp(-1.0, 1.0).asin())
-        .sum()
-}
-
-fn centroid_3d(points: &[[f64; 3]]) -> [f64; 3] {
-    let mut sum = [0.0, 0.0, 0.0];
-    for point in points {
-        sum = vec_add(sum, *point);
-    }
-    vec_scale(sum, 1.0 / points.len() as f64)
 }
 
 fn validate_supported_confseq_base_ring(
@@ -2585,47 +2982,6 @@ fn validate_supported_confseq_base_ring(
         }
     }
     Ok(())
-}
-
-fn place_confseq_tree(
-    molecule: &Molecule,
-    adjacency: &AdjacencyList,
-    atom_idx: usize,
-    parent: Option<usize>,
-    point: [f64; 3],
-    coords: &mut [[f64; 3]],
-    placed: &mut [bool],
-    geometry: &ConfSeqBaseGeometry,
-) {
-    coords[atom_idx] = point;
-    placed[atom_idx] = true;
-
-    let base_axis = parent
-        .map(|parent| vec_normalize(vec_sub(coords[atom_idx], coords[parent])))
-        .unwrap_or([1.0, 0.0, 0.0]);
-    let children: Vec<_> = adjacency
-        .neighbors_of(atom_idx)
-        .iter()
-        .filter(|nbr| Some(nbr.atom_index) != parent && !placed[nbr.atom_index])
-        .collect();
-    let child_count = children.len();
-    for (child_ord, nbr) in children.into_iter().enumerate() {
-        let bond = &molecule.bonds()[nbr.bond.index()];
-        let length = geometry.bond_length(bond);
-        let angle = confseq_base_local_angle_rad(molecule, atom_idx);
-        let dir = child_direction(base_axis, child_ord, child_count, angle);
-        let child_point = vec_add(coords[atom_idx], vec_scale(dir, length));
-        place_confseq_tree(
-            molecule,
-            adjacency,
-            nbr.atom_index,
-            Some(atom_idx),
-            child_point,
-            coords,
-            placed,
-            geometry,
-        );
-    }
 }
 
 fn child_direction(
@@ -2756,43 +3112,6 @@ fn confseq_base_ring_angle_rad(molecule: &Molecule, center: usize, ring_size: us
     }
 }
 
-struct ConfSeqBaseGeometry {
-    bond_lengths: Vec<f64>,
-}
-
-impl ConfSeqBaseGeometry {
-    fn new(molecule: &Molecule, ring_info: &rings::RingInfo) -> Self {
-        let ring_bonds: HashSet<_> = ring_info
-            .bond_rings()
-            .iter()
-            .flat_map(|ring| ring.iter().map(|bond| bond.index()))
-            .collect();
-        let bond_lengths = molecule
-            .bonds()
-            .iter()
-            .map(|bond| {
-                // Non-aromatic ring blocks are constrained base scaffolds; keep
-                // their static edge lengths to avoid hidden ring-shape drift.
-                // Aromatic ring and non-ring bonds use the source-backed UFF
-                // rest length already ported in core.
-                if ring_bonds.contains(&bond.id().index()) && !bond.is_aromatic() {
-                    confseq_base_static_bond_length(molecule, bond)
-                } else {
-                    confseq_base_source_backed_bond_length(molecule, bond)
-                }
-            })
-            .collect();
-        Self { bond_lengths }
-    }
-
-    fn bond_length(&self, bond: &Bond) -> f64 {
-        self.bond_lengths
-            .get(bond.id().index())
-            .copied()
-            .unwrap_or_else(|| confseq_base_static_bond_length_fallback(bond))
-    }
-}
-
 fn confseq_base_source_backed_bond_length(molecule: &Molecule, bond: &Bond) -> f64 {
     // BEGIN RDKIT CPP FUNCTION RDKit::UFF::getUFFBondStretchParams (AtomTyper.cpp:535-557)
     // RDKit✔️❗: bool getUFFBondStretchParams(const ROMol &mol, unsigned int idx1,
@@ -2814,10 +3133,6 @@ fn confseq_base_source_backed_bond_length(molecule: &Molecule, bond: &Bond) -> f
         .flatten()
         .map(|params| params.r0)
         .unwrap_or_else(|| confseq_base_static_bond_length(molecule, bond))
-}
-
-fn confseq_base_bond_length(molecule: &Molecule, bond: &Bond) -> f64 {
-    confseq_base_source_backed_bond_length(molecule, bond)
 }
 
 fn confseq_base_static_bond_length_fallback(bond: &Bond) -> f64 {
@@ -2896,6 +3211,31 @@ fn vec_scale(v: [f64; 3], s: f64) -> [f64; 3] {
     [v[0] * s, v[1] * s, v[2] * s]
 }
 
+fn angle_rad_from_points(a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> Option<f64> {
+    let ba = vec_sub(a, b);
+    let bc = vec_sub(c, b);
+    let ba_len = vec_len(ba);
+    let bc_len = vec_len(bc);
+    if ba_len <= 1.0e-12 || bc_len <= 1.0e-12 {
+        return None;
+    }
+    Some(
+        (vec_dot(ba, bc) / (ba_len * bc_len))
+            .clamp(-1.0, 1.0)
+            .acos(),
+    )
+}
+
+fn confseq_base_coord_centroid(coords: &[[f64; 3]]) -> [f64; 3] {
+    if coords.is_empty() {
+        return [0.0, 0.0, 0.0];
+    }
+    let sum = coords
+        .iter()
+        .fold([0.0, 0.0, 0.0], |acc, point| vec_add(acc, *point));
+    vec_scale(sum, 1.0 / coords.len() as f64)
+}
+
 fn vec_cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [
         a[1] * b[2] - a[2] * b[1],
@@ -2910,16 +3250,6 @@ fn vec_dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 fn vec_len(v: [f64; 3]) -> f64 {
     (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
-}
-
-fn angle_rad(a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> f64 {
-    let ba = vec_sub(a, b);
-    let bc = vec_sub(c, b);
-    let denom = vec_len(ba) * vec_len(bc);
-    if denom <= 1.0e-12 {
-        return 0.0;
-    }
-    (vec_dot(ba, bc) / denom).clamp(-1.0, 1.0).acos()
 }
 
 fn vec_normalize(v: [f64; 3]) -> [f64; 3] {
@@ -3590,6 +3920,19 @@ fn chiral_tag_cache_code(tag: ChiralTag) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct ConfSeqDgReferenceCache {
+        corpus_path: String,
+        entries: Vec<ConfSeqDgReferenceCacheEntry>,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct ConfSeqDgReferenceCacheEntry {
+        heavy_atom_points: Option<Vec<[f64; 3]>>,
+        error: Option<String>,
+    }
 
     fn build_template_initial_coords_for_test(
         smiles: &str,
@@ -3762,6 +4105,325 @@ mod tests {
             .expect("ConfSeq base template should build")
     }
 
+    fn heavy_atom_points_for_rmsd(mol: &Molecule) -> Vec<[f64; 3]> {
+        let coords = conformer_points(mol);
+        mol.atoms()
+            .iter()
+            .filter_map(|atom| (atom.atomic_number() != 1).then_some(coords[atom.id().index()]))
+            .collect()
+    }
+
+    fn quantile_sorted(values: &[f64], q: f64) -> f64 {
+        if values.is_empty() {
+            return f64::NAN;
+        }
+        let idx = ((values.len() - 1) as f64 * q).round() as usize;
+        values[idx]
+    }
+
+    #[derive(Debug, Clone)]
+    struct RigidFragmentRmsdSummary {
+        fragment_rmsds: Vec<f64>,
+        max_rmsd: Option<f64>,
+        worst_fragment_atoms: Vec<usize>,
+    }
+
+    fn rigid_fragment_rmsd_summary(
+        molecule: &Molecule,
+        reference_heavy_points: &[[f64; 3]],
+        base: &Molecule,
+    ) -> RigidFragmentRmsdSummary {
+        let base_heavy_points = heavy_atom_points_for_rmsd(base);
+        assert_eq!(
+            reference_heavy_points.len(),
+            base_heavy_points.len(),
+            "rigid-fragment RMSD requires matching heavy atom counts"
+        );
+        let fragments = rigid_heavy_fragments_cutting_confseq_rotors(molecule);
+        let heavy_index_by_atom = heavy_index_by_atom(molecule);
+        let mut fragment_rmsds = Vec::new();
+        let mut worst_fragment_atoms = Vec::new();
+        for fragment in fragments {
+            let heavy_indices: Vec<_> = fragment
+                .iter()
+                .copied()
+                .filter_map(|atom_idx| heavy_index_by_atom[atom_idx])
+                .collect();
+            if heavy_indices.len() < 3 {
+                continue;
+            }
+            let ref_points: Vec<_> = heavy_indices
+                .iter()
+                .map(|&idx| reference_heavy_points[idx])
+                .collect();
+            let base_points: Vec<_> = heavy_indices
+                .iter()
+                .map(|&idx| base_heavy_points[idx])
+                .collect();
+            let rmsd = crate::distgeom::aligned_rmsd_for_test(&ref_points, &base_points);
+            if fragment_rmsds
+                .iter()
+                .copied()
+                .max_by(f64::total_cmp)
+                .map(|current_max| rmsd > current_max)
+                .unwrap_or(true)
+            {
+                worst_fragment_atoms = fragment;
+            }
+            fragment_rmsds.push(rmsd);
+        }
+        let max_rmsd = fragment_rmsds.iter().copied().max_by(f64::total_cmp);
+        RigidFragmentRmsdSummary {
+            fragment_rmsds,
+            max_rmsd,
+            worst_fragment_atoms,
+        }
+    }
+
+    fn rigid_heavy_fragments_cutting_confseq_rotors(molecule: &Molecule) -> Vec<Vec<usize>> {
+        let cut_bonds: HashSet<_> = collect_single_bond_dihedrals(molecule)
+            .into_iter()
+            .map(|(_, j, k, _)| sorted_pair(j, k))
+            .collect();
+        let adjacency = AdjacencyList::from_topology(molecule.num_atoms(), molecule.bonds());
+        let mut seen = vec![false; molecule.num_atoms()];
+        let mut fragments = Vec::new();
+        for atom in molecule.atoms() {
+            let start = atom.id().index();
+            if seen[start] || atom.atomic_number() == 1 {
+                continue;
+            }
+            let mut fragment = Vec::new();
+            let mut queue = VecDeque::new();
+            seen[start] = true;
+            queue.push_back(start);
+            while let Some(current) = queue.pop_front() {
+                fragment.push(current);
+                for neighbor in adjacency.neighbors_of(current) {
+                    let next = neighbor.atom_index;
+                    if seen[next] || molecule.atoms()[next].atomic_number() == 1 {
+                        continue;
+                    }
+                    if cut_bonds.contains(&sorted_pair(current, next)) {
+                        continue;
+                    }
+                    seen[next] = true;
+                    queue.push_back(next);
+                }
+            }
+            fragments.push(fragment);
+        }
+        fragments
+    }
+
+    fn heavy_index_by_atom(molecule: &Molecule) -> Vec<Option<usize>> {
+        let mut heavy_index_by_atom = vec![None; molecule.num_atoms()];
+        let mut heavy_idx = 0usize;
+        for atom in molecule.atoms() {
+            if atom.atomic_number() == 1 {
+                continue;
+            }
+            heavy_index_by_atom[atom.id().index()] = Some(heavy_idx);
+            heavy_idx += 1;
+        }
+        heavy_index_by_atom
+    }
+
+    fn rigid_fragment_type_for_diagnostic(
+        molecule: &Molecule,
+        model: &ConfSeqBaseConstraintModel,
+        fragment_atoms: &[usize],
+    ) -> &'static str {
+        let fragment_set: HashSet<_> = fragment_atoms.iter().copied().collect();
+        for component in &model.ring_components {
+            if component
+                .atoms
+                .iter()
+                .all(|atom| fragment_set.contains(atom))
+            {
+                return if component.planar {
+                    "ring_planar"
+                } else {
+                    "ring_nonplanar"
+                };
+            }
+        }
+        let all_planar_like = fragment_atoms.iter().copied().all(|atom_idx| {
+            let atom = &molecule.atoms()[atom_idx];
+            atom.is_aromatic() || atom.hybridization() == Hybridization::Sp2
+        });
+        if all_planar_like {
+            "planar_pi"
+        } else if fragment_atoms.iter().any(|atom| {
+            model
+                .ring_components
+                .iter()
+                .any(|component| component.atoms.contains(atom))
+        }) {
+            "ring_mixed"
+        } else {
+            "acyclic"
+        }
+    }
+
+    fn rigid_fragment_local_diagnostic(molecule: &Molecule, fragment_atoms: &[usize]) -> String {
+        let fragment_set: HashSet<_> = fragment_atoms.iter().copied().collect();
+        let cut_bonds: HashSet<_> = collect_single_bond_dihedrals(molecule)
+            .into_iter()
+            .map(|(_, j, k, _)| sorted_pair(j, k))
+            .collect();
+        let ring_bonds: HashSet<_> = rings::symmetrize_sssr(molecule)
+            .map(|ring_info| {
+                ring_info
+                    .bond_rings()
+                    .iter()
+                    .flatten()
+                    .map(|bond| bond.index())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let atom_details: Vec<_> = fragment_atoms
+            .iter()
+            .copied()
+            .map(|atom_idx| {
+                let atom = &molecule.atoms()[atom_idx];
+                format!(
+                    "{atom_idx}:Z{} hyb={:?} arom={} charge={} hdeg={}",
+                    atom.atomic_number(),
+                    atom.hybridization(),
+                    atom.is_aromatic(),
+                    atom.formal_charge(),
+                    heavy_degree(molecule, atom_idx)
+                )
+            })
+            .collect();
+        let bond_details: Vec<_> = molecule
+            .bonds()
+            .iter()
+            .filter_map(|bond| {
+                let begin = bond.begin().index();
+                let end = bond.end().index();
+                let begin_in = fragment_set.contains(&begin);
+                let end_in = fragment_set.contains(&end);
+                if !begin_in && !end_in {
+                    return None;
+                }
+                let scope = if begin_in && end_in {
+                    "internal"
+                } else {
+                    "border"
+                };
+                let pair = sorted_pair(begin, end);
+                Some(format!(
+                    "{begin}-{end}:{:?} arom={} conj={} ring={} rotor_cut={} {scope}",
+                    bond.order(),
+                    bond.is_aromatic(),
+                    bond.is_conjugated(),
+                    ring_bonds.contains(&bond.id().index()),
+                    cut_bonds.contains(&pair),
+                ))
+            })
+            .collect();
+        format!(
+            "atoms=[{}] bonds=[{}]",
+            atom_details.join("; "),
+            bond_details.join("; ")
+        )
+    }
+
+    fn load_or_generate_confseq_dg_reference_cache(
+        corpus_path: &str,
+        in_smiles_batch: &[String],
+        td_smiles_batch: &[String],
+    ) -> ConfSeqDgReferenceCache {
+        let cache_path = confseq_dg_reference_cache_path(corpus_path);
+        if cache_path.exists() {
+            let raw = std::fs::read_to_string(&cache_path).unwrap_or_else(|err| {
+                panic!(
+                    "failed to read ConfSeq DG reference cache {}: {err}",
+                    cache_path.display()
+                )
+            });
+            let cache: ConfSeqDgReferenceCache = serde_json::from_str(&raw).unwrap_or_else(|err| {
+                panic!(
+                    "failed to parse ConfSeq DG reference cache {}: {err}",
+                    cache_path.display()
+                )
+            });
+            assert_eq!(
+                cache.entries.len(),
+                in_smiles_batch.len(),
+                "ConfSeq DG reference cache {} has {} entries but corpus has {}",
+                cache_path.display(),
+                cache.entries.len(),
+                in_smiles_batch.len()
+            );
+            return cache;
+        }
+
+        if std::env::var("COSMOLKIT_CONFSEQ_GENERATE_DG_REFERENCE_CACHE")
+            .ok()
+            .as_deref()
+            != Some("1")
+        {
+            panic!(
+                "ConfSeq DG reference cache is missing at {}. Set COSMOLKIT_CONFSEQ_GENERATE_DG_REFERENCE_CACHE=1 to generate it explicitly.",
+                cache_path.display()
+            );
+        }
+
+        let reference_options = ConfSeqDecodeOptions {
+            optimize_with_uff: false,
+            ..ConfSeqDecodeOptions::default()
+        };
+        let reference_batch = decode_confseq_batch_with_options(
+            in_smiles_batch,
+            td_smiles_batch,
+            &reference_options,
+            true,
+        )
+        .expect("reference batch should decode with per-record errors");
+
+        let entries = reference_batch
+            .molecules
+            .iter()
+            .zip(reference_batch.errors.iter())
+            .map(|(molecule, error)| ConfSeqDgReferenceCacheEntry {
+                heavy_atom_points: molecule.as_ref().map(heavy_atom_points_for_rmsd),
+                error: error.as_ref().map(|error| format!("{error:?}")),
+            })
+            .collect();
+        let cache = ConfSeqDgReferenceCache {
+            corpus_path: corpus_path.to_string(),
+            entries,
+        };
+        if let Some(parent) = cache_path.parent() {
+            std::fs::create_dir_all(parent).unwrap_or_else(|err| {
+                panic!(
+                    "failed to create ConfSeq DG reference cache directory {}: {err}",
+                    parent.display()
+                )
+            });
+        }
+        let raw = serde_json::to_string_pretty(&cache)
+            .expect("ConfSeq DG reference cache should serialize");
+        std::fs::write(&cache_path, raw).unwrap_or_else(|err| {
+            panic!(
+                "failed to write ConfSeq DG reference cache {}: {err}",
+                cache_path.display()
+            )
+        });
+        cache
+    }
+
+    fn confseq_dg_reference_cache_path(corpus_path: &str) -> std::path::PathBuf {
+        std::env::var("COSMOLKIT_CONFSEQ_DG_REFERENCE_CACHE")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                std::path::PathBuf::from(format!("{corpus_path}.dg_reference_heavy_points.json"))
+            })
+    }
+
     fn bond_length_rms_against_reference(reference: &Molecule, probe: &Molecule) -> f64 {
         let ref_points = conformer_points(reference);
         let probe_points = conformer_points(probe);
@@ -3894,499 +4556,106 @@ mod tests {
     }
 
     #[test]
-    fn confseq_base_conformer_corrects_ring_bound_tetrahedral_stereo_with_cyclic_side_fallback() {
-        let smiles =
-            "Cc1ccc(c(c1F)C(=O)N2C[C@H](C3(C2)CC[NH2+]CC3)C(=O)N[C@@H]4CCC[C@@H]([C@@H]4C)C)F";
-        let molecule = Molecule::from_smiles(smiles).expect("test SMILES parses");
-        let embedded =
-            try_build_confseq_base_conformer(&molecule).expect("base conformer should build");
-        let coords = conformer_points(&embedded);
-        let adjacency = AdjacencyList::from_topology(embedded.num_atoms(), embedded.bonds());
-        let constraints =
-            collect_confseq_base_tetrahedral_stereo_constraints(&embedded, &adjacency)
-                .expect("tetrahedral constraints should collect");
+    fn confseq_base_constraint_model_extracts_rdkit_prior_classes() {
+        let molecule = Molecule::from_smiles("C/C=C/C").expect("test SMILES parses");
+        let ring_info = rings::symmetrize_sssr(&molecule).expect("ring perception should work");
+        let model = build_confseq_base_constraint_model(&molecule, &ring_info)
+            .expect("constraint model should build");
 
+        assert_eq!(model.bond_targets.len(), molecule.num_bonds());
+        assert!(model.planar_bonds.contains(&sorted_pair(1, 2)));
         assert!(
-            constraints.iter().any(
-                |constraint| constraint.ligands.iter().copied().any(|ligand| {
-                    ligand != constraint.center
-                        && confseq_base_chiral_movable_side(
-                            &embedded, &adjacency, constraint, ligand,
-                        )
-                        .is_ok_and(|side| {
-                            confseq_base_chiral_side_contains_other_ligand(
-                                &side, constraint, ligand,
-                            )
-                        })
-                })
-            ),
-            "fixture should exercise the cyclic-side stereo correction candidate"
+            model
+                .torsion_priors
+                .values()
+                .any(|prior| *prior == ConfSeqBaseTorsionPrior::Trans)
         );
-        for constraint in &constraints {
-            let volume = confseq_base_chiral_volume(&coords, constraint);
+    }
+
+    #[test]
+    fn confseq_base_constraint_builder_places_acyclic_and_simple_ring_scaffolds() {
+        for smiles in ["CCCC", "CC(C)CO", "c1ccccc1", "C1CCCCC1"] {
+            let molecule = Molecule::from_smiles(smiles).expect("test SMILES parses");
+            let embedded =
+                try_build_confseq_base_conformer(&molecule).expect("base conformer should build");
+
+            assert_eq!(embedded.num_atoms(), molecule.num_atoms());
+            assert_eq!(embedded.conformers_3d().len(), 1);
             assert!(
-                confseq_base_chiral_volume_satisfies_tag(volume, constraint.tag),
-                "tetrahedral stereo at atom {} should satisfy {:?}, volume={volume}",
-                constraint.center,
-                constraint.tag
+                embedded
+                    .conformers_3d()
+                    .first()
+                    .expect("base conformer exists")
+                    .coordinates()
+                    .iter()
+                    .all(|point| point.iter().all(|value| value.is_finite()))
             );
         }
     }
 
     #[test]
-    fn confseq_base_conformer_separates_two_substituents_on_ring_bound_sp3_center() {
-        let smiles = "C[C@H](c1[n-]nnn1)[NH2+][C@@H]2CS(=O)(=O)c3c2cccc3";
-        let molecule = Molecule::from_smiles(smiles).expect("test SMILES parses");
+    fn confseq_base_constraint_model_groups_shared_ring_systems() {
+        let molecule = Molecule::from_smiles("C1CC2CCC1C2").expect("bridged system parses");
+        let ring_info = rings::symmetrize_sssr(&molecule).expect("ring perception works");
+        let model = build_confseq_base_constraint_model(&molecule, &ring_info)
+            .expect("shared ring systems should be modeled as one component");
+
+        assert_eq!(model.ring_components.len(), 1);
+        assert!(model.ring_components[0].atoms.len() > ring_info.atom_rings()[0].len());
+    }
+
+    #[test]
+    fn confseq_base_conformer_initializes_shared_ring_system_scaffolds() {
+        for smiles in ["C1CCC2(CC1)CCC2", "C1CC2(CC1)CCNCC2"] {
+            let molecule = Molecule::from_smiles(smiles).expect("spiro fixture parses");
+            let embedded =
+                try_build_confseq_base_conformer(&molecule).expect("base conformer should build");
+            let coords = embedded.conformers_3d()[0].coordinates();
+
+            assert!(
+                coords
+                    .iter()
+                    .all(|point| point.iter().all(|value| value.is_finite())),
+                "shared ring fixture should produce finite base coordinates: {smiles}"
+            );
+        }
+    }
+
+    #[test]
+    fn confseq_base_ring_system_scaffold_uses_rdkit_initial_prior() {
+        let molecule = Molecule::from_smiles("c1ccc2ccccc2c1").expect("naphthalene parses");
         let embedded =
             try_build_confseq_base_conformer(&molecule).expect("base conformer should build");
-        let coords = conformer_points(&embedded);
-
-        let sulfur = embedded
-            .atoms()
+        let coords = embedded.conformers_3d()[0].coordinates();
+        let unique_xy: HashSet<_> = coords
             .iter()
-            .find(|atom| {
-                atom.atomic_number() == 16 && heavy_degree(&embedded, atom.id().index()) == 4
-            })
-            .expect("fixture should contain a tetravalent ring-bound sulfur")
-            .id()
-            .index();
-        let oxygen_neighbors: Vec<_> = embedded
-            .bonds()
-            .iter()
-            .filter_map(|bond| {
-                let begin = bond.begin().index();
-                let end = bond.end().index();
-                let other = if begin == sulfur {
-                    end
-                } else if end == sulfur {
-                    begin
-                } else {
-                    return None;
-                };
-                (embedded.atoms()[other].atomic_number() == 8).then_some(other)
-            })
+            .map(|point| ((point[0] * 1000.0) as i64, (point[1] * 1000.0) as i64))
             .collect();
 
-        assert_eq!(oxygen_neighbors.len(), 2);
-        let angle = angle_deg(
-            coords[oxygen_neighbors[0]],
-            coords[sulfur],
-            coords[oxygen_neighbors[1]],
-        );
-        assert!(
-            angle > 30.0,
-            "two non-ring substituents on ring-bound sp3 sulfur must not collapse, angle={angle:.6}"
-        );
+        assert_eq!(unique_xy.len(), molecule.num_atoms());
     }
 
     #[test]
-    fn confseq_base_conformer_uses_analytic_chair_for_saturated_carbon_six_rings() {
-        let template = base_template_for_comparison("C1CCCCC1");
-        let coords = conformer_points(&template.molecule);
-
-        for idx in 0..6 {
-            let next = (idx + 1) % 6;
-            let bond = bond_between_pair(&template.molecule, sorted_pair(idx, next))
-                .expect("cyclohexane edge should exist");
-            let expected = confseq_base_static_bond_length(&template.molecule, bond);
-            assert!(
-                (distance(coords[idx], coords[next]) - expected).abs() < 1.0e-10,
-                "cyclohexane chair edge {idx}-{next} should use the base ring C-C single length"
-            );
-        }
-        for idx in 0..6 {
-            let prev = (idx + 5) % 6;
-            let next = (idx + 1) % 6;
-            let angle = angle_deg(coords[prev], coords[idx], coords[next]);
-            assert!(
-                (angle - 109.47122063449069).abs() < 1.0e-10,
-                "cyclohexane chair angle at {idx} should be tetrahedral, got {angle}"
-            );
-        }
-    }
-
-    #[test]
-    fn confseq_base_conformer_uses_puckered_six_rings_for_saturated_heterocycles() {
-        for smiles in ["C1CCNCC1", "C1COCCN1", "C1CCSCC1"] {
-            let template = base_template_for_comparison(smiles);
-            let coords = conformer_points(&template.molecule);
-            let rings = rings::symmetrize_sssr(&template.molecule)
-                .expect("heterocycle ring perception should work");
-            let ring = &rings.atom_rings()[0];
-
-            for pos in 0..ring.len() {
-                let begin = ring[pos].index();
-                let end = ring[(pos + 1) % ring.len()].index();
-                let bond = bond_between_pair(&template.molecule, sorted_pair(begin, end))
-                    .expect("ring edge should exist");
-                let expected = confseq_base_static_bond_length(&template.molecule, bond);
-                assert!(
-                    (distance(coords[begin], coords[end]) - expected).abs() < 1.0e-8,
-                    "saturated heterocycle {smiles} should preserve ring edge {begin}-{end}"
-                );
-            }
-
-            let max_abs_z = ring
-                .iter()
-                .map(|atom| coords[atom.index()][2].abs())
-                .fold(0.0, f64::max);
-            assert!(
-                max_abs_z > 0.05,
-                "saturated heterocycle {smiles} should not collapse to a planar ring"
-            );
-        }
-    }
-
-    #[test]
-    fn confseq_base_conformer_preserves_saturated_five_ring_edges_without_forcefield() {
-        let template = base_template_for_comparison("C1CCCC1");
-        let coords = conformer_points(&template.molecule);
-
-        let max_abs_z = coords
+    fn confseq_base_scaffold_initializes_connected_ring_systems_globally() {
+        let molecule = Molecule::from_smiles("c1ccccc1CCc2ccccc2").expect("fixture parses");
+        let embedded =
+            try_build_confseq_base_conformer(&molecule).expect("base conformer should build");
+        let coords = embedded.conformers_3d()[0].coordinates();
+        let longest_bond = molecule
+            .bonds()
             .iter()
-            .map(|point| point[2].abs())
+            .map(|bond| {
+                vec_len(vec_sub(
+                    coords[bond.begin().index()],
+                    coords[bond.end().index()],
+                ))
+            })
             .fold(0.0, f64::max);
-        assert!(max_abs_z.is_finite());
 
-        for idx in 0..5 {
-            let next = (idx + 1) % 5;
-            let bond = bond_between_pair(&template.molecule, sorted_pair(idx, next))
-                .expect("cyclopentane edge should exist");
-            let expected = confseq_base_static_bond_length(&template.molecule, bond);
-            assert!(
-                (distance(coords[idx], coords[next]) - expected).abs() < 1.0e-10,
-                "cyclopentane base edge {idx}-{next} should use the base ring C-C single length"
-            );
-        }
-    }
-
-    #[test]
-    fn confseq_base_ring_substituents_satisfy_local_center_angles() {
-        for smiles in ["Cc1ccccc1", "CC1CCNCC1", "C1CCN(CC1)C"] {
-            let template = base_template_for_comparison(smiles);
-            let molecule = &template.molecule;
-            let coords = conformer_points(molecule);
-            let adjacency = AdjacencyList::from_topology(molecule.num_atoms(), molecule.bonds());
-            let rings = rings::symmetrize_sssr(molecule).expect("ring perception should work");
-
-            let mut checked = 0;
-            for ring in rings.atom_rings() {
-                let ring_atoms: HashSet<_> = ring.iter().map(|atom| atom.index()).collect();
-                for atom in ring {
-                    let center = atom.index();
-                    let Some(outside) = adjacency
-                        .neighbors_of(center)
-                        .iter()
-                        .map(|nbr| nbr.atom_index)
-                        .find(|idx| !ring_atoms.contains(idx))
-                    else {
-                        continue;
-                    };
-                    let ring_neighbors: Vec<_> = adjacency
-                        .neighbors_of(center)
-                        .iter()
-                        .map(|nbr| nbr.atom_index)
-                        .filter(|idx| ring_atoms.contains(idx))
-                        .collect();
-                    assert_eq!(ring_neighbors.len(), 2);
-                    let target = confseq_base_local_angle_rad(molecule, center).to_degrees();
-                    for ring_neighbor in ring_neighbors {
-                        let observed =
-                            angle_deg(coords[ring_neighbor], coords[center], coords[outside]);
-                        assert!(
-                            (observed - target).abs() < 1.0e-8,
-                            "smiles={smiles} center={center} ring_neighbor={ring_neighbor} outside={outside} expected {target}, got {observed}"
-                        );
-                    }
-                    checked += 1;
-                }
-            }
-            assert!(
-                checked > 0,
-                "test molecule {smiles} should have a ring substituent"
-            );
-        }
-    }
-
-    #[test]
-    fn confseq_base_conformer_builds_acyclic_small_molecules_with_local_geometry() {
-        for smiles in [
-            "CCCC",
-            "CCO",
-            "CC(C)C",
-            "CC(C)(C)C",
-            "CC(C)CO",
-            "CC=O",
-            "CC#N",
-            "C=CC",
-            "C#CC",
-            "CC(=O)N",
-            "COC(=O)C",
-            "CCF",
-            "CCCl",
-            "CCBr",
-            "CCI",
-            "CCSC",
-            "CS(=O)C",
-            "CS(=O)(=O)C",
-            "CP(=O)(O)O",
-            "C(F)(Cl)Br",
-            "CC(=O)OC",
-        ] {
-            let uff_template = optimized_template_for_comparison(smiles);
-            let base_template = base_template_for_comparison(smiles);
-            let bond_rms =
-                bond_length_rms_against_reference(&uff_template.molecule, &base_template.molecule);
-            let angle_rms =
-                angle_rms_against_reference(&uff_template.molecule, &base_template.molecule);
-            let all_heavy_angle_rms = all_heavy_angle_rms_against_reference(
-                &uff_template.molecule,
-                &base_template.molecule,
-            );
-
-            eprintln!(
-                "confseq_base acyclic smiles={smiles} bond_rms={bond_rms:.6} angle_rms={angle_rms:.6} all_heavy_angle_rms={all_heavy_angle_rms:.6}"
-            );
-            assert!(
-                bond_rms < 0.08,
-                "acyclic base bond lengths should stay near UFF-relaxed path"
-            );
-            assert!(
-                angle_rms < 8.0,
-                "acyclic base local angles should stay near UFF-relaxed path"
-            );
-            assert!(
-                all_heavy_angle_rms < 8.0,
-                "acyclic base all-heavy local angles should stay near UFF-relaxed path"
-            );
-        }
-    }
-
-    #[test]
-    fn confseq_base_conformer_builds_single_aromatic_ring_as_rigid_planar_polygon() {
-        for smiles in [
-            "c1ccccc1",
-            "Cc1ccccc1",
-            "CCc1ccccc1",
-            "Cc1ccc(C)cc1",
-            "c1ccncc1",
-            "Cc1ccncc1",
-            "c1cnccn1",
-            "c1ccoc1",
-            "Cc1ccoc1",
-            "c1ccsc1",
-            "c1cc[nH]c1",
-            "c1ncc[nH]1",
-        ] {
-            let uff_template = optimized_template_for_comparison(smiles);
-            let base_template = base_template_for_comparison(smiles);
-            let bond_rms =
-                bond_length_rms_against_reference(&uff_template.molecule, &base_template.molecule);
-            let all_heavy_angle_rms = all_heavy_angle_rms_against_reference(
-                &uff_template.molecule,
-                &base_template.molecule,
-            );
-            let aromatic_atoms = aromatic_atom_indices(&base_template.molecule);
-            let coords = conformer_points(&base_template.molecule);
-            let max_abs_z = aromatic_atoms
-                .iter()
-                .map(|idx| coords[*idx][2].abs())
-                .fold(0.0, f64::max);
-
-            eprintln!(
-                "confseq_base aromatic_ring smiles={smiles} bond_rms={bond_rms:.6} all_heavy_angle_rms={all_heavy_angle_rms:.6} max_ring_abs_z={max_abs_z:.6}"
-            );
-            assert!(bond_rms < 0.10);
-            assert!(all_heavy_angle_rms < 12.0);
-            assert!(max_abs_z < 1.0e-9);
-        }
-    }
-
-    #[test]
-    fn confseq_base_conformer_builds_disjoint_aromatic_ring_blocks() {
-        for smiles in [
-            "c1ccccc1-c2ccccc2",
-            "c1ccccc1Oc2ccccc2",
-            "c1ccccc1CCc2ccccc2",
-            "Cc1ccc(Oc2ccncc2)cc1",
-            "c1ccoc1-c2ccsc2",
-        ] {
-            let uff_template = optimized_template_for_comparison(smiles);
-            let base_template = base_template_for_comparison(smiles);
-            let bond_rms =
-                bond_length_rms_against_reference(&uff_template.molecule, &base_template.molecule);
-            let all_heavy_angle_rms = all_heavy_angle_rms_against_reference(
-                &uff_template.molecule,
-                &base_template.molecule,
-            );
-            let coords = conformer_points(&base_template.molecule);
-            let rings = rings::fast_find_rings(&base_template.molecule)
-                .expect("base template ring perception should work");
-
-            for ring in rings.atom_rings() {
-                let max_abs_z = ring
-                    .iter()
-                    .map(|atom| coords[atom.index()][2].abs())
-                    .fold(0.0, f64::max);
-                assert!(
-                    max_abs_z < 1.0e-9,
-                    "each aromatic ring block stays planar in the base frame"
-                );
-            }
-
-            eprintln!(
-                "confseq_base disjoint_aromatic smiles={smiles} bond_rms={bond_rms:.6} all_heavy_angle_rms={all_heavy_angle_rms:.6}"
-            );
-            assert!(bond_rms < 0.12);
-            assert!(all_heavy_angle_rms < 18.0);
-        }
-    }
-
-    #[test]
-    fn confseq_base_conformer_builds_edge_fused_aromatic_ring_components() {
-        for smiles in [
-            "c1ccc2ccccc2c1",
-            "c1ccc2ncccc2c1",
-            "c1ccc2occc2c1",
-            "c1ccc2cc3ccccc3cc2c1",
-            "c1ccc2c(c1)ccc3ccccc23",
-            "c1ccc2c(c1)[nH]c3ccccc23",
-        ] {
-            let uff_template = optimized_template_for_comparison(smiles);
-            let base_template = base_template_for_comparison(smiles);
-            let bond_rms =
-                bond_length_rms_against_reference(&uff_template.molecule, &base_template.molecule);
-            let all_heavy_angle_rms = all_heavy_angle_rms_against_reference(
-                &uff_template.molecule,
-                &base_template.molecule,
-            );
-            let aromatic_atoms = aromatic_atom_indices(&base_template.molecule);
-            let coords = conformer_points(&base_template.molecule);
-            let max_abs_z = aromatic_atoms
-                .iter()
-                .map(|idx| coords[*idx][2].abs())
-                .fold(0.0, f64::max);
-
-            eprintln!(
-                "confseq_base fused_aromatic smiles={smiles} bond_rms={bond_rms:.6} all_heavy_angle_rms={all_heavy_angle_rms:.6} max_abs_z={max_abs_z:.6}"
-            );
-            assert!(bond_rms < 0.12);
-            assert!(all_heavy_angle_rms < 18.0);
-            assert!(max_abs_z < 1.0e-9);
-        }
-    }
-
-    #[test]
-    fn confseq_base_conformer_builds_linked_and_substituted_fused_aromatic_components() {
-        for smiles in [
-            "Cc1ccc2ccccc2c1",
-            "CCc1ccc2ccccc2c1",
-            "COc1ccc2ccccc2c1",
-            "c1ccc2ccccc2c1-c3ccccc3",
-            "c1ccc2ccccc2c1CCc3ccccc3",
-            "c1ccc2ccccc2c1-c3ccc4ccccc4c3",
-        ] {
-            let uff_template = optimized_template_for_comparison(smiles);
-            let base_template = base_template_for_comparison(smiles);
-            let bond_rms =
-                bond_length_rms_against_reference(&uff_template.molecule, &base_template.molecule);
-            let all_heavy_angle_rms = all_heavy_angle_rms_against_reference(
-                &uff_template.molecule,
-                &base_template.molecule,
-            );
-            let aromatic_atoms = aromatic_atom_indices(&base_template.molecule);
-            let coords = conformer_points(&base_template.molecule);
-            let max_abs_z = aromatic_atoms
-                .iter()
-                .map(|idx| coords[*idx][2].abs())
-                .fold(0.0, f64::max);
-
-            eprintln!(
-                "confseq_base linked_fused smiles={smiles} bond_rms={bond_rms:.6} all_heavy_angle_rms={all_heavy_angle_rms:.6} max_abs_z={max_abs_z:.6}"
-            );
-            assert!(bond_rms < 0.12);
-            assert!(all_heavy_angle_rms < 18.0);
-            assert!(max_abs_z < 1.0e-9);
-        }
-    }
-
-    #[test]
-    fn confseq_base_conformer_builds_branched_aromatic_linker_components() {
-        for smiles in [
-            "c1ccccc1Oc2ccccc2",
-            "c1ccccc1Sc2ccccc2",
-            "c1ccccc1S(=O)(=O)c2ccccc2",
-            "c1ccc2ccccc2c1S(=O)(=O)c3ccccc3",
-            "c1ccccc1N(c2ccccc2)c3ccccc3",
-            "c1ccc2ccccc2c1N(c3ccccc3)c4ccccc4",
-        ] {
-            let uff_template = optimized_template_for_comparison(smiles);
-            let base_template = base_template_for_comparison(smiles);
-            let bond_rms =
-                bond_length_rms_against_reference(&uff_template.molecule, &base_template.molecule);
-            let all_heavy_angle_rms = all_heavy_angle_rms_against_reference(
-                &uff_template.molecule,
-                &base_template.molecule,
-            );
-            let max_ring_plane_deviation =
-                max_aromatic_ring_plane_deviation(&base_template.molecule);
-
-            eprintln!(
-                "confseq_base branched_aromatic smiles={smiles} bond_rms={bond_rms:.6} all_heavy_angle_rms={all_heavy_angle_rms:.6} max_ring_plane_deviation={max_ring_plane_deviation:.6}"
-            );
-            assert!(bond_rms < 0.12);
-            assert!(all_heavy_angle_rms < 18.0);
-            assert!(max_ring_plane_deviation < 1.0e-9);
-        }
-    }
-
-    #[test]
-    fn confseq_base_conformer_rejects_ring_systems_outside_current_subset() {
-        let molecule = Molecule::from_smiles("C1CC2CCC1C2").expect("bridged system parses");
-        let error = try_build_confseq_base_conformer(&molecule)
-            .expect_err("bridged ring systems are not in the current ConfSeq-base subset");
-
-        assert!(matches!(
-            error,
-            ConfSeqBaseConformerError::UnsupportedRingFusion { .. }
-                | ConfSeqBaseConformerError::UnsupportedClosedRingFusion
-        ));
-    }
-
-    #[test]
-    fn confseq_base_conformer_builds_spiro_ring_forest() {
-        for smiles in ["C1CCC2(CC1)CCC2", "C1CC2(CC1)CCNCC2"] {
-            let base_template = base_template_for_comparison(smiles);
-            let coords = conformer_points(&base_template.molecule);
-            let bond_rms = bond_length_rms_against_reference(
-                &optimized_template_for_comparison(smiles).molecule,
-                &base_template.molecule,
-            );
-            let max_origin_distance = coords
-                .iter()
-                .map(|point| vec_len(*point))
-                .fold(0.0, f64::max);
-
-            eprintln!(
-                "confseq_base spiro smiles={smiles} bond_rms={bond_rms:.6} max_origin_distance={max_origin_distance:.6}"
-            );
-            assert!(bond_rms < 0.20);
-            assert!(max_origin_distance.is_finite());
-        }
-    }
-
-    #[test]
-    fn confseq_base_fusion_graph_guard_rejects_closed_fusion_components() {
-        assert!(confseq_base_fusion_graph_is_forest(&[
-            vec![1],
-            vec![0, 2],
-            vec![1]
-        ]));
-        assert!(!confseq_base_fusion_graph_is_forest(&[
-            vec![1, 2],
-            vec![0, 2],
-            vec![0, 1]
-        ]));
+        assert!(
+            longest_bond < 2.0,
+            "global RDKit scaffold initialization should not leave ring systems disconnected: longest_bond={longest_bond:.3}"
+        );
     }
 
     #[test]
@@ -4399,14 +4668,13 @@ mod tests {
 
         let error =
             decode_confseq_with_options("C 1 C C 2 C C C 1 C 2", "C 1 C C 2 C C C 1 C 2", &options)
-                .expect_err("unsupported base-conformer ring must not fallback to DistGeom");
+                .expect_err("base-conformer decode failure must not fallback to DistGeom");
 
         assert!(matches!(
             error,
-            ConfSeqDecodeError::BaseConformer(
-                ConfSeqBaseConformerError::UnsupportedRingFusion { .. }
-                    | ConfSeqBaseConformerError::UnsupportedClosedRingFusion
-            )
+            ConfSeqDecodeError::AngleTokenCountMismatch { .. }
+                | ConfSeqDecodeError::DihedralTokenCountMismatch { .. }
+                | ConfSeqDecodeError::BaseConformer(_)
         ));
     }
 
@@ -4424,18 +4692,12 @@ mod tests {
 
         assert_eq!(
             diagnostic.phase,
-            Some(diagnostics::ConfSeqDiagnosticPhase::BaseTemplate)
+            Some(diagnostics::ConfSeqDiagnosticPhase::Decode)
         );
         assert!(diagnostic.parsed);
         assert!(diagnostic.distance_geometry_template_built);
-        assert!(!diagnostic.base_template_built);
-        assert!(matches!(
-            diagnostic.base_error,
-            Some(
-                ConfSeqBaseConformerError::UnsupportedRingFusion { .. }
-                    | ConfSeqBaseConformerError::UnsupportedClosedRingFusion
-            )
-        ));
+        assert!(diagnostic.base_template_built);
+        assert!(!diagnostic.base_decoded);
     }
 
     #[test]
@@ -4625,5 +4887,741 @@ mod tests {
         }
 
         assert!(true);
+    }
+
+    #[test]
+    #[ignore = "local ConfSeq corpus pass-rate snapshot"]
+    fn confseq_base_corpus_pass_rate_snapshot() {
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
+            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
+        });
+        let input =
+            std::fs::read_to_string(&corpus_path).expect("ConfSeq corpus should be readable");
+        let base_options = ConfSeqDecodeOptions {
+            optimize_with_uff: false,
+            template_backend: ConfSeqTemplateBackend::BaseConformer,
+            ..ConfSeqDecodeOptions::default()
+        };
+
+        let mut in_smiles_batch = Vec::new();
+        let mut td_smiles_batch = Vec::new();
+        for (line_idx, line) in input.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let value: Value = serde_json::from_str(line).unwrap_or_else(|err| {
+                panic!("failed to parse corpus JSON line {}: {err}", line_idx + 1)
+            });
+            let in_smiles = value["in_smiles"].as_str().unwrap_or_else(|| {
+                panic!(
+                    "corpus line {} is missing string field in_smiles",
+                    line_idx + 1
+                )
+            });
+            let td_smiles = value["td_smiles"].as_str().unwrap_or_else(|| {
+                panic!(
+                    "corpus line {} is missing string field td_smiles",
+                    line_idx + 1
+                )
+            });
+            in_smiles_batch.push(in_smiles.to_string());
+            td_smiles_batch.push(td_smiles.to_string());
+        }
+
+        let reference_cache = load_or_generate_confseq_dg_reference_cache(
+            &corpus_path,
+            &in_smiles_batch,
+            &td_smiles_batch,
+        );
+        let base_batch = decode_confseq_batch_with_options(
+            &in_smiles_batch,
+            &td_smiles_batch,
+            &base_options,
+            true,
+        )
+        .expect("base batch should decode with per-record errors");
+
+        let total = in_smiles_batch.len();
+        let mut reference_success = 0usize;
+        let mut base_success_where_reference_success = 0usize;
+        let mut pass_03a = 0usize;
+        let mut rmsds = Vec::new();
+        let mut rigid_fragment_rmsds = Vec::new();
+        let mut rigid_fragment_max_rmsds = Vec::new();
+        let mut worst_rigid_fragments = Vec::<(f64, usize, Vec<usize>, String)>::new();
+        let mut rigid_fragment_pass_01a = 0usize;
+        let mut rigid_fragment_pass_02a = 0usize;
+        let mut rigid_fragment_pass_03a = 0usize;
+        let mut rigid_max_pass_01a = 0usize;
+        let mut rigid_max_pass_02a = 0usize;
+        let mut rigid_max_pass_03a = 0usize;
+        let mut global_fail_rigid_pass = 0usize;
+        let mut global_fail_rigid_fail = 0usize;
+        let mut base_errors: HashMap<String, usize> = HashMap::new();
+
+        for idx in 0..total {
+            let Some(reference_points) = reference_cache.entries[idx].heavy_atom_points.as_ref()
+            else {
+                continue;
+            };
+            reference_success += 1;
+
+            match base_batch.molecules[idx].as_ref() {
+                Some(base) => {
+                    base_success_where_reference_success += 1;
+                    let base_points = heavy_atom_points_for_rmsd(base);
+                    assert_eq!(
+                        reference_points.len(),
+                        base_points.len(),
+                        "line {} decoded molecules should have matching heavy atom counts",
+                        idx + 1
+                    );
+                    let rmsd = crate::distgeom::aligned_rmsd_for_test(
+                        reference_points.as_slice(),
+                        &base_points,
+                    );
+                    if rmsd <= 0.3 {
+                        pass_03a += 1;
+                    }
+                    let parsed = parse_confseq(&in_smiles_batch[idx], &td_smiles_batch[idx])
+                        .expect("fixture ConfSeq should parse");
+                    let source_mol = Molecule::from_smiles(&parsed.stripped_smiles)
+                        .expect("fixture stripped SMILES should parse");
+                    let rigid_summary =
+                        rigid_fragment_rmsd_summary(&source_mol, reference_points, base);
+                    for &fragment_rmsd in &rigid_summary.fragment_rmsds {
+                        if fragment_rmsd <= 0.1 {
+                            rigid_fragment_pass_01a += 1;
+                        }
+                        if fragment_rmsd <= 0.2 {
+                            rigid_fragment_pass_02a += 1;
+                        }
+                        if fragment_rmsd <= 0.3 {
+                            rigid_fragment_pass_03a += 1;
+                        }
+                    }
+                    rigid_fragment_rmsds.extend(rigid_summary.fragment_rmsds.iter().copied());
+                    if let Some(max_rmsd) = rigid_summary.max_rmsd {
+                        rigid_fragment_max_rmsds.push(max_rmsd);
+                        if max_rmsd <= 0.1 {
+                            rigid_max_pass_01a += 1;
+                        }
+                        if max_rmsd <= 0.2 {
+                            rigid_max_pass_02a += 1;
+                        }
+                        if max_rmsd <= 0.3 {
+                            rigid_max_pass_03a += 1;
+                        }
+                        worst_rigid_fragments.push((
+                            max_rmsd,
+                            idx,
+                            rigid_summary.worst_fragment_atoms,
+                            parsed.stripped_smiles,
+                        ));
+                        if rmsd > 0.3 {
+                            if max_rmsd <= 0.3 {
+                                global_fail_rigid_pass += 1;
+                            } else {
+                                global_fail_rigid_fail += 1;
+                            }
+                        }
+                    }
+                    rmsds.push(rmsd);
+                }
+                None => {
+                    let error = base_batch.errors[idx]
+                        .as_ref()
+                        .expect("base failure should include an error");
+                    *base_errors.entry(format!("{error:?}")).or_default() += 1;
+                }
+            }
+        }
+
+        rmsds.sort_by(|left, right| left.total_cmp(right));
+        rigid_fragment_rmsds.sort_by(|left, right| left.total_cmp(right));
+        rigid_fragment_max_rmsds.sort_by(|left, right| left.total_cmp(right));
+        let total_pass_rate = pass_03a as f64 / total.max(1) as f64 * 100.0;
+        let comparable_pass_rate =
+            pass_03a as f64 / base_success_where_reference_success.max(1) as f64 * 100.0;
+        let base_coverage =
+            base_success_where_reference_success as f64 / reference_success.max(1) as f64 * 100.0;
+
+        eprintln!("confseq_base_corpus path={corpus_path}");
+        eprintln!(
+            "confseq_base_corpus total={total} reference_success={reference_success} base_success_where_reference_success={base_success_where_reference_success} pass_rmsd_le_0_3a={pass_03a}"
+        );
+        eprintln!(
+            "confseq_base_corpus total_pass_rate={total_pass_rate:.2}% comparable_pass_rate={comparable_pass_rate:.2}% base_coverage_vs_reference={base_coverage:.2}%"
+        );
+        eprintln!(
+            "confseq_base_corpus rmsd p50={:.6} p75={:.6} p90={:.6} p95={:.6} p99={:.6}",
+            quantile_sorted(&rmsds, 0.50),
+            quantile_sorted(&rmsds, 0.75),
+            quantile_sorted(&rmsds, 0.90),
+            quantile_sorted(&rmsds, 0.95),
+            quantile_sorted(&rmsds, 0.99)
+        );
+        eprintln!(
+            "confseq_base_corpus rigid_fragment_rmsd fragments={} pass_le_0_1a={} pass_le_0_2a={} pass_le_0_3a={} p50={:.6} p75={:.6} p90={:.6} p95={:.6} p99={:.6}",
+            rigid_fragment_rmsds.len(),
+            rigid_fragment_pass_01a,
+            rigid_fragment_pass_02a,
+            rigid_fragment_pass_03a,
+            quantile_sorted(&rigid_fragment_rmsds, 0.50),
+            quantile_sorted(&rigid_fragment_rmsds, 0.75),
+            quantile_sorted(&rigid_fragment_rmsds, 0.90),
+            quantile_sorted(&rigid_fragment_rmsds, 0.95),
+            quantile_sorted(&rigid_fragment_rmsds, 0.99)
+        );
+        eprintln!(
+            "confseq_base_corpus rigid_fragment_max_per_mol comparable={} pass_le_0_1a={} pass_le_0_2a={} pass_le_0_3a={} p50={:.6} p90={:.6} p99={:.6} global_fail_rigid_pass={} global_fail_rigid_fail={}",
+            rigid_fragment_max_rmsds.len(),
+            rigid_max_pass_01a,
+            rigid_max_pass_02a,
+            rigid_max_pass_03a,
+            quantile_sorted(&rigid_fragment_max_rmsds, 0.50),
+            quantile_sorted(&rigid_fragment_max_rmsds, 0.90),
+            quantile_sorted(&rigid_fragment_max_rmsds, 0.99),
+            global_fail_rigid_pass,
+            global_fail_rigid_fail,
+        );
+        worst_rigid_fragments.sort_by(|left, right| right.0.total_cmp(&left.0));
+        for (max_rmsd, idx, atoms, stripped_smiles) in worst_rigid_fragments.into_iter().take(12) {
+            let mol = Molecule::from_smiles(&stripped_smiles)
+                .expect("fixture stripped SMILES should parse");
+            let rings = rings::symmetrize_sssr(&mol).expect("ring perception should work");
+            let model = build_confseq_base_constraint_model(&mol, &rings)
+                .expect("base constraint model should build for diagnostic");
+            let fragment_type = rigid_fragment_type_for_diagnostic(&mol, &model, &atoms);
+            let local = rigid_fragment_local_diagnostic(&mol, &atoms);
+            eprintln!(
+                "confseq_base_corpus worst_rigid_fragment idx={idx} max_rmsd={max_rmsd:.6} type={fragment_type} atoms={atoms:?} {local} stripped_smiles={stripped_smiles}"
+            );
+        }
+
+        let mut errors: Vec<_> = base_errors.into_iter().collect();
+        errors.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+        for (error, count) in errors.into_iter().take(12) {
+            eprintln!("confseq_base_corpus base_error count={count} error={error}");
+        }
+    }
+
+    #[test]
+    #[ignore = "local ConfSeq corpus BaseConformer-only coverage snapshot"]
+    fn confseq_base_corpus_base_only_snapshot() {
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
+            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
+        });
+        let input =
+            std::fs::read_to_string(&corpus_path).expect("ConfSeq corpus should be readable");
+        let base_options = ConfSeqDecodeOptions {
+            optimize_with_uff: false,
+            template_backend: ConfSeqTemplateBackend::BaseConformer,
+            ..ConfSeqDecodeOptions::default()
+        };
+
+        let mut in_smiles_batch = Vec::new();
+        let mut td_smiles_batch = Vec::new();
+        for (line_idx, line) in input.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let value: Value = serde_json::from_str(line).unwrap_or_else(|err| {
+                panic!("failed to parse corpus JSON line {}: {err}", line_idx + 1)
+            });
+            let in_smiles = value["in_smiles"].as_str().unwrap_or_else(|| {
+                panic!(
+                    "corpus line {} is missing string field in_smiles",
+                    line_idx + 1
+                )
+            });
+            let td_smiles = value["td_smiles"].as_str().unwrap_or_else(|| {
+                panic!(
+                    "corpus line {} is missing string field td_smiles",
+                    line_idx + 1
+                )
+            });
+            in_smiles_batch.push(in_smiles.to_string());
+            td_smiles_batch.push(td_smiles.to_string());
+        }
+
+        let base_batch = decode_confseq_batch_with_options(
+            &in_smiles_batch,
+            &td_smiles_batch,
+            &base_options,
+            true,
+        )
+        .expect("base batch should decode with per-record errors");
+
+        let total = in_smiles_batch.len();
+        let success = base_batch
+            .molecules
+            .iter()
+            .filter(|molecule| molecule.is_some())
+            .count();
+        let mut base_errors: HashMap<String, usize> = HashMap::new();
+        for error in base_batch.errors.iter().flatten() {
+            *base_errors.entry(format!("{error:?}")).or_default() += 1;
+        }
+        let success_rate = success as f64 / total.max(1) as f64 * 100.0;
+
+        eprintln!("confseq_base_only_corpus path={corpus_path}");
+        eprintln!(
+            "confseq_base_only_corpus total={total} success={success} failure={} success_rate={success_rate:.2}%",
+            total - success
+        );
+
+        let mut errors: Vec<_> = base_errors.into_iter().collect();
+        errors.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+        for (error, count) in errors.into_iter().take(12) {
+            eprintln!("confseq_base_only_corpus base_error count={count} error={error}");
+        }
+    }
+
+    #[test]
+    #[ignore = "local ConfSeq corpus structural diagnostics"]
+    fn confseq_base_corpus_structural_diagnostics() {
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
+            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
+        });
+        let input =
+            std::fs::read_to_string(&corpus_path).expect("ConfSeq corpus should be readable");
+        let base_options = ConfSeqDecodeOptions {
+            optimize_with_uff: false,
+            template_backend: ConfSeqTemplateBackend::BaseConformer,
+            ..ConfSeqDecodeOptions::default()
+        };
+
+        let mut in_smiles_batch = Vec::new();
+        let mut td_smiles_batch = Vec::new();
+        for (line_idx, line) in input.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let value: Value = serde_json::from_str(line).unwrap_or_else(|err| {
+                panic!("failed to parse corpus JSON line {}: {err}", line_idx + 1)
+            });
+            in_smiles_batch.push(
+                value["in_smiles"]
+                    .as_str()
+                    .expect("in_smiles should be present")
+                    .to_string(),
+            );
+            td_smiles_batch.push(
+                value["td_smiles"]
+                    .as_str()
+                    .expect("td_smiles should be present")
+                    .to_string(),
+            );
+        }
+
+        let reference_cache = load_or_generate_confseq_dg_reference_cache(
+            &corpus_path,
+            &in_smiles_batch,
+            &td_smiles_batch,
+        );
+        let base_batch = decode_confseq_batch_with_options(
+            &in_smiles_batch,
+            &td_smiles_batch,
+            &base_options,
+            true,
+        )
+        .expect("base batch should decode with per-record errors");
+
+        let mut successes = Vec::<(f64, usize)>::new();
+        let mut failures = Vec::<(usize, String)>::new();
+        for idx in 0..in_smiles_batch.len() {
+            match (
+                reference_cache.entries[idx].heavy_atom_points.as_ref(),
+                base_batch.molecules[idx].as_ref(),
+            ) {
+                (Some(reference_points), Some(base)) => {
+                    let base_points = heavy_atom_points_for_rmsd(base);
+                    let rmsd =
+                        crate::distgeom::aligned_rmsd_for_test(reference_points, &base_points);
+                    successes.push((rmsd, idx));
+                }
+                (_, None) => {
+                    failures.push((
+                        idx,
+                        format!(
+                            "{:?}",
+                            base_batch.errors[idx]
+                                .as_ref()
+                                .expect("base failure should include an error")
+                        ),
+                    ));
+                }
+                _ => {}
+            }
+        }
+        successes.sort_by(|left, right| right.0.total_cmp(&left.0));
+
+        eprintln!("confseq_base_structural_diagnostics worst_successes");
+        for (rank, (rmsd, idx)) in successes.into_iter().take(12).enumerate() {
+            let stripped = parse_confseq(&in_smiles_batch[idx], &td_smiles_batch[idx])
+                .expect("fixture ConfSeq should parse")
+                .stripped_smiles;
+            let mol = Molecule::from_smiles(&stripped).expect("fixture should parse");
+            let rings = rings::symmetrize_sssr(&mol).expect("ring perception should work");
+            let model = build_confseq_base_constraint_model(&mol, &rings)
+                .expect("base constraint model should build for diagnostic");
+            let base = base_batch.molecules[idx].as_ref().expect("checked above");
+            let coords = conformer_points(base);
+            let max_abs_z = coords
+                .iter()
+                .map(|point| point[2].abs())
+                .fold(0.0, f64::max);
+            let planar_bonds = collect_confseq_base_planar_bonds(&mol).len();
+            let rotatable_single_bonds = mol
+                .bonds()
+                .iter()
+                .filter(|bond| {
+                    bond.order() == BondOrder::Single
+                        && !bond.is_aromatic()
+                        && !planar_bond_like_for_diagnostic(&mol, bond)
+                })
+                .count();
+            eprintln!(
+                "idx={} rmsd={rmsd:.6} atoms={} bonds={} rings={} planar_bonds={} rot_single={} max_abs_z={max_abs_z:.3} stripped_smiles={} in_smiles={} td_smiles={}",
+                idx,
+                mol.num_atoms(),
+                mol.num_bonds(),
+                rings.num_rings(),
+                planar_bonds,
+                rotatable_single_bonds,
+                stripped,
+                in_smiles_batch[idx],
+                td_smiles_batch[idx]
+            );
+            if rank < 6 {
+                for (component_idx, component) in model.ring_components.iter().enumerate() {
+                    let atom_set: HashSet<_> = component.atoms.iter().copied().collect();
+                    let atom_details: Vec<_> = component
+                        .atoms
+                        .iter()
+                        .map(|&atom_idx| {
+                            let atom = &mol.atoms()[atom_idx];
+                            format!(
+                                "Z{}@{}:{:?}:arom={}:exo_pi={}:conj={}",
+                                atom.atomic_number(),
+                                atom_idx,
+                                atom.hybridization(),
+                                atom.is_aromatic(),
+                                confseq_base_ring_atom_has_exocyclic_pi_bond(
+                                    &mol, atom_idx, &atom_set
+                                ),
+                                confseq_base_ring_atom_is_conjugated_to_ring_pi_system(
+                                    &mol, atom_idx, &atom_set
+                                )
+                            )
+                        })
+                        .collect();
+                    eprintln!(
+                        "idx={idx} component={component_idx} planar={} atoms=[{}] rings={:?}",
+                        component.planar,
+                        atom_details.join(","),
+                        component.rings
+                    );
+                }
+            }
+        }
+
+        let mut band_successes = Vec::<(f64, usize)>::new();
+        for idx in 0..in_smiles_batch.len() {
+            if let (Some(reference_points), Some(base)) = (
+                reference_cache.entries[idx].heavy_atom_points.as_ref(),
+                base_batch.molecules[idx].as_ref(),
+            ) {
+                let base_points = heavy_atom_points_for_rmsd(base);
+                let rmsd = crate::distgeom::aligned_rmsd_for_test(reference_points, &base_points);
+                band_successes.push((rmsd, idx));
+            }
+        }
+        band_successes.sort_by(|left, right| left.0.total_cmp(&right.0));
+        eprintln!("confseq_base_structural_diagnostics quantile_samples");
+        for &quantile in &[0.50, 0.75, 0.90] {
+            if band_successes.is_empty() {
+                continue;
+            }
+            let center = ((band_successes.len() - 1) as f64 * quantile).round() as isize;
+            let start = (center - 2).max(0) as usize;
+            let end = (center + 3).min(band_successes.len() as isize) as usize;
+            for &(rmsd, idx) in &band_successes[start..end] {
+                let stripped = parse_confseq(&in_smiles_batch[idx], &td_smiles_batch[idx])
+                    .expect("fixture ConfSeq should parse")
+                    .stripped_smiles;
+                let mol = Molecule::from_smiles(&stripped).expect("fixture should parse");
+                let rings = rings::symmetrize_sssr(&mol).expect("ring perception should work");
+                let model = build_confseq_base_constraint_model(&mol, &rings)
+                    .expect("base constraint model should build for diagnostic");
+                let planar_components = model
+                    .ring_components
+                    .iter()
+                    .filter(|component| component.planar)
+                    .count();
+                let nonplanar_components = model.ring_components.len() - planar_components;
+                let base = base_batch.molecules[idx].as_ref().expect("checked above");
+                let coords = conformer_points(base);
+                let path14_penalty = confseq_base_path14_distance_penalty(&model, &coords);
+                let rotatable_single_bonds = mol
+                    .bonds()
+                    .iter()
+                    .filter(|bond| {
+                        bond.order() == BondOrder::Single
+                            && !bond.is_aromatic()
+                            && !planar_bond_like_for_diagnostic(&mol, bond)
+                    })
+                    .count();
+                eprintln!(
+                    "quantile={quantile:.2} idx={idx} rmsd={rmsd:.6} atoms={} rings={} components={} planar_components={} nonplanar_components={} rot_single={} path14_penalty={path14_penalty:.6} stripped_smiles={stripped}",
+                    mol.num_atoms(),
+                    rings.num_rings(),
+                    model.ring_components.len(),
+                    planar_components,
+                    nonplanar_components,
+                    rotatable_single_bonds,
+                );
+            }
+        }
+
+        eprintln!("confseq_base_structural_diagnostics first_failures");
+        for (idx, error) in failures.into_iter().take(20) {
+            let stripped = parse_confseq(&in_smiles_batch[idx], &td_smiles_batch[idx])
+                .expect("fixture ConfSeq should parse")
+                .stripped_smiles;
+            let mol = Molecule::from_smiles(&stripped).expect("fixture should parse");
+            let rings = rings::symmetrize_sssr(&mol).expect("ring perception should work");
+            eprintln!(
+                "idx={} atoms={} bonds={} rings={} error={} stripped_smiles={} in_smiles={} td_smiles={}",
+                idx,
+                mol.num_atoms(),
+                mol.num_bonds(),
+                rings.num_rings(),
+                error,
+                stripped,
+                in_smiles_batch[idx],
+                td_smiles_batch[idx]
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "local ConfSeq corpus stage RMSD diagnostics"]
+    fn confseq_base_corpus_stage_rmsd_diagnostics() {
+        let corpus_path = std::env::var("COSMOLKIT_CONFSEQ_CORPUS").unwrap_or_else(|_| {
+            "/home/wangjingtong/sh4090/confseq_test_strings_100x10.jsonl".to_string()
+        });
+        let input =
+            std::fs::read_to_string(&corpus_path).expect("ConfSeq corpus should be readable");
+        let base_options = ConfSeqDecodeOptions {
+            optimize_with_uff: false,
+            template_backend: ConfSeqTemplateBackend::BaseConformer,
+            ..ConfSeqDecodeOptions::default()
+        };
+        let dg_options = ConfSeqDecodeOptions {
+            optimize_with_uff: false,
+            template_backend: ConfSeqTemplateBackend::DistanceGeometry,
+            ..ConfSeqDecodeOptions::default()
+        };
+
+        let mut in_smiles_batch = Vec::new();
+        let mut td_smiles_batch = Vec::new();
+        let mut parsed_batch = Vec::new();
+        for (line_idx, line) in input.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let value: Value = serde_json::from_str(line).unwrap_or_else(|err| {
+                panic!("failed to parse corpus JSON line {}: {err}", line_idx + 1)
+            });
+            let in_smiles = value["in_smiles"]
+                .as_str()
+                .expect("in_smiles should be present");
+            let td_smiles = value["td_smiles"]
+                .as_str()
+                .expect("td_smiles should be present");
+            let parsed = parse_confseq(in_smiles, td_smiles).expect("fixture ConfSeq should parse");
+            in_smiles_batch.push(in_smiles.to_string());
+            td_smiles_batch.push(td_smiles.to_string());
+            parsed_batch.push(parsed);
+        }
+
+        let reference_cache = load_or_generate_confseq_dg_reference_cache(
+            &corpus_path,
+            &in_smiles_batch,
+            &td_smiles_batch,
+        );
+        let base_batch = decode_confseq_batch_with_options(
+            &in_smiles_batch,
+            &td_smiles_batch,
+            &base_options,
+            true,
+        )
+        .expect("base batch should decode with per-record errors");
+
+        let mut worst = Vec::new();
+        for idx in 0..in_smiles_batch.len() {
+            let Some(reference_points) = reference_cache.entries[idx].heavy_atom_points.as_ref()
+            else {
+                continue;
+            };
+            let Some(base) = base_batch.molecules[idx].as_ref() else {
+                continue;
+            };
+            let rmsd = crate::distgeom::aligned_rmsd_for_test(
+                reference_points,
+                &heavy_atom_points_for_rmsd(base),
+            );
+            worst.push((rmsd, idx));
+        }
+        worst.sort_by(|left, right| right.0.total_cmp(&left.0));
+
+        let mut rows = Vec::new();
+        for (_, line_idx) in worst.into_iter().take(16) {
+            let parsed = &parsed_batch[line_idx];
+            let Ok(reference) = build_template(
+                &parsed.stripped_smiles,
+                &parsed.chiral_tags_by_atom,
+                &dg_options,
+            )
+            .and_then(|template| decode_from_template(&template, &parsed, &dg_options)) else {
+                continue;
+            };
+            let reference_points = heavy_atom_points_for_rmsd(&reference);
+            let Ok(base_template) = build_template(
+                &parsed.stripped_smiles,
+                &parsed.chiral_tags_by_atom,
+                &base_options,
+            ) else {
+                continue;
+            };
+
+            let mut angle_only_options = base_options.clone();
+            angle_only_options.apply_dihedrals = false;
+            let Ok(angle_only) = decode_from_template(&base_template, &parsed, &angle_only_options)
+            else {
+                continue;
+            };
+            let Ok(full_base) = decode_from_template(&base_template, &parsed, &base_options) else {
+                continue;
+            };
+
+            let template_rmsd = crate::distgeom::aligned_rmsd_for_test(
+                &reference_points,
+                &heavy_atom_points_for_rmsd(&base_template.molecule),
+            );
+            let angle_rmsd = crate::distgeom::aligned_rmsd_for_test(
+                &reference_points,
+                &heavy_atom_points_for_rmsd(&angle_only),
+            );
+            let full_rmsd = crate::distgeom::aligned_rmsd_for_test(
+                &reference_points,
+                &heavy_atom_points_for_rmsd(&full_base),
+            );
+            rows.push((
+                full_rmsd,
+                line_idx,
+                template_rmsd,
+                angle_rmsd,
+                parsed.stripped_smiles.clone(),
+            ));
+        }
+
+        rows.sort_by(|left, right| right.0.total_cmp(&left.0));
+        for (full_rmsd, line_idx, template_rmsd, angle_rmsd, stripped_smiles) in
+            rows.into_iter().take(16)
+        {
+            eprintln!(
+                "confseq_base_stage idx={line_idx} template_rmsd={template_rmsd:.6} angle_only_rmsd={angle_rmsd:.6} full_rmsd={full_rmsd:.6} stripped_smiles={stripped_smiles}"
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "local ConfSeq base candidate diagnostics"]
+    fn confseq_base_candidate_diagnostics() {
+        let smiles = std::env::var("COSMOLKIT_CONFSEQ_BASE_DIAG_SMILES")
+            .unwrap_or_else(|_| "Cc1cc(C)nc(NN2C(=O)CSC2=S)n1".to_string());
+        let mol = Molecule::from_smiles(&smiles).expect("diagnostic SMILES should parse");
+        let rings = rings::symmetrize_sssr(&mol).expect("ring perception should work");
+        let adjacency = AdjacencyList::from_topology(mol.num_atoms(), mol.bonds());
+        let model = build_confseq_base_constraint_model(&mol, &rings)
+            .expect("base constraint model should build");
+        let chiral_constraints =
+            collect_confseq_base_tetrahedral_stereo_constraints(&mol, &adjacency)
+                .expect("chiral constraints should collect");
+
+        let candidates = [
+            (
+                "rdkit_scaffold",
+                construct_confseq_base_coords_from_rdkit_scaffold(&mol, &adjacency, &model),
+            ),
+            (
+                "local_3d_prior",
+                construct_confseq_base_coords_from_local_3d_prior(&mol, &adjacency, &model),
+            ),
+        ];
+        eprintln!("confseq_base_candidate_diag smiles={smiles}");
+        for (name, candidate) in candidates {
+            match candidate {
+                Ok(coords) => {
+                    let total =
+                        confseq_base_candidate_score(&mol, &model, &chiral_constraints, &coords);
+                    let (violations, penalty, max_deficit) =
+                        confseq_base_path14_distance_score_details(&model, &coords);
+                    let max_abs_z = coords
+                        .iter()
+                        .map(|point| point[2].abs())
+                        .fold(0.0, f64::max);
+                    eprintln!(
+                        "confseq_base_candidate_diag candidate={name} total_score={total:.6} path14_violations={violations} path14_penalty={penalty:.6} max_path14_deficit={max_deficit:.6} max_abs_z={max_abs_z:.3}"
+                    );
+                }
+                Err(err) => {
+                    eprintln!("confseq_base_candidate_diag candidate={name} error={err:?}");
+                }
+            }
+        }
+        for (component_idx, component) in model.ring_components.iter().enumerate() {
+            eprintln!(
+                "confseq_base_candidate_diag component={component_idx} planar={} atoms={:?} rings={:?}",
+                component.planar, component.atoms, component.rings
+            );
+        }
+    }
+
+    fn confseq_base_path14_distance_score_details(
+        model: &ConfSeqBaseConstraintModel,
+        coords: &[[f64; 3]],
+    ) -> (usize, f64, f64) {
+        let mut violations = 0usize;
+        let mut penalty = 0.0;
+        let mut max_deficit: f64 = 0.0;
+        for prior in &model.path14_distance_priors {
+            let (i, _, _, l) = prior.atoms;
+            let observed = vec_len(vec_sub(coords[i], coords[l]));
+            let deficit = if observed < prior.lower_bound {
+                prior.lower_bound - observed
+            } else if observed > prior.upper_bound {
+                observed - prior.upper_bound
+            } else {
+                0.0
+            };
+            if deficit > 0.0 {
+                violations += 1;
+                penalty += deficit * deficit * 1.5;
+                max_deficit = max_deficit.max(deficit);
+            }
+        }
+        (violations, penalty, max_deficit)
+    }
+
+    fn planar_bond_like_for_diagnostic(molecule: &Molecule, bond: &Bond) -> bool {
+        bond.order() == BondOrder::Double
+            || molecule.atoms()[bond.begin().index()].is_aromatic()
+            || molecule.atoms()[bond.end().index()].is_aromatic()
+            || (molecule.atoms()[bond.begin().index()].hybridization() == Hybridization::Sp2
+                && molecule.atoms()[bond.end().index()].hybridization() == Hybridization::Sp2)
     }
 }

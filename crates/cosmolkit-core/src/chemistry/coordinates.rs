@@ -7017,6 +7017,26 @@ pub(crate) fn compute_2d_coords(
     compute_2d_coords_with_params(atoms, bonds, &Compute2DCoordParameters::default())
 }
 
+/// Return the RDKit-depictor initial embedded-fragment scaffold before final
+/// collision cleanup and sampling. ConfSeq BaseConformer uses this as a cheap,
+/// source-backed ring-system prior instead of running distance geometry.
+pub(crate) fn rdkit_initial_2d_scaffold_coords(
+    atoms: &[Atom],
+    bonds: &[Bond],
+) -> Result<Vec<[f64; 2]>, Coordinate2DError> {
+    let n = atoms.len();
+    if n == 0 {
+        return Err(Coordinate2DError::InvalidInput(
+            "empty molecule has no 2D coordinates",
+        ));
+    }
+    let mut depict_mol = build_rdkit_depict_molecule_from_slices(atoms, bonds)?;
+    let cip_ranks = rdkit_depict_ordering_cip_ranks(&mut depict_mol)?;
+    let mut efrags = rdkit_compute_initial_efrags_strict(atoms, bonds, &cip_ranks, None, false)?;
+    shift_coords(&mut efrags);
+    Ok(copy_coordinate_from_efrags(n, &efrags))
+}
+
 // BEGIN RDKIT CPP FUNCTION: compute2DCoords overload wrapper (RDDepictor.cpp)
 // RDKit✔️✔️: unsigned int compute2DCoords(RDKit::ROMol &mol,
 // RDKit✔️✔️:                              const RDGeom::INT_POINT2D_MAP *coordMap,
