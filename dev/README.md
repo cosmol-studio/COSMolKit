@@ -19,6 +19,9 @@ daily development.
 - [pdb_mmcif_gemmi_primary_plan.md](pdb_mmcif_gemmi_primary_plan.md) —
   execution plan for Gemmi-primary PDB/mmCIF reading and RDKit-compatible
   molecule construction
+- [confseq_fast_geometry_design.md](confseq_fast_geometry_design.md) —
+  ConfSeq FastGeometry backend boundary, target architecture, metrics, and
+  validation rules
 
 ## Required Development Mode
 
@@ -135,7 +138,7 @@ metadata later.
 Operation bodies receive a unified `OpParts` value through `#[mol_op_body(...)]`.
 Do not add per-operation parts structs or manual capability combinations.
 
-`OpParts` is a lightweight operation capability object:
+`OpParts` is a fast operation capability object:
 
 ```text
 OpParts::new clones Molecule cheaply by cloning Arc-backed blocks.

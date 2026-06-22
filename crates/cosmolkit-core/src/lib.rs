@@ -151,9 +151,11 @@ pub use chemistry::forcefield::{
     normalize_angle_deg,
 };
 pub use confseq::{
-    ConfSeqBaseConformerError, ConfSeqBatchDecodeResult, ConfSeqDecodeError, ConfSeqDecodeOptions,
+    ConfSeqBatchDecodeResult, ConfSeqDecodeError, ConfSeqDecodeOptions, ConfSeqFastGeometryError,
     ConfSeqTemplateBackend, decode_confseq, decode_confseq_batch,
-    decode_confseq_batch_with_options, decode_confseq_with_options,
+    decode_confseq_batch_with_options, decode_confseq_record, decode_confseq_record_batch,
+    decode_confseq_record_batch_with_options, decode_confseq_record_with_options,
+    decode_confseq_with_options,
 };
 pub use coordinates::With2DCoordinatesParams;
 pub use derived::DerivedState;

@@ -291,6 +291,20 @@ pub fn mol_to_smiles(
     mol_to_smiles_with_mode(molecule, params, SmilesOutputMode::PlainSmiles)
 }
 
+pub(crate) fn mol_to_smiles_with_atom_output_order(
+    molecule: &Molecule,
+    params: &SmilesWriteParams,
+) -> Result<(String, Vec<AtomId>), SmilesWriteError> {
+    let mut context = SmilesWriteContext::default();
+    let smiles = mol_to_smiles_with_mode_and_context(
+        molecule,
+        params,
+        SmilesOutputMode::PlainSmiles,
+        &mut context,
+    )?;
+    Ok((smiles, context.atom_output_order))
+}
+
 pub fn mol_to_cx_smiles(
     molecule: &Molecule,
     params: &SmilesWriteParams,
@@ -406,6 +420,16 @@ fn mol_to_smiles_with_mode(
     params: &SmilesWriteParams,
     mode: SmilesOutputMode,
 ) -> Result<String, SmilesWriteError> {
+    let mut context = SmilesWriteContext::default();
+    mol_to_smiles_with_mode_and_context(molecule, params, mode, &mut context)
+}
+
+fn mol_to_smiles_with_mode_and_context(
+    molecule: &Molecule,
+    params: &SmilesWriteParams,
+    mode: SmilesOutputMode,
+    context: &mut SmilesWriteContext,
+) -> Result<String, SmilesWriteError> {
     // BEGIN RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles
     // RDKit✔️✔️: std::string MolToSmiles(const ROMol &mol, const SmilesWriteParams &params,
     // RDKit✔️✔️:                         bool doingCXSmiles, bool includeStereoGroups) {
@@ -473,7 +497,6 @@ fn mol_to_smiles_with_mode(
 
     let mut molecule = molecule.clone();
 
-    let mut context = SmilesWriteContext::default();
     let mut fragment_results = Vec::new();
     let mut working_params = params.clone();
 
@@ -528,7 +551,7 @@ fn mol_to_smiles_with_mode(
             &ranks,
             &working_params,
             SmilesWriteOverrides::default(),
-            &mut context,
+            context,
         )?);
         if working_params.canonical && saved_atom_maps.is_some() {
             let _ = stash_and_clear_atom_maps_for_smiles(&mut molecule, &working_params);
@@ -538,7 +561,7 @@ fn mol_to_smiles_with_mode(
         restore_atom_maps_after_canonical_smiles(&mut molecule, saved_atom_maps.as_deref());
     }
 
-    let mut result = assemble_fragment_smiles(fragment_results, &working_params, &mut context)?;
+    let mut result = assemble_fragment_smiles(fragment_results, &working_params, context)?;
     if let SmilesOutputMode::CxSmiles { fields, .. } = mode {
         let scope = CxWriteScope {
             atom_order: context.atom_output_order.clone(),

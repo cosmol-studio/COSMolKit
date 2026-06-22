@@ -3,7 +3,10 @@
 use crate::{
     Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, BondStereo, Conformer2D, Conformer3D, Molecule,
     MoleculeBuildError, MoleculeProperties, StereoGroup, SubstanceGroup,
-    molecule::{CoordinateBlock, MoleculeCapabilities, TopologyBlock, TopologyTrust},
+    molecule::{
+        AtomMapping, BondMapping, CoordinateBlock, MoleculeCapabilities, TopologyBlock,
+        TopologyMapping, TopologyTrust,
+    },
 };
 
 /// One-shot molecule construction API.
@@ -227,6 +230,124 @@ impl MoleculeBuilder {
             *conformer = Conformer3D::new(conformer.id(), coords, conformer.is_3d());
         }
         atom_mapping
+    }
+
+    pub(crate) fn renumber_atoms_for_construction(
+        &mut self,
+        old_atom_order: &[AtomId],
+    ) -> Result<TopologyMapping, MoleculeBuildError> {
+        if old_atom_order.len() != self.atoms.len() {
+            return Err(MoleculeBuildError::InvalidMoleculeState {
+                message: "atom renumbering order length does not match atom count".to_string(),
+            });
+        }
+        let mut seen = vec![false; self.atoms.len()];
+        for atom in old_atom_order {
+            if atom.index() >= self.atoms.len() || seen[atom.index()] {
+                return Err(MoleculeBuildError::InvalidMoleculeState {
+                    message: "atom renumbering order is not a permutation".to_string(),
+                });
+            }
+            seen[atom.index()] = true;
+        }
+
+        let mut atom_old_to_new = vec![None; self.atoms.len()];
+        let mut atom_new_to_old = Vec::with_capacity(self.atoms.len());
+        let mut atoms = Vec::with_capacity(self.atoms.len());
+        for (new_idx, old_atom) in old_atom_order.iter().copied().enumerate() {
+            let new_id = AtomId::new(new_idx);
+            atom_old_to_new[old_atom.index()] = Some(new_id);
+            atom_new_to_old.push(Some(old_atom));
+            atoms.push(self.atoms[old_atom.index()].clone().with_id(new_id));
+        }
+
+        let mut bond_old_to_new = vec![None; self.bonds.len()];
+        let mut bond_new_to_old = Vec::with_capacity(self.bonds.len());
+        let mut bonds = Vec::with_capacity(self.bonds.len());
+        for bond in &self.bonds {
+            let begin = atom_old_to_new[bond.begin().index()]
+                .expect("atom permutation maps every old atom");
+            let end =
+                atom_old_to_new[bond.end().index()].expect("atom permutation maps every old atom");
+            let stereo_atoms = bond.stereo_atoms().and_then(|[left, right]| {
+                Some([
+                    atom_old_to_new[left.index()]?,
+                    atom_old_to_new[right.index()]?,
+                ])
+            });
+            let new_id = BondId::new(bonds.len());
+            bond_old_to_new[bond.id().index()] = Some(new_id);
+            bond_new_to_old.push(Some(bond.id()));
+            bonds.push(bond.clone().remapped(new_id, begin, end, stereo_atoms));
+        }
+
+        for conformer in &mut self.conformers_2d {
+            let coords = old_atom_order
+                .iter()
+                .map(|atom| conformer.coordinates()[atom.index()])
+                .collect();
+            *conformer = Conformer2D::new(conformer.id(), coords);
+        }
+        for conformer in &mut self.conformers_3d {
+            let coords = old_atom_order
+                .iter()
+                .map(|atom| conformer.coordinates()[atom.index()])
+                .collect();
+            *conformer = Conformer3D::new(conformer.id(), coords, conformer.is_3d());
+        }
+
+        self.substance_groups = self
+            .substance_groups
+            .iter()
+            .enumerate()
+            .filter_map(|(old_index, sgroup)| {
+                let sgroup_map = (0..self.substance_groups.len())
+                    .map(crate::SubstanceGroupId::new)
+                    .map(Some)
+                    .collect::<Vec<_>>();
+                sgroup.remapped(
+                    crate::SubstanceGroupId::new(old_index),
+                    &atom_old_to_new,
+                    &bond_old_to_new,
+                    &sgroup_map,
+                )
+            })
+            .collect();
+        self.stereo_groups = self
+            .stereo_groups
+            .iter()
+            .filter_map(|group| group.remapped(&atom_old_to_new, &bond_old_to_new))
+            .collect();
+
+        self.properties.remap_topology(&TopologyMapping {
+            atoms: AtomMapping {
+                old_to_new: atom_old_to_new.clone(),
+                new_to_old: atom_new_to_old.clone(),
+            },
+            bonds: BondMapping {
+                old_to_new: bond_old_to_new.clone(),
+                new_to_old: bond_new_to_old.clone(),
+            },
+        });
+
+        self.atoms = atoms;
+        self.bonds = bonds;
+        self.adjacency = vec![Vec::new(); self.atoms.len()];
+        for bond in &self.bonds {
+            self.adjacency[bond.begin().index()].push(bond.id());
+            self.adjacency[bond.end().index()].push(bond.id());
+        }
+
+        Ok(TopologyMapping {
+            atoms: AtomMapping {
+                old_to_new: atom_old_to_new,
+                new_to_old: atom_new_to_old,
+            },
+            bonds: BondMapping {
+                old_to_new: bond_old_to_new,
+                new_to_old: bond_new_to_old,
+            },
+        })
     }
 
     pub fn set_2d_coordinates(&mut self, coords: Vec<[f64; 2]>) -> Result<(), MoleculeBuildError> {

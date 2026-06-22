@@ -7018,7 +7018,7 @@ pub(crate) fn compute_2d_coords(
 }
 
 /// Return the RDKit-depictor initial embedded-fragment scaffold before final
-/// collision cleanup and sampling. ConfSeq BaseConformer uses this as a cheap,
+/// collision cleanup and sampling. ConfSeq FastGeometry uses this as a cheap,
 /// source-backed ring-system prior instead of running distance geometry.
 pub(crate) fn rdkit_initial_2d_scaffold_coords(
     atoms: &[Atom],

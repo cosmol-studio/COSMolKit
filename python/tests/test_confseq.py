@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import pytest
+
 import cosmolkit
+
+CORPUS_CONFSEQ = (
+    "N C <112> | ( = O ) <84> C <111> | <-45> n 1 c c ( <21> N <123> | "
+    "<173> C <116> | ( = O ) <120> c 2 c c c c c 2 <112> C <112> | <-66> "
+    "N 2 <-172> C ( = O ) <-2> C <0> N <3> C <174> 2 = O ) c n 1"
+)
 
 
 def test_confseq_submodule_is_importable():
@@ -10,7 +18,7 @@ def test_confseq_submodule_is_importable():
 
 
 def test_confseq_decode_returns_cosmolkit_molecule():
-    mol = cosmolkit.confseq.decode("C C", "C C")
+    mol = cosmolkit.confseq.decode("C C")
 
     assert isinstance(mol, cosmolkit.Molecule)
     assert mol.num_atoms() == 2
@@ -18,19 +26,57 @@ def test_confseq_decode_returns_cosmolkit_molecule():
 
 
 def test_confseq_decode_can_disable_uff_optimization():
-    mol = cosmolkit.confseq.decode("C C", "C C", optimize_with_uff=False)
+    mol = cosmolkit.confseq.decode("C C", optimize_with_uff=False)
 
     assert isinstance(mol, cosmolkit.Molecule)
     assert mol.num_atoms() == 2
     assert mol.num_conformers() == 1
 
 
+def test_confseq_decode_accepts_explicit_template_backend():
+    dg = cosmolkit.confseq.decode(
+        CORPUS_CONFSEQ,
+        optimize_with_uff=False,
+        template_backend="distance_geometry",
+    )
+    fast = cosmolkit.confseq.decode(
+        CORPUS_CONFSEQ,
+        optimize_with_uff=False,
+        template_backend="fast_geometry",
+    )
+
+    assert isinstance(dg, cosmolkit.Molecule)
+    assert isinstance(fast, cosmolkit.Molecule)
+    assert dg.num_atoms() == 26
+    assert fast.num_atoms() == 26
+    assert dg.num_conformers() == 1
+    assert fast.num_conformers() == 1
+
+
+def test_confseq_decode_rejects_unknown_template_backend():
+    with pytest.raises(ValueError, match="template_backend"):
+        cosmolkit.confseq.decode(
+            "C C",
+            optimize_with_uff=False,
+            template_backend="unknown",
+        )
+
+
+def test_confseq_decode_rejects_old_base_conformer_backend_name():
+    with pytest.raises(ValueError, match="template_backend"):
+        cosmolkit.confseq.decode(
+            "C <90> | C C",
+            optimize_with_uff=False,
+            template_backend="base_conformer",
+        )
+
+
 def test_confseq_decode_batch_preserves_order_and_uses_local_cache():
     mols = cosmolkit.confseq.decode_batch(
         ["C C", "C C"],
-        ["C C", "C C"],
         n_jobs=1,
         optimize_with_uff=False,
+        template_backend="distance_geometry",
     )
 
     assert [mol.num_atoms() for mol in mols] == [2, 2]
@@ -39,7 +85,6 @@ def test_confseq_decode_batch_preserves_order_and_uses_local_cache():
 
 def test_confseq_decode_batch_can_keep_errors():
     mols = cosmolkit.confseq.decode_batch(
-        ["C C", "not smiles"],
         ["C C", "not smiles"],
         errors="keep",
     )

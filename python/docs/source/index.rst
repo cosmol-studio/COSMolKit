@@ -19,6 +19,7 @@ directly.
 
    installation
    quickstart
+   confseq
    molecule
    batch
    fingerprints

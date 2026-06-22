@@ -428,8 +428,8 @@ impl DerivedCacheBlock {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AtomMapping {
-    old_to_new: Vec<Option<AtomId>>,
-    new_to_old: Vec<Option<AtomId>>,
+    pub(crate) old_to_new: Vec<Option<AtomId>>,
+    pub(crate) new_to_old: Vec<Option<AtomId>>,
 }
 
 impl AtomMapping {
@@ -446,8 +446,8 @@ impl AtomMapping {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BondMapping {
-    old_to_new: Vec<Option<crate::BondId>>,
-    new_to_old: Vec<Option<crate::BondId>>,
+    pub(crate) old_to_new: Vec<Option<crate::BondId>>,
+    pub(crate) new_to_old: Vec<Option<crate::BondId>>,
 }
 
 impl BondMapping {
@@ -464,8 +464,8 @@ impl BondMapping {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopologyMapping {
-    atoms: AtomMapping,
-    bonds: BondMapping,
+    pub(crate) atoms: AtomMapping,
+    pub(crate) bonds: BondMapping,
 }
 
 impl TopologyMapping {

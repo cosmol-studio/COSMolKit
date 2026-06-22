@@ -27,6 +27,7 @@ GENERATORS: list[tuple[str, str]] = [
         "gen_rdkit_conformer_generation_library_golden.py",
         "conformer_generation_library.jsonl",
     ),
+    ("gen_rdkit_confseq_embed_golden.py", "confseq_embed_template.jsonl"),
     ("gen_rdkit_forcefield_params_golden.py", "forcefield_params.jsonl"),
     ("gen_rdkit_mmff_builtin_golden.py", "mmff_builtin.jsonl"),
     ("gen_rdkit_smiles_writer_golden.py", "smiles_writer.jsonl"),

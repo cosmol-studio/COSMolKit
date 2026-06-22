@@ -7617,6 +7617,8 @@ fn set_13_bounds_helper_doubles_tolerance_for_larger_sp2_ring_atoms() {
 
     let (_thiophene_mmat_12, thiophene_accum) = run_set12_bounds(&thiophene);
     let (_benzene_mmat_12, benzene_accum) = run_set12_bounds(&benzene);
+    let thiophene_rings = thiophene.derived_cache().rings.as_ref().expect("rings");
+    let benzene_rings = benzene.derived_cache().rings.as_ref().expect("rings");
 
     let sulfur = thiophene
         .atoms()
@@ -7646,6 +7648,7 @@ fn set_13_bounds_helper_doubles_tolerance_for_larger_sp2_ring_atoms() {
         &thiophene_accum.bond_lengths,
         &mut thiophene_mmat,
         &thiophene,
+        thiophene_rings,
     );
 
     let mut benzene_mmat = BoundsMatrix::new(benzene.num_atoms());
@@ -7658,6 +7661,7 @@ fn set_13_bounds_helper_doubles_tolerance_for_larger_sp2_ring_atoms() {
         &benzene_accum.bond_lengths,
         &mut benzene_mmat,
         &benzene,
+        benzene_rings,
     );
 
     let thiophene_width = thiophene_mmat.get_upper(sulfur_neighbors[0], sulfur_neighbors[1])
@@ -7666,8 +7670,8 @@ fn set_13_bounds_helper_doubles_tolerance_for_larger_sp2_ring_atoms() {
 
     assert!((thiophene_width - (4.0 * DIST13_TOL)).abs() < 1e-9);
     assert!((benzene_width - (2.0 * DIST13_TOL)).abs() < 1e-9);
-    assert!(is_larger_sp2_atom_idx(&thiophene, sulfur));
-    assert!(!is_larger_sp2_atom_idx(&benzene, 1));
+    assert!(is_larger_sp2_atom_idx(&thiophene, thiophene_rings, sulfur));
+    assert!(!is_larger_sp2_atom_idx(&benzene, benzene_rings, 1));
 }
 
 #[test]

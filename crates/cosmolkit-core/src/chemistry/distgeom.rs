@@ -66,6 +66,9 @@ const TETRAHEDRAL_CENTERINVOLUME_TOL: f64 = 0.30;
 thread_local! {
     static RDKIT_DISTGEOM_RNG: std::cell::RefCell<RdkitDistgeomMinStdRand> =
         std::cell::RefCell::new(RdkitDistgeomMinStdRand::default());
+    #[cfg(test)]
+    static EMBEDDER_TEST_TRACE: std::cell::RefCell<Option<EmbedderTestTrace>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 fn have_opposite_sign(a: f64, b: f64) -> bool {
@@ -83,6 +86,46 @@ fn row64_distgeom_trace_enabled(num_points: usize) -> bool {
 
 fn row61_distgeom_trace_enabled(num_points: usize) -> bool {
     env::var("RDKIT_ROW61_TRACE").ok().as_deref() == Some("1") && num_points == 26
+}
+
+fn distgeom_trace_num_points_enabled(num_points: usize) -> bool {
+    env::var("RDKIT_DISTGEOM_TRACE_NUM_POINTS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        == Some(num_points)
+}
+
+fn distgeom_trace_bounds_pairs() -> Vec<(usize, usize)> {
+    env::var("COSMOLKIT_DG_TRACE_BOUNDS_PAIRS")
+        .or_else(|_| env::var("RDKIT_DG_TRACE_BOUNDS_PAIRS"))
+        .ok()
+        .map(|value| {
+            value
+                .split(';')
+                .filter_map(|pair| {
+                    let (a, b) = pair.split_once(',')?;
+                    let a = a.trim().parse::<usize>().ok()?;
+                    let b = b.trim().parse::<usize>().ok()?;
+                    Some((a, b))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn trace_bounds_stage(stage: &str, mmat: &BoundsMatrix) {
+    for (i, j) in distgeom_trace_bounds_pairs() {
+        if i < mmat.n && j < mmat.n {
+            println!(
+                "rust_bounds_stage stage={} pair={},{} lb={:.17} ub={:.17}",
+                stage,
+                i,
+                j,
+                mmat.get_lower(i, j),
+                mmat.get_upper(i, j)
+            );
+        }
+    }
 }
 
 fn row103_distgeom_trace_enabled(num_points: usize) -> bool {
@@ -508,6 +551,89 @@ pub(crate) enum EmbedderTestStage {
     InitialCoords,
     FirstMinimized,
     FourthDimensionCleaned,
+    ExpTorsionMinimized,
+    FinalChecked,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub(crate) struct EmbedderTestLowLevelTrace {
+    pub(crate) random_dist_preview: Option<Vec<f64>>,
+    pub(crate) random_dist_full: Option<Vec<f64>>,
+    pub(crate) random_dist_sum: Option<f64>,
+    pub(crate) random_dist_sum_sq: Option<f64>,
+    pub(crate) random_dist_largest: Option<f64>,
+    pub(crate) initial_sum_sq_d2: Option<f64>,
+    pub(crate) initial_sq_d0i_preview: Option<Vec<f64>>,
+    pub(crate) initial_eig_vals_before_sqrt: Option<Vec<f64>>,
+    pub(crate) initial_eig_vals_after_sqrt: Option<Vec<f64>>,
+    pub(crate) first_minimization_initial_energy: Option<f64>,
+    pub(crate) first_minimization_final_energy: Option<f64>,
+    pub(crate) first_minimization_passes: Option<u32>,
+    pub(crate) first_minimization_max_contrib: Option<f64>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug, Default)]
+pub(crate) struct EmbedderTestTrace {
+    pub(crate) initial_coords: Option<Vec<[f64; 3]>>,
+    pub(crate) first_minimized: Option<Vec<[f64; 3]>>,
+    pub(crate) fourth_dimension_cleaned: Option<Vec<[f64; 3]>>,
+    pub(crate) exp_torsion_minimized: Option<Vec<[f64; 3]>>,
+    pub(crate) final_checked: Option<Vec<[f64; 3]>>,
+    pub(crate) failures: Vec<(String, u32)>,
+    pub(crate) low_level: EmbedderTestLowLevelTrace,
+}
+
+#[cfg(test)]
+fn embedder_test_low_level_trace_reset() {
+    EMBEDDER_TEST_TRACE.with(|slot| {
+        *slot.borrow_mut() = Some(EmbedderTestTrace::default());
+    });
+}
+
+#[cfg(test)]
+fn embedder_test_low_level_trace_take() -> EmbedderTestTrace {
+    EMBEDDER_TEST_TRACE
+        .with(|slot| slot.borrow_mut().take())
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+fn embedder_test_trace_update(update: impl FnOnce(&mut EmbedderTestTrace)) {
+    EMBEDDER_TEST_TRACE.with(|slot| {
+        if let Some(trace) = slot.borrow_mut().as_mut() {
+            update(trace);
+        }
+    });
+}
+
+#[cfg(test)]
+fn embedder_test_trace_set_coords(slot: &mut Option<Vec<[f64; 3]>>, positions: &[Vec<f64>]) {
+    if slot.is_none() {
+        *slot = Some(
+            positions
+                .iter()
+                .map(|point| [point[0], point[1], point[2]])
+                .collect(),
+        );
+    }
+}
+
+#[cfg(test)]
+fn embedder_test_trace_failures(params: &EmbedParameters) -> Vec<(String, u32)> {
+    params
+        .failures
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, count)| {
+            if *count == 0 {
+                return None;
+            }
+            let cause = EmbedFailureCause::from_rdkit_ordinal(idx as u32)?;
+            Some((cause.rdkit_name().to_string(), *count))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -605,15 +731,10 @@ pub(crate) fn embedder_stage_coords_for_test(
         } else {
             params.max_iterations
         };
-        for iter in 0..max_iterations {
+        let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
+        for _iter in 0..max_iterations {
             let mut attempt_positions = vec![vec![0.0; dim]; n_atoms];
             let mut dist_mat = SymmMatrix::new(n_atoms);
-            let mut rng =
-                RdkitDistgeomMinStdRand::new_from_embed_points_seed(rdkit_embedder_conformer_seed(
-                    params.random_seed,
-                    iter as usize,
-                    params.enable_sequential_random_seeds,
-                ));
             if !embedder_generate_initial_coords(
                 &mut attempt_positions,
                 &embed_args,
@@ -655,6 +776,41 @@ pub(crate) fn embedder_stage_coords_for_test(
             {
                 continue;
             }
+            if matches!(stage, EmbedderTestStage::FourthDimensionCleaned) {
+                positions = Some(attempt_positions);
+                break;
+            }
+
+            if (params.use_exp_torsion_angle_prefs || params.use_basic_knowledge)
+                && !embedder_minimize_with_exp_torsions(&mut attempt_positions, &embed_args, params)
+            {
+                continue;
+            }
+            if matches!(stage, EmbedderTestStage::ExpTorsionMinimized) {
+                positions = Some(attempt_positions);
+                break;
+            }
+
+            if !embedder_double_bond_geometry_checks(
+                &attempt_positions,
+                &embed_args,
+                params,
+                1.0e-3,
+            ) {
+                continue;
+            }
+            if params.enforce_chirality {
+                if !embed_args.chiral_centers.is_empty()
+                    && !embedder_final_chiral_checks(&mut attempt_positions, &embed_args, params)
+                {
+                    continue;
+                }
+                if !embed_args.stereo_double_bonds.is_empty()
+                    && !embedder_double_bond_stereo_checks(&attempt_positions, &embed_args, params)
+                {
+                    continue;
+                }
+            }
             positions = Some(attempt_positions);
             break;
         }
@@ -682,6 +838,118 @@ pub(crate) fn embedder_stage_coords_for_test(
         full_conformers.push(full);
     }
     embedder_add_conformers(mol, full_conformers, params.clear_confs).map(|(mol, _)| mol)
+}
+
+#[cfg(test)]
+pub(crate) fn embedder_trace_for_test(
+    mol: &Molecule,
+    params: &mut EmbedParameters,
+) -> Result<EmbedderTestTrace, DgBoundsError> {
+    let (mol_frags, _frag_mapping) =
+        molecule_fragments_for_embed(mol, params.embed_fragments_separately)?;
+    let coord_map_storage = params.coord_map.clone();
+    let mut coord_map = coord_map_storage.as_ref();
+    if mol_frags.len() > 1 && coord_map.is_some() {
+        coord_map = None;
+    }
+    let previous_track_failures = params.track_failures;
+    params.track_failures = true;
+    params
+        .failures
+        .resize(EmbedFailureCause::EndOfEnum as usize, 0);
+    params.failures.fill(0);
+
+    let mut trace = EmbedderTestTrace::default();
+    for (frag_idx, piece) in mol_frags.iter().enumerate() {
+        if frag_idx > 0 {
+            break;
+        }
+        let n_atoms = piece.num_atoms();
+        let mut etkdg_details = CrystalFFDetails::default();
+        embedder_init_etkdg(piece, params, &mut etkdg_details)?;
+
+        let mut mmat;
+        if params.bounds_mat.is_none() || mol_frags.len() > 1 {
+            mmat = BoundsMatrix::new(n_atoms);
+            if !embedder_setup_initial_bounds_matrix(
+                piece,
+                &mut mmat,
+                coord_map,
+                params,
+                &mut etkdg_details,
+            )? {
+                continue;
+            }
+        } else {
+            let bounds = params.bounds_mat.as_ref().expect("checked above");
+            if bounds.num_rows() != n_atoms {
+                return Err(DgBoundsError::GenerationFailed(
+                    "size of boundsMat provided does not match the number of atoms in the molecule."
+                        .to_string(),
+                ));
+            }
+            collect_bonds_and_angles(piece, &mut etkdg_details.bonds, &mut etkdg_details.angles);
+            mmat = (**bounds).clone();
+        }
+
+        let piece_storage;
+        let piece = if piece
+            .derived_cache()
+            .rings
+            .as_ref()
+            .is_some_and(crate::RingInfo::is_initialized)
+        {
+            piece
+        } else {
+            let mut ringed_piece = piece.clone();
+            let ring_info = ring_info_for_distgeom(piece)?.into_owned();
+            ringed_piece.derived_cache_mut().rings = Some(ring_info);
+            piece_storage = ringed_piece;
+            &piece_storage
+        };
+
+        let mut chiral_centers = Vec::new();
+        let mut tetrahedral_carbons = Vec::new();
+        embedder_find_chiral_sets(
+            piece,
+            &mut chiral_centers,
+            &mut tetrahedral_carbons,
+            coord_map,
+        );
+
+        let mut double_bond_ends = Vec::new();
+        let mut stereo_double_bonds = Vec::new();
+        embedder_find_double_bonds(
+            piece,
+            &mut double_bond_ends,
+            &mut stereo_double_bonds,
+            coord_map,
+        );
+
+        let four_d = params.use_random_coords || !chiral_centers.is_empty();
+        let dim = if four_d { 4 } else { 3 };
+        let embed_args = EmbedArgs {
+            mmat: &mmat,
+            chiral_centers: &chiral_centers,
+            tetrahedral_carbons: &tetrahedral_carbons,
+            etkdg_details: Some(&etkdg_details),
+            double_bond_ends: Some(&double_bond_ends),
+            stereo_double_bonds: &stereo_double_bonds,
+        };
+        let mut attempt_positions = vec![vec![0.0; dim]; n_atoms];
+        embedder_test_low_level_trace_reset();
+        let _ = embedder_embed_points(
+            &mut attempt_positions,
+            embed_args,
+            params,
+            params.random_seed,
+            None,
+        )?;
+        trace = embedder_test_low_level_trace_take();
+    }
+    trace.failures = embedder_test_trace_failures(params);
+    params.track_failures = previous_track_failures;
+    Ok(trace)
 }
 
 fn copy_forcefield_positions_to_point_vectors(field: &ForceField, positions: &mut [Vec<f64>]) {
@@ -767,15 +1035,45 @@ fn embedder_first_minimization(
         }
     }
     field.initialize();
-    if field.calc_energy_current(None) > EMBEDDER_ERROR_TOL {
+    let initial_energy = field.calc_energy_current(None);
+    #[cfg(test)]
+    embedder_test_trace_update(|trace| {
+        trace
+            .low_level
+            .first_minimization_initial_energy
+            .get_or_insert(initial_energy);
+    });
+    let mut minimize_passes = 0_u32;
+    if initial_energy > EMBEDDER_ERROR_TOL {
         let mut need_more = 1;
         while need_more != 0 {
+            minimize_passes += 1;
             need_more = field.minimize(400, embed_params.optimizer_force_tol, 1.0e-6);
         }
     }
     copy_forcefield_positions_to_point_vectors(&field, positions);
     let mut e_contribs = Vec::new();
     let local_e = field.calc_energy_current(Some(&mut e_contribs));
+    #[cfg(test)]
+    embedder_test_trace_update(|trace| {
+        trace
+            .low_level
+            .first_minimization_final_energy
+            .get_or_insert(local_e);
+        trace
+            .low_level
+            .first_minimization_passes
+            .get_or_insert(minimize_passes);
+        trace
+            .low_level
+            .first_minimization_max_contrib
+            .get_or_insert_with(|| {
+                e_contribs
+                    .iter()
+                    .copied()
+                    .fold(0.0_f64, |acc, value| acc.max(value))
+            });
+    });
     if local_e / positions.len() as f64 >= MAX_MINIMIZED_E_PER_ATOM {
         got_coords = false;
     }
@@ -937,9 +1235,11 @@ fn embedder_minimize_fourth_dimension(
 
     field.initialize();
     let trace_row64 = row64_distgeom_trace_enabled(positions.len());
-    if trace_row64 {
+    let trace_num_points = distgeom_trace_num_points_enabled(positions.len());
+    if trace_row64 || trace_num_points {
         println!(
-            "row64_fourth_dimension initial_energy={:.15}",
+            "distgeom_fourth_dimension n={} initial_energy={:.15}",
+            positions.len(),
             field.calc_energy_current(None)
         );
     }
@@ -950,16 +1250,20 @@ fn embedder_minimize_fourth_dimension(
             if let Some(deadline) = end_time
                 && Instant::now() > deadline
             {
-                if trace_row64 {
-                    println!("row64_fourth_dimension timeout pass={pass}");
+                if trace_row64 || trace_num_points {
+                    println!(
+                        "distgeom_fourth_dimension n={} timeout pass={pass}",
+                        positions.len()
+                    );
                 }
                 copy_forcefield_positions_to_point_vectors(&field, positions);
                 return false;
             }
             need_more = field.minimize(200, embed_params.optimizer_force_tol, 1.0e-6);
-            if trace_row64 {
+            if trace_row64 || trace_num_points {
                 println!(
-                    "row64_fourth_dimension pass={} need_more={} energy={:.15}",
+                    "distgeom_fourth_dimension n={} pass={} need_more={} energy={:.15}",
+                    positions.len(),
                     pass,
                     need_more,
                     field.calc_energy_current(None)
@@ -1308,7 +1612,14 @@ fn embedder_final_chiral_checks(
     // RDKit✔️✔️:   return true;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::finalChiralChecks
+    let trace_num_points = distgeom_trace_num_points_enabled(positions.len());
     if !embedder_check_chiral_centers(positions, eargs, embed_params) {
+        if trace_num_points {
+            println!(
+                "distgeom_final_chiral n={} substage=check_chiral_centers2 ok=0",
+                positions.len()
+            );
+        }
         embedder_increment_failure(embed_params, EmbedFailureCause::CheckChiralCenters2);
         return false;
     }
@@ -1327,6 +1638,12 @@ fn embedder_final_chiral_checks(
     if !atoms_to_check.is_empty() {
         let positions_3d = point_vectors_to_forcefield_vec3(positions);
         if !embedder_bounds_fulfilled(&atoms_to_check, eargs.mmat, &positions_3d) {
+            if trace_num_points {
+                println!(
+                    "distgeom_final_chiral n={} substage=final_chiral_bounds ok=0 atoms={atoms_to_check:?}",
+                    positions.len()
+                );
+            }
             embedder_increment_failure(embed_params, EmbedFailureCause::FinalChiralBounds);
             return false;
         }
@@ -1335,6 +1652,13 @@ fn embedder_final_chiral_checks(
     let positions_3d = point_vectors_to_forcefield_vec3(positions);
     for chiral_set in eargs.chiral_centers {
         if !embedder_center_in_volume(chiral_set, &positions_3d, 0.1) {
+            if trace_num_points {
+                println!(
+                    "distgeom_final_chiral n={} substage=final_center_in_volume ok=0 center={}",
+                    positions.len(),
+                    chiral_set.idx0
+                );
+            }
             embedder_increment_failure(embed_params, EmbedFailureCause::FinalCenterInVolume);
             return false;
         }
@@ -1354,6 +1678,7 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
     let mut dist_mat = SymmMatrix::new(positions.len());
     let trace_row64 = row64_distgeom_trace_enabled(positions.len());
     let trace_row61 = row61_distgeom_trace_enabled(positions.len());
+    let trace_num_points = distgeom_trace_num_points_enabled(positions.len());
 
     while !got_coords && iter < embed_params.max_iterations {
         if let Some(deadline) = end_time
@@ -1363,6 +1688,11 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
                 println!("row64_embed_points timeout_before_iter iter={iter}");
             } else if trace_row61 {
                 println!("row61_embed_points timeout_before_iter iter={iter}");
+            } else if trace_num_points {
+                println!(
+                    "distgeom_embed_points n={} timeout_before_iter iter={iter}",
+                    positions.len()
+                );
             }
             break;
         }
@@ -1372,6 +1702,11 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
             println!("row64_embed_points iter_start iter={iter}");
         } else if trace_row61 {
             println!("row61_embed_points iter_start iter={iter}");
+        } else if trace_num_points {
+            println!(
+                "distgeom_embed_points n={} iter_start iter={iter}",
+                positions.len()
+            );
         }
         if let Some(callback) = embed_params.callback {
             callback(iter);
@@ -1384,13 +1719,27 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
                 println!("row64_embed_points iter={iter} stage=initial_coords ok=0");
             } else if trace_row61 {
                 println!("row61_embed_points iter={iter} stage=initial_coords ok=0");
+            } else if trace_num_points {
+                println!(
+                    "distgeom_embed_points n={} iter={iter} stage=initial_coords ok=0",
+                    positions.len()
+                );
             }
             embedder_increment_failure(embed_params, EmbedFailureCause::InitialCoords);
         } else {
+            #[cfg(test)]
+            embedder_test_trace_update(|trace| {
+                embedder_test_trace_set_coords(&mut trace.initial_coords, positions);
+            });
             if trace_row64 {
                 println!("row64_embed_points iter={iter} stage=initial_coords ok=1");
             } else if trace_row61 {
                 println!("row61_embed_points iter={iter} stage=initial_coords ok=1");
+            } else if trace_num_points {
+                println!(
+                    "distgeom_embed_points n={} iter={iter} stage=initial_coords ok=1",
+                    positions.len()
+                );
             }
             got_coords = embedder_first_minimization(positions, eargs, embed_params);
             if !got_coords {
@@ -1398,13 +1747,27 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
                     println!("row64_embed_points iter={iter} stage=first_minimization ok=0");
                 } else if trace_row61 {
                     println!("row61_embed_points iter={iter} stage=first_minimization ok=0");
+                } else if trace_num_points {
+                    println!(
+                        "distgeom_embed_points n={} iter={iter} stage=first_minimization ok=0",
+                        positions.len()
+                    );
                 }
                 embedder_increment_failure(embed_params, EmbedFailureCause::FirstMinimization);
             } else {
+                #[cfg(test)]
+                embedder_test_trace_update(|trace| {
+                    embedder_test_trace_set_coords(&mut trace.first_minimized, positions);
+                });
                 if trace_row64 {
                     println!("row64_embed_points iter={iter} stage=first_minimization ok=1");
                 } else if trace_row61 {
                     println!("row61_embed_points iter={iter} stage=first_minimization ok=1");
+                } else if trace_num_points {
+                    println!(
+                        "distgeom_embed_points n={} iter={iter} stage=first_minimization ok=1",
+                        positions.len()
+                    );
                 }
                 got_coords = embedder_check_tetrahedral_centers(positions, eargs, embed_params);
                 if !got_coords {
@@ -1425,6 +1788,15 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
             if got_coords && (!eargs.chiral_centers.is_empty() || embed_params.use_random_coords) {
                 got_coords =
                     embedder_minimize_fourth_dimension(positions, eargs, embed_params, end_time);
+                if got_coords {
+                    #[cfg(test)]
+                    embedder_test_trace_update(|trace| {
+                        embedder_test_trace_set_coords(
+                            &mut trace.fourth_dimension_cleaned,
+                            positions,
+                        );
+                    });
+                }
                 if trace_row64 {
                     println!(
                         "row64_embed_points iter={iter} stage=fourth_dimension ok={}",
@@ -1433,6 +1805,12 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
                 } else if trace_row61 {
                     println!(
                         "row61_embed_points iter={iter} stage=fourth_dimension ok={}",
+                        i32::from(got_coords)
+                    );
+                } else if trace_num_points {
+                    println!(
+                        "distgeom_embed_points n={} iter={iter} stage=fourth_dimension ok={}",
+                        positions.len(),
                         i32::from(got_coords)
                     );
                 }
@@ -1456,6 +1834,19 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
                 && (embed_params.use_exp_torsion_angle_prefs || embed_params.use_basic_knowledge)
             {
                 got_coords = embedder_minimize_with_exp_torsions(positions, eargs, embed_params);
+                if got_coords {
+                    #[cfg(test)]
+                    embedder_test_trace_update(|trace| {
+                        embedder_test_trace_set_coords(&mut trace.exp_torsion_minimized, positions);
+                    });
+                }
+                if trace_num_points {
+                    println!(
+                        "distgeom_embed_points n={} iter={iter} stage=etk_minimization ok={}",
+                        positions.len(),
+                        i32::from(got_coords)
+                    );
+                }
                 if !got_coords {
                     embedder_increment_failure(embed_params, EmbedFailureCause::EtkMinimization);
                 }
@@ -1464,6 +1855,13 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
             if got_coords {
                 got_coords =
                     embedder_double_bond_geometry_checks(positions, eargs, embed_params, 1.0e-3);
+                if trace_num_points {
+                    println!(
+                        "distgeom_embed_points n={} iter={iter} stage=double_bond_geometry ok={}",
+                        positions.len(),
+                        i32::from(got_coords)
+                    );
+                }
                 if !got_coords {
                     embedder_increment_failure(embed_params, EmbedFailureCause::LinearDoubleBond);
                 }
@@ -1472,9 +1870,23 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
             if embed_params.enforce_chirality && got_coords {
                 if !eargs.chiral_centers.is_empty() {
                     got_coords = embedder_final_chiral_checks(positions, eargs, embed_params);
+                    if trace_num_points {
+                        println!(
+                            "distgeom_embed_points n={} iter={iter} stage=final_chiral ok={}",
+                            positions.len(),
+                            i32::from(got_coords)
+                        );
+                    }
                 }
                 if got_coords && !eargs.stereo_double_bonds.is_empty() {
                     got_coords = embedder_double_bond_stereo_checks(positions, eargs, embed_params);
+                    if trace_num_points {
+                        println!(
+                            "distgeom_embed_points n={} iter={iter} stage=double_bond_stereo ok={}",
+                            positions.len(),
+                            i32::from(got_coords)
+                        );
+                    }
                     if !got_coords {
                         embedder_increment_failure(
                             embed_params,
@@ -1482,6 +1894,12 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
                         );
                     }
                 }
+            }
+            if got_coords {
+                #[cfg(test)]
+                embedder_test_trace_update(|trace| {
+                    embedder_test_trace_set_coords(&mut trace.final_checked, positions);
+                });
             }
         }
     }
@@ -2275,13 +2693,16 @@ fn embedder_setup_initial_bounds_matrix(
             );
         }
     }
+    trace_bounds_stage("after_initial_set_topol", mmat);
     let mut tol = 0.0;
     if let Some(coord_map) = coord_map {
         embedder_adjust_bounds_mat_from_coord_map(mmat, n_atoms, coord_map);
         tol = 0.05;
+        trace_bounds_stage("after_coord_map", mmat);
     }
     let smooth_start = trace_row64.then(Instant::now);
     if !triangle_smooth_bounds_shared(mmat, tol) {
+        trace_bounds_stage("after_triangle_smooth_first_fail", mmat);
         if let Some(start) = smooth_start {
             println!(
                 "row64_setup_bounds triangle_smooth_first={:.6} ok=0",
@@ -2289,6 +2710,7 @@ fn embedder_setup_initial_bounds_matrix(
             );
         }
         init_bounds_mat_shared(mmat, DEFAULT_LOWER, DEFAULT_UPPER);
+        trace_bounds_stage("after_retry_init", mmat);
         let retry_start = trace_row64.then(Instant::now);
         set_topol_bounds(
             mol,
@@ -2306,11 +2728,14 @@ fn embedder_setup_initial_bounds_matrix(
                 start.elapsed().as_secs_f64()
             );
         }
+        trace_bounds_stage("after_retry_set_topol", mmat);
         if let Some(coord_map) = coord_map {
             embedder_adjust_bounds_mat_from_coord_map(mmat, n_atoms, coord_map);
+            trace_bounds_stage("after_retry_coord_map", mmat);
         }
         let second_smooth_start = trace_row64.then(Instant::now);
         if !triangle_smooth_bounds_shared(mmat, tol) {
+            trace_bounds_stage("after_triangle_smooth_second_fail", mmat);
             if let Some(start) = second_smooth_start {
                 println!(
                     "row64_setup_bounds triangle_smooth_second={:.6} ok=0",
@@ -2319,6 +2744,7 @@ fn embedder_setup_initial_bounds_matrix(
             }
             if params.ignore_smoothing_failures {
                 init_bounds_mat_shared(mmat, DEFAULT_LOWER, DEFAULT_UPPER);
+                trace_bounds_stage("after_fallback_init", mmat);
                 let fallback_start = trace_row64.then(Instant::now);
                 set_topol_bounds(
                     mol,
@@ -2336,19 +2762,23 @@ fn embedder_setup_initial_bounds_matrix(
                         start.elapsed().as_secs_f64()
                     );
                 }
+                trace_bounds_stage("after_fallback_set_topol", mmat);
                 if let Some(coord_map) = coord_map {
                     embedder_adjust_bounds_mat_from_coord_map(mmat, n_atoms, coord_map);
+                    trace_bounds_stage("after_fallback_coord_map", mmat);
                 }
             } else {
                 return Ok(false);
             }
         } else if let Some(start) = second_smooth_start {
+            trace_bounds_stage("after_triangle_smooth_second_ok", mmat);
             println!(
                 "row64_setup_bounds triangle_smooth_second={:.6} ok=1",
                 start.elapsed().as_secs_f64()
             );
         }
     } else if let Some(start) = smooth_start {
+        trace_bounds_stage("after_triangle_smooth_first_ok", mmat);
         println!(
             "row64_setup_bounds triangle_smooth_first={:.6} ok=1",
             start.elapsed().as_secs_f64()
@@ -3360,6 +3790,31 @@ impl EmbedParameters {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn set_bounds_matrix(&mut self, bounds: Vec<Vec<f64>>) -> Result<(), DgBoundsError> {
+        let n = bounds.len();
+        if bounds.iter().any(|row| row.len() != n) {
+            return Err(DgBoundsError::GenerationFailed(
+                "bounds matrix must be square".to_string(),
+            ));
+        }
+        for row in &bounds {
+            for &value in row {
+                if !value.is_finite() || value < 0.0 {
+                    return Err(DgBoundsError::GenerationFailed(
+                        "bounds matrix values must be finite and non-negative".to_string(),
+                    ));
+                }
+            }
+        }
+        self.bounds_mat = Some(Arc::new(BoundsMatrix { data: bounds, n }));
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn has_bounds_matrix(&self) -> bool {
+        self.bounds_mat.is_some()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -6261,6 +6716,24 @@ fn pick_random_dist_mat_with_rng<R: RdkitDoubleRng>(
             }
         }
     }
+    #[cfg(test)]
+    embedder_test_trace_update(|trace| {
+        if trace.low_level.random_dist_preview.is_none() {
+            trace.low_level.random_dist_preview =
+                Some(dist_mat.data.iter().take(16).copied().collect());
+            if env::var("COSMOLKIT_DG_TRACE_FULL_RANDOM_DIST")
+                .ok()
+                .as_deref()
+                == Some("1")
+            {
+                trace.low_level.random_dist_full = Some(dist_mat.data.clone());
+            }
+            trace.low_level.random_dist_sum = Some(dist_mat.data.iter().sum());
+            trace.low_level.random_dist_sum_sq =
+                Some(dist_mat.data.iter().map(|value| value * value).sum());
+            trace.low_level.random_dist_largest = Some(largest_val);
+        }
+    });
     largest_val
 }
 
@@ -6617,6 +7090,10 @@ fn compute_initial_coords_with_rng<R: RdkitDoubleRng>(
         sum_sq_d2 += sq_mat.data[i];
     }
     sum_sq_d2 /= (n * n) as f64;
+    #[cfg(test)]
+    embedder_test_trace_update(|trace| {
+        trace.low_level.initial_sum_sq_d2.get_or_insert(sum_sq_d2);
+    });
     if trace_row64 {
         let preview_len = data.len().min(12);
         let payload = data[..preview_len]
@@ -6707,6 +7184,13 @@ fn compute_initial_coords_with_rng<R: RdkitDoubleRng>(
             .join(",");
         println!("row61_compute_initial_coords sq_d0i=[{}]", payload);
     }
+    #[cfg(test)]
+    embedder_test_trace_update(|trace| {
+        if trace.low_level.initial_sq_d0i_preview.is_none() {
+            trace.low_level.initial_sq_d0i_preview =
+                Some(sq_d0i.iter().take(16).copied().collect());
+        }
+    });
 
     // RDKit✔️✔️:   for (unsigned int i = 0; i < N; i++) {
     // RDKit✔️✔️:     for (unsigned int j = 0; j <= i; j++) {
@@ -6731,6 +7215,12 @@ fn compute_initial_coords_with_rng<R: RdkitDoubleRng>(
         Some(&mut eig_vecs),
         (sum_sq_d2 * n as f64) as i32,
     )?;
+    #[cfg(test)]
+    embedder_test_trace_update(|trace| {
+        if trace.low_level.initial_eig_vals_before_sqrt.is_none() {
+            trace.low_level.initial_eig_vals_before_sqrt = Some(eig_vals.clone());
+        }
+    });
     if trace_row64 {
         let payload = eig_vals
             .iter()
@@ -6752,6 +7242,12 @@ fn compute_initial_coords_with_rng<R: RdkitDoubleRng>(
             payload
         );
     }
+    #[cfg(test)]
+    embedder_test_trace_update(|trace| {
+        if trace.low_level.initial_eig_vals_before_sqrt.is_none() {
+            trace.low_level.initial_eig_vals_before_sqrt = Some(eig_vals.clone());
+        }
+    });
 
     // RDKit✔️✔️:   double *eigData = eigVals.getData();
     // RDKit✔️✔️:   bool foundNeg = false;
@@ -6799,6 +7295,12 @@ fn compute_initial_coords_with_rng<R: RdkitDoubleRng>(
             payload, found_neg, zero_eigs
         );
     }
+    #[cfg(test)]
+    embedder_test_trace_update(|trace| {
+        if trace.low_level.initial_eig_vals_after_sqrt.is_none() {
+            trace.low_level.initial_eig_vals_after_sqrt = Some(eig_vals.clone());
+        }
+    });
     // RDKit✔️✔️:   if ((foundNeg) && (!randNegEig)) {
     // RDKit✔️✔️:     return false;
     // RDKit✔️✔️:   }
@@ -8100,12 +8602,12 @@ fn set_12_bounds(
     })?;
 
     let mut squish_atoms = vec![false; mol.atoms().len()];
-    let ring_info = mol.derived_cache().rings.as_ref();
+    let ring_info = ring_info_for_distgeom(mol)?;
     for (bond_index, bond) in mol.bonds().iter().enumerate() {
         if conjugated[bond_index]
             && (mol.atoms()[bond.begin().index()].atomic_number() > 10
                 || mol.atoms()[bond.end().index()].atomic_number() > 10)
-            && ring_info.is_some_and(|ri| is_bond_in_ring_of_size(ri, bond.id().index(), 5))
+            && is_bond_in_ring_of_size(ring_info.as_ref(), bond.id().index(), 5)
         {
             squish_atoms[bond.begin().index()] = true;
             squish_atoms[bond.end().index()] = true;
@@ -8232,6 +8734,7 @@ fn set_13_bounds_helper(
     bond_lengths: &[f64],
     mmat: &mut BoundsMatrix,
     mol: &Molecule,
+    rinfo: &crate::RingInfo,
 ) {
     // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_set13BoundsHelper (BoundsMatrixBuilder.cpp:369-391)
     // RDKit✔️✔️: void _set13BoundsHelper(unsigned int aid1, unsigned int aid, unsigned int aid3,
@@ -8268,13 +8771,13 @@ fn set_13_bounds_helper(
     let mut dl = compute_13_dist(bond_lengths[bid1], bond_lengths[bid2], angle);
     let mut dist_tol = DIST13_TOL;
 
-    if is_larger_sp2_atom_idx(mol, aid1) {
+    if is_larger_sp2_atom_idx(mol, rinfo, aid1) {
         dist_tol *= 2.0;
     }
-    if is_larger_sp2_atom_idx(mol, aid) {
+    if is_larger_sp2_atom_idx(mol, rinfo, aid) {
         dist_tol *= 2.0;
     }
-    if is_larger_sp2_atom_idx(mol, aid3) {
+    if is_larger_sp2_atom_idx(mol, rinfo, aid3) {
         dist_tol *= 2.0;
     }
 
@@ -8294,15 +8797,11 @@ fn bond_between_idx(bond_idx: usize) -> Option<usize> {
 // RDKit✔️✔️:          atom->getOwningMol().getRingInfo()->numAtomRings(atom->getIdx());
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION isLargerSP2Atom
-fn is_larger_sp2_atom_idx(mol: &Molecule, idx: usize) -> bool {
+fn is_larger_sp2_atom_idx(mol: &Molecule, rinfo: &crate::RingInfo, idx: usize) -> bool {
     let atom = &mol.atoms()[idx];
     atom.atomic_number() > 13
         && atom.hybridization() == Hybridization::Sp2
-        && mol
-            .derived_cache()
-            .rings
-            .as_ref()
-            .is_some_and(|rings| rings.num_atom_rings(AtomId::new(idx)) > 0)
+        && rinfo.num_atom_rings(AtomId::new(idx)) > 0
 }
 
 // ──────────────────────────────────────────────
@@ -8650,6 +9149,7 @@ fn set_13_bounds(
                         &accum_data.bond_lengths,
                         mmat,
                         mol,
+                        rinfo,
                     );
                     accum_data.visited13_bounds[pid] = true;
                 }
@@ -8716,6 +9216,7 @@ fn set_13_bounds(
                             &accum_data.bond_lengths,
                             mmat,
                             mol,
+                            rinfo,
                         );
                         accum_data.visited13_bounds[pid] = true;
                     }
@@ -8764,6 +9265,7 @@ fn set_13_bounds(
                                 &accum_data.bond_lengths,
                                 mmat,
                                 mol,
+                                rinfo,
                             );
                         } else {
                             let dmax =
@@ -11048,6 +11550,7 @@ fn set_topol_bounds(
     };
 
     set_12_bounds(mol, mmat, &mut accum_data)?;
+    trace_bounds_stage("after_set12", mmat);
     if set13bounds {
         set_13_bounds(
             mol,
@@ -11055,6 +11558,7 @@ fn set_topol_bounds(
             &mut accum_data,
             ring_info.as_deref().expect("ring info loaded"),
         );
+        trace_bounds_stage("after_set13", mmat);
     }
     if set14bounds {
         set_14_bounds(
@@ -11066,11 +11570,14 @@ fn set_topol_bounds(
             force_trans_amides,
             ring_info.as_deref().expect("ring info loaded"),
         );
+        trace_bounds_stage("after_set14", mmat);
     }
     if set15bounds {
         set_15_bounds(mol, mmat, &mut accum_data, &dist_matrix);
+        trace_bounds_stage("after_set15", mmat);
     }
     set_lower_bound_vdw(mol, mmat, scale_vdw, &dist_matrix);
+    trace_bounds_stage("after_vdw", mmat);
     Ok(())
 }
 

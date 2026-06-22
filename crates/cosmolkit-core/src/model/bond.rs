@@ -382,6 +382,19 @@ impl BondSpec {
     pub fn prop(&self, key: &str) -> Option<&str> {
         self.props.get(key).map(String::as_str)
     }
+
+    pub(crate) fn remapped_endpoints(
+        &self,
+        begin: AtomId,
+        end: AtomId,
+        stereo_atoms: Option<[AtomId; 2]>,
+    ) -> Self {
+        let mut spec = self.clone();
+        spec.begin = begin;
+        spec.end = end;
+        spec.stereo_atoms = stereo_atoms;
+        spec
+    }
 }
 
 /// Immutable bond record owned by `Molecule`.
