@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pickle
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -71,6 +72,35 @@ def test_smiles_and_value_semantics_preserve_expected_graph_features():
     assert removed.to_smiles(canonical=False) == base.to_smiles(canonical=False)
     assert atom_signature(removed) == atom_signature(base)
     assert bond_signature(removed) == bond_signature(base)
+
+
+def test_molecule_supports_python_pickle_roundtrip():
+    mol = (
+        cosmolkit.Molecule.from_smiles("F[C@H](Cl)[13CH3:7]")
+        .with_hydrogens()
+        .with_2d_coordinates()
+    )
+
+    restored = pickle.loads(pickle.dumps(mol))
+
+    assert restored is not mol
+    assert restored.to_smiles(canonical=False) == mol.to_smiles(canonical=False)
+    assert atom_signature(restored) == atom_signature(mol)
+    assert bond_signature(restored) == bond_signature(mol)
+    assert restored.has_2d_coordinates()
+    assert np.allclose(restored.coordinates_2d(), mol.coordinates_2d())
+
+
+def test_molecule_pickle_rebuild_rejects_invalid_state():
+    with pytest.raises(ValueError, match="unsupported Molecule pickle schema"):
+        cosmolkit._rebuild_molecule_from_pickle(
+            {
+                "kind": "cosmolkit.Molecule",
+                "pickle_schema": 999,
+                "core_format": "cosmolkit-molecule-archive",
+                "payload": b"",
+            }
+        )
 
 
 def test_coordinate_and_sdf_roundtrip_behaviors_are_consistent():

@@ -11,6 +11,8 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     Atom, AtomId, Bond, BondDirection, BondId, BondOrder, BondStereo, ChiralTag, Conformer3D,
     CoordinateDimension, Hybridization, Molecule, SGroupAttachPoint, SGroupBondRole, SGroupBracket,
@@ -23,6 +25,16 @@ use crate::{
 // Format version
 // ──────────────────────────────────────────────
 const PICKLE_VERSION: u8 = 2;
+const ARCHIVE_MAGIC: &[u8; 8] = b"CSMOLPKL";
+const ARCHIVE_MAJOR: u16 = 1;
+const ARCHIVE_MINOR: u16 = 0;
+const SECTION_FLAG_REQUIRED: u8 = 1;
+const SECTION_CODEC_RAW: u8 = 0;
+const SECTION_CODEC_POSTCARD: u8 = 1;
+const SECTION_MANIFEST: u16 = 1;
+const SECTION_MOLECULE_STATE: u16 = 2;
+const MANIFEST_VERSION: u16 = 1;
+const MOLECULE_STATE_VERSION: u16 = 1;
 
 // ──────────────────────────────────────────────
 // Error type
@@ -34,6 +46,18 @@ pub enum PickleError {
     UnexpectedEof,
     #[error("unsupported pickle version: {0}")]
     UnsupportedVersion(u8),
+    #[error("unsupported archive version: {major}.{minor}")]
+    UnsupportedArchiveVersion { major: u16, minor: u16 },
+    #[error("unsupported archive section {section} version: {version}")]
+    UnsupportedSectionVersion { section: u16, version: u16 },
+    #[error("invalid archive: {0}")]
+    InvalidArchive(String),
+    #[error("missing required archive section: {0}")]
+    MissingRequiredSection(u16),
+    #[error("duplicate archive section: {0}")]
+    DuplicateSection(u16),
+    #[error("unknown required archive section: {0}")]
+    UnknownRequiredSection(u16),
     #[error("data length mismatch: expected {expected}, got {actual}")]
     DataLengthMismatch { expected: usize, actual: usize },
     #[error("invalid enum value: {value} for {type_name}")]
@@ -46,6 +70,20 @@ pub enum PickleError {
     TooManyBonds(usize),
     #[error("string too long: {0}")]
     StringTooLong(usize),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ArchiveManifestV1 {
+    crate_version: String,
+    molecule_state_codec: u8,
+    molecule_state_version: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct MoleculeStateV1 {
+    encoding: u8,
+    encoding_version: u8,
+    payload: Vec<u8>,
 }
 
 // ──────────────────────────────────────────────
@@ -210,6 +248,254 @@ impl<'a> PickleReader<'a> {
         }
         Ok(props)
     }
+
+    fn remaining(&self) -> usize {
+        self.data.len().saturating_sub(self.pos)
+    }
+
+    fn read_exact_slice(&mut self, len: usize) -> Result<&'a [u8], PickleError> {
+        self.ensure(len)?;
+        let slice = &self.data[self.pos..self.pos + len];
+        self.pos += len;
+        Ok(slice)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ArchiveSection<'a> {
+    id: u16,
+    version: u16,
+    flags: u8,
+    codec: u8,
+    payload: &'a [u8],
+}
+
+impl ArchiveSection<'_> {
+    fn is_required(self) -> bool {
+        self.flags & SECTION_FLAG_REQUIRED != 0
+    }
+}
+
+fn write_u16_le(buf: &mut Vec<u8>, value: u16) {
+    buf.extend_from_slice(&value.to_le_bytes());
+}
+
+fn write_u32_le(buf: &mut Vec<u8>, value: u32) {
+    buf.extend_from_slice(&value.to_le_bytes());
+}
+
+fn read_u16_le(r: &mut PickleReader<'_>) -> Result<u16, PickleError> {
+    let lo = r.read_u8()? as u16;
+    let hi = r.read_u8()? as u16;
+    Ok(lo | (hi << 8))
+}
+
+fn read_u32_le(r: &mut PickleReader<'_>) -> Result<u32, PickleError> {
+    let bytes = r.read_exact_slice(4)?;
+    Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
+}
+
+fn archive_manifest() -> ArchiveManifestV1 {
+    ArchiveManifestV1 {
+        crate_version: crate::version().to_string(),
+        molecule_state_codec: SECTION_CODEC_POSTCARD,
+        molecule_state_version: MOLECULE_STATE_VERSION,
+    }
+}
+
+fn encode_manifest() -> Result<Vec<u8>, PickleError> {
+    postcard::to_allocvec(&archive_manifest())
+        .map_err(|err| PickleError::InvalidArchive(format!("manifest encode failed: {err}")))
+}
+
+fn encode_molecule_state(payload: Vec<u8>) -> Result<Vec<u8>, PickleError> {
+    let state = MoleculeStateV1 {
+        encoding: SECTION_CODEC_RAW,
+        encoding_version: PICKLE_VERSION,
+        payload,
+    };
+    postcard::to_allocvec(&state)
+        .map_err(|err| PickleError::InvalidArchive(format!("molecule state encode failed: {err}")))
+}
+
+fn write_archive_section(
+    buf: &mut Vec<u8>,
+    id: u16,
+    version: u16,
+    flags: u8,
+    codec: u8,
+    payload: &[u8],
+) -> Result<(), PickleError> {
+    if payload.len() > u32::MAX as usize {
+        return Err(PickleError::DataLengthMismatch {
+            expected: u32::MAX as usize,
+            actual: payload.len(),
+        });
+    }
+    write_u16_le(buf, id);
+    write_u16_le(buf, version);
+    buf.push(flags);
+    buf.push(codec);
+    write_u32_le(buf, payload.len() as u32);
+    buf.extend_from_slice(payload);
+    Ok(())
+}
+
+fn encode_sectioned_archive(molecule_state: Vec<u8>) -> Result<Vec<u8>, PickleError> {
+    let manifest = encode_manifest()?;
+    let molecule_state = encode_molecule_state(molecule_state)?;
+    let mut buf = Vec::with_capacity(
+        ARCHIVE_MAGIC.len() + 2 + 2 + 2 + 20 + manifest.len() + molecule_state.len(),
+    );
+    buf.extend_from_slice(ARCHIVE_MAGIC);
+    write_u16_le(&mut buf, ARCHIVE_MAJOR);
+    write_u16_le(&mut buf, ARCHIVE_MINOR);
+    write_u16_le(&mut buf, 2);
+    write_archive_section(
+        &mut buf,
+        SECTION_MANIFEST,
+        MANIFEST_VERSION,
+        0,
+        SECTION_CODEC_POSTCARD,
+        &manifest,
+    )?;
+    write_archive_section(
+        &mut buf,
+        SECTION_MOLECULE_STATE,
+        MOLECULE_STATE_VERSION,
+        SECTION_FLAG_REQUIRED,
+        SECTION_CODEC_POSTCARD,
+        &molecule_state,
+    )?;
+    Ok(buf)
+}
+
+fn read_archive_sections<'a>(data: &'a [u8]) -> Result<Vec<ArchiveSection<'a>>, PickleError> {
+    let mut r = PickleReader::new(data);
+    let magic = r.read_exact_slice(ARCHIVE_MAGIC.len())?;
+    if magic != ARCHIVE_MAGIC {
+        return Err(PickleError::InvalidArchive("magic mismatch".to_string()));
+    }
+    let major = read_u16_le(&mut r)?;
+    let minor = read_u16_le(&mut r)?;
+    if major > ARCHIVE_MAJOR {
+        return Err(PickleError::UnsupportedArchiveVersion { major, minor });
+    }
+    let section_count = read_u16_le(&mut r)? as usize;
+    if section_count > 1024 {
+        return Err(PickleError::InvalidArchive(format!(
+            "unreasonable section count: {section_count}"
+        )));
+    }
+    let mut sections = Vec::with_capacity(section_count);
+    for _ in 0..section_count {
+        let id = read_u16_le(&mut r)?;
+        let version = read_u16_le(&mut r)?;
+        let flags = r.read_u8()?;
+        let codec = r.read_u8()?;
+        let len = read_u32_le(&mut r)? as usize;
+        let payload = r.read_exact_slice(len)?;
+        sections.push(ArchiveSection {
+            id,
+            version,
+            flags,
+            codec,
+            payload,
+        });
+    }
+    if r.remaining() != 0 {
+        return Err(PickleError::InvalidArchive(format!(
+            "trailing bytes after archive sections: {}",
+            r.remaining()
+        )));
+    }
+    Ok(sections)
+}
+
+fn decode_sectioned_archive(data: &[u8]) -> Result<Molecule, PickleError> {
+    let sections = read_archive_sections(data)?;
+    let mut manifest_seen = false;
+    let mut molecule_state: Option<&[u8]> = None;
+    for section in sections {
+        match section.id {
+            SECTION_MANIFEST => {
+                if manifest_seen {
+                    return Err(PickleError::DuplicateSection(SECTION_MANIFEST));
+                }
+                manifest_seen = true;
+                if section.version != MANIFEST_VERSION {
+                    return Err(PickleError::UnsupportedSectionVersion {
+                        section: SECTION_MANIFEST,
+                        version: section.version,
+                    });
+                }
+                if section.codec != SECTION_CODEC_POSTCARD {
+                    return Err(PickleError::InvalidArchive(format!(
+                        "manifest uses unsupported codec {}",
+                        section.codec
+                    )));
+                }
+                let manifest: ArchiveManifestV1 =
+                    postcard::from_bytes(section.payload).map_err(|err| {
+                        PickleError::InvalidArchive(format!("manifest decode failed: {err}"))
+                    })?;
+                if manifest.molecule_state_codec != SECTION_CODEC_POSTCARD {
+                    return Err(PickleError::InvalidArchive(format!(
+                        "manifest declares unsupported molecule state codec {}",
+                        manifest.molecule_state_codec
+                    )));
+                }
+                if manifest.molecule_state_version != MOLECULE_STATE_VERSION {
+                    return Err(PickleError::UnsupportedSectionVersion {
+                        section: SECTION_MOLECULE_STATE,
+                        version: manifest.molecule_state_version,
+                    });
+                }
+            }
+            SECTION_MOLECULE_STATE => {
+                if molecule_state.is_some() {
+                    return Err(PickleError::DuplicateSection(SECTION_MOLECULE_STATE));
+                }
+                if section.version != MOLECULE_STATE_VERSION {
+                    return Err(PickleError::UnsupportedSectionVersion {
+                        section: SECTION_MOLECULE_STATE,
+                        version: section.version,
+                    });
+                }
+                if section.codec != SECTION_CODEC_POSTCARD {
+                    return Err(PickleError::InvalidArchive(format!(
+                        "molecule state uses unsupported codec {}",
+                        section.codec
+                    )));
+                }
+                molecule_state = Some(section.payload);
+            }
+            unknown => {
+                if section.is_required() {
+                    return Err(PickleError::UnknownRequiredSection(unknown));
+                }
+            }
+        }
+    }
+    if !manifest_seen {
+        return Err(PickleError::MissingRequiredSection(SECTION_MANIFEST));
+    }
+    let Some(molecule_state) = molecule_state else {
+        return Err(PickleError::MissingRequiredSection(SECTION_MOLECULE_STATE));
+    };
+    let state: MoleculeStateV1 = postcard::from_bytes(molecule_state).map_err(|err| {
+        PickleError::InvalidArchive(format!("molecule state decode failed: {err}"))
+    })?;
+    if state.encoding != SECTION_CODEC_RAW {
+        return Err(PickleError::InvalidArchive(format!(
+            "molecule state declares unsupported encoding {}",
+            state.encoding
+        )));
+    }
+    if state.encoding_version > PICKLE_VERSION {
+        return Err(PickleError::UnsupportedVersion(state.encoding_version));
+    }
+    mol_from_legacy_binary(&state.payload)
 }
 
 // ──────────────────────────────────────────────
@@ -1018,6 +1304,10 @@ fn write_stereo_group(w: &mut PickleWriter, sg: &StereoGroup) {
 ///
 /// Returns `PickleError` if serialization encounters an internal issue.
 pub fn mol_to_binary(mol: &Molecule) -> Result<Vec<u8>, PickleError> {
+    encode_sectioned_archive(mol_to_legacy_binary(mol)?)
+}
+
+fn mol_to_legacy_binary(mol: &Molecule) -> Result<Vec<u8>, PickleError> {
     let mut w = PickleWriter::new();
 
     // Version
@@ -1149,6 +1439,14 @@ pub fn mol_to_binary(mol: &Molecule) -> Result<Vec<u8>, PickleError> {
 /// Returns `PickleError` if the data is corrupt, has an unsupported version,
 /// or produces an invalid molecule state.
 pub fn mol_from_binary(data: &[u8]) -> Result<Molecule, PickleError> {
+    if data.starts_with(ARCHIVE_MAGIC) {
+        decode_sectioned_archive(data)
+    } else {
+        mol_from_legacy_binary(data)
+    }
+}
+
+fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
     let mut r = PickleReader::new(data);
 
     // Version check
@@ -1762,8 +2060,69 @@ mod tests {
     fn test_empty_molecule_roundtrip() {
         let mol = Molecule::new();
         let data = mol_to_binary(&mol).unwrap();
+        assert!(data.starts_with(ARCHIVE_MAGIC));
         let mol2 = mol_from_binary(&data).unwrap();
         assert_eq!(mol, mol2, "empty molecule roundtrip failed");
+    }
+
+    #[test]
+    fn test_legacy_molecule_state_roundtrip_remains_readable() {
+        let mol = build_simple_methane();
+        let data = mol_to_legacy_binary(&mol).unwrap();
+        assert!(!data.starts_with(ARCHIVE_MAGIC));
+        let mol2 = mol_from_binary(&data).unwrap();
+        assert_eq!(mol, mol2, "legacy molecule-state roundtrip failed");
+    }
+
+    #[test]
+    fn test_sectioned_archive_rejects_unknown_required_section() {
+        let mol = build_simple_methane();
+        let molecule_state = encode_molecule_state(mol_to_legacy_binary(&mol).unwrap()).unwrap();
+        let manifest = encode_manifest().unwrap();
+        let mut data = Vec::new();
+        data.extend_from_slice(ARCHIVE_MAGIC);
+        write_u16_le(&mut data, ARCHIVE_MAJOR);
+        write_u16_le(&mut data, ARCHIVE_MINOR);
+        write_u16_le(&mut data, 3);
+        write_archive_section(
+            &mut data,
+            SECTION_MANIFEST,
+            MANIFEST_VERSION,
+            0,
+            SECTION_CODEC_POSTCARD,
+            &manifest,
+        )
+        .unwrap();
+        write_archive_section(
+            &mut data,
+            SECTION_MOLECULE_STATE,
+            MOLECULE_STATE_VERSION,
+            SECTION_FLAG_REQUIRED,
+            SECTION_CODEC_POSTCARD,
+            &molecule_state,
+        )
+        .unwrap();
+        write_archive_section(
+            &mut data,
+            999,
+            1,
+            SECTION_FLAG_REQUIRED,
+            SECTION_CODEC_RAW,
+            b"future",
+        )
+        .unwrap();
+
+        let err = mol_from_binary(&data).unwrap_err();
+        assert!(matches!(err, PickleError::UnknownRequiredSection(999)));
+    }
+
+    #[test]
+    fn test_sectioned_archive_rejects_trailing_bytes() {
+        let mol = build_simple_methane();
+        let mut data = mol_to_binary(&mol).unwrap();
+        data.push(0);
+        let err = mol_from_binary(&data).unwrap_err();
+        assert!(matches!(err, PickleError::InvalidArchive(_)));
     }
 
     #[test]

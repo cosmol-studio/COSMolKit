@@ -12,11 +12,11 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 cosmolkit-core = { version = "0.2.7", path = "../crates/cosmolkit-core" }
-pyo3-stub-gen = { version = "0.22.2", default-features = false, optional = true }
-pyo3 = { version = "0.28.3", default-features = false }
-pyo3-stub-gen-derive = "0.22.2"
-numpy = "0.28.0"
-glam = "0.33.0"
+pyo3-stub-gen = { version = "0.23.0", default-features = false, optional = true }
+pyo3-stub-gen-derive = "0.23.0"
+pyo3 = { version = "0.29.0", default-features = false }
+numpy = "0.29.0"
+glam = "0.33.1"
 
 [features]
 default = ["release-abi3-py39"]

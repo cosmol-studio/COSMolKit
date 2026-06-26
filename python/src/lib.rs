@@ -12,7 +12,7 @@ use pyo3::exceptions::{PyIndexError, PyNotImplementedError, PyTypeError, PyValue
 use pyo3::prelude::*;
 use pyo3::types::{
     PyAny, PyBool, PyBytes, PyDict, PyIterator, PyList, PyMapping, PyMappingProxy, PySlice,
-    PySliceMethods, PyType,
+    PySliceMethods, PyTuple, PyType,
 };
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::define_stub_info_gatherer;
@@ -144,6 +144,20 @@ fn hash_pyerr(error: cosmolkit_core::mol_hash::HashError) -> PyErr {
 
 fn pickle_pyerr(error: cosmolkit_core::PickleError) -> PyErr {
     PyValueError::new_err(error.to_string())
+}
+
+fn molecule_pickle_state<'py>(
+    py: Python<'py>,
+    inner: &cosmolkit_core::Molecule,
+) -> PyResult<Bound<'py, PyDict>> {
+    let data = cosmolkit_core::mol_to_binary(inner).map_err(pickle_pyerr)?;
+    let state = PyDict::new(py);
+    state.set_item("kind", "cosmolkit.Molecule")?;
+    state.set_item("pickle_schema", 1u16)?;
+    state.set_item("cosmolkit_version", env!("CARGO_PKG_VERSION"))?;
+    state.set_item("core_format", "cosmolkit-molecule-archive")?;
+    state.set_item("payload", PyBytes::new(py, &data))?;
+    Ok(state)
 }
 
 fn stereo_pyerr(error: cosmolkit_core::StereoError) -> PyErr {
@@ -4903,6 +4917,14 @@ Deserialize a molecule from COSMolKit binary data.
         Ok(Self { inner })
     }
 
+    fn __reduce_ex__<'py>(&self, py: Python<'py>, _protocol: u8) -> PyResult<Bound<'py, PyAny>> {
+        let module = py.import("cosmolkit")?;
+        let rebuild = module.getattr("_rebuild_molecule_from_pickle")?;
+        let state = molecule_pickle_state(py, &self.inner)?;
+        let args = PyTuple::new(py, [state])?;
+        Ok(PyTuple::new(py, [rebuild.into_any(), args.into_any()])?.into_any())
+    }
+
     #[pyo3(signature = (strict=None))]
     fn sanitize(&self, strict: Option<bool>) -> PyResult<Self> {
         reject_non_strict_sanitize(strict)?;
@@ -6284,6 +6306,51 @@ fn mol_from_binary(data: &[u8]) -> PyResult<Molecule> {
 }
 
 #[pyfunction]
+#[doc(hidden)]
+fn _rebuild_molecule_from_pickle(state: &Bound<'_, PyAny>) -> PyResult<Molecule> {
+    let dict = state
+        .downcast::<PyDict>()
+        .map_err(|_| PyValueError::new_err("invalid Molecule pickle state: expected dict"))?;
+    let kind: String = dict
+        .get_item("kind")?
+        .ok_or_else(|| PyValueError::new_err("invalid Molecule pickle state: missing kind"))?
+        .extract()?;
+    if kind != "cosmolkit.Molecule" {
+        return Err(PyValueError::new_err(format!(
+            "invalid Molecule pickle state kind: {kind}"
+        )));
+    }
+    let schema: u16 = dict
+        .get_item("pickle_schema")?
+        .ok_or_else(|| {
+            PyValueError::new_err("invalid Molecule pickle state: missing pickle_schema")
+        })?
+        .extract()?;
+    if schema != 1 {
+        return Err(PyValueError::new_err(format!(
+            "unsupported Molecule pickle schema: {schema}"
+        )));
+    }
+    let core_format: String = dict
+        .get_item("core_format")?
+        .ok_or_else(|| PyValueError::new_err("invalid Molecule pickle state: missing core_format"))?
+        .extract()?;
+    if core_format != "cosmolkit-molecule-archive" {
+        return Err(PyValueError::new_err(format!(
+            "unsupported Molecule pickle core_format: {core_format}"
+        )));
+    }
+    let payload = dict
+        .get_item("payload")?
+        .ok_or_else(|| PyValueError::new_err("invalid Molecule pickle state: missing payload"))?;
+    let payload = payload.downcast::<PyBytes>().map_err(|_| {
+        PyValueError::new_err("invalid Molecule pickle state: payload must be bytes")
+    })?;
+    let inner = cosmolkit_core::mol_from_binary(payload.as_bytes()).map_err(pickle_pyerr)?;
+    Ok(Molecule { inner })
+}
+
+#[pyfunction]
 #[doc = r#"
 Parse SMARTS text into a ``SmartsMolecule`` query-tree value.
 
@@ -6589,6 +6656,7 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(mol_to_binary, m)?)?;
     m.add_function(wrap_pyfunction!(mol_from_binary, m)?)?;
+    m.add_function(wrap_pyfunction!(_rebuild_molecule_from_pickle, m)?)?;
     m.add_function(wrap_pyfunction!(parse_smarts, m)?)?;
     m.add_function(wrap_pyfunction!(uff_has_all_molecule_params, m)?)?;
     m.add_function(wrap_pyfunction!(uff_optimize_molecule, m)?)?;
