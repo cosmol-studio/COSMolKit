@@ -15,7 +15,7 @@ pub enum StereoError {
     InvariantViolation(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LigandRef {
     Atom(AtomId),
     ImplicitHydrogen,
@@ -25,7 +25,6 @@ pub enum LigandRef {
 pub struct TetrahedralStereo {
     pub center: AtomId,
     pub ligands: [LigandRef; 4],
-    pub clockwise: bool,
 }
 
 /// RDKit❗✔️: E/Z bond stereo information
@@ -193,25 +192,106 @@ pub fn tetrahedral_stereo(molecule: &Molecule) -> Result<Vec<TetrahedralStereo>,
             ligands[i] = LigandRef::Atom(nbr);
         }
 
-        // Determine clockwise flag from chiral_tag and permutation.
-        // See smiles_write.rs get_atom_chirality_info for the formula:
-        //   CW + even perm → @@ → clockwise
-        //   CW + odd perm → @ → anticlockwise
-        //   CCW + even perm → @ → anticlockwise
-        //   CCW + odd perm → @@ → clockwise
+        // COSMolKit defines tetrahedral stereo as center + ordered ligands.
+        // RDKit-style CW/CCW tags are compatibility input state, so fold their
+        // parity into an odd ligand permutation instead of carrying a second
+        // orientation flag.
         let perm = atom.chiral_permutation().unwrap_or(0);
-        let clockwise = match (tag, perm % 2) {
-            (ChiralTag::TetrahedralCw, 0) | (ChiralTag::TetrahedralCcw, 1) => true,
-            _ => false,
-        };
+        if matches!(
+            (tag, perm % 2),
+            (ChiralTag::TetrahedralCw, 0) | (ChiralTag::TetrahedralCcw, 1)
+        ) {
+            ligands.swap(0, 1);
+        }
 
-        result.push(TetrahedralStereo {
-            center,
-            ligands,
-            clockwise,
-        });
+        let ligands = canonicalize_tetrahedral_ligands(ligands);
+
+        result.push(TetrahedralStereo { center, ligands });
     }
     Ok(result)
+}
+
+fn canonicalize_tetrahedral_ligands(ligands: [LigandRef; 4]) -> [LigandRef; 4] {
+    if ligands.contains(&LigandRef::ImplicitHydrogen) {
+        return canonicalize_tetrahedral_ligands_with_implicit_hydrogen(ligands);
+    }
+
+    let mut best = ligands;
+
+    for a in 0..4 {
+        for b in 0..4 {
+            for c in 0..4 {
+                for d in 0..4 {
+                    let perm = [a, b, c, d];
+                    if has_duplicate_indices(perm) || !is_even_permutation(perm) {
+                        continue;
+                    }
+                    let candidate = [
+                        ligands[perm[0]],
+                        ligands[perm[1]],
+                        ligands[perm[2]],
+                        ligands[perm[3]],
+                    ];
+                    if candidate < best {
+                        best = candidate;
+                    }
+                }
+            }
+        }
+    }
+
+    best
+}
+
+fn canonicalize_tetrahedral_ligands_with_implicit_hydrogen(
+    ligands: [LigandRef; 4],
+) -> [LigandRef; 4] {
+    let mut best = ligands;
+
+    for a in 0..4 {
+        for b in 0..4 {
+            for c in 0..4 {
+                for d in 0..4 {
+                    let perm = [a, b, c, d];
+                    if has_duplicate_indices(perm) || !is_even_permutation(perm) {
+                        continue;
+                    }
+                    let candidate = [
+                        ligands[perm[0]],
+                        ligands[perm[1]],
+                        ligands[perm[2]],
+                        ligands[perm[3]],
+                    ];
+                    if candidate[3] == LigandRef::ImplicitHydrogen && candidate < best {
+                        best = candidate;
+                    }
+                }
+            }
+        }
+    }
+
+    best
+}
+
+fn has_duplicate_indices(indices: [usize; 4]) -> bool {
+    indices[0] == indices[1]
+        || indices[0] == indices[2]
+        || indices[0] == indices[3]
+        || indices[1] == indices[2]
+        || indices[1] == indices[3]
+        || indices[2] == indices[3]
+}
+
+fn is_even_permutation(indices: [usize; 4]) -> bool {
+    let mut inversions = 0;
+    for i in 0..4 {
+        for j in (i + 1)..4 {
+            if indices[i] > indices[j] {
+                inversions += 1;
+            }
+        }
+    }
+    inversions % 2 == 0
 }
 
 // RDKit✔️✔️: bool shouldDetectDoubleBondStereo(const Bond *bond) {
@@ -3709,10 +3789,90 @@ fn is_opposite_bonds(mol: &Molecule, _atom_idx: usize, _bond_a: usize, _bond_b: 
 #[cfg(test)]
 mod tests {
     use super::{
-        StereoError, assign_atom_cip_ranks, is_atom_potential_chiral_center,
+        LigandRef, StereoError, assign_atom_cip_ranks, canonicalize_tetrahedral_ligands,
+        has_duplicate_indices, is_atom_potential_chiral_center, is_even_permutation,
         perturbation_order_from_bond_indices,
     };
-    use crate::Molecule;
+    use crate::{AtomId, Molecule};
+
+    #[test]
+    fn tetrahedral_stereo_ligand_order_encodes_smiles_handedness() {
+        let ccw = Molecule::from_smiles("F[C@](Cl)(Br)I").expect("parse chiral SMILES");
+        let cw = Molecule::from_smiles("F[C@@](Cl)(Br)I").expect("parse chiral SMILES");
+
+        let ccw_stereo = ccw.tetrahedral_stereo().expect("tetrahedral stereo");
+        let cw_stereo = cw.tetrahedral_stereo().expect("tetrahedral stereo");
+
+        assert_eq!(ccw_stereo.len(), 1);
+        assert_eq!(cw_stereo.len(), 1);
+        assert_eq!(ccw_stereo[0].center, AtomId::new(1));
+        assert_eq!(cw_stereo[0].center, AtomId::new(1));
+        assert_eq!(
+            ccw_stereo[0].ligands,
+            [
+                LigandRef::Atom(AtomId::new(0)),
+                LigandRef::Atom(AtomId::new(2)),
+                LigandRef::Atom(AtomId::new(3)),
+                LigandRef::Atom(AtomId::new(4)),
+            ]
+        );
+        assert_eq!(
+            cw_stereo[0].ligands,
+            [
+                LigandRef::Atom(AtomId::new(0)),
+                LigandRef::Atom(AtomId::new(2)),
+                LigandRef::Atom(AtomId::new(4)),
+                LigandRef::Atom(AtomId::new(3)),
+            ]
+        );
+    }
+
+    #[test]
+    fn tetrahedral_stereo_canonicalizes_even_ligand_permutations() {
+        let base = [
+            LigandRef::Atom(AtomId::new(0)),
+            LigandRef::Atom(AtomId::new(2)),
+            LigandRef::Atom(AtomId::new(3)),
+            LigandRef::Atom(AtomId::new(4)),
+        ];
+
+        for a in 0..4 {
+            for b in 0..4 {
+                for c in 0..4 {
+                    for d in 0..4 {
+                        let perm = [a, b, c, d];
+                        if has_duplicate_indices(perm) {
+                            continue;
+                        }
+                        let candidate = [base[a], base[b], base[c], base[d]];
+                        if is_even_permutation(perm) {
+                            assert_eq!(canonicalize_tetrahedral_ligands(candidate), base);
+                        } else {
+                            assert_ne!(canonicalize_tetrahedral_ligands(candidate), base);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tetrahedral_stereo_places_implicit_hydrogen_as_fourth_ligand() {
+        let mol = Molecule::from_smiles("[13CH3:7][C@H](F)Cl").expect("parse chiral SMILES");
+        let stereo = mol.tetrahedral_stereo().expect("tetrahedral stereo");
+
+        assert_eq!(stereo.len(), 1);
+        assert_eq!(stereo[0].center, AtomId::new(1));
+        assert_eq!(
+            stereo[0].ligands,
+            [
+                LigandRef::Atom(AtomId::new(0)),
+                LigandRef::Atom(AtomId::new(2)),
+                LigandRef::Atom(AtomId::new(3)),
+                LigandRef::ImplicitHydrogen,
+            ]
+        );
+    }
 
     #[test]
     fn implicit_hydrogen_tetrahedral_center_is_potentially_chiral_like_rdkit() {

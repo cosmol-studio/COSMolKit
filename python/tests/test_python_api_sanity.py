@@ -454,7 +454,11 @@ def test_fingerprint_and_stereo_outputs_are_structurally_reasonable():
     assert len(stereo) == 1
     center, ligands = stereo[0]
     assert center == 1
-    assert len(ligands) == 4
+    assert ligands == [0, 2, 3, None]
+
+    opposite = cosmolkit.Molecule.from_smiles("F[C@@H](Cl)Br")
+    opposite_stereo = opposite.tetrahedral_stereo()
+    assert opposite_stereo == [(1, [0, 3, 2, None])]
 
     fp = chiral.fingerprint_morgan(radius=2, n_bits=256)
     same = cosmolkit.Molecule.from_smiles("F[C@H](Cl)Br").fingerprint_morgan(radius=2, n_bits=256)

@@ -3953,8 +3953,17 @@ include_unassigned : bool, default True
     #[doc = r#"
 Return ordered tetrahedral stereo ligand records.
 
-Each record is ``(center_atom_index, ordered_ligands)``. Implicit hydrogen is
-represented as ``None``.
+Each record is ``(center_atom_index, ordered_ligands)``. The ligand order is
+the stereochemical value, not a plain adjacency listing: opposite tetrahedral
+configurations can have the same ligand set but different ligand order.
+Equivalent even permutations are canonicalized to one numeric representative;
+odd permutations remain distinct because they encode the opposite handedness.
+``None`` does not mean that a ligand is absent. It represents a hydrogen ligand
+that exists chemically but is implicit in the current molecule graph and
+therefore has no atom index.
+
+Specification:
+https://github.com/cosmol-studio/COSMolKit/blob/main/dev/tetrahedral_stereo.md
 "#]
     fn tetrahedral_stereo(&self) -> PyResult<Vec<(usize, Vec<Option<usize>>)>> {
         to_python_tetrahedral_stereo(&self.inner)
@@ -6309,7 +6318,7 @@ fn mol_from_binary(data: &[u8]) -> PyResult<Molecule> {
 #[doc(hidden)]
 fn _rebuild_molecule_from_pickle(state: &Bound<'_, PyAny>) -> PyResult<Molecule> {
     let dict = state
-        .downcast::<PyDict>()
+        .cast::<PyDict>()
         .map_err(|_| PyValueError::new_err("invalid Molecule pickle state: expected dict"))?;
     let kind: String = dict
         .get_item("kind")?
@@ -6343,7 +6352,7 @@ fn _rebuild_molecule_from_pickle(state: &Bound<'_, PyAny>) -> PyResult<Molecule>
     let payload = dict
         .get_item("payload")?
         .ok_or_else(|| PyValueError::new_err("invalid Molecule pickle state: missing payload"))?;
-    let payload = payload.downcast::<PyBytes>().map_err(|_| {
+    let payload = payload.cast::<PyBytes>().map_err(|_| {
         PyValueError::new_err("invalid Molecule pickle state: payload must be bytes")
     })?;
     let inner = cosmolkit_core::mol_from_binary(payload.as_bytes()).map_err(pickle_pyerr)?;

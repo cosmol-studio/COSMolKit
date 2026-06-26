@@ -129,13 +129,26 @@ maps such as ``BOND_ORDER_MAP`` and ``CHIRAL_TAG_MAP`` are available when a
 string name from an external source needs to be converted to the enum member.
 
 When code needs COSMolKit's ordered-ligand tetrahedral representation, use
-``tetrahedral_stereo()`` as a separate view derived from those chiral tags:
+``tetrahedral_stereo()``. The returned ligand order is the stereochemical
+value, not just the atom adjacency order. This makes it useful both for
+finding the four ligands around a center and for comparing whether two records
+represent the same tetrahedral configuration. Equivalent even permutations are
+canonicalized to one numeric representative. The precise contract is in
+`dev/tetrahedral_stereo.md <https://github.com/cosmol-studio/COSMolKit/blob/main/dev/tetrahedral_stereo.md>`__.
 
 .. code-block:: python
 
    mol = Molecule.from_smiles("F[C@H](Cl)Br")
 
    print(mol.tetrahedral_stereo())
+   print(Molecule.from_smiles("F[C@@H](Cl)Br").tetrahedral_stereo())
+   print(mol.with_hydrogens().tetrahedral_stereo())
+   print(Molecule.from_smiles("F[C@](Cl)(Br)I").tetrahedral_stereo())
+   print(Molecule.from_smiles("F[C@@](Cl)(Br)I").tetrahedral_stereo())
+
+``None`` in the ligand list represents an implicit hydrogen ligand. It does
+not mean the ligand slot is empty. If hydrogens are materialized with
+``with_hydrogens()``, that hydrogen ligand is returned as an atom index.
 
 Conformer Generation And Force-Field Optimization
 -------------------------------------------------
