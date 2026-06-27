@@ -13,10 +13,10 @@ mod cx;
 mod stereo;
 
 pub(crate) use self::stereo::{
-    assign_chiral_types_from_3d, assign_chiral_types_from_3d_for_testing,
-    assign_chiral_types_from_bond_dirs, assign_stereochemistry_cleanup_subset,
-    clear_all_bond_dir_flags, set_double_bond_neighbor_directions,
-    set_double_bond_neighbor_directions_from_stereo,
+    assign_chiral_types_from_3d, assign_chiral_types_from_3d_with_valence,
+    assign_chiral_types_from_bond_dirs, assign_double_bond_stereo_after_smiles_parse,
+    assign_stereochemistry_cleanup_subset, clear_all_bond_dir_flags,
+    set_double_bond_neighbor_directions, set_double_bond_neighbor_directions_from_stereo,
 };
 use self::{cx::*, stereo::*};
 

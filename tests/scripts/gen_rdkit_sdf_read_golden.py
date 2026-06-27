@@ -14,8 +14,10 @@ carry tetrahedral chirality.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import re
+import tempfile
 from importlib.metadata import version
 from pathlib import Path
 from typing import Iterable
@@ -170,6 +172,138 @@ def parse_molblock(block: str) -> tuple[Chem.Mol | None, str | None]:
     return parsed, None
 
 
+def supplier_summary(mol: Chem.Mol) -> dict[str, object]:
+    return {
+        "atoms": atom_features(mol),
+        "bonds": bond_features(mol),
+        "positions": positions(mol),
+        "chiral_tags": chiral_tags(mol),
+        "smiles_out": smiles_pair(mol),
+        "properties": {
+            name: mol.GetProp(name)
+            for name in mol.GetPropNames(includePrivate=True, includeComputed=True)
+        },
+        "atom_properties": [
+            {
+                name: atom.GetProp(name)
+                for name in atom.GetPropNames(includePrivate=True, includeComputed=True)
+            }
+            for atom in mol.GetAtoms()
+        ],
+        "bond_properties": [
+            {
+                name: bond.GetProp(name)
+                for name in bond.GetPropNames(includePrivate=True, includeComputed=True)
+            }
+            for bond in mol.GetBonds()
+        ],
+    }
+
+
+def error_row(base: dict[str, object], sdf: str | None, error: str | None) -> dict[str, object]:
+    return {
+        **base,
+        "rdkit_ok": False,
+        "sdf": sdf,
+        "error": error or "RDKit operation failed",
+    }
+
+
+def success_row(base: dict[str, object], sdf: str, mol: Chem.Mol) -> dict[str, object]:
+    return {
+        **base,
+        "rdkit_ok": True,
+        "sdf": sdf,
+        **supplier_summary(mol),
+        "error": None,
+    }
+
+
+def read_forward_supplier(
+    sdf: str,
+    *,
+    sanitize: bool,
+    remove_hs: bool,
+    strict_parsing: bool,
+    process_property_lists: bool,
+) -> tuple[Chem.Mol | None, str | None]:
+    try:
+        supplier = Chem.ForwardSDMolSupplier(
+            io.BytesIO(sdf.encode("utf-8")),
+            sanitize=sanitize,
+            removeHs=remove_hs,
+            strictParsing=strict_parsing,
+        )
+        supplier.SetProcessPropertyLists(process_property_lists)
+        parsed = next(supplier)
+    except StopIteration:
+        return None, "ForwardSDMolSupplier returned no records"
+    except Exception as exc:
+        return None, str(exc)
+    if parsed is None:
+        return None, "ForwardSDMolSupplier returned None"
+    return parsed, None
+
+
+def read_indexed_supplier(
+    sdf: str,
+    *,
+    sanitize: bool,
+    remove_hs: bool,
+    strict_parsing: bool,
+    process_property_lists: bool,
+) -> tuple[Chem.Mol | None, str | None]:
+    with tempfile.NamedTemporaryFile("w", suffix=".sdf", encoding="utf-8") as handle:
+        handle.write(sdf)
+        handle.flush()
+        try:
+            supplier = Chem.SDMolSupplier(
+                handle.name,
+                sanitize=sanitize,
+                removeHs=remove_hs,
+                strictParsing=strict_parsing,
+            )
+            supplier.SetProcessPropertyLists(process_property_lists)
+            parsed = supplier[0]
+        except Exception as exc:
+            return None, str(exc)
+    if parsed is None:
+        return None, "SDMolSupplier returned None"
+    return parsed, None
+
+
+def append_data_fields(block: str) -> str:
+    return (
+        block
+        + ">  <ID>\nrecord-1\n\n"
+        + ">  <BLANK_VALUE>\n\n"
+        + ">  <REPEATED>\nfirst\n\n"
+        + ">  <REPEATED>\nsecond\n\n"
+        + ">  <atom.prop.note>\n[missing] alpha beta\n\n"
+        + ">  <atom.iprop.rank>\n10 20 30 40 50 60 70 80 90 100\n\n"
+        + ">  <bond.prop.flag>\none two three four five six seven eight nine\n\n"
+        + "$$$$\n"
+    )
+
+
+def malformed_sdf_records() -> list[tuple[str, str]]:
+    valid_minimal = (
+        "malformed\n"
+        "  COSMolKit      2D\n"
+        "\n"
+        "  1  0  0  0  0  0  0  0  0  0999 V2000\n"
+        "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n"
+        "M  END\n"
+    )
+    return [
+        ("empty", ""),
+        ("missing_delimiter", valid_minimal),
+        ("invalid_data_header", valid_minimal + "> no label\nvalue\n\n$$$$\n"),
+        ("spurious_data", valid_minimal + "spurious\n\n$$$$\n"),
+        ("missing_m_end", valid_minimal.replace("M  END\n", "") + "$$$$\n"),
+    ]
+
+
 def build_case(
     smiles: str,
     source: Chem.Mol | None,
@@ -186,46 +320,119 @@ def build_case(
         "dimension": dimension,
         "format": fmt,
         "stereo_markers": markers,
+        "api": "ForwardSDMolSupplier",
+        "operation": "read",
+        "sanitize": True,
+        "remove_hs": False,
+        "strict_parsing": True,
+        "process_property_lists": True,
     }
     if source is None:
-        return {
-            **base,
-            "rdkit_ok": False,
-            "sdf": None,
-            "error": source_error or "source molecule generation failed",
-        }
+        return error_row(base, None, source_error or "source molecule generation failed")
 
     block, render_error = render_molblock(source, fmt)
     if block is None:
-        return {
-            **base,
-            "rdkit_ok": False,
-            "sdf": None,
-            "error": render_error,
-        }
+        return error_row(base, None, render_error)
     if markers == "coords_only":
         block = strip_stereo_markers(block, fmt)
 
     parsed, parse_error = parse_molblock(block)
     if parsed is None:
-        return {
-            **base,
-            "rdkit_ok": False,
-            "sdf": block + "$$$$\n",
-            "error": parse_error,
-        }
+        return error_row(base, block + "$$$$\n", parse_error)
 
-    return {
-        **base,
-        "rdkit_ok": True,
-        "sdf": block + "$$$$\n",
-        "atoms": atom_features(parsed),
-        "bonds": bond_features(parsed),
-        "positions": positions(parsed),
-        "chiral_tags": chiral_tags(parsed),
-        "smiles_out": smiles_pair(parsed),
-        "error": None,
-    }
+    return success_row(base, block + "$$$$\n", parsed)
+
+
+def build_supplier_cases(
+    smiles: str,
+    sdf: str,
+    *,
+    dimension: str,
+    fmt: str,
+    markers: str,
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    sdf_variants = [
+        ("plain", sdf),
+        ("data_fields", append_data_fields(sdf.removesuffix("$$$$\n"))),
+    ]
+    for variant, sdf_text in sdf_variants:
+        for api_name, parser_fn in [
+            ("ForwardSDMolSupplier", read_forward_supplier),
+            ("SDMolSupplier", read_indexed_supplier),
+        ]:
+            for sanitize in [True, False]:
+                for remove_hs in [True, False]:
+                    for strict_parsing in [True, False]:
+                        for process_property_lists in [True, False]:
+                            case_id = (
+                                f"{dimension.lower()}_{fmt.lower()}_{markers}_{variant}_"
+                                f"{api_name.lower()}_sanitize_{int(sanitize)}_"
+                                f"removehs_{int(remove_hs)}_strict_{int(strict_parsing)}_"
+                                f"proplists_{int(process_property_lists)}"
+                            )
+                            base = {
+                                "smiles": smiles,
+                                "case_id": case_id,
+                                "dimension": dimension,
+                                "format": fmt,
+                                "stereo_markers": markers,
+                                "api": api_name,
+                                "operation": "read",
+                                "sanitize": sanitize,
+                                "remove_hs": remove_hs,
+                                "strict_parsing": strict_parsing,
+                                "process_property_lists": process_property_lists,
+                            }
+                            parsed, parse_error = parser_fn(
+                                sdf_text,
+                                sanitize=sanitize,
+                                remove_hs=remove_hs,
+                                strict_parsing=strict_parsing,
+                                process_property_lists=process_property_lists,
+                            )
+                            rows.append(
+                                error_row(base, sdf_text, parse_error)
+                                if parsed is None
+                                else success_row(base, sdf_text, parsed)
+                            )
+    return rows
+
+
+def build_malformed_cases() -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for label, sdf_text in malformed_sdf_records():
+        for api_name, parser_fn in [
+            ("ForwardSDMolSupplier", read_forward_supplier),
+            ("SDMolSupplier", read_indexed_supplier),
+        ]:
+            for strict_parsing in [True, False]:
+                base = {
+                    "smiles": None,
+                    "case_id": f"malformed_{label}_{api_name.lower()}_strict_{int(strict_parsing)}",
+                    "dimension": "invalid",
+                    "format": "invalid",
+                    "stereo_markers": "invalid",
+                    "api": api_name,
+                    "operation": "malformed",
+                    "sanitize": True,
+                    "remove_hs": True,
+                    "strict_parsing": strict_parsing,
+                    "process_property_lists": True,
+                }
+                parsed, parse_error = parser_fn(
+                    sdf_text,
+                    sanitize=True,
+                    remove_hs=True,
+                    strict_parsing=strict_parsing,
+                    process_property_lists=True,
+                )
+                rows.append(
+                    error_row(base, sdf_text, parse_error)
+                    if parsed is None
+                    else success_row(base, sdf_text, parsed)
+                )
+    return rows
 
 
 def build_records(smiles: str) -> list[dict[str, object]]:
@@ -267,6 +474,17 @@ def build_records(smiles: str) -> list[dict[str, object]]:
                         markers=markers,
                     )
                 )
+                sdf = records[-1].get("sdf")
+                if isinstance(sdf, str):
+                    records.extend(
+                        build_supplier_cases(
+                            smiles,
+                            sdf,
+                            dimension=dimension,
+                            fmt=fmt,
+                            markers=markers,
+                        )
+                    )
     return records
 
 
@@ -299,6 +517,7 @@ def main() -> None:
         if args.limit is not None and idx >= args.limit:
             break
         rows.extend(build_records(smiles))
+    rows.extend(build_malformed_cases())
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as handle:

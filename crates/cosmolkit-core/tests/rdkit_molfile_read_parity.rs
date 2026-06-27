@@ -3,18 +3,31 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
 use cosmolkit_core::{
-    BondDirection, BondOrder, BondStereo, ChiralTag, SmilesWriteParams,
-    io::{molfile::read_mol_record_from_str_with_params, sdf::SdfReadParams},
+    BondDirection, BondOrder, BondStereo, ChiralTag, Molecule, SmilesWriteParams,
+    io::{
+        molfile::{MolFileRecord, read_mol_file_with_params, read_mol_record_from_str_with_params},
+        sdf::SdfReadParams,
+    },
 };
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 struct MolFileReadRecord {
-    smiles: String,
+    smiles: Option<String>,
     case_id: String,
     dimension: String,
     format: String,
     stereo_markers: String,
+    #[serde(default)]
+    api: Option<String>,
+    #[serde(default)]
+    operation: Option<String>,
+    #[serde(default)]
+    sanitize: Option<bool>,
+    #[serde(default)]
+    remove_hs: Option<bool>,
+    #[serde(default)]
+    strict_parsing: Option<bool>,
     rdkit_ok: bool,
     molblock: Option<String>,
     atoms: Option<Vec<AtomRecord>>,
@@ -95,6 +108,10 @@ fn bond_order_name(order: BondOrder) -> &'static str {
     order.rdkit_name()
 }
 
+fn record_label(record: &MolFileReadRecord) -> &str {
+    record.smiles.as_deref().unwrap_or("<no-smiles>")
+}
+
 fn bond_direction_name(direction: BondDirection) -> &'static str {
     match direction {
         BondDirection::None => "NONE",
@@ -124,33 +141,112 @@ fn chiral_tag_name(tag: ChiralTag) -> &'static str {
     tag.rdkit_name()
 }
 
-fn parsed_record(
-    record: &MolFileReadRecord,
-    row_idx: usize,
-) -> cosmolkit_core::io::molfile::MolFileRecord {
+fn parsed_record(record: &MolFileReadRecord, row_idx: usize) -> MolFileRecord {
     let molblock = record
         .molblock
         .as_ref()
         .unwrap_or_else(|| panic!("rdkit_ok row {} has no molblock", row_idx + 1));
-    // Golden generation uses Chem.MolFromMolBlock(..., sanitize=True,
-    // removeHs=False), so parity must bind the same reader parameters.
-    read_mol_record_from_str_with_params(
-        molblock,
-        SdfReadParams {
-            sanitize: true,
-            remove_hs: false,
-            process_property_lists: false,
-            ..Default::default()
-        },
-    )
-    .unwrap_or_else(|error| {
+    let params = SdfReadParams {
+        sanitize: record.sanitize.unwrap_or(true),
+        remove_hs: record.remove_hs.unwrap_or(false),
+        strict_parsing: record.strict_parsing.unwrap_or(true),
+        process_property_lists: false,
+        ..Default::default()
+    };
+    let read_result = match record.api.as_deref().unwrap_or("MolFromMolBlock") {
+        "MolFromMolBlock" => read_mol_record_from_str_with_params(molblock, params),
+        "MolFromMolFile" => {
+            let mut temp = tempfile::NamedTempFile::new().expect("should create temp molfile");
+            std::io::Write::write_all(&mut temp, molblock.as_bytes())
+                .expect("should write temp molfile");
+            read_mol_file_with_params(temp.path(), params)
+        }
+        other => panic!(
+            "unsupported molfile golden API {other} at row {}",
+            row_idx + 1
+        ),
+    };
+    let mut parsed = read_result.unwrap_or_else(|error| {
         panic!(
             "COSMolKit should parse molfile row {} case {} {}: {error}",
             row_idx + 1,
             record.case_id,
-            record.smiles
+            record_label(record)
         )
-    })
+    });
+    parsed.molecule = apply_delayed_operation(parsed.molecule, record, row_idx);
+    parsed
+}
+
+fn apply_delayed_operation(
+    molecule: Molecule,
+    record: &MolFileReadRecord,
+    row_idx: usize,
+) -> Molecule {
+    match record.operation.as_deref().unwrap_or("read") {
+        "read" => molecule,
+        "delayed_sanitize" => molecule.sanitize().unwrap_or_else(|error| {
+            panic!(
+                "COSMolKit delayed sanitize failed at row {} case {} ({}): {error}",
+                row_idx + 1,
+                record.case_id,
+                record_label(record)
+            )
+        }),
+        "delayed_remove_hs" => molecule.without_hydrogens().unwrap_or_else(|error| {
+            panic!(
+                "COSMolKit delayed removeHs failed at row {} case {} ({}): {error}",
+                row_idx + 1,
+                record.case_id,
+                record_label(record)
+            )
+        }),
+        "failure" => molecule,
+        other => panic!(
+            "unsupported molfile golden operation {other} at row {}",
+            row_idx + 1
+        ),
+    }
+}
+
+fn assert_error_matches_rdkit(record: &MolFileReadRecord, row_idx: usize) {
+    let Some(molblock) = record.molblock.as_ref() else {
+        assert!(
+            record.error.is_some(),
+            "row {} {} ({}) is rdkit not ok but has no error",
+            row_idx + 1,
+            record.case_id,
+            record_label(record)
+        );
+        return;
+    };
+    let params = SdfReadParams {
+        sanitize: record.sanitize.unwrap_or(true),
+        remove_hs: record.remove_hs.unwrap_or(false),
+        strict_parsing: record.strict_parsing.unwrap_or(true),
+        process_property_lists: false,
+        ..Default::default()
+    };
+    let result = match record.api.as_deref().unwrap_or("MolFromMolBlock") {
+        "MolFromMolBlock" => read_mol_record_from_str_with_params(molblock, params),
+        "MolFromMolFile" => {
+            let mut temp = tempfile::NamedTempFile::new().expect("should create temp molfile");
+            std::io::Write::write_all(&mut temp, molblock.as_bytes())
+                .expect("should write temp molfile");
+            read_mol_file_with_params(temp.path(), params)
+        }
+        other => panic!(
+            "unsupported molfile golden API {other} at row {}",
+            row_idx + 1
+        ),
+    };
+    assert!(
+        result.is_err(),
+        "COSMolKit unexpectedly parsed RDKit failure row {} case {} ({})",
+        row_idx + 1,
+        record.case_id,
+        record_label(record)
+    );
 }
 
 fn assert_case_matrix(records: &[MolFileReadRecord]) {
@@ -208,13 +304,7 @@ fn molfile_read_topology_and_atom_fields_match_rdkit() {
     let records = load_golden();
     for (row_idx, record) in records.iter().enumerate() {
         if !record.rdkit_ok {
-            assert!(
-                record.error.is_some(),
-                "row {} {} ({}) is rdkit not ok but has no error",
-                row_idx + 1,
-                record.case_id,
-                record.smiles
-            );
+            assert_error_matches_rdkit(record, row_idx);
             continue;
         }
         let parsed = parsed_record(record, row_idx);
@@ -239,7 +329,7 @@ fn molfile_read_topology_and_atom_fields_match_rdkit() {
             "atom field mismatch at row {} case {} ({})",
             row_idx + 1,
             record.case_id,
-            record.smiles
+            record_label(record)
         );
 
         let actual_bonds = parsed
@@ -265,7 +355,7 @@ fn molfile_read_topology_and_atom_fields_match_rdkit() {
             "bond field mismatch at row {} case {} ({})",
             row_idx + 1,
             record.case_id,
-            record.smiles
+            record_label(record)
         );
     }
 }
@@ -278,10 +368,9 @@ fn molfile_read_coordinates_match_rdkit_for_2d_and_3d_records() {
             continue;
         }
         let parsed = parsed_record(record, row_idx);
-        let expected_positions = record
-            .positions
-            .as_ref()
-            .expect("rdkit_ok row should have positions");
+        let Some(expected_positions) = record.positions.as_ref() else {
+            continue;
+        };
 
         if record.dimension == "2D" {
             let coords = parsed.molecule.coordinates_2d().unwrap_or_else(|| {
@@ -303,7 +392,7 @@ fn molfile_read_coordinates_match_rdkit_for_2d_and_3d_records() {
                     row_idx + 1,
                     record.case_id,
                     atom_idx,
-                    record.smiles
+                    record_label(record)
                 );
             }
         } else {
@@ -331,7 +420,7 @@ fn molfile_read_coordinates_match_rdkit_for_2d_and_3d_records() {
                     row_idx + 1,
                     record.case_id,
                     atom_idx,
-                    record.smiles
+                    record_label(record)
                 );
             }
         }
@@ -362,7 +451,7 @@ fn molfile_read_chirality_matches_rdkit_for_markers_and_coordinates() {
             "chirality mismatch at row {} case {} ({})",
             row_idx + 1,
             record.case_id,
-            record.smiles
+            record_label(record)
         );
     }
 }
@@ -391,14 +480,14 @@ fn molfile_read_to_smiles_matches_rdkit_canonical_and_noncanonical() {
                 "canonical SMILES mismatch at row {} case {} ({})",
                 row_idx + 1,
                 record.case_id,
-                record.smiles
+                record_label(record)
             ),
             Err(error) => assert!(
                 error.to_string().contains("unsupported path"),
                 "canonical SMILES write failed without explicit unsupported error at row {} case {} ({}): {error}",
                 row_idx + 1,
                 record.case_id,
-                record.smiles
+                record_label(record)
             ),
         }
 
@@ -414,7 +503,7 @@ fn molfile_read_to_smiles_matches_rdkit_canonical_and_noncanonical() {
                     "noncanonical SMILES write failed at row {} case {} ({}): {error}",
                     row_idx + 1,
                     record.case_id,
-                    record.smiles
+                    record_label(record)
                 )
             });
         assert_eq!(
@@ -423,7 +512,7 @@ fn molfile_read_to_smiles_matches_rdkit_canonical_and_noncanonical() {
             "noncanonical SMILES mismatch at row {} case {} ({})",
             row_idx + 1,
             record.case_id,
-            record.smiles
+            record_label(record)
         );
     }
 }

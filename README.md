@@ -234,6 +234,26 @@ model-building workflows.
 
 Python examples live in `python/examples/`.
 
+## Development
+
+Small focused Rust test filters may use the default debug profile while
+iterating:
+
+```bash
+cargo test -p cosmolkit-core --features op-contracts-strict <test-filter>
+```
+
+Large local runs, parity suites, and CI tests should use release mode with the
+same strict feature set:
+
+```bash
+cargo test -p cosmolkit-core --release --features op-contracts-strict
+```
+
+Release-mode testing keeps operation contracts and runtime invariants enabled
+through `op-contracts-strict`; optimized release builds for distribution use
+default features unless explicit runtime checks are requested.
+
 ## Roadmap
 
 Status labels:

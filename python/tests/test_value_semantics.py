@@ -90,7 +90,7 @@ def test_in_place_sanitize_and_kekulize_methods_match_value_methods():
     assert benzene.to_smiles(kekule=True) == expected_kekule.to_smiles(kekule=True)
 
 
-def test_sdf_sanitize_false_is_not_silently_ignored():
+def test_sdf_sanitize_false_is_supported_and_not_silently_sanitized():
     sdf = """ethane
      COSMolKit      2D
 
@@ -101,8 +101,10 @@ def test_sdf_sanitize_false_is_not_silently_ignored():
 M  END
 $$$$
 """
-    with pytest.raises(ValueError, match="sanitize=False is not implemented for SDF"):
-        cosmolkit.Molecule.read_sdf_from_str(sdf, sanitize=False)
+    mol = cosmolkit.Molecule.read_sdf_from_str(sdf, sanitize=False)
+
+    assert mol.num_atoms() == 2
+    assert mol.num_bonds() == 1
 
 
 def test_sanitize_strict_false_is_not_silently_ignored():

@@ -17,7 +17,7 @@ pub(crate) fn assign_stereochemistry_cleanup_subset(
     Ok(())
 }
 
-pub(super) fn assign_double_bond_stereo_after_smiles_parse(
+pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
     mol: &mut Molecule,
     clean_it: bool,
 ) -> Result<(), StereoError> {
@@ -2808,55 +2808,61 @@ pub(super) fn rdkit_total_hs(
     atom.explicit_hydrogens() as usize + implicit_hydrogens[atom_idx].max(0) as usize
 }
 
-/// Port of `MolOps::assignChiralTypesFrom3D` — tetrahedral signed-volume branch.
+/// Port of `MolOps::assignChiralTypesFrom3D`.
 ///
 /// Assigns chiral tags to atoms based on 3D coordinates using signed-volume
-/// computation. Only handles tetrahedral cases (4-coordinate or S/Se with
-/// effective coordination). Non-tetrahedral and atropisomer cases are deferred.
+/// computation for tetrahedral and supported non-tetrahedral cases.
 ///
 /// C++ source: `third_party/rdkit/Code/GraphMol/Chirality.cpp:3377-3500`
-///
-/// Note: this is the tetrahedral-only port. The non-tetrahedral path
-/// (`assignNontetrahedralChiralTypeFrom3D`) is deferred.
 pub(crate) fn assign_chiral_types_from_3d(mol: &mut Molecule, conf_id: usize) {
-    // RDKit✔️✔️: void assignChiralTypesFrom3D(ROMol &mol, int confId, bool replaceExistingTags) {
-    // RDKit✔️✔️:   const double ZERO_VOLUME_TOL = 0.1;
-    // RDKit✔️✔️:   if (!mol.getNumConformers()) {
-    // RDKit✔️✔️:     return;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   const Conformer &conf = mol.getConformer(confId);
-    // RDKit✔️✔️:   if (!conf.is3D()) {
-    // RDKit✔️✔️:     return;
-    // RDKit✔️✔️:   }
+    let _ = assign_chiral_types_from_3d_with_valence(mol, conf_id);
+}
+
+pub(crate) fn assign_chiral_types_from_3d_with_valence(
+    mol: &mut Molecule,
+    conf_id: usize,
+) -> Result<(), crate::ValenceError> {
+    // Performance note for RDKit✔️❌ markers in this function: behavior is
+    // source-backed, but COSMolKit currently finds atom bonds by scanning the
+    // bond table per atom, while RDKit iterates adjacency-backed atom bonds.
+    // RDKit✔️❌: void assignChiralTypesFrom3D(ROMol &mol, int confId, bool replaceExistingTags) {
+    // RDKit✔️❌:   const double ZERO_VOLUME_TOL = 0.1;
+    // RDKit✔️❌:   if (!mol.getNumConformers()) {
+    // RDKit✔️❌:     return;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   const Conformer &conf = mol.getConformer(confId);
+    // RDKit✔️❌:   if (!conf.is3D()) {
+    // RDKit✔️❌:     return;
+    // RDKit✔️❌:   }
     let conf_idx = mol.conformers_3d().iter().position(|c| c.id() == conf_id);
     let Some(conf_idx) = conf_idx else {
-        return;
+        return Ok(());
     };
-    // RDKit✔️✔️:   if (mol.hasProp(common_properties::_StereochemDone)) {
-    // RDKit✔️✔️:     mol.clearProp(common_properties::_StereochemDone);
-    // RDKit✔️✔️:   }
+    // RDKit✔️❌:   if (mol.hasProp(common_properties::_StereochemDone)) {
+    // RDKit✔️❌:     mol.clearProp(common_properties::_StereochemDone);
+    // RDKit✔️❌:   }
     if mol.prop("_StereochemDone").is_some() {
         mol.properties_mut().clear_prop("_StereochemDone");
     }
     let conformer = &mol.conformers_3d()[conf_idx];
     if !conformer.is_3d() {
-        return;
+        return Ok(());
     }
     let coords = conformer.coordinates();
 
-    // RDKit✔️✔️:   boost::dynamic_bitset<> explicitAtoms;
-    // RDKit✔️✔️:   explicitAtoms.resize(mol.getNumAtoms(), 0);
-    // RDKit✔️✔️:   for (auto bond : mol.bonds()) {
-    // RDKit✔️✔️:     if (bondDir == Bond::BondDir::BEGINWEDGE ||
-    // RDKit✔️✔️:         bondDir == Bond::BondDir::BEGINDASH) {
-    // RDKit✔️✔️:       explicitAtoms[bond->getBeginAtom()->getIdx()] = 1;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   for (auto atom : mol.atoms()) {
-    // RDKit✔️✔️:     if (atom->getChiralTag() != Atom::ChiralType::CHI_UNSPECIFIED) {
-    // RDKit✔️✔️:       explicitAtoms[atom->getIdx()] = 1;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
+    // RDKit✔️❌:   boost::dynamic_bitset<> explicitAtoms;
+    // RDKit✔️❌:   explicitAtoms.resize(mol.getNumAtoms(), 0);
+    // RDKit✔️❌:   for (auto bond : mol.bonds()) {
+    // RDKit✔️❌:     if (bondDir == Bond::BondDir::BEGINWEDGE ||
+    // RDKit✔️❌:         bondDir == Bond::BondDir::BEGINDASH) {
+    // RDKit✔️❌:       explicitAtoms[bond->getBeginAtom()->getIdx()] = 1;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   for (auto atom : mol.atoms()) {
+    // RDKit✔️❌:     if (atom->getChiralTag() != Atom::ChiralType::CHI_UNSPECIFIED) {
+    // RDKit✔️❌:       explicitAtoms[atom->getIdx()] = 1;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
     let n_atoms = mol.num_atoms();
     let mut explicit_atoms = vec![false; n_atoms];
     for bond in mol.bonds() {
@@ -2873,27 +2879,23 @@ pub(crate) fn assign_chiral_types_from_3d(mol: &mut Molecule, conf_id: usize) {
         }
     }
 
-    // RDKit✔️✔️:   for (auto atom : mol.atoms()) {
-    // RDKit✔️✔️:     if (!replaceExistingTags && atom->getChiralTag() != Atom::CHI_UNSPECIFIED) {
-    // RDKit✔️✔️:       continue;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit✔️❌:   for (auto atom : mol.atoms()) {
+    // RDKit✔️❌:     if (!replaceExistingTags && atom->getChiralTag() != Atom::CHI_UNSPECIFIED) {
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     atom->setChiralTag(Atom::CHI_UNSPECIFIED);
     let mut chiral_assignments: Vec<(usize, ChiralTag)> = Vec::new();
     let mut chiral_permutation_assignments: Vec<Option<u32>> = vec![None; n_atoms];
     let mut non_explicit_3d_chirality = vec![false; n_atoms];
-    let Ok(valence) =
-        crate::assign_valence_with_options(mol, crate::ValenceModel::RdkitLike, false)
-    else {
-        return;
-    };
+    let valence = crate::assign_valence_with_options(mol, crate::ValenceModel::RdkitLike, false)?;
 
     for atom_idx in 0..n_atoms {
         let atom = &mol.topology_block().atoms[atom_idx];
-        // RDKit✔️✔️:     auto nzDegree = Chirality::detail::getAtomNonzeroDegree(atom);
-        // RDKit✔️✔️:     auto tnzDegree = nzDegree + atom->getTotalNumHs();
-        // RDKit✔️✔️:     if (nzDegree < 3 || tnzDegree > 6) {
-        // RDKit✔️✔️:       continue;
-        // RDKit✔️✔️:     }
+        // RDKit✔️❌:     auto nzDegree = Chirality::detail::getAtomNonzeroDegree(atom);
+        // RDKit✔️❌:     auto tnzDegree = nzDegree + atom->getTotalNumHs();
+        // RDKit✔️❌:     if (nzDegree < 3 || tnzDegree > 6) {
+        // RDKit✔️❌:       continue;
+        // RDKit✔️❌:     }
         let nz_degree = atom_nonzero_degree(mol, atom_idx);
         let tnz_degree = nz_degree + rdkit_total_hs(atom, atom_idx, &valence.implicit_hydrogens);
         if nz_degree < 3 || tnz_degree > 6 {
@@ -2901,13 +2903,13 @@ pub(crate) fn assign_chiral_types_from_3d(mol: &mut Molecule, conf_id: usize) {
             continue;
         }
 
-        // RDKit✔️✔️:     if (allowNontetrahedralStereo &&
-        // RDKit✔️✔️:         assignNontetrahedralChiralTypeFrom3D(mol, conf, atom)) {
-        // RDKit✔️✔️:       if (explicitAtoms[atom->getIdx()] == 0) {
-        // RDKit✔️✔️:         atom->setProp(common_properties::_NonExplicit3DChirality, 1);
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:       continue;
-        // RDKit✔️✔️:     }
+        // RDKit✔️❌:     if (allowNontetrahedralStereo &&
+        // RDKit✔️❌:         assignNontetrahedralChiralTypeFrom3D(mol, conf, atom)) {
+        // RDKit✔️❌:       if (explicitAtoms[atom->getIdx()] == 0) {
+        // RDKit✔️❌:         atom->setProp(common_properties::_NonExplicit3DChirality, 1);
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:       continue;
+        // RDKit✔️❌:     }
         if let Some((tag, permutation)) =
             assign_nontetrahedral_chiral_type_from_3d(mol, coords, atom_idx)
         {
@@ -2919,17 +2921,17 @@ pub(crate) fn assign_chiral_types_from_3d(mol: &mut Molecule, conf_id: usize) {
             continue;
         }
 
-        // RDKit✔️✔️:     /* We're only doing tetrahedral cases here */
-        // RDKit✔️✔️:     if (tnzDegree > 4) {
-        // RDKit✔️✔️:       chiral_assignments.push((atom_idx, ChiralTag::Unspecified));
-        // RDKit✔️✔️:       continue;
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     int anum = atom->getAtomicNum();
-        // RDKit✔️✔️:     if (anum != 16 && anum != 34 &&  // S or Se
-        // RDKit✔️✔️:         tnzDegree != 4) {
-        // RDKit✔️✔️:       chiral_assignments.push((atom_idx, ChiralTag::Unspecified));
-        // RDKit✔️✔️:       continue;
-        // RDKit✔️✔️:     }
+        // RDKit✔️❌:     /* We're only doing tetrahedral cases here */
+        // RDKit✔️❌:     if (tnzDegree > 4) {
+        // RDKit✔️❌:       chiral_assignments.push((atom_idx, ChiralTag::Unspecified));
+        // RDKit✔️❌:       continue;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     int anum = atom->getAtomicNum();
+        // RDKit✔️❌:     if (anum != 16 && anum != 34 &&  // S or Se
+        // RDKit✔️❌:         tnzDegree != 4) {
+        // RDKit✔️❌:       chiral_assignments.push((atom_idx, ChiralTag::Unspecified));
+        // RDKit✔️❌:       continue;
+        // RDKit✔️❌:     }
         if tnz_degree > 4 {
             chiral_assignments.push((atom_idx, ChiralTag::Unspecified));
             continue;
@@ -2940,23 +2942,23 @@ pub(crate) fn assign_chiral_types_from_3d(mol: &mut Molecule, conf_id: usize) {
             continue;
         }
 
-        // RDKit✔️✔️:     const auto &p0 = conf.getAtomPos(atom->getIdx());
-        // RDKit✔️✔️:     const RDGeom::Point3D *nbrs[4];
-        // RDKit✔️✔️:     unsigned int nbrIdx = 0;
-        // RDKit✔️✔️:     int hasWigglyBond = 0;
-        // RDKit✔️✔️:     for (const auto bond : mol.atomBonds(atom)) {
-        // RDKit✔️✔️:       hasWigglyBond = isWigglyBond(bond, atom);
-        // RDKit✔️✔️:       if (hasWigglyBond) {
-        // RDKit✔️✔️:         break;
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:       if (!Chirality::detail::bondAffectsAtomChirality(bond, atom)) {
-        // RDKit✔️✔️:         continue;
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:       nbrs[nbrIdx++] = &conf.getAtomPos(bond->getOtherAtomIdx(atom->getIdx()));
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     if (hasWigglyBond) {
-        // RDKit✔️✔️:       continue;
-        // RDKit✔️✔️:     }
+        // RDKit✔️❌:     const auto &p0 = conf.getAtomPos(atom->getIdx());
+        // RDKit✔️❌:     const RDGeom::Point3D *nbrs[4];
+        // RDKit✔️❌:     unsigned int nbrIdx = 0;
+        // RDKit✔️❌:     int hasWigglyBond = 0;
+        // RDKit✔️❌:     for (const auto bond : mol.atomBonds(atom)) {
+        // RDKit✔️❌:       hasWigglyBond = isWigglyBond(bond, atom);
+        // RDKit✔️❌:       if (hasWigglyBond) {
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:       if (!Chirality::detail::bondAffectsAtomChirality(bond, atom)) {
+        // RDKit✔️❌:         continue;
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:       nbrs[nbrIdx++] = &conf.getAtomPos(bond->getOtherAtomIdx(atom->getIdx()));
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     if (hasWigglyBond) {
+        // RDKit✔️❌:       continue;
+        // RDKit✔️❌:     }
         let p0 = coords[atom_idx];
         let mut nbr_positions: Vec<[f64; 3]> = Vec::with_capacity(4);
         let mut has_wiggly_bond = false;
@@ -2986,24 +2988,24 @@ pub(crate) fn assign_chiral_types_from_3d(mol: &mut Molecule, conf_id: usize) {
             continue;
         }
 
-        // RDKit✔️✔️:     auto v1 = *nbrs[0] - p0;
-        // RDKit✔️✔️:     auto v2 = *nbrs[1] - p0;
-        // RDKit✔️✔️:     auto v3 = *nbrs[2] - p0;
-        // RDKit✔️✔️:     double chiralVol = v1.dotProduct(v2.crossProduct(v3));
-        // RDKit✔️✔️:     bool chiralitySet = false;
-        // RDKit✔️✔️:     if (chiralVol < -ZERO_VOLUME_TOL) {
-        // RDKit✔️✔️:       atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CW);
-        // RDKit✔️✔️:       chiralitySet = true;
-        // RDKit✔️✔️:     } else if (chiralVol > ZERO_VOLUME_TOL) {
-        // RDKit✔️✔️:       atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CCW);
-        // RDKit✔️✔️:       chiralitySet = true;
-        // RDKit✔️✔️:     } else if (nbrIdx == 4) {
-        // RDKit✔️✔️:       auto v4 = *nbrs[3] - p0;
-        // RDKit✔️✔️:       chiralVol = -v1.dotProduct(v2.crossProduct(v4));
-        // RDKit✔️✔️:       if (chiralVol < -ZERO_VOLUME_TOL) { ... }
-        // RDKit✔️✔️:     } else {
-        // RDKit✔️✔️:       atom->setChiralTag(Atom::CHI_UNSPECIFIED);
-        // RDKit✔️✔️:     }
+        // RDKit✔️❌:     auto v1 = *nbrs[0] - p0;
+        // RDKit✔️❌:     auto v2 = *nbrs[1] - p0;
+        // RDKit✔️❌:     auto v3 = *nbrs[2] - p0;
+        // RDKit✔️❌:     double chiralVol = v1.dotProduct(v2.crossProduct(v3));
+        // RDKit✔️❌:     bool chiralitySet = false;
+        // RDKit✔️❌:     if (chiralVol < -ZERO_VOLUME_TOL) {
+        // RDKit✔️❌:       atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CW);
+        // RDKit✔️❌:       chiralitySet = true;
+        // RDKit✔️❌:     } else if (chiralVol > ZERO_VOLUME_TOL) {
+        // RDKit✔️❌:       atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CCW);
+        // RDKit✔️❌:       chiralitySet = true;
+        // RDKit✔️❌:     } else if (nbrIdx == 4) {
+        // RDKit✔️❌:       auto v4 = *nbrs[3] - p0;
+        // RDKit✔️❌:       chiralVol = -v1.dotProduct(v2.crossProduct(v4));
+        // RDKit✔️❌:       if (chiralVol < -ZERO_VOLUME_TOL) { ... }
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+        // RDKit✔️❌:     }
         match tetrahedral_chiral_volume(p0, &nbr_positions) {
             Some(tag) => {
                 if tag != ChiralTag::Unspecified && !explicit_atoms[atom_idx] {
@@ -3019,9 +3021,9 @@ pub(crate) fn assign_chiral_types_from_3d(mol: &mut Molecule, conf_id: usize) {
     let atoms = &mut mol.topology_block_mut().atoms;
     for (idx, tag) in chiral_assignments {
         atoms[idx].set_chiral_tag(tag);
-        // RDKit✔️✔️:     if (chiralitySet && explicitAtoms[atom->getIdx()] == 0) {
-        // RDKit✔️✔️:       atom->setProp<int>(common_properties::_NonExplicit3DChirality, 1);
-        // RDKit✔️✔️:     }
+        // RDKit✔️❌:     if (chiralitySet && explicitAtoms[atom->getIdx()] == 0) {
+        // RDKit✔️❌:       atom->setProp<int>(common_properties::_NonExplicit3DChirality, 1);
+        // RDKit✔️❌:     }
         if non_explicit_3d_chirality[idx] {
             atoms[idx].set_prop("_NonExplicit3DChirality", "1");
         }
@@ -3029,8 +3031,5 @@ pub(crate) fn assign_chiral_types_from_3d(mol: &mut Molecule, conf_id: usize) {
             atoms[idx].set_chiral_permutation(Some(permutation));
         }
     }
-}
-
-pub(crate) fn assign_chiral_types_from_3d_for_testing(mol: &mut Molecule, conf_id: usize) {
-    assign_chiral_types_from_3d(mol, conf_id);
+    Ok(())
 }

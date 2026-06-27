@@ -795,8 +795,27 @@ fn remove_hs_assignment_inner(
         )?;
     }
 
-    // RDKit❗✔️:   if (!atomsToRemove.empty() && ps.removeNonimplicit && sanitize) { sanitizeMol(mol); }
-    if !assignment.atoms_to_remove.is_empty() && params.remove_nonimplicit && sanitize {
+    // RDKit✔️✔️: ROMol *removeHs(const ROMol &mol, const RemoveHsParameters &ps, bool sanitize) {
+    // RDKit✔️✔️:   auto *res = new RWMol(mol);
+    // RDKit✔️✔️:   try {
+    // RDKit✔️✔️:     removeHs(*res, ps, sanitize);
+    // RDKit✔️✔️:   } catch (const MolSanitizeException &) {
+    // RDKit✔️✔️:     delete res;
+    // RDKit✔️✔️:     throw;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return static_cast<ROMol *>(res);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: python::def("RemoveHs",
+    // RDKit✔️✔️:             (ROMol * (*)(const ROMol &, const MolOps::RemoveHsParameters &, bool)) &
+    // RDKit✔️✔️:                 MolOps::removeHs,
+    // RDKit✔️✔️:             (python::arg("mol"), python::arg("params"),
+    // RDKit✔️✔️:              python::arg("sanitize") = true),
+    // RDKit✔️❌:   if (!atomsToRemove.empty() && ps.removeNonimplicit && sanitize) { sanitizeMol(mol); }
+    //
+    // `atomsToRemove` is a boost::dynamic_bitset sized to mol.getNumAtoms();
+    // empty() is false for every non-empty molecule, even when no hydrogens
+    // were selected for removal.
+    if sanitize && params.remove_nonimplicit && !read_parts.atoms().is_empty() {
         assignment.sanitize_after_removal = true;
     }
 

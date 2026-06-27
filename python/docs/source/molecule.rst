@@ -28,6 +28,38 @@ Common transformations include:
 - ``with_kekulized_bonds()``
 - ``with_2d_coordinates()``
 
+Read Finalization
+-----------------
+
+Molfile and SDF molecule readers use the RDKit-source-backed finalization path
+for modeled parser behavior. With the default ``sanitize=True`` and
+``remove_hs=True``, readers parse the CTAB, process molfile/SDF properties,
+assign modeled stereochemistry, remove hydrogens through the RDKit-aligned
+hydrogen-removal path, sanitize, and assign final stereochemistry.
+
+Passing ``sanitize=False`` preserves the parsed molecule state for a later
+value-style sanitize operation:
+
+.. code-block:: python
+
+   raw = Molecule.read_mol("input.mol", sanitize=False)
+   sanitized = raw.sanitize()
+
+   assert raw is not sanitized
+
+Passing ``remove_hs=False`` preserves explicit hydrogens for later value-style
+hydrogen removal:
+
+.. code-block:: python
+
+   with_h = Molecule.read_sdf("input.sdf", remove_hs=False)
+   heavy = with_h.without_hydrogens()
+
+   assert with_h is not heavy
+
+The same delayed-operation pattern applies to ``read_mol_from_str()`` and
+``read_sdf_from_str()``.
+
 In-Place Operations
 -------------------
 

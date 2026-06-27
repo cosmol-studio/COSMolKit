@@ -184,10 +184,15 @@ Core validation should use operation-contract checks:
 
 ```bash
 cargo check -p cosmolkit-core --features op-contracts-strict
-cargo test -p cosmolkit-core --features op-contracts-strict
+cargo test -p cosmolkit-core --release --features op-contracts-strict
 cargo check -p cosmolkit-py
 cargo fmt --all
 ```
+
+Use debug-profile test filters for small local iterations. Use release mode with
+`op-contracts-strict` for large local runs, parity suites, and CI; release-mode
+testing keeps operation contracts and runtime invariants enabled through the
+strict feature set.
 
 Python binding development:
 

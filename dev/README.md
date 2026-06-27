@@ -29,7 +29,7 @@ Development and CI must use strict operation checks:
 
 ```bash
 cargo check -p cosmolkit-core --features op-contracts-strict
-cargo test -p cosmolkit-core --features op-contracts-strict
+cargo test -p cosmolkit-core --release --features op-contracts-strict
 ```
 
 `op-contracts-strict` currently means:
@@ -49,6 +49,32 @@ operation body invalidation/handled-state checks
 Agents must not validate topology-operation changes with plain
 `cargo check -p cosmolkit-core` alone. Plain checks are useful for a quick syntax
 pass, but they are not sufficient for development signoff.
+
+Use release test builds for routine full local validation. The strict feature
+set still compiles runtime invariants and operation-contract checks; release
+mode only avoids paying debug-build execution cost in parity tests where runtime
+dominates compile time.
+
+Small, focused tests may be run in the default debug profile while iterating on
+one function or one module:
+
+```bash
+cargo test -p cosmolkit-core --features op-contracts-strict <test-filter>
+```
+
+Large local test runs, parity suites, and CI test runs should use release mode
+with the same strict feature set:
+
+```bash
+cargo test -p cosmolkit-core --release --features op-contracts-strict
+```
+
+Do not interpret release-mode testing as relaxed testing. Constraint coverage is
+controlled by `op-contracts-strict`, not by the Cargo optimization profile.
+
+Expensive exhaustive parity matrices are marked `#[ignore]` and run explicitly
+in CI coverage jobs. Local default tests keep representative rows so everyday
+validation remains bounded.
 
 ## Required Release Mode
 

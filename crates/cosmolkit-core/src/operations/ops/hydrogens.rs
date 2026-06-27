@@ -276,7 +276,7 @@ fn add_hs_virtual_adjacency<'a>(
     adjacency
 }
 
-pub(super) fn add_hs_set_terminal_atom_coord<'a>(
+pub(crate) fn add_hs_set_terminal_atom_coord<'a>(
     molecule: impl MoleculeReadAccess<'a>,
     adjacency: &[Vec<(usize, Option<crate::BondId>)>],
     coords: &[[f64; 3]],

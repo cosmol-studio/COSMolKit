@@ -2,7 +2,7 @@
 use crate::draw::PreparedDrawMolecule;
 use crate::io::molblock::{self, SdfFormat};
 use crate::io::sdf::{
-    SdfCoordinateMode, SdfDataset, SdfReadParams, SdfReader, read_sdf_from_str_with_coordinate_mode,
+    SdfCoordinateMode, SdfDataset, SdfReadParams, SdfReader, read_sdf_from_str_with_params,
 };
 use crate::{Molecule, SmilesWriteParams};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
@@ -388,6 +388,25 @@ impl MoleculeBatch {
         n_jobs: Option<usize>,
         progress_bar: Option<bool>,
     ) -> Result<Self, BatchValidationError> {
+        Self::read_sdf_records_from_str_with_params_and_options(
+            sdf_text,
+            SdfReadParams {
+                coordinate_mode,
+                ..Default::default()
+            },
+            errors,
+            n_jobs,
+            progress_bar,
+        )
+    }
+
+    pub fn read_sdf_records_from_str_with_params_and_options(
+        sdf_text: &str,
+        params: SdfReadParams,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Self, BatchValidationError> {
         let records = split_sdf_record_strings(sdf_text);
         with_progress_bar_for_option(
             progress_bar,
@@ -399,10 +418,7 @@ impl MoleculeBatch {
                         .par_iter()
                         .enumerate()
                         .map(|(index, sdf)| {
-                            let out = match read_sdf_from_str_with_coordinate_mode(
-                                sdf,
-                                coordinate_mode,
-                            ) {
+                            let out = match read_sdf_from_str_with_params(sdf, params) {
                                 Ok(record) => BatchRecord::Molecule(record.molecule),
                                 Err(error) => BatchRecord::Error(BatchRecordError::new(
                                     index,
@@ -435,13 +451,29 @@ impl MoleculeBatch {
         n_jobs: Option<usize>,
         progress_bar: Option<bool>,
     ) -> Result<Self, BatchValidationError> {
+        Self::read_sdf_records_from_reader_with_params_and_options(
+            reader,
+            SdfReadParams {
+                coordinate_mode,
+                ..Default::default()
+            },
+            errors,
+            n_jobs,
+            progress_bar,
+        )
+    }
+
+    pub fn read_sdf_records_from_reader_with_params_and_options<R: BufRead>(
+        reader: R,
+        params: SdfReadParams,
+        errors: BatchErrorMode,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Self, BatchValidationError> {
         let _ = n_jobs;
         with_progress_bar_for_option(progress_bar, 0, "Reading SDF records", |progress| {
-            Self::read_sdf_records_from_reader_with_progress(
-                reader,
-                coordinate_mode,
-                errors,
-                progress,
+            Self::read_sdf_records_from_reader_with_params_and_progress(
+                reader, params, errors, progress,
             )
         })
     }
@@ -452,7 +484,24 @@ impl MoleculeBatch {
         errors: BatchErrorMode,
         progress: BatchProgress<'_>,
     ) -> Result<Self, BatchValidationError> {
-        let mut reader = SdfReader::with_coordinate_mode(reader, coordinate_mode);
+        Self::read_sdf_records_from_reader_with_params_and_progress(
+            reader,
+            SdfReadParams {
+                coordinate_mode,
+                ..Default::default()
+            },
+            errors,
+            progress,
+        )
+    }
+
+    pub fn read_sdf_records_from_reader_with_params_and_progress<R: BufRead>(
+        reader: R,
+        params: SdfReadParams,
+        errors: BatchErrorMode,
+        progress: BatchProgress<'_>,
+    ) -> Result<Self, BatchValidationError> {
+        let mut reader = SdfReader::with_params(reader, params);
         let mut records = Vec::new();
         let mut index = 0usize;
         loop {
@@ -462,7 +511,16 @@ impl MoleculeBatch {
                     index += 1;
                     tick_progress(progress);
                 }
-                Ok(None) => break,
+                Ok(None) if reader.is_end() => break,
+                Ok(None) => {
+                    records.push(BatchRecord::Error(BatchRecordError::new(
+                        index,
+                        "read_sdf",
+                        "SDF record returned no molecule before end of stream",
+                    )));
+                    index += 1;
+                    tick_progress(progress);
+                }
                 Err(error) => {
                     records.push(BatchRecord::Error(BatchRecordError::new(
                         index,
@@ -482,12 +540,7 @@ impl MoleculeBatch {
         errors: BatchErrorMode,
         progress: BatchProgress<'_>,
     ) -> Result<Self, BatchValidationError> {
-        Self::read_sdf_dataset_with_params_and_progress(
-            dataset,
-            SdfReadParams::default(),
-            errors,
-            progress,
-        )
+        Self::read_sdf_dataset_with_params_and_progress(dataset, dataset.params(), errors, progress)
     }
 
     pub fn read_sdf_dataset_with_params_and_progress(
@@ -1679,6 +1732,55 @@ mod tests {
         let filtered = MoleculeBatch::from_smiles_list(&smiles).filter_valid();
         assert_eq!(filtered.len(), 2);
         assert_eq!(filtered.valid_mask(), vec![true, true]);
+    }
+
+    #[test]
+    fn read_sdf_records_from_reader_keeps_recovered_supplier_none_records() {
+        let sdf = "\
+ok
+  COSMolKit      2D
+
+  1  0  0  0  0  0            999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+$$$$
+bad
+
+
+  1  0  0  0  0  0            999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+$$$$
+after
+  COSMolKit      2D
+
+  1  0  0  0  0  0            999 V2000
+    0.0000    0.0000    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+$$$$
+";
+
+        let kept = MoleculeBatch::read_sdf_records_from_reader(
+            std::io::Cursor::new(sdf.as_bytes()),
+            SdfCoordinateMode::Preserve,
+            BatchErrorMode::KeepErrors,
+        )
+        .unwrap();
+
+        assert_eq!(kept.len(), 3);
+        assert_eq!(kept.valid_mask(), vec![true, false, true]);
+        let errors = kept.errors();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].index, 1);
+        assert_eq!(errors[0].operation, "read_sdf");
+
+        let strict = MoleculeBatch::read_sdf_records_from_reader(
+            std::io::Cursor::new(sdf.as_bytes()),
+            SdfCoordinateMode::Preserve,
+            BatchErrorMode::Strict,
+        )
+        .unwrap_err();
+        assert_eq!(strict.errors, 1);
+        assert_eq!(strict.record_errors[0].index, 1);
     }
 
     #[test]

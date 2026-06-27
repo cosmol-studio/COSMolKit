@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+
 import pytest
 
 import cosmolkit
@@ -12,7 +14,7 @@ CORPUS_CONFSEQ = (
 
 
 def test_confseq_submodule_is_importable():
-    import cosmolkit.confseq as confseq
+    confseq = importlib.import_module("cosmolkit.confseq")
 
     assert confseq.decode is cosmolkit.confseq.decode
 
@@ -79,8 +81,10 @@ def test_confseq_decode_batch_preserves_order_and_uses_local_cache():
         template_backend="distance_geometry",
     )
 
-    assert [mol.num_atoms() for mol in mols] == [2, 2]
-    assert [mol.num_conformers() for mol in mols] == [1, 1]
+    assert all(isinstance(mol, cosmolkit.Molecule) for mol in mols)
+    concrete_mols = [mol for mol in mols if mol is not None]
+    assert [mol.num_atoms() for mol in concrete_mols] == [2, 2]
+    assert [mol.num_conformers() for mol in concrete_mols] == [1, 1]
 
 
 def test_confseq_decode_batch_can_keep_errors():

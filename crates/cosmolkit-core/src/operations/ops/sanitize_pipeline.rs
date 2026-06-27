@@ -486,7 +486,7 @@ pub(super) fn run_sanitize_pipeline_on_topology(
     Ok(changed)
 }
 
-fn sanitize_conjugation_assignment(
+pub(crate) fn sanitize_conjugation_assignment(
     read_parts: MoleculeReadParts<'_>,
 ) -> Result<Vec<bool>, crate::ValenceError> {
     let molecule = read_parts;
@@ -625,7 +625,7 @@ fn sanitize_is_atom_conjugation_candidate<'a>(
     // END RDKIT CPP FUNCTION isAtomConjugCand
 }
 
-fn sanitize_hybridization_assignment(
+pub(crate) fn sanitize_hybridization_assignment(
     read_parts: MoleculeReadParts<'_>,
 ) -> Result<Vec<crate::Hybridization>, crate::ValenceError> {
     let molecule = read_parts;

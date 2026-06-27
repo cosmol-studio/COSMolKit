@@ -68,14 +68,20 @@ For core, topology-operation, or operation-registry changes, use strict checks:
 
 ```bash
 cargo check -p cosmolkit-core --features op-contracts-strict
-cargo test -p cosmolkit-core --features op-contracts-strict
+cargo test -p cosmolkit-core --release --features op-contracts-strict
 ```
 
 For cross-crate changes, also run:
 
 ```bash
-cargo test --workspace --features cosmolkit-core/op-contracts-strict
+cargo test --workspace --release --features cosmolkit-core/op-contracts-strict
 ```
+
+Small focused test filters may use the default debug profile while iterating.
+Large local runs, parity suites, and CI test runs should use release mode with
+the same strict feature set. Release-mode testing must not relax operation
+contracts or runtime invariants; those checks are controlled by
+`op-contracts-strict`.
 
 Plain `cargo check -p cosmolkit-core` is acceptable only as a quick syntax pass.
 Run formatting after Rust edits:

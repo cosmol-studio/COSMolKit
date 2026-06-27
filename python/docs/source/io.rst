@@ -70,6 +70,22 @@ not needed:
 ``SdfReader`` does not know the final record count without pre-indexing the
 file, so accurate record-count progress belongs to ``SdfDataset``.
 
+SDF readers expose the RDKit-source-backed finalization parameters
+``sanitize``, ``remove_hs``, and ``strict_parsing``. They are passed through the
+same parser parameter object for ``Molecule.read_sdf()``,
+``Molecule.read_sdf_from_str()``, ``MoleculeBatch.read_sdf()``,
+``MoleculeBatch.read_sdf_records_from_str()``, ``SdfDataset.open()``, and
+``SdfReader.open()``.
+
+``sanitize=True`` runs the RDKit-aligned post-parse sanitization and final
+stereochemistry assignment during read. ``sanitize=False`` preserves the parsed
+CTAB state so sanitization can be requested later with ``mol.sanitize()``.
+``remove_hs=True`` applies the RDKit molfile/SDF hydrogen-removal path after
+parse finalization; ``remove_hs=False`` preserves explicit hydrogens so they can
+be removed later with ``mol.without_hydrogens()``. ``strict_parsing`` controls
+whether strict molfile and SDF parse failures are raised or non-strict recovery
+is allowed for source-modeled cases.
+
 Read a single-record MDL molfile with the same CTAB parser:
 
 .. code-block:: python
@@ -77,11 +93,20 @@ Read a single-record MDL molfile with the same CTAB parser:
    mol = Molecule.read_mol("input.mol", coordinate_dim="auto")
    mol = Molecule.read_mol_from_str(mol_text, coordinate_dim="2d")
 
+``Molecule.read_mol()`` and ``Molecule.read_mol_from_str()`` expose the same
+``sanitize``, ``remove_hs``, and ``strict_parsing`` controls as RDKit
+``MolFromMolFile`` and ``MolFromMolBlock``.
+
 ``Molecule.read_mol()`` and ``Molecule.read_mol_from_str()`` follow RDKit
 ``MolFromMolBlock`` boundaries: they parse the molfile CTAB through the first
 ``M  END`` line and ignore unread trailing text, including SDF data fields and
 ``$$$$`` record separators. Use ``Molecule.read_sdf()``, ``SdfDataset``, or
 ``SdfReader`` when those SDF data fields are part of the requested input.
+
+SDF record readers parse data fields after ``M  END`` and attach them to the
+record metadata/molecule properties according to the source-backed SDF supplier
+behavior. Molfile readers intentionally do not parse those fields because RDKit
+``MolFromMolBlock`` stops at the molfile boundary.
 
 Write a molecule to SDF. SDF writing is explicit about the coordinate source:
 ``write_sdf()`` and ``to_2d_sdf_string()`` export 2D coordinates, generating

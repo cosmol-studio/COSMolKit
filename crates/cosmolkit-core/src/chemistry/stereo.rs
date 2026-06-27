@@ -1568,12 +1568,16 @@ pub fn atom_is_candidate_for_ring_stereochem(
     }
 
     let atom = &mol.atoms()[atom_idx];
-    let deg = atom_degree(mol, atom_idx);
 
     // Three-coordinate N additional requirements:
     //   in a ring of size 3 (from InChI) OR a bridgehead (RDKit extension)
+    // RDKit✔️✔️: if (atom->getAtomicNum() == 7 && atom->getTotalDegree() == 3 &&
+    // RDKit✔️✔️:     !ringInfo->isAtomInRingOfSize(atom->getIdx(), 3) &&
+    // RDKit✔️✔️:     !queryIsAtomBridgehead(atom)) {
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
     if atom.atomic_number() == 7
-        && deg == 3
+        && atom_total_degree(mol, atom_idx) == 3
         && !ri.is_atom_in_ring_of_size(atom_id, 3)
         && !is_atom_bridgehead(mol, atom_idx)
     {
@@ -2400,6 +2404,21 @@ fn atom_degree(mol: &Molecule, a: usize) -> usize {
         .iter()
         .filter(|b| b.begin().index() == a || b.end().index() == a)
         .count()
+}
+
+/// Helper: compute RDKit `Atom::getTotalDegree()` as graph degree plus
+/// explicit and implicit hydrogens.
+fn atom_total_degree(mol: &Molecule, atom_idx: usize) -> usize {
+    let atom = &mol.atoms()[atom_idx];
+    let implicit_hydrogens = mol
+        .derived_cache()
+        .valence
+        .as_ref()
+        .and_then(|valence| valence.implicit_hydrogens.get(atom_idx))
+        .copied()
+        .unwrap_or(0)
+        .max(0) as usize;
+    atom_degree(mol, atom_idx) + atom.explicit_hydrogens() as usize + implicit_hydrogens
 }
 
 /// Helper: compute degree from bond slice.

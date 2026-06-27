@@ -51,6 +51,46 @@ def assert_coord_rows_match_atoms(mol: cosmolkit.Molecule) -> None:
         assert coords3d.shape == (atom_count, 3), coords3d.shape
 
 
+def regression_fixture_text(name: str) -> str:
+    return (Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "regression" / name).read_text(
+        encoding="utf-8"
+    )
+
+
+KEKULE_BENZENE_MOL = """kekule_benzene
+  COSMolKit      2D
+
+  6  6  0  0  0  0  0  0  0  0999 V2000
+    1.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.7500   -1.2990    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.7500   -1.2990    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.7500    1.2990    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.7500    1.2990    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  2  3  2  0
+  3  4  1  0
+  4  5  2  0
+  5  6  1  0
+  6  1  2  0
+M  END
+"""
+
+
+def assert_kekule_benzene_unsanitized(mol: cosmolkit.Molecule) -> None:
+    assert len(mol) == 6
+    assert [bond.bond_type() for bond in mol.bonds()] == [
+        cosmolkit.BondOrder.SINGLE,
+        cosmolkit.BondOrder.DOUBLE,
+        cosmolkit.BondOrder.SINGLE,
+        cosmolkit.BondOrder.DOUBLE,
+        cosmolkit.BondOrder.SINGLE,
+        cosmolkit.BondOrder.DOUBLE,
+    ]
+    assert not any(atom.is_aromatic() for atom in mol.atoms())
+    assert not any(bond.is_aromatic() for bond in mol.bonds())
+
+
 def test_smiles_and_value_semantics_preserve_expected_graph_features():
     base = cosmolkit.Molecule.from_smiles("F[C@H](Cl)[13CH3:7]")
     assert len(base) == 4
@@ -156,6 +196,67 @@ $$$$
     assert removed.num_conformers() == 1
     assert removed.coordinates_2d().shape == (1, 3)
     assert removed.coordinates_3d().shape == (1, 3)
+
+
+def test_read_mol_from_str_accepts_sanitize_false():
+    mol = cosmolkit.Molecule.read_mol_from_str(
+        KEKULE_BENZENE_MOL,
+        coordinate_dim="2d",
+        sanitize=False,
+    )
+
+    assert_kekule_benzene_unsanitized(mol)
+
+
+def test_read_mol_accepts_sanitize_false(tmp_path: Path):
+    path = tmp_path / "kekule_benzene.mol"
+    path.write_text(KEKULE_BENZENE_MOL, encoding="utf-8")
+
+    mol = cosmolkit.Molecule.read_mol(
+        str(path),
+        coordinate_dim="2d",
+        sanitize=False,
+    )
+
+    assert_kekule_benzene_unsanitized(mol)
+
+
+def test_read_sdf_from_str_accepts_sanitize_false():
+    mol = cosmolkit.Molecule.read_sdf_from_str(
+        f"{KEKULE_BENZENE_MOL}$$$$\n",
+        coordinate_dim="2d",
+        sanitize=False,
+    )
+
+    assert_kekule_benzene_unsanitized(mol)
+
+
+def test_read_sdf_accepts_sanitize_false(tmp_path: Path):
+    path = tmp_path / "kekule_benzene.sdf"
+    path.write_text(f"{KEKULE_BENZENE_MOL}$$$$\n", encoding="utf-8")
+
+    mol = cosmolkit.Molecule.read_sdf(
+        str(path),
+        coordinate_dim="2d",
+        sanitize=False,
+    )
+
+    assert_kekule_benzene_unsanitized(mol)
+
+
+def test_1aid_sdf_reader_preserves_rdkit_ring_stereo_after_remove_hs():
+    mol = cosmolkit.Molecule.read_sdf_from_str(
+        regression_fixture_text("1aid_ligand.sdf"),
+        coordinate_dim="3d",
+        sanitize=True,
+        remove_hs=True,
+    )
+
+    tags = [atom.chiral_tag() for atom in mol.atoms()]
+    assert tags[0] == cosmolkit.ChiralTag.CHI_TETRAHEDRAL_CW
+    assert tags[3] == cosmolkit.ChiralTag.CHI_TETRAHEDRAL_CW
+    centers = {center: ligands for center, ligands in mol.tetrahedral_stereo()}
+    assert {0, 3}.issubset(centers)
 
 
 def test_forcefield_wrappers_optimize_existing_3d_conformer_by_value():
@@ -446,6 +547,20 @@ NO_CHARGES
 
     with pytest.raises(ValueError, match="unsupported MOL2 variant"):
         _ = cosmolkit.Molecule.read_mol2_from_str(mol2_text, variant="tripos")
+
+
+def test_1aid_mol2_reader_preserves_rdkit_ring_stereo_after_remove_hs():
+    mol = cosmolkit.Molecule.read_mol2_from_str(
+        regression_fixture_text("1aid_ligand.mol2"),
+        sanitize=True,
+        remove_hs=True,
+    )
+
+    tags = [atom.chiral_tag() for atom in mol.atoms()]
+    assert tags[0] == cosmolkit.ChiralTag.CHI_TETRAHEDRAL_CW
+    assert tags[3] == cosmolkit.ChiralTag.CHI_TETRAHEDRAL_CW
+    centers = {center: ligands for center, ligands in mol.tetrahedral_stereo()}
+    assert {0, 3}.issubset(centers)
 
 
 def test_fingerprint_and_stereo_outputs_are_structurally_reasonable():

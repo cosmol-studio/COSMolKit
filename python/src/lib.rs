@@ -37,6 +37,21 @@ fn parse_coordinate_mode(value: Option<&str>) -> PyResult<cosmolkit_core::SdfCoo
     }
 }
 
+fn make_sdf_read_params(
+    sanitize: Option<bool>,
+    remove_hs: Option<bool>,
+    strict_parsing: Option<bool>,
+    coordinate_dim: &str,
+) -> PyResult<cosmolkit_core::SdfReadParams> {
+    Ok(cosmolkit_core::SdfReadParams {
+        sanitize: sanitize.unwrap_or(true),
+        remove_hs: remove_hs.unwrap_or(true),
+        strict_parsing: strict_parsing.unwrap_or(true),
+        coordinate_mode: parse_coordinate_mode(Some(coordinate_dim))?,
+        ..Default::default()
+    })
+}
+
 fn parse_batch_error_mode(errors: Option<&Bound<'_, PyAny>>) -> PyResult<BatchErrorMode> {
     let Some(errors) = errors else {
         return Ok(BatchErrorMode::Strict);
@@ -300,15 +315,6 @@ fn reject_non_strict_sanitize(strict: Option<bool>) -> PyResult<()> {
     if matches!(strict, Some(false)) {
         return Err(PyValueError::new_err(
             "strict=False sanitization is not implemented; COSMolKit currently supports RDKit-style strict sanitization only",
-        ));
-    }
-    Ok(())
-}
-
-fn reject_unsanitized_mol_reader(sanitize: Option<bool>) -> PyResult<()> {
-    if matches!(sanitize, Some(false)) {
-        return Err(PyValueError::new_err(
-            "sanitize=False is not implemented for SDF/molfile readers; MolBlock parsing currently finalizes chemistry during read",
         ));
     }
     Ok(())
@@ -1549,7 +1555,7 @@ metadata inspection, or chunked processing matter.
 "#]
 struct PySdfDataset {
     inner: cosmolkit_core::SdfDataset,
-    coordinate_mode: cosmolkit_core::SdfCoordinateMode,
+    params: cosmolkit_core::SdfReadParams,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
@@ -1564,14 +1570,14 @@ where random access or accurate record-count progress matters, prefer
 "#]
 struct PySdfReader {
     path: PathBuf,
-    coordinate_mode: cosmolkit_core::io::sdf::SdfCoordinateMode,
+    params: cosmolkit_core::SdfReadParams,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(name = "SdfDatasetIterator", skip_from_py_object)]
 struct PySdfDatasetIterator {
     dataset: cosmolkit_core::SdfDataset,
-    coordinate_mode: cosmolkit_core::SdfCoordinateMode,
+    params: cosmolkit_core::SdfReadParams,
     position: usize,
 }
 
@@ -1579,7 +1585,7 @@ struct PySdfDatasetIterator {
 #[pyclass(name = "SdfBatchIterator", skip_from_py_object)]
 struct PySdfBatchIterator {
     dataset: cosmolkit_core::SdfDataset,
-    coordinate_mode: cosmolkit_core::SdfCoordinateMode,
+    params: cosmolkit_core::SdfReadParams,
     position: usize,
     size: usize,
     errors: BatchErrorMode,
@@ -1889,17 +1895,13 @@ fn sdf_indices_from_key(len: usize, key: &Bound<'_, PyAny>) -> PyResult<Result<V
 
 fn sdf_batch_from_range(
     dataset: &cosmolkit_core::SdfDataset,
-    coordinate_mode: cosmolkit_core::SdfCoordinateMode,
+    params: cosmolkit_core::SdfReadParams,
     start: usize,
     end: usize,
     errors: BatchErrorMode,
     progress_bar: Option<&cosmolkit_core::BatchProgressBar>,
 ) -> Result<cosmolkit_core::MoleculeBatch, cosmolkit_core::BatchValidationError> {
     let mut records = Vec::with_capacity(end.saturating_sub(start));
-    let params = cosmolkit_core::SdfReadParams {
-        coordinate_mode,
-        ..Default::default()
-    };
     for index in start..end {
         match dataset.record_with_params(index, params) {
             Ok(record) => records.push(BatchRecord::Molecule(record.molecule)),
@@ -1921,14 +1923,10 @@ fn sdf_batch_from_range(
 
 fn sdf_batch_from_indices(
     dataset: &cosmolkit_core::SdfDataset,
-    coordinate_mode: cosmolkit_core::SdfCoordinateMode,
+    params: cosmolkit_core::SdfReadParams,
     indices: Vec<usize>,
 ) -> Result<cosmolkit_core::MoleculeBatch, cosmolkit_core::BatchValidationError> {
     let mut records = Vec::with_capacity(indices.len());
-    let params = cosmolkit_core::SdfReadParams {
-        coordinate_mode,
-        ..Default::default()
-    };
     for index in indices {
         match dataset.record_with_params(index, params) {
             Ok(record) => records.push(BatchRecord::Molecule(record.molecule)),
@@ -2047,16 +2045,19 @@ impl PySdfRecord {
 #[pymethods]
 impl PySdfDataset {
     #[classmethod]
-    #[pyo3(signature = (path, index=None, build=None, coordinate_dim="auto"))]
+    #[pyo3(signature = (path, index=None, build=None, coordinate_dim="auto", *, sanitize=None, remove_hs=None, strict_parsing=None))]
     fn open(
         _cls: &Bound<'_, PyType>,
         path: &str,
         index: Option<&Bound<'_, PyAny>>,
         build: Option<&str>,
         coordinate_dim: &str,
+        sanitize: Option<bool>,
+        remove_hs: Option<bool>,
+        strict_parsing: Option<bool>,
     ) -> PyResult<Self> {
         let expanded_path = expand_user_path(path)?;
-        let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
+        let params = make_sdf_read_params(sanitize, remove_hs, strict_parsing, coordinate_dim)?;
         if let Some(build) = build
             && !matches!(build, "auto" | "always" | "never")
         {
@@ -2075,18 +2076,9 @@ impl PySdfDataset {
                 }
             }
         }
-        let inner = cosmolkit_core::SdfDataset::open_with_params(
-            expanded_path,
-            cosmolkit_core::SdfReadParams {
-                coordinate_mode,
-                ..Default::default()
-            },
-        )
-        .map_err(|err| PyValueError::new_err(format!("SdfDataset.open failed: {err}")))?;
-        Ok(Self {
-            inner,
-            coordinate_mode,
-        })
+        let inner = cosmolkit_core::SdfDataset::open_with_params(expanded_path, params)
+            .map_err(|err| PyValueError::new_err(format!("SdfDataset.open failed: {err}")))?;
+        Ok(Self { inner, params })
     }
 
     fn __len__(&self) -> usize {
@@ -2118,20 +2110,14 @@ impl PySdfDataset {
             Err(index) => {
                 let record = self
                     .inner
-                    .record_with_params(
-                        index,
-                        cosmolkit_core::SdfReadParams {
-                            coordinate_mode: self.coordinate_mode,
-                            ..Default::default()
-                        },
-                    )
+                    .record_with_params(index, self.params)
                     .map_err(|err| {
                         PyValueError::new_err(format!("SdfDataset read failed: {err}"))
                     })?;
                 Ok(Py::new(py, sdf_record_py(index, record))?.into_any())
             }
             Ok(indices) => {
-                let inner = sdf_batch_from_indices(&self.inner, self.coordinate_mode, indices)
+                let inner = sdf_batch_from_indices(&self.inner, self.params, indices)
                     .map_err(batch_validation_pyerr)?;
                 Ok(Py::new(py, MoleculeBatch { inner })?.into_any())
             }
@@ -2141,7 +2127,7 @@ impl PySdfDataset {
     fn __iter__(&self) -> PySdfDatasetIterator {
         PySdfDatasetIterator {
             dataset: self.inner.clone(),
-            coordinate_mode: self.coordinate_mode,
+            params: self.params,
             position: 0,
         }
     }
@@ -2169,7 +2155,7 @@ impl PySdfDataset {
             maybe_batch_progress_bar(progress_bar, self.inner.len(), "read_sdf_batches");
         Ok(PySdfBatchIterator {
             dataset: self.inner.clone(),
-            coordinate_mode: self.coordinate_mode,
+            params: self.params,
             position: 0,
             size,
             errors,
@@ -2184,11 +2170,18 @@ impl PySdfDataset {
 #[pymethods]
 impl PySdfReader {
     #[classmethod]
-    #[pyo3(signature = (path, coordinate_dim="auto"))]
-    fn open(_cls: &Bound<'_, PyType>, path: &str, coordinate_dim: &str) -> PyResult<Self> {
+    #[pyo3(signature = (path, coordinate_dim="auto", *, sanitize=None, remove_hs=None, strict_parsing=None))]
+    fn open(
+        _cls: &Bound<'_, PyType>,
+        path: &str,
+        coordinate_dim: &str,
+        sanitize: Option<bool>,
+        remove_hs: Option<bool>,
+        strict_parsing: Option<bool>,
+    ) -> PyResult<Self> {
         Ok(Self {
             path: expand_user_path(path)?,
-            coordinate_mode: parse_coordinate_mode(Some(coordinate_dim))?,
+            params: make_sdf_read_params(sanitize, remove_hs, strict_parsing, coordinate_dim)?,
         })
     }
 
@@ -2211,9 +2204,9 @@ impl PySdfReader {
         let file = File::open(&self.path)
             .map_err(|err| PyValueError::new_err(format!("SdfReader.open failed: {err}")))?;
         Ok(PySdfReaderBatchIterator {
-            reader: cosmolkit_core::io::sdf::SdfReader::with_coordinate_mode(
+            reader: cosmolkit_core::io::sdf::SdfReader::with_params(
                 BufReader::new(file),
-                self.coordinate_mode,
+                self.params,
             ),
             index: 0,
             size,
@@ -2240,13 +2233,7 @@ impl PySdfDatasetIterator {
         self.position += 1;
         let record = self
             .dataset
-            .record_with_params(
-                index,
-                cosmolkit_core::SdfReadParams {
-                    coordinate_mode: self.coordinate_mode,
-                    ..Default::default()
-                },
-            )
+            .record_with_params(index, self.params)
             .map_err(|err| PyValueError::new_err(format!("SdfDataset read failed: {err}")))?;
         Ok(Some(sdf_record_py(index, record)))
     }
@@ -2273,7 +2260,7 @@ impl PySdfBatchIterator {
         self.position = end;
         let inner = sdf_batch_from_range(
             &self.dataset,
-            self.coordinate_mode,
+            self.params,
             start,
             end,
             self.errors,
@@ -2395,7 +2382,7 @@ MoleculeBatch
     }
 
     #[classmethod]
-    #[pyo3(signature = (sdf_text, errors=None, n_jobs=None, coordinate_dim="auto"))]
+    #[pyo3(signature = (sdf_text, errors=None, n_jobs=None, coordinate_dim="auto", *, sanitize=None, remove_hs=None, strict_parsing=None))]
     #[doc = r#"
 Read all molecule records from an SDF string.
 
@@ -2416,22 +2403,26 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
         errors: Option<&Bound<'_, PyAny>>,
         n_jobs: Option<usize>,
         coordinate_dim: &str,
+        sanitize: Option<bool>,
+        remove_hs: Option<bool>,
+        strict_parsing: Option<bool>,
     ) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
-        let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
-        let inner = cosmolkit_core::MoleculeBatch::read_sdf_records_from_str_with_options(
-            sdf_text,
-            coordinate_mode,
-            mode,
-            validate_n_jobs(n_jobs)?,
-            None,
-        )
-        .map_err(batch_validation_pyerr)?;
+        let params = make_sdf_read_params(sanitize, remove_hs, strict_parsing, coordinate_dim)?;
+        let inner =
+            cosmolkit_core::MoleculeBatch::read_sdf_records_from_str_with_params_and_options(
+                sdf_text,
+                params,
+                mode,
+                validate_n_jobs(n_jobs)?,
+                None,
+            )
+            .map_err(batch_validation_pyerr)?;
         Ok(Self { inner })
     }
 
     #[classmethod]
-    #[pyo3(signature = (path, errors=None, n_jobs=None, progress_bar=false, coordinate_dim="auto"))]
+    #[pyo3(signature = (path, errors=None, n_jobs=None, progress_bar=false, coordinate_dim="auto", *, sanitize=None, remove_hs=None, strict_parsing=None))]
     #[doc = r#"
 Read all molecule records from an SDF file into a batch.
 
@@ -2456,25 +2447,19 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
         n_jobs: Option<usize>,
         progress_bar: bool,
         coordinate_dim: &str,
+        sanitize: Option<bool>,
+        remove_hs: Option<bool>,
+        strict_parsing: Option<bool>,
     ) -> PyResult<Self> {
         let mode = parse_batch_error_mode(errors)?;
-        let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
+        let params = make_sdf_read_params(sanitize, remove_hs, strict_parsing, coordinate_dim)?;
         let expanded_path = expand_user_path(path)?;
         if progress_bar {
-            let dataset = cosmolkit_core::SdfDataset::open_with_params(
-                &expanded_path,
-                cosmolkit_core::SdfReadParams {
-                    coordinate_mode,
-                    ..Default::default()
-                },
-            )
-            .map_err(|err| PyValueError::new_err(format!("read_sdf index failed: {err}")))?;
+            let dataset = cosmolkit_core::SdfDataset::open_with_params(&expanded_path, params)
+                .map_err(|err| PyValueError::new_err(format!("read_sdf index failed: {err}")))?;
             let inner = cosmolkit_core::MoleculeBatch::read_sdf_dataset_with_params_and_options(
                 &dataset,
-                cosmolkit_core::SdfReadParams {
-                    coordinate_mode,
-                    ..Default::default()
-                },
+                params,
                 mode,
                 validate_n_jobs(n_jobs)?,
                 Some(true),
@@ -2488,14 +2473,15 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
                 expanded_path.display()
             ))
         })?;
-        let inner = cosmolkit_core::MoleculeBatch::read_sdf_records_from_reader_with_options(
-            BufReader::new(file),
-            coordinate_mode,
-            mode,
-            validate_n_jobs(n_jobs)?,
-            None,
-        )
-        .map_err(batch_validation_pyerr)?;
+        let inner =
+            cosmolkit_core::MoleculeBatch::read_sdf_records_from_reader_with_params_and_options(
+                BufReader::new(file),
+                params,
+                mode,
+                validate_n_jobs(n_jobs)?,
+                None,
+            )
+            .map_err(batch_validation_pyerr)?;
         Ok(Self { inner })
     }
 
@@ -3523,7 +3509,7 @@ Molecule
     }
 
     #[classmethod]
-    #[pyo3(signature = (path, sanitize=None, coordinate_dim="auto"))]
+    #[pyo3(signature = (path, sanitize=None, coordinate_dim="auto", *, remove_hs=None, strict_parsing=None))]
     #[doc = r#"
 Read the first molecule record from an SDF file.
 
@@ -3537,6 +3523,10 @@ path : str
     SDF file path.
 sanitize : bool, optional
     Optional molecule preparation flag.
+remove_hs : bool, optional
+    Optional hydrogen removal flag.
+strict_parsing : bool, optional
+    Optional strict SDF parsing flag.
 coordinate_dim : {"auto", "2d", "3d"}, optional
     Coordinate interpretation mode. ``"auto"`` preserves the molfile header.
 "#]
@@ -3545,13 +3535,23 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
         path: &str,
         sanitize: Option<bool>,
         coordinate_dim: &str,
+        remove_hs: Option<bool>,
+        strict_parsing: Option<bool>,
     ) -> PyResult<Self> {
-        reject_unsanitized_mol_reader(sanitize)?;
         let expanded_path = expand_user_path(path)?;
         let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
         let file = File::open(&expanded_path)
             .map_err(|e| PyValueError::new_err(format!("read_sdf open failed: {e}")))?;
-        let mut reader = SdfReader::with_coordinate_mode(BufReader::new(file), coordinate_mode);
+        let mut reader = SdfReader::with_params(
+            BufReader::new(file),
+            cosmolkit_core::SdfReadParams {
+                sanitize: sanitize.unwrap_or(true),
+                remove_hs: remove_hs.unwrap_or(true),
+                strict_parsing: strict_parsing.unwrap_or(true),
+                coordinate_mode,
+                ..Default::default()
+            },
+        );
         let Some(record) = reader
             .next_record()
             .map_err(|e| PyValueError::new_err(format!("read_sdf parse failed: {e:?}")))?
@@ -3564,7 +3564,7 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
     }
 
     #[classmethod]
-    #[pyo3(signature = (path, sanitize=None, coordinate_dim="auto"))]
+    #[pyo3(signature = (path, sanitize=None, coordinate_dim="auto", *, remove_hs=None, strict_parsing=None))]
     #[doc = r#"
 Read one molecule from an MDL molfile.
 
@@ -3579,6 +3579,10 @@ path : str
     Molfile path.
 sanitize : bool, optional
     Optional molecule preparation flag.
+remove_hs : bool, optional
+    Optional hydrogen removal flag.
+strict_parsing : bool, optional
+    Optional strict molfile parsing flag.
 coordinate_dim : {"auto", "2d", "3d"}, optional
     Coordinate interpretation mode. ``"auto"`` preserves the molfile header.
 "#]
@@ -3587,13 +3591,17 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
         path: &str,
         sanitize: Option<bool>,
         coordinate_dim: &str,
+        remove_hs: Option<bool>,
+        strict_parsing: Option<bool>,
     ) -> PyResult<Self> {
-        reject_unsanitized_mol_reader(sanitize)?;
         let expanded_path = expand_user_path(path)?;
         let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
         let record = cosmolkit_core::io::molfile::read_mol_file_with_params(
             &expanded_path,
             cosmolkit_core::SdfReadParams {
+                sanitize: sanitize.unwrap_or(true),
+                remove_hs: remove_hs.unwrap_or(true),
+                strict_parsing: strict_parsing.unwrap_or(true),
                 coordinate_mode,
                 ..Default::default()
             },
@@ -3605,7 +3613,7 @@ coordinate_dim : {"auto", "2d", "3d"}, optional
     }
 
     #[classmethod]
-    #[pyo3(signature = (mol_text, sanitize=None, coordinate_dim="auto"))]
+    #[pyo3(signature = (mol_text, sanitize=None, coordinate_dim="auto", *, remove_hs=None, strict_parsing=None))]
     #[doc = r#"
 Read one molecule from an MDL molfile string.
 
@@ -3619,12 +3627,16 @@ including SDF data fields and ``$$$$`` record separators. Use
         mol_text: &str,
         sanitize: Option<bool>,
         coordinate_dim: &str,
+        remove_hs: Option<bool>,
+        strict_parsing: Option<bool>,
     ) -> PyResult<Self> {
-        reject_unsanitized_mol_reader(sanitize)?;
         let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
         let record = cosmolkit_core::io::molfile::read_mol_record_from_str_with_params(
             mol_text,
             cosmolkit_core::SdfReadParams {
+                sanitize: sanitize.unwrap_or(true),
+                remove_hs: remove_hs.unwrap_or(true),
+                strict_parsing: strict_parsing.unwrap_or(true),
                 coordinate_mode,
                 ..Default::default()
             },
@@ -3636,7 +3648,7 @@ including SDF data fields and ``$$$$`` record separators. Use
     }
 
     #[classmethod]
-    #[pyo3(signature = (sdf_text, sanitize=None, coordinate_dim="auto"))]
+    #[pyo3(signature = (sdf_text, sanitize=None, coordinate_dim="auto", *, remove_hs=None, strict_parsing=None))]
     #[doc = r#"
 Read one molecule from an SDF record string.
 
@@ -3649,12 +3661,19 @@ parsed as SDF record metadata. Use ``read_mol_from_str()`` for RDKit
         sdf_text: &str,
         sanitize: Option<bool>,
         coordinate_dim: &str,
+        remove_hs: Option<bool>,
+        strict_parsing: Option<bool>,
     ) -> PyResult<Self> {
-        reject_unsanitized_mol_reader(sanitize)?;
         let coordinate_mode = parse_coordinate_mode(Some(coordinate_dim))?;
-        let record = cosmolkit_core::io::sdf::read_sdf_from_str_with_coordinate_mode(
+        let record = cosmolkit_core::io::sdf::read_sdf_from_str_with_params(
             sdf_text,
-            coordinate_mode,
+            cosmolkit_core::SdfReadParams {
+                sanitize: sanitize.unwrap_or(true),
+                remove_hs: remove_hs.unwrap_or(true),
+                strict_parsing: strict_parsing.unwrap_or(true),
+                coordinate_mode,
+                ..Default::default()
+            },
         )
         .map_err(|e| PyValueError::new_err(format!("read_sdf_from_str failed: {e:?}")))?;
         Ok(Self {

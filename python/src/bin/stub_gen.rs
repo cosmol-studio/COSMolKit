@@ -20,12 +20,12 @@ fn main() -> Result<()> {
         text = format!("{future_line}{text}");
     }
     text = expose_chem_enums(text);
-    text = expose_residue_enums_and_functions(text);
     text = expose_batch_validation_error(text);
     text = expose_batch_error_mode_inputs(text);
     text = expose_batch_getitem_overloads(text);
     text = expose_sdf_dataset_getitem_overloads(text);
     text = expose_module_functions(text);
+    text = expose_residue_enums_and_functions(text);
     text = expose_confseq_module(text);
     fs::write(pyi_path, text)?;
 
@@ -111,6 +111,7 @@ fn expose_module_functions(mut text: String) -> String {
     for name in [
         "__version__",
         "version",
+        "_rebuild_molecule_from_pickle",
         "mol_to_binary",
         "mol_from_binary",
         "parse_smarts",
@@ -137,6 +138,7 @@ fn expose_module_functions(mut text: String) -> String {
     if !text.contains("__version__: builtins.str") {
         let declarations = r#"__version__: builtins.str
 def version() -> builtins.str: ...
+def _rebuild_molecule_from_pickle(state: typing.Any) -> Molecule: ...
 def mol_to_binary(mol: Molecule) -> bytes: ...
 def mol_from_binary(data: bytes) -> Molecule: ...
 def parse_smarts(smarts: builtins.str) -> SmartsMolecule: ...

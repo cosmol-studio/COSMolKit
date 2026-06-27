@@ -1,9 +1,16 @@
 //! Molfile convenience reader layered over SDF parsing.
 
-use std::path::Path;
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+    path::Path,
+};
 
 use crate::Molecule;
-use crate::io::sdf::{SdfReadError, SdfReadParams};
+use crate::io::sdf::{
+    SdfReadError, SdfReadParams, read_mol_block_molecule_with_params,
+    read_mol_data_stream_molecule_with_params,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MolFileRecord {
@@ -12,16 +19,62 @@ pub struct MolFileRecord {
 }
 
 pub fn read_mol_file(path: impl AsRef<Path>) -> Result<MolFileRecord, SdfReadError> {
-    let text = std::fs::read_to_string(path).map_err(|err| SdfReadError::Parse(err.to_string()))?;
-    read_mol_record_from_str(&text)
+    read_mol_file_with_params(
+        path,
+        SdfReadParams {
+            process_property_lists: false,
+            ..Default::default()
+        },
+    )
 }
 
 pub fn read_mol_file_with_params(
     path: impl AsRef<Path>,
     params: SdfReadParams,
 ) -> Result<MolFileRecord, SdfReadError> {
-    let text = std::fs::read_to_string(path).map_err(|err| SdfReadError::Parse(err.to_string()))?;
-    read_mol_record_from_str_with_params(&text, params)
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: MolFromMolFile
+    // RDKit✔️✔️: std::unique_ptr<RWMol> MolFromMolFile(const std::string &fName,
+    // RDKit✔️✔️:                                       const MolFileParserParams &params) {
+    // RDKit✔️✔️:   std::ifstream inStream(fName.c_str());
+    // RDKit✔️✔️:   if (!inStream || (inStream.bad())) {
+    // RDKit✔️✔️:     std::ostringstream errout;
+    // RDKit✔️✔️:     errout << "Bad input file " << fName;
+    // RDKit✔️✔️:     throw BadFileException(errout.str());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!inStream.eof()) {
+    // RDKit✔️✔️:     unsigned int line = 0;
+    // RDKit✔️✔️:     return MolFromMolDataStream(inStream, line, params);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     return std::unique_ptr<RWMol>();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: MolFromMolFile
+    //
+    // COSMolKit's public molfile API cannot return a null molecule record.
+    // The RDKit null unique_ptr branch is represented at this Result boundary
+    // as a parse error, matching the generated RDKit failure golden rows.
+    let path = path.as_ref();
+    let file = File::open(path)
+        .map_err(|_| SdfReadError::Parse(format!("Bad input file {}", path.display())))?;
+    let mut reader = BufReader::new(file);
+    if reader
+        .fill_buf()
+        .map_err(|err| SdfReadError::Parse(err.to_string()))?
+        .is_empty()
+    {
+        return Err(SdfReadError::Parse("empty molfile".to_string()));
+    }
+    let mut line_number = 0;
+    let molecule = read_mol_data_stream_molecule_with_params(
+        &mut reader,
+        &mut line_number,
+        SdfReadParams {
+            process_property_lists: false,
+            ..params
+        },
+    )?;
+    let name = molecule.properties().name().map(str::to_string);
+    Ok(MolFileRecord { molecule, name })
 }
 
 pub fn read_mol_record_from_str(s: &str) -> Result<MolFileRecord, SdfReadError> {
@@ -49,33 +102,15 @@ pub fn read_mol_record_from_str_with_params(
     //
     // RDKit's MolFromMolBlock does not parse unread text after the CTAB; it
     // lets MolFromMolDataStream return after M END.
-    let mol_block = mol_block_through_m_end(s);
-    let record = crate::io::sdf::read_sdf_from_str_with_params(
-        mol_block,
+    let molecule = read_mol_block_molecule_with_params(
+        s,
         SdfReadParams {
             process_property_lists: false,
             ..params
         },
     )?;
-    let name = record.molecule.properties().name().map(str::to_string);
-    Ok(MolFileRecord {
-        molecule: record.molecule,
-        name,
-    })
-}
-
-fn mol_block_through_m_end(input: &str) -> &str {
-    let mut end = input.len();
-    let mut offset = 0;
-    for line in input.split_inclusive('\n') {
-        let content = line.trim_end_matches('\n').trim_end_matches('\r');
-        offset += line.len();
-        if content == "M  END" {
-            end = offset;
-            break;
-        }
-    }
-    &input[..end]
+    let name = molecule.properties().name().map(str::to_string);
+    Ok(MolFileRecord { molecule, name })
 }
 
 #[cfg(test)]
@@ -87,6 +122,24 @@ mod tests {
   COSMolKit      2D
 
   1  0  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+"#;
+
+    const EXPLICIT_H_MOL: &str = r#"explicit-h
+  COSMolKit      2D
+
+  2  1  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.0000    0.0000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+M  END
+"#;
+
+    const INVALID_VERSION_MOL: &str = r#"invalid-version
+  COSMolKit      2D
+
+  1  0  0  0  0  0  0  0  0  0999 X2000
     0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
 M  END
 "#;
@@ -123,5 +176,110 @@ M  END
     fn molfile_reader_accepts_sdf_record_separator_after_m_end_like_rdkit() {
         let record = read_mol_record_from_str(&format!("{FLAT_MOL}$$$$\n")).unwrap();
         assert_eq!(record.molecule.num_atoms(), 1);
+    }
+
+    #[test]
+    fn molfile_reader_ignores_unread_trailing_text_after_m_end() {
+        let record =
+            read_mol_record_from_str(&format!("{FLAT_MOL}>  <FIELD>\nvalue\n\n$$$$\n")).unwrap();
+        assert_eq!(record.molecule.num_atoms(), 1);
+        assert_eq!(record.molecule.prop("FIELD"), None);
+    }
+
+    #[test]
+    fn molfile_reader_reports_empty_input_and_missing_counts_line() {
+        assert!(read_mol_record_from_str("").is_err());
+        assert!(read_mol_record_from_str("name\n  COSMolKit      2D\ncomment\n").is_err());
+    }
+
+    #[test]
+    fn molfile_reader_honors_strict_parsing_for_ctab_version_string() {
+        let strict = read_mol_record_from_str_with_params(
+            INVALID_VERSION_MOL,
+            SdfReadParams {
+                strict_parsing: true,
+                ..Default::default()
+            },
+        );
+        assert!(strict.is_err());
+
+        let lax = read_mol_record_from_str_with_params(
+            INVALID_VERSION_MOL,
+            SdfReadParams {
+                strict_parsing: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(lax.molecule.num_atoms(), 1);
+    }
+
+    #[test]
+    fn molfile_reader_only_removes_hs_when_sanitize_is_enabled() {
+        let sanitized_remove_hs = read_mol_record_from_str_with_params(
+            EXPLICIT_H_MOL,
+            SdfReadParams {
+                sanitize: true,
+                remove_hs: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(sanitized_remove_hs.molecule.num_atoms(), 1);
+
+        let sanitized_keep_hs = read_mol_record_from_str_with_params(
+            EXPLICIT_H_MOL,
+            SdfReadParams {
+                sanitize: true,
+                remove_hs: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(sanitized_keep_hs.molecule.num_atoms(), 2);
+
+        let unsanitized_remove_hs = read_mol_record_from_str_with_params(
+            EXPLICIT_H_MOL,
+            SdfReadParams {
+                sanitize: false,
+                remove_hs: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(unsanitized_remove_hs.molecule.num_atoms(), 2);
+    }
+
+    #[test]
+    fn molfile_path_reader_reports_file_open_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing.mol");
+        let err = read_mol_file_with_params(&missing, SdfReadParams::default()).unwrap_err();
+        assert!(err.to_string().contains("Bad input file"));
+    }
+
+    #[test]
+    fn molfile_path_reader_reports_file_read_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = read_mol_file_with_params(dir.path(), SdfReadParams::default()).unwrap_err();
+        assert!(!err.to_string().is_empty());
+    }
+
+    #[test]
+    fn molfile_path_reader_reports_empty_file_as_no_molecule() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let err = read_mol_file_with_params(file.path(), SdfReadParams::default()).unwrap_err();
+        assert_eq!(err.to_string(), "empty molfile");
+    }
+
+    #[test]
+    fn molfile_path_reader_reads_single_record_molfile() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut file, FLAT_MOL.as_bytes()).unwrap();
+
+        let record = read_mol_file_with_params(file.path(), SdfReadParams::default()).unwrap();
+        assert_eq!(record.name.as_deref(), Some("flat"));
+        assert_eq!(record.molecule.num_atoms(), 1);
+        assert_eq!(record.molecule.num_bonds(), 0);
     }
 }

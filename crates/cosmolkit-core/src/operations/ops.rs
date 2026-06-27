@@ -26,7 +26,7 @@ use crate::{
 
 pub(crate) use crate::read_parts::MoleculeReadParts;
 
-trait MoleculeReadAccess<'a>: Copy {
+pub(crate) trait MoleculeReadAccess<'a>: Copy {
     fn atoms(self) -> &'a [Atom];
     fn bonds(self) -> &'a [Bond];
     fn atom(self, atom: AtomId) -> Option<&'a Atom>;
@@ -1785,10 +1785,14 @@ molecule_ops! {
     }
 }
 
-mod hydrogens;
+pub(crate) mod hydrogens;
 mod sanitize_pipeline;
 
 use self::{hydrogens::*, sanitize_pipeline::*};
+
+pub(crate) use self::sanitize_pipeline::{
+    sanitize_conjugation_assignment, sanitize_hybridization_assignment,
+};
 
 #[mol_op_body(with_kekulized_bonds, parts)]
 fn with_kekulized_bonds_impl(clear_aromatic_flags: bool) -> Result<OpOutcome, OperationError> {
