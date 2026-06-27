@@ -43,10 +43,12 @@ RDKit parity tests are strict source-level reproduction tests against `third_par
    surfaces.
 4. (Optional) Install local COSMolKit Python build into the same env for direct comparison:
    - `.venv/bin/maturin develop --manifest-path python/Cargo.toml`
-5. Run core tests:
-   - `cargo test -p cosmolkit-core --features op-contracts-strict`
+5. Run core tests. Use a focused debug-profile filter while iterating, and
+   release mode with the same strict feature set for full local parity runs:
+   - `cargo test -p cosmolkit-core --features op-contracts-strict <test-filter>`
+   - `cargo test -p cosmolkit-core --release --features op-contracts-strict`
 6. Run the exhaustive SMILES writer branch matrix when checking full writer parity:
-   - `cargo test -p cosmolkit-core --features op-contracts-strict --test rdkit_smiles_writer_parity smiles_writer_matches_rdkit_golden_across_param_branches -- --ignored`
+   - `cargo test -p cosmolkit-core --release --features op-contracts-strict --test rdkit_smiles_writer_parity smiles_writer_matches_rdkit_golden_across_param_branches -- --ignored`
 
 Notes:
 - `cargo test` never generates RDKit golden files. If a golden file is missing, regenerate all RDKit goldens with the single entrypoint before running Rust tests.
@@ -69,7 +71,7 @@ Known topology failures are xfail records, not skips. The case still runs, the f
 
 `crates/cosmolkit-core/tests/rdkit_graph_feature_parity.rs` contains:
 - `graph_feature_golden_has_one_record_per_smiles`
-- `graph_feature_golden_records_cip_for_chiral_atoms`
+- `graph_feature_golden_preserves_rdkit_cip_fields_for_chiral_atoms`
 - `graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules`
 
 The graph feature test compares both direct molecules and explicit-hydrogen molecules. It covers atom atomic number, chirality, CIP code/rank, degree, formal charge, total hydrogens, radical electrons, hybridization, aromaticity, ring membership, and bond type/stereo/conjugation.
@@ -91,9 +93,8 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 
 `crates/cosmolkit-core/tests/rdkit_conformer_generation_library_parity.rs` contains:
 - `conformer_generation_library_golden_has_one_record_per_smiles`
-- `conformer_generation_library_matches_rdkit_golden_from_smiles_to_exact_coords`
+- `conformer_generation_library_matches_rdkit_golden_under_fixed_iteration_budget`
 - corpus-wide RDKit golden coverage for the explicit path `SMILES -> AddHs -> ETKDGv3(seed=61453,numThreads=1,timeout=10) -> single conformer`
-- the exact-coordinate gate is currently marked `#[ignore]` and is run explicitly during conformer-port closure because the full `tests/smiles.smi` corpus is not yet row-closed to RDKit
 
 `crates/cosmolkit-core/tests/rdkit_forcefield_params_parity.rs` contains:
 - `forcefield_params_golden_has_one_record_per_smiles_library_entry`
@@ -108,12 +109,17 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 - `mmff_multi_conformer_final_coordinates_match_rdkit_golden_for_first_embedded_row`
 - strict RDKit parity coverage for UFF/MMFF parameter coverage, initial energy/gradient, and single-/multi-conformer optimization on the shared corpus
 
-`crates/cosmolkit-core/tests/rdkit_morgan_fingerprint_parity.rs` contains:
-- `morgan_fingerprint_golden_has_one_record_per_smiles`
-- `morgan_fingerprint_matches_rdkit_golden_across_param_branches`
-- RDKit Morgan generator golden coverage for `radius`, `fpSize`, `includeChirality`, `useBondTypes`, `countSimulation`, `countBounds`, `onlyNonzeroInvariants`, `includeRedundantEnvironments`, `fromAtoms`, `ignoreAtoms`, custom atom invariants, custom bond invariants, explicit Morgan atom/bond invariant generator objects, default feature/FCFP atom invariants, `numBitsPerFeature`, AdditionalOutput (`atomCounts`, `atomToBits`, `bitInfoMap`, `atomsPerBit`), on-bit indices, on-bit counts, and adjacent-row Tanimoto similarity
-- `includeRingMembership` is intentionally covered as RDKit Python wrapper behavior: `MorganWrapper.cpp::getMorganGenerator()` accepts the argument but does not forward it unless callers explicitly supply an atom invariants generator
-- Python binding coverage lives in `python/tests/test_morgan_fingerprint.py` and independently compares COSMolKit bindings to RDKit for default Morgan fingerprints, chirality, count simulation, explicit atom/bond invariant generators, feature/FCFP invariants, custom invariants, `fromAtoms`, batch fingerprint lists, Tanimoto similarity, and AdditionalOutput fields.
+`crates/cosmolkit-core/src/properties/fingerprint.rs` contains focused Morgan
+fingerprint unit coverage for deterministic bit generation, chirality,
+count-simulation, custom atom/bond invariants, feature invariants, `fromAtoms`,
+`ignoreAtoms`, Tanimoto, AdditionalOutput, and parameter validation. The
+generated RDKit baseline `tests/golden/morgan_fingerprint.jsonl` is kept for
+parity data, but the current core crate does not expose a dedicated
+`rdkit_morgan_fingerprint_parity.rs` integration test. Python binding coverage
+lives in `python/tests/test_morgan_fingerprint.py` and covers default Morgan
+fingerprints, chirality, count simulation, feature/connectivity generators,
+custom invariants, `fromAtoms`, batch fingerprint lists, Tanimoto similarity,
+and AdditionalOutput fields.
 
 `crates/cosmolkit-core/tests/rdkit_smiles_writer_parity.rs` contains:
 - `smiles_writer_golden_has_one_record_per_smiles`
@@ -121,15 +127,15 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 - strict RDKit parity coverage for `MolToSmiles()` across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches
 
 `crates/cosmolkit-core/tests/rdkit_svg_draw_parity.rs` contains:
-- `svg_drawer_golden_has_one_record_per_smiles`
-- `svg_drawer_matches_rdkit_golden`
-- strict RDKit parity coverage for the Python-exposed `MolDraw2DSVG(..., noFreetype=True)` final SVG string
+- `svg_draw_golden_has_one_record_per_smiles`
+- `svg_drawer_matches_rdkit_golden_except_tool_identifiers`
+- `svg_drawer_matches_rdkit_golden_except_tool_identifiers_in_parallel_batch`
+- strict RDKit parity coverage for the Python-exposed `MolDraw2DSVG(..., noFreetype=True)` final SVG string, excluding expected tool identifier metadata differences
 
 `crates/cosmolkit-core/tests/rdkit_sdf_read_parity.rs` contains:
-- `sdf_read_topology_and_atom_fields_match_rdkit`
-- `sdf_read_coordinates_match_rdkit_for_2d_and_3d_records`
-- `sdf_read_chirality_matches_rdkit_for_markers_and_coordinates`
-- `sdf_read_to_smiles_matches_rdkit_canonical_and_noncanonical`
+- `sdf_read_golden_covers_expected_case_matrix`
+- `sdf_read_representative_apis_and_parameters_match_rdkit`
+- `sdf_read_all_apis_and_parameters_match_rdkit` (`#[ignore]` exhaustive matrix)
 
 `crates/cosmolkit-core/tests/rdkit_molfile_read_parity.rs` contains:
 - `molfile_read_topology_and_atom_fields_match_rdkit`
@@ -143,12 +149,25 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 - `mol2_read_coordinates_and_chirality_match_rdkit`
 - `mol2_read_to_smiles_matches_rdkit_canonical_and_noncanonical`
 
+PDB/mmCIF element-table and metal handling coverage includes:
+- `rdkit_atomic_number_from_symbol_covers_canonical_and_legacy_entries`
+- `bio_element_symbol_lookup_covers_rdkit_periodic_table`
+- `pdb_element_field_accepts_full_rdkit_gemmi_element_table`
+- `mmcif_atom_site_accepts_full_rdkit_gemmi_element_table`
+- `rdkit_pdb_molecule_conversion_accepts_full_pdb_element_table`
+- `pdb_connection_helpers_use_gemmi_full_metal_table`
+- Python coverage for `MoleculeEdit.add_atom("Hg")`,
+  `Molecule.from_pdb_block()` Hg/Cd records, and `Protein.from_pdb_str()` with
+  supported metal HETATM records.
+
 Current status:
 - `cosmolkit-core` graph-feature parity is currently passing on the shared corpus (direct + explicit-H comparisons).
 - tetrahedral stereo ordered-ligand geometry validation is currently passing against RDKit ETKDGv3 (`seed=42`) on all chiral corpus entries.
 - DG bounds matrix parity is currently passing on the shared corpus.
 - force-field parameter parity is currently passing on the shared corpus across UFF/MMFF parameter coverage, initial energy/gradient, and single-/multi-conformer optimization branches.
-- Morgan fingerprint parity is currently passing on the shared corpus across the supported RDKit-style bit-vector branches, and the Python binding smoke/parity tests pass against RDKit for representative parameter combinations.
+- Morgan fingerprint unit and Python binding coverage is currently passing for
+  the supported public branches; a dedicated current-core RDKit golden parity
+  integration test is not present.
 - SMILES writer parity is currently passing on the shared corpus across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches.
 - strict V2000 molblock coordinate/topology parity is currently passing on the shared corpus.
 - MOL2 read parity is currently passing against copied RDKit MOL2 parser fixtures for the generated MOL2 golden.

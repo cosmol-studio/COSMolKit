@@ -277,6 +277,12 @@ def main() -> None:
         default=Path("tests/golden/confseq_embed_template.jsonl"),
     )
     parser.add_argument(
+        "--input",
+        type=Path,
+        default=Path("tests/smiles.smi"),
+        help="unused compatibility flag accepted for gen_all_rdkit_goldens.py",
+    )
+    parser.add_argument(
         "--sdf-output",
         type=Path,
         default=Path("tmp/confseq_nonplanar_compare/rdkit_confseq_embed_template.sdf"),

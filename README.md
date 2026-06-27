@@ -21,7 +21,8 @@
 COSMolKit is a Python molecular toolkit backed by a Rust core. It provides
 value-style molecule operations, SMILES/SDF/MOL2/XYZ workflows, 2D depiction,
 native 3D conformer generation, UFF/MMFF optimization, fingerprints, batch
-processing, and protein-focused structural biology APIs.
+processing, Python pickle round-tripping, and protein-focused structural
+biology APIs.
 
 The library is built around explicit behavior: supported operations return
 structured results, unsupported behavior fails visibly, and public molecule
@@ -213,6 +214,7 @@ inputs until a trusted graph has been constructed.
 - Distance-geometry bounds matrices
 - Substructure matching and SMARTS parse metadata
 - Ordered batch transforms and exports
+- Python pickle round-tripping for `Molecule`
 - PDB/mmCIF molecule-block parsing and protein projection APIs
 - Support-status metadata for public features
 
@@ -335,7 +337,8 @@ Goal: expose verified molecular behavior through a practical Python interface.
 
 - ✅ Value-style molecule transformations
 - ✅ Graph, coordinate, fingerprint, and bounds-matrix accessors
-- ✅ Python examples for drawing, SDF-to-SMILES, batch processing, and proteins
+- ✅ Python examples for drawing, SDF-to-SMILES, pickle round-tripping, batch
+  processing, and proteins
 - 🧪 Type stubs and documentation coverage
 - 🚧 Stable model-ready graph exports
 - 🚧 NumPy / PyTorch oriented adapters

@@ -2883,24 +2883,57 @@ fn element_from_padded_name_is_ambiguous(atom_name: &str) -> bool {
 }
 
 fn is_metal_element(element: Option<Element>) -> bool {
+    // BEGIN GEMMI CPP FUNCTION gemmi::is_metal_value / gemmi::is_metal
+    // Gemmi✔️✔️: inline bool& is_metal_value(El el) {
+    // Gemmi✔️✔️:   static bool table[] = {
+    // Gemmi✔️✔️:     // X     H     He
+    // Gemmi✔️✔️:     false, false, false,
+    // Gemmi✔️✔️:     // Li  Be     B      C      N      O      F     Ne
+    // Gemmi✔️✔️:     true, true, false, false, false, false, false, false,
+    // Gemmi✔️✔️:     // Na  Mg    Al     Si     P      S      Cl     Ar
+    // Gemmi✔️✔️:     true, true, true, false, false, false, false, false,
+    // Gemmi✔️✔️:     // K   Ca    Sc    Ti    V     Cr    Mn    Fe    Co    Ni    Cu    Zn
+    // Gemmi✔️✔️:     true, true, true, true, true, true, true, true, true, true, true, true,
+    // Gemmi✔️✔️:     // Ga  Ge    As     Se     Br     Kr
+    // Gemmi✔️✔️:     true, true, false, false, false, false,
+    // Gemmi✔️✔️:     // Rb  Sr    Y     Zr    Nb    Mo    Tc    Ru    Rh    Pd    Ag    Cd
+    // Gemmi✔️✔️:     true, true, true, true, true, true, true, true, true, true, true, true,
+    // Gemmi✔️✔️:     // In  Sn    Sb    Te      I     Xe
+    // Gemmi✔️✔️:     true, true, true, false, false, false,
+    // Gemmi✔️✔️:     // Cs  Ba    La    Ce    Pr    Nd    Pm    Sm    Eu    Gd    Tb    Dy
+    // Gemmi✔️✔️:     true, true, true, true, true, true, true, true, true, true, true, true,
+    // Gemmi✔️✔️:     // Ho  Er    Tm    Yb    Lu    Hf    Ta    W     Re    Os    Ir    Pt
+    // Gemmi✔️✔️:     true, true, true, true, true, true, true, true, true, true, true, true,
+    // Gemmi✔️✔️:     // Au  Hg    Tl    Pb    Bi    Po    At     Rn
+    // Gemmi✔️✔️:     true, true, true, true, true, true, false, false,
+    // Gemmi✔️✔️:     // Fr  Ra    Ac    Th    Pa    U     Np    Pu    Am    Cm    Bk    Cf
+    // Gemmi✔️✔️:     true, true, true, true, true, true, true, true, true, true, true, true,
+    // Gemmi✔️✔️:     // Es  Fm    Md    No    Lr    Rf    Db    Sg    Bh    Hs    Mt    Ds
+    // Gemmi✔️✔️:     true, true, true, true, true, true, true, true, true, true, true, true,
+    // Gemmi✔️✔️:     // Rg  Cn    Nh    Fl    Mc    Lv    Ts     Og
+    // Gemmi✔️✔️:     true, true, true, true, true, true, false, false,
+    // Gemmi✔️✔️:     // D    END
+    // Gemmi✔️✔️:     false, false
+    // Gemmi✔️✔️:   };
+    // Gemmi✔️✔️:   return table[static_cast<int>(el)];
+    // Gemmi✔️✔️: }
+    // Gemmi✔️✔️: inline bool is_metal(El el) { return is_metal_value(el); }
+    // END GEMMI CPP FUNCTION gemmi::is_metal_value / gemmi::is_metal
+    let Some(element) = element else {
+        return false;
+    };
     matches!(
-        element,
-        Some(
-            Element::LI
-                | Element::BE
-                | Element::NA
-                | Element::MG
-                | Element::AL
-                | Element::K
-                | Element::CA
-                | Element::MN
-                | Element::FE
-                | Element::CO
-                | Element::NI
-                | Element::CU
-                | Element::ZN
-        )
-    )
+        element.atomic_number(),
+        3 | 4
+            | 11
+            | 12
+            | 13
+            | 19..=32
+            | 37..=50
+            | 51
+            | 55..=84
+            | 87..=116
+    ) && !matches!(element.atomic_number(), 33..=36 | 52..=54 | 85 | 86 | 117 | 118)
 }
 
 // BEGIN GEMMI CPP FUNCTION process_conn
@@ -8645,39 +8678,58 @@ fn parse_altloc(value: u8) -> Option<AltLocLabel> {
 }
 
 fn element_from_symbol(symbol: &str) -> Option<Element> {
-    let atomic_number = match symbol.trim().to_ascii_uppercase().as_str() {
-        "H" => 1,
-        "HE" => 2,
-        "LI" => 3,
-        "BE" => 4,
-        "B" => 5,
-        "C" => 6,
-        "N" => 7,
-        "O" => 8,
-        "F" => 9,
-        "NE" => 10,
-        "NA" => 11,
-        "MG" => 12,
-        "AL" => 13,
-        "SI" => 14,
-        "P" => 15,
-        "S" => 16,
-        "CL" => 17,
-        "AR" => 18,
-        "K" => 19,
-        "CA" => 20,
-        "MN" => 25,
-        "FE" => 26,
-        "CO" => 27,
-        "NI" => 28,
-        "CU" => 29,
-        "ZN" => 30,
-        "SE" => 34,
-        "BR" => 35,
-        "I" => 53,
-        _ => return None,
-    };
+    // BEGIN GEMMI CPP FUNCTION gemmi::Element / gemmi::impl::find_element
+    // Gemmi✔️✔️: explicit Element(const char* str) noexcept : elem(find_element(str)) {}
+    // Gemmi✔️✔️: inline El find_element(const char* symbol) {
+    // Gemmi✔️✔️:   if (symbol == nullptr || symbol[0] == '\0')
+    // Gemmi✔️✔️:     return El::X;
+    // Gemmi✔️✔️:   char first = symbol[0] & ~0x20;  // lower -> upper, space -> NUL
+    // Gemmi✔️✔️:   char second = symbol[1] & ~0x20;
+    // Gemmi✔️✔️:   if (first == '\0')
+    // Gemmi✔️✔️:     return impl::find_single_letter_element(second);
+    // Gemmi✔️✔️:   if (second < 14)
+    // Gemmi✔️✔️:     return impl::find_single_letter_element(first);
+    // Gemmi✔️✔️:   elname_t* names = &element_uppercase_name(El::X);
+    // Gemmi✔️✔️:   for (int i = 0; i != 120; ++i) {
+    // Gemmi✔️✔️:     if (names[i][0] == first && names[i][1] == second)
+    // Gemmi✔️✔️:       return static_cast<El>(i);
+    // Gemmi✔️✔️:   }
+    // Gemmi✔️✔️:   return El::X;
+    // Gemmi✔️✔️: }
+    // Gemmi✔️✔️: int atomic_number() const { return elem == El::D ? 1 : ordinal(); }
+    // END GEMMI CPP FUNCTION gemmi::Element / gemmi::impl::find_element
+    //
+    // BEGIN RDKIT CPP FUNCTION PeriodicTable::getAtomicNumber
+    // RDKit✔️✔️: byname[dat->Symbol()] = dat->AtomicNumber();
+    // RDKit✔️✔️: int getAtomicNumber(const std::string &elementSymbol) const { ... byname.find(elementSymbol) ... }
+    // END RDKIT CPP FUNCTION PeriodicTable::getAtomicNumber
+    let normalized = normalize_gemmi_element_symbol(symbol.trim())?;
+    if normalized == "X" {
+        return Some(Element::DUMMY);
+    }
+    if normalized == "D" {
+        return Some(Element::H);
+    }
+    let atomic_number = crate::chemistry::valence::rdkit_atomic_number_from_symbol(&normalized)?;
     Element::from_atomic_number(atomic_number)
+}
+
+fn normalize_gemmi_element_symbol(symbol: &str) -> Option<String> {
+    let bytes = symbol.as_bytes();
+    let first = bytes.first().copied()?;
+    if !first.is_ascii_alphabetic() {
+        return None;
+    }
+
+    let mut normalized = String::with_capacity(2);
+    normalized.push(char::from(first.to_ascii_uppercase()));
+    if let Some(second) = bytes.get(1).copied() {
+        if !second.is_ascii_alphabetic() {
+            return None;
+        }
+        normalized.push(char::from(second.to_ascii_lowercase()));
+    }
+    Some(normalized)
 }
 
 fn infer_element_from_padded_atom_name(atom_name: &str) -> Option<Element> {
@@ -8757,6 +8809,113 @@ mod tests {
         assert_eq!(structure.atoms[0].occupancy, Some(1.0));
         assert_eq!(structure.atoms[0].b_iso, Some(20.0));
         assert_eq!(structure.coordinates.positions[0], [11.104, 13.207, 9.900]);
+    }
+
+    #[test]
+    fn pdb_element_field_accepts_full_rdkit_gemmi_element_table() {
+        for atomic_number in 1..=118 {
+            let symbol = crate::chemistry::valence::rdkit_element_symbol(atomic_number).unwrap();
+            let element_field = format!("{symbol:>2}");
+            let mut pdb = " ".repeat(80);
+            pdb.replace_range(0..6, "HETATM");
+            pdb.replace_range(6..11, &format!("{atomic_number:>5}"));
+            pdb.replace_range(12..16, " M  ");
+            pdb.replace_range(17..20, "LIG");
+            pdb.replace_range(20..22, "A ");
+            pdb.replace_range(22..26, &format!("{atomic_number:>4}"));
+            pdb.replace_range(30..38, "   0.000");
+            pdb.replace_range(38..46, "   0.000");
+            pdb.replace_range(46..54, "   0.000");
+            pdb.replace_range(54..60, "  1.00");
+            pdb.replace_range(60..66, " 10.00");
+            pdb.replace_range(76..78, &element_field);
+
+            let structure = BioStructure::from_pdb_str(&format!("{pdb}\n")).unwrap();
+            assert_eq!(
+                structure.atoms[0].element.atomic_number(),
+                atomic_number,
+                "{symbol}"
+            );
+        }
+
+        for (symbol, expected) in [("HG", Element::HG), ("CD", Element::CD)] {
+            let mut pdb = " ".repeat(80);
+            pdb.replace_range(0..6, "HETATM");
+            pdb.replace_range(6..11, "    1");
+            pdb.replace_range(12..16, " M  ");
+            pdb.replace_range(17..20, "LIG");
+            pdb.replace_range(20..22, "A ");
+            pdb.replace_range(22..26, "   1");
+            pdb.replace_range(30..38, "   0.000");
+            pdb.replace_range(38..46, "   0.000");
+            pdb.replace_range(46..54, "   0.000");
+            pdb.replace_range(54..60, "  1.00");
+            pdb.replace_range(60..66, " 10.00");
+            pdb.replace_range(76..78, symbol);
+
+            let structure = BioStructure::from_pdb_str(&format!("{pdb}\n")).unwrap();
+            assert_eq!(structure.atoms[0].element, expected, "{symbol}");
+        }
+    }
+
+    #[test]
+    fn bio_element_symbol_lookup_covers_rdkit_periodic_table() {
+        for atomic_number in 1..=118 {
+            let symbol = crate::chemistry::valence::rdkit_element_symbol(atomic_number).unwrap();
+            let element = element_from_symbol(symbol).unwrap();
+            assert_eq!(element.atomic_number(), atomic_number, "{symbol}");
+
+            let uppercase = symbol.to_ascii_uppercase();
+            let element = element_from_symbol(&uppercase).unwrap();
+            assert_eq!(element.atomic_number(), atomic_number, "{uppercase}");
+        }
+        assert_eq!(element_from_symbol("X").unwrap(), Element::DUMMY);
+        assert_eq!(element_from_symbol("x").unwrap(), Element::DUMMY);
+        assert_eq!(element_from_symbol("D").unwrap(), Element::H);
+        assert_eq!(element_from_symbol("d").unwrap(), Element::H);
+    }
+
+    #[test]
+    fn mmcif_atom_site_accepts_full_rdkit_gemmi_element_table() {
+        let mut mmcif = "\
+data_demo
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+"
+        .to_string();
+        for atomic_number in 1..=118 {
+            let symbol = crate::chemistry::valence::rdkit_element_symbol(atomic_number).unwrap();
+            mmcif.push_str(&format!(
+                "HETATM {atomic_number} {symbol} {symbol} . LIG A 1 {atomic_number} 0.0 0.0 0.0\n"
+            ));
+        }
+        mmcif.push_str("HETATM 119 HG HG . LIG A 1 119 0.0 0.0 0.0\n");
+        mmcif.push_str("HETATM 120 CD CD . LIG A 1 120 0.0 0.0 0.0\n");
+
+        let structure = read_mmcif_atom_site_subset_from_str(&mmcif).unwrap();
+
+        for atomic_number in 1..=118 {
+            assert_eq!(
+                structure.atoms[usize::from(atomic_number - 1)]
+                    .element
+                    .atomic_number(),
+                atomic_number
+            );
+        }
+
+        assert_eq!(structure.atoms[118].element, Element::HG);
+        assert_eq!(structure.atoms[119].element, Element::CD);
     }
 
     #[test]
@@ -10181,6 +10340,31 @@ ATOM      4  O1  LIG A   4       6.000   0.000   0.000  1.00 20.00           O
         assert_eq!(structure.cispeps.len(), 1);
         assert_eq!(structure.cispeps[0].model_num, 1);
         assert_eq!(structure.cispeps[0].reported_angle, Some(12.34));
+    }
+
+    #[test]
+    fn pdb_connection_helpers_use_gemmi_full_metal_table() {
+        let pdb = "\
+HETATM    1 CD    CD A   1       0.000   0.000   0.000  1.00 20.00          CD
+ATOM      2  O   HOH A   2       2.000   0.000   0.000  1.00 20.00           O
+";
+        let mut structure = BioStructure::from_pdb_str(pdb).unwrap();
+        let mut metal_link = " ".repeat(80);
+        metal_link.replace_range(0..4, "LINK");
+        metal_link.replace_range(12..16, "CD  ");
+        metal_link.replace_range(17..20, "CD ");
+        metal_link.replace_range(20..22, "A ");
+        metal_link.replace_range(22..26, "   1");
+        metal_link.replace_range(42..46, " O  ");
+        metal_link.replace_range(47..50, "HOH");
+        metal_link.replace_range(50..52, "A ");
+        metal_link.replace_range(52..56, "   2");
+
+        process_conn(&mut structure, &[metal_link]);
+
+        assert_eq!(structure.connections.len(), 1);
+        assert_eq!(structure.connections[0].type_, BioConnectionType::MetalC);
+        assert_eq!(structure.connections[0].name, "metalc1");
     }
 
     #[test]

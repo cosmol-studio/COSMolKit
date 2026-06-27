@@ -458,6 +458,11 @@ def test_editing_commit_boundary_matches_sanitize_behavior():
     valid = valid_editor.commit()
     assert valid.to_smiles(canonical=False) == "CCO"
 
+    metal_editor = cosmolkit.Molecule.from_smiles("C").edit()
+    hg = metal_editor.add_atom("Hg")
+    metal = metal_editor.commit(sanitize=False)
+    assert metal.atoms()[hg].atomic_num() == 80
+
 
 def test_read_mol_stops_at_m_end_and_ignores_trailing_sdf_text(tmp_path: Path):
     mol2d = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
@@ -646,6 +651,17 @@ HETATM    2  O1  LIG A   1       1.200   0.000   0.000  1.00 10.00           O
     )
     assert pdb_mol.num_atoms() == 2
     assert pdb_mol.num_bonds() == 1
+
+    metal_pdb_mol = cosmolkit.Molecule.from_pdb_block(
+        """\
+HETATM    1 HG    HG     1      -2.213  10.563  24.265  1.00 32.73          HG
+HETATM    2 CD    CD     1      -3.467  18.396  77.649  0.50 39.48          CD
+""",
+        sanitize=False,
+        remove_hs=False,
+        proximity_bonding=False,
+    )
+    assert [atom.atomic_num() for atom in metal_pdb_mol.atoms()] == [80, 48]
 
     mmcif_mol = cosmolkit.Molecule.from_mmcif_block(
         """\

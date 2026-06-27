@@ -159,14 +159,14 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "cosmolkit-core",
 ]
 
 [[package]]
 name = "cosmolkit-core"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "cosmolkit-macros",
  "cosmolkit-ringdecomposer",
@@ -187,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-macros"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -196,7 +196,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-py"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "cosmolkit-core",
  "glam",
@@ -208,7 +208,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-ringdecomposer"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "thiserror",
 ]

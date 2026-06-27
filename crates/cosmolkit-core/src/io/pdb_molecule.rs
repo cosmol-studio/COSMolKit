@@ -1834,6 +1834,19 @@ CONECT    1    2
     }
 
     #[test]
+    fn rdkit_pdb_molecule_conversion_accepts_full_pdb_element_table() {
+        let pdb = "\
+HETATM    1 HG    HG A   1      -2.213  10.563  24.265  1.00 32.73          HG
+HETATM    2 CD    CD A   2      -3.467  18.396  77.649  0.50 39.48          CD
+";
+        let mol = Molecule::from_pdb_block_with_options(pdb, no_proximity_profile()).unwrap();
+
+        assert_eq!(mol.num_atoms(), 2);
+        assert_eq!(mol.atoms()[0].atomic_number(), 80);
+        assert_eq!(mol.atoms()[1].atomic_number(), 48);
+    }
+
+    #[test]
     fn rdkit_pdb_molecule_conversion_flavor_eight_applies_standard_residue_double_bonds() {
         let pdb = "\
 ATOM      1  C   ALA A   1       0.000   0.000   0.000  1.00 10.00           C

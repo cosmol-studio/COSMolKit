@@ -233,7 +233,8 @@ pub use support::{
 };
 pub use valence::{
     ValenceAssignment, ValenceError, ValenceModel, assign_radicals, assign_valence,
-    assign_valence_with_options, atom_has_valence_violation, rdkit_valence_list,
+    assign_valence_with_options, atom_has_valence_violation, rdkit_atomic_number_from_symbol,
+    rdkit_element_symbol, rdkit_valence_list,
 };
 
 /// Returns the crate version at compile time.

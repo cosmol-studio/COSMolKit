@@ -217,6 +217,12 @@ by ``from_pdb_block()``:
        proximity_bonding=True,
    )
 
+PDB and mmCIF element parsing uses the shared RDKit/Gemmi-aligned periodic
+table coverage, including metal elements such as ``Hg`` and ``Cd``. The
+high-level ``Protein`` projection keeps protein residues for traversal while
+still accepting supported non-protein HETATM element records in the input
+structure.
+
 XYZ Blocks
 ----------
 

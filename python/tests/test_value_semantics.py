@@ -440,7 +440,7 @@ $$$$
 
 def test_protein_from_pdb_str_projects_protein_chains():
     pdb = """\
-ATOM      1  N   ALA A   1      11.104  13.207   9.900  1.00 20.00           N  
+ATOM      1  N   ALA A   1      11.104  13.207   9.900  1.00 20.00           N
 ATOM      2  CA  ALA A   1      12.210  13.912  10.555  1.00 20.00           C  
 ATOM      3  C   ALA A   1      13.470  13.079  10.413  1.00 20.00           C  
 HETATM    4  O   HOH A   2      18.000  10.000   8.000  1.00 10.00           O  
@@ -471,6 +471,17 @@ HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
         "ACD(MSE)", cosmolkit.ResidueInfoKind.AA
     ) == ["ALA", "CYS", "ASP", "MSE"]
     assert cosmolkit.expand_protein_one_letter_string("m") == ["MET"]
+
+
+def test_protein_from_pdb_str_does_not_fail_on_supported_metal_hetatm():
+    pdb = """\
+ATOM      1  N   ALA A   1      11.104  13.207   9.900  1.00 20.00           N
+HETATM    2 HG    HG     2      -2.213  10.563  24.265  1.00 32.73          HG
+HETATM    3 CD    CD     3      -3.467  18.396  77.649  0.50 39.48          CD
+"""
+    protein = cosmolkit.Protein.from_pdb_str(pdb)
+
+    assert protein.num_atoms() == 1
 
 
 def test_molecule_batch_read_sdf_file_error_modes(tmp_path: Path):

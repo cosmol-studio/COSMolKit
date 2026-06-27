@@ -1,4 +1,4 @@
-"""Public Python API example: protein subset traversal.
+"""Public Python API example: protein projection traversal.
 
 Usage:
     .venv/bin/python python/examples/protein_from_pdb.py

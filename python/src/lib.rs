@@ -803,34 +803,6 @@ fn expand_user_path(path: &str) -> PyResult<PathBuf> {
     }
 }
 
-fn atomic_number_from_element(element: &str) -> Option<u8> {
-    match element {
-        "H" => Some(1),
-        "B" => Some(5),
-        "C" => Some(6),
-        "N" => Some(7),
-        "O" => Some(8),
-        "F" => Some(9),
-        "P" => Some(15),
-        "S" => Some(16),
-        "Cl" => Some(17),
-        "Br" => Some(35),
-        "I" => Some(53),
-        "Na" => Some(11),
-        "K" => Some(19),
-        "Li" => Some(3),
-        "Mg" => Some(12),
-        "Ca" => Some(20),
-        "Fe" => Some(26),
-        "Cu" => Some(29),
-        "Zn" => Some(30),
-        "Si" => Some(14),
-        "Al" => Some(13),
-        "*" => Some(0),
-        _ => None,
-    }
-}
-
 fn py_method<'py>(obj: &Bound<'py, PyAny>, method: &str) -> PyResult<Bound<'py, PyAny>> {
     obj.call_method0(method)
         .map_err(|err| PyValueError::new_err(format!("from_rdkit failed calling {method}: {err}")))
@@ -5584,7 +5556,7 @@ impl MoleculeEdit {
 Add an atom by element symbol and return its atom index.
 "#]
     fn add_atom(&mut self, element: &str) -> PyResult<usize> {
-        let Some(atomic_num) = atomic_number_from_element(element) else {
+        let Some(atomic_num) = cosmolkit_core::rdkit_atomic_number_from_symbol(element) else {
             return Err(PyValueError::new_err(format!(
                 "unsupported element symbol '{element}'"
             )));

@@ -122,6 +122,36 @@ new molecule:
 
    edited = editor.commit()
 
+Serialization
+-------------
+
+``Molecule`` supports Python ``pickle`` for in-process persistence and
+inter-process transfer. The pickle state carries a COSMolKit pickle schema and
+the versioned core molecule archive payload, so future incompatible payload
+changes can be rejected explicitly instead of being decoded as the wrong
+structure.
+
+.. code-block:: python
+
+   import pickle
+
+   mol = Molecule.from_smiles("F[C@H](Cl)[13CH3:7]").with_2d_coordinates()
+   restored = pickle.loads(pickle.dumps(mol, protocol=pickle.HIGHEST_PROTOCOL))
+
+   print(restored.to_smiles(canonical=False))
+
+Advanced callers can use ``mol_to_binary()`` and ``mol_from_binary()`` to
+inspect or persist the COSMolKit molecule archive directly. Python
+applications should prefer ``pickle`` unless they specifically need the raw
+archive payload:
+
+.. code-block:: python
+
+   payload = mol.mol_to_binary()
+   restored = Molecule.mol_from_binary(payload)
+
+   assert restored.to_smiles(canonical=False) == mol.to_smiles(canonical=False)
+
 Depictions
 ----------
 

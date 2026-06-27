@@ -93,6 +93,19 @@ Access coordinates as NumPy arrays:
 
    print(coords.shape)
 
+Round-trip a molecule through Python pickle:
+
+.. code-block:: python
+
+   import pickle
+
+   mol = Molecule.from_smiles("F[C@H](Cl)[13CH3:7]").with_2d_coordinates()
+
+   restored = pickle.loads(pickle.dumps(mol, protocol=pickle.HIGHEST_PROTOCOL))
+
+   print(restored.to_smiles(canonical=False))
+   print(restored.has_2d_coordinates())
+
 Generate a native 3D conformer with ETKDGv3:
 
 .. code-block:: python

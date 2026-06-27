@@ -2261,6 +2261,162 @@ fn rdkit_periodic_table_entry(atomic_number: u8) -> Option<&'static RdkitPeriodi
     RDKIT_PERIODIC_TABLE.get(usize::from(atomic_number))
 }
 
+#[must_use]
+pub fn rdkit_atomic_number_from_symbol(symbol: &str) -> Option<u8> {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/PeriodicTable.h :: getAtomicNumber
+    // RDKit✔️🔝: int getAtomicNumber(const std::string &elementSymbol) const {
+    // RDKit✔️🔝:   // this little optimization actually makes a measurable difference
+    // RDKit✔️🔝:   // in molecule-construction time
+    // RDKit✔️🔝:   int anum = -1;
+    // RDKit✔️🔝:   if (elementSymbol == "C") {
+    // RDKit✔️🔝:     anum = 6;
+    // RDKit✔️🔝:   } else if (elementSymbol == "N") {
+    // RDKit✔️🔝:     anum = 7;
+    // RDKit✔️🔝:   } else if (elementSymbol == "O") {
+    // RDKit✔️🔝:     anum = 8;
+    // RDKit✔️🔝:   } else {
+    // RDKit✔️🔝:     STR_UINT_MAP::const_iterator iter = byname.find(elementSymbol);
+    // RDKit✔️🔝:     if (iter != byname.end()) {
+    // RDKit✔️🔝:       anum = iter->second;
+    // RDKit✔️🔝:     }
+    // RDKit✔️🔝:   }
+    // RDKit✔️🔝:   POSTCONDITION(anum > -1, "Element '" + elementSymbol + "' not found");
+    // RDKit✔️🔝:   return anum;
+    // RDKit✔️🔝: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/PeriodicTable.h :: getAtomicNumber
+    //
+    // BEGIN RDKIT CPP TYPEDEF third_party/rdkit/Code/RDGeneral/types.h :: STR_UINT_MAP
+    // RDKit✔️🔝: typedef std::map<std::string, UINT> STR_UINT_MAP;
+    // END RDKIT CPP TYPEDEF third_party/rdkit/Code/RDGeneral/types.h :: STR_UINT_MAP
+    //
+    // The symbol set is static and tiny. A direct string match preserves
+    // RDKit's byname coverage, including legacy aliases retained in
+    // atomic_data, while avoiding RDKit's O(log n) std::map traversal and
+    // runtime table storage.
+    match symbol {
+        "*" => Some(0),
+        "H" => Some(1),
+        "He" => Some(2),
+        "Li" => Some(3),
+        "Be" => Some(4),
+        "B" => Some(5),
+        "C" => Some(6),
+        "N" => Some(7),
+        "O" => Some(8),
+        "F" => Some(9),
+        "Ne" => Some(10),
+        "Na" => Some(11),
+        "Mg" => Some(12),
+        "Al" => Some(13),
+        "Si" => Some(14),
+        "P" => Some(15),
+        "S" => Some(16),
+        "Cl" => Some(17),
+        "Ar" => Some(18),
+        "K" => Some(19),
+        "Ca" => Some(20),
+        "Sc" => Some(21),
+        "Ti" => Some(22),
+        "V" => Some(23),
+        "Cr" => Some(24),
+        "Mn" => Some(25),
+        "Fe" => Some(26),
+        "Co" => Some(27),
+        "Ni" => Some(28),
+        "Cu" => Some(29),
+        "Zn" => Some(30),
+        "Ga" => Some(31),
+        "Ge" => Some(32),
+        "As" => Some(33),
+        "Se" => Some(34),
+        "Br" => Some(35),
+        "Kr" => Some(36),
+        "Rb" => Some(37),
+        "Sr" => Some(38),
+        "Y" => Some(39),
+        "Zr" => Some(40),
+        "Nb" => Some(41),
+        "Mo" => Some(42),
+        "Tc" => Some(43),
+        "Ru" => Some(44),
+        "Rh" => Some(45),
+        "Pd" => Some(46),
+        "Ag" => Some(47),
+        "Cd" => Some(48),
+        "In" => Some(49),
+        "Sn" => Some(50),
+        "Sb" => Some(51),
+        "Te" => Some(52),
+        "I" => Some(53),
+        "Xe" => Some(54),
+        "Cs" => Some(55),
+        "Ba" => Some(56),
+        "La" => Some(57),
+        "Ce" => Some(58),
+        "Pr" => Some(59),
+        "Nd" => Some(60),
+        "Pm" => Some(61),
+        "Sm" => Some(62),
+        "Eu" => Some(63),
+        "Gd" => Some(64),
+        "Tb" => Some(65),
+        "Dy" => Some(66),
+        "Ho" => Some(67),
+        "Er" => Some(68),
+        "Tm" => Some(69),
+        "Yb" => Some(70),
+        "Lu" => Some(71),
+        "Hf" => Some(72),
+        "Ta" => Some(73),
+        "W" => Some(74),
+        "Re" => Some(75),
+        "Os" => Some(76),
+        "Ir" => Some(77),
+        "Pt" => Some(78),
+        "Au" => Some(79),
+        "Hg" => Some(80),
+        "Tl" => Some(81),
+        "Pb" => Some(82),
+        "Bi" => Some(83),
+        "Po" => Some(84),
+        "At" => Some(85),
+        "Rn" => Some(86),
+        "Fr" => Some(87),
+        "Ra" => Some(88),
+        "Ac" => Some(89),
+        "Th" => Some(90),
+        "Pa" => Some(91),
+        "U" => Some(92),
+        "Np" => Some(93),
+        "Pu" => Some(94),
+        "Am" => Some(95),
+        "Cm" => Some(96),
+        "Bk" => Some(97),
+        "Cf" => Some(98),
+        "Es" => Some(99),
+        "Fm" => Some(100),
+        "Md" => Some(101),
+        "No" => Some(102),
+        "Lr" => Some(103),
+        "Rf" => Some(104),
+        "Db" => Some(105),
+        "Sg" => Some(106),
+        "Bh" => Some(107),
+        "Hs" => Some(108),
+        "Mt" => Some(109),
+        "Ds" => Some(110),
+        "Rg" => Some(111),
+        "Cn" => Some(112),
+        "Nh" | "Uut" => Some(113),
+        "Fl" => Some(114),
+        "Mc" | "Uup" => Some(115),
+        "Lv" => Some(116),
+        "Ts" => Some(117),
+        "Og" => Some(118),
+        _ => None,
+    }
+}
+
 pub(crate) fn rdkit_default_valence(atomic_number: u8) -> Result<i32, ValenceError> {
     Ok(required_valence_list(atomic_number)?[0])
 }
@@ -2356,7 +2512,7 @@ fn invalid_valence_with_message(atom: &Atom, message: String) -> ValenceError {
     }
 }
 
-pub(crate) fn rdkit_element_symbol(atomic_number: u8) -> Result<&'static str, ValenceError> {
+pub fn rdkit_element_symbol(atomic_number: u8) -> Result<&'static str, ValenceError> {
     // BEGIN RDKIT CPP FUNCTION PeriodicTable::getElementSymbol / atomicData::Symbol
     // RDKit✔️✔️: std::string getElementSymbol(UINT atomicNumber) const {
     // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
@@ -2398,6 +2554,19 @@ mod tests {
         assert_eq!(rdkit_element_symbol(6).unwrap(), "C");
         assert_eq!(rdkit_element_symbol(118).unwrap(), "Og");
         assert!(rdkit_element_symbol(119).is_err());
+    }
+
+    #[test]
+    fn rdkit_atomic_number_from_symbol_covers_canonical_and_legacy_entries() {
+        for atomic_number in 0..=118 {
+            let symbol = rdkit_element_symbol(atomic_number).unwrap();
+            assert_eq!(
+                super::rdkit_atomic_number_from_symbol(symbol),
+                Some(atomic_number)
+            );
+        }
+        assert_eq!(super::rdkit_atomic_number_from_symbol("Uut"), Some(113));
+        assert_eq!(super::rdkit_atomic_number_from_symbol("Uup"), Some(115));
     }
 
     #[test]
