@@ -65,11 +65,11 @@ jobs:
 
             - name: Generate HTML coverage report
               if: always()
-              run: cargo llvm-cov report --html --output-dir target/llvm-cov/html
+              run: cargo llvm-cov report -p cosmolkit-core --release --features op-contracts-strict --html --output-dir target/llvm-cov/html
 
             - name: Generate LCOV coverage report
               if: always()
-              run: cargo llvm-cov report --lcov --output-path lcov.info
+              run: cargo llvm-cov report -p cosmolkit-core --release --features op-contracts-strict --lcov --output-path lcov.info
 
             - name: Upload HTML coverage artifact
               if: always()
