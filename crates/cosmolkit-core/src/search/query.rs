@@ -106,6 +106,9 @@ pub enum AtomQueryPredicate {
     TotalDegree(u8),
     TotalDegreeLessEqual(u8),
     TotalDegreeGreaterEqual(u8),
+    TotalValence(u8),
+    TotalValenceLessEqual(u8),
+    TotalValenceGreaterEqual(u8),
     Connectivity(u8),
     ConnectivityLessEqual(u8),
     ConnectivityGreaterEqual(u8),
@@ -261,6 +264,21 @@ fn total_degree_with_hydrogens(
 ) -> Option<u8> {
     let degree = u8::try_from(adj.neighbors_of(atom.id().index()).len()).ok()?;
     total_hydrogen_count(valence, atom).map(|total_hs| degree.saturating_add(total_hs))
+}
+
+fn total_valence_with_hydrogens(valence: Option<&ValenceAssignment>, atom: &Atom) -> Option<u8> {
+    valence.and_then(|assignment| {
+        let explicit = *assignment.explicit_valence.get(atom.id().index())?;
+        let implicit = assignment
+            .implicit_hydrogens
+            .get(atom.id().index())
+            .copied()
+            .unwrap_or(0)
+            .max(0);
+        explicit
+            .checked_add(implicit)
+            .and_then(|value| u8::try_from(value).ok())
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -442,6 +460,18 @@ pub fn atom_predicate_matches_with_context(
         AtomQueryPredicate::TotalDegreeGreaterEqual(n) => {
             total_degree_with_hydrogens(adj, valence.as_ref(), atom)
                 .is_some_and(|total| total >= *n)
+        }
+
+        // RDKit✔️✔️: total valence — queryAtomTotalValence.
+        // RDKit source: queryAtomTotalValence(at) { return at->getTotalValence(); }
+        AtomQueryPredicate::TotalValence(n) => {
+            total_valence_with_hydrogens(valence.as_ref(), atom) == Some(*n)
+        }
+        AtomQueryPredicate::TotalValenceLessEqual(n) => {
+            total_valence_with_hydrogens(valence.as_ref(), atom).is_some_and(|total| total <= *n)
+        }
+        AtomQueryPredicate::TotalValenceGreaterEqual(n) => {
+            total_valence_with_hydrogens(valence.as_ref(), atom).is_some_and(|total| total >= *n)
         }
 
         // RDKit✔️✔️: connectivity — SMARTS X, total degree including hydrogens.

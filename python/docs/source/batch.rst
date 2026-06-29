@@ -130,6 +130,8 @@ Derived Outputs
    bounds = prepared.dg_bounds_matrix_list()
    fingerprints = prepared.fingerprint_morgan_list(n_bits=2048)
 
+Morgan fingerprint batch APIs use the same source-backed branches as the
+single-molecule API and are covered by strict RDKit bit-identical parity tests.
 Morgan fingerprints can also be collected with provenance data:
 
 .. code-block:: python

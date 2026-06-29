@@ -2,12 +2,14 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::panic::AssertUnwindSafe;
-use std::path::PathBuf;
 
 use cosmolkit_core::{
     BatchErrorMode, Molecule, MoleculeBatch, SmilesWriteError, SmilesWriteParams,
 };
 use serde::Deserialize;
+
+mod common;
+use common::parity_data;
 
 #[derive(Debug, Deserialize)]
 struct BranchResult {
@@ -38,16 +40,13 @@ struct SmilesWriterRecord {
     error: Option<String>,
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
 fn load_golden() -> Vec<SmilesWriterRecord> {
-    let path = repo_root().join("tests/golden/smiles_writer.jsonl");
+    let path = parity_data::golden_path("smiles_writer.jsonl");
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate all RDKit goldens with `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`: {err}",
-            path.display()
+            "failed to open {}; regenerate RDKit goldens with `{}`: {err}",
+            path.display(),
+            parity_data::regenerate_command()
         )
     });
     BufReader::new(file)
@@ -285,20 +284,12 @@ fn run_smiles_writer_parity(branch_names: Option<&[&str]>) {
 
 #[test]
 fn smiles_writer_golden_has_one_record_per_smiles() {
-    let smiles_path = repo_root().join("tests/smiles.smi");
-    let expected = std::fs::read_to_string(&smiles_path)
-        .unwrap_or_else(|err| panic!("failed to read {}: {err}", smiles_path.display()))
-        .lines()
-        .filter(|line| {
-            let line = line.trim();
-            !line.is_empty() && !line.starts_with('#')
-        })
-        .count();
+    let expected = parity_data::count_smiles_rows();
     let records = load_golden();
     assert_eq!(
         records.len(),
         expected,
-        "smiles writer golden row count must match tests/smiles.smi"
+        "smiles writer golden row count must match the active parity corpus"
     );
 }
 

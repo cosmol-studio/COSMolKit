@@ -37,6 +37,7 @@ workflows.
 
 - Python documentation: <https://kit.cosmol.org/>
 - Rust crate notes: [`crates/cosmolkit/README.md`](crates/cosmolkit/README.md)
+- Feature parity scope: [`tests/parity_scope.md`](tests/parity_scope.md)
 
 ## Installation
 

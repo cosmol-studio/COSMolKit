@@ -11767,10 +11767,14 @@ pub fn dg_bounds_matrix_with_options(
         true,
         true,
     )?;
-    if do_triangle_smoothing && !mmat.triangle_smooth(0.0) {
-        return Err(DgBoundsError::GenerationFailed(
-            "triangle smoothing found inconsistent bounds".to_string(),
-        ));
+    if do_triangle_smoothing {
+        // RDKit✔️❌:   if (doTriangleSmoothing) {
+        // RDKit✔️❌:     DistGeom::triangleSmoothBounds(mat);
+        // RDKit✔️❌:   }
+        //
+        // The Python wrapper intentionally ignores the boolean return from
+        // triangle smoothing and still exposes the mutated matrix.
+        let _ = mmat.triangle_smooth(0.0);
     }
     Ok(mmat.to_vec_vec())
 }

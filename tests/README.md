@@ -4,23 +4,26 @@
 - `fixtures/bio/` structure biology test inputs and expected outputs
 - `fixtures/mol2/rdkit/` copied RDKit MOL2 parser fixtures used by MOL2 read parity; this avoids requiring CI to see `third_party/rdkit` as a checked-out submodule when regenerating goldens
 - `fixtures/conformer_generation/rdkit/test_data/` copied RDKit conformer-generation fixtures used by conformer parity and golden regeneration; provenance is recorded in `fixtures/conformer_generation/rdkit_inventory.jsonl`
-- `smiles.smi` shared SMILES corpus for graph-feature and molblock parity tests
-- `golden/graph_features.jsonl` RDKit baseline for atom, bond, valence, stereo, and CIP graph-feature parity
-- `golden/molblock_v2000_minimal.jsonl` RDKit baseline for minimal V2000 mol block body parity
-- `golden/molblock_v2000_kekulized.jsonl` RDKit baseline for kekulized bond-block parity (ignores coordinates)
+- `smiles.smi` small daily SMILES corpus for default non-iterative RDKit parity tests
+- `smiles_5000.smi` strict 5000-row SMILES corpus for explicit exhaustive non-iterative parity checks
+- `golden/smiles_small/*.jsonl` RDKit baselines generated from `smiles.smi`
+- `golden/smiles_5000/*.jsonl` RDKit baselines generated from `smiles_5000.smi`
+- `golden/smiles_*/graph_features.jsonl` RDKit baseline for atom, bond, valence, stereo, and CIP graph-feature parity
+- `golden/smiles_*/molblock_v2000_minimal.jsonl` RDKit baseline for minimal V2000 mol block body parity
+- `golden/smiles_*/molblock_v2000_kekulized.jsonl` RDKit baseline for kekulized bond-block parity (ignores coordinates)
 - `golden/tetrahedral_stereo_geometry.jsonl` RDKit ETKDG geometry baseline for tetrahedral stereo volume checks
-- `golden/smiles_writer.jsonl` RDKit baseline for `MolToSmiles()` parity across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches
-- `golden/isomeric_smiles.jsonl` RDKit baseline for focused isomeric SMILES parity cases
-- `golden/dg_bounds_matrix.jsonl` RDKit baseline for distance-geometry bounds matrix parity
+- `golden/smiles_*/smiles_writer.jsonl` RDKit baseline for `MolToSmiles()` parity across the generated writer parameter matrix (`isomericSmiles`, `kekuleSmiles`, `canonical`, `cleanStereo`, `allBondsExplicit`, `allHsExplicit`, `includeDativeBonds`, `ignoreAtomMapNumbers`, and `rootedAtAtom`)
+- `golden/smiles_*/isomeric_smiles.jsonl` RDKit baseline for focused isomeric SMILES parity cases
+- `golden/smiles_*/dg_bounds_matrix.jsonl` RDKit baseline for distance-geometry bounds matrix parity
 - `golden/forcefield_params.jsonl` RDKit baseline for UFF/MMFF parameter coverage, initial energy/gradient, and single-/multi-conformer force-field optimization parity
 - `golden/morgan_fingerprint.jsonl` RDKit baseline for Morgan fingerprint bit-vector and adjacent-row Tanimoto parity across radius, bit-count, chirality, bond-type, count-simulation, custom-invariant, generator, and AdditionalOutput branches
-- `golden/svg_drawer.jsonl` RDKit baseline for `MolDraw2DSVG` output parity
-- `golden/prepared_draw_molecule.jsonl` RDKit baseline for `PrepareMolForDrawing(kekulize=True, addChiralHs=True, wedgeBonds=True, forceCoords=True)` prepared atom coordinates and bond directions
-- `golden/sdf_write.jsonl` RDKit baseline for MolBlock/SDF write parity across 2D/3D, V2000/V3000, stereo, and kekulize branches
-- `golden/sdf_read.jsonl` RDKit baseline for SDF read parity across 2D/3D, V2000/V3000, stereo-marker, and coordinate-inferred branches
-- `golden/molfile_read.jsonl` RDKit baseline for direct `.mol`/molblock read parity across the same CTAB branch matrix without SDF record separators or data fields
+- `golden/smiles_*/svg_drawer.jsonl` RDKit baseline for `MolDraw2DSVG` output parity
+- `golden/smiles_*/prepared_draw_molecule.jsonl` RDKit baseline for `PrepareMolForDrawing(kekulize=True, addChiralHs=True, wedgeBonds=True, forceCoords=True)` prepared atom coordinates and bond directions
+- `golden/smiles_*/sdf_write.jsonl` RDKit baseline for MolBlock/SDF write parity across 2D/3D, V2000/V3000, stereo, and kekulize branches
+- `golden/smiles_*/sdf_read.jsonl` RDKit baseline for SDF read parity across 2D/3D, V2000/V3000, stereo-marker, and coordinate-inferred branches
+- `golden/smiles_*/molfile_read.jsonl` RDKit baseline for direct `.mol`/molblock read parity across the same CTAB branch matrix without SDF record separators or data fields
 - `golden/mol2_read.jsonl` RDKit baseline for MOL2 read parity over copied RDKit MOL2 fixtures, covering parser parameters, topology, atom/bond fields, 3D coordinates, chirality, and SMILES output
-- `golden/xyz_read.jsonl` RDKit baseline for XYZ block read parity: atom identities, one 3D conformer, coordinates, and no inferred bonds
+- `golden/smiles_*/xyz_read.jsonl` RDKit baseline for XYZ block read parity: atom identities, one 3D conformer, coordinates, and no inferred bonds
 - `corpus/topology/core.csv` target contract corpus for topology-changing operation invariant tests
 - `corpus/topology/cow_small.csv` small COW-only topology corpus; do not run broad parity matrices just to prove value isolation
 - `known_failures/topology_invariants.jsonl` exact xfail records for topology invariant failures; records must match operation, case, invariant, and error kind
@@ -31,28 +34,42 @@ RDKit `2026.03.1` is the current oracle for generated golden files. The source r
 
 RDKit parity tests are strict source-level reproduction tests against `third_party/rdkit`. Do not make parity tests pass by loosening assertions, skipping mismatching fields, adding vague fallbacks, simplifying test conditions, row-specific patches, or heuristic guesses. When a mismatch appears, locate the corresponding RDKit source path and port that behavior directly; if the path is not implemented yet, keep the failure explicit and narrowly described.
 
+For the detailed consistency boundary of the high-value parity surfaces, see
+[`parity_scope.md`](parity_scope.md). That module documents what is asserted for
+DG bounds, seeded conformer generation, force fields, prepared 2D depiction,
+final SVG output, MolBlock/SDF IO, graph/stereo/SMILES, fingerprints, and
+substructure.
+
 1. Create project-level Python env (one shared env for testing + future bindings):
    - `uv sync --group dev`
    - this creates/updates `.venv/` at repository root
-2. Regenerate all RDKit golden files through the single entrypoint:
-   - `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`
+2. Regenerate RDKit golden files through the single entrypoint:
+   - daily small profile: `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --profile smiles_small --suite default --clean --jobs 4`
+   - strict 5000 profile: `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --profile smiles_5000 --suite strict-corpus --clean --jobs 4`
    - omit `--jobs` to use the script default (`min(4, cpu_count, generator_count)`), or pass a larger value for a local high-core machine
 3. Do not regenerate committed golden files through individual generator scripts.
    The per-surface scripts are implementation details of the unified entrypoint;
    using one-off outputs as committed baselines risks drift between parity
    surfaces.
-4. (Optional) Install local COSMolKit Python build into the same env for direct comparison:
+4. Golden files must encode their generation conditions in the path. If the
+   corpus, RDKit version, generator branch matrix, coordinate/RNG settings,
+   normalization rule, or supported field set changes, use a new profile
+   directory or a new file name instead of overwriting an incompatible baseline.
+   `tests/golden/smiles_small/` and `tests/golden/smiles_5000/` are separate on
+   purpose; never make tests switch corpus while reading the other directory.
+5. (Optional) Install local COSMolKit Python build into the same env for direct comparison:
    - `.venv/bin/maturin develop --manifest-path python/Cargo.toml`
-5. Run core tests. Use a focused debug-profile filter while iterating, and
+6. Run core tests. Use a focused debug-profile filter while iterating, and
    release mode with the same strict feature set for full local parity runs:
    - `cargo test -p cosmolkit-core --features op-contracts-strict <test-filter>`
    - `cargo test -p cosmolkit-core --release --features op-contracts-strict`
-6. Run the exhaustive SMILES writer branch matrix when checking full writer parity:
+   - strict 5000 corpus: `COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo test -p cosmolkit-core --release --features op-contracts-strict <non-iterative-parity-filter>`
+7. Run the exhaustive SMILES writer branch matrix when checking full writer parity:
    - `cargo test -p cosmolkit-core --release --features op-contracts-strict --test rdkit_smiles_writer_parity smiles_writer_matches_rdkit_golden_across_param_branches -- --ignored`
 
 Notes:
 - `cargo test` never generates RDKit golden files. If a golden file is missing, regenerate all RDKit goldens with the single entrypoint before running Rust tests.
-- CI regenerates all RDKit Python golden files through `tests/scripts/gen_all_rdkit_goldens.py` immediately after `uv sync --group dev` and before running Rust tests.
+- CI regenerates RDKit Python golden files through `tests/scripts/gen_all_rdkit_goldens.py` immediately after `uv sync --group dev` and before running Rust tests. The default workflow uses `smiles_small/default`; manual dispatch can select `smiles_5000/strict-corpus` with the same action.
 - The unified golden generator includes an RDKit version assertion for ETKDG geometry goldens so test conditions do not drift silently.
 
 ## Gemmi Macromolecular Parsing
@@ -94,7 +111,7 @@ The graph feature test compares both direct molecules and explicit-hydrogen mole
 `crates/cosmolkit-core/tests/rdkit_conformer_generation_library_parity.rs` contains:
 - `conformer_generation_library_golden_has_one_record_per_smiles`
 - `conformer_generation_library_matches_rdkit_golden_under_fixed_iteration_budget`
-- corpus-wide RDKit golden coverage for the explicit path `SMILES -> AddHs -> ETKDGv3(seed=61453,numThreads=1,timeout=10) -> single conformer`
+- corpus-wide RDKit golden coverage for the explicit deterministic path `SMILES -> AddHs -> ETKDGv3(seed=61453,numThreads=1,maxIterations=3,timeout=0) -> single conformer`
 
 `crates/cosmolkit-core/tests/rdkit_forcefield_params_parity.rs` contains:
 - `forcefield_params_golden_has_one_record_per_smiles_library_entry`
@@ -114,23 +131,36 @@ fingerprint unit coverage for deterministic bit generation, chirality,
 count-simulation, custom atom/bond invariants, feature invariants, `fromAtoms`,
 `ignoreAtoms`, Tanimoto, AdditionalOutput, and parameter validation. The
 generated RDKit baseline `tests/golden/morgan_fingerprint.jsonl` is kept for
-parity data, but the current core crate does not expose a dedicated
-`rdkit_morgan_fingerprint_parity.rs` integration test. Python binding coverage
-lives in `python/tests/test_morgan_fingerprint.py` and covers default Morgan
-fingerprints, chirality, count simulation, feature/connectivity generators,
-custom invariants, `fromAtoms`, batch fingerprint lists, Tanimoto similarity,
-and AdditionalOutput fields.
+strict bit-identical parity data, and
+`crates/cosmolkit-core/tests/rdkit_morgan_fingerprint_parity.rs` asserts exact
+Morgan on-bit vectors, sparse-count output, sparse-bit output, hashed-count
+output, explicit-bit output, AdditionalOutput fields, and adjacent-row Tanimoto
+values across the branch matrix. `crates/cosmolkit-core/tests/rdkit_maccs_fingerprint_parity.rs`
+asserts exact RDKit MACCS raw 167-bit vectors and public 166-bit projections on
+targeted fixtures, the daily small corpus, and the explicit `smiles_5000`
+profile. Python binding coverage lives in `python/tests/test_morgan_fingerprint.py`
+for API behavior and `python/tests/test_fingerprint_rdkit_bit_parity.py` for
+RDKit exact-bit parity of the exposed Morgan and MACCS APIs. Topological and
+Avalon fingerprints remain unfinished until exact RDKit bit-vector parity is
+source-ported and tested. Structurally similar hashing, similarity-shape
+correlation, or "compatible" fingerprints are not accepted parity states.
+
+`python/tests/test_substructure_rdkit_parity.py` contains molecule-query
+substructure smoke parity against RDKit `GetSubstructMatches()`. The exposed
+substructure functions are unfinished unless these exact query-to-target atom
+mapping checks pass; direct SMARTS query matching remains a separate unexposed
+surface.
 
 `crates/cosmolkit-core/tests/rdkit_smiles_writer_parity.rs` contains:
 - `smiles_writer_golden_has_one_record_per_smiles`
 - `smiles_writer_matches_rdkit_golden_across_param_branches`
-- strict RDKit parity coverage for `MolToSmiles()` across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches
+- strict RDKit parity coverage for `MolToSmiles()` across the full generated writer parameter matrix: `isomericSmiles`, `kekuleSmiles`, `canonical`, `cleanStereo`, `allBondsExplicit`, `allHsExplicit`, `includeDativeBonds`, `ignoreAtomMapNumbers`, and `rootedAtAtom` (`none`/`first`/`last`). Canonicalized SMILES output is compared directly in the canonical branches.
 
 `crates/cosmolkit-core/tests/rdkit_svg_draw_parity.rs` contains:
 - `svg_draw_golden_has_one_record_per_smiles`
 - `svg_drawer_matches_rdkit_golden_except_tool_identifiers`
 - `svg_drawer_matches_rdkit_golden_except_tool_identifiers_in_parallel_batch`
-- strict RDKit parity coverage for the Python-exposed `MolDraw2DSVG(..., noFreetype=True)` final SVG string, excluding expected tool identifier metadata differences
+- strict RDKit parity coverage for the Python-exposed `MolDraw2DSVG(..., noFreetype=True)` final SVG string on the shared corpus, excluding expected tool identifier metadata differences. This is not whole-surface MolDraw2D parity; marker-open drawing branches such as link-node extraction, StereoGroup masking, and atomRegions remain unfinished until exact final-output parity tests cover them.
 
 `crates/cosmolkit-core/tests/rdkit_sdf_read_parity.rs` contains:
 - `sdf_read_golden_covers_expected_case_matrix`
@@ -165,11 +195,13 @@ Current status:
 - tetrahedral stereo ordered-ligand geometry validation is currently passing against RDKit ETKDGv3 (`seed=42`) on all chiral corpus entries.
 - DG bounds matrix parity is currently passing on the shared corpus.
 - force-field parameter parity is currently passing on the shared corpus across UFF/MMFF parameter coverage, initial energy/gradient, and single-/multi-conformer optimization branches.
-- Morgan fingerprint unit and Python binding coverage is currently passing for
-  the supported public branches; a dedicated current-core RDKit golden parity
-  integration test is not present.
-- SMILES writer parity is currently passing on the shared corpus across `isomericSmiles`, `kekuleSmiles`, and `canonical` branches.
+- Morgan and MACCS fingerprint exposed branches are currently passing strict
+  RDKit bit-identical parity; topological and Avalon fingerprints remain
+  unfinished.
+- Substructure molecule-query APIs are unfinished unless the strict RDKit
+  query-match parity tests pass for the exposed public branch.
+- SMILES writer parity is currently passing for the common branch set, with an explicit exhaustive parity target across the full generated writer parameter matrix.
 - strict V2000 molblock coordinate/topology parity is currently passing on the shared corpus.
 - MOL2 read parity is currently passing against copied RDKit MOL2 parser fixtures for the generated MOL2 golden.
-- SVG drawer parity is currently passing against RDKit final SVG goldens for the shared corpus.
+- SVG drawer final-SVG parity is currently passing against RDKit goldens for the shared corpus only; marker-open drawing branches remain unfinished.
 - Temporary stress check result: random sampling 1000 SMILES from `core_comp_lib.csv` with regenerated RDKit goldens still exposes unresolved molblock parity gaps (details logged under `tmp/rust_test_core_comp_lib_sample1000_with_regen_errors.txt`).

@@ -11,6 +11,9 @@ use cosmolkit_core::{
 };
 use serde::Deserialize;
 
+mod common;
+use common::parity_data;
+
 #[derive(Debug, Deserialize)]
 struct MolFileReadRecord {
     smiles: Option<String>,
@@ -65,7 +68,7 @@ struct SmilesOut {
 }
 
 fn golden_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/golden/molfile_read.jsonl")
+    parity_data::golden_path("molfile_read.jsonl")
 }
 
 fn ensure_golden_exists() {
@@ -73,8 +76,9 @@ fn ensure_golden_exists() {
     assert!(
         path.exists(),
         "missing RDKit molfile read golden: {}. Generate it before running tests:\n\
-         uv sync --group dev && .venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4",
-        path.display()
+         uv sync --group dev && {}",
+        path.display(),
+        parity_data::regenerate_command()
     );
 }
 

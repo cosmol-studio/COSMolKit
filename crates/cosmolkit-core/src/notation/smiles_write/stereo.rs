@@ -274,7 +274,16 @@ pub(super) fn update_property_cache_for_smiles(
     // RDKit✔️✔️: // molecule's existing RingInfo and only computes fast rings on demand in
     // RDKit✔️✔️: // specific canonical-ranking paths.
     // END RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles ring-info lifetime
-    *molecule = molecule.with_assigned_valence()?;
+    assign_non_strict_valence_cache_for_smiles(molecule)?;
+    Ok(())
+}
+
+fn assign_non_strict_valence_cache_for_smiles(
+    molecule: &mut Molecule,
+) -> Result<(), SmilesWriteError> {
+    let valence =
+        crate::assign_valence_with_options(molecule, crate::ValenceModel::RdkitLike, false)?;
+    molecule.derived_cache_mut().valence = Some(valence);
     Ok(())
 }
 
@@ -398,24 +407,119 @@ pub(super) fn assign_stereochemistry_for_smiles(
     }
     ensure_fast_rings_for_writer_stereo_perception(molecule)?;
     crate::stereo::assign_stereochemistry(molecule)?;
-    assign_double_bond_stereo_for_writer_working_copy(molecule)?;
-    let ranks = crate::stereo::assign_atom_cip_ranks(molecule)?;
-    let (_, atom_labels, _) = crate::stereo::assign_atom_chiral_codes(molecule, &ranks)?;
-    for (atom_idx, cip_code) in atom_labels {
-        if let Some(atom_mut) = molecule.topology_block_mut().atoms.get_mut(atom_idx) {
-            atom_mut.set_prop("_CIPCode", cip_code);
-        }
-    }
-    for (atom_idx, rank) in ranks.iter().copied().enumerate() {
-        if let Some(atom_mut) = molecule.topology_block_mut().atoms.get_mut(atom_idx) {
-            atom_mut.set_prop("_CIPRank", rank.to_string());
-        }
-    }
+    let ranks = assign_legacy_cip_labels_for_writer_working_copy(molecule)?;
     if clean_stereo {
         apply_clean_stereo_ring_special_cases_for_writer(molecule, &ranks)?;
     }
     molecule.properties_mut().set_prop("_StereochemDone", "1");
     Ok(())
+}
+
+pub(super) fn assign_legacy_cip_labels_for_writer_working_copy(
+    molecule: &mut Molecule,
+) -> Result<Vec<u32>, SmilesWriteError> {
+    // BEGIN RDKIT CPP FUNCTION Chirality::legacyStereoPerception fixed-point assignment loop
+    // RDKit✔️✔️: UINT_VECT atomRanks;
+    // RDKit✔️✔️: bool keepGoing = hasStereoAtoms | hasStereoBonds;
+    // RDKit✔️✔️: bool changedStereoAtoms, changedStereoBonds;
+    // RDKit✔️✔️: while (keepGoing) {
+    // RDKit✔️✔️:   if (hasStereoAtoms || hasPotentialStereoAtoms) {
+    // RDKit✔️✔️:     std::tie(hasStereoAtoms, changedStereoAtoms) =
+    // RDKit✔️✔️:         Chirality::assignAtomChiralCodes(mol, atomRanks,
+    // RDKit✔️✔️:                                        flagPossibleStereoCenters);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     changedStereoAtoms = false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (hasStereoBonds || hasPotentialStereoBonds) {
+    // RDKit✔️✔️:     std::tie(hasStereoBonds, changedStereoBonds) =
+    // RDKit✔️✔️:         Chirality::assignBondStereoCodes(mol, atomRanks);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     changedStereoBonds = false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   keepGoing = (hasStereoAtoms || hasStereoBonds) &&
+    // RDKit✔️✔️:               (changedStereoAtoms || changedStereoBonds);
+    // RDKit✔️✔️:   if (keepGoing) {
+    // RDKit✔️✔️:     Chirality::rerankAtoms(mol, atomRanks);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION Chirality::legacyStereoPerception fixed-point assignment loop
+    let mut ranks = crate::stereo::assign_atom_cip_ranks_in_place(molecule)?;
+    let mut has_stereo_atoms = molecule
+        .atoms()
+        .iter()
+        .any(|atom| !matches!(atom.chiral_tag(), ChiralTag::Unspecified | ChiralTag::Other));
+    let mut has_stereo_bonds = molecule.bonds().iter().any(|bond| {
+        bond.order() == BondOrder::Double
+            && molecule
+                .topology_block()
+                .adjacency
+                .neighbors_of(bond.begin().index())
+                .iter()
+                .chain(
+                    molecule
+                        .topology_block()
+                        .adjacency
+                        .neighbors_of(bond.end().index())
+                        .iter(),
+                )
+                .any(|neighbor| {
+                    molecule
+                        .bonds()
+                        .get(neighbor.bond.index())
+                        .is_some_and(|neighbor_bond| {
+                            matches!(
+                                neighbor_bond.direction(),
+                                BondDirection::EndDownRight | BondDirection::EndUpRight
+                            )
+                        })
+                })
+    });
+    let mut keep_going = has_stereo_atoms || has_stereo_bonds;
+    while keep_going {
+        let atom_changed = if has_stereo_atoms {
+            let (unassigned_atoms, atom_labels, atom_changed) =
+                crate::stereo::assign_atom_chiral_codes(molecule, &ranks)?;
+            for (atom_idx, cip_code) in atom_labels {
+                if let Some(atom_mut) = molecule.topology_block_mut().atoms.get_mut(atom_idx) {
+                    atom_mut.set_prop("_CIPCode", cip_code);
+                }
+            }
+            has_stereo_atoms = unassigned_atoms;
+            atom_changed
+        } else {
+            false
+        };
+
+        let bond_changed = if has_stereo_bonds {
+            let (unassigned_bonds, assignments, bond_changed) =
+                crate::stereo::assign_bond_stereo_codes(molecule, &ranks);
+            for (bond_idx, stereo, begin_control, end_control) in assignments {
+                let Some(bond_mut) = molecule.topology_block_mut().bonds.get_mut(bond_idx) else {
+                    continue;
+                };
+                if bond_mut.stereo() != BondStereo::None {
+                    continue;
+                }
+                bond_mut
+                    .set_stereo_atoms(Some([AtomId::new(begin_control), AtomId::new(end_control)]));
+                bond_mut.set_stereo(match stereo {
+                    crate::stereo::DoubleBondStereo::E => BondStereo::E,
+                    crate::stereo::DoubleBondStereo::Z => BondStereo::Z,
+                    crate::stereo::DoubleBondStereo::Unknown => BondStereo::Any,
+                });
+            }
+            has_stereo_bonds = unassigned_bonds;
+            bond_changed
+        } else {
+            false
+        };
+
+        keep_going = (has_stereo_atoms || has_stereo_bonds) && (atom_changed || bond_changed);
+        if keep_going {
+            ranks = crate::stereo::rerank_atoms_in_place(molecule, &ranks)?;
+        }
+    }
+    Ok(ranks)
 }
 
 pub(super) fn ensure_fast_rings_for_writer_stereo_perception(
@@ -523,7 +627,7 @@ pub(super) fn apply_clean_stereo_ring_special_cases_for_writer(
             }
         }
     }
-    *molecule = molecule.with_assigned_valence()?;
+    assign_non_strict_valence_cache_for_smiles(molecule)?;
     Ok(())
 }
 

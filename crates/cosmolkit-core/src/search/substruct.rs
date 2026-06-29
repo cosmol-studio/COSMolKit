@@ -16,7 +16,7 @@
 //! Each copied C++ block below uses the two-axis status marker:
 //! - RDKit✔️✔️: fully reproduced behavior and performance
 //! - RDKit✔️❌: functionally correct, but with a known performance gap
-//! - RDKit❗✔️: approximately implemented, perf-equivalent
+//! - RDKit❗✔️: unfinished behavior that must not be presented as parity
 //! - RDKit❌❌: not yet ported
 
 use crate::chemistry::forcefield::crystalff::build_crystalff_query_molecule;
@@ -167,14 +167,13 @@ impl Vf2Graph {
 //   The atomCompat logic is inlined for the basic case (atomic number,
 //   aromaticity, isotope, formal charge). Full QueryNode eval is deferred.
 
-/// RDKit✔️❌: Basic atom compatibility check matching RDKit's atomCompat.
+/// Unfinished atom compatibility check for RDKit's atomCompat.
 ///
-/// RDKit `atomCompat` checks: atomic number, aromaticity, isotope,
-/// formal charge, and query atom queries. We implement the non-query
-/// subset here. Full SMARTS/QueryNode evaluation is blocked on
-/// MatchSubqueries porting.
+/// RDKit `atomCompat` checks atomic number, aromaticity, isotope,
+/// formal charge, and query atom queries. This remains unfinished until the
+/// full source behavior and parity surface are closed.
 fn atom_matches(query_atom: &Atom, query_mol: &Molecule, mol_atom: &Atom, mol: &Molecule) -> bool {
-    // RDKit source (atomCompat, approx):
+    // RDKit source (atomCompat, unfinished):
     //   if (query->hasQuery()) {
     //     return query->Match(mol);
     //   }
@@ -308,11 +307,11 @@ fn atom_query_predicate_matches_for_substruct(
     }
 }
 
-/// RDKit❗✔️: Partial evaluation of an atom query node.
+/// RDKit❗✔️: Evaluation of an atom query node for the SMARTS subset currently
+/// modeled by COSMolKit.
 ///
-/// Only the basic predicates (AtomicNumber, IsAromatic, FormalCharge,
-/// Isotope) are implemented. Recursive, RGroup, and SMARTS queries
-/// are not yet supported.
+/// Recursive SMARTS are evaluated through the recursive match cache used by
+/// SubstructMatch; unsupported predicate leaves still evaluate false.
 fn evaluate_atom_query(
     query: &crate::QueryNode<AtomQueryPredicate>,
     atom: &Atom,
@@ -365,12 +364,12 @@ fn evaluate_atom_query(
 //     const SubstructMatchParameters &d_params;
 //   };
 
-/// RDKit✔️❌: Basic bond compatibility check matching RDKit's bondCompat.
+/// RDKit❗✔️: bond compatibility check for RDKit's bondCompat.
 ///
-/// Handles bond order matching with aromatic fallback rules.
-/// Query bonds via BondQueryPredicate are deferred.
+/// Handles query-bond predicate trees, bond order matching, and aromatic
+/// fallback rules required by the default Morgan feature SMARTS patterns.
 fn bond_matches(query_bond: &Bond, query_mol: &Molecule, mol_bond: &Bond, mol: &Molecule) -> bool {
-    // RDKit source (bondCompat, approx):
+    // RDKit source (bondCompat, unfinished):
     //   if (qBnd->hasQuery()) return qBnd->Match(mBnd);
     //   if (qBnd->getIsAromatic() && mBnd->getIsAromatic()) return true;
     //   return qBnd->getBondType() == mBnd->getBondType();
@@ -412,7 +411,8 @@ fn bond_matches(query_bond: &Bond, query_mol: &Molecule, mol_bond: &Bond, mol: &
     false
 }
 
-/// RDKit❗✔️: Partial evaluation of a bond query node.
+/// RDKit❗✔️: Evaluation of a bond query node for the currently modeled SMARTS
+/// bond predicate subset.
 fn evaluate_bond_query(
     query: &crate::QueryNode<BondQueryPredicate>,
     bond: &Bond,
@@ -1000,6 +1000,9 @@ impl<'a> Vf2SubState<'a> {
         debug_assert!(node2 < self.n2);
         debug_assert_eq!(self.core_1[node1], NULL_NODE);
         debug_assert_eq!(self.core_2[node2], NULL_NODE);
+        if self.core_1[node1] != NULL_NODE || self.core_2[node2] != NULL_NODE {
+            return false;
+        }
 
         // RDKit✔️✔️: if (boost::out_degree(node1, *g1) > boost::out_degree(node2, *g2)) {
         // RDKit✔️✔️:   return false;
@@ -2046,6 +2049,1010 @@ mod tests {
         };
         let matches = get_substruct_matches_with_params(&c, &c, &params);
         assert_eq!(matches.len(), 1, "max_matches=1 should return one match");
+    }
+
+    #[test]
+    fn feature_smarts_substruct_matches_required_query_semantics() {
+        let cases = [
+            (
+                "Donor",
+                "[$([N;!H0;v3,v4&+1]),$([O,S;H1;+0]),n&H1&+0]",
+                "CCO",
+                vec![2],
+                vec![2],
+            ),
+            (
+                "Acceptor",
+                "[$([O,S;H1;v2;!$(*-*=[O,N,P,S])]),$([O,S;H0;v2]),$([O,S;-]),$([N;v3;!$(N-*=[O,N,P,S])]),n&H0&+0,$([o,s;+0;!$([o,s]:n);!$([o,s]:c:n)])]",
+                "CC(=O)C",
+                vec![2],
+                vec![2],
+            ),
+            (
+                "Aromatic",
+                "[a]",
+                "c1ccccc1",
+                vec![0],
+                vec![0, 1, 2, 3, 4, 5],
+            ),
+            ("Halogen", "[F,Cl,Br,I]", "CCl", vec![1], vec![1]),
+            (
+                "Basic",
+                "[#7;+,$([N;H2&+0][$([C,a]);!$([C,a](=O))]),$([N;H1&+0]([$([C,a]);!$([C,a](=O))])[$([C,a]);!$([C,a](=O))]),$([N;H0&+0]([C;!$(C(=O))])([C;!$(C(=O))])[C;!$(C(=O))])]",
+                "[NH4+]",
+                vec![0],
+                vec![0],
+            ),
+            (
+                "Acidic",
+                "[$([C,S](=[O,S,P])-[O;H1,-1])]",
+                "CC(=O)O",
+                vec![1],
+                vec![1],
+            ),
+        ];
+
+        for (name, smarts, smiles, expected_first, expected_atoms) in cases {
+            let mol = Molecule::from_smiles_with_sanitize(smiles, false)
+                .unwrap_or_else(|_| panic!("{name} molecule should parse"));
+            let query = build_crystalff_query_molecule(smarts)
+                .unwrap_or_else(|_| panic!("{name} SMARTS should build query molecule"));
+            let matches = get_substruct_matches(&mol, &query);
+            assert!(
+                !matches.is_empty(),
+                "{name} should produce at least one match"
+            );
+            assert_eq!(
+                matches[0].atom_mapping, expected_first,
+                "{name} first match atom mapping"
+            );
+            let mut atom_indices: Vec<usize> = matches
+                .iter()
+                .flat_map(|matched| matched.atom_mapping.iter().copied())
+                .filter(|idx| *idx != NULL_NODE)
+                .collect();
+            atom_indices.sort_unstable();
+            atom_indices.dedup();
+            assert_eq!(atom_indices, expected_atoms, "{name} feature SMARTS");
+        }
+    }
+
+    #[test]
+    fn maccs_patterns_substruct_matches_required_topology_semantics() {
+        let cases = [
+            (
+                "four-membered ring",
+                "*1~*~*~*~1",
+                "C1CCC1",
+                true,
+                vec![0, 1, 2, 3],
+            ),
+            (
+                "four-membered ring rejects chain",
+                "*1~*~*~*~1",
+                "CCCC",
+                false,
+                Vec::new(),
+            ),
+            ("ring bond", "*@*(@*)@*", "C12CC1C2", true, vec![0, 2, 1, 3]),
+            (
+                "non-ring oxygen bridge",
+                "*!@[#8]!@*",
+                "COC",
+                true,
+                vec![0, 1, 2],
+            ),
+            (
+                "branch degree",
+                "*~*(~*)(~*)~*",
+                "CC(C)(C)C",
+                true,
+                vec![0, 1, 2, 3, 4],
+            ),
+            (
+                "recursive ring closure",
+                "[$([CH3]~*~*~[CH2]~*),$([CH3]~*1~*~[CH2]1)]",
+                "CC1CC1",
+                true,
+                vec![0],
+            ),
+        ];
+
+        for (name, smarts, smiles, expected_match, expected_first) in cases {
+            let mol = Molecule::from_smiles_with_sanitize(smiles, true)
+                .unwrap_or_else(|_| panic!("{name} molecule should parse"));
+            let query = build_crystalff_query_molecule(smarts)
+                .unwrap_or_else(|_| panic!("{name} MACCS SMARTS should build query"));
+            let matches = get_substruct_matches(&mol, &query);
+            assert_eq!(
+                !matches.is_empty(),
+                expected_match,
+                "{name} match truth value"
+            );
+            if expected_match {
+                assert_eq!(
+                    matches[0].atom_mapping, expected_first,
+                    "{name} first match"
+                );
+            }
+        }
+    }
+
+    struct MaccsPatternGolden {
+        bit: u16,
+        smarts: &'static str,
+        smiles: &'static str,
+        first_match: &'static [usize],
+    }
+
+    fn rdkit_maccs_pattern_positive_goldens() -> &'static [MaccsPatternGolden] {
+        // RDKit source: MACCS.cpp::Patterns initializes these SMARTS strings
+        // with `RDKit::SmartsToMol(...)`. `first_match` values were generated
+        // from pinned RDKit 2026.03.1 using `Mol.GetSubstructMatch()`.
+        &[
+            MaccsPatternGolden {
+                bit: 8,
+                smarts: "[!#6!#1]1~*~*~*~1",
+                smiles: "O1CCC1",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 11,
+                smarts: "*1~*~*~*~1",
+                smiles: "C1CCC1",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 13,
+                smarts: "[#8]~[#7](~[#6])~[#6]",
+                smiles: "ON(C)C",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 14,
+                smarts: "[#16]-[#16]",
+                smiles: "CSSC",
+                first_match: &[1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 15,
+                smarts: "[#8]~[#6](~[#8])~[#8]",
+                smiles: "O=C(O)O",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 16,
+                smarts: "[!#6!#1]1~*~*~1",
+                smiles: "O1CC1",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 17,
+                smarts: "[#6]#[#6]",
+                smiles: "C#C",
+                first_match: &[0, 1],
+            },
+            MaccsPatternGolden {
+                bit: 19,
+                smarts: "*1~*~*~*~*~*~*~1",
+                smiles: "C1CCCCCC1",
+                first_match: &[0, 1, 2, 3, 4, 5, 6],
+            },
+            MaccsPatternGolden {
+                bit: 20,
+                smarts: "[#14]",
+                smiles: "[SiH4]",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 21,
+                smarts: "[#6]=[#6](~[!#6!#1])~[!#6!#1]",
+                smiles: "C=C(O)O",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 22,
+                smarts: "*1~*~*~1",
+                smiles: "C1CC1",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 23,
+                smarts: "[#7]~[#6](~[#8])~[#8]",
+                smiles: "NC(=O)O",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 24,
+                smarts: "[#7]-[#8]",
+                smiles: "ON(C)C",
+                first_match: &[1, 0],
+            },
+            MaccsPatternGolden {
+                bit: 25,
+                smarts: "[#7]~[#6](~[#7])~[#7]",
+                smiles: "NC(N)N",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 26,
+                smarts: "[#6]=@[#6](@*)@*",
+                smiles: "C1=C2CCCC2C1",
+                first_match: &[0, 1, 2, 5],
+            },
+            MaccsPatternGolden {
+                bit: 28,
+                smarts: "[!#6!#1]~[CH2]~[!#6!#1]",
+                smiles: "OCO",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 30,
+                smarts: "[#6]~[!#6!#1](~[#6])(~[#6])~*",
+                smiles: "C[S](C)(C)C",
+                first_match: &[0, 1, 2, 3, 4],
+            },
+            MaccsPatternGolden {
+                bit: 31,
+                smarts: "[!#6!#1]~[F,Cl,Br,I]",
+                smiles: "N[Pt](Cl)(Cl)N",
+                first_match: &[1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 32,
+                smarts: "[#6]~[#16]~[#7]",
+                smiles: "CSN",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 33,
+                smarts: "[#7]~[#16]",
+                smiles: "CSN",
+                first_match: &[2, 1],
+            },
+            MaccsPatternGolden {
+                bit: 34,
+                smarts: "[CH2]=*",
+                smiles: "C=C",
+                first_match: &[0, 1],
+            },
+            MaccsPatternGolden {
+                bit: 36,
+                smarts: "[#16R]",
+                smiles: "S1CC1",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 37,
+                smarts: "[#7]~[#6](~[#8])~[#7]",
+                smiles: "NC(=O)N",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 38,
+                smarts: "[#7]~[#6](~[#6])~[#7]",
+                smiles: "NC(C)N",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 39,
+                smarts: "[#8]~[#16](~[#8])~[#8]",
+                smiles: "COS(=O)(=O)O",
+                first_match: &[1, 2, 3, 4],
+            },
+            MaccsPatternGolden {
+                bit: 40,
+                smarts: "[#16]-[#8]",
+                smiles: "CSO",
+                first_match: &[1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 41,
+                smarts: "[#6]#[#7]",
+                smiles: "C#N",
+                first_match: &[0, 1],
+            },
+            MaccsPatternGolden {
+                bit: 43,
+                smarts: "[!#6!#1!H0]~*~[!#6!#1!H0]",
+                smiles: "OCO",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 44,
+                smarts: "[!#1;!#6;!#7;!#8;!#9;!#14;!#15;!#16;!#17;!#35;!#53]",
+                smiles: "[SeH2]",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 45,
+                smarts: "[#6]=[#6]~[#7]",
+                smiles: "C=CN",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 47,
+                smarts: "[#16]~*~[#7]",
+                smiles: "SCN",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 48,
+                smarts: "[#8]~[!#6!#1](~[#8])~[#8]",
+                smiles: "COS(=O)(=O)O",
+                first_match: &[1, 2, 3, 4],
+            },
+            MaccsPatternGolden {
+                bit: 49,
+                smarts: "[!+0]",
+                smiles: "O=N(=O)O",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 50,
+                smarts: "[#6]=[#6](~[#6])~[#6]",
+                smiles: "CC(C)=C",
+                first_match: &[3, 1, 0, 2],
+            },
+            MaccsPatternGolden {
+                bit: 51,
+                smarts: "[#6]~[#16]~[#8]",
+                smiles: "CSO",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 52,
+                smarts: "[#7]~[#7]",
+                smiles: "NNO",
+                first_match: &[0, 1],
+            },
+            MaccsPatternGolden {
+                bit: 53,
+                smarts: "[!#6!#1!H0]~*~*~*~[!#6!#1!H0]",
+                smiles: "NCCCO",
+                first_match: &[0, 1, 2, 3, 4],
+            },
+            MaccsPatternGolden {
+                bit: 54,
+                smarts: "[!#6!#1!H0]~*~*~[!#6!#1!H0]",
+                smiles: "NCCN",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 55,
+                smarts: "[#8]~[#16]~[#8]",
+                smiles: "CS(=O)(=O)C",
+                first_match: &[2, 1, 3],
+            },
+            MaccsPatternGolden {
+                bit: 56,
+                smarts: "[#8]~[#7](~[#8])~[#6]",
+                smiles: "ON(O)C",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 57,
+                smarts: "[#8R]",
+                smiles: "O1CC1",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 58,
+                smarts: "[!#6!#1]~[#16]~[!#6!#1]",
+                smiles: "CS(=O)(=O)C",
+                first_match: &[2, 1, 3],
+            },
+            MaccsPatternGolden {
+                bit: 59,
+                smarts: "[#16]!:*:*",
+                smiles: "Sc1ccccc1",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 60,
+                smarts: "[#16]=[#8]",
+                smiles: "CS(=O)C",
+                first_match: &[1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 61,
+                smarts: "*~[#16](~*)~*",
+                smiles: "C[S](C)(C)C",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 62,
+                smarts: "*@*!@*@*",
+                smiles: "C1CC1C1CC1",
+                first_match: &[0, 2, 3, 4],
+            },
+            MaccsPatternGolden {
+                bit: 63,
+                smarts: "[#7]=[#8]",
+                smiles: "N=O",
+                first_match: &[0, 1],
+            },
+            MaccsPatternGolden {
+                bit: 64,
+                smarts: "*@*!@[#16]",
+                smiles: "Sc1ccccc1",
+                first_match: &[2, 1, 0],
+            },
+            MaccsPatternGolden {
+                bit: 65,
+                smarts: "c:n",
+                smiles: "c1ncccc1",
+                first_match: &[0, 1],
+            },
+            MaccsPatternGolden {
+                bit: 66,
+                smarts: "[#6]~[#6](~[#6])(~[#6])~*",
+                smiles: "CC(C)(C)C",
+                first_match: &[0, 1, 2, 3, 4],
+            },
+            MaccsPatternGolden {
+                bit: 67,
+                smarts: "[!#6!#1]~[#16]",
+                smiles: "CSSC",
+                first_match: &[1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 68,
+                smarts: "[!#6!#1!H0]~[!#6!#1!H0]",
+                smiles: "NNO",
+                first_match: &[0, 1],
+            },
+            MaccsPatternGolden {
+                bit: 69,
+                smarts: "[!#6!#1]~[!#6!#1!H0]",
+                smiles: "CSN",
+                first_match: &[1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 70,
+                smarts: "[!#6!#1]~[#7]~[!#6!#1]",
+                smiles: "NNO",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 71,
+                smarts: "[#7]~[#8]",
+                smiles: "N=O",
+                first_match: &[0, 1],
+            },
+            MaccsPatternGolden {
+                bit: 72,
+                smarts: "[#8]~*~*~[#8]",
+                smiles: "OCCO",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 73,
+                smarts: "[#16]=*",
+                smiles: "CS(=O)C",
+                first_match: &[1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 74,
+                smarts: "[CH3]~*~[CH3]",
+                smiles: "CCC",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 75,
+                smarts: "*!@[#7]@*",
+                smiles: "CN1CC1",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 76,
+                smarts: "[#6]=[#6](~*)~*",
+                smiles: "CC(C)=C",
+                first_match: &[3, 1, 0, 2],
+            },
+            MaccsPatternGolden {
+                bit: 77,
+                smarts: "[#7]~*~[#7]",
+                smiles: "NC(=O)N",
+                first_match: &[0, 1, 3],
+            },
+            MaccsPatternGolden {
+                bit: 78,
+                smarts: "[#6]=[#7]",
+                smiles: "C=N",
+                first_match: &[0, 1],
+            },
+            MaccsPatternGolden {
+                bit: 79,
+                smarts: "[#7]~*~*~[#7]",
+                smiles: "NCCN",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 80,
+                smarts: "[#7]~*~*~*~[#7]",
+                smiles: "NCCCN",
+                first_match: &[0, 1, 2, 3, 4],
+            },
+            MaccsPatternGolden {
+                bit: 81,
+                smarts: "[#16]~*(~*)~*",
+                smiles: "Sc1ccccc1",
+                first_match: &[0, 1, 2, 6],
+            },
+            MaccsPatternGolden {
+                bit: 82,
+                smarts: "*~[CH2]~[!#6!#1!H0]",
+                smiles: "CCO",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 83,
+                smarts: "[!#6!#1]1~*~*~*~*~1",
+                smiles: "O1CCCC1",
+                first_match: &[0, 1, 2, 3, 4],
+            },
+            MaccsPatternGolden {
+                bit: 84,
+                smarts: "[NH2]",
+                smiles: "CCN",
+                first_match: &[2],
+            },
+            MaccsPatternGolden {
+                bit: 85,
+                smarts: "[#6]~[#7](~[#6])~[#6]",
+                smiles: "CN(C)C",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 86,
+                smarts: "[C;H2,H3][!#6!#1][C;H2,H3]",
+                smiles: "COC",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 87,
+                smarts: "[F,Cl,Br,I]!@*@*",
+                smiles: "Clc1ccccc1",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 89,
+                smarts: "[#8]~*~*~*~[#8]",
+                smiles: "OCCCO",
+                first_match: &[0, 1, 2, 3, 4],
+            },
+            MaccsPatternGolden {
+                bit: 90,
+                smarts: "[$([!#6!#1!H0]~*~*~[CH2]~*),$([!#6!#1!H0R]1@[R]@[R]@[CH2R]1),$([!#6!#1!H0]~[R]1@[R]@[CH2R]1)]",
+                smiles: "N1CCC1",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 91,
+                smarts: "[$([!#6!#1!H0]~*~*~*~[CH2]~*),$([!#6!#1!H0R]1@[R]@[R]@[R]@[CH2R]1),$([!#6!#1!H0]~[R]1@[R]@[R]@[CH2R]1),$([!#6!#1!H0]~*~[R]1@[R]@[CH2R]1)]",
+                smiles: "NCCCCCN",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 92,
+                smarts: "[#8]~[#6](~[#7])~[#6]",
+                smiles: "CC(=O)N",
+                first_match: &[2, 1, 3, 0],
+            },
+            MaccsPatternGolden {
+                bit: 93,
+                smarts: "[!#6!#1]~[CH3]",
+                smiles: "COC",
+                first_match: &[1, 0],
+            },
+            MaccsPatternGolden {
+                bit: 94,
+                smarts: "[!#6!#1]~[#7]",
+                smiles: "CSN",
+                first_match: &[1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 95,
+                smarts: "[#7]~*~*~[#8]",
+                smiles: "NCCO",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 96,
+                smarts: "*1~*~*~*~*~1",
+                smiles: "C1CCCC1",
+                first_match: &[0, 1, 2, 3, 4],
+            },
+            MaccsPatternGolden {
+                bit: 97,
+                smarts: "[#7]~*~*~*~[#8]",
+                smiles: "NCCCO",
+                first_match: &[0, 1, 2, 3, 4],
+            },
+            MaccsPatternGolden {
+                bit: 98,
+                smarts: "[!#6!#1]1~*~*~*~*~*~1",
+                smiles: "O1CCCCC1",
+                first_match: &[0, 1, 2, 3, 4, 5],
+            },
+            MaccsPatternGolden {
+                bit: 99,
+                smarts: "[#6]=[#6]",
+                smiles: "C=C",
+                first_match: &[0, 1],
+            },
+            MaccsPatternGolden {
+                bit: 100,
+                smarts: "*~[CH2]~[#7]",
+                smiles: "CCN",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 101,
+                smarts: "[$([R]1@[R]@[R]@[R]@[R]@[R]@[R]@[R]@1),$([R]1@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@1),$([R]1@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@1),$([R]1@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@1),$([R]1@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@1),$([R]1@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@1),$([R]1@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@1)]",
+                smiles: "C1CCCCCCC1",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 102,
+                smarts: "[!#6!#1]~[#8]",
+                smiles: "CSO",
+                first_match: &[1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 104,
+                smarts: "[!#6!#1!H0]~*~[CH2]~*",
+                smiles: "CCCO",
+                first_match: &[3, 2, 1, 0],
+            },
+            MaccsPatternGolden {
+                bit: 105,
+                smarts: "*@*(@*)@*",
+                smiles: "C12CC1C2",
+                first_match: &[0, 2, 1, 3],
+            },
+            MaccsPatternGolden {
+                bit: 106,
+                smarts: "[!#6!#1]~*(~[!#6!#1])~[!#6!#1]",
+                smiles: "COS(=O)(=O)O",
+                first_match: &[1, 2, 3, 4],
+            },
+            MaccsPatternGolden {
+                bit: 107,
+                smarts: "[F,Cl,Br,I]~*(~*)~*",
+                smiles: "CC(C)(C)Cl",
+                first_match: &[4, 1, 0, 2],
+            },
+            MaccsPatternGolden {
+                bit: 108,
+                smarts: "[CH3]~*~*~*~[CH2]~*",
+                smiles: "CCCCCC",
+                first_match: &[0, 1, 2, 3, 4, 5],
+            },
+            MaccsPatternGolden {
+                bit: 109,
+                smarts: "*~[CH2]~[#8]",
+                smiles: "CCO",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 110,
+                smarts: "[#7]~[#6]~[#8]",
+                smiles: "CC(=O)N",
+                first_match: &[3, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 111,
+                smarts: "[#7]~*~[CH2]~*",
+                smiles: "CCCN",
+                first_match: &[3, 2, 1, 0],
+            },
+            MaccsPatternGolden {
+                bit: 112,
+                smarts: "*~*(~*)(~*)~*",
+                smiles: "CC(C)(C)C",
+                first_match: &[0, 1, 2, 3, 4],
+            },
+            MaccsPatternGolden {
+                bit: 113,
+                smarts: "[#8]!:*:*",
+                smiles: "Oc1ccccc1",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 114,
+                smarts: "[CH3]~[CH2]~*",
+                smiles: "CCC",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 115,
+                smarts: "[CH3]~*~[CH2]~*",
+                smiles: "CCCC",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 116,
+                smarts: "[$([CH3]~*~*~[CH2]~*),$([CH3]~*1~*~[CH2]1)]",
+                smiles: "CCCCC",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 117,
+                smarts: "[#7]~*~[#8]",
+                smiles: "CC(=O)N",
+                first_match: &[3, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 118,
+                smarts: "[$(*~[CH2]~[CH2]~*),$(*1~[CH2]~[CH2]1)]",
+                smiles: "CCCC",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 119,
+                smarts: "[#7]=*",
+                smiles: "N=O",
+                first_match: &[0, 1],
+            },
+            MaccsPatternGolden {
+                bit: 120,
+                smarts: "[!#6R]",
+                smiles: "O1CC1",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 121,
+                smarts: "[#7R]",
+                smiles: "N1CC1",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 122,
+                smarts: "*~[#7](~*)~*",
+                smiles: "ON(C)C",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 123,
+                smarts: "[#8]~[#6]~[#8]",
+                smiles: "OCO",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 124,
+                smarts: "[!#6!#1]~[!#6!#1]",
+                smiles: "CSSC",
+                first_match: &[1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 126,
+                smarts: "*!@[#8]!@*",
+                smiles: "COC",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 127,
+                smarts: "*@*!@[#8]",
+                smiles: "Oc1ccccc1",
+                first_match: &[2, 1, 0],
+            },
+            MaccsPatternGolden {
+                bit: 128,
+                smarts: "[$(*~[CH2]~*~*~*~[CH2]~*),$([R]1@[CH2R]@[R]@[R]@[R]@[CH2R]1),$(*~[CH2]~[R]1@[R]@[R]@[CH2R]1),$(*~[CH2]~*~[R]1@[R]@[CH2R]1)]",
+                smiles: "CCCCCCC",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 129,
+                smarts: "[$(*~[CH2]~*~*~[CH2]~*),$([R]1@[CH2]@[R]@[R]@[CH2R]1),$(*~[CH2]~[R]1@[R]@[CH2R]1)]",
+                smiles: "CCCCCC",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 131,
+                smarts: "[!#6!#1!H0]",
+                smiles: "CCO",
+                first_match: &[2],
+            },
+            MaccsPatternGolden {
+                bit: 132,
+                smarts: "[#8]~*~[CH2]~*",
+                smiles: "CCCO",
+                first_match: &[3, 2, 1, 0],
+            },
+            MaccsPatternGolden {
+                bit: 133,
+                smarts: "*@*!@[#7]",
+                smiles: "Nc1ccccc1",
+                first_match: &[2, 1, 0],
+            },
+            MaccsPatternGolden {
+                bit: 135,
+                smarts: "[#7]!:*:*",
+                smiles: "Nc1ccccc1",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 136,
+                smarts: "[#8]=*",
+                smiles: "CS(=O)C",
+                first_match: &[2, 1],
+            },
+            MaccsPatternGolden {
+                bit: 137,
+                smarts: "[!C!cR]",
+                smiles: "O1CC1",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 138,
+                smarts: "[!#6!#1]~[CH2]~*",
+                smiles: "CCO",
+                first_match: &[2, 1, 0],
+            },
+            MaccsPatternGolden {
+                bit: 139,
+                smarts: "[O!H0]",
+                smiles: "CCO",
+                first_match: &[2],
+            },
+            MaccsPatternGolden {
+                bit: 140,
+                smarts: "[#8]",
+                smiles: "CCO",
+                first_match: &[2],
+            },
+            MaccsPatternGolden {
+                bit: 141,
+                smarts: "[CH3]",
+                smiles: "CC",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 142,
+                smarts: "[#7]",
+                smiles: "C#N",
+                first_match: &[1],
+            },
+            MaccsPatternGolden {
+                bit: 144,
+                smarts: "*!:*:*!:*",
+                smiles: "Cc1ccccc1C",
+                first_match: &[0, 1, 6, 7],
+            },
+            MaccsPatternGolden {
+                bit: 145,
+                smarts: "*1~*~*~*~*~*~1",
+                smiles: "C1CCCCC1",
+                first_match: &[0, 1, 2, 3, 4, 5],
+            },
+            MaccsPatternGolden {
+                bit: 147,
+                smarts: "[$(*~[CH2]~[CH2]~*),$([R]1@[CH2R]@[CH2R]1)]",
+                smiles: "CCCC",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 148,
+                smarts: "*~[!#6!#1](~*)~*",
+                smiles: "C[S](C)(C)C",
+                first_match: &[0, 1, 2, 3],
+            },
+            MaccsPatternGolden {
+                bit: 149,
+                smarts: "[C;H3,H4]",
+                smiles: "C",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 150,
+                smarts: "*!@*@*!@*",
+                smiles: "Cc1ccccc1C",
+                first_match: &[0, 1, 6, 7],
+            },
+            MaccsPatternGolden {
+                bit: 151,
+                smarts: "[#7!H0]",
+                smiles: "CCN",
+                first_match: &[2],
+            },
+            MaccsPatternGolden {
+                bit: 152,
+                smarts: "[#8]~[#6](~[#6])~[#6]",
+                smiles: "CC(C)(C)O",
+                first_match: &[4, 1, 0, 2],
+            },
+            MaccsPatternGolden {
+                bit: 154,
+                smarts: "[#6]=[#8]",
+                smiles: "CC(=O)O",
+                first_match: &[1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 155,
+                smarts: "*!@[CH2]!@*",
+                smiles: "CCC",
+                first_match: &[0, 1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 156,
+                smarts: "[#7]~*(~*)~*",
+                smiles: "CC(C)N",
+                first_match: &[3, 1, 0, 2],
+            },
+            MaccsPatternGolden {
+                bit: 157,
+                smarts: "[#6]-[#8]",
+                smiles: "CCO",
+                first_match: &[1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 158,
+                smarts: "[#6]-[#7]",
+                smiles: "CCN",
+                first_match: &[1, 2],
+            },
+            MaccsPatternGolden {
+                bit: 162,
+                smarts: "a",
+                smiles: "c1ccccc1",
+                first_match: &[0],
+            },
+            MaccsPatternGolden {
+                bit: 165,
+                smarts: "[R]",
+                smiles: "C1CC1",
+                first_match: &[0],
+            },
+        ]
+    }
+
+    #[test]
+    fn maccs_patterns_match_rdkit_positive_truth_and_first_atom_maps() {
+        let goldens = rdkit_maccs_pattern_positive_goldens();
+        assert_eq!(goldens.len(), 136);
+
+        for golden in goldens {
+            let mol =
+                Molecule::from_smiles_with_sanitize(golden.smiles, true).unwrap_or_else(|error| {
+                    panic!("MACCS bit {} target SMILES failed: {error}", golden.bit)
+                });
+            let query = build_crystalff_query_molecule(golden.smarts)
+                .unwrap_or_else(|error| panic!("MACCS bit {} SMARTS failed: {error}", golden.bit));
+            let matches = get_substruct_matches(&mol, &query);
+            assert!(
+                !matches.is_empty(),
+                "MACCS bit {} should match RDKit positive target {} with SMARTS {}",
+                golden.bit,
+                golden.smiles,
+                golden.smarts
+            );
+            assert_eq!(
+                matches[0].atom_mapping, golden.first_match,
+                "MACCS bit {} first RDKit atom map for {}",
+                golden.bit, golden.smiles
+            );
+        }
+    }
+
+    #[test]
+    fn maccs_bit_030_requires_four_explicit_neighbors_like_rdkit() {
+        let mol = Molecule::from_smiles("ON(C)C").expect("fixture should parse");
+        let query = build_crystalff_query_molecule("[#6]~[!#6!#1](~[#6])(~[#6])~*")
+            .expect("MACCS bit 30 SMARTS should build");
+
+        assert_eq!(query.num_atoms(), 5);
+        assert_eq!(query.num_bonds(), 4);
+        assert!(
+            !has_substruct_match(&mol, &query),
+            "RDKit does not match MACCS bit 30 against ON(C)C through the max-matches=1 path"
+        );
+        assert!(
+            get_substruct_matches(&mol, &query).is_empty(),
+            "RDKit does not match MACCS bit 30 against ON(C)C"
+        );
     }
 
     #[test]

@@ -42,8 +42,12 @@ pub struct SmartsMolecule {
     pub atom_queries: Vec<QueryNode<AtomQueryPredicate>>,
     /// Query trees for each bond in the pattern (length = atom_queries.len() - 1).
     pub bond_queries: Vec<QueryNode<BondQueryPredicate>>,
+    /// Query bond endpoints in SMARTS atom-index space.
+    pub bond_edges: Vec<(usize, usize)>,
     /// Ring-closure specifications: (closure_number, atom_index_in_pattern)
     pub ring_closures: Vec<(u8, usize)>,
+    /// Ring-closure bond query specifications: (closure_number, atom_index, bond_query).
+    pub ring_closure_bonds: Vec<(u8, usize, QueryNode<BondQueryPredicate>)>,
 }
 
 impl SmartsMolecule {
@@ -51,12 +55,16 @@ impl SmartsMolecule {
     pub fn new(
         atom_queries: Vec<QueryNode<AtomQueryPredicate>>,
         bond_queries: Vec<QueryNode<BondQueryPredicate>>,
+        bond_edges: Vec<(usize, usize)>,
         ring_closures: Vec<(u8, usize)>,
+        ring_closure_bonds: Vec<(u8, usize, QueryNode<BondQueryPredicate>)>,
     ) -> Self {
         Self {
             atom_queries,
             bond_queries,
+            bond_edges,
             ring_closures,
+            ring_closure_bonds,
         }
     }
 
@@ -563,19 +571,30 @@ impl<'a> SmartsParser<'a> {
     fn parse_smarts_molecule(&mut self) -> Result<SmartsMolecule, SmartsParseError> {
         let mut atom_queries: Vec<QueryNode<AtomQueryPredicate>> = Vec::new();
         let mut bond_queries: Vec<QueryNode<BondQueryPredicate>> = Vec::new();
+        let mut bond_edges: Vec<(usize, usize)> = Vec::new();
         let mut ring_closures: Vec<(u8, usize)> = Vec::new();
+        let mut ring_closure_bonds: Vec<(u8, usize, QueryNode<BondQueryPredicate>)> = Vec::new();
 
         // RDKit✔️✔️: Parse the first atom
         let first = self.parse_atom()?;
         atom_queries.push(first);
 
         // RDKit✔️✔️: Parse the rest of the pattern
-        self.parse_smarts_chain(&mut atom_queries, &mut bond_queries, &mut ring_closures)?;
+        let _ = self.parse_smarts_chain(
+            &mut atom_queries,
+            &mut bond_queries,
+            &mut bond_edges,
+            &mut ring_closures,
+            &mut ring_closure_bonds,
+            0,
+        )?;
 
         Ok(SmartsMolecule::new(
             atom_queries,
             bond_queries,
+            bond_edges,
             ring_closures,
+            ring_closure_bonds,
         ))
     }
 
@@ -585,8 +604,11 @@ impl<'a> SmartsParser<'a> {
         &mut self,
         atom_queries: &mut Vec<QueryNode<AtomQueryPredicate>>,
         bond_queries: &mut Vec<QueryNode<BondQueryPredicate>>,
+        bond_edges: &mut Vec<(usize, usize)>,
         ring_closures: &mut Vec<(u8, usize)>,
-    ) -> Result<(), SmartsParseError> {
+        ring_closure_bonds: &mut Vec<(u8, usize, QueryNode<BondQueryPredicate>)>,
+        mut active_atom_idx: usize,
+    ) -> Result<usize, SmartsParseError> {
         loop {
             match self.peek() {
                 (Token::EndOfStream, _) => break,
@@ -596,9 +618,40 @@ impl<'a> SmartsParser<'a> {
                 // Bond spec followed by atom
                 (Token::BondSpec(_), _) | (Token::Not, _) | (Token::And, _) => {
                     let bond = self.parse_bond()?;
-                    bond_queries.push(bond);
-                    let atom = self.parse_atom()?;
-                    atom_queries.push(atom);
+                    match self.peek() {
+                        (Token::RingClosureDigit(n), pos) | (Token::RingClosurePercent(n), pos) => {
+                            let num = *n;
+                            let bond_pos = *pos;
+                            self.advance();
+                            // RDKit source: smarts.yy lines 321-337
+                            // RDKit✔️✔️: | mol bond_expr ring_number {
+                            // RDKit✔️✔️:   RWMol * mp = (*molList)[$$];
+                            // RDKit✔️✔️:   Atom *atom=mp->getActiveAtom();
+                            // RDKit✔️✔️:   mp->setBondBookmark($2,$3);
+                            // RDKit✔️✔️:   $2->setOwningMol(mp);
+                            // RDKit✔️✔️:   $2->setBeginAtomIdx(atom->getIdx());
+                            // RDKit✔️✔️:   $2->setProp("_cxsmilesBondIdx",numBondsParsed++);
+                            // RDKit✔️✔️:   mp->setAtomBookmark(atom,$3);
+                            self.record_ring_closure(
+                                num,
+                                active_atom_idx,
+                                bond,
+                                bond_pos,
+                                bond_queries,
+                                bond_edges,
+                                ring_closures,
+                                ring_closure_bonds,
+                            );
+                        }
+                        _ => {
+                            let atom = self.parse_atom()?;
+                            atom_queries.push(atom);
+                            let end_atom_idx = atom_queries.len() - 1;
+                            bond_queries.push(bond);
+                            bond_edges.push((active_atom_idx, end_atom_idx));
+                            active_atom_idx = end_atom_idx;
+                        }
+                    }
                 }
 
                 // No bond spec — implicit single/aromatic bond (SMARTS semantics)
@@ -607,25 +660,35 @@ impl<'a> SmartsParser<'a> {
                     match self.peek() {
                         (Token::RingClosureDigit(n), pos) | (Token::RingClosurePercent(n), pos) => {
                             let num = *n;
-                            let existing_len = atom_queries.len();
                             let bond_pos = *pos;
                             self.advance();
-                            // Record ring closure: the last atom in the pattern
-                            let last_atom_idx = existing_len - 1;
-                            ring_closures.push((num, last_atom_idx));
-                            self.ring_closure_targets.entry(num).or_insert((
-                                last_atom_idx,
+                            // Record ring closure on RDKit's current active atom.
+                            self.record_ring_closure(
+                                num,
+                                active_atom_idx,
                                 unspecified_smarts_bond_query(),
                                 bond_pos,
-                            ));
+                                bond_queries,
+                                bond_edges,
+                                ring_closures,
+                                ring_closure_bonds,
+                            );
                         }
                         (Token::OpenParen, _) => {
                             // RDKit✔️✔️: Branch — parse the sub-pattern
                             self.advance();
-                            // The branch is a sub-chain attached to the current atom
-                            let saved_bonds = bond_queries.len();
-                            let saved_atoms = atom_queries.len();
-                            self.parse_smarts_chain(atom_queries, bond_queries, ring_closures)?;
+                            // RDKit source: smarts.yy branch_open_token productions
+                            // RDKit✔️✔️: branchPoints.push_back({atomIdx1, $2});
+                            // RDKit✔️✔️: GROUP_CLOSE_TOKEN restores the active atom
+                            // RDKit✔️✔️: with mp->setActiveAtom(branchPoints.back().first).
+                            let _branch_active = self.parse_smarts_chain(
+                                atom_queries,
+                                bond_queries,
+                                bond_edges,
+                                ring_closures,
+                                ring_closure_bonds,
+                                active_atom_idx,
+                            )?;
                             match self.peek() {
                                 (Token::CloseParen, _) => {
                                     self.advance();
@@ -641,30 +704,57 @@ impl<'a> SmartsParser<'a> {
                                     });
                                 }
                             }
-                            // Bond from parent to first atom of branch
-                            if saved_atoms < atom_queries.len() {
-                                bond_queries.insert(saved_bonds, unspecified_smarts_bond_query());
-                            }
                         }
                         (Token::Dot, _) => {
                             // RDKit✔️✔️: Dot separates disconnected fragments
                             self.advance();
-                            bond_queries.push(QueryNode::Predicate(BondQueryPredicate::Any));
                             let atom = self.parse_atom()?;
                             atom_queries.push(atom);
+                            active_atom_idx = atom_queries.len() - 1;
                         }
                         // Atom follows implicitly with default bond
                         _ => {
                             bond_queries.push(unspecified_smarts_bond_query());
                             let atom = self.parse_atom()?;
                             atom_queries.push(atom);
+                            let end_atom_idx = atom_queries.len() - 1;
+                            bond_edges.push((active_atom_idx, end_atom_idx));
+                            active_atom_idx = end_atom_idx;
                         }
                     }
                 }
             }
         }
 
-        Ok(())
+        Ok(active_atom_idx)
+    }
+
+    fn record_ring_closure(
+        &mut self,
+        num: u8,
+        atom_idx: usize,
+        bond: QueryNode<BondQueryPredicate>,
+        bond_pos: usize,
+        bond_queries: &mut Vec<QueryNode<BondQueryPredicate>>,
+        bond_edges: &mut Vec<(usize, usize)>,
+        ring_closures: &mut Vec<(u8, usize)>,
+        ring_closure_bonds: &mut Vec<(u8, usize, QueryNode<BondQueryPredicate>)>,
+    ) {
+        ring_closures.push((num, atom_idx));
+        ring_closure_bonds.push((num, atom_idx, bond.clone()));
+        if let Some((open_atom_idx, open_bond, _open_pos)) = self.ring_closure_targets.remove(&num)
+        {
+            let resolved_bond = if bond == unspecified_smarts_bond_query() {
+                open_bond
+            } else {
+                bond
+            };
+            bond_queries.push(resolved_bond);
+            bond_edges.push((open_atom_idx, atom_idx));
+        } else {
+            self.ring_closure_targets
+                .insert(num, (atom_idx, bond, bond_pos));
+        }
     }
 
     /// Parse an atom expression.
@@ -1127,7 +1217,7 @@ impl<'a> SmartsParser<'a> {
             ));
         }
 
-        // Valence/connectivity: v or v<N>
+        // Valence: v or v<N>
         // RDKit✔️✔️: smarts.yy — v_TOKEN (optional NUMBER)
         if ch == 'v' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len);
@@ -1135,7 +1225,7 @@ impl<'a> SmartsParser<'a> {
                 return Ok((QueryNode::Predicate(AtomQueryPredicate::Any), consumed));
             }
             return Ok((
-                QueryNode::Predicate(AtomQueryPredicate::TotalDegree(num as u8)),
+                QueryNode::Predicate(AtomQueryPredicate::TotalValence(num as u8)),
                 consumed,
             ));
         }
@@ -1796,9 +1886,31 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_explicit_bond_ring_closure_like_rdkit() {
+        let mol = parse_smarts("*1~*~*~*~1").unwrap();
+        assert_eq!(mol.atom_queries.len(), 4);
+        assert_eq!(mol.bond_queries.len(), 4);
+        assert_eq!(mol.bond_edges, vec![(0, 1), (1, 2), (2, 3), (0, 3)]);
+        assert_eq!(mol.ring_closures, vec![(1, 0), (1, 3)]);
+        assert_eq!(mol.ring_closure_bonds.len(), 2);
+        assert_eq!(
+            mol.ring_closure_bonds[1],
+            (1, 3, QueryNode::Predicate(BondQueryPredicate::Any))
+        );
+    }
+
+    #[test]
     fn test_parse_branch() {
         let mol = parse_smarts("C(C)C").unwrap();
         assert_eq!(mol.atom_queries.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_branch_continues_from_branch_point_like_rdkit() {
+        let mol = parse_smarts("[#6]~[!#6!#1](~[#6])(~[#6])~*").unwrap();
+        assert_eq!(mol.atom_queries.len(), 5);
+        assert_eq!(mol.bond_queries.len(), 4);
+        assert_eq!(mol.bond_edges, vec![(0, 1), (1, 2), (1, 3), (1, 4)]);
     }
 
     #[test]
@@ -1860,6 +1972,342 @@ mod tests {
         assert!(mol.atom_query(0).is_some());
         assert!(mol.bond_query(0).is_some());
         assert!(mol.bond_query(1).is_some());
+    }
+
+    #[test]
+    fn default_feature_smarts_parse_into_expected_query_shapes() {
+        let cases = [
+            (
+                "Donor",
+                "[$([N;!H0;v3,v4&+1]),$([O,S;H1;+0]),n&H1&+0]",
+                "or",
+            ),
+            (
+                "Acceptor",
+                "[$([O,S;H1;v2;!$(*-*=[O,N,P,S])]),$([O,S;H0;v2]),$([O,S;-]),$([N;v3;!$(N-*=[O,N,P,S])]),n&H0&+0,$([o,s;+0;!$([o,s]:n);!$([o,s]:c:n)])]",
+                "or",
+            ),
+            ("Aromatic", "[a]", "aromatic"),
+            ("Halogen", "[F,Cl,Br,I]", "or"),
+            (
+                "Basic",
+                "[#7;+,$([N;H2&+0][$([C,a]);!$([C,a](=O))]),$([N;H1&+0]([$([C,a]);!$([C,a](=O))])[$([C,a]);!$([C,a](=O))]),$([N;H0&+0]([C;!$(C(=O))])([C;!$(C(=O))])[C;!$(C(=O))])]",
+                "and",
+            ),
+            ("Acidic", "[$([C,S](=[O,S,P])-[O;H1,-1])]", "recursive"),
+        ];
+
+        for (name, pattern, expected_shape) in cases {
+            let parsed =
+                parse_smarts(pattern).unwrap_or_else(|_| panic!("{name} SMARTS should parse"));
+            assert_eq!(parsed.atom_queries.len(), 1, "{name} atom query count");
+            let atom_query = &parsed.atom_queries[0];
+            match expected_shape {
+                "or" => assert!(matches!(atom_query, QueryNode::Or(_)), "{name} root"),
+                "and" => assert!(matches!(atom_query, QueryNode::And(_)), "{name} root"),
+                "aromatic" => assert!(
+                    matches!(
+                        atom_query,
+                        QueryNode::Predicate(AtomQueryPredicate::IsAromatic(true))
+                    ),
+                    "{name} root"
+                ),
+                "recursive" => assert!(
+                    matches!(
+                        atom_query,
+                        QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(_))
+                    ),
+                    "{name} root"
+                ),
+                _ => panic!("unexpected expected shape for {name}"),
+            }
+        }
+    }
+
+    fn atom_query_contains(
+        query: &QueryNode<AtomQueryPredicate>,
+        predicate: &AtomQueryPredicate,
+    ) -> bool {
+        match query {
+            QueryNode::Predicate(candidate) => candidate == predicate,
+            QueryNode::And(children) | QueryNode::Or(children) => children
+                .iter()
+                .any(|child| atom_query_contains(child, predicate)),
+            QueryNode::Not(child) => atom_query_contains(child, predicate),
+        }
+    }
+
+    fn atom_query_contains_recursive_smarts(query: &QueryNode<AtomQueryPredicate>) -> bool {
+        match query {
+            QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(_)) => true,
+            QueryNode::Predicate(_) => false,
+            QueryNode::And(children) | QueryNode::Or(children) => {
+                children.iter().any(atom_query_contains_recursive_smarts)
+            }
+            QueryNode::Not(child) => atom_query_contains_recursive_smarts(child),
+        }
+    }
+
+    fn bond_query_contains(
+        query: &QueryNode<BondQueryPredicate>,
+        predicate: &BondQueryPredicate,
+    ) -> bool {
+        match query {
+            QueryNode::Predicate(candidate) => candidate == predicate,
+            QueryNode::And(children) | QueryNode::Or(children) => children
+                .iter()
+                .any(|child| bond_query_contains(child, predicate)),
+            QueryNode::Not(child) => bond_query_contains(child, predicate),
+        }
+    }
+
+    #[test]
+    fn maccs_patterns_parse_targeted_source_smarts_categories() {
+        // RDKit source: MACCS.cpp::Patterns constructs these SMARTS strings
+        // with RDKit::SmartsToMol before matching them in GenerateFP().
+        let recursive = parse_smarts(
+            "[$([!#6!#1!H0]~*~*~[CH2]~*),$([!#6!#1!H0R]1@[R]@[R]@[CH2R]1),$([!#6!#1!H0]~[R]1@[R]@[CH2R]1)]",
+        )
+        .expect("MACCS bit 90 recursive SMARTS should parse");
+        assert_eq!(recursive.num_atoms(), 1);
+        assert!(atom_query_contains_recursive_smarts(
+            &recursive.atom_queries[0]
+        ));
+
+        let ring_atom = parse_smarts("[R]").expect("MACCS bit 165 ring atom should parse");
+        assert!(atom_query_contains(
+            &ring_atom.atom_queries[0],
+            &AtomQueryPredicate::InRing
+        ));
+
+        let ring_bond = parse_smarts("*@*(@*)@*").expect("MACCS bit 105 ring bonds should parse");
+        assert!(
+            ring_bond
+                .bond_queries
+                .iter()
+                .any(|query| bond_query_contains(query, &BondQueryPredicate::IsInRing(true))),
+            "MACCS bit 105 should preserve @ ring-bond queries"
+        );
+
+        let non_ring_bond =
+            parse_smarts("*!@[#8]!@*").expect("MACCS bit 126 non-ring bonds should parse");
+        assert!(
+            non_ring_bond.bond_queries.iter().any(|query| matches!(
+                query,
+                QueryNode::Not(child)
+                    if **child == QueryNode::Predicate(BondQueryPredicate::IsInRing(true))
+            )),
+            "MACCS bit 126 should preserve !@ non-ring-bond queries"
+        );
+
+        let wildcard = parse_smarts("*~[CH2]~[#7]").expect("MACCS bit 100 wildcard should parse");
+        assert_eq!(
+            wildcard.atom_queries[0],
+            QueryNode::Predicate(AtomQueryPredicate::Any)
+        );
+
+        let negation = parse_smarts("[!#6!#1!H0]").expect("MACCS bit 131 negation should parse");
+        assert!(
+            matches!(&negation.atom_queries[0], QueryNode::And(children) if children.iter().any(|child| matches!(child, QueryNode::Not(_)))),
+            "MACCS bit 131 should preserve atom-query negation"
+        );
+
+        let alternatives =
+            parse_smarts("[F,Cl,Br,I]").expect("MACCS bit 31 OR alternatives should parse");
+        assert!(
+            matches!(&alternatives.atom_queries[0], QueryNode::Or(children) if children.len() == 4),
+            "MACCS bit 31 should parse four halogen alternatives"
+        );
+
+        let hydrogen_count =
+            parse_smarts("[C;H3,H4]").expect("MACCS bit 149 hydrogen counts should parse");
+        assert!(atom_query_contains(
+            &hydrogen_count.atom_queries[0],
+            &AtomQueryPredicate::HydrogenCount(3)
+        ));
+        assert!(atom_query_contains(
+            &hydrogen_count.atom_queries[0],
+            &AtomQueryPredicate::HydrogenCount(4)
+        ));
+
+        let branch_ring_closure = parse_smarts("[$([CH3]~*~*~[CH2]~*),$([CH3]~*1~*~[CH2]1)]")
+            .expect("MACCS bit 116 branch/ring-closure SMARTS should parse");
+        assert_eq!(branch_ring_closure.num_atoms(), 1);
+        assert!(atom_query_contains_recursive_smarts(
+            &branch_ring_closure.atom_queries[0]
+        ));
+
+        let explicit_ring_closure =
+            parse_smarts("*1~*~*~*~1").expect("MACCS bit 11 ring closure should parse");
+        assert_eq!(
+            explicit_ring_closure.bond_edges,
+            vec![(0, 1), (1, 2), (2, 3), (0, 3)]
+        );
+        assert_eq!(explicit_ring_closure.ring_closures, vec![(1, 0), (1, 3)]);
+        assert_eq!(explicit_ring_closure.ring_closure_bonds.len(), 2);
+    }
+
+    #[test]
+    fn maccs_patterns_parse_source_smarts() {
+        let cases = [
+            (8, "[!#6!#1]1~*~*~*~1"),
+            (11, "*1~*~*~*~1"),
+            (13, "[#8]~[#7](~[#6])~[#6]"),
+            (14, "[#16]-[#16]"),
+            (15, "[#8]~[#6](~[#8])~[#8]"),
+            (16, "[!#6!#1]1~*~*~1"),
+            (17, "[#6]#[#6]"),
+            (19, "*1~*~*~*~*~*~*~1"),
+            (20, "[#14]"),
+            (21, "[#6]=[#6](~[!#6!#1])~[!#6!#1]"),
+            (22, "*1~*~*~1"),
+            (23, "[#7]~[#6](~[#8])~[#8]"),
+            (24, "[#7]-[#8]"),
+            (25, "[#7]~[#6](~[#7])~[#7]"),
+            (26, "[#6]=@[#6](@*)@*"),
+            (28, "[!#6!#1]~[CH2]~[!#6!#1]"),
+            (30, "[#6]~[!#6!#1](~[#6])(~[#6])~*"),
+            (31, "[!#6!#1]~[F,Cl,Br,I]"),
+            (32, "[#6]~[#16]~[#7]"),
+            (33, "[#7]~[#16]"),
+            (34, "[CH2]=*"),
+            (36, "[#16R]"),
+            (37, "[#7]~[#6](~[#8])~[#7]"),
+            (38, "[#7]~[#6](~[#6])~[#7]"),
+            (39, "[#8]~[#16](~[#8])~[#8]"),
+            (40, "[#16]-[#8]"),
+            (41, "[#6]#[#7]"),
+            (43, "[!#6!#1!H0]~*~[!#6!#1!H0]"),
+            (44, "[!#1;!#6;!#7;!#8;!#9;!#14;!#15;!#16;!#17;!#35;!#53]"),
+            (45, "[#6]=[#6]~[#7]"),
+            (47, "[#16]~*~[#7]"),
+            (48, "[#8]~[!#6!#1](~[#8])~[#8]"),
+            (49, "[!+0]"),
+            (50, "[#6]=[#6](~[#6])~[#6]"),
+            (51, "[#6]~[#16]~[#8]"),
+            (52, "[#7]~[#7]"),
+            (53, "[!#6!#1!H0]~*~*~*~[!#6!#1!H0]"),
+            (54, "[!#6!#1!H0]~*~*~[!#6!#1!H0]"),
+            (55, "[#8]~[#16]~[#8]"),
+            (56, "[#8]~[#7](~[#8])~[#6]"),
+            (57, "[#8R]"),
+            (58, "[!#6!#1]~[#16]~[!#6!#1]"),
+            (59, "[#16]!:*:*"),
+            (60, "[#16]=[#8]"),
+            (61, "*~[#16](~*)~*"),
+            (62, "*@*!@*@*"),
+            (63, "[#7]=[#8]"),
+            (64, "*@*!@[#16]"),
+            (65, "c:n"),
+            (66, "[#6]~[#6](~[#6])(~[#6])~*"),
+            (67, "[!#6!#1]~[#16]"),
+            (68, "[!#6!#1!H0]~[!#6!#1!H0]"),
+            (69, "[!#6!#1]~[!#6!#1!H0]"),
+            (70, "[!#6!#1]~[#7]~[!#6!#1]"),
+            (71, "[#7]~[#8]"),
+            (72, "[#8]~*~*~[#8]"),
+            (73, "[#16]=*"),
+            (74, "[CH3]~*~[CH3]"),
+            (75, "*!@[#7]@*"),
+            (76, "[#6]=[#6](~*)~*"),
+            (77, "[#7]~*~[#7]"),
+            (78, "[#6]=[#7]"),
+            (79, "[#7]~*~*~[#7]"),
+            (80, "[#7]~*~*~*~[#7]"),
+            (81, "[#16]~*(~*)~*"),
+            (82, "*~[CH2]~[!#6!#1!H0]"),
+            (83, "[!#6!#1]1~*~*~*~*~1"),
+            (84, "[NH2]"),
+            (85, "[#6]~[#7](~[#6])~[#6]"),
+            (86, "[C;H2,H3][!#6!#1][C;H2,H3]"),
+            (87, "[F,Cl,Br,I]!@*@*"),
+            (89, "[#8]~*~*~*~[#8]"),
+            (
+                90,
+                "[$([!#6!#1!H0]~*~*~[CH2]~*),$([!#6!#1!H0R]1@[R]@[R]@[CH2R]1),$([!#6!#1!H0]~[R]1@[R]@[CH2R]1)]",
+            ),
+            (
+                91,
+                "[$([!#6!#1!H0]~*~*~*~[CH2]~*),$([!#6!#1!H0R]1@[R]@[R]@[R]@[CH2R]1),$([!#6!#1!H0]~[R]1@[R]@[R]@[CH2R]1),$([!#6!#1!H0]~*~[R]1@[R]@[CH2R]1)]",
+            ),
+            (92, "[#8]~[#6](~[#7])~[#6]"),
+            (93, "[!#6!#1]~[CH3]"),
+            (94, "[!#6!#1]~[#7]"),
+            (95, "[#7]~*~*~[#8]"),
+            (96, "*1~*~*~*~*~1"),
+            (97, "[#7]~*~*~*~[#8]"),
+            (98, "[!#6!#1]1~*~*~*~*~*~1"),
+            (99, "[#6]=[#6]"),
+            (100, "*~[CH2]~[#7]"),
+            (
+                101,
+                "[$([R]1@[R]@[R]@[R]@[R]@[R]@[R]@[R]@1),$([R]1@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@1),$([R]1@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@1),$([R]1@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@1),$([R]1@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@1),$([R]1@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@1),$([R]1@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@[R]@1)]",
+            ),
+            (102, "[!#6!#1]~[#8]"),
+            (104, "[!#6!#1!H0]~*~[CH2]~*"),
+            (105, "*@*(@*)@*"),
+            (106, "[!#6!#1]~*(~[!#6!#1])~[!#6!#1]"),
+            (107, "[F,Cl,Br,I]~*(~*)~*"),
+            (108, "[CH3]~*~*~*~[CH2]~*"),
+            (109, "*~[CH2]~[#8]"),
+            (110, "[#7]~[#6]~[#8]"),
+            (111, "[#7]~*~[CH2]~*"),
+            (112, "*~*(~*)(~*)~*"),
+            (113, "[#8]!:*:*"),
+            (114, "[CH3]~[CH2]~*"),
+            (115, "[CH3]~*~[CH2]~*"),
+            (116, "[$([CH3]~*~*~[CH2]~*),$([CH3]~*1~*~[CH2]1)]"),
+            (117, "[#7]~*~[#8]"),
+            (118, "[$(*~[CH2]~[CH2]~*),$(*1~[CH2]~[CH2]1)]"),
+            (119, "[#7]=*"),
+            (120, "[!#6R]"),
+            (121, "[#7R]"),
+            (122, "*~[#7](~*)~*"),
+            (123, "[#8]~[#6]~[#8]"),
+            (124, "[!#6!#1]~[!#6!#1]"),
+            (126, "*!@[#8]!@*"),
+            (127, "*@*!@[#8]"),
+            (
+                128,
+                "[$(*~[CH2]~*~*~*~[CH2]~*),$([R]1@[CH2R]@[R]@[R]@[R]@[CH2R]1),$(*~[CH2]~[R]1@[R]@[R]@[CH2R]1),$(*~[CH2]~*~[R]1@[R]@[CH2R]1)]",
+            ),
+            (
+                129,
+                "[$(*~[CH2]~*~*~[CH2]~*),$([R]1@[CH2]@[R]@[R]@[CH2R]1),$(*~[CH2]~[R]1@[R]@[CH2R]1)]",
+            ),
+            (131, "[!#6!#1!H0]"),
+            (132, "[#8]~*~[CH2]~*"),
+            (133, "*@*!@[#7]"),
+            (135, "[#7]!:*:*"),
+            (136, "[#8]=*"),
+            (137, "[!C!cR]"),
+            (138, "[!#6!#1]~[CH2]~*"),
+            (139, "[O!H0]"),
+            (140, "[#8]"),
+            (141, "[CH3]"),
+            (142, "[#7]"),
+            (144, "*!:*:*!:*"),
+            (145, "*1~*~*~*~*~*~1"),
+            (147, "[$(*~[CH2]~[CH2]~*),$([R]1@[CH2R]@[CH2R]1)]"),
+            (148, "*~[!#6!#1](~*)~*"),
+            (149, "[C;H3,H4]"),
+            (150, "*!@*@*!@*"),
+            (151, "[#7!H0]"),
+            (152, "[#8]~[#6](~[#6])~[#6]"),
+            (154, "[#6]=[#8]"),
+            (155, "*!@[CH2]!@*"),
+            (156, "[#7]~*(~*)~*"),
+            (157, "[#6]-[#8]"),
+            (158, "[#6]-[#7]"),
+            (162, "a"),
+            (165, "[R]"),
+        ];
+
+        assert_eq!(cases.len(), 136);
+        for (bit, smarts) in cases {
+            parse_smarts(smarts)
+                .unwrap_or_else(|error| panic!("MACCS bit {bit} SMARTS failed: {error}"));
+        }
     }
 
     #[test]

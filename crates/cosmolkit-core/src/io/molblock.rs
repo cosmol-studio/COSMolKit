@@ -206,6 +206,7 @@ struct PreparedMol<'a> {
     /// kekulization. After kekulization, these should still be written
     /// as bond type 4 (aromatic) in the molfile output.
     aromatic_bonds: Vec<usize>,
+    wedge_bonds: BTreeMap<usize, usize>,
     selected: SelectedCoordinates,
 }
 
@@ -248,12 +249,18 @@ fn prepare_mol_for_writing<'a>(
     }
 
     // outputMolToMolBlock() always calls pickBondsToWedge() before serializing
-    // bond lines; this is not gated on includeStereo.
-    wedge_molecule_bonds_like_rdkit(mol.to_mut(), selected.coords.as_deref())?;
+    // bond lines; this is not gated on includeStereo. The writer uses this map
+    // transiently in GetMolFileBondLine instead of mutating bond endpoints.
+    let ring_info = match mol.as_ref().derived_cache().rings.as_ref() {
+        Some(ri) if ri.is_sssr_or_better() => ri.clone(),
+        _ => find_sssr(mol.as_ref()).map_err(|e| MolWriteError::Value(e.to_string()))?,
+    };
+    let wedge_bonds = pick_bonds_to_wedge(mol.as_ref(), &ring_info);
 
     Ok(PreparedMol {
         molecule: mol,
         aromatic_bonds,
+        wedge_bonds,
         selected,
     })
 }
@@ -401,9 +408,9 @@ fn determine_bond_wedge_state(
         let Some(tmp_vect) = normalized_direction(center_loc, other_loc) else {
             return Ok(res);
         };
-        // RDKit❗✔️: auto angle = refVect.signedAngleTo(tmpVect);
+        // RDKit✔️✔️: auto angle = refVect.signedAngleTo(tmpVect);
         // RDKit❗✔️: if (angle < 0.0) { angle += 2. * M_PI; }
-        let mut angle = signed_angle_2d(ref_vect, tmp_vect);
+        let mut angle = rdkit_point3d_signed_angle_to(ref_vect, tmp_vect);
         if angle < 0.0 {
             angle += 2.0 * PI;
         }
@@ -434,7 +441,6 @@ fn determine_bond_wedge_state(
             n_swaps = n_swaps.saturating_add(1);
         }
     }
-
     // RDKit❗✔️: if (chiralType == Atom::CHI_TETRAHEDRAL_CCW) {
     // RDKit❗✔️:   if (nSwaps % 2 == 1) { res = Bond::BEGINDASH; }
     // RDKit❗✔️:   else { res = Bond::BEGINWEDGE; }
@@ -475,10 +481,41 @@ fn normalized_direction(from: [f64; 3], to: [f64; 3]) -> Option<[f64; 3]> {
     Some([dx / len, dy / len, dz / len])
 }
 
-fn signed_angle_2d(reference: [f64; 3], other: [f64; 3]) -> f64 {
+fn rdkit_point3d_signed_angle_to(reference: [f64; 3], other: [f64; 3]) -> f64 {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/Geometry/point.h :: Point3D::angleTo / signedAngleTo
+    // RDKit✔️✔️: double angleTo(const Point3D &other) const {
+    // RDKit✔️✔️:   double lsq = lengthSq() * other.lengthSq();
+    // RDKit✔️✔️:   double dotProd = dotProduct(other);
+    // RDKit✔️✔️:   dotProd /= sqrt(lsq);
+    // RDKit✔️✔️:   if (dotProd <= -1.0) { return M_PI; }
+    // RDKit✔️✔️:   if (dotProd >= 1.0) { return 0.0; }
+    // RDKit✔️✔️:   return acos(dotProd);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: double signedAngleTo(const Point3D &other) const {
+    // RDKit✔️✔️:   double res = this->angleTo(other);
+    // RDKit✔️✔️:   if ((this->x * other.y - this->y * other.x) < -zero_tolerance) {
+    // RDKit✔️✔️:     res = 2.0 * M_PI - res;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/Geometry/point.h :: Point3D::angleTo / signedAngleTo
+    let lsq =
+        (reference[0] * reference[0] + reference[1] * reference[1] + reference[2] * reference[2])
+            * (other[0] * other[0] + other[1] * other[1] + other[2] * other[2]);
+    let mut dot = reference[0] * other[0] + reference[1] * other[1] + reference[2] * other[2];
+    dot /= lsq.sqrt();
+    let mut res = if dot <= -1.0 {
+        PI
+    } else if dot >= 1.0 {
+        0.0
+    } else {
+        dot.acos()
+    };
     let cross_z = reference[0] * other[1] - reference[1] * other[0];
-    let dot = reference[0] * other[0] + reference[1] * other[1] + reference[2] * other[2];
-    cross_z.atan2(dot)
+    if cross_z < -1.0e-16 {
+        res = 2.0 * PI - res;
+    }
+    res
 }
 
 fn molfile_perturbation_order_from_bond_indices(
@@ -538,6 +575,7 @@ fn mol_to_v3000_block_with_params(
     let prepared = prepare_mol_for_writing(molecule, params, selection)?;
     let molecule = prepared.molecule.as_ref();
     let aromatic_bonds = &prepared.aromatic_bonds;
+    let wedge_bonds = &prepared.wedge_bonds;
     let selected = &prepared.selected;
     validate_v3000_writer_subset(molecule, params.include_stereo)?;
     let chiral_flag = molfile_chiral_flag(molecule)?;
@@ -561,10 +599,13 @@ fn mol_to_v3000_block_with_params(
     ));
     let v3k_parity_flags: Vec<u32> = if selected.is_3d {
         if let Some(ref coords_3d) = selected.coords {
+            let valence = molblock_valence_assignment(molecule).map_err(|source| {
+                MolWriteError::Value(format!("V3000 atom parity assignment failed: {source}"))
+            })?;
             molecule
                 .atoms()
                 .iter()
-                .map(|atom| get_atom_parity_flag(molecule, atom, coords_3d))
+                .map(|atom| get_atom_parity_flag(molecule, atom, coords_3d, &valence))
                 .collect()
         } else {
             vec![0u32; molecule.num_atoms()]
@@ -597,6 +638,8 @@ fn mol_to_v3000_block_with_params(
                 bond,
                 params.include_stereo,
                 aromatic_bonds,
+                wedge_bonds,
+                selected.coords.as_deref(),
             )?);
             out.push('\n');
         }
@@ -678,6 +721,7 @@ fn mol_to_v2000_block_with_params(
     let prepared = prepare_mol_for_writing(molecule, params, selection)?;
     let molecule = prepared.molecule.as_ref();
     let aromatic_bonds = &prepared.aromatic_bonds;
+    let wedge_bonds = &prepared.wedge_bonds;
     let selected = &prepared.selected;
     validate_v2000_writer_subset(molecule, params.include_stereo)?;
     validate_v2000_coordinate_range(selected.coords.as_deref())?;
@@ -706,10 +750,13 @@ fn mol_to_v2000_block_with_params(
 
     let parity_flags: Vec<u32> = if selected.is_3d {
         if let Some(ref coords_3d) = selected.coords {
+            let valence = molblock_valence_assignment(molecule).map_err(|source| {
+                MolWriteError::Value(format!("MolBlock atom parity assignment failed: {source}"))
+            })?;
             molecule
                 .atoms()
                 .iter()
-                .map(|atom| get_atom_parity_flag(molecule, atom, coords_3d))
+                .map(|atom| get_atom_parity_flag(molecule, atom, coords_3d, &valence))
                 .collect()
         } else {
             vec![0u32; molecule.num_atoms()]
@@ -732,10 +779,12 @@ fn mol_to_v2000_block_with_params(
             bond,
             params.include_stereo,
             aromatic_bonds,
+            wedge_bonds,
+            selected.coords.as_deref(),
         )?);
         out.push('\n');
     }
-    append_v2000_property_lines(&mut out, molecule);
+    append_v2000_property_lines(&mut out, molecule)?;
     append_v2000_rgroup_lines(&mut out, molecule)?;
     append_v2000_value_lines(&mut out, molecule);
     append_v2000_alias_lines(&mut out, molecule);
@@ -1127,7 +1176,8 @@ fn validate_v2000_writer_subset(
             }
         }
         if include_stereo {
-            v2000_bond_stereo_code(molecule, bond)?;
+            let empty_wedge_bonds = BTreeMap::new();
+            v2000_bond_stereo_code(molecule, bond, &empty_wedge_bonds, None)?;
             if bond.unknown_stereo() {
                 return Err(MolWriteError::UnsupportedSubset(
                     "bond stereochemistry MolBlock writing is not ported",
@@ -1192,7 +1242,8 @@ fn validate_v3000_writer_subset(
             }
         }
         if include_stereo {
-            v3000_bond_cfg_code(molecule, bond)?;
+            let empty_wedge_bonds = BTreeMap::new();
+            v3000_bond_cfg_code(molecule, bond, &empty_wedge_bonds, None)?;
             if bond.unknown_stereo() {
                 return Err(MolWriteError::UnsupportedSubset(
                     "bond stereochemistry V3000 writing is not ported",
@@ -1312,6 +1363,8 @@ fn v2000_atom_line(
 }
 
 // RDKit✔️✔️: unsigned int getAtomParityFlag(const Atom *atom, const Conformer *conf) {
+// RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
+// RDKit✔️✔️:   PRECONDITION(conf, "bad conformer");
 // RDKit✔️✔️:   if (!conf->is3D() ||
 // RDKit✔️✔️:       !(atom->getDegree() >= 3 && atom->getTotalDegree() == 4)) {
 // RDKit✔️✔️:     return 0;
@@ -1325,14 +1378,19 @@ fn v2000_atom_line(
 // RDKit✔️✔️:   return (vol < 0) ? 2 : (vol > 0) ? 1 : 0;
 // RDKit✔️✔️: }
 // END RDKIT FUNCTION getAtomParityFlag
-fn get_atom_parity_flag(molecule: &Molecule, atom: &Atom, coords_3d: &[[f64; 3]]) -> u32 {
+fn get_atom_parity_flag(
+    molecule: &Molecule,
+    atom: &Atom,
+    coords_3d: &[[f64; 3]],
+    valence: &crate::ValenceAssignment,
+) -> u32 {
     let atom_idx = atom.id().index();
     if matches!(atom.chiral_tag(), ChiralTag::Unspecified | ChiralTag::Other) {
         return 0;
     }
     let adjacency = &molecule.topology_block().adjacency;
     let neighbors = adjacency.neighbors_of(atom_idx);
-    if !(3..=4).contains(&neighbors.len()) {
+    if !(neighbors.len() >= 3 && molfile_total_degree(molecule, atom, valence) == 4) {
         return 0;
     }
     // Compute vectors from the center atom to each neighbor.
@@ -1464,18 +1522,33 @@ fn molfile_total_valence_field(molecule: &Molecule, atom: &Atom) -> Result<u32, 
     if !has_non_default_valence(molecule, atom, &valence)? {
         return Ok(0);
     }
-    let degree = molecule
-        .topology_block()
-        .adjacency
-        .neighbors_of(atom.id().index())
-        .len() as u32;
-    if degree == 0 {
+    // RDKit✔️✔️:   if (atom->getTotalDegree() == 0) {
+    // RDKit✔️✔️:     totValence = 15;
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     totValence = atom->getTotalValence() % 15;
+    // RDKit✔️✔️:   }
+    let total_degree = molfile_total_degree(molecule, atom, &valence);
+    if total_degree == 0 {
         Ok(15)
     } else {
         let total_valence = valence.explicit_valence[atom.id().index()]
             + valence.implicit_hydrogens[atom.id().index()].max(0);
         Ok((total_valence as u32) % 15)
     }
+}
+
+fn molfile_total_degree(
+    molecule: &Molecule,
+    atom: &Atom,
+    valence: &crate::ValenceAssignment,
+) -> i32 {
+    molecule
+        .topology_block()
+        .adjacency
+        .neighbors_of(atom.id().index())
+        .len() as i32
+        + i32::from(atom.explicit_hydrogens())
+        + valence.implicit_hydrogens[atom.id().index()].max(0)
 }
 
 fn should_be_crossed_bond_for_writer(
@@ -1618,6 +1691,8 @@ fn v2000_bond_line(
     bond: &Bond,
     include_stereo: bool,
     aromatic_bonds: &[usize],
+    wedge_bonds: &BTreeMap<usize, usize>,
+    coords: Option<&[[f64; 3]]>,
 ) -> Result<String, MolWriteError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: BondGetMolFileSymbol / GetMolFileBondLine
     // RDKit❗✔️: if (bond->hasQuery()) { res = getQueryBondSymbol(bond); }
@@ -1628,16 +1703,21 @@ fn v2000_bond_line(
     // RDKit❗✔️: ss << std::setw(3) << symbol;
     // RDKit❗✔️: ss << " " << std::setw(2) << dirCode;
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: BondGetMolFileSymbol / GetMolFileBondLine
-    let mut stereo_code = v2000_bond_stereo_code(molecule, bond)?;
+    let (mut stereo_code, reverse) = v2000_bond_stereo_code(molecule, bond, wedge_bonds, coords)?;
     // RDKit✔️✔️: do not cross bonds which were aromatic before kekulization.
     if aromatic_bonds.contains(&bond.id().index()) && stereo_code == 3 {
         stereo_code = 0;
     }
     let type_code = v2000_bond_type_code(bond)?;
+    let (begin_idx, end_idx) = if reverse {
+        (bond.end().index(), bond.begin().index())
+    } else {
+        (bond.begin().index(), bond.end().index())
+    };
     let mut line = format!(
         "{:>3}{:>3}{:>3} {:>2}",
-        bond.begin().index() + 1,
-        bond.end().index() + 1,
+        begin_idx + 1,
+        end_idx + 1,
         type_code,
         stereo_code
     );
@@ -1647,7 +1727,12 @@ fn v2000_bond_line(
     Ok(line)
 }
 
-fn v2000_bond_stereo_code(molecule: &Molecule, bond: &Bond) -> Result<u32, MolWriteError> {
+fn v2000_bond_stereo_code(
+    molecule: &Molecule,
+    bond: &Bond,
+    wedge_bonds: &BTreeMap<usize, usize>,
+    coords: Option<&[[f64; 3]]>,
+) -> Result<(u32, bool), MolWriteError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: GetMolFileBondStereoInfo
     // RDKit❗✔️: reverse = false;
     // RDKit❗✔️: dir = Bond::NONE;
@@ -1674,21 +1759,78 @@ fn v2000_bond_stereo_code(molecule: &Molecule, bond: &Bond) -> Result<u32, MolWr
     // RDKit❗✔️: UNKNOWN single bond -> 4
     // RDKit❗✔️: BEGINDASH -> 6
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetMolFileBondLine stereo dirCode branch
-    Ok(match bond.direction() {
-        BondDirection::None
-            if v2000_bond_type_code(bond)? == 2
-                && should_be_crossed_bond_for_writer(molecule, bond)? =>
+    let (dir, reverse) = molfile_bond_stereo_info(molecule, bond, wedge_bonds, coords)?;
+    Ok((molfile_bond_dir_code(dir), reverse))
+}
+
+fn molfile_bond_stereo_info(
+    molecule: &Molecule,
+    bond: &Bond,
+    wedge_bonds: &BTreeMap<usize, usize>,
+    coords: Option<&[[f64; 3]]>,
+) -> Result<(BondDirection, bool), MolWriteError> {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: GetMolFileBondStereoInfo
+    // RDKit✔️✔️: reverse = false;
+    // RDKit✔️✔️: dir = Bond::NONE;
+    // RDKit✔️✔️: if (canHaveDirection(*bond)) {
+    // RDKit✔️✔️:   dir = Chirality::detail::determineBondWedgeState(bond, wedgeBonds, conf);
+    // RDKit✔️✔️:   if ((dir == Bond::BEGINDASH) ||
+    // RDKit✔️✔️:       (dir == Bond::BEGINWEDGE || dir == Bond::UNKNOWN)) {
+    // RDKit✔️✔️:     auto wbi = wedgeBonds.find(bond->getIdx());
+    // RDKit✔️✔️:     if (wbi != wedgeBonds.end() && ... &&
+    // RDKit✔️✔️:         static_cast<unsigned int>(wbi->second->getIdx()) !=
+    // RDKit✔️✔️:             bond->getBeginAtomIdx()) {
+    // RDKit✔️✔️:       reverse = true;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: } else if (bond->getBondType() == Bond::DOUBLE) {
+    // RDKit✔️✔️:   if (Chirality::shouldBeACrossedBond(bond)) {
+    // RDKit✔️✔️:     dir = Bond::BondDir::EITHERDOUBLE;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: GetMolFileBondStereoInfo
+    let mut dir = BondDirection::None;
+    let mut reverse = false;
+    if can_have_direction_for_molfile(bond) {
+        dir = if let Some(&from_atom_idx) = wedge_bonds.get(&bond.id().index()) {
+            determine_bond_wedge_state(molecule, bond, from_atom_idx, coords)?
+        } else {
+            bond.direction()
+        };
+        if matches!(
+            dir,
+            BondDirection::BeginDash | BondDirection::BeginWedge | BondDirection::Unknown
+        ) && wedge_bonds
+            .get(&bond.id().index())
+            .is_some_and(|&from_atom_idx| from_atom_idx != bond.begin().index())
         {
-            3
+            reverse = true;
         }
+    } else if bond.order() == BondOrder::Double
+        && should_be_crossed_bond_for_writer(molecule, bond)?
+    {
+        dir = BondDirection::EitherDouble;
+    }
+    Ok((dir, reverse))
+}
+
+fn can_have_direction_for_molfile(bond: &Bond) -> bool {
+    // RDKit✔️✔️: inline bool canHaveDirection(const Bond &bond) {
+    // RDKit✔️✔️:   auto bondType = bond.getBondType();
+    // RDKit✔️✔️:   return (bondType == Bond::SINGLE || bondType == Bond::AROMATIC);
+    // RDKit✔️✔️: }
+    matches!(bond.order(), BondOrder::Single | BondOrder::Aromatic)
+}
+
+fn molfile_bond_dir_code(dir: BondDirection) -> u32 {
+    match dir {
         BondDirection::None => 0,
-        BondDirection::BeginWedge if v2000_bond_type_code(bond)? == 1 => 1,
-        BondDirection::BeginDash if v2000_bond_type_code(bond)? == 1 => 6,
-        BondDirection::EitherDouble if v2000_bond_type_code(bond)? == 2 => 3,
-        BondDirection::Unknown if v2000_bond_type_code(bond)? == 1 => 4,
+        BondDirection::BeginWedge => 1,
+        BondDirection::BeginDash => 6,
+        BondDirection::Unknown => 4,
+        BondDirection::EitherDouble => 3,
         BondDirection::EndUpRight | BondDirection::EndDownRight => 0,
-        _ => 0,
-    })
+    }
 }
 
 fn v2000_bond_type_code(bond: &Bond) -> Result<u32, MolWriteError> {
@@ -1766,7 +1908,13 @@ fn v3000_atom_line(
         out.push_str(&format!(" MASS={isotope}"));
     }
     let electrons = atom.radical_electrons();
-    if electrons != 0 && atom_degree(molecule, atom.id().index()) != 0 {
+    let valence = molblock_valence_assignment(molecule).map_err(|source| {
+        MolWriteError::Value(format!(
+            "V3000 MolBlock RAD field assignment failed for atom {}: {source}",
+            atom.id().index()
+        ))
+    })?;
+    if electrons != 0 && molfile_total_degree(molecule, atom, &valence) != 0 {
         let code = if electrons % 2 == 1 { 2 } else { 3 };
         out.push_str(&format!(" RAD={code}"));
     }
@@ -1838,6 +1986,8 @@ fn v3000_bond_line(
     bond: &Bond,
     include_stereo: bool,
     aromatic_bonds: &[usize],
+    wedge_bonds: &BTreeMap<usize, usize>,
+    coords: Option<&[[f64; 3]]>,
 ) -> Result<String, MolWriteError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetV3000MolFileBondLine
     // RDKit❗✔️: ss << "M  V30 " << bond->getIdx() + 1;
@@ -1850,18 +2000,26 @@ fn v3000_bond_line(
     // RDKit❗✔️: if (bond->getPropIfPresent(common_properties::_MolFileBondEndPts, sprop) && sprop != "0") { ss << " ENDPTS=" << sprop; }
     // RDKit❗✔️: if (bond->getPropIfPresent(common_properties::_MolFileBondAttach, sprop) && sprop != "0") { ss << " ATTACH=" << sprop; }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetV3000MolFileBondLine
+    let (mut cfg, reverse) = v3000_bond_cfg_code(molecule, bond, wedge_bonds, coords)?;
+    let (begin_idx, end_idx) = if reverse {
+        (bond.end().index(), bond.begin().index())
+    } else {
+        (bond.begin().index(), bond.end().index())
+    };
     let type_code = v3000_bond_type_code(bond)?;
     let mut out = format!(
         "M  V30 {} {} {} {}",
         bond.id().index() + 1,
         type_code,
-        bond.begin().index() + 1,
-        bond.end().index() + 1
+        begin_idx + 1,
+        end_idx + 1
     );
-    let mut cfg = v3000_bond_cfg_code(molecule, bond)?;
     if aromatic_bonds.contains(&bond.id().index())
-        && bond.direction() == BondDirection::EitherDouble
         && cfg == Some(2)
+        && matches!(
+            molfile_bond_stereo_info(molecule, bond, wedge_bonds, coords)?.0,
+            BondDirection::EitherDouble
+        )
     {
         cfg = None;
     }
@@ -1878,7 +2036,12 @@ fn v3000_bond_line(
     Ok(out)
 }
 
-fn v3000_bond_cfg_code(molecule: &Molecule, bond: &Bond) -> Result<Option<u32>, MolWriteError> {
+fn v3000_bond_cfg_code(
+    molecule: &Molecule,
+    bond: &Bond,
+    wedge_bonds: &BTreeMap<usize, usize>,
+    coords: Option<&[[f64; 3]]>,
+) -> Result<(Option<u32>, bool), MolWriteError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: GetMolFileBondStereoInfo
     // RDKit❗✔️: reverse = false;
     // RDKit❗✔️: dir = Bond::NONE;
@@ -1905,21 +2068,15 @@ fn v3000_bond_cfg_code(molecule: &Molecule, bond: &Bond) -> Result<Option<u32>, 
     // RDKit❗✔️: EITHERDOUBLE double bond -> CFG=2
     // RDKit❗✔️: BEGINDASH -> CFG=3
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetV3000MolFileBondLine stereo CFG branch
-    Ok(match bond.direction() {
-        BondDirection::None
-            if v3000_bond_type_code(bond)? == 2
-                && should_be_crossed_bond_for_writer(molecule, bond)? =>
-        {
-            Some(2)
-        }
-        BondDirection::None => None,
-        BondDirection::BeginWedge => Some(1),
-        BondDirection::BeginDash => Some(3),
-        BondDirection::Unknown if v3000_bond_type_code(bond)? == 1 => Some(2),
-        BondDirection::EitherDouble if v3000_bond_type_code(bond)? == 2 => Some(2),
-        BondDirection::EndUpRight | BondDirection::EndDownRight => None,
+    let (dir, reverse) = molfile_bond_stereo_info(molecule, bond, wedge_bonds, coords)?;
+    let cfg = match molfile_bond_dir_code(dir) {
+        0 => None,
+        1 => Some(1),
+        3 | 4 => Some(2),
+        6 => Some(3),
         _ => None,
-    })
+    };
+    Ok((cfg, reverse))
 }
 
 fn append_v3000_bond_prop(out: &mut String, bond: &Bond, prop: &str, label: &str) {
@@ -2581,7 +2738,7 @@ fn v2000_bond_order_query_symbol(orders: &[BondOrder]) -> Option<u32> {
     }
 }
 
-fn append_v2000_property_lines(out: &mut String, molecule: &Molecule) {
+fn append_v2000_property_lines(out: &mut String, molecule: &Molecule) -> Result<(), MolWriteError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetMolFileChargeInfo
     // RDKit❗✔️: if (atom->getFormalCharge() != 0) { ++nChgs; chgss << boost::format(" %3d %3d") % (atom->getIdx() + 1) % atom->getFormalCharge(); ... }
     // RDKit❗✔️: unsigned int nRadEs = atom->getNumRadicalElectrons();
@@ -2599,12 +2756,15 @@ fn append_v2000_property_lines(out: &mut String, molecule: &Molecule) {
         .collect::<Vec<_>>();
     append_v2000_counted_property(out, "CHG", &charges);
 
+    let valence = molblock_valence_assignment(molecule).map_err(|source| {
+        MolWriteError::Value(format!("MolBlock RAD field assignment failed: {source}"))
+    })?;
     let radicals = molecule
         .atoms()
         .iter()
         .filter_map(|atom| {
             let electrons = atom.radical_electrons();
-            if electrons == 0 || atom_degree(molecule, atom.id().index()) == 0 {
+            if electrons == 0 || molfile_total_degree(molecule, atom, &valence) == 0 {
                 return None;
             }
             let code = if electrons % 2 == 1 { 2 } else { 3 };
@@ -2622,6 +2782,7 @@ fn append_v2000_property_lines(out: &mut String, molecule: &Molecule) {
         })
         .collect::<Vec<_>>();
     append_v2000_counted_property(out, "ISO", &isotopes);
+    Ok(())
 }
 
 fn append_v2000_rgroup_lines(out: &mut String, molecule: &Molecule) -> Result<(), MolWriteError> {
@@ -3636,11 +3797,11 @@ fn pick_bond_to_wedge(
     }
 
     // RDKit❌❌: if (nbrScores.empty()) { return -1; }
-    // RDKit❌❌: auto minPr = std::min_element(nbrScores.begin(), nbrScores.end());
-    // RDKit❌❌: return minPr->second;
+    // RDKit✔️✔️: auto minPr = std::min_element(nbrScores.begin(), nbrScores.end());
+    // RDKit✔️✔️: return minPr->second;
     nbr_scores
         .iter()
-        .min_by_key(|(score, _)| *score)
+        .min_by_key(|(score, bid)| (*score, *bid))
         .map(|(_, bid)| *bid)
 }
 /// END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: pickBondToWedge
@@ -3668,7 +3829,7 @@ fn pick_bonds_to_wedge(mol: &Molecule, ring_info: &RingInfo) -> BTreeMap<usize, 
     // RDKit❌❌:             });
     // RDKit❌❌: }
     if chi_nbrs {
-        indices.sort_by_key(|&i| n_chiral_nbrs[i]);
+        rdkit_std_sort_indices_by_chiral_neighbor_count(&mut indices, &n_chiral_nbrs);
     }
 
     // RDKit❌❌: std::map<int, std::unique_ptr<Chirality::WedgeInfoBase>> wedgeInfo;
@@ -3709,6 +3870,187 @@ fn pick_bonds_to_wedge(mol: &Molecule, ring_info: &RingInfo) -> BTreeMap<usize, 
     wedge_info
 }
 /// END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/WedgeBonds.cpp :: pickBondsToWedge
+
+fn rdkit_std_sort_indices_by_chiral_neighbor_count(indices: &mut [usize], n_chiral_nbrs: &[i32]) {
+    // BEGIN LIBSTDC++ CPP FUNCTIONS /usr/include/c++/13/bits/stl_algo.h :: std::__sort helpers
+    // libstdc++✔️✔️: std::__introsort_loop(__first, __last,
+    // libstdc++✔️✔️:                       std::__lg(__last - __first) * 2, __comp);
+    // libstdc++✔️✔️: std::__final_insertion_sort(__first, __last, __comp);
+    // libstdc++✔️✔️: while (__last - __first > int(_S_threshold)) {
+    // libstdc++✔️✔️:   --__depth_limit;
+    // libstdc++✔️✔️:   _RandomAccessIterator __cut =
+    // libstdc++✔️✔️:     std::__unguarded_partition_pivot(__first, __last, __comp);
+    // libstdc++✔️✔️:   std::__introsort_loop(__cut, __last, __depth_limit, __comp);
+    // libstdc++✔️✔️:   __last = __cut;
+    // libstdc++✔️✔️: }
+    // libstdc++✔️✔️: std::__move_median_to_first(__first, __first + 1, __mid, __last - 1,
+    // libstdc++✔️✔️:                             __comp);
+    // libstdc++✔️✔️: return std::__unguarded_partition(__first + 1, __last, __first, __comp);
+    // libstdc++✔️✔️: enum { _S_threshold = 16 };
+    // END LIBSTDC++ CPP FUNCTIONS /usr/include/c++/13/bits/stl_algo.h :: std::__sort helpers
+    if indices.is_empty() {
+        return;
+    }
+    let depth_limit = (usize::BITS - indices.len().leading_zeros() - 1) as usize * 2;
+    libstdcxx_introsort_loop(indices, 0, indices.len(), depth_limit, n_chiral_nbrs);
+    libstdcxx_final_insertion_sort(indices, 0, indices.len(), n_chiral_nbrs);
+}
+
+fn libstdcxx_less(indices: &[usize], left: usize, right: usize, n_chiral_nbrs: &[i32]) -> bool {
+    n_chiral_nbrs[indices[left]] < n_chiral_nbrs[indices[right]]
+}
+
+fn libstdcxx_value_less(
+    value: usize,
+    right: usize,
+    indices: &[usize],
+    n_chiral_nbrs: &[i32],
+) -> bool {
+    n_chiral_nbrs[value] < n_chiral_nbrs[indices[right]]
+}
+
+fn libstdcxx_move_median_to_first(
+    indices: &mut [usize],
+    result: usize,
+    a: usize,
+    b: usize,
+    c: usize,
+    n_chiral_nbrs: &[i32],
+) {
+    if libstdcxx_less(indices, a, b, n_chiral_nbrs) {
+        if libstdcxx_less(indices, b, c, n_chiral_nbrs) {
+            indices.swap(result, b);
+        } else if libstdcxx_less(indices, a, c, n_chiral_nbrs) {
+            indices.swap(result, c);
+        } else {
+            indices.swap(result, a);
+        }
+    } else if libstdcxx_less(indices, a, c, n_chiral_nbrs) {
+        indices.swap(result, a);
+    } else if libstdcxx_less(indices, b, c, n_chiral_nbrs) {
+        indices.swap(result, c);
+    } else {
+        indices.swap(result, b);
+    }
+}
+
+fn libstdcxx_unguarded_partition(
+    indices: &mut [usize],
+    mut first: usize,
+    last: usize,
+    pivot: usize,
+    n_chiral_nbrs: &[i32],
+) -> usize {
+    let mut last = last;
+    loop {
+        while libstdcxx_less(indices, first, pivot, n_chiral_nbrs) {
+            first += 1;
+        }
+        last -= 1;
+        while libstdcxx_less(indices, pivot, last, n_chiral_nbrs) {
+            last -= 1;
+        }
+        if first >= last {
+            return first;
+        }
+        indices.swap(first, last);
+        first += 1;
+    }
+}
+
+fn libstdcxx_unguarded_partition_pivot(
+    indices: &mut [usize],
+    first: usize,
+    last: usize,
+    n_chiral_nbrs: &[i32],
+) -> usize {
+    let mid = first + (last - first) / 2;
+    libstdcxx_move_median_to_first(indices, first, first + 1, mid, last - 1, n_chiral_nbrs);
+    libstdcxx_unguarded_partition(indices, first + 1, last, first, n_chiral_nbrs)
+}
+
+fn libstdcxx_introsort_loop(
+    indices: &mut [usize],
+    first: usize,
+    mut last: usize,
+    mut depth_limit: usize,
+    n_chiral_nbrs: &[i32],
+) {
+    const S_THRESHOLD: usize = 16;
+    while last - first > S_THRESHOLD {
+        if depth_limit == 0 {
+            indices[first..last].sort_unstable_by_key(|&idx| n_chiral_nbrs[idx]);
+            return;
+        }
+        depth_limit -= 1;
+        let cut = libstdcxx_unguarded_partition_pivot(indices, first, last, n_chiral_nbrs);
+        libstdcxx_introsort_loop(indices, cut, last, depth_limit, n_chiral_nbrs);
+        last = cut;
+    }
+}
+
+fn libstdcxx_insertion_sort(
+    indices: &mut [usize],
+    first: usize,
+    last: usize,
+    n_chiral_nbrs: &[i32],
+) {
+    if first == last {
+        return;
+    }
+    for i in (first + 1)..last {
+        if libstdcxx_less(indices, i, first, n_chiral_nbrs) {
+            let value = indices[i];
+            for pos in (first..i).rev() {
+                indices[pos + 1] = indices[pos];
+            }
+            indices[first] = value;
+        } else {
+            libstdcxx_unguarded_linear_insert(indices, i, n_chiral_nbrs);
+        }
+    }
+}
+
+fn libstdcxx_unguarded_linear_insert(
+    indices: &mut [usize],
+    mut last: usize,
+    n_chiral_nbrs: &[i32],
+) {
+    let value = indices[last];
+    let mut next = last - 1;
+    while libstdcxx_value_less(value, next, indices, n_chiral_nbrs) {
+        indices[last] = indices[next];
+        last = next;
+        next -= 1;
+    }
+    indices[last] = value;
+}
+
+fn libstdcxx_unguarded_insertion_sort(
+    indices: &mut [usize],
+    first: usize,
+    last: usize,
+    n_chiral_nbrs: &[i32],
+) {
+    for i in first..last {
+        libstdcxx_unguarded_linear_insert(indices, i, n_chiral_nbrs);
+    }
+}
+
+fn libstdcxx_final_insertion_sort(
+    indices: &mut [usize],
+    first: usize,
+    last: usize,
+    n_chiral_nbrs: &[i32],
+) {
+    const S_THRESHOLD: usize = 16;
+    if last - first > S_THRESHOLD {
+        libstdcxx_insertion_sort(indices, first, first + S_THRESHOLD, n_chiral_nbrs);
+        libstdcxx_unguarded_insertion_sort(indices, first + S_THRESHOLD, last, n_chiral_nbrs);
+    } else {
+        libstdcxx_insertion_sort(indices, first, last, n_chiral_nbrs);
+    }
+}
 
 #[cfg(test)]
 mod tests;

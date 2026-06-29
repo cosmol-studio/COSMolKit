@@ -287,8 +287,17 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
         // RDKit❗✔️: }
         // END RDKIT CPP FUNCTION assignAtomChiralCodes subset
         let atom_changed = if has_stereo_atoms || has_potential_stereo_atoms {
-            let (unassigned_atoms, atom_assignments, atom_changed) =
-                crate::stereo::assign_atom_chiral_codes(mol, &ranks)?;
+            let (unassigned_atoms, atom_assignments, possible_atoms, atom_changed) =
+                crate::stereo::assign_atom_chiral_codes_with_possible(
+                    mol,
+                    &ranks,
+                    flag_possible_stereo_centers,
+                )?;
+            for atom_idx in possible_atoms {
+                if let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(atom_idx) {
+                    atom_mut.set_prop("_ChiralityPossible", "1");
+                }
+            }
             for (atom_idx, cip_code) in atom_assignments {
                 if let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(atom_idx) {
                     atom_mut.set_prop("_CIPCode", cip_code);
@@ -393,6 +402,7 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
             })
             .collect();
     let atom_ids: Vec<AtomId> = mol.atoms().iter().map(|atom| atom.id()).collect();
+    let mut explicit_h_to_implicit_updates = false;
     for atom_id in atom_ids {
         let atom = &mol.atoms()[atom_id.index()];
         if matches!(atom.chiral_tag(), ChiralTag::Unspecified | ChiralTag::Other)
@@ -414,7 +424,21 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
         {
             atom_mut.set_explicit_hydrogens(0);
             atom_mut.set_no_implicit(false);
+            explicit_h_to_implicit_updates = true;
         }
+    }
+    if explicit_h_to_implicit_updates {
+        // RDKit✔️✔️:         atom->calcExplicitValence(false);
+        // RDKit✔️✔️:         atom->calcImplicitValence(false);
+        let valence =
+            crate::assign_valence_with_options(mol, crate::ValenceModel::RdkitLike, false)
+                .map_err(|_error| {
+                    StereoError::UnsupportedFeature(crate::UnsupportedFeatureError {
+                        feature: "SMILES_STEREOCHEMISTRY_CLEANUP",
+                        reason: "valence assignment failed after explicit-H cleanup",
+                    })
+                })?;
+        mol.derived_cache_mut().valence = Some(valence);
     }
     // BEGIN RDKIT CPP FUNCTION assignStereochemistry cleanIt bond-dir cleanup subset
     // RDKit✔️✔️:       // check for directionality on single bonds around
@@ -780,12 +804,14 @@ pub(super) fn ensure_valence_for_stereo(mol: &mut Molecule) -> Result<(), Stereo
     if mol.derived_cache().valence.is_some() {
         return Ok(());
     }
-    *mol = mol.with_assigned_valence().map_err(|_error| {
-        StereoError::UnsupportedFeature(crate::UnsupportedFeatureError {
-            feature: "CIP_RANKING",
-            reason: "valence assignment failed before stereo perception",
-        })
-    })?;
+    let valence = crate::assign_valence_with_options(mol, crate::ValenceModel::RdkitLike, false)
+        .map_err(|_error| {
+            StereoError::UnsupportedFeature(crate::UnsupportedFeatureError {
+                feature: "CIP_RANKING",
+                reason: "valence assignment failed before stereo perception",
+            })
+        })?;
+    mol.derived_cache_mut().valence = Some(valence);
     Ok(())
 }
 

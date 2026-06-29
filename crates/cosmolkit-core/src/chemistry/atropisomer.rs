@@ -477,9 +477,10 @@ pub fn does_mol_have_atropisomers(mol: &Molecule) -> bool {
 /// ```
 /// where c > d, a < b, e < f
 ///
-/// Returns a list of (bond_index, ChiralTag) pairs for all detected
-/// atropisomer bonds. The ChiralTag is an approximation — full geometric
-/// detection requires coordinates.
+/// Returns a list of (bond_index, ChiralTag) pairs for detected atropisomer
+/// bonds in the current coordinate-free path. This is unfinished for full RDKit
+/// parity: coordinate-based geometric detection is not covered here and this
+/// ChiralTag projection must not be treated as a complete source port.
 pub fn assign_atropisomer_stereo(mol: &Molecule) -> Result<Vec<(BondId, ChiralTag)>, AtropError> {
     // Rings needed for structural validation during assignment.
     let rings = mol

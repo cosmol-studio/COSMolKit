@@ -50,6 +50,7 @@ unsafe extern "C" {
     fn c_libm_sqrt(x: f64) -> f64;
 }
 
+use crate::AtomId;
 use crate::ChiralTag;
 use crate::Molecule;
 use crate::atom::Atom;
@@ -1566,6 +1567,7 @@ impl RdkitEmbeddedFrag {
         adjacency: &[Vec<usize>],
         degree: &[usize],
         cip_ranks: &[u32],
+        atom_ring_counts: &[usize],
     ) -> Self {
         let mut frag = Self::default();
         for (&aid, &loc) in coord_map {
@@ -1588,7 +1590,7 @@ impl RdkitEmbeddedFrag {
             frag.done = false;
         }
         frag.setup_new_neighs(atoms, bonds, adjacency, degree, cip_ranks);
-        frag.setup_attachment_points(adjacency);
+        frag.setup_attachment_points(adjacency, atom_ring_counts);
         frag
     }
 
@@ -1602,9 +1604,17 @@ impl RdkitEmbeddedFrag {
         adjacency: &[Vec<usize>],
         degree: &[usize],
         cip_ranks: &[u32],
+        atom_ring_counts: &[usize],
     ) -> Self {
-        let mut frag =
-            Self::from_coord_map(ring_atom_coords, atoms, bonds, adjacency, degree, cip_ranks);
+        let mut frag = Self::from_coord_map(
+            ring_atom_coords,
+            atoms,
+            bonds,
+            adjacency,
+            degree,
+            cip_ranks,
+            atom_ring_counts,
+        );
         frag.done = false;
         frag
     }
@@ -1673,13 +1683,35 @@ impl RdkitEmbeddedFrag {
 
     // RDKit✔️✔️: void EmbeddedFrag::computeNbrsAndAng(unsigned int aid,
     // RDKit✔️✔️:                                      const RDKit::INT_VECT &doneNbrs) { ... }
-    fn compute_nbrs_and_ang(&mut self, aid: usize, done_nbrs: &[usize]) {
+    fn compute_nbrs_and_ang(
+        &mut self,
+        aid: usize,
+        done_nbrs: &[usize],
+        atom_ring_counts: &[usize],
+    ) {
+        // RDKit✔️✔️:   auto winner = anglePairs.back();
+        // RDKit✔️✔️:   for (auto pr : boost::adaptors::reverse(anglePairs)) {
+        // RDKit✔️✔️:     if ((dp_mol->getRingInfo()->numAtomRings(pr.second.first) <= 1) &&
+        // RDKit✔️✔️:         (dp_mol->getRingInfo()->numAtomRings(pr.second.second) <= 1)) {
+        // RDKit✔️✔️:       winner = pr;
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
         if done_nbrs.len() < 3 {
             return;
         }
         let mut angle_pairs = Vec::<(f64, (usize, usize))>::new();
+        // RDKit✔️✔️:   for (auto nbi1 = doneNbrs.begin(); nbi1 != doneNbrs.end(); ++nbi1) {
+        // RDKit✔️✔️:     auto nbi3 = nbi1;
+        // RDKit✔️✔️:     for (auto nbi2 = nbi3++; nbi2 != doneNbrs.end(); ++nbi2) {
+        // RDKit✔️✔️:       ang = computeAngle(d_eatoms[aid].loc, d_eatoms[*nbi1].loc,
+        // RDKit✔️✔️:                          d_eatoms[*nbi2].loc);
+        // RDKit✔️✔️:       auto nbrPair = std::make_pair((*nbi1), (*nbi2));
+        // RDKit✔️✔️:       anglePairs.emplace_back(ang, nbrPair);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
         for i in 0..done_nbrs.len() {
-            for j in i + 1..done_nbrs.len() {
+            for j in i..done_nbrs.len() {
                 let a = done_nbrs[i];
                 let b = done_nbrs[j];
                 angle_pairs.push((
@@ -1693,9 +1725,19 @@ impl RdkitEmbeddedFrag {
             }
         }
         angle_pairs.sort_by(|x, y| x.0.total_cmp(&y.0));
-        let Some((w_ang, (wnb1, wnb2))) = angle_pairs.last().copied() else {
+        let Some(mut winner) = angle_pairs.last().copied() else {
             return;
         };
+        for pair in angle_pairs.iter().rev() {
+            let (a, b) = pair.1;
+            if atom_ring_counts.get(a).copied().unwrap_or(0) <= 1
+                && atom_ring_counts.get(b).copied().unwrap_or(0) <= 1
+            {
+                winner = *pair;
+                break;
+            }
+        }
+        let (w_ang, (wnb1, wnb2)) = winner;
         let mut nb1 = wnb1;
         let mut nb2 = wnb2;
         for &(_, (a, b)) in angle_pairs.iter() {
@@ -1755,9 +1797,9 @@ impl RdkitEmbeddedFrag {
         }
         heavy.extend(hydrogens);
         if !heavy.is_empty() && (degree[aid] < 4 || heavy.len() < 3) {
-            heavy = rdkit_rank_atoms_by_rank(atoms, &heavy, degree, cip_ranks, true);
+            heavy = rdkit_rank_atoms_by_rank(atoms, &heavy, degree, true);
         } else if degree[aid] >= 4 && heavy.len() >= 3 {
-            heavy = rdkit_set_nbr_order(aid, &heavy, atoms, bonds, adjacency, degree, cip_ranks);
+            heavy = rdkit_set_nbr_order(aid, &heavy, atoms, bonds, adjacency, degree);
         }
         if let Some(st) = self.eatoms.get_mut(&aid) {
             st.pending = heavy;
@@ -1782,7 +1824,7 @@ impl RdkitEmbeddedFrag {
             self.update_new_neighs(aid, atoms, bonds, adjacency, degree, cip_ranks);
         }
         let mut ranked = self.attach_pts.iter().copied().collect::<Vec<_>>();
-        rdkit_rank_atoms_by_rank_into(atoms, &mut ranked, degree, cip_ranks, true);
+        rdkit_rank_atoms_by_rank_into(atoms, &mut ranked, degree, true);
         self.attach_pts = ranked.into();
     }
 
@@ -1795,7 +1837,7 @@ impl RdkitEmbeddedFrag {
     }
 
     // RDKit✔️✔️: void EmbeddedFrag::setupAttachmentPoints() { ... }
-    fn setup_attachment_points(&mut self, adjacency: &[Vec<usize>]) {
+    fn setup_attachment_points(&mut self, adjacency: &[Vec<usize>], atom_ring_counts: &[usize]) {
         let attach_ids: Vec<usize> = self.attach_pts.iter().copied().collect();
         for dai in attach_ids {
             let enbrs = self
@@ -1831,7 +1873,7 @@ impl RdkitEmbeddedFrag {
                     st.angle = ang;
                 }
             } else {
-                self.compute_nbrs_and_ang(dai, &done_nbrs);
+                self.compute_nbrs_and_ang(dai, &done_nbrs, atom_ring_counts);
             }
         }
     }
@@ -1880,7 +1922,6 @@ impl RdkitEmbeddedFrag {
             normal = (-normal.0, -normal.1);
             (true, normal)
         };
-
         self.eatoms.insert(
             aid,
             TreeEmbeddedAtom {
@@ -2058,6 +2099,7 @@ impl RdkitEmbeddedFrag {
         bonds: &[Bond],
         adjacency: &[Vec<usize>],
         degree: &[usize],
+        atom_ring_counts: &[usize],
         ring_system_atoms: &[usize],
         ring_count: usize,
     ) -> Option<bool> {
@@ -2126,7 +2168,7 @@ impl RdkitEmbeddedFrag {
                 }
             }
             self.setup_new_neighs(atoms, bonds, adjacency, degree, &[]);
-            self.setup_attachment_points(adjacency);
+            self.setup_attachment_points(adjacency, atom_ring_counts);
             return Some(true);
         }
         Some(false)
@@ -3451,6 +3493,7 @@ impl RdkitEmbeddedFrag {
         adjacency: &[Vec<usize>],
         degree: &[usize],
         cip_ranks: &[u32],
+        atom_ring_counts: &[usize],
         fused_rings: &[Vec<usize>],
         use_ring_templates: bool,
     ) -> Option<()> {
@@ -3469,6 +3512,7 @@ impl RdkitEmbeddedFrag {
                 bonds,
                 adjacency,
                 degree,
+                atom_ring_counts,
                 &funion,
                 fused_rings.len(),
             )? {
@@ -3499,6 +3543,7 @@ impl RdkitEmbeddedFrag {
                     bonds,
                     adjacency,
                     degree,
+                    atom_ring_counts,
                     &core_union,
                     core_rings.len(),
                 )? {
@@ -3685,13 +3730,20 @@ fn build_rdkit_depict_molecule_from_slices(
     bonds: &[Bond],
 ) -> Result<Molecule, Coordinate2DError> {
     let mut molecule = build_rdkit_molecule_from_slices(atoms, bonds)?;
-    let valence = crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false)
+    let valence =
+        crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false)
         .map_err(|error| {
             Coordinate2DError::UnsupportedFeature(format!(
                 "RDKit updatePropertyCache(false) equivalent failed during 2D coordinate generation: {error}"
             ))
         })?;
     molecule.derived_cache_mut().valence = Some(valence);
+    let rings = crate::symmetrize_sssr(&molecule).map_err(|error| {
+        Coordinate2DError::UnsupportedFeature(format!(
+            "RDKit GetSymmSSSR equivalent failed during 2D coordinate generation: {error}"
+        ))
+    })?;
+    molecule.derived_cache_mut().rings = Some(rings);
     Ok(molecule)
 }
 
@@ -3701,11 +3753,15 @@ fn rdkit_atom_to_spec(atom: &Atom) -> AtomSpec {
         .with_explicit_hydrogens(atom.explicit_hydrogens())
         .with_chiral_tag(atom.chiral_tag())
         .with_aromatic(atom.is_aromatic())
-        .with_isotope(atom.isotope().unwrap_or(0))
-        .with_atom_map(atom.atom_map().unwrap_or(0))
         .with_no_implicit(atom.no_implicit())
         .with_radical_electrons(atom.radical_electrons())
         .with_hybridization(atom.hybridization());
+    if let Some(isotope) = atom.isotope() {
+        spec = spec.with_isotope(isotope);
+    }
+    if let Some(atom_map) = atom.atom_map() {
+        spec = spec.with_atom_map(atom_map);
+    }
     if let Some(chiral_perm) = atom.chiral_permutation() {
         spec = spec.with_chiral_permutation(chiral_perm);
     }
@@ -4214,12 +4270,12 @@ fn rdkit_hybridizations_for_depict(
 // RDKit✔️✔️:   for (const auto aid : commAtms) {
 // RDKit✔️✔️:     unsigned int rank = aid;
 // RDKit✔️✔️:     const auto at = mol.getAtomWithIdx(aid);
-// RDKit❗✔️:     if (!at->getPropIfPresent(RDKit::common_properties::_CIPRank, rank)) {
-// RDKit❗✔️:       if (at->getPropIfPresent(RDKit::common_properties::_ChiralAtomRank, rank)) {
-// RDKit❗✔️:         rank = mol.getNumAtoms() - rank;
-// RDKit❗✔️:       }
-// RDKit❗✔️:       rank += mol.getNumAtoms() * getAtomDepictRank(at);
-// RDKit❗✔️:     }
+// RDKit✔️✔️:     if (!at->getPropIfPresent(RDKit::common_properties::_CIPRank, rank)) {
+// RDKit✔️✔️:       if (at->getPropIfPresent(RDKit::common_properties::_ChiralAtomRank, rank)) {
+// RDKit✔️✔️:         rank = mol.getNumAtoms() - rank;
+// RDKit✔️✔️:       }
+// RDKit✔️✔️:       rank += mol.getNumAtoms() * getAtomDepictRank(at);
+// RDKit✔️✔️:     }
 // RDKit✔️✔️:     rankAid.emplace_back(rank, aid);
 // RDKit✔️✔️:   }
 // RDKit✔️✔️:   if (ascending) {
@@ -4238,11 +4294,9 @@ fn rdkit_rank_atoms_by_rank_into(
     atom_slice: &[Atom],
     order: &mut [usize],
     degree: &[usize],
-    cip_ranks: &[u32],
     ascending: bool,
 ) {
-    let natms = atom_slice.len() as u32;
-    let use_cip_ranks_fallback = cip_ranks.iter().any(|&rank| rank != 0);
+    let mol_atom_count = atom_slice.len() as u32;
     let mut rank_aid: Vec<(u32, usize)> = Vec::with_capacity(order.len());
     for &aid in order.iter() {
         let mut rank = aid as u32;
@@ -4256,11 +4310,9 @@ fn rdkit_rank_atoms_by_rank_into(
             .prop("_ChiralAtomRank")
             .and_then(|value| value.parse::<u32>().ok())
         {
-            rank = natms - chiral_rank;
-        } else if use_cip_ranks_fallback && aid < cip_ranks.len() {
-            rank = cip_ranks[aid];
+            rank = mol_atom_count - chiral_rank;
         } else {
-            rank += natms * atom_depict_rank(atom.atomic_number(), degree[aid]) as u32;
+            rank += mol_atom_count * atom_depict_rank(atom.atomic_number(), degree[aid]) as u32;
         }
         rank_aid.push((rank, aid));
     }
@@ -4278,11 +4330,10 @@ fn rdkit_rank_atoms_by_rank(
     atom_slice: &[Atom],
     order: &[usize],
     degree: &[usize],
-    cip_ranks: &[u32],
     ascending: bool,
 ) -> Vec<usize> {
     let mut res = order.to_vec();
-    rdkit_rank_atoms_by_rank_into(atom_slice, &mut res, degree, cip_ranks, ascending);
+    rdkit_rank_atoms_by_rank_into(atom_slice, &mut res, degree, ascending);
     res
 }
 
@@ -4330,7 +4381,6 @@ fn rdkit_set_nbr_order(
     _bonds: &[Bond],
     adjacency: &[Vec<usize>],
     degree: &[usize],
-    cip_ranks: &[u32],
 ) -> Vec<usize> {
     let mut thold = nbrs.to_vec();
     let mut ref_atom: Option<usize> = None;
@@ -4343,10 +4393,10 @@ fn rdkit_set_nbr_order(
         thold.push(r);
     }
     if thold.len() <= 3 {
-        return rdkit_rank_atoms_by_rank(atoms, nbrs, degree, cip_ranks, true);
+        return rdkit_rank_atoms_by_rank(atoms, nbrs, degree, true);
     }
 
-    thold = rdkit_rank_atoms_by_rank(atoms, &thold, degree, cip_ranks, true);
+    thold = rdkit_rank_atoms_by_rank(atoms, &thold, degree, true);
     let ln = thold.len();
     thold.swap(ln - 3, ln - 2);
 
@@ -6730,6 +6780,9 @@ fn rdkit_compute_initial_efrags_strict(
         .iter()
         .map(|ring| ring.iter().map(|aid| aid.index()).collect())
         .collect();
+    let atom_ring_counts: Vec<usize> = (0..n)
+        .map(|aid| ring_info.num_atom_rings(AtomId::new(aid)))
+        .collect();
     let ring_bond_ids: BTreeSet<usize> = ring_info
         .bond_rings()
         .iter()
@@ -6752,7 +6805,13 @@ fn rdkit_compute_initial_efrags_strict(
         .filter(|coord_map| coord_map.len() > 1)
     {
         efrags.push(RdkitEmbeddedFrag::from_coord_map(
-            coord_map, atoms, bonds, &adjacency, &degree, cip_ranks,
+            coord_map,
+            atoms,
+            bonds,
+            &adjacency,
+            &degree,
+            cip_ranks,
+            &atom_ring_counts,
         ));
     }
 
@@ -6763,6 +6822,7 @@ fn rdkit_compute_initial_efrags_strict(
             &adjacency,
             &degree,
             cip_ranks,
+            &atom_ring_counts,
             &arings,
             &mut efrags,
             coord_map_tuples.as_ref(),
@@ -6773,7 +6833,13 @@ fn rdkit_compute_initial_efrags_strict(
     for seed in embed_nontetrahedral_stereo(atoms, bonds, &stereo_mol, &atom_ranks) {
         let coord_map = seed.into_iter().collect::<BTreeMap<usize, (f64, f64)>>();
         efrags.push(RdkitEmbeddedFrag::from_coord_map(
-            &coord_map, atoms, bonds, &adjacency, &degree, cip_ranks,
+            &coord_map,
+            atoms,
+            bonds,
+            &adjacency,
+            &degree,
+            cip_ranks,
+            &atom_ring_counts,
         ));
     }
 
@@ -6942,22 +7008,14 @@ fn require_default_compute_2d_coord_parameters(
 // RDKit✔️✔️:   keepGoing = flagPossibleStereoCenters &&
 // RDKit✔️✔️:               (hasPotentialStereoAtoms || hasPotentialStereoBonds);
 // RDKit✔️✔️: }
-fn rdkit_depict_ordering_needs_cip_ranks(depict_mol: &Molecule) -> bool {
-    let atoms = depict_mol.atoms();
-    let bonds = depict_mol.bonds();
-    let has_stereo_atoms = atoms.iter().any(|atom| {
-        atom.chiral_tag() != ChiralTag::Unspecified && atom.chiral_tag() != ChiralTag::Other
-    });
-    if has_stereo_atoms {
-        return true;
-    }
-    let has_stereo_bonds = bonds.iter().any(|bond| {
+fn rdkit_depict_has_stereo_bond_dirs(depict_mol: &Molecule) -> bool {
+    depict_mol.bonds().iter().any(|bond| {
         if bond.order() != BondOrder::Double {
             return false;
         }
         let begin = bond.begin().index();
         let end = bond.end().index();
-        bonds.iter().any(|nbond| {
+        depict_mol.bonds().iter().any(|nbond| {
             (nbond.begin().index() == begin
                 || nbond.end().index() == begin
                 || nbond.begin().index() == end
@@ -6967,24 +7025,139 @@ fn rdkit_depict_ordering_needs_cip_ranks(depict_mol: &Molecule) -> bool {
                     BondDirection::EndDownRight | BondDirection::EndUpRight
                 )
         })
-    });
-    if has_stereo_bonds {
-        return true;
+    })
+}
+
+fn rdkit_depict_has_potential_stereo_bonds(
+    depict_mol: &Molecule,
+) -> Result<bool, Coordinate2DError> {
+    for bond in depict_mol.bonds() {
+        if bond.order() != BondOrder::Double {
+            continue;
+        }
+        if crate::stereo::should_detect_double_bond_stereo(depict_mol, bond.id()).map_err(
+            |error| {
+                Coordinate2DError::UnsupportedFeature(format!(
+                    "RDKit shouldDetectDoubleBondStereo equivalent failed during 2D coordinate stereochemistry assignment: {error}"
+                ))
+            },
+        )? {
+            return Ok(true);
+        }
     }
-    false
+    Ok(false)
+}
+
+fn rdkit_depict_needs_atom_chiral_code_ranks(depict_mol: &Molecule) -> bool {
+    depict_mol.atoms().iter().any(|atom| {
+        !matches!(atom.chiral_tag(), ChiralTag::Unspecified | ChiralTag::Other)
+            && atom.prop("_CIPCode").is_none()
+    })
+}
+
+fn rdkit_depict_needs_bond_stereo_ranks(depict_mol: &Molecule) -> bool {
+    depict_mol
+        .bonds()
+        .iter()
+        .any(|bond| bond.order() == BondOrder::Double && bond.stereo() == BondStereo::None)
 }
 
 fn rdkit_depict_ordering_cip_ranks(
     depict_mol: &mut Molecule,
 ) -> Result<Vec<u32>, Coordinate2DError> {
-    if !rdkit_depict_ordering_needs_cip_ranks(depict_mol) {
-        return Ok(Vec::new());
+    // BEGIN RDKIT CPP FUNCTION: MolOps::assignStereochemistry(mol, false)
+    // RDKit✔️✔️: void assignStereochemistry(ROMol &mol, bool cleanIt, bool force,
+    // RDKit✔️✔️:                            bool flagPossibleStereoCenters) {
+    // RDKit✔️✔️:   if (!force && mol.hasProp(common_properties::_StereochemDone)) {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (mol.needsUpdatePropertyCache()) {
+    // RDKit✔️✔️:     mol.updatePropertyCache(false);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   Chirality::legacyStereoPerception(mol, cleanIt, flagPossibleStereoCenters);
+    // RDKit✔️✔️:   mol.setProp(common_properties::_StereochemDone, 1, true);
+    // RDKit✔️✔️: }
+    //
+    // BEGIN RDKIT CPP FUNCTION: legacyStereoPerception(mol, false, false)
+    // RDKit✔️✔️: bool hasStereoAtoms = false;
+    // RDKit✔️✔️: bool hasPotentialStereoAtoms = false;
+    // RDKit✔️✔️: for (auto atom : mol.atoms()) {
+    // RDKit✔️✔️:   if (!hasStereoAtoms && atom->getChiralTag() != Atom::CHI_UNSPECIFIED &&
+    // RDKit✔️✔️:       atom->getChiralTag() != Atom::CHI_OTHER) {
+    // RDKit✔️✔️:     hasStereoAtoms = true;
+    // RDKit✔️✔️:   } else if (!hasPotentialStereoAtoms) {
+    // RDKit✔️✔️:     UINT_VECT ranks;
+    // RDKit✔️✔️:     Chirality::INT_PAIR_VECT nbrs;
+    // RDKit✔️✔️:     hasPotentialStereoAtoms =
+    // RDKit✔️✔️:         isAtomPotentialChiralCenter(atom, mol, ranks, nbrs).first;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: bool hasStereoBonds = false;
+    // RDKit✔️✔️: bool hasPotentialStereoBonds = false;
+    // RDKit✔️✔️: for (auto bond : mol.bonds()) {
+    // RDKit✔️✔️:   if (!hasStereoBonds && bond->getBondType() == Bond::DOUBLE) {
+    // RDKit✔️✔️:     bool isSpecified = false;
+    // RDKit✔️✔️:     ...
+    // RDKit✔️✔️:     if (!hasPotentialStereoBonds && !isSpecified &&
+    // RDKit✔️✔️:         shouldDetectDoubleBondStereo(bond)) {
+    // RDKit✔️✔️:       hasPotentialStereoBonds = true;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!cleanIt && hasStereoBonds && hasPotentialStereoBonds) {
+    // RDKit✔️✔️:     break;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: UINT_VECT atomRanks;
+    // RDKit✔️✔️: bool keepGoing = hasStereoAtoms | hasStereoBonds;
+    // RDKit✔️✔️: if (!keepGoing) {
+    // RDKit✔️✔️:   keepGoing = flagPossibleStereoCenters &&
+    // RDKit✔️✔️:               (hasPotentialStereoAtoms || hasPotentialStereoBonds);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: while (keepGoing) {
+    // RDKit✔️✔️:   if (hasStereoAtoms || hasPotentialStereoAtoms) {
+    // RDKit✔️✔️:     std::tie(hasStereoAtoms, changedStereoAtoms) =
+    // RDKit✔️✔️:         Chirality::assignAtomChiralCodes(mol, atomRanks,
+    // RDKit✔️✔️:                                        flagPossibleStereoCenters);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (hasStereoBonds || hasPotentialStereoBonds) {
+    // RDKit✔️✔️:     std::tie(hasStereoBonds, changedStereoBonds) =
+    // RDKit✔️✔️:         Chirality::assignBondStereoCodes(mol, atomRanks);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   keepGoing = (hasStereoAtoms || hasStereoBonds) &&
+    // RDKit✔️✔️:               (changedStereoAtoms || changedStereoBonds);
+    // RDKit✔️✔️:   if (keepGoing) {
+    // RDKit✔️✔️:     Chirality::rerankAtoms(mol, atomRanks);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION: legacyStereoPerception(mol, false, false)
+    let existing_cip_ranks = depict_mol
+        .atoms()
+        .iter()
+        .map(|atom| {
+            atom.prop("_CIPRank")
+                .and_then(|value| value.parse::<u32>().ok())
+        })
+        .collect::<Option<Vec<_>>>();
+    if let Some(ranks) = existing_cip_ranks {
+        return Ok(ranks);
     }
-    crate::stereo::assign_atom_cip_ranks_in_place(depict_mol).map_err(|error| {
-        Coordinate2DError::UnsupportedFeature(format!(
-            "RDKit assignStereochemistry()/assignAtomCIPRanks equivalent failed during 2D coordinate generation: {error}"
-        ))
-    })
+    let needs_atom_ranks = rdkit_depict_needs_atom_chiral_code_ranks(depict_mol);
+    let has_stereo_none_double = depict_mol
+        .bonds()
+        .iter()
+        .any(|bond| bond.order() == BondOrder::Double && bond.stereo() == BondStereo::None);
+    let runs_bond_stereo_assignment = rdkit_depict_has_stereo_bond_dirs(depict_mol)
+        || rdkit_depict_has_potential_stereo_bonds(depict_mol)?;
+    let needs_bond_ranks = runs_bond_stereo_assignment && has_stereo_none_double;
+    if needs_atom_ranks || needs_bond_ranks {
+        let ranks = crate::stereo::assign_atom_cip_ranks_in_place(depict_mol).map_err(|error| {
+            Coordinate2DError::UnsupportedFeature(format!(
+                "RDKit assignAtomCIPRanks equivalent failed during 2D coordinate stereochemistry assignment: {error}"
+            ))
+        })?;
+        return Ok(ranks);
+    }
+    Ok(Vec::new())
 }
 
 /// Compute RDKit-compatible 2D coordinates for a molecule using the currently
@@ -7001,8 +7174,11 @@ fn compute_2d_coords_default_path(
     }
     let mut depict_mol = build_rdkit_depict_molecule_from_slices(atoms, bonds)?;
     let cip_ranks = rdkit_depict_ordering_cip_ranks(&mut depict_mol)?;
+    let depict_atoms = depict_mol.atoms();
+    let depict_bonds = depict_mol.bonds();
 
-    let mut efrags = rdkit_compute_initial_efrags_strict(atoms, bonds, &cip_ranks, None, false)?;
+    let mut efrags =
+        rdkit_compute_initial_efrags_strict(depict_atoms, depict_bonds, &cip_ranks, None, false)?;
     shift_coords(&mut efrags);
     Ok(copy_coordinate_from_efrags(n, &efrags))
 }
@@ -7032,7 +7208,10 @@ pub(crate) fn rdkit_initial_2d_scaffold_coords(
     }
     let mut depict_mol = build_rdkit_depict_molecule_from_slices(atoms, bonds)?;
     let cip_ranks = rdkit_depict_ordering_cip_ranks(&mut depict_mol)?;
-    let mut efrags = rdkit_compute_initial_efrags_strict(atoms, bonds, &cip_ranks, None, false)?;
+    let depict_atoms = depict_mol.atoms();
+    let depict_bonds = depict_mol.bonds();
+    let mut efrags =
+        rdkit_compute_initial_efrags_strict(depict_atoms, depict_bonds, &cip_ranks, None, false)?;
     shift_coords(&mut efrags);
     Ok(copy_coordinate_from_efrags(n, &efrags))
 }
@@ -7128,14 +7307,16 @@ pub(crate) fn compute_2d_coords_with_params(
     }
     let mut depict_mol = build_rdkit_depict_molecule_from_slices(atoms, bonds)?;
     let cip_ranks = rdkit_depict_ordering_cip_ranks(&mut depict_mol)?;
+    let depict_atoms = depict_mol.atoms();
+    let depict_bonds = depict_mol.bonds();
     let mut adjacency = vec![Vec::<usize>::new(); n];
-    for bond in bonds {
+    for bond in depict_bonds {
         adjacency[bond.begin().index()].push(bond.end().index());
         adjacency[bond.end().index()].push(bond.begin().index());
     }
     let mut efrags = rdkit_compute_initial_efrags_strict(
-        atoms,
-        bonds,
+        depict_atoms,
+        depict_bonds,
         &cip_ranks,
         params.coord_map,
         params.use_ring_templates,
@@ -7146,8 +7327,8 @@ pub(crate) fn compute_2d_coords_with_params(
         let comp = efrag_component_atom_ids(frag);
         if params.n_samples > 0 && params.n_flips_per_sample > 0 {
             frag.random_sample_flips_and_permutations(
-                atoms,
-                bonds,
+                depict_atoms,
+                depict_bonds,
                 &comp,
                 &adjacency,
                 params.n_flips_per_sample as usize,
@@ -7158,13 +7339,16 @@ pub(crate) fn compute_2d_coords_with_params(
                 params.permute_deg4_nodes,
             );
         } else {
-            frag.remove_collisions_bond_flip(atoms, bonds, &comp, &adjacency);
+            frag.remove_collisions_bond_flip(depict_atoms, depict_bonds, &comp, &adjacency);
         }
     }
     for frag in &mut efrags {
         let comp = efrag_component_atom_ids(frag);
-        frag.remove_collisions_open_angles(atoms, bonds, &comp, &adjacency);
-        frag.remove_collisions_shorten_bonds(atoms, bonds, &comp, &adjacency);
+        frag.remove_collisions_open_angles(depict_atoms, depict_bonds, &comp, &adjacency);
+    }
+    for frag in &mut efrags {
+        let comp = efrag_component_atom_ids(frag);
+        frag.remove_collisions_shorten_bonds(depict_atoms, depict_bonds, &comp, &adjacency);
     }
     debug_print_efrag_stage("post_cleanup", &efrags);
     if params
@@ -7982,21 +8166,21 @@ mod tests {
             .unwrap();
         let mol = builder.build().unwrap();
         let degree = vec![2usize, 1, 1];
-        let order = rdkit_rank_atoms_by_rank(mol.atoms(), &[0, 1, 2], &degree, &[30, 10, 20], true);
+        let order = rdkit_rank_atoms_by_rank(mol.atoms(), &[0, 1, 2], &degree, true);
         assert_eq!(order, vec![1, 2, 0]);
     }
 
     #[test]
-    fn rank_atoms_falls_back_to_explicit_cip_rank_vector_when_props_are_absent() {
+    fn rank_atoms_uses_chiral_atom_rank_when_cip_rank_prop_is_absent() {
         let mut builder = MoleculeBuilder::new();
-        let c = builder.add_atom(AtomSpec::new(Element::C));
-        let h = builder.add_atom(AtomSpec::new(Element::H));
+        let c = builder.add_atom(AtomSpec::new(Element::C).with_prop("_ChiralAtomRank", "0"));
+        let h = builder.add_atom(AtomSpec::new(Element::H).with_prop("_ChiralAtomRank", "1"));
         builder
             .add_bond(BondSpec::new(c, h, BondOrder::Single))
             .unwrap();
         let mol = builder.build().unwrap();
         let degree = vec![1usize, 1];
-        let order = rdkit_rank_atoms_by_rank(mol.atoms(), &[0, 1], &degree, &[20, 10], true);
+        let order = rdkit_rank_atoms_by_rank(mol.atoms(), &[0, 1], &degree, true);
         assert_eq!(order, vec![1, 0]);
     }
 
@@ -8014,8 +8198,8 @@ mod tests {
             .unwrap();
         let mol = builder.build().unwrap();
         let degree = vec![2usize, 1, 1];
-        let ascending = rdkit_rank_atoms_by_rank(mol.atoms(), &[0, 1, 2], &degree, &[], true);
-        let descending = rdkit_rank_atoms_by_rank(mol.atoms(), &[0, 1, 2], &degree, &[], false);
+        let ascending = rdkit_rank_atoms_by_rank(mol.atoms(), &[0, 1, 2], &degree, true);
+        let descending = rdkit_rank_atoms_by_rank(mol.atoms(), &[0, 1, 2], &degree, false);
         assert_eq!(ascending, vec![0, 1, 2]);
         assert_eq!(descending, vec![2, 1, 0]);
     }
@@ -8035,15 +8219,8 @@ mod tests {
         let mol = builder.build().unwrap();
         let adjacency = vec![vec![1, 2], vec![0], vec![0]];
         let degree = vec![2usize, 1, 1];
-        let ordered = rdkit_set_nbr_order(
-            0,
-            &[2, 1],
-            mol.atoms(),
-            mol.bonds(),
-            &adjacency,
-            &degree,
-            &[],
-        );
+        let ordered =
+            rdkit_set_nbr_order(0, &[2, 1], mol.atoms(), mol.bonds(), &adjacency, &degree);
         assert_eq!(ordered, vec![2, 1]);
     }
 
@@ -8063,15 +8240,8 @@ mod tests {
         let mol = builder.build().unwrap();
         let adjacency = vec![vec![1, 2, 3, 4], vec![0], vec![0], vec![0], vec![0]];
         let degree = vec![4usize, 1, 1, 1, 1];
-        let ordered = rdkit_set_nbr_order(
-            0,
-            &[1, 2, 3],
-            mol.atoms(),
-            mol.bonds(),
-            &adjacency,
-            &degree,
-            &[],
-        );
+        let ordered =
+            rdkit_set_nbr_order(0, &[1, 2, 3], mol.atoms(), mol.bonds(), &adjacency, &degree);
         assert_eq!(ordered, vec![2, 3, 1]);
     }
 
@@ -8912,6 +9082,7 @@ mod tests {
         let mol = builder.build().unwrap();
         let adjacency = vec![vec![1], vec![0, 2], vec![1]];
         let degree = vec![1usize, 2, 1];
+        let atom_ring_counts = vec![0usize; mol.num_atoms()];
         let coords = BTreeMap::from([(0usize, (0.0, 0.0)), (1usize, (1.5, 0.0))]);
         let frag = RdkitEmbeddedFrag::from_coord_map(
             &coords,
@@ -8920,6 +9091,7 @@ mod tests {
             &adjacency,
             &degree,
             &[],
+            &atom_ring_counts,
         );
         assert_eq!(frag.attach_pts.iter().copied().collect::<Vec<_>>(), vec![1]);
         assert_eq!(frag.eatoms[&1].pending, vec![2]);
@@ -8966,6 +9138,7 @@ mod tests {
         let mol = builder.build().unwrap();
         let adjacency = vec![vec![1, 2, 3], vec![0], vec![0], vec![0]];
         let degree = vec![3usize, 1, 1, 1];
+        let atom_ring_counts = vec![0usize; mol.num_atoms()];
         let mut frag = RdkitEmbeddedFrag::from_coord_map(
             &BTreeMap::from([
                 (0usize, (0.0, 0.0)),
@@ -8977,8 +9150,9 @@ mod tests {
             &adjacency,
             &degree,
             &[],
+            &atom_ring_counts,
         );
-        frag.setup_attachment_points(&adjacency);
+        frag.setup_attachment_points(&adjacency, &atom_ring_counts);
         assert_eq!(frag.find_neighbor(3, &adjacency), Some(0));
         assert_eq!(frag.eatoms[&0].pending, vec![3]);
         assert!(frag.find_num_neigh((0.1, 0.1), 1.1) >= 2);
@@ -9069,9 +9243,18 @@ mod tests {
         let mol = builder.build().unwrap();
         let adjacency = vec![vec![1, 2], vec![0, 2], vec![1, 0]];
         let degree = vec![2usize, 2, 2];
+        let atom_ring_counts = vec![1usize; mol.num_atoms()];
         let mut frag = RdkitEmbeddedFrag::default();
         let result = frag
-            .match_to_template(mol.atoms(), mol.bonds(), &adjacency, &degree, &[0, 1, 2], 1)
+            .match_to_template(
+                mol.atoms(),
+                mol.bonds(),
+                &adjacency,
+                &degree,
+                &atom_ring_counts,
+                &[0, 1, 2],
+                1,
+            )
             .expect("helper should not error");
         let bucket_exists = rdkit_has_template_of_size(3);
         assert_eq!(result, bucket_exists && !frag.eatoms.is_empty());
@@ -9241,6 +9424,7 @@ mod tests {
             })
             .collect();
         let degree: Vec<usize> = adjacency.iter().map(Vec::len).collect();
+        let atom_ring_counts = vec![1usize; mol.num_atoms()];
         let fused_rings = vec![vec![0usize, 1, 2, 3], vec![2usize, 4, 5, 3]];
 
         let mut frag = RdkitEmbeddedFrag::default();
@@ -9250,6 +9434,7 @@ mod tests {
             &adjacency,
             &degree,
             &[],
+            &atom_ring_counts,
             &fused_rings,
             false,
         )
@@ -9313,6 +9498,7 @@ mod tests {
             })
             .collect();
         let degree: Vec<usize> = adjacency.iter().map(Vec::len).collect();
+        let atom_ring_counts = vec![1usize; mol.num_atoms()];
         let fused_rings = vec![vec![0usize, 1, 2, 3, 6], vec![3usize, 4, 5, 6]];
 
         let mut frag = RdkitEmbeddedFrag::default();
@@ -9322,6 +9508,7 @@ mod tests {
             &adjacency,
             &degree,
             &[],
+            &atom_ring_counts,
             &fused_rings,
             true,
         )
@@ -9376,8 +9563,11 @@ mod tests {
             })
             .collect();
         let degree: Vec<usize> = adjacency.iter().map(Vec::len).collect();
-        let fused_rings: Vec<Vec<usize>> = crate::symmetrize_sssr(&mol)
-            .unwrap()
+        let ring_info = crate::symmetrize_sssr(&mol).unwrap();
+        let atom_ring_counts: Vec<usize> = (0..mol.num_atoms())
+            .map(|aid| ring_info.num_atom_rings(AtomId::new(aid)))
+            .collect();
+        let fused_rings: Vec<Vec<usize>> = ring_info
             .atom_rings()
             .iter()
             .map(|ring| ring.iter().map(|aid| aid.index()).collect())
@@ -9432,6 +9622,7 @@ mod tests {
                     mol.bonds(),
                     &adjacency,
                     &degree,
+                    &atom_ring_counts,
                     &core_union,
                     core_rings.len(),
                 )
@@ -9446,6 +9637,7 @@ mod tests {
             &adjacency,
             &degree,
             &[],
+            &atom_ring_counts,
             &fused_rings,
             true,
         )
@@ -10489,12 +10681,14 @@ mod tests {
         coord_map.insert(0usize, (0.0, 0.0));
         coord_map.insert(1usize, (1.0, 0.0));
         let mut efrags = Vec::new();
+        let atom_ring_counts = vec![1usize; atoms.len()];
         embed_fused_systems(
             atoms,
             bonds,
             &adjacency,
             &degree,
             &cip_ranks,
+            &atom_ring_counts,
             &fused_rings,
             &mut efrags,
             Some(&coord_map),
@@ -11536,6 +11730,7 @@ fn embed_fused_systems(
     adjacency: &[Vec<usize>],
     degree: &[usize],
     cip_ranks: &[u32],
+    atom_ring_counts: &[usize],
     arings: &[Vec<usize>],
     efrags: &mut Vec<RdkitEmbeddedFrag>,
     coord_map: Option<&BTreeMap<usize, (f64, f64)>>,
@@ -11590,6 +11785,7 @@ fn embed_fused_systems(
             adjacency,
             degree,
             cip_ranks,
+            atom_ring_counts,
             &frings,
             allow_ring_templates,
         );

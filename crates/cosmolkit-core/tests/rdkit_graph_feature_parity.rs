@@ -1,13 +1,22 @@
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::path::Path;
 
 use cosmolkit_core::{
-    BatchErrorMode, BatchRecord, BondDirection, BondOrder, BondStereo, ChiralTag as OursChiralTag,
-    Molecule, MoleculeBatch, ValenceModel, assign_valence, rdkit_valence_list,
+    AtomId, BatchErrorMode, BatchRecord, BondDirection, BondOrder, BondStereo,
+    ChiralTag as OursChiralTag, Molecule, MoleculeBatch, ValenceModel, assign_valence,
+    rdkit_valence_list, symmetrize_sssr,
 };
 use serde::{Deserialize, Deserializer};
+
+mod common;
+use common::parity_data;
+
+include!(concat!(
+    env!("OUT_DIR"),
+    "/rdkit_isotope_masses_generated.rs"
+));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ChiralTag {
@@ -264,17 +273,8 @@ enum TestDataError {
     },
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crates/")
-        .parent()
-        .expect("repo root")
-        .to_path_buf()
-}
-
 fn load_smiles() -> Result<Vec<String>, TestDataError> {
-    let path = repo_root().join("tests/smiles.smi");
+    let path = parity_data::smiles_path();
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     let mut rows = Vec::new();
@@ -290,7 +290,7 @@ fn load_smiles() -> Result<Vec<String>, TestDataError> {
 }
 
 fn load_golden() -> Result<Vec<GoldenRecord>, TestDataError> {
-    let path = repo_root().join("tests/golden/graph_features.jsonl");
+    let path = parity_data::golden_path("graph_features.jsonl");
     ensure_golden_exists(&path);
     let file = File::open(path)?;
     let reader = BufReader::new(file);
@@ -309,12 +309,13 @@ fn load_golden() -> Result<Vec<GoldenRecord>, TestDataError> {
     Ok(rows)
 }
 
-fn ensure_golden_exists(golden_path: &PathBuf) {
+fn ensure_golden_exists(golden_path: &Path) {
     assert!(
         golden_path.exists(),
         "missing RDKit graph feature golden: {}. Generate it before running tests:\n\
-         uv sync --group dev && .venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4",
-        golden_path.display()
+         uv sync --group dev && {}",
+        golden_path.display(),
+        parity_data::regenerate_command()
     );
 }
 
@@ -795,17 +796,21 @@ fn compute_hybridization(
             _ => Hybridization::Unspecified,
         };
     }
-    let nouter = rdkit_n_outer_electrons(atom.atomic_number()).unwrap_or(0);
-    let total_valence = assignment.explicit_valence[atom_index] as i32
-        + assignment.implicit_hydrogens[atom_index] as i32;
-    let num_free = nouter - (total_valence + atom.formal_charge() as i32);
-    let norbs = if total_valence + nouter - (atom.formal_charge() as i32) < 8 {
-        let radicals = atom.radical_electrons() as i32;
-        let lone_pairs = (num_free - radicals) / 2;
-        deg + lone_pairs + radicals
+    let norbs = if atom.atomic_number() < 89 {
+        let nouter = rdkit_n_outer_electrons(atom.atomic_number()).unwrap_or(0);
+        let total_valence = assignment.explicit_valence[atom_index] as i32
+            + assignment.implicit_hydrogens[atom_index] as i32;
+        let num_free = nouter - (total_valence + atom.formal_charge() as i32);
+        if total_valence + nouter - (atom.formal_charge() as i32) < 8 {
+            let radicals = atom.radical_electrons() as i32;
+            let lone_pairs = (num_free - radicals) / 2;
+            deg + lone_pairs + radicals
+        } else {
+            let lone_pairs = num_free / 2;
+            deg + lone_pairs
+        }
     } else {
-        let lone_pairs = num_free / 2;
-        deg + lone_pairs
+        deg
     };
     match norbs {
         0 | 1 => Hybridization::S,
@@ -908,21 +913,26 @@ fn extract_possible_stereo_features(
     });
     let keep_cip_ranks = legacy_possible_stereo_presence_requires_rank_work(mol);
     let cip_ranks = if keep_cip_ranks {
-        legacy_rdkit_cip_ranks_for_depict_with_assignment(mol, &assignment)
+        existing_cip_rank_props(mol)
+            .unwrap_or_else(|| legacy_rdkit_cip_ranks_for_depict_with_assignment(mol, &assignment))
     } else {
         Vec::new()
     };
-    let chirality_possible_flags: Vec<bool> = if cip_ranks.is_empty() {
-        vec![false; mol.atoms().len()]
-    } else {
+    let mut potential_atom_results: Vec<(bool, bool)> = if keep_cip_ranks {
         (0..mol.atoms().len())
             .map(|atom_idx| {
                 let (legal_center, has_dupes, _nbrs) =
                     legacy_is_atom_potential_chiral_center(mol, &assignment, atom_idx, &cip_ranks);
-                legal_center && !has_dupes
+                (legal_center, has_dupes)
             })
             .collect()
+    } else {
+        vec![(false, false); mol.atoms().len()]
     };
+    let mut chirality_possible_flags: Vec<bool> = potential_atom_results
+        .iter()
+        .map(|(legal_center, has_dupes)| *legal_center && !*has_dupes)
+        .collect();
     let cip_codes: Vec<Option<String>> = if keep_cip_ranks {
         (0..mol.atoms().len())
             .map(|atom_idx| legacy_cip_code_for_atom(mol, &assignment, &cip_ranks, atom_idx))
@@ -930,10 +940,30 @@ fn extract_possible_stereo_features(
     } else {
         vec![None; mol.atoms().len()]
     };
-    let cip_ranks = if keep_cip_ranks
-        && cip_codes.iter().any(Option::is_some)
-        && legacy_assign_bond_stereo_would_leave_unassigned(mol)
-    {
+    let assigned_stereo_atom = cip_codes.iter().any(Option::is_some);
+    let unassigned_stereo_atom_after_assignment =
+        potential_atom_results
+            .iter()
+            .enumerate()
+            .any(|(atom_idx, (legal_center, has_dupes))| {
+                if !*legal_center {
+                    return false;
+                }
+                let tag = mol.atoms()[atom_idx].chiral_tag();
+                let assigned_this_atom = !*has_dupes
+                    && !matches!(tag, OursChiralTag::Unspecified | OursChiralTag::Other);
+                !assigned_this_atom
+            });
+    let should_rerank = assigned_stereo_atom
+        && (unassigned_stereo_atom_after_assignment
+            || legacy_assign_bond_stereo_would_leave_unassigned(mol));
+    let cip_ranks = if should_rerank {
+        // RDKit source, Chirality.cpp::findPotentialStereo():
+        //   keepGoing = (hasStereoAtoms || hasStereoBonds) &&
+        //               (changedStereoAtoms || changedStereoBonds);
+        //   if (keepGoing) {
+        //     Chirality::rerankAtoms(mol, atomRanks);
+        //   }
         legacy_rdkit_cip_reranks_with_legacy_stereo_and_assignment(
             mol,
             &cip_ranks,
@@ -943,6 +973,19 @@ fn extract_possible_stereo_features(
     } else {
         cip_ranks
     };
+    if should_rerank {
+        potential_atom_results = (0..mol.atoms().len())
+            .map(|atom_idx| {
+                let (legal_center, has_dupes, _nbrs) =
+                    legacy_is_atom_potential_chiral_center(mol, &assignment, atom_idx, &cip_ranks);
+                (legal_center, has_dupes)
+            })
+            .collect();
+        chirality_possible_flags = potential_atom_results
+            .iter()
+            .map(|(legal_center, has_dupes)| *legal_center && !*has_dupes)
+            .collect();
+    }
     let atoms = atoms
         .into_iter()
         .enumerate()
@@ -1025,9 +1068,11 @@ fn atom_nonzero_degree_for_legacy_stereo(mol: &Molecule, atom_index: usize) -> u
         .iter()
         .filter(|bond| {
             (bond.begin().index() == atom_index || bond.end().index() == atom_index)
-                && !(matches!(bond.order(), BondOrder::Null)
-                    || matches!(bond.order(), BondOrder::Dative)
-                        && bond.begin().index() == atom_index)
+                && !(matches!(
+                    bond.order(),
+                    BondOrder::Null | BondOrder::Unspecified | BondOrder::Zero
+                ) || matches!(bond.order(), BondOrder::Dative)
+                    && bond.begin().index() == atom_index)
         })
         .count()
 }
@@ -1077,20 +1122,128 @@ fn atom_has_conjugated_bond_for_legacy_stereo(mol: &Molecule, atom_index: usize)
     })
 }
 
-fn is_atom_bridgehead_for_legacy_stereo(mol: &Molecule, atom_index: usize) -> bool {
-    if atom_nonzero_degree_for_legacy_stereo(mol, atom_index) < 3 {
-        return false;
+fn legacy_rdkit_hybridization_for_stereo(
+    mol: &Molecule,
+    assignment: &cosmolkit_core::ValenceAssignment,
+    atom_index: usize,
+) -> Hybridization {
+    let mut atom_degree = vec![0usize; mol.atoms().len()];
+    for bond in mol.bonds() {
+        atom_degree[bond.begin().index()] += 1;
+        atom_degree[bond.end().index()] += 1;
     }
-    let atom_ring_bonds = mol
+    let conjugated_bonds = compute_conjugated_bonds(mol, assignment, &atom_degree);
+    let mut atom_has_conjugated_bond = vec![false; mol.atoms().len()];
+    for (bond_index, bond) in mol.bonds().iter().enumerate() {
+        if conjugated_bonds[bond_index] {
+            atom_has_conjugated_bond[bond.begin().index()] = true;
+            atom_has_conjugated_bond[bond.end().index()] = true;
+        }
+    }
+    compute_hybridization(
+        mol,
+        assignment,
+        &atom_degree,
+        &atom_has_conjugated_bond,
+        atom_index,
+    )
+}
+
+fn is_atom_bridgehead_for_legacy_stereo(mol: &Molecule, atom_index: usize) -> bool {
+    // RDKit source, QueryOps.cpp::queryIsAtomBridgehead:
+    //   if (at->getDegree() < 3) {
+    //     return 0;
+    //   }
+    //   ... track which ring bonds involve this atom ...
+    //   if (atomRingBonds.count() < 3) {
+    //     return 0;
+    //   }
+    //   ... for each ring containing the atom:
+    //     if (overlap >= 2 && atomInRingJ) {
+    //       ringsOverlap.set(i);
+    //       ringsOverlap.set(j);
+    //       break;
+    //     }
+    //   if (!ringsOverlap[i]) {
+    //     return 0;
+    //   }
+    //   return 1;
+    if mol
         .bonds()
         .iter()
-        .enumerate()
-        .filter(|(bond_index, bond)| {
-            (bond.begin().index() == atom_index || bond.end().index() == atom_index)
-                && min_cycle_size_for_bond(mol, *bond_index).is_some()
-        })
-        .count();
-    atom_ring_bonds >= 3
+        .filter(|bond| bond.begin().index() == atom_index || bond.end().index() == atom_index)
+        .count()
+        < 3
+    {
+        return false;
+    }
+    let Ok(ring_info) = symmetrize_sssr(mol) else {
+        return false;
+    };
+    if !ring_info.is_initialized() {
+        return false;
+    }
+
+    let mut atom_ring_bonds = vec![false; mol.bonds().len()];
+    let mut atom_ring_bond_count = 0usize;
+    for bond in mol.bonds() {
+        let bond_index = bond.id().index();
+        if (bond.begin().index() == atom_index || bond.end().index() == atom_index)
+            && ring_info.num_bond_rings(bond.id()) > 0
+        {
+            atom_ring_bonds[bond_index] = true;
+            atom_ring_bond_count += 1;
+        }
+    }
+    if atom_ring_bond_count < 3 {
+        return false;
+    }
+
+    let atom_rings = ring_info.atom_members(AtomId::new(atom_index));
+    let atom_ring_set = atom_rings
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    let mut rings_overlap = vec![false; ring_info.bond_rings().len()];
+    for ring_i in 0..ring_info.bond_rings().len() {
+        if !atom_ring_set.contains(&ring_i) {
+            continue;
+        }
+        let mut bonds_in_i = vec![false; mol.bonds().len()];
+        for bond in &ring_info.bond_rings()[ring_i] {
+            bonds_in_i[bond.index()] = true;
+        }
+
+        for ring_j in (ring_i + 1)..ring_info.bond_rings().len() {
+            let mut overlap = 0usize;
+            let mut atom_in_ring_j = false;
+            let mut found_overlap_with_j = false;
+            for bond in &ring_info.bond_rings()[ring_j] {
+                let bond_index = bond.index();
+                if atom_ring_bonds[bond_index] {
+                    atom_in_ring_j = true;
+                }
+                if bonds_in_i[bond_index] {
+                    overlap += 1;
+                }
+                if overlap >= 2 && atom_in_ring_j {
+                    rings_overlap[ring_i] = true;
+                    rings_overlap[ring_j] = true;
+                    found_overlap_with_j = true;
+                    break;
+                }
+            }
+            if found_overlap_with_j {
+                break;
+            }
+        }
+
+        if !rings_overlap[ring_i] {
+            return false;
+        }
+    }
+
+    true
 }
 
 fn legacy_is_atom_potential_chiral_center(
@@ -1102,23 +1255,7 @@ fn legacy_is_atom_potential_chiral_center(
     let atom = &mol.atoms()[atom_index];
     let nz_degree = atom_nonzero_degree_for_legacy_stereo(mol, atom_index);
     let total_num_hs = atom.explicit_hydrogens() as usize
-        + assignment.implicit_hydrogens[atom_index].max(0) as usize
-        + mol
-            .bonds()
-            .iter()
-            .filter(|bond| {
-                let other = if bond.begin().index() == atom_index {
-                    Some(bond.end().index())
-                } else if bond.end().index() == atom_index {
-                    Some(bond.begin().index())
-                } else {
-                    None
-                };
-                other
-                    .map(|idx| mol.atoms()[idx].atomic_number() == 1)
-                    .unwrap_or(false)
-            })
-            .count();
+        + assignment.implicit_hydrogens[atom_index].max(0) as usize;
     let tnz_degree = nz_degree + total_num_hs;
     let mut legal_center = true;
     let mut has_dupes = false;
@@ -1142,7 +1279,9 @@ fn legacy_is_atom_potential_chiral_center(
                         (bond.begin().index() == atom_index || bond.end().index() == atom_index)
                             && min_cycle_size_for_bond(mol, bond_index) == Some(3)
                     });
-                    if !atom_has_conjugated_bond_for_legacy_stereo(mol, atom_index)
+                    if legacy_rdkit_hybridization_for_stereo(mol, assignment, atom_index)
+                        == Hybridization::Sp3
+                        && !atom_has_conjugated_bond_for_legacy_stereo(mol, atom_index)
                         && (in_three_ring || is_atom_bridgehead_for_legacy_stereo(mol, atom_index))
                     {
                         legal_center = true;
@@ -1176,8 +1315,11 @@ fn legacy_is_atom_potential_chiral_center(
                 continue;
             };
             nbrs.push((ranks[other_idx] as u32, bond.id().index()));
-            if !(matches!(bond.order(), BondOrder::Null)
-                || matches!(bond.order(), BondOrder::Dative) && bond.begin().index() == atom_index)
+            if !(matches!(
+                bond.order(),
+                BondOrder::Null | BondOrder::Unspecified | BondOrder::Zero
+            ) || matches!(bond.order(), BondOrder::Dative)
+                && bond.begin().index() == atom_index)
                 && seen_ranks.insert(ranks[other_idx], ()).is_some()
             {
                 has_dupes = true;
@@ -1223,27 +1365,12 @@ fn legacy_rdkit_twice_bond_type(order: BondOrder) -> i64 {
 }
 
 fn legacy_most_common_isotope(atomic_num: u8) -> Option<i64> {
-    match atomic_num {
-        1 => Some(1),
-        5 => Some(11),
-        6 => Some(12),
-        7 => Some(14),
-        8 => Some(16),
-        9 => Some(19),
-        11 => Some(23),
-        12 => Some(24),
-        13 => Some(27),
-        14 => Some(28),
-        15 => Some(31),
-        16 => Some(32),
-        17 => Some(35),
-        19 => Some(39),
-        20 => Some(40),
-        35 => Some(79),
-        53 => Some(127),
-        n if n <= 20 => Some((n as i64) * 2),
-        _ => Some((atomic_num as i64).max(1) * 2),
-    }
+    // RDKit source, PeriodicTable.h::getMostCommonIsotope:
+    //   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
+    //   return byanum[atomicNumber].MostCommonIsotope();
+    RDKIT_MOST_COMMON_ISOTOPES
+        .get(usize::from(atomic_num))
+        .map(|isotope| i64::from(*isotope))
 }
 
 fn legacy_rdkit_cip_invariants(mol: &Molecule) -> Vec<i64> {
@@ -1524,7 +1651,13 @@ fn legacy_rdkit_cip_ranks_from_invariants_with_assignment(
     {
         for index in 0..n {
             let index_offset = K_MAX_BONDS * index;
-            let feature_len = num_neighbors[index].min(K_MAX_BONDS);
+            // RDKit source, Chirality.cpp::iterateCIPRanks:
+            //   const int numNeighbors = bondFeatures.numNeighbors[index];
+            //   auto *sortBegin = &bondFeatures.countsAndNeighborIndices[indexOffset];
+            //   auto *sortEnd = sortBegin + numNeighbors + 1;
+            //
+            // The trailing zero-count sentinel participates in sorting and iteration.
+            let feature_len = (num_neighbors[index] + 1).min(K_MAX_BONDS);
             if num_neighbors[index] > 1 {
                 bond_features[index_offset..index_offset + feature_len]
                     .sort_by(|a, b| ranks[b.1].cmp(&ranks[a.1]));
@@ -1569,6 +1702,15 @@ fn legacy_rdkit_cip_ranks_for_depict_with_assignment(
         false,
         assignment,
     )
+}
+
+fn existing_cip_rank_props(mol: &Molecule) -> Option<Vec<i64>> {
+    let mut ranks = Vec::with_capacity(mol.atoms().len());
+    for atom in mol.atoms() {
+        let rank = atom.prop("_CIPRank")?.parse::<i64>().ok()?;
+        ranks.push(rank);
+    }
+    Some(ranks)
 }
 
 fn legacy_rdkit_cip_reranks_with_legacy_stereo_and_assignment(
@@ -1903,8 +2045,8 @@ fn compare_possible_stereo_features(
 
 #[test]
 fn graph_feature_golden_has_one_record_per_smiles() {
-    let smiles = load_smiles().expect("should read tests/smiles.smi");
-    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let smiles = load_smiles().expect("should read active parity smiles corpus");
+    let golden = load_golden().expect("should read active graph feature golden");
     assert_eq!(
         golden.len(),
         smiles.len(),
@@ -1985,14 +2127,7 @@ fn graph_feature_golden_records_chiral_centers_with_include_unassigned_branches(
 fn graph_feature_golden_records_flag_possible_stereo_centers_branch() {
     let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
     let mut possible_center_rows = 0usize;
-    let required_smiles = ["CC(F)(Cl)Br", "FC(Cl)(Br)I", "CC(F)Cl", "CC(Cl)Br"];
-
-    for required in required_smiles {
-        assert!(
-            golden.iter().any(|record| record.smiles == required),
-            "SMILES corpus should contain explicit potential-stereocenter fixture {required}"
-        );
-    }
+    let mut possible_center_atoms = 0usize;
 
     for (idx, record) in golden.iter().enumerate() {
         if !record.rdkit_ok {
@@ -2018,11 +2153,13 @@ fn graph_feature_golden_records_flag_possible_stereo_centers_branch() {
             record.smiles
         );
 
-        if possible
+        let row_possible_atoms = possible
             .atom_features
             .iter()
-            .any(|atom| atom.chirality_possible)
-        {
+            .filter(|atom| atom.chirality_possible)
+            .count();
+        possible_center_atoms += row_possible_atoms;
+        if row_possible_atoms > 0 {
             possible_center_rows += 1;
         }
     }
@@ -2030,6 +2167,10 @@ fn graph_feature_golden_records_flag_possible_stereo_centers_branch() {
     assert!(
         possible_center_rows >= 4,
         "SMILES corpus should exercise RDKit AssignStereochemistry(flagPossibleStereoCenters=True)"
+    );
+    assert!(
+        possible_center_atoms >= 4,
+        "SMILES corpus should contain explicit RDKit _ChiralityPossible atom coverage"
     );
 }
 

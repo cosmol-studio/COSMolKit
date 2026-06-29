@@ -73,6 +73,8 @@ pub mod operations;
 pub mod properties;
 pub mod search;
 pub mod support;
+#[cfg(test)]
+mod test_data;
 
 pub use bio::invariants as bio_invariants;
 pub use bio::ops as bio_ops;
@@ -167,8 +169,12 @@ pub use distgeom::{
 pub use draw::SvgDrawError;
 pub use error::{InvariantError, MoleculeBuildError};
 pub use fingerprint::{
-    Fingerprint, FingerprintError, MorganAdditionalOutput, MorganAtomInvariantsGenerator,
+    AdditionalOutput, Fingerprint, FingerprintArguments, FingerprintError, MaccsFingerprintParams,
+    MorganAdditionalOutput, MorganAtomInvariantsGenerator, MorganBitFingerprintOutput,
     MorganBondInvariantsGenerator, MorganFingerprintOutput, MorganFingerprintParams,
+    MorganSparseFingerprintOutput, SparseBitFingerprint, SparseCountFingerprint, maccs_fingerprint,
+    maccs_get_fingerprint_as_bit_vect, morgan_get_fingerprint, morgan_get_fingerprint_as_bit_vect,
+    morgan_get_hashed_fingerprint,
 };
 pub use hydrogens::{AddHsParams, AddHydrogensError, RemoveHsParams, RemoveHydrogensError};
 pub use io::bio::{BioPdbReadParams, BioReadError, read_mmcif_atom_site_subset_from_str};
@@ -229,7 +235,8 @@ pub use support::{
     CONFORMER_GENERATION_FEATURE, COORDINATE_2D_FEATURE, DG_BOUNDS_FEATURE, DRAWING_FEATURE,
     FINGERPRINT_FEATURE, FeatureCategory, FeatureSpec, HYDROGENS_FEATURE, KEKULIZE_FEATURE,
     MOLBLOCK_IO_FEATURE, PUBLIC_FEATURES, RINGS_FEATURE, SANITIZE_FEATURE, SMILES_PARSE_FEATURE,
-    SMILES_WRITE_FEATURE, STEREO_FEATURE, SupportStatus, UnsupportedFeatureError, VALENCE_FEATURE,
+    SMILES_WRITE_FEATURE, STEREO_FEATURE, SUBSTRUCTURE_FEATURE, SupportStatus,
+    UnsupportedFeatureError, VALENCE_FEATURE,
 };
 pub use valence::{
     ValenceAssignment, ValenceError, ValenceModel, assign_radicals, assign_valence,

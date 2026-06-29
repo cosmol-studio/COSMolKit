@@ -4561,7 +4561,10 @@ as one new molecule value.
         from_atoms=None
     ))]
     #[doc = r#"
-Return an Avalon fingerprint.
+Return an unfinished Avalon fingerprint.
+
+This surface is not a RDKit/Avalon compatibility claim until exact-bit parity
+tests pass against the RDKit Avalon implementation.
 "#]
     fn avalon_fingerprint(
         &self,
@@ -4612,7 +4615,11 @@ Return an Avalon fingerprint.
         num_bits_per_feature=1
     ))]
     #[doc = r#"
-Return an RDKit-style Morgan fingerprint.
+Return a Morgan fingerprint for the supported RDKit bit-identical branches.
+
+The exposed Morgan branches are checked against RDKit exact-bit parity. A
+99.9% match, similarity correlation, or structurally similar hashing is not a
+passing state.
 
 Parameters
 ----------
@@ -4635,7 +4642,7 @@ include_redundant_environments : bool, default False
 from_atoms : list[int], optional
     Restrict environments to these root atoms.
 ignore_atoms : list[int], optional
-    Accepted for RDKit API parity; Morgan currently ignores this input.
+    Passed through to the RDKit source-backed generator path.
 custom_atom_invariants : list[int], optional
     Per-atom starting invariants.
 custom_bond_invariants : list[int], optional
@@ -4723,7 +4730,10 @@ num_bits_per_feature : int, default 1
         num_bits_per_feature=1
     ))]
     #[doc = r#"
-Return a Morgan fingerprint together with allocated RDKit-style additional output.
+Return a Morgan fingerprint with RDKit bit-identical provenance output.
+
+The fingerprint and exposed AdditionalOutput fields are checked against RDKit
+exact-bit and exact-field parity for the supported branches.
 "#]
     fn fingerprint_morgan_with_output(
         &self,
@@ -4789,7 +4799,10 @@ Return a Morgan fingerprint together with allocated RDKit-style additional outpu
         ignore_atoms=None
     ))]
     #[doc = r#"
-Return a topological fingerprint.
+Return an unfinished topological fingerprint.
+
+This surface is not RDKit ``RDKFingerprint`` compatible until exact-bit parity
+tests pass.
 "#]
     fn topological_fingerprint(
         &self,
@@ -4817,13 +4830,18 @@ Return a topological fingerprint.
 
     #[pyo3(signature = (n_bits=166))]
     #[doc = r#"
-Return a MACCS fingerprint.
+Return a MACCS fingerprint using RDKit bit-identical key generation.
+
+COSMolKit exposes the public 166-bit projection of RDKit's raw 167-bit MACCS
+vector, where RDKit bit 0 is unused and raw bits 1..166 map to public bits
+0..165.
 "#]
-    fn maccs_fingerprint(&self, n_bits: usize) -> Fingerprint {
+    fn maccs_fingerprint(&self, n_bits: usize) -> PyResult<Fingerprint> {
         let params = cosmolkit_core::fingerprint::MaccsFingerprintParams { n_bits };
-        Fingerprint {
-            inner: self.inner.maccs_fingerprint(&params),
-        }
+        self.inner
+            .maccs_fingerprint(&params)
+            .map(|inner| Fingerprint { inner })
+            .map_err(fingerprint_pyerr)
     }
 
     #[doc = r#"
@@ -6485,16 +6503,32 @@ fn mmff_optimize_molecule_confs(
 }
 
 #[pyfunction]
+#[doc = r#"
+Return whether a molecule contains a molecule-query substructure.
+
+This surface is unfinished until strict RDKit molecule-query parity tests pass.
+Direct SMARTS query matching is not yet exposed as a Python API.
+"#]
 fn has_substruct_match(mol: &Molecule, query: &Molecule) -> bool {
     cosmolkit_core::has_substruct_match(&mol.inner, &query.inner)
 }
 
 #[pyfunction]
+#[doc = r#"
+Return the first molecule-query substructure match, if present.
+
+This surface is unfinished until strict RDKit molecule-query parity tests pass.
+"#]
 fn get_substruct_match(mol: &Molecule, query: &Molecule) -> Option<SubstructMatchResult> {
     cosmolkit_core::get_substruct_match(&mol.inner, &query.inner).map(Into::into)
 }
 
 #[pyfunction]
+#[doc = r#"
+Return molecule-query substructure matches.
+
+This surface is unfinished until strict RDKit molecule-query parity tests pass.
+"#]
 fn get_substruct_matches(mol: &Molecule, query: &Molecule) -> Vec<SubstructMatchResult> {
     cosmolkit_core::get_substruct_matches(&mol.inner, &query.inner)
         .into_iter()
@@ -6504,6 +6538,11 @@ fn get_substruct_matches(mol: &Molecule, query: &Molecule) -> Vec<SubstructMatch
 
 #[pyfunction]
 #[pyo3(signature = (mol, query, max_matches=1000, uniquify=true))]
+#[doc = r#"
+Return molecule-query substructure matches with explicit limits.
+
+This surface is unfinished until strict RDKit molecule-query parity tests pass.
+"#]
 fn get_substruct_matches_with_params(
     mol: &Molecule,
     query: &Molecule,

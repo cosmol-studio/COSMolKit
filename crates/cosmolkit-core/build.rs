@@ -11,6 +11,7 @@ fn main() {
     let uff_generated_path = out_dir.join("uff_defaults_generated.rs");
     let mmff_generated_path = out_dir.join("mmff_defaults_generated.rs");
     let crystalff_generated_path = out_dir.join("crystalff_defaults_generated.rs");
+    let isotope_generated_path = out_dir.join("rdkit_isotope_masses_generated.rs");
 
     let uff_params_path =
         manifest_dir.join("src/chemistry/forcefield/rdkit/ForceField/UFF/Params.cpp");
@@ -18,9 +19,17 @@ fn main() {
         manifest_dir.join("src/chemistry/forcefield/rdkit/ForceField/MMFF/Params.cpp");
     let crystalff_dir =
         manifest_dir.join("src/chemistry/forcefield/rdkit/GraphMol/ForceFieldHelpers/CrystalFF");
+    let rdkit_atomic_data_path = manifest_dir
+        .join("../../third_party/rdkit/Code/GraphMol/atomic_data.cpp")
+        .canonicalize()
+        .expect("locate RDKit atomic_data.cpp");
 
     println!("cargo:rerun-if-changed={}", uff_params_path.display());
     println!("cargo:rerun-if-changed={}", mmff_params_path.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        rdkit_atomic_data_path.display()
+    );
     for file_name in [
         "torsionPreferences_v1.in",
         "torsionPreferences_v2.in",
@@ -183,6 +192,16 @@ fn main() {
             )
         })
         .collect();
+    let rdkit_atomic_data_source =
+        fs::read_to_string(&rdkit_atomic_data_path).expect("read RDKit atomic_data.cpp");
+    let periodic_table_atom_data =
+        extract_cpp_string(&rdkit_atomic_data_source, "periodicTableAtomData")
+            .expect("extract RDKit periodicTableAtomData");
+    let isotope_atom_data = extract_cpp_string_array(&rdkit_atomic_data_source, "isotopesAtomData")
+        .expect("extract RDKit isotopesAtomData");
+    let mut isotope_masses = parse_rdkit_isotope_masses(&isotope_atom_data);
+    isotope_masses.sort_by_key(|row| (row.atomic_number, row.isotope));
+    let most_common_isotopes = parse_rdkit_most_common_isotopes(&periodic_table_atom_data);
 
     let mut generated = String::new();
     writeln!(
@@ -282,6 +301,34 @@ fn main() {
     }
     fs::write(crystalff_generated_path, crystalff_generated)
         .expect("write CrystalFF generated Rust");
+
+    let mut isotope_generated = generated_header();
+    writeln!(
+        isotope_generated,
+        "pub(crate) static RDKIT_ISOTOPE_MASSES: &[((u8, u16), f64)] = &["
+    )
+    .unwrap();
+    for row in &isotope_masses {
+        writeln!(
+            isotope_generated,
+            "    (({}, {}), {:?}),",
+            row.atomic_number, row.isotope, row.mass
+        )
+        .unwrap();
+    }
+    writeln!(isotope_generated, "];").unwrap();
+    writeln!(isotope_generated).unwrap();
+    writeln!(
+        isotope_generated,
+        "pub(crate) static RDKIT_MOST_COMMON_ISOTOPES: &[i16] = &["
+    )
+    .unwrap();
+    for isotope in &most_common_isotopes {
+        writeln!(isotope_generated, "    {},", isotope).unwrap();
+    }
+    writeln!(isotope_generated, "];").unwrap();
+    fs::write(isotope_generated_path, isotope_generated)
+        .expect("write RDKit isotope mass generated Rust");
 
     fs::write(generated_path, generated).expect("write forcefield generated Rust");
 }
@@ -1068,6 +1115,73 @@ fn parse_u32(value: &str, line: &str) -> u32 {
     })
 }
 
+#[derive(Debug)]
+struct RdkitIsotopeMassRow {
+    atomic_number: u8,
+    isotope: u16,
+    mass: f64,
+}
+
+fn parse_rdkit_isotope_masses(table: &str) -> Vec<RdkitIsotopeMassRow> {
+    table
+        .lines()
+        .filter_map(|raw_line| {
+            let line = raw_line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            if fields.len() < 4 {
+                panic!("invalid RDKit isotope data row {line:?}");
+            }
+            let atomic_number = parse_u8(fields[0], line);
+            let isotope = fields[2].parse::<u16>().unwrap_or_else(|err| {
+                panic!(
+                    "invalid generated isotope integer {:?} in {:?}: {err}",
+                    fields[2], line
+                )
+            });
+            let mass = parse_f64(fields[3], line);
+            Some(RdkitIsotopeMassRow {
+                atomic_number,
+                isotope,
+                mass,
+            })
+        })
+        .collect()
+}
+
+fn parse_rdkit_most_common_isotopes(table: &str) -> Vec<i16> {
+    let mut isotopes = Vec::new();
+    for raw_line in table.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 10 {
+            panic!("invalid RDKit periodic table row {line:?}");
+        }
+        let atomic_number = usize::from(parse_u8(fields[0], line));
+        if atomic_number != isotopes.len() {
+            continue;
+        }
+        let isotope = fields[8].parse::<i16>().unwrap_or_else(|err| {
+            panic!(
+                "invalid generated most-common isotope integer {:?} in {:?}: {err}",
+                fields[8], line
+            )
+        });
+        isotopes.push(isotope);
+    }
+    assert_eq!(
+        isotopes.len(),
+        119,
+        "RDKit periodicTableAtomData should produce atomic numbers 0..=118"
+    );
+    isotopes
+}
+
 fn mmff_symbol_to_rust(symbol: &str) -> &'static str {
     match symbol {
         "defaultMMFFDef" => "DEFAULT_MMFF_DEF",
@@ -1115,7 +1229,8 @@ fn extract_cpp_string_by_header(source: &str, header: &str) -> Option<String> {
 fn find_initializer_end(source: &str) -> Option<usize> {
     let mut in_string = false;
     let mut escaped = false;
-    for (idx, ch) in source.char_indices() {
+    let mut chars = source.char_indices().peekable();
+    while let Some((idx, ch)) = chars.next() {
         if in_string {
             if escaped {
                 escaped = false;
@@ -1125,6 +1240,45 @@ fn find_initializer_end(source: &str) -> Option<usize> {
                 '\\' => escaped = true,
                 '"' => in_string = false,
                 _ => {}
+            }
+            continue;
+        }
+        if ch == '/' && chars.peek().is_some_and(|(_, next)| *next == '/') {
+            chars.next();
+            for (_, comment_ch) in chars.by_ref() {
+                if comment_ch == '\n' {
+                    break;
+                }
+            }
+            continue;
+        }
+        if ch == '/' && chars.peek().is_some_and(|(_, next)| *next == '*') {
+            chars.next();
+            let mut prev = '\0';
+            for (_, comment_ch) in chars.by_ref() {
+                if prev == '*' && comment_ch == '/' {
+                    break;
+                }
+                prev = comment_ch;
+            }
+            continue;
+        }
+        if ch == 'R' && chars.peek().is_some_and(|(_, next)| *next == '"') {
+            chars.next();
+            let mut delimiter = String::new();
+            for (_, delimiter_ch) in chars.by_ref() {
+                if delimiter_ch == '(' {
+                    break;
+                }
+                delimiter.push(delimiter_ch);
+            }
+            let terminator = format!("){delimiter}\"");
+            let mut raw_tail = String::new();
+            for (_, raw_ch) in chars.by_ref() {
+                raw_tail.push(raw_ch);
+                if raw_tail.ends_with(&terminator) {
+                    break;
+                }
             }
             continue;
         }
@@ -1157,6 +1311,27 @@ fn decode_cpp_string_literals(source: &str) -> String {
                     break;
                 }
                 prev = comment_ch;
+            }
+            continue;
+        }
+        if ch == 'R' && chars.peek() == Some(&'"') {
+            chars.next();
+            let mut delimiter = String::new();
+            for delimiter_ch in chars.by_ref() {
+                if delimiter_ch == '(' {
+                    break;
+                }
+                delimiter.push(delimiter_ch);
+            }
+            let terminator = format!("){delimiter}\"");
+            let mut raw = String::new();
+            for raw_ch in chars.by_ref() {
+                raw.push(raw_ch);
+                if raw.ends_with(&terminator) {
+                    let content_len = raw.len() - terminator.len();
+                    decoded.push_str(&raw[..content_len]);
+                    break;
+                }
             }
             continue;
         }

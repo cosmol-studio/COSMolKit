@@ -5,6 +5,11 @@ use crate::{
     read_parts::MoleculeReadParts,
 };
 
+include!(concat!(
+    env!("OUT_DIR"),
+    "/rdkit_isotope_masses_generated.rs"
+));
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValenceModel {
     RdkitLike,
@@ -2261,6 +2266,61 @@ fn rdkit_periodic_table_entry(atomic_number: u8) -> Option<&'static RdkitPeriodi
     RDKIT_PERIODIC_TABLE.get(usize::from(atomic_number))
 }
 
+const RDKit_ATOMIC_WEIGHTS: [f64; 119] = [
+    0.0, 1.008, 4.003, 6.941, 9.012, 10.812, 12.011, 14.007, 15.999, 18.998, 20.18, 22.99, 24.305,
+    26.982, 28.086, 30.974, 32.067, 35.453, 39.948, 39.098, 40.078, 44.956, 47.867, 50.944, 51.996,
+    54.938, 55.845, 58.933, 58.693, 63.546, 65.39, 69.723, 72.61, 74.922, 78.96, 79.904, 83.8,
+    85.468, 87.62, 88.906, 91.224, 92.906, 95.94, 98.0, 101.07, 102.906, 106.42, 107.868, 112.412,
+    114.818, 118.711, 121.76, 127.6, 126.904, 131.29, 132.905, 137.328, 138.906, 140.116, 140.908,
+    144.24, 145.0, 150.36, 151.964, 157.25, 158.925, 162.5, 164.93, 167.26, 168.934, 173.04,
+    174.967, 178.49, 180.948, 183.84, 186.207, 190.23, 192.217, 195.078, 196.967, 200.59, 204.383,
+    207.2, 208.98, 209.0, 210.0, 222.0, 223.0, 226.0, 227.0, 232.038, 231.036, 238.029, 237.0,
+    244.0, 243.0, 247.0, 247.0, 251.0, 252.0, 257.0, 258.0, 259.0, 262.0, 267.0, 268.0, 269.0,
+    270.0, 269.0, 278.0, 281.0, 281.0, 285.0, 284.179, 289.190, 288.193, 293.204, 292.207, 294.214,
+];
+
+#[must_use]
+pub(crate) fn rdkit_atomic_mass(atomic_number: u8, isotope: Option<u16>) -> f64 {
+    // BEGIN RDKIT CPP FUNCTION Atom::getMass / PeriodicTable::getAtomicWeight / PeriodicTable::getMassForIsotope
+    // RDKit✔️✔️: double Atom::getMass() const {
+    // RDKit✔️✔️:   if (d_isotope) {
+    // RDKit✔️✔️:     return PeriodicTable::getTable()->getMassForIsotope(d_atomicNum, d_isotope);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     return PeriodicTable::getTable()->getAtomicWeight(d_atomicNum);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: double getAtomicWeight(UINT atomicNumber) const {
+    // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
+    // RDKit✔️✔️:   double mass = byanum[atomicNumber].Mass();
+    // RDKit✔️✔️:   return mass;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: double getMassForIsotope(UINT atomicNumber, UINT isotope) const {
+    // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
+    // RDKit✔️✔️:   const std::map<unsigned int, std::pair<double, double>> &m =
+    // RDKit✔️✔️:       byanum[atomicNumber].d_isotopeInfoMap;
+    // RDKit✔️✔️:   std::map<unsigned int, std::pair<double, double>>::const_iterator item =
+    // RDKit✔️✔️:       m.find(isotope);
+    // RDKit✔️✔️:   if (item == m.end()) {
+    // RDKit✔️✔️:     return 0.0;
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     return item->second.first;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION Atom::getMass / PeriodicTable::getAtomicWeight / PeriodicTable::getMassForIsotope
+    let atomic_weight = RDKit_ATOMIC_WEIGHTS
+        .get(usize::from(atomic_number))
+        .copied()
+        .unwrap_or(0.0);
+    if let Some(isotope) = isotope {
+        RDKIT_ISOTOPE_MASSES
+            .binary_search_by_key(&(atomic_number, isotope), |&(key, _)| key)
+            .map(|index| RDKIT_ISOTOPE_MASSES[index].1)
+            .unwrap_or(0.0)
+    } else {
+        atomic_weight
+    }
+}
+
 #[must_use]
 pub fn rdkit_atomic_number_from_symbol(symbol: &str) -> Option<u8> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/PeriodicTable.h :: getAtomicNumber
@@ -2441,6 +2501,30 @@ pub(crate) fn periodic_table_outer_electrons(atomic_number: u8) -> Result<i32, V
         .map(|entry| entry.n_outer)
         .ok_or(ValenceError::UnsupportedBranch {
             reason: "PeriodicTable outer electrons atomic number out of range",
+        })
+}
+
+pub(crate) fn rdkit_most_common_isotope(atomic_number: u8) -> Result<i64, ValenceError> {
+    // BEGIN RDKIT CPP FUNCTION PeriodicTable::getMostCommonIsotope / atomicData::MostCommonIsotope
+    // RDKit✔️✔️: int MostCommonIsotope() const { return commonIsotope; }
+    // RDKit✔️✔️: int getMostCommonIsotope(UINT atomicNumber) const {
+    // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
+    // RDKit✔️✔️:   return byanum[atomicNumber].MostCommonIsotope();
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: atomicData::atomicData(const std::string &dataLine) {
+    // RDKit✔️✔️:   // most common isotope
+    // RDKit✔️✔️:   istr.clear();
+    // RDKit✔️✔️:   istr.str(*token);
+    // RDKit✔️✔️:   istr >> commonIsotope;
+    // RDKit✔️✔️:   ++token;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: RDKIT_GRAPHMOL_EXPORT extern const std::string periodicTableAtomData;
+    // END RDKIT CPP FUNCTION PeriodicTable::getMostCommonIsotope / atomicData::MostCommonIsotope
+    RDKIT_MOST_COMMON_ISOTOPES
+        .get(usize::from(atomic_number))
+        .map(|isotope| i64::from(*isotope))
+        .ok_or(ValenceError::UnsupportedBranch {
+            reason: "PeriodicTable most-common isotope atomic number out of range",
         })
 }
 

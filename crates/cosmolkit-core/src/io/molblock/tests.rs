@@ -1,7 +1,7 @@
 use super::*;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::{
     AtomQueryPredicate, AtomSpec, BondDirection, BondOrder, BondQueryPredicate, BondSpec,
@@ -11,15 +11,6 @@ use crate::{
 };
 use crate::{MOLBLOCK_IO_FEATURE, Molecule, UnsupportedFeatureError};
 use serde::Deserialize;
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crates/")
-        .parent()
-        .expect("repo root")
-        .to_path_buf()
-}
 
 fn body(block: &str) -> String {
     let lines: Vec<_> = block.lines().collect();
@@ -280,7 +271,7 @@ struct GoldenRecord {
 }
 
 fn load_smiles() -> Vec<String> {
-    let path = repo_root().join("tests/smiles.smi");
+    let path = crate::test_data::smiles_path();
     std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))
         .lines()
@@ -291,7 +282,7 @@ fn load_smiles() -> Vec<String> {
 }
 
 fn load_golden() -> Vec<GoldenRecord> {
-    let path = repo_root().join("tests/golden/molblock_v2000_minimal.jsonl");
+    let path = crate::test_data::golden_path("molblock_v2000_minimal.jsonl");
     ensure_golden_exists(&path);
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!("failed to open {}: {err}", path.display());
@@ -313,8 +304,9 @@ fn load_golden() -> Vec<GoldenRecord> {
 fn ensure_golden_exists(golden_path: &Path) {
     assert!(
         golden_path.exists(),
-        "missing {}; regenerate all RDKit goldens with `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`",
+        "missing {}; regenerate RDKit goldens with `{}`",
         golden_path.display(),
+        crate::test_data::regenerate_command()
     );
 }
 

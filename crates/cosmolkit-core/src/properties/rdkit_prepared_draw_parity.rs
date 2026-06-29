@@ -1,6 +1,5 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
 
 use crate::draw::PreparedDrawMolecule;
 use crate::{BondOrder, Molecule, MoleculeBatch};
@@ -33,16 +32,13 @@ struct PreparedDrawRecord {
     error: Option<String>,
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
 fn load_golden() -> Vec<PreparedDrawRecord> {
-    let path = repo_root().join("tests/golden/prepared_draw_molecule.jsonl");
+    let path = crate::test_data::golden_path("prepared_draw_molecule.jsonl");
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate all RDKit goldens with `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`: {err}",
-            path.display()
+            "failed to open {}; regenerate RDKit goldens with `{}`: {err}",
+            path.display(),
+            crate::test_data::regenerate_command()
         )
     });
     BufReader::new(file)
@@ -65,20 +61,12 @@ fn bond_order_name(order: BondOrder) -> &'static str {
 
 #[test]
 fn prepared_draw_golden_has_one_record_per_smiles() {
-    let smiles_path = repo_root().join("tests/smiles.smi");
-    let expected = std::fs::read_to_string(&smiles_path)
-        .unwrap_or_else(|err| panic!("failed to read {}: {err}", smiles_path.display()))
-        .lines()
-        .filter(|line| {
-            let line = line.trim();
-            !line.is_empty() && !line.starts_with('#')
-        })
-        .count();
+    let expected = crate::test_data::count_smiles_rows();
     let records = load_golden();
     assert_eq!(
         records.len(),
         expected,
-        "prepared draw golden row count must match tests/smiles.smi"
+        "prepared draw golden row count must match the active parity corpus"
     );
 }
 

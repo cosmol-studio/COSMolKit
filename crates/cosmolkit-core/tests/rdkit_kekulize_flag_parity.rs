@@ -1,9 +1,11 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
 
 use cosmolkit_core::{BatchErrorMode, BatchRecord, BondOrder, Molecule, MoleculeBatch};
 use serde::Deserialize;
+
+mod common;
+use common::parity_data;
 
 #[derive(Debug, Deserialize)]
 struct KekulizeFlagRecord {
@@ -17,16 +19,13 @@ struct KekulizeFlagRecord {
     bond_is_aromatic: Option<Vec<bool>>,
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
 fn load_golden() -> Vec<KekulizeFlagRecord> {
-    let path = repo_root().join("tests/golden/kekulize_clear_flags_false.jsonl");
+    let path = parity_data::golden_path("kekulize_clear_flags_false.jsonl");
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate all RDKit goldens with `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`: {err}",
-            path.display()
+            "failed to open {}; regenerate RDKit goldens with `{}`: {err}",
+            path.display(),
+            parity_data::regenerate_command()
         )
     });
     BufReader::new(file)
@@ -49,15 +48,7 @@ fn bond_type_name(order: BondOrder) -> &'static str {
 
 #[test]
 fn kekulize_clear_flags_false_golden_has_one_record_per_smiles() {
-    let smiles_path = repo_root().join("tests/smiles.smi");
-    let expected = std::fs::read_to_string(&smiles_path)
-        .unwrap_or_else(|err| panic!("failed to read {}: {err}", smiles_path.display()))
-        .lines()
-        .filter(|line| {
-            let line = line.trim();
-            !line.is_empty() && !line.starts_with('#')
-        })
-        .count();
+    let expected = parity_data::count_smiles_rows();
     let records = load_golden();
     assert_eq!(records.len(), expected);
 }

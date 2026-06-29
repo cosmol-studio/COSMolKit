@@ -148,7 +148,15 @@ pub const FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::Fingerprint,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Compute Morgan-style fingerprints with connectivity invariants (RDKit component-vector hash style). Environment propagation uses RDKit's seed=layer + sorted neighbor-pair hashing. Chirality support, feature invariants (element/property classification), custom atom/bond invariants, count-simulation with configurable bounds. Hash-value alignment is structurally compatible but not bit-identical (uses own hash_combine instead of gboost::hash).",
+    docs: "Morgan and MACCS exposed branches are source-backed and covered by strict RDKit bit-identical parity tests. Morgan parity covers sparse-count, sparse-bit, hashed-count, explicit-bit, AdditionalOutput, and branch-matrix on-bit outputs. MACCS parity covers RDKit raw 167-bit vectors and COSMolKit public 166-bit projections on targeted fixtures plus the small and strict SMILES profiles. Topological and Avalon fingerprints remain unfinished until exact RDKit bit-vector parity is source-ported and tested. Similarity-shape correlation, structurally similar hashing, and 99.9% bit agreement are not accepted parity states.",
+};
+
+pub const SUBSTRUCTURE_FEATURE: FeatureSpec = FeatureSpec {
+    name: "substructure.match",
+    category: FeatureCategory::Core,
+    status: SupportStatus::Experimental,
+    parity_sensitive: true,
+    docs: "Substructure matching is unfinished until the exposed molecule-query and future SMARTS-query surfaces pass strict RDKit parity tests. The current VF2 implementation must not be presented as RDKit-compatible while any atom/bond compatibility or query-matching branch remains approximate or marker-open.",
 };
 
 pub const DRAWING_FEATURE: FeatureSpec = FeatureSpec {
@@ -156,15 +164,11 @@ pub const DRAWING_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::Drawing,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "SVG/PNG molecule renderer ported from RDKit MolDraw2D. \
-           Includes atom labels (isotope/charge/H/map), bond geometry \
-           (single/double/triple/wedge/aromatic/dative), radical dots, clash \
-           detection, scale calculation, and smoothed bond joins. \
-           Annotations: CIP codes (R/S, E/Z), atom notes, bond notes, \
-           SGroup data, brackets, variable bonds, link nodes, close-contact \
-           markers, and highlights. SVG metadata, data-tag attributes, and \
-           CSS class output for atoms/bonds. \
-           SVG output via native XML; PNG via usvg+resvg rasterization.",
+    docs: "Experimental SVG/PNG molecule renderer with strict RDKit MolDraw2D final-SVG golden coverage for the shared corpus. \
+           The passing SVG parity boundary must not be generalized to marker-open branches. \
+           Atom labels, common bond geometry, radical dots, scale calculation, selected annotations, SGroup data, brackets, variable bonds, close-contact markers, highlights, SVG metadata, data-tag attributes, and CSS class output are modeled for the covered surface. \
+           Link-node drawing, StereoGroup masking, atomRegions, and other marker-open branches remain unfinished until their RDKit source helpers are ported and covered by exact final-output parity tests. \
+           PNG output is a rasterization of the local SVG via usvg+resvg, not a RDKit Cairo/Qt bit-parity target.",
 };
 
 pub const STEREO_FEATURE: FeatureSpec = FeatureSpec {
@@ -253,6 +257,7 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &SANITIZE_FEATURE,
     &KEKULIZE_FEATURE,
     &FINGERPRINT_FEATURE,
+    &SUBSTRUCTURE_FEATURE,
     &DRAWING_FEATURE,
     &STEREO_FEATURE,
     &VALENCE_FEATURE,

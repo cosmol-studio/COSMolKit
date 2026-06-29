@@ -13,6 +13,7 @@ from rdkit import Chem, DataStructs, RDLogger
 from rdkit.Chem import rdFingerprintGenerator
 
 EXPECTED_RDKIT_VERSION = "2026.3.1"
+UINT32_MASK = (1 << 32) - 1
 
 BRANCHES = [
     {
@@ -66,7 +67,7 @@ BRANCHES = [
         "nBits": 2048,
         "includeChirality": False,
         "useBondTypes": True,
-        "includeRingMembership": False,
+        "atomInvariantsGenerator": "morgan_ring_false",
     },
     {
         "name": "r2_n2048_from_atom_0",
@@ -214,6 +215,169 @@ def fingerprint_kwargs(mol: Chem.Mol, branch: dict[str, object]) -> dict[str, ob
     return kwargs
 
 
+def unsigned_bit_id(bit_id: int) -> int:
+    """Normalize RDKit SparseBitVect signed Python ids to uint32 bit ids."""
+    return int(bit_id) & UINT32_MASK
+
+
+def make_additional_output() -> rdFingerprintGenerator.AdditionalOutput:
+    additional_output = rdFingerprintGenerator.AdditionalOutput()
+    additional_output.AllocateAtomCounts()
+    additional_output.AllocateAtomToBits()
+    additional_output.AllocateBitInfoMap()
+    additional_output.AllocateAtomsPerBit()
+    return additional_output
+
+
+def additional_output_record(
+    additional_output: rdFingerprintGenerator.AdditionalOutput | None,
+) -> dict[str, object] | None:
+    if additional_output is None:
+        return None
+    return {
+        "atom_counts": list(additional_output.GetAtomCounts()),
+        "atom_to_bits": [
+            [unsigned_bit_id(bit) for bit in bits]
+            for bits in additional_output.GetAtomToBits()
+        ],
+        "bit_info_map": {
+            str(unsigned_bit_id(bit)): [list(pair) for pair in pairs]
+            for bit, pairs in sorted(additional_output.GetBitInfoMap().items())
+        },
+        "atoms_per_bit": {
+            str(unsigned_bit_id(bit)): [list(atoms) for atoms in atoms_per_bit]
+            for bit, atoms_per_bit in sorted(additional_output.GetAtomsPerBit().items())
+        },
+    }
+
+
+def call_generator_output(
+    generator,
+    method_name: str,
+    mol: Chem.Mol,
+    branch: dict[str, object],
+) -> tuple[object, dict[str, object] | None]:
+    additional_output = make_additional_output() if branch.get("additionalOutput") else None
+    kwargs = fingerprint_kwargs(mol, branch)
+    if additional_output is not None:
+        kwargs["additionalOutput"] = additional_output
+    return getattr(generator, method_name)(mol, **kwargs), additional_output_record(additional_output)
+
+
+def sparse_count_record(
+    generator,
+    mol: Chem.Mol,
+    branch: dict[str, object],
+) -> dict[str, object]:
+    try:
+        fp, additional_output = call_generator_output(
+            generator, "GetSparseCountFingerprint", mol, branch
+        )
+        record = {
+            "ok": True,
+            "nonzero_elements": {
+                str(int(bit)): int(count)
+                for bit, count in sorted(fp.GetNonzeroElements().items())
+            },
+            "error": None,
+        }
+        if additional_output is not None:
+            record["additional_output"] = additional_output
+        return record
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "nonzero_elements": None,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def sparse_bit_record(
+    generator,
+    mol: Chem.Mol,
+    branch: dict[str, object],
+) -> dict[str, object]:
+    try:
+        fp, additional_output = call_generator_output(
+            generator, "GetSparseFingerprint", mol, branch
+        )
+        on_bits = sorted(unsigned_bit_id(bit) for bit in fp.GetOnBits())
+        record = {
+            "ok": True,
+            "on_bits": on_bits,
+            "num_on_bits": len(on_bits),
+            "error": None,
+        }
+        if additional_output is not None:
+            record["additional_output"] = additional_output
+        return record
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "on_bits": None,
+            "num_on_bits": None,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def hashed_count_record(
+    generator,
+    mol: Chem.Mol,
+    branch: dict[str, object],
+) -> dict[str, object]:
+    try:
+        fp, additional_output = call_generator_output(
+            generator, "GetCountFingerprint", mol, branch
+        )
+        record = {
+            "ok": True,
+            "nonzero_elements": {
+                str(int(bit)): int(count)
+                for bit, count in sorted(fp.GetNonzeroElements().items())
+            },
+            "error": None,
+        }
+        if additional_output is not None:
+            record["additional_output"] = additional_output
+        return record
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "nonzero_elements": None,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def explicit_bit_record(
+    generator,
+    mol: Chem.Mol,
+    branch: dict[str, object],
+) -> tuple[dict[str, object], object | None]:
+    try:
+        fp, additional_output = call_generator_output(
+            generator, "GetFingerprint", mol, branch
+        )
+        record = {
+            "ok": True,
+            "on_bits": list(fp.GetOnBits()),
+            "num_on_bits": fp.GetNumOnBits(),
+            "error": None,
+        }
+        if additional_output is not None:
+            record["additional_output"] = additional_output
+        return record, fp
+    except Exception as exc:  # noqa: BLE001
+        return (
+            {
+                "ok": False,
+                "on_bits": None,
+                "num_on_bits": None,
+                "error": f"{type(exc).__name__}: {exc}",
+            },
+            None,
+        )
+
+
 def build_records(smiles_values: list[str]) -> list[dict[str, object]]:
     previous_fps: dict[str, object] = {}
     records: list[dict[str, object]] = []
@@ -236,57 +400,38 @@ def build_records(smiles_values: list[str]) -> list[dict[str, object]]:
         branches = {}
         for branch in BRANCHES:
             name = branch["name"]
-            try:
-                additional_output = None
-                if branch.get("additionalOutput"):
-                    additional_output = rdFingerprintGenerator.AdditionalOutput()
-                    additional_output.AllocateAtomCounts()
-                    additional_output.AllocateAtomToBits()
-                    additional_output.AllocateBitInfoMap()
-                    additional_output.AllocateAtomsPerBit()
-                kwargs = fingerprint_kwargs(mol, branch)
-                if additional_output is not None:
-                    kwargs["additionalOutput"] = additional_output
-                fp = generators[name].GetFingerprint(mol, **kwargs)
-                previous = previous_fps.get(name)
-                tanimoto = (
-                    None
-                    if previous is None
-                    else DataStructs.TanimotoSimilarity(fp, previous)
-                )
-                branch_record = {
-                    "ok": True,
-                    "on_bits": list(fp.GetOnBits()),
-                    "num_on_bits": fp.GetNumOnBits(),
-                    "tanimoto_to_previous": tanimoto,
-                    "error": None,
-                }
-                if additional_output is not None:
-                    branch_record["additional_output"] = {
-                        "atom_counts": list(additional_output.GetAtomCounts()),
-                        "atom_to_bits": [
-                            list(bits) for bits in additional_output.GetAtomToBits()
-                        ],
-                        "bit_info_map": {
-                            str(bit): [list(pair) for pair in pairs]
-                            for bit, pairs in sorted(additional_output.GetBitInfoMap().items())
-                        },
-                        "atoms_per_bit": {
-                            str(bit): [list(atoms) for atoms in atoms_per_bit]
-                            for bit, atoms_per_bit in sorted(additional_output.GetAtomsPerBit().items())
-                        },
-                    }
-                branches[name] = branch_record
-                previous_fps[name] = fp
-            except Exception as exc:  # noqa: BLE001
-                branches[name] = {
-                    "ok": False,
-                    "on_bits": None,
-                    "num_on_bits": None,
-                    "tanimoto_to_previous": None,
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
+            sparse_count = sparse_count_record(generators[name], mol, branch)
+            sparse_bit = sparse_bit_record(generators[name], mol, branch)
+            hashed_count = hashed_count_record(generators[name], mol, branch)
+            explicit_bit, fp = explicit_bit_record(generators[name], mol, branch)
+            previous = previous_fps.get(name)
+            tanimoto = (
+                None
+                if fp is None or previous is None
+                else DataStructs.TanimotoSimilarity(fp, previous)
+            )
+            branch_ok = all(
+                output["ok"]
+                for output in (sparse_count, sparse_bit, hashed_count, explicit_bit)
+            )
+            branch_record = {
+                "ok": branch_ok,
+                "sparse_count": sparse_count,
+                "sparse_bit": sparse_bit,
+                "hashed_count": hashed_count,
+                "explicit_bit": explicit_bit,
+                "on_bits": explicit_bit["on_bits"],
+                "num_on_bits": explicit_bit["num_on_bits"],
+                "tanimoto_to_previous": tanimoto,
+                "error": None if branch_ok else "one or more Morgan output calls failed",
+            }
+            if explicit_bit.get("additional_output") is not None:
+                branch_record["additional_output"] = explicit_bit["additional_output"]
+            branches[name] = branch_record
+            if fp is None:
                 previous_fps.pop(name, None)
+            else:
+                previous_fps[name] = fp
 
         records.append(
             {

@@ -206,7 +206,10 @@ Generate a Morgan fingerprint:
    print(fp.on_bits())
 
 ``on_bits()`` returns the sparse bit indexes set inside the fixed-length binary
-fingerprint. It is not a dense neural embedding.
+fingerprint. The exposed Morgan and MACCS fingerprint branches are covered by
+strict RDKit bit-identical parity tests; structurally similar hashes or
+similarity correlation are not compatibility claims. It is not a dense neural
+embedding.
 
 Parse SMARTS metadata:
 

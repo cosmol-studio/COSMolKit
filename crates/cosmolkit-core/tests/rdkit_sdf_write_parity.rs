@@ -1,13 +1,15 @@
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
 
 use cosmolkit_core::io::{
     molblock::{MolBlockWriteParams, SdfFormat, mol_to_sdf_record_with_params},
     molfile::read_mol_record_from_str,
 };
 use serde::Deserialize;
+
+mod common;
+use common::parity_data;
 
 #[derive(Debug, Deserialize)]
 struct SdfWriteRecord {
@@ -37,16 +39,13 @@ struct SdfWriteBranchParams {
     force_v3000: bool,
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
 fn load_golden() -> Vec<SdfWriteRecord> {
-    let path = repo_root().join("tests/golden/sdf_write.jsonl");
+    let path = parity_data::golden_path("sdf_write.jsonl");
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate all RDKit goldens with `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`: {err}",
-            path.display()
+            "failed to open {}; regenerate RDKit goldens with `{}`: {err}",
+            path.display(),
+            parity_data::regenerate_command()
         )
     });
     BufReader::new(file)
@@ -88,20 +87,12 @@ fn branch_params(branch: &SdfWriteBranch) -> MolBlockWriteParams {
 
 #[test]
 fn sdf_write_golden_has_one_record_per_smiles_and_expected_branches() {
-    let smiles_path = repo_root().join("tests/smiles.smi");
-    let expected = std::fs::read_to_string(&smiles_path)
-        .unwrap_or_else(|err| panic!("failed to read {}: {err}", smiles_path.display()))
-        .lines()
-        .filter(|line| {
-            let line = line.trim();
-            !line.is_empty() && !line.starts_with('#')
-        })
-        .count();
+    let expected = parity_data::count_smiles_rows();
     let records = load_golden();
     assert_eq!(
         records.len(),
         expected,
-        "SDF write golden row count must match tests/smiles.smi"
+        "SDF write golden row count must match the active parity corpus"
     );
     let first_ok = records
         .iter()

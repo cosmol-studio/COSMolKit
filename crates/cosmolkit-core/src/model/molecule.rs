@@ -1008,7 +1008,7 @@ impl Molecule {
     pub fn maccs_fingerprint(
         &self,
         params: &crate::fingerprint::MaccsFingerprintParams,
-    ) -> crate::Fingerprint {
+    ) -> Result<crate::Fingerprint, crate::FingerprintError> {
         crate::fingerprint::maccs_fingerprint(self, params)
     }
 
@@ -1227,8 +1227,10 @@ mod tests {
             crate::fingerprint::topological_fingerprint(&mol, &topological_params)
         );
         assert_eq!(
-            mol.maccs_fingerprint(&maccs_params),
+            mol.maccs_fingerprint(&maccs_params)
+                .expect("method MACCS fingerprint"),
             crate::fingerprint::maccs_fingerprint(&mol, &maccs_params)
+                .expect("module MACCS fingerprint")
         );
     }
 

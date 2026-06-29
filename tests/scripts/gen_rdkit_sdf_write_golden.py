@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import json
+import multiprocessing
 from importlib.metadata import version
 from pathlib import Path
 from typing import Iterable
@@ -182,6 +183,11 @@ def build_record(smiles: str) -> dict[str, object]:
     }
 
 
+def build_indexed_record(item: tuple[int, str]) -> tuple[int, dict[str, object]]:
+    row_idx, smiles = item
+    return row_idx, build_record(smiles)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -196,17 +202,57 @@ def main() -> None:
         default=Path("tests/golden/sdf_write.jsonl"),
         help="output JSONL path (default: tests/golden/sdf_write.jsonl)",
     )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="parallel RDKit worker processes (default: 1)",
+    )
     args = parser.parse_args()
 
     assert_rdkit_version()
     RDLogger.DisableLog("rdApp.*")
-    records = [build_record(smiles) for smiles in iter_smiles(args.input)]
+    smiles_list = list(iter_smiles(args.input))
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    with args.output.open("w", encoding="utf-8") as handle:
-        for record in records:
-            handle.write(json.dumps(record, ensure_ascii=True))
-            handle.write("\n")
-    print(f"Wrote {len(records)} records to {args.output}")
+    tmp_output = args.output.with_suffix(args.output.suffix + ".tmp")
+    items = list(enumerate(smiles_list, start=1))
+
+    with tmp_output.open("w", encoding="utf-8") as handle:
+        next_to_write = 1
+        pending: dict[int, dict[str, object]] = {}
+        completed = 0
+        if args.jobs <= 1:
+            iterator = map(build_indexed_record, items)
+            for row_idx, record in iterator:
+                completed += 1
+                if completed == 1 or completed % 50 == 0 or completed == len(smiles_list):
+                    print(f"[sdf-write] completed {completed}/{len(smiles_list)}", flush=True)
+                pending[row_idx] = record
+                while next_to_write in pending:
+                    record_to_write = pending.pop(next_to_write)
+                    handle.write(json.dumps(record_to_write, ensure_ascii=True))
+                    handle.write("\n")
+                    next_to_write += 1
+                handle.flush()
+        else:
+            with multiprocessing.Pool(processes=args.jobs) as pool:
+                iterator = pool.imap_unordered(build_indexed_record, items, chunksize=1)
+                for row_idx, record in iterator:
+                    completed += 1
+                    if completed == 1 or completed % 50 == 0 or completed == len(smiles_list):
+                        print(
+                            f"[sdf-write] completed {completed}/{len(smiles_list)}",
+                            flush=True,
+                        )
+                    pending[row_idx] = record
+                    while next_to_write in pending:
+                        record_to_write = pending.pop(next_to_write)
+                        handle.write(json.dumps(record_to_write, ensure_ascii=True))
+                        handle.write("\n")
+                        next_to_write += 1
+                    handle.flush()
+    tmp_output.replace(args.output)
+    print(f"Wrote {len(smiles_list)} records to {args.output}")
 
 
 if __name__ == "__main__":

@@ -812,7 +812,19 @@ struct CrystalffTemplateBond {
 pub(crate) fn build_crystalff_query_molecule(smarts: &str) -> Result<Molecule, String> {
     let parsed = parse_smarts(smarts).map_err(|error| error.to_string())?;
     let atom_queries = parsed.atom_queries;
-    let bonds = expand_crystalff_smarts_bonds(smarts)?;
+    let bonds = parsed
+        .bond_edges
+        .iter()
+        .copied()
+        .zip(parsed.bond_queries.iter().cloned())
+        .map(
+            |((begin_atom_idx, end_atom_idx), query)| CrystalffTemplateBond {
+                begin_atom_idx,
+                end_atom_idx,
+                query,
+            },
+        )
+        .collect::<Vec<_>>();
     let mut builder = MoleculeBuilder::new();
     let atom_ids: Vec<_> = atom_queries
         .iter()

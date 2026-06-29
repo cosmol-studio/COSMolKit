@@ -1,4 +1,4 @@
-//! RDKit MolDraw2D-compatible molecule drawing (SVG + PNG).
+//! Experimental RDKit MolDraw2D-derived molecule drawing (SVG + PNG).
 //!
 //! Source reproduction protocol: dev/source_reproduction_protocol.md
 //!
@@ -15,8 +15,13 @@
 //!
 //! - RDKit✔️✔️: direct port from RDKit C++ (MolDraw2DSVG.cpp, DrawMol.cpp, AtomSymbol.cpp)
 //! - RDKit✔️❌: ported with COSMolKit-specific adaptation
-//! - RDKit❗✔️: algorithm-equivalent via different architecture
-//! - RDKit❗❌: not ported (intentional omission)
+//! - RDKit❗✔️: modeled but not a whole-surface parity claim
+//! - RDKit❗❌: unfinished/not ported; must not be counted as MolDraw2D parity
+//!
+//! The final SVG golden tests cover the current shared corpus only. Marker-open
+//! branches such as link-node extraction, StereoGroup masking, and atomRegions
+//! stay unfinished until their RDKit source helpers are ported and exact final
+//! output parity is added.
 //!
 
 use crate::{
@@ -820,9 +825,22 @@ fn direction_vector(from: DVec2, to: DVec2) -> DVec2 {
     (to - from).normalize_or_zero()
 }
 
-/// RDKit❗✔️: angle between two vectors in radians
+// BEGIN RDKIT CPP FUNCTION RDGeom::Point2D::angleTo (Geometry/point.h)
+// RDKit✔️✔️: double angleTo(const Point2D &other) const {
+// RDKit✔️✔️:   auto t1 = *this; auto t2 = other;
+// RDKit✔️✔️:   t1.normalize(); t2.normalize();
+// RDKit✔️✔️:   double dotProd = t1.dotProduct(t2);
+// RDKit✔️✔️:   if (dotProd < -1.0) { dotProd = -1.0; }
+// RDKit✔️✔️:   else if (dotProd > 1.0) { dotProd = 1.0; }
+// RDKit✔️✔️:   return acos(dotProd);
+// RDKit✔️✔️: }
+// END RDKIT CPP FUNCTION RDGeom::Point2D::angleTo
 fn angle_to(v1: DVec2, v2: DVec2) -> f64 {
-    v1.angle_to(v2)
+    let len = (v1.length_squared() * v2.length_squared()).sqrt();
+    if len == 0.0 {
+        return 0.0;
+    }
+    (v1.dot(v2) / len).clamp(-1.0, 1.0).acos()
 }
 
 fn cross(a: DVec2, b: DVec2) -> f64 {
@@ -1534,59 +1552,7 @@ fn do_labels_clash(label1: &AtomLabel, label2: &AtomLabel) -> bool {
             height: r1.height,
             ..r1.clone()
         };
-        if (label1.atom_idx == 59 && label2.atom_idx == 55)
-            || (label1.atom_idx == 55 && label2.atom_idx == 59)
-        {
-            let (tl, tr, br, bl) = s1.calc_corners(0.0);
-            eprintln!(
-                "COSMOL_RUST_LABEL_CLASH_RECT1 atom1={} atom2={} orient1={:?} orient2={:?} trans=({:.17},{:.17}) tl=({:.17},{:.17}) tr=({:.17},{:.17}) br=({:.17},{:.17}) bl=({:.17},{:.17})",
-                label1.atom_idx,
-                label2.atom_idx,
-                label1.orient,
-                label2.orient,
-                s1.trans.x,
-                s1.trans.y,
-                tl.x,
-                tl.y,
-                tr.x,
-                tr.y,
-                br.x,
-                br.y,
-                bl.x,
-                bl.y
-            );
-        }
         let intersects = label2.does_rect_clash(&s1, 0.0);
-        if (label1.atom_idx == 59 && label2.atom_idx == 55)
-            || (label1.atom_idx == 55 && label2.atom_idx == 59)
-        {
-            for r2 in &label2.rects {
-                let s2 = StringRect {
-                    trans: DVec2::new(r2.trans.x + label2.cds.x, r2.trans.y + label2.cds.y),
-                    width: r2.width,
-                    height: r2.height,
-                    ..r2.clone()
-                };
-                let res = s2.does_it_intersect(&s1, 0.0);
-                let (tl, tr, br, bl) = s2.calc_corners(0.0);
-                eprintln!(
-                    "COSMOL_RUST_LABEL_CLASH_RECT2 atom1={} atom2={} trans=({:.17},{:.17}) tl=({:.17},{:.17}) tr=({:.17},{:.17}) br=({:.17},{:.17}) bl=({:.17},{:.17}) res={}",
-                    label1.atom_idx,
-                    label2.atom_idx,
-                    s2.trans.x,
-                    s2.trans.y,
-                    tl.x,
-                    tl.y,
-                    tr.x,
-                    tr.y,
-                    br.x,
-                    br.y,
-                    bl.x,
-                    bl.y,
-                    res
-                );
-            }
-        }
         if intersects {
             return true;
         }
@@ -2329,9 +2295,6 @@ impl DrawMol {
             out.font_scale = final_font_scale;
         }
 
-        out.extract_mol_notes(&prepared_mol);
-        out.find_extremes();
-        out.refresh_ranges_from_extremes();
         if Self::debug_svg_row_active(12) {
             for idx in [0usize, 1usize] {
                 if let Some(label) = out.atom_labels.get(idx).and_then(|l| l.as_ref()) {
@@ -2347,6 +2310,7 @@ impl DrawMol {
             }
         }
         out.change_to_draw_coords();
+        out.extract_mol_notes(&prepared_mol);
         out.extract_close_contacts();
         if Self::debug_svg_row_active(12) {
             for idx in [0usize, 1usize] {
@@ -3460,9 +3424,6 @@ impl DrawMol {
 
         self.at_cds[b] = saved_b;
         self.at_cds[e] = saved_e;
-
-        self.single_bond_lines.push(self.bonds.len() - 2);
-        self.single_bond_lines.push(self.bonds.len() - 1);
     }
 
     fn make_wedged_bond(&mut self, mol: &Molecule, bond: &Bond) -> Result<(), SvgDrawError> {
@@ -3864,7 +3825,7 @@ impl DrawMol {
                 scale_width: self.options.scale_bond_width,
                 dash_pattern,
                 atom1_idx: second_atom1_idx,
-                atom2_idx,
+                atom2_idx: first_atom2_idx,
                 bond_idx,
             });
             if self.bonds[idx2].dash_pattern.is_empty() {
@@ -3985,6 +3946,17 @@ impl DrawMol {
     }
 
     fn smooth_bond_joins(&mut self, mol: &Molecule) {
+        // BEGIN RDKIT CPP FUNCTION DrawMol::smoothBondJoins (DrawMol.cpp)
+        // RDKit✔️✔️: int p2 = -1;
+        // RDKit✔️✔️: for (unsigned int j = 0; j < singleBondLines_.size(); ++j) {
+        // RDKit✔️✔️:   if (adjAtomIdx == sbl2->atom1_) { p2 = 0; }
+        // RDKit✔️✔️:   else if (adjAtomIdx == sbl2->atom2_) { p2 = 1; }
+        // RDKit✔️✔️:   if (p2 != -1) {
+        // RDKit✔️✔️:     double dist = (sbl1->points_[p1] - sbl2->points_[p2]).lengthSq();
+        // RDKit✔️✔️:     if (dist < 1.0e-6) { ... }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        // END RDKIT CPP FUNCTION DrawMol::smoothBondJoins
         for atom in mol.atoms() {
             let idx = atom.id().index();
             if self.atom_labels.get(idx).and_then(|l| l.as_ref()).is_some() {
@@ -4029,6 +4001,9 @@ impl DrawMol {
                     continue;
                 }
                 let p1 = p1.unwrap();
+                // RDKit keeps p2 outside the inner loop and does not reset it
+                // for a line that does not contain adjAtomIdx.
+                let mut p2 = None;
                 for j in 0..self.single_bond_lines.len() {
                     if i == j {
                         continue;
@@ -4037,11 +4012,10 @@ impl DrawMol {
                     let Some(line2) = self.bonds.get(line2_idx) else {
                         continue;
                     };
-                    let p2 = line_endpoint_for_atom(line2, idx);
-                    if p2.is_none() {
-                        continue;
+                    if let Some(endpoint) = line_endpoint_for_atom(line2, idx) {
+                        p2 = Some(endpoint);
                     }
-                    let p2 = p2.unwrap();
+                    let Some(p2) = p2 else { continue };
                     if (line_point(line1, p1) - line_point(line2, p2)).length_squared() < 1.0e-6 {
                         let p12 = if p1 == 1 { 0 } else { 1 };
                         let p22 = if p2 == 1 { 0 } else { 1 };
@@ -5392,9 +5366,10 @@ impl DrawMol {
         }
         let font_size = self.font_size * self.font_scale;
 
-        // COSMolKit❗❌: Link node extraction uses MolEnumerator::utils::getMolLinkNodes
-        // which is not ported. For now, look for bonds with the `_MolFileBondEndPts` prop
-        // as a heuristic for link nodes, and draw bracket crosses.
+        // COSMolKit❗❌: Link node extraction depends on
+        // MolEnumerator::utils::getMolLinkNodes, which is not ported. This
+        // local `_MolFileBondEndPts` path is retained only as unfinished
+        // rendering behavior and must not be treated as RDKit MolDraw2D parity.
         let crossing_frac = 0.333;
         let length_frac = 0.333;
         let mut label_pt = DVec2::new(-1000.0, -1000.0);
@@ -5916,12 +5891,22 @@ impl DrawMol {
     }
 
     fn calc_radical_rect(&self, atom: &Atom) -> (StringRect, OrientType) {
+        // BEGIN RDKIT CPP FUNCTION DrawMol::calcRadicalRect (DrawMol.cpp)
+        // RDKit✔️✔️: int num_rade = atom->getNumRadicalElectrons();
+        // RDKit✔️✔️: double spot_rad = 0.2 * drawOptions_.multipleBondOffset * fontScale_;
+        // RDKit✔️✔️: OrientType orient = atomSyms_[atom->getIdx()].second;
+        // RDKit✔️✔️: double rad_size = (4 * num_rade - 2) * spot_rad / fontScale_;
+        // RDKit✔️✔️: rad_rect.width_ = rad_size * fontScale_;
+        // RDKit✔️✔️: rad_rect.height_ = spot_rad * 3.0;
+        // RDKit✔️✔️: rad_rect.width_ = spot_rad * 1.5;
+        // RDKit✔️✔️: rad_rect.height_ = rad_size * fontScale_;
+        // END RDKIT CPP FUNCTION DrawMol::calcRadicalRect
         let idx = atom.id().index();
         let at_cds = self.at_cds[idx];
         let spot_rad = self.radical_spot_radius_unscaled();
+        let font_scale = self.font_scale_factor();
         let orient = self.atom_orients.get(idx).copied().unwrap_or(OrientType::C);
-        let rad_size =
-            (4.0 * f64::from(atom.radical_electrons()) - 2.0) * spot_rad / self.font_scale_factor();
+        let rad_size = (4.0 * f64::from(atom.radical_electrons()) - 2.0) * spot_rad / font_scale;
 
         let (x_min, x_max, y_min, y_max) = if let Some(Some(label)) = self.atom_labels.get(idx) {
             let mut x_min = f64::MAX;
@@ -5945,7 +5930,7 @@ impl DrawMol {
                 .filter(move |fallback| *fallback != orient),
         ) {
             let rect = radical_rect_for_orientation(
-                trial, at_cds, x_min, x_max, y_min, y_max, spot_rad, rad_size,
+                trial, at_cds, x_min, x_max, y_min, y_max, spot_rad, rad_size, font_scale,
             );
             if !self.does_rect_clash(&rect, 0.0) {
                 return (rect, trial);
@@ -5961,6 +5946,7 @@ impl DrawMol {
                 y_max,
                 spot_rad,
                 rad_size,
+                font_scale,
             ),
             OrientType::N,
         )
@@ -6422,8 +6408,8 @@ impl DrawMol {
             }
             let b1 = direction_vector(self.at_cds[end_idx], self.at_cds[bond.begin().index()]);
             let b2 = direction_vector(
-                self.at_cds[adj_bond.begin().index()],
                 self.at_cds[adj_bond.end().index()],
+                self.at_cds[adj_bond.begin().index()],
             );
             if (1.0 - b1.dot(b2)).abs() < 0.001 {
                 continue;
@@ -6570,132 +6556,53 @@ fn radical_rect_for_orientation(
     y_max: f64,
     spot_rad: f64,
     rad_size: f64,
+    font_scale: f64,
 ) -> StringRect {
+    let radial_span = rad_size * font_scale;
     let (tx, ty, width, height) = match orient {
         OrientType::N => (
             at_cds.x,
             y_max + 0.5 * (spot_rad * 3.0),
-            rad_size,
+            radial_span,
             spot_rad * 3.0,
         ),
         OrientType::S => (
             at_cds.x,
             y_min - 0.5 * (spot_rad * 3.0),
-            rad_size,
+            radial_span,
             spot_rad * 3.0,
         ),
-        OrientType::E => (x_max + 3.0 * spot_rad, at_cds.y, spot_rad * 1.5, rad_size),
-        OrientType::W => (x_min - 3.0 * spot_rad, at_cds.y, spot_rad * 1.5, rad_size),
+        OrientType::E => (
+            x_max + 3.0 * spot_rad,
+            at_cds.y,
+            spot_rad * 1.5,
+            radial_span,
+        ),
+        OrientType::W => (
+            x_min - 3.0 * spot_rad,
+            at_cds.y,
+            spot_rad * 1.5,
+            radial_span,
+        ),
         OrientType::C => (
             at_cds.x,
             y_max + 0.5 * (spot_rad * 3.0),
-            rad_size,
+            radial_span,
             spot_rad * 3.0,
         ),
     };
     radical_rect_at(DVec2::new(tx, ty), width, height)
 }
 
-/// RDKit❗✔️: element_symbol — periodic table element names from atomic number.
-/// This is a superset of the RDKit PeriodicTable::getElementSymbol, including
-/// placeholder names for all known elements up to Og (118). Unknown numbers
-/// return "?". Matches the same subset used in smiles_write.rs.
 fn element_symbol(atomic_num: u8) -> &'static str {
-    // RDKit periodic table element symbols (subset)
-    match atomic_num {
-        0 => "*",
-        1 => "H",
-        2 => "He",
-        3 => "Li",
-        4 => "Be",
-        5 => "B",
-        6 => "C",
-        7 => "N",
-        8 => "O",
-        9 => "F",
-        10 => "Ne",
-        11 => "Na",
-        12 => "Mg",
-        13 => "Al",
-        14 => "Si",
-        15 => "P",
-        16 => "S",
-        17 => "Cl",
-        18 => "Ar",
-        19 => "K",
-        20 => "Ca",
-        21 => "Sc",
-        22 => "Ti",
-        23 => "V",
-        24 => "Cr",
-        25 => "Mn",
-        26 => "Fe",
-        27 => "Co",
-        28 => "Ni",
-        29 => "Cu",
-        30 => "Zn",
-        31 => "Ga",
-        32 => "Ge",
-        33 => "As",
-        34 => "Se",
-        35 => "Br",
-        36 => "Kr",
-        37 => "Rb",
-        38 => "Sr",
-        39 => "Y",
-        40 => "Zr",
-        41 => "Nb",
-        42 => "Mo",
-        43 => "Tc",
-        44 => "Ru",
-        45 => "Rh",
-        46 => "Pd",
-        47 => "Ag",
-        48 => "Cd",
-        49 => "In",
-        50 => "Sn",
-        51 => "Sb",
-        52 => "Te",
-        53 => "I",
-        54 => "Xe",
-        55 => "Cs",
-        56 => "Ba",
-        57..=71 => "La",
-        72 => "Hf",
-        73 => "Ta",
-        74 => "W",
-        75 => "Re",
-        76 => "Os",
-        77 => "Ir",
-        78 => "Pt",
-        79 => "Au",
-        80 => "Hg",
-        81 => "Tl",
-        82 => "Pb",
-        83 => "Bi",
-        84 => "Po",
-        85 => "At",
-        86 => "Rn",
-        87 => "Fr",
-        88 => "Ra",
-        89..=103 => "Ac",
-        104 => "Rf",
-        105 => "Db",
-        106 => "Sg",
-        107 => "Bh",
-        108 => "Hs",
-        109 => "Mt",
-        110 => "Ds",
-        111 => "Rg",
-        112 => "Cn",
-        113 => "Nh",
-        114 => "Fl",
-        115 => "Mc",
-        116 => "Lv",
-        117 => "Ts",
-        118 => "Og",
-        _ => "?",
-    }
+    // BEGIN RDKIT CPP FUNCTION PeriodicTable::getElementSymbol / atomicData::Symbol
+    // RDKit✔️✔️: std::string getElementSymbol(UINT atomicNumber) const {
+    // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
+    // RDKit✔️✔️:   return byanum[atomicNumber].Symbol();
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: std::string Symbol() const { return symb; }
+    // END RDKIT CPP FUNCTION PeriodicTable::getElementSymbol / atomicData::Symbol
+    crate::rdkit_element_symbol(atomic_num).unwrap_or("?")
 }
 
 // ──────────────────────────────────────────────
@@ -7824,7 +7731,7 @@ pub(crate) fn prepare_mol_for_drawing_parity(
 //   extractSGroupData   → extract_sgroup_data   (DrawMol.cpp:601-697) ✔
 //   extractVariableBonds→ extract_variable_bonds(DrawMol.cpp:698-773) ✔
 //   extractBrackets     → extract_brackets      (DrawMol.cpp:774-929) ✔
-//   extractLinkNodes    → extract_link_nodes    (DrawMol.cpp:930-987) ✔
+//   extractLinkNodes    → extract_link_nodes    (DrawMol.cpp:930-987) ❌ (getMolLinkNodes not ported)
 //   extractCloseContacts→ extract_close_contacts(DrawMol.cpp:988-1116)✔
 
 // ──────────────────────────────────────────────

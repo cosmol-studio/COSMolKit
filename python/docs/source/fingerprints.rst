@@ -1,10 +1,14 @@
 Fingerprints
 ============
 
-COSMolKit exposes RDKit-style Morgan fingerprints as fixed-length bit vectors.
-The Python ``Fingerprint`` object is a sparse view over that binary vector:
-``on_bits()`` returns the bit indexes whose value is 1. It is not a dense
-floating-point neural embedding.
+COSMolKit exposes fingerprint APIs as fixed-length bit vectors. The exposed
+Morgan and MACCS branches are covered by strict RDKit bit-identical parity
+tests. Similarity-shape correlation or structurally similar hashing is not a
+compatibility claim. Topological and Avalon fingerprints remain unfinished until
+their exact RDKit bit-vector parity is source-ported and tested. The Python
+``Fingerprint`` object is a sparse view over the binary vector: ``on_bits()``
+returns the bit indexes whose value is 1. It is not a dense floating-point
+neural embedding.
 
 Single Molecules
 ----------------
@@ -32,7 +36,7 @@ Additional Output
 -----------------
 
 ``fingerprint_morgan_with_output()`` returns a ``MorganFingerprintResult`` with
-the fingerprint and RDKit-style provenance data:
+the fingerprint and experimental provenance data:
 
 .. code-block:: python
 
@@ -48,7 +52,8 @@ the fingerprint and RDKit-style provenance data:
 Supported Parameters
 --------------------
 
-The Python binding exposes the supported RDKit-style Morgan generator branches:
+The Python binding exposes the source-backed Morgan generator branches covered
+by exact RDKit bit parity:
 
 - ``radius`` and ``n_bits``
 - ``include_chirality`` and ``use_bond_types``

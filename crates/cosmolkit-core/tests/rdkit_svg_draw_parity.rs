@@ -5,6 +5,9 @@ use std::path::PathBuf;
 use cosmolkit_core::{Molecule, MoleculeBatch};
 use serde::Deserialize;
 
+mod common;
+use common::parity_data;
+
 #[derive(Debug, Deserialize)]
 struct SvgDrawRecord {
     smiles: String,
@@ -15,16 +18,13 @@ struct SvgDrawRecord {
     error: Option<String>,
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
 fn load_golden() -> Vec<SvgDrawRecord> {
-    let path = repo_root().join("tests/golden/svg_drawer.jsonl");
+    let path = parity_data::golden_path("svg_drawer.jsonl");
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate all RDKit goldens with `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`: {err}",
-            path.display()
+            "failed to open {}; regenerate RDKit goldens with `{}`: {err}",
+            path.display(),
+            parity_data::regenerate_command()
         )
     });
     BufReader::new(file)
@@ -83,20 +83,12 @@ fn maybe_dump_svg_debug(row_idx: usize, expected_svg: &str, actual_svg: &str) {
 
 #[test]
 fn svg_draw_golden_has_one_record_per_smiles() {
-    let smiles_path = repo_root().join("tests/smiles.smi");
-    let expected = std::fs::read_to_string(&smiles_path)
-        .unwrap_or_else(|err| panic!("failed to read {}: {err}", smiles_path.display()))
-        .lines()
-        .filter(|line| {
-            let line = line.trim();
-            !line.is_empty() && !line.starts_with('#')
-        })
-        .count();
+    let expected = parity_data::count_smiles_rows();
     let records = load_golden();
     assert_eq!(
         records.len(),
         expected,
-        "SVG golden row count must match tests/smiles.smi"
+        "SVG golden row count must match the active parity corpus"
     );
 }
 

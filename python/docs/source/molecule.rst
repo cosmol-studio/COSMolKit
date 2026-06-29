@@ -280,7 +280,8 @@ source molecule.
 Substructure And SMARTS
 -----------------------
 
-Substructure matching functions accept molecule queries:
+Substructure matching functions accept molecule queries. This surface is
+unfinished until strict RDKit molecule-query parity tests pass:
 
 .. code-block:: python
 

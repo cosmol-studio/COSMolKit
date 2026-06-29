@@ -3623,6 +3623,17 @@ fn from_smiles_clears_nonunique_tetrahedral_tag_like_rdkit_row_92() {
             .iter()
             .all(|atom| atom.chiral_tag() == ChiralTag::Unspecified)
     );
+    assert_eq!(molecule.atoms()[20].explicit_hydrogens(), 0);
+    assert!(!molecule.atoms()[20].no_implicit());
+    assert_eq!(
+        molecule
+            .derived_cache()
+            .valence
+            .as_ref()
+            .expect("sanitize valence cache")
+            .implicit_hydrogens[20],
+        1
+    );
 }
 
 #[test]
@@ -3765,6 +3776,27 @@ fn from_smiles_assigns_rdkit_legacy_cip_ranks_for_acetic_acid() {
         })
         .collect::<Vec<_>>();
     assert_eq!(observed, vec![Some(0), Some(1), Some(3), Some(2)]);
+}
+
+#[test]
+fn from_smiles_reranks_legacy_cip_labels_when_possible_centers_remain_like_rdkit_row_2508() {
+    let molecule =
+        Molecule::from_smiles("CC(C)(c1ccc(OCC[C@H](O)Cl)cc1)c1ccc(OCC[C@@H](O)Cl)cc1").unwrap();
+    let observed = molecule
+        .atoms()
+        .iter()
+        .map(|atom| {
+            atom.prop("_CIPRank")
+                .and_then(|value| value.parse::<u32>().ok())
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(observed[0], Some(0));
+    assert_eq!(observed[2], Some(0));
+    assert_eq!(observed[3], Some(8));
+    assert_eq!(observed[15], Some(7));
+    assert_eq!(molecule.atoms()[10].prop("_CIPCode"), Some("R"));
+    assert_eq!(molecule.atoms()[22].prop("_CIPCode"), Some("S"));
 }
 
 #[test]

@@ -4,6 +4,25 @@ fn ethane() -> Molecule {
     Molecule::from_smiles_with_sanitize("CC", false).unwrap()
 }
 
+fn hypervalent_sulfur_like_geom_unsanitized_molecule() -> Molecule {
+    let mut builder = crate::MoleculeBuilder::new();
+    let sulfur = builder.add_atom(crate::AtomSpec::new(crate::Element::S).with_formal_charge(3));
+    let nitrogen = builder.add_atom(crate::AtomSpec::new(crate::Element::N));
+    let oxygens = (0..4)
+        .map(|_| builder.add_atom(crate::AtomSpec::new(crate::Element::O).with_formal_charge(-1)))
+        .collect::<Vec<_>>();
+
+    builder
+        .add_bond(crate::BondSpec::new(sulfur, nitrogen, BondOrder::Single))
+        .unwrap();
+    for oxygen in oxygens {
+        builder
+            .add_bond(crate::BondSpec::new(sulfur, oxygen, BondOrder::Single))
+            .unwrap();
+    }
+    builder.build().unwrap()
+}
+
 #[test]
 fn mol_to_smiles_empty_molecule_returns_empty_string_like_rdkit_entrypoint() {
     let molecule = Molecule::from_smiles_with_sanitize("", false).unwrap();
@@ -83,6 +102,24 @@ fn all_primary_smiles_writer_modes_fail_closed_until_ported() {
     );
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), "CC");
+}
+
+#[test]
+fn mol_to_smiles_updates_writer_property_cache_non_strict_like_rdkit() {
+    let molecule = hypervalent_sulfur_like_geom_unsanitized_molecule();
+
+    let strict_error =
+        crate::assign_valence(&molecule, crate::ValenceModel::RdkitLike).unwrap_err();
+    assert!(
+        strict_error
+            .to_string()
+            .contains("Explicit valence for atom # 0 S, 5, is greater than permitted")
+    );
+
+    assert_eq!(
+        mol_to_smiles(&molecule, &SmilesWriteParams::default()).unwrap(),
+        "N[S+3]([O-])([O-])([O-])[O-]"
+    );
 }
 
 #[test]

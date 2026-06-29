@@ -10,9 +10,9 @@
 // RDKit source: PatternFingerprints.cpp (Copyright (C) 2013-2020 Greg Landrum
 // and Rational Discovery LLC. BSD license.)
 //
-// This file ports the RDKit PatternFingerprint which matches SMARTS-based
-// substructure patterns and sets fingerprint bits. We extend the approach
-// here into the AVALON-style path-enumeration fingerprint.
+// This file contains an unfinished fingerprint implementation. It is not an
+// accepted RDKit/Avalon parity port until source-level behavior is reproduced
+// and exact-bit parity tests pass.
 //
 // The RDKit PatternFingerprint algorithm:
 //   - Defines a set of SMARTS patterns (linear fragments, rings, branches)
@@ -21,7 +21,7 @@
 //     into a fingerprint bit, folded to fpSize
 //   - Supports tautomeric fingerprint mode (tautomer-invariant hashing)
 //
-// The AVALON fingerprint extends this by also supporting:
+// The current experimental AVALON-like path code also supports:
 //   - DFS enumeration of all linear paths from each atom up to a max depth
 //   - Hashing each path's atom types and bond orders
 //   - Folding to nBits
@@ -36,7 +36,10 @@ use crate::{
 // AvalonFingerprintParams
 // ---------------------------------------------------------------------------
 
-/// Parameters for the AVALON path-based fingerprint.
+/// Parameters for the unfinished AVALON fingerprint surface.
+///
+/// This API must not be treated as RDKit/Avalon compatible until an exact-bit
+/// source-level port and parity test are in place.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AvalonFingerprintParams {
     /// Minimum path length in bonds (default: 1).

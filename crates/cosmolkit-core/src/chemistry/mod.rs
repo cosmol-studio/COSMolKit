@@ -5,6 +5,7 @@
 
 pub mod aromaticity;
 pub mod atropisomer;
+pub(crate) mod ciplabeler;
 pub mod coordinates;
 pub mod distgeom;
 pub mod forcefield;

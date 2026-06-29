@@ -2,6 +2,7 @@
 //
 // Source reproduction protocol: dev/source_reproduction_protocol.md
 
+use crate::chemistry::valence::rdkit_most_common_isotope;
 use crate::{AtomId, BondId, ChiralTag, Conformer3D, Molecule};
 use std::collections::HashSet;
 
@@ -356,10 +357,16 @@ pub fn assign_stereochemistry(molecule: &Molecule) -> Result<(), StereoError> {
 // Ported from RDKit Chirality.cpp (lines 953-1350)
 // Source reproduction protocol: dev/source_reproduction_protocol.md
 
-/// RDKit✔️✔️: uint8_t getTwiceBondType(const Bond &b) — Bond.cpp:261-300
+/// RDKit✔️✔️: uint8_t getTwiceBondType(const Bond &b) — Bond.cpp:261-312
 /// Returns 2× bond order for CIP ranking:
 /// Single→2, Double→4, Triple→6, Quadruple→8, OneAndHalf→3, TwoAndHalf→5, etc.
 fn get_twice_bond_order(order: crate::BondOrder) -> u8 {
+    // RDKit✔️✔️: case Bond::DATIVEONE:
+    // RDKit✔️✔️:   return 2;
+    // RDKit✔️✔️:   break;  // FIX: this should probably be different
+    // RDKit✔️✔️: case Bond::DATIVE:
+    // RDKit✔️✔️:   return 2;
+    // RDKit✔️✔️:   break;  // FIX: again probably wrong
     match order {
         crate::BondOrder::Single => 2,
         crate::BondOrder::Double => 4,
@@ -372,9 +379,8 @@ fn get_twice_bond_order(order: crate::BondOrder) -> u8 {
         crate::BondOrder::ThreeAndHalf => 7,
         crate::BondOrder::FourAndHalf => 9,
         crate::BondOrder::FiveAndHalf => 11,
+        crate::BondOrder::Dative | crate::BondOrder::DativeOne => 2,
         crate::BondOrder::Ionic
-        | crate::BondOrder::Dative
-        | crate::BondOrder::DativeOne
         | crate::BondOrder::DativeLeft
         | crate::BondOrder::DativeRight
         | crate::BondOrder::Hydrogen
@@ -429,8 +435,9 @@ fn build_cip_invariants(mol: &Molecule) -> Vec<i64> {
 
         let mut mass: i64 = 0;
         if let Some(iso) = atom.isotope() {
-            let common_iso = most_common_isotope(atom.atomic_number()).unwrap_or(iso as i64);
-            mass = iso as i64 - common_iso as i64;
+            let common_iso = rdkit_most_common_isotope(atom.atomic_number())
+                .expect("RDKit PeriodicTable most-common isotope atomic number");
+            mass = iso as i64 - common_iso;
             if mass >= 0 {
                 mass += 1;
             }
@@ -454,32 +461,6 @@ fn build_cip_invariants(mol: &Molecule) -> Vec<i64> {
         res[idx] = invariant;
     }
     res
-}
-
-/// Most common isotope per atomic number, extracted from RDKit PeriodicTable.
-fn most_common_isotope(atomic_num: u8) -> Option<i64> {
-    // RDKit PeriodicTable data for common elements
-    match atomic_num {
-        1 => Some(1),
-        5 => Some(11),
-        6 => Some(12),
-        7 => Some(14),
-        8 => Some(16),
-        9 => Some(19),
-        11 => Some(23),
-        12 => Some(24),
-        13 => Some(27),
-        14 => Some(28),
-        15 => Some(31),
-        16 => Some(32),
-        17 => Some(35),
-        19 => Some(39),
-        20 => Some(40),
-        35 => Some(79),
-        53 => Some(127),
-        n if n <= 20 => Some((n as i64) * 2),
-        _ => Some((atomic_num as i64).max(1) * 2),
-    }
 }
 
 // BEGIN RDKIT CPP STRUCT SortableCIPReference (Chirality.cpp:1031-1070)
@@ -690,7 +671,7 @@ fn compute_bond_features(
         let mut index_offset = atom_idx * K_MAX_BONDS;
         for &nbr_ref in adjacency.neighbors_of(atom_idx) {
             let nbr_idx = nbr_ref.atom_index;
-            features.num_neighbors[atom_idx] += 1;
+            features.num_neighbors[nbr_idx] += 1;
 
             let (ref mut count, ref mut neighbor_index) =
                 features.counts_and_neighbor_indices[index_offset];
@@ -838,7 +819,7 @@ fn iterate_cip_ranks(
 
             // Sort neighbors by rank (descending)
             let mut neighbor_pairs: Vec<(u8, usize)> = bond_features.counts_and_neighbor_indices
-                [index_offset..index_offset + num_neighbors]
+                [index_offset..index_offset + num_neighbors + 1]
                 .to_vec();
             if num_neighbors > 1 {
                 neighbor_pairs.sort_by(|a, b| ranks[a.1].cmp(&ranks[b.1]).reverse());
@@ -973,7 +954,18 @@ pub fn assign_atom_chiral_codes(
     mol: &Molecule,
     ranks: &[u32],
 ) -> Result<(bool, Vec<(usize, String)>, bool), StereoError> {
+    let (unassigned_atoms, labels, _, atom_changed) =
+        assign_atom_chiral_codes_with_possible(mol, ranks, false)?;
+    Ok((unassigned_atoms, labels, atom_changed))
+}
+
+pub(crate) fn assign_atom_chiral_codes_with_possible(
+    mol: &Molecule,
+    ranks: &[u32],
+    flag_possible_stereo_centers: bool,
+) -> Result<(bool, Vec<(usize, String)>, Vec<usize>, bool), StereoError> {
     let mut labels = Vec::new();
+    let mut possible_atoms = Vec::new();
     let mut atom_changed = false;
     let mut unassigned_atoms = 0usize;
     let implicit_hydrogens = mol
@@ -983,7 +975,8 @@ pub fn assign_atom_chiral_codes(
         .map(|valence| valence.implicit_hydrogens.as_slice());
     for atom in mol.atoms() {
         let tag = atom.chiral_tag();
-        if matches!(tag, ChiralTag::Unspecified | ChiralTag::Other) {
+        if !flag_possible_stereo_centers && matches!(tag, ChiralTag::Unspecified | ChiralTag::Other)
+        {
             continue;
         }
         // Skip if already has a CIP code
@@ -995,7 +988,13 @@ pub fn assign_atom_chiral_codes(
         if legal_center {
             unassigned_atoms += 1;
         }
+        if legal_center && !has_dupes && flag_possible_stereo_centers {
+            possible_atoms.push(idx);
+        }
         if !legal_center || has_dupes {
+            continue;
+        }
+        if matches!(tag, ChiralTag::Unspecified | ChiralTag::Other) {
             continue;
         }
         nbrs.sort_by_key(|(rank, neighbor_idx)| (*rank, *neighbor_idx));
@@ -1033,7 +1032,7 @@ pub fn assign_atom_chiral_codes(
         unassigned_atoms = unassigned_atoms.saturating_sub(1);
         labels.push((idx, cip_code.to_string()));
     }
-    Ok((unassigned_atoms > 0, labels, atom_changed))
+    Ok((unassigned_atoms > 0, labels, possible_atoms, atom_changed))
 }
 
 // ──────────────────────────────────────────────
@@ -3193,18 +3192,49 @@ pub fn is_atom_potential_chiral_center(
             legal_center = false;
             match atom.atomic_number() {
                 7 => {
-                    // three-coordinate N needs special handling
-                    // Simplified: allow N in 3-rings or bridgehead
-                    // (full RDKit logic checks hybridization and conjugated bonds)
-                    legal_center = true;
+                    // RDKit✔️✔️: if (atom->getHybridization() == Atom::HybridizationType::SP3 &&
+                    // RDKit✔️✔️:     !MolOps::atomHasConjugatedBond(atom) &&
+                    // RDKit✔️✔️:     (mol.getRingInfo()->isAtomInRingOfSize(atom->getIdx(), 3) ||
+                    // RDKit✔️✔️:      queryIsAtomBridgehead(atom))) {
+                    // RDKit✔️✔️:   legalCenter = true;
+                    // RDKit✔️✔️: }
+                    let in_three_membered_ring = mol
+                        .derived_cache()
+                        .rings
+                        .as_ref()
+                        .is_some_and(|ri| ri.is_atom_in_ring_of_size(atom.id(), 3));
+                    let atom_has_conjugated_bond = mol.bonds().iter().any(|bond| {
+                        (bond.begin().index() == atom_idx || bond.end().index() == atom_idx)
+                            && bond.is_conjugated()
+                    });
+                    if atom.hybridization() == crate::Hybridization::Sp3
+                        && !atom_has_conjugated_bond
+                        && (in_three_membered_ring || is_atom_bridgehead(mol, atom_idx))
+                    {
+                        legal_center = true;
+                    }
                 }
                 15 | 33 => {
                     // phosphines and arsines are always stereogenic
                     legal_center = true;
                 }
                 16 | 34 => {
-                    // sulfur/selenium with explicit valence 4 or 3+charge
-                    legal_center = true;
+                    // RDKit✔️✔️: if (atom->getValence(Atom::ValenceType::EXPLICIT) == 4 ||
+                    // RDKit✔️✔️:     (atom->getValence(Atom::ValenceType::EXPLICIT) == 3 &&
+                    // RDKit✔️✔️:      atom->getFormalCharge() == 1)) {
+                    // RDKit✔️✔️:   legalCenter = true;
+                    // RDKit✔️✔️: }
+                    let explicit_valence = mol
+                        .derived_cache()
+                        .valence
+                        .as_ref()
+                        .and_then(|valence| valence.explicit_valence.get(atom_idx))
+                        .copied()
+                        .unwrap_or_default();
+                    if explicit_valence == 4 || (explicit_valence == 3 && atom.formal_charge() == 1)
+                    {
+                        legal_center = true;
+                    }
                 }
                 _ => {}
             }
