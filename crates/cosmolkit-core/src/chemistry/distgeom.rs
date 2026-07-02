@@ -26,6 +26,8 @@ use crate::chemistry::forcefield::{
     ForceFieldVec3,
 };
 use crate::chemistry::stereo::{get_ideal_angle_between_ligands, has_non_tetrahedral_stereo};
+use crate::molecule::CoordinateBlock as MoleculeCoordinateBlock;
+use crate::read_parts::MoleculeReadParts;
 use crate::{
     Atom, AtomId, Bond, BondId, BondOrder, BondQueryPredicate, BondStereo, ChiralTag, Conformer3D,
     DerivedState, Hybridization, Molecule, MoleculeBuildError, QueryNode, SubstructMatchParams,
@@ -2502,7 +2504,7 @@ fn embedder_adjust_bounds_mat_from_coord_map(
     mmat: &mut BoundsMatrix,
     _num_atoms: usize,
     coord_map: &BTreeMap<i32, ForceFieldVec3>,
-) {
+) -> Result<(), DgBoundsError> {
     // BEGIN RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::adjustBoundsMatFromCoordMap (Embedder.cpp:1221-1236)
     // RDKit✔️✔️: void adjustBoundsMatFromCoordMap(
     // RDKit✔️✔️:     DistGeom::BoundsMatPtr mmat, unsigned int,
@@ -2532,10 +2534,11 @@ fn embedder_adjust_bounds_mat_from_coord_map(
         let (i_idx, i_point) = entries[i];
         for &(j_idx, j_point) in entries.iter().skip(i + 1) {
             let dist = (i_point - j_point).length();
-            mmat.set_upper(i_idx, j_idx, dist);
-            mmat.set_lower(i_idx, j_idx, dist);
+            mmat.set_upper(i_idx, j_idx, dist)?;
+            mmat.set_lower(i_idx, j_idx, dist)?;
         }
     }
+    Ok(())
 }
 
 fn embedder_init_etkdg(
@@ -2696,7 +2699,7 @@ fn embedder_setup_initial_bounds_matrix(
     trace_bounds_stage("after_initial_set_topol", mmat);
     let mut tol = 0.0;
     if let Some(coord_map) = coord_map {
-        embedder_adjust_bounds_mat_from_coord_map(mmat, n_atoms, coord_map);
+        embedder_adjust_bounds_mat_from_coord_map(mmat, n_atoms, coord_map)?;
         tol = 0.05;
         trace_bounds_stage("after_coord_map", mmat);
     }
@@ -2730,7 +2733,7 @@ fn embedder_setup_initial_bounds_matrix(
         }
         trace_bounds_stage("after_retry_set_topol", mmat);
         if let Some(coord_map) = coord_map {
-            embedder_adjust_bounds_mat_from_coord_map(mmat, n_atoms, coord_map);
+            embedder_adjust_bounds_mat_from_coord_map(mmat, n_atoms, coord_map)?;
             trace_bounds_stage("after_retry_coord_map", mmat);
         }
         let second_smooth_start = trace_row64.then(Instant::now);
@@ -2764,7 +2767,7 @@ fn embedder_setup_initial_bounds_matrix(
                 }
                 trace_bounds_stage("after_fallback_set_topol", mmat);
                 if let Some(coord_map) = coord_map {
-                    embedder_adjust_bounds_mat_from_coord_map(mmat, n_atoms, coord_map);
+                    embedder_adjust_bounds_mat_from_coord_map(mmat, n_atoms, coord_map)?;
                     trace_bounds_stage("after_fallback_coord_map", mmat);
                 }
             } else {
@@ -3512,6 +3515,8 @@ fn embedder_embed_helper(
 pub enum DgBoundsError {
     #[error("distance bounds matrix generation failed: {0}")]
     GenerationFailed(String),
+    #[error("invalid distance bounds: {0}")]
+    InvalidBounds(String),
     #[error("invalid embed parameters JSON: {0}")]
     InvalidEmbedParametersJson(String),
     #[error("molecule has no atoms")]
@@ -6259,13 +6264,42 @@ impl BoundsMatrix {
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setUpperBound
-    fn set_upper(&mut self, i: usize, j: usize, v: f64) {
-        assert!(v >= 0.0, "Negative upper bound");
+    fn invalid_bounds(
+        reason: &'static str,
+        i: usize,
+        j: usize,
+        lb: f64,
+        ub: f64,
+        current_lower: f64,
+        current_upper: f64,
+    ) -> DgBoundsError {
+        DgBoundsError::InvalidBounds(format!(
+            "{reason} for atom pair ({i}, {j}); requested lower={lb:.6}, upper={ub:.6}, current lower={current_lower:.6}, current upper={current_upper:.6}"
+        ))
+    }
+
+    fn set_upper_unchecked(&mut self, i: usize, j: usize, v: f64) {
         if i < j {
             self.set_val(i, j, v);
         } else {
             self.set_val(j, i, v);
         }
+    }
+
+    fn set_upper(&mut self, i: usize, j: usize, v: f64) -> Result<(), DgBoundsError> {
+        if v < 0.0 || v.is_nan() {
+            return Err(Self::invalid_bounds(
+                "negative upper bound",
+                i,
+                j,
+                self.get_lower(i, j),
+                v,
+                self.get_lower(i, j),
+                self.get_upper(i, j),
+            ));
+        }
+        self.set_upper_unchecked(i, j, v);
+        Ok(())
     }
 
     // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setUpperBoundIfBetter (BoundsMatrix.h:57-62)
@@ -6276,10 +6310,11 @@ impl BoundsMatrix {
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setUpperBoundIfBetter
-    fn set_upper_if_better(&mut self, i: usize, j: usize, val: f64) {
+    fn set_upper_if_better(&mut self, i: usize, j: usize, val: f64) -> Result<(), DgBoundsError> {
         if val < self.get_upper(i, j) && val > self.get_lower(i, j) {
-            self.set_upper(i, j, val);
+            self.set_upper(i, j, val)?;
         }
+        Ok(())
     }
 
     // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBound (BoundsMatrix.h:65-72)
@@ -6292,13 +6327,28 @@ impl BoundsMatrix {
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBound
-    fn set_lower(&mut self, i: usize, j: usize, v: f64) {
-        assert!(v >= 0.0, "Negative lower bound");
+    fn set_lower_unchecked(&mut self, i: usize, j: usize, v: f64) {
         if i < j {
             self.set_val(j, i, v);
         } else {
             self.set_val(i, j, v);
         }
+    }
+
+    fn set_lower(&mut self, i: usize, j: usize, v: f64) -> Result<(), DgBoundsError> {
+        if v < 0.0 || v.is_nan() {
+            return Err(Self::invalid_bounds(
+                "negative lower bound",
+                i,
+                j,
+                v,
+                self.get_upper(i, j),
+                self.get_lower(i, j),
+                self.get_upper(i, j),
+            ));
+        }
+        self.set_lower_unchecked(i, j, v);
+        Ok(())
     }
 
     // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBoundIfBetter (BoundsMatrix.h:76-81)
@@ -6309,10 +6359,11 @@ impl BoundsMatrix {
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBoundIfBetter
-    fn set_lower_if_better(&mut self, i: usize, j: usize, val: f64) {
+    fn set_lower_if_better(&mut self, i: usize, j: usize, val: f64) -> Result<(), DgBoundsError> {
         if val > self.get_lower(i, j) && val < self.get_upper(i, j) {
-            self.set_lower(i, j, val);
+            self.set_lower(i, j, val)?;
         }
+        Ok(())
     }
 
     // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::getLowerBound (BoundsMatrix.h:84-90)
@@ -8218,8 +8269,14 @@ fn construct_3d_forcefield_with_cpci(
 }
 
 impl BoundsMatrix {
-    fn check_and_set_bounds(&mut self, i: usize, j: usize, lb: f64, ub: f64) {
-        self.check_and_set_bounds_with_mode(i, j, lb, ub, false);
+    fn check_and_set_bounds(
+        &mut self,
+        i: usize,
+        j: usize,
+        lb: f64,
+        ub: f64,
+    ) -> Result<(), DgBoundsError> {
+        self.check_and_set_bounds_with_mode(i, j, lb, ub, false)
     }
 
     // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_checkAndSetBounds (BoundsMatrixBuilder.cpp:195-227)
@@ -8273,12 +8330,32 @@ impl BoundsMatrix {
         lb: f64,
         ub: f64,
         set_if_better: bool,
-    ) {
+    ) -> Result<(), DgBoundsError> {
         let clb = self.get_lower(i, j);
         let cub = self.get_upper(i, j);
 
-        assert!(ub > lb, "upper bound not greater than lower bound");
-        assert!(lb > DIST12_DELTA || clb > DIST12_DELTA, "bad lower bound");
+        if !matches!(ub.partial_cmp(&lb), Some(std::cmp::Ordering::Greater)) {
+            return Err(Self::invalid_bounds(
+                "upper bound not greater than lower bound",
+                i,
+                j,
+                lb,
+                ub,
+                clb,
+                cub,
+            ));
+        }
+        if !(lb > DIST12_DELTA || clb > DIST12_DELTA) {
+            return Err(Self::invalid_bounds(
+                "bad lower bound",
+                i,
+                j,
+                lb,
+                ub,
+                clb,
+                cub,
+            ));
+        }
 
         if set_if_better {
             let mut nlb = clb.max(lb);
@@ -8289,21 +8366,22 @@ impl BoundsMatrix {
                 nub = cub.max(ub);
             }
 
-            self.set_lower(i, j, nlb);
-            self.set_upper(i, j, nub);
+            self.set_lower(i, j, nlb)?;
+            self.set_upper(i, j, nub)?;
         } else {
             if clb <= DIST12_DELTA {
-                self.set_lower(i, j, lb);
+                self.set_lower(i, j, lb)?;
             } else if lb < clb && lb > DIST12_DELTA {
-                self.set_lower(i, j, lb);
+                self.set_lower(i, j, lb)?;
             }
 
             if cub >= MAX_UPPER {
-                self.set_upper(i, j, ub);
+                self.set_upper(i, j, ub)?;
             } else if ub > cub && ub < MAX_UPPER {
-                self.set_upper(i, j, ub);
+                self.set_upper(i, j, ub)?;
             }
         }
+        Ok(())
     }
 
     fn triangle_smooth(&mut self, tol: f64) -> bool {
@@ -8449,8 +8527,8 @@ fn init_bounds_mat_ptr(mmat: &mut BoundsMatrix, default_min: f64, default_max: f
 
     for i in 1..npt {
         for j in 0..i {
-            mmat.set_upper(i, j, default_max);
-            mmat.set_lower(i, j, default_min);
+            mmat.set_upper_unchecked(i, j, default_max);
+            mmat.set_lower_unchecked(i, j, default_min);
         }
     }
 }
@@ -8634,23 +8712,23 @@ fn set_12_bounds(
                     0.0
                 };
                 accum_data.bond_lengths[bond.id().index()] = bl;
-                mmat.set_upper(beg_id, end_id, bl + extra_squish + DIST12_DELTA);
-                mmat.set_lower(beg_id, end_id, bl - extra_squish - DIST12_DELTA);
+                mmat.set_upper(beg_id, end_id, bl + extra_squish + DIST12_DELTA)?;
+                mmat.set_lower(beg_id, end_id, bl - extra_squish - DIST12_DELTA)?;
             } else {
                 let bl = (vdw_radius(mol.atoms()[beg_id].atomic_number())
                     + vdw_radius(mol.atoms()[end_id].atomic_number()))
                     / 2.0;
                 accum_data.bond_lengths[bond.id().index()] = bl;
-                mmat.set_upper(beg_id, end_id, 1.5 * bl);
-                mmat.set_lower(beg_id, end_id, 0.5 * bl);
+                mmat.set_upper(beg_id, end_id, 1.5 * bl)?;
+                mmat.set_lower(beg_id, end_id, 0.5 * bl)?;
             }
         } else {
             let bl = (vdw_radius(mol.atoms()[beg_id].atomic_number())
                 + vdw_radius(mol.atoms()[end_id].atomic_number()))
                 / 2.0;
             accum_data.bond_lengths[bond.id().index()] = bl;
-            mmat.set_upper(beg_id, end_id, 1.5 * bl);
-            mmat.set_lower(beg_id, end_id, 0.5 * bl);
+            mmat.set_upper(beg_id, end_id, 1.5 * bl)?;
+            mmat.set_lower(beg_id, end_id, 0.5 * bl)?;
         }
         let pid = beg_id.min(end_id) * mol.atoms().len() + beg_id.max(end_id);
         accum_data.visited12_bounds[pid] = true;
@@ -8737,7 +8815,7 @@ fn set_13_bounds_helper(
     mmat: &mut BoundsMatrix,
     mol: &Molecule,
     rinfo: &crate::RingInfo,
-) {
+) -> Result<(), DgBoundsError> {
     // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_set13BoundsHelper (BoundsMatrixBuilder.cpp:369-391)
     // RDKit✔️✔️: void _set13BoundsHelper(unsigned int aid1, unsigned int aid, unsigned int aid3,
     // RDKit✔️✔️:                         double angle, const ComputedData &accumData,
@@ -8764,10 +8842,10 @@ fn set_13_bounds_helper(
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DGeomHelpers::_set13BoundsHelper
     let Some(bid1) = bond_between_idx_simple(mol, aid1, aid) else {
-        return;
+        return Ok(());
     };
     let Some(bid2) = bond_between_idx_simple(mol, aid, aid3) else {
-        return;
+        return Ok(());
     };
 
     let mut dl = compute_13_dist(bond_lengths[bid1], bond_lengths[bid2], angle);
@@ -8785,7 +8863,7 @@ fn set_13_bounds_helper(
 
     let du = dl + dist_tol;
     dl -= dist_tol;
-    mmat.check_and_set_bounds(aid1, aid3, dl, du);
+    mmat.check_and_set_bounds(aid1, aid3, dl, du)
 }
 
 fn bond_between_idx(bond_idx: usize) -> Option<usize> {
@@ -8945,16 +9023,45 @@ fn ring_info_for_distgeom(mol: &Molecule) -> Result<Cow<'_, crate::RingInfo>, Dg
     }
 }
 
+fn dg_generation_error(message: impl Into<String>) -> DgBoundsError {
+    DgBoundsError::GenerationFailed(message.into())
+}
+
 fn bond_pair_shared_atom(
     mol: &Molecule,
     accum_data: &ComputedData,
     bid1: usize,
     bid2: usize,
-) -> usize {
+) -> Result<usize, DgBoundsError> {
     let nb = mol.num_bonds();
     let aid = accum_data.get_bond_adj(nb, bid1, bid2);
-    assert!(aid >= 0, "missing shared atom for bond pair");
-    aid as usize
+    if aid < 0 {
+        return Err(dg_generation_error(format!(
+            "missing shared atom for bond pair ({bid1}, {bid2})"
+        )));
+    }
+    let aid = aid as usize;
+    if aid >= mol.num_atoms() {
+        return Err(dg_generation_error(format!(
+            "shared atom index {aid} for bond pair ({bid1}, {bid2}) is out of range"
+        )));
+    }
+    Ok(aid)
+}
+
+fn validate_bond_angle(
+    angle: f64,
+    bid1: usize,
+    bid2: usize,
+    context: &'static str,
+) -> Result<(), DgBoundsError> {
+    if angle > 0.0 {
+        Ok(())
+    } else {
+        Err(dg_generation_error(format!(
+            "{context}: missing or invalid bond angle for bond pair ({bid1}, {bid2}): {angle}"
+        )))
+    }
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_getAtomStereo (BoundsMatrixBuilder.cpp:660-681)
@@ -9097,21 +9204,19 @@ fn set_13_bounds(
     mmat: &mut BoundsMatrix,
     accum_data: &mut ComputedData,
     rinfo: &crate::RingInfo,
-) {
+) -> Result<(), DgBoundsError> {
     let npt = mmat.num_rows();
-    assert_eq!(npt, mol.atoms().len(), "Wrong size metric matrix");
+    if npt != mol.atoms().len() {
+        return Err(dg_generation_error("Wrong size metric matrix"));
+    }
 
     let nb = mol.bonds().len();
-    assert_eq!(
-        accum_data.bond_angles.len(),
-        nb * nb,
-        "Wrong size bond angle matrix"
-    );
-    assert_eq!(
-        accum_data.bond_adj.len(),
-        nb * nb,
-        "Wrong size bond adjacency matrix"
-    );
+    if accum_data.bond_angles.len() != nb * nb {
+        return Err(dg_generation_error("Wrong size bond angle matrix"));
+    }
+    if accum_data.bond_adj.len() != nb * nb {
+        return Err(dg_generation_error("Wrong size bond adjacency matrix"));
+    }
 
     let mut atom_rings: Vec<Vec<usize>> = rinfo
         .atom_rings()
@@ -9152,7 +9257,7 @@ fn set_13_bounds(
                         mmat,
                         mol,
                         rinfo,
-                    );
+                    )?;
                     accum_data.visited13_bounds[pid] = true;
                 }
                 accum_data.set_bond_angle(nb, b1, b2, angle);
@@ -9219,7 +9324,7 @@ fn set_13_bounds(
                             mmat,
                             mol,
                             rinfo,
-                        );
+                        )?;
                         accum_data.visited13_bounds[pid] = true;
                     }
 
@@ -9268,13 +9373,13 @@ fn set_13_bounds(
                                 mmat,
                                 mol,
                                 rinfo,
-                            );
+                            )?;
                         } else {
                             let dmax =
                                 accum_data.bond_lengths[bid1] + accum_data.bond_lengths[bid2];
                             let dl = 1.0;
                             let du = dmax * 1.2;
-                            mmat.check_and_set_bounds(aid1, aid3, dl, du);
+                            mmat.check_and_set_bounds(aid1, aid3, dl, du)?;
                         }
                         accum_data.visited13_bounds[pid] = true;
                     }
@@ -9287,6 +9392,7 @@ fn set_13_bounds(
             }
         }
     }
+    Ok(())
 }
 
 // ──────────────────────────────────────────────
@@ -9339,10 +9445,10 @@ fn record_14_path(
     bid2: usize,
     bid3: usize,
     accum_data: &mut ComputedData,
-) {
-    let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2);
+) -> Result<(), DgBoundsError> {
+    let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2)?;
     let ahyb2 = mol.atoms()[atm2].hybridization();
-    let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3);
+    let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3)?;
     let ahyb3 = mol.atoms()[atm3].hybridization();
     let nb = mol.num_bonds();
 
@@ -9360,6 +9466,7 @@ fn record_14_path(
         bid3,
         kind,
     });
+    Ok(())
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_setInRing14Bounds (BoundsMatrixBuilder.cpp:724-826)
@@ -9435,10 +9542,10 @@ fn set_in_ring_14_bounds(
     dmat: &[f64],
     ring_size: usize,
     ring_info: &crate::RingInfo,
-) {
-    let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2);
+) -> Result<(), DgBoundsError> {
+    let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2)?;
     let ahyb2 = mol.atoms()[atm2].hybridization();
-    let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3);
+    let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3)?;
     let ahyb3 = mol.atoms()[atm3].hybridization();
 
     let bnd1 = &mol.bonds()[bid1];
@@ -9455,10 +9562,10 @@ fn set_in_ring_14_bounds(
     };
     let pid = aid1.min(aid4) * mol.num_atoms() + aid1.max(aid4);
     if accum_data.visited_bound(pid, DistType::Dist13) {
-        return;
+        return Ok(());
     }
     if dmat[aid1.max(aid4) * mmat.num_rows() + aid1.min(aid4)] < 2.9 {
-        return;
+        return Ok(());
     }
 
     let bl1 = accum_data.bond_lengths[bid1];
@@ -9466,8 +9573,8 @@ fn set_in_ring_14_bounds(
     let bl3 = accum_data.bond_lengths[bid3];
     let ba12 = accum_data.get_bond_angle(mol.num_bonds(), bid1, bid2);
     let ba23 = accum_data.get_bond_angle(mol.num_bonds(), bid2, bid3);
-    assert!(ba12 > 0.0);
-    assert!(ba23 > 0.0);
+    validate_bond_angle(ba12, bid1, bid2, "set_in_ring_14_bounds")?;
+    validate_bond_angle(ba23, bid2, bid3, "set_in_ring_14_bounds")?;
 
     let stype = get_atom_stereo(&mol.bonds()[bid2], aid1, aid4);
     let mut prefer_cis = false;
@@ -9540,7 +9647,7 @@ fn set_in_ring_14_bounds(
     };
 
     accum_data.visited14_bounds[pid] = true;
-    mmat.check_and_set_bounds(aid1, aid4, dl, du);
+    mmat.check_and_set_bounds(aid1, aid4, dl, du)
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_setTwoInSameRing14Bounds (BoundsMatrixBuilder.cpp:828-900)
@@ -9601,9 +9708,9 @@ fn set_two_in_same_ring_14_bounds(
     accum_data: &mut ComputedData,
     mmat: &mut BoundsMatrix,
     dmat: &[f64],
-) {
-    let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2);
-    let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3);
+) -> Result<(), DgBoundsError> {
+    let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2)?;
+    let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3)?;
     let bnd1 = &mol.bonds()[bid1];
     let bnd3 = &mol.bonds()[bid3];
     let aid1 = if bnd1.begin().index() == atm2 {
@@ -9619,13 +9726,13 @@ fn set_two_in_same_ring_14_bounds(
     let pid = aid1.min(aid4) * mol.num_atoms() + aid1.max(aid4);
 
     if accum_data.visited_bound(pid, DistType::Dist13) {
-        return;
+        return Ok(());
     }
     if dmat[aid1.max(aid4) * mmat.num_rows() + aid1.min(aid4)] < 2.9 {
-        return;
+        return Ok(());
     }
     if bond_between(mol, aid1, atm3).is_some() || bond_between(mol, aid4, atm2).is_some() {
-        return;
+        return Ok(());
     }
 
     let ahyb2 = mol.atoms()[atm2].hybridization();
@@ -9635,8 +9742,8 @@ fn set_two_in_same_ring_14_bounds(
     let bl3 = accum_data.bond_lengths[bid3];
     let ba12 = accum_data.get_bond_angle(mol.num_bonds(), bid1, bid2);
     let ba23 = accum_data.get_bond_angle(mol.num_bonds(), bid2, bid3);
-    assert!(ba12 > 0.0);
-    assert!(ba23 > 0.0);
+    validate_bond_angle(ba12, bid1, bid2, "set_two_in_same_ring_14_bounds")?;
+    validate_bond_angle(ba23, bid2, bid3, "set_two_in_same_ring_14_bounds")?;
 
     let nb = mol.num_bonds();
     let (mut dl, mut du, kind) = if ahyb2 == Hybridization::Sp2 && ahyb3 == Hybridization::Sp2 {
@@ -9657,7 +9764,7 @@ fn set_two_in_same_ring_14_bounds(
         (dl, du, Path14Kind::Other)
     };
 
-    mmat.check_and_set_bounds(aid1, aid4, dl, du);
+    mmat.check_and_set_bounds(aid1, aid4, dl, du)?;
     accum_data.paths14.push(Path14Configuration {
         bid1,
         bid2,
@@ -9665,6 +9772,7 @@ fn set_two_in_same_ring_14_bounds(
         kind,
     });
     accum_data.visited14_bounds[pid] = true;
+    Ok(())
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_setTwoInDiffRing14Bounds (BoundsMatrixBuilder.cpp:902-910)
@@ -9689,8 +9797,8 @@ fn set_two_in_diff_ring_14_bounds(
     mmat: &mut BoundsMatrix,
     dmat: &[f64],
     ring_info: &crate::RingInfo,
-) {
-    set_in_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat, 0, ring_info);
+) -> Result<(), DgBoundsError> {
+    set_in_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat, 0, ring_info)
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_setShareRingBond14Bounds (BoundsMatrixBuilder.cpp:912-920)
@@ -9711,8 +9819,8 @@ fn set_share_ring_bond_14_bounds(
     mmat: &mut BoundsMatrix,
     dmat: &[f64],
     ring_info: &crate::RingInfo,
-) {
-    set_in_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat, 0, ring_info);
+) -> Result<(), DgBoundsError> {
+    set_in_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat, 0, ring_info)
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_checkMacrocycleTwoInSameRingAmideEster14 (BoundsMatrixBuilder.cpp:1342-1361)
@@ -9819,11 +9927,11 @@ fn set_macrocycle_two_in_same_ring_14_bounds(
     accum_data: &mut ComputedData,
     mmat: &mut BoundsMatrix,
     dmat: &[f64],
-) {
+) -> Result<(), DgBoundsError> {
     // Behavior matches RDKit, but duplicate path recording and bond/neighbor lookup
     // still go through Vec-backed helpers instead of RDKit's set and adjacency types.
-    let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2);
-    let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3);
+    let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2)?;
+    let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3)?;
     let bnd1 = &mol.bonds()[bid1];
     let bnd3 = &mol.bonds()[bid3];
     let aid1 = if bnd1.begin().index() == atm2 {
@@ -9841,13 +9949,13 @@ fn set_macrocycle_two_in_same_ring_14_bounds(
     let pid = aid1.min(aid4) * mol.num_atoms() + aid1.max(aid4);
 
     if accum_data.visited_bound(pid, DistType::Dist13) {
-        return;
+        return Ok(());
     }
     if dmat[aid1.max(aid4) * mmat.num_rows() + aid1.min(aid4)] < 2.9 {
-        return;
+        return Ok(());
     }
     if bond_between(mol, aid1, atm3).is_some() || bond_between(mol, aid4, atm2).is_some() {
-        return;
+        return Ok(());
     }
 
     let bl1 = accum_data.bond_lengths[bid1];
@@ -9855,8 +9963,18 @@ fn set_macrocycle_two_in_same_ring_14_bounds(
     let bl3 = accum_data.bond_lengths[bid3];
     let ba12 = accum_data.get_bond_angle(mol.num_bonds(), bid1, bid2);
     let ba23 = accum_data.get_bond_angle(mol.num_bonds(), bid2, bid3);
-    assert!(ba12 > 0.0);
-    assert!(ba23 > 0.0);
+    validate_bond_angle(
+        ba12,
+        bid1,
+        bid2,
+        "set_macrocycle_two_in_same_ring_14_bounds",
+    )?;
+    validate_bond_angle(
+        ba23,
+        bid2,
+        bid3,
+        "set_macrocycle_two_in_same_ring_14_bounds",
+    )?;
 
     let nb = mol.num_bonds();
     let (mut dl, mut du, kind) = if check_macrocycle_two_in_same_ring_amide_ester_14(
@@ -9881,7 +9999,7 @@ fn set_macrocycle_two_in_same_ring_14_bounds(
         (dl, du, Path14Kind::Other)
     };
 
-    mmat.check_and_set_bounds(aid1, aid4, dl, du);
+    mmat.check_and_set_bounds(aid1, aid4, dl, du)?;
     accum_data.paths14.push(Path14Configuration {
         bid1,
         bid2,
@@ -9889,6 +10007,7 @@ fn set_macrocycle_two_in_same_ring_14_bounds(
         kind,
     });
     accum_data.visited14_bounds[pid] = true;
+    Ok(())
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_setMacrocycleAllInSameRing14Bounds (BoundsMatrixBuilder.cpp:1456-1660)
@@ -9977,12 +10096,12 @@ fn set_macrocycle_all_in_same_ring_14_bounds(
     bid3: usize,
     accum_data: &mut ComputedData,
     mmat: &mut BoundsMatrix,
-) {
+) -> Result<(), DgBoundsError> {
     // Behavior matches RDKit's branch structure, including the +0.1 trans-amide
     // widening and secondary-amide-H suppression branch, but helper lookups are
     // still repeated over Vec-backed adjacency data.
-    let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2);
-    let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3);
+    let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2)?;
+    let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3)?;
     let bnd1 = &mol.bonds()[bid1];
     let bnd2 = &mol.bonds()[bid2];
     let bnd3 = &mol.bonds()[bid3];
@@ -9998,7 +10117,7 @@ fn set_macrocycle_all_in_same_ring_14_bounds(
     };
     let pid = aid1.min(aid4) * mol.num_atoms() + aid1.max(aid4);
     if accum_data.visited_bound(pid, DistType::Dist13) {
-        return;
+        return Ok(());
     }
 
     let atm1 = aid1;
@@ -10008,8 +10127,18 @@ fn set_macrocycle_all_in_same_ring_14_bounds(
     let bl3 = accum_data.bond_lengths[bid3];
     let ba12 = accum_data.get_bond_angle(mol.num_bonds(), bid1, bid2);
     let ba23 = accum_data.get_bond_angle(mol.num_bonds(), bid2, bid3);
-    assert!(ba12 > 0.0);
-    assert!(ba23 > 0.0);
+    validate_bond_angle(
+        ba12,
+        bid1,
+        bid2,
+        "set_macrocycle_all_in_same_ring_14_bounds",
+    )?;
+    validate_bond_angle(
+        ba23,
+        bid2,
+        bid3,
+        "set_macrocycle_all_in_same_ring_14_bounds",
+    )?;
 
     let mut set_the_bound = true;
     let nb = mol.num_bonds();
@@ -10105,7 +10234,7 @@ fn set_macrocycle_all_in_same_ring_14_bounds(
             dl -= GEN_DIST_TOL;
             du += GEN_DIST_TOL;
         }
-        mmat.check_and_set_bounds(aid1, aid4, dl, du);
+        mmat.check_and_set_bounds(aid1, aid4, dl, du)?;
         accum_data.paths14.push(Path14Configuration {
             bid1,
             bid2,
@@ -10114,6 +10243,7 @@ fn set_macrocycle_all_in_same_ring_14_bounds(
         });
         accum_data.visited14_bounds[pid] = true;
     }
+    Ok(())
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_setChain14Bounds (BoundsMatrixBuilder.cpp:980-1317)
@@ -10187,12 +10317,12 @@ fn set_chain_14_bounds(
     accum_data: &mut ComputedData,
     mmat: &mut BoundsMatrix,
     force_trans_amides: bool,
-) {
+) -> Result<(), DgBoundsError> {
     // Behavior matches RDKit's branch matrix, but path flags use Vec dedup scans
     // instead of RDKit set containers and several helper predicates rescan local
     // adjacency/state on each branch.
-    let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2);
-    let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3);
+    let atm2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2)?;
+    let atm3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3)?;
     let bnd1 = &mol.bonds()[bid1];
     let bnd2 = &mol.bonds()[bid2];
     let bnd3 = &mol.bonds()[bid3];
@@ -10208,7 +10338,7 @@ fn set_chain_14_bounds(
     };
     let pid = aid1.min(aid4) * mol.num_atoms() + aid1.max(aid4);
     if accum_data.visited_bound(pid, DistType::Dist13) {
-        return;
+        return Ok(());
     }
 
     let atm1 = aid1;
@@ -10218,8 +10348,8 @@ fn set_chain_14_bounds(
     let bl3 = accum_data.bond_lengths[bid3];
     let ba12 = accum_data.get_bond_angle(mol.num_bonds(), bid1, bid2);
     let ba23 = accum_data.get_bond_angle(mol.num_bonds(), bid2, bid3);
-    assert!(ba12 > 0.0);
-    assert!(ba23 > 0.0);
+    validate_bond_angle(ba12, bid1, bid2, "set_chain_14_bounds")?;
+    validate_bond_angle(ba23, bid2, bid3, "set_chain_14_bounds")?;
 
     let mut set_the_bound = true;
     let nb = mol.num_bonds();
@@ -10378,7 +10508,7 @@ fn set_chain_14_bounds(
             dl -= GEN_DIST_TOL;
             du += GEN_DIST_TOL;
         }
-        mmat.check_and_set_bounds(aid1, aid4, dl, du);
+        mmat.check_and_set_bounds(aid1, aid4, dl, du)?;
         accum_data.paths14.push(Path14Configuration {
             bid1,
             bid2,
@@ -10387,6 +10517,7 @@ fn set_chain_14_bounds(
         });
         accum_data.visited14_bounds[pid] = true;
     }
+    Ok(())
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_checkH2NX3H1OX2 (BoundsMatrixBuilder.cpp:845-856)
@@ -10840,18 +10971,19 @@ fn set_15_bounds(
     mmat: &mut BoundsMatrix,
     accum_data: &mut ComputedData,
     dmat: &[f64],
-) {
+) -> Result<(), DgBoundsError> {
     let nb = mol.bonds().len();
     let na = mol.atoms().len();
     for path_idx in 0..accum_data.paths14.len() {
         let path = accum_data.paths14[path_idx];
         set_15_bounds_helper(
             mol, mmat, accum_data, dmat, nb, na, path.bid1, path.bid2, path.bid3, path.kind,
-        );
+        )?;
         set_15_bounds_helper(
             mol, mmat, accum_data, dmat, nb, na, path.bid3, path.bid2, path.bid1, path.kind,
-        );
+        )?;
     }
+    Ok(())
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_set15BoundsHelper (BoundsMatrixBuilder.cpp:2106-2253)
@@ -10981,17 +11113,17 @@ fn set_15_bounds_helper(
     bid2: usize,
     bid3: usize,
     kind: Path14Kind,
-) {
+) -> Result<(), DgBoundsError> {
     // Behavior matches RDKit's 1-5 branch matrix, but cis/trans path flags are
     // still searched in Vec-backed stores with linear duplicate checks.
     // RDKit❗✔️: Get shared atoms via bond adjacency matrix
-    let aid2 = accum_data.get_bond_adj(nb, bid1, bid2) as usize;
+    let aid2 = bond_pair_shared_atom(mol, accum_data, bid1, bid2)?;
     let aid1 = if mol.bonds()[bid1].begin().index() == aid2 {
         mol.bonds()[bid1].end().index()
     } else {
         mol.bonds()[bid1].begin().index()
     };
-    let aid3 = accum_data.get_bond_adj(nb, bid2, bid3) as usize;
+    let aid3 = bond_pair_shared_atom(mol, accum_data, bid2, bid3)?;
     let aid4 = if mol.bonds()[bid3].begin().index() == aid3 {
         mol.bonds()[bid3].end().index()
     } else {
@@ -11020,7 +11152,7 @@ fn set_15_bounds_helper(
 
         // RDKit❗✔️: if pair was already bounded as 1-2/1-3/1-4, skip the whole function
         if accum_data.visited_bound(pid, DistType::Dist14) {
-            return;
+            return Ok(());
         }
 
         // RDKit❗✔️: skip if atoms are already close in distance matrix
@@ -11120,12 +11252,13 @@ fn set_15_bounds_helper(
         }
 
         // RDKit❗✔️: _checkAndSetBounds(aid1, aid5, dl, du, mmat);
-        mmat.check_and_set_bounds(aid1, aid5, dl, du);
+        mmat.check_and_set_bounds(aid1, aid5, dl, du)?;
 
         // RDKit❗✔️: accumData.set15Atoms[pid1] = 1; accumData.set15Atoms[pid2] = 1;
         accum_data.set15_atoms[pid1] = true;
         accum_data.set15_atoms[pid2] = true;
     }
+    Ok(())
 }
 
 /// RDKit❗✔️: set14Bounds — torsion-based 1-4 bounds
@@ -11138,7 +11271,7 @@ fn set_14_bounds(
     use_macrocycle_14config: bool,
     force_trans_amides: bool,
     rinfo: &crate::RingInfo,
-) {
+) -> Result<(), DgBoundsError> {
     // BEGIN RDKIT CPP FUNCTION DGeomHelpers::set14Bounds (BoundsMatrixBuilder.cpp:1664-1784)
     // RDKit❗✔️: void set14Bounds(const ROMol &mol, DistGeom::BoundsMatPtr mmat,
     // RDKit❗✔️:                  ComputedData &accumData, double *distMatrix,
@@ -11170,10 +11303,14 @@ fn set_14_bounds(
     // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION DGeomHelpers::set14Bounds
     let npt = mmat.num_rows();
-    assert_eq!(npt, mol.num_atoms(), "Wrong size metric matrix");
+    if npt != mol.num_atoms() {
+        return Err(dg_generation_error("Wrong size metric matrix"));
+    }
     let max_num_bonds = (u64::MAX as f64).cbrt() as usize;
     if mol.num_bonds() >= max_num_bonds {
-        panic!("Too many bonds in the molecule, cannot compute 1-4 bounds");
+        return Err(dg_generation_error(
+            "Too many bonds in the molecule, cannot compute 1-4 bounds",
+        ));
     }
     let bond_rings = rinfo.bond_rings();
 
@@ -11205,15 +11342,15 @@ fn set_14_bounds(
                 if use_macrocycle_14config && r_size >= MIN_MACROCYCLE_RING_SIZE {
                     set_macrocycle_all_in_same_ring_14_bounds(
                         mol, bid1, bid2, bid3, accum_data, mmat,
-                    );
+                    )?;
                     bid_is_macrocycle.insert(bid2);
                 } else {
                     set_in_ring_14_bounds(
                         mol, bid1, bid2, bid3, accum_data, mmat, dmat, r_size, rinfo,
-                    );
+                    )?;
                 }
             } else {
-                record_14_path(mol, bid1, bid2, bid3, accum_data);
+                record_14_path(mol, bid1, bid2, bid3, accum_data)?;
             }
             bid1 = bid2;
         }
@@ -11256,11 +11393,11 @@ fn set_14_bounds(
                     if use_macrocycle_14config && bid_is_macrocycle.contains(&bid2) {
                         set_macrocycle_two_in_same_ring_14_bounds(
                             mol, bid1, bid2, bid3, accum_data, mmat, dmat,
-                        );
+                        )?;
                     } else {
                         set_two_in_same_ring_14_bounds(
                             mol, bid1, bid2, bid3, accum_data, mmat, dmat,
-                        );
+                        )?;
                     }
                 } else if (rinfo.num_bond_rings(BondId::new(bid1)) > 0
                     && rinfo.num_bond_rings(BondId::new(bid2)) > 0)
@@ -11269,11 +11406,11 @@ fn set_14_bounds(
                 {
                     set_two_in_diff_ring_14_bounds(
                         mol, bid1, bid2, bid3, accum_data, mmat, dmat, rinfo,
-                    );
+                    )?;
                 } else if rinfo.num_bond_rings(BondId::new(bid2)) > 0 {
                     set_share_ring_bond_14_bounds(
                         mol, bid1, bid2, bid3, accum_data, mmat, dmat, rinfo,
-                    );
+                    )?;
                 } else {
                     set_chain_14_bounds(
                         mol,
@@ -11283,11 +11420,12 @@ fn set_14_bounds(
                         accum_data,
                         mmat,
                         force_trans_amides,
-                    );
+                    )?;
                 }
             }
         }
     }
+    Ok(())
 }
 
 /// Helper: get bond length from ComputedData
@@ -11438,10 +11576,17 @@ fn collect_bonds_and_angles(
 // RDKit✔️✔️:   }
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION DGeomHelpers::setLowerBoundVDW
-fn set_lower_bound_vdw(mol: &Molecule, mmat: &mut BoundsMatrix, _scale_vdw: bool, dmat: &[f64]) {
+fn set_lower_bound_vdw(
+    mol: &Molecule,
+    mmat: &mut BoundsMatrix,
+    _scale_vdw: bool,
+    dmat: &[f64],
+) -> Result<(), DgBoundsError> {
     let n = mol.atoms().len();
     let npt = mmat.num_rows();
-    assert_eq!(npt, n, "Wrong size metric matrix");
+    if npt != n {
+        return Err(dg_generation_error("Wrong size metric matrix"));
+    }
 
     // Pre-compute H-bond donor/acceptor bitsets
     let mut h_in_hbond_donors = vec![false; n];
@@ -11466,23 +11611,24 @@ fn set_lower_bound_vdw(mol: &Molecule, mmat: &mut BoundsMatrix, _scale_vdw: bool
             if (h_in_hbond_donors[i] && hbond_acceptors[j])
                 || (hbond_acceptors[i] && h_in_hbond_donors[j])
             {
-                mmat.set_lower(i, j, H_BOND_LENGTH);
+                mmat.set_lower(i, j, H_BOND_LENGTH)?;
             } else if td == 4.0 {
                 // 1-5: scaled VDW
-                mmat.set_lower(i, j, VDW_SCALE_15 * (vw1 + vw2));
+                mmat.set_lower(i, j, VDW_SCALE_15 * (vw1 + vw2))?;
             } else if td == 5.0 {
                 // 1-6: slightly less scaled
                 mmat.set_lower(
                     i,
                     j,
                     (VDW_SCALE_15 + 0.5 * (1.0 - VDW_SCALE_15)) * (vw1 + vw2),
-                );
+                )?;
             } else {
                 // Full VDW sum
-                mmat.set_lower(i, j, vw1 + vw2);
+                mmat.set_lower(i, j, vw1 + vw2)?;
             }
         }
     }
+    Ok(())
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::setTopolBounds (BoundsMatrixBuilder.cpp:1808-1845)
@@ -11559,7 +11705,7 @@ fn set_topol_bounds(
             mmat,
             &mut accum_data,
             ring_info.as_deref().expect("ring info loaded"),
-        );
+        )?;
         trace_bounds_stage("after_set13", mmat);
     }
     if set14bounds {
@@ -11571,14 +11717,14 @@ fn set_topol_bounds(
             use_macrocycle_14config,
             force_trans_amides,
             ring_info.as_deref().expect("ring info loaded"),
-        );
+        )?;
         trace_bounds_stage("after_set14", mmat);
     }
     if set15bounds {
-        set_15_bounds(mol, mmat, &mut accum_data, &dist_matrix);
+        set_15_bounds(mol, mmat, &mut accum_data, &dist_matrix)?;
         trace_bounds_stage("after_set15", mmat);
     }
-    set_lower_bound_vdw(mol, mmat, scale_vdw, &dist_matrix);
+    set_lower_bound_vdw(mol, mmat, scale_vdw, &dist_matrix)?;
     trace_bounds_stage("after_vdw", mmat);
     Ok(())
 }
@@ -11664,7 +11810,7 @@ pub(crate) fn dg_path14_priors(mol: &Molecule) -> Result<Vec<DgPath14Prior>, DgB
     let dist_matrix = flatten_topological_distances_matrix(mol);
     let ring_info = ring_info_for_distgeom(mol)?;
     set_12_bounds(mol, &mut mmat, &mut accum_data)?;
-    set_13_bounds(mol, &mut mmat, &mut accum_data, ring_info.as_ref());
+    set_13_bounds(mol, &mut mmat, &mut accum_data, ring_info.as_ref())?;
     set_14_bounds(
         mol,
         &mut mmat,
@@ -11673,7 +11819,7 @@ pub(crate) fn dg_path14_priors(mol: &Molecule) -> Result<Vec<DgPath14Prior>, DgB
         false,
         true,
         ring_info.as_ref(),
-    );
+    )?;
 
     let mut priors = Vec::with_capacity(accum_data.paths14.len());
     for path in accum_data.paths14 {
@@ -11862,6 +12008,41 @@ fn embedder_add_conformers(
         ));
     }
     Ok((out, ids))
+}
+
+fn molecule_from_read_parts_with_coordinates(
+    read: MoleculeReadParts<'_>,
+    coordinates: MoleculeCoordinateBlock,
+) -> Result<Molecule, DgBoundsError> {
+    Molecule::from_operation_blocks(
+        read.topology().clone(),
+        coordinates,
+        read.properties().clone(),
+        read.derived_cache().clone(),
+        read.capabilities(),
+    )
+    .map_err(|failure| DgBoundsError::CoordinateUpdateFailed(failure.to_string()))
+}
+
+pub(crate) fn embed_multiple_confs_coordinate_update(
+    read: MoleculeReadParts<'_>,
+    coordinates: MoleculeCoordinateBlock,
+    num_confs: u32,
+    params: &mut EmbedParameters,
+) -> Result<(MoleculeCoordinateBlock, Vec<i32>), DgBoundsError> {
+    let source = molecule_from_read_parts_with_coordinates(read, coordinates)?;
+    let (embedded, ids) = embed_multiple_confs(&source, num_confs, params)?;
+    Ok((embedded.coordinate_block().clone(), ids))
+}
+
+pub(crate) fn embed_molecule_coordinate_update(
+    read: MoleculeReadParts<'_>,
+    coordinates: MoleculeCoordinateBlock,
+    params: &mut EmbedParameters,
+) -> Result<(MoleculeCoordinateBlock, i32), DgBoundsError> {
+    let (coordinates, conf_ids) =
+        embed_multiple_confs_coordinate_update(read, coordinates, 1, params)?;
+    Ok((coordinates, conf_ids.first().copied().unwrap_or(-1)))
 }
 
 pub fn embed_multiple_confs(

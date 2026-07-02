@@ -111,10 +111,15 @@ fn sanitize_recompute_property_cache(
     step: crate::SanitizeStep,
     operation: &'static MoleculeOpSpec,
 ) -> Result<crate::ValenceAssignment, OperationError> {
-    let view = parts.read_parts_for_optional_blocks(topology.clone(), coordinates, properties)?;
-    let valence = MoleculeReadParts::from_molecule(&view)
-        .assign_valence_with_options(crate::ValenceModel::RdkitLike, strict)
-        .map_err(|source| sanitize_valence_error(operation, step, source))?;
+    let valence = parts.with_optional_block_read_parts(
+        topology.clone(),
+        coordinates,
+        properties,
+        |read| {
+            read.assign_valence_with_options(crate::ValenceModel::RdkitLike, strict)
+                .map_err(|source| sanitize_valence_error(operation, step, source))
+        },
+    )?;
     parts.set_valence_cache(valence.clone());
     Ok(valence)
 }
@@ -152,11 +157,14 @@ pub(super) fn run_sanitize_pipeline_on_topology(
     parts.clear_cache(SANITIZE_SPEC.needs_update());
     macro_rules! sanitize_read {
         ($read:ident => $body:expr) => {{
-            let view = parts
-                .read_parts_for_optional_blocks((*topology).clone(), coordinates, properties)
-                .expect("sanitize working topology should satisfy molecule invariants");
-            let $read = MoleculeReadParts::from_molecule(&view);
-            $body
+            parts
+                .with_optional_block_read_parts(
+                    (*topology).clone(),
+                    coordinates,
+                    properties,
+                    |$read| Ok::<_, OperationError>($body),
+                )
+                .expect("sanitize working topology should satisfy molecule invariants")
         }};
     }
 
@@ -520,8 +528,8 @@ pub(crate) fn sanitize_conjugation_assignment(
     // END RDKIT CPP FUNCTION MolOps::setConjugation
 }
 
-fn sanitize_mark_conjugated_atom_bonds<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+fn sanitize_mark_conjugated_atom_bonds(
+    molecule: MoleculeReadParts<'_>,
     adjacency: &crate::AdjacencyList,
     valence: &crate::ValenceAssignment,
     atom: AtomId,
@@ -582,8 +590,8 @@ fn sanitize_mark_conjugated_atom_bonds<'a>(
     // END RDKIT CPP FUNCTION markConjAtomBonds
 }
 
-fn sanitize_is_atom_conjugation_candidate<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+fn sanitize_is_atom_conjugation_candidate(
+    molecule: MoleculeReadParts<'_>,
     adjacency: &crate::AdjacencyList,
     valence: &crate::ValenceAssignment,
     atom: AtomId,
@@ -700,8 +708,8 @@ pub(crate) fn sanitize_hybridization_assignment(
     // END RDKIT CPP FUNCTION MolOps::setHybridization
 }
 
-fn sanitize_num_bonds_plus_lone_pairs<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+fn sanitize_num_bonds_plus_lone_pairs(
+    molecule: MoleculeReadParts<'_>,
     adjacency: &crate::AdjacencyList,
     valence: &crate::ValenceAssignment,
     atom: AtomId,
@@ -754,8 +762,8 @@ fn sanitize_num_bonds_plus_lone_pairs<'a>(
     // END RDKIT CPP FUNCTION numBondsPlusLonePairs
 }
 
-fn sanitize_count_atom_electrons<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+fn sanitize_count_atom_electrons(
+    molecule: MoleculeReadParts<'_>,
     adjacency: &crate::AdjacencyList,
     valence: &crate::ValenceAssignment,
     atom: AtomId,
@@ -803,8 +811,8 @@ fn sanitize_count_atom_electrons<'a>(
     Ok(result)
 }
 
-fn sanitize_valence_facts<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+fn sanitize_valence_facts(
+    molecule: MoleculeReadParts<'_>,
 ) -> Result<crate::ValenceAssignment, crate::ValenceError> {
     if let Some(valence) = &molecule.derived_cache().valence {
         Ok(valence.clone())
@@ -813,8 +821,8 @@ fn sanitize_valence_facts<'a>(
     }
 }
 
-pub(super) fn sanitize_adjacency<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+pub(super) fn sanitize_adjacency(
+    molecule: MoleculeReadParts<'_>,
 ) -> Result<crate::AdjacencyList, crate::ValenceError> {
     crate::AdjacencyList::try_from_topology(molecule.num_atoms(), molecule.bonds()).map_err(|_| {
         crate::ValenceError::UnsupportedBranch {
@@ -823,8 +831,8 @@ pub(super) fn sanitize_adjacency<'a>(
     })
 }
 
-fn sanitize_total_degree<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+fn sanitize_total_degree(
+    molecule: MoleculeReadParts<'_>,
     adjacency: &crate::AdjacencyList,
     valence: &crate::ValenceAssignment,
     atom: AtomId,
@@ -848,10 +856,7 @@ fn sanitize_total_valence(valence: &crate::ValenceAssignment, atom: AtomId) -> i
     valence.explicit_valence[atom.index()] + valence.implicit_hydrogens[atom.index()].max(0)
 }
 
-fn sanitize_atom_has_conjugated_bond<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
-    atom: AtomId,
-) -> bool {
+fn sanitize_atom_has_conjugated_bond(molecule: MoleculeReadParts<'_>, atom: AtomId) -> bool {
     molecule
         .bonds()
         .iter()
@@ -922,8 +927,8 @@ fn sanitize_cleanup_assignment(
     Ok(assignment)
 }
 
-fn sanitize_nitrogens_cleanup_assignment<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+fn sanitize_nitrogens_cleanup_assignment(
+    molecule: MoleculeReadParts<'_>,
     adjacency: &crate::AdjacencyList,
     assignment: &mut SanitizeCleanupAssignment,
 ) -> Result<(), crate::ValenceError> {
@@ -1016,8 +1021,8 @@ fn sanitize_nitrogens_cleanup_assignment<'a>(
     Ok(())
 }
 
-fn sanitize_phosphorus_cleanup_assignment<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+fn sanitize_phosphorus_cleanup_assignment(
+    molecule: MoleculeReadParts<'_>,
     adjacency: &crate::AdjacencyList,
     atom: AtomId,
     assignment: &mut SanitizeCleanupAssignment,
@@ -1088,8 +1093,8 @@ fn sanitize_phosphorus_cleanup_assignment<'a>(
     Ok(())
 }
 
-fn sanitize_halogen_cleanup_assignment<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+fn sanitize_halogen_cleanup_assignment(
+    molecule: MoleculeReadParts<'_>,
     adjacency: &crate::AdjacencyList,
     atom: AtomId,
     assignment: &mut SanitizeCleanupAssignment,
@@ -1147,8 +1152,8 @@ fn sanitize_halogen_cleanup_assignment<'a>(
     Ok(())
 }
 
-pub(super) fn sanitize_cleanup_explicit_valence<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+pub(super) fn sanitize_cleanup_explicit_valence(
+    molecule: MoleculeReadParts<'_>,
     adjacency: &crate::AdjacencyList,
     assignment: &SanitizeCleanupAssignment,
     atom: AtomId,
@@ -1283,11 +1288,11 @@ fn sanitize_organometallic_cleanup_assignment(
     // RDKit✔️✔️:   mol.updatePropertyCache(false);
     // RDKit✔️✔️:   std::vector<unsigned int> ranks(mol.getNumAtoms());
     // RDKit✔️✔️:   RDKit::Canon::rankMolAtoms(mol, ranks);
-    let ranks = MoleculeReadAccess::rank_mol_atoms(molecule).map_err(|_| {
-        crate::ValenceError::UnsupportedBranch {
+    let ranks = molecule
+        .rank_mol_atoms()
+        .map_err(|_| crate::ValenceError::UnsupportedBranch {
             reason: "organometallic cleanup canonical ranking failed",
-        }
-    })?;
+        })?;
     // RDKit✔️✔️:   std::sort(atom_ranks.begin(), atom_ranks.end(),
     // RDKit✔️✔️:             [](const std::pair<int, int> &p1, std::pair<int, int> &p2) -> bool {
     // RDKit✔️✔️:               return p1.second < p2.second;
@@ -1313,8 +1318,8 @@ fn sanitize_organometallic_cleanup_assignment(
     Ok(assignment)
 }
 
-pub(super) fn sanitize_metal_bond_cleanup_assignment<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+pub(super) fn sanitize_metal_bond_cleanup_assignment(
+    molecule: MoleculeReadParts<'_>,
     adjacency: &crate::AdjacencyList,
     valence: &crate::ValenceAssignment,
     ranks: &[usize],
@@ -1383,8 +1388,8 @@ pub(super) fn sanitize_metal_bond_cleanup_assignment<'a>(
     Ok(())
 }
 
-pub(super) fn sanitize_is_hypervalent_nonmetal<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+pub(super) fn sanitize_is_hypervalent_nonmetal(
+    molecule: MoleculeReadParts<'_>,
     adjacency: &crate::AdjacencyList,
     valence: &crate::ValenceAssignment,
     atom: AtomId,
@@ -1451,8 +1456,8 @@ fn sanitize_no_dative(atom: &crate::Atom) -> bool {
     matches!(atom.atomic_number(), 1 | 2 | 9 | 10)
 }
 
-pub(super) fn sanitize_organometallic_single_bonded_metals<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+pub(super) fn sanitize_organometallic_single_bonded_metals(
+    molecule: MoleculeReadParts<'_>,
     adjacency: &crate::AdjacencyList,
     assignment: &SanitizeOrganometallicCleanupAssignment,
     atom: AtomId,

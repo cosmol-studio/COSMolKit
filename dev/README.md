@@ -164,6 +164,12 @@ metadata later.
 Operation bodies receive a unified `OpParts` value through `#[mol_op_body(...)]`.
 Do not add per-operation parts structs or manual capability combinations.
 
+`OpParts` and its working molecule state must live in the private molecule-op
+runtime module. Operation body implementation functions must live in sibling
+modules, not in that runtime module. This is an architectural boundary, not a
+layout preference: Rust privacy must make `parts.working` and every other
+`OpParts` field unreachable from operation bodies.
+
 `OpParts` is a fast operation capability object:
 
 ```text
@@ -192,6 +198,18 @@ recompute_stereo()
 clear_cache(...)
 finish(...)
 ```
+
+Operation bodies must not recover a raw `Molecule` or raw `&Molecule` through
+helper APIs. Helpers called from operation bodies must accept narrowed inputs
+such as `MoleculeReadParts`, `&[Atom]`, `&[Bond]`, `CoordinateBlock`, or an
+explicit operation-local assignment/update plan. Do not add compatibility traits
+or generic helper signatures that also accept `&Molecule`.
+
+Whole-molecule algorithms used by operations must be split at the operation
+boundary: compute from read-only narrowed inputs, then apply returned block
+updates through `OpParts` begin/commit methods. Distance-geometry conformer
+generation is the reference pattern: operation bodies call read-only coordinate
+update helpers and write back only the returned `CoordinateBlock`.
 
 `OpParts` is wrapper-owned state migration and contract-recording machinery. Do
 not add chemistry, perception, sanitization, or operation-specific behavior to

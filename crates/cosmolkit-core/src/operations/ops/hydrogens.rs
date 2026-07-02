@@ -7,14 +7,18 @@ pub(super) fn with_hydrogens_impl(
     let mut topology = parts.begin_topology_mut()?;
     let mut coordinates = parts.begin_coordinates_mut()?;
     let mut properties = parts.begin_properties_mut()?;
-    let view =
-        parts.read_parts_for_blocks(topology.clone(), coordinates.clone(), properties.clone())?;
-    let assignment = MoleculeReadParts::from_molecule(&view)
-        .add_hs_assignment(&params)
-        .map_err(|source| OperationError::AddHydrogens {
-            operation: &WITH_HYDROGENS_SPEC,
-            source,
-        })?;
+    let assignment = parts.with_block_read_parts(
+        topology.clone(),
+        coordinates.clone(),
+        properties.clone(),
+        |read| {
+            read.add_hs_assignment(&params)
+                .map_err(|source| OperationError::AddHydrogens {
+                    operation: &WITH_HYDROGENS_SPEC,
+                    source,
+                })
+        },
+    )?;
 
     let changed = apply_add_hs_assignment(
         parts,
@@ -68,21 +72,28 @@ pub(super) fn apply_add_hs_assignment(
         || !assignment.atom_pdb_residue_info_updates.is_empty()
         || !assignment.clear_isotopic_hydrogen_properties.is_empty();
 
-    let view =
-        parts.read_parts_for_blocks(topology.clone(), coordinates.clone(), properties.clone())?;
-    let read = MoleculeReadParts::from_molecule(&view);
-    let coords_2d_to_append = read
-        .coordinates_2d()
-        .map(|coords| add_hs_terminal_coords_2d(read, assignment, coords));
-    let coords_2d_to_append = match coords_2d_to_append {
-        Some(coords) => Some(coords?),
-        None => None,
-    };
-    let conformer_coords_to_append = read
-        .conformers_3d()
-        .iter()
-        .map(|conformer| add_hs_terminal_coords_3d(read, assignment, conformer.coordinates()))
-        .collect::<Result<Vec<_>, _>>()?;
+    let (coords_2d_to_append, conformer_coords_to_append) = parts.with_block_read_parts(
+        topology.clone(),
+        coordinates.clone(),
+        properties.clone(),
+        |read| {
+            let coords_2d_to_append = read
+                .coordinates_2d()
+                .map(|coords| add_hs_terminal_coords_2d(read, assignment, coords));
+            let coords_2d_to_append = match coords_2d_to_append {
+                Some(coords) => Some(coords?),
+                None => None,
+            };
+            let conformer_coords_to_append = read
+                .conformers_3d()
+                .iter()
+                .map(|conformer| {
+                    add_hs_terminal_coords_3d(read, assignment, conformer.coordinates())
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((coords_2d_to_append, conformer_coords_to_append))
+        },
+    )?;
 
     for update in &assignment.atom_explicit_hydrogen_updates {
         let Some(atom) = topology.atoms.get_mut(update.atom.index()) else {
@@ -206,8 +217,8 @@ pub(super) fn add_hs_terminal_coords_3d(
     add_hs_terminal_coords(molecule, assignment, coords, true)
 }
 
-fn add_hs_terminal_coords<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+fn add_hs_terminal_coords(
+    molecule: MoleculeReadParts<'_>,
     assignment: &crate::hydrogens::AddHsAssignment,
     coords: &[[f64; 3]],
     is_3d: bool,
@@ -264,8 +275,8 @@ fn add_hs_terminal_coords<'a>(
     Ok(appended)
 }
 
-fn add_hs_virtual_adjacency<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+fn add_hs_virtual_adjacency(
+    molecule: MoleculeReadParts<'_>,
     hydrogens_to_add: usize,
 ) -> Vec<Vec<(usize, Option<crate::BondId>)>> {
     let mut adjacency = vec![Vec::new(); molecule.num_atoms() + hydrogens_to_add];
@@ -276,8 +287,8 @@ fn add_hs_virtual_adjacency<'a>(
     adjacency
 }
 
-pub(crate) fn add_hs_set_terminal_atom_coord<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+pub(crate) fn add_hs_set_terminal_atom_coord(
+    molecule: MoleculeReadParts<'_>,
     adjacency: &[Vec<(usize, Option<crate::BondId>)>],
     coords: &[[f64; 3]],
     atom_index: usize,
@@ -526,8 +537,8 @@ fn add_hs_rdkit_rb0(atomic_number: u8) -> f64 {
     // END RDKIT CPP FUNCTION PeriodicTable::getRb0 / atomicData::Rb0
 }
 
-fn add_hs_bond_is_pi_like<'a>(
-    molecule: impl MoleculeReadAccess<'a>,
+fn add_hs_bond_is_pi_like(
+    molecule: MoleculeReadParts<'_>,
     adjacency: &[Vec<(usize, Option<crate::BondId>)>],
     begin: usize,
     end: usize,
@@ -635,7 +646,7 @@ fn add_hs_angle(left: [f64; 3], right: [f64; 3]) -> f64 {
 #[mol_op_body(without_hydrogens, parts)]
 pub(super) fn without_hydrogens_impl(sanitize: bool) -> Result<OpOutcome, OperationError> {
     let params = crate::hydrogens::RemoveHsParams::default();
-    without_hydrogens_apply(parts, &params, sanitize)
+    without_hydrogens_apply(parts, &params, sanitize, &WITHOUT_HYDROGENS_SPEC)
 }
 
 #[mol_op_body(without_hydrogens_with_params, parts)]
@@ -643,25 +654,34 @@ pub(super) fn without_hydrogens_with_params_impl(
     params: crate::hydrogens::RemoveHsParams,
     sanitize: bool,
 ) -> Result<OpOutcome, OperationError> {
-    without_hydrogens_apply(parts, &params, sanitize)
+    without_hydrogens_apply(
+        parts,
+        &params,
+        sanitize,
+        &WITHOUT_HYDROGENS_WITH_PARAMS_SPEC,
+    )
 }
 
 fn without_hydrogens_apply(
     parts: &mut OpParts<'_>,
     params: &crate::hydrogens::RemoveHsParams,
     sanitize: bool,
+    operation: &'static MoleculeOpSpec,
 ) -> Result<OpOutcome, OperationError> {
-    let operation = parts.spec;
     let mut topology = parts.begin_topology_mut()?;
     let mut coordinates = parts.begin_coordinates_mut()?;
     let mut properties = parts.begin_properties_mut()?;
-    let view =
-        parts.read_parts_for_blocks(topology.clone(), coordinates.clone(), properties.clone())?;
-    let assignment = MoleculeReadParts::from_molecule(&view)
-        .remove_hs_assignment(params, sanitize)
-        .map_err(|source| OperationError::RemoveHydrogens { operation, source })?;
+    let assignment = parts.with_block_read_parts(
+        topology.clone(),
+        coordinates.clone(),
+        properties.clone(),
+        |read| {
+            read.remove_hs_assignment(params, sanitize)
+                .map_err(|source| OperationError::RemoveHydrogens { operation, source })
+        },
+    )?;
 
-    let mut changed = apply_remove_hs_assignment(parts, &mut topology, &assignment)?;
+    let mut changed = apply_remove_hs_assignment(&mut topology, &assignment, operation)?;
     let atoms_to_remove = assignment.atoms_to_remove.clone();
     if atoms_to_remove.is_empty() {
         let atom_count = topology.atoms.len();
@@ -679,8 +699,13 @@ fn without_hydrogens_apply(
         changed = true;
     }
     if assignment.sanitize_after_removal {
-        changed |=
-            sanitize_after_remove_hs_removal(parts, &mut topology, &coordinates, &properties)?;
+        changed |= sanitize_after_remove_hs_removal(
+            parts,
+            &mut topology,
+            &coordinates,
+            &properties,
+            operation,
+        )?;
     }
     parts.commit_topology(topology)?;
     parts.commit_coordinates(coordinates)?;
@@ -696,11 +721,10 @@ fn without_hydrogens_apply(
 }
 
 fn apply_remove_hs_assignment(
-    parts: &mut OpParts<'_>,
     topology: &mut TopologyBlock,
     assignment: &crate::hydrogens::RemoveHsAssignment,
+    operation: &'static MoleculeOpSpec,
 ) -> Result<bool, OperationError> {
-    let operation = parts.spec;
     let has_local_updates = !assignment.atom_explicit_hydrogen_updates.is_empty()
         || !assignment.atom_chirality_inversions.is_empty()
         || !assignment.atom_property_updates.is_empty()
@@ -846,6 +870,7 @@ fn sanitize_after_remove_hs_removal(
     topology: &mut TopologyBlock,
     coordinates: &CoordinateBlock,
     properties: &MoleculeProperties,
+    operation: &'static MoleculeOpSpec,
 ) -> Result<bool, OperationError> {
     // BEGIN RDKIT CPP BODY MolOps::removeHs sanitize-after-removal
     // RDKit✔️✔️:   if (!atomsToRemove.empty() && ps.removeNonimplicit && sanitize) {
@@ -857,7 +882,7 @@ fn sanitize_after_remove_hs_removal(
         Some(coordinates),
         Some(properties),
         crate::SanitizeOps::ALL,
-        &WITHOUT_HYDROGENS_SPEC,
+        operation,
     )?;
     // END RDKIT CPP BODY MolOps::removeHs sanitize-after-removal
     Ok(changed)

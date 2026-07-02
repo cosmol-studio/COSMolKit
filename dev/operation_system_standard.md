@@ -282,6 +282,12 @@ Weak operations may record only local stable-index topology edits.
 
 `OpParts` is the only mutable capability object for molecule operation bodies.
 
+`OpParts` is defined in the private molecule-operation runtime module. That
+module is the only module allowed to own or touch the internal working
+`Molecule`. `#[mol_op_body]` implementation functions live in sibling modules
+and receive only `&mut OpParts`; they must not share a module with the runtime
+state.
+
 It owns:
 
 ```text
@@ -303,6 +309,49 @@ Operation bodies may mutate molecule state only through `OpParts` methods or ref
 `OpParts` must not expose a whole-molecule read view that overlaps with an
 actively begun write-owned block. Read access to a write-owned block is allowed
 only through the local owned working value.
+
+Operation-body helpers must not accept raw `Molecule` or `&Molecule` as a
+convenience path. Use `MoleculeReadParts`, slices, coordinate blocks, or typed
+assignment/update plans instead. If an algorithm historically consumed a whole
+molecule, operations must use a two-stage shape: read-only calculation from
+narrowed inputs, followed by block-level writeback through `OpParts`.
+
+Canonical operation-body shape:
+
+```rust
+#[mol_op_body(with_example_state, parts)]
+fn with_example_state_impl(args: ExampleArgs) -> Result<OpOutcome, OperationError> {
+    let mut topology = parts.begin_topology_mut()?;
+    let plan = parts.with_topology_read_parts(topology.clone(), |read| {
+        crate::example_domain::compute_plan(read, &args).map_err(|source| {
+            OperationError::Example {
+                operation: &WITH_EXAMPLE_STATE_SPEC,
+                source,
+            }
+        })
+    })?;
+    crate::example_domain::apply_plan(&mut topology, &plan);
+    parts.commit_topology(topology)?;
+    parts.record_topology_edit(TopologyEditKind::Local)?;
+    parts.clear_cache(DerivedState::DRAWING);
+    Ok(OpOutcome::Changed)
+}
+```
+
+Forbidden operation-body shape:
+
+```rust
+fn with_example_state_impl(...) -> Result<OpOutcome, OperationError> {
+    let molecule = parts.working.clone();
+    helper_that_accepts_whole_molecule(&molecule);
+    Ok(OpOutcome::Changed)
+}
+```
+
+The operation source tree carries guard tests for this boundary. If a new
+operation appears to need direct `parts.working`, a raw molecule escape, or an
+operation body inside the runtime module, treat that as a design exception and
+stop for human-author approval instead of weakening the guards.
 
 ---
 

@@ -4,7 +4,9 @@ use crate::chemistry::forcefield::uff::atom_typer::add_atom_charge_flags_for_uff
 use crate::chemistry::forcefield::{
     ForceField, ForceFieldContrib, ForceFieldSnapshot, ForceFieldVec3,
 };
-use crate::{AtomSpec, BondSpec, Element, Molecule, ValenceModel, assign_valence};
+use crate::{
+    AtomSpec, BondSpec, Element, Molecule, ValenceModel, assign_valence, read_mol2_from_str,
+};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -3412,12 +3414,12 @@ fn embedder_center_in_volume_chiral_set_overload_delegates_indices() {
 #[test]
 fn embedder_bounds_fulfilled_matches_rdkit_tolerance_rule() {
     let mut mmat = BoundsMatrix::new(3);
-    mmat.set_lower(0, 1, 0.9);
-    mmat.set_upper(0, 1, 1.1);
-    mmat.set_lower(0, 2, 1.0);
-    mmat.set_upper(0, 2, 2.0);
-    mmat.set_lower(1, 2, 1.0);
-    mmat.set_upper(1, 2, 2.0);
+    mmat.set_lower(0, 1, 0.9).expect("set lower");
+    mmat.set_upper(0, 1, 1.1).expect("set upper");
+    mmat.set_lower(0, 2, 1.0).expect("set lower");
+    mmat.set_upper(0, 2, 2.0).expect("set upper");
+    mmat.set_lower(1, 2, 1.0).expect("set lower");
+    mmat.set_upper(1, 2, 2.0).expect("set upper");
     let atoms = [0, 1, 2];
     let ok_positions = vec![
         ForceFieldVec3::new(0.0, 0.0, 0.0),
@@ -3439,8 +3441,8 @@ fn embedder_bounds_fulfilled_matches_rdkit_tolerance_rule() {
 #[test]
 fn embedder_generate_initial_coords_random_branch_applies_coord_map_and_zeroes_higher_dimensions() {
     let mut mmat = BoundsMatrix::new(3);
-    mmat.set_lower(0, 1, 1.0);
-    mmat.set_upper(0, 1, 1.0);
+    mmat.set_lower(0, 1, 1.0).expect("set lower");
+    mmat.set_upper(0, 1, 1.0).expect("set upper");
     let chiral_centers: VectChiralSet = Vec::new();
     let tetrahedral_carbons: VectChiralSet = Vec::new();
     let eargs = EmbedArgs {
@@ -3483,8 +3485,8 @@ fn embedder_generate_initial_coords_random_branch_applies_coord_map_and_zeroes_h
 #[test]
 fn embedder_generate_initial_coords_distance_matrix_branch_uses_bounds_matrix() {
     let mut mmat = BoundsMatrix::new(2);
-    mmat.set_lower(0, 1, 2.0);
-    mmat.set_upper(0, 1, 2.0);
+    mmat.set_lower(0, 1, 2.0).expect("set lower");
+    mmat.set_upper(0, 1, 2.0).expect("set upper");
     let chiral_centers: VectChiralSet = Vec::new();
     let tetrahedral_carbons: VectChiralSet = Vec::new();
     let eargs = EmbedArgs {
@@ -3515,8 +3517,8 @@ fn embedder_generate_initial_coords_distance_matrix_branch_uses_bounds_matrix() 
 #[test]
 fn embedder_first_minimization_keeps_exact_satisfied_two_point_bounds() {
     let mut mmat = BoundsMatrix::new(2);
-    mmat.set_lower(0, 1, 1.0);
-    mmat.set_upper(0, 1, 1.0);
+    mmat.set_lower(0, 1, 1.0).expect("set lower");
+    mmat.set_upper(0, 1, 1.0).expect("set upper");
     let chiral_centers: VectChiralSet = Vec::new();
     let tetrahedral_carbons: VectChiralSet = Vec::new();
     let eargs = EmbedArgs {
@@ -3628,8 +3630,8 @@ fn embedder_check_chiral_centers_matches_rdkit_volume_bound_rule() {
 #[test]
 fn embedder_minimize_fourth_dimension_keeps_exact_satisfied_two_point_bounds() {
     let mut mmat = BoundsMatrix::new(2);
-    mmat.set_lower(0, 1, 1.0);
-    mmat.set_upper(0, 1, 1.0);
+    mmat.set_lower(0, 1, 1.0).expect("set lower");
+    mmat.set_upper(0, 1, 1.0).expect("set upper");
     let chiral_centers: VectChiralSet = Vec::new();
     let tetrahedral_carbons: VectChiralSet = Vec::new();
     let eargs = EmbedArgs {
@@ -3658,8 +3660,8 @@ fn embedder_minimize_fourth_dimension_keeps_exact_satisfied_two_point_bounds() {
 #[test]
 fn embedder_minimize_fourth_dimension_preserves_random_coord_map_fixed_points() {
     let mut mmat = BoundsMatrix::new(2);
-    mmat.set_lower(0, 1, 1.0);
-    mmat.set_upper(0, 1, 1.0);
+    mmat.set_lower(0, 1, 1.0).expect("set lower");
+    mmat.set_upper(0, 1, 1.0).expect("set upper");
     let chiral_centers: VectChiralSet = Vec::new();
     let tetrahedral_carbons: VectChiralSet = Vec::new();
     let eargs = EmbedArgs {
@@ -3689,8 +3691,8 @@ fn embedder_minimize_fourth_dimension_preserves_random_coord_map_fixed_points() 
 #[test]
 fn embedder_minimize_fourth_dimension_returns_false_after_timeout_deadline() {
     let mut mmat = BoundsMatrix::new(2);
-    mmat.set_lower(0, 1, 1.0);
-    mmat.set_upper(0, 1, 1.0);
+    mmat.set_lower(0, 1, 1.0).expect("set lower");
+    mmat.set_upper(0, 1, 1.0).expect("set upper");
     let chiral_centers: VectChiralSet = Vec::new();
     let tetrahedral_carbons: VectChiralSet = Vec::new();
     let eargs = EmbedArgs {
@@ -3715,8 +3717,8 @@ fn embedder_minimize_fourth_dimension_returns_false_after_timeout_deadline() {
 #[test]
 fn embedder_minimize_with_exp_torsions_plain_etdg_preserves_random_coord_map_fixed_points() {
     let mut mmat = BoundsMatrix::new(2);
-    mmat.set_lower(0, 1, 1.0);
-    mmat.set_upper(0, 1, 1.0);
+    mmat.set_lower(0, 1, 1.0).expect("set lower");
+    mmat.set_upper(0, 1, 1.0).expect("set upper");
     let chiral_centers: VectChiralSet = Vec::new();
     let tetrahedral_carbons: VectChiralSet = Vec::new();
     let details = CrystalFFDetails::default();
@@ -3748,8 +3750,8 @@ fn embedder_minimize_with_exp_torsions_plain_etdg_preserves_random_coord_map_fix
 #[test]
 fn embedder_minimize_with_exp_torsions_basic_knowledge_accepts_empty_cpci() {
     let mut mmat = BoundsMatrix::new(2);
-    mmat.set_lower(0, 1, 1.0);
-    mmat.set_upper(0, 1, 1.0);
+    mmat.set_lower(0, 1, 1.0).expect("set lower");
+    mmat.set_upper(0, 1, 1.0).expect("set upper");
     let chiral_centers: VectChiralSet = Vec::new();
     let tetrahedral_carbons: VectChiralSet = Vec::new();
     let details = CrystalFFDetails::default();
@@ -3919,8 +3921,8 @@ fn broad_bounds_matrix(size: usize) -> BoundsMatrix {
     let mut mmat = BoundsMatrix::new(size);
     for i in 1..size {
         for j in 0..i {
-            mmat.set_lower(i, j, 0.0);
-            mmat.set_upper(i, j, 100.0);
+            mmat.set_lower(i, j, 0.0).expect("set lower");
+            mmat.set_upper(i, j, 100.0).expect("set upper");
         }
     }
     mmat
@@ -4001,7 +4003,7 @@ fn embedder_final_chiral_checks_tracks_volume_failure() {
 #[test]
 fn embedder_final_chiral_checks_tracks_bounds_failure() {
     let mut mmat = broad_bounds_matrix(5);
-    mmat.set_upper(0, 1, 0.05);
+    mmat.set_upper(0, 1, 0.05).expect("set upper");
     let chiral_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(
         0, 1, 2, 3, 4, -100.0, 100.0,
     ));
@@ -4083,8 +4085,8 @@ fn embedder_final_chiral_checks_tracks_center_in_volume_failure() {
 fn embedder_embed_points_sets_default_iterations_and_runs_callback() {
     EMBED_POINTS_CALLBACK_COUNT.store(0, Ordering::SeqCst);
     let mut mmat = BoundsMatrix::new(2);
-    mmat.set_lower(0, 1, 1.0);
-    mmat.set_upper(0, 1, 1.0);
+    mmat.set_lower(0, 1, 1.0).expect("set lower");
+    mmat.set_upper(0, 1, 1.0).expect("set upper");
     let chiral_centers: VectChiralSet = Vec::new();
     let tetrahedral_carbons: VectChiralSet = Vec::new();
     let eargs = EmbedArgs {
@@ -4118,8 +4120,8 @@ fn embedder_embed_points_seed_zero_is_local_and_reproducible() {
     let mut mmat = BoundsMatrix::new(3);
     for i in 1..3 {
         for j in 0..i {
-            mmat.set_lower(i, j, 1.0);
-            mmat.set_upper(i, j, 2.0);
+            mmat.set_lower(i, j, 1.0).expect("set lower");
+            mmat.set_upper(i, j, 2.0).expect("set upper");
         }
     }
     let chiral_centers: VectChiralSet = Vec::new();
@@ -4528,7 +4530,7 @@ fn embedder_adjust_bounds_mat_from_coord_map_sets_exact_pair_distances() {
     coord_map.insert(0, ForceFieldVec3::new(3.0, 4.0, 0.0));
     coord_map.insert(1, ForceFieldVec3::new(3.0, 4.0, 12.0));
 
-    embedder_adjust_bounds_mat_from_coord_map(&mut mmat, 4, &coord_map);
+    embedder_adjust_bounds_mat_from_coord_map(&mut mmat, 4, &coord_map).expect("coord map bounds");
 
     assert_eq!(mmat.get_upper(0, 2), 5.0);
     assert_eq!(mmat.get_lower(0, 2), 5.0);
@@ -4545,12 +4547,14 @@ fn embedder_adjust_bounds_mat_from_coord_map_accepts_empty_and_singleton_maps() 
     let mut mmat = BoundsMatrix::new(2);
     let before = (mmat.get_upper(0, 1), mmat.get_lower(0, 1));
     let empty = BTreeMap::new();
-    embedder_adjust_bounds_mat_from_coord_map(&mut mmat, 2, &empty);
+    embedder_adjust_bounds_mat_from_coord_map(&mut mmat, 2, &empty)
+        .expect("empty coord map bounds");
     assert_eq!((mmat.get_upper(0, 1), mmat.get_lower(0, 1)), before);
 
     let mut singleton = BTreeMap::new();
     singleton.insert(0, ForceFieldVec3::new(1.0, 2.0, 3.0));
-    embedder_adjust_bounds_mat_from_coord_map(&mut mmat, 2, &singleton);
+    embedder_adjust_bounds_mat_from_coord_map(&mut mmat, 2, &singleton)
+        .expect("singleton coord map bounds");
     assert_eq!((mmat.get_upper(0, 1), mmat.get_lower(0, 1)), before);
 }
 
@@ -5542,12 +5546,12 @@ fn rdkit_minstd_seed_state(seed: i32) -> u64 {
 
 fn pick_random_dist_mat_bounds() -> BoundsMatrix {
     let mut mmat = BoundsMatrix::new(3);
-    mmat.set_lower(1, 0, 1.0);
-    mmat.set_upper(1, 0, 3.0);
-    mmat.set_lower(2, 0, 2.0);
-    mmat.set_upper(2, 0, 6.0);
-    mmat.set_lower(2, 1, 4.0);
-    mmat.set_upper(2, 1, 8.0);
+    mmat.set_lower(1, 0, 1.0).expect("set lower");
+    mmat.set_upper(1, 0, 3.0).expect("set upper");
+    mmat.set_lower(2, 0, 2.0).expect("set lower");
+    mmat.set_upper(2, 0, 6.0).expect("set upper");
+    mmat.set_lower(2, 1, 4.0).expect("set lower");
+    mmat.set_upper(2, 1, 8.0).expect("set upper");
     mmat
 }
 
@@ -5661,8 +5665,8 @@ fn pick_random_dist_mat_rejects_size_mismatch() {
 #[should_panic]
 fn pick_random_dist_mat_rejects_upper_bound_below_lower_bound() {
     let mut mmat = BoundsMatrix::new(2);
-    mmat.set_lower(1, 0, 3.0);
-    mmat.set_upper(1, 0, 2.0);
+    mmat.set_lower(1, 0, 3.0).expect("set lower");
+    mmat.set_upper(1, 0, 2.0).expect("set upper");
     let mut dist_mat = SymmMatrix::new(2);
     let mut rng = FixedDoubleRng::new(vec![0.0]);
 
@@ -5838,12 +5842,12 @@ fn compute_random_coords_rejects_non_positive_box_size() {
 #[test]
 fn construct_distgeom_forcefield_adds_distance_terms_for_basin_and_extra_weights() {
     let mut mmat = BoundsMatrix::new(3);
-    mmat.set_lower(1, 0, 1.0);
-    mmat.set_upper(1, 0, 2.0);
-    mmat.set_lower(2, 0, 1.0);
-    mmat.set_upper(2, 0, 2.0);
-    mmat.set_lower(2, 1, 1.0);
-    mmat.set_upper(2, 1, 4.0);
+    mmat.set_lower(1, 0, 1.0).expect("set lower");
+    mmat.set_upper(1, 0, 2.0).expect("set upper");
+    mmat.set_lower(2, 0, 1.0).expect("set lower");
+    mmat.set_upper(2, 0, 2.0).expect("set upper");
+    mmat.set_lower(2, 1, 1.0).expect("set lower");
+    mmat.set_upper(2, 1, 4.0).expect("set upper");
     let positions = vec![
         vec![0.0, 0.0, 0.0],
         vec![3.0, 0.0, 0.0],
@@ -6205,8 +6209,8 @@ fn distgeom_add13_terms_add_angle_improper_bounds_and_current_distance_contribs(
     };
     let mut atom_pairs = vec![false; 25];
     let mut mmat = BoundsMatrix::new(5);
-    mmat.set_lower(0, 3, 1.5);
-    mmat.set_upper(0, 3, 1.6);
+    mmat.set_lower(0, 3, 1.5).expect("set lower");
+    mmat.set_upper(0, 3, 1.6).expect("set upper");
     let is_improper_constrained = vec![false, true, false, false, false];
 
     add_13_terms(
@@ -6316,8 +6320,10 @@ fn distgeom_long_range_distance_constraints_skip_atom_pairs_and_use_bounds_or_ti
     let mut mmat = BoundsMatrix::new(4);
     for i in 1..4 {
         for j in 0..i {
-            mmat.set_lower(i, j, 0.5 + i as f64 + j as f64 * 0.1);
-            mmat.set_upper(i, j, 2.5 + i as f64 + j as f64 * 0.1);
+            mmat.set_lower(i, j, 0.5 + i as f64 + j as f64 * 0.1)
+                .expect("set lower");
+            mmat.set_upper(i, j, 2.5 + i as f64 + j as f64 * 0.1)
+                .expect("set upper");
         }
     }
     let details = CrystalFFDetails {
@@ -6396,8 +6402,10 @@ fn construct_3d_forcefield_bounds_matrix(num_atoms: usize) -> BoundsMatrix {
     let mut mmat = BoundsMatrix::new(num_atoms);
     for i in 1..num_atoms {
         for j in 0..i {
-            mmat.set_lower(i, j, 0.75 + i as f64 * 0.1 + j as f64 * 0.01);
-            mmat.set_upper(i, j, 3.25 + i as f64 * 0.1 + j as f64 * 0.01);
+            mmat.set_lower(i, j, 0.75 + i as f64 * 0.1 + j as f64 * 0.01)
+                .expect("set lower");
+            mmat.set_upper(i, j, 3.25 + i as f64 * 0.1 + j as f64 * 0.01)
+                .expect("set upper");
         }
     }
     mmat
@@ -6778,7 +6786,7 @@ fn run_set12_bounds(mol: &Molecule) -> (BoundsMatrix, ComputedData) {
 fn run_set13_bounds(mol: &Molecule) -> (BoundsMatrix, ComputedData) {
     let (mut mmat, mut accum_data) = run_set12_bounds(mol);
     let rinfo = ring_info_for_distgeom(mol).expect("ring info");
-    set_13_bounds(mol, &mut mmat, &mut accum_data, &rinfo);
+    set_13_bounds(mol, &mut mmat, &mut accum_data, &rinfo).expect("set13Bounds");
     (mmat, accum_data)
 }
 
@@ -6797,7 +6805,8 @@ fn run_set14_bounds(
         use_macrocycle_14config,
         force_trans_amides,
         &ring_info_for_distgeom(mol).expect("ring info"),
-    );
+    )
+    .expect("set14Bounds");
     (mmat, accum_data, dmat)
 }
 
@@ -6808,7 +6817,7 @@ fn run_set15_bounds(
 ) -> (BoundsMatrix, ComputedData, Vec<f64>) {
     let (mut mmat, mut accum_data, dmat) =
         run_set14_bounds(mol, use_macrocycle_14config, force_trans_amides);
-    set_15_bounds(mol, &mut mmat, &mut accum_data, &dmat);
+    set_15_bounds(mol, &mut mmat, &mut accum_data, &dmat).expect("set15Bounds");
     (mmat, accum_data, dmat)
 }
 
@@ -6889,7 +6898,8 @@ fn run_set14_same_ring_pass_only(
                         bid3,
                         &mut accum_data,
                         &mut mmat,
-                    );
+                    )
+                    .expect("macrocycle same-ring 1-4 bounds");
                 } else {
                     set_in_ring_14_bounds(
                         mol,
@@ -6901,10 +6911,11 @@ fn run_set14_same_ring_pass_only(
                         &dmat,
                         r_size,
                         &rinfo,
-                    );
+                    )
+                    .expect("in-ring 1-4 bounds");
                 }
             } else {
-                record_14_path(mol, bid1, bid2, bid3, &mut accum_data);
+                record_14_path(mol, bid1, bid2, bid3, &mut accum_data).expect("record14Path");
             }
             bid1 = bid2;
         }
@@ -7172,8 +7183,8 @@ fn bounds_matrix_stores_upper_in_upper_triangle_and_lower_in_lower_triangle() {
         n: 3,
     };
 
-    mmat.set_upper(2, 0, 4.2);
-    mmat.set_lower(2, 0, 1.8);
+    mmat.set_upper(2, 0, 4.2).expect("set upper");
+    mmat.set_lower(2, 0, 1.8).expect("set lower");
 
     assert_eq!(mmat.data[0][2], 4.2);
     assert_eq!(mmat.data[2][0], 1.8);
@@ -7186,8 +7197,8 @@ fn bounds_matrix_stores_upper_in_upper_triangle_and_lower_in_lower_triangle() {
 #[test]
 fn bounds_matrix_export_preserves_rdkit_raw_triangle_layout() {
     let mut mmat = BoundsMatrix::new(2);
-    mmat.set_upper(0, 1, 2.5);
-    mmat.set_lower(0, 1, 1.25);
+    mmat.set_upper(0, 1, 2.5).expect("set upper");
+    mmat.set_lower(0, 1, 1.25).expect("set lower");
 
     let raw = mmat.to_vec_vec();
     assert_eq!(raw, vec![vec![0.0, 2.5], vec![1.25, 0.0]]);
@@ -7196,45 +7207,51 @@ fn bounds_matrix_export_preserves_rdkit_raw_triangle_layout() {
 #[test]
 fn bounds_matrix_set_upper_if_better_only_tightens_within_current_interval() {
     let mut mmat = BoundsMatrix::new(2);
-    mmat.set_lower(0, 1, 1.2);
-    mmat.set_upper(0, 1, 3.4);
+    mmat.set_lower(0, 1, 1.2).expect("set lower");
+    mmat.set_upper(0, 1, 3.4).expect("set upper");
 
-    mmat.set_upper_if_better(0, 1, 2.6);
+    mmat.set_upper_if_better(0, 1, 2.6)
+        .expect("set upper if better");
     assert_eq!(mmat.get_upper(0, 1), 2.6);
 
-    mmat.set_upper_if_better(0, 1, 2.9);
+    mmat.set_upper_if_better(0, 1, 2.9)
+        .expect("set upper if better");
     assert_eq!(mmat.get_upper(0, 1), 2.6);
 
-    mmat.set_upper_if_better(0, 1, 1.0);
+    mmat.set_upper_if_better(0, 1, 1.0)
+        .expect("set upper if better");
     assert_eq!(mmat.get_upper(0, 1), 2.6);
 }
 
 #[test]
 fn bounds_matrix_set_lower_if_better_only_raises_within_current_interval() {
     let mut mmat = BoundsMatrix::new(2);
-    mmat.set_lower(0, 1, 1.2);
-    mmat.set_upper(0, 1, 3.4);
+    mmat.set_lower(0, 1, 1.2).expect("set lower");
+    mmat.set_upper(0, 1, 3.4).expect("set upper");
 
-    mmat.set_lower_if_better(0, 1, 2.1);
+    mmat.set_lower_if_better(0, 1, 2.1)
+        .expect("set lower if better");
     assert_eq!(mmat.get_lower(0, 1), 2.1);
 
-    mmat.set_lower_if_better(0, 1, 1.8);
+    mmat.set_lower_if_better(0, 1, 1.8)
+        .expect("set lower if better");
     assert_eq!(mmat.get_lower(0, 1), 2.1);
 
-    mmat.set_lower_if_better(0, 1, 3.6);
+    mmat.set_lower_if_better(0, 1, 3.6)
+        .expect("set lower if better");
     assert_eq!(mmat.get_lower(0, 1), 2.1);
 }
 
 #[test]
 fn bounds_matrix_check_valid_detects_crossed_bounds() {
     let mut valid = BoundsMatrix::new(3);
-    valid.set_lower(0, 2, 1.3);
-    valid.set_upper(0, 2, 2.8);
+    valid.set_lower(0, 2, 1.3).expect("set lower");
+    valid.set_upper(0, 2, 2.8).expect("set upper");
     assert!(valid.check_valid());
 
     let mut invalid = BoundsMatrix::new(3);
-    invalid.set_lower(0, 2, 2.9);
-    invalid.set_upper(0, 2, 2.1);
+    invalid.set_lower(0, 2, 2.9).expect("set lower");
+    invalid.set_upper(0, 2, 2.1).expect("set upper");
     assert!(!invalid.check_valid());
 }
 
@@ -7242,7 +7259,8 @@ fn bounds_matrix_check_valid_detects_crossed_bounds() {
 fn check_and_set_bounds_sets_uninitialized_pair_conservatively() {
     let mut mmat = BoundsMatrix::new(3);
 
-    mmat.check_and_set_bounds(0, 2, 1.2, 2.8);
+    mmat.check_and_set_bounds(0, 2, 1.2, 2.8)
+        .expect("check and set bounds");
 
     assert_eq!(mmat.get_lower(0, 2), 1.2);
     assert_eq!(mmat.get_upper(0, 2), 2.8);
@@ -7253,14 +7271,16 @@ fn check_and_set_bounds_sets_uninitialized_pair_conservatively() {
 #[test]
 fn check_and_set_bounds_only_tightens_lower_and_relaxes_upper_when_allowed() {
     let mut mmat = BoundsMatrix::new(3);
-    mmat.set_lower(0, 2, 1.8);
-    mmat.set_upper(0, 2, 2.2);
+    mmat.set_lower(0, 2, 1.8).expect("set lower");
+    mmat.set_upper(0, 2, 2.2).expect("set upper");
 
-    mmat.check_and_set_bounds(0, 2, 1.4, 2.6);
+    mmat.check_and_set_bounds(0, 2, 1.4, 2.6)
+        .expect("check and set bounds");
     assert_eq!(mmat.get_lower(0, 2), 1.4);
     assert_eq!(mmat.get_upper(0, 2), 2.6);
 
-    mmat.check_and_set_bounds(0, 2, 1.6, 2.0);
+    mmat.check_and_set_bounds(0, 2, 1.6, 2.0)
+        .expect("check and set bounds");
     assert_eq!(mmat.get_lower(0, 2), 1.4);
     assert_eq!(mmat.get_upper(0, 2), 2.6);
 }
@@ -7268,10 +7288,11 @@ fn check_and_set_bounds_only_tightens_lower_and_relaxes_upper_when_allowed() {
 #[test]
 fn check_and_set_bounds_with_mode_uses_overlap_when_ranges_are_consistent() {
     let mut mmat = BoundsMatrix::new(2);
-    mmat.set_lower(0, 1, 1.3);
-    mmat.set_upper(0, 1, 3.1);
+    mmat.set_lower(0, 1, 1.3).expect("set lower");
+    mmat.set_upper(0, 1, 3.1).expect("set upper");
 
-    mmat.check_and_set_bounds_with_mode(0, 1, 1.8, 2.4, true);
+    mmat.check_and_set_bounds_with_mode(0, 1, 1.8, 2.4, true)
+        .expect("check and set bounds");
 
     assert_eq!(mmat.get_lower(0, 1), 1.8);
     assert_eq!(mmat.get_upper(0, 1), 2.4);
@@ -7282,10 +7303,11 @@ fn check_and_set_bounds_with_mode_uses_overlap_when_ranges_are_consistent() {
 #[test]
 fn check_and_set_bounds_with_mode_falls_back_to_conservative_union_when_disjoint() {
     let mut mmat = BoundsMatrix::new(2);
-    mmat.set_lower(0, 1, 1.3);
-    mmat.set_upper(0, 1, 2.0);
+    mmat.set_lower(0, 1, 1.3).expect("set lower");
+    mmat.set_upper(0, 1, 2.0).expect("set upper");
 
-    mmat.check_and_set_bounds_with_mode(0, 1, 2.4, 3.0, true);
+    mmat.check_and_set_bounds_with_mode(0, 1, 2.4, 3.0, true)
+        .expect("check and set bounds");
 
     assert_eq!(mmat.get_lower(0, 1), 1.3);
     assert_eq!(mmat.get_upper(0, 1), 3.0);
@@ -7550,7 +7572,7 @@ fn set_lower_bound_vdw_scales_15_16_and_longer_paths_like_rdkit() {
     dmat[5 * mol.num_atoms()] = 5.0;
     dmat[6 * mol.num_atoms()] = 6.0;
 
-    set_lower_bound_vdw(&mol, &mut mmat, true, &dmat);
+    set_lower_bound_vdw(&mol, &mut mmat, true, &dmat).expect("setLowerBoundVDW");
 
     let vdw_sum = vdw_radius(6) + vdw_radius(6);
     assert!((mmat.get_lower(4, 0) - (VDW_SCALE_15 * vdw_sum)).abs() < 1e-9);
@@ -7576,7 +7598,7 @@ fn set_lower_bound_vdw_uses_hbond_floor_before_vdw_scaling() {
     dmat[2 * mol.num_atoms() + 1] = 6.0;
     dmat[1 * mol.num_atoms() + 2] = 6.0;
 
-    set_lower_bound_vdw(&mol, &mut mmat, true, &dmat);
+    set_lower_bound_vdw(&mol, &mut mmat, true, &dmat).expect("setLowerBoundVDW");
 
     assert!((mmat.get_lower(2, 1) - H_BOND_LENGTH).abs() < 1e-9);
 }
@@ -7651,7 +7673,8 @@ fn set_13_bounds_helper_doubles_tolerance_for_larger_sp2_ring_atoms() {
         &mut thiophene_mmat,
         &thiophene,
         thiophene_rings,
-    );
+    )
+    .expect("thiophene 1-3 bounds");
 
     let mut benzene_mmat = BoundsMatrix::new(benzene.num_atoms());
     let benzene_angle = set_ring_angle(&benzene, 1, 6);
@@ -7664,7 +7687,8 @@ fn set_13_bounds_helper_doubles_tolerance_for_larger_sp2_ring_atoms() {
         &mut benzene_mmat,
         &benzene,
         benzene_rings,
-    );
+    )
+    .expect("benzene 1-3 bounds");
 
     let thiophene_width = thiophene_mmat.get_upper(sulfur_neighbors[0], sulfur_neighbors[1])
         - thiophene_mmat.get_lower(sulfur_neighbors[0], sulfur_neighbors[1]);
@@ -8008,7 +8032,8 @@ fn set_macrocycle_two_in_same_ring_14_bounds_uses_cis_for_macrocycle_amide_path(
         &mut accum_data,
         &mut mmat,
         &dmat,
-    );
+    )
+    .expect("macrocycle two-in-same-ring bounds");
 
     let path = accum_data.paths14.last().expect("path");
     assert_eq!(path.kind, Path14Kind::Cis);
@@ -8057,7 +8082,8 @@ fn set_macrocycle_all_in_same_ring_14_bounds_uses_trans_plus_point_one_for_macro
     let bid1 = bond_between_idx_simple(&mol, atom1, nitrogen).expect("b1");
     let bid2 = bond_between_idx_simple(&mol, nitrogen, carbonyl).expect("b2");
     let bid3 = bond_between_idx_simple(&mol, carbonyl, atm4).expect("b3");
-    set_macrocycle_all_in_same_ring_14_bounds(&mol, bid1, bid2, bid3, &mut accum_data, &mut mmat);
+    set_macrocycle_all_in_same_ring_14_bounds(&mol, bid1, bid2, bid3, &mut accum_data, &mut mmat)
+        .expect("macrocycle all-in-same-ring bounds");
 
     let path = accum_data.paths14.last().expect("path");
     assert_eq!(path.kind, Path14Kind::Trans);
@@ -8080,7 +8106,8 @@ fn set_macrocycle_all_in_same_ring_14_bounds_uses_other_for_plain_macrocycle_cha
         find_same_ring_dispatch_triple(&mol, true).expect("macrocycle path");
 
     let before_paths = accum_data.paths14.len();
-    set_macrocycle_all_in_same_ring_14_bounds(&mol, bid1, bid2, bid3, &mut accum_data, &mut mmat);
+    set_macrocycle_all_in_same_ring_14_bounds(&mol, bid1, bid2, bid3, &mut accum_data, &mut mmat)
+        .expect("macrocycle all-in-same-ring bounds");
 
     let path = accum_data.paths14.get(before_paths).expect("new path");
     assert_eq!(path.kind, Path14Kind::Other);
@@ -8101,7 +8128,8 @@ fn set_chain_14_bounds_uses_defined_double_bond_stereo_for_alkenes() {
         &mut trans_accum,
         &mut trans_mmat,
         false,
-    );
+    )
+    .expect("chain trans bounds");
     let trans_path = trans_accum.paths14.last().expect("trans path");
     assert_eq!(trans_path.kind, Path14Kind::Trans);
     let trans_expected = compute_14_dist_trans(
@@ -8127,7 +8155,8 @@ fn set_chain_14_bounds_uses_defined_double_bond_stereo_for_alkenes() {
         &mut cis_accum,
         &mut cis_mmat,
         false,
-    );
+    )
+    .expect("chain cis bounds");
     let cis_path = cis_accum.paths14.last().expect("cis path");
     assert_eq!(cis_path.kind, Path14Kind::Cis);
     let cis_expected = compute_14_dist_cis(
@@ -8148,7 +8177,8 @@ fn set_chain_14_bounds_uses_ss_special_case() {
     let bid1 = bond_between_idx_simple(&mol, 0, 1).expect("0-1");
     let bid2 = bond_between_idx_simple(&mol, 1, 2).expect("1-2");
     let bid3 = bond_between_idx_simple(&mol, 2, 3).expect("2-3");
-    set_chain_14_bounds(&mol, bid1, bid2, bid3, &mut accum_data, &mut mmat, false);
+    set_chain_14_bounds(&mol, bid1, bid2, bid3, &mut accum_data, &mut mmat, false)
+        .expect("chain S-S bounds");
 
     let path = accum_data.paths14.last().expect("path");
     assert_eq!(path.kind, Path14Kind::Other);
@@ -8251,7 +8281,8 @@ fn set_chain_14_bounds_honors_force_trans_amides_for_secondary_amide_h_paths() {
         &mut accum_data,
         &mut mmat,
         true,
-    );
+    )
+    .expect("chain amide14 bounds");
     let amide14_path = accum_data.paths14.last().expect("amide14 path");
     assert_eq!(amide14_path.kind, Path14Kind::Trans);
     let expected_14 = compute_14_dist_trans(
@@ -8272,7 +8303,8 @@ fn set_chain_14_bounds_honors_force_trans_amides_for_secondary_amide_h_paths() {
         &mut accum_data,
         &mut mmat,
         true,
-    );
+    )
+    .expect("chain amide15 bounds");
     let amide15_path = accum_data.paths14.last().expect("amide15 path");
     assert_eq!(amide15_path.kind, Path14Kind::Cis);
     let expected_15 = compute_14_dist_cis(
@@ -8297,7 +8329,7 @@ fn record_14_path_marks_sp2_sp2_ring_paths_as_cis() {
     let bid1 = bond_between_idx_simple(&mol, 5, 0).expect("5-0");
     let bid2 = bond_between_idx_simple(&mol, 0, 1).expect("0-1");
     let bid3 = bond_between_idx_simple(&mol, 1, 2).expect("1-2");
-    record_14_path(&mol, bid1, bid2, bid3, &mut accum_data);
+    record_14_path(&mol, bid1, bid2, bid3, &mut accum_data).expect("record14Path");
 
     let path = accum_data.paths14.last().expect("path");
     assert_eq!(path.bid1, bid1);
@@ -8322,7 +8354,7 @@ fn record_14_path_uses_other_for_non_sp2_path_without_cis_flags() {
     let bid2 = bond_between_idx_simple(&mol, 1, 2).expect("1-2");
     let bid3 = bond_between_idx_simple(&mol, 2, 3).expect("2-3");
 
-    record_14_path(&mol, bid1, bid2, bid3, &mut accum_data);
+    record_14_path(&mol, bid1, bid2, bid3, &mut accum_data).expect("record14Path");
 
     let path = accum_data.paths14.last().expect("path");
     assert_eq!(path.kind, Path14Kind::Other);
@@ -8355,7 +8387,8 @@ fn set_in_ring_14_bounds_prefers_cis_for_small_sp2_ring_paths() {
         &dmat,
         6,
         &rinfo,
-    );
+    )
+    .expect("in-ring cis bounds");
 
     let path = accum_data.paths14.last().expect("path");
     assert_eq!(path.kind, Path14Kind::Cis);
@@ -8396,7 +8429,8 @@ fn set_two_in_same_ring_14_bounds_uses_trans_for_sp2_external_substituent_path()
         &mut accum_data,
         &mut mmat,
         &dmat,
-    );
+    )
+    .expect("two-in-same-ring bounds");
 
     let path = accum_data.paths14.last().expect("path");
     assert_eq!(path.kind, Path14Kind::Trans);
@@ -8438,7 +8472,8 @@ fn diff_ring14_and_share_ring14_delegate_to_in_ring_helper() {
         &dmat,
         0,
         &rinfo,
-    );
+    )
+    .expect("base in-ring bounds");
 
     let (mut diff_mmat, mut diff_accum) = run_set13_bounds(&mol);
     set_two_in_diff_ring_14_bounds(
@@ -8450,7 +8485,8 @@ fn diff_ring14_and_share_ring14_delegate_to_in_ring_helper() {
         &mut diff_mmat,
         &dmat,
         &rinfo,
-    );
+    )
+    .expect("diff-ring bounds");
 
     let (mut share_mmat, mut share_accum) = run_set13_bounds(&mol);
     set_share_ring_bond_14_bounds(
@@ -8462,7 +8498,8 @@ fn diff_ring14_and_share_ring14_delegate_to_in_ring_helper() {
         &mut share_mmat,
         &dmat,
         &rinfo,
-    );
+    )
+    .expect("share-ring-bond bounds");
 
     assert_eq!(
         diff_accum.paths14.last().map(|p| p.kind),
@@ -8584,7 +8621,8 @@ fn set_15_bounds_helper_returns_immediately_for_visited_14_pair() {
         bid2,
         bid3,
         Path14Kind::Other,
-    );
+    )
+    .expect("set15BoundsHelper visited skip");
 
     assert_eq!(mmat.get_lower(0, 4), before_lower);
     assert_eq!(mmat.get_upper(0, 4), before_upper);
@@ -8614,7 +8652,8 @@ fn set_15_bounds_helper_uses_vdw_fallback_and_marks_set15_atoms_for_unknown_path
         bid2,
         bid3,
         Path14Kind::Other,
-    );
+    )
+    .expect("set15BoundsHelper vdw fallback");
 
     let expected_lower = VDW_SCALE_15 * (vdw_radius(6) + vdw_radius(6));
     assert!((mmat.get_lower(0, 4) - expected_lower).abs() < 1e-12);
@@ -8648,7 +8687,8 @@ fn set_15_bounds_helper_uses_reversed_other_branch_formula_for_cis_path() {
         bid2,
         bid3,
         Path14Kind::Other,
-    );
+    )
+    .expect("set15BoundsHelper cis path");
 
     let d1 = accum_data.bond_lengths[bid1];
     let d2 = accum_data.bond_lengths[bid2];
@@ -8692,7 +8732,8 @@ fn set_15_bounds_helper_uses_reversed_other_branch_formula_for_trans_path() {
         bid2,
         bid3,
         Path14Kind::Other,
-    );
+    )
+    .expect("set15BoundsHelper trans path");
 
     let d1 = accum_data.bond_lengths[bid1];
     let d2 = accum_data.bond_lengths[bid2];
@@ -8733,7 +8774,7 @@ fn set_15_bounds_entrypoint_matches_two_helper_calls_for_single_path() {
         kind: Path14Kind::Other,
     });
     record_path_flag(&mut entry_accum.cis_paths, path_id);
-    set_15_bounds(&mol, &mut entry_mmat, &mut entry_accum, &dmat);
+    set_15_bounds(&mol, &mut entry_mmat, &mut entry_accum, &dmat).expect("set15Bounds");
 
     let (mut helper_mmat, mut helper_accum) = run_set13_bounds(&mol);
     helper_accum.paths14.push(Path14Configuration {
@@ -8754,7 +8795,8 @@ fn set_15_bounds_entrypoint_matches_two_helper_calls_for_single_path() {
         bid2,
         bid3,
         Path14Kind::Other,
-    );
+    )
+    .expect("set15BoundsHelper forward");
     set_15_bounds_helper(
         &mol,
         &mut helper_mmat,
@@ -8766,7 +8808,8 @@ fn set_15_bounds_entrypoint_matches_two_helper_calls_for_single_path() {
         bid2,
         bid1,
         Path14Kind::Other,
-    );
+    )
+    .expect("set15BoundsHelper reverse");
 
     assert_eq!(entry_mmat.get_lower(0, 4), helper_mmat.get_lower(0, 4));
     assert_eq!(entry_mmat.get_upper(0, 4), helper_mmat.get_upper(0, 4));
@@ -8859,10 +8902,11 @@ fn set_14_bounds_entrypoint_same_ring_matches_direct_helper() {
         &dmat,
         ring_size,
         &rinfo,
-    );
+    )
+    .expect("direct same-ring bounds");
 
-    let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2);
-    let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3);
+    let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2).expect("shared atom");
+    let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3).expect("shared atom");
     let aid1 = if mol.bonds()[bid1].begin().index() == atm2 {
         mol.bonds()[bid1].end().index()
     } else {
@@ -8894,10 +8938,11 @@ fn set_14_bounds_entrypoint_two_same_ring_matches_direct_helper() {
         &mut direct_accum,
         &mut direct_mmat,
         &dmat,
-    );
+    )
+    .expect("direct two-same-ring bounds");
 
-    let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2);
-    let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3);
+    let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2).expect("shared atom");
+    let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3).expect("shared atom");
     let aid1 = if mol.bonds()[bid1].begin().index() == atm2 {
         mol.bonds()[bid1].end().index()
     } else {
@@ -8930,10 +8975,11 @@ fn set_14_bounds_entrypoint_two_diff_ring_matches_direct_helper() {
         &mut direct_mmat,
         &dmat,
         &rinfo,
-    );
+    )
+    .expect("direct two-diff-ring bounds");
 
-    let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2);
-    let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3);
+    let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2).expect("shared atom");
+    let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3).expect("shared atom");
     let aid1 = if mol.bonds()[bid1].begin().index() == atm2 {
         mol.bonds()[bid1].end().index()
     } else {
@@ -8966,10 +9012,11 @@ fn set_14_bounds_entrypoint_share_ring_bond_matches_direct_helper() {
         &mut direct_mmat,
         &dmat,
         &rinfo,
-    );
+    )
+    .expect("direct share-ring-bond bounds");
 
-    let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2);
-    let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3);
+    let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2).expect("shared atom");
+    let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3).expect("shared atom");
     let aid1 = if mol.bonds()[bid1].begin().index() == atm2 {
         mol.bonds()[bid1].end().index()
     } else {
@@ -9000,10 +9047,11 @@ fn set_14_bounds_entrypoint_chain_matches_direct_helper() {
         &mut direct_accum,
         &mut direct_mmat,
         false,
-    );
+    )
+    .expect("direct chain bounds");
 
-    let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2);
-    let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3);
+    let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2).expect("shared atom");
+    let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3).expect("shared atom");
     let aid1 = if mol.bonds()[bid1].begin().index() == atm2 {
         mol.bonds()[bid1].end().index()
     } else {
@@ -9033,9 +9081,10 @@ fn set_14_bounds_entrypoint_macrocycle_matches_direct_helper() {
         bid3,
         &mut direct_accum,
         &mut direct_mmat,
-    );
-    let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2);
-    let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3);
+    )
+    .expect("direct macrocycle bounds");
+    let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2).expect("shared atom");
+    let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3).expect("shared atom");
     let atom1 = if mol.bonds()[bid1].begin().index() == atm2 {
         mol.bonds()[bid1].end().index()
     } else {
@@ -9121,6 +9170,22 @@ fn test_empty() {
     assert!(matches!(
         err,
         DgBoundsError::GenerationFailed(message) if message == "molecule has no atoms"
+    ));
+}
+
+#[test]
+fn dg_bounds_matrix_returns_error_instead_of_panicking_for_3rj7_re_complex() {
+    let mol2 = include_str!("../../../tests/fixtures/3rj7_ligand.mol2");
+    let record = read_mol2_from_str(mol2)
+        .expect("3rj7 mol2 should parse")
+        .expect("3rj7 mol2 should contain a molecule");
+
+    let err = dg_bounds_matrix(&record.molecule).expect_err("invalid bounds must be reported");
+
+    assert!(matches!(
+        err,
+        DgBoundsError::InvalidBounds(message)
+            if message.contains("bad lower bound") && message.contains("atom pair")
     ));
 }
 
@@ -9286,12 +9351,12 @@ fn triangle_smooth_shared_forwarding_matches_pointer_entrypoint() {
         data: vec![vec![0.0; 3]; 3],
         n: 3,
     };
-    via_ptr.set_lower(0, 1, 0.5);
-    via_ptr.set_upper(0, 1, 1.0);
-    via_ptr.set_lower(1, 2, 4.0);
-    via_ptr.set_upper(1, 2, 5.0);
-    via_ptr.set_lower(0, 2, 1.0);
-    via_ptr.set_upper(0, 2, 10.0);
+    via_ptr.set_lower(0, 1, 0.5).expect("set lower");
+    via_ptr.set_upper(0, 1, 1.0).expect("set upper");
+    via_ptr.set_lower(1, 2, 4.0).expect("set lower");
+    via_ptr.set_upper(1, 2, 5.0).expect("set upper");
+    via_ptr.set_lower(0, 2, 1.0).expect("set lower");
+    via_ptr.set_upper(0, 2, 10.0).expect("set upper");
 
     let mut via_shared = BoundsMatrix {
         data: via_ptr.data.clone(),
@@ -9311,12 +9376,12 @@ fn triangle_smooth_uses_rdkit_difference_formula_to_tighten_lower_bound() {
         data: vec![vec![0.0; 3]; 3],
         n: 3,
     };
-    mmat.set_lower(0, 1, 0.5);
-    mmat.set_upper(0, 1, 1.0);
-    mmat.set_lower(1, 2, 4.0);
-    mmat.set_upper(1, 2, 5.0);
-    mmat.set_lower(0, 2, 1.0);
-    mmat.set_upper(0, 2, 10.0);
+    mmat.set_lower(0, 1, 0.5).expect("set lower");
+    mmat.set_upper(0, 1, 1.0).expect("set upper");
+    mmat.set_lower(1, 2, 4.0).expect("set lower");
+    mmat.set_upper(1, 2, 5.0).expect("set upper");
+    mmat.set_lower(0, 2, 1.0).expect("set lower");
+    mmat.set_upper(0, 2, 10.0).expect("set upper");
 
     assert!(mmat.triangle_smooth(0.0));
 
@@ -9332,12 +9397,12 @@ fn triangle_smooth_reconciles_small_lower_upper_inversion_with_tolerance() {
         data: vec![vec![0.0; 3]; 3],
         n: 3,
     };
-    mmat.set_lower(0, 1, 2.01);
-    mmat.set_upper(0, 1, 2.0);
-    mmat.set_lower(0, 2, 0.1);
-    mmat.set_upper(0, 2, 100.0);
-    mmat.set_lower(1, 2, 0.1);
-    mmat.set_upper(1, 2, 100.0);
+    mmat.set_lower(0, 1, 2.01).expect("set lower");
+    mmat.set_upper(0, 1, 2.0).expect("set upper");
+    mmat.set_lower(0, 2, 0.1).expect("set lower");
+    mmat.set_upper(0, 2, 100.0).expect("set upper");
+    mmat.set_lower(1, 2, 0.1).expect("set lower");
+    mmat.set_upper(1, 2, 100.0).expect("set upper");
 
     assert!(mmat.triangle_smooth(0.01));
     assert_eq!(mmat.get_lower(0, 1), 2.01);
@@ -9350,12 +9415,12 @@ fn triangle_smooth_fails_when_lower_exceeds_upper_beyond_tolerance() {
         data: vec![vec![0.0; 3]; 3],
         n: 3,
     };
-    mmat.set_lower(0, 1, 2.2);
-    mmat.set_upper(0, 1, 2.0);
-    mmat.set_lower(0, 2, 0.1);
-    mmat.set_upper(0, 2, 100.0);
-    mmat.set_lower(1, 2, 0.1);
-    mmat.set_upper(1, 2, 100.0);
+    mmat.set_lower(0, 1, 2.2).expect("set lower");
+    mmat.set_upper(0, 1, 2.0).expect("set upper");
+    mmat.set_lower(0, 2, 0.1).expect("set lower");
+    mmat.set_upper(0, 2, 100.0).expect("set upper");
+    mmat.set_lower(1, 2, 0.1).expect("set lower");
+    mmat.set_upper(1, 2, 100.0).expect("set upper");
 
     assert!(!mmat.triangle_smooth(0.01));
 }

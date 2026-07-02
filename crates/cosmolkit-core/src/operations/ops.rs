@@ -18,95 +18,13 @@ use std::fmt;
 use cosmolkit_macros::{mol_op_body, molecule_ops};
 
 use crate::{
-    Atom, AtomId, Bond, DerivedState, InvariantError, Molecule, MoleculeProperties, SupportStatus,
+    AtomId, DerivedState, InvariantError, Molecule, MoleculeProperties, SupportStatus,
     TopologyTrust,
     invariants::enforce_molecule_invariants,
-    molecule::{CoordinateBlock, DerivedCacheBlock, TopologyBlock, TopologyMapping},
+    molecule::{CoordinateBlock, TopologyBlock, TopologyMapping},
 };
 
 pub(crate) use crate::read_parts::MoleculeReadParts;
-
-pub(crate) trait MoleculeReadAccess<'a>: Copy {
-    fn atoms(self) -> &'a [Atom];
-    fn bonds(self) -> &'a [Bond];
-    fn atom(self, atom: AtomId) -> Option<&'a Atom>;
-    fn num_atoms(self) -> usize;
-    fn derived_cache(self) -> &'a DerivedCacheBlock;
-    fn assign_valence_with_options(
-        self,
-        model: crate::ValenceModel,
-        strict: bool,
-    ) -> Result<crate::ValenceAssignment, crate::ValenceError>;
-    fn rank_mol_atoms(self) -> Result<Vec<usize>, crate::KekulizeError>;
-}
-
-impl<'a> MoleculeReadAccess<'a> for MoleculeReadParts<'a> {
-    fn atoms(self) -> &'a [Atom] {
-        MoleculeReadParts::atoms(self)
-    }
-
-    fn bonds(self) -> &'a [Bond] {
-        MoleculeReadParts::bonds(self)
-    }
-
-    fn atom(self, atom: AtomId) -> Option<&'a Atom> {
-        MoleculeReadParts::atom(self, atom)
-    }
-
-    fn num_atoms(self) -> usize {
-        MoleculeReadParts::num_atoms(self)
-    }
-
-    fn derived_cache(self) -> &'a DerivedCacheBlock {
-        MoleculeReadParts::derived_cache(self)
-    }
-
-    fn assign_valence_with_options(
-        self,
-        model: crate::ValenceModel,
-        strict: bool,
-    ) -> Result<crate::ValenceAssignment, crate::ValenceError> {
-        MoleculeReadParts::assign_valence_with_options(self, model, strict)
-    }
-
-    fn rank_mol_atoms(self) -> Result<Vec<usize>, crate::KekulizeError> {
-        MoleculeReadParts::rank_mol_atoms(self)
-    }
-}
-
-impl<'a> MoleculeReadAccess<'a> for &'a Molecule {
-    fn atoms(self) -> &'a [Atom] {
-        self.atoms()
-    }
-
-    fn bonds(self) -> &'a [Bond] {
-        self.bonds()
-    }
-
-    fn atom(self, atom: AtomId) -> Option<&'a Atom> {
-        self.atom(atom)
-    }
-
-    fn num_atoms(self) -> usize {
-        self.num_atoms()
-    }
-
-    fn derived_cache(self) -> &'a DerivedCacheBlock {
-        self.derived_cache()
-    }
-
-    fn assign_valence_with_options(
-        self,
-        model: crate::ValenceModel,
-        strict: bool,
-    ) -> Result<crate::ValenceAssignment, crate::ValenceError> {
-        crate::assign_valence_with_options(self, model, strict)
-    }
-
-    fn rank_mol_atoms(self) -> Result<Vec<usize>, crate::KekulizeError> {
-        crate::canon_rank::rank_mol_atoms(self)
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoleculeOpKind {
@@ -482,957 +400,6 @@ pub struct ParityMatrixEntry {
     pub feature: &'static crate::FeatureSpec,
     pub profile: &'static str,
     pub rdkit_version: Option<&'static str>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationTrace {
-    touched_blocks: BlockSet,
-    claimed_write_blocks: BlockSet,
-    recorded_topology_edit: TopologyEditKind,
-    remapped_blocks: BlockSet,
-    preserved_cache: DerivedState,
-    read_cache: DerivedState,
-    cleared_cache: DerivedState,
-    updated_cache: DerivedState,
-    outcome: Option<OpOutcome>,
-}
-
-impl OperationTrace {
-    #[must_use]
-    pub const fn touched_blocks(&self) -> BlockSet {
-        self.touched_blocks
-    }
-
-    #[must_use]
-    pub const fn read_cache(&self) -> DerivedState {
-        self.read_cache
-    }
-
-    #[must_use]
-    pub const fn remapped_blocks(&self) -> BlockSet {
-        self.remapped_blocks
-    }
-
-    #[must_use]
-    pub const fn preserved_cache(&self) -> DerivedState {
-        self.preserved_cache
-    }
-
-    #[must_use]
-    pub const fn cleared_cache(&self) -> DerivedState {
-        self.cleared_cache
-    }
-
-    #[must_use]
-    pub const fn updated_cache(&self) -> DerivedState {
-        self.updated_cache
-    }
-
-    #[must_use]
-    pub fn outcome(&self) -> Option<&OpOutcome> {
-        self.outcome.as_ref()
-    }
-}
-
-#[cfg(feature = "op-contracts")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BlockLifecycle {
-    Available,
-    Begun,
-    Committed,
-}
-
-#[cfg(feature = "op-contracts")]
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ContractSourceSnapshot {
-    atom_count: usize,
-    bond_endpoints: Vec<(AtomId, AtomId)>,
-}
-
-#[cfg(feature = "op-contracts")]
-impl ContractSourceSnapshot {
-    fn from_molecule(molecule: &Molecule) -> Self {
-        Self {
-            atom_count: molecule.num_atoms(),
-            bond_endpoints: molecule
-                .bonds()
-                .iter()
-                .map(|bond| (bond.begin(), bond.end()))
-                .collect(),
-        }
-    }
-
-    const fn num_atoms(&self) -> usize {
-        self.atom_count
-    }
-
-    fn num_bonds(&self) -> usize {
-        self.bond_endpoints.len()
-    }
-
-    fn bond_endpoint(&self, index: usize) -> Option<(AtomId, AtomId)> {
-        self.bond_endpoints.get(index).copied()
-    }
-}
-
-#[cfg(feature = "op-contracts")]
-enum ContractSource<'a> {
-    Borrowed(&'a Molecule),
-    Snapshot(ContractSourceSnapshot),
-}
-
-#[cfg(feature = "op-contracts")]
-impl ContractSource<'_> {
-    fn num_atoms(&self) -> usize {
-        match self {
-            Self::Borrowed(molecule) => molecule.num_atoms(),
-            Self::Snapshot(snapshot) => snapshot.num_atoms(),
-        }
-    }
-
-    fn num_bonds(&self) -> usize {
-        match self {
-            Self::Borrowed(molecule) => molecule.num_bonds(),
-            Self::Snapshot(snapshot) => snapshot.num_bonds(),
-        }
-    }
-
-    fn bond_endpoint(&self, index: usize) -> Option<(AtomId, AtomId)> {
-        match self {
-            Self::Borrowed(molecule) => molecule
-                .bonds()
-                .get(index)
-                .map(|bond| (bond.begin(), bond.end())),
-            Self::Snapshot(snapshot) => snapshot.bond_endpoint(index),
-        }
-    }
-}
-
-pub struct OpParts<'a> {
-    spec: &'static MoleculeOpSpec,
-    #[cfg(feature = "op-contracts")]
-    contract_source: ContractSource<'a>,
-    working: Molecule,
-    in_place_target: Option<&'a mut Molecule>,
-    topology_mapping: Option<TopologyMapping>,
-    #[cfg(feature = "op-contracts")]
-    topology_lifecycle: BlockLifecycle,
-    #[cfg(feature = "op-contracts")]
-    coordinates_lifecycle: BlockLifecycle,
-    #[cfg(feature = "op-contracts")]
-    properties_lifecycle: BlockLifecycle,
-
-    #[cfg(feature = "op-contracts")]
-    trace: OperationTrace,
-}
-
-impl<'a> OpParts<'a> {
-    pub(crate) fn new(
-        source: &'a Molecule,
-        spec: &'static MoleculeOpSpec,
-    ) -> Result<Self, OperationError> {
-        validate_semantic_preconditions(source, spec)?;
-        Ok(Self {
-            spec,
-            #[cfg(feature = "op-contracts")]
-            contract_source: ContractSource::Borrowed(source),
-            working: source.clone(),
-            in_place_target: None,
-            topology_mapping: None,
-            #[cfg(feature = "op-contracts")]
-            topology_lifecycle: BlockLifecycle::Available,
-            #[cfg(feature = "op-contracts")]
-            coordinates_lifecycle: BlockLifecycle::Available,
-            #[cfg(feature = "op-contracts")]
-            properties_lifecycle: BlockLifecycle::Available,
-            #[cfg(feature = "op-contracts")]
-            trace: OperationTrace {
-                touched_blocks: BlockSet::NONE,
-                claimed_write_blocks: BlockSet::NONE,
-                recorded_topology_edit: TopologyEditKind::None,
-                remapped_blocks: BlockSet::NONE,
-                preserved_cache: DerivedState::NONE,
-                read_cache: DerivedState::NONE,
-                cleared_cache: DerivedState::NONE,
-                updated_cache: DerivedState::NONE,
-                outcome: None,
-            },
-        })
-    }
-
-    pub(crate) fn new_in_place(
-        target: &'a mut Molecule,
-        spec: &'static MoleculeOpSpec,
-    ) -> Result<Self, OperationError> {
-        validate_semantic_preconditions(target, spec)?;
-        #[cfg(feature = "op-contracts")]
-        let contract_source =
-            ContractSource::Snapshot(ContractSourceSnapshot::from_molecule(target));
-        let working = std::mem::take(target);
-        Ok(Self {
-            spec,
-            #[cfg(feature = "op-contracts")]
-            contract_source,
-            working,
-            in_place_target: Some(target),
-            topology_mapping: None,
-            #[cfg(feature = "op-contracts")]
-            topology_lifecycle: BlockLifecycle::Available,
-            #[cfg(feature = "op-contracts")]
-            coordinates_lifecycle: BlockLifecycle::Available,
-            #[cfg(feature = "op-contracts")]
-            properties_lifecycle: BlockLifecycle::Available,
-            #[cfg(feature = "op-contracts")]
-            trace: OperationTrace {
-                touched_blocks: BlockSet::NONE,
-                claimed_write_blocks: BlockSet::NONE,
-                recorded_topology_edit: TopologyEditKind::None,
-                remapped_blocks: BlockSet::NONE,
-                preserved_cache: DerivedState::NONE,
-                read_cache: DerivedState::NONE,
-                cleared_cache: DerivedState::NONE,
-                updated_cache: DerivedState::NONE,
-                outcome: None,
-            },
-        })
-    }
-
-    // Agent guardrail:
-    // OpParts is wrapper-owned state migration and contract-recording machinery.
-    // Do not add chemistry, perception, sanitization, or operation-specific
-    // behavior here. Operation impl_fn bodies compute behavior themselves or
-    // call domain modules, then use OpParts only to read the working molecule,
-    // apply state changes, and record contract effects.
-    pub(crate) fn begin_topology_read(&self) -> Result<MoleculeReadParts<'_>, OperationError> {
-        self.validate_access_spec()?;
-        #[cfg(feature = "op-contracts")]
-        {
-            if !self.spec.access.read().contains(BlockSet::TOPOLOGY)
-                || self.spec.access.write().contains(BlockSet::TOPOLOGY)
-            {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "operation attempted to read topology outside its registry read access",
-                });
-            }
-        }
-        Ok(MoleculeReadParts::from_molecule(&self.working))
-    }
-
-    fn read_parts_for_topology(&self, topology: TopologyBlock) -> Result<Molecule, OperationError> {
-        self.read_parts_for_blocks(
-            topology,
-            self.working.coordinate_block().clone(),
-            self.working.properties().clone(),
-        )
-    }
-
-    fn read_parts_for_blocks(
-        &self,
-        topology: TopologyBlock,
-        coordinates: CoordinateBlock,
-        properties: MoleculeProperties,
-    ) -> Result<Molecule, OperationError> {
-        Molecule::from_operation_blocks(
-            topology,
-            coordinates,
-            properties,
-            self.working.derived_cache().clone(),
-            self.working.capabilities_block(),
-        )
-        .map_err(|failure| OperationError::InvariantViolation {
-            operation: self.spec,
-            failure,
-        })
-    }
-
-    fn read_parts_for_optional_blocks(
-        &self,
-        topology: TopologyBlock,
-        coordinates: Option<&CoordinateBlock>,
-        properties: Option<&MoleculeProperties>,
-    ) -> Result<Molecule, OperationError> {
-        self.read_parts_for_blocks(
-            topology,
-            coordinates
-                .cloned()
-                .unwrap_or_else(|| self.working.coordinate_block().clone()),
-            properties
-                .cloned()
-                .unwrap_or_else(|| self.working.properties().clone()),
-        )
-    }
-
-    pub(crate) fn begin_topology_mut(&mut self) -> Result<TopologyBlock, OperationError> {
-        self.begin_block_mut(BlockSet::TOPOLOGY)?;
-        #[cfg(feature = "op-contracts")]
-        {
-            self.topology_lifecycle = BlockLifecycle::Begun;
-        }
-        Ok(if self.in_place_target.is_some() {
-            self.working.take_topology_block_or_clone()
-        } else {
-            self.working.topology_block().clone()
-        })
-    }
-
-    pub(crate) fn commit_topology(
-        &mut self,
-        mut topology: TopologyBlock,
-    ) -> Result<(), OperationError> {
-        #[cfg(feature = "op-contracts")]
-        {
-            if self.topology_lifecycle != BlockLifecycle::Begun {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "topology block was not begun before commit",
-                });
-            }
-        }
-        topology.adjacency =
-            crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
-        self.record_mutation(BlockSet::TOPOLOGY);
-        self.working.replace_topology_block(topology);
-        #[cfg(feature = "op-contracts")]
-        {
-            self.topology_lifecycle = BlockLifecycle::Committed;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn begin_coordinates_mut(&mut self) -> Result<CoordinateBlock, OperationError> {
-        self.begin_block_mut(BlockSet::COORDINATES)?;
-        #[cfg(feature = "op-contracts")]
-        {
-            self.coordinates_lifecycle = BlockLifecycle::Begun;
-        }
-        Ok(if self.in_place_target.is_some() {
-            self.working.take_coordinate_block_or_clone()
-        } else {
-            self.working.coordinate_block().clone()
-        })
-    }
-
-    pub(crate) fn commit_coordinates(
-        &mut self,
-        coordinates: CoordinateBlock,
-    ) -> Result<(), OperationError> {
-        #[cfg(feature = "op-contracts")]
-        {
-            if self.coordinates_lifecycle != BlockLifecycle::Begun {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "coordinate block was not begun before commit",
-                });
-            }
-        }
-        self.record_mutation(BlockSet::COORDINATES);
-        self.working.replace_coordinate_block(coordinates);
-        #[cfg(feature = "op-contracts")]
-        {
-            self.coordinates_lifecycle = BlockLifecycle::Committed;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn begin_properties_mut(&mut self) -> Result<MoleculeProperties, OperationError> {
-        self.begin_block_mut(BlockSet::PROPERTIES)?;
-        #[cfg(feature = "op-contracts")]
-        {
-            self.properties_lifecycle = BlockLifecycle::Begun;
-        }
-        Ok(if self.in_place_target.is_some() {
-            self.working.take_properties_or_clone()
-        } else {
-            self.working.properties().clone()
-        })
-    }
-
-    pub(crate) fn commit_properties(
-        &mut self,
-        properties: MoleculeProperties,
-    ) -> Result<(), OperationError> {
-        #[cfg(feature = "op-contracts")]
-        {
-            if self.properties_lifecycle != BlockLifecycle::Begun {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "properties block was not begun before commit",
-                });
-            }
-        }
-        self.record_mutation(BlockSet::PROPERTIES);
-        self.working.replace_properties(properties);
-        #[cfg(feature = "op-contracts")]
-        {
-            self.properties_lifecycle = BlockLifecycle::Committed;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn record_topology_edit(
-        &mut self,
-        kind: TopologyEditKind,
-    ) -> Result<(), OperationError> {
-        #[cfg(feature = "op-contracts")]
-        {
-            if kind == TopologyEditKind::Local
-                && matches!(
-                    self.spec.topology_edit,
-                    TopologyEditKind::Appending
-                        | TopologyEditKind::Compacting
-                        | TopologyEditKind::Renumbering
-                        | TopologyEditKind::Merge
-                )
-            {
-                return Ok(());
-            }
-            if self.spec.topology_edit != kind {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "recorded topology edit does not match registry declaration",
-                });
-            }
-            self.trace.recorded_topology_edit = kind;
-        }
-        #[cfg(not(feature = "op-contracts"))]
-        {
-            let _ = kind;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn record_topology_mapping(&mut self, mapping: TopologyMapping) {
-        self.topology_mapping = Some(mapping);
-        self.record_remapped(self.spec.auto_remap);
-    }
-
-    /// Check that `state` is in `requires | recompute` (write permission).
-    /// Check that `state` is in `recompute` (write permission).
-    /// Panics with a clear message on violation — this is a programming error.
-    #[cfg(feature = "op-contracts")]
-    fn check_cache_write_permission(&self, state: DerivedState) {
-        let effects = self.spec.derived_effects;
-        let allowed = effects.recompute();
-        if !allowed.contains(state) {
-            panic!(
-                "cache write permission violation: operation `{}` attempted to write \
-                 derived state `{:?}` but only has `recompute({:?})` \
-                 permissions",
-                self.spec.method,
-                state,
-                effects.recompute(),
-            );
-        }
-    }
-
-    /// Check that every bit set in `states` is in `invalidate | recompute` (clear permission).
-    /// Panics with a clear message on violation.
-    #[cfg(feature = "op-contracts")]
-    fn check_cache_clear_permission(&self, states: DerivedState) {
-        let effects = self.spec.derived_effects;
-        let allowed = effects.invalidate().union(effects.recompute());
-        let forbidden = states.bits() & !allowed.bits();
-        if forbidden != 0 {
-            panic!(
-                "cache clear permission violation: operation `{}` attempted to clear \
-                 derived state bits `{:#010b}` but only has `invalidate({:?})` and `recompute({:?})` \
-                 permissions",
-                self.spec.method,
-                forbidden,
-                effects.invalidate(),
-                effects.recompute(),
-            );
-        }
-    }
-
-    /// Check that `state` is in `preserve` (read permission).
-    /// Panics with a clear message on violation.
-    #[cfg(feature = "op-contracts")]
-    fn check_cache_read_permission(&self, state: DerivedState) {
-        let effects = self.spec.derived_effects;
-        let allowed = effects.preserve();
-        if !allowed.contains(state) {
-            panic!(
-                "cache read permission violation: operation `{}` attempted to read \
-                 derived state `{:?}` but only has `preserve({:?})` \
-                 permissions",
-                self.spec.method,
-                state,
-                effects.preserve(),
-            );
-        }
-    }
-
-    pub(crate) fn set_rings_cache(&mut self, rings: crate::RingInfo) {
-        #[cfg(feature = "op-contracts")]
-        self.check_cache_write_permission(DerivedState::RINGS);
-        self.record_mutation(BlockSet::DERIVED_CACHE);
-        self.working.derived_cache_mut().rings = Some(rings);
-        self.record_updated_cache(DerivedState::RINGS);
-    }
-
-    pub(crate) fn set_ring_families_cache(&mut self, ring_families: crate::RingInfo) {
-        #[cfg(feature = "op-contracts")]
-        self.check_cache_write_permission(DerivedState::RING_FAMILIES);
-        self.record_mutation(BlockSet::DERIVED_CACHE);
-        self.working.derived_cache_mut().ring_families = Some(ring_families);
-        self.record_updated_cache(DerivedState::RING_FAMILIES);
-    }
-
-    pub(crate) fn set_valence_cache(&mut self, valence: crate::ValenceAssignment) {
-        #[cfg(feature = "op-contracts")]
-        self.check_cache_write_permission(DerivedState::VALENCE);
-        self.record_mutation(BlockSet::DERIVED_CACHE);
-        self.working.derived_cache_mut().valence = Some(valence);
-        self.record_updated_cache(DerivedState::VALENCE);
-    }
-
-    pub(crate) fn mark_aromaticity_valid(&mut self) {
-        #[cfg(feature = "op-contracts")]
-        self.check_cache_write_permission(DerivedState::AROMATICITY);
-        self.record_mutation(BlockSet::DERIVED_CACHE);
-        self.working.derived_cache_mut().aromaticity_valid = true;
-        self.record_updated_cache(DerivedState::AROMATICITY);
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn mark_stereo_handled(&mut self) {
-        #[cfg(feature = "op-contracts")]
-        self.check_cache_write_permission(DerivedState::STEREO);
-        self.record_mutation(BlockSet::DERIVED_CACHE);
-        self.working.derived_cache_mut().stereo_valid = true;
-        self.record_updated_cache(DerivedState::STEREO);
-    }
-
-    pub(crate) fn clear_cache(&mut self, states: DerivedState) {
-        #[cfg(feature = "op-contracts")]
-        {
-            self.check_cache_clear_permission(states);
-            self.trace.cleared_cache |= states;
-        }
-        if states.touches_cache() {
-            self.record_mutation(BlockSet::DERIVED_CACHE);
-            self.working.derived_cache_mut().invalidate(states);
-        }
-        #[cfg(not(feature = "op-contracts"))]
-        {
-            let _ = states;
-        }
-    }
-
-    pub(crate) fn prove_preserved(
-        &mut self,
-        states: DerivedState,
-        proof: PreservationProof,
-    ) -> Result<(), OperationError> {
-        #[cfg(feature = "op-contracts")]
-        {
-            if !self.spec.derived_effects.preserve().contains(states) {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "operation attempted to prove preservation for undeclared derived states",
-                });
-            }
-            match proof {
-                PreservationProof::LeafAtomAppend => {
-                    self.validate_leaf_atom_append_preservation()?
-                }
-            }
-            self.trace.preserved_cache |= states;
-        }
-        #[cfg(not(feature = "op-contracts"))]
-        {
-            let _ = states;
-            let _ = proof;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn finish(self, outcome: OpOutcome) -> Result<Molecule, OperationError> {
-        debug_assert!(self.in_place_target.is_none());
-        #[cfg(feature = "op-contracts")]
-        {
-            let mut this = self;
-            this.trace.outcome = Some(outcome);
-            this.validate_contract()?;
-            enforce_molecule_invariants(&this.working).map_err(|failure| {
-                OperationError::InvariantViolation {
-                    operation: this.spec,
-                    failure,
-                }
-            })?;
-            Ok(this.working)
-        }
-        #[cfg(not(feature = "op-contracts"))]
-        {
-            let _ = outcome;
-            enforce_molecule_invariants(&self.working).map_err(|failure| {
-                OperationError::InvariantViolation {
-                    operation: self.spec,
-                    failure,
-                }
-            })?;
-            Ok(self.working)
-        }
-    }
-
-    pub(crate) fn abort_in_place(mut self) {
-        let Some(target) = self.in_place_target.take() else {
-            return;
-        };
-        *target = self.working;
-    }
-
-    pub(crate) fn finish_in_place(self, outcome: OpOutcome) -> Result<(), OperationError> {
-        #[cfg(feature = "op-contracts")]
-        {
-            let mut this = self;
-            this.trace.outcome = Some(outcome);
-            let validation = this.validate_contract().and_then(|()| {
-                enforce_molecule_invariants(&this.working).map_err(|failure| {
-                    OperationError::InvariantViolation {
-                        operation: this.spec,
-                        failure,
-                    }
-                })
-            });
-            let target = this
-                .in_place_target
-                .take()
-                .ok_or(OperationError::InvalidInput {
-                    operation: this.spec,
-                    message: "in-place operation was finished without an in-place target",
-                })?;
-            *target = this.working;
-            validation
-        }
-        #[cfg(not(feature = "op-contracts"))]
-        {
-            let mut this = self;
-            let _ = outcome;
-            let validation = enforce_molecule_invariants(&this.working).map_err(|failure| {
-                OperationError::InvariantViolation {
-                    operation: this.spec,
-                    failure,
-                }
-            });
-            let target = this
-                .in_place_target
-                .take()
-                .ok_or(OperationError::InvalidInput {
-                    operation: this.spec,
-                    message: "in-place operation was finished without an in-place target",
-                })?;
-            *target = this.working;
-            validation
-        }
-    }
-
-    fn record_mutation(&mut self, block: BlockSet) {
-        #[cfg(feature = "op-contracts")]
-        {
-            assert!(
-                self.spec.access.can_write(block) && self.spec.may_mutate.contains(block),
-                "operation `{}` attempted to mutate a block outside its registry permissions",
-                self.spec.method
-            );
-            self.trace.touched_blocks = self.trace.touched_blocks.union(block);
-        }
-        #[cfg(not(feature = "op-contracts"))]
-        {
-            let _ = block;
-        }
-    }
-
-    #[cfg(feature = "op-contracts")]
-    fn validate_access_spec(&self) -> Result<(), OperationError> {
-        if self.spec.access.has_overlapping_read_write() {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "operation access declares the same block as both read and write",
-            });
-        }
-        if self.spec.access.write() != self.spec.may_mutate {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "operation access write set must match may_mutate",
-            });
-        }
-        Ok(())
-    }
-
-    #[cfg(not(feature = "op-contracts"))]
-    fn validate_access_spec(&self) -> Result<(), OperationError> {
-        Ok(())
-    }
-
-    fn begin_block_mut(&mut self, block: BlockSet) -> Result<(), OperationError> {
-        self.validate_access_spec()?;
-        #[cfg(feature = "op-contracts")]
-        {
-            if !self.spec.access.can_write(block) {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "operation attempted to write a block outside its registry access",
-                });
-            }
-            let lifecycle = if block == BlockSet::TOPOLOGY {
-                self.topology_lifecycle
-            } else if block == BlockSet::COORDINATES {
-                self.coordinates_lifecycle
-            } else if block == BlockSet::PROPERTIES {
-                self.properties_lifecycle
-            } else {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "operation attempted to begin an unknown block",
-                });
-            };
-            if lifecycle != BlockLifecycle::Available {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "operation attempted to begin the same writable block twice",
-                });
-            }
-            self.trace.claimed_write_blocks = self.trace.claimed_write_blocks.union(block);
-        }
-        #[cfg(not(feature = "op-contracts"))]
-        {
-            let _ = block;
-        }
-        Ok(())
-    }
-
-    fn record_updated_cache(&mut self, state: DerivedState) {
-        #[cfg(feature = "op-contracts")]
-        {
-            self.trace.updated_cache = self.trace.updated_cache.union(state);
-        }
-        #[cfg(not(feature = "op-contracts"))]
-        {
-            let _ = state;
-        }
-    }
-
-    #[cfg(feature = "op-contracts")]
-    fn validate_leaf_atom_append_preservation(&self) -> Result<(), OperationError> {
-        if self.spec.topology_edit != TopologyEditKind::Appending {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "leaf-append preservation proof requires an appending topology operation",
-            });
-        }
-        let Some(mapping) = &self.topology_mapping else {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "leaf-append preservation proof requires a topology mapping",
-            });
-        };
-        let old_atom_count = self.contract_source.num_atoms();
-        let old_bond_count = self.contract_source.num_bonds();
-        if mapping.atoms().old_to_new().len() != old_atom_count
-            || mapping.bonds().old_to_new().len() != old_bond_count
-            || mapping.atoms().new_to_old().len() != self.working.num_atoms()
-            || mapping.bonds().new_to_old().len() != self.working.num_bonds()
-        {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "leaf-append preservation proof has inconsistent mapping dimensions",
-            });
-        }
-        for (old_idx, mapped) in mapping.atoms().old_to_new().iter().enumerate() {
-            if *mapped != Some(AtomId::new(old_idx)) {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "leaf-append preservation proof requires identity mapping for old atoms",
-                });
-            }
-        }
-        for (old_idx, mapped) in mapping.bonds().old_to_new().iter().enumerate() {
-            if *mapped != Some(crate::BondId::new(old_idx)) {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "leaf-append preservation proof requires identity mapping for old bonds",
-                });
-            }
-        }
-        for old_idx in 0..old_bond_count {
-            let Some((before_begin, before_end)) = self.contract_source.bond_endpoint(old_idx)
-            else {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "leaf-append preservation proof found missing source bond endpoint",
-                });
-            };
-            let after = &self.working.bonds()[old_idx];
-            if before_begin != after.begin() || before_end != after.end() {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "leaf-append preservation proof detected changed old bond endpoints",
-                });
-            }
-        }
-
-        let mut appended_degrees =
-            vec![0usize; self.working.num_atoms().saturating_sub(old_atom_count)];
-        for bond in &self.working.bonds()[old_bond_count..] {
-            let begin_old = bond.begin().index() < old_atom_count;
-            let end_old = bond.end().index() < old_atom_count;
-            if begin_old == end_old {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "leaf-append preservation proof requires every appended bond to connect one old atom and one appended atom",
-                });
-            }
-            let appended_idx = if begin_old {
-                bond.end().index() - old_atom_count
-            } else {
-                bond.begin().index() - old_atom_count
-            };
-            if appended_idx >= appended_degrees.len() {
-                return Err(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "leaf-append preservation proof found appended bond referencing an out-of-range atom",
-                });
-            }
-            appended_degrees[appended_idx] += 1;
-        }
-        if appended_degrees.iter().any(|degree| *degree != 1) {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "leaf-append preservation proof requires every appended atom to be a degree-one leaf",
-            });
-        }
-        Ok(())
-    }
-
-    #[cfg(feature = "op-contracts")]
-    fn validate_contract(&self) -> Result<(), OperationError> {
-        self.validate_access_spec()?;
-        let effects = self.spec.derived_effects;
-        let recompute_ds = effects.recompute();
-        if recompute_ds.intersects(effects.preserve())
-            || recompute_ds.intersects(effects.invalidate())
-            || effects.preserve().intersects(effects.invalidate())
-        {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "operation derived_effects contains overlapping effect categories",
-            });
-        }
-
-        let updated_or_cleared = self.trace.cleared_cache | self.trace.updated_cache;
-        if !updated_or_cleared.contains(self.spec.needs_update()) {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "operation body did not clear or update every required cache state",
-            });
-        }
-
-        if !self
-            .trace
-            .preserved_cache
-            .contains(self.spec.derived_effects.preserve())
-        {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "operation body did not prove every declared preserved derived state",
-            });
-        }
-
-        if self.spec.requires_mapping == MappingRequirement::Required
-            && self.topology_mapping.is_none()
-        {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "strong topology operation did not record a topology mapping",
-            });
-        }
-
-        if !self.trace.remapped_blocks.contains(self.spec.auto_remap) {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "operation did not remap every registry-required block",
-            });
-        }
-
-        if self.trace.touched_blocks.contains(BlockSet::TOPOLOGY)
-            && self.spec.topology_edit != TopologyEditKind::None
-            && self.trace.recorded_topology_edit == TopologyEditKind::None
-        {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "operation touched topology without recording the registry topology edit",
-            });
-        }
-
-        Ok(())
-    }
-
-    fn record_remapped(&mut self, block: BlockSet) {
-        #[cfg(feature = "op-contracts")]
-        {
-            self.trace.remapped_blocks = self.trace.remapped_blocks.union(block);
-        }
-        #[cfg(not(feature = "op-contracts"))]
-        {
-            let _ = block;
-        }
-    }
-}
-
-fn validate_semantic_preconditions(
-    molecule: &Molecule,
-    spec: &'static MoleculeOpSpec,
-) -> Result<(), OperationError> {
-    let preconditions = spec.semantic_preconditions;
-    if preconditions.contains(SemanticPreconditionSet::TRUSTED_BOND_TOPOLOGY)
-        && molecule.num_atoms() != 0
-        && molecule.topology_trust() != TopologyTrust::TrustedGraph
-    {
-        return Err(OperationError::Precondition {
-            operation: spec,
-            requirement: SemanticPrecondition::TrustedBondTopology,
-            message: "operation requires a molecule with trusted bond topology",
-        });
-    }
-    if preconditions.contains(SemanticPreconditionSet::HYDROGEN_OWNERSHIP_REPRESENTED)
-        && !hydrogen_ownership_is_represented(molecule)
-    {
-        return Err(OperationError::Precondition {
-            operation: spec,
-            requirement: SemanticPrecondition::HydrogenOwnershipRepresented,
-            message: "explicit hydrogen atoms must be connected to their owning heavy atoms",
-        });
-    }
-    Ok(())
-}
-
-fn hydrogen_ownership_is_represented(molecule: &Molecule) -> bool {
-    if !molecule
-        .atoms()
-        .iter()
-        .any(|atom| atom.atomic_number() != 1)
-    {
-        return true;
-    }
-    molecule
-        .atoms()
-        .iter()
-        .filter(|atom| atom.atomic_number() == 1)
-        .all(|atom| {
-            molecule
-                .topology_block()
-                .adjacency
-                .neighbors_of(atom.id().index())
-                .iter()
-                .any(|neighbor| {
-                    molecule
-                        .atom(AtomId::new(neighbor.atom_index))
-                        .is_some_and(|neighbor_atom| neighbor_atom.atomic_number() != 1)
-                })
-        })
 }
 
 molecule_ops! {
@@ -1910,443 +877,18 @@ molecule_ops! {
     }
 }
 
+mod bodies;
 pub(crate) mod hydrogens;
+mod runtime;
 mod sanitize_pipeline;
 
-use self::{hydrogens::*, sanitize_pipeline::*};
+use self::runtime::OpParts;
+pub use self::runtime::OperationTrace;
+use self::{bodies::*, hydrogens::*, sanitize_pipeline::*};
 
 pub(crate) use self::sanitize_pipeline::{
     sanitize_conjugation_assignment, sanitize_hybridization_assignment,
 };
-
-#[mol_op_body(with_kekulized_bonds, parts)]
-fn with_kekulized_bonds_impl(clear_aromatic_flags: bool) -> Result<OpOutcome, OperationError> {
-    // RDKit✔️✔️: void kekulizeMol(ROMol &mol, bool clearAromaticFlags = false,
-    // RDKit✔️✔️:                  bool canonical = true) {
-    // RDKit✔️✔️:   auto &wmol = static_cast<RWMol &>(mol);
-    // RDKit✔️✔️:   MolOps::Kekulize(wmol, clearAromaticFlags, canonical);
-    // RDKit✔️✔️: }
-    let mut topology = parts.begin_topology_mut()?;
-    let view = parts.read_parts_for_topology(topology.clone())?;
-    let rings = MoleculeReadParts::from_molecule(&view)
-        .symmetrize_sssr()
-        .map_err(|source| OperationError::RingFinding {
-            operation: &WITH_KEKULIZED_BONDS_SPEC,
-            source,
-        })?;
-    parts.set_rings_cache(rings);
-    let view = parts.read_parts_for_topology(topology.clone())?;
-    let ring_info = MoleculeReadParts::from_molecule(&view)
-        .derived_cache()
-        .rings
-        .as_ref()
-        .expect("rings were recomputed immediately above")
-        .clone();
-    let assignment = MoleculeReadParts::from_molecule(&view)
-        .kekulize_assignment(Some(&ring_info), clear_aromatic_flags, true, 100)
-        .map_err(|source| OperationError::Kekulize {
-            operation: &WITH_KEKULIZED_BONDS_SPEC,
-            source,
-        })?;
-
-    let changed = crate::kekulize::apply_kekulize_assignment(&mut topology, &assignment);
-    let view = parts.read_parts_for_topology(topology.clone())?;
-    let valence = MoleculeReadParts::from_molecule(&view)
-        .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
-        .map_err(|source| OperationError::Valence {
-            operation: &WITH_KEKULIZED_BONDS_SPEC,
-            source,
-        })?;
-    parts.commit_topology(topology)?;
-    parts.record_topology_edit(TopologyEditKind::Local)?;
-    parts.clear_cache(DerivedState::AROMATICITY);
-    parts.set_valence_cache(valence);
-    parts.clear_cache(DerivedState::DRAWING | DerivedState::FINGERPRINT);
-    Ok(if changed {
-        OpOutcome::Changed
-    } else {
-        OpOutcome::NoOp {
-            reason: "kekulization assignment produced no effective topology-state change",
-        }
-    })
-}
-
-#[mol_op_body(assigned_valence, parts)]
-fn assigned_valence_impl() -> Result<OpOutcome, OperationError> {
-    let read = parts.begin_topology_read()?;
-    let valence = read
-        .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
-        .map_err(|source| OperationError::Valence {
-            operation: &ASSIGNED_VALENCE_SPEC,
-            source,
-        })?;
-    parts.set_valence_cache(valence);
-    Ok(OpOutcome::Changed)
-}
-
-#[mol_op_body(assigned_rings, parts)]
-fn assigned_rings_impl() -> Result<OpOutcome, OperationError> {
-    let read = parts.begin_topology_read()?;
-    let rings = read
-        .symmetrize_sssr()
-        .map_err(|source| OperationError::RingFinding {
-            operation: &ASSIGNED_RINGS_SPEC,
-            source,
-        })?;
-    parts.set_rings_cache(rings);
-    Ok(OpOutcome::Changed)
-}
-
-#[mol_op_body(assigned_ring_families, parts)]
-fn assigned_ring_families_impl() -> Result<OpOutcome, OperationError> {
-    let read = parts.begin_topology_read()?;
-    let ring_families =
-        read.find_ring_families(false, false)
-            .map_err(|source| OperationError::RingFinding {
-                operation: &ASSIGNED_RING_FAMILIES_SPEC,
-                source,
-            })?;
-    parts.set_ring_families_cache(ring_families);
-    Ok(OpOutcome::Changed)
-}
-
-#[mol_op_body(assigned_aromaticity, parts)]
-fn assigned_aromaticity_impl() -> Result<OpOutcome, OperationError> {
-    let mut topology = parts.begin_topology_mut()?;
-    let view = parts.read_parts_for_topology(topology.clone())?;
-    let read = MoleculeReadParts::from_molecule(&view);
-    let rings = read
-        .symmetrize_sssr()
-        .map_err(|source| OperationError::RingFinding {
-            operation: &ASSIGNED_AROMATICITY_SPEC,
-            source,
-        })?;
-    parts.set_rings_cache(rings);
-    let view = parts.read_parts_for_topology(topology.clone())?;
-    let assignment = MoleculeReadParts::from_molecule(&view)
-        .set_aromaticity(crate::AromaticityModel::Default)
-        .map_err(|source| OperationError::Aromaticity {
-            operation: &ASSIGNED_AROMATICITY_SPEC,
-            source,
-        })?;
-    for (atom, is_aromatic) in topology
-        .atoms
-        .iter_mut()
-        .zip(assignment.atom_aromatic.iter().copied())
-    {
-        atom.set_aromatic(is_aromatic);
-    }
-    for (bond, is_aromatic) in topology
-        .bonds
-        .iter_mut()
-        .zip(assignment.bond_aromatic.iter().copied())
-    {
-        bond.set_aromatic(is_aromatic);
-        if is_aromatic
-            && matches!(
-                bond.order(),
-                crate::BondOrder::Single | crate::BondOrder::Double
-            )
-        {
-            bond.set_order(crate::BondOrder::Aromatic);
-        }
-    }
-    let view = parts.read_parts_for_topology(topology.clone())?;
-    let valence = MoleculeReadParts::from_molecule(&view)
-        .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
-        .map_err(|source| OperationError::Valence {
-            operation: &ASSIGNED_AROMATICITY_SPEC,
-            source,
-        })?;
-    parts.commit_topology(topology)?;
-    parts.record_topology_edit(TopologyEditKind::Local)?;
-    parts.set_valence_cache(valence);
-    parts.mark_aromaticity_valid();
-    parts.clear_cache(DerivedState::DRAWING | DerivedState::FINGERPRINT);
-    Ok(OpOutcome::Changed)
-}
-
-#[mol_op_body(assigned_radicals, parts)]
-fn assigned_radicals_impl() -> Result<OpOutcome, OperationError> {
-    let mut topology = parts.begin_topology_mut()?;
-    let view = parts.read_parts_for_topology(topology.clone())?;
-    let read = MoleculeReadParts::from_molecule(&view);
-
-    let radicals = read
-        .assign_radicals()
-        .map_err(|source| OperationError::Valence {
-            operation: &ASSIGNED_RADICALS_SPEC,
-            source,
-        })?;
-
-    let changed = read
-        .atoms()
-        .iter()
-        .zip(radicals.iter().copied())
-        .any(|(atom, radical)| atom.radical_electrons() != radical);
-
-    if changed {
-        for (atom, radical) in topology.atoms.iter_mut().zip(radicals) {
-            atom.set_radical_electrons(radical);
-        }
-    }
-
-    let view = parts.read_parts_for_topology(topology.clone())?;
-    let valence = MoleculeReadParts::from_molecule(&view)
-        .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
-        .map_err(|source| OperationError::Valence {
-            operation: &ASSIGNED_RADICALS_SPEC,
-            source,
-        })?;
-    parts.commit_topology(topology)?;
-    parts.record_topology_edit(TopologyEditKind::Local)?;
-    parts.set_valence_cache(valence);
-    Ok(OpOutcome::Changed)
-}
-
-#[mol_op_body(with_2d_coordinates, parts)]
-fn with_2d_coordinates_impl(
-    params: crate::With2DCoordinatesParams,
-) -> Result<OpOutcome, OperationError> {
-    let (atoms, bonds) = {
-        let read = parts.begin_topology_read()?;
-        (read.atoms(), read.bonds())
-    };
-    let coords = crate::coordinates::compute_2d_coords_with_params(
-        atoms,
-        bonds,
-        &params.as_compute_params(),
-    )
-    .map_err(|source| match source {
-        crate::coordinates::Coordinate2DError::InvalidInput(message) => {
-            OperationError::InvalidInput {
-                operation: &WITH_2D_COORDINATES_SPEC,
-                message,
-            }
-        }
-        crate::coordinates::Coordinate2DError::UnsupportedFeature(_) => {
-            OperationError::UnsupportedFeature {
-                operation: &WITH_2D_COORDINATES_SPEC,
-                source: crate::UnsupportedFeatureError::from_spec(&crate::COORDINATE_2D_FEATURE),
-            }
-        }
-    })?;
-    let mut coord_block = parts.begin_coordinates_mut()?;
-    if params.clear_confs {
-        coord_block.conformers_2d.clear();
-    }
-    coord_block.conformers_2d.push(crate::Conformer2D::new(
-        coord_block.conformers_2d.len(),
-        coords,
-    ));
-    coord_block.source_coordinate_dim = Some(crate::CoordinateDimension::TwoD);
-    parts.commit_coordinates(coord_block)?;
-    parts.clear_cache(DerivedState::DRAWING);
-    Ok(OpOutcome::Changed)
-}
-
-#[mol_op_body(with_2d_coordinate_block, parts)]
-fn with_2d_coordinate_block_impl(coords: Vec<[f64; 2]>) -> Result<OpOutcome, OperationError> {
-    let atom_count = {
-        let read = parts.begin_topology_read()?;
-        read.num_atoms()
-    };
-    if coords.len() != atom_count {
-        return Err(OperationError::InvalidInput {
-            operation: &WITH_2D_COORDINATE_BLOCK_SPEC,
-            message: "2D coordinate row count mismatch",
-        });
-    }
-
-    let mut coord_block = parts.begin_coordinates_mut()?;
-    coord_block.conformers_2d.clear();
-    coord_block
-        .conformers_2d
-        .push(crate::Conformer2D::new(0, coords));
-    coord_block.source_coordinate_dim = Some(crate::CoordinateDimension::TwoD);
-    parts.commit_coordinates(coord_block)?;
-    parts.clear_cache(DerivedState::DRAWING);
-    Ok(OpOutcome::Changed)
-}
-
-fn source_coordinate_dim_for_block(
-    coord_block: &CoordinateBlock,
-) -> Option<crate::CoordinateDimension> {
-    if coord_block
-        .conformers_3d
-        .iter()
-        .any(crate::Conformer3D::is_3d)
-    {
-        Some(crate::CoordinateDimension::ThreeD)
-    } else if !coord_block.conformers_2d.is_empty() || !coord_block.conformers_3d.is_empty() {
-        Some(crate::CoordinateDimension::TwoD)
-    } else {
-        None
-    }
-}
-
-#[mol_op_body(with_3d_conformer, parts)]
-fn with_3d_conformer_impl(mut params: crate::EmbedParameters) -> Result<OpOutcome, OperationError> {
-    let source = parts.working.clone();
-    let (embedded, id) =
-        crate::distgeom::embed_molecule(&source, &mut params).map_err(|source| {
-            OperationError::DistanceGeometry {
-                operation: &WITH_3D_CONFORMER_SPEC,
-                source,
-            }
-        })?;
-    let _coord_block = parts.begin_coordinates_mut()?;
-    let coord_block = embedded.coordinate_block().clone();
-    parts.commit_coordinates(coord_block)?;
-    parts.clear_cache(DerivedState::DRAWING);
-    if id < 0 {
-        Ok(OpOutcome::NoOp {
-            reason: "RDKit EmbedMolecule returned -1",
-        })
-    } else {
-        Ok(OpOutcome::Changed)
-    }
-}
-
-#[mol_op_body(with_3d_coordinates, parts)]
-fn with_3d_coordinates_impl(
-    coords: Vec<[f64; 3]>,
-    conformer_index: usize,
-) -> Result<OpOutcome, OperationError> {
-    let atom_count = {
-        let read = parts.begin_topology_read()?;
-        read.num_atoms()
-    };
-    if coords.len() != atom_count {
-        return Err(OperationError::InvalidInput {
-            operation: &WITH_3D_COORDINATES_SPEC,
-            message: "3D conformer row count mismatch",
-        });
-    }
-
-    let mut coord_block = parts.begin_coordinates_mut()?;
-    if conformer_index >= coord_block.conformers_3d.len() {
-        return Err(OperationError::InvalidInput {
-            operation: &WITH_3D_COORDINATES_SPEC,
-            message: "3D conformer index out of range",
-        });
-    }
-    let existing = &coord_block.conformers_3d[conformer_index];
-    coord_block.conformers_3d[conformer_index] =
-        crate::Conformer3D::new(existing.id(), coords, existing.is_3d());
-    coord_block.source_coordinate_dim = source_coordinate_dim_for_block(&coord_block);
-    parts.commit_coordinates(coord_block)?;
-    parts.clear_cache(DerivedState::DRAWING);
-    Ok(OpOutcome::Changed)
-}
-
-#[mol_op_body(with_cleared_3d_conformers, parts)]
-fn with_cleared_3d_conformers_impl() -> Result<OpOutcome, OperationError> {
-    let mut coord_block = parts.begin_coordinates_mut()?;
-    let changed = !coord_block.conformers_3d.is_empty()
-        || matches!(
-            coord_block.source_coordinate_dim,
-            Some(crate::CoordinateDimension::ThreeD)
-        );
-    coord_block.conformers_3d.clear();
-    coord_block.source_coordinate_dim = source_coordinate_dim_for_block(&coord_block);
-    parts.commit_coordinates(coord_block)?;
-    parts.clear_cache(DerivedState::DRAWING);
-    Ok(if changed {
-        OpOutcome::Changed
-    } else {
-        OpOutcome::NoOp {
-            reason: "molecule has no 3D conformers to clear",
-        }
-    })
-}
-
-#[mol_op_body(with_3d_conformers, parts)]
-fn with_3d_conformers_impl(
-    num_confs: usize,
-    mut params: crate::EmbedParameters,
-) -> Result<OpOutcome, OperationError> {
-    let source = parts.working.clone();
-    let num_confs = u32::try_from(num_confs).map_err(|_| OperationError::InvalidInput {
-        operation: &WITH_3D_CONFORMERS_SPEC,
-        message: "num_confs does not fit in RDKit unsigned int parameter",
-    })?;
-    let (embedded, ids) = crate::distgeom::embed_multiple_confs(&source, num_confs, &mut params)
-        .map_err(|source| OperationError::DistanceGeometry {
-            operation: &WITH_3D_CONFORMERS_SPEC,
-            source,
-        })?;
-    let _coord_block = parts.begin_coordinates_mut()?;
-    let coord_block = embedded.coordinate_block().clone();
-    parts.commit_coordinates(coord_block)?;
-    parts.clear_cache(DerivedState::DRAWING);
-    if ids.is_empty() {
-        Ok(OpOutcome::NoOp {
-            reason: "RDKit EmbedMultipleConfs returned no conformer IDs",
-        })
-    } else {
-        Ok(OpOutcome::Changed)
-    }
-}
-
-#[mol_op_body(with_added_3d_conformer, parts)]
-fn with_added_3d_conformer_impl(
-    coords: Vec<[f64; 3]>,
-    is_3d: bool,
-) -> Result<OpOutcome, OperationError> {
-    let atom_count = {
-        let read = parts.begin_topology_read()?;
-        read.num_atoms()
-    };
-    if coords.len() != atom_count {
-        return Err(OperationError::InvalidInput {
-            operation: &WITH_ADDED_3D_CONFORMER_SPEC,
-            message: "3D conformer row count mismatch",
-        });
-    }
-
-    let mut coord_block = parts.begin_coordinates_mut()?;
-    let next_id = coord_block
-        .conformers_3d
-        .iter()
-        .map(crate::Conformer3D::id)
-        .max()
-        .map_or(0, |max_id| max_id + 1);
-    coord_block
-        .conformers_3d
-        .push(crate::Conformer3D::new(next_id, coords, is_3d));
-    coord_block.source_coordinate_dim = source_coordinate_dim_for_block(&coord_block);
-    parts.commit_coordinates(coord_block)?;
-    parts.clear_cache(DerivedState::DRAWING);
-    Ok(OpOutcome::Changed)
-}
-
-#[mol_op_body(with_only_3d_conformer, parts)]
-fn with_only_3d_conformer_impl(
-    coords: Vec<[f64; 3]>,
-    is_3d: bool,
-) -> Result<OpOutcome, OperationError> {
-    let atom_count = {
-        let read = parts.begin_topology_read()?;
-        read.num_atoms()
-    };
-    if coords.len() != atom_count {
-        return Err(OperationError::InvalidInput {
-            operation: &WITH_ONLY_3D_CONFORMER_SPEC,
-            message: "3D conformer row count mismatch",
-        });
-    }
-
-    let mut coord_block = parts.begin_coordinates_mut()?;
-    coord_block.conformers_3d.clear();
-    coord_block
-        .conformers_3d
-        .push(crate::Conformer3D::new(0, coords, is_3d));
-    coord_block.source_coordinate_dim = source_coordinate_dim_for_block(&coord_block);
-    parts.commit_coordinates(coord_block)?;
-    parts.clear_cache(DerivedState::DRAWING);
-    Ok(OpOutcome::Changed)
-}
 
 #[cfg(test)]
 mod tests {
@@ -2421,9 +963,142 @@ mod tests {
     fn molecule_read_parts_does_not_expose_raw_molecule_escape() {
         let ops_source = include_str!("ops.rs");
         let read_parts_source = include_str!("../model/read_parts.rs");
+        assert!(!ops_source.contains(concat!("Molecule", "ReadAccess")));
         assert!(!ops_source.contains(concat!("read_parts", ".", "molecule")));
         assert!(!ops_source.contains(concat!(".", "molecule", "()")));
+        assert!(!read_parts_source.contains(concat!("with_", "molecule", "_read")));
         assert!(!read_parts_source.contains(concat!("pub(crate) fn ", "molecule")));
+    }
+
+    fn op_body_sources() -> [(&'static str, &'static str); 3] {
+        [
+            ("bodies.rs", include_str!("ops/bodies.rs")),
+            ("hydrogens.rs", include_str!("ops/hydrogens.rs")),
+            (
+                "sanitize_pipeline.rs",
+                include_str!("ops/sanitize_pipeline.rs"),
+            ),
+        ]
+    }
+
+    fn assert_sources_do_not_contain(sources: &[(&str, &str)], forbidden: &[&str]) {
+        for (name, source) in sources {
+            for pattern in forbidden {
+                assert!(
+                    !source.contains(pattern),
+                    "{name} must not contain forbidden operation-body pattern `{pattern}`"
+                );
+            }
+        }
+    }
+
+    fn parts_method_names(source: &str) -> Vec<&str> {
+        let mut names = Vec::new();
+        let mut remaining = source;
+        while let Some(index) = remaining.find("parts.") {
+            let after = &remaining[index + "parts.".len()..];
+            let len = after
+                .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+                .unwrap_or(after.len());
+            if len > 0 {
+                names.push(&after[..len]);
+            }
+            remaining = &after[len..];
+        }
+        names
+    }
+
+    #[test]
+    fn op_parts_working_state_is_runtime_private() {
+        let ops_source = include_str!("ops.rs");
+        let runtime_source = include_str!("ops/runtime.rs");
+
+        assert!(ops_source.contains("mod runtime;"));
+        assert!(runtime_source.contains("pub struct OpParts"));
+        assert!(runtime_source.contains("working: Molecule"));
+        assert!(ops_source.contains(concat!("use self::runtime::", "OpParts;")));
+        assert!(!ops_source.contains(concat!("pub(crate) use self::runtime::", "OpParts")));
+        assert!(!ops_source.contains(concat!("pub use self::runtime::", "OpParts")));
+    }
+
+    #[test]
+    fn operation_body_modules_do_not_access_runtime_or_raw_molecule_escape_hatches() {
+        let sources = op_body_sources();
+        assert_sources_do_not_contain(
+            &sources,
+            &[
+                concat!("parts", ".", "working"),
+                concat!(".", "working"),
+                concat!("parts", ".", "spec"),
+                concat!("&", "Molecule", ","),
+                concat!("&", "Molecule", ")"),
+                concat!("&", "Molecule", "\n"),
+                concat!("Molecule", "::"),
+                concat!("MoleculeReadParts", "::", "from_molecule"),
+                concat!("from_", "operation", "_blocks"),
+                concat!("read_parts", "_for_", "topology"),
+                concat!("read_parts", "_for_", "blocks"),
+                concat!("read_parts", "_for_", "optional", "_blocks"),
+                concat!("OpParts", "::", "new"),
+                concat!("new_", "in_place"),
+            ],
+        );
+    }
+
+    #[test]
+    fn operation_body_parts_usage_stays_within_capability_methods() {
+        const ALLOWED: &[&str] = &[
+            "begin_topology_read",
+            "begin_topology_mut",
+            "commit_topology",
+            "begin_coordinates_mut",
+            "commit_coordinates",
+            "begin_properties_mut",
+            "commit_properties",
+            "record_topology_edit",
+            "record_topology_mapping",
+            "clear_cache",
+            "set_rings_cache",
+            "set_ring_families_cache",
+            "set_valence_cache",
+            "mark_aromaticity_valid",
+            "prove_preserved",
+            "with_topology_read_parts",
+            "with_block_read_parts",
+            "with_optional_block_read_parts",
+        ];
+
+        for (source_name, source) in op_body_sources() {
+            for method in parts_method_names(source) {
+                assert!(
+                    ALLOWED.contains(&method),
+                    "{source_name} uses non-capability OpParts method `{method}`"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn distgeom_operation_bodies_use_coordinate_update_boundary() {
+        let bodies_source = include_str!("ops/bodies.rs");
+        assert!(bodies_source.contains("embed_molecule_coordinate_update"));
+        assert!(bodies_source.contains("embed_multiple_confs_coordinate_update"));
+        assert!(!bodies_source.contains(concat!("embed_", "molecule", "(")));
+        assert!(!bodies_source.contains(concat!("embed_", "multiple", "_confs", "(")));
+        assert!(!bodies_source.contains(concat!("working", ".", "clone", "()")));
+    }
+
+    #[test]
+    fn mol_op_body_functions_live_outside_runtime_module() {
+        let runtime_source = include_str!("ops/runtime.rs");
+        let bodies_source = include_str!("ops/bodies.rs");
+        let hydrogens_source = include_str!("ops/hydrogens.rs");
+        let sanitize_source = include_str!("ops/sanitize_pipeline.rs");
+
+        assert!(!runtime_source.contains("#[mol_op_body"));
+        assert!(bodies_source.contains("#[mol_op_body"));
+        assert!(hydrogens_source.contains("#[mol_op_body"));
+        assert!(sanitize_source.contains("#[mol_op_body"));
     }
 
     #[cfg(feature = "op-contracts")]
@@ -3908,7 +2583,8 @@ mod tests {
             .add_bond(crate::BondSpec::new(a1, a3, crate::BondOrder::Single))
             .unwrap();
         let molecule = builder.build().unwrap();
-        let adjacency = sanitize_adjacency(&molecule).unwrap();
+        let read = MoleculeReadParts::from_molecule(&molecule);
+        let adjacency = sanitize_adjacency(read).unwrap();
 
         let incident = sanitize_cleanup_incident_bonds(&adjacency, a1);
 
@@ -3936,7 +2612,8 @@ mod tests {
             ))
             .unwrap();
         let molecule = builder.build().unwrap();
-        let adjacency = sanitize_adjacency(&molecule).unwrap();
+        let read = MoleculeReadParts::from_molecule(&molecule);
+        let adjacency = sanitize_adjacency(read).unwrap();
         let mut assignment = SanitizeCleanupAssignment {
             atom_formal_charges: molecule
                 .atoms()
@@ -3948,8 +2625,7 @@ mod tests {
         assignment.bond_orders[oxygen_bond.index()] = crate::BondOrder::Single;
 
         let valence =
-            sanitize_cleanup_explicit_valence(&molecule, &adjacency, &assignment, nitrogen)
-                .unwrap();
+            sanitize_cleanup_explicit_valence(read, &adjacency, &assignment, nitrogen).unwrap();
 
         assert_eq!(valence, 2);
     }
@@ -4125,11 +2801,12 @@ mod tests {
             ))
             .unwrap();
         let molecule = builder.build().unwrap();
-        let adjacency = sanitize_adjacency(&molecule).unwrap();
-        let valence = molecule
+        let read = MoleculeReadParts::from_molecule(&molecule);
+        let adjacency = sanitize_adjacency(read).unwrap();
+        let valence = read
             .assign_valence_with_options(crate::ValenceModel::RdkitLike, false)
             .unwrap();
-        let ranks = molecule.rank_mol_atoms().unwrap();
+        let ranks = read.rank_mol_atoms().unwrap();
         let mut assignment = SanitizeOrganometallicCleanupAssignment {
             bond_orders: molecule.bonds().iter().map(crate::Bond::order).collect(),
             bond_endpoints: molecule
@@ -4140,7 +2817,7 @@ mod tests {
         };
 
         sanitize_metal_bond_cleanup_assignment(
-            &molecule,
+            read,
             &adjacency,
             &valence,
             &ranks,
@@ -4188,14 +2865,15 @@ mod tests {
             aromatic_neighbors.push(carbon);
         }
         let aromatic = aromatic_builder.build().unwrap();
-        let aromatic_adj = sanitize_adjacency(&aromatic).unwrap();
-        let aromatic_valence = aromatic
+        let aromatic_read = MoleculeReadParts::from_molecule(&aromatic);
+        let aromatic_adj = sanitize_adjacency(aromatic_read).unwrap();
+        let aromatic_valence = aromatic_read
             .assign_valence_with_options(crate::ValenceModel::RdkitLike, false)
             .unwrap();
 
         assert!(
             sanitize_is_hypervalent_nonmetal(
-                &aromatic,
+                aromatic_read,
                 &aromatic_adj,
                 &aromatic_valence,
                 sulfur_atom
@@ -4214,19 +2892,15 @@ mod tests {
             ))
             .unwrap();
         let metal_molecule = metal_builder.build().unwrap();
-        let metal_adj = sanitize_adjacency(&metal_molecule).unwrap();
-        let metal_valence = metal_molecule
+        let metal_read = MoleculeReadParts::from_molecule(&metal_molecule);
+        let metal_adj = sanitize_adjacency(metal_read).unwrap();
+        let metal_valence = metal_read
             .assign_valence_with_options(crate::ValenceModel::RdkitLike, false)
             .unwrap();
 
         assert!(
-            !sanitize_is_hypervalent_nonmetal(
-                &metal_molecule,
-                &metal_adj,
-                &metal_valence,
-                metal_atom
-            )
-            .unwrap()
+            !sanitize_is_hypervalent_nonmetal(metal_read, &metal_adj, &metal_valence, metal_atom)
+                .unwrap()
         );
     }
 
@@ -4260,7 +2934,8 @@ mod tests {
             ))
             .unwrap();
         let molecule = builder.build().unwrap();
-        let adjacency = sanitize_adjacency(&molecule).unwrap();
+        let read = MoleculeReadParts::from_molecule(&molecule);
+        let adjacency = sanitize_adjacency(read).unwrap();
         let mut assignment = SanitizeOrganometallicCleanupAssignment {
             bond_orders: molecule.bonds().iter().map(crate::Bond::order).collect(),
             bond_endpoints: molecule
@@ -4272,7 +2947,7 @@ mod tests {
         assignment.bond_orders[rewritten_bond.index()] = crate::BondOrder::Dative;
 
         let metals =
-            sanitize_organometallic_single_bonded_metals(&molecule, &adjacency, &assignment, donor);
+            sanitize_organometallic_single_bonded_metals(read, &adjacency, &assignment, donor);
 
         assert_eq!(metals, vec![metal_single]);
         assert_eq!(keep_bond.index(), 0);
@@ -5076,9 +3751,14 @@ mod tests {
             crate::AtomId::new(0),
             crate::AtomSpec::new(crate::Element::C),
         ));
-        let view = parts.read_parts_for_topology(topology.clone()).unwrap();
-        let valence = MoleculeReadParts::from_molecule(&view)
-            .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
+        let valence = parts
+            .with_topology_read_parts(topology.clone(), |read| {
+                read.assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
+                    .map_err(|source| OperationError::Valence {
+                        operation: &WITH_KEKULIZED_BONDS_SPEC,
+                        source,
+                    })
+            })
             .unwrap();
         parts.commit_topology(topology).unwrap();
         parts.record_topology_edit(TopologyEditKind::Local).unwrap();

@@ -1,5 +1,5 @@
 use crate::{
-    AdjacencyList, Atom, AtomId, Bond, Molecule, MoleculeProperties,
+    AdjacencyList, Atom, AtomId, Bond, Molecule, MoleculeCapabilities, MoleculeProperties,
     molecule::{CoordinateBlock, DerivedCacheBlock, TopologyBlock},
     sgroup::SubstanceGroup,
     stereo::StereoGroup,
@@ -93,11 +93,9 @@ impl<'a> MoleculeReadParts<'a> {
         self.molecule.derived_cache()
     }
 
-    fn with_molecule_read<R>(self, f: impl FnOnce(&Molecule) -> R) -> R {
-        let _ = (self, f);
-        panic!(
-            "MoleculeReadParts is the registered-operation read capability surface. Raw &Molecule escape is forbidden by the current ops design. Add narrow accessors or explicit dependency plumbing instead of using with_molecule_read()."
-        )
+    #[must_use]
+    pub(crate) fn capabilities(self) -> MoleculeCapabilities {
+        self.molecule.capabilities()
     }
 
     pub(crate) fn add_hs_assignment(
