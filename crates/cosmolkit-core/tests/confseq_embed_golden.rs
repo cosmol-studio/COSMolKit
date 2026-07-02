@@ -10,6 +10,9 @@ use cosmolkit_core::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod common;
+use common::parity_data;
+
 const DISTANCE_MATRIX_TOLERANCE: f64 = 1.0e-6;
 const COLLISION_THRESHOLD: f64 = 0.4;
 
@@ -30,33 +33,17 @@ struct ConfSeqEmbedGoldenRecord {
     error: Option<String>,
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
-fn running_in_ci() -> bool {
-    std::env::var_os("CI").is_some() || std::env::var_os("GITHUB_ACTIONS").is_some()
-}
-
 fn load_golden() -> Vec<ConfSeqEmbedGoldenRecord> {
     let explicit_path = std::env::var("COSMOLKIT_CONFSEQ_EMBED_GOLDEN").ok();
     let path = explicit_path
         .as_deref()
         .map(PathBuf::from)
-        .unwrap_or_else(|| repo_root().join("tests/golden/confseq_embed_template.jsonl"));
-    if !path.exists() && explicit_path.is_none() && running_in_ci() {
-        eprintln!(
-            "skipping ConfSeq embed golden tests because {} is missing in CI; \
-             generate it with `.venv/bin/python tests/scripts/gen_rdkit_confseq_embed_golden.py` \
-             or set COSMOLKIT_CONFSEQ_EMBED_GOLDEN",
-            path.display()
-        );
-        return Vec::new();
-    }
+        .unwrap_or_else(|| parity_data::golden_path("confseq_embed_template.jsonl"));
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate with `.venv/bin/python tests/scripts/gen_rdkit_confseq_embed_golden.py`: {err}",
-            path.display()
+            "failed to open {}; regenerate RDKit goldens with `{}` or set COSMOLKIT_CONFSEQ_EMBED_GOLDEN: {err}",
+            path.display(),
+            parity_data::regenerate_command()
         )
     });
     BufReader::new(file)

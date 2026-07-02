@@ -11,6 +11,9 @@ use cosmolkit_core::{
 };
 use serde::Deserialize;
 
+mod common;
+use common::parity_data;
+
 const COORD_TOLERANCE: f64 = 1.0e-6;
 
 #[derive(Debug, Deserialize)]
@@ -35,7 +38,7 @@ struct ConformerGenerationFixtureRecord {
 }
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    parity_data::repo_root()
 }
 
 fn inventory_path() -> PathBuf {
@@ -76,11 +79,12 @@ fn vendored_fixture_path(source: &str) -> PathBuf {
 }
 
 fn load_golden() -> Vec<ConformerGenerationGoldenRecord> {
-    let path = repo_root().join("tests/golden/conformer_generation.jsonl");
+    let path = parity_data::golden_path("conformer_generation.jsonl");
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate all RDKit goldens with `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`: {err}",
-            path.display()
+            "failed to open {}; regenerate RDKit goldens with `{}`: {err}",
+            path.display(),
+            parity_data::regenerate_command()
         )
     });
     BufReader::new(file)

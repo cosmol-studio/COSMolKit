@@ -20,11 +20,15 @@ on:
             golden_suite:
                 description: "RDKit golden generator suite"
                 required: false
-                default: "default"
+                default: "all"
                 type: choice
                 options:
-                    - default
-                    - strict-corpus
+                    - all
+            run_exhaustive_parity:
+                description: "Run ignored exhaustive parity suites"
+                required: false
+                default: false
+                type: boolean
 
 permissions:
     contents: read
@@ -34,7 +38,8 @@ jobs:
         runs-on: ubuntu-latest
         env:
             COSMOLKIT_PARITY_PROFILE: ${{ github.event.inputs.parity_profile || 'smiles_small' }}
-            COSMOLKIT_GOLDEN_SUITE: ${{ github.event.inputs.golden_suite || 'default' }}
+            COSMOLKIT_GOLDEN_SUITE: ${{ github.event.inputs.golden_suite || 'all' }}
+            COSMOLKIT_RUN_EXHAUSTIVE_PARITY: ${{ github.event.inputs.run_exhaustive_parity || 'false' }}
 
         steps:
             - name: Checkout
@@ -60,9 +65,24 @@ jobs:
             - name: Sync dev environment
               run: uv sync --group dev
 
+            - name: Restore RDKit golden cache
+              id: rdkit_golden_cache
+              uses: actions/cache/restore@v4
+              with:
+                  path: tests/golden/${{ env.COSMOLKIT_PARITY_PROFILE }}
+                  key: rdkit-goldens-${{ runner.os }}-${{ env.COSMOLKIT_PARITY_PROFILE }}-${{ env.COSMOLKIT_GOLDEN_SUITE }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'tests/smiles.smi', 'tests/smiles_5000.smi', 'tests/scripts/gen*.py') }}
+
             - name: Regenerate RDKit goldens for selected parity profile
+              if: steps.rdkit_golden_cache.outputs.cache-hit != 'true'
               run: |
                   .venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --profile "$COSMOLKIT_PARITY_PROFILE" --suite "$COSMOLKIT_GOLDEN_SUITE" --clean --jobs 4
+
+            - name: Save RDKit golden cache
+              if: steps.rdkit_golden_cache.outputs.cache-hit != 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: tests/golden/${{ env.COSMOLKIT_PARITY_PROFILE }}
+                  key: ${{ steps.rdkit_golden_cache.outputs.cache-primary-key }}
 
             - name: Run cosmolkit-core tests with coverage instrumentation
               id: cov_run
@@ -73,12 +93,14 @@ jobs:
 
             - name: Run exhaustive SMILES writer parity with coverage instrumentation
               id: smiles_writer_full
+              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
               continue-on-error: true
               run: |
                   cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_smiles_writer_parity --no-report -- --ignored smiles_writer_matches_rdkit_golden_across_param_branches
 
             - name: Run exhaustive SDF reader parity with coverage instrumentation
               id: sdf_reader_full
+              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
               continue-on-error: true
               run: |
                   cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_sdf_read_parity --no-report -- --ignored sdf_read_all_apis_and_parameters_match_rdkit

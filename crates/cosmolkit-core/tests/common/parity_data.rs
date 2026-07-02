@@ -52,7 +52,7 @@ pub fn count_smiles_rows() -> usize {
 
 pub fn regenerate_command() -> String {
     format!(
-        ".venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --profile {} --suite default --clean --jobs 4",
+        ".venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --profile {} --suite all --clean --jobs 4",
         profile_name()
     )
 }

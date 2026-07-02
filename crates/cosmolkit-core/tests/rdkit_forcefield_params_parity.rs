@@ -1,6 +1,5 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
 
 use cosmolkit_core::{
     Atom, AtomSpec, Bond, BondSpec, MmffMolProperties, Molecule, MoleculeBuilder,
@@ -9,6 +8,9 @@ use cosmolkit_core::{
     uff_optimize_molecule, uff_optimize_molecule_confs,
 };
 use serde::Deserialize;
+
+mod common;
+use common::parity_data;
 
 const ENERGY_TOLERANCE: f64 = 1.0e-6;
 const GRADIENT_TOLERANCE: f64 = 1.0e-6;
@@ -75,16 +77,13 @@ struct ForcefieldParamsRecord {
     error: Option<String>,
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
 fn load_golden() -> Vec<ForcefieldParamsRecord> {
-    let path = repo_root().join("tests/golden/forcefield_params.jsonl");
+    let path = parity_data::golden_path("forcefield_params.jsonl");
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate the forcefield RDKit golden with `.venv/bin/python tests/scripts/gen_rdkit_forcefield_params_golden.py`: {err}",
-            path.display()
+            "failed to open {}; regenerate RDKit goldens with `{}`: {err}",
+            path.display(),
+            parity_data::regenerate_command()
         )
     });
     BufReader::new(file)
@@ -103,15 +102,7 @@ fn load_golden() -> Vec<ForcefieldParamsRecord> {
 
 #[test]
 fn forcefield_params_golden_has_one_record_per_smiles_library_entry() {
-    let smiles_path = repo_root().join("tests/smiles.smi");
-    let expected = std::fs::read_to_string(&smiles_path)
-        .unwrap_or_else(|err| panic!("failed to read {}: {err}", smiles_path.display()))
-        .lines()
-        .filter(|line| {
-            let line = line.trim();
-            !line.is_empty() && !line.starts_with('#')
-        })
-        .count();
+    let expected = parity_data::count_smiles_rows();
     let records = load_golden();
     for (row_idx, record) in records.iter().enumerate() {
         if let Some(embedded) = &record.embedded {
@@ -126,7 +117,7 @@ fn forcefield_params_golden_has_one_record_per_smiles_library_entry() {
     assert_eq!(
         records.len(),
         expected,
-        "forcefield params golden row count must match tests/smiles.smi"
+        "forcefield params golden row count must match the active parity corpus"
     );
 }
 

@@ -5,6 +5,9 @@ use std::path::PathBuf;
 use cosmolkit_core::{BatchRecord, LigandRef, Molecule, MoleculeBatch};
 use serde::Deserialize;
 
+mod common;
+use common::parity_data;
+
 #[derive(Debug, Deserialize)]
 struct GeometryRecord {
     smiles: String,
@@ -15,8 +18,7 @@ struct GeometryRecord {
 }
 
 fn golden_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/golden/tetrahedral_stereo_geometry.jsonl")
+    parity_data::golden_path("tetrahedral_stereo_geometry.jsonl")
 }
 
 fn ensure_golden_exists() {
@@ -24,8 +26,9 @@ fn ensure_golden_exists() {
     assert!(
         path.exists(),
         "missing RDKit tetrahedral stereo geometry golden: {}. Generate it before running tests:\n\
-         uv sync --group dev && .venv/bin/python tests/scripts/gen_rdkit_tetrahedral_stereo_geometry.py --input tests/smiles.smi --output tests/golden/tetrahedral_stereo_geometry.jsonl",
-        path.display()
+         uv sync --group dev && .venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --profile {} --suite all --clean --jobs 4",
+        path.display(),
+        parity_data::profile_name()
     );
 }
 

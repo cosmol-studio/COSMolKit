@@ -5,6 +5,9 @@ use std::path::PathBuf;
 use cosmolkit_core::{MmffMolProperties, Molecule, mmff_has_all_molecule_params};
 use serde::Deserialize;
 
+mod common;
+use common::parity_data;
+
 #[derive(Debug, Deserialize)]
 struct MmffBuiltinRecord {
     fixture: String,
@@ -21,15 +24,16 @@ struct MmffBuiltinRecord {
 }
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    parity_data::repo_root()
 }
 
 fn load_golden() -> Vec<MmffBuiltinRecord> {
-    let path = repo_root().join("tests/golden/mmff_builtin.jsonl");
+    let path = parity_data::golden_path("mmff_builtin.jsonl");
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate the MMFF built-in RDKit golden with `.venv/bin/python tests/scripts/gen_rdkit_mmff_builtin_golden.py`: {err}",
-            path.display()
+            "failed to open {}; regenerate RDKit goldens with `{}`: {err}",
+            path.display(),
+            parity_data::regenerate_command()
         )
     });
     BufReader::new(file)

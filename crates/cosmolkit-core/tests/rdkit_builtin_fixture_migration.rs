@@ -13,6 +13,9 @@ use cosmolkit_core::{
 };
 use serde::Deserialize;
 
+mod common;
+use common::parity_data;
+
 #[derive(Debug, Deserialize)]
 struct BuiltinFixtureRecord {
     kind: String,
@@ -31,23 +34,20 @@ struct BuiltinFixtureRecord {
 }
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    parity_data::repo_root()
 }
 
 fn fixture_root() -> PathBuf {
     repo_root().join("tests/fixtures/rdkit_builtin")
 }
 
-fn golden_path() -> PathBuf {
-    repo_root().join("tests/golden/rdkit_builtin_fixture_migration.jsonl")
-}
-
 fn load_golden() -> Vec<BuiltinFixtureRecord> {
-    let path = golden_path();
+    let path = parity_data::golden_path("rdkit_builtin_fixture_migration.jsonl");
     let file = File::open(&path).unwrap_or_else(|err| {
         panic!(
-            "failed to open {}; regenerate all RDKit goldens with `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --clean --jobs 4`: {err}",
-            path.display()
+            "failed to open {}; regenerate RDKit goldens with `{}`: {err}",
+            path.display(),
+            parity_data::regenerate_command()
         )
     });
     BufReader::new(file)

@@ -19,10 +19,8 @@ fn main() {
         manifest_dir.join("src/chemistry/forcefield/rdkit/ForceField/MMFF/Params.cpp");
     let crystalff_dir =
         manifest_dir.join("src/chemistry/forcefield/rdkit/GraphMol/ForceFieldHelpers/CrystalFF");
-    let rdkit_atomic_data_path = manifest_dir
-        .join("../../third_party/rdkit/Code/GraphMol/atomic_data.cpp")
-        .canonicalize()
-        .expect("locate RDKit atomic_data.cpp");
+    let rdkit_atomic_data_path =
+        manifest_dir.join("src/chemistry/forcefield/rdkit/GraphMol/atomic_data.cpp");
 
     println!("cargo:rerun-if-changed={}", uff_params_path.display());
     println!("cargo:rerun-if-changed={}", mmff_params_path.display());

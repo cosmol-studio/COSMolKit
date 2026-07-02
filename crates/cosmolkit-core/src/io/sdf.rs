@@ -13580,12 +13580,11 @@ $$$$
 
     #[test]
     fn detect_atropisomer_chirality_matches_rdkit_fixture_macrocycle() {
-        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
-            "../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/atropisomers/macrocycle-5-meta-Cl-ortho-hash.sdf",
+        let input = include_str!(
+            "../../../../tests/fixtures/rdkit_builtin/Code/GraphMol/FileParsers/atropisomers/macrocycle-5-meta-Cl-ortho-hash.sdf"
         );
-        let input = std::fs::read_to_string(fixture).unwrap();
         let record = read_sdf_from_str_with_params(
-            &input,
+            input,
             SdfReadParams {
                 sanitize: false,
                 remove_hs: false,
