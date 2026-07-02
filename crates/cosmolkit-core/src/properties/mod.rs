@@ -2,6 +2,7 @@
 
 pub mod avalon_fingerprint;
 pub mod batch;
+pub mod descriptors;
 pub mod draw;
 pub mod fingerprint;
 pub mod mol_hash;

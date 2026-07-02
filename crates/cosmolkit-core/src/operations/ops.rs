@@ -1722,7 +1722,7 @@ molecule_ops! {
         },
         requires_mapping: none,
         allows_noop: true,
-        feature: COORDINATE_2D_FEATURE,
+        feature: COORDINATE_EDIT_FEATURE,
         parity: required_when_supported,
         io_roundtrip: true,
         invariant_profile: "coordinate_generation",
@@ -1782,6 +1782,131 @@ molecule_ops! {
         io_roundtrip: true,
         invariant_profile: "coordinate_generation_3d_multi",
         parity_profile: "embed_multiple_confs_rdkit",
+    }
+
+    op with_2d_coordinate_block(coords: Vec<[f64; 2]>) {
+        method: with_2d_coordinate_block,
+        impl_fn: with_2d_coordinate_block_impl,
+        inplace: true,
+        inplace_method: set_2d_coordinate_block_,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology], write: [coordinates] },
+        may_mutate: [coordinates],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [],
+            invalidate: [drawing],
+        },
+        requires_mapping: none,
+        allows_noop: false,
+        feature: COORDINATE_EDIT_FEATURE,
+        parity: required_when_supported,
+        io_roundtrip: true,
+        invariant_profile: "coordinate_set_2d",
+        parity_profile: "set_2d_coordinates_manual",
+    }
+
+    op with_3d_coordinates(coords: Vec<[f64; 3]>, conformer_index: usize) {
+        method: with_3d_coordinates,
+        impl_fn: with_3d_coordinates_impl,
+        inplace: true,
+        inplace_method: set_3d_coordinates_,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology], write: [coordinates] },
+        may_mutate: [coordinates],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [],
+            invalidate: [drawing],
+        },
+        requires_mapping: none,
+        allows_noop: false,
+        feature: COORDINATE_EDIT_FEATURE,
+        parity: required_when_supported,
+        io_roundtrip: true,
+        invariant_profile: "coordinate_set_3d",
+        parity_profile: "set_3d_coordinates_manual",
+    }
+
+    op with_cleared_3d_conformers() {
+        method: with_cleared_3d_conformers,
+        impl_fn: with_cleared_3d_conformers_impl,
+        inplace: true,
+        inplace_method: clear_3d_conformers_,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [], write: [coordinates] },
+        may_mutate: [coordinates],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [],
+            invalidate: [drawing],
+        },
+        requires_mapping: none,
+        allows_noop: true,
+        feature: COORDINATE_EDIT_FEATURE,
+        parity: required_when_supported,
+        io_roundtrip: true,
+        invariant_profile: "coordinate_clear_3d_conformers",
+        parity_profile: "remove_all_conformers_manual",
+    }
+
+    op with_added_3d_conformer(coords: Vec<[f64; 3]>, is_3d: bool) {
+        method: with_added_3d_conformer,
+        impl_fn: with_added_3d_conformer_impl,
+        inplace: true,
+        inplace_method: add_3d_conformer_,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology], write: [coordinates] },
+        may_mutate: [coordinates],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [],
+            invalidate: [drawing],
+        },
+        requires_mapping: none,
+        allows_noop: false,
+        feature: COORDINATE_EDIT_FEATURE,
+        parity: required_when_supported,
+        io_roundtrip: true,
+        invariant_profile: "coordinate_add_3d_conformer",
+        parity_profile: "add_3d_conformer_manual",
+    }
+
+    op with_only_3d_conformer(coords: Vec<[f64; 3]>, is_3d: bool) {
+        method: with_only_3d_conformer,
+        impl_fn: with_only_3d_conformer_impl,
+        inplace: true,
+        inplace_method: set_only_3d_conformer_,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology], write: [coordinates] },
+        may_mutate: [coordinates],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [],
+            invalidate: [drawing],
+        },
+        requires_mapping: none,
+        allows_noop: false,
+        feature: COORDINATE_EDIT_FEATURE,
+        parity: required_when_supported,
+        io_roundtrip: true,
+        invariant_profile: "coordinate_set_single_3d_conformer",
+        parity_profile: "remove_all_then_add_conformer_manual",
     }
 }
 
@@ -2020,6 +2145,46 @@ fn with_2d_coordinates_impl(
     Ok(OpOutcome::Changed)
 }
 
+#[mol_op_body(with_2d_coordinate_block, parts)]
+fn with_2d_coordinate_block_impl(coords: Vec<[f64; 2]>) -> Result<OpOutcome, OperationError> {
+    let atom_count = {
+        let read = parts.begin_topology_read()?;
+        read.num_atoms()
+    };
+    if coords.len() != atom_count {
+        return Err(OperationError::InvalidInput {
+            operation: &WITH_2D_COORDINATE_BLOCK_SPEC,
+            message: "2D coordinate row count mismatch",
+        });
+    }
+
+    let mut coord_block = parts.begin_coordinates_mut()?;
+    coord_block.conformers_2d.clear();
+    coord_block
+        .conformers_2d
+        .push(crate::Conformer2D::new(0, coords));
+    coord_block.source_coordinate_dim = Some(crate::CoordinateDimension::TwoD);
+    parts.commit_coordinates(coord_block)?;
+    parts.clear_cache(DerivedState::DRAWING);
+    Ok(OpOutcome::Changed)
+}
+
+fn source_coordinate_dim_for_block(
+    coord_block: &CoordinateBlock,
+) -> Option<crate::CoordinateDimension> {
+    if coord_block
+        .conformers_3d
+        .iter()
+        .any(crate::Conformer3D::is_3d)
+    {
+        Some(crate::CoordinateDimension::ThreeD)
+    } else if !coord_block.conformers_2d.is_empty() || !coord_block.conformers_3d.is_empty() {
+        Some(crate::CoordinateDimension::TwoD)
+    } else {
+        None
+    }
+}
+
 #[mol_op_body(with_3d_conformer, parts)]
 fn with_3d_conformer_impl(mut params: crate::EmbedParameters) -> Result<OpOutcome, OperationError> {
     let source = parts.working.clone();
@@ -2041,6 +2206,59 @@ fn with_3d_conformer_impl(mut params: crate::EmbedParameters) -> Result<OpOutcom
     } else {
         Ok(OpOutcome::Changed)
     }
+}
+
+#[mol_op_body(with_3d_coordinates, parts)]
+fn with_3d_coordinates_impl(
+    coords: Vec<[f64; 3]>,
+    conformer_index: usize,
+) -> Result<OpOutcome, OperationError> {
+    let atom_count = {
+        let read = parts.begin_topology_read()?;
+        read.num_atoms()
+    };
+    if coords.len() != atom_count {
+        return Err(OperationError::InvalidInput {
+            operation: &WITH_3D_COORDINATES_SPEC,
+            message: "3D conformer row count mismatch",
+        });
+    }
+
+    let mut coord_block = parts.begin_coordinates_mut()?;
+    if conformer_index >= coord_block.conformers_3d.len() {
+        return Err(OperationError::InvalidInput {
+            operation: &WITH_3D_COORDINATES_SPEC,
+            message: "3D conformer index out of range",
+        });
+    }
+    let existing = &coord_block.conformers_3d[conformer_index];
+    coord_block.conformers_3d[conformer_index] =
+        crate::Conformer3D::new(existing.id(), coords, existing.is_3d());
+    coord_block.source_coordinate_dim = source_coordinate_dim_for_block(&coord_block);
+    parts.commit_coordinates(coord_block)?;
+    parts.clear_cache(DerivedState::DRAWING);
+    Ok(OpOutcome::Changed)
+}
+
+#[mol_op_body(with_cleared_3d_conformers, parts)]
+fn with_cleared_3d_conformers_impl() -> Result<OpOutcome, OperationError> {
+    let mut coord_block = parts.begin_coordinates_mut()?;
+    let changed = !coord_block.conformers_3d.is_empty()
+        || matches!(
+            coord_block.source_coordinate_dim,
+            Some(crate::CoordinateDimension::ThreeD)
+        );
+    coord_block.conformers_3d.clear();
+    coord_block.source_coordinate_dim = source_coordinate_dim_for_block(&coord_block);
+    parts.commit_coordinates(coord_block)?;
+    parts.clear_cache(DerivedState::DRAWING);
+    Ok(if changed {
+        OpOutcome::Changed
+    } else {
+        OpOutcome::NoOp {
+            reason: "molecule has no 3D conformers to clear",
+        }
+    })
 }
 
 #[mol_op_body(with_3d_conformers, parts)]
@@ -2069,6 +2287,65 @@ fn with_3d_conformers_impl(
     } else {
         Ok(OpOutcome::Changed)
     }
+}
+
+#[mol_op_body(with_added_3d_conformer, parts)]
+fn with_added_3d_conformer_impl(
+    coords: Vec<[f64; 3]>,
+    is_3d: bool,
+) -> Result<OpOutcome, OperationError> {
+    let atom_count = {
+        let read = parts.begin_topology_read()?;
+        read.num_atoms()
+    };
+    if coords.len() != atom_count {
+        return Err(OperationError::InvalidInput {
+            operation: &WITH_ADDED_3D_CONFORMER_SPEC,
+            message: "3D conformer row count mismatch",
+        });
+    }
+
+    let mut coord_block = parts.begin_coordinates_mut()?;
+    let next_id = coord_block
+        .conformers_3d
+        .iter()
+        .map(crate::Conformer3D::id)
+        .max()
+        .map_or(0, |max_id| max_id + 1);
+    coord_block
+        .conformers_3d
+        .push(crate::Conformer3D::new(next_id, coords, is_3d));
+    coord_block.source_coordinate_dim = source_coordinate_dim_for_block(&coord_block);
+    parts.commit_coordinates(coord_block)?;
+    parts.clear_cache(DerivedState::DRAWING);
+    Ok(OpOutcome::Changed)
+}
+
+#[mol_op_body(with_only_3d_conformer, parts)]
+fn with_only_3d_conformer_impl(
+    coords: Vec<[f64; 3]>,
+    is_3d: bool,
+) -> Result<OpOutcome, OperationError> {
+    let atom_count = {
+        let read = parts.begin_topology_read()?;
+        read.num_atoms()
+    };
+    if coords.len() != atom_count {
+        return Err(OperationError::InvalidInput {
+            operation: &WITH_ONLY_3D_CONFORMER_SPEC,
+            message: "3D conformer row count mismatch",
+        });
+    }
+
+    let mut coord_block = parts.begin_coordinates_mut()?;
+    coord_block.conformers_3d.clear();
+    coord_block
+        .conformers_3d
+        .push(crate::Conformer3D::new(0, coords, is_3d));
+    coord_block.source_coordinate_dim = source_coordinate_dim_for_block(&coord_block);
+    parts.commit_coordinates(coord_block)?;
+    parts.clear_cache(DerivedState::DRAWING);
+    Ok(OpOutcome::Changed)
 }
 
 #[cfg(test)]
@@ -2317,6 +2594,109 @@ mod tests {
     }
 
     #[test]
+    fn conformer_generation_operation_registry_exposes_3d_generation_entries() {
+        assert!(
+            MOLECULE_OPS
+                .iter()
+                .any(|operation| same_operation(operation, &WITH_3D_CONFORMER_SPEC))
+        );
+        assert!(
+            MOLECULE_OPS
+                .iter()
+                .any(|operation| same_operation(operation, &WITH_3D_CONFORMERS_SPEC))
+        );
+        assert_eq!(
+            support_feature_for(&WITH_3D_CONFORMER_SPEC).map(|feature| feature.name),
+            Some(crate::CONFORMER_GENERATION_FEATURE.name)
+        );
+        assert_eq!(
+            support_feature_for(&WITH_3D_CONFORMERS_SPEC).map(|feature| feature.name),
+            Some(crate::CONFORMER_GENERATION_FEATURE.name)
+        );
+    }
+
+    #[test]
+    fn coordinate_edit_operations_are_registered_as_operation_contracts() {
+        assert!(
+            MOLECULE_OPS
+                .iter()
+                .any(|operation| same_operation(operation, &WITH_2D_COORDINATE_BLOCK_SPEC))
+        );
+        assert!(
+            MOLECULE_OPS
+                .iter()
+                .any(|operation| same_operation(operation, &WITH_3D_COORDINATES_SPEC))
+        );
+        assert!(
+            MOLECULE_OPS
+                .iter()
+                .any(|operation| same_operation(operation, &WITH_CLEARED_3D_CONFORMERS_SPEC))
+        );
+        assert!(
+            MOLECULE_OPS
+                .iter()
+                .any(|operation| same_operation(operation, &WITH_ADDED_3D_CONFORMER_SPEC))
+        );
+        assert!(
+            MOLECULE_OPS
+                .iter()
+                .any(|operation| same_operation(operation, &WITH_ONLY_3D_CONFORMER_SPEC))
+        );
+        assert_eq!(
+            support_feature_for(&WITH_2D_COORDINATE_BLOCK_SPEC).map(|feature| feature.name),
+            Some(crate::COORDINATE_EDIT_FEATURE.name)
+        );
+        assert_eq!(
+            support_feature_for(&WITH_3D_COORDINATES_SPEC).map(|feature| feature.name),
+            Some(crate::COORDINATE_EDIT_FEATURE.name)
+        );
+        assert_eq!(
+            support_feature_for(&WITH_CLEARED_3D_CONFORMERS_SPEC).map(|feature| feature.name),
+            Some(crate::COORDINATE_EDIT_FEATURE.name)
+        );
+        assert_eq!(
+            support_feature_for(&WITH_ADDED_3D_CONFORMER_SPEC).map(|feature| feature.name),
+            Some(crate::COORDINATE_EDIT_FEATURE.name)
+        );
+        assert_eq!(
+            support_feature_for(&WITH_ONLY_3D_CONFORMER_SPEC).map(|feature| feature.name),
+            Some(crate::COORDINATE_EDIT_FEATURE.name)
+        );
+        assert_eq!(
+            WITH_2D_COORDINATE_BLOCK_SPEC.domain,
+            OperationDomain::Coordinate
+        );
+        assert_eq!(WITH_3D_COORDINATES_SPEC.domain, OperationDomain::Coordinate);
+        assert_eq!(
+            WITH_CLEARED_3D_CONFORMERS_SPEC.domain,
+            OperationDomain::Coordinate
+        );
+        assert_eq!(
+            WITH_ADDED_3D_CONFORMER_SPEC.domain,
+            OperationDomain::Coordinate
+        );
+        assert_eq!(
+            WITH_ONLY_3D_CONFORMER_SPEC.domain,
+            OperationDomain::Coordinate
+        );
+        assert!(support_matrix_contains(&WITH_2D_COORDINATE_BLOCK_SPEC));
+        assert!(support_matrix_contains(&WITH_3D_COORDINATES_SPEC));
+        assert!(support_matrix_contains(&WITH_CLEARED_3D_CONFORMERS_SPEC));
+        assert!(support_matrix_contains(&WITH_ADDED_3D_CONFORMER_SPEC));
+        assert!(support_matrix_contains(&WITH_ONLY_3D_CONFORMER_SPEC));
+        assert!(invariant_matrix_contains(&WITH_2D_COORDINATE_BLOCK_SPEC));
+        assert!(invariant_matrix_contains(&WITH_3D_COORDINATES_SPEC));
+        assert!(invariant_matrix_contains(&WITH_CLEARED_3D_CONFORMERS_SPEC));
+        assert!(invariant_matrix_contains(&WITH_ADDED_3D_CONFORMER_SPEC));
+        assert!(invariant_matrix_contains(&WITH_ONLY_3D_CONFORMER_SPEC));
+        assert!(parity_matrix_contains(&WITH_2D_COORDINATE_BLOCK_SPEC));
+        assert!(parity_matrix_contains(&WITH_3D_COORDINATES_SPEC));
+        assert!(parity_matrix_contains(&WITH_CLEARED_3D_CONFORMERS_SPEC));
+        assert!(parity_matrix_contains(&WITH_ADDED_3D_CONFORMER_SPEC));
+        assert!(parity_matrix_contains(&WITH_ONLY_3D_CONFORMER_SPEC));
+    }
+
+    #[test]
     fn conformer_generation_operation_registry_exposes_3d_coordinate_generation() {
         assert!(
             MOLECULE_OPS
@@ -2407,6 +2787,57 @@ mod tests {
             result.source_coordinate_dim(),
             Some(crate::CoordinateDimension::TwoD)
         );
+    }
+
+    #[test]
+    fn three_d_conformer_clear_and_single_assignment_run_through_coordinate_ops() {
+        let mut builder = crate::MoleculeBuilder::new();
+        let a0 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let a1 = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
+        builder
+            .add_bond(crate::BondSpec::new(a0, a1, crate::BondOrder::Single))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+        let first = vec![[0.0, 0.0, 0.0], [1.2, 0.0, 0.0]];
+        let second = vec![[0.0, 0.0, 1.0], [1.2, 0.0, 1.0]];
+        let replacement = vec![[0.5, 0.5, 0.5], [1.7, 0.5, 0.5]];
+
+        let with_two = molecule
+            .with_added_3d_conformer(first.clone(), true)
+            .unwrap()
+            .with_added_3d_conformer(second.clone(), true)
+            .unwrap();
+        let cleared = with_two.with_cleared_3d_conformers().unwrap();
+        let only = with_two
+            .with_only_3d_conformer(replacement.clone(), true)
+            .unwrap();
+
+        assert_eq!(with_two.conformers_3d().len(), 2);
+        assert!(cleared.conformers_3d().is_empty());
+        assert_eq!(only.conformers_3d().len(), 1);
+        assert_eq!(only.conformers_3d()[0].coordinates(), replacement);
+        assert_eq!(
+            only.source_coordinate_dim(),
+            Some(crate::CoordinateDimension::ThreeD)
+        );
+
+        let mut in_place = with_two.clone();
+        in_place.clear_3d_conformers_().unwrap();
+        assert!(in_place.conformers_3d().is_empty());
+        in_place
+            .set_only_3d_conformer_(second.clone(), true)
+            .unwrap();
+        assert_eq!(in_place.conformers_3d().len(), 1);
+        assert_eq!(in_place.conformers_3d()[0].coordinates(), second);
+
+        let two_d_flagged = with_two
+            .with_only_3d_conformer(replacement.clone(), false)
+            .unwrap();
+        assert_eq!(
+            two_d_flagged.source_coordinate_dim(),
+            Some(crate::CoordinateDimension::TwoD)
+        );
+        assert!(!two_d_flagged.conformers_3d()[0].is_3d());
     }
 
     #[test]

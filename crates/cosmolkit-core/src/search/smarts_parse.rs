@@ -328,6 +328,8 @@ enum Token {
     RingClosurePercent(u8),
     /// Logical AND operator &
     And,
+    /// Low-precedence logical AND operator ;
+    Semi,
     /// Logical OR operator (comma)
     Or,
     /// Logical NOT operator !
@@ -413,7 +415,7 @@ fn tokenize(input: &str) -> Result<Vec<(Token, usize)>, SmartsParseError> {
                 i += 1;
             }
             ';' => {
-                tokens.push((Token::And, i));
+                tokens.push((Token::Semi, i));
                 i += 1;
             }
             ',' => {
@@ -466,9 +468,23 @@ fn tokenize(input: &str) -> Result<Vec<(Token, usize)>, SmartsParseError> {
 
             // Aromatic elements + query-only chars (lowercase)
             'c' | 'n' | 'o' | 's' | 'p' | 'a' | 'b' => {
-                let name = ch.to_string();
-                tokens.push((Token::AromaticElement(name), i));
+                let start = i;
                 i += 1;
+                if start + 1 < len {
+                    let two_char: String = chars[start..=start + 1].iter().collect();
+                    match two_char.as_str() {
+                        "si" | "as" | "se" | "te" => {
+                            // RDKit✔️✔️: <IN_ATOM_STATE>si	{  yylval->ival = 14;  return AROMATIC_ATOM_TOKEN;  }
+                            // RDKit✔️✔️: <IN_ATOM_STATE>as	{  yylval->ival = 33;  return AROMATIC_ATOM_TOKEN;  }
+                            // RDKit✔️✔️: <IN_ATOM_STATE>se	{  yylval->ival = 34;  return AROMATIC_ATOM_TOKEN;  }
+                            // RDKit✔️✔️: <IN_ATOM_STATE>te	{  yylval->ival = 52;  return AROMATIC_ATOM_TOKEN;  }
+                            i = start + 2;
+                        }
+                        _ => {}
+                    }
+                }
+                let name: String = chars[start..i].iter().collect();
+                tokens.push((Token::AromaticElement(name), start));
             }
 
             // Organic elements + SMARTS primitives (uppercase or single-letter)
@@ -616,7 +632,7 @@ impl<'a> SmartsParser<'a> {
                 (Token::CloseBracket, _) => break,
 
                 // Bond spec followed by atom
-                (Token::BondSpec(_), _) | (Token::Not, _) | (Token::And, _) => {
+                (Token::BondSpec(_), _) | (Token::Not, _) | (Token::And, _) | (Token::Semi, _) => {
                     let bond = self.parse_bond()?;
                     match self.peek() {
                         (Token::RingClosureDigit(n), pos) | (Token::RingClosurePercent(n), pos) => {
@@ -1102,6 +1118,78 @@ impl<'a> SmartsParser<'a> {
             ));
         }
 
+        // Element symbol
+        // RDKit✔️✔️: <IN_ATOM_STATE>Hg |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Tl |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Pb |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Bi |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Po |
+        // RDKit✔️✔️: <IN_ATOM_STATE>At |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Rn |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Fr |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ra |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ac |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Th |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Pa |
+        // RDKit✔️✔️: <IN_ATOM_STATE>U |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Np |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Pu |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Am |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Cm |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Bk |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Cf |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Es |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Fm |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Md |
+        // RDKit✔️✔️: <IN_ATOM_STATE>No |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Lr |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Rf |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Db |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Sg |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Bh |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Hs |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Mt |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Ds |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Rg |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Cn |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Uut |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Fl |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Uup |
+        // RDKit✔️✔️: <IN_ATOM_STATE>Lv  { yylval->atom = new QueryAtom( PeriodicTable::getTable()->getAtomicNumber( yytext ) );
+        // RDKit✔️✔️:                       return ATOM_TOKEN;
+        // RDKit✔️✔️:                    }
+        //
+        // RDKit flex selects the longest matching token in IN_ATOM_STATE, so
+        // two-letter elements such as Hg must be consumed before the H_TOKEN
+        // hydrogen-count rule below.
+        if ch.is_ascii_uppercase() {
+            let start = i;
+            let end = i + 1;
+            if end < len && chars[end].is_ascii_lowercase() {
+                let two_char: String = chars[start..=end].iter().collect();
+                if let Some(atomic_num) = element_symbol_to_atomic_number(&two_char) {
+                    let query = match two_char.as_str() {
+                        "B" | "C" | "N" | "O" | "P" | "S" | "F" | "Cl" | "Br" | "I" | "Si"
+                        | "As" | "Se" | "Te" | "H" => organic_element_to_query(&two_char),
+                        _ => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(atomic_num)),
+                    };
+                    return Ok((query, end + 1));
+                }
+            }
+            if ch != 'H' {
+                let one_char: String = chars[start..end].iter().collect();
+                if let Some(atomic_num) = element_symbol_to_atomic_number(&one_char) {
+                    let query = match one_char.as_str() {
+                        "B" | "C" | "N" | "O" | "P" | "S" | "F" => {
+                            organic_element_to_query(&one_char)
+                        }
+                        _ => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(atomic_num)),
+                    };
+                    return Ok((query, end));
+                }
+            }
+        }
+
         // Hydrogen-count SMARTS queries: `h` or `h<N>`, `H` or `H<N>`
         // RDKit✔️✔️: smarts.ll / smarts.yy split `h` into AtomHasImplicitH /
         // RDKit✔️✔️: AtomImplicitHCount and `H` into AtomHCount.
@@ -1136,11 +1224,38 @@ impl<'a> SmartsParser<'a> {
         // RDKit✔️✔️: smarts.yy — R_TOKEN (optional NUMBER)
         if ch == 'R' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len);
-            if num == 0 {
+            if consumed == i + 1 {
                 return Ok((QueryNode::Predicate(AtomQueryPredicate::InRing), consumed));
             }
+            if num == 0 {
+                // RDKit✔️✔️: <IN_ATOM_STATE>R {
+                // RDKit✔️✔️:   yylval->atom = new QueryAtom();
+                // RDKit✔️✔️:   yylval->atom->setQuery(new AtomRingQuery(-1));
+                // RDKit✔️✔️:   return COMPLEX_ATOM_QUERY_TOKEN;
+                // RDKit✔️✔️: }
+                //
+                // RDKit✔️✔️: | COMPLEX_ATOM_QUERY_TOKEN number {
+                // RDKit✔️✔️:   static_cast<ATOM_EQUALS_QUERY *>($1->getQuery())->setVal($2);
+                // RDKit✔️✔️:   $$ = $1;
+                // RDKit✔️✔️: }
+                //
+                // AtomRingQuery(0) is equivalent to "not in any ring".
+                return Ok((
+                    QueryNode::not(QueryNode::Predicate(AtomQueryPredicate::InRing)),
+                    consumed,
+                ));
+            }
             return Ok((
-                QueryNode::Predicate(AtomQueryPredicate::NumRingBonds(num as u8)),
+                // RDKit✔️✔️: <IN_ATOM_STATE>R {
+                // RDKit✔️✔️:   yylval->atom = new QueryAtom();
+                // RDKit✔️✔️:   yylval->atom->setQuery(new AtomRingQuery(-1));
+                // RDKit✔️✔️:   return COMPLEX_ATOM_QUERY_TOKEN;
+                // RDKit✔️✔️: }
+                // RDKit✔️✔️: | COMPLEX_ATOM_QUERY_TOKEN number {
+                // RDKit✔️✔️:   static_cast<ATOM_EQUALS_QUERY *>($1->getQuery())->setVal($2);
+                // RDKit✔️✔️:   $$ = $1;
+                // RDKit✔️✔️: }
+                QueryNode::Predicate(AtomQueryPredicate::NumAtomRings(num as u8)),
                 consumed,
             ));
         }
@@ -1264,37 +1379,6 @@ impl<'a> SmartsParser<'a> {
             ));
         }
 
-        // Element symbol
-        // RDKit✔️✔️: smarts.yy — element symbols (2-char or 1-char)
-        if ch.is_ascii_uppercase() {
-            let start = i;
-            let end = i + 1;
-            // Check for two-char element
-            if end < len && chars[end].is_ascii_lowercase() {
-                let two_char: String = chars[start..=end].iter().collect();
-                if let Some(atomic_num) = element_symbol_to_atomic_number(&two_char) {
-                    let query = match two_char.as_str() {
-                        "B" | "C" | "N" | "O" | "P" | "S" | "F" | "Cl" | "Br" | "I" | "Si"
-                        | "As" | "Se" | "Te" | "H" => organic_element_to_query(&two_char),
-                        _ => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(atomic_num)),
-                    };
-                    return Ok((query, end + 1));
-                }
-            }
-            let one_char: String = chars[start..end].iter().collect();
-            if let Some(atomic_num) = element_symbol_to_atomic_number(&one_char) {
-                let query = match one_char.as_str() {
-                    "B" | "C" | "N" | "O" | "P" | "S" | "F" | "H" => {
-                        organic_element_to_query(&one_char)
-                    }
-                    _ => QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(atomic_num)),
-                };
-                return Ok((query, end));
-            }
-            // Unknown symbol — treat as wildcard
-            return Ok((QueryNode::Predicate(AtomQueryPredicate::Any), end));
-        }
-
         // Isotope: numeric literal before element (e.g. "13C")
         if ch.is_ascii_digit() {
             let (num, consumed) = self.parse_number(chars, i, len)?;
@@ -1304,13 +1388,31 @@ impl<'a> SmartsParser<'a> {
             ));
         }
 
-        // Lowercase aromatic element inside bracket (e.g. [c])
+        // Lowercase aromatic element inside bracket (e.g. [c], [se])
         if ch.is_ascii_lowercase() && ch != 'a' && ch != 'u' && ch != 'v' && ch != 'r' && ch != 'h'
         {
-            let name = ch.to_string();
-            // Same as aromatic_element_to_query but for bracket content
+            let mut consumed = i + 1;
+            if i + 1 < len {
+                let two_char: String = chars[i..=i + 1].iter().collect();
+                match two_char.as_str() {
+                    // RDKit✔️✔️: <IN_ATOM_STATE>si	{  yylval->ival = 14;  return AROMATIC_ATOM_TOKEN;  }
+                    // RDKit✔️✔️: <IN_ATOM_STATE>as	{  yylval->ival = 33;  return AROMATIC_ATOM_TOKEN;  }
+                    // RDKit✔️✔️: <IN_ATOM_STATE>se	{  yylval->ival = 34;  return AROMATIC_ATOM_TOKEN;  }
+                    // RDKit✔️✔️: <IN_ATOM_STATE>te	{  yylval->ival = 52;  return AROMATIC_ATOM_TOKEN;  }
+                    "si" | "as" | "se" | "te" => {
+                        consumed = i + 2;
+                    }
+                    _ => {}
+                }
+            }
+            let name: String = chars[i..consumed].iter().collect();
+            // RDKit✔️✔️: | AROMATIC_ATOM_TOKEN {
+            // RDKit✔️✔️:   $$ = new QueryAtom($1);
+            // RDKit✔️✔️:   $$->setIsAromatic(true);
+            // RDKit✔️✔️:   $$->setQuery(makeAtomTypeQuery($1,true));
+            // RDKit✔️✔️: }
             let query = aromatic_element_to_query(&name);
-            return Ok((query, i + 1));
+            return Ok((query, consumed));
         }
 
         // Wildcard inside bracket (shouldn't normally appear, but handle it)
@@ -1419,18 +1521,117 @@ impl<'a> SmartsParser<'a> {
 
     /// Parse a bond specifier.
     ///
-    /// RDKit source: smarts.yy — bond → BOND_TOKEN
-    /// RDKit❗✔️: Supports the CrystalFF parameter-table bond combinations
-    /// `!@`, `@`, and `;` in addition to the basic bond specifiers.
+    /// RDKit source: smarts.yy — bond_expr / bond_query / bondd.
+    /// RDKit✔️✔️: %left SEMI_TOKEN
+    /// RDKit✔️✔️: %left OR_TOKEN
+    /// RDKit✔️✔️: %left AND_TOKEN
+    /// RDKit✔️✔️: %right NOT_TOKEN
+    ///
+    /// RDKit✔️✔️: bond_expr:bond_expr AND_TOKEN bond_expr {
+    /// RDKit✔️✔️:   $1->expandQuery($3->getQuery()->copy(),Queries::COMPOSITE_AND,true);
+    /// RDKit✔️✔️:   delete $3;
+    /// RDKit✔️✔️:   $$ = $1;
+    /// RDKit✔️✔️: }
+    /// RDKit✔️✔️: | bond_expr OR_TOKEN bond_expr {
+    /// RDKit✔️✔️:   $1->expandQuery($3->getQuery()->copy(),Queries::COMPOSITE_OR,true);
+    /// RDKit✔️✔️:   delete $3;
+    /// RDKit✔️✔️:   $$ = $1;
+    /// RDKit✔️✔️: }
+    /// RDKit✔️✔️: | bond_expr SEMI_TOKEN bond_expr {
+    /// RDKit✔️✔️:   $1->expandQuery($3->getQuery()->copy(),Queries::COMPOSITE_AND,true);
+    /// RDKit✔️✔️:   delete $3;
+    /// RDKit✔️✔️:   $$ = $1;
+    /// RDKit✔️✔️: }
+    /// RDKit✔️✔️: | bond_query
+    /// RDKit✔️✔️: ;
+    /// RDKit✔️✔️:
+    /// RDKit✔️✔️: bond_query: bondd
+    /// RDKit✔️✔️: | bond_query bondd {
+    /// RDKit✔️✔️:   $1->expandQuery($2->getQuery()->copy(),Queries::COMPOSITE_AND,true);
+    /// RDKit✔️✔️:   delete $2;
+    /// RDKit✔️✔️:   $$ = $1;
+    /// RDKit✔️✔️: }
+    /// RDKit✔️✔️: ;
+    /// RDKit✔️✔️:
+    /// RDKit✔️✔️: bondd: BOND_TOKEN
+    /// RDKit✔️✔️: | MINUS_TOKEN {
+    /// RDKit✔️✔️:   QueryBond *newB= new QueryBond();
+    /// RDKit✔️✔️:   newB->setBondType(Bond::SINGLE);
+    /// RDKit✔️✔️:   newB->setQuery(makeBondOrderEqualsQuery(Bond::SINGLE));
+    /// RDKit✔️✔️:   $$ = newB;
+    /// RDKit✔️✔️: }
+    /// RDKit✔️✔️: | HASH_TOKEN {
+    /// RDKit✔️✔️:   QueryBond *newB= new QueryBond();
+    /// RDKit✔️✔️:   newB->setBondType(Bond::TRIPLE);
+    /// RDKit✔️✔️:   newB->setQuery(makeBondOrderEqualsQuery(Bond::TRIPLE));
+    /// RDKit✔️✔️:   $$ = newB;
+    /// RDKit✔️✔️: }
+    /// RDKit✔️✔️: | COLON_TOKEN {
+    /// RDKit✔️✔️:   QueryBond *newB= new QueryBond();
+    /// RDKit✔️✔️:   newB->setBondType(Bond::AROMATIC);
+    /// RDKit✔️✔️:   newB->setQuery(makeBondOrderEqualsQuery(Bond::AROMATIC));
+    /// RDKit✔️✔️:   $$ = newB;
+    /// RDKit✔️✔️: }
+    /// RDKit✔️✔️: | AT_TOKEN {
+    /// RDKit✔️✔️:   QueryBond *newB= new QueryBond();
+    /// RDKit✔️✔️:   newB->setQuery(makeBondIsInRingQuery());
+    /// RDKit✔️✔️:   $$ = newB;
+    /// RDKit✔️✔️: }
+    /// RDKit✔️✔️: | NOT_TOKEN bondd {
+    /// RDKit✔️✔️:   $2->getQuery()->setNegation(!($2->getQuery()->getNegation()));
+    /// RDKit✔️✔️:   $$ = $2;
+    /// RDKit✔️✔️: }
+    /// RDKit✔️✔️: ;
     fn parse_bond(&mut self) -> Result<QueryNode<BondQueryPredicate>, SmartsParseError> {
         let mut negate_next = false;
-        let mut predicates = Vec::new();
         let mut consumed_any = false;
-        let mut logical_or = false;
+        let mut clauses: Vec<QueryNode<BondQueryPredicate>> = Vec::new();
+        let mut current_or_terms: Vec<QueryNode<BondQueryPredicate>> = Vec::new();
+        let mut current_term: Vec<QueryNode<BondQueryPredicate>> = Vec::new();
+
+        fn push_term(
+            current_term: &mut Vec<QueryNode<BondQueryPredicate>>,
+            current_or_terms: &mut Vec<QueryNode<BondQueryPredicate>>,
+        ) {
+            let mut filtered = std::mem::take(current_term)
+                .into_iter()
+                .filter(|query| *query != QueryNode::Predicate(BondQueryPredicate::Any))
+                .collect::<Vec<_>>();
+            if filtered.is_empty() {
+                return;
+            }
+            let term = if filtered.len() == 1 {
+                filtered.pop().expect("single bond-query term")
+            } else {
+                QueryNode::And(filtered)
+            };
+            current_or_terms.push(term);
+        }
+
+        fn push_clause(
+            current_term: &mut Vec<QueryNode<BondQueryPredicate>>,
+            current_or_terms: &mut Vec<QueryNode<BondQueryPredicate>>,
+            clauses: &mut Vec<QueryNode<BondQueryPredicate>>,
+        ) {
+            push_term(current_term, current_or_terms);
+            if current_or_terms.is_empty() {
+                return;
+            }
+            let clause = if current_or_terms.len() == 1 {
+                current_or_terms.pop().expect("single bond-query clause")
+            } else {
+                QueryNode::Or(std::mem::take(current_or_terms))
+            };
+            clauses.push(clause);
+        }
 
         while matches!(
             self.peek(),
-            (Token::BondSpec(_), _) | (Token::Not, _) | (Token::And, _) | (Token::Or, _)
+            (Token::BondSpec(_), _)
+                | (Token::Not, _)
+                | (Token::And, _)
+                | (Token::Semi, _)
+                | (Token::Or, _)
         ) {
             match self.peek() {
                 (Token::Not, _) => {
@@ -1442,9 +1643,14 @@ impl<'a> SmartsParser<'a> {
                     consumed_any = true;
                     self.advance();
                 }
+                (Token::Semi, _) => {
+                    consumed_any = true;
+                    push_clause(&mut current_term, &mut current_or_terms, &mut clauses);
+                    self.advance();
+                }
                 (Token::Or, _) => {
                     consumed_any = true;
-                    logical_or = true;
+                    push_term(&mut current_term, &mut current_or_terms);
                     self.advance();
                 }
                 (Token::BondSpec(ch), _) => {
@@ -1457,26 +1663,23 @@ impl<'a> SmartsParser<'a> {
                     } else {
                         query
                     };
-                    predicates.push(query);
+                    current_term.push(query);
                 }
                 _ => break,
             }
         }
 
-        let predicates = predicates
-            .into_iter()
-            .filter(|query| *query != QueryNode::Predicate(BondQueryPredicate::Any))
-            .collect::<Vec<_>>();
-        match predicates.len() {
+        push_clause(&mut current_term, &mut current_or_terms, &mut clauses);
+
+        match clauses.len() {
             0 if consumed_any => Ok(QueryNode::Predicate(BondQueryPredicate::Any)),
             0 => Err(SmartsParseError::UnexpectedCharacter {
                 position: self.pos_info(),
                 character: '?',
                 context: "expected bond specifier".to_string(),
             }),
-            len if logical_or && len > 1 => Ok(QueryNode::Or(predicates)),
-            1 => Ok(predicates.into_iter().next().expect("single bond query")),
-            _ => Ok(QueryNode::And(predicates)),
+            1 => Ok(clauses.into_iter().next().expect("single bond query")),
+            _ => Ok(QueryNode::And(clauses)),
         }
     }
 }
@@ -1528,7 +1731,7 @@ fn organic_element_to_query(name: &str) -> QueryNode<AtomQueryPredicate> {
 /// Convert an aromatic element name to an atom query.
 ///
 /// RDKit source: smarts.ll — AROMATIC_ATOM_TOKEN handling.
-/// RDKit✔️✔️: Aromatic subset: c, n, o, s, p
+/// RDKit✔️✔️: Aromatic subset: b, c, n, o, p, s, si, as, se, te
 fn aromatic_element_to_query(name: &str) -> QueryNode<AtomQueryPredicate> {
     match name {
         "c" => QueryNode::And(vec![
@@ -1545,6 +1748,22 @@ fn aromatic_element_to_query(name: &str) -> QueryNode<AtomQueryPredicate> {
         ]),
         "s" => QueryNode::And(vec![
             QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(16)),
+            QueryNode::Predicate(AtomQueryPredicate::IsAromatic(true)),
+        ]),
+        "si" => QueryNode::And(vec![
+            QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(14)),
+            QueryNode::Predicate(AtomQueryPredicate::IsAromatic(true)),
+        ]),
+        "as" => QueryNode::And(vec![
+            QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(33)),
+            QueryNode::Predicate(AtomQueryPredicate::IsAromatic(true)),
+        ]),
+        "se" => QueryNode::And(vec![
+            QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(34)),
+            QueryNode::Predicate(AtomQueryPredicate::IsAromatic(true)),
+        ]),
+        "te" => QueryNode::And(vec![
+            QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(52)),
             QueryNode::Predicate(AtomQueryPredicate::IsAromatic(true)),
         ]),
         "p" => QueryNode::And(vec![

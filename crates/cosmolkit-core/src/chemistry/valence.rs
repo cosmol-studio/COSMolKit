@@ -2528,6 +2528,30 @@ pub(crate) fn rdkit_most_common_isotope(atomic_number: u8) -> Result<i64, Valenc
         })
 }
 
+pub(crate) fn rdkit_most_common_isotope_mass(atomic_number: u8) -> Result<f64, ValenceError> {
+    // BEGIN RDKIT CPP FUNCTION PeriodicTable::getMostCommonIsotopeMass / atomicData::MostCommonIsotopeMass
+    // RDKit✔️✔️: double MostCommonIsotopeMass() const { return commonIsotopeMass; }
+    // RDKit✔️✔️: double getMostCommonIsotopeMass(UINT atomicNumber) const {
+    // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
+    // RDKit✔️✔️:   return byanum[atomicNumber].MostCommonIsotopeMass();
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: atomicData::atomicData(const std::string &dataLine) {
+    // RDKit✔️✔️:   // most common isotopic mass
+    // RDKit✔️✔️:   istr.clear();
+    // RDKit✔️✔️:   istr.str(*token);
+    // RDKit✔️✔️:   istr >> commonIsotopeMass;
+    // RDKit✔️✔️:   ++token;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: RDKIT_GRAPHMOL_EXPORT extern const std::string periodicTableAtomData;
+    // END RDKIT CPP FUNCTION PeriodicTable::getMostCommonIsotopeMass / atomicData::MostCommonIsotopeMass
+    RDKIT_MOST_COMMON_ISOTOPE_MASSES
+        .get(usize::from(atomic_number))
+        .copied()
+        .ok_or(ValenceError::UnsupportedBranch {
+            reason: "PeriodicTable most-common isotope mass atomic number out of range",
+        })
+}
+
 pub(crate) fn periodic_table_more_electronegative(
     atomic_number_1: u8,
     atomic_number_2: u8,

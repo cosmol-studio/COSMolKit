@@ -236,6 +236,74 @@ returns a new molecule value.
    print(embedded.coordinates_3d())
    print(params.failures)
 
+Manual Coordinate Assignment
+----------------------------
+
+Coordinate setters take a complete coordinate block and validate it before the
+molecule value is updated. This avoids exposing partially edited conformer
+state through Python.
+
+.. code-block:: python
+
+   import numpy as np
+   from cosmolkit import Molecule
+
+   mol = Molecule.from_smiles("CCO")
+
+   coords_2d = np.array(
+       [
+           [0.0, 0.0],
+           [1.5, 0.0],
+           [2.1, 1.2],
+       ]
+   )
+   drawn = mol.with_2d_coordinates(coords_2d)
+
+   coords_3d = np.array(
+       [
+           [0.0, 0.0, 0.0],
+           [1.5, 0.0, 0.0],
+           [2.1, 1.2, 0.4],
+       ]
+   )
+   placed = mol.with_added_3d_conformer(coords_3d)
+
+   shifted = placed.with_3d_coordinates(coords_3d + [0.0, 0.0, 1.0])
+   single = placed.with_only_3d_conformer(coords_3d + [0.0, 0.0, 2.0])
+   cleared = placed.with_cleared_3d_conformers()
+
+   print(drawn.coordinates_2d())
+   print(placed.num_conformers())
+   print(shifted.coordinates_3d())
+   print(single.num_conformers())
+   print(cleared.num_conformers())
+
+The in-place forms follow COSMolKit's trailing-underscore convention:
+
+.. code-block:: python
+
+   mol.set_2d_coordinates_(coords_2d)
+   conf_id = mol.add_3d_conformer_(coords_3d)
+   mol.set_3d_coordinates_(coords_3d + [0.0, 0.0, 1.0], conformer_index=conf_id)
+   mol.clear_3d_conformers_()
+   conf_id = mol.set_only_3d_conformer_(coords_3d)
+
+2D assignment accepts shape ``(num_atoms, 2)`` or ``(num_atoms, 3)``. For
+three-column input, ``z_policy`` controls whether the z column is ignored,
+required to be zero, or rejected:
+
+.. code-block:: python
+
+   coords_2d_with_zero_z = np.column_stack([coords_2d, np.zeros(mol.num_atoms())])
+   mol.with_2d_coordinates(coords_2d_with_zero_z, z_policy="require_zero")
+
+3D assignment accepts only shape ``(num_atoms, 3)``. All coordinate values must
+be finite, and row counts must match ``mol.num_atoms()``.
+``with_only_3d_conformer(coords)`` is the direct value-style equivalent of
+RDKit ``RemoveAllConformers(); AddConformer(conf, assignId=True)`` for manual
+coordinate assignment; the in-place form is ``set_only_3d_conformer_(coords)``
+and returns conformer id ``0``.
+
 For multi-conformer generation, explicit seeds are deterministic. RMS pruning,
 sequential seed expansion, and terminal-group symmetrization for pruning follow
 the source-ported RDKit path.

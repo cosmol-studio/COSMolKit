@@ -35,6 +35,130 @@ def test_with_2d_coordinates_returns_new_molecule_without_mutating_input():
     assert mol_2d.has_2d_coordinates()
 
 
+def test_setting_2d_coordinates_is_value_style_and_validates_input():
+    mol = cosmolkit.Molecule.from_smiles("CCO")
+    coords = np.array([[0.0, 0.0], [1.5, 0.0], [3.0, 0.0]], dtype=np.float32)
+
+    with_coords = mol.with_2d_coordinates(coords)
+
+    assert with_coords is not mol
+    assert not mol.has_2d_coordinates()
+    assert with_coords.has_2d_coordinates()
+    assert np.allclose(with_coords.coordinates_2d(), np.column_stack([coords, np.zeros(3)]))
+
+    with pytest.raises(ValueError, match="row count mismatch"):
+        mol.with_2d_coordinates([[0.0, 0.0]])
+
+    with pytest.raises(ValueError, match="non-finite"):
+        mol.with_2d_coordinates([[0.0, 0.0], [1.0, np.nan], [2.0, 0.0]])
+
+
+def test_setting_2d_coordinates_z_policy_and_in_place_update():
+    mol = cosmolkit.Molecule.from_smiles("CCO")
+    coords3 = [[0.0, 0.0, 0.0], [1.0, 0.1, 0.0], [2.0, 0.2, 0.0]]
+
+    strict = mol.with_2d_coordinates(coords3, z_policy="require_zero")
+    assert np.allclose(strict.coordinates_2d()[:, :2], np.asarray(coords3)[:, :2])
+
+    with pytest.raises(ValueError, match="z_policy='error'"):
+        mol.with_2d_coordinates(coords3, z_policy="error")
+
+    with pytest.raises(ValueError, match="require zero z"):
+        mol.with_2d_coordinates(
+            [[0.0, 0.0, 0.0], [1.0, 0.1, 0.25], [2.0, 0.2, 0.0]],
+            z_policy="require_zero",
+        )
+
+    assert mol.set_2d_coordinates_(coords3) is None
+    assert mol.has_2d_coordinates()
+    assert np.allclose(mol.coordinates_2d()[:, 2], 0.0)
+
+
+def test_adding_and_replacing_3d_coordinates_preserves_value_semantics():
+    mol = cosmolkit.Molecule.from_smiles("CCO")
+    first = np.array([[0.0, 0.0, 0.0], [1.4, 0.0, 0.0], [2.0, 1.0, 0.0]])
+    second = first + np.array([0.0, 0.0, 1.0])
+    replacement = first + np.array([0.25, 0.5, 0.75])
+
+    one_conf = mol.with_added_3d_conformer(first)
+
+    assert one_conf is not mol
+    assert mol.num_conformers() == 0
+    assert one_conf.num_conformers() == 1
+    assert np.allclose(one_conf.coordinates_3d(), first)
+
+    two_confs = one_conf.with_added_3d_conformer(second.astype(np.float32))
+    replaced = two_confs.with_3d_coordinates(replacement, conformer_index=0)
+
+    assert two_confs.num_conformers() == 2
+    assert replaced.num_conformers() == 2
+    assert np.allclose(two_confs.coordinates_3d(0), first)
+    assert np.allclose(replaced.coordinates_3d(0), replacement)
+    assert np.allclose(replaced.coordinates_3d(1), second)
+
+
+def test_3d_coordinate_in_place_api_returns_conformer_ids_and_validates_input():
+    mol = cosmolkit.Molecule.from_smiles("CCO")
+    first = [[0.0, 0.0, 0.0], [1.4, 0.0, 0.0], [2.0, 1.0, 0.0]]
+    replacement = [[0.1, 0.2, 0.3], [1.5, 0.2, 0.3], [2.1, 1.2, 0.3]]
+
+    assert mol.add_3d_conformer_(first) == 0
+    assert mol.num_conformers() == 1
+    assert mol.set_3d_coordinates_(replacement) is None
+    assert np.allclose(mol.coordinates_3d(), replacement)
+
+    with pytest.raises(ValueError, match="ConformerRowCount|row count mismatch"):
+        mol.add_3d_conformer_([[0.0, 0.0, 0.0]])
+
+    with pytest.raises(ValueError, match="out of range"):
+        mol.set_3d_coordinates_(replacement, conformer_index=7)
+
+    with pytest.raises(ValueError, match="shape"):
+        mol.with_added_3d_conformer([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
+
+    with pytest.raises(ValueError, match="non-finite"):
+        mol.with_added_3d_conformer([[0.0, 0.0, 0.0], [1.0, float("inf"), 0.0], [2.0, 0.0, 0.0]])
+
+
+def test_3d_conformer_clear_and_single_conformer_assignment_use_value_semantics():
+    mol = cosmolkit.Molecule.from_smiles("CCO")
+    first = np.array([[0.0, 0.0, 0.0], [1.4, 0.0, 0.0], [2.0, 1.0, 0.0]])
+    second = first + np.array([0.0, 0.0, 1.0])
+    replacement = first + np.array([0.25, 0.5, 0.75])
+
+    multi = mol.with_added_3d_conformer(first).with_added_3d_conformer(second)
+    cleared = multi.with_cleared_3d_conformers()
+    single = multi.with_only_3d_conformer(replacement)
+
+    assert multi.num_conformers() == 2
+    assert cleared.num_conformers() == 0
+    assert single.num_conformers() == 1
+    assert np.allclose(single.coordinates_3d(), replacement)
+
+    with pytest.raises(ValueError, match="no 3D conformer"):
+        cleared.coordinates_3d()
+
+
+def test_3d_conformer_clear_and_single_conformer_assignment_in_place():
+    mol = cosmolkit.Molecule.from_smiles("CCO")
+    first = [[0.0, 0.0, 0.0], [1.4, 0.0, 0.0], [2.0, 1.0, 0.0]]
+    second = [[0.0, 0.0, 1.0], [1.4, 0.0, 1.0], [2.0, 1.0, 1.0]]
+
+    mol.add_3d_conformer_(first)
+    mol.add_3d_conformer_(second)
+    assert mol.num_conformers() == 2
+
+    assert mol.clear_3d_conformers_() is None
+    assert mol.num_conformers() == 0
+
+    assert mol.set_only_3d_conformer_(second) == 0
+    assert mol.num_conformers() == 1
+    assert np.allclose(mol.coordinates_3d(), second)
+
+    with pytest.raises(ValueError, match="row count mismatch"):
+        mol.set_only_3d_conformer_([[0.0, 0.0, 0.0]])
+
+
 def test_from_smiles_sanitize_flag_and_molecule_sanitize_are_value_style():
     raw = cosmolkit.Molecule.from_smiles("CN(=O)=O", sanitize=False)
 

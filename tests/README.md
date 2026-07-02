@@ -9,6 +9,8 @@
 - `golden/smiles_small/*.jsonl` RDKit baselines generated from `smiles.smi`
 - `golden/smiles_5000/*.jsonl` RDKit baselines generated from `smiles_5000.smi`
 - `golden/smiles_*/graph_features.jsonl` RDKit baseline for atom, bond, valence, stereo, and CIP graph-feature parity
+- `golden/smiles_*/molecular_descriptors.jsonl` RDKit baseline for molecule-level descriptor parity: molecular weight, exact mass, formula variants, HBD/HBA, FSP3, Crippen LogP/MR, TPSA variants, aromatic rings, rotatable-bond option variants, and QED
+- `golden/smiles_*/delete_substructs_onlyfrags_chirality.jsonl` RDKit baseline for focused `Chem.DeleteSubstructs` parity across whole-fragment deletion (`onlyFrags=true`), ordinary match deletion (`onlyFrags=false`), and source-backed chiral `useChirality=true/false` cases used by descriptor/QED dependencies
 - `golden/smiles_*/molblock_v2000_minimal.jsonl` RDKit baseline for minimal V2000 mol block body parity
 - `golden/smiles_*/molblock_v2000_kekulized.jsonl` RDKit baseline for kekulized bond-block parity (ignores coordinates)
 - `golden/tetrahedral_stereo_geometry.jsonl` RDKit ETKDG geometry baseline for tetrahedral stereo volume checks
@@ -46,6 +48,7 @@ substructure.
 2. Regenerate RDKit golden files through the single entrypoint:
    - daily small profile: `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --profile smiles_small --suite default --clean --jobs 4`
    - strict 5000 profile: `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --profile smiles_5000 --suite strict-corpus --clean --jobs 4`
+   - focused DeleteSubstructs surface only: `.venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --profile smiles_small --suite delete-substructs --clean --jobs 1`
    - omit `--jobs` to use the script default (`min(4, cpu_count, generator_count)`), or pass a larger value for a local high-core machine
 3. Do not regenerate committed golden files through individual generator scripts.
    The per-surface scripts are implementation details of the unified entrypoint;
@@ -90,6 +93,11 @@ Known topology failures are xfail records, not skips. The case still runs, the f
 - `graph_feature_golden_has_one_record_per_smiles`
 - `graph_feature_golden_preserves_rdkit_cip_fields_for_chiral_atoms`
 - `graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules`
+
+`crates/cosmolkit-core/tests/rdkit_molecular_descriptor_parity.rs` contains:
+- `molecular_descriptor_golden_has_one_record_per_smiles`
+- `molecular_descriptors_match_rdkit_golden_for_supported_properties`
+- strict field-by-field equality checks for molecule-level descriptor functions; unsupported COSMolKit descriptor APIs fail closed and are counted as parity failures
 
 The graph feature test compares both direct molecules and explicit-hydrogen molecules. It covers atom atomic number, chirality, CIP code/rank, degree, formal charge, total hydrogens, radical electrons, hybridization, aromaticity, ring membership, and bond type/stereo/conjugation.
 

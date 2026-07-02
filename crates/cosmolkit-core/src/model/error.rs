@@ -16,6 +16,11 @@ pub enum MoleculeBuildError {
     CoordinateRowCount { rows: usize, atom_count: usize },
     #[error("3D conformer row count mismatch: rows={rows}, atom_count={atom_count}")]
     ConformerRowCount { rows: usize, atom_count: usize },
+    #[error("3D conformer index out of range: index={index}, conformer_count={conformer_count}")]
+    ConformerIndexOutOfRange {
+        index: usize,
+        conformer_count: usize,
+    },
     #[error("substance group atom out of range: {atom}, atom_count={atom_count}")]
     SubstanceGroupAtomOutOfRange { atom: AtomId, atom_count: usize },
     #[error("substance group bond out of range: {bond}, bond_count={bond_count}")]

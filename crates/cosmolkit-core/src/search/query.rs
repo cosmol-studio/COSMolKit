@@ -113,6 +113,7 @@ pub enum AtomQueryPredicate {
     ConnectivityLessEqual(u8),
     ConnectivityGreaterEqual(u8),
     InRing,
+    NumAtomRings(u8),
     InRingOfSize(u8),
     SmallestRingSize(u8),
     SmallestRingSizeLessEqual(u8),
@@ -494,6 +495,17 @@ pub fn atom_predicate_matches_with_context(
         AtomQueryPredicate::InRing => {
             if let Some(ri) = &ring_info {
                 ri.num_atom_rings(atom.id()) > 0
+            } else {
+                false
+            }
+        }
+
+        // RDKit✔️✔️: AtomRingQuery(N) — atom ring membership count.
+        // RDKit source: `COMPLEX_ATOM_QUERY_TOKEN number` mutates the
+        // AtomRingQuery value used for `R` SMARTS primitives.
+        AtomQueryPredicate::NumAtomRings(n) => {
+            if let Some(ri) = &ring_info {
+                ri.num_atom_rings(atom.id()) as u8 == *n
             } else {
                 false
             }

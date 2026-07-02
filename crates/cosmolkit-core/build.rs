@@ -202,6 +202,8 @@ fn main() {
     let mut isotope_masses = parse_rdkit_isotope_masses(&isotope_atom_data);
     isotope_masses.sort_by_key(|row| (row.atomic_number, row.isotope));
     let most_common_isotopes = parse_rdkit_most_common_isotopes(&periodic_table_atom_data);
+    let most_common_isotope_masses =
+        parse_rdkit_most_common_isotope_masses(&periodic_table_atom_data);
 
     let mut generated = String::new();
     writeln!(
@@ -325,6 +327,16 @@ fn main() {
     .unwrap();
     for isotope in &most_common_isotopes {
         writeln!(isotope_generated, "    {},", isotope).unwrap();
+    }
+    writeln!(isotope_generated, "];").unwrap();
+    writeln!(isotope_generated).unwrap();
+    writeln!(
+        isotope_generated,
+        "pub(crate) static RDKIT_MOST_COMMON_ISOTOPE_MASSES: &[f64] = &["
+    )
+    .unwrap();
+    for mass in &most_common_isotope_masses {
+        writeln!(isotope_generated, "    {:?},", mass).unwrap();
     }
     writeln!(isotope_generated, "];").unwrap();
     fs::write(isotope_generated_path, isotope_generated)
@@ -1180,6 +1192,31 @@ fn parse_rdkit_most_common_isotopes(table: &str) -> Vec<i16> {
         "RDKit periodicTableAtomData should produce atomic numbers 0..=118"
     );
     isotopes
+}
+
+fn parse_rdkit_most_common_isotope_masses(table: &str) -> Vec<f64> {
+    let mut masses = Vec::new();
+    for raw_line in table.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 10 {
+            panic!("invalid RDKit periodic table row {line:?}");
+        }
+        let atomic_number = usize::from(parse_u8(fields[0], line));
+        if atomic_number != masses.len() {
+            continue;
+        }
+        masses.push(parse_f64(fields[9], line));
+    }
+    assert_eq!(
+        masses.len(),
+        119,
+        "RDKit periodicTableAtomData should produce atomic numbers 0..=118"
+    );
+    masses
 }
 
 fn mmff_symbol_to_rust(symbol: &str) -> &'static str {

@@ -44,6 +44,16 @@ GENERATOR_SPECS: list[dict[str, object]] = [
         "suites": {"default", "strict-corpus", "all"},
     },
     {
+        "script": "gen_rdkit_molecular_descriptors_golden.py",
+        "output": "molecular_descriptors.jsonl",
+        "suites": {"default", "strict-corpus", "all"},
+    },
+    {
+        "script": "gen_rdkit_delete_substructs_golden.py",
+        "output": "delete_substructs_onlyfrags_chirality.jsonl",
+        "suites": {"default", "strict-corpus", "delete-substructs", "all"},
+    },
+    {
         "script": "gen_rdkit_tetrahedral_stereo_geometry.py",
         "output": "tetrahedral_stereo_geometry.jsonl",
         "suites": {"iterative", "all"},
@@ -164,7 +174,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--suite",
         default="default",
-        choices=["default", "strict-corpus", "fixtures", "iterative", "fingerprint", "all", *sorted(SUITE_ALIASES)],
+        choices=[
+            "default",
+            "strict-corpus",
+            "fixtures",
+            "iterative",
+            "fingerprint",
+            "delete-substructs",
+            "all",
+            *sorted(SUITE_ALIASES),
+        ],
         help="generator suite to run (default: default)",
     )
     parser.add_argument(

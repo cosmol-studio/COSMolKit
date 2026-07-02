@@ -6181,6 +6181,8 @@ mod tests {
         let params = crate::SubstructMatchParams {
             max_matches: 1000,
             uniquify: false,
+            use_chirality: false,
+            specified_stereo_query_matches_unspecified: false,
         };
         let matches = crate::get_substruct_matches_with_params(molecule, molecule, &params);
         if matches.is_empty() {

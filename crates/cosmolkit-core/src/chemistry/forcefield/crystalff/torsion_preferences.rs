@@ -394,6 +394,8 @@ pub fn get_experimental_torsions(
                 &SubstructMatchParams {
                     max_matches: 1000,
                     uniquify: false,
+                    use_chirality: false,
+                    specified_stereo_query_matches_unspecified: false,
                 },
             );
             if env::var("RDKIT_ROW61_TRACE").ok().as_deref() == Some("1")
@@ -1463,6 +1465,8 @@ mod tests {
             &SubstructMatchParams {
                 max_matches: 1000,
                 uniquify: true,
+                use_chirality: false,
+                specified_stereo_query_matches_unspecified: false,
             },
         );
 
@@ -2070,6 +2074,8 @@ mod tests {
             &SubstructMatchParams {
                 max_matches: 1000,
                 uniquify: false,
+                use_chirality: false,
+                specified_stereo_query_matches_unspecified: false,
             },
         );
 
@@ -2097,6 +2103,8 @@ mod tests {
             &SubstructMatchParams {
                 max_matches: 1000,
                 uniquify: false,
+                use_chirality: false,
+                specified_stereo_query_matches_unspecified: false,
             },
         );
 
@@ -2121,6 +2129,8 @@ mod tests {
             &SubstructMatchParams {
                 max_matches: 1000,
                 uniquify: false,
+                use_chirality: false,
+                specified_stereo_query_matches_unspecified: false,
             },
         );
 
@@ -2145,6 +2155,8 @@ mod tests {
             &SubstructMatchParams {
                 max_matches: 1000,
                 uniquify: false,
+                use_chirality: false,
+                specified_stereo_query_matches_unspecified: false,
             },
         );
 
@@ -2170,6 +2182,8 @@ mod tests {
             &SubstructMatchParams {
                 max_matches: 1000,
                 uniquify: false,
+                use_chirality: false,
+                specified_stereo_query_matches_unspecified: false,
             },
         );
 
@@ -2233,6 +2247,8 @@ mod tests {
             &SubstructMatchParams {
                 max_matches: 1000,
                 uniquify: false,
+                use_chirality: false,
+                specified_stereo_query_matches_unspecified: false,
             },
         );
 
@@ -2308,6 +2324,8 @@ mod tests {
             &SubstructMatchParams {
                 max_matches: 1000,
                 uniquify: false,
+                use_chirality: false,
+                specified_stereo_query_matches_unspecified: false,
             },
         );
 
@@ -2376,6 +2394,8 @@ mod tests {
             &SubstructMatchParams {
                 max_matches: 1000,
                 uniquify: false,
+                use_chirality: false,
+                specified_stereo_query_matches_unspecified: false,
             },
         );
 
