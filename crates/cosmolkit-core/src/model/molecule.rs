@@ -1001,7 +1001,7 @@ impl Molecule {
     pub fn topological_fingerprint(
         &self,
         params: &crate::fingerprint::TopologicalFingerprintParams,
-    ) -> crate::Fingerprint {
+    ) -> Result<crate::Fingerprint, crate::FingerprintError> {
         crate::fingerprint::topological_fingerprint(self, params)
     }
 
@@ -1218,13 +1218,13 @@ mod tests {
         let maccs_params = MaccsFingerprintParams::default();
 
         assert_eq!(
-            mol.avalon_fingerprint(&avalon_params)
-                .expect("method avalon fingerprint"),
-            avalon_fingerprint(&mol, &avalon_params).expect("module avalon fingerprint")
+            mol.avalon_fingerprint(&avalon_params).unwrap_err(),
+            avalon_fingerprint(&mol, &avalon_params).unwrap_err()
         );
         assert_eq!(
-            mol.topological_fingerprint(&topological_params),
-            crate::fingerprint::topological_fingerprint(&mol, &topological_params)
+            mol.topological_fingerprint(&topological_params)
+                .unwrap_err(),
+            crate::fingerprint::topological_fingerprint(&mol, &topological_params).unwrap_err()
         );
         assert_eq!(
             mol.maccs_fingerprint(&maccs_params)
@@ -1325,8 +1325,8 @@ mod tests {
             ignore_atoms: Some(vec![2]),
         };
         assert_eq!(
-            mol.topological_fingerprint(&params),
-            crate::fingerprint::topological_fingerprint(&mol, &params)
+            mol.topological_fingerprint(&params).unwrap_err(),
+            crate::fingerprint::topological_fingerprint(&mol, &params).unwrap_err()
         );
     }
 }

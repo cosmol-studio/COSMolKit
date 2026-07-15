@@ -1,150 +1,87 @@
-# RDKit Morgan/MACCS Source Inventory Gap Report
+# RDKit Morgan/MACCS Source Inventory
 
 ## Scope
 
-This report inventories the pinned RDKit source under
-`third_party/rdkit/Code/GraphMol/Fingerprints/` for the Morgan and MACCS
-surfaces targeted by `dev/rdkit_morgan_maccs_full_port_plan.md`, and compares
-that surface to the currently exposed COSMolKit fingerprint API.
+This report records the exact boundary of the Morgan and MACCS implementation
+against pinned RDKit `2026.03.1`. It is not a completion claim for every class,
+wrapper, overload, input-state preparation branch, or fingerprint family under
+`GraphMol/Fingerprints`.
 
-## RDKit Source Inventory
+The source inventory is anchored to:
 
-### `FingerprintGenerator.h` / `FingerprintGenerator.cpp`
+- `FingerprintGenerator.h` / `FingerprintGenerator.cpp`
+- `FingerprintUtil.h` / `FingerprintUtil.cpp`
+- `MorganGenerator.h` / `MorganGenerator.cpp`
+- `MorganFingerprints.h` / `MorganFingerprints.cpp`
+- `MACCS.h` / `MACCS.cpp`
+- the dependent CIPLabeler, SMARTS/substructure, ring, valence, and periodic
+  table paths reached by the exposed branch matrix
 
-Current RDKit responsibilities:
+## Morgan: Implemented And Validated Boundary
 
-- `AdditionalOutput` allocation holders and reinitialization semantics
-- `FingerprintArguments` construction, `commonArgumentsString`, `toJSON`,
-  `fromJSON`
-- `FingerprintGenerator` construction, ownership, `infoString`, `toJSON`,
-  `fromJSON`
-- `getFingerprintHelper` orchestration
-- count-simulation helper bits and temporary additional-output duplication
-- `getSparseCountFingerprint`, `getSparseFingerprint`, `getCountFingerprint`,
-  `getFingerprint`
+The following exposed outputs have source-backed implementations and strict
+RDKit golden comparisons:
 
-Gap status in COSMolKit:
+- sparse count fingerprint
+- sparse bit fingerprint
+- hashed count fingerprint
+- explicit bit fingerprint
+- count simulation and count bounds
+- connectivity and default feature atom invariants
+- explicit Morgan bond invariants
+- `fromAtoms`, RDKit's currently unused `ignoreAtoms` behavior, custom atom
+  invariants, and custom bond invariants
+- redundant-environment and `numBitsPerFeature` branches
+- `AdditionalOutput` atom counts, atom-to-bits, bit-info map, and atoms-per-bit
+- covered chirality/CIPLabeler branches in the committed Morgan matrix
 
-- Only a partial Morgan-specific inline path exists.
-- AdditionalOutput is represented, but RDKit allocation/reinitialization
-  semantics are not yet source-ported as a generator-owned object model.
-- The shared generator/argument pipeline is not yet fully ported.
+This boundary is validated by
+`crates/cosmolkit-core/tests/rdkit_morgan_fingerprint_parity.rs`. It does not
+mean every RDKit generator object API or every molecule preparation state is
+available. In particular:
 
-### `FingerprintUtil.h` / `FingerprintUtil.cpp`
+- fingerprint generation with `includeChirality=true` and missing
+  `_StereochemDone` fails closed until the exact RDKit
+  `MolOps::assignStereochemistry` preparation branch is reproduced there
+- supplied feature SMARTS generator patterns remain unsupported
+- any branch marked open in the source file remains unsupported even when an
+  adjacent branch shares the same output type
 
-Current RDKit responsibilities:
+Those branches return `FingerprintError`; they do not use legacy CIP,
+alternative SMARTS classification, or another local fingerprint as fallback.
 
-- `MorganFingerprints::ss_matcher`
-- `MorganFingerprints::defaultFeatureSmarts`
-- `MorganFingerprints::getConnectivityInvariants`
-- `MorganFingerprints::getFeatureInvariants`
-- `RDKitFPUtils::buildDefaultRDKitFingerprintAtomInvariants`
-- path enumeration and bond-hash helpers used by other fingerprint families
+## MACCS: Implemented And Validated Boundary
 
-Gap status in COSMolKit:
+The exposed MACCS path follows `MACCS.cpp::GenerateFP`:
 
-- Connectivity invariants exist in partial form.
-- Feature invariants are currently approximated locally instead of being
-  source-backed through SMARTS/substructure matching.
-- `ss_matcher` and `defaultFeatureSmarts` are not source-ported.
+- source SMARTS patterns and raw RDKit bit numbering
+- direct element/count/ring/fragment key logic
+- raw 167-bit vector with bit 0 unused
+- COSMolKit public 166-bit projection from raw bits 1 through 166
 
-### `MorganGenerator.h` / `MorganGenerator.cpp`
+Strict tests compare both vectors on targeted per-key fixtures and the selected
+SMILES profile. Non-166 public output sizes return `FingerprintError`. SMARTS
+matcher construction is fallible and its error is propagated; it cannot panic
+or silently omit a key.
 
-Current RDKit responsibilities:
+## Other Fingerprint Families
 
-- `MorganAtomInvGenerator`
-- `MorganFeatureAtomInvGenerator`
-- `MorganBondInvGenerator`
-- `MorganArguments`
-- `MorganAtomEnv`
-- `MorganEnvGenerator`
-- `getMorganGenerator`
-- `getAtomInvariants`, `getBondInvariants`, `getEnvironments`
-- info-string, JSON, clone, result-size, and additional-output semantics
+`RDKFingerprintMol` and Avalon are not part of the completed Morgan/MACCS
+boundary.
 
-Gap status in COSMolKit:
+- `RDKFingerprintMol` depends on the RDKitFP generator path, branched subgraph
+  enumeration, random bit generation, density folding, atom invariants,
+  atom-bit output, and bit-path output.
+- Avalon depends on the external Avalon/reaccs implementation, including
+  `bitFlags`, `isQuery`, `resetVect`, and byte-rounded vector semantics.
 
-- Morgan fingerprint behavior exists only as a partial inline implementation in
-  `crates/cosmolkit-core/src/properties/fingerprint.rs`.
-- Generator ownership, JSON wiring, and exact environment generation are not
-  source-complete.
-- Feature and bond invariant generators are not yet ported as RDKit-shaped
-  generator objects.
+The previous local DFS/path-hash implementations were not source-equivalent and
+have been removed. The retained public entry points return structured
+unsupported errors until those complete source paths are ported and exact-bit
+tests pass.
 
-### `MorganFingerprints.h` / `MorganFingerprints.cpp`
+## Acceptance Rule
 
-Current RDKit responsibilities:
-
-- `getFingerprint`
-- `getHashedFingerprint`
-- `getFingerprintAsBitVect`
-- sparse/count/bit-vector wrapper behavior over `FingerprintGenerator`
-
-Gap status in COSMolKit:
-
-- Public Morgan wrappers exist, but they still call a simplified inline path.
-- Wrapper behavior around exact generator plumbing and additional-output
-  propagation is not yet source-complete.
-
-### `MACCS.h` / `MACCS.cpp`
-
-Current RDKit responsibilities:
-
-- `Patterns` table initialization
-- `GenerateFP`
-- `MACCSFingerprints::getFingerprintAsBitVect`
-- 167-bit internal vector behavior with bit 0 unused and public 166-bit
-  projection
-
-Gap status in COSMolKit:
-
-- MACCS is present only as a heuristic/local rule set.
-- RDKit SMARTS patterns, bit numbering, and exact key logic are not
-  source-ported.
-- The current implementation is not acceptable as parity closure for the
-  pinned RDKit oracle.
-
-## Current COSMolKit Public Fingerprint Surface
-
-Exposed from `crates/cosmolkit-core/src/lib.rs`:
-
-- `Fingerprint`
-- `FingerprintError`
-- `MorganAdditionalOutput`
-- `MorganAtomInvariantsGenerator`
-- `MorganBondInvariantsGenerator`
-- `MorganFingerprintOutput`
-- `MorganFingerprintParams`
-
-Exposed from `crates/cosmolkit-core/src/properties/fingerprint.rs`:
-
-- `morgan_fingerprint`
-- `morgan_fingerprint_with_output`
-- `topological_fingerprint`
-- `maccs_fingerprint`
-- `TopologicalFingerprintParams`
-- `MaccsFingerprintParams`
-
-Policy surface:
-
-- `crates/cosmolkit-core/src/support.rs` currently marks the Morgan fingerprint
-  feature as experimental and explicitly unfinished.
-- The public docs and tests still describe Morgan parity as pending strict
-  bit-identical coverage.
-
-## Gap Summary
-
-1. The RDKit generator pipeline is not yet source-complete in COSMolKit.
-2. Morgan feature invariants still rely on local approximation instead of
-   source-backed SMARTS/substructure machinery.
-3. MACCS is still heuristic and not source-ported.
-4. The public surface currently exposes unfinished fingerprint behavior that
-   must be replaced or narrowed as the RDKit port progresses.
-
-## Immediate Follow-Ups Implied by the Plan
-
-- Port `AdditionalOutput` allocation and storage semantics.
-- Port `FingerprintArguments` and Morgan argument/generator objects.
-- Replace feature-invariant heuristics with source-backed SMARTS/substructure
-  behavior.
-- Port MACCS patterns and exact key logic.
+Only exact equality on the enumerated source-backed boundary is accepted.
+Similarity correlation, structurally similar hashes, partial key sets, and
+99.9% bit agreement are failures, not compatibility states.

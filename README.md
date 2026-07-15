@@ -211,7 +211,7 @@ inputs until a trusted graph has been constructed.
 - 2D coordinate generation and SVG/PNG depiction
 - Native 3D conformer generation with DG/KDG/ETDG/ETKDG parameter presets
 - UFF/MMFF optimization of generated or imported 3D conformers
-- Morgan and Avalon fingerprints
+- Morgan and MACCS fingerprints for the validated exact-parity branches
 - Distance-geometry bounds matrices
 - Substructure matching and SMARTS parse metadata
 - Ordered batch transforms and exports
@@ -279,8 +279,9 @@ Goal: keep the supported molecular core correct before expanding breadth.
 - ✅ Distance-geometry bounds matrices
 - ✅ Native 3D conformer generation and UFF/MMFF post-optimization for
   supported molecules
-- 🧪 Morgan fingerprints and Tanimoto similarity
-- 🧪 Avalon fingerprints
+- 🧪 Morgan fingerprints and Tanimoto similarity for the validated exact-parity branches
+- 🧪 MACCS fingerprints for the validated exact raw/public projection
+- 🚧 RDKFingerprint/topological and Avalon fingerprints (fail closed until source ports exist)
 - 🧪 Substructure matching and Python SMARTS parse metadata
 - 🚧 Broader descriptor APIs such as formula, molecular weight, and ring
   statistics

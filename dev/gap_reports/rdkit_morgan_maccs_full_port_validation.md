@@ -1,9 +1,11 @@
-# RDKit Morgan/MACCS Full Port Validation
+# RDKit Morgan/MACCS Exposed-Branch Validation
 
 ## Scope
 
-This validation closes `dev/rdkit_morgan_maccs_full_port_plan.md` for the
-currently exposed COSMolKit Morgan and MACCS fingerprint surfaces.
+This validation closes `dev/rdkit_morgan_maccs_full_port_plan.md` only for the
+enumerated COSMolKit Morgan and MACCS branches below. It is not a blanket claim
+for every RDKit fingerprint class, overload, molecule-preparation state, or
+other fingerprint family.
 
 The source oracle is the pinned RDKit tree under:
 
@@ -46,8 +48,10 @@ MACCS behavior is source-backed for the exposed COSMolKit path:
 - COSMolKit public 166-bit projection from RDKit bits 1 through 166.
 
 Unsupported behavior policy remains unchanged: any option outside the modeled
-source-backed surface must return a structured unsupported error instead of
-emitting chemically meaningful-looking fingerprint bits.
+source-backed surface returns a structured error instead of emitting
+chemically meaningful-looking fingerprint bits. Morgan chirality requiring a
+missing `_StereochemDone` preparation branch and supplied feature SMARTS are
+examples of branches outside this validated boundary.
 
 ## Golden Conditions
 
@@ -126,7 +130,7 @@ cargo fmt --all
 
 Result: completed successfully.
 
-## No Remaining Compatibility Claim
+## No Overclaim
 
 The Morgan and MACCS exposed paths must be described as exact RDKit parity for
 the covered source-backed behavior or as unsupported. They must not be
@@ -136,3 +140,8 @@ percentage-compatible.
 The accepted evidence is exact equality against pinned RDKit golden outputs and
 source-backed implementation markers. `99.9%` agreement is not a passing state
 for these fingerprint features.
+
+This report does not cover `RDKFingerprintMol`/topological or Avalon. Their
+former local path-hash approximations have been removed, and the public calls
+return structured unsupported errors until the complete RDKit/Avalon source
+paths are ported.

@@ -156,7 +156,7 @@ pub const FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::Fingerprint,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Morgan and MACCS exposed branches are source-backed and covered by strict RDKit bit-identical parity tests. Morgan parity covers sparse-count, sparse-bit, hashed-count, explicit-bit, AdditionalOutput, and branch-matrix on-bit outputs. MACCS parity covers RDKit raw 167-bit vectors and COSMolKit public 166-bit projections on targeted fixtures plus the small and strict SMILES profiles. Topological and Avalon fingerprints remain unfinished until exact RDKit bit-vector parity is source-ported and tested. Similarity-shape correlation, structurally similar hashing, and 99.9% bit agreement are not accepted parity states.",
+    docs: "Mixed fingerprint surface. The enumerated Morgan branches are source-backed and tested for exact RDKit equality across sparse-count, sparse-bit, hashed-count, explicit-bit, AdditionalOutput, and the committed branch matrix. MACCS is tested as the exact RDKit raw 167-bit vector and COSMolKit 166-bit projection on targeted fixtures plus the small and strict SMILES profiles. These are validation boundaries, not a claim that every RDKit fingerprint API or every unmodeled input-state preparation branch is ported. Morgan branches that require unported preparation or supplied-pattern behavior return FingerprintError. RDKFingerprintMol/topological and Avalon are not implemented: their former local path-hash approximations were removed and their public calls now return structured unsupported errors. No approximate, correlation-compatible, or 99.9%-matching vector is accepted.",
 };
 
 pub const SUBSTRUCTURE_FEATURE: FeatureSpec = FeatureSpec {

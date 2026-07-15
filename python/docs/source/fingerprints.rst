@@ -4,9 +4,10 @@ Fingerprints
 COSMolKit exposes fingerprint APIs as fixed-length bit vectors. The exposed
 Morgan and MACCS branches are covered by strict RDKit bit-identical parity
 tests. Similarity-shape correlation or structurally similar hashing is not a
-compatibility claim. Topological and Avalon fingerprints remain unfinished until
-their exact RDKit bit-vector parity is source-ported and tested. The Python
-``Fingerprint`` object is a sparse view over the binary vector: ``on_bits()``
+compatibility claim. ``RDKFingerprintMol``/topological and Avalon fingerprints
+are not implemented: those calls raise an unsupported-feature error instead of
+returning approximate path-hash bits. The Python ``Fingerprint`` object is a
+sparse view over the binary vector: ``on_bits()``
 returns the bit indexes whose value is 1. It is not a dense floating-point
 neural embedding.
 
@@ -68,6 +69,11 @@ by exact RDKit bit parity:
 - ``bond_invariants_use_bond_types``
 - ``bond_invariants_use_chirality``
 - ``num_bits_per_feature``
+
+The list is the tested boundary, not a claim that every RDKit fingerprint
+generator or every input-state preparation branch is implemented. Unsupported
+branches propagate an error; they do not silently fall back to another
+fingerprint algorithm.
 
 Batch Fingerprints
 ------------------

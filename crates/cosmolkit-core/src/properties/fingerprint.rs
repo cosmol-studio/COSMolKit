@@ -57,15 +57,10 @@ const DEFAULT_FEATURE_SMARTS: [&str; 6] = [
 // for matcher construction and access.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SsMatcher {
-    matcher: Option<Molecule>,
+    matcher: Molecule,
 }
 
 impl SsMatcher {
-    #[must_use]
-    pub fn new() -> Self {
-        Self { matcher: None }
-    }
-
     #[must_use]
     pub fn try_new(pattern: &str) -> Result<Self, FingerprintError> {
         let matcher = build_crystalff_query_molecule(pattern).map_err(|reason| {
@@ -74,20 +69,18 @@ impl SsMatcher {
                 reason,
             }
         })?;
-        Ok(Self {
-            matcher: Some(matcher),
-        })
+        Ok(Self { matcher })
     }
 
     #[must_use]
-    pub fn from_pattern(pattern: &str) -> Self {
-        Self::try_new(pattern).expect("RDKit SMARTS pattern must parse")
+    pub fn from_pattern(pattern: &str) -> Result<Self, FingerprintError> {
+        Self::try_new(pattern)
     }
 
     #[must_use]
     #[allow(non_snake_case)]
-    pub fn getMatcher(&self) -> Option<&Molecule> {
-        self.matcher.as_ref()
+    pub fn getMatcher(&self) -> &Molecule {
+        &self.matcher
     }
 }
 
@@ -97,28 +90,35 @@ pub(crate) fn default_feature_smarts() -> &'static [&'static str; 6] {
 }
 
 #[must_use]
-pub(crate) fn default_feature_matchers() -> Vec<SsMatcher> {
+pub(crate) fn default_feature_matchers() -> Result<Vec<SsMatcher>, FingerprintError> {
     DEFAULT_FEATURE_SMARTS
         .iter()
         .map(|pattern| SsMatcher::from_pattern(pattern))
         .collect()
 }
 
-fn cached_default_feature_matchers() -> &'static [SsMatcher] {
-    static CACHE: OnceLock<Vec<SsMatcher>> = OnceLock::new();
-    CACHE.get_or_init(default_feature_matchers).as_slice()
+fn cached_default_feature_matchers() -> Result<&'static [SsMatcher], FingerprintError> {
+    static CACHE: OnceLock<Result<Vec<SsMatcher>, FingerprintError>> = OnceLock::new();
+    match CACHE.get_or_init(default_feature_matchers) {
+        Ok(matchers) => Ok(matchers.as_slice()),
+        Err(error) => Err(error.clone()),
+    }
 }
 
-fn cached_rdkit_maccs_pattern_matchers() -> &'static [(usize, SsMatcher)] {
-    static CACHE: OnceLock<Vec<(usize, SsMatcher)>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            RDKIT_MACCS_PATTERNS
-                .iter()
-                .map(|pattern| (pattern.bit, SsMatcher::from_pattern(pattern.smarts)))
-                .collect()
-        })
-        .as_slice()
+fn cached_rdkit_maccs_pattern_matchers() -> Result<&'static [(usize, SsMatcher)], FingerprintError>
+{
+    static CACHE: OnceLock<Result<Vec<(usize, SsMatcher)>, FingerprintError>> = OnceLock::new();
+    match CACHE.get_or_init(|| {
+        RDKIT_MACCS_PATTERNS
+            .iter()
+            .map(|pattern| {
+                SsMatcher::from_pattern(pattern.smarts).map(|matcher| (pattern.bit, matcher))
+            })
+            .collect()
+    }) {
+        Ok(matchers) => Ok(matchers.as_slice()),
+        Err(error) => Err(error.clone()),
+    }
 }
 
 /// RDKit-style scratch container for optional fingerprint provenance outputs.
@@ -665,8 +665,19 @@ pub struct MorganArguments {
 
 impl Default for MorganArguments {
     fn default() -> Self {
-        Self::new(3, false, false, false, vec![1, 2, 4, 8], 2048, false, true)
-            .expect("MorganArguments::default uses valid RDKit defaults")
+        Self {
+            fingerprint_arguments: FingerprintArguments {
+                df_count_simulation: false,
+                df_include_chirality: false,
+                d_count_bounds: vec![1, 2, 4, 8],
+                d_fp_size: 2048,
+                d_num_bits_per_feature: 1,
+            },
+            df_only_nonzero_invariants: false,
+            d_radius: 3,
+            df_include_redundant_environments: false,
+            df_use_bond_types: true,
+        }
     }
 }
 
@@ -918,7 +929,7 @@ impl MorganFeatureAtomInvGenerator {
     /// RDKit✔️✔️: std::vector<std::uint32_t> *MorganFeatureAtomInvGenerator::getAtomInvariants(const ROMol &mol) const
     #[must_use]
     #[allow(non_snake_case)]
-    pub fn getAtomInvariants(&self, molecule: &Molecule) -> Vec<u32> {
+    pub fn getAtomInvariants(&self, molecule: &Molecule) -> Result<Vec<u32>, FingerprintError> {
         // RDKit source: MorganGenerator.cpp lines 132-140
         // RDKit✔️✔️: std::vector<std::uint32_t> *MorganFeatureAtomInvGenerator::getAtomInvariants(
         // RDKit✔️✔️:     const ROMol &mol) const {
@@ -966,7 +977,7 @@ impl MorganFeatureAtomInvGenerator {
         if let Some(pattern_smarts) = &self.pattern_smarts {
             let encoded = pattern_smarts
                 .iter()
-                .map(|pattern| serde_json::to_string(pattern).expect("SMARTS string JSON encoding"))
+                .map(|pattern| Value::String(pattern.clone()).to_string())
                 .collect::<Vec<_>>()
                 .join(",");
             fields.push(format!(r#""patternSMARTS":[{encoded}]"#));
@@ -1065,11 +1076,14 @@ pub enum MorganAtomInvariantsGenerator {
 }
 
 impl MorganAtomInvariantsGenerator {
-    fn get_atom_invariants(&self, molecule: &Molecule) -> Vec<u32> {
+    fn get_atom_invariants(&self, molecule: &Molecule) -> Result<Vec<u32>, FingerprintError> {
         match self {
             Self::Connectivity {
                 include_ring_membership,
-            } => MorganAtomInvGenerator::new(*include_ring_membership).getAtomInvariants(molecule),
+            } => {
+                Ok(MorganAtomInvGenerator::new(*include_ring_membership)
+                    .getAtomInvariants(molecule))
+            }
             Self::Feature => MorganFeatureAtomInvGenerator::new().getAtomInvariants(molecule),
         }
     }
@@ -1111,9 +1125,8 @@ impl MorganBondInvariantsGenerator {
     /// RDKit✔️✔️: std::vector<std::uint32_t> *MorganBondInvGenerator::getBondInvariants(const ROMol &mol) const
     #[must_use]
     #[allow(non_snake_case)]
-    pub fn getBondInvariants(&self, molecule: &Molecule) -> Vec<u32> {
+    pub fn getBondInvariants(&self, molecule: &Molecule) -> Result<Vec<u32>, FingerprintError> {
         self.try_get_bond_invariants(molecule)
-            .expect("MorganBondInvGenerator::getBondInvariants requires source-backed CIPLabeler when useChirality is true and _CIPComputed is missing")
     }
 
     fn try_get_bond_invariants(&self, molecule: &Molecule) -> Result<Vec<u32>, FingerprintError> {
@@ -2260,7 +2273,8 @@ impl MorganFingerprintGenerator {
         let atom_invariants = if let Some(custom) = &args.custom_atom_invariants {
             custom.clone()
         } else {
-            self.atom_invariants_generator.get_atom_invariants(molecule)
+            self.atom_invariants_generator
+                .get_atom_invariants(molecule)?
         };
 
         // RDKit✔️✔️:   std::unique_ptr<std::vector<std::uint32_t>> bondInvariants = nullptr;
@@ -2596,8 +2610,8 @@ pub enum FingerprintError {
     InvalidArguments { reason: &'static str },
     #[error("invalid fingerprint arguments JSON: {0}")]
     InvalidArgumentsJson(String),
-    #[error("CIPLabeler failed while preparing Morgan fingerprint chirality: {0}")]
-    CipLabeler(#[from] crate::chemistry::ciplabeler::CipLabelerError),
+    #[error("CIPLabeler failed while preparing Morgan fingerprint chirality: {reason}")]
+    CipLabeler { reason: String },
     #[error("invalid SMARTS pattern '{pattern}': {reason}")]
     InvalidSmartsPattern { pattern: String, reason: String },
     #[error("unsupported fingerprint option {option}: {reason}")]
@@ -2607,6 +2621,14 @@ pub enum FingerprintError {
     },
     #[error("fingerprint bit length mismatch: {left} != {right}")]
     BitLengthMismatch { left: usize, right: usize },
+}
+
+impl From<crate::chemistry::ciplabeler::CipLabelerError> for FingerprintError {
+    fn from(error: crate::chemistry::ciplabeler::CipLabelerError) -> Self {
+        Self::CipLabeler {
+            reason: error.to_string(),
+        }
+    }
 }
 
 fn copied_atoms_setting_bits(
@@ -3138,14 +3160,15 @@ fn compute_connectivity_invariants(
 fn compute_feature_invariants_with_patterns(
     molecule: &Molecule,
     supplied_patterns: Option<&[SsMatcher]>,
-) -> Vec<u32> {
+) -> Result<Vec<u32>, FingerprintError> {
     let num_atoms = molecule.num_atoms();
     let mut invariants = vec![0u32; num_atoms];
-    let feature_matchers = supplied_patterns.unwrap_or_else(|| cached_default_feature_matchers());
+    let feature_matchers = match supplied_patterns {
+        Some(patterns) => patterns,
+        None => cached_default_feature_matchers()?,
+    };
     for (feature_idx, matcher) in feature_matchers.iter().enumerate() {
-        let Some(query) = matcher.getMatcher() else {
-            continue;
-        };
+        let query = matcher.getMatcher();
         let mask = 1u32 << feature_idx;
         for matched in crate::get_substruct_matches(molecule, query) {
             for atom_idx in matched.atom_mapping {
@@ -3153,10 +3176,10 @@ fn compute_feature_invariants_with_patterns(
             }
         }
     }
-    invariants
+    Ok(invariants)
 }
 
-fn compute_feature_invariants(molecule: &Molecule) -> Vec<u32> {
+fn compute_feature_invariants(molecule: &Molecule) -> Result<Vec<u32>, FingerprintError> {
     MorganFeatureAtomInvGenerator::new().getAtomInvariants(molecule)
 }
 
@@ -3169,7 +3192,7 @@ fn compute_initial_invariants(
         MorganAtomInvariantsGenerator::Connectivity { .. } => {
             compute_connectivity_invariants(molecule, adjacency, params)
         }
-        MorganAtomInvariantsGenerator::Feature => compute_feature_invariants(molecule),
+        MorganAtomInvariantsGenerator::Feature => compute_feature_invariants(molecule)?,
     };
 
     if let Some(custom) = &params.custom_atom_invariants {
@@ -3647,23 +3670,21 @@ fn atom_is_excluded(index: usize, params: &MorganFingerprintParams) -> bool {
 // RDKit source: GraphMol/Fingerprints/FingerprintUtil.cpp
 // ---------------------------------------------------------------------------
 
-/// Parameters for topological (path-based) fingerprint generation.
+/// Parameters reserved for the future source-backed `RDKFingerprintMol` port.
 ///
-/// Enumerates graph paths and hashes each path into a fixed-size bit
-/// fingerprint.
-///
-/// This surface is unfinished until it passes bit-identical RDKit
-/// `RDKFingerprint` parity. A similar path-hashing shape is not a supported
-/// compatibility claim.
+/// The current public shape is retained for API planning only. The operation
+/// returns `FingerprintError::UnsupportedOption` until the complete RDKit
+/// generator and option surface is ported.
 ///
 /// # Parameters
 /// - `min_path`: minimum path length in bonds (default 1).
 /// - `max_path`: maximum path length in bonds (default 7).
 /// - `n_bits`: size of the output fingerprint (default 2048).
 /// - `n_bits_per_hash`: number of bit positions to set per path hash (default 2).
-/// - `use_bond_types`: whether bond order contributes to the path invariant.
+/// - `use_bond_types`: maps to RDKit's `useBondOrder` option.
 /// - `from_atoms`: if `Some`, only enumerate paths starting from these atoms.
-/// - `ignore_atoms`: if `Some`, skip paths through these atoms.
+/// - `ignore_atoms`: reserved compatibility parameter; RDKit's exposed
+///   `RDKFingerprintMol` signature has no corresponding option.
 #[derive(Debug, Clone)]
 pub struct TopologicalFingerprintParams {
     pub min_path: u32,
@@ -3689,134 +3710,33 @@ impl Default for TopologicalFingerprintParams {
     }
 }
 
-// RDKit source: GraphMol/Fingerprints/FingerprintUtil.cpp
-// RDKit source: void getFingerprint(const ROMol &mol, SparseBitVect &fp,
-// RDKit source:     unsigned int minPath, unsigned int maxPath,
-// RDKit source:     ...)
-// RDKit source: path enumeration via boost::graph and BFS up to maxPath.
+// RDKit source: GraphMol/Fingerprints/Fingerprints.h::RDKFingerprintMol
+// RDKit❌❌: RDKIT_FINGERPRINTS_EXPORT ExplicitBitVect *RDKFingerprintMol(
+// RDKit❌❌:     const ROMol &mol, unsigned int minPath = 1, unsigned int maxPath = 7,
+// RDKit❌❌:     unsigned int fpSize = 2048, unsigned int nBitsPerHash = 2,
+// RDKit❌❌:     bool useHs = true, double tgtDensity = 0.0, unsigned int minSize = 128,
+// RDKit❌❌:     bool branchedPaths = true, bool useBondOrder = true,
+// RDKit❌❌:     std::vector<std::uint32_t> *atomInvariants = nullptr,
+// RDKit❌❌:     const std::vector<std::uint32_t> *fromAtoms = nullptr,
+// RDKit❌❌:     std::vector<std::vector<std::uint32_t>> *atomBits = nullptr,
+// RDKit❌❌:     std::map<std::uint32_t, std::vector<std::vector<int>>> *bitInfo = nullptr);
+// RDKit source: GraphMol/Fingerprints/Fingerprints.cpp::RDKFingerprintMol
+// RDKit❌❌: std::unique_ptr<FingerprintGenerator<std::uint32_t>> fpgen(
+// RDKit❌❌:     RDKit::RDKitFP::getRDKitFPGenerator<std::uint32_t>(
+// RDKit❌❌:         minPath, maxPath, useHs, branchedPaths, useBondOrder));
+// RDKit❌❌: fpgen->getOptions()->d_fpSize = fpSize;
+// RDKit❌❌: fpgen->getOptions()->d_numBitsPerFeature = nBitsPerHash;
 //
-// COSMolKit currently enumerates simple paths by DFS and folds local hashes.
-// This is not a source-complete RDKit port and must remain unfinished until
-// exact-bit parity coverage passes.
-#[must_use]
+// No approximate bit vector is returned. The previous local DFS/hash
+// implementation was removed because it was not RDKit RDKFingerprint behavior.
 pub fn topological_fingerprint(
-    molecule: &Molecule,
-    params: &TopologicalFingerprintParams,
-) -> Fingerprint {
-    let n_bits = params.n_bits;
-    if molecule.num_atoms() == 0 || n_bits == 0 {
-        return Fingerprint::from_on_bits(n_bits, []);
-    }
-
-    // Build adjacency list if not cached.
-    let adjacency = molecule.topology_block().adjacency.clone();
-
-    let num_atoms = molecule.num_atoms();
-    let atoms = molecule.atoms();
-    let bonds = molecule.bonds();
-
-    // Helper to check if an atom index is excluded.
-    let is_excluded = |idx: usize| -> bool {
-        if let Some(from) = &params.from_atoms {
-            return !from.contains(&idx);
-        }
-        if let Some(ignore) = &params.ignore_atoms {
-            return ignore.contains(&idx);
-        }
-        false
-    };
-
-    // Cache atomic numbers for fast access.
-    let atomic_numbers: Vec<u8> = atoms.iter().map(|a| a.atomic_number()).collect();
-
-    // Compute bond order values for each bond (by bond index).
-    let bond_order_values: Vec<u32> = if params.use_bond_types {
-        bonds
-            .iter()
-            .map(|b| match b.order() {
-                crate::BondOrder::Single => 1,
-                crate::BondOrder::Double => 2,
-                crate::BondOrder::Triple => 3,
-                crate::BondOrder::Quadruple => 4,
-                crate::BondOrder::Aromatic => 12,
-                crate::BondOrder::Dative => 9,
-                _ => 0,
-            })
-            .collect()
-    } else {
-        bonds.iter().map(|_| 1u32).collect()
-    };
-
-    // Convert bonds to CSR-style lookup: for each pair (atom_i, atom_j),
-    // find the bond index between them.
-    // Build a simple adjacency with bond indices.
-    let mut on_bits_set: std::collections::HashSet<usize> = std::collections::HashSet::new();
-
-    for start_atom in 0..num_atoms {
-        if is_excluded(start_atom) {
-            continue;
-        }
-
-        // DFS stack: (current_atom, path_atoms, path_bonds, depth)
-        // path_atoms: vec of atom indices visited (including start)
-        // path_bonds: vec of bond order values between atoms in path
-        let mut stack: Vec<(usize, Vec<usize>, Vec<u32>, u32)> = Vec::new();
-        stack.push((start_atom, vec![start_atom], vec![], 0));
-
-        while let Some((current, path_atoms, path_bonds, depth)) = stack.pop() {
-            // If the current path length (in bonds) >= min_path, hash it.
-            // Path length in bonds = path_atoms.len() - 1
-            let path_len_bonds = path_atoms.len() as u32 - 1;
-            if path_len_bonds >= params.min_path && path_len_bonds <= params.max_path {
-                // Build invariant: start with atomic_number of first atom,
-                // then hash_combine each (bond_order, next_atomic_number) pair.
-                let mut invariant: u32 = atomic_numbers[start_atom] as u32;
-                for (k, &bond_val) in path_bonds.iter().enumerate() {
-                    let next_idx = path_atoms[k + 1];
-                    let mut pair_hash: u32 = 0;
-                    hash_combine(&mut pair_hash, bond_val);
-                    hash_combine(&mut pair_hash, atomic_numbers[next_idx] as u32);
-                    hash_combine(&mut invariant, pair_hash);
-                }
-
-                // Fold the invariant into bit positions using n_bits_per_hash folding.
-                for chunk in 0..params.n_bits_per_hash {
-                    let bit = if chunk == 0 {
-                        invariant as usize % n_bits
-                    } else {
-                        invariant.wrapping_add(chunk.wrapping_mul(0x517cc1b7)) as usize % n_bits
-                    };
-                    on_bits_set.insert(bit);
-                }
-            }
-
-            // Stop enumerating if we've reached max_path depth.
-            if path_len_bonds >= params.max_path {
-                continue;
-            }
-
-            // Visit neighbors that are not already in the current path.
-            for neighbor in adjacency.neighbors_of(current) {
-                let n_idx = neighbor.atom_index;
-                if path_atoms.contains(&n_idx) {
-                    continue;
-                }
-                if is_excluded(n_idx) {
-                    continue;
-                }
-
-                let bond_val = bond_order_values[neighbor.bond.index()];
-                let mut new_path_atoms = path_atoms.clone();
-                new_path_atoms.push(n_idx);
-                let mut new_path_bonds = path_bonds.clone();
-                new_path_bonds.push(bond_val);
-                stack.push((n_idx, new_path_atoms, new_path_bonds, depth + 1));
-            }
-        }
-    }
-
-    let on_bits: Vec<usize> = on_bits_set.into_iter().collect();
-    Fingerprint::from_on_bits(n_bits, on_bits)
+    _molecule: &Molecule,
+    _params: &TopologicalFingerprintParams,
+) -> Result<Fingerprint, FingerprintError> {
+    Err(FingerprintError::UnsupportedOption {
+        option: "topological_fingerprint",
+        reason: "RDKit RDKFingerprint exact-bit source port is not implemented",
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -4431,8 +4351,11 @@ pub(crate) fn rdkit_maccs_public_index(bit: usize) -> Option<usize> {
     (1..RDKIT_MACCS_RAW_BITS).contains(&bit).then(|| bit - 1)
 }
 
-fn rdkit_maccs_generate_fp_raw_bits_001_166(molecule: &Molecule) -> BTreeSet<usize> {
+fn rdkit_maccs_generate_fp_raw_bits_001_166(
+    molecule: &Molecule,
+) -> Result<BTreeSet<usize>, FingerprintError> {
     let mut bits = BTreeSet::new();
+    let pattern_matchers = cached_rdkit_maccs_pattern_matchers()?;
 
     // RDKit source: MACCS.cpp::GenerateFP direct element-key loop.
     // RDKit✔️✔️:   for (atom = mol.beginAtoms(); atom != mol.endAtoms(); ++atom) {
@@ -4619,14 +4542,12 @@ fn rdkit_maccs_generate_fp_raw_bits_001_166(molecule: &Molecule) -> BTreeSet<usi
     // RDKit✔️✔️:   if (RDKit::SubstructMatch(mol, *pats.bit_117, match, true)) {
     // RDKit✔️✔️:     fp.setBit(117);
     // RDKit✔️✔️:   }
-    for &(bit, ref matcher) in cached_rdkit_maccs_pattern_matchers()
+    for &(bit, ref matcher) in pattern_matchers
         .iter()
         .filter(|&&(bit, _)| bit <= 120 && bit != 118 && bit != 120)
     {
-        if let Some(query) = matcher.getMatcher() {
-            if crate::has_substruct_match(molecule, query) {
-                bits.insert(bit);
-            }
+        if crate::has_substruct_match(molecule, matcher.getMatcher()) {
+            bits.insert(bit);
         }
     }
 
@@ -4637,32 +4558,29 @@ fn rdkit_maccs_generate_fp_raw_bits_001_166(molecule: &Molecule) -> BTreeSet<usi
     // RDKit✔️✔️:     fp.setBit(120);
     // RDKit✔️✔️:   }
     for bit in [118usize, 120] {
-        if let Some(pattern) = cached_rdkit_maccs_pattern_matchers()
+        if let Some(pattern) = pattern_matchers
             .iter()
             .find(|&&(pattern_bit, _)| pattern_bit == bit)
-            && let Some(query) = pattern.1.getMatcher()
-            && crate::get_substruct_matches(molecule, query).len() > 1
+            && crate::get_substruct_matches(molecule, pattern.1.getMatcher()).len() > 1
         {
             bits.insert(bit);
         }
     }
 
     let maccs_match_count = |bit: usize| -> usize {
-        cached_rdkit_maccs_pattern_matchers()
+        pattern_matchers
             .iter()
             .find(|&&(pattern_bit, _)| pattern_bit == bit)
-            .and_then(|pattern| pattern.1.getMatcher())
-            .map_or(0, |query| {
-                crate::get_substruct_matches(molecule, query).len()
+            .map_or(0, |pattern| {
+                crate::get_substruct_matches(molecule, pattern.1.getMatcher()).len()
             })
     };
 
     let has_maccs_match = |bit: usize| -> bool {
-        cached_rdkit_maccs_pattern_matchers()
+        pattern_matchers
             .iter()
             .find(|&&(pattern_bit, _)| pattern_bit == bit)
-            .and_then(|pattern| pattern.1.getMatcher())
-            .is_some_and(|query| crate::has_substruct_match(molecule, query))
+            .is_some_and(|pattern| crate::has_substruct_match(molecule, pattern.1.getMatcher()))
     };
 
     // RDKit source: MACCS.cpp::GenerateFP pattern-key checks from bit_121 through bit_165.
@@ -4905,7 +4823,7 @@ fn rdkit_maccs_generate_fp_raw_bits_001_166(molecule: &Molecule) -> BTreeSet<usi
         }
     }
 
-    bits
+    Ok(bits)
 }
 
 // RDKit✔️❌: ExplicitBitVect *getFingerprintAsBitVect(const ROMol &mol)
@@ -4919,11 +4837,13 @@ fn rdkit_maccs_generate_fp_raw_bits_001_166(molecule: &Molecule) -> BTreeSet<usi
 // The raw implementation can compute SSSR ring info when the molecule has no
 // cached ring cache, so performance is marked worse than RDKit's direct
 // initialized RingInfo access for that branch.
-pub fn maccs_get_fingerprint_as_bit_vect(molecule: &Molecule) -> Fingerprint {
-    Fingerprint::from_on_bits(
+pub fn maccs_get_fingerprint_as_bit_vect(
+    molecule: &Molecule,
+) -> Result<Fingerprint, FingerprintError> {
+    Ok(Fingerprint::from_on_bits(
         RDKIT_MACCS_RAW_BITS,
-        rdkit_maccs_generate_fp_raw_bits_001_166(molecule),
-    )
+        rdkit_maccs_generate_fp_raw_bits_001_166(molecule)?,
+    ))
 }
 
 pub fn maccs_fingerprint(
@@ -4941,7 +4861,7 @@ pub fn maccs_fingerprint(
         return Ok(Fingerprint::from_on_bits(n_bits, []));
     }
 
-    let projected_on_bits = maccs_get_fingerprint_as_bit_vect(molecule)
+    let projected_on_bits = maccs_get_fingerprint_as_bit_vect(molecule)?
         .on_bits()
         .into_iter()
         .filter_map(rdkit_maccs_public_index)
@@ -4964,6 +4884,27 @@ mod tests {
             n_bits,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn unported_topological_fingerprint_fails_closed() {
+        let err =
+            topological_fingerprint(&Molecule::new(), &TopologicalFingerprintParams::default())
+                .expect_err("unfinished RDKFingerprint must not return approximate bits");
+        assert!(matches!(
+            err,
+            FingerprintError::UnsupportedOption {
+                option: "topological_fingerprint",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn fingerprint_smarts_parse_errors_are_returned() {
+        let err = SsMatcher::from_pattern("[#6")
+            .expect_err("invalid SMARTS must return an error instead of panicking");
+        assert!(matches!(err, FingerprintError::InvalidSmartsPattern { .. }));
     }
 
     fn methane() -> Molecule {
@@ -5292,7 +5233,7 @@ mod tests {
         expected_raw_bits: &[usize],
         expected_public_bits: &[usize],
     ) {
-        let raw = maccs_get_fingerprint_as_bit_vect(mol);
+        let raw = maccs_get_fingerprint_as_bit_vect(mol).expect("raw MACCS fingerprint");
         assert_eq!(raw.n_bits(), RDKIT_MACCS_RAW_BITS);
         assert!(
             !raw.on_bits().contains(&0),
@@ -5840,8 +5781,8 @@ mod tests {
         ignore_atoms: Option<&[usize]>,
     ) -> Result<MorganAdditionalOutput, FingerprintError> {
         let atom_invariants = MorganAtomInvGenerator::new(true).getAtomInvariants(mol);
-        let bond_invariants =
-            MorganBondInvGenerator::new(arguments.df_use_bond_types, false).getBondInvariants(mol);
+        let bond_invariants = MorganBondInvGenerator::new(arguments.df_use_bond_types, false)
+            .getBondInvariants(mol)?;
         let envs = MorganEnvGenerator::new().getEnvironments(
             mol,
             arguments,
@@ -7697,13 +7638,9 @@ mod tests {
             ]
         );
 
-        let matchers = default_feature_matchers();
+        let matchers = default_feature_matchers().expect("default feature SMARTS must parse");
         assert_eq!(matchers.len(), 6);
-        assert!(
-            matchers
-                .iter()
-                .all(|matcher| matcher.getMatcher().is_some())
-        );
+        assert_eq!(matchers.iter().map(SsMatcher::getMatcher).count(), 6);
     }
 
     #[test]
@@ -7717,10 +7654,10 @@ mod tests {
             ("CC(=O)O", 5, vec![1]),
         ];
 
-        let matchers = default_feature_matchers();
+        let matchers = default_feature_matchers().expect("default feature SMARTS must parse");
         for (smiles, feature_idx, expected_atoms) in fixtures {
             let mol = Molecule::from_smiles_with_sanitize(smiles, false).unwrap();
-            let query = matchers[feature_idx].getMatcher().unwrap();
+            let query = matchers[feature_idx].getMatcher();
             let matches = crate::get_substruct_matches(&mol, query);
             let mut atom_indices: Vec<usize> = matches
                 .iter()
@@ -7753,7 +7690,9 @@ mod tests {
         for (smiles, expected) in cases {
             let mol = Molecule::from_smiles_with_sanitize(smiles, false).unwrap();
             assert_eq!(
-                generator.getAtomInvariants(&mol),
+                generator
+                    .getAtomInvariants(&mol)
+                    .expect("feature invariants"),
                 expected,
                 "default feature invariant mismatch for {smiles}"
             );
@@ -7854,7 +7793,7 @@ mod tests {
         for (order, expected) in cases {
             let mol = two_atom_molecule_with_bond(order);
             assert_eq!(
-                generator.getBondInvariants(&mol),
+                generator.getBondInvariants(&mol).expect("bond invariants"),
                 vec![expected],
                 "bond order {order:?}"
             );
@@ -7873,7 +7812,11 @@ mod tests {
             BondOrder::Zero,
         ] {
             let mol = two_atom_molecule_with_bond(order);
-            assert_eq!(generator.getBondInvariants(&mol), vec![1], "{order:?}");
+            assert_eq!(
+                generator.getBondInvariants(&mol).expect("bond invariants"),
+                vec![1],
+                "{order:?}"
+            );
         }
     }
 
@@ -7893,7 +7836,7 @@ mod tests {
             } else {
                 double_bond_stereo_molecule(stereo)
             };
-            let invariants = generator.getBondInvariants(&mol);
+            let invariants = generator.getBondInvariants(&mol).expect("bond invariants");
             assert_eq!(invariants[0], expected, "double bond stereo {stereo:?}");
             assert_eq!(&invariants[1..], &[1, 1], "side bonds for {stereo:?}");
         }
@@ -7907,7 +7850,10 @@ mod tests {
                 .with_stereo(BondStereo::E),
         );
 
-        assert_eq!(generator.getBondInvariants(&mol), vec![1]);
+        assert_eq!(
+            generator.getBondInvariants(&mol).expect("bond invariants"),
+            vec![1]
+        );
     }
 
     #[test]
@@ -7921,7 +7867,7 @@ mod tests {
         };
         let output = morgan_fingerprint_with_output(&mol, &params).unwrap();
         assert!(!output.fingerprint.on_bits().is_empty());
-        let invariants = compute_feature_invariants(&mol);
+        let invariants = compute_feature_invariants(&mol).expect("feature invariants");
         assert_eq!(invariants.len(), mol.num_atoms());
         assert!(invariants.iter().any(|inv| *inv != 0));
     }

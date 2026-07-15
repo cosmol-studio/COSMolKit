@@ -96,32 +96,21 @@ def test_maccs_fingerprint_rejects_non_rdkit_bit_length():
         ck_mol.maccs_fingerprint(n_bits=64)
 
 
-@pytest.mark.xfail(reason="topological fingerprint is not source-ported to RDKit exact parity yet")
-@pytest.mark.parametrize("smiles", SMOKE_SMILES)
-def test_topological_fingerprint_is_rdkit_bit_identical(smiles):
-    ck_mol = cosmolkit.Molecule.from_smiles(smiles)
-    rd_mol = Chem.MolFromSmiles(smiles)
-    rd_fp = Chem.RDKFingerprint(
-        rd_mol,
-        minPath=1,
-        maxPath=7,
-        fpSize=2048,
-        nBitsPerHash=2,
-        useHs=False,
-        tgtDensity=0.0,
-        minSize=2048,
-    )
+def test_topological_fingerprint_fails_closed_instead_of_returning_approximate_bits():
+    ck_mol = cosmolkit.Molecule.from_smiles("CCO")
 
-    assert _ck_bits(ck_mol.topological_fingerprint()) == _rdkit_bits(rd_fp)
+    with pytest.raises(
+        ValueError,
+        match="topological_fingerprint.*RDKFingerprint exact-bit source port is not implemented",
+    ):
+        ck_mol.topological_fingerprint()
 
 
-@pytest.mark.xfail(reason="Avalon fingerprint is not source-ported to RDKit exact parity yet")
-@pytest.mark.parametrize("smiles", SMOKE_SMILES)
-def test_avalon_fingerprint_is_rdkit_bit_identical(smiles):
-    py_avalon_tools = pytest.importorskip("rdkit.Avalon.pyAvalonTools")
-    ck_mol = cosmolkit.Molecule.from_smiles(smiles)
-    rd_mol = Chem.MolFromSmiles(smiles)
+def test_avalon_fingerprint_fails_closed_instead_of_returning_approximate_bits():
+    ck_mol = cosmolkit.Molecule.from_smiles("CCO")
 
-    assert _ck_bits(ck_mol.avalon_fingerprint(n_bits=2048)) == _rdkit_bits(
-        py_avalon_tools.GetAvalonFP(rd_mol, nBits=2048)
-    )
+    with pytest.raises(
+        ValueError,
+        match="avalon_fingerprint.*Avalon exact-bit source port is not implemented",
+    ):
+        ck_mol.avalon_fingerprint(n_bits=2048)

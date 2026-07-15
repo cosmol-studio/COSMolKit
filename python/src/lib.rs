@@ -4815,10 +4815,10 @@ as one new molecule value.
         from_atoms=None
     ))]
     #[doc = r#"
-Return an unfinished Avalon fingerprint.
+Report that Avalon fingerprint generation is unsupported.
 
-This surface is not a RDKit/Avalon compatibility claim until exact-bit parity
-tests pass against the RDKit Avalon implementation.
+This call fails with an unsupported-feature error. COSMolKit does not return
+approximate Avalon-like bits while the Avalon source dependency is unported.
 "#]
     fn avalon_fingerprint(
         &self,
@@ -5053,10 +5053,10 @@ exact-bit and exact-field parity for the supported branches.
         ignore_atoms=None
     ))]
     #[doc = r#"
-Return an unfinished topological fingerprint.
+Report that RDKit topological fingerprint generation is unsupported.
 
-This surface is not RDKit ``RDKFingerprint`` compatible until exact-bit parity
-tests pass.
+This call fails with an unsupported-feature error. COSMolKit does not return
+approximate path-hash bits while ``RDKFingerprintMol`` is unported.
 "#]
     fn topological_fingerprint(
         &self,
@@ -5067,7 +5067,7 @@ tests pass.
         use_bond_types: bool,
         from_atoms: Option<Vec<usize>>,
         ignore_atoms: Option<Vec<usize>>,
-    ) -> Fingerprint {
+    ) -> PyResult<Fingerprint> {
         let params = make_topological_fingerprint_params(
             min_path,
             max_path,
@@ -5077,9 +5077,10 @@ tests pass.
             from_atoms,
             ignore_atoms,
         );
-        Fingerprint {
-            inner: self.inner.topological_fingerprint(&params),
-        }
+        self.inner
+            .topological_fingerprint(&params)
+            .map(|inner| Fingerprint { inner })
+            .map_err(fingerprint_pyerr)
     }
 
     #[pyo3(signature = (n_bits=166))]

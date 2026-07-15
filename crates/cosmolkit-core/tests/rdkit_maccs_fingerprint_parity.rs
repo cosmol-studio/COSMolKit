@@ -116,7 +116,9 @@ fn maccs_fingerprint_matches_rdkit_raw_and_public_golden() {
             .raw_on_bits
             .as_ref()
             .unwrap_or_else(|| panic!("RDKit-ok MACCS record missing raw_on_bits in {context}"));
-        let raw = maccs_get_fingerprint_as_bit_vect(&mol);
+        let raw = maccs_get_fingerprint_as_bit_vect(&mol).unwrap_or_else(|err| {
+            panic!("COSMolKit failed raw MACCS generation in {context}: {err}")
+        });
         assert_eq!(raw.n_bits(), 167, "raw MACCS n_bits mismatch in {context}");
         assert!(
             !raw.on_bits().contains(&0),

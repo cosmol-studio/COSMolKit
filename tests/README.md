@@ -149,9 +149,12 @@ targeted fixtures, the daily small corpus, and the explicit `smiles_5000`
 profile. Python binding coverage lives in `python/tests/test_morgan_fingerprint.py`
 for API behavior and `python/tests/test_fingerprint_rdkit_bit_parity.py` for
 RDKit exact-bit parity of the exposed Morgan and MACCS APIs. Topological and
-Avalon fingerprints remain unfinished until exact RDKit bit-vector parity is
-source-ported and tested. Structurally similar hashing, similarity-shape
-correlation, or "compatible" fingerprints are not accepted parity states.
+Avalon and `RDKFingerprintMol`/topological fingerprints are not implemented;
+their previous local path-hash approximations were removed and the public APIs
+now return structured unsupported errors. Morgan/MACCS passing results apply
+only to the enumerated source-backed branches above. Structurally similar
+hashing, similarity-shape correlation, or "compatible" fingerprints are not
+accepted parity states.
 
 `python/tests/test_substructure_rdkit_parity.py` contains molecule-query
 substructure smoke parity against RDKit `GetSubstructMatches()`. The exposed
@@ -203,9 +206,9 @@ Current status:
 - tetrahedral stereo ordered-ligand geometry validation is currently passing against RDKit ETKDGv3 (`seed=42`) on all chiral corpus entries.
 - DG bounds matrix parity is currently passing on the shared corpus.
 - force-field parameter parity is currently passing on the shared corpus across UFF/MMFF parameter coverage, initial energy/gradient, and single-/multi-conformer optimization branches.
-- Morgan and MACCS fingerprint exposed branches are currently passing strict
-  RDKit bit-identical parity; topological and Avalon fingerprints remain
-  unfinished.
+- The enumerated Morgan and MACCS fingerprint branches are currently passing
+  strict RDKit bit-identical parity. Topological and Avalon return explicit
+  unsupported errors; no approximate vectors remain behind those APIs.
 - Substructure molecule-query APIs are unfinished unless the strict RDKit
   query-match parity tests pass for the exposed public branch.
 - SMILES writer parity is currently passing for the common branch set, with an explicit exhaustive parity target across the full generated writer parameter matrix.

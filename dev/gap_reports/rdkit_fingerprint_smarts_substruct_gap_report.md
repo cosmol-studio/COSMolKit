@@ -1,124 +1,50 @@
-# RDKit Fingerprint SMARTS/Substructure Gap Report
+# RDKit Fingerprint SMARTS/Substructure Boundary Audit
 
 ## Purpose
 
-This report covers the SMARTS parsing and substructure-matching capability
-required by:
+This audit records the SMARTS and substructure behavior reached by the
+validated Morgan feature-invariant and MACCS branches. It must not be read as
+a blanket closure of the public substructure API.
 
-- `MorganFeatureAtomInvGenerator::getAtomInvariants`
-- `FingerprintUtil.cpp::defaultFeatureSmarts`
-- `FingerprintUtil.cpp::getFeatureInvariants`
-- `MACCS.cpp::Patterns`
-- `MACCS.cpp::GenerateFP`
+The source targets are:
 
-The target is exact RDKit source-backed behavior, not heuristic feature
-classification.
+- `third_party/rdkit/Code/GraphMol/Fingerprints/FingerprintUtil.cpp`
+- `third_party/rdkit/Code/GraphMol/Fingerprints/MACCS.cpp`
+- `third_party/rdkit/Code/GraphMol/Substruct/SubstructMatch.cpp`
+- `third_party/rdkit/Code/GraphMol/Substruct/vf2.hpp`
 
-## RDKit Behaviors That Must Be Covered
+## Validated Fingerprint Boundary
 
-### Morgan feature invariants
+Morgan uses the six RDKit default feature SMARTS patterns for donor, acceptor,
+aromatic, halogen, basic, and acidic invariants. MACCS uses the pinned RDKit
+pattern table and direct-key logic. The committed Morgan and MACCS parity tests
+compare exact output bits, raw/public projections, and the covered provenance
+fields on targeted fixtures and the selected SMILES profiles.
 
-RDKit uses the six default feature SMARTS patterns from
-`FingerprintUtil.cpp::defaultFeatureSmarts`:
+The Rust implementation constructs these matchers through the source-backed
+SMARTS/query path. Matcher construction is fallible. A parse failure is
+returned as `FingerprintError::InvalidSmartsPattern`; an empty matcher is not
+silently skipped; no local element/degree/ring heuristic is used as fallback.
 
-- Donor
-- Acceptor
-- Aromatic
-- Halogen
-- Basic
-- Acidic
+## Deliberately Unfinished Boundaries
 
-These are not local element buckets. They depend on SMARTS parsing and
-substructure matching over query trees.
+The following are separate from the validated fingerprint branch and remain
+unfinished:
 
-### MACCS key patterns
+- the full public SMARTS-query API
+- every `SubstructMatchParams` branch, including marker-open stereo/query
+  behavior
+- recursive SMARTS/query primitives not covered by the fingerprint pattern
+  matrix
+- user-supplied Morgan feature SMARTS generator patterns
 
-RDKit MACCS keys require:
+Those branches must remain explicitly unsupported or marker-open. Passing the
+Morgan/MACCS fingerprint matrix does not upgrade them to general substructure
+parity.
 
-- the full `Patterns` table from `MACCS.cpp`
-- recursive SMARTS support through `$()`
-- ring closures, branch syntax, and ring-bond queries
-- atom and bond negation
-- OR alternatives
-- aromatic and aliphatic atom tokens
-- hydrogen-count and degree constraints
-- bond direction / aromatic / ring semantics where present in the pattern
+## Policy
 
-## Current COSMolKit Support
-
-### SMARTS parser
-
-`crates/cosmolkit-core/src/search/smarts_parse.rs` already supports a broad
-subset of SMARTS syntax:
-
-- bracket atoms
-- organic atoms and aromatic atoms
-- AND / OR / NOT query trees
-- ring closures
-- recursive SMARTS labeling
-- bond tokens such as `-`, `=`, `#`, `:`, `~`, `@`, `/`, `\\`
-
-This is sufficient to parse many RDKit pattern strings, including the Morgan
-default patterns and much of MACCS.
-
-### Query predicates
-
-`crates/cosmolkit-core/src/search/query.rs` already evaluates many RDKit-style
-atom and bond predicates:
-
-- atomic number and atom type
-- aromaticity
-- formal charge
-- isotopes
-- hydrogen counts
-- explicit degree / total degree / substitution count
-- ring membership / ring bond counts
-- hybridization
-- basic bond order and bond ring predicates
-
-### Substructure matching
-
-`crates/cosmolkit-core/src/search/substruct.rs` already provides VF2-based
-matching with recursive SMARTS caching and query-aware predicate evaluation.
-
-## Gaps Remaining
-
-### 1. Morgan feature invariants are still heuristic in the fingerprint module
-
-`crates/cosmolkit-core/src/properties/fingerprint.rs` still computes Morgan
-feature invariants with local donor/acceptor/aromatic/halogen/basic/acidic
-rules. That is not a source-backed replacement for RDKit
-`defaultFeatureSmarts` + `getFeatureInvariants`.
-
-### 2. RDKit recursive SMARTS and query semantics are not yet closed as a
-parity claim
-
-The parser and query engine can represent and evaluate many SMARTS forms, but
-the current codebase still marks recursive SMARTS, selected molfile/query-code
-branches, and parts of query evaluation as unfinished or explicitly unsupported.
-That is acceptable for fail-closed behavior, but it is not yet a closed parity
-surface for all Morgan/MACCS pattern strings.
-
-### 3. MACCS requires exact pattern-table parity and exact match semantics
-
-The current MACCS implementation in `fingerprint.rs` is a local heuristic rule
-set. It does not provide:
-
-- exact RDKit `Patterns` initialization
-- exact 167-bit internal semantics
-- exact key-by-key `GenerateFP` behavior
-- exact first-match / pattern-match behavior for the source pattern table
-
-### 4. Unsupported query branches must stay explicit
-
-Any query primitive that is not fully reproduced must continue to fail closed
-instead of producing a chemically plausible fallback. That includes recursive
-SMARTS and any query code not yet mapped to exact RDKit semantics.
-
-## Conclusion
-
-COSMolKit has enough parser and query infrastructure to continue the port, but
-the Morgan feature path and MACCS path are not source-complete yet. The next
-required work is to replace heuristic feature classification with exact
-RDKit-pattern matching and to close any remaining unsupported query branches
-explicitly.
+The previous report text describing Morgan feature invariants or MACCS as local
+heuristics is obsolete. The current implementation either uses the validated
+source-backed pattern path or returns a structured error. No similarity
+correlation, partial key set, or 99.9% bit agreement is accepted as parity.
