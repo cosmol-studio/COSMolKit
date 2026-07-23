@@ -26,6 +26,7 @@
 - `golden/smiles_*/molfile_read.jsonl` RDKit baseline for direct `.mol`/molblock read parity across the same CTAB branch matrix without SDF record separators or data fields
 - `golden/mol2_read.jsonl` RDKit baseline for MOL2 read parity over copied RDKit MOL2 fixtures, covering parser parameters, topology, atom/bond fields, 3D coordinates, chirality, and SMILES output
 - `golden/smiles_*/xyz_read.jsonl` RDKit baseline for XYZ block read parity: atom identities, one 3D conformer, coordinates, and no inferred bonds
+- `golden/inchi/official_c_oracle.schema.json` versioned schema for official InChI C oracle records; `official_c_oracle_version.jsonl` pins the self-test record
 - `corpus/topology/core.csv` target contract corpus for topology-changing operation invariant tests
 - `corpus/topology/cow_small.csv` small COW-only topology corpus; do not run broad parity matrices just to prove value isolation
 - `known_failures/topology_invariants.jsonl` exact xfail records for topology invariant failures; records must match operation, case, invariant, and error kind
@@ -33,6 +34,13 @@
 ## Standard Workflow (RDKit Parity)
 
 RDKit `2026.03.1` is the current oracle for generated golden files. The source reference is `third_party/rdkit` pinned to `Release_2026_03_1` (`351f8f378f8ad6bbd517980c38896e66bf907af8`). Keep the Python environment project-level so the same `.venv` can later host COSMolKit Python bindings for direct comparison.
+
+The independent official InChI C oracle lives under
+`tests/tools/inchi_official_c_oracle/`. Its runner verifies the complete
+pinned InChI v1.07.5 submodule checkout SHA-256 before building the official
+`libinchi` target under `target/`; neither the oracle nor the native library is
+linked to production Rust code. Run its provenance self-test with
+`cargo test -p cosmolkit-inchi official_c_oracle_version_and_provenance`.
 
 RDKit parity tests are strict source-level reproduction tests against `third_party/rdkit`. Do not make parity tests pass by loosening assertions, skipping mismatching fields, adding vague fallbacks, simplifying test conditions, row-specific patches, or heuristic guesses. When a mismatch appears, locate the corresponding RDKit source path and port that behavior directly; if the path is not implemented yet, keep the failure explicit and narrowly described.
 

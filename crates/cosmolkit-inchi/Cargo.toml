@@ -1,0 +1,22 @@
+[package]
+name = "cosmolkit-inchi"
+description = "Reusable source-port boundary for the IUPAC InChI engine"
+keywords = ["inchi", "chemistry", "molecular-identifier"]
+categories = ["science"]
+repository.workspace = true
+homepage.workspace = true
+license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "cosmolkit_inchi"
+path = "src/lib.rs"
+
+[dependencies]
+bytemuck = "1.25.2"
+hexf-parse = "0.2"
+
+[dev-dependencies]
+serde_json = "1.0.150"

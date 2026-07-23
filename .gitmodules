@@ -7,3 +7,6 @@
 [submodule "third_party/RingDecomposerLib"]
 	path = third_party/RingDecomposerLib
 	url = https://github.com/rareylab/RingDecomposerLib.git
+[submodule "third_party/InChI"]
+	path = third_party/InChI
+	url = https://github.com/IUPAC-InChI/InChI.git

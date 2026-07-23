@@ -12,3 +12,4 @@ tests/golden
 
 tmp/
 python/examples/output
+/dev/inchi-source-type-generator/target/
