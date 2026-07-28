@@ -1,5 +1,6 @@
 use crate::source::base::ichi_io::inchi_strbuf_printf;
 use crate::source::base::ichimake::{GetDfsOrder4CT, mystrrev};
+use crate::source::base::ichiparm::source_strtod_with_end;
 use crate::source::base::util::inchi_free;
 use crate::source_types::{
     CT_MODE_ABC_NUM_CLOSURES, CT_MODE_ABC_NUMBERS, CT_MODE_PREDECESSORS, EQL_EQU_ISO, EQL_EQU_TG,
@@ -4614,6 +4615,38 @@ pub(crate) fn inchi_strtol(
     }
 }
 
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn inchi_strtod(
+    heap: &mut SourceHeap,
+    str_: SourceConstPointer<i8>,
+    p: Option<&mut SourceConstPointer<i8>>,
+) -> Result<f64, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt2.c:2288 inchi_strtod
+    // INCHI✔️❌: complete source frame follows verbatim.
+    /*
+double inchi_strtod(const char *str, const char **p)
+{
+    return strtod( str, (char **) p );
+}
+    */
+    // END INCHI C FUNCTION: inchi_strtod
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: inchi_strtod
+    // INCHI✔️❌: GCC/Linux TARGET_API_LIB resolves strtod to the C runtime implementation.
+    // INCHI✔️❌: COMPILE_ANSI_ONLY and READ_INCHI_STRING do not alter this wrapper.
+    // END INCHI ACTIVE MACRO CONFIGURATION: inchi_strtod
+    // The shared source-runtime parser clones the remaining allocation and its
+    // numeric token, unlike libc strtod's direct scan.
+
+    let (value, end_offset) = source_strtod_with_end(heap, str_)?;
+    if let Some(p) = p {
+        *p = str_.offset(
+            i64::try_from(end_offset).map_err(|_| SourceHeapError::PointerOffsetOverflow)?,
+        )?;
+    }
+    Ok(value)
+}
+
 pub(crate) fn print_sequence_of_nums_compressing_ranges(
     heap: &mut SourceHeap,
     numbers: &[i32],
@@ -6466,6 +6499,118 @@ mod tests {
         assert_eq!(
             inchi_strtol(&mut heap, unterminated, None, 10),
             Err(SourceHeapError::MissingNulTerminator)
+        );
+    }
+
+    #[test]
+    fn source_port__ichiprt2__inchi_strtod__line_2288() {
+        let mut heap = SourceHeap::default();
+        let finite_cases: &[(&[u8], f64, i64)] = &[
+            (b"123.5tail", 123.5, 5),
+            (b" \t-0.25e+2!", -25.0, 10),
+            (b".5x", 0.5, 2),
+            (b"1.e2x", 100.0, 4),
+            (b"1e+x", 1.0, 1),
+            (b"nope", 0.0, 0),
+            (b"0x1.8p+1z", 3.0, 8),
+            (b"0x1pz", 1.0, 3),
+        ];
+        for &(bytes, expected, expected_offset) in finite_cases {
+            let input = allocate_c_string(&mut heap, bytes);
+            let mut end = SourceConstPointer::null();
+            heap.set_source_errno(77);
+            let actual = inchi_strtod(&mut heap, input, Some(&mut end)).unwrap();
+            assert_eq!(actual.to_bits(), expected.to_bits(), "{bytes:?}");
+            assert_eq!(end, input.offset(expected_offset).unwrap(), "{bytes:?}");
+            assert_eq!(heap.source_errno(), 77, "{bytes:?}");
+        }
+
+        let positive_infinity = allocate_c_string(&mut heap, b"INFz");
+        let mut end = SourceConstPointer::null();
+        assert_eq!(
+            inchi_strtod(&mut heap, positive_infinity, Some(&mut end)),
+            Ok(f64::INFINITY)
+        );
+        assert_eq!(end, positive_infinity.offset(3).unwrap());
+
+        let negative_infinity = allocate_c_string(&mut heap, b"-infinity!");
+        assert_eq!(
+            inchi_strtod(&mut heap, negative_infinity, Some(&mut end)),
+            Ok(f64::NEG_INFINITY)
+        );
+        assert_eq!(end, negative_infinity.offset(9).unwrap());
+
+        let nan = allocate_c_string(&mut heap, b"NAN(payload)!");
+        let value = inchi_strtod(&mut heap, nan, Some(&mut end)).unwrap();
+        assert!(value.is_nan());
+        assert!(!value.is_sign_negative());
+        assert_eq!(end, nan.offset(12).unwrap());
+
+        let numeric_nan = allocate_c_string(&mut heap, b"nan(123)!");
+        let value = inchi_strtod(&mut heap, numeric_nan, Some(&mut end)).unwrap();
+        assert_eq!(value.to_bits(), 0x7ff8_0000_0000_007b);
+        assert_eq!(end, numeric_nan.offset(8).unwrap());
+
+        let hexadecimal_nan = allocate_c_string(&mut heap, b"nan(0x123)!");
+        let value = inchi_strtod(&mut heap, hexadecimal_nan, Some(&mut end)).unwrap();
+        assert_eq!(value.to_bits(), 0x7ff8_0000_0000_0123);
+        assert_eq!(end, hexadecimal_nan.offset(10).unwrap());
+
+        let octal_nan = allocate_c_string(&mut heap, b"nan(0123)!");
+        let value = inchi_strtod(&mut heap, octal_nan, Some(&mut end)).unwrap();
+        assert_eq!(value.to_bits(), 0x7ff8_0000_0000_0053);
+        assert_eq!(end, octal_nan.offset(9).unwrap());
+
+        let invalid_nan_payload = allocate_c_string(&mut heap, b"nan(x-y)!");
+        let value = inchi_strtod(&mut heap, invalid_nan_payload, Some(&mut end)).unwrap();
+        assert_eq!(value.to_bits(), f64::NAN.to_bits());
+        assert_eq!(end, invalid_nan_payload.offset(3).unwrap());
+
+        let negative_nan = allocate_c_string(&mut heap, b"-nan!");
+        let value = inchi_strtod(&mut heap, negative_nan, Some(&mut end)).unwrap();
+        assert!(value.is_nan());
+        assert!(value.is_sign_negative());
+        assert_eq!(end, negative_nan.offset(4).unwrap());
+
+        let negative_zero = allocate_c_string(&mut heap, b"-0tail");
+        let value = inchi_strtod(&mut heap, negative_zero, Some(&mut end)).unwrap();
+        assert_eq!(value.to_bits(), (-0.0_f64).to_bits());
+        assert_eq!(end, negative_zero.offset(2).unwrap());
+
+        let overflow = allocate_c_string(&mut heap, b"1e309x");
+        heap.set_source_errno(0);
+        assert_eq!(
+            inchi_strtod(&mut heap, overflow, Some(&mut end)),
+            Ok(f64::INFINITY)
+        );
+        assert_eq!(end, overflow.offset(5).unwrap());
+        assert_eq!(heap.source_errno(), 34);
+
+        let underflow = allocate_c_string(&mut heap, b"1e-4000x");
+        heap.set_source_errno(0);
+        let value = inchi_strtod(&mut heap, underflow, Some(&mut end)).unwrap();
+        assert_eq!(value.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(end, underflow.offset(7).unwrap());
+        assert_eq!(heap.source_errno(), 34);
+
+        let subnormal = allocate_c_string(&mut heap, b"5e-324x");
+        heap.set_source_errno(0);
+        let value = inchi_strtod(&mut heap, subnormal, Some(&mut end)).unwrap();
+        assert_eq!(value.to_bits(), 1);
+        assert_eq!(end, subnormal.offset(6).unwrap());
+        assert_eq!(heap.source_errno(), 34);
+
+        let no_end = allocate_c_string(&mut heap, b"2.5");
+        assert_eq!(inchi_strtod(&mut heap, no_end, None), Ok(2.5));
+
+        let unterminated = heap.allocate(vec![b'1' as i8]).unwrap().as_const();
+        assert_eq!(
+            inchi_strtod(&mut heap, unterminated, Some(&mut end)),
+            Err(SourceHeapError::MissingNulTerminator)
+        );
+        assert_eq!(
+            inchi_strtod(&mut heap, SourceConstPointer::null(), Some(&mut end)),
+            Err(SourceHeapError::NullPointer)
         );
     }
 

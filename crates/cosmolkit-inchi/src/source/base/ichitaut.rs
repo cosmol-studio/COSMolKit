@@ -8,8 +8,10 @@ use crate::source::base::{
         bExistsAnyAltPath, bHasAcidicHydrogen, bHasAcidicMinus, bHasOtherExchangableH,
         bIsHardRemHCandidate,
     },
+    ichisort::insertions_sort,
     util::{
         get_el_valence, get_endpoint_valence, get_endpoint_valence_KET, inchi_calloc, inchi_free,
+        inchi_realloc,
     },
 };
 use crate::source_types::{
@@ -22,16 +24,17 @@ use crate::source_types::{
     BNS_PROGRAM_ERR, BNS_RADICAL_ERR, BNS_VERT_EDGE_OVFL, BOND_ALT_13, BOND_ALT12NS, BOND_ALTERN,
     BOND_DOUBLE, BOND_MARK_ALL, BOND_SINGLE, BOND_TAUTOM, BOND_TRIPLE, BOND_TYPE_MASK, C_CANDIDATE,
     C_GROUP, C_GROUP_INFO, CANON_GLOBALS, CT_OUT_OF_RAM, CT_TAUCOUNT_ERR, DFS_PATH, ENDPOINT_INFO,
-    FLAG_FORCE_SALT_TAUT, KETO_ENOL_TAUT, MAX_ATOMS, MAXVAL, NUM_H_ISOTOPES, RADICAL_SINGLET,
-    S_CANDIDATE, S_CHAR, S_GROUP_INFO, SALT_ACCEPTOR, SALT_DONOR, SALT_DONOR_ALL, SALT_DONOR_H,
-    SALT_DONOR_H2, SALT_DONOR_Neg, SALT_DONOR_Neg2, SALT_SELECTED, SALT_p_ACCEPTOR, SALT_p_DONOR,
-    SourceHeap, SourceHeapError, SourceMutPointer, T_BONDPOS, T_ENDPOINT, T_GROUP, T_GROUP_INFO,
-    T_NUM_ISOTOPIC, T_NUM_NO_ISOTOPIC, TAUT_PT_06_00, TAUT_PT_13_00, TAUT_PT_16_00, TAUT_PT_18_00,
-    TAUT_PT_22_00, TAUT_PT_39_00, TG_FLAG_1_5_TAUT, TG_FLAG_ALLOW_NO_NEGTV_O,
-    TG_FLAG_ALLOW_NO_NEGTV_O_DONE, TG_FLAG_FOUND_SALT_CHARGES_DONE, TG_FLAG_KETO_ENOL_TAUT,
-    TG_FLAG_MOVE_POS_CHARGES, TG_FLAG_PT_06_00, TG_FLAG_PT_13_00, TG_FLAG_PT_16_00,
-    TG_FLAG_PT_18_00, TG_FLAG_PT_22_00, TG_FLAG_PT_39_00, TG_FLAG_TEST_TAUT__ATOMS, clock_t,
-    inp_ATOM,
+    FLAG_FORCE_SALT_TAUT, FLAG_NORM_CONSIDER_TAUT, KETO_ENOL_TAUT, MAX_ATOMS, MAXVAL,
+    NUM_H_ISOTOPES, RADICAL_SINGLET, S_CANDIDATE, S_CHAR, S_GROUP_INFO, SALT_ACCEPTOR, SALT_DONOR,
+    SALT_DONOR_ALL, SALT_DONOR_H, SALT_DONOR_H2, SALT_DONOR_Neg, SALT_DONOR_Neg2, SALT_SELECTED,
+    SALT_p_ACCEPTOR, SALT_p_DONOR, SourceHeap, SourceHeapError, SourceMutPointer, T_BONDPOS,
+    T_ENDPOINT, T_GROUP, T_GROUP_HDR_LEN, T_GROUP_INFO, T_NUM_ISOTOPIC, T_NUM_NO_ISOTOPIC,
+    TAUT_PT_06_00, TAUT_PT_13_00, TAUT_PT_16_00, TAUT_PT_18_00, TAUT_PT_22_00, TAUT_PT_39_00,
+    TG_FLAG_1_5_TAUT, TG_FLAG_ALLOW_NO_NEGTV_O, TG_FLAG_ALLOW_NO_NEGTV_O_DONE,
+    TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE,
+    TG_FLAG_FOUND_SALT_CHARGES_DONE, TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_MOVE_POS_CHARGES,
+    TG_FLAG_PT_06_00, TG_FLAG_PT_13_00, TG_FLAG_PT_16_00, TG_FLAG_PT_18_00, TG_FLAG_PT_22_00,
+    TG_FLAG_PT_39_00, TG_FLAG_TEST_TAUT__ATOMS, clock_t, inp_ATOM,
     local_ichitaut::{
         C_SUBTYPE_CHARGED_H_ACCEPT, C_SUBTYPE_CHARGED_H_ACCEPT_p_DONOR, C_SUBTYPE_CHARGED_H_DONOR,
         C_SUBTYPE_CHARGED_NON_TAUT, C_SUBTYPE_CHARGED_p_DONOR, C_SUBTYPE_H_ACCEPT,
@@ -39,8 +42,8 @@ use crate::source_types::{
         C_SUBTYPE_NEUTRAL_H_ACCEPT_p_ACCEPT, C_SUBTYPE_NEUTRAL_H_DONOR, C_SUBTYPE_NEUTRAL_NON_TAUT,
         CHARGE_TYPE, MAX_STACK_ARRAY_LEN,
     },
-    tagTG_NumDA_TG_NUM_DA, tagTG_NumDA_TG_Num_aH, tagTG_NumDA_TG_Num_aM, tagTG_NumDA_TG_Num_aO,
-    tagTG_NumDA_TG_Num_dH, tagTG_NumDA_TG_Num_dM, tagTG_NumDA_TG_Num_dO,
+    sp_ATOM, tagTG_NumDA_TG_NUM_DA, tagTG_NumDA_TG_Num_aH, tagTG_NumDA_TG_Num_aM,
+    tagTG_NumDA_TG_Num_aO, tagTG_NumDA_TG_Num_dH, tagTG_NumDA_TG_Num_dM, tagTG_NumDA_TG_Num_dO,
 };
 
 const CTYPE: [CHARGE_TYPE; 6] = [
@@ -10537,11 +10540,1216 @@ pub(crate) fn MarkTautomerGroups(
     Ok(if n_err < 0 { n_err } else { tot_changes })
 }
 
+#[allow(non_snake_case)]
+pub(crate) fn CompRankTautomer(
+    heap: &SourceHeap,
+    a1: AT_RANK,
+    a2: AT_RANK,
+    pn_tRankForSort: SourceMutPointer<AT_RANK>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichitaut.c:7008 CompRankTautomer
+    // INCHI✔️✔️: complete active source frame follows verbatim.
+    /*
+    int CompRankTautomer( const void* a1, const void* a2, void *p )
+    {
+        AT_RANK *pn_tRankForSort = (AT_RANK *) p;
+        int ret = (int) pn_tRankForSort[(int) ( *(const AT_RANK*) a1 )] -
+            (int) pn_tRankForSort[(int) ( *(const AT_RANK*) a2 )];
+
+        return ret;
+    }
+    */
+    // END INCHI C FUNCTION: CompRankTautomer
+
+    let ranks = heap.slice(pn_tRankForSort.as_const())?;
+    let first = *ranks
+        .get(usize::from(a1))
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let second = *ranks
+        .get(usize::from(a2))
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    Ok(i32::from(first) - i32::from(second))
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn SortTautomerGroupsAndEndpoints(
+    heap: &mut SourceHeap,
+    _pCG: &mut CANON_GLOBALS,
+    t_group_info: &T_GROUP_INFO,
+    num_atoms: i32,
+    num_at_tg: i32,
+    nRank: SourceMutPointer<AT_RANK>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichitaut.c:7019 SortTautomerGroupsAndEndpoints
+    // INCHI✔️❌: complete active source frame follows verbatim.
+    /*
+    int SortTautomerGroupsAndEndpoints( CANON_GLOBALS *pCG,
+                                        T_GROUP_INFO *t_group_info,
+                                        int num_atoms,
+                                        int num_at_tg,
+                                        AT_RANK *nRank )
+    {
+        int i, nFirstEndpointAtNoPos, nNumEndpoints;
+        AT_RANK *pn_tRankForSort;
+        AT_NUMB  *nEndpointAtomNumber;
+        int       num_t_groups = num_at_tg - num_atoms;
+        T_GROUP   *t_group = NULL;
+
+        /*  Check if sorting is required */
+        if (num_t_groups <= 0 || t_group_info->nNumEndpoints < 2)
+        {
+            return 0; /*  no tautomer data */
+        }
+
+        t_group = t_group_info->t_group;
+
+        /*  Sort endpoints within the groups */
+        for (i = 0; i < num_t_groups; i++)
+        {
+            if (t_group[i].nNumEndpoints < 2)
+            {
+                continue;  /*  program error; should not happen */ /*   <BRKPT> */
+            }
+
+            /*  Set globals for sorting */
+            nFirstEndpointAtNoPos = t_group[i].nFirstEndpointAtNoPos;
+            nNumEndpoints = t_group[i].nNumEndpoints;
+            if (nNumEndpoints + nFirstEndpointAtNoPos > t_group_info->nNumEndpoints)
+            {
+                /*  for debug only */
+                return CT_TAUCOUNT_ERR; /*  program error */ /*   <BRKPT> */
+            }
+            nEndpointAtomNumber = t_group_info->nEndpointAtomNumber + (int) nFirstEndpointAtNoPos;
+            pn_tRankForSort = nRank;
+
+            insertions_sort( pn_tRankForSort, nEndpointAtomNumber, nNumEndpoints,
+                             sizeof( nEndpointAtomNumber[0] ), CompRankTautomer );
+        }
+
+        /*  Sort the tautomeric groups according to their ranks only
+        (that is, ignoring the isotopic composition of the mobile groups and ranks of the endpoints) */
+        if (t_group_info->num_t_groups > 1)
+        {
+            /*  Set globals for sorting */
+            /*  a hack: the ranks of all tautomeric groups are */
+            /*  located at nRank[num_atoms..num_at_tg-1] */
+            pn_tRankForSort = nRank + num_atoms;
+            /*  Sort */
+            /*  ordering numbers to sort : t_group_info->tGroupNumber; */
+
+            insertions_sort( pn_tRankForSort, t_group_info->tGroupNumber,
+                             num_t_groups, sizeof( t_group_info->tGroupNumber[0] ),
+                             CompRankTautomer );
+        }
+
+        return t_group_info->num_t_groups;
+    }
+    */
+    // END INCHI C FUNCTION: SortTautomerGroupsAndEndpoints
+
+    let num_t_groups = num_at_tg.wrapping_sub(num_atoms);
+    if num_t_groups <= 0 || t_group_info.nNumEndpoints < 2 {
+        return Ok(0);
+    }
+
+    let group_count = usize::try_from(num_t_groups)
+        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    let groups = heap
+        .slice(t_group_info.t_group.as_const())?
+        .get(..group_count)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .to_vec();
+
+    for group in groups {
+        if group.nNumEndpoints < 2 {
+            continue;
+        }
+
+        let first_endpoint = i32::from(group.nFirstEndpointAtNoPos);
+        let endpoint_count = i32::from(group.nNumEndpoints);
+        if endpoint_count + first_endpoint > t_group_info.nNumEndpoints {
+            return Ok(CT_TAUCOUNT_ERR);
+        }
+        let endpoint_pointer = t_group_info
+            .nEndpointAtomNumber
+            .offset(i64::from(first_endpoint))?;
+        heap.with_slice_mut_and_heap(endpoint_pointer, |endpoints, heap| {
+            insertions_sort(
+                bytemuck::cast_slice_mut::<AT_NUMB, u8>(endpoints),
+                usize::try_from(endpoint_count)
+                    .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
+                std::mem::size_of::<AT_NUMB>(),
+                &mut |left, right| {
+                    CompRankTautomer(
+                        heap,
+                        AT_NUMB::from_ne_bytes([left[0], left[1]]),
+                        AT_NUMB::from_ne_bytes([right[0], right[1]]),
+                        nRank,
+                    )
+                },
+            )
+            .map(|_| ())
+        })?;
+    }
+
+    if t_group_info.num_t_groups > 1 {
+        let rank_pointer = nRank.offset(i64::from(num_atoms))?;
+        heap.with_slice_mut_and_heap(t_group_info.tGroupNumber, |group_numbers, heap| {
+            insertions_sort(
+                bytemuck::cast_slice_mut::<AT_NUMB, u8>(group_numbers),
+                group_count,
+                std::mem::size_of::<AT_NUMB>(),
+                &mut |left, right| {
+                    CompRankTautomer(
+                        heap,
+                        AT_NUMB::from_ne_bytes([left[0], left[1]]),
+                        AT_NUMB::from_ne_bytes([right[0], right[1]]),
+                        rank_pointer,
+                    )
+                },
+            )
+            .map(|_| ())
+        })?;
+    }
+
+    Ok(t_group_info.num_t_groups)
+}
+
+pub(crate) fn free_t_group_info(
+    heap: &mut SourceHeap,
+    t_group_info: Option<&mut T_GROUP_INFO>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichitaut.c:6336 free_t_group_info
+    // INCHI✔️❌: complete active source frame follows verbatim; checked SourceHeap frees add overhead.
+    /*
+    int free_t_group_info( T_GROUP_INFO *t_group_info )
+    {
+        if (t_group_info)
+        {
+            if (t_group_info->t_group)
+            {
+                inchi_free( t_group_info->t_group );
+            }
+            if (t_group_info->nEndpointAtomNumber)
+            {
+                inchi_free( t_group_info->nEndpointAtomNumber );
+            }
+            if (t_group_info->tGroupNumber)
+            {
+                inchi_free( t_group_info->tGroupNumber );
+            }
+            if (t_group_info->nIsotopicEndpointAtomNumber)
+            {
+                inchi_free( t_group_info->nIsotopicEndpointAtomNumber );
+            }
+            memset( t_group_info, 0, sizeof( *t_group_info ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+        }
+
+        return 0;
+    }
+        */
+    // END INCHI C FUNCTION: free_t_group_info
+
+    if let Some(t_group_info) = t_group_info {
+        if !t_group_info.t_group.is_null() {
+            inchi_free(heap, t_group_info.t_group)?;
+        }
+        if !t_group_info.nEndpointAtomNumber.is_null() {
+            inchi_free(heap, t_group_info.nEndpointAtomNumber)?;
+        }
+        if !t_group_info.tGroupNumber.is_null() {
+            inchi_free(heap, t_group_info.tGroupNumber)?;
+        }
+        if !t_group_info.nIsotopicEndpointAtomNumber.is_null() {
+            inchi_free(heap, t_group_info.nIsotopicEndpointAtomNumber)?;
+        }
+        *t_group_info = T_GROUP_INFO::default();
+    }
+    Ok(0)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn CountTautomerGroups(
+    heap: &mut SourceHeap,
+    at: SourceMutPointer<sp_ATOM>,
+    num_atoms: i32,
+    t_group_info: Option<&mut T_GROUP_INFO>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichitaut.c:6519 CountTautomerGroups
+    // INCHI✔️❌: complete active source frame follows verbatim; checked SourceHeap access adds overhead.
+    /*
+    int CountTautomerGroups( sp_ATOM *at,
+                             int num_atoms,
+                             T_GROUP_INFO *t_group_info )
+    {
+        int i, j, ret = 0, nNumEndpoints, max_t_group, num_groups_noH;
+
+        AT_NUMB    nGroupNumber, nNewGroupNumber, *nCurrEndpointAtNoPos = NULL;
+
+        T_GROUP   *t_group;
+        int        num_t;
+        /* int bIgnoreIsotopic, max_num_t; */
+        AT_NUMB   *nTautomerGroupNumber = NULL;
+        AT_NUMB   *nEndpointAtomNumber = NULL;
+        AT_NUMB   *tGroupNumber = NULL;
+
+        if (!t_group_info || !t_group_info->t_group || 0 >= t_group_info->max_num_t_groups)
+        {
+            return 0; /* empty t-groups */
+        }
+        num_t = t_group_info->num_t_groups;
+        t_group = t_group_info->t_group;
+        /*
+        max_num_t       =  t_group_info->max_num_t_groups;
+        bIgnoreIsotopic =  t_group_info->bIgnoreIsotopic;
+        */
+        num_groups_noH = 0;
+
+        /* the following 2 arrays are to be rebuilt here */
+        /* djb-rwth: fixing oss-fuzz issue #70006 */
+        if (t_group_info->nEndpointAtomNumber)
+        {
+            /* free( t_group_info->nEndpointAtomNumber ); */
+            t_group_info->nEndpointAtomNumber = NULL;
+        }
+        if (t_group_info->tGroupNumber)
+        {
+            /* inchi_free( t_group_info->tGroupNumber ); */
+            t_group_info->tGroupNumber = NULL;
+        }
+
+        /*  Find max_t_group */
+        for (i = 0, max_t_group = 0; i < t_group_info->num_t_groups; i++)
+        {
+            if (max_t_group < t_group[i].nGroupNumber)
+                max_t_group = t_group[i].nGroupNumber;
+        }
+        /*  Allocate memory for temp storage of numbers of endpoints  */
+        if (max_t_group &&
+             !( nTautomerGroupNumber = (AT_NUMB*) inchi_calloc( (long long)max_t_group + 1, sizeof( nTautomerGroupNumber[0] ) ) /*temp*/ )) /* djb-rwth: cast operator added */
+        {
+            goto err_exit_function; /*  program error: out of RAM */ /*   <BRKPT> */
+        }
+
+        /*  Count endpoints for each tautomer group */
+        for (i = 0, nNumEndpoints = 0; i < num_atoms; i++)
+        {
+            if (( j = at[i].endpoint ) == 0)
+            {
+                continue;
+            }
+            if (j > max_t_group) /*  debug only */
+            {
+                goto err_exit_function; /*  program error */ /*   <BRKPT> */
+            }
+            if (nTautomerGroupNumber) /* djb-rwth: fixing a NULL pointer dereference */
+                nTautomerGroupNumber[j] ++;
+            nNumEndpoints++;
+        }
+
+        if (!nNumEndpoints)
+        {
+            goto exit_function; /*  not a tautomer */
+        }
+
+        /*  allocate temporary array */
+        if (!( nEndpointAtomNumber = (AT_NUMB*) inchi_calloc( nNumEndpoints, sizeof( nEndpointAtomNumber[0] ) ) ) ||
+             !( nCurrEndpointAtNoPos = (AT_NUMB*) inchi_calloc( num_t, sizeof( nCurrEndpointAtNoPos[0] ) ) /*temp*/ ))
+        {
+            goto err_exit_function; /*   program error: out of RAM */ /*   <BRKPT> */
+        }
+
+        /*
+        * Remove missing endpoints from t_group. Since only one
+        * disconnected part is processed, some endpoints groups may have disappeared.
+        * Mark t_groups containing charges only for subsequent removal
+        */
+        for (i = 0, nNewGroupNumber = 0; i < num_t; /*i ++*/)
+        {
+            int bNoH = 0, nNumH;
+            nGroupNumber = t_group[i].nGroupNumber;
+            for (j = 1, nNumH = t_group[i].num[0]; j < T_NUM_NO_ISOTOPIC; j++)
+            {
+                nNumH -= (int) t_group[i].num[j];
+            }
+            if (nTautomerGroupNumber) /* djb-rwth: fixing a NULL pointer dereference */
+            {
+                if (t_group[i].nNumEndpoints != nTautomerGroupNumber[(int)nGroupNumber]
+    #if ( IGNORE_TGROUP_WITHOUT_H == 1 )
+                    || (bNoH = (t_group[i].num[0] == t_group[i].num[1]))  /* only for (H,-) t-groups; (+) t-groups are not removed */
+    #endif
+                    ) /* djb-rwth: fixing a NULL pointer dereference */
+                {
+                    if (!nTautomerGroupNumber[(int)nGroupNumber] || bNoH)
+                    {
+                        /*  The group belongs to another disconnected part of the structure or has only charges */
+                        /*  Remove the group */
+                        num_t--;
+                        if (i < num_t)
+                            memmove(t_group + i, t_group + i + 1, ((long long)num_t - (long long)i) * sizeof(t_group[0])); /* djb-rwth: cast operators added */
+                        if (bNoH)
+                        {
+                            /*  Group contains no mobile hydrogen atoms, only charges. Prepare to remove it. */
+                            nTautomerGroupNumber[(int)nGroupNumber] = 0;
+                            num_groups_noH++;
+                        }
+                        /*i --;*/
+                    }
+                    else
+                    {
+                        /*  Different number of endpoints */
+                        goto err_exit_function; /*  program error */ /*   <BRKPT> */
+                    }
+                }
+                else
+                {
+                    /*  Renumber t_group and prepare to renumber at[i].endpoint */
+                    nTautomerGroupNumber[(int)nGroupNumber] =
+                        t_group[i].nGroupNumber = ++nNewGroupNumber; /*  = i+1 */
+                    /*  get first group atom orig. number position in the nEndpointAtomNumber[] */
+                    /*  and in the tautomer endpoint canon numbers part of the connection table */
+                    t_group[i].nFirstEndpointAtNoPos = nCurrEndpointAtNoPos[i] =
+                        i ? (t_group[i - 1].nFirstEndpointAtNoPos + t_group[i - 1].nNumEndpoints) : 0;
+                    t_group[i].num[0] = nNumH;
+    #if ( REMOVE_TGROUP_CHARGE == 1 )
+                    t_group[i].num[1] = 0;  /* remove only (-) charges */
+    #endif
+                    /* -- wrong condition. Disabled.
+                    if ( t_group[i].nGroupNumber != i + 1 ) { // for debug only
+                    goto err_exit_function; // program error
+                    }
+                    */
+                    i++;
+                }
+            }
+        }
+        if (num_t != nNewGroupNumber)
+        {
+            /*  for debug only */
+            goto err_exit_function; /*  program error */ /*   <BRKPT> */
+        }
+
+        /*  Check if any tautomer group was left */
+        if (!nNewGroupNumber)
+        {
+            if (!num_groups_noH)
+            {
+                goto err_exit_function; /*  program error: not a tautomer */ /*   <BRKPT> */
+            }
+            else
+            {
+                goto exit_function;
+            }
+        }
+
+        /*
+        * An array for tautomer group sorting later, at the time of storing Connection Table
+        * Later the sorting consists out of 2 steps:
+        * 1) Sort t_group[i].nNumEndpoints endpoint atom ranks within each endpoint group
+        *    starting from t_group[i].nFirstEndpointAtNoPos; i = 0..t_group_info->num_t_groups-1
+        * 2) Sort the groups indexes t_group_info->tGroupNumber[]
+        */
+        if (!( tGroupNumber =
+            (AT_NUMB*) inchi_calloc( (long long)nNewGroupNumber * (long long)TGSO_TOTAL_LEN, sizeof( tGroupNumber[0] ) ) )) /* djb-rwth: cast operator added */
+        {
+            goto err_exit_function; /*  out of RAM */
+        }
+        for (i = 0; i < nNewGroupNumber; i++)
+        {
+            tGroupNumber[i] = (AT_NUMB) i; /*  initialization: original t_group number = (at[i]->endpoint-1) */
+        }
+        /*
+        * Renumber endpoint atoms and save their orig. atom
+        * numbers for filling out the tautomer part of the LinearCT.
+        * nCurrEndpointAtNoPos[j] is an index of the atom number in the nEndpointAtomNumber[]
+        */
+        for (i = 0; i < num_atoms; i++)
+        {
+            if ((j = (int) at[i].endpoint)) /* djb-rwth: addressing LLVM warning */
+            {
+                j = (int) ( at[i].endpoint = nTautomerGroupNumber[j] ) - 1; /*  new t_group number */
+                if (j >= 0 && j < num_t) /* djb-rwth: fixing buffer overflow */
+                {
+                    /*  j=-1 in case of no mobile hydrogen atoms (charges only), group being removed */
+                    if (nCurrEndpointAtNoPos[j] >=   /*  debug only */
+                         t_group[j].nFirstEndpointAtNoPos + t_group[j].nNumEndpoints)
+                    {
+                        goto err_exit_function; /*  program error */ /*   <BRKPT> */
+                    }
+                    nEndpointAtomNumber[(int) nCurrEndpointAtNoPos[j] ++] = (AT_NUMB) i;
+                }
+                else
+                {
+                    nNumEndpoints--; /*  endpoint has been removed */
+                }
+            }
+        }
+        t_group_info->num_t_groups = nNewGroupNumber;
+        t_group_info->nNumEndpoints = nNumEndpoints;
+        t_group_info->nEndpointAtomNumber = nEndpointAtomNumber;
+        t_group_info->tGroupNumber = tGroupNumber; /* only the 1st segment filled */
+        inchi_free( nTautomerGroupNumber );
+        inchi_free( nCurrEndpointAtNoPos );
+        return nNumEndpoints + T_GROUP_HDR_LEN * nNewGroupNumber + 1; /*  nLenLinearCTTautomer */
+
+    err_exit_function:
+        ret = CT_TAUCOUNT_ERR;
+
+    exit_function:
+
+        /*  release allocated memory; set "no tautomeric group" */
+        if (nEndpointAtomNumber)
+        {
+            inchi_free( nEndpointAtomNumber );
+        }
+        if (nTautomerGroupNumber)
+        {
+            inchi_free( nTautomerGroupNumber );
+        }
+        if (tGroupNumber)
+        {
+            inchi_free( tGroupNumber );
+        }
+        if (nCurrEndpointAtNoPos)
+        {
+            inchi_free( nCurrEndpointAtNoPos );
+        }
+        t_group_info->nNumEndpoints = 0;
+        t_group_info->num_t_groups = 0;
+        if (!ret && ( ( t_group_info->tni.bNormalizationFlags & FLAG_NORM_CONSIDER_TAUT ) ||
+                      (t_group_info->nNumIsotopicEndpoints > 1 && ( t_group_info->bTautFlagsDone & ( TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE ) )) )) /* djb-rwth: addressing LLVM warning */
+        {
+            ret = 1; /* only protons have been (re)moved or neitralization happened */
+        }
+
+        return ret;
+    }
+        */
+    // END INCHI C FUNCTION: CountTautomerGroups
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: CountTautomerGroups
+    // INCHI✔️❌: IGNORE_TGROUP_WITHOUT_H == 1 and REMOVE_TGROUP_CHARGE == 0.
+    // INCHI✔️❌: TGSO_TOTAL_LEN == 4 and T_GROUP_HDR_LEN == 3.
+    // END INCHI ACTIVE MACRO CONFIGURATION: CountTautomerGroups
+
+    let Some(info) = t_group_info else {
+        return Ok(0);
+    };
+    if info.t_group.is_null() || info.max_num_t_groups <= 0 {
+        return Ok(0);
+    }
+
+    let mut number_of_groups = info.num_t_groups;
+    let group_count =
+        usize::try_from(number_of_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    if heap.slice(info.t_group.as_const())?.len() < group_count {
+        return Err(SourceHeapError::PointerOutOfBounds);
+    }
+
+    // The active 2024 fix intentionally orphans these old allocations.
+    info.nEndpointAtomNumber = SourceMutPointer::null();
+    info.tGroupNumber = SourceMutPointer::null();
+
+    let mut maximum_group = 0_i32;
+    for group in &heap.slice(info.t_group.as_const())?[..group_count] {
+        maximum_group = maximum_group.max(i32::from(group.nGroupNumber));
+    }
+
+    let mut group_number_map = SourceMutPointer::<AT_NUMB>::null();
+    let mut endpoint_atom_numbers = SourceMutPointer::<AT_NUMB>::null();
+    let mut current_endpoint_positions = SourceMutPointer::<AT_NUMB>::null();
+    let mut sorted_group_numbers = SourceMutPointer::<AT_NUMB>::null();
+    let mut return_code = 0_i32;
+
+    let process = (|| -> Result<Option<i32>, SourceHeapError> {
+        if maximum_group != 0 {
+            group_number_map = match inchi_calloc::<AT_NUMB>(
+                heap,
+                u64::try_from(maximum_group)
+                    .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?
+                    + 1,
+                std::mem::size_of::<AT_NUMB>() as u64,
+            ) {
+                Ok(pointer) => pointer,
+                Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+                Err(error) => return Err(error),
+            };
+            if group_number_map.is_null() {
+                return_code = CT_TAUCOUNT_ERR;
+                return Ok(None);
+            }
+        }
+
+        let atom_count =
+            usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        if heap.slice(at.as_const())?.len() < atom_count {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        let mut number_of_endpoints = 0_i32;
+        for index in 0..atom_count {
+            let endpoint = i32::from(heap.slice(at.as_const())?[index].endpoint);
+            if endpoint == 0 {
+                continue;
+            }
+            if endpoint > maximum_group {
+                return_code = CT_TAUCOUNT_ERR;
+                return Ok(None);
+            }
+            if !group_number_map.is_null() {
+                let endpoint =
+                    usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let value = heap.slice(group_number_map.as_const())?[endpoint];
+                heap.slice_mut(group_number_map)?[endpoint] = value.wrapping_add(1);
+            }
+            number_of_endpoints = number_of_endpoints.wrapping_add(1);
+        }
+
+        if number_of_endpoints == 0 {
+            return Ok(None);
+        }
+
+        endpoint_atom_numbers = match inchi_calloc::<AT_NUMB>(
+            heap,
+            u64::try_from(number_of_endpoints)
+                .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
+            std::mem::size_of::<AT_NUMB>() as u64,
+        ) {
+            Ok(pointer) => pointer,
+            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+            Err(error) => return Err(error),
+        };
+        if endpoint_atom_numbers.is_null() {
+            return_code = CT_TAUCOUNT_ERR;
+            return Ok(None);
+        }
+        current_endpoint_positions = match inchi_calloc::<AT_NUMB>(
+            heap,
+            number_of_groups as u64,
+            std::mem::size_of::<AT_NUMB>() as u64,
+        ) {
+            Ok(pointer) => pointer,
+            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+            Err(error) => return Err(error),
+        };
+        if current_endpoint_positions.is_null() {
+            return_code = CT_TAUCOUNT_ERR;
+            return Ok(None);
+        }
+
+        let mut groups_without_hydrogen = 0_i32;
+        let mut new_group_number = 0_u16;
+        let mut index = 0_i32;
+        while index < number_of_groups {
+            let group_index =
+                usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let group = heap.slice(info.t_group.as_const())?[group_index].clone();
+            let old_group_number = usize::from(group.nGroupNumber);
+            let number_of_hydrogens = i32::from(group.num[0]).wrapping_sub(i32::from(group.num[1]));
+            let no_hydrogen = group.num[0] == group.num[1];
+            let actual_endpoints = heap.slice(group_number_map.as_const())?[old_group_number];
+
+            if group.nNumEndpoints != actual_endpoints || no_hydrogen {
+                if actual_endpoints == 0 || no_hydrogen {
+                    number_of_groups -= 1;
+                    if index < number_of_groups {
+                        let groups = heap.slice_mut(info.t_group)?;
+                        for moved in group_index
+                            ..usize::try_from(number_of_groups)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+                        {
+                            groups[moved] = groups[moved + 1].clone();
+                        }
+                    }
+                    if no_hydrogen {
+                        heap.slice_mut(group_number_map)?[old_group_number] = 0;
+                        groups_without_hydrogen = groups_without_hydrogen.wrapping_add(1);
+                    }
+                } else {
+                    return_code = CT_TAUCOUNT_ERR;
+                    return Ok(None);
+                }
+            } else {
+                new_group_number = new_group_number.wrapping_add(1);
+                heap.slice_mut(group_number_map)?[old_group_number] = new_group_number;
+                let first_position = if index != 0 {
+                    let previous = &heap.slice(info.t_group.as_const())?[group_index - 1];
+                    previous
+                        .nFirstEndpointAtNoPos
+                        .wrapping_add(previous.nNumEndpoints)
+                } else {
+                    0
+                };
+                {
+                    let groups = heap.slice_mut(info.t_group)?;
+                    groups[group_index].nGroupNumber = new_group_number;
+                    groups[group_index].nFirstEndpointAtNoPos = first_position;
+                    groups[group_index].num[0] = number_of_hydrogens as AT_RANK;
+                }
+                heap.slice_mut(current_endpoint_positions)?[group_index] = first_position;
+                index += 1;
+            }
+        }
+
+        if number_of_groups != i32::from(new_group_number) {
+            return_code = CT_TAUCOUNT_ERR;
+            return Ok(None);
+        }
+        if new_group_number == 0 {
+            if groups_without_hydrogen == 0 {
+                return_code = CT_TAUCOUNT_ERR;
+            }
+            return Ok(None);
+        }
+
+        let sorted_length = u64::from(new_group_number)
+            .checked_mul(u64::from(crate::source_types::TGSO_TOTAL_LEN))
+            .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+        sorted_group_numbers = match inchi_calloc::<AT_NUMB>(
+            heap,
+            sorted_length,
+            std::mem::size_of::<AT_NUMB>() as u64,
+        ) {
+            Ok(pointer) => pointer,
+            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+            Err(error) => return Err(error),
+        };
+        if sorted_group_numbers.is_null() {
+            return_code = CT_TAUCOUNT_ERR;
+            return Ok(None);
+        }
+        for index in 0..usize::from(new_group_number) {
+            heap.slice_mut(sorted_group_numbers)?[index] = index as AT_NUMB;
+        }
+
+        for atom_index in 0..atom_count {
+            let old_endpoint = usize::from(heap.slice(at.as_const())?[atom_index].endpoint);
+            if old_endpoint == 0 {
+                continue;
+            }
+            let mapped = heap.slice(group_number_map.as_const())?[old_endpoint];
+            heap.slice_mut(at)?[atom_index].endpoint = mapped;
+            let group_index = i32::from(mapped) - 1;
+            if group_index >= 0 && group_index < number_of_groups {
+                let group_index = usize::try_from(group_index)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let position =
+                    usize::from(heap.slice(current_endpoint_positions.as_const())?[group_index]);
+                let group = &heap.slice(info.t_group.as_const())?[group_index];
+                if position
+                    >= usize::from(
+                        group
+                            .nFirstEndpointAtNoPos
+                            .wrapping_add(group.nNumEndpoints),
+                    )
+                {
+                    return_code = CT_TAUCOUNT_ERR;
+                    return Ok(None);
+                }
+                heap.slice_mut(endpoint_atom_numbers)?[position] = atom_index as AT_NUMB;
+                heap.slice_mut(current_endpoint_positions)?[group_index] =
+                    (position as AT_NUMB).wrapping_add(1);
+            } else {
+                number_of_endpoints = number_of_endpoints.wrapping_sub(1);
+            }
+        }
+
+        info.num_t_groups = i32::from(new_group_number);
+        info.nNumEndpoints = number_of_endpoints;
+        info.nEndpointAtomNumber = endpoint_atom_numbers;
+        info.tGroupNumber = sorted_group_numbers;
+        endpoint_atom_numbers = SourceMutPointer::null();
+        sorted_group_numbers = SourceMutPointer::null();
+        Ok(Some(
+            number_of_endpoints
+                .wrapping_add((T_GROUP_HDR_LEN as i32).wrapping_mul(i32::from(new_group_number)))
+                .wrapping_add(1),
+        ))
+    })();
+
+    let process = match process {
+        Ok(value) => value,
+        Err(error) => {
+            inchi_free(heap, endpoint_atom_numbers)?;
+            inchi_free(heap, group_number_map)?;
+            inchi_free(heap, sorted_group_numbers)?;
+            inchi_free(heap, current_endpoint_positions)?;
+            return Err(error);
+        }
+    };
+    inchi_free(heap, endpoint_atom_numbers)?;
+    inchi_free(heap, group_number_map)?;
+    inchi_free(heap, sorted_group_numbers)?;
+    inchi_free(heap, current_endpoint_positions)?;
+
+    if let Some(success) = process {
+        return Ok(success);
+    }
+
+    info.nNumEndpoints = 0;
+    info.num_t_groups = 0;
+    if return_code == 0
+        && ((info.tni.bNormalizationFlags & u64::from(FLAG_NORM_CONSIDER_TAUT)) != 0
+            || (info.nNumIsotopicEndpoints > 1
+                && (info.bTautFlagsDone
+                    & u64::from(TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE))
+                    != 0))
+    {
+        return_code = 1;
+    }
+    Ok(return_code)
+}
+
+pub(crate) fn set_tautomer_iso_sort_keys(
+    heap: &mut SourceHeap,
+    t_group_info: Option<&mut T_GROUP_INFO>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichitaut.c:6477 set_tautomer_iso_sort_keys
+    // INCHI✔️❌: complete active source frame follows verbatim; checked SourceHeap access adds overhead.
+    /*
+    int set_tautomer_iso_sort_keys( T_GROUP_INFO *t_group_info )
+    {
+        T_GROUP       *t_group;
+        T_GROUP_ISOWT Mult = 1;
+        int     i, j, num_t_groups, num_iso_t_groups = 0;
+
+        if (!t_group_info || !( t_group = t_group_info->t_group ) ||
+             0 >= ( num_t_groups = t_group_info->num_t_groups ) || t_group_info->nNumIsotopicEndpoints)
+        {
+            return 0;
+        }
+
+        for (i = 0; i < num_t_groups; i++)
+        {
+            t_group[i].iWeight = 0;
+            j = T_NUM_ISOTOPIC - 1;
+            Mult = 1;
+            do
+            {
+                t_group[i].iWeight += Mult * (T_GROUP_ISOWT) t_group[i].num[T_NUM_NO_ISOTOPIC + j];
+            } while (--j >= 0 && ( Mult *= T_GROUP_ISOWT_MULT ));
+
+            num_iso_t_groups += ( t_group[i].iWeight != 0 );
+        }
+
+        return num_iso_t_groups;
+    }
+        */
+    // END INCHI C FUNCTION: set_tautomer_iso_sort_keys
+
+    let Some(t_group_info) = t_group_info else {
+        return Ok(0);
+    };
+    if t_group_info.t_group.is_null()
+        || t_group_info.num_t_groups <= 0
+        || t_group_info.nNumIsotopicEndpoints != 0
+    {
+        return Ok(0);
+    }
+
+    let count = usize::try_from(t_group_info.num_t_groups)
+        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let groups = heap.slice_mut(t_group_info.t_group)?;
+    if groups.len() < count {
+        return Err(SourceHeapError::PointerOutOfBounds);
+    }
+    let mut number_of_isotopic_groups = 0_i32;
+    for group in &mut groups[..count] {
+        group.iWeight = 0;
+        let mut isotope = T_NUM_ISOTOPIC as i32 - 1;
+        let mut multiplier = 1_i64;
+        loop {
+            let index = usize::try_from(T_NUM_NO_ISOTOPIC as i32 + isotope)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            group.iWeight = group
+                .iWeight
+                .wrapping_add(multiplier.wrapping_mul(i64::from(group.num[index])));
+            isotope -= 1;
+            if isotope < 0 {
+                break;
+            }
+            multiplier =
+                multiplier.wrapping_mul(i64::from(crate::source_types::T_GROUP_ISOWT_MULT));
+            if multiplier == 0 {
+                break;
+            }
+        }
+        number_of_isotopic_groups =
+            number_of_isotopic_groups.wrapping_add(i32::from(group.iWeight != 0));
+    }
+    Ok(number_of_isotopic_groups)
+}
+
+pub(crate) fn make_a_copy_of_t_group_info(
+    heap: &mut SourceHeap,
+    t_group_info: Option<&mut T_GROUP_INFO>,
+    t_group_info_orig: Option<&mut T_GROUP_INFO>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichitaut.c:6364 make_a_copy_of_t_group_info
+    // INCHI✔️❌: complete active source frame follows verbatim; checked typed allocations and copies add overhead.
+    /*
+    int make_a_copy_of_t_group_info( T_GROUP_INFO *t_group_info,
+                                     T_GROUP_INFO *t_group_info_orig )
+    {
+        int err = 0, len;
+        free_t_group_info( t_group_info );
+        if (t_group_info_orig && t_group_info)
+        {
+            if (( len = t_group_info_orig->max_num_t_groups ) > 0)
+            {
+                T_GROUP* tgi_tg = NULL;  /* Copied from below 2024-09-01 DT */
+                /* djb-rwth: fixing oss-fuzz issue #52978 */
+                tgi_tg = (T_GROUP*)inchi_malloc(((long long)len+1) * sizeof(t_group_info->t_group[0])); /* djb-rwth: cast operator added */
+                if (tgi_tg && t_group_info_orig->t_group)
+                {
+                    t_group_info->t_group = tgi_tg;
+                    memcpy(tgi_tg,
+                        t_group_info_orig->t_group,
+                        len * sizeof(t_group_info->t_group[0])); /* djb-rwth: cast operator added */
+                }
+                else
+                {
+                    if (tgi_tg) /* djb-rwth: avoiding memory leak */
+                    {
+                        inchi_free(tgi_tg);
+                    }
+                    err++;
+                }
+            }
+            if (( len = t_group_info_orig->nNumEndpoints ) > 0)
+            {
+                if ((t_group_info->nEndpointAtomNumber =
+                    (AT_NUMB*) inchi_malloc( len * sizeof( t_group_info->nEndpointAtomNumber[0] ) ))) /* djb-rwth: addressing LLVM warning */
+                {
+                    memcpy(t_group_info->nEndpointAtomNumber,
+                        t_group_info_orig->nEndpointAtomNumber,
+                        len * sizeof(t_group_info->nEndpointAtomNumber[0]));
+                }
+                else
+                {
+                    err++;
+                }
+            }
+            if (( len = t_group_info_orig->num_t_groups ) > 0)
+            {
+                if ((t_group_info->tGroupNumber =
+                    (AT_NUMB*) inchi_malloc( (long long)len * TGSO_TOTAL_LEN * sizeof( t_group_info->tGroupNumber[0] ) ))) /* djb-rwth: cast operator added; djb-rwth: addressing LLVM warning */
+                {
+                    memcpy(t_group_info->tGroupNumber,
+                        t_group_info_orig->tGroupNumber,
+                        (long long)len * TGSO_TOTAL_LEN * sizeof(t_group_info->tGroupNumber[0])); /* djb-rwth: cast operator added */
+                }
+                else
+                {
+                    err++;
+                }
+            }
+            if (( len = t_group_info_orig->nNumIsotopicEndpoints ) > 0)
+            {
+                /* djb-rwth: fixing oss-fuzz issue #53519 */
+                AT_NUMB* tgi_niean = (AT_NUMB*)inchi_malloc(len * sizeof(t_group_info->nIsotopicEndpointAtomNumber[0]));
+                AT_NUMB* tgior_niean = (AT_NUMB*)inchi_realloc(t_group_info_orig->nIsotopicEndpointAtomNumber, len * sizeof(t_group_info_orig->nIsotopicEndpointAtomNumber[0]));
+                if (tgi_niean && tgior_niean) /* djb-rwth: addressing LLVM warning */
+                {
+                    t_group_info->nIsotopicEndpointAtomNumber = tgi_niean;
+                    t_group_info_orig->nIsotopicEndpointAtomNumber = tgior_niean;
+                    memcpy(tgi_niean,
+                        tgior_niean,
+                        len * sizeof(t_group_info->nIsotopicEndpointAtomNumber[0]));
+                }
+                else
+                {
+                    /* djb-rwth: avoiding memory leaks */
+                    if (tgi_niean)
+                    {
+                        inchi_free(tgi_niean);
+                    }
+                    if (tgior_niean)
+                    {
+                        inchi_free(tgior_niean);
+                    }
+                    err++;
+                }
+            }
+            if (!err)
+            {
+                t_group_info->nNumEndpoints = t_group_info_orig->nNumEndpoints;
+                t_group_info->num_t_groups = t_group_info_orig->num_t_groups;
+                t_group_info->max_num_t_groups = t_group_info_orig->max_num_t_groups;
+                t_group_info->bIgnoreIsotopic = t_group_info_orig->bIgnoreIsotopic;
+                t_group_info->nNumIsotopicEndpoints = t_group_info_orig->nNumIsotopicEndpoints;
+                t_group_info->tni = t_group_info_orig->tni;
+                /*
+                t_group_info->nNumRemovedExplicitH       = t_group_info_orig->nNumRemovedExplicitH;
+                t_group_info->nNumRemovedProtons         = t_group_info_orig->nNumRemovedProtons;
+                t_group_info->bNormalizationFlags        = t_group_info_orig->bNormalizationFlags;
+                */
+                /*
+                t_group_info->bHardAddedRemovedProtons   = t_group_info_orig->bHardAddedRemovedProtons;
+                t_group_info->bSimpleAddedRemovedProtons = t_group_info_orig->bSimpleAddedRemovedProtons;
+                t_group_info->nNumCanceledCharges        = t_group_info_orig->nNumCanceledCharges;
+                */
+            }
+            t_group_info->bTautFlags = t_group_info_orig->bTautFlags;
+            t_group_info->bTautFlagsDone = t_group_info_orig->bTautFlagsDone;
+        }
+
+        return err;
+    }
+        */
+    // END INCHI C FUNCTION: make_a_copy_of_t_group_info
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: make_a_copy_of_t_group_info
+    // INCHI✔️❌: inchi_malloc/inchi_realloc/inchi_free select GCC/Linux libc behavior.
+    // INCHI✔️❌: TGSO_TOTAL_LEN == 4.
+    // END INCHI ACTIVE MACRO CONFIGURATION: make_a_copy_of_t_group_info
+
+    let mut destination = t_group_info;
+    free_t_group_info(heap, destination.as_deref_mut())?;
+    let (Some(source), Some(destination)) = (t_group_info_orig, destination) else {
+        return Ok(0);
+    };
+
+    let mut error_count = 0_i32;
+    if source.max_num_t_groups > 0 {
+        let length = u64::try_from(source.max_num_t_groups)
+            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        let allocated = match inchi_calloc::<T_GROUP>(
+            heap,
+            length + 1,
+            std::mem::size_of::<T_GROUP>() as u64,
+        ) {
+            Ok(pointer) => pointer,
+            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+            Err(error) => return Err(error),
+        };
+        if !allocated.is_null() && !source.t_group.is_null() {
+            let copied = heap.slice(source.t_group.as_const())?
+                [..usize::try_from(length).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                .to_vec();
+            destination.t_group = allocated;
+            heap.slice_mut(allocated)?[..copied.len()].clone_from_slice(&copied);
+        } else {
+            inchi_free(heap, allocated)?;
+            error_count = error_count.wrapping_add(1);
+        }
+    }
+
+    if source.nNumEndpoints > 0 {
+        let length = u64::try_from(source.nNumEndpoints)
+            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        let allocated =
+            match inchi_calloc::<AT_NUMB>(heap, length, std::mem::size_of::<AT_NUMB>() as u64) {
+                Ok(pointer) => pointer,
+                Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+                Err(error) => return Err(error),
+            };
+        if !allocated.is_null() {
+            destination.nEndpointAtomNumber = allocated;
+            let copied = heap.slice(source.nEndpointAtomNumber.as_const())?
+                [..usize::try_from(length).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                .to_vec();
+            heap.slice_mut(allocated)?.clone_from_slice(&copied);
+        } else {
+            error_count = error_count.wrapping_add(1);
+        }
+    }
+
+    if source.num_t_groups > 0 {
+        let length = u64::try_from(source.num_t_groups)
+            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?
+            .checked_mul(u64::from(crate::source_types::TGSO_TOTAL_LEN))
+            .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+        let allocated =
+            match inchi_calloc::<AT_NUMB>(heap, length, std::mem::size_of::<AT_NUMB>() as u64) {
+                Ok(pointer) => pointer,
+                Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+                Err(error) => return Err(error),
+            };
+        if !allocated.is_null() {
+            destination.tGroupNumber = allocated;
+            let copied = heap.slice(source.tGroupNumber.as_const())?
+                [..usize::try_from(length).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+                .to_vec();
+            heap.slice_mut(allocated)?.clone_from_slice(&copied);
+        } else {
+            error_count = error_count.wrapping_add(1);
+        }
+    }
+
+    if source.nNumIsotopicEndpoints > 0 {
+        let length = u64::try_from(source.nNumIsotopicEndpoints)
+            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        let allocated =
+            match inchi_calloc::<AT_NUMB>(heap, length, std::mem::size_of::<AT_NUMB>() as u64) {
+                Ok(pointer) => pointer,
+                Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+                Err(error) => return Err(error),
+            };
+        let reallocated =
+            match inchi_realloc::<AT_NUMB>(heap, source.nIsotopicEndpointAtomNumber, length) {
+                Ok(pointer) => pointer,
+                Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+                Err(error) => return Err(error),
+            };
+        if !allocated.is_null() && !reallocated.is_null() {
+            destination.nIsotopicEndpointAtomNumber = allocated;
+            source.nIsotopicEndpointAtomNumber = reallocated;
+            let copied = heap.slice(reallocated.as_const())?.to_vec();
+            heap.slice_mut(allocated)?.clone_from_slice(&copied);
+        } else {
+            inchi_free(heap, allocated)?;
+            inchi_free(heap, reallocated)?;
+            error_count = error_count.wrapping_add(1);
+        }
+    }
+
+    if error_count == 0 {
+        destination.nNumEndpoints = source.nNumEndpoints;
+        destination.num_t_groups = source.num_t_groups;
+        destination.max_num_t_groups = source.max_num_t_groups;
+        destination.bIgnoreIsotopic = source.bIgnoreIsotopic;
+        destination.nNumIsotopicEndpoints = source.nNumIsotopicEndpoints;
+        destination.tni = source.tni.clone();
+    }
+    destination.bTautFlags = source.bTautFlags;
+    destination.bTautFlagsDone = source.bTautFlagsDone;
+
+    if error_count != 0 {
+        free_t_group_info(heap, Some(destination))?;
+    }
+    Ok(error_count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::source::base::ichi_bns::{AllocateAndInitBnData, AllocateAndInitBnStruct};
     use crate::source_types::{ALT_PATH_MODE_TAUTOM, INCHI_CLOCK};
+
+    #[test]
+    fn source_port__ichitaut__compranktautomer__line_7008() {
+        let mut heap = SourceHeap::default();
+        let ranks = heap
+            .allocate_model_storage(vec![0, AT_RANK::MAX, 7, 7, 1])
+            .unwrap();
+
+        assert_eq!(CompRankTautomer(&heap, 2, 3, ranks), Ok(0));
+        assert_eq!(CompRankTautomer(&heap, 1, 4, ranks), Ok(65_534));
+        assert_eq!(CompRankTautomer(&heap, 4, 1, ranks), Ok(-65_534));
+        assert_eq!(CompRankTautomer(&heap, 0, 2, ranks), Ok(-7));
+        assert_eq!(
+            CompRankTautomer(&heap, 5, 0, ranks),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+    }
+
+    #[test]
+    fn source_port__ichitaut__sorttautomergroupsandendpoints__line_7019() {
+        let mut heap = SourceHeap::default();
+        let mut globals = CANON_GLOBALS::default();
+        let empty = T_GROUP_INFO::default();
+        assert_eq!(
+            SortTautomerGroupsAndEndpoints(
+                &mut heap,
+                &mut globals,
+                &empty,
+                4,
+                4,
+                SourceMutPointer::null(),
+            ),
+            Ok(0)
+        );
+
+        let endpoints = heap.allocate_model_storage(vec![2, 0, 1, 4, 3, 1]).unwrap();
+        let groups = heap
+            .allocate_model_storage(vec![
+                T_GROUP {
+                    nNumEndpoints: 3,
+                    nFirstEndpointAtNoPos: 0,
+                    ..T_GROUP::default()
+                },
+                T_GROUP {
+                    nNumEndpoints: 1,
+                    nFirstEndpointAtNoPos: 3,
+                    ..T_GROUP::default()
+                },
+                T_GROUP {
+                    nNumEndpoints: 2,
+                    nFirstEndpointAtNoPos: 4,
+                    ..T_GROUP::default()
+                },
+            ])
+            .unwrap();
+        let group_numbers = heap.allocate_model_storage(vec![0, 1, 2]).unwrap();
+        let ranks = heap
+            .allocate_model_storage(vec![10, 20, 30, 40, 50, 20, 20, 10])
+            .unwrap();
+        let info = T_GROUP_INFO {
+            t_group: groups,
+            nEndpointAtomNumber: endpoints,
+            tGroupNumber: group_numbers,
+            nNumEndpoints: 6,
+            num_t_groups: 3,
+            ..T_GROUP_INFO::default()
+        };
+
+        assert_eq!(
+            SortTautomerGroupsAndEndpoints(&mut heap, &mut globals, &info, 5, 8, ranks),
+            Ok(3)
+        );
+        assert_eq!(
+            heap.slice(endpoints.as_const()).unwrap(),
+            &[0, 1, 2, 4, 1, 3]
+        );
+        assert_eq!(
+            heap.slice(group_numbers.as_const()).unwrap(),
+            &[2, 0, 1],
+            "equal-rank group numbers retain insertion order"
+        );
+
+        let short_info = T_GROUP_INFO {
+            nNumEndpoints: 1,
+            ..T_GROUP_INFO::default()
+        };
+        assert_eq!(
+            SortTautomerGroupsAndEndpoints(
+                &mut heap,
+                &mut globals,
+                &short_info,
+                0,
+                1,
+                SourceMutPointer::null(),
+            ),
+            Ok(0)
+        );
+
+        let overflow_groups = heap
+            .allocate_model_storage(vec![T_GROUP {
+                nNumEndpoints: 2,
+                nFirstEndpointAtNoPos: 1,
+                ..T_GROUP::default()
+            }])
+            .unwrap();
+        let overflow_endpoints = heap.allocate_model_storage(vec![1, 0]).unwrap();
+        let overflow_ranks = heap.allocate_model_storage(vec![1, 2]).unwrap();
+        let overflow_info = T_GROUP_INFO {
+            t_group: overflow_groups,
+            nEndpointAtomNumber: overflow_endpoints,
+            nNumEndpoints: 2,
+            num_t_groups: 1,
+            ..T_GROUP_INFO::default()
+        };
+        assert_eq!(
+            SortTautomerGroupsAndEndpoints(
+                &mut heap,
+                &mut globals,
+                &overflow_info,
+                1,
+                2,
+                overflow_ranks,
+            ),
+            Ok(CT_TAUCOUNT_ERR)
+        );
+        assert_eq!(heap.slice(overflow_endpoints.as_const()).unwrap(), &[1, 0]);
+    }
 
     fn bonded_pair(bond_type: u8) -> Vec<inp_ATOM> {
         let mut atoms = vec![inp_ATOM::default(); 2];
@@ -15143,5 +16351,522 @@ mod tests {
                 cKetoEnolCode: 1,
             }
         );
+    }
+
+    #[test]
+    fn source_port__ichitaut__free_t_group_info__line_6336() {
+        let mut empty_heap = SourceHeap::default();
+        assert_eq!(free_t_group_info(&mut empty_heap, None), Ok(0));
+        assert_eq!(empty_heap.live_allocation_count(), 0);
+        let mut empty_info = T_GROUP_INFO::default();
+        assert_eq!(
+            free_t_group_info(&mut empty_heap, Some(&mut empty_info)),
+            Ok(0)
+        );
+        assert_eq!(empty_info, T_GROUP_INFO::default());
+        assert_eq!(empty_heap.live_allocation_count(), 0);
+
+        let mut heap = SourceHeap::default();
+        let groups = heap
+            .allocate_model_storage(vec![T_GROUP::default(), T_GROUP::default()])
+            .unwrap();
+        let endpoints = heap.allocate_model_storage(vec![1_u16, 2, 3]).unwrap();
+        let group_numbers = heap.allocate_model_storage(vec![4_u16, 5, 6, 7]).unwrap();
+        let isotopic_endpoints = heap.allocate_model_storage(vec![8_u16, 9]).unwrap();
+        let mut info = T_GROUP_INFO {
+            t_group: groups,
+            nEndpointAtomNumber: endpoints,
+            tGroupNumber: group_numbers,
+            nNumEndpoints: 3,
+            num_t_groups: 2,
+            max_num_t_groups: 17,
+            bIgnoreIsotopic: -1,
+            nIsotopicEndpointAtomNumber: isotopic_endpoints,
+            nNumIsotopicEndpoints: 2,
+            num_iso_H: [1, 2, 3],
+            tni: crate::source_types::TNI {
+                nNumRemovedExplicitH: 4,
+                nNumRemovedProtons: 5,
+                nNumRemovedProtonsIsotopic: [6, 7, 8],
+                bNormalizationFlags: u64::MAX,
+            },
+            bTautFlags: 0x1234,
+            bTautFlagsDone: 0x5678,
+        };
+        assert_eq!(heap.live_allocation_count(), 4);
+        assert_eq!(free_t_group_info(&mut heap, Some(&mut info)), Ok(0));
+        assert_eq!(info, T_GROUP_INFO::default());
+        assert_eq!(heap.live_allocation_count(), 0);
+
+        let mut partial_heap = SourceHeap::default();
+        let endpoint = partial_heap.allocate_model_storage(vec![10_u16]).unwrap();
+        let mut partial = T_GROUP_INFO {
+            nEndpointAtomNumber: endpoint,
+            nNumEndpoints: 1,
+            bTautFlags: u64::MAX,
+            ..T_GROUP_INFO::default()
+        };
+        assert_eq!(
+            free_t_group_info(&mut partial_heap, Some(&mut partial)),
+            Ok(0)
+        );
+        assert_eq!(partial, T_GROUP_INFO::default());
+        assert_eq!(partial_heap.live_allocation_count(), 0);
+    }
+
+    #[test]
+    fn source_port__ichitaut__make_a_copy_of_t_group_info__line_6364() {
+        fn source_info(heap: &mut SourceHeap) -> T_GROUP_INFO {
+            let mut first = T_GROUP::default();
+            first.nGroupNumber = 11;
+            first.num = [1, 2, 3, 4, 5];
+            let mut second = T_GROUP::default();
+            second.nGroupNumber = 22;
+            second.num = [6, 7, 8, 9, 10];
+            T_GROUP_INFO {
+                t_group: heap.allocate_model_storage(vec![first, second]).unwrap(),
+                nEndpointAtomNumber: heap.allocate_model_storage(vec![3_u16, 5, 7]).unwrap(),
+                tGroupNumber: heap
+                    .allocate_model_storage(vec![10_u16, 11, 12, 13, 20, 21, 22, 23])
+                    .unwrap(),
+                nNumEndpoints: 3,
+                num_t_groups: 2,
+                max_num_t_groups: 2,
+                bIgnoreIsotopic: 1,
+                nIsotopicEndpointAtomNumber: heap.allocate_model_storage(vec![31_u16, 32]).unwrap(),
+                nNumIsotopicEndpoints: 2,
+                num_iso_H: [4, 5, 6],
+                tni: crate::source_types::TNI {
+                    nNumRemovedExplicitH: 7,
+                    nNumRemovedProtons: 8,
+                    nNumRemovedProtonsIsotopic: [9, 10, 11],
+                    bNormalizationFlags: 0x1234,
+                },
+                bTautFlags: 0x5678,
+                bTautFlagsDone: 0x9abc,
+            }
+        }
+
+        let mut null_heap = SourceHeap::default();
+        let mut source = source_info(&mut null_heap);
+        let original_isotopic = source.nIsotopicEndpointAtomNumber;
+        assert_eq!(
+            make_a_copy_of_t_group_info(&mut null_heap, None, Some(&mut source)),
+            Ok(0)
+        );
+        assert_eq!(source.nIsotopicEndpointAtomNumber, original_isotopic);
+        assert_eq!(null_heap.live_allocation_count(), 4);
+
+        let old_destination_group = null_heap
+            .allocate_model_storage(vec![T_GROUP::default()])
+            .unwrap();
+        let mut destination = T_GROUP_INFO {
+            t_group: old_destination_group,
+            max_num_t_groups: 99,
+            ..T_GROUP_INFO::default()
+        };
+        assert_eq!(
+            make_a_copy_of_t_group_info(&mut null_heap, Some(&mut destination), None),
+            Ok(0)
+        );
+        assert_eq!(destination, T_GROUP_INFO::default());
+        assert_eq!(null_heap.live_allocation_count(), 4);
+
+        let mut heap = SourceHeap::default();
+        let mut source = source_info(&mut heap);
+        let old_source_isotopic = source.nIsotopicEndpointAtomNumber;
+        let old_destination_endpoint = heap.allocate_model_storage(vec![99_u16, 98]).unwrap();
+        let mut destination = T_GROUP_INFO {
+            nEndpointAtomNumber: old_destination_endpoint,
+            nNumEndpoints: 2,
+            bTautFlags: u64::MAX,
+            ..T_GROUP_INFO::default()
+        };
+        assert_eq!(
+            make_a_copy_of_t_group_info(&mut heap, Some(&mut destination), Some(&mut source)),
+            Ok(0)
+        );
+        assert_ne!(source.nIsotopicEndpointAtomNumber, old_source_isotopic);
+        assert_eq!(
+            heap.slice(source.nIsotopicEndpointAtomNumber.as_const())
+                .unwrap(),
+            [31, 32]
+        );
+        assert_eq!(destination.nNumEndpoints, 3);
+        assert_eq!(destination.num_t_groups, 2);
+        assert_eq!(destination.max_num_t_groups, 2);
+        assert_eq!(destination.bIgnoreIsotopic, 1);
+        assert_eq!(destination.nNumIsotopicEndpoints, 2);
+        assert_eq!(destination.tni, source.tni);
+        assert_eq!(destination.num_iso_H, [0, 0, 0]);
+        assert_eq!(destination.bTautFlags, 0x5678);
+        assert_eq!(destination.bTautFlagsDone, 0x9abc);
+        assert_eq!(
+            heap.slice(destination.nEndpointAtomNumber.as_const())
+                .unwrap(),
+            [3, 5, 7]
+        );
+        assert_eq!(
+            heap.slice(destination.tGroupNumber.as_const()).unwrap(),
+            [10, 11, 12, 13, 20, 21, 22, 23]
+        );
+        let copied_groups = heap.slice(destination.t_group.as_const()).unwrap();
+        assert_eq!(copied_groups.len(), 3);
+        assert_eq!(copied_groups[0].nGroupNumber, 11);
+        assert_eq!(copied_groups[1].nGroupNumber, 22);
+        assert_eq!(
+            heap.slice(destination.nIsotopicEndpointAtomNumber.as_const())
+                .unwrap(),
+            [31, 32]
+        );
+        assert_eq!(heap.live_allocation_count(), 8);
+
+        for successful_allocations in 0..5 {
+            let mut failure_heap = SourceHeap::default();
+            let mut source = source_info(&mut failure_heap);
+            let mut destination = T_GROUP_INFO {
+                bTautFlags: u64::MAX,
+                ..T_GROUP_INFO::default()
+            };
+            failure_heap.fail_after_allocations(successful_allocations);
+            assert_eq!(
+                make_a_copy_of_t_group_info(
+                    &mut failure_heap,
+                    Some(&mut destination),
+                    Some(&mut source),
+                ),
+                Ok(1),
+                "allocation failure after {successful_allocations} successes"
+            );
+            assert_eq!(
+                destination,
+                T_GROUP_INFO::default(),
+                "destination cleanup after failure {successful_allocations}"
+            );
+            if successful_allocations == 3 {
+                assert_eq!(failure_heap.live_allocation_count(), 3);
+                assert_eq!(
+                    failure_heap.slice(source.nIsotopicEndpointAtomNumber.as_const()),
+                    Err(SourceHeapError::MissingAllocation)
+                );
+            } else {
+                assert_eq!(
+                    failure_heap.live_allocation_count(),
+                    4,
+                    "source ownership after failure {successful_allocations}"
+                );
+                assert_eq!(
+                    failure_heap
+                        .slice(source.nIsotopicEndpointAtomNumber.as_const())
+                        .unwrap(),
+                    [31, 32]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_port__ichitaut__set_tautomer_iso_sort_keys__line_6477() {
+        let mut empty_heap = SourceHeap::default();
+        assert_eq!(set_tautomer_iso_sort_keys(&mut empty_heap, None), Ok(0));
+        let mut empty_info = T_GROUP_INFO::default();
+        assert_eq!(
+            set_tautomer_iso_sort_keys(&mut empty_heap, Some(&mut empty_info)),
+            Ok(0)
+        );
+
+        let mut heap = SourceHeap::default();
+        let groups = heap
+            .allocate_model_storage(vec![
+                T_GROUP {
+                    num: [0, 0, 1, 2, 3],
+                    iWeight: -1,
+                    ..T_GROUP::default()
+                },
+                T_GROUP {
+                    num: [9, 8, 0, 0, 0],
+                    iWeight: -2,
+                    ..T_GROUP::default()
+                },
+                T_GROUP {
+                    num: [0, 0, u16::MAX, u16::MAX, u16::MAX],
+                    iWeight: -3,
+                    ..T_GROUP::default()
+                },
+            ])
+            .unwrap();
+        let mut info = T_GROUP_INFO {
+            t_group: groups,
+            num_t_groups: 3,
+            ..T_GROUP_INFO::default()
+        };
+        assert_eq!(
+            set_tautomer_iso_sort_keys(&mut heap, Some(&mut info)),
+            Ok(2)
+        );
+        let groups_after = heap.slice(groups.as_const()).unwrap();
+        assert_eq!(groups_after[0].iWeight, 1_050_627);
+        assert_eq!(groups_after[1].iWeight, 0);
+        assert_eq!(
+            groups_after[2].iWeight,
+            i64::from(u16::MAX) * (1 + 1024 + 1_048_576)
+        );
+
+        let unchanged = groups_after.to_vec();
+        info.nNumIsotopicEndpoints = 1;
+        assert_eq!(
+            set_tautomer_iso_sort_keys(&mut heap, Some(&mut info)),
+            Ok(0)
+        );
+        assert_eq!(heap.slice(groups.as_const()).unwrap(), unchanged);
+
+        info.nNumIsotopicEndpoints = 0;
+        info.num_t_groups = 0;
+        assert_eq!(
+            set_tautomer_iso_sort_keys(&mut heap, Some(&mut info)),
+            Ok(0)
+        );
+        assert_eq!(heap.slice(groups.as_const()).unwrap(), unchanged);
+
+        info.num_t_groups = 4;
+        assert_eq!(
+            set_tautomer_iso_sort_keys(&mut heap, Some(&mut info)),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+    }
+
+    #[test]
+    fn source_port__ichitaut__counttautomergroups__line_6519() {
+        fn group(number: u16, endpoints: u16, hydrogens: u16, charges: u16) -> T_GROUP {
+            let mut group = T_GROUP {
+                nGroupNumber: number,
+                nNumEndpoints: endpoints,
+                ..T_GROUP::default()
+            };
+            group.num[0] = hydrogens;
+            group.num[1] = charges;
+            group
+        }
+
+        fn normal_fixture(heap: &mut SourceHeap) -> (SourceMutPointer<sp_ATOM>, T_GROUP_INFO) {
+            let atoms = heap
+                .allocate_model_storage(vec![
+                    sp_ATOM {
+                        endpoint: 2,
+                        ..sp_ATOM::default()
+                    },
+                    sp_ATOM {
+                        endpoint: 5,
+                        ..sp_ATOM::default()
+                    },
+                    sp_ATOM {
+                        endpoint: 2,
+                        ..sp_ATOM::default()
+                    },
+                    sp_ATOM::default(),
+                ])
+                .unwrap();
+            let groups = heap
+                .allocate_model_storage(vec![group(2, 2, 4, 1), group(5, 1, 2, 0)])
+                .unwrap();
+            (
+                atoms,
+                T_GROUP_INFO {
+                    t_group: groups,
+                    num_t_groups: 2,
+                    max_num_t_groups: 2,
+                    ..T_GROUP_INFO::default()
+                },
+            )
+        }
+
+        let mut null_heap = SourceHeap::default();
+        assert_eq!(
+            CountTautomerGroups(&mut null_heap, SourceMutPointer::null(), 0, None),
+            Ok(0)
+        );
+        let mut empty = T_GROUP_INFO::default();
+        assert_eq!(
+            CountTautomerGroups(
+                &mut null_heap,
+                SourceMutPointer::null(),
+                0,
+                Some(&mut empty)
+            ),
+            Ok(0)
+        );
+
+        let mut heap = SourceHeap::default();
+        let (atoms, mut info) = normal_fixture(&mut heap);
+        let orphaned_endpoints = heap.allocate_model_storage(vec![91_u16, 92]).unwrap();
+        let orphaned_groups = heap
+            .allocate_model_storage(vec![81_u16, 82, 83, 84])
+            .unwrap();
+        info.nEndpointAtomNumber = orphaned_endpoints;
+        info.tGroupNumber = orphaned_groups;
+        assert_eq!(
+            CountTautomerGroups(&mut heap, atoms, 4, Some(&mut info)),
+            Ok(10)
+        );
+        assert_eq!((info.num_t_groups, info.nNumEndpoints), (2, 3));
+        assert_eq!(
+            heap.slice(atoms.as_const())
+                .unwrap()
+                .iter()
+                .map(|atom| atom.endpoint)
+                .collect::<Vec<_>>(),
+            [1, 2, 1, 0]
+        );
+        let groups = heap.slice(info.t_group.as_const()).unwrap();
+        assert_eq!(
+            (
+                groups[0].nGroupNumber,
+                groups[0].nFirstEndpointAtNoPos,
+                groups[0].num[0],
+                groups[1].nGroupNumber,
+                groups[1].nFirstEndpointAtNoPos,
+                groups[1].num[0],
+            ),
+            (1, 0, 3, 2, 2, 2)
+        );
+        assert_eq!(
+            heap.slice(info.nEndpointAtomNumber.as_const()).unwrap(),
+            [0, 2, 1]
+        );
+        assert_eq!(
+            heap.slice(info.tGroupNumber.as_const()).unwrap(),
+            [0, 1, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(heap.slice(orphaned_endpoints.as_const()).unwrap(), [91, 92]);
+        assert_eq!(
+            heap.slice(orphaned_groups.as_const()).unwrap(),
+            [81, 82, 83, 84]
+        );
+        assert_eq!(heap.live_allocation_count(), 6);
+
+        let mut no_h_heap = SourceHeap::default();
+        let no_h_atoms = no_h_heap
+            .allocate_model_storage(vec![sp_ATOM {
+                endpoint: 1,
+                ..sp_ATOM::default()
+            }])
+            .unwrap();
+        let no_h_groups = no_h_heap
+            .allocate_model_storage(vec![group(1, 1, 1, 1)])
+            .unwrap();
+        let mut no_h_info = T_GROUP_INFO {
+            t_group: no_h_groups,
+            num_t_groups: 1,
+            max_num_t_groups: 1,
+            ..T_GROUP_INFO::default()
+        };
+        assert_eq!(
+            CountTautomerGroups(&mut no_h_heap, no_h_atoms, 1, Some(&mut no_h_info)),
+            Ok(0)
+        );
+        assert_eq!((no_h_info.num_t_groups, no_h_info.nNumEndpoints), (0, 0));
+        assert_eq!(
+            no_h_heap.slice(no_h_atoms.as_const()).unwrap()[0].endpoint,
+            1
+        );
+        assert_eq!(no_h_heap.live_allocation_count(), 2);
+
+        let mut no_endpoint_heap = SourceHeap::default();
+        let no_endpoint_atoms = no_endpoint_heap
+            .allocate_model_storage(vec![sp_ATOM::default()])
+            .unwrap();
+        let no_endpoint_groups = no_endpoint_heap
+            .allocate_model_storage(vec![group(1, 1, 2, 0)])
+            .unwrap();
+        let mut no_endpoint_info = T_GROUP_INFO {
+            t_group: no_endpoint_groups,
+            num_t_groups: 1,
+            max_num_t_groups: 1,
+            ..T_GROUP_INFO::default()
+        };
+        no_endpoint_info.tni.bNormalizationFlags = u64::from(FLAG_NORM_CONSIDER_TAUT);
+        assert_eq!(
+            CountTautomerGroups(
+                &mut no_endpoint_heap,
+                no_endpoint_atoms,
+                1,
+                Some(&mut no_endpoint_info),
+            ),
+            Ok(1)
+        );
+        assert_eq!(
+            (
+                no_endpoint_info.num_t_groups,
+                no_endpoint_info.nNumEndpoints
+            ),
+            (0, 0)
+        );
+
+        for invalid_endpoint in [3_u16, u16::MAX] {
+            let mut invalid_heap = SourceHeap::default();
+            let invalid_atoms = invalid_heap
+                .allocate_model_storage(vec![sp_ATOM {
+                    endpoint: invalid_endpoint,
+                    ..sp_ATOM::default()
+                }])
+                .unwrap();
+            let invalid_groups = invalid_heap
+                .allocate_model_storage(vec![group(2, 1, 2, 0)])
+                .unwrap();
+            let mut invalid_info = T_GROUP_INFO {
+                t_group: invalid_groups,
+                num_t_groups: 1,
+                max_num_t_groups: 1,
+                ..T_GROUP_INFO::default()
+            };
+            assert_eq!(
+                CountTautomerGroups(&mut invalid_heap, invalid_atoms, 1, Some(&mut invalid_info),),
+                Ok(CT_TAUCOUNT_ERR)
+            );
+            assert_eq!(invalid_heap.live_allocation_count(), 2);
+        }
+
+        let mut mismatch_heap = SourceHeap::default();
+        let mismatch_atoms = mismatch_heap
+            .allocate_model_storage(vec![sp_ATOM {
+                endpoint: 1,
+                ..sp_ATOM::default()
+            }])
+            .unwrap();
+        let mismatch_groups = mismatch_heap
+            .allocate_model_storage(vec![group(1, 2, 3, 0)])
+            .unwrap();
+        let mut mismatch_info = T_GROUP_INFO {
+            t_group: mismatch_groups,
+            num_t_groups: 1,
+            max_num_t_groups: 1,
+            ..T_GROUP_INFO::default()
+        };
+        assert_eq!(
+            CountTautomerGroups(
+                &mut mismatch_heap,
+                mismatch_atoms,
+                1,
+                Some(&mut mismatch_info),
+            ),
+            Ok(CT_TAUCOUNT_ERR)
+        );
+
+        for successful_allocations in 0..4 {
+            let mut failure_heap = SourceHeap::default();
+            let (atoms, mut info) = normal_fixture(&mut failure_heap);
+            failure_heap.fail_after_allocations(successful_allocations);
+            assert_eq!(
+                CountTautomerGroups(&mut failure_heap, atoms, 4, Some(&mut info)),
+                Ok(CT_TAUCOUNT_ERR),
+                "allocation failure after {successful_allocations} successes"
+            );
+            assert_eq!(
+                failure_heap.source_allocation_calls(),
+                successful_allocations + 1
+            );
+            assert_eq!(failure_heap.live_allocation_count(), 2);
+            assert_eq!((info.num_t_groups, info.nNumEndpoints), (0, 0));
+        }
     }
 }

@@ -3476,12 +3476,12 @@ pub(crate) fn OAD_Edit_Underivatize(
     // INCHI✔️❌:
     // END INCHI C FUNCTION: OAD_Edit_Underivatize
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: OAD_Edit_Underivatize
-    // INCHI❗❌: #define UNDERIVATIZE 1
-    // INCHI❗❌: #define UNDERIVATIZE_REPORT 1
-    // INCHI❗❌: #define FIX_UNDERIV_TO_SDF
-    // INCHI❗❌: #define UNDERIV_ADD_EXPLICIT_H
-    // INCHI❗❌: #define COUNT_ALL_NOT_DERIV 1
-    // INCHI❗❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
+    // INCHI✔️❌: #define UNDERIVATIZE 1
+    // INCHI✔️❌: #define UNDERIVATIZE_REPORT 1
+    // INCHI✔️❌: #define FIX_UNDERIV_TO_SDF
+    // INCHI✔️❌: #define UNDERIV_ADD_EXPLICIT_H
+    // INCHI✔️❌: #define COUNT_ALL_NOT_DERIV 1
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: OAD_Edit_Underivatize
 
     let mut ret = 0_i32;

@@ -670,7 +670,7 @@ No function-name inference was used for these edges. The direct and transitive t
 | `SortNeighListsBySymmAndCanonRank` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap2.c:434` | external | reachable | `insertions_sort_NeighListBySymmAndCanonRank` | 0 |
 | `SortNeighLists2` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap2.c:448` | external | reachable | `insertions_sort_NeighList_AT_NUMBERS` | 0 |
 | `SortNeighLists3` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap2.c:482` | external | reachable | `insertions_sort_NeighList_AT_NUMBERS3` | 0 |
-| `DifferentiateRanks2` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap2.c:518` | external | reachable | `switch_ptrs`, `SetNewRanksFromNeighLists`, `SortNeighLists2`, `inchi_qsort`, `insertions_sort` | 0 |
+| `DifferentiateRanks2` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap2.c:518` | external | reachable | `switch_ptrs`, `SetNewRanksFromNeighLists`, `SortNeighLists2`, `inchi_qsort`, `insertions_sort`, callback `CompRank`, callback `CompRanksOrd`, callback `CompNeighListRanksOrd` | 0 |
 | `DifferentiateRanks3` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap2.c:561` | external | reachable | `switch_ptrs`, `SetNewRanksFromNeighLists3`, `SortNeighLists3` | 0 |
 | `DifferentiateRanks4` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap2.c:602` | external | reachable | `switch_ptrs`, `SetNewRanksFromNeighLists4`, `SortNeighLists3` | 0 |
 | `DifferentiateRanksBasic` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap2.c:637` | external | reachable | `switch_ptrs`, `SetNewRanksFromNeighLists`, `SortNeighLists2`, `inchi_qsort`, `insertions_sort` | 0 |
@@ -1088,7 +1088,7 @@ No function-name inference was used for these edges. The direct and transitive t
 | `insertions_sort_NeighListBySymmAndCanonRank` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:421` | external | reachable | none | 0 |
 | `CompNeighborsAT_NUMBER` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:453` | external | active, export-unreachable | none | 0 |
 | `comp_AT_RANK` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:467` | external | active, export-unreachable | none | 0 |
-| `CompRank` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:475` | external | active, export-unreachable | none | 0 |
+| `CompRank` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:475` | external | reachable as active `DifferentiateRanks2` sorting callback | none | 0 |
 | `CompRanksOrd` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:486` | external | active, export-unreachable | none | 0 |
 | `CompAtomInvariants2Only` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:502` | external | reachable | none | 0 |
 | `CompAtomInvariants2` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:536` | external | active, export-unreachable | `CompAtomInvariants2Only` | 0 |
@@ -1099,7 +1099,7 @@ No function-name inference was used for these edges. The direct and transitive t
 | `CompNeighListRanks` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:615` | external | reachable | `compare_NeighLists` | 0 |
 | `CompNeighLists` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:632` | external | active, export-unreachable | `compare_NeighLists` | 0 |
 | `CompNeighListsUpToMaxRank` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:644` | external | active, export-unreachable | `CompareNeighListLexUpToMaxRank` | 0 |
-| `CompNeighListRanksOrd` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:657` | external | active, export-unreachable | `CompNeighListRanks` | 0 |
+| `CompNeighListRanksOrd` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:657` | external | reachable as active `DifferentiateRanks2` rank-refinement callback | `CompNeighListRanks` | 0 |
 | `CompRanksInvOrd` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:670` | external | active, export-unreachable | none | 0 |
 | `CompNeighborsRanksCountEql` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:677` | external | active, export-unreachable | none | 0 |
 | `CreateNeighListFromLinearCT` | `third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:701` | external | reachable | none | 0 |

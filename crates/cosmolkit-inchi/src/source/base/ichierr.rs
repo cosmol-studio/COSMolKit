@@ -1,4 +1,10 @@
-use crate::source_types::{STR_ERR_LEN, SourceHeapError};
+use crate::source_types::{
+    BNS_ALTBOND_ERR, BNS_RADICAL_ERR, BNS_TIMEOUT, CT_ATOMCOUNT_ERR, CT_CALC_STEREO_ERR,
+    CT_CANON_ERR, CT_ISO_H_ERR, CT_ISOCOUNT_ERR, CT_ISOTAUCOUNT_ERR, CT_LEN_MISMATCH,
+    CT_MAPCOUNT_ERR, CT_OUT_OF_RAM, CT_OVERFLOW, CT_RANKING_ERR, CT_REMOVE_STEREO_ERR,
+    CT_STEREO_CANON_ERR, CT_STEREOBOND_ERROR, CT_STEREOCOUNT_ERR, CT_TAUCOUNT_ERR, CT_TIMEOUT_ERR,
+    CT_UNKNOWN_ERR, CT_USER_QUIT_ERR, CT_WRONG_FORMULA, STR_ERR_LEN, SourceHeapError,
+};
 
 fn c_string_length(value: &[i8]) -> Result<usize, SourceHeapError> {
     value
@@ -14,6 +20,95 @@ fn find_bytes(haystack: &[i8], needle: &[i8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn ErrMsg(error_code: i32) -> String {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichierr.c:54 ErrMsg
+    // BEGIN COMPLETE VERBATIM SOURCE FRAME: ErrMsg
+    // INCHI✔️❌: const char *ErrMsg( int nErrorCode )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     const char *p;
+    // INCHI✔️❌:     static char szErrMsg[64];
+    // INCHI✔️❌:     switch (nErrorCode)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         case 0:                      p = "";                      break;
+    // INCHI✔️❌:         case CT_OVERFLOW:            p = "ARRAY OVERFLOW";        break;
+    // INCHI✔️❌:         case CT_LEN_MISMATCH:        p = "LENGTH_MISMATCH";       break;
+    // INCHI✔️❌:         case CT_OUT_OF_RAM:          p = "Out of RAM";            break;
+    // INCHI✔️❌:         case CT_RANKING_ERR:         p = "RANKING_ERR";           break;
+    // INCHI✔️❌:         case CT_ISOCOUNT_ERR:        p = "ISOCOUNT_ERR";          break;
+    // INCHI✔️❌:         case CT_TAUCOUNT_ERR:        p = "TAUCOUNT_ERR";          break;
+    // INCHI✔️❌:         case CT_ISOTAUCOUNT_ERR:     p = "ISOTAUCOUNT_ERR";       break;
+    // INCHI✔️❌:         case CT_MAPCOUNT_ERR:        p = "MAPCOUNT_ERR";          break;
+    // INCHI✔️❌:         case CT_TIMEOUT_ERR:         p = "Time limit exceeded";   break;
+    // INCHI✔️❌:         case CT_ISO_H_ERR:           p = "ISO_H_ERR";             break;
+    // INCHI✔️❌:         case CT_STEREOCOUNT_ERR:     p = "STEREOCOUNT_ERR";       break;
+    // INCHI✔️❌:         case CT_ATOMCOUNT_ERR:       p = "ATOMCOUNT_ERR";         break;
+    // INCHI✔️❌:         case CT_STEREOBOND_ERROR:    p = "STEREOBOND_ERR";        break;
+    // INCHI✔️❌:         case CT_USER_QUIT_ERR:       p = "User requested termination"; break;
+    // INCHI✔️❌:         case CT_REMOVE_STEREO_ERR:   p = "REMOVE_STEREO_ERR";     break;
+    // INCHI✔️❌:         case CT_CALC_STEREO_ERR:     p = "CALC_STEREO_ERR";       break;
+    // INCHI✔️❌:         case CT_STEREO_CANON_ERR:    p = "STEREO_CANON_ERR";      break;
+    // INCHI✔️❌:         case CT_CANON_ERR:           p = "CANON_ERR";             break;
+    // INCHI✔️❌:         case CT_WRONG_FORMULA:       p = "Wrong or missing chemical formula";  break;
+    // INCHI✔️❌:         /*case CT_CANON_ERR2:          p = "CT_CANON_ERR2";         break;*/
+    // INCHI✔️❌:         case CT_UNKNOWN_ERR:         p = "UNKNOWN_ERR";           break;
+    // INCHI✔️❌:         case BNS_RADICAL_ERR:        p = "Cannot process free radical center"; break;
+    // INCHI✔️❌:         case BNS_ALTBOND_ERR:        p = "Cannot process aromatic bonds";      break;
+    // INCHI✔️❌:         /* v. 1.05 */
+    // INCHI✔️❌:         case BNS_TIMEOUT:             p = "Structure normalization timeout";      break;
+    // INCHI✔️❌:
+    // INCHI✔️❌:         default:
+    // INCHI✔️❌:             if (nErrorCode > CT_UNKNOWN_ERR)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 sprintf(szErrMsg, "No description(%d)", nErrorCode);
+    // INCHI✔️❌:                 p = szErrMsg;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             else
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 sprintf(szErrMsg, "UNKNOWN_ERR(%d)", CT_UNKNOWN_ERR - nErrorCode);
+    // INCHI✔️❌:                 p = szErrMsg;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             break;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return p;
+    // INCHI✔️❌: }
+    // END COMPLETE VERBATIM SOURCE FRAME: ErrMsg
+    // END INCHI C FUNCTION: ErrMsg
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: ErrMsg
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux.
+    // INCHI✔️❌: Owned Rust text adds allocation versus C literals/static szErrMsg storage.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: ErrMsg
+    match error_code {
+        0 => "".to_owned(),
+        CT_OVERFLOW => "ARRAY OVERFLOW".to_owned(),
+        CT_LEN_MISMATCH => "LENGTH_MISMATCH".to_owned(),
+        CT_OUT_OF_RAM => "Out of RAM".to_owned(),
+        CT_RANKING_ERR => "RANKING_ERR".to_owned(),
+        CT_ISOCOUNT_ERR => "ISOCOUNT_ERR".to_owned(),
+        CT_TAUCOUNT_ERR => "TAUCOUNT_ERR".to_owned(),
+        CT_ISOTAUCOUNT_ERR => "ISOTAUCOUNT_ERR".to_owned(),
+        CT_MAPCOUNT_ERR => "MAPCOUNT_ERR".to_owned(),
+        CT_TIMEOUT_ERR => "Time limit exceeded".to_owned(),
+        CT_ISO_H_ERR => "ISO_H_ERR".to_owned(),
+        CT_STEREOCOUNT_ERR => "STEREOCOUNT_ERR".to_owned(),
+        CT_ATOMCOUNT_ERR => "ATOMCOUNT_ERR".to_owned(),
+        CT_STEREOBOND_ERROR => "STEREOBOND_ERR".to_owned(),
+        CT_USER_QUIT_ERR => "User requested termination".to_owned(),
+        CT_REMOVE_STEREO_ERR => "REMOVE_STEREO_ERR".to_owned(),
+        CT_CALC_STEREO_ERR => "CALC_STEREO_ERR".to_owned(),
+        CT_STEREO_CANON_ERR => "STEREO_CANON_ERR".to_owned(),
+        CT_CANON_ERR => "CANON_ERR".to_owned(),
+        CT_WRONG_FORMULA => "Wrong or missing chemical formula".to_owned(),
+        CT_UNKNOWN_ERR => "UNKNOWN_ERR".to_owned(),
+        BNS_RADICAL_ERR => "Cannot process free radical center".to_owned(),
+        BNS_ALTBOND_ERR => "Cannot process aromatic bonds".to_owned(),
+        BNS_TIMEOUT => "Structure normalization timeout".to_owned(),
+        code if code > CT_UNKNOWN_ERR => format!("No description({code})"),
+        code => format!("UNKNOWN_ERR({})", CT_UNKNOWN_ERR.wrapping_sub(code)),
+    }
 }
 
 pub(crate) fn already_have_this_message(
@@ -191,6 +286,44 @@ mod tests {
     fn buffer_text(value: &[i8]) -> String {
         let length = c_string_length(value).unwrap();
         String::from_utf8(value[..length].iter().map(|byte| *byte as u8).collect()).unwrap()
+    }
+
+    #[test]
+    fn source_port__ichierr__errmsg__line_54() {
+        for (code, expected) in [
+            (0, ""),
+            (CT_OVERFLOW, "ARRAY OVERFLOW"),
+            (CT_LEN_MISMATCH, "LENGTH_MISMATCH"),
+            (CT_OUT_OF_RAM, "Out of RAM"),
+            (CT_RANKING_ERR, "RANKING_ERR"),
+            (CT_ISOCOUNT_ERR, "ISOCOUNT_ERR"),
+            (CT_TAUCOUNT_ERR, "TAUCOUNT_ERR"),
+            (CT_ISOTAUCOUNT_ERR, "ISOTAUCOUNT_ERR"),
+            (CT_MAPCOUNT_ERR, "MAPCOUNT_ERR"),
+            (CT_TIMEOUT_ERR, "Time limit exceeded"),
+            (CT_ISO_H_ERR, "ISO_H_ERR"),
+            (CT_STEREOCOUNT_ERR, "STEREOCOUNT_ERR"),
+            (CT_ATOMCOUNT_ERR, "ATOMCOUNT_ERR"),
+            (CT_STEREOBOND_ERROR, "STEREOBOND_ERR"),
+            (CT_USER_QUIT_ERR, "User requested termination"),
+            (CT_REMOVE_STEREO_ERR, "REMOVE_STEREO_ERR"),
+            (CT_CALC_STEREO_ERR, "CALC_STEREO_ERR"),
+            (CT_STEREO_CANON_ERR, "STEREO_CANON_ERR"),
+            (CT_CANON_ERR, "CANON_ERR"),
+            (CT_WRONG_FORMULA, "Wrong or missing chemical formula"),
+            (CT_UNKNOWN_ERR, "UNKNOWN_ERR"),
+            (BNS_RADICAL_ERR, "Cannot process free radical center"),
+            (BNS_ALTBOND_ERR, "Cannot process aromatic bonds"),
+            (BNS_TIMEOUT, "Structure normalization timeout"),
+        ] {
+            assert_eq!(ErrMsg(code), expected, "error code {code}");
+        }
+
+        assert_eq!(ErrMsg(-29_999), "No description(-29999)");
+        assert_eq!(ErrMsg(1), "No description(1)");
+        assert_eq!(ErrMsg(i32::MAX), "No description(2147483647)");
+        assert_eq!(ErrMsg(CT_UNKNOWN_ERR - 1), "UNKNOWN_ERR(1)");
+        assert_eq!(ErrMsg(i32::MIN), "UNKNOWN_ERR(2147453629)");
     }
 
     #[test]

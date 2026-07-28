@@ -1,17 +1,22 @@
 use std::cmp::Ordering;
 
 use crate::source::base::ichi_io::inchi_ios_print;
+use crate::source::base::ichierr::{AddErrorMessage, ErrMsg};
 use crate::source::base::ichimake::{CompINChINonTaut2, CompINChITaut2};
 use crate::source::base::ichiprt1::OutputINChI2;
+use crate::source::base::mol_fmt2::MolfileSaveCopy;
+use crate::source::base::runichi2::{eprint_bytes, sdf_label_value, source_array_c_bytes};
 use crate::source::base::strutil::{Free_INChI, Free_INChI_Aux};
 use crate::source::base::util::inchi_free;
 use crate::source_types::{
-    _IS_FATAL, CANON_GLOBALS, COMP_ATOM_DATA, CT_OUT_OF_RAM, FILE, INCHI_BAS, INCHI_IOS_STRING,
-    INCHI_IOSTREAM, INCHI_MODE, INCHI_NUM, INCHI_OUT_EMBED_REC, INCHI_OUT_PLAIN_TEXT,
-    INCHI_OUT_PLAIN_TEXT_COMMENTS, INCHI_OUT_PRINT_OPTIONS, INCHI_OUT_TABBED_OUTPUT, INCHI_SORT,
-    INPUT_PARMS, NORM_CANON_FLAGS, ORIG_ATOM_DATA, ORIG_STRUCT, OUT_TN, PINChI_Aux2, PINChI2,
-    SourceConstPointer, SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer,
-    SourceVaList, TAUT_NON, TAUT_NUM, TAUT_YES, TG_FLAG_DISCONNECT_COORD_DONE,
+    _IS_ERROR, _IS_FATAL, _IS_WARNING, AMBIGUOUS_STEREO_ATOM, AMBIGUOUS_STEREO_ATOM_ISO,
+    AMBIGUOUS_STEREO_BOND, AMBIGUOUS_STEREO_BOND_ISO, CANON_GLOBALS, COMP_ATOM_DATA, CT_OUT_OF_RAM,
+    CT_USER_QUIT_ERR, FILE, INCHI_BAS, INCHI_CLOCK, INCHI_IOS_STRING, INCHI_IOSTREAM, INCHI_MODE,
+    INCHI_NUM, INCHI_OUT_EMBED_REC, INCHI_OUT_PLAIN_TEXT, INCHI_OUT_PLAIN_TEXT_COMMENTS,
+    INCHI_OUT_PRINT_OPTIONS, INCHI_OUT_TABBED_OUTPUT, INCHI_SORT, INChI, INChI_Stereo,
+    INP_ATOM_DATA, INPUT_PARMS, NORM_CANON_FLAGS, ORIG_ATOM_DATA, ORIG_STRUCT, OUT_TN, PINChI_Aux2,
+    PINChI2, STRUCT_DATA, SourceConstPointer, SourceFormatArgument, SourceHeap, SourceHeapError,
+    SourceMutPointer, SourceVaList, TAUT_NON, TAUT_NUM, TAUT_YES, TG_FLAG_DISCONNECT_COORD_DONE,
 };
 
 fn sort_inchi_rows(
@@ -38,6 +43,111 @@ fn sort_inchi_rows(
         }
     });
     error.map_or(Ok(()), Err)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn bIsStructChiral(
+    heap: &SourceHeap,
+    inchi_components: [SourceMutPointer<PINChI2>; INCHI_NUM as usize],
+    component_counts: [i32; INCHI_NUM as usize],
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/runichi4.c:1271 bIsStructChiral
+    // BEGIN COMPLETE VERBATIM SOURCE FRAME: bIsStructChiral
+    // INCHI✔️❌: int bIsStructChiral( PINChI2 *pINChI2[INCHI_NUM], int num_components[] )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     int i, j, k;
+    // INCHI✔️❌:     INChI *pINChI;
+    // INCHI✔️❌:     INChI_Stereo *Stereo;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     for (j = 0; j < INCHI_NUM; j++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         /* disconnected / reconnected */
+    // INCHI✔️❌:         if (!num_components[j])
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             continue;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         for (i = 0; i < num_components[j]; i++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /* i-th component */
+    // INCHI✔️❌:             for (k = 0; k < TAUT_NUM; k++)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 /* mobile/immobile H */
+    // INCHI✔️❌:                 if (( pINChI = pINChI2[j][i][k] ) &&
+    // INCHI✔️❌:                       !pINChI->bDeleted                &&
+    // INCHI✔️❌:                       pINChI->nNumberOfAtoms > 0)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:
+    // INCHI✔️❌:                     if (( Stereo = pINChI->Stereo ) &&
+    // INCHI✔️❌:                          Stereo->t_parity &&
+    // INCHI✔️❌:                          Stereo->nNumberOfStereoCenters > 0 &&
+    // INCHI✔️❌:                          Stereo->nCompInv2Abs)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         return 1; /* inversion changed stereo */
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                     if (( Stereo = pINChI->StereoIsotopic ) &&
+    // INCHI✔️❌:                          Stereo->t_parity &&
+    // INCHI✔️❌:                          Stereo->nNumberOfStereoCenters > 0 &&
+    // INCHI✔️❌:                          Stereo->nCompInv2Abs)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         return 1; /* inversion changed stereo */
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return 0;
+    // INCHI✔️❌: }
+    // END COMPLETE VERBATIM SOURCE FRAME: bIsStructChiral
+    // END INCHI C FUNCTION: bIsStructChiral
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: bIsStructChiral
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; INCHI_NUM=2 and TAUT_NUM=2.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: bIsStructChiral
+
+    for domain in 0..INCHI_NUM as usize {
+        let count = component_counts[domain];
+        if count == 0 {
+            continue;
+        }
+        for component in 0..count.max(0) {
+            let component =
+                usize::try_from(component).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let row = heap
+                .slice(inchi_components[domain].as_const())?
+                .get(component)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            for tautomer in 0..TAUT_NUM as usize {
+                let inchi_pointer = row[tautomer];
+                if inchi_pointer.is_null() {
+                    continue;
+                }
+                let inchi = heap
+                    .slice(inchi_pointer.as_const())?
+                    .first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                if inchi.bDeleted != 0 || inchi.nNumberOfAtoms <= 0 {
+                    continue;
+                }
+                for stereo_pointer in [inchi.Stereo, inchi.StereoIsotopic] {
+                    if stereo_pointer.is_null() {
+                        continue;
+                    }
+                    let stereo = heap
+                        .slice(stereo_pointer.as_const())?
+                        .first()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    if !stereo.t_parity.is_null()
+                        && stereo.nNumberOfStereoCenters > 0
+                        && stereo.nCompInv2Abs != 0
+                    {
+                        return Ok(1);
+                    }
+                }
+            }
+        }
+    }
+    Ok(0)
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -764,10 +874,472 @@ pub(crate) fn FreeINChIArrays(
     Ok(())
 }
 
+#[allow(non_snake_case)]
+pub(crate) fn GetProcessingWarningsOneInChI(
+    heap: &SourceHeap,
+    p_inchi: &INChI,
+    input_normalized_data: &INP_ATOM_DATA,
+    error_buffer: &mut [i8],
+    no_warnings: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/runichi4.c:1574 GetProcessingWarningsOneInChI
+    // INCHI✔️✔️: int GetProcessingWarningsOneInChI( INChI *pINChI,
+    // INCHI✔️✔️:                                    INP_ATOM_DATA *inp_norm_data,
+    // INCHI✔️✔️:                                    char *pStrErrStruct,
+    // INCHI✔️✔️:                                    int bNoWarnings )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     int j;
+    // INCHI✔️✔️:     int nAmbiguousStereoAtoms, nAmbiguousStereoBonds;
+    // INCHI✔️✔️:     nAmbiguousStereoAtoms = 0;
+    // INCHI✔️✔️:     nAmbiguousStereoBonds = 0;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     if (inp_norm_data->at)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         for (j = 0; j < pINChI->nNumberOfAtoms; j++)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             if (inp_norm_data->at[j].bAmbiguousStereo & ( AMBIGUOUS_STEREO_ATOM | AMBIGUOUS_STEREO_ATOM_ISO ))
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 nAmbiguousStereoAtoms++;
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:             if (inp_norm_data->at[j].bAmbiguousStereo & ( AMBIGUOUS_STEREO_BOND | AMBIGUOUS_STEREO_BOND_ISO ))
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 nAmbiguousStereoBonds++;
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         if (nAmbiguousStereoAtoms)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             if (!bNoWarnings)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 WarningMessage( pStrErrStruct, "Ambiguous stereo:" );
+    // INCHI✔️✔️:                 WarningMessage( pStrErrStruct, "center(s)" );
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         if (nAmbiguousStereoBonds)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             if (!bNoWarnings)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 WarningMessage( pStrErrStruct, "Ambiguous stereo:" );
+    // INCHI✔️✔️:                 WarningMessage( pStrErrStruct, "bond(s)" );
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     return ( nAmbiguousStereoAtoms || nAmbiguousStereoBonds );
+    // INCHI✔️✔️: }
+    // END INCHI C FUNCTION: GetProcessingWarningsOneInChI
+
+    let mut ambiguous_stereo_atoms = 0_i32;
+    let mut ambiguous_stereo_bonds = 0_i32;
+    if !input_normalized_data.at.is_null() {
+        let count = if p_inchi.nNumberOfAtoms > 0 {
+            usize::try_from(p_inchi.nNumberOfAtoms)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+        } else {
+            0
+        };
+        let atoms = heap
+            .slice(input_normalized_data.at.as_const())?
+            .get(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        for atom in atoms {
+            let ambiguity = i32::from(atom.bAmbiguousStereo);
+            if ambiguity & (AMBIGUOUS_STEREO_ATOM as i32 | AMBIGUOUS_STEREO_ATOM_ISO as i32) != 0 {
+                ambiguous_stereo_atoms += 1;
+            }
+            if ambiguity & (AMBIGUOUS_STEREO_BOND as i32 | AMBIGUOUS_STEREO_BOND_ISO as i32) != 0 {
+                ambiguous_stereo_bonds += 1;
+            }
+        }
+        if ambiguous_stereo_atoms != 0 && no_warnings == 0 {
+            let heading = b"Ambiguous stereo:\0".map(|byte| byte as i8);
+            let centers = b"center(s)\0".map(|byte| byte as i8);
+            AddErrorMessage(Some(error_buffer), Some(&heading))?;
+            AddErrorMessage(Some(error_buffer), Some(&centers))?;
+        }
+        if ambiguous_stereo_bonds != 0 && no_warnings == 0 {
+            let heading = b"Ambiguous stereo:\0".map(|byte| byte as i8);
+            let bonds = b"bond(s)\0".map(|byte| byte as i8);
+            AddErrorMessage(Some(error_buffer), Some(&heading))?;
+            AddErrorMessage(Some(error_buffer), Some(&bonds))?;
+        }
+    }
+    Ok(i32::from(
+        ambiguous_stereo_atoms != 0 || ambiguous_stereo_bonds != 0,
+    ))
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn GetProcessingWarningsOneComponentInChI(
+    heap: &SourceHeap,
+    current_inchi: &[SourceMutPointer<INChI>; TAUT_NUM as usize],
+    input_normalized_data: &[INP_ATOM_DATA; TAUT_NUM as usize],
+    structure_data: &mut STRUCT_DATA,
+    no_warnings: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/runichi4.c:1550 GetProcessingWarningsOneComponentInChI
+    // INCHI✔️✔️: int GetProcessingWarningsOneComponentInChI( INChI *cur_INChI[],
+    // INCHI✔️✔️:                                             INP_ATOM_DATA **inp_norm_data,
+    // INCHI✔️✔️:                                             STRUCT_DATA *sd,
+    // INCHI✔️✔️:                                             int bNoWarnings )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     int i, ret = 0;
+    // INCHI✔️✔️:     for (i = 0; i < TAUT_NUM; i++)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         if (cur_INChI[i] && cur_INChI[i]->nNumberOfAtoms > 0)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             ret |= GetProcessingWarningsOneInChI( cur_INChI[i],
+    // INCHI✔️✔️:                                                   inp_norm_data[i],
+    // INCHI✔️✔️:                                                   sd->pStrErrStruct,
+    // INCHI✔️✔️:                                                   bNoWarnings );
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     return ret;
+    // INCHI✔️✔️: }
+    // END INCHI C FUNCTION: GetProcessingWarningsOneComponentInChI
+
+    let mut result = 0_i32;
+    for representation in 0..TAUT_NUM as usize {
+        if !current_inchi[representation].is_null() {
+            let inchi = heap
+                .slice(current_inchi[representation].as_const())?
+                .first()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if inchi.nNumberOfAtoms > 0 {
+                result |= GetProcessingWarningsOneInChI(
+                    heap,
+                    inchi,
+                    &input_normalized_data[representation],
+                    &mut structure_data.pStrErrStruct,
+                    no_warnings,
+                )?;
+            }
+        }
+    }
+    Ok(result)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn TreatErrorsInCreateOneComponentINChI(
+    heap: &mut SourceHeap,
+    structure_data: &mut STRUCT_DATA,
+    input_parameters: &INPUT_PARMS,
+    _original_atom_data: &ORIG_ATOM_DATA,
+    component_index: i32,
+    input_structure_number: i64,
+    _input_file: Option<&mut INCHI_IOSTREAM>,
+    log_file: Option<&mut INCHI_IOSTREAM>,
+    _output_file: Option<&mut INCHI_IOSTREAM>,
+    _problem_file: Option<&mut INCHI_IOSTREAM>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/runichi4.c:1387 TreatErrorsInCreateOneComponentINChI
+    // BEGIN COMPLETE VERBATIM SOURCE FRAME: TreatErrorsInCreateOneComponentINChI
+    // INCHI✔️❌: int TreatErrorsInCreateOneComponentINChI( STRUCT_DATA *sd,
+    // INCHI✔️❌:                                           INPUT_PARMS    *ip,
+    // INCHI✔️❌:                                           ORIG_ATOM_DATA *orig_inp_data,
+    // INCHI✔️❌:                                           int i, long num_inp,
+    // INCHI✔️❌:                                           INCHI_IOSTREAM *inp_file,
+    // INCHI✔️❌:                                           INCHI_IOSTREAM *log_file,
+    // INCHI✔️❌:                                           INCHI_IOSTREAM *out_file,
+    // INCHI✔️❌:                                           INCHI_IOSTREAM *prb_file )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     if (sd->nErrorCode)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         AddErrorMessage( sd->pStrErrStruct, ErrMsg( sd->nErrorCode ) );
+    // INCHI✔️❌:         inchi_ios_eprint( log_file,
+    // INCHI✔️❌:                           "Error %d (%s) structure #%ld component %d.%s%s%s%s\n",
+    // INCHI✔️❌:                           sd->nErrorCode, sd->pStrErrStruct,
+    // INCHI✔️❌:                           num_inp, i + 1, SDF_LBL_VAL( ip->pSdfLabel, ip->pSdfValue ) );
+    // INCHI✔️❌:         sd->nErrorType = ( sd->nErrorCode == CT_OUT_OF_RAM || sd->nErrorCode == CT_USER_QUIT_ERR )
+    // INCHI✔️❌:             ? _IS_FATAL
+    // INCHI✔️❌:             : _IS_ERROR;
+    // INCHI✔️❌:
+    // INCHI✔️❌: #ifdef TARGET_LIB_FOR_WINCHI
+    // INCHI✔️❌:         if (( ip->bINChIOutputOptions & INCHI_OUT_WINCHI_WINDOW ) &&
+    // INCHI✔️❌:             ( ip->bINChIOutputOptions & INCHI_OUT_PLAIN_TEXT ))
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             sd->nErrorType = ProcessStructError( out_file, log_file,
+    // INCHI✔️❌:                                                  sd->pStrErrStruct, sd->nErrorType,
+    // INCHI✔️❌:                                                  num_inp, ip );
+    // INCHI✔️❌:             /*  Save the problem structure */
+    // INCHI✔️❌:             if (prb_file->f &&
+    // INCHI✔️❌:                  0L <= sd->fPtrStart && sd->fPtrStart < sd->fPtrEnd &&
+    // INCHI✔️❌:                  !ip->bSaveAllGoodStructsAsProblem)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 MolfileSaveCopy( inp_file, sd->fPtrStart, sd->fPtrEnd, prb_file->f, num_inp );
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         else
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /*  Save the problem structure */
+    // INCHI✔️❌:             if (sd->nErrorCode &&
+    // INCHI✔️❌:                  prb_file->f &&
+    // INCHI✔️❌:                  0L <= sd->fPtrStart && sd->fPtrStart < sd->fPtrEnd &&
+    // INCHI✔️❌:                  !ip->bSaveAllGoodStructsAsProblem)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 MolfileSaveCopy( inp_file, sd->fPtrStart, sd->fPtrEnd, prb_file->f, num_inp );
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌: /* #ifndef TARGET_API_LIB */
+    // INCHI✔️❌: #if ( !defined( TARGET_API_LIB ) && !defined(TARGET_EXE_STANDALONE) )
+    // INCHI✔️❌:     /*  print the logfile record */
+    // INCHI✔️❌:     if (log_file->f && log_file->f != stderr && ( sd->ulStructTime >= 1000 || sd->nErrorCode ))
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         fprintf( log_file->f, "%10lu msec structure #%ld.%s%s%s%s (%d component%s, %d atom%s, error=%d).\n",
+    // INCHI✔️❌:                 sd->ulStructTime, num_inp, SDF_LBL_VAL( ip->pSdfLabel, ip->pSdfValue ),
+    // INCHI✔️❌:                 orig_inp_data->num_components, orig_inp_data->num_components == 1 ? "" : "s",
+    // INCHI✔️❌:                 orig_inp_data->num_inp_atoms, orig_inp_data->num_inp_atoms == 1 ? "" : "s", sd->nErrorCode );
+    // INCHI✔️❌:     }
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return sd->nErrorType;
+    // INCHI✔️❌: }
+    // END COMPLETE VERBATIM SOURCE FRAME: TreatErrorsInCreateOneComponentINChI
+    // END INCHI C FUNCTION: TreatErrorsInCreateOneComponentINChI
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: TreatErrorsInCreateOneComponentINChI
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; TARGET_LIB_FOR_WINCHI is undefined.
+    // INCHI✔️❌: Both problem-file branches and the !TARGET_API_LIB timing record are inactive.
+    // INCHI✔️❌: SourceHeap-backed formatting adds temporary allocations versus direct C varargs formatting.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: TreatErrorsInCreateOneComponentINChI
+    if structure_data.nErrorCode != 0 {
+        let error_message = ErrMsg(structure_data.nErrorCode);
+        let mut c_error_message = error_message
+            .bytes()
+            .map(|byte| byte as i8)
+            .collect::<Vec<_>>();
+        c_error_message.push(0);
+        AddErrorMessage(
+            Some(&mut structure_data.pStrErrStruct),
+            Some(&c_error_message),
+        )?;
+
+        let error_text = source_array_c_bytes(&structure_data.pStrErrStruct)?;
+        let mut log = b"Error ".to_vec();
+        log.extend_from_slice(structure_data.nErrorCode.to_string().as_bytes());
+        log.extend_from_slice(b" (");
+        log.extend_from_slice(&error_text);
+        log.extend_from_slice(b") structure #");
+        log.extend_from_slice(input_structure_number.to_string().as_bytes());
+        log.extend_from_slice(b" component ");
+        log.extend_from_slice(component_index.wrapping_add(1).to_string().as_bytes());
+        log.push(b'.');
+        log.extend_from_slice(&sdf_label_value(heap, input_parameters)?);
+        log.push(b'\n');
+        eprint_bytes(heap, log_file, &log)?;
+
+        structure_data.nErrorType = if structure_data.nErrorCode == CT_OUT_OF_RAM
+            || structure_data.nErrorCode == CT_USER_QUIT_ERR
+        {
+            _IS_FATAL as i32
+        } else {
+            _IS_ERROR as i32
+        };
+    }
+    Ok(structure_data.nErrorType)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn TreatCreateINChIWarning(
+    heap: &mut SourceHeap,
+    structure_data: &mut STRUCT_DATA,
+    input_parameters: &INPUT_PARMS,
+    _original_atom_data: &ORIG_ATOM_DATA,
+    input_structure_number: i64,
+    input_file: Option<&mut INCHI_IOSTREAM>,
+    log_file: Option<&mut INCHI_IOSTREAM>,
+    _output_file: Option<&mut INCHI_IOSTREAM>,
+    problem_file: Option<&mut INCHI_IOSTREAM>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/runichi4.c:1453 TreatCreateINChIWarning
+    // BEGIN COMPLETE VERBATIM SOURCE FRAME: TreatCreateINChIWarning
+    // INCHI✔️❌: int TreatCreateINChIWarning( STRUCT_DATA    *sd,
+    // INCHI✔️❌:                              INPUT_PARMS    *ip,
+    // INCHI✔️❌:                              ORIG_ATOM_DATA *orig_inp_data,
+    // INCHI✔️❌:                              long           num_inp,
+    // INCHI✔️❌:                              INCHI_IOSTREAM *inp_file,
+    // INCHI✔️❌:                              INCHI_IOSTREAM *log_file,
+    // INCHI✔️❌:                              INCHI_IOSTREAM *out_file,
+    // INCHI✔️❌:                              INCHI_IOSTREAM *prb_file )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:
+    // INCHI✔️❌: #if ( bRELEASE_VERSION == 0 && (EXTR_FLAGS || EXTR_MASK) )
+    // INCHI✔️❌:     if (EXTR_MASK ? ( ( sd->bExtract & EXTR_MASK ) == EXTR_FLAGS )
+    // INCHI✔️❌:                     : ( sd->bExtract & EXTR_FLAGS )
+    // INCHI✔️❌:        )
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         char szMsg[64];
+    // INCHI✔️❌:         sprintf( szMsg, "ExtractStruct.code=0x%X", sd->bExtract );
+    // INCHI✔️❌:         if (!ip->bNoWarnings)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             WarningMessage( sd->pStrErrStruct, szMsg );
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (!sd->nErrorCode && sd->pStrErrStruct[0])
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         inchi_ios_eprint( log_file, "Warning (%s) structure #%ld.%s%s%s%s\n",
+    // INCHI✔️❌:             sd->pStrErrStruct, num_inp, SDF_LBL_VAL( ip->pSdfLabel, ip->pSdfValue ) );
+    // INCHI✔️❌:         sd->nErrorType = _IS_WARNING;
+    // INCHI✔️❌:
+    // INCHI✔️❌: #ifdef TARGET_LIB_FOR_WINCHI
+    // INCHI✔️❌:         if (( ip->bINChIOutputOptions & INCHI_OUT_WINCHI_WINDOW ) &&
+    // INCHI✔️❌:             ( ip->bINChIOutputOptions & INCHI_OUT_PLAIN_TEXT ))
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             sd->nErrorType = ProcessStructError( out_file,
+    // INCHI✔️❌:                                                  log_file,
+    // INCHI✔️❌:                                                  sd->pStrErrStruct,
+    // INCHI✔️❌:                                                  sd->nErrorType,
+    // INCHI✔️❌:                                                  num_inp,
+    // INCHI✔️❌:                                                  ip );
+    // INCHI✔️❌:         }
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:         /*  save the structure as a problem structure if requested */
+    // INCHI✔️❌:         if (ip->bSaveWarningStructsAsProblem && !ip->bSaveAllGoodStructsAsProblem &&
+    // INCHI✔️❌:              prb_file->f && 0L <= sd->fPtrStart && sd->fPtrStart < sd->fPtrEnd)
+    // INCHI✔️❌:         {   /* djb-rwth: addressing coverity ID #499545 -- return values handled properly */
+    // INCHI✔️❌:             MolfileSaveCopy( inp_file,
+    // INCHI✔️❌:                              sd->fPtrStart,
+    // INCHI✔️❌:                              sd->fPtrEnd,
+    // INCHI✔️❌:                              prb_file->f,
+    // INCHI✔️❌:                              num_inp );
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌: #if ( bRELEASE_VERSION == 0 )
+    // INCHI✔️❌:         /*  otherwise extract the structure as a problem structure if requested */
+    // INCHI✔️❌:         else
+    // INCHI✔️❌:             if (( EXTR_MASK ? ( ( sd->bExtract & EXTR_MASK ) == EXTR_FLAGS ) : ( sd->bExtract & EXTR_FLAGS ) )
+    // INCHI✔️❌:                             && !ip->bSaveAllGoodStructsAsProblem &&
+    // INCHI✔️❌:                                prb_file->f &&
+    // INCHI✔️❌:                                0L <= sd->fPtrStart && sd->fPtrStart < sd->fPtrEnd)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 MolfileSaveCopy( inp_file->f,
+    // INCHI✔️❌:                                  sd->fPtrStart,
+    // INCHI✔️❌:                                  sd->fPtrEnd,
+    // INCHI✔️❌:                                  prb_file->f,
+    // INCHI✔️❌:                                  num_inp );
+    // INCHI✔️❌:             }
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌: #if ( bRELEASE_VERSION != 1 && bOUTPUT_ONE_STRUCT_TIME == 1 )
+    // INCHI✔️❌: #ifndef TARGET_API_LIB
+    // INCHI✔️❌:     if (log_file && log_file != stderr)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         fprintf( log_file, "%10lu msec structure %1dD #%ld.%s%s%s%s (%d component%s, %d atom%s, error=%d).\n",
+    // INCHI✔️❌:                 sd->ulStructTime, orig_inp_data->num_dimensions, num_inp, SDF_LBL_VAL( ip->pSdfLabel, ip->pSdfValue ),
+    // INCHI✔️❌:                 orig_inp_data->num_components, orig_inp_data->num_components == 1 ? "" : "s",
+    // INCHI✔️❌:                 orig_inp_data->num_inp_atoms, orig_inp_data->num_inp_atoms == 1 ? "" : "s", sd->nErrorCode );
+    // INCHI✔️❌:     }
+    // INCHI✔️❌: #else
+    // INCHI✔️❌:     if (log_file)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         inchi_ios_eprint( log_file, "%10lu msec structure %1dD #%ld.%s%s%s%s (%d component%s, %d atom%s, error=%d).\n",
+    // INCHI✔️❌:                 sd->ulStructTime, orig_inp_data->num_dimensions, num_inp, SDF_LBL_VAL( ip->pSdfLabel, ip->pSdfValue ),
+    // INCHI✔️❌:                 orig_inp_data->num_components, orig_inp_data->num_components == 1 ? "" : "s",
+    // INCHI✔️❌:                 orig_inp_data->num_inp_atoms, orig_inp_data->num_inp_atoms == 1 ? "" : "s", sd->nErrorCode );
+    // INCHI✔️❌:     }
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return sd->nErrorType;
+    // INCHI✔️❌: }
+    // END COMPLETE VERBATIM SOURCE FRAME: TreatCreateINChIWarning
+    // END INCHI C FUNCTION: TreatCreateINChIWarning
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: TreatCreateINChIWarning
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; bRELEASE_VERSION=1.
+    // INCHI✔️❌: EXTR_FLAGS=0; EXTR_MASK=0; TARGET_LIB_FOR_WINCHI is undefined;
+    // INCHI✔️❌: bOUTPUT_ONE_STRUCT_TIME is forced to 0 for release builds.
+    // INCHI✔️❌: SourceHeap-backed formatting adds temporary allocations versus direct C varargs formatting.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: TreatCreateINChIWarning
+
+    if structure_data.nErrorCode == 0 && structure_data.pStrErrStruct[0] != 0 {
+        let warning_text = source_array_c_bytes(&structure_data.pStrErrStruct)?;
+        let mut log = b"Warning (".to_vec();
+        log.extend_from_slice(&warning_text);
+        log.extend_from_slice(b") structure #");
+        log.extend_from_slice(input_structure_number.to_string().as_bytes());
+        log.push(b'.');
+        log.extend_from_slice(&sdf_label_value(heap, input_parameters)?);
+        log.push(b'\n');
+        eprint_bytes(heap, log_file, &log)?;
+        structure_data.nErrorType = _IS_WARNING as i32;
+
+        let problem_output = problem_file
+            .as_ref()
+            .map(|stream| stream.f)
+            .unwrap_or_else(SourceMutPointer::null);
+        if input_parameters.bSaveWarningStructsAsProblem != 0
+            && input_parameters.bSaveAllGoodStructsAsProblem == 0
+            && !problem_output.is_null()
+            && structure_data.fPtrStart >= 0
+            && structure_data.fPtrStart < structure_data.fPtrEnd
+        {
+            let _ = MolfileSaveCopy(
+                heap,
+                input_file,
+                structure_data.fPtrStart,
+                structure_data.fPtrEnd,
+                problem_output,
+                input_structure_number,
+            )?;
+        }
+    }
+
+    Ok(structure_data.nErrorType)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn DisplayTheWholeStructure(
+    _canonical_globals: SourceMutPointer<CANON_GLOBALS>,
+    _clock: SourceMutPointer<INCHI_CLOCK>,
+    _structure_data: SourceMutPointer<STRUCT_DATA>,
+    _input_parameters: SourceMutPointer<INPUT_PARMS>,
+    _title: SourceMutPointer<i8>,
+    _input_file: SourceMutPointer<INCHI_IOSTREAM>,
+    _log_file: SourceMutPointer<INCHI_IOSTREAM>,
+    _original_atom_data: SourceMutPointer<ORIG_ATOM_DATA>,
+    _input_structure_number: i64,
+    _inchi_index: i32,
+    _show_structure: i32,
+    _inchi_library_flag: i32,
+) -> i32 {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/runichi4.c:1204 DisplayTheWholeStructure
+    // BEGIN COMPLETE VERBATIM SOURCE FRAME: DisplayTheWholeStructure
+    // INCHI✔️✔️: int DisplayTheWholeStructure( struct tagCANON_GLOBALS *pCG,
+    // INCHI✔️✔️:                               struct tagINCHI_CLOCK   *ic,
+    // INCHI✔️✔️:                               STRUCT_DATA             *sd,
+    // INCHI✔️✔️:                               INPUT_PARMS             *ip,
+    // INCHI✔️✔️:                               char                    *szTitle,
+    // INCHI✔️✔️:                               INCHI_IOSTREAM          *inp_file,
+    // INCHI✔️✔️:                               INCHI_IOSTREAM          *log_file,
+    // INCHI✔️✔️:                               ORIG_ATOM_DATA          *orig_inp_data,
+    // INCHI✔️✔️:                               long                    num_inp,
+    // INCHI✔️✔️:                               int                     iINChI,
+    // INCHI✔️✔️:                               int                     bShowStruct,
+    // INCHI✔️✔️:                               int                     bINCHI_LIB_Flag )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     return 0;
+    // INCHI✔️✔️: }
+    // END COMPLETE VERBATIM SOURCE FRAME: DisplayTheWholeStructure
+    // END INCHI C FUNCTION: DisplayTheWholeStructure
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: DisplayTheWholeStructure
+    // INCHI✔️✔️: COMPILE_ANSI_ONLY selects the dummy implementation; TARGET_API_LIB; GCC/Linux.
+    // INCHI✔️✔️: The GUI implementation at runichi4.c:994 is excluded by the active preprocessor branch.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: DisplayTheWholeStructure
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source_types::{INCHI_IOS_TYPE_STRING, INCHI_OUT_NO_AUX_INFO, INChI, INChI_Aux};
+    use crate::source_types::{
+        _IS_WARNING, AMBIGUOUS_STEREO_ERROR, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING,
+        INCHI_OUT_NO_AUX_INFO, INChI_Aux, SourceFile, inp_ATOM,
+    };
 
     fn buffer(heap: &mut SourceHeap, size: usize) -> INCHI_IOS_STRING {
         INCHI_IOS_STRING {
@@ -1124,6 +1696,747 @@ mod tests {
         assert_eq!(
             heap.slice(negative_aux.as_const()),
             Err(SourceHeapError::MissingAllocation)
+        );
+    }
+
+    #[test]
+    fn source_port__runichi4__getprocessingwarningsoneinchi__line_1574() {
+        fn error_text(buffer: &[i8]) -> String {
+            let end = buffer.iter().position(|byte| *byte == 0).unwrap();
+            buffer[..end]
+                .iter()
+                .map(|byte| *byte as u8 as char)
+                .collect()
+        }
+
+        fn run(
+            heap: &SourceHeap,
+            atoms: SourceMutPointer<inp_ATOM>,
+            atom_count: i32,
+            no_warnings: i32,
+        ) -> (i32, String) {
+            let mut errors = vec![0_i8; crate::source_types::STR_ERR_LEN as usize];
+            let result = GetProcessingWarningsOneInChI(
+                heap,
+                &INChI {
+                    nNumberOfAtoms: atom_count,
+                    ..INChI::default()
+                },
+                &INP_ATOM_DATA {
+                    at: atoms,
+                    ..INP_ATOM_DATA::default()
+                },
+                &mut errors,
+                no_warnings,
+            )
+            .unwrap();
+            (result, error_text(&errors))
+        }
+
+        let mut heap = SourceHeap::default();
+        assert_eq!(
+            run(&heap, SourceMutPointer::null(), 4, 0),
+            (0, String::new())
+        );
+
+        let atoms = heap
+            .allocate_model_storage(vec![
+                inp_ATOM {
+                    bAmbiguousStereo: AMBIGUOUS_STEREO_ATOM as i8,
+                    ..inp_ATOM::default()
+                },
+                inp_ATOM {
+                    bAmbiguousStereo: AMBIGUOUS_STEREO_ATOM_ISO as i8,
+                    ..inp_ATOM::default()
+                },
+                inp_ATOM {
+                    bAmbiguousStereo: AMBIGUOUS_STEREO_BOND as i8,
+                    ..inp_ATOM::default()
+                },
+                inp_ATOM {
+                    bAmbiguousStereo: AMBIGUOUS_STEREO_BOND_ISO as i8,
+                    ..inp_ATOM::default()
+                },
+                inp_ATOM {
+                    bAmbiguousStereo: (AMBIGUOUS_STEREO_ATOM | AMBIGUOUS_STEREO_BOND) as i8,
+                    ..inp_ATOM::default()
+                },
+                inp_ATOM {
+                    bAmbiguousStereo: AMBIGUOUS_STEREO_ERROR as i8,
+                    ..inp_ATOM::default()
+                },
+            ])
+            .unwrap();
+
+        assert_eq!(run(&heap, atoms, 0, 0), (0, String::new()));
+        assert_eq!(run(&heap, atoms, -1, 0), (0, String::new()));
+        assert_eq!(
+            run(&heap, atoms, 1, 0),
+            (1, "Ambiguous stereo: center(s)".to_owned())
+        );
+        assert_eq!(
+            run(&heap, atoms.offset(1).unwrap(), 1, 0),
+            (1, "Ambiguous stereo: center(s)".to_owned())
+        );
+        assert_eq!(
+            run(&heap, atoms.offset(2).unwrap(), 1, 0),
+            (1, "Ambiguous stereo: bond(s)".to_owned())
+        );
+        assert_eq!(
+            run(&heap, atoms.offset(3).unwrap(), 1, 0),
+            (1, "Ambiguous stereo: bond(s)".to_owned())
+        );
+        assert_eq!(
+            run(&heap, atoms, 5, 0),
+            (1, "Ambiguous stereo: center(s); bond(s)".to_owned())
+        );
+        assert_eq!(
+            run(&heap, atoms.offset(5).unwrap(), 1, 0),
+            (0, String::new())
+        );
+        assert_eq!(run(&heap, atoms, 5, 1), (1, String::new()));
+        assert_eq!(run(&heap, atoms, 5, i32::MIN), (1, String::new()));
+    }
+
+    #[test]
+    fn source_port__runichi4__getprocessingwarningsonecomponentinchi__line_1550() {
+        fn error_text(buffer: &[i8]) -> String {
+            let end = buffer.iter().position(|byte| *byte == 0).unwrap();
+            buffer[..end]
+                .iter()
+                .map(|byte| *byte as u8 as char)
+                .collect()
+        }
+
+        let mut heap = SourceHeap::default();
+        let mut structure = STRUCT_DATA::default();
+        assert_eq!(
+            GetProcessingWarningsOneComponentInChI(
+                &heap,
+                &[SourceMutPointer::null(), SourceMutPointer::null()],
+                &std::array::from_fn(|_| INP_ATOM_DATA::default()),
+                &mut structure,
+                0,
+            ),
+            Ok(0)
+        );
+
+        let empty_inchi = heap
+            .allocate_model_storage(vec![INChI {
+                nNumberOfAtoms: 0,
+                ..INChI::default()
+            }])
+            .unwrap();
+        assert_eq!(
+            GetProcessingWarningsOneComponentInChI(
+                &heap,
+                &[empty_inchi, SourceMutPointer::null()],
+                &std::array::from_fn(|_| INP_ATOM_DATA::default()),
+                &mut structure,
+                0,
+            ),
+            Ok(0)
+        );
+
+        let atom = heap
+            .allocate_model_storage(vec![inp_ATOM {
+                bAmbiguousStereo: AMBIGUOUS_STEREO_ATOM_ISO as i8,
+                ..inp_ATOM::default()
+            }])
+            .unwrap();
+        let bond = heap
+            .allocate_model_storage(vec![inp_ATOM {
+                bAmbiguousStereo: AMBIGUOUS_STEREO_BOND_ISO as i8,
+                ..inp_ATOM::default()
+            }])
+            .unwrap();
+        let normalized = [
+            INP_ATOM_DATA {
+                at: atom,
+                ..INP_ATOM_DATA::default()
+            },
+            INP_ATOM_DATA {
+                at: bond,
+                ..INP_ATOM_DATA::default()
+            },
+        ];
+        let first = heap
+            .allocate_model_storage(vec![INChI {
+                nNumberOfAtoms: 1,
+                ..INChI::default()
+            }])
+            .unwrap();
+        let second = heap
+            .allocate_model_storage(vec![INChI {
+                nNumberOfAtoms: 1,
+                ..INChI::default()
+            }])
+            .unwrap();
+
+        assert_eq!(
+            GetProcessingWarningsOneComponentInChI(
+                &heap,
+                &[first, second],
+                &normalized,
+                &mut structure,
+                0,
+            ),
+            Ok(1)
+        );
+        assert_eq!(
+            error_text(&structure.pStrErrStruct),
+            "Ambiguous stereo: center(s); bond(s)"
+        );
+
+        let mut no_warning_structure = STRUCT_DATA::default();
+        assert_eq!(
+            GetProcessingWarningsOneComponentInChI(
+                &heap,
+                &[SourceMutPointer::null(), second],
+                &normalized,
+                &mut no_warning_structure,
+                1,
+            ),
+            Ok(1)
+        );
+        assert_eq!(error_text(&no_warning_structure.pStrErrStruct), "");
+    }
+
+    #[test]
+    fn source_port__runichi4__displaythewholestructure__line_1204() {
+        assert_eq!(
+            DisplayTheWholeStructure(
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                i64::MIN,
+                i32::MIN,
+                i32::MAX,
+                -1,
+            ),
+            0
+        );
+
+        let mut heap = SourceHeap::default();
+        let canonical_globals = heap
+            .allocate_model_storage(vec![CANON_GLOBALS::default()])
+            .unwrap();
+        let clock = heap
+            .allocate_model_storage(vec![INCHI_CLOCK::default()])
+            .unwrap();
+        let structure = heap
+            .allocate_model_storage(vec![STRUCT_DATA {
+                bUserQuit: 17,
+                ..STRUCT_DATA::default()
+            }])
+            .unwrap();
+        let parameters = heap
+            .allocate_model_storage(vec![INPUT_PARMS {
+                bDisplay: 23,
+                ..INPUT_PARMS::default()
+            }])
+            .unwrap();
+        let title = heap.allocate_model_storage(vec![b'X' as i8, 0]).unwrap();
+        let input_file = heap
+            .allocate_model_storage(vec![INCHI_IOSTREAM::default()])
+            .unwrap();
+        let log_file = heap
+            .allocate_model_storage(vec![INCHI_IOSTREAM::default()])
+            .unwrap();
+        let original = heap
+            .allocate_model_storage(vec![ORIG_ATOM_DATA {
+                num_inp_atoms: 31,
+                ..ORIG_ATOM_DATA::default()
+            }])
+            .unwrap();
+
+        assert_eq!(
+            DisplayTheWholeStructure(
+                canonical_globals,
+                clock,
+                structure,
+                parameters,
+                title,
+                input_file,
+                log_file,
+                original,
+                i64::MAX,
+                i32::MAX,
+                i32::MIN,
+                1,
+            ),
+            0
+        );
+        assert_eq!(heap.slice(structure.as_const()).unwrap()[0].bUserQuit, 17);
+        assert_eq!(heap.slice(parameters.as_const()).unwrap()[0].bDisplay, 23);
+        assert_eq!(
+            heap.slice(original.as_const()).unwrap()[0].num_inp_atoms,
+            31
+        );
+        assert_eq!(heap.slice(title.as_const()).unwrap(), &[b'X' as i8, 0]);
+    }
+
+    #[test]
+    fn source_port__runichi4__treaterrorsincreateonecomponentinchi__line_1387() {
+        let mut no_error_heap = SourceHeap::default();
+        let mut no_error_log = stream(&mut no_error_heap);
+        let mut no_error_structure = STRUCT_DATA {
+            nErrorType: _IS_WARNING as i32,
+            ..STRUCT_DATA::default()
+        };
+        assert_eq!(
+            TreatErrorsInCreateOneComponentINChI(
+                &mut no_error_heap,
+                &mut no_error_structure,
+                &INPUT_PARMS::default(),
+                &ORIG_ATOM_DATA::default(),
+                0,
+                1,
+                None,
+                Some(&mut no_error_log),
+                None,
+                None,
+            ),
+            Ok(_IS_WARNING as i32)
+        );
+        assert_eq!(text(&no_error_heap, &no_error_log), "");
+
+        let mut ordinary_heap = SourceHeap::default();
+        let label = ordinary_heap
+            .allocate_model_storage(vec![b'I' as i8, b'D' as i8, 0])
+            .unwrap();
+        let value = ordinary_heap
+            .allocate_model_storage(vec![b'4' as i8, b'2' as i8, 0])
+            .unwrap();
+        let parameters = INPUT_PARMS {
+            pSdfLabel: label,
+            pSdfValue: value,
+            ..INPUT_PARMS::default()
+        };
+        let mut ordinary_log = stream(&mut ordinary_heap);
+        let mut ordinary_structure = STRUCT_DATA {
+            nErrorCode: crate::source_types::CT_ATOMCOUNT_ERR,
+            ..STRUCT_DATA::default()
+        };
+        ordinary_structure.pStrErrStruct[..6].copy_from_slice(&[
+            b'p' as i8, b'r' as i8, b'i' as i8, b'o' as i8, b'r' as i8, 0,
+        ]);
+        assert_eq!(
+            TreatErrorsInCreateOneComponentINChI(
+                &mut ordinary_heap,
+                &mut ordinary_structure,
+                &parameters,
+                &ORIG_ATOM_DATA::default(),
+                2,
+                -7,
+                None,
+                Some(&mut ordinary_log),
+                None,
+                None,
+            ),
+            Ok(_IS_ERROR as i32)
+        );
+        assert_eq!(
+            text(&ordinary_heap, &ordinary_log),
+            "Error -30011 (prior; ATOMCOUNT_ERR) structure #-7 component 3. ID=42\n"
+        );
+        let ordinary_error = ordinary_structure
+            .pStrErrStruct
+            .iter()
+            .take_while(|byte| **byte != 0)
+            .map(|byte| *byte as u8 as char)
+            .collect::<String>();
+        assert_eq!(ordinary_error, "prior; ATOMCOUNT_ERR");
+
+        for fatal_code in [CT_OUT_OF_RAM, CT_USER_QUIT_ERR] {
+            let mut fatal_heap = SourceHeap::default();
+            let mut fatal_log = stream(&mut fatal_heap);
+            let mut fatal_structure = STRUCT_DATA {
+                nErrorCode: fatal_code,
+                ..STRUCT_DATA::default()
+            };
+            assert_eq!(
+                TreatErrorsInCreateOneComponentINChI(
+                    &mut fatal_heap,
+                    &mut fatal_structure,
+                    &INPUT_PARMS::default(),
+                    &ORIG_ATOM_DATA::default(),
+                    0,
+                    i64::MAX,
+                    None,
+                    Some(&mut fatal_log),
+                    None,
+                    None,
+                ),
+                Ok(_IS_FATAL as i32)
+            );
+            let expected_message = ErrMsg(fatal_code);
+            assert_eq!(
+                text(&fatal_heap, &fatal_log),
+                format!(
+                    "Error {fatal_code} ({expected_message}) structure #{} component 1.\n",
+                    i64::MAX
+                )
+            );
+        }
+
+        let mut duplicate_heap = SourceHeap::default();
+        let mut duplicate_log = stream(&mut duplicate_heap);
+        let mut duplicate_structure = STRUCT_DATA {
+            nErrorCode: CT_OUT_OF_RAM,
+            ..STRUCT_DATA::default()
+        };
+        duplicate_structure.pStrErrStruct[..11].copy_from_slice(&[
+            b'O' as i8, b'u' as i8, b't' as i8, b' ' as i8, b'o' as i8, b'f' as i8, b' ' as i8,
+            b'R' as i8, b'A' as i8, b'M' as i8, 0,
+        ]);
+        assert_eq!(
+            TreatErrorsInCreateOneComponentINChI(
+                &mut duplicate_heap,
+                &mut duplicate_structure,
+                &INPUT_PARMS::default(),
+                &ORIG_ATOM_DATA::default(),
+                0,
+                0,
+                None,
+                Some(&mut duplicate_log),
+                None,
+                None,
+            ),
+            Ok(_IS_FATAL as i32)
+        );
+        assert_eq!(
+            text(&duplicate_heap, &duplicate_log),
+            "Error -30002 (Out of RAM) structure #0 component 1.\n"
+        );
+    }
+
+    #[test]
+    fn source_port__runichi4__treatcreateinchiwarning__line_1453() {
+        fn warning_structure(error_code: i32) -> STRUCT_DATA {
+            let mut structure = STRUCT_DATA {
+                nErrorCode: error_code,
+                nErrorType: 37,
+                fPtrStart: 0,
+                fPtrEnd: 10,
+                ..STRUCT_DATA::default()
+            };
+            structure.pStrErrStruct[..5]
+                .copy_from_slice(&[b'c' as i8, b'a' as i8, b'r' as i8, b'e' as i8, 0]);
+            structure
+        }
+
+        let mut no_text_heap = SourceHeap::default();
+        let mut no_text_log = stream(&mut no_text_heap);
+        let mut no_text_structure = STRUCT_DATA {
+            nErrorType: 41,
+            ..STRUCT_DATA::default()
+        };
+        assert_eq!(
+            TreatCreateINChIWarning(
+                &mut no_text_heap,
+                &mut no_text_structure,
+                &INPUT_PARMS::default(),
+                &ORIG_ATOM_DATA::default(),
+                i64::MIN,
+                None,
+                Some(&mut no_text_log),
+                None,
+                None,
+            ),
+            Ok(41)
+        );
+        assert_eq!(text(&no_text_heap, &no_text_log), "");
+
+        let mut error_heap = SourceHeap::default();
+        let mut error_log = stream(&mut error_heap);
+        let mut error_structure = warning_structure(9);
+        assert_eq!(
+            TreatCreateINChIWarning(
+                &mut error_heap,
+                &mut error_structure,
+                &INPUT_PARMS::default(),
+                &ORIG_ATOM_DATA::default(),
+                i64::MAX,
+                None,
+                Some(&mut error_log),
+                None,
+                None,
+            ),
+            Ok(37)
+        );
+        assert_eq!(text(&error_heap, &error_log), "");
+
+        let mut labeled_heap = SourceHeap::default();
+        let label = labeled_heap
+            .allocate_model_storage(vec![b'I' as i8, b'D' as i8, 0])
+            .unwrap();
+        let value = labeled_heap
+            .allocate_model_storage(vec![b'4' as i8, b'2' as i8, 0])
+            .unwrap();
+        let parameters = INPUT_PARMS {
+            pSdfLabel: label,
+            pSdfValue: value,
+            bNoWarnings: 1,
+            ..INPUT_PARMS::default()
+        };
+        let mut labeled_log = stream(&mut labeled_heap);
+        let mut labeled_structure = warning_structure(0);
+        assert_eq!(
+            TreatCreateINChIWarning(
+                &mut labeled_heap,
+                &mut labeled_structure,
+                &parameters,
+                &ORIG_ATOM_DATA::default(),
+                i64::MIN,
+                None,
+                Some(&mut labeled_log),
+                None,
+                None,
+            ),
+            Ok(_IS_WARNING as i32)
+        );
+        assert_eq!(
+            text(&labeled_heap, &labeled_log),
+            format!("Warning (care) structure #{}. ID=42\n", i64::MIN)
+        );
+
+        let mut save_heap = SourceHeap::default();
+        let input_file = save_heap
+            .allocate_model_storage(vec![SourceFile {
+                bytes: b"name\nbody\nrest\n".to_vec(),
+                ..SourceFile::default()
+            }])
+            .unwrap();
+        let problem_output = save_heap
+            .allocate_model_storage(vec![SourceFile::default()])
+            .unwrap();
+        let mut input_stream = INCHI_IOSTREAM {
+            f: input_file,
+            type_: INCHI_IOS_TYPE_FILE as i32,
+            ..INCHI_IOSTREAM::default()
+        };
+        let mut problem_stream = INCHI_IOSTREAM {
+            f: problem_output,
+            type_: INCHI_IOS_TYPE_FILE as i32,
+            ..INCHI_IOSTREAM::default()
+        };
+        let mut save_log = stream(&mut save_heap);
+        let mut save_structure = warning_structure(0);
+        let save_parameters = INPUT_PARMS {
+            bSaveWarningStructsAsProblem: 1,
+            ..INPUT_PARMS::default()
+        };
+        assert_eq!(
+            TreatCreateINChIWarning(
+                &mut save_heap,
+                &mut save_structure,
+                &save_parameters,
+                &ORIG_ATOM_DATA::default(),
+                -17,
+                Some(&mut input_stream),
+                Some(&mut save_log),
+                None,
+                Some(&mut problem_stream),
+            ),
+            Ok(_IS_WARNING as i32)
+        );
+        assert_eq!(
+            text(&save_heap, &save_log),
+            "Warning (care) structure #-17.\n"
+        );
+        assert_eq!(
+            save_heap
+                .slice(problem_output.as_const())
+                .unwrap()
+                .first()
+                .unwrap()
+                .bytes,
+            b"#-17/name\nbody\n".to_vec()
+        );
+
+        for (save_warning, save_all, has_problem_file, start, end) in [
+            (0, 0, true, 0, 10),
+            (1, 1, true, 0, 10),
+            (1, 0, false, 0, 10),
+            (1, 0, true, -1, 10),
+            (1, 0, true, 10, 10),
+        ] {
+            let mut heap = SourceHeap::default();
+            let input = heap
+                .allocate_model_storage(vec![SourceFile {
+                    bytes: b"name\nbody\n".to_vec(),
+                    ..SourceFile::default()
+                }])
+                .unwrap();
+            let output = heap
+                .allocate_model_storage(vec![SourceFile::default()])
+                .unwrap();
+            let mut input_stream = INCHI_IOSTREAM {
+                f: input,
+                type_: INCHI_IOS_TYPE_FILE as i32,
+                ..INCHI_IOSTREAM::default()
+            };
+            let mut problem_stream = INCHI_IOSTREAM {
+                f: if has_problem_file {
+                    output
+                } else {
+                    SourceMutPointer::null()
+                },
+                type_: INCHI_IOS_TYPE_FILE as i32,
+                ..INCHI_IOSTREAM::default()
+            };
+            let mut log = stream(&mut heap);
+            let mut structure = warning_structure(0);
+            structure.fPtrStart = start;
+            structure.fPtrEnd = end;
+            let parameters = INPUT_PARMS {
+                bSaveWarningStructsAsProblem: save_warning,
+                bSaveAllGoodStructsAsProblem: save_all,
+                ..INPUT_PARMS::default()
+            };
+            assert_eq!(
+                TreatCreateINChIWarning(
+                    &mut heap,
+                    &mut structure,
+                    &parameters,
+                    &ORIG_ATOM_DATA::default(),
+                    3,
+                    Some(&mut input_stream),
+                    Some(&mut log),
+                    None,
+                    Some(&mut problem_stream),
+                ),
+                Ok(_IS_WARNING as i32)
+            );
+            assert!(
+                heap.slice(output.as_const())
+                    .unwrap()
+                    .first()
+                    .unwrap()
+                    .bytes
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn source_port__runichi4__bisstructchiral__line_1271() {
+        fn component_array(
+            heap: &mut SourceHeap,
+            first: SourceMutPointer<INChI>,
+            second: SourceMutPointer<INChI>,
+        ) -> SourceMutPointer<PINChI2> {
+            heap.allocate_model_storage(vec![[first, second]]).unwrap()
+        }
+
+        let mut heap = SourceHeap::default();
+        assert_eq!(
+            bIsStructChiral(
+                &heap,
+                [SourceMutPointer::null(), SourceMutPointer::null()],
+                [0, i32::MIN],
+            ),
+            Ok(0)
+        );
+
+        let deleted = heap
+            .allocate_model_storage(vec![INChI {
+                bDeleted: 1,
+                nNumberOfAtoms: 3,
+                ..INChI::default()
+            }])
+            .unwrap();
+        let zero_atoms = heap.allocate_model_storage(vec![INChI::default()]).unwrap();
+        let skipped = component_array(&mut heap, deleted, zero_atoms);
+        assert_eq!(
+            bIsStructChiral(&heap, [skipped, SourceMutPointer::null()], [1, 0],),
+            Ok(0)
+        );
+
+        for stereo in [
+            INChI_Stereo {
+                nNumberOfStereoCenters: 1,
+                nCompInv2Abs: 1,
+                ..INChI_Stereo::default()
+            },
+            INChI_Stereo {
+                t_parity: heap.allocate(vec![1_i8]).unwrap(),
+                nNumberOfStereoCenters: 0,
+                nCompInv2Abs: 1,
+                ..INChI_Stereo::default()
+            },
+            INChI_Stereo {
+                t_parity: heap.allocate(vec![1_i8]).unwrap(),
+                nNumberOfStereoCenters: 1,
+                nCompInv2Abs: 0,
+                ..INChI_Stereo::default()
+            },
+        ] {
+            let stereo = heap.allocate_model_storage(vec![stereo]).unwrap();
+            let inchi = heap
+                .allocate_model_storage(vec![INChI {
+                    nNumberOfAtoms: 1,
+                    Stereo: stereo,
+                    ..INChI::default()
+                }])
+                .unwrap();
+            let components = component_array(&mut heap, inchi, SourceMutPointer::null());
+            assert_eq!(
+                bIsStructChiral(&heap, [components, SourceMutPointer::null()], [1, 0],),
+                Ok(0)
+            );
+        }
+
+        let parity = heap.allocate(vec![i8::MIN]).unwrap();
+        let valid_stereo = heap
+            .allocate_model_storage(vec![INChI_Stereo {
+                t_parity: parity,
+                nNumberOfStereoCenters: i32::MAX,
+                nCompInv2Abs: i32::MIN,
+                ..INChI_Stereo::default()
+            }])
+            .unwrap();
+        let ordinary = heap
+            .allocate_model_storage(vec![INChI {
+                nNumberOfAtoms: 1,
+                Stereo: valid_stereo,
+                ..INChI::default()
+            }])
+            .unwrap();
+        let ordinary_components = component_array(&mut heap, SourceMutPointer::null(), ordinary);
+        assert_eq!(
+            bIsStructChiral(
+                &heap,
+                [ordinary_components, SourceMutPointer::null()],
+                [1, 0],
+            ),
+            Ok(1)
+        );
+
+        let isotopic = heap
+            .allocate_model_storage(vec![INChI {
+                nNumberOfAtoms: 1,
+                StereoIsotopic: valid_stereo,
+                ..INChI::default()
+            }])
+            .unwrap();
+        let empty_component = [SourceMutPointer::null(), SourceMutPointer::null()];
+        let isotopic_components = heap
+            .allocate_model_storage(vec![empty_component, [isotopic, SourceMutPointer::null()]])
+            .unwrap();
+        assert_eq!(
+            bIsStructChiral(
+                &heap,
+                [SourceMutPointer::null(), isotopic_components],
+                [0, 2],
+            ),
+            Ok(1)
         );
     }
 }

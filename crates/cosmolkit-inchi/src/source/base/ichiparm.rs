@@ -214,15 +214,61 @@ pub(crate) fn source_strtod_with_end(
         && lower(remaining[2]) == b'n'
     {
         index += 3;
+        let negative = bytes[token_start] as u8 == b'-';
+        let mut payload = 0_u64;
         if bytes.get(index).map(|byte| *byte as u8) == Some(b'(')
             && let Some(close) = bytes[index + 1..nul]
                 .iter()
                 .position(|byte| *byte as u8 == b')')
         {
-            index += close + 2;
+            let payload_bytes = &bytes[index + 1..index + 1 + close];
+            if payload_bytes.iter().all(|byte| {
+                let byte = *byte as u8;
+                byte.is_ascii_alphanumeric() || byte == b'_'
+            }) {
+                index += close + 2;
+
+                let (base, digit_start) = if payload_bytes.len() > 2
+                    && payload_bytes[0] as u8 == b'0'
+                    && matches!(payload_bytes[1] as u8, b'x' | b'X')
+                {
+                    (16_u64, 2_usize)
+                } else if payload_bytes.first().map(|byte| *byte as u8) == Some(b'0') {
+                    (8_u64, 0_usize)
+                } else {
+                    (10_u64, 0_usize)
+                };
+                let mut parsed = 0_u64;
+                let mut saw_digit = false;
+                let mut valid_number = digit_start < payload_bytes.len();
+                for &byte in &payload_bytes[digit_start..] {
+                    let digit = match byte as u8 {
+                        b'0'..=b'9' => u64::from(byte as u8 - b'0'),
+                        b'a'..=b'f' if base == 16 => u64::from(byte as u8 - b'a') + 10,
+                        b'A'..=b'F' if base == 16 => u64::from(byte as u8 - b'A') + 10,
+                        _ => {
+                            valid_number = false;
+                            break;
+                        }
+                    };
+                    if digit >= base {
+                        valid_number = false;
+                        break;
+                    }
+                    saw_digit = true;
+                    parsed = parsed
+                        .checked_mul(base)
+                        .and_then(|value| value.checked_add(digit))
+                        .unwrap_or(u64::MAX);
+                }
+                if valid_number && saw_digit {
+                    payload = parsed;
+                }
+            }
         }
-        let negative = bytes[token_start] as u8 == b'-';
-        return Ok((if negative { -f64::NAN } else { f64::NAN }, index));
+        let bits =
+            u64::from(negative) << 63 | 0x7ff8_0000_0000_0000 | (payload & 0x000f_ffff_ffff_ffff);
+        return Ok((f64::from_bits(bits), index));
     }
 
     if bytes
@@ -253,6 +299,7 @@ pub(crate) fn source_strtod_with_end(
         if digits == 0 {
             return Ok((0.0, 0));
         }
+        let mut has_complete_exponent = false;
         if index < nul && matches!(bytes[index] as u8, b'p' | b'P') {
             let exponent = index;
             index += 1;
@@ -265,12 +312,17 @@ pub(crate) fn source_strtod_with_end(
             }
             if index == exponent_digits {
                 index = exponent;
+            } else {
+                has_complete_exponent = true;
             }
         }
-        let token: Vec<u8> = bytes[token_start..index]
+        let mut token: Vec<u8> = bytes[token_start..index]
             .iter()
             .map(|byte| *byte as u8)
             .collect();
+        if !has_complete_exponent {
+            token.extend_from_slice(b"p0");
+        }
         let token =
             std::str::from_utf8(&token).map_err(|_| SourceHeapError::InvalidSourceTextEncoding)?;
         let value = hexf_parse::parse_hexf64(token, false)

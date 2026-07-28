@@ -12,6 +12,7 @@ use crate::source::base::{
         nGetEndpointInfo_PT_16_00, nGetEndpointInfo_PT_18_00, nGetEndpointInfo_PT_22_00,
         nGetEndpointInfo_PT_39_00,
     },
+    strutil::bHeteroAtomMayHaveXchgIsoH,
     util::{
         detect_unusual_el_valence, get_el_valence, get_endpoint_valence, inchi_calloc, inchi_free,
         inchi_malloc, ion_el_group, is_el_a_metal, n_no_metal_bonds_valence,
@@ -51,8 +52,8 @@ use crate::source_types::{
     FLAG_PROTON_SINGLE_REMOVED, HAL_ACID_H_XCHG, INCHI_CLOCK, KETO_ENOL_TAUT,
     MAX_ALT_AATG_ARRAY_LEN, MAX_BOND_EDGE_CAP, MAX_NUM_STEREO_BONDS, MIN_NUM_STEREO_BOND_NEIGH,
     NO_VERTEX, NUM_H, NUM_H_ISOTOPES, NUM_KINDS_OF_GROUPS, NodeSet, RADICAL_DOUBLET,
-    RADICAL_SINGLET, RADICAL_TRIPLET, S_CANDIDATE, S_CHAR, S_GROUP_INFO, SALT_ACCEPTOR,
-    SALT_DONOR_H, SALT_DONOR_Neg, STEREO_DBLE_EITHER, SourceHeap, SourceHeapError,
+    RADICAL_SINGLET, RADICAL_TRIPLET, RI_ERR_PROGR, S_CANDIDATE, S_CHAR, S_GROUP_INFO,
+    SALT_ACCEPTOR, SALT_DONOR_H, SALT_DONOR_Neg, STEREO_DBLE_EITHER, SourceHeap, SourceHeapError,
     SourceMutPointer, T_GROUP_INFO, TAUT_PT_06_00, TAUT_PT_13_00, TAUT_PT_16_00, TAUT_PT_18_00,
     TAUT_PT_22_00, TAUT_PT_39_00, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE,
     TG_FLAG_HARD_ADD_REM_PROTONS, TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_MERGE_TAUT_SALTS,
@@ -77,6 +78,995 @@ use crate::source_types::{
     tagAltPathConst_iALTP_START_ATOM, tagBnsRadSrchMode_RAD_SRCH_FROM_FICT,
     tagBnsRadSrchMode_RAD_SRCH_NORM,
 };
+
+#[allow(non_snake_case)]
+pub(crate) fn bHasChargedNeighbor(at: &[inp_ATOM], iat: i32) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:12005 bHasChargedNeighbor
+    // INCHI✔✔: complete source frame follows verbatim.
+    /*
+    int bHasChargedNeighbor( inp_ATOM *at, int iat )
+    {
+        int i;
+        for (i = 0; i < at[iat].valence; i++)
+        {
+            if (at[(int) at[iat].neighbor[i]].charge)
+            {
+                return 1;
+            }
+        }
+
+        return 0;
+    }
+    */
+    // END INCHI C FUNCTION: bHasChargedNeighbor
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: bHasChargedNeighbor
+    // INCHI✔✔: READ_INCHI_STRING=1 includes this production helper.
+    // INCHI✔✔: COMPILE_ANSI_ONLY and TARGET_API_LIB do not alter this function body.
+    // END INCHI ACTIVE MACRO CONFIGURATION: bHasChargedNeighbor
+
+    let center = at
+        .get(usize::try_from(iat).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    for neighbor_index in 0..i32::from(center.valence) {
+        let neighbor = *center
+            .neighbor
+            .get(neighbor_index as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let neighbor = at
+            .get(usize::from(neighbor))
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if neighbor.charge != 0 {
+            return Ok(1);
+        }
+    }
+    Ok(0)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn AddRemoveProtonsRestr(
+    at: &mut [inp_ATOM],
+    num_atoms: i32,
+    num_protons_to_add: &mut i32,
+    nNumProtAddedByRestr: i32,
+    bNormalizationFlags: u64,
+    num_tg: i32,
+    nChargeRevrs: i32,
+    nChargeInChI: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:12056 AddRemoveProtonsRestr
+    // INCHI✔️❗: complete source frame follows verbatim.
+    /*
+    int AddRemoveProtonsRestr( inp_ATOM *at,
+                               int num_atoms,
+                               int *num_protons_to_add,
+                               int nNumProtAddedByRestr,
+                               INCHI_MODE bNormalizationFlags,
+                               int num_tg,
+                               int nChargeRevrs,
+                               int nChargeInChI )
+    {
+        int i, j, ret = 0;
+        int nAtTypeTotals[ATTOT_ARRAY_LEN];
+        int   num_prot = *num_protons_to_add;
+        int   type, mask, bSuccess, nTotCharge, nNumSuccess = 0;
+        int max_j_Aa = -1, max_j_Ar = -1;
+
+        /* for the reference:
+
+        #define FLAG_NORM_CONSIDER_TAUT      ( FLAG_PROTON_NPO_SIMPLE_REMOVED | \
+        FLAG_PROTON_NP_HARD_REMOVED    | \
+        FLAG_PROTON_AC_SIMPLE_ADDED    | \
+        FLAG_PROTON_AC_SIMPLE_REMOVED  | \
+        FLAG_PROTON_AC_HARD_REMOVED    | \
+        FLAG_PROTON_AC_HARD_ADDED      | \
+        FLAG_PROTON_SINGLE_REMOVED     | \
+        FLAG_PROTON_CHARGE_CANCEL    )
+
+        #define FLAG_FORCE_SALT_TAUT         ( FLAG_PROTON_NP_HARD_REMOVED  | \
+        FLAG_PROTON_AC_HARD_REMOVED  | \
+        FLAG_PROTON_AC_HARD_ADDED    )
+
+        */
+
+        /* if ChargeRevrs > nChargeInChI then we should prevent proton addition or facilitate proton removal
+        a typical case is (=) on N or O instead of C(-)
+
+        if ChargeRevrs < nChargeInChI then we should prevent proton removal or facilitate proton addition
+        */
+
+        mark_at_type( at, num_atoms, nAtTypeTotals );
+        for (i = nTotCharge = 0; i < num_atoms; i++)
+        {
+            nTotCharge += at[i].charge;
+        }
+        /* Size for SimpleAddAcidicProtons() */
+        for (max_j_Aa = 0; AaTypMask[2 * max_j_Aa]; max_j_Aa++)
+        {
+            ;
+        }
+        /* Size for SimpleRemoveAcidicProtons */
+        for (max_j_Ar = 0; ArTypMask[2 * max_j_Ar]; max_j_Ar++)
+        {
+            ;
+        }
+        if (num_prot < 0 && nAtTypeTotals[ATTOT_TOT_CHARGE] - nNumProtAddedByRestr <= 0)
+        {
+            /* Remove proton(s) */
+            /* use test from SimpleAddAcidicProtons() to test whether removal of H(+) from =C-OH, etc. is correct */
+            for (i = 0; i < num_atoms && num_prot; i++)
+            {
+                /* Choose an atom */
+                if (at[i].sb_parity[0] || at[i].p_parity || at[i].charge ||
+                     !at[i].num_H || at[i].radical || bHasChargedNeighbor( at, i ))
+                {
+                    continue;
+                }
+                /* try to remove a proton and check whether InChI would add it back */
+                at[i].charge--;
+                at[i].num_H--;
+                type = GetAtomChargeType( at, i, NULL, &mask, 0 );
+                at[i].charge++;
+                at[i].num_H++;
+
+                if (type)
+                {
+                    for (bSuccess = 0, j = 0; j < max_j_Aa; j++)
+                    {
+                        if ((bSuccess = ( type & AaTypMask[2 * j] ) && ( mask && AaTypMask[2 * j + 1] ))) /* djb-rwth: addressing LLVM warning */
+                        {
+                            break; /* the proton may be added to this atom */
+                        }
+                    }
+                    if (bSuccess)
+                    {
+                        /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+                        type = GetAtomChargeType( at, i, nAtTypeTotals, &mask, 1 ); /* subtract at[i] */
+                        at[i].charge--;
+                        at[i].num_H--;
+                        type = GetAtomChargeType( at, i, nAtTypeTotals, &mask, 0 ); /* add changed at[i] */
+                        num_prot++; /* success */
+                        nNumSuccess++;
+                    }
+                }
+            }
+        }
+
+        if (num_prot < 0 && num_tg && nAtTypeTotals[ATTOT_TOT_CHARGE] - nNumProtAddedByRestr <= 0)
+        {
+            /* Alternative proton removal: O=C-NH => (-)O-C=N, O and N are taut. endpoints */
+            int endp2, centp, k, i0, k0;
+            for (i = 0; i < num_atoms; i++)
+            {
+                /* Choose an atom */
+                if (!at[i].endpoint || at[i].sb_parity[0] || at[i].p_parity ||
+                     at[i].radical || at[i].charge || bHasChargedNeighbor( at, i ))
+                {
+                    continue;
+                }
+                /* Looking for tautomeric =O */
+                if (1 != at[i].valence || BOND_TYPE_DOUBLE != at[i].bond_type[0] || at[i].num_H ||
+                     2 != get_endpoint_valence( at[i].el_number ))
+                {
+                    continue;
+                }
+                centp = at[i].neighbor[0];
+                if (at[centp].sb_parity[0] || at[centp].p_parity || !is_centerpoint_elem( at[centp].el_number ))
+                {
+                    continue;
+                }
+                /* Found a possible centerpoint, looking for -NH endpoint */
+                for (k = 0; k < at[centp].valence; k++)
+                {
+                    if (at[centp].bond_type[k] != BOND_TYPE_SINGLE)
+                    {
+                        continue;
+                    }
+                    endp2 = at[centp].neighbor[k];
+                    if (at[endp2].endpoint != at[i].endpoint ||
+                         !at[endp2].num_H || at[endp2].charge ||
+                         at[endp2].sb_parity[0] || at[endp2].p_parity ||
+                         at[endp2].valence != at[endp2].chem_bonds_valence ||
+                         3 != at[endp2].chem_bonds_valence + at[endp2].num_H ||
+                         3 != get_endpoint_valence( at[endp2].el_number ))
+                    {
+                        continue;
+                    }
+                    /* Find bonds in reciprocal ajacency lists */
+                    for (i0 = 0; i0 < at[centp].valence && i != at[centp].neighbor[i0]; i0++)
+                    {
+                        ;
+                    }
+                    for (k0 = 0; k0 < at[endp2].valence && centp != at[endp2].neighbor[k0]; k0++)
+                    {
+                        ;
+                    }
+                    if (i0 == at[centp].valence || k0 == at[endp2].valence)
+                    {
+                        return RI_ERR_PROGR;
+                    }
+                    /* -NH has been found */
+                    /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+                    type = GetAtomChargeType( at, i, nAtTypeTotals, &mask, 1 ); /* subtract at[i] */
+                    type = GetAtomChargeType( at, endp2, nAtTypeTotals, &mask, 1 ); /* subtract at[endp2] */
+
+                    at[i].bond_type[0] --;
+                    at[centp].bond_type[i0] --;
+                    at[i].chem_bonds_valence--;
+                    at[i].charge--;
+
+                    at[endp2].bond_type[k0] ++;
+                    at[centp].bond_type[k] ++;
+                    at[endp2].chem_bonds_valence++;
+                    at[endp2].num_H--;
+
+                    num_prot++;
+                    nNumSuccess++;
+
+                    /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+                    type = GetAtomChargeType( at, i, nAtTypeTotals, &mask, 0 ); /* add at[i] */
+                    type = GetAtomChargeType( at, endp2, nAtTypeTotals, &mask, 0 ); /* add at[endp2] */
+                }
+            }
+        }
+
+        if (num_prot > 0)
+        {
+            /* Add protons */
+            /* 1. Use test from SimpleRemoveAcidicProtons() to test whether addition of H(+) to =C-O(-), etc. is correct */
+            for (i = 0; i < num_atoms && num_prot && nAtTypeTotals[ATTOT_TOT_CHARGE] - nNumProtAddedByRestr >= 0; i++)
+            {
+                /* Choose an atom */
+                if (at[i].sb_parity[0] || at[i].p_parity || at[i].num_H ||
+                     at[i].charge != -1 || at[i].radical || bHasChargedNeighbor( at, i ))
+                {
+                    continue;
+                }
+                /* Try to add a proton and check whether InChI would remove it back */
+                at[i].charge++;
+                at[i].num_H++;
+                type = GetAtomChargeType( at, i, NULL, &mask, 0 );
+                at[i].charge--;
+                at[i].num_H--;
+                if (type)
+                {
+                    for (bSuccess = 0, j = 0; j < max_j_Ar; j++)
+                    {   
+                        if ((bSuccess = ( type & ArTypMask[2 * j] ) && ( mask && ArTypMask[2 * j + 1] ))) /* djb-rwth: addressing LLVM warning */
+                        {
+                            break;
+                        }
+                    }
+                    if (bSuccess)
+                    {
+                        /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+                        type = GetAtomChargeType( at, i, nAtTypeTotals, &mask, 1 ); /* subtract at[i] */
+                        at[i].charge++;
+                        at[i].num_H++;
+                        type = GetAtomChargeType( at, i, nAtTypeTotals, &mask, 0 ); /* add changed at[i] */
+                        num_prot--; /* success */
+                        nNumSuccess++;
+                    }
+                }
+            }
+            /* 2. Use test from SimpleRemoveHplusNPO() */
+            for (i = 0; i < num_atoms && num_prot; i++)
+            {
+                /* Choose an atom */
+                if (at[i].sb_parity[0] || at[i].p_parity ||
+                     at[i].charge || at[i].radical || bHasChargedNeighbor( at, i ))
+                {
+                    continue;
+                }
+                /* Try to add a proton and check whether InChI would remove it back */
+                at[i].num_H++;
+                at[i].charge++;
+                bSuccess = ( PR_SIMPLE_TYP & ( type = GetAtomChargeType( at, i, NULL, &mask, 0 ) ) ) &&
+                    ( PR_SIMPLE_MSK & mask ); /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+                at[i].num_H--;  /* failed */
+                at[i].charge--;
+                if (bSuccess)
+                {
+                    /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+                    type = GetAtomChargeType( at, i, nAtTypeTotals, &mask, 1 ); /* subtract at[i] */
+                    at[i].num_H++;
+                    at[i].charge++;
+                    type = GetAtomChargeType( at, i, nAtTypeTotals, &mask, 0 ); /* add changed at[i] */
+                    num_prot--;     /* succeeded */
+                    nNumSuccess++;
+                }
+            }
+        }
+
+        if (num_prot < 0 && ( bNormalizationFlags & FLAG_PROTON_AC_HARD_ADDED ) && 1 == num_tg &&
+             nAtTypeTotals[ATTOT_TOT_CHARGE] - nNumProtAddedByRestr <= 0)
+        {
+            /* Try to remove protons from tautomeric N (specific ADP must be present) */
+            int nNumAcceptors_DB_O = 0, nNumDonors_SB_NH = 0, num_max, num_success;
+            for (i = 0; i < num_atoms; i++)
+            {
+                /* Choose an atom */
+                if (!at[i].endpoint || at[i].radical ||
+                     at[i].sb_parity[0] || at[i].p_parity || bHasChargedNeighbor( at, i ))
+                {
+                    continue;
+                }
+                type = GetAtomChargeType( at, i, NULL, &mask, 0 );
+                if (( type & AA_HARD_TYP_CO ) && ( mask & AA_HARD_MSK_CO ))
+                {
+                    nNumAcceptors_DB_O++;
+                }
+                else
+                {
+                    if (( type == ATT_ATOM_N ) && ( mask == ATBIT_NP_H ) && !at[i].charge &&
+                         at[i].valence == at[i].chem_bonds_valence)
+                    {
+                        nNumDonors_SB_NH++;
+                    }
+                }
+            }
+            num_max = inchi_min( nNumAcceptors_DB_O, nNumDonors_SB_NH );
+            for (i = 0, num_success = 0; i < num_atoms && num_success < num_max && num_prot < 0; i++)
+            {
+                /* Choose an atom */
+                if (!at[i].endpoint || at[i].radical || at[i].sb_parity[0] ||
+                     at[i].p_parity || bHasChargedNeighbor( at, i ))
+                {
+                    continue;
+                }
+                type = GetAtomChargeType( at, i, NULL, &mask, 0 );
+                if (( type == ATT_ATOM_N ) && ( mask == ATBIT_NP_H ) && !at[i].charge &&
+                     at[i].valence == at[i].chem_bonds_valence)
+                {
+                    /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+                    type = GetAtomChargeType( at, i, nAtTypeTotals, &mask, 1 ); /* subtract at[i] */
+                    at[i].num_H--;
+                    at[i].charge--;
+                    type = GetAtomChargeType( at, i, nAtTypeTotals, &mask, 0 ); /* add changed at[i] */
+                    num_prot++;
+                    num_success++;
+                    nNumSuccess++;
+                }
+            }
+        }
+
+        /*exit_function:*/
+
+        *num_protons_to_add = num_prot;
+
+        return ret < 0 ? ret : nNumSuccess;
+    }
+    */
+    // END INCHI C FUNCTION: AddRemoveProtonsRestr
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: AddRemoveProtonsRestr
+    // INCHI✔️❗: READ_INCHI_STRING=1 includes this production function.
+    // INCHI✔️❗: FIX_NORM_BUG_ADD_ION_PAIR=1 selects the active GetAtomChargeType behavior.
+    // INCHI✔️❗: COMPILE_ANSI_ONLY and TARGET_API_LIB do not alter this function body.
+    // END INCHI ACTIVE MACRO CONFIGURATION: AddRemoveProtonsRestr
+
+    let _ = (nChargeRevrs, nChargeInChI);
+    let mut totals = [0_i32; ATTOT_ARRAY_LEN];
+    let mut num_prot = *num_protons_to_add;
+    let mut num_success = 0_i32;
+    mark_at_type(at, num_atoms, Some(&mut totals))?;
+
+    let mut _total_charge = 0_i32;
+    for atom_index in 0..num_atoms {
+        let index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        _total_charge = _total_charge.wrapping_add(i32::from(
+            at.get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .charge,
+        ));
+    }
+
+    let max_j_aa = AA_TYP_MASK
+        .chunks_exact(2)
+        .take_while(|pair| pair[0] != 0)
+        .count();
+    let max_j_ar = AR_TYP_MASK
+        .chunks_exact(2)
+        .take_while(|pair| pair[0] != 0)
+        .count();
+
+    if num_prot < 0 && totals[ATTOT_TOT_CHARGE].wrapping_sub(nNumProtAddedByRestr) <= 0 {
+        for atom_index in 0..num_atoms {
+            if num_prot == 0 {
+                break;
+            }
+            let index =
+                usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom = at.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if atom.sb_parity[0] != 0
+                || atom.p_parity != 0
+                || atom.charge != 0
+                || atom.num_H == 0
+                || atom.radical != 0
+                || bHasChargedNeighbor(&*at, atom_index)? != 0
+            {
+                continue;
+            }
+
+            at[index].charge = at[index].charge.wrapping_sub(1);
+            at[index].num_H = at[index].num_H.wrapping_sub(1);
+            let mut mask = 0_i32;
+            let type_ = GetAtomChargeType(&*at, atom_index, None, Some(&mut mask), 0)?;
+            at[index].charge = at[index].charge.wrapping_add(1);
+            at[index].num_H = at[index].num_H.wrapping_add(1);
+
+            if type_ != 0 {
+                let mut success = false;
+                for pair in AA_TYP_MASK[..2 * max_j_aa].chunks_exact(2) {
+                    success = (type_ & pair[0]) != 0 && mask != 0 && pair[1] != 0;
+                    if success {
+                        break;
+                    }
+                }
+                if success {
+                    let _ =
+                        GetAtomChargeType(&*at, atom_index, Some(&mut totals), Some(&mut mask), 1)?;
+                    at[index].charge = at[index].charge.wrapping_sub(1);
+                    at[index].num_H = at[index].num_H.wrapping_sub(1);
+                    let _ =
+                        GetAtomChargeType(&*at, atom_index, Some(&mut totals), Some(&mut mask), 0)?;
+                    num_prot = num_prot.wrapping_add(1);
+                    num_success = num_success.wrapping_add(1);
+                }
+            }
+        }
+    }
+
+    if num_prot < 0
+        && num_tg != 0
+        && totals[ATTOT_TOT_CHARGE].wrapping_sub(nNumProtAddedByRestr) <= 0
+    {
+        for atom_index in 0..num_atoms {
+            let index =
+                usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom = at.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if atom.endpoint == 0
+                || atom.sb_parity[0] != 0
+                || atom.p_parity != 0
+                || atom.radical != 0
+                || atom.charge != 0
+                || bHasChargedNeighbor(&*at, atom_index)? != 0
+            {
+                continue;
+            }
+            if atom.valence != 1
+                || u32::from(atom.bond_type[0]) != BOND_DOUBLE
+                || atom.num_H != 0
+                || get_endpoint_valence(atom.el_number) != 2
+            {
+                continue;
+            }
+            let center_index = usize::from(atom.neighbor[0]);
+            let center = at
+                .get(center_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if center.sb_parity[0] != 0
+                || center.p_parity != 0
+                || is_centerpoint_elem(center.el_number) == 0
+            {
+                continue;
+            }
+
+            for center_neighbor_order in 0..i32::from(center.valence) {
+                let center_order = usize::try_from(center_neighbor_order)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let center = at
+                    .get(center_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                if u32::from(
+                    *center
+                        .bond_type
+                        .get(center_order)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                ) != BOND_SINGLE
+                {
+                    continue;
+                }
+                let endpoint_index = usize::from(
+                    *center
+                        .neighbor
+                        .get(center_order)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                );
+                let endpoint = at
+                    .get(endpoint_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                if endpoint.endpoint != at[index].endpoint
+                    || endpoint.num_H == 0
+                    || endpoint.charge != 0
+                    || endpoint.sb_parity[0] != 0
+                    || endpoint.p_parity != 0
+                    || endpoint.valence != endpoint.chem_bonds_valence
+                    || i32::from(endpoint.chem_bonds_valence)
+                        .wrapping_add(i32::from(endpoint.num_H))
+                        != 3
+                    || get_endpoint_valence(endpoint.el_number) != 3
+                {
+                    continue;
+                }
+
+                let mut first_reciprocal = 0_i32;
+                while first_reciprocal < i32::from(at[center_index].valence) {
+                    let order = usize::try_from(first_reciprocal)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if atom_index
+                        == i32::from(
+                            *at[center_index]
+                                .neighbor
+                                .get(order)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                        )
+                    {
+                        break;
+                    }
+                    first_reciprocal = first_reciprocal.wrapping_add(1);
+                }
+                let mut second_reciprocal = 0_i32;
+                while second_reciprocal < i32::from(at[endpoint_index].valence) {
+                    let order = usize::try_from(second_reciprocal)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if center_index
+                        == usize::from(
+                            *at[endpoint_index]
+                                .neighbor
+                                .get(order)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                        )
+                    {
+                        break;
+                    }
+                    second_reciprocal = second_reciprocal.wrapping_add(1);
+                }
+                if first_reciprocal == i32::from(at[center_index].valence)
+                    || second_reciprocal == i32::from(at[endpoint_index].valence)
+                {
+                    return Ok(RI_ERR_PROGR);
+                }
+
+                let mut mask = 0_i32;
+                let _ = GetAtomChargeType(&*at, atom_index, Some(&mut totals), Some(&mut mask), 1)?;
+                let _ = GetAtomChargeType(
+                    &*at,
+                    i32::try_from(endpoint_index)
+                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+                    Some(&mut totals),
+                    Some(&mut mask),
+                    1,
+                )?;
+
+                at[index].bond_type[0] = at[index].bond_type[0].wrapping_sub(1);
+                let first_order = usize::try_from(first_reciprocal)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                at[center_index].bond_type[first_order] =
+                    at[center_index].bond_type[first_order].wrapping_sub(1);
+                at[index].chem_bonds_valence = at[index].chem_bonds_valence.wrapping_sub(1);
+                at[index].charge = at[index].charge.wrapping_sub(1);
+
+                let second_order = usize::try_from(second_reciprocal)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                at[endpoint_index].bond_type[second_order] =
+                    at[endpoint_index].bond_type[second_order].wrapping_add(1);
+                at[center_index].bond_type[center_order] =
+                    at[center_index].bond_type[center_order].wrapping_add(1);
+                at[endpoint_index].chem_bonds_valence =
+                    at[endpoint_index].chem_bonds_valence.wrapping_add(1);
+                at[endpoint_index].num_H = at[endpoint_index].num_H.wrapping_sub(1);
+
+                num_prot = num_prot.wrapping_add(1);
+                num_success = num_success.wrapping_add(1);
+
+                let _ = GetAtomChargeType(&*at, atom_index, Some(&mut totals), Some(&mut mask), 0)?;
+                let _ = GetAtomChargeType(
+                    &*at,
+                    i32::try_from(endpoint_index)
+                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+                    Some(&mut totals),
+                    Some(&mut mask),
+                    0,
+                )?;
+            }
+        }
+    }
+
+    if num_prot > 0 {
+        for atom_index in 0..num_atoms {
+            if num_prot == 0 || totals[ATTOT_TOT_CHARGE].wrapping_sub(nNumProtAddedByRestr) < 0 {
+                break;
+            }
+            let index =
+                usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom = at.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if atom.sb_parity[0] != 0
+                || atom.p_parity != 0
+                || atom.num_H != 0
+                || atom.charge != -1
+                || atom.radical != 0
+                || bHasChargedNeighbor(&*at, atom_index)? != 0
+            {
+                continue;
+            }
+
+            at[index].charge = at[index].charge.wrapping_add(1);
+            at[index].num_H = at[index].num_H.wrapping_add(1);
+            let mut mask = 0_i32;
+            let type_ = GetAtomChargeType(&*at, atom_index, None, Some(&mut mask), 0)?;
+            at[index].charge = at[index].charge.wrapping_sub(1);
+            at[index].num_H = at[index].num_H.wrapping_sub(1);
+            if type_ != 0 {
+                let mut success = false;
+                for pair in AR_TYP_MASK[..2 * max_j_ar].chunks_exact(2) {
+                    success = (type_ & pair[0]) != 0 && mask != 0 && pair[1] != 0;
+                    if success {
+                        break;
+                    }
+                }
+                if success {
+                    let _ =
+                        GetAtomChargeType(&*at, atom_index, Some(&mut totals), Some(&mut mask), 1)?;
+                    at[index].charge = at[index].charge.wrapping_add(1);
+                    at[index].num_H = at[index].num_H.wrapping_add(1);
+                    let _ =
+                        GetAtomChargeType(&*at, atom_index, Some(&mut totals), Some(&mut mask), 0)?;
+                    num_prot = num_prot.wrapping_sub(1);
+                    num_success = num_success.wrapping_add(1);
+                }
+            }
+        }
+
+        for atom_index in 0..num_atoms {
+            if num_prot == 0 {
+                break;
+            }
+            let index =
+                usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom = at.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if atom.sb_parity[0] != 0
+                || atom.p_parity != 0
+                || atom.charge != 0
+                || atom.radical != 0
+                || bHasChargedNeighbor(&*at, atom_index)? != 0
+            {
+                continue;
+            }
+
+            at[index].num_H = at[index].num_H.wrapping_add(1);
+            at[index].charge = at[index].charge.wrapping_add(1);
+            let mut mask = 0_i32;
+            let type_ = GetAtomChargeType(&*at, atom_index, None, Some(&mut mask), 0)?;
+            let success = (PR_SIMPLE_TYP as i32 & type_) != 0 && (PR_SIMPLE_MSK & mask) != 0;
+            at[index].num_H = at[index].num_H.wrapping_sub(1);
+            at[index].charge = at[index].charge.wrapping_sub(1);
+            if success {
+                let _ = GetAtomChargeType(&*at, atom_index, Some(&mut totals), Some(&mut mask), 1)?;
+                at[index].num_H = at[index].num_H.wrapping_add(1);
+                at[index].charge = at[index].charge.wrapping_add(1);
+                let _ = GetAtomChargeType(&*at, atom_index, Some(&mut totals), Some(&mut mask), 0)?;
+                num_prot = num_prot.wrapping_sub(1);
+                num_success = num_success.wrapping_add(1);
+            }
+        }
+    }
+
+    if num_prot < 0
+        && bNormalizationFlags & u64::from(FLAG_PROTON_AC_HARD_ADDED) != 0
+        && num_tg == 1
+        && totals[ATTOT_TOT_CHARGE].wrapping_sub(nNumProtAddedByRestr) <= 0
+    {
+        let mut acceptors = 0_i32;
+        let mut donors = 0_i32;
+        for atom_index in 0..num_atoms {
+            let index =
+                usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom = at.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if atom.endpoint == 0
+                || atom.radical != 0
+                || atom.sb_parity[0] != 0
+                || atom.p_parity != 0
+                || bHasChargedNeighbor(&*at, atom_index)? != 0
+            {
+                continue;
+            }
+            let mut mask = 0_i32;
+            let type_ = GetAtomChargeType(&*at, atom_index, None, Some(&mut mask), 0)?;
+            if (type_ & AA_HARD_TYP_CO as i32) != 0 && (mask & AA_HARD_MSK_CO) != 0 {
+                acceptors = acceptors.wrapping_add(1);
+            } else if type_ == ATT_ATOM_N as i32
+                && mask == ATBIT_NP_H
+                && atom.charge == 0
+                && atom.valence == atom.chem_bonds_valence
+            {
+                donors = donors.wrapping_add(1);
+            }
+        }
+        let maximum = acceptors.min(donors);
+        let mut hard_success = 0_i32;
+        for atom_index in 0..num_atoms {
+            if hard_success >= maximum || num_prot >= 0 {
+                break;
+            }
+            let index =
+                usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom = at.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if atom.endpoint == 0
+                || atom.radical != 0
+                || atom.sb_parity[0] != 0
+                || atom.p_parity != 0
+                || bHasChargedNeighbor(&*at, atom_index)? != 0
+            {
+                continue;
+            }
+            let mut mask = 0_i32;
+            let type_ = GetAtomChargeType(&*at, atom_index, None, Some(&mut mask), 0)?;
+            if type_ == ATT_ATOM_N as i32
+                && mask == ATBIT_NP_H
+                && atom.charge == 0
+                && atom.valence == atom.chem_bonds_valence
+            {
+                let _ = GetAtomChargeType(&*at, atom_index, Some(&mut totals), Some(&mut mask), 1)?;
+                at[index].num_H = at[index].num_H.wrapping_sub(1);
+                at[index].charge = at[index].charge.wrapping_sub(1);
+                let _ = GetAtomChargeType(&*at, atom_index, Some(&mut totals), Some(&mut mask), 0)?;
+                num_prot = num_prot.wrapping_add(1);
+                hard_success = hard_success.wrapping_add(1);
+                num_success = num_success.wrapping_add(1);
+            }
+        }
+    }
+
+    *num_protons_to_add = num_prot;
+    Ok(num_success)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn AddRemoveIsoProtonsRestr(
+    at: &mut [inp_ATOM],
+    num_atoms: i32,
+    num_protons_to_add: &mut [NUM_H; NUM_H_ISOTOPES as usize],
+    num_tg: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:12360 AddRemoveIsoProtonsRestr
+    // INCHI✔️✔️: complete source frame follows verbatim.
+    /*
+int AddRemoveIsoProtonsRestr( inp_ATOM *at,
+                              int num_atoms,
+                              NUM_H num_protons_to_add[],
+                              int num_tg )
+{
+    int i, j, k, n, ret = 0;
+    int   nNumSuccess = 0, min_at, max_at, num_H, num_iso_H, num_expl_H, num_expl_iso_H; /* djb-rwth: ignoring LLVM warning: possible presence of global variables */
+    int   iCurIso; /* 0=> 1H, 1=> D, 2=> T */
+    int   iCurMode, iCurMode1, iCurMode2; /* 0=> Not Endpoints, 1=> Endpoints */
+
+                                          /* Distribute isotopes from  heaviest to lightest; pick up atoms in order 1. Not endpoints; 2. Endpoints */
+    iCurMode1 = 0;
+    iCurMode2 = num_tg ? 1 : 0;
+    for (iCurMode = iCurMode1; iCurMode <= iCurMode2; iCurMode++)
+    {
+        for (iCurIso = 2; 0 <= iCurIso; iCurIso--)
+        {
+            /* check for isotopic H to add */
+            if (!num_protons_to_add[iCurIso])
+            {
+                continue;
+            }
+            if (0 > num_protons_to_add[iCurIso])
+            {
+                ret = RI_ERR_PROGR;
+                goto exit_function;
+            }
+
+            /* Limits for atom scanning */
+            min_at = 0;
+            max_at = num_atoms;
+
+            /* Cycle withio the limits */
+            for (i = min_at; i < max_at && 0 < num_protons_to_add[iCurIso]; i++)
+            {
+                /* Pick an atom */
+                if (iCurMode)
+                {
+                    if (at[i].endpoint)
+                    {
+                        j = i;  /* atom number */
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                }
+                else
+                {
+                    if (!at[i].endpoint && 1 == bHeteroAtomMayHaveXchgIsoH( at, i ))
+                    { /* atom number */
+                        j = i;
+                    }
+                    else
+                    {
+                        if (at[i].el_number == EL_NUMBER_H && at[i].charge == 1 &&
+                             !at[i].valence && !at[i].radical && !at[i].iso_atw_diff)
+                        {
+                            /* proton, not isotopic; make it isotopic */
+                            at[i].iso_atw_diff = 1 + iCurIso;
+                            num_protons_to_add[iCurIso] --;
+                            nNumSuccess++;
+                            continue;
+                        }
+                        else
+                        {
+                            continue;
+                        }
+                    }
+                }
+
+                /* j is the atom number */
+                /* count implicit H */
+                num_H = at[j].num_H;
+                num_iso_H = NUM_ISO_H(at, j); /* djb-rwth: ignoring LLVM warning: possible presence of global variables */
+
+                while (num_H > 0 && num_protons_to_add[iCurIso] > 0)
+                {
+                    /* Substitute one implicit H with an isotopic atom H */
+                    at[j].num_iso_H[iCurIso] ++;
+                    at[j].num_H--;
+                    num_protons_to_add[iCurIso] --;
+                    num_H--;
+                    num_iso_H++;
+                    nNumSuccess++;
+                }
+                /* Count explicit H */
+                num_expl_H = num_expl_iso_H = 0;
+                for (k = 0; k < at[j].valence && num_atoms <= ( n = at[j].neighbor[k] ); k++)
+                {
+                    num_expl_H += ( 0 == at[n].iso_atw_diff );
+                    num_expl_iso_H += ( 0 != at[n].iso_atw_diff );
+                }
+                while (num_expl_H > 0 && num_protons_to_add[iCurIso] > 0)
+                {
+                    /* Substitute one explicit H with an isotopic atom H */
+                    n = at[j].neighbor[num_expl_H];
+                    if (at[n].iso_atw_diff)
+                    {
+                        ret = RI_ERR_PROGR;
+                        goto exit_function;
+                    }
+                    at[n].iso_atw_diff = 1 + iCurIso;
+                    num_expl_H--;
+                    num_expl_iso_H++;
+                    num_protons_to_add[iCurIso] --;
+                    nNumSuccess++;
+                }
+            }
+        }
+    }
+
+exit_function:
+
+    return ret < 0 ? ret : nNumSuccess;
+}
+    */
+    // END INCHI C FUNCTION: AddRemoveIsoProtonsRestr
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: AddRemoveIsoProtonsRestr
+    // INCHI✔️✔️: READ_INCHI_STRING=1 includes this function for the selected production target.
+    // INCHI✔️✔️: #define NUM_ISO_H(AT,N) (AT[N].num_iso_H[0]+AT[N].num_iso_H[1]+AT[N].num_iso_H[2])
+    // INCHI✔️✔️: NUM_H is signed 16-bit; NUM_H_ISOTOPES=3; EL_NUMBER_H=1.
+    // INCHI✔️✔️: RI_ERR_PROGR=-3 and RADICAL_SINGLET=1.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: AddRemoveIsoProtonsRestr
+
+    let mut successes = 0_i32;
+    let last_mode = i32::from(num_tg != 0);
+    let mut mode = 0_i32;
+    while mode <= last_mode {
+        let mut isotope = 2_i32;
+        while isotope >= 0 {
+            let isotope_index = isotope as usize;
+            if num_protons_to_add[isotope_index] == 0 {
+                isotope -= 1;
+                continue;
+            }
+            if num_protons_to_add[isotope_index] < 0 {
+                return Ok(RI_ERR_PROGR);
+            }
+            let mut atom_number = 0_i32;
+            while atom_number < num_atoms && num_protons_to_add[isotope_index] > 0 {
+                let index = usize::try_from(atom_number)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let atom = at.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let selected = if mode != 0 {
+                    atom.endpoint != 0
+                } else {
+                    atom.endpoint == 0
+                        && bHeteroAtomMayHaveXchgIsoH(at, atom_number)? == 1
+                };
+                if !selected {
+                    if mode == 0
+                        && atom.el_number == 1
+                        && atom.charge == 1
+                        && atom.valence == 0
+                        && atom.radical == 0
+                        && atom.iso_atw_diff == 0
+                    {
+                        at[index].iso_atw_diff = isotope.wrapping_add(1) as i8;
+                        num_protons_to_add[isotope_index] =
+                            num_protons_to_add[isotope_index].wrapping_sub(1);
+                        successes = successes.wrapping_add(1);
+                    }
+                    atom_number = atom_number.wrapping_add(1);
+                    continue;
+                }
+
+                let mut num_h = i32::from(at[index].num_H);
+                let mut num_iso_h = at[index]
+                    .num_iso_H
+                    .into_iter()
+                    .map(i32::from)
+                    .fold(0_i32, i32::wrapping_add);
+                while num_h > 0 && num_protons_to_add[isotope_index] > 0 {
+                    at[index].num_iso_H[isotope_index] =
+                        at[index].num_iso_H[isotope_index].wrapping_add(1);
+                    at[index].num_H = at[index].num_H.wrapping_sub(1);
+                    num_protons_to_add[isotope_index] =
+                        num_protons_to_add[isotope_index].wrapping_sub(1);
+                    num_h = num_h.wrapping_sub(1);
+                    num_iso_h = num_iso_h.wrapping_add(1);
+                    successes = successes.wrapping_add(1);
+                }
+
+                let mut num_explicit_h = 0_i32;
+                let mut num_explicit_iso_h = 0_i32;
+                let mut bond = 0_i32;
+                while bond < i32::from(at[index].valence) {
+                    let bond_index = usize::try_from(bond)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let neighbor = i32::from(*at[index]
+                        .neighbor
+                        .get(bond_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?);
+                    if neighbor < num_atoms {
+                        break;
+                    }
+                    let explicit = at
+                        .get(usize::try_from(neighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    num_explicit_h =
+                        num_explicit_h.wrapping_add(i32::from(explicit.iso_atw_diff == 0));
+                    num_explicit_iso_h = num_explicit_iso_h
+                        .wrapping_add(i32::from(explicit.iso_atw_diff != 0));
+                    bond = bond.wrapping_add(1);
+                }
+                while num_explicit_h > 0 && num_protons_to_add[isotope_index] > 0 {
+                    let bond_index = usize::try_from(num_explicit_h)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let neighbor = i32::from(*at[index]
+                        .neighbor
+                        .get(bond_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?);
+                    let explicit = at
+                        .get_mut(usize::try_from(neighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    if explicit.iso_atw_diff != 0 {
+                        return Ok(RI_ERR_PROGR);
+                    }
+                    explicit.iso_atw_diff = isotope.wrapping_add(1) as i8;
+                    num_explicit_h = num_explicit_h.wrapping_sub(1);
+                    num_explicit_iso_h = num_explicit_iso_h.wrapping_add(1);
+                    num_protons_to_add[isotope_index] =
+                        num_protons_to_add[isotope_index].wrapping_sub(1);
+                    successes = successes.wrapping_add(1);
+                }
+                let _ = (num_iso_h, num_explicit_iso_h);
+                atom_number = atom_number.wrapping_add(1);
+            }
+            isotope -= 1;
+        }
+        mode = mode.wrapping_add(1);
+    }
+    Ok(successes)
+}
 
 fn allocate_zeroed<T: Default + Clone + 'static>(
     heap: &mut SourceHeap,
@@ -274,6 +1264,7 @@ const ATTOT_NUM_ERRORS: usize = 30;
 const ATTOT_TOT_CHARGE: usize = 31;
 const ATTOT_NUM_CHARGES: usize = 32;
 const ATTOT_ARRAY_LEN: usize = 33;
+const ATBIT_NP_H: i32 = att_bit(ATTOT_NUM_NP_H);
 const PR_SIMPLE_MSK: i32 = (att_bit(ATTOT_NUM_NP_PROTON) | att_bit(ATTOT_NUM_OH_PLUS)) as i32;
 const AR_SIMPLE_MSK1: i32 = att_bit(ATTOT_NUM_COH)
     | att_bit(ATTOT_NUM_CSH)
@@ -455,7 +1446,7 @@ pub(crate) fn fix_special_bonds(
             && atom.radical == 0
             && 2 <= i32::from(atom.chem_bonds_valence) + input_atom_numh(atom)
                 - get_el_valence(i32::from(atom.el_number), 0, 0)?
-            && num_of_H(heap, atoms_ptr.as_const(), i)? == 0
+            && num_of_H(&atoms, i)? == 0
             && 2 == n_no_metal_bonds_valence(Some(&atoms), i)? + input_atom_numh(atom)
                 - get_el_valence(i32::from(atom.el_number), 0, 0)?
             && ion_el_group(i32::from(atom.el_number)) == 7
@@ -479,7 +1470,7 @@ pub(crate) fn fix_special_bonds(
                 } else {
                     (n2, i2)
                 };
-                if num_of_H(heap, atoms_ptr.as_const(), n3)? == 0
+                if num_of_H(&atoms, n3)? == 0
                     && n_no_metal_num_bonds(Some(&atoms), n3)? == 2
                     && n_no_metal_bonds_valence(Some(&atoms), n3)? == 3
                     && ion_el_group(i32::from(input_atom_ref(&atoms, n3)?.el_number)) == 7
@@ -588,7 +1579,7 @@ pub(crate) fn fix_special_bonds(
                     let _ = num_other;
                 }
                 if num_n == 1
-                    && num_of_H(heap, atoms_ptr.as_const(), n2)? == 0
+                    && num_of_H(&atoms, n2)? == 0
                     && n_no_metal_num_bonds(Some(&atoms), n2)? == 2
                     && n_no_metal_bonds_valence(Some(&atoms), n2)? == 3
                     && 0 <= n_no_metal_other_neigh_index(Some(&atoms), n2, i)?
@@ -609,7 +1600,7 @@ pub(crate) fn fix_special_bonds(
             && atom.radical == 0
             && 2 <= i32::from(atom.chem_bonds_valence) + input_atom_numh(atom)
                 - get_el_valence(i32::from(atom.el_number), 0, 0)?
-            && num_of_H(heap, atoms_ptr.as_const(), i)? == 0
+            && num_of_H(&atoms, i)? == 0
             && 2 == n_no_metal_bonds_valence(Some(&atoms), i)? + input_atom_numh(atom)
                 - get_el_valence(i32::from(atom.el_number), 0, 0)?
             && atom.el_number != 8
@@ -714,7 +1705,7 @@ pub(crate) fn fix_special_bonds(
             && atom.radical == 0
             && 4 <= i32::from(atom.chem_bonds_valence) + input_atom_numh(atom)
                 - get_el_valence(i32::from(atom.el_number), 0, 0)?
-            && num_of_H(heap, atoms_ptr.as_const(), i)? == 0
+            && num_of_H(&atoms, i)? == 0
             && 4 == n_no_metal_bonds_valence(Some(&atoms), i)? + input_atom_numh(atom)
                 - get_el_valence(i32::from(atom.el_number), 0, 0)?
             && atom.el_number != 8
@@ -744,7 +1735,7 @@ pub(crate) fn fix_special_bonds(
                         || (input_atom_ref(&atoms, n1)?.charge == 1
                             && input_atom_ref(&atoms, n1)?.valence == 2))
                         && input_atom_ref(&atoms, n1)?.radical == 0
-                        && num_of_H(heap, atoms_ptr.as_const(), n1)? == 0
+                        && num_of_H(&atoms, n1)? == 0
                         && ion_el_group(i32::from(input_atom_ref(&atoms, n1)?.el_number)) == 8
                         && n_no_metal_num_bonds(Some(&atoms), n1)? == 1
                     {
@@ -753,13 +1744,11 @@ pub(crate) fn fix_special_bonds(
                 } else if bond_type == 1
                     && n_no_metal_num_bonds(Some(&atoms), n1)? == 1
                     && ion_el_group(i32::from(input_atom_ref(&atoms, n1)?.el_number)) == 8
-                    && num_of_H(heap, atoms_ptr.as_const(), n1)? <= 1
-                    && (((input_atom_ref(&atoms, n1)?.charge == 0)
-                        && num_of_H(heap, atoms_ptr.as_const(), n1)? == 1)
+                    && num_of_H(&atoms, n1)? <= 1
+                    && (((input_atom_ref(&atoms, n1)?.charge == 0) && num_of_H(&atoms, n1)? == 1)
                         as i32
                         + (((input_atom_ref(&atoms, n1)?.charge == -1)
-                            && num_of_H(heap, atoms_ptr.as_const(), n1)? == 0)
-                            as i32))
+                            && num_of_H(&atoms, n1)? == 0) as i32))
                         == 1
                 {
                     num_oh += 1;
@@ -783,7 +1772,7 @@ pub(crate) fn fix_special_bonds(
             && atom.radical == 0
             && 6 <= i32::from(atom.chem_bonds_valence) + input_atom_numh(atom)
                 - get_el_valence(i32::from(atom.el_number), 0, 0)?
-            && num_of_H(heap, atoms_ptr.as_const(), i)? == 0
+            && num_of_H(&atoms, i)? == 0
             && 6 == n_no_metal_bonds_valence(Some(&atoms), i)? + input_atom_numh(atom)
                 - get_el_valence(i32::from(atom.el_number), 0, 0)?
             && atom.el_number != 8
@@ -809,7 +1798,7 @@ pub(crate) fn fix_special_bonds(
                         || (input_atom_ref(&atoms, n1)?.charge == 1
                             && input_atom_ref(&atoms, n1)?.valence == 2))
                         && input_atom_ref(&atoms, n1)?.radical == 0
-                        && num_of_H(heap, atoms_ptr.as_const(), n1)? == 0
+                        && num_of_H(&atoms, n1)? == 0
                         && ion_el_group(i32::from(input_atom_ref(&atoms, n1)?.el_number)) == 8
                         && n_no_metal_num_bonds(Some(&atoms), n1)? == 1
                     {
@@ -818,13 +1807,11 @@ pub(crate) fn fix_special_bonds(
                 } else if bond_type == 1
                     && n_no_metal_num_bonds(Some(&atoms), n1)? == 1
                     && ion_el_group(i32::from(input_atom_ref(&atoms, n1)?.el_number)) == 8
-                    && num_of_H(heap, atoms_ptr.as_const(), n1)? <= 1
-                    && (((input_atom_ref(&atoms, n1)?.charge == 0)
-                        && num_of_H(heap, atoms_ptr.as_const(), n1)? == 1)
+                    && num_of_H(&atoms, n1)? <= 1
+                    && (((input_atom_ref(&atoms, n1)?.charge == 0) && num_of_H(&atoms, n1)? == 1)
                         as i32
                         + (((input_atom_ref(&atoms, n1)?.charge == -1)
-                            && num_of_H(heap, atoms_ptr.as_const(), n1)? == 0)
-                            as i32))
+                            && num_of_H(&atoms, n1)? == 0) as i32))
                         == 1
                 {
                     num_oh += 1;
@@ -10818,6 +11805,206 @@ pub(crate) fn DeAllocateBnStruct(
 }
 
 #[allow(non_snake_case)]
+pub(crate) fn SetRadEndpoints(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    bRadSrchMode: BRS_MODE,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:7969 SetRadEndpoints
+    // INCHI✔️❌: int SetRadEndpoints( BN_STRUCT *pBNS, BN_DATA *pBD, BRS_MODE bRadSrchMode )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     int ret, i, j, k, delta; /* djb-rwth: removing redundant variables */
+    // INCHI✔️❌:     BNS_VERTEX *pRad, *pEndp;
+    // INCHI✔️❌:     Vertex     wRad, vRad, vEndp, nNumRadicals;
+    // INCHI✔️❌:     int        nDots = 0 /* added initialization, 2006-03 */, nNumEdges;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (pBNS->tot_st_cap <= pBNS->tot_st_flow)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         return 0;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     pBD->nNumRadEndpoints = 0;
+    // INCHI✔️❌:     pBD->nNumRadEdges = 0;
+    // INCHI✔️❌:     pBD->bRadSrchMode = bRadSrchMode;
+    // INCHI✔️❌:     pBNS->alt_path = pBNS->altp[0];
+    // INCHI✔️❌:     pBNS->bChangeFlow = 0;
+    // INCHI✔️❌:     ret = BalancedNetworkSearch( pBNS, pBD, BNS_EF_RAD_SRCH );
+    // INCHI✔️❌:     ReInitBnData( pBD );
+    // INCHI✔️❌:     ReInitBnStructAltPaths( pBNS );
+    // INCHI✔️❌:     if (!ret && pBD->nNumRadEndpoints >= 2)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         /* Sort by radical locations */
+    // INCHI✔️❌:         qsort( pBD->RadEndpoints, pBD->nNumRadEndpoints / 2, 2 * sizeof( pBD->RadEndpoints[0] ), cmp_rad_endpoints );
+    // INCHI✔️❌:         /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:         nNumRadicals = 0;
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* Create new vertices (type=BNS_VERT_TYPE_TEMP) and edges with flow=cap=1 */
+    // INCHI✔️❌:         /* connecting the new vertices radical vertices */
+    // INCHI✔️❌:         for (i = 0; i < pBD->nNumRadEndpoints; i = j)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             wRad = pBD->RadEndpoints[i];
+    // INCHI✔️❌:             pRad = pBNS->vert + wRad;
+    // INCHI✔️❌:             delta = pRad->st_edge.cap - ( pRad->st_edge.flow & EDGE_FLOW_ST_MASK );
+    // INCHI✔️❌:             if (delta <= 0)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 delta = 1;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             nNumEdges = 0;
+    // INCHI✔️❌:             for (j = i; j < pBD->nNumRadEndpoints && wRad == pBD->RadEndpoints[j]; j += 2)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 nNumEdges++;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             /* Add new aux vertex to the radical atom/vertex */
+    // INCHI✔️❌:             vRad = bAddNewVertex( pBNS, wRad, delta, delta, nNumEdges + 1, &nDots );
+    // INCHI✔️❌:             if (IS_BNS_ERROR( vRad ))
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 ret = vRad;
+    // INCHI✔️❌:                 goto error_exit;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             pRad = pBNS->vert + vRad;
+    // INCHI✔️❌:             pBD->RadEdges[pBD->nNumRadEdges++] = pRad->iedge[pRad->num_adj_edges - 1];
+    // INCHI✔️❌:             /* Replace references to vertex wRad with vRad */
+    // INCHI✔️❌:             for (k = i, nNumEdges = 0; k < j; k += 2) /* djb-rwth: ignoring LLVM warning: variable used */
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 pBD->RadEndpoints[k] = vRad;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             nNumRadicals++;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         /* All vRad vertex indices should be in the range vFirstNewVertex...vFirstNewVertex+nNumRadicals-1 */
+    // INCHI✔️❌:         /* connect new vertices to the radical endpoints thus replacing radicals with even-length alternating cycles */
+    // INCHI✔️❌:         for (i = 0; i < pBD->nNumRadEndpoints; i = j)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             vRad = pBD->RadEndpoints[i];
+    // INCHI✔️❌:             pRad = pBNS->vert + vRad;
+    // INCHI✔️❌:             for (j = i; j < pBD->nNumRadEndpoints && vRad == pBD->RadEndpoints[j]; j += 2)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 /* Connect vew vertex pRad to radical endpoints */
+    // INCHI✔️❌:                 vEndp = pBD->RadEndpoints[j + 1];
+    // INCHI✔️❌:                 pEndp = pBNS->vert + vEndp;
+    // INCHI✔️❌:                 ret = AddNewEdge( pRad, pEndp, pBNS, 1, 0 );
+    // INCHI✔️❌:                 if (IS_BNS_ERROR( ret ))
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     goto error_exit;
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:                 pBD->RadEdges[pBD->nNumRadEdges++] = ret;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         pBD->nNumRadicals = nNumRadicals;
+    // INCHI✔️❌:         return nNumRadicals; /* done */
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return 0; /* nothing to do */
+    // INCHI✔️❌:
+    // INCHI✔️❌: error_exit:
+    // INCHI✔️❌:     RemoveRadEndpoints( pBNS, pBD, NULL );
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return ret;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: SetRadEndpoints
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: SetRadEndpoints
+    // INCHI✔️❌: #define BNS_RAD_SEARCH 1
+    // INCHI✔️❌: #define BNS_EF_RAD_SRCH 4
+    // INCHI✔️❌: #define EDGE_FLOW_ST_MASK 0x3fff
+    // INCHI✔️❌: #define IS_BNS_ERROR(X) (BNS_ERR <= (X) && (X) <= BNS_MAX_ERR_VALUE)
+    // END INCHI ACTIVE MACRO CONFIGURATION: SetRadEndpoints
+
+    if pBNS.tot_st_cap <= pBNS.tot_st_flow {
+        return Ok(0);
+    }
+
+    pBD.nNumRadEndpoints = 0;
+    pBD.nNumRadEdges = 0;
+    pBD.bRadSrchMode = bRadSrchMode;
+    pBNS.alt_path = pBNS.altp[0];
+    pBNS.bChangeFlow = 0;
+    let mut ret = BalancedNetworkSearch(heap, pBNS, pBD, BNS_EF_RAD_SRCH as i32)?;
+    let _ = ReInitBnData(heap, Some(pBD))?;
+    let _ = ReInitBnStructAltPaths(heap, pBNS)?;
+
+    if ret == 0 && pBD.nNumRadEndpoints >= 2 {
+        sort_rad_endpoint_pairs(heap, pBD.RadEndpoints, pBD.nNumRadEndpoints / 2)?;
+        let mut n_num_radicals = 0_i32;
+        let mut n_dots = 0_i32;
+        let mut i = 0_i32;
+
+        while i < pBD.nNumRadEndpoints {
+            let w_rad = work_get(heap, pBD.RadEndpoints, i)?;
+            let p_rad = bns_vertex(heap, pBNS, w_rad)?;
+            let mut delta = p_rad
+                .st_edge
+                .cap
+                .wrapping_sub(p_rad.st_edge.flow & EDGE_FLOW_ST_MASK as i32);
+            if delta <= 0 {
+                delta = 1;
+            }
+
+            let mut n_num_edges = 0_i32;
+            let mut j = i;
+            while j < pBD.nNumRadEndpoints && w_rad == work_get(heap, pBD.RadEndpoints, j)? {
+                n_num_edges = n_num_edges.wrapping_add(1);
+                j = j.wrapping_add(2);
+            }
+
+            let v_rad = bAddNewVertex(
+                heap,
+                pBNS,
+                w_rad,
+                delta,
+                delta,
+                n_num_edges.wrapping_add(1),
+                &mut n_dots,
+            )?;
+            if is_bns_error(v_rad) {
+                ret = v_rad;
+                let _ = RemoveRadEndpoints(heap, pBNS, pBD, None)?;
+                return Ok(ret);
+            }
+
+            let p_rad = bns_vertex(heap, pBNS, v_rad)?;
+            let edge_index = work_get(
+                heap,
+                p_rad.iedge,
+                i32::from(p_rad.num_adj_edges).wrapping_sub(1),
+            )?;
+            work_set(heap, pBD.RadEdges, pBD.nNumRadEdges, edge_index)?;
+            pBD.nNumRadEdges = pBD.nNumRadEdges.wrapping_add(1);
+
+            let mut k = i;
+            while k < j {
+                work_set(heap, pBD.RadEndpoints, k, v_rad)?;
+                k = k.wrapping_add(2);
+            }
+            n_num_radicals = n_num_radicals.wrapping_add(1);
+            i = j;
+        }
+
+        i = 0;
+        while i < pBD.nNumRadEndpoints {
+            let v_rad = work_get(heap, pBD.RadEndpoints, i)?;
+            let mut j = i;
+            while j < pBD.nNumRadEndpoints && v_rad == work_get(heap, pBD.RadEndpoints, j)? {
+                let v_endp = work_get(heap, pBD.RadEndpoints, j.wrapping_add(1))?;
+                ret = AddNewEdge(heap, pBNS, v_rad, v_endp, 1, 0)?;
+                if is_bns_error(ret) {
+                    let _ = RemoveRadEndpoints(heap, pBNS, pBD, None)?;
+                    return Ok(ret);
+                }
+                work_set(heap, pBD.RadEdges, pBD.nNumRadEdges, ret)?;
+                pBD.nNumRadEdges = pBD.nNumRadEdges.wrapping_add(1);
+                j = j.wrapping_add(2);
+            }
+            i = j;
+        }
+
+        pBD.nNumRadicals = n_num_radicals;
+        return Ok(n_num_radicals);
+    }
+
+    Ok(0)
+}
+
+#[allow(non_snake_case)]
 pub(crate) fn SetRadEndpoints2(
     heap: &mut SourceHeap,
     pCG: &mut CANON_GLOBALS,
@@ -12820,6 +14007,7 @@ pub(crate) fn ReInitBnData(
 
 #[allow(non_snake_case)]
 pub(crate) fn RestoreEdgeFlow(edge: &mut BNS_EDGE, delta: i32, bChangeFlow: i32) -> i32 {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:442 RestoreEdgeFlow
     // INCHI✔️❌: int RestoreEdgeFlow( BNS_EDGE *edge, int delta, int bChangeFlow )
     // INCHI✔️❌: {
     // INCHI✔️❌:     /*flow1 = edge->flow;*/ /* output from BNS */
@@ -12853,6 +14041,7 @@ pub(crate) fn RestoreEdgeFlow(edge: &mut BNS_EDGE, delta: i32, bChangeFlow: i32)
     // INCHI✔️❌:
     // INCHI✔️❌:     return 0;
     // INCHI✔️❌: }
+    // END INCHI C FUNCTION: RestoreEdgeFlow
 
     match (bChangeFlow as u32) & BNS_EF_CHNG_RSTR {
         BNS_EF_CHNG_FLOW => edge.flow0 = edge.flow,
@@ -12871,6 +14060,7 @@ pub(crate) fn SetAtomBondType(
     delta: i32,
     bChangeFlow: i32,
 ) -> i32 {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:480 SetAtomBondType
     // INCHI✔️❌: int SetAtomBondType( BNS_EDGE *edge,
     // INCHI✔️❌:                      U_CHAR *bond_type12,
     // INCHI✔️❌:                      U_CHAR *bond_type21,
@@ -13075,6 +14265,7 @@ pub(crate) fn SetAtomBondType(
     // INCHI✔️❌:
     // INCHI✔️❌:     return ret;
     // INCHI✔️❌: }
+    // END INCHI C FUNCTION: SetAtomBondType
 
     let Some(bond_type21) = bond_type21 else {
         return 0;
@@ -13191,6 +14382,7 @@ pub(crate) fn SetAtomRadAndChemValFromVertexCapFlow(
     atom: SourceMutPointer<inp_ATOM>,
     v1: i32,
 ) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:726 SetAtomRadAndChemValFromVertexCapFlow
     // INCHI✔️❌: int SetAtomRadAndChemValFromVertexCapFlow( BN_STRUCT *pBNS,
     // INCHI✔️❌:                                            inp_ATOM *atom,
     // INCHI✔️❌:                                            int v1 )
@@ -13237,6 +14429,7 @@ pub(crate) fn SetAtomRadAndChemValFromVertexCapFlow(
     // INCHI✔️❌:
     // INCHI✔️❌:     return nChanges;
     // INCHI✔️❌: }
+    // END INCHI C FUNCTION: SetAtomRadAndChemValFromVertexCapFlow
 
     let vertex = bns_vertex(heap, pBNS, v1)?;
     if vertex.st_edge.pass == 0 {
@@ -13276,6 +14469,7 @@ pub(crate) fn SetBondsFromBnStructFlow(
     num_atoms: i32,
     bChangeFlow0: i32,
 ) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:1165 SetBondsFromBnStructFlow
     // INCHI✔️❌: int SetBondsFromBnStructFlow( BN_STRUCT *pBNS,
     // INCHI✔️❌:                               inp_ATOM *at,
     // INCHI✔️❌:                               int num_atoms,
@@ -13439,6 +14633,7 @@ pub(crate) fn SetBondsFromBnStructFlow(
     // INCHI✔️❌:
     // INCHI✔️❌:     return err ? err : ret;
     // INCHI✔️❌: }
+    // END INCHI C FUNCTION: SetBondsFromBnStructFlow
 
     let bChangeFlow = bChangeFlow0 & !(BNS_EF_SET_NOSTEREO as i32);
     let mut ret = 0_i32;
@@ -14833,6 +16028,7 @@ pub(crate) fn RestoreBnStructFlow(
     pBNS: &mut BN_STRUCT,
     bChangeFlow: i32,
 ) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:1525 RestoreBnStructFlow
     // INCHI✔️❌: int RestoreBnStructFlow( BN_STRUCT *pBNS, int bChangeFlow )
     // INCHI✔️❌: {
     // INCHI✔️❌:     int       pass, i, v1, v2, ineigh1, ineigh2, vLast, n, delta, ret, err = 0; /* djb-rwth: ignoring LLVM warning: possible presence of global variables */
@@ -14895,6 +16091,7 @@ pub(crate) fn RestoreBnStructFlow(
     // INCHI✔️❌:
     // INCHI✔️❌:     return err ? err : ret;
     // INCHI✔️❌: }
+    // END INCHI C FUNCTION: RestoreBnStructFlow
 
     let mut pass = pBNS.num_altp.wrapping_sub(1);
     let mut ret = 0_i32;
@@ -14958,6 +16155,7 @@ pub(crate) fn MarkRingSystemsAltBns(
     pBNS: &BN_STRUCT,
     bUnknAltAsNoStereo: i32,
 ) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:11459 MarkRingSystemsAltBns
     // INCHI✔️❌: int MarkRingSystemsAltBns( BN_STRUCT* pBNS, int bUnknAltAsNoStereo )
     // INCHI✔️❌: {
     // INCHI✔️❌:     AT_NUMB   *nStackAtom = NULL;
@@ -15296,6 +16494,7 @@ pub(crate) fn MarkRingSystemsAltBns(
     // INCHI✔️❌:
     // INCHI✔️❌:     return nNumRingSystems;
     // INCHI✔️❌: }
+    // END INCHI C FUNCTION: MarkRingSystemsAltBns
 
     let _ = bUnknAltAsNoStereo;
     let _ = BNS_MARK_ONLY_BLOCKS;
@@ -17206,6 +18405,7 @@ pub(crate) fn MarkNonStereoAltBns(
     num_atoms: i32,
     bUnknAltAsNoStereo: i32,
 ) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:11909 MarkNonStereoAltBns
     // INCHI✔️❌: int MarkNonStereoAltBns( BN_STRUCT *pBNS,
     // INCHI✔️❌:                          inp_ATOM *at,
     // INCHI✔️❌:                          int num_atoms,
@@ -17287,6 +18487,7 @@ pub(crate) fn MarkNonStereoAltBns(
     // INCHI✔️❌:
     // INCHI✔️❌:     return ret;
     // INCHI✔️❌: }
+    // END INCHI C FUNCTION: MarkNonStereoAltBns
 
     if pBNS.num_atoms != num_atoms
         || pBNS.num_vertices != num_atoms
@@ -19319,6 +20520,473 @@ mod tests {
         TG_FLAG_TEST_TAUT__ATOMS,
         local_ichi_bns::{BT_OTHER_ALTERN_BOND, TREE_IN_1},
     };
+
+    #[test]
+    fn source_port__ichi_bns__bhaschargedneighbor__line_12005() {
+        let mut heap = SourceHeap::default();
+        let mut center = inp_ATOM {
+            valence: 3,
+            ..inp_ATOM::default()
+        };
+        center.neighbor[..3].copy_from_slice(&[1, 2, 3]);
+        let atoms = heap
+            .allocate_model_storage(vec![
+                center.clone(),
+                inp_ATOM::default(),
+                inp_ATOM {
+                    charge: -1,
+                    ..inp_ATOM::default()
+                },
+                inp_ATOM::default(),
+            ])
+            .unwrap();
+        assert_eq!(
+            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0),
+            Ok(1)
+        );
+
+        heap.slice_mut(atoms).unwrap()[2].charge = 0;
+        assert_eq!(
+            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0),
+            Ok(0)
+        );
+        heap.slice_mut(atoms).unwrap()[3].charge = 1;
+        assert_eq!(
+            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0),
+            Ok(1)
+        );
+
+        heap.slice_mut(atoms).unwrap()[0].valence = 0;
+        heap.slice_mut(atoms).unwrap()[0].neighbor[0] = u16::MAX;
+        assert_eq!(
+            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0),
+            Ok(0)
+        );
+        heap.slice_mut(atoms).unwrap()[0].valence = -1;
+        assert_eq!(
+            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0),
+            Ok(0)
+        );
+
+        heap.slice_mut(atoms).unwrap()[0].valence = 2;
+        heap.slice_mut(atoms).unwrap()[0].neighbor[..2].copy_from_slice(&[1, u16::MAX]);
+        heap.slice_mut(atoms).unwrap()[1].charge = -128;
+        assert_eq!(
+            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0),
+            Ok(1)
+        );
+        heap.slice_mut(atoms).unwrap()[1].charge = 0;
+        assert_eq!(
+            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 0),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+
+        heap.slice_mut(atoms).unwrap()[0] = center;
+        assert_eq!(
+            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), -1),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(
+            bHasChargedNeighbor(heap.slice(atoms.as_const()).unwrap(), 4),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+
+        let mut oversized = inp_ATOM {
+            valence: 21,
+            ..inp_ATOM::default()
+        };
+        oversized.neighbor.fill(1);
+        let oversized_atoms = heap
+            .allocate_model_storage(vec![oversized, inp_ATOM::default()])
+            .unwrap();
+        assert_eq!(
+            bHasChargedNeighbor(heap.slice(oversized_atoms.as_const()).unwrap(), 0),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+
+        heap.slice_mut(atoms).unwrap()[1].valence = 1;
+        heap.slice_mut(atoms).unwrap()[1].neighbor[0] = 1;
+        heap.slice_mut(atoms).unwrap()[2].charge = 127;
+        assert_eq!(
+            bHasChargedNeighbor(&heap.slice(atoms.as_const()).unwrap()[1..], 0),
+            Ok(1)
+        );
+    }
+
+    #[test]
+    fn source_port__ichi_bns__addremoveprotonsrestr__line_12056() {
+        fn atom(
+            element: u8,
+            valence: i8,
+            chem_bonds_valence: i8,
+            num_h: i8,
+            charge: i8,
+        ) -> inp_ATOM {
+            inp_ATOM {
+                el_number: element,
+                valence,
+                chem_bonds_valence,
+                num_H: num_h,
+                charge,
+                at_type: 555,
+                ..inp_ATOM::default()
+            }
+        }
+
+        fn acidic_oxygen(num_h: i8, charge: i8) -> Vec<inp_ATOM> {
+            let mut atoms = vec![atom(8, 1, 1, num_h, charge), atom(6, 1, 4, 0, 0)];
+            atoms[0].neighbor[0] = 1;
+            atoms[1].neighbor[0] = 0;
+            atoms
+        }
+
+        fn run(
+            atoms: &mut [inp_ATOM],
+            num_atoms: i32,
+            protons: &mut i32,
+            restricted: i32,
+            flags: u64,
+            num_tg: i32,
+        ) -> Result<i32, SourceHeapError> {
+            AddRemoveProtonsRestr(
+                atoms,
+                num_atoms,
+                protons,
+                restricted,
+                flags,
+                num_tg,
+                i32::MIN,
+                i32::MAX,
+            )
+        }
+
+        let mut zero_atoms = vec![atom(6, 0, 0, 0, 0)];
+        let mut zero_protons = 0;
+        assert_eq!(run(&mut zero_atoms, 1, &mut zero_protons, 0, 0, 0), Ok(0));
+        assert_eq!(zero_protons, 0);
+        assert_eq!(zero_atoms[0].at_type, ATT_NONE as AT_NUMB);
+
+        let mut negative_atoms = vec![atom(6, 0, 0, 0, 0)];
+        let mut negative_protons = -1;
+        assert_eq!(
+            run(&mut negative_atoms, -1, &mut negative_protons, 0, 0, 0),
+            Ok(0)
+        );
+        assert_eq!(negative_protons, -1);
+        assert_eq!(negative_atoms[0].at_type, 555);
+
+        let mut short_atoms = vec![atom(6, 0, 0, 0, 0)];
+        let mut short_protons = 0;
+        assert_eq!(
+            run(&mut short_atoms, 2, &mut short_protons, 0, 0, 0),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(short_protons, 0);
+
+        let mut remove_atoms = acidic_oxygen(1, 0);
+        let mut remove_protons = -1;
+        assert_eq!(
+            run(&mut remove_atoms, 2, &mut remove_protons, 0, 0, 0),
+            Ok(1)
+        );
+        assert_eq!(remove_protons, 0);
+        assert_eq!((remove_atoms[0].charge, remove_atoms[0].num_H), (-1, 0));
+        assert_eq!((remove_atoms[1].charge, remove_atoms[1].num_H), (0, 0));
+
+        let mut add_atoms = acidic_oxygen(0, -1);
+        add_atoms.push(atom(1, 0, 0, 0, 1));
+        let mut add_protons = 1;
+        assert_eq!(run(&mut add_atoms, 3, &mut add_protons, 0, 0, 0), Ok(1));
+        assert_eq!(add_protons, 0);
+        assert_eq!((add_atoms[0].charge, add_atoms[0].num_H), (0, 1));
+        assert_eq!((add_atoms[2].charge, add_atoms[2].num_H), (1, 0));
+
+        let mut ammonia = vec![atom(7, 0, 0, 3, 0)];
+        let mut ammonia_protons = 1;
+        assert_eq!(run(&mut ammonia, 1, &mut ammonia_protons, 0, 0, 0), Ok(1));
+        assert_eq!(ammonia_protons, 0);
+        assert_eq!((ammonia[0].charge, ammonia[0].num_H), (1, 4));
+
+        for mutation in 0..6 {
+            let mut skipped = acidic_oxygen(1, 0);
+            match mutation {
+                0 => skipped[0].sb_parity[0] = 1,
+                1 => skipped[0].p_parity = 1,
+                2 => skipped[0].radical = RADICAL_DOUBLET as i8,
+                3 => skipped[0].num_H = 0,
+                4 => skipped[0].charge = 1,
+                5 => skipped[1].charge = 1,
+                _ => unreachable!(),
+            }
+            let expected = (skipped[0].charge, skipped[0].num_H);
+            let mut protons = -1;
+            assert_eq!(run(&mut skipped, 2, &mut protons, 0, 0, 0), Ok(0));
+            assert_eq!(protons, -1);
+            assert_eq!((skipped[0].charge, skipped[0].num_H), expected);
+        }
+
+        fn tautomer_atoms() -> Vec<inp_ATOM> {
+            let mut atoms = vec![
+                atom(8, 1, 2, 0, 0),
+                atom(6, 2, 3, 0, 0),
+                atom(7, 2, 2, 1, 0),
+                atom(6, 1, 1, 3, 0),
+            ];
+            atoms[0].endpoint = 1;
+            atoms[0].neighbor[0] = 1;
+            atoms[0].bond_type[0] = BOND_DOUBLE as u8;
+            atoms[1].neighbor[..2].copy_from_slice(&[0, 2]);
+            atoms[1].bond_type[..2].copy_from_slice(&[BOND_DOUBLE as u8, BOND_SINGLE as u8]);
+            atoms[2].endpoint = 1;
+            atoms[2].neighbor[..2].copy_from_slice(&[1, 3]);
+            atoms[2].bond_type[..2].fill(BOND_SINGLE as u8);
+            atoms[3].neighbor[0] = 2;
+            atoms[3].bond_type[0] = BOND_SINGLE as u8;
+            atoms
+        }
+
+        let mut tautomer = tautomer_atoms();
+        let mut tautomer_protons = -1;
+        assert_eq!(run(&mut tautomer, 4, &mut tautomer_protons, 0, 0, 1), Ok(1));
+        assert_eq!(tautomer_protons, 0);
+        assert_eq!(
+            (
+                tautomer[0].bond_type[0],
+                tautomer[0].chem_bonds_valence,
+                tautomer[0].charge,
+                tautomer[1].bond_type[0],
+                tautomer[1].bond_type[1],
+                tautomer[2].bond_type[0],
+                tautomer[2].chem_bonds_valence,
+                tautomer[2].num_H,
+            ),
+            (1, 1, -1, 1, 2, 2, 3, 0)
+        );
+
+        let mut broken = tautomer_atoms();
+        broken[1].valence = 1;
+        broken[1].neighbor[0] = 2;
+        broken[1].bond_type[0] = BOND_SINGLE as u8;
+        let mut broken_protons = -1;
+        assert_eq!(
+            run(&mut broken, 4, &mut broken_protons, 0, 0, 1),
+            Ok(RI_ERR_PROGR)
+        );
+        assert_eq!(broken_protons, -1);
+
+        let mut hard = vec![
+            atom(8, 1, 2, 0, 0),
+            atom(6, 1, 4, 0, 0),
+            atom(7, 0, 0, 3, 0),
+        ];
+        hard[0].endpoint = 1;
+        hard[0].neighbor[0] = 1;
+        hard[0].bond_type[0] = BOND_DOUBLE as u8;
+        hard[1].neighbor[0] = 0;
+        hard[1].bond_type[0] = BOND_DOUBLE as u8;
+        hard[2].endpoint = 1;
+        let mut hard_protons = -1;
+        assert_eq!(
+            run(
+                &mut hard,
+                3,
+                &mut hard_protons,
+                0,
+                u64::from(FLAG_PROTON_AC_HARD_ADDED),
+                1
+            ),
+            Ok(1)
+        );
+        assert_eq!(hard_protons, 0);
+        assert_eq!((hard[2].charge, hard[2].num_H), (-1, 2));
+    }
+
+    #[test]
+    fn source_port__ichi_bns__addremoveisoprotonsrestr__line_12360() {
+        fn exchange_atom(element: u8, hydrogens: i8, endpoint: u16) -> inp_ATOM {
+            let target_valence = match element {
+                7 | 15 => 3,
+                8 | 16 | 34 | 52 => 2,
+                9 | 17 | 35 | 53 => 1,
+                _ => 0,
+            };
+            inp_ATOM {
+                el_number: element,
+                num_H: hydrogens,
+                chem_bonds_valence: target_valence - hydrogens,
+                endpoint,
+                ..inp_ATOM::default()
+            }
+        }
+
+        let mut untouched = vec![exchange_atom(7, 3, 0)];
+        let original = untouched.clone();
+        let mut zero = [0_i16; 3];
+        assert_eq!(
+            AddRemoveIsoProtonsRestr(&mut untouched, i32::MAX, &mut zero, 1),
+            Ok(0)
+        );
+        assert_eq!(untouched, original);
+        assert_eq!(
+            AddRemoveIsoProtonsRestr(&mut untouched, i32::MIN, &mut zero, 1),
+            Ok(0)
+        );
+
+        let mut negative_atoms = vec![exchange_atom(7, 3, 0)];
+        let mut negative = [0_i16, 0, -1];
+        assert_eq!(
+            AddRemoveIsoProtonsRestr(&mut negative_atoms, 1, &mut negative, 0),
+            Ok(RI_ERR_PROGR)
+        );
+        assert_eq!(negative_atoms, vec![exchange_atom(7, 3, 0)]);
+
+        let mut partial = vec![inp_ATOM {
+            el_number: 1,
+            charge: 1,
+            ..inp_ATOM::default()
+        }];
+        let mut partial_balance = [-1_i16, 0, 1];
+        assert_eq!(
+            AddRemoveIsoProtonsRestr(&mut partial, 1, &mut partial_balance, 0),
+            Ok(RI_ERR_PROGR)
+        );
+        assert_eq!(partial[0].iso_atw_diff, 3);
+        assert_eq!(partial_balance, [-1, 0, 0]);
+
+        let mut protons = vec![
+            inp_ATOM {
+                el_number: 1,
+                charge: 1,
+                ..inp_ATOM::default()
+            };
+            3
+        ];
+        let mut proton_balance = [1_i16, 1, 1];
+        assert_eq!(
+            AddRemoveIsoProtonsRestr(&mut protons, 3, &mut proton_balance, 0),
+            Ok(3)
+        );
+        assert_eq!(
+            protons
+                .iter()
+                .map(|atom| atom.iso_atw_diff)
+                .collect::<Vec<_>>(),
+            vec![3, 2, 1]
+        );
+        assert_eq!(proton_balance, [0, 0, 0]);
+
+        let mut implicit = vec![exchange_atom(7, 3, 0)];
+        let mut implicit_balance = [1_i16, 1, 1];
+        assert_eq!(
+            AddRemoveIsoProtonsRestr(&mut implicit, 1, &mut implicit_balance, 0),
+            Ok(3)
+        );
+        assert_eq!((implicit[0].num_H, implicit[0].num_iso_H), (0, [1, 1, 1]));
+        assert_eq!(implicit_balance, [0, 0, 0]);
+
+        for element in [7, 15, 8, 16, 34, 52, 9, 17, 35, 53] {
+            let hydrogens = if matches!(element, 7 | 15) {
+                3
+            } else if matches!(element, 8 | 16 | 34 | 52) {
+                2
+            } else {
+                1
+            };
+            let mut atoms = vec![exchange_atom(element, hydrogens, 0)];
+            let mut balance = [0_i16, 0, 1];
+            assert_eq!(
+                AddRemoveIsoProtonsRestr(&mut atoms, 1, &mut balance, 0),
+                Ok(1),
+                "element={element}"
+            );
+            assert_eq!(atoms[0].num_iso_H[2], 1);
+        }
+
+        let mut endpoint_disabled = vec![exchange_atom(8, 2, 1)];
+        let original_endpoint = endpoint_disabled.clone();
+        let mut endpoint_balance = [0_i16, 0, 1];
+        assert_eq!(
+            AddRemoveIsoProtonsRestr(&mut endpoint_disabled, 1, &mut endpoint_balance, 0,),
+            Ok(0)
+        );
+        assert_eq!(endpoint_disabled, original_endpoint);
+        assert_eq!(endpoint_balance, [0, 0, 1]);
+        assert_eq!(
+            AddRemoveIsoProtonsRestr(&mut endpoint_disabled, 1, &mut endpoint_balance, 1,),
+            Ok(1)
+        );
+        assert_eq!(endpoint_disabled[0].num_iso_H[2], 1);
+
+        let mut ordered = vec![exchange_atom(8, 2, 1), exchange_atom(7, 3, 0)];
+        let mut ordered_balance = [0_i16, 0, 1];
+        assert_eq!(
+            AddRemoveIsoProtonsRestr(&mut ordered, 2, &mut ordered_balance, 1),
+            Ok(1)
+        );
+        assert_eq!(ordered[0].num_iso_H, [0, 0, 0]);
+        assert_eq!(ordered[1].num_iso_H, [0, 0, 1]);
+
+        let mut explicit = vec![
+            inp_ATOM {
+                el_number: 7,
+                valence: 3,
+                chem_bonds_valence: 3,
+                neighbor: [2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                ..inp_ATOM::default()
+            },
+            inp_ATOM::default(),
+            inp_ATOM {
+                el_number: 1,
+                valence: 1,
+                iso_atw_diff: 1,
+                ..inp_ATOM::default()
+            },
+            inp_ATOM {
+                el_number: 1,
+                valence: 1,
+                ..inp_ATOM::default()
+            },
+            inp_ATOM {
+                el_number: 1,
+                valence: 1,
+                iso_atw_diff: 2,
+                ..inp_ATOM::default()
+            },
+        ];
+        let mut explicit_balance = [0_i16, 0, 1];
+        assert_eq!(
+            AddRemoveIsoProtonsRestr(&mut explicit, 2, &mut explicit_balance, 0),
+            Ok(1)
+        );
+        assert_eq!(explicit[3].iso_atw_diff, 3);
+        assert_eq!(explicit_balance, [0, 0, 0]);
+
+        let mut malformed = explicit.clone();
+        malformed[2].iso_atw_diff = 0;
+        malformed[3].iso_atw_diff = 0;
+        malformed[4].iso_atw_diff = 1;
+        let mut malformed_balance = [0_i16, 0, 1];
+        assert_eq!(
+            AddRemoveIsoProtonsRestr(&mut malformed, 2, &mut malformed_balance, 0),
+            Ok(RI_ERR_PROGR)
+        );
+        assert_eq!(malformed_balance, [0, 0, 1]);
+
+        let mut short = vec![exchange_atom(7, 3, 0)];
+        let mut short_balance = [0_i16, 0, 1];
+        assert_eq!(
+            AddRemoveIsoProtonsRestr(&mut short, 2, &mut short_balance, 0),
+            Ok(1)
+        );
+        assert_eq!(short_balance, [0, 0, 0]);
+        let mut still_short = vec![exchange_atom(7, 0, 0)];
+        still_short[0].chem_bonds_valence = 3;
+        let mut still_short_balance = [0_i16, 0, 1];
+        assert_eq!(
+            AddRemoveIsoProtonsRestr(&mut still_short, 2, &mut still_short_balance, 0),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+    }
 
     fn make_graph(
         heap: &mut SourceHeap,
@@ -29235,6 +30903,296 @@ mod tests {
         assert_eq!(
             RestoreRadicalsOnly(&iedge_error_heap, &iedge_error_bns, &iedge_error_bd, None),
             Ok(BNS_PROGRAM_ERR)
+        );
+    }
+
+    #[test]
+    fn source_port__ichi_bns__setradendpoints__line_7969() {
+        fn bns_data(heap: &mut SourceHeap, slots: usize, endpoint_capacity: i32) -> BN_DATA {
+            BN_DATA {
+                BasePtr: heap.allocate(vec![NO_VERTEX; slots]).unwrap(),
+                SwitchEdge: heap.allocate(vec![[NO_VERTEX, -1]; slots]).unwrap(),
+                Tree: heap.allocate(vec![0; slots]).unwrap(),
+                ScanQ: heap.allocate(vec![NO_VERTEX; slots]).unwrap(),
+                Pu: heap.allocate(vec![NO_VERTEX; slots]).unwrap(),
+                Pv: heap.allocate(vec![NO_VERTEX; slots]).unwrap(),
+                max_num_vertices: endpoint_capacity,
+                max_len_Pu_Pv: slots as i32,
+                RadEndpoints: heap.allocate(vec![NO_VERTEX; slots]).unwrap(),
+                RadEdges: heap.allocate(vec![NO_VERTEX; slots]).unwrap(),
+                ..BN_DATA::default()
+            }
+        }
+
+        fn radical_graph(
+            heap: &mut SourceHeap,
+            endpoint_count: usize,
+            max_vertices: usize,
+            max_edges: usize,
+        ) -> BN_STRUCT {
+            let atom_count = endpoint_count * 2 + 1;
+            let max_adj_edges = endpoint_count + 2;
+            let iedge = heap
+                .allocate(vec![0_i32; max_vertices * max_adj_edges])
+                .unwrap();
+            let mut vertices = vec![BNS_VERTEX::default(); max_vertices];
+            for (index, vertex) in vertices.iter_mut().enumerate() {
+                vertex.iedge = iedge.offset((index * max_adj_edges) as i64).unwrap();
+                vertex.max_adj_edges = max_adj_edges as AT_NUMB;
+                if index < atom_count {
+                    vertex.type_ = BNS_VERT_TYPE_ATOM as AT_NUMB;
+                }
+            }
+            vertices[0].st_edge = BNS_ST_EDGE {
+                cap: 2,
+                flow: 1,
+                ..BNS_ST_EDGE::default()
+            };
+            vertices[0].num_adj_edges = endpoint_count as AT_NUMB;
+            for branch in 0..endpoint_count {
+                let bridge = branch * 2 + 1;
+                let endpoint = bridge + 1;
+                vertices[bridge].st_edge = BNS_ST_EDGE {
+                    cap: 1,
+                    flow: 1,
+                    ..BNS_ST_EDGE::default()
+                };
+                vertices[bridge].num_adj_edges = 2;
+                vertices[endpoint].st_edge = BNS_ST_EDGE {
+                    cap: 1,
+                    flow: 1,
+                    ..BNS_ST_EDGE::default()
+                };
+                vertices[endpoint].num_adj_edges = 1;
+            }
+
+            let mut edges = vec![BNS_EDGE::default(); max_edges];
+            for branch in 0..endpoint_count {
+                let bridge = branch * 2 + 1;
+                let endpoint = bridge + 1;
+                let first_edge = branch * 2;
+                let second_edge = first_edge + 1;
+                edges[first_edge] = BNS_EDGE {
+                    neighbor1: 0,
+                    neighbor12: bridge as AT_NUMB,
+                    neigh_ord: [branch as AT_NUMB, 0],
+                    cap: 1,
+                    cap0: 1,
+                    ..BNS_EDGE::default()
+                };
+                edges[second_edge] = BNS_EDGE {
+                    neighbor1: bridge as AT_NUMB,
+                    neighbor12: (bridge ^ endpoint) as AT_NUMB,
+                    neigh_ord: [1, 0],
+                    cap: 1,
+                    cap0: 1,
+                    flow: 1,
+                    flow0: 1,
+                    ..BNS_EDGE::default()
+                };
+                let iedges = heap.slice_mut(iedge).unwrap();
+                iedges[branch] = first_edge as i32;
+                iedges[bridge * max_adj_edges] = first_edge as i32;
+                iedges[bridge * max_adj_edges + 1] = second_edge as i32;
+                iedges[endpoint * max_adj_edges] = second_edge as i32;
+            }
+
+            let initial_edge_count = endpoint_count * 2;
+            let mut bns = BN_STRUCT {
+                num_atoms: atom_count as i32,
+                num_vertices: atom_count as i32,
+                max_vertices: max_vertices as i32,
+                num_bonds: initial_edge_count as i32,
+                num_edges: initial_edge_count as i32,
+                max_edges: max_edges as i32,
+                max_iedges: (max_vertices * max_adj_edges) as i32,
+                tot_st_cap: (atom_count + 1) as i32,
+                tot_st_flow: atom_count as i32,
+                vert: heap.allocate(vertices).unwrap(),
+                edge: heap.allocate(edges).unwrap(),
+                iedge,
+                max_altp: 1,
+                ..BN_STRUCT::default()
+            };
+            bns.altp[0] = heap.allocate(vec![BNS_ALT_PATH::default(); 6]).unwrap();
+            bns
+        }
+
+        let mut early_heap = SourceHeap::default();
+        let mut early_bns = radical_graph(&mut early_heap, 1, 5, 5);
+        early_bns.tot_st_flow = early_bns.tot_st_cap;
+        early_bns.bChangeFlow = 77;
+        let sentinel_alt_path = early_heap
+            .allocate(vec![BNS_ALT_PATH::default(); 1])
+            .unwrap();
+        early_bns.alt_path = sentinel_alt_path;
+        let mut early_bd = bns_data(&mut early_heap, 12, 12);
+        early_bd.nNumRadEndpoints = 6;
+        early_bd.nNumRadEdges = 5;
+        early_bd.bRadSrchMode = 99;
+        assert_eq!(
+            SetRadEndpoints(
+                &mut early_heap,
+                &mut early_bns,
+                &mut early_bd,
+                tagBnsRadSrchMode_RAD_SRCH_NORM,
+            ),
+            Ok(0)
+        );
+        assert_eq!(
+            (
+                early_bd.nNumRadEndpoints,
+                early_bd.nNumRadEdges,
+                early_bd.bRadSrchMode,
+                early_bns.bChangeFlow,
+                early_bns.alt_path,
+            ),
+            (6, 5, 99, 77, sentinel_alt_path)
+        );
+
+        let mut single_heap = SourceHeap::default();
+        let mut single_bns = radical_graph(&mut single_heap, 1, 5, 5);
+        let mut single_bd = bns_data(&mut single_heap, 12, 12);
+        assert_eq!(
+            SetRadEndpoints(
+                &mut single_heap,
+                &mut single_bns,
+                &mut single_bd,
+                tagBnsRadSrchMode_RAD_SRCH_NORM,
+            ),
+            Ok(1)
+        );
+        assert_eq!(
+            (
+                single_bns.num_vertices,
+                single_bns.num_edges,
+                single_bd.nNumRadEndpoints,
+                single_bd.nNumRadEdges,
+                single_bd.nNumRadicals,
+                single_bd.bRadSrchMode,
+            ),
+            (4, 4, 2, 2, 1, tagBnsRadSrchMode_RAD_SRCH_NORM)
+        );
+        assert_eq!(
+            &single_heap
+                .slice(single_bd.RadEndpoints.as_const())
+                .unwrap()[0..2],
+            &[3, 2]
+        );
+        assert_eq!(
+            &single_heap.slice(single_bd.RadEdges.as_const()).unwrap()[0..2],
+            &[2, 3]
+        );
+        assert!(single_bns.alt_path.is_null());
+        assert_eq!(single_bns.num_altp, 0);
+        {
+            let vertices = single_heap.slice(single_bns.vert.as_const()).unwrap();
+            assert_eq!((vertices[0].st_edge.cap, vertices[0].st_edge.flow), (2, 2));
+            assert_eq!(vertices[3].type_, BNS_VERT_TYPE_TEMP as AT_NUMB);
+            assert_eq!(vertices[3].num_adj_edges, 2);
+        }
+
+        let mut grouped_heap = SourceHeap::default();
+        let mut grouped_bns = radical_graph(&mut grouped_heap, 2, 7, 8);
+        let mut grouped_bd = bns_data(&mut grouped_heap, 16, 16);
+        assert_eq!(
+            SetRadEndpoints(
+                &mut grouped_heap,
+                &mut grouped_bns,
+                &mut grouped_bd,
+                tagBnsRadSrchMode_RAD_SRCH_NORM,
+            ),
+            Ok(1)
+        );
+        assert_eq!(
+            (
+                grouped_bns.num_vertices,
+                grouped_bns.num_edges,
+                grouped_bd.nNumRadEndpoints,
+                grouped_bd.nNumRadEdges,
+                grouped_bd.nNumRadicals,
+            ),
+            (6, 7, 4, 3, 1)
+        );
+        assert_eq!(
+            &grouped_heap
+                .slice(grouped_bd.RadEndpoints.as_const())
+                .unwrap()[0..4],
+            &[5, 2, 5, 4]
+        );
+        assert_eq!(
+            &grouped_heap.slice(grouped_bd.RadEdges.as_const()).unwrap()[0..3],
+            &[4, 5, 6]
+        );
+
+        let mut search_error_heap = SourceHeap::default();
+        let mut search_error_bns = radical_graph(&mut search_error_heap, 1, 5, 5);
+        let mut search_error_bd = bns_data(&mut search_error_heap, 12, 1);
+        assert_eq!(
+            SetRadEndpoints(
+                &mut search_error_heap,
+                &mut search_error_bns,
+                &mut search_error_bd,
+                tagBnsRadSrchMode_RAD_SRCH_NORM,
+            ),
+            Ok(0)
+        );
+        assert_eq!(search_error_bd.nNumRadEndpoints, 0);
+        assert_eq!(search_error_bd.nNumRadEdges, 0);
+        assert!(search_error_bns.alt_path.is_null());
+        assert_eq!(search_error_bd.QSize, -1);
+
+        let mut vertex_error_heap = SourceHeap::default();
+        let mut vertex_error_bns = radical_graph(&mut vertex_error_heap, 1, 3, 5);
+        let mut vertex_error_bd = bns_data(&mut vertex_error_heap, 12, 12);
+        assert_eq!(
+            SetRadEndpoints(
+                &mut vertex_error_heap,
+                &mut vertex_error_bns,
+                &mut vertex_error_bd,
+                tagBnsRadSrchMode_RAD_SRCH_NORM,
+            ),
+            Ok(BNS_VERT_EDGE_OVFL)
+        );
+        assert_eq!(
+            (
+                vertex_error_bns.num_vertices,
+                vertex_error_bns.num_edges,
+                vertex_error_bd.nNumRadEdges,
+                vertex_error_bd.nNumRadicals,
+            ),
+            (3, 2, 0, 0)
+        );
+
+        let mut edge_error_heap = SourceHeap::default();
+        let mut edge_error_bns = radical_graph(&mut edge_error_heap, 1, 4, 3);
+        let mut edge_error_bd = bns_data(&mut edge_error_heap, 12, 12);
+        assert_eq!(
+            SetRadEndpoints(
+                &mut edge_error_heap,
+                &mut edge_error_bns,
+                &mut edge_error_bd,
+                tagBnsRadSrchMode_RAD_SRCH_NORM,
+            ),
+            Ok(BNS_VERT_EDGE_OVFL)
+        );
+        assert_eq!(
+            (
+                edge_error_bns.num_vertices,
+                edge_error_bns.num_edges,
+                edge_error_bd.nNumRadEdges,
+                edge_error_bd.nNumRadicals,
+                edge_error_bd.bRadSrchMode,
+            ),
+            (3, 2, 0, 0, tagBnsRadSrchMode_RAD_SRCH_NORM)
+        );
+        assert_eq!(
+            edge_error_heap
+                .slice(edge_error_bns.vert.as_const())
+                .unwrap()[0]
+                .st_edge
+                .flow,
+            1
         );
     }
 

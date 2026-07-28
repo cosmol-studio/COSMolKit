@@ -1,19 +1,1989 @@
+use crate::source::base::ichi_bns::mark_alt_bonds_and_taut_groups;
+use crate::source::base::ichican2::{DeAllocBCN, GetBaseCanonRanking};
+use crate::source::base::ichicano::{
+    AllocateCS, Canon_INChI, DeAllocateCS, GetCanonLengths, UpdateFullLinearCT,
+};
+use crate::source::base::ichiisot::set_atom_iso_sort_keys;
+use crate::source::base::ichimak2::FillOutINChI;
+use crate::source::base::ichinorm::MarkRingSystemsInp;
 use crate::source::base::ichiprt2::{Eql_INChI_Stereo, inchi_strtol};
-use crate::source::base::ichisort::{CreateNeighListFromLinearCT, FreeNeighList, insertions_sort};
-use crate::source::base::util::{inchi_calloc, inchi_free};
+use crate::source::base::ichisort::{
+    CreateNeighListFromLinearCT, FreeNeighList, insertions_sort, insertions_sort_AT_RANK,
+};
+use crate::source::base::ichister::set_stereo_parity;
+use crate::source::base::ichitaut::{
+    CountTautomerGroups, make_a_copy_of_t_group_info, set_tautomer_iso_sort_keys,
+};
+use crate::source::base::mol2atom::FreeInpAtom;
+use crate::source::base::strutil::{add_DT_to_num_H, remove_terminal_HDT};
+use crate::source::base::util::{
+    get_periodic_table_number, inchi_calloc, inchi_free, inchi_malloc,
+};
 use crate::source_types::{
-    _IS_ERROR, _IS_FATAL, _IS_OKAY, _IS_WARNING, AT_NUMB, AT_RANK, EQL_SP2, EQL_SP3,
-    INCHI_FLAG_RAC_STEREO, INCHI_FLAG_REL_STEREO, INCHI_MODE, INCHI_SORT, INChI, INChI_Aux,
-    INChI_Stereo, INPUT_PARMS, MAX_ATOMS, SourceConstPointer, SourceHeap, SourceHeapError,
-    SourceMutPointer, TAUT_NON, TAUT_YES, tagDiffINChILayers_DIFL_F, tagDiffINChILayers_DIFL_FI,
-    tagDiffINChILayers_DIFL_M, tagDiffINChILayers_DIFL_MI, tagDiffINChISegments_DIFS_b_SBONDS,
+    _IS_ERROR, _IS_FATAL, _IS_OKAY, _IS_WARNING, AB_PARITY_UNDF, AB_PARITY_UNKN, AT_NUMB, AT_RANK,
+    ATOM_SIZES, ATT_PROTON, BCN, CANON_GLOBALS, CANON_MODE_CT, CANON_MODE_ISO,
+    CANON_MODE_ISO_STEREO, CANON_MODE_STEREO, CANON_MODE_TAUT, CANON_STAT, CMODE_NO_ALT_SBONDS,
+    CMODE_NOEQ_STEREO, CMODE_RACEMIC_STEREO, CMODE_REDNDNT_STEREO, CMODE_RELATIVE_STEREO,
+    CMODE_SB_IGN_ALL_UU, CMODE_SC_IGN_ALL_UU, CT_CANON_ERR, CT_ERR_MAX, CT_ERR_MIN,
+    CT_TAUCOUNT_ERR, EQL_SP2, EQL_SP3, ERR_NO_CANON_RESULTS, FLAG_NORM_CONSIDER_TAUT, ICR,
+    ICR_MAX_DIFF_FIXED_H, ICR_MAX_ENDP_IN1_ONLY, ICR_MAX_ENDP_IN2_ONLY, ICR_MAX_SB_IN1_ONLY,
+    ICR_MAX_SB_IN2_ONLY, ICR_MAX_SB_UNDF, ICR_MAX_SC_IN1_ONLY, ICR_MAX_SC_IN2_ONLY,
+    ICR_MAX_SC_UNDF, INCHI_CLOCK, INCHI_FLAG_RAC_STEREO, INCHI_FLAG_REL_STEREO, INCHI_MODE,
+    INCHI_SORT, INChI, INChI_Aux, INChI_Stereo, INP_ATOM_DATA, INPUT_PARMS, MAX_ATOMS,
+    NUM_H_ISOTOPES, ORIG_ATOM_DATA, PES_BIT_ARSINE_STEREO, PES_BIT_FIX_SP3_BUG,
+    PES_BIT_PHOSPHINE_STEREO, PES_BIT_POINT_EDGE_STEREO, REQ_MODE_BASIC, REQ_MODE_DEFAULT,
+    REQ_MODE_DIFF_UU_STEREO, REQ_MODE_ISO, REQ_MODE_ISO_STEREO, REQ_MODE_NO_ALT_SBONDS,
+    REQ_MODE_NOEQ_STEREO, REQ_MODE_NON_ISO, REQ_MODE_RACEMIC_STEREO, REQ_MODE_REDNDNT_STEREO,
+    REQ_MODE_RELATIVE_STEREO, REQ_MODE_SB_IGN_ALL_UU, REQ_MODE_SC_IGN_ALL_UU, REQ_MODE_STEREO,
+    REQ_MODE_TAUT, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, T_GROUP_INFO,
+    TAUT_NON, TAUT_NUM, TAUT_YES, TG_FLAG_ALL_TAUTOMERIC, TG_FLAG_ARSINE_STEREO,
+    TG_FLAG_FIX_ISO_FIXEDH_BUG, TG_FLAG_FIX_SP3_BUG, TG_FLAG_FIX_TERM_H_CHRG_BUG,
+    TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE, TG_FLAG_H_ALREADY_REMOVED,
+    TG_FLAG_PHOSPHINE_STEREO, TG_FLAG_POINTED_EDGE_STEREO, WARN_FAILED_ISOTOPIC,
+    WARN_FAILED_ISOTOPIC_STEREO, WARN_FAILED_STEREO, clock_t, inchiTime, inp_ATOM, sp_ATOM,
+    tagDiffINChILayers_DIFL_F, tagDiffINChILayers_DIFL_FI, tagDiffINChILayers_DIFL_M,
+    tagDiffINChILayers_DIFL_MI, tagDiffINChISegments_DIFS_b_SBONDS,
     tagDiffINChISegments_DIFS_f_FORMULA, tagDiffINChISegments_DIFS_h_H_ATOMS,
     tagDiffINChISegments_DIFS_i_IATOMS, tagDiffINChISegments_DIFS_m_SP3INV,
     tagDiffINChISegments_DIFS_o_TRANSP, tagDiffINChISegments_DIFS_q_CHARGE,
     tagDiffINChISegments_DIFS_s_STYPE, tagDiffINChISegments_DIFS_t_SATOMS,
-    tagMarkDiff_DIFV_BOTH_EMPTY, tagMarkDiff_DIFV_EQL2PRECED, tagMarkDiff_DIFV_FI_EQ_MI,
-    tagMarkDiff_DIFV_IS_EMPTY, tagMarkDiff_DIFV_NEQ2PRECED, tagMarkDiff_DIFV_OUTPUT_OMIT_F,
+    tagInchiDiffBits_IDIF_ATOMS, tagInchiDiffBits_IDIF_CHARGE, tagInchiDiffBits_IDIF_CON_LEN,
+    tagInchiDiffBits_IDIF_CON_TBL, tagInchiDiffBits_IDIF_DIFF_TG_ENDP,
+    tagInchiDiffBits_IDIF_EXTRA_TG_ENDP, tagInchiDiffBits_IDIF_ISO_AT,
+    tagInchiDiffBits_IDIF_LESS_FH, tagInchiDiffBits_IDIF_LESS_H,
+    tagInchiDiffBits_IDIF_MISS_TG_ENDP, tagInchiDiffBits_IDIF_MORE_FH,
+    tagInchiDiffBits_IDIF_MORE_H, tagInchiDiffBits_IDIF_MULTIPLE_TG, tagInchiDiffBits_IDIF_NO_TAUT,
+    tagInchiDiffBits_IDIF_NUM_AT, tagInchiDiffBits_IDIF_NUM_EL, tagInchiDiffBits_IDIF_NUM_ISO_AT,
+    tagInchiDiffBits_IDIF_NUM_TG, tagInchiDiffBits_IDIF_POSITION_H, tagInchiDiffBits_IDIF_PROBLEM,
+    tagInchiDiffBits_IDIF_REM_ISO_H, tagInchiDiffBits_IDIF_REM_PROT,
+    tagInchiDiffBits_IDIF_SB_EXTRA, tagInchiDiffBits_IDIF_SB_EXTRA_UNDF,
+    tagInchiDiffBits_IDIF_SB_MISS, tagInchiDiffBits_IDIF_SB_MISS_UNDF,
+    tagInchiDiffBits_IDIF_SB_PARITY, tagInchiDiffBits_IDIF_SC_EXTRA,
+    tagInchiDiffBits_IDIF_SC_EXTRA_UNDF, tagInchiDiffBits_IDIF_SC_INV,
+    tagInchiDiffBits_IDIF_SC_MISS, tagInchiDiffBits_IDIF_SC_MISS_UNDF,
+    tagInchiDiffBits_IDIF_SC_PARITY, tagInchiDiffBits_IDIF_SINGLE_TG, tagInchiDiffBits_IDIF_TG,
+    tagInchiDiffBits_IDIF_WRONG_TAUT, tagMarkDiff_DIFV_BOTH_EMPTY, tagMarkDiff_DIFV_EQL2PRECED,
+    tagMarkDiff_DIFV_FI_EQ_MI, tagMarkDiff_DIFV_IS_EMPTY, tagMarkDiff_DIFV_NEQ2PRECED,
+    tagMarkDiff_DIFV_OUTPUT_OMIT_F,
 };
+
+#[allow(non_snake_case)]
+pub(crate) fn inp2spATOM(
+    heap: &mut SourceHeap,
+    inp_at: SourceConstPointer<inp_ATOM>,
+    num_inp_at: i32,
+    at: SourceMutPointer<sp_ATOM>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimake.c:119 inp2spATOM
+    // INCHI✔️❌: complete source frame follows verbatim; input prefix cloning adds an allocation.
+    /*
+    int inp2spATOM(inp_ATOM* inp_at, int num_inp_at, sp_ATOM* at)
+    {
+        int i, j, val, elname_len;
+
+        memset(at, 0, sizeof(at[0]) * num_inp_at); /* djb-rwth: memset_s C11/Annex K variant? */
+
+        for (i = 0; i < num_inp_at; i++)
+        {
+            elname_len = sizeof(at[0].elname) - 1; /* djb-rwth: fixing coverity ID #499609 */
+            strncpy(at[i].elname, inp_at[i].elname, elname_len);
+            at[i].elname[elname_len] = '\0';
+            at[i].el_number = (U_CHAR)get_periodic_table_number(at[i].elname);
+            val = at[i].valence = inp_at[i].valence;
+            for (j = 0; j < val; j++)
+            {
+                at[i].neighbor[j] = inp_at[i].neighbor[j];
+                at[i].bond_type[j] = inp_at[i].bond_type[j];
+            }
+            at[i].chem_bonds_valence = inp_at[i].chem_bonds_valence;
+            at[i].orig_at_number = inp_at[i].orig_at_number;
+            at[i].orig_compt_at_numb = inp_at[i].orig_compt_at_numb;
+            at[i].endpoint = inp_at[i].endpoint;
+            at[i].iso_atw_diff = inp_at[i].iso_atw_diff;
+            at[i].num_H = inp_at[i].num_H;
+            at[i].cFlags = inp_at[i].cFlags;
+            for (j = 0; j < NUM_H_ISOTOPES; j++)
+            {
+                at[i].num_iso_H[j] = inp_at[i].num_iso_H[j];
+            }
+            at[i].charge = inp_at[i].charge;
+            at[i].radical = inp_at[i].radical;
+
+    #if ( FIND_RING_SYSTEMS == 1 )
+            at[i].nBlockSystem = inp_at[i].nBlockSystem;
+            at[i].bCutVertex = inp_at[i].bCutVertex;
+            at[i].nRingSystem = inp_at[i].nRingSystem;
+            at[i].nNumAtInRingSystem = inp_at[i].nNumAtInRingSystem;
+    #if ( FIND_RINS_SYSTEMS_DISTANCES == 1 )
+            at[i].nDistanceFromTerminal = inp_at[i].nDistanceFromTerminal;
+    #endif
+    #endif
+
+            /*
+                    at[i].x                  = inp_at[i].x;
+                    at[i].y                  = inp_at[i].y;
+                    at[i].z                  = inp_at[i].z;
+            */
+        }
+
+        return 0;
+    }
+
+
+    */
+    // END INCHI C FUNCTION: inp2spATOM
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: inp2spATOM
+    // INCHI✔️❌: #define FIND_RING_SYSTEMS 1
+    // INCHI✔️❌: #define FIND_RINS_SYSTEMS_DISTANCES 0
+    // END INCHI ACTIVE MACRO CONFIGURATION: inp2spATOM
+
+    let count = usize::try_from(num_inp_at).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    if count == 0 {
+        return Ok(0);
+    }
+    let input = heap
+        .slice(inp_at)?
+        .get(..count)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .to_vec();
+    let output = heap
+        .slice_mut(at)?
+        .get_mut(..count)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    output.fill(sp_ATOM::default());
+
+    for (source, destination) in input.iter().zip(output.iter_mut()) {
+        let nul = source
+            .elname
+            .iter()
+            .position(|byte| *byte == 0)
+            .unwrap_or(source.elname.len());
+        for index in 0..5 {
+            destination.elname[index] = if index < nul { source.elname[index] } else { 0 };
+        }
+        destination.elname[5] = 0;
+        destination.el_number = get_periodic_table_number(Some(&destination.elname))? as u8;
+        destination.valence = source.valence;
+        let valence = i32::from(source.valence);
+        if valence > 20 {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        for index in 0..usize::try_from(valence.max(0))
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+        {
+            destination.neighbor[index] = source.neighbor[index];
+            destination.bond_type[index] = source.bond_type[index];
+        }
+        destination.chem_bonds_valence = source.chem_bonds_valence;
+        destination.orig_at_number = source.orig_at_number;
+        destination.orig_compt_at_numb = source.orig_compt_at_numb;
+        destination.endpoint = source.endpoint;
+        destination.iso_atw_diff = source.iso_atw_diff;
+        destination.num_H = source.num_H;
+        destination.cFlags = source.cFlags;
+        for index in 0..NUM_H_ISOTOPES as usize {
+            destination.num_iso_H[index] = source.num_iso_H[index];
+        }
+        destination.charge = source.charge;
+        destination.radical = source.radical;
+        destination.nBlockSystem = source.nBlockSystem;
+        destination.bCutVertex = source.bCutVertex;
+        destination.nRingSystem = source.nRingSystem;
+        destination.nNumAtInRingSystem = source.nNumAtInRingSystem;
+    }
+    Ok(0)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn Create_INChI(
+    heap: &mut SourceHeap,
+    pCG: &mut CANON_GLOBALS,
+    ic: SourceMutPointer<INCHI_CLOCK>,
+    ip: &INPUT_PARMS,
+    ppINChI: [SourceMutPointer<INChI>; TAUT_NUM as usize],
+    ppINChI_Aux: [SourceMutPointer<INChI_Aux>; TAUT_NUM as usize],
+    _orig_inp_data: Option<&ORIG_ATOM_DATA>,
+    inp_at: SourceMutPointer<inp_ATOM>,
+    out_norm_data: &mut [INP_ATOM_DATA; TAUT_NUM as usize],
+    num_inp_at: i32,
+    mut nUserMode: INCHI_MODE,
+    pbTautFlags: &mut INCHI_MODE,
+    pbTautFlagsDone: &mut INCHI_MODE,
+    ulMaxTime: SourceMutPointer<inchiTime>,
+    mut ti_out: Option<&mut T_GROUP_INFO>,
+    mut pStrErrStruct: Option<&mut [i8]>,
+    clock_result: clock_t,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimake.c:3707 Create_INChI
+    // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap access and stack-object modeling add overhead.
+    /*
+    int  Create_INChI(CANON_GLOBALS* pCG,
+        INCHI_CLOCK* ic,
+        INPUT_PARMS* ip,
+        INChI** ppINChI,
+        INChI_Aux** ppINChI_Aux,
+        ORIG_ATOM_DATA* orig_inp_data,
+        inp_ATOM* inp_at,
+        INP_ATOM_DATA* out_norm_data[2],
+        int num_inp_at,
+        INCHI_MODE nUserMode,
+        INCHI_MODE* pbTautFlags,
+        INCHI_MODE* pbTautFlagsDone,
+        struct tagInchiTime* ulMaxTime,
+        T_GROUP_INFO* ti_out,
+        char* pStrErrStruct)
+    {
+        /*
+        #define NON_TAUT 0
+        #define TAUT     1
+        */
+        int nebend = 0, * ebend = NULL;
+    
+        sp_ATOM* at[TAUT_NUM]; /* at[0]=>non-tautomeric, at[1]=>tautomeric */
+        int                       i, n1, n2, num_atoms, num_at_tg, num_removed_H, num_removed_H_taut = 0, ret = 0, ret2 = 0;
+        INCHI_MODE                 nMode = 0;
+        T_GROUP_INFO              vt_group_info;
+        T_GROUP_INFO              vt_group_info_orig;
+        T_GROUP_INFO* /*const*/  t_group_info = &vt_group_info;
+        T_GROUP_INFO* /*const*/  t_group_info_orig = &vt_group_info_orig;
+    
+        CANON_STAT  CS, CS2;
+        CANON_STAT* pCS = &CS;
+        CANON_STAT* pCS2 = &CS2;  /*  save all allocations to avoid memory leaks in case Canon_INChI() removes the pointer */
+    
+        ATOM_SIZES  s[TAUT_NUM];
+    
+        BCN Bcn;
+        BCN* pBCN = &Bcn;
+    
+        int bHasIsotopicAtoms = 0;
+        int bMayHaveStereo = 0;
+        int num_taut_at = 0;
+    
+        inp_ATOM* out_at = NULL;     /*, *norm_at_fixed_bonds[TAUT_NUM]; */ /*  = {out_norm_nontaut_at, out_norm_taut_at} ; */
+        INChI* pINChI = NULL;      /* added initialization 2006-03 */
+        INChI_Aux* pINChI_Aux = NULL;  /* added initialization 2006-03 */
+        int        bPointedEdgeStereo = ((TG_FLAG_POINTED_EDGE_STEREO & *pbTautFlags) ? PES_BIT_POINT_EDGE_STEREO : 0)
+            | ((TG_FLAG_PHOSPHINE_STEREO & *pbTautFlags) ? PES_BIT_PHOSPHINE_STEREO : 0)
+            | ((TG_FLAG_ARSINE_STEREO & *pbTautFlags) ? PES_BIT_ARSINE_STEREO : 0)
+            | ((TG_FLAG_FIX_SP3_BUG & *pbTautFlags) ? PES_BIT_FIX_SP3_BUG : 0);
+        INCHI_MODE bTautFlags = (*pbTautFlags & (~(INCHI_MODE)TG_FLAG_ALL_TAUTOMERIC));
+        INCHI_MODE bTautFlagsDone = (*pbTautFlagsDone /*& (~(INCHI_MODE)TG_FLAG_ALL_TAUTOMERIC) */);
+    #if ( bRELEASE_VERSION == 0 )
+        int bExtract = 0; /*  EXTR_HAS_ATOM_WITH_DEFINED_PARITY; */
+    #endif
+    
+    #ifdef GHI100_FIX
+    #if ((SPRINTF_FLAG != 1) && (SPRINTF_FLAG != 2))
+        setlocale(LC_ALL, "en-US"); /* djb-rwth: setting all locales to "en-US" */
+    #endif
+    #endif
+    
+        /* */
+        int bFixIsoFixedH = 0;
+        int bFixTermHChrg = 0;
+    
+        int LargeMolecules = ip->bLargeMolecules;
+        /* djb-rwth: removing redundant variables */
+    
+        /*    vABParityUnknown holds actual value of an internal constant signifying
+            unknown parity: either the same as for undefined parity (default==standard)
+            or a specific one (non-std; requested by SLUUD switch).                 */
+        int vABParityUnknown = AB_PARITY_UNDF;
+        if (0 != (nUserMode & REQ_MODE_DIFF_UU_STEREO))
+        {
+            /* Make labels for unknown and undefined stereo different */
+            vABParityUnknown = AB_PARITY_UNKN;
+        }
+    
+        /* djb-rwth: removing redundant code */
+    
+    #if ( FIX_ISO_FIXEDH_BUG == 1 )
+        if (TG_FLAG_FIX_ISO_FIXEDH_BUG & *pbTautFlags)
+            bFixIsoFixedH = 1;
+    #endif
+    #if ( FIX_TERM_H_CHRG_BUG == 1 )
+        if (TG_FLAG_FIX_TERM_H_CHRG_BUG & *pbTautFlags)
+            bFixTermHChrg = 1;
+    #endif
+    
+    #ifdef FIX_SRU_CYCLIZING_PS_BONDS_IN_BNS
+        /* Polymer related */
+        if (orig_inp_data && orig_inp_data->polymer && orig_inp_data->polymer->n > 0 && orig_inp_data->polymer->valid)
+        {
+            int j, jj;
+            nebend = 0;
+            for (j = 0; j < orig_inp_data->polymer->n; j++)
+                if (orig_inp_data->polymer->units[j]->cyclized == 1)
+                    nebend++;
+            if (nebend)
+            {
+                nebend *= 2;
+                ebend = inchi_calloc(2 * nebend, sizeof(int));
+                if (!ebend)
+                {
+                    ret = CT_OUT_OF_RAM; goto exit_function;
+                }
+                jj = 0;
+                for (j = 0; j < orig_inp_data->polymer->n; j++)
+                {
+                    if (orig_inp_data->polymer->units[j]->cyclized == 1)
+                    {
+                        ebend[jj] = orig_inp_data->polymer->units[j]->end_atom1;
+                        ebend[jj + 1] = orig_inp_data->polymer->units[j]->end_atom2;
+                        jj += 2;
+                    }
+                }
+            }
+        }
+    #endif
+    
+        memset(s, 0, sizeof(s)); /* djb-rwth: memset_s C11/Annex K variant? */
+        if (pBCN)
+        {
+            memset(pBCN, 0, sizeof(pBCN[0])); /* djb-rwth: memset_s C11/Annex K variant? */
+        }
+        memset(t_group_info, 0, sizeof(*t_group_info)); /* djb-rwth: memset_s C11/Annex K variant? */
+        memset(t_group_info_orig, 0, sizeof(*t_group_info_orig)); /* djb-rwth: memset_s C11/Annex K variant? */
+        /*norm_at[TAUT_NON] = out_norm_data[TAUT_NON]->at; *//* output normalized non-tautomeric component */
+        /*norm_at[TAUT_YES] = out_norm_data[TAUT_YES]->at; *//* output normalized tautomeric component */
+        /*norm_at_fixed_bonds[TAUT_NON] = NULL;*/
+        /*norm_at_fixed_bonds[TAUT_YES] = out_norm_data[TAUT_YES]->at_fixed_bonds;*/
+        for (i = 0; i < TAUT_NUM; i++)
+        {
+            if (out_norm_data[i]->at)
+            {
+                if (!(at[i] = (sp_ATOM*)inchi_malloc(num_inp_at * sizeof(*at[0]))))
+                {
+                    ret = -1;
+                }
+            }
+            else
+            {
+                at[i] = NULL;
+            }
+        }
+    
+        if ((!out_norm_data[TAUT_NON]->at && !out_norm_data[TAUT_YES]->at)
+            || !inp_at || ret) /* djb-rwth: addressing LLVM warning */
+        {
+            ret = -1;
+            goto exit_function;
+        }
+    
+        /* the first struct to process: tautomeric if exists else non-tautomeric */
+        out_at = out_norm_data[TAUT_YES]->at ? out_norm_data[TAUT_YES]->at : out_norm_data[TAUT_NON]->at;
+        /* copy the input structure to be normalized to the buffer for the normalization data */
+        memcpy(out_at, inp_at, num_inp_at * sizeof(out_at[0]));
+        /*  tautomeric groups setting */
+        t_group_info->bIgnoreIsotopic = 0;   /*  include tautomeric group isotopic info in MarkTautomerGroups() */
+        t_group_info->bTautFlags = *pbTautFlags;
+        t_group_info->bTautFlagsDone = *pbTautFlagsDone;
+        t_group_info->t_group = NULL; /* djb-rwth: fixing oss-fuzz issue #70475 */
+    
+        /*
+            Preprocess the structure
+            (here THE NUMBER OF ATOMS MAY BE REDUCED)
+        */
+    
+        /*  ??? Ambiguity: H-D may become HD or DH
+            (that is, H+implicit D or D+implicit H)    */
+        if (TG_FLAG_H_ALREADY_REMOVED & bTautFlags)
+        {
+            INP_ATOM_DATA* out_norm_data1 = out_norm_data[TAUT_YES]->at ? out_norm_data[TAUT_YES] :
+                out_norm_data[TAUT_NON]->at ? out_norm_data[TAUT_NON] : NULL;
+            if (out_norm_data1)
+            {
+                num_at_tg =
+                    num_atoms = out_norm_data1->num_at - out_norm_data1->num_removed_H;
+                num_removed_H = out_norm_data1->num_removed_H;
+                t_group_info->tni.nNumRemovedExplicitH = num_removed_H;
+            }
+            else
+            {
+                ret = -1;
+                goto exit_function;
+            }
+        }
+        else
+        {
+            num_at_tg = num_atoms = remove_terminal_HDT(num_inp_at, out_at, bFixTermHChrg);
+            num_removed_H = num_inp_at - num_atoms;
+            t_group_info->tni.nNumRemovedExplicitH = num_removed_H;
+            add_DT_to_num_H(num_atoms, out_at);
+        }
+        /*fix_odd_things( num_atoms, out_at );*/
+    #if ( FIND_RING_SYSTEMS == 1 )
+        MarkRingSystemsInp(out_at, num_atoms, 0);
+    #endif
+        /*  duplicate the preprocessed structure so that all supplied out_norm_data[]->at buffers are filled */
+        if (out_at != out_norm_data[TAUT_YES]->at && out_norm_data[TAUT_YES]->at)
+        {
+            memcpy(out_norm_data[TAUT_YES]->at, out_at, num_inp_at * sizeof(out_at[0]));
+        }
+        if (out_norm_data[TAUT_YES]->at_fixed_bonds && out_norm_data[TAUT_YES]->at)
+        {
+            memcpy(out_norm_data[TAUT_YES]->at_fixed_bonds, out_at, num_inp_at * sizeof(out_at[0]));
+        }
+        if (out_at != out_norm_data[TAUT_NON]->at && out_norm_data[TAUT_NON]->at)
+        {
+            memcpy(out_norm_data[TAUT_NON]->at, out_at, num_inp_at * sizeof(out_at[0]));
+        }
+    
+        /*
+          ??? not true ??? duplicate inp_at and keep inp_at[] unchanged after terminal hydrogens removal
+          set stereo parities in taut_at[], non_taut_at[]
+          obtain max. lenghts of the name stereo parts
+          Ignore absence/presence of isotopic stereo for now
+          mark isotopic atoms
+        */
+        if (out_norm_data[TAUT_YES]->at && at[TAUT_YES])
+        {
+            /* final normalization of possibly tautomeric structure */
+            ret = mark_alt_bonds_and_taut_groups(ic, pCG,
+                out_norm_data[TAUT_YES]->at,
+                out_norm_data[TAUT_YES]->at_fixed_bonds,
+                num_atoms, ulMaxTime, t_group_info,
+                NULL, NULL,
+                nebend, ebend);
+            if (ret < 0)
+            {
+                goto exit_function;/*  out of RAM or other normalization problem */
+            }
+            num_taut_at = ret; /* number of atoms without removed H? */
+            num_removed_H_taut = t_group_info->tni.nNumRemovedExplicitH;
+            out_norm_data[TAUT_YES]->num_at = num_atoms + num_removed_H_taut; /* protons might have been removed */
+            out_norm_data[TAUT_YES]->num_removed_H = num_removed_H_taut;
+            out_norm_data[TAUT_YES]->nNumRemovedProtons += t_group_info->tni.nNumRemovedProtons;
+            for (i = 0; i < NUM_H_ISOTOPES; i++)
+            {
+                out_norm_data[TAUT_YES]->nNumRemovedProtonsIsotopic[i] +=
+                    t_group_info->tni.nNumRemovedProtonsIsotopic[i] /*+ t_group_info->num_iso_H[i]*/;
+                out_norm_data[TAUT_YES]->num_iso_H[i] +=
+                    t_group_info->num_iso_H[i];
+            }
+            /* mark deleted isolated tautomeric H(+) */
+            if (num_taut_at == 1 &&
+                out_norm_data[TAUT_YES]->at[0].at_type == ATT_PROTON &&
+                t_group_info && t_group_info->tni.nNumRemovedProtons == 1)
+            {
+                out_norm_data[TAUT_YES]->bDeleted = 1;
+                FreeInpAtom(&out_norm_data[TAUT_YES]->at_fixed_bonds);
+            }
+            else
+            {
+                if ((t_group_info->tni.bNormalizationFlags & FLAG_NORM_CONSIDER_TAUT) &&
+                    out_norm_data[TAUT_YES]->at_fixed_bonds)
+                {
+                    out_norm_data[TAUT_YES]->bTautPreprocessed = 1;
+                }
+            }
+    
+            /*
+                if ( !(t_group_info->tni.bNormalizationFlags & (FLAG_NORM_CONSIDER_TAUT & ~FLAG_PROTON_SINGLE_REMOVED)) &&
+                     out_norm_data[TAUT_YES]->at_fixed_bonds) {
+                     FreeInpAtom( &out_norm_data[TAUT_YES]->at_fixed_bonds );
+                }
+            */
+    
+            /*out_norm_data[TAUT_YES]->num_removed_H = num_removed_H_taut;*/
+    
+            out_norm_data[TAUT_YES]->bTautFlags = *pbTautFlags = t_group_info->bTautFlags;
+            out_norm_data[TAUT_YES]->bTautFlagsDone = *pbTautFlagsDone = t_group_info->bTautFlagsDone;
+            out_norm_data[TAUT_YES]->bNormalizationFlags = t_group_info->tni.bNormalizationFlags;
+    
+            /* create internal sp_ATOM at[] out of out_norm_data[]->at */
+            inp2spATOM(out_norm_data[TAUT_YES]->at, num_inp_at, at[TAUT_YES]);
+    
+            /* set stereo parities to at[]; nUserMode: accept alt. stereo bonds, min ring size */
+            ret = set_stereo_parity(pCG, out_norm_data[TAUT_YES]->at, at[TAUT_YES],
+                num_taut_at, num_removed_H_taut,
+                &s[TAUT_YES].nMaxNumStereoAtoms,
+                &s[TAUT_YES].nMaxNumStereoBonds,
+                nUserMode, bPointedEdgeStereo,
+                vABParityUnknown, ip->bLooseTSACheck, ip->bStereoAtZz);
+    
+    #if ( bRELEASE_VERSION == 0 )
+            if (0 < ret)
+            {
+                bExtract |= EXTR_HAS_ATOM_WITH_DEFINED_PARITY;
+            }
+            if (t_group_info->tni.bNormalizationFlags & FLAG_NORM_CONSIDER_TAUT)
+            {
+                bExtract |= EXTR_TAUT_TREATMENT_CHARGES;
+            }
+    #endif
+    
+            if (RETURNED_ERROR(ret))
+            {
+                goto exit_function; /*  stereo bond error */
+            }
+    
+            s[TAUT_YES].bMayHaveStereo =
+                (s[TAUT_YES].nMaxNumStereoAtoms ||
+                    s[TAUT_YES].nMaxNumStereoBonds);
+    
+            /*
+                mark isotopic atoms and atoms that have non-tautomeric
+                isotopic terminal hydrogen atoms 1H, 2H(D), 3H(T)
+            */
+    
+            s[TAUT_YES].num_isotopic_atoms =
+                set_atom_iso_sort_keys(num_taut_at,
+                    at[TAUT_YES],
+                    t_group_info,
+                    &s[TAUT_YES].bHasIsotopicTautGroups);
+    
+            /*
+                Prepare tautomeric (if no tautomerism found then prepare non-tautomeric)
+                structure for canonicalizaton:
+    
+                    remove t-groups that have no H,
+                    remove charges from t-groups if requested
+                    renumber t-groups and find final t_group_info->num_t_groups
+                    add to t-groups lists of endpoints tgroup->nEndpointAtomNumber[]
+                    calculate length of the t-group part of the connection table
+             */
+    
+            s[TAUT_YES].nLenLinearCTTautomer = CountTautomerGroups(at[TAUT_YES], num_taut_at, t_group_info);
+    
+            if (RETURNED_ERROR(s[TAUT_YES].nLenLinearCTTautomer))
+            {
+                /* added error treatment 9-11-2003 */
+                ret = s[TAUT_YES].nLenLinearCTTautomer;
+                goto exit_function;
+                /*  error has happened; no breakpoint here
+                s[TAUT_YES].nLenLinearCTTautomer = 0;
+                */
+            }
+    
+            else if (s[TAUT_YES].nLenLinearCTTautomer > 0)
+            {
+                num_at_tg = num_taut_at + t_group_info->num_t_groups;
+                /*  ??? -not true- create t_group_info_orig for multiple calls with atom renumbering */
+                make_a_copy_of_t_group_info(t_group_info_orig /* dest*/, t_group_info /* source*/); /* djb-rwth: addressing coverity ID #499544 -- properly used sequence of arguments according to the comment in previous line */
+                /*  mark isotopic tautomer groups: calculate t_group->iWeight */
+                s[TAUT_YES].nLenLinearCTIsotopicTautomer = set_tautomer_iso_sort_keys(t_group_info);
+                if (s[TAUT_YES].nLenLinearCTIsotopicTautomer < 0)
+                {
+                    /* ??? -error cannot happen- error has happened; no breakpoint here */
+                    s[TAUT_YES].nLenLinearCTIsotopicTautomer = 0;
+                }
+                out_norm_data[TAUT_YES]->bTautomeric = s[TAUT_YES].nLenLinearCTTautomer;
+            }
+    
+            /*  new variable: s[TAUT_YES].nLenCT introduced 7-22-2002 */
+            GetCanonLengths(num_taut_at, at[TAUT_YES], &s[TAUT_YES], t_group_info);
+        }
+    
+        if (out_norm_data[TAUT_NON]->at &&
+            out_norm_data[TAUT_YES]->at &&
+            at[TAUT_NON] &&
+            !s[TAUT_YES].nLenLinearCTTautomer)
+        {
+            /* the structure is non-tautomeric: use tautomeric treatment results only for it */
+            inchi_free(at[TAUT_NON]);
+            at[TAUT_NON] = NULL;
+        }
+    
+        else if (!out_norm_data[TAUT_NON]->at &&
+            out_norm_data[TAUT_YES]->at &&
+            !at[TAUT_NON] &&
+            at[TAUT_YES] &&
+            !s[TAUT_YES].nLenLinearCTTautomer)
+        {
+            /* requested tautomeric; found non-tautomeric; it is located in out_norm_data[TAUT_YES]->at */
+            out_norm_data[TAUT_YES]->bTautomeric = 0;
+        }
+    
+        else if (out_norm_data[TAUT_NON]->at && at[TAUT_NON])
+        {
+            /* the structure needs non-tautomeric treatment:
+            final normalization of non-tautomeric structure */
+            ret = mark_alt_bonds_and_taut_groups(ic, pCG,
+                out_norm_data[TAUT_NON]->at,
+                NULL,
+                num_atoms,
+                ulMaxTime,
+                NULL,
+                &bTautFlags,
+                &bTautFlagsDone,
+                nebend, ebend);
+            if (ret < 0)
+            {
+                goto exit_function;  /*  out of RAM or other normalization problem */
+            }
+            out_norm_data[TAUT_NON]->num_at = num_atoms + num_removed_H;
+            out_norm_data[TAUT_NON]->num_removed_H = num_removed_H;
+            out_norm_data[TAUT_NON]->bTautFlags = *pbTautFlags;
+            out_norm_data[TAUT_NON]->bTautFlagsDone = *pbTautFlagsDone;
+            out_norm_data[TAUT_NON]->bNormalizationFlags = 0;
+    
+            /* create internal sp_ATOM at[] out of out_norm_data[]->at */
+            inp2spATOM(out_norm_data[TAUT_NON]->at, num_inp_at, at[TAUT_NON]);
+    
+            /* set stereo parities to at[]; nUserMode: accept alt. stereo bonds, min ring size */
+            ret = set_stereo_parity(pCG, out_norm_data[TAUT_NON]->at,
+                at[TAUT_NON], num_atoms, num_removed_H,
+                &s[TAUT_NON].nMaxNumStereoAtoms,
+                &s[TAUT_NON].nMaxNumStereoBonds, nUserMode,
+                bPointedEdgeStereo, vABParityUnknown,
+                ip->bLooseTSACheck, ip->bStereoAtZz);
+    #if ( bRELEASE_VERSION == 0 )
+            if (0 < ret)
+            {
+                bExtract |= EXTR_HAS_ATOM_WITH_DEFINED_PARITY;
+            }
+    #endif
+            if (RETURNED_ERROR(ret))
+            {
+                goto exit_function; /*  stereo bond error */
+            }
+            s[TAUT_NON].bMayHaveStereo = (s[TAUT_NON].nMaxNumStereoAtoms ||
+                s[TAUT_NON].nMaxNumStereoBonds);
+    
+            /*
+             * mark isotopic atoms and atoms that have non-tautomeric
+             * isotopic terminal hydrogen atoms 1H, 2H(D), 3H(T)
+             */
+            s[TAUT_NON].num_isotopic_atoms = set_atom_iso_sort_keys(num_atoms, at[TAUT_NON], NULL, NULL);
+            GetCanonLengths(num_atoms, at[TAUT_NON], &s[TAUT_NON], NULL);
+            out_norm_data[TAUT_NON]->bTautomeric = 0;
+        }
+    
+        /* common  */
+        bMayHaveStereo = s[TAUT_YES].bMayHaveStereo || s[TAUT_NON].bMayHaveStereo;
+        bHasIsotopicAtoms = s[TAUT_NON].num_isotopic_atoms > 0 || s[TAUT_NON].bHasIsotopicTautGroups > 0 ||
+            s[TAUT_YES].num_isotopic_atoms > 0 || s[TAUT_YES].bHasIsotopicTautGroups > 0;
+        if (bFixIsoFixedH)
+        {
+            /* 2008-03-21 DT */
+            bHasIsotopicAtoms = bHasIsotopicAtoms
+                ||
+                (s[TAUT_YES].nLenLinearCTTautomer > 0 && t_group_info &&
+                    ((0 < NUM_H_ISOTOPES && t_group_info->tni.nNumRemovedProtonsIsotopic[0]) ||
+                        (1 < NUM_H_ISOTOPES && t_group_info->tni.nNumRemovedProtonsIsotopic[1]) ||
+                        (2 < NUM_H_ISOTOPES && t_group_info->tni.nNumRemovedProtonsIsotopic[2])
+                        )); /* djb-rwth: addressing LLVM warning */
+        }
+        bHasIsotopicAtoms = bHasIsotopicAtoms
+            ||
+            (s[TAUT_YES].nLenIsotopicEndpoints > 1 && t_group_info &&
+                (t_group_info->bTautFlagsDone & (TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE))); /* djb-rwth: addressing LLVM warning */
+    
+        /* default mode */
+        if (!(nUserMode & REQ_MODE_DEFAULT))
+        {
+            /*  default */
+            nUserMode |= REQ_MODE_DEFAULT;
+        }
+    
+        /* adjust the mode to the reality */
+        if ((nUserMode & REQ_MODE_ISO) && !bHasIsotopicAtoms)
+        {
+            nUserMode ^= REQ_MODE_ISO;
+            nUserMode |= REQ_MODE_NON_ISO;  /*  at least one is needed */
+        }
+        if ((nUserMode & REQ_MODE_STEREO) && (nUserMode & REQ_MODE_ISO))
+        {
+            nUserMode |= REQ_MODE_ISO_STEREO;
+        }
+        if ((nUserMode & REQ_MODE_STEREO) && !(nUserMode & REQ_MODE_NON_ISO))
+        {
+            nUserMode ^= REQ_MODE_STEREO;
+        }
+        if (!bMayHaveStereo)
+        {
+            if (nUserMode & REQ_MODE_STEREO)
+                nUserMode ^= REQ_MODE_STEREO;
+            if (nUserMode & REQ_MODE_ISO_STEREO)
+                nUserMode ^= REQ_MODE_ISO_STEREO;
+        }
+    
+        if ((nUserMode & REQ_MODE_BASIC) &&
+            (!out_norm_data[TAUT_NON]->at || !ppINChI[TAUT_NON] ||
+                !ppINChI_Aux[TAUT_NON] || !at[TAUT_NON]))
+        {
+            nUserMode ^= REQ_MODE_BASIC;
+        }
+        if ((nUserMode & REQ_MODE_TAUT) &&
+            (!out_norm_data[TAUT_YES]->at || !ppINChI[TAUT_YES] ||
+                !ppINChI_Aux[TAUT_YES] || !at[TAUT_YES]))
+        {
+            nUserMode ^= REQ_MODE_TAUT;
+        }
+    
+        switch ((int)nUserMode & (REQ_MODE_BASIC | REQ_MODE_TAUT))
+        {
+        case REQ_MODE_BASIC:
+            n1 = TAUT_NON;
+            n2 = TAUT_NON;
+            break;
+        case REQ_MODE_TAUT:
+            n1 = TAUT_YES;
+            n2 = TAUT_YES;
+            break;
+        case (REQ_MODE_BASIC | REQ_MODE_TAUT):
+            n1 = TAUT_NON;
+            n2 = TAUT_YES;
+            break;
+        default:
+            ret = -3;
+            goto exit_function; /*  program error: inconsistent nUserMode or missing taut/non-taut allocation */ /*   <BRKPT> */
+        }
+    
+        /*
+            Obtain all non-stereo canonical numberings
+        */
+    
+        if ((nUserMode & REQ_MODE_NON_ISO) && !(nUserMode & REQ_MODE_ISO))
+        {
+            /* added for special non-isotopic test mode 2004-10-04 */
+            if (t_group_info)
+            {
+                t_group_info->bIgnoreIsotopic = 1;
+                if (t_group_info->nIsotopicEndpointAtomNumber)
+                {
+                    t_group_info->nIsotopicEndpointAtomNumber[0] = inchi_min(1, t_group_info->nIsotopicEndpointAtomNumber[0]);
+                }
+                memset(t_group_info->num_iso_H, 0, sizeof(t_group_info->num_iso_H)); /* djb-rwth: memset_s C11/Annex K variant? */
+                memset(t_group_info->tni.nNumRemovedProtonsIsotopic, 0, sizeof(t_group_info->tni.nNumRemovedProtonsIsotopic)); /* djb-rwth: memset_s C11/Annex K variant? */
+                t_group_info->bTautFlagsDone &= ~(TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE);
+            }
+            for (i = 0; i < TAUT_NUM; i++)
+            {
+                s[i].bHasIsotopicTautGroups = 0;
+                s[i].bIgnoreIsotopic = 1;
+                s[i].nLenIsotopic = 0;
+                s[i].nLenIsotopicEndpoints = 0;
+                s[i].nLenLinearCTIsotopicTautomer = 0;
+                s[i].num_isotopic_atoms = 0;
+            }
+            bHasIsotopicAtoms = 0;
+        }
+    
+        ret = GetBaseCanonRanking(ic, num_atoms, num_at_tg, at,
+            t_group_info, s, pBCN, ulMaxTime,
+            pCG, bFixIsoFixedH, LargeMolecules);
+    
+        if (ret < 0)
+        {
+            goto exit_function; /*  program error */
+        }
+    #if ( bRELEASE_VERSION == 0 && FIND_CANON_NE_EQUITABLE == 1 )
+        /* Debug only: find whether canonical equivalence is different from equitable partition */
+        if (bCanonIsFinerThanEquitablePartition(num_atoms, at[n1], pBCN->ftcn[TAUT_NON].nSymmRankCt))
+        {
+            bExtract |= EXTR_CANON_NE_EQUITABLE;
+        }
+    #endif
+    
+        /* added for special non-isotopic test mode 2004-10-04 */
+        if (!pBCN->ftcn[n1].PartitionCt.Rank)
+        {
+            n1 = ALT_TAUT(n1);
+        }
+        if (!pBCN->ftcn[n2].PartitionCt.Rank)
+        {
+            n2 = ALT_TAUT(n2);
+        }
+        if (n1 > n2)
+        {
+            ret = CT_TAUCOUNT_ERR;
+            goto exit_function; /*  program error */
+        }
+    
+        /*
+            Obtain stereo canonical numberings
+        */
+    
+        for (i = n2; i >= n1 && !RETURNED_ERROR(ret); i--)
+        {
+            memset(pCS, 0, sizeof(*pCS)); /* djb-rwth: memset_s C11/Annex K variant? */
+    
+            switch (i)
+            {
+            case TAUT_NON:
+                /*  non-tautomeric */
+                /* djb-rwth: removing redundant code */
+                nMode = (s[i].nLenLinearCTTautomer == 0) ? CANON_MODE_CT : CANON_MODE_TAUT;
+                nMode |= (bHasIsotopicAtoms && (nUserMode & REQ_MODE_ISO)) ? CANON_MODE_ISO : 0;
+                nMode |= (s[TAUT_NON].bMayHaveStereo && (nUserMode & REQ_MODE_STEREO)) ? CANON_MODE_STEREO : 0;
+                nMode |= (bHasIsotopicAtoms && s[TAUT_NON].bMayHaveStereo && (nUserMode & REQ_MODE_ISO_STEREO)) ? CANON_MODE_ISO_STEREO : 0;
+                nMode |= (nUserMode & REQ_MODE_NOEQ_STEREO) ? CMODE_NOEQ_STEREO : 0;
+                nMode |= (nUserMode & REQ_MODE_REDNDNT_STEREO) ? CMODE_REDNDNT_STEREO : 0;
+                nMode |= (nUserMode & REQ_MODE_NO_ALT_SBONDS) ? CMODE_NO_ALT_SBONDS : 0;
+                if ((nMode & CANON_MODE_STEREO) == CANON_MODE_STEREO ||
+                    (nMode & CANON_MODE_ISO_STEREO) == CANON_MODE_ISO_STEREO)
+                {
+                    nMode |= (nUserMode & REQ_MODE_RELATIVE_STEREO) ? CMODE_RELATIVE_STEREO : 0;
+                    nMode |= (nUserMode & REQ_MODE_RACEMIC_STEREO) ? CMODE_RACEMIC_STEREO : 0;
+                    nMode |= (nUserMode & REQ_MODE_SC_IGN_ALL_UU) ? CMODE_SC_IGN_ALL_UU : 0;
+                    nMode |= (nUserMode & REQ_MODE_SB_IGN_ALL_UU) ? CMODE_SB_IGN_ALL_UU : 0;
+                }
+                if ((ret = AllocateCS(pCS, num_atoms, num_atoms, s[TAUT_NON].nLenCT, s[TAUT_NON].nLenCTAtOnly,
+                    s[TAUT_NON].nLenLinearCTStereoDble, s[TAUT_NON].nMaxNumStereoBonds,
+                    s[TAUT_NON].nLenLinearCTStereoCarb, s[TAUT_NON].nMaxNumStereoAtoms,
+                    0, 0, s[TAUT_NON].nLenIsotopic, nMode, pBCN))) /* djb-rwth: addressing LLVM warning */
+                {
+                    goto exit_function;
+                }
+                *pCS2 = *pCS;
+                break;
+            case TAUT_YES: /*  tautomeric */
+                /* djb-rwth: removing redundant code */
+                nMode = (s[i].nLenLinearCTTautomer == 0) ? CANON_MODE_CT : CANON_MODE_TAUT;
+                nMode |= (bHasIsotopicAtoms && (nUserMode & REQ_MODE_ISO)) ? CANON_MODE_ISO : 0;
+                nMode |= (s[TAUT_YES].bMayHaveStereo && (nUserMode & REQ_MODE_STEREO)) ? CANON_MODE_STEREO : 0;
+                nMode |= (bHasIsotopicAtoms && s[TAUT_YES].bMayHaveStereo && (nUserMode & REQ_MODE_ISO_STEREO)) ? CANON_MODE_ISO_STEREO : 0;
+                nMode |= (nUserMode & REQ_MODE_NOEQ_STEREO) ? CMODE_NOEQ_STEREO : 0;
+                nMode |= (nUserMode & REQ_MODE_REDNDNT_STEREO) ? CMODE_REDNDNT_STEREO : 0;
+                nMode |= (nUserMode & REQ_MODE_NO_ALT_SBONDS) ? CMODE_NO_ALT_SBONDS : 0;
+                if ((nMode & CANON_MODE_STEREO) == CANON_MODE_STEREO ||
+                    (nMode & CANON_MODE_ISO_STEREO) == CANON_MODE_ISO_STEREO)
+                {
+                    nMode |= (nUserMode & REQ_MODE_RELATIVE_STEREO) ? CMODE_RELATIVE_STEREO : 0;
+                    nMode |= (nUserMode & REQ_MODE_RACEMIC_STEREO) ? CMODE_RACEMIC_STEREO : 0;
+                    nMode |= (nUserMode & REQ_MODE_SC_IGN_ALL_UU) ? CMODE_SC_IGN_ALL_UU : 0;
+                    nMode |= (nUserMode & REQ_MODE_SB_IGN_ALL_UU) ? CMODE_SB_IGN_ALL_UU : 0;
+                }
+                if ((ret = AllocateCS(pCS, num_atoms, num_at_tg, s[TAUT_YES].nLenCT, s[TAUT_YES].nLenCTAtOnly,
+                    s[TAUT_YES].nLenLinearCTStereoDble, s[TAUT_YES].nMaxNumStereoBonds,
+                    s[TAUT_YES].nLenLinearCTStereoCarb, s[TAUT_YES].nMaxNumStereoAtoms,
+                    s[TAUT_YES].nLenLinearCTTautomer, s[TAUT_YES].nLenLinearCTIsotopicTautomer,
+                    s[TAUT_YES].nLenIsotopic, nMode, pBCN))) /* djb-rwth: addressing LLVM warning */
+                {
+                    goto exit_function;
+                }
+                *pCS2 = *pCS;
+                break;
+            }
+    
+            /* 2009-12-05 */
+            nMode |= (nUserMode & REQ_MODE_DIFF_UU_STEREO) ? REQ_MODE_DIFF_UU_STEREO : 0;
+            /* 2009-12-05 */
+    
+            /*  settings */
+            pCS->lNumDecreasedCT = -1;
+            pCS->bDoubleBondSquare = DOUBLE_BOND_NEIGH_LIST ? 2 : 0;  /*  2 => special mode */
+            pCS->bIgnoreIsotopic = !((s[TAUT_NON].num_isotopic_atoms ||
+                s[TAUT_YES].num_isotopic_atoms ||
+                s[TAUT_YES].bHasIsotopicTautGroups) ||
+                (nUserMode & REQ_MODE_NON_ISO) ||
+                !(nUserMode & REQ_MODE_ISO));
+    
+            if ((nUserMode & REQ_MODE_NON_ISO) && !(nUserMode & REQ_MODE_ISO))
+            {
+                pCS->bIgnoreIsotopic = 1; /* 10-04-2004 */
+            }
+    
+            if (i == TAUT_YES)
+            {
+                /* tautomeric */
+                pCS->t_group_info = t_group_info; /*  ??? make a copy or reuse ???  */
+                pCS->t_group_info->bIgnoreIsotopic = !(s[TAUT_YES].bHasIsotopicTautGroups ||
+                    (nUserMode & REQ_MODE_NON_ISO) ||
+                    !(nUserMode & REQ_MODE_ISO));
+                if ((nUserMode & REQ_MODE_NON_ISO) && !(nUserMode & REQ_MODE_ISO))
+                {
+                    pCS->t_group_info->bIgnoreIsotopic = 1; /* 10-04-2004 */
+                }
+            }
+    
+            pCS->ulTimeOutTime = pBCN->ulTimeOutTime;
+            /*=========== Obsolete Mode Bits (bit 0 is Least Significant Bit) ===========
+             *
+             *  Mode      Bits       Description
+             *   '0' c    0          Only one connection table canonicalization
+             *   '1' C    1          Recalculate CT using fixed nSymmRank
+             *   '2' i    1|2        Isotopic canonicalization (internal)
+             *   '3' I    1|2|4      Isotopic canonicalization (output)
+             *   '4' s    1|8        Stereo canonicalization
+             *   '5' S    1|2|4|16   Stereo isotopic canonicalization
+             *   '6' A    1|2|4|8|16 Output All
+             */
+    
+             /*
+                 The last canonicalization step
+             */
+    
+            if (pBCN)
+            {
+                /* USE_CANON2 == 1 */
+                pCS->NeighList = NULL;
+                pCS->pBCN = pBCN;
+    
+                ret = Canon_INChI(ic,
+                    num_atoms,
+                    i ? num_at_tg : num_atoms,
+                    at[i], pCS,
+                    pCG,
+                    nMode, i);
+            }
+            else
+            {
+                /* old way */
+                pCS->NeighList = CreateNeighList(num_atoms,
+                    i ? num_at_tg : num_atoms,
+                    at[i],
+                    pCS->bDoubleBondSquare,
+                    pCS->t_group_info);
+                pCS->pBCN = NULL;
+    
+                ret = Canon_INChI(ic,
+                    num_atoms,
+                    i ? num_at_tg : num_atoms,
+                    at[i], pCS,
+                    pCG,
+                    nMode, i);
+            }
+    
+            pINChI = ppINChI[i];      /* pointers to already allocated still empty InChI */
+            pINChI_Aux = ppINChI_Aux[i];
+    
+            if (ret <= 0)
+            {
+                /*
+                    Failure in Canon_INChI()
+                */
+                pINChI->nErrorCode = ret;
+                pINChI_Aux->nErrorCode = ret;
+            }
+            else
+            {
+                /*
+                    Success Canon_INChI()
+    
+                    save canonicalization results in
+                    pINChI and pINChI_Aux
+                */
+                pINChI->nErrorCode = 0;
+                pINChI_Aux->nErrorCode = 0;
+                pINChI->bDeleted = pINChI_Aux->bDeleted = out_norm_data[i]->bDeleted;
+                pINChI_Aux->nCanonFlags = pCS->nCanonFlags;
+                pINChI_Aux->bTautFlags = out_norm_data[i]->bTautFlags;
+                pINChI_Aux->bTautFlagsDone = out_norm_data[i]->bTautFlagsDone;
+                pINChI_Aux->bNormalizationFlags = out_norm_data[i]->bNormalizationFlags;
+    
+                /*  may return an error or a warning */
+                ret = FillOutINChI(pINChI, pINChI_Aux,
+                    num_atoms, i ? num_at_tg : num_atoms,
+                    i ? num_removed_H_taut : num_removed_H, at[i],
+                    out_norm_data[i]->at, pCS,
+                    pCG,
+                    i, nUserMode,
+                    pStrErrStruct, ip->bNoWarnings);
+    
+                if (RETURNED_ERROR(ret))
+                {
+                    /* Failure in FillOutINChI() */
+                    pINChI->nErrorCode = ret;
+                    pINChI_Aux->nErrorCode = ret;
+                }
+                else
+                {
+                    /* Success in FillOutINChI() */
+    
+    #if ( bRELEASE_VERSION == 0 )
+                    if (pINChI->Stereo &&
+                        (pINChI->Stereo->nCompInv2Abs && !pINChI->Stereo->bTrivialInv) ||
+                        pINChI->StereoIsotopic &&
+                        (pINChI->StereoIsotopic->nCompInv2Abs && !pINChI->StereoIsotopic->bTrivialInv))
+                    {
+                        bExtract |= EXTR_NON_TRIVIAL_STEREO;
+                    }
+    #endif
+                    /*    Mark non-tautomeric representation as having
+                        another, tautomeric representation */
+                    if (pINChI_Aux && s[TAUT_YES].nLenLinearCTTautomer)
+                    {
+                        pINChI_Aux->bIsTautomeric = s[TAUT_YES].nLenLinearCTTautomer;
+                    }
+    #if ( bRELEASE_VERSION == 0 )
+                    pCS->bExtract |= bExtract;
+                    pINChI->bExtract |= pCS->bExtract;
+    #endif
+    
+                    ret2 = CheckCanonNumberingCorrectness(num_atoms,
+                        i ? num_at_tg : num_atoms,
+                        at[i], pCS,
+                        pCG,
+                        i, pStrErrStruct);
+                    if (ret2 && pINChI_Aux) /* djb-rwth: fixing a NULL pointer dereference */
+                    {
+                        pINChI->nErrorCode = ret2;
+                        pINChI_Aux->nErrorCode = ret2;
+                        ret = ret2;
+                    }
+                }
+            }
+    
+            FreeNeighList(pCS->NeighList);
+            DeAllocateCS(pCS2);
+    
+            pINChI = NULL;      /* avoid dangling pointers */
+            pINChI_Aux = NULL;  /* avoid dangling pointers */
+        }
+    
+        if (ret == 0)
+        {
+            ret = num_atoms;
+        }
+        /*  treat the results later */
+    
+    exit_function:
+    
+        DeAllocBCN(pBCN);
+        if (at[TAUT_YES])
+        {
+            inchi_free(at[TAUT_YES]);
+        }
+        if (at[TAUT_NON])
+        {
+            inchi_free(at[TAUT_NON]);
+        }
+        if (ti_out)
+        {
+            *ti_out = *t_group_info;
+        }
+        else
+        {
+            /* free_t_group_info(t_group_info); */
+            if (t_group_info) /* djb-rwth: fixing oss-fuzz issue #42537161/70475 */
+            {
+                if (t_group_info->nEndpointAtomNumber)
+                {
+                    inchi_free(t_group_info->nEndpointAtomNumber);
+                }
+                if (t_group_info->tGroupNumber)
+                {
+                    inchi_free(t_group_info->tGroupNumber);
+                }
+                if (t_group_info->nIsotopicEndpointAtomNumber)
+                {
+                    inchi_free(t_group_info->nIsotopicEndpointAtomNumber);
+                }
+                memset(t_group_info, 0, sizeof(*t_group_info)); /* djb-rwth: memset_s C11/Annex K variant? */
+            }
+        }
+        free_t_group_info(t_group_info_orig);
+    
+        if (ebend)
+        {
+            inchi_free(ebend);
+        }
+    
+        return ret;
+    }
+    */
+    // END INCHI C FUNCTION: Create_INChI
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: Create_INChI
+    // INCHI✔️❌: GCC/Linux: bRELEASE_VERSION == 1, SPRINTF_FLAG == 2.
+    // INCHI✔️❌: #define FIX_ISO_FIXEDH_BUG 1
+    // INCHI✔️❌: #define FIX_TERM_H_CHRG_BUG 1
+    // INCHI✔️❌: #define FIND_RING_SYSTEMS 1
+    // INCHI✔️❌: #define FIND_CANON_NE_EQUITABLE 0
+    // INCHI✔️❌: #define DOUBLE_BOND_NEIGH_LIST 0
+    // INCHI✔️❌: GHI100_FIX and FIX_SRU_CYCLIZING_PS_BONDS_IN_BNS are undefined.
+    // END INCHI ACTIVE MACRO CONFIGURATION: Create_INChI
+    let returned_error = |value: i32| (CT_ERR_MIN..=CT_ERR_MAX).contains(&value);
+    let mut at = [SourceMutPointer::<sp_ATOM>::null(); TAUT_NUM as usize];
+    let mut sizes = std::array::from_fn(|_| ATOM_SIZES::default());
+    let mut t_group_info = T_GROUP_INFO::default();
+    let mut t_group_info_orig = T_GROUP_INFO::default();
+    let mut bcn = BCN::default();
+    let mut cs = CANON_STAT::default();
+    let mut cs_allocations = CANON_STAT::default();
+    let mut bcn_storage = SourceMutPointer::<BCN>::null();
+    let mut tgi_storage = SourceMutPointer::<T_GROUP_INFO>::null();
+    let mut ret = 0_i32;
+
+    let computation = (|| -> Result<i32, SourceHeapError> {
+        if num_inp_at < 0 {
+            return Ok(-1);
+        }
+        let count = usize::try_from(num_inp_at)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let mut clock = heap
+            .slice(ic.as_const())?
+            .first()
+            .cloned()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let b_pointed_edge_stereo =
+            i32::from((*pbTautFlags & u64::from(TG_FLAG_POINTED_EDGE_STEREO)) != 0)
+                * PES_BIT_POINT_EDGE_STEREO as i32
+                | i32::from((*pbTautFlags & u64::from(TG_FLAG_PHOSPHINE_STEREO)) != 0)
+                    * PES_BIT_PHOSPHINE_STEREO as i32
+                | i32::from((*pbTautFlags & u64::from(TG_FLAG_ARSINE_STEREO)) != 0)
+                    * PES_BIT_ARSINE_STEREO as i32
+                | i32::from((*pbTautFlags & u64::from(TG_FLAG_FIX_SP3_BUG)) != 0)
+                    * PES_BIT_FIX_SP3_BUG as i32;
+        let mut b_taut_flags = *pbTautFlags & !u64::from(TG_FLAG_ALL_TAUTOMERIC);
+        let mut b_taut_flags_done = *pbTautFlagsDone;
+        let b_fix_iso_fixed_h =
+            i32::from((*pbTautFlags & u64::from(TG_FLAG_FIX_ISO_FIXEDH_BUG)) != 0);
+        let b_fix_term_h_charge =
+            i32::from((*pbTautFlags & u64::from(TG_FLAG_FIX_TERM_H_CHRG_BUG)) != 0);
+        let large_molecules = ip.bLargeMolecules;
+        let v_ab_parity_unknown = if nUserMode & u64::from(REQ_MODE_DIFF_UU_STEREO) != 0 {
+            AB_PARITY_UNKN as i32
+        } else {
+            AB_PARITY_UNDF as i32
+        };
+
+        for index in 0..TAUT_NUM as usize {
+            if !out_norm_data[index].at.is_null() {
+                at[index] = match inchi_calloc::<sp_ATOM>(
+                    heap,
+                    u64::try_from(num_inp_at)
+                        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
+                    std::mem::size_of::<sp_ATOM>() as u64,
+                ) {
+                    Ok(pointer) => pointer,
+                    Err(SourceHeapError::AllocationFailed) => {
+                        ret = -1;
+                        SourceMutPointer::null()
+                    }
+                    Err(error) => return Err(error),
+                };
+            }
+        }
+        if (out_norm_data[TAUT_NON as usize].at.is_null()
+            && out_norm_data[TAUT_YES as usize].at.is_null())
+            || inp_at.is_null()
+            || ret != 0
+        {
+            return Ok(-1);
+        }
+
+        let out_at = if !out_norm_data[TAUT_YES as usize].at.is_null() {
+            out_norm_data[TAUT_YES as usize].at
+        } else {
+            out_norm_data[TAUT_NON as usize].at
+        };
+        let copied_input = heap
+            .slice(inp_at.as_const())?
+            .get(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .to_vec();
+        heap.slice_mut(out_at)?
+            .get_mut(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .clone_from_slice(&copied_input);
+
+        t_group_info.bIgnoreIsotopic = 0;
+        t_group_info.bTautFlags = *pbTautFlags;
+        t_group_info.bTautFlagsDone = *pbTautFlagsDone;
+        t_group_info.t_group = SourceMutPointer::null();
+
+        let mut num_atoms;
+        let mut num_at_tg;
+        let num_removed_h;
+        if b_taut_flags & u64::from(TG_FLAG_H_ALREADY_REMOVED) != 0 {
+            let selected = if !out_norm_data[TAUT_YES as usize].at.is_null() {
+                &out_norm_data[TAUT_YES as usize]
+            } else {
+                &out_norm_data[TAUT_NON as usize]
+            };
+            num_atoms = selected.num_at.wrapping_sub(selected.num_removed_H);
+            num_at_tg = num_atoms;
+            num_removed_h = selected.num_removed_H;
+            t_group_info.tni.nNumRemovedExplicitH = num_removed_h as i16;
+        } else {
+            num_atoms = remove_terminal_HDT(heap, num_inp_at, out_at, b_fix_term_h_charge)?;
+            num_at_tg = num_atoms;
+            num_removed_h = num_inp_at.wrapping_sub(num_atoms);
+            t_group_info.tni.nNumRemovedExplicitH = num_removed_h as i16;
+            let atoms = heap.slice_mut(out_at)?;
+            add_DT_to_num_H(num_atoms, atoms)?;
+        }
+        MarkRingSystemsInp(heap, out_at, num_atoms, 0)?;
+
+        for index in 0..TAUT_NUM as usize {
+            let destination = out_norm_data[index].at;
+            if !destination.is_null() && destination != out_at {
+                let source = heap.slice(out_at.as_const())?[..count].to_vec();
+                heap.slice_mut(destination)?[..count].clone_from_slice(&source);
+            }
+        }
+        if !out_norm_data[TAUT_YES as usize].at_fixed_bonds.is_null()
+            && !out_norm_data[TAUT_YES as usize].at.is_null()
+        {
+            let source = heap.slice(out_at.as_const())?[..count].to_vec();
+            heap.slice_mut(out_norm_data[TAUT_YES as usize].at_fixed_bonds)?[..count]
+                .clone_from_slice(&source);
+        }
+
+        let mut num_removed_h_taut = 0_i32;
+        let mut num_taut_at = 0_i32;
+        if !out_norm_data[TAUT_YES as usize].at.is_null() && !at[TAUT_YES as usize].is_null() {
+            tgi_storage = heap.allocate_model_storage(vec![t_group_info.clone()])?;
+            ret = mark_alt_bonds_and_taut_groups(
+                heap,
+                ic,
+                pCG,
+                out_norm_data[TAUT_YES as usize].at,
+                out_norm_data[TAUT_YES as usize].at_fixed_bonds,
+                num_atoms,
+                ulMaxTime,
+                tgi_storage,
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                0,
+                SourceMutPointer::null(),
+                clock_result,
+            )?;
+            t_group_info = heap.slice(tgi_storage.as_const())?[0].clone();
+            if ret < 0 {
+                return Ok(ret);
+            }
+            num_taut_at = ret;
+            num_removed_h_taut = i32::from(t_group_info.tni.nNumRemovedExplicitH);
+            let taut = &mut out_norm_data[TAUT_YES as usize];
+            taut.num_at = num_atoms.wrapping_add(num_removed_h_taut);
+            taut.num_removed_H = num_removed_h_taut;
+            taut.nNumRemovedProtons = taut
+                .nNumRemovedProtons
+                .wrapping_add(i32::from(t_group_info.tni.nNumRemovedProtons));
+            for isotope in 0..NUM_H_ISOTOPES as usize {
+                taut.nNumRemovedProtonsIsotopic[isotope] = taut.nNumRemovedProtonsIsotopic
+                    [isotope]
+                    .wrapping_add(t_group_info.tni.nNumRemovedProtonsIsotopic[isotope]);
+                taut.num_iso_H[isotope] =
+                    taut.num_iso_H[isotope].wrapping_add(t_group_info.num_iso_H[isotope]);
+            }
+            if num_taut_at == 1
+                && heap.slice(taut.at.as_const())?[0].at_type == ATT_PROTON as AT_NUMB
+                && t_group_info.tni.nNumRemovedProtons == 1
+            {
+                taut.bDeleted = 1;
+                FreeInpAtom(heap, Some(&mut taut.at_fixed_bonds))?;
+            } else if t_group_info.tni.bNormalizationFlags
+                & u64::from(FLAG_NORM_CONSIDER_TAUT)
+                != 0
+                && !taut.at_fixed_bonds.is_null()
+            {
+                taut.bTautPreprocessed = 1;
+            }
+            taut.bTautFlags = t_group_info.bTautFlags;
+            *pbTautFlags = t_group_info.bTautFlags;
+            taut.bTautFlagsDone = t_group_info.bTautFlagsDone;
+            *pbTautFlagsDone = t_group_info.bTautFlagsDone;
+            taut.bNormalizationFlags = t_group_info.tni.bNormalizationFlags;
+
+            inp2spATOM(
+                heap,
+                taut.at.as_const(),
+                num_inp_at,
+                at[TAUT_YES as usize],
+            )?;
+            ret = set_stereo_parity(
+                pCG,
+                heap,
+                taut.at,
+                at[TAUT_YES as usize],
+                num_taut_at,
+                num_removed_h_taut,
+                Some(&mut sizes[TAUT_YES as usize].nMaxNumStereoAtoms),
+                Some(&mut sizes[TAUT_YES as usize].nMaxNumStereoBonds),
+                nUserMode,
+                b_pointed_edge_stereo,
+                v_ab_parity_unknown,
+                ip.bLooseTSACheck,
+                ip.bStereoAtZz,
+            )?;
+            if returned_error(ret) {
+                return Ok(ret);
+            }
+            sizes[TAUT_YES as usize].bMayHaveStereo = i32::from(
+                sizes[TAUT_YES as usize].nMaxNumStereoAtoms != 0
+                    || sizes[TAUT_YES as usize].nMaxNumStereoBonds != 0,
+            );
+            sizes[TAUT_YES as usize].num_isotopic_atoms = set_atom_iso_sort_keys(
+                heap,
+                num_taut_at,
+                at[TAUT_YES as usize],
+                Some(&t_group_info),
+                Some(&mut sizes[TAUT_YES as usize].bHasIsotopicTautGroups),
+            )?;
+            sizes[TAUT_YES as usize].nLenLinearCTTautomer = CountTautomerGroups(
+                heap,
+                at[TAUT_YES as usize],
+                num_taut_at,
+                Some(&mut t_group_info),
+            )?;
+            if returned_error(sizes[TAUT_YES as usize].nLenLinearCTTautomer) {
+                return Ok(sizes[TAUT_YES as usize].nLenLinearCTTautomer);
+            } else if sizes[TAUT_YES as usize].nLenLinearCTTautomer > 0 {
+                num_at_tg = num_taut_at.wrapping_add(t_group_info.num_t_groups);
+                let _ = make_a_copy_of_t_group_info(
+                    heap,
+                    Some(&mut t_group_info_orig),
+                    Some(&mut t_group_info),
+                )?;
+                sizes[TAUT_YES as usize].nLenLinearCTIsotopicTautomer =
+                    set_tautomer_iso_sort_keys(heap, Some(&mut t_group_info))?;
+                if sizes[TAUT_YES as usize].nLenLinearCTIsotopicTautomer < 0 {
+                    sizes[TAUT_YES as usize].nLenLinearCTIsotopicTautomer = 0;
+                }
+                out_norm_data[TAUT_YES as usize].bTautomeric =
+                    sizes[TAUT_YES as usize].nLenLinearCTTautomer;
+            }
+            GetCanonLengths(
+                heap,
+                num_taut_at,
+                at[TAUT_YES as usize].as_const(),
+                &mut sizes[TAUT_YES as usize],
+                Some(&t_group_info),
+            )?;
+        }
+
+        if !out_norm_data[TAUT_NON as usize].at.is_null()
+            && !out_norm_data[TAUT_YES as usize].at.is_null()
+            && !at[TAUT_NON as usize].is_null()
+            && sizes[TAUT_YES as usize].nLenLinearCTTautomer == 0
+        {
+            inchi_free(heap, at[TAUT_NON as usize])?;
+            at[TAUT_NON as usize] = SourceMutPointer::null();
+        } else if out_norm_data[TAUT_NON as usize].at.is_null()
+            && !out_norm_data[TAUT_YES as usize].at.is_null()
+            && at[TAUT_NON as usize].is_null()
+            && !at[TAUT_YES as usize].is_null()
+            && sizes[TAUT_YES as usize].nLenLinearCTTautomer == 0
+        {
+            out_norm_data[TAUT_YES as usize].bTautomeric = 0;
+        } else if !out_norm_data[TAUT_NON as usize].at.is_null()
+            && !at[TAUT_NON as usize].is_null()
+        {
+            let external_flags = heap.allocate_model_storage(vec![b_taut_flags])?;
+            let external_flags_done = heap.allocate_model_storage(vec![b_taut_flags_done])?;
+            ret = mark_alt_bonds_and_taut_groups(
+                heap,
+                ic,
+                pCG,
+                out_norm_data[TAUT_NON as usize].at,
+                SourceMutPointer::null(),
+                num_atoms,
+                ulMaxTime,
+                SourceMutPointer::null(),
+                external_flags,
+                external_flags_done,
+                0,
+                SourceMutPointer::null(),
+                clock_result,
+            )?;
+            b_taut_flags = heap.slice(external_flags.as_const())?[0];
+            b_taut_flags_done = heap.slice(external_flags_done.as_const())?[0];
+            inchi_free(heap, external_flags)?;
+            inchi_free(heap, external_flags_done)?;
+            if ret < 0 {
+                return Ok(ret);
+            }
+            let non = &mut out_norm_data[TAUT_NON as usize];
+            non.num_at = num_atoms.wrapping_add(num_removed_h);
+            non.num_removed_H = num_removed_h;
+            non.bTautFlags = *pbTautFlags;
+            non.bTautFlagsDone = *pbTautFlagsDone;
+            non.bNormalizationFlags = 0;
+            inp2spATOM(heap, non.at.as_const(), num_inp_at, at[TAUT_NON as usize])?;
+            ret = set_stereo_parity(
+                pCG,
+                heap,
+                non.at,
+                at[TAUT_NON as usize],
+                num_atoms,
+                num_removed_h,
+                Some(&mut sizes[TAUT_NON as usize].nMaxNumStereoAtoms),
+                Some(&mut sizes[TAUT_NON as usize].nMaxNumStereoBonds),
+                nUserMode,
+                b_pointed_edge_stereo,
+                v_ab_parity_unknown,
+                ip.bLooseTSACheck,
+                ip.bStereoAtZz,
+            )?;
+            if returned_error(ret) {
+                return Ok(ret);
+            }
+            sizes[TAUT_NON as usize].bMayHaveStereo = i32::from(
+                sizes[TAUT_NON as usize].nMaxNumStereoAtoms != 0
+                    || sizes[TAUT_NON as usize].nMaxNumStereoBonds != 0,
+            );
+            sizes[TAUT_NON as usize].num_isotopic_atoms = set_atom_iso_sort_keys(
+                heap,
+                num_atoms,
+                at[TAUT_NON as usize],
+                None,
+                None,
+            )?;
+            GetCanonLengths(
+                heap,
+                num_atoms,
+                at[TAUT_NON as usize].as_const(),
+                &mut sizes[TAUT_NON as usize],
+                None,
+            )?;
+            non.bTautomeric = 0;
+        }
+
+        let b_may_have_stereo = sizes[TAUT_YES as usize].bMayHaveStereo != 0
+            || sizes[TAUT_NON as usize].bMayHaveStereo != 0;
+        let mut b_has_isotopic_atoms = sizes[TAUT_NON as usize].num_isotopic_atoms > 0
+            || sizes[TAUT_NON as usize].bHasIsotopicTautGroups > 0
+            || sizes[TAUT_YES as usize].num_isotopic_atoms > 0
+            || sizes[TAUT_YES as usize].bHasIsotopicTautGroups > 0;
+        if b_fix_iso_fixed_h != 0 {
+            b_has_isotopic_atoms |= sizes[TAUT_YES as usize].nLenLinearCTTautomer > 0
+                && t_group_info
+                    .tni
+                    .nNumRemovedProtonsIsotopic
+                    .iter()
+                    .any(|value| *value != 0);
+        }
+        b_has_isotopic_atoms |= sizes[TAUT_YES as usize].nLenIsotopicEndpoints > 1
+            && t_group_info.bTautFlagsDone
+                & u64::from(TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE)
+                != 0;
+
+        if nUserMode & u64::from(REQ_MODE_DEFAULT) == 0 {
+            nUserMode |= u64::from(REQ_MODE_DEFAULT);
+        }
+        if nUserMode & u64::from(REQ_MODE_ISO) != 0 && !b_has_isotopic_atoms {
+            nUserMode ^= u64::from(REQ_MODE_ISO);
+            nUserMode |= u64::from(REQ_MODE_NON_ISO);
+        }
+        if nUserMode & u64::from(REQ_MODE_STEREO) != 0
+            && nUserMode & u64::from(REQ_MODE_ISO) != 0
+        {
+            nUserMode |= u64::from(REQ_MODE_ISO_STEREO);
+        }
+        if nUserMode & u64::from(REQ_MODE_STEREO) != 0
+            && nUserMode & u64::from(REQ_MODE_NON_ISO) == 0
+        {
+            nUserMode ^= u64::from(REQ_MODE_STEREO);
+        }
+        if !b_may_have_stereo {
+            nUserMode &= !u64::from(REQ_MODE_STEREO | REQ_MODE_ISO_STEREO);
+        }
+        if nUserMode & u64::from(REQ_MODE_BASIC) != 0
+            && (out_norm_data[TAUT_NON as usize].at.is_null()
+                || ppINChI[TAUT_NON as usize].is_null()
+                || ppINChI_Aux[TAUT_NON as usize].is_null()
+                || at[TAUT_NON as usize].is_null())
+        {
+            nUserMode ^= u64::from(REQ_MODE_BASIC);
+        }
+        if nUserMode & u64::from(REQ_MODE_TAUT) != 0
+            && (out_norm_data[TAUT_YES as usize].at.is_null()
+                || ppINChI[TAUT_YES as usize].is_null()
+                || ppINChI_Aux[TAUT_YES as usize].is_null()
+                || at[TAUT_YES as usize].is_null())
+        {
+            nUserMode ^= u64::from(REQ_MODE_TAUT);
+        }
+        let requested = nUserMode & u64::from(REQ_MODE_BASIC | REQ_MODE_TAUT);
+        let (mut n1, mut n2) = match requested {
+            value if value == u64::from(REQ_MODE_BASIC) => (TAUT_NON, TAUT_NON),
+            value if value == u64::from(REQ_MODE_TAUT) => (TAUT_YES, TAUT_YES),
+            value if value == u64::from(REQ_MODE_BASIC | REQ_MODE_TAUT) => {
+                (TAUT_NON, TAUT_YES)
+            }
+            _ => return Ok(-3),
+        };
+
+        if nUserMode & u64::from(REQ_MODE_NON_ISO) != 0
+            && nUserMode & u64::from(REQ_MODE_ISO) == 0
+        {
+            t_group_info.bIgnoreIsotopic = 1;
+            if !t_group_info.nIsotopicEndpointAtomNumber.is_null() {
+                let first = &mut heap.slice_mut(t_group_info.nIsotopicEndpointAtomNumber)?[0];
+                *first = (*first).min(1);
+            }
+            t_group_info.num_iso_H.fill(0);
+            t_group_info.tni.nNumRemovedProtonsIsotopic.fill(0);
+            t_group_info.bTautFlagsDone &=
+                !u64::from(TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE);
+            for size in &mut sizes {
+                size.bHasIsotopicTautGroups = 0;
+                size.bIgnoreIsotopic = 1;
+                size.nLenIsotopic = 0;
+                size.nLenIsotopicEndpoints = 0;
+                size.nLenLinearCTIsotopicTautomer = 0;
+                size.num_isotopic_atoms = 0;
+            }
+            b_has_isotopic_atoms = false;
+        }
+
+        ret = GetBaseCanonRanking(
+            heap,
+            &mut clock,
+            num_atoms,
+            num_at_tg,
+            at,
+            Some(&mut t_group_info),
+            &sizes,
+            &mut bcn,
+            ulMaxTime,
+            pCG,
+            b_fix_iso_fixed_h,
+            large_molecules,
+            None,
+            None,
+            clock_result,
+        )?;
+        if ret < 0 {
+            return Ok(ret);
+        }
+        if bcn.ftcn[n1 as usize].PartitionCt.Rank.is_null() {
+            n1 = 1 - n1;
+        }
+        if bcn.ftcn[n2 as usize].PartitionCt.Rank.is_null() {
+            n2 = 1 - n2;
+        }
+        if n1 > n2 {
+            return Ok(CT_TAUCOUNT_ERR);
+        }
+        bcn_storage = heap.allocate_model_storage(vec![bcn.clone()])?;
+
+        for index in (n1..=n2).rev() {
+            if returned_error(ret) {
+                break;
+            }
+            cs = CANON_STAT::default();
+            let i = index as usize;
+            let mut n_mode = if sizes[i].nLenLinearCTTautomer == 0 {
+                CANON_MODE_CT
+            } else {
+                CANON_MODE_TAUT
+            };
+            if b_has_isotopic_atoms && nUserMode & u64::from(REQ_MODE_ISO) != 0 {
+                n_mode |= CANON_MODE_ISO;
+            }
+            if sizes[i].bMayHaveStereo != 0 && nUserMode & u64::from(REQ_MODE_STEREO) != 0 {
+                n_mode |= CANON_MODE_STEREO;
+            }
+            if b_has_isotopic_atoms
+                && sizes[i].bMayHaveStereo != 0
+                && nUserMode & u64::from(REQ_MODE_ISO_STEREO) != 0
+            {
+                n_mode |= CANON_MODE_ISO_STEREO;
+            }
+            n_mode |= if nUserMode & u64::from(REQ_MODE_NOEQ_STEREO) != 0 {
+                CMODE_NOEQ_STEREO
+            } else {
+                0
+            };
+            n_mode |= if nUserMode & u64::from(REQ_MODE_REDNDNT_STEREO) != 0 {
+                CMODE_REDNDNT_STEREO
+            } else {
+                0
+            };
+            n_mode |= if nUserMode & u64::from(REQ_MODE_NO_ALT_SBONDS) != 0 {
+                CMODE_NO_ALT_SBONDS
+            } else {
+                0
+            };
+            if n_mode & CANON_MODE_STEREO == CANON_MODE_STEREO
+                || n_mode & CANON_MODE_ISO_STEREO == CANON_MODE_ISO_STEREO
+            {
+                n_mode |= if nUserMode & u64::from(REQ_MODE_RELATIVE_STEREO) != 0 {
+                    CMODE_RELATIVE_STEREO
+                } else {
+                    0
+                };
+                n_mode |= if nUserMode & u64::from(REQ_MODE_RACEMIC_STEREO) != 0 {
+                    CMODE_RACEMIC_STEREO
+                } else {
+                    0
+                };
+                n_mode |= if nUserMode & u64::from(REQ_MODE_SC_IGN_ALL_UU) != 0 {
+                    CMODE_SC_IGN_ALL_UU
+                } else {
+                    0
+                };
+                n_mode |= if nUserMode & u64::from(REQ_MODE_SB_IGN_ALL_UU) != 0 {
+                    CMODE_SB_IGN_ALL_UU
+                } else {
+                    0
+                };
+            }
+            let allocation_result = AllocateCS(
+                heap,
+                &mut cs,
+                num_atoms,
+                if index == TAUT_YES { num_at_tg } else { num_atoms },
+                sizes[i].nLenCT,
+                sizes[i].nLenCTAtOnly,
+                sizes[i].nLenLinearCTStereoDble,
+                sizes[i].nMaxNumStereoBonds,
+                sizes[i].nLenLinearCTStereoCarb,
+                sizes[i].nMaxNumStereoAtoms,
+                if index == TAUT_YES {
+                    sizes[i].nLenLinearCTTautomer
+                } else {
+                    0
+                },
+                if index == TAUT_YES {
+                    sizes[i].nLenLinearCTIsotopicTautomer
+                } else {
+                    0
+                },
+                sizes[i].nLenIsotopic,
+                u64::from(n_mode),
+                bcn_storage,
+            )?;
+            cs_allocations = cs.clone();
+            if allocation_result != 0 {
+                ret = allocation_result;
+                break;
+            }
+            n_mode |= if nUserMode & u64::from(REQ_MODE_DIFF_UU_STEREO) != 0 {
+                REQ_MODE_DIFF_UU_STEREO
+            } else {
+                0
+            };
+            cs.lNumDecreasedCT = -1;
+            cs.bDoubleBondSquare = 0;
+            cs.bIgnoreIsotopic = i32::from(
+                !((sizes[TAUT_NON as usize].num_isotopic_atoms != 0
+                    || sizes[TAUT_YES as usize].num_isotopic_atoms != 0
+                    || sizes[TAUT_YES as usize].bHasIsotopicTautGroups != 0)
+                    || nUserMode & u64::from(REQ_MODE_NON_ISO) != 0
+                    || nUserMode & u64::from(REQ_MODE_ISO) == 0),
+            );
+            if nUserMode & u64::from(REQ_MODE_NON_ISO) != 0
+                && nUserMode & u64::from(REQ_MODE_ISO) == 0
+            {
+                cs.bIgnoreIsotopic = 1;
+            }
+            if index == TAUT_YES {
+                heap.slice_mut(tgi_storage)?[0] = t_group_info.clone();
+                cs.t_group_info = tgi_storage;
+                t_group_info.bIgnoreIsotopic = i32::from(
+                    !(sizes[TAUT_YES as usize].bHasIsotopicTautGroups != 0
+                        || nUserMode & u64::from(REQ_MODE_NON_ISO) != 0
+                        || nUserMode & u64::from(REQ_MODE_ISO) == 0),
+                );
+                if nUserMode & u64::from(REQ_MODE_NON_ISO) != 0
+                    && nUserMode & u64::from(REQ_MODE_ISO) == 0
+                {
+                    t_group_info.bIgnoreIsotopic = 1;
+                }
+                heap.slice_mut(tgi_storage)?[0] = t_group_info.clone();
+            }
+            cs.ulTimeOutTime = heap.slice(bcn_storage.as_const())?[0].ulTimeOutTime;
+            cs.NeighList = SourceMutPointer::null();
+            cs.pBCN = bcn_storage;
+            ret = Canon_INChI(
+                heap,
+                &mut clock,
+                clock_result,
+                None,
+                None,
+                num_atoms,
+                if index == TAUT_YES { num_at_tg } else { num_atoms },
+                at[i],
+                &mut cs,
+                pCG,
+                n_mode,
+                index as i32,
+            )?;
+            if index == TAUT_YES {
+                t_group_info = heap.slice(tgi_storage.as_const())?[0].clone();
+            }
+
+            let mut inchi = heap.slice(ppINChI[i].as_const())?[0].clone();
+            let mut aux = heap.slice(ppINChI_Aux[i].as_const())?[0].clone();
+            if ret <= 0 {
+                inchi.nErrorCode = ret;
+                aux.nErrorCode = ret;
+            } else {
+                inchi.nErrorCode = 0;
+                aux.nErrorCode = 0;
+                inchi.bDeleted = out_norm_data[i].bDeleted;
+                aux.bDeleted = out_norm_data[i].bDeleted;
+                aux.nCanonFlags = cs.nCanonFlags;
+                aux.bTautFlags = out_norm_data[i].bTautFlags;
+                aux.bTautFlagsDone = out_norm_data[i].bTautFlagsDone;
+                aux.bNormalizationFlags = out_norm_data[i].bNormalizationFlags;
+                ret = FillOutINChI(
+                    heap,
+                    &mut inchi,
+                    &mut aux,
+                    num_atoms,
+                    if index == TAUT_YES { num_at_tg } else { num_atoms },
+                    if index == TAUT_YES {
+                        num_removed_h_taut
+                    } else {
+                        num_removed_h
+                    },
+                    at[i],
+                    out_norm_data[i].at,
+                    &mut cs,
+                    pCG,
+                    index as i32,
+                    nUserMode,
+                    pStrErrStruct.as_deref_mut(),
+                    ip.bNoWarnings,
+                )?;
+                if returned_error(ret) {
+                    inchi.nErrorCode = ret;
+                    aux.nErrorCode = ret;
+                } else {
+                    if sizes[TAUT_YES as usize].nLenLinearCTTautomer != 0 {
+                        aux.bIsTautomeric = sizes[TAUT_YES as usize].nLenLinearCTTautomer;
+                    }
+                    let ret2 = CheckCanonNumberingCorrectness(
+                        heap,
+                        num_atoms,
+                        if index == TAUT_YES { num_at_tg } else { num_atoms },
+                        at[i].as_const(),
+                        &mut cs,
+                        pCG,
+                        index as i32,
+                        pStrErrStruct.as_deref_mut(),
+                    )?;
+                    if ret2 != 0 {
+                        inchi.nErrorCode = ret2;
+                        aux.nErrorCode = ret2;
+                        ret = ret2;
+                    }
+                }
+            }
+            heap.slice_mut(ppINChI[i])?[0] = inchi;
+            heap.slice_mut(ppINChI_Aux[i])?[0] = aux;
+            DeAllocateCS(heap, &mut cs_allocations)?;
+            cs = CANON_STAT::default();
+            cs_allocations = CANON_STAT::default();
+        }
+        if ret == 0 {
+            ret = num_atoms;
+        }
+        Ok(ret)
+    })();
+
+    DeAllocateCS(heap, &mut cs_allocations)?;
+    if !bcn_storage.is_null() {
+        bcn = heap.slice(bcn_storage.as_const())?[0].clone();
+    }
+    DeAllocBCN(heap, Some(&mut bcn))?;
+    if !bcn_storage.is_null() {
+        inchi_free(heap, bcn_storage)?;
+    }
+    for pointer in at {
+        if !pointer.is_null() {
+            inchi_free(heap, pointer)?;
+        }
+    }
+    if let Some(output) = ti_out.as_deref_mut() {
+        *output = t_group_info;
+    } else {
+        if !t_group_info.nEndpointAtomNumber.is_null() {
+            inchi_free(heap, t_group_info.nEndpointAtomNumber)?;
+        }
+        if !t_group_info.tGroupNumber.is_null() {
+            inchi_free(heap, t_group_info.tGroupNumber)?;
+        }
+        if !t_group_info.nIsotopicEndpointAtomNumber.is_null() {
+            inchi_free(heap, t_group_info.nIsotopicEndpointAtomNumber)?;
+        }
+    }
+    if !t_group_info_orig.t_group.is_null() {
+        inchi_free(heap, t_group_info_orig.t_group)?;
+    }
+    if !t_group_info_orig.nEndpointAtomNumber.is_null() {
+        inchi_free(heap, t_group_info_orig.nEndpointAtomNumber)?;
+    }
+    if !t_group_info_orig.tGroupNumber.is_null() {
+        inchi_free(heap, t_group_info_orig.tGroupNumber)?;
+    }
+    if !t_group_info_orig.nIsotopicEndpointAtomNumber.is_null() {
+        inchi_free(heap, t_group_info_orig.nIsotopicEndpointAtomNumber)?;
+    }
+    if !tgi_storage.is_null() {
+        inchi_free(heap, tgi_storage)?;
+    }
+    computation
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn CheckCanonNumberingCorrectness(
+    heap: &mut SourceHeap,
+    num_atoms: i32,
+    num_at_tg: i32,
+    at: SourceConstPointer<sp_ATOM>,
+    pCS: &mut CANON_STAT,
+    pCG: &mut CANON_GLOBALS,
+    _bTautomeric: i32,
+    _pStrErrStruct: Option<&mut [i8]>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimake.c:6230 CheckCanonNumberingCorrectness
+    // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap access adds overhead.
+    /*
+    int CheckCanonNumberingCorrectness(int num_atoms,
+        int num_at_tg,
+        sp_ATOM* at,
+        CANON_STAT* pCS,
+        CANON_GLOBALS* pCG,
+        int bTautomeric,
+        char* pStrErrStruct)
+    {
+        int i, ret = 0;
+        AT_NUMB* pCanonOrd = NULL;
+        int nErrorCode = 0;
+        AT_NUMB* pCanonRank; /* canonical ranks of the atoms or tautomeric groups */
+        AT_NUMB* pCanonRankAtoms = NULL;
+
+        /* djb-rwth: removing redundant code */
+
+        pCanonRankAtoms = (AT_NUMB*)inchi_calloc((long long)num_at_tg + 1, sizeof(pCanonRankAtoms[0])); /* djb-rwth: cast operator added */
+
+        /*
+            Non-isotopic part
+        */
+
+        pCanonOrd = pCS->nLenCanonOrdStereo > 0 ? pCS->nCanonOrdStereo :
+            pCS->nLenCanonOrd > 0 ? pCS->nCanonOrd : NULL;
+        pCanonRank = pCanonRankAtoms;
+        if (pCanonOrd && pCanonRank)
+        {
+            for (i = 0; i < num_at_tg; i++)
+            {
+                pCanonRank[pCanonOrd[i]] = (AT_NUMB)(i + 1);
+            }
+            ret = UpdateFullLinearCT(num_atoms, num_at_tg, at, pCanonRank, pCanonOrd, pCS,
+                pCG,
+                0);
+            if (ret /*|| memcmp(pCS->LinearCT, pCS->LinearCT2, sizeof(AT_RANK) * pCS->nLenLinearCT )*/)
+            {
+                nErrorCode |= WARN_FAILED_STEREO;
+            }
+        }
+        else
+        {
+            nErrorCode |= ERR_NO_CANON_RESULTS;
+            goto exit_function;
+        }
+
+        /*
+            Isotopic part
+        */
+
+        pCanonOrd = pCS->nLenCanonOrdIsotopicStereo > 0 ? pCS->nCanonOrdIsotopicStereo :
+            pCS->nLenCanonOrdIsotopic > 0 ? pCS->nCanonOrdIsotopic : NULL;
+        pCanonRank = pCanonRankAtoms;
+
+        if (pCanonOrd && pCanonRank)
+        {
+            for (i = 0; i < num_at_tg; i++)
+            {
+                pCanonRank[pCanonOrd[i]] = (AT_NUMB)(i + 1);
+            }
+            ret = UpdateFullLinearCT(num_atoms, num_at_tg, at, pCanonRank, pCanonOrd, pCS,
+                pCG,
+                0);
+            if (ret /*|| memcmp(pCS->LinearCT, pCS->LinearCT2, sizeof(AT_RANK) * pCS->nLenLinearCT )*/)
+            {
+                nErrorCode |= (pCS->nLenCanonOrdIsotopicStereo ? WARN_FAILED_ISOTOPIC_STEREO : WARN_FAILED_ISOTOPIC);
+            }
+        }
+
+    exit_function:
+        if (pCanonRankAtoms)
+        {
+            inchi_free(pCanonRankAtoms);
+        }
+
+        if (nErrorCode)
+        {
+            return CT_CANON_ERR;
+        }
+
+        return 0;
+    }
+    */
+    // END INCHI C FUNCTION: CheckCanonNumberingCorrectness
+
+    let count = i64::from(num_at_tg)
+        .checked_add(1)
+        .and_then(|value| u64::try_from(value).ok())
+        .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+    let ranks = match inchi_calloc::<AT_NUMB>(heap, count, 2) {
+        Ok(pointer) => pointer,
+        Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+        Err(error) => return Err(error),
+    };
+    let computation = (|| -> Result<i32, SourceHeapError> {
+        let mut error_code = 0_i32;
+        let total =
+            usize::try_from(num_at_tg).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+
+        let nonisotopic_order = if pCS.nLenCanonOrdStereo > 0 {
+            pCS.nCanonOrdStereo
+        } else if pCS.nLenCanonOrd > 0 {
+            pCS.nCanonOrd
+        } else {
+            SourceMutPointer::null()
+        };
+        if nonisotopic_order.is_null() || ranks.is_null() {
+            error_code |= ERR_NO_CANON_RESULTS as i32;
+        } else {
+            for i in 0..total {
+                let order = heap.slice(nonisotopic_order.as_const())?[i];
+                heap.slice_mut(ranks)?[usize::from(order)] = (i as AT_NUMB).wrapping_add(1);
+            }
+            if UpdateFullLinearCT(
+                heap,
+                num_atoms,
+                num_at_tg,
+                at,
+                ranks,
+                nonisotopic_order,
+                pCS,
+                pCG,
+                0,
+            )? != 0
+            {
+                error_code |= WARN_FAILED_STEREO as i32;
+            }
+
+            let isotopic_order = if pCS.nLenCanonOrdIsotopicStereo > 0 {
+                pCS.nCanonOrdIsotopicStereo
+            } else if pCS.nLenCanonOrdIsotopic > 0 {
+                pCS.nCanonOrdIsotopic
+            } else {
+                SourceMutPointer::null()
+            };
+            if !isotopic_order.is_null() {
+                for i in 0..total {
+                    let order = heap.slice(isotopic_order.as_const())?[i];
+                    heap.slice_mut(ranks)?[usize::from(order)] = (i as AT_NUMB).wrapping_add(1);
+                }
+                if UpdateFullLinearCT(
+                    heap,
+                    num_atoms,
+                    num_at_tg,
+                    at,
+                    ranks,
+                    isotopic_order,
+                    pCS,
+                    pCG,
+                    0,
+                )? != 0
+                {
+                    error_code |= if pCS.nLenCanonOrdIsotopicStereo != 0 {
+                        WARN_FAILED_ISOTOPIC_STEREO as i32
+                    } else {
+                        WARN_FAILED_ISOTOPIC as i32
+                    };
+                }
+            }
+        }
+        Ok(if error_code != 0 { CT_CANON_ERR } else { 0 })
+    })();
+    inchi_free(heap, ranks)?;
+    computation
+}
 
 #[allow(non_snake_case)]
 pub(crate) fn GetElementAndCount(
@@ -3585,6 +5555,1739 @@ pub(crate) fn CompareReversedStereoINChI(
 }
 
 #[allow(non_snake_case)]
+pub(crate) fn CompareReversedStereoINChI2(
+    heap: &SourceHeap,
+    s1: Option<&INChI_Stereo>,
+    s2: Option<&INChI_Stereo>,
+    picr: &mut ICR,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimake.c:2635 CompareReversedStereoINChI2
+    /*
+    int CompareReversedStereoINChI2(INChI_Stereo* s1/* InChI from reversed struct */,
+        INChI_Stereo* s2 /* input InChI */,
+        ICR* picr)
+    {
+        int ret = 0;
+        int j1, j2, num_dif, num_extra_undf, num_miss_undf, num_in1_only, num_in2_only; /* djb-rwth: removing redundant variables */
+        int bAddSb = !(picr->num_sb_undef_in1_only + picr->num_sb_in1_only + picr->num_sb_in2_only);
+        int bAddSc = !(picr->num_sc_undef_in1_only + picr->num_sc_in1_only + picr->num_sc_in2_only);
+
+        int nNumSc1 = s1 ? s1->nNumberOfStereoCenters : 0;
+        int nNumSc2 = s2 ? s2->nNumberOfStereoCenters : 0;
+        int nNumSb1 = s1 ? s1->nNumberOfStereoBonds : 0;
+        int nNumSb2 = s2 ? s2->nNumberOfStereoBonds : 0;
+
+        /* djb-rwth: redundant part of the condition corrected; fixing a NULL pointer dereference */
+        if (s1 && s2 && (nNumSc1 || nNumSc2) && (nNumSc1 != nNumSc2 ||
+            memcmp(s1->nNumber, s2->nNumber, nNumSc1 * sizeof(s1->nNumber[0])) ||
+            memcmp(s1->t_parity, s2->t_parity, nNumSc1 * sizeof(s1->t_parity[0]))))
+        {
+            num_dif = num_extra_undf = num_miss_undf = num_in1_only = num_in2_only = 0;
+            for (j1 = j2 = 0; j1 < nNumSc1 && j2 < nNumSc2; )
+            {
+                if (s1->nNumber[j1] == s2->nNumber[j2])
+                {
+                    if (s1->t_parity[j1] != s2->t_parity[j2]) /* djb-rwth: removing redundant code */
+                    {
+                        num_dif++;
+                    }
+                    j1++;
+                    j2++;
+                }
+                else
+                {
+                    if (s1->nNumber[j1] < s2->nNumber[j2])
+                    {
+                        num_in1_only++;
+                        if (s1->t_parity[j1] == AB_PARITY_UNDF)
+                        {
+                            num_extra_undf++;
+                        }
+                        if (bAddSc)
+                        {
+                            if (picr->num_sc_in1_only < ICR_MAX_SC_IN1_ONLY)
+                            {
+                                picr->sc_in1_only[picr->num_sc_in1_only++] = j1;
+                            }
+                            if (s1->t_parity[j1] == AB_PARITY_UNDF)
+                            {
+                                if (picr->num_sc_undef_in1_only < ICR_MAX_SC_UNDF)
+                                {
+                                    picr->sc_undef_in1_only[picr->num_sc_undef_in1_only++] = j1;
+                                }
+                            }
+                        }
+                        j1++;
+                    }
+                    else
+                    {
+                        num_in2_only++;
+                        if (s2->t_parity[j2] == AB_PARITY_UNDF)
+                        {
+                            num_miss_undf++;
+                        }
+                        if (bAddSc)
+                        {
+                            if (picr->num_sc_in2_only < ICR_MAX_SC_IN2_ONLY)
+                            {
+                                picr->sc_in2_only[picr->num_sc_in2_only++] = j2;
+                            }
+                            if (s2->t_parity[j2] == AB_PARITY_UNDF)
+                            {
+                                if (picr->num_sc_undef_in2_only < ICR_MAX_SC_UNDF)
+                                {
+                                    picr->sc_undef_in2_only[picr->num_sc_undef_in2_only++] = j1;
+                                }
+                            }
+                        }
+                        j2++;
+                    }
+                }
+            }
+            while (j1 < nNumSc1)
+            {
+                if (s1->t_parity[j1] == AB_PARITY_UNDF)
+                {
+                    num_extra_undf++;
+                }
+                num_in1_only++;
+                if (bAddSc)
+                {
+                    if (picr->num_sc_in1_only < ICR_MAX_SC_IN1_ONLY)
+                    {
+                        picr->sc_in1_only[picr->num_sc_in1_only++] = j1;
+                    }
+                    if (s1->t_parity[j1] == AB_PARITY_UNDF)
+                    {
+                        if (picr->num_sc_undef_in1_only < ICR_MAX_SC_UNDF)
+                        {
+                            picr->sc_undef_in1_only[picr->num_sc_undef_in1_only++] = j1;
+                        }
+                    }
+                }
+                j1++;
+            }
+            while (j2 < nNumSc2)
+            {
+                if (s2->t_parity[j2] == AB_PARITY_UNDF)
+                {
+                    num_miss_undf++;
+                }
+                num_in2_only++;
+                if (bAddSc)
+                {
+                    if (picr->num_sc_in2_only < ICR_MAX_SC_IN2_ONLY)
+                    {
+                        picr->sc_in2_only[picr->num_sc_in2_only++] = j2;
+                    }
+                }
+                j2++;
+            }
+            if (num_dif)
+            {
+                ret |= IDIF_SC_PARITY;
+            }
+            if (num_in1_only)
+            {
+                if (num_extra_undf)
+                {
+                    ret |= IDIF_SC_EXTRA_UNDF;
+                }
+                if (num_in1_only != num_extra_undf)
+                {
+                    ret |= IDIF_SC_EXTRA;
+                }
+            }
+            if (num_in2_only)
+            {
+                if (num_miss_undf)
+                {
+                    ret |= IDIF_SC_MISS_UNDF;
+                }
+                if (num_in2_only != num_miss_undf)
+                {
+                    ret |= IDIF_SC_MISS;
+                }
+            }
+        }
+        if (s1 && s2 && s1->nCompInv2Abs != s2->nCompInv2Abs && s1->nCompInv2Abs && s2->nCompInv2Abs)
+        {
+            ret |= IDIF_SC_INV;
+        }
+
+        if ((nNumSb1 || nNumSb2) &&
+            (nNumSb1 != nNumSb2 ||
+                memcmp(s1->nBondAtom1, s2->nBondAtom1, nNumSb1 * sizeof(s1->nBondAtom1[0])) ||
+                memcmp(s1->nBondAtom2, s2->nBondAtom2, nNumSb1 * sizeof(s1->nBondAtom2[0])) ||
+                memcmp(s1->b_parity, s2->b_parity, nNumSb1 * sizeof(s1->b_parity[0]))))
+        {
+            num_dif = num_extra_undf = num_miss_undf = num_in1_only = num_in2_only = 0; /* djb-rwth: removing redundant code */
+            for (j1 = j2 = 0; j1 < nNumSb1 && j2 < nNumSb2; )
+            {
+                if (s1->nBondAtom1[j1] == s2->nBondAtom1[j2] &&
+                    s1->nBondAtom2[j1] == s2->nBondAtom2[j2])
+                {
+                    if (s1->b_parity[j1] != s2->b_parity[j2]) /* djb-rwth: removing redundant code */
+                    {
+                        num_dif++;
+                    }
+                    j1++;
+                    j2++;
+                }
+                else
+                {
+                    if (s1->nBondAtom1[j1] < s2->nBondAtom1[j2] ||
+                        (s1->nBondAtom1[j1] == s2->nBondAtom1[j2] && s1->nBondAtom2[j1] < s2->nBondAtom2[j2])) /* djb-rwth: addressing LLVM warning */
+                    {
+                        num_in1_only++;
+                        if (s1->b_parity[j1] == AB_PARITY_UNDF)
+                        {
+                            num_extra_undf++;
+                        }
+                        if (bAddSb)
+                        {
+                            if (picr->num_sb_in1_only < ICR_MAX_SB_IN1_ONLY)
+                            {
+                                picr->sb_in1_only[picr->num_sb_in1_only++] = j1;
+                            }
+                            if (s1->b_parity[j1] == AB_PARITY_UNDF)
+                            {
+                                if (picr->num_sb_undef_in1_only < ICR_MAX_SB_UNDF)
+                                {
+                                    picr->sb_undef_in1_only[picr->num_sb_undef_in1_only++] = j1;
+                                }
+                            }
+                        }
+                        j1++;
+                    }
+                    else
+                    {
+                        num_in2_only++;
+                        if (s2->b_parity[j2] == AB_PARITY_UNDF)
+                        {
+                            num_miss_undf++;
+                        }
+                        if (bAddSb)
+                        {
+                            if (picr->num_sb_in2_only < ICR_MAX_SB_IN2_ONLY)
+                            {
+                                picr->sb_in2_only[picr->num_sb_in2_only++] = j2;
+                            }
+                            if (s2->b_parity[j2] == AB_PARITY_UNDF)
+                            {
+                                if (picr->num_sb_undef_in2_only < ICR_MAX_SB_UNDF)
+                                {
+                                    picr->sb_undef_in2_only[picr->num_sb_undef_in2_only++] = j1;
+                                }
+                            }
+                        }
+                        j2++;
+                    }
+                }
+            }
+            while (j1 < nNumSb1)
+            {
+                num_in1_only++;
+                if (s1->b_parity[j1] == AB_PARITY_UNDF)
+                {
+                    num_extra_undf++;
+                }
+                if (bAddSb)
+                {
+                    if (picr->num_sb_in1_only < ICR_MAX_SB_IN1_ONLY)
+                    {
+                        picr->sb_in1_only[picr->num_sb_in1_only++] = j1;
+                    }
+                    if (s1->b_parity[j1] == AB_PARITY_UNDF)
+                    {
+                        if (picr->num_sb_undef_in1_only < ICR_MAX_SB_UNDF)
+                        {
+                            picr->sb_undef_in1_only[picr->num_sb_undef_in1_only++] = j1;
+                        }
+                    }
+                }
+                j1++;
+            }
+            while (j2 < nNumSb2)
+            {
+                num_in2_only++;
+                if (s2->b_parity[j2] == AB_PARITY_UNDF)
+                {
+                    num_miss_undf++;
+                }
+                if (bAddSb)
+                {
+                    if (picr->num_sb_in2_only < ICR_MAX_SB_IN2_ONLY)
+                    {
+                        picr->sb_in2_only[picr->num_sb_in2_only++] = j2;
+                    }
+                    if (s2->b_parity[j2] == AB_PARITY_UNDF)
+                    {
+                        if (picr->num_sb_undef_in2_only < ICR_MAX_SB_UNDF)
+                        {
+                            picr->sb_undef_in2_only[picr->num_sb_undef_in2_only++] = j1;
+                        }
+                    }
+                }
+                j2++;
+            }
+            if (num_dif)
+            {
+                ret |= IDIF_SB_PARITY;
+            }
+            if (num_in1_only)
+            {
+                if (num_extra_undf)
+                {
+                    ret |= IDIF_SB_EXTRA_UNDF;
+                }
+                if (num_in1_only != num_extra_undf)
+                {
+                    ret |= IDIF_SB_EXTRA;
+                }
+            }
+            if (num_in2_only)
+            {
+                if (num_miss_undf)
+                {
+                    ret |= IDIF_SB_MISS_UNDF;
+                }
+                if (num_in2_only != num_miss_undf)
+                {
+                    ret |= IDIF_SB_MISS;
+                }
+            }
+        }
+
+        return ret;
+    }
+    */
+    // END INCHI C FUNCTION: CompareReversedStereoINChI2
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: CompareReversedStereoINChI2
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux.
+    // INCHI✔️❌: ICR_MAX_SC_*=32, ICR_MAX_SB_*=32, and AB_PARITY_UNDF=3.
+    // INCHI✔️❌: Checked SourceHeap slice lookup adds overhead versus memcmp/direct pointers.
+    // END INCHI ACTIVE MACRO CONFIGURATION: CompareReversedStereoINChI2
+
+    let add_sb = picr
+        .num_sb_undef_in1_only
+        .wrapping_add(picr.num_sb_in1_only)
+        .wrapping_add(picr.num_sb_in2_only)
+        == 0;
+    let add_sc = picr
+        .num_sc_undef_in1_only
+        .wrapping_add(picr.num_sc_in1_only)
+        .wrapping_add(picr.num_sc_in2_only)
+        == 0;
+    let num_sc1 = s1.map_or(0, |stereo| stereo.nNumberOfStereoCenters);
+    let num_sc2 = s2.map_or(0, |stereo| stereo.nNumberOfStereoCenters);
+    let num_sb1 = s1.map_or(0, |stereo| stereo.nNumberOfStereoBonds);
+    let num_sb2 = s2.map_or(0, |stereo| stereo.nNumberOfStereoBonds);
+    let mut ret = 0_i32;
+
+    if let (Some(s1), Some(s2)) = (s1, s2) {
+        if num_sc1 != 0 || num_sc2 != 0 {
+            let count1 =
+                usize::try_from(num_sc1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let count2 =
+                usize::try_from(num_sc2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let numbers1 = if count1 == 0 {
+                &[][..]
+            } else {
+                heap.slice(s1.nNumber.as_const())?
+                    .get(..count1)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+            };
+            let numbers2 = if count2 == 0 {
+                &[][..]
+            } else {
+                heap.slice(s2.nNumber.as_const())?
+                    .get(..count2)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+            };
+            let parities1 = if count1 == 0 {
+                &[][..]
+            } else {
+                heap.slice(s1.t_parity.as_const())?
+                    .get(..count1)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+            };
+            let parities2 = if count2 == 0 {
+                &[][..]
+            } else {
+                heap.slice(s2.t_parity.as_const())?
+                    .get(..count2)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+            };
+            if num_sc1 != num_sc2 || numbers1 != numbers2 || parities1 != parities2 {
+                let mut j1 = 0_usize;
+                let mut j2 = 0_usize;
+                let mut num_dif = 0_i32;
+                let mut num_extra_undf = 0_i32;
+                let mut num_miss_undf = 0_i32;
+                let mut num_in1_only = 0_i32;
+                let mut num_in2_only = 0_i32;
+                while j1 < count1 && j2 < count2 {
+                    if numbers1[j1] == numbers2[j2] {
+                        num_dif = num_dif.wrapping_add(i32::from(parities1[j1] != parities2[j2]));
+                        j1 += 1;
+                        j2 += 1;
+                    } else if numbers1[j1] < numbers2[j2] {
+                        num_in1_only = num_in1_only.wrapping_add(1);
+                        let undefined = parities1[j1] == AB_PARITY_UNDF as i8;
+                        num_extra_undf = num_extra_undf.wrapping_add(i32::from(undefined));
+                        if add_sc {
+                            if picr.num_sc_in1_only < ICR_MAX_SC_IN1_ONLY as i32 {
+                                picr.sc_in1_only[picr.num_sc_in1_only as usize] = j1 as AT_NUMB;
+                                picr.num_sc_in1_only += 1;
+                            }
+                            if undefined && picr.num_sc_undef_in1_only < ICR_MAX_SC_UNDF as i32 {
+                                picr.sc_undef_in1_only[picr.num_sc_undef_in1_only as usize] =
+                                    j1 as AT_NUMB;
+                                picr.num_sc_undef_in1_only += 1;
+                            }
+                        }
+                        j1 += 1;
+                    } else {
+                        num_in2_only = num_in2_only.wrapping_add(1);
+                        let undefined = parities2[j2] == AB_PARITY_UNDF as i8;
+                        num_miss_undf = num_miss_undf.wrapping_add(i32::from(undefined));
+                        if add_sc {
+                            if picr.num_sc_in2_only < ICR_MAX_SC_IN2_ONLY as i32 {
+                                picr.sc_in2_only[picr.num_sc_in2_only as usize] = j2 as AT_NUMB;
+                                picr.num_sc_in2_only += 1;
+                            }
+                            if undefined && picr.num_sc_undef_in2_only < ICR_MAX_SC_UNDF as i32 {
+                                picr.sc_undef_in2_only[picr.num_sc_undef_in2_only as usize] =
+                                    j1 as AT_NUMB;
+                                picr.num_sc_undef_in2_only += 1;
+                            }
+                        }
+                        j2 += 1;
+                    }
+                }
+                while j1 < count1 {
+                    let undefined = parities1[j1] == AB_PARITY_UNDF as i8;
+                    num_extra_undf = num_extra_undf.wrapping_add(i32::from(undefined));
+                    num_in1_only = num_in1_only.wrapping_add(1);
+                    if add_sc {
+                        if picr.num_sc_in1_only < ICR_MAX_SC_IN1_ONLY as i32 {
+                            picr.sc_in1_only[picr.num_sc_in1_only as usize] = j1 as AT_NUMB;
+                            picr.num_sc_in1_only += 1;
+                        }
+                        if undefined && picr.num_sc_undef_in1_only < ICR_MAX_SC_UNDF as i32 {
+                            picr.sc_undef_in1_only[picr.num_sc_undef_in1_only as usize] =
+                                j1 as AT_NUMB;
+                            picr.num_sc_undef_in1_only += 1;
+                        }
+                    }
+                    j1 += 1;
+                }
+                while j2 < count2 {
+                    let undefined = parities2[j2] == AB_PARITY_UNDF as i8;
+                    num_miss_undf = num_miss_undf.wrapping_add(i32::from(undefined));
+                    num_in2_only = num_in2_only.wrapping_add(1);
+                    if add_sc && picr.num_sc_in2_only < ICR_MAX_SC_IN2_ONLY as i32 {
+                        picr.sc_in2_only[picr.num_sc_in2_only as usize] = j2 as AT_NUMB;
+                        picr.num_sc_in2_only += 1;
+                    }
+                    j2 += 1;
+                }
+                if num_dif != 0 {
+                    ret |= tagInchiDiffBits_IDIF_SC_PARITY as i32;
+                }
+                if num_in1_only != 0 {
+                    if num_extra_undf != 0 {
+                        ret |= tagInchiDiffBits_IDIF_SC_EXTRA_UNDF as i32;
+                    }
+                    if num_in1_only != num_extra_undf {
+                        ret |= tagInchiDiffBits_IDIF_SC_EXTRA as i32;
+                    }
+                }
+                if num_in2_only != 0 {
+                    if num_miss_undf != 0 {
+                        ret |= tagInchiDiffBits_IDIF_SC_MISS_UNDF as i32;
+                    }
+                    if num_in2_only != num_miss_undf {
+                        ret |= tagInchiDiffBits_IDIF_SC_MISS as i32;
+                    }
+                }
+            }
+        }
+        if s1.nCompInv2Abs != s2.nCompInv2Abs && s1.nCompInv2Abs != 0 && s2.nCompInv2Abs != 0 {
+            ret |= tagInchiDiffBits_IDIF_SC_INV as i32;
+        }
+    }
+
+    if num_sb1 != 0 || num_sb2 != 0 {
+        let s1 = s1.ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let s2 = s2.ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let count1 =
+            usize::try_from(num_sb1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count2 =
+            usize::try_from(num_sb2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let atom11 = if count1 == 0 {
+            &[][..]
+        } else {
+            heap.slice(s1.nBondAtom1.as_const())?
+                .get(..count1)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+        };
+        let atom12 = if count1 == 0 {
+            &[][..]
+        } else {
+            heap.slice(s1.nBondAtom2.as_const())?
+                .get(..count1)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+        };
+        let parity1 = if count1 == 0 {
+            &[][..]
+        } else {
+            heap.slice(s1.b_parity.as_const())?
+                .get(..count1)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+        };
+        let atom21 = if count2 == 0 {
+            &[][..]
+        } else {
+            heap.slice(s2.nBondAtom1.as_const())?
+                .get(..count2)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+        };
+        let atom22 = if count2 == 0 {
+            &[][..]
+        } else {
+            heap.slice(s2.nBondAtom2.as_const())?
+                .get(..count2)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+        };
+        let parity2 = if count2 == 0 {
+            &[][..]
+        } else {
+            heap.slice(s2.b_parity.as_const())?
+                .get(..count2)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+        };
+        if num_sb1 != num_sb2 || atom11 != atom21 || atom12 != atom22 || parity1 != parity2 {
+            let mut j1 = 0_usize;
+            let mut j2 = 0_usize;
+            let mut num_dif = 0_i32;
+            let mut num_extra_undf = 0_i32;
+            let mut num_miss_undf = 0_i32;
+            let mut num_in1_only = 0_i32;
+            let mut num_in2_only = 0_i32;
+            while j1 < count1 && j2 < count2 {
+                if atom11[j1] == atom21[j2] && atom12[j1] == atom22[j2] {
+                    num_dif = num_dif.wrapping_add(i32::from(parity1[j1] != parity2[j2]));
+                    j1 += 1;
+                    j2 += 1;
+                } else if atom11[j1] < atom21[j2]
+                    || (atom11[j1] == atom21[j2] && atom12[j1] < atom22[j2])
+                {
+                    num_in1_only += 1;
+                    let undefined = parity1[j1] == AB_PARITY_UNDF as i8;
+                    num_extra_undf += i32::from(undefined);
+                    if add_sb {
+                        if picr.num_sb_in1_only < ICR_MAX_SB_IN1_ONLY as i32 {
+                            picr.sb_in1_only[picr.num_sb_in1_only as usize] = j1 as AT_NUMB;
+                            picr.num_sb_in1_only += 1;
+                        }
+                        if undefined && picr.num_sb_undef_in1_only < ICR_MAX_SB_UNDF as i32 {
+                            picr.sb_undef_in1_only[picr.num_sb_undef_in1_only as usize] =
+                                j1 as AT_NUMB;
+                            picr.num_sb_undef_in1_only += 1;
+                        }
+                    }
+                    j1 += 1;
+                } else {
+                    num_in2_only += 1;
+                    let undefined = parity2[j2] == AB_PARITY_UNDF as i8;
+                    num_miss_undf += i32::from(undefined);
+                    if add_sb {
+                        if picr.num_sb_in2_only < ICR_MAX_SB_IN2_ONLY as i32 {
+                            picr.sb_in2_only[picr.num_sb_in2_only as usize] = j2 as AT_NUMB;
+                            picr.num_sb_in2_only += 1;
+                        }
+                        if undefined && picr.num_sb_undef_in2_only < ICR_MAX_SB_UNDF as i32 {
+                            picr.sb_undef_in2_only[picr.num_sb_undef_in2_only as usize] =
+                                j1 as AT_NUMB;
+                            picr.num_sb_undef_in2_only += 1;
+                        }
+                    }
+                    j2 += 1;
+                }
+            }
+            while j1 < count1 {
+                num_in1_only += 1;
+                let undefined = parity1[j1] == AB_PARITY_UNDF as i8;
+                num_extra_undf += i32::from(undefined);
+                if add_sb {
+                    if picr.num_sb_in1_only < ICR_MAX_SB_IN1_ONLY as i32 {
+                        picr.sb_in1_only[picr.num_sb_in1_only as usize] = j1 as AT_NUMB;
+                        picr.num_sb_in1_only += 1;
+                    }
+                    if undefined && picr.num_sb_undef_in1_only < ICR_MAX_SB_UNDF as i32 {
+                        picr.sb_undef_in1_only[picr.num_sb_undef_in1_only as usize] = j1 as AT_NUMB;
+                        picr.num_sb_undef_in1_only += 1;
+                    }
+                }
+                j1 += 1;
+            }
+            while j2 < count2 {
+                num_in2_only += 1;
+                let undefined = parity2[j2] == AB_PARITY_UNDF as i8;
+                num_miss_undf += i32::from(undefined);
+                if add_sb {
+                    if picr.num_sb_in2_only < ICR_MAX_SB_IN2_ONLY as i32 {
+                        picr.sb_in2_only[picr.num_sb_in2_only as usize] = j2 as AT_NUMB;
+                        picr.num_sb_in2_only += 1;
+                    }
+                    if undefined && picr.num_sb_undef_in2_only < ICR_MAX_SB_UNDF as i32 {
+                        picr.sb_undef_in2_only[picr.num_sb_undef_in2_only as usize] = j1 as AT_NUMB;
+                        picr.num_sb_undef_in2_only += 1;
+                    }
+                }
+                j2 += 1;
+            }
+            if num_dif != 0 {
+                ret |= tagInchiDiffBits_IDIF_SB_PARITY as i32;
+            }
+            if num_in1_only != 0 {
+                if num_extra_undf != 0 {
+                    ret |= tagInchiDiffBits_IDIF_SB_EXTRA_UNDF as i32;
+                }
+                if num_in1_only != num_extra_undf {
+                    ret |= tagInchiDiffBits_IDIF_SB_EXTRA as i32;
+                }
+            }
+            if num_in2_only != 0 {
+                if num_miss_undf != 0 {
+                    ret |= tagInchiDiffBits_IDIF_SB_MISS_UNDF as i32;
+                }
+                if num_in2_only != num_miss_undf {
+                    ret |= tagInchiDiffBits_IDIF_SB_MISS as i32;
+                }
+            }
+        }
+    }
+    Ok(ret)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn CompareIcr(
+    picr1: &ICR,
+    picr2: &ICR,
+    pin1: Option<&mut INCHI_MODE>,
+    pin2: Option<&mut INCHI_MODE>,
+    mask: INCHI_MODE,
+) -> i32 {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimake.c:3189 CompareIcr
+    // INCHI✔️✔️: complete active source frame follows verbatim; active IDIFF
+    // INCHI✔️✔️: masks end at bit 30 and both implementations use one bitwise pass.
+    /*
+    int CompareIcr(ICR* picr1,
+        ICR* picr2,
+        INCHI_MODE* pin1,
+        INCHI_MODE* pin2,
+        INCHI_MODE mask)
+    {
+        int nNumExtraBits1 = 0, nNumExtraBits2 = 0, bit1, bit2;
+        INCHI_MODE Flg1 = picr1->flags, Flg2 = picr2->flags, cur_bit = 1, in1, in2;
+        int i, ret;
+
+        /* compare flags */
+        in1 = in2 = 0;
+        for (i = 0; Flg1 || Flg2; i++, Flg1 >>= 1, Flg2 >>= 1, cur_bit <<= 1)
+        {
+            if (!(mask & cur_bit))
+            {
+                continue;
+            }
+            bit1 = Flg1 & 1;
+            bit2 = Flg2 & 1;
+            if (bit1 && !bit2)
+            {
+                in1 |= 1 << i;
+                nNumExtraBits1++;
+            }
+            else
+            {
+                if (!bit1 && bit2)
+                {
+                    in2 |= 1 << i;
+                    nNumExtraBits2++;
+                }
+            }
+        }
+        if (nNumExtraBits1 && !nNumExtraBits2)
+        {
+            ret = 1;
+        }
+        else
+        {
+            if (!nNumExtraBits1 && nNumExtraBits2)
+            {
+                ret = -1;
+            }
+            else
+            {
+                if (!in1 && !in2)
+                {
+                    ret = 0;
+                }
+                else
+                {
+                    ret = 2; /* compare produced undefined results */
+                }
+            }
+        }
+
+        if (pin1)
+        {
+            *pin1 = in1;
+        }
+        if (pin2)
+        {
+            *pin2 = in2;
+        }
+
+        /* more detailed compare not implemented */
+
+        return ret;
+    }
+    */
+    // END INCHI C FUNCTION: CompareIcr
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: CompareIcr
+    // INCHI✔️✔️: COMPILE_ANSI_ONLY=1; TARGET_API_LIB=1; GCC/Linux; INCHI_MODE=unsigned long=u64.
+    // END INCHI ACTIVE MACRO CONFIGURATION: CompareIcr
+    let mut n_num_extra_bits1 = 0_i32;
+    let mut n_num_extra_bits2 = 0_i32;
+    let mut flg1 = picr1.flags;
+    let mut flg2 = picr2.flags;
+    let mut cur_bit = 1_u64;
+    let mut in1 = 0_u64;
+    let mut in2 = 0_u64;
+    let mut i = 0_u32;
+
+    while flg1 != 0 || flg2 != 0 {
+        if mask & cur_bit != 0 {
+            let bit1 = flg1 & 1;
+            let bit2 = flg2 & 1;
+            if bit1 != 0 && bit2 == 0 {
+                in1 |= 1_u64 << i;
+                n_num_extra_bits1 += 1;
+            } else if bit1 == 0 && bit2 != 0 {
+                in2 |= 1_u64 << i;
+                n_num_extra_bits2 += 1;
+            }
+        }
+        i += 1;
+        flg1 >>= 1;
+        flg2 >>= 1;
+        cur_bit = cur_bit.wrapping_shl(1);
+    }
+
+    let ret = if n_num_extra_bits1 != 0 && n_num_extra_bits2 == 0 {
+        1
+    } else if n_num_extra_bits1 == 0 && n_num_extra_bits2 != 0 {
+        -1
+    } else if in1 == 0 && in2 == 0 {
+        0
+    } else {
+        2
+    };
+
+    if let Some(pin1) = pin1 {
+        *pin1 = in1;
+    }
+    if let Some(pin2) = pin2 {
+        *pin2 = in2;
+    }
+
+    ret
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn CompareReversedINChI2(
+    heap: &mut SourceHeap,
+    i1: Option<&INChI>,
+    i2: Option<&INChI>,
+    a1: Option<&INChI_Aux>,
+    a2: Option<&INChI_Aux>,
+    picr: &mut ICR,
+    err: &mut i32,
+) -> Result<INCHI_MODE, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimake.c:3262 CompareReversedINChI2
+    // INCHI✔️❌: complete source frame follows verbatim; endpoint staging adds Rust-owned vectors.
+    /*
+    INCHI_MODE CompareReversedINChI2(INChI* i1 /* InChI from reversed struct */,
+        INChI* i2 /* input InChI */,
+        INChI_Aux* a1,
+        INChI_Aux* a2,
+        ICR* picr,
+        int* err)
+    {
+        INCHI_MODE ret = 0;
+        INChI_Stereo* Stereo1 = NULL, * Stereo2 = NULL;
+        int  n1, n2, m, j, j1, j2, ret2, num_H1, num_H2;
+
+        *err = 0;
+
+        memset(picr, 0, sizeof(*picr)); /* djb-rwth: memset_s C11/Annex K variant? */
+
+        if (i1 == NULL && i2 == NULL)
+        {
+            return 0;
+        }
+        if ((i1 == NULL) ^ (i2 == NULL))
+        {
+            ret |= IDIF_PROBLEM; /* one InChI exists while another doesn't */
+            goto exit_function;
+        }
+
+        if (i1->nErrorCode == i2->nErrorCode)
+        {
+            if (i1->nErrorCode)
+            {
+                ret |= IDIF_PROBLEM; /* both InChI have same error codes */
+                goto exit_function;
+            }
+        }
+        else
+        {
+            ret |= IDIF_PROBLEM; /* at least one InChI has an error code */
+            goto exit_function;
+        }
+
+        if (i1->nNumberOfAtoms != i2->nNumberOfAtoms)
+        {
+            ret |= IDIF_NUM_AT;
+            goto exit_function;
+        }
+        if (i1->nNumberOfAtoms > 0)
+        {
+            if (memcmp(i1->nAtom, i2->nAtom, i1->nNumberOfAtoms * sizeof(i1->nAtom[0])))
+            {
+                ret |= IDIF_ATOMS;
+                goto exit_function;
+            }
+            /* IDIF_NON_TAUT_H,  IDIF_MORE_FH, IDIF_LESS_FH */
+            if (memcmp(i1->nNum_H, i2->nNum_H, i1->nNumberOfAtoms * sizeof(i1->nNum_H[0])))
+            {
+                ret |= IDIF_POSITION_H;
+                for (j1 = 0; j1 < i1->nNumberOfAtoms; j1++)
+                {
+                    if (i1->nNum_H[j1] != i2->nNum_H[j1] && picr->num_diff_pos_H < ICR_MAX_DIFF_FIXED_H)
+                    {
+                        picr->diff_pos_H_at[picr->num_diff_pos_H] = j1;
+                        picr->diff_pos_H_nH[picr->num_diff_pos_H] = i1->nNum_H[j1] - i2->nNum_H[j1];
+                        picr->num_diff_pos_H++;
+                    }
+                }
+            }
+            /* fixed H */
+            if (i1->nNum_H_fixed || i2->nNum_H_fixed)
+            {
+                int bHasFixedH1 = 0, bHasFixedH2 = 0, i;
+                if (i1->nNum_H_fixed)
+                {
+                    for (i = 0; i < i1->nNumberOfAtoms; i++)
+                    {
+                        if (i1->nNum_H_fixed[i])
+                        {
+                            bHasFixedH1++;
+                        }
+                    }
+                }
+                if (i2->nNum_H_fixed)
+                {
+                    for (i = 0; i < i2->nNumberOfAtoms; i++)
+                    {
+                        if (i2->nNum_H_fixed[i])
+                        {
+                            bHasFixedH2++;
+                        }
+                    }
+                }
+                if (bHasFixedH1 && !bHasFixedH2)
+                {
+                    for (i = j = 0; i < i1->nNumberOfAtoms; i++)
+                    {
+                        if (i1->nNum_H_fixed[i])
+                        {
+                            if (j < ICR_MAX_DIFF_FIXED_H)
+                            {
+                                picr->fixed_H_at1_more[j] = i;
+                                picr->fixed_H_nH1_more[j] = i1->nNum_H_fixed[i];
+                                j++;
+                            }
+                        }
+                    }
+                    picr->num_fixed_H1_more = j;
+                    ret |= IDIF_MORE_FH; /* Extra Fixed-H */
+                }
+                else
+                {
+                    if (!bHasFixedH1 && bHasFixedH2)
+                    {
+                        for (i = j = 0; i < i2->nNumberOfAtoms; i++)
+                        {
+                            if (i2->nNum_H_fixed[i])
+                            {
+                                if (j < ICR_MAX_DIFF_FIXED_H)
+                                {
+                                    picr->fixed_H_at2_more[j] = i;
+                                    picr->fixed_H_nH2_more[j] = i2->nNum_H_fixed[i];
+                                    j++;
+                                }
+                            }
+                        }
+                        picr->num_fixed_H2_more = j;
+                        ret |= IDIF_LESS_FH; /* Missed Fixed-H */
+                    }
+                    else
+                    {
+                        if (bHasFixedH1 && bHasFixedH2 &&
+                            memcmp(i1->nNum_H_fixed, i2->nNum_H_fixed, i1->nNumberOfAtoms * sizeof(i1->nNum_H_fixed[0])))
+                        {
+                            for (i = j1 = j2 = 0; i < i1->nNumberOfAtoms; i++)
+                            {
+                                if (i1->nNum_H_fixed[i] > i2->nNum_H_fixed[i])
+                                {
+                                    if (j1 < ICR_MAX_DIFF_FIXED_H)
+                                    {
+                                        picr->fixed_H_at1_more[j1] = i;
+                                        picr->fixed_H_nH1_more[j1] = i1->nNum_H_fixed[i] - i2->nNum_H_fixed[i];
+                                        j1++;
+                                    }
+                                }
+                                else
+                                {
+                                    if (i1->nNum_H_fixed[i] < i2->nNum_H_fixed[i])
+                                    {
+                                        if (j2 < ICR_MAX_DIFF_FIXED_H)
+                                        {
+                                            picr->fixed_H_at2_more[j2] = i;
+                                            picr->fixed_H_nH2_more[j2] = i2->nNum_H_fixed[i] - i1->nNum_H_fixed[i];
+                                            j2++;
+                                        }
+                                    }
+                                }
+                            }
+                            ret |= (j1 ? IDIF_MORE_FH : 0) | (j2 ? IDIF_LESS_FH : 0);
+                            picr->num_fixed_H1_more = j1;
+                            picr->num_fixed_H2_more = j2;
+                        }
+                    }
+                }
+            }
+        }
+
+        /* compare formulas and H */
+        num_H1 = 0;
+        num_H2 = 0;
+        ret2 = CompareHillFormulasNoH(i1->szHillFormula, i2->szHillFormula, &num_H1, &num_H2);
+        picr->tot_num_H1 = num_H1;
+        picr->tot_num_H2 = num_H2;
+        if (ret2)
+        {
+            ret |= IDIF_NUM_EL;
+            goto exit_function;
+        }
+        if (num_H1 > num_H2)
+        {
+            ret |= IDIF_MORE_H;
+        }
+        if (num_H1 < num_H2)
+        {
+            ret |= IDIF_LESS_H;
+        }
+        if (i1->lenConnTable != i2->lenConnTable)
+        {
+            ret |= IDIF_CON_LEN;
+            goto exit_function;
+        }
+        else
+        {
+            if (i1->lenConnTable > 0 && memcmp(i1->nConnTable, i2->nConnTable, i1->lenConnTable * sizeof(i1->nConnTable[0])))
+            {
+                ret |= IDIF_CON_TBL;
+                goto exit_function;
+            }
+        }
+
+        /* output special cases: different number of t-groups, different sizes of t-groups, different endpoints */
+        /* in isotopic or deprotonated cases i1->lenTautomer == 1 && i1->nTautomer[0] = 0 */
+
+        /*
+            if ( i1->lenTautomer != i2->lenTautomer && (i1->lenTautomer > 1 || i2->lenTautomer > 1) ) {
+                ret |=  IDIF_TAUT_LEN;
+            }
+        */
+
+        /* compare number of t-groups */
+        n1 = i1->lenTautomer ? i1->nTautomer[0] : 0;
+        n2 = i2->lenTautomer ? i2->nTautomer[0] : 0;
+        if (!n1 && n2)
+        {
+            ret |= IDIF_NO_TAUT;
+        }
+        else
+        {
+            if (n1 && !n2)
+            {
+                ret |= IDIF_WRONG_TAUT;
+            }
+            else
+            {
+                if (n1 == 1 && n2 > 1)
+                {
+                    ret |= IDIF_SINGLE_TG;
+                }
+                else
+                {
+                    if (n1 > 1 && n2 == 1)
+                    {
+                        ret |= IDIF_MULTIPLE_TG;
+                    }
+                    else
+                    {
+                        if (n1 != n2)
+                        {
+                            ret |= IDIF_NUM_TG;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (n1 || n2)
+        {
+            /* number of endpoints */
+            int num1 = 0, num2 = 0, num_M1 = 0, num_M2 = 0;
+            int len, num_eq, num_in1_only, num_in2_only;
+            AT_NUMB* pe1 = (AT_NUMB*)inchi_malloc(((long long)i1->lenTautomer + 1) * sizeof(pe1[0])); /* djb-rwth: cast operator added */
+            AT_NUMB* pe2 = (AT_NUMB*)inchi_malloc(((long long)i2->lenTautomer + 1) * sizeof(pe2[0])); /* djb-rwth: cast operator added */
+            num_H1 = num_H2 = 0;
+            /* collect endpoints, H, (-) */
+            if (!pe1 || !pe2)
+            {
+                if (pe1)
+                {
+                    inchi_free(pe1);
+                }
+                if (pe2)
+                {
+                    inchi_free(pe2);
+                }
+                *err = -1; /* allocation error */
+                goto exit_function;
+            }
+            for (m = 1; m < i1->lenTautomer; m += len)
+            {
+                len = i1->nTautomer[m++];
+                num_H1 += i1->nTautomer[m];
+                num_M1 += i1->nTautomer[m + 1];
+                for (j = 2; j < len; j++)
+                {
+                    pe1[num1++] = i1->nTautomer[m + j];
+                }
+            }
+            for (m = 1; m < i2->lenTautomer; m += len)
+            {
+                len = i2->nTautomer[m++];
+                num_H2 += i2->nTautomer[m];
+                num_M2 += i2->nTautomer[m + 1];
+                for (j = 2; j < len; j++)
+                {
+                    pe2[num2++] = i2->nTautomer[m + j];
+                }
+            }
+            picr->num_taut_H1 = num_H1;
+            picr->num_taut_H2 = num_H2;
+            picr->num_taut_M1 = num_M1;
+            picr->num_taut_M2 = num_M2;
+            /* sort endpoints */
+            insertions_sort_AT_RANK(pe1, num1);
+            insertions_sort_AT_RANK(pe2, num2);
+            /* compare */
+            /*
+            if ( num1 < num2 ) {
+                ret |= IDIF_LESS_TG_ENDP;
+            } else
+            if ( num1 > num2 ) {
+                ret |= IDIF_MORE_TG_ENDP;
+            }
+            */
+            /* compare all */
+            num_eq = num_in1_only = num_in2_only = 0;
+            for (j1 = j2 = 0; j1 < num1 && j2 < num2; )
+            {
+                if (pe1[j1] == pe2[j2])
+                {
+                    j1++;
+                    j2++;
+                    num_eq++;
+                }
+                else
+                {
+                    if (pe1[j1] < pe2[j2])
+                    { /* BC: fixed, was pe2[j1] 2006-03-27 */
+                        if (picr->num_endp_in1_only < ICR_MAX_ENDP_IN1_ONLY)
+                        {
+                            picr->endp_in1_only[picr->num_endp_in1_only++] = pe1[j1];
+                        }
+                        j1++;
+                        num_in1_only++;
+                    }
+                    else
+                    {
+                        if (picr->num_endp_in2_only < ICR_MAX_ENDP_IN2_ONLY)
+                        {
+                            picr->endp_in2_only[picr->num_endp_in2_only++] = pe2[j2];
+                        }
+                        j2++;
+                        num_in2_only++;
+                    }
+                }
+            }
+            while (j1 < num1)
+            {
+                if (picr->num_endp_in1_only < ICR_MAX_ENDP_IN1_ONLY)
+                {
+                    picr->endp_in1_only[picr->num_endp_in1_only++] = pe1[j1];
+                }
+                j1++;
+                num_in1_only++;
+            }
+            while (j2 < num2)
+            {
+                if (picr->num_endp_in2_only < ICR_MAX_ENDP_IN2_ONLY)
+                {
+                    picr->endp_in2_only[picr->num_endp_in2_only++] = pe2[j2];
+                }
+                j2++;
+                num_in2_only++;
+            }
+            if (num_in1_only)
+            {
+                ret |= IDIF_EXTRA_TG_ENDP;
+            }
+            if (num_in2_only)
+            {
+                ret |= IDIF_MISS_TG_ENDP;
+            }
+            if (!num_in1_only && !num_in2_only && num_eq)
+            {
+                ; /* same t-groups endpoints */
+            }
+            else
+            {
+                ret |= IDIF_DIFF_TG_ENDP;
+            }
+            inchi_free(pe1);
+            inchi_free(pe2);
+        }
+
+        if ((i1->lenTautomer > 1 && i2->lenTautomer > 1) &&
+            (i1->lenTautomer != i2->lenTautomer ||
+                memcmp(i1->nTautomer, i2->nTautomer, i1->lenTautomer * sizeof(i1->nTautomer[0]))))
+        {
+            ret |= IDIF_TG;
+        }
+
+        if (i1->nNumberOfIsotopicAtoms != i2->nNumberOfIsotopicAtoms)
+        {
+            ret |= IDIF_NUM_ISO_AT;
+        }
+        else
+        {
+            if (i1->nNumberOfIsotopicAtoms > 0 && memcmp(i1->IsotopicAtom, i2->IsotopicAtom, i1->nNumberOfIsotopicAtoms * sizeof(i1->IsotopicAtom[0])))
+            {
+                ret |= IDIF_ISO_AT;
+            }
+        }
+        if (i1->nTotalCharge != i2->nTotalCharge)
+        {
+            ret |= IDIF_CHARGE;
+        }
+        if (a1 && a1->nNumRemovedProtons && (!a2 || a2->nNumRemovedProtons != a1->nNumRemovedProtons))
+        {
+            ret |= IDIF_REM_PROT;
+        }
+        if (a1 && (!a2 ||
+            a2->nNumRemovedIsotopicH[0] != a1->nNumRemovedIsotopicH[0] ||
+            a2->nNumRemovedIsotopicH[1] != a1->nNumRemovedIsotopicH[1] ||
+            a2->nNumRemovedIsotopicH[2] != a1->nNumRemovedIsotopicH[2]))
+        {
+            ret |= IDIF_REM_ISO_H;
+        }
+
+        /*
+        if ( i1->nPossibleLocationsOfIsotopicH && i2->nPossibleLocationsOfIsotopicH ) {
+            if ( i1->nPossibleLocationsOfIsotopicH[0] != i2->nPossibleLocationsOfIsotopicH[0] ||
+                 memcmp(i1->nPossibleLocationsOfIsotopicH, i2->nPossibleLocationsOfIsotopicH,
+                        sizeof(i1->nPossibleLocationsOfIsotopicH[0])*i1->nPossibleLocationsOfIsotopicH[0]) )
+                return 18;
+        } else
+        if ( !i1->nPossibleLocationsOfIsotopicH != !i2->nPossibleLocationsOfIsotopicH ) {
+            return 19;
+        }
+        */
+
+        if (i1->StereoIsotopic &&
+            i1->StereoIsotopic->nNumberOfStereoBonds + i1->StereoIsotopic->nNumberOfStereoCenters)
+        {
+            Stereo1 = i1->StereoIsotopic;
+        }
+        else
+        {
+            Stereo1 = i1->Stereo;
+        }
+        if (i2->StereoIsotopic &&
+            i2->StereoIsotopic->nNumberOfStereoBonds + i2->StereoIsotopic->nNumberOfStereoCenters)
+        {
+            Stereo2 = i2->StereoIsotopic;
+        }
+        else
+        {
+            Stereo2 = i2->Stereo;
+        }
+        ret |= CompareReversedStereoINChI2(Stereo1, Stereo2, picr);
+
+    exit_function:
+
+        picr->flags = ret;
+
+        return ret;
+    }
+    */
+    // END INCHI C FUNCTION: CompareReversedINChI2
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: CompareReversedINChI2
+    // INCHI✔️❌: READ_INCHI_STRING=1; COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux.
+    // INCHI✔️❌: inchi_malloc/free resolve to the active mode.h malloc/free macros.
+    // INCHI✔️❌: ICR_MAX_DIFF_FIXED_H=32 and ICR_MAX_ENDP_IN{1,2}_ONLY=32.
+    // END INCHI ACTIVE MACRO CONFIGURATION: CompareReversedINChI2
+
+    *err = 0;
+    *picr = ICR::default();
+    let mut ret = 0_u32;
+
+    macro_rules! finish {
+        () => {{
+            picr.flags = INCHI_MODE::from(ret);
+            return Ok(INCHI_MODE::from(ret));
+        }};
+    }
+
+    let (i1, i2) = match (i1, i2) {
+        (None, None) => return Ok(0),
+        (Some(i1), Some(i2)) => (i1, i2),
+        _ => {
+            ret |= tagInchiDiffBits_IDIF_PROBLEM;
+            finish!();
+        }
+    };
+
+    if i1.nErrorCode == i2.nErrorCode {
+        if i1.nErrorCode != 0 {
+            ret |= tagInchiDiffBits_IDIF_PROBLEM;
+            finish!();
+        }
+    } else {
+        ret |= tagInchiDiffBits_IDIF_PROBLEM;
+        finish!();
+    }
+
+    if i1.nNumberOfAtoms != i2.nNumberOfAtoms {
+        ret |= tagInchiDiffBits_IDIF_NUM_AT;
+        finish!();
+    }
+    if i1.nNumberOfAtoms > 0 {
+        let atom_count = usize::try_from(i1.nNumberOfAtoms)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let atoms1 = heap
+            .slice(i1.nAtom.as_const())?
+            .get(..atom_count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atoms2 = heap
+            .slice(i2.nAtom.as_const())?
+            .get(..atom_count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if atoms1 != atoms2 {
+            ret |= tagInchiDiffBits_IDIF_ATOMS;
+            finish!();
+        }
+
+        let hydrogens1 = heap
+            .slice(i1.nNum_H.as_const())?
+            .get(..atom_count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let hydrogens2 = heap
+            .slice(i2.nNum_H.as_const())?
+            .get(..atom_count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if hydrogens1 != hydrogens2 {
+            ret |= tagInchiDiffBits_IDIF_POSITION_H;
+            for index in 0..atom_count {
+                if hydrogens1[index] != hydrogens2[index]
+                    && picr.num_diff_pos_H < ICR_MAX_DIFF_FIXED_H as i32
+                {
+                    let output = picr.num_diff_pos_H as usize;
+                    picr.diff_pos_H_at[output] = index as AT_NUMB;
+                    picr.diff_pos_H_nH[output] = hydrogens1[index].wrapping_sub(hydrogens2[index]);
+                    picr.num_diff_pos_H = picr.num_diff_pos_H.wrapping_add(1);
+                }
+            }
+        }
+
+        if !i1.nNum_H_fixed.is_null() || !i2.nNum_H_fixed.is_null() {
+            let fixed1 = if i1.nNum_H_fixed.is_null() {
+                None
+            } else {
+                Some(
+                    heap.slice(i1.nNum_H_fixed.as_const())?
+                        .get(..atom_count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                )
+            };
+            let fixed2 = if i2.nNum_H_fixed.is_null() {
+                None
+            } else {
+                Some(
+                    heap.slice(i2.nNum_H_fixed.as_const())?
+                        .get(..atom_count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                )
+            };
+            let has_fixed1 = fixed1.map_or(0_i32, |values| {
+                values.iter().fold(0_i32, |count, value| {
+                    count.wrapping_add(i32::from(*value != 0))
+                })
+            });
+            let has_fixed2 = fixed2.map_or(0_i32, |values| {
+                values.iter().fold(0_i32, |count, value| {
+                    count.wrapping_add(i32::from(*value != 0))
+                })
+            });
+
+            if has_fixed1 != 0 && has_fixed2 == 0 {
+                let values = fixed1.expect("nonzero count requires a source array");
+                let mut count = 0_i32;
+                for (index, &value) in values.iter().enumerate() {
+                    if value != 0 && count < ICR_MAX_DIFF_FIXED_H as i32 {
+                        picr.fixed_H_at1_more[count as usize] = index as AT_NUMB;
+                        picr.fixed_H_nH1_more[count as usize] = value;
+                        count = count.wrapping_add(1);
+                    }
+                }
+                picr.num_fixed_H1_more = count;
+                ret |= tagInchiDiffBits_IDIF_MORE_FH;
+            } else if has_fixed1 == 0 && has_fixed2 != 0 {
+                let values = fixed2.expect("nonzero count requires a source array");
+                let mut count = 0_i32;
+                for (index, &value) in values.iter().enumerate() {
+                    if value != 0 && count < ICR_MAX_DIFF_FIXED_H as i32 {
+                        picr.fixed_H_at2_more[count as usize] = index as AT_NUMB;
+                        picr.fixed_H_nH2_more[count as usize] = value;
+                        count = count.wrapping_add(1);
+                    }
+                }
+                picr.num_fixed_H2_more = count;
+                ret |= tagInchiDiffBits_IDIF_LESS_FH;
+            } else if has_fixed1 != 0 && has_fixed2 != 0 {
+                let values1 = fixed1.expect("nonzero count requires a source array");
+                let values2 = fixed2.expect("nonzero count requires a source array");
+                if values1 != values2 {
+                    let mut count1 = 0_i32;
+                    let mut count2 = 0_i32;
+                    for index in 0..atom_count {
+                        if values1[index] > values2[index] {
+                            if count1 < ICR_MAX_DIFF_FIXED_H as i32 {
+                                picr.fixed_H_at1_more[count1 as usize] = index as AT_NUMB;
+                                picr.fixed_H_nH1_more[count1 as usize] =
+                                    values1[index].wrapping_sub(values2[index]);
+                                count1 = count1.wrapping_add(1);
+                            }
+                        } else if values1[index] < values2[index]
+                            && count2 < ICR_MAX_DIFF_FIXED_H as i32
+                        {
+                            picr.fixed_H_at2_more[count2 as usize] = index as AT_NUMB;
+                            picr.fixed_H_nH2_more[count2 as usize] =
+                                values2[index].wrapping_sub(values1[index]);
+                            count2 = count2.wrapping_add(1);
+                        }
+                    }
+                    if count1 != 0 {
+                        ret |= tagInchiDiffBits_IDIF_MORE_FH;
+                    }
+                    if count2 != 0 {
+                        ret |= tagInchiDiffBits_IDIF_LESS_FH;
+                    }
+                    picr.num_fixed_H1_more = count1;
+                    picr.num_fixed_H2_more = count2;
+                }
+            }
+        }
+    }
+
+    let mut total_h1 = 0_i32;
+    let mut total_h2 = 0_i32;
+    let formula_difference = CompareHillFormulasNoH(
+        heap,
+        i1.szHillFormula.as_const(),
+        i2.szHillFormula.as_const(),
+        &mut total_h1,
+        &mut total_h2,
+    )?;
+    picr.tot_num_H1 = total_h1;
+    picr.tot_num_H2 = total_h2;
+    if formula_difference != 0 {
+        ret |= tagInchiDiffBits_IDIF_NUM_EL;
+        finish!();
+    }
+    if total_h1 > total_h2 {
+        ret |= tagInchiDiffBits_IDIF_MORE_H;
+    }
+    if total_h1 < total_h2 {
+        ret |= tagInchiDiffBits_IDIF_LESS_H;
+    }
+
+    if i1.lenConnTable != i2.lenConnTable {
+        ret |= tagInchiDiffBits_IDIF_CON_LEN;
+        finish!();
+    }
+    if i1.lenConnTable > 0 {
+        let connection_count =
+            usize::try_from(i1.lenConnTable).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let connections1 = heap
+            .slice(i1.nConnTable.as_const())?
+            .get(..connection_count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let connections2 = heap
+            .slice(i2.nConnTable.as_const())?
+            .get(..connection_count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if connections1 != connections2 {
+            ret |= tagInchiDiffBits_IDIF_CON_TBL;
+            finish!();
+        }
+    }
+
+    let num_groups1 = if i1.lenTautomer != 0 {
+        *heap
+            .slice(i1.nTautomer.as_const())?
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)? as i32
+    } else {
+        0
+    };
+    let num_groups2 = if i2.lenTautomer != 0 {
+        *heap
+            .slice(i2.nTautomer.as_const())?
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)? as i32
+    } else {
+        0
+    };
+    if num_groups1 == 0 && num_groups2 != 0 {
+        ret |= tagInchiDiffBits_IDIF_NO_TAUT;
+    } else if num_groups1 != 0 && num_groups2 == 0 {
+        ret |= tagInchiDiffBits_IDIF_WRONG_TAUT;
+    } else if num_groups1 == 1 && num_groups2 > 1 {
+        ret |= tagInchiDiffBits_IDIF_SINGLE_TG;
+    } else if num_groups1 > 1 && num_groups2 == 1 {
+        ret |= tagInchiDiffBits_IDIF_MULTIPLE_TG;
+    } else if num_groups1 != num_groups2 {
+        ret |= tagInchiDiffBits_IDIF_NUM_TG;
+    }
+
+    if num_groups1 != 0 || num_groups2 != 0 {
+        let byte_count1 = u64::try_from(
+            (i64::from(i1.lenTautomer) + 1)
+                .checked_mul(std::mem::size_of::<AT_NUMB>() as i64)
+                .ok_or(SourceHeapError::AllocationSizeOverflow)?,
+        )
+        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        let byte_count2 = u64::try_from(
+            (i64::from(i2.lenTautomer) + 1)
+                .checked_mul(std::mem::size_of::<AT_NUMB>() as i64)
+                .ok_or(SourceHeapError::AllocationSizeOverflow)?,
+        )
+        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+
+        let endpoint_allocation1 = match inchi_malloc(heap, byte_count1) {
+            Ok(pointer) => pointer,
+            Err(SourceHeapError::AllocationFailed) => {
+                *err = -1;
+                finish!();
+            }
+            Err(error) => return Err(error),
+        };
+        let endpoint_allocation2 = match inchi_malloc(heap, byte_count2) {
+            Ok(pointer) => pointer,
+            Err(SourceHeapError::AllocationFailed) => {
+                inchi_free(heap, endpoint_allocation1)?;
+                *err = -1;
+                finish!();
+            }
+            Err(error) => {
+                inchi_free(heap, endpoint_allocation1)?;
+                return Err(error);
+            }
+        };
+
+        let endpoint_result =
+            (|| -> Result<(Vec<AT_NUMB>, Vec<AT_NUMB>, i32, i32, i32, i32), SourceHeapError> {
+                let tautomer_count1 = usize::try_from(i1.lenTautomer)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let tautomer_count2 = usize::try_from(i2.lenTautomer)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let tautomer1 = if tautomer_count1 == 0 {
+                    Vec::new()
+                } else {
+                    heap.slice(i1.nTautomer.as_const())?
+                        .get(..tautomer_count1)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .to_vec()
+                };
+                let tautomer2 = if tautomer_count2 == 0 {
+                    Vec::new()
+                } else {
+                    heap.slice(i2.nTautomer.as_const())?
+                        .get(..tautomer_count2)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .to_vec()
+                };
+
+                let mut endpoints1 = Vec::new();
+                let mut endpoints2 = Vec::new();
+                let mut taut_h1 = 0_i32;
+                let mut taut_h2 = 0_i32;
+                let mut taut_m1 = 0_i32;
+                let mut taut_m2 = 0_i32;
+
+                let mut m = 1_usize;
+                while m < tautomer_count1 {
+                    let length = usize::from(tautomer1[m]);
+                    m += 1;
+                    let record = tautomer1
+                        .get(m..m.saturating_add(length))
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    taut_h1 = taut_h1.wrapping_add(i32::from(
+                        *record.first().ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    ));
+                    taut_m1 = taut_m1.wrapping_add(i32::from(
+                        *record.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    ));
+                    endpoints1.extend_from_slice(
+                        record
+                            .get(2..length)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    );
+                    m = m
+                        .checked_add(length)
+                        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                }
+
+                m = 1;
+                while m < tautomer_count2 {
+                    let length = usize::from(tautomer2[m]);
+                    m += 1;
+                    let record = tautomer2
+                        .get(m..m.saturating_add(length))
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    taut_h2 = taut_h2.wrapping_add(i32::from(
+                        *record.first().ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    ));
+                    taut_m2 = taut_m2.wrapping_add(i32::from(
+                        *record.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    ));
+                    endpoints2.extend_from_slice(
+                        record
+                            .get(2..length)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    );
+                    m = m
+                        .checked_add(length)
+                        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                }
+
+                let count1 = i32::try_from(endpoints1.len())
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let count2 = i32::try_from(endpoints2.len())
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                insertions_sort_AT_RANK(&mut endpoints1, count1)?;
+                insertions_sort_AT_RANK(&mut endpoints2, count2)?;
+                Ok((endpoints1, endpoints2, taut_h1, taut_h2, taut_m1, taut_m2))
+            })();
+
+        let free1 = inchi_free(heap, endpoint_allocation1);
+        let free2 = inchi_free(heap, endpoint_allocation2);
+        free1?;
+        free2?;
+        let (endpoints1, endpoints2, taut_h1, taut_h2, taut_m1, taut_m2) = endpoint_result?;
+
+        picr.num_taut_H1 = taut_h1;
+        picr.num_taut_H2 = taut_h2;
+        picr.num_taut_M1 = taut_m1;
+        picr.num_taut_M2 = taut_m2;
+
+        let mut index1 = 0_usize;
+        let mut index2 = 0_usize;
+        let mut num_equal = 0_i32;
+        let mut num_in1_only = 0_i32;
+        let mut num_in2_only = 0_i32;
+        while index1 < endpoints1.len() && index2 < endpoints2.len() {
+            if endpoints1[index1] == endpoints2[index2] {
+                index1 += 1;
+                index2 += 1;
+                num_equal = num_equal.wrapping_add(1);
+            } else if endpoints1[index1] < endpoints2[index2] {
+                if picr.num_endp_in1_only < ICR_MAX_ENDP_IN1_ONLY as i32 {
+                    picr.endp_in1_only[picr.num_endp_in1_only as usize] = endpoints1[index1];
+                    picr.num_endp_in1_only = picr.num_endp_in1_only.wrapping_add(1);
+                }
+                index1 += 1;
+                num_in1_only = num_in1_only.wrapping_add(1);
+            } else {
+                if picr.num_endp_in2_only < ICR_MAX_ENDP_IN2_ONLY as i32 {
+                    picr.endp_in2_only[picr.num_endp_in2_only as usize] = endpoints2[index2];
+                    picr.num_endp_in2_only = picr.num_endp_in2_only.wrapping_add(1);
+                }
+                index2 += 1;
+                num_in2_only = num_in2_only.wrapping_add(1);
+            }
+        }
+        while index1 < endpoints1.len() {
+            if picr.num_endp_in1_only < ICR_MAX_ENDP_IN1_ONLY as i32 {
+                picr.endp_in1_only[picr.num_endp_in1_only as usize] = endpoints1[index1];
+                picr.num_endp_in1_only = picr.num_endp_in1_only.wrapping_add(1);
+            }
+            index1 += 1;
+            num_in1_only = num_in1_only.wrapping_add(1);
+        }
+        while index2 < endpoints2.len() {
+            if picr.num_endp_in2_only < ICR_MAX_ENDP_IN2_ONLY as i32 {
+                picr.endp_in2_only[picr.num_endp_in2_only as usize] = endpoints2[index2];
+                picr.num_endp_in2_only = picr.num_endp_in2_only.wrapping_add(1);
+            }
+            index2 += 1;
+            num_in2_only = num_in2_only.wrapping_add(1);
+        }
+        if num_in1_only != 0 {
+            ret |= tagInchiDiffBits_IDIF_EXTRA_TG_ENDP;
+        }
+        if num_in2_only != 0 {
+            ret |= tagInchiDiffBits_IDIF_MISS_TG_ENDP;
+        }
+        if num_in1_only != 0 || num_in2_only != 0 || num_equal == 0 {
+            ret |= tagInchiDiffBits_IDIF_DIFF_TG_ENDP;
+        }
+    }
+
+    if i1.lenTautomer > 1 && i2.lenTautomer > 1 {
+        let raw_tautomer_difference = if i1.lenTautomer != i2.lenTautomer {
+            true
+        } else {
+            let count = usize::try_from(i1.lenTautomer)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            heap.slice(i1.nTautomer.as_const())?
+                .get(..count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                != heap
+                    .slice(i2.nTautomer.as_const())?
+                    .get(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+        };
+        if raw_tautomer_difference {
+            ret |= tagInchiDiffBits_IDIF_TG;
+        }
+    }
+
+    if i1.nNumberOfIsotopicAtoms != i2.nNumberOfIsotopicAtoms {
+        ret |= tagInchiDiffBits_IDIF_NUM_ISO_AT;
+    } else if i1.nNumberOfIsotopicAtoms > 0 {
+        let count = usize::try_from(i1.nNumberOfIsotopicAtoms)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        if heap
+            .slice(i1.IsotopicAtom.as_const())?
+            .get(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            != heap
+                .slice(i2.IsotopicAtom.as_const())?
+                .get(..count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+        {
+            ret |= tagInchiDiffBits_IDIF_ISO_AT;
+        }
+    }
+    if i1.nTotalCharge != i2.nTotalCharge {
+        ret |= tagInchiDiffBits_IDIF_CHARGE;
+    }
+    if let Some(aux1) = a1 {
+        if aux1.nNumRemovedProtons != 0
+            && a2.is_none_or(|aux2| aux2.nNumRemovedProtons != aux1.nNumRemovedProtons)
+        {
+            ret |= tagInchiDiffBits_IDIF_REM_PROT;
+        }
+        if a2.is_none_or(|aux2| {
+            aux2.nNumRemovedIsotopicH[0] != aux1.nNumRemovedIsotopicH[0]
+                || aux2.nNumRemovedIsotopicH[1] != aux1.nNumRemovedIsotopicH[1]
+                || aux2.nNumRemovedIsotopicH[2] != aux1.nNumRemovedIsotopicH[2]
+        }) {
+            ret |= tagInchiDiffBits_IDIF_REM_ISO_H;
+        }
+    }
+
+    let isotopic_stereo1 = if i1.StereoIsotopic.is_null() {
+        None
+    } else {
+        heap.slice(i1.StereoIsotopic.as_const())?.first()
+    };
+    let regular_stereo1 = if i1.Stereo.is_null() {
+        None
+    } else {
+        heap.slice(i1.Stereo.as_const())?.first()
+    };
+    let stereo1 = if isotopic_stereo1.is_some_and(|stereo| {
+        stereo
+            .nNumberOfStereoBonds
+            .wrapping_add(stereo.nNumberOfStereoCenters)
+            != 0
+    }) {
+        isotopic_stereo1
+    } else {
+        regular_stereo1
+    };
+
+    let isotopic_stereo2 = if i2.StereoIsotopic.is_null() {
+        None
+    } else {
+        heap.slice(i2.StereoIsotopic.as_const())?.first()
+    };
+    let regular_stereo2 = if i2.Stereo.is_null() {
+        None
+    } else {
+        heap.slice(i2.Stereo.as_const())?.first()
+    };
+    let stereo2 = if isotopic_stereo2.is_some_and(|stereo| {
+        stereo
+            .nNumberOfStereoBonds
+            .wrapping_add(stereo.nNumberOfStereoCenters)
+            != 0
+    }) {
+        isotopic_stereo2
+    } else {
+        regular_stereo2
+    };
+
+    ret |= CompareReversedStereoINChI2(heap, stereo1, stereo2, picr)? as u32;
+    picr.flags = INCHI_MODE::from(ret);
+    Ok(INCHI_MODE::from(ret))
+}
+
+#[allow(non_snake_case)]
 pub(crate) fn CompareReversedINChI(
     heap: &SourceHeap,
     i1: Option<&INChI>,
@@ -4877,6 +8580,445 @@ mod tests {
     use super::*;
 
     #[test]
+    fn source_port__ichimake__compareicr__line_3189() {
+        fn compare(
+            flags1: INCHI_MODE,
+            flags2: INCHI_MODE,
+            mask: INCHI_MODE,
+        ) -> (i32, INCHI_MODE, INCHI_MODE) {
+            let left = ICR {
+                flags: flags1,
+                tot_num_H1: i32::MIN,
+                ..ICR::default()
+            };
+            let right = ICR {
+                flags: flags2,
+                tot_num_H2: i32::MAX,
+                ..ICR::default()
+            };
+            let left_before = left.clone();
+            let right_before = right.clone();
+            let mut in1 = INCHI_MODE::MAX;
+            let mut in2 = INCHI_MODE::MAX;
+            let ret = CompareIcr(&left, &right, Some(&mut in1), Some(&mut in2), mask);
+            assert_eq!(left, left_before);
+            assert_eq!(right, right_before);
+            (ret, in1, in2)
+        }
+
+        assert_eq!(compare(0, 0, 0), (0, 0, 0));
+        for bit_index in 0..=30 {
+            let bit = 1_u64 << bit_index;
+            assert_eq!(compare(bit, 0, bit), (1, bit, 0), "left bit {bit_index}");
+            assert_eq!(compare(0, bit, bit), (-1, 0, bit), "right bit {bit_index}");
+            assert_eq!(compare(bit, bit, bit), (0, 0, 0), "shared bit {bit_index}");
+            assert_eq!(compare(bit, 0, 0), (0, 0, 0), "masked bit {bit_index}");
+        }
+
+        let low = 1_u64;
+        let middle = 1_u64 << 17;
+        let high = 1_u64 << 30;
+        assert_eq!(
+            compare(low | middle, high, INCHI_MODE::MAX),
+            (2, low | middle, high)
+        );
+        assert_eq!(
+            compare(low | middle, middle | high, INCHI_MODE::MAX),
+            (2, low, high)
+        );
+        assert_eq!(
+            compare(low | middle, high, low | middle),
+            (1, low | middle, 0)
+        );
+        assert_eq!(compare(low | middle, high, high), (-1, 0, high));
+
+        let left = ICR {
+            flags: low,
+            ..ICR::default()
+        };
+        let right = ICR {
+            flags: high,
+            ..ICR::default()
+        };
+        assert_eq!(CompareIcr(&left, &right, None, None, low | high), 2);
+
+        let outside_active_masks = 1_u64 << 63;
+        assert_eq!(compare(outside_active_masks, 0, 0), (0, 0, 0));
+    }
+
+    #[test]
+    fn source_port__ichimake__create_inchi__line_3707() {
+        let mut heap = SourceHeap::default();
+        let clock = heap
+            .allocate_model_storage(vec![INCHI_CLOCK::default()])
+            .unwrap();
+        let mut empty_outputs = std::array::from_fn(|_| INP_ATOM_DATA::default());
+        assert_eq!(
+            Create_INChI(
+                &mut heap,
+                &mut CANON_GLOBALS::default(),
+                clock,
+                &INPUT_PARMS::default(),
+                [SourceMutPointer::null(); TAUT_NUM as usize],
+                [SourceMutPointer::null(); TAUT_NUM as usize],
+                None,
+                SourceMutPointer::null(),
+                &mut empty_outputs,
+                0,
+                u64::from(REQ_MODE_TAUT | REQ_MODE_NON_ISO),
+                &mut 0,
+                &mut 0,
+                SourceMutPointer::null(),
+                None,
+                None,
+                0,
+            ),
+            Ok(-1)
+        );
+
+        let mut carbon = inp_ATOM {
+            el_number: 6,
+            num_H: 4,
+            orig_at_number: 1,
+            ..inp_ATOM::default()
+        };
+        carbon.elname[0] = b'C' as i8;
+        let input = heap.allocate_model_storage(vec![carbon]).unwrap();
+        let normalized = heap
+            .allocate_model_storage(vec![inp_ATOM::default()])
+            .unwrap();
+        let inchi_atoms = heap.allocate_model_storage(vec![0_u8]).unwrap();
+        let inchi_connections = heap.allocate_model_storage(vec![0_u16]).unwrap();
+        let inchi_hydrogens = heap.allocate_model_storage(vec![0_i8]).unwrap();
+        let inchi_fixed_hydrogens = heap.allocate_model_storage(vec![0_i8]).unwrap();
+        let inchi = heap
+            .allocate_model_storage(vec![INChI {
+                nAtom: inchi_atoms,
+                nConnTable: inchi_connections,
+                nNum_H: inchi_hydrogens,
+                nNum_H_fixed: inchi_fixed_hydrogens,
+                ..INChI::default()
+            }])
+            .unwrap();
+        let aux_order = heap.allocate_model_storage(vec![0_u16]).unwrap();
+        let aux_equivalence = heap.allocate_model_storage(vec![0_u16]).unwrap();
+        let aux = heap
+            .allocate_model_storage(vec![INChI_Aux {
+                nOrigAtNosInCanonOrd: aux_order,
+                nConstitEquNumbers: aux_equivalence,
+                ..INChI_Aux::default()
+            }])
+            .unwrap();
+        let mut outputs = std::array::from_fn(|_| INP_ATOM_DATA::default());
+        outputs[TAUT_YES as usize] = INP_ATOM_DATA {
+            at: normalized,
+            num_at: 1,
+            ..INP_ATOM_DATA::default()
+        };
+        let mut flags = u64::from(TG_FLAG_FIX_ISO_FIXEDH_BUG | TG_FLAG_FIX_TERM_H_CHRG_BUG);
+        let mut flags_done = 0_u64;
+        let mut globals = CANON_GLOBALS::default();
+
+        assert_eq!(
+            Create_INChI(
+                &mut heap,
+                &mut globals,
+                clock,
+                &INPUT_PARMS::default(),
+                [SourceMutPointer::null(), inchi],
+                [SourceMutPointer::null(), aux],
+                None,
+                input,
+                &mut outputs,
+                1,
+                u64::from(REQ_MODE_TAUT | REQ_MODE_NON_ISO),
+                &mut flags,
+                &mut flags_done,
+                SourceMutPointer::null(),
+                None,
+                None,
+                0,
+            ),
+            Ok(1)
+        );
+        let generated = &heap.slice(inchi.as_const()).unwrap()[0];
+        assert_eq!(generated.nErrorCode, 0);
+        assert_eq!(generated.nNumberOfAtoms, 1);
+        assert_eq!(heap.slice(generated.nAtom.as_const()).unwrap(), &[6]);
+        assert_eq!(heap.slice(generated.nNum_H.as_const()).unwrap(), &[4]);
+        assert_eq!(
+            &heap.slice(generated.szHillFormula.as_const()).unwrap()[..4],
+            &[b'C' as i8, b'H' as i8, b'4' as i8, 0]
+        );
+        assert_eq!(outputs[TAUT_YES as usize].num_at, 1);
+        assert_eq!(outputs[TAUT_YES as usize].num_removed_H, 0);
+        assert_eq!(heap.slice(aux.as_const()).unwrap()[0].nNumberOfAtoms, 1);
+    }
+
+    #[test]
+    fn source_port__ichimake__checkcanonnumberingcorrectness__line_6230() {
+        fn fixture(
+            with_isotope: bool,
+        ) -> (
+            SourceHeap,
+            SourceMutPointer<sp_ATOM>,
+            CANON_STAT,
+            CANON_GLOBALS,
+        ) {
+            let mut heap = SourceHeap::default();
+            let atoms = heap
+                .allocate_model_storage(vec![sp_ATOM::default()])
+                .unwrap();
+            let order = heap.allocate_model_storage(vec![0_u16]).unwrap();
+            let isotope = if with_isotope {
+                heap.allocate_model_storage(vec![0_u16]).unwrap()
+            } else {
+                SourceMutPointer::null()
+            };
+            let linear = heap.allocate_model_storage(vec![1_u16]).unwrap();
+            let canon = CANON_STAT {
+                LinearCT: linear,
+                nMaxLenLinearCT: 1,
+                nLenLinearCT: 1,
+                nLenLinearCTAtOnly: 1,
+                nCanonOrd: order,
+                nLenCanonOrd: 1,
+                nCanonOrdIsotopic: isotope,
+                nLenCanonOrdIsotopic: i32::from(with_isotope),
+                ..CANON_STAT::default()
+            };
+            (heap, atoms, canon, CANON_GLOBALS::default())
+        }
+
+        let (mut heap, atoms, mut canon, mut globals) = fixture(true);
+        let live = heap.live_allocation_count();
+        assert_eq!(
+            CheckCanonNumberingCorrectness(
+                &mut heap,
+                1,
+                1,
+                atoms.as_const(),
+                &mut canon,
+                &mut globals,
+                0,
+                None,
+            ),
+            Ok(0)
+        );
+        assert_eq!(heap.live_allocation_count(), live);
+
+        let (mut heap, atoms, mut canon, mut globals) = fixture(false);
+        assert_eq!(
+            CheckCanonNumberingCorrectness(
+                &mut heap,
+                1,
+                1,
+                atoms.as_const(),
+                &mut canon,
+                &mut globals,
+                0,
+                None,
+            ),
+            Ok(0)
+        );
+
+        let (mut heap, atoms, mut missing, mut globals) = fixture(false);
+        missing.nLenCanonOrd = 0;
+        missing.nCanonOrd = SourceMutPointer::null();
+        assert_eq!(
+            CheckCanonNumberingCorrectness(
+                &mut heap,
+                1,
+                1,
+                atoms.as_const(),
+                &mut missing,
+                &mut globals,
+                0,
+                None,
+            ),
+            Ok(CT_CANON_ERR)
+        );
+
+        let (mut heap, atoms, mut mismatch, mut globals) = fixture(false);
+        heap.slice_mut(mismatch.LinearCT).unwrap()[0] = 0;
+        assert_eq!(
+            CheckCanonNumberingCorrectness(
+                &mut heap,
+                1,
+                1,
+                atoms.as_const(),
+                &mut mismatch,
+                &mut globals,
+                0,
+                None,
+            ),
+            Ok(CT_CANON_ERR)
+        );
+        assert_eq!(heap.slice(mismatch.LinearCT.as_const()).unwrap(), &[0]);
+
+        let (mut heap, atoms, mut allocation_failure, mut globals) = fixture(false);
+        let live = heap.live_allocation_count();
+        heap.fail_after_allocations(0);
+        assert_eq!(
+            CheckCanonNumberingCorrectness(
+                &mut heap,
+                1,
+                1,
+                atoms.as_const(),
+                &mut allocation_failure,
+                &mut globals,
+                0,
+                None,
+            ),
+            Ok(CT_CANON_ERR)
+        );
+        assert_eq!(heap.live_allocation_count(), live);
+
+        let (mut heap, _atoms, mut invalid_access, mut globals) = fixture(false);
+        let live = heap.live_allocation_count();
+        assert_eq!(
+            CheckCanonNumberingCorrectness(
+                &mut heap,
+                1,
+                1,
+                SourceConstPointer::null(),
+                &mut invalid_access,
+                &mut globals,
+                0,
+                None,
+            ),
+            Err(SourceHeapError::NullPointer)
+        );
+        assert_eq!(heap.live_allocation_count(), live);
+    }
+
+    #[test]
+    fn source_port__ichimake__inp2spatom__line_119() {
+        let mut heap = SourceHeap::default();
+        assert_eq!(
+            inp2spATOM(
+                &mut heap,
+                SourceConstPointer::null(),
+                0,
+                SourceMutPointer::null(),
+            ),
+            Ok(0)
+        );
+
+        let mut carbon = inp_ATOM::default();
+        carbon.elname = [b'C' as i8, 0, 91, 92, 93, 94];
+        carbon.valence = 2;
+        carbon.neighbor[..3].copy_from_slice(&[7, 8, 99]);
+        carbon.bond_type[..3].copy_from_slice(&[1, 2, 99]);
+        carbon.chem_bonds_valence = 3;
+        carbon.orig_at_number = 101;
+        carbon.orig_compt_at_numb = 202;
+        carbon.endpoint = 303;
+        carbon.iso_atw_diff = -4;
+        carbon.num_H = 5;
+        carbon.cFlags = -6;
+        carbon.num_iso_H = [7, 8, 9];
+        carbon.charge = -2;
+        carbon.radical = 3;
+        carbon.nBlockSystem = 404;
+        carbon.bCutVertex = -1;
+        carbon.nRingSystem = 505;
+        carbon.nNumAtInRingSystem = 606;
+        carbon.bAmbiguousStereo = 44;
+        carbon.x = 1.25;
+        carbon.y = -2.5;
+        carbon.z = 3.75;
+
+        let mut truncated = inp_ATOM::default();
+        truncated.elname = [
+            b'A' as i8, b'b' as i8, b'c' as i8, b'd' as i8, b'e' as i8, b'f' as i8,
+        ];
+        truncated.valence = -1;
+        truncated.neighbor[0] = 88;
+        truncated.bond_type[0] = 77;
+
+        let input = heap
+            .allocate_model_storage(vec![carbon.clone(), truncated])
+            .unwrap();
+        let mut sentinel = sp_ATOM::default();
+        sentinel.elname = [9; 6];
+        sentinel.orig_at_number = 999;
+        let output = heap
+            .allocate_model_storage(vec![sentinel.clone(), sentinel.clone(), sentinel.clone()])
+            .unwrap();
+        assert_eq!(inp2spATOM(&mut heap, input.as_const(), 2, output), Ok(0));
+        let converted = heap.slice(output.as_const()).unwrap();
+        assert_eq!(converted[0].elname, [b'C' as i8, 0, 0, 0, 0, 0]);
+        assert_eq!(converted[0].el_number, 6);
+        assert_eq!(converted[0].valence, 2);
+        assert_eq!(&converted[0].neighbor[..3], &[7, 8, 0]);
+        assert_eq!(&converted[0].bond_type[..3], &[1, 2, 0]);
+        assert_eq!(converted[0].chem_bonds_valence, 3);
+        assert_eq!(converted[0].orig_at_number, 101);
+        assert_eq!(converted[0].orig_compt_at_numb, 202);
+        assert_eq!(converted[0].endpoint, 303);
+        assert_eq!(converted[0].iso_atw_diff, -4);
+        assert_eq!(converted[0].num_H, 5);
+        assert_eq!(converted[0].cFlags, -6);
+        assert_eq!(converted[0].num_iso_H, [7, 8, 9]);
+        assert_eq!(converted[0].charge, -2);
+        assert_eq!(converted[0].radical, 3);
+        assert_eq!(converted[0].nBlockSystem, 404);
+        assert_eq!(converted[0].bCutVertex, -1);
+        assert_eq!(converted[0].nRingSystem, 505);
+        assert_eq!(converted[0].nNumAtInRingSystem, 606);
+        assert_eq!(converted[0].bAmbiguousStereo, 0);
+        assert_eq!(
+            converted[1].elname,
+            [
+                b'A' as i8, b'b' as i8, b'c' as i8, b'd' as i8, b'e' as i8, 0
+            ]
+        );
+        assert_eq!(converted[1].el_number, u8::MAX);
+        assert_eq!(converted[1].valence, -1);
+        assert_eq!(converted[1].neighbor[0], 0);
+        assert_eq!(converted[1].bond_type[0], 0);
+        assert_eq!(converted[2], sentinel);
+
+        let mut maximum = inp_ATOM::default();
+        maximum.elname = [b'O' as i8, 0, 0, 0, 0, 0];
+        maximum.valence = 20;
+        for index in 0..20 {
+            maximum.neighbor[index] = index as u16 + 100;
+            maximum.bond_type[index] = index as u8 + 1;
+        }
+        let maximum = heap.allocate_model_storage(vec![maximum]).unwrap();
+        let maximum_output = heap
+            .allocate_model_storage(vec![sp_ATOM::default()])
+            .unwrap();
+        assert_eq!(
+            inp2spATOM(&mut heap, maximum.as_const(), 1, maximum_output),
+            Ok(0)
+        );
+        assert_eq!(
+            heap.slice(maximum_output.as_const()).unwrap()[0].neighbor,
+            std::array::from_fn(|index| index as u16 + 100)
+        );
+
+        let mut invalid = carbon;
+        invalid.valence = 21;
+        let invalid = heap.allocate_model_storage(vec![invalid]).unwrap();
+        let invalid_output = heap.allocate_model_storage(vec![sentinel.clone()]).unwrap();
+        assert_eq!(
+            inp2spATOM(&mut heap, invalid.as_const(), 1, invalid_output),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(
+            heap.slice(invalid_output.as_const()).unwrap()[0].valence,
+            21
+        );
+        assert_eq!(
+            inp2spATOM(&mut heap, invalid.as_const(), -1, invalid_output),
+            Err(SourceHeapError::SourceIntegerOverflow)
+        );
+    }
+
+    #[test]
     fn source_port__ichimake__mystrrev__line_2090() {
         for (input, expected) in [
             ("", ""),
@@ -4932,6 +9074,20 @@ mod tests {
                     ..INChI_IsotopicAtom::default()
                 }])
                 .unwrap(),
+            ..INChI::default()
+        }
+    }
+
+    fn reversed_inchi2_fixture(heap: &mut SourceHeap) -> INChI {
+        INChI {
+            nNumberOfAtoms: 2,
+            szHillFormula: heap
+                .allocate(vec![b'C' as i8, b'2' as i8, b'H' as i8, b'6' as i8, 0])
+                .unwrap(),
+            nAtom: heap.allocate(vec![6_u8, 6]).unwrap(),
+            lenConnTable: 2,
+            nConnTable: heap.allocate(vec![1_u16, 2]).unwrap(),
+            nNum_H: heap.allocate(vec![3_i8, 3]).unwrap(),
             ..INChI::default()
         }
     }
@@ -6070,6 +10226,573 @@ mod tests {
         assert_eq!(
             CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)),
             Ok(28)
+        );
+    }
+
+    #[test]
+    fn source_port__ichimake__comparereversedstereoinchi2__line_2635() {
+        let mut heap = SourceHeap::default();
+        let mut empty_results = ICR::default();
+        assert_eq!(
+            CompareReversedStereoINChI2(&heap, None, None, &mut empty_results),
+            Ok(0)
+        );
+        let one_sided = stereo_fixture(&mut heap, &[1], &[1], 0, &[], &[], &[]);
+        assert_eq!(
+            CompareReversedStereoINChI2(&heap, Some(&one_sided), None, &mut empty_results,),
+            Ok(0)
+        );
+
+        let zero_count = INChI_Stereo::default();
+        let one_center = stereo_fixture(&mut heap, &[1], &[1], 0, &[], &[], &[]);
+        let mut zero_count_results = ICR::default();
+        assert_eq!(
+            CompareReversedStereoINChI2(
+                &heap,
+                Some(&zero_count),
+                Some(&one_center),
+                &mut zero_count_results,
+            ),
+            Ok(tagInchiDiffBits_IDIF_SC_MISS as i32)
+        );
+        assert_eq!(
+            (
+                zero_count_results.num_sc_in2_only,
+                zero_count_results.sc_in2_only[0]
+            ),
+            (1, 0)
+        );
+        zero_count_results = ICR::default();
+        assert_eq!(
+            CompareReversedStereoINChI2(
+                &heap,
+                Some(&one_center),
+                Some(&zero_count),
+                &mut zero_count_results,
+            ),
+            Ok(tagInchiDiffBits_IDIF_SC_EXTRA as i32)
+        );
+        assert_eq!(
+            (
+                zero_count_results.num_sc_in1_only,
+                zero_count_results.sc_in1_only[0]
+            ),
+            (1, 0)
+        );
+
+        let one_bond = stereo_fixture(&mut heap, &[], &[], 0, &[1], &[2], &[1]);
+        zero_count_results = ICR::default();
+        assert_eq!(
+            CompareReversedStereoINChI2(
+                &heap,
+                Some(&zero_count),
+                Some(&one_bond),
+                &mut zero_count_results,
+            ),
+            Ok(tagInchiDiffBits_IDIF_SB_MISS as i32)
+        );
+        assert_eq!(
+            (
+                zero_count_results.num_sb_in2_only,
+                zero_count_results.sb_in2_only[0]
+            ),
+            (1, 0)
+        );
+        zero_count_results = ICR::default();
+        assert_eq!(
+            CompareReversedStereoINChI2(
+                &heap,
+                Some(&one_bond),
+                Some(&zero_count),
+                &mut zero_count_results,
+            ),
+            Ok(tagInchiDiffBits_IDIF_SB_EXTRA as i32)
+        );
+        assert_eq!(
+            (
+                zero_count_results.num_sb_in1_only,
+                zero_count_results.sb_in1_only[0]
+            ),
+            (1, 0)
+        );
+
+        let center1 = stereo_fixture(
+            &mut heap,
+            &[1, 3, 5],
+            &[AB_PARITY_UNDF as i8, 1, 2],
+            1,
+            &[],
+            &[],
+            &[],
+        );
+        let center2 = stereo_fixture(
+            &mut heap,
+            &[2, 3, 6],
+            &[AB_PARITY_UNDF as i8, 2, AB_PARITY_UNDF as i8],
+            2,
+            &[],
+            &[],
+            &[],
+        );
+        let mut center_results = ICR::default();
+        let center_bits = tagInchiDiffBits_IDIF_SC_PARITY as i32
+            | tagInchiDiffBits_IDIF_SC_EXTRA_UNDF as i32
+            | tagInchiDiffBits_IDIF_SC_EXTRA as i32
+            | tagInchiDiffBits_IDIF_SC_MISS_UNDF as i32
+            | tagInchiDiffBits_IDIF_SC_INV as i32;
+        assert_eq!(
+            CompareReversedStereoINChI2(&heap, Some(&center1), Some(&center2), &mut center_results,),
+            Ok(center_bits)
+        );
+        assert_eq!(
+            (
+                center_results.num_sc_in1_only,
+                &center_results.sc_in1_only[..2],
+                center_results.num_sc_undef_in1_only,
+                center_results.sc_undef_in1_only[0],
+            ),
+            (2, &[0, 2][..], 1, 0)
+        );
+        assert_eq!(
+            (
+                center_results.num_sc_in2_only,
+                &center_results.sc_in2_only[..2],
+                center_results.num_sc_undef_in2_only,
+                center_results.sc_undef_in2_only[0],
+            ),
+            (2, &[0, 2][..], 1, 1)
+        );
+        let recorded_centers = center_results.clone();
+        assert_eq!(
+            CompareReversedStereoINChI2(&heap, Some(&center1), Some(&center2), &mut center_results,),
+            Ok(center_bits)
+        );
+        assert_eq!(center_results, recorded_centers);
+
+        let bond1 = stereo_fixture(
+            &mut heap,
+            &[],
+            &[],
+            0,
+            &[1, 3, 5],
+            &[2, 4, 6],
+            &[AB_PARITY_UNDF as i8, 1, 2],
+        );
+        let bond2 = stereo_fixture(
+            &mut heap,
+            &[],
+            &[],
+            0,
+            &[1, 3, 7],
+            &[3, 4, 8],
+            &[AB_PARITY_UNDF as i8, 2, AB_PARITY_UNDF as i8],
+        );
+        let mut bond_results = ICR::default();
+        let bond_bits = tagInchiDiffBits_IDIF_SB_PARITY as i32
+            | tagInchiDiffBits_IDIF_SB_EXTRA_UNDF as i32
+            | tagInchiDiffBits_IDIF_SB_EXTRA as i32
+            | tagInchiDiffBits_IDIF_SB_MISS_UNDF as i32;
+        assert_eq!(
+            CompareReversedStereoINChI2(&heap, Some(&bond1), Some(&bond2), &mut bond_results,),
+            Ok(bond_bits)
+        );
+        assert_eq!(
+            (
+                bond_results.num_sb_in1_only,
+                &bond_results.sb_in1_only[..2],
+                bond_results.num_sb_undef_in1_only,
+                bond_results.sb_undef_in1_only[0],
+            ),
+            (2, &[0, 2][..], 1, 0)
+        );
+        assert_eq!(
+            (
+                bond_results.num_sb_in2_only,
+                &bond_results.sb_in2_only[..2],
+                bond_results.num_sb_undef_in2_only,
+                &bond_results.sb_undef_in2_only[..2],
+            ),
+            (2, &[0, 2][..], 2, &[1, 3][..])
+        );
+
+        let equal1 = stereo_fixture(&mut heap, &[1], &[1], 0, &[2], &[3], &[1]);
+        let equal2 = stereo_fixture(&mut heap, &[1], &[1], 0, &[2], &[3], &[1]);
+        assert_eq!(
+            CompareReversedStereoINChI2(&heap, Some(&equal1), Some(&equal2), &mut ICR::default(),),
+            Ok(0)
+        );
+    }
+
+    #[test]
+    fn source_port__ichimake__comparereversedinchi2__line_3262() {
+        fn compare(
+            heap: &mut SourceHeap,
+            left: Option<&INChI>,
+            right: Option<&INChI>,
+            aux_left: Option<&INChI_Aux>,
+            aux_right: Option<&INChI_Aux>,
+        ) -> (u32, ICR, i32) {
+            let mut results = ICR {
+                flags: INCHI_MODE::MAX,
+                tot_num_H1: -77,
+                ..ICR::default()
+            };
+            let mut error = 77;
+            let difference = CompareReversedINChI2(
+                heap,
+                left,
+                right,
+                aux_left,
+                aux_right,
+                &mut results,
+                &mut error,
+            )
+            .unwrap();
+            (difference as u32, results, error)
+        }
+
+        let mut heap = SourceHeap::default();
+        let (difference, results, error) = compare(&mut heap, None, None, None, None);
+        assert_eq!((difference, results, error), (0, ICR::default(), 0));
+
+        let one_sided = reversed_inchi2_fixture(&mut heap);
+        let (difference, results, error) = compare(&mut heap, Some(&one_sided), None, None, None);
+        assert_eq!(difference, tagInchiDiffBits_IDIF_PROBLEM);
+        assert_eq!(results.flags as u32, difference);
+        assert_eq!(error, 0);
+
+        let left = reversed_inchi2_fixture(&mut heap);
+        let right = reversed_inchi2_fixture(&mut heap);
+        let (difference, results, error) =
+            compare(&mut heap, Some(&left), Some(&right), None, None);
+        assert_eq!((difference, results.flags as u32, error), (0, 0, 0));
+        assert_eq!((results.tot_num_H1, results.tot_num_H2), (6, 6));
+
+        let mut error_left = left.clone();
+        let mut error_right = right.clone();
+        error_left.nErrorCode = 4;
+        error_right.nErrorCode = 4;
+        assert_eq!(
+            compare(&mut heap, Some(&error_left), Some(&error_right), None, None).0,
+            tagInchiDiffBits_IDIF_PROBLEM
+        );
+        error_right.nErrorCode = 5;
+        assert_eq!(
+            compare(&mut heap, Some(&error_left), Some(&error_right), None, None).0,
+            tagInchiDiffBits_IDIF_PROBLEM
+        );
+
+        let mut changed = reversed_inchi2_fixture(&mut heap);
+        changed.nNumberOfAtoms = 1;
+        assert_eq!(
+            compare(&mut heap, Some(&left), Some(&changed), None, None).0,
+            tagInchiDiffBits_IDIF_NUM_AT
+        );
+        changed = reversed_inchi2_fixture(&mut heap);
+        changed.nAtom = heap.allocate(vec![6_u8, 7]).unwrap();
+        assert_eq!(
+            compare(&mut heap, Some(&left), Some(&changed), None, None).0,
+            tagInchiDiffBits_IDIF_ATOMS
+        );
+
+        let mut hydrogen_left = reversed_inchi2_fixture(&mut heap);
+        let mut hydrogen_right = reversed_inchi2_fixture(&mut heap);
+        hydrogen_left.nNum_H = heap.allocate(vec![i8::MIN, 4]).unwrap();
+        hydrogen_right.nNum_H = heap.allocate(vec![1_i8, 2]).unwrap();
+        hydrogen_left.nNum_H_fixed = heap.allocate(vec![2_i8, -1]).unwrap();
+        hydrogen_right.nNum_H_fixed = heap.allocate(vec![1_i8, 3]).unwrap();
+        let (difference, results, _) = compare(
+            &mut heap,
+            Some(&hydrogen_left),
+            Some(&hydrogen_right),
+            None,
+            None,
+        );
+        assert_eq!(
+            difference,
+            tagInchiDiffBits_IDIF_POSITION_H
+                | tagInchiDiffBits_IDIF_MORE_FH
+                | tagInchiDiffBits_IDIF_LESS_FH
+        );
+        assert_eq!(results.num_diff_pos_H, 2);
+        assert_eq!(&results.diff_pos_H_at[..2], &[0, 1]);
+        assert_eq!(&results.diff_pos_H_nH[..2], &[127, 2]);
+        assert_eq!(
+            (
+                results.num_fixed_H1_more,
+                results.fixed_H_at1_more[0],
+                results.fixed_H_nH1_more[0],
+            ),
+            (1, 0, 1)
+        );
+        assert_eq!(
+            (
+                results.num_fixed_H2_more,
+                results.fixed_H_at2_more[0],
+                results.fixed_H_nH2_more[0],
+            ),
+            (1, 1, 4)
+        );
+
+        let mut fixed_only = reversed_inchi2_fixture(&mut heap);
+        fixed_only.nNum_H_fixed = heap.allocate(vec![0_i8, -3]).unwrap();
+        let (difference, results, _) =
+            compare(&mut heap, Some(&fixed_only), Some(&right), None, None);
+        assert_eq!(difference, tagInchiDiffBits_IDIF_MORE_FH);
+        assert_eq!(
+            (
+                results.num_fixed_H1_more,
+                results.fixed_H_at1_more[0],
+                results.fixed_H_nH1_more[0],
+            ),
+            (1, 1, -3)
+        );
+        let (difference, results, _) =
+            compare(&mut heap, Some(&right), Some(&fixed_only), None, None);
+        assert_eq!(difference, tagInchiDiffBits_IDIF_LESS_FH);
+        assert_eq!(results.fixed_H_nH2_more[0], -3);
+
+        let mut fewer_formula_h = reversed_inchi2_fixture(&mut heap);
+        fewer_formula_h.szHillFormula = heap
+            .allocate(vec![b'C' as i8, b'2' as i8, b'H' as i8, b'4' as i8, 0])
+            .unwrap();
+        assert_eq!(
+            compare(&mut heap, Some(&left), Some(&fewer_formula_h), None, None).0,
+            tagInchiDiffBits_IDIF_MORE_H
+        );
+        assert_eq!(
+            compare(&mut heap, Some(&fewer_formula_h), Some(&left), None, None).0,
+            tagInchiDiffBits_IDIF_LESS_H
+        );
+        let mut different_element = reversed_inchi2_fixture(&mut heap);
+        different_element.szHillFormula = heap
+            .allocate(vec![b'N' as i8, b'2' as i8, b'H' as i8, b'6' as i8, 0])
+            .unwrap();
+        let (difference, results, _) =
+            compare(&mut heap, Some(&left), Some(&different_element), None, None);
+        assert_eq!(difference, tagInchiDiffBits_IDIF_NUM_EL);
+        assert_eq!((results.tot_num_H1, results.tot_num_H2), (0, 0));
+
+        let mut connection = reversed_inchi2_fixture(&mut heap);
+        connection.lenConnTable = 1;
+        assert_eq!(
+            compare(&mut heap, Some(&left), Some(&connection), None, None).0,
+            tagInchiDiffBits_IDIF_CON_LEN
+        );
+        connection = reversed_inchi2_fixture(&mut heap);
+        connection.nConnTable = heap.allocate(vec![1_u16, 3]).unwrap();
+        assert_eq!(
+            compare(&mut heap, Some(&left), Some(&connection), None, None).0,
+            tagInchiDiffBits_IDIF_CON_TBL
+        );
+
+        let mut tautomer_left = reversed_inchi2_fixture(&mut heap);
+        tautomer_left.nTautomer = heap.allocate(vec![1_u16, 4, 2, 1, 5, 1]).unwrap();
+        tautomer_left.lenTautomer = 6;
+        let mut tautomer_right = reversed_inchi2_fixture(&mut heap);
+        tautomer_right.nTautomer = heap.allocate(vec![1_u16, 4, 1, 0, 2, 5]).unwrap();
+        tautomer_right.lenTautomer = 6;
+        let (difference, results, _) = compare(
+            &mut heap,
+            Some(&tautomer_left),
+            Some(&tautomer_right),
+            None,
+            None,
+        );
+        assert_eq!(
+            difference,
+            tagInchiDiffBits_IDIF_EXTRA_TG_ENDP
+                | tagInchiDiffBits_IDIF_MISS_TG_ENDP
+                | tagInchiDiffBits_IDIF_DIFF_TG_ENDP
+                | tagInchiDiffBits_IDIF_TG
+        );
+        assert_eq!(
+            (
+                results.num_taut_H1,
+                results.num_taut_H2,
+                results.num_taut_M1,
+                results.num_taut_M2,
+            ),
+            (2, 1, 1, 0)
+        );
+        assert_eq!(
+            (
+                results.num_endp_in1_only,
+                results.endp_in1_only[0],
+                results.num_endp_in2_only,
+                results.endp_in2_only[0],
+            ),
+            (1, 1, 1, 2)
+        );
+
+        let mut two_groups = reversed_inchi2_fixture(&mut heap);
+        two_groups.nTautomer = heap.allocate(vec![2_u16, 3, 1, 0, 2, 3, 1, 0, 4]).unwrap();
+        two_groups.lenTautomer = 9;
+        let mut three_groups = reversed_inchi2_fixture(&mut heap);
+        three_groups.nTautomer = heap
+            .allocate(vec![3_u16, 3, 1, 0, 2, 3, 1, 0, 4, 3, 1, 0, 6])
+            .unwrap();
+        three_groups.lenTautomer = 13;
+        assert_ne!(
+            compare(
+                &mut heap,
+                Some(&tautomer_left),
+                Some(&two_groups),
+                None,
+                None
+            )
+            .0 & tagInchiDiffBits_IDIF_SINGLE_TG,
+            0
+        );
+        assert_ne!(
+            compare(
+                &mut heap,
+                Some(&two_groups),
+                Some(&tautomer_left),
+                None,
+                None
+            )
+            .0 & tagInchiDiffBits_IDIF_MULTIPLE_TG,
+            0
+        );
+        assert_ne!(
+            compare(
+                &mut heap,
+                Some(&two_groups),
+                Some(&three_groups),
+                None,
+                None
+            )
+            .0 & tagInchiDiffBits_IDIF_NUM_TG,
+            0
+        );
+        assert_ne!(
+            compare(&mut heap, Some(&right), Some(&tautomer_left), None, None).0
+                & tagInchiDiffBits_IDIF_NO_TAUT,
+            0
+        );
+        assert_ne!(
+            compare(&mut heap, Some(&tautomer_left), Some(&right), None, None).0
+                & tagInchiDiffBits_IDIF_WRONG_TAUT,
+            0
+        );
+
+        let baseline_allocations = heap.live_allocation_count();
+        heap.fail_after_allocations(0);
+        let (difference, results, error) = compare(
+            &mut heap,
+            Some(&tautomer_left),
+            Some(&tautomer_right),
+            None,
+            None,
+        );
+        assert_eq!(error, -1);
+        assert_eq!(results.flags as u32, difference);
+        assert_eq!(heap.live_allocation_count(), baseline_allocations);
+        heap.fail_after_allocations(1);
+        let (difference, results, error) = compare(
+            &mut heap,
+            Some(&tautomer_left),
+            Some(&tautomer_right),
+            None,
+            None,
+        );
+        assert_eq!(error, -1);
+        assert_eq!(results.flags as u32, difference);
+        assert_eq!(heap.live_allocation_count(), baseline_allocations);
+
+        let mut isotope_left = reversed_inchi2_fixture(&mut heap);
+        isotope_left.nNumberOfIsotopicAtoms = 1;
+        isotope_left.IsotopicAtom = heap
+            .allocate(vec![INChI_IsotopicAtom {
+                nAtomNumber: 1,
+                ..INChI_IsotopicAtom::default()
+            }])
+            .unwrap();
+        let mut isotope_right = reversed_inchi2_fixture(&mut heap);
+        assert_eq!(
+            compare(
+                &mut heap,
+                Some(&isotope_left),
+                Some(&isotope_right),
+                None,
+                None
+            )
+            .0,
+            tagInchiDiffBits_IDIF_NUM_ISO_AT
+        );
+        isotope_right.nNumberOfIsotopicAtoms = 1;
+        isotope_right.IsotopicAtom = heap
+            .allocate(vec![INChI_IsotopicAtom {
+                nAtomNumber: 2,
+                ..INChI_IsotopicAtom::default()
+            }])
+            .unwrap();
+        assert_eq!(
+            compare(
+                &mut heap,
+                Some(&isotope_left),
+                Some(&isotope_right),
+                None,
+                None
+            )
+            .0,
+            tagInchiDiffBits_IDIF_ISO_AT
+        );
+
+        let mut charged = reversed_inchi2_fixture(&mut heap);
+        charged.nTotalCharge = -1;
+        assert_eq!(
+            compare(&mut heap, Some(&charged), Some(&right), None, None).0,
+            tagInchiDiffBits_IDIF_CHARGE
+        );
+        let aux = INChI_Aux {
+            nNumRemovedProtons: 2,
+            nNumRemovedIsotopicH: [1, 2, 3],
+            ..INChI_Aux::default()
+        };
+        let (difference, _, _) = compare(&mut heap, Some(&left), Some(&right), Some(&aux), None);
+        assert_eq!(
+            difference,
+            tagInchiDiffBits_IDIF_REM_PROT | tagInchiDiffBits_IDIF_REM_ISO_H
+        );
+
+        let regular_left = stereo_fixture(&mut heap, &[1], &[1], 0, &[], &[], &[]);
+        let regular_right = stereo_fixture(&mut heap, &[1], &[2], 0, &[], &[], &[]);
+        let empty_isotopic_left = INChI_Stereo::default();
+        let empty_isotopic_right = INChI_Stereo::default();
+        let mut stereo_left = reversed_inchi2_fixture(&mut heap);
+        stereo_left.Stereo = heap.allocate(vec![regular_left]).unwrap();
+        stereo_left.StereoIsotopic = heap.allocate(vec![empty_isotopic_left]).unwrap();
+        let mut stereo_right = reversed_inchi2_fixture(&mut heap);
+        stereo_right.Stereo = heap.allocate(vec![regular_right]).unwrap();
+        stereo_right.StereoIsotopic = heap.allocate(vec![empty_isotopic_right]).unwrap();
+        assert_ne!(
+            compare(
+                &mut heap,
+                Some(&stereo_left),
+                Some(&stereo_right),
+                None,
+                None
+            )
+            .0 & tagInchiDiffBits_IDIF_SC_PARITY,
+            0
+        );
+
+        let isotopic_left = stereo_fixture(&mut heap, &[2], &[1], 0, &[], &[], &[]);
+        let isotopic_right = stereo_fixture(&mut heap, &[2], &[2], 0, &[], &[], &[]);
+        stereo_left.StereoIsotopic = heap.allocate(vec![isotopic_left]).unwrap();
+        stereo_right.StereoIsotopic = heap.allocate(vec![isotopic_right]).unwrap();
+        assert_ne!(
+            compare(
+                &mut heap,
+                Some(&stereo_left),
+                Some(&stereo_right),
+                None,
+                None
+            )
+            .0 & tagInchiDiffBits_IDIF_SC_PARITY,
+            0
         );
     }
 

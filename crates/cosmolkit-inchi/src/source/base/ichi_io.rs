@@ -122,6 +122,58 @@ pub(crate) fn inchi_strbuf_close(
     Ok(())
 }
 
+#[rustfmt::skip]
+pub(crate) fn inchi_strbuf_create_copy(
+    heap: &mut SourceHeap,
+    destination: &mut INCHI_IOS_STRING,
+    source: &INCHI_IOS_STRING,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_io.c:1438 inchi_strbuf_create_copy
+    // INCHI✔️❌: complete source frame follows verbatim.
+    /*
+int inchi_strbuf_create_copy(INCHI_IOS_STRING* buf2, INCHI_IOS_STRING* buf)
+{
+    char* new_str = NULL;
+
+    new_str = (char*)inchi_calloc(buf->nAllocatedLength, sizeof(char));
+    buf2->pStr = new_str;
+    if (!new_str)
+    {
+        return -1;
+    }
+    buf2->nAllocatedLength = buf->nAllocatedLength;
+    buf2->nUsedLength = buf->nUsedLength;
+    buf2->nPtr = buf->nPtr;
+
+    return 0;
+}
+    */
+    // END INCHI C FUNCTION: inchi_strbuf_create_copy
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: inchi_strbuf_create_copy
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; inchi_calloc is the active calloc macro.
+    // INCHI✔️❌: The source does not copy source bytes and does not free a pre-existing destination buffer.
+    // INCHI✔️❌: SourceHeap allocation bookkeeping is materially slower than the source calloc assignment.
+    // END INCHI ACTIVE MACRO CONFIGURATION: inchi_strbuf_create_copy
+
+    let new_string = match inchi_calloc::<i8>(heap, source.nAllocatedLength as u64, 1) {
+        Ok(pointer) => pointer,
+        Err(
+            SourceHeapError::AllocationFailed
+            | SourceHeapError::AllocationSizeOverflow
+            | SourceHeapError::AllocationElementCountOutOfRange,
+        ) => SourceMutPointer::null(),
+        Err(error) => return Err(error),
+    };
+    destination.pStr = new_string;
+    if new_string.is_null() {
+        return Ok(-1);
+    }
+    destination.nAllocatedLength = source.nAllocatedLength;
+    destination.nUsedLength = source.nUsedLength;
+    destination.nPtr = source.nPtr;
+    Ok(0)
+}
+
 pub(crate) fn inchi_strbuf_update(
     heap: &mut SourceHeap,
     buf: Option<&mut INCHI_IOS_STRING>,
@@ -2594,6 +2646,160 @@ mod tests {
             heap.slice(allocation.as_const()),
             Err(SourceHeapError::MissingAllocation)
         );
+    }
+
+    #[test]
+    fn source_port__ichi_io__inchi_strbuf_create_copy__line_1438() {
+        let mut heap = SourceHeap::default();
+        let source_string = heap
+            .allocate_model_storage(vec![b'A' as i8, b'B' as i8, 0, 91, 92, 93])
+            .unwrap();
+        let source = INCHI_IOS_STRING {
+            pStr: source_string,
+            nAllocatedLength: 6,
+            nUsedLength: 2,
+            nPtr: 17,
+        };
+        let old_destination = heap.allocate_model_storage(vec![b'X' as i8, 0]).unwrap();
+        let mut destination = INCHI_IOS_STRING {
+            pStr: old_destination,
+            nAllocatedLength: 71,
+            nUsedLength: 72,
+            nPtr: 73,
+        };
+        assert_eq!(
+            inchi_strbuf_create_copy(&mut heap, &mut destination, &source),
+            Ok(0)
+        );
+        assert_ne!(destination.pStr, source.pStr);
+        assert_ne!(destination.pStr, old_destination);
+        assert_eq!(
+            (
+                destination.nAllocatedLength,
+                destination.nUsedLength,
+                destination.nPtr,
+            ),
+            (6, 2, 17)
+        );
+        assert_eq!(heap.slice(destination.pStr.as_const()).unwrap(), &[0; 6]);
+        assert_eq!(
+            heap.slice(source_string.as_const()).unwrap(),
+            &[b'A' as i8, b'B' as i8, 0, 91, 92, 93]
+        );
+        assert_eq!(
+            heap.slice(old_destination.as_const()).unwrap(),
+            &[b'X' as i8, 0]
+        );
+
+        let source_without_storage = INCHI_IOS_STRING {
+            pStr: SourceMutPointer::null(),
+            nAllocatedLength: 3,
+            nUsedLength: i32::MIN,
+            nPtr: i32::MAX,
+        };
+        let mut destination_without_storage = INCHI_IOS_STRING::default();
+        assert_eq!(
+            inchi_strbuf_create_copy(
+                &mut heap,
+                &mut destination_without_storage,
+                &source_without_storage,
+            ),
+            Ok(0)
+        );
+        assert_eq!(
+            heap.slice(destination_without_storage.pStr.as_const())
+                .unwrap(),
+            &[0; 3]
+        );
+        assert_eq!(destination_without_storage.nUsedLength, i32::MIN);
+        assert_eq!(destination_without_storage.nPtr, i32::MAX);
+
+        let mut zero_destination = INCHI_IOS_STRING {
+            nAllocatedLength: 7,
+            nUsedLength: 8,
+            nPtr: 9,
+            ..INCHI_IOS_STRING::default()
+        };
+        assert_eq!(
+            inchi_strbuf_create_copy(
+                &mut heap,
+                &mut zero_destination,
+                &INCHI_IOS_STRING::default(),
+            ),
+            Ok(0)
+        );
+        assert!(!zero_destination.pStr.is_null());
+        assert!(
+            heap.slice(zero_destination.pStr.as_const())
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            zero_destination,
+            INCHI_IOS_STRING {
+                pStr: zero_destination.pStr,
+                ..INCHI_IOS_STRING::default()
+            }
+        );
+
+        let mut failing_heap = SourceHeap::default();
+        let failed_old = failing_heap
+            .allocate_model_storage(vec![b'Y' as i8, 0])
+            .unwrap();
+        let mut failed = INCHI_IOS_STRING {
+            pStr: failed_old,
+            nAllocatedLength: 31,
+            nUsedLength: 32,
+            nPtr: 33,
+        };
+        let failed_source = INCHI_IOS_STRING {
+            nAllocatedLength: 4,
+            nUsedLength: 2,
+            nPtr: 1,
+            ..INCHI_IOS_STRING::default()
+        };
+        failing_heap.fail_after_allocations(0);
+        assert_eq!(
+            inchi_strbuf_create_copy(&mut failing_heap, &mut failed, &failed_source),
+            Ok(-1)
+        );
+        assert!(failed.pStr.is_null());
+        assert_eq!(
+            (failed.nAllocatedLength, failed.nUsedLength, failed.nPtr),
+            (31, 32, 33)
+        );
+        assert_eq!(
+            failing_heap.slice(failed_old.as_const()).unwrap(),
+            &[b'Y' as i8, 0]
+        );
+
+        let negative_old = heap.allocate_model_storage(vec![7_i8]).unwrap();
+        let mut negative_destination = INCHI_IOS_STRING {
+            pStr: negative_old,
+            nAllocatedLength: 41,
+            nUsedLength: 42,
+            nPtr: 43,
+        };
+        let negative_source = INCHI_IOS_STRING {
+            nAllocatedLength: -1,
+            nUsedLength: 51,
+            nPtr: 52,
+            ..INCHI_IOS_STRING::default()
+        };
+        assert_eq!(
+            inchi_strbuf_create_copy(&mut heap, &mut negative_destination, &negative_source),
+            Ok(-1)
+        );
+        assert!(negative_destination.pStr.is_null());
+        assert_eq!(
+            (
+                negative_destination.nAllocatedLength,
+                negative_destination.nUsedLength,
+                negative_destination.nPtr,
+            ),
+            (41, 42, 43)
+        );
+        assert_eq!(heap.slice(negative_old.as_const()).unwrap(), &[7]);
     }
 
     #[test]

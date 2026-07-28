@@ -55,6 +55,19 @@ pub(crate) enum SourceArgvPointer {
     Command(SourceMutPointer<i8>),
 }
 
+/// Identity of a `T_GROUP_INFO *` output selected during reverse-InChI work.
+///
+/// Active production paths assign either `NULL` or `&pStruct->One_ti`.
+/// `External` retains an existing caller pointer identity when a source error
+/// returns before assigning the output.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum SourceTGroupInfoPointer {
+    #[default]
+    Null,
+    StructureOne,
+    External(u64),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct AllocationId(u64);
 
@@ -140,6 +153,14 @@ impl_source_pointer_value_traits!(SourceConstPointer);
 impl<T> SourceMutPointer<T> {
     pub(crate) const fn as_const(self) -> SourceConstPointer<T> {
         SourceConstPointer {
+            allocation: self.allocation,
+            element_offset: self.element_offset,
+            marker: PhantomData,
+        }
+    }
+
+    pub(crate) const fn cast<U>(self) -> SourceMutPointer<U> {
+        SourceMutPointer {
             allocation: self.allocation,
             element_offset: self.element_offset,
             marker: PhantomData,
@@ -478,6 +499,109 @@ impl SourceHeap {
             None => Err(SourceHeapError::AllocationTypeMismatch),
         };
         self.allocations.insert(id, allocation);
+        result
+    }
+
+    pub(crate) fn with_slice_mut_and_heap_mut<T: 'static, R>(
+        &mut self,
+        pointer: SourceMutPointer<T>,
+        operation: impl FnOnce(&mut [T], &mut SourceHeap) -> Result<R, SourceHeapError>,
+    ) -> Result<R, SourceHeapError> {
+        let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
+        let mut allocation = self
+            .allocations
+            .remove(&id)
+            .ok_or(SourceHeapError::MissingAllocation)?;
+        let offset = match usize::try_from(pointer.element_offset) {
+            Ok(offset) => offset,
+            Err(_) => {
+                self.allocations.insert(id, allocation);
+                return Err(SourceHeapError::PointerOutOfBounds);
+            }
+        };
+        let result = match allocation.downcast_mut::<Vec<T>>() {
+            Some(values) => match values.get_mut(offset..) {
+                Some(values) => operation(values, self),
+                None => Err(SourceHeapError::PointerOutOfBounds),
+            },
+            None => Err(SourceHeapError::AllocationTypeMismatch),
+        };
+        self.allocations.insert(id, allocation);
+        result
+    }
+
+    pub(crate) fn with_two_slices_mut_and_optional_third<A: 'static, B: 'static, C: 'static, R>(
+        &mut self,
+        first: SourceMutPointer<A>,
+        second: SourceMutPointer<B>,
+        third: Option<SourceMutPointer<C>>,
+        operation: impl FnOnce(&mut [A], &mut [B], Option<&mut [C]>) -> Result<R, SourceHeapError>,
+    ) -> Result<R, SourceHeapError> {
+        let first_id = first.allocation.ok_or(SourceHeapError::NullPointer)?;
+        let second_id = second.allocation.ok_or(SourceHeapError::NullPointer)?;
+        let third_id = third.and_then(|pointer| pointer.allocation);
+        if first_id == second_id || third_id.is_some_and(|id| id == first_id || id == second_id) {
+            return Err(SourceHeapError::PointerAllocationMismatch);
+        }
+
+        let mut first_allocation = self
+            .allocations
+            .remove(&first_id)
+            .ok_or(SourceHeapError::MissingAllocation)?;
+        let Some(mut second_allocation) = self.allocations.remove(&second_id) else {
+            self.allocations.insert(first_id, first_allocation);
+            return Err(SourceHeapError::MissingAllocation);
+        };
+        let mut third_allocation = if let Some(id) = third_id {
+            match self.allocations.remove(&id) {
+                Some(allocation) => Some((id, allocation)),
+                None => {
+                    self.allocations.insert(first_id, first_allocation);
+                    self.allocations.insert(second_id, second_allocation);
+                    return Err(SourceHeapError::MissingAllocation);
+                }
+            }
+        } else {
+            None
+        };
+
+        let result = (|| {
+            let first_offset = usize::try_from(first.element_offset)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let second_offset = usize::try_from(second.element_offset)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let first_values = first_allocation
+                .downcast_mut::<Vec<A>>()
+                .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                .get_mut(first_offset..)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let second_values = second_allocation
+                .downcast_mut::<Vec<B>>()
+                .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                .get_mut(second_offset..)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let third_values = match (&mut third_allocation, third) {
+                (Some((_, allocation)), Some(pointer)) => {
+                    let offset = usize::try_from(pointer.element_offset)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    Some(
+                        allocation
+                            .downcast_mut::<Vec<C>>()
+                            .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                            .get_mut(offset..)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    )
+                }
+                _ => None,
+            };
+            operation(first_values, second_values, third_values)
+        })();
+
+        self.allocations.insert(first_id, first_allocation);
+        self.allocations.insert(second_id, second_allocation);
+        if let Some((id, allocation)) = third_allocation {
+            self.allocations.insert(id, allocation);
+        }
         result
     }
 

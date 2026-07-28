@@ -1,7 +1,8 @@
 use crate::source::base::ichi_bns::nBondsValenceInpAt;
 use crate::source::base::ichi_io::inchi_ios_print_nodisplay;
 use crate::source::base::util::{
-    get_atomic_mass_from_elnum, inchi_calloc, inchi_free, needed_unusual_el_valence,
+    get_atomic_mass_from_elnum, inchi_calloc, inchi_free, is_in_the_ilist,
+    needed_unusual_el_valence,
 };
 use crate::source_types::{
     _IS_ERROR, FILE, INCHI_IOSTREAM, INT_ARRAY, MOL_FMT_M_CONN_EU, MOL_FMT_M_CONN_HH,
@@ -196,6 +197,100 @@ pub(crate) fn IntArray_Append(
         .ok_or(SourceHeapError::PointerOutOfBounds)? = new_item;
     items.used = next_used;
     Ok(0)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn IntArray_AppendIfAbsent(
+    heap: &mut SourceHeap,
+    items: &mut INT_ARRAY,
+    new_item: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:572 IntArray_AppendIfAbsent
+    // INCHI✔️✔️: complete source frame follows verbatim.
+    /*
+int IntArray_AppendIfAbsent(INT_ARRAY *items, int new_item)
+{
+    if (!is_in_the_ilist(items->item, new_item, items->used))
+    {
+        return IntArray_Append(items, new_item);
+    }
+    return 0;
+}
+    */
+    // END INCHI C FUNCTION: IntArray_AppendIfAbsent
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: IntArray_AppendIfAbsent
+    // INCHI✔️✔️: COMPILE_ANSI_ONLY and TARGET_API_LIB do not alter this production helper.
+    // INCHI✔️✔️: The Rust lookup is the already-ported linear is_in_the_ilist implementation.
+    // INCHI✔️✔️: A missing item delegates directly to the already-ported IntArray_Append.
+    // END INCHI ACTIVE MACRO CONFIGURATION: IntArray_AppendIfAbsent
+
+    let item_slice = if items.used == 0 {
+        None
+    } else {
+        Some(heap.slice(items.item.as_const())?)
+    };
+    if is_in_the_ilist(item_slice, new_item, items.used)?.is_none() {
+        return IntArray_Append(heap, Some(items), new_item);
+    }
+    Ok(0)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn IntArray_DebugPrint(items: SourceMutPointer<INT_ARRAY>) {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:582 IntArray_DebugPrint
+    // INCHI✔️✔️: complete source frame follows verbatim.
+    /*
+void IntArray_DebugPrint(INT_ARRAY *items)
+{
+    if (items)
+    {
+        int i;
+        if (items->used > 0)
+        {
+            for (i = 0; i < items->used - 1; i++)
+            {
+                ITRACE_("%-d, ", items->item[i]);
+            }
+            ITRACE_("%-d\n", items->item[items->used - 1]);
+        }
+        else
+        {
+            ; /*ITRACE_( "[None]\n");*/
+        }
+    }
+}
+    */
+    // END INCHI C FUNCTION: IntArray_DebugPrint
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: IntArray_DebugPrint
+    // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux, so ITRACE_ is 0 && _inchi_trace.
+    // INCHI✔️✔️: Short-circuiting prevents evaluation of every item access and produces no output.
+    // INCHI✔️✔️: The optimized active production behavior is therefore an allocation-free O(1) no-op.
+    // END INCHI ACTIVE MACRO CONFIGURATION: IntArray_DebugPrint
+
+    let _ = items;
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn IntArray_Reset(items: &mut INT_ARRAY) {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:603 IntArray_Reset
+    // INCHI✔️✔️: complete source frame follows verbatim.
+    /*
+    void IntArray_Reset(INT_ARRAY *items)
+    {
+        items->used = 0;
+        return;
+    }
+        */
+    // END INCHI C FUNCTION: IntArray_Reset
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: IntArray_Reset
+    // INCHI✔️✔️: COMPILE_ANSI_ONLY and TARGET_API_LIB do not alter this production helper.
+    // INCHI✔️✔️: The allocation pointer, capacity, increment, and element bytes remain untouched.
+    // INCHI✔️✔️: Rust performs the same single field write with no allocation.
+    // END INCHI ACTIVE MACRO CONFIGURATION: IntArray_Reset
+
+    items.used = 0;
 }
 
 #[allow(non_snake_case)]
@@ -2825,6 +2920,196 @@ mod tests {
             Err(SourceHeapError::SourceIntegerOverflow)
         );
         assert_eq!(boundary.used, i32::MAX);
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__intarray_appendifabsent__line_572() {
+        let mut heap = SourceHeap::default();
+        let storage = heap
+            .allocate_model_storage(vec![i32::MIN, 7, i32::MAX, 91, 92])
+            .unwrap();
+        let mut items = INT_ARRAY {
+            item: storage,
+            allocated: 5,
+            used: 3,
+            increment: 2,
+        };
+
+        for duplicate in [i32::MIN, 7, i32::MAX] {
+            let before = heap.slice(items.item.as_const()).unwrap().to_vec();
+            let pointer = items.item;
+            assert_eq!(
+                IntArray_AppendIfAbsent(&mut heap, &mut items, duplicate),
+                Ok(0)
+            );
+            assert_eq!(items.item, pointer);
+            assert_eq!((items.allocated, items.used, items.increment), (5, 3, 2));
+            assert_eq!(heap.slice(items.item.as_const()).unwrap(), before);
+        }
+
+        assert_eq!(IntArray_AppendIfAbsent(&mut heap, &mut items, -11), Ok(0));
+        assert_eq!((items.allocated, items.used), (5, 4));
+        assert_eq!(
+            heap.slice(items.item.as_const()).unwrap(),
+            &[i32::MIN, 7, i32::MAX, -11, 92]
+        );
+
+        items.used = 5;
+        let old = items.item;
+        assert_eq!(IntArray_AppendIfAbsent(&mut heap, &mut items, 123), Ok(0));
+        assert_ne!(items.item, old);
+        assert_eq!((items.allocated, items.used, items.increment), (7, 6, 2));
+        assert_eq!(
+            heap.slice(items.item.as_const()).unwrap(),
+            &[i32::MIN, 7, i32::MAX, -11, 92, 123, 0]
+        );
+        assert_eq!(
+            heap.slice(old.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+
+        let empty_storage = heap.allocate_model_storage(vec![44_i32]).unwrap();
+        let mut empty = INT_ARRAY {
+            item: empty_storage,
+            allocated: 1,
+            used: 0,
+            increment: 1,
+        };
+        assert_eq!(
+            IntArray_AppendIfAbsent(&mut heap, &mut empty, i32::MIN),
+            Ok(0)
+        );
+        assert_eq!(empty.used, 1);
+        assert_eq!(heap.slice(empty.item.as_const()).unwrap(), &[i32::MIN]);
+
+        let mut failure_heap = SourceHeap::default();
+        let failure_old = failure_heap.allocate_model_storage(vec![1_i32, 2]).unwrap();
+        let mut failure = INT_ARRAY {
+            item: failure_old,
+            allocated: 2,
+            used: 2,
+            increment: 2,
+        };
+        failure_heap.fail_after_allocations(0);
+        assert_eq!(
+            IntArray_AppendIfAbsent(&mut failure_heap, &mut failure, 3),
+            Ok(-1)
+        );
+        assert!(failure.item.is_null());
+        assert_eq!(
+            (failure.allocated, failure.used, failure.increment),
+            (2, 2, 2)
+        );
+        assert_eq!(
+            failure_heap.slice(failure_old.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+
+        let invalid_storage = heap.allocate_model_storage(vec![5_i32]).unwrap();
+        let mut negative = INT_ARRAY {
+            item: invalid_storage,
+            allocated: 1,
+            used: -1,
+            increment: 1,
+        };
+        assert_eq!(
+            IntArray_AppendIfAbsent(&mut heap, &mut negative, 5),
+            Err(SourceHeapError::SourceIntegerOverflow)
+        );
+        assert_eq!(negative.used, -1);
+
+        let mut out_of_bounds = INT_ARRAY {
+            item: invalid_storage,
+            allocated: 2,
+            used: 2,
+            increment: 1,
+        };
+        assert_eq!(
+            IntArray_AppendIfAbsent(&mut heap, &mut out_of_bounds, 8),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!((out_of_bounds.allocated, out_of_bounds.used), (2, 2));
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__intarray_debugprint__line_582() {
+        IntArray_DebugPrint(SourceMutPointer::null());
+
+        let mut heap = SourceHeap::default();
+        for used in [i32::MIN, -1, 0, 1, 2, i32::MAX] {
+            let items = heap
+                .allocate_model_storage(vec![INT_ARRAY {
+                    item: SourceMutPointer::null(),
+                    allocated: i32::MIN,
+                    used,
+                    increment: i32::MAX,
+                }])
+                .unwrap();
+            IntArray_DebugPrint(items);
+            let items = &heap.slice(items.as_const()).unwrap()[0];
+            assert!(items.item.is_null());
+            assert_eq!(items.used, used);
+        }
+
+        let item = heap
+            .allocate_model_storage(vec![i32::MIN, 0, i32::MAX])
+            .unwrap();
+        let items = heap
+            .allocate_model_storage(vec![INT_ARRAY {
+                item,
+                allocated: 3,
+                used: 3,
+                increment: 3,
+            }])
+            .unwrap();
+        IntArray_DebugPrint(items);
+        assert_eq!(
+            heap.slice(item.as_const()).unwrap(),
+            &[i32::MIN, 0, i32::MAX]
+        );
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__intarray_reset__line_603() {
+        let mut heap = SourceHeap::default();
+        let pointer = heap
+            .allocate_model_storage(vec![11_i32, -7, i32::MAX, i32::MIN])
+            .unwrap();
+        let mut items = INT_ARRAY {
+            item: pointer,
+            allocated: 4,
+            used: 3,
+            increment: -9,
+        };
+        IntArray_Reset(&mut items);
+        assert_eq!(items.item, pointer);
+        assert_eq!((items.allocated, items.used, items.increment), (4, 0, -9));
+        assert_eq!(
+            heap.slice(pointer.as_const()).unwrap(),
+            &[11, -7, i32::MAX, i32::MIN]
+        );
+
+        items.used = i32::MIN;
+        IntArray_Reset(&mut items);
+        assert_eq!(items.used, 0);
+        assert_eq!(items.item, pointer);
+
+        let mut null_storage = INT_ARRAY {
+            item: SourceMutPointer::null(),
+            allocated: i32::MIN,
+            used: i32::MAX,
+            increment: i32::MAX,
+        };
+        IntArray_Reset(&mut null_storage);
+        assert_eq!(
+            null_storage,
+            INT_ARRAY {
+                item: SourceMutPointer::null(),
+                allocated: i32::MIN,
+                used: 0,
+                increment: i32::MAX,
+            }
+        );
     }
 
     #[test]

@@ -9479,6 +9479,492 @@ pub(crate) fn IsBondAtomNumsLesser(bond1: &[i32; 2], bond2: &[i32; 2]) -> i32 {
     0
 }
 
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn EditINCHI_HidePolymerZz(
+    heap: &mut SourceHeap,
+    output: &mut INCHI_IOSTREAM,
+    number_of_polymer_zz: i32,
+    number_of_placeholder_zy: i32,
+) -> Result<(), SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:5039 EditINCHI_HidePolymerZz
+    // INCHI✔️❌: complete source frame follows verbatim.
+    /*
+void EditINCHI_HidePolymerZz(INCHI_IOSTREAM *out, int n_pzz, int n_zy)
+{
+    char *s = out->s.pStr, *s0, *buf = NULL;
+    char prev_layer_symbol = '0';
+    int i, j, ii, nzz,
+        nzz1 = 0, nslash = 0, ncopied = 0,
+        start = 0, skip = 0, is_in_z_layer = 0,
+        eol_was_consumed = 0, pre_eol = 0,
+        nonprt_sym = 0, nonprt_prev = 0;
+
+    if (n_zy > 0) 
+    {
+        /* We have some placeholder pseudo atoms which should not be removed below (if anyway they are allowed) */
+        if (n_pzz == 0)
+        {
+            /* Have nothing to remove, just exit */
+            return;
+        }
+        /* Have both polymer-related and placeholder pseudo atoms */
+        if (n_pzz < 2)
+        {
+            /* Something strange, should not arrive here, cowardly exit */
+            return;
+        }
+    }
+
+    /* Ensure that polymeric layer is present */
+    if (!strstr(s, "/z"))
+    {
+        return;
+    }
+    s0 = strstr(s, "InChI=1B/");
+    if (!s0)
+    {
+        return;
+    }
+
+#if 0
+    nzz1 = CountPseudoElementInFormula("Zz", s0 + strlen("InChI=1B/"));
+    if (nzz1 == 0)
+    {
+        return;
+    }
+    if (nzz1 != (n_pzz + n_zy))
+    {
+        /* Something strange, should not arrive here, cowardly exit */
+        return;
+    }
+#endif
+    nzz1 = n_pzz;
+
+    /* OK, we must hide n_pzz Zz's*/
+    buf = (char *) inchi_calloc( (long long)out->s.nUsedLength + 1, sizeof( char ) ); /* djb-rwth: cast operator added */
+    if (!buf)
+    {
+        return;
+    }
+
+    /* Consume '\n' temporarily */
+    if (s[out->s.nUsedLength - 1] == '\n')
+    {
+        s[out->s.nUsedLength - 1] = '\0';
+        out->s.nUsedLength--;
+        eol_was_consumed = 1;
+    }
+
+    start = s0 - s;
+    nzz = nzz1;
+    is_in_z_layer = skip = 0;
+    for (i = start; i < out->s.nUsedLength; i++)
+    {
+        pre_eol = (i == out->s.nUsedLength - 1);
+        nonprt_sym = s[i] == '\n' || s[i] == '\r' || s[i] == '\t';
+
+        if (!skip)
+        {
+            buf[ncopied] = s[i];
+            ncopied++;
+            if (nonprt_sym && nonprt_prev)
+            {
+                continue;
+            }
+        }
+        nonprt_prev = nonprt_sym;
+
+        if (is_in_z_layer && !skip)
+        {
+            if (s[i] == '(')
+            {
+                /* Software version 1.07 : skip pattern "(cap,cap-bkbonds)" but not "(cap-end, cap-end)" */
+                const char *q;
+                const char *p = out->s.pStr + i + 1;
+                AT_NUMB ia = (AT_NUMB) inchi_strtol(p, &q, 10); /* make compiler happy: */ /* djb-rwth: removing redundant code; ignoring LLVM warning: variable used to store function return value */
+                if (*q != '-')
+                {
+                    skip = 1; 
+                }
+            }
+        }
+        else if (is_in_z_layer && skip)
+        {
+            if (s[i] == '-')
+            {
+                skip = 0;
+            }
+        }
+
+        if (s[i] == '/' || pre_eol || nonprt_sym )
+        {
+            if (is_in_z_layer)
+            {
+                is_in_z_layer = 0;
+            }
+
+            if (s[i] == '/')
+            {
+                nslash++;
+            }
+
+            if (nslash == 2 ||
+                ( nslash == 1 && pre_eol ) ||
+                ( prev_layer_symbol == 'f' )
+                )
+            {
+                if (nzz)
+                {
+                    /* eat Zz's */
+                    ii = i;
+                    if (pre_eol)
+                    {
+                        ii = i + 1;
+                    }
+                    if (s[ii - 1] == 'z' && s[ii - 2] == 'Z')
+                    {
+                        ncopied -= 2;
+                        for (j = ii - 3; j >= 0; j--)
+                        {
+                            if (s[j] == '.')
+                            {
+                                break;
+                            }
+                            ncopied--;
+                        }
+                        ncopied--;
+                        if (!pre_eol)
+                        {
+                            buf[ncopied - 1] = '/';
+                        }
+                        else
+                        {
+                            buf[ncopied - 1] = '\0';
+                        }
+                    }
+                }
+            }
+            else if (nslash > 2 || pre_eol || s[i] == '\n')
+            {
+                if (nzz)
+                {
+                    if (prev_layer_symbol != 'p' &&
+                         prev_layer_symbol != 's' &&
+                         prev_layer_symbol != 'f' &&
+                         prev_layer_symbol != 'z'
+                        )
+                    {
+                        /* eat nzz last ; if any */
+                        int n_eaten = 0;
+                        char eatable = ';';
+                        if (prev_layer_symbol == 'm')
+                        {
+                            eatable = '.';
+                        }
+                        ii = i;
+                        if (pre_eol)
+                        {
+                            ii = i + 1;
+                        }
+                        for (j = ii - 1; j >= 0; j--)
+                        {
+                            if (s[j] == eatable  && n_eaten < nzz)
+                            {
+                                ncopied--;
+                                n_eaten++;
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+                        if (!pre_eol)
+                        {
+                            if (s[i] == '\n')
+                            {
+                                buf[ncopied - 1] = '\n';
+                            }
+                            else
+                            {
+                                buf[ncopied - 1] = '/';
+                            }
+                        }
+                        else
+                        {
+                            buf[ncopied] = '\0';
+                            break;
+                        }
+                    }
+                }
+            }
+
+            prev_layer_symbol = s[i + 1];
+            if (s[i + 1] == 'r')
+            {
+                if (i + 3 < out->s.nUsedLength && s[i + 3] == ':')
+                {
+                    /* ra: rB; rC: in AuxInfo */
+                    ;
+                }
+                else
+                {
+                    /* reconnected layer */
+                    nslash = 1;
+                    /* nzz = nzz2;    paranoidal */
+                }
+            }
+            else if (s[i + 1] == 'z')
+            {
+                is_in_z_layer = 1;
+            }
+        }
+    }
+
+    out->s.nUsedLength = 0;
+    inchi_ios_print_nodisplay( out, "%s%s", buf, eol_was_consumed ? "\n" : "" );
+    inchi_free( buf );
+
+    return;
+}
+    */
+    // END INCHI C FUNCTION: EditINCHI_HidePolymerZz
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: EditINCHI_HidePolymerZz
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; the literal #if 0 block is inactive.
+    // INCHI✔️❌: Rust uses checked model pointers for C undefined pointer/index domains and retains the
+    // INCHI✔️❌: source allocation, in-place newline mutation, output reset, print, and cleanup ordering.
+    // END INCHI ACTIVE MACRO CONFIGURATION: EditINCHI_HidePolymerZz
+
+    if number_of_placeholder_zy > 0 {
+        if number_of_polymer_zz == 0 {
+            return Ok(());
+        }
+        if number_of_polymer_zz < 2 {
+            return Ok(());
+        }
+    }
+
+    if output.s.pStr.is_null() {
+        return Err(SourceHeapError::NullPointer);
+    }
+    let source = heap.slice(output.s.pStr.as_const())?.to_vec();
+    let nul = source
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or(SourceHeapError::MissingNulTerminator)?;
+    let visible = &source[..nul];
+    let find = |needle: &[u8]| {
+        visible
+            .windows(needle.len())
+            .position(|window| window.iter().map(|byte| *byte as u8).eq(needle.iter().copied()))
+    };
+    if find(b"/z").is_none() {
+        return Ok(());
+    }
+    let Some(start) = find(b"InChI=1B/") else {
+        return Ok(());
+    };
+
+    let allocation_count = i64::from(output.s.nUsedLength) + 1;
+    let buffer = match inchi_calloc::<i8>(heap, allocation_count as u64, 1) {
+        Ok(pointer) => pointer,
+        Err(SourceHeapError::AllocationFailed)
+        | Err(SourceHeapError::AllocationSizeOverflow)
+        | Err(SourceHeapError::AllocationElementCountOutOfRange) => return Ok(()),
+        Err(error) => return Err(error),
+    };
+
+    let operation = (|| -> Result<(), SourceHeapError> {
+        let mut input = source;
+        let mut used = usize::try_from(output.s.nUsedLength)
+            .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
+        if used == 0 || used > input.len() {
+            return Err(SourceHeapError::UnsupportedSourceBehavior);
+        }
+        let mut consumed_eol = false;
+        if input[used - 1] as u8 == b'\n' {
+            input[used - 1] = 0;
+            heap.slice_mut(output.s.pStr)?[used - 1] = 0;
+            output.s.nUsedLength = output.s.nUsedLength.wrapping_sub(1);
+            used -= 1;
+            consumed_eol = true;
+        }
+
+        let mut copied = vec![0_i8; usize::try_from(allocation_count)
+            .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?];
+        let mut copied_count = 0_i32;
+        let mut slash_count = 0_i32;
+        let mut skip = false;
+        let mut in_z_layer = false;
+        let mut previous_nonprinting = false;
+        let mut previous_layer_symbol = b'0';
+        let polymer_zz = number_of_polymer_zz;
+        let mut index = start;
+        while index < used {
+            let pre_eol = index == used - 1;
+            let character = *input
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
+            let nonprinting = matches!(character, b'\n' | b'\r' | b'\t');
+
+            if !skip {
+                let target = usize::try_from(copied_count)
+                    .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
+                *copied
+                    .get_mut(target)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? = character as i8;
+                copied_count = copied_count.wrapping_add(1);
+                if nonprinting && previous_nonprinting {
+                    index += 1;
+                    continue;
+                }
+            }
+            previous_nonprinting = nonprinting;
+
+            if in_z_layer && !skip {
+                if character == b'(' {
+                    let parse_pointer = output
+                        .s
+                        .pStr
+                        .as_const()
+                        .offset(i64::try_from(index + 1).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?;
+                    let mut end = SourceConstPointer::null();
+                    let _atom_number = inchi_strtol(heap, parse_pointer, Some(&mut end), 10)? as u16;
+                    let end_character = *heap
+                        .slice(end)?
+                        .first()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
+                    if end_character != b'-' {
+                        skip = true;
+                    }
+                }
+            } else if in_z_layer && skip && character == b'-' {
+                skip = false;
+            }
+
+            if character == b'/' || pre_eol || nonprinting {
+                if in_z_layer {
+                    in_z_layer = false;
+                }
+                if character == b'/' {
+                    slash_count = slash_count.wrapping_add(1);
+                }
+
+                if slash_count == 2
+                    || (slash_count == 1 && pre_eol)
+                    || previous_layer_symbol == b'f'
+                {
+                    if polymer_zz != 0 {
+                        let boundary = if pre_eol { index + 1 } else { index };
+                        if boundary < 2 {
+                            return Err(SourceHeapError::UnsupportedSourceBehavior);
+                        }
+                        if input[boundary - 1] as u8 == b'z'
+                            && input[boundary - 2] as u8 == b'Z'
+                        {
+                            copied_count = copied_count.wrapping_sub(2);
+                            let mut scan = i64::try_from(boundary)
+                                .map_err(|_| SourceHeapError::PointerOffsetOverflow)? - 3;
+                            while scan >= 0 {
+                                if input[scan as usize] as u8 == b'.' {
+                                    break;
+                                }
+                                copied_count = copied_count.wrapping_sub(1);
+                                scan -= 1;
+                            }
+                            copied_count = copied_count.wrapping_sub(1);
+                            let target = if pre_eol {
+                                copied_count.wrapping_sub(1)
+                            } else {
+                                copied_count.wrapping_sub(1)
+                            };
+                            let target = usize::try_from(target)
+                                .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
+                            copied[target] = if pre_eol { 0 } else { b'/' as i8 };
+                        }
+                    }
+                } else if slash_count > 2 || pre_eol || character == b'\n' {
+                    if polymer_zz != 0
+                        && !matches!(previous_layer_symbol, b'p' | b's' | b'f' | b'z')
+                    {
+                        let eatable = if previous_layer_symbol == b'm' { b'.' } else { b';' };
+                        let boundary = if pre_eol { index + 1 } else { index };
+                        let mut scan = i64::try_from(boundary)
+                            .map_err(|_| SourceHeapError::PointerOffsetOverflow)? - 1;
+                        let mut eaten = 0_i32;
+                        while scan >= 0
+                            && input[scan as usize] as u8 == eatable
+                            && eaten < polymer_zz
+                        {
+                            copied_count = copied_count.wrapping_sub(1);
+                            eaten = eaten.wrapping_add(1);
+                            scan -= 1;
+                        }
+                        if !pre_eol {
+                            let target = usize::try_from(copied_count.wrapping_sub(1))
+                                .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
+                            copied[target] = if character == b'\n' { b'\n' as i8 } else { b'/' as i8 };
+                        } else {
+                            let target = usize::try_from(copied_count)
+                                .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
+                            copied[target] = 0;
+                            break;
+                        }
+                    }
+                }
+
+                let next = *input
+                    .get(index + 1)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
+                previous_layer_symbol = next;
+                if next == b'r' {
+                    if !(index + 3 < used && input[index + 3] as u8 == b':') {
+                        slash_count = 1;
+                    }
+                } else if next == b'z' {
+                    in_z_layer = true;
+                }
+            }
+            index += 1;
+        }
+
+        heap.slice_mut(buffer)?.copy_from_slice(&copied);
+        output.s.nUsedLength = 0;
+        let format = heap.allocate_model_storage(vec![b'%' as i8, b's' as i8, b'%' as i8, b's' as i8, 0])?;
+        let ending = heap.allocate_model_storage(if consumed_eol {
+            vec![b'\n' as i8, 0]
+        } else {
+            vec![0]
+        })?;
+        let print_result = inchi_ios_print_nodisplay(
+            heap,
+            Some(output),
+            SourceMutPointer::null(),
+            format.as_const(),
+            &SourceVaList {
+                arguments: vec![
+                    SourceFormatArgument::Bytes(buffer.as_const()),
+                    SourceFormatArgument::Bytes(ending.as_const()),
+                ],
+                ..SourceVaList::default()
+            },
+        );
+        let ending_cleanup = heap.free(ending);
+        let format_cleanup = heap.free(format);
+        match (print_result, ending_cleanup, format_cleanup) {
+            (Err(error), _, _)
+            | (Ok(_), Err(error), _)
+            | (Ok(_), Ok(()), Err(error)) => Err(error),
+            (Ok(_), Ok(()), Ok(())) => Ok(()),
+        }
+    })();
+    let cleanup = inchi_free(heap, buffer);
+    match (operation, cleanup) {
+        (Err(error), _) | (Ok(()), Err(error)) => Err(error),
+        (Ok(()), Ok(())) => Ok(()),
+    }
+}
+
 pub(crate) fn inchi_sort_int_pair_ascending(a: &mut i32, b: &mut i32) {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:5525 inchi_sort_int_pair_ascending
     // INCHI✔️✔️: static void inchi_sort_int_pair_ascending(int *a, int *b)
@@ -11612,179 +12098,189 @@ pub(crate) fn OrigStruct_FillOut(
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: OrigStruct_FillOut
 
     let scratch = heap.allocate_model_storage(vec![0_i8; ORIG_STR_BUFLEN as usize])?;
-    original_structure.polymer = SourceMutPointer::null();
-    original_structure.v3000 = SourceMutPointer::null();
-    original_structure.n_zy = original_atom_data.n_zy;
+    let result = (|| {
+        original_structure.polymer = SourceMutPointer::null();
+        original_structure.v3000 = SourceMutPointer::null();
+        original_structure.n_zy = original_atom_data.n_zy;
 
-    let mut index = 0_i32;
-    let mut coordinate_length = 0_i32;
-    if !original_atom_data.szCoord.is_null() {
-        loop {
-            let length = WriteOrigCoord(
+        let mut index = 0_i32;
+        let mut coordinate_length = 0_i32;
+        if !original_atom_data.szCoord.is_null() {
+            loop {
+                let length = WriteOrigCoord(
+                    heap,
+                    original_atom_data.num_inp_atoms,
+                    original_atom_data.szCoord.as_const(),
+                    &mut index,
+                    scratch,
+                    ORIG_STR_BUFLEN as i32,
+                )?;
+                if length == 0 {
+                    break;
+                }
+                coordinate_length = coordinate_length
+                    .checked_add(length)
+                    .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+            }
+            let allocation_length = u64::try_from(coordinate_length)
+                .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?
+                .checked_add(1)
+                .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+            original_structure.szCoord = match inchi_malloc(heap, allocation_length) {
+                Ok(pointer) => pointer,
+                Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+                Err(error) => return Err(error),
+            };
+            index = 0;
+            if original_structure.szCoord.is_null() {
+                return Ok(-1);
+            }
+            let written = WriteOrigCoord(
                 heap,
                 original_atom_data.num_inp_atoms,
                 original_atom_data.szCoord.as_const(),
                 &mut index,
+                original_structure.szCoord,
+                coordinate_length
+                    .checked_add(1)
+                    .ok_or(SourceHeapError::SourceIntegerOverflow)?,
+            )?;
+            if written != coordinate_length || index != original_atom_data.num_inp_atoms {
+                return Ok(-1);
+            }
+            inchi_free(heap, original_atom_data.szCoord)?;
+            original_atom_data.szCoord = SourceMutPointer::null();
+        }
+
+        index = 0;
+        let mut atom_length = 0_i32;
+        loop {
+            let length = WriteOrigAtoms(
+                heap,
+                canon_globals,
+                original_atom_data.num_inp_atoms,
+                original_atom_data.at.as_const(),
+                &mut index,
                 scratch,
                 ORIG_STR_BUFLEN as i32,
+                structure_data,
             )?;
             if length == 0 {
                 break;
             }
-            coordinate_length = coordinate_length
+            atom_length = atom_length
                 .checked_add(length)
                 .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+            if original_atom_data.num_inp_atoms == 0 {
+                break;
+            }
         }
-        let allocation_length = u64::try_from(coordinate_length)
+        let allocation_length = u64::try_from(atom_length)
             .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?
             .checked_add(1)
             .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-        original_structure.szCoord = match inchi_malloc(heap, allocation_length) {
+        original_structure.szAtoms = match inchi_malloc(heap, allocation_length) {
             Ok(pointer) => pointer,
             Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
             Err(error) => return Err(error),
         };
         index = 0;
-        if original_structure.szCoord.is_null() {
+        if original_structure.szAtoms.is_null() {
             return Ok(-1);
         }
-        let written = WriteOrigCoord(
-            heap,
-            original_atom_data.num_inp_atoms,
-            original_atom_data.szCoord.as_const(),
-            &mut index,
-            original_structure.szCoord,
-            coordinate_length
-                .checked_add(1)
-                .ok_or(SourceHeapError::SourceIntegerOverflow)?,
-        )?;
-        if written != coordinate_length || index != original_atom_data.num_inp_atoms {
-            return Ok(-1);
-        }
-        inchi_free(heap, original_atom_data.szCoord)?;
-        original_atom_data.szCoord = SourceMutPointer::null();
-    }
-
-    index = 0;
-    let mut atom_length = 0_i32;
-    loop {
-        let length = WriteOrigAtoms(
+        let written = WriteOrigAtoms(
             heap,
             canon_globals,
             original_atom_data.num_inp_atoms,
             original_atom_data.at.as_const(),
             &mut index,
-            scratch,
-            ORIG_STR_BUFLEN as i32,
+            original_structure.szAtoms,
+            atom_length
+                .checked_add(1)
+                .ok_or(SourceHeapError::SourceIntegerOverflow)?,
             structure_data,
         )?;
-        if length == 0 {
-            break;
+        if written != atom_length || index != original_atom_data.num_inp_atoms {
+            return Ok(-1);
         }
-        atom_length = atom_length
-            .checked_add(length)
-            .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-        if original_atom_data.num_inp_atoms == 0 {
-            break;
-        }
-    }
-    let allocation_length = u64::try_from(atom_length)
-        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?
-        .checked_add(1)
-        .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-    original_structure.szAtoms = match inchi_malloc(heap, allocation_length) {
-        Ok(pointer) => pointer,
-        Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
-        Err(error) => return Err(error),
-    };
-    index = 0;
-    if original_structure.szAtoms.is_null() {
-        return Ok(-1);
-    }
-    let written = WriteOrigAtoms(
-        heap,
-        canon_globals,
-        original_atom_data.num_inp_atoms,
-        original_atom_data.at.as_const(),
-        &mut index,
-        original_structure.szAtoms,
-        atom_length
-            .checked_add(1)
-            .ok_or(SourceHeapError::SourceIntegerOverflow)?,
-        structure_data,
-    )?;
-    if written != atom_length || index != original_atom_data.num_inp_atoms {
-        return Ok(-1);
-    }
 
-    let mut bond_length = 0_i32;
-    index = 1;
-    loop {
-        let length = WriteOrigBonds(
+        let mut bond_length = 0_i32;
+        index = 1;
+        loop {
+            let length = WriteOrigBonds(
+                heap,
+                canon_globals,
+                original_atom_data.num_inp_atoms,
+                original_atom_data.at,
+                &mut index,
+                scratch,
+                ORIG_STR_BUFLEN as i32,
+                structure_data,
+            )?;
+            if length == 0 {
+                break;
+            }
+            bond_length = bond_length
+                .checked_add(length)
+                .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+            if original_atom_data.num_inp_atoms == 0 {
+                break;
+            }
+        }
+        let allocation_length = u64::try_from(bond_length)
+            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?
+            .checked_add(2)
+            .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+        original_structure.szBonds = match inchi_malloc(heap, allocation_length) {
+            Ok(pointer) => pointer,
+            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+            Err(error) => return Err(error),
+        };
+        index = 1;
+        if original_structure.szBonds.is_null() {
+            return Ok(-1);
+        }
+        let written = WriteOrigBonds(
             heap,
             canon_globals,
             original_atom_data.num_inp_atoms,
             original_atom_data.at,
             &mut index,
-            scratch,
-            ORIG_STR_BUFLEN as i32,
+            original_structure.szBonds,
+            bond_length
+                .checked_add(2)
+                .ok_or(SourceHeapError::SourceIntegerOverflow)?,
             structure_data,
         )?;
-        if length == 0 {
-            break;
+        if written != bond_length || index != original_atom_data.num_inp_atoms {
+            return Ok(-1);
         }
-        bond_length = bond_length
-            .checked_add(length)
-            .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-        if original_atom_data.num_inp_atoms == 0 {
-            break;
-        }
-    }
-    let allocation_length = u64::try_from(bond_length)
-        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?
-        .checked_add(2)
-        .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-    original_structure.szBonds = match inchi_malloc(heap, allocation_length) {
-        Ok(pointer) => pointer,
-        Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
-        Err(error) => return Err(error),
-    };
-    index = 1;
-    if original_structure.szBonds.is_null() {
-        return Ok(-1);
-    }
-    let written = WriteOrigBonds(
-        heap,
-        canon_globals,
-        original_atom_data.num_inp_atoms,
-        original_atom_data.at,
-        &mut index,
-        original_structure.szBonds,
-        bond_length
-            .checked_add(2)
-            .ok_or(SourceHeapError::SourceIntegerOverflow)?,
-        structure_data,
-    )?;
-    if written != bond_length || index != original_atom_data.num_inp_atoms {
-        return Ok(-1);
-    }
 
-    original_structure.num_atoms = original_atom_data.num_inp_atoms;
-    if !original_atom_data.polymer.is_null()
-        && heap
-            .slice(original_atom_data.polymer.as_const())?
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .n
-            > 0
-        && original_atom_data.valid_polymer != 0
-    {
-        original_structure.polymer = original_atom_data.polymer;
+        original_structure.num_atoms = original_atom_data.num_inp_atoms;
+        if !original_atom_data.polymer.is_null()
+            && heap
+                .slice(original_atom_data.polymer.as_const())?
+                .first()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .n
+                > 0
+            && original_atom_data.valid_polymer != 0
+        {
+            original_structure.polymer = original_atom_data.polymer;
+        }
+        if !original_atom_data.v3000.is_null() {
+            original_structure.v3000 = original_atom_data.v3000;
+        }
+        Ok(0)
+    })();
+    let free_result = heap.free(scratch);
+    match result {
+        Err(error) => Err(error),
+        Ok(value) => {
+            free_result?;
+            Ok(value)
+        }
     }
-    if !original_atom_data.v3000.is_null() {
-        original_structure.v3000 = original_atom_data.v3000;
-    }
-    Ok(0)
 }
 
 #[allow(non_snake_case)]
@@ -12523,7 +13019,10 @@ mod tests {
             atom_failure_heap.slice(transferred_coordinates.as_const()),
             Err(SourceHeapError::MissingAllocation)
         );
-        assert_eq!(text(&atom_failure_heap, atom_failure_output.szCoord), b"1,2,3;\0");
+        assert_eq!(
+            text(&atom_failure_heap, atom_failure_output.szCoord),
+            b"1,2,3;\0"
+        );
         assert!(atom_failure_output.szAtoms.is_null());
         assert_eq!(atom_failure_output.num_atoms, 77);
         OrigStruct_Free(&mut atom_failure_heap, Some(&mut atom_failure_output)).unwrap();
@@ -12545,7 +13044,10 @@ mod tests {
             ),
             Ok(-1)
         );
-        assert_eq!(text(&bond_failure_heap, bond_failure_output.szAtoms), b"1C0\0");
+        assert_eq!(
+            text(&bond_failure_heap, bond_failure_output.szAtoms),
+            b"1C0\0"
+        );
         assert!(bond_failure_output.szBonds.is_null());
         assert_eq!(bond_failure_output.num_atoms, 77);
         OrigStruct_Free(&mut bond_failure_heap, Some(&mut bond_failure_output)).unwrap();
@@ -16161,6 +16663,141 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn source_port__ichiprt1__editinchi_hidepolymerzz__line_5039() {
+        fn stream(heap: &mut SourceHeap, text: &[u8], extra: usize) -> INCHI_IOSTREAM {
+            let mut storage = text.iter().map(|byte| *byte as i8).collect::<Vec<_>>();
+            storage.push(0);
+            storage.resize(storage.len() + extra, 0x55_i8);
+            let allocated = storage.len() as i32;
+            INCHI_IOSTREAM {
+                s: INCHI_IOS_STRING {
+                    pStr: heap.allocate_model_storage(storage).unwrap(),
+                    nAllocatedLength: allocated,
+                    nUsedLength: text.len() as i32,
+                    nPtr: 37,
+                },
+                type_: crate::source_types::INCHI_IOS_TYPE_STRING as i32,
+                ..INCHI_IOSTREAM::default()
+            }
+        }
+
+        fn bytes(heap: &SourceHeap, output: &INCHI_IOSTREAM) -> Vec<u8> {
+            heap.slice(output.s.pStr.as_const()).unwrap()[..output.s.nUsedLength as usize]
+                .iter()
+                .map(|byte| *byte as u8)
+                .collect()
+        }
+
+        let mut heap = SourceHeap::default();
+        let mut null_output = INCHI_IOSTREAM::default();
+        assert_eq!(
+            EditINCHI_HidePolymerZz(&mut heap, &mut null_output, 0, 1),
+            Ok(())
+        );
+        assert_eq!(
+            EditINCHI_HidePolymerZz(&mut heap, &mut null_output, 1, 1),
+            Ok(())
+        );
+        assert_eq!(
+            EditINCHI_HidePolymerZz(&mut heap, &mut null_output, 2, 0),
+            Err(SourceHeapError::NullPointer)
+        );
+
+        for text in [b"InChI=1B/CH4/h1H4".as_slice(), b"prefix/z1-2".as_slice()] {
+            let mut output = stream(&mut heap, text, 8);
+            let before = output.clone();
+            let allocations = heap.live_allocation_count();
+            heap.trace_source_allocations();
+            assert_eq!(
+                EditINCHI_HidePolymerZz(&mut heap, &mut output, 2, 0),
+                Ok(())
+            );
+            assert_eq!(output, before);
+            assert_eq!(heap.source_allocation_calls(), 0);
+            assert_eq!(heap.live_allocation_count(), allocations);
+        }
+
+        const SOURCE_EXAMPLE: &[u8] = b"InChI=1B/C4H4N4.2Zz/c1-5-2-7-4-8-3-6-1;;/h1-4H;;/z101-1-8(9,10-8,3,1,6,2,5,2,7,3,6,1,5,4,7,4,8)/b5-1-,5-2+,6-1+,6-3-,7-2+,7-4+,8-3+,8-4+;;";
+        const HIDDEN_EXAMPLE: &[u8] = b"InChI=1B/C4H4N4/c1-5-2-7-4-8-3-6-1/h1-4H/z101-1-8(8,3,1,6,2,5,2,7,3,6,1,5,4,7,4,8)/b5-1-,5-2+,6-1+,6-3-,7-2+,7-4+,8-3+,8-4+";
+        for newline in [false, true] {
+            let mut input = SOURCE_EXAMPLE.to_vec();
+            if newline {
+                input.push(b'\n');
+            }
+            let mut output = stream(&mut heap, &input, 32);
+            let pointer = output.s.pStr;
+            heap.trace_source_allocations();
+            assert_eq!(
+                EditINCHI_HidePolymerZz(&mut heap, &mut output, 2, 0),
+                Ok(())
+            );
+            let mut expected = HIDDEN_EXAMPLE.to_vec();
+            if newline {
+                expected.push(b'\n');
+            }
+            assert_eq!(bytes(&heap, &output), expected);
+            assert_eq!(output.s.nUsedLength, expected.len() as i32);
+            assert_eq!(output.s.nPtr, 37);
+            assert_eq!(output.s.pStr, pointer);
+            assert_eq!(heap.source_allocation_calls(), 1);
+            let storage = heap.slice(output.s.pStr.as_const()).unwrap();
+            assert_eq!(storage[expected.len()], 0);
+            assert!(storage[expected.len() + 1..].contains(&0x55_i8));
+        }
+
+        let retained_pattern = b"InChI=1B/C.Zz/c1;;/z1(2-3,4)/h1H;;";
+        let retained_expected = b"InChI=1B/C/c1;/z1(2-3,4)/h1H;";
+        let mut retained = stream(&mut heap, retained_pattern, 16);
+        assert_eq!(
+            EditINCHI_HidePolymerZz(&mut heap, &mut retained, 1, 0),
+            Ok(())
+        );
+        assert_eq!(bytes(&heap, &retained), retained_expected);
+
+        let mut allocation_failure = stream(&mut heap, SOURCE_EXAMPLE, 8);
+        let before = allocation_failure.clone();
+        let before_bytes = heap
+            .slice(allocation_failure.s.pStr.as_const())
+            .unwrap()
+            .to_vec();
+        let allocations = heap.live_allocation_count();
+        heap.fail_after_allocations(0);
+        assert_eq!(
+            EditINCHI_HidePolymerZz(&mut heap, &mut allocation_failure, 2, 0),
+            Ok(())
+        );
+        assert_eq!(allocation_failure, before);
+        assert_eq!(
+            heap.slice(allocation_failure.s.pStr.as_const()).unwrap(),
+            before_bytes
+        );
+        assert_eq!(heap.live_allocation_count(), allocations);
+        assert_eq!(heap.source_allocation_calls(), 1);
+
+        let mut print_failure_input = SOURCE_EXAMPLE.to_vec();
+        print_failure_input.push(b'\n');
+        let mut print_failure = stream(&mut heap, &print_failure_input, 0);
+        print_failure.s.nAllocatedLength = 0;
+        let original_pointer = print_failure.s.pStr;
+        let allocations = heap.live_allocation_count();
+        heap.fail_after_allocations(1);
+        assert_eq!(
+            EditINCHI_HidePolymerZz(&mut heap, &mut print_failure, 2, 0),
+            Ok(())
+        );
+        assert_eq!(print_failure.s.pStr, original_pointer);
+        assert_eq!(print_failure.s.nUsedLength, 0);
+        assert_eq!(print_failure.s.nAllocatedLength, 0);
+        assert_eq!(print_failure.s.nPtr, 37);
+        assert_eq!(
+            heap.slice(original_pointer.as_const()).unwrap()[SOURCE_EXAMPLE.len()],
+            0
+        );
+        assert_eq!(heap.live_allocation_count(), allocations);
+        assert_eq!(heap.source_allocation_calls(), 2);
     }
 
     #[test]
