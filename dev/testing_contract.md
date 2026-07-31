@@ -77,6 +77,7 @@ COSMolKit tests should be organized around these categories.
 | AI-native export | Export schema documented and versioned | not_applicable | Applies when stable AI export APIs exist |
 | Documentation | Public behavior documented at support level | partial | Needs review during API changes |
 | RDKit differences | Intentional differences documented | partial | Should be linked from mismatch/known-failure records |
+| InChI scalar APIs | Four public scalar APIs have exact source-defined official-C/RDKit tests, Python tests, structured diagnostics, and fail-closed unsupported-state coverage | implemented | `INCHI_API_PARITY_MATRIX` is the structured non-operation parity source. The official-C undefined `NormalizeAndCompare` allocation path maps to deterministic `allocation_failed` and is not an exact-parity claim. |
 
 ---
 

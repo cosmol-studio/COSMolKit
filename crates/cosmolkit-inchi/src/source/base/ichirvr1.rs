@@ -332,6 +332,13 @@ pub(crate) fn cmp_charge_val(
     // INCHI✔️✔️:     return (int) p1->nValenceOrderingNumber - (int) p2->nValenceOrderingNumber;
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: cmp_charge_val
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: cmp_charge_val
+    // INCHI✔️✔️: typedef struct tagChargeValence {
+    // INCHI✔️✔️:     int nValence;
+    // INCHI✔️✔️:     int nCharge;
+    // INCHI✔️✔️:     int nValenceOrderingNumber;
+    // INCHI✔️✔️: } CHARGE_VAL;
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: cmp_charge_val
 
     let mut difference = first.nValence.wrapping_sub(second.nValence);
     if difference != 0 {
@@ -3201,8 +3208,9 @@ pub(crate) fn RegisterTCGroup(
 }
 
 // Exact active `cnList` node data from ichirvr1.c:102-504 under TARGET_API_LIB.
-// Edge tuples store (neighbor, capacity, forbidden mask); every static edge flow is zero.
-pub(crate) type CnNodeData = (i32, i32, i32, [(i32, i32, i32); 3]);
+// ECF edge tuples preserve the source field order:
+// (neighbor, capacity, bForbiddenEdge, flow).
+pub(crate) type CnNodeData = (i32, i32, i32, [(i32, i32, i32, i32); 3]);
 pub(crate) struct CnListData {
     pub(crate) bits: i32,
     nodes: &'static [CnNodeData],
@@ -3211,155 +3219,155 @@ pub(crate) const CN_LIST: [CnListData; 18] = [
     CnListData {
         bits: 650,
         nodes: &[
-            (1, 3, 3, [(2, 3, 3), (0, 0, 0), (0, 0, 0)]),
-            (192, 3, 3, [(3, 1, 0), (4, 2, 0), (0, 0, 0)]),
-            (192, 2, 2, [(5, 1, 0), (4, 2, 2), (0, 0, 0)]),
-            (192, 2, 2, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
-            (16, 2, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 3, 3, [(2, 3, 0, 3), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (192, 3, 3, [(3, 1, 0, 0), (4, 2, 0, 0), (0, 0, 0, 0)]),
+            (192, 2, 2, [(5, 1, 0, 0), (4, 2, 0, 2), (0, 0, 0, 0)]),
+            (192, 2, 2, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (16, 2, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 1105,
         nodes: &[
-            (1, 3, 3, [(2, 3, 3), (0, 0, 0), (0, 0, 0)]),
-            (192, 3, 3, [(3, 2, 0), (4, 1, 0), (0, 0, 0)]),
-            (192, 2, 2, [(5, 1, 1), (4, 1, 1), (0, 0, 0)]),
-            (192, 1, 1, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
-            (16, 1, 1, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 3, 3, [(2, 3, 0, 3), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (192, 3, 3, [(3, 2, 0, 0), (4, 1, 0, 0), (0, 0, 0, 0)]),
+            (192, 2, 2, [(5, 1, 0, 1), (4, 1, 0, 1), (0, 0, 0, 0)]),
+            (192, 1, 1, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (16, 1, 1, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 81,
         nodes: &[
-            (1, 2, 2, [(2, 2, 2), (0, 0, 0), (0, 0, 0)]),
-            (192, 2, 2, [(3, 1, 0), (4, 1, 0), (0, 0, 0)]),
-            (192, 2, 2, [(5, 1, 1), (4, 1, 1), (0, 0, 0)]),
-            (192, 1, 1, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
-            (16, 1, 1, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 2, 2, [(2, 2, 0, 2), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (192, 2, 2, [(3, 1, 0, 0), (4, 1, 0, 0), (0, 0, 0, 0)]),
+            (192, 2, 2, [(5, 1, 0, 1), (4, 1, 0, 1), (0, 0, 0, 0)]),
+            (192, 1, 1, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (16, 1, 1, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 138,
         nodes: &[
-            (1, 2, 2, [(2, 2, 2), (0, 0, 0), (0, 0, 0)]),
-            (192, 2, 2, [(3, 1, 0), (4, 1, 0), (0, 0, 0)]),
-            (192, 1, 1, [(5, 1, 0), (4, 1, 1), (0, 0, 0)]),
-            (192, 1, 1, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
-            (16, 2, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 2, 2, [(2, 2, 0, 2), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (192, 2, 2, [(3, 1, 0, 0), (4, 1, 0, 0), (0, 0, 0, 0)]),
+            (192, 1, 1, [(5, 1, 0, 0), (4, 1, 0, 1), (0, 0, 0, 0)]),
+            (192, 1, 1, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (16, 2, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 140,
         nodes: &[
-            (1, 2, 1, [(2, 1, 1), (3, 1, 0), (0, 0, 0)]),
-            (16, 1, 1, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
-            (272, 1, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 2, 1, [(2, 1, 0, 1), (3, 1, 0, 0), (0, 0, 0, 0)]),
+            (16, 1, 1, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (272, 1, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 266,
         nodes: &[
-            (1, 2, 2, [(2, 2, 2), (0, 0, 0), (0, 0, 0)]),
-            (192, 2, 2, [(3, 1, 0), (4, 1, 0), (0, 0, 0)]),
-            (16, 2, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
-            (272, 1, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 2, 2, [(2, 2, 0, 2), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (192, 2, 2, [(3, 1, 0, 0), (4, 1, 0, 0), (0, 0, 0, 0)]),
+            (16, 2, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (272, 1, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 14,
         nodes: &[
-            (1, 1, 0, [(2, 1, 0), (0, 0, 0), (0, 0, 0)]),
-            (192, 1, 1, [(3, 1, 1), (0, 0, 0), (0, 0, 0)]),
-            (192, 1, 1, [(4, 1, 0), (6, 1, 0), (0, 0, 0)]),
-            (192, 1, 1, [(5, 1, 1), (0, 0, 0), (0, 0, 0)]),
-            (1040, 1, 1, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
-            (1296, 1, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 1, 0, [(2, 1, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (192, 1, 1, [(3, 1, 0, 1), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (192, 1, 1, [(4, 1, 0, 0), (6, 1, 0, 0), (0, 0, 0, 0)]),
+            (192, 1, 1, [(5, 1, 0, 1), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (1040, 1, 1, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (1296, 1, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 97,
         nodes: &[
-            (1, 2, 2, [(2, 2, 2), (0, 0, 0), (0, 0, 0)]),
-            (192, 2, 2, [(3, 1, 0), (4, 1, 0), (0, 0, 0)]),
-            (192, 1, 1, [(5, 1, 0), (4, 1, 1), (0, 0, 0)]),
-            (192, 1, 1, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
-            (272, 1, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 2, 2, [(2, 2, 0, 2), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (192, 2, 2, [(3, 1, 0, 0), (4, 1, 0, 0), (0, 0, 0, 0)]),
+            (192, 1, 1, [(5, 1, 0, 0), (4, 1, 0, 1), (0, 0, 0, 0)]),
+            (192, 1, 1, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (272, 1, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 49,
         nodes: &[
-            (1, 1, 1, [(2, 1, 1), (0, 0, 0), (0, 0, 0)]),
-            (192, 1, 1, [(3, 1, 0), (5, 1, 0), (0, 0, 0)]),
-            (192, 1, 1, [(4, 1, 1), (0, 0, 0), (0, 0, 0)]),
-            (16, 1, 1, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
-            (272, 1, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 1, 1, [(2, 1, 0, 1), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (192, 1, 1, [(3, 1, 0, 0), (5, 1, 0, 0), (0, 0, 0, 0)]),
+            (192, 1, 1, [(4, 1, 0, 1), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (16, 1, 1, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (272, 1, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 105,
         nodes: &[
-            (1, 2, 2, [(2, 2, 2), (0, 0, 0), (0, 0, 0)]),
-            (192, 2, 2, [(3, 1, 0), (4, 1, 0), (0, 0, 0)]),
-            (192, 2, 2, [(5, 1, 1), (4, 1, 1), (0, 0, 0)]),
-            (192, 1, 1, [(6, 1, 0), (0, 0, 0), (0, 0, 0)]),
-            (16, 1, 1, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
-            (272, 1, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 2, 2, [(2, 2, 0, 2), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (192, 2, 2, [(3, 1, 0, 0), (4, 1, 0, 0), (0, 0, 0, 0)]),
+            (192, 2, 2, [(5, 1, 0, 1), (4, 1, 0, 1), (0, 0, 0, 0)]),
+            (192, 1, 1, [(6, 1, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (16, 1, 1, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (272, 1, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 17,
         nodes: &[
-            (1, 1, 1, [(2, 1, 1), (0, 0, 0), (0, 0, 0)]),
-            (16, 1, 1, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 1, 1, [(2, 1, 0, 1), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (16, 1, 1, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 10,
         nodes: &[
-            (1, 1, 1, [(2, 1, 1), (0, 0, 0), (0, 0, 0)]),
-            (192, 1, 1, [(3, 1, 0), (0, 0, 0), (0, 0, 0)]),
-            (16, 2, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 1, 1, [(2, 1, 0, 1), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (192, 1, 1, [(3, 1, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (16, 2, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 33,
         nodes: &[
-            (1, 1, 1, [(2, 1, 1), (0, 0, 0), (0, 0, 0)]),
-            (192, 1, 1, [(3, 1, 0), (0, 0, 0), (0, 0, 0)]),
-            (272, 1, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 1, 1, [(2, 1, 0, 1), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (192, 1, 1, [(3, 1, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (272, 1, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 12,
         nodes: &[
-            (1, 1, 0, [(2, 1, 0), (0, 0, 0), (0, 0, 0)]),
-            (272, 1, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 1, 0, [(2, 1, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (272, 1, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 2,
         nodes: &[
-            (1, 0, 0, [(2, 1, 0), (0, 0, 0), (0, 0, 0)]),
-            (16, 2, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 0, 0, [(2, 1, 1, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (16, 2, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
     CnListData {
         bits: 4,
-        nodes: &[(1, 0, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)])],
+        nodes: &[(1, 0, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)])],
     },
     CnListData {
         bits: 1,
-        nodes: &[(1, 0, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)])],
+        nodes: &[(1, 0, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)])],
     },
     CnListData {
         bits: -1,
         nodes: &[
-            (1, 0, 0, [(2, 16, 0), (4, 16, 0), (0, 0, 0)]),
-            (192, 16, 16, [(3, 16, 16), (0, 0, 0), (0, 0, 0)]),
-            (2064, 16, 16, [(0, 0, 0), (0, 0, 2), (0, 0, 0)]),
-            (2320, 16, 0, [(0, 0, 0), (0, 0, 0), (0, 0, 0)]),
-            (2048, 0, 0, [(1, 3, 0), (0, 0, 0), (0, 0, 0)]),
+            (1, 0, 0, [(2, 16, 0, 0), (4, 16, 0, 0), (0, 0, 0, 0)]),
+            (192, 16, 16, [(3, 16, 0, 16), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (2064, 16, 16, [(0, 0, 0, 0), (0, 0, 0, 2), (0, 0, 0, 0)]),
+            (2320, 16, 0, [(0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
+            (2048, 0, 0, [(1, 3, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)]),
         ],
     },
 ];
@@ -4340,11 +4348,10 @@ pub(crate) fn nCountBnsSizes(
                 }
                 for (node_index, node) in list.nodes.iter().enumerate() {
                     let (type_, node_cap, node_flow, edges) = *node;
-                    for (neighbor_number, edge_cap, _forbidden) in edges {
+                    for (neighbor_number, edge_cap, edge_flow, _forbidden) in edges {
                         if neighbor_number == 0 {
                             break;
                         }
-                        let edge_flow = 0_i32;
                         other_edges = other_edges.wrapping_add(1);
                         let neighbor_index = usize::try_from(neighbor_number - 1)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -5577,9 +5584,20 @@ pub(crate) fn comp_cc_cand(a1: &CC_CAND, a2: &CC_CAND) -> i32 {
     // INCHI✔️✔️:     return ret;
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: comp_cc_cand
-    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: comp_cc_cand
-    // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux.
-    // END INCHI ACTIVE MACRO CONFIGURATION: comp_cc_cand
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: comp_cc_cand
+    // INCHI✔️✔️: typedef struct tagChargeChangeCandidate {
+    // INCHI✔️✔️:     Vertex iat;
+    // INCHI✔️✔️:     char   num_bonds;
+    // INCHI✔️✔️:     char   chem_valence;
+    // INCHI✔️✔️:     char   cMetal;
+    // INCHI✔️✔️:     char   cNumBondsToMetal;
+    // INCHI✔️✔️:     char   cNumValenceElectrons;
+    // INCHI✔️✔️:     char   cPeriodicRowNumber;
+    // INCHI✔️✔️:     char   cNumChargeStates;
+    // INCHI✔️✔️:     U_CHAR el_number;
+    // INCHI✔️✔️: } CC_CAND;
+    // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux signed-char ABI.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: comp_cc_cand
 
     let mut ret = i32::from(a2.cMetal).wrapping_sub(i32::from(a1.cMetal));
     if ret != 0 {
@@ -6842,7 +6860,10 @@ pub(crate) fn AddTGroups2TCGBnStruct(
             let _ = index;
         }
         heap.slice_mut(network.vert)?.clone_from_slice(&vertices);
-        heap.slice_mut(groups.pTCG)?.clone_from_slice(&group_values);
+        heap.slice_mut(groups.pTCG)?
+            .get_mut(..group_values.len())
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .clone_from_slice(&group_values);
 
         let atoms = if number_of_atoms == 0 {
             Vec::new()
@@ -8703,7 +8724,10 @@ pub(crate) fn AddCGroups2TCGBnStruct(
         previous_vertex = vertex_index;
     }
     heap.slice_mut(network.vert)?.clone_from_slice(&vertices);
-    heap.slice_mut(groups.pTCG)?.clone_from_slice(&group_values);
+    heap.slice_mut(groups.pTCG)?
+        .get_mut(..group_values.len())
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .clone_from_slice(&group_values);
     current_vertices =
         i32::try_from(previous_vertex + 1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
 
@@ -8871,7 +8895,9 @@ pub(crate) fn AddCGroups2TCGBnStruct(
                 return Ok(BNS_BOND_ERR);
             };
 
-            for &(neighbor_number, source_edge_capacity, source_forbidden) in &first_node.3 {
+            for &(neighbor_number, source_edge_capacity, source_forbidden, source_edge_flow) in
+                &first_node.3
+            {
                 if neighbor_number == 0 {
                     break;
                 }
@@ -9023,12 +9049,19 @@ pub(crate) fn AddCGroups2TCGBnStruct(
                     } else {
                         0
                     };
+                    let edge_flow = if !metal_atoms {
+                        source_edge_flow
+                    } else if source_edge_flow != 0 {
+                        restore_mode.nMetalMaxCharge_D
+                    } else {
+                        0
+                    };
                     let edge = heap
                         .slice_mut(network.edge)?
                         .get_mut(edge_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     edge.cap = edge_capacity;
-                    edge.flow = 0;
+                    edge.flow = edge_flow;
                 }
                 {
                     let edge = heap
@@ -9394,7 +9427,7 @@ pub(crate) fn nNumEdgesToCnVertex(
     for (node_index, node) in nodes.iter().enumerate() {
         let node_index =
             i32::try_from(node_index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        for &(neighbor, _, _) in &node.3 {
+        for &(neighbor, _, _, _) in &node.3 {
             if neighbor == 0 {
                 break;
             }
@@ -12761,21 +12794,240 @@ mod tests {
             nCharge: charge,
             nValenceOrderingNumber: order,
         };
-        assert!(cmp_charge_val(&value(1, 0, 0), &value(2, 0, 0)) < 0);
-        assert!(cmp_charge_val(&value(2, 0, 0), &value(1, 0, 0)) > 0);
-        assert!(cmp_charge_val(&value(2, 0, 0), &value(2, 1, 0)) < 0);
-        assert!(cmp_charge_val(&value(2, 1, 0), &value(2, -1, 0)) < 0);
-        assert!(cmp_charge_val(&value(2, -1, 0), &value(2, 1, 0)) > 0);
-        assert!(cmp_charge_val(&value(2, 1, 3), &value(2, 1, 5)) < 0);
-        assert_eq!(cmp_charge_val(&value(2, 1, 3), &value(2, 1, 3)), 0);
-        assert_eq!(
-            cmp_charge_val(&value(i32::MIN, 0, i32::MIN), &value(i32::MAX, 0, i32::MAX),),
-            1
+        let cases = [
+            (value(1, 0, 0), value(2, 0, 0), -1),
+            (value(2, 0, 0), value(1, 0, 0), 1),
+            (value(2, 0, 0), value(2, 1, 0), -1),
+            (value(2, 2, 0), value(2, 1, 0), 1),
+            (value(2, 1, 0), value(2, -1, 0), -2),
+            (value(2, -1, 0), value(2, 1, 0), 2),
+            (value(2, 1, 3), value(2, 1, 5), -2),
+            (value(2, 1, 5), value(2, 1, 3), 2),
+            (value(2, 1, 3), value(2, 1, 3), 0),
+            (value(i32::MIN, 0, 0), value(0, 0, 0), i32::MIN),
+            (value(i32::MAX, 0, 0), value(0, 0, 0), i32::MAX),
+            (value(0, i32::MAX, 0), value(0, 0, 0), i32::MAX),
+            (value(0, 0, i32::MIN), value(0, 0, 0), i32::MIN),
+            (value(0, 0, i32::MAX), value(0, 0, 0), i32::MAX),
+        ];
+        for (first, second, expected) in cases {
+            let first_before = first.clone();
+            let second_before = second.clone();
+            assert_eq!(cmp_charge_val(&first, &second), expected);
+            assert_eq!(first, first_before);
+            assert_eq!(second, second_before);
+        }
+    }
+
+    #[test]
+    fn official_c_oracle__cmp_charge_val__exact() {
+        use std::path::Path;
+        use std::process::Command;
+
+        use serde_json::Value;
+
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("cosmolkit-inchi must be located under crates/");
+        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let oracle = Command::new("sh")
+            .arg(&runner)
+            .arg("--cmp-charge-val-records")
+            .current_dir(repository_root)
+            .output()
+            .unwrap_or_else(|error| panic!("failed to start {}: {error}", runner.display()));
+        assert!(
+            oracle.status.success(),
+            "official C oracle failed with {}:\n{}",
+            oracle.status,
+            String::from_utf8_lossy(&oracle.stderr)
         );
-        assert_eq!(
-            cmp_charge_val(&value(0, i32::MIN, 0), &value(0, 0, 0)),
-            i32::MIN
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let mut record_count = 0_usize;
+        for line in output.lines() {
+            let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
+            assert_eq!(official["schema_version"], "cosmolkit-inchi-official-c-v1");
+            assert_eq!(official["operation"], "cmp_charge_val");
+            let case_id = official["case_id"].as_str().expect("case_id must be text");
+            let parse_value = |side: &str, field: &str| {
+                i32::try_from(
+                    official["input"][side][field]
+                        .as_i64()
+                        .unwrap_or_else(|| panic!("{case_id}: {side}.{field} must be i32")),
+                )
+                .unwrap_or_else(|_| panic!("{case_id}: {side}.{field} exceeds i32"))
+            };
+            let first = crate::source_types::CHARGE_VAL {
+                nValence: parse_value("first", "valence"),
+                nCharge: parse_value("first", "charge"),
+                nValenceOrderingNumber: parse_value("first", "order"),
+            };
+            let second = crate::source_types::CHARGE_VAL {
+                nValence: parse_value("second", "valence"),
+                nCharge: parse_value("second", "charge"),
+                nValenceOrderingNumber: parse_value("second", "order"),
+            };
+            let first_before = first.clone();
+            let second_before = second.clone();
+            let rust = cmp_charge_val(&first, &second);
+            let expected = i32::try_from(
+                official["output"]["result"]
+                    .as_i64()
+                    .expect("result must be i32"),
+            )
+            .expect("official result exceeds i32");
+            assert_eq!(rust, expected, "{case_id}");
+            assert_eq!(first, first_before, "{case_id}");
+            assert_eq!(second, second_before, "{case_id}");
+            assert_eq!(official["output"]["first_unchanged"], true, "{case_id}");
+            assert_eq!(official["output"]["second_unchanged"], true, "{case_id}");
+            record_count += 1;
+        }
+        assert_eq!(record_count, 14);
+    }
+
+    #[test]
+    fn source_port__ichirvr1__comp_cc_cand__line_4584() {
+        let candidate = |iat,
+                         num_bonds,
+                         chem_valence,
+                         metal,
+                         bonds_to_metal,
+                         valence_electrons,
+                         periodic_row,
+                         charge_states,
+                         element| CC_CAND {
+            iat,
+            num_bonds,
+            chem_valence,
+            cMetal: metal,
+            cNumBondsToMetal: bonds_to_metal,
+            cNumValenceElectrons: valence_electrons,
+            cPeriodicRowNumber: periodic_row,
+            cNumChargeStates: charge_states,
+            el_number: element,
+        };
+        let base = candidate(7, 2, 3, 0, 0, 4, 2, 1, 6);
+        let cases = [
+            (
+                candidate(7, 2, 3, i8::MIN, 0, 4, 2, 1, 6),
+                candidate(7, 2, 3, i8::MAX, 0, 4, 2, 1, 6),
+                255,
+            ),
+            (
+                candidate(7, 2, 3, i8::MAX, 0, 4, 2, 1, 6),
+                candidate(7, 2, 3, i8::MIN, 0, 4, 2, 1, 6),
+                -255,
+            ),
+            (base.clone(), candidate(7, 2, 3, 0, 5, 4, 2, 1, 6), 5),
+            (base.clone(), candidate(7, 2, 3, 0, 0, 4, 5, 1, 6), 3),
+            (base.clone(), candidate(7, 5, 3, 0, 0, 4, 2, 1, 6), 3),
+            (base.clone(), candidate(7, 2, 5, 0, 0, 4, 2, 1, 6), -2),
+            (candidate(7, 2, 3, 0, 0, 0, 2, 1, 6), base.clone(), -1),
+            (base.clone(), candidate(7, 2, 3, 0, 0, 0, 2, 1, 6), -1),
+            (base.clone(), candidate(7, 2, 3, 0, 0, -4, 2, 1, 6), 0),
+            (
+                candidate(i32::MIN, 2, 3, 0, 0, 4, 2, 1, 6),
+                candidate(i32::MIN + 1, 2, 3, 0, 0, 4, 2, 1, 6),
+                1,
+            ),
+            (
+                candidate(i32::MAX, 2, 3, 0, 0, 4, 2, 1, 6),
+                candidate(i32::MAX - 1, 2, 3, 0, 0, 4, 2, 1, 6),
+                -1,
+            ),
+            (
+                base.clone(),
+                candidate(7, 2, 3, 0, 0, 4, 2, i8::MAX, u8::MAX),
+                0,
+            ),
+        ];
+        for (first, second, expected) in cases {
+            let first_before = first.clone();
+            let second_before = second.clone();
+            assert_eq!(comp_cc_cand(&first, &second), expected);
+            assert_eq!(first, first_before);
+            assert_eq!(second, second_before);
+        }
+    }
+
+    #[test]
+    fn official_c_oracle__comp_cc_cand__exact() {
+        use std::path::Path;
+        use std::process::Command;
+
+        use serde_json::Value;
+
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("cosmolkit-inchi must be located under crates/");
+        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let oracle = Command::new("sh")
+            .arg(&runner)
+            .arg("--comp-cc-cand-records")
+            .current_dir(repository_root)
+            .output()
+            .unwrap_or_else(|error| panic!("failed to start {}: {error}", runner.display()));
+        assert!(
+            oracle.status.success(),
+            "official C oracle failed with {}:\n{}",
+            oracle.status,
+            String::from_utf8_lossy(&oracle.stderr)
         );
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let mut record_count = 0_usize;
+        for line in output.lines() {
+            let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
+            assert_eq!(official["schema_version"], "cosmolkit-inchi-official-c-v1");
+            assert_eq!(official["operation"], "comp_cc_cand");
+            let case_id = official["case_id"].as_str().expect("case_id must be text");
+            let parse_i32 = |side: &str, field: &str| {
+                i32::try_from(
+                    official["input"][side][field]
+                        .as_i64()
+                        .unwrap_or_else(|| panic!("{case_id}: {side}.{field} must be i32")),
+                )
+                .unwrap_or_else(|_| panic!("{case_id}: {side}.{field} exceeds i32"))
+            };
+            let parse_i8 = |side: &str, field: &str| {
+                i8::try_from(parse_i32(side, field))
+                    .unwrap_or_else(|_| panic!("{case_id}: {side}.{field} exceeds i8"))
+            };
+            let parse_candidate = |side: &str| CC_CAND {
+                iat: parse_i32(side, "iat"),
+                num_bonds: parse_i8(side, "num_bonds"),
+                chem_valence: parse_i8(side, "chem_valence"),
+                cMetal: parse_i8(side, "metal"),
+                cNumBondsToMetal: parse_i8(side, "bonds_to_metal"),
+                cNumValenceElectrons: parse_i8(side, "valence_electrons"),
+                cPeriodicRowNumber: parse_i8(side, "periodic_row"),
+                cNumChargeStates: parse_i8(side, "charge_states"),
+                el_number: u8::try_from(parse_i32(side, "element"))
+                    .unwrap_or_else(|_| panic!("{case_id}: {side}.element exceeds u8")),
+            };
+            let first = parse_candidate("first");
+            let second = parse_candidate("second");
+            let first_before = first.clone();
+            let second_before = second.clone();
+            let rust = comp_cc_cand(&first, &second);
+            let expected = i32::try_from(
+                official["output"]["result"]
+                    .as_i64()
+                    .expect("result must be i32"),
+            )
+            .expect("official result exceeds i32");
+            assert_eq!(rust, expected, "{case_id}");
+            assert_eq!(first, first_before, "{case_id}");
+            assert_eq!(second, second_before, "{case_id}");
+            assert_eq!(official["output"]["first_unchanged"], true, "{case_id}");
+            assert_eq!(official["output"]["second_unchanged"], true, "{case_id}");
+            record_count += 1;
+        }
+        assert_eq!(record_count, 12);
     }
 
     #[test]
@@ -14329,14 +14581,15 @@ mod tests {
                 hash_i32(*type_);
                 hash_i32(*cap);
                 hash_i32(*flow);
-                for (neighbor, edge_cap, edge_flow) in edges {
+                for (neighbor, edge_cap, forbidden, edge_flow) in edges {
                     hash_i32(*neighbor);
                     hash_i32(*edge_cap);
+                    hash_i32(*forbidden);
                     hash_i32(*edge_flow);
                 }
             }
         }
-        assert_eq!(hash, 2_842_589_691_826_349_987);
+        assert_eq!(hash, 6_410_081_296_829_866_238);
 
         let mut first = inp_ATOM {
             valence: 1,
@@ -17583,7 +17836,7 @@ mod tests {
                 edge.flow0,
                 edge.forbidden,
             ),
-            (0, 1, 1, 1, 0, 0, 1)
+            (0, 1, 1, 1, 1, 1, 0)
         );
         assert_eq!(valence_atoms[0].nCPlusGroupEdge, 1);
         assert_eq!(
@@ -17594,6 +17847,37 @@ mod tests {
             &heap.slice(incident.as_const()).unwrap()[..7],
             &[0, -1, -1, -1, 0, -1, -1]
         );
+
+        let (
+            mut heap,
+            mut network,
+            structure,
+            mut valence_atoms,
+            mut groups,
+            _,
+            edges,
+            _,
+            group_pointer,
+        ) = fixture(15, BNS_VT_C_POS as i32, 1);
+        heap.slice_mut(group_pointer).unwrap()[0].st_cap = 2;
+        assert_eq!(
+            AddCGroups2TCGBnStruct(
+                &mut heap,
+                &mut network,
+                &structure,
+                &mut valence_atoms,
+                &mut groups,
+                2,
+            ),
+            Ok(1)
+        );
+        let edge = &heap.slice(edges.as_const()).unwrap()[0];
+        assert_eq!(
+            (edge.cap, edge.cap0, edge.flow, edge.flow0, edge.forbidden),
+            (1, 1, 0, 0, 1)
+        );
+        assert_eq!(valence_atoms[0].nCPlusGroupEdge, 1);
+        assert_eq!((network.tot_st_cap, network.tot_st_flow), (2, 0));
 
         let (
             mut heap,
@@ -17648,9 +17932,17 @@ mod tests {
         assert_eq!(
             heap.slice(edges.as_const()).unwrap()[..2]
                 .iter()
-                .map(|edge| (edge.neighbor1, edge.neighbor12, edge.cap, edge.forbidden))
+                .map(|edge| {
+                    (
+                        edge.neighbor1,
+                        edge.neighbor12,
+                        edge.cap,
+                        edge.flow,
+                        edge.forbidden,
+                    )
+                })
                 .collect::<Vec<_>>(),
-            vec![(0, 2, 1, 1), (1, 3, 1, 0)]
+            vec![(0, 2, 1, 1, 0), (1, 3, 1, 0, 0)]
         );
         assert_eq!(valence_atoms[0].nCMinusGroupEdge, 2);
         assert_eq!(
@@ -18136,9 +18428,10 @@ mod tests {
         assert_eq!(
             (
                 heap.slice(edges.as_const()).unwrap()[0].cap,
+                heap.slice(edges.as_const()).unwrap()[0].flow,
                 heap.slice(edges.as_const()).unwrap()[0].forbidden,
             ),
-            (1, 1)
+            (1, 1, 0)
         );
 
         let (mut heap, mut network, structure, mut valence_atoms, mut groups, _, edges, _, _) =
@@ -18160,9 +18453,10 @@ mod tests {
             (
                 heap.slice(edges.as_const()).unwrap()[0].neighbor12,
                 heap.slice(edges.as_const()).unwrap()[0].cap,
+                heap.slice(edges.as_const()).unwrap()[0].flow,
                 heap.slice(edges.as_const()).unwrap()[0].forbidden,
             ),
-            (7, 1, 1)
+            (7, 1, 1, 0)
         );
     }
 

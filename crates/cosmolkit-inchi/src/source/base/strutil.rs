@@ -68,6 +68,12 @@ pub(crate) fn cmp_iso_atw_diff_component_no(first: &inp_ATOM, second: &inp_ATOM)
     // INCHI✔️✔️:     return ret;
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: cmp_iso_atw_diff_component_no
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: cmp_iso_atw_diff_component_no
+    // INCHI✔️✔️: typedef signed char S_CHAR;
+    // INCHI✔️✔️: typedef unsigned short AT_NUMB;
+    // INCHI✔️✔️:     S_CHAR iso_atw_diff;              /* =0 => natural isotopic abundances                        */
+    // INCHI✔️✔️:     AT_NUMB component; /* number of the structure component > 0                    */
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: cmp_iso_atw_diff_component_no
 
     let isotope_order = i32::from(first.iso_atw_diff) - i32::from(second.iso_atw_diff);
     if isotope_order != 0 {
@@ -9968,6 +9974,45 @@ pub(crate) fn imat_new(
     Ok(0)
 }
 
+pub(crate) fn cmp_components(first: &[AT_NUMB; 3], second: &[AT_NUMB; 3]) -> i32 {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/strutil.c:4247 cmp_components
+    // INCHI✔️✔️: int cmp_components( const void *a1, const void *a2 )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     int ret;
+    // INCHI✔️✔️:     AT_NUMB n1;
+    // INCHI✔️✔️:     AT_NUMB n2;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     n1 = ( (const AT_NUMB *) a1 )[0];
+    // INCHI✔️✔️:     /* number of atoms in the component -- descending order */
+    // INCHI✔️✔️:     n2 = ( (const AT_NUMB *) a2 )[0];
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     if ((ret = (int) n2 - (int) n1)) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         return ret;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     /* stable sort */
+    // INCHI✔️✔️:     n1 = ( (const AT_NUMB *) a1 )[1];
+    // INCHI✔️✔️:     /* component ordering number -- ascending order */
+    // INCHI✔️✔️:     n2 = ( (const AT_NUMB *) a2 )[1];
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     ret = (int) n1 - (int) n2;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     return ret;
+    // INCHI✔️✔️: }
+    // END INCHI C FUNCTION: cmp_components
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: cmp_components
+    // INCHI✔️✔️: typedef unsigned short AT_NUMB;
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: cmp_components
+
+    let size_order = i32::from(second[0]) - i32::from(first[0]);
+    if size_order != 0 {
+        size_order
+    } else {
+        i32::from(first[1]) - i32::from(second[1])
+    }
+}
+
 #[allow(non_snake_case)]
 pub(crate) fn MarkDisconnectedComponents(
     heap: &mut SourceHeap,
@@ -10378,14 +10423,8 @@ pub(crate) fn MarkDisconnectedComponents(
             heap.slice_mut(component_rows)?[component][0] =
                 heap.slice(component_rows.as_const())?[component][0].wrapping_add(1);
         }
-        heap.slice_mut(component_rows)?[..component_count].sort_by(|first, second| {
-            let size_order = i32::from(second[0]) - i32::from(first[0]);
-            if size_order != 0 {
-                size_order.cmp(&0)
-            } else {
-                (i32::from(first[1]) - i32::from(second[1])).cmp(&0)
-            }
-        });
+        heap.slice_mut(component_rows)?[..component_count]
+            .sort_by(|first, second| cmp_components(first, second).cmp(&0));
         for index in 0..component_count {
             let row = heap.slice(component_rows.as_const())?[index];
             heap.slice_mut(current_lengths)?[index] = row[0];
@@ -10597,6 +10636,213 @@ pub(crate) fn ExtractConnectedComponent(
 mod tests {
     use super::*;
     use crate::source_types::{INChI_IsotopicAtom, INChI_IsotopicTGroup, subgraf_edge};
+
+    #[test]
+    fn source_port__strutil__cmp_iso_atw_diff_component_no__line_166() {
+        let atom = |isotope, component| inp_ATOM {
+            iso_atw_diff: isotope,
+            component,
+            ..inp_ATOM::default()
+        };
+
+        let minimum = atom(i8::MIN, u16::MAX);
+        let maximum = atom(i8::MAX, 0);
+        let minimum_before = minimum.clone();
+        let maximum_before = maximum.clone();
+        assert_eq!(cmp_iso_atw_diff_component_no(&minimum, &maximum), -255);
+        assert_eq!(cmp_iso_atw_diff_component_no(&maximum, &minimum), 255);
+        assert_eq!(minimum, minimum_before);
+        assert_eq!(maximum, maximum_before);
+
+        assert_eq!(
+            cmp_iso_atw_diff_component_no(&atom(7, 0), &atom(7, u16::MAX)),
+            -65_535
+        );
+        assert_eq!(
+            cmp_iso_atw_diff_component_no(&atom(7, u16::MAX), &atom(7, 0)),
+            65_535
+        );
+        assert_eq!(cmp_iso_atw_diff_component_no(&atom(7, 23), &atom(7, 23)), 0);
+
+        let mut atoms = [
+            atom(1, 9),
+            atom(-1, u16::MAX),
+            atom(1, 2),
+            atom(-1, 0),
+            atom(1, 2),
+        ];
+        atoms.sort_by(|first, second| cmp_iso_atw_diff_component_no(first, second).cmp(&0));
+        assert_eq!(
+            atoms.map(|entry| (entry.iso_atw_diff, entry.component)),
+            [(-1, 0), (-1, u16::MAX), (1, 2), (1, 2), (1, 9)]
+        );
+    }
+
+    #[test]
+    fn official_c_oracle__cmp_iso_atw_diff_component_no__exact() {
+        use std::path::Path;
+        use std::process::Command;
+
+        use serde_json::Value;
+
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("cosmolkit-inchi must be located under crates/");
+        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let oracle = Command::new("sh")
+            .arg(&runner)
+            .arg("--cmp-iso-atw-diff-component-no-records")
+            .current_dir(repository_root)
+            .output()
+            .unwrap_or_else(|error| panic!("failed to start {}: {error}", runner.display()));
+        assert!(
+            oracle.status.success(),
+            "official C oracle failed with {}:\n{}",
+            oracle.status,
+            String::from_utf8_lossy(&oracle.stderr)
+        );
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let mut record_count = 0_usize;
+        for line in output.lines() {
+            let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
+            assert_eq!(official["schema_version"], "cosmolkit-inchi-official-c-v1");
+            assert_eq!(official["operation"], "cmp_iso_atw_diff_component_no");
+            let case_id = official["case_id"].as_str().expect("case_id must be text");
+            let parse_isotope = |field: &str| {
+                i8::try_from(
+                    official["input"][field]
+                        .as_i64()
+                        .unwrap_or_else(|| panic!("{case_id}: {field} must be i8")),
+                )
+                .unwrap_or_else(|_| panic!("{case_id}: {field} exceeds i8"))
+            };
+            let parse_component = |field: &str| {
+                u16::try_from(
+                    official["input"][field]
+                        .as_u64()
+                        .unwrap_or_else(|| panic!("{case_id}: {field} must be u16")),
+                )
+                .unwrap_or_else(|_| panic!("{case_id}: {field} exceeds u16"))
+            };
+            let first = inp_ATOM {
+                iso_atw_diff: parse_isotope("first_iso_atw_diff"),
+                component: parse_component("first_component"),
+                ..inp_ATOM::default()
+            };
+            let second = inp_ATOM {
+                iso_atw_diff: parse_isotope("second_iso_atw_diff"),
+                component: parse_component("second_component"),
+                ..inp_ATOM::default()
+            };
+            let first_before = first.clone();
+            let second_before = second.clone();
+            let rust = cmp_iso_atw_diff_component_no(&first, &second);
+            let expected = i32::try_from(
+                official["output"]["result"]
+                    .as_i64()
+                    .expect("result must be an integer"),
+            )
+            .expect("official result must fit i32");
+            assert_eq!(rust, expected, "{case_id}");
+            assert_eq!(first, first_before, "{case_id}: Rust first input mutation");
+            assert_eq!(
+                second, second_before,
+                "{case_id}: Rust second input mutation"
+            );
+            assert_eq!(official["output"]["first_unchanged"], true, "{case_id}");
+            assert_eq!(official["output"]["second_unchanged"], true, "{case_id}");
+            record_count += 1;
+        }
+        assert_eq!(record_count, 7);
+    }
+
+    #[test]
+    fn source_port__strutil__cmp_components__line_4247() {
+        assert_eq!(cmp_components(&[9, 4, 0], &[3, 0, 0]), -6);
+        assert_eq!(cmp_components(&[3, 0, 0], &[9, 4, 0]), 6);
+        assert_eq!(cmp_components(&[u16::MAX, 0, 0], &[0, 0, 0]), -65_535);
+        assert_eq!(cmp_components(&[0, 0, 0], &[u16::MAX, 0, 0]), 65_535);
+
+        assert_eq!(cmp_components(&[7, 2, 0], &[7, 8, 0]), -6);
+        assert_eq!(cmp_components(&[7, 8, 0], &[7, 2, 0]), 6);
+        assert_eq!(cmp_components(&[7, 0, 0], &[7, u16::MAX, 0]), -65_535);
+        assert_eq!(cmp_components(&[7, u16::MAX, 0], &[7, 0, 0]), 65_535);
+
+        assert_eq!(cmp_components(&[7, 2, 0], &[7, 2, u16::MAX]), 0);
+
+        let mut rows = [[2, 1, 7], [5, 3, 8], [5, 0, 9], [2, 0, 10]];
+        rows.sort_by(|first, second| cmp_components(first, second).cmp(&0));
+        assert_eq!(rows, [[5, 0, 9], [5, 3, 8], [2, 0, 10], [2, 1, 7]]);
+    }
+
+    #[test]
+    fn official_c_oracle__cmp_components__exact() {
+        use std::path::Path;
+        use std::process::Command;
+
+        use serde_json::Value;
+
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("cosmolkit-inchi must be located under crates/");
+        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let oracle = Command::new("sh")
+            .arg(&runner)
+            .arg("--cmp-components-records")
+            .current_dir(repository_root)
+            .output()
+            .unwrap_or_else(|error| panic!("failed to start {}: {error}", runner.display()));
+        assert!(
+            oracle.status.success(),
+            "official C oracle failed with {}:\n{}",
+            oracle.status,
+            String::from_utf8_lossy(&oracle.stderr)
+        );
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let mut record_count = 0_usize;
+        for line in output.lines() {
+            let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
+            assert_eq!(official["schema_version"], "cosmolkit-inchi-official-c-v1");
+            assert_eq!(official["operation"], "cmp_components");
+            let case_id = official["case_id"].as_str().expect("case_id must be text");
+            let parse_row = |field: &str| {
+                let values = official["input"][field]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("{case_id}: {field} must be an array"));
+                assert_eq!(values.len(), 3, "{case_id}: {field} length");
+                let mut row = [0_u16; 3];
+                for (index, value) in values.iter().enumerate() {
+                    row[index] = u16::try_from(
+                        value
+                            .as_u64()
+                            .unwrap_or_else(|| panic!("{case_id}: {field}[{index}] must be u16")),
+                    )
+                    .unwrap_or_else(|_| panic!("{case_id}: {field}[{index}] exceeds u16"));
+                }
+                row
+            };
+            let first = parse_row("first");
+            let second = parse_row("second");
+            let first_before = first;
+            let second_before = second;
+            let rust = cmp_components(&first, &second);
+            let expected = i32::try_from(
+                official["output"]["result"]
+                    .as_i64()
+                    .expect("result must be an integer"),
+            )
+            .expect("official result must fit i32");
+            assert_eq!(rust, expected, "{case_id}");
+            assert_eq!(first, first_before, "{case_id}: first input mutation");
+            assert_eq!(second, second_before, "{case_id}: second input mutation");
+            record_count += 1;
+        }
+        assert_eq!(record_count, 10);
+    }
 
     fn terminal_hdt_atom(symbol: u8, neighbor: u16) -> inp_ATOM {
         let mut atom = inp_ATOM {

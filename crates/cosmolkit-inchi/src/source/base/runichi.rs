@@ -8,8 +8,10 @@ use crate::source::base::mol_fmt2::MolfileSaveCopy;
 use crate::source::base::mol_fmt4::{IntArray_AppendIfAbsent, OrigAtData_WriteToSDfile};
 use crate::source::base::mol2atom::{CreateInpAtomData, FreeCompAtomData};
 use crate::source::base::runichi2::{
-    DoOneStructureEarlyPreprocessing, GetOneComponent, POSEContext_Free, POSEContext_Init,
-    TreatErrorsInReadTheStructure, bIsSameBond, eprint_bytes, sdf_label_value,
+    DoOneStructureEarlyPreprocessing, GetOneComponent, OAD_Polymer_PrepareFoldCRUEdits,
+    OAD_Polymer_PrepareFrameShiftEdits, OAD_StructureEdits_Clear, OAD_StructureEdits_DebugPrint,
+    OAD_StructureEdits_Init, POSEContext_Free, POSEContext_Init, TreatErrorsInReadTheStructure,
+    bIsSameBond, eprint_bytes, sdf_label_value,
 };
 use crate::source::base::runichi3::{
     OAD_Polymer_CyclizeCloseableUnits, OAD_Polymer_DebugTrace, OAD_Polymer_FindBackbones,
@@ -27,22 +29,23 @@ use crate::source::base::strutil::{
 };
 use crate::source::base::util::{
     extract_auxinfo_substring, extract_inchi_substring, inchi_calloc, inchi_free, is_in_the_ilist,
+    remove_one_lf,
 };
 use crate::source_types::{
-    _IS_ERROR, _IS_FATAL, _IS_OKAY, CANON_GLOBALS, CMP_COMPONENTS, COMP_ATOM_DATA, CT_OUT_OF_RAM,
-    CT_USER_QUIT_ERR, FLAG_INP_AT_CHIRAL, INCHI_BAS, INCHI_CLOCK, INCHI_IOS_STRING,
-    INCHI_IOS_TYPE_STRING, INCHI_IOSTREAM, INCHI_MODE, INCHI_NUM, INCHI_OUT_NO_AUX_INFO,
-    INCHI_OUT_SAVEOPT, INCHI_OUT_SDFILE_ATOMS_DT, INCHI_OUT_SDFILE_ONLY, INCHI_OUT_SHORT_AUX_INFO,
-    INCHI_REC, INP_ATOM_DATA, INP_ATOM_DATA2, INPUT_PARMS, LOG_MASK_ALL, NORM_CANON_FLAGS,
-    OAD_StructureEdits, ORIG_ATOM_DATA, ORIG_STRUCT, PINChI_Aux2, PINChI2,
-    POLYMER_REPRESENTATION_MIXED, POLYMER_REPRESENTATION_STRUCTURE_BASED, POLYMERS_LEGACY,
-    POLYMERS_LEGACY_PLUS, POLYMERS_MODERN, REQ_MODE_BASIC, REQ_MODE_DIFF_UU_STEREO, REQ_MODE_ISO,
-    REQ_MODE_RACEMIC_STEREO, REQ_MODE_RELATIVE_STEREO, REQ_MODE_SB_IGN_ALL_UU,
-    REQ_MODE_SC_IGN_ALL_UU, REQ_MODE_STEREO, REQ_MODE_TAUT, SAVE_OPT_15T, SAVE_OPT_FIXEDH,
-    SAVE_OPT_KET, SAVE_OPT_PT_06_00, SAVE_OPT_PT_13_00, SAVE_OPT_PT_16_00, SAVE_OPT_PT_18_00,
-    SAVE_OPT_PT_22_00, SAVE_OPT_PT_39_00, SAVE_OPT_RECMET, SAVE_OPT_SLUUD, SAVE_OPT_SUU,
-    STRUCT_DATA, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, TAUT_NON,
-    TAUT_NUM, TAUT_YES, TG_FLAG_1_5_TAUT, TG_FLAG_DISCONNECT_COORD_DONE,
+    _IS_ERROR, _IS_FATAL, _IS_OKAY, _IS_WARNING, CANON_GLOBALS, CMP_COMPONENTS, COMP_ATOM_DATA,
+    CT_OUT_OF_RAM, CT_USER_QUIT_ERR, FLAG_INP_AT_CHIRAL, INCHI_BAS, INCHI_CLOCK, INCHI_IOS_STRING,
+    INCHI_IOS_TYPE_STRING, INCHI_IOSTREAM, INCHI_MODE, INCHI_NUM, INCHI_OUT_INCHI_GEN_ERROR,
+    INCHI_OUT_NO_AUX_INFO, INCHI_OUT_SAVEOPT, INCHI_OUT_SDFILE_ATOMS_DT, INCHI_OUT_SDFILE_ONLY,
+    INCHI_OUT_SHORT_AUX_INFO, INCHI_OUT_STDINCHI, INCHI_REC, INP_ATOM_DATA, INP_ATOM_DATA2,
+    INPUT_PARMS, LOG_MASK_ALL, NORM_CANON_FLAGS, OAD_StructureEdits, ORIG_ATOM_DATA, ORIG_STRUCT,
+    PINChI_Aux2, PINChI2, POLYMER_REPRESENTATION_MIXED, POLYMER_REPRESENTATION_STRUCTURE_BASED,
+    POLYMERS_LEGACY, POLYMERS_LEGACY_PLUS, POLYMERS_MODERN, POLYMERS_NO, REQ_MODE_BASIC,
+    REQ_MODE_DIFF_UU_STEREO, REQ_MODE_ISO, REQ_MODE_RACEMIC_STEREO, REQ_MODE_RELATIVE_STEREO,
+    REQ_MODE_SB_IGN_ALL_UU, REQ_MODE_SC_IGN_ALL_UU, REQ_MODE_STEREO, REQ_MODE_TAUT, SAVE_OPT_15T,
+    SAVE_OPT_FIXEDH, SAVE_OPT_KET, SAVE_OPT_PT_06_00, SAVE_OPT_PT_13_00, SAVE_OPT_PT_16_00,
+    SAVE_OPT_PT_18_00, SAVE_OPT_PT_22_00, SAVE_OPT_PT_39_00, SAVE_OPT_RECMET, SAVE_OPT_SLUUD,
+    SAVE_OPT_SUU, STRUCT_DATA, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer,
+    TAUT_NON, TAUT_NUM, TAUT_YES, TG_FLAG_1_5_TAUT, TG_FLAG_DISCONNECT_COORD_DONE,
     TG_FLAG_DISCONNECT_SALTS_DONE, TG_FLAG_FIX_ODD_THINGS_DONE, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE,
     TG_FLAG_FOUND_ISOTOPIC_H_DONE, TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_MOVE_CHARGE_COORD_DONE,
     TG_FLAG_MOVE_HPLUS2NEUTR_DONE, TG_FLAG_MOVE_POS_CHARGES_DONE, TG_FLAG_PT_06_00,
@@ -85,6 +88,916 @@ fn overwrite_source_c_buffer(
     }
     destination[bytes.len()] = 0;
     Ok(())
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn ProcessOneStructureEx(
+    heap: &mut SourceHeap,
+    clock: SourceMutPointer<INCHI_CLOCK>,
+    canonical_globals: SourceMutPointer<CANON_GLOBALS>,
+    structure_data: &mut STRUCT_DATA,
+    input_parameters: &mut INPUT_PARMS,
+    mut title: Option<&mut [i8]>,
+    inchi_components: &mut [SourceMutPointer<PINChI2>; INCHI_NUM as usize],
+    aux_components: &mut [SourceMutPointer<PINChI_Aux2>; INCHI_NUM as usize],
+    input_file: SourceMutPointer<INCHI_IOSTREAM>,
+    log_file: SourceMutPointer<INCHI_IOSTREAM>,
+    output_file: SourceMutPointer<INCHI_IOSTREAM>,
+    problem_file: SourceMutPointer<INCHI_IOSTREAM>,
+    original_input_pointer: SourceMutPointer<ORIG_ATOM_DATA>,
+    prepared_input_pointer: SourceMutPointer<ORIG_ATOM_DATA>,
+    input_number: i64,
+    mut string_buffer: Option<&mut INCHI_IOS_STRING>,
+    save_option_bits: u8,
+    stdout: SourceMutPointer<crate::source_types::FILE>,
+    clock_result: clock_t,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/runichi.c:2029 ProcessOneStructureEx
+    // INCHI✔️❌: complete source frame follows verbatim.
+    /*
+int ProcessOneStructureEx( struct tagINCHI_CLOCK    *ic,
+                           struct tagCANON_GLOBALS  *CG,
+                           STRUCT_DATA              *sd,
+                           INPUT_PARMS              *ip,
+                           char                     *szTitle,
+                           PINChI2                  *pINChI2[INCHI_NUM],
+                           PINChI_Aux2              *pINChI_Aux2[INCHI_NUM],
+                           INCHI_IOSTREAM           *inp_file,
+                           INCHI_IOSTREAM           *log_file,
+                           INCHI_IOSTREAM           *out_file,
+                           INCHI_IOSTREAM           *prb_file,
+                           ORIG_ATOM_DATA           *orig_inp_data,
+                           ORIG_ATOM_DATA           *prep_inp_data,
+                           long                     num_inp,
+                           INCHI_IOS_STRING         *strbuf,
+                           unsigned char            save_opt_bits )
+{
+    int ret = _IS_OKAY;
+    char *sinchi_noedits=NULL, *saux_noedits=NULL;
+    
+
+    /* PREPROCESS */
+
+#if (BUILD_WITH_ENG_OPTIONS==1)
+#if ALLOW_SUBSTRUCTURE_FILTERING==1
+    if (ip->bFilterSS)
+    {
+        int present, ok = 0;
+        
+        present = OrigAtData_CheckForSubstructure(orig_inp_data);
+
+        if (ip->bFilterSS == 1 && present)			ok = 1;
+        else if (ip->bFilterSS == -1 && !present)	ok = 1;
+
+        if (!ok)
+        {
+            inchi_ios_eprint(log_file, "Warning (Skip record which does not pass substructure presence/absence filter) structure #%ld.%s%s%s%s\n",
+                             num_inp, SDF_LBL_VAL(ip->pSdfLabel, ip->pSdfValue));
+            return _IS_SKIP;
+        }
+    }
+#endif
+#endif
+
+    /*  Preprocess Polymer CRUs (collect frame shift info and edit the original input accordingly) */
+    ret = PreprocessPolymerCRUData( ic, CG, sd, ip, szTitle,
+                                    pINChI2, pINChI_Aux2,
+                                    inp_file, log_file, out_file, prb_file,
+                                    orig_inp_data, prep_inp_data,
+                                    num_inp, strbuf, save_opt_bits,
+                                    &sinchi_noedits, &saux_noedits); /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+
+    /* CALCULATE INCHI */
+    
+    /* Perform calculation as usual either for untouched (modes POLYMERS_LEGACY and POLYMERS_LEGACY_PLUS) 
+       or just edited, probably (mode POLYMERS_MODERN) structure as passed in orig_inp_data
+    */
+    ret = ProcessOneStructureExCore( ic, CG, sd, ip,  szTitle, 
+                                     pINChI2, pINChI_Aux2,
+                                     inp_file, log_file, out_file, prb_file,
+                                     orig_inp_data, prep_inp_data,
+                                     num_inp, strbuf, save_opt_bits );
+
+    if (ip->bINChIOutputOptions2 & INCHI_OUT_INCHI_GEN_ERROR)
+    {
+        if (ret == _IS_FATAL || ret == _IS_ERROR)
+        {
+            if (ip->bINChIOutputOptions & INCHI_OUT_STDINCHI)
+            {
+                inchi_ios_eprint(out_file, "InChI=1S//\n");
+            }
+            else
+            {
+                inchi_ios_eprint(out_file, "InChI=1//\n");
+            }
+        }
+    }
+
+    /* Post-process: add AuxInfo for a very unedited original structure */
+    if (ret != _IS_FATAL && ret != _IS_ERROR)
+    {
+        if (!(ip->bINChIOutputOptions & INCHI_OUT_NO_AUX_INFO) &&
+            out_file->s.pStr && strstr(out_file->s.pStr, "AuxInfo=" ) &&
+            saux_noedits && strstr(saux_noedits, "AuxInfo=") )
+        {
+            char *pp = out_file->s.pStr;
+            if (saux_noedits[8])
+            {
+                remove_one_lf(pp);
+                out_file->s.nUsedLength = strlen(out_file->s.pStr);
+                inchi_ios_eprint(out_file, "/U/%-s\n", saux_noedits +8);
+            }
+        }
+    }
+
+    inchi_free(sinchi_noedits);
+    inchi_free(saux_noedits);
+
+    
+#ifdef TARGET_LIB_FOR_WINCHI
+
+    push_to_winchi_text_window(out_file);
+
+    if (sd->pStrErrStruct && FWPUSH)
+    {
+        FWPUSH(sd->pStrErrStruct);
+    }
+    inchi_ios_flush(out_file);
+#endif
+
+    return ret;
+}
+    */
+    // END INCHI C FUNCTION: ProcessOneStructureEx
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: ProcessOneStructureEx
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; BUILD_WITH_ENG_OPTIONS=0.
+    // INCHI✔️❌: ALLOW_SUBSTRUCTURE_FILTERING and TARGET_LIB_FOR_WINCHI branches are inactive.
+    // INCHI✔️❌: Preprocess status overwrite, output mutation order, AuxInfo /U/ append, and unconditional free order are preserved.
+    // INCHI✔️❌: Stream-record cloning and SourceHeap allocation-map access are materially more expensive than native direct pointers.
+    // END INCHI ACTIVE MACRO CONFIGURATION: ProcessOneStructureEx
+
+    fn stream_record(
+        heap: &SourceHeap,
+        pointer: SourceMutPointer<INCHI_IOSTREAM>,
+    ) -> Result<Option<INCHI_IOSTREAM>, SourceHeapError> {
+        if pointer.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(
+                heap.slice(pointer.as_const())?
+                    .first()
+                    .cloned()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            ))
+        }
+    }
+
+    fn store_stream_record(
+        heap: &mut SourceHeap,
+        pointer: SourceMutPointer<INCHI_IOSTREAM>,
+        value: Option<INCHI_IOSTREAM>,
+    ) -> Result<(), SourceHeapError> {
+        if let Some(value) = value {
+            *heap
+                .slice_mut(pointer)?
+                .first_mut()
+                .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
+        }
+        Ok(())
+    }
+
+    let mut noedits_inchi = SourceMutPointer::null();
+    let mut noedits_aux = SourceMutPointer::null();
+
+    let mut original_record = if original_input_pointer.is_null() {
+        None
+    } else {
+        Some(
+            heap.slice(original_input_pointer.as_const())?
+                .first()
+                .cloned()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+        )
+    };
+    let prepared_records = if prepared_input_pointer.is_null() {
+        vec![ORIG_ATOM_DATA::default(); INCHI_NUM as usize]
+    } else {
+        heap.slice(prepared_input_pointer.as_const())?
+            .get(..INCHI_NUM as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .to_vec()
+    };
+    let title_for_preprocess = title.as_deref().unwrap_or(&[0]);
+    let _preprocess_status = PreprocessPolymerCRUData(
+        heap,
+        clock,
+        canonical_globals,
+        structure_data,
+        input_parameters,
+        title_for_preprocess,
+        Some(inchi_components),
+        Some(aux_components),
+        input_file,
+        log_file,
+        output_file,
+        problem_file,
+        original_record.as_mut(),
+        &prepared_records,
+        input_number,
+        string_buffer.as_deref(),
+        save_option_bits,
+        &mut noedits_inchi,
+        &mut noedits_aux,
+        stdout,
+        clock_result,
+    )?;
+    if let Some(original_record) = original_record {
+        *heap
+            .slice_mut(original_input_pointer)?
+            .first_mut()
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = original_record;
+    }
+
+    let mut input_stream = stream_record(heap, input_file)?;
+    let mut log_stream = stream_record(heap, log_file)?;
+    let mut output_stream = stream_record(heap, output_file)?;
+    let mut problem_stream = stream_record(heap, problem_file)?;
+
+    let operation = (|| -> Result<i32, SourceHeapError> {
+        let ret = ProcessOneStructureExCore(
+            heap,
+            clock,
+            canonical_globals,
+            structure_data,
+            input_parameters,
+            title.as_deref_mut(),
+            inchi_components,
+            aux_components,
+            input_stream.as_mut(),
+            log_stream.as_mut(),
+            output_stream.as_mut(),
+            problem_stream.as_mut(),
+            original_input_pointer,
+            prepared_input_pointer,
+            input_number,
+            string_buffer.as_deref_mut(),
+            save_option_bits,
+            stdout,
+            clock_result,
+        )?;
+
+        if input_parameters.bINChIOutputOptions2 & INCHI_OUT_INCHI_GEN_ERROR as i32 != 0
+            && (ret == _IS_FATAL as i32 || ret == _IS_ERROR as i32)
+        {
+            let generated = if input_parameters.bINChIOutputOptions & INCHI_OUT_STDINCHI as i32 != 0
+            {
+                b"InChI=1S//\n" as &[u8]
+            } else {
+                b"InChI=1//\n" as &[u8]
+            };
+            let _ = eprint_bytes(heap, output_stream.as_mut(), generated)?;
+        }
+
+        if ret != _IS_FATAL as i32
+            && ret != _IS_ERROR as i32
+            && input_parameters.bINChIOutputOptions & INCHI_OUT_NO_AUX_INFO as i32 == 0
+            && output_stream.as_ref().is_some_and(|stream| !stream.s.pStr.is_null())
+            && !noedits_aux.is_null()
+        {
+            let output_has_aux = {
+                let stream = output_stream.as_ref().expect("checked above");
+                runichi_c_text(heap, stream.s.pStr.as_const())?
+                    .windows(8)
+                    .any(|window| window == b"AuxInfo=")
+            };
+            let aux = runichi_c_text(heap, noedits_aux.as_const())?;
+            if output_has_aux
+                && aux.windows(8).any(|window| window == b"AuxInfo=")
+                && aux.get(8).copied().unwrap_or(0) != 0
+            {
+                let stream = output_stream.as_mut().expect("checked above");
+                remove_one_lf(heap, stream.s.pStr)?;
+                let length = runichi_c_text(heap, stream.s.pStr.as_const())?.len();
+                stream.s.nUsedLength = i32::try_from(length)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let mut suffix = b"/U/".to_vec();
+                suffix.extend_from_slice(&aux[8..]);
+                suffix.push(b'\n');
+                let _ = eprint_bytes(heap, Some(stream), &suffix)?;
+            }
+        }
+        Ok(ret)
+    })();
+
+    let store_input = store_stream_record(heap, input_file, input_stream);
+    let store_log = store_stream_record(heap, log_file, log_stream);
+    let store_output = store_stream_record(heap, output_file, output_stream);
+    let store_problem = store_stream_record(heap, problem_file, problem_stream);
+    let free_inchi = inchi_free(heap, noedits_inchi);
+    let free_aux = inchi_free(heap, noedits_aux);
+
+    match operation {
+        Err(error) => Err(error),
+        Ok(ret) => {
+            store_input?;
+            store_log?;
+            store_output?;
+            store_problem?;
+            free_inchi?;
+            free_aux?;
+            Ok(ret)
+        }
+    }
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn PreprocessPolymerCRUData(
+    heap: &mut SourceHeap,
+    clock: SourceMutPointer<INCHI_CLOCK>,
+    canonical_globals: SourceMutPointer<CANON_GLOBALS>,
+    structure_data: &mut STRUCT_DATA,
+    input_parameters: &mut INPUT_PARMS,
+    title: &[i8],
+    inchi_components: Option<&[SourceMutPointer<PINChI2>; INCHI_NUM as usize]>,
+    aux_components: Option<&[SourceMutPointer<PINChI_Aux2>; INCHI_NUM as usize]>,
+    input_file: SourceMutPointer<INCHI_IOSTREAM>,
+    log_file: SourceMutPointer<INCHI_IOSTREAM>,
+    output_file: SourceMutPointer<INCHI_IOSTREAM>,
+    problem_file: SourceMutPointer<INCHI_IOSTREAM>,
+    mut original_input: Option<&mut ORIG_ATOM_DATA>,
+    prepared_input: &[ORIG_ATOM_DATA],
+    input_number: i64,
+    string_buffer: Option<&INCHI_IOS_STRING>,
+    save_option_bits: u8,
+    inchi_noedits: &mut SourceMutPointer<i8>,
+    aux_noedits: &mut SourceMutPointer<i8>,
+    stdout: SourceMutPointer<crate::source_types::FILE>,
+    clock_result: clock_t,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/runichi.c:2147 PreprocessPolymerCRUData
+    // INCHI✔️❌: complete source frame follows verbatim.
+    /*
+int PreprocessPolymerCRUData(	struct tagINCHI_CLOCK    *ic,
+                                struct tagCANON_GLOBALS  *CG,
+                                STRUCT_DATA              *sd,
+                                INPUT_PARMS              *ip,
+                                char                     *szTitle,
+                                PINChI2                  *pINChI2[INCHI_NUM],
+                                PINChI_Aux2              *pINChI_Aux2[INCHI_NUM],
+                                INCHI_IOSTREAM           *inp_file,
+                                INCHI_IOSTREAM           *log_file,
+                                INCHI_IOSTREAM           *out_file,
+                                INCHI_IOSTREAM           *prb_file,
+                                ORIG_ATOM_DATA           *orig_inp_data,
+                                ORIG_ATOM_DATA           *prep_inp_data,
+                                long                     num_inp,
+                                INCHI_IOS_STRING         *strbuf,
+                                unsigned char            save_opt_bits,
+                                char					 **sinchi_noedits,
+                                char					 **saux_noedits)
+{
+    int ret = _IS_OKAY;
+    char *sinchi_105p = NULL, *saux_105p = NULL;
+    OAD_StructureEdits edits_unit_frame_shift, *ed_fs = &edits_unit_frame_shift;
+    OAD_StructureEdits edits_unit_folding, *ed_fold = &edits_unit_folding;
+    
+    OAD_StructureEdits_Init(ed_fold);
+    OAD_StructureEdits_Init(ed_fs);
+
+    if (orig_inp_data)
+    {
+        orig_inp_data->valid_polymer = 0;
+        if (orig_inp_data->polymer)
+        {
+            orig_inp_data->polymer->treat = ip->bPolymers;
+            if (orig_inp_data->polymer->treat != POLYMERS_NO)
+            {
+                orig_inp_data->valid_polymer = 1;
+
+                if (orig_inp_data->polymer->treat == POLYMERS_MODERN)
+                {
+                    int n_done, n_todo = 0, n_poly_zz = 0; /* djb-rwth: ignoring LLVM warning: variable used */
+
+                    /*  First, get InChI and AuxInfo for the unedited original input
+                    (actually, we are interested in AuxInfo for original structure;
+                    we then append it to the final result AuxInfo, in order to
+                    preserve total reversibility (restoring the original structure ) */
+                    ret = OAD_ProcessOneStructureNoEdits(ic, CG, sd, ip, szTitle,
+                                                            pINChI2, pINChI_Aux2,
+                                                            inp_file, log_file, out_file, prb_file,
+                                                            orig_inp_data, prep_inp_data,
+                                                            num_inp, strbuf, save_opt_bits,
+                                                            &n_poly_zz,
+                                                            sinchi_noedits, saux_noedits);
+                    if (ret == _IS_FATAL || ret == _IS_ERROR)
+                    {
+                        ret = _IS_WARNING; 
+                        if (!ip->bNoWarnings)
+                        {
+                            AddErrorMessage(sd->pStrErrStruct, "CRU folding and frame shift analysis failed");
+                        }
+                        goto exit_function;
+                    }
+                    if (n_poly_zz < 2)
+                    {
+                        /* For now, CRU folding and frame shift analysis are only applicable to */
+                        /* CRU having both caps of indefinite nature, Zz                        */
+                        goto exit_function;
+                    }
+                    
+
+                    /* Prepare and perform CRU folding related edits */
+                    if (ip->bFoldPolymerSRU != 0) 
+                    {
+                        /*	Get interim 105+ flavour of InChI and AuxInfo and prepare */
+                        int old_bFrameShiftScheme = ip->bFrameShiftScheme;
+                        ip->bFrameShiftScheme = FSS_STARS_CYCLED;
+                        ret = OAD_ProcessOneStructure105Plus(ic, CG, sd, ip, szTitle,
+                            pINChI2, pINChI_Aux2,
+                            inp_file, log_file, out_file, prb_file,
+                            orig_inp_data, prep_inp_data,
+                            num_inp, strbuf, save_opt_bits,
+                            &sinchi_105p, &saux_105p);
+                        ip->bFrameShiftScheme = old_bFrameShiftScheme;
+                        if (ret == _IS_FATAL || ret == _IS_ERROR)
+                        {
+                            ret = _IS_WARNING;
+                            if (!ip->bNoWarnings)
+                            {
+                                /* AddErrorMessage(sd->pStrErrStruct, "CRU fold analysis failed");*/
+                                ;
+                            }
+                            goto frame_shift; 
+                        }
+
+                        ret = OAD_Polymer_PrepareFoldCRUEdits( orig_inp_data, *sinchi_noedits, *saux_noedits, sinchi_105p, saux_105p, ed_fold);
+                        if (ret == _IS_FATAL || ret == _IS_ERROR)
+                        {
+                            if (!ip->bNoWarnings)
+                            {
+                                /*AddErrorMessage(sd->pStrErrStruct, "CRU fold analysis failed");*/
+                                ;
+                            }
+                            goto frame_shift;
+                        }
+                        if (ret == _IS_WARNING)
+                        {
+                           /* inchi_ios_eprint(log_file, "Warning (CRU fold analysis failed) structure #%ld.%s%s%s%s\n",
+                                num_inp, SDF_LBL_VAL(ip->pSdfLabel, ip->pSdfValue));*/                            
+                            ;
+                        }
+                        /* else */
+                        {
+                            /* Proceed with CRU fold */
+                            n_done = 0; /* djb-rwth: ignoring LLVM warning: variable used */
+                            n_todo = ed_fold->del_atom->used + ed_fold->del_bond->used + ed_fold->new_bond->used + ed_fold->mod_bond->used;
+                            ed_fold->del_side_chains = 1;
+                            OAD_StructureEdits_DebugPrint(ed_fold);
+                            if (n_todo)
+                            {
+                                /* Edit the original input data */
+                                ed_fold->del_side_chains = 1;
+                                n_done = OAD_StructureEdits_Apply(sd, ip, orig_inp_data, ed_fold, &ret); /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+                                if (ret == _IS_FATAL || ret == _IS_ERROR)
+                                {
+                                    ret = _IS_WARNING;
+                                    /*inchi_ios_eprint(log_file, "Warning (CRU fold failed) structure #%ld.%s%s%s%s\n",
+                                        num_inp, SDF_LBL_VAL(ip->pSdfLabel, ip->pSdfValue));
+                                    */
+                                    if (!ip->bNoWarnings)
+                                    {
+                                        AddErrorMessage(sd->pStrErrStruct, "CRU folding failed");
+                                    }
+                                }
+                                else
+                                {
+                                    if (!ip->bNoWarnings)
+                                    {
+                                        WarningMessage(sd->pStrErrStruct, "Atom(s) removed due to CRU folding");
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+frame_shift:        ;
+                    /* Prepare and perform frame shift related edits */
+                    if (ip->bFrameShiftScheme != FSS_NONE) 
+                    {
+                        /* Clear buffers */
+                        if (sinchi_105p)
+                        {
+                            inchi_free(sinchi_105p);
+                        }
+                        if (saux_105p)
+                        {
+                            inchi_free(saux_105p);
+                        }
+                        /*	Get interim 105+ flavour of InChI and AuxInfo (possibly 2nd time) */
+                        ret = OAD_ProcessOneStructure105Plus(ic, CG, sd, ip, szTitle,
+                                                                pINChI2, pINChI_Aux2,
+                                                                inp_file, log_file, out_file, prb_file,
+                                                                orig_inp_data, prep_inp_data,
+                                                                num_inp, strbuf, save_opt_bits,
+                                                                &sinchi_105p, &saux_105p);
+                        if (ret == _IS_FATAL || ret == _IS_ERROR)
+                        {
+                            ret = _IS_WARNING;
+                            /*inchi_ios_eprint(log_file, "Warning (Frame shift analysis failed) structure #%ld.%s%s%s%s\n",
+                                num_inp, SDF_LBL_VAL(ip->pSdfLabel, ip->pSdfValue));*/
+                            if (!ip->bNoWarnings)
+                            {
+                                AddErrorMessage(sd->pStrErrStruct, "Frame shift analysis failed");
+                            }
+                            goto exit_function;
+                        }
+
+                        ret = OAD_Polymer_PrepareFrameShiftEdits( orig_inp_data, sinchi_105p, saux_105p, ed_fs);
+                     
+                        if (ret == _IS_FATAL || ret == _IS_ERROR) /* djb-rwth: logical operator corrected */
+                        {
+                            ret = _IS_WARNING;
+                            /*inchi_ios_eprint(log_file, "Warning (Frame shift analysis failed) structure #%ld.%s%s%s%s\n",
+                                             num_inp, SDF_LBL_VAL(ip->pSdfLabel, ip->pSdfValue));*/
+                            if (!ip->bNoWarnings)
+                            {
+                                AddErrorMessage(sd->pStrErrStruct, "Frame shift analysis failed");
+                            }
+                            goto exit_function;
+                        }
+                        else
+                        {
+                            /* OK, proceed with frame shift */
+                            n_done = 0; /* djb-rwth: ignoring LLVM warning: variable used */
+                            n_todo = ed_fs->del_atom->used +
+                                     ed_fs->del_bond->used + ed_fs->new_bond->used + ed_fs->mod_bond->used +
+                                     ed_fs->mod_coord->used;
+                            OAD_StructureEdits_DebugPrint(ed_fs);
+                            if (n_todo)
+                            {
+                                /* Edit the original input data according to frame shift info */
+                                n_done = OAD_StructureEdits_Apply(sd, ip, orig_inp_data, ed_fs, &ret); /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+                                if (ret == _IS_FATAL || ret == _IS_ERROR)
+                                {
+                                    ret = _IS_WARNING;
+                                    /*inchi_ios_eprint(log_file, "Warning (Frame shift failed) structure #%ld.%s%s%s%s\n",
+                                                     num_inp, SDF_LBL_VAL(ip->pSdfLabel, ip->pSdfValue));*/
+                                    if (!ip->bNoWarnings)
+                                    {
+                                        AddErrorMessage(sd->pStrErrStruct, "Frame shift failed");
+                                    }
+                                }
+                                else
+                                {
+                                    if (!ip->bNoWarnings)
+                                    {
+                                        WarningMessage(sd->pStrErrStruct, "Bond(s) rearranged due to CRU frame shift");
+                                    }
+                                }
+                            }
+                        }
+                    } /* if (ip->bFrameShiftScheme != FSS_NONE)  */
+
+
+                } /* if (orig_inp_data->polymer->treat == POLYMERS_MODERN) */
+            }
+
+            else /* orig_inp_data->polymer->treat == POLYMERS_NO) */
+            {
+                /*inchi_ios_eprint(log_file, "Ignore polymer data");*/
+                if (!ip->bNoWarnings)
+                {
+                    AddErrorMessage(sd->pStrErrStruct, "Ignore polymer data");
+                }
+            }
+        }
+    }
+
+exit_function:
+    if (sinchi_105p)
+    {
+        inchi_free(sinchi_105p);
+    }
+    if (saux_105p)
+    {
+        inchi_free(saux_105p);
+    }
+    OAD_StructureEdits_Clear(ed_fold);  /* Clear edits collection */
+    OAD_StructureEdits_Clear(ed_fs);    /* Clear edits collection */
+    */
+    // END INCHI C FUNCTION: PreprocessPolymerCRUData
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: PreprocessPolymerCRUData
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; WarningMessage expands to AddErrorMessage.
+    // INCHI✔️❌: FSS_STARS_CYCLED=0, FSS_NONE=1, POLYMERS_NO=0, and POLYMERS_MODERN=1.
+    // INCHI✔️❌: Both ignored edit-initialization statuses, fold-to-frame control transfer, return rewriting, mutation order, and cleanup order are preserved.
+    // INCHI✔️❌: SourceHeap pointer-map access and independently completed worker ports add cloning and allocation overhead beyond native direct pointers.
+    // END INCHI ACTIVE MACRO CONFIGURATION: PreprocessPolymerCRUData
+
+    fn used(
+        heap: &SourceHeap,
+        pointer: SourceMutPointer<crate::source_types::INT_ARRAY>,
+    ) -> Result<i32, SourceHeapError> {
+        Ok(heap
+            .slice(pointer.as_const())?
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .used)
+    }
+
+    fn add_message(
+        structure_data: &mut STRUCT_DATA,
+        message: &[u8],
+    ) -> Result<(), SourceHeapError> {
+        let mut source_message = message.iter().map(|byte| *byte as i8).collect::<Vec<_>>();
+        source_message.push(0);
+        let _ = AddErrorMessage(
+            Some(&mut structure_data.pStrErrStruct),
+            Some(&source_message),
+        )?;
+        Ok(())
+    }
+
+    let mut interim_inchi = SourceMutPointer::null();
+    let mut interim_aux = SourceMutPointer::null();
+    let mut fold_edits = OAD_StructureEdits::default();
+    let mut frame_shift_edits = OAD_StructureEdits::default();
+
+    let fold_init = OAD_StructureEdits_Init(heap, &mut fold_edits);
+    let frame_shift_init = OAD_StructureEdits_Init(heap, &mut frame_shift_edits);
+    let setup_error = fold_init.err().or_else(|| frame_shift_init.err());
+
+    let operation = if let Some(error) = setup_error {
+        Err(error)
+    } else {
+        (|| -> Result<i32, SourceHeapError> {
+            let mut ret = _IS_OKAY as i32;
+
+            if let Some(original_input) = original_input.as_deref_mut() {
+                original_input.valid_polymer = 0;
+                if !original_input.polymer.is_null() {
+                    let treatment = input_parameters.bPolymers;
+                    heap.slice_mut(original_input.polymer)?
+                        .first_mut()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .treat = treatment;
+                    if treatment != POLYMERS_NO as i32 {
+                        original_input.valid_polymer = 1;
+
+                        if treatment == POLYMERS_MODERN as i32 {
+                            let mut number_of_polymer_zz = 0_i32;
+                            ret = OAD_ProcessOneStructureNoEdits(
+                                heap,
+                                clock,
+                                canonical_globals,
+                                structure_data,
+                                input_parameters,
+                                title,
+                                inchi_components,
+                                aux_components,
+                                input_file,
+                                log_file,
+                                output_file,
+                                problem_file,
+                                original_input,
+                                prepared_input,
+                                input_number,
+                                string_buffer,
+                                save_option_bits,
+                                &mut number_of_polymer_zz,
+                                inchi_noedits,
+                                aux_noedits,
+                                stdout,
+                                clock_result,
+                            )?;
+                            if ret == _IS_FATAL as i32 || ret == _IS_ERROR as i32 {
+                                ret = _IS_WARNING as i32;
+                                if input_parameters.bNoWarnings == 0 {
+                                    add_message(
+                                        structure_data,
+                                        b"CRU folding and frame shift analysis failed",
+                                    )?;
+                                }
+                                return Ok(ret);
+                            }
+                            if number_of_polymer_zz < 2 {
+                                return Ok(ret);
+                            }
+
+                            if input_parameters.bFoldPolymerSRU != 0 {
+                                let old_frame_shift_scheme =
+                                    input_parameters.bFrameShiftScheme;
+                                input_parameters.bFrameShiftScheme =
+                                    tagFrameShifScheme_FSS_STARS_CYCLED as i32;
+                                let interim_result = OAD_ProcessOneStructure105Plus(
+                                    heap,
+                                    clock,
+                                    canonical_globals,
+                                    structure_data,
+                                    input_parameters,
+                                    title,
+                                    inchi_components,
+                                    aux_components,
+                                    input_file,
+                                    log_file,
+                                    output_file,
+                                    problem_file,
+                                    original_input,
+                                    prepared_input,
+                                    input_number,
+                                    string_buffer,
+                                    save_option_bits,
+                                    &mut interim_inchi,
+                                    &mut interim_aux,
+                                    stdout,
+                                    clock_result,
+                                );
+                                input_parameters.bFrameShiftScheme =
+                                    old_frame_shift_scheme;
+                                ret = interim_result?;
+                                if ret == _IS_FATAL as i32 || ret == _IS_ERROR as i32 {
+                                    ret = _IS_WARNING as i32;
+                                } else {
+                                    ret = OAD_Polymer_PrepareFoldCRUEdits(
+                                        heap,
+                                        original_input,
+                                        inchi_noedits.as_const(),
+                                        aux_noedits.as_const(),
+                                        interim_inchi.as_const(),
+                                        interim_aux.as_const(),
+                                        &fold_edits,
+                                    )?;
+                                    if ret != _IS_FATAL as i32 && ret != _IS_ERROR as i32 {
+                                        let number_todo = used(heap, fold_edits.del_atom)?
+                                            .wrapping_add(used(heap, fold_edits.del_bond)?)
+                                            .wrapping_add(used(heap, fold_edits.new_bond)?)
+                                            .wrapping_add(used(heap, fold_edits.mod_bond)?);
+                                        fold_edits.del_side_chains = 1;
+                                        OAD_StructureEdits_DebugPrint(&fold_edits);
+                                        if number_todo != 0 {
+                                            fold_edits.del_side_chains = 1;
+                                            let _number_done = OAD_StructureEdits_Apply(
+                                                heap,
+                                                structure_data,
+                                                input_parameters,
+                                                original_input,
+                                                &fold_edits,
+                                                &mut ret,
+                                            )?;
+                                            if ret == _IS_FATAL as i32
+                                                || ret == _IS_ERROR as i32
+                                            {
+                                                ret = _IS_WARNING as i32;
+                                                if input_parameters.bNoWarnings == 0 {
+                                                    add_message(
+                                                        structure_data,
+                                                        b"CRU folding failed",
+                                                    )?;
+                                                }
+                                            } else if input_parameters.bNoWarnings == 0 {
+                                                add_message(
+                                                    structure_data,
+                                                    b"Atom(s) removed due to CRU folding",
+                                                )?;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if input_parameters.bFrameShiftScheme
+                                != tagFrameShifScheme_FSS_NONE as i32
+                            {
+                                if !interim_inchi.is_null() {
+                                    inchi_free(heap, interim_inchi)?;
+                                }
+                                if !interim_aux.is_null() {
+                                    inchi_free(heap, interim_aux)?;
+                                }
+                                ret = OAD_ProcessOneStructure105Plus(
+                                    heap,
+                                    clock,
+                                    canonical_globals,
+                                    structure_data,
+                                    input_parameters,
+                                    title,
+                                    inchi_components,
+                                    aux_components,
+                                    input_file,
+                                    log_file,
+                                    output_file,
+                                    problem_file,
+                                    original_input,
+                                    prepared_input,
+                                    input_number,
+                                    string_buffer,
+                                    save_option_bits,
+                                    &mut interim_inchi,
+                                    &mut interim_aux,
+                                    stdout,
+                                    clock_result,
+                                )?;
+                                if ret == _IS_FATAL as i32 || ret == _IS_ERROR as i32 {
+                                    ret = _IS_WARNING as i32;
+                                    if input_parameters.bNoWarnings == 0 {
+                                        add_message(
+                                            structure_data,
+                                            b"Frame shift analysis failed",
+                                        )?;
+                                    }
+                                    return Ok(ret);
+                                }
+
+                                ret = OAD_Polymer_PrepareFrameShiftEdits(
+                                    heap,
+                                    original_input,
+                                    interim_inchi.as_const(),
+                                    interim_aux.as_const(),
+                                    &frame_shift_edits,
+                                )?;
+                                if ret == _IS_FATAL as i32 || ret == _IS_ERROR as i32 {
+                                    ret = _IS_WARNING as i32;
+                                    if input_parameters.bNoWarnings == 0 {
+                                        add_message(
+                                            structure_data,
+                                            b"Frame shift analysis failed",
+                                        )?;
+                                    }
+                                    return Ok(ret);
+                                }
+
+                                let number_todo = used(heap, frame_shift_edits.del_atom)?
+                                    .wrapping_add(used(heap, frame_shift_edits.del_bond)?)
+                                    .wrapping_add(used(heap, frame_shift_edits.new_bond)?)
+                                    .wrapping_add(used(heap, frame_shift_edits.mod_bond)?)
+                                    .wrapping_add(used(heap, frame_shift_edits.mod_coord)?);
+                                OAD_StructureEdits_DebugPrint(&frame_shift_edits);
+                                if number_todo != 0 {
+                                    let _number_done = OAD_StructureEdits_Apply(
+                                        heap,
+                                        structure_data,
+                                        input_parameters,
+                                        original_input,
+                                        &frame_shift_edits,
+                                        &mut ret,
+                                    )?;
+                                    if ret == _IS_FATAL as i32 || ret == _IS_ERROR as i32 {
+                                        ret = _IS_WARNING as i32;
+                                        if input_parameters.bNoWarnings == 0 {
+                                            add_message(
+                                                structure_data,
+                                                b"Frame shift failed",
+                                            )?;
+                                        }
+                                    } else if input_parameters.bNoWarnings == 0 {
+                                        add_message(
+                                            structure_data,
+                                            b"Bond(s) rearranged due to CRU frame shift",
+                                        )?;
+                                    }
+                                }
+                            }
+                        }
+                    } else if input_parameters.bNoWarnings == 0 {
+                        add_message(structure_data, b"Ignore polymer data")?;
+                    }
+                }
+            }
+
+            Ok(ret)
+        })()
+    };
+
+    let mut cleanup_error = None;
+    if !interim_inchi.is_null() {
+        if let Err(error) = inchi_free(heap, interim_inchi) {
+            cleanup_error = Some(error);
+        }
+    }
+    if !interim_aux.is_null() {
+        if let Err(error) = inchi_free(heap, interim_aux)
+            && cleanup_error.is_none()
+        {
+            cleanup_error = Some(error);
+        }
+    }
+    if let Err(error) = OAD_StructureEdits_Clear(heap, &mut fold_edits)
+        && cleanup_error.is_none()
+    {
+        cleanup_error = Some(error);
+    }
+    if let Err(error) = OAD_StructureEdits_Clear(heap, &mut frame_shift_edits)
+        && cleanup_error.is_none()
+    {
+        cleanup_error = Some(error);
+    }
+
+    match operation {
+        Err(error) => Err(error),
+        Ok(_) if cleanup_error.is_some() => Err(cleanup_error.expect("checked above")),
+        Ok(ret) => Ok(ret),
+    }
 }
 
 #[rustfmt::skip]
@@ -5331,9 +6244,13 @@ pub(crate) fn CreateOneComponentINChI(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source::base::ichi_io::{inchi_ios_close, inchi_strbuf_close};
+    use crate::source::base::ichican2::SetBitFree;
+    use crate::source::base::mol2atom::FreeOrigAtData;
+    use crate::source::base::runichi4::FreeAllINChIArrays;
     use crate::source_types::{
         INCHI_IOS_TYPE_FILE, INChI, INT_ARRAY, OAD_Polymer, OAD_PolymerUnit, POLYMER_CONN_HT,
-        POLYMER_SST_NON, POLYMER_STY_SRU, POLYMERS_LEGACY, SourceFile, inp_ATOM,
+        POLYMER_SST_NON, POLYMER_STY_SRU, POLYMERS_LEGACY, STR_ERR_LEN, SourceFile, inp_ATOM,
     };
 
     fn string_stream() -> INCHI_IOSTREAM {
@@ -5384,6 +6301,666 @@ mod tests {
         };
         atom.elname[..2].copy_from_slice(&[b'C' as i8, 0]);
         atom
+    }
+
+    #[test]
+    fn source_port__runichi__processonestructureex__line_2029() {
+        fn invoke(
+            heap: &mut SourceHeap,
+            structure: &mut STRUCT_DATA,
+            parameters: &mut INPUT_PARMS,
+            original: ORIG_ATOM_DATA,
+        ) -> (Result<i32, SourceHeapError>, Vec<u8>, usize, usize) {
+            let clock = heap
+                .allocate_model_storage(vec![INCHI_CLOCK::default()])
+                .unwrap();
+            let canonical = heap
+                .allocate_model_storage(vec![CANON_GLOBALS::default()])
+                .unwrap();
+            let stdout = heap
+                .allocate_model_storage(vec![SourceFile {
+                    is_standard_stream: true,
+                    ..SourceFile::default()
+                }])
+                .unwrap();
+            let output = heap.allocate_model_storage(vec![string_stream()]).unwrap();
+            let original = heap.allocate_model_storage(vec![original]).unwrap();
+            let prepared = heap
+                .allocate_model_storage(vec![ORIG_ATOM_DATA::default(); INCHI_NUM as usize])
+                .unwrap();
+            let mut string_buffer = INCHI_IOS_STRING {
+                pStr: heap.allocate_model_storage(vec![0_i8; 4096]).unwrap(),
+                nAllocatedLength: 4096,
+                nPtr: 4096,
+                ..INCHI_IOS_STRING::default()
+            };
+            let mut inchi_components = [SourceMutPointer::null(); INCHI_NUM as usize];
+            let mut aux_components = [SourceMutPointer::null(); INCHI_NUM as usize];
+            let mut title = [0_i8];
+            let result = ProcessOneStructureEx(
+                heap,
+                clock,
+                canonical,
+                structure,
+                parameters,
+                Some(&mut title),
+                &mut inchi_components,
+                &mut aux_components,
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                output,
+                SourceMutPointer::null(),
+                original,
+                prepared,
+                i64::MIN,
+                Some(&mut string_buffer),
+                0xa5,
+                stdout,
+                0,
+            );
+            let output_record = heap.slice(output.as_const()).unwrap()[0].clone();
+            let output_bytes = stream_bytes(heap, &output_record);
+            let output_length = output_record.s.nUsedLength as usize;
+            let mut counts = structure.num_components;
+            FreeAllINChIArrays(
+                heap,
+                &mut inchi_components,
+                &mut aux_components,
+                &mut counts,
+            )
+            .unwrap();
+            assert_eq!(counts, [0; INCHI_NUM as usize]);
+            assert_eq!(
+                inchi_components,
+                [SourceMutPointer::null(); INCHI_NUM as usize]
+            );
+            assert_eq!(
+                aux_components,
+                [SourceMutPointer::null(); INCHI_NUM as usize]
+            );
+            heap.with_slice_mut_and_heap_mut(original, |records, heap| {
+                FreeOrigAtData(heap, records.first_mut())
+            })
+            .unwrap();
+            heap.with_slice_mut_and_heap_mut(prepared, |records, heap| {
+                for record in records.iter_mut().take(INCHI_NUM as usize) {
+                    FreeOrigAtData(heap, Some(record))?;
+                }
+                Ok(())
+            })
+            .unwrap();
+            inchi_strbuf_close(heap, Some(&mut string_buffer)).unwrap();
+            heap.with_slice_mut_and_heap_mut(canonical, |records, heap| {
+                SetBitFree(
+                    heap,
+                    records
+                        .first_mut()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                )?;
+                Ok(())
+            })
+            .unwrap();
+            heap.with_slice_mut_and_heap_mut(output, |records, heap| {
+                inchi_ios_close(heap, records.first_mut())
+            })
+            .unwrap();
+            heap.free(clock).unwrap();
+            heap.free(canonical).unwrap();
+            heap.free(stdout).unwrap();
+            heap.free(output).unwrap();
+            heap.free(original).unwrap();
+            heap.free(prepared).unwrap();
+            assert_eq!(heap.live_allocations_of::<INChI>(), 0);
+            assert_eq!(
+                heap.live_allocations_of::<crate::source_types::INChI_Aux>(),
+                0
+            );
+            assert_eq!(heap.live_allocations_of::<inp_ATOM>(), 0);
+            assert_eq!(heap.live_allocations_of::<INP_ATOM_DATA>(), 0);
+            assert_eq!(heap.live_allocations_of::<COMP_ATOM_DATA>(), 0);
+            assert_eq!(
+                heap.live_source_allocation_count(),
+                heap.live_source_allocations_of::<SourceMutPointer<OAD_PolymerUnit>>()
+            );
+            (
+                result,
+                output_bytes,
+                output_length,
+                heap.live_source_allocation_count(),
+            )
+        }
+
+        let base_parameters = INPUT_PARMS {
+            bAllowEmptyStructure: 1,
+            nInputType: tagInputType_INPUT_MOLFILE,
+            nMode: u64::from(REQ_MODE_TAUT | crate::source_types::REQ_MODE_NON_ISO),
+            bINChIOutputOptions: (crate::source_types::INCHI_OUT_PLAIN_TEXT
+                | INCHI_OUT_NO_AUX_INFO
+                | INCHI_OUT_SHORT_AUX_INFO) as i32,
+            ..INPUT_PARMS::default()
+        };
+        let mut heap = SourceHeap::default();
+        let mut structure = STRUCT_DATA::default();
+        let mut parameters = base_parameters.clone();
+        parameters.bPolymers = POLYMERS_LEGACY as i32;
+        let atoms = heap
+            .allocate_model_storage(vec![structure_carbon(0, 1)])
+            .unwrap();
+        let (result, output, output_length, live_allocations) = invoke(
+            &mut heap,
+            &mut structure,
+            &mut parameters,
+            ORIG_ATOM_DATA {
+                at: atoms,
+                num_inp_atoms: 1,
+                ..ORIG_ATOM_DATA::default()
+            },
+        );
+        assert_eq!(result, Ok(_IS_OKAY as i32));
+        assert_eq!(structure.num_components[INCHI_BAS as usize], 1);
+        assert_eq!(output, b"InChI=1/CH4/h1H4\n");
+        assert_eq!(output_length, output.len());
+        assert_eq!(live_allocations, 0);
+
+        for standard in [false, true] {
+            let mut heap = SourceHeap::default();
+            let atoms = heap
+                .allocate_model_storage(vec![inp_ATOM {
+                    elname: [b'Z' as i8, b'z' as i8, 0, 0, 0, 0],
+                    ..inp_ATOM::default()
+                }])
+                .unwrap();
+            let original = ORIG_ATOM_DATA {
+                at: atoms,
+                num_inp_atoms: 1,
+                ..ORIG_ATOM_DATA::default()
+            };
+            let mut structure = STRUCT_DATA::default();
+            let mut parameters = INPUT_PARMS {
+                nInputType: tagInputType_INPUT_SDFILE,
+                bINChIOutputOptions2: INCHI_OUT_INCHI_GEN_ERROR as i32,
+                bINChIOutputOptions: (crate::source_types::INCHI_OUT_PLAIN_TEXT
+                    | if standard { INCHI_OUT_STDINCHI } else { 0 })
+                    as i32,
+                ..INPUT_PARMS::default()
+            };
+            let (result, output, output_length, live_allocations) =
+                invoke(&mut heap, &mut structure, &mut parameters, original);
+            assert_eq!(result, Ok(_IS_ERROR as i32), "standard={standard}");
+            assert_eq!(
+                output,
+                if standard {
+                    b"InChI=1S//\n" as &[u8]
+                } else {
+                    b"InChI=1//\n" as &[u8]
+                },
+                "standard={standard}"
+            );
+            assert_eq!(output_length, output.len());
+            assert_eq!(live_allocations, 0);
+        }
+
+        let mut heap = SourceHeap::default();
+        let polymer = heap
+            .allocate_model_storage(vec![OAD_Polymer {
+                treat: POLYMERS_MODERN as i32,
+                ..OAD_Polymer::default()
+            }])
+            .unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![structure_carbon(0, 1)])
+            .unwrap();
+        let coordinates = heap.allocate_model_storage(vec![[b' ' as i8; 32]]).unwrap();
+        let original = ORIG_ATOM_DATA {
+            at: atoms,
+            szCoord: coordinates,
+            num_inp_atoms: 1,
+            polymer,
+            valid_polymer: -1,
+            ..ORIG_ATOM_DATA::default()
+        };
+        let mut structure = STRUCT_DATA::default();
+        let mut parameters = INPUT_PARMS {
+            bAllowEmptyStructure: 1,
+            nInputType: tagInputType_INPUT_MOLFILE,
+            nMode: u64::from(REQ_MODE_TAUT | crate::source_types::REQ_MODE_NON_ISO),
+            bPolymers: POLYMERS_MODERN as i32,
+            bINChIOutputOptions: crate::source_types::INCHI_OUT_PLAIN_TEXT as i32,
+            ..INPUT_PARMS::default()
+        };
+        let (result, output, output_length, live_allocations) =
+            invoke(&mut heap, &mut structure, &mut parameters, original);
+        assert_eq!(result, Ok(_IS_OKAY as i32));
+        assert_eq!(
+            output,
+            b"InChI=1/CH4/h1H4\nAuxInfo=1/0/N:1/rA:1C/rB:/rC:;/U/1/0/N:1/rA:1C/rB:/rC:;\n"
+        );
+        assert_eq!(output_length, output.len());
+        // The source duplicates the non-null, zero-unit polymer three times with calloc(0, 8),
+        // while OAD_Polymer_Free frees its units array only when pd->n is nonzero.
+        assert_eq!(live_allocations, 3);
+    }
+
+    #[test]
+    fn source_port__runichi__preprocesspolymercrudata__line_2147() {
+        fn invoke(
+            heap: &mut SourceHeap,
+            structure_data: &mut STRUCT_DATA,
+            input_parameters: &mut INPUT_PARMS,
+            original_input: Option<&mut ORIG_ATOM_DATA>,
+            supplied_inchi: Option<&[SourceMutPointer<PINChI2>; INCHI_NUM as usize]>,
+            inchi_noedits: &mut SourceMutPointer<i8>,
+            aux_noedits: &mut SourceMutPointer<i8>,
+            fail_after: Option<u64>,
+        ) -> (Result<i32, SourceHeapError>, usize, u64) {
+            let clock = heap
+                .allocate_model_storage(vec![INCHI_CLOCK::default()])
+                .unwrap();
+            let canonical = heap
+                .allocate_model_storage(vec![CANON_GLOBALS::default()])
+                .unwrap();
+            let stdout = heap
+                .allocate_model_storage(vec![SourceFile {
+                    is_standard_stream: true,
+                    ..SourceFile::default()
+                }])
+                .unwrap();
+            let prepared: [ORIG_ATOM_DATA; INCHI_NUM as usize] =
+                std::array::from_fn(|_| ORIG_ATOM_DATA::default());
+            let baseline = heap.live_allocation_count();
+            if let Some(successful_allocations) = fail_after {
+                heap.fail_after_allocations(successful_allocations);
+            } else {
+                heap.trace_source_allocations();
+            }
+            let result = PreprocessPolymerCRUData(
+                heap,
+                clock,
+                canonical,
+                structure_data,
+                input_parameters,
+                &[0],
+                supplied_inchi,
+                None,
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                original_input,
+                &prepared,
+                i64::MIN,
+                None,
+                0xa5,
+                inchi_noedits,
+                aux_noedits,
+                stdout,
+                0,
+            );
+            let calls = heap.source_allocation_calls();
+            (result, baseline, calls)
+        }
+
+        fn empty_polymer(heap: &mut SourceHeap, n_pzz: i32) -> SourceMutPointer<OAD_Polymer> {
+            let pzz = if n_pzz > 0 {
+                heap.allocate_model_storage((1..=n_pzz).collect()).unwrap()
+            } else {
+                SourceMutPointer::null()
+            };
+            heap.allocate_model_storage(vec![OAD_Polymer {
+                n_pzz,
+                pzz,
+                ..OAD_Polymer::default()
+            }])
+            .unwrap()
+        }
+
+        fn branch_polymer(heap: &mut SourceHeap) -> ORIG_ATOM_DATA {
+            let mut left = inp_ATOM {
+                orig_at_number: 1,
+                valence: 1,
+                chem_bonds_valence: 1,
+                ..inp_ATOM::default()
+            };
+            left.elname[..3].copy_from_slice(&[b'Z' as i8, b'z' as i8, 0]);
+            left.neighbor[0] = 1;
+            left.bond_type[0] = 1;
+            let mut center = inp_ATOM {
+                el_number: 6,
+                orig_at_number: 2,
+                valence: 2,
+                chem_bonds_valence: 2,
+                num_H: 2,
+                ..inp_ATOM::default()
+            };
+            center.elname[..2].copy_from_slice(&[b'C' as i8, 0]);
+            center.neighbor[..2].copy_from_slice(&[0, 2]);
+            center.bond_type[..2].copy_from_slice(&[1, 1]);
+            let mut right = inp_ATOM {
+                orig_at_number: 3,
+                valence: 1,
+                chem_bonds_valence: 1,
+                ..inp_ATOM::default()
+            };
+            right.elname[..3].copy_from_slice(&[b'Z' as i8, b'z' as i8, 0]);
+            right.neighbor[0] = 1;
+            right.bond_type[0] = 1;
+            let atoms = heap
+                .allocate_model_storage(vec![left, center, right])
+                .unwrap();
+            let atom_list = heap.allocate_model_storage(vec![2_i32]).unwrap();
+            let crossing_bonds = heap.allocate_model_storage(vec![1, 2, 3, 2]).unwrap();
+            let unit = heap
+                .allocate_model_storage(vec![OAD_PolymerUnit {
+                    type_: POLYMER_STY_SRU as i32,
+                    subtype: POLYMER_SST_NON as i32,
+                    conn: POLYMER_CONN_HT as i32,
+                    na: 1,
+                    nb: 2,
+                    alist: atom_list,
+                    blist: crossing_bonds,
+                    ..OAD_PolymerUnit::default()
+                }])
+                .unwrap();
+            let units = heap.allocate_model_storage(vec![unit]).unwrap();
+            let polymer = heap
+                .allocate_model_storage(vec![OAD_Polymer {
+                    units,
+                    n: 1,
+                    treat: POLYMERS_MODERN as i32,
+                    ..OAD_Polymer::default()
+                }])
+                .unwrap();
+            ORIG_ATOM_DATA {
+                at: atoms,
+                num_inp_atoms: 3,
+                num_inp_bonds: 2,
+                polymer,
+                valid_polymer: -1,
+                ..ORIG_ATOM_DATA::default()
+            }
+        }
+
+        let mut null_heap = SourceHeap::default();
+        let old_inchi = c_text(&mut null_heap, b"old-inchi");
+        let old_aux = c_text(&mut null_heap, b"old-aux");
+        let mut inchi = old_inchi;
+        let mut aux = old_aux;
+        let (result, baseline, calls) = invoke(
+            &mut null_heap,
+            &mut STRUCT_DATA::default(),
+            &mut INPUT_PARMS::default(),
+            None,
+            None,
+            &mut inchi,
+            &mut aux,
+            None,
+        );
+        assert_eq!(result, Ok(_IS_OKAY as i32));
+        assert_eq!(calls, 20);
+        assert_eq!(null_heap.live_allocation_count(), baseline);
+        assert_eq!((inchi, aux), (old_inchi, old_aux));
+
+        for successful_allocations in [0, 1, 2, 9, 10, 11, 19] {
+            let mut failure_heap = SourceHeap::default();
+            let mut failure_inchi = SourceMutPointer::null();
+            let mut failure_aux = SourceMutPointer::null();
+            let (result, baseline, _) = invoke(
+                &mut failure_heap,
+                &mut STRUCT_DATA::default(),
+                &mut INPUT_PARMS::default(),
+                None,
+                None,
+                &mut failure_inchi,
+                &mut failure_aux,
+                Some(successful_allocations),
+            );
+            assert_eq!(result, Ok(_IS_OKAY as i32));
+            assert_eq!(failure_heap.live_allocation_count(), baseline);
+        }
+
+        let mut no_polymer_heap = SourceHeap::default();
+        let mut no_polymer = ORIG_ATOM_DATA {
+            valid_polymer: 73,
+            ..ORIG_ATOM_DATA::default()
+        };
+        let (result, baseline, calls) = invoke(
+            &mut no_polymer_heap,
+            &mut STRUCT_DATA::default(),
+            &mut INPUT_PARMS::default(),
+            Some(&mut no_polymer),
+            None,
+            &mut SourceMutPointer::null(),
+            &mut SourceMutPointer::null(),
+            None,
+        );
+        assert_eq!(result, Ok(_IS_OKAY as i32));
+        assert_eq!(no_polymer.valid_polymer, 0);
+        assert_eq!(calls, 20);
+        assert_eq!(no_polymer_heap.live_allocation_count(), baseline);
+
+        for no_warnings in [0, 1] {
+            let mut ignored_heap = SourceHeap::default();
+            let polymer = empty_polymer(&mut ignored_heap, 0);
+            let mut ignored = ORIG_ATOM_DATA {
+                polymer,
+                valid_polymer: 79,
+                ..ORIG_ATOM_DATA::default()
+            };
+            let mut structure = STRUCT_DATA::default();
+            let mut parameters = INPUT_PARMS {
+                bPolymers: POLYMERS_NO as i32,
+                bNoWarnings: no_warnings,
+                ..INPUT_PARMS::default()
+            };
+            let (result, _, _) = invoke(
+                &mut ignored_heap,
+                &mut structure,
+                &mut parameters,
+                Some(&mut ignored),
+                None,
+                &mut SourceMutPointer::null(),
+                &mut SourceMutPointer::null(),
+                None,
+            );
+            assert_eq!(result, Ok(_IS_OKAY as i32));
+            assert_eq!(ignored.valid_polymer, 0);
+            assert_eq!(ignored_heap.slice(polymer.as_const()).unwrap()[0].treat, 0);
+            assert_eq!(
+                array_c_bytes(&structure.pStrErrStruct),
+                if no_warnings == 0 {
+                    b"Ignore polymer data" as &[u8]
+                } else {
+                    b""
+                }
+            );
+        }
+
+        let mut legacy_heap = SourceHeap::default();
+        let legacy_polymer = empty_polymer(&mut legacy_heap, 0);
+        let mut legacy = ORIG_ATOM_DATA {
+            polymer: legacy_polymer,
+            valid_polymer: -1,
+            ..ORIG_ATOM_DATA::default()
+        };
+        let mut legacy_parameters = INPUT_PARMS {
+            bPolymers: POLYMERS_LEGACY as i32,
+            ..INPUT_PARMS::default()
+        };
+        let (result, _, _) = invoke(
+            &mut legacy_heap,
+            &mut STRUCT_DATA::default(),
+            &mut legacy_parameters,
+            Some(&mut legacy),
+            None,
+            &mut SourceMutPointer::null(),
+            &mut SourceMutPointer::null(),
+            None,
+        );
+        assert_eq!(result, Ok(_IS_OKAY as i32));
+        assert_eq!(legacy.valid_polymer, 1);
+        assert_eq!(
+            legacy_heap.slice(legacy_polymer.as_const()).unwrap()[0].treat,
+            POLYMERS_LEGACY as i32
+        );
+
+        let mut reject_heap = SourceHeap::default();
+        let reject_polymer = empty_polymer(&mut reject_heap, 0);
+        let mut reject = ORIG_ATOM_DATA {
+            polymer: reject_polymer,
+            ..ORIG_ATOM_DATA::default()
+        };
+        let supplied_pointer = reject_heap
+            .allocate_model_storage(vec![[SourceMutPointer::null(), SourceMutPointer::null()]])
+            .unwrap();
+        let supplied = [supplied_pointer, SourceMutPointer::null()];
+        let mut reject_structure = STRUCT_DATA::default();
+        let mut reject_parameters = INPUT_PARMS {
+            bPolymers: POLYMERS_MODERN as i32,
+            ..INPUT_PARMS::default()
+        };
+        inchi = old_inchi;
+        aux = old_aux;
+        let (result, _, _) = invoke(
+            &mut reject_heap,
+            &mut reject_structure,
+            &mut reject_parameters,
+            Some(&mut reject),
+            Some(&supplied),
+            &mut inchi,
+            &mut aux,
+            None,
+        );
+        assert_eq!(result, Ok(_IS_WARNING as i32));
+        assert!(inchi.is_null());
+        assert!(aux.is_null());
+        assert_eq!(
+            array_c_bytes(&reject_structure.pStrErrStruct),
+            b"CRU folding and frame shift analysis failed"
+        );
+
+        let mut modern_heap = SourceHeap::default();
+        let modern_polymer = empty_polymer(&mut modern_heap, 0);
+        let mut modern = ORIG_ATOM_DATA {
+            polymer: modern_polymer,
+            valid_polymer: -1,
+            ..ORIG_ATOM_DATA::default()
+        };
+        let mut modern_structure = STRUCT_DATA::default();
+        let mut modern_parameters = INPUT_PARMS {
+            nInputType: tagInputType_INPUT_MOLFILE,
+            nMode: u64::from(REQ_MODE_TAUT | crate::source_types::REQ_MODE_NON_ISO),
+            bPolymers: POLYMERS_MODERN as i32,
+            bFoldPolymerSRU: 1,
+            bFrameShiftScheme: tagFrameShifScheme_FSS_STARS_CYCLED as i32,
+            bAllowEmptyStructure: 1,
+            bINChIOutputOptions: (INCHI_OUT_NO_AUX_INFO
+                | INCHI_OUT_SHORT_AUX_INFO
+                | crate::source_types::INCHI_OUT_PLAIN_TEXT)
+                as i32,
+            ..INPUT_PARMS::default()
+        };
+        let mut modern_inchi = SourceMutPointer::null();
+        let mut modern_aux = SourceMutPointer::null();
+        let (result, _, _) = invoke(
+            &mut modern_heap,
+            &mut modern_structure,
+            &mut modern_parameters,
+            Some(&mut modern),
+            None,
+            &mut modern_inchi,
+            &mut modern_aux,
+            None,
+        );
+        assert_eq!(
+            result,
+            Ok(_IS_OKAY as i32),
+            "message={:?}",
+            array_c_bytes(&modern_structure.pStrErrStruct)
+        );
+        assert_eq!(modern.valid_polymer, 1);
+        assert_eq!(
+            runichi_c_text(&modern_heap, modern_inchi.as_const()).unwrap(),
+            b"InChI=1//"
+        );
+        assert_eq!(
+            runichi_c_text(&modern_heap, modern_aux.as_const()).unwrap(),
+            b"AuxInfo=1//"
+        );
+        assert!(array_c_bytes(&modern_structure.pStrErrStruct).is_empty());
+        assert_eq!(
+            modern_parameters.bFrameShiftScheme,
+            tagFrameShifScheme_FSS_STARS_CYCLED as i32
+        );
+
+        for (fold, frame_shift) in [
+            (0, tagFrameShifScheme_FSS_NONE as i32),
+            (1, tagFrameShifScheme_FSS_NONE as i32),
+            (0, tagFrameShifScheme_FSS_STARS_CYCLED as i32),
+        ] {
+            let mut chain_heap = SourceHeap::default();
+            let mut chain = branch_polymer(&mut chain_heap);
+            let mut structure = STRUCT_DATA::default();
+            let mut parameters = INPUT_PARMS {
+                nInputType: tagInputType_INPUT_MOLFILE,
+                nMode: u64::from(REQ_MODE_TAUT | crate::source_types::REQ_MODE_NON_ISO),
+                bPolymers: POLYMERS_MODERN as i32,
+                bFoldPolymerSRU: fold,
+                bFrameShiftScheme: frame_shift,
+                bNPZz: 1,
+                bAllowEmptyStructure: 1,
+                bINChIOutputOptions: (INCHI_OUT_NO_AUX_INFO
+                    | INCHI_OUT_SHORT_AUX_INFO
+                    | crate::source_types::INCHI_OUT_PLAIN_TEXT)
+                    as i32,
+                ..INPUT_PARMS::default()
+            };
+            let mut validation_error = [0_i8; STR_ERR_LEN as usize];
+            assert_eq!(
+                OAD_ValidatePolymerAndPseudoElementData(
+                    &mut chain_heap,
+                    &mut chain,
+                    parameters.bPolymers,
+                    parameters.bNPZz,
+                    Some(&mut validation_error),
+                    parameters.bNoWarnings,
+                ),
+                Ok(_IS_OKAY as i32),
+                "fold={fold} frame_shift={frame_shift} validation_message={:?}",
+                array_c_bytes(&validation_error)
+            );
+            assert_eq!(chain.valid_polymer, 1);
+            assert_eq!(
+                chain_heap
+                    .slice(chain.polymer.as_const())
+                    .unwrap()
+                    .first()
+                    .unwrap()
+                    .n_pzz,
+                2
+            );
+            let mut chain_inchi = SourceMutPointer::null();
+            let mut chain_aux = SourceMutPointer::null();
+            let (result, _, _) = invoke(
+                &mut chain_heap,
+                &mut structure,
+                &mut parameters,
+                Some(&mut chain),
+                None,
+                &mut chain_inchi,
+                &mut chain_aux,
+                None,
+            );
+            assert_eq!(
+                result,
+                Ok(_IS_OKAY as i32),
+                "fold={fold} frame_shift={frame_shift} message={:?}",
+                array_c_bytes(&structure.pStrErrStruct)
+            );
+            assert_eq!(
+                parameters.bFrameShiftScheme, frame_shift,
+                "fold={fold} frame_shift={frame_shift}"
+            );
+        }
     }
 
     #[test]

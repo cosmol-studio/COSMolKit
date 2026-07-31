@@ -98,6 +98,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## InChI
+
+The Rust facade exposes the four audited scalar InChI APIs directly:
+
+```rust
+use cosmolkit::{Molecule, inchi_to_inchi_key, mol_from_inchi, mol_to_inchi};
+
+let molecule = Molecule::from_smiles("C")?;
+let generated = mol_to_inchi(&molecule, None)?;
+assert_eq!(generated.inchi, b"InChI=1S/CH4/h1H4");
+
+let key = inchi_to_inchi_key(&generated.inchi)?;
+assert_eq!(key.key, b"VNWKTOKETHGBQD-UHFFFAOYSA-N");
+
+let parsed = mol_from_inchi(&generated.inchi, false, false)?;
+assert!(parsed.molecule.is_some());
+```
+
+Pinned official InChI v1.07.5 and RDKit 2026.03.1 establish exact parity for
+source-defined behavior in this boundary. Official-C undefined behavior on the
+audited `NormalizeAndCompare` initial-allocation path is mapped to a
+deterministic structured allocation error. MolBlock, SDF/V3000, IXA, AuxInfo,
+INCHIGEN, version-query, and extended-polymer InChI APIs are not exposed.
+
 ## Conformer Generation And Force Field Applications
 
 Native conformer generation uses RDKit-aligned distance-geometry parameters.

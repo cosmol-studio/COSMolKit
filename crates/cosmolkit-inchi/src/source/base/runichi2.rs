@@ -1008,7 +1008,7 @@ exit_function:
             Err(error) if is_source_allocation_error(error) => return Ok(_IS_ERROR as i32),
             Err(error) => return Err(error),
         };
-        let mut result = heap.with_slice_mut_and_heap_mut(orig, |values, heap| {
+        let result = heap.with_slice_mut_and_heap_mut(orig, |values, heap| {
             extract_orig_nums_from_auxinfo_string(heap, saux, values)
         })?;
         if result != _IS_OKAY as i32 && result != _IS_WARNING as i32 {
@@ -1317,7 +1317,6 @@ exit_function:
             }
         }
 
-        result = _IS_OKAY as i32;
         Ok(result)
     })();
 
@@ -7686,6 +7685,341 @@ mod tests {
                 1,
             ),
             Err(SourceHeapError::NullPointer)
+        );
+    }
+
+    #[test]
+    fn source_port__runichi2__oad_polymer_prepareframeshiftedits__line_2523() {
+        const IDENTITY_AUX: &[u8] = b"AuxInfo=1/0/N:1,2,3,4,5,6,7,8";
+        const SHIFT_3_6: &[u8] = b"InChI=1B/C6H12.2Zz/zA(3,6,1)";
+
+        #[derive(Clone)]
+        struct Fixture {
+            data: ORIG_ATOM_DATA,
+            units: Vec<SourceMutPointer<OAD_PolymerUnit>>,
+            edits: OAD_StructureEdits,
+        }
+
+        fn named_atom(name: &[u8]) -> inp_ATOM {
+            let mut atom = inp_ATOM::default();
+            for (target, source) in atom.elname.iter_mut().zip(name.iter().copied()) {
+                *target = source as i8;
+            }
+            atom
+        }
+
+        fn fixture(
+            heap: &mut SourceHeap,
+            unit_specs: Vec<(Vec<i32>, Option<Vec<i32>>, i32)>,
+            star_caps: bool,
+            edit_capacity: i32,
+        ) -> Fixture {
+            let mut atoms = vec![named_atom(b"C"); 8];
+            if star_caps {
+                atoms[0] = named_atom(b"Zz");
+                atoms[7] = named_atom(b"Zz");
+            }
+            for (index, atom) in atoms.iter_mut().enumerate() {
+                atom.orig_at_number = (index + 1) as u16;
+            }
+            let atoms = heap.allocate_model_storage(atoms).unwrap();
+
+            let mut units = Vec::new();
+            for (atom_list, crossing_bonds, crossing_count) in unit_specs {
+                let atom_count = atom_list.len() as i32;
+                let atom_list = heap.allocate_model_storage(atom_list).unwrap();
+                let crossing_bonds = crossing_bonds
+                    .map(|values| heap.allocate_model_storage(values).unwrap())
+                    .unwrap_or_else(SourceMutPointer::null);
+                units.push(
+                    heap.allocate_model_storage(vec![OAD_PolymerUnit {
+                        na: atom_count,
+                        nb: crossing_count,
+                        alist: atom_list,
+                        blist: crossing_bonds,
+                        ..OAD_PolymerUnit::default()
+                    }])
+                    .unwrap(),
+                );
+            }
+            let unit_table = heap.allocate_model_storage(units.clone()).unwrap();
+            let polymer = heap
+                .allocate_model_storage(vec![OAD_Polymer {
+                    units: unit_table,
+                    n: units.len() as i32,
+                    ..OAD_Polymer::default()
+                }])
+                .unwrap();
+
+            let edit_item = heap
+                .allocate_model_storage(vec![-91_i32; edit_capacity as usize])
+                .unwrap();
+            let mod_bond = heap
+                .allocate_model_storage(vec![INT_ARRAY {
+                    item: edit_item,
+                    allocated: edit_capacity,
+                    used: 0,
+                    increment: edit_capacity.max(1),
+                }])
+                .unwrap();
+            Fixture {
+                data: ORIG_ATOM_DATA {
+                    at: atoms,
+                    num_inp_atoms: 8,
+                    polymer,
+                    ..ORIG_ATOM_DATA::default()
+                },
+                units,
+                edits: OAD_StructureEdits {
+                    mod_bond,
+                    ..OAD_StructureEdits::default()
+                },
+            }
+        }
+
+        fn invoke(
+            heap: &mut SourceHeap,
+            fixture: &Fixture,
+            inchi: &[u8],
+            aux: &[u8],
+        ) -> Result<i32, SourceHeapError> {
+            let inchi = c_string(heap, inchi);
+            let aux = c_string(heap, aux);
+            heap.trace_source_allocations();
+            OAD_Polymer_PrepareFrameShiftEdits(
+                heap,
+                &fixture.data,
+                inchi.as_const(),
+                aux.as_const(),
+                &fixture.edits,
+            )
+        }
+
+        fn edit_values(heap: &SourceHeap, edits: &OAD_StructureEdits) -> Vec<i32> {
+            let array = &heap.slice(edits.mod_bond.as_const()).unwrap()[0];
+            heap.slice(array.item.as_const()).unwrap()[..array.used as usize].to_vec()
+        }
+
+        let standard_unit = || vec![(vec![2, 3, 4, 5, 6, 7], Some(vec![1, 2, 8, 7]), 2)];
+
+        let mut empty_heap = SourceHeap::default();
+        let empty = fixture(&mut empty_heap, standard_unit(), true, 16);
+        let empty_baseline = empty_heap.live_allocation_count();
+        assert_eq!(
+            invoke(&mut empty_heap, &empty, b"InChI=1B/C6H12.2Zz", IDENTITY_AUX),
+            Ok(_IS_OKAY as i32)
+        );
+        assert_eq!(empty_heap.source_allocation_calls(), 3);
+        assert_eq!(empty_heap.live_allocation_count(), empty_baseline + 2);
+        assert!(edit_values(&empty_heap, &empty.edits).is_empty());
+
+        let mut malformed_heap = SourceHeap::default();
+        let malformed = fixture(&mut malformed_heap, standard_unit(), true, 16);
+        let malformed_inchi = c_string(&mut malformed_heap, SHIFT_3_6);
+        let malformed_aux = c_string(&mut malformed_heap, b"/N:");
+        let malformed_baseline = malformed_heap.live_allocation_count();
+        malformed_heap.trace_source_allocations();
+        assert_eq!(
+            OAD_Polymer_PrepareFrameShiftEdits(
+                &mut malformed_heap,
+                &malformed.data,
+                malformed_inchi.as_const(),
+                malformed_aux.as_const(),
+                &malformed.edits,
+            ),
+            Ok(_IS_ERROR as i32)
+        );
+        assert_eq!(malformed_heap.source_allocation_calls(), 1);
+        assert_eq!(malformed_heap.live_allocation_count(), malformed_baseline);
+
+        for successful_allocations in 0..3 {
+            let mut failure_heap = SourceHeap::default();
+            let failed = fixture(&mut failure_heap, standard_unit(), true, 16);
+            let inchi = c_string(&mut failure_heap, SHIFT_3_6);
+            let aux = c_string(&mut failure_heap, IDENTITY_AUX);
+            let baseline = failure_heap.live_allocation_count();
+            failure_heap.fail_after_allocations(successful_allocations);
+            assert_eq!(
+                OAD_Polymer_PrepareFrameShiftEdits(
+                    &mut failure_heap,
+                    &failed.data,
+                    inchi.as_const(),
+                    aux.as_const(),
+                    &failed.edits,
+                ),
+                Ok(_IS_ERROR as i32),
+                "successful_allocations={successful_allocations}"
+            );
+            assert_eq!(
+                failure_heap.source_allocation_calls(),
+                successful_allocations + 1
+            );
+            assert_eq!(failure_heap.live_allocation_count(), baseline);
+            assert!(edit_values(&failure_heap, &failed.edits).is_empty());
+        }
+
+        let mut skipped_heap = SourceHeap::default();
+        let skipped = fixture(
+            &mut skipped_heap,
+            vec![
+                (vec![3, 6], None, 2),
+                (vec![3, 6], Some(vec![1, 2, 8, 7]), 1),
+            ],
+            true,
+            16,
+        );
+        assert_eq!(
+            invoke(&mut skipped_heap, &skipped, SHIFT_3_6, IDENTITY_AUX),
+            Ok(_IS_ERROR as i32)
+        );
+        assert!(edit_values(&skipped_heap, &skipped.edits).is_empty());
+
+        let mut missing_heap = SourceHeap::default();
+        let missing = fixture(
+            &mut missing_heap,
+            vec![(vec![2, 7], Some(vec![1, 2, 8, 7]), 2)],
+            true,
+            16,
+        );
+        assert_eq!(
+            invoke(&mut missing_heap, &missing, SHIFT_3_6, IDENTITY_AUX),
+            Ok(_IS_ERROR as i32)
+        );
+
+        let mut find_error_heap = SourceHeap::default();
+        let find_error = fixture(
+            &mut find_error_heap,
+            vec![(vec![3, 6, 7], Some(vec![3, 6, 8, 7]), 2)],
+            true,
+            16,
+        );
+        assert_eq!(
+            invoke(&mut find_error_heap, &find_error, SHIFT_3_6, IDENTITY_AUX,),
+            Ok(_IS_OKAY as i32)
+        );
+        assert!(edit_values(&find_error_heap, &find_error.edits).is_empty());
+
+        let mut nonstar_heap = SourceHeap::default();
+        let nonstar = fixture(&mut nonstar_heap, standard_unit(), false, 16);
+        assert_eq!(
+            invoke(&mut nonstar_heap, &nonstar, SHIFT_3_6, IDENTITY_AUX),
+            Ok(_IS_OKAY as i32)
+        );
+        assert!(edit_values(&nonstar_heap, &nonstar.edits).is_empty());
+
+        let mut unchanged_heap = SourceHeap::default();
+        let unchanged = fixture(&mut unchanged_heap, standard_unit(), true, 16);
+        assert_eq!(
+            invoke(
+                &mut unchanged_heap,
+                &unchanged,
+                b"InChI=1B/C6H12.2Zz/zA(2,7,1)",
+                IDENTITY_AUX,
+            ),
+            Ok(_IS_OKAY as i32)
+        );
+        assert!(edit_values(&unchanged_heap, &unchanged.edits).is_empty());
+
+        let mut same_end_heap = SourceHeap::default();
+        let same_end = fixture(
+            &mut same_end_heap,
+            vec![(vec![2, 3, 6], Some(vec![1, 2, 8, 2]), 2)],
+            true,
+            16,
+        );
+        assert_eq!(
+            invoke(&mut same_end_heap, &same_end, SHIFT_3_6, IDENTITY_AUX),
+            Ok(_IS_OKAY as i32)
+        );
+        assert!(edit_values(&same_end_heap, &same_end.edits).is_empty());
+
+        for (crossing, expected) in [
+            (vec![1, 3, 8, 7], vec![7, 8, 6, 8, 3, 6, 3, 7]),
+            (vec![1, 2, 8, 6], vec![2, 1, 3, 1, 3, 6, 2, 6]),
+        ] {
+            let mut one_side_heap = SourceHeap::default();
+            let one_side = fixture(
+                &mut one_side_heap,
+                vec![(vec![2, 3, 4, 5, 6, 7], Some(crossing), 2)],
+                true,
+                16,
+            );
+            assert_eq!(
+                invoke(&mut one_side_heap, &one_side, SHIFT_3_6, IDENTITY_AUX),
+                Ok(_IS_OKAY as i32)
+            );
+            assert_eq!(edit_values(&one_side_heap, &one_side.edits), expected);
+        }
+
+        let mut selected_heap = SourceHeap::default();
+        let mut selected = fixture(
+            &mut selected_heap,
+            vec![
+                (vec![2, 3, 4, 5, 6, 7], Some(vec![1, 2, 8, 7]), 2),
+                (vec![3, 4, 5, 6], Some(vec![1, 4, 8, 5]), 2),
+            ],
+            true,
+            16,
+        );
+        selected.data.num_dimensions = 3;
+        let selected_baseline = selected_heap.live_allocation_count();
+        assert_eq!(
+            invoke(&mut selected_heap, &selected, SHIFT_3_6, IDENTITY_AUX),
+            Ok(_IS_OKAY as i32)
+        );
+        assert_eq!(selected_heap.source_allocation_calls(), 3);
+        assert_eq!(selected_heap.live_allocation_count(), selected_baseline + 2);
+        assert_eq!(
+            edit_values(&selected_heap, &selected.edits),
+            [4, 1, 3, 1, 5, 8, 6, 8, 3, 6, 4, 5]
+        );
+        assert_eq!(
+            selected_heap.slice(selected.units[0].as_const()).unwrap()[0].cap1,
+            0
+        );
+        let selected_unit = &selected_heap.slice(selected.units[1].as_const()).unwrap()[0];
+        assert_eq!(
+            (
+                selected_unit.cap1,
+                selected_unit.end_atom1,
+                selected_unit.end_atom2,
+                selected_unit.cap2,
+            ),
+            (1, 4, 5, 8)
+        );
+
+        let mut append_failure_heap = SourceHeap::default();
+        let append_failure = fixture(&mut append_failure_heap, standard_unit(), true, 4);
+        let inchi = c_string(&mut append_failure_heap, SHIFT_3_6);
+        let aux = c_string(&mut append_failure_heap, IDENTITY_AUX);
+        let append_baseline = append_failure_heap.live_allocation_count();
+        append_failure_heap.fail_after_allocations(3);
+        assert_eq!(
+            OAD_Polymer_PrepareFrameShiftEdits(
+                &mut append_failure_heap,
+                &append_failure.data,
+                inchi.as_const(),
+                aux.as_const(),
+                &append_failure.edits,
+            ),
+            Ok(_IS_ERROR as i32)
+        );
+        assert_eq!(append_failure_heap.source_allocation_calls(), 4);
+        assert_eq!(
+            append_failure_heap.live_allocation_count(),
+            append_baseline - 1
+        );
+        let failed_array = &append_failure_heap
+            .slice(append_failure.edits.mod_bond.as_const())
+            .unwrap()[0];
+        assert!(failed_array.item.is_null());
+        assert_eq!(
+            (
+                failed_array.allocated,
+                failed_array.used,
+                failed_array.increment
+            ),
+            (4, 4, 4)
         );
     }
 

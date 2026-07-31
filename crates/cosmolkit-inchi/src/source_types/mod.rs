@@ -8,6 +8,8 @@
 
 use std::any::Any;
 use std::collections::BTreeMap;
+#[cfg(test)]
+use std::collections::BTreeSet;
 use std::fmt;
 use std::marker::PhantomData;
 
@@ -222,6 +224,10 @@ pub(crate) struct SourceHeap {
     allocations_before_failure: Option<u64>,
     #[cfg(test)]
     source_allocation_calls: u64,
+    #[cfg(test)]
+    live_source_allocations: BTreeSet<AllocationId>,
+    #[cfg(test)]
+    live_source_allocation_types: BTreeMap<AllocationId, &'static str>,
 }
 
 const INP_ATOM_GCC_LP64_SIZE: usize = 176;
@@ -394,6 +400,31 @@ impl SourceHeap {
     }
 
     #[cfg(test)]
+    pub(crate) fn live_source_allocation_count(&self) -> usize {
+        self.live_source_allocations.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn live_source_allocations_of<T: 'static>(&self) -> usize {
+        self.live_source_allocations
+            .iter()
+            .filter(|id| {
+                self.allocations
+                    .get(id)
+                    .is_some_and(|allocation| allocation.is::<Vec<T>>())
+            })
+            .count()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn live_source_allocation_types(&self) -> Vec<&'static str> {
+        self.live_source_allocation_types
+            .values()
+            .copied()
+            .collect()
+    }
+
+    #[cfg(test)]
     pub(crate) fn live_allocations_of<T: 'static>(&self) -> usize {
         self.allocations
             .values()
@@ -418,7 +449,16 @@ impl SourceHeap {
         if let Some(remaining) = &mut self.allocations_before_failure {
             *remaining -= 1;
         }
-        self.allocate_model_storage(values)
+        let pointer = self.allocate_model_storage(values)?;
+        #[cfg(test)]
+        self.live_source_allocations
+            .insert(pointer.allocation.expect("fresh allocation is non-null"));
+        #[cfg(test)]
+        self.live_source_allocation_types.insert(
+            pointer.allocation.expect("fresh allocation is non-null"),
+            std::any::type_name::<T>(),
+        );
+        Ok(pointer)
     }
 
     pub(crate) fn allocate_model_storage<T: 'static>(
@@ -623,6 +663,10 @@ impl SourceHeap {
             return Err(SourceHeapError::AllocationTypeMismatch);
         }
         self.allocations.remove(&id);
+        #[cfg(test)]
+        self.live_source_allocations.remove(&id);
+        #[cfg(test)]
+        self.live_source_allocation_types.remove(&id);
         Ok(())
     }
 }

@@ -524,6 +524,83 @@ pub(crate) fn CompNeighListRanks(
 }
 
 #[allow(non_snake_case)]
+pub(crate) fn CompNeighLists(
+    heap: &SourceHeap,
+    a1: AT_RANK,
+    a2: AT_RANK,
+    pCG: &CANON_GLOBALS,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:632 CompNeighLists
+    // INCHI✔️❌: int CompNeighLists( const void* a1, const void* a2, void *p )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     CANON_GLOBALS *pCG = (CANON_GLOBALS *) p;
+    // INCHI✔️❌:     int ret;
+    // INCHI✔️❌:     ret = compare_NeighLists( pCG->m_pNeighList_RankForSort + *( (const AT_RANK*) a1 ),
+    // INCHI✔️❌:                               pCG->m_pNeighList_RankForSort + *( (const AT_RANK*) a2 ), p );
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return ret;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: CompNeighLists
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: CompNeighLists
+    // INCHI✔️❌: typedef unsigned short AT_RANK;
+    // INCHI✔️❌: typedef AT_RANK  *NEIGH_LIST;
+    // INCHI✔️❌:     const NEIGH_LIST      *m_pNeighList_RankForSort;
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: CompNeighLists
+
+    let neighbor_lists = heap.slice(pCG.m_pNeighList_RankForSort)?;
+    let first = *neighbor_lists
+        .get(usize::from(a1))
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let second = *neighbor_lists
+        .get(usize::from(a2))
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    compare_NeighLists(heap, first, second, pCG)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn CompNeighListsUpToMaxRank(
+    heap: &SourceHeap,
+    a1: AT_RANK,
+    a2: AT_RANK,
+    pCG: &CANON_GLOBALS,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:644 CompNeighListsUpToMaxRank
+    // INCHI✔️❌: int CompNeighListsUpToMaxRank( const void* a1, const void* a2, void *p )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     CANON_GLOBALS *pCG = (CANON_GLOBALS *) p;
+    // INCHI✔️❌:     int ret;
+    // INCHI✔️❌:     ret = CompareNeighListLexUpToMaxRank( pCG->m_pNeighList_RankForSort[*( (const AT_RANK*) a1 )],
+    // INCHI✔️❌:                                           pCG->m_pNeighList_RankForSort[*( (const AT_RANK*) a2 )],
+    // INCHI✔️❌:                                           pCG->m_pn_RankForSort, pCG->m_nMaxAtNeighRankForSort );
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return ret;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: CompNeighListsUpToMaxRank
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: CompNeighListsUpToMaxRank
+    // INCHI✔️❌: typedef unsigned short AT_RANK;
+    // INCHI✔️❌: typedef AT_RANK  *NEIGH_LIST;
+    // INCHI✔️❌:     const NEIGH_LIST      *m_pNeighList_RankForSort;
+    // INCHI✔️❌:     const AT_RANK         *m_pn_RankForSort;
+    // INCHI✔️❌:     AT_RANK m_nMaxAtNeighRankForSort;
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: CompNeighListsUpToMaxRank
+
+    let neighbor_lists = heap.slice(pCG.m_pNeighList_RankForSort)?;
+    let first = *neighbor_lists
+        .get(usize::from(a1))
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let second = *neighbor_lists
+        .get(usize::from(a2))
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    CompareNeighListLexUpToMaxRank(
+        heap,
+        first,
+        second,
+        pCG.m_pn_RankForSort.as_mut(),
+        pCG.m_nMaxAtNeighRankForSort,
+    )
+}
+
+#[allow(non_snake_case)]
 pub(crate) fn CompNeighListRanksOrd(
     heap: &SourceHeap,
     a1: AT_RANK,
@@ -2536,6 +2613,343 @@ mod tests {
             CompNeighListRanks(&heap, 0, 0, &CANON_GLOBALS::default()),
             Err(SourceHeapError::NullPointer)
         );
+    }
+
+    #[test]
+    fn source_port__ichisort__compneighlists__line_632() {
+        let mut heap = SourceHeap::default();
+        let ranks = heap.allocate_model_storage(vec![10_u16, 20, 30]).unwrap();
+        let first = heap.allocate_model_storage(vec![2_u16, 0, 1]).unwrap();
+        let second = heap.allocate_model_storage(vec![2_u16, 0, 2]).unwrap();
+        let equal = heap.allocate_model_storage(vec![2_u16, 0, 1]).unwrap();
+        let short = heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
+        let neighbor_lists = heap
+            .allocate_model_storage(vec![first, second, equal, short])
+            .unwrap();
+        let globals = CANON_GLOBALS {
+            m_pNeighList_RankForSort: neighbor_lists.as_const(),
+            m_pn_RankForSort: ranks.as_const(),
+            ..CANON_GLOBALS::default()
+        };
+
+        assert_eq!(CompNeighLists(&heap, 0, 1, &globals), Ok(-10));
+        assert_eq!(CompNeighLists(&heap, 1, 0, &globals), Ok(10));
+        assert_eq!(CompNeighLists(&heap, 0, 2, &globals), Ok(0));
+        assert_eq!(CompNeighLists(&heap, 3, 0, &globals), Ok(-1));
+        assert_eq!(CompNeighLists(&heap, 0, 3, &globals), Ok(1));
+        assert_eq!(
+            CompNeighLists(&heap, 4, 0, &globals),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(
+            CompNeighLists(&heap, 0, 0, &CANON_GLOBALS::default()),
+            Err(SourceHeapError::NullPointer)
+        );
+
+        let missing_ranks = CANON_GLOBALS {
+            m_pNeighList_RankForSort: neighbor_lists.as_const(),
+            ..CANON_GLOBALS::default()
+        };
+        assert_eq!(
+            CompNeighLists(&heap, 0, 1, &missing_ranks),
+            Err(SourceHeapError::NullPointer)
+        );
+    }
+
+    #[test]
+    fn official_c_oracle__compneighlists__exact() {
+        use std::path::Path;
+        use std::process::Command;
+
+        use serde_json::Value;
+
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("cosmolkit-inchi must be located under crates/");
+        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let oracle = Command::new("sh")
+            .arg(&runner)
+            .arg("--comp-neigh-lists-records")
+            .current_dir(repository_root)
+            .output()
+            .unwrap_or_else(|error| panic!("failed to start {}: {error}", runner.display()));
+        assert!(
+            oracle.status.success(),
+            "official C oracle failed with {}:\n{}",
+            oracle.status,
+            String::from_utf8_lossy(&oracle.stderr)
+        );
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let mut record_count = 0_usize;
+        for line in output.lines() {
+            let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
+            assert_eq!(official["schema_version"], "cosmolkit-inchi-official-c-v1");
+            assert_eq!(official["operation"], "CompNeighLists");
+            let case_id = official["case_id"].as_str().expect("case_id must be text");
+            let parse_array = |field: &str| {
+                official["input"][field]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("{case_id}: {field} must be an array"))
+                    .iter()
+                    .map(|value| {
+                        u16::try_from(
+                            value
+                                .as_u64()
+                                .unwrap_or_else(|| panic!("{case_id}: {field} must contain u16")),
+                        )
+                        .unwrap_or_else(|_| panic!("{case_id}: {field} value exceeds u16"))
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let first_values = parse_array("first_list");
+            let second_values = parse_array("second_list");
+            let ranks_values = parse_array("ranks");
+            let first_len = usize::from(first_values[0]);
+            let second_len = usize::from(second_values[0]);
+            let first_index = u16::try_from(
+                official["input"]["first_index"]
+                    .as_u64()
+                    .expect("first_index must be u16"),
+            )
+            .expect("first_index exceeds u16");
+            let second_index = u16::try_from(
+                official["input"]["second_index"]
+                    .as_u64()
+                    .expect("second_index must be u16"),
+            )
+            .expect("second_index exceeds u16");
+
+            let mut heap = SourceHeap::default();
+            let ranks = heap.allocate_model_storage(ranks_values).unwrap();
+            let first = heap
+                .allocate_model_storage(first_values[..=first_len].to_vec())
+                .unwrap();
+            let second = heap
+                .allocate_model_storage(second_values[..=second_len].to_vec())
+                .unwrap();
+            let neighbor_lists = heap.allocate_model_storage(vec![first, second]).unwrap();
+            let globals = CANON_GLOBALS {
+                m_pNeighList_RankForSort: neighbor_lists.as_const(),
+                m_pn_RankForSort: ranks.as_const(),
+                ..CANON_GLOBALS::default()
+            };
+            let first_before = heap.slice(first.as_const()).unwrap().to_vec();
+            let second_before = heap.slice(second.as_const()).unwrap().to_vec();
+            let ranks_before = heap.slice(ranks.as_const()).unwrap().to_vec();
+            let lists_before = heap.slice(neighbor_lists.as_const()).unwrap().to_vec();
+            let globals_before = globals.clone();
+            let rust = CompNeighLists(&heap, first_index, second_index, &globals).unwrap();
+            let expected = i32::try_from(
+                official["output"]["result"]
+                    .as_i64()
+                    .expect("result must be an integer"),
+            )
+            .expect("official result must fit i32");
+            assert_eq!(rust, expected, "{case_id}");
+            assert_eq!(heap.slice(first.as_const()).unwrap(), first_before);
+            assert_eq!(heap.slice(second.as_const()).unwrap(), second_before);
+            assert_eq!(heap.slice(ranks.as_const()).unwrap(), ranks_before);
+            assert_eq!(heap.slice(neighbor_lists.as_const()).unwrap(), lists_before);
+            assert_eq!(globals, globals_before);
+            for field in [
+                "first_list_unchanged",
+                "second_list_unchanged",
+                "ranks_unchanged",
+                "list_pointers_unchanged",
+                "indices_unchanged",
+                "globals_unchanged",
+            ] {
+                assert_eq!(official["output"][field], true, "{case_id}: {field}");
+            }
+            record_count += 1;
+        }
+        assert_eq!(record_count, 7);
+    }
+
+    #[test]
+    fn source_port__ichisort__compneighlistsuptomaxrank__line_644() {
+        let mut heap = SourceHeap::default();
+        let ranks = heap
+            .allocate_model_storage(vec![1_u16, 2, 3, 9, 10, u16::MAX])
+            .unwrap();
+        let first = heap.allocate_model_storage(vec![3_u16, 0, 1, 3]).unwrap();
+        let second = heap.allocate_model_storage(vec![3_u16, 0, 2, 4]).unwrap();
+        let short = heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
+        let long = heap.allocate_model_storage(vec![2_u16, 0, 1]).unwrap();
+        let boundary_high = heap.allocate_model_storage(vec![1_u16, 5]).unwrap();
+        let boundary_low = heap.allocate_model_storage(vec![1_u16, 4]).unwrap();
+        let neighbor_lists = heap
+            .allocate_model_storage(vec![
+                first,
+                second,
+                short,
+                long,
+                boundary_high,
+                boundary_low,
+            ])
+            .unwrap();
+        let mut globals = CANON_GLOBALS {
+            m_pNeighList_RankForSort: neighbor_lists.as_const(),
+            m_pn_RankForSort: ranks.as_const(),
+            m_nMaxAtNeighRankForSort: 10,
+            ..CANON_GLOBALS::default()
+        };
+
+        assert_eq!(CompNeighListsUpToMaxRank(&heap, 0, 1, &globals), Ok(-1));
+        assert_eq!(CompNeighListsUpToMaxRank(&heap, 1, 0, &globals), Ok(1));
+
+        globals.m_nMaxAtNeighRankForSort = 1;
+        assert_eq!(CompNeighListsUpToMaxRank(&heap, 0, 1, &globals), Ok(0));
+
+        globals.m_nMaxAtNeighRankForSort = 2;
+        assert_eq!(CompNeighListsUpToMaxRank(&heap, 2, 3, &globals), Ok(-1));
+        assert_eq!(CompNeighListsUpToMaxRank(&heap, 3, 2, &globals), Ok(1));
+
+        globals.m_nMaxAtNeighRankForSort = u16::MAX;
+        assert_eq!(
+            CompNeighListsUpToMaxRank(&heap, 4, 5, &globals),
+            Ok(i32::from(u16::MAX) - 10)
+        );
+        assert_eq!(
+            CompNeighListsUpToMaxRank(&heap, 6, 0, &globals),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(
+            CompNeighListsUpToMaxRank(&heap, 0, 0, &CANON_GLOBALS::default()),
+            Err(SourceHeapError::NullPointer)
+        );
+
+        let missing_ranks = CANON_GLOBALS {
+            m_pNeighList_RankForSort: neighbor_lists.as_const(),
+            m_nMaxAtNeighRankForSort: u16::MAX,
+            ..CANON_GLOBALS::default()
+        };
+        assert_eq!(
+            CompNeighListsUpToMaxRank(&heap, 0, 1, &missing_ranks),
+            Err(SourceHeapError::NullPointer)
+        );
+    }
+
+    #[test]
+    fn official_c_oracle__compneighlistsuptomaxrank__exact() {
+        use std::path::Path;
+        use std::process::Command;
+
+        use serde_json::Value;
+
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("cosmolkit-inchi must be located under crates/");
+        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let oracle = Command::new("sh")
+            .arg(&runner)
+            .arg("--comp-neigh-lists-up-to-max-rank-records")
+            .current_dir(repository_root)
+            .output()
+            .unwrap_or_else(|error| panic!("failed to start {}: {error}", runner.display()));
+        assert!(
+            oracle.status.success(),
+            "official C oracle failed with {}:\n{}",
+            oracle.status,
+            String::from_utf8_lossy(&oracle.stderr)
+        );
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let mut record_count = 0_usize;
+        for line in output.lines() {
+            let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
+            assert_eq!(official["schema_version"], "cosmolkit-inchi-official-c-v1");
+            assert_eq!(official["operation"], "CompNeighListsUpToMaxRank");
+            let case_id = official["case_id"].as_str().expect("case_id must be text");
+            let parse_array = |field: &str| {
+                official["input"][field]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("{case_id}: {field} must be an array"))
+                    .iter()
+                    .map(|value| {
+                        u16::try_from(
+                            value
+                                .as_u64()
+                                .unwrap_or_else(|| panic!("{case_id}: {field} must contain u16")),
+                        )
+                        .unwrap_or_else(|_| panic!("{case_id}: {field} value exceeds u16"))
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let first_values = parse_array("first_list");
+            let second_values = parse_array("second_list");
+            let ranks_values = parse_array("ranks");
+            let first_len = usize::from(first_values[0]);
+            let second_len = usize::from(second_values[0]);
+            let first_index = u16::try_from(
+                official["input"]["first_index"]
+                    .as_u64()
+                    .expect("first_index must be u16"),
+            )
+            .expect("first_index exceeds u16");
+            let second_index = u16::try_from(
+                official["input"]["second_index"]
+                    .as_u64()
+                    .expect("second_index must be u16"),
+            )
+            .expect("second_index exceeds u16");
+            let max_rank = u16::try_from(
+                official["input"]["max_rank"]
+                    .as_u64()
+                    .expect("max_rank must be u16"),
+            )
+            .expect("max_rank exceeds u16");
+
+            let mut heap = SourceHeap::default();
+            let ranks = heap.allocate_model_storage(ranks_values).unwrap();
+            let first = heap
+                .allocate_model_storage(first_values[..=first_len].to_vec())
+                .unwrap();
+            let second = heap
+                .allocate_model_storage(second_values[..=second_len].to_vec())
+                .unwrap();
+            let neighbor_lists = heap.allocate_model_storage(vec![first, second]).unwrap();
+            let globals = CANON_GLOBALS {
+                m_pNeighList_RankForSort: neighbor_lists.as_const(),
+                m_pn_RankForSort: ranks.as_const(),
+                m_nMaxAtNeighRankForSort: max_rank,
+                ..CANON_GLOBALS::default()
+            };
+            let first_before = heap.slice(first.as_const()).unwrap().to_vec();
+            let second_before = heap.slice(second.as_const()).unwrap().to_vec();
+            let ranks_before = heap.slice(ranks.as_const()).unwrap().to_vec();
+            let lists_before = heap.slice(neighbor_lists.as_const()).unwrap().to_vec();
+            let globals_before = globals.clone();
+            let rust =
+                CompNeighListsUpToMaxRank(&heap, first_index, second_index, &globals).unwrap();
+            let expected = i32::try_from(
+                official["output"]["result"]
+                    .as_i64()
+                    .expect("result must be an integer"),
+            )
+            .expect("official result must fit i32");
+            assert_eq!(rust, expected, "{case_id}");
+            assert_eq!(heap.slice(first.as_const()).unwrap(), first_before);
+            assert_eq!(heap.slice(second.as_const()).unwrap(), second_before);
+            assert_eq!(heap.slice(ranks.as_const()).unwrap(), ranks_before);
+            assert_eq!(heap.slice(neighbor_lists.as_const()).unwrap(), lists_before);
+            assert_eq!(globals, globals_before);
+            for field in [
+                "first_list_unchanged",
+                "second_list_unchanged",
+                "ranks_unchanged",
+                "list_pointers_unchanged",
+                "indices_unchanged",
+                "globals_unchanged",
+            ] {
+                assert_eq!(official["output"][field], true, "{case_id}: {field}");
+            }
+            record_count += 1;
+        }
+        assert_eq!(record_count, 8);
     }
 
     #[test]

@@ -96,6 +96,298 @@ pub(crate) fn inchi_free<T: 'static>(
     heap.free(pointer)
 }
 
+#[rustfmt::skip]
+pub(crate) fn normalize_string(
+    heap: &mut SourceHeap,
+    name: SourceMutPointer<i8>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:1589 normalize_string
+    // INCHI✔️❌: complete source frame follows verbatim; SourceHeap checked access adds allocation-map overhead.
+    /*
+int normalize_string( char* name )
+{
+    int i, len, n;
+
+    len = (int) strlen( name );
+
+    for (i = 0, n = 0; i < len; i++)
+    {
+        if (isspace( UCINT name[i] ) /*|| !isprint( UCINT name[i] )*/)
+        {
+            name[i] = ' '; /* exterminate tabs !!! */
+            n++;
+        }
+        else
+        {
+            if (n > 0)
+            {
+                memmove((void*)&name[i - n], (void*)&name[i], (long long)len - (long long)i + 1); /* djb-rwth: cast operators added */
+                i -= n;
+                len -= n;
+            }
+            n = -1;
+        }
+    }
+    if (n == len) /* empty line */
+    {
+        name[len = 0] = '\0';
+    }
+    else if (++n && n <= len)
+    {
+        len -= n;
+        name[len] = '\0';
+    }
+
+    return len;
+}
+    */
+    // END INCHI C FUNCTION: normalize_string
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: normalize_string
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; UCINT casts each signed char through unsigned char.
+    // INCHI✔️❌: The selected C locale makes isspace true exactly for HT, LF, VT, FF, CR, and space.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: normalize_string
+
+    let bytes = heap.slice_mut(name)?;
+    let source_length = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or(SourceHeapError::MissingNulTerminator)?;
+    let mut len = i32::try_from(source_length)
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let mut i = 0_i32;
+    let mut n = 0_i32;
+
+    while i < len {
+        let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        if source_is_ascii_space(bytes[index]) {
+            bytes[index] = b' ' as i8;
+            n = n.wrapping_add(1);
+        } else {
+            if n > 0 {
+                let source_start = usize::try_from(i)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let destination_start = usize::try_from(i.wrapping_sub(n))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let source_end = usize::try_from(len.wrapping_add(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                bytes.copy_within(source_start..source_end, destination_start);
+                i = i.wrapping_sub(n);
+                len = len.wrapping_sub(n);
+            }
+            n = -1;
+        }
+        i = i.wrapping_add(1);
+    }
+    if n == len {
+        len = 0;
+        bytes[0] = 0;
+    } else {
+        n = n.wrapping_add(1);
+        if n != 0 && n <= len {
+            len = len.wrapping_sub(n);
+            bytes[usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = 0;
+        }
+    }
+
+    Ok(len)
+}
+
+#[rustfmt::skip]
+pub(crate) fn is_matching_any_delim(
+    character: i8,
+    delimiters: Option<&[i8]>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:1710 is_matching_any_delim
+    // INCHI✔️✔️: complete source frame follows verbatim; Rust performs the same allocation-free linear scan.
+    /*
+int is_matching_any_delim( char c, char* delims )
+{
+    int ic = UCINT c;
+    while (*delims)
+    {
+        if (ic == *delims)
+        {
+            return 1;
+        }
+        delims++;
+    }
+    return 0;
+}
+    */
+    // END INCHI C FUNCTION: is_matching_any_delim
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: is_matching_any_delim
+    // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux uses signed char and UCINT casts only c through unsigned char.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: is_matching_any_delim
+
+    let delimiters = delimiters.ok_or(SourceHeapError::NullPointer)?;
+    let character = i32::from(character as u8);
+    for delimiter in delimiters {
+        if *delimiter == 0 {
+            return Ok(0);
+        }
+        if character == i32::from(*delimiter) {
+            return Ok(1);
+        }
+    }
+    Err(SourceHeapError::MissingNulTerminator)
+}
+
+#[rustfmt::skip]
+pub(crate) fn read_upto_delim(
+    heap: &mut SourceHeap,
+    pstring: &mut SourceMutPointer<i8>,
+    field: SourceMutPointer<i8>,
+    maxlen: i32,
+    delimiters: Option<&[i8]>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:1658 read_upto_delim
+    // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap accesses add allocation-map overhead.
+    /*
+int read_upto_delim( char **pstring, char *field, int maxlen, char* delims )
+{
+    int i, n;
+    char *p = *pstring;
+
+    if (!p)
+    {
+        return -1;
+    }
+
+    /* skip leading spaces */
+    for (i = 0; p[i] && isspace( UCINT p[i] ); i++)
+    {
+        ;
+    }
+    p += i;
+
+    /* read up to next delim or eol */
+    n = 0;
+    while (p[n] && !is_matching_any_delim( p[n], delims ))
+    {
+        n++;
+    }
+
+    if (n + 1 > maxlen)
+    {
+        return -1;
+    }
+
+    mystrncpy( field, p, n + 1 );
+    field[n + 1] = '\0';
+
+    if (!p[n])
+    {
+        /* reached EOL */
+        *pstring = NULL;
+    }
+    else
+    {
+        /* advance reading pos */
+        *pstring = *pstring + i + n;
+    }
+
+    return n;
+}
+    */
+    // END INCHI C FUNCTION: read_upto_delim
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: read_upto_delim
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux signed-char and C-locale isspace behavior.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: read_upto_delim
+
+    let original = *pstring;
+    if original.is_null() {
+        return Ok(-1);
+    }
+    let input = heap.slice(original.as_const())?;
+    let mut leading = 0_usize;
+    loop {
+        let byte = *input
+            .get(leading)
+            .ok_or(SourceHeapError::MissingNulTerminator)?;
+        if byte == 0 || !source_is_ascii_space(byte) {
+            break;
+        }
+        leading += 1;
+    }
+    let mut copied = 0_usize;
+    let reached_end = loop {
+        let byte = *input
+            .get(leading + copied)
+            .ok_or(SourceHeapError::MissingNulTerminator)?;
+        if byte == 0 {
+            break true;
+        }
+        if is_matching_any_delim(byte, delimiters)? != 0 {
+            break false;
+        }
+        copied += 1;
+    };
+    let copied_i32 = i32::try_from(copied).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    if copied_i32.wrapping_add(1) > maxlen {
+        return Ok(-1);
+    }
+    let source = original.offset(
+        i64::try_from(leading).map_err(|_| SourceHeapError::PointerOffsetOverflow)?,
+    )?;
+    mystrncpy(
+        heap,
+        field,
+        source.as_const(),
+        u32::try_from(copied_i32.wrapping_add(1))
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+    )?;
+    *heap
+        .slice_mut(field)?
+        .get_mut(copied + 1)
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+    if reached_end {
+        *pstring = SourceMutPointer::null();
+    } else {
+        *pstring = original.offset(
+            i64::try_from(leading + copied)
+                .map_err(|_| SourceHeapError::PointerOffsetOverflow)?,
+        )?;
+    }
+    Ok(copied_i32)
+}
+
+#[rustfmt::skip]
+pub(crate) fn remove_trailing_spaces(
+    heap: &mut SourceHeap,
+    pointer: SourceMutPointer<i8>,
+) -> Result<(), SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:1728 remove_trailing_spaces
+    // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap access adds allocation-map overhead.
+    /*
+void remove_trailing_spaces( char* p )
+{
+    int   len;
+    for (len = (int) strlen( p ) - 1; len >= 0 && isspace( UCINT p[len] ); len--)
+    {
+        ;
+    }
+    p[++len] = '\0';
+}
+    */
+    // END INCHI C FUNCTION: remove_trailing_spaces
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: remove_trailing_spaces
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux signed-char and C-locale isspace behavior.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: remove_trailing_spaces
+
+    let bytes = heap.slice_mut(pointer)?;
+    let length = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or(SourceHeapError::MissingNulTerminator)?;
+    i32::try_from(length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let mut retained = length;
+    while retained != 0 && source_is_ascii_space(bytes[retained - 1]) {
+        retained -= 1;
+    }
+    bytes[retained] = 0;
+    Ok(())
+}
+
 pub(crate) fn get_element_chemical_symbol(
     mut atomic_number: i32,
     element: &mut [i8],
@@ -211,6 +503,51 @@ pub(crate) fn get_element_or_pseudoelement_symbol(
     }
     destination[symbol.len()] = 0;
     Ok(result)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn remove_one_lf(
+    heap: &mut SourceHeap,
+    pointer: SourceMutPointer<i8>,
+) -> Result<(), SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:1740 remove_one_lf
+    // INCHI✔️❌: complete source frame follows verbatim.
+    /*
+    void remove_one_lf( char* p )
+    {
+        size_t len;
+        if (p && 0 < ( len = strlen( p ) ) && p[len - 1] == '\n')
+        {
+            p[len - 1] = '\0';
+            if (len >= 2 && p[len - 2] == '\r')
+            {
+                p[len - 2] = '\0';
+            }
+        }
+    }
+        */
+    // END INCHI C FUNCTION: remove_one_lf
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: remove_one_lf
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; size_t is 64-bit.
+    // INCHI✔️❌: strlen is reproduced by the first NUL search; SourceHeap reports unterminated modeled storage explicitly.
+    // INCHI✔️❌: The algorithm remains one linear scan with no allocation, but SourceHeap allocation-map lookup is absent in C.
+    // END INCHI ACTIVE MACRO CONFIGURATION: remove_one_lf
+
+    if pointer.is_null() {
+        return Ok(());
+    }
+    let bytes = heap.slice_mut(pointer)?;
+    let length = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or(SourceHeapError::MissingNulTerminator)?;
+    if length != 0 && bytes[length - 1] == b'\n' as i8 {
+        bytes[length - 1] = 0;
+        if length >= 2 && bytes[length - 2] == b'\r' as i8 {
+            bytes[length - 2] = 0;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn lrtrim(
@@ -3335,6 +3672,41 @@ pub(crate) fn get_atomic_mass_from_elnum(atomic_number: i32) -> Result<i32, Sour
     Ok(0)
 }
 
+#[rustfmt::skip]
+pub(crate) fn get_atomic_mass(element_name: Option<&[i8]>) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:1040 get_atomic_mass
+    // INCHI✔️❌: complete source frame follows verbatim; Rust slice validation and Result propagation add overhead.
+    /*
+int get_atomic_mass( const char *elname )
+{
+    int el_number, atw;
+    if (ERR_ELEM != ( el_number = el_number_in_internal_ref_table( elname ) ))
+    {
+        atw = ElData[el_number].nAtMass;
+    }
+    else
+    {
+        atw = 0;
+    }
+
+    return atw;
+}
+    */
+    // END INCHI C FUNCTION: get_atomic_mass
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: get_atomic_mass
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; inactive INCHI_ZFRAG ElData rows are excluded.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: get_atomic_mass
+
+    let element_number = el_number_in_internal_ref_table(element_name)?;
+    if element_number == ERR_ELEM {
+        return Ok(0);
+    }
+    EL_DATA_ATOMIC_MASSES
+        .get(usize::try_from(element_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+        .copied()
+        .ok_or(SourceHeapError::PointerOutOfBounds)
+}
+
 pub(crate) fn is_in_the_list(
     path_atom: Option<&[AT_NUMB]>,
     next_atom: AT_NUMB,
@@ -4144,11 +4516,92 @@ pub(crate) fn inchi__strdup(
     Ok(duplicate)
 }
 
+#[rustfmt::skip]
+pub(crate) fn dotify_non_printable_chars(
+    heap: &mut SourceHeap,
+    line: SourceMutPointer<i8>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/util.c:1630 dotify_non_printable_chars
+    // INCHI✔️❌: complete source frame follows verbatim; checked source-heap access adds overhead.
+    /*
+int dotify_non_printable_chars( char *line )
+{
+    int i, c, num = 0;
+
+    if (line)
+    {
+        for (i = 0; (c = UCINT line[i]); i++) /* djb-rwth: addressing LLVM warning */
+        {
+            /* assuming ASCII charset */
+            if (c < ' ' || c >= 0x7F)
+            {
+                line[i] = '.';
+                num++;
+            }
+        }
+    }
+
+    return num;
+}
+    */
+    // END INCHI C FUNCTION: dotify_non_printable_chars
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: dotify_non_printable_chars
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; UCINT casts each signed char through unsigned char.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: dotify_non_printable_chars
+
+    if line.is_null() {
+        return Ok(0);
+    }
+    let bytes = heap.slice_mut(line)?;
+    let mut replacements = 0_i32;
+    for byte in bytes {
+        let value = *byte as u8;
+        if value == 0 {
+            return Ok(replacements);
+        }
+        if value < b' ' || value >= 0x7f {
+            *byte = b'.' as i8;
+            replacements = replacements.wrapping_add(1);
+        }
+    }
+    Err(SourceHeapError::MissingNulTerminator)
+}
+
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod tests {
     use super::*;
     use crate::source_types::{BOND_DOUBLE, BOND_SINGLE};
+
+    #[test]
+    fn source_port__util__dotify_non_printable_chars__line_1630() {
+        let mut heap = SourceHeap::default();
+        assert_eq!(
+            dotify_non_printable_chars(&mut heap, SourceMutPointer::null()),
+            Ok(0)
+        );
+
+        let empty = heap.allocate(vec![0_i8, 7]).unwrap();
+        assert_eq!(dotify_non_printable_chars(&mut heap, empty), Ok(0));
+        assert_eq!(heap.slice(empty.as_const()).unwrap(), &[0, 7]);
+
+        let line = heap
+            .allocate(vec![1_i8, 31, 32, 126, 127, -1, b'A' as i8, 0, 2])
+            .unwrap();
+        assert_eq!(dotify_non_printable_chars(&mut heap, line), Ok(4));
+        assert_eq!(
+            heap.slice(line.as_const()).unwrap(),
+            &[
+                b'.' as i8, b'.' as i8, 32, 126, b'.' as i8, b'.' as i8, b'A' as i8, 0, 2
+            ]
+        );
+
+        let unterminated = heap.allocate(vec![b'A' as i8]).unwrap();
+        assert_eq!(
+            dotify_non_printable_chars(&mut heap, unterminated),
+            Err(SourceHeapError::MissingNulTerminator)
+        );
+    }
 
     #[test]
     fn source_port__util__get_element_or_pseudoelement_symbol__line_316() {
@@ -5492,6 +5945,32 @@ mod tests {
     }
 
     #[test]
+    fn source_port__util__get_atomic_mass__line_1040() {
+        for (symbol, expected) in [
+            (&b"H\0"[..], 1),
+            (&b"D\0"[..], 2),
+            (&b"T\0"[..], 3),
+            (&b"C\0"[..], 12),
+            (&b"Fe\0"[..], 56),
+            (&b"Og\0"[..], 294),
+            (&b"Zy\0"[..], 0),
+            (&b"Zz\0"[..], 0),
+            (&b"\0"[..], 0),
+            (&b"c\0"[..], 0),
+            (&b"FE\0"[..], 0),
+            (&b"Qq\0"[..], 0),
+        ] {
+            let input: Vec<i8> = symbol.iter().map(|byte| *byte as i8).collect();
+            assert_eq!(get_atomic_mass(Some(&input)), Ok(expected), "{symbol:?}");
+        }
+        assert_eq!(get_atomic_mass(None), Err(SourceHeapError::NullPointer));
+        assert_eq!(
+            get_atomic_mass(Some(&[b'C' as i8])),
+            Err(SourceHeapError::MissingNulTerminator)
+        );
+    }
+
+    #[test]
     fn source_port__util__get_num_h__line_862() {
         let c = [b'C' as i8, 0];
         let n = [b'N' as i8, 0];
@@ -6434,6 +6913,48 @@ mod tests {
     }
 
     #[test]
+    fn source_port__util__remove_one_lf__line_1740() {
+        fn run_case(input: &[i8], expected: &[i8]) {
+            let mut heap = SourceHeap::default();
+            let pointer = allocate_source_fixture(&mut heap, input.to_vec());
+            assert_eq!(remove_one_lf(&mut heap, pointer), Ok(()));
+            assert_eq!(heap.slice(pointer.as_const()).unwrap(), expected);
+        }
+
+        let mut heap = SourceHeap::default();
+        assert_eq!(remove_one_lf(&mut heap, SourceMutPointer::null()), Ok(()));
+
+        run_case(&[0, 91], &[0, 91]);
+        run_case(
+            &[b'a' as i8, b'\n' as i8, b'b' as i8, 0, 91],
+            &[b'a' as i8, b'\n' as i8, b'b' as i8, 0, 91],
+        );
+        run_case(&[b'a' as i8, b'\n' as i8, 0, 91], &[b'a' as i8, 0, 0, 91]);
+        run_case(
+            &[b'a' as i8, b'\r' as i8, b'\n' as i8, 0, 91],
+            &[b'a' as i8, 0, 0, 0, 91],
+        );
+        run_case(
+            &[b'a' as i8, b'\n' as i8, b'\n' as i8, 0, 91],
+            &[b'a' as i8, b'\n' as i8, 0, 0, 91],
+        );
+        run_case(
+            &[b'a' as i8, b'\r' as i8, 0, 91],
+            &[b'a' as i8, b'\r' as i8, 0, 91],
+        );
+
+        let unterminated = allocate_source_fixture(&mut heap, vec![b'a' as i8, b'\n' as i8]);
+        assert_eq!(
+            remove_one_lf(&mut heap, unterminated),
+            Err(SourceHeapError::MissingNulTerminator)
+        );
+        assert_eq!(
+            heap.slice(unterminated.as_const()).unwrap(),
+            &[b'a' as i8, b'\n' as i8]
+        );
+    }
+
+    #[test]
     fn source_port__util__mystrncpy__line_1760() {
         let mut heap = SourceHeap::default();
         assert_eq!(
@@ -6779,6 +7300,319 @@ mod tests {
         );
         assert_eq!(unchanged_length, 17);
         assert_eq!(inchi_free(&mut heap, unterminated), Ok(()));
+    }
+
+    #[test]
+    fn source_port__util__normalize_string__line_1589() {
+        let mut heap = SourceHeap::default();
+
+        let mixed = allocate_source_fixture(
+            &mut heap,
+            vec![
+                b' ' as i8,
+                b' ' as i8,
+                b'A' as i8,
+                b'\t' as i8,
+                b'\t' as i8,
+                b'B' as i8,
+                b'\r' as i8,
+                b'\n' as i8,
+                0,
+                b'X' as i8,
+                b'Y' as i8,
+            ],
+        );
+        assert_eq!(normalize_string(&mut heap, mixed), Ok(3));
+        assert_eq!(
+            heap.slice(mixed.as_const()).unwrap(),
+            &[
+                b'A' as i8,
+                b' ' as i8,
+                b'B' as i8,
+                0,
+                b' ' as i8,
+                0,
+                0,
+                b'\n' as i8,
+                0,
+                b'X' as i8,
+                b'Y' as i8,
+            ]
+        );
+
+        let all_space = allocate_source_fixture(
+            &mut heap,
+            vec![
+                b'\t' as i8,
+                b'\n' as i8,
+                0x0b,
+                0x0c,
+                b'\r' as i8,
+                b' ' as i8,
+                0,
+                77,
+            ],
+        );
+        assert_eq!(normalize_string(&mut heap, all_space), Ok(0));
+        assert_eq!(
+            heap.slice(all_space.as_const()).unwrap(),
+            &[
+                0, b' ' as i8, b' ' as i8, b' ' as i8, b' ' as i8, b' ' as i8, 0, 77
+            ]
+        );
+
+        let empty = allocate_source_fixture(&mut heap, vec![0_i8, 91]);
+        assert_eq!(normalize_string(&mut heap, empty), Ok(0));
+        assert_eq!(heap.slice(empty.as_const()).unwrap(), &[0, 91]);
+
+        let non_ascii = allocate_source_fixture(
+            &mut heap,
+            vec![
+                b' ' as i8,
+                0xa0_u8 as i8,
+                b' ' as i8,
+                b'C' as i8,
+                b' ' as i8,
+                0,
+            ],
+        );
+        assert_eq!(normalize_string(&mut heap, non_ascii), Ok(3));
+        assert_eq!(
+            &heap.slice(non_ascii.as_const()).unwrap()[..4],
+            &[0xa0_u8 as i8, b' ' as i8, b'C' as i8, 0]
+        );
+
+        let interior = allocate_source_fixture(
+            &mut heap,
+            vec![99_i8, b' ' as i8, b'D' as i8, b' ' as i8, 0, 88],
+        );
+        let interior_start = interior.offset(1).unwrap();
+        assert_eq!(normalize_string(&mut heap, interior_start), Ok(1));
+        assert_eq!(
+            heap.slice(interior.as_const()).unwrap(),
+            &[99, b'D' as i8, 0, 0, 0, 88]
+        );
+
+        assert_eq!(
+            normalize_string(&mut heap, SourceMutPointer::null()),
+            Err(SourceHeapError::NullPointer)
+        );
+        let unterminated = allocate_source_fixture(&mut heap, vec![b' ' as i8, b'Q' as i8]);
+        assert_eq!(
+            normalize_string(&mut heap, unterminated),
+            Err(SourceHeapError::MissingNulTerminator)
+        );
+        assert_eq!(
+            heap.slice(unterminated.as_const()).unwrap(),
+            &[b' ' as i8, b'Q' as i8]
+        );
+    }
+
+    #[test]
+    fn source_port__util__is_matching_any_delim__line_1710() {
+        let whitespace = [
+            b' ' as i8,
+            b'\t' as i8,
+            b'\n' as i8,
+            0x0b,
+            0x0c,
+            b'\r' as i8,
+            0,
+        ];
+        for character in &whitespace[..6] {
+            assert_eq!(is_matching_any_delim(*character, Some(&whitespace)), Ok(1));
+        }
+        assert_eq!(is_matching_any_delim(b'X' as i8, Some(&whitespace)), Ok(0));
+        assert_eq!(is_matching_any_delim(0, Some(&whitespace)), Ok(0));
+        assert_eq!(
+            is_matching_any_delim(b',' as i8, Some(&[b';' as i8, b',' as i8, b',' as i8, 0])),
+            Ok(1)
+        );
+        assert_eq!(
+            is_matching_any_delim(0xff_u8 as i8, Some(&[0xff_u8 as i8, 0])),
+            Ok(0)
+        );
+        assert_eq!(
+            is_matching_any_delim(b'A' as i8, None),
+            Err(SourceHeapError::NullPointer)
+        );
+        assert_eq!(
+            is_matching_any_delim(b'A' as i8, Some(&[b'B' as i8, b'C' as i8])),
+            Err(SourceHeapError::MissingNulTerminator)
+        );
+        assert_eq!(
+            is_matching_any_delim(b'A' as i8, Some(&[b'A' as i8])),
+            Ok(1)
+        );
+    }
+
+    #[test]
+    fn source_port__util__read_upto_delim__line_1658() {
+        let mut heap = SourceHeap::default();
+        let delimiters = [b',' as i8, b';' as i8, 0];
+        let input = allocate_source_fixture(
+            &mut heap,
+            b" \talpha,beta\0".iter().map(|byte| *byte as i8).collect(),
+        );
+        let field = allocate_source_fixture(&mut heap, vec![0x55_i8; 16]);
+        let mut cursor = input;
+        assert_eq!(
+            read_upto_delim(&mut heap, &mut cursor, field, 16, Some(&delimiters)),
+            Ok(5)
+        );
+        assert_eq!(cursor, input.offset(7).unwrap());
+        assert_eq!(
+            &heap.slice(field.as_const()).unwrap()[..8],
+            &[
+                b'a' as i8, b'l' as i8, b'p' as i8, b'h' as i8, b'a' as i8, 0, 0, 0x55
+            ]
+        );
+
+        heap.slice_mut(field).unwrap().fill(0x44);
+        assert_eq!(
+            read_upto_delim(&mut heap, &mut cursor, field, 1, Some(&delimiters)),
+            Ok(0)
+        );
+        assert_eq!(cursor, input.offset(7).unwrap());
+        assert_eq!(&heap.slice(field.as_const()).unwrap()[..3], &[0, 0, 0x44]);
+
+        cursor = cursor.offset(1).unwrap();
+        heap.slice_mut(field).unwrap().fill(0x33);
+        assert_eq!(
+            read_upto_delim(&mut heap, &mut cursor, field, 5, Some(&delimiters)),
+            Ok(4)
+        );
+        assert!(cursor.is_null());
+        assert_eq!(
+            &heap.slice(field.as_const()).unwrap()[..7],
+            &[b'b' as i8, b'e' as i8, b't' as i8, b'a' as i8, 0, 0, 0x33]
+        );
+
+        let too_long = allocate_source_fixture(
+            &mut heap,
+            b"  abc,\0".iter().map(|byte| *byte as i8).collect(),
+        );
+        cursor = too_long;
+        heap.slice_mut(field).unwrap().fill(0x22);
+        assert_eq!(
+            read_upto_delim(&mut heap, &mut cursor, field, 3, Some(&delimiters)),
+            Ok(-1)
+        );
+        assert_eq!(cursor, too_long);
+        assert!(
+            heap.slice(field.as_const())
+                .unwrap()
+                .iter()
+                .all(|byte| *byte == 0x22)
+        );
+        assert_eq!(
+            read_upto_delim(&mut heap, &mut cursor, field, -1, Some(&delimiters)),
+            Ok(-1)
+        );
+        assert_eq!(cursor, too_long);
+
+        let spaces =
+            allocate_source_fixture(&mut heap, vec![b' ' as i8, b'\t' as i8, b'\n' as i8, 0]);
+        cursor = spaces;
+        assert_eq!(
+            read_upto_delim(&mut heap, &mut cursor, field, 1, None),
+            Ok(0)
+        );
+        assert!(cursor.is_null());
+
+        cursor = input.offset(2).unwrap();
+        assert_eq!(
+            read_upto_delim(&mut heap, &mut cursor, field, 16, None),
+            Err(SourceHeapError::NullPointer)
+        );
+        assert_eq!(cursor, input.offset(2).unwrap());
+
+        cursor = SourceMutPointer::null();
+        assert_eq!(
+            read_upto_delim(&mut heap, &mut cursor, field, 16, Some(&delimiters)),
+            Ok(-1)
+        );
+        let empty = allocate_source_fixture(&mut heap, vec![0_i8]);
+        cursor = empty;
+        assert_eq!(
+            read_upto_delim(
+                &mut heap,
+                &mut cursor,
+                SourceMutPointer::null(),
+                1,
+                Some(&delimiters)
+            ),
+            Err(SourceHeapError::NullPointer)
+        );
+        assert_eq!(cursor, empty);
+    }
+
+    #[test]
+    fn source_port__util__remove_trailing_spaces__line_1728() {
+        let mut heap = SourceHeap::default();
+        let mixed = allocate_source_fixture(
+            &mut heap,
+            vec![
+                b'A' as i8,
+                b' ' as i8,
+                b'B' as i8,
+                b'\t' as i8,
+                b'\n' as i8,
+                0x0b,
+                0x0c,
+                b'\r' as i8,
+                b' ' as i8,
+                0,
+                77,
+            ],
+        );
+        assert_eq!(remove_trailing_spaces(&mut heap, mixed), Ok(()));
+        assert_eq!(
+            heap.slice(mixed.as_const()).unwrap(),
+            &[
+                b'A' as i8,
+                b' ' as i8,
+                b'B' as i8,
+                0,
+                b'\n' as i8,
+                0x0b,
+                0x0c,
+                b'\r' as i8,
+                b' ' as i8,
+                0,
+                77,
+            ]
+        );
+        let all_space =
+            allocate_source_fixture(&mut heap, vec![b' ' as i8, b'\t' as i8, b'\n' as i8, 0, 88]);
+        assert_eq!(remove_trailing_spaces(&mut heap, all_space), Ok(()));
+        assert_eq!(
+            heap.slice(all_space.as_const()).unwrap(),
+            &[0, b'\t' as i8, b'\n' as i8, 0, 88]
+        );
+        let non_ascii =
+            allocate_source_fixture(&mut heap, vec![b'X' as i8, 0xa0_u8 as i8, b' ' as i8, 0]);
+        assert_eq!(remove_trailing_spaces(&mut heap, non_ascii), Ok(()));
+        assert_eq!(
+            heap.slice(non_ascii.as_const()).unwrap(),
+            &[b'X' as i8, 0xa0_u8 as i8, 0, 0]
+        );
+        let empty = allocate_source_fixture(&mut heap, vec![0_i8, 99]);
+        assert_eq!(remove_trailing_spaces(&mut heap, empty), Ok(()));
+        assert_eq!(heap.slice(empty.as_const()).unwrap(), &[0, 99]);
+        assert_eq!(
+            remove_trailing_spaces(&mut heap, SourceMutPointer::null()),
+            Err(SourceHeapError::NullPointer)
+        );
+        let unterminated = allocate_source_fixture(&mut heap, vec![b'X' as i8, b' ' as i8]);
+        assert_eq!(
+            remove_trailing_spaces(&mut heap, unterminated),
+            Err(SourceHeapError::MissingNulTerminator)
+        );
+        assert_eq!(
+            heap.slice(unterminated.as_const()).unwrap(),
+            &[b'X' as i8, b' ' as i8]
+        );
     }
 
     #[test]

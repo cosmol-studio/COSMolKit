@@ -8785,48 +8785,178 @@ pub(crate) fn NormalizeAndCompare(
         }
         macro_rules! compare {
             ($reverse:expr, $original:expr, $output:expr) => {{
-                let reverse = first_model!(pStruct.pOneINChI[$reverse]);
-                let original = first_model!(pInChI[$original]);
-                let auxiliary = if pStruct.pOneINChI_Aux[$reverse].is_null() {
-                    None
+                #[cfg(test)]
+                let forced_compare =
+                    normalize_and_compare_test_compare($reverse, $original, $output);
+                #[cfg(not(test))]
+                let forced_compare: Option<(INCHI_MODE, i32)> = None;
+                if let Some(forced_compare) = forced_compare {
+                    forced_compare
                 } else {
-                    Some(first_model!(pStruct.pOneINChI_Aux[$reverse]))
-                };
-                let mut comparison_error = 0_i32;
-                let flags = CompareReversedINChI2(
-                    heap,
-                    Some(&reverse),
-                    Some(&original),
-                    auxiliary.as_ref(),
-                    None,
-                    $output,
-                    &mut comparison_error,
-                )?;
-                (flags, comparison_error)
+                    let reverse = first_model!(pStruct.pOneINChI[$reverse]);
+                    let original = first_model!(pInChI[$original]);
+                    let auxiliary = if pStruct.pOneINChI_Aux[$reverse].is_null() {
+                        None
+                    } else {
+                        Some(first_model!(pStruct.pOneINChI_Aux[$reverse]))
+                    };
+                    let mut comparison_error = 0_i32;
+                    let flags = CompareReversedINChI2(
+                        heap,
+                        Some(&reverse),
+                        Some(&original),
+                        auxiliary.as_ref(),
+                        None,
+                        $output,
+                        &mut comparison_error,
+                    )?;
+                    (flags, comparison_error)
+                }
             }};
         }
         macro_rules! rebuild {
             () => {{
-                ret = MakeOneInChIOutOfStrFromINChI2(
-                    heap,
-                    pCG,
-                    ic,
-                    ip,
-                    sd,
-                    pBNS,
-                    pStruct,
-                    at,
-                    at2,
-                    at3,
-                    pVA,
-                    pTCGroups,
-                    Some(&mut t_group_info),
-                    Some(&mut at_norm),
-                    Some(&mut at_prep),
-                    clock_result,
-                )?;
+                #[cfg(test)]
+                let forced_rebuild = normalize_and_compare_test_rebuild_return();
+                #[cfg(not(test))]
+                let forced_rebuild: Option<(i32, bool, bool, bool)> = None;
+                ret = if let Some((forced_rebuild, prep_present, norm_present, tinfo_present)) =
+                    forced_rebuild
+                {
+                    at_prep = if prep_present {
+                        at
+                    } else {
+                        SourceMutPointer::null()
+                    };
+                    at_norm = if norm_present {
+                        at
+                    } else {
+                        SourceMutPointer::null()
+                    };
+                    t_group_info = if tinfo_present {
+                        SourceTGroupInfoPointer::StructureOne
+                    } else {
+                        SourceTGroupInfoPointer::Null
+                    };
+                    forced_rebuild
+                } else {
+                    MakeOneInChIOutOfStrFromINChI2(
+                        heap,
+                        pCG,
+                        ic,
+                        ip,
+                        sd,
+                        pBNS,
+                        pStruct,
+                        at,
+                        at2,
+                        at3,
+                        pVA,
+                        pTCGroups,
+                        Some(&mut t_group_info),
+                        Some(&mut at_norm),
+                        Some(&mut at_prep),
+                        clock_result,
+                    )?
+                };
                 if ret < 0 {
                     return Ok(());
+                }
+            }};
+        }
+        macro_rules! fill_fixed_h {
+            () => {{
+                #[cfg(test)]
+                let forced = normalize_and_compare_test_fill();
+                #[cfg(not(test))]
+                let forced: Option<i32> = None;
+                if let Some(forced) = forced {
+                    forced
+                } else {
+                    FillOutExtraFixedHDataRestr(heap, pStruct)?
+                }
+            }};
+        }
+        macro_rules! fix_less_h {
+            () => {{
+                #[cfg(test)]
+                let forced = normalize_and_compare_test_fix_less();
+                #[cfg(not(test))]
+                let forced: Option<i32> = None;
+                if let Some(forced) = forced {
+                    forced
+                } else {
+                    FixLessHydrogenInFormula(
+                        heap,
+                        pBNS,
+                        pBD,
+                        pStruct,
+                        at,
+                        at2,
+                        at_prep,
+                        pVA,
+                        pTCGroups,
+                        pnNumRunBNS,
+                        pnTotalDelta,
+                        forbidden_edge_mask,
+                        clock_result,
+                    )?
+                }
+            }};
+        }
+        macro_rules! fix_more_h {
+            () => {{
+                #[cfg(test)]
+                let forced = normalize_and_compare_test_fix_more();
+                #[cfg(not(test))]
+                let forced: Option<i32> = None;
+                if let Some(forced) = forced {
+                    forced
+                } else {
+                    FixMoreHydrogenInFormula(
+                        heap,
+                        pBNS,
+                        pBD,
+                        pStruct,
+                        at,
+                        at2,
+                        at_prep,
+                        pVA,
+                        pTCGroups,
+                        pnNumRunBNS,
+                        pnTotalDelta,
+                        forbidden_edge_mask,
+                        clock_result,
+                    )?
+                }
+            }};
+        }
+        macro_rules! fix_extra_endpoints {
+            ($comparison:expr) => {{
+                #[cfg(test)]
+                let forced = normalize_and_compare_test_fix_extra();
+                #[cfg(not(test))]
+                let forced: Option<i32> = None;
+                if let Some(forced) = forced {
+                    forced
+                } else {
+                    FixRemoveExtraTautEndpoints(
+                        heap,
+                        pBNS,
+                        pBD,
+                        pStruct,
+                        at,
+                        at2,
+                        at_prep,
+                        at_norm,
+                        pVA,
+                        pTCGroups,
+                        $comparison,
+                        pnNumRunBNS,
+                        pnTotalDelta,
+                        forbidden_edge_mask,
+                        clock_result,
+                    )?
                 }
             }};
         }
@@ -8865,12 +8995,38 @@ pub(crate) fn NormalizeAndCompare(
                 let initial_size = len0_i32.wrapping_add(1);
                 let mut buffer = INCHI_IOS_STRING::default();
                 let string_result = (|| -> Result<(), SourceHeapError> {
-                    if inchi_strbuf_init(heap, &mut buffer, initial_size, initial_size)? > 0 {
+                    #[cfg(test)]
+                    normalize_and_compare_test_event("inchi_strbuf_init:begin".to_owned());
+                    let init_result =
+                        inchi_strbuf_init(heap, &mut buffer, initial_size, initial_size)?;
+                    #[cfg(test)]
+                    normalize_and_compare_test_event(if init_result > 0 {
+                        "inchi_strbuf_init:positive".to_owned()
+                    } else {
+                        "inchi_strbuf_init:non-positive".to_owned()
+                    });
+                    if init_result > 0 {
                         let source = heap.slice(formula_pointer.as_const())?[..=len0].to_vec();
                         heap.slice_mut(buffer.pStr)?[..=len0].copy_from_slice(&source);
                         buffer.nUsedLength = len0_i32;
                     }
-                    let _ = MergeZzInHillFormula(heap, &mut buffer)?;
+                    #[cfg(test)]
+                    normalize_and_compare_test_event("MergeZzInHillFormula:begin".to_owned());
+                    let merge_result = MergeZzInHillFormula(heap, &mut buffer)?;
+                    #[cfg(test)]
+                    {
+                        if normalize_and_compare_test_force_zz_growth() && merge_result == 0 {
+                            buffer.nUsedLength = buffer.nAllocatedLength.wrapping_add(1);
+                            normalize_and_compare_test_event(
+                                "MergeZzInHillFormula:forced-growth".to_owned(),
+                            );
+                        }
+                        normalize_and_compare_test_event(if merge_result == 0 {
+                            "MergeZzInHillFormula:zero".to_owned()
+                        } else {
+                            "MergeZzInHillFormula:negative".to_owned()
+                        });
+                    }
                     if buffer.pStr.is_null() {
                         return Err(SourceHeapError::AllocationFailed);
                     }
@@ -8878,6 +9034,14 @@ pub(crate) fn NormalizeAndCompare(
                         let requested = u64::try_from(buffer.nUsedLength.wrapping_add(1))
                             .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
                         let replacement = inchi_realloc(heap, formula_pointer, requested)?;
+                        #[cfg(test)]
+                        normalize_and_compare_test_event("inchi_realloc:begin".to_owned());
+                        #[cfg(test)]
+                        normalize_and_compare_test_event(if replacement.is_null() {
+                            "inchi_realloc:null".to_owned()
+                        } else {
+                            "inchi_realloc:non-null".to_owned()
+                        });
                         if !replacement.is_null() {
                             heap.slice_mut(reversed_pointer)?[0].szHillFormula = replacement;
                         }
@@ -8895,14 +9059,18 @@ pub(crate) fn NormalizeAndCompare(
                         .copy_from_slice(&source);
                     Ok(())
                 })();
+                #[cfg(test)]
+                normalize_and_compare_test_event("inchi_strbuf_close:begin".to_owned());
                 let close_result = inchi_strbuf_close(heap, Some(&mut buffer));
+                #[cfg(test)]
+                normalize_and_compare_test_event("inchi_strbuf_close:end".to_owned());
                 string_result?;
                 close_result?;
             }
         }
 
         if i32::from(pStruct.iMobileH) == TAUT_NON as i32 {
-            ret = FillOutExtraFixedHDataRestr(heap, pStruct)?;
+            ret = fill_fixed_h!();
             if ret != 0 {
                 return Ok(());
             }
@@ -8924,21 +9092,7 @@ pub(crate) fn NormalizeAndCompare(
             nDeltaCur = icr.tot_num_H2.wrapping_sub(icr.tot_num_H1);
             if nDeltaCur > 0 {
                 loop {
-                    ret = FixLessHydrogenInFormula(
-                        heap,
-                        pBNS,
-                        pBD,
-                        pStruct,
-                        at,
-                        at2,
-                        at_prep,
-                        pVA,
-                        pTCGroups,
-                        pnNumRunBNS,
-                        pnTotalDelta,
-                        forbidden_edge_mask,
-                        clock_result,
-                    )?;
+                    ret = fix_less_h!();
                     if ret < 0 {
                         return Ok(());
                     }
@@ -8955,7 +9109,7 @@ pub(crate) fn NormalizeAndCompare(
                         0
                     };
                     if i32::from(pStruct.iMobileH) == TAUT_NON as i32 {
-                        ret = FillOutExtraFixedHDataRestr(heap, pStruct)?;
+                        ret = fill_fixed_h!();
                         if ret != 0 {
                             return Ok(());
                         }
@@ -8979,21 +9133,7 @@ pub(crate) fn NormalizeAndCompare(
             nDeltaCur = icr.tot_num_H1.wrapping_sub(icr.tot_num_H2);
             if nDeltaCur > 0 {
                 loop {
-                    ret = FixMoreHydrogenInFormula(
-                        heap,
-                        pBNS,
-                        pBD,
-                        pStruct,
-                        at,
-                        at2,
-                        at_prep,
-                        pVA,
-                        pTCGroups,
-                        pnNumRunBNS,
-                        pnTotalDelta,
-                        forbidden_edge_mask,
-                        clock_result,
-                    )?;
+                    ret = fix_more_h!();
                     if ret < 0 {
                         return Ok(());
                     }
@@ -9010,7 +9150,7 @@ pub(crate) fn NormalizeAndCompare(
                         0
                     };
                     if i32::from(pStruct.iMobileH) == TAUT_NON as i32 {
-                        ret = FillOutExtraFixedHDataRestr(heap, pStruct)?;
+                        ret = fill_fixed_h!();
                         if ret != 0 {
                             return Ok(());
                         }
@@ -9034,23 +9174,7 @@ pub(crate) fn NormalizeAndCompare(
             nDeltaCur = icr.num_endp_in1_only;
             if nDeltaCur > 0 {
                 loop {
-                    ret = FixRemoveExtraTautEndpoints(
-                        heap,
-                        pBNS,
-                        pBD,
-                        pStruct,
-                        at,
-                        at2,
-                        at_prep,
-                        at_norm,
-                        pVA,
-                        pTCGroups,
-                        &icr,
-                        pnNumRunBNS,
-                        pnTotalDelta,
-                        forbidden_edge_mask,
-                        clock_result,
-                    )?;
+                    ret = fix_extra_endpoints!(&icr);
                     if ret < 0 {
                         return Ok(());
                     }
@@ -9067,7 +9191,7 @@ pub(crate) fn NormalizeAndCompare(
                         0
                     };
                     if i32::from(pStruct.iMobileH) == TAUT_NON as i32 {
-                        ret = FillOutExtraFixedHDataRestr(heap, pStruct)?;
+                        ret = fill_fixed_h!();
                         if ret != 0 {
                             return Ok(());
                         }
@@ -9090,7 +9214,59 @@ pub(crate) fn NormalizeAndCompare(
         if i32::from(pStruct.bMobileH) == TAUT_NON as i32 {
             let mut num_tries = 0_i32;
             loop {
-                ret = FixFixedHRestoredStructure(
+                #[cfg(test)]
+                let forced = normalize_and_compare_test_fix_fixed(_num_inp);
+                #[cfg(not(test))]
+                let forced: Option<i32> = None;
+                ret = if let Some(forced) = forced {
+                    forced
+                } else {
+                    FixFixedHRestoredStructure(
+                        heap,
+                        pCG,
+                        ic,
+                        ip,
+                        sd,
+                        pBNS,
+                        pBD,
+                        pStruct,
+                        at,
+                        at2,
+                        at3,
+                        pVA,
+                        pTCGroups,
+                        Some(&mut t_group_info),
+                        Some(&mut at_norm),
+                        Some(&mut at_prep),
+                        pInChI,
+                        _num_inp,
+                        bHasSomeFixedH,
+                        Some(pnNumRunBNS),
+                        Some(pnTotalDelta),
+                        forbidden_edge_mask,
+                        forbidden_stereo_edge_mask,
+                        clock_result,
+                    )?
+                };
+                if ret < 0 {
+                    return Ok(());
+                }
+                let repeat = num_tries < 2 && ret > 0;
+                num_tries = num_tries.wrapping_add(1);
+                if !repeat {
+                    break;
+                }
+            }
+        }
+        if i32::from(pStruct.bMobileH) == TAUT_YES as i32 {
+            #[cfg(test)]
+            let forced = normalize_and_compare_test_fix_mobile(_num_inp);
+            #[cfg(not(test))]
+            let forced: Option<i32> = None;
+            ret = if let Some(forced) = forced {
+                forced
+            } else {
+                FixMobileHRestoredStructure(
                     heap,
                     pCG,
                     ic,
@@ -9115,44 +9291,8 @@ pub(crate) fn NormalizeAndCompare(
                     forbidden_edge_mask,
                     forbidden_stereo_edge_mask,
                     clock_result,
-                )?;
-                if ret < 0 {
-                    return Ok(());
-                }
-                let repeat = num_tries < 2 && ret > 0;
-                num_tries = num_tries.wrapping_add(1);
-                if !repeat {
-                    break;
-                }
-            }
-        }
-        if i32::from(pStruct.bMobileH) == TAUT_YES as i32 {
-            ret = FixMobileHRestoredStructure(
-                heap,
-                pCG,
-                ic,
-                ip,
-                sd,
-                pBNS,
-                pBD,
-                pStruct,
-                at,
-                at2,
-                at3,
-                pVA,
-                pTCGroups,
-                Some(&mut t_group_info),
-                Some(&mut at_norm),
-                Some(&mut at_prep),
-                pInChI,
-                _num_inp,
-                bHasSomeFixedH,
-                Some(pnNumRunBNS),
-                Some(pnTotalDelta),
-                forbidden_edge_mask,
-                forbidden_stereo_edge_mask,
-                clock_result,
-            )?;
+                )?
+            };
             if ret < 0 {
                 return Ok(());
             }
@@ -9182,35 +9322,43 @@ pub(crate) fn NormalizeAndCompare(
                 return Ok(());
             }
         }
-        ret = FixRestoredStructureStereo(
-            heap,
-            pCG,
-            ic,
-            cmpInChI,
-            &mut icr,
-            cmpInChI2,
-            &mut icr2,
-            ip,
-            sd,
-            pBNS,
-            pBD,
-            pStruct,
-            at,
-            at2,
-            at3,
-            pVA,
-            pTCGroups,
-            Some(&mut t_group_info),
-            Some(&mut at_norm),
-            Some(&mut at_prep),
-            pInChI,
-            _num_inp,
-            pnNumRunBNS,
-            pnTotalDelta,
-            forbidden_edge_mask,
-            forbidden_stereo_edge_mask,
-            clock_result,
-        )?;
+        #[cfg(test)]
+        let forced = normalize_and_compare_test_fix_stereo();
+        #[cfg(not(test))]
+        let forced: Option<i32> = None;
+        ret = if let Some(forced) = forced {
+            forced
+        } else {
+            FixRestoredStructureStereo(
+                heap,
+                pCG,
+                ic,
+                cmpInChI,
+                &mut icr,
+                cmpInChI2,
+                &mut icr2,
+                ip,
+                sd,
+                pBNS,
+                pBD,
+                pStruct,
+                at,
+                at2,
+                at3,
+                pVA,
+                pTCGroups,
+                Some(&mut t_group_info),
+                Some(&mut at_norm),
+                Some(&mut at_prep),
+                pInChI,
+                _num_inp,
+                pnNumRunBNS,
+                pnTotalDelta,
+                forbidden_edge_mask,
+                forbidden_stereo_edge_mask,
+                clock_result,
+            )?
+        };
         if ret < 0 {
             return Ok(());
         }
@@ -9258,21 +9406,59 @@ pub(crate) fn NormalizeAndCompare(
 
     let cleanup = (|| -> Result<(), SourceHeapError> {
         for index in 0..TAUT_NUM as usize {
+            #[cfg(test)]
+            normalize_and_compare_test_cleanup_inchi(heap, index, pStruct.pOneINChI[index]);
+            let had_inchi = !pStruct.pOneINChI[index].is_null();
             let _ = Free_INChI(heap, &mut pStruct.pOneINChI[index])?;
+            #[cfg(test)]
+            if had_inchi {
+                normalize_and_compare_test_event(format!("free:pOneINChI[{index}]"));
+            }
+            #[cfg(test)]
+            normalize_and_compare_test_cleanup_aux(heap, index, pStruct.pOneINChI_Aux[index]);
+            let had_aux = !pStruct.pOneINChI_Aux[index].is_null();
             let _ = Free_INChI_Aux(heap, &mut pStruct.pOneINChI_Aux[index])?;
+            #[cfg(test)]
+            if had_aux {
+                normalize_and_compare_test_event(format!("free:pOneINChI_Aux[{index}]"));
+            }
             let holder = pStruct.pOne_norm_data[index];
+            #[cfg(test)]
+            normalize_and_compare_test_cleanup_norm(heap, index, holder);
             if !holder.is_null() {
                 let mut data = heap
                     .slice(holder.as_const())?
                     .first()
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                #[cfg(test)]
+                {
+                    if !data.at.is_null() {
+                        normalize_and_compare_test_event(format!(
+                            "free:pOne_norm_data[{index}].at"
+                        ));
+                    }
+                    if !data.at_fixed_bonds.is_null() {
+                        normalize_and_compare_test_event(format!(
+                            "free:pOne_norm_data[{index}].at_fixed_bonds"
+                        ));
+                    }
+                }
                 FreeInpAtomData(heap, &mut data)?;
                 inchi_free(heap, holder)?;
+                #[cfg(test)]
+                normalize_and_compare_test_event(format!("free:pOne_norm_data[{index}]"));
                 pStruct.pOne_norm_data[index] = SourceMutPointer::null();
             }
         }
+        #[cfg(test)]
+        normalize_and_compare_test_cleanup_t_group(heap, &pStruct.One_ti);
+        let had_t_group = !pStruct.One_ti.t_group.is_null();
         let _ = free_t_group_info(heap, Some(&mut pStruct.One_ti))?;
+        #[cfg(test)]
+        if had_t_group {
+            normalize_and_compare_test_event("free:One_ti.t_group".to_owned());
+        }
         Ok(())
     })();
 
@@ -9282,11 +9468,518 @@ pub(crate) fn NormalizeAndCompare(
 }
 
 #[cfg(test)]
+#[derive(Default)]
+struct NormalizeAndCompareTestControl {
+    forced_rebuild_return: Option<i32>,
+    forced_compare: Option<(INCHI_MODE, i32)>,
+    expected_inchi_atoms: [i32; 2],
+    holder_mask: u8,
+    events: Vec<String>,
+    prefree_state_exact: bool,
+    force_zz_growth: bool,
+    formula_before_cleanup: String,
+    rebuild_script: Vec<(i32, bool, bool, bool)>,
+    compare_script: Vec<(INCHI_MODE, i32, i32, i32, i32)>,
+    fill_script: Vec<i32>,
+    fix_less_script: Vec<i32>,
+    fix_more_script: Vec<i32>,
+    fix_extra_script: Vec<i32>,
+    fix_fixed_script: Vec<i32>,
+    fix_mobile_script: Vec<i32>,
+    fix_stereo_script: Vec<i32>,
+    final_cleanup: Option<NormalizeAndCompareFinalCleanup>,
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct NormalizeAndCompareFinalCleanup {
+    expected_norm_at: [SourceMutPointer<inp_ATOM>; TAUT_NUM as usize],
+    expected_t_groups: Option<Vec<crate::source_types::T_GROUP>>,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static NORMALIZE_AND_COMPARE_TEST_CONTROL: std::cell::RefCell<Option<NormalizeAndCompareTestControl>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_begin(holder_mask: u8, forced_rebuild_return: i32) {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        *control.borrow_mut() = Some(NormalizeAndCompareTestControl {
+            forced_rebuild_return: Some(forced_rebuild_return),
+            forced_compare: None,
+            expected_inchi_atoms: [10, 11],
+            holder_mask,
+            events: Vec::new(),
+            prefree_state_exact: true,
+            force_zz_growth: false,
+            formula_before_cleanup: String::new(),
+            rebuild_script: Vec::new(),
+            compare_script: Vec::new(),
+            fill_script: Vec::new(),
+            fix_less_script: Vec::new(),
+            fix_more_script: Vec::new(),
+            fix_extra_script: Vec::new(),
+            fix_fixed_script: Vec::new(),
+            fix_mobile_script: Vec::new(),
+            fix_stereo_script: Vec::new(),
+            final_cleanup: None,
+        });
+    });
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_begin_layer_selection(reversed_state: i32) {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        *control.borrow_mut() = Some(NormalizeAndCompareTestControl {
+            forced_rebuild_return: Some(0),
+            forced_compare: Some((IDIF_PROBLEM, 0)),
+            expected_inchi_atoms: [1, if reversed_state == 1 { 0 } else { 1 }],
+            holder_mask: 0,
+            events: Vec::new(),
+            prefree_state_exact: true,
+            force_zz_growth: false,
+            formula_before_cleanup: String::new(),
+            rebuild_script: Vec::new(),
+            compare_script: Vec::new(),
+            fill_script: Vec::new(),
+            fix_less_script: Vec::new(),
+            fix_more_script: Vec::new(),
+            fix_extra_script: Vec::new(),
+            fix_fixed_script: Vec::new(),
+            fix_mobile_script: Vec::new(),
+            fix_stereo_script: Vec::new(),
+            final_cleanup: None,
+        });
+    });
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_begin_common_success() {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        *control.borrow_mut() = Some(NormalizeAndCompareTestControl {
+            forced_rebuild_return: Some(0),
+            forced_compare: None,
+            expected_inchi_atoms: [1, 0],
+            holder_mask: 0,
+            events: Vec::new(),
+            prefree_state_exact: true,
+            force_zz_growth: false,
+            formula_before_cleanup: String::new(),
+            rebuild_script: Vec::new(),
+            compare_script: Vec::new(),
+            fill_script: Vec::new(),
+            fix_less_script: Vec::new(),
+            fix_more_script: Vec::new(),
+            fix_extra_script: Vec::new(),
+            fix_fixed_script: Vec::new(),
+            fix_mobile_script: Vec::new(),
+            fix_stereo_script: Vec::new(),
+            final_cleanup: None,
+        });
+    });
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_begin_zz(force_growth: bool) {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        *control.borrow_mut() = Some(NormalizeAndCompareTestControl {
+            forced_rebuild_return: Some(0),
+            forced_compare: Some((IDIF_PROBLEM, 0)),
+            expected_inchi_atoms: [1, 0],
+            holder_mask: 0,
+            events: Vec::new(),
+            prefree_state_exact: true,
+            force_zz_growth: force_growth,
+            formula_before_cleanup: String::new(),
+            rebuild_script: Vec::new(),
+            compare_script: Vec::new(),
+            fill_script: Vec::new(),
+            fix_less_script: Vec::new(),
+            fix_more_script: Vec::new(),
+            fix_extra_script: Vec::new(),
+            fix_fixed_script: Vec::new(),
+            fix_mobile_script: Vec::new(),
+            fix_stereo_script: Vec::new(),
+            final_cleanup: None,
+        });
+    });
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_begin_scripted(
+    rebuild_script: Vec<(i32, bool, bool, bool)>,
+    compare_script: Vec<(INCHI_MODE, i32, i32, i32, i32)>,
+    fill_script: Vec<i32>,
+    fix_less_script: Vec<i32>,
+    fix_more_script: Vec<i32>,
+    fix_extra_script: Vec<i32>,
+    fix_fixed_script: Vec<i32>,
+    fix_mobile_script: Vec<i32>,
+    fix_stereo_script: Vec<i32>,
+) {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        *control.borrow_mut() = Some(NormalizeAndCompareTestControl {
+            forced_rebuild_return: None,
+            forced_compare: None,
+            expected_inchi_atoms: [1, 0],
+            holder_mask: 0,
+            events: Vec::new(),
+            prefree_state_exact: true,
+            force_zz_growth: false,
+            formula_before_cleanup: String::new(),
+            rebuild_script,
+            compare_script,
+            fill_script,
+            fix_less_script,
+            fix_more_script,
+            fix_extra_script,
+            fix_fixed_script,
+            fix_mobile_script,
+            fix_stereo_script,
+            final_cleanup: None,
+        });
+    });
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_set_final_cleanup(
+    expected_inchi_atoms: [i32; TAUT_NUM as usize],
+    expected_norm_at: [SourceMutPointer<inp_ATOM>; TAUT_NUM as usize],
+    expected_t_groups: Option<Vec<crate::source_types::T_GROUP>>,
+) {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let control = control
+            .as_mut()
+            .expect("NormalizeAndCompare test control must be active");
+        control.expected_inchi_atoms = expected_inchi_atoms;
+        control.final_cleanup = Some(NormalizeAndCompareFinalCleanup {
+            expected_norm_at,
+            expected_t_groups,
+        });
+    });
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_force_zz_growth() -> bool {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        control
+            .borrow()
+            .as_ref()
+            .is_some_and(|control| control.force_zz_growth)
+    })
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_rebuild_return() -> Option<(i32, bool, bool, bool)> {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let control = control.as_mut()?;
+        control
+            .events
+            .push("MakeOneInChIOutOfStrFromINChI2".to_owned());
+        if !control.rebuild_script.is_empty() {
+            Some(control.rebuild_script.remove(0))
+        } else {
+            control
+                .forced_rebuild_return
+                .take()
+                .map(|value| (value, false, false, false))
+        }
+    })
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_compare(
+    reverse_index: usize,
+    original_index: usize,
+    output: &mut ICR,
+) -> Option<(INCHI_MODE, i32)> {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let control = control.as_mut()?;
+        control.events.push(format!(
+            "CompareReversedINChI2:r{reverse_index}:o{original_index}"
+        ));
+        if !control.compare_script.is_empty() {
+            let (flags, error, h1, h2, endpoints) = control.compare_script.remove(0);
+            output.tot_num_H1 = h1;
+            output.tot_num_H2 = h2;
+            output.num_endp_in1_only = endpoints;
+            Some((flags, error))
+        } else {
+            control.forced_compare
+        }
+    })
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_fill() -> Option<i32> {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let control = control.as_mut()?;
+        if control.fill_script.is_empty() {
+            return None;
+        }
+        control
+            .events
+            .push("FillOutExtraFixedHDataRestr".to_owned());
+        Some(control.fill_script.remove(0))
+    })
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_fix_less() -> Option<i32> {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let control = control.as_mut()?;
+        if control.fix_less_script.is_empty() {
+            return None;
+        }
+        control.events.push("FixLessHydrogenInFormula".to_owned());
+        Some(control.fix_less_script.remove(0))
+    })
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_fix_more() -> Option<i32> {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let control = control.as_mut()?;
+        if control.fix_more_script.is_empty() {
+            return None;
+        }
+        control.events.push("FixMoreHydrogenInFormula".to_owned());
+        Some(control.fix_more_script.remove(0))
+    })
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_fix_extra() -> Option<i32> {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let control = control.as_mut()?;
+        if control.fix_extra_script.is_empty() {
+            return None;
+        }
+        control
+            .events
+            .push("FixRemoveExtraTautEndpoints".to_owned());
+        Some(control.fix_extra_script.remove(0))
+    })
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_fix_fixed(num_inp: i64) -> Option<i32> {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let control = control.as_mut()?;
+        if control.fix_fixed_script.is_empty() {
+            return None;
+        }
+        control
+            .events
+            .push(format!("FixFixedHRestoredStructure:num_inp={num_inp}"));
+        Some(control.fix_fixed_script.remove(0))
+    })
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_fix_mobile(num_inp: i64) -> Option<i32> {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let control = control.as_mut()?;
+        if control.fix_mobile_script.is_empty() {
+            return None;
+        }
+        control
+            .events
+            .push(format!("FixMobileHRestoredStructure:num_inp={num_inp}"));
+        Some(control.fix_mobile_script.remove(0))
+    })
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_fix_stereo() -> Option<i32> {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let control = control.as_mut()?;
+        if control.fix_stereo_script.is_empty() {
+            return None;
+        }
+        control.events.push("FixRestoredStructureStereo".to_owned());
+        Some(control.fix_stereo_script.remove(0))
+    })
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_event(event: String) {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        if let Some(control) = control.borrow_mut().as_mut() {
+            control.events.push(event);
+        }
+    });
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_cleanup_inchi(
+    heap: &SourceHeap,
+    index: usize,
+    pointer: SourceMutPointer<INChI>,
+) {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let Some(control) = control.as_mut() else {
+            return;
+        };
+        let present = !pointer.is_null();
+        control.events.push(format!(
+            "Free_INChI[{index}]:{}",
+            if present { "present" } else { "null" }
+        ));
+        if present {
+            control.prefree_state_exact &= heap.slice(pointer.as_const()).is_ok_and(|values| {
+                values.first().is_some_and(|inchi| {
+                    inchi.nErrorCode == 100 + index as i32
+                        && inchi.nNumberOfAtoms == control.expected_inchi_atoms[index]
+                        && inchi.nRefCount == 0
+                })
+            });
+            if let Ok(values) = heap.slice(pointer.as_const())
+                && let Some(inchi) = values.first()
+                && !inchi.szHillFormula.is_null()
+                && let Ok(formula) = heap.slice(inchi.szHillFormula.as_const())
+            {
+                let length = formula.iter().position(|byte| *byte == 0).unwrap_or(0);
+                control.formula_before_cleanup = formula[..length]
+                    .iter()
+                    .map(|byte| *byte as u8 as char)
+                    .collect();
+                control.events.push("free:formula".to_owned());
+            }
+        }
+    });
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_cleanup_aux(
+    heap: &SourceHeap,
+    index: usize,
+    pointer: SourceMutPointer<crate::source_types::INChI_Aux>,
+) {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let Some(control) = control.as_mut() else {
+            return;
+        };
+        let present = !pointer.is_null();
+        control.events.push(format!(
+            "Free_INChI_Aux[{index}]:{}",
+            if present { "present" } else { "null" }
+        ));
+        if present {
+            control.prefree_state_exact &= heap.slice(pointer.as_const()).is_ok_and(|values| {
+                values.first().is_some_and(|aux| {
+                    aux.nErrorCode == 200 + index as i32
+                        && aux.nNumberOfAtoms == 20 + index as i32
+                        && aux.nRefCount == 0
+                })
+            });
+        }
+    });
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_cleanup_norm(
+    heap: &SourceHeap,
+    index: usize,
+    pointer: SourceMutPointer<crate::source_types::INP_ATOM_DATA>,
+) {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let Some(control) = control.as_mut() else {
+            return;
+        };
+        let present = !pointer.is_null();
+        control.events.push(format!(
+            "FreeInpAtomData[{index}]:{}",
+            if present { "present" } else { "null" }
+        ));
+        if present {
+            control.prefree_state_exact &= heap.slice(pointer.as_const()).is_ok_and(|values| {
+                values.first().is_some_and(|data| {
+                    let expected_at = control
+                        .final_cleanup
+                        .as_ref()
+                        .map_or(SourceMutPointer::null(), |final_cleanup| {
+                            final_cleanup.expected_norm_at[index]
+                        });
+                    data.num_at == 30 + index as i32
+                        && data.num_bonds == 40 + index as i32
+                        && data.at == expected_at
+                        && data.at_fixed_bonds.is_null()
+                })
+            });
+        }
+    });
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_cleanup_t_group(
+    heap: &SourceHeap,
+    info: &crate::source_types::T_GROUP_INFO,
+) {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let Some(control) = control.as_mut() else {
+            return;
+        };
+        let present = !info.t_group.is_null();
+        control.events.push(format!(
+            "free_t_group_info:{}",
+            if present { "present" } else { "null" }
+        ));
+        if let Some(final_cleanup) = &control.final_cleanup {
+            control.prefree_state_exact &= match &final_cleanup.expected_t_groups {
+                Some(expected) => {
+                    present
+                        && info.num_t_groups == expected.len() as i32
+                        && heap
+                            .slice(info.t_group.as_const())
+                            .is_ok_and(|groups| groups == expected)
+                }
+                None => !present && info.num_t_groups == 0,
+            };
+        } else {
+            control.prefree_state_exact &= present
+                && info.num_t_groups == 1
+                && heap.slice(info.t_group.as_const()).is_ok_and(|groups| {
+                    groups.first().is_some_and(|group| {
+                        group.nNumEndpoints == 51 && group.num == [52, 53, 0, 0, 0]
+                    })
+                });
+        }
+    });
+}
+
+#[cfg(test)]
+fn normalize_and_compare_test_finish() -> NormalizeAndCompareTestControl {
+    NORMALIZE_AND_COMPARE_TEST_CONTROL.with(|control| {
+        control
+            .borrow_mut()
+            .take()
+            .expect("NormalizeAndCompare test control must be active")
+    })
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::source_types::{
         BNS_EDGE, BNS_VERTEX, INChI_Aux, INP_ATOM_DATA, REQ_MODE_NON_ISO, REQ_MODE_TAUT, SRM,
-        T_GROUP, T_GROUP_INFO, TC_GROUP, TG_FLAG_FIX_ISO_FIXEDH_BUG, TG_FLAG_FIX_TERM_H_CHRG_BUG,
+        T_GROUP, T_GROUP_INFO, TAUT_INI, TC_GROUP, TG_FLAG_FIX_ISO_FIXEDH_BUG,
+        TG_FLAG_FIX_TERM_H_CHRG_BUG,
     };
 
     fn absent_groups() -> ALL_TC_GROUPS {
@@ -11665,6 +12358,1275 @@ mod tests {
         assert_eq!(run(&mut allocation, allocation_input), Ok(RI_ERR_ALLOC));
         assert_cleanup(&allocation);
         assert_eq!(allocation.heap.source_allocation_calls(), 1);
+    }
+
+    #[test]
+    fn source_policy__normalizeandcompare__undefined_initial_buffer_allocation_returns_structured_error()
+     {
+        let mut heap = SourceHeap::default();
+        let clock = heap
+            .allocate_model_storage(vec![INCHI_CLOCK::default()])
+            .unwrap();
+        let restore_mode = heap.allocate_model_storage(vec![SRM::default()]).unwrap();
+        let vertices = heap
+            .allocate_model_storage(vec![BNS_VERTEX::default()])
+            .unwrap();
+        let mut bns = BN_STRUCT {
+            num_atoms: 1,
+            num_vertices: 1,
+            vert: vertices,
+            ..BN_STRUCT::default()
+        };
+        let mut carbon = inp_ATOM {
+            el_number: 6,
+            num_H: 4,
+            orig_at_number: 1,
+            component: 1,
+            ..inp_ATOM::default()
+        };
+        carbon.elname[0] = b'C' as i8;
+        let at = heap.allocate_model_storage(vec![carbon]).unwrap();
+        let at2 = heap
+            .allocate_model_storage(vec![inp_ATOM::default()])
+            .unwrap();
+        let at3 = heap
+            .allocate_model_storage(vec![inp_ATOM::default()])
+            .unwrap();
+        let formula = heap
+            .allocate(b"CZzZz2\0".iter().copied().map(|byte| byte as i8).collect())
+            .unwrap();
+        let reversed = heap
+            .allocate(vec![INChI {
+                nErrorCode: 100,
+                nNumberOfAtoms: 1,
+                szHillFormula: formula,
+                ..INChI::default()
+            }])
+            .unwrap();
+        let original = heap
+            .allocate_model_storage(vec![INChI {
+                nErrorCode: 70,
+                nNumberOfAtoms: 1,
+                ..INChI::default()
+            }])
+            .unwrap();
+        let parameters = INPUT_PARMS {
+            nMode: u64::from(REQ_MODE_TAUT | REQ_MODE_NON_ISO),
+            ..INPUT_PARMS::default()
+        };
+        let data = STRUCT_DATA::default();
+        let mut structure = StrFromINChI {
+            at,
+            num_atoms: 1,
+            bMobileH: TAUT_YES as i8,
+            iMobileH: TAUT_YES as i8,
+            pSrm: restore_mode.as_const(),
+            n_zy: 1,
+            n_pzz: 1,
+            pOneINChI: [reversed, SourceMutPointer::null()],
+            ..StrFromINChI::default()
+        };
+        let mut expected_structure = structure.clone();
+        expected_structure.pOneINChI = [SourceMutPointer::null(); TAUT_NUM as usize];
+        let mut canonical_globals = CANON_GLOBALS::default();
+        let mut bns_data = BN_DATA::default();
+        let mut valence = vec![VAL_AT::default()];
+        let mut groups = ALL_TC_GROUPS::default();
+        let canonical_globals_before = canonical_globals.clone();
+        let clock_before = heap.slice(clock.as_const()).unwrap()[0].clone();
+        let bns_before = bns.clone();
+        let bns_data_before = bns_data.clone();
+        let vertices_before = heap.slice(vertices.as_const()).unwrap().to_vec();
+        let atoms_before = heap.slice(at.as_const()).unwrap().to_vec();
+        let atoms2_before = heap.slice(at2.as_const()).unwrap().to_vec();
+        let atoms3_before = heap.slice(at3.as_const()).unwrap().to_vec();
+        let source_allocations_before = heap.live_source_allocation_count();
+
+        heap.trace_source_allocations();
+        heap.fail_after_allocations(0);
+        normalize_and_compare_test_begin_zz(false);
+        let mut runs = 17;
+        let mut delta = -19;
+        let result = NormalizeAndCompare(
+            &mut heap,
+            &mut canonical_globals,
+            clock,
+            &parameters,
+            &data,
+            &mut bns,
+            &mut bns_data,
+            &mut structure,
+            at,
+            at2,
+            at3,
+            &mut valence,
+            &mut groups,
+            [original, SourceMutPointer::null()],
+            i64::MAX,
+            0,
+            &mut runs,
+            &mut delta,
+            4,
+            0,
+            0,
+        );
+        let control = normalize_and_compare_test_finish();
+
+        assert_eq!(result, Err(SourceHeapError::AllocationFailed));
+        assert_eq!((runs, delta), (17, -19));
+        assert_eq!(source_allocations_before, 2);
+        assert_eq!(heap.source_allocation_calls(), 1);
+        assert_eq!(heap.live_source_allocation_count(), 0);
+        assert!(heap.slice(reversed.as_const()).is_err());
+        assert!(heap.slice(formula.as_const()).is_err());
+        assert_eq!(heap.slice(original.as_const()).unwrap()[0].nErrorCode, 70);
+        assert_eq!(structure, expected_structure);
+        assert_eq!(canonical_globals, canonical_globals_before);
+        assert_eq!(heap.slice(clock.as_const()).unwrap()[0], clock_before);
+        assert_eq!(bns, bns_before);
+        assert_eq!(bns_data, bns_data_before);
+        assert_eq!(heap.slice(vertices.as_const()).unwrap(), vertices_before);
+        assert_eq!(heap.slice(at.as_const()).unwrap(), atoms_before);
+        assert_eq!(heap.slice(at2.as_const()).unwrap(), atoms2_before);
+        assert_eq!(heap.slice(at3.as_const()).unwrap(), atoms3_before);
+        assert_eq!(valence, vec![VAL_AT::default()]);
+        assert_eq!(groups, ALL_TC_GROUPS::default());
+        assert_eq!(control.formula_before_cleanup, "CZzZz2");
+        assert_eq!(
+            control.events,
+            [
+                "MakeOneInChIOutOfStrFromINChI2",
+                "inchi_strbuf_init:begin",
+                "inchi_strbuf_init:non-positive",
+                "MergeZzInHillFormula:begin",
+                "MergeZzInHillFormula:zero",
+                "inchi_strbuf_close:begin",
+                "inchi_strbuf_close:end",
+                "Free_INChI[0]:present",
+                "free:formula",
+                "free:pOneINChI[0]",
+                "Free_INChI_Aux[0]:null",
+                "FreeInpAtomData[0]:null",
+                "Free_INChI[1]:null",
+                "Free_INChI_Aux[1]:null",
+                "FreeInpAtomData[1]:null",
+                "free_t_group_info:null",
+            ]
+        );
+        assert!(
+            !control
+                .events
+                .iter()
+                .any(|event| event.starts_with("CompareReversedINChI2")
+                    || event.starts_with("Fix"))
+        );
+    }
+
+    #[test]
+    fn official_c_oracle__normalizeandcompare__exact() {
+        use std::path::Path;
+        use std::process::Command;
+
+        use serde_json::{Value, json};
+
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("cosmolkit-inchi must be located under crates/");
+        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let oracle = Command::new("sh")
+            .arg(&runner)
+            .arg("--normalize-and-compare-records")
+            .current_dir(repository_root)
+            .output()
+            .unwrap_or_else(|error| panic!("failed to start {}: {error}", runner.display()));
+        assert!(
+            oracle.status.success(),
+            "official C oracle failed with {}:\n{}",
+            oracle.status,
+            String::from_utf8_lossy(&oracle.stderr)
+        );
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let mut record_count = 0_usize;
+
+        for line in output.lines() {
+            let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
+            assert_eq!(official["schema_version"], "cosmolkit-inchi-official-c-v1");
+            assert_eq!(official["operation"], "NormalizeAndCompare");
+            let case_id = official["case_id"].as_str().expect("case_id must be text");
+            if official["family"] == "zz-zy-undefined" {
+                assert_eq!(official["output"]["source_defined"], false, "{case_id}");
+                assert!(
+                    matches!(
+                        official["output"]["termination_kind"].as_str(),
+                        Some("signal" | "exit")
+                    ),
+                    "{case_id}"
+                );
+                assert!(official["output"].get("result").is_none(), "{case_id}");
+                assert!(
+                    official["output"].get("cleanup_events").is_none(),
+                    "{case_id}"
+                );
+                record_count += 1;
+                continue;
+            }
+            if official["family"] == "final" {
+                let integers = |name: &str| -> Vec<i32> {
+                    official["input"][name]
+                        .as_array()
+                        .unwrap_or_else(|| panic!("{case_id}: {name} must be an array"))
+                        .iter()
+                        .map(|value| {
+                            value
+                                .as_i64()
+                                .and_then(|value| i32::try_from(value).ok())
+                                .unwrap_or_else(|| panic!("{case_id}: {name} value must fit i32"))
+                        })
+                        .collect()
+                };
+                let b_mobile_h = official["input"]["b_mobile_h"]
+                    .as_i64()
+                    .and_then(|value| i8::try_from(value).ok())
+                    .expect("b_mobile_h must fit i8");
+                let i_mobile_h = official["input"]["i_mobile_h"]
+                    .as_i64()
+                    .and_then(|value| i8::try_from(value).ok())
+                    .expect("i_mobile_h must fit i8");
+                let original_layer1 = official["input"]["original_layer1"]
+                    .as_bool()
+                    .expect("original_layer1 must be boolean");
+                let reversed_layer1 = official["input"]["reversed_layer1"]
+                    .as_bool()
+                    .expect("reversed_layer1 must be boolean");
+                let num_inp = official["input"]["num_inp"]
+                    .as_i64()
+                    .expect("num_inp must fit the GCC/Linux long model");
+                let fixed_returns = integers("fixed_ret");
+                let mobile_returns = integers("mobile_ret");
+                let stereo_returns = integers("stereo_ret");
+                let tc_edges = integers("tc_edges");
+                let tinfo_h: Vec<u16> = integers("tinfo_h")
+                    .into_iter()
+                    .map(|value| {
+                        u16::try_from(value)
+                            .unwrap_or_else(|_| panic!("{case_id}: tinfo_h must fit AT_RANK"))
+                    })
+                    .collect();
+                let tinfo_endpoints: Vec<u16> = integers("tinfo_endpoints")
+                    .into_iter()
+                    .map(|value| {
+                        u16::try_from(value).unwrap_or_else(|_| {
+                            panic!("{case_id}: tinfo_endpoints must fit AT_NUMB")
+                        })
+                    })
+                    .collect();
+                let tinfo_present = official["input"]["tinfo_present"]
+                    .as_bool()
+                    .expect("tinfo_present must be boolean");
+                assert_eq!(tinfo_h.len(), tinfo_endpoints.len(), "{case_id}");
+                assert_eq!(tinfo_present, !tinfo_h.is_empty(), "{case_id}");
+                let primary_flags = official["input"]["primary_flags"]
+                    .as_u64()
+                    .expect("primary_flags must be unsigned");
+                let primary_error = official["input"]["primary_error"]
+                    .as_i64()
+                    .and_then(|value| i32::try_from(value).ok())
+                    .expect("primary_error must fit i32");
+                let optional_flags = official["input"]["optional_flags"]
+                    .as_u64()
+                    .expect("optional_flags must be unsigned");
+                let optional_error = official["input"]["optional_error"]
+                    .as_i64()
+                    .and_then(|value| i32::try_from(value).ok())
+                    .expect("optional_error must fit i32");
+                let optional_active =
+                    b_mobile_h == TAUT_NON as i8 && (original_layer1 || reversed_layer1);
+                let mut compare_script =
+                    vec![(0, 0, 0, 0, 0), (primary_flags, primary_error, 0, 0, 0)];
+                if optional_active {
+                    compare_script.push((optional_flags, optional_error, 0, 0, 0));
+                }
+                let fill_returns = if i_mobile_h == TAUT_NON as i8 {
+                    vec![0]
+                } else {
+                    Vec::new()
+                };
+
+                let mut heap = SourceHeap::default();
+                let clock = heap
+                    .allocate_model_storage(vec![INCHI_CLOCK::default()])
+                    .unwrap();
+                let restore_mode = heap.allocate_model_storage(vec![SRM::default()]).unwrap();
+                let vertices = heap
+                    .allocate_model_storage(vec![BNS_VERTEX::default()])
+                    .unwrap();
+                let mut bns = BN_STRUCT {
+                    num_atoms: 1,
+                    num_vertices: 1,
+                    vert: vertices,
+                    ..BN_STRUCT::default()
+                };
+                let mut carbon = inp_ATOM {
+                    el_number: 6,
+                    num_H: 4,
+                    orig_at_number: 1,
+                    component: 1,
+                    ..inp_ATOM::default()
+                };
+                carbon.elname[0] = b'C' as i8;
+                let at = heap.allocate_model_storage(vec![carbon]).unwrap();
+                let at2 = heap
+                    .allocate_model_storage(vec![inp_ATOM::default()])
+                    .unwrap();
+                let at3 = heap
+                    .allocate_model_storage(vec![inp_ATOM::default()])
+                    .unwrap();
+                let reversed_zero = heap
+                    .allocate(vec![INChI {
+                        nErrorCode: 100,
+                        nNumberOfAtoms: 1,
+                        ..INChI::default()
+                    }])
+                    .unwrap();
+                let reversed_one = if reversed_layer1 {
+                    heap.allocate(vec![INChI {
+                        nErrorCode: 101,
+                        nNumberOfAtoms: 1,
+                        ..INChI::default()
+                    }])
+                    .unwrap()
+                } else {
+                    SourceMutPointer::null()
+                };
+                let norm_at = heap.allocate(vec![inp_ATOM::default()]).unwrap();
+                let norm_holder = heap
+                    .allocate(vec![INP_ATOM_DATA {
+                        at: norm_at,
+                        num_at: 30,
+                        num_bonds: 40,
+                        ..INP_ATOM_DATA::default()
+                    }])
+                    .unwrap();
+                let original = heap
+                    .allocate_model_storage(vec![
+                        INChI {
+                            nErrorCode: 70,
+                            nNumberOfAtoms: 1,
+                            ..INChI::default()
+                        },
+                        INChI {
+                            nErrorCode: 71,
+                            nNumberOfAtoms: usize::from(original_layer1) as i32,
+                            ..INChI::default()
+                        },
+                    ])
+                    .unwrap();
+                let original_one = if original_layer1 {
+                    original.offset(1).unwrap()
+                } else {
+                    SourceMutPointer::null()
+                };
+                let tc_group_values: Vec<TC_GROUP> = tc_edges
+                    .iter()
+                    .map(|num_edges| TC_GROUP {
+                        num_edges: *num_edges,
+                        ..TC_GROUP::default()
+                    })
+                    .collect();
+                let tc_group_pointer = if tc_group_values.is_empty() {
+                    SourceMutPointer::null()
+                } else {
+                    heap.allocate_model_storage(tc_group_values).unwrap()
+                };
+                let t_group_values: Vec<T_GROUP> = tinfo_h
+                    .iter()
+                    .copied()
+                    .zip(tinfo_endpoints.iter().copied())
+                    .map(|(mobile_h, endpoints)| T_GROUP {
+                        num: [mobile_h, 0, 0, 0, 0],
+                        nNumEndpoints: endpoints,
+                        ..T_GROUP::default()
+                    })
+                    .collect();
+                let t_group_pointer = if tinfo_present {
+                    heap.allocate(t_group_values.clone()).unwrap()
+                } else {
+                    SourceMutPointer::null()
+                };
+                let parameters = INPUT_PARMS {
+                    nMode: u64::from(REQ_MODE_TAUT | REQ_MODE_NON_ISO),
+                    ..INPUT_PARMS::default()
+                };
+                let data = STRUCT_DATA::default();
+                let mut structure = StrFromINChI {
+                    at,
+                    num_atoms: 1,
+                    bMobileH: b_mobile_h,
+                    iMobileH: i_mobile_h,
+                    pSrm: restore_mode.as_const(),
+                    pOneINChI: [reversed_zero, reversed_one],
+                    pOne_norm_data: [norm_holder, SourceMutPointer::null()],
+                    One_ti: T_GROUP_INFO {
+                        t_group: t_group_pointer,
+                        num_t_groups: t_group_values.len() as i32,
+                        ..T_GROUP_INFO::default()
+                    },
+                    ..StrFromINChI::default()
+                };
+                let mut expected_structure = structure.clone();
+                expected_structure.pOneINChI = [SourceMutPointer::null(); TAUT_NUM as usize];
+                expected_structure.pOne_norm_data = [SourceMutPointer::null(); TAUT_NUM as usize];
+                expected_structure.One_ti = T_GROUP_INFO::default();
+                let input = [original, original_one];
+                let mut valence = vec![VAL_AT::default()];
+                let mut groups = ALL_TC_GROUPS {
+                    pTCG: tc_group_pointer,
+                    num_tgroups: tc_edges.len() as i32,
+                    ..ALL_TC_GROUPS::default()
+                };
+                let mut bns_data = BN_DATA::default();
+                let source_allocations_before = heap.live_source_allocation_count();
+                normalize_and_compare_test_begin_scripted(
+                    vec![(0, true, true, tinfo_present)],
+                    compare_script.clone(),
+                    fill_returns.clone(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    fixed_returns.clone(),
+                    mobile_returns.clone(),
+                    stereo_returns.clone(),
+                );
+                normalize_and_compare_test_set_final_cleanup(
+                    [1, i32::from(reversed_layer1)],
+                    [norm_at, SourceMutPointer::null()],
+                    tinfo_present.then_some(t_group_values),
+                );
+                let mut runs = 17;
+                let mut delta = -19;
+                let result = NormalizeAndCompare(
+                    &mut heap,
+                    &mut CANON_GLOBALS::default(),
+                    clock,
+                    &parameters,
+                    &data,
+                    &mut bns,
+                    &mut bns_data,
+                    &mut structure,
+                    at,
+                    at2,
+                    at3,
+                    &mut valence,
+                    &mut groups,
+                    input,
+                    num_inp,
+                    0,
+                    &mut runs,
+                    &mut delta,
+                    4,
+                    0,
+                    0,
+                )
+                .unwrap_or_else(|error| panic!("{case_id}: Rust source error: {error:?}"));
+                let control = normalize_and_compare_test_finish();
+                let source_allocations_after = heap.live_source_allocation_count();
+                let actual = json!({
+                    "result": result,
+                    "runs": runs,
+                    "delta": delta,
+                    "rebuild_used": 1 - control.rebuild_script.len(),
+                    "compare_used": compare_script.len() - control.compare_script.len(),
+                    "fill_used": fill_returns.len() - control.fill_script.len(),
+                    "fixed_used": fixed_returns.len() - control.fix_fixed_script.len(),
+                    "mobile_used": mobile_returns.len() - control.fix_mobile_script.len(),
+                    "stereo_used": stereo_returns.len() - control.fix_stereo_script.len(),
+                    "complete_caller_state_exact": structure == expected_structure
+                        && heap.slice(original.as_const()).unwrap()[0].nErrorCode == 70
+                        && heap.slice(original.as_const()).unwrap()[1].nErrorCode == 71,
+                    "prefree_state_exact": control.prefree_state_exact,
+                    "holders_null": structure.pOneINChI
+                        == [SourceMutPointer::null(); TAUT_NUM as usize]
+                        && structure.pOneINChI_Aux
+                            == [SourceMutPointer::null(); TAUT_NUM as usize]
+                        && structure.pOne_norm_data
+                            == [SourceMutPointer::null(); TAUT_NUM as usize],
+                    "one_ti_cleared": structure.One_ti == T_GROUP_INFO::default(),
+                    "input_pointers_preserved": input == [original, original_one],
+                    "allocation_free_exact": source_allocations_after == 0,
+                    "source_allocations_before": source_allocations_before,
+                    "source_allocations_after": source_allocations_after,
+                    "cleanup_events": control.events,
+                });
+                assert_eq!(actual, official["output"], "{case_id}");
+                record_count += 1;
+                continue;
+            }
+            if official["family"] == "first-less" || official["family"] == "more-extra" {
+                let integers = |name: &str| -> Vec<i32> {
+                    official["input"][name]
+                        .as_array()
+                        .unwrap_or_else(|| panic!("{case_id}: {name} must be an array"))
+                        .iter()
+                        .map(|value| {
+                            value
+                                .as_i64()
+                                .and_then(|value| i32::try_from(value).ok())
+                                .unwrap_or_else(|| panic!("{case_id}: {name} value must fit i32"))
+                        })
+                        .collect()
+                };
+                let modes = |name: &str| -> Vec<INCHI_MODE> {
+                    official["input"][name]
+                        .as_array()
+                        .unwrap_or_else(|| panic!("{case_id}: {name} must be an array"))
+                        .iter()
+                        .map(|value| {
+                            value
+                                .as_u64()
+                                .unwrap_or_else(|| panic!("{case_id}: {name} must be unsigned"))
+                        })
+                        .collect()
+                };
+                let mobile_h = official["input"]["mobile_h"]
+                    .as_i64()
+                    .and_then(|value| i8::try_from(value).ok())
+                    .expect("mobile_h must fit i8");
+                let rebuild_returns = integers("rebuild_ret");
+                let rebuild_prep = integers("rebuild_prep");
+                let rebuild_norm = integers("rebuild_norm");
+                let compare_flags = modes("compare_flags");
+                let compare_errors = integers("compare_error");
+                let compare_h1 = integers("compare_h1");
+                let compare_h2 = integers("compare_h2");
+                let compare_endpoints = integers("compare_endpoints");
+                let fill_returns = integers("fill_ret");
+                let fix_returns = integers("fix_ret");
+                assert_eq!(rebuild_returns.len(), rebuild_prep.len(), "{case_id}");
+                assert_eq!(rebuild_returns.len(), rebuild_norm.len(), "{case_id}");
+                assert_eq!(compare_flags.len(), compare_errors.len(), "{case_id}");
+                assert_eq!(compare_flags.len(), compare_h1.len(), "{case_id}");
+                assert_eq!(compare_flags.len(), compare_h2.len(), "{case_id}");
+                assert_eq!(compare_flags.len(), compare_endpoints.len(), "{case_id}");
+                let rebuild_script: Vec<_> = rebuild_returns
+                    .iter()
+                    .copied()
+                    .zip(rebuild_prep.iter().map(|value| *value != 0))
+                    .zip(rebuild_norm.iter().map(|value| *value != 0))
+                    .map(|((result, prep), norm)| (result, prep, norm, false))
+                    .collect();
+                let compare_script: Vec<_> = compare_flags
+                    .iter()
+                    .copied()
+                    .zip(compare_errors.iter().copied())
+                    .zip(compare_h1.iter().copied())
+                    .zip(compare_h2.iter().copied())
+                    .zip(compare_endpoints.iter().copied())
+                    .map(|((((flags, error), h1), h2), endpoints)| {
+                        (flags, error, h1, h2, endpoints)
+                    })
+                    .collect();
+                let repair_kind = official["input"]["repair_kind"]
+                    .as_str()
+                    .expect("repair_kind must be text");
+                assert!(
+                    matches!(repair_kind, "less" | "more" | "extra"),
+                    "{case_id}: unknown repair kind {repair_kind}"
+                );
+
+                let mut heap = SourceHeap::default();
+                let clock = heap
+                    .allocate_model_storage(vec![INCHI_CLOCK::default()])
+                    .unwrap();
+                let restore_mode = heap.allocate_model_storage(vec![SRM::default()]).unwrap();
+                let vertices = heap
+                    .allocate_model_storage(vec![BNS_VERTEX::default()])
+                    .unwrap();
+                let mut bns = BN_STRUCT {
+                    num_atoms: 1,
+                    num_vertices: 1,
+                    vert: vertices,
+                    ..BN_STRUCT::default()
+                };
+                let mut carbon = inp_ATOM {
+                    el_number: 6,
+                    num_H: 4,
+                    orig_at_number: 1,
+                    component: 1,
+                    ..inp_ATOM::default()
+                };
+                carbon.elname[0] = b'C' as i8;
+                let at = heap.allocate_model_storage(vec![carbon]).unwrap();
+                let at2 = heap
+                    .allocate_model_storage(vec![inp_ATOM::default()])
+                    .unwrap();
+                let at3 = heap
+                    .allocate_model_storage(vec![inp_ATOM::default()])
+                    .unwrap();
+                let reversed = heap
+                    .allocate(vec![INChI {
+                        nErrorCode: 100,
+                        nNumberOfAtoms: 1,
+                        ..INChI::default()
+                    }])
+                    .unwrap();
+                let original = heap
+                    .allocate_model_storage(vec![INChI {
+                        nErrorCode: 70,
+                        nNumberOfAtoms: 1,
+                        ..INChI::default()
+                    }])
+                    .unwrap();
+                let parameters = INPUT_PARMS {
+                    nMode: u64::from(REQ_MODE_TAUT | REQ_MODE_NON_ISO),
+                    ..INPUT_PARMS::default()
+                };
+                let data = STRUCT_DATA::default();
+                let mut structure = StrFromINChI {
+                    at,
+                    num_atoms: 1,
+                    bMobileH: TAUT_INI as i8,
+                    iMobileH: mobile_h,
+                    pSrm: restore_mode.as_const(),
+                    pOneINChI: [reversed, SourceMutPointer::null()],
+                    ..StrFromINChI::default()
+                };
+                let mut expected_structure = structure.clone();
+                expected_structure.pOneINChI = [SourceMutPointer::null(); TAUT_NUM as usize];
+                let input = [original, SourceMutPointer::null()];
+                let mut valence = vec![VAL_AT::default()];
+                let mut groups = ALL_TC_GROUPS::default();
+                let mut bns_data = BN_DATA::default();
+                normalize_and_compare_test_begin_scripted(
+                    rebuild_script.clone(),
+                    compare_script.clone(),
+                    fill_returns.clone(),
+                    if repair_kind == "less" {
+                        fix_returns.clone()
+                    } else {
+                        Vec::new()
+                    },
+                    if repair_kind == "more" {
+                        fix_returns.clone()
+                    } else {
+                        Vec::new()
+                    },
+                    if repair_kind == "extra" {
+                        fix_returns.clone()
+                    } else {
+                        Vec::new()
+                    },
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                );
+                let mut runs = 17;
+                let mut delta = -19;
+                let result = NormalizeAndCompare(
+                    &mut heap,
+                    &mut CANON_GLOBALS::default(),
+                    clock,
+                    &parameters,
+                    &data,
+                    &mut bns,
+                    &mut bns_data,
+                    &mut structure,
+                    at,
+                    at2,
+                    at3,
+                    &mut valence,
+                    &mut groups,
+                    input,
+                    i64::MAX,
+                    0,
+                    &mut runs,
+                    &mut delta,
+                    4,
+                    0,
+                    0,
+                )
+                .unwrap_or_else(|error| panic!("{case_id}: Rust source error: {error:?}"));
+                let control = normalize_and_compare_test_finish();
+                let holders_null = structure.pOneINChI
+                    == [SourceMutPointer::null(); TAUT_NUM as usize]
+                    && structure.pOneINChI_Aux == [SourceMutPointer::null(); TAUT_NUM as usize]
+                    && structure.pOne_norm_data == [SourceMutPointer::null(); TAUT_NUM as usize];
+                let actual = json!({
+                    "result": result,
+                    "runs": runs,
+                    "delta": delta,
+                    "rebuild_used": rebuild_script.len() - control.rebuild_script.len(),
+                    "compare_used": compare_script.len() - control.compare_script.len(),
+                    "fill_used": fill_returns.len() - control.fill_script.len(),
+                    "fix_used": match repair_kind {
+                        "less" => fix_returns.len() - control.fix_less_script.len(),
+                        "more" => fix_returns.len() - control.fix_more_script.len(),
+                        "extra" => fix_returns.len() - control.fix_extra_script.len(),
+                        _ => unreachable!(),
+                    },
+                    "complete_caller_state_exact": structure == expected_structure
+                        && heap.slice(original.as_const()).unwrap()[0].nErrorCode == 70,
+                    "prefree_state_exact": control.prefree_state_exact,
+                    "holders_null": holders_null,
+                    "allocation_free_exact": heap.live_source_allocation_count() == 0,
+                    "cleanup_events": control.events,
+                });
+                assert_eq!(actual, official["output"], "{case_id}");
+                record_count += 1;
+                continue;
+            }
+            if official["family"] == "zz-zy" {
+                let n_zy = official["input"]["n_zy"]
+                    .as_i64()
+                    .and_then(|value| i32::try_from(value).ok())
+                    .expect("n_zy must fit i32");
+                let n_pzz = official["input"]["n_pzz"]
+                    .as_i64()
+                    .and_then(|value| i32::try_from(value).ok())
+                    .expect("n_pzz must fit i32");
+                let formula_present = official["input"]["formula_present"]
+                    .as_bool()
+                    .expect("formula_present must be boolean");
+                let formula = official["input"]["formula"]
+                    .as_str()
+                    .expect("formula must be text");
+                let failure_stage = official["input"]["failure_stage"]
+                    .as_u64()
+                    .expect("failure_stage must be unsigned");
+                let force_growth = official["input"]["force_growth"]
+                    .as_bool()
+                    .expect("force_growth must be boolean");
+
+                let mut heap = SourceHeap::default();
+                let clock = heap
+                    .allocate_model_storage(vec![INCHI_CLOCK::default()])
+                    .unwrap();
+                let restore_mode = heap.allocate_model_storage(vec![SRM::default()]).unwrap();
+                let vertices = heap
+                    .allocate_model_storage(vec![BNS_VERTEX::default()])
+                    .unwrap();
+                let mut bns = BN_STRUCT {
+                    num_atoms: 1,
+                    num_vertices: 1,
+                    vert: vertices,
+                    ..BN_STRUCT::default()
+                };
+                let mut carbon = inp_ATOM {
+                    el_number: 6,
+                    num_H: 4,
+                    orig_at_number: 1,
+                    component: 1,
+                    ..inp_ATOM::default()
+                };
+                carbon.elname[0] = b'C' as i8;
+                let at = heap.allocate_model_storage(vec![carbon]).unwrap();
+                let at2 = heap
+                    .allocate_model_storage(vec![inp_ATOM::default()])
+                    .unwrap();
+                let at3 = heap
+                    .allocate_model_storage(vec![inp_ATOM::default()])
+                    .unwrap();
+                let formula_pointer = if formula_present {
+                    heap.allocate(
+                        formula
+                            .bytes()
+                            .chain(std::iter::once(0))
+                            .map(|byte| byte as i8)
+                            .collect(),
+                    )
+                    .unwrap()
+                } else {
+                    SourceMutPointer::null()
+                };
+                let reversed = heap
+                    .allocate(vec![INChI {
+                        nErrorCode: 100,
+                        nNumberOfAtoms: 1,
+                        szHillFormula: formula_pointer,
+                        ..INChI::default()
+                    }])
+                    .unwrap();
+                let original = heap
+                    .allocate_model_storage(vec![INChI {
+                        nErrorCode: 70,
+                        nNumberOfAtoms: 1,
+                        ..INChI::default()
+                    }])
+                    .unwrap();
+                let parameters = INPUT_PARMS {
+                    nMode: u64::from(REQ_MODE_TAUT | REQ_MODE_NON_ISO),
+                    ..INPUT_PARMS::default()
+                };
+                let data = STRUCT_DATA::default();
+                let mut structure = StrFromINChI {
+                    at,
+                    num_atoms: 1,
+                    bMobileH: TAUT_YES as i8,
+                    iMobileH: TAUT_YES as i8,
+                    pSrm: restore_mode.as_const(),
+                    n_zy,
+                    n_pzz,
+                    pOneINChI: [reversed, SourceMutPointer::null()],
+                    ..StrFromINChI::default()
+                };
+                let mut expected_structure = structure.clone();
+                expected_structure.pOneINChI = [SourceMutPointer::null(); TAUT_NUM as usize];
+                let mut valence = vec![VAL_AT::default()];
+                let mut groups = ALL_TC_GROUPS::default();
+                let mut canonical_globals = CANON_GLOBALS::default();
+                let mut bns_data = BN_DATA::default();
+                let canonical_globals_before = canonical_globals.clone();
+                let clock_before = heap.slice(clock.as_const()).unwrap()[0].clone();
+                let parameters_before = parameters.clone();
+                let data_before = data.clone();
+                let bns_before = bns.clone();
+                let bns_data_before = bns_data.clone();
+                let vertices_before = heap.slice(vertices.as_const()).unwrap().to_vec();
+                let atoms_before = heap.slice(at.as_const()).unwrap().to_vec();
+                let atoms2_before = heap.slice(at2.as_const()).unwrap().to_vec();
+                let atoms3_before = heap.slice(at3.as_const()).unwrap().to_vec();
+                let valence_before = valence.clone();
+                let groups_before = groups.clone();
+                let input = [original, SourceMutPointer::null()];
+                let initial_source_allocations = heap.live_source_allocation_count();
+                heap.trace_source_allocations();
+                if failure_stage != 0 {
+                    heap.fail_after_allocations(failure_stage - 1);
+                }
+                normalize_and_compare_test_begin_zz(force_growth);
+                let mut runs = 17;
+                let mut delta = -19;
+                let result = NormalizeAndCompare(
+                    &mut heap,
+                    &mut canonical_globals,
+                    clock,
+                    &parameters,
+                    &data,
+                    &mut bns,
+                    &mut bns_data,
+                    &mut structure,
+                    at,
+                    at2,
+                    at3,
+                    &mut valence,
+                    &mut groups,
+                    input,
+                    i64::MAX,
+                    0,
+                    &mut runs,
+                    &mut delta,
+                    4,
+                    0,
+                    0,
+                )
+                .unwrap_or_else(|error| panic!("{case_id}: Rust source error: {error:?}"));
+                let control = normalize_and_compare_test_finish();
+                let source_allocation_calls = heap.source_allocation_calls();
+                let source_allocations_after = heap.live_source_allocation_count();
+                let failure_observed = usize::from(failure_stage != 0);
+                let successful_realloc = usize::from(force_growth && failure_stage != 4);
+                let successful_allocations = initial_source_allocations
+                    + usize::try_from(source_allocation_calls).unwrap()
+                    - failure_observed
+                    - successful_realloc;
+                let complete_caller_state_exact = canonical_globals == canonical_globals_before
+                    && heap.slice(clock.as_const()).unwrap()[0] == clock_before
+                    && parameters == parameters_before
+                    && data == data_before
+                    && bns == bns_before
+                    && bns_data == bns_data_before
+                    && heap.slice(vertices.as_const()).unwrap() == vertices_before
+                    && heap.slice(at.as_const()).unwrap() == atoms_before
+                    && heap.slice(at2.as_const()).unwrap() == atoms2_before
+                    && heap.slice(at3.as_const()).unwrap() == atoms3_before
+                    && valence == valence_before
+                    && groups == groups_before
+                    && structure == expected_structure
+                    && heap.slice(original.as_const()).unwrap()[0].nErrorCode == 70;
+                let holders_null = structure.pOneINChI
+                    == [SourceMutPointer::null(); TAUT_NUM as usize]
+                    && structure.pOneINChI_Aux == [SourceMutPointer::null(); TAUT_NUM as usize]
+                    && structure.pOne_norm_data == [SourceMutPointer::null(); TAUT_NUM as usize];
+                let actual = json!({
+                    "result": result,
+                    "runs": runs,
+                    "delta": delta,
+                    "formula_before_cleanup": control.formula_before_cleanup,
+                    "complete_caller_state_exact": complete_caller_state_exact,
+                    "prefree_state_exact": control.prefree_state_exact,
+                    "holders_null": holders_null,
+                    "source_allocation_calls": source_allocation_calls,
+                    "successful_allocations": successful_allocations,
+                    "frees": successful_allocations - source_allocations_after,
+                    "allocation_free_exact": source_allocations_after == 0,
+                    "cleanup_events": control.events,
+                });
+                assert_eq!(actual, official["output"], "{case_id}");
+                record_count += 1;
+                continue;
+            }
+            if official["family"] == "layer-selection" || official["family"] == "common-success" {
+                let common_success = official["family"] == "common-success";
+                let mobile_h = official["input"]["mobile_h"]
+                    .as_i64()
+                    .and_then(|value| i8::try_from(value).ok())
+                    .expect("mobile_h must fit i8");
+                let original_state = official["input"]["original_state"]
+                    .as_i64()
+                    .and_then(|value| i32::try_from(value).ok())
+                    .expect("original state must fit i32");
+                let reversed_state = official["input"]["reversed_state"]
+                    .as_i64()
+                    .and_then(|value| i32::try_from(value).ok())
+                    .expect("reversed state must fit i32");
+                let mut heap = SourceHeap::default();
+                let clock = heap
+                    .allocate_model_storage(vec![INCHI_CLOCK::default()])
+                    .unwrap();
+                let restore_mode = heap.allocate_model_storage(vec![SRM::default()]).unwrap();
+                let vertices = heap
+                    .allocate_model_storage(vec![BNS_VERTEX::default()])
+                    .unwrap();
+                let mut bns = BN_STRUCT {
+                    num_atoms: 1,
+                    num_vertices: 1,
+                    vert: vertices,
+                    ..BN_STRUCT::default()
+                };
+                let mut carbon = inp_ATOM {
+                    el_number: 6,
+                    num_H: 4,
+                    orig_at_number: 1,
+                    component: 1,
+                    ..inp_ATOM::default()
+                };
+                carbon.elname[0] = b'C' as i8;
+                let at = heap.allocate_model_storage(vec![carbon]).unwrap();
+                let at2 = heap
+                    .allocate_model_storage(vec![inp_ATOM::default()])
+                    .unwrap();
+                let at3 = heap
+                    .allocate_model_storage(vec![inp_ATOM::default()])
+                    .unwrap();
+                let original = heap
+                    .allocate_model_storage(vec![
+                        INChI {
+                            nErrorCode: 70,
+                            nNumberOfAtoms: 1,
+                            ..INChI::default()
+                        },
+                        INChI {
+                            nErrorCode: 71,
+                            nNumberOfAtoms: if original_state == 1 { 0 } else { 1 },
+                            bDeleted: i32::from(original_state == 2),
+                            ..INChI::default()
+                        },
+                    ])
+                    .unwrap();
+                let original_one = if original_state == 0 {
+                    SourceMutPointer::null()
+                } else {
+                    original.offset(1).unwrap()
+                };
+                let reversed_zero = heap
+                    .allocate(vec![INChI {
+                        nErrorCode: 100,
+                        nNumberOfAtoms: 1,
+                        ..INChI::default()
+                    }])
+                    .unwrap();
+                let reversed_one = if reversed_state == 0 {
+                    SourceMutPointer::null()
+                } else {
+                    heap.allocate(vec![INChI {
+                        nErrorCode: 101,
+                        nNumberOfAtoms: if reversed_state == 1 { 0 } else { 1 },
+                        bDeleted: i32::from(reversed_state == 2),
+                        ..INChI::default()
+                    }])
+                    .unwrap()
+                };
+                let norm_zero = if common_success {
+                    heap.allocate(vec![INP_ATOM_DATA {
+                        num_at: 30,
+                        num_bonds: 40,
+                        ..INP_ATOM_DATA::default()
+                    }])
+                    .unwrap()
+                } else {
+                    SourceMutPointer::null()
+                };
+                let parameters = INPUT_PARMS {
+                    nMode: u64::from(REQ_MODE_TAUT | REQ_MODE_NON_ISO),
+                    ..INPUT_PARMS::default()
+                };
+                let data = STRUCT_DATA::default();
+                let mut structure = StrFromINChI {
+                    at,
+                    num_atoms: 1,
+                    bMobileH: mobile_h,
+                    iMobileH: TAUT_YES as i8,
+                    pSrm: restore_mode.as_const(),
+                    pOneINChI: [reversed_zero, reversed_one],
+                    pOne_norm_data: [norm_zero, SourceMutPointer::null()],
+                    ..StrFromINChI::default()
+                };
+                let mut expected_structure = structure.clone();
+                expected_structure.pOneINChI = [SourceMutPointer::null(); TAUT_NUM as usize];
+                expected_structure.pOne_norm_data = [SourceMutPointer::null(); TAUT_NUM as usize];
+                let mut valence = vec![VAL_AT::default()];
+                let mut groups = ALL_TC_GROUPS::default();
+                let mut bns_data = BN_DATA::default();
+                let input = [original, original_one];
+                let source_allocations_before = heap.live_source_allocation_count();
+                if common_success {
+                    normalize_and_compare_test_begin_common_success();
+                } else {
+                    normalize_and_compare_test_begin_layer_selection(reversed_state);
+                }
+                let mut runs = 17;
+                let mut delta = -19;
+                let result = NormalizeAndCompare(
+                    &mut heap,
+                    &mut CANON_GLOBALS::default(),
+                    clock,
+                    &parameters,
+                    &data,
+                    &mut bns,
+                    &mut bns_data,
+                    &mut structure,
+                    at,
+                    at2,
+                    at3,
+                    &mut valence,
+                    &mut groups,
+                    input,
+                    i64::MAX,
+                    0,
+                    &mut runs,
+                    &mut delta,
+                    4,
+                    0,
+                    0,
+                )
+                .unwrap_or_else(|error| panic!("{case_id}: Rust source error: {error:?}"));
+                let control = normalize_and_compare_test_finish();
+                let source_allocations_after = heap.live_source_allocation_count();
+                let selected_original_index =
+                    i32::from(mobile_h == TAUT_NON as i8 && original_state == 3);
+                let selected_reversed_index =
+                    i32::from(mobile_h == TAUT_NON as i8 && reversed_state == 3);
+                let actual = json!({
+                    "result": result,
+                    "runs": runs,
+                    "delta": delta,
+                    "selected_original_index": selected_original_index,
+                    "selected_reversed_index": selected_reversed_index,
+                    "complete_caller_state_exact": structure == expected_structure
+                        && heap.slice(original.as_const()).unwrap()[0].nErrorCode == 70
+                        && heap.slice(original.as_const()).unwrap()[1].nErrorCode == 71,
+                    "prefree_state_exact": control.prefree_state_exact,
+                    "allocation_free_exact": source_allocations_after == 0,
+                    "source_allocations_before": source_allocations_before,
+                    "source_allocations_after": source_allocations_after,
+                    "holders_null": structure.pOneINChI
+                        == [SourceMutPointer::null(); TAUT_NUM as usize]
+                        && structure.pOneINChI_Aux
+                            == [SourceMutPointer::null(); TAUT_NUM as usize]
+                        && structure.pOne_norm_data
+                            == [SourceMutPointer::null(); TAUT_NUM as usize],
+                    "one_ti_cleared": structure.One_ti == T_GROUP_INFO::default(),
+                    "input_pointers_preserved": input == [original, original_one],
+                    "cleanup_events": control.events,
+                });
+                assert_eq!(actual, official["output"], "{case_id}");
+                record_count += 1;
+                continue;
+            }
+            let holder_mask = official["input"]["holder_mask"]
+                .as_u64()
+                .and_then(|value| u8::try_from(value).ok())
+                .expect("holder mask must fit u8");
+            let forced_return = official["input"]["forced_return"]
+                .as_i64()
+                .and_then(|value| i32::try_from(value).ok())
+                .expect("forced return must fit i32");
+            assert!(matches!(forced_return, RI_ERR_ALLOC | RI_ERR_PROGR));
+
+            let mut heap = SourceHeap::default();
+            let clock = heap
+                .allocate_model_storage(vec![INCHI_CLOCK::default()])
+                .unwrap();
+            let restore_mode = heap.allocate_model_storage(vec![SRM::default()]).unwrap();
+            let vertices = heap
+                .allocate_model_storage(vec![BNS_VERTEX::default()])
+                .unwrap();
+            let mut bns = BN_STRUCT {
+                num_atoms: 1,
+                num_vertices: 1,
+                vert: vertices,
+                ..BN_STRUCT::default()
+            };
+            let mut carbon = inp_ATOM {
+                el_number: 6,
+                num_H: 4,
+                orig_at_number: 1,
+                component: 1,
+                ..inp_ATOM::default()
+            };
+            carbon.elname[0] = b'C' as i8;
+            let at = heap.allocate_model_storage(vec![carbon]).unwrap();
+            let at2 = heap
+                .allocate_model_storage(vec![inp_ATOM::default()])
+                .unwrap();
+            let at3 = heap
+                .allocate_model_storage(vec![inp_ATOM::default()])
+                .unwrap();
+            let parameters = INPUT_PARMS {
+                nMode: u64::from(REQ_MODE_TAUT | REQ_MODE_NON_ISO),
+                bTautFlags: u64::from(TG_FLAG_FIX_ISO_FIXEDH_BUG | TG_FLAG_FIX_TERM_H_CHRG_BUG),
+                ..INPUT_PARMS::default()
+            };
+            let data = STRUCT_DATA::default();
+            let mut structure = StrFromINChI {
+                at,
+                num_atoms: 1,
+                bMobileH: TAUT_YES as i8,
+                iMobileH: TAUT_YES as i8,
+                pSrm: restore_mode.as_const(),
+                ..StrFromINChI::default()
+            };
+            for index in 0..TAUT_NUM as usize {
+                let shift = index * 3;
+                if holder_mask & (1 << shift) != 0 {
+                    structure.pOneINChI[index] = heap
+                        .allocate(vec![INChI {
+                            nErrorCode: 100 + index as i32,
+                            nNumberOfAtoms: 10 + index as i32,
+                            ..INChI::default()
+                        }])
+                        .unwrap();
+                }
+                if holder_mask & (1 << (shift + 1)) != 0 {
+                    structure.pOneINChI_Aux[index] = heap
+                        .allocate(vec![INChI_Aux {
+                            nErrorCode: 200 + index as i32,
+                            nNumberOfAtoms: 20 + index as i32,
+                            ..INChI_Aux::default()
+                        }])
+                        .unwrap();
+                }
+                if holder_mask & (1 << (shift + 2)) != 0 {
+                    structure.pOne_norm_data[index] = heap
+                        .allocate(vec![INP_ATOM_DATA {
+                            num_at: 30 + index as i32,
+                            num_bonds: 40 + index as i32,
+                            ..INP_ATOM_DATA::default()
+                        }])
+                        .unwrap();
+                }
+            }
+            structure.One_ti.t_group = heap
+                .allocate(vec![T_GROUP {
+                    nNumEndpoints: 51,
+                    num: [52, 53, 0, 0, 0],
+                    ..T_GROUP::default()
+                }])
+                .unwrap();
+            structure.One_ti.num_t_groups = 1;
+
+            let mut valence = vec![VAL_AT::default()];
+            let mut groups = ALL_TC_GROUPS::default();
+            let mut canonical_globals = CANON_GLOBALS::default();
+            let mut bns_data = BN_DATA::default();
+            let canonical_globals_before = canonical_globals.clone();
+            let clock_before = heap.slice(clock.as_const()).unwrap()[0].clone();
+            let parameters_before = parameters.clone();
+            let data_before = data.clone();
+            let bns_before = bns.clone();
+            let bns_data_before = bns_data.clone();
+            let vertices_before = heap.slice(vertices.as_const()).unwrap().to_vec();
+            let atoms_before = heap.slice(at.as_const()).unwrap().to_vec();
+            let atoms2_before = heap.slice(at2.as_const()).unwrap().to_vec();
+            let atoms3_before = heap.slice(at3.as_const()).unwrap().to_vec();
+            let valence_before = valence.clone();
+            let groups_before = groups.clone();
+            let mut expected_structure = structure.clone();
+            expected_structure.pOneINChI = [SourceMutPointer::null(); TAUT_NUM as usize];
+            expected_structure.pOneINChI_Aux = [SourceMutPointer::null(); TAUT_NUM as usize];
+            expected_structure.pOne_norm_data = [SourceMutPointer::null(); TAUT_NUM as usize];
+            expected_structure.One_ti = T_GROUP_INFO::default();
+            let input = [SourceMutPointer::null(); TAUT_NUM as usize];
+            let source_allocations_before = heap.live_source_allocation_count();
+            normalize_and_compare_test_begin(holder_mask, forced_return);
+            let mut runs = 17;
+            let mut delta = -19;
+            let result = NormalizeAndCompare(
+                &mut heap,
+                &mut canonical_globals,
+                clock,
+                &parameters,
+                &data,
+                &mut bns,
+                &mut bns_data,
+                &mut structure,
+                at,
+                at2,
+                at3,
+                &mut valence,
+                &mut groups,
+                input,
+                i64::MAX,
+                0,
+                &mut runs,
+                &mut delta,
+                4,
+                0,
+                0,
+            )
+            .unwrap_or_else(|error| panic!("{case_id}: Rust source error: {error:?}"));
+            let control = normalize_and_compare_test_finish();
+            assert_eq!(control.holder_mask, holder_mask, "{case_id}");
+            let complete_caller_state_exact = canonical_globals == canonical_globals_before
+                && heap.slice(clock.as_const()).unwrap()[0] == clock_before
+                && parameters == parameters_before
+                && data == data_before
+                && bns == bns_before
+                && bns_data == bns_data_before
+                && heap.slice(vertices.as_const()).unwrap() == vertices_before
+                && heap.slice(at.as_const()).unwrap() == atoms_before
+                && heap.slice(at2.as_const()).unwrap() == atoms2_before
+                && heap.slice(at3.as_const()).unwrap() == atoms3_before
+                && valence == valence_before
+                && groups == groups_before
+                && structure == expected_structure
+                && input == [SourceMutPointer::null(); TAUT_NUM as usize];
+            let holders_null = structure.pOneINChI == [SourceMutPointer::null(); TAUT_NUM as usize]
+                && structure.pOneINChI_Aux == [SourceMutPointer::null(); TAUT_NUM as usize]
+                && structure.pOne_norm_data == [SourceMutPointer::null(); TAUT_NUM as usize];
+            let source_allocations_after = heap.live_source_allocation_count();
+            let actual = json!({
+                "result": result,
+                "runs": runs,
+                "delta": delta,
+                "complete_caller_state_exact": complete_caller_state_exact,
+                "prefree_state_exact": control.prefree_state_exact,
+                "allocation_free_exact": source_allocations_after == 0,
+                "source_allocations_before": source_allocations_before,
+                "source_allocations_after": source_allocations_after,
+                "holders_null": holders_null,
+                "one_ti_cleared": structure.One_ti.t_group.is_null()
+                    && structure.One_ti.num_t_groups == 0,
+                "input_pointers_preserved": input
+                    == [SourceMutPointer::null(); TAUT_NUM as usize],
+                "cleanup_events": control.events,
+            });
+            assert_eq!(actual, official["output"], "{case_id}");
+            record_count += 1;
+        }
+
+        assert_eq!(record_count, 241, "NormalizeAndCompare oracle case count");
     }
 
     #[test]

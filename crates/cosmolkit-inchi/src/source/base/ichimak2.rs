@@ -1946,6 +1946,29 @@ fn fill_out_warning(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum FillOutINChIBehavior {
+    Full { no_warnings: bool },
+    ReducedWarn,
+}
+
+impl FillOutINChIBehavior {
+    fn emit_normalization_warnings(self) -> bool {
+        matches!(self, Self::Full { no_warnings: false })
+    }
+
+    fn emit_stereo_warnings(self) -> bool {
+        match self {
+            Self::Full { no_warnings } => !no_warnings,
+            Self::ReducedWarn => true,
+        }
+    }
+
+    fn copy_stereo_oom_is_fatal(self) -> bool {
+        matches!(self, Self::Full { .. })
+    }
+}
+
 #[rustfmt::skip]
 #[allow(non_snake_case, clippy::too_many_arguments)]
 pub(crate) fn FillOutINChI(
@@ -2793,6 +2816,43 @@ pub(crate) fn FillOutINChI(
     */
     // END INCHI C FUNCTION: FillOutINChI
 
+    FillOutINChIWithBehavior(
+        heap,
+        pINChI,
+        pINChI_Aux,
+        num_atoms,
+        num_at_tg,
+        num_removed_H,
+        at,
+        norm_at,
+        pCS,
+        pCG,
+        bTautomeric,
+        nUserMode,
+        pStrErrStruct,
+        FillOutINChIBehavior::Full {
+            no_warnings: bNoWarnings != 0,
+        },
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn FillOutINChIWithBehavior(
+    heap: &mut SourceHeap,
+    pINChI: &mut INChI,
+    pINChI_Aux: &mut INChI_Aux,
+    num_atoms: i32,
+    num_at_tg: i32,
+    num_removed_H: i32,
+    at: SourceMutPointer<sp_ATOM>,
+    norm_at: SourceMutPointer<inp_ATOM>,
+    pCS: &mut CANON_STAT,
+    pCG: &mut CANON_GLOBALS,
+    bTautomeric: i32,
+    nUserMode: INCHI_MODE,
+    mut pStrErrStruct: Option<&mut [i8]>,
+    behavior: FillOutINChIBehavior,
+) -> Result<i32, SourceHeapError> {
     let mut pCanonRankAtoms = SourceMutPointer::<AT_NUMB>::null();
     let mut pSortOrd = SourceMutPointer::<AT_NUMB>::null();
     let mut nErrorCode = 0_i32;
@@ -2886,12 +2946,12 @@ pub(crate) fn FillOutINChI(
             if pINChI_Aux.bNormalizationFlags
                 & u64::from(FLAG_NORM_CONSIDER_TAUT & !FLAG_PROTON_CHARGE_CANCEL)
                 != 0
-                && bNoWarnings == 0
+                && behavior.emit_normalization_warnings()
             {
                 fill_out_warning(pStrErrStruct.as_deref_mut(), b"Proton(s) added/removed\0")?;
             }
             if pINChI_Aux.bNormalizationFlags & u64::from(FLAG_PROTON_CHARGE_CANCEL) != 0
-                && bNoWarnings == 0
+                && behavior.emit_normalization_warnings()
             {
                 fill_out_warning(pStrErrStruct.as_deref_mut(), b"Charges neutralized\0")?;
             }
@@ -2944,7 +3004,7 @@ pub(crate) fn FillOutINChI(
                 pCanonOrdInv.as_const(),
                 pCanonRankInv.as_const(),
             )?;
-            if nErrorCode == 1 {
+            if nErrorCode == 1 && behavior.copy_stereo_oom_is_fatal() {
                 nErrorCode = 0;
                 pINChI.nErrorCode = CT_OUT_OF_RAM;
                 pINChI_Aux.nErrorCode = CT_OUT_OF_RAM;
@@ -3244,7 +3304,7 @@ pub(crate) fn FillOutINChI(
             if nStereoUnmarkMode & u64::from(REQ_MODE_SB_IGN_ALL_UU) != 0 {
                 pINChI.nFlags |= u64::from(INCHI_FLAG_SB_IGN_ALL_UU);
             }
-            if bNoWarnings == 0 {
+            if behavior.emit_stereo_warnings() {
                 fill_out_warning(pStrErrStruct.as_deref_mut(), b"Omitted undefined stereo\0")?;
             }
         }
@@ -3303,7 +3363,7 @@ pub(crate) fn FillOutINChI(
                 pCanonOrdInv.as_const(),
                 pCanonRankInv.as_const(),
             )?;
-            if nErrorCode == 1 {
+            if nErrorCode == 1 && behavior.copy_stereo_oom_is_fatal() {
                 nErrorCode = 0;
                 pINChI.nErrorCode = CT_OUT_OF_RAM;
                 pINChI_Aux.nErrorCode = CT_OUT_OF_RAM;
@@ -3478,7 +3538,7 @@ pub(crate) fn FillOutINChI(
             if isotope_unmark & u64::from(REQ_MODE_SB_IGN_ALL_UU) != 0 {
                 pINChI.nFlags |= u64::from(INCHI_FLAG_SC_IGN_ALL_ISO_UU);
             }
-            if bNoWarnings == 0 {
+            if behavior.emit_stereo_warnings() {
                 fill_out_warning(pStrErrStruct.as_deref_mut(), b"Omitted undefined stereo\0")?;
             }
         }
@@ -3757,6 +3817,7 @@ pub(crate) fn WriteCoord(output: &mut [i8], value: f64) -> Result<(), SourceHeap
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source_types::{AB_PARITY_UNDF, T_GROUP_INFO};
 
     struct FillOutFixture {
         heap: SourceHeap,
@@ -3874,6 +3935,28 @@ mod tests {
                 0,
                 Some(&mut self.errors),
                 0,
+            )
+        }
+
+        fn call_reduced(
+            &mut self,
+            b_tautomeric: i32,
+            user_mode: INCHI_MODE,
+        ) -> Result<i32, SourceHeapError> {
+            crate::source::api::inchi_dll_a2::FillOutINChIReducedWarn(
+                &mut self.heap,
+                &mut self.inchi,
+                &mut self.aux,
+                2,
+                2,
+                0,
+                self.atoms,
+                self.normalized,
+                &mut self.canon,
+                &mut self.globals,
+                b_tautomeric,
+                user_mode,
+                Some(&mut self.errors),
             )
         }
     }
@@ -3998,6 +4081,92 @@ mod tests {
                 allocations_before
             );
         }
+    }
+
+    #[test]
+    fn source_port__inchi_dll_a2__filloutinchireducedwarn__line_2254() {
+        let mut basic = FillOutFixture::new();
+        assert_eq!(basic.call_reduced(0, 0), Ok(0));
+        assert_eq!(basic.inchi.nTotalCharge, 0);
+        assert_eq!(basic.inchi.nNumberOfAtoms, 2);
+        assert_eq!(basic.aux.nNumberOfAtoms, 2);
+        assert_eq!(
+            basic.heap.slice(basic.inchi.nAtom.as_const()).unwrap(),
+            &[6, 8]
+        );
+        assert_eq!(
+            basic
+                .heap
+                .slice(basic.aux.nIsotopicOrigAtNosInCanonOrd.as_const())
+                .unwrap(),
+            &[22, 11]
+        );
+
+        let mut normalization_warnings = FillOutFixture::new();
+        let t_group_info = normalization_warnings
+            .heap
+            .allocate_model_storage(vec![T_GROUP_INFO::default()])
+            .unwrap();
+        normalization_warnings.canon.t_group_info = t_group_info;
+        normalization_warnings.aux.bNormalizationFlags = u64::from(FLAG_NORM_CONSIDER_TAUT);
+        assert_eq!(normalization_warnings.call_reduced(1, 0), Ok(0));
+        assert_eq!(normalization_warnings.errors[0], 0);
+
+        let mut stereo_warning = FillOutFixture::new();
+        let stereo = INChI_Stereo {
+            nNumberOfStereoCenters: 1,
+            nNumber: stereo_warning
+                .heap
+                .allocate_model_storage(vec![1_u16])
+                .unwrap(),
+            t_parity: stereo_warning
+                .heap
+                .allocate_model_storage(vec![AB_PARITY_UNDF as i8])
+                .unwrap(),
+            nNumberInv: stereo_warning
+                .heap
+                .allocate_model_storage(vec![1_u16])
+                .unwrap(),
+            t_parityInv: stereo_warning
+                .heap
+                .allocate_model_storage(vec![AB_PARITY_UNDF as i8])
+                .unwrap(),
+            ..INChI_Stereo::default()
+        };
+        stereo_warning.inchi.Stereo = stereo_warning
+            .heap
+            .allocate_model_storage(vec![stereo])
+            .unwrap();
+        assert_eq!(
+            stereo_warning.call_reduced(0, u64::from(REQ_MODE_SC_IGN_ALL_UU)),
+            Ok(0)
+        );
+        let warning = b"Omitted undefined stereo\0"
+            .iter()
+            .map(|byte| *byte as i8)
+            .collect::<Vec<_>>();
+        assert_eq!(&stereo_warning.errors[..warning.len()], &warning);
+        assert_ne!(
+            stereo_warning.inchi.nFlags & u64::from(INCHI_FLAG_SC_IGN_ALL_UU),
+            0
+        );
+
+        for successful_allocations in [0, 1] {
+            let mut out_of_memory = FillOutFixture::new();
+            let allocations_before = out_of_memory.heap.live_allocation_count();
+            out_of_memory
+                .heap
+                .fail_after_allocations(successful_allocations);
+            assert_eq!(out_of_memory.call_reduced(0, 0), Ok(CT_OUT_OF_RAM));
+            assert_eq!(out_of_memory.inchi.nErrorCode, CT_OUT_OF_RAM);
+            assert_eq!(out_of_memory.aux.nErrorCode, CT_OUT_OF_RAM);
+            assert_eq!(
+                out_of_memory.heap.live_allocation_count(),
+                allocations_before
+            );
+        }
+
+        assert!(!FillOutINChIBehavior::ReducedWarn.copy_stereo_oom_is_fatal());
     }
 
     fn format_coordinate(value: f64) -> String {

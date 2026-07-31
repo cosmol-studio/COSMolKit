@@ -206,6 +206,7 @@ inputs until a trusted graph has been constructed.
 - MOL/SDF reading and writing
 - MOL2 reading with RDKit-style `Mol2ParserParams`
 - XYZ block reading
+- Four scalar InChI APIs with exact source-defined official-C/RDKit parity and structured errors
 - Hydrogen transforms and Kekulization
 - Sanitization and chemistry problem detection
 - 2D coordinate generation and SVG/PNG depiction
@@ -279,6 +280,9 @@ Goal: keep the supported molecular core correct before expanding breadth.
 - ✅ Distance-geometry bounds matrices
 - ✅ Native 3D conformer generation and UFF/MMFF post-optimization for
   supported molecules
+- ✅ `Chem.MolToInchi`, `Chem.MolToInchiKey`, `InchiToInchiKey`, and
+  `Chem.MolFromInchi` for source-defined behavior; official-C undefined
+  allocation behavior returns a structured error
 - 🧪 Morgan fingerprints and Tanimoto similarity for the validated exact-parity branches
 - 🧪 MACCS fingerprints for the validated exact raw/public projection
 - 🚧 RDKFingerprint/topological and Avalon fingerprints (fail closed until source ports exist)

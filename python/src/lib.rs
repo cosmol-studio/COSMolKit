@@ -132,6 +132,73 @@ fn batch_validation_pyerr(error: cosmolkit_core::BatchValidationError) -> PyErr 
     })
 }
 
+fn inchi_error_kind_name(kind: cosmolkit_core::InchiErrorKind) -> &'static str {
+    match kind {
+        cosmolkit_core::InchiErrorKind::AllocationFailed => "allocation_failed",
+        cosmolkit_core::InchiErrorKind::UnsupportedState => "unsupported_state",
+        cosmolkit_core::InchiErrorKind::InvalidInput => "invalid_input",
+        cosmolkit_core::InchiErrorKind::InvalidSourceOutput => "invalid_source_output",
+        cosmolkit_core::InchiErrorKind::Toolkit => "toolkit",
+        cosmolkit_core::InchiErrorKind::SourcePort => "source_port",
+    }
+}
+
+fn inchi_pyerr(error: cosmolkit_core::InchiError) -> PyErr {
+    let message = error.to_string();
+    Python::attach(|py| {
+        let class_name = match error.kind {
+            cosmolkit_core::InchiErrorKind::AllocationFailed => "InchiAllocationError",
+            cosmolkit_core::InchiErrorKind::UnsupportedState => "InchiUnsupportedStateError",
+            _ => "InchiError",
+        };
+        match (|| -> PyResult<Bound<'_, PyAny>> {
+            let cls = py.import("cosmolkit")?.getattr(class_name)?;
+            cls.call1((
+                message,
+                error.operation,
+                inchi_error_kind_name(error.kind),
+                error.detail,
+            ))
+        })() {
+            Ok(instance) => PyErr::from_value(instance),
+            Err(error) => error,
+        }
+    })
+}
+
+fn emit_inchi_diagnostics(diagnostics: &[cosmolkit_core::InchiDiagnostic]) -> PyResult<()> {
+    if diagnostics.is_empty() {
+        return Ok(());
+    }
+    Python::attach(|py| {
+        let warning_class = py.import("cosmolkit")?.getattr("InchiDiagnosticWarning")?;
+        let warn = py.import("warnings")?.getattr("warn")?;
+        for diagnostic in diagnostics {
+            let level = match diagnostic.level {
+                cosmolkit_core::InchiDiagnosticLevel::Warning => "warning",
+                cosmolkit_core::InchiDiagnosticLevel::Error => "error",
+            };
+            let warning = warning_class.call1((level, diagnostic.message.as_str()))?;
+            warn.call1((warning,))?;
+        }
+        Ok(())
+    })
+}
+
+fn inchi_output_string(
+    operation: &'static str,
+    field: &'static str,
+    bytes: Vec<u8>,
+) -> PyResult<String> {
+    String::from_utf8(bytes).map_err(|error| {
+        inchi_pyerr(cosmolkit_core::InchiError {
+            operation,
+            kind: cosmolkit_core::InchiErrorKind::InvalidSourceOutput,
+            detail: format!("{field} is not valid UTF-8: {error}"),
+        })
+    })
+}
+
 fn fingerprint_pyerr(error: cosmolkit_core::FingerprintError) -> PyErr {
     PyValueError::new_err(error.to_string())
 }
@@ -714,6 +781,55 @@ class BatchValidationError(ValueError):
         .get_item("BatchValidationError")?
         .ok_or_else(|| PyValueError::new_err("failed to create BatchValidationError class"))?;
     m.add("BatchValidationError", cls)?;
+    Ok(())
+}
+
+fn add_inchi_error_classes(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = m.py();
+    let globals = PyDict::new(py);
+    globals.set_item("ValueError", py.get_type::<PyValueError>())?;
+    globals.set_item(
+        "UserWarning",
+        py.import("builtins")?.getattr("UserWarning")?,
+    )?;
+    let code = r#"
+class InchiError(ValueError):
+    __module__ = "cosmolkit"
+
+    def __init__(self, message, operation, kind, detail):
+        super().__init__(message)
+        self.operation = operation
+        self.kind = kind
+        self.detail = detail
+
+class InchiAllocationError(InchiError):
+    __module__ = "cosmolkit"
+
+class InchiUnsupportedStateError(InchiError):
+    __module__ = "cosmolkit"
+
+class InchiDiagnosticWarning(UserWarning):
+    __module__ = "cosmolkit"
+
+    def __init__(self, level, message):
+        super().__init__(message)
+        self.level = level
+        self.message = message
+"#;
+    py.import("builtins")?
+        .getattr("exec")?
+        .call1((code, &globals))?;
+    for class_name in [
+        "InchiError",
+        "InchiAllocationError",
+        "InchiUnsupportedStateError",
+        "InchiDiagnosticWarning",
+    ] {
+        let cls = globals
+            .get_item(class_name)?
+            .ok_or_else(|| PyValueError::new_err(format!("failed to create {class_name} class")))?;
+        m.add(class_name, cls)?;
+    }
     Ok(())
 }
 
@@ -6911,11 +7027,69 @@ fn expand_one_letter(code: &str, kind: i64) -> PyResult<Option<String>> {
     Ok(cosmolkit_core::expand_one_letter(c, kind).map(str::to_string))
 }
 
+#[pyfunction(name = "MolToInchi", signature = (molecule, options = ""))]
+#[doc = r#"
+Generate an InChI for a molecule without mutating the source molecule.
+"#]
+fn chem_mol_to_inchi(molecule: &Molecule, options: &str) -> PyResult<String> {
+    let options = (!options.is_empty()).then_some(options.as_bytes());
+    let output = cosmolkit_core::mol_to_inchi(&molecule.inner, options).map_err(inchi_pyerr)?;
+    emit_inchi_diagnostics(&output.diagnostics)?;
+    inchi_output_string("mol_to_inchi", "InChI", output.inchi)
+}
+
+#[pyfunction(name = "MolToInchiKey", signature = (molecule, options = ""))]
+#[doc = r#"
+Generate an InChIKey for a molecule without mutating the source molecule.
+"#]
+fn chem_mol_to_inchi_key(molecule: &Molecule, options: &str) -> PyResult<String> {
+    let options = (!options.is_empty()).then_some(options.as_bytes());
+    let output = cosmolkit_core::mol_to_inchi_key(&molecule.inner, options).map_err(inchi_pyerr)?;
+    emit_inchi_diagnostics(&output.diagnostics)?;
+    inchi_output_string("mol_to_inchi_key", "InChIKey", output.key)
+}
+
+#[pyfunction(name = "InchiToInchiKey")]
+#[doc = r#"
+Generate an InChIKey directly from an InChI string.
+"#]
+fn inchi_to_inchi_key_py(inchi: &str) -> PyResult<String> {
+    let output = cosmolkit_core::inchi_to_inchi_key(inchi.as_bytes()).map_err(inchi_pyerr)?;
+    emit_inchi_diagnostics(&output.diagnostics)?;
+    inchi_output_string("inchi_to_inchi_key", "InChIKey", output.key)
+}
+
+#[pyfunction(name = "MolFromInchi", signature = (inchi, sanitize = true, remove_hs = true))]
+#[doc = r#"
+Parse an InChI into a molecule, returning ``None`` when the source API returns no graph.
+"#]
+fn chem_mol_from_inchi(inchi: &str, sanitize: bool, remove_hs: bool) -> PyResult<Option<Molecule>> {
+    let output = cosmolkit_core::mol_from_inchi(inchi.as_bytes(), sanitize, remove_hs)
+        .map_err(inchi_pyerr)?;
+    emit_inchi_diagnostics(&output.diagnostics)?;
+    Ok(output.molecule.map(|inner| Molecule { inner }))
+}
+
+fn add_chem_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = m.py();
+    let submodule = PyModule::new(py, "Chem")?;
+    submodule.add_function(wrap_pyfunction!(chem_mol_to_inchi, &submodule)?)?;
+    submodule.add_function(wrap_pyfunction!(chem_mol_to_inchi_key, &submodule)?)?;
+    submodule.add_function(wrap_pyfunction!(chem_mol_from_inchi, &submodule)?)?;
+    py.import("sys")?
+        .getattr("modules")?
+        .set_item("cosmolkit.Chem", &submodule)?;
+    m.add_submodule(&submodule)?;
+    m.add("Chem", submodule)?;
+    Ok(())
+}
+
 #[pymodule]
 fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     add_public_enums(m)?;
     add_batch_validation_error_class(m)?;
+    add_inchi_error_classes(m)?;
     m.add_class::<Molecule>()?;
     m.add_class::<PyEmbedParameters>()?;
     m.add_class::<Protein>()?;
@@ -6972,6 +7146,8 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(expand_protein_one_letter, m)?)?;
     m.add_function(wrap_pyfunction!(expand_one_letter_sequence, m)?)?;
     m.add_function(wrap_pyfunction!(expand_protein_one_letter_string, m)?)?;
+    m.add_function(wrap_pyfunction!(inchi_to_inchi_key_py, m)?)?;
+    add_chem_module(m)?;
     confseq_py::add_confseq_module(m)?;
     Ok(())
 }

@@ -1,0 +1,65 @@
+--- ichirvr4.c
++++ ichirvr4.oracle.c
+@@ -1365,7 +1365,7 @@
+     /************************************************************/
+     /* compare                                                  */
+     /************************************************************/
+-    if (pStruct->iMobileH == TAUT_NON && (ret = FillOutExtraFixedHDataRestr(pStruct)))
++    if (pStruct->iMobileH == TAUT_NON && (ret = oracle_test_FillOutExtraFixedHDataRestr(pStruct)))
+     {
+         goto exit_function;
+     }
+@@ -1385,7 +1385,7 @@
+     {
+         do
+         {
+-            ret = FixLessHydrogenInFormula(pBNS, pBD, pStruct, at, at2, at_prep, pVA, pTCGroups,
++            ret = oracle_test_FixLessHydrogenInFormula(pBNS, pBD, pStruct, at, at2, at_prep, pVA, pTCGroups,
+                 pnNumRunBNS, pnTotalDelta, forbidden_edge_mask);
+             if (ret < 0)
+             {
+@@ -1415,7 +1415,7 @@
+                 {
+                     iRevrInChI = 0;
+                 }
+-                if (pStruct->iMobileH == TAUT_NON && (ret = FillOutExtraFixedHDataRestr(pStruct)))
++                if (pStruct->iMobileH == TAUT_NON && (ret = oracle_test_FillOutExtraFixedHDataRestr(pStruct)))
+                 {
+                     goto exit_function;
+                 }
+@@ -1434,7 +1434,7 @@
+     {
+         do
+         {
+-            ret = FixMoreHydrogenInFormula(pBNS, pBD, pStruct, at, at2, at_prep, pVA, pTCGroups,
++            ret = oracle_test_FixMoreHydrogenInFormula(pBNS, pBD, pStruct, at, at2, at_prep, pVA, pTCGroups,
+                 pnNumRunBNS, pnTotalDelta, forbidden_edge_mask);
+             if (ret < 0)
+             {
+@@ -1464,7 +1464,7 @@
+                 {
+                     iRevrInChI = 0;
+                 }
+-                if (pStruct->iMobileH == TAUT_NON && (ret = FillOutExtraFixedHDataRestr(pStruct)))
++                if (pStruct->iMobileH == TAUT_NON && (ret = oracle_test_FillOutExtraFixedHDataRestr(pStruct)))
+                 {
+                     goto exit_function;
+                 }
+@@ -1483,7 +1483,7 @@
+     {
+         do
+         {
+-            ret = FixRemoveExtraTautEndpoints(pBNS, pBD, pStruct, at, at2, at_prep, at_norm, pVA, pTCGroups, &icr,
++            ret = oracle_test_FixRemoveExtraTautEndpoints(pBNS, pBD, pStruct, at, at2, at_prep, at_norm, pVA, pTCGroups, &icr,
+                 pnNumRunBNS, pnTotalDelta, forbidden_edge_mask);
+             if (ret < 0)
+             {
+@@ -1513,7 +1513,7 @@
+                 {
+                     iRevrInChI = 0;
+                 }
+-                if (pStruct->iMobileH == TAUT_NON && (ret = FillOutExtraFixedHDataRestr(pStruct)))
++                if (pStruct->iMobileH == TAUT_NON && (ret = oracle_test_FillOutExtraFixedHDataRestr(pStruct)))
+                 {
+                     goto exit_function;
+                 }

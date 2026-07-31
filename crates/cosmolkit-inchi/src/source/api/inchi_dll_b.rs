@@ -1,15 +1,27 @@
-use crate::source::base::ichi_io::{inchi_ios_gets, inchi_ios_getsTab, inchi_ios_getsTab1};
+use crate::source::api::inchi_dll::parse_options_string;
+use crate::source::base::ichi_io::{
+    inchi_ios_close, inchi_ios_eprint, inchi_ios_gets, inchi_ios_getsTab, inchi_ios_getsTab1,
+    inchi_ios_init, inchi_strbuf_close, inchi_strbuf_init,
+};
+use crate::source::base::ichican2::SetBitFree;
 use crate::source::base::ichierr::AddErrorMessage;
+use crate::source::base::ichiparm::ReadCommandLineParms;
+use crate::source::base::mol2atom::FreeOrigAtData;
 use crate::source::base::readinch::{FindToken, FreeInchi_Stereo0D, LoadLine};
-use crate::source::base::util::{inchi_calloc, inchi_free, lrtrim, mystrncpy};
+use crate::source::base::runichi4::FreeAllINChIArrays;
+use crate::source::base::util::{inchi_calloc, inchi_free, inchi_malloc, lrtrim, mystrncpy};
 use crate::source_types::{
-    AB_MAX_WELL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY, CHAR_MASK, FLAG_INP_AT_CHIRAL,
-    FLAG_INP_AT_NONCHIRAL, INCHI_INP_EOF_ERR, INCHI_INP_EOF_RET, INCHI_INP_ERROR_ERR,
-    INCHI_INP_ERROR_RET, INCHI_INP_FATAL_ERR, INCHI_INP_FATAL_RET, INCHI_IOSTREAM, INCHI_LINE_ADD,
-    INCHI_LINE_LEN, INCHI_MODE, INPUT_TYPE, MAX_INPUT_BOND_TYPE, MAX_SDF_HEADER, MAX_SDF_VALUE,
-    MIN_INPUT_BOND_TYPE, MOL_COORD, NO_ATOM, S_SHORT, SB_PARITY_MASK, SB_PARITY_SHFT, SourceHeap,
-    SourceHeapError, SourceMutPointer, inchi_Atom, inchi_Input, inchi_Stereo0D,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_DOUBLE_EITHER,
+    AB_MAX_WELL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY, CANON_GLOBALS, CHAR_MASK,
+    FLAG_INP_AT_CHIRAL, FLAG_INP_AT_NONCHIRAL, INCHI_INP_EOF_ERR, INCHI_INP_EOF_RET,
+    INCHI_INP_ERROR_ERR, INCHI_INP_ERROR_RET, INCHI_INP_FATAL_ERR, INCHI_INP_FATAL_RET,
+    INCHI_IOS_STRING, INCHI_IOS_TYPE_STRING, INCHI_IOSTREAM, INCHI_LINE_ADD, INCHI_LINE_LEN,
+    INCHI_MAX_NUM_ARG, INCHI_MODE, INCHI_NUM, INCHI_OUT_NO_AUX_INFO, INCHI_STRBUF_INITIAL_SIZE,
+    INCHI_STRBUF_SIZE_INCREMENT, INPUT_PARMS, INPUT_TYPE, MAX_INPUT_BOND_TYPE, MAX_NUM_PATHS,
+    MAX_SDF_HEADER, MAX_SDF_VALUE, MIN_INPUT_BOND_TYPE, MOL_COORD, MOL2INCHI_BAD_COMMAND_LINE,
+    MOL2INCHI_NO_RAM, NO_ATOM, ORIG_ATOM_DATA, PINChI_Aux2, PINChI2, S_SHORT, SB_PARITY_MASK,
+    SB_PARITY_SHFT, STRUCT_DATA, SourceArgvPointer, SourceConstPointer, SourceHeap,
+    SourceHeapError, SourceMutPointer, SourceVaList, bRELEASE_VERSION, inchi_Atom, inchi_Input,
+    inchi_Stereo0D, tagINCHIBondStereo2D_INCHI_BOND_STEREO_DOUBLE_EITHER,
     tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1DOWN,
     tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1EITHER,
     tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1UP,
@@ -22,7 +34,7 @@ use crate::source_types::{
     tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN, tagINCHIStereoType0D_INCHI_StereoType_Allene,
     tagINCHIStereoType0D_INCHI_StereoType_DoubleBond, tagINCHIStereoType0D_INCHI_StereoType_None,
     tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral, tagInputType_INPUT_INCHI_PLAIN,
-    tagInputType_INPUT_INCHI_XML,
+    tagInputType_INPUT_INCHI_XML, tagInputType_INPUT_MOLFILE,
 };
 
 // `inchi_api.h` fields under the pinned LP64 ABI: three doubles, three
@@ -229,6 +241,364 @@ pub(crate) fn CreateInchiAtom(
     // END INCHI C FUNCTION: CreateInchiAtom
 
     inchi_calloc(heap, num_atoms as u64, SOURCE_SIZEOF_INCHI_ATOM)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn PrepareToMakeINCHI(
+    heap: &mut SourceHeap,
+    sd: &mut STRUCT_DATA,
+    ip: &mut INPUT_PARMS,
+    orig_inp_data: &mut ORIG_ATOM_DATA,
+    prep_inp_data: &mut [ORIG_ATOM_DATA; INCHI_NUM as usize],
+    p_inchi: &mut [SourceMutPointer<PINChI2>; INCHI_NUM as usize],
+    p_inchi_aux: &mut [SourceMutPointer<PINChI_Aux2>; INCHI_NUM as usize],
+    pout: &mut INCHI_IOSTREAM,
+    plog: &mut INCHI_IOSTREAM,
+    pprb: &mut INCHI_IOSTREAM,
+    inp_file: &mut INCHI_IOSTREAM,
+    moltext: SourceConstPointer<i8>,
+    options: SourceConstPointer<i8>,
+    strbuf: &mut INCHI_IOS_STRING,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll_b.c:285 PrepareToMakeINCHI
+    // INCHI✔️❌: complete source frame follows verbatim; SourceHeap stack-buffer and checked pointer modeling add overhead.
+    /*
+int PrepareToMakeINCHI( STRUCT_DATA *sd,
+                        INPUT_PARMS *ip,
+                        ORIG_ATOM_DATA *orig_inp_data,
+                        ORIG_ATOM_DATA *prep_inp_data,
+                        PINChI2 *pINChI[INCHI_NUM],
+                        PINChI_Aux2 *pINChI_Aux[INCHI_NUM],
+                        INCHI_IOSTREAM *pout,
+                        INCHI_IOSTREAM *plog,
+                        INCHI_IOSTREAM *pprb,
+                        INCHI_IOSTREAM *inp_file,
+                        const char *moltext,
+                        char *options,
+                        INCHI_IOS_STRING *strbuf )
+{
+    int retcode = 0;
+    unsigned long  ulDisplTime = 0;
+    int bReleaseVersion = bRELEASE_VERSION;
+    char szSdfDataValue[MAX_SDF_VALUE + 1];
+
+
+    const char *quasi_argv[INCHI_MAX_NUM_ARG + 1];
+    int   quasi_argc;
+    char *quasi_options = NULL;
+
+    if (options)
+    {
+        quasi_options = (char*) inchi_malloc( strlen( options ) + 1 );
+    }
+    if (quasi_options)
+    {
+        strcpy( quasi_options, options );
+        quasi_argc = parse_options_string( quasi_options, quasi_argv, INCHI_MAX_NUM_ARG );
+    }
+    else
+    {
+        quasi_argc = 1;
+        quasi_argv[0] = "";
+        quasi_argv[1] = NULL;
+    }
+
+    /* I/O streams */
+    inchi_ios_init( pout, INCHI_IOS_TYPE_STRING, NULL );
+    inchi_ios_init( plog, INCHI_IOS_TYPE_STRING, NULL );
+    inchi_ios_init( pprb, INCHI_IOS_TYPE_STRING, NULL );
+
+
+    /* input ( string of Molfile )*/
+    inchi_ios_init( inp_file, INCHI_IOS_TYPE_STRING, NULL );
+    inp_file->s.pStr = (char *) moltext;
+    inp_file->s.nPtr = 0;
+    inp_file->s.nUsedLength = strlen( moltext ) + 1;
+    inp_file->f = NULL;
+
+    memset( szSdfDataValue, 0, sizeof( szSdfDataValue ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+
+
+    /* data structs */
+    memset( sd, 0, sizeof( *sd ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    memset( ip, 0, sizeof( *ip ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+
+    memset( orig_inp_data, 0, sizeof( *orig_inp_data ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    memset( prep_inp_data, 0, 2 * sizeof( *prep_inp_data ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+
+    pINChI[0] = pINChI[1] = NULL;
+    pINChI_Aux[0] = pINChI_Aux[1] = NULL;
+
+    /* Parse command line */
+    if (0 > ReadCommandLineParms( quasi_argc,
+        quasi_argv,
+        ip,
+        szSdfDataValue,
+        &ulDisplTime,
+        bReleaseVersion,
+        plog ))
+    {
+        return  MOL2INCHI_BAD_COMMAND_LINE;
+    }
+
+    ip->nInputType = INPUT_MOLFILE;
+    ip->bNoStructLabels = 1;
+    ip->pSdfLabel = NULL;
+    ip->pSdfValue = NULL;
+    /* ip->bINChIOutputOptions |= INCHI_OUT_NO_AUX_INFO; */
+
+    /* Supply expandable string buffer */
+    if (0 >= inchi_strbuf_init( strbuf, INCHI_STRBUF_INITIAL_SIZE, INCHI_STRBUF_SIZE_INCREMENT ))
+    {
+        if (plog && plog->s.pStr)
+        {
+            inchi_ios_eprint( plog, "Cannot allocate output string buffer. Terminating\n" );
+        }
+        retcode = MOL2INCHI_NO_RAM;
+        goto ret;
+    }
+
+ret:
+    if (quasi_options)
+    {
+        inchi_free( quasi_options );
+    }
+
+    return retcode;
+}
+    */
+    // END INCHI C FUNCTION: PrepareToMakeINCHI
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: PrepareToMakeINCHI
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; bRELEASE_VERSION == 1.
+    // INCHI✔️❌: inchi_malloc/free are the active libc allocation macros; INCHI_NUM == 2.
+    // INCHI✔️❌: INPUT_MOLFILE resolves to tagInputType_INPUT_MOLFILE.
+    // END INCHI ACTIVE MACRO CONFIGURATION: PrepareToMakeINCHI
+
+    let moltext_length = heap
+        .slice(moltext)?
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or(SourceHeapError::MissingNulTerminator)?;
+
+    let mut quasi_options = SourceMutPointer::null();
+    let mut parsed_arguments = vec![SourceArgvPointer::Null; INCHI_MAX_NUM_ARG as usize + 1];
+    let quasi_argc;
+    if !options.is_null() {
+        let option_length = heap
+            .slice(options)?
+            .iter()
+            .position(|byte| *byte == 0)
+            .ok_or(SourceHeapError::MissingNulTerminator)?;
+        quasi_options = match inchi_malloc(heap, (option_length + 1) as u64) {
+            Ok(pointer) => pointer,
+            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+            Err(error) => return Err(error),
+        };
+        if !quasi_options.is_null() {
+            let copied = heap.slice(options)?[..=option_length].to_vec();
+            heap.slice_mut(quasi_options)?[..=option_length].copy_from_slice(&copied);
+        }
+    }
+    if !quasi_options.is_null() {
+        quasi_argc = parse_options_string(
+            heap,
+            quasi_options,
+            &mut parsed_arguments,
+            INCHI_MAX_NUM_ARG as i32,
+        )?;
+    } else {
+        quasi_argc = 1;
+        parsed_arguments[0] = SourceArgvPointer::EmptyLiteral;
+        parsed_arguments[1] = SourceArgvPointer::Null;
+    }
+
+    inchi_ios_init(
+        Some(pout),
+        INCHI_IOS_TYPE_STRING as i32,
+        SourceMutPointer::null(),
+    )?;
+    inchi_ios_init(
+        Some(plog),
+        INCHI_IOS_TYPE_STRING as i32,
+        SourceMutPointer::null(),
+    )?;
+    inchi_ios_init(
+        Some(pprb),
+        INCHI_IOS_TYPE_STRING as i32,
+        SourceMutPointer::null(),
+    )?;
+    inchi_ios_init(
+        Some(inp_file),
+        INCHI_IOS_TYPE_STRING as i32,
+        SourceMutPointer::null(),
+    )?;
+    inp_file.s.pStr = moltext.as_mut();
+    inp_file.s.nPtr = 0;
+    inp_file.s.nUsedLength = moltext_length.wrapping_add(1) as i32;
+    inp_file.f = SourceMutPointer::null();
+
+    *sd = STRUCT_DATA::default();
+    *ip = INPUT_PARMS::default();
+    *orig_inp_data = ORIG_ATOM_DATA::default();
+    *prep_inp_data = std::array::from_fn(|_| ORIG_ATOM_DATA::default());
+    *p_inchi = std::array::from_fn(|_| SourceMutPointer::null());
+    *p_inchi_aux = std::array::from_fn(|_| SourceMutPointer::null());
+
+    let sdf_value = heap.allocate_model_storage(vec![0_i8; MAX_SDF_VALUE as usize + 1])?;
+    let empty_argument = heap.allocate_model_storage(vec![0_i8])?;
+    let mut argv = Vec::with_capacity(quasi_argc as usize);
+    for argument in parsed_arguments.iter().take(quasi_argc as usize) {
+        argv.push(match *argument {
+            SourceArgvPointer::EmptyLiteral => empty_argument.as_const(),
+            SourceArgvPointer::Command(pointer) => pointer.as_const(),
+            SourceArgvPointer::Null => SourceConstPointer::null(),
+        });
+    }
+    let mut display_time = 0_u64;
+    let command_result = ReadCommandLineParms(
+        heap,
+        quasi_argc,
+        &argv,
+        ip,
+        sdf_value,
+        &mut display_time,
+        bRELEASE_VERSION as i32,
+        Some(plog),
+    );
+    heap.free(empty_argument)?;
+    heap.free(sdf_value)?;
+    let command_result = command_result?;
+    if command_result < 0 {
+        return Ok(MOL2INCHI_BAD_COMMAND_LINE as i32);
+    }
+
+    ip.nInputType = tagInputType_INPUT_MOLFILE;
+    ip.bNoStructLabels = 1;
+    ip.pSdfLabel = SourceMutPointer::null();
+    ip.pSdfValue = SourceMutPointer::null();
+
+    let mut retcode = 0_i32;
+    if inchi_strbuf_init(
+        heap,
+        strbuf,
+        INCHI_STRBUF_INITIAL_SIZE as i32,
+        INCHI_STRBUF_SIZE_INCREMENT as i32,
+    )? <= 0
+    {
+        if !plog.s.pStr.is_null() {
+            let format = heap.allocate_model_storage(
+                b"Cannot allocate output string buffer. Terminating\n\0"
+                    .iter()
+                    .map(|byte| *byte as i8)
+                    .collect(),
+            )?;
+            let print_result = inchi_ios_eprint(
+                heap,
+                Some(plog),
+                format.as_const(),
+                &SourceVaList::default(),
+            );
+            heap.free(format)?;
+            print_result?;
+        }
+        retcode = MOL2INCHI_NO_RAM as i32;
+    }
+
+    if !quasi_options.is_null() {
+        inchi_free(heap, quasi_options)?;
+    }
+    Ok(retcode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn PostMakeINCHICleanup(
+    heap: &mut SourceHeap,
+    canonical_globals: &mut CANON_GLOBALS,
+    sd: &mut STRUCT_DATA,
+    ip: &mut INPUT_PARMS,
+    orig_inp_data: &mut ORIG_ATOM_DATA,
+    prep_inp_data: &mut [ORIG_ATOM_DATA; INCHI_NUM as usize],
+    p_inchi: &mut [SourceMutPointer<PINChI2>; INCHI_NUM as usize],
+    p_inchi_aux: &mut [SourceMutPointer<PINChI_Aux2>; INCHI_NUM as usize],
+    pout: &mut INCHI_IOSTREAM,
+    _plog: &mut INCHI_IOSTREAM,
+    pprb: &mut INCHI_IOSTREAM,
+    _inp_file: &mut INCHI_IOSTREAM,
+    _moltext: SourceConstPointer<i8>,
+    strbuf: &mut INCHI_IOS_STRING,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll_b.c:391 PostMakeINCHICleanup
+    // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap frees add overhead.
+    /*
+int PostMakeINCHICleanup( struct tagCANON_GLOBALS *pCG,
+                          STRUCT_DATA *sd,
+                          INPUT_PARMS *ip,
+                          ORIG_ATOM_DATA *orig_inp_data,
+                          ORIG_ATOM_DATA *prep_inp_data,
+                          PINChI2 *pINChI[INCHI_NUM],
+                          PINChI_Aux2 *pINChI_Aux[INCHI_NUM],
+                          INCHI_IOSTREAM *pout,
+                          INCHI_IOSTREAM *plog,
+                          INCHI_IOSTREAM *pprb,
+                          INCHI_IOSTREAM *inp_file,
+                          const char *moltext,
+                          INCHI_IOS_STRING *strbuf )
+{
+    int retcode = 0;
+    int i;
+
+
+    /* Free structure data */
+
+    /*  Free INChI memory */
+    FreeAllINChIArrays( pINChI, pINChI_Aux, sd->num_components );
+
+    FreeOrigAtData( orig_inp_data );
+    FreeOrigAtData( prep_inp_data );
+    FreeOrigAtData( prep_inp_data + 1 );
+
+    inchi_ios_close( pout );
+    inchi_ios_close( pprb );
+
+    inchi_strbuf_close( strbuf );
+
+    for (i = 0; i < MAX_NUM_PATHS; i++)
+    {
+        if (ip->path[i])
+        {
+            inchi_free( (void*) ip->path[i] );
+            /*  cast deliberately discards 'const' qualifier */
+            ip->path[i] = NULL;
+        }
+    }
+    SetBitFree( pCG );
+
+    return retcode;
+}
+    */
+    // END INCHI C FUNCTION: PostMakeINCHICleanup
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: PostMakeINCHICleanup
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; INCHI_NUM == 2 and MAX_NUM_PATHS == 4.
+    // INCHI✔️❌: plog, inp_file, and moltext are intentionally not closed or freed by this function.
+    // END INCHI ACTIVE MACRO CONFIGURATION: PostMakeINCHICleanup
+
+    FreeAllINChIArrays(heap, p_inchi, p_inchi_aux, &mut sd.num_components)?;
+    FreeOrigAtData(heap, Some(orig_inp_data))?;
+    FreeOrigAtData(heap, Some(&mut prep_inp_data[0]))?;
+    FreeOrigAtData(heap, Some(&mut prep_inp_data[1]))?;
+    inchi_ios_close(heap, Some(pout))?;
+    inchi_ios_close(heap, Some(pprb))?;
+    inchi_strbuf_close(heap, Some(strbuf))?;
+    for path in ip.path.iter_mut().take(MAX_NUM_PATHS as usize) {
+        if !path.is_null() {
+            inchi_free(heap, path.as_mut())?;
+            *path = SourceConstPointer::null();
+        }
+    }
+    SetBitFree(heap, canonical_globals)?;
+    Ok(0)
 }
 
 pub(crate) fn FreeInchi_Input(
@@ -4459,7 +4829,7 @@ mod tests {
     use super::*;
     use crate::source_types::{
         INCHI_IOS_STRING, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING, STR_ERR_LEN, SourceFile,
-        inchi_Stereo0D,
+        bitWord, inchi_Stereo0D, inp_ATOM,
     };
     use crate::test_support::allocate_source_fixture;
     use serde_json::{Value, json};
@@ -4485,6 +4855,301 @@ mod tests {
             CreateInchiAtom(&mut heap, -1),
             Err(SourceHeapError::AllocationSizeOverflow)
         );
+    }
+
+    #[test]
+    fn source_port__inchi_dll_b__preparetomakeinchi__line_285() {
+        fn call_prepare(
+            heap: &mut SourceHeap,
+            moltext: SourceConstPointer<i8>,
+            options: SourceConstPointer<i8>,
+        ) -> (
+            Result<i32, SourceHeapError>,
+            STRUCT_DATA,
+            INPUT_PARMS,
+            ORIG_ATOM_DATA,
+            [ORIG_ATOM_DATA; INCHI_NUM as usize],
+            [SourceMutPointer<PINChI2>; INCHI_NUM as usize],
+            [SourceMutPointer<PINChI_Aux2>; INCHI_NUM as usize],
+            [INCHI_IOSTREAM; 4],
+            INCHI_IOS_STRING,
+        ) {
+            let mut sd = STRUCT_DATA {
+                nErrorCode: 91,
+                ..STRUCT_DATA::default()
+            };
+            let mut ip = INPUT_PARMS::default();
+            ip.nInputType = 92;
+            let mut original = ORIG_ATOM_DATA {
+                num_inp_atoms: 93,
+                ..ORIG_ATOM_DATA::default()
+            };
+            let mut prepared = std::array::from_fn(|index| ORIG_ATOM_DATA {
+                num_inp_atoms: 94 + index as i32,
+                ..ORIG_ATOM_DATA::default()
+            });
+            let sentinel = moltext.as_mut().cast::<PINChI2>();
+            let aux_sentinel = moltext.as_mut().cast::<PINChI_Aux2>();
+            let mut inchi = [sentinel; INCHI_NUM as usize];
+            let mut aux = [aux_sentinel; INCHI_NUM as usize];
+            let mut streams: [INCHI_IOSTREAM; 4] = std::array::from_fn(|_| {
+                let mut stream = INCHI_IOSTREAM::default();
+                stream.type_ = 95;
+                stream
+            });
+            let mut strbuf = INCHI_IOS_STRING::default();
+            let (pout, remainder) = streams.split_at_mut(1);
+            let (plog, remainder) = remainder.split_at_mut(1);
+            let (pprb, inp_file) = remainder.split_at_mut(1);
+            let result = PrepareToMakeINCHI(
+                heap,
+                &mut sd,
+                &mut ip,
+                &mut original,
+                &mut prepared,
+                &mut inchi,
+                &mut aux,
+                &mut pout[0],
+                &mut plog[0],
+                &mut pprb[0],
+                &mut inp_file[0],
+                moltext,
+                options,
+                &mut strbuf,
+            );
+            (
+                result, sd, ip, original, prepared, inchi, aux, streams, strbuf,
+            )
+        }
+
+        let mut heap = SourceHeap::default();
+        let moltext = allocate_source_fixture(
+            &mut heap,
+            b"empty molfile text\n\0"
+                .iter()
+                .map(|byte| *byte as i8)
+                .collect(),
+        );
+        let options = allocate_source_fixture(
+            &mut heap,
+            b"-AuxNone\0".iter().map(|byte| *byte as i8).collect(),
+        );
+        let (result, sd, ip, original, prepared, inchi, aux, streams, strbuf) =
+            call_prepare(&mut heap, moltext.as_const(), options.as_const());
+        assert_eq!(result, Ok(0));
+        assert_eq!(sd, STRUCT_DATA::default());
+        assert_eq!(original, ORIG_ATOM_DATA::default());
+        assert_eq!(prepared, std::array::from_fn(|_| ORIG_ATOM_DATA::default()));
+        assert_eq!(inchi, [SourceMutPointer::null(); INCHI_NUM as usize]);
+        assert_eq!(aux, [SourceMutPointer::null(); INCHI_NUM as usize]);
+        assert_eq!(ip.nInputType, tagInputType_INPUT_MOLFILE);
+        assert_eq!(ip.bNoStructLabels, 1);
+        assert!(ip.pSdfLabel.is_null());
+        assert!(ip.pSdfValue.is_null());
+        assert_ne!(ip.bINChIOutputOptions & INCHI_OUT_NO_AUX_INFO as i32, 0);
+        assert_eq!(streams[0].type_, INCHI_IOS_TYPE_STRING as i32);
+        assert_eq!(streams[1].type_, INCHI_IOS_TYPE_STRING as i32);
+        assert_eq!(streams[2].type_, INCHI_IOS_TYPE_STRING as i32);
+        assert_eq!(streams[3].type_, INCHI_IOS_TYPE_STRING as i32);
+        assert_eq!(streams[3].s.pStr, moltext);
+        assert_eq!(streams[3].s.nPtr, 0);
+        assert_eq!(streams[3].s.nUsedLength, 20);
+        assert!(streams[3].f.is_null());
+        assert!(!strbuf.pStr.is_null());
+        assert_eq!(strbuf.nAllocatedLength, INCHI_STRBUF_INITIAL_SIZE as i32);
+        assert_eq!(strbuf.nPtr, INCHI_STRBUF_SIZE_INCREMENT as i32);
+        inchi_free(&mut heap, strbuf.pStr).unwrap();
+
+        let mut fallback_heap = SourceHeap::default();
+        let fallback_moltext = allocate_source_fixture(
+            &mut fallback_heap,
+            b"x\0".iter().map(|byte| *byte as i8).collect(),
+        );
+        let fallback_options = allocate_source_fixture(
+            &mut fallback_heap,
+            b"-AuxNone\0".iter().map(|byte| *byte as i8).collect(),
+        );
+        fallback_heap.fail_after_allocations(0);
+        let (fallback_result, _, fallback_ip, _, _, _, _, _, fallback_strbuf) = call_prepare(
+            &mut fallback_heap,
+            fallback_moltext.as_const(),
+            fallback_options.as_const(),
+        );
+        assert_eq!(fallback_result, Ok(0));
+        assert_eq!(fallback_heap.source_allocation_calls(), 2);
+        assert_eq!(
+            fallback_ip.bINChIOutputOptions & INCHI_OUT_NO_AUX_INFO as i32,
+            0
+        );
+        inchi_free(&mut fallback_heap, fallback_strbuf.pStr).unwrap();
+
+        let mut no_ram_heap = SourceHeap::default();
+        let no_ram_moltext = allocate_source_fixture(
+            &mut no_ram_heap,
+            b"x\0".iter().map(|byte| *byte as i8).collect(),
+        );
+        no_ram_heap.fail_after_allocations(0);
+        let (no_ram_result, _, _, _, _, _, _, _, no_ram_strbuf) = call_prepare(
+            &mut no_ram_heap,
+            no_ram_moltext.as_const(),
+            SourceConstPointer::null(),
+        );
+        assert_eq!(no_ram_result, Ok(MOL2INCHI_NO_RAM as i32));
+        assert!(no_ram_strbuf.pStr.is_null());
+
+        let mut bad_heap = SourceHeap::default();
+        let bad_moltext = allocate_source_fixture(
+            &mut bad_heap,
+            b"x\0".iter().map(|byte| *byte as i8).collect(),
+        );
+        let bad_options = allocate_source_fixture(
+            &mut bad_heap,
+            b"-Key -OUTPUTSDF\0"
+                .iter()
+                .map(|byte| *byte as i8)
+                .collect(),
+        );
+        bad_heap.trace_source_allocations();
+        let (bad_result, _, _, _, _, _, _, _, bad_strbuf) = call_prepare(
+            &mut bad_heap,
+            bad_moltext.as_const(),
+            bad_options.as_const(),
+        );
+        assert_eq!(bad_result, Ok(MOL2INCHI_BAD_COMMAND_LINE as i32));
+        assert!(bad_strbuf.pStr.is_null());
+        assert!(bad_heap.live_source_allocation_count() >= 1);
+    }
+
+    #[test]
+    fn source_port__inchi_dll_b__postmakeinchicleanup__line_391() {
+        let mut heap = SourceHeap::default();
+        let canonical_bits = allocate_source_fixture(&mut heap, vec![0 as bitWord]);
+        let mut canonical_globals = CANON_GLOBALS {
+            m_bBit: canonical_bits,
+            ..CANON_GLOBALS::default()
+        };
+
+        let inchi_rows = allocate_source_fixture(&mut heap, vec![[SourceMutPointer::null(); 2]]);
+        let aux_rows = allocate_source_fixture(&mut heap, vec![[SourceMutPointer::null(); 2]]);
+        let mut p_inchi = [inchi_rows, SourceMutPointer::null()];
+        let mut p_inchi_aux = [aux_rows, SourceMutPointer::null()];
+        let mut sd = STRUCT_DATA {
+            num_components: [1, 0],
+            ..STRUCT_DATA::default()
+        };
+
+        let original_atoms = allocate_source_fixture(&mut heap, vec![inp_ATOM::default()]);
+        let prepared_atoms = allocate_source_fixture(&mut heap, vec![inp_ATOM::default()]);
+        let reconnected_atoms = allocate_source_fixture(&mut heap, vec![inp_ATOM::default()]);
+        let mut original = ORIG_ATOM_DATA {
+            at: original_atoms,
+            num_inp_atoms: 1,
+            ..ORIG_ATOM_DATA::default()
+        };
+        let mut prepared = [
+            ORIG_ATOM_DATA {
+                at: prepared_atoms,
+                num_inp_atoms: 1,
+                ..ORIG_ATOM_DATA::default()
+            },
+            ORIG_ATOM_DATA {
+                at: reconnected_atoms,
+                num_inp_atoms: 1,
+                ..ORIG_ATOM_DATA::default()
+            },
+        ];
+
+        let output_text = allocate_source_fixture(&mut heap, vec![b'o' as i8, 0]);
+        let log_text = allocate_source_fixture(&mut heap, vec![b'l' as i8, 0]);
+        let problem_text = allocate_source_fixture(&mut heap, vec![b'p' as i8, 0]);
+        let input_text = allocate_source_fixture(&mut heap, vec![b'i' as i8, 0]);
+        let string_buffer = allocate_source_fixture(&mut heap, vec![b's' as i8, 0]);
+        let moltext = allocate_source_fixture(&mut heap, vec![b'm' as i8, 0]);
+        let make_stream = |pointer| INCHI_IOSTREAM {
+            type_: INCHI_IOS_TYPE_STRING as i32,
+            s: INCHI_IOS_STRING {
+                pStr: pointer,
+                nAllocatedLength: 2,
+                nUsedLength: 1,
+                nPtr: 0,
+            },
+            ..INCHI_IOSTREAM::default()
+        };
+        let mut pout = make_stream(output_text);
+        let mut plog = make_stream(log_text);
+        let mut pprb = make_stream(problem_text);
+        let mut inp_file = make_stream(input_text);
+        let mut strbuf = INCHI_IOS_STRING {
+            pStr: string_buffer,
+            nAllocatedLength: 2,
+            nUsedLength: 1,
+            nPtr: 8,
+        };
+
+        let path0 = allocate_source_fixture(&mut heap, vec![b'a' as i8, 0]);
+        let path2 = allocate_source_fixture(&mut heap, vec![b'b' as i8, 0]);
+        let mut ip = INPUT_PARMS::default();
+        ip.path[0] = path0.as_const();
+        ip.path[2] = path2.as_const();
+
+        assert_eq!(
+            PostMakeINCHICleanup(
+                &mut heap,
+                &mut canonical_globals,
+                &mut sd,
+                &mut ip,
+                &mut original,
+                &mut prepared,
+                &mut p_inchi,
+                &mut p_inchi_aux,
+                &mut pout,
+                &mut plog,
+                &mut pprb,
+                &mut inp_file,
+                moltext.as_const(),
+                &mut strbuf,
+            ),
+            Ok(0)
+        );
+
+        for pointer in [
+            canonical_bits.cast::<i8>(),
+            inchi_rows.cast::<i8>(),
+            aux_rows.cast::<i8>(),
+            original_atoms.cast::<i8>(),
+            prepared_atoms.cast::<i8>(),
+            reconnected_atoms.cast::<i8>(),
+            output_text,
+            problem_text,
+            string_buffer,
+            path0,
+            path2,
+        ] {
+            assert_eq!(
+                heap.slice(pointer.as_const()).map(|_| ()),
+                Err(SourceHeapError::MissingAllocation)
+            );
+        }
+        assert!(heap.slice(log_text.as_const()).is_ok());
+        assert!(heap.slice(input_text.as_const()).is_ok());
+        assert!(heap.slice(moltext.as_const()).is_ok());
+        assert_eq!(sd.num_components, [0, 0]);
+        assert_eq!(p_inchi, [SourceMutPointer::null(); INCHI_NUM as usize]);
+        assert_eq!(p_inchi_aux, [SourceMutPointer::null(); INCHI_NUM as usize]);
+        assert!(original.at.is_null());
+        assert!(prepared[0].at.is_null());
+        assert!(prepared[1].at.is_null());
+        assert_eq!(pout.s, INCHI_IOS_STRING::default());
+        assert!(pout.f.is_null());
+        assert_eq!(pout.type_, INCHI_IOS_TYPE_STRING as i32);
+        assert_eq!(pprb.s, INCHI_IOS_STRING::default());
+        assert!(pprb.f.is_null());
+        assert_eq!(pprb.type_, INCHI_IOS_TYPE_STRING as i32);
+        assert_eq!(plog.s.pStr, log_text);
+        assert_eq!(inp_file.s.pStr, input_text);
+        assert_eq!(strbuf, INCHI_IOS_STRING::default());
+        assert!(ip.path.iter().all(|path| path.is_null()));
+        assert!(canonical_globals.m_bBit.is_null());
     }
 
     #[test]

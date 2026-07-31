@@ -220,6 +220,16 @@ pub const AROMATICITY_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Experimental RDKit-aligned aromaticity assignment scaffold with fail-closed unsupported branches.",
 };
 
+pub const INCHI_FEATURE: FeatureSpec = FeatureSpec {
+    name: "inchi.scalar",
+    category: FeatureCategory::Io,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
+    parity_sensitive: true,
+    docs: "The four audited scalar APIs (MolToInchi, MolToInchiKey, InchiToInchiKey, and MolFromInchi) reproduce pinned RDKit 2026.03.1 and official InChI v1.07.5 behavior exactly where the official C source defines behavior. The active NormalizeAndCompare initial-buffer allocation-failure path executes undefined C behavior; COSMolKit intentionally returns a deterministic structured allocation error there. MolBlock, SDF/V3000, IXA, AuxInfo conversion, incremental INCHIGEN, version-query, and extended-polymer InChI APIs are outside this public feature and remain frozen or unsupported.",
+};
+
 pub const BATCH_FEATURE: FeatureSpec = FeatureSpec {
     name: "batch.operations",
     category: FeatureCategory::Batch,
@@ -272,6 +282,7 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &VALENCE_FEATURE,
     &RINGS_FEATURE,
     &AROMATICITY_FEATURE,
+    &INCHI_FEATURE,
     &BATCH_FEATURE,
     &DG_BOUNDS_FEATURE,
     &BIO_STRUCTURE_FEATURE,

@@ -41,6 +41,12 @@ pinned InChI v1.07.5 submodule checkout SHA-256 before building the official
 `libinchi` target under `target/`; neither the oracle nor the native library is
 linked to production Rust code. Run its provenance self-test with
 `cargo test -p cosmolkit-inchi official_c_oracle_version_and_provenance`.
+The public InChI parity boundary contains only `Chem.MolToInchi`,
+`Chem.MolToInchiKey`, root `InchiToInchiKey`, and `Chem.MolFromInchi`.
+Source-defined behavior is compared exactly. The official-C undefined
+`NormalizeAndCompare` initial-buffer allocation path is tested as termination
+evidence only; production Rust maps it to a deterministic structured
+`allocation_failed` error and does not claim exact C behavior for that path.
 
 RDKit parity tests are strict source-level reproduction tests against `third_party/rdkit`. Do not make parity tests pass by loosening assertions, skipping mismatching fields, adding vague fallbacks, simplifying test conditions, row-specific patches, or heuristic guesses. When a mismatch appears, locate the corresponding RDKit source path and port that behavior directly; if the path is not implemented yet, keep the failure explicit and narrowly described.
 

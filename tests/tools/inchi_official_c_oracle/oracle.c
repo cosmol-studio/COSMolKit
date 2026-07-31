@@ -1,26 +1,35 @@
 #include <float.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <locale.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "mode.h"
 #include "inchi_api.h"
 #include "incomdef.h"
 #include "ichidrp.h"
 #include "ichierr.h"
+#include "ichicant.h"
+#include "ichirvrs.h"
+#include "ichitaut.h"
 #include "inpdef.h"
 #include "ichi.h"
 #include "ichi_io.h"
+#include "ichitime.h"
 #include "inchi_dll_b.h"
 #include "readinch.h"
+#include "sha2.h"
 #include "util.h"
 
 void *__real_malloc(size_t size);
 void *__real_calloc(size_t count, size_t size);
+void *__real_realloc(void *pointer, size_t size);
 void __real_free(void *pointer);
 
 static int ORACLE_ALLOCATION_FAILURE_ENABLED = 0;
@@ -29,6 +38,142 @@ static int ORACLE_ALLOCATION_CALLS = 0;
 static int ORACLE_DEFER_FREES = 0;
 static void *ORACLE_DEFERRED_FREES[4096];
 static size_t ORACLE_DEFERRED_FREE_COUNT = 0;
+
+static int ORACLE_NORMALIZE_ACTIVE = 0;
+static int ORACLE_NORMALIZE_FORCED_REBUILD_RETURN = 0;
+static int ORACLE_NORMALIZE_FORCE_REBUILD = 0;
+static int ORACLE_NORMALIZE_FORCE_COMPARE = 0;
+static int ORACLE_NORMALIZE_PREFREE_EXACT = 1;
+static char ORACLE_NORMALIZE_EVENTS[8192];
+static size_t ORACLE_NORMALIZE_EVENTS_LENGTH = 0;
+static INChI **ORACLE_NORMALIZE_INCHI_HOLDERS[TAUT_NUM];
+static INChI_Aux **ORACLE_NORMALIZE_AUX_HOLDERS[TAUT_NUM];
+static INP_ATOM_DATA *ORACLE_NORMALIZE_NORM_HOLDERS[TAUT_NUM];
+static INChI *ORACLE_NORMALIZE_REVERSED[TAUT_NUM];
+static INChI *ORACLE_NORMALIZE_ORIGINAL[TAUT_NUM];
+static int ORACLE_NORMALIZE_EXPECTED_INCHI_ATOMS[TAUT_NUM];
+static int ORACLE_NORMALIZE_ZZ_ACTIVE = 0;
+static int ORACLE_NORMALIZE_ZZ_FAILURE_STAGE = 0;
+static int ORACLE_NORMALIZE_ZZ_CALLOC_ORDINAL = 0;
+static int ORACLE_NORMALIZE_ZZ_FORCE_GROWTH = 0;
+static int ORACLE_NORMALIZE_ZZ_SUCCESSFUL_ALLOCATIONS = 0;
+static int ORACLE_NORMALIZE_ZZ_FREES = 0;
+static int ORACLE_NORMALIZE_ZZ_REALLOC_CALLS = 0;
+static char ORACLE_NORMALIZE_ZZ_FORMULA[256];
+static int ORACLE_NORMALIZE_FIRST_LESS_ACTIVE = 0;
+static int ORACLE_NORMALIZE_FINAL_ACTIVE = 0;
+static int ORACLE_NORMALIZE_REBUILD_RETURNS[8];
+static int ORACLE_NORMALIZE_REBUILD_PREP[8];
+static int ORACLE_NORMALIZE_REBUILD_NORM[8];
+static int ORACLE_NORMALIZE_REBUILD_TINFO[8];
+static int ORACLE_NORMALIZE_REBUILD_LENGTH = 0;
+static int ORACLE_NORMALIZE_REBUILD_POSITION = 0;
+static INCHI_MODE ORACLE_NORMALIZE_COMPARE_FLAGS[8];
+static int ORACLE_NORMALIZE_COMPARE_ERRORS[8];
+static int ORACLE_NORMALIZE_COMPARE_H1[8];
+static int ORACLE_NORMALIZE_COMPARE_H2[8];
+static int ORACLE_NORMALIZE_COMPARE_ENDPOINTS[8];
+static int ORACLE_NORMALIZE_COMPARE_LENGTH = 0;
+static int ORACLE_NORMALIZE_COMPARE_POSITION = 0;
+static int ORACLE_NORMALIZE_FILL_RETURNS[8];
+static int ORACLE_NORMALIZE_FILL_LENGTH = 0;
+static int ORACLE_NORMALIZE_FILL_POSITION = 0;
+static int ORACLE_NORMALIZE_FIX_LESS_RETURNS[8];
+static int ORACLE_NORMALIZE_FIX_LESS_LENGTH = 0;
+static int ORACLE_NORMALIZE_FIX_LESS_POSITION = 0;
+static int ORACLE_NORMALIZE_FIX_MORE_RETURNS[8];
+static int ORACLE_NORMALIZE_FIX_MORE_LENGTH = 0;
+static int ORACLE_NORMALIZE_FIX_MORE_POSITION = 0;
+static int ORACLE_NORMALIZE_FIX_EXTRA_RETURNS[8];
+static int ORACLE_NORMALIZE_FIX_EXTRA_LENGTH = 0;
+static int ORACLE_NORMALIZE_FIX_EXTRA_POSITION = 0;
+static int ORACLE_NORMALIZE_FIX_FIXED_RETURNS[8];
+static int ORACLE_NORMALIZE_FIX_FIXED_LENGTH = 0;
+static int ORACLE_NORMALIZE_FIX_FIXED_POSITION = 0;
+static int ORACLE_NORMALIZE_FIX_MOBILE_RETURNS[8];
+static int ORACLE_NORMALIZE_FIX_MOBILE_LENGTH = 0;
+static int ORACLE_NORMALIZE_FIX_MOBILE_POSITION = 0;
+static int ORACLE_NORMALIZE_FIX_STEREO_RETURNS[8];
+static int ORACLE_NORMALIZE_FIX_STEREO_LENGTH = 0;
+static int ORACLE_NORMALIZE_FIX_STEREO_POSITION = 0;
+static inp_ATOM *ORACLE_NORMALIZE_EXPECTED_NORM_AT[TAUT_NUM];
+static int ORACLE_NORMALIZE_EXPECTED_TINFO_PRESENT = 0;
+static int ORACLE_NORMALIZE_EXPECTED_TINFO_LENGTH = 0;
+static AT_RANK ORACLE_NORMALIZE_EXPECTED_TINFO_H[2];
+static AT_NUMB ORACLE_NORMALIZE_EXPECTED_TINFO_ENDPOINTS[2];
+
+typedef struct tagOracleNormalizeAllocation
+{
+    void *pointer;
+    const char *label;
+} ORACLE_NORMALIZE_ALLOCATION;
+
+static ORACLE_NORMALIZE_ALLOCATION ORACLE_NORMALIZE_ALLOCATIONS[16];
+static size_t ORACLE_NORMALIZE_ALLOCATION_COUNT = 0;
+
+static void oracle_normalize_event(const char *event)
+{
+    int written;
+    size_t remaining;
+    if (!ORACLE_NORMALIZE_ACTIVE)
+    {
+        return;
+    }
+    remaining = sizeof(ORACLE_NORMALIZE_EVENTS) -
+                ORACLE_NORMALIZE_EVENTS_LENGTH;
+    written = snprintf(ORACLE_NORMALIZE_EVENTS + ORACLE_NORMALIZE_EVENTS_LENGTH,
+                       remaining, "%s\"%s\"",
+                       ORACLE_NORMALIZE_EVENTS_LENGTH ? "," : "", event);
+    if (written < 0 || (size_t) written >= remaining)
+    {
+        fputs("NormalizeAndCompare event buffer exceeded\n", stderr);
+        abort();
+    }
+    ORACLE_NORMALIZE_EVENTS_LENGTH += (size_t) written;
+}
+
+static void oracle_normalize_register_allocation(void *pointer,
+                                                 const char *label)
+{
+    if (!pointer || ORACLE_NORMALIZE_ALLOCATION_COUNT >=
+                        sizeof(ORACLE_NORMALIZE_ALLOCATIONS) /
+                            sizeof(ORACLE_NORMALIZE_ALLOCATIONS[0]))
+    {
+        fputs("NormalizeAndCompare allocation registry exceeded\n", stderr);
+        abort();
+    }
+    ORACLE_NORMALIZE_ALLOCATIONS[ORACLE_NORMALIZE_ALLOCATION_COUNT].pointer =
+        pointer;
+    ORACLE_NORMALIZE_ALLOCATIONS[ORACLE_NORMALIZE_ALLOCATION_COUNT].label =
+        label;
+    ORACLE_NORMALIZE_ALLOCATION_COUNT++;
+}
+
+static void oracle_normalize_record_free(void *pointer)
+{
+    size_t index;
+    char event[96];
+    if (!ORACLE_NORMALIZE_ACTIVE)
+    {
+        return;
+    }
+    for (index = 0; index < ORACLE_NORMALIZE_ALLOCATION_COUNT; index++)
+    {
+        if (ORACLE_NORMALIZE_ALLOCATIONS[index].pointer == pointer)
+        {
+            snprintf(event, sizeof(event), "free:%s",
+                     ORACLE_NORMALIZE_ALLOCATIONS[index].label);
+            oracle_normalize_event(event);
+            return;
+        }
+    }
+    if (ORACLE_NORMALIZE_ZZ_ACTIVE)
+    {
+        return;
+    }
+    ORACLE_NORMALIZE_PREFREE_EXACT = 0;
+    oracle_normalize_event("free:unregistered");
+}
 
 static int oracle_allocation_should_fail(void)
 {
@@ -52,11 +197,59 @@ void *__wrap_malloc(size_t size)
 
 void *__wrap_calloc(size_t count, size_t size)
 {
-    if (oracle_allocation_should_fail())
+    void *pointer;
+    int should_fail = oracle_allocation_should_fail();
+    if (ORACLE_NORMALIZE_ZZ_ACTIVE)
+    {
+        ORACLE_NORMALIZE_ZZ_CALLOC_ORDINAL++;
+        should_fail = should_fail ||
+                      ORACLE_NORMALIZE_ZZ_FAILURE_STAGE ==
+                          ORACLE_NORMALIZE_ZZ_CALLOC_ORDINAL;
+    }
+    if (should_fail)
     {
         return NULL;
     }
-    return __real_calloc(count, size);
+    pointer = __real_calloc(count, size);
+    if (pointer && ORACLE_NORMALIZE_ZZ_ACTIVE)
+    {
+        ORACLE_NORMALIZE_ZZ_SUCCESSFUL_ALLOCATIONS++;
+    }
+    return pointer;
+}
+
+void *__wrap_realloc(void *pointer, size_t size)
+{
+    void *replacement;
+    size_t index;
+    if (ORACLE_NORMALIZE_ZZ_ACTIVE)
+    {
+        ORACLE_NORMALIZE_ZZ_REALLOC_CALLS++;
+        oracle_normalize_event("inchi_realloc:begin");
+        if (ORACLE_NORMALIZE_ZZ_FAILURE_STAGE == 4)
+        {
+            oracle_normalize_event("inchi_realloc:null");
+            return NULL;
+        }
+    }
+    replacement = __real_realloc(pointer, size);
+    if (ORACLE_NORMALIZE_ZZ_ACTIVE)
+    {
+        oracle_normalize_event(replacement ? "inchi_realloc:non-null"
+                                           : "inchi_realloc:null");
+        if (replacement)
+        {
+            for (index = 0; index < ORACLE_NORMALIZE_ALLOCATION_COUNT; index++)
+            {
+                if (ORACLE_NORMALIZE_ALLOCATIONS[index].pointer == pointer)
+                {
+                    ORACLE_NORMALIZE_ALLOCATIONS[index].pointer = replacement;
+                    break;
+                }
+            }
+        }
+    }
+    return replacement;
 }
 
 void __wrap_free(void *pointer)
@@ -66,6 +259,11 @@ void __wrap_free(void *pointer)
     {
         return;
     }
+    if (ORACLE_NORMALIZE_ZZ_ACTIVE)
+    {
+        ORACLE_NORMALIZE_ZZ_FREES++;
+    }
+    oracle_normalize_record_free(pointer);
     for (i = 0; i < ORACLE_DEFERRED_FREE_COUNT; i++)
     {
         if (ORACLE_DEFERRED_FREES[i] == pointer)
@@ -92,6 +290,458 @@ void __wrap_free(void *pointer)
         return;
     }
     __real_free(pointer);
+}
+
+int __real_MakeOneInChIOutOfStrFromINChI2(
+    CANON_GLOBALS *pCG, INCHI_CLOCK *ic, const INPUT_PARMS *ip,
+    STRUCT_DATA *sd, BN_STRUCT *pBNS, StrFromINChI *pStruct,
+    inp_ATOM *at, inp_ATOM *at2, inp_ATOM *at3, VAL_AT *pVA,
+    ALL_TC_GROUPS *pTCGroups, T_GROUP_INFO **t_group_info,
+    inp_ATOM **at_norm, inp_ATOM **at_prep);
+
+int __wrap_MakeOneInChIOutOfStrFromINChI2(
+    CANON_GLOBALS *pCG, INCHI_CLOCK *ic, const INPUT_PARMS *ip,
+    STRUCT_DATA *sd, BN_STRUCT *pBNS, StrFromINChI *pStruct,
+    inp_ATOM *at, inp_ATOM *at2, inp_ATOM *at3, VAL_AT *pVA,
+    ALL_TC_GROUPS *pTCGroups, T_GROUP_INFO **t_group_info,
+    inp_ATOM **at_norm, inp_ATOM **at_prep)
+{
+    if ((ORACLE_NORMALIZE_FIRST_LESS_ACTIVE ||
+         ORACLE_NORMALIZE_FINAL_ACTIVE) &&
+        ORACLE_NORMALIZE_REBUILD_POSITION < ORACLE_NORMALIZE_REBUILD_LENGTH)
+    {
+        int position = ORACLE_NORMALIZE_REBUILD_POSITION++;
+        oracle_normalize_event("MakeOneInChIOutOfStrFromINChI2");
+        *at_norm = ORACLE_NORMALIZE_REBUILD_NORM[position] ? at : NULL;
+        *at_prep = ORACLE_NORMALIZE_REBUILD_PREP[position] ? at : NULL;
+        *t_group_info = ORACLE_NORMALIZE_REBUILD_TINFO[position]
+                            ? &pStruct->One_ti
+                            : NULL;
+        return ORACLE_NORMALIZE_REBUILD_RETURNS[position];
+    }
+    if (ORACLE_NORMALIZE_ACTIVE && ORACLE_NORMALIZE_FORCE_REBUILD)
+    {
+        oracle_normalize_event("MakeOneInChIOutOfStrFromINChI2");
+        return ORACLE_NORMALIZE_FORCED_REBUILD_RETURN;
+    }
+    return __real_MakeOneInChIOutOfStrFromINChI2(
+        pCG, ic, ip, sd, pBNS, pStruct, at, at2, at3, pVA, pTCGroups,
+        t_group_info, at_norm, at_prep);
+}
+
+INCHI_MODE __real_CompareReversedINChI2(INChI *i1, INChI *i2,
+                                       INChI_Aux *a1, INChI_Aux *a2,
+                                       ICR *picr, int *err);
+
+INCHI_MODE __wrap_CompareReversedINChI2(INChI *i1, INChI *i2,
+                                       INChI_Aux *a1, INChI_Aux *a2,
+                                       ICR *picr, int *err)
+{
+    if (ORACLE_NORMALIZE_ACTIVE)
+    {
+        int reverse_index = i1 == ORACLE_NORMALIZE_REVERSED[1] ? 1 : 0;
+        int original_index = i2 == ORACLE_NORMALIZE_ORIGINAL[1] ? 1 : 0;
+        char event[72];
+        snprintf(event, sizeof(event),
+                 "CompareReversedINChI2:r%d:o%d", reverse_index,
+                 original_index);
+        oracle_normalize_event(event);
+    }
+    if ((ORACLE_NORMALIZE_FIRST_LESS_ACTIVE ||
+         ORACLE_NORMALIZE_FINAL_ACTIVE) &&
+        ORACLE_NORMALIZE_COMPARE_POSITION < ORACLE_NORMALIZE_COMPARE_LENGTH)
+    {
+        int position = ORACLE_NORMALIZE_COMPARE_POSITION++;
+        memset(picr, 0, sizeof(*picr));
+        picr->tot_num_H1 = ORACLE_NORMALIZE_COMPARE_H1[position];
+        picr->tot_num_H2 = ORACLE_NORMALIZE_COMPARE_H2[position];
+        picr->num_endp_in1_only =
+            ORACLE_NORMALIZE_COMPARE_ENDPOINTS[position];
+        *err = ORACLE_NORMALIZE_COMPARE_ERRORS[position];
+        (void) a1;
+        (void) a2;
+        return ORACLE_NORMALIZE_COMPARE_FLAGS[position];
+    }
+    if (ORACLE_NORMALIZE_ACTIVE && ORACLE_NORMALIZE_FORCE_COMPARE)
+    {
+        memset(picr, 0, sizeof(*picr));
+        *err = 0;
+        (void) a1;
+        (void) a2;
+        return IDIF_PROBLEM;
+    }
+    return __real_CompareReversedINChI2(i1, i2, a1, a2, picr, err);
+}
+
+int __real_inchi_strbuf_init(INCHI_IOS_STRING *buf, int start_size,
+                             int incr_size);
+void __real_inchi_strbuf_close(INCHI_IOS_STRING *buf);
+int __real_MergeZzInHillFormula(INCHI_IOS_STRING *strbuf);
+
+int __wrap_inchi_strbuf_init(INCHI_IOS_STRING *buf, int start_size,
+                             int incr_size)
+{
+    int result;
+    if (ORACLE_NORMALIZE_ZZ_ACTIVE)
+    {
+        oracle_normalize_event("inchi_strbuf_init:begin");
+    }
+    result = __real_inchi_strbuf_init(buf, start_size, incr_size);
+    if (ORACLE_NORMALIZE_ZZ_ACTIVE)
+    {
+        oracle_normalize_event(result > 0 ? "inchi_strbuf_init:positive"
+                                          : "inchi_strbuf_init:non-positive");
+    }
+    return result;
+}
+
+int __wrap_MergeZzInHillFormula(INCHI_IOS_STRING *strbuf)
+{
+    int result;
+    if (ORACLE_NORMALIZE_ZZ_ACTIVE)
+    {
+        oracle_normalize_event("MergeZzInHillFormula:begin");
+    }
+    result = __real_MergeZzInHillFormula(strbuf);
+    if (ORACLE_NORMALIZE_ZZ_ACTIVE && ORACLE_NORMALIZE_ZZ_FORCE_GROWTH &&
+        result == 0)
+    {
+        strbuf->nUsedLength = strbuf->nAllocatedLength + 1;
+        oracle_normalize_event("MergeZzInHillFormula:forced-growth");
+    }
+    if (ORACLE_NORMALIZE_ZZ_ACTIVE)
+    {
+        oracle_normalize_event(result == 0 ? "MergeZzInHillFormula:zero"
+                                           : "MergeZzInHillFormula:negative");
+    }
+    return result;
+}
+
+void __wrap_inchi_strbuf_close(INCHI_IOS_STRING *buf)
+{
+    if (ORACLE_NORMALIZE_ZZ_ACTIVE)
+    {
+        oracle_normalize_event("inchi_strbuf_close:begin");
+    }
+    __real_inchi_strbuf_close(buf);
+    if (ORACLE_NORMALIZE_ZZ_ACTIVE)
+    {
+        oracle_normalize_event("inchi_strbuf_close:end");
+    }
+}
+
+int oracle_test_FillOutExtraFixedHDataRestr(StrFromINChI *pStruct)
+{
+    if ((ORACLE_NORMALIZE_FIRST_LESS_ACTIVE ||
+         ORACLE_NORMALIZE_FINAL_ACTIVE) &&
+        ORACLE_NORMALIZE_FILL_POSITION < ORACLE_NORMALIZE_FILL_LENGTH)
+    {
+        oracle_normalize_event("FillOutExtraFixedHDataRestr");
+        return ORACLE_NORMALIZE_FILL_RETURNS[ORACLE_NORMALIZE_FILL_POSITION++];
+    }
+    return FillOutExtraFixedHDataRestr(pStruct);
+}
+
+int oracle_test_FixLessHydrogenInFormula(
+    BN_STRUCT *pBNS, BN_DATA *pBD, StrFromINChI *pStruct, inp_ATOM *at,
+    inp_ATOM *at2, inp_ATOM *atf, VAL_AT *pVA,
+    ALL_TC_GROUPS *pTCGroups, int *pnNumRunBNS, int *pnTotalDelta,
+    int forbidden_edge_mask)
+{
+    if (ORACLE_NORMALIZE_FIRST_LESS_ACTIVE &&
+        ORACLE_NORMALIZE_FIX_LESS_POSITION <
+            ORACLE_NORMALIZE_FIX_LESS_LENGTH)
+    {
+        oracle_normalize_event("FixLessHydrogenInFormula");
+        return ORACLE_NORMALIZE_FIX_LESS_RETURNS
+            [ORACLE_NORMALIZE_FIX_LESS_POSITION++];
+    }
+    return FixLessHydrogenInFormula(
+        pBNS, pBD, pStruct, at, at2, atf, pVA, pTCGroups, pnNumRunBNS,
+        pnTotalDelta, forbidden_edge_mask);
+}
+
+int oracle_test_FixMoreHydrogenInFormula(
+    BN_STRUCT *pBNS, BN_DATA *pBD, StrFromINChI *pStruct, inp_ATOM *at,
+    inp_ATOM *at2, inp_ATOM *atf, VAL_AT *pVA,
+    ALL_TC_GROUPS *pTCGroups, int *pnNumRunBNS, int *pnTotalDelta,
+    int forbidden_edge_mask)
+{
+    if (ORACLE_NORMALIZE_FIRST_LESS_ACTIVE &&
+        ORACLE_NORMALIZE_FIX_MORE_POSITION <
+            ORACLE_NORMALIZE_FIX_MORE_LENGTH)
+    {
+        oracle_normalize_event("FixMoreHydrogenInFormula");
+        return ORACLE_NORMALIZE_FIX_MORE_RETURNS
+            [ORACLE_NORMALIZE_FIX_MORE_POSITION++];
+    }
+    return FixMoreHydrogenInFormula(
+        pBNS, pBD, pStruct, at, at2, atf, pVA, pTCGroups, pnNumRunBNS,
+        pnTotalDelta, forbidden_edge_mask);
+}
+
+int oracle_test_FixRemoveExtraTautEndpoints(
+    BN_STRUCT *pBNS, BN_DATA *pBD, StrFromINChI *pStruct, inp_ATOM *at,
+    inp_ATOM *at2, inp_ATOM *atf, inp_ATOM *atn, VAL_AT *pVA,
+    ALL_TC_GROUPS *pTCGroups, ICR *picr, int *pnNumRunBNS,
+    int *pnTotalDelta, int forbidden_edge_mask)
+{
+    if (ORACLE_NORMALIZE_FIRST_LESS_ACTIVE &&
+        ORACLE_NORMALIZE_FIX_EXTRA_POSITION <
+            ORACLE_NORMALIZE_FIX_EXTRA_LENGTH)
+    {
+        oracle_normalize_event("FixRemoveExtraTautEndpoints");
+        return ORACLE_NORMALIZE_FIX_EXTRA_RETURNS
+            [ORACLE_NORMALIZE_FIX_EXTRA_POSITION++];
+    }
+    return FixRemoveExtraTautEndpoints(
+        pBNS, pBD, pStruct, at, at2, atf, atn, pVA, pTCGroups, picr,
+        pnNumRunBNS, pnTotalDelta, forbidden_edge_mask);
+}
+
+int __real_FixFixedHRestoredStructure(
+    CANON_GLOBALS *pCG, INCHI_CLOCK *ic, const INPUT_PARMS *ip,
+    STRUCT_DATA *sd, BN_STRUCT *pBNS, BN_DATA *pBD,
+    StrFromINChI *pStruct, inp_ATOM *at, inp_ATOM *at2, inp_ATOM *at3,
+    VAL_AT *pVA, ALL_TC_GROUPS *pTCGroups, T_GROUP_INFO **ti,
+    inp_ATOM **at_norm, inp_ATOM **at_prep, INChI *pInChI[], long num_inp,
+    int bHasSomeFixedH, int *pnNumRunBNS, int *pnTotalDelta,
+    int forbidden_edge_mask, int forbidden_stereo_edge_mask);
+
+int __wrap_FixFixedHRestoredStructure(
+    CANON_GLOBALS *pCG, INCHI_CLOCK *ic, const INPUT_PARMS *ip,
+    STRUCT_DATA *sd, BN_STRUCT *pBNS, BN_DATA *pBD,
+    StrFromINChI *pStruct, inp_ATOM *at, inp_ATOM *at2, inp_ATOM *at3,
+    VAL_AT *pVA, ALL_TC_GROUPS *pTCGroups, T_GROUP_INFO **ti,
+    inp_ATOM **at_norm, inp_ATOM **at_prep, INChI *pInChI[], long num_inp,
+    int bHasSomeFixedH, int *pnNumRunBNS, int *pnTotalDelta,
+    int forbidden_edge_mask, int forbidden_stereo_edge_mask)
+{
+    if (ORACLE_NORMALIZE_FINAL_ACTIVE &&
+        ORACLE_NORMALIZE_FIX_FIXED_POSITION <
+            ORACLE_NORMALIZE_FIX_FIXED_LENGTH)
+    {
+        char event[96];
+        snprintf(event, sizeof(event),
+                 "FixFixedHRestoredStructure:num_inp=%ld", num_inp);
+        oracle_normalize_event(event);
+        return ORACLE_NORMALIZE_FIX_FIXED_RETURNS
+            [ORACLE_NORMALIZE_FIX_FIXED_POSITION++];
+    }
+    return __real_FixFixedHRestoredStructure(
+        pCG, ic, ip, sd, pBNS, pBD, pStruct, at, at2, at3, pVA,
+        pTCGroups, ti, at_norm, at_prep, pInChI, num_inp, bHasSomeFixedH,
+        pnNumRunBNS, pnTotalDelta, forbidden_edge_mask,
+        forbidden_stereo_edge_mask);
+}
+
+int __real_FixMobileHRestoredStructure(
+    CANON_GLOBALS *pCG, INCHI_CLOCK *ic, const INPUT_PARMS *ip,
+    STRUCT_DATA *sd, BN_STRUCT *pBNS, BN_DATA *pBD,
+    StrFromINChI *pStruct, inp_ATOM *at, inp_ATOM *at2, inp_ATOM *at3,
+    VAL_AT *pVA, ALL_TC_GROUPS *pTCGroups, T_GROUP_INFO **ti,
+    inp_ATOM **at_norm, inp_ATOM **at_prep, INChI *pInChI[], long num_inp,
+    int bHasSomeFixedH, int *pnNumRunBNS, int *pnTotalDelta,
+    int forbidden_edge_mask, int forbidden_stereo_edge_mask);
+
+int __wrap_FixMobileHRestoredStructure(
+    CANON_GLOBALS *pCG, INCHI_CLOCK *ic, const INPUT_PARMS *ip,
+    STRUCT_DATA *sd, BN_STRUCT *pBNS, BN_DATA *pBD,
+    StrFromINChI *pStruct, inp_ATOM *at, inp_ATOM *at2, inp_ATOM *at3,
+    VAL_AT *pVA, ALL_TC_GROUPS *pTCGroups, T_GROUP_INFO **ti,
+    inp_ATOM **at_norm, inp_ATOM **at_prep, INChI *pInChI[], long num_inp,
+    int bHasSomeFixedH, int *pnNumRunBNS, int *pnTotalDelta,
+    int forbidden_edge_mask, int forbidden_stereo_edge_mask)
+{
+    if (ORACLE_NORMALIZE_FINAL_ACTIVE &&
+        ORACLE_NORMALIZE_FIX_MOBILE_POSITION <
+            ORACLE_NORMALIZE_FIX_MOBILE_LENGTH)
+    {
+        char event[96];
+        snprintf(event, sizeof(event),
+                 "FixMobileHRestoredStructure:num_inp=%ld", num_inp);
+        oracle_normalize_event(event);
+        return ORACLE_NORMALIZE_FIX_MOBILE_RETURNS
+            [ORACLE_NORMALIZE_FIX_MOBILE_POSITION++];
+    }
+    return __real_FixMobileHRestoredStructure(
+        pCG, ic, ip, sd, pBNS, pBD, pStruct, at, at2, at3, pVA,
+        pTCGroups, ti, at_norm, at_prep, pInChI, num_inp, bHasSomeFixedH,
+        pnNumRunBNS, pnTotalDelta, forbidden_edge_mask,
+        forbidden_stereo_edge_mask);
+}
+
+int __real_FixRestoredStructureStereo(
+    CANON_GLOBALS *pCG, INCHI_CLOCK *ic, INCHI_MODE cmpInChI, ICR *icr,
+    INCHI_MODE cmpInChI2, ICR *icr2, const INPUT_PARMS *ip,
+    STRUCT_DATA *sd, BN_STRUCT *pBNS, BN_DATA *pBD,
+    StrFromINChI *pStruct, inp_ATOM *at, inp_ATOM *at2, inp_ATOM *at3,
+    VAL_AT *pVA, ALL_TC_GROUPS *pTCGroups, T_GROUP_INFO **ti,
+    inp_ATOM **at_norm, inp_ATOM **at_prep, INChI *pInChI[], long num_inp,
+    int *pnNumRunBNS, int *pnTotalDelta, int forbidden_edge_mask,
+    int forbidden_stereo_edge_mask);
+
+int __wrap_FixRestoredStructureStereo(
+    CANON_GLOBALS *pCG, INCHI_CLOCK *ic, INCHI_MODE cmpInChI, ICR *icr,
+    INCHI_MODE cmpInChI2, ICR *icr2, const INPUT_PARMS *ip,
+    STRUCT_DATA *sd, BN_STRUCT *pBNS, BN_DATA *pBD,
+    StrFromINChI *pStruct, inp_ATOM *at, inp_ATOM *at2, inp_ATOM *at3,
+    VAL_AT *pVA, ALL_TC_GROUPS *pTCGroups, T_GROUP_INFO **ti,
+    inp_ATOM **at_norm, inp_ATOM **at_prep, INChI *pInChI[], long num_inp,
+    int *pnNumRunBNS, int *pnTotalDelta, int forbidden_edge_mask,
+    int forbidden_stereo_edge_mask)
+{
+    if (ORACLE_NORMALIZE_FINAL_ACTIVE &&
+        ORACLE_NORMALIZE_FIX_STEREO_POSITION <
+            ORACLE_NORMALIZE_FIX_STEREO_LENGTH)
+    {
+        oracle_normalize_event("FixRestoredStructureStereo");
+        return ORACLE_NORMALIZE_FIX_STEREO_RETURNS
+            [ORACLE_NORMALIZE_FIX_STEREO_POSITION++];
+    }
+    return __real_FixRestoredStructureStereo(
+        pCG, ic, cmpInChI, icr, cmpInChI2, icr2, ip, sd, pBNS, pBD,
+        pStruct, at, at2, at3, pVA, pTCGroups, ti, at_norm, at_prep,
+        pInChI, num_inp, pnNumRunBNS, pnTotalDelta, forbidden_edge_mask,
+        forbidden_stereo_edge_mask);
+}
+
+int __real_Free_INChI(INChI **inchi);
+int __real_Free_INChI_Aux(INChI_Aux **aux);
+void __real_FreeInpAtomData(INP_ATOM_DATA *data);
+int __real_free_t_group_info(T_GROUP_INFO *info);
+
+int __wrap_Free_INChI(INChI **inchi)
+{
+    int index;
+    if (ORACLE_NORMALIZE_ACTIVE)
+    {
+        char event[64];
+        for (index = 0; index < TAUT_NUM; index++)
+        {
+            if (ORACLE_NORMALIZE_INCHI_HOLDERS[index] == inchi)
+            {
+                snprintf(event, sizeof(event), "Free_INChI[%d]:%s", index,
+                         *inchi ? "present" : "null");
+                oracle_normalize_event(event);
+                if (*inchi && ((*inchi)->nErrorCode != 100 + index ||
+                               (*inchi)->nNumberOfAtoms !=
+                                   ORACLE_NORMALIZE_EXPECTED_INCHI_ATOMS[index] ||
+                               (*inchi)->nRefCount != 0))
+                {
+                    ORACLE_NORMALIZE_PREFREE_EXACT = 0;
+                }
+                break;
+            }
+        }
+        if (*inchi && (*inchi)->szHillFormula)
+        {
+            snprintf(ORACLE_NORMALIZE_ZZ_FORMULA,
+                     sizeof(ORACLE_NORMALIZE_ZZ_FORMULA), "%s",
+                     (*inchi)->szHillFormula);
+        }
+    }
+    return __real_Free_INChI(inchi);
+}
+
+int __wrap_Free_INChI_Aux(INChI_Aux **aux)
+{
+    int index;
+    if (ORACLE_NORMALIZE_ACTIVE)
+    {
+        char event[72];
+        for (index = 0; index < TAUT_NUM; index++)
+        {
+            if (ORACLE_NORMALIZE_AUX_HOLDERS[index] == aux)
+            {
+                snprintf(event, sizeof(event), "Free_INChI_Aux[%d]:%s", index,
+                         *aux ? "present" : "null");
+                oracle_normalize_event(event);
+                if (*aux && ((*aux)->nErrorCode != 200 + index ||
+                             (*aux)->nNumberOfAtoms != 20 + index ||
+                             (*aux)->nRefCount != 0))
+                {
+                    ORACLE_NORMALIZE_PREFREE_EXACT = 0;
+                }
+                break;
+            }
+        }
+    }
+    return __real_Free_INChI_Aux(aux);
+}
+
+void __wrap_FreeInpAtomData(INP_ATOM_DATA *data)
+{
+    int index;
+    if (ORACLE_NORMALIZE_ACTIVE)
+    {
+        char event[72];
+        for (index = 0; index < TAUT_NUM; index++)
+        {
+            if (ORACLE_NORMALIZE_NORM_HOLDERS[index] == data ||
+                (!data && !ORACLE_NORMALIZE_NORM_HOLDERS[index]))
+            {
+                snprintf(event, sizeof(event), "FreeInpAtomData[%d]:%s", index,
+                         data ? "present" : "null");
+                oracle_normalize_event(event);
+                if (data &&
+                    (data->num_at != 30 + index ||
+                     data->num_bonds != 40 + index ||
+                     data->at != ORACLE_NORMALIZE_EXPECTED_NORM_AT[index] ||
+                     data->at_fixed_bonds))
+                {
+                    ORACLE_NORMALIZE_PREFREE_EXACT = 0;
+                }
+                ORACLE_NORMALIZE_NORM_HOLDERS[index] =
+                    (INP_ATOM_DATA *) (uintptr_t) 1;
+                break;
+            }
+        }
+    }
+    __real_FreeInpAtomData(data);
+}
+
+int __wrap_free_t_group_info(T_GROUP_INFO *info)
+{
+    if (ORACLE_NORMALIZE_ACTIVE)
+    {
+        int index;
+        oracle_normalize_event(info && info->t_group
+                                   ? "free_t_group_info:present"
+                                   : "free_t_group_info:null");
+        if (ORACLE_NORMALIZE_FINAL_ACTIVE)
+        {
+            if (!info || (!!info->t_group !=
+                          ORACLE_NORMALIZE_EXPECTED_TINFO_PRESENT) ||
+                info->num_t_groups != ORACLE_NORMALIZE_EXPECTED_TINFO_LENGTH)
+            {
+                ORACLE_NORMALIZE_PREFREE_EXACT = 0;
+            }
+            else
+            {
+                for (index = 0;
+                     index < ORACLE_NORMALIZE_EXPECTED_TINFO_LENGTH;
+                     index++)
+                {
+                    if (info->t_group[index].num[0] !=
+                            ORACLE_NORMALIZE_EXPECTED_TINFO_H[index] ||
+                        info->t_group[index].nNumEndpoints !=
+                            ORACLE_NORMALIZE_EXPECTED_TINFO_ENDPOINTS[index])
+                    {
+                        ORACLE_NORMALIZE_PREFREE_EXACT = 0;
+                    }
+                }
+            }
+        }
+        else if (!info || !info->t_group || info->num_t_groups != 1 ||
+                 info->t_group[0].nNumEndpoints != 51 ||
+                 info->t_group[0].num[0] != 52 ||
+                 info->t_group[0].num[1] != 53)
+        {
+            ORACLE_NORMALIZE_PREFREE_EXACT = 0;
+        }
+    }
+    return __real_free_t_group_info(info);
 }
 
 static void oracle_flush_deferred_frees(void)
@@ -129,6 +779,29 @@ int InchiToInchi_Input(INCHI_IOSTREAM *inp_molfile,
                        INCHI_MODE *pInpAtomFlags,
                        int *err,
                        char *pStrErr);
+int cmp_components(const void *a1, const void *a2);
+int cmp_rad_endpoints(const void *a1, const void *a2);
+int cmp_iso_atw_diff_component_no(const void *a1, const void *a2);
+int CompTGroupNumber(const void *tg1, const void *tg2, void *p);
+int CompCGroupNumber(const void *cg1, const void *cg2, void *p);
+int CompNeighLists(const void *a1, const void *a2, void *p);
+int CompNeighListsUpToMaxRank(const void *a1, const void *a2, void *p);
+int cmp_charge_val(const void *a1, const void *a2, void *p);
+int comp_cc_cand(const void *a1, const void *a2);
+const char *base26_triplet_1(const unsigned char *a);
+const char *base26_triplet_2(const unsigned char *a);
+const char *base26_triplet_3(const unsigned char *a);
+const char *base26_triplet_4(const unsigned char *a);
+const char *base26_dublet_for_bits_28_to_36(unsigned char *a);
+const char *base26_dublet_for_bits_56_to_64(unsigned char *a);
+void get_xtra_hash_major_hex(const unsigned char *a, char *szXtra);
+void get_xtra_hash_minor_hex(const unsigned char *a, char *szXtra);
+void oracle_sha2_starts(sha2_context *ctx);
+void oracle_sha2_process(sha2_context *ctx, unsigned char data[64]);
+void oracle_sha2_update(sha2_context *ctx, unsigned char *input, int ilen);
+void oracle_sha2_finish(sha2_context *ctx, unsigned char output[32]);
+void oracle_sha2_csum(unsigned char *input, int ilen,
+                      unsigned char output[32]);
 
 static const char *EXPECTED_VERSION = "1.07.5";
 static const char *EXPECTED_DESCRIPTION =
@@ -1301,6 +1974,21 @@ static void print_u8_array(const unsigned char *values, int length)
             putchar(',');
         }
         printf("%u", (unsigned int) values[i]);
+    }
+    putchar(']');
+}
+
+static void print_ulong_array(const unsigned long *values, int length)
+{
+    int index;
+    putchar('[');
+    for (index = 0; index < length; index++)
+    {
+        if (index)
+        {
+            putchar(',');
+        }
+        printf("%" PRIu64, (uint64_t) values[index]);
     }
     putchar(']');
 }
@@ -3861,6 +4549,3757 @@ static int print_inchi_to_atom_records(void)
     return 0;
 }
 
+typedef struct tagOracleComponentCase
+{
+    const char *case_id;
+    AT_NUMB first[3];
+    AT_NUMB second[3];
+} ORACLE_COMPONENT_CASE;
+
+static const ORACLE_COMPONENT_CASE COMPONENT_CASES[] = {
+    { "size-descending", { 9, 4, 0 }, { 3, 0, 0 } },
+    { "size-ascending", { 3, 0, 0 }, { 9, 4, 0 } },
+    { "size-max-min", { 65535, 0, 0 }, { 0, 0, 0 } },
+    { "size-min-max", { 0, 0, 0 }, { 65535, 0, 0 } },
+    { "order-ascending", { 7, 2, 0 }, { 7, 8, 0 } },
+    { "order-descending", { 7, 8, 0 }, { 7, 2, 0 } },
+    { "order-min-max", { 7, 0, 0 }, { 7, 65535, 0 } },
+    { "order-max-min", { 7, 65535, 0 }, { 7, 0, 0 } },
+    { "equal-keys-third-diff", { 7, 2, 0 }, { 7, 2, 65535 } },
+    { "all-equal", { 65535, 65535, 65535 }, { 65535, 65535, 65535 } },
+};
+
+static int print_cmp_components_records(void)
+{
+    size_t i;
+    for (i = 0; i < sizeof(COMPONENT_CASES) / sizeof(COMPONENT_CASES[0]); i++)
+    {
+        const ORACLE_COMPONENT_CASE *test_case = COMPONENT_CASES + i;
+        int result = cmp_components(test_case->first, test_case->second);
+        fputs("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+              "\"case_id\":", stdout);
+        print_json_string(test_case->case_id);
+        printf(",\"operation\":\"cmp_components\","
+               "\"input\":{\"first\":[%u,%u,%u],"
+               "\"second\":[%u,%u,%u]},"
+               "\"output\":{\"result\":%d}}\n",
+               (unsigned int) test_case->first[0],
+               (unsigned int) test_case->first[1],
+               (unsigned int) test_case->first[2],
+               (unsigned int) test_case->second[0],
+               (unsigned int) test_case->second[1],
+               (unsigned int) test_case->second[2],
+               result);
+    }
+    return 0;
+}
+
+typedef struct tagOracleRadEndpointCase
+{
+    const char *case_id;
+    int first[2];
+    int second[2];
+} ORACLE_RAD_ENDPOINT_CASE;
+
+static const ORACLE_RAD_ENDPOINT_CASE RAD_ENDPOINT_CASES[] = {
+    { "first-field-less", { INT_MIN, INT_MAX }, { 0, 0 } },
+    { "first-field-greater", { INT_MAX, INT_MIN }, { 0, 0 } },
+    { "second-field-less", { 7, INT_MIN }, { 7, 0 } },
+    { "second-field-greater", { 7, INT_MAX }, { 7, 0 } },
+    { "both-fields-equal", { 7, 11 }, { 7, 11 } },
+};
+
+static int print_cmp_rad_endpoints_records(void)
+{
+    size_t i;
+    for (i = 0; i < sizeof(RAD_ENDPOINT_CASES) / sizeof(RAD_ENDPOINT_CASES[0]); i++)
+    {
+        const ORACLE_RAD_ENDPOINT_CASE *test_case = RAD_ENDPOINT_CASES + i;
+        int result = cmp_rad_endpoints(test_case->first, test_case->second);
+        fputs("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+              "\"case_id\":", stdout);
+        print_json_string(test_case->case_id);
+        printf(",\"operation\":\"cmp_rad_endpoints\","
+               "\"input\":{\"first\":[%d,%d],"
+               "\"second\":[%d,%d]},"
+               "\"output\":{\"result\":%d}}\n",
+               test_case->first[0],
+               test_case->first[1],
+               test_case->second[0],
+               test_case->second[1],
+               result);
+    }
+    return 0;
+}
+
+typedef struct tagOracleTGroupCase
+{
+    const char *case_id;
+    AT_NUMB first_group_number;
+    AT_NUMB second_group_number;
+    int context_nonnull;
+} ORACLE_T_GROUP_CASE;
+
+static const ORACLE_T_GROUP_CASE T_GROUP_CASES[] = {
+    { "minimum-minus-maximum-null-context", 0, 65535, 0 },
+    { "maximum-minus-minimum-nonnull-context", 65535, 0, 1 },
+    { "equal-null-context", 17, 17, 0 },
+    { "ascending-nonnull-context", 11, 29, 1 },
+    { "descending-null-context", 29, 11, 0 },
+};
+
+static int print_comp_t_group_number_records(void)
+{
+    size_t i;
+    for (i = 0; i < sizeof(T_GROUP_CASES) / sizeof(T_GROUP_CASES[0]); i++)
+    {
+        const ORACLE_T_GROUP_CASE *test_case = T_GROUP_CASES + i;
+        T_GROUP first;
+        T_GROUP second;
+        T_GROUP first_before;
+        T_GROUP second_before;
+        int context = 0x13579bdf;
+        int context_before = context;
+        int result;
+
+        memset(&first, 0xa5, sizeof(first));
+        memset(&second, 0x5a, sizeof(second));
+        first.nGroupNumber = test_case->first_group_number;
+        second.nGroupNumber = test_case->second_group_number;
+        memcpy(&first_before, &first, sizeof(first));
+        memcpy(&second_before, &second, sizeof(second));
+        result = CompTGroupNumber(
+            &first,
+            &second,
+            test_case->context_nonnull ? &context : NULL);
+
+        fputs("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+              "\"case_id\":", stdout);
+        print_json_string(test_case->case_id);
+        printf(",\"operation\":\"CompTGroupNumber\","
+               "\"input\":{\"first_group_number\":%u,"
+               "\"second_group_number\":%u,"
+               "\"context_nonnull\":%s},"
+               "\"output\":{\"result\":%d,"
+               "\"first_unchanged\":%s,"
+               "\"second_unchanged\":%s,"
+               "\"context_unchanged\":%s}}\n",
+               (unsigned int) test_case->first_group_number,
+               (unsigned int) test_case->second_group_number,
+               test_case->context_nonnull ? "true" : "false",
+               result,
+               memcmp(&first, &first_before, sizeof(first)) == 0 ? "true" : "false",
+               memcmp(&second, &second_before, sizeof(second)) == 0 ? "true" : "false",
+               context == context_before ? "true" : "false");
+    }
+    return 0;
+}
+
+typedef struct tagOracleCGroupCase
+{
+    const char *case_id;
+    AT_NUMB first_group_number;
+    AT_NUMB second_group_number;
+    int context_nonnull;
+} ORACLE_C_GROUP_CASE;
+
+static const ORACLE_C_GROUP_CASE C_GROUP_CASES[] = {
+    { "minimum-minus-maximum-null-context", 0, 65535, 0 },
+    { "maximum-minus-minimum-nonnull-context", 65535, 0, 1 },
+    { "equal-null-context", 23, 23, 0 },
+    { "ascending-nonnull-context", 11, 29, 1 },
+    { "descending-null-context", 29, 11, 0 },
+};
+
+static int print_comp_c_group_number_records(void)
+{
+    size_t i;
+    for (i = 0; i < sizeof(C_GROUP_CASES) / sizeof(C_GROUP_CASES[0]); i++)
+    {
+        const ORACLE_C_GROUP_CASE *test_case = C_GROUP_CASES + i;
+        C_GROUP first;
+        C_GROUP second;
+        C_GROUP first_before;
+        C_GROUP second_before;
+        int context = 0x2468ace;
+        int context_before = context;
+        int result;
+
+        memset(&first, 0xa5, sizeof(first));
+        memset(&second, 0x5a, sizeof(second));
+        first.nGroupNumber = test_case->first_group_number;
+        second.nGroupNumber = test_case->second_group_number;
+        memcpy(&first_before, &first, sizeof(first));
+        memcpy(&second_before, &second, sizeof(second));
+        result = CompCGroupNumber(
+            &first,
+            &second,
+            test_case->context_nonnull ? &context : NULL);
+
+        fputs("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+              "\"case_id\":", stdout);
+        print_json_string(test_case->case_id);
+        printf(",\"operation\":\"CompCGroupNumber\","
+               "\"input\":{\"first_group_number\":%u,"
+               "\"second_group_number\":%u,"
+               "\"context_nonnull\":%s},"
+               "\"output\":{\"result\":%d,"
+               "\"first_unchanged\":%s,"
+               "\"second_unchanged\":%s,"
+               "\"context_unchanged\":%s}}\n",
+               (unsigned int) test_case->first_group_number,
+               (unsigned int) test_case->second_group_number,
+               test_case->context_nonnull ? "true" : "false",
+               result,
+               memcmp(&first, &first_before, sizeof(first)) == 0 ? "true" : "false",
+               memcmp(&second, &second_before, sizeof(second)) == 0 ? "true" : "false",
+               context == context_before ? "true" : "false");
+    }
+    return 0;
+}
+
+typedef struct tagOracleIsoComponentCase
+{
+    const char *case_id;
+    S_CHAR first_iso_atw_diff;
+    AT_NUMB first_component;
+    S_CHAR second_iso_atw_diff;
+    AT_NUMB second_component;
+} ORACLE_ISO_COMPONENT_CASE;
+
+static const ORACLE_ISO_COMPONENT_CASE ISO_COMPONENT_CASES[] = {
+    { "isotope-minimum-minus-maximum", -128, 65535, 127, 0 },
+    { "isotope-maximum-minus-minimum", 127, 0, -128, 65535 },
+    { "isotope-priority-over-component", -1, 65535, 0, 0 },
+    { "component-minimum-minus-maximum", 7, 0, 7, 65535 },
+    { "component-maximum-minus-minimum", 7, 65535, 7, 0 },
+    { "component-ascending", 7, 11, 7, 29 },
+    { "both-fields-equal", 7, 23, 7, 23 },
+};
+
+static int print_cmp_iso_atw_diff_component_no_records(void)
+{
+    size_t i;
+    for (i = 0; i < sizeof(ISO_COMPONENT_CASES) / sizeof(ISO_COMPONENT_CASES[0]); i++)
+    {
+        const ORACLE_ISO_COMPONENT_CASE *test_case = ISO_COMPONENT_CASES + i;
+        inp_ATOM first;
+        inp_ATOM second;
+        inp_ATOM first_before;
+        inp_ATOM second_before;
+        int result;
+
+        memset(&first, 0xa5, sizeof(first));
+        memset(&second, 0x5a, sizeof(second));
+        first.iso_atw_diff = test_case->first_iso_atw_diff;
+        first.component = test_case->first_component;
+        second.iso_atw_diff = test_case->second_iso_atw_diff;
+        second.component = test_case->second_component;
+        memcpy(&first_before, &first, sizeof(first));
+        memcpy(&second_before, &second, sizeof(second));
+        result = cmp_iso_atw_diff_component_no(&first, &second);
+
+        fputs("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+              "\"case_id\":", stdout);
+        print_json_string(test_case->case_id);
+        printf(",\"operation\":\"cmp_iso_atw_diff_component_no\","
+               "\"input\":{\"first_iso_atw_diff\":%d,"
+               "\"first_component\":%u,"
+               "\"second_iso_atw_diff\":%d,"
+               "\"second_component\":%u},"
+               "\"output\":{\"result\":%d,"
+               "\"first_unchanged\":%s,"
+               "\"second_unchanged\":%s}}\n",
+               (int) test_case->first_iso_atw_diff,
+               (unsigned int) test_case->first_component,
+               (int) test_case->second_iso_atw_diff,
+               (unsigned int) test_case->second_component,
+               result,
+               memcmp(&first, &first_before, sizeof(first)) == 0 ? "true" : "false",
+               memcmp(&second, &second_before, sizeof(second)) == 0 ? "true" : "false");
+    }
+    return 0;
+}
+
+typedef struct tagOracleNeighListsCase
+{
+    const char *case_id;
+    AT_RANK first_list[3];
+    AT_RANK second_list[3];
+} ORACLE_NEIGH_LISTS_CASE;
+
+static const ORACLE_NEIGH_LISTS_CASE NEIGH_LISTS_CASES[] = {
+    { "first-rank-less", { 1, 1, 0 }, { 1, 2, 0 } },
+    { "first-rank-greater", { 1, 2, 0 }, { 1, 1, 0 } },
+    { "later-rank-less", { 2, 1, 2 }, { 2, 1, 3 } },
+    { "equal", { 2, 1, 2 }, { 2, 1, 2 } },
+    { "first-shorter", { 1, 1, 0 }, { 2, 1, 2 } },
+    { "first-longer", { 2, 1, 2 }, { 1, 1, 0 } },
+    { "rank-boundary", { 1, 0, 0 }, { 1, 4, 0 } },
+};
+
+static int print_comp_neigh_lists_records(void)
+{
+    static const AT_RANK RANK_TEMPLATE[5] = { 0, 10, 20, 30, 65535 };
+    size_t i;
+    for (i = 0; i < sizeof(NEIGH_LISTS_CASES) / sizeof(NEIGH_LISTS_CASES[0]); i++)
+    {
+        const ORACLE_NEIGH_LISTS_CASE *test_case = NEIGH_LISTS_CASES + i;
+        AT_RANK first_list[3];
+        AT_RANK second_list[3];
+        AT_RANK first_before[3];
+        AT_RANK second_before[3];
+        AT_RANK ranks[5];
+        AT_RANK ranks_before[5];
+        NEIGH_LIST lists[2];
+        NEIGH_LIST lists_before[2];
+        AT_RANK first_index = 0;
+        AT_RANK second_index = 1;
+        AT_RANK first_index_before = first_index;
+        AT_RANK second_index_before = second_index;
+        CANON_GLOBALS globals;
+        CANON_GLOBALS globals_before;
+        int result;
+
+        memcpy(first_list, test_case->first_list, sizeof(first_list));
+        memcpy(second_list, test_case->second_list, sizeof(second_list));
+        memcpy(ranks, RANK_TEMPLATE, sizeof(ranks));
+        lists[0] = first_list;
+        lists[1] = second_list;
+        memset(&globals, 0xa5, sizeof(globals));
+        globals.m_pNeighList_RankForSort = lists;
+        globals.m_pn_RankForSort = ranks;
+        memcpy(first_before, first_list, sizeof(first_list));
+        memcpy(second_before, second_list, sizeof(second_list));
+        memcpy(ranks_before, ranks, sizeof(ranks));
+        memcpy(lists_before, lists, sizeof(lists));
+        memcpy(&globals_before, &globals, sizeof(globals));
+
+        result = CompNeighLists(&first_index, &second_index, &globals);
+
+        fputs("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+              "\"case_id\":", stdout);
+        print_json_string(test_case->case_id);
+        printf(",\"operation\":\"CompNeighLists\","
+               "\"input\":{\"first_list\":[%u,%u,%u],"
+               "\"second_list\":[%u,%u,%u],"
+               "\"ranks\":[%u,%u,%u,%u,%u],"
+               "\"first_index\":%u,\"second_index\":%u},"
+               "\"output\":{\"result\":%d,"
+               "\"first_list_unchanged\":%s,"
+               "\"second_list_unchanged\":%s,"
+               "\"ranks_unchanged\":%s,"
+               "\"list_pointers_unchanged\":%s,"
+               "\"indices_unchanged\":%s,"
+               "\"globals_unchanged\":%s}}\n",
+               (unsigned int) first_list[0],
+               (unsigned int) first_list[1],
+               (unsigned int) first_list[2],
+               (unsigned int) second_list[0],
+               (unsigned int) second_list[1],
+               (unsigned int) second_list[2],
+               (unsigned int) ranks[0],
+               (unsigned int) ranks[1],
+               (unsigned int) ranks[2],
+               (unsigned int) ranks[3],
+               (unsigned int) ranks[4],
+               (unsigned int) first_index,
+               (unsigned int) second_index,
+               result,
+               memcmp(first_list, first_before, sizeof(first_list)) == 0 ? "true" : "false",
+               memcmp(second_list, second_before, sizeof(second_list)) == 0 ? "true" : "false",
+               memcmp(ranks, ranks_before, sizeof(ranks)) == 0 ? "true" : "false",
+               memcmp(lists, lists_before, sizeof(lists)) == 0 ? "true" : "false",
+               first_index == first_index_before && second_index == second_index_before ? "true" : "false",
+               memcmp(&globals, &globals_before, sizeof(globals)) == 0 ? "true" : "false");
+    }
+    return 0;
+}
+
+typedef struct tagOracleNeighListsUpToMaxRankCase
+{
+    const char *case_id;
+    AT_RANK first_list[4];
+    AT_RANK second_list[4];
+    AT_RANK max_rank;
+} ORACLE_NEIGH_LISTS_UP_TO_MAX_RANK_CASE;
+
+static const ORACLE_NEIGH_LISTS_UP_TO_MAX_RANK_CASE NEIGH_LISTS_UP_TO_MAX_RANK_CASES[] = {
+    { "first-rank-less", { 3, 0, 1, 3 }, { 3, 0, 2, 4 }, 10 },
+    { "first-rank-greater", { 3, 0, 2, 4 }, { 3, 0, 1, 3 }, 10 },
+    { "trimmed-equal", { 3, 0, 1, 3 }, { 3, 0, 2, 4 }, 1 },
+    { "first-shorter", { 1, 0, 0, 0 }, { 2, 0, 1, 0 }, 2 },
+    { "first-longer", { 2, 0, 1, 0 }, { 1, 0, 0, 0 }, 2 },
+    { "all-trimmed", { 1, 3, 0, 0 }, { 1, 4, 0, 0 }, 0 },
+    { "rank-maximum-included", { 1, 5, 0, 0 }, { 1, 4, 0, 0 }, 65535 },
+    { "rank-maximum-excluded", { 1, 5, 0, 0 }, { 1, 4, 0, 0 }, 65534 },
+};
+
+static int print_comp_neigh_lists_up_to_max_rank_records(void)
+{
+    static const AT_RANK RANK_TEMPLATE[6] = { 1, 2, 3, 9, 10, 65535 };
+    size_t i;
+    for (i = 0;
+         i < sizeof(NEIGH_LISTS_UP_TO_MAX_RANK_CASES) /
+                 sizeof(NEIGH_LISTS_UP_TO_MAX_RANK_CASES[0]);
+         i++)
+    {
+        const ORACLE_NEIGH_LISTS_UP_TO_MAX_RANK_CASE *test_case =
+            NEIGH_LISTS_UP_TO_MAX_RANK_CASES + i;
+        AT_RANK first_list[4];
+        AT_RANK second_list[4];
+        AT_RANK first_before[4];
+        AT_RANK second_before[4];
+        AT_RANK ranks[6];
+        AT_RANK ranks_before[6];
+        NEIGH_LIST lists[2];
+        NEIGH_LIST lists_before[2];
+        AT_RANK first_index = 0;
+        AT_RANK second_index = 1;
+        AT_RANK first_index_before = first_index;
+        AT_RANK second_index_before = second_index;
+        CANON_GLOBALS globals;
+        CANON_GLOBALS globals_before;
+        int result;
+
+        memcpy(first_list, test_case->first_list, sizeof(first_list));
+        memcpy(second_list, test_case->second_list, sizeof(second_list));
+        memcpy(ranks, RANK_TEMPLATE, sizeof(ranks));
+        lists[0] = first_list;
+        lists[1] = second_list;
+        memset(&globals, 0xa5, sizeof(globals));
+        globals.m_pNeighList_RankForSort = lists;
+        globals.m_pn_RankForSort = ranks;
+        globals.m_nMaxAtNeighRankForSort = test_case->max_rank;
+        memcpy(first_before, first_list, sizeof(first_list));
+        memcpy(second_before, second_list, sizeof(second_list));
+        memcpy(ranks_before, ranks, sizeof(ranks));
+        memcpy(lists_before, lists, sizeof(lists));
+        memcpy(&globals_before, &globals, sizeof(globals));
+
+        result = CompNeighListsUpToMaxRank(&first_index, &second_index, &globals);
+
+        fputs("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+              "\"case_id\":", stdout);
+        print_json_string(test_case->case_id);
+        printf(",\"operation\":\"CompNeighListsUpToMaxRank\","
+               "\"input\":{\"first_list\":[%u,%u,%u,%u],"
+               "\"second_list\":[%u,%u,%u,%u],"
+               "\"ranks\":[%u,%u,%u,%u,%u,%u],"
+               "\"max_rank\":%u,"
+               "\"first_index\":%u,\"second_index\":%u},"
+               "\"output\":{\"result\":%d,"
+               "\"first_list_unchanged\":%s,"
+               "\"second_list_unchanged\":%s,"
+               "\"ranks_unchanged\":%s,"
+               "\"list_pointers_unchanged\":%s,"
+               "\"indices_unchanged\":%s,"
+               "\"globals_unchanged\":%s}}\n",
+               (unsigned int) first_list[0],
+               (unsigned int) first_list[1],
+               (unsigned int) first_list[2],
+               (unsigned int) first_list[3],
+               (unsigned int) second_list[0],
+               (unsigned int) second_list[1],
+               (unsigned int) second_list[2],
+               (unsigned int) second_list[3],
+               (unsigned int) ranks[0],
+               (unsigned int) ranks[1],
+               (unsigned int) ranks[2],
+               (unsigned int) ranks[3],
+               (unsigned int) ranks[4],
+               (unsigned int) ranks[5],
+               (unsigned int) globals.m_nMaxAtNeighRankForSort,
+               (unsigned int) first_index,
+               (unsigned int) second_index,
+               result,
+               memcmp(first_list, first_before, sizeof(first_list)) == 0 ? "true" : "false",
+               memcmp(second_list, second_before, sizeof(second_list)) == 0 ? "true" : "false",
+               memcmp(ranks, ranks_before, sizeof(ranks)) == 0 ? "true" : "false",
+               memcmp(lists, lists_before, sizeof(lists)) == 0 ? "true" : "false",
+               first_index == first_index_before && second_index == second_index_before ? "true" : "false",
+               memcmp(&globals, &globals_before, sizeof(globals)) == 0 ? "true" : "false");
+    }
+    return 0;
+}
+
+typedef struct tagOracleChargeValCase
+{
+    const char *case_id;
+    int first_valence;
+    int first_charge;
+    int first_order;
+    int second_valence;
+    int second_charge;
+    int second_order;
+} ORACLE_CHARGE_VAL_CASE;
+
+static const ORACLE_CHARGE_VAL_CASE CHARGE_VAL_CASES[] = {
+    { "valence-less", 1, 0, 0, 2, 0, 0 },
+    { "valence-greater", 2, 0, 0, 1, 0, 0 },
+    { "absolute-charge-less", 2, 0, 0, 2, 1, 0 },
+    { "absolute-charge-greater", 2, 2, 0, 2, 1, 0 },
+    { "positive-before-negative", 2, 1, 0, 2, -1, 0 },
+    { "negative-after-positive", 2, -1, 0, 2, 1, 0 },
+    { "ordering-less", 2, 1, 3, 2, 1, 5 },
+    { "ordering-greater", 2, 1, 5, 2, 1, 3 },
+    { "equal", 2, 1, 3, 2, 1, 3 },
+    { "valence-minimum", INT_MIN, 0, 0, 0, 0, 0 },
+    { "valence-maximum", INT_MAX, 0, 0, 0, 0, 0 },
+    { "absolute-charge-maximum", 0, INT_MAX, 0, 0, 0, 0 },
+    { "ordering-minimum", 0, 0, INT_MIN, 0, 0, 0 },
+    { "ordering-maximum", 0, 0, INT_MAX, 0, 0, 0 },
+};
+
+static int print_cmp_charge_val_records(void)
+{
+    size_t i;
+    for (i = 0; i < sizeof(CHARGE_VAL_CASES) / sizeof(CHARGE_VAL_CASES[0]); i++)
+    {
+        const ORACLE_CHARGE_VAL_CASE *test_case = CHARGE_VAL_CASES + i;
+        CHARGE_VAL first;
+        CHARGE_VAL second;
+        CHARGE_VAL first_before;
+        CHARGE_VAL second_before;
+        int result;
+
+        first.nValence = test_case->first_valence;
+        first.nCharge = test_case->first_charge;
+        first.nValenceOrderingNumber = test_case->first_order;
+        second.nValence = test_case->second_valence;
+        second.nCharge = test_case->second_charge;
+        second.nValenceOrderingNumber = test_case->second_order;
+        memcpy(&first_before, &first, sizeof(first));
+        memcpy(&second_before, &second, sizeof(second));
+        result = cmp_charge_val(&first, &second, NULL);
+
+        fputs("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+              "\"case_id\":", stdout);
+        print_json_string(test_case->case_id);
+        printf(",\"operation\":\"cmp_charge_val\","
+               "\"input\":{\"first\":{\"valence\":%d,\"charge\":%d,\"order\":%d},"
+               "\"second\":{\"valence\":%d,\"charge\":%d,\"order\":%d}},"
+               "\"output\":{\"result\":%d,"
+               "\"first_unchanged\":%s,"
+               "\"second_unchanged\":%s}}\n",
+               first.nValence,
+               first.nCharge,
+               first.nValenceOrderingNumber,
+               second.nValence,
+               second.nCharge,
+               second.nValenceOrderingNumber,
+               result,
+               memcmp(&first, &first_before, sizeof(first)) == 0 ? "true" : "false",
+               memcmp(&second, &second_before, sizeof(second)) == 0 ? "true" : "false");
+    }
+    return 0;
+}
+
+typedef struct tagOracleCcCandCase
+{
+    const char *case_id;
+    CC_CAND first;
+    CC_CAND second;
+} ORACLE_CC_CAND_CASE;
+
+static const ORACLE_CC_CAND_CASE CC_CAND_CASES[] = {
+    { "metal-min-max",
+      { 7, 2, 3, SCHAR_MIN, 0, 4, 2, 1, 6 },
+      { 7, 2, 3, SCHAR_MAX, 0, 4, 2, 1, 6 } },
+    { "metal-max-min",
+      { 7, 2, 3, SCHAR_MAX, 0, 4, 2, 1, 6 },
+      { 7, 2, 3, SCHAR_MIN, 0, 4, 2, 1, 6 } },
+    { "bonds-to-metal",
+      { 7, 2, 3, 0, 0, 4, 2, 1, 6 },
+      { 7, 2, 3, 0, 5, 4, 2, 1, 6 } },
+    { "periodic-row",
+      { 7, 2, 3, 0, 0, 4, 2, 1, 6 },
+      { 7, 2, 3, 0, 0, 4, 5, 1, 6 } },
+    { "bond-count",
+      { 7, 2, 3, 0, 0, 4, 2, 1, 6 },
+      { 7, 5, 3, 0, 0, 4, 2, 1, 6 } },
+    { "chemical-valence",
+      { 7, 2, 3, 0, 0, 4, 2, 1, 6 },
+      { 7, 2, 5, 0, 0, 4, 2, 1, 6 } },
+    { "first-no-valence-electrons",
+      { 7, 2, 3, 0, 0, 0, 2, 1, 6 },
+      { 7, 2, 3, 0, 0, 4, 2, 1, 6 } },
+    { "second-no-valence-electrons",
+      { 7, 2, 3, 0, 0, 4, 2, 1, 6 },
+      { 7, 2, 3, 0, 0, 0, 2, 1, 6 } },
+    { "different-nonzero-valence-electrons",
+      { 7, 2, 3, 0, 0, 4, 2, 1, 6 },
+      { 7, 2, 3, 0, 0, -4, 2, 1, 6 } },
+    { "vertex-minimum-neighbor",
+      { INT_MIN, 2, 3, 0, 0, 4, 2, 1, 6 },
+      { INT_MIN + 1, 2, 3, 0, 0, 4, 2, 1, 6 } },
+    { "vertex-maximum-neighbor",
+      { INT_MAX, 2, 3, 0, 0, 4, 2, 1, 6 },
+      { INT_MAX - 1, 2, 3, 0, 0, 4, 2, 1, 6 } },
+    { "ignored-fields-and-equal",
+      { 7, 2, 3, 0, 0, 4, 2, 1, 6 },
+      { 7, 2, 3, 0, 0, 4, 2, SCHAR_MAX, UCHAR_MAX } },
+};
+
+static void print_cc_cand_json(const CC_CAND *candidate)
+{
+    printf("{\"iat\":%d,\"num_bonds\":%d,\"chem_valence\":%d,"
+           "\"metal\":%d,\"bonds_to_metal\":%d,"
+           "\"valence_electrons\":%d,\"periodic_row\":%d,"
+           "\"charge_states\":%d,\"element\":%u}",
+           (int) candidate->iat,
+           (int) candidate->num_bonds,
+           (int) candidate->chem_valence,
+           (int) candidate->cMetal,
+           (int) candidate->cNumBondsToMetal,
+           (int) candidate->cNumValenceElectrons,
+           (int) candidate->cPeriodicRowNumber,
+           (int) candidate->cNumChargeStates,
+           (unsigned int) candidate->el_number);
+}
+
+static int print_comp_cc_cand_records(void)
+{
+    size_t i;
+    for (i = 0; i < sizeof(CC_CAND_CASES) / sizeof(CC_CAND_CASES[0]); i++)
+    {
+        const ORACLE_CC_CAND_CASE *test_case = CC_CAND_CASES + i;
+        CC_CAND first = test_case->first;
+        CC_CAND second = test_case->second;
+        CC_CAND first_before;
+        CC_CAND second_before;
+        int result;
+
+        memcpy(&first_before, &first, sizeof(first));
+        memcpy(&second_before, &second, sizeof(second));
+        result = comp_cc_cand(&first, &second);
+
+        fputs("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+              "\"case_id\":", stdout);
+        print_json_string(test_case->case_id);
+        fputs(",\"operation\":\"comp_cc_cand\",\"input\":{\"first\":", stdout);
+        print_cc_cand_json(&first);
+        fputs(",\"second\":", stdout);
+        print_cc_cand_json(&second);
+        printf("},\"output\":{\"result\":%d,"
+               "\"first_unchanged\":%s,"
+               "\"second_unchanged\":%s}}\n",
+               result,
+               memcmp(&first, &first_before, sizeof(first)) == 0 ? "true" : "false",
+               memcmp(&second, &second_before, sizeof(second)) == 0 ? "true" : "false");
+    }
+    return 0;
+}
+
+static void print_base26_triplet_1_record(const char *case_prefix,
+                                          unsigned int ordinal,
+                                          unsigned char first,
+                                          unsigned char second)
+{
+    unsigned char input[2] = { first, second };
+    unsigned char input_before[2];
+    const char *result;
+
+    memcpy(input_before, input, sizeof(input));
+    result = base26_triplet_1(input);
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"%s-%u\",\"operation\":\"base26_triplet_1\","
+           "\"input\":{\"bytes\":[%u,%u]},"
+           "\"output\":{\"bytes\":[%u,%u,%u],\"nul\":%u,"
+           "\"input_unchanged\":%s}}\n",
+           case_prefix,
+           ordinal,
+           (unsigned int) input[0],
+           (unsigned int) input[1],
+           (unsigned int) (unsigned char) result[0],
+           (unsigned int) (unsigned char) result[1],
+           (unsigned int) (unsigned char) result[2],
+           (unsigned int) (unsigned char) result[3],
+           memcmp(input, input_before, sizeof(input)) == 0 ? "true" : "false");
+}
+
+static int print_base26_triplet_1_records(void)
+{
+    unsigned int index;
+    unsigned int high_bits;
+    for (index = 0; index < 16384; index++)
+    {
+        print_base26_triplet_1_record("index",
+                                      index,
+                                      (unsigned char) index,
+                                      (unsigned char) (index >> 8));
+    }
+    for (high_bits = 0; high_bits < 4; high_bits++)
+    {
+        print_base26_triplet_1_record("high-mask",
+                                      high_bits,
+                                      0x5a,
+                                      (unsigned char) (0x15 | (high_bits << 6)));
+    }
+    return 0;
+}
+
+static void print_base26_triplet_2_record(const char *case_prefix,
+                                          unsigned int ordinal,
+                                          unsigned char first,
+                                          unsigned char second,
+                                          unsigned char third,
+                                          unsigned char fourth)
+{
+    unsigned char input[4] = { first, second, third, fourth };
+    unsigned char input_before[4];
+    const char *result;
+
+    memcpy(input_before, input, sizeof(input));
+    result = base26_triplet_2(input);
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"%s-%u\",\"operation\":\"base26_triplet_2\","
+           "\"input\":{\"bytes\":[%u,%u,%u,%u]},"
+           "\"output\":{\"bytes\":[%u,%u,%u],\"nul\":%u,"
+           "\"input_unchanged\":%s}}\n",
+           case_prefix,
+           ordinal,
+           (unsigned int) input[0],
+           (unsigned int) input[1],
+           (unsigned int) input[2],
+           (unsigned int) input[3],
+           (unsigned int) (unsigned char) result[0],
+           (unsigned int) (unsigned char) result[1],
+           (unsigned int) (unsigned char) result[2],
+           (unsigned int) (unsigned char) result[3],
+           memcmp(input, input_before, sizeof(input)) == 0 ? "true" : "false");
+}
+
+static int print_base26_triplet_2_records(void)
+{
+    static const unsigned char ignored_bits[4][3] = {
+        { 0x00, 0x00, 0x00 },
+        { 0xff, 0x3f, 0xf0 },
+        { 0x5a, 0x15, 0xa0 },
+        { 0xa5, 0x2a, 0x50 }
+    };
+    unsigned int index;
+    unsigned int variant;
+    unsigned int fixed_index = 0x155a;
+    unsigned char second = (unsigned char) ((fixed_index & 0x03) << 6);
+    unsigned char third = (unsigned char) ((fixed_index >> 2) & 0xff);
+    unsigned char fourth = (unsigned char) ((fixed_index >> 10) & 0x0f);
+
+    for (index = 0; index < 16384; index++)
+    {
+        print_base26_triplet_2_record(
+            "index",
+            index,
+            0,
+            (unsigned char) ((index & 0x03) << 6),
+            (unsigned char) ((index >> 2) & 0xff),
+            (unsigned char) ((index >> 10) & 0x0f));
+    }
+    for (variant = 0; variant < 4; variant++)
+    {
+        print_base26_triplet_2_record(
+            "ignored-bits",
+            variant,
+            ignored_bits[variant][0],
+            (unsigned char) (second | ignored_bits[variant][1]),
+            third,
+            (unsigned char) (fourth | ignored_bits[variant][2]));
+    }
+    return 0;
+}
+
+static void print_base26_triplet_3_record(const char *case_prefix,
+                                          unsigned int ordinal,
+                                          const unsigned char input_value[6])
+{
+    unsigned char input[6];
+    unsigned char input_before[6];
+    const char *result;
+
+    memcpy(input, input_value, sizeof(input));
+    memcpy(input_before, input, sizeof(input));
+    result = base26_triplet_3(input);
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"%s-%u\",\"operation\":\"base26_triplet_3\","
+           "\"input\":{\"bytes\":[%u,%u,%u,%u,%u,%u]},"
+           "\"output\":{\"bytes\":[%u,%u,%u],\"nul\":%u,"
+           "\"input_unchanged\":%s}}\n",
+           case_prefix,
+           ordinal,
+           (unsigned int) input[0],
+           (unsigned int) input[1],
+           (unsigned int) input[2],
+           (unsigned int) input[3],
+           (unsigned int) input[4],
+           (unsigned int) input[5],
+           (unsigned int) (unsigned char) result[0],
+           (unsigned int) (unsigned char) result[1],
+           (unsigned int) (unsigned char) result[2],
+           (unsigned int) (unsigned char) result[3],
+           memcmp(input, input_before, sizeof(input)) == 0 ? "true" : "false");
+}
+
+static int print_base26_triplet_3_records(void)
+{
+    static const unsigned char ignored_bits[4][5] = {
+        { 0x00, 0x00, 0x00, 0x00, 0x00 },
+        { 0xff, 0xff, 0xff, 0x0f, 0xfc },
+        { 0x5a, 0xa5, 0x3c, 0x05, 0xa8 },
+        { 0xa5, 0x5a, 0xc3, 0x0a, 0x54 }
+    };
+    unsigned int index;
+    unsigned int variant;
+    unsigned int fixed_index = 0x155a;
+    unsigned char canonical[6] = {
+        0,
+        0,
+        0,
+        (unsigned char) ((fixed_index & 0x0f) << 4),
+        (unsigned char) ((fixed_index >> 4) & 0xff),
+        (unsigned char) ((fixed_index >> 12) & 0x03)
+    };
+
+    for (index = 0; index < 16384; index++)
+    {
+        unsigned char input[6] = {
+            0,
+            0,
+            0,
+            (unsigned char) ((index & 0x0f) << 4),
+            (unsigned char) ((index >> 4) & 0xff),
+            (unsigned char) ((index >> 12) & 0x03)
+        };
+        print_base26_triplet_3_record("index", index, input);
+    }
+    for (variant = 0; variant < 4; variant++)
+    {
+        unsigned char input[6] = {
+            ignored_bits[variant][0],
+            ignored_bits[variant][1],
+            ignored_bits[variant][2],
+            (unsigned char) (canonical[3] | ignored_bits[variant][3]),
+            canonical[4],
+            (unsigned char) (canonical[5] | ignored_bits[variant][4])
+        };
+        print_base26_triplet_3_record("ignored-bits", variant, input);
+    }
+    return 0;
+}
+
+static void print_base26_triplet_4_record(const char *case_prefix,
+                                          unsigned int ordinal,
+                                          const unsigned char input_value[7])
+{
+    unsigned char input[7];
+    unsigned char input_before[7];
+    const char *result;
+
+    memcpy(input, input_value, sizeof(input));
+    memcpy(input_before, input, sizeof(input));
+    result = base26_triplet_4(input);
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"%s-%u\",\"operation\":\"base26_triplet_4\","
+           "\"input\":{\"bytes\":[%u,%u,%u,%u,%u,%u,%u]},"
+           "\"output\":{\"bytes\":[%u,%u,%u],\"nul\":%u,"
+           "\"input_unchanged\":%s}}\n",
+           case_prefix,
+           ordinal,
+           (unsigned int) input[0],
+           (unsigned int) input[1],
+           (unsigned int) input[2],
+           (unsigned int) input[3],
+           (unsigned int) input[4],
+           (unsigned int) input[5],
+           (unsigned int) input[6],
+           (unsigned int) (unsigned char) result[0],
+           (unsigned int) (unsigned char) result[1],
+           (unsigned int) (unsigned char) result[2],
+           (unsigned int) (unsigned char) result[3],
+           memcmp(input, input_before, sizeof(input)) == 0 ? "true" : "false");
+}
+
+static int print_base26_triplet_4_records(void)
+{
+    static const unsigned char ignored_bits[4][6] = {
+        { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+        { 0xff, 0xff, 0xff, 0xff, 0xff, 0x03 },
+        { 0x5a, 0xa5, 0x3c, 0xc3, 0x69, 0x01 },
+        { 0xa5, 0x5a, 0xc3, 0x3c, 0x96, 0x02 }
+    };
+    unsigned int index;
+    unsigned int variant;
+    unsigned int fixed_index = 0x155a;
+    unsigned char canonical[7] = {
+        0,
+        0,
+        0,
+        0,
+        0,
+        (unsigned char) ((fixed_index & 0x3f) << 2),
+        (unsigned char) ((fixed_index >> 6) & 0xff)
+    };
+
+    for (index = 0; index < 16384; index++)
+    {
+        unsigned char input[7] = {
+            0,
+            0,
+            0,
+            0,
+            0,
+            (unsigned char) ((index & 0x3f) << 2),
+            (unsigned char) ((index >> 6) & 0xff)
+        };
+        print_base26_triplet_4_record("index", index, input);
+    }
+    for (variant = 0; variant < 4; variant++)
+    {
+        unsigned char input[7] = {
+            ignored_bits[variant][0],
+            ignored_bits[variant][1],
+            ignored_bits[variant][2],
+            ignored_bits[variant][3],
+            ignored_bits[variant][4],
+            (unsigned char) (canonical[5] | ignored_bits[variant][5]),
+            canonical[6]
+        };
+        print_base26_triplet_4_record("ignored-bits", variant, input);
+    }
+    return 0;
+}
+
+static void print_base26_dublet_for_bits_28_to_36_record(
+    const char *case_prefix,
+    unsigned int ordinal,
+    const unsigned char input_value[5])
+{
+    unsigned char input[5];
+    unsigned char input_before[5];
+    const char *result;
+
+    memcpy(input, input_value, sizeof(input));
+    memcpy(input_before, input, sizeof(input));
+    result = base26_dublet_for_bits_28_to_36(input);
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"%s-%u\","
+           "\"operation\":\"base26_dublet_for_bits_28_to_36\","
+           "\"input\":{\"bytes\":[%u,%u,%u,%u,%u]},"
+           "\"output\":{\"bytes\":[%u,%u],\"nul\":%u,"
+           "\"input_unchanged\":%s}}\n",
+           case_prefix,
+           ordinal,
+           (unsigned int) input[0],
+           (unsigned int) input[1],
+           (unsigned int) input[2],
+           (unsigned int) input[3],
+           (unsigned int) input[4],
+           (unsigned int) (unsigned char) result[0],
+           (unsigned int) (unsigned char) result[1],
+           (unsigned int) (unsigned char) result[2],
+           memcmp(input, input_before, sizeof(input)) == 0 ? "true" : "false");
+}
+
+static int print_base26_dublet_for_bits_28_to_36_records(void)
+{
+    static const unsigned char ignored_bits[4][5] = {
+        { 0x00, 0x00, 0x00, 0x00, 0x00 },
+        { 0xff, 0xff, 0xff, 0x0f, 0xe0 },
+        { 0x5a, 0xa5, 0x3c, 0x05, 0xa0 },
+        { 0xa5, 0x5a, 0xc3, 0x0a, 0x40 }
+    };
+    unsigned int index;
+    unsigned int variant;
+    unsigned int fixed_index = 0x15a;
+    unsigned char canonical[5] = {
+        0,
+        0,
+        0,
+        (unsigned char) ((fixed_index & 0x0f) << 4),
+        (unsigned char) ((fixed_index >> 4) & 0x1f)
+    };
+
+    for (index = 0; index < 512; index++)
+    {
+        unsigned char input[5] = {
+            0,
+            0,
+            0,
+            (unsigned char) ((index & 0x0f) << 4),
+            (unsigned char) ((index >> 4) & 0x1f)
+        };
+        print_base26_dublet_for_bits_28_to_36_record("index", index, input);
+    }
+    for (variant = 0; variant < 4; variant++)
+    {
+        unsigned char input[5] = {
+            ignored_bits[variant][0],
+            ignored_bits[variant][1],
+            ignored_bits[variant][2],
+            (unsigned char) (canonical[3] | ignored_bits[variant][3]),
+            (unsigned char) (canonical[4] | ignored_bits[variant][4])
+        };
+        print_base26_dublet_for_bits_28_to_36_record(
+            "ignored-bits", variant, input);
+    }
+    return 0;
+}
+
+static void print_base26_dublet_for_bits_56_to_64_record(
+    const char *case_prefix,
+    unsigned int ordinal,
+    const unsigned char input_value[9])
+{
+    unsigned char input[9];
+    unsigned char input_before[9];
+    const char *result;
+
+    memcpy(input, input_value, sizeof(input));
+    memcpy(input_before, input, sizeof(input));
+    result = base26_dublet_for_bits_56_to_64(input);
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"%s-%u\","
+           "\"operation\":\"base26_dublet_for_bits_56_to_64\","
+           "\"input\":{\"bytes\":[%u,%u,%u,%u,%u,%u,%u,%u,%u]},"
+           "\"output\":{\"bytes\":[%u,%u],\"nul\":%u,"
+           "\"input_unchanged\":%s}}\n",
+           case_prefix,
+           ordinal,
+           (unsigned int) input[0],
+           (unsigned int) input[1],
+           (unsigned int) input[2],
+           (unsigned int) input[3],
+           (unsigned int) input[4],
+           (unsigned int) input[5],
+           (unsigned int) input[6],
+           (unsigned int) input[7],
+           (unsigned int) input[8],
+           (unsigned int) (unsigned char) result[0],
+           (unsigned int) (unsigned char) result[1],
+           (unsigned int) (unsigned char) result[2],
+           memcmp(input, input_before, sizeof(input)) == 0 ? "true" : "false");
+}
+
+static int print_base26_dublet_for_bits_56_to_64_records(void)
+{
+    static const unsigned char ignored_bits[4][8] = {
+        { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+        { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe },
+        { 0x5a, 0xa5, 0x3c, 0xc3, 0x69, 0x96, 0x0f, 0xaa },
+        { 0xa5, 0x5a, 0xc3, 0x3c, 0x96, 0x69, 0xf0, 0x54 }
+    };
+    unsigned int index;
+    unsigned int variant;
+    unsigned int fixed_index = 0x15a;
+    unsigned char canonical[9] = {
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        (unsigned char) (fixed_index & 0xff),
+        (unsigned char) ((fixed_index >> 8) & 0x01)
+    };
+
+    for (index = 0; index < 512; index++)
+    {
+        unsigned char input[9] = {
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            (unsigned char) (index & 0xff),
+            (unsigned char) ((index >> 8) & 0x01)
+        };
+        print_base26_dublet_for_bits_56_to_64_record("index", index, input);
+    }
+    for (variant = 0; variant < 4; variant++)
+    {
+        unsigned char input[9] = {
+            ignored_bits[variant][0],
+            ignored_bits[variant][1],
+            ignored_bits[variant][2],
+            ignored_bits[variant][3],
+            ignored_bits[variant][4],
+            ignored_bits[variant][5],
+            ignored_bits[variant][6],
+            canonical[7],
+            (unsigned char) (canonical[8] | ignored_bits[variant][7])
+        };
+        print_base26_dublet_for_bits_56_to_64_record(
+            "ignored-bits", variant, input);
+    }
+    return 0;
+}
+
+static void print_get_xtra_hash_major_hex_record(unsigned int seed)
+{
+    unsigned char input[32];
+    unsigned char input_before[32];
+    unsigned char output[64];
+    unsigned int index;
+
+    for (index = 0; index < 32; index++)
+    {
+        input[index] = (unsigned char) (seed + index * 17);
+    }
+    input[8] = (unsigned char) seed;
+    memcpy(input_before, input, sizeof(input));
+    memset(output, 0xa5, sizeof(output));
+    get_xtra_hash_major_hex(input, (char *) output);
+
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"seed-%u\","
+           "\"operation\":\"get_xtra_hash_major_hex\","
+           "\"input\":{\"bytes\":",
+           seed);
+    print_u8_array(input, (int) sizeof(input));
+    fputs("},\"output\":{\"bytes\":", stdout);
+    print_u8_array(output, (int) sizeof(output));
+    printf(",\"input_unchanged\":%s}}\n",
+           memcmp(input, input_before, sizeof(input)) == 0 ? "true" : "false");
+}
+
+static int print_get_xtra_hash_major_hex_records(void)
+{
+    unsigned int seed;
+    for (seed = 0; seed < 256; seed++)
+    {
+        print_get_xtra_hash_major_hex_record(seed);
+    }
+    return 0;
+}
+
+static void print_get_xtra_hash_minor_hex_record(unsigned int seed)
+{
+    unsigned char input[32];
+    unsigned char input_before[32];
+    unsigned char output[64];
+    unsigned int index;
+
+    for (index = 0; index < 32; index++)
+    {
+        input[index] = (unsigned char) (seed + index * 17);
+    }
+    input[4] = (unsigned char) seed;
+    memcpy(input_before, input, sizeof(input));
+    memset(output, 0xa5, sizeof(output));
+    get_xtra_hash_minor_hex(input, (char *) output);
+
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"seed-%u\","
+           "\"operation\":\"get_xtra_hash_minor_hex\","
+           "\"input\":{\"bytes\":",
+           seed);
+    print_u8_array(input, (int) sizeof(input));
+    fputs("},\"output\":{\"bytes\":", stdout);
+    print_u8_array(output, (int) sizeof(output));
+    printf(",\"input_unchanged\":%s}}\n",
+           memcmp(input, input_before, sizeof(input)) == 0 ? "true" : "false");
+}
+
+static int print_get_xtra_hash_minor_hex_records(void)
+{
+    unsigned int seed;
+    for (seed = 0; seed < 256; seed++)
+    {
+        print_get_xtra_hash_minor_hex_record(seed);
+    }
+    return 0;
+}
+
+static void print_sha2_starts_record(unsigned int seed)
+{
+    sha2_context ctx;
+    sha2_context before;
+    unsigned int index;
+
+    ctx.total[0] =
+        (unsigned long) (UINT64_C(0x0123456789abcdef) ^
+                         ((uint64_t) seed << 32) ^ seed);
+    ctx.total[1] =
+        (unsigned long) (UINT64_C(0xfedcba9876543210) ^
+                         ((uint64_t) seed << 40) ^ ((uint64_t) seed << 8));
+    for (index = 0; index < 8; index++)
+    {
+        ctx.state[index] =
+            (unsigned long) (UINT64_C(0x9e3779b97f4a7c15) *
+                             (uint64_t) (index + 1) ^
+                             ((uint64_t) seed << ((index * 7) % 56)) ^
+                             (uint64_t) (seed + index * 29));
+    }
+    for (index = 0; index < 64; index++)
+    {
+        ctx.buffer[index] =
+            (unsigned char) (0xa5U ^ seed ^ (index * 37U));
+    }
+    memcpy(&before, &ctx, sizeof(ctx));
+
+    oracle_sha2_starts(&ctx);
+
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"seed-%u\",\"operation\":\"sha2_starts\","
+           "\"input\":{\"total\":",
+           seed);
+    print_ulong_array(before.total, 2);
+    fputs(",\"state\":", stdout);
+    print_ulong_array(before.state, 8);
+    fputs(",\"buffer\":", stdout);
+    print_u8_array(before.buffer, 64);
+    fputs("},\"output\":{\"total\":", stdout);
+    print_ulong_array(ctx.total, 2);
+    fputs(",\"state\":", stdout);
+    print_ulong_array(ctx.state, 8);
+    fputs(",\"buffer\":", stdout);
+    print_u8_array(ctx.buffer, 64);
+    printf(",\"buffer_unchanged\":%s}}\n",
+           memcmp(ctx.buffer, before.buffer, sizeof(ctx.buffer)) == 0
+               ? "true"
+               : "false");
+}
+
+static int print_sha2_starts_records(void)
+{
+    unsigned int seed;
+    for (seed = 0; seed < 32; seed++)
+    {
+        print_sha2_starts_record(seed);
+    }
+    return 0;
+}
+
+typedef struct tagSha2CsumCase
+{
+    const char *case_id;
+    int ilen;
+    int null_input;
+} Sha2CsumCase;
+
+static const Sha2CsumCase SHA2_CSUM_CASES[] = {
+    {"negative-min-null", INT_MIN, 1},
+    {"negative-one-null", -1, 1},
+    {"zero-null", 0, 1},
+    {"zero-nonnull", 0, 0},
+    {"length-1", 1, 0},
+    {"length-54", 54, 0},
+    {"length-55", 55, 0},
+    {"length-56", 56, 0},
+    {"length-57", 57, 0},
+    {"length-63", 63, 0},
+    {"length-64", 64, 0},
+    {"length-65", 65, 0},
+    {"length-119", 119, 0},
+    {"length-120", 120, 0},
+    {"length-121", 121, 0},
+    {"length-127", 127, 0},
+    {"length-128", 128, 0},
+    {"length-129", 129, 0},
+    {"length-255", 255, 0},
+    {"length-256", 256, 0},
+    {"length-257", 257, 0},
+    {"length-511", 511, 0},
+    {"length-512", 512, 0},
+    {"length-513", 513, 0},
+    {"length-1023", 1023, 0},
+    {"length-1024", 1024, 0},
+};
+
+static void print_sha2_csum_record(const Sha2CsumCase *test_case,
+                                   unsigned int case_index)
+{
+    unsigned char input[1024];
+    unsigned char input_before[1024];
+    unsigned char output[32];
+    unsigned char output_before[32];
+    unsigned char *input_pointer;
+    unsigned int index;
+
+    for (index = 0; index < sizeof(input); index++)
+    {
+        input[index] =
+            (unsigned char) (case_index * 17U + index * 29U + (index >> 3));
+    }
+    for (index = 0; index < sizeof(output); index++)
+    {
+        output[index] = (unsigned char) (0xa5U ^ case_index ^ index);
+    }
+    memcpy(input_before, input, sizeof(input));
+    memcpy(output_before, output, sizeof(output));
+    input_pointer = test_case->null_input ? NULL : input;
+
+    oracle_sha2_csum(input_pointer, test_case->ilen, output);
+
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"%s\",\"operation\":\"sha2_csum\","
+           "\"input\":{\"ilen\":%d,\"input_pointer_null\":%s,\"bytes\":",
+           test_case->case_id, test_case->ilen,
+           test_case->null_input ? "true" : "false");
+    print_u8_array(input_before, (int) sizeof(input_before));
+    fputs(",\"output\":", stdout);
+    print_u8_array(output_before, (int) sizeof(output_before));
+    fputs("},\"output\":{\"bytes\":", stdout);
+    print_u8_array(input, (int) sizeof(input));
+    fputs(",\"digest\":", stdout);
+    print_u8_array(output, (int) sizeof(output));
+    printf(",\"input_unchanged\":%s}}\n",
+           memcmp(input, input_before, sizeof(input)) == 0 ? "true" : "false");
+}
+
+static int print_sha2_csum_records(void)
+{
+    unsigned int index;
+    for (index = 0;
+         index < sizeof(SHA2_CSUM_CASES) / sizeof(SHA2_CSUM_CASES[0]);
+         index++)
+    {
+        print_sha2_csum_record(&SHA2_CSUM_CASES[index], index);
+    }
+    return 0;
+}
+
+typedef struct tagInchiKeyCase
+{
+    const char *case_id;
+    const char *text;
+    int xtra1;
+    int xtra2;
+    int null_input;
+    int null_xtra1;
+    int null_xtra2;
+    int allocation_failure_ordinal;
+    int generated_minor_length;
+} InchiKeyCase;
+
+static const InchiKeyCase INCHI_KEY_CASES[] = {
+    {"null-input", "", 1, 1, 1, 0, 0, 0, 0},
+    {"short-prefix", "InChI=", 1, 1, 0, 0, 0, 0, 0},
+    {"wrong-prefix", "inchi=1S/CH4", 1, 1, 0, 0, 0, 0, 0},
+    {"wrong-version", "InChI=2S/CH4", 1, 1, 0, 0, 0, 0, 0},
+    {"wrong-slash", "InChI=1S:CH4", 1, 1, 0, 0, 0, 0, 0},
+    {"invalid-first-body-byte", "InChI=1S/!bad", 1, 1, 0, 0, 0, 0, 0},
+    {"standard-empty", "InChI=1S//", 1, 1, 0, 0, 0, 0, 0},
+    {"standard-error", "InChI=1S/?", 1, 1, 0, 0, 0, 0, 0},
+    {"standard-methane-xtra", "InChI=1S/CH4/h1H4", 1, 1, 0, 0, 0, 0, 0},
+    {"nonstandard-methane-no-xtra", "InChI=1/CH4/h1H4", 0, 0, 0, 0, 0, 0, 0},
+    {"beta-methane-null-xtra", "InChI=1B/CH4/h1H4", 1, 1, 0, 1, 1, 0, 0},
+    {"major-c-h-q", "InChI=1/C2H6/c1-2/h1-2H3/q+1", 1, 1, 0, 0, 0, 0, 0},
+    {"default-minor", "InChI=1/CH4/t1-/m0/s1", 1, 1, 0, 0, 0, 0, 0},
+    {"nonstandard-fixed-h", "InChI=1/CH4/fh1H4", 1, 1, 0, 0, 0, 0, 0},
+    {"nonstandard-reconnected", "InChI=1/CH4/rC/h1H4", 1, 1, 0, 0, 0, 0, 0},
+    {"standard-fixed-h-error", "InChI=1S/CH4/fh1H4", 1, 1, 0, 0, 0, 0, 0},
+    {"standard-reconnected-error", "InChI=1S/CH4/rC", 1, 1, 0, 0, 0, 0, 0},
+    {"proton-plus-1", "InChI=1S/CH4/h1H4/p+1", 1, 1, 0, 0, 0, 0, 0},
+    {"proton-plus-12", "InChI=1S/CH4/h1H4/p+12", 1, 1, 0, 0, 0, 0, 0},
+    {"proton-plus-13", "InChI=1S/CH4/h1H4/p+13", 1, 1, 0, 0, 0, 0, 0},
+    {"proton-minus-1", "InChI=1S/CH4/h1H4/p-1", 1, 1, 0, 0, 0, 0, 0},
+    {"proton-minus-12", "InChI=1S/CH4/h1H4/p-12", 1, 1, 0, 0, 0, 0, 0},
+    {"proton-minus-13", "InChI=1S/CH4/h1H4/p-13", 1, 1, 0, 0, 0, 0, 0},
+    {"proton-zero", "InChI=1S/CH4/p0", 1, 1, 0, 0, 0, 0, 0},
+    {"proton-empty-at-end", "InChI=1S/CH4/p", 1, 1, 0, 0, 0, 0, 0},
+    {"proton-short-before-minor", "InChI=1S/CH4/p/t1-", 1, 1, 0, 0, 0, 0, 0},
+    {"proton-stops-at-nondigit", "InChI=1S/CH4/p+1junk/t1-", 1, 1, 0, 0, 0, 0, 0},
+    {"proton-positive-long-overflow", "InChI=1S/CH4/p9223372036854775808",
+     1, 1, 0, 0, 0, 0, 0},
+    {"proton-negative-long-overflow", "InChI=1S/CH4/p-9223372036854775809",
+     1, 1, 0, 0, 0, 0, 0},
+    {"trailing-invalid-substring-byte", "InChI=1S/CH4/h1H4 trailing bytes",
+     1, 1, 0, 0, 0, 0, 0},
+    {"minor-length-254", NULL, 1, 1, 0, 0, 0, 0, 254},
+    {"minor-length-255", NULL, 1, 1, 0, 0, 0, 0, 255},
+    {"null-major-xtra-output", "InChI=1S/CH4/h1H4", 1, 1, 0, 1, 0, 0, 0},
+    {"null-minor-xtra-output", "InChI=1S/CH4/h1H4", 1, 1, 0, 0, 1, 0, 0},
+    {"allocation-failure-smajor", "InChI=1S/CH4/h1H4", 1, 1, 0, 0, 0, 2, 0},
+    {"allocation-failure-sminor", "InChI=1S/CH4/h1H4", 1, 1, 0, 0, 0, 3, 0},
+    {"allocation-failure-stmp", "InChI=1S/CH4/h1H4", 1, 1, 0, 0, 0, 4, 0},
+    {"allocation-failure-sproto", "InChI=1S/CH4/h1H4", 1, 1, 0, 0, 0, 5, 0},
+};
+
+static void print_inchi_key_record(const InchiKeyCase *test_case,
+                                   unsigned int case_index)
+{
+    char input[640];
+    char input_before[640];
+    char key[64];
+    char key_before[64];
+    char xtra1[64];
+    char xtra1_before[64];
+    char xtra2[64];
+    char xtra2_before[64];
+    const char *source;
+    int status;
+    int allocation_calls;
+    int deferred_frees;
+    int allocation_failed;
+    int successful_allocations;
+    int live_allocations;
+    unsigned int index;
+
+    for (index = 0; index < sizeof(input); index++)
+    {
+        input[index] = (char) (0x31U + ((case_index + index * 17U) & 0x3fU));
+    }
+    for (index = 0; index < sizeof(key); index++)
+    {
+        key[index] = (char) (0xa5U ^ case_index ^ index);
+        xtra1[index] = (char) (0x5aU ^ case_index ^ index);
+        xtra2[index] = (char) (0x3cU ^ case_index ^ index);
+    }
+    if (test_case->generated_minor_length)
+    {
+        const char *prefix = "InChI=1/C/";
+        size_t prefix_length = strlen(prefix);
+        size_t minor_body_length =
+            (size_t) test_case->generated_minor_length - 1U;
+        memcpy(input, prefix, prefix_length);
+        memset(input + prefix_length, 'x', minor_body_length);
+        input[prefix_length + minor_body_length] = '\0';
+    }
+    else
+    {
+        size_t text_length = strlen(test_case->text);
+        memcpy(input, test_case->text, text_length + 1);
+    }
+    memcpy(input_before, input, sizeof(input));
+    memcpy(key_before, key, sizeof(key));
+    memcpy(xtra1_before, xtra1, sizeof(xtra1));
+    memcpy(xtra2_before, xtra2, sizeof(xtra2));
+
+    source = test_case->null_input ? NULL : input;
+    ORACLE_ALLOCATION_CALLS = 0;
+    ORACLE_ALLOCATION_ORDINAL = test_case->allocation_failure_ordinal;
+    ORACLE_ALLOCATION_FAILURE_ENABLED = 1;
+    ORACLE_DEFER_FREES = 1;
+    status = GetINCHIKeyFromINCHI(
+        source, test_case->xtra1, test_case->xtra2, key,
+        test_case->null_xtra1 ? NULL : xtra1,
+        test_case->null_xtra2 ? NULL : xtra2);
+    ORACLE_ALLOCATION_FAILURE_ENABLED = 0;
+    ORACLE_DEFER_FREES = 0;
+
+    allocation_calls = ORACLE_ALLOCATION_CALLS;
+    deferred_frees = (int) ORACLE_DEFERRED_FREE_COUNT;
+    allocation_failed =
+        test_case->allocation_failure_ordinal > 0 &&
+        allocation_calls >= test_case->allocation_failure_ordinal;
+    successful_allocations = allocation_calls - allocation_failed;
+    live_allocations = successful_allocations - deferred_frees;
+
+    fputs("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+          "\"case_id\":", stdout);
+    print_json_string(test_case->case_id);
+    printf(",\"operation\":\"get_inchi_key_from_inchi\","
+           "\"input\":{\"xtra1\":%d,\"xtra2\":%d,"
+           "\"input_pointer_null\":%s,\"xtra1_pointer_null\":%s,"
+           "\"xtra2_pointer_null\":%s,\"allocation_failure_ordinal\":%d,"
+           "\"bytes\":",
+           test_case->xtra1, test_case->xtra2,
+           test_case->null_input ? "true" : "false",
+           test_case->null_xtra1 ? "true" : "false",
+           test_case->null_xtra2 ? "true" : "false",
+           test_case->allocation_failure_ordinal);
+    print_u8_array((const unsigned char *) input_before, (int) sizeof(input_before));
+    fputs(",\"key\":", stdout);
+    print_u8_array((const unsigned char *) key_before, (int) sizeof(key_before));
+    fputs(",\"xtra1_bytes\":", stdout);
+    print_u8_array((const unsigned char *) xtra1_before, (int) sizeof(xtra1_before));
+    fputs(",\"xtra2_bytes\":", stdout);
+    print_u8_array((const unsigned char *) xtra2_before, (int) sizeof(xtra2_before));
+    printf("},\"output\":{\"status\":%d,\"bytes\":", status);
+    print_u8_array((const unsigned char *) input, (int) sizeof(input));
+    fputs(",\"key\":", stdout);
+    print_u8_array((const unsigned char *) key, (int) sizeof(key));
+    fputs(",\"xtra1_bytes\":", stdout);
+    print_u8_array((const unsigned char *) xtra1, (int) sizeof(xtra1));
+    fputs(",\"xtra2_bytes\":", stdout);
+    print_u8_array((const unsigned char *) xtra2, (int) sizeof(xtra2));
+    printf(",\"input_unchanged\":%s,\"allocation_calls\":%d,"
+           "\"deferred_frees\":%d,\"live_allocations\":%d}}\n",
+           memcmp(input, input_before, sizeof(input)) == 0 ? "true" : "false",
+           allocation_calls, deferred_frees, live_allocations);
+
+    oracle_flush_deferred_frees();
+}
+
+static int print_inchi_key_records(void)
+{
+    unsigned int index;
+    for (index = 0;
+         index < sizeof(INCHI_KEY_CASES) / sizeof(INCHI_KEY_CASES[0]);
+         index++)
+    {
+        print_inchi_key_record(&INCHI_KEY_CASES[index], index);
+    }
+    return 0;
+}
+
+static void print_sha2_process_record(unsigned int seed)
+{
+    sha2_context ctx;
+    sha2_context before;
+    unsigned char data[64];
+    unsigned char data_before[64];
+    unsigned int index;
+
+    ctx.total[0] =
+        (unsigned long) (UINT64_C(0x0123456789abcdef) ^
+                         ((uint64_t) seed << 32) ^ seed);
+    ctx.total[1] =
+        (unsigned long) (UINT64_C(0xfedcba9876543210) ^
+                         ((uint64_t) seed << 40) ^ ((uint64_t) seed << 8));
+    for (index = 0; index < 8; index++)
+    {
+        ctx.state[index] =
+            (unsigned long) (UINT64_C(0x9e3779b97f4a7c15) *
+                             (uint64_t) (index + 1) ^
+                             ((uint64_t) seed << ((index * 7) % 56)) ^
+                             (uint64_t) (seed + index * 29));
+    }
+    for (index = 0; index < 64; index++)
+    {
+        ctx.buffer[index] =
+            (unsigned char) (0xa5U ^ seed ^ (index * 37U));
+        data[index] =
+            (unsigned char) (seed + index * 17U + (index >> 1));
+    }
+    memcpy(&before, &ctx, sizeof(ctx));
+    memcpy(data_before, data, sizeof(data));
+
+    oracle_sha2_process(&ctx, data);
+
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"seed-%u\",\"operation\":\"sha2_process\","
+           "\"input\":{\"total\":",
+           seed);
+    print_ulong_array(before.total, 2);
+    fputs(",\"state\":", stdout);
+    print_ulong_array(before.state, 8);
+    fputs(",\"buffer\":", stdout);
+    print_u8_array(before.buffer, 64);
+    fputs(",\"data\":", stdout);
+    print_u8_array(data_before, 64);
+    fputs("},\"output\":{\"total\":", stdout);
+    print_ulong_array(ctx.total, 2);
+    fputs(",\"state\":", stdout);
+    print_ulong_array(ctx.state, 8);
+    fputs(",\"buffer\":", stdout);
+    print_u8_array(ctx.buffer, 64);
+    fputs(",\"data\":", stdout);
+    print_u8_array(data, 64);
+    printf(",\"total_unchanged\":%s,\"buffer_unchanged\":%s,"
+           "\"data_unchanged\":%s}}\n",
+           memcmp(ctx.total, before.total, sizeof(ctx.total)) == 0
+               ? "true"
+               : "false",
+           memcmp(ctx.buffer, before.buffer, sizeof(ctx.buffer)) == 0
+               ? "true"
+               : "false",
+           memcmp(data, data_before, sizeof(data)) == 0 ? "true" : "false");
+}
+
+static int print_sha2_process_records(void)
+{
+    unsigned int seed;
+    for (seed = 0; seed < 256; seed++)
+    {
+        print_sha2_process_record(seed);
+    }
+    return 0;
+}
+
+typedef struct tagSha2UpdateCase
+{
+    const char *case_id;
+    unsigned long total0;
+    unsigned long total1;
+    int ilen;
+} Sha2UpdateCase;
+
+static const Sha2UpdateCase SHA2_UPDATE_CASES[] = {
+    {"negative-min", 17UL, 23UL, INT_MIN},
+    {"negative-one", 17UL, 23UL, -1},
+    {"zero", 17UL, 23UL, 0},
+    {"empty-left-one", 0UL, 7UL, 1},
+    {"empty-left-63", 0UL, 7UL, 63},
+    {"empty-left-64", 0UL, 7UL, 64},
+    {"empty-left-65", 0UL, 7UL, 65},
+    {"empty-left-127", 0UL, 7UL, 127},
+    {"empty-left-128", 0UL, 7UL, 128},
+    {"empty-left-129", 0UL, 7UL, 129},
+    {"left-1-fill-minus-one", 1UL, 11UL, 62},
+    {"left-1-fill", 1UL, 11UL, 63},
+    {"left-1-fill-plus-one", 1UL, 11UL, 64},
+    {"left-1-fill-plus-block", 1UL, 11UL, 127},
+    {"left-1-fill-plus-block-tail", 1UL, 11UL, 128},
+    {"left-13-fill-minus-one", 13UL, 19UL, 50},
+    {"left-13-fill", 13UL, 19UL, 51},
+    {"left-13-fill-plus-one", 13UL, 19UL, 52},
+    {"left-13-fill-plus-block", 13UL, 19UL, 115},
+    {"left-13-fill-plus-block-tail", 13UL, 19UL, 116},
+    {"left-48-fill-minus-one", 48UL, 29UL, 15},
+    {"left-48-fill", 48UL, 29UL, 16},
+    {"left-48-fill-plus-one", 48UL, 29UL, 17},
+    {"left-48-fill-plus-block", 48UL, 29UL, 80},
+    {"left-48-fill-plus-block-tail", 48UL, 29UL, 81},
+    {"left-48-two-blocks-tail", 48UL, 29UL, 145},
+    {"left-63-fill", 63UL, 31UL, 1},
+    {"left-63-fill-plus-one", 63UL, 31UL, 2},
+    {"left-63-fill-plus-block", 63UL, 31UL, 65},
+    {"left-63-fill-plus-block-tail", 63UL, 31UL, 66},
+    {"low-counter-no-carry", 0xfffffff0UL, 0x1234UL, 15},
+    {"low-counter-carry-at-boundary", 0xfffffff0UL, 0x1234UL, 16},
+    {"low-counter-carry-plus-one", 0xfffffff0UL, 0x1234UL, 17},
+    {"low-counter-carry-multiple-blocks", 0xfffffff0UL, 0x1234UL, 145},
+    {"high-counter-wrap", 0xffffffffUL, ULONG_MAX, 1},
+    {"lp64-high-total-bits", (unsigned long) UINT64_C(0x123456780000003f),
+     (unsigned long) UINT64_C(0xfedcba9876543210), 1},
+};
+
+static void print_sha2_update_record(const Sha2UpdateCase *test_case,
+                                     unsigned int case_index)
+{
+    sha2_context ctx;
+    sha2_context before;
+    unsigned char input[256];
+    unsigned char input_before[256];
+    unsigned int index;
+
+    ctx.total[0] = test_case->total0;
+    ctx.total[1] = test_case->total1;
+    for (index = 0; index < 8; index++)
+    {
+        ctx.state[index] =
+            (unsigned long) (UINT64_C(0x6a09e667f3bcc908) ^
+                             (UINT64_C(0x9e3779b97f4a7c15) *
+                              (uint64_t) (index + case_index + 1)));
+    }
+    for (index = 0; index < 64; index++)
+    {
+        ctx.buffer[index] =
+            (unsigned char) (0xa5U ^ (case_index * 11U) ^ (index * 37U));
+    }
+    for (index = 0; index < sizeof(input); index++)
+    {
+        input[index] =
+            (unsigned char) (case_index * 17U + index * 29U + (index >> 2));
+    }
+    memcpy(&before, &ctx, sizeof(ctx));
+    memcpy(input_before, input, sizeof(input));
+
+    oracle_sha2_update(&ctx, input, test_case->ilen);
+
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"%s\",\"operation\":\"sha2_update\","
+           "\"input\":{\"ilen\":%d,\"total\":",
+           test_case->case_id, test_case->ilen);
+    print_ulong_array(before.total, 2);
+    fputs(",\"state\":", stdout);
+    print_ulong_array(before.state, 8);
+    fputs(",\"buffer\":", stdout);
+    print_u8_array(before.buffer, 64);
+    fputs(",\"bytes\":", stdout);
+    print_u8_array(input_before, (int) sizeof(input_before));
+    fputs("},\"output\":{\"total\":", stdout);
+    print_ulong_array(ctx.total, 2);
+    fputs(",\"state\":", stdout);
+    print_ulong_array(ctx.state, 8);
+    fputs(",\"buffer\":", stdout);
+    print_u8_array(ctx.buffer, 64);
+    fputs(",\"bytes\":", stdout);
+    print_u8_array(input, (int) sizeof(input));
+    printf(",\"input_unchanged\":%s}}\n",
+           memcmp(input, input_before, sizeof(input)) == 0 ? "true" : "false");
+}
+
+static int print_sha2_update_records(void)
+{
+    unsigned int index;
+    for (index = 0;
+         index < sizeof(SHA2_UPDATE_CASES) / sizeof(SHA2_UPDATE_CASES[0]);
+         index++)
+    {
+        print_sha2_update_record(&SHA2_UPDATE_CASES[index], index);
+    }
+    return 0;
+}
+
+typedef struct tagSha2FinishCase
+{
+    const char *case_id;
+    unsigned long total0;
+    unsigned long total1;
+} Sha2FinishCase;
+
+static const Sha2FinishCase SHA2_FINISH_CASES[] = {
+    {"last-0", 0UL, 0UL},
+    {"last-1", 1UL, 3UL},
+    {"last-54", 54UL, 5UL},
+    {"last-55", 55UL, 7UL},
+    {"last-56", 56UL, 11UL},
+    {"last-57", 57UL, 13UL},
+    {"last-63", 63UL, 17UL},
+    {"carry-in-message-length", 0xfffffff7UL, 0x1234UL},
+    {"carry-in-padding", 0xffffffffUL, 0x5678UL},
+    {"carry-wraps-high-counter", 0xffffffffUL, ULONG_MAX},
+    {"lp64-high-total-last-55",
+     (unsigned long) UINT64_C(0x1234567800000037),
+     (unsigned long) UINT64_C(0xfedcba9876543210)},
+    {"lp64-high-total-last-56",
+     (unsigned long) UINT64_C(0xabcdef0100000038),
+     (unsigned long) UINT64_C(0x0123456789abcdef)},
+};
+
+static void print_sha2_finish_record(const Sha2FinishCase *test_case,
+                                     unsigned int case_index)
+{
+    sha2_context ctx;
+    sha2_context before;
+    unsigned char output[32];
+    unsigned char output_before[32];
+    unsigned int index;
+
+    ctx.total[0] = test_case->total0;
+    ctx.total[1] = test_case->total1;
+    for (index = 0; index < 8; index++)
+    {
+        ctx.state[index] =
+            (unsigned long) (UINT64_C(0x6a09e667f3bcc908) ^
+                             (UINT64_C(0x9e3779b97f4a7c15) *
+                              (uint64_t) (index + case_index + 1)));
+    }
+    for (index = 0; index < 64; index++)
+    {
+        ctx.buffer[index] =
+            (unsigned char) (0x5aU ^ (case_index * 19U) ^ (index * 41U));
+    }
+    for (index = 0; index < sizeof(output); index++)
+    {
+        output[index] = (unsigned char) (0xa5U ^ index ^ case_index);
+    }
+    memcpy(&before, &ctx, sizeof(ctx));
+    memcpy(output_before, output, sizeof(output));
+
+    oracle_sha2_finish(&ctx, output);
+
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"%s\",\"operation\":\"sha2_finish\","
+           "\"input\":{\"total\":",
+           test_case->case_id);
+    print_ulong_array(before.total, 2);
+    fputs(",\"state\":", stdout);
+    print_ulong_array(before.state, 8);
+    fputs(",\"buffer\":", stdout);
+    print_u8_array(before.buffer, 64);
+    fputs(",\"output\":", stdout);
+    print_u8_array(output_before, 32);
+    fputs("},\"output\":{\"total\":", stdout);
+    print_ulong_array(ctx.total, 2);
+    fputs(",\"state\":", stdout);
+    print_ulong_array(ctx.state, 8);
+    fputs(",\"buffer\":", stdout);
+    print_u8_array(ctx.buffer, 64);
+    fputs(",\"digest\":", stdout);
+    print_u8_array(output, 32);
+    fputs("}}\n", stdout);
+}
+
+static int print_sha2_finish_records(void)
+{
+    unsigned int index;
+    for (index = 0;
+         index < sizeof(SHA2_FINISH_CASES) / sizeof(SHA2_FINISH_CASES[0]);
+         index++)
+    {
+        print_sha2_finish_record(&SHA2_FINISH_CASES[index], index);
+    }
+    return 0;
+}
+
+static void print_nullable_json_string(const char *text)
+{
+    if (text)
+    {
+        print_json_string(text);
+    }
+    else
+    {
+        fputs("null", stdout);
+    }
+}
+
+static void print_root_atom(const inchi_Atom *atom)
+{
+    printf("{\"coordinate_bits\":[%" PRIu64 ",%" PRIu64 ",%" PRIu64 "],"
+           "\"neighbor\":",
+           double_bits(atom->x), double_bits(atom->y), double_bits(atom->z));
+    print_i16_array(atom->neighbor, MAXVAL);
+    fputs(",\"bond_type\":", stdout);
+    print_i8_array(atom->bond_type, MAXVAL);
+    fputs(",\"bond_stereo\":", stdout);
+    print_i8_array(atom->bond_stereo, MAXVAL);
+    fputs(",\"elname\":", stdout);
+    print_char_array(atom->elname, ATOM_EL_LEN);
+    printf(",\"num_bonds\":%d,\"num_iso_h\":", (int) atom->num_bonds);
+    print_i8_array(atom->num_iso_H, NUM_H_ISOTOPES + 1);
+    printf(",\"isotopic_mass\":%d,\"radical\":%d,\"charge\":%d}",
+           (int) atom->isotopic_mass, (int) atom->radical, (int) atom->charge);
+}
+
+static void print_root_stereo(const inchi_Stereo0D *stereo)
+{
+    fputs("{\"neighbor\":", stdout);
+    print_i16_array(stereo->neighbor, 4);
+    printf(",\"central_atom\":%d,\"type\":%d,\"parity\":%d}",
+           (int) stereo->central_atom, (int) stereo->type, (int) stereo->parity);
+}
+
+static void set_root_element(inchi_Atom *atom, const char *element)
+{
+    size_t length = strlen(element);
+    if (length >= ATOM_EL_LEN)
+    {
+        abort();
+    }
+    memcpy(atom->elname, element, length + 1);
+}
+
+typedef struct tagRootGetInchiCase
+{
+    const char *case_id;
+    int kind;
+    const char *options;
+} RootGetInchiCase;
+
+static const RootGetInchiCase ROOT_GET_INCHI_CASES[] = {
+    {"generate-methane-standard", 0, NULL},
+    {"generate-methane-fixedh-options", 0, "-FixedH -RecMet -SUU -SLUUD"},
+    {"generate-tetrahedral-0d", 1, NULL},
+    {"generate-carbon-2d", 2, NULL},
+    {"generate-carbon-3d-isotope-charge-radical", 3, "-FixedH"},
+    {"generate-carbon-iron-reconnected", 4, "-RecMet -FixedH"},
+    {"generate-pseudoatom-error", 5, NULL},
+};
+
+static void print_root_get_inchi_record(const RootGetInchiCase *test_case)
+{
+    inchi_Atom atoms[5];
+    inchi_Atom atoms_before[5];
+    inchi_Stereo0D stereo[1];
+    inchi_Stereo0D stereo_before[1];
+    char options[96];
+    char options_before[96];
+    inchi_Input input;
+    inchi_Output output;
+    int status;
+    int atom_count = 1;
+    int stereo_count = 0;
+    int input_unchanged;
+
+    memset(atoms, 0, sizeof(atoms));
+    memset(stereo, 0, sizeof(stereo));
+    memset(options, 0xa5, sizeof(options));
+    if (test_case->options)
+    {
+        size_t length = strlen(test_case->options);
+        memcpy(options, test_case->options, length + 1);
+    }
+
+    if (test_case->kind == 0)
+    {
+        set_root_element(&atoms[0], "C");
+        atoms[0].num_iso_H[0] = -1;
+    }
+    else if (test_case->kind == 1)
+    {
+        int index;
+        static const char *elements[] = {"C", "F", "Cl", "Br", "I"};
+        atom_count = 5;
+        stereo_count = 1;
+        for (index = 0; index < atom_count; index++)
+        {
+            set_root_element(&atoms[index], elements[index]);
+        }
+        for (index = 0; index < 4; index++)
+        {
+            atoms[0].neighbor[index] = (AT_NUM) (index + 1);
+            atoms[0].bond_type[index] = INCHI_BOND_TYPE_SINGLE;
+            atoms[index + 1].neighbor[0] = 0;
+            atoms[index + 1].bond_type[0] = INCHI_BOND_TYPE_SINGLE;
+            atoms[index + 1].num_bonds = 1;
+            stereo[0].neighbor[index] = (AT_NUM) (index + 1);
+        }
+        atoms[0].num_bonds = 4;
+        stereo[0].central_atom = 0;
+        stereo[0].type = INCHI_StereoType_Tetrahedral;
+        stereo[0].parity = INCHI_PARITY_ODD;
+    }
+    else if (test_case->kind == 2)
+    {
+        set_root_element(&atoms[0], "C");
+        atoms[0].num_iso_H[0] = -1;
+        atoms[0].x = 1.25;
+        atoms[0].y = -2.5;
+    }
+    else if (test_case->kind == 3)
+    {
+        set_root_element(&atoms[0], "C");
+        atoms[0].num_iso_H[0] = -1;
+        atoms[0].x = 1.25;
+        atoms[0].y = -2.5;
+        atoms[0].z = 3.75;
+        atoms[0].isotopic_mass = 13;
+        atoms[0].charge = 1;
+        atoms[0].radical = INCHI_RADICAL_DOUBLET;
+    }
+    else if (test_case->kind == 4)
+    {
+        atom_count = 2;
+        set_root_element(&atoms[0], "C");
+        set_root_element(&atoms[1], "Fe");
+        atoms[0].num_iso_H[0] = -1;
+        atoms[0].neighbor[0] = 1;
+        atoms[0].bond_type[0] = INCHI_BOND_TYPE_SINGLE;
+        atoms[0].num_bonds = 1;
+        atoms[1].neighbor[0] = 0;
+        atoms[1].bond_type[0] = INCHI_BOND_TYPE_SINGLE;
+        atoms[1].num_bonds = 1;
+    }
+    else
+    {
+        set_root_element(&atoms[0], "*");
+    }
+
+    memcpy(atoms_before, atoms, sizeof(atoms));
+    memcpy(stereo_before, stereo, sizeof(stereo));
+    memcpy(options_before, options, sizeof(options));
+    memset(&input, 0, sizeof(input));
+    input.atom = atoms;
+    input.num_atoms = (AT_NUM) atom_count;
+    input.stereo0D = stereo_count ? stereo : NULL;
+    input.num_stereo0D = (AT_NUM) stereo_count;
+    input.szOptions = test_case->options ? options : NULL;
+    memset(&output, 0, sizeof(output));
+
+    status = GetINCHI(&input, &output);
+    input_unchanged =
+        memcmp(atoms, atoms_before, sizeof(atoms)) == 0 &&
+        memcmp(stereo, stereo_before, sizeof(stereo)) == 0 &&
+        memcmp(options, options_before, sizeof(options)) == 0;
+
+    fputs("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\",\"case_id\":",
+          stdout);
+    print_json_string(test_case->case_id);
+    printf(",\"operation\":\"get_inchi_root\",\"input\":{\"kind\":%d,"
+           "\"options\":",
+           test_case->kind);
+    print_nullable_json_string(test_case->options);
+    printf("},\"output\":{\"status\":%d,\"inchi\":", status);
+    print_nullable_json_string(output.szInChI);
+    fputs(",\"aux\":", stdout);
+    print_nullable_json_string(output.szAuxInfo);
+    fputs(",\"message\":", stdout);
+    print_nullable_json_string(output.szMessage);
+    fputs(",\"log\":", stdout);
+    print_nullable_json_string(output.szLog);
+    printf(",\"input_unchanged\":%s", input_unchanged ? "true" : "false");
+
+    FreeINCHI(&output);
+    printf(",\"after_free\":{\"inchi_null\":%s,\"aux_null\":%s,"
+           "\"message_null\":%s,\"log_null\":%s}}}\n",
+           output.szInChI ? "false" : "true",
+           output.szAuxInfo ? "false" : "true",
+           output.szMessage ? "false" : "true",
+           output.szLog ? "false" : "true");
+}
+
+typedef struct tagRootGetStructCase
+{
+    const char *case_id;
+    const char *inchi;
+    const char *options;
+} RootGetStructCase;
+
+static const RootGetStructCase ROOT_GET_STRUCT_CASES[] = {
+    {"parse-methane", "InChI=1S/CH4/h1H4", NULL},
+    {"parse-warning",
+     "InChI=1S/C3H6O3/c1-2(4)3(5)6/h2,4H,1H3,(H,5,6)/t2-/m0/s1", NULL},
+    {"parse-isotope-charge", "InChI=1S/CH5N/c1-2/h2H2,1H3/p+1/i1+1", NULL},
+    {"parse-tetrahedral", "InChI=1S/CBrClFI/c2-1(3,4)5/t1-/m1/s1", NULL},
+    {"parse-fixed-h",
+     "InChI=1/C5H5N5O/c6-5-9-3-2(4(11)10-5)7-1-8-3/"
+     "h1H,(H4,6,7,8,9,10,11)/f/h8,10H,6H2",
+     NULL},
+    {"parse-reconnected", "InChI=1/CH4/h1H4/rCH4/h1H4", NULL},
+    {"parse-polymer",
+     "InChI=1B/C4H4N4.2Zz/c1-5-2-7-4-8-3-6-1;;/h1-4H;;/"
+     "z101-1-8(9,10-8,3,1,6,2,5,2,7,3,6,1,5,4,7,4,8)/"
+     "b5-1-,5-2+,6-1+,6-3-,7-2+,7-4+,8-3+,8-4+;;",
+     NULL},
+    {"parse-malformed", "bad", NULL},
+};
+
+static void print_root_get_struct_record(const RootGetStructCase *test_case)
+{
+    char input_text[512];
+    char input_before[512];
+    char options[96];
+    char options_before[96];
+    inchi_InputINCHI input;
+    inchi_OutputStruct output;
+    int status;
+    int index;
+    int input_unchanged;
+
+    memset(input_text, 0xa5, sizeof(input_text));
+    memcpy(input_text, test_case->inchi, strlen(test_case->inchi) + 1);
+    memcpy(input_before, input_text, sizeof(input_text));
+    memset(options, 0xa5, sizeof(options));
+    if (test_case->options)
+    {
+        memcpy(options, test_case->options, strlen(test_case->options) + 1);
+    }
+    memcpy(options_before, options, sizeof(options));
+    input.szInChI = input_text;
+    input.szOptions = test_case->options ? options : NULL;
+    memset(&output, 0xa5, sizeof(output));
+
+    status = GetStructFromINCHI(&input, &output);
+    input_unchanged =
+        memcmp(input_text, input_before, sizeof(input_text)) == 0 &&
+        memcmp(options, options_before, sizeof(options)) == 0;
+
+    fputs("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\",\"case_id\":",
+          stdout);
+    print_json_string(test_case->case_id);
+    fputs(",\"operation\":\"get_struct_from_inchi_root\",\"input\":{\"inchi\":",
+          stdout);
+    print_json_string(test_case->inchi);
+    fputs(",\"options\":", stdout);
+    print_nullable_json_string(test_case->options);
+    printf("},\"output\":{\"status\":%d,\"num_atoms\":%d,"
+           "\"num_stereo\":%d,\"message\":",
+           status, (int) output.num_atoms, (int) output.num_stereo0D);
+    print_nullable_json_string(output.szMessage);
+    fputs(",\"log\":", stdout);
+    print_nullable_json_string(output.szLog);
+    fputs(",\"warning_flags\":[", stdout);
+    printf("%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 "],\"atoms\":[",
+           (uint64_t) output.WarningFlags[0][0],
+           (uint64_t) output.WarningFlags[0][1],
+           (uint64_t) output.WarningFlags[1][0],
+           (uint64_t) output.WarningFlags[1][1]);
+    for (index = 0; index < output.num_atoms; index++)
+    {
+        if (index)
+        {
+            putchar(',');
+        }
+        print_root_atom(output.atom + index);
+    }
+    fputs("],\"stereo\":[", stdout);
+    for (index = 0; index < output.num_stereo0D; index++)
+    {
+        if (index)
+        {
+            putchar(',');
+        }
+        print_root_stereo(output.stereo0D + index);
+    }
+    printf("],\"input_unchanged\":%s", input_unchanged ? "true" : "false");
+
+    FreeStructFromINCHI(&output);
+    printf(",\"after_free\":{\"atom_null\":%s,\"stereo_null\":%s,"
+           "\"message_null\":%s,\"log_null\":%s,\"num_atoms\":%d,"
+           "\"num_stereo\":%d,\"warning_flags\":[%" PRIu64 ",%" PRIu64
+           ",%" PRIu64 ",%" PRIu64 "]}}}\n",
+           output.atom ? "false" : "true",
+           output.stereo0D ? "false" : "true",
+           output.szMessage ? "false" : "true",
+           output.szLog ? "false" : "true",
+           (int) output.num_atoms, (int) output.num_stereo0D,
+           (uint64_t) output.WarningFlags[0][0],
+           (uint64_t) output.WarningFlags[0][1],
+           (uint64_t) output.WarningFlags[1][0],
+           (uint64_t) output.WarningFlags[1][1]);
+}
+
+static int print_rdkit_core_root_records(void)
+{
+    unsigned int index;
+    for (index = 0;
+         index < sizeof(ROOT_GET_INCHI_CASES) / sizeof(ROOT_GET_INCHI_CASES[0]);
+         index++)
+    {
+        print_root_get_inchi_record(ROOT_GET_INCHI_CASES + index);
+    }
+    for (index = 0;
+         index < sizeof(ROOT_GET_STRUCT_CASES) / sizeof(ROOT_GET_STRUCT_CASES[0]);
+         index++)
+    {
+        print_root_get_struct_record(ROOT_GET_STRUCT_CASES + index);
+    }
+    return 0;
+}
+
+static void cn_list_hash_i32(uint64_t *hash, int value)
+{
+    uint32_t bits = (uint32_t) value;
+    unsigned int byte_index;
+    for (byte_index = 0; byte_index < 4; byte_index++)
+    {
+        *hash ^= (bits >> (byte_index * 8)) & UINT32_C(0xff);
+        *hash *= UINT64_C(1099511628211);
+    }
+}
+
+static int print_cn_list_record(void)
+{
+    uint64_t hash = UINT64_C(1469598103934665603);
+    int list_index;
+    for (list_index = 0; list_index < cnListNumEl; list_index++)
+    {
+        int node_index;
+        cn_list_hash_i32(&hash, cnList[list_index].bits);
+        for (node_index = 0; node_index < cnList[list_index].len; node_index++)
+        {
+            int edge_index;
+            const C_NODE *node = cnList[list_index].pCN + node_index;
+            cn_list_hash_i32(&hash, node->v.type);
+            cn_list_hash_i32(&hash, node->v.cap);
+            cn_list_hash_i32(&hash, node->v.flow);
+            for (edge_index = 0; edge_index < MAX_CN_VAL; edge_index++)
+            {
+                const ECF *edge = node->e + edge_index;
+                cn_list_hash_i32(&hash, edge->neigh);
+                cn_list_hash_i32(&hash, edge->cap);
+                cn_list_hash_i32(&hash, edge->bForbiddenEdge);
+                cn_list_hash_i32(&hash, edge->flow);
+            }
+        }
+    }
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\"," 
+           "\"case_id\":\"cn-list-active-table\",\"operation\":\"cn_list\"," 
+           "\"output\":{\"count\":%d,\"hash\":\"%" PRIu64 "\"," 
+           "\"cn_p_edge\":{\"neighbor\":%d,\"cap\":%d," 
+           "\"forbidden\":%d,\"flow\":%d}}}\n",
+           cnListNumEl, hash,
+           (int) cnList[14].pCN[0].e[0].neigh,
+           (int) cnList[14].pCN[0].e[0].cap,
+           (int) cnList[14].pCN[0].e[0].bForbiddenEdge,
+           (int) cnList[14].pCN[0].e[0].flow);
+    return 0;
+}
+
+static int print_normalize_and_compare_negative_case(unsigned int holder_mask,
+                                                     int forced_return)
+{
+    CANON_GLOBALS canonical_globals;
+    CANON_GLOBALS canonical_globals_before;
+    struct tagINCHI_CLOCK clock;
+    struct tagINCHI_CLOCK clock_before;
+    INPUT_PARMS parameters;
+    INPUT_PARMS parameters_before;
+    STRUCT_DATA data;
+    STRUCT_DATA data_before;
+    BN_STRUCT bns;
+    BN_STRUCT bns_before;
+    BN_DATA bns_data;
+    BN_DATA bns_data_before;
+    BNS_VERTEX vertex;
+    BNS_VERTEX vertex_before;
+    StrFromINChI structure;
+    StrFromINChI expected_structure;
+    inp_ATOM atoms[1];
+    inp_ATOM atoms_before[1];
+    inp_ATOM atoms2[1];
+    inp_ATOM atoms2_before[1];
+    inp_ATOM atoms3[1];
+    inp_ATOM atoms3_before[1];
+    VAL_AT valence[1];
+    VAL_AT valence_before[1];
+    ALL_TC_GROUPS groups;
+    ALL_TC_GROUPS groups_before;
+    SRM restore_mode;
+    INChI *input[TAUT_NUM] = {NULL, NULL};
+    static const char *inchi_labels[TAUT_NUM] = {
+        "pOneINChI[0]", "pOneINChI[1]"};
+    static const char *aux_labels[TAUT_NUM] = {
+        "pOneINChI_Aux[0]", "pOneINChI_Aux[1]"};
+    static const char *norm_labels[TAUT_NUM] = {
+        "pOne_norm_data[0]", "pOne_norm_data[1]"};
+    char case_id[96];
+    int index;
+    int result;
+    int runs = 17;
+    int delta = -19;
+    int complete_caller_state_exact;
+    int allocation_free_exact;
+    int holders_null;
+    int one_ti_cleared;
+    size_t source_allocations_before;
+    size_t source_allocations_after;
+
+    memset(&canonical_globals, 0, sizeof(canonical_globals));
+    memset(&clock, 0, sizeof(clock));
+    memset(&parameters, 0, sizeof(parameters));
+    memset(&data, 0, sizeof(data));
+    memset(&bns, 0, sizeof(bns));
+    memset(&bns_data, 0, sizeof(bns_data));
+    memset(&vertex, 0, sizeof(vertex));
+    memset(&structure, 0, sizeof(structure));
+    memset(atoms, 0, sizeof(atoms));
+    memset(atoms2, 0, sizeof(atoms2));
+    memset(atoms3, 0, sizeof(atoms3));
+    memset(valence, 0, sizeof(valence));
+    memset(&groups, 0, sizeof(groups));
+    memset(&restore_mode, 0, sizeof(restore_mode));
+
+    parameters.nMode = REQ_MODE_TAUT | REQ_MODE_NON_ISO;
+    parameters.bTautFlags = TG_FLAG_FIX_ISO_FIXEDH_BUG |
+                            TG_FLAG_FIX_TERM_H_CHRG_BUG;
+    bns.num_atoms = 1;
+    bns.num_vertices = 1;
+    bns.vert = &vertex;
+    atoms[0].el_number = 6;
+    atoms[0].num_H = 4;
+    atoms[0].orig_at_number = 1;
+    atoms[0].component = 1;
+    strcpy(atoms[0].elname, "C");
+    structure.at = atoms;
+    structure.num_atoms = 1;
+    structure.bMobileH = TAUT_YES;
+    structure.iMobileH = TAUT_YES;
+    structure.pSrm = &restore_mode;
+
+    ORACLE_NORMALIZE_ALLOCATION_COUNT = 0;
+    for (index = 0; index < TAUT_NUM; index++)
+    {
+        unsigned int shift = (unsigned int) index * 3U;
+        if (holder_mask & (1U << shift))
+        {
+            structure.pOneINChI[index] = calloc(1, sizeof(INChI));
+            if (!structure.pOneINChI[index])
+            {
+                return 70;
+            }
+            structure.pOneINChI[index]->nErrorCode = 100 + index;
+            structure.pOneINChI[index]->nNumberOfAtoms = 10 + index;
+            oracle_normalize_register_allocation(structure.pOneINChI[index],
+                                                 inchi_labels[index]);
+        }
+        if (holder_mask & (1U << (shift + 1U)))
+        {
+            structure.pOneINChI_Aux[index] = calloc(1, sizeof(INChI_Aux));
+            if (!structure.pOneINChI_Aux[index])
+            {
+                return 70;
+            }
+            structure.pOneINChI_Aux[index]->nErrorCode = 200 + index;
+            structure.pOneINChI_Aux[index]->nNumberOfAtoms = 20 + index;
+            oracle_normalize_register_allocation(
+                structure.pOneINChI_Aux[index], aux_labels[index]);
+        }
+        if (holder_mask & (1U << (shift + 2U)))
+        {
+            structure.pOne_norm_data[index] =
+                calloc(1, sizeof(INP_ATOM_DATA));
+            if (!structure.pOne_norm_data[index])
+            {
+                return 70;
+            }
+            structure.pOne_norm_data[index]->num_at = 30 + index;
+            structure.pOne_norm_data[index]->num_bonds = 40 + index;
+            oracle_normalize_register_allocation(
+                structure.pOne_norm_data[index], norm_labels[index]);
+        }
+    }
+    structure.One_ti.t_group = calloc(1, sizeof(T_GROUP));
+    if (!structure.One_ti.t_group)
+    {
+        return 70;
+    }
+    structure.One_ti.num_t_groups = 1;
+    structure.One_ti.t_group[0].nNumEndpoints = 51;
+    structure.One_ti.t_group[0].num[0] = 52;
+    structure.One_ti.t_group[0].num[1] = 53;
+    oracle_normalize_register_allocation(structure.One_ti.t_group,
+                                         "One_ti.t_group");
+
+    canonical_globals_before = canonical_globals;
+    clock_before = clock;
+    parameters_before = parameters;
+    data_before = data;
+    bns_before = bns;
+    bns_data_before = bns_data;
+    vertex_before = vertex;
+    memcpy(atoms_before, atoms, sizeof(atoms));
+    memcpy(atoms2_before, atoms2, sizeof(atoms2));
+    memcpy(atoms3_before, atoms3, sizeof(atoms3));
+    memcpy(valence_before, valence, sizeof(valence));
+    groups_before = groups;
+    expected_structure = structure;
+    for (index = 0; index < TAUT_NUM; index++)
+    {
+        expected_structure.pOneINChI[index] = NULL;
+        expected_structure.pOneINChI_Aux[index] = NULL;
+        expected_structure.pOne_norm_data[index] = NULL;
+    }
+    memset(&expected_structure.One_ti, 0, sizeof(expected_structure.One_ti));
+
+    ORACLE_NORMALIZE_EVENTS[0] = '\0';
+    ORACLE_NORMALIZE_EVENTS_LENGTH = 0;
+    ORACLE_NORMALIZE_PREFREE_EXACT = 1;
+    ORACLE_NORMALIZE_EXPECTED_INCHI_ATOMS[0] = 10;
+    ORACLE_NORMALIZE_EXPECTED_INCHI_ATOMS[1] = 11;
+    ORACLE_NORMALIZE_FORCED_REBUILD_RETURN = forced_return;
+    ORACLE_NORMALIZE_FORCE_REBUILD = 1;
+    for (index = 0; index < TAUT_NUM; index++)
+    {
+        ORACLE_NORMALIZE_INCHI_HOLDERS[index] =
+            &structure.pOneINChI[index];
+        ORACLE_NORMALIZE_AUX_HOLDERS[index] =
+            &structure.pOneINChI_Aux[index];
+        ORACLE_NORMALIZE_NORM_HOLDERS[index] =
+            structure.pOne_norm_data[index];
+    }
+    ORACLE_DEFERRED_FREE_COUNT = 0;
+    ORACLE_DEFER_FREES = 1;
+    ORACLE_NORMALIZE_ACTIVE = 1;
+    result = NormalizeAndCompare(
+        &canonical_globals, &clock, &parameters, &data, &bns, &bns_data,
+        &structure, atoms, atoms2, atoms3, valence, &groups, input, LONG_MAX,
+        0, &runs, &delta, 4, 0);
+    ORACLE_NORMALIZE_ACTIVE = 0;
+
+    holders_null = structure.pOneINChI[0] == NULL &&
+                   structure.pOneINChI[1] == NULL &&
+                   structure.pOneINChI_Aux[0] == NULL &&
+                   structure.pOneINChI_Aux[1] == NULL &&
+                   structure.pOne_norm_data[0] == NULL &&
+                   structure.pOne_norm_data[1] == NULL;
+    one_ti_cleared = structure.One_ti.t_group == NULL &&
+                     structure.One_ti.num_t_groups == 0;
+    complete_caller_state_exact =
+        memcmp(&canonical_globals, &canonical_globals_before,
+               sizeof(canonical_globals)) == 0 &&
+        memcmp(&clock, &clock_before, sizeof(clock)) == 0 &&
+        memcmp(&parameters, &parameters_before, sizeof(parameters)) == 0 &&
+        memcmp(&data, &data_before, sizeof(data)) == 0 &&
+        memcmp(&bns, &bns_before, sizeof(bns)) == 0 &&
+        memcmp(&bns_data, &bns_data_before, sizeof(bns_data)) == 0 &&
+        memcmp(&vertex, &vertex_before, sizeof(vertex)) == 0 &&
+        memcmp(atoms, atoms_before, sizeof(atoms)) == 0 &&
+        memcmp(atoms2, atoms2_before, sizeof(atoms2)) == 0 &&
+        memcmp(atoms3, atoms3_before, sizeof(atoms3)) == 0 &&
+        memcmp(valence, valence_before, sizeof(valence)) == 0 &&
+        memcmp(&groups, &groups_before, sizeof(groups)) == 0 &&
+        memcmp(&structure, &expected_structure, sizeof(structure)) == 0 &&
+        input[0] == NULL && input[1] == NULL;
+    source_allocations_before = ORACLE_NORMALIZE_ALLOCATION_COUNT;
+    source_allocations_after = source_allocations_before >=
+                                       ORACLE_DEFERRED_FREE_COUNT
+                                   ? source_allocations_before -
+                                         ORACLE_DEFERRED_FREE_COUNT
+                                   : source_allocations_before;
+    allocation_free_exact =
+        ORACLE_DEFERRED_FREE_COUNT == source_allocations_before;
+    snprintf(case_id, sizeof(case_id), "normalize-initial-%d-mask-%02x",
+             forced_return, holder_mask);
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"%s\",\"operation\":\"NormalizeAndCompare\","
+           "\"input\":{\"holder_mask\":%u,\"forced_return\":%d},"
+           "\"output\":{\"result\":%d,\"runs\":%d,\"delta\":%d,"
+           "\"complete_caller_state_exact\":%s,"
+           "\"prefree_state_exact\":%s,\"allocation_free_exact\":%s,"
+           "\"source_allocations_before\":%zu,"
+           "\"source_allocations_after\":%zu,\"holders_null\":%s,"
+           "\"one_ti_cleared\":%s,\"input_pointers_preserved\":%s,"
+           "\"cleanup_events\":[%s]}}\n",
+           case_id, holder_mask, forced_return, result, runs, delta,
+           complete_caller_state_exact ? "true" : "false",
+           ORACLE_NORMALIZE_PREFREE_EXACT ? "true" : "false",
+           allocation_free_exact ? "true" : "false",
+           source_allocations_before, source_allocations_after,
+           holders_null ? "true" : "false",
+           one_ti_cleared ? "true" : "false",
+           input[0] == NULL && input[1] == NULL ? "true" : "false",
+           ORACLE_NORMALIZE_EVENTS);
+    fflush(stdout);
+
+    ORACLE_DEFER_FREES = 0;
+    oracle_flush_deferred_frees();
+    return 0;
+}
+
+static int print_normalize_and_compare_layer_case(int mobile_h,
+                                                  int original_state,
+                                                  int reversed_state,
+                                                  int force_compare)
+{
+    CANON_GLOBALS canonical_globals;
+    struct tagINCHI_CLOCK clock;
+    INPUT_PARMS parameters;
+    STRUCT_DATA data;
+    BN_STRUCT bns;
+    BN_DATA bns_data;
+    BNS_VERTEX vertex;
+    StrFromINChI structure;
+    StrFromINChI expected_structure;
+    inp_ATOM atoms[1];
+    inp_ATOM atoms2[1];
+    inp_ATOM atoms3[1];
+    VAL_AT valence[1];
+    ALL_TC_GROUPS groups;
+    SRM restore_mode;
+    INChI original[TAUT_NUM];
+    INChI *input[TAUT_NUM];
+    int result;
+    int runs = 17;
+    int delta = -19;
+    int expected_original_index;
+    int expected_reversed_index;
+    int holders_null;
+    int complete_caller_state_exact;
+    char case_id[128];
+
+    memset(&canonical_globals, 0, sizeof(canonical_globals));
+    memset(&clock, 0, sizeof(clock));
+    memset(&parameters, 0, sizeof(parameters));
+    memset(&data, 0, sizeof(data));
+    memset(&bns, 0, sizeof(bns));
+    memset(&bns_data, 0, sizeof(bns_data));
+    memset(&vertex, 0, sizeof(vertex));
+    memset(&structure, 0, sizeof(structure));
+    memset(atoms, 0, sizeof(atoms));
+    memset(atoms2, 0, sizeof(atoms2));
+    memset(atoms3, 0, sizeof(atoms3));
+    memset(valence, 0, sizeof(valence));
+    memset(&groups, 0, sizeof(groups));
+    memset(&restore_mode, 0, sizeof(restore_mode));
+    memset(original, 0, sizeof(original));
+
+    parameters.nMode = REQ_MODE_TAUT | REQ_MODE_NON_ISO;
+    bns.num_atoms = 1;
+    bns.num_vertices = 1;
+    bns.vert = &vertex;
+    atoms[0].el_number = 6;
+    atoms[0].num_H = 4;
+    atoms[0].orig_at_number = 1;
+    atoms[0].component = 1;
+    strcpy(atoms[0].elname, "C");
+    structure.at = atoms;
+    structure.num_atoms = 1;
+    structure.bMobileH = (char) mobile_h;
+    structure.iMobileH = TAUT_YES;
+    structure.pSrm = &restore_mode;
+    original[0].nNumberOfAtoms = 1;
+    original[0].nErrorCode = 70;
+    original[1].nErrorCode = 71;
+    input[0] = original;
+    input[1] = NULL;
+    if (original_state != 0)
+    {
+        original[1].nNumberOfAtoms = original_state == 1 ? 0 : 1;
+        original[1].bDeleted = original_state == 2;
+        input[1] = original + 1;
+    }
+
+    ORACLE_NORMALIZE_ALLOCATION_COUNT = 0;
+    structure.pOneINChI[0] = calloc(1, sizeof(INChI));
+    if (!structure.pOneINChI[0])
+    {
+        return 70;
+    }
+    structure.pOneINChI[0]->nNumberOfAtoms = 1;
+    structure.pOneINChI[0]->nErrorCode = 100;
+    oracle_normalize_register_allocation(structure.pOneINChI[0],
+                                         "pOneINChI[0]");
+    if (reversed_state != 0)
+    {
+        structure.pOneINChI[1] = calloc(1, sizeof(INChI));
+        if (!structure.pOneINChI[1])
+        {
+            return 70;
+        }
+        structure.pOneINChI[1]->nNumberOfAtoms =
+            reversed_state == 1 ? 0 : 1;
+        structure.pOneINChI[1]->bDeleted = reversed_state == 2;
+        structure.pOneINChI[1]->nErrorCode = 101;
+        oracle_normalize_register_allocation(structure.pOneINChI[1],
+                                             "pOneINChI[1]");
+    }
+    if (!force_compare)
+    {
+        structure.pOne_norm_data[0] = calloc(1, sizeof(INP_ATOM_DATA));
+        if (!structure.pOne_norm_data[0])
+        {
+            return 70;
+        }
+        structure.pOne_norm_data[0]->num_at = 30;
+        structure.pOne_norm_data[0]->num_bonds = 40;
+        oracle_normalize_register_allocation(structure.pOne_norm_data[0],
+                                             "pOne_norm_data[0]");
+    }
+
+    expected_original_index = mobile_h == TAUT_NON && original_state == 3;
+    expected_reversed_index = mobile_h == TAUT_NON && reversed_state == 3;
+    expected_structure = structure;
+    expected_structure.pOneINChI[0] = NULL;
+    expected_structure.pOneINChI[1] = NULL;
+    expected_structure.pOne_norm_data[0] = NULL;
+
+    ORACLE_NORMALIZE_EVENTS[0] = '\0';
+    ORACLE_NORMALIZE_EVENTS_LENGTH = 0;
+    ORACLE_NORMALIZE_PREFREE_EXACT = 1;
+    ORACLE_NORMALIZE_FORCED_REBUILD_RETURN = 0;
+    ORACLE_NORMALIZE_FORCE_REBUILD = 1;
+    ORACLE_NORMALIZE_FORCE_COMPARE = force_compare;
+    ORACLE_NORMALIZE_EXPECTED_INCHI_ATOMS[0] = 1;
+    ORACLE_NORMALIZE_EXPECTED_INCHI_ATOMS[1] =
+        reversed_state == 1 ? 0 : 1;
+    ORACLE_NORMALIZE_REVERSED[0] = structure.pOneINChI[0];
+    ORACLE_NORMALIZE_REVERSED[1] = structure.pOneINChI[1];
+    ORACLE_NORMALIZE_ORIGINAL[0] = input[0];
+    ORACLE_NORMALIZE_ORIGINAL[1] = input[1];
+    ORACLE_NORMALIZE_INCHI_HOLDERS[0] = &structure.pOneINChI[0];
+    ORACLE_NORMALIZE_INCHI_HOLDERS[1] = &structure.pOneINChI[1];
+    ORACLE_NORMALIZE_AUX_HOLDERS[0] = &structure.pOneINChI_Aux[0];
+    ORACLE_NORMALIZE_AUX_HOLDERS[1] = &structure.pOneINChI_Aux[1];
+    ORACLE_NORMALIZE_NORM_HOLDERS[0] = structure.pOne_norm_data[0];
+    ORACLE_NORMALIZE_NORM_HOLDERS[1] = NULL;
+    ORACLE_DEFERRED_FREE_COUNT = 0;
+    ORACLE_DEFER_FREES = 1;
+    ORACLE_NORMALIZE_ACTIVE = 1;
+    result = NormalizeAndCompare(
+        &canonical_globals, &clock, &parameters, &data, &bns, &bns_data,
+        &structure, atoms, atoms2, atoms3, valence, &groups, input, LONG_MAX,
+        0, &runs, &delta, 4, 0);
+    ORACLE_NORMALIZE_ACTIVE = 0;
+    ORACLE_NORMALIZE_FORCE_COMPARE = 0;
+
+    holders_null = !structure.pOneINChI[0] && !structure.pOneINChI[1] &&
+                   !structure.pOneINChI_Aux[0] &&
+                   !structure.pOneINChI_Aux[1] &&
+                   !structure.pOne_norm_data[0] &&
+                   !structure.pOne_norm_data[1];
+    complete_caller_state_exact =
+        memcmp(&structure, &expected_structure, sizeof(structure)) == 0 &&
+        input[0] == original &&
+        input[1] == (original_state ? original + 1 : NULL) &&
+        original[0].nErrorCode == 70 && original[1].nErrorCode == 71;
+    snprintf(case_id, sizeof(case_id),
+             force_compare ? "normalize-layer-m%d-o%d-r%d"
+                           : "normalize-common-success",
+             mobile_h, original_state, reversed_state);
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\","
+           "\"case_id\":\"%s\",\"operation\":\"NormalizeAndCompare\","
+           "\"family\":\"%s\","
+           "\"input\":{\"mobile_h\":%d,\"original_state\":%d,"
+           "\"reversed_state\":%d},"
+           "\"output\":{\"result\":%d,\"runs\":%d,\"delta\":%d,"
+           "\"selected_original_index\":%d,"
+           "\"selected_reversed_index\":%d,"
+           "\"complete_caller_state_exact\":%s,"
+           "\"prefree_state_exact\":%s,\"allocation_free_exact\":%s,"
+           "\"source_allocations_before\":%zu,"
+           "\"source_allocations_after\":0,\"holders_null\":%s,"
+           "\"one_ti_cleared\":true,\"input_pointers_preserved\":true,"
+           "\"cleanup_events\":[%s]}}\n",
+           case_id, force_compare ? "layer-selection" : "common-success",
+           mobile_h, original_state, reversed_state, result, runs,
+           delta, expected_original_index, expected_reversed_index,
+           complete_caller_state_exact ? "true" : "false",
+           ORACLE_NORMALIZE_PREFREE_EXACT ? "true" : "false",
+           ORACLE_DEFERRED_FREE_COUNT == ORACLE_NORMALIZE_ALLOCATION_COUNT
+               ? "true"
+               : "false",
+           ORACLE_NORMALIZE_ALLOCATION_COUNT,
+           holders_null ? "true" : "false", ORACLE_NORMALIZE_EVENTS);
+    fflush(stdout);
+    ORACLE_DEFER_FREES = 0;
+    oracle_flush_deferred_frees();
+    return 0;
+}
+
+static int run_normalize_and_compare_zz_case(int n_zy, int n_pzz,
+                                             const char *formula,
+                                             int failure_stage,
+                                             int force_growth,
+                                             int emit_record)
+{
+    CANON_GLOBALS canonical_globals;
+    CANON_GLOBALS canonical_globals_before;
+    struct tagINCHI_CLOCK clock;
+    struct tagINCHI_CLOCK clock_before;
+    INPUT_PARMS parameters;
+    INPUT_PARMS parameters_before;
+    STRUCT_DATA data;
+    STRUCT_DATA data_before;
+    BN_STRUCT bns;
+    BN_STRUCT bns_before;
+    BN_DATA bns_data;
+    BN_DATA bns_data_before;
+    BNS_VERTEX vertex;
+    BNS_VERTEX vertex_before;
+    StrFromINChI structure;
+    StrFromINChI expected_structure;
+    inp_ATOM atoms[1];
+    inp_ATOM atoms_before[1];
+    inp_ATOM atoms2[1];
+    inp_ATOM atoms2_before[1];
+    inp_ATOM atoms3[1];
+    inp_ATOM atoms3_before[1];
+    VAL_AT valence[1];
+    VAL_AT valence_before[1];
+    ALL_TC_GROUPS groups;
+    ALL_TC_GROUPS groups_before;
+    SRM restore_mode;
+    INChI original;
+    INChI *input[TAUT_NUM] = {&original, NULL};
+    int result;
+    int runs = 17;
+    int delta = -19;
+    int complete_caller_state_exact;
+    int holders_null;
+    char case_id[160];
+
+    memset(&canonical_globals, 0, sizeof(canonical_globals));
+    memset(&clock, 0, sizeof(clock));
+    memset(&parameters, 0, sizeof(parameters));
+    memset(&data, 0, sizeof(data));
+    memset(&bns, 0, sizeof(bns));
+    memset(&bns_data, 0, sizeof(bns_data));
+    memset(&vertex, 0, sizeof(vertex));
+    memset(&structure, 0, sizeof(structure));
+    memset(atoms, 0, sizeof(atoms));
+    memset(atoms2, 0, sizeof(atoms2));
+    memset(atoms3, 0, sizeof(atoms3));
+    memset(valence, 0, sizeof(valence));
+    memset(&groups, 0, sizeof(groups));
+    memset(&restore_mode, 0, sizeof(restore_mode));
+    memset(&original, 0, sizeof(original));
+
+    parameters.nMode = REQ_MODE_TAUT | REQ_MODE_NON_ISO;
+    bns.num_atoms = 1;
+    bns.num_vertices = 1;
+    bns.vert = &vertex;
+    atoms[0].el_number = 6;
+    atoms[0].num_H = 4;
+    atoms[0].orig_at_number = 1;
+    atoms[0].component = 1;
+    strcpy(atoms[0].elname, "C");
+    structure.at = atoms;
+    structure.num_atoms = 1;
+    structure.bMobileH = TAUT_YES;
+    structure.iMobileH = TAUT_YES;
+    structure.pSrm = &restore_mode;
+    structure.n_zy = n_zy;
+    structure.n_pzz = n_pzz;
+    original.nNumberOfAtoms = 1;
+    original.nErrorCode = 70;
+
+    ORACLE_NORMALIZE_ALLOCATION_COUNT = 0;
+    structure.pOneINChI[0] = calloc(1, sizeof(INChI));
+    if (!structure.pOneINChI[0])
+    {
+        return 70;
+    }
+    structure.pOneINChI[0]->nNumberOfAtoms = 1;
+    structure.pOneINChI[0]->nErrorCode = 100;
+    oracle_normalize_register_allocation(structure.pOneINChI[0],
+                                         "pOneINChI[0]");
+    if (formula)
+    {
+        size_t formula_size = strlen(formula) + 1;
+        structure.pOneINChI[0]->szHillFormula = calloc(formula_size, 1);
+        if (!structure.pOneINChI[0]->szHillFormula)
+        {
+            return 70;
+        }
+        memcpy(structure.pOneINChI[0]->szHillFormula, formula, formula_size);
+        oracle_normalize_register_allocation(
+            structure.pOneINChI[0]->szHillFormula, "formula");
+    }
+
+    canonical_globals_before = canonical_globals;
+    clock_before = clock;
+    parameters_before = parameters;
+    data_before = data;
+    bns_before = bns;
+    bns_data_before = bns_data;
+    vertex_before = vertex;
+    memcpy(atoms_before, atoms, sizeof(atoms));
+    memcpy(atoms2_before, atoms2, sizeof(atoms2));
+    memcpy(atoms3_before, atoms3, sizeof(atoms3));
+    memcpy(valence_before, valence, sizeof(valence));
+    groups_before = groups;
+    expected_structure = structure;
+    expected_structure.pOneINChI[0] = NULL;
+
+    ORACLE_NORMALIZE_EVENTS[0] = '\0';
+    ORACLE_NORMALIZE_EVENTS_LENGTH = 0;
+    ORACLE_NORMALIZE_PREFREE_EXACT = 1;
+    ORACLE_NORMALIZE_ZZ_FORMULA[0] = '\0';
+    ORACLE_NORMALIZE_FORCED_REBUILD_RETURN = 0;
+    ORACLE_NORMALIZE_FORCE_REBUILD = 1;
+    ORACLE_NORMALIZE_FORCE_COMPARE = 1;
+    ORACLE_NORMALIZE_EXPECTED_INCHI_ATOMS[0] = 1;
+    ORACLE_NORMALIZE_EXPECTED_INCHI_ATOMS[1] = 0;
+    ORACLE_NORMALIZE_REVERSED[0] = structure.pOneINChI[0];
+    ORACLE_NORMALIZE_REVERSED[1] = NULL;
+    ORACLE_NORMALIZE_ORIGINAL[0] = input[0];
+    ORACLE_NORMALIZE_ORIGINAL[1] = NULL;
+    ORACLE_NORMALIZE_INCHI_HOLDERS[0] = &structure.pOneINChI[0];
+    ORACLE_NORMALIZE_INCHI_HOLDERS[1] = &structure.pOneINChI[1];
+    ORACLE_NORMALIZE_AUX_HOLDERS[0] = &structure.pOneINChI_Aux[0];
+    ORACLE_NORMALIZE_AUX_HOLDERS[1] = &structure.pOneINChI_Aux[1];
+    ORACLE_NORMALIZE_NORM_HOLDERS[0] = NULL;
+    ORACLE_NORMALIZE_NORM_HOLDERS[1] = NULL;
+    ORACLE_NORMALIZE_ZZ_FAILURE_STAGE = failure_stage;
+    ORACLE_NORMALIZE_ZZ_CALLOC_ORDINAL = 0;
+    ORACLE_NORMALIZE_ZZ_FORCE_GROWTH = force_growth;
+    ORACLE_NORMALIZE_ZZ_SUCCESSFUL_ALLOCATIONS = formula ? 2 : 1;
+    ORACLE_NORMALIZE_ZZ_FREES = 0;
+    ORACLE_NORMALIZE_ZZ_REALLOC_CALLS = 0;
+    ORACLE_NORMALIZE_ZZ_ACTIVE = 1;
+    ORACLE_NORMALIZE_ACTIVE = 1;
+    result = NormalizeAndCompare(
+        &canonical_globals, &clock, &parameters, &data, &bns, &bns_data,
+        &structure, atoms, atoms2, atoms3, valence, &groups, input, LONG_MAX,
+        0, &runs, &delta, 4, 0);
+    ORACLE_NORMALIZE_ACTIVE = 0;
+    ORACLE_NORMALIZE_ZZ_ACTIVE = 0;
+    ORACLE_NORMALIZE_FORCE_COMPARE = 0;
+
+    holders_null = !structure.pOneINChI[0] && !structure.pOneINChI[1] &&
+                   !structure.pOneINChI_Aux[0] &&
+                   !structure.pOneINChI_Aux[1] &&
+                   !structure.pOne_norm_data[0] &&
+                   !structure.pOne_norm_data[1];
+    complete_caller_state_exact =
+        memcmp(&canonical_globals, &canonical_globals_before,
+               sizeof(canonical_globals)) == 0 &&
+        memcmp(&clock, &clock_before, sizeof(clock)) == 0 &&
+        memcmp(&parameters, &parameters_before, sizeof(parameters)) == 0 &&
+        memcmp(&data, &data_before, sizeof(data)) == 0 &&
+        memcmp(&bns, &bns_before, sizeof(bns)) == 0 &&
+        memcmp(&bns_data, &bns_data_before, sizeof(bns_data)) == 0 &&
+        memcmp(&vertex, &vertex_before, sizeof(vertex)) == 0 &&
+        memcmp(atoms, atoms_before, sizeof(atoms)) == 0 &&
+        memcmp(atoms2, atoms2_before, sizeof(atoms2)) == 0 &&
+        memcmp(atoms3, atoms3_before, sizeof(atoms3)) == 0 &&
+        memcmp(valence, valence_before, sizeof(valence)) == 0 &&
+        memcmp(&groups, &groups_before, sizeof(groups)) == 0 &&
+        memcmp(&structure, &expected_structure, sizeof(structure)) == 0 &&
+        input[0] == &original && !input[1] && original.nErrorCode == 70;
+
+    if (emit_record)
+    {
+        snprintf(case_id, sizeof(case_id),
+                 "normalize-zz-nzy%d-npzz%d-f%s-fail%d-grow%d", n_zy,
+                 n_pzz, formula ? formula : "null", failure_stage,
+                 force_growth);
+        printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\"," 
+               "\"case_id\":\"%s\",\"operation\":\"NormalizeAndCompare\"," 
+               "\"family\":\"zz-zy\",\"input\":{\"n_zy\":%d," 
+               "\"n_pzz\":%d,\"formula_present\":%s," 
+               "\"formula\":\"%s\"," 
+               "\"failure_stage\":%d,\"force_growth\":%s}," 
+               "\"output\":{\"result\":%d,\"runs\":%d,\"delta\":%d," 
+               "\"formula_before_cleanup\":\"%s\"," 
+               "\"complete_caller_state_exact\":%s," 
+               "\"prefree_state_exact\":%s,\"holders_null\":%s," 
+               "\"source_allocation_calls\":%d," 
+               "\"successful_allocations\":%d,\"frees\":%d," 
+               "\"allocation_free_exact\":%s,\"cleanup_events\":[%s]}}\n",
+               case_id, n_zy, n_pzz, formula ? "true" : "false",
+               formula ? formula : "", failure_stage,
+               force_growth ? "true" : "false", result, runs, delta,
+               ORACLE_NORMALIZE_ZZ_FORMULA,
+               complete_caller_state_exact ? "true" : "false",
+               ORACLE_NORMALIZE_PREFREE_EXACT ? "true" : "false",
+               holders_null ? "true" : "false",
+               ORACLE_NORMALIZE_ZZ_CALLOC_ORDINAL +
+                   ORACLE_NORMALIZE_ZZ_REALLOC_CALLS,
+               ORACLE_NORMALIZE_ZZ_SUCCESSFUL_ALLOCATIONS,
+               ORACLE_NORMALIZE_ZZ_FREES,
+               ORACLE_NORMALIZE_ZZ_SUCCESSFUL_ALLOCATIONS ==
+                       ORACLE_NORMALIZE_ZZ_FREES
+                   ? "true"
+                   : "false",
+               ORACLE_NORMALIZE_EVENTS);
+        fflush(stdout);
+    }
+    return 0;
+}
+
+static int print_normalize_and_compare_zz_undefined_case(void)
+{
+    pid_t child;
+    int status;
+    fflush(stdout);
+    child = fork();
+    if (child < 0)
+    {
+        return 71;
+    }
+    if (child == 0)
+    {
+        (void) run_normalize_and_compare_zz_case(1, 1, "CZzZz2", 1, 0,
+                                                  0);
+        _exit(0);
+    }
+    if (waitpid(child, &status, 0) != child)
+    {
+        return 72;
+    }
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\"," 
+           "\"case_id\":\"normalize-zz-initial-buffer-allocation-undefined\"," 
+           "\"operation\":\"NormalizeAndCompare\"," 
+           "\"family\":\"zz-zy-undefined\"," 
+           "\"input\":{\"n_zy\":1,\"n_pzz\":1," 
+           "\"formula\":\"CZzZz2\",\"failure_stage\":1}," 
+           "\"output\":{\"source_defined\":false," 
+           "\"termination_kind\":\"%s\",\"termination_value\":%d}}\n",
+           WIFSIGNALED(status) ? "signal" : "exit",
+           WIFSIGNALED(status) ? WTERMSIG(status) : WEXITSTATUS(status));
+    fflush(stdout);
+    return 0;
+}
+
+typedef struct tagOracleNormalizeFirstLessCase
+{
+    const char *name;
+    int mobile_h;
+    int rebuild_len;
+    int rebuild_ret[3];
+    int rebuild_prep[3];
+    int compare_len;
+    INCHI_MODE compare_flags[4];
+    int compare_error[4];
+    int compare_h1[4];
+    int compare_h2[4];
+    int fill_len;
+    int fill_ret[2];
+    int fix_len;
+    int fix_ret[2];
+    int repair_kind;
+    int rebuild_norm[3];
+    int compare_endpoints[4];
+} ORACLE_NORMALIZE_FIRST_LESS_CASE;
+
+static const ORACLE_NORMALIZE_FIRST_LESS_CASE
+    ORACLE_NORMALIZE_FIRST_LESS_CASES[] = {
+        {"fill-skip", TAUT_YES, 1, {0}, {0}, 1, {IDIF_PROBLEM}},
+        {"fill-negative", TAUT_NON, 1, {0}, {0}, 0, {0}, {0}, {0}, {0},
+         1, {-7}},
+        {"fill-positive", TAUT_NON, 1, {0}, {0}, 0, {0}, {0}, {0}, {0},
+         1, {7}},
+        {"compare-problem-precedence", TAUT_NON, 1, {0}, {0}, 1,
+         {IDIF_PROBLEM}, {9}, {0}, {0}, 1, {0}},
+        {"compare-error", TAUT_NON, 1, {0}, {0}, 1, {0}, {9}, {0}, {0},
+         1, {0}},
+        {"less-flag-false", TAUT_YES, 1, {0}, {1}, 2,
+         {0, IDIF_PROBLEM}},
+        {"less-prep-null", TAUT_YES, 1, {0}, {0}, 2,
+         {IDIF_LESS_H, IDIF_PROBLEM}, {0}, {0}, {2}},
+        {"less-delta-zero", TAUT_YES, 1, {0}, {1}, 2,
+         {IDIF_LESS_H, IDIF_PROBLEM}, {0}, {2}, {2}},
+        {"less-delta-negative", TAUT_YES, 1, {0}, {1}, 2,
+         {IDIF_LESS_H, IDIF_PROBLEM}, {0}, {3}, {2}},
+        {"less-fixer-negative", TAUT_YES, 1, {0}, {1}, 1,
+         {IDIF_LESS_H}, {0}, {0}, {3}, 0, {0}, 1, {-7}},
+        {"less-fixer-zero", TAUT_YES, 1, {0}, {1}, 2,
+         {IDIF_LESS_H, IDIF_PROBLEM}, {0}, {0}, {3}, 0, {0}, 1, {0}},
+        {"less-rebuild-negative", TAUT_YES, 2, {0, -8}, {1, 1}, 1,
+         {IDIF_LESS_H}, {0}, {0}, {3}, 0, {0}, 1, {1}},
+        {"less-repeat-fill-positive", TAUT_NON, 2, {0, 0}, {1, 1}, 1,
+         {IDIF_LESS_H}, {0}, {0}, {3}, 2, {0, 7}, 1, {1}},
+        {"less-exit-cleared", TAUT_YES, 2, {0, 0}, {1, 1}, 3,
+         {IDIF_LESS_H, 0, IDIF_PROBLEM}, {0}, {0, 0, 0}, {3, 2, 0},
+         0, {0}, 1, {1}},
+        {"less-exit-prep-null", TAUT_YES, 2, {0, 0}, {1, 0}, 3,
+         {IDIF_LESS_H, IDIF_LESS_H, IDIF_PROBLEM}, {0}, {0, 0, 0},
+         {3, 2, 0}, 0, {0}, 1, {1}},
+        {"less-exit-zero-delta", TAUT_YES, 2, {0, 0}, {1, 1}, 3,
+         {IDIF_LESS_H, IDIF_LESS_H, IDIF_PROBLEM}, {0}, {0, 2, 0},
+         {3, 2, 0}, 0, {0}, 1, {1}},
+        {"less-exit-nondecreasing", TAUT_YES, 2, {0, 0}, {1, 1}, 3,
+         {IDIF_LESS_H, IDIF_LESS_H, IDIF_PROBLEM}, {0}, {0, 0, 0},
+         {3, 3, 0}, 0, {0}, 1, {1}},
+        {"less-continue-decreasing", TAUT_YES, 2, {0, 0}, {1, 1}, 3,
+        {IDIF_LESS_H, IDIF_LESS_H, IDIF_PROBLEM}, {0}, {0, 0, 0},
+         {3, 2, 0}, 0, {0}, 2, {1, 0}}};
+
+enum
+{
+    ORACLE_NORMALIZE_REPAIR_LESS = 0,
+    ORACLE_NORMALIZE_REPAIR_MORE = 1,
+    ORACLE_NORMALIZE_REPAIR_EXTRA = 2
+};
+
+static const ORACLE_NORMALIZE_FIRST_LESS_CASE
+    ORACLE_NORMALIZE_MORE_EXTRA_CASES[] = {
+        {.name = "more-flag-false", .mobile_h = TAUT_YES,
+         .rebuild_len = 1, .rebuild_ret = {0}, .rebuild_prep = {1},
+         .compare_len = 2, .compare_flags = {0, IDIF_PROBLEM},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_MORE},
+        {.name = "more-prep-null", .mobile_h = TAUT_YES,
+         .rebuild_len = 1, .rebuild_ret = {0}, .rebuild_prep = {0},
+         .compare_len = 2,
+         .compare_flags = {IDIF_MORE_H, IDIF_PROBLEM},
+         .compare_h1 = {2}, .repair_kind = ORACLE_NORMALIZE_REPAIR_MORE},
+        {.name = "more-delta-zero", .mobile_h = TAUT_YES,
+         .rebuild_len = 1, .rebuild_ret = {0}, .rebuild_prep = {1},
+         .compare_len = 2,
+         .compare_flags = {IDIF_MORE_H, IDIF_PROBLEM},
+         .compare_h1 = {2}, .compare_h2 = {2},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_MORE},
+        {.name = "more-delta-negative", .mobile_h = TAUT_YES,
+         .rebuild_len = 1, .rebuild_ret = {0}, .rebuild_prep = {1},
+         .compare_len = 2,
+         .compare_flags = {IDIF_MORE_H, IDIF_PROBLEM},
+         .compare_h1 = {2}, .compare_h2 = {3},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_MORE},
+        {.name = "more-fixer-negative", .mobile_h = TAUT_YES,
+         .rebuild_len = 1, .rebuild_ret = {0}, .rebuild_prep = {1},
+         .compare_len = 1, .compare_flags = {IDIF_MORE_H},
+         .compare_h1 = {3}, .fix_len = 1, .fix_ret = {-7},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_MORE},
+        {.name = "more-fixer-zero", .mobile_h = TAUT_YES,
+         .rebuild_len = 1, .rebuild_ret = {0}, .rebuild_prep = {1},
+         .compare_len = 2,
+         .compare_flags = {IDIF_MORE_H, IDIF_PROBLEM},
+         .compare_h1 = {3}, .fix_len = 1, .fix_ret = {0},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_MORE},
+        {.name = "more-rebuild-negative", .mobile_h = TAUT_YES,
+         .rebuild_len = 2, .rebuild_ret = {0, -8},
+         .rebuild_prep = {1, 1}, .compare_len = 1,
+         .compare_flags = {IDIF_MORE_H}, .compare_h1 = {3},
+         .fix_len = 1, .fix_ret = {1},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_MORE},
+        {.name = "more-repeat-fill-positive", .mobile_h = TAUT_NON,
+         .rebuild_len = 2, .rebuild_ret = {0, 0},
+         .rebuild_prep = {1, 1}, .compare_len = 1,
+         .compare_flags = {IDIF_MORE_H}, .compare_h1 = {3},
+         .fill_len = 2, .fill_ret = {0, 7},
+         .fix_len = 1, .fix_ret = {1},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_MORE},
+        {.name = "more-exit-cleared", .mobile_h = TAUT_YES,
+         .rebuild_len = 2, .rebuild_ret = {0, 0},
+         .rebuild_prep = {1, 1}, .compare_len = 3,
+         .compare_flags = {IDIF_MORE_H, 0, IDIF_PROBLEM},
+         .compare_h1 = {3, 2}, .fix_len = 1, .fix_ret = {1},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_MORE},
+        {.name = "more-exit-prep-null", .mobile_h = TAUT_YES,
+         .rebuild_len = 2, .rebuild_ret = {0, 0},
+         .rebuild_prep = {1, 0}, .compare_len = 3,
+         .compare_flags = {IDIF_MORE_H, IDIF_MORE_H, IDIF_PROBLEM},
+         .compare_h1 = {3, 2}, .fix_len = 1, .fix_ret = {1},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_MORE},
+        {.name = "more-exit-zero-delta", .mobile_h = TAUT_YES,
+         .rebuild_len = 2, .rebuild_ret = {0, 0},
+         .rebuild_prep = {1, 1}, .compare_len = 3,
+         .compare_flags = {IDIF_MORE_H, IDIF_MORE_H, IDIF_PROBLEM},
+         .compare_h1 = {3, 2}, .compare_h2 = {0, 2},
+         .fix_len = 1, .fix_ret = {1},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_MORE},
+        {.name = "more-exit-nondecreasing", .mobile_h = TAUT_YES,
+         .rebuild_len = 2, .rebuild_ret = {0, 0},
+         .rebuild_prep = {1, 1}, .compare_len = 3,
+         .compare_flags = {IDIF_MORE_H, IDIF_MORE_H, IDIF_PROBLEM},
+         .compare_h1 = {3, 3}, .fix_len = 1, .fix_ret = {1},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_MORE},
+        {.name = "more-continue-decreasing", .mobile_h = TAUT_YES,
+         .rebuild_len = 2, .rebuild_ret = {0, 0},
+         .rebuild_prep = {1, 1}, .compare_len = 3,
+         .compare_flags = {IDIF_MORE_H, IDIF_MORE_H, IDIF_PROBLEM},
+         .compare_h1 = {3, 2}, .fix_len = 2, .fix_ret = {1, 0},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_MORE},
+        {.name = "extra-flag-false", .mobile_h = TAUT_YES,
+         .rebuild_len = 1, .rebuild_ret = {0}, .rebuild_prep = {1},
+         .rebuild_norm = {1}, .compare_len = 2,
+         .compare_flags = {0, IDIF_PROBLEM},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_EXTRA},
+        {.name = "extra-norm-null", .mobile_h = TAUT_YES,
+         .rebuild_len = 1, .rebuild_ret = {0}, .rebuild_prep = {1},
+         .compare_len = 2,
+         .compare_flags = {IDIF_EXTRA_TG_ENDP, IDIF_PROBLEM},
+         .compare_endpoints = {2},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_EXTRA},
+        {.name = "extra-delta-zero", .mobile_h = TAUT_YES,
+         .rebuild_len = 1, .rebuild_ret = {0}, .rebuild_prep = {1},
+         .rebuild_norm = {1}, .compare_len = 2,
+         .compare_flags = {IDIF_EXTRA_TG_ENDP, IDIF_PROBLEM},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_EXTRA},
+        {.name = "extra-delta-negative", .mobile_h = TAUT_YES,
+         .rebuild_len = 1, .rebuild_ret = {0}, .rebuild_prep = {1},
+         .rebuild_norm = {1}, .compare_len = 2,
+         .compare_flags = {IDIF_EXTRA_TG_ENDP, IDIF_PROBLEM},
+         .compare_endpoints = {-1},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_EXTRA},
+        {.name = "extra-fixer-negative", .mobile_h = TAUT_YES,
+         .rebuild_len = 1, .rebuild_ret = {0}, .rebuild_prep = {1},
+         .rebuild_norm = {1}, .compare_len = 1,
+         .compare_flags = {IDIF_EXTRA_TG_ENDP},
+         .compare_endpoints = {3}, .fix_len = 1, .fix_ret = {-7},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_EXTRA},
+        {.name = "extra-fixer-zero", .mobile_h = TAUT_YES,
+         .rebuild_len = 1, .rebuild_ret = {0}, .rebuild_prep = {1},
+         .rebuild_norm = {1}, .compare_len = 2,
+         .compare_flags = {IDIF_EXTRA_TG_ENDP, IDIF_PROBLEM},
+         .compare_endpoints = {3}, .fix_len = 1, .fix_ret = {0},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_EXTRA},
+        {.name = "extra-rebuild-negative", .mobile_h = TAUT_YES,
+         .rebuild_len = 2, .rebuild_ret = {0, -8},
+         .rebuild_prep = {1, 1}, .rebuild_norm = {1, 1},
+         .compare_len = 1, .compare_flags = {IDIF_EXTRA_TG_ENDP},
+         .compare_endpoints = {3}, .fix_len = 1, .fix_ret = {1},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_EXTRA},
+        {.name = "extra-repeat-fill-positive", .mobile_h = TAUT_NON,
+         .rebuild_len = 2, .rebuild_ret = {0, 0},
+         .rebuild_prep = {1, 1}, .rebuild_norm = {1, 1},
+         .compare_len = 1, .compare_flags = {IDIF_EXTRA_TG_ENDP},
+         .compare_endpoints = {3}, .fill_len = 2, .fill_ret = {0, 7},
+         .fix_len = 1, .fix_ret = {1},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_EXTRA},
+        {.name = "extra-exit-cleared", .mobile_h = TAUT_YES,
+         .rebuild_len = 2, .rebuild_ret = {0, 0},
+         .rebuild_prep = {1, 1}, .rebuild_norm = {1, 1},
+         .compare_len = 3,
+         .compare_flags = {IDIF_EXTRA_TG_ENDP, 0, IDIF_PROBLEM},
+         .compare_endpoints = {3, 2}, .fix_len = 1, .fix_ret = {1},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_EXTRA},
+        {.name = "extra-exit-norm-null", .mobile_h = TAUT_YES,
+         .rebuild_len = 2, .rebuild_ret = {0, 0},
+         .rebuild_prep = {1, 1}, .rebuild_norm = {1, 0},
+         .compare_len = 3,
+         .compare_flags = {IDIF_EXTRA_TG_ENDP, IDIF_EXTRA_TG_ENDP,
+                           IDIF_PROBLEM},
+         .compare_endpoints = {3, 2}, .fix_len = 1, .fix_ret = {1},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_EXTRA},
+        {.name = "extra-exit-zero-delta", .mobile_h = TAUT_YES,
+         .rebuild_len = 2, .rebuild_ret = {0, 0},
+         .rebuild_prep = {1, 1}, .rebuild_norm = {1, 1},
+         .compare_len = 3,
+         .compare_flags = {IDIF_EXTRA_TG_ENDP, IDIF_EXTRA_TG_ENDP,
+                           IDIF_PROBLEM},
+         .compare_endpoints = {3, 0}, .fix_len = 1, .fix_ret = {1},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_EXTRA},
+        {.name = "extra-exit-nondecreasing", .mobile_h = TAUT_YES,
+         .rebuild_len = 2, .rebuild_ret = {0, 0},
+         .rebuild_prep = {1, 1}, .rebuild_norm = {1, 1},
+         .compare_len = 3,
+         .compare_flags = {IDIF_EXTRA_TG_ENDP, IDIF_EXTRA_TG_ENDP,
+                           IDIF_PROBLEM},
+         .compare_endpoints = {3, 3}, .fix_len = 1, .fix_ret = {1},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_EXTRA},
+        {.name = "extra-continue-decreasing", .mobile_h = TAUT_YES,
+         .rebuild_len = 2, .rebuild_ret = {0, 0},
+         .rebuild_prep = {1, 1}, .rebuild_norm = {1, 1},
+         .compare_len = 3,
+         .compare_flags = {IDIF_EXTRA_TG_ENDP, IDIF_EXTRA_TG_ENDP,
+                           IDIF_PROBLEM},
+         .compare_endpoints = {3, 2}, .fix_len = 2, .fix_ret = {1, 0},
+         .repair_kind = ORACLE_NORMALIZE_REPAIR_EXTRA}};
+
+static void print_normalize_int_array(const int *values, int length)
+{
+    int index;
+    putchar('[');
+    for (index = 0; index < length; index++)
+    {
+        if (index)
+        {
+            putchar(',');
+        }
+        printf("%d", values[index]);
+    }
+    putchar(']');
+}
+
+static void print_normalize_mode_array(const INCHI_MODE *values, int length)
+{
+    int index;
+    putchar('[');
+    for (index = 0; index < length; index++)
+    {
+        if (index)
+        {
+            putchar(',');
+        }
+        printf("%" PRIu64, (uint64_t) values[index]);
+    }
+    putchar(']');
+}
+
+static int print_normalize_and_compare_first_less_case(
+    const ORACLE_NORMALIZE_FIRST_LESS_CASE *test_case)
+{
+    CANON_GLOBALS canonical_globals;
+    struct tagINCHI_CLOCK clock;
+    INPUT_PARMS parameters;
+    STRUCT_DATA data;
+    BN_STRUCT bns;
+    BN_DATA bns_data;
+    BNS_VERTEX vertex;
+    StrFromINChI structure;
+    StrFromINChI expected_structure;
+    inp_ATOM atoms[1], atoms2[1], atoms3[1];
+    VAL_AT valence[1];
+    ALL_TC_GROUPS groups;
+    SRM restore_mode;
+    INChI original;
+    INChI *input[TAUT_NUM] = {&original, NULL};
+    int result, runs = 17, delta = -19, index;
+    int holders_null, complete_caller_state_exact;
+
+    memset(&canonical_globals, 0, sizeof(canonical_globals));
+    memset(&clock, 0, sizeof(clock));
+    memset(&parameters, 0, sizeof(parameters));
+    memset(&data, 0, sizeof(data));
+    memset(&bns, 0, sizeof(bns));
+    memset(&bns_data, 0, sizeof(bns_data));
+    memset(&vertex, 0, sizeof(vertex));
+    memset(&structure, 0, sizeof(structure));
+    memset(atoms, 0, sizeof(atoms));
+    memset(atoms2, 0, sizeof(atoms2));
+    memset(atoms3, 0, sizeof(atoms3));
+    memset(valence, 0, sizeof(valence));
+    memset(&groups, 0, sizeof(groups));
+    memset(&restore_mode, 0, sizeof(restore_mode));
+    memset(&original, 0, sizeof(original));
+    parameters.nMode = REQ_MODE_TAUT | REQ_MODE_NON_ISO;
+    bns.num_atoms = bns.num_vertices = 1;
+    bns.vert = &vertex;
+    atoms[0].el_number = 6;
+    atoms[0].num_H = 4;
+    atoms[0].orig_at_number = atoms[0].component = 1;
+    strcpy(atoms[0].elname, "C");
+    structure.at = atoms;
+    structure.num_atoms = 1;
+    structure.bMobileH = TAUT_INI;
+    structure.iMobileH = (char) test_case->mobile_h;
+    structure.pSrm = &restore_mode;
+    original.nNumberOfAtoms = 1;
+    original.nErrorCode = 70;
+    ORACLE_NORMALIZE_ALLOCATION_COUNT = 0;
+    structure.pOneINChI[0] = calloc(1, sizeof(INChI));
+    if (!structure.pOneINChI[0])
+    {
+        return 70;
+    }
+    structure.pOneINChI[0]->nNumberOfAtoms = 1;
+    structure.pOneINChI[0]->nErrorCode = 100;
+    oracle_normalize_register_allocation(structure.pOneINChI[0],
+                                         "pOneINChI[0]");
+    expected_structure = structure;
+    expected_structure.pOneINChI[0] = NULL;
+
+    ORACLE_NORMALIZE_REBUILD_LENGTH = test_case->rebuild_len;
+    ORACLE_NORMALIZE_COMPARE_LENGTH = test_case->compare_len;
+    ORACLE_NORMALIZE_FILL_LENGTH = test_case->fill_len;
+    ORACLE_NORMALIZE_FIX_LESS_LENGTH =
+        test_case->repair_kind == ORACLE_NORMALIZE_REPAIR_LESS
+            ? test_case->fix_len : 0;
+    ORACLE_NORMALIZE_FIX_MORE_LENGTH =
+        test_case->repair_kind == ORACLE_NORMALIZE_REPAIR_MORE
+            ? test_case->fix_len : 0;
+    ORACLE_NORMALIZE_FIX_EXTRA_LENGTH =
+        test_case->repair_kind == ORACLE_NORMALIZE_REPAIR_EXTRA
+            ? test_case->fix_len : 0;
+    for (index = 0; index < test_case->rebuild_len; index++)
+    {
+        ORACLE_NORMALIZE_REBUILD_RETURNS[index] = test_case->rebuild_ret[index];
+        ORACLE_NORMALIZE_REBUILD_PREP[index] = test_case->rebuild_prep[index];
+        ORACLE_NORMALIZE_REBUILD_NORM[index] = test_case->rebuild_norm[index];
+    }
+    for (index = 0; index < test_case->compare_len; index++)
+    {
+        ORACLE_NORMALIZE_COMPARE_FLAGS[index] = test_case->compare_flags[index];
+        ORACLE_NORMALIZE_COMPARE_ERRORS[index] = test_case->compare_error[index];
+        ORACLE_NORMALIZE_COMPARE_H1[index] = test_case->compare_h1[index];
+        ORACLE_NORMALIZE_COMPARE_H2[index] = test_case->compare_h2[index];
+        ORACLE_NORMALIZE_COMPARE_ENDPOINTS[index] =
+            test_case->compare_endpoints[index];
+    }
+    memcpy(ORACLE_NORMALIZE_FILL_RETURNS, test_case->fill_ret,
+           sizeof(test_case->fill_ret));
+    memcpy(ORACLE_NORMALIZE_FIX_LESS_RETURNS, test_case->fix_ret,
+           sizeof(test_case->fix_ret));
+    memcpy(ORACLE_NORMALIZE_FIX_MORE_RETURNS, test_case->fix_ret,
+           sizeof(test_case->fix_ret));
+    memcpy(ORACLE_NORMALIZE_FIX_EXTRA_RETURNS, test_case->fix_ret,
+           sizeof(test_case->fix_ret));
+    ORACLE_NORMALIZE_REBUILD_POSITION = ORACLE_NORMALIZE_COMPARE_POSITION = 0;
+    ORACLE_NORMALIZE_FILL_POSITION = ORACLE_NORMALIZE_FIX_LESS_POSITION = 0;
+    ORACLE_NORMALIZE_FIX_MORE_POSITION = 0;
+    ORACLE_NORMALIZE_FIX_EXTRA_POSITION = 0;
+    ORACLE_NORMALIZE_EVENTS[0] = '\0';
+    ORACLE_NORMALIZE_EVENTS_LENGTH = 0;
+    ORACLE_NORMALIZE_PREFREE_EXACT = 1;
+    ORACLE_NORMALIZE_EXPECTED_INCHI_ATOMS[0] = 1;
+    ORACLE_NORMALIZE_EXPECTED_INCHI_ATOMS[1] = 0;
+    ORACLE_NORMALIZE_REVERSED[0] = structure.pOneINChI[0];
+    ORACLE_NORMALIZE_REVERSED[1] = NULL;
+    ORACLE_NORMALIZE_ORIGINAL[0] = input[0];
+    ORACLE_NORMALIZE_ORIGINAL[1] = NULL;
+    ORACLE_NORMALIZE_INCHI_HOLDERS[0] = &structure.pOneINChI[0];
+    ORACLE_NORMALIZE_INCHI_HOLDERS[1] = &structure.pOneINChI[1];
+    ORACLE_NORMALIZE_AUX_HOLDERS[0] = &structure.pOneINChI_Aux[0];
+    ORACLE_NORMALIZE_AUX_HOLDERS[1] = &structure.pOneINChI_Aux[1];
+    ORACLE_NORMALIZE_NORM_HOLDERS[0] = ORACLE_NORMALIZE_NORM_HOLDERS[1] = NULL;
+    ORACLE_DEFERRED_FREE_COUNT = 0;
+    ORACLE_DEFER_FREES = 1;
+    ORACLE_NORMALIZE_FIRST_LESS_ACTIVE = ORACLE_NORMALIZE_ACTIVE = 1;
+    result = NormalizeAndCompare(
+        &canonical_globals, &clock, &parameters, &data, &bns, &bns_data,
+        &structure, atoms, atoms2, atoms3, valence, &groups, input, LONG_MAX,
+        0, &runs, &delta, 4, 0);
+    ORACLE_NORMALIZE_ACTIVE = ORACLE_NORMALIZE_FIRST_LESS_ACTIVE = 0;
+    holders_null = !structure.pOneINChI[0] && !structure.pOneINChI[1] &&
+                   !structure.pOneINChI_Aux[0] && !structure.pOneINChI_Aux[1] &&
+                   !structure.pOne_norm_data[0] && !structure.pOne_norm_data[1];
+    complete_caller_state_exact =
+        memcmp(&structure, &expected_structure, sizeof(structure)) == 0 &&
+        input[0] == &original && !input[1] && original.nErrorCode == 70;
+
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\"," 
+           "\"case_id\":\"normalize-%s-%s\"," 
+           "\"operation\":\"NormalizeAndCompare\"," 
+           "\"family\":\"%s\",\"input\":{\"repair_kind\":\"%s\"," 
+           "\"mobile_h\":%d,\"rebuild_ret\":",
+           test_case->repair_kind == ORACLE_NORMALIZE_REPAIR_LESS
+               ? "first-less" : "more-extra",
+           test_case->name,
+           test_case->repair_kind == ORACLE_NORMALIZE_REPAIR_LESS
+               ? "first-less" : "more-extra",
+           test_case->repair_kind == ORACLE_NORMALIZE_REPAIR_LESS
+               ? "less" :
+               (test_case->repair_kind == ORACLE_NORMALIZE_REPAIR_MORE
+                    ? "more" : "extra"),
+           test_case->mobile_h);
+    print_normalize_int_array(test_case->rebuild_ret, test_case->rebuild_len);
+    printf(",\"rebuild_prep\":");
+    print_normalize_int_array(test_case->rebuild_prep, test_case->rebuild_len);
+    printf(",\"rebuild_norm\":");
+    print_normalize_int_array(test_case->rebuild_norm, test_case->rebuild_len);
+    printf(",\"compare_flags\":");
+    print_normalize_mode_array(test_case->compare_flags,
+                               test_case->compare_len);
+    printf(",\"compare_error\":");
+    print_normalize_int_array(test_case->compare_error, test_case->compare_len);
+    printf(",\"compare_h1\":");
+    print_normalize_int_array(test_case->compare_h1, test_case->compare_len);
+    printf(",\"compare_h2\":");
+    print_normalize_int_array(test_case->compare_h2, test_case->compare_len);
+    printf(",\"compare_endpoints\":");
+    print_normalize_int_array(test_case->compare_endpoints,
+                              test_case->compare_len);
+    printf(",\"fill_ret\":");
+    print_normalize_int_array(test_case->fill_ret, test_case->fill_len);
+    printf(",\"fix_ret\":");
+    print_normalize_int_array(test_case->fix_ret, test_case->fix_len);
+    printf("},\"output\":{\"result\":%d,\"runs\":%d,\"delta\":%d," 
+           "\"rebuild_used\":%d,\"compare_used\":%d," 
+           "\"fill_used\":%d,\"fix_used\":%d," 
+           "\"complete_caller_state_exact\":%s," 
+           "\"prefree_state_exact\":%s,\"holders_null\":%s," 
+           "\"allocation_free_exact\":%s,\"cleanup_events\":[%s]}}\n",
+           result, runs, delta, ORACLE_NORMALIZE_REBUILD_POSITION,
+           ORACLE_NORMALIZE_COMPARE_POSITION, ORACLE_NORMALIZE_FILL_POSITION,
+           test_case->repair_kind == ORACLE_NORMALIZE_REPAIR_LESS
+               ? ORACLE_NORMALIZE_FIX_LESS_POSITION
+               : (test_case->repair_kind == ORACLE_NORMALIZE_REPAIR_MORE
+                      ? ORACLE_NORMALIZE_FIX_MORE_POSITION
+                      : ORACLE_NORMALIZE_FIX_EXTRA_POSITION),
+           complete_caller_state_exact ? "true" : "false",
+           ORACLE_NORMALIZE_PREFREE_EXACT ? "true" : "false",
+           holders_null ? "true" : "false",
+           ORACLE_DEFERRED_FREE_COUNT == ORACLE_NORMALIZE_ALLOCATION_COUNT
+               ? "true" : "false",
+           ORACLE_NORMALIZE_EVENTS);
+    fflush(stdout);
+    ORACLE_DEFER_FREES = 0;
+    oracle_flush_deferred_frees();
+    return 0;
+}
+
+typedef struct tagOracleNormalizeFinalCase
+{
+    const char *name;
+    int b_mobile_h;
+    int i_mobile_h;
+    int original_layer1;
+    int reversed_layer1;
+    long num_inp;
+    int fixed_len;
+    int fixed_ret[4];
+    int mobile_len;
+    int mobile_ret[1];
+    INCHI_MODE primary_flags;
+    int primary_error;
+    INCHI_MODE optional_flags;
+    int optional_error;
+    int stereo_len;
+    int stereo_ret[1];
+    int tc_len;
+    int tc_edges[2];
+    int tinfo_present;
+    int tinfo_len;
+    int tinfo_h[2];
+    int tinfo_endpoints[2];
+} ORACLE_NORMALIZE_FINAL_CASE;
+
+static const ORACLE_NORMALIZE_FINAL_CASE ORACLE_NORMALIZE_FINAL_CASES[] = {
+    {.name = "fixed-negative-long-min", .b_mobile_h = TAUT_NON,
+     .i_mobile_h = TAUT_NON, .num_inp = LONG_MIN,
+     .fixed_len = 1, .fixed_ret = {-7}},
+    {.name = "fixed-zero", .b_mobile_h = TAUT_NON,
+     .i_mobile_h = TAUT_NON, .fixed_len = 1, .fixed_ret = {0},
+     .primary_flags = IDIF_PROBLEM},
+    {.name = "fixed-one-positive", .b_mobile_h = TAUT_NON,
+     .i_mobile_h = TAUT_NON, .fixed_len = 2, .fixed_ret = {1, 0},
+     .primary_flags = IDIF_PROBLEM},
+    {.name = "fixed-two-positive", .b_mobile_h = TAUT_NON,
+     .i_mobile_h = TAUT_NON, .fixed_len = 3, .fixed_ret = {1, 1, 0},
+     .primary_flags = IDIF_PROBLEM},
+    {.name = "fixed-three-positive", .b_mobile_h = TAUT_NON,
+     .i_mobile_h = TAUT_NON, .fixed_len = 3, .fixed_ret = {1, 1, 1},
+     .primary_flags = IDIF_PROBLEM},
+    {.name = "mobile-negative-long-max", .b_mobile_h = TAUT_YES,
+     .i_mobile_h = TAUT_YES, .num_inp = LONG_MAX,
+     .mobile_len = 1, .mobile_ret = {-7}},
+    {.name = "mobile-zero", .b_mobile_h = TAUT_YES,
+     .i_mobile_h = TAUT_YES, .mobile_len = 1, .mobile_ret = {0},
+     .primary_flags = IDIF_PROBLEM},
+    {.name = "mobile-positive", .b_mobile_h = TAUT_YES,
+     .i_mobile_h = TAUT_YES, .mobile_len = 1, .mobile_ret = {7},
+     .primary_flags = IDIF_PROBLEM},
+    {.name = "non-enum-mobile-h", .b_mobile_h = TAUT_INI,
+     .i_mobile_h = TAUT_INI, .primary_flags = IDIF_PROBLEM},
+    {.name = "primary-problem-precedence", .b_mobile_h = TAUT_INI,
+     .i_mobile_h = TAUT_INI, .primary_flags = IDIF_PROBLEM,
+     .primary_error = 9},
+    {.name = "primary-error", .b_mobile_h = TAUT_INI,
+     .i_mobile_h = TAUT_INI, .primary_error = 9},
+    {.name = "primary-ordinary-flags", .b_mobile_h = TAUT_INI,
+     .i_mobile_h = TAUT_INI, .primary_flags = IDIF_MORE_H,
+     .stereo_len = 1, .stereo_ret = {0}},
+    {.name = "optional-skipped", .b_mobile_h = TAUT_NON,
+     .i_mobile_h = TAUT_NON, .fixed_len = 1, .fixed_ret = {0},
+     .stereo_len = 1, .stereo_ret = {0}},
+    {.name = "optional-original-only", .b_mobile_h = TAUT_NON,
+     .i_mobile_h = TAUT_NON, .original_layer1 = 1,
+     .fixed_len = 1, .fixed_ret = {0}, .stereo_len = 1,
+     .stereo_ret = {0}},
+    {.name = "optional-reversed-only", .b_mobile_h = TAUT_NON,
+     .i_mobile_h = TAUT_NON, .reversed_layer1 = 1,
+     .fixed_len = 1, .fixed_ret = {0}, .stereo_len = 1,
+     .stereo_ret = {0}},
+    {.name = "optional-both", .b_mobile_h = TAUT_NON,
+     .i_mobile_h = TAUT_NON, .original_layer1 = 1,
+     .reversed_layer1 = 1, .fixed_len = 1, .fixed_ret = {0},
+     .stereo_len = 1, .stereo_ret = {0}},
+    {.name = "optional-problem-primary-check", .b_mobile_h = TAUT_NON,
+     .i_mobile_h = TAUT_NON, .original_layer1 = 1,
+     .reversed_layer1 = 1, .fixed_len = 1, .fixed_ret = {0},
+     .optional_flags = IDIF_PROBLEM, .stereo_len = 1,
+     .stereo_ret = {7}},
+    {.name = "optional-error", .b_mobile_h = TAUT_NON,
+     .i_mobile_h = TAUT_NON, .original_layer1 = 1,
+     .reversed_layer1 = 1, .fixed_len = 1, .fixed_ret = {0},
+     .optional_error = 9},
+    {.name = "stereo-negative", .b_mobile_h = TAUT_INI,
+     .i_mobile_h = TAUT_INI, .stereo_len = 1, .stereo_ret = {-7}},
+    {.name = "stereo-zero", .b_mobile_h = TAUT_INI,
+     .i_mobile_h = TAUT_INI, .stereo_len = 1, .stereo_ret = {0}},
+    {.name = "stereo-positive", .b_mobile_h = TAUT_INI,
+     .i_mobile_h = TAUT_INI, .stereo_len = 1, .stereo_ret = {7}},
+    {.name = "endpoint-zero-null-tinfo", .b_mobile_h = TAUT_INI,
+     .i_mobile_h = TAUT_INI, .stereo_len = 1, .stereo_ret = {0}},
+    {.name = "endpoint-mixed", .b_mobile_h = TAUT_INI,
+     .i_mobile_h = TAUT_INI, .stereo_len = 1, .stereo_ret = {0},
+     .tc_len = 2, .tc_edges = {2, 3}, .tinfo_present = 1,
+     .tinfo_len = 2, .tinfo_h = {0, 1},
+     .tinfo_endpoints = {5, 7}},
+    {.name = "endpoint-all-zero-h", .b_mobile_h = TAUT_INI,
+     .i_mobile_h = TAUT_INI, .stereo_len = 1, .stereo_ret = {0},
+     .tinfo_present = 1, .tinfo_len = 2,
+     .tinfo_endpoints = {USHRT_MAX, USHRT_MAX}},
+    {.name = "endpoint-signed-max", .b_mobile_h = TAUT_INI,
+     .i_mobile_h = TAUT_INI, .stereo_len = 1, .stereo_ret = {0},
+     .tc_len = 1, .tc_edges = {INT_MAX}, .tinfo_present = 1,
+     .tinfo_len = 1, .tinfo_h = {USHRT_MAX},
+     .tinfo_endpoints = {USHRT_MAX}},
+    {.name = "endpoint-signed-min", .b_mobile_h = TAUT_INI,
+     .i_mobile_h = TAUT_INI, .stereo_len = 1, .stereo_ret = {0},
+     .tc_len = 1, .tc_edges = {INT_MIN}}
+};
+
+static int print_normalize_and_compare_final_case(
+    const ORACLE_NORMALIZE_FINAL_CASE *test_case)
+{
+    CANON_GLOBALS canonical_globals;
+    struct tagINCHI_CLOCK clock;
+    INPUT_PARMS parameters;
+    STRUCT_DATA data;
+    BN_STRUCT bns;
+    BN_DATA bns_data;
+    BNS_VERTEX vertex;
+    StrFromINChI structure, expected_structure;
+    inp_ATOM atoms[1], atoms2[1], atoms3[1];
+    VAL_AT valence[1];
+    ALL_TC_GROUPS groups;
+    TC_GROUP tc_groups[2];
+    SRM restore_mode;
+    INChI original[2];
+    INChI *input[TAUT_NUM];
+    int result, runs = 17, delta = -19, index;
+    int optional_active, holders_null, complete_caller_state_exact;
+
+    memset(&canonical_globals, 0, sizeof(canonical_globals));
+    memset(&clock, 0, sizeof(clock));
+    memset(&parameters, 0, sizeof(parameters));
+    memset(&data, 0, sizeof(data));
+    memset(&bns, 0, sizeof(bns));
+    memset(&bns_data, 0, sizeof(bns_data));
+    memset(&vertex, 0, sizeof(vertex));
+    memset(&structure, 0, sizeof(structure));
+    memset(atoms, 0, sizeof(atoms));
+    memset(atoms2, 0, sizeof(atoms2));
+    memset(atoms3, 0, sizeof(atoms3));
+    memset(valence, 0, sizeof(valence));
+    memset(&groups, 0, sizeof(groups));
+    memset(tc_groups, 0, sizeof(tc_groups));
+    memset(&restore_mode, 0, sizeof(restore_mode));
+    memset(original, 0, sizeof(original));
+
+    parameters.nMode = REQ_MODE_TAUT | REQ_MODE_NON_ISO;
+    bns.num_atoms = bns.num_vertices = 1;
+    bns.vert = &vertex;
+    atoms[0].el_number = 6;
+    atoms[0].num_H = 4;
+    atoms[0].orig_at_number = atoms[0].component = 1;
+    strcpy(atoms[0].elname, "C");
+    structure.at = atoms;
+    structure.num_atoms = 1;
+    structure.bMobileH = (char) test_case->b_mobile_h;
+    structure.iMobileH = (char) test_case->i_mobile_h;
+    structure.pSrm = &restore_mode;
+    original[0].nNumberOfAtoms = 1;
+    original[0].nErrorCode = 70;
+    original[1].nNumberOfAtoms = test_case->original_layer1 ? 1 : 0;
+    original[1].nErrorCode = 71;
+    input[0] = &original[0];
+    input[1] = test_case->original_layer1 ? &original[1] : NULL;
+
+    ORACLE_NORMALIZE_ALLOCATION_COUNT = 0;
+    structure.pOneINChI[0] = calloc(1, sizeof(INChI));
+    structure.pOne_norm_data[0] = calloc(1, sizeof(INP_ATOM_DATA));
+    if (!structure.pOneINChI[0] || !structure.pOne_norm_data[0])
+    {
+        return 70;
+    }
+    structure.pOneINChI[0]->nNumberOfAtoms = 1;
+    structure.pOneINChI[0]->nErrorCode = 100;
+    structure.pOne_norm_data[0]->num_at = 30;
+    structure.pOne_norm_data[0]->num_bonds = 40;
+    structure.pOne_norm_data[0]->at = calloc(1, sizeof(inp_ATOM));
+    if (!structure.pOne_norm_data[0]->at)
+    {
+        return 70;
+    }
+    oracle_normalize_register_allocation(structure.pOneINChI[0],
+                                         "pOneINChI[0]");
+    oracle_normalize_register_allocation(structure.pOne_norm_data[0],
+                                         "pOne_norm_data[0]");
+    oracle_normalize_register_allocation(structure.pOne_norm_data[0]->at,
+                                         "pOne_norm_data[0].at");
+    if (test_case->reversed_layer1)
+    {
+        structure.pOneINChI[1] = calloc(1, sizeof(INChI));
+        if (!structure.pOneINChI[1])
+        {
+            return 70;
+        }
+        structure.pOneINChI[1]->nNumberOfAtoms = 1;
+        structure.pOneINChI[1]->nErrorCode = 101;
+        oracle_normalize_register_allocation(structure.pOneINChI[1],
+                                             "pOneINChI[1]");
+    }
+    groups.num_tgroups = test_case->tc_len;
+    groups.pTCG = test_case->tc_len ? tc_groups : NULL;
+    for (index = 0; index < test_case->tc_len; index++)
+    {
+        tc_groups[index].num_edges = test_case->tc_edges[index];
+    }
+    if (test_case->tinfo_present)
+    {
+        structure.One_ti.t_group =
+            calloc((size_t) test_case->tinfo_len, sizeof(T_GROUP));
+        if (!structure.One_ti.t_group)
+        {
+            return 70;
+        }
+        structure.One_ti.num_t_groups = test_case->tinfo_len;
+        oracle_normalize_register_allocation(structure.One_ti.t_group,
+                                             "One_ti.t_group");
+        for (index = 0; index < test_case->tinfo_len; index++)
+        {
+            structure.One_ti.t_group[index].num[0] =
+                (AT_RANK) test_case->tinfo_h[index];
+            structure.One_ti.t_group[index].nNumEndpoints =
+                (AT_NUMB) test_case->tinfo_endpoints[index];
+        }
+    }
+
+    expected_structure = structure;
+    expected_structure.pOneINChI[0] = expected_structure.pOneINChI[1] = NULL;
+    expected_structure.pOne_norm_data[0] = NULL;
+    memset(&expected_structure.One_ti, 0, sizeof(expected_structure.One_ti));
+
+    ORACLE_NORMALIZE_REBUILD_LENGTH = 1;
+    ORACLE_NORMALIZE_REBUILD_RETURNS[0] = 0;
+    ORACLE_NORMALIZE_REBUILD_PREP[0] = 1;
+    ORACLE_NORMALIZE_REBUILD_NORM[0] = 1;
+    ORACLE_NORMALIZE_REBUILD_TINFO[0] = test_case->tinfo_present;
+    optional_active = test_case->b_mobile_h == TAUT_NON &&
+                      (test_case->original_layer1 ||
+                       test_case->reversed_layer1);
+    ORACLE_NORMALIZE_COMPARE_LENGTH = 2 + optional_active;
+    memset(ORACLE_NORMALIZE_COMPARE_FLAGS, 0,
+           sizeof(ORACLE_NORMALIZE_COMPARE_FLAGS));
+    memset(ORACLE_NORMALIZE_COMPARE_ERRORS, 0,
+           sizeof(ORACLE_NORMALIZE_COMPARE_ERRORS));
+    ORACLE_NORMALIZE_COMPARE_FLAGS[1] = test_case->primary_flags;
+    ORACLE_NORMALIZE_COMPARE_ERRORS[1] = test_case->primary_error;
+    if (optional_active)
+    {
+        ORACLE_NORMALIZE_COMPARE_FLAGS[2] = test_case->optional_flags;
+        ORACLE_NORMALIZE_COMPARE_ERRORS[2] = test_case->optional_error;
+    }
+    ORACLE_NORMALIZE_FILL_LENGTH =
+        test_case->i_mobile_h == TAUT_NON ? 1 : 0;
+    ORACLE_NORMALIZE_FILL_RETURNS[0] = 0;
+    ORACLE_NORMALIZE_FIX_FIXED_LENGTH = test_case->fixed_len;
+    ORACLE_NORMALIZE_FIX_MOBILE_LENGTH = test_case->mobile_len;
+    ORACLE_NORMALIZE_FIX_STEREO_LENGTH = test_case->stereo_len;
+    memcpy(ORACLE_NORMALIZE_FIX_FIXED_RETURNS, test_case->fixed_ret,
+           sizeof(test_case->fixed_ret));
+    memcpy(ORACLE_NORMALIZE_FIX_MOBILE_RETURNS, test_case->mobile_ret,
+           sizeof(test_case->mobile_ret));
+    memcpy(ORACLE_NORMALIZE_FIX_STEREO_RETURNS, test_case->stereo_ret,
+           sizeof(test_case->stereo_ret));
+    ORACLE_NORMALIZE_REBUILD_POSITION = ORACLE_NORMALIZE_COMPARE_POSITION = 0;
+    ORACLE_NORMALIZE_FILL_POSITION = ORACLE_NORMALIZE_FIX_FIXED_POSITION = 0;
+    ORACLE_NORMALIZE_FIX_MOBILE_POSITION = 0;
+    ORACLE_NORMALIZE_FIX_STEREO_POSITION = 0;
+    ORACLE_NORMALIZE_EVENTS[0] = '\0';
+    ORACLE_NORMALIZE_EVENTS_LENGTH = 0;
+    ORACLE_NORMALIZE_PREFREE_EXACT = 1;
+    ORACLE_NORMALIZE_EXPECTED_INCHI_ATOMS[0] = 1;
+    ORACLE_NORMALIZE_EXPECTED_INCHI_ATOMS[1] =
+        test_case->reversed_layer1 ? 1 : 0;
+    ORACLE_NORMALIZE_REVERSED[0] = structure.pOneINChI[0];
+    ORACLE_NORMALIZE_REVERSED[1] = structure.pOneINChI[1];
+    ORACLE_NORMALIZE_ORIGINAL[0] = input[0];
+    ORACLE_NORMALIZE_ORIGINAL[1] = input[1];
+    ORACLE_NORMALIZE_INCHI_HOLDERS[0] = &structure.pOneINChI[0];
+    ORACLE_NORMALIZE_INCHI_HOLDERS[1] = &structure.pOneINChI[1];
+    ORACLE_NORMALIZE_AUX_HOLDERS[0] = &structure.pOneINChI_Aux[0];
+    ORACLE_NORMALIZE_AUX_HOLDERS[1] = &structure.pOneINChI_Aux[1];
+    ORACLE_NORMALIZE_NORM_HOLDERS[0] = structure.pOne_norm_data[0];
+    ORACLE_NORMALIZE_NORM_HOLDERS[1] = NULL;
+    ORACLE_NORMALIZE_EXPECTED_NORM_AT[0] =
+        structure.pOne_norm_data[0]->at;
+    ORACLE_NORMALIZE_EXPECTED_NORM_AT[1] = NULL;
+    ORACLE_NORMALIZE_EXPECTED_TINFO_PRESENT = test_case->tinfo_present;
+    ORACLE_NORMALIZE_EXPECTED_TINFO_LENGTH = test_case->tinfo_len;
+    for (index = 0; index < 2; index++)
+    {
+        ORACLE_NORMALIZE_EXPECTED_TINFO_H[index] =
+            (AT_RANK) test_case->tinfo_h[index];
+        ORACLE_NORMALIZE_EXPECTED_TINFO_ENDPOINTS[index] =
+            (AT_NUMB) test_case->tinfo_endpoints[index];
+    }
+    ORACLE_DEFERRED_FREE_COUNT = 0;
+    ORACLE_DEFER_FREES = 1;
+    ORACLE_NORMALIZE_FINAL_ACTIVE = ORACLE_NORMALIZE_ACTIVE = 1;
+    result = NormalizeAndCompare(
+        &canonical_globals, &clock, &parameters, &data, &bns, &bns_data,
+        &structure, atoms, atoms2, atoms3, valence, &groups, input,
+        test_case->num_inp, 0, &runs, &delta, 4, 0);
+    ORACLE_NORMALIZE_ACTIVE = ORACLE_NORMALIZE_FINAL_ACTIVE = 0;
+
+    holders_null = !structure.pOneINChI[0] && !structure.pOneINChI[1] &&
+                   !structure.pOneINChI_Aux[0] &&
+                   !structure.pOneINChI_Aux[1] &&
+                   !structure.pOne_norm_data[0] &&
+                   !structure.pOne_norm_data[1];
+    complete_caller_state_exact =
+        memcmp(&structure, &expected_structure, sizeof(structure)) == 0 &&
+        input[0] == &original[0] &&
+        input[1] == (test_case->original_layer1 ? &original[1] : NULL) &&
+        original[0].nErrorCode == 70 && original[1].nErrorCode == 71;
+
+    printf("{\"schema_version\":\"cosmolkit-inchi-official-c-v1\"," 
+           "\"case_id\":\"normalize-final-%s\"," 
+           "\"operation\":\"NormalizeAndCompare\"," 
+           "\"family\":\"final\",\"input\":{" 
+           "\"b_mobile_h\":%d,\"i_mobile_h\":%d," 
+           "\"original_layer1\":%s,\"reversed_layer1\":%s," 
+           "\"num_inp\":%ld,\"fixed_ret\":",
+           test_case->name, test_case->b_mobile_h, test_case->i_mobile_h,
+           test_case->original_layer1 ? "true" : "false",
+           test_case->reversed_layer1 ? "true" : "false",
+           test_case->num_inp);
+    print_normalize_int_array(test_case->fixed_ret, test_case->fixed_len);
+    printf(",\"mobile_ret\":");
+    print_normalize_int_array(test_case->mobile_ret, test_case->mobile_len);
+    printf(",\"primary_flags\":%" PRIu64 ",\"primary_error\":%d," 
+           "\"optional_flags\":%" PRIu64 ",\"optional_error\":%d," 
+           "\"stereo_ret\":",
+           (uint64_t) test_case->primary_flags, test_case->primary_error,
+           (uint64_t) test_case->optional_flags, test_case->optional_error);
+    print_normalize_int_array(test_case->stereo_ret, test_case->stereo_len);
+    printf(",\"tc_edges\":");
+    print_normalize_int_array(test_case->tc_edges, test_case->tc_len);
+    printf(",\"tinfo_present\":%s,\"tinfo_h\":",
+           test_case->tinfo_present ? "true" : "false");
+    print_normalize_int_array(test_case->tinfo_h, test_case->tinfo_len);
+    printf(",\"tinfo_endpoints\":");
+    print_normalize_int_array(test_case->tinfo_endpoints,
+                              test_case->tinfo_len);
+    printf("},\"output\":{\"result\":%d,\"runs\":%d,\"delta\":%d," 
+           "\"rebuild_used\":%d,\"compare_used\":%d," 
+           "\"fill_used\":%d,\"fixed_used\":%d," 
+           "\"mobile_used\":%d,\"stereo_used\":%d," 
+           "\"complete_caller_state_exact\":%s," 
+           "\"prefree_state_exact\":%s,\"holders_null\":%s," 
+           "\"one_ti_cleared\":%s,\"input_pointers_preserved\":%s," 
+           "\"allocation_free_exact\":%s,\"source_allocations_before\":%zu," 
+           "\"source_allocations_after\":%d,\"cleanup_events\":[%s]}}\n",
+           result, runs, delta, ORACLE_NORMALIZE_REBUILD_POSITION,
+           ORACLE_NORMALIZE_COMPARE_POSITION, ORACLE_NORMALIZE_FILL_POSITION,
+           ORACLE_NORMALIZE_FIX_FIXED_POSITION,
+           ORACLE_NORMALIZE_FIX_MOBILE_POSITION,
+           ORACLE_NORMALIZE_FIX_STEREO_POSITION,
+           complete_caller_state_exact ? "true" : "false",
+           ORACLE_NORMALIZE_PREFREE_EXACT ? "true" : "false",
+           holders_null ? "true" : "false",
+           !structure.One_ti.t_group && !structure.One_ti.num_t_groups
+               ? "true" : "false",
+           input[0] == &original[0] &&
+                   input[1] ==
+                       (test_case->original_layer1 ? &original[1] : NULL)
+               ? "true" : "false",
+           ORACLE_DEFERRED_FREE_COUNT == ORACLE_NORMALIZE_ALLOCATION_COUNT
+               ? "true" : "false",
+           ORACLE_NORMALIZE_ALLOCATION_COUNT, 0,
+           ORACLE_NORMALIZE_EVENTS);
+    fflush(stdout);
+    ORACLE_DEFER_FREES = 0;
+    oracle_flush_deferred_frees();
+    return 0;
+}
+
+static int print_normalize_and_compare_records(void)
+{
+    static const int forced_returns[] = {RI_ERR_ALLOC, RI_ERR_PROGR};
+    unsigned int return_index;
+    unsigned int holder_mask;
+    for (return_index = 0;
+         return_index < sizeof(forced_returns) / sizeof(forced_returns[0]);
+         return_index++)
+    {
+        for (holder_mask = 0; holder_mask < 64; holder_mask++)
+        {
+            int status = print_normalize_and_compare_negative_case(
+                holder_mask, forced_returns[return_index]);
+            if (status != 0)
+            {
+                return status;
+            }
+        }
+    }
+    for (return_index = 0; return_index < 2; return_index++)
+    {
+        int mobile_h = return_index == 0 ? TAUT_NON : TAUT_YES;
+        int original_state;
+        for (original_state = 0; original_state < 4; original_state++)
+        {
+            int reversed_state;
+            for (reversed_state = 0; reversed_state < 4; reversed_state++)
+            {
+                int status = print_normalize_and_compare_layer_case(
+                    mobile_h, original_state, reversed_state, 1);
+                if (status != 0)
+                {
+                    return status;
+                }
+            }
+        }
+    }
+    if (print_normalize_and_compare_layer_case(TAUT_INI, 0, 0, 0) != 0)
+    {
+        return 70;
+    }
+    if (run_normalize_and_compare_zz_case(0, 1, "CZzZz2", 0, 0, 1) ||
+        run_normalize_and_compare_zz_case(1, 0, "CZzZz2", 0, 0, 1) ||
+        run_normalize_and_compare_zz_case(1, 1, NULL, 0, 0, 1) ||
+        run_normalize_and_compare_zz_case(1, 1, "C2H6", 0, 0, 1) ||
+        run_normalize_and_compare_zz_case(1, 1, "CZzZz2", 0, 0, 1) ||
+        run_normalize_and_compare_zz_case(1, 1, "CZzZz2", 2, 0, 1) ||
+        run_normalize_and_compare_zz_case(1, 1, "CZzZz2", 3, 0, 1) ||
+        run_normalize_and_compare_zz_case(1, 1, "CZzZz2", 0, 1, 1) ||
+        run_normalize_and_compare_zz_case(1, 1, "CZzZz2", 4, 1, 1))
+    {
+        return 70;
+    }
+    if (print_normalize_and_compare_zz_undefined_case() != 0)
+    {
+        return 70;
+    }
+    for (return_index = 0;
+         return_index < sizeof(ORACLE_NORMALIZE_FIRST_LESS_CASES) /
+                            sizeof(ORACLE_NORMALIZE_FIRST_LESS_CASES[0]);
+         return_index++)
+    {
+        if (print_normalize_and_compare_first_less_case(
+                ORACLE_NORMALIZE_FIRST_LESS_CASES + return_index) != 0)
+        {
+            return 70;
+        }
+    }
+    for (return_index = 0;
+         return_index < sizeof(ORACLE_NORMALIZE_MORE_EXTRA_CASES) /
+                            sizeof(ORACLE_NORMALIZE_MORE_EXTRA_CASES[0]);
+         return_index++)
+    {
+        if (print_normalize_and_compare_first_less_case(
+                ORACLE_NORMALIZE_MORE_EXTRA_CASES + return_index) != 0)
+        {
+            return 70;
+        }
+    }
+    for (return_index = 0;
+         return_index < sizeof(ORACLE_NORMALIZE_FINAL_CASES) /
+                            sizeof(ORACLE_NORMALIZE_FINAL_CASES[0]);
+         return_index++)
+    {
+        if (print_normalize_and_compare_final_case(
+                ORACLE_NORMALIZE_FINAL_CASES + return_index) != 0)
+        {
+            return 70;
+        }
+    }
+    return 0;
+}
+
 static int print_version_record(void)
 {
     const char *version = IXA_INCHIBUILDER_GetInChIVersion(IXA_FALSE);
@@ -3892,7 +8331,7 @@ int main(int argc, char **argv)
     if (argc != 2)
     {
         fprintf(stderr,
-                "usage: official-c-oracle --version-record|--inchi-to-inchi-atom-records|--inchi-to-inchi-input-records|--get-inchi-input-from-aux-info-records|--get-std-inchi-input-from-aux-info-records|--write-coord-records|--parse-options-records|--element-lookup-records|--periodic-lookup-records|--el-valence-records|--metal-records|--atomic-mass-records|--detect-unusual-valence-records|--extract-charge-records|--extract-hydrogen-records|--list-records|--bonds-to-metal-records|--set-atom-records|--set-bond-records\n");
+                "usage: official-c-oracle --version-record|--inchi-to-inchi-atom-records|--inchi-to-inchi-input-records|--get-inchi-input-from-aux-info-records|--get-std-inchi-input-from-aux-info-records|--write-coord-records|--parse-options-records|--element-lookup-records|--periodic-lookup-records|--el-valence-records|--metal-records|--atomic-mass-records|--detect-unusual-valence-records|--extract-charge-records|--extract-hydrogen-records|--list-records|--bonds-to-metal-records|--set-atom-records|--set-bond-records|--cmp-components-records|--cmp-rad-endpoints-records|--comp-t-group-number-records|--comp-c-group-number-records|--cmp-iso-atw-diff-component-no-records|--comp-neigh-lists-records|--comp-neigh-lists-up-to-max-rank-records|--cmp-charge-val-records|--comp-cc-cand-records|--base26-triplet-1-records|--base26-triplet-2-records|--base26-triplet-3-records|--base26-triplet-4-records|--base26-dublet-for-bits-28-to-36-records|--base26-dublet-for-bits-56-to-64-records|--get-xtra-hash-major-hex-records|--get-xtra-hash-minor-hex-records|--sha2-starts-records|--sha2-process-records|--sha2-update-records|--sha2-finish-records|--sha2-csum-records|--inchi-key-records|--rdkit-core-root-records|--normalize-and-compare-records|--cn-list-record\n");
         return 64;
     }
     if (strcmp(argv[1], "--version-record") == 0)
@@ -3970,6 +8409,110 @@ int main(int argc, char **argv)
     if (strcmp(argv[1], "--set-bond-records") == 0)
     {
         return print_set_bond_records();
+    }
+    if (strcmp(argv[1], "--cmp-components-records") == 0)
+    {
+        return print_cmp_components_records();
+    }
+    if (strcmp(argv[1], "--cmp-rad-endpoints-records") == 0)
+    {
+        return print_cmp_rad_endpoints_records();
+    }
+    if (strcmp(argv[1], "--comp-t-group-number-records") == 0)
+    {
+        return print_comp_t_group_number_records();
+    }
+    if (strcmp(argv[1], "--comp-c-group-number-records") == 0)
+    {
+        return print_comp_c_group_number_records();
+    }
+    if (strcmp(argv[1], "--cmp-iso-atw-diff-component-no-records") == 0)
+    {
+        return print_cmp_iso_atw_diff_component_no_records();
+    }
+    if (strcmp(argv[1], "--comp-neigh-lists-records") == 0)
+    {
+        return print_comp_neigh_lists_records();
+    }
+    if (strcmp(argv[1], "--comp-neigh-lists-up-to-max-rank-records") == 0)
+    {
+        return print_comp_neigh_lists_up_to_max_rank_records();
+    }
+    if (strcmp(argv[1], "--cmp-charge-val-records") == 0)
+    {
+        return print_cmp_charge_val_records();
+    }
+    if (strcmp(argv[1], "--comp-cc-cand-records") == 0)
+    {
+        return print_comp_cc_cand_records();
+    }
+    if (strcmp(argv[1], "--base26-triplet-1-records") == 0)
+    {
+        return print_base26_triplet_1_records();
+    }
+    if (strcmp(argv[1], "--base26-triplet-2-records") == 0)
+    {
+        return print_base26_triplet_2_records();
+    }
+    if (strcmp(argv[1], "--base26-triplet-3-records") == 0)
+    {
+        return print_base26_triplet_3_records();
+    }
+    if (strcmp(argv[1], "--base26-triplet-4-records") == 0)
+    {
+        return print_base26_triplet_4_records();
+    }
+    if (strcmp(argv[1], "--base26-dublet-for-bits-28-to-36-records") == 0)
+    {
+        return print_base26_dublet_for_bits_28_to_36_records();
+    }
+    if (strcmp(argv[1], "--base26-dublet-for-bits-56-to-64-records") == 0)
+    {
+        return print_base26_dublet_for_bits_56_to_64_records();
+    }
+    if (strcmp(argv[1], "--get-xtra-hash-major-hex-records") == 0)
+    {
+        return print_get_xtra_hash_major_hex_records();
+    }
+    if (strcmp(argv[1], "--get-xtra-hash-minor-hex-records") == 0)
+    {
+        return print_get_xtra_hash_minor_hex_records();
+    }
+    if (strcmp(argv[1], "--sha2-starts-records") == 0)
+    {
+        return print_sha2_starts_records();
+    }
+    if (strcmp(argv[1], "--sha2-process-records") == 0)
+    {
+        return print_sha2_process_records();
+    }
+    if (strcmp(argv[1], "--sha2-update-records") == 0)
+    {
+        return print_sha2_update_records();
+    }
+    if (strcmp(argv[1], "--sha2-finish-records") == 0)
+    {
+        return print_sha2_finish_records();
+    }
+    if (strcmp(argv[1], "--sha2-csum-records") == 0)
+    {
+        return print_sha2_csum_records();
+    }
+    if (strcmp(argv[1], "--inchi-key-records") == 0)
+    {
+        return print_inchi_key_records();
+    }
+    if (strcmp(argv[1], "--rdkit-core-root-records") == 0)
+    {
+        return print_rdkit_core_root_records();
+    }
+    if (strcmp(argv[1], "--normalize-and-compare-records") == 0)
+    {
+        return print_normalize_and_compare_records();
+    }
+    if (strcmp(argv[1], "--cn-list-record") == 0)
+    {
+        return print_cn_list_record();
     }
     fprintf(stderr, "unknown official C oracle operation\n");
     return 64;

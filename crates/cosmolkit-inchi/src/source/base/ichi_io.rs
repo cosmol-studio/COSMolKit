@@ -330,6 +330,104 @@ pub(crate) fn inchi_strbuf_printf(
     Ok(rendered_length)
 }
 
+#[rustfmt::skip]
+pub(crate) fn inchi_strbuf_addline(
+    heap: &mut SourceHeap,
+    buf: &mut INCHI_IOS_STRING,
+    inp_stream: Option<&mut INCHI_IOSTREAM>,
+    crlf2lf: i32,
+    preserve_lf: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_io.c:1635 inchi_strbuf_addline
+    // INCHI✔️❌: complete source frame follows verbatim; modeled format literal and typed varargs add overhead.
+    /*
+int inchi_strbuf_addline(INCHI_IOS_STRING* buf,
+    INCHI_IOSTREAM* inp_stream,
+    int crlf2lf,
+    int preserve_lf)
+{
+    int c;
+
+    while (1)
+    {
+        c = inchi_ios_str_getc(inp_stream);
+        if (c == EOF)
+        {
+            return -1;
+        }
+        inchi_strbuf_printf(buf, "%c", c);
+        if (c == '\n')
+        {
+            break;
+        }
+    }
+    if (crlf2lf)
+    {
+        if (buf->nUsedLength > 2)
+        {
+            if (buf->pStr[buf->nUsedLength - 2] == '\r')
+            {
+                buf->pStr[buf->nUsedLength - 2] = '\n';
+                buf->pStr[--buf->nUsedLength] = '\0';
+            }
+        }
+    }
+    if (!preserve_lf)
+    {
+        buf->pStr[--buf->nUsedLength] = '\0';
+    }
+
+    return buf->nUsedLength;
+}
+    */
+    // END INCHI C FUNCTION: inchi_strbuf_addline
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: inchi_strbuf_addline
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; EOF is -1 and char is signed.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: inchi_strbuf_addline
+
+    let inp_stream = inp_stream.ok_or(SourceHeapError::NullPointer)?;
+    let format = heap.allocate_model_storage(vec![b'%' as i8, b'c' as i8, 0])?;
+    let result = (|| -> Result<i32, SourceHeapError> {
+        loop {
+            let character = inchi_ios_str_getc(heap, inp_stream)?;
+            if character == SOURCE_EOF {
+                return Ok(-1);
+            }
+            let arguments = SourceVaList {
+                arguments: vec![SourceFormatArgument::Byte(character as i8)],
+                position: 0,
+            };
+            let _ = inchi_strbuf_printf(heap, Some(&mut *buf), format.as_const(), &arguments)?;
+            if character == i32::from(b'\n') {
+                break;
+            }
+        }
+        if crlf2lf != 0 && buf.nUsedLength > 2 {
+            let cr_index = usize::try_from(buf.nUsedLength.wrapping_sub(2))
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            if heap.slice(buf.pStr.as_const())?[cr_index] == b'\r' as i8 {
+                heap.slice_mut(buf.pStr)?[cr_index] = b'\n' as i8;
+                buf.nUsedLength = buf.nUsedLength.wrapping_sub(1);
+                let end = usize::try_from(buf.nUsedLength)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                heap.slice_mut(buf.pStr)?[end] = 0;
+            }
+        }
+        if preserve_lf == 0 {
+            buf.nUsedLength = buf.nUsedLength.wrapping_sub(1);
+            let end = usize::try_from(buf.nUsedLength)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            heap.slice_mut(buf.pStr)?[end] = 0;
+        }
+        Ok(buf.nUsedLength)
+    })();
+    let cleanup = heap.free(format);
+    match (result, cleanup) {
+        (Err(error), _) | (Ok(_), Err(error)) => Err(error),
+        (Ok(value), Ok(())) => Ok(value),
+    }
+}
+
 fn next_format_argument(
     arguments: &mut SourceVaList,
 ) -> Result<SourceFormatArgument, SourceHeapError> {
@@ -460,7 +558,7 @@ fn c_printf_float(value: f64, specifier: u8, precision: Option<usize>, alternate
     }
 }
 
-fn source_vformat(
+pub(crate) fn source_vformat(
     heap: &mut SourceHeap,
     format: SourceConstPointer<i8>,
     arguments: &mut SourceVaList,
@@ -2565,6 +2663,80 @@ mod tests {
         SourceVoid,
     };
     use crate::test_support::allocate_source_fixture;
+
+    #[test]
+    fn source_port__ichi_io__inchi_strbuf_addline__line_1635() {
+        fn stream(heap: &mut SourceHeap, value: &[u8]) -> INCHI_IOSTREAM {
+            let data = heap
+                .allocate_model_storage(value.iter().map(|byte| *byte as i8).collect())
+                .unwrap();
+            INCHI_IOSTREAM {
+                type_: INCHI_IOS_TYPE_STRING as i32,
+                s: INCHI_IOS_STRING {
+                    pStr: data,
+                    nAllocatedLength: value.len() as i32,
+                    nUsedLength: value.len() as i32,
+                    nPtr: 0,
+                },
+                ..INCHI_IOSTREAM::default()
+            }
+        }
+        fn bytes(heap: &SourceHeap, buffer: &INCHI_IOS_STRING) -> Vec<u8> {
+            heap.slice(buffer.pStr.as_const()).unwrap()[..buffer.nUsedLength as usize]
+                .iter()
+                .map(|byte| *byte as u8)
+                .collect()
+        }
+
+        let mut heap = SourceHeap::default();
+        let mut buffer = INCHI_IOS_STRING::default();
+        assert!(inchi_strbuf_init(&mut heap, &mut buffer, 4, 4).unwrap() > 0);
+        heap.slice_mut(buffer.pStr).unwrap()[..4]
+            .copy_from_slice(&[b'p' as i8, b'r' as i8, b'e' as i8, 0]);
+        buffer.nUsedLength = 3;
+
+        let mut crlf = stream(&mut heap, b"a\r\nrest");
+        assert_eq!(
+            inchi_strbuf_addline(&mut heap, &mut buffer, Some(&mut crlf), 1, 1),
+            Ok(5)
+        );
+        assert_eq!(bytes(&heap, &buffer), b"prea\n");
+        assert_eq!(crlf.s.nPtr, 3);
+
+        let mut no_lf = stream(&mut heap, b"b\ntail");
+        assert_eq!(
+            inchi_strbuf_addline(&mut heap, &mut buffer, Some(&mut no_lf), 0, 0),
+            Ok(6)
+        );
+        assert_eq!(bytes(&heap, &buffer), b"prea\nb");
+
+        let mut eof = stream(&mut heap, b"xy");
+        assert_eq!(
+            inchi_strbuf_addline(&mut heap, &mut buffer, Some(&mut eof), 1, 0),
+            Ok(-1)
+        );
+        assert_eq!(bytes(&heap, &buffer), b"prea\nbxy");
+
+        let mut empty_buffer = INCHI_IOS_STRING::default();
+        inchi_strbuf_init(&mut heap, &mut empty_buffer, 2, 2).unwrap();
+        let mut empty_crlf = stream(&mut heap, b"\r\n");
+        assert_eq!(
+            inchi_strbuf_addline(&mut heap, &mut empty_buffer, Some(&mut empty_crlf), 1, 1),
+            Ok(2)
+        );
+        assert_eq!(bytes(&heap, &empty_buffer), b"\r\n");
+
+        let mut bare_lf = stream(&mut heap, b"\n");
+        assert_eq!(
+            inchi_strbuf_addline(&mut heap, &mut empty_buffer, Some(&mut bare_lf), 0, 0),
+            Ok(2)
+        );
+        assert_eq!(bytes(&heap, &empty_buffer), b"\r\n");
+        assert_eq!(
+            inchi_strbuf_addline(&mut heap, &mut empty_buffer, None, 0, 0),
+            Err(SourceHeapError::NullPointer)
+        );
+    }
 
     #[test]
     fn source_port__ichi_io__inchi_strbuf_init__line_1370() {

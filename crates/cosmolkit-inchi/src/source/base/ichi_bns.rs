@@ -54,15 +54,15 @@ use crate::source_types::{
     NO_VERTEX, NUM_H, NUM_H_ISOTOPES, NUM_KINDS_OF_GROUPS, NodeSet, RADICAL_DOUBLET,
     RADICAL_SINGLET, RADICAL_TRIPLET, RI_ERR_PROGR, S_CANDIDATE, S_CHAR, S_GROUP_INFO,
     SALT_ACCEPTOR, SALT_DONOR_H, SALT_DONOR_Neg, STEREO_DBLE_EITHER, SourceHeap, SourceHeapError,
-    SourceMutPointer, T_GROUP_INFO, TAUT_PT_06_00, TAUT_PT_13_00, TAUT_PT_16_00, TAUT_PT_18_00,
-    TAUT_PT_22_00, TAUT_PT_39_00, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE,
-    TG_FLAG_HARD_ADD_REM_PROTONS, TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_MERGE_TAUT_SALTS,
-    TG_FLAG_MERGE_TAUT_SALTS_DONE, TG_FLAG_MOVE_POS_CHARGES, TG_FLAG_MOVE_POS_CHARGES_DONE,
-    TG_FLAG_PT_06_00, TG_FLAG_PT_13_00, TG_FLAG_PT_16_00, TG_FLAG_PT_18_00, TG_FLAG_PT_22_00,
-    TG_FLAG_PT_39_00, TG_FLAG_TEST_TAUT__ATOMS_DONE, TG_FLAG_TEST_TAUT__SALTS,
-    TG_FLAG_TEST_TAUT__SALTS_DONE, TG_FLAG_TEST_TAUT2_SALTS, TG_FLAG_TEST_TAUT2_SALTS_DONE,
-    TG_FLAG_TEST_TAUT3_SALTS_DONE, TG_FLAG_VARIABLE_PROTONS, Vertex, Vertex_s, Vertex_t,
-    VertexFlow, bRELEASE_VERSION, clock_t, inchiTime, inp_ATOM,
+    SourceMutPointer, T_GROUP, T_GROUP_INFO, TAUT_PT_06_00, TAUT_PT_13_00, TAUT_PT_16_00,
+    TAUT_PT_18_00, TAUT_PT_22_00, TAUT_PT_39_00, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE,
+    TG_FLAG_FOUND_ISOTOPIC_H_DONE, TG_FLAG_HARD_ADD_REM_PROTONS, TG_FLAG_KETO_ENOL_TAUT,
+    TG_FLAG_MERGE_TAUT_SALTS, TG_FLAG_MERGE_TAUT_SALTS_DONE, TG_FLAG_MOVE_POS_CHARGES,
+    TG_FLAG_MOVE_POS_CHARGES_DONE, TG_FLAG_PT_06_00, TG_FLAG_PT_13_00, TG_FLAG_PT_16_00,
+    TG_FLAG_PT_18_00, TG_FLAG_PT_22_00, TG_FLAG_PT_39_00, TG_FLAG_TEST_TAUT__ATOMS_DONE,
+    TG_FLAG_TEST_TAUT__SALTS, TG_FLAG_TEST_TAUT__SALTS_DONE, TG_FLAG_TEST_TAUT2_SALTS,
+    TG_FLAG_TEST_TAUT2_SALTS_DONE, TG_FLAG_TEST_TAUT3_SALTS_DONE, TG_FLAG_VARIABLE_PROTONS, Vertex,
+    Vertex_s, Vertex_t, VertexFlow, bRELEASE_VERSION, clock_t, inchiTime, inp_ATOM,
     local_ichi_bns::{
         AA_HARD_TYP_CO, AA_HARD_TYP_H, AA_HARD_TYP_NEG, AA_HARD_TYP_POS, AA_SIMPLE_TYP1,
         AA_SIMPLE_TYP4, ALT_PATH_CHANGES, AR_HARD_TYP_HA, AR_HARD_TYP_HN, AR_HARD_TYP_NEG,
@@ -11187,6 +11187,51 @@ pub(crate) fn RestoreRadicalsOnly(
     Ok(0)
 }
 
+pub(crate) fn cmp_rad_endpoints(first: &[Vertex; 2], second: &[Vertex; 2]) -> i32 {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:7784 cmp_rad_endpoints
+    // INCHI✔️✔️: int cmp_rad_endpoints( const void *a1, const void *a2 )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     /* Vertex radical_vertex, radical_endpoint */
+    // INCHI✔️✔️:     const Vertex *p1 = (const Vertex *) a1;
+    // INCHI✔️✔️:     const Vertex *p2 = (const Vertex *) a2;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     if (p1[0] < p2[0])
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         return -1;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     if (p1[0] > p2[0])
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         return 1;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     if (p1[1] < p2[1])
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         return -1;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     if (p1[1] > p2[1])
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         return 1;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     return 0;
+    // INCHI✔️✔️: }
+    // END INCHI C FUNCTION: cmp_rad_endpoints
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: cmp_rad_endpoints
+    // INCHI✔️✔️: typedef int Vertex;
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: cmp_rad_endpoints
+
+    if first[0] < second[0] {
+        -1
+    } else if first[0] > second[0] {
+        1
+    } else if first[1] < second[1] {
+        -1
+    } else if first[1] > second[1] {
+        1
+    } else {
+        0
+    }
+}
+
 fn sort_rad_endpoint_pairs(
     heap: &mut SourceHeap,
     rad_endpoints: SourceMutPointer<Vertex>,
@@ -11200,7 +11245,7 @@ fn sort_rad_endpoint_pairs(
         while j >= 0 {
             let left = work_get(heap, rad_endpoints, j * 2)?;
             let right = work_get(heap, rad_endpoints, j * 2 + 1)?;
-            if (left, right) <= (key_left, key_right) {
+            if cmp_rad_endpoints(&[left, right], &[key_left, key_right]) <= 0 {
                 break;
             }
             work_set(heap, rad_endpoints, (j + 1) * 2, left)?;
@@ -17037,6 +17082,39 @@ pub(crate) fn ReInitBnStruct(
 }
 
 #[allow(non_snake_case)]
+#[allow(non_snake_case)]
+pub(crate) fn CompTGroupNumber(first: &T_GROUP, second: &T_GROUP) -> i32 {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:9195 CompTGroupNumber
+    // INCHI✔️✔️: int CompTGroupNumber( const void *tg1, const void *tg2, void *p )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     return (int) ( (const T_GROUP *) tg1 )->nGroupNumber - (int) ( (const T_GROUP *) tg2 )->nGroupNumber;
+    // INCHI✔️✔️: }
+    // END INCHI C FUNCTION: CompTGroupNumber
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: CompTGroupNumber
+    // INCHI✔️✔️: typedef unsigned short AT_NUMB;
+    // INCHI✔️✔️:     AT_NUMB   nGroupNumber;  /* positive tautomer group ID = atom->endpoint */
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: CompTGroupNumber
+
+    i32::from(first.nGroupNumber) - i32::from(second.nGroupNumber)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn CompCGroupNumber(first: &C_GROUP, second: &C_GROUP) -> i32 {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:9202 CompCGroupNumber
+    // INCHI✔️✔️: int CompCGroupNumber( const void *cg1, const void *cg2, void *p )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     return (int) ( (const C_GROUP *) cg1 )->nGroupNumber - (int) ( (const C_GROUP *) cg2 )->nGroupNumber;
+    // INCHI✔️✔️: }
+    // END INCHI C FUNCTION: CompCGroupNumber
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: CompCGroupNumber
+    // INCHI✔️✔️: typedef unsigned short AT_NUMB;
+    // INCHI✔️✔️:     AT_NUMB   nGroupNumber;
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: CompCGroupNumber
+
+    i32::from(first.nGroupNumber) - i32::from(second.nGroupNumber)
+}
+
+#[allow(non_snake_case)]
 pub(crate) fn AddTGroups2BnStruct(
     heap: &mut SourceHeap,
     _pCG: &mut CANON_GLOBALS,
@@ -17268,7 +17346,7 @@ pub(crate) fn AddTGroups2BnStruct(
     }
 
     if bRELEASE_VERSION != 1 {
-        groups.sort_by_key(|group| group.nGroupNumber);
+        groups.sort_by(|first, second| CompTGroupNumber(first, second).cmp(&0));
         for i in 1..groups.len() {
             if groups[i]
                 .nGroupNumber
@@ -17286,7 +17364,7 @@ pub(crate) fn AddTGroups2BnStruct(
                 .nGroupNumber,
         )
     {
-        groups.sort_by_key(|group| group.nGroupNumber);
+        groups.sort_by(|first, second| CompTGroupNumber(first, second).cmp(&0));
     }
     heap.slice_mut(tgi.t_group)?[..group_count].clone_from_slice(&groups);
 
@@ -17654,7 +17732,7 @@ pub(crate) fn AddCGroups2BnStruct(
     }
 
     if bRELEASE_VERSION != 1 {
-        groups.sort_by_key(|group| group.nGroupNumber);
+        groups.sort_by(|first, second| CompCGroupNumber(first, second).cmp(&0));
         for i in 1..groups.len() {
             if groups[i]
                 .nGroupNumber
@@ -17672,7 +17750,7 @@ pub(crate) fn AddCGroups2BnStruct(
                 .nGroupNumber,
         )
     {
-        groups.sort_by_key(|group| group.nGroupNumber);
+        groups.sort_by(|first, second| CompCGroupNumber(first, second).cmp(&0));
     }
     heap.slice_mut(cgi.c_group)?[..group_count].clone_from_slice(&groups);
 
@@ -20520,6 +20598,296 @@ mod tests {
         TG_FLAG_TEST_TAUT__ATOMS,
         local_ichi_bns::{BT_OTHER_ALTERN_BOND, TREE_IN_1},
     };
+
+    #[test]
+    fn source_port__ichi_bns__cmp_rad_endpoints__line_7784() {
+        assert_eq!(cmp_rad_endpoints(&[i32::MIN, i32::MAX], &[0, 0]), -1);
+        assert_eq!(cmp_rad_endpoints(&[i32::MAX, i32::MIN], &[0, 0]), 1);
+        assert_eq!(cmp_rad_endpoints(&[7, i32::MIN], &[7, 0]), -1);
+        assert_eq!(cmp_rad_endpoints(&[7, i32::MAX], &[7, 0]), 1);
+        assert_eq!(cmp_rad_endpoints(&[7, 11], &[7, 11]), 0);
+
+        let mut pairs = [[4, 8], [2, 9], [4, 1], [2, -3], [4, 1]];
+        pairs.sort_by(|first, second| cmp_rad_endpoints(first, second).cmp(&0));
+        assert_eq!(pairs, [[2, -3], [2, 9], [4, 1], [4, 1], [4, 8]]);
+    }
+
+    #[test]
+    fn source_port__ichi_bns__comptgroupnumber__line_9195() {
+        let group = |number| T_GROUP {
+            nGroupNumber: number,
+            ..T_GROUP::default()
+        };
+
+        let minimum = group(u16::MIN);
+        let middle = group(17);
+        let equal = group(17);
+        let maximum = group(u16::MAX);
+        assert_eq!(CompTGroupNumber(&minimum, &maximum), -65_535);
+        assert_eq!(CompTGroupNumber(&maximum, &minimum), 65_535);
+        assert_eq!(CompTGroupNumber(&middle, &equal), 0);
+        assert_eq!(CompTGroupNumber(&minimum, &middle), -17);
+        assert_eq!(CompTGroupNumber(&middle, &minimum), 17);
+
+        let mut groups = [group(u16::MAX), group(17), group(0), group(17)];
+        groups.sort_by(|first, second| CompTGroupNumber(first, second).cmp(&0));
+        assert_eq!(
+            groups.map(|entry| entry.nGroupNumber),
+            [0, 17, 17, u16::MAX]
+        );
+    }
+
+    #[test]
+    fn source_port__ichi_bns__compcgroupnumber__line_9202() {
+        let group = |number| C_GROUP {
+            nGroupNumber: number,
+            ..C_GROUP::default()
+        };
+
+        let minimum = group(u16::MIN);
+        let middle = group(23);
+        let equal = group(23);
+        let maximum = group(u16::MAX);
+        assert_eq!(CompCGroupNumber(&minimum, &maximum), -65_535);
+        assert_eq!(CompCGroupNumber(&maximum, &minimum), 65_535);
+        assert_eq!(CompCGroupNumber(&middle, &equal), 0);
+        assert_eq!(CompCGroupNumber(&minimum, &middle), -23);
+        assert_eq!(CompCGroupNumber(&middle, &minimum), 23);
+
+        let mut groups = [group(u16::MAX), group(23), group(0), group(23)];
+        groups.sort_by(|first, second| CompCGroupNumber(first, second).cmp(&0));
+        assert_eq!(
+            groups.map(|entry| entry.nGroupNumber),
+            [0, 23, 23, u16::MAX]
+        );
+    }
+
+    #[test]
+    fn official_c_oracle__comptgroupnumber__exact() {
+        use std::path::Path;
+        use std::process::Command;
+
+        use serde_json::Value;
+
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("cosmolkit-inchi must be located under crates/");
+        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let oracle = Command::new("sh")
+            .arg(&runner)
+            .arg("--comp-t-group-number-records")
+            .current_dir(repository_root)
+            .output()
+            .unwrap_or_else(|error| panic!("failed to start {}: {error}", runner.display()));
+        assert!(
+            oracle.status.success(),
+            "official C oracle failed with {}:\n{}",
+            oracle.status,
+            String::from_utf8_lossy(&oracle.stderr)
+        );
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let mut record_count = 0_usize;
+        let mut saw_null_context = false;
+        let mut saw_nonnull_context = false;
+        for line in output.lines() {
+            let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
+            assert_eq!(official["schema_version"], "cosmolkit-inchi-official-c-v1");
+            assert_eq!(official["operation"], "CompTGroupNumber");
+            let case_id = official["case_id"].as_str().expect("case_id must be text");
+            let parse_number = |field: &str| {
+                u16::try_from(
+                    official["input"][field]
+                        .as_u64()
+                        .unwrap_or_else(|| panic!("{case_id}: {field} must be u16")),
+                )
+                .unwrap_or_else(|_| panic!("{case_id}: {field} exceeds u16"))
+            };
+            let first = T_GROUP {
+                nGroupNumber: parse_number("first_group_number"),
+                ..T_GROUP::default()
+            };
+            let second = T_GROUP {
+                nGroupNumber: parse_number("second_group_number"),
+                ..T_GROUP::default()
+            };
+            let context_nonnull = official["input"]["context_nonnull"]
+                .as_bool()
+                .expect("context_nonnull must be boolean");
+            saw_null_context |= !context_nonnull;
+            saw_nonnull_context |= context_nonnull;
+            let first_before = first.clone();
+            let second_before = second.clone();
+            let rust = CompTGroupNumber(&first, &second);
+            let expected = i32::try_from(
+                official["output"]["result"]
+                    .as_i64()
+                    .expect("result must be an integer"),
+            )
+            .expect("official result must fit i32");
+            assert_eq!(rust, expected, "{case_id}");
+            assert_eq!(first, first_before, "{case_id}: Rust first input mutation");
+            assert_eq!(
+                second, second_before,
+                "{case_id}: Rust second input mutation"
+            );
+            assert_eq!(official["output"]["first_unchanged"], true, "{case_id}");
+            assert_eq!(official["output"]["second_unchanged"], true, "{case_id}");
+            assert_eq!(official["output"]["context_unchanged"], true, "{case_id}");
+            record_count += 1;
+        }
+        assert_eq!(record_count, 5);
+        assert!(saw_null_context);
+        assert!(saw_nonnull_context);
+    }
+
+    #[test]
+    fn official_c_oracle__compcgroupnumber__exact() {
+        use std::path::Path;
+        use std::process::Command;
+
+        use serde_json::Value;
+
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("cosmolkit-inchi must be located under crates/");
+        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let oracle = Command::new("sh")
+            .arg(&runner)
+            .arg("--comp-c-group-number-records")
+            .current_dir(repository_root)
+            .output()
+            .unwrap_or_else(|error| panic!("failed to start {}: {error}", runner.display()));
+        assert!(
+            oracle.status.success(),
+            "official C oracle failed with {}:\n{}",
+            oracle.status,
+            String::from_utf8_lossy(&oracle.stderr)
+        );
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let mut record_count = 0_usize;
+        let mut saw_null_context = false;
+        let mut saw_nonnull_context = false;
+        for line in output.lines() {
+            let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
+            assert_eq!(official["schema_version"], "cosmolkit-inchi-official-c-v1");
+            assert_eq!(official["operation"], "CompCGroupNumber");
+            let case_id = official["case_id"].as_str().expect("case_id must be text");
+            let parse_number = |field: &str| {
+                u16::try_from(
+                    official["input"][field]
+                        .as_u64()
+                        .unwrap_or_else(|| panic!("{case_id}: {field} must be u16")),
+                )
+                .unwrap_or_else(|_| panic!("{case_id}: {field} exceeds u16"))
+            };
+            let first = C_GROUP {
+                nGroupNumber: parse_number("first_group_number"),
+                ..C_GROUP::default()
+            };
+            let second = C_GROUP {
+                nGroupNumber: parse_number("second_group_number"),
+                ..C_GROUP::default()
+            };
+            let context_nonnull = official["input"]["context_nonnull"]
+                .as_bool()
+                .expect("context_nonnull must be boolean");
+            saw_null_context |= !context_nonnull;
+            saw_nonnull_context |= context_nonnull;
+            let first_before = first.clone();
+            let second_before = second.clone();
+            let rust = CompCGroupNumber(&first, &second);
+            let expected = i32::try_from(
+                official["output"]["result"]
+                    .as_i64()
+                    .expect("result must be an integer"),
+            )
+            .expect("official result must fit i32");
+            assert_eq!(rust, expected, "{case_id}");
+            assert_eq!(first, first_before, "{case_id}: Rust first input mutation");
+            assert_eq!(
+                second, second_before,
+                "{case_id}: Rust second input mutation"
+            );
+            assert_eq!(official["output"]["first_unchanged"], true, "{case_id}");
+            assert_eq!(official["output"]["second_unchanged"], true, "{case_id}");
+            assert_eq!(official["output"]["context_unchanged"], true, "{case_id}");
+            record_count += 1;
+        }
+        assert_eq!(record_count, 5);
+        assert!(saw_null_context);
+        assert!(saw_nonnull_context);
+    }
+
+    #[test]
+    fn official_c_oracle__cmp_rad_endpoints__exact() {
+        use std::path::Path;
+        use std::process::Command;
+
+        use serde_json::Value;
+
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("cosmolkit-inchi must be located under crates/");
+        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let oracle = Command::new("sh")
+            .arg(&runner)
+            .arg("--cmp-rad-endpoints-records")
+            .current_dir(repository_root)
+            .output()
+            .unwrap_or_else(|error| panic!("failed to start {}: {error}", runner.display()));
+        assert!(
+            oracle.status.success(),
+            "official C oracle failed with {}:\n{}",
+            oracle.status,
+            String::from_utf8_lossy(&oracle.stderr)
+        );
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let mut record_count = 0_usize;
+        for line in output.lines() {
+            let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
+            assert_eq!(official["schema_version"], "cosmolkit-inchi-official-c-v1");
+            assert_eq!(official["operation"], "cmp_rad_endpoints");
+            let case_id = official["case_id"].as_str().expect("case_id must be text");
+            let parse_pair = |field: &str| {
+                let values = official["input"][field]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("{case_id}: {field} must be an array"));
+                assert_eq!(values.len(), 2, "{case_id}: {field} length");
+                let mut pair = [0_i32; 2];
+                for (index, value) in values.iter().enumerate() {
+                    pair[index] = i32::try_from(
+                        value
+                            .as_i64()
+                            .unwrap_or_else(|| panic!("{case_id}: {field}[{index}] must be i32")),
+                    )
+                    .unwrap_or_else(|_| panic!("{case_id}: {field}[{index}] exceeds i32"));
+                }
+                pair
+            };
+            let first = parse_pair("first");
+            let second = parse_pair("second");
+            let first_before = first;
+            let second_before = second;
+            let rust = cmp_rad_endpoints(&first, &second);
+            let expected = i32::try_from(
+                official["output"]["result"]
+                    .as_i64()
+                    .expect("result must be an integer"),
+            )
+            .expect("official result must fit i32");
+            assert_eq!(rust, expected, "{case_id}");
+            assert_eq!(first, first_before, "{case_id}: first input mutation");
+            assert_eq!(second, second_before, "{case_id}: second input mutation");
+            record_count += 1;
+        }
+        assert_eq!(record_count, 5);
+    }
 
     #[test]
     fn source_port__ichi_bns__bhaschargedneighbor__line_12005() {

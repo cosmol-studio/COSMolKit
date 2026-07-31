@@ -66,6 +66,7 @@
 pub mod bio;
 pub mod chemistry;
 pub mod confseq;
+pub mod inchi;
 pub mod io;
 pub mod model;
 pub mod notation;
@@ -177,6 +178,12 @@ pub use fingerprint::{
     morgan_get_hashed_fingerprint,
 };
 pub use hydrogens::{AddHsParams, AddHydrogensError, RemoveHsParams, RemoveHydrogensError};
+pub use inchi::{
+    INCHI_API_PARITY_MATRIX, InchiApiParitySpec, InchiDiagnostic, InchiDiagnosticLevel, InchiError,
+    InchiErrorKind, InchiReturnValues, InchiToInchiKeyOutput, MolFromInchiOutput,
+    MolToInchiKeyOutput, MolToInchiOutput, inchi_to_inchi_key, mol_from_inchi, mol_to_inchi,
+    mol_to_inchi_key,
+};
 pub use io::bio::{BioPdbReadParams, BioReadError, read_mmcif_atom_site_subset_from_str};
 pub use io::mol2::{
     Mol2ReadError, Mol2ReadParams, Mol2Record, Mol2Type, mol_from_mol2_block_like_rdkit,
@@ -242,8 +249,8 @@ pub use support::{
     BIO_PDB_COORDINATE_SUBSET_READ_FEATURE, BIO_SELECTION_FEATURE, BIO_STRUCTURE_FEATURE,
     CONFORMER_GENERATION_FEATURE, COORDINATE_2D_FEATURE, COORDINATE_EDIT_FEATURE,
     DG_BOUNDS_FEATURE, DRAWING_FEATURE, FINGERPRINT_FEATURE, FeatureCategory, FeatureSpec,
-    HYDROGENS_FEATURE, KEKULIZE_FEATURE, MOLBLOCK_IO_FEATURE, PUBLIC_FEATURES, RINGS_FEATURE,
-    SANITIZE_FEATURE, SMILES_PARSE_FEATURE, SMILES_WRITE_FEATURE, STEREO_FEATURE,
+    HYDROGENS_FEATURE, INCHI_FEATURE, KEKULIZE_FEATURE, MOLBLOCK_IO_FEATURE, PUBLIC_FEATURES,
+    RINGS_FEATURE, SANITIZE_FEATURE, SMILES_PARSE_FEATURE, SMILES_WRITE_FEATURE, STEREO_FEATURE,
     SUBSTRUCTURE_FEATURE, SupportStatus, UnsupportedFeatureError, VALENCE_FEATURE,
 };
 pub use valence::{

@@ -25,6 +25,7 @@ fn main() -> Result<()> {
     text = expose_batch_getitem_overloads(text);
     text = expose_sdf_dataset_getitem_overloads(text);
     text = expose_module_functions(text);
+    text = expose_inchi_api(text);
     text = expose_residue_enums_and_functions(text);
     text = expose_confseq_module(text);
     fs::write(pyi_path, text)?;
@@ -483,5 +484,55 @@ fn expose_batch_validation_error(mut text: String) -> String {
         );
     }
 
+    text
+}
+
+fn expose_inchi_api(mut text: String) -> String {
+    for export_name in [
+        "Chem",
+        "InchiToInchiKey",
+        "InchiError",
+        "InchiAllocationError",
+        "InchiUnsupportedStateError",
+        "InchiDiagnosticWarning",
+    ] {
+        let export = format!("    \"{export_name}\",\n");
+        if !text.contains(&export) {
+            text = text.replace(
+                "    \"__version__\",\n",
+                &format!("{export}    \"__version__\",\n"),
+            );
+        }
+    }
+
+    if !text.contains("class _ChemModule(typing.Protocol):") {
+        let declarations = r#"class InchiError(builtins.ValueError):
+    operation: builtins.str
+    kind: builtins.str
+    detail: builtins.str
+
+class InchiAllocationError(InchiError): ...
+
+class InchiUnsupportedStateError(InchiError): ...
+
+class InchiDiagnosticWarning(builtins.UserWarning):
+    level: builtins.str
+    message: builtins.str
+
+class _ChemModule(typing.Protocol):
+    def MolToInchi(self, molecule: Molecule, options: builtins.str = ...) -> builtins.str: ...
+    def MolToInchiKey(self, molecule: Molecule, options: builtins.str = ...) -> builtins.str: ...
+    def MolFromInchi(self, inchi: builtins.str, sanitize: builtins.bool = ..., remove_hs: builtins.bool = ...) -> typing.Optional[Molecule]: ...
+
+Chem: _ChemModule
+
+def InchiToInchiKey(inchi: builtins.str) -> builtins.str: ...
+
+"#;
+        text = text.replace(
+            "__version__: builtins.str\n",
+            &format!("{declarations}__version__: builtins.str\n"),
+        );
+    }
     text
 }

@@ -1,15 +1,912 @@
 use crate::source::base::ichi_bns::nBondsValenceInpAt;
-use crate::source::base::ichi_io::inchi_ios_print_nodisplay;
+use crate::source::base::ichi_io::{inchi_fgetsLf, inchi_ios_print_nodisplay};
+use crate::source::base::ichierr::AddErrorMessage;
 use crate::source::base::util::{
-    get_atomic_mass_from_elnum, inchi_calloc, inchi_free, is_in_the_ilist,
-    needed_unusual_el_valence,
+    dotify_non_printable_chars, get_atomic_mass_from_elnum, inchi_calloc, inchi_free,
+    inchi_memicmp, is_in_the_ilist, mystrncpy, needed_unusual_el_valence, normalize_string,
+    remove_trailing_spaces,
+};
+use crate::source_types::local_mol_fmt4::{
+    SD_FMT_END_OF_DATA_BLOCK, SD_FMT_END_OF_DATA_ITEM, SDF_DATA_HEADER, SDF_DATA_HEADER_CAS,
+    SDF_DATA_HEADER_COMMENT, SDF_DATA_HEADER_NAME, SDF_DATA_HEADER_USER, SDF_DATA_LINE,
+    SDF_EMPTY_LINE, SDF_START,
 };
 use crate::source_types::{
-    _IS_ERROR, FILE, INCHI_IOSTREAM, INT_ARRAY, MOL_FMT_M_CONN_EU, MOL_FMT_M_CONN_HH,
-    MOL_FMT_M_CONN_HT, MOL_FMT_M_SST_ALT, MOL_FMT_M_SST_BLK, MOL_FMT_M_SST_RAN, OAD_PolymerUnit,
-    ORIG_ATOM_DATA, RADICAL_DOUBLET, RADICAL_SINGLET, RADICAL_TRIPLET, SourceConstPointer,
-    SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList, inp_ATOM,
+    _IS_ERROR, FILE, INCHI_IOSTREAM, INT_ARRAY, MAX_SDF_VALUE, MOL_FMT_INPLINELEN,
+    MOL_FMT_M_CONN_EU, MOL_FMT_M_CONN_HH, MOL_FMT_M_CONN_HT, MOL_FMT_M_SST_ALT, MOL_FMT_M_SST_BLK,
+    MOL_FMT_M_SST_RAN, MOL_FMT_MAXLINELEN, MOL_FMT_SGROUP, MOL_FMT_SGROUPS, NUM_LISTS,
+    OAD_PolymerUnit, ORIG_ATOM_DATA, RADICAL_DOUBLET, RADICAL_SINGLET, RADICAL_TRIPLET,
+    SD_FMT_END_OF_DATA, SourceConstPointer, SourceFormatArgument, SourceHeap, SourceHeapError,
+    SourceMutPointer, SourceVaList, inp_ATOM,
 };
+
+fn mol_fmt4_add_ascii_message(
+    target: Option<&mut [i8]>,
+    message: &[u8],
+) -> Result<i32, SourceHeapError> {
+    let terminated = message
+        .iter()
+        .map(|byte| *byte as i8)
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    AddErrorMessage(target, Some(&terminated))
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn SDFileIdentifyLabel(
+    heap: &mut SourceHeap,
+    inp_line: SourceConstPointer<i8>,
+    sdf_label: SourceConstPointer<i8>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:346 SDFileIdentifyLabel
+    // INCHI✔️❌: complete source frame follows verbatim; SourceHeap stack-array and literal-pointer modeling adds allocation-map overhead.
+    /*
+int SDFileIdentifyLabel(char *inp_line, const char *pSdfLabel)
+{
+    char line[MOL_FMT_MAXLINELEN];
+    char *p, *q;
+    int i, j, len, tmp1 = 0, tmp2 = 0, cnd = 0;
+
+    if ((p = strchr(inp_line, '<')) &&
+        (q = strchr(p, '>')) &&
+        (len = q - p - 1) > 0 && len < (int)sizeof(line))
+    {
+        memcpy(line, p + 1, len);
+        line[len] = '\0';
+
+        for (i = 0; (i < len) && (cnd == 0); i++)
+        {
+            if (isspace(UCINT line[i]))
+            {
+                tmp1 = i;
+                cnd = 1;
+            }
+        }
+
+        cnd = 0;
+
+        for (j = len - 1; (j >= tmp1) && (cnd == 0); j--)
+        {
+            if (isspace(UCINT line[j]))
+            {
+                tmp2 = j;
+                cnd = 1;
+            }
+        }
+
+        len = tmp2 - tmp1 + 1;
+        p = line + tmp1;
+
+        if (pSdfLabel && pSdfLabel[0] && len == (int)strlen(pSdfLabel) && !inchi_memicmp(p, pSdfLabel, len))
+        {
+            return SDF_DATA_HEADER_USER;
+        }
+
+        if (len == sizeof(sdf_data_hdr_name) - 1 && !inchi_memicmp(p, sdf_data_hdr_name, len))
+        {
+            return SDF_DATA_HEADER_NAME;
+        }
+
+        if (len == sizeof(sdf_data_hdr_comm) - 1 && !inchi_memicmp(p, sdf_data_hdr_comm, len))
+        {
+            return SDF_DATA_HEADER_COMMENT;
+        }
+
+        if (!inchi_memicmp(p, "CAS", 3))
+        {
+            return SDF_DATA_HEADER_CAS;
+        }
+    }
+
+    return SDF_DATA_HEADER;
+}
+    */
+    // END INCHI C FUNCTION: SDFileIdentifyLabel
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: SDFileIdentifyLabel
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; UCINT casts to unsigned char and the selected C locale has ASCII isspace behavior.
+    // INCHI✔️❌: strchr, memcpy, strlen, and completed inchi_memicmp are active; the source tmp1/tmp2 initialization and fixed three-byte CAS comparison are preserved literally.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: SDFileIdentifyLabel
+
+    let line_capacity = usize::try_from(MOL_FMT_MAXLINELEN)
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let line = heap.allocate_model_storage(vec![0_i8; line_capacity])?;
+    let name = heap.allocate_model_storage(b"NAME\0".iter().map(|byte| *byte as i8).collect())?;
+    let comment = heap.allocate_model_storage(b"COMMENT\0".iter().map(|byte| *byte as i8).collect())?;
+    let cas = heap.allocate_model_storage(b"CAS\0".iter().map(|byte| *byte as i8).collect())?;
+    let result = (|| -> Result<i32, SourceHeapError> {
+        let input = heap.slice(inp_line)?;
+        let input_length = input.iter().position(|byte| *byte == 0)
+            .ok_or(SourceHeapError::MissingNulTerminator)?;
+        let input = &input[..input_length];
+        let Some(open) = input.iter().position(|byte| *byte == b'<' as i8) else {
+            return Ok(SDF_DATA_HEADER as i32);
+        };
+        let Some(relative_close) = input[open..].iter().position(|byte| *byte == b'>' as i8) else {
+            return Ok(SDF_DATA_HEADER as i32);
+        };
+        let close = open.wrapping_add(relative_close);
+        let original_length = close.wrapping_sub(open).wrapping_sub(1);
+        if original_length == 0 || original_length >= line_capacity {
+            return Ok(SDF_DATA_HEADER as i32);
+        }
+        let copied_input = input[open + 1..close].to_vec();
+        heap.slice_mut(line)?[..original_length]
+            .copy_from_slice(&copied_input);
+        heap.slice_mut(line)?[original_length] = 0;
+
+        let copied = heap.slice(line.as_const())?;
+        let mut tmp1 = 0_usize;
+        if let Some(index) = copied[..original_length].iter().position(|byte| {
+            matches!(*byte as u8, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+        }) {
+            tmp1 = index;
+        }
+        let mut tmp2 = 0_usize;
+        if let Some(index) = copied[tmp1..original_length].iter().rposition(|byte| {
+            matches!(*byte as u8, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+        }) {
+            tmp2 = tmp1.wrapping_add(index);
+        }
+        let length = tmp2.wrapping_sub(tmp1).wrapping_add(1);
+        let candidate = line.as_const().offset(i64::try_from(tmp1)
+            .map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?;
+
+        if !sdf_label.is_null() {
+            let label = heap.slice(sdf_label)?;
+            let label_length = label.iter().position(|byte| *byte == 0)
+                .ok_or(SourceHeapError::MissingNulTerminator)?;
+            if label.first().copied().unwrap_or(0) != 0
+                && length == label_length
+                && inchi_memicmp(heap, candidate, sdf_label, length as u64)? == 0
+            {
+                return Ok(SDF_DATA_HEADER_USER as i32);
+            }
+        }
+        if length == 4 && inchi_memicmp(heap, candidate, name.as_const(), length as u64)? == 0 {
+            return Ok(SDF_DATA_HEADER_NAME as i32);
+        }
+        if length == 7 && inchi_memicmp(heap, candidate, comment.as_const(), length as u64)? == 0 {
+            return Ok(SDF_DATA_HEADER_COMMENT as i32);
+        }
+        if inchi_memicmp(heap, candidate, cas.as_const(), 3)? == 0 {
+            return Ok(SDF_DATA_HEADER_CAS as i32);
+        }
+        Ok(SDF_DATA_HEADER as i32)
+    })();
+    let cleanup = [line, name, comment, cas]
+        .into_iter()
+        .try_for_each(|pointer| heap.free(pointer));
+    match (result, cleanup) {
+        (Err(error), _) | (Ok(_), Err(error)) => Err(error),
+        (Ok(value), Ok(())) => Ok(value),
+    }
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn SDFileExtractCASNo(
+    heap: &mut SourceHeap,
+    line: SourceMutPointer<i8>,
+) -> Result<u64, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:407 SDFileExtractCASNo
+    // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap allocation-map access adds constant overhead.
+    /*
+unsigned long SDFileExtractCASNo(char *line)
+{
+    int i, j;
+
+    i = line[0] == '-' ? 1 : 0;
+
+    for (j = i; line[i]; i++)
+    {
+        if (isdigit(UCINT line[i]))
+        {
+            line[j++] = line[i];
+        }
+        else if (line[i] != '-')
+        {
+            break;
+        }
+    }
+
+    line[j] = '\0';
+
+    return strtoul(line, NULL, 10);
+}
+    */
+    // END INCHI C FUNCTION: SDFileExtractCASNo
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: SDFileExtractCASNo
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; unsigned long is 64 bits and UCINT casts to unsigned char.
+    // INCHI✔️❌: The selected C locale recognizes only ASCII decimal digits; libc strtoul base 10 returns ULONG_MAX on range error and applies a leading minus by unsigned negation when the magnitude is representable.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: SDFileExtractCASNo
+
+    let bytes = heap.slice_mut(line)?;
+    let nul = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or(SourceHeapError::MissingNulTerminator)?;
+    let mut i = usize::from(bytes.first().copied() == Some(b'-' as i8));
+    let mut j = i;
+    while i < nul {
+        let byte = bytes[i] as u8;
+        if byte.is_ascii_digit() {
+            bytes[j] = bytes[i];
+            j = j.wrapping_add(1);
+        } else if byte != b'-' {
+            break;
+        }
+        i = i.wrapping_add(1);
+    }
+    bytes[j] = 0;
+
+    let negative = j != 0 && bytes[0] == b'-' as i8;
+    let first_digit = usize::from(negative);
+    let mut value = 0_u64;
+    let mut overflow = false;
+    for byte in &bytes[first_digit..j] {
+        let digit = (*byte as u8).wrapping_sub(b'0') as u64;
+        if !overflow {
+            match value.checked_mul(10).and_then(|value| value.checked_add(digit)) {
+                Some(parsed) => value = parsed,
+                None => overflow = true,
+            }
+        }
+    }
+    if overflow {
+        Ok(u64::MAX)
+    } else if negative {
+        Ok(0_u64.wrapping_sub(value))
+    } else {
+        Ok(value)
+    }
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn SDFileSkipExtraData(
+    heap: &mut SourceHeap,
+    mut inp_file: Option<&mut INCHI_IOSTREAM>,
+    mut CAS_num: Option<&mut u64>,
+    comment: SourceMutPointer<i8>,
+    lcomment: i32,
+    name: SourceMutPointer<i8>,
+    lname: i32,
+    prev_err: i32,
+    pSdfLabel: SourceConstPointer<i8>,
+    pSdfValue: SourceMutPointer<i8>,
+    mut pStrErr: Option<&mut [i8]>,
+    bNoWarnings: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:161 SDFileSkipExtraData
+    // INCHI✔️❌: complete source frame follows verbatim; modeled stack buffers and checked SourceHeap pointer access add allocation-map overhead.
+    /*
+int SDFileSkipExtraData(INCHI_IOSTREAM *inp_file,
+                        unsigned long *CAS_num,
+                        char *comment,
+                        int lcomment,
+                        char *name,
+                        int lname,
+                        int prev_err,
+                        const char *pSdfLabel,
+                        char *pSdfValue,
+                        char *pStrErr,
+                        int bNoWarnings)
+{
+    char *p = NULL;
+    char line[MOL_FMT_INPLINELEN];
+    const int line_len = sizeof( line );
+    int n_blank_lines = 0, n_lines = 0;
+    int current_state = SDF_START;
+    int err = 0;
+    int wait_for_CAS = 0;
+    int CAS_num_is_user = 0;
+    int wait_for_name = name && lname > 0 && !name[0];
+    int wait_for_comment = comment && lcomment > 0 && !comment[0];
+    int wait_for_user = pSdfLabel && pSdfLabel[0] && pSdfValue;
+
+    if (CAS_num != NULL)
+    {
+        wait_for_CAS = 1;
+        *CAS_num = 0LU;
+        CAS_num_is_user = (wait_for_user && !inchi_memicmp(pSdfLabel, "CAS", 3));
+    }
+
+    while (!err &&
+           current_state != SD_FMT_END_OF_DATA_BLOCK &&
+           NULL != (p = inchi_fgetsLf(line, line_len, inp_file)))
+    {
+        if (!n_lines && !memcmp(line, "M  END", 6))
+        {
+            /*  allow subtle errors */
+            continue;
+        }
+
+        n_lines++;
+        remove_trailing_spaces(line);
+
+        if (line[MOL_FMT_MAXLINELEN])
+        {
+            if (current_state != SDF_DATA_HEADER &&
+                current_state != SDF_DATA_LINE &&
+                current_state != SDF_DATA_HEADER_NAME &&
+                current_state != SDF_DATA_HEADER_USER &&
+                current_state != SDF_DATA_HEADER_COMMENT)
+            {
+                line[MOL_FMT_MAXLINELEN] = '\0';
+                if (!prev_err)
+                {
+                    TREAT_ERR(err, 0, "Too long SData line truncated");
+                }
+            }
+            else
+            {
+                /* allow long lines in SDF data. 9-29-00 DCh */
+                line[MOL_FMT_MAXLINELEN] = '\0';
+            }
+        }
+
+        n_blank_lines += (*line == '\0');
+
+        switch (current_state)
+        {
+            case SDF_START:
+            case SD_FMT_END_OF_DATA_ITEM:
+            case SDF_EMPTY_LINE: /* Added 9-25-97 DCh */
+
+                if (!strcmp(line, SD_FMT_END_OF_DATA))
+                {
+                    current_state = SD_FMT_END_OF_DATA_BLOCK;
+                }
+                else if ('>' == *line)
+                {
+                    current_state = (wait_for_name || wait_for_comment || wait_for_CAS || wait_for_user) ? SDFileIdentifyLabel( line, pSdfLabel ) : SDF_DATA_HEADER;
+                }
+                else if (*line == '\0')
+                {
+                    /* Added 9-25-97 DCh */
+                    /* Relax the strictness: Allow more than 1 empty line. */
+                    current_state = SDF_EMPTY_LINE;
+                }
+                else if (!prev_err)
+                {
+                    TREAT_ERR(err, 3, "Unexpected SData header line:"); /* djb-rwth: addressing coverity ID #499557 -- TREAT_ERR properly used */
+                    dotify_non_printable_chars(line);
+                    AddErrorMessage(pStrErr, line);
+                    /* unexpected contents of data header line */
+                }
+                else
+                {
+                    err = 3;
+                }
+                break;
+
+            case SDF_DATA_HEADER_NAME:
+
+                if (wait_for_name && 0 < normalize_string(line))
+                {
+                    wait_for_name = 0;
+                    mystrncpy(name, line, lname);
+                }
+                goto got_data_line;
+
+            case SDF_DATA_HEADER_COMMENT:
+
+                if (wait_for_comment && 0 < normalize_string(line))
+                {
+                    wait_for_comment = 0;
+                    mystrncpy(comment, line, lcomment);
+                }
+                goto got_data_line;
+
+            case SDF_DATA_HEADER_USER:
+
+                if (wait_for_user && 0 < normalize_string(line))
+                {
+                    wait_for_user = 0;
+                    mystrncpy(pSdfValue, line, MAX_SDF_VALUE + 1);
+
+                    if (CAS_num_is_user && wait_for_CAS)
+                    {
+                        *CAS_num = SDFileExtractCASNo(line);
+                        wait_for_CAS = (0LU == *CAS_num);
+                    }
+                }
+                goto got_data_line;
+
+            case SDF_DATA_HEADER_CAS:
+
+                if (wait_for_CAS && 0 < normalize_string(line))
+                {
+                    *CAS_num = SDFileExtractCASNo(line);
+                    wait_for_CAS = (0LU == *CAS_num);
+                }
+                goto got_data_line;
+
+            case SDF_DATA_HEADER:
+            case SDF_DATA_LINE:
+
+            got_data_line:
+                current_state = *line ? SDF_DATA_LINE : SD_FMT_END_OF_DATA_ITEM;
+                break;
+        }
+    }
+
+    if (!err && SD_FMT_END_OF_DATA_BLOCK != current_state && NULL == p)
+    {
+        ; /* err = 4; */ /* unexpected end of file: missing $$$$ */
+    }
+
+    else if (err && (n_blank_lines == n_lines && *line == '\0'))
+    {
+        /* empty lines -- do not know when this can happen */
+        err = 5;
+    }
+
+    if (err && err != 5 && current_state != SD_FMT_END_OF_DATA_BLOCK && p)
+    {
+        /*  bypass up to $$$$ */
+        while ((p = inchi_fgetsLf(line, line_len, inp_file)) &&
+               memcmp(line, SD_FMT_END_OF_DATA, 4))
+        {
+            ;
+        }
+        if (p)
+        {
+            /*  arrived to $$$$; non-fatal */
+            err = 9;
+            if (!bNoWarnings)
+            {
+                WarningMessage(pStrErr, "Bypassing to next structure");
+            }
+        }
+    }
+
+    return err;
+}
+    */
+    // END INCHI C FUNCTION: SDFileSkipExtraData
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: SDFileSkipExtraData
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; unsigned long is u64, line_len is 204, and MOL_FMT_MAXLINELEN is 200.
+    // INCHI✔️❌: WarningMessage expands to completed AddErrorMessage; TREAT_ERR preserves a nonzero error, assigns only a nonzero new error, and always calls AddErrorMessage.
+    // INCHI✔️❌: All direct callees are completed source ports: inchi_fgetsLf, remove_trailing_spaces, SDFileIdentifyLabel, normalize_string, mystrncpy, SDFileExtractCASNo, dotify_non_printable_chars, inchi_memicmp, and AddErrorMessage.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: SDFileSkipExtraData
+
+    let line = heap.allocate_model_storage(vec![0_i8; MOL_FMT_INPLINELEN as usize])?;
+    let cas_literal = heap.allocate_model_storage(b"CAS\0".iter().map(|byte| *byte as i8).collect())?;
+    let result = (|| -> Result<i32, SourceHeapError> {
+        let mut p = SourceMutPointer::null();
+        let mut n_blank_lines = 0_i32;
+        let mut n_lines = 0_i32;
+        let mut current_state = SDF_START as i32;
+        let mut err = 0_i32;
+        let mut wait_for_CAS = false;
+        let mut CAS_num_is_user = false;
+        let mut wait_for_name = !name.is_null()
+            && lname > 0
+            && heap.slice(name.as_const())?.first().copied() == Some(0);
+        let mut wait_for_comment = !comment.is_null()
+            && lcomment > 0
+            && heap.slice(comment.as_const())?.first().copied() == Some(0);
+        let mut wait_for_user = !pSdfLabel.is_null()
+            && heap.slice(pSdfLabel)?.first().copied().unwrap_or(0) != 0
+            && !pSdfValue.is_null();
+
+        if let Some(value) = CAS_num.as_deref_mut() {
+            wait_for_CAS = true;
+            *value = 0;
+            CAS_num_is_user = wait_for_user
+                && inchi_memicmp(heap, pSdfLabel, cas_literal.as_const(), 3)? == 0;
+        }
+
+        while err == 0 && current_state != SD_FMT_END_OF_DATA_BLOCK as i32 {
+            p = inchi_fgetsLf(
+                heap,
+                line,
+                MOL_FMT_INPLINELEN as i32,
+                inp_file.as_deref_mut(),
+            )?;
+            if p.is_null() {
+                break;
+            }
+            if n_lines == 0
+                && heap.slice(line.as_const())?[..6]
+                    == [b'M' as i8, b' ' as i8, b' ' as i8, b'E' as i8, b'N' as i8, b'D' as i8]
+            {
+                continue;
+            }
+
+            n_lines = n_lines.wrapping_add(1);
+            remove_trailing_spaces(heap, line)?;
+
+            if heap.slice(line.as_const())?[MOL_FMT_MAXLINELEN as usize] != 0 {
+                if current_state != SDF_DATA_HEADER as i32
+                    && current_state != SDF_DATA_LINE as i32
+                    && current_state != SDF_DATA_HEADER_NAME as i32
+                    && current_state != SDF_DATA_HEADER_USER as i32
+                    && current_state != SDF_DATA_HEADER_COMMENT as i32
+                {
+                    heap.slice_mut(line)?[MOL_FMT_MAXLINELEN as usize] = 0;
+                    if prev_err == 0 {
+                        let _ = mol_fmt4_add_ascii_message(
+                            pStrErr.as_deref_mut(),
+                            b"Too long SData line truncated",
+                        )?;
+                    }
+                } else {
+                    heap.slice_mut(line)?[MOL_FMT_MAXLINELEN as usize] = 0;
+                }
+            }
+
+            let line_is_empty = heap.slice(line.as_const())?.first().copied() == Some(0);
+            n_blank_lines = n_blank_lines.wrapping_add(i32::from(line_is_empty));
+
+            match current_state {
+                state if state == SDF_START as i32
+                    || state == SD_FMT_END_OF_DATA_ITEM as i32
+                    || state == SDF_EMPTY_LINE as i32 =>
+                {
+                    let bytes = heap.slice(line.as_const())?;
+                    let length = bytes
+                        .iter()
+                        .position(|byte| *byte == 0)
+                        .ok_or(SourceHeapError::MissingNulTerminator)?;
+                    let is_end = length == SD_FMT_END_OF_DATA.len() - 1
+                        && bytes[..length]
+                            .iter()
+                            .zip(&SD_FMT_END_OF_DATA[..length])
+                            .all(|(left, right)| *left as u8 == *right);
+                    if is_end {
+                        current_state = SD_FMT_END_OF_DATA_BLOCK as i32;
+                    } else if bytes.first().copied() == Some(b'>' as i8) {
+                        current_state = if wait_for_name
+                            || wait_for_comment
+                            || wait_for_CAS
+                            || wait_for_user
+                        {
+                            SDFileIdentifyLabel(heap, line.as_const(), pSdfLabel)?
+                        } else {
+                            SDF_DATA_HEADER as i32
+                        };
+                    } else if line_is_empty {
+                        current_state = SDF_EMPTY_LINE as i32;
+                    } else if prev_err == 0 {
+                        if err == 0 {
+                            err = 3;
+                        }
+                        let _ = mol_fmt4_add_ascii_message(
+                            pStrErr.as_deref_mut(),
+                            b"Unexpected SData header line:",
+                        )?;
+                        let _ = dotify_non_printable_chars(heap, line)?;
+                        let message = heap.slice(line.as_const())?;
+                        let _ = AddErrorMessage(pStrErr.as_deref_mut(), Some(message))?;
+                    } else {
+                        err = 3;
+                    }
+                }
+                state if state == SDF_DATA_HEADER_NAME as i32 => {
+                    if wait_for_name && normalize_string(heap, line)? > 0 {
+                        wait_for_name = false;
+                        let _ = mystrncpy(heap, name, line.as_const(), lname as u32)?;
+                    }
+                    current_state = if heap.slice(line.as_const())?.first().copied() != Some(0) {
+                        SDF_DATA_LINE as i32
+                    } else {
+                        SD_FMT_END_OF_DATA_ITEM as i32
+                    };
+                }
+                state if state == SDF_DATA_HEADER_COMMENT as i32 => {
+                    if wait_for_comment && normalize_string(heap, line)? > 0 {
+                        wait_for_comment = false;
+                        let _ = mystrncpy(heap, comment, line.as_const(), lcomment as u32)?;
+                    }
+                    current_state = if heap.slice(line.as_const())?.first().copied() != Some(0) {
+                        SDF_DATA_LINE as i32
+                    } else {
+                        SD_FMT_END_OF_DATA_ITEM as i32
+                    };
+                }
+                state if state == SDF_DATA_HEADER_USER as i32 => {
+                    if wait_for_user && normalize_string(heap, line)? > 0 {
+                        wait_for_user = false;
+                        let _ = mystrncpy(
+                            heap,
+                            pSdfValue,
+                            line.as_const(),
+                            MAX_SDF_VALUE + 1,
+                        )?;
+                        if CAS_num_is_user && wait_for_CAS {
+                            if let Some(value) = CAS_num.as_deref_mut() {
+                                *value = SDFileExtractCASNo(heap, line)?;
+                                wait_for_CAS = *value == 0;
+                            }
+                        }
+                    }
+                    current_state = if heap.slice(line.as_const())?.first().copied() != Some(0) {
+                        SDF_DATA_LINE as i32
+                    } else {
+                        SD_FMT_END_OF_DATA_ITEM as i32
+                    };
+                }
+                state if state == SDF_DATA_HEADER_CAS as i32 => {
+                    if wait_for_CAS && normalize_string(heap, line)? > 0 {
+                        if let Some(value) = CAS_num.as_deref_mut() {
+                            *value = SDFileExtractCASNo(heap, line)?;
+                            wait_for_CAS = *value == 0;
+                        }
+                    }
+                    current_state = if heap.slice(line.as_const())?.first().copied() != Some(0) {
+                        SDF_DATA_LINE as i32
+                    } else {
+                        SD_FMT_END_OF_DATA_ITEM as i32
+                    };
+                }
+                state if state == SDF_DATA_HEADER as i32 || state == SDF_DATA_LINE as i32 => {
+                    current_state = if heap.slice(line.as_const())?.first().copied() != Some(0) {
+                        SDF_DATA_LINE as i32
+                    } else {
+                        SD_FMT_END_OF_DATA_ITEM as i32
+                    };
+                }
+                _ => {}
+            }
+        }
+
+        if err == 0 && current_state != SD_FMT_END_OF_DATA_BLOCK as i32 && p.is_null() {
+        } else if err != 0
+            && n_blank_lines == n_lines
+            && heap.slice(line.as_const())?.first().copied() == Some(0)
+        {
+            err = 5;
+        }
+
+        if err != 0
+            && err != 5
+            && current_state != SD_FMT_END_OF_DATA_BLOCK as i32
+            && !p.is_null()
+        {
+            loop {
+                p = inchi_fgetsLf(
+                    heap,
+                    line,
+                    MOL_FMT_INPLINELEN as i32,
+                    inp_file.as_deref_mut(),
+                )?;
+                if p.is_null()
+                    || heap.slice(line.as_const())?[..4]
+                        == [b'$' as i8, b'$' as i8, b'$' as i8, b'$' as i8]
+                {
+                    break;
+                }
+            }
+            if !p.is_null() {
+                err = 9;
+                if bNoWarnings == 0 {
+                    let _ = mol_fmt4_add_ascii_message(
+                        pStrErr.as_deref_mut(),
+                        b"Bypassing to next structure",
+                    )?;
+                }
+            }
+        }
+        Ok(err)
+    })();
+    let cleanup = heap.free(line).and_then(|_| heap.free(cas_literal));
+    match (result, cleanup) {
+        (Err(error), _) | (Ok(_), Err(error)) => Err(error),
+        (Ok(value), Ok(())) => Ok(value),
+    }
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn NumLists_Alloc(
+    heap: &mut SourceHeap,
+    num_lists: Option<&mut NUM_LISTS>,
+    nlists: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:433 NumLists_Alloc
+    // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap allocation-map access adds overhead.
+    /*
+int NumLists_Alloc(NUM_LISTS *num_lists, int nlists)
+{
+    if (num_lists)
+    {
+        if ((num_lists->lists = (int **)inchi_calloc(nlists, sizeof(int *)))) /* djb-rwth: addressing LLVM warning */
+        {
+            num_lists->increment =
+                num_lists->allocated = nlists;
+            return 0; /*  ok */
+        }
+    }
+
+    return -1; /*  error */
+}
+    */
+    // END INCHI C FUNCTION: NumLists_Alloc
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: NumLists_Alloc
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; inchi_calloc resolves to libc calloc and pointer size is eight bytes.
+    // INCHI✔️❌: Assignment occurs before the allocation-result test, so failure stores NULL; success does not reset used or free a prior lists pointer.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: NumLists_Alloc
+
+    let Some(num_lists) = num_lists else { return Ok(-1); };
+    let replacement = match inchi_calloc::<SourceMutPointer<i32>>(heap, nlists as u64, 8) {
+        Ok(pointer) => pointer,
+        Err(SourceHeapError::AllocationFailed)
+        | Err(SourceHeapError::AllocationElementCountOutOfRange)
+        | Err(SourceHeapError::AllocationSizeOverflow) => {
+            num_lists.lists = SourceMutPointer::null();
+            return Ok(-1);
+        }
+        Err(error) => return Err(error),
+    };
+    num_lists.lists = replacement;
+    num_lists.allocated = nlists;
+    num_lists.increment = nlists;
+    Ok(0)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn NumLists_ReAlloc(
+    heap: &mut SourceHeap,
+    num_lists: Option<&mut NUM_LISTS>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:449 NumLists_ReAlloc
+    // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap copy adds overhead.
+    /*
+int NumLists_ReAlloc(NUM_LISTS *num_lists)
+{
+    if (num_lists)
+    {
+        if (num_lists->lists && num_lists->allocated > 0 && num_lists->increment > 0)
+        {
+            void *p = num_lists->lists;
+            if ((num_lists->lists =
+                     (int **)inchi_calloc((long long)num_lists->allocated + (long long)num_lists->increment, sizeof(int *)))) /* djb-rwth: cast operators added; addressing LLVM warning */
+            {
+                memcpy(num_lists->lists, p, num_lists->used * sizeof(num_lists->lists[0]));
+                inchi_free(p);
+                num_lists->allocated += num_lists->increment;
+                return 0; /*  ok */
+            }
+        }
+    }
+
+    return -1; /*  error */
+}
+    */
+    // END INCHI C FUNCTION: NumLists_ReAlloc
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: NumLists_ReAlloc
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; pointer size is eight bytes.
+    // INCHI✔️❌: Failed calloc leaves num_lists->lists NULL and does not free the saved old array.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: NumLists_ReAlloc
+
+    let Some(num_lists) = num_lists else { return Ok(-1); };
+    if num_lists.lists.is_null() || num_lists.allocated <= 0 || num_lists.increment <= 0 {
+        return Ok(-1);
+    }
+    let old = num_lists.lists;
+    let count = i64::from(num_lists.allocated) + i64::from(num_lists.increment);
+    let replacement = match inchi_calloc::<SourceMutPointer<i32>>(heap, count as u64, 8) {
+        Ok(pointer) => pointer,
+        Err(SourceHeapError::AllocationFailed)
+        | Err(SourceHeapError::AllocationElementCountOutOfRange)
+        | Err(SourceHeapError::AllocationSizeOverflow) => {
+            num_lists.lists = SourceMutPointer::null();
+            return Ok(-1);
+        }
+        Err(error) => return Err(error),
+    };
+    num_lists.lists = replacement;
+    let used = usize::try_from(num_lists.used).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let copied = heap
+        .slice(old.as_const())?
+        .get(..used)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .to_vec();
+    heap.slice_mut(replacement)?[..used].copy_from_slice(&copied);
+    inchi_free(heap, old)?;
+    num_lists.allocated = num_lists.allocated.wrapping_add(num_lists.increment);
+    Ok(0)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn NumLists_Append(
+    heap: &mut SourceHeap,
+    num_lists: Option<&mut NUM_LISTS>,
+    list: SourceMutPointer<i32>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:471 NumLists_Append
+    // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap indexing adds overhead.
+    /*
+int NumLists_Append(NUM_LISTS *num_lists, int *list)
+{
+    if (num_lists)
+    {
+        if (num_lists->used + 1 > num_lists->allocated)
+        {
+            /* need to expand buffer */
+            if (NumLists_ReAlloc(num_lists))
+            {
+                return -1; /*  error */
+            }
+        }
+        num_lists->lists[num_lists->used++] = list;
+        return 0;
+    }
+
+    return -1;
+}
+    */
+    // END INCHI C FUNCTION: NumLists_Append
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: NumLists_Append
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; NumLists_ReAlloc is the completed source callee.
+    // INCHI✔️❌: A NULL list value is stored; only a NULL NUM_LISTS descriptor is rejected.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: NumLists_Append
+
+    let Some(num_lists) = num_lists else { return Ok(-1); };
+    if num_lists.used.wrapping_add(1) > num_lists.allocated
+        && NumLists_ReAlloc(heap, Some(num_lists))? != 0
+    {
+        return Ok(-1);
+    }
+    let used = usize::try_from(num_lists.used).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    *heap
+        .slice_mut(num_lists.lists)?
+        .get_mut(used)
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = list;
+    num_lists.used = num_lists.used.wrapping_add(1);
+    Ok(0)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn NumLists_Free(
+    heap: &mut SourceHeap,
+    num_lists: Option<&mut NUM_LISTS>,
+) -> Result<(), SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:491 NumLists_Free
+    // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap frees add allocation-map overhead.
+    /*
+void NumLists_Free(NUM_LISTS *num_lists)
+{
+    if (num_lists)
+    {
+        int i;
+        for (i = 0; i < num_lists->used; i++)
+            inchi_free(num_lists->lists[i]); /* djb-rwth: unresolved issue -- revision required? -- false positive as this function just does the clean-up job */
+        inchi_free(num_lists->lists);
+        memset(num_lists, 0, sizeof(*num_lists)); /* djb-rwth: memset_s C11/Annex K variant? */
+    }
+}
+    */
+    // END INCHI C FUNCTION: NumLists_Free
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: NumLists_Free
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; inchi_free(X) checks X before free(X).
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: NumLists_Free
+
+    let Some(num_lists) = num_lists else {
+        return Ok(());
+    };
+    let used = num_lists.used.max(0) as usize;
+    if used != 0 {
+        let pointers = heap
+            .slice(num_lists.lists.as_const())?
+            .get(..used)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .to_vec();
+        for pointer in pointers {
+            inchi_free(heap, pointer)?;
+        }
+    }
+    inchi_free(heap, num_lists.lists)?;
+    *num_lists = NUM_LISTS::default();
+    Ok(())
+}
 
 fn mol_fmt4_print(
     heap: &mut SourceHeap,
@@ -73,6 +970,305 @@ pub(crate) fn IntArray_Alloc(
         }
         Err(error) => Err(error),
     }
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn MolFmtSgroups_Alloc(
+    heap: &mut SourceHeap,
+    sgroups: Option<&mut MOL_FMT_SGROUPS>,
+    nsgroups: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:675 MolFmtSgroups_Alloc
+    // INCHI✔️❌: complete source frame follows verbatim; checked source-heap allocation adds overhead.
+    /*
+int MolFmtSgroups_Alloc(MOL_FMT_SGROUPS *sgroups, int nsgroups)
+{
+    if (sgroups)
+    {
+        if (NULL != (sgroups->group = (MOL_FMT_SGROUP **)inchi_calloc(nsgroups, sizeof(MOL_FMT_SGROUP *))))
+        {
+            /* ITRACE_( "\nAllocated sgroups->group at %-p \n", sgroups->group ); */
+            sgroups->increment = sgroups->allocated = nsgroups;
+            return 0;
+        }
+    }
+
+    return -1;
+}
+    */
+    // END INCHI C FUNCTION: MolFmtSgroups_Alloc
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolFmtSgroups_Alloc
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; inchi_calloc is calloc and a pointer is 8 bytes.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolFmtSgroups_Alloc
+
+    let Some(sgroups) = sgroups else {
+        return Ok(-1);
+    };
+    match inchi_calloc::<SourceMutPointer<MOL_FMT_SGROUP>>(heap, nsgroups as u64, 8) {
+        Ok(group) => {
+            sgroups.group = group;
+            sgroups.allocated = nsgroups;
+            sgroups.increment = nsgroups;
+            Ok(0)
+        }
+        Err(SourceHeapError::AllocationFailed)
+        | Err(SourceHeapError::AllocationElementCountOutOfRange)
+        | Err(SourceHeapError::AllocationSizeOverflow) => {
+            sgroups.group = SourceMutPointer::null();
+            Ok(-1)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn MolFmtSgroups_ReAlloc(
+    heap: &mut SourceHeap,
+    sgroups: Option<&mut MOL_FMT_SGROUPS>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:693 MolFmtSgroups_ReAlloc
+    // INCHI✔️❌: complete source frame follows verbatim; checked source-heap copying adds overhead.
+    /*
+int MolFmtSgroups_ReAlloc(MOL_FMT_SGROUPS *sgroups)
+{
+    if (sgroups)
+    {
+        if (sgroups->group && sgroups->allocated > 0 && sgroups->increment > 0)
+        {
+            void *p = sgroups->group;
+            if ((sgroups->group = (MOL_FMT_SGROUP **)inchi_calloc( (long long)sgroups->allocated + (long long)sgroups->increment,
+                sizeof( sgroups->group[0] ) ))) /* djb-rwth: cast operators added; addressing LLVM warning */
+            {
+                memcpy(sgroups->group, p, sgroups->used * sizeof(sgroups->group[0]));
+                inchi_free(p);
+                sgroups->allocated += sgroups->increment;
+                return 0; /*  ok */
+            }
+        }
+    }
+
+    return -1;
+}
+    */
+    // END INCHI C FUNCTION: MolFmtSgroups_ReAlloc
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolFmtSgroups_ReAlloc
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; inchi_calloc is calloc and pointer size is 8.
+    // INCHI✔️❌: On calloc failure the assignment leaves sgroups->group NULL and the saved old allocation is not freed.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolFmtSgroups_ReAlloc
+
+    let Some(sgroups) = sgroups else {
+        return Ok(-1);
+    };
+    if sgroups.group.is_null() || sgroups.allocated <= 0 || sgroups.increment <= 0 {
+        return Ok(-1);
+    }
+
+    let old_group = sgroups.group;
+    let count = i64::from(sgroups.allocated) + i64::from(sgroups.increment);
+    let replacement = match inchi_calloc::<SourceMutPointer<MOL_FMT_SGROUP>>(
+        heap,
+        count as u64,
+        8,
+    ) {
+        Ok(pointer) => pointer,
+        Err(SourceHeapError::AllocationFailed)
+        | Err(SourceHeapError::AllocationElementCountOutOfRange)
+        | Err(SourceHeapError::AllocationSizeOverflow) => {
+            sgroups.group = SourceMutPointer::null();
+            return Ok(-1);
+        }
+        Err(error) => return Err(error),
+    };
+    sgroups.group = replacement;
+
+    let used = usize::try_from(sgroups.used).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let copied = heap
+        .slice(old_group.as_const())?
+        .get(..used)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .to_vec();
+    heap.slice_mut(replacement)?
+        .get_mut(..used)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .copy_from_slice(&copied);
+    inchi_free(heap, old_group)?;
+    sgroups.allocated = sgroups.allocated.wrapping_add(sgroups.increment);
+    Ok(0)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn MolFmtSgroups_Append(
+    heap: &mut SourceHeap,
+    sgroups: Option<&mut MOL_FMT_SGROUPS>,
+    id: i32,
+    type_: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:715 MolFmtSgroups_Append
+    // INCHI✔️❌: complete source frame follows verbatim; checked source-heap pointer writes add overhead.
+    /*
+int MolFmtSgroups_Append(MOL_FMT_SGROUPS *sgroups, int id, int type)
+{
+    if (sgroups)
+    {
+        /* Make new Sgroup */
+        MOL_FMT_SGROUP *sgroup = NULL;
+        if (0 != MolFmtSgroup_Create(&sgroup, id, type))
+        {
+            return -1;
+        }
+        /* Add new created Sgroup to Sgroups */
+        if (sgroups->used + 1 > sgroups->allocated)
+        {
+            /* expand buffer */
+            if (MolFmtSgroups_ReAlloc(sgroups))
+            {
+                MolFmtSgroup_Free(sgroup); /* djb-rwth: avoiding memory leak */
+                return -1; /*  no RAM */
+            }
+        }
+        sgroups->group[sgroups->used++] = sgroup;
+
+        /*
+        {
+        int num = sgroups->used-1;
+        printf("\nCreated/added Sgroup: id=%-d ( num in Sgroups=%-d ) of type=%-d \n", sgroups->group[num]->id, num, sgroups->group[num]->type );
+        }
+        */
+
+        return 0;
+    }
+
+    return -1;
+}
+    */
+    // END INCHI C FUNCTION: MolFmtSgroups_Append
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolFmtSgroups_Append
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; the printf diagnostic is inside a source comment and inactive.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolFmtSgroups_Append
+
+    let Some(sgroups) = sgroups else {
+        return Ok(-1);
+    };
+    let mut sgroup = SourceMutPointer::null();
+    if MolFmtSgroup_Create(heap, &mut sgroup, id, type_)? != 0 {
+        return Ok(-1);
+    }
+    if sgroups.used.wrapping_add(1) > sgroups.allocated
+        && MolFmtSgroups_ReAlloc(heap, Some(sgroups))? != 0
+    {
+        MolFmtSgroup_Free(heap, sgroup)?;
+        return Ok(-1);
+    }
+
+    let index = usize::try_from(sgroups.used).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    *heap
+        .slice_mut(sgroups.group)?
+        .get_mut(index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = sgroup;
+    sgroups.used = sgroups.used.wrapping_add(1);
+    Ok(0)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn MolFmtSgroups_Free(
+    heap: &mut SourceHeap,
+    sgroups: Option<&mut MOL_FMT_SGROUPS>,
+) -> Result<(), SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:751 MolFmtSgroups_Free
+    // INCHI✔️❌: complete source frame follows verbatim; checked source-heap reads add overhead.
+    /*
+void MolFmtSgroups_Free(MOL_FMT_SGROUPS *sgroups)
+{
+    if (sgroups)
+    {
+        int i;
+        for (i = 0; i < sgroups->used; i++)
+        {
+            MolFmtSgroup_Free(sgroups->group[i]);
+        }
+
+        /* ITRACE_( "\nAbout to free sgroups->group at %-p\n", sgroups->group ); */
+        inchi_free(sgroups->group);
+
+        memset(sgroups, 0, sizeof(MOL_FMT_SGROUPS)); /* djb-rwth: memset_s C11/Annex K variant? */
+    }
+}
+    */
+    // END INCHI C FUNCTION: MolFmtSgroups_Free
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolFmtSgroups_Free
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; ITRACE_ is inactive and inchi_free is the null-checking free macro.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolFmtSgroups_Free
+
+    let Some(sgroups) = sgroups else {
+        return Ok(());
+    };
+    let used = usize::try_from(sgroups.used).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let children = if used == 0 {
+        Vec::new()
+    } else {
+        heap.slice(sgroups.group.as_const())?
+            .get(..used)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .to_vec()
+    };
+    for child in children {
+        MolFmtSgroup_Free(heap, child)?;
+    }
+    inchi_free(heap, sgroups.group)?;
+    *sgroups = MOL_FMT_SGROUPS::default();
+    Ok(())
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn MolFmtSgroups_GetIndexBySgroupId(
+    heap: &SourceHeap,
+    id: i32,
+    sgroups: &MOL_FMT_SGROUPS,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:769 MolFmtSgroups_GetIndexBySgroupId
+    // INCHI✔️❌: complete source frame follows verbatim; checked source-heap allocation-map lookups add overhead.
+    /*
+int MolFmtSgroups_GetIndexBySgroupId(int id, MOL_FMT_SGROUPS *sgroups)
+{
+    int i;
+    for (i = 0; i < sgroups->used; i++)
+    {
+        if (sgroups->group[i]->id == id)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+    */
+    // END INCHI C FUNCTION: MolFmtSgroups_GetIndexBySgroupId
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolFmtSgroups_GetIndexBySgroupId
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; no conditional branch alters this helper.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolFmtSgroups_GetIndexBySgroupId
+
+    if sgroups.used <= 0 {
+        return Ok(-1);
+    }
+    let used = usize::try_from(sgroups.used).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let groups = heap
+        .slice(sgroups.group.as_const())?
+        .get(..used)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    for (index, group) in groups.iter().enumerate() {
+        let value = heap
+            .slice(group.as_const())?
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if value.id == id {
+            return i32::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds);
+        }
+    }
+    Ok(-1)
 }
 
 #[allow(non_snake_case)]
@@ -325,6 +1521,117 @@ pub(crate) fn IntArray_Free(
     }
     *items = INT_ARRAY::default();
     Ok(())
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn MolFmtSgroup_Create(
+    heap: &mut SourceHeap,
+    sgroup: &mut SourceMutPointer<MOL_FMT_SGROUP>,
+    id: i32,
+    type_: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:634 MolFmtSgroup_Create
+    // INCHI✔️❌: complete source frame follows verbatim; checked source-heap object access adds overhead.
+    /*
+int MolFmtSgroup_Create(MOL_FMT_SGROUP **sgroup, int id, int type)
+{
+    *sgroup = (MOL_FMT_SGROUP *)inchi_calloc(1, sizeof(MOL_FMT_SGROUP));
+    if (*sgroup)
+    {
+        if (IntArray_Alloc(&((*sgroup)->alist), 8) ||
+            IntArray_Alloc(&((*sgroup)->blist), 8))
+        {
+            MolFmtSgroup_Free(*sgroup);
+            return -1;
+        }
+        (*sgroup)->id = id;
+        (*sgroup)->type = type;
+
+        (*sgroup)->subtype = 0;
+        (*sgroup)->conn = 0;
+        (*sgroup)->label = 0;
+
+        return 0;
+    }
+    return -1;
+}
+    */
+    // END INCHI C FUNCTION: MolFmtSgroup_Create
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolFmtSgroup_Create
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; inchi_calloc is calloc.
+    // INCHI✔️❌: MOL_FMT_SGROUP is 216 bytes and calloc zero-initializes every field before the two IntArray_Alloc calls.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolFmtSgroup_Create
+
+    let allocated = match inchi_calloc::<MOL_FMT_SGROUP>(heap, 1, 216) {
+        Ok(pointer) => pointer,
+        Err(SourceHeapError::AllocationFailed)
+        | Err(SourceHeapError::AllocationElementCountOutOfRange)
+        | Err(SourceHeapError::AllocationSizeOverflow) => {
+            *sgroup = SourceMutPointer::null();
+            return Ok(-1);
+        }
+        Err(error) => return Err(error),
+    };
+    *sgroup = allocated;
+
+    let mut value = MOL_FMT_SGROUP::default();
+    if IntArray_Alloc(heap, &mut value.alist, 8)? != 0 {
+        heap.slice_mut(allocated)?[0] = value;
+        MolFmtSgroup_Free(heap, allocated)?;
+        return Ok(-1);
+    }
+    heap.slice_mut(allocated)?[0] = value.clone();
+    if IntArray_Alloc(heap, &mut value.blist, 8)? != 0 {
+        heap.slice_mut(allocated)?[0] = value;
+        MolFmtSgroup_Free(heap, allocated)?;
+        return Ok(-1);
+    }
+
+    value.id = id;
+    value.type_ = type_;
+    value.subtype = 0;
+    value.conn = 0;
+    value.label = 0;
+    heap.slice_mut(allocated)?[0] = value;
+    Ok(0)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub(crate) fn MolFmtSgroup_Free(
+    heap: &mut SourceHeap,
+    sgroup: SourceMutPointer<MOL_FMT_SGROUP>,
+) -> Result<(), SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol_fmt4.c:658 MolFmtSgroup_Free
+    // INCHI✔️❌: complete source frame follows verbatim; checked source-heap object extraction adds overhead.
+    /*
+void MolFmtSgroup_Free(MOL_FMT_SGROUP *sgroup)
+{
+    if (sgroup)
+    {
+        IntArray_Free(&(sgroup->alist));
+        IntArray_Free(&(sgroup->blist));
+        inchi_free(sgroup);
+    }
+}
+    */
+    // END INCHI C FUNCTION: MolFmtSgroup_Free
+    // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolFmtSgroup_Free
+    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; inchi_free is the mode.h null-checking free macro.
+    // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolFmtSgroup_Free
+
+    if sgroup.is_null() {
+        return Ok(());
+    }
+    let mut value = heap
+        .slice(sgroup.as_const())?
+        .first()
+        .cloned()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    IntArray_Free(heap, Some(&mut value.alist))?;
+    IntArray_Free(heap, Some(&mut value.blist))?;
+    inchi_free(heap, sgroup)
 }
 
 fn mol_fmt4_c_text(
@@ -2313,7 +3620,10 @@ pub(crate) fn OrigAtData_WriteToSDfileAdditionalLines(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source_types::{INCHI_IOS_STRING, INCHI_IOS_TYPE_STRING, OAD_Polymer, inp_ATOM};
+    use crate::source_types::{
+        INCHI_IOS_STRING, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING, OAD_Polymer, STR_ERR_LEN,
+        SourceFile, inp_ATOM,
+    };
 
     fn string_stream() -> INCHI_IOSTREAM {
         INCHI_IOSTREAM {
@@ -2346,6 +3656,44 @@ mod tests {
         .as_const()
     }
 
+    fn input_stream(heap: &mut SourceHeap, bytes: &[u8]) -> INCHI_IOSTREAM {
+        let data = heap
+            .allocate_model_storage(
+                bytes
+                    .iter()
+                    .copied()
+                    .chain(std::iter::once(0))
+                    .map(|byte| byte as i8)
+                    .collect(),
+            )
+            .unwrap();
+        INCHI_IOSTREAM {
+            type_: INCHI_IOS_TYPE_STRING as i32,
+            s: INCHI_IOS_STRING {
+                pStr: data,
+                nAllocatedLength: bytes.len() as i32 + 1,
+                nUsedLength: bytes.len() as i32,
+                nPtr: 0,
+            },
+            ..INCHI_IOSTREAM::default()
+        }
+    }
+
+    fn mutable_c_buffer(heap: &mut SourceHeap, capacity: usize) -> SourceMutPointer<i8> {
+        heap.allocate_model_storage(vec![0_i8; capacity]).unwrap()
+    }
+
+    fn c_buffer_bytes(heap: &SourceHeap, pointer: SourceConstPointer<i8>) -> Vec<u8> {
+        let bytes = heap.slice(pointer).unwrap();
+        let length = bytes.iter().position(|byte| *byte == 0).unwrap();
+        bytes[..length].iter().map(|byte| *byte as u8).collect()
+    }
+
+    fn error_bytes(errors: &[i8]) -> Vec<u8> {
+        let length = errors.iter().position(|byte| *byte == 0).unwrap();
+        errors[..length].iter().map(|byte| *byte as u8).collect()
+    }
+
     fn named_atom(name: &[u8]) -> inp_ATOM {
         let mut atom = inp_ATOM::default();
         for (target, source) in atom.elname.iter_mut().zip(name.iter().copied()) {
@@ -2374,6 +3722,630 @@ mod tests {
             "{:10.4}{:10.4}{:10.4} {:<3.3}{:2}{:3}  0     0{:3}  0  0  0  0\n",
             atom.x, atom.y, atom.z, symbol, isotope, charge, valence
         )
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__sdfileidentifylabel__line_346() {
+        let mut heap = SourceHeap::default();
+
+        for (line, expected) in [
+            (b">  <CAS>\n".as_slice(), SDF_DATA_HEADER_CAS as i32),
+            (b">  <cas-number>\n".as_slice(), SDF_DATA_HEADER_CAS as i32),
+            (b">  <NAME>\n".as_slice(), SDF_DATA_HEADER as i32),
+            (b">  <COMMENT>\n".as_slice(), SDF_DATA_HEADER as i32),
+            (b">  <FIELD>\n".as_slice(), SDF_DATA_HEADER as i32),
+            (b"no angle brackets".as_slice(), SDF_DATA_HEADER as i32),
+            (b">  <>".as_slice(), SDF_DATA_HEADER as i32),
+            (b">  <unterminated".as_slice(), SDF_DATA_HEADER as i32),
+        ] {
+            let input = c_text(&mut heap, line);
+            assert_eq!(
+                SDFileIdentifyLabel(&mut heap, input, SourceConstPointer::null()),
+                Ok(expected),
+                "{}",
+                String::from_utf8_lossy(line)
+            );
+        }
+
+        let one_character = c_text(&mut heap, b">  <x>\n");
+        let one_character_label = c_text(&mut heap, b"X");
+        assert_eq!(
+            SDFileIdentifyLabel(&mut heap, one_character, one_character_label),
+            Ok(SDF_DATA_HEADER_USER as i32)
+        );
+
+        let spaced = c_text(&mut heap, b">  < FIELD >\n");
+        let spaced_label = c_text(&mut heap, b" FIELD ");
+        assert_eq!(
+            SDFileIdentifyLabel(&mut heap, spaced, spaced_label),
+            Ok(SDF_DATA_HEADER_USER as i32)
+        );
+
+        let ordinary = c_text(&mut heap, b">  <FIELD>\n");
+        let ordinary_label = c_text(&mut heap, b"FIELD");
+        assert_eq!(
+            SDFileIdentifyLabel(&mut heap, ordinary, ordinary_label),
+            Ok(SDF_DATA_HEADER as i32)
+        );
+
+        let empty_label = c_text(&mut heap, b"");
+        assert_eq!(
+            SDFileIdentifyLabel(&mut heap, ordinary, empty_label),
+            Ok(SDF_DATA_HEADER as i32)
+        );
+
+        let long_inner = vec![b'A'; MOL_FMT_MAXLINELEN as usize];
+        let mut long_line = b">  <".to_vec();
+        long_line.extend_from_slice(&long_inner);
+        long_line.push(b'>');
+        let long = c_text(&mut heap, &long_line);
+        assert_eq!(
+            SDFileIdentifyLabel(&mut heap, long, SourceConstPointer::null()),
+            Ok(SDF_DATA_HEADER as i32)
+        );
+        assert_eq!(heap.live_source_allocation_count(), 0);
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__sdfileextractcasno__line_407() {
+        fn check(input: &[u8], expected_value: u64, expected_bytes: &[u8]) {
+            let mut heap = SourceHeap::default();
+            let storage = heap
+                .allocate_model_storage(input.iter().map(|byte| *byte as i8).collect())
+                .unwrap();
+            assert_eq!(
+                SDFileExtractCASNo(&mut heap, storage),
+                Ok(expected_value),
+                "{}",
+                String::from_utf8_lossy(input)
+            );
+            assert_eq!(
+                heap.slice(storage.as_const())
+                    .unwrap()
+                    .iter()
+                    .map(|byte| *byte as u8)
+                    .collect::<Vec<_>>(),
+                expected_bytes
+            );
+            heap.free(storage).unwrap();
+            assert_eq!(heap.live_source_allocation_count(), 0);
+        }
+
+        check(b"\0", 0, b"\0");
+        check(b"-\0", 0, b"-\0");
+        check(b"123-45\0", 12_345, b"12345\0\0");
+        check(b"-123-45\0", 0_u64.wrapping_sub(12_345), b"-12345\0\0");
+        check(b"--12\0", 0_u64.wrapping_sub(12), b"-12\0\0");
+        check(b"12A34\0\x55\x66", 12, b"12\034\0\x55\x66");
+        check(b"A12\0\x55", 0, b"\012\0\x55");
+        check(b"+12\0", 0, b"\012\0");
+        check(b" 12\0", 0, b"\012\0");
+        check(b"1-2--3\0", 123, b"123\0-3\0");
+        check(
+            b"18446744073709551615\0",
+            u64::MAX,
+            b"18446744073709551615\0",
+        );
+        check(
+            b"18446744073709551616\0",
+            u64::MAX,
+            b"18446744073709551616\0",
+        );
+        check(b"-18446744073709551615\0", 1, b"-18446744073709551615\0");
+        check(
+            b"-18446744073709551616\0",
+            u64::MAX,
+            b"-18446744073709551616\0",
+        );
+        check(b"\xff12\0", 0, b"\012\0");
+
+        let mut heap = SourceHeap::default();
+        let unterminated = heap
+            .allocate_model_storage(vec![b'1' as i8, b'2' as i8])
+            .unwrap();
+        assert_eq!(
+            SDFileExtractCASNo(&mut heap, unterminated),
+            Err(SourceHeapError::MissingNulTerminator)
+        );
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__sdfileskipextradata__line_161() {
+        let mut heap = SourceHeap::default();
+
+        let mut direct_end = input_stream(&mut heap, b"$$$$\nNEXT\n");
+        let mut cas = 77_u64;
+        let name = mutable_c_buffer(&mut heap, 16);
+        let comment = mutable_c_buffer(&mut heap, 16);
+        let mut errors = [0_i8; STR_ERR_LEN as usize];
+        assert_eq!(
+            SDFileSkipExtraData(
+                &mut heap,
+                Some(&mut direct_end),
+                Some(&mut cas),
+                comment,
+                16,
+                name,
+                16,
+                0,
+                SourceConstPointer::null(),
+                SourceMutPointer::null(),
+                Some(&mut errors),
+                0,
+            ),
+            Ok(0)
+        );
+        assert_eq!(cas, 0);
+        assert_eq!(direct_end.s.nPtr, 5);
+        assert_eq!(c_buffer_bytes(&heap, name.as_const()), b"");
+        assert_eq!(c_buffer_bytes(&heap, comment.as_const()), b"");
+        assert_eq!(error_bytes(&errors), b"");
+
+        let mut cas_input = input_stream(
+            &mut heap,
+            b"M  END\nM  END trailing text\n>  <CAS-number>\n  12-34-5  \n\n$$$$\nNEXT\n",
+        );
+        cas = 9;
+        assert_eq!(
+            SDFileSkipExtraData(
+                &mut heap,
+                Some(&mut cas_input),
+                Some(&mut cas),
+                SourceMutPointer::null(),
+                0,
+                SourceMutPointer::null(),
+                0,
+                0,
+                SourceConstPointer::null(),
+                SourceMutPointer::null(),
+                Some(&mut errors),
+                0,
+            ),
+            Ok(0)
+        );
+        assert_eq!(cas, 12_345);
+        assert_eq!(
+            &heap.slice(cas_input.s.pStr.as_const()).unwrap()[cas_input.s.nPtr as usize..][..5],
+            &[b'N' as i8, b'E' as i8, b'X' as i8, b'T' as i8, b'\n' as i8]
+        );
+
+        let label = c_text(&mut heap, b"x");
+        let value = mutable_c_buffer(&mut heap, MAX_SDF_VALUE as usize + 1);
+        let mut user_input = input_stream(&mut heap, b">  <X>\n  Alpha\t\tBeta  \n\n$$$$\n");
+        assert_eq!(
+            SDFileSkipExtraData(
+                &mut heap,
+                Some(&mut user_input),
+                None,
+                SourceMutPointer::null(),
+                0,
+                SourceMutPointer::null(),
+                0,
+                0,
+                label,
+                value,
+                Some(&mut errors),
+                0,
+            ),
+            Ok(0)
+        );
+        assert_eq!(c_buffer_bytes(&heap, value.as_const()), b"Alpha Beta");
+
+        let mut eof = input_stream(&mut heap, b">  <FIELD>\ndata\n");
+        assert_eq!(
+            SDFileSkipExtraData(
+                &mut heap,
+                Some(&mut eof),
+                None,
+                SourceMutPointer::null(),
+                0,
+                SourceMutPointer::null(),
+                0,
+                0,
+                SourceConstPointer::null(),
+                SourceMutPointer::null(),
+                Some(&mut errors),
+                0,
+            ),
+            Ok(0)
+        );
+        assert_eq!(eof.s.nPtr, eof.s.nUsedLength);
+
+        errors.fill(0);
+        let mut malformed = input_stream(&mut heap, b"bad\x01header\nignored\n$$$$\nNEXT\n");
+        assert_eq!(
+            SDFileSkipExtraData(
+                &mut heap,
+                Some(&mut malformed),
+                None,
+                SourceMutPointer::null(),
+                0,
+                SourceMutPointer::null(),
+                0,
+                0,
+                SourceConstPointer::null(),
+                SourceMutPointer::null(),
+                Some(&mut errors),
+                0,
+            ),
+            Ok(9)
+        );
+        assert_eq!(
+            error_bytes(&errors),
+            b"Unexpected SData header line: bad.header; Bypassing to next structure"
+        );
+        assert_eq!(
+            &heap.slice(malformed.s.pStr.as_const()).unwrap()[malformed.s.nPtr as usize..][..5],
+            &[b'N' as i8, b'E' as i8, b'X' as i8, b'T' as i8, b'\n' as i8]
+        );
+
+        errors.fill(0);
+        errors[..4].copy_from_slice(&[b'o' as i8, b'l' as i8, b'd' as i8, 0]);
+        let mut suppressed = input_stream(&mut heap, b"bad\n$$$$\n");
+        assert_eq!(
+            SDFileSkipExtraData(
+                &mut heap,
+                Some(&mut suppressed),
+                None,
+                SourceMutPointer::null(),
+                0,
+                SourceMutPointer::null(),
+                0,
+                1,
+                SourceConstPointer::null(),
+                SourceMutPointer::null(),
+                Some(&mut errors),
+                1,
+            ),
+            Ok(9)
+        );
+        assert_eq!(error_bytes(&errors), b"old");
+
+        errors.fill(0);
+        let mut malformed_eof = input_stream(&mut heap, b"bad\nignored\n");
+        assert_eq!(
+            SDFileSkipExtraData(
+                &mut heap,
+                Some(&mut malformed_eof),
+                None,
+                SourceMutPointer::null(),
+                0,
+                SourceMutPointer::null(),
+                0,
+                0,
+                SourceConstPointer::null(),
+                SourceMutPointer::null(),
+                Some(&mut errors),
+                0,
+            ),
+            Ok(3)
+        );
+        assert_eq!(error_bytes(&errors), b"Unexpected SData header line: bad");
+
+        errors.fill(0);
+        let mut long_header_data = vec![b'A'; MOL_FMT_MAXLINELEN as usize + 20];
+        long_header_data.extend_from_slice(b"\n$$$$\n");
+        let mut long_header = input_stream(&mut heap, &long_header_data);
+        assert_eq!(
+            SDFileSkipExtraData(
+                &mut heap,
+                Some(&mut long_header),
+                None,
+                SourceMutPointer::null(),
+                0,
+                SourceMutPointer::null(),
+                0,
+                0,
+                SourceConstPointer::null(),
+                SourceMutPointer::null(),
+                Some(&mut errors),
+                0,
+            ),
+            Ok(9)
+        );
+        let long_errors = error_bytes(&errors);
+        assert!(
+            long_errors
+                .starts_with(b"Too long SData line truncated; Unexpected SData header line:")
+        );
+        assert!(long_errors.ends_with(b"Bypassing to next structure"));
+
+        errors.fill(0);
+        let mut long_data_input = b">  <FIELD>\n".to_vec();
+        long_data_input.extend(std::iter::repeat_n(b'A', MOL_FMT_MAXLINELEN as usize + 20));
+        long_data_input.extend_from_slice(b"\n\n$$$$\n");
+        let mut long_data = input_stream(&mut heap, &long_data_input);
+        assert_eq!(
+            SDFileSkipExtraData(
+                &mut heap,
+                Some(&mut long_data),
+                None,
+                SourceMutPointer::null(),
+                0,
+                SourceMutPointer::null(),
+                0,
+                0,
+                SourceConstPointer::null(),
+                SourceMutPointer::null(),
+                Some(&mut errors),
+                0,
+            ),
+            Ok(0)
+        );
+        assert_eq!(error_bytes(&errors), b"");
+
+        let file = heap
+            .allocate(vec![SourceFile {
+                bytes: b"$$$$\nNEXT\n".to_vec(),
+                ..SourceFile::default()
+            }])
+            .unwrap();
+        let mut file_stream = INCHI_IOSTREAM {
+            type_: INCHI_IOS_TYPE_FILE as i32,
+            f: file,
+            ..INCHI_IOSTREAM::default()
+        };
+        assert_eq!(
+            SDFileSkipExtraData(
+                &mut heap,
+                Some(&mut file_stream),
+                None,
+                SourceMutPointer::null(),
+                0,
+                SourceMutPointer::null(),
+                0,
+                0,
+                SourceConstPointer::null(),
+                SourceMutPointer::null(),
+                None,
+                0,
+            ),
+            Ok(0)
+        );
+        assert_eq!(heap.slice(file.as_const()).unwrap()[0].position, 5);
+        heap.free(file).unwrap();
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__numlists_alloc__line_433() {
+        let mut heap = SourceHeap::default();
+        assert_eq!(NumLists_Alloc(&mut heap, None, 3), Ok(-1));
+
+        let old = heap
+            .allocate_model_storage(vec![SourceMutPointer::<i32>::null()])
+            .unwrap();
+        let mut lists = NUM_LISTS {
+            lists: old,
+            allocated: 11,
+            used: 7,
+            increment: 13,
+        };
+        assert_eq!(NumLists_Alloc(&mut heap, Some(&mut lists), 3), Ok(0));
+        assert_ne!(lists.lists, old);
+        assert_eq!((lists.allocated, lists.used, lists.increment), (3, 7, 3));
+        assert_eq!(
+            heap.slice(lists.lists.as_const()).unwrap(),
+            &[
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+            ]
+        );
+        assert_eq!(
+            heap.slice(old.as_const()).unwrap(),
+            &[SourceMutPointer::null()]
+        );
+
+        let mut zero = NUM_LISTS {
+            used: 9,
+            ..NUM_LISTS::default()
+        };
+        assert_eq!(NumLists_Alloc(&mut heap, Some(&mut zero), 0), Ok(0));
+        assert!(!zero.lists.is_null());
+        assert_eq!((zero.allocated, zero.used, zero.increment), (0, 9, 0));
+        assert!(heap.slice(zero.lists.as_const()).unwrap().is_empty());
+
+        let stale = heap
+            .allocate_model_storage(vec![SourceMutPointer::<i32>::null()])
+            .unwrap();
+        let mut negative = NUM_LISTS {
+            lists: stale,
+            allocated: 4,
+            used: 2,
+            increment: 6,
+        };
+        assert_eq!(NumLists_Alloc(&mut heap, Some(&mut negative), -1), Ok(-1));
+        assert!(negative.lists.is_null());
+        assert_eq!(
+            (negative.allocated, negative.used, negative.increment),
+            (4, 2, 6)
+        );
+        assert_eq!(
+            heap.slice(stale.as_const()).unwrap(),
+            &[SourceMutPointer::null()]
+        );
+
+        let leaked = heap
+            .allocate_model_storage(vec![SourceMutPointer::<i32>::null()])
+            .unwrap();
+        let mut failing = NUM_LISTS {
+            lists: leaked,
+            allocated: 8,
+            used: 5,
+            increment: 9,
+        };
+        heap.fail_after_allocations(0);
+        assert_eq!(NumLists_Alloc(&mut heap, Some(&mut failing), 2), Ok(-1));
+        assert!(failing.lists.is_null());
+        assert_eq!(
+            (failing.allocated, failing.used, failing.increment),
+            (8, 5, 9)
+        );
+        assert_eq!(
+            heap.slice(leaked.as_const()).unwrap(),
+            &[SourceMutPointer::null()]
+        );
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__numlists_realloc__line_449() {
+        let mut heap = SourceHeap::default();
+        assert_eq!(NumLists_ReAlloc(&mut heap, None), Ok(-1));
+        let mut invalid = NUM_LISTS::default();
+        assert_eq!(NumLists_ReAlloc(&mut heap, Some(&mut invalid)), Ok(-1));
+
+        let first = heap.allocate_model_storage(vec![1_i32]).unwrap();
+        let second = heap.allocate_model_storage(vec![2_i32]).unwrap();
+        let old = heap.allocate_model_storage(vec![first, second]).unwrap();
+        let mut lists = NUM_LISTS {
+            lists: old,
+            allocated: 2,
+            used: 2,
+            increment: 2,
+        };
+        assert_eq!(NumLists_ReAlloc(&mut heap, Some(&mut lists)), Ok(0));
+        assert_eq!((lists.allocated, lists.used, lists.increment), (4, 2, 2));
+        assert_ne!(lists.lists, old);
+        assert_eq!(
+            heap.slice(lists.lists.as_const()).unwrap(),
+            &[
+                first,
+                second,
+                SourceMutPointer::null(),
+                SourceMutPointer::null()
+            ]
+        );
+        assert_eq!(
+            heap.slice(old.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+
+        let leaked = heap.allocate_model_storage(vec![first]).unwrap();
+        let mut failing = NUM_LISTS {
+            lists: leaked,
+            allocated: 1,
+            used: 1,
+            increment: 1,
+        };
+        heap.fail_after_allocations(0);
+        assert_eq!(NumLists_ReAlloc(&mut heap, Some(&mut failing)), Ok(-1));
+        assert!(failing.lists.is_null());
+        assert_eq!(heap.slice(leaked.as_const()).unwrap(), &[first]);
+        assert_eq!(
+            (failing.allocated, failing.used, failing.increment),
+            (1, 1, 1)
+        );
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__numlists_append__line_471() {
+        let mut heap = SourceHeap::default();
+        let first = heap.allocate_model_storage(vec![11_i32]).unwrap();
+        let second = heap.allocate_model_storage(vec![22_i32]).unwrap();
+        assert_eq!(NumLists_Append(&mut heap, None, first), Ok(-1));
+
+        let array = heap
+            .allocate_model_storage(vec![SourceMutPointer::null(), SourceMutPointer::null()])
+            .unwrap();
+        let mut lists = NUM_LISTS {
+            lists: array,
+            allocated: 2,
+            used: 0,
+            increment: 2,
+        };
+        assert_eq!(NumLists_Append(&mut heap, Some(&mut lists), first), Ok(0));
+        assert_eq!((lists.used, lists.allocated), (1, 2));
+        assert_eq!(heap.slice(lists.lists.as_const()).unwrap()[0], first);
+        assert_eq!(
+            NumLists_Append(&mut heap, Some(&mut lists), SourceMutPointer::null()),
+            Ok(0)
+        );
+        assert_eq!((lists.used, lists.allocated), (2, 2));
+        assert!(heap.slice(lists.lists.as_const()).unwrap()[1].is_null());
+
+        assert_eq!(NumLists_Append(&mut heap, Some(&mut lists), second), Ok(0));
+        assert_eq!((lists.used, lists.allocated, lists.increment), (3, 4, 2));
+        assert_eq!(
+            &heap.slice(lists.lists.as_const()).unwrap()[..3],
+            &[first, SourceMutPointer::null(), second]
+        );
+        assert_eq!(
+            heap.slice(array.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+
+        let old = heap.allocate_model_storage(vec![first]).unwrap();
+        let mut failing = NUM_LISTS {
+            lists: old,
+            allocated: 1,
+            used: 1,
+            increment: 1,
+        };
+        heap.fail_after_allocations(0);
+        assert_eq!(
+            NumLists_Append(&mut heap, Some(&mut failing), second),
+            Ok(-1)
+        );
+        assert!(failing.lists.is_null());
+        assert_eq!(
+            (failing.used, failing.allocated, failing.increment),
+            (1, 1, 1)
+        );
+        assert_eq!(heap.slice(old.as_const()).unwrap(), &[first]);
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__numlists_free__line_491() {
+        let mut heap = SourceHeap::default();
+        assert_eq!(NumLists_Free(&mut heap, None), Ok(()));
+
+        let first = heap.allocate_model_storage(vec![1_i32, 2]).unwrap();
+        let second = heap.allocate_model_storage(vec![3_i32]).unwrap();
+        let unused = heap.allocate_model_storage(vec![4_i32, 5]).unwrap();
+        let list_array = heap
+            .allocate_model_storage(vec![first, second, unused])
+            .unwrap();
+        let mut lists = NUM_LISTS {
+            lists: list_array,
+            allocated: 3,
+            used: 2,
+            increment: 7,
+        };
+        assert_eq!(NumLists_Free(&mut heap, Some(&mut lists)), Ok(()));
+        assert_eq!(lists, NUM_LISTS::default());
+        assert_eq!(
+            heap.slice(first.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(
+            heap.slice(second.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(
+            heap.slice(list_array.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(heap.slice(unused.as_const()).unwrap(), &[4, 5]);
+
+        let preserved = heap.allocate_model_storage(vec![9_i32]).unwrap();
+        let empty_array = heap.allocate_model_storage(vec![preserved]).unwrap();
+        let mut negative = NUM_LISTS {
+            lists: empty_array,
+            allocated: 1,
+            used: -1,
+            increment: i32::MIN,
+        };
+        assert_eq!(NumLists_Free(&mut heap, Some(&mut negative)), Ok(()));
+        assert_eq!(negative, NUM_LISTS::default());
+        assert_eq!(heap.slice(preserved.as_const()).unwrap(), &[9]);
+        assert_eq!(
+            heap.slice(empty_array.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+
+        let mut all_zero = NUM_LISTS::default();
+        assert_eq!(NumLists_Free(&mut heap, Some(&mut all_zero)), Ok(()));
+        assert_eq!(all_zero, NUM_LISTS::default());
     }
 
     #[test]
@@ -2784,6 +4756,594 @@ mod tests {
             (1, 1, 1)
         );
         assert_eq!(heap.slice(old.as_const()).unwrap(), &[3]);
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__molfmtsgroups_alloc__line_675() {
+        let mut heap = SourceHeap::default();
+        assert_eq!(MolFmtSgroups_Alloc(&mut heap, None, 3), Ok(-1));
+
+        let stale = heap
+            .allocate_model_storage(vec![SourceMutPointer::<MOL_FMT_SGROUP>::null()])
+            .unwrap();
+        let mut groups = MOL_FMT_SGROUPS {
+            group: stale,
+            allocated: 9,
+            used: 4,
+            increment: 7,
+        };
+        assert_eq!(MolFmtSgroups_Alloc(&mut heap, Some(&mut groups), 3), Ok(0));
+        assert_eq!((groups.allocated, groups.used, groups.increment), (3, 4, 3));
+        assert_eq!(
+            heap.slice(groups.group.as_const()).unwrap(),
+            &[
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                SourceMutPointer::null()
+            ]
+        );
+        assert_eq!(heap.slice(stale.as_const()).unwrap().len(), 1);
+
+        let mut zero = MOL_FMT_SGROUPS {
+            allocated: -1,
+            used: -2,
+            increment: -3,
+            ..MOL_FMT_SGROUPS::default()
+        };
+        assert_eq!(MolFmtSgroups_Alloc(&mut heap, Some(&mut zero), 0), Ok(0));
+        assert!(!zero.group.is_null());
+        assert_eq!((zero.allocated, zero.used, zero.increment), (0, -2, 0));
+        assert_eq!(heap.slice(zero.group.as_const()).unwrap(), &[]);
+
+        let mut failure_heap = SourceHeap::default();
+        let old = failure_heap
+            .allocate_model_storage(vec![SourceMutPointer::<MOL_FMT_SGROUP>::null()])
+            .unwrap();
+        let mut failure = MOL_FMT_SGROUPS {
+            group: old,
+            allocated: 8,
+            used: 6,
+            increment: 4,
+        };
+        failure_heap.fail_after_allocations(0);
+        assert_eq!(
+            MolFmtSgroups_Alloc(&mut failure_heap, Some(&mut failure), 2),
+            Ok(-1)
+        );
+        assert!(failure.group.is_null());
+        assert_eq!(
+            (failure.allocated, failure.used, failure.increment),
+            (8, 6, 4)
+        );
+        assert_eq!(failure_heap.slice(old.as_const()).unwrap().len(), 1);
+
+        let old = heap
+            .allocate_model_storage(vec![SourceMutPointer::<MOL_FMT_SGROUP>::null()])
+            .unwrap();
+        let mut negative = MOL_FMT_SGROUPS {
+            group: old,
+            allocated: 1,
+            used: 1,
+            increment: 1,
+        };
+        assert_eq!(
+            MolFmtSgroups_Alloc(&mut heap, Some(&mut negative), -1),
+            Ok(-1)
+        );
+        assert!(negative.group.is_null());
+        assert_eq!(
+            (negative.allocated, negative.used, negative.increment),
+            (1, 1, 1)
+        );
+        assert_eq!(heap.slice(old.as_const()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__molfmtsgroups_realloc__line_693() {
+        let mut heap = SourceHeap::default();
+        assert_eq!(MolFmtSgroups_ReAlloc(&mut heap, None), Ok(-1));
+
+        for mut invalid in [
+            MOL_FMT_SGROUPS::default(),
+            MOL_FMT_SGROUPS {
+                group: heap
+                    .allocate_model_storage(vec![SourceMutPointer::null()])
+                    .unwrap(),
+                allocated: 0,
+                used: 0,
+                increment: 1,
+            },
+            MOL_FMT_SGROUPS {
+                group: heap
+                    .allocate_model_storage(vec![SourceMutPointer::null()])
+                    .unwrap(),
+                allocated: 1,
+                used: 0,
+                increment: 0,
+            },
+        ] {
+            let before = invalid.clone();
+            assert_eq!(MolFmtSgroups_ReAlloc(&mut heap, Some(&mut invalid)), Ok(-1));
+            assert_eq!(invalid, before);
+        }
+
+        let first = heap
+            .allocate_model_storage(vec![MOL_FMT_SGROUP::default()])
+            .unwrap();
+        let second = heap
+            .allocate_model_storage(vec![MOL_FMT_SGROUP::default()])
+            .unwrap();
+        let old = heap
+            .allocate(vec![first, second, SourceMutPointer::null()])
+            .unwrap();
+        let mut groups = MOL_FMT_SGROUPS {
+            group: old,
+            allocated: 3,
+            used: 2,
+            increment: 2,
+        };
+        assert_eq!(MolFmtSgroups_ReAlloc(&mut heap, Some(&mut groups)), Ok(0));
+        assert_eq!((groups.allocated, groups.used, groups.increment), (5, 2, 2));
+        assert_eq!(
+            heap.slice(groups.group.as_const()).unwrap(),
+            &[
+                first,
+                second,
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+                SourceMutPointer::null()
+            ]
+        );
+        assert_eq!(
+            heap.slice(old.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+
+        let empty_old = heap
+            .allocate(Vec::<SourceMutPointer<MOL_FMT_SGROUP>>::new())
+            .unwrap();
+        let mut empty = MOL_FMT_SGROUPS {
+            group: empty_old,
+            allocated: 1,
+            used: 0,
+            increment: 1,
+        };
+        assert_eq!(MolFmtSgroups_ReAlloc(&mut heap, Some(&mut empty)), Ok(0));
+        assert_eq!(empty.allocated, 2);
+        assert_eq!(
+            heap.slice(empty.group.as_const()).unwrap(),
+            &[SourceMutPointer::null(), SourceMutPointer::null()]
+        );
+
+        let mut failure_heap = SourceHeap::default();
+        let failure_old = failure_heap
+            .allocate(vec![SourceMutPointer::<MOL_FMT_SGROUP>::null()])
+            .unwrap();
+        let mut failure = MOL_FMT_SGROUPS {
+            group: failure_old,
+            allocated: 1,
+            used: 1,
+            increment: 2,
+        };
+        failure_heap.fail_after_allocations(0);
+        assert_eq!(
+            MolFmtSgroups_ReAlloc(&mut failure_heap, Some(&mut failure)),
+            Ok(-1)
+        );
+        assert!(failure.group.is_null());
+        assert_eq!(
+            (failure.allocated, failure.used, failure.increment),
+            (1, 1, 2)
+        );
+        assert_eq!(
+            failure_heap.slice(failure_old.as_const()).unwrap(),
+            &[SourceMutPointer::null()]
+        );
+        assert_eq!(failure_heap.live_source_allocation_count(), 1);
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__molfmtsgroups_append__line_715() {
+        let mut heap = SourceHeap::default();
+        assert_eq!(MolFmtSgroups_Append(&mut heap, None, 1, 2), Ok(-1));
+        assert_eq!(heap.live_source_allocation_count(), 0);
+
+        let array = heap
+            .allocate(vec![SourceMutPointer::<MOL_FMT_SGROUP>::null(); 2])
+            .unwrap();
+        let mut groups = MOL_FMT_SGROUPS {
+            group: array,
+            allocated: 2,
+            used: 0,
+            increment: 2,
+        };
+        assert_eq!(
+            MolFmtSgroups_Append(&mut heap, Some(&mut groups), 17, 19),
+            Ok(0)
+        );
+        assert_eq!((groups.allocated, groups.used, groups.increment), (2, 1, 2));
+        let appended = heap.slice(groups.group.as_const()).unwrap()[0];
+        let value = &heap.slice(appended.as_const()).unwrap()[0];
+        assert_eq!((value.id, value.type_), (17, 19));
+        assert_eq!(heap.live_source_allocation_count(), 4);
+        assert_eq!(MolFmtSgroup_Free(&mut heap, appended), Ok(()));
+        assert_eq!(inchi_free(&mut heap, groups.group), Ok(()));
+
+        let full_array = heap
+            .allocate(vec![SourceMutPointer::<MOL_FMT_SGROUP>::null()])
+            .unwrap();
+        let mut full = MOL_FMT_SGROUPS {
+            group: full_array,
+            allocated: 1,
+            used: 1,
+            increment: 2,
+        };
+        assert_eq!(
+            MolFmtSgroups_Append(&mut heap, Some(&mut full), -7, 31),
+            Ok(0)
+        );
+        assert_eq!((full.allocated, full.used, full.increment), (3, 2, 2));
+        let expanded = heap.slice(full.group.as_const()).unwrap();
+        assert!(expanded[0].is_null());
+        let expanded_group = expanded[1];
+        assert!(expanded[2].is_null());
+        assert_eq!(
+            (
+                heap.slice(expanded_group.as_const()).unwrap()[0].id,
+                heap.slice(expanded_group.as_const()).unwrap()[0].type_
+            ),
+            (-7, 31)
+        );
+        assert_eq!(
+            heap.slice(full_array.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(MolFmtSgroup_Free(&mut heap, expanded_group), Ok(()));
+        assert_eq!(inchi_free(&mut heap, full.group), Ok(()));
+        assert_eq!(heap.live_source_allocation_count(), 0);
+
+        for successful_allocations in 0..=2 {
+            let mut failure_heap = SourceHeap::default();
+            let old = failure_heap
+                .allocate(vec![SourceMutPointer::<MOL_FMT_SGROUP>::null()])
+                .unwrap();
+            let mut failure = MOL_FMT_SGROUPS {
+                group: old,
+                allocated: 1,
+                used: 0,
+                increment: 1,
+            };
+            failure_heap.fail_after_allocations(successful_allocations);
+            assert_eq!(
+                MolFmtSgroups_Append(&mut failure_heap, Some(&mut failure), 3, 5),
+                Ok(-1)
+            );
+            assert_eq!(failure.group, old);
+            assert_eq!(
+                (failure.allocated, failure.used, failure.increment),
+                (1, 0, 1)
+            );
+            assert_eq!(failure_heap.live_source_allocation_count(), 1);
+        }
+
+        let mut realloc_failure_heap = SourceHeap::default();
+        let realloc_old = realloc_failure_heap
+            .allocate(vec![SourceMutPointer::<MOL_FMT_SGROUP>::null()])
+            .unwrap();
+        let mut realloc_failure = MOL_FMT_SGROUPS {
+            group: realloc_old,
+            allocated: 1,
+            used: 1,
+            increment: 1,
+        };
+        realloc_failure_heap.fail_after_allocations(3);
+        assert_eq!(
+            MolFmtSgroups_Append(
+                &mut realloc_failure_heap,
+                Some(&mut realloc_failure),
+                23,
+                29,
+            ),
+            Ok(-1)
+        );
+        assert!(realloc_failure.group.is_null());
+        assert_eq!(
+            (
+                realloc_failure.allocated,
+                realloc_failure.used,
+                realloc_failure.increment
+            ),
+            (1, 1, 1)
+        );
+        assert_eq!(
+            realloc_failure_heap.slice(realloc_old.as_const()).unwrap(),
+            &[SourceMutPointer::null()]
+        );
+        assert_eq!(realloc_failure_heap.live_source_allocation_count(), 1);
+
+        let mut invalid_growth_heap = SourceHeap::default();
+        let invalid_old = invalid_growth_heap
+            .allocate(vec![SourceMutPointer::<MOL_FMT_SGROUP>::null()])
+            .unwrap();
+        let mut invalid_growth = MOL_FMT_SGROUPS {
+            group: invalid_old,
+            allocated: 1,
+            used: 1,
+            increment: 0,
+        };
+        assert_eq!(
+            MolFmtSgroups_Append(&mut invalid_growth_heap, Some(&mut invalid_growth), 2, 3),
+            Ok(-1)
+        );
+        assert_eq!(invalid_growth.group, invalid_old);
+        assert_eq!(
+            (
+                invalid_growth.allocated,
+                invalid_growth.used,
+                invalid_growth.increment
+            ),
+            (1, 1, 0)
+        );
+        assert_eq!(invalid_growth_heap.live_source_allocation_count(), 1);
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__molfmtsgroups_free__line_751() {
+        let mut heap = SourceHeap::default();
+        assert_eq!(MolFmtSgroups_Free(&mut heap, None), Ok(()));
+
+        let mut first = SourceMutPointer::null();
+        let mut second = SourceMutPointer::null();
+        assert_eq!(MolFmtSgroup_Create(&mut heap, &mut first, 1, 2), Ok(0));
+        assert_eq!(MolFmtSgroup_Create(&mut heap, &mut second, 3, 4), Ok(0));
+        let first_alist = heap.slice(first.as_const()).unwrap()[0].alist.item;
+        let first_blist = heap.slice(first.as_const()).unwrap()[0].blist.item;
+        let second_alist = heap.slice(second.as_const()).unwrap()[0].alist.item;
+        let second_blist = heap.slice(second.as_const()).unwrap()[0].blist.item;
+        let array = heap
+            .allocate(vec![first, second, SourceMutPointer::null()])
+            .unwrap();
+        let mut groups = MOL_FMT_SGROUPS {
+            group: array,
+            allocated: 3,
+            used: 2,
+            increment: 3,
+        };
+        assert_eq!(heap.live_source_allocation_count(), 7);
+        assert_eq!(MolFmtSgroups_Free(&mut heap, Some(&mut groups)), Ok(()));
+        assert_eq!(groups, MOL_FMT_SGROUPS::default());
+        assert_eq!(heap.live_source_allocation_count(), 0);
+        for pointer_result in [
+            heap.slice(first.as_const()).map(|_| ()),
+            heap.slice(second.as_const()).map(|_| ()),
+            heap.slice(first_alist.as_const()).map(|_| ()),
+            heap.slice(first_blist.as_const()).map(|_| ()),
+            heap.slice(second_alist.as_const()).map(|_| ()),
+            heap.slice(second_blist.as_const()).map(|_| ()),
+            heap.slice(array.as_const()).map(|_| ()),
+        ] {
+            assert_eq!(pointer_result, Err(SourceHeapError::MissingAllocation));
+        }
+
+        let empty_array = heap
+            .allocate(Vec::<SourceMutPointer<MOL_FMT_SGROUP>>::new())
+            .unwrap();
+        let mut empty = MOL_FMT_SGROUPS {
+            group: empty_array,
+            allocated: 0,
+            used: 0,
+            increment: 0,
+        };
+        assert_eq!(MolFmtSgroups_Free(&mut heap, Some(&mut empty)), Ok(()));
+        assert_eq!(empty, MOL_FMT_SGROUPS::default());
+        assert_eq!(heap.live_source_allocation_count(), 0);
+
+        let mut used_child = SourceMutPointer::null();
+        let mut unused_child = SourceMutPointer::null();
+        assert_eq!(MolFmtSgroup_Create(&mut heap, &mut used_child, 5, 6), Ok(0));
+        assert_eq!(
+            MolFmtSgroup_Create(&mut heap, &mut unused_child, 7, 8),
+            Ok(0)
+        );
+        let partial_array = heap.allocate(vec![used_child, unused_child]).unwrap();
+        let mut partial = MOL_FMT_SGROUPS {
+            group: partial_array,
+            allocated: 2,
+            used: 1,
+            increment: 2,
+        };
+        assert_eq!(MolFmtSgroups_Free(&mut heap, Some(&mut partial)), Ok(()));
+        assert_eq!(partial, MOL_FMT_SGROUPS::default());
+        assert_eq!(
+            heap.slice(used_child.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(heap.slice(unused_child.as_const()).unwrap()[0].id, 7);
+        assert_eq!(heap.live_source_allocation_count(), 3);
+        assert_eq!(MolFmtSgroup_Free(&mut heap, unused_child), Ok(()));
+        assert_eq!(heap.live_source_allocation_count(), 0);
+
+        let mut null_group = MOL_FMT_SGROUPS {
+            group: SourceMutPointer::null(),
+            allocated: 9,
+            used: 0,
+            increment: 4,
+        };
+        assert_eq!(MolFmtSgroups_Free(&mut heap, Some(&mut null_group)), Ok(()));
+        assert_eq!(null_group, MOL_FMT_SGROUPS::default());
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__molfmtsgroups_getindexbysgroupid__line_769() {
+        let mut heap = SourceHeap::default();
+        let empty = MOL_FMT_SGROUPS::default();
+        assert_eq!(MolFmtSgroups_GetIndexBySgroupId(&heap, 1, &empty), Ok(-1));
+        let negative_used = MOL_FMT_SGROUPS {
+            used: -1,
+            ..MOL_FMT_SGROUPS::default()
+        };
+        assert_eq!(
+            MolFmtSgroups_GetIndexBySgroupId(&heap, 1, &negative_used),
+            Ok(-1)
+        );
+
+        let first = heap
+            .allocate_model_storage(vec![MOL_FMT_SGROUP {
+                id: 17,
+                ..MOL_FMT_SGROUP::default()
+            }])
+            .unwrap();
+        let second = heap
+            .allocate_model_storage(vec![MOL_FMT_SGROUP {
+                id: -3,
+                ..MOL_FMT_SGROUP::default()
+            }])
+            .unwrap();
+        let duplicate = heap
+            .allocate_model_storage(vec![MOL_FMT_SGROUP {
+                id: 17,
+                ..MOL_FMT_SGROUP::default()
+            }])
+            .unwrap();
+        let outside_used = heap
+            .allocate_model_storage(vec![MOL_FMT_SGROUP {
+                id: 99,
+                ..MOL_FMT_SGROUP::default()
+            }])
+            .unwrap();
+        let array = heap
+            .allocate_model_storage(vec![first, second, duplicate, outside_used])
+            .unwrap();
+        let groups = MOL_FMT_SGROUPS {
+            group: array,
+            allocated: 4,
+            used: 3,
+            increment: 4,
+        };
+        assert_eq!(MolFmtSgroups_GetIndexBySgroupId(&heap, 17, &groups), Ok(0));
+        assert_eq!(MolFmtSgroups_GetIndexBySgroupId(&heap, -3, &groups), Ok(1));
+        assert_eq!(MolFmtSgroups_GetIndexBySgroupId(&heap, 99, &groups), Ok(-1));
+        assert_eq!(
+            MolFmtSgroups_GetIndexBySgroupId(&heap, 123, &groups),
+            Ok(-1)
+        );
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__molfmtsgroup_free__line_658() {
+        let mut heap = SourceHeap::default();
+        assert_eq!(
+            MolFmtSgroup_Free(&mut heap, SourceMutPointer::null()),
+            Ok(())
+        );
+
+        let alist = heap.allocate(vec![1_i32, 2, 3]).unwrap();
+        let blist = heap.allocate(vec![4_i32, 5]).unwrap();
+        let group = heap
+            .allocate(vec![MOL_FMT_SGROUP {
+                id: 17,
+                alist: INT_ARRAY {
+                    item: alist,
+                    allocated: 3,
+                    used: 3,
+                    increment: 3,
+                },
+                blist: INT_ARRAY {
+                    item: blist,
+                    allocated: 2,
+                    used: 2,
+                    increment: 2,
+                },
+                ..MOL_FMT_SGROUP::default()
+            }])
+            .unwrap();
+        assert_eq!(heap.live_source_allocation_count(), 3);
+        assert_eq!(MolFmtSgroup_Free(&mut heap, group), Ok(()));
+        assert_eq!(heap.live_source_allocation_count(), 0);
+        assert_eq!(
+            heap.slice(alist.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(
+            heap.slice(blist.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(
+            heap.slice(group.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+
+        let group_with_null_lists = heap
+            .allocate(vec![MOL_FMT_SGROUP {
+                id: 18,
+                ..MOL_FMT_SGROUP::default()
+            }])
+            .unwrap();
+        assert_eq!(MolFmtSgroup_Free(&mut heap, group_with_null_lists), Ok(()));
+        assert_eq!(heap.live_source_allocation_count(), 0);
+    }
+
+    #[test]
+    fn source_port__mol_fmt4__molfmtsgroup_create__line_634() {
+        let mut heap = SourceHeap::default();
+        let stale = heap
+            .allocate_model_storage(vec![MOL_FMT_SGROUP::default()])
+            .unwrap();
+        let mut group = stale;
+        assert_eq!(MolFmtSgroup_Create(&mut heap, &mut group, -17, 23), Ok(0));
+        assert_ne!(group, stale);
+        let created = &heap.slice(group.as_const()).unwrap()[0];
+        assert_eq!((created.id, created.type_), (-17, 23));
+        assert_eq!((created.subtype, created.conn, created.label), (0, 0, 0));
+        assert_eq!(created.xbr1, [0.0; 4]);
+        assert_eq!(created.xbr2, [0.0; 4]);
+        assert_eq!(created.smt, [0; 80]);
+        assert_eq!(
+            (
+                created.alist.allocated,
+                created.alist.used,
+                created.alist.increment
+            ),
+            (8, 0, 8)
+        );
+        assert_eq!(
+            (
+                created.blist.allocated,
+                created.blist.used,
+                created.blist.increment
+            ),
+            (8, 0, 8)
+        );
+        assert_eq!(heap.slice(created.alist.item.as_const()).unwrap(), &[0; 8]);
+        assert_eq!(heap.slice(created.blist.item.as_const()).unwrap(), &[0; 8]);
+        assert_eq!(heap.live_source_allocation_count(), 3);
+        assert_eq!(MolFmtSgroup_Free(&mut heap, group), Ok(()));
+        assert_eq!(heap.live_source_allocation_count(), 0);
+
+        for successful_allocations in 0..=2 {
+            let mut failure_heap = SourceHeap::default();
+            let old = failure_heap
+                .allocate_model_storage(vec![MOL_FMT_SGROUP::default()])
+                .unwrap();
+            let mut output = old;
+            failure_heap.fail_after_allocations(successful_allocations);
+            assert_eq!(
+                MolFmtSgroup_Create(&mut failure_heap, &mut output, 7, 11),
+                Ok(-1),
+                "failure after {successful_allocations} successful allocations"
+            );
+            if successful_allocations == 0 {
+                assert!(output.is_null());
+            } else {
+                assert!(!output.is_null());
+                assert_eq!(
+                    failure_heap.slice(output.as_const()),
+                    Err(SourceHeapError::MissingAllocation)
+                );
+            }
+            assert_eq!(failure_heap.live_source_allocation_count(), 0);
+            assert_eq!(failure_heap.slice(old.as_const()).unwrap().len(), 1);
+        }
     }
 
     #[test]

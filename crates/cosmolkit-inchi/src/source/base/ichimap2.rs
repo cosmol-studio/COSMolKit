@@ -3,11 +3,11 @@ use crate::source::base::ichicans::{
     RemoveOneStereoBond, RemoveOneStereoCenter, SetOneStereoBondIllDefParity,
 };
 use crate::source::base::ichisort::{
-    CompNeighListRanks, CompNeighListRanksOrd, CompNeighborsRanksCountEql, CompRank,
-    CompRanksInvOrd, CompRanksOrd, CompareNeighListLex, CompareNeighListLexUpToMaxRank,
-    CreateNeighList, FreeNeighList, inchi_qsort, insertions_sort, insertions_sort_AT_NUMBERS,
-    insertions_sort_NeighList_AT_NUMBERS, insertions_sort_NeighList_AT_NUMBERS3,
-    insertions_sort_NeighListBySymmAndCanonRank,
+    CompNeighListRanks, CompNeighListRanksOrd, CompNeighLists, CompNeighListsUpToMaxRank,
+    CompNeighborsRanksCountEql, CompRank, CompRanksInvOrd, CompRanksOrd, CompareNeighListLex,
+    CompareNeighListLexUpToMaxRank, CreateNeighList, FreeNeighList, inchi_qsort, insertions_sort,
+    insertions_sort_AT_NUMBERS, insertions_sort_NeighList_AT_NUMBERS,
+    insertions_sort_NeighList_AT_NUMBERS3, insertions_sort_NeighListBySymmAndCanonRank,
 };
 use crate::source::base::util::inchi_free;
 use crate::source_types::local_ichimap2::{
@@ -821,11 +821,7 @@ pub(crate) fn SetNewRanksFromNeighLists3(
             heap,
             nAtomNumber.offset(i64::from(i))?,
             i32::from(r2).wrapping_sub(i),
-            &mut |heap, left: AT_NUMB, right: AT_NUMB| {
-                let left_list = source_get(heap, NeighList, i32::from(left))?;
-                let right_list = source_get(heap, NeighList, i32::from(right))?;
-                CompareNeighListLex(heap, left_list, right_list, nRank)
-            },
+            &mut |heap, left: AT_NUMB, right: AT_NUMB| CompNeighLists(heap, left, right, pCG),
         )?;
         j = i32::from(r2).wrapping_sub(1);
         let k = i32::from(source_get(heap, nAtomNumber, j)?);
@@ -967,9 +963,7 @@ pub(crate) fn SetNewRanksFromNeighLists4(
             nAtomNumber.offset(i64::from(i))?,
             i32::from(r2).wrapping_sub(i),
             &mut |heap, left: AT_NUMB, right: AT_NUMB| {
-                let left_list = source_get(heap, NeighList, i32::from(left))?;
-                let right_list = source_get(heap, NeighList, i32::from(right))?;
-                CompareNeighListLexUpToMaxRank(heap, left_list, right_list, nRank, nMaxAtRank)
+                CompNeighListsUpToMaxRank(heap, left, right, pCG)
             },
         )?;
         j = i32::from(r2).wrapping_sub(1);

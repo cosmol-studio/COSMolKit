@@ -96,10 +96,29 @@ third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/CMakeLists.txt
 
 The complete submodule tree includes command-line programs, demos, tests,
 project files, documentation, and assets. Those files remain available as
-source references and independent fixtures, but the approved production port
-covers the complete `libinchi` call graph rather than translating demo or CLI
-programs into the reusable crate.
+source references and independent fixtures. The selected production closure is
+the configured active call graph reachable from `GetINCHI`, `FreeINCHI`,
+`GetINCHIKeyFromINCHI`, `GetStructFromINCHI`, and `FreeStructFromINCHI`, which
+is the exact official-engine boundary needed by the four public scalar APIs.
+Already ported code outside that closure is retained privately and frozen;
+unported outside-scope exports are not scheduled or exposed.
 
 The pinned C code is a source reference and may be compiled only for an
 independent non-production oracle. The production `cosmolkit-inchi` crate must
 not link it, expose it through FFI, invoke an executable, or fall back to it.
+
+## Public Support Boundary
+
+The supported public surface is limited to `Chem.MolToInchi`,
+`Chem.MolToInchiKey`, root `InchiToInchiKey`, and `Chem.MolFromInchi`.
+MolBlock, SDF/V3000, IXA, AuxInfo conversion, incremental INCHIGEN,
+version-query, and extended-polymer entry points are frozen or unsupported and
+must not be inferred from private source-port coverage.
+
+Pinned official-C and RDKit oracles establish exact equality only for behavior
+defined by the corresponding source. The active `NormalizeAndCompare` initial
+`inchi_strbuf_init` allocation-failure path reaches
+`strcpy(existing_formula, NULL)`, so official C defines no portable return,
+mutation, cleanup, or signal result. Under the human-authorized policy,
+production Rust returns a deterministic structured `allocation_failed` error
+for that path. This intentional mapping is not described as exact C parity.
