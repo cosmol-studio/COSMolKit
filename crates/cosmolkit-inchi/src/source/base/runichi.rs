@@ -6128,7 +6128,6 @@ pub(crate) fn CreateOneComponentINChI(
         heap.free(maximum_time)?;
     }
     let num_atoms = create_result?;
-
     if !current_input.at.is_null() {
         SetConnectedComponentNumber(
             heap.slice_mut(current_input.at)?,

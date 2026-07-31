@@ -126,6 +126,80 @@ coordinates, options, cleanup, toolkit call order, and source-molecule
 preservation as applicable. The oracle runners are tests only and are absent
 from production dependencies.
 
+## Strict 5000 Public API Regression
+
+The Schematic issue 11 reproduction initially found eight valid strict-corpus
+rows that failed COSMolKit InChI generation with
+`SourceHeapError::PointerOutOfBounds`: `440`, `904`, `2040`, `2556`, `3248`,
+`3620`, `3811`, and `4944`. The source-level repair preserves the official
+`ichi_bns.c:10951-10957` short-circuit order in `BalancedNetworkSearch`; the
+`bIgnoreVertexNonTACN_group` call is no longer evaluated on states for which
+the preceding official predicates are false.
+
+The exact focused regression command executed one test:
+
+```bash
+cargo test -q -p cosmolkit-core \
+  --features op-contracts-strict \
+  --lib \
+  inchi::tests::inchi_generation_matches_chematic_issue_11_pointer_regressions \
+  -- --exact --nocapture
+```
+
+It reported `1 passed; 0 failed; 2573 filtered out` and checks the complete
+InChI, warning return code, and InChIKey for every formerly failing row.
+
+The installed Python extension was then rebuilt from the current Rust source
+with `.venv/bin/maturin develop --manifest-path python/Cargo.toml`. A
+fail-closed public-wrapper harness processed all `5000` rows of
+`tests/smiles_5000.smi`, independently parsed each input with pinned RDKit
+`2026.03.1` and COSMolKit, and compared `rdkit.Chem.MolToInchi` with
+`cosmolkit.Chem.MolToInchi` by exact string equality. Its result was:
+
+```text
+corpus_rows=5000
+exact=5000
+mismatch=0
+rdkit_parse_error=0
+cosmolkit_parse_error=0
+rdkit_generation_error=0
+cosmolkit_generation_error=0
+failure_count=0
+```
+
+The harness exits nonzero unless every count has exactly the values above; no
+row, warning, exception, or output field is skipped.
+
+This corpus check is now also a persistent Rust integration test at
+`crates/cosmolkit-core/tests/rdkit_inchi_parity.rs`. Its pinned-RDKit golden
+generator is part of the unified generator as the `inchi` suite, and committed
+goldens contain `150` small-profile records and `5000` strict-profile records.
+The test checks corpus/golden row counts, contiguous row numbers, source SMILES
+order, and every result. The small profile has `132` nonempty RDKit outputs,
+which require complete InChI byte equality; `5` RDKit empty outputs, for which
+Rust must return either an empty output or the policy-defined structured
+`UnsupportedState`; and `13` RDKit parse failures, which must remain Rust parse
+failures. No unrelated generation-error category is accepted. Every
+strict-profile row has a nonempty RDKit InChI, so all `5000` strict comparisons
+are exact byte equality.
+
+The persisted commands both executed one matching test:
+
+```bash
+cargo test -p cosmolkit-core --release --features op-contracts-strict \
+  --test rdkit_inchi_parity \
+  inchi_matches_pinned_rdkit_for_every_active_profile_row -- --exact
+
+COSMOLKIT_PARITY_PROFILE=smiles_5000 \
+  cargo test -p cosmolkit-core --release --features op-contracts-strict \
+  --test rdkit_inchi_parity \
+  inchi_matches_pinned_rdkit_for_every_active_profile_row -- --exact
+```
+
+The small profile reported `1 passed`, `0 failed`, `0 filtered out` after
+processing all `150` rows. The strict profile reported `1 passed`, `0 failed`,
+`0 filtered out` after processing all `5000` rows.
+
 ## Authorized Undefined-Behavior Mapping
 
 `NormalizeAndCompare` at
@@ -210,8 +284,12 @@ fact.
 | Command or harness | Recorded result |
 |---|---|
 | `cargo fmt --all -- --check` | passed |
+| `cargo test -p cosmolkit-inchi` | passed; main harness reported `1271 passed`, `0 failed`, `0 filtered out`; provenance harness reported `1 passed` |
+| strict 5000 Python public-wrapper exact comparison | pinned RDKit `2026.03.1`; `5000` exact, `0` mismatches, `0` parse errors, `0` generation errors |
+| persisted Rust InChI small-profile parity | `150` rows processed; `1 passed`, `0 failed`, `0 filtered out` |
+| persisted Rust InChI strict-profile parity | `5000` exact nonempty InChI byte comparisons; `1 passed`, `0 failed`, `0 filtered out` |
 | `cargo check -p cosmolkit-core --features op-contracts-strict` | passed |
-| `cargo test -p cosmolkit-core --release --features op-contracts-strict` | passed; core harness reported `2528 passed`, `0 failed`, and `45` explicitly ignored tests |
+| `cargo test -p cosmolkit-core --release --features op-contracts-strict` | passed; core harness reported `2529 passed`, `0 failed`, and `45` explicitly ignored tests |
 | `cargo test --workspace --release --features cosmolkit-core/op-contracts-strict` | exit `0`; InChI main harness reported `1271 passed`, `0 failed`, `0 filtered out`; strict workspace harnesses passed |
 | `.venv/bin/pytest python/tests/test_inchi.py` | all selected InChI Python tests executed and passed |
 | `.venv/bin/python -m sphinx -b html python/docs/source python/docs/build/html` | completed successfully |

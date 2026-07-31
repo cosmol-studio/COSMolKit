@@ -478,6 +478,7 @@ impl SourceHeap {
         })
     }
 
+    #[track_caller]
     pub(crate) fn slice<T: 'static>(
         &self,
         pointer: SourceConstPointer<T>,
@@ -496,6 +497,7 @@ impl SourceHeap {
             .ok_or(SourceHeapError::PointerOutOfBounds)
     }
 
+    #[track_caller]
     pub(crate) fn slice_mut<T: 'static>(
         &mut self,
         pointer: SourceMutPointer<T>,
@@ -514,6 +516,7 @@ impl SourceHeap {
             .ok_or(SourceHeapError::PointerOutOfBounds)
     }
 
+    #[track_caller]
     pub(crate) fn with_slice_mut_and_heap<T: 'static, R>(
         &mut self,
         pointer: SourceMutPointer<T>,
@@ -542,6 +545,7 @@ impl SourceHeap {
         result
     }
 
+    #[track_caller]
     pub(crate) fn with_slice_mut_and_heap_mut<T: 'static, R>(
         &mut self,
         pointer: SourceMutPointer<T>,

@@ -33,10 +33,11 @@ use std::{
 
 use crate::{
     AtomId, AtomQueryPredicate, AtomSpec, BondDirection, BondId, BondOrder, BondQueryPredicate,
-    BondSpec, BondStereo, Conformer3D, Element, MOLBLOCK_IO_FEATURE, Molecule, MoleculeBuilder,
-    QueryNode, SGroupAttachPoint, SGroupBracket, SGroupBracketStyle, SGroupCState,
-    SGroupConnection, SdfPropertyList, SdfPropertyListTarget, StereoGroup, StereoGroupKind,
-    SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, UnsupportedFeatureError,
+    BondSpec, BondStereo, Conformer2D, Conformer3D, CoordinateDimension, Element,
+    MOLBLOCK_IO_FEATURE, Molecule, MoleculeBuilder, QueryNode, SGroupAttachPoint, SGroupBracket,
+    SGroupBracketStyle, SGroupCState, SGroupConnection, SdfPropertyList, SdfPropertyListTarget,
+    StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+    UnsupportedFeatureError,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2527,6 +2528,7 @@ fn mol_from_mol_data_stream<R: BufRead>(
         }
     }?;
     let molecule = finish_mol_processing(parsed.molecule, parsed.chirality_possible, params)?;
+    let molecule = finalize_parsed_coordinate_storage(molecule)?;
     Ok(ParsedMolBlock {
         molecule,
         header: parsed.header,
@@ -2804,6 +2806,56 @@ fn calculate_rdkit_3d_flag(marked_3d: bool, coords: &[[f64; 3]], chirality_possi
         return true;
     }
     nonzero_z
+}
+
+fn resolve_coordinate_3d_flag(detected_3d: bool, mode: SdfCoordinateMode) -> bool {
+    match mode {
+        SdfCoordinateMode::Preserve => detected_3d,
+        SdfCoordinateMode::Require2D => false,
+        SdfCoordinateMode::Require3D => true,
+    }
+}
+
+fn finalize_parsed_coordinate_storage(mut molecule: Molecule) -> Result<Molecule, SdfReadError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: bool ParseV2000CTAB / bool ParseV3000CTAB
+    // RDKit✔️❗:   conf->set3D(is3d);
+    // RDKit✔️❗:   mol->addConformer(conf, true);
+    // RDKit✔️❗:   conf = nullptr;
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: bool ParseV2000CTAB / bool ParseV3000CTAB
+    // RDKit has one conformer store. Parsing and postprocessing use one
+    // temporary Conformer3D so source routines see the same unified object;
+    // this boundary then maps that object into exactly one COSMolKit store.
+    let mut coordinates = molecule.take_coordinate_block_or_clone();
+    if !coordinates.conformers_2d.is_empty() || coordinates.conformers_3d.len() != 1 {
+        return Err(SdfReadError::Parse(
+            "parsed molfile must contain exactly one source conformer before coordinate storage finalization"
+                .to_string(),
+        ));
+    }
+
+    if coordinates.conformers_3d[0].is_3d() {
+        coordinates.source_coordinate_dim = Some(CoordinateDimension::ThreeD);
+    } else {
+        let source = coordinates
+            .conformers_3d
+            .pop()
+            .expect("length checked above");
+        let mut conformer = Conformer2D::new(
+            source.id(),
+            source
+                .coordinates()
+                .iter()
+                .map(|coordinate| [coordinate[0], coordinate[1]])
+                .collect(),
+        );
+        for (key, value) in source.props() {
+            conformer = conformer.with_prop(key.clone(), value.clone());
+        }
+        coordinates.conformers_2d.push(conformer);
+        coordinates.source_coordinate_dim = Some(CoordinateDimension::TwoD);
+    }
+    molecule.replace_coordinate_block(coordinates);
+    Ok(molecule)
 }
 
 fn parse_counts_line(
@@ -3189,10 +3241,13 @@ fn parse_v2000_ctab<R: BufRead>(
         .iter()
         .map(|atom| atom.coord_3d)
         .collect::<Vec<_>>();
-    let is_3d = calculate_rdkit_3d_flag(
-        molfile_info_marks_3d(&header.info),
-        &coords,
-        chirality_possible,
+    let is_3d = resolve_coordinate_3d_flag(
+        calculate_rdkit_3d_flag(
+            molfile_info_marks_3d(&header.info),
+            &coords,
+            chirality_possible,
+        ),
+        params.coordinate_mode,
     );
 
     let mut builder = MoleculeBuilder::new();
@@ -3215,11 +3270,6 @@ fn parse_v2000_ctab<R: BufRead>(
     for substance_group in property_state.sgroups.into_values() {
         builder
             .add_substance_group(substance_group)
-            .map_err(molecule_build_error)?;
-    }
-    if !is_3d && !coords.is_empty() {
-        builder
-            .set_2d_coordinates(coords.iter().map(|coord| [coord[0], coord[1]]).collect())
             .map_err(molecule_build_error)?;
     }
     builder
@@ -7628,16 +7678,14 @@ fn parse_v3000_ctab<R: BufRead>(
         ));
     }
 
-    let is_3d = calculate_rdkit_3d_flag(
-        molfile_info_marks_3d(&header.info),
-        &coords,
-        chirality_possible,
+    let is_3d = resolve_coordinate_3d_flag(
+        calculate_rdkit_3d_flag(
+            molfile_info_marks_3d(&header.info),
+            &coords,
+            chirality_possible,
+        ),
+        params.coordinate_mode,
     );
-    if !is_3d && !coords.is_empty() {
-        builder
-            .set_2d_coordinates(coords.iter().map(|coord| [coord[0], coord[1]]).collect())
-            .map_err(molecule_build_error)?;
-    }
     builder
         .add_conformer(Conformer3D::new(0, coords, is_3d))
         .map_err(molecule_build_error)?;
@@ -12638,13 +12686,16 @@ $$$$
         .unwrap();
 
         assert_eq!(result.molecule.num_atoms(), 3);
-        let conformer = result.molecule.conformers_3d().first().unwrap();
-        assert!(!conformer.is_3d());
+        assert!(result.molecule.conformers_3d().is_empty());
+        let conformer = result.molecule.conformers_2d().first().unwrap();
         assert_eq!(conformer.coordinates().len(), 3);
         let attachment = conformer.coordinates()[2];
         assert!((attachment[0] - -2.50869).abs() < 1.0e-4);
         assert!((attachment[1] - 4.52002).abs() < 1.0e-4);
-        assert_eq!(attachment[2], 0.0);
+        assert_eq!(
+            result.molecule.source_coordinate_dim(),
+            Some(crate::CoordinateDimension::TwoD)
+        );
     }
 
     #[test]
@@ -12917,15 +12968,59 @@ $$$$
                 [1.9796, 0.1365],
             ]
         );
-        let conformer = record
-            .molecule
-            .conformers_3d()
-            .first()
-            .expect("2D input should still preserve the source conformer");
-        assert!(!conformer.is_3d());
+        assert_eq!(record.molecule.conformers_2d().len(), 1);
+        assert!(record.molecule.conformers_3d().is_empty());
         assert_eq!(
             record.molecule.source_coordinate_dim(),
             Some(crate::CoordinateDimension::TwoD)
+        );
+    }
+
+    #[test]
+    fn sdf_reader_coordinate_mode_stores_each_source_conformer_once() {
+        let input = concat!(
+            "zero-z\n",
+            "  PubChem          2D\n",
+            "\n",
+            "  2  1  0  0  0  0  0  0  0  0999 V2000\n",
+            "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "    1.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "  1  2  1  0\n",
+            "M  END\n",
+            "$$$$\n",
+        );
+
+        for mode in [SdfCoordinateMode::Preserve, SdfCoordinateMode::Require2D] {
+            let record = read_sdf_from_str_with_params(
+                input,
+                SdfReadParams {
+                    coordinate_mode: mode,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(record.molecule.conformers_2d().len(), 1);
+            assert!(record.molecule.conformers_3d().is_empty());
+            assert_eq!(
+                record.molecule.source_coordinate_dim(),
+                Some(crate::CoordinateDimension::TwoD)
+            );
+        }
+
+        let record = read_sdf_from_str_with_params(
+            input,
+            SdfReadParams {
+                coordinate_mode: SdfCoordinateMode::Require3D,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(record.molecule.conformers_2d().is_empty());
+        assert_eq!(record.molecule.conformers_3d().len(), 1);
+        assert!(record.molecule.conformers_3d()[0].is_3d());
+        assert_eq!(
+            record.molecule.source_coordinate_dim(),
+            Some(crate::CoordinateDimension::ThreeD)
         );
     }
 

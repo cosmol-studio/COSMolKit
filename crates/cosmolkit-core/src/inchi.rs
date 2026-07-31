@@ -869,6 +869,73 @@ mod tests {
     }
 
     #[test]
+    fn inchi_generation_matches_chematic_issue_11_pointer_regressions() {
+        let cases = [
+            (
+                440,
+                "C[C@H](NC(=O)[C@@H](CC(N)=O)N(O)C(=O)[C@H](CO)NC(=O)CNC(=O)C1CCN=C(C(CO)NC(=O)[C@@H]2CCNc3c(NC(=O)CC(O)C(N)=O)cc4cc(O)c(O)cc4[n+]32)N1)C(=O)NCC(=O)N[C@H](C)C(=O)NCC(=O)N[C@H]1CCCN(O)C1=O",
+                "InChI=1S/C48H67N17O20/c1-20(42(77)54-16-37(74)58-24-4-3-9-63(84)47(24)82)56-36(73)15-53-43(78)21(2)57-46(81)30(13-34(49)71)65(85)48(83)27(19-67)60-38(75)17-55-44(79)23-5-7-51-40(61-23)26(18-66)62-45(80)28-6-8-52-41-25(59-35(72)14-33(70)39(50)76)10-22-11-31(68)32(69)12-29(22)64(28)41/h10-12,20-21,23-24,26-28,30,33,66-67,70,84-85H,3-9,13-19H2,1-2H3,(H16,49,50,51,52,53,54,55,56,57,58,59,60,61,62,68,69,71,72,73,74,75,76,77,78,79,80,81)/p+1/t20-,21+,23?,24+,26?,27+,28+,30-,33?/m1/s1",
+                "PZXWNCGKYBGCFQ-MLNIRCADSA-O",
+            ),
+            (
+                904,
+                "CC[C@H](C)[C@H]1NC(=O)c2cc3ccc(O)cc3[n+](C)c21",
+                "InChI=1S/C16H18N2O2/c1-4-9(2)14-15-12(16(20)17-14)7-10-5-6-11(19)8-13(10)18(15)3/h5-9,14H,4H2,1-3H3,(H,17,20)/p+1/t9-,14+/m0/s1",
+                "GTNBOKIWQUJZFH-LKFCYVNXSA-O",
+            ),
+            (
+                2040,
+                "COC(=O)c1cc2c[n+](C)c3c(N)c(Cl)c(=N)c([nH]1)c23",
+                "InChI=1S/C13H11ClN4O2/c1-18-4-5-3-6(13(19)20-2)17-11-7(5)12(18)10(16)8(14)9(11)15/h3-4H,1-2H3,(H3,15,16)/p+1",
+                "WVQCUPZVEGKBBJ-UHFFFAOYSA-O",
+            ),
+            (
+                2556,
+                "CC1=[N+](C)[C@H]2[C@@H](OC1=C(N)C(=O)O)O[C@H](CO)[C@H](O)[C@@H]2O",
+                "InChI=1S/C12H18N2O7/c1-4-10(6(13)11(18)19)21-12-7(14(4)2)9(17)8(16)5(3-15)20-12/h5,7-9,12-13,15-17H,3H2,1-2H3,(H,18,19)/p+1/t5-,7-,8+,9-,12-/m1/s1",
+                "WSWRZDSZMARMQJ-GXIXWSSHSA-O",
+            ),
+            (
+                3248,
+                "CC[n+]1c(-c2ccccc2)c2cc(N)ccc2c2ccc(N)cc21.[Br-]",
+                "InChI=1S/C21H19N3.BrH/c1-2-24-20-13-16(23)9-11-18(20)17-10-8-15(22)12-19(17)21(24)14-6-4-3-5-7-14;/h3-13,23H,2,22H2,1H3;1H",
+                "ZMMJGEGLRURXTF-UHFFFAOYSA-N",
+            ),
+            (
+                3620,
+                "Cc1cc[n+]2c(NC(=O)c3ccccc3)c(-c3cccs3)[nH]c2c1",
+                "InChI=1S/C19H15N3OS/c1-13-9-10-22-16(12-13)20-17(15-8-5-11-24-15)18(22)21-19(23)14-6-3-2-4-7-14/h2-12H,1H3,(H,21,23)/p+1",
+                "OVFLFOQKWYSFNY-UHFFFAOYSA-O",
+            ),
+            (
+                3811,
+                "Cc1cc2c(s1)Nc1ccccc1NC2=[N+]1CCN(C)CC1",
+                "InChI=1S/C17H20N4S/c1-12-11-13-16(21-9-7-20(2)8-10-21)18-14-5-3-4-6-15(14)19-17(13)22-12/h3-6,11H,7-10H2,1-2H3,(H,18,19)/p+1",
+                "HZFBJGGXPNEAPR-UHFFFAOYSA-O",
+            ),
+            (
+                4944,
+                "Cc1cc[n+]2c(-c3ccnc(N)n3)c(C)[nH]c2c1",
+                "InChI=1S/C13H13N5/c1-8-4-6-18-11(7-8)16-9(2)12(18)10-3-5-15-13(14)17-10/h3-7H,1-2H3,(H2,14,15,17)/p+1",
+                "OQODWFCIKXTEHB-UHFFFAOYSA-O",
+            ),
+        ];
+
+        for (row, smiles, expected_inchi, expected_key) in cases {
+            let molecule = Molecule::from_smiles(smiles)
+                .unwrap_or_else(|error| panic!("row {row} SMILES: {error}"));
+            let output = mol_to_inchi(&molecule, None)
+                .unwrap_or_else(|error| panic!("row {row} InChI generation: {error}"));
+            assert_eq!(output.inchi, expected_inchi.as_bytes(), "row {row} InChI");
+            assert_eq!(output.return_values.return_code, 1, "row {row} return code");
+
+            let key = inchi_to_inchi_key(&output.inchi)
+                .unwrap_or_else(|error| panic!("row {row} InChIKey generation: {error}"));
+            assert_eq!(key.key, expected_key.as_bytes(), "row {row} InChIKey");
+        }
+    }
+
+    #[test]
     fn inchi_core_bridge_parsed_graph_preserves_isotope_charge_bond_and_stereo_fields() {
         let output =
             mol_from_inchi(b"InChI=1S/CHBrClF/c2-1(3)4/t1-/m0/s1/i1+1", false, false).unwrap();
@@ -893,6 +960,27 @@ mod tests {
             .map(|atom| molecule.topology_block().adjacency.neighbors_of(atom).len())
             .sum::<usize>();
         assert_eq!(adjacency_edges, molecule.num_bonds() * 2);
+    }
+
+    #[test]
+    fn inchi_core_bridge_accepts_zero_z_v2000_2d_input_without_duplicate_conformer() {
+        let input = concat!(
+            "zero-z\n",
+            "  PubChem          2D\n",
+            "\n",
+            "  2  1  0  0  0  0  0  0  0  0999 V2000\n",
+            "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "    1.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n",
+            "  1  2  1  0\n",
+            "M  END\n",
+            "$$$$\n",
+        );
+        let record = crate::io::sdf::read_sdf_from_str(input).unwrap();
+
+        assert_eq!(record.molecule.conformers_2d().len(), 1);
+        assert!(record.molecule.conformers_3d().is_empty());
+        let output = mol_to_inchi(&record.molecule, None).unwrap();
+        assert_eq!(output.inchi, b"InChI=1S/C2H6/c1-2/h1-2H3");
     }
 
     #[test]

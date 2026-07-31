@@ -81,6 +81,8 @@ substructure.
    - `cargo test -p cosmolkit-core --features op-contracts-strict <test-filter>`
    - `cargo test -p cosmolkit-core --release --features op-contracts-strict`
    - strict 5000 corpus: `COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo test -p cosmolkit-core --release --features op-contracts-strict <non-iterative-parity-filter>`
+   - small InChI corpus: `cargo test -p cosmolkit-core --release --features op-contracts-strict --test rdkit_inchi_parity inchi_matches_pinned_rdkit_for_every_active_profile_row -- --exact`
+   - strict 5000 InChI corpus: `COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo test -p cosmolkit-core --release --features op-contracts-strict --test rdkit_inchi_parity inchi_matches_pinned_rdkit_for_every_active_profile_row -- --exact`
 7. Run the exhaustive SMILES writer branch matrix when checking full writer parity:
    - `cargo test -p cosmolkit-core --release --features op-contracts-strict --test rdkit_smiles_writer_parity smiles_writer_matches_rdkit_golden_across_param_branches -- --ignored`
 

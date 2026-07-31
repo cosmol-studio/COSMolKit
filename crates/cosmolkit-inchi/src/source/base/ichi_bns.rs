@@ -13482,7 +13482,7 @@ pub(crate) fn BalancedNetworkSearch(
         work_set(heap, tree, Vertex_s as Vertex, TREE_IN_1 as S_CHAR)?;
 
         loop {
-            let mut u = work_get(heap, scan_q, k)?;
+            let u = work_get(heap, scan_q, k)?;
             let mut b_u = FindBase(heap, u, base_ptr)?;
             let degree = GetVertexDegree(heap, pBNS, u)?;
             let mut n = 0;
@@ -13536,12 +13536,12 @@ pub(crate) fn BalancedNetworkSearch(
                         let switch_prim_u = work_get(heap, switch_edge, prim_u)?;
                         let avoids_t_prime = switch_prim_u[0] != prim_v
                             || Get2ndEdgeVertex(heap, pBNS, switch_prim_u)? != prim_u;
-                        let blocked_tacn_group = pBNS.type_TACN != 0
-                            && bIgnoreVertexNonTACN_group(heap, pBNS, prim_v, u, switch_edge)? != 0;
                         if work_get(heap, tree, prim_v)? >= TREE_IN_2BLOSS as S_CHAR
                             && avoids_t_prime
                             && b_u != b_v
-                            && !blocked_tacn_group
+                            && !(pBNS.type_TACN != 0
+                                && bIgnoreVertexNonTACN_group(heap, pBNS, prim_v, u, switch_edge)?
+                                    != 0)
                         {
                             n += 1;
                             work_set(heap, q_size_slot, 0, q_size)?;
@@ -13630,7 +13630,6 @@ pub(crate) fn BalancedNetworkSearch(
     heap.free(q_size_slot)?;
     result
 }
-
 #[allow(non_snake_case)]
 pub(crate) fn RunBalancedNetworkSearch(
     heap: &mut SourceHeap,

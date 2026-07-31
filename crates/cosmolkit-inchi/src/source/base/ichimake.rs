@@ -1273,11 +1273,11 @@ pub(crate) fn Create_INChI(
             taut.bNormalizationFlags = t_group_info.tni.bNormalizationFlags;
 
             inp2spATOM(
-                heap,
-                taut.at.as_const(),
-                num_inp_at,
-                at[TAUT_YES as usize],
-            )?;
+                    heap,
+                    taut.at.as_const(),
+                    num_inp_at,
+                    at[TAUT_YES as usize],
+                )?;
             ret = set_stereo_parity(
                 pCG,
                 heap,

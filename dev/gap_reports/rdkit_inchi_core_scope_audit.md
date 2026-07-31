@@ -262,6 +262,56 @@ The two conditions in Step 5311 now execute and pass:
 - Revised exposure gate: the Step 5309 stop is superseded for the four audited toolkit-neutral scalar APIs only. Integration may proceed because every source-defined selected behavior is closed exactly and the one audited official-C undefined path has the human-authorized deterministic structured Rust error. This is not an exact-parity result for that path and does not authorize any other undefined, unverified, or unsupported path.
 - Remaining selected active call graph: no source-implementation Port unit remains. One selected source location retains an open first-axis marker solely for the authorized undefined path; it does not permit a heuristic, placeholder, partial result, silent fallback, production FFI, external production command, or SMILES/MolBlock transit.
 
+## Schematic Issue 11 Pointer Regression Reaudit
+
+Eight valid rows in `tests/smiles_5000.smi` previously failed Rust InChI
+generation with `SourceHeapError::PointerOutOfBounds`: `440`, `904`, `2040`,
+`2556`, `3248`, `3620`, `3811`, and `4944`. The failing active call path was:
+
+```text
+RunBalancedNetworkSearch
+  -> BalancedNetworkSearch
+  -> bIgnoreVertexNonTACN_group
+  -> GetPrevVertex
+```
+
+The source defect was in the existing `BalancedNetworkSearch` port, not a
+missing function. Official `ichi_bns.c:10951-10957` evaluates
+`bIgnoreVertexNonTACN_group(pBNS, prim(v), u, SwitchEdge)` only after
+`TREE_IS_S_REACHABLE(prim(v))`, the T-prime edge exclusion, and `b_u != b_v`
+have all succeeded. Rust had evaluated that helper before the enclosing
+condition, so it followed an official-C-unreachable `SwitchEdge[-6]` path.
+The Rust expression at `crates/cosmolkit-inchi/src/source/base/ichi_bns.rs:13540`
+now keeps the fallible helper call in the same lazy `&&` position as the
+official source. No pointer bound was widened, no error was swallowed, and no
+input-specific branch, heuristic, fallback, FFI, or external production call
+was added.
+
+The focused command was:
+
+```bash
+cargo test -q -p cosmolkit-core \
+  --features op-contracts-strict \
+  --lib \
+  inchi::tests::inchi_generation_matches_chematic_issue_11_pointer_regressions \
+  -- --exact --nocapture
+```
+
+The main harness executed exactly one matching test and reported `1 passed; 0
+failed; 2573 filtered out`. The test covers all eight original failures and
+asserts the complete pinned-RDKit InChI string, official warning return code
+`1`, and complete InChIKey for every row.
+
+After rebuilding the Python extension from the repaired Rust source, a
+fail-closed public-entry comparison parsed every corpus row independently with
+pinned RDKit `2026.03.1` and COSMolKit, then compared
+`rdkit.Chem.MolToInchi` with `cosmolkit.Chem.MolToInchi` by string equality.
+The result was exactly `5000` equal InChI strings, `0` mismatches, `0` RDKit
+parse errors, `0` COSMolKit parse errors, `0` RDKit generation errors, and `0`
+COSMolKit generation errors. Any nonzero failure category made the harness
+exit nonzero. This regression closes no new function and changes no existing
+source or performance marker.
+
 ## Frozen And Excluded Active Definitions
 
 Every configured active definition outside the five-root callback-complete closure is frozen or unscheduled below. A `completed-frozen` row keeps its existing Rust code but receives no further Port or parity step. An `excluded-unported` row is not part of the new plan.

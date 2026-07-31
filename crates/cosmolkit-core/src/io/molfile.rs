@@ -159,6 +159,7 @@ M  END
             Some(CoordinateDimension::TwoD)
         );
         assert!(as_2d.molecule.coordinates_2d().is_some());
+        assert!(as_2d.molecule.conformers_3d().is_empty());
 
         let as_3d = read_mol_record_from_str_with_params(
             FLAT_MOL,
@@ -168,8 +169,9 @@ M  END
             },
         )
         .unwrap();
-        assert!(as_3d.molecule.coordinates_2d().is_some());
+        assert!(as_3d.molecule.coordinates_2d().is_none());
         assert_eq!(as_3d.molecule.conformers_3d().len(), 1);
+        assert!(as_3d.molecule.conformers_3d()[0].is_3d());
     }
 
     #[test]

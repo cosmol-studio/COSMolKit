@@ -84,12 +84,31 @@ jobs:
                   path: tests/golden/${{ env.COSMOLKIT_PARITY_PROFILE }}
                   key: ${{ steps.rdkit_golden_cache.outputs.cache-primary-key }}
 
-            - name: Run cosmolkit-core tests with coverage instrumentation
+            - name: Restore strict 5000 InChI golden cache
+              id: strict_5000_inchi_golden_cache
+              uses: actions/cache/restore@v4
+              with:
+                  path: tests/golden/smiles_5000/inchi.jsonl
+                  key: rdkit-goldens-${{ runner.os }}-smiles_5000-inchi-v1-${{ hashFiles('uv.lock', 'pyproject.toml', 'tests/smiles_5000.smi', 'tests/scripts/gen_all_rdkit_goldens.py', 'tests/scripts/gen_rdkit_inchi_golden.py') }}
+
+            - name: Regenerate strict 5000 InChI golden
+              if: steps.strict_5000_inchi_golden_cache.outputs.cache-hit != 'true'
+              run: |
+                  .venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --profile smiles_5000 --suite inchi --clean --jobs 1
+
+            - name: Save strict 5000 InChI golden cache
+              if: steps.strict_5000_inchi_golden_cache.outputs.cache-hit != 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: tests/golden/smiles_5000/inchi.jsonl
+                  key: ${{ steps.strict_5000_inchi_golden_cache.outputs.cache-primary-key }}
+
+            - name: Run core, InChI, and ring tests with coverage instrumentation
               id: cov_run
               continue-on-error: true
               run: |
                   cargo llvm-cov clean --workspace
-                  cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --no-report
+                  cargo llvm-cov -p cosmolkit-core -p cosmolkit-inchi -p cosmolkit-ringdecomposer --release --features cosmolkit-core/op-contracts-strict --no-report
 
             - name: Run exhaustive SMILES writer parity with coverage instrumentation
               id: smiles_writer_full
@@ -105,13 +124,19 @@ jobs:
               run: |
                   cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_sdf_read_parity --no-report -- --ignored sdf_read_all_apis_and_parameters_match_rdkit
 
+            - name: Run strict 5000 InChI parity with coverage instrumentation
+              id: strict_5000_inchi
+              continue-on-error: true
+              run: |
+                  COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_inchi_parity --no-report -- inchi_matches_pinned_rdkit_for_every_active_profile_row --exact
+
             - name: Generate HTML coverage report
               if: always()
-              run: cargo llvm-cov report -p cosmolkit-core --release --html --output-dir target/llvm-cov/html
+              run: cargo llvm-cov report -p cosmolkit-core -p cosmolkit-inchi -p cosmolkit-ringdecomposer --release --html --output-dir target/llvm-cov/html
 
             - name: Generate LCOV coverage report
               if: always()
-              run: cargo llvm-cov report -p cosmolkit-core --release --lcov --output-path lcov.info
+              run: cargo llvm-cov report -p cosmolkit-core -p cosmolkit-inchi -p cosmolkit-ringdecomposer --release --lcov --output-path lcov.info
 
             - name: Upload HTML coverage artifact
               if: always()
@@ -133,7 +158,7 @@ jobs:
                   verbose: true
 
             - name: Fail workflow if tests failed
-              if: steps.cov_run.outcome == 'failure' || steps.smiles_writer_full.outcome == 'failure' || steps.sdf_reader_full.outcome == 'failure'
+              if: steps.cov_run.outcome == 'failure' || steps.smiles_writer_full.outcome == 'failure' || steps.sdf_reader_full.outcome == 'failure' || steps.strict_5000_inchi.outcome == 'failure'
               run: |
                   echo "Rust tests failed. Coverage artifacts were still generated and uploaded."
                   exit 1

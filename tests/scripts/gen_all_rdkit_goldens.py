@@ -24,6 +24,11 @@ PROFILE_GOLDEN_DIRS = {
 
 GENERATOR_SPECS: list[dict[str, object]] = [
     {
+        "script": "gen_rdkit_inchi_golden.py",
+        "output": "inchi.jsonl",
+        "suites": {"default", "strict-corpus", "inchi", "all"},
+    },
+    {
         "script": "gen_rdkit_v2000_minimal_golden.py",
         "output": "molblock_v2000_minimal.jsonl",
         "suites": {"default", "strict-corpus", "all"},
@@ -181,6 +186,7 @@ def parse_args() -> argparse.Namespace:
             "iterative",
             "fingerprint",
             "delete-substructs",
+            "inchi",
             "all",
             *sorted(SUITE_ALIASES),
         ],
