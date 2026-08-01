@@ -1,0 +1,3 @@
+{"fixture":"gemmi_chemcomp_sample.cif","origin_kind":"repository_authored_synthetic","source":"pre-migration COSMolKit integration fixture","bytes":180,"sha256":"8a4ae9eded2a8c5a6230265e484f1553136dcbfd61ff288b1af9bab3256406b4"}
+{"fixture":"gemmi_full_feature_sample.cif","origin_kind":"repository_authored_synthetic","source":"pre-migration COSMolKit integration fixture","bytes":5441,"sha256":"4f6bab1d8073e223da1126906ca3a46e9a49f778f3d7e19fb980c82d3a9a145d"}
+{"fixture":"gemmi_full_feature_sample.pdb","origin_kind":"repository_authored_synthetic","source":"pre-migration COSMolKit integration fixture","bytes":2097,"sha256":"ecc00fd45b69a6a6f4175097179375fc4f1a6d448cc0cbc1dae054dbff8fd63c"}

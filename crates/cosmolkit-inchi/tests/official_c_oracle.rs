@@ -26,9 +26,9 @@ fn read_json(path: &Path) -> Value {
 #[test]
 fn official_c_oracle_version_and_provenance() {
     let root = repository_root();
-    let schema_path = root.join("tests/golden/inchi/official_c_oracle.schema.json");
-    let golden_path = root.join("tests/golden/inchi/official_c_oracle_version.jsonl");
-    let runner_path = root.join("tests/tools/inchi_official_c_oracle/run.sh");
+    let schema_path = root.join("testdata/inchi/reference/official_c_oracle.schema.json");
+    let golden_path = root.join("testdata/inchi/reference/official_c_oracle_version.jsonl");
+    let runner_path = root.join("tools/oracles/official_inchi/run.sh");
 
     let schema = read_json(&schema_path);
     assert_eq!(

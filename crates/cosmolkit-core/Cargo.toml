@@ -39,4 +39,5 @@ usvg = "0.47"
 resvg = "0.47"
 
 [dev-dependencies]
+cosmolkit-test-support = { path = "../cosmolkit-test-support" }
 tempfile = "3"

@@ -52,9 +52,13 @@ def assert_coord_rows_match_atoms(mol: cosmolkit.Molecule) -> None:
 
 
 def regression_fixture_text(name: str) -> str:
-    return (Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "regression" / name).read_text(
-        encoding="utf-8"
-    )
+    return (
+        Path(__file__).resolve().parents[2]
+        / "testdata"
+        / "stereo"
+        / "fixtures"
+        / name
+    ).read_text(encoding="utf-8")
 
 
 KEKULE_BENZENE_MOL = """kekule_benzene
@@ -394,7 +398,7 @@ def test_conformer_generation_python_api_exposes_native_embedding_and_parameters
 def test_conformer_generation_failure_tracking_and_forcefield_post_optimization():
     fixture = (
         Path(__file__).resolve().parents[2]
-        / "tests/fixtures/rdkit_builtin/Code/GraphMol/DistGeomHelpers/chirality_failure_test.mol"
+        / "testdata/rdkit_builtin/fixtures/Code/GraphMol/DistGeomHelpers/chirality_failure_test.mol"
     )
     chiral = cosmolkit.Molecule.read_mol(str(fixture), coordinate_dim="auto", sanitize=True)
     chiral_params = cosmolkit.EmbedParameters.etkdg_v3()

@@ -28,7 +28,7 @@ fn load_golden() -> Vec<MaccsRecord> {
     assert!(
         path.exists(),
         "missing RDKit MACCS fingerprint golden: {}. Regenerate fingerprint goldens with \
-         .venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --profile {} --suite fingerprint --clean --jobs 4",
+         .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile {} --suite fingerprint --clean --jobs 4",
         path.display(),
         parity_data::profile_name(),
     );

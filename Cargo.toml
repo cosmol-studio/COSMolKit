@@ -3,6 +3,7 @@ members = [
     "crates/cosmolkit-core",
     "crates/cosmolkit-inchi",
     "crates/cosmolkit-ringdecomposer",
+    "crates/cosmolkit-test-support",
     "crates/cosmolkit",
     "crates/cosmolkit-macros",
     "python",

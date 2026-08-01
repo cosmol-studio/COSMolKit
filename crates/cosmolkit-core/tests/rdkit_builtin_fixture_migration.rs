@@ -38,7 +38,7 @@ fn repo_root() -> PathBuf {
 }
 
 fn fixture_root() -> PathBuf {
-    repo_root().join("tests/fixtures/rdkit_builtin")
+    repo_root().join("testdata/rdkit_builtin/fixtures")
 }
 
 fn load_golden() -> Vec<BuiltinFixtureRecord> {

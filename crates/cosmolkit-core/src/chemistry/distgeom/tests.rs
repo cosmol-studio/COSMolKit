@@ -9175,7 +9175,7 @@ fn test_empty() {
 
 #[test]
 fn dg_bounds_matrix_returns_error_instead_of_panicking_for_3rj7_re_complex() {
-    let mol2 = include_str!("../../../tests/fixtures/3rj7_ligand.mol2");
+    let mol2 = include_str!("../../../../../testdata/mol2/fixtures/3rj7_ligand.mol2");
     let record = read_mol2_from_str(mol2)
         .expect("3rj7 mol2 should parse")
         .expect("3rj7 mol2 should contain a molecule");

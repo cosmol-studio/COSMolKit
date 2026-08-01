@@ -428,7 +428,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/official_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--base26-triplet-1-records")
@@ -520,7 +520,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/official_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--base26-triplet-2-records")
@@ -614,7 +614,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/official_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--base26-triplet-3-records")
@@ -709,7 +709,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/official_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--base26-triplet-4-records")
@@ -810,7 +810,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/official_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--base26-dublet-for-bits-28-to-36-records")
@@ -919,7 +919,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/official_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--base26-dublet-for-bits-56-to-64-records")
@@ -1014,7 +1014,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/official_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--get-xtra-hash-major-hex-records")
@@ -1109,7 +1109,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/official_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--get-xtra-hash-minor-hex-records")

@@ -26,7 +26,7 @@ fn ensure_golden_exists() {
     assert!(
         path.exists(),
         "missing RDKit tetrahedral stereo geometry golden: {}. Generate it before running tests:\n\
-         uv sync --group dev && .venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --profile {} --suite all --clean --jobs 4",
+         uv sync --group dev && .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile {} --suite all --clean --jobs 4",
         path.display(),
         parity_data::profile_name()
     );
@@ -79,7 +79,7 @@ fn tetrahedral_stereo_ordered_ligands_match_rdkit_etkdg_positive_volume() {
     let golden = load_golden();
     assert!(
         golden.len() >= 7,
-        "golden should cover tetrahedral stereocenters in tests/smiles.smi"
+        "golden should cover tetrahedral stereocenters in testdata/smiles/corpus/smiles_small.smi"
     );
 
     for (row_idx, record) in golden.iter().enumerate() {

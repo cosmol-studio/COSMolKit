@@ -25,11 +25,11 @@ fn repo_root() -> PathBuf {
 }
 
 fn inventory_path() -> PathBuf {
-    repo_root().join("tests/fixtures/conformer_generation/rdkit_inventory.jsonl")
+    repo_root().join("testdata/conformer/fixtures/rdkit_inventory.jsonl")
 }
 
 fn fixture_root() -> PathBuf {
-    repo_root().join("tests/fixtures/conformer_generation")
+    repo_root().join("testdata/conformer/fixtures")
 }
 
 fn load_inventory() -> Vec<ConformerGenerationFixtureRecord> {

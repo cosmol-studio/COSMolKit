@@ -1,0 +1,12 @@
+[package]
+name = "cosmolkit-test-support"
+description = "Repository-local test data and expected-output support for COSMolKit"
+version.workspace = true
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"

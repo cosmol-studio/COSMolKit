@@ -2097,7 +2097,7 @@ fn graph_feature_golden_has_one_record_per_smiles() {
 
 #[test]
 fn graph_feature_golden_records_chiral_centers_with_include_unassigned_branches() {
-    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let golden = load_golden().expect("should read generated graph_features.jsonl");
     for (idx, record) in golden.iter().enumerate() {
         if !record.rdkit_ok {
             continue;
@@ -2125,7 +2125,7 @@ fn graph_feature_golden_records_chiral_centers_with_include_unassigned_branches(
 
 #[test]
 fn graph_feature_golden_records_flag_possible_stereo_centers_branch() {
-    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let golden = load_golden().expect("should read generated graph_features.jsonl");
     let mut possible_center_rows = 0usize;
     let mut possible_center_atoms = 0usize;
 
@@ -2176,7 +2176,7 @@ fn graph_feature_golden_records_flag_possible_stereo_centers_branch() {
 
 #[test]
 fn graph_feature_golden_records_isotopes_from_smiles() {
-    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let golden = load_golden().expect("should read generated graph_features.jsonl");
     let mut isotopes = Vec::new();
 
     for record in golden.iter().filter(|record| record.rdkit_ok) {
@@ -2196,7 +2196,7 @@ fn graph_feature_golden_records_isotopes_from_smiles() {
 
 #[test]
 fn graph_feature_golden_preserves_rdkit_cip_fields_for_chiral_atoms() {
-    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let golden = load_golden().expect("should read generated graph_features.jsonl");
     let mut chiral_atoms = 0usize;
     let mut cip_code_count = 0usize;
     let mut cip_rank_count = 0usize;
@@ -2253,7 +2253,7 @@ fn graph_feature_golden_preserves_rdkit_cip_fields_for_chiral_atoms() {
 
 #[test]
 fn graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules() {
-    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let golden = load_golden().expect("should read generated graph_features.jsonl");
 
     for (idx, record) in golden.iter().enumerate() {
         let ours = Molecule::from_smiles(&record.smiles);
@@ -2356,7 +2356,7 @@ fn graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules(
 
 #[test]
 fn graph_features_match_rdkit_golden_for_addhs_removehs_roundtrip_branch() {
-    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let golden = load_golden().expect("should read generated graph_features.jsonl");
 
     for (idx, record) in golden.iter().enumerate() {
         let ours = Molecule::from_smiles(&record.smiles);
@@ -2441,7 +2441,7 @@ fn graph_features_match_rdkit_golden_for_addhs_removehs_roundtrip_branch() {
 
 #[test]
 fn graph_features_match_rdkit_golden_for_flag_possible_stereo_centers_branch() {
-    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let golden = load_golden().expect("should read generated graph_features.jsonl");
 
     for (idx, record) in golden.iter().enumerate() {
         let ours = Molecule::from_smiles(&record.smiles);
@@ -2504,7 +2504,7 @@ fn graph_features_match_rdkit_golden_for_flag_possible_stereo_centers_branch() {
 #[test]
 fn graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules_in_parallel_batch()
 {
-    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let golden = load_golden().expect("should read generated graph_features.jsonl");
     let smiles = golden
         .iter()
         .map(|record| record.smiles.clone())
@@ -2573,7 +2573,7 @@ fn graph_features_match_rdkit_golden_for_direct_and_explicit_hydrogen_molecules_
 
 #[test]
 fn graph_features_match_rdkit_golden_for_addhs_removehs_roundtrip_branch_in_parallel_batch() {
-    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let golden = load_golden().expect("should read generated graph_features.jsonl");
     let smiles = golden
         .iter()
         .map(|record| record.smiles.clone())
@@ -2624,7 +2624,7 @@ fn graph_features_match_rdkit_golden_for_addhs_removehs_roundtrip_branch_in_para
 
 #[test]
 fn graph_features_match_rdkit_golden_for_flag_possible_stereo_centers_branch_in_parallel_batch() {
-    let golden = load_golden().expect("should read tests/golden/graph_features.jsonl");
+    let golden = load_golden().expect("should read generated graph_features.jsonl");
     let smiles = golden
         .iter()
         .map(|record| record.smiles.clone())

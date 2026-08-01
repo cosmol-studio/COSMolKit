@@ -15,7 +15,11 @@ operations, or macro-controlled operation machinery, read `dev/README.md`.
   generated tables.
 - `crates/cosmolkit/`: Rust facade and top-level public API.
 - `python/`: PyO3 bindings, Python packaging, examples, and docs.
-- `tests/`: integration, regression, parity, and golden-test data.
+- `crates/<crate>/tests/`: public integration, regression, and parity tests for
+  the owning crate.
+- `testdata/`: shared committed fixtures/corpora and generated expected-data
+  locations; see `dev/repository_organization_policy.md`.
+- `tools/testdata/`: explicit reference-data preparation entrypoints.
 - `dev/`: normative design documents and development operating rules.
 
 Keep public APIs in `lib.rs` or narrow public modules. Keep implementation

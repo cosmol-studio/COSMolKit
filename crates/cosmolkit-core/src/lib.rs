@@ -75,7 +75,7 @@ pub mod properties;
 pub mod search;
 pub mod support;
 #[cfg(test)]
-mod test_data;
+pub(crate) use cosmolkit_test_support as test_data;
 
 pub use bio::invariants as bio_invariants;
 pub use bio::ops as bio_ops;

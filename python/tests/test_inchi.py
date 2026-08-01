@@ -59,7 +59,7 @@ def test_inchi_python_exposes_source_diagnostic_as_structured_warning() -> None:
 def test_inchi_python_rejects_unsupported_molecule_state_structurally() -> None:
     fixture = (
         REPO_ROOT
-        / "tests/fixtures/rdkit_builtin/Code/GraphMol/FileParsers/Issue3432136_1.mol"
+        / "testdata/rdkit_builtin/fixtures/Code/GraphMol/FileParsers/Issue3432136_1.mol"
     )
     molecule = cosmolkit.Molecule.read_mol_from_str(
         fixture.read_text(), sanitize=False, remove_hs=False

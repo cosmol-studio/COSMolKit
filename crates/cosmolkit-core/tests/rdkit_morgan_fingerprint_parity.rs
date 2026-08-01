@@ -77,7 +77,7 @@ fn load_golden() -> Vec<MorganRecord> {
     assert!(
         path.exists(),
         "missing RDKit Morgan fingerprint golden: {}. Regenerate all goldens with \
-         .venv/bin/python tests/scripts/gen_all_rdkit_goldens.py --python .venv/bin/python --profile {} --suite fingerprint --clean --jobs 4",
+         .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile {} --suite fingerprint --clean --jobs 4",
         parity_data::profile_name(),
         path.display()
     );
@@ -789,7 +789,7 @@ fn morgan_fingerprint_golden_has_one_record_per_smiles() {
     assert_eq!(
         records.len(),
         expected,
-        "Morgan fingerprint golden row count must match tests/smiles.smi"
+        "Morgan fingerprint golden row count must match testdata/smiles/corpus/smiles_small.smi"
     );
     assert!(
         records.iter().any(|record| {

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cosmol-studio/COSMolKit/testdata/inchi/reference/official_c_oracle.schema.json",
+  "title": "COSMolKit official InChI C oracle record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "oracle",
+    "case_id",
+    "operation",
+    "input",
+    "output"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "cosmolkit-inchi-official-c-v1"
+    },
+    "oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "tag",
+        "commit",
+        "tree_sha256",
+        "api_version"
+      ],
+      "properties": {
+        "project": { "const": "IUPAC InChI" },
+        "tag": { "const": "v1.07.5" },
+        "commit": {
+          "const": "11a87982bb518f57ac013f0b258c283655e1ea1d"
+        },
+        "tree_sha256": {
+          "const": "4f903503c370a6dd21de0a2e6beb77e076a1cd6063b34b6bde4b57d91f9c4edd"
+        },
+        "api_version": { "const": "1.07.5" }
+      }
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "operation": {
+      "enum": [
+        "version",
+        "generate",
+        "generate_std",
+        "validate",
+        "inchi_to_inchi",
+        "inchi_to_inchi_atom",
+        "inchi_key",
+        "read_structure",
+        "read_aux_info"
+      ]
+    },
+    "input": {
+      "type": "object"
+    },
+    "output": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "type": "integer" }
+      }
+    }
+  }
+}

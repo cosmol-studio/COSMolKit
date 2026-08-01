@@ -1327,19 +1327,14 @@ mod tests {
     };
     use crate::search::query::{atom_matches_query, bond_matches_query};
     use crate::{Molecule, SubstructMatchParams, get_substruct_matches_with_params};
-    use std::path::PathBuf;
 
     const VALID_BASE_PARAM_LINE: &str = "[C:1][C:2][C:3][C:4] 1 0 -1 0 1 0 -1 0 1 0 -1 0\n";
     const VALID_OVERRIDE_PARAM_LINE: &str =
         "[N:1][C:2][O:3][S:4] -1 1.1 1 1.2 -1 1.3 1 1.4 -1 1.5 1 1.6\n";
 
-    fn repo_root() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-    }
-
-    fn conformer_fixture_path(relative_path: &str) -> PathBuf {
-        repo_root()
-            .join("tests/fixtures/conformer_generation")
+    fn conformer_fixture_path(relative_path: &str) -> std::path::PathBuf {
+        crate::test_data::repo_root()
+            .join("testdata/conformer/fixtures")
             .join(relative_path)
     }
 

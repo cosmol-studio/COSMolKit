@@ -1000,7 +1000,7 @@ pub(crate) mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/official_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--inchi-key-records")

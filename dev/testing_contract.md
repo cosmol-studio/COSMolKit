@@ -544,8 +544,8 @@ Known failures must not be implemented as silent skips.
 Suggested file:
 
 ```text
-tests/known_failures/rdkit_parity_known_failures.jsonl
-tests/known_failures/topology_invariants.jsonl
+testdata/known_failures/rdkit_parity_known_failures.jsonl
+testdata/known_failures/topology_invariants.jsonl
 ```
 
 Example:
@@ -777,13 +777,15 @@ Breaking schema changes must update the schema version.
 Recommended corpus organization:
 
 ```text
-tests/corpus/
-  topology/
+testdata/
+  topology/corpus/
     core.csv
     cow_small.csv
-  sdf_v2000_cases.sdf
-  sdf_v3000_cases.sdf
-  known_edge_cases.smi
+  sdf/corpus/
+    sdf_v2000_cases.sdf
+    sdf_v3000_cases.sdf
+  smiles/corpus/
+    known_edge_cases.smi
 ```
 
 Topology CSV corpora should include stable case IDs and tags:

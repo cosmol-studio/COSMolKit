@@ -6,8 +6,8 @@ use cosmolkit_core::{
     },
 };
 
-const ONE_AID_SDF: &str = include_str!("../../../tests/fixtures/regression/1aid_ligand.sdf");
-const ONE_AID_MOL2: &str = include_str!("../../../tests/fixtures/regression/1aid_ligand.mol2");
+const ONE_AID_SDF: &str = include_str!("../../../testdata/stereo/fixtures/1aid_ligand.sdf");
+const ONE_AID_MOL2: &str = include_str!("../../../testdata/stereo/fixtures/1aid_ligand.mol2");
 
 fn assert_1aid_tetrahedral_stereo_is_preserved(molecule: &cosmolkit_core::Molecule, source: &str) {
     assert_eq!(

@@ -8747,6 +8747,9 @@ mod tests {
 
     #[test]
     fn constrained_depiction_hard_constraint_uses_reference_core_coords_and_keeps_new_conformer() {
+        let _lock = prefer_coordgen_test_lock().lock().unwrap();
+        let _guard = PreferCoordGenGuard::capture();
+        set_prefer_coord_gen(false);
         let mut ref_builder = MoleculeBuilder::new();
         let r0 = ref_builder.add_atom(AtomSpec::new(Element::C));
         let r1 = ref_builder.add_atom(AtomSpec::new(Element::C));

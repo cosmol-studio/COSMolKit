@@ -8,7 +8,7 @@ python/cosmolkit.pyi
 .maturin/
 .zed/
 
-tests/golden
+/testdata/*/expected/
 
 tmp/
 python/examples/output

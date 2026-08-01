@@ -5908,7 +5908,7 @@ mod tests {
             .parent()
             .and_then(std::path::Path::parent)
             .expect("crate must be below repository root");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(runner)
             .arg("--inchi-to-inchi-key-records")
@@ -6228,7 +6228,7 @@ mod tests {
             .parent()
             .and_then(std::path::Path::parent)
             .expect("crate must be below repository root");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(runner)
             .arg("--mol-to-inchi-key-records")
@@ -8027,7 +8027,7 @@ mod tests {
             .parent()
             .and_then(std::path::Path::parent)
             .expect("crate must be below repository root");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(runner)
             .arg("--mol-to-inchi-records")
@@ -8820,7 +8820,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--r-clean-up-records")
@@ -8928,7 +8928,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--fix-option-symbol-records")
@@ -9598,7 +9598,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--inchi-to-mol-records")
@@ -10095,7 +10095,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg(selector)
@@ -10234,7 +10234,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--clean-up-records")
@@ -10415,7 +10415,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--valence5n-cleanup5-records")
@@ -14009,7 +14009,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--valence5n-cleanup1-records")
@@ -14155,7 +14155,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--valence5n-cleanup2-records")
@@ -14348,7 +14348,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--neighboring-si-records")
@@ -14616,7 +14616,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--valence4n-cleanup1-records")
@@ -14882,7 +14882,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--valence4n-cleanup2-records")
@@ -15052,7 +15052,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--assign-bond-dirs-records")
@@ -15327,7 +15327,7 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/rdkit_inchi_cpp_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/rdkit_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--find-alternating-bonds-records")

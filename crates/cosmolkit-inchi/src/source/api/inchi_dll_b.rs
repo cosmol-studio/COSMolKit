@@ -6333,7 +6333,7 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
             .parent()
             .and_then(Path::parent)
             .expect("cosmolkit-inchi must be located under crates/");
-        let runner = repository_root.join("tests/tools/inchi_official_c_oracle/run.sh");
+        let runner = repository_root.join("tools/oracles/official_inchi/run.sh");
         let oracle = Command::new("sh")
             .arg(&runner)
             .arg("--inchi-to-inchi-atom-records")

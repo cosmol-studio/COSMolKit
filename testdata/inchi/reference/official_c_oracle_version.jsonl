@@ -1,0 +1,1 @@
+{"schema_version":"cosmolkit-inchi-official-c-v1","oracle":{"project":"IUPAC InChI","tag":"v1.07.5","commit":"11a87982bb518f57ac013f0b258c283655e1ea1d","tree_sha256":"4f903503c370a6dd21de0a2e6beb77e076a1cd6063b34b6bde4b57d91f9c4edd","api_version":"1.07.5"},"case_id":"oracle-version","operation":"version","input":{"full_description":false},"output":{"status":0,"value":"1.07.5"}}

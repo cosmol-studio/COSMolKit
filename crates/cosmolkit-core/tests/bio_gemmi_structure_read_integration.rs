@@ -4,7 +4,7 @@ use cosmolkit_core::{BioConnectionType, BioCoorFormat, BioStructure, EntityKind}
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/bio")
+        .join("../../testdata/bio/fixtures")
         .join(name)
 }
 

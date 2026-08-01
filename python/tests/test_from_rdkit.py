@@ -10,7 +10,13 @@ Point3D = pytest.importorskip("rdkit.Geometry").Point3D
 
 
 def _load_smiles_cases():
-    corpus = Path(__file__).resolve().parents[2] / "tests" / "smiles.smi"
+    corpus = (
+        Path(__file__).resolve().parents[2]
+        / "testdata"
+        / "smiles"
+        / "corpus"
+        / "smiles_small.smi"
+    )
     smiles = [
         line.strip()
         for line in corpus.read_text().splitlines()

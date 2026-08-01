@@ -52,7 +52,7 @@ fn load_golden() -> Vec<MmffBuiltinRecord> {
 
 fn expected_fixture_rows(fixture: &str) -> usize {
     let path = repo_root()
-        .join("tests/fixtures/forcefield/mmff/rdkit")
+        .join("testdata/forcefield/fixtures/mmff/rdkit")
         .join(fixture);
     std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))

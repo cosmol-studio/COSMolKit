@@ -13676,7 +13676,7 @@ $$$$
     #[test]
     fn detect_atropisomer_chirality_matches_rdkit_fixture_macrocycle() {
         let input = include_str!(
-            "../../../../tests/fixtures/rdkit_builtin/Code/GraphMol/FileParsers/atropisomers/macrocycle-5-meta-Cl-ortho-hash.sdf"
+            "../../../../testdata/rdkit_builtin/fixtures/Code/GraphMol/FileParsers/atropisomers/macrocycle-5-meta-Cl-ortho-hash.sdf"
         );
         let record = read_sdf_from_str_with_params(
             input,
