@@ -41,6 +41,10 @@ jobs:
             COSMOLKIT_GOLDEN_SUITE: ${{ github.event.inputs.golden_suite || 'all' }}
             COSMOLKIT_RUN_EXHAUSTIVE_PARITY: ${{ github.event.inputs.run_exhaustive_parity || 'false' }}
             RDKIT_EXPECTED_CACHE_SCHEMA: v2
+            # Optimization and fat LTO can emit zero-hash coverage mappings
+            # that disagree with records from static test binaries.
+            CARGO_PROFILE_RELEASE_OPT_LEVEL: "0"
+            CARGO_PROFILE_RELEASE_LTO: "false"
 
         steps:
             - name: Checkout
@@ -128,6 +132,7 @@ jobs:
             - name: Run core, InChI, and ring tests with coverage instrumentation
               id: cov_run
               continue-on-error: true
+              shell: bash
               run: |
                   cargo llvm-cov clean --workspace
                   cargo llvm-cov -p cosmolkit-core -p cosmolkit-inchi -p cosmolkit-ringdecomposer --release --features cosmolkit-core/op-contracts-strict --no-report
@@ -136,6 +141,7 @@ jobs:
               id: smiles_writer_full
               if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
               continue-on-error: true
+              shell: bash
               run: |
                   cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_smiles_writer_parity --no-report -- --ignored smiles_writer_matches_rdkit_golden_across_param_branches
 
@@ -143,22 +149,46 @@ jobs:
               id: sdf_reader_full
               if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
               continue-on-error: true
+              shell: bash
               run: |
                   cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_sdf_read_parity --no-report -- --ignored sdf_read_all_apis_and_parameters_match_rdkit
 
             - name: Run strict 5000 InChI parity with coverage instrumentation
               id: strict_5000_inchi
               continue-on-error: true
+              shell: bash
               run: |
                   COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_inchi_parity --no-report -- inchi_matches_pinned_rdkit_for_every_active_profile_row --exact
 
             - name: Generate HTML coverage report
               if: always()
-              run: cargo llvm-cov report -p cosmolkit-core -p cosmolkit-inchi -p cosmolkit-ringdecomposer --release --html --output-dir target/llvm-cov/html
+              shell: bash
+              run: |
+                  report_log="$(mktemp)"
+                  if ! cargo llvm-cov report -p cosmolkit-core -p cosmolkit-inchi -p cosmolkit-ringdecomposer --release --html --output-dir target/llvm-cov/html 2>"$report_log"; then
+                      cat "$report_log" >&2
+                      exit 1
+                  fi
+                  cat "$report_log" >&2
+                  if grep -Eq '[0-9]+ functions have mismatched data' "$report_log"; then
+                      echo "Coverage profile data do not match the instrumented objects." >&2
+                      exit 1
+                  fi
 
             - name: Generate LCOV coverage report
               if: always()
-              run: cargo llvm-cov report -p cosmolkit-core -p cosmolkit-inchi -p cosmolkit-ringdecomposer --release --lcov --output-path lcov.info
+              shell: bash
+              run: |
+                  report_log="$(mktemp)"
+                  if ! cargo llvm-cov report -p cosmolkit-core -p cosmolkit-inchi -p cosmolkit-ringdecomposer --release --lcov --output-path lcov.info 2>"$report_log"; then
+                      cat "$report_log" >&2
+                      exit 1
+                  fi
+                  cat "$report_log" >&2
+                  if grep -Eq '[0-9]+ functions have mismatched data' "$report_log"; then
+                      echo "Coverage profile data do not match the instrumented objects." >&2
+                      exit 1
+                  fi
 
             - name: Upload HTML coverage artifact
               if: always()

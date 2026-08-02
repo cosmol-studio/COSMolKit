@@ -49,10 +49,9 @@ First task for every new continuation:
 3. Keep `work.md` as the immediate execution queue and `porting_inventory.md`
    as the status ledger.
 
-Do not mark a README claim complete merely because a skeleton, old-core
-implementation, partial subset, or experimental branch exists. Unsupported or
-partial behavior must remain visible in the inventory and must fail explicitly
-in code.
+Do not mark a README claim complete merely because a skeleton, partial subset,
+or experimental branch exists. Unsupported or partial behavior must remain
+visible in the inventory and must fail explicitly in code.
 
 Phase 0 is a code gate, not a documentation cleanup phase. An agent must not
 advance past Phase 0 after only editing Markdown. It may update Markdown to
@@ -81,8 +80,8 @@ operation/support contracts.
    by the source behavior, add it when it fits project policy: value-style API,
    no public mutable storage, operation-controlled mutation.
 
-5. **No old-core dependency.** Do not depend on `crates/cosmolkit-core-old/`,
-   re-export from it, or silently copy old-core behavior.
+5. **Current and upstream sources are authoritative.** Do not silently copy
+   behavior from superseded implementations.
 
 6. **Reread normative documents** before each implementation step. At minimum:
    - `dev/README.md`

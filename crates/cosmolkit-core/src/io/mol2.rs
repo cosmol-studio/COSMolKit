@@ -264,156 +264,9 @@ fn parse_mol2_molecule_header_like_rdkit(
 }
 
 fn rdkit_atomic_number_for_symbol_like_rdkit(symbol: &str) -> Result<u8, Mol2ReadError> {
-    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/PeriodicTable.h :: getAtomicNumber
-    // RDKit✔️✔️: int getAtomicNumber(const std::string &elementSymbol) const {
-    // RDKit✔️✔️:   // this little optimization actually makes a measurable difference
-    // RDKit✔️✔️:   // in molecule-construction time
-    // RDKit✔️✔️:   int anum = -1;
-    // RDKit✔️✔️:   if (elementSymbol == "C") {
-    // RDKit✔️✔️:     anum = 6;
-    // RDKit✔️✔️:   } else if (elementSymbol == "N") {
-    // RDKit✔️✔️:     anum = 7;
-    // RDKit✔️✔️:   } else if (elementSymbol == "O") {
-    // RDKit✔️✔️:     anum = 8;
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     STR_UINT_MAP::const_iterator iter = byname.find(elementSymbol);
-    // RDKit✔️✔️:     if (iter != byname.end()) {
-    // RDKit✔️✔️:       anum = iter->second;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   POSTCONDITION(anum > -1, "Element '" + elementSymbol + "' not found");
-    // RDKit✔️✔️:   return anum;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/PeriodicTable.h :: getAtomicNumber
-    let atomic_number = match symbol {
-        "*" => 0,
-        "H" => 1,
-        "He" => 2,
-        "Li" => 3,
-        "Be" => 4,
-        "B" => 5,
-        "C" => 6,
-        "N" => 7,
-        "O" => 8,
-        "F" => 9,
-        "Ne" => 10,
-        "Na" => 11,
-        "Mg" => 12,
-        "Al" => 13,
-        "Si" => 14,
-        "P" => 15,
-        "S" => 16,
-        "Cl" => 17,
-        "Ar" => 18,
-        "K" => 19,
-        "Ca" => 20,
-        "Sc" => 21,
-        "Ti" => 22,
-        "V" => 23,
-        "Cr" => 24,
-        "Mn" => 25,
-        "Fe" => 26,
-        "Co" => 27,
-        "Ni" => 28,
-        "Cu" => 29,
-        "Zn" => 30,
-        "Ga" => 31,
-        "Ge" => 32,
-        "As" => 33,
-        "Se" => 34,
-        "Br" => 35,
-        "Kr" => 36,
-        "Rb" => 37,
-        "Sr" => 38,
-        "Y" => 39,
-        "Zr" => 40,
-        "Nb" => 41,
-        "Mo" => 42,
-        "Tc" => 43,
-        "Ru" => 44,
-        "Rh" => 45,
-        "Pd" => 46,
-        "Ag" => 47,
-        "Cd" => 48,
-        "In" => 49,
-        "Sn" => 50,
-        "Sb" => 51,
-        "Te" => 52,
-        "I" => 53,
-        "Xe" => 54,
-        "Cs" => 55,
-        "Ba" => 56,
-        "La" => 57,
-        "Ce" => 58,
-        "Pr" => 59,
-        "Nd" => 60,
-        "Pm" => 61,
-        "Sm" => 62,
-        "Eu" => 63,
-        "Gd" => 64,
-        "Tb" => 65,
-        "Dy" => 66,
-        "Ho" => 67,
-        "Er" => 68,
-        "Tm" => 69,
-        "Yb" => 70,
-        "Lu" => 71,
-        "Hf" => 72,
-        "Ta" => 73,
-        "W" => 74,
-        "Re" => 75,
-        "Os" => 76,
-        "Ir" => 77,
-        "Pt" => 78,
-        "Au" => 79,
-        "Hg" => 80,
-        "Tl" => 81,
-        "Pb" => 82,
-        "Bi" => 83,
-        "Po" => 84,
-        "At" => 85,
-        "Rn" => 86,
-        "Fr" => 87,
-        "Ra" => 88,
-        "Ac" => 89,
-        "Th" => 90,
-        "Pa" => 91,
-        "U" => 92,
-        "Np" => 93,
-        "Pu" => 94,
-        "Am" => 95,
-        "Cm" => 96,
-        "Bk" => 97,
-        "Cf" => 98,
-        "Es" => 99,
-        "Fm" => 100,
-        "Md" => 101,
-        "No" => 102,
-        "Lr" => 103,
-        "Rf" => 104,
-        "Db" => 105,
-        "Sg" => 106,
-        "Bh" => 107,
-        "Hs" => 108,
-        "Mt" => 109,
-        "Ds" => 110,
-        "Rg" => 111,
-        "Cn" => 112,
-        "Nh" | "Uut" => 113,
-        "Fl" => 114,
-        "Mc" | "Uup" => 115,
-        "Lv" => 116,
-        "Ts" => 117,
-        "Og" => 118,
-        _ => {
-            return Err(Mol2ReadError::Parse(format!(
-                "Element '{symbol}' not found"
-            )));
-        }
-    };
-    Ok(atomic_number)
+    crate::rdkit_atomic_number_from_symbol(symbol)
+        .ok_or_else(|| Mol2ReadError::Parse(format!("Element '{symbol}' not found")))
 }
-
 fn mol2_atom_spec_from_sybyl_symbol_like_rdkit(
     symbol: &str,
 ) -> Result<Option<AtomSpec>, Mol2ReadError> {
@@ -2388,6 +2241,31 @@ fn mol2_operation_error(error: crate::OperationError) -> Mol2ReadError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_periodic_table_delegation_covers_mol2_symbols_and_errors() {
+        for atomic_number in 0..=118 {
+            let symbol = crate::rdkit_element_symbol(atomic_number).unwrap();
+            assert_eq!(
+                rdkit_atomic_number_for_symbol_like_rdkit(symbol).unwrap(),
+                atomic_number
+            );
+        }
+        assert_eq!(
+            rdkit_atomic_number_for_symbol_like_rdkit("Uut").unwrap(),
+            113
+        );
+        assert_eq!(
+            rdkit_atomic_number_for_symbol_like_rdkit("Uup").unwrap(),
+            115
+        );
+        assert_eq!(
+            rdkit_atomic_number_for_symbol_like_rdkit("Xx")
+                .unwrap_err()
+                .to_string(),
+            "MOL2 parse failed: Element 'Xx' not found"
+        );
+    }
 
     fn parse_header_from_block(input: &str) -> Result<Mol2MoleculeHeader, Mol2ReadError> {
         let offsets = scan_mol2_sections_like_rdkit(input)?;

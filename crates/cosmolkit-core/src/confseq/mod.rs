@@ -4791,47 +4791,10 @@ fn confseq_base_local_angle_rad(molecule: &Molecule, center: usize) -> f64 {
 }
 
 fn confseq_base_ring_angle_rad(molecule: &Molecule, center: usize, ring_size: usize) -> f64 {
-    let atom = &molecule.atoms()[center];
-    let deg_to_rad = PI / 180.0;
-    // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_setRingAngle (BoundsMatrixBuilder.cpp:393-414)
-    // RDKit✔️✔️: void _setRingAngle(Atom::HybridizationType aHyb, unsigned int ringSize,
-    // RDKit✔️✔️:                    double &angle) {
-    // RDKit✔️✔️:   if ((aHyb == Atom::SP2 && ringSize <= 8) || (ringSize == 3) ||
-    // RDKit✔️✔️:       (ringSize == 4)) {
-    // RDKit✔️✔️:     angle = M_PI * (1 - 2.0 / ringSize);
-    // RDKit✔️✔️:   } else if (aHyb == Atom::SP3) {
-    // RDKit✔️✔️:     if (ringSize == 5) {
-    // RDKit✔️✔️:       angle = 104 * M_PI / 180;
-    // RDKit✔️✔️:     } else {
-    // RDKit✔️✔️:       angle = 109.5 * M_PI / 180;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else if (aHyb == Atom::SP3D) {
-    // RDKit✔️✔️:     angle = 105.0 * M_PI / 180;
-    // RDKit✔️✔️:   } else if (aHyb == Atom::SP3D2) {
-    // RDKit✔️✔️:     angle = 90.0 * M_PI / 180;
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     angle = 120 * M_PI / 180;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION DGeomHelpers::_setRingAngle
-    if (atom.hybridization() == Hybridization::Sp2 && ring_size <= 8)
-        || ring_size == 3
-        || ring_size == 4
-    {
-        PI * (1.0 - 2.0 / ring_size as f64)
-    } else if atom.hybridization() == Hybridization::Sp3 {
-        if ring_size == 5 {
-            104.0 * deg_to_rad
-        } else {
-            109.5 * deg_to_rad
-        }
-    } else if atom.hybridization() == Hybridization::Sp3d {
-        105.0 * deg_to_rad
-    } else if atom.hybridization() == Hybridization::Sp3d2 {
-        90.0 * deg_to_rad
-    } else {
-        120.0 * deg_to_rad
-    }
+    crate::source_port_helpers::rdkit_set_ring_angle(
+        molecule.atoms()[center].hybridization(),
+        ring_size,
+    )
 }
 
 fn confseq_base_source_backed_angle_rad(

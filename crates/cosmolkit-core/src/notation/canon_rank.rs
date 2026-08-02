@@ -564,50 +564,15 @@ fn bond_other_atom_index(
     view.bond_other_atom_index(bond_id, atom_id)
 }
 
-fn count_swaps_to_interconvert<T: Copy + Eq + std::fmt::Debug>(
-    reference: &[T],
-    mut probe: Vec<T>,
-) -> usize {
-    // BEGIN RDKIT CPP FUNCTION countSwapsToInterconvert
-    // RDKit✔️✔️: unsigned int countSwapsToInterconvert(const T &ref, T probe) {
-    // RDKit✔️✔️:   PRECONDITION(ref.size() == probe.size(), "size mismatch");
-    assert_eq!(reference.len(), probe.len(), "size mismatch");
-    // RDKit✔️✔️:   typename T::const_iterator refIt = ref.begin();
-    // RDKit✔️✔️:   typename T::iterator probeIt = probe.begin();
-    // RDKit✔️✔️:   typename T::iterator probeIt2;
-    // RDKit✔️✔️:   unsigned int nSwaps = 0;
-    let mut swaps = 0usize;
-    // RDKit✔️✔️:   while (refIt != ref.end()) {
-    for idx in 0..reference.len() {
-        // RDKit✔️✔️:     if ((*probeIt) != (*refIt)) {
-        if probe[idx] != reference[idx] {
-            // RDKit✔️✔️:       bool foundIt = false;
-            // RDKit✔️✔️:       probeIt2 = probeIt;
-            // RDKit✔️✔️:       while ((*probeIt2) != (*refIt) && probeIt2 != probe.end()) {
-            // RDKit✔️✔️:         ++probeIt2;
-            // RDKit✔️✔️:       }
-            let found_idx = probe[idx..]
-                .iter()
-                .position(|value| *value == reference[idx])
-                .map(|offset| idx + offset)
-                // RDKit✔️✔️:       CHECK_INVARIANT(foundIt, "could not find probe element");
-                .expect("could not find probe element");
-            // RDKit✔️✔️:       if (probeIt2 != probe.end()) {
-            // RDKit✔️✔️:         foundIt = true;
-            // RDKit✔️✔️:       }
-            // RDKit✔️✔️:       std::swap(*probeIt, *probeIt2);
-            // RDKit✔️✔️:       nSwaps++;
-            probe.swap(idx, found_idx);
-            swaps += 1;
-        }
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     ++probeIt;
-        // RDKit✔️✔️:     ++refIt;
-    }
-    // RDKit✔️✔️:   return nSwaps;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION countSwapsToInterconvert
-    swaps
+fn count_swaps_to_interconvert<T: Copy + Eq>(reference: &[T], probe: Vec<T>) -> usize {
+    crate::source_port_helpers::count_swaps_to_interconvert(reference, &probe).unwrap_or_else(
+        |error| match error {
+            crate::source_port_helpers::CountSwapsError::SizeMismatch => panic!("size mismatch"),
+            crate::source_port_helpers::CountSwapsError::MissingProbeElement => {
+                panic!("could not find probe element")
+            }
+        },
+    )
 }
 
 fn init_fragment_canon_atoms_for_kekulize<'a>(

@@ -191,8 +191,7 @@ The active-path scan below produced no matches:
 rg -n \
   'tests/(fixtures|corpus|golden|known_failures)|crates/cosmolkit-core/tests/fixtures|python/tests/fixtures' \
   AGENTS.md README.md dev/README.md testdata tools .github \
-  crates/*/src crates/*/tests python/tests \
-  --glob '!crates/cosmolkit-core-old/**'
+  crates/*/src crates/*/tests python/tests
 ```
 
 The set of `_generate_*.py` helpers under `tools/testdata/rdkit/` exactly

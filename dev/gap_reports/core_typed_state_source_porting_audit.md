@@ -58,7 +58,7 @@ needs them.
 | Drawing cache | `DerivedState::DRAWING` bit only | Drawing is a checked README feature but has no typed cache/prepared-state storage yet. | Add drawing cache only if source port needs cached state. Otherwise keep drawing as recomputed output and use invalidation bit for future compatibility. |
 | Fingerprint cache | `DerivedState::FINGERPRINT` bit only | Fingerprint is a checked README feature but generation is unsupported. | Add cache only after Morgan source port establishes what can become stale; otherwise compute directly and keep invalidation bit reserved. |
 | DG bounds feature separation | `dg_bounds_matrix` returns a coordinate-2d unsupported error | DG bounds is a checked README feature distinct from 2D coordinate generation. | Add or split a dedicated support feature before marking DG bounds complete. |
-| PDB residue info completeness | `AtomPdbResidueInfo` models the subset needed by AddHs | RDKit `AtomPDBResidueInfo` also has secondary structure, segment number, and monomer class. | Add fields only when Rust source ports for PDB/sequence/writer behavior need them. Do not add broad old-core compatibility fields without source need. |
+| PDB residue info completeness | `AtomPdbResidueInfo` models the subset needed by AddHs | RDKit `AtomPDBResidueInfo` also has secondary structure, segment number, and monomer class. | Add fields only when Rust source ports for PDB/sequence/writer behavior need them. Do not add broad compatibility fields without source need. |
 
 ## Remap Risks To Resolve Before Completion
 

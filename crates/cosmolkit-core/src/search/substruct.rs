@@ -1600,41 +1600,9 @@ fn match_mask(atom_mapping: &[usize], mol_num_atoms: usize) -> Vec<bool> {
 }
 
 fn count_swaps_to_interconvert_i32(reference: &[i32], probe: &[i32]) -> Option<u32> {
-    // BEGIN RDKIT CPP FUNCTION countSwapsToInterconvert
-    // RDKit✔️✔️: template <typename T>
-    // RDKit✔️✔️: unsigned int countSwapsToInterconvert(const T &ref, T probe) {
-    // RDKit✔️✔️:   unsigned int res = 0;
-    // RDKit✔️✔️:   PRECONDITION(ref.size() == probe.size(), "bad vector sizes");
-    // RDKit✔️✔️:   for (unsigned int i = 0; i < ref.size(); ++i) {
-    // RDKit✔️✔️:     if (ref[i] != probe[i]) {
-    // RDKit✔️✔️:       unsigned int j = i + 1;
-    // RDKit✔️✔️:       while (probe[j] != ref[i]) {
-    // RDKit✔️✔️:         ++j;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       std::swap(probe[i], probe[j]);
-    // RDKit✔️✔️:       ++res;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return res;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION
-    if reference.len() != probe.len() {
-        return None;
-    }
-    let mut work = probe.to_vec();
-    let mut swaps = 0_u32;
-    for (idx, expected) in reference.iter().copied().enumerate() {
-        if work[idx] == expected {
-            continue;
-        }
-        let found_idx = work[idx + 1..]
-            .iter()
-            .position(|value| *value == expected)
-            .map(|offset| idx + 1 + offset)?;
-        work.swap(idx, found_idx);
-        swaps = swaps.saturating_add(1);
-    }
-    Some(swaps)
+    crate::source_port_helpers::count_swaps_to_interconvert(reference, probe)
+        .ok()
+        .and_then(|swaps| u32::try_from(swaps).ok())
 }
 
 fn rdkit_atom_perturbation_order_from_bond_indices(
@@ -2540,6 +2508,12 @@ pub fn try_get_substruct_matches_with_params(
 mod tests {
     use super::*;
     use crate::MoleculeBuilder;
+
+    #[test]
+    fn shared_count_swaps_substruct_preserves_none_failure_mapping() {
+        assert_eq!(count_swaps_to_interconvert_i32(&[1, 2], &[1]), None);
+        assert_eq!(count_swaps_to_interconvert_i32(&[1, 2], &[1, 3]), None);
+    }
 
     fn make_mol_c() -> Molecule {
         // Methane: C

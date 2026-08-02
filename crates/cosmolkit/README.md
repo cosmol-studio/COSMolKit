@@ -136,9 +136,9 @@ assert!(calc_mol_wt(&molecule, false)? > 94.0);
 assert_eq!(calc_num_aromatic_rings(&molecule)?, 1);
 ```
 
-The descriptor surface is public but experimental. Supported rows are checked
-field-by-field against pinned RDKit golden data; unmodeled source states return
-an explicit descriptor error.
+The documented descriptor surface is stable. Supported rows and parameter
+combinations are checked field-by-field against pinned RDKit golden data;
+unmodeled source states return an explicit descriptor error.
 
 ## Conformer Generation And Force Field Applications
 

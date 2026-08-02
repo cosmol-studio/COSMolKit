@@ -393,66 +393,13 @@ pub fn mmff_optimize_molecule_confs(
         // RDKit✔️❌:     ForceFieldsHelper::OptimizeMoleculeConfs(mol, *ff, res, numThreads,
         // RDKit✔️❌:                                              maxIters);
         //
-        // BEGIN RDKIT CPP FUNCTION RDKit::ForceFieldsHelper::OptimizeMoleculeConfs (FFConvenience.h:116-127)
-        // RDKit✔️❌: inline void OptimizeMoleculeConfs(ROMol &mol, ForceFields::ForceField &ff,
-        // RDKit✔️❌:                                   std::vector<std::pair<int, double>> &res,
-        // RDKit✔️❌:                                   int numThreads = 1, int maxIters = 1000) {
-        // RDKit✔️❌:   res.resize(mol.getNumConformers());
-        assert!(conformer_results.len() >= conformer_count);
-        // RDKit✔️❌:   numThreads = getNumThreadsToUse(numThreads);
-        //
-        // BEGIN RDKIT CPP FUNCTION RDKit::getNumThreadsToUse without RDK_BUILD_THREADSAFE_SSS (RDThreads.h:37-40)
-        // RDKit✔️❌: inline unsigned int getNumThreadsToUse(int target) {
-        // RDKit✔️❌:   RDUNUSED_PARAM(target);
-        let _ = num_threads;
-        // RDKit✔️❌:   return 1;
-        // RDKit✔️❌: }
-        // END RDKIT CPP FUNCTION RDKit::getNumThreadsToUse without RDK_BUILD_THREADSAFE_SSS
-        // RDKit✔️❌:   if (numThreads == 1) {
-        // RDKit✔️❌:     detail::OptimizeMoleculeConfsST(mol, ff, res, maxIters);
-        //
-        // BEGIN RDKIT CPP FUNCTION RDKit::ForceFieldsHelper::detail::OptimizeMoleculeConfsST (FFConvenience.h:61-78)
-        // RDKit✔️❌: inline void OptimizeMoleculeConfsST(ROMol &mol, ForceFields::ForceField &ff,
-        // RDKit✔️❌:                                     std::vector<std::pair<int, double>> &res,
-        // RDKit✔️❌:                                     int maxIters) {
-        // RDKit✔️❌:   PRECONDITION(res.size() >= mol.getNumConformers(),
-        // RDKit✔️❌:                "res.size() must be >= mol.getNumConformers()");
-        assert!(conformer_results.len() >= conformer_count);
-        // RDKit✔️❌:   unsigned int i = 0;
-        // RDKit✔️❌:   for (ROMol::ConformerIterator cit = mol.beginConformers();
-        // RDKit✔️❌:        cit != mol.endConformers(); ++cit, ++i) {
-        for conf_index in 0..conformer_count {
-            let start_coords = molecule.conformers_3d()[conf_index].coordinates().to_vec();
-            // RDKit✔️❌:     for (unsigned int aidx = 0; aidx < mol.getNumAtoms(); ++aidx) {
-            // RDKit✔️❌:       ff.positions()[aidx] = &(*cit)->getAtomPos(aidx);
-            ff.positions_mut().clear();
-            for coord in &start_coords {
-                ff.positions_mut()
-                    .push(crate::chemistry::forcefield::core::ForceFieldVec3::new(
-                        coord[0], coord[1], coord[2],
-                    ));
-            }
-            // RDKit✔️❌:     }
-            // RDKit✔️❌:     ff.initialize();
-            ff.initialize();
-            // RDKit✔️❌:     int needsMore = ff.minimize(maxIters);
-            let needs_more = ff.minimize(max_iters, 1.0e-4, 1.0e-6);
-            // RDKit✔️❌:     double e = ff.calcEnergy();
-            let energy = ff.calc_energy_current(None);
-            // RDKit✔️❌:     res[i] = std::make_pair(needsMore, e);
-            conformer_results[conf_index] = MmffOptimizeMoleculeConfResult { needs_more, energy };
-            {
-                let coords =
-                    molecule.coordinate_block_mut().conformers_3d[conf_index].coordinates_mut();
-                for (coord, position) in coords.iter_mut().zip(ff.positions()) {
-                    *coord = [position.x, position.y, position.z];
-                }
-            }
-            // RDKit✔️❌:   }
-        }
-        // RDKit✔️❌: }
-        // END RDKIT CPP FUNCTION RDKit::ForceFieldsHelper::detail::OptimizeMoleculeConfsST
-        // RDKit✔️❌:   }
+        conformer_results = crate::chemistry::forcefield::optimize_molecule_confs_non_threaded(
+            &mut molecule,
+            &mut ff,
+            num_threads,
+            max_iters,
+            |needs_more, energy| MmffOptimizeMoleculeConfResult { needs_more, energy },
+        );
         // RDKit✔️❌: } else {
     } else {
         for result in &mut conformer_results {
@@ -5652,8 +5599,7 @@ mod tests {
     }
 
     #[test]
-    fn mmff_public_api_mmff_optimize_molecule_confs_returns_value_style_results_for_all_conformers()
-    {
+    fn shared_forcefield_conformer_driver_mmff_returns_value_style_results_for_all_conformers() {
         let molecule = bonded_pair_with_named_3d_conformers(
             AtomSpec::new(Element::C),
             AtomSpec::new(Element::C),
@@ -5687,7 +5633,7 @@ mod tests {
     }
 
     #[test]
-    fn mmff_public_api_mmff_optimize_molecule_confs_returns_minus_one_for_missing_atom_params() {
+    fn shared_forcefield_conformer_driver_mmff_returns_minus_one_for_missing_atom_params() {
         let molecule = single_atom_with_3d_conformer(AtomSpec::new(Element::HE), [0.0, 0.0, 0.0]);
         let original_coords = molecule.conformers_3d()[0].coordinates().to_vec();
 
@@ -5734,7 +5680,7 @@ mod tests {
     }
 
     #[test]
-    fn mmff_public_api_mmff_optimize_molecule_confs_handles_non_positive_thread_request_like_non_threaded_rdkit_build()
+    fn shared_forcefield_conformer_driver_mmff_handles_non_positive_thread_request_like_non_threaded_rdkit_build()
      {
         let molecule = bonded_pair_with_named_3d_conformers(
             AtomSpec::new(Element::C),
@@ -5764,7 +5710,7 @@ mod tests {
     }
 
     #[test]
-    fn mmff_public_api_mmff_optimize_molecule_confs_reports_max_iteration_limit() {
+    fn shared_forcefield_conformer_driver_mmff_reports_max_iteration_limit() {
         let molecule = bonded_pair_with_3d_conformer(
             AtomSpec::new(Element::C),
             AtomSpec::new(Element::C),
@@ -5786,7 +5732,7 @@ mod tests {
     }
 
     #[test]
-    fn mmff_public_api_mmff_optimize_molecule_confs_preserves_all_named_conformers() {
+    fn shared_forcefield_conformer_driver_mmff_preserves_all_named_conformers() {
         let molecule = bonded_pair_with_named_3d_conformers(
             AtomSpec::new(Element::C),
             AtomSpec::new(Element::C),

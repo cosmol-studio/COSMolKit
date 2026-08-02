@@ -1232,69 +1232,29 @@ fn cached_total_valence(
 fn tracked_isotopic_hydrogens(
     read_parts: MoleculeReadParts<'_>,
 ) -> Result<Vec<(AtomId, Vec<u16>)>, RemoveHydrogensError> {
-    // BEGIN RDKIT CPP FUNCTION getIsoMap
-    // RDKit✔️✔️: std::map<unsigned int, std::vector<unsigned int>> getIsoMap(const ROMol &mol) {
-    // RDKit✔️❌:   std::map<unsigned int, std::vector<unsigned int>> isoMap;
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/AddHs.cpp :: getIsoMap
     // RDKit✔️❌:   for (auto atom : mol.atoms()) {
     // RDKit✔️❌:     if (atom->hasProp(common_properties::_isotopicHs)) {
     // RDKit✔️❌:       atom->clearProp(common_properties::_isotopicHs);
     // RDKit✔️❌:     }
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   for (auto bond : mol.bonds()) {
-    // RDKit✔️✔️:     auto ba = bond->getBeginAtom();
-    // RDKit✔️✔️:     auto ea = bond->getEndAtom();
-    // RDKit✔️✔️:     int ha = -1;
-    // RDKit✔️✔️:     unsigned int iso;
-    // RDKit✔️✔️:     if (ba->getAtomicNum() == 1 && ba->getIsotope() &&
-    // RDKit✔️✔️:         ea->getAtomicNum() != 1) {
-    // RDKit✔️✔️:       ha = ea->getIdx();
-    // RDKit✔️✔️:       iso = ba->getIsotope();
-    // RDKit✔️✔️:     } else if (ea->getAtomicNum() == 1 && ea->getIsotope() &&
-    // RDKit✔️✔️:                ba->getAtomicNum() != 1) {
-    // RDKit✔️✔️:       ha = ba->getIdx();
-    // RDKit✔️✔️:       iso = ea->getIsotope();
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     if (ha == -1) { continue; }
-    // RDKit✔️✔️:     auto &v = isoMap[ha];
-    // RDKit✔️✔️:     v.push_back(iso);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return isoMap;
-    // RDKit✔️✔️: }
-    let mut map = Vec::<(AtomId, Vec<u16>)>::new();
-    for bond in read_parts.bonds() {
-        let begin = read_parts
-            .atom(bond.begin())
-            .ok_or(RemoveHydrogensError::AtomOutOfRange {
-                atom: bond.begin(),
-                atom_count: read_parts.num_atoms(),
-            })?;
-        let end = read_parts
-            .atom(bond.end())
-            .ok_or(RemoveHydrogensError::AtomOutOfRange {
-                atom: bond.end(),
-                atom_count: read_parts.num_atoms(),
-            })?;
-        let tracked = if begin.atomic_number() == 1
-            && begin.isotope().is_some()
-            && end.atomic_number() != 1
-        {
-            Some((end.id(), begin.isotope().expect("checked above")))
-        } else if end.atomic_number() == 1 && end.isotope().is_some() && begin.atomic_number() != 1
-        {
-            Some((begin.id(), end.isotope().expect("checked above")))
-        } else {
-            None
-        };
-        if let Some((heavy_atom, isotope)) = tracked {
-            if let Some((_, isotopes)) = map.iter_mut().find(|(atom, _)| *atom == heavy_atom) {
-                isotopes.push(isotope);
-            } else {
-                map.push((heavy_atom, vec![isotope]));
-            }
-        }
-    }
-    Ok(map)
-    // END RDKIT CPP FUNCTION getIsoMap
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/AddHs.cpp :: getIsoMap
+    // The operation adapter records clears before sets in `RemoveHsAssignment`.
+    crate::source_port_helpers::rdkit_get_iso_map(
+        read_parts
+            .bonds()
+            .iter()
+            .map(|bond| (bond.begin(), bond.end())),
+        |atom_id| {
+            read_parts
+                .atom(atom_id)
+                .map(|atom| (atom.atomic_number(), atom.isotope()))
+                .ok_or(RemoveHydrogensError::AtomOutOfRange {
+                    atom: atom_id,
+                    atom_count: read_parts.num_atoms(),
+                })
+        },
+    )
 }
 
 fn should_remove_h(
@@ -1950,36 +1910,19 @@ fn count_swaps_to_interconvert(
     probe: &[BondId],
     reference: &[BondId],
 ) -> Result<usize, RemoveHydrogensError> {
-    // BEGIN RDKIT CPP FUNCTION countSwapsToInterconvert
-    // RDKit✔️✔️: unsigned int countSwapsToInterconvert(const T &ref, T probe) { ... }
-    if probe.len() != reference.len() {
-        return Err(RemoveHydrogensError::ProtocolDebt {
-            branch: "Atom::getPerturbationOrder/size-mismatch",
-            reason: "chirality perturbation order received mismatched bond-ordering lengths",
-        });
-    }
-    let mut work = probe.to_vec();
-    let mut swaps = 0usize;
-    for i in 0..work.len() {
-        if work[i] == reference[i] {
-            continue;
-        }
-        let Some(j) = work
-            .iter()
-            .enumerate()
-            .skip(i + 1)
-            .find_map(|(idx, value)| (*value == reference[i]).then_some(idx))
-        else {
-            return Err(RemoveHydrogensError::ProtocolDebt {
-                branch: "Atom::getPerturbationOrder/missing-probe-element",
-                reason: "chirality perturbation order could not match RDKit bond-ordering elements",
-            });
+    crate::source_port_helpers::count_swaps_to_interconvert(reference, probe).map_err(|error| {
+        let (branch, reason) = match error {
+            crate::source_port_helpers::CountSwapsError::SizeMismatch => (
+                "Atom::getPerturbationOrder/size-mismatch",
+                "chirality perturbation order received mismatched bond-ordering lengths",
+            ),
+            crate::source_port_helpers::CountSwapsError::MissingProbeElement => (
+                "Atom::getPerturbationOrder/missing-probe-element",
+                "chirality perturbation order could not match RDKit bond-ordering elements",
+            ),
         };
-        work.swap(i, j);
-        swaps += 1;
-    }
-    Ok(swaps)
-    // END RDKIT CPP FUNCTION countSwapsToInterconvert
+        RemoveHydrogensError::ProtocolDebt { branch, reason }
+    })
 }
 
 fn opposite_bond_direction(direction: BondDirection) -> BondDirection {
@@ -2082,6 +2025,56 @@ mod tests {
 
     fn read(molecule: &Molecule) -> MoleculeReadParts<'_> {
         MoleculeReadParts::from_molecule(molecule)
+    }
+
+    #[test]
+    fn shared_get_iso_map_remove_hs_adapter_preserves_atom_range_error() {
+        let mut builder = MoleculeBuilder::new();
+        let carbon = builder.add_atom(AtomSpec::new(Element::C));
+        let deuterium = builder.add_atom(AtomSpec::new(Element::H).with_isotope(2));
+        let bond = builder
+            .add_bond(BondSpec::new(carbon, deuterium, BondOrder::Single))
+            .unwrap();
+        let mut molecule = builder.build().unwrap();
+        let missing = AtomId::new(7);
+        molecule.topology_block_mut().bonds[bond.index()].set_endpoints(carbon, missing);
+
+        let error = tracked_isotopic_hydrogens(read(&molecule)).unwrap_err();
+
+        assert_eq!(
+            error,
+            RemoveHydrogensError::AtomOutOfRange {
+                atom: missing,
+                atom_count: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn shared_count_swaps_remove_hs_preserves_protocol_debt_mapping() {
+        let size_error =
+            count_swaps_to_interconvert(&[BondId::new(0)], &[BondId::new(0), BondId::new(1)])
+                .unwrap_err();
+        assert!(matches!(
+            size_error,
+            RemoveHydrogensError::ProtocolDebt {
+                branch: "Atom::getPerturbationOrder/size-mismatch",
+                ..
+            }
+        ));
+
+        let missing_error = count_swaps_to_interconvert(
+            &[BondId::new(0), BondId::new(2)],
+            &[BondId::new(0), BondId::new(1)],
+        )
+        .unwrap_err();
+        assert!(matches!(
+            missing_error,
+            RemoveHydrogensError::ProtocolDebt {
+                branch: "Atom::getPerturbationOrder/missing-probe-element",
+                ..
+            }
+        ));
     }
 
     #[test]

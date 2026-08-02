@@ -1939,32 +1939,20 @@ pub(super) fn count_swaps_to_interconvert(
     probe: &[BondId],
     reference: &[BondId],
 ) -> Result<usize, SmilesWriteError> {
-    if probe.len() != reference.len() {
-        return invariant_stage_error(
-            SmilesPlanStage::ShortTermAtomWriter,
-            "count_swaps_to_interconvert() probe/reference length mismatch",
-        );
-    }
-    let mut work = probe.to_vec();
-    let mut swaps = 0usize;
-    for (idx, expected) in reference.iter().copied().enumerate() {
-        if work[idx] == expected {
-            continue;
-        }
-        let Some(found_idx) = work[idx..]
-            .iter()
-            .position(|bond| *bond == expected)
-            .map(|offset| idx + offset)
-        else {
-            return invariant_stage_error(
-                SmilesPlanStage::ShortTermAtomWriter,
-                "count_swaps_to_interconvert() expected bond missing from probe order",
-            );
+    crate::source_port_helpers::count_swaps_to_interconvert(reference, probe).map_err(|error| {
+        let message = match error {
+            crate::source_port_helpers::CountSwapsError::SizeMismatch => {
+                "count_swaps_to_interconvert() probe/reference length mismatch"
+            }
+            crate::source_port_helpers::CountSwapsError::MissingProbeElement => {
+                "count_swaps_to_interconvert() expected bond missing from probe order"
+            }
         };
-        work.swap(idx, found_idx);
-        swaps = swaps.saturating_add(1);
-    }
-    Ok(swaps)
+        SmilesWriteError::InvariantViolation {
+            stage: SmilesPlanStage::ShortTermAtomWriter.as_str(),
+            message,
+        }
+    })
 }
 
 pub(super) fn chiral_atom_needs_tag_inversion_for_writer(
@@ -1973,54 +1961,35 @@ pub(super) fn chiral_atom_needs_tag_inversion_for_writer(
     is_atom_first: bool,
     num_closures: usize,
 ) -> bool {
-    // BEGIN RDKIT CPP FUNCTION Canon::chiralAtomNeedsTagInversion
-    // RDKit✔️✔️: bool chiralAtomNeedsTagInversion(const RDKit::ROMol &mol,
-    // RDKit✔️✔️:                                  const RDKit::Atom *atom, bool isAtomFirst,
-    // RDKit✔️✔️:                                  size_t numClosures) {
-    // RDKit✔️✔️:   return atom->getDegree() == 3 &&
-    // RDKit✔️✔️:          ((isAtomFirst && atom->getNumExplicitHs() == 1) ||
-    // RDKit✔️✔️:           (!details::atomHasFourthValence(atom) && numClosures == 1 &&
-    // RDKit✔️✔️:            !details::isUnsaturated(atom, mol)));
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION Canon::chiralAtomNeedsTagInversion
     let atom = &molecule.atoms()[atom_id.index()];
     let degree = incident_bonds(molecule, atom_id).len();
-    degree == 3
-        && ((is_atom_first && atom.explicit_hydrogens() == 1)
-            || (!atom_has_fourth_valence_for_writer(molecule, atom_id)
-                && num_closures == 1
-                && !atom_is_unsaturated_for_writer(molecule, atom_id)))
+    crate::notation::smiles::canon_chiral_atom_needs_tag_inversion(
+        degree,
+        atom.explicit_hydrogens(),
+        is_atom_first,
+        atom_has_fourth_valence_for_writer(molecule, atom_id),
+        num_closures,
+        atom_is_unsaturated_for_writer(molecule, atom_id),
+    )
 }
 
 pub(super) fn atom_has_fourth_valence_for_writer(molecule: &Molecule, atom_id: AtomId) -> bool {
-    // BEGIN RDKIT CPP FUNCTION Canon::details::atomHasFourthValence
-    // RDKit✔️✔️: bool atomHasFourthValence(const Atom *atom) {
-    // RDKit✔️✔️:   if (atom->getNumExplicitHs() == 1 ||
-    // RDKit✔️✔️:       (!atom->needsUpdatePropertyCache() &&
-    // RDKit✔️✔️:        atom->getValence(Atom::ValenceType::IMPLICIT) == 1)) {
-    // RDKit✔️✔️:     return true;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (atom->hasQuery()) {
-    // RDKit✔️✔️:     return hasSingleHQuery(atom->getQuery());
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return false;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION Canon::details::atomHasFourthValence
-    //
     // COSMolKit does not model RDKit's per-atom property-cache dirty bit.
     // The implicit-H branch therefore relies on the current derived valence
     // cache when present, matching the writer's current modeled state space.
     let atom = &molecule.atoms()[atom_id.index()];
-    atom.explicit_hydrogens() == 1
-        || molecule
-            .derived_cache()
-            .valence
-            .as_ref()
-            .and_then(|valence| valence.implicit_hydrogens.get(atom_id.index()))
-            .is_some_and(|implicit_hydrogens| *implicit_hydrogens == 1)
-        || atom
-            .query()
-            .is_some_and(atom_query_has_single_h_count_for_writer)
+    let cached_implicit_valence_is_one = molecule
+        .derived_cache()
+        .valence
+        .as_ref()
+        .and_then(|valence| valence.implicit_hydrogens.get(atom_id.index()))
+        .is_some_and(|implicit_hydrogens| *implicit_hydrogens == 1);
+    crate::notation::smiles::canon_atom_has_fourth_valence(
+        atom.explicit_hydrogens(),
+        cached_implicit_valence_is_one,
+        atom.query()
+            .is_some_and(crate::notation::smiles::atom_query_has_single_h_count),
+    )
 }
 
 pub(super) fn atom_is_unsaturated_for_writer(molecule: &Molecule, atom_id: AtomId) -> bool {
@@ -2055,53 +2024,5 @@ pub(super) fn bond_order_as_double_for_writer(order: BondOrder) -> f64 {
         | BondOrder::Other
         | BondOrder::Zero
         | BondOrder::Unspecified => 0.0,
-    }
-}
-
-pub(super) fn atom_query_has_single_h_count_for_writer(
-    query: &QueryNode<AtomQueryPredicate>,
-) -> bool {
-    // BEGIN RDKIT CPP FUNCTION Canon::details::hasSingleHQuery
-    // RDKit✔️✔️: bool hasSingleHQuery(const Atom::QUERYATOM_QUERY *q) {
-    // RDKit✔️✔️:   PRECONDITION(q, "bad query");
-    // RDKit✔️✔️:   bool res = false;
-    // RDKit✔️✔️:   const auto &descr = q->getDescription();
-    // RDKit✔️✔️:   if (descr == "AtomAnd") {
-    // RDKit✔️✔️:     for (auto cIt = q->beginChildren(); cIt != q->endChildren(); ++cIt) {
-    // RDKit✔️✔️:       const auto &cDescr = (*cIt)->getDescription();
-    // RDKit✔️✔️:       if (cDescr == "AtomHCount") {
-    // RDKit✔️✔️:         return !(*cIt)->getNegation() &&
-    // RDKit✔️✔️:                ((ATOM_EQUALS_QUERY *)(*cIt).get())->getVal() == 1;
-    // RDKit✔️✔️:       } else if (cDescr == "AtomAnd") {
-    // RDKit✔️✔️:         res = hasSingleHQuery((*cIt).get());
-    // RDKit✔️✔️:         if (res) {
-    // RDKit✔️✔️:           return true;
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return res;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION Canon::details::hasSingleHQuery
-    match query {
-        QueryNode::And(children) => {
-            let mut found_nested = false;
-            for child in children {
-                match child {
-                    QueryNode::Predicate(AtomQueryPredicate::ImplicitHydrogenCount(count))
-                        if *count == 1 =>
-                    {
-                        return true;
-                    }
-                    QueryNode::And(_) if atom_query_has_single_h_count_for_writer(child) => {
-                        found_nested = true;
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-            found_nested
-        }
-        _ => false,
     }
 }

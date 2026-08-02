@@ -3106,17 +3106,6 @@ impl SmilesBuildState {
         atom_id: AtomId,
         num_closures: usize,
     ) -> Result<bool, SmilesParseError> {
-        // BEGIN RDKIT CPP FUNCTION Canon::chiralAtomNeedsTagInversion
-        // RDKit✔️✔️: bool chiralAtomNeedsTagInversion(const RDKit::ROMol &mol,
-        // RDKit✔️✔️:                                  const RDKit::Atom *atom, bool isAtomFirst,
-        // RDKit✔️✔️:                                  size_t numClosures) {
-        // RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
-        // RDKit✔️✔️:   return atom->getDegree() == 3 &&
-        // RDKit✔️✔️:          ((isAtomFirst && atom->getNumExplicitHs() == 1) ||
-        // RDKit✔️✔️:           (!details::atomHasFourthValence(atom) && numClosures == 1 &&
-        // RDKit✔️✔️:            !details::isUnsaturated(atom, mol)));
-        // RDKit✔️✔️: }
-        // END RDKIT CPP FUNCTION Canon::chiralAtomNeedsTagInversion
         let atom = self
             .builder
             .atoms()
@@ -3124,28 +3113,17 @@ impl SmilesBuildState {
             .ok_or_else(|| SmilesParseError::ParseError(format!("missing atom {atom_id}")))?;
         let degree = self.atom_degree(atom_id);
         let is_atom_first = self.smiles_start_atoms.contains(&atom_id);
-        Ok(degree == 3
-            && ((is_atom_first && atom.explicit_hydrogens() == 1)
-                || (!self.atom_has_fourth_valence(atom_id)?
-                    && num_closures == 1
-                    && !self.is_unsaturated(atom_id))))
+        Ok(canon_chiral_atom_needs_tag_inversion(
+            degree,
+            atom.explicit_hydrogens(),
+            is_atom_first,
+            self.atom_has_fourth_valence(atom_id)?,
+            num_closures,
+            self.is_unsaturated(atom_id),
+        ))
     }
 
     fn atom_has_fourth_valence(&self, atom_id: AtomId) -> Result<bool, SmilesParseError> {
-        // BEGIN RDKIT CPP FUNCTION Canon::details::atomHasFourthValence
-        // RDKit✔️✔️: bool atomHasFourthValence(const Atom *atom) {
-        // RDKit✔️✔️:   if (atom->getNumExplicitHs() == 1 ||
-        // RDKit✔️✔️:       (!atom->needsUpdatePropertyCache() &&
-        // RDKit✔️✔️:        atom->getValence(Atom::ValenceType::IMPLICIT) == 1)) {
-        // RDKit✔️✔️:     return true;
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   if (atom->hasQuery()) {
-        // RDKit✔️✔️:     return hasSingleHQuery(atom->getQuery());
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   return false;
-        // RDKit✔️✔️: }
-        // END RDKIT CPP FUNCTION Canon::details::atomHasFourthValence
-        //
         // NOTE: COSMolKit does not implement per-atom property cache
         // (needsUpdatePropertyCache / getValence(IMPLICIT)). During SMILES
         // canonicalization the explicit H count is already set by the
@@ -3156,8 +3134,11 @@ impl SmilesBuildState {
             .atoms()
             .get(atom_id.index())
             .ok_or_else(|| SmilesParseError::ParseError(format!("missing atom {atom_id}")))?;
-        Ok(atom.explicit_hydrogens() == 1
-            || atom.query().is_some_and(atom_query_has_single_h_count))
+        Ok(canon_atom_has_fourth_valence(
+            atom.explicit_hydrogens(),
+            false,
+            atom.query().is_some_and(atom_query_has_single_h_count),
+        ))
     }
 
     fn is_unsaturated(&self, atom_id: AtomId) -> bool {
@@ -3190,141 +3171,30 @@ impl SmilesBuildState {
         probe: &[i32],
         inverse: bool,
     ) -> Result<u32, SmilesParseError> {
-        // BEGIN RDKIT CPP FUNCTION Chirality::getChiralPermutation
-        // RDKit✔️✔️: unsigned int getChiralPermutation(const Atom *cen, const INT_LIST &probe,
-        // RDKit✔️✔️:                                   bool inverse) {
-        // RDKit✔️✔️:   int perm;
-        // RDKit✔️✔️:   if (!cen->getPropIfPresent(common_properties::_chiralPermutation, perm) ||
-        // RDKit✔️✔️:       perm <= 0) {
-        // RDKit✔️✔️:     return 0;
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   decltype(&swap_octahedral) swap_func = nullptr;
-        // RDKit✔️✔️:   switch (cen->getChiralTag()) {
-        // RDKit✔️✔️:     case Atom::ChiralType::CHI_OCTAHEDRAL:
-        // RDKit✔️✔️:       if (probe.size() > 6) {
-        // RDKit✔️✔️:         return 0;
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:       swap_func = swap_octahedral;
-        // RDKit✔️✔️:       break;
-        // RDKit✔️✔️:     case Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL:
-        // RDKit✔️✔️:       if (probe.size() > 5) {
-        // RDKit✔️✔️:         return 0;
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:       swap_func = swap_trigonalbipyramidal;
-        // RDKit✔️✔️:       break;
-        // RDKit✔️✔️:     case Atom::ChiralType::CHI_SQUAREPLANAR:
-        // RDKit✔️✔️:       if (probe.size() > 4) {
-        // RDKit✔️✔️:         return 0;
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:       swap_func = swap_squareplanar;
-        // RDKit✔️✔️:       break;
-        // RDKit✔️✔️:     default:
-        // RDKit✔️✔️:       break;
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   unsigned int nbrIdx = 0;
-        // RDKit✔️✔️:   std::vector<int> order(cen->getOwningMol().getNumBonds(), -1);
-        // RDKit✔️✔️:   for (const auto bnd : cen->getOwningMol().atomBonds(cen)) {
-        // RDKit✔️✔️:     order[bnd->getIdx()] = nbrIdx++;
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   std::vector<unsigned int> nbrPerm(nbrIdx);
-        // RDKit✔️✔️:   std::iota(nbrPerm.begin(), nbrPerm.end(), 0);
-        // RDKit✔️✔️:   std::vector<unsigned int> probePerm(probe.size());
-        // RDKit✔️✔️:   nbrIdx = 0;
-        // RDKit✔️✔️:   for (auto v : probe) {
-        // RDKit✔️✔️:     probePerm[nbrIdx++] = v < 0 ? -1 : order[v];
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   if (nbrPerm.size() < nbrIdx) {
-        // RDKit✔️✔️:     nbrPerm.insert(nbrPerm.end(), nbrIdx - nbrPerm.size(), -1);
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   if (inverse) {
-        // RDKit✔️✔️:     std::swap(nbrPerm, probePerm);
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   for (unsigned int i = 0; i < probePerm.size() - 1; ++i) {
-        // RDKit✔️✔️:     auto pval = probePerm[i];
-        // RDKit✔️✔️:     if (nbrPerm[i] == pval) {
-        // RDKit✔️✔️:       continue;
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     auto tgt = std::find(nbrPerm.begin() + i, nbrPerm.end(), pval);
-        // RDKit✔️✔️:     perm = swap_func(perm, i, tgt - nbrPerm.begin());
-        // RDKit✔️✔️:     std::swap(*tgt, nbrPerm[i]);
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   return perm;
-        // RDKit✔️✔️: }
-        // END RDKIT CPP FUNCTION Chirality::getChiralPermutation
         let atom = self
             .builder
             .atoms()
             .get(atom_id.index())
             .ok_or_else(|| SmilesParseError::ParseError(format!("missing atom {atom_id}")))?;
-        let mut perm = atom.chiral_permutation().unwrap_or(0);
-        if perm == 0 {
-            return Ok(0);
-        }
-        let swap_func: fn(u32, usize, usize) -> u32 = match atom.chiral_tag() {
-            ChiralTag::SquarePlanar => {
-                if probe.len() > 4 {
-                    return Ok(0);
-                }
-                swap_squareplanar
-            }
-            ChiralTag::TrigonalBipyramidal => {
-                if probe.len() > 5 {
-                    return Ok(0);
-                }
-                swap_trigonalbipyramidal
-            }
-            ChiralTag::Octahedral => {
-                if probe.len() > 6 {
-                    return Ok(0);
-                }
-                swap_octahedral
-            }
-            _ => return Ok(0),
-        };
-        let mut order = vec![-1isize; self.builder.bonds().len()];
-        let mut nbr_idx = 0isize;
-        for &bond_id in self.builder.neighbor_bonds(atom_id) {
-            order[bond_id.index()] = nbr_idx;
-            nbr_idx += 1;
-        }
-        let mut nbr_perm = (0..nbr_idx).collect::<Vec<_>>();
-        let mut probe_perm = Vec::with_capacity(probe.len());
-        for value in probe {
-            if *value < 0 {
-                probe_perm.push(-1);
-            } else {
-                probe_perm.push(order[*value as usize]);
-            }
-        }
-        if nbr_perm.len() < probe_perm.len() {
-            nbr_perm.extend(std::iter::repeat_n(-1, probe_perm.len() - nbr_perm.len()));
-        }
-        if nbr_perm.len() != probe_perm.len() {
-            return Err(SmilesParseError::ParseError(
-                "probe vector size does not match".to_string(),
-            ));
-        }
-        if inverse {
-            std::mem::swap(&mut nbr_perm, &mut probe_perm);
-        }
-        for i in 0..probe_perm.len().saturating_sub(1) {
-            let pval = probe_perm[i];
-            if nbr_perm[i] == pval {
-                continue;
-            }
-            let Some(target) = nbr_perm[i..]
-                .iter()
-                .position(|value| *value == pval)
-                .map(|offset| i + offset)
-            else {
-                return Err(SmilesParseError::ParseError(
-                    "could not find probe element".to_string(),
-                ));
-            };
-            perm = swap_func(perm, i, target);
-            nbr_perm.swap(i, target);
-        }
-        Ok(perm)
+        let incident_bonds = self
+            .builder
+            .neighbor_bonds(atom_id)
+            .iter()
+            .map(|bond_id| bond_id.index())
+            .collect::<Vec<_>>();
+        let probe = probe
+            .iter()
+            .map(|value| usize::try_from(*value).ok())
+            .collect::<Vec<_>>();
+        nontetrahedral_chiral_permutation_kernel(
+            atom.chiral_permutation().unwrap_or(0),
+            atom.chiral_tag(),
+            self.builder.bonds().len(),
+            &incident_bonds,
+            &probe,
+            inverse,
+        )
+        .map_err(|error| SmilesParseError::ParseError(error.message().to_string()))
     }
 
     fn is_empty(&self) -> bool {
@@ -4583,60 +4453,27 @@ fn smiles_may_need_extra_h(
 fn tracked_smiles_isotopic_hydrogens(
     builder: &MoleculeBuilder,
 ) -> Result<Vec<(AtomId, Vec<u16>)>, SmilesParseError> {
-    // BEGIN RDKIT CPP FUNCTION getIsoMap
-    // RDKit✔️✔️: std::map<unsigned int, std::vector<unsigned int>> getIsoMap(const ROMol &mol) {
-    // RDKit✔️✔️:   std::map<unsigned int, std::vector<unsigned int>> isoMap;
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/AddHs.cpp :: getIsoMap
     // RDKit✔️✔️:   for (auto atom : mol.atoms()) {
     // RDKit✔️✔️:     if (atom->hasProp(common_properties::_isotopicHs)) {
     // RDKit✔️✔️:       atom->clearProp(common_properties::_isotopicHs);
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   for (auto bond : mol.bonds()) {
-    // RDKit✔️✔️:     auto ba = bond->getBeginAtom();
-    // RDKit✔️✔️:     auto ea = bond->getEndAtom();
-    // RDKit✔️✔️:     int ha = -1;
-    // RDKit✔️✔️:     unsigned int iso;
-    // RDKit✔️✔️:     if (ba->getAtomicNum() == 1 && ba->getIsotope() &&
-    // RDKit✔️✔️:         ea->getAtomicNum() != 1) {
-    // RDKit✔️✔️:       ha = ea->getIdx();
-    // RDKit✔️✔️:       iso = ba->getIsotope();
-    // RDKit✔️✔️:     } else if (ea->getAtomicNum() == 1 && ea->getIsotope() &&
-    // RDKit✔️✔️:                ba->getAtomicNum() != 1) {
-    // RDKit✔️✔️:       ha = ba->getIdx();
-    // RDKit✔️✔️:       iso = ea->getIsotope();
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     if (ha == -1) { continue; }
-    // RDKit✔️✔️:     auto &v = isoMap[ha];
-    // RDKit✔️✔️:     v.push_back(iso);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return isoMap;
-    // RDKit✔️✔️: }
-    let mut map = BTreeMap::<AtomId, Vec<u16>>::new();
-    for bond in builder.bonds() {
-        let begin = builder.atoms().get(bond.begin().index()).ok_or_else(|| {
-            SmilesParseError::ParseError(format!("missing atom {}", bond.begin()))
-        })?;
-        let end = builder
-            .atoms()
-            .get(bond.end().index())
-            .ok_or_else(|| SmilesParseError::ParseError(format!("missing atom {}", bond.end())))?;
-        let tracked = if begin.atomic_number() == 1
-            && begin.isotope().is_some()
-            && end.atomic_number() != 1
-        {
-            Some((end.id(), begin.isotope().expect("checked above")))
-        } else if end.atomic_number() == 1 && end.isotope().is_some() && begin.atomic_number() != 1
-        {
-            Some((begin.id(), end.isotope().expect("checked above")))
-        } else {
-            None
-        };
-        if let Some((heavy_atom, isotope)) = tracked {
-            map.entry(heavy_atom).or_default().push(isotope);
-        }
-    }
-    Ok(map.into_iter().collect())
-    // END RDKIT CPP FUNCTION getIsoMap
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/AddHs.cpp :: getIsoMap
+    // The builder-owned clear loop is applied by `remove_hs_update_explicit_count`.
+    crate::source_port_helpers::rdkit_get_iso_map(
+        builder
+            .bonds()
+            .iter()
+            .map(|bond| (bond.begin(), bond.end())),
+        |atom_id| {
+            builder
+                .atoms()
+                .get(atom_id.index())
+                .map(|atom| (atom.atomic_number(), atom.isotope()))
+                .ok_or_else(|| SmilesParseError::ParseError(format!("missing atom {atom_id}")))
+        },
+    )
 }
 
 fn smiles_hydrogen_has_special_sgroup_role(
@@ -4756,7 +4593,55 @@ fn bond_order_as_double(order: BondOrder) -> f64 {
     }
 }
 
-fn atom_query_has_single_h_count(query: &QueryNode<AtomQueryPredicate>) -> bool {
+pub(crate) fn canon_chiral_atom_needs_tag_inversion(
+    degree: usize,
+    explicit_hydrogens: u8,
+    is_atom_first: bool,
+    atom_has_fourth_valence: bool,
+    num_closures: usize,
+    is_unsaturated: bool,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Canon.cpp :: Canon::chiralAtomNeedsTagInversion
+    // RDKit✔️✔️: bool chiralAtomNeedsTagInversion(const RDKit::ROMol &mol,
+    // RDKit✔️✔️:                                  const RDKit::Atom *atom, bool isAtomFirst,
+    // RDKit✔️✔️:                                  size_t numClosures) {
+    // RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
+    // RDKit✔️✔️:   return atom->getDegree() == 3 &&
+    // RDKit✔️✔️:          ((isAtomFirst && atom->getNumExplicitHs() == 1) ||
+    // RDKit✔️✔️:           (!details::atomHasFourthValence(atom) && numClosures == 1 &&
+    // RDKit✔️✔️:            !details::isUnsaturated(atom, mol)));
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Canon.cpp :: Canon::chiralAtomNeedsTagInversion
+    degree == 3
+        && ((is_atom_first && explicit_hydrogens == 1)
+            || (!atom_has_fourth_valence && num_closures == 1 && !is_unsaturated))
+}
+
+pub(crate) fn canon_atom_has_fourth_valence(
+    explicit_hydrogens: u8,
+    cached_implicit_valence_is_one: bool,
+    has_single_h_query: bool,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Canon.cpp :: Canon::details::atomHasFourthValence
+    // RDKit✔️✔️: bool atomHasFourthValence(const Atom *atom) {
+    // RDKit✔️✔️:   if (atom->getNumExplicitHs() == 1 ||
+    // RDKit✔️✔️:       (!atom->needsUpdatePropertyCache() &&
+    // RDKit✔️✔️:        atom->getValence(Atom::ValenceType::IMPLICIT) == 1)) {
+    // RDKit✔️✔️:     return true;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (atom->hasQuery()) {
+    // RDKit✔️✔️:     // the SMARTS [C@@H] produces an atom with a H query, but we also
+    // RDKit✔️✔️:     // need to treat this like an explicit H for chirality purposes
+    // RDKit✔️✔️:     // This was Github #1489
+    // RDKit✔️✔️:     return hasSingleHQuery(atom->getQuery());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Canon.cpp :: Canon::details::atomHasFourthValence
+    explicit_hydrogens == 1 || cached_implicit_valence_is_one || has_single_h_query
+}
+
+pub(crate) fn atom_query_has_single_h_count(query: &QueryNode<AtomQueryPredicate>) -> bool {
     // BEGIN RDKIT CPP FUNCTION Canon::details::hasSingleHQuery
     // RDKit✔️✔️: bool hasSingleHQuery(const Atom::QUERYATOM_QUERY *q) {
     // RDKit✔️✔️:   // list queries are series of nested ors of AtomAtomicNum queries
@@ -4925,110 +4810,199 @@ pub(crate) fn nontetrahedral_max_neighbors(chiral_tag: ChiralTag) -> Option<usiz
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChiralPermutationError {
+    BondIndexOutOfBounds,
+    ProbeSizeMismatch,
+    MissingProbeElement,
+}
+
+impl ChiralPermutationError {
+    fn message(self) -> &'static str {
+        match self {
+            Self::BondIndexOutOfBounds => "bond index out of bounds",
+            Self::ProbeSizeMismatch => "probe vector size does not match",
+            Self::MissingProbeElement => "could not find probe element",
+        }
+    }
+}
+
+fn nontetrahedral_chiral_permutation_kernel(
+    mut perm: u32,
+    chiral_tag: ChiralTag,
+    bond_count: usize,
+    incident_bond_indices: &[usize],
+    probe: &[Option<usize>],
+    inverse: bool,
+) -> Result<u32, ChiralPermutationError> {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/NontetrahedralStereo.cpp :: Chirality::getChiralPermutation
+    // RDKit✔️✔️: unsigned int getChiralPermutation(const Atom *cen, const INT_LIST &probe,
+    // RDKit✔️✔️:                                   bool inverse) {
+    // RDKit✔️✔️:   PRECONDITION(cen, "bad center pointer");
+    // RDKit✔️✔️:   PRECONDITION(cen->hasOwningMol(), "no owning mol");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   int perm;
+    // RDKit✔️✔️:   if (!cen->getPropIfPresent(common_properties::_chiralPermutation, perm) ||
+    // RDKit✔️✔️:       perm <= 0) {
+    // RDKit✔️✔️:     return 0;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   decltype(&swap_octahedral) swap_func = nullptr;
+    // RDKit✔️✔️:   switch (cen->getChiralTag()) {
+    // RDKit✔️✔️:     case Atom::ChiralType::CHI_OCTAHEDRAL:
+    // RDKit✔️✔️:       if (probe.size() > 6) {
+    // RDKit✔️✔️:         return 0;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       swap_func = swap_octahedral;
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL:
+    // RDKit✔️✔️:       if (probe.size() > 5) {
+    // RDKit✔️✔️:         return 0;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       swap_func = swap_trigonalbipyramidal;
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case Atom::ChiralType::CHI_SQUAREPLANAR:
+    // RDKit✔️✔️:       if (probe.size() > 4) {
+    // RDKit✔️✔️:         return 0;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       swap_func = swap_squareplanar;
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     default:
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!swap_func) {
+    // RDKit✔️✔️:     return 0;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   unsigned int nbrIdx = 0;
+    // RDKit✔️✔️:   std::vector<int> order(cen->getOwningMol().getNumBonds(), -1);
+    // RDKit✔️✔️:   for (const auto bnd : cen->getOwningMol().atomBonds(cen)) {
+    // RDKit✔️✔️:     order[bnd->getIdx()] = nbrIdx++;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // nbrPerm maps original index to array position
+    // RDKit✔️✔️:   std::vector<unsigned int> nbrPerm(nbrIdx);
+    // RDKit✔️✔️:   std::iota(nbrPerm.begin(), nbrPerm.end(), 0);
+    // RDKit✔️✔️:   std::vector<unsigned int> probePerm(probe.size());
+    // RDKit✔️✔️:   nbrIdx = 0;
+    // RDKit✔️✔️:   for (auto v : probe) {
+    // RDKit✔️✔️:     probePerm[nbrIdx++] = v < 0 ? -1 : order[v];
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // Missing (implicit) neighbors are at the end when in storage order
+    // RDKit✔️✔️:   if (nbrPerm.size() < nbrIdx) {
+    // RDKit✔️✔️:     nbrPerm.insert(nbrPerm.end(), nbrIdx - nbrPerm.size(), -1);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   CHECK_INVARIANT(nbrPerm.size() == probePerm.size(),
+    // RDKit✔️✔️:                   "probe vector size does not match");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (inverse) {
+    // RDKit✔️✔️:     std::swap(nbrPerm, probePerm);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   boost::dynamic_bitset<> swapped(probe.size());
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < probePerm.size() - 1; ++i) {
+    // RDKit✔️✔️:     auto pval = probePerm[i];
+    // RDKit✔️✔️:     if (nbrPerm[i] == pval) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     auto tgt = std::find(nbrPerm.begin() + i, nbrPerm.end(), pval);
+    // RDKit✔️✔️:     TEST_ASSERT(tgt != nbrPerm.end());
+    // RDKit✔️✔️:     perm = swap_func(perm, i, tgt - nbrPerm.begin());
+    // RDKit✔️✔️:     std::swap(*tgt, nbrPerm[i]);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return perm;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/NontetrahedralStereo.cpp :: Chirality::getChiralPermutation
+    if perm == 0 {
+        return Ok(0);
+    }
+    let swap_func: fn(u32, usize, usize) -> u32 = match chiral_tag {
+        ChiralTag::SquarePlanar if probe.len() <= 4 => swap_squareplanar,
+        ChiralTag::TrigonalBipyramidal if probe.len() <= 5 => swap_trigonalbipyramidal,
+        ChiralTag::Octahedral if probe.len() <= 6 => swap_octahedral,
+        ChiralTag::SquarePlanar | ChiralTag::TrigonalBipyramidal | ChiralTag::Octahedral => {
+            return Ok(0);
+        }
+        _ => return Ok(0),
+    };
+
+    let mut order = vec![-1isize; bond_count];
+    for (neighbor_index, &bond_index) in incident_bond_indices.iter().enumerate() {
+        let slot = order
+            .get_mut(bond_index)
+            .ok_or(ChiralPermutationError::BondIndexOutOfBounds)?;
+        *slot = neighbor_index as isize;
+    }
+    let mut neighbor_permutation = (0..incident_bond_indices.len() as isize).collect::<Vec<_>>();
+    let mut probe_permutation = Vec::with_capacity(probe.len());
+    for bond_index in probe {
+        let position = match bond_index {
+            Some(bond_index) => *order
+                .get(*bond_index)
+                .ok_or(ChiralPermutationError::BondIndexOutOfBounds)?,
+            None => -1,
+        };
+        probe_permutation.push(position);
+    }
+    if neighbor_permutation.len() < probe_permutation.len() {
+        neighbor_permutation.extend(std::iter::repeat_n(
+            -1,
+            probe_permutation.len() - neighbor_permutation.len(),
+        ));
+    }
+    if neighbor_permutation.len() != probe_permutation.len() {
+        return Err(ChiralPermutationError::ProbeSizeMismatch);
+    }
+    if inverse {
+        std::mem::swap(&mut neighbor_permutation, &mut probe_permutation);
+    }
+    for index in 0..probe_permutation.len().saturating_sub(1) {
+        let probe_value = probe_permutation[index];
+        if neighbor_permutation[index] == probe_value {
+            continue;
+        }
+        let target = neighbor_permutation[index..]
+            .iter()
+            .position(|value| *value == probe_value)
+            .map(|offset| index + offset)
+            .ok_or(ChiralPermutationError::MissingProbeElement)?;
+        perm = swap_func(perm, index, target);
+        neighbor_permutation.swap(index, target);
+    }
+    Ok(perm)
+}
+
 pub(crate) fn nontetrahedral_chiral_permutation_for_probe(
     molecule: &Molecule,
     atom_id: AtomId,
     probe: &[Option<BondId>],
     inverse: bool,
 ) -> Result<u32, String> {
-    // BEGIN RDKIT CPP FUNCTION Chirality::getChiralPermutation
-    // RDKit✔️✔️: unsigned int getChiralPermutation(const Atom *cen, const INT_LIST &probe,
-    // RDKit✔️✔️:                                   bool inverse) {
-    // RDKit✔️✔️:   int perm;
-    // RDKit✔️✔️:   if (!cen->getPropIfPresent(common_properties::_chiralPermutation, perm) ||
-    // RDKit✔️✔️:       perm <= 0) {
-    // RDKit✔️✔️:     return 0;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   decltype(&swap_octahedral) swap_func = nullptr;
-    // RDKit✔️✔️:   switch (cen->getChiralTag()) { ... }
-    // RDKit✔️✔️:   std::vector<int> order(cen->getOwningMol().getNumBonds(), -1);
-    // RDKit✔️✔️:   for (const auto bnd : cen->getOwningMol().atomBonds(cen)) {
-    // RDKit✔️✔️:     order[bnd->getIdx()] = nbrIdx++;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   std::vector<unsigned int> nbrPerm(nbrIdx);
-    // RDKit✔️✔️:   std::iota(nbrPerm.begin(), nbrPerm.end(), 0);
-    // RDKit✔️✔️:   std::vector<unsigned int> probePerm(probe.size());
-    // RDKit✔️✔️:   for (auto v : probe) {
-    // RDKit✔️✔️:     probePerm[nbrIdx++] = v < 0 ? -1 : order[v];
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (nbrPerm.size() < nbrIdx) {
-    // RDKit✔️✔️:     nbrPerm.insert(nbrPerm.end(), nbrIdx - nbrPerm.size(), -1);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (inverse) {
-    // RDKit✔️✔️:     std::swap(nbrPerm, probePerm);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   for (unsigned int i = 0; i < probePerm.size() - 1; ++i) { ... }
-    // RDKit✔️✔️:   return perm;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION Chirality::getChiralPermutation
     let atom = molecule
         .atoms()
         .get(atom_id.index())
         .ok_or_else(|| format!("missing atom {atom_id}"))?;
-    let mut perm = atom.chiral_permutation().unwrap_or(0);
-    if perm == 0 {
-        return Ok(0);
-    }
-    let swap_func: fn(u32, usize, usize) -> u32 = match atom.chiral_tag() {
-        ChiralTag::SquarePlanar => {
-            if probe.len() > 4 {
-                return Ok(0);
-            }
-            swap_squareplanar
-        }
-        ChiralTag::TrigonalBipyramidal => {
-            if probe.len() > 5 {
-                return Ok(0);
-            }
-            swap_trigonalbipyramidal
-        }
-        ChiralTag::Octahedral => {
-            if probe.len() > 6 {
-                return Ok(0);
-            }
-            swap_octahedral
-        }
-        _ => return Ok(0),
-    };
-
-    let mut order = vec![-1isize; molecule.num_bonds()];
-    let mut nbr_idx = 0isize;
-    for bond in molecule.bonds() {
-        if bond.begin() == atom_id || bond.end() == atom_id {
-            order[bond.id().index()] = nbr_idx;
-            nbr_idx += 1;
-        }
-    }
-    let mut nbr_perm = (0..nbr_idx).collect::<Vec<_>>();
-    let mut probe_perm = Vec::with_capacity(probe.len());
-    for bond in probe {
-        match bond {
-            Some(bond_id) => probe_perm.push(order[bond_id.index()]),
-            None => probe_perm.push(-1),
-        }
-    }
-    if nbr_perm.len() < probe_perm.len() {
-        nbr_perm.extend(std::iter::repeat_n(-1, probe_perm.len() - nbr_perm.len()));
-    }
-    if inverse {
-        std::mem::swap(&mut nbr_perm, &mut probe_perm);
-    }
-    for i in 0..probe_perm.len().saturating_sub(1) {
-        let pval = probe_perm[i];
-        if nbr_perm[i] == pval {
-            continue;
-        }
-        let Some(target) = nbr_perm[i..]
-            .iter()
-            .position(|value| *value == pval)
-            .map(|offset| i + offset)
-        else {
-            return Err("could not find probe element".to_string());
-        };
-        perm = swap_func(perm, i, target);
-        nbr_perm.swap(i, target);
-    }
-    Ok(perm)
+    let incident_bonds = molecule
+        .bonds()
+        .iter()
+        .filter(|bond| bond.begin() == atom_id || bond.end() == atom_id)
+        .map(|bond| bond.id().index())
+        .collect::<Vec<_>>();
+    let probe = probe
+        .iter()
+        .map(|bond_id| bond_id.map(BondId::index))
+        .collect::<Vec<_>>();
+    nontetrahedral_chiral_permutation_kernel(
+        atom.chiral_permutation().unwrap_or(0),
+        atom.chiral_tag(),
+        molecule.num_bonds(),
+        &incident_bonds,
+        &probe,
+        inverse,
+    )
+    .map_err(|error| error.message().to_string())
 }
 
 pub fn assign_double_bond_stereo_from_directions(

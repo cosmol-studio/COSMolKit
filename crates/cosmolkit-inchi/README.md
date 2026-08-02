@@ -39,6 +39,15 @@ Production code uses only owned Rust data and the Rust allocator. It does not:
 Official C is compiled only by independent test-oracle fixtures and never enters
 the production dependency graph.
 
+## Validation Status
+
+Focused source-port tests cover the active official-engine call graph, and
+independent official-C oracle tests compare observable output fields at the
+function boundaries. The public COSMolKit adapter is also compared exactly
+with pinned RDKit output on the committed small corpus and the 5000-row InChI
+corpus. Tests do not ignore fields, use compatibility thresholds, or route
+production calls through the C oracle.
+
 ## Source Alignment
 
 The official engine source is pinned to IUPAC InChI `v1.07.5`:

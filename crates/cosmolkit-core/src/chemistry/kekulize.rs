@@ -1804,81 +1804,34 @@ fn ordered_kekulize_rings(
 }
 
 fn fused_ring_systems(rings: &[KekulizeRing]) -> Vec<Vec<usize>> {
-    // BEGIN RDKIT CPP FUNCTION RingUtils::makeRingNeighborMap
-    // RDKit✔️✔️: void makeRingNeighborMap(const VECT_INT_VECT &brings,
-    // RDKit✔️✔️:                          INT_INT_VECT_MAP &neighMap, unsigned int maxSize,
-    // RDKit✔️✔️:                          unsigned int maxOverlapSize) {
-    // RDKit✔️✔️:   auto nrings = rdcast<int>(brings.size());
-    // RDKit✔️✔️:   for (i = 0; i < nrings; ++i) {
-    // RDKit✔️✔️:     neighMap[i];
-    // RDKit✔️✔️:     ring1 = brings[i];
-    // RDKit✔️✔️:     for (j = i + 1; j < nrings; ++j) {
-    // RDKit✔️✔️:       INT_VECT inter;
-    // RDKit✔️✔️:       Intersect(ring1, brings[j], inter);
-    // RDKit✔️✔️:       if (inter.size() > 0 &&
-    // RDKit✔️✔️:           (!maxOverlapSize || inter.size() <= maxOverlapSize)) {
-    // RDKit✔️✔️:         neighMap[i].push_back(j);
-    // RDKit✔️✔️:         neighMap[j].push_back(i);
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION RingUtils::makeRingNeighborMap
-    let mut neighbor_map = vec![Vec::<usize>::new(); rings.len()];
-    for left in 0..rings.len() {
-        for right in (left + 1)..rings.len() {
-            if rings_share_bond(rings, left, right) {
-                neighbor_map[left].push(right);
-                neighbor_map[right].push(left);
-            }
-        }
-    }
-
-    // BEGIN RDKIT CPP FUNCTION RingUtils::pickFusedRings
-    // RDKit✔️✔️: void pickFusedRings(int curr, const INT_INT_VECT_MAP &neighMap, INT_VECT &res,
-    // RDKit✔️✔️:                     boost::dynamic_bitset<> &done, int depth) {
-    // RDKit✔️✔️:   auto pos = neighMap.find(curr);
-    // RDKit✔️✔️:   done[curr] = 1;
-    // RDKit✔️✔️:   res.push_back(curr);
-    // RDKit✔️✔️:   const auto &neighs = pos->second;
-    // RDKit✔️✔️:   for (int neigh : neighs) {
-    // RDKit✔️✔️:     if (!done[neigh]) {
-    // RDKit✔️✔️:       pickFusedRings(neigh, neighMap, res, done, depth + 1);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION RingUtils::pickFusedRings
+    let neighbor_map = crate::source_port_helpers::rdkit_make_ring_neighbor_map(
+        rings.len(),
+        |index| rings[index].bonds.as_slice(),
+        0,
+        0,
+    );
     let mut systems = Vec::<Vec<usize>>::new();
     let mut done = vec![false; rings.len()];
-    let mut curr = 0usize;
-    while curr < rings.len() {
+    let mut current = 0usize;
+    while current < rings.len() {
         let mut fused = Vec::new();
-        pick_fused_rings_rdkit_order(curr, &neighbor_map, &mut fused, &mut done);
+        crate::source_port_helpers::rdkit_pick_fused_rings(
+            current,
+            &neighbor_map,
+            &mut fused,
+            &mut done,
+            0,
+        )
+        .expect("RingUtils map contains every source ring index");
         systems.push(fused);
 
         let Some(next) = done.iter().position(|is_done| !*is_done) else {
             break;
         };
-        curr = next;
+        current = next;
     }
     systems
 }
-
-fn pick_fused_rings_rdkit_order(
-    curr: usize,
-    neighbor_map: &[Vec<usize>],
-    result: &mut Vec<usize>,
-    done: &mut [bool],
-) {
-    done[curr] = true;
-    result.push(curr);
-    for &neighbor in &neighbor_map[curr] {
-        if !done[neighbor] {
-            pick_fused_rings_rdkit_order(neighbor, neighbor_map, result, done);
-        }
-    }
-}
-
 fn fused_ring_systems_stack_order_for_tests(rings: &[KekulizeRing]) -> Vec<Vec<usize>> {
     let mut systems = Vec::<Vec<usize>>::new();
     let mut seen = vec![false; rings.len()];
@@ -2139,6 +2092,34 @@ mod tests {
         );
         let ring_systems = fused_ring_systems(&kekulize_rings);
         (rings, kekulize_rings, ring_systems)
+    }
+
+    #[test]
+    fn shared_ring_utils_kekulize_preserves_recursive_neighbor_order() {
+        let rings = vec![
+            KekulizeRing {
+                atoms: Vec::new(),
+                bonds: vec![BondId::new(0), BondId::new(1)],
+                source_ring: 0,
+            },
+            KekulizeRing {
+                atoms: Vec::new(),
+                bonds: vec![BondId::new(1), BondId::new(2)],
+                source_ring: 1,
+            },
+            KekulizeRing {
+                atoms: Vec::new(),
+                bonds: vec![BondId::new(0), BondId::new(3)],
+                source_ring: 2,
+            },
+            KekulizeRing {
+                atoms: Vec::new(),
+                bonds: vec![BondId::new(2), BondId::new(4)],
+                source_ring: 3,
+            },
+        ];
+
+        assert_eq!(fused_ring_systems(&rings), vec![vec![0, 1, 3, 2]]);
     }
 
     #[test]

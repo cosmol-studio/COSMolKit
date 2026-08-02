@@ -22,6 +22,28 @@ fn parse_number_token(input: &str) -> Result<i32, SmilesParseError> {
 }
 
 #[test]
+fn shared_get_iso_map_smiles_adapter_preserves_missing_atom_error() {
+    let mut builder = MoleculeBuilder::new();
+    let carbon = builder.add_atom(AtomSpec::new(Element::C));
+    let deuterium = builder.add_atom(AtomSpec::new(Element::H).with_isotope(2));
+    let bond = builder
+        .add_bond(BondSpec::new(carbon, deuterium, BondOrder::Single))
+        .unwrap();
+    let missing = AtomId::new(7);
+    builder
+        .bond_mut(bond)
+        .unwrap()
+        .set_endpoints(carbon, missing);
+
+    let error = tracked_smiles_isotopic_hydrogens(&builder).unwrap_err();
+
+    assert!(matches!(
+        error,
+        SmilesParseError::ParseError(message) if message == "missing atom 7"
+    ));
+}
+
+#[test]
 fn preprocess_smiles_splits_name_when_cxsmiles_disabled() {
     let params = SmilesParseParams::without_cxsmiles_for_test();
     let result = preprocess_smiles("CCO ethanol", &params).unwrap();
@@ -2112,7 +2134,7 @@ fn handle_cx_part_and_name_parses_substitution_query_like_rdkit() {
 }
 
 #[test]
-fn atom_query_has_single_h_count_matches_rdkit_atomand_only() {
+fn shared_canon_helpers_has_single_h_query_matches_rdkit_atomand_only() {
     let direct_h = QueryNode::predicate(AtomQueryPredicate::ImplicitHydrogenCount(1));
     let atom_and_h = QueryNode::and(vec![
         QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
@@ -2140,7 +2162,150 @@ fn atom_query_has_single_h_count_matches_rdkit_atomand_only() {
 }
 
 #[test]
-fn atom_has_fourth_valence_treats_single_h_query_like_rdkit() {
+fn shared_canon_helpers_pure_predicates_cover_every_source_condition() {
+    assert!(!canon_chiral_atom_needs_tag_inversion(
+        2, 1, true, false, 1, false
+    ));
+    assert!(canon_chiral_atom_needs_tag_inversion(
+        3, 1, true, true, 0, true
+    ));
+    assert!(canon_chiral_atom_needs_tag_inversion(
+        3, 0, false, false, 1, false
+    ));
+    assert!(!canon_chiral_atom_needs_tag_inversion(
+        3, 0, false, true, 1, false
+    ));
+    assert!(!canon_chiral_atom_needs_tag_inversion(
+        3, 0, false, false, 0, false
+    ));
+    assert!(!canon_chiral_atom_needs_tag_inversion(
+        3, 0, false, false, 1, true
+    ));
+
+    assert!(canon_atom_has_fourth_valence(1, false, false));
+    assert!(canon_atom_has_fourth_valence(0, true, false));
+    assert!(canon_atom_has_fourth_valence(0, false, true));
+    assert!(!canon_atom_has_fourth_valence(0, false, false));
+}
+
+#[test]
+fn shared_canon_helpers_chiral_permutation_kernel_covers_tags_inverse_and_errors() {
+    let incident = [0, 1, 2, 3, 4, 5];
+    let square_probe = [Some(1), Some(0), Some(2), Some(3)];
+    assert_eq!(
+        nontetrahedral_chiral_permutation_kernel(
+            1,
+            ChiralTag::SquarePlanar,
+            6,
+            &incident[..4],
+            &square_probe,
+            false,
+        ),
+        Ok(3)
+    );
+    assert_eq!(
+        nontetrahedral_chiral_permutation_kernel(
+            1,
+            ChiralTag::SquarePlanar,
+            6,
+            &incident[..4],
+            &square_probe,
+            true,
+        ),
+        Ok(3)
+    );
+    assert_eq!(
+        nontetrahedral_chiral_permutation_kernel(
+            1,
+            ChiralTag::TrigonalBipyramidal,
+            6,
+            &incident[..5],
+            &[Some(1), Some(0), Some(2), Some(3), Some(4)],
+            false,
+        ),
+        Ok(9)
+    );
+    assert_eq!(
+        nontetrahedral_chiral_permutation_kernel(
+            1,
+            ChiralTag::Octahedral,
+            6,
+            &incident,
+            &[Some(1), Some(0), Some(2), Some(3), Some(4), Some(5),],
+            false,
+        ),
+        Ok(17)
+    );
+    assert_eq!(
+        nontetrahedral_chiral_permutation_kernel(
+            0,
+            ChiralTag::SquarePlanar,
+            4,
+            &incident[..4],
+            &square_probe,
+            false,
+        ),
+        Ok(0)
+    );
+    assert_eq!(
+        nontetrahedral_chiral_permutation_kernel(
+            1,
+            ChiralTag::TetrahedralCw,
+            4,
+            &incident[..4],
+            &square_probe,
+            false,
+        ),
+        Ok(0)
+    );
+    assert_eq!(
+        nontetrahedral_chiral_permutation_kernel(
+            1,
+            ChiralTag::SquarePlanar,
+            6,
+            &incident[..5],
+            &[Some(0), Some(1), Some(2), Some(3), Some(4)],
+            false,
+        ),
+        Ok(0)
+    );
+    assert_eq!(
+        nontetrahedral_chiral_permutation_kernel(
+            1,
+            ChiralTag::SquarePlanar,
+            4,
+            &incident[..4],
+            &[Some(0), Some(1), Some(2)],
+            false,
+        ),
+        Err(ChiralPermutationError::ProbeSizeMismatch)
+    );
+    assert_eq!(
+        nontetrahedral_chiral_permutation_kernel(
+            1,
+            ChiralTag::SquarePlanar,
+            4,
+            &incident[..4],
+            &[None, Some(0), Some(1), Some(2)],
+            false,
+        ),
+        Err(ChiralPermutationError::MissingProbeElement)
+    );
+    assert_eq!(
+        nontetrahedral_chiral_permutation_kernel(
+            1,
+            ChiralTag::SquarePlanar,
+            4,
+            &incident[..4],
+            &[Some(4), Some(0), Some(1), Some(2)],
+            false,
+        ),
+        Err(ChiralPermutationError::BondIndexOutOfBounds)
+    );
+}
+
+#[test]
+fn shared_canon_helpers_parser_atom_has_fourth_valence_uses_single_h_query() {
     let mut state = SmilesBuildState::new();
     let atom = state
         .builder
@@ -2153,7 +2318,7 @@ fn atom_has_fourth_valence_treats_single_h_query_like_rdkit() {
 }
 
 #[test]
-fn atom_has_fourth_valence_uses_explicit_h_and_false_fallback_like_rdkit() {
+fn shared_canon_helpers_parser_atom_has_fourth_valence_uses_explicit_h_and_false_fallback() {
     let mut state = SmilesBuildState::new();
     let explicit_h = state
         .builder
@@ -2252,7 +2417,7 @@ fn perturbation_order_rejects_missing_probe_element_like_rdkit() {
 }
 
 #[test]
-fn chiral_atom_needs_tag_inversion_matches_rdkit_degree_and_unsaturation_rules() {
+fn shared_canon_helpers_parser_chiral_inversion_preserves_degree_and_unsaturation_rules() {
     let mut first_atom = SmilesBuildState::new();
     let first = first_atom
         .builder
@@ -3058,7 +3223,8 @@ fn from_smiles_with_sanitize_false_recomputes_nontetrahedral_ring_permutation_li
 }
 
 #[test]
-fn nontetrahedral_chiral_permutation_for_probe_returns_zero_for_nonpositive_or_oversized_cases() {
+fn shared_canon_helpers_molecule_chiral_permutation_returns_zero_for_nonpositive_or_oversized_cases()
+ {
     let mut builder = Molecule::builder();
     let center_without_perm =
         builder.add_atom(AtomSpec::new(Element::PT).with_chiral_tag(ChiralTag::SquarePlanar));

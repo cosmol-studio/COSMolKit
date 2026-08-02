@@ -8,9 +8,6 @@ operations, or macro-controlled operation machinery, read `dev/README.md`.
 
 - `crates/cosmolkit-core/`: current molecular graph, state, operation, IO, and
   chemistry core.
-- `crates/cosmolkit-core-old/`: previous implementation; reference material
-  only. Do not depend on, re-export from, or silently copy its behavior into the
-  current core.
 - `crates/cosmolkit-macros/`: proc macros for operation bodies, registries, and
   generated tables.
 - `crates/cosmolkit/`: Rust facade and top-level public API.
@@ -37,8 +34,6 @@ Ports from RDKit, Gemmi, OpenBabel, or other C/C++ libraries must follow
 - Use the required two-axis source markers for behavior and complexity status.
 - Unsupported source behavior must return structured unsupported errors or stay
   marked unsupported; do not hide gaps behind silent fallbacks.
-- `crates/cosmolkit-core-old/` may explain prior intent, but it is not an
-  authority for current behavior.
 
 ## Operation System
 
@@ -127,8 +122,8 @@ Build docs and run type checks with:
 ```
 
 Python APIs should follow the current Rust core API, should not expose internal
-helpers, and should not preserve old-core compatibility behavior unless there is
-an explicit public API decision.
+helpers, and should not preserve superseded compatibility behavior unless there
+is an explicit public API decision.
 
 ## Coding And Testing
 

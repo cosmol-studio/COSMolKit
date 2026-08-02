@@ -16,6 +16,9 @@
   <a href="https://pypi.org/project/cosmolkit/">
     <img src="https://img.shields.io/pypi/v/cosmolkit.svg" alt="pypi badge"/>
   </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license badge"/>
+  </a>
 </p>
 
 COSMolKit is a Python molecular toolkit backed by a Rust core. It provides
@@ -38,6 +41,18 @@ workflows.
 - Python documentation: <https://kit.cosmol.org/>
 - Rust crate notes: [`crates/cosmolkit/README.md`](crates/cosmolkit/README.md)
 - Feature parity scope: [`dev/parity_scope.md`](dev/parity_scope.md)
+
+## Validation Status
+
+The supported Rust surface is tested with strict operation contracts. Coverage
+CI instruments `cosmolkit-core`, `cosmolkit-inchi`, and
+`cosmolkit-ringdecomposer`, rejects mismatched LLVM profile data, and runs the
+committed 5000-row InChI parity corpus in addition to the default test suites.
+
+The four public scalar InChI operations match pinned official InChI v1.07.5
+and RDKit 2026.03.1 output exactly for all currently validated source-defined
+cases. Official-C undefined behavior is represented by a structured Rust error
+instead of an implementation-dependent result.
 
 ## Installation
 
@@ -291,9 +306,9 @@ Goal: keep the supported molecular core correct before expanding breadth.
 - ✅ MACCS fingerprints for the validated exact raw/public projection
 - 🚧 RDKFingerprint/topological and Avalon fingerprints (fail closed until source ports exist)
 - ✅ Substructure matching and Python SMARTS parse metadata
-- 🧪 Molecular descriptors: average/exact molecular weight, formula, H-bond
+- ✅ Molecular descriptors: average/exact molecular weight, formula, H-bond
   donor/acceptor counts, fraction Csp3, Crippen logP/MR, TPSA, aromatic-ring
-  count, rotatable-bond modes, and QED
+  count, rotatable-bond modes, and QED for the documented parameter space
 
 ### File I/O and Depiction
 
@@ -369,3 +384,9 @@ COSMolKit is developed with deep respect for RDKit and the broader open-source
 cheminformatics community. The goal is an independent Rust-native implementation
 that preserves interoperability and RDKit-parity behavior where appropriate,
 while offering a deterministic Python API and AI-native extension surface.
+
+## License
+
+COSMolKit is licensed under the [MIT License](LICENSE). Vendored sources and
+externally derived test fixtures retain their upstream copyright and license
+terms as documented beside those files.

@@ -3,7 +3,7 @@ name = "cosmolkit-test-support"
 description = "Repository-local test data and expected-output support for COSMolKit"
 version.workspace = true
 edition.workspace = true
-license = "MIT OR Apache-2.0"
+license.workspace = true
 publish = false
 
 [dependencies]

@@ -27,7 +27,6 @@ The crate must not own or depend on:
 - a native or system InChI library in production;
 - subprocesses, external executables, or network access;
 - SMILES or MolBlock regeneration as a substitute for InChI behavior;
-- `crates/cosmolkit-core-old`.
 
 Conversion between COSMolKit `Molecule` and the toolkit-neutral input belongs
 in `cosmolkit-core`, outside this crate. A native official-C oracle may exist

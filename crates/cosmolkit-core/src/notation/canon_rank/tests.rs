@@ -1,6 +1,18 @@
 use super::*;
 use crate::{AtomSpec, BondSpec, Element, MoleculeBuilder, StereoGroup};
 
+#[test]
+#[should_panic(expected = "size mismatch")]
+fn shared_count_swaps_canon_preserves_size_precondition_panic() {
+    let _ = count_swaps_to_interconvert(&[1_u8, 2], vec![1]);
+}
+
+#[test]
+#[should_panic(expected = "could not find probe element")]
+fn shared_count_swaps_canon_preserves_missing_element_invariant_panic() {
+    let _ = count_swaps_to_interconvert(&[1_u8, 2], vec![1, 3]);
+}
+
 fn init_fragment_canon_atoms_for_kekulize<'a>(
     molecule: &Molecule,
     atoms_to_use: &[bool],

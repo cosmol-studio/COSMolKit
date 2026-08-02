@@ -1,5 +1,43 @@
 use super::*;
 
+#[test]
+fn shared_periodic_table_delegation_covers_smiles_symbols_and_fallback() {
+    for atomic_number in 0..=118 {
+        assert_eq!(
+            element_symbol(atomic_number).unwrap(),
+            crate::rdkit_element_symbol(atomic_number).unwrap()
+        );
+    }
+    assert_eq!(element_symbol(200).unwrap(), "?");
+}
+
+#[test]
+fn shared_count_swaps_smiles_writer_preserves_invariant_failure_mapping() {
+    let size_error =
+        stereo::count_swaps_to_interconvert(&[BondId::new(0)], &[BondId::new(0), BondId::new(1)])
+            .unwrap_err();
+    assert!(matches!(
+        size_error,
+        SmilesWriteError::InvariantViolation {
+            stage: "ShortTermAtomWriter",
+            message: "count_swaps_to_interconvert() probe/reference length mismatch",
+        }
+    ));
+
+    let missing_error = stereo::count_swaps_to_interconvert(
+        &[BondId::new(0), BondId::new(2)],
+        &[BondId::new(0), BondId::new(1)],
+    )
+    .unwrap_err();
+    assert!(matches!(
+        missing_error,
+        SmilesWriteError::InvariantViolation {
+            stage: "ShortTermAtomWriter",
+            message: "count_swaps_to_interconvert() expected bond missing from probe order",
+        }
+    ));
+}
+
 fn ethane() -> Molecule {
     Molecule::from_smiles_with_sanitize("CC", false).unwrap()
 }
@@ -449,7 +487,7 @@ fn rooted_canonical_writer_matches_rdkit_branch_order_for_multichiral_case() {
 }
 
 #[test]
-fn canonical_dfs_traversal_treats_single_h_query_as_fourth_valence_for_writer() {
+fn shared_canon_helpers_writer_treats_single_h_query_as_fourth_valence() {
     let mut builder = crate::MoleculeBuilder::new();
     let center = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_query(
         crate::QueryNode::and(vec![
@@ -479,7 +517,7 @@ fn canonical_dfs_traversal_treats_single_h_query_as_fourth_valence_for_writer() 
 }
 
 #[test]
-fn canonical_dfs_traversal_treats_implicit_h_valence_as_fourth_for_writer() {
+fn shared_canon_helpers_writer_treats_cached_implicit_h_as_fourth_valence() {
     let molecule = Molecule::from_smiles_with_sanitize("F[C@H](Cl)Br", true).unwrap();
     let center = AtomId::new(1);
 

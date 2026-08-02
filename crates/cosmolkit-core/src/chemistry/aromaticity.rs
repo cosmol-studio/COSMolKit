@@ -537,38 +537,16 @@ fn pick_fused_rings(
     done: &mut [bool],
     depth: usize,
 ) -> Result<(), AromaticityError> {
-    // BEGIN RDKIT CPP FUNCTION RingUtils::pickFusedRings
-    // RDKit✔️✔️: void pickFusedRings(int curr, const INT_INT_VECT_MAP &neighMap, INT_VECT &res,
-    // RDKit✔️✔️:                     boost::dynamic_bitset<> &done, int depth) {
-    // RDKit✔️✔️:   auto pos = neighMap.find(curr);
-    // RDKit✔️✔️:   PRECONDITION(pos != neighMap.end(), "bad argument");
-    let Some(neighbors) = neighbor_map.get(&current) else {
-        return Err(AromaticityError::InvariantViolation {
-            message: "bad argument",
-        });
-    };
-    // RDKit✔️✔️:   done[curr] = 1;
-    // RDKit✔️✔️:   res.push_back(curr);
-    let _ = depth;
-    done[current] = true;
-    result.push(current);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   const auto &neighs = pos->second;
-    // RDKit✔️✔️:   for (int neigh : neighs) {
-    for &neighbor in neighbors {
-        // RDKit✔️✔️:     if (!done[neigh]) {
-        // RDKit✔️✔️:       pickFusedRings(neigh, neighMap, res, done, depth + 1);
-        // RDKit✔️✔️:     }
-        if !done[neighbor] {
-            pick_fused_rings(neighbor, neighbor_map, result, done, depth + 1)?;
-        }
-    }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION RingUtils::pickFusedRings
-    Ok(())
+    crate::source_port_helpers::rdkit_pick_fused_rings(current, neighbor_map, result, done, depth)
+        .map_err(|error| AromaticityError::InvariantViolation {
+            message: match error {
+                crate::source_port_helpers::RingNeighborError::MissingRing => "bad argument",
+                crate::source_port_helpers::RingNeighborError::RingIndexOutOfBounds => {
+                    "ring index out of range"
+                }
+            },
+        })
 }
-
 #[allow(dead_code)]
 fn check_fused(
     ring_ids: &[usize],
@@ -628,60 +606,13 @@ fn make_ring_neighbor_map(
     max_size: usize,
     max_overlap_size: usize,
 ) -> RingNeighborMap {
-    // BEGIN RDKIT CPP FUNCTION RingUtils::makeRingNeighborMap
-    // RDKit✔️✔️: void makeRingNeighborMap(const VECT_INT_VECT &brings,
-    // RDKit✔️✔️:                          INT_INT_VECT_MAP &neighMap, unsigned int maxSize,
-    // RDKit✔️✔️:                          unsigned int maxOverlapSize) {
-    // RDKit✔️✔️:   auto nrings = rdcast<int>(brings.size());
-    // RDKit✔️✔️:   int i, j;
-    // RDKit✔️✔️:   INT_VECT ring1;
-    let mut neighbor_map = RingNeighborMap::new();
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   for (i = 0; i < nrings; ++i) {
-    for i in 0..bond_rings.len() {
-        // RDKit✔️✔️:     // create an empty INT_VECT at neighMap[i] if it does not yet exist
-        // RDKit✔️✔️:     neighMap[i];
-        neighbor_map.entry(i).or_default();
-        // RDKit✔️✔️:     if (maxSize && brings[i].size() > maxSize) {
-        // RDKit✔️✔️:       continue;
-        // RDKit✔️✔️:     }
-        if max_size != 0 && bond_rings[i].len() > max_size {
-            continue;
-        }
-        // RDKit✔️✔️:     ring1 = brings[i];
-        let ring1 = bond_rings[i].iter().copied().collect::<BTreeSet<_>>();
-        // RDKit✔️✔️:     for (j = i + 1; j < nrings; ++j) {
-        for j in i + 1..bond_rings.len() {
-            // RDKit✔️✔️:       if (maxSize && brings[j].size() > maxSize) {
-            // RDKit✔️✔️:         continue;
-            // RDKit✔️✔️:       }
-            if max_size != 0 && bond_rings[j].len() > max_size {
-                continue;
-            }
-            // RDKit✔️✔️:       INT_VECT inter;
-            // RDKit✔️✔️:       Intersect(ring1, brings[j], inter);
-            let overlap = bond_rings[j]
-                .iter()
-                .filter(|bond| ring1.contains(bond))
-                .count();
-            // RDKit✔️✔️:       if (inter.size() > 0 &&
-            // RDKit✔️✔️:           (!maxOverlapSize || inter.size() <= maxOverlapSize)) {
-            if overlap > 0 && (max_overlap_size == 0 || overlap <= max_overlap_size) {
-                // RDKit✔️✔️:         neighMap[i].push_back(j);
-                // RDKit✔️✔️:         neighMap[j].push_back(i);
-                neighbor_map.entry(i).or_default().push(j);
-                neighbor_map.entry(j).or_default().push(i);
-            }
-            // RDKit✔️✔️:       }
-        }
-        // RDKit✔️✔️:     }
-    }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION RingUtils::makeRingNeighborMap
-    neighbor_map
+    crate::source_port_helpers::rdkit_make_ring_neighbor_map(
+        bond_rings.len(),
+        |index| bond_rings[index].as_slice(),
+        max_size,
+        max_overlap_size,
+    )
 }
-
 fn convert_candidate_ring_to_bonds(
     context: &AromaticityContext<'_>,
     ring: &[usize],
@@ -2524,7 +2455,7 @@ mod tests {
     }
 
     #[test]
-    fn make_ring_neighbor_map_matches_rdkit_overlap_rules() {
+    fn shared_ring_utils_aromaticity_preserves_overlap_rules() {
         let map = make_ring_neighbor_map(&[vec![0, 1, 2], vec![2, 3, 4], vec![4, 5, 6]], 0, 1);
 
         assert_eq!(map.get(&0), Some(&vec![1]));
@@ -2537,15 +2468,34 @@ mod tests {
     }
 
     #[test]
-    fn pick_and_check_fused_match_rdkit_graph_walk() {
-        let map = make_ring_neighbor_map(&[vec![0, 1], vec![1, 2], vec![3, 4]], 0, 1);
+    fn shared_ring_utils_aromaticity_preserves_intersect_duplicates_and_size_filter() {
+        let forward = make_ring_neighbor_map(&[vec![7, 7], vec![7]], 0, 1);
+        assert_eq!(forward.get(&0), Some(&Vec::new()));
+        assert_eq!(forward.get(&1), Some(&Vec::new()));
+
+        let reverse = make_ring_neighbor_map(&[vec![7], vec![7, 7]], 0, 1);
+        assert_eq!(reverse.get(&0), Some(&vec![1]));
+        assert_eq!(reverse.get(&1), Some(&vec![0]));
+
+        let size_filtered = make_ring_neighbor_map(&[vec![0, 1, 2], vec![2, 3]], 2, 0);
+        assert_eq!(size_filtered.get(&0), Some(&Vec::new()));
+        assert_eq!(size_filtered.get(&1), Some(&Vec::new()));
+    }
+
+    #[test]
+    fn shared_ring_utils_aromaticity_preserves_graph_walk_order_and_errors() {
+        let map = make_ring_neighbor_map(&[vec![0, 1], vec![1, 2], vec![0, 3], vec![2, 4]], 0, 1);
         let mut result = Vec::new();
         let mut done = vec![false; map.len()];
 
         pick_fused_rings(0, &map, &mut result, &mut done, 0).unwrap();
 
-        assert_eq!(result, vec![0, 1]);
+        assert_eq!(result, vec![0, 1, 3, 2]);
         assert!(check_fused(&[0, 1], &map).unwrap());
-        assert!(!check_fused(&[0, 2], &map).unwrap());
+        assert!(!check_fused(&[1, 2], &map).unwrap());
+
+        let mut missing_result = Vec::new();
+        let mut missing_done = vec![false; map.len()];
+        assert!(pick_fused_rings(4, &map, &mut missing_result, &mut missing_done, 0).is_err());
     }
 }

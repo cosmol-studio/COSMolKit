@@ -23,10 +23,10 @@ entire crate. At the current revision, 447 copied source lines are marked
 `RDL✔️✔️` and 286 remain `RDL❗✔️` because their behavior is implemented but not
 fully proven across all source-defined edge states.
 
-The crate is therefore usable by COSMolKit's experimental ring-perception
-surface, with focused regression coverage for the exercised graph states. The
-term "port" here does not claim blanket exact parity for the remaining
-`RDL❗✔️` frames.
+The crate backs COSMolKit's stable ring-perception surface for its documented
+supported graph states, with focused regression and RDKit parity coverage for
+those states. The term "port" here does not claim blanket exact parity for the
+remaining `RDL❗✔️` source frames.
 
 ## Porting Markers
 
