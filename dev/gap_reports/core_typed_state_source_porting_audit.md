@@ -1,7 +1,7 @@
 # Core Typed State Source-Porting Audit
 
 This is the Stage 1 typed-state audit for
-[`porting_plan.md`](porting_plan.md).
+[`porting_plan.md`](../archive/roadmaps/porting_plan.md).
 
 No runtime behavior is changed by this document. It records current redesigned
 Rust core state and the typed-state gaps that should be resolved before marking

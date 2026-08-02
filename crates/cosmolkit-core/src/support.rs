@@ -74,89 +74,119 @@ impl UnsupportedFeatureError {
 pub const SMILES_PARSE_FEATURE: FeatureSpec = FeatureSpec {
     name: "smiles.parse",
     category: FeatureCategory::Io,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Parse SMILES into Molecule with sanitize integration through registered operations (kekulize, valence, aromaticity, rings). RDKit-aligned postprocessing includes first-2D/first-3D conformer selection, wedged/3D stereo assignment (including non-tetrahedral branches), atropisomer chirality mutation paths, CX wiggly-bond direction cleanup, and _NeedsQueryScan ring/non-ring query completion. CX extensions (coords, labels, values, props, radicals, stereo, SGroups, hierarchy, polymer, linknodes) are parsed. Remove-H isotope tracking and the targeted fixture-backed reader parity gaps from the current checklist are closed, but the reader is not marker-complete: `notation/smiles.rs` still contains 1 `RDKit❌❌`, 2 `RDKit❗❗`, 14 `RDKit✔️❌`, and 713 `RDKit❗✔️` copied-source lines across the remaining parser/helper blockers tracked by the gap report. Remaining unported or unresolved branches fail closed or remain explicitly tracked by gap reports.",
+    docs: "Parse SMILES into Molecule with registered sanitize, valence, aromaticity, kekulize, ring, hydrogen, stereo, and supported CX postprocessing. The documented parse scope is checked against pinned RDKit graph-state golden data; unmodeled branches return explicit errors instead of guessed chemistry.",
 };
 
 pub const SMILES_WRITE_FEATURE: FeatureSpec = FeatureSpec {
     name: "smiles.write",
     category: FeatureCategory::Io,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Plain SMILES output (canonical and noncanonical) is implemented, including the checklist-closed parity cases for noncanonical/rooted/connected/ring/fused/CIP-tie double-bond direction output and non-tetrahedral class emission/permutation recomputation. Aromatic atoms (lowercase) and BondOrder::Aromatic bonds are supported. CX writer blocks are implemented for bond wedge/dash config, ring-bond cis/trans config, linknodes, polymer SGroups, SGroup hierarchy, atropisomer bonds, atom labels, molfile values, 2D coordinates, radicals, atom properties, enhanced stereo groups, and coordinate/hydrogen/zero bonds. Writer behavior depends on the chemistry-core sanitize/valence/kekulize/ring state pipeline, and writer-internal unsupported stage guards were replaced by concrete invariant/validation errors where reachable. The frozen writer file is marker-closed for the current checklist scope, but the feature remains experimental and depends on broader parser/chemistry parity surfaces that are still open elsewhere.",
+    docs: "Write canonical, noncanonical, rooted, isomeric, kekule, explicit-bond, explicit-hydrogen, dative, atom-map, and supported CX SMILES branches. The documented branch matrix is checked exactly against pinned RDKit output; unsupported branches return explicit errors.",
 };
 
 pub const MOLBLOCK_IO_FEATURE: FeatureSpec = FeatureSpec {
     name: "molblock.io",
     category: FeatureCategory::Io,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Experimental V2000/V3000 MolBlock/SDF writer with parity flag, bond-stereo, SGroup, RGroup, alias, value lines, and aromatic-bond bookkeeping. Reader has partial V2000 parsing. The writer and reader remain dependent on explicit valence/kekulize/ring state management. Unsupported branches (complex SMARTS queries, atropisomer wedge-bonds) fail closed.",
+    docs: "Read and write the documented V2000/V3000 MolBlock and SDF branches with sanitize, remove-H, strict-parsing, coordinate-dimension, stereo, SGroup, RGroup, alias, value-line, and aromatic-bond handling. Covered fields and output branches are checked against pinned RDKit; unsupported extensions fail explicitly.",
 };
 
 pub const MOL2_READ_FEATURE: FeatureSpec = FeatureSpec {
     name: "mol2.read",
     category: FeatureCategory::Io,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "RDKit-compatible Tripos MOL2 reading is source-ported from `Mol2FileParser.cpp` for the exposed `Mol2FileToMol`/`Mol2BlockToMol` profile, including `Mol2ParserParams` controls for sanitize, removeHs, CORINA variant, and cleanupSubstructures. The feature remains experimental while broader fixture parity and marker audit work continues.",
+    docs: "Read the exposed Tripos MOL2 profile with sanitize, remove-H, CORINA-variant, and cleanup-substructure controls. Topology, atom and bond fields, coordinates, chirality, and SMILES output are checked against pinned RDKit.",
 };
 
 pub const HYDROGENS_FEATURE: FeatureSpec = FeatureSpec {
     name: "molecule.hydrogens",
     category: FeatureCategory::TopologyOperation,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Experimental value-style explicit hydrogen operations. Remove-H is being ported through the operation-contract path and depends on valence/kekulize/ring state being available; unsupported source branches fail closed.",
+    docs: "Value-style and explicit in-place AddHs/RemoveHs operations with parameterized removal, atom and coordinate remapping, isotope tracking, stereo maintenance, and operation-contract checks. Modeled branches are covered by graph-state parity and focused source tests; unsupported states fail explicitly.",
 };
 
 pub const COORDINATE_2D_FEATURE: FeatureSpec = FeatureSpec {
     name: "coordinates.2d",
     category: FeatureCategory::TopologyOperation,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Experimental RDKit-aligned 2D depiction surface with value semantics. The active Rust path includes parameterized compute2DCoords entrypoints, preferCoordGen/forceRDKit routing, ring-template registry loading, mimic-distance embedding, constrained 2D/3D depiction matching, normalize/straighten helpers, and registered with_2d_coordinates exposure used by batch, MolBlock, and drawing callers. CoordGen-backed runtime branches are not available in this build and fail explicitly instead of silently diverging; final whole-surface audit/validation remains tracked separately.",
+    docs: "Generate 2D coordinates through registered value-style and in-place operations, including the local RDKit coordinate path, templates, constrained depiction, normalization, and straightening used by drawing and MolBlock workflows. Prepared coordinates and final depiction outputs are checked against pinned RDKit; unavailable CoordGen runtime branches fail explicitly.",
 };
 
 pub const COORDINATE_EDIT_FEATURE: FeatureSpec = FeatureSpec {
     name: "coordinates.edit",
     category: FeatureCategory::TopologyOperation,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::Supported,
     parity_sensitive: true,
-    docs: "Experimental coordinate block editing via registered molecule operations. This surface covers replacement of the 2D coordinate block, replacement of an existing 3D conformer, and appending an additional 3D conformer. The goal is to keep coordinate mutation inside the operation-contract path so tests can surface state/contract mismatches instead of bypassing them with ad hoc storage edits.",
+    docs: "Edit 2D and 3D coordinate blocks through registered value-style and explicit in-place operations, including replacement, clearing, and appending conformers with operation-contract validation.",
 };
 
 pub const CONFORMER_GENERATION_FEATURE: FeatureSpec = FeatureSpec {
     name: "coordinates.3d.conformer_generation",
     category: FeatureCategory::TopologyOperation,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Experimental RDKit-aligned distance-geometry conformer generation. The exposed surface uses the source-ported EmbedParameters presets, DG/KDG/ETDG/ETKDG entry points, source-backed seeded and unseeded RNG setup, deterministic explicit-seed single-conformer path, deterministic batch seed policy for multi-conformer generation, pruning, terminal-group symmetrization during symmetry-aware pruning, coordMap, CPCI, custom bounds-matrix size validation, stereo/chiral checks, macrocycle and small-ring torsion paths. Final marker audit: no first-axis `RDKit❌❌` block remains in the audited conformer-generation path; residual `RDKit✔️❌`, `RDKit✔️❗`, and `RDKit❗✔️` markers remain in the bounds-builder helper surface and should not be overstated as blanket parity closure.",
+    docs: "Generate one or multiple 3D conformers through the exposed DG/KDG/ETDG/ETKDG presets and parameter controls, including explicit seeds, pruning, coordMap, CPCI, custom bounds matrices, stereo checks, macrocycles, and small-ring torsions. Deterministic covered branches are compared with pinned RDKit coordinates and status fields.",
 };
 
 pub const SANITIZE_FEATURE: FeatureSpec = FeatureSpec {
     name: "molecule.sanitize",
     category: FeatureCategory::TopologyOperation,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Run supported RDKit-aligned sanitization steps as a weak topology-state operation, sequencing the explicit valence/kekulize/ring handoff used by the SMILES reader and other operations. Full RDKit flag/error/cleanup closure is still pending in the broader operation-orchestration surface: `operations/ops.rs` still contains 216 `RDKit✔️❌` copied-source lines across the remaining sanitize/property/cleanup orchestration blocks and helper routines tracked by the gap report. Unported requested steps fail closed.",
+    docs: "Run modeled RDKit sanitize stages as registered weak topology-state operations, including cleanup, properties, rings, kekulization, radicals, aromaticity, conjugation, hybridization, chirality cleanup, and hydrogen adjustment. End-to-end graph parity and focused stage tests cover the supported branches; unsupported requested states fail explicitly.",
 };
 
 pub const KEKULIZE_FEATURE: FeatureSpec = FeatureSpec {
     name: "molecule.with_kekulized_bonds",
     category: FeatureCategory::TopologyOperation,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Experimental operation-pipeline for kekulized bond rewriting. This is the dependency used by fused aromatic assignment and KekulizeIfPossible restoration. Fragment filtering, fused aromatic candidate selection, worker ordering/backtracking, dummy-question permutation, and value-style `KekulizeIfPossible` restoration have focused regression coverage, but broader operation-state interaction closure is still pending and `chemistry/kekulize.rs` still contains 397 `RDKit✔️❌` copied-source lines in the current frozen-scope audit; unsupported branches fail closed.",
+    docs: "Rewrite modeled aromatic systems through registered value-style and in-place kekulization, including fragment filtering, fused-ring candidate selection, backtracking, dummy-query permutations, clear-aromatic-flags behavior, and restoration on failure. Covered output branches are checked against pinned RDKit.",
 };
 
 pub const FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
     name: "fingerprint.morgan",
     category: FeatureCategory::Fingerprint,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Mixed fingerprint surface. The enumerated Morgan branches are source-backed and tested for exact RDKit equality across sparse-count, sparse-bit, hashed-count, explicit-bit, AdditionalOutput, and the committed branch matrix. MACCS is tested as the exact RDKit raw 167-bit vector and COSMolKit 166-bit projection on targeted fixtures plus the small and strict SMILES profiles. These are validation boundaries, not a claim that every RDKit fingerprint API or every unmodeled input-state preparation branch is ported. Morgan branches that require unported preparation or supplied-pattern behavior return FingerprintError. RDKFingerprintMol/topological and Avalon are not implemented: their former local path-hash approximations were removed and their public calls now return structured unsupported errors. No approximate, correlation-compatible, or 99.9%-matching vector is accepted.",
+    docs: "Provide the enumerated Morgan sparse-count, sparse-bit, hashed-count, explicit-bit, AdditionalOutput, and MACCS raw/public projection branches with exact pinned-RDKit parity. RDKFingerprint/topological, Avalon, and unmodeled preparation branches return structured unsupported errors rather than approximate vectors.",
+};
+
+pub const DESCRIPTORS_FEATURE: FeatureSpec = FeatureSpec {
+    name: "descriptors.molecular",
+    category: FeatureCategory::Core,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
+    parity_sensitive: true,
+    docs: "RDKit-aligned molecular descriptors exposed through the Rust API and Python bindings. The supported surface covers average and exact molecular weight (including only-heavy mode), formula options, H-bond donor/acceptor counts, fraction Csp3, every exposed Crippen include-H/force combination, every exposed TPSA force/S/P combination, aromatic-ring count, rotatable-bond modes, and QED. Supported corpus rows are compared field-by-field and bit-for-bit against pinned RDKit golden data, while inputs rejected by RDKit are required to fail in COSMolKit as well.",
 };
 
 pub const SUBSTRUCTURE_FEATURE: FeatureSpec = FeatureSpec {
@@ -170,13 +200,9 @@ pub const SUBSTRUCTURE_FEATURE: FeatureSpec = FeatureSpec {
 pub const DRAWING_FEATURE: FeatureSpec = FeatureSpec {
     name: "drawing.depiction",
     category: FeatureCategory::Drawing,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::Supported,
     parity_sensitive: true,
-    docs: "Experimental SVG/PNG molecule renderer with strict RDKit MolDraw2D final-SVG golden coverage for the shared corpus. \
-           The passing SVG parity boundary must not be generalized to marker-open branches. \
-           Atom labels, common bond geometry, radical dots, scale calculation, selected annotations, SGroup data, brackets, variable bonds, close-contact markers, highlights, SVG metadata, data-tag attributes, and CSS class output are modeled for the covered surface. \
-           Link-node drawing, StereoGroup masking, atomRegions, and other marker-open branches remain unfinished until their RDKit source helpers are ported and covered by exact final-output parity tests. \
-           PNG output is a rasterization of the local SVG via usvg+resvg, not a RDKit Cairo/Qt bit-parity target.",
+    docs: "Render the documented molecule depiction surface as SVG and PNG. Covered SVG output is compared exactly with pinned RDKit after normalizing only tool identifiers; PNG is deterministic local rasterization of that SVG through usvg and resvg, not a Cairo or Qt byte-parity claim. Unsupported annotation branches fail explicitly.",
 };
 
 pub const STEREO_FEATURE: FeatureSpec = FeatureSpec {
@@ -191,33 +217,41 @@ pub const STEREO_FEATURE: FeatureSpec = FeatureSpec {
            (atomChiralTypeFromBondDirPseudo3D). Full non-tetrahedral stereo infrastructure \
            (SquarePlanar, TrigonalBipyramidal, Octahedral swap tables and across-atom lookup). \
            Ring stereochemistry special-case detection. Full CIP-based bond stereo codes \
-           and assignLegacyCIPLabels dispatcher ported. assignAtomChiralTagsFromStructure \
-           (full 3D coordinate-based ChiralTag assignment) remains blocked on Conformer \
-           infrastructure completeness.",
+           and assignLegacyCIPLabels dispatcher ported. Full \
+           assignAtomChiralTagsFromStructure behavior that derives and writes ChiralTag \
+           values from conformer geometry remains unsupported; conformer storage exists, \
+           but the source-defined chiral-volume, degeneracy, overwrite, and writeback \
+           branches are not yet reproduced end to end.",
 };
 
 pub const VALENCE_FEATURE: FeatureSpec = FeatureSpec {
     name: "valence.assignment",
     category: FeatureCategory::Valence,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Experimental RDKit-aligned valence and implicit hydrogen assignment. This is a shared dependency for sanitize, kekulize, and SMILES postprocessing. `chemistry/valence.rs` now only retains 4 `RDKit✔️❌` copied-source lines in `ValenceContext::new`, and remaining work is concentrated in property-cache maintenance, radicals, dative/query edge cases, and broader entrypoint/orchestration logic in `operations/ops.rs`. Unsupported branches fail closed.",
+    docs: "Assign modeled RDKit valence, implicit hydrogens, property-cache state, and radicals through registered operations used by parsing and sanitization. Covered graph fields and focused source branches match pinned RDKit; unmodeled query or dative states fail explicitly.",
 };
 
 pub const RINGS_FEATURE: FeatureSpec = FeatureSpec {
     name: "rings.symm_sssr",
     category: FeatureCategory::TopologyOperation,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Experimental RDKit-aligned SSSR, symmetrized SSSR, fast ring traversal, and URF-enabled ring-family/relevant-cycle perception via `cosmolkit_ringdecomposer`. SSSR active-bond filtering, D2 duplicate-candidate handling, D3/extra-ring discovery, symmetrized K4 storage, fastFindRings DFS traversal, and the URF-enabled ring-family/relevant-cycle path have focused regression coverage. The frozen ring-perception file is marker-closed for the current checklist scope, but the feature remains experimental and is not a blanket claim of complete RDKit ring parity outside that audited scope.",
+    docs: "Provide modeled SSSR, symmetrized SSSR, fast ring traversal, and URF-backed ring-family and relevant-cycle perception. Ring membership is covered by pinned-RDKit graph parity and focused source tests cover the supported SSSR and ring-family graph states.",
 };
 
 pub const AROMATICITY_FEATURE: FeatureSpec = FeatureSpec {
     name: "aromaticity.assignment",
     category: FeatureCategory::TopologyOperation,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Experimental RDKit-aligned aromaticity assignment scaffold with fail-closed unsupported branches.",
+    docs: "Assign modeled RDKit aromatic atom and bond state through registered operations. Covered graph states match pinned RDKit and unsupported aromaticity models or source states fail explicitly.",
 };
 
 pub const INCHI_FEATURE: FeatureSpec = FeatureSpec {
@@ -227,41 +261,42 @@ pub const INCHI_FEATURE: FeatureSpec = FeatureSpec {
         rdkit_version: "2026.03.1",
     },
     parity_sensitive: true,
-    docs: "The four audited scalar APIs (MolToInchi, MolToInchiKey, InchiToInchiKey, and MolFromInchi) reproduce pinned RDKit 2026.03.1 and official InChI v1.07.5 behavior exactly where the official C source defines behavior. The active NormalizeAndCompare initial-buffer allocation-failure path executes undefined C behavior; COSMolKit intentionally returns a deterministic structured allocation error there. MolBlock, SDF/V3000, IXA, AuxInfo conversion, incremental INCHIGEN, version-query, and extended-polymer InChI APIs are outside this public feature and remain frozen or unsupported.",
+    docs: "The four audited scalar APIs (MolToInchi, MolToInchiKey, InchiToInchiKey, and MolFromInchi) reproduce pinned RDKit 2026.03.1 and official InChI v1.07.5 behavior exactly where the official C source defines behavior. The NormalizeAndCompare initial-buffer allocation-failure path executes undefined C behavior, so COSMolKit returns a deterministic structured allocation error. Other official InChI API families are outside this public feature.",
 };
 
 pub const BATCH_FEATURE: FeatureSpec = FeatureSpec {
     name: "batch.operations",
     category: FeatureCategory::Batch,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::Supported,
     parity_sensitive: false,
-    docs: "Batch construction from SMILES list, ordered transformations via registered molecule operations, \
+    docs: "Stable batch construction from SMILES lists, ordered transformations via registered molecule operations, \
            error modes (Strict/KeepErrors), valid mask, filter valid, SMILES export with params, \
-           and PNG image export. Batch scheduling and parallel execution are not yet implemented.",
+           PNG image export, configurable progress reporting, and deterministic ordered parallel \
+           execution through Rayon with batch-level or per-call worker-count selection.",
 };
 
 pub const BIO_STRUCTURE_FEATURE: FeatureSpec = FeatureSpec {
     name: "bio.structure",
     category: FeatureCategory::BioHierarchy,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::Supported,
     parity_sensitive: false,
-    docs: "Experimental flat-row BioStructure hierarchy and coordinate storage. This is COSMolKit's single public structural model for protein/PDB/mmCIF work. Public access is read-only; mutation must go through crate-internal builders or registered BioStructure operations.",
+    docs: "Flat-row BioStructure hierarchy and coordinate storage for protein, PDB, mmCIF, mmJSON, and chem-comp workflows. Public access is read-only; mutation goes through crate-internal builders or registered BioStructure operations.",
 };
 
 pub const BIO_PDB_COORDINATE_SUBSET_READ_FEATURE: FeatureSpec = FeatureSpec {
     name: "bio.pdb.coordinate_subset.read",
     category: FeatureCategory::Io,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::Supported,
     parity_sensitive: true,
-    docs: "Experimental Gemmi-aligned PDB structural reader into BioStructure. This is the structural IO path and the required front end for future RDKit-compatible molecule input. The public feature name keeps the historical subset label for API stability, but the current reader surface covers ATOM/HETATM, MODEL/ENDMDL, ANISOU, residue and chain identity, TER semantics, SEQRES entities, DBREF, SSBOND/LINK/CISPEP, MODRES, selected header metadata, AUTHOR, CRYST1, SCALE, ORIGX, and MTRIX/NCS records. Remaining unsupported Gemmi branches fail explicitly and stay marked in io::bio.",
+    docs: "Read the documented Gemmi-aligned PDB structural record scope into BioStructure, including coordinates, models, anisotropic data, hierarchy, entities, connections, selected metadata, crystallography, and NCS transforms. Unmodeled records fail explicitly in strict mode.",
 };
 
 pub const BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE: FeatureSpec = FeatureSpec {
     name: "bio.mmcif.atom_site_subset.read",
     category: FeatureCategory::Io,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::Supported,
     parity_sensitive: true,
-    docs: "Experimental Gemmi-aligned mmCIF/mmJSON structural reader into BioStructure. This is the structural IO path and the required front end for any future molecule compatibility input. The public feature name keeps the historical atom-site subset label for API stability, but the current reader surface also covers mmJSON dispatch, _entity, _entity_poly, _entity_poly_seq, _struct_ref/_struct_ref_seq, _struct_asym, _struct_conn, _struct_mon_prot_cis, _pdbx_struct_mod_residue, _pdbx_struct_assembly*, _pdbx_sifts_xref_db, _struct_ncs_oper, crystallographic transforms, and chem-comp CIF handoff through the same dispatch path. RDKit-derived macromolecular parser work remains deferred unless a Molecule compatibility need is approved. Remaining unsupported Gemmi branches fail explicitly and stay marked in io::bio.",
+    docs: "Read the documented Gemmi-aligned mmCIF, mmJSON, and chem-comp structural scope into BioStructure, including atom sites, entities and sequences, references, connectivity, assemblies, SIFTS mappings, crystallography, and NCS transforms. Unmodeled structural categories fail explicitly where required.",
 };
 
 pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
@@ -276,6 +311,7 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &SANITIZE_FEATURE,
     &KEKULIZE_FEATURE,
     &FINGERPRINT_FEATURE,
+    &DESCRIPTORS_FEATURE,
     &SUBSTRUCTURE_FEATURE,
     &DRAWING_FEATURE,
     &STEREO_FEATURE,
@@ -294,17 +330,11 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
 pub const DG_BOUNDS_FEATURE: FeatureSpec = FeatureSpec {
     name: "distgeom.bounds_matrix",
     category: FeatureCategory::Core,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Experimental distance-geometry bounds matrix generation. The current Rust DG bounds surface is \
-           source-backed across the selected RDKit baseline: raw BoundsMatrix upper/lower triangle storage, \
-           triangle smoothing, 1-2/1-3/1-4/1-5 bound setting, VDW lower bounds, collectBondsAndAngles, \
-           both setTopolBounds overloads, and GetMoleculeBoundsMatrix-style wrapper defaults are implemented \
-           with focused strict tests. The final DG bounds audit found no remaining first-axis `RDKit❌*` \
-           gap in the audited call chain, but deliberate `RDKit✔️❌`, `RDKit✔️❗`, and `RDKit❗✔️` markers \
-           remain visible for performance and helper-abstraction caveats. This is a port-closure statement \
-           for the audited DG bounds scope, not a blanket RDKit parity guarantee for every possible \
-           molecule/input outside that baseline.",
+    docs: "Generate the documented RDKit-style distance-geometry bounds matrix, including triangle smoothing, topological 1-2 through 1-5 bounds, ring and macrocycle handling, and VDW lower bounds. Matrix shape and every covered lower and upper entry are compared with pinned RDKit.",
 };
 
 pub const BIO_SELECTION_FEATURE: FeatureSpec = FeatureSpec {

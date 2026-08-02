@@ -15,6 +15,19 @@ The crate is independent from `cosmolkit-core`: users provide plain graph nodes
 and undirected edges. COSMolKit adapts molecular topology to this graph layer in
 its own core crate.
 
+## Current Port Status
+
+The Rust implementation contains no `RDL❌❌` source lines: every inventoried
+source frame has an implementation. Behavioral proof is not yet closed for the
+entire crate. At the current revision, 447 copied source lines are marked
+`RDL✔️✔️` and 286 remain `RDL❗✔️` because their behavior is implemented but not
+fully proven across all source-defined edge states.
+
+The crate is therefore usable by COSMolKit's experimental ring-perception
+surface, with focused regression coverage for the exercised graph states. The
+term "port" here does not claim blanket exact parity for the remaining
+`RDL❗✔️` frames.
+
 ## Porting Markers
 
 RDL source-reproduction comments use the same two-axis marker policy as the

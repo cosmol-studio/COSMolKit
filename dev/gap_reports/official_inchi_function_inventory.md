@@ -2580,5 +2580,5 @@ Parse errors: `59`. Function definitions: `35`.
 Run from the repository root:
 
 ```bash
-uv run --no-project --with tree-sitter --with tree-sitter-c python dev/generate_inchi_function_inventory.py
+uv run --no-project --with tree-sitter --with tree-sitter-c python dev/tools/inchi/generate_inchi_function_inventory.py
 ```

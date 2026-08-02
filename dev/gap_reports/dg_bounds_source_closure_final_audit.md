@@ -5,7 +5,7 @@ Date: 2026-05-18
 ## Scope
 
 This audit covers the DG bounds generation baseline used by
-`dev/dg_bounds_rdkit_full_port_checklist.md` after Step 159 refreshed the
+`dev/archive/plans/dg_bounds_rdkit_full_port_checklist.md` after Step 159 refreshed the
 direct baseline inventory to include `DGeomHelpers::_getAtomStereo(...)`:
 
 - `third_party/rdkit/Code/DistGeom/BoundsMatrix.h`

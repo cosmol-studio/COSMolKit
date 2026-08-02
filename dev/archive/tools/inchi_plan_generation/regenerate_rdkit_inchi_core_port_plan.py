@@ -11,11 +11,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[4]
 BUILD_ROOT = REPO_ROOT / "target" / "inchi-active-call-graph-audit"
 AUDIT_JSON = BUILD_ROOT / "official_inchi_active_call_graph.json"
 COMPILE_DATABASE = BUILD_ROOT / "compile_commands.json"
-PLAN_PATH = REPO_ROOT / "dev" / "rdkit_inchi_full_port_plan.md"
+PLAN_PATH = (
+    REPO_ROOT / "dev" / "archive" / "plans" / "rdkit_inchi_full_port_plan.md"
+)
 REPORT_PATH = (
     REPO_ROOT / "dev" / "gap_reports" / "rdkit_inchi_core_scope_audit.md"
 )

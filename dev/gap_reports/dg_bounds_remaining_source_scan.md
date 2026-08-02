@@ -7,7 +7,7 @@ Date: 2026-05-18
 This report re-audits the DG bounds port after checklist steps `1-159`.
 
 The audit baseline is the DG bounds call graph intentionally tracked by
-`dev/dg_bounds_rdkit_full_port_checklist.md`:
+`dev/archive/plans/dg_bounds_rdkit_full_port_checklist.md`:
 
 - `third_party/rdkit/Code/GraphMol/DistGeomHelpers/BoundsMatrixBuilder.cpp`
 - `third_party/rdkit/Code/DistGeom/BoundsMatrix.h`

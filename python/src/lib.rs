@@ -17,7 +17,7 @@ use pyo3::types::{
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::define_stub_info_gatherer;
 #[cfg(feature = "stubgen")]
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pymethods};
 #[cfg(not(feature = "stubgen"))]
 use pyo3_stub_gen_derive::remove_gen_stub;
 
@@ -201,6 +201,22 @@ fn inchi_output_string(
 
 fn fingerprint_pyerr(error: cosmolkit_core::FingerprintError) -> PyErr {
     PyValueError::new_err(error.to_string())
+}
+
+fn descriptor_pyerr(error: cosmolkit_core::DescriptorError) -> PyErr {
+    PyNotImplementedError::new_err(error.to_string())
+}
+
+fn parse_rotatable_bonds_mode(mode: &str) -> PyResult<cosmolkit_core::NumRotatableBondsOptions> {
+    match mode {
+        "default" => Ok(cosmolkit_core::NumRotatableBondsOptions::Default),
+        "non_strict" => Ok(cosmolkit_core::NumRotatableBondsOptions::NonStrict),
+        "strict" => Ok(cosmolkit_core::NumRotatableBondsOptions::Strict),
+        "strict_linkages" => Ok(cosmolkit_core::NumRotatableBondsOptions::StrictLinkages),
+        _ => Err(PyValueError::new_err(format!(
+            "unsupported rotatable-bond mode '{mode}', expected one of: default, non_strict, strict, strict_linkages"
+        ))),
+    }
 }
 
 fn svg_draw_pyerr(error: cosmolkit_core::SvgDrawError) -> PyErr {
@@ -5307,7 +5323,7 @@ Deserialize a molecule from COSMolKit binary data.
     }
 
     fn __reduce_ex__<'py>(&self, py: Python<'py>, _protocol: u8) -> PyResult<Bound<'py, PyAny>> {
-        let module = py.import("cosmolkit")?;
+        let module = py.import("cosmolkit.cosmolkit")?;
         let rebuild = module.getattr("_rebuild_molecule_from_pickle")?;
         let state = molecule_pickle_state(py, &self.inner)?;
         let args = PyTuple::new(py, [state])?;
@@ -6668,11 +6684,13 @@ impl SubstructMatchResult {
     }
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 fn version() -> &'static str {
     cosmolkit_core::version()
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = r#"
 Serialize a molecule to COSMolKit binary bytes.
@@ -6685,11 +6703,15 @@ fn mol_to_binary<'py>(py: Python<'py>, mol: &Molecule) -> PyResult<Bound<'py, Py
     Ok(PyBytes::new(py, &data))
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pyfunction]
 #[doc = r#"
 Deserialize a molecule from COSMolKit binary bytes.
 "#]
-fn mol_from_binary(data: &[u8]) -> PyResult<Molecule> {
+fn mol_from_binary(
+    #[gen_stub(override_type(type_repr = "builtins.bytes", imports = ("builtins")))] data: &[u8],
+) -> PyResult<Molecule> {
     let inner = cosmolkit_core::mol_from_binary(data).map_err(pickle_pyerr)?;
     Ok(Molecule { inner })
 }
@@ -6739,6 +6761,7 @@ fn _rebuild_molecule_from_pickle(state: &Bound<'_, PyAny>) -> PyResult<Molecule>
     Ok(Molecule { inner })
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = r#"
 Parse SMARTS text into a ``SmartsMolecule`` query-tree value.
@@ -6751,6 +6774,7 @@ fn parse_smarts(smarts: &str) -> PyResult<PySmartsMolecule> {
     Ok(PySmartsMolecule { inner })
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = r#"
 Return whether UFF parameters are available for every atom in a molecule.
@@ -6759,6 +6783,7 @@ fn uff_has_all_molecule_params(mol: &Molecule) -> PyResult<bool> {
     cosmolkit_core::uff_has_all_molecule_params(&mol.inner).map_err(forcefield_pyerr)
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[pyo3(signature = (mol, max_iters=1000, vdw_thresh=10.0, conf_id=-1, ignore_interfrag_interactions=true))]
 #[doc = r#"
@@ -6784,6 +6809,7 @@ fn uff_optimize_molecule(
     .map_err(forcefield_pyerr)
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[pyo3(signature = (mol, num_threads=1, max_iters=1000, vdw_thresh=10.0, ignore_interfrag_interactions=true))]
 #[doc = r#"
@@ -6809,6 +6835,7 @@ fn uff_optimize_molecule_confs(
     .map_err(forcefield_pyerr)
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = r#"
 Return whether MMFF94 parameters are available for a molecule.
@@ -6817,6 +6844,7 @@ fn mmff_has_all_molecule_params(mol: &Molecule) -> PyResult<bool> {
     cosmolkit_core::mmff_has_all_molecule_params(&mol.inner).map_err(forcefield_pyerr)
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[pyo3(signature = (mol, mmff_variant="MMFF94", max_iters=200, non_bonded_thresh=100.0, conf_id=-1, ignore_interfrag_interactions=true))]
 #[doc = r#"
@@ -6845,6 +6873,7 @@ fn mmff_optimize_molecule(
     .map_err(forcefield_pyerr)
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[pyo3(signature = (mol, num_threads=1, max_iters=1000, mmff_variant="MMFF94", non_bonded_thresh=10.0, ignore_interfrag_interactions=true))]
 #[doc = r#"
@@ -6873,6 +6902,7 @@ fn mmff_optimize_molecule_confs(
     .map_err(forcefield_pyerr)
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = r#"
 Return whether a molecule contains a molecule-query substructure.
@@ -6884,6 +6914,7 @@ fn has_substruct_match(mol: &Molecule, query: &Molecule) -> bool {
     cosmolkit_core::has_substruct_match(&mol.inner, &query.inner)
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = r#"
 Return the first molecule-query substructure match, if present.
@@ -6894,6 +6925,7 @@ fn get_substruct_match(mol: &Molecule, query: &Molecule) -> Option<SubstructMatc
     cosmolkit_core::get_substruct_match(&mol.inner, &query.inner).map(Into::into)
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = r#"
 Return molecule-query substructure matches.
@@ -6907,6 +6939,7 @@ fn get_substruct_matches(mol: &Molecule, query: &Molecule) -> Vec<SubstructMatch
         .collect()
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[pyo3(signature = (mol, query, max_matches=1000, uniquify=true))]
 #[doc = r#"
@@ -6932,6 +6965,139 @@ fn get_substruct_matches_with_params(
         .collect()
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, only_heavy=false))]
+#[doc = r#"
+Return the RDKit-aligned average molecular weight.
+
+Set ``only_heavy=True`` to omit hydrogen atoms and implicit hydrogen mass.
+The input molecule is not mutated.
+"#]
+fn calc_mol_wt(molecule: &Molecule, only_heavy: bool) -> PyResult<f64> {
+    cosmolkit_core::calc_mol_wt(&molecule.inner, only_heavy).map_err(descriptor_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, only_heavy=false))]
+#[doc = r#"
+Return the RDKit-aligned exact molecular weight.
+
+Set ``only_heavy=True`` to omit hydrogen atoms and implicit hydrogen mass.
+The input molecule is not mutated.
+"#]
+fn calc_exact_mol_wt(molecule: &Molecule, only_heavy: bool) -> PyResult<f64> {
+    cosmolkit_core::calc_exact_mol_wt(&molecule.inner, only_heavy).map_err(descriptor_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, separate_isotopes=false, abbreviate_h_isotopes=true))]
+#[doc = r#"
+Return the RDKit-aligned molecular formula.
+
+``separate_isotopes`` emits isotope-specific terms. When enabled,
+``abbreviate_h_isotopes`` writes hydrogen-2 and hydrogen-3 as D and T.
+The input molecule is not mutated.
+"#]
+fn calc_mol_formula(
+    molecule: &Molecule,
+    separate_isotopes: bool,
+    abbreviate_h_isotopes: bool,
+) -> PyResult<String> {
+    cosmolkit_core::calc_mol_formula(&molecule.inner, separate_isotopes, abbreviate_h_isotopes)
+        .map_err(descriptor_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[doc = "Return the RDKit-aligned hydrogen-bond donor count without mutating the molecule."]
+fn calc_num_hbd(molecule: &Molecule) -> PyResult<u32> {
+    cosmolkit_core::calc_num_hbd(&molecule.inner).map_err(descriptor_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[doc = "Return the RDKit-aligned hydrogen-bond acceptor count without mutating the molecule."]
+fn calc_num_hba(molecule: &Molecule) -> PyResult<u32> {
+    cosmolkit_core::calc_num_hba(&molecule.inner).map_err(descriptor_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[doc = "Return the RDKit-aligned fraction of carbon atoms that are sp3 without mutating the molecule."]
+fn calc_fraction_csp3(molecule: &Molecule) -> PyResult<f64> {
+    cosmolkit_core::calc_fraction_csp3(&molecule.inner).map_err(descriptor_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pyfunction]
+#[gen_stub(override_return_type(type_repr = "tuple[builtins.float, builtins.float]", imports = ("builtins")))]
+#[pyo3(signature = (molecule, include_hs=true, force=false))]
+#[doc = r#"
+Return ``(logp, molar_refractivity)`` using the RDKit Crippen descriptor path.
+
+The input molecule is not mutated.
+"#]
+fn calc_crippen_descriptors(
+    molecule: &Molecule,
+    include_hs: bool,
+    force: bool,
+) -> PyResult<(f64, f64)> {
+    cosmolkit_core::calc_crippen_descriptors(&molecule.inner, include_hs, force)
+        .map(|values| (values.logp, values.molar_refractivity))
+        .map_err(descriptor_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, force=false, include_sandp=false))]
+#[doc = r#"
+Return the RDKit-aligned topological polar surface area.
+
+Set ``include_sandp=True`` to include sulfur and phosphorus contributions.
+The input molecule is not mutated.
+"#]
+fn calc_tpsa(molecule: &Molecule, force: bool, include_sandp: bool) -> PyResult<f64> {
+    cosmolkit_core::calc_tpsa(&molecule.inner, force, include_sandp).map_err(descriptor_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[doc = "Return the RDKit-aligned aromatic-ring count without mutating the molecule."]
+fn calc_num_aromatic_rings(molecule: &Molecule) -> PyResult<u32> {
+    cosmolkit_core::calc_num_aromatic_rings(&molecule.inner).map_err(descriptor_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pyfunction]
+#[pyo3(signature = (molecule, mode="default"))]
+#[doc = r#"
+Return the RDKit-aligned rotatable-bond count.
+
+``mode`` must be ``"default"``, ``"non_strict"``, ``"strict"``, or
+``"strict_linkages"``. The input molecule is not mutated.
+"#]
+fn calc_num_rotatable_bonds(
+    molecule: &Molecule,
+    #[gen_stub(override_type(type_repr = "typing.Literal['default', 'non_strict', 'strict', 'strict_linkages']", imports = ("typing")))]
+    mode: &str,
+) -> PyResult<u32> {
+    let options = parse_rotatable_bonds_mode(mode)?;
+    cosmolkit_core::calc_num_rotatable_bonds(&molecule.inner, options).map_err(descriptor_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[doc = "Return the RDKit-aligned quantitative estimate of drug-likeness without mutating the molecule."]
+fn calc_qed(molecule: &Molecule) -> PyResult<f64> {
+    cosmolkit_core::calc_qed(&molecule.inner).map_err(descriptor_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = r#"
 Return Gemmi-derived tabulated residue information for a residue name.
@@ -6942,6 +7108,7 @@ fn find_tabulated_residue(name: &str) -> PyResidueInfo {
     }
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = r#"
 Return the Gemmi tabulated residue index for a residue name.
@@ -6950,6 +7117,7 @@ fn find_tabulated_residue_idx(name: &str) -> usize {
     cosmolkit_core::find_tabulated_residue_idx(name)
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = r#"
 Return Gemmi-derived tabulated residue information by table index.
@@ -6963,7 +7131,10 @@ fn get_residue_info(idx: usize) -> PyResult<PyResidueInfo> {
     Ok(PyResidueInfo { inner })
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pyfunction]
+#[gen_stub(override_return_type(type_repr = "ResidueCode"))]
 #[doc = r#"
 Return the Gemmi tabulated residue code for a residue name.
 "#]
@@ -6971,6 +7142,7 @@ fn residue_code_from_name<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'p
     residue_code_enum_member(py, cosmolkit_core::residue_code_from_name(name))
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = r#"
 Expand a deprecated Gemmi protein one-letter residue code alias.
@@ -6990,15 +7162,21 @@ fn expand_protein_one_letter(code: &str) -> PyResult<Option<String>> {
     Ok(cosmolkit_core::expand_protein_one_letter(c).map(str::to_string))
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pyfunction]
 #[doc = r#"
 Expand a one-letter amino-acid, RNA, or DNA residue sequence using Gemmi's table.
 "#]
-fn expand_one_letter_sequence(seq: &str, kind: i64) -> PyResult<Vec<String>> {
+fn expand_one_letter_sequence(
+    seq: &str,
+    #[gen_stub(override_type(type_repr = "ResidueInfoKind"))] kind: i64,
+) -> PyResult<Vec<String>> {
     let kind = residue_info_kind_from_code(kind)?;
     cosmolkit_core::expand_one_letter_sequence(seq, kind).map_err(residue_info_sequence_pyerr)
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = r#"
 Expand a deprecated Gemmi protein one-letter residue sequence alias.
@@ -7007,11 +7185,16 @@ fn expand_protein_one_letter_string(seq: &str) -> PyResult<Vec<String>> {
     cosmolkit_core::expand_protein_one_letter_string(seq).map_err(residue_info_sequence_pyerr)
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pyfunction]
 #[doc = r#"
 Expand a one-letter amino-acid, RNA, or DNA residue code using Gemmi's table.
 "#]
-fn expand_one_letter(code: &str, kind: i64) -> PyResult<Option<String>> {
+fn expand_one_letter(
+    code: &str,
+    #[gen_stub(override_type(type_repr = "ResidueInfoKind"))] kind: i64,
+) -> PyResult<Option<String>> {
     let mut chars = code.chars();
     let Some(c) = chars.next() else {
         return Err(PyValueError::new_err(
@@ -7049,6 +7232,7 @@ fn chem_mol_to_inchi_key(molecule: &Molecule, options: &str) -> PyResult<String>
     inchi_output_string("mol_to_inchi_key", "InChIKey", output.key)
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction(name = "InchiToInchiKey")]
 #[doc = r#"
 Generate an InChIKey directly from an InChI string.
@@ -7126,7 +7310,10 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(mol_to_binary, m)?)?;
     m.add_function(wrap_pyfunction!(mol_from_binary, m)?)?;
-    m.add_function(wrap_pyfunction!(_rebuild_molecule_from_pickle, m)?)?;
+    m.setattr(
+        "_rebuild_molecule_from_pickle",
+        wrap_pyfunction!(_rebuild_molecule_from_pickle, m)?,
+    )?;
     m.add_function(wrap_pyfunction!(parse_smarts, m)?)?;
     m.add_function(wrap_pyfunction!(uff_has_all_molecule_params, m)?)?;
     m.add_function(wrap_pyfunction!(uff_optimize_molecule, m)?)?;
@@ -7138,6 +7325,17 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_substruct_match, m)?)?;
     m.add_function(wrap_pyfunction!(get_substruct_matches, m)?)?;
     m.add_function(wrap_pyfunction!(get_substruct_matches_with_params, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_mol_wt, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_exact_mol_wt, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_mol_formula, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_hbd, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_hba, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_fraction_csp3, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_crippen_descriptors, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_tpsa, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_aromatic_rings, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_num_rotatable_bonds, m)?)?;
+    m.add_function(wrap_pyfunction!(calc_qed, m)?)?;
     m.add_function(wrap_pyfunction!(find_tabulated_residue, m)?)?;
     m.add_function(wrap_pyfunction!(find_tabulated_residue_idx, m)?)?;
     m.add_function(wrap_pyfunction!(get_residue_info, m)?)?;

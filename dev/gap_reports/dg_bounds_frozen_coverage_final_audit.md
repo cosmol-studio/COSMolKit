@@ -5,7 +5,7 @@ Date: 2026-05-18
 ## Final Conclusion
 
 For the DG bounds baseline defined by
-`dev/dg_bounds_rdkit_full_port_checklist.md`, coverage is exactly `100%`.
+`dev/archive/plans/dg_bounds_rdkit_full_port_checklist.md`, coverage is exactly `100%`.
 
 That `100%` statement is scoped and means:
 

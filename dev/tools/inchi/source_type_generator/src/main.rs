@@ -232,7 +232,7 @@ fn main() {
     let generated = format!(
         "// Generated from IUPAC InChI v1.07.5 at commit\n\
          // 11a87982bb518f57ac013f0b258c283655e1ea1d.\n\
-         // Input: dev/inchi_type_inventory_wrapper.h plus all 60 production C files.\n\
+         // Input: dev/tools/inchi/inchi_type_inventory_wrapper.h plus all 60 production C files.\n\
          // Configuration: COMPILE_ANSI_ONLY, TARGET_API_LIB, GCC/Clang LP64.\n\
          // Generator declaration baseline: bindgen-cli 0.72.1.\n\
          // The checked-in result is pure Rust and contains no FFI declarations.\n\

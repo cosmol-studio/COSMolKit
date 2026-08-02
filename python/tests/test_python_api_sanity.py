@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import pickle
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -119,6 +120,12 @@ def test_smiles_and_value_semantics_preserve_expected_graph_features():
 
 
 def test_molecule_supports_python_pickle_roundtrip():
+    native = importlib.import_module("cosmolkit.cosmolkit")
+    assert not hasattr(cosmolkit, "_rebuild_molecule_from_pickle")
+    assert hasattr(native, "_rebuild_molecule_from_pickle")
+    assert "_rebuild_molecule_from_pickle" not in cosmolkit.__all__
+    assert "_rebuild_molecule_from_pickle" not in native.__all__
+
     mol = (
         cosmolkit.Molecule.from_smiles("F[C@H](Cl)[13CH3:7]")
         .with_hydrogens()
@@ -136,8 +143,9 @@ def test_molecule_supports_python_pickle_roundtrip():
 
 
 def test_molecule_pickle_rebuild_rejects_invalid_state():
+    native = importlib.import_module("cosmolkit.cosmolkit")
     with pytest.raises(ValueError, match="unsupported Molecule pickle schema"):
-        cosmolkit._rebuild_molecule_from_pickle(
+        native._rebuild_molecule_from_pickle(
             {
                 "kind": "cosmolkit.Molecule",
                 "pickle_schema": 999,

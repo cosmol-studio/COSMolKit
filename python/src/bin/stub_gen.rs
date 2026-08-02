@@ -24,9 +24,9 @@ fn main() -> Result<()> {
     text = expose_batch_error_mode_inputs(text);
     text = expose_batch_getitem_overloads(text);
     text = expose_sdf_dataset_getitem_overloads(text);
-    text = expose_module_functions(text);
+    text = expose_module_constants(text);
     text = expose_inchi_api(text);
-    text = expose_residue_enums_and_functions(text);
+    text = expose_residue_enums(text);
     text = expose_confseq_module(text);
     fs::write(pyi_path, text)?;
 
@@ -108,56 +108,18 @@ fn expose_sdf_dataset_getitem_overloads(mut text: String) -> String {
     text
 }
 
-fn expose_module_functions(mut text: String) -> String {
-    for name in [
-        "__version__",
-        "version",
-        "_rebuild_molecule_from_pickle",
-        "mol_to_binary",
-        "mol_from_binary",
-        "parse_smarts",
-        "uff_has_all_molecule_params",
-        "uff_optimize_molecule",
-        "uff_optimize_molecule_confs",
-        "mmff_has_all_molecule_params",
-        "mmff_optimize_molecule",
-        "mmff_optimize_molecule_confs",
-        "has_substruct_match",
-        "get_substruct_match",
-        "get_substruct_matches",
-        "get_substruct_matches_with_params",
-    ] {
-        let export = format!("    \"{name}\",\n");
-        if !text.contains(&export) {
-            text = text.replace(
-                "    \"SubstructMatchResult\",\n",
-                &format!("    \"SubstructMatchResult\",\n{export}"),
-            );
-        }
+fn expose_module_constants(mut text: String) -> String {
+    let export = "    \"__version__\",\n";
+    if !text.contains(export) {
+        text = text.replace(
+            "    \"SubstructMatchResult\",\n",
+            &format!("    \"SubstructMatchResult\",\n{export}"),
+        );
     }
-
     if !text.contains("__version__: builtins.str") {
-        let declarations = r#"__version__: builtins.str
-def version() -> builtins.str: ...
-def _rebuild_molecule_from_pickle(state: typing.Any) -> Molecule: ...
-def mol_to_binary(mol: Molecule) -> bytes: ...
-def mol_from_binary(data: bytes) -> Molecule: ...
-def parse_smarts(smarts: builtins.str) -> SmartsMolecule: ...
-def uff_has_all_molecule_params(mol: Molecule) -> builtins.bool: ...
-def uff_optimize_molecule(mol: Molecule, max_iters: builtins.int = ..., vdw_thresh: builtins.float = ..., conf_id: builtins.int = ..., ignore_interfrag_interactions: builtins.bool = ...) -> UffOptimizeMoleculeResult: ...
-def uff_optimize_molecule_confs(mol: Molecule, num_threads: builtins.int = ..., max_iters: builtins.int = ..., vdw_thresh: builtins.float = ..., ignore_interfrag_interactions: builtins.bool = ...) -> UffOptimizeMoleculeConfsResult: ...
-def mmff_has_all_molecule_params(mol: Molecule) -> builtins.bool: ...
-def mmff_optimize_molecule(mol: Molecule, mmff_variant: builtins.str = ..., max_iters: builtins.int = ..., non_bonded_thresh: builtins.float = ..., conf_id: builtins.int = ..., ignore_interfrag_interactions: builtins.bool = ...) -> MmffOptimizeMoleculeResult: ...
-def mmff_optimize_molecule_confs(mol: Molecule, num_threads: builtins.int = ..., max_iters: builtins.int = ..., mmff_variant: builtins.str = ..., non_bonded_thresh: builtins.float = ..., ignore_interfrag_interactions: builtins.bool = ...) -> MmffOptimizeMoleculeConfsResult: ...
-def has_substruct_match(mol: Molecule, query: Molecule) -> builtins.bool: ...
-def get_substruct_match(mol: Molecule, query: Molecule) -> typing.Optional[SubstructMatchResult]: ...
-def get_substruct_matches(mol: Molecule, query: Molecule) -> builtins.list[SubstructMatchResult]: ...
-def get_substruct_matches_with_params(mol: Molecule, query: Molecule, max_matches: builtins.int = ..., uniquify: builtins.bool = ...) -> builtins.list[SubstructMatchResult]: ...
-
-"#;
         text = text.replace(
             "@typing.final\nclass SubstructMatchResult:",
-            &format!("{declarations}@typing.final\nclass SubstructMatchResult:"),
+            "__version__: builtins.str\n\n@typing.final\nclass SubstructMatchResult:",
         );
     }
     text
@@ -211,7 +173,7 @@ fn residue_stub_defs() -> String {
     out
 }
 
-fn expose_residue_enums_and_functions(mut text: String) -> String {
+fn expose_residue_enums(mut text: String) -> String {
     if !text.contains("import enum\n") {
         text = text.replace("import builtins\n", "import builtins\nimport enum\n");
     }
@@ -222,14 +184,6 @@ fn expose_residue_enums_and_functions(mut text: String) -> String {
         "RESIDUE_CODE_MAP",
         "RESIDUE_INFO_KIND_MAP",
         "ResidueInfo",
-        "find_tabulated_residue",
-        "find_tabulated_residue_idx",
-        "get_residue_info",
-        "residue_code_from_name",
-        "expand_one_letter",
-        "expand_protein_one_letter",
-        "expand_one_letter_sequence",
-        "expand_protein_one_letter_string",
     ] {
         let export = format!("    \"{name}\",\n");
         if !text.contains(&export) {
@@ -245,25 +199,6 @@ fn expose_residue_enums_and_functions(mut text: String) -> String {
         );
     }
 
-    if !text.contains("def find_tabulated_residue(name: builtins.str) -> ResidueInfo") {
-        let functions = r#"def find_tabulated_residue(name: builtins.str) -> ResidueInfo: ...
-def find_tabulated_residue_idx(name: builtins.str) -> builtins.int: ...
-def get_residue_info(idx: builtins.int) -> ResidueInfo: ...
-def residue_code_from_name(name: builtins.str) -> ResidueCode: ...
-def expand_one_letter(code: builtins.str, kind: ResidueInfoKind) -> typing.Optional[builtins.str]: ...
-def expand_protein_one_letter(code: builtins.str) -> typing.Optional[builtins.str]: ...
-def expand_one_letter_sequence(seq: builtins.str, kind: ResidueInfoKind) -> builtins.list[builtins.str]: ...
-def expand_protein_one_letter_string(seq: builtins.str) -> builtins.list[builtins.str]: ...
-
-"#;
-        text = text.replace(
-            "def version() -> builtins.str: ...\n",
-            &format!("def version() -> builtins.str: ...\n{functions}"),
-        );
-    }
-
-    text = text.replace("def expand_one_letter(code: builtins.str, kind: builtins.int) -> typing.Optional[builtins.str]: ...", "def expand_one_letter(code: builtins.str, kind: ResidueInfoKind) -> typing.Optional[builtins.str]: ...");
-    text = text.replace("def expand_one_letter_sequence(seq: builtins.str, kind: builtins.int) -> builtins.list[builtins.str]: ...", "def expand_one_letter_sequence(seq: builtins.str, kind: ResidueInfoKind) -> builtins.list[builtins.str]: ...");
     text
 }
 
@@ -490,7 +425,6 @@ fn expose_batch_validation_error(mut text: String) -> String {
 fn expose_inchi_api(mut text: String) -> String {
     for export_name in [
         "Chem",
-        "InchiToInchiKey",
         "InchiError",
         "InchiAllocationError",
         "InchiUnsupportedStateError",
@@ -525,8 +459,6 @@ class _ChemModule(typing.Protocol):
     def MolFromInchi(self, inchi: builtins.str, sanitize: builtins.bool = ..., remove_hs: builtins.bool = ...) -> typing.Optional[Molecule]: ...
 
 Chem: _ChemModule
-
-def InchiToInchiKey(inchi: builtins.str) -> builtins.str: ...
 
 "#;
         text = text.replace(

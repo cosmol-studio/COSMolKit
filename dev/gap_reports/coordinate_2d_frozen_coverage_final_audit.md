@@ -36,7 +36,7 @@ All three commands passed in this execution round.
 
 For the selected checklist baseline, the active Rust 2D depiction surface is at
 or near `100%` source-port coverage in the sense defined by
-`dev/coordinate_2d_rdkit_full_port_checklist.md`:
+`dev/plans/coordinate_2d_rdkit_full_port_checklist.md`:
 
 - the major chemistry entrypoints are implemented
 - the direct helper inventory required by the active call chain is present

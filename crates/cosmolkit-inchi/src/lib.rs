@@ -4,8 +4,8 @@
 //! It is independent of `cosmolkit-core`, RDKit, Python, and external
 //! executables so completed functionality can be reused by other Rust projects.
 //!
-//! See `dev/rdkit_inchi_full_port_plan.md` in the workspace for the required
-//! source inventory, marker, and parity contract.
+//! See `dev/archive/plans/rdkit_inchi_full_port_plan.md` in the workspace for
+//! the required source inventory, marker, and parity contract.
 
 mod source_types;
 

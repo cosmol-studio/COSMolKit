@@ -2,7 +2,7 @@
 
 ## Audit Context
 
-- Plan step: `dev/rdkit_molecular_descriptors_full_port_plan.md` Step 3.
+- Plan step: `dev/archive/plans/rdkit_molecular_descriptors_full_port_plan.md` Step 3.
 - Required rules freshly loaded before this audit:
   - `dev/policy_invariants.md`
   - `dev/source_reproduction_protocol.md`
@@ -93,7 +93,7 @@
 
 ## Step 23 HBD/HBA SMARTS Audit
 
-- Plan step: `dev/rdkit_molecular_descriptors_full_port_plan.md` Step 23.
+- Plan step: `dev/archive/plans/rdkit_molecular_descriptors_full_port_plan.md` Step 23.
 - Required rules freshly loaded before this audit:
   - `dev/policy_invariants.md`
   - `dev/source_reproduction_protocol.md`
@@ -139,7 +139,7 @@
 
 ## Step 29 HBA Recursive-SMARTS Audit
 
-- Plan step: `dev/rdkit_molecular_descriptors_full_port_plan.md` Step 29.
+- Plan step: `dev/archive/plans/rdkit_molecular_descriptors_full_port_plan.md` Step 29.
 - Required rules freshly loaded before this audit:
   - `dev/policy_invariants.md`
   - `dev/source_reproduction_protocol.md`
@@ -190,7 +190,7 @@
 
 ## Step 49 Crippen SMARTS Parameter Audit
 
-- Plan step: `dev/rdkit_molecular_descriptors_full_port_plan.md` Step 49.
+- Plan step: `dev/archive/plans/rdkit_molecular_descriptors_full_port_plan.md` Step 49.
 - Required rules freshly loaded before this audit:
   - `dev/policy_invariants.md`
   - `dev/source_reproduction_protocol.md`
@@ -239,7 +239,7 @@
 
 ## Step 65 QED Dependency Audit
 
-- Plan step: `dev/rdkit_molecular_descriptors_full_port_plan.md` Step 65.
+- Plan step: `dev/archive/plans/rdkit_molecular_descriptors_full_port_plan.md` Step 65.
 - Required rules freshly loaded before this audit:
   - `dev/policy_invariants.md`
   - `dev/source_reproduction_protocol.md`
@@ -297,7 +297,7 @@
 
 ## Step 83 Post-Step-81 Source-Marker Audit
 
-- Plan step: `dev/rdkit_molecular_descriptors_full_port_plan.md` Step 83.
+- Plan step: `dev/archive/plans/rdkit_molecular_descriptors_full_port_plan.md` Step 83.
 - Required rules freshly loaded before this audit:
   - `dev/policy_invariants.md`
   - `dev/source_reproduction_protocol.md`
@@ -340,7 +340,7 @@
 
 ## Step 95 Substructure Chirality Source Audit
 
-- Plan step: `dev/rdkit_molecular_descriptors_full_port_plan.md` Step 95.
+- Plan step: `dev/archive/plans/rdkit_molecular_descriptors_full_port_plan.md` Step 95.
 - Required rules freshly loaded before this audit:
   - `dev/policy_invariants.md`
   - `dev/source_reproduction_protocol.md`
@@ -353,7 +353,7 @@
   - `useChirality` at `SubstructMatch.h:43`: atom/bond stereo participates in matching.
   - `specifiedStereoQueryMatchesUnspecified` at `SubstructMatch.h:72`: when false, specified stereo in the query must not match unspecified stereo in the molecule.
   - `recursionPossible`, `uniquify`, and `maxMatches` remain required because `ChemTransforms.cpp::deleteSubstructs` calls `SubstructMatch(*res, query, fgpMatches, uniquify=true, recursionPossible=true, useChirality)`.
-- Out-of-scope for `dev/rdkit_molecular_descriptors_full_port_plan.md`; required targets for a separate full SubstructMatch source-port plan:
+- Out-of-scope for `dev/archive/plans/rdkit_molecular_descriptors_full_port_plan.md`; required targets for a separate full SubstructMatch source-port plan:
   - `useEnhancedStereo` / stereo groups, generic matchers, extra final checks, property checks, query-query matches, multithreaded resonance supplier matching, and generic atom matchers.
 
 ### Function-Level Port Targets

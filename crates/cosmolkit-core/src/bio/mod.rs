@@ -2,7 +2,7 @@
 //!
 //! `BioStructure` is a flat-row, hierarchy-indexed representation for proteins,
 //! DNA, RNA, and complexes. It is NOT a giant `Molecule`; it is a hierarchy +
-//! coordinate + assembly object. See `dev/BioStructureOperationContractDesign.md`.
+//! coordinate + assembly object. See `dev/bio_structure_operation_contract_design.md`.
 //!
 //! Gemmi marker convention is defined in `dev/source_reproduction_protocol.md`.
 

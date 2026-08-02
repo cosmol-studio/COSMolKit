@@ -1,7 +1,7 @@
 # RDKit Conformer Generation Source Inventory
 
 This inventory is the Step 3 artifact for
-`dev/rdkit_conformer_generation_full_port_plan.md`.
+`dev/archive/plans/rdkit_conformer_generation_full_port_plan.md`.
 
 The implementation target is full source-backed RDKit conformer generation
 coverage for `EmbedMolecule` and `EmbedMultipleConfs`. This is an inventory

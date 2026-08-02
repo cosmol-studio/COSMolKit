@@ -15,7 +15,7 @@ Audit sources:
 ## Summary
 
 The Gemmi-aligned structural reader closure requested by
-`dev/pdb_mmcif_gemmi_full_port_checklist.md` is now exposed through:
+`dev/plans/pdb_mmcif_gemmi_full_port_checklist.md` is now exposed through:
 
 - `BioStructure::from_structure_str(...)`
 - `BioStructure::from_str_with_format(...)`

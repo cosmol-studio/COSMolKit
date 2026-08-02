@@ -176,6 +176,7 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "basedpyright" },
+    { name = "epam-indigo" },
     { name = "furo" },
     { name = "maturin" },
     { name = "numpy" },
@@ -190,6 +191,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "basedpyright", specifier = ">=1.31" },
+    { name = "epam-indigo", specifier = ">=1.45.0" },
     { name = "furo", specifier = ">=2024.8.6" },
     { name = "maturin", specifier = ">=1.7" },
     { name = "numpy", specifier = "<2" },
@@ -205,6 +207,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ae/b6/03bb70946330e88ffec97aefd3ea75ba575cb2e762061e0e62a213befee8/docutils-0.22.4.tar.gz", hash = "sha256:4db53b1fde9abecbb74d91230d32ab626d94f6badfc575d6db9194a49df29968", size = 2291750, upload-time = "2025-12-18T19:00:26.443Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl", hash = "sha256:d0013f540772d1420576855455d050a2180186c91c15779301ac2ccb3eeb68de", size = 633196, upload-time = "2025-12-18T19:00:18.077Z" },
+]
+
+[[package]]
+name = "epam-indigo"
+version = "1.45.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/30/42/aec362be6491e8da100fcb2c6ecccfc4df1ec2f6bc28e1034524213b48cc/epam_indigo-1.45.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:0ac5876652f9e3cf486056ce999c61927b11adea3a3888eccc3eea5573d3821a", size = 5879337, upload-time = "2026-07-10T13:58:08.003Z" },
+    { url = "https://files.pythonhosted.org/packages/0b/ec/15f5538db69a69ec2a9bb11de40240f33f37ec84be7bcd94c4ad355c51a4/epam_indigo-1.45.0-py3-none-macosx_11_0_x86_64.whl", hash = "sha256:c047d64a3ee3b7a4dba6437359dead5e8c4634b6159c44c3b0ca7eebb0ba73f4", size = 6239683, upload-time = "2026-07-10T13:58:09.668Z" },
+    { url = "https://files.pythonhosted.org/packages/58/30/6e3ba969cf9d5fc968850a17493ae5ee2b369a3653416feb34540bf1744a/epam_indigo-1.45.0-py3-none-manylinux1_x86_64.whl", hash = "sha256:6aafe8ebf8f2ef835e0c5c45b3d4a2c00cd365ace55568785590418f61fbcedb", size = 9319577, upload-time = "2026-07-10T13:58:11.288Z" },
+    { url = "https://files.pythonhosted.org/packages/e7/b5/78aac7a4c47209dd4263bd8278ec744bab0b4b482f5475740326f382ee8c/epam_indigo-1.45.0-py3-none-manylinux2014_aarch64.whl", hash = "sha256:9361146a6052343e7c347afc59bd579d5f2f7ce11f3d246875a84946a302f946", size = 8767156, upload-time = "2026-07-10T13:58:13.226Z" },
+    { url = "https://files.pythonhosted.org/packages/de/54/3389fe12aaccb5cd9121825b05692581c48a9552a17a755d87d2d13debd4/epam_indigo-1.45.0-py3-none-win32.whl", hash = "sha256:10fe4eff3af62fb3e810eeca032ffa0aa68b4d511a9d5c31a0c00b7cf3542392", size = 8341929, upload-time = "2026-07-10T13:58:15.154Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/77/f51288f7334821e0e4d15fa5b4805d9554d528701eb4a98fbab9aa02bc2f/epam_indigo-1.45.0-py3-none-win_amd64.whl", hash = "sha256:5f0da615e5e0b0acf2714e810b0d0ae4347fff0e71e0a1480329e9d823e60cbc", size = 9334979, upload-time = "2026-07-10T13:58:16.947Z" },
 ]
 
 [[package]]

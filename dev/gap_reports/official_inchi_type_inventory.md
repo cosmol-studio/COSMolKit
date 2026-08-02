@@ -10,8 +10,8 @@
 - Preprocessor configuration: `COMPILE_ANSI_ONLY`, `TARGET_API_LIB`
 - Audited ABI arithmetic profile: GCC/Clang Linux LP64
 - Declaration baseline generator: `bindgen-cli 0.72.1`
-- Rust declaration transformer: `dev/inchi-source-type-generator`
-- Reproduction driver: `dev/generate_inchi_source_types.py`
+- Rust declaration transformer: `dev/tools/inchi/source_type_generator`
+- Reproduction driver: `dev/tools/inchi/generate_inchi_source_types.py`
 - Owned Rust output:
   `crates/cosmolkit-inchi/src/source_types/generated.rs`
 
@@ -89,7 +89,7 @@ Install or provide `bindgen-cli 0.72.1`, then run from the repository root:
 ```bash
 BINDGEN=/path/to/bindgen \
 LIBCLANG_PATH=/usr/lib/llvm-18/lib \
-.venv/bin/python dev/generate_inchi_source_types.py
+.venv/bin/python dev/tools/inchi/generate_inchi_source_types.py
 ```
 
 The script rejects a different bindgen version and rejects a production C-file

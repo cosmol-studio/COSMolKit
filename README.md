@@ -262,9 +262,13 @@ default features unless explicit runtime checks are requested.
 
 Status labels:
 
-- ✅ available in the public Python API
-- 🧪 implemented or partially available, still being hardened
-- 🚧 planned / not yet public
+- ✅ stable public functionality within its documented supported scope
+- 🧪 public experimental feature; available, but its behavior or API may change
+- 🚧 planned or not yet public
+
+The ✅ status applies to the documented COSMolKit scope. It does not claim that
+every API or input branch from an upstream reference library is implemented;
+behavior outside that scope must continue to fail explicitly.
 
 ### Chemistry Core
 
@@ -283,12 +287,13 @@ Goal: keep the supported molecular core correct before expanding breadth.
 - ✅ `Chem.MolToInchi`, `Chem.MolToInchiKey`, `InchiToInchiKey`, and
   `Chem.MolFromInchi` for source-defined behavior; official-C undefined
   allocation behavior returns a structured error
-- 🧪 Morgan fingerprints and Tanimoto similarity for the validated exact-parity branches
-- 🧪 MACCS fingerprints for the validated exact raw/public projection
+- ✅ Morgan fingerprints and Tanimoto similarity for the validated exact-parity branches
+- ✅ MACCS fingerprints for the validated exact raw/public projection
 - 🚧 RDKFingerprint/topological and Avalon fingerprints (fail closed until source ports exist)
-- 🧪 Substructure matching and Python SMARTS parse metadata
-- 🚧 Broader descriptor APIs such as formula, molecular weight, and ring
-  statistics
+- ✅ Substructure matching and Python SMARTS parse metadata
+- 🧪 Molecular descriptors: average/exact molecular weight, formula, H-bond
+  donor/acceptor counts, fraction Csp3, Crippen logP/MR, TPSA, aromatic-ring
+  count, rotatable-bond modes, and QED
 
 ### File I/O and Depiction
 
@@ -306,7 +311,7 @@ from Python.
 - ✅ 2D coordinate generation
 - ✅ SVG drawing
 - ✅ PNG export
-- 🧪 RDKit-style visual parity testing for supported depiction output
+- ✅ RDKit-style visual parity testing for supported depiction output
 - 🚧 Annotation overlays and richer drawing customization
 - ✅ 3D conformer generation and embedding APIs
 
@@ -322,7 +327,7 @@ identity.
 - ✅ Configurable progress display with `with_progress_bar()`
 - ✅ Per-record errors, valid masks, and error reports
 - ✅ Batch SMILES, image, and SDF export paths
-- 🧪 Golden parity tests for parallel batch behavior
+- ✅ Golden parity tests for parallel batch behavior
 - 🚧 More streaming and chunked dataset workflows
 
 ### Protein and Structural Biology
@@ -333,7 +338,7 @@ through low-level structural tables.
 - ✅ `Protein.from_pdb()` / `Protein.from_mmcif()` high-level entry points
 - ✅ Protein chain, residue, and atom iteration
 - ✅ Protein-only projection from broader structural data
-- 🧪 PDB/mmCIF structural parsing
+- ✅ PDB/mmCIF structural parsing
 - 🚧 Selection utilities for chains, residues, atoms, and neighborhoods
 - 🚧 Ligand, nucleic-acid, and mixed-structure ergonomic APIs
 
@@ -341,11 +346,11 @@ through low-level structural tables.
 
 Goal: expose verified molecular behavior through a practical Python interface.
 
-- ✅ Value-style molecule transformations
-- ✅ Graph, coordinate, fingerprint, and bounds-matrix accessors
+- ✅ Stable value-style mutation contract for public molecule transformations
+- ✅ Graph, coordinate, fingerprint, descriptor, and bounds-matrix accessors
 - ✅ Python examples for drawing, SDF-to-SMILES, pickle round-tripping, batch
   processing, and proteins
-- 🧪 Type stubs and documentation coverage
+- ✅ Type stubs and documentation coverage
 - 🚧 Stable model-ready graph exports
 - 🚧 NumPy / PyTorch oriented adapters
 - 🚧 Molecular tokenization and AI-native geometry helpers

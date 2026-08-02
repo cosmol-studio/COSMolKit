@@ -11,8 +11,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-PLAN_PATH = REPO_ROOT / "dev" / "rdkit_inchi_full_port_plan.md"
+REPO_ROOT = Path(__file__).resolve().parents[4]
+PLAN_PATH = (
+    REPO_ROOT / "dev" / "archive" / "plans" / "rdkit_inchi_full_port_plan.md"
+)
 AUDIT_PATH = (
     REPO_ROOT
     / "target"

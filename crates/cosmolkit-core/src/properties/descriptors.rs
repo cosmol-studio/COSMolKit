@@ -1,8 +1,8 @@
-//! RDKit molecular descriptor parity surfaces.
+//! RDKit-aligned molecular descriptor surfaces.
 //!
-//! The functions in this module intentionally fail closed until their RDKit
-//! source paths are ported. They exist so descriptor parity tests can be added
-//! before implementation without silently using approximations.
+//! Public descriptor functions are source-backed and covered by field-level
+//! parity tests. Source states outside the modeled boundary fail explicitly
+//! instead of returning approximate descriptor values.
 
 use std::{
     cmp::Ordering,

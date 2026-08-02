@@ -1,6 +1,6 @@
 # RDKit MolBlock Reader Source Map
 
-Step: `dev/rdkit_molblock_sdf_full_port_plan.md` Step 181 final update.
+Step: `dev/archive/plans/rdkit_molblock_sdf_full_port_plan.md` Step 181 final update.
 
 Scope audited:
 

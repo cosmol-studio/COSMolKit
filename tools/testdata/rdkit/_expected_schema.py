@@ -91,8 +91,7 @@ SCHEMAS = {
         "error:null|string,label:null|string,public_n_bits:integer,public_on_bits:null|array,raw_n_bits:integer,raw_on_bits:null|array,rdkit_ok:boolean,record_type:string,smiles:string"
     ),
     "molecular_descriptors.jsonl": _schema(
-        "descriptors:null|object,error:null|string,rdkit_ok:boolean,smiles:string",
-        "descriptor_bits:object",
+        "descriptor_bits:null|object,descriptor_option_bits:null|object,descriptor_options:null|object,descriptors:null|object,error:null|string,rdkit_ok:boolean,smiles:string",
     ),
     "svg_drawer.jsonl": _schema(
         "error:null|string,height:integer,rdkit_ok:boolean,smiles:string,svg:null|string,width:integer"

@@ -2,7 +2,7 @@
 
 ## Scope
 
-This validation closes `dev/rdkit_morgan_maccs_full_port_plan.md` only for the
+This validation closes `dev/archive/plans/rdkit_morgan_maccs_full_port_plan.md` only for the
 enumerated COSMolKit Morgan and MACCS branches below. It is not a blanket claim
 for every RDKit fingerprint class, overload, molecule-preparation state, or
 other fingerprint family.

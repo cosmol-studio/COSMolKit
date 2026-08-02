@@ -4,8 +4,8 @@
 
 | Document | Purpose |
 |----------|---------|
-| [porting_inventory.md](porting_inventory.md) | Per-feature code-first status (implemented / substantial / partial / deferred) |
-| [work.md](work.md) | Active phase — current task, design detail, and ordered backlog |
+| [porting_inventory.md](../../porting_inventory.md) | Current per-feature status ledger; it has continued evolving after this roadmap was archived |
+| `work.md` (removed) | Historical active-phase queue; no current file exists |
 
 ## Overview
 
@@ -21,7 +21,7 @@ hardening and Python-facing work are deferred for now.
 
 The plan is organized into numbered phases. Each phase has a concrete
 deliverable and is executed sequentially. The current phase is tracked in
-[work.md](work.md); when a phase completes, the next one from the backlog is
+the former `work.md`; when a phase completed, the next one from the backlog was
 promoted automatically.
 
 ## Agent Entry Contract
@@ -73,7 +73,7 @@ operation/support contracts.
 
 3. **Use pinned upstream source when filling chemistry behavior.** Keep existing
    source-line markers aligned with
-   [`source_reproduction_protocol.md`](source_reproduction_protocol.md), but
+   [`source_reproduction_protocol.md`](../../source_reproduction_protocol.md), but
    defer strict parity hardening unless the missing feature cannot be completed
    safely without it.
 
@@ -105,8 +105,8 @@ operation/support contracts.
    input must be layered over Gemmi structural parsing plus explicit
    `BioStructure -> Molecule` conversion. Do not expose parallel public parser
    modules for the same task. Follow
-   [`bio_structure_io_policy.md`](bio_structure_io_policy.md) and
-   [`pdb_mmcif_gemmi_primary_plan.md`](pdb_mmcif_gemmi_primary_plan.md).
+   [`bio_structure_io_policy.md`](../../bio_structure_io_policy.md) and
+   [`pdb_mmcif_gemmi_primary_plan.md`](../../pdb_mmcif_gemmi_primary_plan.md).
 
 10. **Final validation** for any core or operation edit:
    ```bash
@@ -149,13 +149,13 @@ evidence. Phase 0 is not clean merely because plan files were edited.
 8. Close batch-native Rust workflows: scheduling, transforms, errors,
    masks/reports, SDF/image export.
 
-The detailed execution queue lives in [`work.md`](work.md).
+The detailed execution queue lived in the removed `work.md`.
 
 ## Agent Workflow
 
 When entering this project for porting work:
 
 1. Read this file to understand the scope and rules.
-2. Open [work.md](work.md) for the current task and design detail.
+2. Open the former `work.md` for the current task and design detail.
 3. After completing the current phase, follow the Completion Protocol in
    `work.md` to auto-advance to the next phase.

@@ -76,6 +76,74 @@ def descriptor_bits(descriptors: dict[str, object]) -> dict[str, str]:
     }
 
 
+def float_bits(value: float) -> str:
+    return f"{struct.unpack('<Q', struct.pack('<d', value))[0]:016x}"
+
+
+def fresh_mol(smiles: str) -> Chem.Mol:
+    mol = Chem.MolFromSmiles(smiles, sanitize=True)
+    if mol is None:
+        raise RuntimeError("MolFromSmiles unexpectedly failed after initial success")
+    return mol
+
+
+def descriptor_option_matrix(smiles: str) -> tuple[dict[str, object], dict[str, object]]:
+    mass_mol = fresh_mol(smiles)
+    options: dict[str, object] = {
+        "mol_wt_only_heavy": Descriptors.MolWt(mass_mol, onlyHeavy=True),
+        "exact_mol_wt_only_heavy": Descriptors.ExactMolWt(
+            mass_mol, onlyHeavy=True
+        ),
+        "crippen": {},
+        "tpsa": {},
+    }
+    bits: dict[str, object] = {
+        "mol_wt_only_heavy": float_bits(options["mol_wt_only_heavy"]),
+        "exact_mol_wt_only_heavy": float_bits(
+            options["exact_mol_wt_only_heavy"]
+        ),
+        "crippen": {},
+        "tpsa": {},
+    }
+
+    crippen = options["crippen"]
+    crippen_bits = bits["crippen"]
+    assert isinstance(crippen, dict)
+    assert isinstance(crippen_bits, dict)
+    for include_hs in (False, True):
+        for force in (False, True):
+            key = f"include_hs_{str(include_hs).lower()}_force_{str(force).lower()}"
+            # Use a fresh molecule for every branch. RDKit caches Crippen
+            # properties on the molecule and a previous force=False call can
+            # otherwise mask the includeHs argument of the next call.
+            logp, mr = rdMolDescriptors.CalcCrippenDescriptors(
+                fresh_mol(smiles), includeHs=include_hs, force=force
+            )
+            crippen[key] = {"logp": logp, "molar_refractivity": mr}
+            crippen_bits[key] = {
+                "logp": float_bits(logp),
+                "molar_refractivity": float_bits(mr),
+            }
+
+    tpsa = options["tpsa"]
+    tpsa_bits = bits["tpsa"]
+    assert isinstance(tpsa, dict)
+    assert isinstance(tpsa_bits, dict)
+    for force in (False, True):
+        for include_sandp in (False, True):
+            key = (
+                f"force_{str(force).lower()}_"
+                f"include_sandp_{str(include_sandp).lower()}"
+            )
+            value = rdMolDescriptors.CalcTPSA(
+                fresh_mol(smiles), force=force, includeSandP=include_sandp
+            )
+            tpsa[key] = value
+            tpsa_bits[key] = float_bits(value)
+
+    return options, bits
+
+
 def build_record(smiles: str) -> dict[str, object]:
     mol = Chem.MolFromSmiles(smiles, sanitize=True)
     if mol is None:
@@ -83,14 +151,20 @@ def build_record(smiles: str) -> dict[str, object]:
             "smiles": smiles,
             "rdkit_ok": False,
             "descriptors": None,
+            "descriptor_bits": None,
+            "descriptor_options": None,
+            "descriptor_option_bits": None,
             "error": "MolFromSmiles returned None",
         }
     descriptors = descriptor_set(mol)
+    descriptor_options, descriptor_option_bits = descriptor_option_matrix(smiles)
     return {
         "smiles": smiles,
         "rdkit_ok": True,
         "descriptors": descriptors,
         "descriptor_bits": descriptor_bits(descriptors),
+        "descriptor_options": descriptor_options,
+        "descriptor_option_bits": descriptor_option_bits,
         "error": None,
     }
 

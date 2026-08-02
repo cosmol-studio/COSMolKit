@@ -3,7 +3,7 @@
 ## Audit Scope
 
 This report audits the existing `crates/cosmolkit-inchi` skeleton against the
-approved reusable-crate boundary in `dev/rdkit_inchi_full_port_plan.md`. It
+approved reusable-crate boundary in `dev/archive/plans/rdkit_inchi_full_port_plan.md`. It
 records the state before the module, type, allocation, engine, adapter, and
 public API implementation steps. It does not treat planned behavior as already
 implemented.

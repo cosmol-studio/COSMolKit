@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[3]
 BASE = ROOT / "third_party" / "InChI" / "INCHI-1-SRC" / "INCHI_BASE" / "src"
 API = (
     ROOT
@@ -22,8 +22,15 @@ API = (
     / "libinchi"
     / "src"
 )
-WRAPPER = ROOT / "dev" / "inchi_type_inventory_wrapper.h"
-GENERATOR = ROOT / "dev" / "inchi-source-type-generator" / "Cargo.toml"
+WRAPPER = ROOT / "dev" / "tools" / "inchi" / "inchi_type_inventory_wrapper.h"
+GENERATOR = (
+    ROOT
+    / "dev"
+    / "tools"
+    / "inchi"
+    / "source_type_generator"
+    / "Cargo.toml"
+)
 OUTPUT = ROOT / "crates" / "cosmolkit-inchi" / "src" / "source_types" / "generated.rs"
 
 

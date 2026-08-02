@@ -28,7 +28,7 @@ Findings:
 - `crates/cosmolkit-core/src/support.rs` does not define `MOL2_READ_FEATURE`, `mol2.read`, or any MOL2 support spec.
 - `crates/cosmolkit-core/src/lib.rs`, `crates/cosmolkit/src`, and `python/` do not expose `read_mol2`, `Mol2`, or `mol_from_mol2` APIs.
 - `tests/` currently has no MOL2, Tripos, or SYBYL fixture directory or golden file.
-- Existing `mol2` matches outside `dev/rdkit_mol2_full_port_plan.md` are variable names such as `let mol2 = ...`; they are not MOL2 file-format implementation evidence.
+- Existing `mol2` matches outside `dev/plans/rdkit_mol2_full_port_plan.md` are variable names such as `let mol2 = ...`; they are not MOL2 file-format implementation evidence.
 
 Current support status:
 

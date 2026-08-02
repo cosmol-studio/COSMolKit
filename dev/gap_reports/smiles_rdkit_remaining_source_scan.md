@@ -7,7 +7,7 @@ Date: 2026-05-16
 Frozen-scope coverage is **not** at `100%`.
 
 This Step 219 audit rescans the current tree against the frozen baseline named
-by `dev/smiles_rdkit_full_port_checklist.md`. A zero-gap rewrite is allowed
+by `dev/plans/smiles_rdkit_full_port_checklist.md`. A zero-gap rewrite is allowed
 only when every frozen-baseline function is marker-closed and no direct frozen
 helper/function gap remains. That condition is still false.
 

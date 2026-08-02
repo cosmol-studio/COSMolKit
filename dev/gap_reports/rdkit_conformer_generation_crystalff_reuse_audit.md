@@ -2,7 +2,7 @@
 
 ## Scope
 
-- Plan step: `dev/rdkit_conformer_generation_full_port_plan.md` Step 75.
+- Plan step: `dev/archive/plans/rdkit_conformer_generation_full_port_plan.md` Step 75.
 - RDKit sources audited:
   - `third_party/rdkit/Code/GraphMol/ForceFieldHelpers/CrystalFF/TorsionPreferences.cpp`
   - `third_party/rdkit/Code/GraphMol/ForceFieldHelpers/CrystalFF/TorsionAngleContribs.cpp`

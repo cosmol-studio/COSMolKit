@@ -1,27 +1,56 @@
 # COSMolKit Development Operating Manual
 
-This file is the entry point for development rules in `dev/`.
+This file is the entry point for development rules in `dev/`. Normative
+standards and current design documents remain at this directory's top level.
+Execution plans, reports, tools, and historical records live in named
+subdirectories so that an old plan cannot be mistaken for current policy.
 
-It records operational details that agents and human contributors must follow
-while editing the redesigned core. The design documents define principles; this
-file defines the default commands and feature flags that should be used during
-daily development.
+## Directory Map
 
-## Related Documents
+| Path | Role |
+|---|---|
+| `dev/*.md` | Normative standards, current design decisions, and stable scope documents |
+| [`plans/`](./plans/) | Plans that still contain executable, unchecked steps |
+| [`gap_reports/`](./gap_reports/) | Audits, source inventories, validation reports, and blocker records |
+| [`tools/`](./tools/) | Development-only audit, generation, and debugging tools |
+| [`archive/`](./archive/) | Superseded roadmaps and inactive execution records; never normative |
 
-- [porting_plan.md](porting_plan.md) — source porting roadmap and current phase
-  (entry point for porting work)
-- [porting_inventory.md](porting_inventory.md) — per-feature porting status
-- [work.md](work.md) — active phase implementation detail
-- [bio_structure_io_policy.md](bio_structure_io_policy.md) — PDB/mmCIF
-  structural IO boundary between Gemmi-derived BioStructure readers and
-  RDKit-derived Molecule compatibility behavior
-- [pdb_mmcif_gemmi_primary_plan.md](pdb_mmcif_gemmi_primary_plan.md) —
-  execution plan for Gemmi-primary PDB/mmCIF reading and RDKit-compatible
-  molecule construction
-- [confseq_fast_geometry_design.md](confseq_fast_geometry_design.md) —
-  ConfSeq FastGeometry backend boundary, target architecture, metrics, and
-  validation rules
+## Normative Standards
+
+- [`agent_plan_standard.md`](./agent_plan_standard.md): required structure for
+  executable plans.
+- [`policy_invariants.md`](./policy_invariants.md): public behavior and
+  correctness invariants.
+- [`source_reproduction_protocol.md`](./source_reproduction_protocol.md):
+  source-port reproduction and marker rules.
+- [`source_bisection_debugging_protocol.md`](./source_bisection_debugging_protocol.md):
+  source-backed mismatch isolation protocol.
+- [`operation_system_standard.md`](./operation_system_standard.md): operation
+  registry, capability, COW, and state-migration standard.
+- [`testing_contract.md`](./testing_contract.md): policy-to-test mapping.
+- [`parity_testing_contract.md`](./parity_testing_contract.md): external
+  reference parity-test contract.
+- [`repository_organization_policy.md`](./repository_organization_policy.md):
+  test and generated-data ownership rules.
+
+## Current Design
+
+- [`topology_operations.md`](./topology_operations.md)
+- [`derived_effects_permission_model.md`](./derived_effects_permission_model.md)
+- [`inplace_operation_api_design.md`](./inplace_operation_api_design.md)
+- [`bio_structure_operation_contract_design.md`](./bio_structure_operation_contract_design.md)
+- [`bio_structure_io_policy.md`](./bio_structure_io_policy.md)
+- [`pdb_mmcif_gemmi_primary_plan.md`](./pdb_mmcif_gemmi_primary_plan.md)
+- [`rdkit_pdb_molecule_conversion_plan.md`](./rdkit_pdb_molecule_conversion_plan.md)
+- [`tetrahedral_stereo.md`](./tetrahedral_stereo.md)
+- [`confseq_fast_geometry_design.md`](./confseq_fast_geometry_design.md)
+- [`ai_native_features.md`](./ai_native_features.md)
+
+Current parity boundaries are summarized in
+[`parity_scope.md`](./parity_scope.md), and the current per-feature ledger is
+[`porting_inventory.md`](./porting_inventory.md). Historical percentage
+estimates and phase roadmaps are retained under
+[`archive/roadmaps/`](./archive/roadmaps/) and are not current status claims.
 
 ## Required Development Mode
 
@@ -271,12 +300,3 @@ developer/agent bug and should panic under `op-contracts-strict`.
 In release default, permission assertions, trace recording, and contract
 validation are not compiled. The release path still uses the same `OpParts`
 accessors and COW storage model; it only omits development checks.
-
-## Related Documents
-
-- [`policy_invariants.md`](./policy_invariants.md): project policy invariants
-- [`testing_contract.md`](./testing_contract.md): policy-to-test mapping
-- [`topology_operations.md`](./topology_operations.md): topology operation rules
-- [`operation_system_standard.md`](./operation_system_standard.md): normative
-  operation registry, `OpParts`, COW, and state-migration standard
-- [`PARITY_TESTING_CONTRACT.md`](./PARITY_TESTING_CONTRACT.md): RDKit parity testing contract

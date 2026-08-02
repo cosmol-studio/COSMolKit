@@ -430,7 +430,7 @@ molecule_ops! {
         requires_mapping: required,
         allows_noop: false,
         feature: HYDROGENS_FEATURE,
-        parity: required_when_supported,
+        parity: required_now,
         io_roundtrip: true,
         invariant_profile: "strong_topology_with_coordinates",
         parity_profile: "add_hs_default_rdkit",
@@ -458,7 +458,7 @@ molecule_ops! {
         requires_mapping: required,
         allows_noop: true,
         feature: HYDROGENS_FEATURE,
-        parity: required_when_supported,
+        parity: required_now,
         io_roundtrip: true,
         invariant_profile: "strong_topology_with_coordinates",
         parity_profile: "remove_hs_default_rdkit",
@@ -483,7 +483,7 @@ molecule_ops! {
         requires_mapping: required,
         allows_noop: true,
         feature: HYDROGENS_FEATURE,
-        parity: required_when_supported,
+        parity: required_now,
         io_roundtrip: true,
         invariant_profile: "strong_topology_with_coordinates",
         parity_profile: "remove_hs_parameterized_rdkit",
@@ -508,7 +508,7 @@ molecule_ops! {
         requires_mapping: none,
         allows_noop: true,
         feature: KEKULIZE_FEATURE,
-        parity: required_when_supported,
+        parity: required_now,
         io_roundtrip: true,
         invariant_profile: "weak_topology_state",
         parity_profile: "kekulize_clear_aromatic_flags",
@@ -536,7 +536,7 @@ molecule_ops! {
         requires_mapping: none,
         allows_noop: true,
         feature: SANITIZE_FEATURE,
-        parity: required_when_supported,
+        parity: required_now,
         io_roundtrip: true,
         invariant_profile: "weak_topology_state",
         parity_profile: "sanitize_default_rdkit",
@@ -561,7 +561,7 @@ molecule_ops! {
         requires_mapping: none,
         allows_noop: true,
         feature: VALENCE_FEATURE,
-        parity: required_when_supported,
+        parity: required_now,
         io_roundtrip: true,
         invariant_profile: "weak_derived_cache_update",
         parity_profile: "update_property_cache_rdkit",
@@ -586,7 +586,7 @@ molecule_ops! {
         requires_mapping: none,
         allows_noop: true,
         feature: RINGS_FEATURE,
-        parity: required_when_supported,
+        parity: required_now,
         io_roundtrip: true,
         invariant_profile: "weak_derived_cache_update",
         parity_profile: "symmetrize_sssr_rdkit",
@@ -611,7 +611,7 @@ molecule_ops! {
         requires_mapping: none,
         allows_noop: true,
         feature: RINGS_FEATURE,
-        parity: required_when_supported,
+        parity: required_now,
         io_roundtrip: true,
         invariant_profile: "weak_derived_cache_update",
         parity_profile: "ring_families_rdkit_urf",
@@ -636,7 +636,7 @@ molecule_ops! {
         requires_mapping: none,
         allows_noop: true,
         feature: AROMATICITY_FEATURE,
-        parity: required_when_supported,
+        parity: required_now,
         io_roundtrip: true,
         invariant_profile: "weak_topology_state",
         parity_profile: "set_aromaticity_default_rdkit",
@@ -661,7 +661,7 @@ molecule_ops! {
         requires_mapping: none,
         allows_noop: true,
         feature: VALENCE_FEATURE,
-        parity: required_when_supported,
+        parity: required_now,
         io_roundtrip: true,
         invariant_profile: "weak_topology_state",
         parity_profile: "assign_radicals_rdkit",
@@ -689,8 +689,8 @@ molecule_ops! {
         },
         requires_mapping: none,
         allows_noop: true,
-        feature: COORDINATE_EDIT_FEATURE,
-        parity: required_when_supported,
+        feature: COORDINATE_2D_FEATURE,
+        parity: required_now,
         io_roundtrip: true,
         invariant_profile: "coordinate_generation",
         parity_profile: "compute_2d_coords_default_rdkit",
@@ -719,7 +719,7 @@ molecule_ops! {
         requires_mapping: none,
         allows_noop: true,
         feature: CONFORMER_GENERATION_FEATURE,
-        parity: required_when_supported,
+        parity: required_now,
         io_roundtrip: true,
         invariant_profile: "coordinate_generation_3d",
         parity_profile: "embed_molecule_etkdgv3_rdkit",
@@ -745,7 +745,7 @@ molecule_ops! {
         requires_mapping: none,
         allows_noop: true,
         feature: CONFORMER_GENERATION_FEATURE,
-        parity: required_when_supported,
+        parity: required_now,
         io_roundtrip: true,
         invariant_profile: "coordinate_generation_3d_multi",
         parity_profile: "embed_multiple_confs_rdkit",
@@ -3460,17 +3460,19 @@ mod tests {
     }
 
     #[test]
-    fn experimental_kekulize_runs_through_operation_pipeline_without_changing_source() {
+    fn supported_kekulize_runs_through_operation_pipeline_without_changing_source() {
         assert_eq!(
             WITH_KEKULIZED_BONDS_SPEC.support,
-            SupportStatus::Experimental
+            SupportStatus::SupportedWithRdkitParity {
+                rdkit_version: "2026.03.1"
+            }
         );
 
         let molecule = crate::Molecule::new();
         let original = molecule.clone();
         let result = molecule
             .with_kekulized_bonds(true)
-            .expect("experimental kekulize skeleton should satisfy op contract");
+            .expect("supported kekulize should satisfy its operation contract");
 
         assert_eq!(molecule, original);
         assert_eq!(result.atoms(), original.atoms());

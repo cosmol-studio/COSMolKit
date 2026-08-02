@@ -36,15 +36,15 @@
 
 Step 1 [x]: Read `dev/agent_plan_standard.md`.
 Step 2 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 3 [x]: Audit the current redesigned-core public mutation and convenience API surface against the operation-registry policy and write a concrete gap report in `dev/ops_architecture_api_gap_report.md`.
+Step 3 [x]: Audit the current redesigned-core public mutation and convenience API surface against the operation-registry policy and write a concrete gap report in `dev/gap_reports/ops_architecture_api_gap_report.md`.
 Step 4 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 5 [x]: Modify the redesigned-core public API to remove or demote the public `assign_atom_cip_ranks_in_place(&mut Molecule)` bypass and add a concrete architecture note in `dev/ops_architecture_api_gap_report.md` describing the enforced replacement boundary.
+Step 5 [x]: Modify the redesigned-core public API to remove or demote the public `assign_atom_cip_ranks_in_place(&mut Molecule)` bypass and add a concrete architecture note in `dev/gap_reports/ops_architecture_api_gap_report.md` describing the enforced replacement boundary.
 Step 6 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
 Step 7 [x]: Add or update targeted tests covering the removal or demotion of the public mutable CIP-rank writeback bypass.
 Step 8 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
 Step 9 [x]: Run the most specific relevant test command for the tests added or updated in Step 7.
 Step 10 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
-Step 11 [x]: Implement a registered operation-backed public replacement for CIP-rank writeback or record a concrete unsupported-architecture note in `dev/ops_architecture_api_gap_report.md` if the required public state boundary is not yet modeled.
+Step 11 [x]: Implement a registered operation-backed public replacement for CIP-rank writeback or record a concrete unsupported-architecture note in `dev/gap_reports/ops_architecture_api_gap_report.md` if the required public state boundary is not yet modeled.
 Step 12 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
 Step 13 [x]: Add or update targeted tests covering the Step 11 operation-backed CIP-rank writeback behavior or the concrete unsupported note.
 Step 14 [x]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.

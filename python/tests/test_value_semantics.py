@@ -246,11 +246,11 @@ def test_molecule_batch_sanitize_flag_and_transform_are_not_noops():
         n_jobs=1,
     )
 
-    with pytest.raises(cosmolkit.BatchValidationError, match="to_smiles"):
-        batch.to_smiles_list(canonical=False)
+    unsanitized = batch.to_smiles_list(canonical=False)
 
     sanitized = batch.sanitize(errors="raise", n_jobs=1).to_smiles_list()
 
+    assert unsanitized == ["CN(=O)=O"]
     assert sanitized == ["C[N+](=O)[O-]"]
 
 

@@ -15,7 +15,7 @@ from tree_sitter import Language, Node, Parser, Query, QueryCursor
 import tree_sitter_c
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[3]
 VENDOR_ROOT = REPO_ROOT / "third_party" / "InChI"
 SOURCE_ROOT = VENDOR_ROOT / "INCHI-1-SRC"
 BASE_ROOT = SOURCE_ROOT / "INCHI_BASE" / "src"
@@ -367,7 +367,7 @@ def main() -> None:
             "Run from the repository root:",
             "",
             "```bash",
-            "uv run --no-project --with tree-sitter --with tree-sitter-c python dev/generate_inchi_function_inventory.py",
+            "uv run --no-project --with tree-sitter --with tree-sitter-c python dev/tools/inchi/generate_inchi_function_inventory.py",
             "```",
             "",
         ]

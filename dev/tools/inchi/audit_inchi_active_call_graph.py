@@ -13,7 +13,7 @@ from datetime import date
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[3]
 BUILD_ROOT = REPO_ROOT / "target" / "inchi-active-call-graph-audit"
 COMPILE_DATABASE = BUILD_ROOT / "compile_commands.json"
 REPORT = (

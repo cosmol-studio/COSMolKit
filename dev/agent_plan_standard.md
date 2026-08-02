@@ -77,7 +77,7 @@ Step N [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protoco
 
 ## Plan
 
-Step 1 [ ]: Read `dev/Agent_Plan_Standard.md`.
+Step 1 [ ]: Read `dev/agent_plan_standard.md`.
 Step 2 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
 Step 3 [ ]: <one concrete task with a concrete artifact>.
 Step 4 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
@@ -111,7 +111,7 @@ Invalid because Step 3 claims completion without producing a concrete artifact.
 # Valid
 
 ```md
-Step 1 [ ]: Read `dev/Agent_Plan_Standard.md`.
+Step 1 [ ]: Read `dev/agent_plan_standard.md`.
 Step 2 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.
 Step 3 [ ]: Audit task A and write a gap report.
 Step 4 [ ]: Read `dev/policy_invariants.md` and `dev/source_reproduction_protocol.md` to reload and follow the required execution standard, source reproduction rules, artifact requirements, no-git rule, and completion criteria for the next task.

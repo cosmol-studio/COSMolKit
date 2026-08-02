@@ -1,7 +1,7 @@
 # RDKit Conformer Generation Reuse Map
 
 This is the Step 5 artifact for
-`dev/rdkit_conformer_generation_full_port_plan.md`.
+`dev/archive/plans/rdkit_conformer_generation_full_port_plan.md`.
 
 This audit compares the Step 3 RDKit conformer-generation source inventory
 against current COSMolKit Rust code. It is an audit only; it does not expand

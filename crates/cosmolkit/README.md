@@ -1,8 +1,8 @@
 # COSMolKit Rust
 
 `cosmolkit` is the Rust facade crate for COSMolKit. It re-exports the molecular
-model, chemistry operations, file I/O, fingerprints, drawing, batch helpers, and
-protein structure APIs from `cosmolkit-core`.
+model, chemistry operations, file I/O, fingerprints, molecular descriptors,
+drawing, batch helpers, and protein structure APIs from `cosmolkit-core`.
 
 ## Documentation
 
@@ -121,6 +121,24 @@ source-defined behavior in this boundary. Official-C undefined behavior on the
 audited `NormalizeAndCompare` initial-allocation path is mapped to a
 deterministic structured allocation error. MolBlock, SDF/V3000, IXA, AuxInfo,
 INCHIGEN, version-query, and extended-polymer InChI APIs are not exposed.
+
+## Molecular Descriptors
+
+The facade re-exports the source-backed descriptor functions from
+`cosmolkit-core`:
+
+```rust
+use cosmolkit::{Molecule, calc_mol_formula, calc_mol_wt, calc_num_aromatic_rings};
+
+let molecule = Molecule::from_smiles("c1ccccc1O")?;
+assert_eq!(calc_mol_formula(&molecule, false, true)?, "C6H6O");
+assert!(calc_mol_wt(&molecule, false)? > 94.0);
+assert_eq!(calc_num_aromatic_rings(&molecule)?, 1);
+```
+
+The descriptor surface is public but experimental. Supported rows are checked
+field-by-field against pinned RDKit golden data; unmodeled source states return
+an explicit descriptor error.
 
 ## Conformer Generation And Force Field Applications
 

@@ -20,7 +20,37 @@ struct DescriptorRecord {
     rdkit_ok: bool,
     descriptors: Option<DescriptorSet>,
     descriptor_bits: Option<DescriptorBits>,
+    descriptor_options: Option<DescriptorOptionMatrix>,
+    descriptor_option_bits: Option<DescriptorOptionBits>,
     error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DescriptorOptionMatrix {
+    mol_wt_only_heavy: f64,
+    exact_mol_wt_only_heavy: f64,
+    crippen: BTreeMap<String, CrippenOptionValues>,
+    tpsa: BTreeMap<String, f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DescriptorOptionBits {
+    mol_wt_only_heavy: String,
+    exact_mol_wt_only_heavy: String,
+    crippen: BTreeMap<String, CrippenOptionBits>,
+    tpsa: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CrippenOptionValues {
+    logp: f64,
+    molar_refractivity: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct CrippenOptionBits {
+    logp: String,
+    molar_refractivity: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,6 +139,17 @@ fn molecular_descriptors_match_rdkit_golden_for_supported_properties() {
                 record.error.is_some(),
                 "RDKit-not-ok molecular descriptor record has no error in {context}"
             );
+            assert!(
+                record.descriptors.is_none()
+                    && record.descriptor_bits.is_none()
+                    && record.descriptor_options.is_none()
+                    && record.descriptor_option_bits.is_none(),
+                "RDKit-not-ok row unexpectedly carries descriptor output in {context}"
+            );
+            assert!(
+                Molecule::from_smiles(&record.smiles).is_err(),
+                "RDKit rejected {context}, but COSMolKit accepted the same descriptor input"
+            );
             continue;
         }
         let expected = record.descriptors.as_ref().unwrap_or_else(|| {
@@ -120,8 +161,111 @@ fn molecular_descriptors_match_rdkit_golden_for_supported_properties() {
                 parity_data::regenerate_command()
             )
         });
+        let expected_options = record.descriptor_options.as_ref().unwrap_or_else(|| {
+            panic!("RDKit-ok molecular descriptor record missing option matrix in {context}")
+        });
+        let expected_option_bits = record.descriptor_option_bits.as_ref().unwrap_or_else(|| {
+            panic!("RDKit-ok molecular descriptor record missing option bits in {context}")
+        });
         let mol = Molecule::from_smiles(&record.smiles)
             .unwrap_or_else(|err| panic!("COSMolKit failed to parse {context}: {err}"));
+
+        check_f64(
+            "mol_wt_only_heavy",
+            &context,
+            calc_mol_wt(&mol, true),
+            expected_options.mol_wt_only_heavy,
+            expected_option_bits.mol_wt_only_heavy.as_str(),
+            &mut failures,
+            &mut by_field,
+        );
+        check_f64(
+            "exact_mol_wt_only_heavy",
+            &context,
+            calc_exact_mol_wt(&mol, true),
+            expected_options.exact_mol_wt_only_heavy,
+            expected_option_bits.exact_mol_wt_only_heavy.as_str(),
+            &mut failures,
+            &mut by_field,
+        );
+
+        for include_hs in [false, true] {
+            for force in [false, true] {
+                let key = format!("include_hs_{include_hs}_force_{force}");
+                let expected_branch = expected_options
+                    .crippen
+                    .get(&key)
+                    .unwrap_or_else(|| panic!("missing Crippen branch {key} in {context}"));
+                let expected_branch_bits = expected_option_bits
+                    .crippen
+                    .get(&key)
+                    .unwrap_or_else(|| panic!("missing Crippen bit branch {key} in {context}"));
+                match calc_crippen_descriptors(&mol, include_hs, force) {
+                    Ok(CrippenDescriptorValues {
+                        logp,
+                        molar_refractivity,
+                    }) => {
+                        compare_f64(
+                            "crippen_option_logp",
+                            &format!("{context} {key}"),
+                            logp,
+                            expected_branch.logp,
+                            expected_branch_bits.logp.as_str(),
+                            &mut failures,
+                            &mut by_field,
+                        );
+                        compare_f64(
+                            "crippen_option_mr",
+                            &format!("{context} {key}"),
+                            molar_refractivity,
+                            expected_branch.molar_refractivity,
+                            expected_branch_bits.molar_refractivity.as_str(),
+                            &mut failures,
+                            &mut by_field,
+                        );
+                    }
+                    Err(err) => {
+                        record_error(
+                            "crippen_option_logp",
+                            &format!("{context} {key}"),
+                            err.clone(),
+                            &mut failures,
+                            &mut by_field,
+                        );
+                        record_error(
+                            "crippen_option_mr",
+                            &format!("{context} {key}"),
+                            err,
+                            &mut failures,
+                            &mut by_field,
+                        );
+                    }
+                }
+            }
+        }
+
+        for force in [false, true] {
+            for include_sandp in [false, true] {
+                let key = format!("force_{force}_include_sandp_{include_sandp}");
+                let expected_value = *expected_options
+                    .tpsa
+                    .get(&key)
+                    .unwrap_or_else(|| panic!("missing TPSA branch {key} in {context}"));
+                let expected_bits = expected_option_bits
+                    .tpsa
+                    .get(&key)
+                    .unwrap_or_else(|| panic!("missing TPSA bit branch {key} in {context}"));
+                check_f64(
+                    "tpsa_option",
+                    &format!("{context} {key}"),
+                    calc_tpsa(&mol, force, include_sandp),
+                    expected_value,
+                    expected_bits,
+                    &mut failures,
+                    &mut by_field,
+                );
+            }
+        }
 
         check_f64(
             "mol_wt",

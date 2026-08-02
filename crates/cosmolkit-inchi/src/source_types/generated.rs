@@ -1,6 +1,6 @@
 // Generated from IUPAC InChI v1.07.5 at commit
 // 11a87982bb518f57ac013f0b258c283655e1ea1d.
-// Input: dev/inchi_type_inventory_wrapper.h plus all 60 production C files.
+// Input: dev/tools/inchi/inchi_type_inventory_wrapper.h plus all 60 production C files.
 // Configuration: COMPILE_ANSI_ONLY, TARGET_API_LIB, GCC/Clang LP64.
 // Generator declaration baseline: bindgen-cli 0.72.1.
 // The checked-in result is pure Rust and contains no FFI declarations.

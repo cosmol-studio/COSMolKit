@@ -1,6 +1,6 @@
 # RDKit MMFF Symbol Inventory
 
-Step: `dev/rdkit_forcefield_full_port_plan.md` Step 675.
+Step: `dev/archive/plans/rdkit_forcefield_full_port_plan.md` Step 675.
 
 Scope audited:
 - `third_party/rdkit/Code/ForceField/MMFF/Params.h`

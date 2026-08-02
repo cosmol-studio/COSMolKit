@@ -4,7 +4,7 @@
 
 This audit compares the active Rust 2D coordinate generation surface against the
 RDKit depiction baseline required by
-`dev/coordinate_2d_rdkit_full_port_checklist.md`:
+`dev/plans/coordinate_2d_rdkit_full_port_checklist.md`:
 
 - `third_party/rdkit/Code/GraphMol/Depictor/RDDepictor.h`
 - `third_party/rdkit/Code/GraphMol/Depictor/RDDepictor.cpp`
