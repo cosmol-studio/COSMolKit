@@ -2032,7 +2032,7 @@ fn finish_mol2_read_like_rdkit(
     // RDKit✔️✔️:     MolOps::assignStereochemistry(*res, true, true);
     // RDKit✔️✔️:   }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/Mol2FileParser.cpp :: MolFromMol2DataStream finalization order
-    assign_chiral_types_from_3d_for_mol2_like_rdkit(&mut record.molecule);
+    assign_chiral_types_from_3d_for_mol2_like_rdkit(&mut record.molecule)?;
     record.molecule = sanitize_mol2_molecule_like_rdkit(record.molecule, params)?;
     Ok(record)
 }
@@ -2128,7 +2128,9 @@ pub fn read_mol2_file_with_params(
     mol_from_mol2_file_like_rdkit(path, params)
 }
 
-fn assign_chiral_types_from_3d_for_mol2_like_rdkit(molecule: &mut Molecule) {
+fn assign_chiral_types_from_3d_for_mol2_like_rdkit(
+    molecule: &mut Molecule,
+) -> Result<(), Mol2ReadError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/Mol2FileParser.cpp :: MolFromMol2DataStream 3D chirality call
     // RDKit✔️✔️:   // set chirality prior to sanitization since it happens from 3D and it's not
     // RDKit✔️✔️:   // possible anymore once the hydrogens are removed
@@ -2136,7 +2138,8 @@ fn assign_chiral_types_from_3d_for_mol2_like_rdkit(molecule: &mut Molecule) {
     // RDKit✔️✔️:   // we use multiconformer files
     // RDKit✔️✔️:   MolOps::assignChiralTypesFrom3D(*res);
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/Mol2FileParser.cpp :: MolFromMol2DataStream 3D chirality call
-    crate::notation::smiles::assign_chiral_types_from_3d(molecule, 0);
+    crate::chemistry::stereo::assign_chiral_types_from_3d_molecule(molecule, -1, true)
+        .map_err(|error| Mol2ReadError::Parse(error.to_string()))
 }
 
 fn sanitize_mol2_molecule_like_rdkit(
@@ -3048,7 +3051,7 @@ mod tests {
         );
         assert_eq!(record.molecule.atoms()[4].atomic_number(), 1);
 
-        assign_chiral_types_from_3d_for_mol2_like_rdkit(&mut record.molecule);
+        assign_chiral_types_from_3d_for_mol2_like_rdkit(&mut record.molecule).unwrap();
 
         assert_eq!(record.molecule.num_atoms(), 5);
         assert_eq!(record.molecule.atoms()[4].atomic_number(), 1);
@@ -3134,7 +3137,7 @@ mod tests {
     fn mol2_sanitize_remove_hs_runs_final_sanitize_property_cache_and_stereo_like_rdkit() {
         let input = "@<TRIPOS>MOLECULE\nmol\n5 4\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 0 0 0 C.3\n2 F1 1 0 0 F\n3 Cl1 0 1 0 Cl\n4 Br1 0 0 1 Br\n5 H1 -1 -1 -1 H\n@<TRIPOS>BOND\n1 1 2 1\n2 1 3 1\n3 1 4 1\n4 1 5 1\n";
         let mut record = read_unsanitized_mol2_from_block(input).unwrap().unwrap();
-        assign_chiral_types_from_3d_for_mol2_like_rdkit(&mut record.molecule);
+        assign_chiral_types_from_3d_for_mol2_like_rdkit(&mut record.molecule).unwrap();
 
         let sanitized =
             sanitize_mol2_molecule_like_rdkit(record.molecule, Mol2ReadParams::default()).unwrap();
@@ -3203,7 +3206,7 @@ mod tests {
     fn mol2_sanitize_keep_hs_runs_property_cache_and_stereo_assignment_like_rdkit() {
         let input = "@<TRIPOS>MOLECULE\nmol\n5 4\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 0 0 0 C.3\n2 F1 1 0 0 F\n3 Cl1 0 1 0 Cl\n4 Br1 0 0 1 Br\n5 H1 -1 -1 -1 H\n@<TRIPOS>BOND\n1 1 2 1\n2 1 3 1\n3 1 4 1\n4 1 5 1\n";
         let mut record = read_unsanitized_mol2_from_block(input).unwrap().unwrap();
-        assign_chiral_types_from_3d_for_mol2_like_rdkit(&mut record.molecule);
+        assign_chiral_types_from_3d_for_mol2_like_rdkit(&mut record.molecule).unwrap();
         let params = Mol2ReadParams {
             sanitize: true,
             remove_hs: false,

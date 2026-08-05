@@ -10143,6 +10143,7 @@ Up to 1024 atoms per structure";
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__inchi_dll__parse_options_string__line_1037() {
         use std::path::Path;
         use std::process::Command;
@@ -10419,6 +10420,7 @@ Up to 1024 atoms per structure";
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__inchi_dll__setatomproperties__line_1139() {
         use std::path::Path;
         use std::process::Command;
@@ -10925,6 +10927,7 @@ Up to 1024 atoms per structure";
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__inchi_dll__setbondproperties__line_1235() {
         use std::path::Path;
         use std::process::Command;
@@ -11137,6 +11140,7 @@ Up to 1024 atoms per structure";
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__rdkit_core_roots__exact() {
         use std::path::Path;
         use std::process::Command;

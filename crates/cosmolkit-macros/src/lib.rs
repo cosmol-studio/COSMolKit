@@ -26,6 +26,7 @@ struct OpEntry {
 #[derive(Default)]
 struct OpFields {
     method: Option<Ident>,
+    docs: Option<LitStr>,
     impl_fn: Option<Ident>,
     domain: Option<Ident>,
     kind: Option<Ident>,
@@ -46,6 +47,7 @@ struct OpFields {
     default_args: Vec<Expr>,
     inplace: Option<LitBool>,
     inplace_method: Option<Ident>,
+    inplace_docs: Option<LitStr>,
     default_inplace_method: Option<Ident>,
 }
 
@@ -103,6 +105,7 @@ impl Parse for OpEntry {
             content.parse::<Token![:]>()?;
             match key.to_string().as_str() {
                 "method" => fields.method = Some(content.parse()?),
+                "docs" => fields.docs = Some(content.parse()?),
                 "impl_fn" => fields.impl_fn = Some(content.parse()?),
                 "domain" => fields.domain = Some(content.parse()?),
                 "kind" => fields.kind = Some(content.parse()?),
@@ -154,6 +157,7 @@ impl Parse for OpEntry {
                 "default_args" => fields.default_args = parse_expr_list(&content)?,
                 "inplace" => fields.inplace = Some(content.parse()?),
                 "inplace_method" => fields.inplace_method = Some(content.parse()?),
+                "inplace_docs" => fields.inplace_docs = Some(content.parse()?),
                 "default_inplace_method" => fields.default_inplace_method = Some(content.parse()?),
                 "rdkit_parity" => {
                     return Err(syn::Error::new(
@@ -499,7 +503,11 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         })
     };
 
+    let method_docs = op.fields.docs.map(|docs| quote!(#[doc = #docs]));
+    let inplace_docs = op.fields.inplace_docs.map(|docs| quote!(#[doc = #docs]));
+
     let method_def = quote! {
+        #method_docs
         pub fn #method(&self, #params) -> Result<crate::molecule::Molecule, crate::ops::OperationError> {
             if matches!(
                 crate::ops::#spec_ident.support,
@@ -521,6 +529,7 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         .unwrap_or_else(|| format_ident!("{}_", method));
     let inplace_method = if inplace_enabled {
         Some(quote! {
+            #inplace_docs
             pub fn #inplace_method_name(&mut self, #params) -> Result<(), crate::ops::OperationError> {
                 if matches!(
                     crate::ops::#spec_ident.support,

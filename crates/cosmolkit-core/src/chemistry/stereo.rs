@@ -3,8 +3,43 @@
 // Source reproduction protocol: dev/source_reproduction_protocol.md
 
 use crate::chemistry::valence::rdkit_most_common_isotope;
-use crate::{AtomId, BondId, ChiralTag, Conformer3D, Molecule};
+use crate::{
+    AdjacencyList, Atom, AtomId, Bond, BondId, ChiralTag, Conformer3D, Molecule, MoleculeProperties,
+};
 use std::collections::HashSet;
+
+// RDKit✔️❌: constexpr auto nonTetrahedralStereoEnvVar =
+// RDKit✔️❌:     "RDK_ENABLE_NONTETRAHEDRAL_STEREO";
+// RDKit✔️❌: constexpr bool nonTetrahedralStereoDefaultVal =
+// RDKit✔️❌:     true;  //!< whether or not nontetrahedral stereo is perceived by default
+const NON_TETRAHEDRAL_STEREO_ENV_VAR: &str = "RDK_ENABLE_NONTETRAHEDRAL_STEREO";
+const NON_TETRAHEDRAL_STEREO_DEFAULT: bool = true;
+
+fn get_val_from_environment(var: &str, default_value: bool) -> bool {
+    // RDKit✔️❌: bool getValFromEnvironment(const char *var, bool defVal) {
+    // RDKit✔️❌:   auto evar = std::getenv(var);
+    // RDKit✔️❌:   if (evar != nullptr) {
+    // RDKit✔️❌:     if (!strcmp(evar, "0")) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       return true;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return defVal;
+    // RDKit✔️❌: }
+    std::env::var_os(var).map_or(default_value, |value| value != "0")
+}
+
+pub(crate) fn get_allow_nontetrahedral_chirality() -> bool {
+    // RDKit✔️❌: bool getAllowNontetrahedralChirality() {
+    // RDKit✔️❌:   return getValFromEnvironment(nonTetrahedralStereoEnvVar,
+    // RDKit✔️❌:                                nonTetrahedralStereoDefaultVal);
+    // RDKit✔️❌: }
+    get_val_from_environment(
+        NON_TETRAHEDRAL_STEREO_ENV_VAR,
+        NON_TETRAHEDRAL_STEREO_DEFAULT,
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StereoError {
@@ -12,8 +47,28 @@ pub enum StereoError {
     UnsupportedFeature(#[from] crate::UnsupportedFeatureError),
     #[error(transparent)]
     RingFinding(#[from] crate::RingFindingError),
+    #[error(transparent)]
+    Valence(#[from] crate::ValenceError),
     #[error("{0}")]
     InvariantViolation(String),
+    #[error("Cannot normalize a zero length vector")]
+    ZeroLengthVector,
+    #[error("Can't find conformation with ID: {conformer_id}")]
+    ConformerNotFound { conformer_id: i32 },
+    #[error("implicit hydrogen state is unavailable for 3D chirality assignment")]
+    MissingImplicitHydrogenState,
+    #[error(
+        "implicit hydrogen state has {actual} rows for {expected} atoms during 3D chirality assignment"
+    )]
+    ImplicitHydrogenCountMismatch { expected: usize, actual: usize },
+    #[error(
+        "conformer {conformer_id} has {actual} coordinate rows for {expected} atoms during 3D chirality assignment"
+    )]
+    ConformerAtomCountMismatch {
+        conformer_id: usize,
+        expected: usize,
+        actual: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1055,7 +1110,7 @@ pub(crate) fn assign_atom_chiral_codes_with_possible(
 //   RDKit✔️✔️: assignLegacyCIPLabels (1966-1979)
 //   RDKit✔️✔️: assignBondCisTrans (1980-2063) — simplified, no StereoInfo dependency
 //   RDKit✔️✔️: rerankAtoms (2067-2117)
-//   RDKit❗✔️: assignAtomChiralTagsFromStructure — simplified 2D wedge detection
+//   RDKit✔️❌: assignChiralTypesFrom3D — complete source-backed 3D kernel below
 //
 // ── Inline vector math helpers for pseudo-3D ───────────────────────────
 
@@ -1104,6 +1159,1288 @@ fn vec_direction(from: [f64; 3], to: [f64; 3]) -> (f64, f64, f64) {
         let l = lsq.sqrt();
         (d.0 / l, d.1 / l, d.2 / l)
     }
+}
+
+// RDKit✔️✔️: static constexpr double zero_tolerance = 1.e-16;
+// RDKit✔️✔️: constexpr void normalize() override {
+// RDKit✔️✔️:   double l = this->length();
+// RDKit✔️✔️:   if (l < zero_tolerance) {
+// RDKit✔️✔️:     throw std::runtime_error("Cannot normalize a zero length vector");
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:
+// RDKit✔️✔️:   x /= l;
+// RDKit✔️✔️:   y /= l;
+// RDKit✔️✔️:   z /= l;
+// RDKit✔️✔️: }
+// RDKit✔️✔️:
+// RDKit✔️✔️: double length() const override {
+// RDKit✔️✔️:   double res = x * x + y * y + z * z;
+// RDKit✔️✔️:   return sqrt(res);
+// RDKit✔️✔️: }
+// RDKit✔️✔️: /*! \brief Returns a normalized direction vector from this
+// RDKit✔️✔️:  *   point to another.
+// RDKit✔️✔️:  *
+// RDKit✔️✔️:  */
+// RDKit✔️✔️: Point3D directionVector(const Point3D &other) const {
+// RDKit✔️✔️:   Point3D res;
+// RDKit✔️✔️:   res.x = other.x - x;
+// RDKit✔️✔️:   res.y = other.y - y;
+// RDKit✔️✔️:   res.z = other.z - z;
+// RDKit✔️✔️:   res.normalize();
+// RDKit✔️✔️:   return res;
+// RDKit✔️✔️: }
+#[inline]
+fn rdkit_direction_vector(from: [f64; 3], other: [f64; 3]) -> Result<(f64, f64, f64), StereoError> {
+    const ZERO_TOLERANCE: f64 = 1.0e-16;
+
+    let mut res = (other[0] - from[0], other[1] - from[1], other[2] - from[2]);
+    let length_squared = res.0 * res.0 + res.1 * res.1 + res.2 * res.2;
+    let length = length_squared.sqrt();
+    if length < ZERO_TOLERANCE {
+        return Err(StereoError::ZeroLengthVector);
+    }
+    res.0 /= length;
+    res.1 /= length;
+    res.2 /= length;
+    Ok(res)
+}
+
+// RDKit✔️✔️: constexpr double lengthSq() const override {
+// RDKit✔️✔️:   // double res = pow(x,2) + pow(y,2) + pow(z,2);
+// RDKit✔️✔️:   double res = x * x + y * y + z * z;
+// RDKit✔️✔️:   return res;
+// RDKit✔️✔️: }
+// RDKit✔️✔️:
+// RDKit✔️✔️: constexpr double dotProduct(const Point3D &other) const {
+// RDKit✔️✔️:   double res = x * (other.x) + y * (other.y) + z * (other.z);
+// RDKit✔️✔️:   return res;
+// RDKit✔️✔️: }
+// RDKit✔️✔️:
+// RDKit✔️✔️: /*! \brief determines the angle between a vector to this point
+// RDKit✔️✔️:  *   from the origin and a vector to the other point.
+// RDKit✔️✔️:  *
+// RDKit✔️✔️:  *  The angle is unsigned: the results of this call will always
+// RDKit✔️✔️:  *   be between 0 and M_PI
+// RDKit✔️✔️:  */
+// RDKit✔️✔️: double angleTo(const Point3D &other) const {
+// RDKit✔️✔️:   double lsq = lengthSq() * other.lengthSq();
+// RDKit✔️✔️:   double dotProd = dotProduct(other);
+// RDKit✔️✔️:   dotProd /= sqrt(lsq);
+// RDKit✔️✔️:
+// RDKit✔️✔️:   // watch for roundoff error:
+// RDKit✔️✔️:   if (dotProd <= -1.0) {
+// RDKit✔️✔️:     return M_PI;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   if (dotProd >= 1.0) {
+// RDKit✔️✔️:     return 0.0;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:
+// RDKit✔️✔️:   return acos(dotProd);
+// RDKit✔️✔️: }
+#[inline]
+fn rdkit_angle_to(this: (f64, f64, f64), other: (f64, f64, f64)) -> f64 {
+    let this_length_squared = this.0 * this.0 + this.1 * this.1 + this.2 * this.2;
+    let other_length_squared = other.0 * other.0 + other.1 * other.1 + other.2 * other.2;
+    let length_squared_product = this_length_squared * other_length_squared;
+    let mut dot_product = this.0 * other.0 + this.1 * other.1 + this.2 * other.2;
+    dot_product /= length_squared_product.sqrt();
+
+    if dot_product <= -1.0 {
+        return std::f64::consts::PI;
+    }
+    if dot_product >= 1.0 {
+        return 0.0;
+    }
+
+    dot_product.acos()
+}
+
+// RDKit✔️✔️: constexpr double dotProduct(const Point3D &other) const {
+// RDKit✔️✔️:   double res = x * (other.x) + y * (other.y) + z * (other.z);
+// RDKit✔️✔️:   return res;
+// RDKit✔️✔️: }
+#[inline]
+fn rdkit_point3d_dot_product(this: (f64, f64, f64), other: (f64, f64, f64)) -> f64 {
+    this.0 * other.0 + this.1 * other.1 + this.2 * other.2
+}
+
+// RDKit✔️✔️: /*! \brief Cross product of this point with the another point
+// RDKit✔️✔️:  *
+// RDKit✔️✔️:  * The order is important here
+// RDKit✔️✔️:  *  The result is "this" cross with "other" not (other x this)
+// RDKit✔️✔️:  */
+// RDKit✔️✔️: constexpr Point3D crossProduct(const Point3D &other) const {
+// RDKit✔️✔️:   Point3D res;
+// RDKit✔️✔️:   res.x = y * (other.z) - z * (other.y);
+// RDKit✔️✔️:   res.y = -x * (other.z) + z * (other.x);
+// RDKit✔️✔️:   res.z = x * (other.y) - y * (other.x);
+// RDKit✔️✔️:   return res;
+// RDKit✔️✔️: }
+#[inline]
+fn rdkit_point3d_cross_product(this: (f64, f64, f64), other: (f64, f64, f64)) -> (f64, f64, f64) {
+    (
+        this.1 * other.2 - this.2 * other.1,
+        -this.0 * other.2 + this.2 * other.0,
+        this.0 * other.1 - this.1 * other.0,
+    )
+}
+
+// RDKit✔️✔️: #define VOLTEST(X, Y, Z) (v[X].dotProduct(v[Y].crossProduct(v[Z])) >= 0.0)
+#[inline]
+fn rdkit_voltest(vectors: &[(f64, f64, f64)], x: usize, y: usize, z: usize) -> bool {
+    rdkit_point3d_dot_product(
+        vectors[x],
+        rdkit_point3d_cross_product(vectors[y], vectors[z]),
+    ) >= 0.0
+}
+
+// RDKit✔️✔️: static unsigned int OctahedralPermFrom3D(unsigned char *pair,
+// RDKit✔️✔️:                                          const RDGeom::Point3D *v) {
+// RDKit✔️✔️:   switch (pair[0]) {
+fn octahedral_perm_from_3d(pair: &[u8; 6], vectors: &[(f64, f64, f64)]) -> u32 {
+    match pair[0] {
+        // RDKit✔️✔️:     case 2:  // a-b
+        // RDKit✔️✔️:       switch (pair[2]) {
+        2 => match pair[2] {
+            // RDKit✔️✔️:         case 4:
+            // RDKit✔️✔️:           return VOLTEST(0, 3, 4) ? 28 : 27;
+            4 => {
+                if rdkit_voltest(vectors, 0, 3, 4) {
+                    28
+                } else {
+                    27
+                }
+            }
+            // RDKit✔️✔️:         case 5:
+            // RDKit✔️✔️:           return VOLTEST(0, 2, 3) ? 25 : 30;
+            5 => {
+                if rdkit_voltest(vectors, 0, 2, 3) {
+                    25
+                } else {
+                    30
+                }
+            }
+            // RDKit✔️✔️:         default:  // 0 or 6
+            // RDKit✔️✔️:           return VOLTEST(0, 2, 3) ? 26 : 29;
+            _ => {
+                if rdkit_voltest(vectors, 0, 2, 3) {
+                    26
+                } else {
+                    29
+                }
+            }
+        },
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 3:  // a-c
+        // RDKit✔️✔️:       switch (pair[1]) {
+        3 => match pair[1] {
+            // RDKit✔️✔️:         case 4:
+            // RDKit✔️✔️:           return VOLTEST(0, 3, 4) ? 22 : 21;
+            4 => {
+                if rdkit_voltest(vectors, 0, 3, 4) {
+                    22
+                } else {
+                    21
+                }
+            }
+            // RDKit✔️✔️:         case 5:
+            // RDKit✔️✔️:           return VOLTEST(0, 1, 3) ? 19 : 24;
+            5 => {
+                if rdkit_voltest(vectors, 0, 1, 3) {
+                    19
+                } else {
+                    24
+                }
+            }
+            // RDKit✔️✔️:         default:  // 0 or 6
+            // RDKit✔️✔️:           return VOLTEST(0, 1, 3) ? 20 : 23;
+            _ => {
+                if rdkit_voltest(vectors, 0, 1, 3) {
+                    20
+                } else {
+                    23
+                }
+            }
+        },
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 4:  // a-d
+        // RDKit✔️✔️:       switch (pair[1]) {
+        4 => match pair[1] {
+            // RDKit✔️✔️:         case 3:
+            // RDKit✔️✔️:           return VOLTEST(0, 2, 4) ? 13 : 12;
+            3 => {
+                if rdkit_voltest(vectors, 0, 2, 4) {
+                    13
+                } else {
+                    12
+                }
+            }
+            // RDKit✔️✔️:         case 5:
+            // RDKit✔️✔️:           return VOLTEST(0, 1, 2) ? 6 : 18;
+            5 => {
+                if rdkit_voltest(vectors, 0, 1, 2) {
+                    6
+                } else {
+                    18
+                }
+            }
+            // RDKit✔️✔️:         default:  // 0 or 6
+            // RDKit✔️✔️:           return VOLTEST(0, 1, 2) ? 7 : 17;
+            _ => {
+                if rdkit_voltest(vectors, 0, 1, 2) {
+                    7
+                } else {
+                    17
+                }
+            }
+        },
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 5:  // a-e
+        // RDKit✔️✔️:       switch (pair[1]) {
+        5 => match pair[1] {
+            // RDKit✔️✔️:         case 3:
+            // RDKit✔️✔️:           return VOLTEST(0, 2, 3) ? 11 : 9;
+            3 => {
+                if rdkit_voltest(vectors, 0, 2, 3) {
+                    11
+                } else {
+                    9
+                }
+            }
+            // RDKit✔️✔️:         case 4:
+            // RDKit✔️✔️:           return VOLTEST(0, 1, 2) ? 3 : 16;
+            4 => {
+                if rdkit_voltest(vectors, 0, 1, 2) {
+                    3
+                } else {
+                    16
+                }
+            }
+            // RDKit✔️✔️:         default:  // 0 or 6
+            // RDKit✔️✔️:           return VOLTEST(0, 1, 2) ? 5 : 15;
+            _ => {
+                if rdkit_voltest(vectors, 0, 1, 2) {
+                    5
+                } else {
+                    15
+                }
+            }
+        },
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     default:  // 0 or 6  a-f
+        // RDKit✔️✔️:       switch (pair[1]) {
+        _ => match pair[1] {
+            // RDKit✔️✔️:         case 3:
+            // RDKit✔️✔️:           return VOLTEST(0, 2, 3) ? 10 : 8;
+            3 => {
+                if rdkit_voltest(vectors, 0, 2, 3) {
+                    10
+                } else {
+                    8
+                }
+            }
+            // RDKit✔️✔️:         case 4:
+            // RDKit✔️✔️:           return VOLTEST(0, 1, 2) ? 1 : 2;
+            4 => {
+                if rdkit_voltest(vectors, 0, 1, 2) {
+                    1
+                } else {
+                    2
+                }
+            }
+            // RDKit✔️✔️:         default:  // 5
+            // RDKit✔️✔️:           return VOLTEST(0, 1, 2) ? 4 : 14;
+            _ => {
+                if rdkit_voltest(vectors, 0, 1, 2) {
+                    4
+                } else {
+                    14
+                }
+            }
+        },
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   // unreachable
+        // RDKit✔️✔️:   return 0;
+        // RDKit✔️✔️: }
+    }
+}
+
+fn assign_nontetrahedral_chiral_type_from_3d(
+    atoms: &mut [Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    conformer: &Conformer3D,
+    atom_idx: usize,
+    tolerance: f64,
+) -> Result<bool, StereoError> {
+    // RDKit✔️✔️: // The tolerance here is pretty high in order to accomodate things coming from
+    // RDKit✔️✔️: // the dgeom code As we get more experience with real-world structures and/or
+    // RDKit✔️✔️: // improve the dgeom code, we can think about lowering this.
+    // RDKit✔️✔️: static bool assignNontetrahedralChiralTypeFrom3D(ROMol &mol,
+    // RDKit✔️✔️:                                                  const Conformer &conf,
+    // RDKit✔️✔️:                                                  Atom *atom,
+    // RDKit✔️✔️:                                                  double tolerance = 0.1) {
+    // RDKit✔️✔️:   // FIX: add tests for dative and zero order bonds
+    // RDKit✔️✔️:   // Fail fast check for non-tetrahedral elements
+    // RDKit✔️✔️:   if (atom->getAtomicNum() < 15) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // check for wiggly bonds
+    // RDKit✔️✔️:   for (const auto bond : mol.atomBonds(atom)) {
+    // RDKit✔️✔️:     if (isWigglyBond(bond, atom)) {
+    // RDKit✔️✔️:       return false;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   RDGeom::Point3D cen = conf.getAtomPos(atom->getIdx());
+    // RDKit✔️✔️:   RDGeom::Point3D v[6];
+    // RDKit✔️✔️:   unsigned int count = 0;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   ROMol::ADJ_ITER nbrIdx, endNbrs;
+    // RDKit✔️✔️:   boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom);
+    // RDKit✔️✔️:   while (nbrIdx != endNbrs) {
+    // RDKit✔️✔️:     if (count == 6) {
+    // RDKit✔️✔️:       return false;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     RDGeom::Point3D p = conf.getAtomPos(*nbrIdx);
+    // RDKit✔️✔️:     v[count] = cen.directionVector(p);
+    // RDKit✔️✔️:     ++count;
+    // RDKit✔️✔️:     ++nbrIdx;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (count < 3) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   unsigned char pair[6];
+    // RDKit✔️✔️:   memset(pair, 0, 6);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   unsigned int pairs = 0;
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < count; i++) {
+    // RDKit✔️✔️:     for (unsigned int j = i + 1; j < count; j++) {
+    // RDKit✔️✔️:       if (v[i].dotProduct(v[j]) < -(1 - tolerance)) {
+    // RDKit✔️✔️:         if (pair[i] || pair[j]) {
+    // RDKit✔️✔️:           return false;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         pair[i] = j + 1;
+    // RDKit✔️✔️:         pair[j] = i + 1;
+    // RDKit✔️✔️:         pairs++;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   Atom::ChiralType tag;
+    // RDKit✔️✔️:   unsigned int perm;
+    // RDKit✔️✔️:   bool res = false;
+    // RDKit✔️✔️:   switch (pairs) {
+    // RDKit✔️✔️:     case 0:
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case 1:
+    // RDKit✔️✔️:       switch (count) {
+    // RDKit✔️✔️:         case 3: /* T-shape */
+    // RDKit✔️✔️:           atom->setChiralTag(Atom::ChiralType::CHI_SQUAREPLANAR);
+    // RDKit✔️✔️:           res = true;
+    // RDKit✔️✔️:           if (pair[0] == 0) {
+    // RDKit✔️✔️:             perm = 3;  // Z
+    // RDKit✔️✔️:           } else if (pair[0] == 2) {
+    // RDKit✔️✔️:             perm = 2;  // 4
+    // RDKit✔️✔️:           } else /* pair[0] == 3 */ {
+    // RDKit✔️✔️:             perm = 1;  // U
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           atom->setProp(common_properties::_chiralPermutation, perm);
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         case 4:                /* See-saw */
+    // RDKit✔️✔️:           if (pair[0] == 2) {  // a b
+    // RDKit✔️✔️:             if (v[2].angleTo(v[3]) < 100 * M_PI / 180.0) {
+    // RDKit✔️✔️:               tag = Atom::ChiralType::CHI_OCTAHEDRAL;
+    // RDKit✔️✔️:               perm = VOLTEST(0, 2, 3) ? 25 : 29;
+    // RDKit✔️✔️:             } else {
+    // RDKit✔️✔️:               tag = Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL;
+    // RDKit✔️✔️:               perm = VOLTEST(0, 2, 3) ? 7 : 8;
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:           } else if (pair[0] == 3) {  // a c
+    // RDKit✔️✔️:             if (v[1].angleTo(v[3]) < 100 * M_PI / 180.0) {
+    // RDKit✔️✔️:               tag = Atom::ChiralType::CHI_OCTAHEDRAL;
+    // RDKit✔️✔️:               perm = VOLTEST(0, 1, 3) ? 19 : 23;
+    // RDKit✔️✔️:             } else {
+    // RDKit✔️✔️:               tag = Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL;
+    // RDKit✔️✔️:               perm = VOLTEST(0, 1, 3) ? 5 : 6;
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:           } else if (pair[0] == 4) {  // a d
+    // RDKit✔️✔️:             if (v[1].angleTo(v[2]) < 100 * M_PI / 180.0) {
+    // RDKit✔️✔️:               tag = Atom::ChiralType::CHI_OCTAHEDRAL;
+    // RDKit✔️✔️:               perm = VOLTEST(0, 1, 2) ? 6 : 17;
+    // RDKit✔️✔️:             } else {
+    // RDKit✔️✔️:               tag = Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL;
+    // RDKit✔️✔️:               perm = VOLTEST(0, 1, 2) ? 3 : 4;
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:           } else if (pair[1] == 3) {  // b c
+    // RDKit✔️✔️:             if (v[0].angleTo(v[3]) < 100 * M_PI / 180.0) {
+    // RDKit✔️✔️:               tag = Atom::ChiralType::CHI_OCTAHEDRAL;
+    // RDKit✔️✔️:               perm = VOLTEST(0, 1, 3) ? 10 : 8;
+    // RDKit✔️✔️:             } else {
+    // RDKit✔️✔️:               tag = Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL;
+    // RDKit✔️✔️:               perm = VOLTEST(1, 0, 3) ? 13 : 14;
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:           } else if (pair[1] == 4) {  // b d
+    // RDKit✔️✔️:             if (v[0].angleTo(v[2]) < 100 * M_PI / 180.0) {
+    // RDKit✔️✔️:               tag = Atom::ChiralType::CHI_OCTAHEDRAL;
+    // RDKit✔️✔️:               perm = VOLTEST(0, 1, 3) ? 1 : 2;
+    // RDKit✔️✔️:             } else {
+    // RDKit✔️✔️:               tag = Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL;
+    // RDKit✔️✔️:               perm = VOLTEST(1, 0, 2) ? 10 : 12;
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:           } else /* pair[2] == 4 */ {  // c d
+    // RDKit✔️✔️:             if (v[0].angleTo(v[1]) < 100 * M_PI / 180.0) {
+    // RDKit✔️✔️:               tag = Atom::ChiralType::CHI_OCTAHEDRAL;
+    // RDKit✔️✔️:               perm = VOLTEST(0, 1, 3) ? 4 : 14;
+    // RDKit✔️✔️:             } else {
+    // RDKit✔️✔️:               tag = Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL;
+    // RDKit✔️✔️:               perm = VOLTEST(3, 0, 1) ? 16 : 19;
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           atom->setChiralTag(tag);
+    // RDKit✔️✔️:           res = true;
+    // RDKit✔️✔️:           atom->setProp(common_properties::_chiralPermutation, perm);
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         case 5: /* Trigonal bipyramidal */
+    // RDKit✔️✔️:           atom->setChiralTag(Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL);
+    // RDKit✔️✔️:           res = true;
+    // RDKit✔️✔️:           if (pair[0] == 2) {
+    // RDKit✔️✔️:             perm = VOLTEST(0, 2, 3) ? 7 : 8;  // a b
+    // RDKit✔️✔️:           } else if (pair[0] == 3) {
+    // RDKit✔️✔️:             perm = VOLTEST(0, 1, 3) ? 5 : 6;  // a c
+    // RDKit✔️✔️:           } else if (pair[0] == 4) {
+    // RDKit✔️✔️:             perm = VOLTEST(0, 1, 2) ? 3 : 4;  // a d
+    // RDKit✔️✔️:           } else if (pair[0] == 5) {
+    // RDKit✔️✔️:             perm = VOLTEST(0, 1, 2) ? 1 : 2;  // a e
+    // RDKit✔️✔️:           } else if (pair[1] == 3) {
+    // RDKit✔️✔️:             perm = VOLTEST(1, 0, 3) ? 13 : 14;  // b c
+    // RDKit✔️✔️:           } else if (pair[1] == 4) {
+    // RDKit✔️✔️:             perm = VOLTEST(1, 0, 2) ? 10 : 12;  // b d
+    // RDKit✔️✔️:           } else if (pair[1] == 5) {
+    // RDKit✔️✔️:             perm = VOLTEST(1, 0, 2) ? 9 : 11;  // b e
+    // RDKit✔️✔️:           } else if (pair[2] == 4) {
+    // RDKit✔️✔️:             perm = VOLTEST(2, 0, 1) ? 16 : 19;  // c d
+    // RDKit✔️✔️:           } else if (pair[2] == 5) {
+    // RDKit✔️✔️:             perm = VOLTEST(2, 0, 1) ? 15 : 20;  // c e
+    // RDKit✔️✔️:           } else /* pair[2] == 4 */ {
+    // RDKit✔️✔️:             perm = VOLTEST(3, 0, 1) ? 17 : 18;  // d e
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           atom->setProp(common_properties::_chiralPermutation, perm);
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case 2:
+    // RDKit✔️✔️:       if (count == 4) {
+    // RDKit✔️✔️:         /* Square planar */
+    // RDKit✔️✔️:         atom->setChiralTag(Atom::ChiralType::CHI_SQUAREPLANAR);
+    // RDKit✔️✔️:         res = true;
+    // RDKit✔️✔️:         if (pair[0] == 2) {
+    // RDKit✔️✔️:           perm = 2;  // 4
+    // RDKit✔️✔️:         } else if (pair[0] == 3) {
+    // RDKit✔️✔️:           perm = 1;  // U
+    // RDKit✔️✔️:         } else /* pair[1] == 4 */ {
+    // RDKit✔️✔️:           perm = 3;  // Z
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         atom->setProp(common_properties::_chiralPermutation, perm);
+    // RDKit✔️✔️:       } else if (count == 5) {
+    // RDKit✔️✔️:         /* Square pyramidal */
+    // RDKit✔️✔️:         atom->setChiralTag(Atom::ChiralType::CHI_OCTAHEDRAL);
+    // RDKit✔️✔️:         res = true;
+    // RDKit✔️✔️:         perm = OctahedralPermFrom3D(pair, v);
+    // RDKit✔️✔️:         atom->setProp(common_properties::_chiralPermutation, perm);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case 3:
+    // RDKit✔️✔️:       if (count == 6) {
+    // RDKit✔️✔️:         /* Octahedral */
+    // RDKit✔️✔️:         atom->setChiralTag(Atom::ChiralType::CHI_OCTAHEDRAL);
+    // RDKit✔️✔️:         res = true;
+    // RDKit✔️✔️:         perm = OctahedralPermFrom3D(pair, v);
+    // RDKit✔️✔️:         atom->setProp(common_properties::_chiralPermutation, perm);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+
+    let atom = atoms.get(atom_idx).ok_or_else(|| {
+        StereoError::InvariantViolation(format!(
+            "atom index {atom_idx} is out of range for {} atoms",
+            atoms.len()
+        ))
+    })?;
+    if atom.atomic_number() < 15 {
+        return Ok(false);
+    }
+
+    let neighbors = adjacency.neighbors_of(atom_idx);
+    for neighbor in neighbors {
+        let bond = bonds.get(neighbor.bond.index()).ok_or_else(|| {
+            StereoError::InvariantViolation(format!(
+                "adjacency for atom {atom_idx} references missing bond {}",
+                neighbor.bond
+            ))
+        })?;
+        if is_wiggly_bond(bond, atom_idx)? {
+            return Ok(false);
+        }
+    }
+
+    let coordinates = conformer.coordinates();
+    let center = coordinates.get(atom_idx).copied().ok_or_else(|| {
+        StereoError::InvariantViolation(format!(
+            "conformer {} has no coordinate for atom {atom_idx}",
+            conformer.id()
+        ))
+    })?;
+    let mut vectors = [(0.0, 0.0, 0.0); 6];
+    let mut count = 0_usize;
+    for neighbor in neighbors {
+        if count == 6 {
+            return Ok(false);
+        }
+        let position = coordinates
+            .get(neighbor.atom_index)
+            .copied()
+            .ok_or_else(|| {
+                StereoError::InvariantViolation(format!(
+                    "conformer {} has no coordinate for neighboring atom {}",
+                    conformer.id(),
+                    neighbor.atom_index
+                ))
+            })?;
+        vectors[count] = rdkit_direction_vector(center, position)?;
+        count += 1;
+    }
+
+    if count < 3 {
+        return Ok(false);
+    }
+
+    let mut pair = [0_u8; 6];
+    let mut pairs = 0_u32;
+    for i in 0..count {
+        for j in i + 1..count {
+            if rdkit_point3d_dot_product(vectors[i], vectors[j]) < -(1.0 - tolerance) {
+                if pair[i] != 0 || pair[j] != 0 {
+                    return Ok(false);
+                }
+                pair[i] = (j + 1) as u8;
+                pair[j] = (i + 1) as u8;
+                pairs += 1;
+            }
+        }
+    }
+
+    let hundred_degrees = 100.0 * std::f64::consts::PI / 180.0;
+    let assignment = match pairs {
+        0 => None,
+        1 => match count {
+            3 => {
+                let permutation = if pair[0] == 0 {
+                    3
+                } else if pair[0] == 2 {
+                    2
+                } else {
+                    1
+                };
+                Some((ChiralTag::SquarePlanar, permutation))
+            }
+            4 => {
+                let (tag, permutation) = if pair[0] == 2 {
+                    if rdkit_angle_to(vectors[2], vectors[3]) < hundred_degrees {
+                        (
+                            ChiralTag::Octahedral,
+                            if rdkit_voltest(&vectors, 0, 2, 3) {
+                                25
+                            } else {
+                                29
+                            },
+                        )
+                    } else {
+                        (
+                            ChiralTag::TrigonalBipyramidal,
+                            if rdkit_voltest(&vectors, 0, 2, 3) {
+                                7
+                            } else {
+                                8
+                            },
+                        )
+                    }
+                } else if pair[0] == 3 {
+                    if rdkit_angle_to(vectors[1], vectors[3]) < hundred_degrees {
+                        (
+                            ChiralTag::Octahedral,
+                            if rdkit_voltest(&vectors, 0, 1, 3) {
+                                19
+                            } else {
+                                23
+                            },
+                        )
+                    } else {
+                        (
+                            ChiralTag::TrigonalBipyramidal,
+                            if rdkit_voltest(&vectors, 0, 1, 3) {
+                                5
+                            } else {
+                                6
+                            },
+                        )
+                    }
+                } else if pair[0] == 4 {
+                    if rdkit_angle_to(vectors[1], vectors[2]) < hundred_degrees {
+                        (
+                            ChiralTag::Octahedral,
+                            if rdkit_voltest(&vectors, 0, 1, 2) {
+                                6
+                            } else {
+                                17
+                            },
+                        )
+                    } else {
+                        (
+                            ChiralTag::TrigonalBipyramidal,
+                            if rdkit_voltest(&vectors, 0, 1, 2) {
+                                3
+                            } else {
+                                4
+                            },
+                        )
+                    }
+                } else if pair[1] == 3 {
+                    if rdkit_angle_to(vectors[0], vectors[3]) < hundred_degrees {
+                        (
+                            ChiralTag::Octahedral,
+                            if rdkit_voltest(&vectors, 0, 1, 3) {
+                                10
+                            } else {
+                                8
+                            },
+                        )
+                    } else {
+                        (
+                            ChiralTag::TrigonalBipyramidal,
+                            if rdkit_voltest(&vectors, 1, 0, 3) {
+                                13
+                            } else {
+                                14
+                            },
+                        )
+                    }
+                } else if pair[1] == 4 {
+                    if rdkit_angle_to(vectors[0], vectors[2]) < hundred_degrees {
+                        (
+                            ChiralTag::Octahedral,
+                            if rdkit_voltest(&vectors, 0, 1, 3) {
+                                1
+                            } else {
+                                2
+                            },
+                        )
+                    } else {
+                        (
+                            ChiralTag::TrigonalBipyramidal,
+                            if rdkit_voltest(&vectors, 1, 0, 2) {
+                                10
+                            } else {
+                                12
+                            },
+                        )
+                    }
+                } else if rdkit_angle_to(vectors[0], vectors[1]) < hundred_degrees {
+                    (
+                        ChiralTag::Octahedral,
+                        if rdkit_voltest(&vectors, 0, 1, 3) {
+                            4
+                        } else {
+                            14
+                        },
+                    )
+                } else {
+                    (
+                        ChiralTag::TrigonalBipyramidal,
+                        if rdkit_voltest(&vectors, 3, 0, 1) {
+                            16
+                        } else {
+                            19
+                        },
+                    )
+                };
+                Some((tag, permutation))
+            }
+            5 => {
+                let permutation = if pair[0] == 2 {
+                    if rdkit_voltest(&vectors, 0, 2, 3) {
+                        7
+                    } else {
+                        8
+                    }
+                } else if pair[0] == 3 {
+                    if rdkit_voltest(&vectors, 0, 1, 3) {
+                        5
+                    } else {
+                        6
+                    }
+                } else if pair[0] == 4 {
+                    if rdkit_voltest(&vectors, 0, 1, 2) {
+                        3
+                    } else {
+                        4
+                    }
+                } else if pair[0] == 5 {
+                    if rdkit_voltest(&vectors, 0, 1, 2) {
+                        1
+                    } else {
+                        2
+                    }
+                } else if pair[1] == 3 {
+                    if rdkit_voltest(&vectors, 1, 0, 3) {
+                        13
+                    } else {
+                        14
+                    }
+                } else if pair[1] == 4 {
+                    if rdkit_voltest(&vectors, 1, 0, 2) {
+                        10
+                    } else {
+                        12
+                    }
+                } else if pair[1] == 5 {
+                    if rdkit_voltest(&vectors, 1, 0, 2) {
+                        9
+                    } else {
+                        11
+                    }
+                } else if pair[2] == 4 {
+                    if rdkit_voltest(&vectors, 2, 0, 1) {
+                        16
+                    } else {
+                        19
+                    }
+                } else if pair[2] == 5 {
+                    if rdkit_voltest(&vectors, 2, 0, 1) {
+                        15
+                    } else {
+                        20
+                    }
+                } else if rdkit_voltest(&vectors, 3, 0, 1) {
+                    17
+                } else {
+                    18
+                };
+                Some((ChiralTag::TrigonalBipyramidal, permutation))
+            }
+            _ => None,
+        },
+        2 if count == 4 => {
+            let permutation = if pair[0] == 2 {
+                2
+            } else if pair[0] == 3 {
+                1
+            } else {
+                3
+            };
+            Some((ChiralTag::SquarePlanar, permutation))
+        }
+        2 if count == 5 => Some((
+            ChiralTag::Octahedral,
+            octahedral_perm_from_3d(&pair, &vectors),
+        )),
+        3 if count == 6 => Some((
+            ChiralTag::Octahedral,
+            octahedral_perm_from_3d(&pair, &vectors),
+        )),
+        _ => None,
+    };
+
+    let Some((tag, permutation)) = assignment else {
+        return Ok(false);
+    };
+    atoms[atom_idx].set_chiral_tag(tag);
+    atoms[atom_idx].set_chiral_permutation(Some(permutation));
+    Ok(true)
+}
+
+fn assign_tetrahedral_chiral_type_from_3d(
+    atoms: &mut [Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    conformer: &Conformer3D,
+    atom_idx: usize,
+    total_num_hs: usize,
+    explicit_atom: bool,
+    zero_volume_tolerance: f64,
+) -> Result<bool, StereoError> {
+    // RDKit✔️✔️:     /* We're only doing tetrahedral cases here */
+    // RDKit✔️✔️:     if (tnzDegree > 4) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     int anum = atom->getAtomicNum();
+    // RDKit✔️✔️:     if (anum != 16 && anum != 34 &&  // S or Se are special
+    // RDKit✔️✔️:                                      // (just using the InChI list for now)
+    // RDKit✔️✔️:         tnzDegree != 4               // not enough total neighbors
+    // RDKit✔️✔️:     ) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     const auto &p0 = conf.getAtomPos(atom->getIdx());
+    // RDKit✔️✔️:     const RDGeom::Point3D *nbrs[4];
+    // RDKit✔️✔️:     unsigned int nbrIdx = 0;
+    // RDKit✔️✔️:     int hasWigglyBond = 0;
+    // RDKit✔️✔️:     for (const auto bond : mol.atomBonds(atom)) {
+    // RDKit✔️✔️:       hasWigglyBond = isWigglyBond(bond, atom);
+    // RDKit✔️✔️:       if (hasWigglyBond) {
+    // RDKit✔️✔️:         break;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (!Chirality::detail::bondAffectsAtomChirality(bond, atom)) {
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       nbrs[nbrIdx++] = &conf.getAtomPos(bond->getOtherAtomIdx(atom->getIdx()));
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (hasWigglyBond) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     auto v1 = *nbrs[0] - p0;
+    // RDKit✔️✔️:     auto v2 = *nbrs[1] - p0;
+    // RDKit✔️✔️:     auto v3 = *nbrs[2] - p0;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     double chiralVol = v1.dotProduct(v2.crossProduct(v3));
+    // RDKit✔️✔️:     bool chiralitySet = false;
+    // RDKit✔️✔️:     if (chiralVol < -ZERO_VOLUME_TOL) {
+    // RDKit✔️✔️:       atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CW);
+    // RDKit✔️✔️:       chiralitySet = true;
+    // RDKit✔️✔️:     } else if (chiralVol > ZERO_VOLUME_TOL) {
+    // RDKit✔️✔️:       atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CCW);
+    // RDKit✔️✔️:       chiralitySet = true;
+    // RDKit✔️✔️:     } else if (nbrIdx == 4) {
+    // RDKit✔️✔️:       // The first three neighbors are on the same plane as the chiral atom (or
+    // RDKit✔️✔️:       // very close to it). If a 4th neighbor is present, let's see if this one
+    // RDKit✔️✔️:       // determines a chiral volume
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       auto v4 = *nbrs[3] - p0;
+    // RDKit✔️✔️:       // v4 would be in the opposite direction to v3
+    // RDKit✔️✔️:       chiralVol = -v1.dotProduct(v2.crossProduct(v4));
+    // RDKit✔️✔️:       if (chiralVol < -ZERO_VOLUME_TOL) {
+    // RDKit✔️✔️:         atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CW);
+    // RDKit✔️✔️:         chiralitySet = true;
+    // RDKit✔️✔️:       } else if (chiralVol > ZERO_VOLUME_TOL) {
+    // RDKit✔️✔️:         atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CCW);
+    // RDKit✔️✔️:         chiralitySet = true;
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     if (chiralitySet && explicitAtoms[atom->getIdx()] == 0) {
+    // RDKit✔️✔️:       atom->setProp<int>(common_properties::_NonExplicit3DChirality, 1);
+    // RDKit✔️✔️:     }
+
+    let atom = atoms.get(atom_idx).ok_or_else(|| {
+        StereoError::InvariantViolation(format!(
+            "atom index {atom_idx} is out of range for {} atoms",
+            atoms.len()
+        ))
+    })?;
+    let neighbors = adjacency.neighbors_of(atom_idx);
+    let mut nonzero_degree = 0_usize;
+    for neighbor in neighbors {
+        let bond = bonds.get(neighbor.bond.index()).ok_or_else(|| {
+            StereoError::InvariantViolation(format!(
+                "adjacency for atom {atom_idx} references missing bond {}",
+                neighbor.bond
+            ))
+        })?;
+        if bond_affects_atom_chirality(bond, atom_idx) {
+            nonzero_degree += 1;
+        }
+    }
+    let total_nonzero_degree = nonzero_degree + total_num_hs;
+    if nonzero_degree < 3 || total_nonzero_degree > 4 {
+        return Ok(false);
+    }
+    let atomic_number = atom.atomic_number();
+    if atomic_number != 16 && atomic_number != 34 && total_nonzero_degree != 4 {
+        return Ok(false);
+    }
+
+    let coordinates = conformer.coordinates();
+    let center = coordinates.get(atom_idx).copied().ok_or_else(|| {
+        StereoError::InvariantViolation(format!(
+            "conformer {} has no coordinate for atom {atom_idx}",
+            conformer.id()
+        ))
+    })?;
+    let mut neighbor_coordinates = [[0.0; 3]; 4];
+    let mut neighbor_count = 0_usize;
+    for neighbor in neighbors {
+        let bond = bonds.get(neighbor.bond.index()).ok_or_else(|| {
+            StereoError::InvariantViolation(format!(
+                "adjacency for atom {atom_idx} references missing bond {}",
+                neighbor.bond
+            ))
+        })?;
+        if is_wiggly_bond(bond, atom_idx)? {
+            return Ok(false);
+        }
+        if !bond_affects_atom_chirality(bond, atom_idx) {
+            continue;
+        }
+        let coordinate = coordinates
+            .get(neighbor.atom_index)
+            .copied()
+            .ok_or_else(|| {
+                StereoError::InvariantViolation(format!(
+                    "conformer {} has no coordinate for neighboring atom {}",
+                    conformer.id(),
+                    neighbor.atom_index
+                ))
+            })?;
+        neighbor_coordinates[neighbor_count] = coordinate;
+        neighbor_count += 1;
+    }
+
+    let subtract_center = |point: [f64; 3]| {
+        (
+            point[0] - center[0],
+            point[1] - center[1],
+            point[2] - center[2],
+        )
+    };
+    let v1 = subtract_center(neighbor_coordinates[0]);
+    let v2 = subtract_center(neighbor_coordinates[1]);
+    let v3 = subtract_center(neighbor_coordinates[2]);
+    let mut chiral_volume = rdkit_point3d_dot_product(v1, rdkit_point3d_cross_product(v2, v3));
+
+    let mut chirality_set = false;
+    if chiral_volume < -zero_volume_tolerance {
+        atoms[atom_idx].set_chiral_tag(ChiralTag::TetrahedralCw);
+        chirality_set = true;
+    } else if chiral_volume > zero_volume_tolerance {
+        atoms[atom_idx].set_chiral_tag(ChiralTag::TetrahedralCcw);
+        chirality_set = true;
+    } else if neighbor_count == 4 {
+        let v4 = subtract_center(neighbor_coordinates[3]);
+        chiral_volume = -rdkit_point3d_dot_product(v1, rdkit_point3d_cross_product(v2, v4));
+        if chiral_volume < -zero_volume_tolerance {
+            atoms[atom_idx].set_chiral_tag(ChiralTag::TetrahedralCw);
+            chirality_set = true;
+        } else if chiral_volume > zero_volume_tolerance {
+            atoms[atom_idx].set_chiral_tag(ChiralTag::TetrahedralCcw);
+            chirality_set = true;
+        } else {
+            atoms[atom_idx].set_chiral_tag(ChiralTag::Unspecified);
+        }
+    } else {
+        atoms[atom_idx].set_chiral_tag(ChiralTag::Unspecified);
+    }
+
+    if chirality_set && !explicit_atom {
+        atoms[atom_idx].set_prop("_NonExplicit3DChirality", "1");
+    }
+    Ok(chirality_set)
+}
+
+pub(crate) fn assign_chiral_types_from_3d_kernel(
+    atoms: &mut [Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    conformers: &[Conformer3D],
+    properties: &mut MoleculeProperties,
+    implicit_hydrogens: Option<&[i32]>,
+    conformer_id: i32,
+    replace_existing_tags: bool,
+) -> Result<(), StereoError> {
+    // RDKit✔️❌: void assignChiralTypesFrom3D(ROMol &mol, int confId, bool replaceExistingTags) {
+    // RDKit✔️❌:   const double ZERO_VOLUME_TOL = 0.1;
+    // RDKit✔️❌:   if (!mol.getNumConformers()) {
+    // RDKit✔️❌:     return;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   const Conformer &conf = mol.getConformer(confId);
+    // RDKit✔️❌:   if (!conf.is3D()) {
+    // RDKit✔️❌:     return;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // if the molecule already has stereochemistry
+    // RDKit✔️❌:   // perceived, remove the flags that indicate
+    // RDKit✔️❌:   // this... what we're about to do will require
+    // RDKit✔️❌:   // that we go again.
+    // RDKit✔️❌:   if (mol.hasProp(common_properties::_StereochemDone)) {
+    // RDKit✔️❌:     mol.clearProp(common_properties::_StereochemDone);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   auto allowNontetrahedralStereo = Chirality::getAllowNontetrahedralChirality();
+    // RDKit✔️❌:
+    // RDKit✔️❌:   boost::dynamic_bitset<> explicitAtoms;
+    // RDKit✔️❌:   explicitAtoms.resize(mol.getNumAtoms(), 0);
+    // RDKit✔️❌:   for (auto bond : mol.bonds()) {
+    // RDKit✔️❌:     auto bondDir = bond->getBondDir();
+    // RDKit✔️❌:     if (bondDir == Bond::BondDir::BEGINWEDGE ||
+    // RDKit✔️❌:         bondDir == Bond::BondDir::BEGINDASH) {
+    // RDKit✔️❌:       explicitAtoms[bond->getBeginAtom()->getIdx()] = 1;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   for (auto atom : mol.atoms()) {
+    // RDKit✔️❌:     if (atom->getChiralTag() != Atom::ChiralType::CHI_UNSPECIFIED) {
+    // RDKit✔️❌:       explicitAtoms[atom->getIdx()] = 1;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   for (auto atom : mol.atoms()) {
+    // RDKit✔️❌:     // if we aren't replacing existing tags and the atom is already tagged,
+    // RDKit✔️❌:     // punt:
+    // RDKit✔️❌:     if (!replaceExistingTags && atom->getChiralTag() != Atom::CHI_UNSPECIFIED) {
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit✔️❌:     // additional reasons to skip the atom:
+    // RDKit✔️❌:     auto nzDegree = Chirality::detail::getAtomNonzeroDegree(atom);
+    // RDKit✔️❌:     auto tnzDegree = nzDegree + atom->getTotalNumHs();
+    // RDKit✔️❌:     if (nzDegree < 3 || tnzDegree > 6) {
+    // RDKit✔️❌:       // not enough explicit neighbors or too many total neighbors
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (allowNontetrahedralStereo &&
+    // RDKit✔️❌:         assignNontetrahedralChiralTypeFrom3D(mol, conf, atom)) {
+    // RDKit✔️❌:       if (explicitAtoms[atom->getIdx()] == 0) {
+    // RDKit✔️❌:         atom->setProp(common_properties::_NonExplicit3DChirality, 1);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     /* We're only doing tetrahedral cases here */
+    // RDKit✔️❌:     if (tnzDegree > 4) {
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     int anum = atom->getAtomicNum();
+    // RDKit✔️❌:     if (anum != 16 && anum != 34 &&  // S or Se are special
+    // RDKit✔️❌:                                      // (just using the InChI list for now)
+    // RDKit✔️❌:         tnzDegree != 4               // not enough total neighbors
+    // RDKit✔️❌:     ) {
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:
+    // RDKit✔️❌:     const auto &p0 = conf.getAtomPos(atom->getIdx());
+    // RDKit✔️❌:     const RDGeom::Point3D *nbrs[4];
+    // RDKit✔️❌:     unsigned int nbrIdx = 0;
+    // RDKit✔️❌:     int hasWigglyBond = 0;
+    // RDKit✔️❌:     for (const auto bond : mol.atomBonds(atom)) {
+    // RDKit✔️❌:       hasWigglyBond = isWigglyBond(bond, atom);
+    // RDKit✔️❌:       if (hasWigglyBond) {
+    // RDKit✔️❌:         break;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       if (!Chirality::detail::bondAffectsAtomChirality(bond, atom)) {
+    // RDKit✔️❌:         continue;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       nbrs[nbrIdx++] = &conf.getAtomPos(bond->getOtherAtomIdx(atom->getIdx()));
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (hasWigglyBond) {
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     auto v1 = *nbrs[0] - p0;
+    // RDKit✔️❌:     auto v2 = *nbrs[1] - p0;
+    // RDKit✔️❌:     auto v3 = *nbrs[2] - p0;
+    // RDKit✔️❌:
+    // RDKit✔️❌:     double chiralVol = v1.dotProduct(v2.crossProduct(v3));
+    // RDKit✔️❌:     bool chiralitySet = false;
+    // RDKit✔️❌:     if (chiralVol < -ZERO_VOLUME_TOL) {
+    // RDKit✔️❌:       atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CW);
+    // RDKit✔️❌:       chiralitySet = true;
+    // RDKit✔️❌:     } else if (chiralVol > ZERO_VOLUME_TOL) {
+    // RDKit✔️❌:       atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CCW);
+    // RDKit✔️❌:       chiralitySet = true;
+    // RDKit✔️❌:     } else if (nbrIdx == 4) {
+    // RDKit✔️❌:       // The first three neighbors are on the same plane as the chiral atom (or
+    // RDKit✔️❌:       // very close to it). If a 4th neighbor is present, let's see if this one
+    // RDKit✔️❌:       // determines a chiral volume
+    // RDKit✔️❌:
+    // RDKit✔️❌:       auto v4 = *nbrs[3] - p0;
+    // RDKit✔️❌:       // v4 would be in the opposite direction to v3
+    // RDKit✔️❌:       chiralVol = -v1.dotProduct(v2.crossProduct(v4));
+    // RDKit✔️❌:       if (chiralVol < -ZERO_VOLUME_TOL) {
+    // RDKit✔️❌:         atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CW);
+    // RDKit✔️❌:         chiralitySet = true;
+    // RDKit✔️❌:       } else if (chiralVol > ZERO_VOLUME_TOL) {
+    // RDKit✔️❌:         atom->setChiralTag(Atom::CHI_TETRAHEDRAL_CCW);
+    // RDKit✔️❌:         chiralitySet = true;
+    // RDKit✔️❌:       } else {
+    // RDKit✔️❌:         atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:
+    // RDKit✔️❌:     if (chiralitySet && explicitAtoms[atom->getIdx()] == 0) {
+    // RDKit✔️❌:       atom->setProp<int>(common_properties::_NonExplicit3DChirality, 1);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+
+    const ZERO_VOLUME_TOLERANCE: f64 = 0.1;
+    if conformers.is_empty() {
+        return Ok(());
+    }
+    let conformer = if conformer_id < 0 {
+        &conformers[0]
+    } else {
+        conformers
+            .iter()
+            .find(|conformer| conformer.id() == conformer_id as usize)
+            .ok_or(StereoError::ConformerNotFound { conformer_id })?
+    };
+    if !conformer.is_3d() {
+        return Ok(());
+    }
+
+    properties.clear_prop("_StereochemDone");
+    let allow_nontetrahedral_stereo = get_allow_nontetrahedral_chirality();
+    if conformer.coordinates().len() != atoms.len() {
+        return Err(StereoError::ConformerAtomCountMismatch {
+            conformer_id: conformer.id(),
+            expected: atoms.len(),
+            actual: conformer.coordinates().len(),
+        });
+    }
+
+    let mut explicit_atoms = vec![false; atoms.len()];
+    for bond in bonds {
+        if matches!(
+            bond.direction(),
+            crate::BondDirection::BeginWedge | crate::BondDirection::BeginDash
+        ) {
+            let begin_idx = bond.begin().index();
+            let explicit_atom = explicit_atoms.get_mut(begin_idx).ok_or_else(|| {
+                StereoError::InvariantViolation(format!(
+                    "bond {} begin atom {} is out of range for {} atoms",
+                    bond.id(),
+                    bond.begin(),
+                    atoms.len()
+                ))
+            })?;
+            *explicit_atom = true;
+        }
+    }
+    for (atom_idx, atom) in atoms.iter().enumerate() {
+        if atom.chiral_tag() != ChiralTag::Unspecified {
+            explicit_atoms[atom_idx] = true;
+        }
+    }
+
+    for atom_idx in 0..atoms.len() {
+        if !replace_existing_tags && atoms[atom_idx].chiral_tag() != ChiralTag::Unspecified {
+            continue;
+        }
+        atoms[atom_idx].set_chiral_tag(ChiralTag::Unspecified);
+
+        let nonzero_degree = atom_nonzero_degree_from_parts(bonds, adjacency, atom_idx)?;
+        let implicit_hydrogens =
+            implicit_hydrogens.ok_or(StereoError::MissingImplicitHydrogenState)?;
+        let implicit_hydrogen_count = implicit_hydrogens.get(atom_idx).copied().ok_or(
+            StereoError::ImplicitHydrogenCountMismatch {
+                expected: atoms.len(),
+                actual: implicit_hydrogens.len(),
+            },
+        )?;
+        let total_num_hs =
+            atoms[atom_idx].explicit_hydrogens() as usize + implicit_hydrogen_count.max(0) as usize;
+        let total_nonzero_degree = nonzero_degree + total_num_hs;
+        if nonzero_degree < 3 || total_nonzero_degree > 6 {
+            continue;
+        }
+
+        if allow_nontetrahedral_stereo
+            && assign_nontetrahedral_chiral_type_from_3d(
+                atoms, bonds, adjacency, conformer, atom_idx, 0.1,
+            )?
+        {
+            if !explicit_atoms[atom_idx] {
+                atoms[atom_idx].set_prop("_NonExplicit3DChirality", "1");
+            }
+            continue;
+        }
+
+        if total_nonzero_degree > 4 {
+            continue;
+        }
+        let atomic_number = atoms[atom_idx].atomic_number();
+        if atomic_number != 16 && atomic_number != 34 && total_nonzero_degree != 4 {
+            continue;
+        }
+        assign_tetrahedral_chiral_type_from_3d(
+            atoms,
+            bonds,
+            adjacency,
+            conformer,
+            atom_idx,
+            total_num_hs,
+            explicit_atoms[atom_idx],
+            ZERO_VOLUME_TOLERANCE,
+        )?;
+    }
+    Ok(())
+}
+
+/// Applies the completed `assignChiralTypesFrom3D` kernel to an owned molecule.
+///
+/// Parser call sites use this adapter to prepare RDKit-like total-hydrogen
+/// state and commit the kernel's topology/property mutations without carrying
+/// a second implementation of the chemistry algorithm.
+pub(crate) fn assign_chiral_types_from_3d_molecule(
+    molecule: &mut Molecule,
+    conformer_id: i32,
+    replace_existing_tags: bool,
+) -> Result<(), StereoError> {
+    let Some(selected_conformer) = (if molecule.conformers_3d().is_empty() {
+        None
+    } else if conformer_id < 0 {
+        molecule.conformers_3d().first()
+    } else {
+        molecule
+            .conformers_3d()
+            .iter()
+            .find(|conformer| conformer.id() == conformer_id as usize)
+    }) else {
+        if molecule.conformers_3d().is_empty() {
+            return Ok(());
+        }
+        return Err(StereoError::ConformerNotFound { conformer_id });
+    };
+    if !selected_conformer.is_3d() {
+        return Ok(());
+    }
+
+    let selected_conformer = selected_conformer.clone();
+    let valence =
+        crate::assign_valence_with_options(molecule, crate::ValenceModel::RdkitLike, false)?;
+    let mut topology = molecule.topology_block().clone();
+    let mut properties = molecule.properties().clone();
+    assign_chiral_types_from_3d_kernel(
+        &mut topology.atoms,
+        &topology.bonds,
+        &topology.adjacency,
+        std::slice::from_ref(&selected_conformer),
+        &mut properties,
+        Some(&valence.implicit_hydrogens),
+        conformer_id,
+        replace_existing_tags,
+    )?;
+
+    molecule.replace_topology_block(topology);
+    molecule.replace_properties(properties);
+    molecule.derived_cache_mut().invalidate(
+        crate::DerivedState::STEREO
+            | crate::DerivedState::DRAWING
+            | crate::DerivedState::FINGERPRINT,
+    );
+    Ok(())
 }
 
 /// Distance of `to` from `from` in the XY plane.
@@ -3308,10 +4645,25 @@ fn perturbation_order_from_bond_indices(
     Ok(swaps)
 }
 
-/// Check if a bond affects the chirality of an atom.
-/// Zero-order and dative bonds from ligand to metal don't count.
+// RDKit✔️✔️: bool bondAffectsAtomChirality(const Bond *bond, const Atom *atom) {
+// RDKit✔️✔️:   // FIX consider how to handle organometallics
+// RDKit✔️✔️:   PRECONDITION(bond, "bad bond pointer");
+// RDKit✔️✔️:   PRECONDITION(atom, "bad atom pointer");
+// RDKit✔️✔️:   if (bond->getBondType() == Bond::BondType::UNSPECIFIED ||
+// RDKit✔️✔️:       bond->getBondType() == Bond::BondType::ZERO ||
+// RDKit✔️✔️:       (bond->getBondType() == Bond::BondType::DATIVE &&
+// RDKit✔️✔️:        bond->getBeginAtomIdx() == atom->getIdx())) {
+// RDKit✔️✔️:     return false;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   return true;
+// RDKit✔️✔️: }
+// Safe Rust references and the typed atom index make the two pointer
+// preconditions unrepresentable at this helper boundary.
 fn bond_affects_atom_chirality(bond: &crate::Bond, atom_idx: usize) -> bool {
-    if bond.order() == crate::BondOrder::Unspecified || bond.order() == crate::BondOrder::Zero {
+    if matches!(
+        bond.order(),
+        crate::BondOrder::Null | crate::BondOrder::Unspecified | crate::BondOrder::Zero
+    ) {
         return false;
     }
     if bond.order() == crate::BondOrder::Dative && bond.begin().index() == atom_idx {
@@ -3320,17 +4672,78 @@ fn bond_affects_atom_chirality(bond: &crate::Bond, atom_idx: usize) -> bool {
     true
 }
 
-/// Count non-zero degree (degree excluding bonds that don't affect chirality).
+// RDKit✔️✔️: unsigned int getAtomNonzeroDegree(const Atom *atom) {
+// RDKit✔️✔️:   PRECONDITION(atom, "bad pointer");
+// RDKit✔️✔️:   PRECONDITION(atom->hasOwningMol(), "no owning molecule");
+// RDKit✔️✔️:   unsigned int res = 0;
+// RDKit✔️✔️:   for (auto bond : atom->getOwningMol().atomBonds(atom)) {
+// RDKit✔️✔️:     if (!bondAffectsAtomChirality(bond, atom)) {
+// RDKit✔️✔️:       continue;
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:     ++res;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   return res;
+// RDKit✔️✔️: }
+// The molecule argument supplies the owning graph. Its CSR adjacency slice
+// preserves bond-table insertion order and gives the same O(degree) traversal
+// without allocation.
 fn atom_nonzero_degree(mol: &Molecule, atom_idx: usize) -> usize {
-    let mut count = 0;
-    for b in mol.bonds() {
-        if (b.begin().index() == atom_idx || b.end().index() == atom_idx)
-            && bond_affects_atom_chirality(b, atom_idx)
-        {
-            count += 1;
+    assert!(atom_idx < mol.num_atoms(), "bad atom index");
+    let topology = mol.topology_block();
+    atom_nonzero_degree_from_parts(&topology.bonds, &topology.adjacency, atom_idx)
+        .expect("molecule topology and adjacency must be aligned")
+}
+
+fn atom_nonzero_degree_from_parts(
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    atom_idx: usize,
+) -> Result<usize, StereoError> {
+    let mut res = 0;
+    for neighbor in adjacency.neighbors_of(atom_idx) {
+        let bond = bonds.get(neighbor.bond.index()).ok_or_else(|| {
+            StereoError::InvariantViolation(format!(
+                "adjacency for atom {atom_idx} references missing bond {}",
+                neighbor.bond
+            ))
+        })?;
+        if !bond_affects_atom_chirality(bond, atom_idx) {
+            continue;
         }
+        res += 1;
     }
-    count
+    Ok(res)
+}
+
+// RDKit✔️✔️: bool isWigglyBond(const Bond *bond, const Atom *atom) {
+// RDKit✔️✔️:   int hasWigglyBond = 0;
+// RDKit✔️✔️:   if (bond->getBeginAtomIdx() == atom->getIdx() &&
+// RDKit✔️✔️:       bond->getBondType() == Bond::BondType::SINGLE &&
+// RDKit✔️✔️:       (bond->getBondDir() == Bond::BondDir::UNKNOWN ||
+// RDKit✔️✔️:        (bond->getPropIfPresent<int>(common_properties::_UnknownStereo,
+// RDKit✔️✔️:                                     hasWigglyBond) &&
+// RDKit✔️✔️:         hasWigglyBond))) {
+// RDKit✔️✔️:     return true;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   return false;
+// RDKit✔️✔️: }
+fn is_wiggly_bond(bond: &crate::Bond, atom_idx: usize) -> Result<bool, StereoError> {
+    if bond.begin().index() != atom_idx || bond.order() != crate::BondOrder::Single {
+        return Ok(false);
+    }
+    if bond.direction() == crate::BondDirection::Unknown {
+        return Ok(true);
+    }
+    let has_wiggly_bond = match bond.prop("_UnknownStereo") {
+        Some(value) => value.parse::<i32>().map_err(|_| {
+            StereoError::InvariantViolation(format!(
+                "bond {} has non-integer _UnknownStereo property {value:?}",
+                bond.id()
+            ))
+        })?,
+        None => i32::from(bond.unknown_stereo()),
+    };
+    Ok(has_wiggly_bond != 0)
 }
 
 /// Check if an atom has a protium (regular H) neighbor.
@@ -3757,92 +5170,1620 @@ pub fn rerank_atoms_in_place(
     Ok(ranks)
 }
 
-// BEGIN RDKIT CPP FUNCTION: assignAtomChiralTagsFromStructure (Chirality.cpp)
-// RDKit✔️✔️: void assignAtomChiralTagsFromStructure(ROMol &mol, INT_VECT &atomIndices, ...) {
-// RDKit✔️✔️:   // Detect chirality from 3D coordinates.
-// RDKit✔️✔️: }
-// END RDKIT CPP FUNCTION: assignAtomChiralTagsFromStructure (simplified)
-/// Simplified chiral tag assignment from coordinates.
-/// Detects tetrahedral chirality from wedged bonds in 2D coordinates.
-/// Uses wedge/dash bond direction to determine R/S configuration.
-/// This is a simplified version of RDKit's assignAtomChiralTagsFromStructure.
-pub fn assign_atom_chiral_tags_from_structure(
-    mol: &Molecule,
-) -> Result<Vec<(usize, ChiralTag)>, StereoError> {
-    let mut results = Vec::new();
-
-    for atom in mol.atoms() {
-        let idx = atom.id().index();
-        let current_tag = atom.chiral_tag();
-
-        // Skip already-assigned or non-tetrahedral atoms
-        if current_tag != ChiralTag::Unspecified && current_tag != ChiralTag::Other {
-            continue;
-        }
-
-        let deg = atom_degree(mol, idx);
-        if deg > 4 || deg < 3 {
-            continue;
-        }
-
-        // Look for wedged bonds to determine chirality
-        let mut wedged_bonds: Vec<usize> = Vec::new();
-        let mut dashed_bonds: Vec<usize> = Vec::new();
-
-        for b in mol.bonds() {
-            if b.begin().index() != idx && b.end().index() != idx {
-                continue;
-            }
-            match b.direction() {
-                crate::BondDirection::BeginWedge => wedged_bonds.push(b.id().index()),
-                crate::BondDirection::BeginDash => dashed_bonds.push(b.id().index()),
-                _ => {}
-            }
-        }
-
-        // With 3 (or 4) coordinate atoms, a single wedge + degree 3 implies chirality
-        if wedged_bonds.len() == 1 && dashed_bonds.is_empty() && deg == 3 {
-            // Wedge up = CW (coming out of plane, then going into plane for 4th ligand)
-            results.push((idx, ChiralTag::TetrahedralCw));
-        } else if dashed_bonds.len() == 1 && wedged_bonds.is_empty() && deg == 3 {
-            // Dash down = CCW
-            results.push((idx, ChiralTag::TetrahedralCcw));
-        } else if wedged_bonds.len() == 1 && dashed_bonds.len() == 1 && deg == 4 {
-            // For 4-coordinate, one wedge + one dash with opposite orientation
-            // Check if they're on opposite sides
-            let wedge_idx = wedged_bonds[0];
-            let dash_idx = dashed_bonds[0];
-            let wedge_bond = &mol.bonds()[wedge_idx];
-            let dash_bond = &mol.bonds()[dash_idx];
-
-            // In typical wedge/dash notation, wedge goes up, dash goes down → CW
-            if is_opposite_bonds(mol, idx, wedge_idx, dash_idx) {
-                results.push((idx, ChiralTag::TetrahedralCw));
-            }
-        }
-    }
-
-    Ok(results)
-}
-
-/// Check if two bonds from the same atom are approximately opposite (180 deg apart)
-/// based on 2D coordinates if available.
-fn is_opposite_bonds(mol: &Molecule, _atom_idx: usize, _bond_a: usize, _bond_b: usize) -> bool {
-    // Simplified: assume opposite if we have one wedge and one dash
-    // This is the typical case in 2D structure diagrams
-    true
-}
-
 // ── End Chirality functions ──────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::{
-        LigandRef, StereoError, assign_atom_cip_ranks, canonicalize_tetrahedral_ligands,
-        has_duplicate_indices, is_atom_potential_chiral_center, is_even_permutation,
-        perturbation_order_from_bond_indices,
+        LigandRef, NON_TETRAHEDRAL_STEREO_ENV_VAR, StereoError, assign_atom_cip_ranks,
+        assign_chiral_types_from_3d_kernel, assign_nontetrahedral_chiral_type_from_3d,
+        assign_tetrahedral_chiral_type_from_3d, atom_nonzero_degree, bond_affects_atom_chirality,
+        canonicalize_tetrahedral_ligands, get_allow_nontetrahedral_chirality,
+        get_val_from_environment, has_duplicate_indices, is_atom_potential_chiral_center,
+        is_even_permutation, is_wiggly_bond, octahedral_perm_from_3d,
+        perturbation_order_from_bond_indices, rdkit_angle_to, rdkit_direction_vector,
+        rdkit_point3d_cross_product, rdkit_point3d_dot_product, rdkit_voltest,
     };
-    use crate::{AtomId, Molecule};
+    use crate::{
+        Atom, AtomId, AtomSpec, BondDirection, BondOrder, BondSpec, ChiralTag, Conformer3D,
+        Element, Molecule, MoleculeBuilder, MoleculeProperties,
+    };
+    use std::ffi::{OsStr, OsString};
+    use std::sync::Mutex;
+
+    static NON_TETRAHEDRAL_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvironmentRestore {
+        name: &'static str,
+        original: Option<OsString>,
+    }
+
+    impl Drop for EnvironmentRestore {
+        fn drop(&mut self) {
+            // SAFETY: this focused test holds NON_TETRAHEDRAL_ENV_LOCK for the
+            // complete mutation window and no production code writes this key.
+            unsafe {
+                match &self.original {
+                    Some(value) => std::env::set_var(self.name, value),
+                    None => std::env::remove_var(self.name),
+                }
+            }
+        }
+    }
+
+    fn set_nontetrahedral_environment(value: Option<&OsStr>) {
+        // SAFETY: callers hold NON_TETRAHEDRAL_ENV_LOCK and restore the key
+        // through EnvironmentRestore before releasing the lock.
+        unsafe {
+            match value {
+                Some(value) => std::env::set_var(NON_TETRAHEDRAL_STEREO_ENV_VAR, value),
+                None => std::env::remove_var(NON_TETRAHEDRAL_STEREO_ENV_VAR),
+            }
+        }
+    }
+
+    #[test]
+    fn get_allow_nontetrahedral_chirality_matches_rdkit_environment_semantics() {
+        let _lock = NON_TETRAHEDRAL_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _restore = EnvironmentRestore {
+            name: NON_TETRAHEDRAL_STEREO_ENV_VAR,
+            original: std::env::var_os(NON_TETRAHEDRAL_STEREO_ENV_VAR),
+        };
+
+        set_nontetrahedral_environment(None);
+        assert!(get_allow_nontetrahedral_chirality());
+        assert!(!get_val_from_environment(
+            NON_TETRAHEDRAL_STEREO_ENV_VAR,
+            false
+        ));
+
+        for (value, expected) in [
+            ("0", false),
+            ("", true),
+            ("00", true),
+            ("false", true),
+            ("1", true),
+            (" 0", true),
+        ] {
+            set_nontetrahedral_environment(Some(OsStr::new(value)));
+            assert_eq!(
+                get_allow_nontetrahedral_chirality(),
+                expected,
+                "unexpected RDKit environment semantics for {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn bond_affects_atom_chirality_matches_rdkit_directional_matrix() {
+        let orders = [
+            BondOrder::Null,
+            BondOrder::Single,
+            BondOrder::Double,
+            BondOrder::Triple,
+            BondOrder::Quadruple,
+            BondOrder::Quintuple,
+            BondOrder::Hextuple,
+            BondOrder::OneAndHalf,
+            BondOrder::TwoAndHalf,
+            BondOrder::ThreeAndHalf,
+            BondOrder::FourAndHalf,
+            BondOrder::FiveAndHalf,
+            BondOrder::Aromatic,
+            BondOrder::Ionic,
+            BondOrder::Dative,
+            BondOrder::DativeOne,
+            BondOrder::DativeLeft,
+            BondOrder::DativeRight,
+            BondOrder::Hydrogen,
+            BondOrder::ThreeCenter,
+            BondOrder::Other,
+            BondOrder::Zero,
+            BondOrder::Unspecified,
+        ];
+
+        for order in orders {
+            let mut builder = MoleculeBuilder::new();
+            let begin = builder.add_atom(AtomSpec::new(Element::C));
+            let end = builder.add_atom(AtomSpec::new(Element::C));
+            builder
+                .add_bond(BondSpec::new(begin, end, order))
+                .expect("two valid atoms accept every modeled bond type");
+            let molecule = builder.build().expect("valid two-atom molecule");
+            let bond = &molecule.bonds()[0];
+
+            let rdkit_unspecified_or_zero = matches!(
+                order,
+                BondOrder::Null | BondOrder::Unspecified | BondOrder::Zero
+            );
+            assert_eq!(
+                bond_affects_atom_chirality(bond, begin.index()),
+                !rdkit_unspecified_or_zero && order != BondOrder::Dative,
+                "unexpected begin-atom result for {order:?}"
+            );
+            assert_eq!(
+                bond_affects_atom_chirality(bond, end.index()),
+                !rdkit_unspecified_or_zero,
+                "unexpected end-atom result for {order:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn atom_nonzero_degree_matches_rdkit_bond_matrix() {
+        let mut builder = MoleculeBuilder::new();
+        let center = builder.add_atom(AtomSpec::new(Element::FE));
+        let single = builder.add_atom(AtomSpec::new(Element::C));
+        let double = builder.add_atom(AtomSpec::new(Element::O));
+        let unspecified = builder.add_atom(AtomSpec::new(Element::N));
+        let zero = builder.add_atom(AtomSpec::new(Element::S));
+        let outgoing_dative = builder.add_atom(AtomSpec::new(Element::P));
+        let incoming_dative = builder.add_atom(AtomSpec::new(Element::B));
+        let isolated = builder.add_atom(AtomSpec::new(Element::F));
+
+        for spec in [
+            BondSpec::new(center, single, BondOrder::Single),
+            BondSpec::new(center, double, BondOrder::Double),
+            BondSpec::new(center, unspecified, BondOrder::Unspecified),
+            BondSpec::new(center, zero, BondOrder::Zero),
+            BondSpec::new(center, outgoing_dative, BondOrder::Dative),
+            BondSpec::new(incoming_dative, center, BondOrder::Dative),
+        ] {
+            builder.add_bond(spec).expect("valid mixed bond matrix");
+        }
+        let molecule = builder.build().expect("valid mixed-degree molecule");
+
+        assert_eq!(atom_nonzero_degree(&molecule, center.index()), 3);
+        assert_eq!(atom_nonzero_degree(&molecule, single.index()), 1);
+        assert_eq!(atom_nonzero_degree(&molecule, double.index()), 1);
+        assert_eq!(atom_nonzero_degree(&molecule, unspecified.index()), 0);
+        assert_eq!(atom_nonzero_degree(&molecule, zero.index()), 0);
+        assert_eq!(atom_nonzero_degree(&molecule, outgoing_dative.index()), 1);
+        assert_eq!(atom_nonzero_degree(&molecule, incoming_dative.index()), 0);
+        assert_eq!(atom_nonzero_degree(&molecule, isolated.index()), 0);
+    }
+
+    #[test]
+    fn is_wiggly_bond_matches_rdkit_atom_relative_matrix() {
+        fn molecule_with_bond(
+            order: BondOrder,
+            direction: BondDirection,
+            unknown_stereo_property: Option<&str>,
+            typed_unknown_stereo: bool,
+        ) -> Molecule {
+            let mut builder = MoleculeBuilder::new();
+            let begin = builder.add_atom(AtomSpec::new(Element::C));
+            let end = builder.add_atom(AtomSpec::new(Element::N));
+            let mut spec = BondSpec::new(begin, end, order)
+                .with_direction(direction)
+                .with_unknown_stereo(typed_unknown_stereo);
+            if let Some(value) = unknown_stereo_property {
+                spec = spec.with_prop("_UnknownStereo", value);
+            }
+            builder.add_bond(spec).expect("valid focused bond");
+            builder.build().expect("valid focused molecule")
+        }
+
+        for direction in [
+            BondDirection::None,
+            BondDirection::BeginWedge,
+            BondDirection::BeginDash,
+            BondDirection::EndUpRight,
+            BondDirection::EndDownRight,
+            BondDirection::EitherDouble,
+            BondDirection::Unknown,
+        ] {
+            let molecule = molecule_with_bond(BondOrder::Single, direction, None, false);
+            let bond = &molecule.bonds()[0];
+            assert_eq!(
+                is_wiggly_bond(bond, 0).expect("valid missing-property state"),
+                direction == BondDirection::Unknown,
+                "unexpected begin-atom result for {direction:?}"
+            );
+            assert!(
+                !is_wiggly_bond(bond, 1).expect("end perspective short-circuits"),
+                "end atom must reject {direction:?}"
+            );
+        }
+
+        for (property, typed, expected) in [
+            (None, false, false),
+            (Some("0"), false, false),
+            (Some("-7"), false, true),
+            (Some("2"), false, true),
+            (None, true, true),
+        ] {
+            let molecule =
+                molecule_with_bond(BondOrder::Single, BondDirection::None, property, typed);
+            assert_eq!(
+                is_wiggly_bond(&molecule.bonds()[0], 0).expect("valid integer property"),
+                expected,
+                "unexpected property result for {property:?}, typed={typed}"
+            );
+        }
+
+        for order in [BondOrder::Double, BondOrder::Aromatic] {
+            let molecule = molecule_with_bond(order, BondDirection::Unknown, Some("-7"), true);
+            assert!(
+                !is_wiggly_bond(&molecule.bonds()[0], 0).expect("non-single bond short-circuits"),
+                "non-single {order:?} must not be wiggly"
+            );
+        }
+
+        let malformed = molecule_with_bond(
+            BondOrder::Single,
+            BondDirection::None,
+            Some("not-an-int"),
+            false,
+        );
+        assert!(matches!(
+            is_wiggly_bond(&malformed.bonds()[0], 0),
+            Err(StereoError::InvariantViolation(_))
+        ));
+        assert!(matches!(
+            is_wiggly_bond(&malformed.bonds()[0], 1),
+            Ok(false)
+        ));
+
+        let direction_short_circuit = molecule_with_bond(
+            BondOrder::Single,
+            BondDirection::Unknown,
+            Some("not-an-int"),
+            false,
+        );
+        assert!(matches!(
+            is_wiggly_bond(&direction_short_circuit.bonds()[0], 0),
+            Ok(true)
+        ));
+    }
+
+    #[test]
+    fn rdkit_direction_vector_matches_source_boundaries() {
+        fn assert_bits_eq(actual: (f64, f64, f64), expected: (f64, f64, f64)) {
+            assert_eq!(actual.0.to_bits(), expected.0.to_bits());
+            assert_eq!(actual.1.to_bits(), expected.1.to_bits());
+            assert_eq!(actual.2.to_bits(), expected.2.to_bits());
+        }
+
+        assert_bits_eq(
+            rdkit_direction_vector([1.0, 2.0, 3.0], [4.0, 6.0, 3.0])
+                .expect("ordinary vector is normalizable"),
+            (3.0 / 5.0, 4.0 / 5.0, 0.0),
+        );
+
+        assert!(matches!(
+            rdkit_direction_vector([0.0; 3], [0.0; 3]),
+            Err(StereoError::ZeroLengthVector)
+        ));
+        assert!(matches!(
+            rdkit_direction_vector([0.0; 3], [0.5e-16, 0.0, 0.0]),
+            Err(StereoError::ZeroLengthVector)
+        ));
+        assert_bits_eq(
+            rdkit_direction_vector([0.0; 3], [1.0e-16, 0.0, 0.0])
+                .expect("zero_tolerance equality does not throw"),
+            (1.0, 0.0, 0.0),
+        );
+        assert_bits_eq(
+            rdkit_direction_vector([0.0; 3], [2.0e-16, 0.0, 0.0])
+                .expect("value above zero_tolerance is normalizable"),
+            (1.0, 0.0, 0.0),
+        );
+        assert!(matches!(
+            rdkit_direction_vector([0.0; 3], [f64::from_bits(1), 0.0, 0.0]),
+            Err(StereoError::ZeroLengthVector)
+        ));
+
+        assert_bits_eq(
+            rdkit_direction_vector([0.0; 3], [f64::MAX, 0.0, 0.0])
+                .expect("overflowed length is not below zero_tolerance"),
+            (0.0, 0.0, 0.0),
+        );
+
+        let nan = rdkit_direction_vector([0.0; 3], [f64::NAN, 1.0, -1.0])
+            .expect("NaN length does not satisfy the throw comparison");
+        assert!(nan.0.is_nan());
+        assert!(nan.1.is_nan());
+        assert!(nan.2.is_nan());
+
+        for infinity in [f64::INFINITY, f64::NEG_INFINITY] {
+            let actual = rdkit_direction_vector([0.0; 3], [infinity, 0.0, -0.0])
+                .expect("infinite length does not satisfy the throw comparison");
+            assert!(actual.0.is_nan());
+            assert_eq!(actual.1.to_bits(), 0.0f64.to_bits());
+            assert_eq!(actual.2.to_bits(), (-0.0f64).to_bits());
+        }
+    }
+
+    #[test]
+    fn rdkit_angle_to_matches_source_boundaries() {
+        assert_eq!(
+            rdkit_angle_to((1.0, 0.0, 0.0), (2.0, 0.0, 0.0)).to_bits(),
+            0.0f64.to_bits()
+        );
+        assert_eq!(
+            rdkit_angle_to((1.0, 0.0, 0.0), (-2.0, 0.0, 0.0)).to_bits(),
+            std::f64::consts::PI.to_bits()
+        );
+        assert_eq!(
+            rdkit_angle_to((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)).to_bits(),
+            std::f64::consts::FRAC_PI_2.to_bits()
+        );
+
+        for (other, expected_bits) in [
+            (
+                (-0.156_434_465_040_231_04, 0.987_688_340_595_137_7, 0.0),
+                0x3ffb_a561_4317_cb35,
+            ),
+            (
+                (-0.173_648_177_666_930_3, 0.984_807_753_012_208, 0.0),
+                0x3ffb_ecde_5da1_15a9,
+            ),
+            (
+                (-0.190_808_995_376_544_8, 0.981_627_183_447_664, 0.0),
+                0x3ffc_345b_782a_601e,
+            ),
+        ] {
+            assert_eq!(
+                rdkit_angle_to((1.0, 0.0, 0.0), other).to_bits(),
+                expected_bits
+            );
+        }
+        let hundred_degrees = f64::from_bits(0x3ffb_ecde_5da1_15a9);
+        assert!(
+            rdkit_angle_to(
+                (1.0, 0.0, 0.0),
+                (-0.156_434_465_040_231_04, 0.987_688_340_595_137_7, 0.0)
+            ) < hundred_degrees
+        );
+        assert_eq!(
+            rdkit_angle_to(
+                (1.0, 0.0, 0.0),
+                (-0.173_648_177_666_930_3, 0.984_807_753_012_208, 0.0)
+            )
+            .to_bits(),
+            hundred_degrees.to_bits()
+        );
+        assert!(
+            rdkit_angle_to(
+                (1.0, 0.0, 0.0),
+                (-0.190_808_995_376_544_8, 0.981_627_183_447_664, 0.0)
+            ) > hundred_degrees
+        );
+
+        let near_parallel = (
+            f64::from_bits(0x4010_4747_4776_4fc0),
+            f64::from_bits(0xbfee_b4e4_73e5_f750),
+            f64::from_bits(0x4012_0156_b839_d268),
+        );
+        let rounding_above_one = (
+            f64::from_bits(0x4010_4747_4596_e981),
+            f64::from_bits(0xbfee_b4e4_7132_ed3a),
+            f64::from_bits(0x4012_0156_b5e0_194a),
+        );
+        assert_eq!(
+            rdkit_angle_to(near_parallel, rounding_above_one).to_bits(),
+            0.0f64.to_bits()
+        );
+        assert_eq!(
+            rdkit_angle_to(
+                near_parallel,
+                (
+                    -rounding_above_one.0,
+                    -rounding_above_one.1,
+                    -rounding_above_one.2,
+                )
+            )
+            .to_bits(),
+            std::f64::consts::PI.to_bits()
+        );
+
+        assert_eq!(
+            rdkit_angle_to((f64::from_bits(1), 0.0, 0.0), (1.0, 0.0, 0.0)).to_bits(),
+            0.0f64.to_bits()
+        );
+
+        for (this, other) in [
+            ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0)),
+            ((f64::NAN, 0.0, 0.0), (1.0, 0.0, 0.0)),
+            ((f64::INFINITY, 0.0, 0.0), (1.0, 0.0, 0.0)),
+            ((f64::NEG_INFINITY, 0.0, 0.0), (1.0, 0.0, 0.0)),
+        ] {
+            assert!(rdkit_angle_to(this, other).is_nan());
+        }
+    }
+
+    #[test]
+    fn voltest_matches_rdkit_signed_zero_and_nonfinite_matrix() {
+        let basis = [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)];
+        assert!(rdkit_voltest(&basis, 0, 1, 2));
+        assert!(!rdkit_voltest(&basis, 0, 2, 1));
+
+        let cross = rdkit_point3d_cross_product((7.0, 11.0, -13.0), (-17.0, 19.0, 23.0));
+        assert_eq!(cross.0.to_bits(), 500.0f64.to_bits());
+        assert_eq!(cross.1.to_bits(), 60.0f64.to_bits());
+        assert_eq!(cross.2.to_bits(), 320.0f64.to_bits());
+        assert_eq!(
+            rdkit_point3d_dot_product((2.0, -3.0, 5.0), cross).to_bits(),
+            2420.0f64.to_bits()
+        );
+        let ordered = [(2.0, -3.0, 5.0), (7.0, 11.0, -13.0), (-17.0, 19.0, 23.0)];
+        assert!(rdkit_voltest(&ordered, 0, 1, 2));
+        assert!(!rdkit_voltest(&ordered, 0, 2, 1));
+
+        for signed_zero in [0.0, -0.0] {
+            let vectors = [(signed_zero, signed_zero, signed_zero), basis[1], basis[2]];
+            let volume = rdkit_point3d_dot_product(
+                vectors[0],
+                rdkit_point3d_cross_product(vectors[1], vectors[2]),
+            );
+            assert_eq!(volume.to_bits(), signed_zero.to_bits());
+            assert!(rdkit_voltest(&vectors, 0, 1, 2));
+        }
+
+        let exact_zero = [basis[1], basis[1], basis[2]];
+        assert_eq!(
+            rdkit_point3d_dot_product(
+                exact_zero[0],
+                rdkit_point3d_cross_product(exact_zero[1], exact_zero[2]),
+            )
+            .to_bits(),
+            0.0f64.to_bits()
+        );
+        assert!(rdkit_voltest(&exact_zero, 0, 1, 2));
+
+        let min_subnormal = f64::from_bits(1);
+        for (value, expected) in [
+            (min_subnormal, true),
+            (-min_subnormal, false),
+            (f64::INFINITY, true),
+            (f64::NEG_INFINITY, false),
+            (f64::NAN, false),
+        ] {
+            let vectors = [(value, 0.0, 0.0), basis[1], basis[2]];
+            assert_eq!(rdkit_voltest(&vectors, 0, 1, 2), expected);
+        }
+    }
+
+    #[test]
+    fn octahedral_perm_from_3d_matches_all_rdkit_switch_branches() {
+        struct Case {
+            pair: [u8; 6],
+            volume_indices: (usize, usize, usize),
+            positive: u32,
+            negative: u32,
+        }
+
+        let cases = [
+            Case {
+                pair: [2, 0, 4, 0, 0, 0],
+                volume_indices: (0, 3, 4),
+                positive: 28,
+                negative: 27,
+            },
+            Case {
+                pair: [2, 0, 5, 0, 0, 0],
+                volume_indices: (0, 2, 3),
+                positive: 25,
+                negative: 30,
+            },
+            Case {
+                pair: [2, 0, 6, 0, 0, 0],
+                volume_indices: (0, 2, 3),
+                positive: 26,
+                negative: 29,
+            },
+            Case {
+                pair: [3, 4, 0, 0, 0, 0],
+                volume_indices: (0, 3, 4),
+                positive: 22,
+                negative: 21,
+            },
+            Case {
+                pair: [3, 5, 0, 0, 0, 0],
+                volume_indices: (0, 1, 3),
+                positive: 19,
+                negative: 24,
+            },
+            Case {
+                pair: [3, 6, 0, 0, 0, 0],
+                volume_indices: (0, 1, 3),
+                positive: 20,
+                negative: 23,
+            },
+            Case {
+                pair: [4, 3, 0, 0, 0, 0],
+                volume_indices: (0, 2, 4),
+                positive: 13,
+                negative: 12,
+            },
+            Case {
+                pair: [4, 5, 0, 0, 0, 0],
+                volume_indices: (0, 1, 2),
+                positive: 6,
+                negative: 18,
+            },
+            Case {
+                pair: [4, 6, 0, 0, 0, 0],
+                volume_indices: (0, 1, 2),
+                positive: 7,
+                negative: 17,
+            },
+            Case {
+                pair: [5, 3, 0, 0, 0, 0],
+                volume_indices: (0, 2, 3),
+                positive: 11,
+                negative: 9,
+            },
+            Case {
+                pair: [5, 4, 0, 0, 0, 0],
+                volume_indices: (0, 1, 2),
+                positive: 3,
+                negative: 16,
+            },
+            Case {
+                pair: [5, 6, 0, 0, 0, 0],
+                volume_indices: (0, 1, 2),
+                positive: 5,
+                negative: 15,
+            },
+            Case {
+                pair: [6, 3, 0, 0, 0, 0],
+                volume_indices: (0, 2, 3),
+                positive: 10,
+                negative: 8,
+            },
+            Case {
+                pair: [6, 4, 0, 0, 0, 0],
+                volume_indices: (0, 1, 2),
+                positive: 1,
+                negative: 2,
+            },
+            Case {
+                pair: [6, 5, 0, 0, 0, 0],
+                volume_indices: (0, 1, 2),
+                positive: 4,
+                negative: 14,
+            },
+        ];
+
+        for case in cases {
+            let (x, y, z) = case.volume_indices;
+            let mut positive_vectors = [(0.0, 0.0, 0.0); 5];
+            positive_vectors[x] = (1.0, 0.0, 0.0);
+            positive_vectors[y] = (0.0, 1.0, 0.0);
+            positive_vectors[z] = (0.0, 0.0, 1.0);
+            assert_eq!(
+                octahedral_perm_from_3d(&case.pair, &positive_vectors),
+                case.positive,
+                "positive-volume result for pair {:?}",
+                case.pair
+            );
+
+            let mut negative_vectors = positive_vectors;
+            negative_vectors[x] = (-1.0, 0.0, 0.0);
+            assert_eq!(
+                octahedral_perm_from_3d(&case.pair, &negative_vectors),
+                case.negative,
+                "negative-volume result for pair {:?}",
+                case.pair
+            );
+        }
+    }
+
+    #[test]
+    fn assign_nontetrahedral_chiral_type_from_3d_covers_all_active_rdkit_branches() {
+        fn run_case(
+            element: Element,
+            directions: &[[f64; 3]],
+            tolerance: f64,
+            unknown_bond: Option<(usize, bool)>,
+        ) -> Result<(bool, ChiralTag, Option<u32>), StereoError> {
+            let mut builder = MoleculeBuilder::new();
+            let center = builder.add_atom(AtomSpec::new(element));
+            for (index, _) in directions.iter().enumerate() {
+                let neighbor = builder.add_atom(AtomSpec::new(Element::F));
+                let (begin, end) = if unknown_bond == Some((index, true)) {
+                    (neighbor, center)
+                } else {
+                    (center, neighbor)
+                };
+                let mut bond = BondSpec::new(begin, end, BondOrder::Single);
+                if unknown_bond.is_some_and(|(unknown_index, _)| unknown_index == index) {
+                    bond = bond.with_direction(BondDirection::Unknown);
+                }
+                builder.add_bond(bond).expect("valid star bond");
+            }
+            let mut molecule = builder.build().expect("valid star molecule");
+            let mut coordinates = Vec::with_capacity(directions.len() + 1);
+            coordinates.push([0.0, 0.0, 0.0]);
+            coordinates.extend_from_slice(directions);
+            let conformer = Conformer3D::new(0, coordinates, true);
+            let bonds = molecule.bonds().to_vec();
+            let adjacency = molecule.topology_block().adjacency.clone();
+            let result = assign_nontetrahedral_chiral_type_from_3d(
+                &mut molecule.topology_block_mut().atoms,
+                &bonds,
+                &adjacency,
+                &conformer,
+                center.index(),
+                tolerance,
+            )?;
+            let atom = &molecule.atoms()[center.index()];
+            Ok((result, atom.chiral_tag(), atom.chiral_permutation()))
+        }
+
+        fn assert_assignment(
+            directions: &[[f64; 3]],
+            expected_tag: ChiralTag,
+            expected_permutation: u32,
+        ) {
+            assert_eq!(
+                run_case(Element::P, directions, 0.1, None)
+                    .expect("source-defined geometry is valid"),
+                (true, expected_tag, Some(expected_permutation)),
+                "unexpected assignment for {directions:?}"
+            );
+        }
+
+        fn one_opposite_pair(
+            count: usize,
+            opposite: (usize, usize),
+            equatorial_angle_degrees: f64,
+            mirror: f64,
+        ) -> Vec<[f64; 3]> {
+            let mut directions = vec![[0.0, 0.0, 0.0]; count];
+            directions[opposite.0] = [0.0, 0.0, 1.0];
+            directions[opposite.1] = [0.0, 0.0, -1.0];
+            let remaining: Vec<_> = (0..count)
+                .filter(|index| *index != opposite.0 && *index != opposite.1)
+                .collect();
+            directions[remaining[0]] = [1.0, 0.0, 0.0];
+            let angle = equatorial_angle_degrees.to_radians();
+            directions[remaining[1]] = [angle.cos(), mirror * angle.sin(), 0.0];
+            if remaining.len() == 3 {
+                let third_angle = 240.0_f64.to_radians();
+                directions[remaining[2]] = [third_angle.cos(), mirror * third_angle.sin(), 0.0];
+            }
+            directions
+        }
+
+        fn scalar_triple_nonnegative(
+            directions: &[[f64; 3]],
+            x: usize,
+            y: usize,
+            z: usize,
+        ) -> bool {
+            let cross = [
+                directions[y][1] * directions[z][2] - directions[y][2] * directions[z][1],
+                -directions[y][0] * directions[z][2] + directions[y][2] * directions[z][0],
+                directions[y][0] * directions[z][1] - directions[y][1] * directions[z][0],
+            ];
+            directions[x][0] * cross[0] + directions[x][1] * cross[1] + directions[x][2] * cross[2]
+                >= 0.0
+        }
+
+        let ordinary_three = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        assert_eq!(
+            run_case(Element::SI, &ordinary_three, 0.1, None).expect("silicon gate"),
+            (false, ChiralTag::Unspecified, None)
+        );
+        assert_eq!(
+            run_case(Element::P, &ordinary_three[..2], 0.1, None).expect("degree-two gate"),
+            (false, ChiralTag::Unspecified, None)
+        );
+        assert_eq!(
+            run_case(Element::P, &ordinary_three, 0.1, None).expect("zero-pair gate"),
+            (false, ChiralTag::Unspecified, None)
+        );
+        assert!(matches!(
+            run_case(
+                Element::P,
+                &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]],
+                0.1,
+                None
+            ),
+            Err(StereoError::ZeroLengthVector)
+        ));
+        assert_eq!(
+            run_case(
+                Element::P,
+                &[[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]],
+                0.1,
+                None
+            )
+            .expect("duplicate pair rejection"),
+            (false, ChiralTag::Unspecified, None)
+        );
+        assert_eq!(
+            run_case(
+                Element::P,
+                &[[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+                0.0,
+                None
+            )
+            .expect("strict antiparallel equality"),
+            (false, ChiralTag::Unspecified, None)
+        );
+        assert_assignment(
+            &[[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            ChiralTag::SquarePlanar,
+            2,
+        );
+
+        for (directions, permutation) in [
+            ([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]], 3),
+            ([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], 2),
+            ([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]], 1),
+        ] {
+            assert_assignment(&directions, ChiralTag::SquarePlanar, permutation);
+        }
+
+        struct SeeSawCase {
+            opposite: (usize, usize),
+            volume: (usize, usize, usize),
+            octahedral: (u32, u32),
+            trigonal_bipyramidal: (u32, u32),
+        }
+        let see_saw_cases = [
+            SeeSawCase {
+                opposite: (0, 1),
+                volume: (0, 2, 3),
+                octahedral: (25, 29),
+                trigonal_bipyramidal: (7, 8),
+            },
+            SeeSawCase {
+                opposite: (0, 2),
+                volume: (0, 1, 3),
+                octahedral: (19, 23),
+                trigonal_bipyramidal: (5, 6),
+            },
+            SeeSawCase {
+                opposite: (0, 3),
+                volume: (0, 1, 2),
+                octahedral: (6, 17),
+                trigonal_bipyramidal: (3, 4),
+            },
+            SeeSawCase {
+                opposite: (1, 2),
+                volume: (0, 1, 3),
+                octahedral: (10, 8),
+                trigonal_bipyramidal: (13, 14),
+            },
+            SeeSawCase {
+                opposite: (1, 3),
+                volume: (0, 1, 3),
+                octahedral: (1, 2),
+                trigonal_bipyramidal: (10, 12),
+            },
+            SeeSawCase {
+                opposite: (2, 3),
+                volume: (0, 1, 3),
+                octahedral: (4, 14),
+                trigonal_bipyramidal: (16, 19),
+            },
+        ];
+        for case in see_saw_cases {
+            for mirror in [1.0, -1.0] {
+                let acute = one_opposite_pair(4, case.opposite, 90.0, mirror);
+                let acute_positive =
+                    scalar_triple_nonnegative(&acute, case.volume.0, case.volume.1, case.volume.2);
+                assert_assignment(
+                    &acute,
+                    ChiralTag::Octahedral,
+                    if acute_positive {
+                        case.octahedral.0
+                    } else {
+                        case.octahedral.1
+                    },
+                );
+
+                let obtuse = one_opposite_pair(4, case.opposite, 120.0, mirror);
+                let tbp_volume = match case.opposite {
+                    (1, 2) => (1, 0, 3),
+                    (1, 3) => (1, 0, 2),
+                    (2, 3) => (3, 0, 1),
+                    _ => case.volume,
+                };
+                let obtuse_positive =
+                    scalar_triple_nonnegative(&obtuse, tbp_volume.0, tbp_volume.1, tbp_volume.2);
+                assert_assignment(
+                    &obtuse,
+                    ChiralTag::TrigonalBipyramidal,
+                    if obtuse_positive {
+                        case.trigonal_bipyramidal.0
+                    } else {
+                        case.trigonal_bipyramidal.1
+                    },
+                );
+            }
+        }
+        let exact_hundred = one_opposite_pair(4, (0, 1), 100.0, 1.0);
+        let exact_hundred_positive = scalar_triple_nonnegative(&exact_hundred, 0, 2, 3);
+        assert_assignment(
+            &exact_hundred,
+            ChiralTag::TrigonalBipyramidal,
+            if exact_hundred_positive { 7 } else { 8 },
+        );
+
+        struct TbpCase {
+            opposite: (usize, usize),
+            volume: (usize, usize, usize),
+            permutations: (u32, u32),
+        }
+        let tbp_cases = [
+            TbpCase {
+                opposite: (0, 1),
+                volume: (0, 2, 3),
+                permutations: (7, 8),
+            },
+            TbpCase {
+                opposite: (0, 2),
+                volume: (0, 1, 3),
+                permutations: (5, 6),
+            },
+            TbpCase {
+                opposite: (0, 3),
+                volume: (0, 1, 2),
+                permutations: (3, 4),
+            },
+            TbpCase {
+                opposite: (0, 4),
+                volume: (0, 1, 2),
+                permutations: (1, 2),
+            },
+            TbpCase {
+                opposite: (1, 2),
+                volume: (1, 0, 3),
+                permutations: (13, 14),
+            },
+            TbpCase {
+                opposite: (1, 3),
+                volume: (1, 0, 2),
+                permutations: (10, 12),
+            },
+            TbpCase {
+                opposite: (1, 4),
+                volume: (1, 0, 2),
+                permutations: (9, 11),
+            },
+            TbpCase {
+                opposite: (2, 3),
+                volume: (2, 0, 1),
+                permutations: (16, 19),
+            },
+            TbpCase {
+                opposite: (2, 4),
+                volume: (2, 0, 1),
+                permutations: (15, 20),
+            },
+            TbpCase {
+                opposite: (3, 4),
+                volume: (3, 0, 1),
+                permutations: (17, 18),
+            },
+        ];
+        for case in tbp_cases {
+            for mirror in [1.0, -1.0] {
+                let directions = one_opposite_pair(5, case.opposite, 120.0, mirror);
+                let positive = scalar_triple_nonnegative(
+                    &directions,
+                    case.volume.0,
+                    case.volume.1,
+                    case.volume.2,
+                );
+                assert_assignment(
+                    &directions,
+                    ChiralTag::TrigonalBipyramidal,
+                    if positive {
+                        case.permutations.0
+                    } else {
+                        case.permutations.1
+                    },
+                );
+            }
+        }
+
+        for (directions, permutation) in [
+            (
+                [
+                    [1.0, 0.0, 0.0],
+                    [-1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, -1.0, 0.0],
+                ],
+                2,
+            ),
+            (
+                [
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [-1.0, 0.0, 0.0],
+                    [0.0, -1.0, 0.0],
+                ],
+                1,
+            ),
+            (
+                [
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, -1.0, 0.0],
+                    [-1.0, 0.0, 0.0],
+                ],
+                3,
+            ),
+        ] {
+            assert_assignment(&directions, ChiralTag::SquarePlanar, permutation);
+        }
+
+        assert_assignment(
+            &[
+                [1.0, 0.0, 0.0],
+                [-1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, -1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            ChiralTag::Octahedral,
+            27,
+        );
+        assert_assignment(
+            &[
+                [1.0, 0.0, 0.0],
+                [-1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, -1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 0.0, -1.0],
+            ],
+            ChiralTag::Octahedral,
+            27,
+        );
+        assert_eq!(
+            run_case(
+                Element::P,
+                &[
+                    [1.0, 0.0, 0.0],
+                    [-1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, -1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [0.0, 0.0, -1.0],
+                    [1.0, 1.0, 1.0],
+                ],
+                0.1,
+                None
+            )
+            .expect("degree-seven rejection"),
+            (false, ChiralTag::Unspecified, None)
+        );
+
+        let t_shape = [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        assert_eq!(
+            run_case(Element::P, &t_shape, 0.1, Some((0, false)))
+                .expect("begin-atom wiggly rejection"),
+            (false, ChiralTag::Unspecified, None)
+        );
+        assert_eq!(
+            run_case(Element::P, &t_shape, 0.1, Some((0, true)))
+                .expect("end-atom wiggly bond is ignored"),
+            (true, ChiralTag::SquarePlanar, Some(2))
+        );
+    }
+
+    #[test]
+    fn tetrahedral_chiral_type_from_3d_matches_rdkit_branch_boundaries() {
+        #[derive(Clone, Copy)]
+        struct Neighbor {
+            coordinate: [f64; 3],
+            order: BondOrder,
+            reverse: bool,
+            direction: BondDirection,
+        }
+
+        impl Neighbor {
+            fn single(coordinate: [f64; 3]) -> Self {
+                Self {
+                    coordinate,
+                    order: BondOrder::Single,
+                    reverse: false,
+                    direction: BondDirection::None,
+                }
+            }
+        }
+
+        fn run_case(
+            element: Element,
+            explicit_hydrogens: u8,
+            total_num_hs: usize,
+            explicit_atom: bool,
+            neighbors: &[Neighbor],
+        ) -> Result<(bool, ChiralTag, Option<String>), StereoError> {
+            let mut builder = MoleculeBuilder::new();
+            let center = builder
+                .add_atom(AtomSpec::new(element).with_explicit_hydrogens(explicit_hydrogens));
+            for neighbor in neighbors {
+                let other = builder.add_atom(AtomSpec::new(Element::F));
+                let (begin, end) = if neighbor.reverse {
+                    (other, center)
+                } else {
+                    (center, other)
+                };
+                builder
+                    .add_bond(
+                        BondSpec::new(begin, end, neighbor.order)
+                            .with_direction(neighbor.direction),
+                    )
+                    .expect("valid focused bond");
+            }
+            let mut molecule = builder.build().expect("valid focused molecule");
+            let mut coordinates = Vec::with_capacity(neighbors.len() + 1);
+            coordinates.push([0.0, 0.0, 0.0]);
+            coordinates.extend(neighbors.iter().map(|neighbor| neighbor.coordinate));
+            let conformer = Conformer3D::new(0, coordinates, true);
+            let bonds = molecule.bonds().to_vec();
+            let adjacency = molecule.topology_block().adjacency.clone();
+            let result = assign_tetrahedral_chiral_type_from_3d(
+                &mut molecule.topology_block_mut().atoms,
+                &bonds,
+                &adjacency,
+                &conformer,
+                center.index(),
+                total_num_hs,
+                explicit_atom,
+                0.1,
+            )?;
+            let atom = &molecule.atoms()[center.index()];
+            Ok((
+                result,
+                atom.chiral_tag(),
+                atom.prop("_NonExplicit3DChirality").map(str::to_owned),
+            ))
+        }
+
+        fn singles(coordinates: &[[f64; 3]]) -> Vec<Neighbor> {
+            coordinates.iter().copied().map(Neighbor::single).collect()
+        }
+
+        let positive = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let negative = [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]];
+
+        assert_eq!(
+            run_case(Element::C, 0, 1, false, &singles(&positive)).expect("implicit-H tetrahedron"),
+            (true, ChiralTag::TetrahedralCcw, Some("1".to_owned()))
+        );
+        assert_eq!(
+            run_case(Element::C, 1, 1, true, &singles(&negative)).expect("explicit-H tetrahedron"),
+            (true, ChiralTag::TetrahedralCw, None)
+        );
+        assert_eq!(
+            run_case(Element::C, 0, 0, false, &singles(&positive))
+                .expect("ordinary carbon needs four total neighbors"),
+            (false, ChiralTag::Unspecified, None)
+        );
+        for element in [Element::S, Element::SE] {
+            assert_eq!(
+                run_case(element, 0, 0, false, &singles(&positive))
+                    .expect("S/Se three-coordinate exception"),
+                (true, ChiralTag::TetrahedralCcw, Some("1".to_owned()))
+            );
+        }
+
+        for (coordinates, expected_tag) in [
+            (
+                [positive[0], positive[1], positive[2]],
+                ChiralTag::TetrahedralCcw,
+            ),
+            (
+                [positive[0], positive[2], positive[1]],
+                ChiralTag::TetrahedralCw,
+            ),
+            (
+                [positive[1], positive[0], positive[2]],
+                ChiralTag::TetrahedralCw,
+            ),
+            (
+                [positive[1], positive[2], positive[0]],
+                ChiralTag::TetrahedralCcw,
+            ),
+            (
+                [positive[2], positive[0], positive[1]],
+                ChiralTag::TetrahedralCcw,
+            ),
+            (
+                [positive[2], positive[1], positive[0]],
+                ChiralTag::TetrahedralCw,
+            ),
+        ] {
+            assert_eq!(
+                run_case(Element::C, 0, 1, true, &singles(&coordinates))
+                    .expect("neighbor permutation"),
+                (true, expected_tag, None)
+            );
+        }
+
+        let tolerance = 0.1_f64;
+        let below = f64::from_bits(tolerance.to_bits() - 1);
+        let above = f64::from_bits(tolerance.to_bits() + 1);
+        for (volume, expected) in [
+            (tolerance, ChiralTag::Unspecified),
+            (below, ChiralTag::Unspecified),
+            (above, ChiralTag::TetrahedralCcw),
+            (-tolerance, ChiralTag::Unspecified),
+            (-below, ChiralTag::Unspecified),
+            (-above, ChiralTag::TetrahedralCw),
+        ] {
+            let coordinates = [[volume, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+            let actual = run_case(Element::C, 0, 1, true, &singles(&coordinates))
+                .expect("source-defined volume boundary");
+            assert_eq!(actual.1, expected, "volume {volume:?}");
+            assert_eq!(actual.0, expected != ChiralTag::Unspecified);
+        }
+
+        for (fourth, expected) in [
+            ([0.0, 0.0, 1.0], ChiralTag::TetrahedralCw),
+            ([0.0, 0.0, -1.0], ChiralTag::TetrahedralCcw),
+            ([1.0, 1.0, 0.0], ChiralTag::Unspecified),
+        ] {
+            let coordinates = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0], fourth];
+            let actual = run_case(Element::C, 0, 0, true, &singles(&coordinates))
+                .expect("fourth-neighbor fallback");
+            assert_eq!(actual.1, expected, "fourth neighbor {fourth:?}");
+            assert_eq!(actual.0, expected != ChiralTag::Unspecified);
+        }
+
+        let mut wiggly = singles(&positive);
+        wiggly[0].direction = BondDirection::Unknown;
+        assert_eq!(
+            run_case(Element::C, 0, 1, false, &wiggly).expect("wiggly rejection"),
+            (false, ChiralTag::Unspecified, None)
+        );
+
+        let mixed_bonds = [
+            Neighbor::single([1.0, 0.0, 0.0]),
+            Neighbor {
+                coordinate: [99.0, 99.0, 99.0],
+                order: BondOrder::Zero,
+                reverse: false,
+                direction: BondDirection::None,
+            },
+            Neighbor::single([0.0, 1.0, 0.0]),
+            Neighbor {
+                coordinate: [-99.0, -99.0, -99.0],
+                order: BondOrder::Dative,
+                reverse: false,
+                direction: BondDirection::None,
+            },
+            Neighbor {
+                coordinate: [0.0, 0.0, 1.0],
+                order: BondOrder::Dative,
+                reverse: true,
+                direction: BondDirection::None,
+            },
+        ];
+        assert_eq!(
+            run_case(Element::C, 0, 1, true, &mixed_bonds)
+                .expect("irrelevant bonds preserve relevant neighbor order"),
+            (true, ChiralTag::TetrahedralCcw, None)
+        );
+
+        let five_total_neighbors = singles(&[
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [-1.0, -1.0, -1.0],
+        ]);
+        assert_eq!(
+            run_case(Element::C, 0, 1, false, &five_total_neighbors)
+                .expect("more than four total neighbors"),
+            (false, ChiralTag::Unspecified, None)
+        );
+    }
+
+    #[test]
+    fn assign_chiral_types_from_3d_covers_complete_rdkit_control_flow() {
+        fn build_star(
+            center: AtomSpec,
+            conformers: &[(usize, bool, Vec<[f64; 3]>)],
+            first_bond_direction: BondDirection,
+        ) -> Molecule {
+            let neighbor_count = conformers
+                .first()
+                .expect("star requires at least one conformer")
+                .2
+                .len()
+                .checked_sub(1)
+                .expect("star conformer requires a center coordinate");
+            let mut builder = MoleculeBuilder::new();
+            let center_id = builder.add_atom(center);
+            for neighbor_idx in 0..neighbor_count {
+                let neighbor = builder.add_atom(AtomSpec::new(Element::C));
+                let direction = if neighbor_idx == 0 {
+                    first_bond_direction
+                } else {
+                    BondDirection::None
+                };
+                builder
+                    .add_bond(
+                        BondSpec::new(center_id, neighbor, BondOrder::Single)
+                            .with_direction(direction),
+                    )
+                    .expect("valid star bond");
+            }
+            for (id, is_3d, coordinates) in conformers {
+                assert_eq!(coordinates.len(), neighbor_count + 1);
+                builder
+                    .add_conformer(Conformer3D::new(*id, coordinates.clone(), *is_3d))
+                    .expect("aligned star conformer");
+            }
+            builder.build().expect("valid star molecule")
+        }
+
+        fn run_kernel(
+            molecule: &Molecule,
+            conformers: Option<Vec<Conformer3D>>,
+            implicit_hydrogens: Option<Vec<i32>>,
+            conformer_id: i32,
+            replace_existing_tags: bool,
+        ) -> (Vec<Atom>, MoleculeProperties, Result<(), StereoError>) {
+            let topology = molecule.topology_block();
+            let mut atoms = topology.atoms.clone();
+            let bonds = topology.bonds.clone();
+            let adjacency = topology.adjacency.clone();
+            let conformers = conformers.unwrap_or_else(|| molecule.conformers_3d().to_vec());
+            let mut properties = molecule.properties().clone();
+            let result = assign_chiral_types_from_3d_kernel(
+                &mut atoms,
+                &bonds,
+                &adjacency,
+                &conformers,
+                &mut properties,
+                implicit_hydrogens.as_deref(),
+                conformer_id,
+                replace_existing_tags,
+            );
+            (atoms, properties, result)
+        }
+
+        let _lock = NON_TETRAHEDRAL_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _restore = EnvironmentRestore {
+            name: NON_TETRAHEDRAL_STEREO_ENV_VAR,
+            original: std::env::var_os(NON_TETRAHEDRAL_STEREO_ENV_VAR),
+        };
+        set_nontetrahedral_environment(None);
+
+        let mut empty_builder = MoleculeBuilder::new();
+        empty_builder.add_atom(
+            AtomSpec::new(Element::C)
+                .with_chiral_tag(ChiralTag::TetrahedralCw)
+                .with_prop("atom_keep", "yes"),
+        );
+        let no_conformer = empty_builder
+            .with_property("_StereochemDone", "1")
+            .with_property("molecule_keep", "yes")
+            .build()
+            .expect("valid no-conformer molecule");
+        let (atoms, properties, result) = run_kernel(&no_conformer, None, None, 99, true);
+        assert_eq!(result, Ok(()));
+        assert_eq!(atoms, no_conformer.atoms());
+        assert_eq!(properties, *no_conformer.properties());
+
+        let non_3d = build_star(
+            AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw),
+            &[(
+                7,
+                false,
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
+            )],
+            BondDirection::None,
+        )
+        .with_prop("_StereochemDone", "1");
+        let (atoms, properties, result) = run_kernel(&non_3d, None, None, 7, true);
+        assert_eq!(result, Ok(()));
+        assert_eq!(atoms, non_3d.atoms());
+        assert_eq!(properties.prop("_StereochemDone"), Some("1"));
+
+        let two_conformers = build_star(
+            AtomSpec::new(Element::C).with_prop("atom_keep", "yes"),
+            &[
+                (
+                    7,
+                    true,
+                    vec![
+                        [0.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0],
+                        [0.0, 0.0, 1.0],
+                    ],
+                ),
+                (
+                    11,
+                    true,
+                    vec![
+                        [0.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0],
+                        [0.0, 1.0, 0.0],
+                    ],
+                ),
+            ],
+            BondDirection::None,
+        )
+        .with_prop("_StereochemDone", "1")
+        .with_prop("molecule_keep", "yes");
+        let implicit = Some(vec![1, 0, 0, 0]);
+        let (atoms, properties, result) =
+            run_kernel(&two_conformers, None, implicit.clone(), -1, true);
+        assert_eq!(result, Ok(()));
+        assert_eq!(atoms[0].chiral_tag(), ChiralTag::TetrahedralCcw);
+        assert_eq!(atoms[0].prop("_NonExplicit3DChirality"), Some("1"));
+        assert_eq!(atoms[0].prop("atom_keep"), Some("yes"));
+        assert_eq!(properties.prop("_StereochemDone"), None);
+        assert_eq!(properties.prop("molecule_keep"), Some("yes"));
+        assert_eq!(two_conformers.conformers_3d()[0].id(), 7);
+        assert_eq!(two_conformers.conformers_3d()[1].id(), 11);
+
+        let (atoms, _, result) = run_kernel(&two_conformers, None, implicit.clone(), 11, true);
+        assert_eq!(result, Ok(()));
+        assert_eq!(atoms[0].chiral_tag(), ChiralTag::TetrahedralCw);
+
+        let (_, properties, result) = run_kernel(&two_conformers, None, implicit.clone(), 8, true);
+        assert_eq!(
+            result,
+            Err(StereoError::ConformerNotFound { conformer_id: 8 })
+        );
+        assert_eq!(properties.prop("_StereochemDone"), Some("1"));
+
+        let existing = build_star(
+            AtomSpec::new(Element::C)
+                .with_chiral_tag(ChiralTag::TetrahedralCw)
+                .with_prop("atom_keep", "yes"),
+            &[((
+                0,
+                true,
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
+            ))],
+            BondDirection::None,
+        )
+        .with_prop("_StereochemDone", "1");
+        let (atoms, properties, result) = run_kernel(&existing, None, implicit.clone(), 0, false);
+        assert_eq!(result, Ok(()));
+        assert_eq!(atoms[0].chiral_tag(), ChiralTag::TetrahedralCw);
+        assert_eq!(atoms[0].prop("atom_keep"), Some("yes"));
+        assert_eq!(properties.prop("_StereochemDone"), None);
+        let (atoms, _, result) = run_kernel(&existing, None, implicit.clone(), 0, true);
+        assert_eq!(result, Ok(()));
+        assert_eq!(atoms[0].chiral_tag(), ChiralTag::TetrahedralCcw);
+        assert_eq!(atoms[0].prop("_NonExplicit3DChirality"), None);
+
+        let wedged = build_star(
+            AtomSpec::new(Element::C),
+            &[((
+                0,
+                true,
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
+            ))],
+            BondDirection::BeginWedge,
+        );
+        let (atoms, _, result) = run_kernel(&wedged, None, implicit.clone(), -1, true);
+        assert_eq!(result, Ok(()));
+        assert_eq!(atoms[0].chiral_tag(), ChiralTag::TetrahedralCcw);
+        assert_eq!(atoms[0].prop("_NonExplicit3DChirality"), None);
+
+        let square_planar = build_star(
+            AtomSpec::new(Element::P),
+            &[((
+                0,
+                true,
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [-1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, -1.0, 0.0],
+                ],
+            ))],
+            BondDirection::None,
+        );
+        let square_planar_h = Some(vec![0; 5]);
+        set_nontetrahedral_environment(Some(OsStr::new("0")));
+        let (atoms, _, result) =
+            run_kernel(&square_planar, None, square_planar_h.clone(), -1, true);
+        assert_eq!(result, Ok(()));
+        assert_eq!(atoms[0].chiral_tag(), ChiralTag::Unspecified);
+        assert_eq!(atoms[0].chiral_permutation(), None);
+        set_nontetrahedral_environment(Some(OsStr::new("1")));
+        let (atoms, _, result) = run_kernel(&square_planar, None, square_planar_h, -1, true);
+        assert_eq!(result, Ok(()));
+        assert_eq!(atoms[0].chiral_tag(), ChiralTag::SquarePlanar);
+        assert_eq!(atoms[0].chiral_permutation(), Some(2));
+        assert_eq!(atoms[0].prop("_NonExplicit3DChirality"), Some("1"));
+
+        for (element, coordinates, implicit_hydrogens) in [
+            (
+                Element::C,
+                vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+                vec![0; 3],
+            ),
+            (
+                Element::C,
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
+                vec![0; 4],
+            ),
+            (
+                Element::P,
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [-1.0, 0.0, 0.0],
+                    [0.0, -1.0, 0.0],
+                    [0.0, 0.0, -1.0],
+                ],
+                vec![1, 0, 0, 0, 0, 0, 0],
+            ),
+            (
+                Element::P,
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [-1.0, 0.0, 0.0],
+                    [0.0, -1.0, 0.0],
+                ],
+                vec![0; 6],
+            ),
+        ] {
+            let molecule = build_star(
+                AtomSpec::new(element),
+                &[(0, true, coordinates)],
+                BondDirection::None,
+            );
+            set_nontetrahedral_environment(Some(OsStr::new("0")));
+            let (atoms, _, result) =
+                run_kernel(&molecule, None, Some(implicit_hydrogens), -1, true);
+            assert_eq!(result, Ok(()));
+            assert_eq!(atoms[0].chiral_tag(), ChiralTag::Unspecified);
+        }
+
+        let (_, _, result) = run_kernel(&two_conformers, None, None, -1, true);
+        assert_eq!(result, Err(StereoError::MissingImplicitHydrogenState));
+        let (_, _, result) = run_kernel(&two_conformers, None, Some(Vec::new()), -1, true);
+        assert_eq!(
+            result,
+            Err(StereoError::ImplicitHydrogenCountMismatch {
+                expected: 4,
+                actual: 0,
+            })
+        );
+        let malformed_conformer = vec![Conformer3D::new(7, vec![[0.0, 0.0, 0.0]; 3], true)];
+        let (_, properties, result) = run_kernel(
+            &two_conformers,
+            Some(malformed_conformer),
+            implicit.clone(),
+            -1,
+            true,
+        );
+        assert_eq!(
+            result,
+            Err(StereoError::ConformerAtomCountMismatch {
+                conformer_id: 7,
+                expected: 4,
+                actual: 3,
+            })
+        );
+        assert_eq!(properties.prop("_StereochemDone"), None);
+
+        set_nontetrahedral_environment(Some(OsStr::new("1")));
+        let zero_vector = build_star(
+            AtomSpec::new(Element::P),
+            &[(
+                0,
+                true,
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                ],
+            )],
+            BondDirection::None,
+        );
+        let (_, _, result) = run_kernel(&zero_vector, None, Some(vec![0; 4]), -1, true);
+        assert_eq!(result, Err(StereoError::ZeroLengthVector));
+
+        let mut invalid_property_builder = MoleculeBuilder::new();
+        let center = invalid_property_builder.add_atom(AtomSpec::new(Element::C));
+        let mut invalid_property_coordinates = vec![[0.0, 0.0, 0.0]];
+        for coordinate in [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]] {
+            let neighbor = invalid_property_builder.add_atom(AtomSpec::new(Element::C));
+            let mut bond = BondSpec::new(center, neighbor, BondOrder::Single);
+            if coordinate == [1.0, 0.0, 0.0] {
+                bond = bond.with_prop("_UnknownStereo", "not-an-int");
+            }
+            invalid_property_builder
+                .add_bond(bond)
+                .expect("valid invalid-property topology");
+            invalid_property_coordinates.push(coordinate);
+        }
+        invalid_property_builder
+            .add_3d_conformer(invalid_property_coordinates)
+            .expect("aligned invalid-property conformer");
+        let invalid_property = invalid_property_builder
+            .build()
+            .expect("valid invalid-property molecule");
+        let (_, _, result) = run_kernel(&invalid_property, None, Some(vec![1, 0, 0, 0]), -1, true);
+        assert!(matches!(result, Err(StereoError::InvariantViolation(_))));
+
+        let mut ordered_builder = MoleculeBuilder::new();
+        let carbon =
+            ordered_builder.add_atom(AtomSpec::new(Element::C).with_prop("first_atom_keep", "yes"));
+        let mut ordered_coordinates = vec![[0.0, 0.0, 0.0]];
+        for coordinate in [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]] {
+            let neighbor = ordered_builder.add_atom(AtomSpec::new(Element::C));
+            ordered_builder
+                .add_bond(BondSpec::new(carbon, neighbor, BondOrder::Single))
+                .expect("valid first-center bond");
+            ordered_coordinates.push(coordinate);
+        }
+        let phosphorus = ordered_builder.add_atom(AtomSpec::new(Element::P));
+        ordered_coordinates.push([10.0, 0.0, 0.0]);
+        for coordinate in [[10.0, 0.0, 0.0], [11.0, 0.0, 0.0], [10.0, 1.0, 0.0]] {
+            let neighbor = ordered_builder.add_atom(AtomSpec::new(Element::C));
+            ordered_builder
+                .add_bond(BondSpec::new(phosphorus, neighbor, BondOrder::Single))
+                .expect("valid second-center bond");
+            ordered_coordinates.push(coordinate);
+        }
+        ordered_builder
+            .add_3d_conformer(ordered_coordinates)
+            .expect("aligned two-center conformer");
+        let ordered = ordered_builder
+            .with_property("molecule_keep", "yes")
+            .build()
+            .expect("valid two-center molecule");
+        let mut ordered_hydrogens = vec![0; ordered.num_atoms()];
+        ordered_hydrogens[carbon.index()] = 1;
+        let (atoms, properties, result) =
+            run_kernel(&ordered, None, Some(ordered_hydrogens), -1, true);
+        assert_eq!(result, Err(StereoError::ZeroLengthVector));
+        assert_eq!(
+            atoms[carbon.index()].chiral_tag(),
+            ChiralTag::TetrahedralCcw
+        );
+        assert_eq!(atoms[carbon.index()].prop("first_atom_keep"), Some("yes"));
+        assert_eq!(
+            atoms[phosphorus.index()].chiral_tag(),
+            ChiralTag::Unspecified
+        );
+        assert_eq!(properties.prop("molecule_keep"), Some("yes"));
+    }
 
     #[test]
     fn tetrahedral_stereo_ligand_order_encodes_smiles_handedness() {

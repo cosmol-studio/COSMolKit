@@ -5885,6 +5885,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__inchitoinchikey__exact() {
         use serde_json::{Value, json};
         use std::process::Command;
@@ -6137,6 +6138,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__moltoinchikey__exact() {
         use serde_json::{Value, json};
         use std::cell::RefCell;
@@ -6637,6 +6639,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_inchi_core_scalar_exact() {
         use std::sync::{Arc, Barrier};
 
@@ -8019,6 +8022,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__moltoinchi__exact() {
         use serde_json::{Value, json};
         use std::process::Command;
@@ -8617,6 +8621,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__rcleanup__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -8903,6 +8908,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__fixoptionsymbol__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -9452,6 +9458,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__inchitomol__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -13643,6 +13650,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence5ncleanup3__exact() {
         assert_valence_cleanup_oracle(
             "--valence5n-cleanup3-records",
@@ -13660,6 +13668,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence5ncleanup4__exact() {
         assert_valence_cleanup_oracle(
             "--valence5n-cleanup4-records",
@@ -13677,11 +13686,13 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence5ncleanup5__exact() {
         assert_valence_cleanup5_oracle();
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence5ncleanup6__exact() {
         let mut case_ids = vec![
             "wrong-element-short-circuit".to_owned(),
@@ -13717,6 +13728,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence5ncleanup7__exact() {
         let mut case_ids = vec![
             "no-target-before-preconditions".to_owned(),
@@ -13749,6 +13761,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence5ncleanup8__exact() {
         let mut case_ids = vec![
             "wrong-element".to_owned(),
@@ -13775,6 +13788,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence5ncleanup9__exact() {
         let mut case_ids = vec![
             "wrong-element".to_owned(),
@@ -13801,6 +13815,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence5ncleanupa__exact() {
         assert_valence_cleanup_oracle(
             "--valence5n-cleanupa-records",
@@ -13825,6 +13840,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence5ncleanupb__exact() {
         assert_valence_cleanup_oracle(
             "--valence5n-cleanupb-records",
@@ -13844,6 +13860,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence7scleanup1__exact() {
         assert_valence_cleanup_oracle(
             "--valence7s-cleanup1-records",
@@ -13868,6 +13885,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence7scleanup2__exact() {
         assert_valence_cleanup_oracle(
             "--valence7s-cleanup2-records",
@@ -13890,6 +13908,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence7scleanup3__exact() {
         assert_valence_cleanup_oracle(
             "--valence7s-cleanup3-records",
@@ -13912,6 +13931,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence8scleanup1__exact() {
         assert_valence_cleanup_oracle(
             "--valence8s-cleanup1-records",
@@ -13936,6 +13956,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence8clcleanup1__exact() {
         assert_valence_cleanup_oracle(
             "--valence8cl-cleanup1-records",
@@ -13955,6 +13976,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence5clcleanup1__exact() {
         assert_valence_cleanup_oracle(
             "--valence5cl-cleanup1-records",
@@ -13975,6 +13997,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence3clcleanup1__exact() {
         assert_valence_cleanup_oracle(
             "--valence3cl-cleanup1-records",
@@ -13994,11 +14017,13 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__cleanup__exact() {
         assert_clean_up_oracle();
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence5ncleanup1__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -14145,6 +14170,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence5ncleanup2__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -14292,6 +14318,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__getnumdoublebondednegativelychargedneighboringsi__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -14489,6 +14516,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence4ncleanup1__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -14755,6 +14783,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__valence4ncleanup2__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -14990,6 +15019,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__assignbonddirs__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -15186,6 +15216,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored RDKit source; run explicitly with --ignored"]
     fn rdkit_cpp_oracle__findalternatingbonds__exact() {
         use std::path::Path;
         use std::process::Command;

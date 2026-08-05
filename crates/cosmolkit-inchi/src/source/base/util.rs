@@ -4861,6 +4861,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__util__is_in_the_list__line_1059() {
         use std::path::Path;
         use std::process::Command;
@@ -5012,6 +5013,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__util__el_number_in_internal_ref_table__line_347() {
         use std::collections::BTreeMap;
         use std::path::Path;
@@ -5124,6 +5126,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__util__get_periodic_table_number__line_364() {
         use std::collections::BTreeSet;
         use std::path::Path;
@@ -5266,6 +5269,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__util__get_el_valence__line_439() {
         use std::path::Path;
         use std::process::Command;
@@ -5446,6 +5450,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__util__detect_unusual_el_valence__line_620() {
         use std::path::Path;
         use std::process::Command;
@@ -5675,6 +5680,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__util__extract_charges_and_radicals__line_700() {
         use std::path::Path;
         use std::process::Command;
@@ -6535,6 +6541,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__util__get_atomic_mass_from_elnum__line_1007() {
         use std::path::Path;
         use std::process::Command;
@@ -6576,6 +6583,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__util__extract_h_atoms__line_774() {
         use std::path::Path;
         use std::process::Command;
@@ -6718,6 +6726,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__util__is_el_a_metal__line_688() {
         use std::path::Path;
         use std::process::Command;
@@ -6858,6 +6867,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__util__nbondsvaltometal__line_1100() {
         use std::path::Path;
         use std::process::Command;

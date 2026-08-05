@@ -20662,6 +20662,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__comptgroupnumber__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -20742,6 +20743,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__compcgroupnumber__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -20822,6 +20824,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__cmp_rad_endpoints__exact() {
         use std::path::Path;
         use std::process::Command;

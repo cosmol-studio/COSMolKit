@@ -208,20 +208,11 @@ pub const DRAWING_FEATURE: FeatureSpec = FeatureSpec {
 pub const STEREO_FEATURE: FeatureSpec = FeatureSpec {
     name: "stereo.perception",
     category: FeatureCategory::Stereo,
-    status: SupportStatus::Experimental,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
     parity_sensitive: true,
-    docs: "Tetrahedral stereo detection from typed state (ChiralTag + chiral_permutation). \
-           CIP ranking system (assignAtomCIPRanks with iterative neighbor-rank refinement) ported. \
-           R/S label assignment (assignAtomChiralCodes) from ChiralTag + permutation. \
-           Double-bond E/Z potential detection. Pseudo-3D wedge-based chiral tag detection \
-           (atomChiralTypeFromBondDirPseudo3D). Full non-tetrahedral stereo infrastructure \
-           (SquarePlanar, TrigonalBipyramidal, Octahedral swap tables and across-atom lookup). \
-           Ring stereochemistry special-case detection. Full CIP-based bond stereo codes \
-           and assignLegacyCIPLabels dispatcher ported. Full \
-           assignAtomChiralTagsFromStructure behavior that derives and writes ChiralTag \
-           values from conformer geometry remains unsupported; conformer storage exists, \
-           but the source-defined chiral-volume, degeneracy, overwrite, and writeback \
-           branches are not yet reproduced end to end.",
+    docs: "Inspect modeled atom and bond stereo state and assign atom ChiralTag values from a selected 3D conformer through the registered with_chiral_tags_from_structure operation. This stable 3D assignment surface has exact full-state parity with pinned RDKit 2026.03.1 assignChiralTypesFrom3D across all 77 fixed oracle records, covering default or explicit conformer selection, replacement control, tetrahedral C/S/Se centers, environment-enabled square-planar/trigonal-bipyramidal/octahedral centers, property updates, no-op paths, and source-defined errors. It preserves topology and coordinates and commits no partial state on error. The broader assignStereochemistryFrom3D workflow, 3D double-bond direction/E-Z assignment, CIP orchestration, and distinct-substituent validation are separate capabilities and are not claimed by this feature.",
 };
 
 pub const VALENCE_FEATURE: FeatureSpec = FeatureSpec {

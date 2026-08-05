@@ -58,14 +58,16 @@ exist.
 | BioStructure and structural readers | Extensive source-focused records and public integration fixtures | Stable for documented PDB/mmCIF/mmJSON structural scope |
 | InChI scalar APIs | Official C and pinned RDKit exact field/branch parity | Already stable with parity |
 | Molecular descriptors | Exact value/bit parity for all exposed options plus matching parse-failure outcomes | Stable with pinned RDKit parity for the exposed descriptor surface |
+| Atom chiral tags from 3D structure | Direct public-operation full-state parity over 77 fixed oracle records plus focused source-branch and parser-path tests | Stable with pinned RDKit parity for the documented `assignChiralTypesFrom3D` scope |
 
 ## Rows Requiring More Work
 
-### Stereo
+### Broader 3D Stereo Orchestration
 
-Split stable typed stereo inspection and covered perception from broader
-coordinate-derived assignment branches. Do not use one broad status to hide an
-unsupported sub-capability.
+The standalone atom-tag assignment capability is resolved above. Keep
+`assignStereochemistryFrom3D`, 3D double-bond direction/E-Z assignment, CIP
+orchestration, and distinct-substituent validation as separately scoped work;
+none is implied by the completed `assignChiralTypesFrom3D` operation.
 
 ### Substructure and SMARTS
 
@@ -103,8 +105,10 @@ ring, aromaticity, 2D-coordinate, and 3D-conformer surfaces.
 `with_2d_coordinates` was incorrectly attached to the generic coordinate-edit
 feature. It now references the dedicated `coordinates.2d` feature descriptor.
 
-Stereo, substructure/SMARTS, and bio selection remain experimental for the
-specific unresolved boundaries listed above. Descriptor parity now covers
+Broader 3D stereo orchestration, substructure/SMARTS, and bio selection remain
+separate unresolved boundaries. The standalone atom-tag-from-structure
+operation now has a parity-scoped supported descriptor backed by 77 exact
+full-state RDKit oracle records. Descriptor parity now covers
 `only_heavy=true`, all four exposed Crippen option combinations, all four
 exposed TPSA option combinations, and the COSMolKit parse-failure outcome for
 all 12 RDKit-rejected rows in the 150-row profile. Python top-level function

@@ -110,7 +110,7 @@ impl BlockAccess {
 
     #[must_use]
     pub const fn can_read(self, block: BlockSet) -> bool {
-        self.read.contains(block) || self.write.contains(block)
+        self.read.union(self.write).contains(block)
     }
 
     #[must_use]
@@ -317,6 +317,12 @@ pub enum OperationError {
         operation: &'static MoleculeOpSpec,
         #[source]
         source: crate::SanitizeError,
+    },
+    #[error("{operation}: stereo error: {source}")]
+    Stereo {
+        operation: &'static MoleculeOpSpec,
+        #[source]
+        source: crate::StereoError,
     },
     #[error("{operation}: kekulize error: {source}")]
     Kekulize {
@@ -665,6 +671,34 @@ molecule_ops! {
         io_roundtrip: true,
         invariant_profile: "weak_topology_state",
         parity_profile: "assign_radicals_rdkit",
+    }
+
+    op with_chiral_tags_from_structure(conformer_id: i32, replace_existing_tags: bool) {
+        method: with_chiral_tags_from_structure,
+        docs: "Return a new molecule with atom chiral tags assigned from a 3D conformer. A negative conformer id selects the first conformer. Existing tags are replaced only when `replace_existing_tags` is true. Atom and bond ordering and all conformer coordinates are preserved. This stable operation has exact full-state parity with pinned RDKit 2026.03.1 `assignChiralTypesFrom3D` across all 77 fixed oracle records for tetrahedral C/S/Se and environment-enabled square-planar, trigonal-bipyramidal, and octahedral centers, including properties, no-ops, and defined errors. It does not perform `assignStereochemistryFrom3D`, 3D double-bond direction/E-Z assignment, CIP orchestration, or distinct-substituent validation.",
+        impl_fn: with_chiral_tags_from_structure_impl,
+        inplace: true,
+        inplace_method: assign_chiral_tags_from_structure_,
+        inplace_docs: "Assign atom chiral tags from a selected 3D conformer in place. This stable mutating form of `Molecule::with_chiral_tags_from_structure` has the same pinned-RDKit parity scope; failures are transactional and leave the molecule unchanged.",
+        domain: topology,
+        kind: weak,
+        topology_edit: local,
+        access: { read: [coordinates], write: [topology, properties, derived_cache] },
+        may_mutate: [topology, properties, derived_cache],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [],
+            invalidate: [stereo, drawing, fingerprint],
+        },
+        semantic_preconditions: [trusted_bond_topology],
+        requires_mapping: none,
+        allows_noop: true,
+        feature: STEREO_FEATURE,
+        parity: required_now,
+        io_roundtrip: true,
+        invariant_profile: "weak_topology_state",
+        parity_profile: "assign_atom_chiral_tags_from_structure_rdkit",
     }
 
     op with_2d_coordinates(params: crate::With2DCoordinatesParams) {
@@ -1048,6 +1082,7 @@ mod tests {
     #[test]
     fn operation_body_parts_usage_stays_within_capability_methods() {
         const ALLOWED: &[&str] = &[
+            "begin_operation_read",
             "begin_topology_read",
             "begin_topology_mut",
             "commit_topology",
@@ -3560,23 +3595,16 @@ mod tests {
 
     #[cfg(feature = "op-contracts")]
     #[test]
-    fn finish_rejects_missing_needs_update_handling() {
+    fn finish_accepts_noop_without_derived_state_updates() {
         let molecule = crate::Molecule::new();
         let parts = OpParts::new(&molecule, &TEST_NEEDS_VALENCE_UPDATE_SPEC).unwrap();
 
-        let err = parts
+        let result = parts
             .finish(OpOutcome::NoOp {
-                reason: "intentionally missed needs_update",
+                reason: "no state changed",
             })
-            .expect_err("needs_update must be cleared or updated before finish");
-
-        assert!(matches!(
-            err,
-            OperationError::InvalidInput {
-                message: "operation body did not clear or update every required cache state",
-                ..
-            }
-        ));
+            .expect("a no-op has no derived-state effects to fulfill");
+        assert_eq!(result, molecule);
     }
 
     #[cfg(feature = "op-contracts")]

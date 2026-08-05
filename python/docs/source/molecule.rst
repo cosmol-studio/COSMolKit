@@ -27,6 +27,7 @@ Common transformations include:
 - ``without_hydrogens()``
 - ``with_kekulized_bonds()``
 - ``with_2d_coordinates()``
+- ``with_chiral_tags_from_structure()``
 
 Read Finalization
 -----------------
@@ -80,6 +81,7 @@ Common in-place operations include:
 - ``kekulize_()``
 - ``sanitize_()``
 - ``compute_2d_coordinates_()``
+- ``assign_chiral_tags_from_structure_()``
 
 If an in-place method returns an error, the molecule is not guaranteed to equal
 its pre-call value. Use the value-style method when failure-preserving behavior
@@ -211,6 +213,46 @@ canonicalized to one numeric representative. The precise contract is in
 ``None`` in the ligand list represents an implicit hydrogen ligand. It does
 not mean the ligand slot is empty. If hydrogens are materialized with
 ``with_hydrogens()``, that hydrogen ligand is returned as an atom index.
+
+Atom Chiral Tags From 3D Coordinates
+------------------------------------
+
+``with_chiral_tags_from_structure()`` assigns atom chiral tags from one stored
+3D conformer and returns a new molecule. ``conf_id=-1`` selects the first
+conformer; pass a nonnegative conformer id to select a specific conformer.
+Existing tags are replaced by default and can be preserved with
+``replace_existing_tags=False``. Coordinates, atom and bond ordering, and
+unrelated properties are preserved.
+
+.. code-block:: python
+
+   import numpy as np
+   from cosmolkit import Molecule
+
+   mol = Molecule.from_smiles("C(F)(Cl)Br").with_only_3d_conformer(
+       np.array(
+           [
+               [0.0, 0.0, 0.0],
+               [1.0, 0.0, 0.0],
+               [0.0, 1.0, 0.0],
+               [0.0, 0.0, 1.0],
+           ]
+       )
+   )
+   assigned = mol.with_chiral_tags_from_structure()
+
+   print(assigned.atoms()[0].chiral_tag())
+
+The in-place form is ``assign_chiral_tags_from_structure_()``. Missing
+conformers and invalid source state raise structured Python exceptions without
+committing partial molecule changes. A selected non-3D conformer is a
+source-defined no-op. This stable ``supported_with_rdkit_parity`` capability
+matches all 77 fixed full-state oracle records exactly against RDKit 2026.03.1
+``assignChiralTypesFrom3D``. Its boundary includes tetrahedral C/S/Se centers,
+environment-enabled square-planar, trigonal-bipyramidal, and octahedral
+centers, property updates, no-op paths, and defined errors. It does not include the
+broader ``assignStereochemistryFrom3D`` workflow, 3D double-bond direction or
+E/Z assignment, CIP orchestration, or distinct-substituent validation.
 
 Conformer Generation And Force-Field Optimization
 -------------------------------------------------

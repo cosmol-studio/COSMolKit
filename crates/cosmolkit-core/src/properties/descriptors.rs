@@ -1945,6 +1945,63 @@ fn rdkit_qed_ads(x: f64, p: QedAdsParameter) -> f64 {
     dx / p.dmax
 }
 
+fn rdkit_qed_python_sum(values: impl IntoIterator<Item = f64>) -> f64 {
+    // CPython✔️✔️: if (PyFloat_CheckExact(result)) {
+    // CPython✔️✔️:     double f_result = PyFloat_AS_DOUBLE(result);
+    // CPython✔️✔️:     double c = 0.0;
+    // CPython✔️✔️:     Py_SETREF(result, NULL);
+    // CPython✔️✔️:     while(result == NULL) {
+    // CPython✔️✔️:         item = PyIter_Next(iter);
+    // CPython✔️✔️:         if (item == NULL) {
+    // CPython✔️✔️:             Py_DECREF(iter);
+    // CPython✔️✔️:             if (PyErr_Occurred())
+    // CPython✔️✔️:                 return NULL;
+    // CPython✔️✔️:             /* Avoid losing the sign on a negative result,
+    // CPython✔️✔️:                and don't let adding the compensation convert
+    // CPython✔️✔️:                an infinite or overflowed sum to a NaN. */
+    // CPython✔️✔️:             if (c && Py_IS_FINITE(c)) {
+    // CPython✔️✔️:                 f_result += c;
+    // CPython✔️✔️:             }
+    // CPython✔️✔️:             return PyFloat_FromDouble(f_result);
+    // CPython✔️✔️:         }
+    // CPython✔️✔️:         if (PyFloat_CheckExact(item)) {
+    // CPython✔️✔️:             // Improved Kahan–Babuška algorithm by Arnold Neumaier
+    // CPython✔️✔️:             double x = PyFloat_AS_DOUBLE(item);
+    // CPython✔️✔️:             double t = f_result + x;
+    // CPython✔️✔️:             if (fabs(f_result) >= fabs(x)) {
+    // CPython✔️✔️:                 c += (f_result - t) + x;
+    // CPython✔️✔️:             } else {
+    // CPython✔️✔️:                 c += (x - t) + f_result;
+    // CPython✔️✔️:             }
+    // CPython✔️✔️:             f_result = t;
+    // CPython✔️✔️:             _Py_DECREF_SPECIALIZED(item, _PyFloat_ExactDealloc);
+    // CPython✔️✔️:             continue;
+    // CPython✔️✔️:         }
+    //
+    // RDKit QED calls sum() with its default integer-zero start and an all-f64
+    // generator. The first float is therefore produced by 0 + item before the
+    // CPython float fast path processes the remaining values.
+    let mut values = values.into_iter();
+    let Some(first) = values.next() else {
+        return 0.0;
+    };
+    let mut result = 0.0 + first;
+    let mut compensation = 0.0;
+    for value in values {
+        let next = result + value;
+        if result.abs() >= value.abs() {
+            compensation += (result - next) + value;
+        } else {
+            compensation += (value - next) + result;
+        }
+        result = next;
+    }
+    if compensation != 0.0 && compensation.is_finite() {
+        result += compensation;
+    }
+    result
+}
+
 fn rdkit_qed_properties(mol: &Molecule) -> DescriptorResult<QedProperties> {
     // RDKit✔️✔️: def properties(mol):
     // RDKit✔️✔️:   """
@@ -2255,14 +2312,15 @@ pub fn calc_qed(mol: &Molecule) -> DescriptorResult<f64> {
         .collect::<Vec<_>>();
     // RDKit✔️✔️:   t = sum(wi * math.log(di) for wi, di in zip(w, d))
     let weights = RDKIT_QED_WEIGHT_MEAN.values_in_rdkit_order();
-    let t = weights
-        .iter()
-        .copied()
-        .zip(d.iter().copied())
-        .map(|(wi, di)| wi * di.ln())
-        .sum::<f64>();
+    let t = rdkit_qed_python_sum(
+        weights
+            .iter()
+            .copied()
+            .zip(d.iter().copied())
+            .map(|(wi, di)| wi * di.ln()),
+    );
     // RDKit✔️✔️:   return math.exp(t / sum(w))
-    Ok((t / weights.iter().copied().sum::<f64>()).exp())
+    Ok((t / rdkit_qed_python_sum(weights)).exp())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -2421,6 +2479,12 @@ mod qed_tests {
     use serde::Deserialize;
     use std::fs::File;
     use std::io::{BufRead, BufReader};
+
+    #[test]
+    fn qed_sum_matches_cpython_313_compensated_float_sum() {
+        let actual = rdkit_qed_python_sum([1.0e16, 1.0, -1.0e16]);
+        assert_eq!(actual.to_bits(), 1.0_f64.to_bits());
+    }
 
     #[derive(Debug, Deserialize)]
     struct DeleteSubstructsRecord {

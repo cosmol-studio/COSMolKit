@@ -23,9 +23,9 @@
 
 COSMolKit is a Python molecular toolkit backed by a Rust core. It provides
 value-style molecule operations, SMILES/SDF/MOL2/XYZ workflows, 2D depiction,
-native 3D conformer generation, UFF/MMFF optimization, fingerprints, batch
-processing, Python pickle round-tripping, and protein-focused structural
-biology APIs.
+native 3D conformer generation, 3D atom-chiral-tag assignment, UFF/MMFF
+optimization, fingerprints, batch processing, Python pickle round-tripping,
+and protein-focused structural biology APIs.
 
 The library is built around explicit behavior: supported operations return
 structured results, unsupported behavior fails visibly, and public molecule
@@ -54,6 +54,13 @@ and RDKit 2026.03.1 output exactly for all currently validated source-defined
 cases. Official-C undefined behavior is represented by a structured Rust error
 instead of an implementation-dependent result.
 
+The public `with_chiral_tags_from_structure()` operation is stable with pinned
+RDKit 2026.03.1 parity for its documented `assignChiralTypesFrom3D` scope. All
+77 fixed full-state oracle records match exactly, including conformer
+selection, replacement control, tetrahedral and enabled non-tetrahedral atom
+tags, properties, no-op paths, and defined errors. The value-style and in-place
+forms preserve caller state on failure.
+
 ## Installation
 
 ```bash
@@ -75,7 +82,8 @@ pip install cosmolkit
 - **Array-friendly data access:** coordinates, bounds matrices, fingerprints,
   and graph features are exposed in forms that fit Python numerical workflows.
 - **Source-backed 3D workflows:** conformer generation and UFF/MMFF
-  optimization are available through the public Python API.
+  optimization are available through the public Python API, and atom chiral
+  tags can be assigned from a selected 3D conformer with pinned-RDKit parity.
 
 ### Value-Style Transformations
 
@@ -222,6 +230,7 @@ inputs until a trusted graph has been constructed.
 - MOL2 reading with RDKit-style `Mol2ParserParams`
 - XYZ block reading
 - Four scalar InChI APIs with exact source-defined official-C/RDKit parity and structured errors
+- Stable 3D atom-chiral-tag assignment with exact pinned-RDKit full-state parity
 - Hydrogen transforms and Kekulization
 - Sanitization and chemistry problem detection
 - 2D coordinate generation and SVG/PNG depiction
@@ -296,6 +305,9 @@ Goal: keep the supported molecular core correct before expanding breadth.
 - ✅ Hydrogen addition and removal
 - ✅ Sanitization for supported chemistry workflows
 - ✅ Stereochemistry inspection for supported atom and bond states
+- ✅ Atom chiral-tag assignment from selected 3D conformers, with exact
+  pinned-RDKit `assignChiralTypesFrom3D` parity across 77 fixed full-state
+  oracle records
 - ✅ Distance-geometry bounds matrices
 - ✅ Native 3D conformer generation and UFF/MMFF post-optimization for
   supported molecules

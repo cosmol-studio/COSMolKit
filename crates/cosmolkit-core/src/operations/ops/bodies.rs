@@ -190,6 +190,80 @@ pub(super) fn assigned_radicals_impl() -> Result<OpOutcome, OperationError> {
     Ok(OpOutcome::Changed)
 }
 
+#[mol_op_body(with_chiral_tags_from_structure, parts)]
+pub(super) fn with_chiral_tags_from_structure_impl(
+    conformer_id: i32,
+    replace_existing_tags: bool,
+) -> Result<OpOutcome, OperationError> {
+    let (original_topology, original_properties, selected_conformer, implicit_hydrogens) = {
+        let read = parts.begin_operation_read()?;
+        let Some(selected_conformer) = (if read.conformers_3d().is_empty() {
+            None
+        } else if conformer_id < 0 {
+            read.conformers_3d().first()
+        } else {
+            read.conformers_3d()
+                .iter()
+                .find(|conformer| conformer.id() == conformer_id as usize)
+        }) else {
+            if read.conformers_3d().is_empty() {
+                return Ok(OpOutcome::NoOp {
+                    reason: "molecule has no conformers",
+                });
+            }
+            return Err(OperationError::Stereo {
+                operation: &WITH_CHIRAL_TAGS_FROM_STRUCTURE_SPEC,
+                source: crate::StereoError::ConformerNotFound { conformer_id },
+            });
+        };
+        if !selected_conformer.is_3d() {
+            return Ok(OpOutcome::NoOp {
+                reason: "selected conformer is not 3D",
+            });
+        }
+        (
+            read.topology().clone(),
+            read.properties().clone(),
+            selected_conformer.clone(),
+            read.derived_cache()
+                .valence
+                .as_ref()
+                .map(|valence| valence.implicit_hydrogens.clone()),
+        )
+    };
+
+    let mut topology = original_topology.clone();
+    let mut properties = original_properties.clone();
+    crate::chemistry::stereo::assign_chiral_types_from_3d_kernel(
+        &mut topology.atoms,
+        &topology.bonds,
+        &topology.adjacency,
+        std::slice::from_ref(&selected_conformer),
+        &mut properties,
+        implicit_hydrogens.as_deref(),
+        conformer_id,
+        replace_existing_tags,
+    )
+    .map_err(|source| OperationError::Stereo {
+        operation: &WITH_CHIRAL_TAGS_FROM_STRUCTURE_SPEC,
+        source,
+    })?;
+
+    if topology == original_topology && properties == original_properties {
+        return Ok(OpOutcome::NoOp {
+            reason: "3D assignment produced no observable state change",
+        });
+    }
+
+    let _ = parts.begin_topology_mut()?;
+    let _ = parts.begin_properties_mut()?;
+    parts.commit_topology(topology)?;
+    parts.commit_properties(properties)?;
+    parts.record_topology_edit(TopologyEditKind::Local)?;
+    parts.clear_cache(DerivedState::STEREO | DerivedState::DRAWING | DerivedState::FINGERPRINT);
+    Ok(OpOutcome::Changed)
+}
+
 #[mol_op_body(with_2d_coordinates, parts)]
 pub(super) fn with_2d_coordinates_impl(
     params: crate::With2DCoordinatesParams,

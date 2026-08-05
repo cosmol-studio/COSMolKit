@@ -3,7 +3,8 @@ COSMolKit Python
 
 COSMolKit is a Python package for molecule graph workflows, SMILES/SDF/MOL2/XYZ
 IO, coordinate access, native 3D conformer generation, UFF/MMFF optimization,
-Morgan fingerprints, molecular descriptors, molecule depiction, Python pickle
+stable atom chiral-tag assignment from selected 3D conformers, Morgan
+fingerprints, molecular descriptors, molecule depiction, Python pickle
 round-tripping, SMARTS parse metadata, protein structure access, and
 high-throughput batch processing.
 

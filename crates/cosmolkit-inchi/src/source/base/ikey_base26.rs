@@ -418,6 +418,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__base26_triplet_1__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -510,6 +511,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__base26_triplet_2__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -604,6 +606,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__base26_triplet_3__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -699,6 +702,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__base26_triplet_4__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -800,6 +804,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__base26_dublet_for_bits_28_to_36__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -909,6 +914,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__base26_dublet_for_bits_56_to_64__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -1004,6 +1010,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__get_xtra_hash_major_hex__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -1099,6 +1106,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__get_xtra_hash_minor_hex__exact() {
         use std::path::Path;
         use std::process::Command;

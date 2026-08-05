@@ -10679,6 +10679,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__cmp_iso_atw_diff_component_no__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -10778,6 +10779,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__cmp_components__exact() {
         use std::path::Path;
         use std::process::Command;

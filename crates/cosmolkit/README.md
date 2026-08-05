@@ -2,7 +2,8 @@
 
 `cosmolkit` is the Rust facade crate for COSMolKit. It re-exports the molecular
 model, chemistry operations, file I/O, fingerprints, molecular descriptors,
-drawing, batch helpers, and protein structure APIs from `cosmolkit-core`.
+drawing, 3D atom chiral-tag assignment, batch helpers, and protein structure
+APIs from `cosmolkit-core`.
 
 ## Documentation
 
@@ -59,6 +60,10 @@ operation-system working-copy clone when molecule blocks are uniquely owned. If
 an in-place operation returns an error, the receiver is not guaranteed to equal
 its pre-call value; use the non-mutating operation when failure-preserving value
 semantics are required.
+
+Stable molecule operations include assigning atom chiral tags from a selected
+3D conformer through `with_chiral_tags_from_structure()` and its explicit
+in-place counterpart `assign_chiral_tags_from_structure_()`.
 
 ## Protein Structures
 

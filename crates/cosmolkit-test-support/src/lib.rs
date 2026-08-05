@@ -123,7 +123,9 @@ pub fn rdkit_expected_domain(file_name: &str) -> &'static str {
         "svg_drawer.jsonl" | "prepared_draw_molecule.jsonl" => "depiction",
         "graph_features.jsonl" => "graph",
         "molecular_descriptors.jsonl" => "descriptors",
-        "tetrahedral_stereo_geometry.jsonl" => "stereo",
+        "tetrahedral_stereo_geometry.jsonl" | "assign_atom_chiral_tags_from_structure.jsonl" => {
+            "stereo"
+        }
         "dg_bounds_matrix.jsonl" => "distgeom",
         "mol2_read.jsonl" => "mol2",
         "xyz_read.jsonl" => "xyz",

@@ -120,6 +120,28 @@ def test_3d_coordinate_in_place_api_returns_conformer_ids_and_validates_input():
         mol.with_added_3d_conformer([[0.0, 0.0, 0.0], [1.0, float("inf"), 0.0], [2.0, 0.0, 0.0]])
 
 
+def test_coordinate_ingress_rejects_oversized_broadcast_views_before_copying():
+    mol = cosmolkit.Molecule.from_smiles("CCO")
+    oversized_3d = np.broadcast_to(
+        np.zeros((1, 3), dtype=np.int8), (1_000_000, 3)
+    )
+    oversized_2d = np.broadcast_to(
+        np.zeros((1, 2), dtype=np.int8), (1_000_000, 2)
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"^3D coordinates row count mismatch: expected 3, got 1000000$",
+    ):
+        mol.with_only_3d_conformer(oversized_3d)
+
+    with pytest.raises(
+        ValueError,
+        match=r"^2D coordinates row count mismatch: expected 3, got 1000000$",
+    ):
+        mol.with_2d_coordinates(oversized_2d)
+
+
 def test_3d_conformer_clear_and_single_conformer_assignment_use_value_semantics():
     mol = cosmolkit.Molecule.from_smiles("CCO")
     first = np.array([[0.0, 0.0, 0.0], [1.4, 0.0, 0.0], [2.0, 1.0, 0.0]])

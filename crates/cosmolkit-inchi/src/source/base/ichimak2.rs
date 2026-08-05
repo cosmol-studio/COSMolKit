@@ -5092,6 +5092,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__ichimak2__writecoord__line_890() {
         use std::path::Path;
         use std::process::Command;

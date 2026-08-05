@@ -1039,7 +1039,7 @@ fn three_neighbor_3d_carbon(formal_charge: i8) -> Molecule {
 fn assign_chiral_types_from_3d_uses_valence_implicit_h_for_three_coordinate_carbon() {
     let mut molecule = three_neighbor_3d_carbon(0);
 
-    assign_chiral_types_from_3d(&mut molecule, 0);
+    assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
     assert_ne!(molecule.atoms()[0].chiral_tag(), ChiralTag::Unspecified);
 }
@@ -1048,7 +1048,7 @@ fn assign_chiral_types_from_3d_uses_valence_implicit_h_for_three_coordinate_carb
 fn assign_chiral_types_from_3d_rejects_three_coordinate_cation_with_no_implicit_h() {
     let mut molecule = three_neighbor_3d_carbon(1);
 
-    assign_chiral_types_from_3d(&mut molecule, 0);
+    assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
     assert_eq!(molecule.atoms()[0].chiral_tag(), ChiralTag::Unspecified);
 }
@@ -1057,7 +1057,7 @@ fn assign_chiral_types_from_3d_rejects_three_coordinate_cation_with_no_implicit_
 fn assign_chiral_types_from_3d_clears_stereochem_done_like_rdkit() {
     let mut molecule = three_neighbor_3d_carbon(0).with_prop("_StereochemDone", "1");
 
-    assign_chiral_types_from_3d(&mut molecule, 0);
+    assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
     assert_eq!(molecule.prop("_StereochemDone"), None);
 }
@@ -1066,7 +1066,7 @@ fn assign_chiral_types_from_3d_clears_stereochem_done_like_rdkit() {
 fn assign_chiral_types_from_3d_marks_non_explicit_3d_chirality_like_rdkit() {
     let mut molecule = three_neighbor_3d_carbon(0);
 
-    assign_chiral_types_from_3d(&mut molecule, 0);
+    assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
     assert_ne!(molecule.atoms()[0].chiral_tag(), ChiralTag::Unspecified);
     assert_eq!(
@@ -1080,7 +1080,7 @@ fn assign_chiral_types_from_3d_does_not_mark_existing_explicit_atom_as_non_expli
     let mut molecule = three_neighbor_3d_carbon(0);
     molecule.topology_block_mut().atoms[0].set_chiral_tag(ChiralTag::TetrahedralCw);
 
-    assign_chiral_types_from_3d(&mut molecule, 0);
+    assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
     assert_ne!(molecule.atoms()[0].chiral_tag(), ChiralTag::Unspecified);
     assert_eq!(molecule.atoms()[0].prop("_NonExplicit3DChirality"), None);
@@ -1713,7 +1713,7 @@ fn assign_chiral_types_from_3d_assigns_square_planar_from_two_opposite_pairs_lik
         [0.0, -1.0, 0.0],
     ]);
 
-    assign_chiral_types_from_3d(&mut molecule, 0);
+    assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
     assert_eq!(molecule.atoms()[0].chiral_tag(), ChiralTag::SquarePlanar);
     assert_eq!(molecule.atoms()[0].chiral_permutation(), Some(2));
@@ -1732,7 +1732,7 @@ fn assign_chiral_types_from_3d_assigns_t_shaped_square_planar_like_rdkit() {
         [-1.0, 0.0, 0.0],
     ]);
 
-    assign_chiral_types_from_3d(&mut molecule, 0);
+    assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
     assert_eq!(molecule.atoms()[0].chiral_tag(), ChiralTag::SquarePlanar);
     assert_eq!(molecule.atoms()[0].chiral_permutation(), Some(3));
@@ -1749,7 +1749,7 @@ fn assign_chiral_types_from_3d_assigns_trigonal_bipyramidal_from_one_opposite_pa
         [-1.0, -1.0, 0.0],
     ]);
 
-    assign_chiral_types_from_3d(&mut molecule, 0);
+    assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
     assert_eq!(
         molecule.atoms()[0].chiral_tag(),
@@ -1772,7 +1772,7 @@ fn assign_chiral_types_from_3d_assigns_seesaw_trigonal_bipyramidal_like_rdkit() 
         [-0.5, 0.866_025_403_784_438_6, 0.0],
     ]);
 
-    assign_chiral_types_from_3d(&mut molecule, 0);
+    assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
     assert_eq!(
         molecule.atoms()[0].chiral_tag(),
@@ -1848,7 +1848,8 @@ fn assign_chiral_types_from_3d_covers_all_seesaw_octahedral_branches_like_rdkit(
 
     for (coords, expected_perm) in cases {
         let mut molecule = square_planar_3d_phosphorus(coords);
-        assign_chiral_types_from_3d(&mut molecule, 0);
+        assign_chiral_types_from_3d(&mut molecule, 0)
+            .expect("3D chirality assignment should succeed");
 
         assert_eq!(molecule.atoms()[0].chiral_tag(), ChiralTag::Octahedral);
         assert_eq!(
@@ -1870,7 +1871,7 @@ fn assign_chiral_types_from_3d_assigns_octahedral_from_three_opposite_pairs_like
         [0.0, 0.0, -1.0],
     ]);
 
-    assign_chiral_types_from_3d(&mut molecule, 0);
+    assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
     assert_eq!(molecule.atoms()[0].chiral_tag(), ChiralTag::Octahedral);
     assert_eq!(molecule.atoms()[0].chiral_permutation(), Some(27));
@@ -1887,7 +1888,7 @@ fn assign_chiral_types_from_3d_assigns_square_pyramidal_as_octahedral_like_rdkit
         [0.0, 0.0, 1.0],
     ]);
 
-    assign_chiral_types_from_3d(&mut molecule, 0);
+    assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
     assert_eq!(molecule.atoms()[0].chiral_tag(), ChiralTag::Octahedral);
     assert_eq!(molecule.atoms()[0].chiral_permutation(), Some(27));
@@ -1903,7 +1904,7 @@ fn assign_chiral_types_from_3d_assigns_seesaw_octahedral_like_rdkit() {
         [0.0, 1.0, 0.0],
     ]);
 
-    assign_chiral_types_from_3d(&mut molecule, 0);
+    assign_chiral_types_from_3d(&mut molecule, 0).expect("3D chirality assignment should succeed");
 
     assert_eq!(molecule.atoms()[0].chiral_tag(), ChiralTag::Octahedral);
     assert_eq!(molecule.atoms()[0].chiral_permutation(), Some(25));

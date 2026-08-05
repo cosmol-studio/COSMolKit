@@ -13,10 +13,10 @@ mod cx;
 mod stereo;
 
 pub(crate) use self::stereo::{
-    assign_chiral_types_from_3d, assign_chiral_types_from_3d_with_valence,
-    assign_chiral_types_from_bond_dirs, assign_double_bond_stereo_after_smiles_parse,
-    assign_stereochemistry_cleanup_subset, clear_all_bond_dir_flags,
-    set_double_bond_neighbor_directions, set_double_bond_neighbor_directions_from_stereo,
+    assign_chiral_types_from_3d, assign_chiral_types_from_bond_dirs,
+    assign_double_bond_stereo_after_smiles_parse, assign_stereochemistry_cleanup_subset,
+    clear_all_bond_dir_flags, set_double_bond_neighbor_directions,
+    set_double_bond_neighbor_directions_from_stereo,
 };
 use self::{cx::*, stereo::*};
 
@@ -3496,7 +3496,12 @@ pub(crate) fn mol_from_smiles(
     if first_2d_conf_id.is_none()
         && let Some(conf_id) = first_3d_conf_id
     {
-        let _ = assign_stereochemistry_from_3d(&mut mol, conf_id);
+        crate::chemistry::stereo::assign_chiral_types_from_3d_molecule(
+            &mut mol,
+            conf_id as i32,
+            true,
+        )
+        .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
     }
 
     // RDKit✔️✔️: Atropisomer detection

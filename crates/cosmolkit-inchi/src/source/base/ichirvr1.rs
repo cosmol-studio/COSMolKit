@@ -12820,6 +12820,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__cmp_charge_val__exact() {
         use std::path::Path;
         use std::process::Command;
@@ -12954,6 +12955,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__comp_cc_cand__exact() {
         use std::path::Path;
         use std::process::Command;

@@ -23,12 +23,10 @@ fn read_json(path: &Path) -> Value {
         .unwrap_or_else(|error| panic!("{} is not valid JSON: {error}", path.display()))
 }
 
-#[test]
-fn official_c_oracle_version_and_provenance() {
+fn validate_reference_metadata() -> Vec<u8> {
     let root = repository_root();
     let schema_path = root.join("testdata/inchi/reference/official_c_oracle.schema.json");
     let golden_path = root.join("testdata/inchi/reference/official_c_oracle_version.jsonl");
-    let runner_path = root.join("tools/oracles/official_inchi/run.sh");
 
     let schema = read_json(&schema_path);
     assert_eq!(
@@ -71,6 +69,21 @@ fn official_c_oracle_version_and_provenance() {
     assert_eq!(golden["operation"], "version");
     assert_eq!(golden["output"]["status"], 0);
     assert_eq!(golden["output"]["value"], API_VERSION);
+
+    golden_bytes
+}
+
+#[test]
+fn official_c_oracle_reference_metadata_is_pinned() {
+    let _ = validate_reference_metadata();
+}
+
+#[test]
+#[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
+fn official_c_oracle_version_and_provenance() {
+    let root = repository_root();
+    let runner_path = root.join("tools/oracles/official_inchi/run.sh");
+    let golden_bytes = validate_reference_metadata();
 
     let output = Command::new("sh")
         .arg(&runner_path)

@@ -105,6 +105,15 @@ GENERATOR_SPECS = [
         {"iterative"},
     ),
     spec(
+        "tetrahedral_stereo_geometry",
+        "assign_atom_chiral_tags_from_structure.jsonl",
+        "stereo",
+        {"iterative"},
+        extra_inputs=(
+            "testdata/stereo/fixtures/assign_atom_chiral_tags_from_structure_cases.json",
+        ),
+    ),
+    spec(
         "dg_bounds_golden",
         "dg_bounds_matrix.jsonl",
         "distgeom",

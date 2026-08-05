@@ -1,0 +1,461 @@
+{
+  "schema_version": 1,
+  "reference": {
+    "implementation": "RDKit",
+    "version": "2026.3.1",
+    "python_entry": "Chem.AssignAtomChiralTagsFromStructure",
+    "cpp_entry": "RDKit::MolOps::assignChiralTypesFrom3D",
+    "source": "third_party/rdkit/Code/GraphMol/Chirality.cpp:3377-3500"
+  },
+  "numeric_tokens": {
+    "negative_zero": "-0.0",
+    "min_subnormal": "smallest positive IEEE-754 binary64 subnormal",
+    "max_finite": "largest finite IEEE-754 binary64 value",
+    "nextafter_0.1_down": "next representable binary64 value below 0.1",
+    "nextafter_0.1_up": "next representable binary64 value above 0.1",
+    "nextafter_negative_0.1_down": "next representable binary64 value below -0.1",
+    "nextafter_negative_0.1_up": "next representable binary64 value above -0.1",
+    "nextafter_zero_tolerance_down": "next representable binary64 value below 1e-16",
+    "zero_tolerance": "the binary64 value produced from 1e-16",
+    "nextafter_zero_tolerance_up": "next representable binary64 value above 1e-16",
+    "cos_100_degrees": "cos(100*pi/180) evaluated by the reference Python process",
+    "sin_100_degrees": "sin(100*pi/180) evaluated by the reference Python process",
+    "nan": "quiet NaN",
+    "positive_infinity": "positive infinity",
+    "negative_infinity": "negative infinity"
+  },
+  "defaults": {
+    "builder": "single_center",
+    "center_position": [0.0, 0.0, 0.0],
+    "center": {
+      "atomic_number": 6,
+      "formal_charge": 0,
+      "explicit_hydrogens": 0,
+      "chiral_tag": "CHI_UNSPECIFIED",
+      "chiral_permutation": null,
+      "props": {"fixture_atom_prop": "center"}
+    },
+    "ligand_atomic_numbers": [9, 17, 35, 53, 8, 7, 6],
+    "bond_type": "SINGLE",
+    "bond_direction": "NONE",
+    "unknown_stereo": null,
+    "conf_id": -1,
+    "replace_existing_tags": true,
+    "environment": {"mode": "unset"},
+    "molecule_props": {
+      "_StereochemDone": "1",
+      "fixture_molecule_prop": "preserve"
+    }
+  },
+  "cases": [
+    {
+      "case_id": "no_conformer_noop",
+      "selection_reason": "zero-conformer early return and complete state preservation",
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "conformers": []
+    },
+    {
+      "case_id": "non_3d_conformer_noop",
+      "selection_reason": "non-3D return occurs before _StereochemDone clearing",
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "conformers": [{"id": 7, "is_3d": false}],
+      "conf_id": 7
+    },
+    {
+      "case_id": "missing_specific_conformer",
+      "selection_reason": "nonnegative missing conformer id exception",
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "conformers": [{"id": 7, "is_3d": true}],
+      "conf_id": 8
+    },
+    {
+      "case_id": "negative_id_selects_first",
+      "selection_reason": "default negative id selects first conformer even when its id is nonzero",
+      "center": {"explicit_hydrogens": 1},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "conformers": [
+        {"id": 9, "is_3d": true},
+        {"id": 3, "is_3d": true, "ligands": [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]]}
+      ]
+    },
+    {
+      "case_id": "specific_id_selects_later",
+      "selection_reason": "specific id selects by conformer id rather than vector position",
+      "center": {"explicit_hydrogens": 1},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "conformers": [
+        {"id": 9, "is_3d": true},
+        {"id": 3, "is_3d": true, "ligands": [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]]}
+      ],
+      "conf_id": 3
+    },
+    {
+      "case_id": "replace_existing_false",
+      "selection_reason": "existing tag and related properties remain untouched when replacement is disabled",
+      "center": {
+        "explicit_hydrogens": 1,
+        "chiral_tag": "CHI_TETRAHEDRAL_CW",
+        "chiral_permutation": 19,
+        "props": {"_NonExplicit3DChirality": 7, "fixture_atom_prop": "center"}
+      },
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "conformers": [{"id": 0, "is_3d": true}],
+      "replace_existing_tags": false
+    },
+    {
+      "case_id": "replace_existing_true",
+      "selection_reason": "existing tag is replaced while source-defined old properties are observed",
+      "center": {
+        "explicit_hydrogens": 1,
+        "chiral_tag": "CHI_TETRAHEDRAL_CW",
+        "chiral_permutation": 19,
+        "props": {"_NonExplicit3DChirality": 7, "fixture_atom_prop": "center"}
+      },
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "tetrahedral_positive_volume_implicit_h",
+      "selection_reason": "positive signed volume with three explicit neighbors and one implicit H",
+      "center": {"explicit_hydrogens": 1},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "tetrahedral_negative_volume_implicit_h",
+      "selection_reason": "negative signed volume with three explicit neighbors and one implicit H",
+      "center": {"explicit_hydrogens": 1},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "tetrahedral_volume_positive_boundary",
+      "selection_reason": "strict positive ZERO_VOLUME_TOL equality",
+      "center": {"explicit_hydrogens": 1},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.1]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "tetrahedral_volume_positive_above",
+      "selection_reason": "next representable value above positive ZERO_VOLUME_TOL",
+      "center": {"explicit_hydrogens": 1},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, "nextafter_0.1_up"]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "tetrahedral_volume_positive_below",
+      "selection_reason": "next representable value below positive ZERO_VOLUME_TOL",
+      "center": {"explicit_hydrogens": 1},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, "nextafter_0.1_down"]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "tetrahedral_volume_negative_boundary",
+      "selection_reason": "strict negative ZERO_VOLUME_TOL equality",
+      "center": {"explicit_hydrogens": 1},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -0.1]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "tetrahedral_volume_negative_outside",
+      "selection_reason": "next representable value below negative ZERO_VOLUME_TOL",
+      "center": {"explicit_hydrogens": 1},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, "nextafter_negative_0.1_down"]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "tetrahedral_fourth_neighbor_fallback",
+      "selection_reason": "first three neighbors are planar and fourth neighbor determines negated volume",
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, -1.0, 0.0], [0.0, 0.0, 1.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "sulfur_three_coordinate",
+      "selection_reason": "source sulfur exception permits three total neighbors",
+      "center": {"atomic_number": 16},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "conformers": [{"id": 0, "is_3d": true}],
+      "environment": {"mode": "set", "value": "0"}
+    },
+    {
+      "case_id": "selenium_three_coordinate",
+      "selection_reason": "source selenium exception permits three total neighbors",
+      "center": {"atomic_number": 34},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}],
+      "environment": {"mode": "set", "value": "0"}
+    },
+    {
+      "case_id": "degree_below_three",
+      "selection_reason": "nonzero-degree lower gate",
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "degree_above_six",
+      "selection_reason": "total-degree upper gate and non-tetrahedral neighbor overflow",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, -1.0], [1.0, 1.0, 1.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "wiggly_begin_unknown_direction",
+      "selection_reason": "single UNKNOWN bond suppresses assignment only from its begin atom",
+      "center": {"explicit_hydrogens": 1},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "bond_overrides": [{"ligand": 0, "direction": "UNKNOWN"}],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "wiggly_end_unknown_direction",
+      "selection_reason": "UNKNOWN direction does not suppress assignment when center is bond end",
+      "center": {"explicit_hydrogens": 1},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "bond_overrides": [{"ligand": 0, "direction": "UNKNOWN", "reverse": true}],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "unknown_stereo_property_zero",
+      "selection_reason": "present integer _UnknownStereo value zero is not wiggly",
+      "center": {"explicit_hydrogens": 1},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "bond_overrides": [{"ligand": 0, "unknown_stereo": 0}],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "unknown_stereo_property_nonzero",
+      "selection_reason": "present integer _UnknownStereo value nonzero is wiggly",
+      "center": {"explicit_hydrogens": 1},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "bond_overrides": [{"ligand": 0, "unknown_stereo": -7}],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "unknown_direction_non_single",
+      "selection_reason": "UNKNOWN direction on a non-single bond is not wiggly",
+      "center": {"atomic_number": 16},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "bond_overrides": [{"ligand": 0, "type": "DOUBLE", "direction": "UNKNOWN"}],
+      "conformers": [{"id": 0, "is_3d": true}],
+      "environment": {"mode": "set", "value": "0"}
+    },
+    {
+      "case_id": "dative_center_begin",
+      "selection_reason": "DATIVE bond is excluded from the begin atom nonzero degree",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "bond_overrides": [{"ligand": 0, "type": "DATIVE"}],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "dative_center_end",
+      "selection_reason": "DATIVE bond contributes at the end atom",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+      "bond_overrides": [{"ligand": 0, "type": "DATIVE", "reverse": true}],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "zero_and_unspecified_bonds",
+      "selection_reason": "ZERO and UNSPECIFIED bonds are excluded from nonzero degree",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [-1.0, 0.0, 0.0]],
+      "bond_overrides": [{"ligand": 0, "type": "ZERO"}, {"ligand": 1, "type": "UNSPECIFIED"}],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "square_planar_t_shape_env_unset",
+      "selection_reason": "default environment enables three-coordinate T-shaped square-planar assignment",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "square_planar_t_shape_env_zero",
+      "selection_reason": "exact environment value 0 disables non-tetrahedral assignment",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}],
+      "environment": {"mode": "set", "value": "0"}
+    },
+    {
+      "case_id": "square_planar_t_shape_env_empty",
+      "selection_reason": "present empty environment value enables non-tetrahedral assignment",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}],
+      "environment": {"mode": "set", "value": ""}
+    },
+    {
+      "case_id": "square_planar_t_shape_env_double_zero",
+      "selection_reason": "present value 00 enables non-tetrahedral assignment",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}],
+      "environment": {"mode": "set", "value": "00"}
+    },
+    {
+      "case_id": "square_planar_t_shape_env_false_text",
+      "selection_reason": "present value false is not parsed as false and enables assignment",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}],
+      "environment": {"mode": "set", "value": "false"}
+    },
+    {
+      "case_id": "square_planar_t_shape_env_one",
+      "selection_reason": "ordinary enabled environment value",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}],
+      "environment": {"mode": "set", "value": "1"}
+    },
+    {
+      "case_id": "see_saw_below_100_degrees",
+      "selection_reason": "one opposite pair and remaining angle below 100 degrees selects octahedral",
+      "center": {"atomic_number": 15},
+      "ligands": [[0.0, 0.0, 1.0], [0.0, 0.0, -1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "see_saw_at_100_degrees",
+      "selection_reason": "strict 100-degree comparison boundary",
+      "center": {"atomic_number": 15},
+      "ligands": [[0.0, 0.0, 1.0], [0.0, 0.0, -1.0], [1.0, 0.0, 0.0], ["cos_100_degrees", "sin_100_degrees", 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "trigonal_bipyramidal_five_coordinate",
+      "selection_reason": "one opposite pair with five neighbors",
+      "center": {"atomic_number": 15},
+      "ligands": [[0.0, 0.0, 1.0], [0.0, 0.0, -1.0], [1.0, 0.0, 0.0], [-0.5, 0.8660254037844386, 0.0], [-0.5, -0.8660254037844386, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "square_planar_four_coordinate",
+      "selection_reason": "two opposite pairs with four neighbors",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, -1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "square_pyramidal_five_coordinate",
+      "selection_reason": "two opposite pairs with five neighbors maps to octahedral permutation",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "octahedral_six_coordinate",
+      "selection_reason": "three opposite pairs with six neighbors",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, -1.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "antiparallel_threshold_equal",
+      "selection_reason": "strict dot-product threshold equality at -0.9 does not form a pair",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [-0.9, 0.4358898943540673, 0.0], [0.0, 0.0, 1.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "duplicate_antiparallel_pair_endpoint",
+      "selection_reason": "one direction paired with two near-antiparallel directions rejects assignment",
+      "center": {"atomic_number": 15},
+      "ligands": [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [-0.95, 0.3122498999199199, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "direction_length_below_zero_tolerance",
+      "selection_reason": "normalization throws below Point3D zero_tolerance",
+      "center": {"atomic_number": 15},
+      "ligands": [["nextafter_zero_tolerance_down", 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "direction_length_equal_zero_tolerance",
+      "selection_reason": "normalization equality does not throw",
+      "center": {"atomic_number": 15},
+      "ligands": [["zero_tolerance", 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "direction_duplicate_coordinate",
+      "selection_reason": "exact duplicate center/neighbor coordinate exception",
+      "center": {"atomic_number": 15},
+      "ligands": [[0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "direction_nonfinite_nan",
+      "selection_reason": "NaN normalization and comparison propagation",
+      "center": {"atomic_number": 15},
+      "ligands": [["nan", 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "direction_nonfinite_infinity",
+      "selection_reason": "infinite length arithmetic and resulting NaN comparisons",
+      "center": {"atomic_number": 15},
+      "ligands": [["positive_infinity", 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+      "conformers": [{"id": 0, "is_3d": true}]
+    },
+    {
+      "case_id": "partial_mutation_before_later_exception",
+      "selection_reason": "first center mutates before a later center throws during normalization",
+      "builder": "explicit",
+      "atoms": [
+        {"atomic_number": 6, "explicit_hydrogens": 1, "props": {"fixture_atom_prop": "first"}},
+        {"atomic_number": 9}, {"atomic_number": 17}, {"atomic_number": 35},
+        {"atomic_number": 15, "props": {"fixture_atom_prop": "second"}},
+        {"atomic_number": 9}, {"atomic_number": 17}, {"atomic_number": 35}
+      ],
+      "bonds": [
+        {"begin": 0, "end": 1, "type": "SINGLE"},
+        {"begin": 0, "end": 2, "type": "SINGLE"},
+        {"begin": 0, "end": 3, "type": "SINGLE"},
+        {"begin": 4, "end": 5, "type": "SINGLE"},
+        {"begin": 4, "end": 6, "type": "SINGLE"},
+        {"begin": 4, "end": 7, "type": "SINGLE"}
+      ],
+      "conformers": [{
+        "id": 0,
+        "is_3d": true,
+        "coordinates": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [10.0, 0.0, 0.0], [10.0, 0.0, 0.0], [9.0, 0.0, 0.0], [10.0, 1.0, 0.0]]
+      }]
+    }
+  ],
+  "octahedral_switch_cases": [
+    {"case_id":"oct_p0_2_p2_4_neg","branch":"p0=2,p2=4","volume_sign":"negative","neighbor_order":["px","nx","py","ny","pz","nz"]},
+    {"case_id":"oct_p0_2_p2_4_pos","branch":"p0=2,p2=4","volume_sign":"nonnegative","neighbor_order":["px","nx","py","ny","nz","pz"]},
+    {"case_id":"oct_p0_2_p2_5_neg","branch":"p0=2,p2=5","volume_sign":"negative","neighbor_order":["px","nx","py","nz","ny","pz"]},
+    {"case_id":"oct_p0_2_p2_5_pos","branch":"p0=2,p2=5","volume_sign":"nonnegative","neighbor_order":["px","nx","py","pz","ny","nz"]},
+    {"case_id":"oct_p0_2_p2_default_neg","branch":"p0=2,p2=default","volume_sign":"negative","neighbor_order":["px","nx","py","nz","pz","ny"]},
+    {"case_id":"oct_p0_2_p2_default_pos","branch":"p0=2,p2=default","volume_sign":"nonnegative","neighbor_order":["px","nx","py","pz","nz","ny"]},
+    {"case_id":"oct_p0_3_p1_4_neg","branch":"p0=3,p1=4","volume_sign":"negative","neighbor_order":["px","py","nx","ny","pz","nz"]},
+    {"case_id":"oct_p0_3_p1_4_pos","branch":"p0=3,p1=4","volume_sign":"nonnegative","neighbor_order":["px","py","nx","ny","nz","pz"]},
+    {"case_id":"oct_p0_3_p1_5_neg","branch":"p0=3,p1=5","volume_sign":"negative","neighbor_order":["px","py","nx","nz","ny","pz"]},
+    {"case_id":"oct_p0_3_p1_5_pos","branch":"p0=3,p1=5","volume_sign":"nonnegative","neighbor_order":["px","py","nx","pz","ny","nz"]},
+    {"case_id":"oct_p0_3_p1_default_neg","branch":"p0=3,p1=default","volume_sign":"negative","neighbor_order":["px","py","nx","nz","pz","ny"]},
+    {"case_id":"oct_p0_3_p1_default_pos","branch":"p0=3,p1=default","volume_sign":"nonnegative","neighbor_order":["px","py","nx","pz","nz","ny"]},
+    {"case_id":"oct_p0_4_p1_3_neg","branch":"p0=4,p1=3","volume_sign":"negative","neighbor_order":["px","py","ny","nx","pz","nz"]},
+    {"case_id":"oct_p0_4_p1_3_pos","branch":"p0=4,p1=3","volume_sign":"nonnegative","neighbor_order":["px","py","ny","nx","nz","pz"]},
+    {"case_id":"oct_p0_4_p1_5_neg","branch":"p0=4,p1=5","volume_sign":"negative","neighbor_order":["px","py","nz","nx","ny","pz"]},
+    {"case_id":"oct_p0_4_p1_5_pos","branch":"p0=4,p1=5","volume_sign":"nonnegative","neighbor_order":["px","py","pz","nx","ny","nz"]},
+    {"case_id":"oct_p0_4_p1_default_neg","branch":"p0=4,p1=default","volume_sign":"negative","neighbor_order":["px","py","nz","nx","pz","ny"]},
+    {"case_id":"oct_p0_4_p1_default_pos","branch":"p0=4,p1=default","volume_sign":"nonnegative","neighbor_order":["px","py","pz","nx","nz","ny"]},
+    {"case_id":"oct_p0_5_p1_3_neg","branch":"p0=5,p1=3","volume_sign":"negative","neighbor_order":["px","py","ny","pz","nx","nz"]},
+    {"case_id":"oct_p0_5_p1_3_pos","branch":"p0=5,p1=3","volume_sign":"nonnegative","neighbor_order":["px","py","ny","nz","nx","pz"]},
+    {"case_id":"oct_p0_5_p1_4_neg","branch":"p0=5,p1=4","volume_sign":"negative","neighbor_order":["px","py","nz","ny","nx","pz"]},
+    {"case_id":"oct_p0_5_p1_4_pos","branch":"p0=5,p1=4","volume_sign":"nonnegative","neighbor_order":["px","py","pz","ny","nx","nz"]},
+    {"case_id":"oct_p0_5_p1_default_neg","branch":"p0=5,p1=default","volume_sign":"negative","neighbor_order":["px","py","nz","pz","nx","ny"]},
+    {"case_id":"oct_p0_5_p1_default_pos","branch":"p0=5,p1=default","volume_sign":"nonnegative","neighbor_order":["px","py","pz","nz","nx","ny"]},
+    {"case_id":"oct_p0_default_p1_3_neg","branch":"p0=default,p1=3","volume_sign":"negative","neighbor_order":["px","py","ny","pz","nz","nx"]},
+    {"case_id":"oct_p0_default_p1_3_pos","branch":"p0=default,p1=3","volume_sign":"nonnegative","neighbor_order":["px","py","ny","nz","pz","nx"]},
+    {"case_id":"oct_p0_default_p1_4_neg","branch":"p0=default,p1=4","volume_sign":"negative","neighbor_order":["px","py","nz","ny","pz","nx"]},
+    {"case_id":"oct_p0_default_p1_4_pos","branch":"p0=default,p1=4","volume_sign":"nonnegative","neighbor_order":["px","py","pz","ny","nz","nx"]},
+    {"case_id":"oct_p0_default_p1_default_neg","branch":"p0=default,p1=default","volume_sign":"negative","neighbor_order":["px","py","nz","pz","ny","nx"]},
+    {"case_id":"oct_p0_default_p1_default_pos","branch":"p0=default,p1=default","volume_sign":"nonnegative","neighbor_order":["px","py","pz","nz","ny","nx"]}
+  ]
+}

@@ -48,6 +48,30 @@
 //! assert_eq!(mol.num_atoms(), expected_atoms);
 //! ```
 //!
+//! Atom chiral tags can be assigned from a selected 3D conformer through a
+//! registered, transactional operation with pinned-RDKit parity:
+//!
+//! ```
+//! use cosmolkit_core::{ChiralTag, Molecule};
+//!
+//! let mol = Molecule::from_smiles("C(F)(Cl)Br")
+//!     .unwrap()
+//!     .with_only_3d_conformer(
+//!         vec![
+//!             [0.0, 0.0, 0.0],
+//!             [1.0, 0.0, 0.0],
+//!             [0.0, 1.0, 0.0],
+//!             [0.0, 0.0, 1.0],
+//!         ],
+//!         true,
+//!     )
+//!     .unwrap();
+//! let assigned = mol.with_chiral_tags_from_structure(-1, true).unwrap();
+//!
+//! assert_eq!(mol.atoms()[0].chiral_tag(), ChiralTag::Unspecified);
+//! assert_ne!(assigned.atoms()[0].chiral_tag(), ChiralTag::Unspecified);
+//! ```
+//!
 //! Coordinate operations follow the same value-style and in-place split:
 //!
 //! ```

@@ -6124,6 +6124,7 @@ AuxInfo=1/0/N:2/rA:2cCO/rB:s1;/rC:0,0,0;1,1,1;\n";
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle_inchi_to_inchi_atom_exact() {
         let expected_case_ids = [
             "plain-labeled-string",

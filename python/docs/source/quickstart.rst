@@ -71,6 +71,31 @@ Inspect chiral tags without converting to an ordered tetrahedral record:
        if atom.chiral_tag() != ChiralTag.CHI_UNSPECIFIED:
            print(atom.idx(), atom.chiral_tag().name)
 
+Assign atom chiral tags from a stored 3D conformer:
+
+.. code-block:: python
+
+   import numpy as np
+
+   spatial = Molecule.from_smiles("C(F)(Cl)Br").with_only_3d_conformer(
+       np.array(
+           [
+               [0.0, 0.0, 0.0],
+               [1.0, 0.0, 0.0],
+               [0.0, 1.0, 0.0],
+               [0.0, 0.0, 1.0],
+           ]
+       )
+   )
+   assigned = spatial.with_chiral_tags_from_structure()
+
+   assert spatial.atoms()[0].chiral_tag() == ChiralTag.CHI_UNSPECIFIED
+   assert assigned.atoms()[0].chiral_tag() != ChiralTag.CHI_UNSPECIFIED
+
+``with_chiral_tags_from_structure()`` is a stable, RDKit-parity operation. Its
+in-place counterpart is ``assign_chiral_tags_from_structure_()``; both forms
+leave caller state unchanged on failure.
+
 Read and write the first SDF record:
 
 .. code-block:: python

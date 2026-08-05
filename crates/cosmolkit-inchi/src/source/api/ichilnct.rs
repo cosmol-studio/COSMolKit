@@ -1855,6 +1855,7 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__ichilnct__inchitoinchi_input__line_204() {
         let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -2259,6 +2260,7 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__ichilnct__get_inchi_input_fromauxinfo__line_89() {
         assert_aux_input_oracle(
             "--get-inchi-input-from-aux-info-records",
@@ -2285,6 +2287,7 @@ AuxInfo=1/rA:1Coe/rB:/rC:;\n";
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     fn official_c_oracle__ichilnct__get_std_inchi_input_fromauxinfo__line_79() {
         assert_aux_input_oracle(
             "--get-std-inchi-input-from-aux-info-records",

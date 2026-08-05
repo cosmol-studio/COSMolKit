@@ -990,6 +990,7 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[ignore = "requires the pinned vendored official InChI source; run explicitly with --ignored"]
     pub(crate) fn official_c_oracle__getinchikeyfrominchi__exact() {
         use std::path::Path;
         use std::process::Command;

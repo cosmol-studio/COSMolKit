@@ -386,10 +386,8 @@ impl MoleculeBuilder {
         Ok(id)
     }
 
-    pub(crate) fn add_conformer(
-        &mut self,
-        conformer: Conformer3D,
-    ) -> Result<(), MoleculeBuildError> {
+    /// Add a conformer while preserving its explicit id and dimensionality.
+    pub fn add_conformer(&mut self, conformer: Conformer3D) -> Result<(), MoleculeBuildError> {
         if conformer.coordinates().len() != self.atoms.len() {
             return Err(MoleculeBuildError::ConformerRowCount {
                 rows: conformer.coordinates().len(),

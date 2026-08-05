@@ -240,6 +240,24 @@ impl<'a> OpParts<'a> {
         Ok(MoleculeReadParts::from_molecule(&self.working))
     }
 
+    pub(crate) fn begin_operation_read(&self) -> Result<MoleculeReadParts<'_>, OperationError> {
+        self.validate_access_spec()?;
+        #[cfg(feature = "op-contracts")]
+        {
+            let required = BlockSet::TOPOLOGY
+                .union(BlockSet::COORDINATES)
+                .union(BlockSet::PROPERTIES)
+                .union(BlockSet::DERIVED_CACHE);
+            if !self.spec.access.can_read(required) {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "operation attempted a full read outside its registry access",
+                });
+            }
+        }
+        Ok(MoleculeReadParts::from_molecule(&self.working))
+    }
+
     pub(crate) fn with_topology_read_parts<R>(
         &self,
         topology: TopologyBlock,
@@ -874,18 +892,20 @@ impl<'a> OpParts<'a> {
             });
         }
 
+        let changed = matches!(self.trace.outcome, Some(OpOutcome::Changed));
         let updated_or_cleared = self.trace.cleared_cache | self.trace.updated_cache;
-        if !updated_or_cleared.contains(self.spec.needs_update()) {
+        if changed && !updated_or_cleared.contains(self.spec.needs_update()) {
             return Err(OperationError::InvalidInput {
                 operation: self.spec,
                 message: "operation body did not clear or update every required cache state",
             });
         }
 
-        if !self
-            .trace
-            .preserved_cache
-            .contains(self.spec.derived_effects.preserve())
+        if changed
+            && !self
+                .trace
+                .preserved_cache
+                .contains(self.spec.derived_effects.preserve())
         {
             return Err(OperationError::InvalidInput {
                 operation: self.spec,

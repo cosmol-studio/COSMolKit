@@ -39,6 +39,21 @@ Production code uses only owned Rust data and the Rust allocator. It does not:
 Official C is compiled only by independent test-oracle fixtures and never enters
 the production dependency graph.
 
+The live official-InChI and RDKit C/C++ oracle tests are explicitly ignored by
+ordinary `cargo test` runs because their pinned upstream source trees are
+development inputs, not repository test dependencies. When those source trees
+are present, run a named oracle test with `--ignored --exact`; the test still
+performs the complete byte/field comparison and fails on any mismatch. For
+example:
+
+```bash
+cargo test -p cosmolkit-inchi --release \
+  official_c_oracle__getinchikeyfrominchi__exact -- --ignored --exact
+
+cargo test -p cosmolkit-inchi --release \
+  rdkit_cpp_oracle__inchitoinchikey__exact -- --ignored --exact
+```
+
 ## Validation Status
 
 Focused source-port tests cover the active official-engine call graph, and

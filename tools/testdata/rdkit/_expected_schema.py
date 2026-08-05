@@ -84,6 +84,9 @@ SCHEMAS = {
     "tetrahedral_stereo_geometry.jsonl": _schema(
         "centers:array,error:null|string,positions:null|array,rdkit_ok:boolean,smiles:string"
     ),
+    "assign_atom_chiral_tags_from_structure.jsonl": _schema(
+        "after:object,before:object,case_id:string,conf_id:integer,environment:object,error_text:null|string,error_type:null|string,replace_existing_tags:boolean,selected_conformer_id:null|integer,selection_reason:string,status:string"
+    ),
     "morgan_fingerprint.jsonl": _schema(
         "branches:object,error:null|string,rdkit_ok:boolean,smiles:string"
     ),

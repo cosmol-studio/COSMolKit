@@ -48,6 +48,8 @@ pub enum PdbMoleculeConversionError {
     Build(#[from] MoleculeBuildError),
     #[error("operation error: {0}")]
     Operation(#[from] OperationError),
+    #[error("stereochemistry error: {0}")]
+    Stereo(#[from] crate::StereoError),
     #[error("unsupported RDKit PDB molecule conversion branch: {0}")]
     Unsupported(&'static str),
 }
@@ -166,7 +168,7 @@ pub fn bio_structure_to_rdkit_pdb_molecule(
     // RDKit✔️✔️:   MolOps::assignChiralTypesFrom3D(*mol);
     // RDKit✔️✔️:   StandardPDBResidueChirality(mol.get());
     // END RDKIT CPP FUNCTION parsePdbBlock chirality tail
-    crate::notation::smiles::assign_chiral_types_from_3d(&mut molecule, 0);
+    crate::chemistry::stereo::assign_chiral_types_from_3d_molecule(&mut molecule, -1, true)?;
     standard_pdb_residue_chirality_like_rdkit(&mut molecule);
     Ok(molecule)
 }

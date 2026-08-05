@@ -168,14 +168,14 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "cosmolkit-core",
 ]
 
 [[package]]
 name = "cosmolkit-core"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "cosmolkit-inchi",
  "cosmolkit-macros",
@@ -198,7 +198,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-inchi"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "bytemuck",
  "hexf-parse",
@@ -207,7 +207,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-macros"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -216,7 +216,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-py"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "cosmolkit-core",
  "glam",
@@ -228,14 +228,14 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-ringdecomposer"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "cosmolkit-test-support"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "serde",
  "serde_json",

@@ -6,9 +6,13 @@ use std::path::PathBuf;
 use cosmolkit_core::io::molblock::{self, SdfFormat};
 use cosmolkit_core::io::sdf::SdfReader;
 use cosmolkit_core::{BatchErrorMode, BatchRecord, BatchRecordError, SmilesWriteParams};
-use numpy::{AllowTypeChange, PyArray2, PyArrayLike, ndarray::Ix2};
+use numpy::{
+    AllowTypeChange, PyArray2, PyArrayLike, PyUntypedArray, PyUntypedArrayMethods, ndarray::Ix2,
+};
 use pyo3::PyErr;
-use pyo3::exceptions::{PyIndexError, PyNotImplementedError, PyTypeError, PyValueError};
+use pyo3::exceptions::{
+    PyIndexError, PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError,
+};
 use pyo3::prelude::*;
 use pyo3::types::{
     PyAny, PyBool, PyBytes, PyDict, PyIterator, PyList, PyMapping, PyMappingProxy, PySlice,
@@ -260,6 +264,29 @@ fn molecule_pickle_state<'py>(
 
 fn stereo_pyerr(error: cosmolkit_core::StereoError) -> PyErr {
     PyValueError::new_err(error.to_string())
+}
+
+fn chiral_tag_assignment_pyerr(error: cosmolkit_core::OperationError) -> PyErr {
+    match &error {
+        cosmolkit_core::OperationError::Unsupported { .. }
+        | cosmolkit_core::OperationError::UnsupportedFeature { .. } => {
+            PyNotImplementedError::new_err(error.to_string())
+        }
+        cosmolkit_core::OperationError::Stereo {
+            source: cosmolkit_core::StereoError::ConformerNotFound { .. },
+            ..
+        }
+        | cosmolkit_core::OperationError::InvalidInput { .. }
+        | cosmolkit_core::OperationError::Precondition { .. }
+        | cosmolkit_core::OperationError::Valence { .. } => {
+            PyValueError::new_err(error.to_string())
+        }
+        cosmolkit_core::OperationError::Stereo { .. }
+        | cosmolkit_core::OperationError::InvariantViolation { .. } => {
+            PyRuntimeError::new_err(error.to_string())
+        }
+        _ => PyValueError::new_err(error.to_string()),
+    }
 }
 
 fn smarts_parse_pyerr(error: cosmolkit_core::SmartsParseError) -> PyErr {
@@ -995,9 +1022,18 @@ fn parse_z_policy(value: &str) -> PyResult<&'static str> {
 
 fn extract_coordinate_matrix(
     coords: &Bound<'_, PyAny>,
+    expected_rows: usize,
     expected_columns: &[usize],
     label: &str,
 ) -> PyResult<Vec<Vec<f64>>> {
+    if let Ok(array) = coords.cast::<PyUntypedArray>()
+        && let [actual_rows, _] = array.shape()
+        && *actual_rows != expected_rows
+    {
+        return Err(PyValueError::new_err(format!(
+            "{label} row count mismatch: expected {expected_rows}, got {actual_rows}"
+        )));
+    }
     let array_like = coords
         .extract::<PyArrayLike<'_, f64, Ix2, AllowTypeChange>>()
         .map_err(|err| {
@@ -1005,6 +1041,12 @@ fn extract_coordinate_matrix(
         })?;
     let array = array_like.as_array();
     let shape = array.shape();
+    if shape[0] != expected_rows {
+        return Err(PyValueError::new_err(format!(
+            "{label} row count mismatch: expected {expected_rows}, got {}",
+            shape[0]
+        )));
+    }
     if !expected_columns.contains(&shape[1]) {
         let columns = expected_columns
             .iter()
@@ -1032,9 +1074,13 @@ fn extract_coordinate_matrix(
     Ok(out)
 }
 
-fn extract_2d_coordinates(coords: &Bound<'_, PyAny>, z_policy: &str) -> PyResult<Vec<[f64; 2]>> {
+fn extract_2d_coordinates(
+    coords: &Bound<'_, PyAny>,
+    expected_rows: usize,
+    z_policy: &str,
+) -> PyResult<Vec<[f64; 2]>> {
     let z_policy = parse_z_policy(z_policy)?;
-    let rows = extract_coordinate_matrix(coords, &[2, 3], "2D coordinates")?;
+    let rows = extract_coordinate_matrix(coords, expected_rows, &[2, 3], "2D coordinates")?;
     let mut out = Vec::with_capacity(rows.len());
     for (row_idx, row) in rows.into_iter().enumerate() {
         if row.len() == 3 {
@@ -1060,8 +1106,11 @@ fn extract_2d_coordinates(coords: &Bound<'_, PyAny>, z_policy: &str) -> PyResult
     Ok(out)
 }
 
-fn extract_3d_coordinates(coords: &Bound<'_, PyAny>) -> PyResult<Vec<[f64; 3]>> {
-    extract_coordinate_matrix(coords, &[3], "3D coordinates").map(|rows| {
+fn extract_3d_coordinates(
+    coords: &Bound<'_, PyAny>,
+    expected_rows: usize,
+) -> PyResult<Vec<[f64; 3]>> {
+    extract_coordinate_matrix(coords, expected_rows, &[3], "3D coordinates").map(|rows| {
         rows.into_iter()
             .map(|row| [row[0], row[1], row[2]])
             .collect()
@@ -4038,6 +4087,59 @@ This is the in-place version of ``with_kekulized_bonds()``.
             .map_err(|err| PyValueError::new_err(format!("kekulize_ failed: {err:?}")))
     }
 
+    #[pyo3(
+        signature = (conf_id=-1, replace_existing_tags=true),
+        text_signature = "($self, conf_id=-1, replace_existing_tags=True)"
+    )]
+    #[doc = r#"
+Return a new molecule with atom chiral tags assigned from 3D coordinates.
+
+The selected conformer, atom and bond ordering, coordinates, and unrelated
+properties are preserved. ``conf_id=-1`` selects the default conformer.
+Existing atom chiral tags are replaced unless ``replace_existing_tags`` is
+false. The original molecule is left unchanged, including on error.
+
+This stable API has exact full-state parity with RDKit 2026.03.1
+``assignChiralTypesFrom3D`` across all 77 fixed oracle records. The covered
+surface includes tetrahedral C/S/Se centers, enabled square-planar,
+trigonal-bipyramidal, and octahedral centers, property updates, no-op paths,
+and defined errors. It does not perform ``assignStereochemistryFrom3D``, 3D
+double-bond direction or E/Z assignment, CIP orchestration, or
+distinct-substituent validation.
+"#]
+    fn with_chiral_tags_from_structure(
+        &self,
+        conf_id: i32,
+        replace_existing_tags: bool,
+    ) -> PyResult<Self> {
+        self.inner
+            .with_chiral_tags_from_structure(conf_id, replace_existing_tags)
+            .map(|inner| Self { inner })
+            .map_err(chiral_tag_assignment_pyerr)
+    }
+
+    #[pyo3(
+        signature = (conf_id=-1, replace_existing_tags=true),
+        text_signature = "($self, conf_id=-1, replace_existing_tags=True)"
+    )]
+    #[doc = r#"
+Assign atom chiral tags from 3D coordinates in place.
+
+This is the in-place form of ``with_chiral_tags_from_structure()``. All public
+in-place ``Molecule`` methods end with ``_``. It has the same stable,
+pinned-RDKit parity scope as the value-style form. Failures are transactional
+and leave the molecule unchanged.
+"#]
+    fn assign_chiral_tags_from_structure_(
+        &mut self,
+        conf_id: i32,
+        replace_existing_tags: bool,
+    ) -> PyResult<()> {
+        self.inner
+            .assign_chiral_tags_from_structure_(conf_id, replace_existing_tags)
+            .map_err(chiral_tag_assignment_pyerr)
+    }
+
     #[doc = r#"
 Return the number of atoms.
 "#]
@@ -4199,7 +4301,7 @@ or ``(num_atoms, 3)``. Three-column input uses ``z_policy``:
         z_policy: &str,
     ) -> PyResult<Self> {
         let out = if let Some(coords) = coords {
-            let coords = extract_2d_coordinates(coords, z_policy)?;
+            let coords = extract_2d_coordinates(coords, self.inner.atoms().len(), z_policy)?;
             self.inner.with_2d_coordinate_block(coords).map_err(|err| {
                 PyValueError::new_err(format!("with_2d_coordinates failed: {err}"))
             })?
@@ -4231,7 +4333,7 @@ Set 2D coordinates in place.
 ``with_2d_coordinates(coords=...)``.
 "#]
     fn set_2d_coordinates_(&mut self, coords: &Bound<'_, PyAny>, z_policy: &str) -> PyResult<()> {
-        let coords = extract_2d_coordinates(coords, z_policy)?;
+        let coords = extract_2d_coordinates(coords, self.inner.atoms().len(), z_policy)?;
         self.inner
             .set_2d_coordinate_block_(coords)
             .map_err(|err| PyValueError::new_err(format!("set_2d_coordinates_ failed: {err}")))
@@ -4249,7 +4351,7 @@ The source molecule must already have a conformer at ``conformer_index``.
         coords: &Bound<'_, PyAny>,
         conformer_index: usize,
     ) -> PyResult<Self> {
-        let coords = extract_3d_coordinates(coords)?;
+        let coords = extract_3d_coordinates(coords, self.inner.atoms().len())?;
         let out = self
             .inner
             .with_3d_coordinates(coords, conformer_index)
@@ -4268,7 +4370,7 @@ Replace an existing 3D conformer's coordinates in place.
         coords: &Bound<'_, PyAny>,
         conformer_index: usize,
     ) -> PyResult<()> {
-        let coords = extract_3d_coordinates(coords)?;
+        let coords = extract_3d_coordinates(coords, self.inner.atoms().len())?;
         self.inner
             .set_3d_coordinates_(coords, conformer_index)
             .map_err(|err| PyValueError::new_err(format!("set_3d_coordinates_ failed: {err}")))
@@ -4304,7 +4406,7 @@ Return a new molecule with one additional 3D conformer.
 ``coords`` must be a numeric array-like object with shape ``(num_atoms, 3)``.
 "#]
     fn with_added_3d_conformer(&self, coords: &Bound<'_, PyAny>, is_3d: bool) -> PyResult<Self> {
-        let coords = extract_3d_coordinates(coords)?;
+        let coords = extract_3d_coordinates(coords, self.inner.atoms().len())?;
         let out = self
             .inner
             .with_added_3d_conformer(coords, is_3d)
@@ -4321,7 +4423,7 @@ Add one 3D conformer in place and return its conformer id.
 ``coords`` must be a numeric array-like object with shape ``(num_atoms, 3)``.
 "#]
     fn add_3d_conformer_(&mut self, coords: &Bound<'_, PyAny>, is_3d: bool) -> PyResult<usize> {
-        let coords = extract_3d_coordinates(coords)?;
+        let coords = extract_3d_coordinates(coords, self.inner.atoms().len())?;
         let conformer_index = self.inner.conformers_3d().len();
         self.inner
             .add_3d_conformer_(coords, is_3d)
@@ -4338,7 +4440,7 @@ COSMolKit equivalent of RDKit ``RemoveAllConformers(); AddConformer(...)`` for
 manual coordinate assignment.
 "#]
     fn with_only_3d_conformer(&self, coords: &Bound<'_, PyAny>, is_3d: bool) -> PyResult<Self> {
-        let coords = extract_3d_coordinates(coords)?;
+        let coords = extract_3d_coordinates(coords, self.inner.atoms().len())?;
         let out = self
             .inner
             .with_only_3d_conformer(coords, is_3d)
@@ -4359,7 +4461,7 @@ Replace all 3D conformers in place with exactly one conformer.
         coords: &Bound<'_, PyAny>,
         is_3d: bool,
     ) -> PyResult<usize> {
-        let coords = extract_3d_coordinates(coords)?;
+        let coords = extract_3d_coordinates(coords, self.inner.atoms().len())?;
         self.inner
             .set_only_3d_conformer_(coords, is_3d)
             .map_err(|err| {
