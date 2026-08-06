@@ -40,7 +40,7 @@ jobs:
             COSMOLKIT_PARITY_PROFILE: ${{ github.event.inputs.parity_profile || 'smiles_small' }}
             COSMOLKIT_GOLDEN_SUITE: ${{ github.event.inputs.golden_suite || 'all' }}
             COSMOLKIT_RUN_EXHAUSTIVE_PARITY: ${{ github.event.inputs.run_exhaustive_parity || 'false' }}
-            RDKIT_EXPECTED_CACHE_SCHEMA: v2
+            RDKIT_EXPECTED_CACHE_SCHEMA: v3
             # Optimization and fat LTO can emit zero-hash coverage mappings
             # that disagree with records from static test binaries.
             CARGO_PROFILE_RELEASE_OPT_LEVEL: "0"
@@ -63,7 +63,7 @@ jobs:
               id: setup_python
               uses: actions/setup-python@v5
               with:
-                  python-version: "3.11"
+                  python-version: "3.13.12"
 
             - name: Setup uv
               uses: astral-sh/setup-uv@v6

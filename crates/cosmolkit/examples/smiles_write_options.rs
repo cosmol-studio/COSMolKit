@@ -1,5 +1,6 @@
-use cosmolkit_core::{Molecule, SmilesWriteParams};
+use cosmolkit::{Molecule, SmilesWriteParams};
 
+// Usage: cargo run -p cosmolkit --example smiles_write_options
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let molecule = Molecule::from_smiles("CCO")?;
     let params = SmilesWriteParams {

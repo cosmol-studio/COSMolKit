@@ -215,10 +215,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Examples
 
 ```bash
-cargo run -p cosmolkit-core --example smiles_minimal_roundtrip
-cargo run -p cosmolkit-core --example draw_svg
-cargo run -p cosmolkit-core --example draw_png
-cargo run -p cosmolkit-core --example sdf_to_smiles
+cargo run -p cosmolkit --example smiles_write_options
+cargo run -p cosmolkit --example draw_svg
+cargo run -p cosmolkit --example draw_png
+cargo run -p cosmolkit --example sdf_to_smiles
 cargo run -p cosmolkit --example protein_from_pdb
 cargo run -p cosmolkit --example read_xyz
 cargo run -p cosmolkit --example conformer_generation

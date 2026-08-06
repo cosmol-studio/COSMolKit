@@ -1,11 +1,11 @@
 use std::fs;
 use std::path::PathBuf;
 
-use cosmolkit_core::Molecule;
+use cosmolkit::Molecule;
 
 // Usage:
-//   cargo run -p cosmolkit-core --example draw_png -- "CCO"
-//   cargo run -p cosmolkit-core --example draw_png -- "CCO" tmp/cosmolkit_preview.png
+//   cargo run -p cosmolkit --example draw_png -- "CCO"
+//   cargo run -p cosmolkit --example draw_png -- "CCO" tmp/cosmolkit_preview.png
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let smiles = args.next().unwrap_or_else(|| "N#C".to_string());

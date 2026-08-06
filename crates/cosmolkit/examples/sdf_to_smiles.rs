@@ -3,13 +3,13 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
-use cosmolkit_core::io::sdf::SdfReader;
+use cosmolkit::io::sdf::SdfReader;
 
 // Usage:
-//   cargo run -p cosmolkit-core --example sdf_to_smiles -- path/to/input.sdf
+//   cargo run -p cosmolkit --example sdf_to_smiles -- path/to/input.sdf
 fn main() {
     let path = env::args_os().nth(1).map(PathBuf::from).unwrap_or_else(|| {
-        panic!("usage: cargo run -p cosmolkit-core --example sdf_to_smiles -- <file.sdf>")
+        panic!("usage: cargo run -p cosmolkit --example sdf_to_smiles -- <file.sdf>")
     });
 
     let file =

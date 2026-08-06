@@ -14,6 +14,7 @@ struct ExpectedManifest {
     domain: String,
     profile: String,
     reference_implementation: ReferenceImplementation,
+    reference_runtime: ReferenceRuntime,
     input: ManifestFile,
     outputs: Vec<ManifestOutput>,
 }
@@ -21,6 +22,12 @@ struct ExpectedManifest {
 #[derive(Debug, Deserialize)]
 struct ReferenceImplementation {
     name: String,
+    version: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReferenceRuntime {
+    implementation: String,
     version: String,
 }
 
@@ -58,6 +65,7 @@ struct ManifestPlatform {
 struct ReferenceIdentity {
     name: String,
     version: String,
+    runtime: ReferenceRuntime,
 }
 
 type ValidationResult = Result<(), String>;
@@ -296,6 +304,8 @@ fn validate_manifest_identity(
         || manifest.profile != profile_name()
         || manifest.reference_implementation.name != reference_identity.name
         || manifest.reference_implementation.version != reference_identity.version
+        || manifest.reference_runtime.implementation != reference_identity.runtime.implementation
+        || manifest.reference_runtime.version != reference_identity.runtime.version
     {
         return Err(format!(
             "{} identity does not match family={expected_reference} domain={expected_domain} profile={}",
@@ -545,12 +555,20 @@ mod tests {
         let corpus = repo_root().join("testdata/smiles/corpus/smiles_small.smi");
         let corpus_sha256 = sha256_file(&corpus).expect("corpus checksum should be available");
         let (system, machine) = current_platform_identity();
+        let reference = reference_identity("rdkit").expect("RDKit identity should be available");
         serde_json::json!({
             "schema_version": 1,
             "family": "rdkit",
             "domain": domain,
             "profile": profile_name(),
-            "reference_implementation": {"name": "rdkit", "version": "2026.03.1"},
+            "reference_implementation": {
+                "name": reference.name,
+                "version": reference.version
+            },
+            "reference_runtime": {
+                "implementation": reference.runtime.implementation,
+                "version": reference.runtime.version
+            },
             "input": {
                 "path": "testdata/smiles/corpus/smiles_small.smi",
                 "sha256": corpus_sha256

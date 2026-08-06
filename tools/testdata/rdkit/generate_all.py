@@ -297,9 +297,16 @@ def file_identities(paths: list[Path], checksums: dict[Path, str]) -> list[dict[
     return identities
 
 
-def reference_identity() -> dict[str, str]:
+def reference_identity() -> dict[str, Any]:
     identity = json.loads(REFERENCE_IDENTITY_PATH.read_text(encoding="utf-8"))
-    if identity.get("name") != "rdkit" or not identity.get("version"):
+    runtime = identity.get("runtime")
+    if (
+        identity.get("name") != "rdkit"
+        or not identity.get("version")
+        or not isinstance(runtime, dict)
+        or runtime.get("implementation") != "cpython"
+        or not runtime.get("version")
+    ):
         raise SystemExit(f"invalid RDKit reference identity: {REFERENCE_IDENTITY_PATH}")
     return identity
 
@@ -317,6 +324,28 @@ def rdkit_version(python: str, expected: str) -> str:
         raise SystemExit(
             f"RDKit version is {actual!r}, expected {expected!r}; "
             "run `uv sync --group dev`"
+        )
+    return actual
+
+
+def python_runtime_identity(python: str, expected: dict[str, str]) -> dict[str, str]:
+    script = (
+        "import json, platform, sys; "
+        "print(json.dumps({'implementation': sys.implementation.name, "
+        "'version': platform.python_version()}, sort_keys=True))"
+    )
+    result = subprocess.run(
+        [python, "-c", script],
+        cwd=REPO_ROOT,
+        text=True,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    actual = json.loads(result.stdout)
+    if actual != expected:
+        raise SystemExit(
+            f"Python reference runtime is {actual!r}, expected {expected!r}; "
+            "RDKit Python descriptors can change bits across interpreter versions"
         )
     return actual
 
@@ -366,6 +395,7 @@ def manifest_identity(
     domain: str,
     profile: str,
     version: str,
+    runtime: dict[str, str],
     input_path: Path,
     checksums: dict[Path, str],
 ) -> dict[str, Any]:
@@ -376,6 +406,7 @@ def manifest_identity(
         "domain": domain,
         "profile": profile,
         "reference_implementation": {"name": "rdkit", "version": version},
+        "reference_runtime": runtime,
         "input": file_identities([input_resolved], checksums)[0],
     }
 
@@ -489,6 +520,7 @@ def main() -> None:
             f"missing={missing_schemas}, extra={extra_schemas}"
         )
     reference = reference_identity()
+    runtime = python_runtime_identity(args.python, reference["runtime"])
     version = rdkit_version(args.python, reference["version"])
     platform_id = platform_identity()
     checksums: dict[Path, str] = {}
@@ -499,7 +531,9 @@ def main() -> None:
 
     stale: dict[str, tuple[list[GeneratorSpec], dict[str, Any], list[dict[str, Any]]]] = {}
     for domain, items in by_domain.items():
-        top_identity = manifest_identity(domain, args.profile, version, input_path, checksums)
+        top_identity = manifest_identity(
+            domain, args.profile, version, runtime, input_path, checksums
+        )
         identities = [
             output_identity(item, input_path, args.profile, platform_id, checksums)
             for item in items

@@ -1,15 +1,30 @@
 from __future__ import annotations
 
 import json
+import platform
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from _expected_schema import SCHEMAS, validate_jsonl_output
-from generate_all import GENERATOR_SPECS
+from generate_all import GENERATOR_SPECS, python_runtime_identity
 
 
 class ExpectedSchemaTests(unittest.TestCase):
+    def test_python_runtime_identity_requires_the_complete_pinned_runtime(self) -> None:
+        expected = {
+            "implementation": sys.implementation.name,
+            "version": platform.python_version(),
+        }
+        self.assertEqual(python_runtime_identity(sys.executable, expected), expected)
+
+        with self.assertRaisesRegex(SystemExit, "Python reference runtime"):
+            python_runtime_identity(
+                sys.executable,
+                {**expected, "version": "0.0.0"},
+            )
+
     def test_every_generator_output_has_exactly_one_schema(self) -> None:
         self.assertEqual({item.output for item in GENERATOR_SPECS}, set(SCHEMAS))
 

@@ -1945,7 +1945,10 @@ fn rdkit_qed_ads(x: f64, p: QedAdsParameter) -> f64 {
     dx / p.dmax
 }
 
-fn rdkit_qed_python_sum(values: impl IntoIterator<Item = f64>) -> f64 {
+fn rdkit_qed_python313_sum(values: impl IntoIterator<Item = f64>) -> f64 {
+    // RDKit 2026.03.1 QED parity is pinned to CPython 3.13.12 because QED.py
+    // delegates both reductions to builtins.sum(), whose float algorithm
+    // changed in CPython 3.12.
     // CPython✔️✔️: if (PyFloat_CheckExact(result)) {
     // CPython✔️✔️:     double f_result = PyFloat_AS_DOUBLE(result);
     // CPython✔️✔️:     double c = 0.0;
@@ -2312,7 +2315,7 @@ pub fn calc_qed(mol: &Molecule) -> DescriptorResult<f64> {
         .collect::<Vec<_>>();
     // RDKit✔️✔️:   t = sum(wi * math.log(di) for wi, di in zip(w, d))
     let weights = RDKIT_QED_WEIGHT_MEAN.values_in_rdkit_order();
-    let t = rdkit_qed_python_sum(
+    let t = rdkit_qed_python313_sum(
         weights
             .iter()
             .copied()
@@ -2320,7 +2323,7 @@ pub fn calc_qed(mol: &Molecule) -> DescriptorResult<f64> {
             .map(|(wi, di)| wi * di.ln()),
     );
     // RDKit✔️✔️:   return math.exp(t / sum(w))
-    Ok((t / rdkit_qed_python_sum(weights)).exp())
+    Ok((t / rdkit_qed_python313_sum(weights)).exp())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -2481,8 +2484,8 @@ mod qed_tests {
     use std::io::{BufRead, BufReader};
 
     #[test]
-    fn qed_sum_matches_cpython_313_compensated_float_sum() {
-        let actual = rdkit_qed_python_sum([1.0e16, 1.0, -1.0e16]);
+    fn qed_sum_matches_pinned_cpython_313_compensated_float_sum() {
+        let actual = rdkit_qed_python313_sum([1.0e16, 1.0, -1.0e16]);
         assert_eq!(actual.to_bits(), 1.0_f64.to_bits());
     }
 
