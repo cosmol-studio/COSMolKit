@@ -1103,6 +1103,7 @@ mod tests {
             "with_topology_read_parts",
             "with_block_read_parts",
             "with_optional_block_read_parts",
+            "with_borrowed_optional_block_read_parts",
         ];
 
         for (source_name, source) in op_body_sources() {
