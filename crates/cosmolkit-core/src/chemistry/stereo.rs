@@ -3563,7 +3563,8 @@ pub(crate) const TRIGONALBIPYRAMIDAL_AXIAL: [[u8; 2]; 21] = [
 
 // BEGIN RDKIT CPP FUNCTION: isTrigonalBipyramidalAxialBond (NontetrahedralStereo.cpp:244-274)
 // RDKit✔️✔️: int isTrigonalBipyramidalAxialBond(const Atom *cen, const Bond *qry)
-/// Check if a bond on a TBP center is axial. Returns 1 for axial[0], -1 for axial[1], 0 otherwise.
+/// Check if a bond on a TBP center is axial. Returns 1 for `axial[0]`, -1 for
+/// `axial[1]`, 0 otherwise.
 #[must_use]
 pub fn is_trigonal_bipyramidal_axial_bond(
     cen_idx: usize,

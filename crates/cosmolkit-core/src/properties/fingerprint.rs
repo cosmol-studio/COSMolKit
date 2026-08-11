@@ -327,7 +327,7 @@ impl FingerprintArguments {
         self.to_json()
     }
 
-    /// RDKit✔️✔️: df_countSimulation = pt.get<bool>("countSimulation", df_countSimulation);
+    // RDKit✔️✔️: df_countSimulation = pt.get<bool>("countSimulation", df_countSimulation);
     /// RDKit✔️✔️: d_countBounds.clear();
     /// RDKit✔️✔️: if (countBoundsNode) { ... push_back(bound); }
     pub fn from_json(&mut self, json: &str) -> Result<(), FingerprintError> {
@@ -1317,7 +1317,7 @@ impl MorganAtomEnv {
         }
     }
 
-    /// RDKit✔️✔️: OutputType MorganAtomEnv<OutputType>::getBitId(...) const
+    // RDKit✔️✔️: OutputType MorganAtomEnv<OutputType>::getBitId(...) const
     #[must_use]
     #[allow(non_snake_case)]
     pub fn getBitId(&self) -> u64 {
@@ -1335,7 +1335,7 @@ impl MorganAtomEnv {
         self.code
     }
 
-    /// RDKit✔️❌: void MorganAtomEnv<OutputType>::updateAdditionalOutput(AdditionalOutput *additionalOutput, size_t bitId) const
+    // RDKit✔️❌: void MorganAtomEnv<OutputType>::updateAdditionalOutput(AdditionalOutput *additionalOutput, size_t bitId) const
     #[allow(non_snake_case)]
     pub fn updateAdditionalOutput(&self, additional_output: &mut AdditionalOutput, bit_id: u64) {
         // RDKit source: MorganGenerator.cpp lines 236-264
@@ -1497,7 +1497,7 @@ impl MorganEnvGenerator {
         Self
     }
 
-    /// RDKit✔️✔️: std::string MorganEnvGenerator<OutputType>::infoString() const
+    // RDKit✔️✔️: std::string MorganEnvGenerator<OutputType>::infoString() const
     #[must_use]
     #[allow(non_snake_case)]
     pub fn infoString(&self) -> String {
@@ -1509,7 +1509,7 @@ impl MorganEnvGenerator {
         "MorganEnvironmentGenerator".to_string()
     }
 
-    /// RDKit✔️✔️: void MorganEnvGenerator<OutputType>::toJSON(boost::property_tree::ptree &pt) const
+    // RDKit✔️✔️: void MorganEnvGenerator<OutputType>::toJSON(boost::property_tree::ptree &pt) const
     #[must_use]
     #[allow(non_snake_case)]
     pub fn toJSON(&self) -> String {
@@ -1523,7 +1523,7 @@ impl MorganEnvGenerator {
         r#"{"type":"MorganEnvGenerator"}"#.to_string()
     }
 
-    /// RDKit✔️✔️: void MorganEnvGenerator<OutputType>::fromJSON(const boost::property_tree::ptree &pt)
+    // RDKit✔️✔️: void MorganEnvGenerator<OutputType>::fromJSON(const boost::property_tree::ptree &pt)
     #[allow(non_snake_case)]
     pub fn fromJSON(&mut self, json: &str) -> Result<(), FingerprintError> {
         // RDKit source: MorganGenerator.cpp lines 473-477
@@ -1543,7 +1543,7 @@ impl MorganEnvGenerator {
         Ok(())
     }
 
-    /// RDKit✔️✔️: OutputType MorganEnvGenerator<OutputType>::getResultSize() const
+    // RDKit✔️✔️: OutputType MorganEnvGenerator<OutputType>::getResultSize() const
     #[must_use]
     #[allow(non_snake_case)]
     pub fn getResultSize(&self) -> u64 {
@@ -1555,7 +1555,7 @@ impl MorganEnvGenerator {
         u64::from(u32::MAX)
     }
 
-    /// RDKit✔️❌: std::vector<AtomEnvironment<OutputType> *> MorganEnvGenerator<OutputType>::getEnvironments(...)
+    // RDKit✔️❌: std::vector<AtomEnvironment<OutputType> *> MorganEnvGenerator<OutputType>::getEnvironments(...)
     #[allow(non_snake_case)]
     pub fn getEnvironments(
         &self,

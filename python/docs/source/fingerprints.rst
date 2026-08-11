@@ -11,6 +11,39 @@ sparse view over the binary vector: ``on_bits()``
 returns the bit indexes whose value is 1. It is not a dense floating-point
 neural embedding.
 
+Unsupported APIs and Planned Ports
+----------------------------------
+
+.. warning::
+
+   ``Molecule.topological_fingerprint()`` and
+   ``Molecule.avalon_fingerprint()`` are unsupported in COSMolKit 0.2.11.
+   Calling either method raises ``ValueError`` with an ``unsupported
+   fingerprint option`` message. They do not return an empty vector, reuse a
+   Morgan fingerprint, or run a locally invented path-hash approximation.
+
+The two APIs remain present so callers receive an explicit, stable failure at
+the intended public boundary while their source-exact implementations are
+pending:
+
+- ``topological_fingerprint()`` requires the complete RDKit
+  ``RDKFingerprintMol``/RDKitFP generator behavior, including branched-path
+  enumeration, source random-bit generation, density folding, atom
+  invariants, and the exposed path and atom-selection parameters.
+- ``avalon_fingerprint()`` requires the complete Avalon/reaccs behavior,
+  including ``bitFlags``, ``isQuery``, ``resetVect``, hydrogen handling,
+  tautomeric fingerprints, and byte-rounded vector semantics.
+
+Neither API will be marked supported until its implementation is copied from
+the pinned upstream source under the project's two-axis source-marker rules and
+produces bit-identical results on focused option fixtures and the maintained
+5000-molecule parity corpus. Similarity correlation, partial bit agreement, or
+a heuristic replacement is not an acceptance condition.
+
+The executable follow-up work is tracked in the `topological and Avalon
+fingerprint source-port plan
+<https://github.com/cosmol-studio/COSMolKit/blob/main/dev/plans/rdkit_topological_avalon_fingerprint_port_plan.md>`_.
+
 Single Molecules
 ----------------
 

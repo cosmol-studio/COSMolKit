@@ -1,14 +1,13 @@
 #!/bin/sh
 set -eu
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-repo_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH='' cd -- "$script_dir/../../.." && pwd)
 source_tree="$repo_root/third_party/InChI"
 source_dir="$source_tree/INCHI-1-SRC/INCHI_API/libinchi/src"
 include_dir="$source_tree/INCHI-1-SRC/INCHI_BASE/src"
 build_root="$repo_root/target/inchi-official-c-oracle"
 library_build="$build_root/libinchi"
-library_dir="$library_build/lib"
 oracle_binary="$build_root/official-c-oracle"
 oracle_object="$build_root/oracle.o"
 sha2_process_oracle_object="$build_root/sha2-process-oracle.o"

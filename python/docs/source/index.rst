@@ -1,5 +1,5 @@
 COSMolKit — Rust-native cheminformatics for Python
-================
+==================================================
 
 COSMolKit provides first-class Python bindings to a Rust-native cheminformatics and structural biology toolkit. The Python API covers molecular graph operations, SMILES/SMARTS and molecular file workflows, coordinate access, native 3D conformer generation, UFF/MMFF optimization, InChI, fingerprints, molecular descriptors, molecule depiction, protein structures, and high-throughput batch processing.
 

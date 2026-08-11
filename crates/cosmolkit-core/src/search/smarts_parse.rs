@@ -37,7 +37,7 @@ use crate::{
 ///
 /// RDKit✔️✔️: RDKit returns an RWMol with QueryAtom / QueryBond objects.
 /// COSMolKit returns a separate struct of query-predicate trees paired via
-/// indexing (atom_queries[i] is the i-th atom, bond_queries[i] is the bond
+/// indexing (`atom_queries[i]` is the i-th atom, `bond_queries[i]` is the bond
 /// between atoms i and i+1 in SMARTS order).
 #[derive(Debug, Clone)]
 pub struct SmartsMolecule {
@@ -221,22 +221,22 @@ impl Default for SmartsParseParams {
 // Top-level parse entry point
 // ---------------------------------------------------------------------------
 
-/// RDKit source: SmilesParse.cpp lines 548-576
-/// RDKit✔️✔️: std::unique_ptr<RWMol> MolFromSmarts(
-/// RDKit✔️✔️:     const std::string &smarts,
-/// RDKit✔️✔️:     const SmartsParserParams &params) {
-/// RDKit✔️✔️:   if (yysmarts_debug != params.debugParse) {
-/// RDKit✔️✔️:     yysmarts_debug = params.debugParse;
-/// RDKit✔️✔️:   }
-/// RDKit✔️✔️:   std::string lsmarts, name, cxPart;
-/// RDKit✔️✔️:   preprocessSmiles(smarts, params, lsmarts, name, cxPart);
-/// RDKit✔️✔️:   auto res = toMol(labelRecursivePatterns(lsmarts), smarts_parse, lsmarts);
-/// RDKit✔️✔️:   handleCXPartAndName(res.get(), params, cxPart, name);
-/// RDKit❗❗:   handleCXPartAndName(res.get(), params, cxPart, name);
-/// RDKit❗❗:   // remaining post-processing steps skipped — CX part handling
-/// RDKit❗❗:   // is done inline in the Rust implementation
-/// RDKit✔️✔️:   return res;
-/// RDKit✔️✔️: }
+// RDKit source: SmilesParse.cpp lines 548-576
+// RDKit✔️✔️: std::unique_ptr<RWMol> MolFromSmarts(
+// RDKit✔️✔️:     const std::string &smarts,
+// RDKit✔️✔️:     const SmartsParserParams &params) {
+// RDKit✔️✔️:   if (yysmarts_debug != params.debugParse) {
+// RDKit✔️✔️:     yysmarts_debug = params.debugParse;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   std::string lsmarts, name, cxPart;
+// RDKit✔️✔️:   preprocessSmiles(smarts, params, lsmarts, name, cxPart);
+// RDKit✔️✔️:   auto res = toMol(labelRecursivePatterns(lsmarts), smarts_parse, lsmarts);
+// RDKit✔️✔️:   handleCXPartAndName(res.get(), params, cxPart, name);
+// RDKit❗❗:   handleCXPartAndName(res.get(), params, cxPart, name);
+// RDKit❗❗:   // remaining post-processing steps skipped — CX part handling
+// RDKit❗❗:   // is done inline in the Rust implementation
+// RDKit✔️✔️:   return res;
+// RDKit✔️✔️: }
 pub fn parse_smarts(smarts: &str) -> Result<SmartsMolecule, SmartsParseError> {
     parse_smarts_with_params(smarts, &SmartsParseParams::default())
 }

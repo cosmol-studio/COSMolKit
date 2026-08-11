@@ -430,29 +430,29 @@ pub fn does_mol_have_atropisomers(mol: &Molecule) -> bool {
         .any(|b| matches!(b.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw))
 }
 
-/// BEGIN RDKIT CPP FUNCTION: DetectAtropisomerChiralityOneBond (Atropisomers.cpp:289-485)
-/// RDKit❗✔️: void DetectAtropisomerChiralityOneBond(Bond *bond, ROMol &mol,
-/// RDKit❗✔️:                                        const Conformer *conf) {
-/// RDKit❗✔️:   // coordinate-based geometric chirality detection
-/// RDKit❗✔️:   // This is the full geometric chirality detection using wedge bonds
-/// RDKit❗✔️:   // and/or 3D coordinates. The COSMolKit equivalent for the
-/// RDKit❗✔️:   // structural part is detect_atropisomers().
-/// RDKit❗✔️:
-/// RDKit❗✔️:   AtropAtomAndBondVec atomAndBondVecs[2];
-/// RDKit❗✔️:   if (!getAtropisomerAtomsAndBonds(bond, atomAndBondVecs, mol)) {
-/// RDKit❗✔️:     return;
-/// RDKit❗✔️:   }
-/// RDKit❗✔️:
-/// RDKit❗✔️:   // ... wedge bond direction analysis, coordinate transform,
-/// RDKit❗✔️:   // cross product of end vectors to determine CW/CCW ...
-/// RDKit❗✔️:
-/// RDKit❗✔️:   if (crossProduct.x > REALLY_SMALL_BOND_LEN) {
-/// RDKit❗✔️:     bond->setStereo(Bond::BondStereo::STEREOATROPCCW);
-/// RDKit❗✔️:   } else if (crossProduct.x < -REALLY_SMALL_BOND_LEN) {
-/// RDKit❗✔️:     bond->setStereo(Bond::BondStereo::STEREOATROPCW);
-/// RDKit❗✔️:   }
-/// RDKit❗✔️: }
-/// END RDKIT CPP FUNCTION: DetectAtropisomerChiralityOneBond
+// BEGIN RDKIT CPP FUNCTION: DetectAtropisomerChiralityOneBond (Atropisomers.cpp:289-485)
+// RDKit❗✔️: void DetectAtropisomerChiralityOneBond(Bond *bond, ROMol &mol,
+// RDKit❗✔️:                                        const Conformer *conf) {
+// RDKit❗✔️:   // coordinate-based geometric chirality detection
+// RDKit❗✔️:   // This is the full geometric chirality detection using wedge bonds
+// RDKit❗✔️:   // and/or 3D coordinates. The COSMolKit equivalent for the
+// RDKit❗✔️:   // structural part is detect_atropisomers().
+// RDKit❗✔️:
+// RDKit❗✔️:   AtropAtomAndBondVec atomAndBondVecs[2];
+// RDKit❗✔️:   if (!getAtropisomerAtomsAndBonds(bond, atomAndBondVecs, mol)) {
+// RDKit❗✔️:     return;
+// RDKit❗✔️:   }
+// RDKit❗✔️:
+// RDKit❗✔️:   // ... wedge bond direction analysis, coordinate transform,
+// RDKit❗✔️:   // cross product of end vectors to determine CW/CCW ...
+// RDKit❗✔️:
+// RDKit❗✔️:   if (crossProduct.x > REALLY_SMALL_BOND_LEN) {
+// RDKit❗✔️:     bond->setStereo(Bond::BondStereo::STEREOATROPCCW);
+// RDKit❗✔️:   } else if (crossProduct.x < -REALLY_SMALL_BOND_LEN) {
+// RDKit❗✔️:     bond->setStereo(Bond::BondStereo::STEREOATROPCW);
+// RDKit❗✔️:   }
+// RDKit❗✔️: }
+// END RDKIT CPP FUNCTION: DetectAtropisomerChiralityOneBond
 ///
 /// Assign atropisomer stereo from existing wedge bond directions.
 ///
@@ -747,39 +747,39 @@ fn is_wedge_or_dash(dir: crate::BondDirection) -> bool {
     )
 }
 
-/// BEGIN RDKIT CPP FUNCTION: cleanupAtropisomerStereoGroups (Atropisomers.cpp:487-520)
-/// RDKit❗✔️: void cleanupAtropisomerStereoGroups(ROMol &mol) {
-/// RDKit❗✔️:   std::vector<StereoGroup> newsgs;
-/// RDKit❗✔️:   for (auto sg : mol.getStereoGroups()) {
-/// RDKit❗✔️:     std::vector<Atom *> okatoms;
-/// RDKit❗✔️:     std::vector<Bond *> okbonds;
-/// RDKit❗✔️:     for (auto atom : sg.getAtoms()) {
-/// RDKit❗✔️:       bool foundAtrop = false;
-/// RDKit❗✔️:       for (auto bndI : boost::make_iterator_range(mol.getAtomBonds(atom))) {
-/// RDKit❗✔️:         auto bond = (mol)[bndI];
-/// RDKit❗✔️:         if (bond->getStereo() == Bond::BondStereo::STEREOATROPCCW ||
-/// RDKit❗✔️:             bond->getStereo() == Bond::BondStereo::STEREOATROPCW) {
-/// RDKit❗✔️:           foundAtrop = true;
-/// RDKit❗✔️:           if (std::find(okbonds.begin(), okbonds.end(), bond) ==
-/// RDKit❗✔️:               okbonds.end()) {
-/// RDKit❗✔️:             okbonds.push_back(bond);
-/// RDKit❗✔️:           }
-/// RDKit❗✔️:         }
-/// RDKit❗✔️:       }
-/// RDKit❗✔️:       if (!foundAtrop) {
-/// RDKit❗✔️:         okatoms.push_back(atom);
-/// RDKit❗✔️:       }
-/// RDKit❗✔️:     }
-/// RDKit❗✔️:     if (okbonds.empty()) {
-/// RDKit❗✔️:       newsgs.push_back(sg);
-/// RDKit❗✔️:     } else {
-/// RDKit❗✔️:       newsgs.emplace_back(sg.getGroupType(), std::move(okatoms),
-/// RDKit❗✔️:                           std::move(okbonds));
-/// RDKit❗✔️:     }
-/// RDKit❗✔️:   }
-/// RDKit❗✔️:   mol.setStereoGroups(std::move(newsgs));
-/// RDKit❗✔️: }
-/// END RDKIT CPP FUNCTION: cleanupAtropisomerStereoGroups
+// BEGIN RDKIT CPP FUNCTION: cleanupAtropisomerStereoGroups (Atropisomers.cpp:487-520)
+// RDKit❗✔️: void cleanupAtropisomerStereoGroups(ROMol &mol) {
+// RDKit❗✔️:   std::vector<StereoGroup> newsgs;
+// RDKit❗✔️:   for (auto sg : mol.getStereoGroups()) {
+// RDKit❗✔️:     std::vector<Atom *> okatoms;
+// RDKit❗✔️:     std::vector<Bond *> okbonds;
+// RDKit❗✔️:     for (auto atom : sg.getAtoms()) {
+// RDKit❗✔️:       bool foundAtrop = false;
+// RDKit❗✔️:       for (auto bndI : boost::make_iterator_range(mol.getAtomBonds(atom))) {
+// RDKit❗✔️:         auto bond = (mol)[bndI];
+// RDKit❗✔️:         if (bond->getStereo() == Bond::BondStereo::STEREOATROPCCW ||
+// RDKit❗✔️:             bond->getStereo() == Bond::BondStereo::STEREOATROPCW) {
+// RDKit❗✔️:           foundAtrop = true;
+// RDKit❗✔️:           if (std::find(okbonds.begin(), okbonds.end(), bond) ==
+// RDKit❗✔️:               okbonds.end()) {
+// RDKit❗✔️:             okbonds.push_back(bond);
+// RDKit❗✔️:           }
+// RDKit❗✔️:         }
+// RDKit❗✔️:       }
+// RDKit❗✔️:       if (!foundAtrop) {
+// RDKit❗✔️:         okatoms.push_back(atom);
+// RDKit❗✔️:       }
+// RDKit❗✔️:     }
+// RDKit❗✔️:     if (okbonds.empty()) {
+// RDKit❗✔️:       newsgs.push_back(sg);
+// RDKit❗✔️:     } else {
+// RDKit❗✔️:       newsgs.emplace_back(sg.getGroupType(), std::move(okatoms),
+// RDKit❗✔️:                           std::move(okbonds));
+// RDKit❗✔️:     }
+// RDKit❗✔️:   }
+// RDKit❗✔️:   mol.setStereoGroups(std::move(newsgs));
+// RDKit❗✔️: }
+// END RDKIT CPP FUNCTION: cleanupAtropisomerStereoGroups
 ///
 /// Remove atropisomer bonds from stereo groups and move them to bond-only
 /// groups. In RDKit, atropisomer stereo groups track which atoms participate

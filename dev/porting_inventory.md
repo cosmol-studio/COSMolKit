@@ -23,6 +23,7 @@ authoritative when this file disagrees with code.
 | `substantial` | Broad implementation exists, but README-level closure still has known gaps |
 | `partial` | Some implementation exists, but important README-visible behavior remains |
 | `deferred` | Explicitly outside this pass |
+| `unsupported` | Public boundary exists but fails explicitly; no result is produced |
 
 ## Cross-Cutting Gaps
 
@@ -58,6 +59,8 @@ authoritative when this file disagrees with code.
 | MolBlock V2000/V3000 handling | `io/sdf.rs`, `Molecule::from_mol_block` | `MOLBLOCK_IO_FEATURE` (Experimental) | substantial | V3000 reader, complex query predicates, supplier edge cases. |
 | Sanitization pipeline | `ops.rs`, `sanitize.rs` | `SANITIZE_FEATURE` | partial | Registered weak-topology sanitize flow exists and is now the explicit reader-side chemistry handoff. The frozen-scope audit is still open in sanitize/property/cleanup orchestration: `operations/ops.rs` currently contains 216 `RDKit✔️❌` copied-source lines across the remaining orchestration and cleanup helpers listed in `dev/gap_reports/smiles_rdkit_remaining_source_scan.md`. |
 | Morgan fingerprint | `fingerprint.rs` | `FINGERPRINT_FEATURE` (Experimental) | substantial | Functional options mostly present; strict RDKit hash parity deferred; audit unsupported options. |
+| RDKFingerprint/topological fingerprint | `fingerprint.rs`, `Molecule::topological_fingerprint` | `FINGERPRINT_FEATURE` | unsupported | The public boundary returns a structured unsupported error. Follow `plans/rdkit_topological_avalon_fingerprint_port_plan.md`; support requires a complete source-exact RDKitFP generator port and exact-bit parity on focused options plus the maintained 5000-row corpus. |
+| Avalon fingerprint | `avalon_fingerprint.rs`, `Molecule::avalon_fingerprint` | `FINGERPRINT_FEATURE` | unsupported | The public boundary returns a structured unsupported error. Follow `plans/rdkit_topological_avalon_fingerprint_port_plan.md`; support requires a complete source-exact Avalon/reaccs port, including byte-rounded vector semantics, and exact-bit parity on focused options plus the maintained 5000-row corpus. |
 | Force fields | `forcefield/`, `uff_*`, `mmff_*` | — | substantial | The source-backed force-field core, UFF, MMFF, and CrystalFF modules have local branch coverage, and `rdkit_forcefield_params_parity.rs` currently passes with `0 ignored` tests for UFF/MMFF parameter coverage, initial energy/gradient, and single-/multi-conformer final-coordinate comparisons on the shared corpus. This is not a blanket claim that every remaining copied RDKit marker in force-field files is closed; marker cleanup and any unsupported source branches must remain explicit. |
 
 ### Chemical File I/O

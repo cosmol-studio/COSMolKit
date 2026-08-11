@@ -45,6 +45,10 @@ jobs:
             # that disagree with records from static test binaries.
             CARGO_PROFILE_RELEASE_OPT_LEVEL: "0"
             CARGO_PROFILE_RELEASE_LTO: "false"
+            # The source-faithful InChI stereo mapper recurses once per stereo
+            # feature. At opt-level=0 its Rust stack frame is much larger than
+            # the optimized frame; the 5000-row corpus includes 63 centers.
+            RUST_MIN_STACK: "8388608"
 
         steps:
             - name: Checkout

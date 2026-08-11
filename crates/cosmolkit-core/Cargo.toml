@@ -22,9 +22,9 @@ op-contracts = []
 op-contracts-strict = ["runtime-invariants", "op-contracts"]
 
 [dependencies]
-cosmolkit-inchi = { version = "0.2.10", path = "../cosmolkit-inchi" }
-cosmolkit-macros = { version = "0.2.10", path = "../cosmolkit-macros" }
-cosmolkit-ringdecomposer = { version = "0.2.10", path = "../cosmolkit-ringdecomposer" }
+cosmolkit-inchi = { version = "0.2.11", path = "../cosmolkit-inchi" }
+cosmolkit-macros = { version = "0.2.11", path = "../cosmolkit-macros" }
+cosmolkit-ringdecomposer = { version = "0.2.11", path = "../cosmolkit-ringdecomposer" }
 glam = "0.33.1"
 indicatif = "0.18"
 libc = "0.2"

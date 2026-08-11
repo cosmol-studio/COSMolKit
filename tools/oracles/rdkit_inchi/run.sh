@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-repo_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH='' cd -- "$script_dir/../../.." && pwd)
 rdkit_root="$repo_root/third_party/rdkit"
 source_file="$rdkit_root/External/INCHI-API/inchi.cpp"
 header_file="$rdkit_root/External/INCHI-API/inchi.h"

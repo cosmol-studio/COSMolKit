@@ -21,7 +21,7 @@
   </a>
 </p>
 
-[COSMolKit](https://github.com/cosmol-studio/cosmolkit) is a Rust-native cheminformatics and structural biology toolkit with first-class Python bindings. It provides molecular graph operations, SMILES/SMARTS and molecular file workflows, 2D depiction, native 3D conformer generation, UFF/MMFF optimization, fingerprints, molecular descriptors, InChI, batch processing, and protein structure APIs.
+[COSMolKit](https://github.com/cosmol-studio/COSMolKit) is a Rust-native cheminformatics and structural biology toolkit with first-class Python bindings. It provides molecular graph operations, SMILES/SMARTS and molecular file workflows, 2D depiction, native 3D conformer generation, UFF/MMFF optimization, fingerprints, molecular descriptors, InChI, batch processing, and protein structure APIs.
 
 For supported cheminformatics operations, RDKit-compatible behavior is treated as the correctness floor. Implementations are validated with fixed parity oracles and source-defined tests where applicable, while unsupported behavior fails explicitly instead of being approximated through silent fallbacks.
 
@@ -304,7 +304,9 @@ Goal: keep the supported molecular core correct before expanding breadth.
   allocation behavior returns a structured error
 - ✅ Morgan fingerprints and Tanimoto similarity for the validated exact-parity branches
 - ✅ MACCS fingerprints for the validated exact raw/public projection
-- 🚧 RDKFingerprint/topological and Avalon fingerprints (fail closed until source ports exist)
+- 🚧 RDKFingerprint/topological and Avalon fingerprints fail closed until
+  the [source-exact follow-up plan](dev/plans/rdkit_topological_avalon_fingerprint_port_plan.md)
+  is completed with exact-bit parity
 - ✅ Substructure matching and Python SMARTS parse metadata
 - ✅ Molecular descriptors: average/exact molecular weight, formula, H-bond
   donor/acceptor counts, fraction Csp3, Crippen logP/MR, TPSA, aromatic-ring
