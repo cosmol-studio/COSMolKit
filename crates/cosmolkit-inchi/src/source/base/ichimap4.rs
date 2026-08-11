@@ -21,6 +21,7 @@ use crate::source_types::{
     inchiTime, ppAT_RANK, sp_ATOM,
 };
 
+#[inline(always)]
 fn source_get<T: Clone + 'static>(
     heap: &SourceHeap,
     pointer: SourceMutPointer<T>,
@@ -32,6 +33,7 @@ fn source_get<T: Clone + 'static>(
         .ok_or(SourceHeapError::PointerOutOfBounds)
 }
 
+#[inline(always)]
 fn source_set<T: Clone + 'static>(
     heap: &mut SourceHeap,
     pointer: SourceMutPointer<T>,
@@ -3361,18 +3363,33 @@ pub(crate) fn map_stereo_atoms4(
                 return Ok(total_success);
             }
 
-            let from_atom = source_get(
-                heap,
-                nAtomNumberCanonFrom,
-                i32::from(atom_rank_canon).wrapping_sub(1),
-            )?;
-            let rank1_pointer = source_get(heap, pRankStack1, 0)?;
-            let rank2_pointer = source_get(heap, pRankStack2, 0)?;
-            let order2_pointer = source_get(heap, pRankStack2, 1)?;
-            let mapping_rank = source_get(heap, rank1_pointer, i32::from(from_atom))?;
+            // These C arrays are fixed allocations for the lifetime of the
+            // canonicalization workspace. Helpers below may update elements in
+            // other rank rows and the stereo marker row, but they neither free
+            // nor resize these buffers. Stable views therefore retain C pointer
+            // identity without retaining element references across helper calls.
+            let canon_from = unsafe { heap.stable_slice(nAtomNumberCanonFrom.as_const())? };
+            let canon_index = usize::try_from(i32::from(atom_rank_canon).wrapping_sub(1))
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            // INCHI✔️✔️:         at_rank1 = pRankStack1[0][at_from1 = (int) nAtomNumberCanonFrom[at_rank_canon1 - 1]];
+            let from_atom = *canon_from.get(canon_index)?;
+            let rank_stack1 = unsafe { heap.stable_slice(pRankStack1.as_const())? };
+            let rank1_pointer = *rank_stack1.get(0)?;
+            let rank_stack2 = unsafe { heap.stable_slice(pRankStack2.as_const())? };
+            let rank2_pointer = *rank_stack2.get(0)?;
+            let order2_pointer = *rank_stack2.get(1)?;
+            let rank1 = unsafe { heap.stable_slice(rank1_pointer.as_const())? };
+            let rank2 = unsafe { heap.stable_slice(rank2_pointer.as_const())? };
+            let order2 = unsafe { heap.stable_slice(order2_pointer.as_const())? };
+            let mapping_rank = *rank1.get(usize::from(from_atom))?;
+            // INCHI✔️✔️:         iMax = at_rank1 - 1;
             let max_index = i32::from(mapping_rank).wrapping_sub(1);
-            let check_to = source_get(heap, order2_pointer, max_index)?;
-            if mapping_rank != source_get(heap, rank2_pointer, i32::from(check_to))? {
+            let max_index_usize =
+                usize::try_from(max_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let check_to = *order2.get(max_index_usize)?;
+            // INCHI✔️✔️:         if (at_rank1 != pRankStack2[0][pRankStack2[1][at_rank1 - 1]])
+            if mapping_rank != *rank2.get(usize::from(check_to))? {
+                // INCHI✔️✔️:             return CT_STEREOCOUNT_ERR;
                 return Ok(CT_STEREOCOUNT_ERR);
             }
 
@@ -3382,42 +3399,56 @@ pub(crate) fn map_stereo_atoms4(
             let mut number_worse = 0_i32;
             let mut number_best = 0_i32;
             let mut number_calculate = 0_i32;
+            let atoms = unsafe { heap.stable_slice(at.as_const())? };
+            let used_atoms = unsafe { heap.stable_slice(pCS.bAtomUsedForStereo.as_const())? };
+            // INCHI✔️✔️:         for (j1 = 0; j1 <= iMax && at_rank1 == pRankStack2[0][at_to1 = pRankStack2[1][iMax - j1]]; j1++)
             let mut scan = 0_i32;
             while scan <= max_index {
-                let to_atom = source_get(heap, order2_pointer, max_index.wrapping_sub(scan))?;
-                if mapping_rank != source_get(heap, rank2_pointer, i32::from(to_atom))? {
+                let order_index = usize::try_from(max_index.wrapping_sub(scan))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let to_atom = *order2.get(order_index)?;
+                if mapping_rank != *rank2.get(usize::from(to_atom))? {
                     break;
                 }
-                let atom_value = heap
-                    .slice(at.as_const())?
-                    .get(usize::from(to_atom))
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let atom_value = atoms.get(usize::from(to_atom))?;
+                // INCHI✔️✔️:             if (!at[at_to1].stereo_bond_neighbor[0] && pCS->bAtomUsedForStereo[at_to1] == STEREO_AT_MARK)
                 if atom_value.stereo_bond_neighbor[0] == 0
-                    && source_get(heap, pCS.bAtomUsedForStereo, i32::from(to_atom))?
-                        == STEREO_AT_MARK as i8
+                    && *used_atoms.get(usize::from(to_atom))? == STEREO_AT_MARK as i8
                 {
+                    // INCHI✔️✔️:                 stereo_center_parity = PARITY_VAL( at[at_to1].stereo_atom_parity );
                     match parity_value(atom_value.stereo_atom_parity) {
+                        // INCHI✔️✔️:                     case AB_PARITY_UNDF: nNumUndf++; break;
                         value if value == AB_PARITY_UNDF as i32 => number_undefined += 1,
+                        // INCHI✔️✔️:                     case AB_PARITY_UNKN: nNumUnkn++; break;
                         value if value == AB_PARITY_UNKN as i32 => number_unknown += 1,
+                        // INCHI✔️✔️:                     case BEST_PARITY: nNumBest++; break;
                         value if value == BEST_PARITY as i32 => number_best += 1,
+                        // INCHI✔️✔️:                     case WORSE_PARITY: nNumWorse++; break;
                         value if value == WORSE_PARITY as i32 => number_worse += 1,
+                        // INCHI✔️✔️:                     case AB_PARITY_CALC: nNumCalc++; break;
                         value if value == AB_PARITY_CALC as i32 => number_calculate += 1,
+                        // INCHI✔️✔️:                     case AB_PARITY_NONE: no_choice++; break;
                         value if value == AB_PARITY_NONE as i32 => {
                             scan = scan.wrapping_add(1);
                             continue;
                         }
                         _ => {}
                     }
-                    number_choices += 1;
+                    // INCHI✔️✔️:                 nNumChoices += !no_choice;
+                    number_choices = number_choices.wrapping_add(1);
                 }
                 scan = scan.wrapping_add(1);
             }
+            // INCHI✔️✔️:         if (nNumChoices != nNumCalc + nNumUndf + nNumUnkn + nNumBest + nNumWorse)
             if number_choices
                 != number_calculate + number_undefined + number_unknown + number_best + number_worse
             {
+                // INCHI✔️✔️:             return CT_STEREOCOUNT_ERR;
                 return Ok(CT_STEREOCOUNT_ERR);
             }
+            // INCHI✔️✔️:         if (!nNumChoices)
             if number_choices == 0 {
+                // INCHI✔️✔️:             goto next_canon_rank;
                 continue 'canon_rank;
             }
 
@@ -3518,36 +3549,38 @@ pub(crate) fn map_stereo_atoms4(
                 }
                 CurTreeSetPos(cur_tree.as_deref_mut(), tpos1);
 
+                // INCHI✔️✔️:         for (j1 = 0; j1 <= iMax && at_rank1 == pRankStack2[0][at_to1 = pRankStack2[1][iMax - j1]]; j1++)
                 let mut candidate_index = 0_i32;
                 while candidate_index <= max_index {
-                    let to_atom = source_get(
-                        heap,
-                        order2_pointer,
-                        max_index.wrapping_sub(candidate_index),
-                    )?;
-                    if mapping_rank != source_get(heap, rank2_pointer, i32::from(to_atom))? {
+                    let order_index = usize::try_from(max_index.wrapping_sub(candidate_index))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let to_atom = *order2.get(order_index)?;
+                    if mapping_rank != *rank2.get(usize::from(to_atom))? {
                         break;
                     }
                     candidate_index = candidate_index.wrapping_add(1);
-                    let atom_value = heap
-                        .slice(at.as_const())?
-                        .get(usize::from(to_atom))
-                        .cloned()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    if atom_value.stereo_atom_parity == 0
-                        || atom_value.stereo_bond_neighbor[0] != 0
-                        || source_get(heap, pCS.bAtomUsedForStereo, i32::from(to_atom))?
-                            != STEREO_AT_MARK as i8
+                    let atom_value = atoms.get(usize::from(to_atom))?;
+                    let atom_parity = atom_value.stereo_atom_parity;
+                    let has_stereo_bond = atom_value.stereo_bond_neighbor[0] != 0;
+                    // End the element borrow before helpers can update other
+                    // source allocations; the stable handle itself is a raw
+                    // fixed-buffer view and carries no Rust reference alias.
+                    let _ = atom_value;
+                    // INCHI✔️✔️:             if (!at[at_to1].stereo_atom_parity || at[at_to1].stereo_bond_neighbor[0] || pCS->bAtomUsedForStereo[at_to1] != STEREO_AT_MARK)
+                    if atom_parity == 0
+                        || has_stereo_bond
+                        || *used_atoms.get(usize::from(to_atom))? != STEREO_AT_MARK as i8
                     {
                         continue;
                     }
-                    if parity_known(atom_value.stereo_atom_parity) {
+                    // INCHI✔️✔️:             if (PARITY_KNOWN( at[at_to1].stereo_atom_parity ))
+                    if parity_known(atom_parity) {
                         if stereo_parity == calculated_parity
-                            || stereo_parity != parity_value(atom_value.stereo_atom_parity)
+                            || stereo_parity != parity_value(atom_parity)
                         {
                             continue;
                         }
-                    } else if parity_calculate(atom_value.stereo_atom_parity) {
+                    } else if parity_calculate(atom_parity) {
                         if stereo_parity != calculated_parity {
                             continue;
                         }
@@ -3555,9 +3588,9 @@ pub(crate) fn map_stereo_atoms4(
                         return Ok(CT_STEREOCOUNT_ERR);
                     }
 
+                    // INCHI✔️✔️:             bAllParitiesIdentical = ( ( at[at_to1].stereo_atom_parity & KNOWN_PARITIES_EQL ) && PARITY_KNOWN( at[at_to1].stereo_atom_parity ) );
                     let mut all_identical =
-                        atom_value.stereo_atom_parity & KNOWN_PARITIES_EQL as i8 != 0
-                            && parity_known(atom_value.stereo_atom_parity);
+                        atom_parity & KNOWN_PARITIES_EQL as i8 != 0 && parity_known(atom_parity);
                     if !all_identical
                         && number_calculate == 0
                         && i32::from(number_undefined == 0)

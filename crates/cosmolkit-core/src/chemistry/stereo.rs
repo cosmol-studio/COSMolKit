@@ -7,6 +7,7 @@ use crate::{
     AdjacencyList, Atom, AtomId, Bond, BondId, ChiralTag, Conformer3D, Molecule, MoleculeProperties,
 };
 use std::collections::HashSet;
+use std::ptr::NonNull;
 
 // RDKit✔️❌: constexpr auto nonTetrahedralStereoEnvVar =
 // RDKit✔️❌:     "RDK_ENABLE_NONTETRAHEDRAL_STEREO";
@@ -519,15 +520,41 @@ fn build_cip_invariants(mol: &Molecule) -> Vec<i64> {
 }
 
 // BEGIN RDKIT CPP STRUCT SortableCIPReference (Chirality.cpp:1031-1070)
+// RDKit✔️✔️: //! Lightweight sortable wrapper that references a CIP entry and keeps track of
+// RDKit✔️✔️: //! the current rank.
 // RDKit✔️✔️: struct SortableCIPReference {
 // RDKit✔️✔️:   SortableCIPReference(CIP_ENTRY *cipRef, const int atomIdx)
-// RDKit✔️✔️:       : cip(cipRef), atomIdx(atomIdx) { ... }
+// RDKit✔️✔️:       : cip(cipRef), atomIdx(atomIdx) {
+// RDKit✔️✔️:     CHECK_INVARIANT(cip != nullptr, "null CIP entry");
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   SortableCIPReference(SortableCIPReference &&other) noexcept {
+// RDKit✔️✔️:     cip = other.cip;
+// RDKit✔️✔️:     atomIdx = other.atomIdx;
+// RDKit✔️✔️:     other.cip = nullptr;
+// RDKit✔️✔️:     currRank = other.currRank;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   SortableCIPReference &operator=(SortableCIPReference &&other) noexcept {
+// RDKit✔️✔️:     if (this == &other) {
+// RDKit✔️✔️:       return *this;
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:     cip = other.cip;
+// RDKit✔️✔️:     atomIdx = other.atomIdx;
+// RDKit✔️✔️:     other.cip = nullptr;
+// RDKit✔️✔️:     currRank = other.currRank;
+// RDKit✔️✔️:     return *this;
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:
 // RDKit✔️✔️:   bool operator==(const SortableCIPReference &rhs) const {
+// RDKit✔️✔️:     PRECONDITION(cip != nullptr, "null CIP entry");
+// RDKit✔️✔️:     PRECONDITION(rhs.cip != nullptr, "null CIP entry");
 // RDKit✔️✔️:     return *cip == *rhs.cip;
 // RDKit✔️✔️:   }
 // RDKit✔️✔️:   bool operator<(const SortableCIPReference &rhs) const {
+// RDKit✔️✔️:     PRECONDITION(cip != nullptr, "null CIP entry");
+// RDKit✔️✔️:     PRECONDITION(rhs.cip != nullptr, "null CIP entry");
 // RDKit✔️✔️:     return *cip < *rhs.cip;
 // RDKit✔️✔️:   }
+// RDKit✔️✔️:
 // RDKit✔️✔️:   CIP_ENTRY *cip = nullptr;
 // RDKit✔️✔️:   int atomIdx = -1;
 // RDKit✔️✔️:   int currRank = -1;
@@ -535,26 +562,34 @@ fn build_cip_invariants(mol: &Molecule) -> Vec<i64> {
 // END RDKIT CPP STRUCT SortableCIPReference
 /// Lightweight sortable wrapper that references a CIP entry and tracks rank.
 /// CIP_ENTRY ≡ Vec<i32> in Rust.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct SortableCipRef {
-    cip: Vec<i32>,
+    cip: NonNull<Vec<i32>>,
     atom_idx: usize,
     curr_rank: i32,
 }
 
 impl SortableCipRef {
-    fn new(cip: Vec<i32>, atom_idx: usize) -> Self {
+    fn new(cip: &mut Vec<i32>, atom_idx: usize) -> Self {
         Self {
-            cip,
+            cip: NonNull::from(cip),
             atom_idx,
             curr_rank: -1,
         }
+    }
+
+    fn cip_entry(&self) -> &[i32] {
+        // SAFETY: `iterate_cip_ranks` allocates the complete outer table
+        // before constructing these pointers and never resizes that table.
+        // Inner Vec growth does not move the Vec header referenced here, and
+        // comparisons do not overlap mutation of the referenced entry.
+        unsafe { self.cip.as_ref().as_slice() }
     }
 }
 
 impl PartialEq for SortableCipRef {
     fn eq(&self, other: &Self) -> bool {
-        self.cip == other.cip
+        self.cip_entry() == other.cip_entry()
     }
 }
 
@@ -568,35 +603,45 @@ impl PartialOrd for SortableCipRef {
 
 impl Ord for SortableCipRef {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Note: RDKit sorts ascending. We match that.
-        self.cip.cmp(&other.cip)
+        self.cip_entry().cmp(other.cip_entry())
     }
 }
 
 // BEGIN RDKIT CPP FUNCTION findSegmentsToResort (Chirality.cpp:1072-1118)
+// RDKit✔️✔️: //! Iterate over sorted entries, track tied regions and assign ranks.
+// RDKit✔️✔️: //! \param sortedEntries CIP entries
+// RDKit✔️✔️: //! \param res Pairs of start, end index of tied atoms
+// RDKit✔️✔️: //! \param numIndependentEntries The number of unique ranks.
 // RDKit✔️✔️: void findSegmentsToResort(std::vector<SortableCIPReference> &sortedEntries,
 // RDKit✔️✔️:                           std::vector<std::pair<int, int>> &res,
 // RDKit✔️✔️:                           unsigned int &numIndependentEntries) {
 // RDKit✔️✔️:   res.clear();
-// RDKit✔️✔️:   numIndependentEntries = sortedEntries.size();
+// RDKit✔️✔️:   numIndependentEntries = rdcast<unsigned int>(sortedEntries.size());
 // RDKit✔️✔️:   SortableCIPReference *current = &sortedEntries.front();
 // RDKit✔️✔️:   int runningRank = 0;
 // RDKit✔️✔️:   current->currRank = runningRank;
 // RDKit✔️✔️:   bool inEqualSection = false;
+// RDKit✔️✔️:
 // RDKit✔️✔️:   for (size_t i = 1; i < sortedEntries.size(); i++) {
 // RDKit✔️✔️:     SortableCIPReference &entry = sortedEntries[i];
 // RDKit✔️✔️:     if (*current == entry) {
 // RDKit✔️✔️:       entry.currRank = runningRank;
 // RDKit✔️✔️:       numIndependentEntries--;
+// RDKit✔️✔️:       // Case where we need to open a section
 // RDKit✔️✔️:       if (!inEqualSection) {
 // RDKit✔️✔️:         inEqualSection = true;
 // RDKit✔️✔️:         auto &[firstIndex, _] = res.emplace_back();
+// RDKit✔️✔️:         // Go back to the first in this section, we only catch at first + 1
 // RDKit✔️✔️:         firstIndex = i - 1;
+// RDKit✔️✔️:       } else {
+// RDKit✔️✔️:         // Case where we are already in a section, nullop
 // RDKit✔️✔️:       }
 // RDKit✔️✔️:     } else {
+// RDKit✔️✔️:       // Case where we're closing an open section.
 // RDKit✔️✔️:       runningRank++;
 // RDKit✔️✔️:       entry.currRank = runningRank;
 // RDKit✔️✔️:       current = &entry;
+// RDKit✔️✔️:
 // RDKit✔️✔️:       if (inEqualSection) {
 // RDKit✔️✔️:         auto &[_, finalIndex] = res.back();
 // RDKit✔️✔️:         finalIndex = i;
@@ -604,6 +649,7 @@ impl Ord for SortableCipRef {
 // RDKit✔️✔️:       }
 // RDKit✔️✔️:     }
 // RDKit✔️✔️:   }
+// RDKit✔️✔️:   // Handle currently open.
 // RDKit✔️✔️:   if (inEqualSection) {
 // RDKit✔️✔️:     auto &[_, finalIndex] = res.back();
 // RDKit✔️✔️:     finalIndex = sortedEntries.size() - 1;
@@ -611,20 +657,34 @@ impl Ord for SortableCipRef {
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION findSegmentsToResort
 /// Iterate over sorted entries, track tied regions and assign ranks.
-fn find_segments_to_resort(sorted_entries: &mut [SortableCipRef]) -> (Vec<(usize, usize)>, usize) {
-    let mut res: Vec<(usize, usize)> = Vec::new();
+fn find_segments_to_resort(
+    sorted_entries: &mut [SortableCipRef],
+    res: &mut Vec<(usize, usize)>,
+) -> usize {
+    res.clear();
     let mut num_independent = sorted_entries.len();
     if sorted_entries.is_empty() {
-        return (res, 0);
+        // RDKit's `front()` does not define an empty-input result. COSMolKit's
+        // public rank API accepts an empty molecule, so this boundary remains
+        // behaviorally partial instead of claiming source equivalence.
+        return 0;
     }
-    let mut current_idx = 0;
-    sorted_entries[0].curr_rank = 0;
+    // SAFETY: the non-empty slice is fixed for this function. `current` and
+    // every `entry` are derived from that one allocation, and the loop never
+    // retains a Rust reference while mutating another entry. CIP comparisons
+    // only read the separately allocated entry vectors.
+    let entries = sorted_entries.as_mut_ptr();
+    let mut current = entries;
     let mut running_rank = 0;
+    unsafe { (*current).curr_rank = running_rank };
     let mut in_equal_section = false;
 
     for i in 1..sorted_entries.len() {
-        if sorted_entries[current_idx] == sorted_entries[i] {
-            sorted_entries[i].curr_rank = running_rank;
+        // SAFETY: `i < sorted_entries.len()` and `current` is either the first
+        // entry or an entry visited by an earlier iteration.
+        let entry = unsafe { entries.add(i) };
+        if unsafe { *current == *entry } {
+            unsafe { (*entry).curr_rank = running_rank };
             num_independent -= 1;
             if !in_equal_section {
                 in_equal_section = true;
@@ -632,22 +692,21 @@ fn find_segments_to_resort(sorted_entries: &mut [SortableCipRef]) -> (Vec<(usize
             }
         } else {
             running_rank += 1;
-            sorted_entries[i].curr_rank = running_rank;
-            current_idx = i;
+            unsafe { (*entry).curr_rank = running_rank };
+            current = entry;
             if in_equal_section {
-                if let Some(last) = res.last_mut() {
-                    last.1 = i;
-                }
+                // SAFETY: `in_equal_section` becomes true only immediately
+                // after pushing the corresponding open segment.
+                unsafe { res.last_mut().unwrap_unchecked() }.1 = i;
                 in_equal_section = false;
             }
         }
     }
     if in_equal_section {
-        if let Some(last) = res.last_mut() {
-            last.1 = sorted_entries.len() - 1;
-        }
+        // SAFETY: the same open-segment invariant applies at loop exit.
+        unsafe { res.last_mut().unwrap_unchecked() }.1 = sorted_entries.len() - 1;
     }
-    (res, num_independent)
+    num_independent
 }
 
 // BEGIN RDKIT CPP FUNCTION recomputeRanks (Chirality.cpp:1180-1186)
@@ -660,14 +719,23 @@ fn find_segments_to_resort(sorted_entries: &mut [SortableCipRef]) -> (Vec<(usize
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION recomputeRanks
 fn recompute_ranks(sorted_entries: &[SortableCipRef], ranks: &mut [u32]) {
-    for entry in sorted_entries {
-        ranks[entry.atom_idx] = entry.curr_rank as u32;
+    debug_assert!(sorted_entries.len() >= ranks.len());
+    let entries = sorted_entries.as_ptr();
+    let output = ranks.as_mut_ptr();
+    for rank in 0..ranks.len() {
+        // SAFETY: `iterate_cip_ranks` constructs one sortable entry per rank,
+        // and each entry retains its original atom index in `0..ranks.len()`.
+        // The two slices are distinct allocations and remain fixed here.
+        let entry = unsafe { &*entries.add(rank) };
+        unsafe { output.add(entry.atom_idx).write(entry.curr_rank as u32) };
     }
 }
 
 // BEGIN RDKIT CPP STRUCT PrecomputedBondFeatures (Chirality.cpp:1120-1125)
 // RDKit✔️✔️: struct PrecomputedBondFeatures {
+// RDKit✔️✔️:   //! Pairs of {atom index, counts}, strided by 8 for each atom.
 // RDKit✔️✔️:   std::vector<std::pair<std::uint8_t, int>> countsAndNeighborIndices;
+// RDKit✔️✔️:   //! Number of neighbors per atom.
 // RDKit✔️✔️:   std::vector<std::uint8_t> numNeighbors;
 // RDKit✔️✔️: };
 // END RDKIT CPP STRUCT PrecomputedBondFeatures
@@ -678,11 +746,14 @@ struct PrecomputedBondFeatures {
 
 // BEGIN RDKIT CPP FUNCTION computeBondFeatures (Chirality.cpp:1127-1178)
 // RDKit✔️✔️: constexpr int kMaxBonds = 16;
+// RDKit✔️✔️:
+// RDKit✔️✔️: //! Lookup neighbor indices and compute counts for each atom.
 // RDKit✔️✔️: PrecomputedBondFeatures computeBondFeatures(const ROMol &mol) {
 // RDKit✔️✔️:   PrecomputedBondFeatures features;
 // RDKit✔️✔️:   const unsigned int numAtoms = mol.getNumAtoms();
 // RDKit✔️✔️:   features.countsAndNeighborIndices.resize(numAtoms * kMaxBonds);
 // RDKit✔️✔️:   features.numNeighbors.resize(numAtoms, 0);
+// RDKit✔️✔️:
 // RDKit✔️✔️:   for (size_t atomIdx = 0; atomIdx < numAtoms; atomIdx++) {
 // RDKit✔️✔️:     int indexOffset = atomIdx * kMaxBonds;
 // RDKit✔️✔️:     for (const auto bond : mol.atomBonds(mol[atomIdx])) {
@@ -691,6 +762,14 @@ struct PrecomputedBondFeatures {
 // RDKit✔️✔️:       auto &[count, neighborIndex] =
 // RDKit✔️✔️:           features.countsAndNeighborIndices.at(indexOffset);
 // RDKit✔️✔️:       neighborIndex = nbrIdx;
+// RDKit✔️✔️:
+// RDKit✔️✔️:       // put the neighbor in 2N times where N is the bond order as a double.
+// RDKit✔️✔️:       // this is to treat aromatic linkages on fair footing. i.e. at least in
+// RDKit✔️✔️:       // the first iteration --c(:c):c and --C(=C)-C should look the same.
+// RDKit✔️✔️:       // this was part of issue 3009911
+// RDKit✔️✔️:
+// RDKit✔️✔️:       // a special case for chiral phosphorus compounds
+// RDKit✔️✔️:       // (this was leading to incorrect assignment of R/S labels ):
 // RDKit✔️✔️:       bool isChiralPhosphorusSpecialCase = false;
 // RDKit✔️✔️:       if (bond->getBondType() == Bond::DOUBLE) {
 // RDKit✔️✔️:         const Atom *nbr = mol[nbrIdx];
@@ -699,11 +778,20 @@ struct PrecomputedBondFeatures {
 // RDKit✔️✔️:           isChiralPhosphorusSpecialCase = nbrDeg == 3 || nbrDeg == 4;
 // RDKit✔️✔️:         }
 // RDKit✔️✔️:       };
+// RDKit✔️✔️:
+// RDKit✔️✔️:       // general justification of this is:
+// RDKit✔️✔️:       // Paragraph 2.2. in the 1966 article is "Valence-Bond Conventions:
+// RDKit✔️✔️:       // Multiple-Bond Unsaturation and Aromaticity". It contains several
+// RDKit✔️✔️:       // conventions of which convention (b) is the one applying here:
+// RDKit✔️✔️:       // "(b) Contributions by d orbitals to bonds of quadriligant atoms are
+// RDKit✔️✔️:       // neglected."
+// RDKit✔️✔️:       // FIX: this applies to more than just P
 // RDKit✔️✔️:       if (isChiralPhosphorusSpecialCase) {
 // RDKit✔️✔️:         count += 1;
 // RDKit✔️✔️:       } else {
 // RDKit✔️✔️:         count += getTwiceBondType(*bond);
 // RDKit✔️✔️:       }
+// RDKit✔️✔️:
 // RDKit✔️✔️:       ++indexOffset;
 // RDKit✔️✔️:     }
 // RDKit✔️✔️:   }
@@ -732,25 +820,18 @@ fn compute_bond_features(
                 features.counts_and_neighbor_indices[index_offset];
             *neighbor_index = nbr_idx;
 
-            // Find the bond between atom_idx and nbr_idx
-            let bond = mol.bonds().iter().find(|b| {
-                (b.begin().index() == atom_idx && b.end().index() == nbr_idx)
-                    || (b.begin().index() == nbr_idx && b.end().index() == atom_idx)
-            });
+            let bond = &mol.bonds()[nbr_ref.bond.index()];
+            let is_chiral_phosphorus = if bond.order() == crate::BondOrder::Double {
+                let nbr_deg = adjacency.neighbors_of(nbr_idx).len();
+                mol.atoms()[nbr_idx].atomic_number() == 15 && (nbr_deg == 3 || nbr_deg == 4)
+            } else {
+                false
+            };
 
-            if let Some(bond) = bond {
-                let is_chiral_phosphorus = if bond.order() == crate::BondOrder::Double {
-                    let nbr_deg = atom_degree_local(mol, nbr_idx);
-                    mol.atoms()[nbr_idx].atomic_number() == 15 && (nbr_deg == 3 || nbr_deg == 4)
-                } else {
-                    false
-                };
-
-                if is_chiral_phosphorus {
-                    *count += 1;
-                } else {
-                    *count += get_twice_bond_order(bond.order());
-                }
+            if is_chiral_phosphorus {
+                *count += 1;
+            } else {
+                *count += get_twice_bond_order(bond.order());
             }
 
             index_offset += 1;
@@ -760,32 +841,48 @@ fn compute_bond_features(
     features
 }
 
-fn atom_degree_local(mol: &Molecule, atom_idx: usize) -> usize {
-    mol.bonds()
-        .iter()
-        .filter(|b| b.begin().index() == atom_idx || b.end().index() == atom_idx)
-        .count()
-}
-
 // BEGIN RDKIT CPP FUNCTION iterateCIPRanks (Chirality.cpp:1188-1324)
 // RDKit✔️✔️: void iterateCIPRanks(const ROMol &mol, const DOUBLE_VECT &invars,
 // RDKit✔️✔️:                      UINT_VECT &ranks, bool seedWithInvars) {
+// RDKit✔️✔️:   PRECONDITION(invars.size() == mol.getNumAtoms(), "bad invars size");
+// RDKit✔️✔️:   PRECONDITION(ranks.size() >= mol.getNumAtoms(), "bad ranks size");
+// RDKit✔️✔️:
 // RDKit✔️✔️:   unsigned int numAtoms = mol.getNumAtoms();
-// RDKit✔️✔️:   CIP_ENTRY_VECT cipEntries(numAtoms);  // Vec<Vec<int>>
-// RDKit✔️✔️:   for (auto &vec : cipEntries) { vec.reserve(16); }
+// RDKit✔️✔️:   CIP_ENTRY_VECT cipEntries(numAtoms);
+// RDKit✔️✔️:   for (auto &vec : cipEntries) {
+// RDKit✔️✔️:     vec.reserve(16);
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:
 // RDKit✔️✔️:   std::vector<SortableCIPReference> sortableEntries;
 // RDKit✔️✔️:   sortableEntries.reserve(numAtoms);
 // RDKit✔️✔️:   for (size_t i = 0; i < cipEntries.size(); i++) {
 // RDKit✔️✔️:     sortableEntries.emplace_back(&cipEntries[i], i);
 // RDKit✔️✔️:   }
-// RDKit✔️✔️:   // Load initial invariants into CIP entries
+// RDKit❌❌: #ifdef VERBOSE_CANON
+// RDKit❌❌:   BOOST_LOG(rdDebugLog) << "invariants:" << std::endl;
+// RDKit❌❌:   for (unsigned int i = 0; i < numAtoms; i++) {
+// RDKit❌❌:     BOOST_LOG(rdDebugLog) << i << ": " << invars[i] << std::endl;
+// RDKit❌❌:   }
+// RDKit❌❌: #endif
+// RDKit✔️✔️:
 // RDKit✔️✔️:   for (unsigned int i = 0; i < numAtoms; i++) {
 // RDKit✔️✔️:     cipEntries[i].push_back(static_cast<int>(invars[i]));
 // RDKit✔️✔️:   }
-// RDKit✔️✔️:   std::sort(sortableEntries.begin(), sortableEntries.end());
-// RDKit✔️✔️:   auto [needsSorting, numRanks] = findSegmentsToResort(sortableEntries);
+// RDKit✔️✔️:   unsigned int numRanks;
+// RDKit✔️❌:   std::sort(sortableEntries.begin(), sortableEntries.end());
+// RDKit✔️✔️:   std::vector<std::pair<int, int>> needsSorting;
+// RDKit✔️✔️:   findSegmentsToResort(sortableEntries, needsSorting, numRanks);
 // RDKit✔️✔️:   recomputeRanks(sortableEntries, ranks);
-// RDKit✔️✔️:   // Seed entries with atomic number (or invariants if requested)
+// RDKit❌❌:
+// RDKit❌❌: #ifdef VERBOSE_CANON
+// RDKit❌❌:   BOOST_LOG(rdDebugLog) << "initial ranks:" << std::endl;
+// RDKit❌❌:   for (unsigned int i = 0; i < numAtoms; ++i) {
+// RDKit❌❌:     BOOST_LOG(rdDebugLog) << i << ": " << ranks[i] << std::endl;
+// RDKit❌❌:   }
+// RDKit❌❌: #endif
+// RDKit✔️✔️:   // Start each atom's rank vector with its atomic number:
+// RDKit✔️✔️:   //  Note: in general one should avoid the temptation to
+// RDKit✔️✔️:   //  use invariants here, those lead to incorrect answers
 // RDKit✔️✔️:   for (unsigned int i = 0; i < numAtoms; i++) {
 // RDKit✔️✔️:     if (seedWithInvars) {
 // RDKit✔️✔️:       cipEntries[i][0] = static_cast<int>(invars[i]);
@@ -794,27 +891,91 @@ fn atom_degree_local(mol: &Molecule, atom_idx: usize) -> usize {
 // RDKit✔️✔️:       cipEntries[i].push_back(static_cast<int>(ranks[i]));
 // RDKit✔️✔️:     }
 // RDKit✔️✔️:   }
+// RDKit✔️✔️:
+// RDKit✔️✔️:   // Based on above seeding, the rank will be set at index 1 or 2.
 // RDKit✔️✔️:   const int cipRankIndex = seedWithInvars ? 1 : 2;
+// RDKit✔️✔️:
+// RDKit✔️✔️:   // Loop until either:
+// RDKit✔️✔️:   //   1) all classes are uniquified
+// RDKit✔️✔️:   //   2) the number of ranks doesn't change from one iteration to
+// RDKit✔️✔️:   //      the next
+// RDKit✔️✔️:   //   3) we've gone through maxIts times
+// RDKit✔️✔️:   //      maxIts is calculated by dividing the number of atoms
+// RDKit✔️✔️:   //      by 2. That's a pessimal version of the
+// RDKit✔️✔️:   //      maximum number of steps required for two atoms to
+// RDKit✔️✔️:   //      "feel" each other (each influences one additional
+// RDKit✔️✔️:   //      neighbor shell per iteration).
 // RDKit✔️✔️:   unsigned int maxIts = numAtoms / 2 + 1;
 // RDKit✔️✔️:   unsigned int numIts = 0;
 // RDKit✔️✔️:   int lastNumRanks = -1;
+// RDKit✔️✔️:
 // RDKit✔️✔️:   PrecomputedBondFeatures bondFeatures = computeBondFeatures(mol);
+// RDKit✔️✔️:
 // RDKit✔️✔️:   while (!needsSorting.empty() && numIts < maxIts &&
-// RDKit✔️✔️:          (lastNumRanks < 0 || lastNumRanks < numRanks)) {
-// RDKit✔️✔️:     // Re-sort tied sections using neighbor ranks
+// RDKit✔️✔️:          (lastNumRanks < 0 ||
+// RDKit✔️✔️:           static_cast<unsigned int>(lastNumRanks) < numRanks)) {
+// RDKit✔️✔️:     // ----------------------------------------------------
+// RDKit✔️✔️:     //
+// RDKit✔️✔️:     // for each atom, get a sorted list of its neighbors' ranks:
+// RDKit✔️✔️:     //
 // RDKit✔️✔️:     for (unsigned int index = 0; index < numAtoms; ++index) {
-// RDKit✔️✔️:       ... (sort neighbors by rank, append to cipEntries)
+// RDKit✔️✔️:       const unsigned int indexOffset = kMaxBonds * index;
+// RDKit✔️✔️:       const int numNeighbors = bondFeatures.numNeighbors[index];
+// RDKit✔️✔️:
+// RDKit✔️✔️:       auto *sortBegin = &bondFeatures.countsAndNeighborIndices[indexOffset];
+// RDKit✔️✔️:       auto *sortEnd = sortBegin + numNeighbors + 1;
+// RDKit✔️✔️:
+// RDKit✔️✔️:       // For each of our neighbors' ranks weighted by bond type, copy it N times
+// RDKit✔️✔️:       // to our cipEntry in reverse rank order, where N is the weight.
+// RDKit✔️✔️:       if (numNeighbors > 1) {  // compare vs 1 for performance.
+// RDKit✔️❌:         std::sort(sortBegin, sortEnd,
+// RDKit✔️❌:                   [&ranks](const std::pair<std::uint8_t, int> &countAndIdx1,
+// RDKit✔️❌:                            const std::pair<std::uint8_t, int> &countAndIdx2) {
+// RDKit✔️❌:                     return ranks[countAndIdx1.second] >
+// RDKit✔️❌:                            ranks[countAndIdx2.second];
+// RDKit✔️❌:                   });
+// RDKit✔️✔️:       }
+// RDKit✔️✔️:       auto &cipEntry = cipEntries[index];
+// RDKit✔️✔️:       for (auto *iter = sortBegin; iter != sortEnd; ++iter) {
+// RDKit✔️✔️:         const auto &[count, idx] = *iter;
+// RDKit✔️✔️:         cipEntry.insert(cipEntry.end(), count, ranks[idx] + 1);
+// RDKit✔️✔️:       }
+// RDKit✔️✔️:       // add a zero for each coordinated H as long as we're not a query atom
+// RDKit✔️✔️:       if (!mol[index]->hasQuery()) {
+// RDKit✔️✔️:         cipEntry.insert(cipEntry.end(), mol[index]->getTotalNumHs(), 0);
+// RDKit✔️✔️:       }
 // RDKit✔️✔️:     }
-// RDKit✔️✔️:     std::sort(sortableEntries.begin() + firstIdx,
-// RDKit✔️✔️:               sortableEntries.begin() + lastIdx + 1);
-// RDKit✔️✔️:     auto [needsSorting, numRanks] = findSegmentsToResort(sortableEntries);
+// RDKit✔️✔️:     // ----------------------------------------------------
+// RDKit✔️✔️:     //
+// RDKit✔️✔️:     // sort the new ranks and update the list of active indices:
+// RDKit✔️✔️:     //
+// RDKit✔️✔️:     lastNumRanks = numRanks;
+// RDKit✔️✔️:
+// RDKit✔️✔️:     // Loop through previously tied atom sections and re-sort.
+// RDKit✔️✔️:     for (const auto &[firstIdx, lastIdx] : needsSorting) {
+// RDKit✔️❌:       std::sort(sortableEntries.begin() + firstIdx,
+// RDKit✔️❌:                 sortableEntries.begin() + lastIdx + 1);
+// RDKit✔️✔️:     }
+// RDKit✔️✔️:     findSegmentsToResort(sortableEntries, needsSorting, numRanks);
+// RDKit✔️✔️:     // Map out of order rankings back to the absolute rankings vector.
 // RDKit✔️✔️:     recomputeRanks(sortableEntries, ranks);
-// RDKit✔️✔️:     // Truncate and store new rank
-// RDKit✔️✔️:     for (unsigned int i = 0; i < numAtoms; ++i) {
-// RDKit✔️✔️:       cipEntries[i].resize(cipRankIndex + 1);
-// RDKit✔️✔️:       cipEntries[i][cipRankIndex] = ranks[i];
+// RDKit✔️✔️:
+// RDKit✔️✔️:     // now truncate each vector and stick the rank at the end
+// RDKit✔️✔️:     if (static_cast<unsigned int>(lastNumRanks) != numRanks) {
+// RDKit✔️✔️:       for (unsigned int i = 0; i < numAtoms; ++i) {
+// RDKit✔️✔️:         cipEntries[i].resize(cipRankIndex + 1);
+// RDKit✔️✔️:         cipEntries[i][cipRankIndex] = ranks[i];
+// RDKit✔️✔️:       }
 // RDKit✔️✔️:     }
+// RDKit✔️✔️:
 // RDKit✔️✔️:     ++numIts;
+// RDKit❌❌: #ifdef VERBOSE_CANON
+// RDKit❌❌:     BOOST_LOG(rdDebugLog) << "strings and ranks:" << std::endl;
+// RDKit❌❌:     for (unsigned int i = 0; i < numAtoms; i++) {
+// RDKit❌❌:       BOOST_LOG(rdDebugLog) << i << ": " << ranks[i] << " > ";
+// RDKit❌❌:       debugVect(cipEntries[i]);
+// RDKit❌❌:     }
+// RDKit❌❌: #endif
 // RDKit✔️✔️:   }
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION iterateCIPRanks
@@ -827,23 +988,19 @@ fn iterate_cip_ranks(
     valence: &crate::ValenceAssignment,
 ) {
     let num_atoms = mol.num_atoms();
-    // CIP_ENTRY_VECT = Vec<Vec<i32>>
-    let mut cip_entries: Vec<Vec<i32>> = vec![Vec::with_capacity(16); num_atoms];
-    let mut sortable_entries: Vec<SortableCipRef> = (0..num_atoms)
-        .map(|i| SortableCipRef::new(std::mem::take(&mut cip_entries[i]), i))
-        .collect();
+    let mut cip_entries: Vec<Vec<i32>> = (0..num_atoms).map(|_| Vec::with_capacity(16)).collect();
+    let mut sortable_entries = Vec::with_capacity(num_atoms);
+    for (atom_idx, cip_entry) in cip_entries.iter_mut().enumerate() {
+        sortable_entries.push(SortableCipRef::new(cip_entry, atom_idx));
+    }
 
-    // Load initial invariants
     for i in 0..num_atoms {
         cip_entries[i].push(invars[i] as i32);
     }
-    // Re-build sortable entries with actual cip data
-    for i in 0..num_atoms {
-        sortable_entries[i].cip = cip_entries[i].clone();
-    }
 
     sortable_entries.sort();
-    let (needs_sorting, mut num_ranks) = find_segments_to_resort(&mut sortable_entries);
+    let mut needs_sorting = Vec::new();
+    let mut num_ranks = find_segments_to_resort(&mut sortable_entries, &mut needs_sorting);
     recompute_ranks(&sortable_entries, ranks);
 
     // Seed entries
@@ -860,58 +1017,40 @@ fn iterate_cip_ranks(
     let max_its = num_atoms / 2 + 1;
     let mut num_its = 0;
     let mut last_num_ranks: Option<usize> = None;
-    let mut needs_sorting = needs_sorting;
-    let bond_features = compute_bond_features(mol, adjacency);
+    let mut bond_features = compute_bond_features(mol, adjacency);
 
     while !needs_sorting.is_empty()
         && num_its < max_its
         && last_num_ranks.map_or(true, |lnr| lnr < num_ranks)
     {
-        // Re-sort tied sections using neighbor ranks
         for index in 0..num_atoms {
             let index_offset = K_MAX_BONDS * index;
             let num_neighbors = bond_features.num_neighbors[index] as usize;
 
-            // Sort neighbors by rank (descending)
-            let mut neighbor_pairs: Vec<(u8, usize)> = bond_features.counts_and_neighbor_indices
-                [index_offset..index_offset + num_neighbors + 1]
-                .to_vec();
+            let neighbor_pairs = &mut bond_features.counts_and_neighbor_indices
+                [index_offset..index_offset + num_neighbors + 1];
             if num_neighbors > 1 {
                 neighbor_pairs.sort_by(|a, b| ranks[a.1].cmp(&ranks[b.1]).reverse());
             }
 
             let cip_entry = &mut cip_entries[index];
-            for &(count, nbr_idx) in &neighbor_pairs {
-                for _ in 0..count {
-                    cip_entry.push(ranks[nbr_idx] as i32 + 1);
-                }
+            for &(count, nbr_idx) in neighbor_pairs.iter() {
+                let new_len = cip_entry.len() + usize::from(count);
+                cip_entry.resize(new_len, ranks[nbr_idx] as i32 + 1);
             }
-            // Add zero for each implicit/explicit H
-            let total_hs = mol.atoms()[index].explicit_hydrogens() as usize
-                + valence
-                    .implicit_hydrogens
-                    .get(index)
-                    .copied()
-                    .unwrap_or(0)
-                    .max(0) as usize;
-            for _ in 0..total_hs {
-                cip_entry.push(0);
+            if mol.atoms()[index].query().is_none() {
+                let total_hs = mol.atoms()[index].explicit_hydrogens() as usize
+                    + valence.implicit_hydrogens[index].max(0) as usize;
+                cip_entry.resize(cip_entry.len() + total_hs, 0);
             }
         }
 
         last_num_ranks = Some(num_ranks);
 
-        for entry in &mut sortable_entries {
-            entry.cip = cip_entries[entry.atom_idx].clone();
-        }
-
-        // Only re-sort tied sections
         for &(first_idx, last_idx) in &needs_sorting {
             sortable_entries[first_idx..=last_idx].sort();
         }
-        let (ns, nr) = find_segments_to_resort(&mut sortable_entries);
-        needs_sorting = ns;
-        num_ranks = nr;
+        num_ranks = find_segments_to_resort(&mut sortable_entries, &mut needs_sorting);
         recompute_ranks(&sortable_entries, ranks);
 
         // Truncate and store new rank
@@ -926,16 +1065,24 @@ fn iterate_cip_ranks(
     }
 }
 
-// BEGIN RDKIT CPP FUNCTION assignAtomCIPRanks (Chirality.cpp:1325-1350)
+// BEGIN RDKIT CPP FUNCTION assignAtomCIPRanks ranking (Chirality.cpp:1325-1340)
+// RDKit✔️✔️: // Figure out the CIP ranks for the atoms of a molecule
 // RDKit✔️✔️: void assignAtomCIPRanks(const ROMol &mol, UINT_VECT &ranks) {
-// RDKit✔️✔️:   DOUBLE_VECT invars(mol.getNumAtoms());
+// RDKit✔️✔️:   PRECONDITION((!ranks.size() || ranks.size() >= mol.getNumAtoms()),
+// RDKit✔️✔️:                "bad ranks size");
+// RDKit✔️✔️:   if (!ranks.size()) {
+// RDKit✔️✔️:     ranks.resize(mol.getNumAtoms());
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   unsigned int numAtoms = mol.getNumAtoms();
+// RDKit✔️✔️: #ifndef USE_NEW_STEREOCHEMISTRY
+// RDKit✔️✔️:   // get the initial invariants:
+// RDKit✔️✔️:   DOUBLE_VECT invars(numAtoms, 0);
 // RDKit✔️✔️:   buildCIPInvariants(mol, invars);
 // RDKit✔️✔️:   iterateCIPRanks(mol, invars, ranks, false);
-// RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
-// RDKit✔️✔️:     mol[i]->setProp(common_properties::_CIPRank, ranks[i], 1);
-// RDKit✔️✔️:   }
-// RDKit✔️✔️: }
-// END RDKIT CPP FUNCTION assignAtomCIPRanks
+// RDKit❌❌: #else
+// RDKit❌❌:   Canon::chiralRankMolAtoms(mol, ranks);
+// RDKit✔️✔️: #endif
+// END RDKIT CPP FUNCTION assignAtomCIPRanks ranking
 /// Assign CIP ranks to all atoms in the molecule.
 /// Returns the rank vector (indexed by atom index). Lower rank = higher priority.
 pub fn assign_atom_cip_ranks(mol: &Molecule) -> Result<Vec<u32>, StereoError> {
@@ -943,23 +1090,25 @@ pub fn assign_atom_cip_ranks(mol: &Molecule) -> Result<Vec<u32>, StereoError> {
     let invars = build_cip_invariants(mol);
     let mut ranks = vec![0u32; n];
 
-    let adjacency = mol.topology_block().adjacency.clone();
-    let valence = mol.derived_cache().valence.clone().ok_or_else(|| {
+    let adjacency = &mol.topology_block().adjacency;
+    let valence = mol.derived_cache().valence.as_ref().ok_or_else(|| {
         StereoError::UnsupportedFeature(crate::UnsupportedFeatureError {
             feature: "CIP_RANKING",
             reason: "CIP ranking requires valence assignment",
         })
     })?;
 
-    iterate_cip_ranks(mol, &invars, &mut ranks, false, &adjacency, &valence);
+    iterate_cip_ranks(mol, &invars, &mut ranks, false, adjacency, valence);
 
     Ok(ranks)
 }
 
-// BEGIN RDKIT CPP FUNCTION assignAtomCIPRanks writeback (Chirality.cpp:1341-1344)
+// BEGIN RDKIT CPP FUNCTION assignAtomCIPRanks writeback (Chirality.cpp:1342-1346)
+// RDKit✔️✔️:   // copy the ranks onto the atoms:
 // RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
 // RDKit✔️✔️:     mol[i]->setProp(common_properties::_CIPRank, ranks[i], 1);
 // RDKit✔️✔️:   }
+// RDKit✔️✔️: }
 fn write_atom_cip_ranks_to_props(mol: &mut Molecule, ranks: &[u32]) {
     for (i, rank) in ranks.iter().copied().enumerate() {
         if let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(i) {
@@ -5175,18 +5324,19 @@ pub fn rerank_atoms_in_place(
 #[cfg(test)]
 mod tests {
     use super::{
-        LigandRef, NON_TETRAHEDRAL_STEREO_ENV_VAR, StereoError, assign_atom_cip_ranks,
-        assign_chiral_types_from_3d_kernel, assign_nontetrahedral_chiral_type_from_3d,
-        assign_tetrahedral_chiral_type_from_3d, atom_nonzero_degree, bond_affects_atom_chirality,
-        canonicalize_tetrahedral_ligands, get_allow_nontetrahedral_chirality,
-        get_val_from_environment, has_duplicate_indices, is_atom_potential_chiral_center,
-        is_even_permutation, is_wiggly_bond, octahedral_perm_from_3d,
-        perturbation_order_from_bond_indices, rdkit_angle_to, rdkit_direction_vector,
-        rdkit_point3d_cross_product, rdkit_point3d_dot_product, rdkit_voltest,
+        LigandRef, NON_TETRAHEDRAL_STEREO_ENV_VAR, SortableCipRef, StereoError,
+        assign_atom_cip_ranks, assign_chiral_types_from_3d_kernel,
+        assign_nontetrahedral_chiral_type_from_3d, assign_tetrahedral_chiral_type_from_3d,
+        atom_nonzero_degree, bond_affects_atom_chirality, canonicalize_tetrahedral_ligands,
+        find_segments_to_resort, get_allow_nontetrahedral_chirality, get_val_from_environment,
+        has_duplicate_indices, is_atom_potential_chiral_center, is_even_permutation,
+        is_wiggly_bond, octahedral_perm_from_3d, perturbation_order_from_bond_indices,
+        rdkit_angle_to, rdkit_direction_vector, rdkit_point3d_cross_product,
+        rdkit_point3d_dot_product, rdkit_voltest, recompute_ranks,
     };
     use crate::{
-        Atom, AtomId, AtomSpec, BondDirection, BondOrder, BondSpec, ChiralTag, Conformer3D,
-        Element, Molecule, MoleculeBuilder, MoleculeProperties,
+        Atom, AtomId, AtomQueryPredicate, AtomSpec, BondDirection, BondOrder, BondSpec, ChiralTag,
+        Conformer3D, Element, Molecule, MoleculeBuilder, MoleculeProperties, QueryNode,
     };
     use std::ffi::{OsStr, OsString};
     use std::sync::Mutex;
@@ -6882,6 +7032,78 @@ mod tests {
         assert!(
             !has_dupes,
             "distinct halogen substituents must not collapse to duplicate ranks"
+        );
+    }
+
+    #[test]
+    fn assign_atom_cip_ranks_matches_rdkit_reference_cases() {
+        for (smiles, expected) in [
+            ("CC(O)F", vec![0, 1, 2, 3]),
+            ("Cl[C@H](Br)I", vec![1, 0, 2, 3]),
+            ("O=P(F)(Cl)Br", vec![0, 2, 1, 3, 4]),
+        ] {
+            let mol = Molecule::from_smiles(smiles).expect("parse CIP reference SMILES");
+            let ranks = assign_atom_cip_ranks(&mol).expect("assign CIP reference ranks");
+            assert_eq!(ranks, expected, "RDKit CIP rank mismatch for {smiles}");
+        }
+    }
+
+    #[test]
+    fn find_segments_to_resort_reuses_source_result_allocation() {
+        let mut cip_entries = [vec![1], vec![1], vec![2]];
+        let mut sortable_entries: Vec<_> = cip_entries
+            .iter_mut()
+            .enumerate()
+            .map(|(atom_idx, entry)| SortableCipRef::new(entry, atom_idx))
+            .collect();
+        let mut segments = Vec::with_capacity(4);
+        segments.push((usize::MAX, usize::MAX));
+        let allocation = segments.as_ptr();
+        let capacity = segments.capacity();
+
+        let independent = find_segments_to_resort(&mut sortable_entries, &mut segments);
+
+        assert_eq!(independent, 2);
+        assert_eq!(segments, [(0, 2)]);
+        assert_eq!(segments.as_ptr(), allocation);
+        assert_eq!(segments.capacity(), capacity);
+        assert_eq!(sortable_entries[0].curr_rank, 0);
+        assert_eq!(sortable_entries[1].curr_rank, 0);
+        assert_eq!(sortable_entries[2].curr_rank, 1);
+    }
+
+    #[test]
+    fn recompute_ranks_writes_sorted_entries_back_by_atom_index() {
+        let mut cip_entries = [vec![2], vec![1], vec![1]];
+        let mut sortable_entries: Vec<_> = cip_entries
+            .iter_mut()
+            .enumerate()
+            .map(|(atom_idx, entry)| SortableCipRef::new(entry, atom_idx))
+            .collect();
+        sortable_entries.sort();
+        let mut segments = Vec::new();
+        find_segments_to_resort(&mut sortable_entries, &mut segments);
+        let mut ranks = vec![u32::MAX; sortable_entries.len()];
+
+        recompute_ranks(&sortable_entries, &mut ranks);
+
+        assert_eq!(ranks, [1, 0, 0]);
+    }
+
+    #[test]
+    fn assign_atom_cip_ranks_skips_hydrogens_for_query_atoms() {
+        let ordinary = Molecule::from_smiles("CC").expect("parse ethane");
+        assert_eq!(
+            assign_atom_cip_ranks(&ordinary).expect("rank ordinary ethane"),
+            vec![0, 0]
+        );
+
+        let mut query = ordinary.clone();
+        query.topology_block_mut().atoms[0]
+            .set_query(Some(QueryNode::predicate(AtomQueryPredicate::Any)));
+        assert_eq!(
+            assign_atom_cip_ranks(&query).expect("rank query ethane"),
+            vec![0, 1]
         );
     }
 

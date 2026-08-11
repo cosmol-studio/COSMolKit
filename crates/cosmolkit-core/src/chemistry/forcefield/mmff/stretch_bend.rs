@@ -146,8 +146,8 @@ impl StretchBendContrib {
 
             // RDKit✔️✔️:     double dist1 = dp_forceField->distance(at1Idx, at2Idx, pos);
             // RDKit✔️✔️:     double dist2 = dp_forceField->distance(at2Idx, at3Idx, pos);
-            let dist1 = force_field.distance_const(atom1_idx, atom2_idx, Some(pos));
-            let dist2 = force_field.distance_const(atom2_idx, atom3_idx, Some(pos));
+            let dist1 = force_field.distance(atom1_idx, atom2_idx, Some(pos));
+            let dist2 = force_field.distance(atom2_idx, atom3_idx, Some(pos));
 
             // RDKit✔️✔️:     RDGeom::Point3D p1(pos[3 * at1Idx], pos[3 * at1Idx + 1],
             // RDKit✔️✔️:                        pos[3 * at1Idx + 2]);
@@ -214,8 +214,8 @@ impl StretchBendContrib {
 
             // RDKit✔️✔️:     double dist1 = dp_forceField->distance(at1Idx, at2Idx, pos);
             // RDKit✔️✔️:     double dist2 = dp_forceField->distance(at2Idx, at3Idx, pos);
-            let dist1 = force_field.distance_const(atom1_idx, atom2_idx, Some(pos));
-            let dist2 = force_field.distance_const(atom2_idx, atom3_idx, Some(pos));
+            let dist1 = force_field.distance(atom1_idx, atom2_idx, Some(pos));
+            let dist2 = force_field.distance(atom2_idx, atom3_idx, Some(pos));
 
             // RDKit✔️✔️:     RDGeom::Point3D p1(pos[3 * at1Idx], pos[3 * at1Idx + 1],
             // RDKit✔️✔️:                        pos[3 * at1Idx + 2]);
@@ -254,16 +254,16 @@ impl StretchBendContrib {
             // RDKit✔️✔️:     double dCos_dS1 = 1.0 / dist1 * (p32.x - cosTheta * p12.x);
             // RDKit✔️✔️:     double dCos_dS2 = 1.0 / dist1 * (p32.y - cosTheta * p12.y);
             // RDKit✔️✔️:     double dCos_dS3 = 1.0 / dist1 * (p32.z - cosTheta * p12.z);
-            let d_cos_ds1 = (p32.x - cos_theta * p12.x) / dist1;
-            let d_cos_ds2 = (p32.y - cos_theta * p12.y) / dist1;
-            let d_cos_ds3 = (p32.z - cos_theta * p12.z) / dist1;
+            let d_cos_ds1 = 1.0 / dist1 * (p32.x - cos_theta * p12.x);
+            let d_cos_ds2 = 1.0 / dist1 * (p32.y - cos_theta * p12.y);
+            let d_cos_ds3 = 1.0 / dist1 * (p32.z - cos_theta * p12.z);
 
             // RDKit✔️✔️:     double dCos_dS4 = 1.0 / dist2 * (p12.x - cosTheta * p32.x);
             // RDKit✔️✔️:     double dCos_dS5 = 1.0 / dist2 * (p12.y - cosTheta * p32.y);
             // RDKit✔️✔️:     double dCos_dS6 = 1.0 / dist2 * (p12.z - cosTheta * p32.z);
-            let d_cos_ds4 = (p12.x - cos_theta * p32.x) / dist2;
-            let d_cos_ds5 = (p12.y - cos_theta * p32.y) / dist2;
-            let d_cos_ds6 = (p12.z - cos_theta * p32.z) / dist2;
+            let d_cos_ds4 = 1.0 / dist2 * (p12.x - cos_theta * p32.x);
+            let d_cos_ds5 = 1.0 / dist2 * (p12.y - cos_theta * p32.y);
+            let d_cos_ds6 = 1.0 / dist2 * (p12.z - cos_theta * p32.z);
 
             // RDKit✔️✔️:     g1[0] += c5 * (p12.x * forceConstant1 * angleTerm +
             // RDKit✔️✔️:                    dCos_dS1 / (-sinTheta) * distTerm);
@@ -563,12 +563,12 @@ mod tests {
         let dist_term = (180.0 / std::f64::consts::PI)
             * (force_constants.0 * (dist1 - rest_lengths.0)
                 + force_constants.1 * (dist2 - rest_lengths.1));
-        let d_cos_ds1 = (p32.x - cos_theta * p12.x) / dist1;
-        let d_cos_ds2 = (p32.y - cos_theta * p12.y) / dist1;
-        let d_cos_ds3 = (p32.z - cos_theta * p12.z) / dist1;
-        let d_cos_ds4 = (p12.x - cos_theta * p32.x) / dist2;
-        let d_cos_ds5 = (p12.y - cos_theta * p32.y) / dist2;
-        let d_cos_ds6 = (p12.z - cos_theta * p32.z) / dist2;
+        let d_cos_ds1 = 1.0 / dist1 * (p32.x - cos_theta * p12.x);
+        let d_cos_ds2 = 1.0 / dist1 * (p32.y - cos_theta * p12.y);
+        let d_cos_ds3 = 1.0 / dist1 * (p32.z - cos_theta * p12.z);
+        let d_cos_ds4 = 1.0 / dist2 * (p12.x - cos_theta * p32.x);
+        let d_cos_ds5 = 1.0 / dist2 * (p12.y - cos_theta * p32.y);
+        let d_cos_ds6 = 1.0 / dist2 * (p12.z - cos_theta * p32.z);
         let mut grad = vec![0.0; pos.len()];
 
         grad[3 * atom1_idx] +=
@@ -1016,7 +1016,7 @@ mod tests {
 
         let expected =
             source_stretch_bend_grad(&pos, [0, 1, 2], (1.508, 1.093), 110.549, (0.227, 0.070));
-        assert_slice_close(&grad, &expected);
+        assert_eq!(grad, expected);
     }
 
     #[test]

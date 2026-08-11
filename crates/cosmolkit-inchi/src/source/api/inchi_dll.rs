@@ -1345,7 +1345,7 @@ translate_RetVal:
             let mut bond_count = 0_i32;
             let (output_stream, remaining_streams) = streams.split_at_mut(1);
             let (log_stream, input_stream) = remaining_streams.split_at_mut(1);
-            raw_return = heap.with_slice_mut_and_heap_mut(message, |message, heap| {
+            let read_write_result = heap.with_slice_mut_and_heap_mut(message, |message, heap| {
                 ReadWriteInChI(
                     heap,
                     clock,
@@ -1366,7 +1366,8 @@ translate_RetVal:
                     stdout,
                     clock_result,
                 )
-            })?;
+            });
+            raw_return = read_write_result?;
 
             if raw_return >= 0 && !polymer.is_null() && !atoms.is_null() && atom_count > 0 {
                 OAD_Polymer_SmartReopenCyclizedUnits(
@@ -2312,7 +2313,6 @@ translate_RetVal:
             input_parameters.bINChIOutputOptions |= INCHI_OUT_STDINCHI as i32;
             input_parameters.bINChIOutputOptions &= !(INCHI_OUT_SAVEOPT as i32);
         }
-
         PrintInputParms(heap, Some(&mut streams[1]), &input_parameters)?;
         if inchi_strbuf_init(
             heap,
@@ -11621,6 +11621,6 @@ Up to 1024 atoms per structure";
             }
             record_count += 1;
         }
-        assert_eq!(record_count, 15);
+        assert_eq!(record_count, 19);
     }
 }

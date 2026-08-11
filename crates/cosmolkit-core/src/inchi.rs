@@ -460,6 +460,7 @@ fn core_from_adapter(
 struct CoreInchiToolkit {
     source_needs_property_cache_update: bool,
     coordinate_dimensions: Vec<CoordinateDimension>,
+    structure_cache: Option<Molecule>,
 }
 
 impl CoreInchiToolkit {
@@ -467,6 +468,7 @@ impl CoreInchiToolkit {
         Self {
             source_needs_property_cache_update: read.derived_cache().valence.is_none(),
             coordinate_dimensions: dimensions,
+            structure_cache: None,
         }
     }
 
@@ -474,6 +476,7 @@ impl CoreInchiToolkit {
         Self {
             source_needs_property_cache_update: true,
             coordinate_dimensions: Vec::new(),
+            structure_cache: None,
         }
     }
 
@@ -482,12 +485,45 @@ impl CoreInchiToolkit {
             .map_err(|detail| toolkit_error("COSMolKit molecule conversion", detail))
     }
 
+    fn cache_structure(&mut self, adapter: &InchiMolecule) -> Result<(), InchiToolkitError> {
+        self.structure_cache = Some(self.molecule(adapter)?);
+        Ok(())
+    }
+
+    fn take_cached_or_build(
+        &mut self,
+        adapter: &InchiMolecule,
+    ) -> Result<Molecule, InchiToolkitError> {
+        self.structure_cache
+            .take()
+            .map_or_else(|| self.molecule(adapter), Ok)
+    }
+
+    fn finish_structure(&mut self, adapter: &InchiMolecule) -> Result<Molecule, InchiToolkitError> {
+        self.take_cached_or_build(adapter)
+    }
+
     fn replace_adapter(
         &mut self,
         adapter: &mut InchiMolecule,
-        molecule: &Molecule,
+        molecule: Molecule,
     ) -> Result<(), InchiToolkitError> {
-        let read = MoleculeReadParts::from_molecule(molecule);
+        // BEGIN RDKIT C++ SOURCE: External/INCHI-API/inchi.cpp:1651-1668
+        // RDKit✔️❌:     cleanUp(*m);
+        // RDKit✔️✔️:     if (sanitize) {
+        // RDKit✔️✔️:       if (removeHs) {
+        // RDKit✔️✔️:         MolOps::removeHs(*m);
+        // RDKit✔️✔️:       } else {
+        // RDKit✔️✔️:         MolOps::sanitizeMol(*m);
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     MolOps::assignStereochemistry(*m, true, true);
+        // The source mutates one RWMol through this sequence. Moving the owned
+        // Molecule into the cache preserves that identity across the adapter
+        // boundary and avoids cloning the completed graph. The marker remains
+        // performance-negative because the adapter materialization itself has
+        // no RDKit counterpart.
+        let read = MoleculeReadParts::from_molecule(&molecule);
         let (replacement, dimensions) = adapter_from_read_parts(read)
             .map_err(|detail| toolkit_error("COSMolKit adapter conversion", detail))?;
         adapter
@@ -506,6 +542,7 @@ impl CoreInchiToolkit {
                 )
             })?;
         self.coordinate_dimensions = dimensions;
+        self.structure_cache = Some(molecule);
         Ok(())
     }
 
@@ -553,19 +590,10 @@ impl MolToInchiToolkit for CoreInchiToolkit {
         molecule: &mut InchiMolecule,
         strict: bool,
     ) -> Result<(), InchiToolkitError> {
-        let core = self.molecule(molecule)?;
-        let _updated = if strict {
-            core.with_assigned_valence()
-        } else {
-            MoleculeReadParts::from_molecule(&core)
-                .assign_valence_with_options(ValenceModel::RdkitLike, false)
-                .map(|_| core)
-                .map_err(|source| crate::OperationError::Valence {
-                    operation: &crate::ASSIGNED_VALENCE_SPEC,
-                    source,
-                })
-        }
-        .map_err(|error| toolkit_error("COSMolKit property cache error", error.to_string()))?;
+        let mut core = self.take_cached_or_build(molecule)?;
+        core.assign_valence_strict_(strict)
+            .map_err(|error| toolkit_error("COSMolKit property cache error", error.to_string()))?;
+        self.structure_cache = Some(core);
         self.source_needs_property_cache_update = false;
         Ok(())
     }
@@ -575,11 +603,10 @@ impl MolToInchiToolkit for CoreInchiToolkit {
         molecule: &mut InchiMolecule,
         clear_aromatic_flags: bool,
     ) -> Result<(), InchiToolkitError> {
-        let core = self.molecule(molecule)?;
-        let updated = core
-            .with_kekulized_bonds(clear_aromatic_flags)
+        let mut core = self.take_cached_or_build(molecule)?;
+        core.kekulize_(clear_aromatic_flags)
             .map_err(|error| toolkit_error("COSMolKit kekulize error", error.to_string()))?;
-        self.replace_adapter(molecule, &updated)
+        self.replace_adapter(molecule, core)
     }
 
     fn element_symbol(&mut self, atomic_number: i32) -> Result<Vec<u8>, InchiToolkitError> {
@@ -682,33 +709,45 @@ impl InchiToMolToolkit for CoreInchiToolkit {
         &mut self,
         molecule: &mut InchiMolecule,
     ) -> Result<Vec<u32>, InchiToolkitError> {
-        let core = self.molecule(molecule)?;
-        MoleculeReadParts::from_molecule(&core)
-            .rank_mol_atoms()
-            .map_err(|error| toolkit_error("COSMolKit canonical rank error", error.to_string()))?
-            .into_iter()
-            .map(|rank| {
-                u32::try_from(rank).map_err(|_| {
-                    toolkit_error("COSMolKit integer range error", "CIP rank exceeds u32")
-                })
-            })
-            .collect()
+        let core = self.take_cached_or_build(molecule)?;
+        let ranks = crate::stereo::assign_atom_cip_ranks(&core)
+            .map_err(|error| toolkit_error("COSMolKit CIP rank error", error.to_string()))?;
+        self.structure_cache = Some(core);
+        Ok(ranks)
     }
 
     fn remove_hydrogens(&mut self, molecule: &mut InchiMolecule) -> Result<(), InchiToolkitError> {
-        let core = self.molecule(molecule)?;
-        let updated = core.without_hydrogens().map_err(|error| {
-            toolkit_error("COSMolKit remove hydrogens error", error.to_string())
-        })?;
-        self.replace_adapter(molecule, &updated)
+        let mut core = self.take_cached_or_build(molecule)?;
+        core.remove_hydrogens_with_sanitize_(true)
+            .map_err(|error| match error {
+                crate::OperationError::Sanitize { .. } => {
+                    toolkit_error("MolSanitizeException", error.to_string())
+                }
+                _ => toolkit_error("COSMolKit remove hydrogens error", error.to_string()),
+            })?;
+        self.replace_adapter(molecule, core)
     }
 
     fn sanitize_molecule(&mut self, molecule: &mut InchiMolecule) -> Result<(), InchiToolkitError> {
-        let core = self.molecule(molecule)?;
-        let updated = core
-            .sanitize()
-            .map_err(|error| toolkit_error("COSMolKit sanitize error", error.to_string()))?;
-        self.replace_adapter(molecule, &updated)
+        let mut core = self.take_cached_or_build(molecule)?;
+        core.sanitize_().map_err(|error| match error {
+            crate::OperationError::Sanitize { .. } => {
+                toolkit_error("MolSanitizeException", error.to_string())
+            }
+            _ => toolkit_error("COSMolKit sanitize error", error.to_string()),
+        })?;
+        self.replace_adapter(molecule, core)
+    }
+
+    fn synchronize_after_cleanup(
+        &mut self,
+        molecule: &InchiMolecule,
+    ) -> Result<(), InchiToolkitError> {
+        // RDKit's `cleanUp`, `removeHs`/`sanitizeMol`, and
+        // `assignStereochemistry` all mutate the same RWMol. The adapter cleanup
+        // runs in the source crate, so this explicit boundary moves its exact
+        // graph state into the corresponding native molecule once.
+        self.cache_structure(molecule)
     }
 
     fn assign_stereochemistry(
@@ -723,9 +762,11 @@ impl InchiToMolToolkit for CoreInchiToolkit {
                 "the audited InchiToMol path requires cleanIt=true and force=true",
             ));
         }
-        let core = self.molecule(molecule)?;
+        let core = self.take_cached_or_build(molecule)?;
         core.perceive_stereochemistry()
-            .map_err(|error| toolkit_error("COSMolKit stereochemistry error", error.to_string()))
+            .map_err(|error| toolkit_error("COSMolKit stereochemistry error", error.to_string()))?;
+        self.structure_cache = Some(core);
+        Ok(())
     }
 }
 
@@ -774,13 +815,13 @@ pub fn mol_from_inchi(
     let molecule = output
         .molecule
         .as_ref()
-        .map(|molecule| core_from_adapter(molecule, &toolkit.coordinate_dimensions))
+        .map(|molecule| toolkit.finish_structure(molecule))
         .transpose()
-        .map_err(|detail| {
+        .map_err(|error| {
             bridge_error(
                 "mol_from_inchi",
                 InchiErrorKind::InvalidSourceOutput,
-                detail,
+                error.message,
             )
         })?;
     Ok(MolFromInchiOutput {
@@ -960,6 +1001,49 @@ mod tests {
             .map(|atom| molecule.topology_block().adjacency.neighbors_of(atom).len())
             .sum::<usize>();
         assert_eq!(adjacency_edges, molecule.num_bonds() * 2);
+    }
+
+    #[test]
+    fn inchi_core_bridge_uses_legacy_cip_ranks_for_double_bond_stereo_neighbors() {
+        let output = mol_from_inchi(
+            b"InChI=1S/C19H21NO3S2/c1-14(12-15-8-4-2-5-9-15)13-16-18(23)20(19(24)25-16)11-7-3-6-10-17(21)22/h2,4-5,8-9,12-13H,3,6-7,10-11H2,1H3,(H,21,22)/b14-12+,16-13-",
+            true,
+            true,
+        )
+        .expect("source-defined double-bond stereo InChI must parse");
+        let molecule = output
+            .molecule
+            .expect("successful parse must return a graph");
+        let bond = molecule
+            .bonds()
+            .iter()
+            .find(|bond| {
+                let endpoints = [bond.begin().index(), bond.end().index()];
+                endpoints == [12, 15] || endpoints == [15, 12]
+            })
+            .expect("audited double bond must be present");
+
+        assert_eq!(bond.stereo(), BondStereo::Z);
+        assert_eq!(
+            bond.stereo_atoms(),
+            Some([AtomId::new(13), AtomId::new(24)])
+        );
+        assert_eq!(
+            molecule.to_smiles(true).unwrap(),
+            "CC(/C=C1\\SC(=S)N(CCCCCC(=O)O)C1=O)=C\\c1ccccc1"
+        );
+    }
+
+    #[test]
+    fn inchi_core_bridge_classifies_rdkit_mol_sanitize_exception() {
+        let error = mol_from_inchi(
+            b"InChI=1S/C8H16O6S2/c9-5-8(14-16(11,12)13)7(10)6-15-3-1-2-4-15/h7-10H,1-6H2/t7-,8+/m0/s1",
+            true,
+            true,
+        )
+        .expect_err("RDKit source path must reject the invalid sanitized valence");
+
+        assert_eq!(error.kind, InchiErrorKind::SanitizeFailed);
     }
 
     #[test]

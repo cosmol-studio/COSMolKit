@@ -3430,6 +3430,71 @@ mod tests {
     }
 
     #[test]
+    fn assigned_valence_strictness_uses_one_registered_value_semantic_operation() {
+        let molecule = Molecule::from_smiles_with_sanitize("C(=O)(=O)(=O)", false).unwrap();
+        let original = molecule.clone();
+
+        let non_strict = molecule.with_assigned_valence_strict(false).unwrap();
+
+        assert_eq!(molecule, original, "value-style call mutated its source");
+        assert_eq!(
+            non_strict.derived_cache().valence,
+            Some(ValenceAssignment {
+                explicit_valence: vec![6, 2, 2, 2],
+                implicit_hydrogens: vec![0, 0, 0, 0],
+            })
+        );
+        assert!(molecule.with_assigned_valence_strict(true).is_err());
+        assert!(molecule.with_assigned_valence().is_err());
+        assert_eq!(
+            crate::MOLECULE_OPS
+                .iter()
+                .filter(|operation| operation.impl_fn == "assigned_valence_impl")
+                .count(),
+            1
+        );
+        assert_eq!(
+            crate::SUPPORT_MATRIX
+                .iter()
+                .filter(|entry| {
+                    entry
+                        .operation
+                        .is_some_and(|operation| operation.impl_fn == "assigned_valence_impl")
+                })
+                .count(),
+            1
+        );
+        assert_eq!(
+            crate::OPERATION_INVARIANT_MATRIX
+                .iter()
+                .filter(|entry| entry.operation.impl_fn == "assigned_valence_impl")
+                .count(),
+            1
+        );
+        assert_eq!(
+            crate::PARITY_MATRIX
+                .iter()
+                .filter(|entry| entry.operation.impl_fn == "assigned_valence_impl")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn assigned_valence_strictness_in_place_preserves_shared_values() {
+        let source = Molecule::from_smiles_with_sanitize("C(=O)(=O)(=O)", false).unwrap();
+        let shared = source.clone();
+        let expected = source.with_assigned_valence_strict(false).unwrap();
+        let mut in_place = source.clone();
+
+        in_place.assign_valence_strict_(false).unwrap();
+
+        assert_eq!(source, shared, "in-place COW escaped into a shared value");
+        assert_eq!(in_place, expected);
+        assert!(in_place.derived_cache().valence.is_some());
+    }
+
+    #[test]
     fn with_assigned_valence_fails_without_committing_invalid_valence_cache() {
         let molecule = Molecule::from_smiles_with_sanitize("C(=O)(=O)(=O)", false).unwrap();
         let original = molecule.clone();

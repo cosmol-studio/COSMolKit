@@ -4443,9 +4443,7 @@ pub(crate) fn abctol(
     const THRESHOLD: i64 = (i64::MAX - 1) / ALPHA_BASE;
 
     let bytes = heap.slice(sz_string)?;
-    let nul = bytes
-        .iter()
-        .position(|&byte| byte == 0)
+    let nul = memchr::memchr(0, bytemuck::cast_slice(bytes))
         .ok_or(SourceHeapError::MissingNulTerminator)?;
     let mut val = 0_i64;
     let mut position = 0_usize;
@@ -4511,9 +4509,7 @@ pub(crate) fn inchi_strtol(
     }
 
     let bytes = heap.slice(str_)?;
-    let nul = bytes
-        .iter()
-        .position(|&byte| byte == 0)
+    let nul = memchr::memchr(0, bytemuck::cast_slice(bytes))
         .ok_or(SourceHeapError::MissingNulTerminator)?;
     let mut position = 0_usize;
     while position < nul

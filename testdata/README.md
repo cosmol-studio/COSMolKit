@@ -57,6 +57,33 @@ The strict 5000-row InChI preparation is:
   --jobs 1
 ```
 
+The lightweight strict force-field audit deliberately separates broad
+parameter coverage from expensive optimizer parity. Prepare its all-row
+coverage oracle with:
+
+```bash
+.venv/bin/python tools/testdata/rdkit/generate_all.py \
+  --python .venv/bin/python \
+  --profile smiles_5000 \
+  --suite forcefield_coverage \
+  --jobs 1
+```
+
+Run all 5,000 parameter/type/charge comparisons, then the complete curated
+energy/gradient/optimizer suite:
+
+```bash
+COSMOLKIT_PARITY_PROFILE=smiles_5000 \
+  cargo test -p cosmolkit-core --test rdkit_forcefield_coverage_parity
+
+COSMOLKIT_PARITY_PROFILE=smiles_small \
+  cargo test -p cosmolkit-core --test rdkit_forcefield_params_parity
+```
+
+The first command does not claim optimizer coverage. The second retains every
+eligible row, comparison field, and the declared `1e-6` energy, gradient, and
+coordinate tolerances.
+
 Omit `--clean` to validate and reuse an exact cache. Use `--clean` only when
 an intentional full regeneration is required. Individual `_generate_*.py`
 files are internal helpers and are not supported public workflows.

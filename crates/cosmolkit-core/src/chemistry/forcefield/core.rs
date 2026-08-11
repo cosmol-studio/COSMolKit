@@ -6,26 +6,6 @@ const MOVETOL: f64 = 1.0e-7;
 const EPS: f64 = 3.0e-8;
 const TOLX: f64 = 4.0 * EPS;
 const MAXSTEP: f64 = 100.0;
-const ROW1_ITER1_CHECKPOINT_BITS: [u64; 18] = [
-    0x3fe475e01a824896,
-    0xbfdedf178888fe31,
-    0xbfbd3692c7d4e18a,
-    0xbfe5525f9ea5a52d,
-    0x3fe89829272a4cde,
-    0x3fde4fb92f4fe23d,
-    0x3ff650c540ee9981,
-    0xbfe16bc86d346ecd,
-    0xbfe1912ff74f169f,
-    0x3ff05cc01120f8d1,
-    0x3fed71cfd920a5eb,
-    0x3fe19bf52f5c05e2,
-    0xbff066948d8f75d9,
-    0xbff226a6db7818d0,
-    0x3fdb6ef8a69179f8,
-    0xbff5d8b1026e6e2b,
-    0x3fde3d51d03c598c,
-    0xbfe9434bca030132,
-];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ForceFieldVec3 {
@@ -587,20 +567,8 @@ impl ForceField {
             return;
         }
         // RDKit✔️✔️: (*contrib)->getGrad(pos, grad);
-        let trace_row1_iter1 =
-            row1_bfgs_trace_enabled(pos.len()) && row1_iter1_checkpoint_pos_matches(pos);
-        for (idx, contrib) in self.contribs.iter().enumerate() {
+        for contrib in &self.contribs {
             contrib.get_grad(pos, grad);
-            if trace_row1_iter1 {
-                let bits: Vec<String> = grad
-                    .iter()
-                    .map(|value| format!("{:#018x}", value.to_bits()))
-                    .collect();
-                println!(
-                    "[row1-calcgrad-cumulative] contrib_idx={idx} values=[{}]",
-                    bits.join(",")
-                );
-            }
         }
         self.zero_fixed_point_grads(grad);
     }
@@ -2253,10 +2221,6 @@ fn calc_gradient_wrapper(ff: &ForceField, pos: &[f64], grad: &mut [f64]) -> f64 
     grad_scale
 }
 
-fn row1_bfgs_trace_enabled(dim: usize) -> bool {
-    dim == 18 && std::env::var("RDKIT_ROW1_TRACE").as_deref() == Ok("1")
-}
-
 fn bfgs_minimize<Energy, Gradient>(
     mut pos: Vec<f64>,
     grad_tol: f64,
@@ -2312,21 +2276,10 @@ where
         MAXSTEP * dim as f64
     };
     for iter in 1..=max_its {
-        if row1_bfgs_trace_enabled(dim) && iter <= 12 {
-            println!("[row1-dir] iter={iter} values={xi:?}");
-        }
         // RDKit✔️✔️: linearSearch(dim, pos, fp, grad.data(), xi.data(), newPos.get(), funcVal, func,
         // RDKit✔️✔️:              maxStep, status);
-        let (status, new_val) = linear_search(
-            iter,
-            &pos,
-            fp,
-            &grad,
-            &mut xi,
-            &mut new_pos,
-            &mut func,
-            max_step,
-        );
+        let (status, new_val) =
+            linear_search(&pos, fp, &grad, &mut xi, &mut new_pos, &mut func, max_step);
         // RDKit✔️✔️: CHECK_INVARIANT(status >= 0, "bad direction in linearSearch");
         assert!(status >= 0, "bad direction in linearSearch");
         let func_val = new_val;
@@ -2362,9 +2315,6 @@ where
         }
         // RDKit✔️✔️: double gradScale = gradFunc(pos, grad.data());
         let grad_scale = grad_func(&pos, &mut grad);
-        if row1_bfgs_trace_enabled(dim) && iter <= 12 {
-            println!("[row1-grad] iter={iter} values={grad:?}");
-        }
         // RDKit✔️✔️: double term = std::max(funcVal * gradScale, 1.0);
         let func_term = func_val * grad_scale;
         let term = if func_term > 1.0 { func_term } else { 1.0 };
@@ -2381,9 +2331,6 @@ where
             }
             d_grad[i] = grad[i] - d_grad[i];
         }
-        if row1_bfgs_trace_enabled(dim) && iter <= 12 {
-            println!("[row1-dgrad] iter={iter} values={d_grad:?}");
-        }
         // RDKit✔️✔️: test /= term;
         test /= term;
         // RDKit✔️✔️: if (test < gradTol) {
@@ -2399,11 +2346,6 @@ where
             return (0, pos);
         }
 
-        if row1_bfgs_trace_enabled(dim) && iter <= 80 {
-            println!(
-                "[row1-bfgs] iter={iter} status={status} line_test={test:.17} gradScale={grad_scale:.17} fp={fp:.17}"
-            );
-        }
         // RDKit✔️✔️: double fac = 0, fae = 0, sumDGrad = 0, sumXi = 0;
         let mut fac = 0.0;
         let mut fae = 0.0;
@@ -2429,38 +2371,6 @@ where
             sum_d_grad += d_grad[i] * d_grad[i];
             sum_xi += xi[i] * xi[i];
         }
-        if row1_bfgs_trace_enabled(dim) && iter <= 12 {
-            println!("[row1-hdgrad] iter={iter} values={hess_d_grad:?}");
-            let invh_head = [
-                inv_hessian[0],
-                inv_hessian[1],
-                inv_hessian[2],
-                inv_hessian[18],
-                inv_hessian[19],
-                inv_hessian[20],
-            ];
-            println!("[row1-invh] iter={iter} values={invh_head:?}");
-            if iter <= 2 {
-                println!(
-                    "[row1-invh-row0] iter={iter} values={:?}",
-                    &inv_hessian[0..dim]
-                );
-                println!(
-                    "[row1-invh-row1] iter={iter} values={:?}",
-                    &inv_hessian[dim..(2 * dim)]
-                );
-                if iter == 1 {
-                    for row in 0..dim {
-                        let start = row * dim;
-                        let end = start + dim;
-                        println!(
-                            "[row1-invh-row{row}] iter={iter} values={:?}",
-                            &inv_hessian[start..end]
-                        );
-                    }
-                }
-            }
-        }
         // RDKit✔️✔️: if (fac > sqrt(EPS * sumDGrad * sumXi)) {
         if fac > (EPS * sum_d_grad * sum_xi).sqrt() {
             // RDKit✔️✔️: fac = 1.0 / fac;
@@ -2478,41 +2388,12 @@ where
                 let hdgi = fad * hess_d_grad[i];
                 let dgi = fae * d_grad[i];
                 for j in i..dim {
-                    let term1 = pxi * xi[j];
-                    let term2 = hdgi * hess_d_grad[j];
-                    let term3 = dgi * d_grad[j];
-                    if row1_bfgs_trace_enabled(dim) && iter == 1 && i == 13 && j == 13 {
-                        println!(
-                            "[row1-invh-update-bits] iter={iter} row=13 col=13 old_bits={:#018x} pxi_bits={:#018x} xj_bits={:#018x} hdgi_bits={:#018x} hdgj_bits={:#018x} dgi_bits={:#018x} dgj_bits={:#018x} term1_bits={:#018x} term2_bits={:#018x} term3_bits={:#018x}",
-                            inv_hessian[i * dim + j].to_bits(),
-                            pxi.to_bits(),
-                            xi[j].to_bits(),
-                            hdgi.to_bits(),
-                            hess_d_grad[j].to_bits(),
-                            dgi.to_bits(),
-                            d_grad[j].to_bits(),
-                            term1.to_bits(),
-                            term2.to_bits(),
-                            term3.to_bits()
-                        );
-                    }
                     inv_hessian[i * dim + j] +=
                         pxi * xi[j] - hdgi * hess_d_grad[j] + dgi * d_grad[j];
                     let updated = inv_hessian[i * dim + j];
-                    if row1_bfgs_trace_enabled(dim) && iter == 1 && i == 13 && j == 13 {
-                        println!(
-                            "[row1-invh-update-newbits] iter={iter} row=13 col=13 new_bits={:#018x}",
-                            updated.to_bits()
-                        );
-                    }
                     inv_hessian[j * dim + i] = updated;
                 }
             }
-        }
-        if row1_bfgs_trace_enabled(dim) && iter <= 80 {
-            println!(
-                "[row1-bfgs-update] iter={iter} fac={fac:.17} fae={fae:.17} sumDGrad={sum_d_grad:.17} sumXi={sum_xi:.17}"
-            );
         }
         // RDKit✔️✔️: for (unsigned int i = 0; i < dim; i++) {
         // RDKit✔️✔️:   xi[i] = 0.0;
@@ -2524,24 +2405,6 @@ where
             xi[i] = 0.0;
             for j in 0..dim {
                 xi[i] -= inv_hessian[i * dim + j] * grad[j];
-            }
-        }
-        if row1_bfgs_trace_enabled(dim) && iter <= 2 {
-            println!("[row1-nextdir] iter={iter} values={xi:?}");
-            if iter <= 2 {
-                let mut accum = 0.0_f64;
-                let trace_row = if iter == 1 { 13 } else { 0 };
-                for j in 0..dim {
-                    let term = inv_hessian[trace_row * dim + j] * grad[j];
-                    accum -= term;
-                    println!(
-                        "[row1-nextdir-accum] iter={iter} row={trace_row} col={j} invh_bits={:#018x} grad_bits={:#018x} term_bits={:#018x} accum_bits={:#018x}",
-                        inv_hessian[trace_row * dim + j].to_bits(),
-                        grad[j].to_bits(),
-                        term.to_bits(),
-                        accum.to_bits()
-                    );
-                }
             }
         }
         // RDKit✔️✔️: if (snapshotVect && snapshotFreq && !(iter % snapshotFreq)) {
@@ -2560,7 +2423,6 @@ where
 }
 
 fn linear_search<Energy>(
-    outer_iter: usize,
     old_pt: &[f64],
     old_val: f64,
     grad: &[f64],
@@ -2646,50 +2508,17 @@ where
         for i in 0..dir.len() {
             new_pt[i] = old_pt[i] + lambda * dir[i];
         }
-        if row1_bfgs_trace_enabled(old_pt.len()) && outer_iter == 2 && it == 1 {
-            println!("[row1-linesearch-point] iter={outer_iter} inner_it={it} values={new_pt:?}");
-            let bits: Vec<String> = new_pt
-                .iter()
-                .map(|value| format!("{:#018x}", value.to_bits()))
-                .collect();
-            println!(
-                "[row1-linesearch-point-bits] iter={outer_iter} inner_it={it} values=[{}]",
-                bits.join(",")
-            );
-            for i in 0..old_pt.len() {
-                let scaled_dir = lambda * dir[i];
-                println!(
-                    "[row1-linesearch-operands] iter={outer_iter} inner_it={it} idx={i} old_bits={:#018x} dir_bits={:#018x} lambda_bits={:#018x} scaled_bits={:#018x} new_bits={:#018x}",
-                    old_pt[i].to_bits(),
-                    dir[i].to_bits(),
-                    lambda.to_bits(),
-                    scaled_dir.to_bits(),
-                    new_pt[i].to_bits(),
-                );
-            }
-        }
         // RDKit✔️✔️: newVal = func(newPt);
         new_val = func(new_pt);
         // RDKit✔️✔️: if (newVal - oldVal <= FUNCTOL * lambda * slope) {
         if new_val - old_val <= FUNCTOL * lambda * slope {
-            if row1_bfgs_trace_enabled(old_pt.len()) && outer_iter <= 80 {
-                println!(
-                    "[row1-linesearch] iter={outer_iter} inner_it={it} accept=1 lambda={lambda:.17} lambdaMin={lambda_min:.17} slope={slope:.17} oldVal={old_val:.17} newVal={new_val:.17}"
-                );
-            }
             // RDKit✔️✔️: resCode = 0;
             // RDKit✔️✔️: return;
             return (0, new_val);
         }
         let tmp_lambda = if it == 0 {
             // RDKit✔️✔️: tmpLambda = -slope / (2.0 * (newVal - oldVal - slope));
-            let tmp_lambda = -slope / (2.0 * (new_val - old_val - slope));
-            if row1_bfgs_trace_enabled(old_pt.len()) && outer_iter <= 80 {
-                println!(
-                    "[row1-linesearch] iter={outer_iter} inner_it={it} accept=0 lambda={lambda:.17} lambdaMin={lambda_min:.17} slope={slope:.17} oldVal={old_val:.17} newVal={new_val:.17} tmpLambda={tmp_lambda:.17} branch=first"
-                );
-            }
-            tmp_lambda
+            -slope / (2.0 * (new_val - old_val - slope))
         } else {
             // RDKit✔️✔️: double rhs1 = newVal - oldVal - lambda * slope;
             // RDKit✔️✔️: double rhs2 = val2 - oldVal - lambda2 * slope;
@@ -2734,11 +2563,6 @@ where
             if tmp_lambda > 0.5 * lambda {
                 tmp_lambda = 0.5 * lambda;
             }
-            if row1_bfgs_trace_enabled(old_pt.len()) && outer_iter <= 80 {
-                println!(
-                    "[row1-linesearch] iter={outer_iter} inner_it={it} accept=0 lambda={lambda:.17} lambda2={lambda2:.17} lambdaMin={lambda_min:.17} slope={slope:.17} oldVal={old_val:.17} newVal={new_val:.17} val2={val2:.17} rhs1={rhs1:.17} rhs2={rhs2:.17} a={a:.17} b={b:.17} tmpLambda={tmp_lambda:.17}"
-                );
-            }
             tmp_lambda
         };
         // RDKit✔️✔️: lambda2 = lambda;
@@ -2763,14 +2587,6 @@ where
     sum = 0.0;
     let _ = sum;
     (res_code, new_val)
-}
-
-fn row1_iter1_checkpoint_pos_matches(pos: &[f64]) -> bool {
-    pos.len() == ROW1_ITER1_CHECKPOINT_BITS.len()
-        && pos
-            .iter()
-            .zip(ROW1_ITER1_CHECKPOINT_BITS)
-            .all(|(value, bits)| value.to_bits() == bits)
 }
 
 #[cfg(test)]

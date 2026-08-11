@@ -145,6 +145,13 @@ GENERATOR_SPECS = [
         {"iterative"},
     ),
     spec(
+        "forcefield_coverage_golden",
+        "forcefield_coverage.jsonl",
+        "forcefield_coverage",
+        {"strict-corpus"},
+        generator_dependencies=("_generate_forcefield_params_golden.py",),
+    ),
+    spec(
         "mmff_builtin_golden",
         "mmff_builtin.jsonl",
         "forcefield",

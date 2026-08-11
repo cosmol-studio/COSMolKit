@@ -2,6 +2,9 @@
 
 use crate::Molecule;
 use crate::chemistry::forcefield::core::{ForceField, ForceFieldVec3};
+use crate::chemistry::forcefield::torsion_query::{
+    DEFAULT_TORSION_BOND_SMARTS, TorsionBondQueryError, match_torsion_bonds,
+};
 use crate::chemistry::rings::RingFindingError;
 use crate::chemistry::valence::ValenceError;
 use crate::notation::fragment::get_fragment_atom_mapping;
@@ -20,8 +23,6 @@ pub(crate) const RELATION_1_2: u8 = 0;
 pub(crate) const RELATION_1_3: u8 = 1;
 pub(crate) const RELATION_1_4: u8 = 2;
 pub(crate) const RELATION_1_X: u8 = 3;
-pub(crate) const DEFAULT_TORSION_BOND_SMARTS: &str = "[!$(*#*)&!D1]~[!$(*#*)&!D1]";
-
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub(crate) enum UffBuilderError {
     #[error("RDKit UFF buildNeighborMatrix is unsupported for empty molecules")]
@@ -38,8 +39,8 @@ pub(crate) enum UffBuilderError {
     ParamsLengthMismatch { atoms: usize, params: usize },
     #[error(transparent)]
     RingFinding(#[from] RingFindingError),
-    #[error("unsupported torsion bond SMARTS for UFF addTorsions: {0}")]
-    UnsupportedTorsionBondSmarts(String),
+    #[error(transparent)]
+    TorsionBondQuery(#[from] TorsionBondQueryError),
     #[error(transparent)]
     AtomTyper(#[from] UffAtomTyperError),
     #[error(transparent)]
@@ -476,19 +477,6 @@ pub(crate) fn add_angles(
     Ok(())
 }
 
-fn matches_default_torsion_atom_query(mol: &Molecule, atom_idx: usize) -> bool {
-    let atom = &mol.atoms()[atom_idx];
-    if mol.topology_block().adjacency.neighbors_of(atom_idx).len() == 1 {
-        return false;
-    }
-    mol.topology_block()
-        .adjacency
-        .neighbors_of(atom_idx)
-        .iter()
-        .all(|neighbor| mol.bonds()[neighbor.bond.index()].order() != crate::BondOrder::Triple)
-        && atom.id().index() == atom_idx
-}
-
 pub(crate) fn add_torsions(
     mol: &Molecule,
     params: &[Option<AtomicParams>],
@@ -496,123 +484,109 @@ pub(crate) fn add_torsions(
     torsion_bond_smarts: &str,
 ) -> Result<(), UffBuilderError> {
     // BEGIN RDKIT CPP FUNCTION UFF::Tools::addTorsions (Builder.cpp:499-585)
-    // RDKit❗❌: void addTorsions(const ROMol &mol, const AtomicParamVect &params,
-    // RDKit❗❌:                  ForceFields::ForceField *field,
-    // RDKit❗❌:                  const std::string &torsionBondSmarts) {
-    // RDKit❗❌:   PRECONDITION(mol.getNumAtoms() == params.size(), "bad parameters");
+    // RDKit✔️❌: void addTorsions(const ROMol &mol, const AtomicParamVect &params,
+    // RDKit✔️❌:                  ForceFields::ForceField *field,
+    // RDKit✔️❌:                  const std::string &torsionBondSmarts) {
+    // RDKit✔️❌:   PRECONDITION(mol.getNumAtoms() == params.size(), "bad parameters");
     if mol.atoms().len() != params.len() {
         return Err(UffBuilderError::ParamsLengthMismatch {
             atoms: mol.atoms().len(),
             params: params.len(),
         });
     }
-    // RDKit❗❌:   PRECONDITION(field, "bad forcefield");
+    // RDKit✔️❌:   PRECONDITION(field, "bad forcefield");
     // Rust's mutable reference models RDKit's non-null forcefield precondition.
 
-    // RDKit❗❌:   // find all of the torsion bonds:
-    // RDKit❗❌:   std::vector<MatchVectType> matchVect;
-    // RDKit❗❌:   const ROMol *defaultQuery = DefaultTorsionBondSmarts::query();
-    // RDKit❗❌:   const ROMol *query = (torsionBondSmarts == DefaultTorsionBondSmarts::string())
-    // RDKit❗❌:                            ? defaultQuery
-    // RDKit❗❌:                            : SmartsToMol(torsionBondSmarts);
-    // RDKit❗❌:   TEST_ASSERT(query);
-    if torsion_bond_smarts != DEFAULT_TORSION_BOND_SMARTS {
-        return Err(UffBuilderError::UnsupportedTorsionBondSmarts(
-            torsion_bond_smarts.to_string(),
-        ));
-    }
-    // COSMolKit currently reproduces the default torsion-bond SMARTS directly
-    // from its literal query semantics and rejects custom SMARTS explicitly
-    // until a source-backed SmartsToMol/SubstructMatch query-molecule bridge
-    // is wired into this helper path.
-    let torsion_bonds: Vec<_> = mol
-        .bonds()
-        .iter()
-        .filter(|bond| {
-            matches_default_torsion_atom_query(mol, bond.begin().index())
-                && matches_default_torsion_atom_query(mol, bond.end().index())
-        })
-        .collect();
-    // RDKit❗❌:   unsigned int nHits = SubstructMatch(mol, *query, matchVect);
-    let n_hits = torsion_bonds.len();
-    // RDKit❗❌:   if (query != defaultQuery) {
-    // RDKit❗❌:     delete query;
-    // RDKit❗❌:   }
+    // RDKit✔️❌:   // find all of the torsion bonds:
+    // RDKit✔️❌:   std::vector<MatchVectType> matchVect;
+    // RDKit✔️❌:   const ROMol *defaultQuery = DefaultTorsionBondSmarts::query();
+    // RDKit✔️❌:   const ROMol *query = (torsionBondSmarts == DefaultTorsionBondSmarts::string())
+    // RDKit✔️❌:                            ? defaultQuery
+    // RDKit✔️❌:                            : SmartsToMol(torsionBondSmarts);
+    // RDKit✔️❌:   TEST_ASSERT(query);
+    let torsion_bond_matches = match_torsion_bonds(mol, torsion_bond_smarts)?;
+    // RDKit✔️❌:   unsigned int nHits = SubstructMatch(mol, *query, matchVect);
+    // RDKit✔️❌:   if (query != defaultQuery) {
+    // RDKit✔️❌:     delete query;
+    // RDKit✔️❌:   }
 
-    // RDKit❗❌:   for (unsigned int i = 0; i < nHits; i++) {
-    for bond in torsion_bonds.iter().take(n_hits) {
-        // RDKit❗❌:     MatchVectType match = matchVect[i];
-        // RDKit❗❌:     TEST_ASSERT(match.size() == 2);
-        // RDKit❗❌:     int idx1 = match[0].second;
-        let idx1 = bond.begin().index();
-        // RDKit❗❌:     int idx2 = match[1].second;
-        let idx2 = bond.end().index();
-        // RDKit❗❌:     if (!params[idx1] || !params[idx2]) {
-        // RDKit❗❌:       continue;
-        // RDKit❗❌:     }
+    // RDKit✔️❌:   for (unsigned int i = 0; i < nHits; i++) {
+    for matched in &torsion_bond_matches {
+        let idx1 = matched.begin_atom_index;
+        let idx2 = matched.end_atom_index;
+        let bond_idx = matched.bond_index;
+        // RDKit✔️❌:     MatchVectType match = matchVect[i];
+        // RDKit✔️❌:     TEST_ASSERT(match.size() == 2);
+        // RDKit✔️❌:     int idx1 = match[0].second;
+        // RDKit✔️❌:     int idx2 = match[1].second;
+        // RDKit✔️❌:     if (!params[idx1] || !params[idx2]) {
+        // RDKit✔️❌:       continue;
+        // RDKit✔️❌:     }
         let (Some(atom1_params), Some(atom2_params)) = (&params[idx1], &params[idx2]) else {
             continue;
         };
-        // RDKit❗❌:     const Bond *bond = mol.getBondBetweenAtoms(idx1, idx2);
-        // RDKit❗❌:     std::vector<TorsionAngleContrib *> contribsHere;
+        // RDKit✔️❌:     const Bond *bond = mol.getBondBetweenAtoms(idx1, idx2);
+        let bond = &mol.bonds()[bond_idx];
+        // RDKit✔️❌:     std::vector<TorsionAngleContrib *> contribsHere;
         let mut contribs_here = Vec::new();
-        // RDKit❗❌:     TEST_ASSERT(bond);
-        // Matched topology bonds come directly from the molecule bond table.
-        // RDKit❗❌:     const Atom *atom1 = mol.getAtomWithIdx(idx1);
+        // RDKit✔️❌:     TEST_ASSERT(bond);
+        // The query layer preserves source endpoint orientation and resolves
+        // the corresponding topology bond before contribution construction.
+        // RDKit✔️❌:     const Atom *atom1 = mol.getAtomWithIdx(idx1);
         let atom1 = &mol.atoms()[idx1];
-        // RDKit❗❌:     const Atom *atom2 = mol.getAtomWithIdx(idx2);
+        // RDKit✔️❌:     const Atom *atom2 = mol.getAtomWithIdx(idx2);
         let atom2 = &mol.atoms()[idx2];
 
-        // RDKit❗❌:     if ((atom1->getHybridization() == Atom::SP2 ||
-        // RDKit❗❌:          atom1->getHybridization() == Atom::SP3) &&
-        // RDKit❗❌:         (atom2->getHybridization() == Atom::SP2 ||
-        // RDKit❗❌:          atom2->getHybridization() == Atom::SP3)) {
+        // RDKit✔️❌:     if ((atom1->getHybridization() == Atom::SP2 ||
+        // RDKit✔️❌:          atom1->getHybridization() == Atom::SP3) &&
+        // RDKit✔️❌:         (atom2->getHybridization() == Atom::SP2 ||
+        // RDKit✔️❌:          atom2->getHybridization() == Atom::SP3)) {
         if (atom1.hybridization() == Hybridization::Sp2
             || atom1.hybridization() == Hybridization::Sp3)
             && (atom2.hybridization() == Hybridization::Sp2
                 || atom2.hybridization() == Hybridization::Sp3)
         {
-            // RDKit❗❌:       ROMol::OEDGE_ITER beg1, end1;
-            // RDKit❗❌:       boost::tie(beg1, end1) = mol.getAtomBonds(atom1);
-            // RDKit❗❌:       while (beg1 != end1) {
+            // RDKit✔️❌:       ROMol::OEDGE_ITER beg1, end1;
+            // RDKit✔️❌:       boost::tie(beg1, end1) = mol.getAtomBonds(atom1);
+            // RDKit✔️❌:       while (beg1 != end1) {
             for first_neighbor in mol.topology_block().adjacency.neighbors_of(idx1) {
                 let t_bond1 = &mol.bonds()[first_neighbor.bond.index()];
-                // RDKit❗❌:         const Bond *tBond1 = mol[*beg1];
-                // RDKit❗❌:         if (tBond1 != bond) {
+                // RDKit✔️❌:         const Bond *tBond1 = mol[*beg1];
+                // RDKit✔️❌:         if (tBond1 != bond) {
                 if t_bond1.id() != bond.id() {
-                    // RDKit❗❌:           int bIdx = tBond1->getOtherAtomIdx(idx1);
+                    // RDKit✔️❌:           int bIdx = tBond1->getOtherAtomIdx(idx1);
                     let b_idx = first_neighbor.atom_index;
-                    // RDKit❗❌:           ROMol::OEDGE_ITER beg2, end2;
-                    // RDKit❗❌:           boost::tie(beg2, end2) = mol.getAtomBonds(atom2);
-                    // RDKit❗❌:           while (beg2 != end2) {
+                    // RDKit✔️❌:           ROMol::OEDGE_ITER beg2, end2;
+                    // RDKit✔️❌:           boost::tie(beg2, end2) = mol.getAtomBonds(atom2);
+                    // RDKit✔️❌:           while (beg2 != end2) {
                     for second_neighbor in mol.topology_block().adjacency.neighbors_of(idx2) {
                         let t_bond2 = &mol.bonds()[second_neighbor.bond.index()];
-                        // RDKit❗❌:             const Bond *tBond2 = mol[*beg2];
-                        // RDKit❗❌:             if (tBond2 != bond && tBond2 != tBond1) {
+                        // RDKit✔️❌:             const Bond *tBond2 = mol[*beg2];
+                        // RDKit✔️❌:             if (tBond2 != bond && tBond2 != tBond1) {
                         if t_bond2.id() != bond.id() && t_bond2.id() != t_bond1.id() {
-                            // RDKit❗❌:               int eIdx = tBond2->getOtherAtomIdx(idx2);
+                            // RDKit✔️❌:               int eIdx = tBond2->getOtherAtomIdx(idx2);
                             let e_idx = second_neighbor.atom_index;
-                            // RDKit❗❌:               // make sure this isn't a three-membered ring:
-                            // RDKit❗❌:               if (eIdx != bIdx) {
+                            // RDKit✔️❌:               // make sure this isn't a three-membered ring:
+                            // RDKit✔️❌:               if (eIdx != bIdx) {
                             if e_idx != b_idx {
-                                // RDKit❗❌:                 // we now have a torsion involving atoms (bonds):
-                                // RDKit❗❌:                 //  bIdx - (tBond1) - idx1 - (bond) - idx2 - (tBond2) - eIdx
-                                // RDKit❗❌:                 TorsionAngleContrib *contrib;
+                                // RDKit✔️❌:                 // we now have a torsion involving atoms (bonds):
+                                // RDKit✔️❌:                 //  bIdx - (tBond1) - idx1 - (bond) - idx2 - (tBond2) - eIdx
+                                // RDKit✔️❌:                 TorsionAngleContrib *contrib;
 
-                                // RDKit❗❌:                 // if either of the end atoms is SP2 hybridized, set a flag
-                                // RDKit❗❌:                 // here.
-                                // RDKit❗❌:                 bool hasSP2 = false;
+                                // RDKit✔️❌:                 // if either of the end atoms is SP2 hybridized, set a flag
+                                // RDKit✔️❌:                 // here.
+                                // RDKit✔️❌:                 bool hasSP2 = false;
                                 let has_sp2 = mol.atoms()[b_idx].hybridization()
                                     == Hybridization::Sp2
                                     || mol.atoms()[e_idx].hybridization() == Hybridization::Sp2;
-                                // RDKit❗❌:                 if (mol.getAtomWithIdx(bIdx)->getHybridization() == Atom::SP2 ||
-                                // RDKit❗❌:                     mol.getAtomWithIdx(eIdx)->getHybridization() == Atom::SP2) {
-                                // RDKit❗❌:                   hasSP2 = true;
-                                // RDKit❗❌:                 }
-                                // RDKit❗❌:                 // std::cout << "Torsion: " << bIdx << "-" << idx1 << "-" <<
-                                // RDKit❗❌:                 // idx2 << "-" << eIdx << std::endl;
-                                // RDKit❗❌:                 // if(okToIncludeTorsion(mol,bond,bIdx,idx1,idx2,eIdx)){
-                                // RDKit❗❌:                 // std::cout << "  INCLUDED" << std::endl;
+                                // RDKit✔️❌:                 if (mol.getAtomWithIdx(bIdx)->getHybridization() == Atom::SP2 ||
+                                // RDKit✔️❌:                     mol.getAtomWithIdx(eIdx)->getHybridization() == Atom::SP2) {
+                                // RDKit✔️❌:                   hasSP2 = true;
+                                // RDKit✔️❌:                 }
+                                // RDKit✔️❌:                 // std::cout << "Torsion: " << bIdx << "-" << idx1 << "-" <<
+                                // RDKit✔️❌:                 // idx2 << "-" << eIdx << std::endl;
+                                // RDKit✔️❌:                 // if(okToIncludeTorsion(mol,bond,bIdx,idx1,idx2,eIdx)){
+                                // RDKit✔️❌:                 // std::cout << "  INCLUDED" << std::endl;
                                 let contrib = TorsionAngleContrib::new(
                                     field,
                                     b_idx,
@@ -628,32 +602,32 @@ pub(crate) fn add_torsions(
                                     atom2_params,
                                     has_sp2,
                                 );
-                                // RDKit❗❌:                 field->contribs().push_back(ForceFields::ContribPtr(contrib));
+                                // RDKit✔️❌:                 field->contribs().push_back(ForceFields::ContribPtr(contrib));
                                 contribs_here.push(contrib);
-                                // RDKit❗❌:                 contribsHere.push_back(contrib);
-                                // RDKit❗❌:                 //}
+                                // RDKit✔️❌:                 contribsHere.push_back(contrib);
+                                // RDKit✔️❌:                 //}
                             }
                         }
                     }
                 }
             }
         }
-        // RDKit❗❌:     }
-        // RDKit❗❌:     // now divide the force constant for each contribution to the torsion energy
-        // RDKit❗❌:     // about this bond by the number of contribs about this bond:
-        // RDKit❗❌:     for (auto chI = contribsHere.begin(); chI != contribsHere.end(); ++chI) {
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     // now divide the force constant for each contribution to the torsion energy
+        // RDKit✔️❌:     // about this bond by the number of contribs about this bond:
+        // RDKit✔️❌:     for (auto chI = contribsHere.begin(); chI != contribsHere.end(); ++chI) {
         let contrib_count = contribs_here.len();
         for contrib in &mut contribs_here {
-            // RDKit❗❌:       (*chI)->scaleForceConstant(contribsHere.size());
+            // RDKit✔️❌:       (*chI)->scaleForceConstant(contribsHere.size());
             contrib.scale_force_constant(contrib_count);
-            // RDKit❗❌:     }
+            // RDKit✔️❌:     }
         }
         for contrib in contribs_here {
             field.add_contrib(Box::new(contrib));
         }
     }
-    // RDKit❗❌:   }
-    // RDKit❗❌: }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION UFF::Tools::addTorsions
     Ok(())
 }
@@ -2302,18 +2276,23 @@ mod tests {
     }
 
     #[test]
-    fn uff_builder_add_torsions_rejects_custom_smarts() {
-        let mol = linear_chain(4);
+    fn uff_builder_add_torsions_accepts_custom_bond_smarts() {
+        let mol = torsion_chain(
+            [
+                (Element::C, Hybridization::Sp3),
+                (Element::C, Hybridization::Sp3),
+                (Element::C, Hybridization::Sp3),
+                (Element::C, Hybridization::Sp3),
+            ],
+            [BondOrder::Single, BondOrder::Single, BondOrder::Single],
+        );
         let mut ff = force_field_with_positions(mol.num_atoms());
         let params = vec![Some(torsion_params(2.0, 1.5)); mol.num_atoms()];
 
-        let err = add_torsions(&mol, &params, &mut ff, "[*:1]-[*:2]")
-            .expect_err("custom torsion SMARTS should remain explicitly unsupported");
+        add_torsions(&mol, &params, &mut ff, "[*:1]-[*:2]")
+            .expect("custom torsion SMARTS should select the three single bonds");
 
-        assert_eq!(
-            err,
-            UffBuilderError::UnsupportedTorsionBondSmarts("[*:1]-[*:2]".to_string())
-        );
+        assert_eq!(ff.contribs().len(), 1);
     }
 
     #[test]

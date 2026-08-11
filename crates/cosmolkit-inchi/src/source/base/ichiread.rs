@@ -33,11 +33,12 @@ use crate::source_types::{
     SAVE_OPT_PT_06_00, SAVE_OPT_PT_13_00, SAVE_OPT_PT_16_00, SAVE_OPT_PT_18_00, SAVE_OPT_PT_22_00,
     SAVE_OPT_PT_39_00, SAVE_OPT_RECMET, SAVE_OPT_SLUUD, SAVE_OPT_SUU, SRM, STRUCT_DATA,
     SourceConstPointer, SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer,
-    SourceVaList, StrFromINChI, T_GROUP_HDR_LEN, TAUT_NON, TAUT_NUM, TAUT_YES,
-    TG_FLAG_ARSINE_STEREO, TG_FLAG_DISCONNECT_COORD, TG_FLAG_DISCONNECT_COORD_DONE,
-    TG_FLAG_FIX_SP3_BUG, TG_FLAG_PHOSPHINE_STEREO, TG_FLAG_RECONNECT_COORD, XYZ_COORD, clock_t,
-    inchiTime, inp_ATOM, local_ichiread::IST_HAPPENED_IN_RECMET, local_ichiread::MODE_PIXH,
-    local_ichiread::NUM_ELEM, local_ichiread::tagCopySegmentType_CPY_ISO_AT as CPY_ISO_AT,
+    SourceVaList, StableSourceConstSlice, StableSourceSlice, StrFromINChI, T_GROUP_HDR_LEN,
+    TAUT_NON, TAUT_NUM, TAUT_YES, TG_FLAG_ARSINE_STEREO, TG_FLAG_DISCONNECT_COORD,
+    TG_FLAG_DISCONNECT_COORD_DONE, TG_FLAG_FIX_SP3_BUG, TG_FLAG_PHOSPHINE_STEREO,
+    TG_FLAG_RECONNECT_COORD, XYZ_COORD, clock_t, inchiTime, inp_ATOM,
+    local_ichiread::IST_HAPPENED_IN_RECMET, local_ichiread::MODE_PIXH, local_ichiread::NUM_ELEM,
+    local_ichiread::tagCopySegmentType_CPY_ISO_AT as CPY_ISO_AT,
     local_ichiread::tagCopySegmentType_CPY_SP2 as CPY_SP2,
     local_ichiread::tagCopySegmentType_CPY_SP3 as CPY_SP3,
     local_ichiread::tagCopySegmentType_CPY_SP3_M as CPY_SP3_M,
@@ -4146,7 +4147,7 @@ exit_error:
                 {
                     one_input.valid_polymer = 1;
                 }
-                return_value = ConvertInChI2Struct(
+                let conversion_result = ConvertInChI2Struct(
                     heap,
                     ip_inp,
                     &mut current_parameters,
@@ -4182,7 +4183,8 @@ exit_error:
                     ic,
                     pCG,
                     clock_result,
-                )?;
+                );
+                return_value = conversion_result?;
                 let result_string = real_output.s.pStr;
                 if return_value > 0 {
                     if output_error_inchi != 0 {
@@ -10386,7 +10388,7 @@ static int SegmentSp3CreateEmpty(const char* str,
         tagInChI_STATE_IST_MOBILE_H_ISO_SP3 as IST_MOBILE_H_ISO_SP3,
     };
 
-    fn calloc_or_null<T: Default + 'static>(
+    fn calloc_or_null<T: Clone + Default + 'static>(
         heap: &mut SourceHeap,
         count: u64,
     ) -> Result<SourceMutPointer<T>, SourceHeapError> {
@@ -11417,7 +11419,7 @@ exit_function:
         tagInChI_STATE_IST_MOBILE_H_SP3 as IST_MOBILE_H_SP3,
     };
 
-    fn calloc_or_null<T: Default + 'static>(
+    fn calloc_or_null<T: Clone + Default + 'static>(
         heap: &mut SourceHeap,
         count: u64,
     ) -> Result<SourceMutPointer<T>, SourceHeapError> {
@@ -12205,7 +12207,7 @@ exit_function:
         tagInChI_STATE_IST_MOBILE_H_SP2 as IST_MOBILE_H_SP2,
     };
 
-    fn calloc_or_null<T: Default + 'static>(
+    fn calloc_or_null<T: Clone + Default + 'static>(
         heap: &mut SourceHeap,
         count: u64,
     ) -> Result<SourceMutPointer<T>, SourceHeapError> {
@@ -13244,7 +13246,7 @@ exit_function:
         POLYMERS_MODERN, tagFrameShifScheme_FSS_STARS_CYCLED,
     };
 
-    fn calloc_or_null<T: Default + 'static>(
+    fn calloc_or_null<T: Clone + Default + 'static>(
         heap: &mut SourceHeap,
         count: u64,
     ) -> Result<SourceMutPointer<T>, SourceHeapError> {
@@ -14957,7 +14959,7 @@ pub(crate) fn ParseSegmentMobileH(
         ALPHA_BASE, BNS_PROGRAM_ERR, INCHI_T_NUM_MOVABLE, S_CHAR, U_CHAR,
     };
 
-    fn calloc_or_null<T: Default + 'static>(
+    fn calloc_or_null<T: Clone + Default + 'static>(
         heap: &mut SourceHeap,
         count: i64,
     ) -> Result<SourceMutPointer<T>, SourceHeapError> {
@@ -16411,7 +16413,7 @@ exit_function:
     const LAST_AT_LEN: usize = 256;
     const EL_NUMBER_H: U_CHAR = 1;
 
-    fn calloc_or_null<T: Default + 'static>(
+    fn calloc_or_null<T: Clone + Default + 'static>(
         heap: &mut SourceHeap,
         count: i64,
         source_element_size: u64,
@@ -17710,7 +17712,7 @@ int ParseSegmentFormula(const char* str,
         local_ichiread::tagInChI_STATE_IST_MOBILE_H_FORMULA as IST_MOBILE_H_FORMULA,
     };
 
-    fn calloc_or_null<T: Default + 'static>(
+    fn calloc_or_null<T: Clone + Default + 'static>(
         heap: &mut SourceHeap,
         count: i64,
         source_element_size: u64,
@@ -19862,7 +19864,7 @@ exit_function:
         tagInChI_STATE_IST_MOBILE_H_SP3_M as IST_MOBILE_H_SP3_M,
     };
 
-    fn calloc_or_null<T: Default + 'static>(
+    fn calloc_or_null<T: Clone + Default + 'static>(
         heap: &mut SourceHeap,
         count: u64,
     ) -> Result<SourceMutPointer<T>, SourceHeapError> {
@@ -20285,7 +20287,7 @@ exit_function:
         tagInChI_STATE_IST_MOBILE_H_SP3_S as IST_MOBILE_H_SP3_S,
     };
 
-    fn calloc_or_null<T: Default + 'static>(
+    fn calloc_or_null<T: Clone + Default + 'static>(
         heap: &mut SourceHeap,
         count: u64,
     ) -> Result<SourceMutPointer<T>, SourceHeapError> {
@@ -22144,7 +22146,7 @@ exit_function:
     // INCHI✔️❌: COMPILE_ANSI_ONLY and TARGET_API_LIB do not otherwise alter this body.
     // END INCHI ACTIVE MACRO CONFIGURATION: CopySegment
 
-    fn calloc_or_null<T: Default + 'static>(
+    fn calloc_or_null<T: Clone + Default + 'static>(
         heap: &mut SourceHeap,
         count: u64,
     ) -> Result<SourceMutPointer<T>, SourceHeapError> {
@@ -23032,25 +23034,34 @@ endf:
             Err(error) => return Err(error),
         };
 
-        let source = heap.slice(is.s.pStr.as_const())?.to_vec();
+        if is.s.pStr.allocation_identity() == s.allocation_identity() {
+            return Err(SourceHeapError::PointerAllocationMismatch);
+        }
+        // The source stream and the new C work buffer are distinct fixed
+        // allocations. Validate both once, then reproduce strcpy directly.
+        // SAFETY: neither allocation is freed or resized while these views are
+        // used, and the newly allocated destination cannot alias the stream.
+        let source = unsafe { heap.stable_slice(is.s.pStr.as_const())? };
         let source_nul = source
+            .prefix(source.len())?
             .iter()
             .position(|byte| *byte == 0)
             .ok_or(SourceHeapError::MissingNulTerminator)?;
         let copy_len = source_nul
             .checked_add(1)
             .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-        if copy_len > heap.slice(s.as_const())?.len() {
+        let mut work = unsafe { heap.stable_slice_mut(s)? };
+        if copy_len > work.len() {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
-        heap.slice_mut(s)?[..copy_len].copy_from_slice(&source[..copy_len]);
+        work.prefix_mut(copy_len)?.copy_from_slice(source.prefix(copy_len)?);
 
         let scan_length = usize::try_from(slength)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if scan_length > heap.slice(s.as_const())?.len() {
+        if scan_length > work.len() {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
-        let whitespace = heap.slice(s.as_const())?[..scan_length]
+        let whitespace = work.prefix_mut(scan_length)?
             .iter()
             .position(|byte| matches!(*byte as u8, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r'))
             .unwrap_or(0);
@@ -23067,28 +23078,35 @@ endf:
                 Err(SourceHeapError::AllocationFailed) => return Ok(()),
                 Err(error) => return Err(error),
             };
-            let current = heap.slice(s.as_const())?;
-            let tail_nul = current[whitespace..]
+            let work_values = work.prefix_mut(work.len())?;
+            let tail_nul = work_values[whitespace..]
                 .iter()
                 .position(|byte| *byte == 0)
                 .ok_or(SourceHeapError::MissingNulTerminator)?;
             let tail_len = tail_nul
                 .checked_add(1)
                 .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-            let tail = current[whitespace..whitespace + tail_len].to_vec();
-            let destination = heap.slice_mut(s2)?;
+            // SAFETY: s2 is a new allocation distinct from s. Both buffers are
+            // fixed until cleanup, matching the source strcpy into s2.
+            let mut destination = unsafe { heap.stable_slice_mut(s2)? };
             if tail_len > destination.len() {
                 return Err(SourceHeapError::PointerOutOfBounds);
             }
-            destination[..tail_len].copy_from_slice(&tail);
-            heap.slice_mut(s)?[whitespace] = 0;
+            destination
+                .prefix_mut(tail_len)?
+                .copy_from_slice(&work_values[whitespace..whitespace + tail_len]);
+            work_values[whitespace] = 0;
         }
 
-        let current = heap.slice(s.as_const())?.to_vec();
-        let nul = current
+        // The remainder of the C function only reads s. Retain the validated
+        // view instead of materializing repeated whole-string snapshots.
+        let current_view: StableSourceConstSlice<i8> = unsafe { heap.stable_slice(s.as_const())? };
+        let nul = current_view
+            .prefix(current_view.len())?
             .iter()
             .position(|byte| *byte == 0)
             .ok_or(SourceHeapError::MissingNulTerminator)?;
+        let current = current_view.prefix(nul)?;
         let i_last_sym = i32::try_from(nul)
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
             .wrapping_sub(1);
@@ -23101,14 +23119,14 @@ endf:
                 .position(|window| window.iter().map(|byte| *byte as u8).eq(needle.iter().copied()))
                 .map(|offset| start + offset)
         };
-        let Some(mut p) = find(&current[..nul], 0, b"InChI=1") else {
+        let Some(mut p) = find(current, 0, b"InChI=1") else {
             return Ok(());
         };
-        let Some(pz_slash) = find(&current[..nul], p, b"/z") else {
+        let Some(pz_slash) = find(current, p, b"/z") else {
             return Ok(());
         };
         let pz = pz_slash + 1;
-        let Some(formula_slash) = current[p..nul]
+        let Some(formula_slash) = current[p..]
             .iter()
             .position(|byte| *byte as u8 == b'/')
             .map(|offset| p + offset)
@@ -23116,7 +23134,7 @@ endf:
             return Ok(());
         };
         p = formula_slash + 1;
-        let formula_end = current[p..nul]
+        let formula_end = current[p..]
             .iter()
             .position(|byte| *byte as u8 == b'/')
             .map(|offset| p + offset);
@@ -23138,10 +23156,7 @@ endf:
                 ntimes = 1;
             }
 
-            let byte = *heap
-                .slice(s.as_const())?
-                .get(p)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
+            let byte = *current.get(p).ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
             if !byte.is_ascii_uppercase() {
                 ret = -1;
                 return Ok(());
@@ -23149,18 +23164,12 @@ endf:
             let mut element = [0_i8; 3];
             element[0] = byte as i8;
             p += 1;
-            let next = *heap
-                .slice(s.as_const())?
-                .get(p)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
+            let next = *current.get(p).ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
             if next != 0 && next.is_ascii_lowercase() {
                 element[1] = next as i8;
                 p += 1;
             }
-            let next = *heap
-                .slice(s.as_const())?
-                .get(p)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
+            let next = *current.get(p).ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
             let elindex = if next != 0 && next.is_ascii_digit() {
                 let mut end = SourceConstPointer::null();
                 let value = inchi_strtol(heap, s.offset(i64::try_from(p).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?.as_const(), Some(&mut end), 10)?;
@@ -23188,7 +23197,7 @@ endf:
                     .checked_add(ntimes.checked_mul(elindex).ok_or(SourceHeapError::SourceIntegerOverflow)?)
                     .ok_or(SourceHeapError::SourceIntegerOverflow)?;
             }
-            if heap.slice(s.as_const())?.get(p).copied().ok_or(SourceHeapError::PointerOutOfBounds)? as u8 == b'.' {
+            if current.get(p).copied().ok_or(SourceHeapError::PointerOutOfBounds)? as u8 == b'.' {
                 p += 1;
             }
         }
@@ -23214,8 +23223,7 @@ endf:
         heap.slice_mut(insert_pos)?[0] = first_position;
         let mut ninsert = 1_i32;
 
-        let current = heap.slice(s.as_const())?.to_vec();
-        let z_end = current[pz..nul]
+        let z_end = current[pz..]
             .iter()
             .position(|byte| *byte as u8 == b'/')
             .map(|offset| pz + offset)
@@ -23231,26 +23239,30 @@ endf:
             }
             Err(error) => return Err(error),
         };
-        let zbytes = current[pz..z_end].to_vec();
-        heap.slice_mut(tmpstr)?[..zbytes.len()].copy_from_slice(&zbytes);
         let mut nstars = 0_i32;
-        let temporary = heap.slice(tmpstr.as_const())?.to_vec();
-        ret = DetectHiddenPolymerStuff(
-            &temporary,
-            zlen,
-            &mut ninsert,
-            heap.slice_mut(insert_pos)?,
-            lead_pos,
-            &mut nstars,
-        )?;
+        {
+            // SAFETY: tmpstr is newly allocated and distinct from s.
+            let mut temporary_output = unsafe { heap.stable_slice_mut(tmpstr)? };
+            temporary_output
+                .prefix_mut(z_end - pz)?
+                .copy_from_slice(&current[pz..z_end]);
+            let temporary = unsafe { heap.stable_slice(tmpstr.as_const())? };
+            ret = DetectHiddenPolymerStuff(
+                temporary.prefix(usize::try_from(zlen).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
+                zlen,
+                &mut ninsert,
+                heap.slice_mut(insert_pos)?,
+                lead_pos,
+                &mut nstars,
+            )?;
+        }
         if ret != 0 || nstars == 0 {
             return Ok(());
         }
 
-        let current = heap.slice(s.as_const())?.to_vec();
-        if let Some(pr_slash) = find(&current[..nul], 0, b"/r") {
+        if let Some(pr_slash) = find(current, 0, b"/r") {
             let pr = pr_slash + 1;
-            let reconnect_end = current[pr..nul]
+            let reconnect_end = current[pr..]
                 .iter()
                 .position(|byte| *byte as u8 == b'/')
                 .map(|offset| pr + offset);
@@ -23261,10 +23273,10 @@ endf:
             *heap.slice_mut(insert_pos)?.get_mut(insertion).ok_or(SourceHeapError::PointerOutOfBounds)? = position;
             ninsert = ninsert.wrapping_add(1);
 
-            if let Some(pz2_slash) = find(&current[..nul], pr, b"/z") {
+            if let Some(pz2_slash) = find(current, pr, b"/z") {
                 let pz2 = pz2_slash + 1;
                 lead_pos = i32::try_from(pz2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                let z2_end = current[pz2..nul]
+                let z2_end = current[pz2..]
                     .iter()
                     .position(|byte| *byte as u8 == b'/')
                     .map(|offset| pz2 + offset)
@@ -23281,27 +23293,29 @@ endf:
                     }
                     Err(error) => return Err(error),
                 };
-                let zbytes = current[pz2..z2_end].to_vec();
-                heap.slice_mut(tmpstr)?[..zbytes.len()].copy_from_slice(&zbytes);
                 nstars = 0;
-                let temporary = heap.slice(tmpstr.as_const())?.to_vec();
-                ret = DetectHiddenPolymerStuff(
-                    &temporary,
-                    zlen,
-                    &mut ninsert,
-                    heap.slice_mut(insert_pos)?,
-                    lead_pos,
-                    &mut nstars,
-                )?;
+                {
+                    let mut temporary_output = unsafe { heap.stable_slice_mut(tmpstr)? };
+                    temporary_output
+                        .prefix_mut(z2_end - pz2)?
+                        .copy_from_slice(&current[pz2..z2_end]);
+                    let temporary = unsafe { heap.stable_slice(tmpstr.as_const())? };
+                    ret = DetectHiddenPolymerStuff(
+                        temporary.prefix(usize::try_from(zlen).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
+                        zlen,
+                        &mut ninsert,
+                        heap.slice_mut(insert_pos)?,
+                        lead_pos,
+                        &mut nstars,
+                    )?;
+                }
                 if ret != 0 {
                     return Ok(());
                 }
             }
         }
 
-        let source = heap.slice(s.as_const())?;
-        let slen = i32::try_from(source.iter().position(|byte| *byte == 0).ok_or(SourceHeapError::MissingNulTerminator)?)
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let slen = i32::try_from(nul).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let edited_count = i64::from(slen)
             .checked_mul(100)
             .and_then(|value| value.checked_add(i64::from(ninsert).checked_mul(320)?))
@@ -23322,22 +23336,32 @@ endf:
             .checked_mul(100)
             .and_then(|value| value.checked_add(ninsert.checked_mul(320)?))
             .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-        let source = heap.slice(s.as_const())?.to_vec();
-        let positions = heap.slice(insert_pos.as_const())?.to_vec();
+        let positions_view = unsafe { heap.stable_slice(insert_pos.as_const())? };
+        let positions = positions_view.prefix(
+            usize::try_from(ninsert).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+        )?;
+        let source = current;
+        // SAFETY: edited_s is a fresh fixed allocation, distinct from source,
+        // positions, and tmpstr. The C loop bounds every write by nc_max.
+        let mut edited = unsafe { heap.stable_slice_mut(edited_s)? };
+        let nc_max_usize = usize::try_from(nc_max)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        if nc_max_usize > edited.len() {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
         let mut nc = 0_i32;
         let mut kinsert = 0_i32;
         let mut star0 = nheavy.wrapping_add(1);
         let mut prev_layer_symbol = b'0';
-        let write_temp = |heap: &mut SourceHeap, pointer: SourceMutPointer<i8>, bytes: &[u8]| -> Result<(), SourceHeapError> {
-            let destination = heap.slice_mut(pointer)?;
-            if bytes.len() >= destination.len() {
-                return Err(SourceHeapError::PointerOutOfBounds);
+        let append_bytes = |edited: &mut StableSourceSlice<i8>, bytes: &[u8], nc: &mut i32| {
+            for &byte in bytes {
+                if *nc < nc_max {
+                    // SAFETY: nc is bounded by nc_max, validated against the
+                    // complete edited_s allocation above.
+                    unsafe { *edited.get_unchecked_mut(*nc as usize) = byte as i8 };
+                    *nc = nc.wrapping_add(1);
+                }
             }
-            for (destination, source) in destination.iter_mut().zip(bytes) {
-                *destination = *source as i8;
-            }
-            destination[bytes.len()] = 0;
-            Ok(())
         };
         let mut i = 0_i32;
         while i < slen {
@@ -23354,19 +23378,12 @@ endf:
                     star0 = star0.wrapping_add(2);
                     value
                 };
-                write_temp(heap, tmpstr, formatted.as_bytes())?;
+                append_bytes(&mut edited, formatted.as_bytes(), &mut nc);
                 kinsert = kinsert.wrapping_add(1);
-                let temporary = heap.slice(tmpstr.as_const())?.to_vec();
-                let length = temporary.iter().position(|byte| *byte == 0).ok_or(SourceHeapError::MissingNulTerminator)?;
-                for &byte in &temporary[..length] {
-                    if nc < nc_max {
-                        heap.slice_mut(edited_s)?[usize::try_from(nc).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = byte;
-                        nc = nc.wrapping_add(1);
-                    }
-                }
             }
             if i == i_last_sym && nc < nc_max {
-                heap.slice_mut(edited_s)?[usize::try_from(nc).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = source[index];
+                // SAFETY: nc < nc_max <= edited.len().
+                unsafe { *edited.get_unchecked_mut(nc as usize) = source[index] };
                 nc = nc.wrapping_add(1);
             }
             if source[index] as u8 == b'/' || i == i_last_sym {
@@ -23375,7 +23392,8 @@ endf:
                     let mut j = 0_i32;
                     while j < nstars {
                         if nc < nc_max {
-                            heap.slice_mut(edited_s)?[usize::try_from(nc).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = addon as i8;
+                            // SAFETY: nc < nc_max <= edited.len().
+                            unsafe { *edited.get_unchecked_mut(nc as usize) = addon as i8 };
                             nc = nc.wrapping_add(1);
                         }
                         j = j.wrapping_add(1);
@@ -23386,15 +23404,7 @@ endf:
                     }
                     if source[index - 1] as u8 != b'f' && source[index - 2] as u8 != b'/' {
                         let formatted = format!(".{nstars}Zz");
-                        write_temp(heap, tmpstr, formatted.as_bytes())?;
-                        let temporary = heap.slice(tmpstr.as_const())?.to_vec();
-                        let length = temporary.iter().position(|byte| *byte == 0).ok_or(SourceHeapError::MissingNulTerminator)?;
-                        for &byte in &temporary[..length] {
-                            if nc < nc_max {
-                                heap.slice_mut(edited_s)?[usize::try_from(nc).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = byte;
-                                nc = nc.wrapping_add(1);
-                            }
-                        }
+                        append_bytes(&mut edited, formatted.as_bytes(), &mut nc);
                     }
                 }
                 if i != i_last_sym {
@@ -23404,13 +23414,15 @@ endf:
                 }
             }
             if nc < nc_max {
-                heap.slice_mut(edited_s)?[usize::try_from(nc).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = source[index];
+                // SAFETY: nc < nc_max <= edited.len().
+                unsafe { *edited.get_unchecked_mut(nc as usize) = source[index] };
                 nc = nc.wrapping_add(1);
             }
             i = i.wrapping_add(1);
         }
         if nc < nc_max {
-            heap.slice_mut(edited_s)?[usize::try_from(nc).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = 0;
+            // SAFETY: nc < nc_max <= edited.len().
+            unsafe { *edited.get_unchecked_mut(nc as usize) = 0 };
         }
 
         inchi_strbuf_close(heap, Some(&mut is.s))?;
@@ -24162,30 +24174,32 @@ dealloc:
             )?);
             sd.ulStructTime = 0;
 
-            let mut canon_globals = heap
-                .slice(pCG.as_const())?
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone();
-            let all_result = AllInchiToStructure(
-                heap,
-                ic,
-                &mut canon_globals,
-                ip,
-                sd,
-                num_inp,
-                pszCurHdr.as_const(),
-                restore_mode_pointer.as_const(),
-                bHasSomeFixedH,
-                &mut structures,
-                pOneInput,
-                clock_result,
-            );
-            *heap
-                .slice_mut(pCG)?
-                .first_mut()
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = canon_globals;
-            ret = all_result?;
+            // The source passes the same CANON_GLOBALS object through the
+            // complete restore call. Validate its allocation once and keep it
+            // borrowed for precisely that call.
+            // INCHI✔️✔️: ret = AllInchiToStructure(ic, pCG, ip, sd, num_inp,
+            // INCHI✔️✔️:     *pszCurHdr, &srm, bHasSomeFixedH, pStruct,
+            // INCHI✔️✔️:     pOneInput);
+            let restore_result = heap.with_slice_mut_and_heap_mut(pCG, |globals, heap| {
+                let canon_globals = globals
+                    .first_mut()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                AllInchiToStructure(
+                    heap,
+                    ic,
+                    canon_globals,
+                    ip,
+                    sd,
+                    num_inp,
+                    pszCurHdr.as_const(),
+                    restore_mode_pointer.as_const(),
+                    bHasSomeFixedH,
+                    &mut structures,
+                    pOneInput,
+                    clock_result,
+                )
+            });
+            ret = restore_result?;
             *ulProcessingTime = ulProcessingTime.wrapping_add(sd.ulStructTime as i64);
             InchiTimeGet(pulTStart, clock_result);
             if ret != 0 {

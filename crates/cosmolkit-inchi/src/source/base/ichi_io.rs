@@ -322,7 +322,7 @@ pub(crate) fn inchi_strbuf_printf(
     destination
         .get_mut(used..end)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .copy_from_slice(&rendered.iter().map(|byte| *byte as i8).collect::<Vec<_>>());
+        .copy_from_slice(bytemuck::cast_slice::<u8, i8>(&rendered));
     *destination
         .get_mut(end)
         .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
@@ -563,13 +563,15 @@ pub(crate) fn source_vformat(
     format: SourceConstPointer<i8>,
     arguments: &mut SourceVaList,
 ) -> Result<Vec<u8>, SourceHeapError> {
-    let format = heap.slice(format)?;
-    let format_length = format
-        .iter()
-        .position(|byte| *byte == 0)
+    let format_values = heap.slice(format)?;
+    let format_length = memchr::memchr(0, bytemuck::cast_slice(format_values))
         .ok_or(SourceHeapError::MissingNulTerminator)?;
-    let format = format[..format_length].to_vec();
-    let mut output = Vec::new();
+    // SAFETY: formatting never frees or resizes the format allocation. `%n`
+    // writes through an i32 allocation and therefore cannot overlap this i8
+    // view under SourceHeap's allocation type checks.
+    let format_view = unsafe { heap.stable_slice(format)? };
+    let format = format_view.prefix(format_length)?;
+    let mut output = Vec::with_capacity(format.len());
     let mut position = 0_usize;
     while position < format.len() {
         if format[position] as u8 != b'%' {

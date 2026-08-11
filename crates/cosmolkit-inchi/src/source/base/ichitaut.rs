@@ -45,6 +45,7 @@ use crate::source_types::{
     sp_ATOM, tagTG_NumDA_TG_NUM_DA, tagTG_NumDA_TG_Num_aH, tagTG_NumDA_TG_Num_aM,
     tagTG_NumDA_TG_Num_aO, tagTG_NumDA_TG_Num_dH, tagTG_NumDA_TG_Num_dM, tagTG_NumDA_TG_Num_dO,
 };
+use std::mem::MaybeUninit;
 
 const CTYPE: [CHARGE_TYPE; 6] = [
     CHARGE_TYPE {
@@ -3047,14 +3048,16 @@ pub(crate) fn GetOtherSaltType(
 const REGISTER_END_POINTS_STACK_LEN: usize = MAX_STACK_ARRAY_LEN as usize + 1;
 
 struct RegisterEndPointsScratch<T> {
-    stack: [T; REGISTER_END_POINTS_STACK_LEN],
+    stack: [MaybeUninit<T>; REGISTER_END_POINTS_STACK_LEN],
     heap: Option<SourceMutPointer<T>>,
 }
 
 impl<T: Copy + Default + 'static> RegisterEndPointsScratch<T> {
     fn new() -> Self {
         Self {
-            stack: [T::default(); REGISTER_END_POINTS_STACK_LEN],
+            // The three source stack arrays are deliberately uninitialized.
+            // RegisterEndPoints writes every element before reading it.
+            stack: [MaybeUninit::uninit(); REGISTER_END_POINTS_STACK_LEN],
             heap: None,
         }
     }
@@ -3069,18 +3072,23 @@ impl<T: Copy + Default + 'static> RegisterEndPointsScratch<T> {
             let pointer = inchi_calloc::<T>(heap, len as u64, std::mem::size_of::<T>() as u64)?;
             {
                 let target = heap.slice_mut(pointer)?;
-                target
+                let target = target
                     .get_mut(..initialized)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .copy_from_slice(&self.stack[..initialized]);
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                // SAFETY: callers pass the initialized prefix length maintained
+                // by the source loops. MaybeUninit<T> has the same layout as T,
+                // and the newly allocated target cannot alias the stack array.
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        self.stack.as_ptr().cast::<T>(),
+                        target.as_mut_ptr(),
+                        initialized,
+                    );
+                }
             }
             self.heap = Some(pointer);
         }
         Ok(())
-    }
-
-    fn as_mut_ptr(&self) -> Option<SourceMutPointer<T>> {
-        self.heap
     }
 
     fn write(
@@ -3095,7 +3103,10 @@ impl<T: Copy + Default + 'static> RegisterEndPointsScratch<T> {
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .clone_from(&value);
         } else {
-            self.stack[index] = value;
+            self.stack
+                .get_mut(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .write(value);
         }
         Ok(())
     }
@@ -3109,9 +3120,29 @@ impl<T: Copy + Default + 'static> RegisterEndPointsScratch<T> {
         } else {
             self.stack
                 .get(index)
-                .copied()
                 .ok_or(SourceHeapError::PointerOutOfBounds)
+                // SAFETY: every source read is bounded by the number of values
+                // already written, or follows the explicit zero initialization.
+                .map(|value| unsafe { value.assume_init_read() })
         }
+    }
+
+    fn clear_prefix(&mut self, heap: &mut SourceHeap, len: usize) -> Result<(), SourceHeapError> {
+        if let Some(pointer) = self.heap {
+            heap.slice_mut(pointer)?
+                .get_mut(..len)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .fill(T::default());
+        } else {
+            let stack = self
+                .stack
+                .get_mut(..len)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            for value in stack {
+                value.write(T::default());
+            }
+        }
+        Ok(())
     }
 
     fn free(&mut self, heap: &mut SourceHeap) -> Result<(), SourceHeapError> {
@@ -3492,11 +3523,8 @@ pub(crate) fn RegisterEndPoints(
             let clear_len = usize::try_from(n_next_group_number)
                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
                 + 1;
-            if let Some(pointer) = n_new_tg_number.as_mut_ptr() {
-                heap.slice_mut(pointer)?.fill(AT_NUMB::default());
-            } else {
-                n_new_tg_number.stack[..clear_len].fill(AT_NUMB::default());
-            }
+            // INCHI✔️✔️:         memset( nNewTgNumber, 0, (nNextGroupNumber + 1) * sizeof(nNewTgNumber[0]) );
+            n_new_tg_number.clear_prefix(heap, clear_len)?;
             for idx in
                 0..usize::try_from(num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
             {
@@ -3587,7 +3615,6 @@ pub(crate) fn RegisterEndPoints(
 
         if let Some(mut pBNS) = pBNS.as_deref_mut() {
             if pBNS.tot_st_cap == pBNS.tot_st_flow || ALWAYS_ADD_TG_ON_THE_FLY == 1 {
-                let atoms_snapshot = heap.slice(at.as_const())?.to_vec();
                 let mut tgi = T_GROUP_INFO {
                     t_group,
                     num_t_groups: num_t,
@@ -3618,23 +3645,23 @@ pub(crate) fn RegisterEndPoints(
                 if is_bns_error(ret_bns) {
                     return Ok(ret_bns);
                 }
+                // INCHI✔️🔝: AddCGroups2BnStruct and AddTGroups2BnStruct receive
+                // the same atom allocation that the C source passes directly.
+                // ReInitBnStruct is called first with bRemoveGroupsFromAtoms=0,
+                // so this stable read-only view is valid for both helpers and
+                // avoids copying the complete inp_ATOM array on every call.
+                let atoms_view = unsafe { heap.stable_slice(at.as_const())? };
+                let atoms = atoms_view.prefix(atoms_view.len())?;
                 if let Some(pb) = heap.slice(pBNS.pbTautFlags.as_const())?.first() {
                     if (*pb & TG_FLAG_MOVE_POS_CHARGES as u64) != 0 {
-                        let ret_bns =
-                            AddCGroups2BnStruct(heap, pCG, pBNS, &atoms_snapshot, num_atoms, cgi)?;
+                        let ret_bns = AddCGroups2BnStruct(heap, pCG, pBNS, atoms, num_atoms, cgi)?;
                         if is_bns_error(ret_bns) {
                             return Ok(ret_bns);
                         }
                     }
                 }
-                let ret_bns = AddTGroups2BnStruct(
-                    heap,
-                    pCG,
-                    pBNS,
-                    &atoms_snapshot,
-                    num_atoms,
-                    Some(&mut tgi),
-                )?;
+                let ret_bns =
+                    AddTGroups2BnStruct(heap, pCG, pBNS, atoms, num_atoms, Some(&mut tgi))?;
                 if is_bns_error(ret_bns) {
                     return Ok(ret_bns);
                 }

@@ -4,6 +4,44 @@ use crate::source_types::{
     SourceMutPointer, inp_ATOM,
     local_util::{ERR_ELEM, MAX_ATOM_CHARGE, MAX_NUM_VALENCES, MIN_ATOM_CHARGE, NEUTRAL_STATE},
 };
+use std::{
+    alloc::{Layout, alloc_zeroed},
+    any::TypeId,
+    sync::OnceLock,
+};
+
+#[inline(always)]
+fn calloc_integer_zero_is_valid<T: 'static>() -> bool {
+    let type_id = TypeId::of::<T>();
+    type_id == TypeId::of::<i8>()
+        || type_id == TypeId::of::<u8>()
+        || type_id == TypeId::of::<i16>()
+        || type_id == TypeId::of::<u16>()
+        || type_id == TypeId::of::<i32>()
+        || type_id == TypeId::of::<u32>()
+        || type_id == TypeId::of::<i64>()
+        || type_id == TypeId::of::<u64>()
+        || type_id == TypeId::of::<isize>()
+        || type_id == TypeId::of::<usize>()
+}
+
+fn calloc_integer_storage<T>(count: usize) -> Result<Vec<T>, SourceHeapError> {
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    let layout = Layout::array::<T>(count).map_err(|_| SourceHeapError::AllocationFailed)?;
+    // INCHI✔️✔️: calloc obtains one zero-initialized allocation rather than
+    // allocating and then filling each byte in a separate Rust operation.
+    // SAFETY: callers admit only the explicit integer TypeId set above, for
+    // which every all-zero byte pattern is a valid value. `layout` describes
+    // exactly `count` T values. The pointer comes from the global allocator,
+    // so Vec may own and later release it through that same allocator.
+    let pointer = unsafe { alloc_zeroed(layout) }.cast::<T>();
+    if pointer.is_null() {
+        return Err(SourceHeapError::AllocationFailed);
+    }
+    Ok(unsafe { Vec::from_raw_parts(pointer, count, count) })
+}
 
 pub(crate) fn inchi_malloc(
     heap: &mut SourceHeap,
@@ -25,7 +63,7 @@ pub(crate) fn inchi_malloc(
     heap.allocate(bytes)
 }
 
-pub(crate) fn inchi_calloc<T: Default + 'static>(
+pub(crate) fn inchi_calloc<T: Clone + Default + 'static>(
     heap: &mut SourceHeap,
     count: u64,
     source_element_size: u64,
@@ -41,11 +79,18 @@ pub(crate) fn inchi_calloc<T: Default + 'static>(
         .ok_or(SourceHeapError::AllocationSizeOverflow)?;
     let count =
         usize::try_from(count).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-    let mut values = Vec::new();
-    values
-        .try_reserve_exact(count)
-        .map_err(|_| SourceHeapError::AllocationFailed)?;
-    values.resize_with(count, T::default);
+    let values = if calloc_integer_zero_is_valid::<T>() {
+        calloc_integer_storage(count)?
+    } else {
+        // Aggregate source models retain their audited logical zero state;
+        // their Rust representation is not assumed to be all-zero bytes.
+        let mut values = Vec::new();
+        values
+            .try_reserve_exact(count)
+            .map_err(|_| SourceHeapError::AllocationFailed)?;
+        values.resize(count, T::default());
+        values
+    };
     heap.allocate(values)
 }
 
@@ -71,7 +116,8 @@ pub(crate) fn inchi_realloc<T: Clone + Default + 'static>(
     replacement
         .try_reserve_exact(count)
         .map_err(|_| SourceHeapError::AllocationFailed)?;
-    replacement.resize_with(count, T::default);
+    // INCHI✔️✔️: realloc preserves the old prefix and zero-fills any grown tail.
+    replacement.resize(count, T::default());
     let copied = old.len().min(count);
     replacement[..copied].clone_from_slice(&old[..copied]);
     let replacement = match heap.allocate(replacement) {
@@ -3202,10 +3248,25 @@ pub(crate) fn get_num_H(
     // INCHI✔❌: }
     // END INCHI C FUNCTION: get_num_H
 
-    let nitrogen = el_number_in_internal_ref_table(Some(&[b'N' as i8, 0]))?;
-    let sulfur = el_number_in_internal_ref_table(Some(&[b'S' as i8, 0]))?;
-    let _oxygen = el_number_in_internal_ref_table(Some(&[b'O' as i8, 0]))?;
-    let carbon = el_number_in_internal_ref_table(Some(&[b'C' as i8, 0]))?;
+    static INTERNAL_ELEMENT_N: OnceLock<i32> = OnceLock::new();
+    static INTERNAL_ELEMENT_S: OnceLock<i32> = OnceLock::new();
+    static INTERNAL_ELEMENT_O: OnceLock<i32> = OnceLock::new();
+    static INTERNAL_ELEMENT_C: OnceLock<i32> = OnceLock::new();
+
+    // INCHI✔️✔️: the four function-static C values above are populated
+    // from the element table once and reused by every later call. Each literal
+    // is valid source text, so these lookups cannot reach the parser error
+    // cases accepted for caller-provided `element_name` below.
+    let cached_element = |slot: &OnceLock<i32>, symbol: i8| {
+        *slot.get_or_init(|| {
+            el_number_in_internal_ref_table(Some(&[symbol, 0]))
+                .expect("an ASCII element literal is valid source text")
+        })
+    };
+    let nitrogen = cached_element(&INTERNAL_ELEMENT_N, b'N' as i8);
+    let sulfur = cached_element(&INTERNAL_ELEMENT_S, b'S' as i8);
+    let _oxygen = cached_element(&INTERNAL_ELEMENT_O, b'O' as i8);
+    let carbon = cached_element(&INTERNAL_ELEMENT_C, b'C' as i8);
 
     if aliased != 0 {
         return Ok(input_hydrogens);
@@ -7627,11 +7688,56 @@ mod tests {
 
     #[test]
     fn source_port__util__inchi_calloc__line_1561() {
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        struct NonZeroDefault(u8);
+
+        impl Default for NonZeroDefault {
+            fn default() -> Self {
+                Self(7)
+            }
+        }
+
         let mut heap = SourceHeap::default();
+
+        let signed_bytes = inchi_calloc::<i8>(&mut heap, 5, 1).unwrap();
+        assert_source_slice_eq(
+            "zeroed-i8-allocation",
+            &heap,
+            signed_bytes.as_const(),
+            &[0; 5],
+        );
+        assert_eq!(inchi_free(&mut heap, signed_bytes), Ok(()));
+
+        let atom_numbers = inchi_calloc::<u16>(&mut heap, 3, 2).unwrap();
+        assert_source_slice_eq(
+            "zeroed-u16-allocation",
+            &heap,
+            atom_numbers.as_const(),
+            &[0; 3],
+        );
+        assert_eq!(inchi_free(&mut heap, atom_numbers), Ok(()));
 
         let integers = inchi_calloc::<i32>(&mut heap, 4, 4).unwrap();
         assert_source_slice_eq("zeroed-i32-allocation", &heap, integers.as_const(), &[0; 4]);
         assert_eq!(inchi_free(&mut heap, integers), Ok(()));
+
+        let wide = inchi_calloc::<u64>(&mut heap, 2, 8).unwrap();
+        assert_source_slice_eq("zeroed-u64-allocation", &heap, wide.as_const(), &[0; 2]);
+        assert_eq!(inchi_free(&mut heap, wide), Ok(()));
+
+        let aggregate_fallback = inchi_calloc::<NonZeroDefault>(
+            &mut heap,
+            3,
+            std::mem::size_of::<NonZeroDefault>() as u64,
+        )
+        .unwrap();
+        assert_source_slice_eq(
+            "aggregate-default-allocation",
+            &heap,
+            aggregate_fallback.as_const(),
+            &[NonZeroDefault(7), NonZeroDefault(7), NonZeroDefault(7)],
+        );
+        assert_eq!(inchi_free(&mut heap, aggregate_fallback), Ok(()));
 
         assert_eq!(
             inchi_calloc::<u8>(&mut heap, u64::MAX, 2),

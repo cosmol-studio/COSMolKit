@@ -36,23 +36,55 @@ def iter_smiles(path: Path) -> Iterable[str]:
 
 def forcefield_result(fn, mol: Chem.Mol) -> dict[str, object]:
     try:
-        return {"ok": True, "has_all": bool(fn(mol)), "error": None}
+        probe_mol = Chem.Mol(mol)
+        return {"ok": True, "has_all": bool(fn(probe_mol)), "error": None}
     except Exception as err:
         return {"ok": False, "has_all": None, "error": str(err)}
 
 
 def mmff_result(mol: Chem.Mol) -> dict[str, object]:
     try:
-        has_all = bool(AllChem.MMFFHasAllMoleculeParams(mol))
-        props = AllChem.MMFFGetMoleculeProperties(mol)
+        probe_mol = Chem.Mol(mol)
+        has_all = bool(AllChem.MMFFHasAllMoleculeParams(probe_mol))
+        props = AllChem.MMFFGetMoleculeProperties(probe_mol)
         atom_types = (
-            [int(props.GetMMFFAtomType(i)) for i in range(mol.GetNumAtoms())]
+            [int(props.GetMMFFAtomType(i)) for i in range(probe_mol.GetNumAtoms())]
             if props is not None
             else None
         )
-        return {"ok": True, "has_all": has_all, "atom_types": atom_types, "error": None}
+        formal_charges = (
+            [
+                float(props.GetMMFFFormalCharge(i))
+                for i in range(probe_mol.GetNumAtoms())
+            ]
+            if props is not None
+            else None
+        )
+        partial_charges = (
+            [
+                float(props.GetMMFFPartialCharge(i))
+                for i in range(probe_mol.GetNumAtoms())
+            ]
+            if props is not None
+            else None
+        )
+        return {
+            "ok": True,
+            "has_all": has_all,
+            "atom_types": atom_types,
+            "formal_charges": formal_charges,
+            "partial_charges": partial_charges,
+            "error": None,
+        }
     except Exception as err:
-        return {"ok": False, "has_all": None, "atom_types": None, "error": str(err)}
+        return {
+            "ok": False,
+            "has_all": None,
+            "atom_types": None,
+            "formal_charges": None,
+            "partial_charges": None,
+            "error": str(err),
+        }
 
 
 def embedded_forcefield_result(smiles: str) -> dict[str, object]:
@@ -260,7 +292,8 @@ def embedded_forcefield_result(smiles: str) -> dict[str, object]:
 
 def forcefield_initial_energy_result(fn, mol: Chem.Mol) -> dict[str, object]:
     try:
-        ff = fn(mol)
+        probe_mol = Chem.Mol(mol)
+        ff = fn(probe_mol)
         if ff is None:
             return {
                 "ok": True,
@@ -388,17 +421,37 @@ def build_record(smiles: str) -> dict[str, object]:
                 "ok": False,
                 "has_all": None,
                 "atom_types": None,
+                "formal_charges": None,
+                "partial_charges": None,
+                "error": "MolFromSmiles returned None",
+            },
+            "uff_explicit_h": {
+                "ok": False,
+                "has_all": None,
+                "error": "MolFromSmiles returned None",
+            },
+            "mmff_explicit_h": {
+                "ok": False,
+                "has_all": None,
+                "atom_types": None,
+                "formal_charges": None,
+                "partial_charges": None,
                 "error": "MolFromSmiles returned None",
             },
             "embedded": embedded_forcefield_result(smiles),
             "error": "MolFromSmiles returned None",
         }
 
+    explicit_h_mol = Chem.AddHs(mol)
     return {
         "smiles": smiles,
         "rdkit_ok": True,
         "uff": forcefield_result(AllChem.UFFHasAllMoleculeParams, mol),
         "mmff": mmff_result(mol),
+        "uff_explicit_h": forcefield_result(
+            AllChem.UFFHasAllMoleculeParams, explicit_h_mol
+        ),
+        "mmff_explicit_h": mmff_result(explicit_h_mol),
         "embedded": embedded_forcefield_result(smiles),
         "error": None,
     }

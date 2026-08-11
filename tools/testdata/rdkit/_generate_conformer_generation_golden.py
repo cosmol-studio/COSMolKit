@@ -53,6 +53,10 @@ def load_smiles_mol(smiles: str) -> Chem.Mol:
     return mol
 
 
+def load_smiles_mol_with_hydrogens(smiles: str) -> Chem.Mol:
+    return Chem.AddHs(load_smiles_mol(smiles))
+
+
 def preset_default() -> rdDistGeom.EmbedParameters:
     return rdDistGeom.EmbedParameters()
 
@@ -283,6 +287,36 @@ CASES: list[dict[str, object]] = [
         "cpci": {
             "0-3": 0.5,
             "1-4": -0.25,
+        },
+    },
+    {
+        "case_id": "single_etkdgv3_x0_ring_connectivity_first",
+        "mode": "single",
+        "source_kind": "smiles_with_hydrogens",
+        "source": "O=C1Nc2ccc(Cl)cc2C(c2ccccc2Cl)=NC1O",
+        "loader": load_smiles_mol_with_hydrogens,
+        "preset_name": "ETKDGv3",
+        "preset": preset_etkdg_v3,
+        "attrs": {
+            "maxIterations": 3,
+            "randomSeed": 61453,
+            "numThreads": 1,
+            "timeout": 0,
+        },
+    },
+    {
+        "case_id": "single_etkdgv3_x0_ring_connectivity_second",
+        "mode": "single",
+        "source_kind": "smiles_with_hydrogens",
+        "source": "CN1C2CCC1CC1(CN=C(c3cn(C)c4ccccc34)O1)C2",
+        "loader": load_smiles_mol_with_hydrogens,
+        "preset_name": "ETKDGv3",
+        "preset": preset_etkdg_v3,
+        "attrs": {
+            "maxIterations": 3,
+            "randomSeed": 61453,
+            "numThreads": 1,
+            "timeout": 0,
         },
     },
     {

@@ -1,7 +1,7 @@
 //! Source-backed RDKit CrystalFF torsion-preference helpers.
 
 use crate::SmartsParseError;
-use crate::search::smarts_parse::{SmartsMolecule, parse_smarts};
+use crate::search::smarts_parse::{SmartsMolecule, build_query_molecule, parse_smarts};
 use crate::{
     AtomQueryPredicate, AtomSpec, BondId, BondOrder, BondQueryPredicate, BondSpec, Element,
     Hybridization, Molecule, MoleculeBuilder, QueryNode, RingInfo, SubstructMatchParams,
@@ -728,7 +728,7 @@ fn parse_exp_torsion_angle_line(
     }
 
     let pattern = parse_smarts(&smarts);
-    let query_molecule = build_crystalff_query_molecule(&smarts);
+    let query_molecule = build_query_molecule(&smarts);
     let idx = query_molecule.as_ref().map_or_else(
         |_| map_pattern_atom_indices(&smarts),
         map_query_atom_indices,
@@ -809,86 +809,6 @@ struct CrystalffTemplateBond {
     begin_atom_idx: usize,
     end_atom_idx: usize,
     query: QueryNode<BondQueryPredicate>,
-}
-
-pub(crate) fn build_crystalff_query_molecule(smarts: &str) -> Result<Molecule, String> {
-    let parsed = parse_smarts(smarts).map_err(|error| error.to_string())?;
-    let atom_queries = parsed.atom_queries;
-    let bonds = parsed
-        .bond_edges
-        .iter()
-        .copied()
-        .zip(parsed.bond_queries.iter().cloned())
-        .map(
-            |((begin_atom_idx, end_atom_idx), query)| CrystalffTemplateBond {
-                begin_atom_idx,
-                end_atom_idx,
-                query,
-            },
-        )
-        .collect::<Vec<_>>();
-    let mut builder = MoleculeBuilder::new();
-    let atom_ids: Vec<_> = atom_queries
-        .iter()
-        .map(|query| {
-            builder.add_atom(
-                AtomSpec::new(
-                    Element::from_atomic_number(0)
-                        .expect("atomic number zero is a valid query atom"),
-                )
-                .with_query(query.clone()),
-            )
-        })
-        .collect();
-    for (atom_idx, atom_id) in atom_ids.iter().enumerate() {
-        if let Some(map_num) = extract_atom_map_from_query(&atom_queries[atom_idx]) {
-            let _ = map_num;
-            let atom = builder.atom_mut(*atom_id).expect("query atom must exist");
-            atom.set_atom_map(Some(map_num));
-        }
-    }
-    for bond in &bonds {
-        builder
-            .add_bond(
-                BondSpec::new(
-                    atom_ids[bond.begin_atom_idx],
-                    atom_ids[bond.end_atom_idx],
-                    bond_order_for_query_probe(&bond.query),
-                )
-                .with_query(bond.query.clone()),
-            )
-            .map_err(|error| error.to_string())?;
-    }
-    builder.build().map_err(|error| error.to_string())
-}
-
-fn extract_atom_map_from_query(query: &QueryNode<AtomQueryPredicate>) -> Option<u32> {
-    match query {
-        QueryNode::Predicate(AtomQueryPredicate::AtomMapNumber(n)) => Some(*n),
-        QueryNode::And(children) | QueryNode::Or(children) => {
-            children.iter().find_map(extract_atom_map_from_query)
-        }
-        QueryNode::Not(child) => extract_atom_map_from_query(child),
-        _ => None,
-    }
-}
-
-fn bond_order_for_query_probe(query: &QueryNode<BondQueryPredicate>) -> BondOrder {
-    match query {
-        QueryNode::Predicate(BondQueryPredicate::Order(order)) => *order,
-        QueryNode::Predicate(BondQueryPredicate::IsAromatic(true)) => BondOrder::Aromatic,
-        QueryNode::And(children) | QueryNode::Or(children) => children
-            .iter()
-            .find_map(|child| match child {
-                QueryNode::Predicate(BondQueryPredicate::Order(order)) => Some(*order),
-                QueryNode::Predicate(BondQueryPredicate::IsAromatic(true)) => {
-                    Some(BondOrder::Aromatic)
-                }
-                _ => None,
-            })
-            .unwrap_or(BondOrder::Single),
-        _ => BondOrder::Single,
-    }
 }
 
 fn unspecified_smarts_bond_query() -> QueryNode<BondQueryPredicate> {
@@ -1321,9 +1241,9 @@ fn organic_atom_token_len(chars: &[char], idx: usize) -> usize {
 mod tests {
     use super::{
         CrystalFFDetails, CrystalffTorsionPreferencesError, ExpTorsionAngleCollection,
-        build_crystalff_query_molecule, get_experimental_torsions,
-        get_experimental_torsions_without_bonds, torsion_preferences_macrocycles,
-        torsion_preferences_small_rings, torsion_preferences_v1, torsion_preferences_v2,
+        build_query_molecule, get_experimental_torsions, get_experimental_torsions_without_bonds,
+        torsion_preferences_macrocycles, torsion_preferences_small_rings, torsion_preferences_v1,
+        torsion_preferences_v2,
     };
     use crate::search::query::{atom_matches_query, bond_matches_query};
     use crate::{Molecule, SubstructMatchParams, get_substruct_matches_with_params};
@@ -1451,8 +1371,7 @@ mod tests {
             .expect("parse azide")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query =
-            build_crystalff_query_molecule("[*:1][X3,X2:2]=[X3,X2:3][*:4]").expect("build query");
+        let query = build_query_molecule("[*:1][X3,X2:2]=[X3,X2:3][*:4]").expect("build query");
 
         let matches = get_substruct_matches_with_params(
             &mol,
@@ -1556,6 +1475,54 @@ mod tests {
         assert_eq!(details.exp_torsion_atoms[1], vec![1, 2, 3, 4]);
         assert_eq!(details.exp_torsion_angles[0].0.len(), 6);
         assert_eq!(details.exp_torsion_angles[0].1.len(), 6);
+    }
+
+    #[test]
+    fn crystalff_x0_torsion_rule_rejects_ring_connected_central_atoms() {
+        let cases = [
+            (
+                "O=C1Nc2ccc(Cl)cc2C(c2ccccc2Cl)=NC1O",
+                vec![12, 11, 10, 18],
+                vec![9, 10, 18, 19],
+                13,
+            ),
+            (
+                "CN1C2CCC1CC1(CN=C(c3cn(C)c4ccccc34)O1)C2",
+                vec![12, 11, 10, 9],
+                vec![8, 9, 10, 11],
+                11,
+            ),
+        ];
+
+        for (smiles, rejected_atoms, retained_atoms, expected_count) in cases {
+            let mol = Molecule::from_smiles(smiles)
+                .expect("parse")
+                .with_hydrogens()
+                .expect("add hs");
+            let mut details = CrystalFFDetails::default();
+
+            get_experimental_torsions_without_bonds(
+                &mol,
+                &mut details,
+                true,
+                false,
+                true,
+                true,
+                2,
+                false,
+            )
+            .expect("ETKDGv3 torsion preferences");
+
+            assert_eq!(details.exp_torsion_atoms.len(), expected_count, "{smiles}");
+            assert!(
+                !details.exp_torsion_atoms.contains(&rejected_atoms),
+                "x0 rule must reject the ring-connected central atom in {smiles}"
+            );
+            assert!(
+                details.exp_torsion_atoms.contains(&retained_atoms),
+                "{smiles}"
+            );
+        }
     }
 
     #[test]
@@ -2061,7 +2028,7 @@ mod tests {
         )
         .expect("parse RDKit simple_torsion.etkdg fixture")
         .molecule;
-        let query = build_crystalff_query_molecule("[!#1:1][CX4H2:2]!@;-[CX4H2:3][!#1:4]")
+        let query = build_query_molecule("[!#1:1][CX4H2:2]!@;-[CX4H2:3][!#1:4]")
             .expect("build CrystalFF query");
         let matches = get_substruct_matches_with_params(
             &mol,
@@ -2089,8 +2056,7 @@ mod tests {
             .expect("parse row34")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query =
-            build_crystalff_query_molecule("[C:1][CX4:2]!@;-[CX3:3][c:4]").expect("build query");
+        let query = build_query_molecule("[C:1][CX4:2]!@;-[CX3:3][c:4]").expect("build query");
 
         let matches = get_substruct_matches_with_params(
             &mol,
@@ -2115,7 +2081,7 @@ mod tests {
             .expect("parse row20")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query = build_crystalff_query_molecule("[O:1]=[C:2]([O-])!@;-[CX4H1:3][H:4]")
+        let query = build_query_molecule("[O:1]=[C:2]([O-])!@;-[CX4H1:3][H:4]")
             .expect("build carboxylate query");
 
         let matches = get_substruct_matches_with_params(
@@ -2141,7 +2107,7 @@ mod tests {
             .expect("parse row57")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query = build_crystalff_query_molecule("[$(C=O):1][NX3:2]!@;-[!#1:3][!#1:4]")
+        let query = build_query_molecule("[$(C=O):1][NX3:2]!@;-[!#1:3][!#1:4]")
             .expect("build recursive carbonyl query");
 
         let matches = get_substruct_matches_with_params(
@@ -2169,7 +2135,7 @@ mod tests {
             .expect("parse row34")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query = build_crystalff_query_molecule(smarts).expect("build CrystalFF query");
+        let query = build_query_molecule(smarts).expect("build CrystalFF query");
 
         let matches = get_substruct_matches_with_params(
             &mol,
@@ -2234,7 +2200,7 @@ mod tests {
             .expect("parse row20")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query = build_crystalff_query_molecule(smarts).expect("build CrystalFF query");
+        let query = build_query_molecule(smarts).expect("build CrystalFF query");
 
         let matches = get_substruct_matches_with_params(
             &mol,
@@ -2311,7 +2277,7 @@ mod tests {
             .expect("parse row89")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query = build_crystalff_query_molecule(smarts).expect("build CrystalFF query");
+        let query = build_query_molecule(smarts).expect("build CrystalFF query");
 
         let matches = get_substruct_matches_with_params(
             &mol,
@@ -2381,7 +2347,7 @@ mod tests {
             .expect("parse row61")
             .with_hydrogens()
             .expect("add hydrogens");
-        let query = build_crystalff_query_molecule(smarts).expect("build CrystalFF query");
+        let query = build_query_molecule(smarts).expect("build CrystalFF query");
 
         let matches = get_substruct_matches_with_params(
             &mol,

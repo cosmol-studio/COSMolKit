@@ -28,9 +28,9 @@ use crate::source_types::local_ichinorm::{
 };
 use crate::source_types::{
     BOND_DOUBLE, BOND_SINGLE, BOND_TRIPLE, BOND_TYPE_ALTERN, CANON_GLOBALS, CT_OUT_OF_RAM,
-    CT_OVERFLOW, INCHI_CLOCK, INP_ATOM_DATA, MAX_SDF_VALUE, ORIG_ATOM_DATA, SourceConstPointer,
-    SourceHeap, SourceHeapError, SourceMutPointer, clock_t, copy_inp_atom_gcc_lp64_byte_prefix,
-    inp_ATOM,
+    CT_OVERFLOW, INCHI_CLOCK, INP_ATOM_DATA, MAX_SDF_VALUE, ORIG_ATOM_DATA, SourceHeap,
+    SourceHeapError, SourceMutPointer, StableSourceSlice, clock_t,
+    copy_inp_atom_gcc_lp64_byte_prefix, inp_ATOM,
 };
 
 const EL_NUMBER_C: u8 = 6;
@@ -5267,27 +5267,23 @@ pub(crate) fn remove_cut_derivs(
     Ok(())
 }
 
-fn work_get<T: Copy + 'static>(
-    heap: &SourceHeap,
-    pointer: SourceConstPointer<T>,
-    index: i32,
-) -> Result<T, SourceHeapError> {
-    heap.slice(pointer.offset(i64::from(index))?)?
-        .first()
-        .copied()
-        .ok_or(SourceHeapError::PointerOutOfBounds)
+#[inline(always)]
+fn ring_work_index(index: i32) -> Result<usize, SourceHeapError> {
+    usize::try_from(index).map_err(|_| SourceHeapError::PointerOffsetOverflow)
 }
 
-fn work_set<T: 'static>(
-    heap: &mut SourceHeap,
-    pointer: SourceMutPointer<T>,
+#[inline(always)]
+fn ring_work_get<T: Copy>(values: &StableSourceSlice<T>, index: i32) -> Result<T, SourceHeapError> {
+    values.get(ring_work_index(index)?).copied()
+}
+
+#[inline(always)]
+fn ring_work_set<T>(
+    values: &mut StableSourceSlice<T>,
     index: i32,
     value: T,
 ) -> Result<(), SourceHeapError> {
-    *heap
-        .slice_mut(pointer.offset(i64::from(index))?)?
-        .first_mut()
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
+    *values.get_mut(ring_work_index(index)?)? = value;
     Ok(())
 }
 
@@ -5905,6 +5901,17 @@ pub(crate) fn MarkRingSystemsInp(
     };
 
     let result = (|| -> Result<i32, SourceHeapError> {
+        // SAFETY: every work array above is a distinct allocation created by
+        // this function. `atoms` predates them, so it cannot alias any work
+        // array. All allocations remain live and retain their buffers until
+        // the views leave scope immediately before the matching frees.
+        let mut stack_view = unsafe { heap.stable_slice_mut(stack)? };
+        let mut ring_stack_view = unsafe { heap.stable_slice_mut(ring_stack)? };
+        let mut dfs_number_view = unsafe { heap.stable_slice_mut(dfs_number)? };
+        let mut low_number_view = unsafe { heap.stable_slice_mut(low_number)? };
+        let mut neighbor_number_view = unsafe { heap.stable_slice_mut(neighbor_number)? };
+        let mut atoms_view = unsafe { heap.stable_slice_mut(atoms)? };
+
         let mut ring_systems = 0_i32;
         let mut u = start;
         let mut dfs = 0_u16;
@@ -5912,27 +5919,23 @@ pub(crate) fn MarkRingSystemsInp(
         let mut ring_top = -1_i32;
         if u <= num_atoms.wrapping_sub(1) {
             dfs = dfs.wrapping_add(1);
-            work_set(heap, low_number, u, dfs)?;
-            work_set(heap, dfs_number, u, dfs)?;
+            ring_work_set(&mut low_number_view, u, dfs)?;
+            ring_work_set(&mut dfs_number_view, u, dfs)?;
             stack_top += 1;
-            work_set(heap, stack, stack_top, u as u16)?;
+            ring_work_set(&mut stack_view, stack_top, u as u16)?;
             ring_top += 1;
-            work_set(heap, ring_stack, ring_top, u as u16)?;
+            ring_work_set(&mut ring_stack_view, ring_top, u as u16)?;
         } else {
             return Ok(CT_OVERFLOW);
         }
         let mut start_children = 0_i32;
 
         loop {
-            let i = i32::from(work_get(heap, stack.as_const(), stack_top)?);
-            let j = i32::from(work_get(heap, neighbor_number.as_const(), i)?);
-            let atom = heap
-                .slice(atoms.as_const().offset(i64::from(i))?)?
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone();
+            let i = i32::from(ring_work_get(&stack_view, stack_top)?);
+            let j = i32::from(ring_work_get(&neighbor_number_view, i)?);
+            let atom = atoms_view.get(ring_work_index(i)?)?;
             if i32::from(atom.valence) > j {
-                work_set(heap, neighbor_number, i, (j as i8).wrapping_add(1))?;
+                ring_work_set(&mut neighbor_number_view, i, (j as i8).wrapping_add(1))?;
                 let neighbor_index =
                     usize::try_from(j).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 u = i32::from(
@@ -5941,60 +5944,52 @@ pub(crate) fn MarkRingSystemsInp(
                         .get(neighbor_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                if work_get(heap, dfs_number.as_const(), u)? == 0 {
+                if ring_work_get(&dfs_number_view, u)? == 0 {
                     stack_top += 1;
-                    work_set(heap, stack, stack_top, u as u16)?;
+                    ring_work_set(&mut stack_view, stack_top, u as u16)?;
                     ring_top += 1;
-                    work_set(heap, ring_stack, ring_top, u as u16)?;
+                    ring_work_set(&mut ring_stack_view, ring_top, u as u16)?;
                     dfs = dfs.wrapping_add(1);
-                    work_set(heap, low_number, u, dfs)?;
-                    work_set(heap, dfs_number, u, dfs)?;
+                    ring_work_set(&mut low_number_view, u, dfs)?;
+                    ring_work_set(&mut dfs_number_view, u, dfs)?;
                     start_children = start_children.wrapping_add(i32::from(i == start));
                 } else if stack_top == 0
-                    || u != i32::from(work_get(heap, stack.as_const(), stack_top - 1)?)
+                    || u != i32::from(ring_work_get(&stack_view, stack_top - 1)?)
                 {
-                    let neighbor_dfs = work_get(heap, dfs_number.as_const(), u)?;
-                    let current_dfs = work_get(heap, dfs_number.as_const(), i)?;
+                    let neighbor_dfs = ring_work_get(&dfs_number_view, u)?;
+                    let current_dfs = ring_work_get(&dfs_number_view, i)?;
                     if neighbor_dfs < current_dfs
-                        && work_get(heap, low_number.as_const(), i)? > neighbor_dfs
+                        && ring_work_get(&low_number_view, i)? > neighbor_dfs
                     {
-                        work_set(heap, low_number, i, neighbor_dfs)?;
+                        ring_work_set(&mut low_number_view, i, neighbor_dfs)?;
                     }
                 }
                 continue;
             }
-            work_set(heap, neighbor_number, i, 0)?;
+            ring_work_set(&mut neighbor_number_view, i, 0)?;
             if i != start {
-                u = i32::from(work_get(heap, stack.as_const(), stack_top - 1)?);
-                if work_get(heap, low_number.as_const(), i)?
-                    >= work_get(heap, dfs_number.as_const(), u)?
-                {
+                u = i32::from(ring_work_get(&stack_view, stack_top - 1)?);
+                if ring_work_get(&low_number_view, i)? >= ring_work_get(&dfs_number_view, u)? {
                     ring_systems = ring_systems.wrapping_add(1);
                     {
-                        let atom = heap
-                            .slice_mut(atoms.offset(i64::from(u))?)?
-                            .first_mut()
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let atom = atoms_view.get_mut(ring_work_index(u)?)?;
                         atom.nBlockSystem = ring_systems as u16;
                         if u != start || start_children > 1 {
                             atom.bCutVertex = atom.bCutVertex.wrapping_add(1);
                         }
                     }
                     while ring_top >= 0 {
-                        let j = i32::from(work_get(heap, ring_stack.as_const(), ring_top)?);
+                        let j = i32::from(ring_work_get(&ring_stack_view, ring_top)?);
                         ring_top -= 1;
-                        heap.slice_mut(atoms.offset(i64::from(j))?)?
-                            .first_mut()
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                            .nBlockSystem = ring_systems as u16;
+                        atoms_view.get_mut(ring_work_index(j)?)?.nBlockSystem = ring_systems as u16;
                         if i == j {
                             break;
                         }
                     }
                 } else {
-                    let child_low = work_get(heap, low_number.as_const(), i)?;
-                    if work_get(heap, low_number.as_const(), u)? > child_low {
-                        work_set(heap, low_number, u, child_low)?;
+                    let child_low = ring_work_get(&low_number_view, i)?;
+                    if ring_work_get(&low_number_view, u)? > child_low {
+                        ring_work_set(&mut low_number_view, u, child_low)?;
                     }
                 }
             }
@@ -6009,23 +6004,19 @@ pub(crate) fn MarkRingSystemsInp(
         dfs = 1;
         stack_top = 0;
         ring_top = 0;
-        heap.slice_mut(dfs_number)?.fill(0);
-        heap.slice_mut(neighbor_number)?.fill(0);
-        work_set(heap, low_number, u, dfs)?;
-        work_set(heap, dfs_number, u, dfs)?;
-        work_set(heap, stack, stack_top, u as u16)?;
-        work_set(heap, ring_stack, ring_top, u as u16)?;
+        dfs_number_view.fill(0);
+        neighbor_number_view.fill(0);
+        ring_work_set(&mut low_number_view, u, dfs)?;
+        ring_work_set(&mut dfs_number_view, u, dfs)?;
+        ring_work_set(&mut stack_view, stack_top, u as u16)?;
+        ring_work_set(&mut ring_stack_view, ring_top, u as u16)?;
 
         loop {
-            let i = i32::from(work_get(heap, stack.as_const(), stack_top)?);
-            let j = i32::from(work_get(heap, neighbor_number.as_const(), i)?);
-            let atom = heap
-                .slice(atoms.as_const().offset(i64::from(i))?)?
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone();
+            let i = i32::from(ring_work_get(&stack_view, stack_top)?);
+            let j = i32::from(ring_work_get(&neighbor_number_view, i)?);
+            let atom = atoms_view.get(ring_work_index(i)?)?;
             if i32::from(atom.valence) > j {
-                work_set(heap, neighbor_number, i, (j as i8).wrapping_add(1))?;
+                ring_work_set(&mut neighbor_number_view, i, (j as i8).wrapping_add(1))?;
                 let neighbor_index =
                     usize::try_from(j).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 u = i32::from(
@@ -6034,48 +6025,43 @@ pub(crate) fn MarkRingSystemsInp(
                         .get(neighbor_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                if work_get(heap, dfs_number.as_const(), u)? == 0 {
+                if ring_work_get(&dfs_number_view, u)? == 0 {
                     stack_top += 1;
-                    work_set(heap, stack, stack_top, u as u16)?;
+                    ring_work_set(&mut stack_view, stack_top, u as u16)?;
                     ring_top += 1;
-                    work_set(heap, ring_stack, ring_top, u as u16)?;
+                    ring_work_set(&mut ring_stack_view, ring_top, u as u16)?;
                     dfs = dfs.wrapping_add(1);
-                    work_set(heap, low_number, u, dfs)?;
-                    work_set(heap, dfs_number, u, dfs)?;
+                    ring_work_set(&mut low_number_view, u, dfs)?;
+                    ring_work_set(&mut dfs_number_view, u, dfs)?;
                 } else if stack_top == 0
-                    || u != i32::from(work_get(heap, stack.as_const(), stack_top - 1)?)
+                    || u != i32::from(ring_work_get(&stack_view, stack_top - 1)?)
                 {
-                    let neighbor_dfs = work_get(heap, dfs_number.as_const(), u)?;
-                    let current_dfs = work_get(heap, dfs_number.as_const(), i)?;
+                    let neighbor_dfs = ring_work_get(&dfs_number_view, u)?;
+                    let current_dfs = ring_work_get(&dfs_number_view, i)?;
                     if neighbor_dfs < current_dfs
-                        && work_get(heap, low_number.as_const(), i)? > neighbor_dfs
+                        && ring_work_get(&low_number_view, i)? > neighbor_dfs
                     {
-                        work_set(heap, low_number, i, neighbor_dfs)?;
+                        ring_work_set(&mut low_number_view, i, neighbor_dfs)?;
                     }
                 }
                 continue;
             }
-            work_set(heap, neighbor_number, i, 0)?;
-            if work_get(heap, dfs_number.as_const(), i)?
-                == work_get(heap, low_number.as_const(), i)?
-            {
+            ring_work_set(&mut neighbor_number_view, i, 0)?;
+            if ring_work_get(&dfs_number_view, i)? == ring_work_get(&low_number_view, i)? {
                 ring_systems = ring_systems.wrapping_add(1);
                 let mut ring_size = 0_u16;
                 let mut j = ring_top;
                 while j >= 0 {
                     ring_size = ring_size.wrapping_add(1);
-                    if i == i32::from(work_get(heap, ring_stack.as_const(), j)?) {
+                    if i == i32::from(ring_work_get(&ring_stack_view, j)?) {
                         break;
                     }
                     j -= 1;
                 }
                 while ring_top >= 0 {
-                    let j = i32::from(work_get(heap, ring_stack.as_const(), ring_top)?);
+                    let j = i32::from(ring_work_get(&ring_stack_view, ring_top)?);
                     ring_top -= 1;
-                    let atom = heap
-                        .slice_mut(atoms.offset(i64::from(j))?)?
-                        .first_mut()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let atom = atoms_view.get_mut(ring_work_index(j)?)?;
                     atom.nRingSystem = ring_systems as u16;
                     atom.nNumAtInRingSystem = ring_size;
                     if i == j {
@@ -6083,10 +6069,10 @@ pub(crate) fn MarkRingSystemsInp(
                     }
                 }
             } else if stack_top > 0 {
-                let predecessor = i32::from(work_get(heap, stack.as_const(), stack_top - 1)?);
-                let child_low = work_get(heap, low_number.as_const(), i)?;
-                if work_get(heap, low_number.as_const(), predecessor)? > child_low {
-                    work_set(heap, low_number, predecessor, child_low)?;
+                let predecessor = i32::from(ring_work_get(&stack_view, stack_top - 1)?);
+                let child_low = ring_work_get(&low_number_view, i)?;
+                if ring_work_get(&low_number_view, predecessor)? > child_low {
+                    ring_work_set(&mut low_number_view, predecessor, child_low)?;
                 }
             }
             stack_top -= 1;

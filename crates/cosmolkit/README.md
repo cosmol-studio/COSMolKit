@@ -1,9 +1,6 @@
-# COSMolKit Rust
+# COSMolKit
 
-`cosmolkit` is the Rust facade crate for COSMolKit. It re-exports the molecular
-model, chemistry operations, file I/O, fingerprints, molecular descriptors,
-drawing, 3D atom chiral-tag assignment, batch helpers, and protein structure
-APIs from `cosmolkit-core`.
+`cosmolkit` is the public Rust API for COSMolKit, a Rust-native cheminformatics and structural biology toolkit. It provides molecular graphs, SMILES/SMARTS processing, molecular file IO, fingerprints, descriptors, 2D depiction, native 3D conformer generation, UFF/MMFF optimization, InChI, substructure search, batch workflows, and protein structure APIs. The crate is a lightweight facade over `cosmolkit-core` and related COSMolKit components, providing the primary Rust import surface without hiding the underlying modules.
 
 ## Documentation
 

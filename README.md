@@ -1,4 +1,4 @@
-# COSMolKit
+# COSMolKit — Rust-native cheminformatics toolkit
 
 <p align="center">
   <a href="https://github.com/cosmol-studio/COSMolKit/actions/workflows/coverage.yml">
@@ -21,20 +21,11 @@
   </a>
 </p>
 
-COSMolKit is a Python molecular toolkit backed by a Rust core. It provides
-value-style molecule operations, SMILES/SDF/MOL2/XYZ workflows, 2D depiction,
-native 3D conformer generation, 3D atom-chiral-tag assignment, UFF/MMFF
-optimization, fingerprints, batch processing, Python pickle round-tripping,
-and protein-focused structural biology APIs.
+[COSMolKit](https://github.com/cosmol-studio/cosmolkit) is a Rust-native cheminformatics and structural biology toolkit with first-class Python bindings. It provides molecular graph operations, SMILES/SMARTS and molecular file workflows, 2D depiction, native 3D conformer generation, UFF/MMFF optimization, fingerprints, molecular descriptors, InChI, batch processing, and protein structure APIs.
 
-The library is built around explicit behavior: supported operations return
-structured results, unsupported behavior fails visibly, and public molecule
-transforms are explicit about whether they return new values or mutate in
-place.
+For supported cheminformatics operations, RDKit-compatible behavior is treated as the correctness floor. Implementations are validated with fixed parity oracles and source-defined tests where applicable, while unsupported behavior fails explicitly instead of being approximated through silent fallbacks.
 
-COSMolKit is designed for array-oriented structural data access, keeping
-molecular data efficient and natural for NumPy, PyTorch, and model-building
-workflows.
+COSMolKit combines a native Rust API with Python interfaces designed for array-oriented scientific and machine-learning workflows. Molecular graphs, coordinates, fingerprints, bounds matrices, and structural data are exposed in forms suitable for NumPy, PyTorch, dataset processing, and model-building pipelines.
 
 ## Documentation
 
@@ -44,10 +35,7 @@ workflows.
 
 ## Validation Status
 
-The supported Rust surface is tested with strict operation contracts. Coverage
-CI instruments `cosmolkit-core`, `cosmolkit-inchi`, and
-`cosmolkit-ringdecomposer`, rejects mismatched LLVM profile data, and runs the
-committed 5000-row InChI parity corpus in addition to the default test suites.
+COSMolKit validates its supported cheminformatics surface with strict operation contracts, fixed reference oracles, source-backed parity tests, and committed validation corpora. Coverage CI instruments `cosmolkit-core`, `cosmolkit-inchi`, and `cosmolkit-ringdecomposer`, rejects mismatched LLVM profile data, and runs the committed 5000-row InChI parity corpus in addition to the default test suites.
 
 The four public scalar InChI operations match pinned official InChI v1.07.5
 and RDKit 2026.03.1 output exactly for all currently validated source-defined

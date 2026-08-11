@@ -108,7 +108,7 @@ impl VdwContrib {
         let force_field = self.force_field();
 
         // RDKit✔️✔️:   double dist = dp_forceField->distance(d_at1Idx, d_at2Idx, pos);
-        let dist = force_field.distance_const(self.at1_idx, self.at2_idx, Some(pos));
+        let dist = force_field.distance(self.at1_idx, self.at2_idx, Some(pos));
         // RDKit✔️✔️:   if (dist > d_thresh || dist <= 0.0) {
         if dist > self.thresh || dist <= 0.0 {
             // RDKit✔️✔️:     return 0.0;
@@ -153,7 +153,7 @@ impl VdwContrib {
         let force_field = self.force_field();
 
         // RDKit✔️✔️:   double dist = dp_forceField->distance(d_at1Idx, d_at2Idx, pos);
-        let dist = force_field.distance_const(self.at1_idx, self.at2_idx, Some(pos));
+        let dist = force_field.distance(self.at1_idx, self.at2_idx, Some(pos));
         // RDKit✔️✔️:   if (dist > d_thresh) {
         if dist > self.thresh {
             // RDKit✔️✔️:     return;
@@ -402,6 +402,20 @@ mod tests {
         let expected = 0.3 * (r6 * r6 - 2.0 * r6);
 
         assert!((contrib.get_energy(&pos) - expected).abs() < EPS);
+    }
+
+    #[test]
+    fn uff_vdwcontrib_get_energy_reuses_source_forcefield_distance_cache() {
+        let ff = initialized_force_field();
+        let at1 = atomic_params(4.0, 0.25);
+        let at2 = atomic_params(9.0, 0.36);
+        let contrib = VdwContrib::new(&ff, 0, 1, &at1, &at2, 10.0);
+        let first_pos = [0.0, 0.0, 0.0, 3.0, 0.0, 0.0];
+        let second_pos = [0.0, 0.0, 0.0, 12.0, 0.0, 0.0];
+
+        let cached_energy = contrib.get_energy(&first_pos);
+
+        assert_eq!(contrib.get_energy(&second_pos), cached_energy);
     }
 
     #[test]

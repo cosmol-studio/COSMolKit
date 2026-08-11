@@ -3,8 +3,9 @@ import sys
 
 sys.path.insert(0, os.path.abspath("../.."))
 
-project = "cosmolkit"
+project = "COSMolKit"
 author = "COSMolKit Contributors"
+html_title = "COSMolKit — Rust-native cheminformatics toolkit"
 
 extensions = [
     "sphinx.ext.autodoc",
@@ -21,3 +22,10 @@ templates_path = ["_templates"]
 exclude_patterns = []
 
 html_theme = "furo"
+
+html_theme_options = {
+    "source_repository": "https://github.com/cosmol-studio/COSMolKit/",
+    "source_branch": "main",
+    "source_directory": "python/docs/source/",
+    "top_of_page_buttons": ["view"],
+}

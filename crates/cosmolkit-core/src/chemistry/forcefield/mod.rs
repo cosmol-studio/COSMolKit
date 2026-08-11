@@ -3,6 +3,7 @@
 pub(crate) mod core;
 pub(crate) mod crystalff;
 pub mod mmff;
+pub(crate) mod torsion_query;
 pub mod uff;
 
 pub use core::{

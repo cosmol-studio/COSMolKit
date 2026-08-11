@@ -148,3 +148,5 @@ CN1C=CC=CC1=O
 Cn1ncc2c(N)ncnc21
 CC1=CSC2=C1CCN(C(=O)[C@@h]1CCN(C)C(=O)C@@HNC3=CC(=CC(N4C=CC=C4)=C3)C(=O)N1C)C2
 C=CC1=CC=C(NC(=O)[C@@h]2CCN(C)C(=O)C@@HNC3=CC(=CC(OCC(F)(F)F)=C3)C(=O)N2C)C=C1
+CC(=O)C1(C(C)=O)C(Cl)C(=O)N1N(c1c(O)ccc2c(P(Cl)Cl)pc(C(=O)O)n12)[N+](=O)[O-]
+COc1cccc(/N=C/C=C2OC(C)(C)C(C)(C)O2)c1.F[B-](F)(F)F.[H+]

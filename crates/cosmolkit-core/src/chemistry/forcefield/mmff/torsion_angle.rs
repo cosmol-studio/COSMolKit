@@ -106,12 +106,12 @@ fn calc_torsion_grad(
     // RDKit✔️✔️:                        1.0 / d[1] * (t[0].y - cosPhi * t[1].y),
     // RDKit✔️✔️:                        1.0 / d[1] * (t[0].z - cosPhi * t[1].z)};
     let d_cos_dt = [
-        (t[1].x - cos_phi * t[0].x) / d[0],
-        (t[1].y - cos_phi * t[0].y) / d[0],
-        (t[1].z - cos_phi * t[0].z) / d[0],
-        (t[0].x - cos_phi * t[1].x) / d[1],
-        (t[0].y - cos_phi * t[1].y) / d[1],
-        (t[0].z - cos_phi * t[1].z) / d[1],
+        1.0 / d[0] * (t[1].x - cos_phi * t[0].x),
+        1.0 / d[0] * (t[1].y - cos_phi * t[0].y),
+        1.0 / d[0] * (t[1].z - cos_phi * t[0].z),
+        1.0 / d[1] * (t[0].x - cos_phi * t[1].x),
+        1.0 / d[1] * (t[0].y - cos_phi * t[1].y),
+        1.0 / d[1] * (t[0].z - cos_phi * t[1].z),
     ];
     let [atom1_idx, atom2_idx, atom3_idx, atom4_idx] = atom_indices;
     let atom1_offset = 3 * atom1_idx;
@@ -493,7 +493,7 @@ impl ForceFieldContrib for TorsionAngleContrib {
 
 #[cfg(test)]
 mod tests {
-    use super::TorsionAngleContrib;
+    use super::{TorsionAngleContrib, calc_torsion_grad};
     use crate::chemistry::forcefield::{
         core::{ForceField, ForceFieldVec3},
         mmff::params::MmffTor,
@@ -868,6 +868,25 @@ mod tests {
         contrib.get_grad(&[], &mut grad);
 
         assert_eq!(grad, vec![1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn mmff_torsion_grad_preserves_source_reciprocal_then_multiply_order() {
+        let mut r = [ForceFieldVec3::default(); 4];
+        r[1].y = 1.0;
+        let t = [
+            ForceFieldVec3::default(),
+            ForceFieldVec3::new(0.0, 0.0, 0.6063718908910518),
+        ];
+        let d = [3.9647444205640148, 1.0];
+        let mut gradient = vec![0.0; 12];
+
+        calc_torsion_grad(r, t, d, &mut gradient, [0, 1, 2, 3], 1.0, 0.0);
+
+        let source_order = 1.0 / d[0] * t[1].z;
+        let reordered = t[1].z / d[0];
+        assert_ne!(source_order.to_bits(), reordered.to_bits());
+        assert_eq!(gradient[0].to_bits(), source_order.to_bits());
     }
 
     #[test]

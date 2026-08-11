@@ -10912,13 +10912,16 @@ pub(crate) fn WriteOrigAtoms(
     }
     let atom_count =
         usize::try_from(num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atoms = if atom_count == 0 {
-        Vec::new()
+    let atoms_view: Option<StableSourceConstSlice<inp_ATOM>> = if atom_count == 0 {
+        None
     } else {
-        heap.slice(atoms)?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
+        // SAFETY: WriteOrigAtoms reads `at` and writes only the separate
+        // output buffer, exactly as the source pointer contract specifies.
+        Some(unsafe { heap.stable_slice(atoms)? })
+    };
+    let atoms = match &atoms_view {
+        Some(view) => view.prefix(atom_count)?,
+        None => &[],
     };
     let mut current_length = 0_i32;
     if *index == 0 {
@@ -11474,13 +11477,16 @@ pub(crate) fn WriteOrigBonds(
     }
     let atom_count =
         usize::try_from(num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atoms = if atom_count == 0 {
-        Vec::new()
+    let atoms_view: Option<StableSourceConstSlice<inp_ATOM>> = if atom_count == 0 {
+        None
     } else {
-        heap.slice(atoms.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
+        // SAFETY: WriteOrigBonds reads `at`; heap mutations below allocate
+        // comparator storage or update the distinct output buffer.
+        Some(unsafe { heap.stable_slice(atoms.as_const())? })
+    };
+    let atoms = match &atoms_view {
+        Some(view) => view.prefix(atom_count)?,
+        None => &[],
     };
     let parity_part = |value: i8| i32::from(value) & SB_PARITY_MASK as i32;
     let parity_part_non_metal =
@@ -17226,6 +17232,7 @@ use crate::source_types::{
     MAX_NUM_STEREO_ATOM_NEIGH, MAX_NUM_STEREO_BONDS, MAXVAL, MOL_COORD, NUM_COORD, ORIG_ATOM_DATA,
     ORIG_STRUCT, RADICAL_DOUBLET, SB_PARITY_MASK, SB_PARITY_SHFT, STEREO_DBLE_EITHER,
     STEREO_SNGL_DOWN, STEREO_SNGL_EITHER, STEREO_SNGL_UP, STRUCT_DATA, SourceConstPointer,
-    SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList, inp_ATOM,
+    SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList,
+    StableSourceConstSlice, inp_ATOM,
     local_ichiprt1::{INCHI_TAG, ORIG_STR_BUFLEN},
 };

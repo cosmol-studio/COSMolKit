@@ -2,9 +2,9 @@ use crate::source::base::ichi_bns::{RemoveRadEndpoints, SetForbiddenEdges, SetRa
 use crate::source::base::ichinorm::MarkRingSystemsInp;
 use crate::source::base::ichiring::is_bond_in_Nmax_memb_ring;
 use crate::source::base::ichirvr1::{
-    AddToEdgeList, AllocEdgeList, BondFlowMaxcapMinorder, CN_LIST, GetChargeFlowerUpperEdge,
-    GetTgroupInfoFromInChI, RemoveForbiddenBondFlowBits, RemoveForbiddenEdgeMask,
-    RemoveFromEdgeListByValue, RunBnsRestoreOnce, RunBnsTestOnce, SetForbiddenEdgeMask,
+    AddToEdgeList, AllocEdgeList, CN_LIST, GetChargeFlowerUpperEdge, GetTgroupInfoFromInChI,
+    RemoveForbiddenBondFlowBits, RemoveForbiddenEdgeMask, RemoveFromEdgeListByValue,
+    RunBnsRestoreOnce, RunBnsTestOnce, SetForbiddenEdgeMask, bond_flow_maxcap_minorder_source,
     comp_cc_cand, get_pVA_atom_type,
 };
 use crate::source::base::ichirvr4::ForbidCarbonChargeEdges;
@@ -29,6 +29,427 @@ use crate::source_types::{
     tagTCGroupTypes_TCG_MeFlower0 as TCG_MeFlower0, tagTCGroupTypes_TCG_Plus as TCG_Plus,
 };
 
+fn copy_inp_atom_prefix(
+    heap: &mut SourceHeap,
+    destination: SourceMutPointer<inp_ATOM>,
+    source: SourceMutPointer<inp_ATOM>,
+    count: usize,
+) -> Result<(), SourceHeapError> {
+    if destination == source {
+        heap.slice(source.as_const())?
+            .get(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        return Ok(());
+    }
+    if destination.allocation_identity() != source.allocation_identity() {
+        // SAFETY: the allocation identities above prove that the source view
+        // cannot alias the destination mutation. Neither allocation is freed
+        // or resized during this direct equivalent of the source memcpy.
+        let source_view = unsafe { heap.stable_slice(source.as_const())? };
+        let source = source_view.prefix(count)?;
+        heap.slice_mut(destination)?
+            .get_mut(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .clone_from_slice(source);
+        return Ok(());
+    }
+
+    // Preserve the port's defined behavior for modeled overlapping pointers.
+    // Official production calls use the two distinct `at` and `at2` buffers.
+    let source = heap
+        .slice(source.as_const())?
+        .get(..count)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .to_vec();
+    heap.slice_mut(destination)?
+        .get_mut(..count)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .clone_from_slice(&source);
+    Ok(())
+}
+
+#[inline]
+fn mobile_h_endpoint_center_is_better(
+    valence_atoms: &[VAL_AT],
+    original_atoms: &[inp_ATOM],
+    candidate: usize,
+    found: Option<usize>,
+) -> bool {
+    let Some(found) = found else {
+        return true;
+    };
+    let candidate_non_carbon = valence_atoms[candidate].cNumValenceElectrons != 4
+        || valence_atoms[candidate].cPeriodicRowNumber != 1;
+    let found_is_carbon = valence_atoms[found].cNumValenceElectrons == 4
+        && valence_atoms[found].cPeriodicRowNumber == 1;
+    candidate_non_carbon
+        && (found_is_carbon
+            || original_atoms[candidate].valence > original_atoms[found].valence
+            || (original_atoms[candidate].valence == original_atoms[found].valence
+                && original_atoms[candidate].el_number > original_atoms[found].el_number))
+}
+
+#[inline]
+fn valence_atom_is_carbon(valence_atoms: &[VAL_AT], vertex: Option<usize>) -> bool {
+    vertex.is_some_and(|vertex| {
+        valence_atoms[vertex].cNumValenceElectrons == 4
+            && valence_atoms[vertex].cPeriodicRowNumber == 1
+    })
+}
+
+fn copy_bns_to_atom_source_layout_is_valid(
+    heap: &SourceHeap,
+    structure: &StrFromINChI,
+    bns: &BN_STRUCT,
+    valence_atoms: &[VAL_AT],
+    groups: &ALL_TC_GROUPS,
+) -> bool {
+    let Some(atom_count) = usize::try_from(structure.num_atoms).ok() else {
+        return false;
+    };
+    let Some(vertex_count) = usize::try_from(bns.num_vertices).ok() else {
+        return false;
+    };
+    let Some(edge_count) = usize::try_from(bns.num_edges).ok() else {
+        return false;
+    };
+    let Some(tgroup_count) = usize::try_from(bns.num_t_groups).ok() else {
+        return false;
+    };
+    let Some(required_vertices) = atom_count.checked_add(tgroup_count) else {
+        return false;
+    };
+    if bns.num_atoms != structure.num_atoms
+        || required_vertices > vertex_count
+        || valence_atoms.len() < atom_count
+    {
+        return false;
+    }
+
+    let atoms_are_valid = atom_count == 0
+        || heap
+            .slice(structure.at.as_const())
+            .ok()
+            .is_some_and(|values| values.len() >= atom_count);
+    let restore_mode_is_valid = atom_count == 0
+        || heap
+            .slice(structure.pSrm)
+            .ok()
+            .is_some_and(|values| !values.is_empty());
+    let vertices = if vertex_count == 0 {
+        Some(&[][..])
+    } else {
+        heap.slice(bns.vert.as_const())
+            .ok()
+            .and_then(|values| values.get(..vertex_count))
+    };
+    let edges_are_valid = edge_count == 0
+        || heap
+            .slice(bns.edge.as_const())
+            .ok()
+            .is_some_and(|values| values.len() >= edge_count);
+    let tgroups_are_valid = tgroup_count == 0
+        || heap
+            .slice(groups.pTCG.as_const())
+            .ok()
+            .is_some_and(|values| values.len() >= tgroup_count);
+    if !atoms_are_valid
+        || !restore_mode_is_valid
+        || vertices.is_none()
+        || !edges_are_valid
+        || !tgroups_are_valid
+    {
+        return false;
+    }
+
+    let source_ids = [
+        structure.at.allocation_identity(),
+        bns.vert.allocation_identity(),
+        bns.edge.allocation_identity(),
+        bns.iedge.allocation_identity(),
+        groups.pTCG.allocation_identity(),
+    ];
+    for (index, id) in source_ids.iter().enumerate() {
+        if id.is_some() && source_ids[..index].contains(id) {
+            return false;
+        }
+    }
+
+    let vertices = vertices.expect("vertex allocation was checked above");
+    vertex_count == 0
+        || (!bns.iedge.is_null()
+            && vertices
+                .first()
+                .is_some_and(|vertex| vertex.iedge == bns.iedge)
+            && heap.slice(bns.iedge.as_const()).is_ok())
+}
+
+#[inline]
+fn copy_bns_to_atom_source_indices_are_valid(
+    atoms: &[inp_ATOM],
+    vertices: &[BNS_VERTEX],
+    edges: &[BNS_EDGE],
+    adjacency: &[i32],
+    adjacency_origin: SourceMutPointer<i32>,
+    valence_atoms: &[VAL_AT],
+    atom_count: usize,
+    tgroup_count: usize,
+) -> bool {
+    let Some(required_vertices) = atom_count.checked_add(tgroup_count) else {
+        return false;
+    };
+    if atoms.len() < atom_count
+        || vertices.len() < required_vertices
+        || valence_atoms.len() < atom_count
+    {
+        return false;
+    }
+
+    for atom_index in 0..atom_count {
+        let atom = &atoms[atom_index];
+        let vertex = &vertices[atom_index];
+        let adjacency_count = usize::from(vertex.num_adj_edges);
+        let Ok(offset) = vertex.iedge.difference(adjacency_origin) else {
+            return false;
+        };
+        let Ok(offset) = usize::try_from(offset) else {
+            return false;
+        };
+        let Some(end) = offset.checked_add(adjacency_count) else {
+            return false;
+        };
+        let Some(row) = adjacency.get(offset..end) else {
+            return false;
+        };
+        let Ok(valence) = usize::try_from(atom.valence) else {
+            return false;
+        };
+        if valence > atom.neighbor.len() || valence > atom.bond_type.len() || valence > row.len() {
+            return false;
+        }
+        for (&neighbor, &edge_index) in atom.neighbor[..valence].iter().zip(&row[..valence]) {
+            if usize::from(neighbor) >= atom_count
+                || usize::try_from(edge_index)
+                    .ok()
+                    .is_none_or(|index| index >= edges.len())
+            {
+                return false;
+            }
+        }
+        for charge_edge in [
+            valence_atoms[atom_index].nCMinusGroupEdge,
+            valence_atoms[atom_index].nCPlusGroupEdge,
+        ] {
+            if charge_edge != 0
+                && usize::try_from(charge_edge.wrapping_sub(1))
+                    .ok()
+                    .is_none_or(|index| index >= edges.len())
+            {
+                return false;
+            }
+        }
+    }
+
+    for vertex in &vertices[atom_count..required_vertices] {
+        let adjacency_count = usize::from(vertex.num_adj_edges);
+        let Ok(offset) = vertex.iedge.difference(adjacency_origin) else {
+            return false;
+        };
+        let Ok(offset) = usize::try_from(offset) else {
+            return false;
+        };
+        let Some(end) = offset.checked_add(adjacency_count) else {
+            return false;
+        };
+        let Some(row) = adjacency.get(offset..end) else {
+            return false;
+        };
+        for &edge_index in row {
+            let Some(edge) = usize::try_from(edge_index)
+                .ok()
+                .and_then(|index| edges.get(index))
+            else {
+                return false;
+            };
+            if usize::from(edge.neighbor1) >= atom_count {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Executes the configured Official InChI loop after the complete C array
+/// contract has been proved once.
+///
+/// # Safety
+///
+/// `copy_bns_to_atom_source_indices_are_valid` must have returned true for
+/// these exact slices and counts. `adjacency_origin` must still identify the
+/// beginning of `adjacency`, and the slices must remain mutually disjoint.
+#[inline]
+unsafe fn copy_bns_to_atom_source_layout(
+    atoms: &mut [inp_ATOM],
+    vertices: &[BNS_VERTEX],
+    edges: &[BNS_EDGE],
+    adjacency: &[i32],
+    adjacency_origin: SourceMutPointer<i32>,
+    valence_atoms: &[VAL_AT],
+    restore_mode: &crate::source_types::SRM,
+    tgroups: &[crate::source_types::TC_GROUP],
+    allow_zero_bond_order: i32,
+) -> i32 {
+    let atom_count = atoms.len();
+    let mut atom_index = 0_usize;
+    while atom_index < atom_count {
+        let vertex = unsafe { vertices.get_unchecked(atom_index) };
+        let offset = unsafe { vertex.iedge.forward_difference_unchecked(adjacency_origin) };
+        let atom_valence = unsafe { atoms.get_unchecked(atom_index) }.valence as usize;
+        let mut chemical_bond_valence = 0_i32;
+        let mut neighbor_order = 0_usize;
+        while neighbor_order < atom_valence {
+            let edge_index = unsafe { *adjacency.get_unchecked(offset + neighbor_order) as usize };
+            let edge = unsafe { edges.get_unchecked(edge_index) };
+            let atom = unsafe { atoms.get_unchecked(atom_index) };
+            let bonded_atom_index =
+                usize::from(unsafe { *atom.neighbor.get_unchecked(neighbor_order) });
+            let bonded_atom = unsafe { atoms.get_unchecked(bonded_atom_index) };
+            let atom_va = unsafe { valence_atoms.get_unchecked(atom_index) };
+            let bonded_atom_va = unsafe { valence_atoms.get_unchecked(bonded_atom_index) };
+            let mut minimum_order = 0_i32;
+            unsafe {
+                bond_flow_maxcap_minorder_source(
+                    atom,
+                    bonded_atom,
+                    atom_va,
+                    bonded_atom_va,
+                    restore_mode,
+                    neighbor_order,
+                    None,
+                    Some(&mut minimum_order),
+                    None,
+                );
+            }
+            let mut bond_order = edge.flow.wrapping_add(minimum_order);
+            if allow_zero_bond_order == 0 && bond_order == 0 {
+                bond_order = 1;
+            }
+            chemical_bond_valence = chemical_bond_valence.wrapping_add(bond_order);
+            unsafe {
+                *atoms
+                    .get_unchecked_mut(atom_index)
+                    .bond_type
+                    .get_unchecked_mut(neighbor_order) = bond_order as u8;
+            }
+            neighbor_order += 1;
+        }
+
+        let atom_va = unsafe { valence_atoms.get_unchecked(atom_index) };
+        let atom = unsafe { atoms.get_unchecked_mut(atom_index) };
+        atom.chem_bonds_valence = chemical_bond_valence as i8;
+        atom.charge = atom_va.cInitCharge;
+        if atom_va.nCMinusGroupEdge != 0 {
+            let edge_index = atom_va.nCMinusGroupEdge.wrapping_sub(1) as usize;
+            let charge = unsafe { edges.get_unchecked(edge_index) }.flow;
+            if charge != 0 {
+                atom.charge = i32::from(atom.charge).wrapping_sub(charge) as i8;
+            }
+        }
+        if atom_va.nCPlusGroupEdge != 0 {
+            let edge_index = atom_va.nCPlusGroupEdge.wrapping_sub(1) as usize;
+            let edge = unsafe { edges.get_unchecked(edge_index) };
+            let charge = edge.cap.wrapping_sub(edge.flow);
+            if charge != 0 {
+                atom.charge = i32::from(atom.charge).wrapping_add(charge) as i8;
+            }
+        }
+        if vertex.st_edge.cap > vertex.st_edge.flow {
+            atom.radical = (crate::source_types::RADICAL_SINGLET as i32)
+                .wrapping_add(vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow))
+                as i8;
+        }
+        atom_index += 1;
+    }
+
+    let mut group_index = 0_usize;
+    while group_index < tgroups.len() {
+        let group = unsafe { tgroups.get_unchecked(group_index) };
+        let mut number_h = i32::from(group.tg_num_H);
+        let mut number_minus = i32::from(group.tg_num_Minus);
+        let minus_first = (i32::from(group.tg_RestoreFlags)
+            & crate::source_types::tagTgRestoreFlags_TGRF_MINUS_FIRST as i32)
+            != 0;
+        let mut minus_vertex = NO_VERTEX;
+        let vertex = unsafe { vertices.get_unchecked(atom_count + group_index) };
+        if (u32::from(vertex.type_) & crate::source_types::BNS_VERT_TYPE_TGROUP) == 0 {
+            return RI_ERR_PROGR;
+        }
+        if group.tg_set_Minus > 0 && number_minus > 0 {
+            minus_vertex = group.tg_set_Minus.wrapping_sub(1);
+            number_minus = number_minus.wrapping_sub(1);
+        }
+        let adjacency_count = usize::from(vertex.num_adj_edges);
+        let offset = unsafe { vertex.iedge.forward_difference_unchecked(adjacency_origin) };
+
+        macro_rules! apply_tautomer_edge {
+            ($adjacency_index:expr) => {{
+                let edge_index =
+                    unsafe { *adjacency.get_unchecked(offset + $adjacency_index) as usize };
+                let edge = unsafe { edges.get_unchecked(edge_index) };
+                let attached_atom_index = usize::from(edge.neighbor1);
+                let atom = unsafe { atoms.get_unchecked_mut(attached_atom_index) };
+                let mut number_to_add = edge.flow;
+                if i32::from(edge.neighbor1) == minus_vertex {
+                    if number_to_add != 0 {
+                        atom.charge = -1;
+                        number_to_add = number_to_add.wrapping_sub(1);
+                    } else {
+                        number_minus = number_minus.wrapping_add(1);
+                    }
+                    minus_vertex = NO_VERTEX;
+                }
+                if number_to_add > 0 {
+                    if number_minus != 0
+                        && atom.charge == 0
+                        && atom.valence == atom.chem_bonds_valence
+                    {
+                        atom.charge = atom.charge.wrapping_sub(1);
+                        number_to_add = number_to_add.wrapping_sub(1);
+                        number_minus = number_minus.wrapping_sub(1);
+                    }
+                    if number_to_add > 0 {
+                        atom.num_H = i32::from(atom.num_H).wrapping_add(number_to_add) as i8;
+                        number_h = number_h.wrapping_sub(number_to_add);
+                    }
+                }
+                atom.endpoint = group_index.wrapping_add(1) as AT_NUMB;
+            }};
+        }
+
+        if minus_first {
+            let mut adjacency_index = 0_usize;
+            while adjacency_index < adjacency_count {
+                apply_tautomer_edge!(adjacency_index);
+                adjacency_index += 1;
+            }
+        } else {
+            let mut adjacency_index = adjacency_count;
+            while adjacency_index != 0 {
+                adjacency_index -= 1;
+                apply_tautomer_edge!(adjacency_index);
+            }
+        }
+        let remaining = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow);
+        if number_h.wrapping_add(number_minus) != remaining
+            && (number_h != 0 || number_minus != 0 || minus_vertex != NO_VERTEX)
+        {
+            return RI_ERR_PROGR;
+        }
+        group_index += 1;
+    }
+    0
+}
+
 #[allow(non_snake_case, clippy::too_many_arguments)]
 pub(crate) fn CopyBnsToAtom(
     heap: &mut SourceHeap,
@@ -39,199 +460,190 @@ pub(crate) fn CopyBnsToAtom(
     allow_zero_bond_order: i32,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:979 CopyBnsToAtom
-    // INCHI✔️❌: complete configured source frame follows verbatim.
-    /*
-    int CopyBnsToAtom( StrFromINChI *pStruct,
-                       BN_STRUCT  *pBNS,
-                       VAL_AT *pVA,
-                       ALL_TC_GROUPS *pTCGroups,
-                       int bAllowZeroBondOrder )
-    {
-        int i, j, charge, ret = 0, v1, nMinorder; /* djb-rwth: removing redundant variables */
-        int          num_at = pStruct->num_atoms;
-        inp_ATOM *at = pStruct->at;
-        ICHICONST SRM *pSrm = pStruct->pSrm;
-        BNS_VERTEX  *pv;
-        BNS_EDGE    *pe;
-        int          chem_bonds_valence, bond_order;
-
-        /* djb-rwth: removing redundant code */
-        for (i = 0; i < num_at; i++)
-        {
-            pv = pBNS->vert + i;
-            /* bonds */
-            chem_bonds_valence = 0;
-            for (j = 0; j < at[i].valence; j++)
-            {
-                pe = pBNS->edge + pv->iedge[j];
-                BondFlowMaxcapMinorder( at, pVA, pSrm, i, j, NULL, &nMinorder, NULL );
-                bond_order = pe->flow + nMinorder;
-                if (!bAllowZeroBondOrder && !bond_order)
-                {
-                    bond_order = 1;
-                }
-                chem_bonds_valence += bond_order;
-                at[i].bond_type[j] = bond_order;  /* BOND_MARK_HIGHLIGHT */
-            }
-            at[i].chem_bonds_valence = chem_bonds_valence;
-            /* charges (both may be present resulting in zero) */
-            at[i].charge = pVA[i].cInitCharge;
-            if (pVA[i].nCMinusGroupEdge)
-            {
-                pe = pBNS->edge + pVA[i].nCMinusGroupEdge - 1;
-                if ((charge = pe->flow)) /* djb-rwth: addressing LLVM warning */
-                {
-                    at[i].charge -= charge;
-                    /* djb-rwth: removing redundant code */
-                }
-            }
-            if (pVA[i].nCPlusGroupEdge)
-            {
-                pe = pBNS->edge + pVA[i].nCPlusGroupEdge - 1;
-                if ((charge = pe->cap - pe->flow)) /* djb-rwth: addressing LLVM warning */
-                {
-                    at[i].charge += charge;
-                    /* djb-rwth: removing redundant code */
-                }
-            }
-            if (pv->st_edge.cap > pv->st_edge.flow)
-            {
-                at[i].radical = RADICAL_SINGLET + ( pv->st_edge.cap - pv->st_edge.flow );
-            }
-        }
-        /* find charge excess */
-        /* djb-rwth: removing redundant variables/code */
-        /* tautomeric H and (-) */
-        for (i = 0; i < pBNS->num_t_groups; i++)
-        {
-            /* tautomeric groups are first non-atom vertices;
-            order of them is same as in pTCGroups->pTCG[] */
-            int num_H = pTCGroups->pTCG[i].tg_num_H;
-            int num_Minus = pTCGroups->pTCG[i].tg_num_Minus;
-            int bMinusFirst = ( pTCGroups->pTCG[i].tg_RestoreFlags & TGRF_MINUS_FIRST );
-            int num_at_add;
-            Vertex vMinus = NO_VERTEX;
-            pv = pBNS->vert + num_at + i;  /* t-group vertex */
-            if (!( pv->type & BNS_VERT_TYPE_TGROUP ))
-            {
-                return RI_ERR_PROGR;
-            }
-            if (pTCGroups->pTCG[i].tg_set_Minus > 0 && num_Minus > 0)
-            {
-                vMinus = pTCGroups->pTCG[i].tg_set_Minus - 1;
-                num_Minus--;
-            }
-
-            if (bMinusFirst)
-            {
-                for (j = 0; j < pv->num_adj_edges; j++)
-                {
-                    pe = pBNS->edge + pv->iedge[j];
-                    v1 = pe->neighbor1;
-                    num_at_add = pe->flow;
-                    if (v1 == vMinus)
-                    {
-                        if (num_at_add)
-                        {
-                            at[v1].charge = -1;  /* no checking at[v1].charge == 0 for now ??? */
-                            num_at_add--;       /* no checking  num_at_add > 0 for now ??? */
-                        }
-                        else
-                        {
-                            num_Minus++;        /* error ??? */
-                        }
-                        vMinus = NO_VERTEX;
-                    }
-                    if (num_at_add > 0)
-                    {
-                        /* atom has tautomeric attachment; do not allow =N(-) */
-                        if (num_Minus && !at[v1].charge &&
-                             at[v1].valence == at[v1].chem_bonds_valence)
-                        {
-                            at[v1].charge--;
-                            num_at_add--;
-                            num_Minus--;
-                        }
-                        if (num_at_add > 0)
-                        {
-                            at[v1].num_H += num_at_add;
-                            num_H -= num_at_add;
-                            /* djb-rwth: removing redundant code */
-                        }
-                    }
-                    at[v1].endpoint = i + 1;
-                }
-                if (( num_H + num_Minus != pv->st_edge.cap - pv->st_edge.flow ) && ( num_H || num_Minus || vMinus != NO_VERTEX ))
-                {
-                    return RI_ERR_PROGR;
-                }
-            }
-            else
-            {
-                for (j = pv->num_adj_edges - 1; 0 <= j; j--)
-                {
-                    pe = pBNS->edge + pv->iedge[j];
-                    v1 = pe->neighbor1;
-                    num_at_add = pe->flow;
-                    if (v1 == vMinus)
-                    {
-                        if (num_at_add)
-                        {
-                            at[v1].charge = -1;  /* no checking at[v1].charge == 0 for now ??? */
-                            num_at_add--;       /* no checking  num_at_add > 0 for now ??? */
-                        }
-                        else
-                        {
-                            num_Minus++;        /* error ??? */
-                        }
-                        vMinus = NO_VERTEX;
-                    }
-                    if (num_at_add > 0)
-                    {
-                        /* atom has tautomeric attachment; do not allow =N(-) */
-                        if (num_Minus && !at[v1].charge &&
-                             at[v1].valence == at[v1].chem_bonds_valence)
-                        {
-                            at[v1].charge--;
-                            num_at_add--;
-                            num_Minus--;
-                        }
-                        if (num_at_add > 0)
-                        {
-                            at[v1].num_H += num_at_add;
-                            num_H -= num_at_add;
-                            /* djb-rwth: removing redundant code */
-                        }
-                    }
-                    at[v1].endpoint = i + 1;
-                }
-                if (( num_H + num_Minus != pv->st_edge.cap - pv->st_edge.flow ) && ( num_H || num_Minus || vMinus != NO_VERTEX ))
-                {
-                    return RI_ERR_PROGR;
-                }
-            }
-        }
-
-        return ret;
-    }
-        */
+    // INCHI✔️✔️:     int CopyBnsToAtom( StrFromINChI *pStruct,
+    // INCHI✔️✔️:                        BN_STRUCT  *pBNS,
+    // INCHI✔️✔️:                        VAL_AT *pVA,
+    // INCHI✔️✔️:                        ALL_TC_GROUPS *pTCGroups,
+    // INCHI✔️✔️:                        int bAllowZeroBondOrder )
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         int i, j, charge, ret = 0, v1, nMinorder; /* djb-rwth: removing redundant variables */
+    // INCHI✔️✔️:         int          num_at = pStruct->num_atoms;
+    // INCHI✔️✔️:         inp_ATOM *at = pStruct->at;
+    // INCHI✔️✔️:         ICHICONST SRM *pSrm = pStruct->pSrm;
+    // INCHI✔️✔️:         BNS_VERTEX  *pv;
+    // INCHI✔️✔️:         BNS_EDGE    *pe;
+    // INCHI✔️✔️:         int          chem_bonds_valence, bond_order;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:         /* djb-rwth: removing redundant code */
+    // INCHI✔️✔️:         for (i = 0; i < num_at; i++)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             pv = pBNS->vert + i;
+    // INCHI✔️✔️:             /* bonds */
+    // INCHI✔️✔️:             chem_bonds_valence = 0;
+    // INCHI✔️✔️:             for (j = 0; j < at[i].valence; j++)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 pe = pBNS->edge + pv->iedge[j];
+    // INCHI✔️✔️:                 BondFlowMaxcapMinorder( at, pVA, pSrm, i, j, NULL, &nMinorder, NULL );
+    // INCHI✔️✔️:                 bond_order = pe->flow + nMinorder;
+    // INCHI✔️✔️:                 if (!bAllowZeroBondOrder && !bond_order)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     bond_order = 1;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:                 chem_bonds_valence += bond_order;
+    // INCHI✔️✔️:                 at[i].bond_type[j] = bond_order;  /* BOND_MARK_HIGHLIGHT */
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:             at[i].chem_bonds_valence = chem_bonds_valence;
+    // INCHI✔️✔️:             /* charges (both may be present resulting in zero) */
+    // INCHI✔️✔️:             at[i].charge = pVA[i].cInitCharge;
+    // INCHI✔️✔️:             if (pVA[i].nCMinusGroupEdge)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 pe = pBNS->edge + pVA[i].nCMinusGroupEdge - 1;
+    // INCHI✔️✔️:                 if ((charge = pe->flow)) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     at[i].charge -= charge;
+    // INCHI✔️✔️:                     /* djb-rwth: removing redundant code */
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:             if (pVA[i].nCPlusGroupEdge)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 pe = pBNS->edge + pVA[i].nCPlusGroupEdge - 1;
+    // INCHI✔️✔️:                 if ((charge = pe->cap - pe->flow)) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     at[i].charge += charge;
+    // INCHI✔️✔️:                     /* djb-rwth: removing redundant code */
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:             if (pv->st_edge.cap > pv->st_edge.flow)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 at[i].radical = RADICAL_SINGLET + ( pv->st_edge.cap - pv->st_edge.flow );
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         /* find charge excess */
+    // INCHI✔️✔️:         /* djb-rwth: removing redundant variables/code */
+    // INCHI✔️✔️:         /* tautomeric H and (-) */
+    // INCHI✔️✔️:         for (i = 0; i < pBNS->num_t_groups; i++)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             /* tautomeric groups are first non-atom vertices;
+    // INCHI✔️✔️:             order of them is same as in pTCGroups->pTCG[] */
+    // INCHI✔️✔️:             int num_H = pTCGroups->pTCG[i].tg_num_H;
+    // INCHI✔️✔️:             int num_Minus = pTCGroups->pTCG[i].tg_num_Minus;
+    // INCHI✔️✔️:             int bMinusFirst = ( pTCGroups->pTCG[i].tg_RestoreFlags & TGRF_MINUS_FIRST );
+    // INCHI✔️✔️:             int num_at_add;
+    // INCHI✔️✔️:             Vertex vMinus = NO_VERTEX;
+    // INCHI✔️✔️:             pv = pBNS->vert + num_at + i;  /* t-group vertex */
+    // INCHI✔️✔️:             if (!( pv->type & BNS_VERT_TYPE_TGROUP ))
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 return RI_ERR_PROGR;
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:             if (pTCGroups->pTCG[i].tg_set_Minus > 0 && num_Minus > 0)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 vMinus = pTCGroups->pTCG[i].tg_set_Minus - 1;
+    // INCHI✔️✔️:                 num_Minus--;
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:             if (bMinusFirst)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 for (j = 0; j < pv->num_adj_edges; j++)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     pe = pBNS->edge + pv->iedge[j];
+    // INCHI✔️✔️:                     v1 = pe->neighbor1;
+    // INCHI✔️✔️:                     num_at_add = pe->flow;
+    // INCHI✔️✔️:                     if (v1 == vMinus)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         if (num_at_add)
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             at[v1].charge = -1;  /* no checking at[v1].charge == 0 for now ??? */
+    // INCHI✔️✔️:                             num_at_add--;       /* no checking  num_at_add > 0 for now ??? */
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                         else
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             num_Minus++;        /* error ??? */
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                         vMinus = NO_VERTEX;
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     if (num_at_add > 0)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         /* atom has tautomeric attachment; do not allow =N(-) */
+    // INCHI✔️✔️:                         if (num_Minus && !at[v1].charge &&
+    // INCHI✔️✔️:                              at[v1].valence == at[v1].chem_bonds_valence)
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             at[v1].charge--;
+    // INCHI✔️✔️:                             num_at_add--;
+    // INCHI✔️✔️:                             num_Minus--;
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                         if (num_at_add > 0)
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             at[v1].num_H += num_at_add;
+    // INCHI✔️✔️:                             num_H -= num_at_add;
+    // INCHI✔️✔️:                             /* djb-rwth: removing redundant code */
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     at[v1].endpoint = i + 1;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:                 if (( num_H + num_Minus != pv->st_edge.cap - pv->st_edge.flow ) && ( num_H || num_Minus || vMinus != NO_VERTEX ))
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     return RI_ERR_PROGR;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:             else
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 for (j = pv->num_adj_edges - 1; 0 <= j; j--)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     pe = pBNS->edge + pv->iedge[j];
+    // INCHI✔️✔️:                     v1 = pe->neighbor1;
+    // INCHI✔️✔️:                     num_at_add = pe->flow;
+    // INCHI✔️✔️:                     if (v1 == vMinus)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         if (num_at_add)
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             at[v1].charge = -1;  /* no checking at[v1].charge == 0 for now ??? */
+    // INCHI✔️✔️:                             num_at_add--;       /* no checking  num_at_add > 0 for now ??? */
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                         else
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             num_Minus++;        /* error ??? */
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                         vMinus = NO_VERTEX;
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     if (num_at_add > 0)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         /* atom has tautomeric attachment; do not allow =N(-) */
+    // INCHI✔️✔️:                         if (num_Minus && !at[v1].charge &&
+    // INCHI✔️✔️:                              at[v1].valence == at[v1].chem_bonds_valence)
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             at[v1].charge--;
+    // INCHI✔️✔️:                             num_at_add--;
+    // INCHI✔️✔️:                             num_Minus--;
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                         if (num_at_add > 0)
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             at[v1].num_H += num_at_add;
+    // INCHI✔️✔️:                             num_H -= num_at_add;
+    // INCHI✔️✔️:                             /* djb-rwth: removing redundant code */
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     at[v1].endpoint = i + 1;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:                 if (( num_H + num_Minus != pv->st_edge.cap - pv->st_edge.flow ) && ( num_H || num_Minus || vMinus != NO_VERTEX ))
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     return RI_ERR_PROGR;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:         return ret;
+    // INCHI✔️✔️:     }
     // END INCHI C FUNCTION: CopyBnsToAtom
+
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: CopyBnsToAtom
-    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux.
-    // INCHI✔️❌: Rust snapshots disjoint SourceHeap regions and writes atoms back at each C return point.
-    // INCHI✔️❌: This preserves behavior but adds allocations compared with direct C pointer traversal.
+    // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux.
+    // INCHI✔️✔️: Production BNS storage uses the source's contiguous pBNS->iedge allocation.
+    // INCHI✔️✔️: That layout is validated before mutation and executes directly on pStruct->at.
+    // INCHI✔️✔️: Compatibility layouts retain checked access and rollback only on Rust pointer errors.
     // END INCHI ACTIVE MACRO CONFIGURATION: CopyBnsToAtom
 
     let atom_count =
         usize::try_from(structure.num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let mut atoms = if atom_count == 0 {
-        Vec::new()
-    } else {
-        heap.slice(structure.at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    };
     let restore_mode = if atom_count == 0 {
         None
     } else {
@@ -244,234 +656,451 @@ pub(crate) fn CopyBnsToAtom(
     };
     let vertex_count =
         usize::try_from(bns.num_vertices).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let vertices = if vertex_count == 0 {
-        Vec::new()
+    let vertices_view = if vertex_count == 0 {
+        None
     } else {
-        heap.slice(bns.vert.as_const())?
-            .get(..vertex_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
+        // SAFETY: CopyBnsToAtom never frees, resizes, or mutates BNS vertices.
+        Some(unsafe { heap.stable_slice(bns.vert.as_const())? })
+    };
+    let vertices = match &vertices_view {
+        Some(view) => view.prefix(vertex_count)?,
+        None => &[],
     };
     let edge_count =
         usize::try_from(bns.num_edges).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let edges = if edge_count == 0 {
-        Vec::new()
+    let edges_view = if edge_count == 0 {
+        None
     } else {
-        heap.slice(bns.edge.as_const())?
-            .get(..edge_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
+        // SAFETY: CopyBnsToAtom only reads BNS edges.
+        Some(unsafe { heap.stable_slice(bns.edge.as_const())? })
     };
-    let mut vertex_edges = Vec::with_capacity(vertices.len());
-    for vertex in &vertices {
-        let count = usize::from(vertex.num_adj_edges);
-        vertex_edges.push(if count == 0 {
-            Vec::new()
-        } else {
-            heap.slice(vertex.iedge.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec()
-        });
-    }
+    let edges = match &edges_view {
+        Some(view) => view.prefix(edge_count)?,
+        None => &[],
+    };
     let tgroup_count =
         usize::try_from(bns.num_t_groups).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let tgroups = if tgroup_count == 0 {
-        Vec::new()
+    let tgroups_view = if tgroup_count == 0 {
+        None
     } else {
-        heap.slice(groups.pTCG.as_const())?
-            .get(..tgroup_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
+        // SAFETY: CopyBnsToAtom only reads tautomer groups.
+        Some(unsafe { heap.stable_slice(groups.pTCG.as_const())? })
     };
-
-    let flush_atoms = |heap: &mut SourceHeap, atoms: &[inp_ATOM]| -> Result<(), SourceHeapError> {
-        if atom_count != 0 {
-            heap.slice_mut(structure.at)?[..atom_count].clone_from_slice(atoms);
-        }
-        Ok(())
+    let tgroups = match &tgroups_view {
+        Some(view) => view.prefix(tgroup_count)?,
+        None => &[],
     };
-
-    for atom_index in 0..atom_count {
-        let vertex = vertices
-            .get(atom_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let adjacency = vertex_edges
-            .get(atom_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let atom_valence = i32::from(atoms[atom_index].valence);
-        let mut chemical_bond_valence = 0_i32;
-        let mut neighbor_order = 0_i32;
-        while neighbor_order < atom_valence {
-            let order_index =
-                usize::try_from(neighbor_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let edge_index = usize::try_from(
-                *adjacency
-                    .get(order_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            )
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let edge = edges
-                .get(edge_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let mut minimum_order = 0_i32;
-            BondFlowMaxcapMinorder(
-                &atoms,
-                valence_atoms,
-                restore_mode.as_ref().ok_or(SourceHeapError::NullPointer)?,
-                atom_index as i32,
-                neighbor_order,
-                None,
-                Some(&mut minimum_order),
-                None,
-            )?;
-            let mut bond_order = edge.flow.wrapping_add(minimum_order);
-            if allow_zero_bond_order == 0 && bond_order == 0 {
-                bond_order = 1;
+    let source_layout_is_valid =
+        copy_bns_to_atom_source_layout_is_valid(heap, structure, bns, valence_atoms, groups);
+    if !source_layout_is_valid {
+        // Compatibility layouts keep the previous Rust error ordering: every
+        // adjacency row is checked before the first atom is modified.
+        for vertex in vertices {
+            let count = usize::from(vertex.num_adj_edges);
+            if count != 0 {
+                let _ = heap
+                    .slice(vertex.iedge.as_const())?
+                    .get(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
             }
-            chemical_bond_valence = chemical_bond_valence.wrapping_add(bond_order);
-            atoms[atom_index].bond_type[order_index] = bond_order as u8;
-            neighbor_order = neighbor_order.wrapping_add(1);
         }
-        atoms[atom_index].chem_bonds_valence = chemical_bond_valence as i8;
-        atoms[atom_index].charge = valence_atoms
-            .get(atom_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .cInitCharge;
+    }
+    let adjacency_view = if source_layout_is_valid && !bns.iedge.is_null() {
+        // SAFETY: the layout check proves that pBNS->iedge is live, has the
+        // expected type, and is disjoint from the writable atom allocation.
+        Some(unsafe { heap.stable_slice(bns.iedge.as_const())? })
+    } else {
+        None
+    };
 
-        let minus_edge = valence_atoms[atom_index].nCMinusGroupEdge;
-        if minus_edge != 0 {
-            let edge_index = usize::try_from(minus_edge.wrapping_sub(1))
+    let copy_from_bns = |atoms: &mut [inp_ATOM], heap: &SourceHeap| {
+        // INCHI✔️✔️:         for (i = 0; i < num_at; i++)
+        let mut atom_index = 0_usize;
+        while atom_index < atom_count {
+            let vertex = vertices
+                .get(atom_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let adjacency_count = usize::from(vertex.num_adj_edges);
+            let adjacency = if adjacency_count == 0 {
+                &[][..]
+            } else if let Some(view) = &adjacency_view {
+                let offset = usize::try_from(vertex.iedge.difference(bns.iedge)?)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let end = offset
+                    .checked_add(adjacency_count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                &view.prefix(end)?[offset..end]
+            } else {
+                heap.slice(vertex.iedge.as_const())?
+                    .get(..adjacency_count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+            };
+            let atom_valence = i32::from(atoms[atom_index].valence);
+            let mut chemical_bond_valence = 0_i32;
+            let mut neighbor_order = 0_i32;
+            while neighbor_order < atom_valence {
+                let order_index = usize::try_from(neighbor_order)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let edge_index = usize::try_from(
+                    *adjacency
+                        .get(order_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                )
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let charge = edges
-                .get(edge_index)
+                let edge = edges
+                    .get(edge_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let mut minimum_order = 0_i32;
+                let atom = atoms
+                    .get(atom_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                if order_index >= atom.neighbor.len() || order_index >= atom.bond_type.len() {
+                    return Err(SourceHeapError::PointerOutOfBounds);
+                }
+                let bonded_atom_index = usize::from(atom.neighbor[order_index]);
+                let bonded_atom = atoms
+                    .get(bonded_atom_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let atom_va = valence_atoms
+                    .get(atom_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let bonded_atom_va = valence_atoms
+                    .get(bonded_atom_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let restore_mode = restore_mode.as_ref().ok_or(SourceHeapError::NullPointer)?;
+                // INCHI✔️✔️:                 BondFlowMaxcapMinorder(
+                // INCHI✔️✔️:                     at, pVA, pSrm, i, j, NULL, &nMinorder, NULL );
+                // SAFETY: this loop resolved the exact `at[i]`, `at[neigh]`,
+                // `pVA[i]`, and `pVA[neigh]` operands and validated `j` in
+                // both fixed bond arrays immediately above.
+                unsafe {
+                    bond_flow_maxcap_minorder_source(
+                        atom,
+                        bonded_atom,
+                        atom_va,
+                        bonded_atom_va,
+                        restore_mode,
+                        order_index,
+                        None,
+                        Some(&mut minimum_order),
+                        None,
+                    );
+                }
+                let mut bond_order = edge.flow.wrapping_add(minimum_order);
+                if allow_zero_bond_order == 0 && bond_order == 0 {
+                    bond_order = 1;
+                }
+                chemical_bond_valence = chemical_bond_valence.wrapping_add(bond_order);
+                atoms[atom_index].bond_type[order_index] = bond_order as u8;
+                neighbor_order = neighbor_order.wrapping_add(1);
+            }
+            atoms[atom_index].chem_bonds_valence = chemical_bond_valence as i8;
+            atoms[atom_index].charge = valence_atoms
+                .get(atom_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .flow;
-            if charge != 0 {
-                atoms[atom_index].charge =
-                    i32::from(atoms[atom_index].charge).wrapping_sub(charge) as i8;
-            }
-        }
-        let plus_edge = valence_atoms[atom_index].nCPlusGroupEdge;
-        if plus_edge != 0 {
-            let edge_index = usize::try_from(plus_edge.wrapping_sub(1))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let edge = edges
-                .get(edge_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let charge = edge.cap.wrapping_sub(edge.flow);
-            if charge != 0 {
-                atoms[atom_index].charge =
-                    i32::from(atoms[atom_index].charge).wrapping_add(charge) as i8;
-            }
-        }
-        if vertex.st_edge.cap > vertex.st_edge.flow {
-            atoms[atom_index].radical = (crate::source_types::RADICAL_SINGLET as i32)
-                .wrapping_add(vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow))
-                as i8;
-        }
-    }
+                .cInitCharge;
 
-    let mut group_index = 0_i32;
-    while group_index < bns.num_t_groups {
-        let group_usize =
-            usize::try_from(group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let group = tgroups
-            .get(group_usize)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let mut number_h = i32::from(group.tg_num_H);
-        let mut number_minus = i32::from(group.tg_num_Minus);
-        let minus_first = (i32::from(group.tg_RestoreFlags)
-            & crate::source_types::tagTgRestoreFlags_TGRF_MINUS_FIRST as i32)
-            != 0;
-        let mut minus_vertex = crate::source_types::NO_VERTEX;
-        if group.tg_set_Minus > 0 && number_minus > 0 {
-            minus_vertex = group.tg_set_Minus.wrapping_sub(1);
-            number_minus = number_minus.wrapping_sub(1);
-        }
-
-        let vertex_index = atom_count
-            .checked_add(group_usize)
-            .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-        let vertex = vertices
-            .get(vertex_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if (u32::from(vertex.type_) & crate::source_types::BNS_VERT_TYPE_TGROUP) == 0 {
-            flush_atoms(heap, &atoms)?;
-            return Ok(RI_ERR_PROGR);
-        }
-        let adjacency = vertex_edges
-            .get(vertex_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-
-        let mut process_edge = |adjacency_index: usize| -> Result<(), SourceHeapError> {
-            let edge_index = usize::try_from(
-                *adjacency
-                    .get(adjacency_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            )
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let edge = edges
-                .get(edge_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let atom_index = usize::from(edge.neighbor1);
-            let atom = atoms
-                .get_mut(atom_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let mut number_to_add = edge.flow;
-            if i32::from(edge.neighbor1) == minus_vertex {
-                if number_to_add != 0 {
-                    atom.charge = -1;
-                    number_to_add = number_to_add.wrapping_sub(1);
-                } else {
-                    number_minus = number_minus.wrapping_add(1);
+            let minus_edge = valence_atoms[atom_index].nCMinusGroupEdge;
+            if minus_edge != 0 {
+                let edge_index = usize::try_from(minus_edge.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let charge = edges
+                    .get(edge_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .flow;
+                if charge != 0 {
+                    atoms[atom_index].charge =
+                        i32::from(atoms[atom_index].charge).wrapping_sub(charge) as i8;
                 }
-                minus_vertex = crate::source_types::NO_VERTEX;
             }
-            if number_to_add > 0 {
-                if number_minus != 0 && atom.charge == 0 && atom.valence == atom.chem_bonds_valence
+            let plus_edge = valence_atoms[atom_index].nCPlusGroupEdge;
+            if plus_edge != 0 {
+                let edge_index = usize::try_from(plus_edge.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let edge = edges
+                    .get(edge_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let charge = edge.cap.wrapping_sub(edge.flow);
+                if charge != 0 {
+                    atoms[atom_index].charge =
+                        i32::from(atoms[atom_index].charge).wrapping_add(charge) as i8;
+                }
+            }
+            if vertex.st_edge.cap > vertex.st_edge.flow {
+                atoms[atom_index].radical = (crate::source_types::RADICAL_SINGLET as i32)
+                    .wrapping_add(vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow))
+                    as i8;
+            }
+            // INCHI✔️✔️:         for-loop increment: i++
+            atom_index += 1;
+        }
+
+        let mut group_index = 0_i32;
+        while group_index < bns.num_t_groups {
+            let group_usize =
+                usize::try_from(group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let group = tgroups
+                .get(group_usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            // INCHI✔️✔️:             int num_H = pTCGroups->pTCG[i].tg_num_H;
+            let mut number_h = i32::from(group.tg_num_H);
+            // INCHI✔️✔️:             int num_Minus = pTCGroups->pTCG[i].tg_num_Minus;
+            let mut number_minus = i32::from(group.tg_num_Minus);
+            // INCHI✔️✔️:             int bMinusFirst = ( pTCGroups->pTCG[i].tg_RestoreFlags & TGRF_MINUS_FIRST );
+            let minus_first = (i32::from(group.tg_RestoreFlags)
+                & crate::source_types::tagTgRestoreFlags_TGRF_MINUS_FIRST as i32)
+                != 0;
+            // INCHI✔️✔️:             Vertex vMinus = NO_VERTEX;
+            let mut minus_vertex = crate::source_types::NO_VERTEX;
+            // INCHI✔️✔️:             pv = pBNS->vert + num_at + i;  /* t-group vertex */
+            let vertex_index = atom_count
+                .checked_add(group_usize)
+                .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+            let vertex = vertices
+                .get(vertex_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            // INCHI✔️✔️:             if (!( pv->type & BNS_VERT_TYPE_TGROUP ))
+            if (u32::from(vertex.type_) & crate::source_types::BNS_VERT_TYPE_TGROUP) == 0 {
+                // INCHI✔️✔️:                 return RI_ERR_PROGR;
+                return Ok(RI_ERR_PROGR);
+            }
+            // INCHI✔️✔️:             if (pTCGroups->pTCG[i].tg_set_Minus > 0 && num_Minus > 0)
+            if group.tg_set_Minus > 0 && number_minus > 0 {
+                // INCHI✔️✔️:                 vMinus = pTCGroups->pTCG[i].tg_set_Minus - 1;
+                minus_vertex = group.tg_set_Minus.wrapping_sub(1);
+                // INCHI✔️✔️:                 num_Minus--;
+                number_minus = number_minus.wrapping_sub(1);
+            }
+            let adjacency_count = usize::from(vertex.num_adj_edges);
+            let adjacency = if adjacency_count == 0 {
+                &[][..]
+            } else if let Some(view) = &adjacency_view {
+                let offset = usize::try_from(vertex.iedge.difference(bns.iedge)?)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let end = offset
+                    .checked_add(adjacency_count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                &view.prefix(end)?[offset..end]
+            } else {
+                heap.slice(vertex.iedge.as_const())?
+                    .get(..adjacency_count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+            };
+
+            // INCHI✔️✔️:             if (bMinusFirst)
+            if minus_first {
+                // INCHI✔️✔️:                 for (j = 0; j < pv->num_adj_edges; j++)
+                let mut adjacency_index = 0_usize;
+                while adjacency_index < adjacency_count {
+                    // INCHI✔️✔️:                     pe = pBNS->edge + pv->iedge[j];
+                    let edge_index = usize::try_from(
+                        *adjacency
+                            .get(adjacency_index)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    )
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge = edges
+                        .get(edge_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    // INCHI✔️✔️:                     v1 = pe->neighbor1;
+                    let atom_index = usize::from(edge.neighbor1);
+                    let atom = atoms
+                        .get_mut(atom_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    // INCHI✔️✔️:                     num_at_add = pe->flow;
+                    let mut number_to_add = edge.flow;
+                    // INCHI✔️✔️:                     if (v1 == vMinus)
+                    if i32::from(edge.neighbor1) == minus_vertex {
+                        // INCHI✔️✔️:                         if (num_at_add)
+                        if number_to_add != 0 {
+                            // INCHI✔️✔️:                             at[v1].charge = -1;
+                            atom.charge = -1;
+                            // INCHI✔️✔️:                             num_at_add--;
+                            number_to_add = number_to_add.wrapping_sub(1);
+                        } else {
+                            // INCHI✔️✔️:                             num_Minus++;
+                            number_minus = number_minus.wrapping_add(1);
+                        }
+                        // INCHI✔️✔️:                         vMinus = NO_VERTEX;
+                        minus_vertex = crate::source_types::NO_VERTEX;
+                    }
+                    // INCHI✔️✔️:                     if (num_at_add > 0)
+                    if number_to_add > 0 {
+                        // INCHI✔️✔️:                         if (num_Minus && !at[v1].charge &&
+                        // INCHI✔️✔️:                              at[v1].valence == at[v1].chem_bonds_valence)
+                        if number_minus != 0
+                            && atom.charge == 0
+                            && atom.valence == atom.chem_bonds_valence
+                        {
+                            // INCHI✔️✔️:                             at[v1].charge--;
+                            atom.charge = atom.charge.wrapping_sub(1);
+                            // INCHI✔️✔️:                             num_at_add--;
+                            number_to_add = number_to_add.wrapping_sub(1);
+                            // INCHI✔️✔️:                             num_Minus--;
+                            number_minus = number_minus.wrapping_sub(1);
+                        }
+                        // INCHI✔️✔️:                         if (num_at_add > 0)
+                        if number_to_add > 0 {
+                            // INCHI✔️✔️:                             at[v1].num_H += num_at_add;
+                            atom.num_H = i32::from(atom.num_H).wrapping_add(number_to_add) as i8;
+                            // INCHI✔️✔️:                             num_H -= num_at_add;
+                            number_h = number_h.wrapping_sub(number_to_add);
+                        }
+                    }
+                    // INCHI✔️✔️:                     at[v1].endpoint = i + 1;
+                    atom.endpoint = group_index.wrapping_add(1) as AT_NUMB;
+                    // INCHI✔️✔️:                 for-loop increment: j++
+                    adjacency_index += 1;
+                }
+                // INCHI✔️✔️:                 if (( num_H + num_Minus != pv->st_edge.cap - pv->st_edge.flow ) && ( num_H || num_Minus || vMinus != NO_VERTEX ))
+                let remaining = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow);
+                if number_h.wrapping_add(number_minus) != remaining
+                    && (number_h != 0
+                        || number_minus != 0
+                        || minus_vertex != crate::source_types::NO_VERTEX)
                 {
-                    atom.charge = atom.charge.wrapping_sub(1);
-                    number_to_add = number_to_add.wrapping_sub(1);
-                    number_minus = number_minus.wrapping_sub(1);
+                    // INCHI✔️✔️:                     return RI_ERR_PROGR;
+                    return Ok(RI_ERR_PROGR);
                 }
-                if number_to_add > 0 {
-                    atom.num_H = i32::from(atom.num_H).wrapping_add(number_to_add) as i8;
-                    number_h = number_h.wrapping_sub(number_to_add);
+            } else {
+                // INCHI✔️✔️:                 for (j = pv->num_adj_edges - 1; 0 <= j; j--)
+                let mut adjacency_index = i32::from(vertex.num_adj_edges).wrapping_sub(1);
+                while adjacency_index >= 0 {
+                    // INCHI✔️✔️:                     pe = pBNS->edge + pv->iedge[j];
+                    let edge_index = usize::try_from(
+                        *adjacency
+                            .get(adjacency_index as usize)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    )
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge = edges
+                        .get(edge_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    // INCHI✔️✔️:                     v1 = pe->neighbor1;
+                    let atom_index = usize::from(edge.neighbor1);
+                    let atom = atoms
+                        .get_mut(atom_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    // INCHI✔️✔️:                     num_at_add = pe->flow;
+                    let mut number_to_add = edge.flow;
+                    // INCHI✔️✔️:                     if (v1 == vMinus)
+                    if i32::from(edge.neighbor1) == minus_vertex {
+                        // INCHI✔️✔️:                         if (num_at_add)
+                        if number_to_add != 0 {
+                            // INCHI✔️✔️:                             at[v1].charge = -1;
+                            atom.charge = -1;
+                            // INCHI✔️✔️:                             num_at_add--;
+                            number_to_add = number_to_add.wrapping_sub(1);
+                        } else {
+                            // INCHI✔️✔️:                             num_Minus++;
+                            number_minus = number_minus.wrapping_add(1);
+                        }
+                        // INCHI✔️✔️:                         vMinus = NO_VERTEX;
+                        minus_vertex = crate::source_types::NO_VERTEX;
+                    }
+                    // INCHI✔️✔️:                     if (num_at_add > 0)
+                    if number_to_add > 0 {
+                        // INCHI✔️✔️:                         if (num_Minus && !at[v1].charge &&
+                        // INCHI✔️✔️:                              at[v1].valence == at[v1].chem_bonds_valence)
+                        if number_minus != 0
+                            && atom.charge == 0
+                            && atom.valence == atom.chem_bonds_valence
+                        {
+                            // INCHI✔️✔️:                             at[v1].charge--;
+                            atom.charge = atom.charge.wrapping_sub(1);
+                            // INCHI✔️✔️:                             num_at_add--;
+                            number_to_add = number_to_add.wrapping_sub(1);
+                            // INCHI✔️✔️:                             num_Minus--;
+                            number_minus = number_minus.wrapping_sub(1);
+                        }
+                        // INCHI✔️✔️:                         if (num_at_add > 0)
+                        if number_to_add > 0 {
+                            // INCHI✔️✔️:                             at[v1].num_H += num_at_add;
+                            atom.num_H = i32::from(atom.num_H).wrapping_add(number_to_add) as i8;
+                            // INCHI✔️✔️:                             num_H -= num_at_add;
+                            number_h = number_h.wrapping_sub(number_to_add);
+                        }
+                    }
+                    // INCHI✔️✔️:                     at[v1].endpoint = i + 1;
+                    atom.endpoint = group_index.wrapping_add(1) as AT_NUMB;
+                    // INCHI✔️✔️:                 for-loop increment: j--
+                    adjacency_index = adjacency_index.wrapping_sub(1);
+                }
+                // INCHI✔️✔️:                 if (( num_H + num_Minus != pv->st_edge.cap - pv->st_edge.flow ) && ( num_H || num_Minus || vMinus != NO_VERTEX ))
+                let remaining = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow);
+                if number_h.wrapping_add(number_minus) != remaining
+                    && (number_h != 0
+                        || number_minus != 0
+                        || minus_vertex != crate::source_types::NO_VERTEX)
+                {
+                    // INCHI✔️✔️:                     return RI_ERR_PROGR;
+                    return Ok(RI_ERR_PROGR);
                 }
             }
-            atom.endpoint = group_index.wrapping_add(1) as AT_NUMB;
-            Ok(())
-        };
+            // INCHI✔️✔️:         for-loop increment: i++
+            group_index = group_index.wrapping_add(1);
+        }
 
-        if minus_first {
-            for adjacency_index in 0..usize::from(vertex.num_adj_edges) {
-                process_edge(adjacency_index)?;
-            }
-        } else {
-            let mut adjacency_index = i32::from(vertex.num_adj_edges).wrapping_sub(1);
-            while adjacency_index >= 0 {
-                process_edge(
-                    usize::try_from(adjacency_index)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )?;
-                adjacency_index = adjacency_index.wrapping_sub(1);
-            }
-        }
-        let remaining = vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow);
-        if number_h.wrapping_add(number_minus) != remaining
-            && (number_h != 0
-                || number_minus != 0
-                || minus_vertex != crate::source_types::NO_VERTEX)
-        {
-            flush_atoms(heap, &atoms)?;
-            return Ok(RI_ERR_PROGR);
-        }
-        group_index = group_index.wrapping_add(1);
+        Ok(0)
+    };
+
+    if atom_count == 0 {
+        return copy_from_bns(&mut [], heap);
     }
-
-    flush_atoms(heap, &atoms)?;
-    Ok(0)
+    if source_layout_is_valid {
+        // SAFETY: the source-layout check proves the atom allocation is live,
+        // long enough, and disjoint from every stable read view above. This
+        // function neither frees nor resizes any participating allocation.
+        let mut atoms_view = unsafe { heap.stable_slice_mut(structure.at)? };
+        let atoms = atoms_view.prefix_mut(atom_count)?;
+        let adjacency_view = adjacency_view
+            .as_ref()
+            .expect("the validated source layout has contiguous adjacency storage");
+        let adjacency = adjacency_view.prefix(adjacency_view.len())?;
+        if copy_bns_to_atom_source_indices_are_valid(
+            atoms,
+            vertices,
+            edges,
+            adjacency,
+            bns.iedge,
+            valence_atoms,
+            atom_count,
+            tgroup_count,
+        ) {
+            let restore_mode = restore_mode
+                .as_ref()
+                .expect("a non-empty validated source layout has restore settings");
+            // SAFETY: the immediately preceding validation proves every atom,
+            // vertex, adjacency, edge, charge-edge, and t-group atom index used
+            // by the Official C loops. The stable views are disjoint and no
+            // participating heap allocation is freed or resized here.
+            return Ok(unsafe {
+                copy_bns_to_atom_source_layout(
+                    atoms,
+                    vertices,
+                    edges,
+                    adjacency,
+                    bns.iedge,
+                    valence_atoms,
+                    restore_mode,
+                    tgroups,
+                    allow_zero_bond_order,
+                )
+            });
+        }
+        return copy_from_bns(atoms, heap);
+    }
+    heap.with_slice_mut_and_heap_mut(structure.at, |all_atoms, heap| {
+        let atoms = all_atoms
+            .get_mut(..atom_count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let before = atoms.to_vec();
+        let result = copy_from_bns(atoms, heap);
+        if result.is_err() {
+            atoms.clone_from_slice(&before);
+        }
+        result
+    })
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -934,8 +1563,7 @@ pub(crate) fn MoveRadToAtomsAddCharges(
             };
             let len_at = usize::try_from(pStruct.num_atoms.wrapping_add(pStruct.num_deleted_H))
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let source_atoms = heap.slice(at.as_const())?[..len_at].to_vec();
-            heap.slice_mut(at2)?[..len_at].clone_from_slice(&source_atoms);
+            copy_inp_atom_prefix(heap, at2, at, len_at)?;
             pStruct.at = at2;
             let ret2 = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1)?;
             pStruct.at = at;
@@ -4746,15 +5374,7 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
         }
 
         let count = usize::try_from(len_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let copied = heap
-            .slice(at.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&copied);
+        copy_inp_atom_prefix(heap, at2, at, count)?;
         pStruct.at = at2;
         let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
         pStruct.at = at;
@@ -5000,8 +5620,7 @@ pub(crate) fn IncrementZeroOrderBondsToHeteroat(
                     RemoveForbiddenEdgeMask(heap, pBNS, &fixed_edges, forbidden_edge_mask)?;
                     fixed_edges.num_edges = 0;
                     if success != 0 {
-                        let copied = heap.slice(at.as_const())?[..count].to_vec();
-                        heap.slice_mut(at2)?[..count].clone_from_slice(&copied);
+                        copy_inp_atom_prefix(heap, at2, at, count)?;
                         pStruct.at = at2;
                         let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
                         pStruct.at = at;
@@ -5212,15 +5831,7 @@ pub(crate) fn MovePlusFromS2DiaminoCarbon(
 
     let computation = (|| -> Result<(), SourceHeapError> {
         AllocEdgeList(heap, &mut all_charge_edges, EDGE_LIST_CLEAR)?;
-        let copied = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&copied);
+        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
         let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
         pStruct.at = at;
@@ -5810,15 +6421,7 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
             RemoveForbiddenEdgeMask(heap, pBNS, &fixed_stereo_edges, forbidden_stereo_edge_mask)?;
         }
 
-        let copied = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&copied);
+        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
         let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
         pStruct.at = at;
@@ -6115,8 +6718,7 @@ pub(crate) fn EliminateChargeSeparationOnHeteroatoms(
             }
         }
 
-        let copied = heap.slice(at.as_const())?[..atom_count].to_vec();
-        heap.slice_mut(at2)?[..atom_count].clone_from_slice(&copied);
+        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at;
         Ok(())
     })();
@@ -6281,15 +6883,7 @@ pub(crate) fn RestoreCyanoGroup(
     let computation = (|| -> Result<(), SourceHeapError> {
         AllocEdgeList(heap, &mut carbon_charge_edges, EDGE_LIST_CLEAR)?;
 
-        let copied = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&copied);
+        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
         let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
         pStruct.at = at;
@@ -6778,15 +7372,7 @@ pub(crate) fn RestoreIsoCyanoGroup(
         AllocEdgeList(heap, &mut all_charge_edges, EDGE_LIST_CLEAR)?;
         AllocEdgeList(heap, &mut isocyano_edges, EDGE_LIST_CLEAR)?;
 
-        let copied = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&copied);
+        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
         let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
         pStruct.at = at;
@@ -7302,15 +7888,7 @@ pub(crate) fn FixMetal_Nminus_Ominus(
     let computation = (|| -> Result<(), SourceHeapError> {
         AllocEdgeList(heap, &mut all_charge_edges, EDGE_LIST_CLEAR)?;
 
-        let copied = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&copied);
+        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
         let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
         pStruct.at = at;
@@ -8263,15 +8841,7 @@ pub(crate) fn RestoreNNNgroup(
         AllocEdgeList(heap, &mut all_nnn_terminal_atoms, EDGE_LIST_CLEAR)?;
         AllocEdgeList(heap, &mut all_niii_charge_edges, EDGE_LIST_CLEAR)?;
 
-        let copied = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&copied);
+        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
         let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
         pStruct.at = at;
@@ -9562,15 +10132,7 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
 
     let computation = (|| -> Result<(), SourceHeapError> {
         AllocEdgeList(heap, &mut carbon_charge_edges, EDGE_LIST_CLEAR)?;
-        let copied = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&copied);
+        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
         let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1)?;
         if copy_result < 0 {
@@ -9883,15 +10445,7 @@ pub(crate) fn EliminateNitrogen5Val3Bonds(
                 return Ok(());
             }
             if ret != 0 {
-                let copied = heap
-                    .slice(at.as_const())?
-                    .get(..atom_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                heap.slice_mut(at2)?
-                    .get_mut(..atom_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .clone_from_slice(&copied);
+                copy_inp_atom_prefix(heap, at2, at, atom_count)?;
                 pStruct.at = at2;
                 let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1)?;
                 if copy_result < 0 {
@@ -10236,15 +10790,7 @@ pub(crate) fn Convert_SIV_to_SVI(
     let computation = (|| -> Result<(), SourceHeapError> {
         AllocEdgeList(heap, &mut carbon_charge_edges, EDGE_LIST_CLEAR)?;
         AllocEdgeList(heap, &mut flower_edges, EDGE_LIST_CLEAR)?;
-        let copied = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&copied);
+        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
         let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1)?;
         if copy_result < 0 {
@@ -10560,15 +11106,7 @@ pub(crate) fn Convert_SIV_to_SVI(
                 return Ok(());
             }
             if ret != 0 {
-                let copied = heap
-                    .slice(at.as_const())?
-                    .get(..atom_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                heap.slice_mut(at2)?
-                    .get_mut(..atom_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .clone_from_slice(&copied);
+                copy_inp_atom_prefix(heap, at2, at, atom_count)?;
                 pStruct.at = at2;
                 let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1)?;
                 if copy_result < 0 {
@@ -10817,15 +11355,7 @@ pub(crate) fn PlusFromDB_N_DB_O_to_Metal(
         AllocEdgeList(heap, &mut carbon_charge_edges, EDGE_LIST_CLEAR)?;
         AllocEdgeList(heap, &mut no_charge_edges, EDGE_LIST_CLEAR)?;
         AllocEdgeList(heap, &mut no_edges, EDGE_LIST_CLEAR)?;
-        let copied = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&copied);
+        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
         pStruct.at = at2;
         let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1)?;
         if copy_result < 0 {
@@ -12421,8 +12951,7 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux.
     // INCHI✔️❌: The ten active Table 5 cases and their ordered fall-through are reproduced.
     // INCHI✔️❌: Signed-char promotion/narrowing and wrapping source integer updates are explicit.
-    // INCHI✔️❌: Rust snapshots the edge and vertex arrays to avoid aliased mutable borrows,
-    // INCHI✔️❌: adding O(V+E) allocation and copying that the direct C pointer implementation lacks.
+    // INCHI✔️❌: SourceHeap validates the edge, vertex, and adjacency allocations before access.
     // END INCHI ACTIVE MACRO CONFIGURATION: AdjustTgroupsToForbiddenEdges2
 
     if num_atoms <= 0 {
@@ -12432,21 +12961,27 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
         usize::try_from(pBNS.num_vertices).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let edge_count =
         usize::try_from(pBNS.num_edges).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let mut vertices = if vertex_count == 0 {
-        Vec::new()
+    // SAFETY: BNS vertices and edges are separate typed allocations, and the
+    // adjacency reads below target separate i32 allocations. This function
+    // neither frees nor resizes any of them, so these views are the direct
+    // equivalent of the source's pBNS->vert and pBNS->edge pointers.
+    let mut vertices_view = if vertex_count == 0 {
+        None
     } else {
-        heap.slice(pBNS.vert.as_const())?
-            .get(..vertex_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
+        Some(unsafe { heap.stable_slice_mut(pBNS.vert)? })
     };
-    let mut edges = if edge_count == 0 {
-        Vec::new()
+    let vertices = match &mut vertices_view {
+        Some(view) => view.prefix_mut(vertex_count)?,
+        None => &mut [],
+    };
+    let mut edges_view = if edge_count == 0 {
+        None
     } else {
-        heap.slice(pBNS.edge.as_const())?
-            .get(..edge_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
+        Some(unsafe { heap.stable_slice_mut(pBNS.edge)? })
+    };
+    let edges = match &mut edges_view {
+        Some(view) => view.prefix_mut(edge_count)?,
+        None => &mut [],
     };
     let inverse_forbidden_mask = !forbidden_mask;
     let mut num_changes = 0_i32;
@@ -13556,18 +14091,6 @@ pub(crate) fn AdjustTgroupsToForbiddenEdges2(
         atom_number = atom_number.wrapping_add(1);
     }
 
-    if edge_count != 0 {
-        heap.slice_mut(pBNS.edge)?
-            .get_mut(..edge_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&edges);
-    }
-    if vertex_count != 0 {
-        heap.slice_mut(pBNS.vert)?
-            .get_mut(..vertex_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&vertices);
-    }
     Ok(num_changes)
 }
 
@@ -13587,87 +14110,85 @@ pub(crate) fn MoveMobileHToAvoidFixedBonds(
     clock_result: clock_t,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:6446 MoveMobileHToAvoidFixedBonds
-    /*
-    int MoveMobileHToAvoidFixedBonds( BN_STRUCT *pBNS,
-                                      BN_DATA *pBD,
-                                      StrFromINChI *pStruct,
-                                      inp_ATOM *at,
-                                      inp_ATOM *at2,
-                                      VAL_AT *pVA,
-                                      ALL_TC_GROUPS *pTCGroups,
-                                      int *pnNumRunBNS,
-                                      int *pnTotalDelta,
-                                      int forbidden_edge_mask )
-    {
-        int ret2, ret;
-        int num_at = pStruct->num_atoms;
-        int num_deleted_H = pStruct->num_deleted_H;
-        int len_at = num_at + num_deleted_H;
-        int nNumFixedEdges, nNumAdjEdges;
-
-        ret = 0;
-
-        if (pTCGroups->num_tgroups)
-        {
-            memcpy(at2, at, len_at * sizeof(at2[0]));
-            pStruct->at = at2;
-            ret2 = CopyBnsToAtom( pStruct, pBNS, pVA, pTCGroups, 1 );
-            pStruct->at = at;
-            if (ret2 < 0)
-            {
-                ret = ret2;
-                goto exit_function;
-            }
-    #if ( FIND_RING_SYSTEMS == 1 )
-            ret2 = MarkRingSystemsInp( at2, num_at, 0 );
-            if (ret2 < 0)
-            {
-                ret = ret2;
-                goto exit_function;
-            }
-    #endif
-            /* --- forbidden edges --- */
-            ret2 = SetForbiddenEdges( pBNS, at2, num_at, forbidden_edge_mask, 0, NULL );
-
-            if (ret2 < 0)
-            {
-                ret2 = -( ret + 1 );
-            }
-            nNumFixedEdges = ret2;
-            ret = AdjustTgroupsToForbiddenEdges2( pBNS, at2, pVA, num_at, forbidden_edge_mask );
-            nNumAdjEdges = ret;
-            if (ret)
-            {
-                pBNS->edge_forbidden_mask |= forbidden_edge_mask;
-                ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );
-                ( *pnNumRunBNS )++;
-                if (ret < 0)
-                {
-                    goto exit_function;
-                }
-                else
-                {
-                    *pnTotalDelta += ret;
-                }
-            }
-            if (nNumFixedEdges || nNumAdjEdges)
-            {
-                /* removes this edge mask from ALL edges */
-                RemoveForbiddenBondFlowBits( pBNS, forbidden_edge_mask );
-            }
-        }
-
-    exit_function:
-
-        return ret;
-    }
-        */
+    // INCHI✔️✔️: int MoveMobileHToAvoidFixedBonds( BN_STRUCT *pBNS,
+    // INCHI✔️✔️:                                   BN_DATA *pBD,
+    // INCHI✔️✔️:                                   StrFromINChI *pStruct,
+    // INCHI✔️✔️:                                   inp_ATOM *at,
+    // INCHI✔️✔️:                                   inp_ATOM *at2,
+    // INCHI✔️✔️:                                   VAL_AT *pVA,
+    // INCHI✔️✔️:                                   ALL_TC_GROUPS *pTCGroups,
+    // INCHI✔️✔️:                                   int *pnNumRunBNS,
+    // INCHI✔️✔️:                                   int *pnTotalDelta,
+    // INCHI✔️✔️:                                   int forbidden_edge_mask )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     int ret2, ret;
+    // INCHI✔️✔️:     int num_at = pStruct->num_atoms;
+    // INCHI✔️✔️:     int num_deleted_H = pStruct->num_deleted_H;
+    // INCHI✔️✔️:     int len_at = num_at + num_deleted_H;
+    // INCHI✔️✔️:     int nNumFixedEdges, nNumAdjEdges;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     ret = 0;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     if (pTCGroups->num_tgroups)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         memcpy(at2, at, len_at * sizeof(at2[0]));
+    // INCHI✔️✔️:         pStruct->at = at2;
+    // INCHI✔️✔️:         ret2 = CopyBnsToAtom( pStruct, pBNS, pVA, pTCGroups, 1 );
+    // INCHI✔️✔️:         pStruct->at = at;
+    // INCHI✔️✔️:         if (ret2 < 0)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             ret = ret2;
+    // INCHI✔️✔️:             goto exit_function;
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️: #if ( FIND_RING_SYSTEMS == 1 )
+    // INCHI✔️✔️:         ret2 = MarkRingSystemsInp( at2, num_at, 0 );
+    // INCHI✔️✔️:         if (ret2 < 0)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             ret = ret2;
+    // INCHI✔️✔️:             goto exit_function;
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️: #endif
+    // INCHI✔️✔️:         /* --- forbidden edges --- */
+    // INCHI✔️✔️:         ret2 = SetForbiddenEdges( pBNS, at2, num_at, forbidden_edge_mask, 0, NULL );
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:         if (ret2 < 0)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             ret2 = -( ret + 1 );
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         nNumFixedEdges = ret2;
+    // INCHI✔️✔️:         ret = AdjustTgroupsToForbiddenEdges2( pBNS, at2, pVA, num_at, forbidden_edge_mask );
+    // INCHI✔️✔️:         nNumAdjEdges = ret;
+    // INCHI✔️✔️:         if (ret)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             pBNS->edge_forbidden_mask |= forbidden_edge_mask;
+    // INCHI✔️✔️:             ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );
+    // INCHI✔️✔️:             ( *pnNumRunBNS )++;
+    // INCHI✔️✔️:             if (ret < 0)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 goto exit_function;
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:             else
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 *pnTotalDelta += ret;
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         if (nNumFixedEdges || nNumAdjEdges)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             /* removes this edge mask from ALL edges */
+    // INCHI✔️✔️:             RemoveForbiddenBondFlowBits( pBNS, forbidden_edge_mask );
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️: exit_function:
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     return ret;
+    // INCHI✔️✔️: }
     // END INCHI C FUNCTION: MoveMobileHToAvoidFixedBonds
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: MoveMobileHToAvoidFixedBonds
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; FIND_RING_SYSTEMS=1.
     // INCHI✔️❌: The source's `ret2 = -(ret + 1)` negative SetForbiddenEdges mapping is verbatim.
     // INCHI✔️❌: pStruct->at restoration and early-return cleanup ordering are preserved.
-    // INCHI✔️❌: SourceHeap checked access and the snapshotting callees retain known overhead.
+    // INCHI✔️❌: SourceHeap checked access in callees retains known overhead.
     // END INCHI ACTIVE MACRO CONFIGURATION: MoveMobileHToAvoidFixedBonds
 
     if pTCGroups.num_tgroups == 0 {
@@ -13678,15 +14199,7 @@ pub(crate) fn MoveMobileHToAvoidFixedBonds(
     let len_at = num_atoms.wrapping_add(pStruct.num_deleted_H);
     let atom_count = usize::try_from(len_at).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if atom_count != 0 {
-        let copied = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&copied);
+        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
     }
 
     pStruct.at = at2;
@@ -13715,18 +14228,24 @@ pub(crate) fn MoveMobileHToAvoidFixedBonds(
         fixed_edges = -1;
     }
 
-    let adjusted_atoms = if num_atoms <= 0 {
-        Vec::new()
+    let adjusted_atom_count =
+        usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    // SAFETY: CopyBnsToAtom and MarkRingSystemsInp have completed their writes
+    // to at2. The remaining source calls only read at2 while mutating distinct
+    // BNS allocations, and at2 remains live and unresized for this scope.
+    let adjusted_atoms_view = if adjusted_atom_count == 0 {
+        None
     } else {
-        heap.slice(at2.as_const())?
-            .get(..usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
+        Some(unsafe { heap.stable_slice(at2.as_const())? })
+    };
+    let adjusted_atoms = match &adjusted_atoms_view {
+        Some(view) => view.prefix(adjusted_atom_count)?,
+        None => &[],
     };
     let adjusted_edges = AdjustTgroupsToForbiddenEdges2(
         heap,
         pBNS,
-        &adjusted_atoms,
+        adjusted_atoms,
         pVA,
         num_atoms,
         forbidden_edge_mask,
@@ -14210,15 +14729,7 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
     let len_at = num_atoms.wrapping_add(pStruct.num_deleted_H);
     let atom_count = usize::try_from(len_at).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if atom_count != 0 {
-        let copied = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&copied);
+        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
     }
     pStruct.at = at2;
 
@@ -14228,37 +14739,26 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
             return Ok(ret2);
         }
 
-        let original_atoms = if atom_count == 0 {
-            Vec::new()
+        // SAFETY: the source function only reads `at` and `at2` after the
+        // initial CopyBnsToAtom call. All subsequent heap mutations target BNS
+        // allocations, and neither atom allocation is freed or resized.
+        let original_atoms_view = if atom_count == 0 {
+            None
         } else {
-            heap.slice(at.as_const())?
-                .get(..atom_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec()
+            Some(unsafe { heap.stable_slice(at.as_const())? })
         };
-        let copied_atoms = if atom_count == 0 {
-            Vec::new()
+        let original_atoms = match &original_atoms_view {
+            Some(view) => view.prefix(atom_count)?,
+            None => &[],
+        };
+        let copied_atoms_view = if atom_count == 0 {
+            None
         } else {
-            heap.slice(at2.as_const())?
-                .get(..atom_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec()
+            Some(unsafe { heap.stable_slice(at2.as_const())? })
         };
-        let comparison_va = pVA.to_vec();
-
-        let better_center = |candidate: usize, found: Option<usize>| {
-            let Some(found) = found else {
-                return true;
-            };
-            let candidate_non_carbon = comparison_va[candidate].cNumValenceElectrons != 4
-                || comparison_va[candidate].cPeriodicRowNumber != 1;
-            let found_is_carbon = comparison_va[found].cNumValenceElectrons == 4
-                && comparison_va[found].cPeriodicRowNumber == 1;
-            candidate_non_carbon
-                && (found_is_carbon
-                    || original_atoms[candidate].valence > original_atoms[found].valence
-                    || (original_atoms[candidate].valence == original_atoms[found].valence
-                        && original_atoms[candidate].el_number > original_atoms[found].el_number))
+        let copied_atoms = match &copied_atoms_view {
+            Some(view) => view.prefix(atom_count)?,
+            None => &[],
         };
 
         let mut total_fixes = 0_i32;
@@ -14421,7 +14921,12 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                                 n = n.wrapping_add(1);
                                 continue;
                             }
-                            if better_center(center, center_found) {
+                            if mobile_h_endpoint_center_is_better(
+                                pVA,
+                                original_atoms,
+                                center,
+                                center_found,
+                            ) {
                                 center_found = Some(center);
                                 tg_edge1_found = Some(tg_edge1);
                                 center_edge1_found = Some(center_edge1);
@@ -14597,7 +15102,12 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
                             let edge0 = heap.slice(pBNS.edge.as_const())?[center_edge0].clone();
                             if edge0.flow == 0
                                 && opposite_vertex(&edge0, center)? == endpoint0
-                                && better_center(center, center_found)
+                                && mobile_h_endpoint_center_is_better(
+                                    pVA,
+                                    original_atoms,
+                                    center,
+                                    center_found,
+                                )
                             {
                                 center_found = Some(center);
                                 tg_edge1_found = Some(tg_edge1);
@@ -14820,16 +15330,7 @@ pub(crate) fn RemoveRadFromMobileHEndpoint(
     let cleanup = if atom_count == 0 {
         Ok(())
     } else {
-        let original = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&original);
-        Ok(())
+        copy_inp_atom_prefix(heap, at2, at, atom_count)
     };
     match (operation, cleanup) {
         (Ok(value), Ok(())) => Ok(value),
@@ -15550,7 +16051,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux.
     // INCHI✔️❌: TAUT_NON=0 and IS_C uses the source VAL_AT electron/row test.
     // INCHI✔️❌: Charge-list one-based/zero-based index expressions are preserved verbatim.
-    // INCHI✔️❌: SourceHeap checked access and comparison snapshots add known overhead.
+    // INCHI✔️❌: SourceHeap checked access adds known overhead.
     // END INCHI ACTIVE MACRO CONFIGURATION: RemoveRadFromMobileHEndpointFixH
 
     if i32::from(pStruct.iMobileH) != TAUT_NON as i32 {
@@ -15566,15 +16067,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
     let len_at = num_atoms.wrapping_add(pStruct.num_deleted_H);
     let atom_count = usize::try_from(len_at).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if atom_count != 0 {
-        let original = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&original);
+        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
     }
     pStruct.at = at2;
     let mut masks_set = false;
@@ -15585,76 +16078,70 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
             return Ok(ret2);
         }
 
-        let original_atoms = if atom_count == 0 {
-            Vec::new()
+        // SAFETY: CopyBnsToAtom has completed its only write to `at2`. The
+        // source function only reads these five allocations until cleanup,
+        // while the BNS calls below mutate separate network allocations.
+        let original_atoms_view = if atom_count == 0 {
+            None
         } else {
-            heap.slice(at.as_const())?
-                .get(..atom_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec()
+            Some(unsafe { heap.stable_slice(at.as_const())? })
         };
-        let copied_atoms = if atom_count == 0 {
-            Vec::new()
+        let original_atoms = match &original_atoms_view {
+            Some(view) => view.prefix(atom_count)?,
+            None => &[],
+        };
+        let copied_atoms_view = if atom_count == 0 {
+            None
         } else {
-            heap.slice(at2.as_const())?
-                .get(..atom_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec()
+            Some(unsafe { heap.stable_slice(at2.as_const())? })
         };
-        let compare_va = pVA.to_vec();
-        let endpoint_flags = if num_atoms <= 0 {
-            Vec::new()
+        let copied_atoms = match &copied_atoms_view {
+            Some(view) => view.prefix(atom_count)?,
+            None => &[],
+        };
+        let endpoint_count = if num_atoms <= 0 {
+            0
         } else {
-            heap.slice(pStruct.endpoint.as_const())?
-                .get(
-                    ..usize::try_from(num_atoms)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec()
+            usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?
         };
-        let endpoint_numbers = if pStruct.ti.nNumEndpoints <= 0 {
-            Vec::new()
+        let endpoint_flags_view = if endpoint_count == 0 {
+            None
         } else {
-            heap.slice(pStruct.ti.nEndpointAtomNumber.as_const())?
-                .get(
-                    ..usize::try_from(pStruct.ti.nNumEndpoints)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec()
+            Some(unsafe { heap.stable_slice(pStruct.endpoint.as_const())? })
         };
-        let taut_groups = if pStruct.ti.num_t_groups <= 0 {
-            Vec::new()
+        let endpoint_flags = match &endpoint_flags_view {
+            Some(view) => view.prefix(endpoint_count)?,
+            None => &[],
+        };
+        let endpoint_number_count = if pStruct.ti.nNumEndpoints <= 0 {
+            0
         } else {
-            heap.slice(pStruct.ti.t_group.as_const())?
-                .get(
-                    ..usize::try_from(pStruct.ti.num_t_groups)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec()
+            usize::try_from(pStruct.ti.nNumEndpoints)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?
         };
-
-        let better_non_carbon = |candidate: usize, found: Option<usize>| {
-            let Some(found) = found else {
-                return true;
-            };
-            let candidate_non_carbon = compare_va[candidate].cNumValenceElectrons != 4
-                || compare_va[candidate].cPeriodicRowNumber != 1;
-            let found_carbon = compare_va[found].cNumValenceElectrons == 4
-                && compare_va[found].cPeriodicRowNumber == 1;
-            candidate_non_carbon
-                && (found_carbon
-                    || original_atoms[candidate].valence > original_atoms[found].valence
-                    || (original_atoms[candidate].valence == original_atoms[found].valence
-                        && original_atoms[candidate].el_number > original_atoms[found].el_number))
+        let endpoint_numbers_view = if endpoint_number_count == 0 {
+            None
+        } else {
+            Some(unsafe { heap.stable_slice(pStruct.ti.nEndpointAtomNumber.as_const())? })
         };
-        let is_carbon = |vertex: Option<usize>| {
-            vertex.is_some_and(|vertex| {
-                compare_va[vertex].cNumValenceElectrons == 4
-                    && compare_va[vertex].cPeriodicRowNumber == 1
-            })
+        let endpoint_numbers = match &endpoint_numbers_view {
+            Some(view) => view.prefix(endpoint_number_count)?,
+            None => &[],
+        };
+        let taut_group_count = if pStruct.ti.num_t_groups <= 0 {
+            0
+        } else {
+            usize::try_from(pStruct.ti.num_t_groups)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+        };
+        let taut_groups_view = if taut_group_count == 0 {
+            None
+        } else {
+            Some(unsafe { heap.stable_slice(pStruct.ti.t_group.as_const())? })
+        };
+        let taut_groups = match &taut_groups_view {
+            Some(view) => view.prefix(taut_group_count)?,
+            None => &[],
         };
 
         let mut total_fixes = 0_i32;
@@ -15803,7 +16290,12 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                             let edge = heap.slice(pBNS.edge.as_const())?[edge_index].clone();
                             if edge.flow == 0
                                 && opposite_vertex(&edge, center)? == endpoint0
-                                && better_non_carbon(center, center_found)
+                                && mobile_h_endpoint_center_is_better(
+                                    pVA,
+                                    original_atoms,
+                                    center,
+                                    center_found,
+                                )
                             {
                                 center_found = Some(center);
                                 edge0_found = Some(edge_index);
@@ -15912,7 +16404,12 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 if endpoint_flags[endpoint2] != 0
                                     && copied_atoms[endpoint2].num_H == 0
                                     && copied_atoms[endpoint1].charge != -1
-                                    && better_non_carbon(center, center_found)
+                                    && mobile_h_endpoint_center_is_better(
+                                        pVA,
+                                        original_atoms,
+                                        center,
+                                        center_found,
+                                    )
                                 {
                                     center_found = Some(center);
                                     center_edge1_found = Some(edge1);
@@ -16073,12 +16570,18 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                         }
                                         if !stereogenic {
                                             let replace = chosen_center.is_none()
-                                                || (!is_carbon(chosen_endpoint2)
-                                                    && is_carbon(Some(endpoint2)))
-                                                || (is_carbon(chosen_endpoint2)
-                                                    && is_carbon(Some(endpoint2))
-                                                    && !is_carbon(chosen_center)
-                                                    && is_carbon(Some(center)));
+                                                || (!valence_atom_is_carbon(pVA, chosen_endpoint2)
+                                                    && valence_atom_is_carbon(
+                                                        pVA,
+                                                        Some(endpoint2),
+                                                    ))
+                                                || (valence_atom_is_carbon(pVA, chosen_endpoint2)
+                                                    && valence_atom_is_carbon(
+                                                        pVA,
+                                                        Some(endpoint2),
+                                                    )
+                                                    && !valence_atom_is_carbon(pVA, chosen_center)
+                                                    && valence_atom_is_carbon(pVA, Some(center)));
                                             if replace {
                                                 chosen_center = Some(center);
                                                 chosen_endpoint2 = Some(endpoint2);
@@ -16336,11 +16839,12 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
                                 && endpoint1_vertex.st_edge.cap == endpoint1_vertex.st_edge.flow
                             {
                                 let replace = best_endpoint.is_none()
-                                    || (!is_carbon(best_endpoint) && is_carbon(Some(endpoint1)))
-                                    || (is_carbon(best_endpoint)
-                                        && is_carbon(Some(endpoint1))
-                                        && !is_carbon(best_center)
-                                        && is_carbon(Some(center)));
+                                    || (!valence_atom_is_carbon(pVA, best_endpoint)
+                                        && valence_atom_is_carbon(pVA, Some(endpoint1)))
+                                    || (valence_atom_is_carbon(pVA, best_endpoint)
+                                        && valence_atom_is_carbon(pVA, Some(endpoint1))
+                                        && !valence_atom_is_carbon(pVA, best_center)
+                                        && valence_atom_is_carbon(pVA, Some(center)));
                                 if replace {
                                     best_endpoint = Some(endpoint1);
                                     best_center = Some(center);
@@ -16401,16 +16905,7 @@ pub(crate) fn RemoveRadFromMobileHEndpointFixH(
     let restore_atoms = if atom_count == 0 {
         Ok(())
     } else {
-        let original = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&original);
-        Ok(())
+        copy_inp_atom_prefix(heap, at2, at, atom_count)
     };
     match (operation, free_charge, free_bond, restore_atoms) {
         (Ok(value), Ok(_), Ok(_), Ok(())) => Ok(value),
@@ -16437,252 +16932,242 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
     clock_result: clock_t,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr2.c:7658 MoveChargeToMakeCenerpoints
-    /*
-    int MoveChargeToMakeCenerpoints( BN_STRUCT *pBNS,
-                                    BN_DATA *pBD,
-                                    StrFromINChI *pStruct,
-                                    inp_ATOM *at,
-                                    inp_ATOM *at2,
-                                    VAL_AT *pVA,
-                                    ALL_TC_GROUPS *pTCGroups,
-                                    int *pnNumRunBNS,
-                                    int *pnTotalDelta,
-                                    int forbidden_edge_mask )
-    {
-        int i, j, neigh, num_endpoints, tg_group = 0, num_success;
-        int ret2, ret, delta;
-        int num_at = pStruct->num_atoms;
-        int num_deleted_H = pStruct->num_deleted_H;
-        int len_at = num_at + num_deleted_H;
-        int inv_forbidden_edge_mask = ~forbidden_edge_mask;
+    // INCHI✔️✔️: int MoveChargeToMakeCenerpoints( BN_STRUCT *pBNS,
+    // INCHI✔️✔️:                                 BN_DATA *pBD,
+    // INCHI✔️✔️:                                 StrFromINChI *pStruct,
+    // INCHI✔️✔️:                                 inp_ATOM *at,
+    // INCHI✔️✔️:                                 inp_ATOM *at2,
+    // INCHI✔️✔️:                                 VAL_AT *pVA,
+    // INCHI✔️✔️:                                 ALL_TC_GROUPS *pTCGroups,
+    // INCHI✔️✔️:                                 int *pnNumRunBNS,
+    // INCHI✔️✔️:                                 int *pnTotalDelta,
+    // INCHI✔️✔️:                                 int forbidden_edge_mask )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     int i, j, neigh, num_endpoints, tg_group = 0, num_success;
+    // INCHI✔️✔️:     int ret2, ret, delta;
+    // INCHI✔️✔️:     int num_at = pStruct->num_atoms;
+    // INCHI✔️✔️:     int num_deleted_H = pStruct->num_deleted_H;
+    // INCHI✔️✔️:     int len_at = num_at + num_deleted_H;
+    // INCHI✔️✔️:     int inv_forbidden_edge_mask = ~forbidden_edge_mask;
 
-        /* for RunBnsTestOnce */
-        Vertex     vPathStart, vPathEnd;
-        int        nPathLen, nDeltaH, nDeltaCharge, nNumVisitedAtoms;
+    // INCHI✔️✔️:     /* for RunBnsTestOnce */
+    // INCHI✔️✔️:     Vertex     vPathStart, vPathEnd;
+    // INCHI✔️✔️:     int        nPathLen, nDeltaH, nDeltaCharge, nNumVisitedAtoms;
 
-        BNS_EDGE   *pEdgePlus, *pEdgeMinus;
-        Vertex      v1p, v2p, v1m, v2m;
-        BNS_VERTEX *pv1p, *pv2p, *pv1m, *pv2m;
+    // INCHI✔️✔️:     BNS_EDGE   *pEdgePlus, *pEdgeMinus;
+    // INCHI✔️✔️:     Vertex      v1p, v2p, v1m, v2m;
+    // INCHI✔️✔️:     BNS_VERTEX *pv1p, *pv2p, *pv1m, *pv2m;
 
-        /* djb-rwth: removing redundant code */
-        num_success = 0;
+    // INCHI✔️✔️:     /* djb-rwth: removing redundant code */
+    // INCHI✔️✔️:     num_success = 0;
 
-        /* to simplify, prepare new at[] from pBNS */
-        memcpy(at2, at, len_at * sizeof(at2[0]));
-        pStruct->at = at2;
-        ret2 = CopyBnsToAtom( pStruct, pBNS, pVA, pTCGroups, 1 );
-        pStruct->at = at;
-        if (ret2 < 0)
-        {
-            ret = ret2;
-            goto exit_function;
-        }
+    // INCHI✔️✔️:     /* to simplify, prepare new at[] from pBNS */
+    // INCHI✔️✔️:     memcpy(at2, at, len_at * sizeof(at2[0]));
+    // INCHI✔️✔️:     pStruct->at = at2;
+    // INCHI✔️✔️:     ret2 = CopyBnsToAtom( pStruct, pBNS, pVA, pTCGroups, 1 );
+    // INCHI✔️✔️:     pStruct->at = at;
+    // INCHI✔️✔️:     if (ret2 < 0)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         ret = ret2;
+    // INCHI✔️✔️:         goto exit_function;
+    // INCHI✔️✔️:     }
 
-        for (i = 0; i < num_at; i++)
-        {
-            if (pVA[i].cNumValenceElectrons != 4 && /* not C, Si, Ge */
-                 !pVA[i].cMetal && !pVA[i].nTautGroupEdge &&
-                 !at2[i].num_H && at2[i].valence >= 3 &&
-                 at2[i].valence == at2[i].chem_bonds_valence &&
-                 !at2[i].charge && pVA[i].nCPlusGroupEdge > 0 &&
-                 is_centerpoint_elem( at2[i].el_number ))
-            {
-                for (j = 0, num_endpoints = 0; j < at2[i].valence; j++)
-                {
-                    neigh = at2[i].neighbor[j];
-                    if (at2[neigh].endpoint)
-                    {
-                        if (!num_endpoints)
-                        {
-                            tg_group = at2[neigh].endpoint;
-                        }
-                        else if (tg_group != at2[neigh].endpoint)
-                        {
-                            break; /* not a centerpoint */
-                        }
-                        num_endpoints++;
-                    }
-                }
+    // INCHI✔️✔️:     for (i = 0; i < num_at; i++)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         if (pVA[i].cNumValenceElectrons != 4 && /* not C, Si, Ge */
+    // INCHI✔️✔️:              !pVA[i].cMetal && !pVA[i].nTautGroupEdge &&
+    // INCHI✔️✔️:              !at2[i].num_H && at2[i].valence >= 3 &&
+    // INCHI✔️✔️:              at2[i].valence == at2[i].chem_bonds_valence &&
+    // INCHI✔️✔️:              !at2[i].charge && pVA[i].nCPlusGroupEdge > 0 &&
+    // INCHI✔️✔️:              is_centerpoint_elem( at2[i].el_number ))
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             for (j = 0, num_endpoints = 0; j < at2[i].valence; j++)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 neigh = at2[i].neighbor[j];
+    // INCHI✔️✔️:                 if (at2[neigh].endpoint)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     if (!num_endpoints)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         tg_group = at2[neigh].endpoint;
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     else if (tg_group != at2[neigh].endpoint)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         break; /* not a centerpoint */
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     num_endpoints++;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:             }
 
-                if (j == at2[i].valence && num_endpoints > 1)
-                {
-                    /* found possible centerpoint */
-                    pEdgePlus = pBNS->edge + ( (long long)pVA[i].nCPlusGroupEdge - 1 ); /* djb-rwth: cast operator added */
-                    pEdgeMinus = ( pVA[i].nCMinusGroupEdge > 0 ) ? pBNS->edge + ((long long) pVA[i].nCMinusGroupEdge - 1 ) : NULL; /* djb-rwth: cast operator added */
-                    if (pEdgePlus->flow + ( pEdgeMinus ? pEdgeMinus->flow : 0 ) != 1)
-                    {
-                        continue;
-                    }
-                    v1p = pEdgePlus->neighbor1;
-                    v2p = pEdgePlus->neighbor12 ^ v1p;
-                    pv1p = pBNS->vert + v1p;
-                    pv2p = pBNS->vert + v2p;
-                    if (pEdgeMinus)
-                    {
-                        v1m = pEdgeMinus->neighbor1;
-                        v2m = pEdgeMinus->neighbor12 ^ v1m;
-                        pv1m = pBNS->vert + v1m;
-                        pv2m = pBNS->vert + v2m;
-                    }
-                    else
-                    {
-                        v1m = NO_VERTEX;
-                        v2m = NO_VERTEX;
-                        pv1m = NULL;
-                        pv2m = NULL;
-                    }
-                    ret = 0;
+    // INCHI✔️✔️:             if (j == at2[i].valence && num_endpoints > 1)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 /* found possible centerpoint */
+    // INCHI✔️✔️:                 pEdgePlus = pBNS->edge + ( (long long)pVA[i].nCPlusGroupEdge - 1 ); /* djb-rwth: cast operator added */
+    // INCHI✔️✔️:                 pEdgeMinus = ( pVA[i].nCMinusGroupEdge > 0 ) ? pBNS->edge + ((long long) pVA[i].nCMinusGroupEdge - 1 ) : NULL; /* djb-rwth: cast operator added */
+    // INCHI✔️✔️:                 if (pEdgePlus->flow + ( pEdgeMinus ? pEdgeMinus->flow : 0 ) != 1)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     continue;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:                 v1p = pEdgePlus->neighbor1;
+    // INCHI✔️✔️:                 v2p = pEdgePlus->neighbor12 ^ v1p;
+    // INCHI✔️✔️:                 pv1p = pBNS->vert + v1p;
+    // INCHI✔️✔️:                 pv2p = pBNS->vert + v2p;
+    // INCHI✔️✔️:                 if (pEdgeMinus)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     v1m = pEdgeMinus->neighbor1;
+    // INCHI✔️✔️:                     v2m = pEdgeMinus->neighbor12 ^ v1m;
+    // INCHI✔️✔️:                     pv1m = pBNS->vert + v1m;
+    // INCHI✔️✔️:                     pv2m = pBNS->vert + v2m;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:                 else
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     v1m = NO_VERTEX;
+    // INCHI✔️✔️:                     v2m = NO_VERTEX;
+    // INCHI✔️✔️:                     pv1m = NULL;
+    // INCHI✔️✔️:                     pv2m = NULL;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:                 ret = 0;
 
-                    /* set new flow to run BNS Search */
-                    if ((delta = pEdgePlus->flow)) /* djb-rwth: addressing LLVM warning */
-                    {
-                        /* positive charge <=> flow=0 on (=) edge */
-                        pEdgePlus->flow -= delta;
-                        pv1p->st_edge.flow -= delta;
-                        pv2p->st_edge.flow -= delta;
-                        pBNS->tot_st_flow -= 2 * delta;
-                        pEdgePlus->forbidden |= forbidden_edge_mask;
-                        if (pEdgeMinus)
-                        {
-                            pEdgeMinus->forbidden |= forbidden_edge_mask;
-                        }
+    // INCHI✔️✔️:                 /* set new flow to run BNS Search */
+    // INCHI✔️✔️:                 if ((delta = pEdgePlus->flow)) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     /* positive charge <=> flow=0 on (=) edge */
+    // INCHI✔️✔️:                     pEdgePlus->flow -= delta;
+    // INCHI✔️✔️:                     pv1p->st_edge.flow -= delta;
+    // INCHI✔️✔️:                     pv2p->st_edge.flow -= delta;
+    // INCHI✔️✔️:                     pBNS->tot_st_flow -= 2 * delta;
+    // INCHI✔️✔️:                     pEdgePlus->forbidden |= forbidden_edge_mask;
+    // INCHI✔️✔️:                     if (pEdgeMinus)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         pEdgeMinus->forbidden |= forbidden_edge_mask;
+    // INCHI✔️✔️:                     }
 
-                        ret = RunBnsTestOnce( pBNS, pBD, pVA, &vPathStart, &vPathEnd, &nPathLen,
-                                              &nDeltaH, &nDeltaCharge, &nNumVisitedAtoms );
+    // INCHI✔️✔️:                     ret = RunBnsTestOnce( pBNS, pBD, pVA, &vPathStart, &vPathEnd, &nPathLen,
+    // INCHI✔️✔️:                                           &nDeltaH, &nDeltaCharge, &nNumVisitedAtoms );
 
-                        if (ret < 0)
-                        {
-                            goto exit_function;
-                        }
+    // INCHI✔️✔️:                     if (ret < 0)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         goto exit_function;
+    // INCHI✔️✔️:                     }
 
-                        if (ret == 1 && ( (vPathEnd == v1p && vPathStart == v2p) ||
-                            (vPathEnd == v2p && vPathStart == v1p) ) &&
-                                          nDeltaCharge == -1 /* charge moving to this atom disappers*/) /* djb-rwth: addressing LLVM warning */
-                        {
-                            ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );
-                            ( *pnNumRunBNS )++;
-                            if (ret < 0)
-                            {
-                                goto exit_function;
-                            }
-                            else if (ret == 1)
-                            {
-                                *pnTotalDelta += ret;
-                            }
-                            else
-                            {
-                                ret = RI_ERR_PROGR;
-                                goto exit_function;
-                            }
-                        }
-                        else
-                        {
-                            ret = 0;
-                            pEdgePlus->flow += delta;
-                            pv1p->st_edge.flow += delta;
-                            pv2p->st_edge.flow += delta;
-                            pBNS->tot_st_flow += 2 * delta;
-                        }
-                        pEdgePlus->forbidden &= inv_forbidden_edge_mask;
-                        if (pEdgeMinus)
-                        {
-                            pEdgeMinus->forbidden &= inv_forbidden_edge_mask;
-                        }
-                    }
-                    else
-                    {
-                        if (pEdgeMinus && ( delta == pEdgeMinus->flow ) && pEdgePlus->flow == 0)
-                        {
-                            /* positive charge <=> flow=0 on (=) edge and flow=0 on (-) edge */
-                            pEdgeMinus->flow -= delta;
-                            pv1m->st_edge.flow -= delta;
-                            pv2m->st_edge.flow -= delta;
-                            pBNS->tot_st_flow -= 2 * delta;
-                            pEdgePlus->forbidden |= forbidden_edge_mask;
-                            pEdgeMinus->forbidden |= forbidden_edge_mask;
-                            ret = RunBnsTestOnce( pBNS, pBD, pVA, &vPathStart, &vPathEnd, &nPathLen,
-                                                  &nDeltaH, &nDeltaCharge, &nNumVisitedAtoms );
-                            if (ret < 0)
-                            {
-                                goto exit_function;
-                            }
-                            if (ret == 1 && ( (vPathEnd == v1m && vPathStart == v2m) ||
-                                              (vPathEnd == v2m && vPathStart == v1m) ) &&
-                                              nDeltaCharge == -1  /* charge moving to this atom disappers*/) /* djb-rwth: addressing LLVM warning */
-                            {
-                                ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );
-                                ( *pnNumRunBNS )++;
-                                if (ret < 0)
-                                {
-                                    goto exit_function;
-                                }
-                                else if (ret == 1)
-                                {
-                                    *pnTotalDelta += ret;
-                                }
-                                else
-                                {
-                                    ret = RI_ERR_PROGR;
-                                    goto exit_function;
-                                }
-                            }
-                            else
-                            {
-                                ret = 0;
-                                pEdgeMinus->flow += delta;
-                                pv1m->st_edge.flow += delta;
-                                pv2m->st_edge.flow += delta;
-                                pBNS->tot_st_flow += 2 * delta;
-                            }
-                            pEdgePlus->forbidden &= inv_forbidden_edge_mask;
-                            pEdgeMinus->forbidden &= inv_forbidden_edge_mask;
-                        }
-                    }
-                    if (ret)
-                    {
-                        num_success++;
-                        memcpy(at2, at, len_at * sizeof(at2[0]));
-                        pStruct->at = at2;
-                        ret2 = CopyBnsToAtom( pStruct, pBNS, pVA, pTCGroups, 1 );
-                        pStruct->at = at;
-                        if (ret2 < 0)
-                        {
-                            ret = ret2;
-                            goto exit_function;
-                        }
-                    }
-                }
-            }
-        }
+    // INCHI✔️✔️:                     if (ret == 1 && ( (vPathEnd == v1p && vPathStart == v2p) ||
+    // INCHI✔️✔️:                         (vPathEnd == v2p && vPathStart == v1p) ) &&
+    // INCHI✔️✔️:                                       nDeltaCharge == -1 /* charge moving to this atom disappers*/) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );
+    // INCHI✔️✔️:                         ( *pnNumRunBNS )++;
+    // INCHI✔️✔️:                         if (ret < 0)
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             goto exit_function;
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                         else if (ret == 1)
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             *pnTotalDelta += ret;
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                         else
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             ret = RI_ERR_PROGR;
+    // INCHI✔️✔️:                             goto exit_function;
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     else
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         ret = 0;
+    // INCHI✔️✔️:                         pEdgePlus->flow += delta;
+    // INCHI✔️✔️:                         pv1p->st_edge.flow += delta;
+    // INCHI✔️✔️:                         pv2p->st_edge.flow += delta;
+    // INCHI✔️✔️:                         pBNS->tot_st_flow += 2 * delta;
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     pEdgePlus->forbidden &= inv_forbidden_edge_mask;
+    // INCHI✔️✔️:                     if (pEdgeMinus)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         pEdgeMinus->forbidden &= inv_forbidden_edge_mask;
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:                 else
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     if (pEdgeMinus && ( delta == pEdgeMinus->flow ) && pEdgePlus->flow == 0)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         /* positive charge <=> flow=0 on (=) edge and flow=0 on (-) edge */
+    // INCHI✔️✔️:                         pEdgeMinus->flow -= delta;
+    // INCHI✔️✔️:                         pv1m->st_edge.flow -= delta;
+    // INCHI✔️✔️:                         pv2m->st_edge.flow -= delta;
+    // INCHI✔️✔️:                         pBNS->tot_st_flow -= 2 * delta;
+    // INCHI✔️✔️:                         pEdgePlus->forbidden |= forbidden_edge_mask;
+    // INCHI✔️✔️:                         pEdgeMinus->forbidden |= forbidden_edge_mask;
+    // INCHI✔️✔️:                         ret = RunBnsTestOnce( pBNS, pBD, pVA, &vPathStart, &vPathEnd, &nPathLen,
+    // INCHI✔️✔️:                                               &nDeltaH, &nDeltaCharge, &nNumVisitedAtoms );
+    // INCHI✔️✔️:                         if (ret < 0)
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             goto exit_function;
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                         if (ret == 1 && ( (vPathEnd == v1m && vPathStart == v2m) ||
+    // INCHI✔️✔️:                                           (vPathEnd == v2m && vPathStart == v1m) ) &&
+    // INCHI✔️✔️:                                           nDeltaCharge == -1  /* charge moving to this atom disappers*/) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             ret = RunBnsRestoreOnce( pBNS, pBD, pVA, pTCGroups );
+    // INCHI✔️✔️:                             ( *pnNumRunBNS )++;
+    // INCHI✔️✔️:                             if (ret < 0)
+    // INCHI✔️✔️:                             {
+    // INCHI✔️✔️:                                 goto exit_function;
+    // INCHI✔️✔️:                             }
+    // INCHI✔️✔️:                             else if (ret == 1)
+    // INCHI✔️✔️:                             {
+    // INCHI✔️✔️:                                 *pnTotalDelta += ret;
+    // INCHI✔️✔️:                             }
+    // INCHI✔️✔️:                             else
+    // INCHI✔️✔️:                             {
+    // INCHI✔️✔️:                                 ret = RI_ERR_PROGR;
+    // INCHI✔️✔️:                                 goto exit_function;
+    // INCHI✔️✔️:                             }
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                         else
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             ret = 0;
+    // INCHI✔️✔️:                             pEdgeMinus->flow += delta;
+    // INCHI✔️✔️:                             pv1m->st_edge.flow += delta;
+    // INCHI✔️✔️:                             pv2m->st_edge.flow += delta;
+    // INCHI✔️✔️:                             pBNS->tot_st_flow += 2 * delta;
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                         pEdgePlus->forbidden &= inv_forbidden_edge_mask;
+    // INCHI✔️✔️:                         pEdgeMinus->forbidden &= inv_forbidden_edge_mask;
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:                 if (ret)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     num_success++;
+    // INCHI✔️✔️:                     memcpy(at2, at, len_at * sizeof(at2[0]));
+    // INCHI✔️✔️:                     pStruct->at = at2;
+    // INCHI✔️✔️:                     ret2 = CopyBnsToAtom( pStruct, pBNS, pVA, pTCGroups, 1 );
+    // INCHI✔️✔️:                     pStruct->at = at;
+    // INCHI✔️✔️:                     if (ret2 < 0)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         ret = ret2;
+    // INCHI✔️✔️:                         goto exit_function;
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:     }
 
+    // INCHI✔️✔️:     ret = num_success;
 
-        ret = num_success;
+    // INCHI✔️✔️: exit_function:
 
-    exit_function:
-
-        return ret;
-    }
-    */
+    // INCHI✔️✔️:     return ret;
+    // INCHI✔️✔️: }
     // END INCHI C FUNCTION: MoveChargeToMakeCenerpoints
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: MoveChargeToMakeCenerpoints
-    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux.
-    // INCHI✔️❌: The one-based charge-edge indices and S_CHAR forbidden-mask conversions are preserved.
-    // INCHI✔️❌: SourceHeap checked access and atom snapshots add known overhead.
+    // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux.
+    // INCHI✔️✔️: The one-based charge-edge indices and S_CHAR forbidden-mask conversions are preserved.
+    // INCHI✔️✔️: SourceHeap stable views keep the source's direct at2[i] reads
+    // INCHI✔️✔️: at constant indexed complexity without an extra owned snapshot.
     // END INCHI ACTIVE MACRO CONFIGURATION: MoveChargeToMakeCenerpoints
 
     let num_atoms = pStruct.num_atoms;
     let len_at = num_atoms.wrapping_add(pStruct.num_deleted_H);
     let atom_count = usize::try_from(len_at).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if atom_count != 0 {
-        let original = heap
-            .slice(at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&original);
+        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
     }
     pStruct.at = at2;
     let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
@@ -16693,22 +17178,24 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
     }
 
     let inverse_mask = !forbidden_edge_mask;
-    let mut copied_atoms = if atom_count == 0 {
-        Vec::new()
+    // SAFETY: `at2` is allocated before this function and is never resized or
+    // freed here. The source mutates BNS allocations between reads; `at2` is
+    // written only by the source-equivalent copy followed by CopyBnsToAtom,
+    // and each indexed reference is used only before that next write.
+    let copied_atoms_view = if atom_count == 0 {
+        None
     } else {
-        heap.slice(at2.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
+        Some(unsafe { heap.stable_slice(at2.as_const())? })
     };
     let mut num_success = 0_i32;
     let mut tg_group = 0_i32;
     let mut i = 0_i32;
     while i < num_atoms {
         let atom_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let atom = copied_atoms
-            .get(atom_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom = match &copied_atoms_view {
+            Some(view) => view.get(atom_index)?,
+            None => return Err(SourceHeapError::PointerOutOfBounds),
+        };
         let valence = pVA
             .get(atom_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -16731,12 +17218,10 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
                         .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let endpoint = i32::from(
-                    copied_atoms
-                        .get(neighbor)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .endpoint,
-                );
+                let endpoint = i32::from(match &copied_atoms_view {
+                    Some(view) => view.get(neighbor)?.endpoint,
+                    None => return Err(SourceHeapError::PointerOutOfBounds),
+                });
                 if endpoint != 0 {
                     if num_endpoints == 0 {
                         tg_group = endpoint;
@@ -16963,15 +17448,7 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
                 if ret != 0 {
                     num_success = num_success.wrapping_add(1);
                     if atom_count != 0 {
-                        let original = heap
-                            .slice(at.as_const())?
-                            .get(..atom_count)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                            .to_vec();
-                        heap.slice_mut(at2)?
-                            .get_mut(..atom_count)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                            .clone_from_slice(&original);
+                        copy_inp_atom_prefix(heap, at2, at, atom_count)?;
                     }
                     pStruct.at = at2;
                     let copy_result = CopyBnsToAtom(heap, pStruct, pBNS, pVA, pTCGroups, 1);
@@ -16980,14 +17457,6 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
                     if ret2 < 0 {
                         return Ok(ret2);
                     }
-                    copied_atoms = if atom_count == 0 {
-                        Vec::new()
-                    } else {
-                        heap.slice(at2.as_const())?
-                            .get(..atom_count)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                            .to_vec()
-                    };
                 }
             }
         }
@@ -17000,7 +17469,7 @@ pub(crate) fn MoveChargeToMakeCenerpoints(
 mod tests {
     use super::*;
 
-    fn copy_bns_fixture(
+    fn copy_bns_fixture_with_layout(
         atoms: Vec<inp_ATOM>,
         valence_atoms: Vec<crate::source_types::VAL_AT>,
         mut vertices: Vec<crate::source_types::BNS_VERTEX>,
@@ -17009,18 +17478,42 @@ mod tests {
         tgroups: Vec<crate::source_types::TC_GROUP>,
         restore_mode: crate::source_types::SRM,
         allow_zero_bond_order: i32,
+        contiguous_adjacency: bool,
+        expected_source_layout: Option<bool>,
     ) -> (Result<i32, SourceHeapError>, Vec<inp_ATOM>) {
         assert_eq!(vertices.len(), adjacency.len());
         let mut heap = SourceHeap::default();
-        for (vertex, edge_indices) in vertices.iter_mut().zip(adjacency) {
-            vertex.num_adj_edges = edge_indices.len() as u16;
-            vertex.max_adj_edges = edge_indices.len() as u16;
-            vertex.iedge = if edge_indices.is_empty() {
+        let adjacency_pointer = if contiguous_adjacency {
+            let flattened = adjacency.iter().flatten().copied().collect::<Vec<_>>();
+            let pointer = if flattened.is_empty() {
                 SourceMutPointer::null()
             } else {
-                heap.allocate_model_storage(edge_indices).unwrap()
+                heap.allocate_model_storage(flattened).unwrap()
             };
-        }
+            let mut offset = 0_usize;
+            for (vertex, edge_indices) in vertices.iter_mut().zip(&adjacency) {
+                vertex.num_adj_edges = edge_indices.len() as u16;
+                vertex.max_adj_edges = edge_indices.len() as u16;
+                vertex.iedge = if pointer.is_null() {
+                    SourceMutPointer::null()
+                } else {
+                    pointer.offset(offset as i64).unwrap()
+                };
+                offset += edge_indices.len();
+            }
+            pointer
+        } else {
+            for (vertex, edge_indices) in vertices.iter_mut().zip(adjacency) {
+                vertex.num_adj_edges = edge_indices.len() as u16;
+                vertex.max_adj_edges = edge_indices.len() as u16;
+                vertex.iedge = if edge_indices.is_empty() {
+                    SourceMutPointer::null()
+                } else {
+                    heap.allocate_model_storage(edge_indices).unwrap()
+                };
+            }
+            SourceMutPointer::null()
+        };
         let atom_count = atoms.len();
         let atom_pointer = if atoms.is_empty() {
             SourceMutPointer::null()
@@ -17062,6 +17555,7 @@ mod tests {
             num_edges: edge_count as i32,
             vert: vertex_pointer,
             edge: edge_pointer,
+            iedge: adjacency_pointer,
             ..crate::source_types::BN_STRUCT::default()
         };
         let groups = crate::source_types::ALL_TC_GROUPS {
@@ -17069,6 +17563,18 @@ mod tests {
             num_tgroups: tgroup_count as i32,
             ..crate::source_types::ALL_TC_GROUPS::default()
         };
+        if let Some(expected) = expected_source_layout {
+            assert_eq!(
+                copy_bns_to_atom_source_layout_is_valid(
+                    &heap,
+                    &structure,
+                    &bns,
+                    &valence_atoms,
+                    &groups,
+                ),
+                expected,
+            );
+        }
         let result = CopyBnsToAtom(
             &mut heap,
             &mut structure,
@@ -17083,6 +17589,55 @@ mod tests {
             heap.slice(atom_pointer.as_const()).unwrap()[..atom_count].to_vec()
         };
         (result, output)
+    }
+
+    fn copy_bns_fixture(
+        atoms: Vec<inp_ATOM>,
+        valence_atoms: Vec<crate::source_types::VAL_AT>,
+        vertices: Vec<crate::source_types::BNS_VERTEX>,
+        adjacency: Vec<Vec<i32>>,
+        edges: Vec<crate::source_types::BNS_EDGE>,
+        tgroups: Vec<crate::source_types::TC_GROUP>,
+        restore_mode: crate::source_types::SRM,
+        allow_zero_bond_order: i32,
+    ) -> (Result<i32, SourceHeapError>, Vec<inp_ATOM>) {
+        copy_bns_fixture_with_layout(
+            atoms,
+            valence_atoms,
+            vertices,
+            adjacency,
+            edges,
+            tgroups,
+            restore_mode,
+            allow_zero_bond_order,
+            false,
+            None,
+        )
+    }
+
+    fn copy_bns_contiguous_fixture(
+        atoms: Vec<inp_ATOM>,
+        valence_atoms: Vec<crate::source_types::VAL_AT>,
+        vertices: Vec<crate::source_types::BNS_VERTEX>,
+        adjacency: Vec<Vec<i32>>,
+        edges: Vec<crate::source_types::BNS_EDGE>,
+        tgroups: Vec<crate::source_types::TC_GROUP>,
+        restore_mode: crate::source_types::SRM,
+        allow_zero_bond_order: i32,
+        expected_source_layout: bool,
+    ) -> (Result<i32, SourceHeapError>, Vec<inp_ATOM>) {
+        copy_bns_fixture_with_layout(
+            atoms,
+            valence_atoms,
+            vertices,
+            adjacency,
+            edges,
+            tgroups,
+            restore_mode,
+            allow_zero_bond_order,
+            true,
+            Some(expected_source_layout),
+        )
     }
 
     #[test]
@@ -17405,6 +17960,95 @@ mod tests {
         assert_eq!(result.unwrap(), 0);
         assert_eq!(atoms[0].charge, 0);
         assert_eq!(atoms[0].endpoint, 1);
+
+        let mut first = inp_ATOM {
+            valence: 1,
+            ..inp_ATOM::default()
+        };
+        first.neighbor[0] = 1;
+        let mut second = inp_ATOM {
+            valence: 1,
+            ..inp_ATOM::default()
+        };
+        second.neighbor[0] = 0;
+        let (result, atoms) = copy_bns_contiguous_fixture(
+            vec![first.clone(), second.clone()],
+            vec![
+                crate::source_types::VAL_AT::default(),
+                crate::source_types::VAL_AT::default(),
+            ],
+            vec![
+                crate::source_types::BNS_VERTEX::default(),
+                crate::source_types::BNS_VERTEX::default(),
+            ],
+            vec![vec![0], vec![0]],
+            vec![crate::source_types::BNS_EDGE::default()],
+            Vec::new(),
+            crate::source_types::SRM::default(),
+            0,
+            true,
+        );
+        assert_eq!(result.unwrap(), 0);
+        assert_eq!(atoms[0].bond_type[0], 1);
+        assert_eq!(atoms[1].bond_type[0], 1);
+
+        let (result, atoms) = copy_bns_contiguous_fixture(
+            vec![first, second],
+            vec![
+                crate::source_types::VAL_AT::default(),
+                crate::source_types::VAL_AT::default(),
+            ],
+            vec![
+                crate::source_types::BNS_VERTEX::default(),
+                crate::source_types::BNS_VERTEX::default(),
+                crate::source_types::BNS_VERTEX::default(),
+            ],
+            vec![vec![0], vec![0], Vec::new()],
+            vec![crate::source_types::BNS_EDGE::default()],
+            vec![crate::source_types::TC_GROUP::default()],
+            crate::source_types::SRM::default(),
+            0,
+            true,
+        );
+        assert_eq!(result.unwrap(), RI_ERR_PROGR);
+        assert_eq!(atoms[0].chem_bonds_valence, 1);
+        assert_eq!(atoms[1].chem_bonds_valence, 1);
+
+        let original_first = inp_ATOM {
+            charge: 9,
+            chem_bonds_valence: 8,
+            ..inp_ATOM::default()
+        };
+        let original_second = inp_ATOM {
+            valence: 1,
+            neighbor: [0; 20],
+            charge: -4,
+            ..inp_ATOM::default()
+        };
+        let (result, atoms) = copy_bns_contiguous_fixture(
+            vec![original_first.clone(), original_second.clone()],
+            vec![
+                crate::source_types::VAL_AT {
+                    cInitCharge: 3,
+                    ..crate::source_types::VAL_AT::default()
+                },
+                crate::source_types::VAL_AT::default(),
+            ],
+            vec![
+                crate::source_types::BNS_VERTEX::default(),
+                crate::source_types::BNS_VERTEX::default(),
+            ],
+            vec![Vec::new(), vec![1]],
+            vec![crate::source_types::BNS_EDGE::default()],
+            Vec::new(),
+            crate::source_types::SRM::default(),
+            0,
+            true,
+        );
+        assert_eq!(result, Err(SourceHeapError::PointerOutOfBounds));
+        assert_eq!(atoms[0].chem_bonds_valence, 0);
+        assert_eq!(atoms[0].charge, 3);
+        assert_eq!(atoms[1], original_second);
     }
 
     #[test]

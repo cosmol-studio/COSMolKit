@@ -16,7 +16,7 @@ use crate::{
         ValenceModel, assign_valence_with_options, rdkit_atomic_mass, rdkit_element_symbol,
         rdkit_most_common_isotope_mass,
     },
-    symmetrize_sssr,
+    find_sssr, symmetrize_sssr,
 };
 
 const RDKIT_ELECTRON_MASS: f64 = 0.00054857991;
@@ -1755,7 +1755,9 @@ const RDKIT_QED_STRUCTURAL_ALERT_SMARTS: &[&str] = &[
     "a31a(a2a(aa1)aaaa2)aaaa3",
     "a1aa2a3a(a1)A=AA=A3=AA=A2",
     "c1cc([NH2])ccc1",
-    "[Hg,Fe,As,Sb,Zn,Se,se,Te,B,Si,Na,Ca,Ge,Ag,Mg,K,Ba,Sr,Be,Ti,Mo,Mn,Ru,Pd,Ni,Cu,Au,Cd,Al,Ga,Sn,Rh,Tl,Bi,Nb,Li,Pb,Hf,Ho]",
+    // RDKit✔️✔️:   '[Hg,Fe,As,Sb,Zn,Se,se,Te,te,B,Si,Na,Ca,Ge,Ag,Mg,K,Ba,Sr,Be,Ti,Mo,Mn,Ru,Pd,Ni,Cu,Au,Cd,' +
+    // RDKit✔️✔️:   'Al,Ga,Sn,Rh,Tl,Bi,Nb,Li,Pb,Hf,Ho]', 'I', 'OS(=O)(=O)[O-]', '[N+](=O)[O-]', 'C(=O)N[OH]',
+    "[Hg,Fe,As,Sb,Zn,Se,se,Te,te,B,Si,Na,Ca,Ge,Ag,Mg,K,Ba,Sr,Be,Ti,Mo,Mn,Ru,Pd,Ni,Cu,Au,Cd,Al,Ga,Sn,Rh,Tl,Bi,Nb,Li,Pb,Hf,Ho]",
     "I",
     "OS(=O)(=O)[O-]",
     "[N+](=O)[O-]",
@@ -2095,12 +2097,14 @@ fn rdkit_qed_arom(mol: &Molecule) -> DescriptorResult<u32> {
     let aliphatic_rings = rdkit_count_smarts_matches("calc_qed", RDKIT_QED_ALIPHATIC_RINGS_SMARTS)?;
     let mol_without_aliphatic_rings =
         rdkit_qed_delete_substructs(mol, &aliphatic_rings, false, false)?;
-    let rings = symmetrize_sssr(&mol_without_aliphatic_rings).map_err(|_| {
-        DescriptorError::Unsupported {
+    // RDKit✔️✔️:     AROM=len(Chem.GetSSSR(Chem.DeleteSubstructs(Chem.Mol(mol), AliphaticRings))),
+    // `GetSSSR` returns the ordinary smallest set, not the extra symmetry
+    // rings added by `symmetrizeSSSR`.
+    let rings =
+        find_sssr(&mol_without_aliphatic_rings).map_err(|_| DescriptorError::Unsupported {
             function: "calc_qed",
             rdkit_function: "Chem.GetSSSR",
-        }
-    })?;
+        })?;
     u32::try_from(rings.atom_rings().len()).map_err(|_| DescriptorError::Unsupported {
         function: "calc_qed",
         rdkit_function: "Chem.GetSSSR",
@@ -2432,7 +2436,7 @@ fn rdkit_count_smarts_matches(function: &'static str, pattern: &str) -> Descript
     // RDKit✔️✔️:   m_matcher = p;
     // RDKit✔️✔️:   POSTCONDITION(m_matcher, "no matcher");
     // RDKit✔️✔️: };
-    crate::chemistry::forcefield::crystalff::build_crystalff_query_molecule(pattern).map_err(|_| {
+    crate::search::smarts_parse::build_query_molecule(pattern).map_err(|_| {
         DescriptorError::Unsupported {
             function,
             rdkit_function: "RDKit::SmartsToMol",
@@ -2549,6 +2553,7 @@ mod qed_tests {
         assert_eq!(structural_alert_hits("N#C"), Vec::<usize>::new());
         assert_eq!(structural_alert_hits("c1ccsc1"), Vec::<usize>::new());
         assert_eq!(structural_alert_hits("c1cc[se]c1"), vec![26]);
+        assert_eq!(structural_alert_hits("c1cc[te]c1"), vec![26]);
         assert_eq!(structural_alert_hits("CC(=O)O"), Vec::<usize>::new());
         assert_eq!(structural_alert_hits("F[C@@H]1O[C@H](Cl)S1"), vec![2]);
         assert_eq!(
@@ -2561,6 +2566,45 @@ mod qed_tests {
             structural_alert_hits("O=[S](=O)(CCC(=O)N/C1=C/C=C(/NC(=O)C)C=C1)C2=CC=CC3=NON=C23"),
             Vec::<usize>::new()
         );
+    }
+
+    #[test]
+    fn qed_aromatic_tellurium_alert_matches_rdkit() {
+        let mol = Molecule::from_smiles("c1cc[te]c1").expect("tellurophene must parse");
+        assert_eq!(calc_qed(&mol).unwrap().to_bits(), 0x3fe0827cd08382b8);
+    }
+
+    #[test]
+    fn qed_preserves_an_isolated_proton_like_rdkit_remove_hs() {
+        let mol = Molecule::from_smiles("C.[H+]").expect("disconnected proton must parse");
+
+        assert_eq!(calc_qed(&mol).unwrap().to_bits(), 0x3fd72f3ad7393056);
+    }
+
+    #[test]
+    fn qed_aromatic_ring_count_uses_rdkit_sssr_not_symmetrized_sssr() {
+        let cases = [
+            (
+                "c1cc2ccc1Cn1cc[n+](c1)Cc1ccc(cc1)C[n+]1ccn(c1)Cc1ccc(cc1)O2",
+                6.0,
+                0x3fd51cef6aee9da4,
+            ),
+            (
+                "COC(=O)c1cc2cc(c1)Cn1cc[n+](c1)Cc1ccc(cc1)-c1ccc(cc1)C[n+]1ccn(c1)Cc1cc(cc(C(=O)OC)c1)Cn1cc[n+](c1)Cc1ccc(cc1)-c1ccc(cc1)C[n+]1ccn(c1)C2.[Cl-].[Cl-].[Cl-].[Cl-]",
+                11.0,
+                0x3fc09baf58464657,
+            ),
+        ];
+        for (smiles, expected_arom, expected_qed_bits) in cases {
+            let mol = Molecule::from_smiles(smiles).expect("QED ring regression must parse");
+            let properties = rdkit_qed_properties(&mol).unwrap();
+            assert_eq!(properties.arom, expected_arom, "{smiles}");
+            assert_eq!(
+                calc_qed(&mol).unwrap().to_bits(),
+                expected_qed_bits,
+                "{smiles}"
+            );
+        }
     }
 
     #[test]

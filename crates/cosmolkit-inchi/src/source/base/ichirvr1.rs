@@ -1,6 +1,6 @@
 use crate::source::base::ichi_bns::{
-    BalancedNetworkSearch, DeAllocateBnStruct, ReInitBnData, ReInitBnStructAltPaths,
-    RunBalancedNetworkSearch,
+    BalancedNetworkSearch, BnsSearchWorkspace, DeAllocateBnStruct, ReInitBnData,
+    ReInitBnStructAltPaths, RunBalancedNetworkSearch, run_balanced_network_search_with_workspace,
 };
 use crate::source::base::ichi_io::{inchi_strbuf_close, inchi_strbuf_init};
 use crate::source::base::ichimake::Create_INChI;
@@ -53,6 +53,45 @@ use crate::source_types::{
     tagTCGroupTypes_TCG_Plus_C0 as TCG_Plus_C0, tagTCGroupTypes_TCG_Plus_M0 as TCG_Plus_M0,
     tagTCGroupTypes_TCG_Plus0 as TCG_Plus0,
 };
+
+fn copy_inp_atom_prefix(
+    heap: &mut SourceHeap,
+    destination: SourceMutPointer<inp_ATOM>,
+    source: SourceMutPointer<inp_ATOM>,
+    count: usize,
+) -> Result<(), SourceHeapError> {
+    if destination == source {
+        heap.slice(source.as_const())?
+            .get(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        return Ok(());
+    }
+    if destination.allocation_identity() != source.allocation_identity() {
+        // SAFETY: distinct allocation identities prove that source and
+        // destination do not alias. Neither allocation is resized or freed
+        // during this source-equivalent memcpy.
+        let source_view = unsafe { heap.stable_slice(source.as_const())? };
+        let source = source_view.prefix(count)?;
+        heap.slice_mut(destination)?
+            .get_mut(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .clone_from_slice(source);
+        return Ok(());
+    }
+
+    // Preserve the modeled overlapping-pointer behavior even though the
+    // Official production call sites use distinct allocations.
+    let source = heap
+        .slice(source.as_const())?
+        .get(..count)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .to_vec();
+    heap.slice_mut(destination)?
+        .get_mut(..count)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .clone_from_slice(&source);
+    Ok(())
+}
 
 #[allow(non_snake_case)]
 pub(crate) fn clear_t_group_info(
@@ -2759,47 +2798,77 @@ pub(crate) fn MakeInChIOutOfStrFromINChI2(
     let mut prepared_atom_data = [ORIG_ATOM_DATA::default(), ORIG_ATOM_DATA::default()];
 
     let operation_result = (|| -> Result<(i32, bool), SourceHeapError> {
-        let mut atoms = heap
-            .slice(structure.at2.as_const())?
-            .get(..total_atoms)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        let stereo = if structure.st.is_null() {
-            None
-        } else {
-            Some(
-                heap.slice(structure.st.as_const())?
-                    .get(
-                        ..usize::try_from(structure.num_atoms.max(0))
-                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+        let stereo_count = usize::try_from(structure.num_atoms.max(0))
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let connected = if structure.at2.allocation_identity() != structure.st.allocation_identity()
+        {
+            heap.with_slice_mut_and_heap(structure.at2, |atoms, heap| {
+                let atoms = atoms
+                    .get_mut(..total_atoms)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let stereo = if structure.st.is_null() {
+                    None
+                } else {
+                    Some(
+                        heap.slice(structure.st.as_const())?
+                            .get(..stereo_count)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     )
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec(),
-            )
+                };
+                CopySt2At(atoms, stereo, structure.num_atoms)?;
+                let connected =
+                    ConnectDisconnectedH(atoms, structure.num_atoms, structure.num_deleted_H)?;
+                if connected >= 0 {
+                    IncrZeroBonds(atoms, structure.num_atoms, component.wrapping_add(1))?;
+                }
+                Ok(connected)
+            })?
+        } else {
+            // Preserve the checked error behavior of malformed modeled alias
+            // pointers; Official production uses distinct typed allocations.
+            let mut atoms = heap
+                .slice(structure.at2.as_const())?
+                .get(..total_atoms)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .to_vec();
+            let stereo = if structure.st.is_null() {
+                None
+            } else {
+                Some(
+                    heap.slice(structure.st.as_const())?
+                        .get(..stereo_count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .to_vec(),
+                )
+            };
+            CopySt2At(&mut atoms, stereo.as_deref(), structure.num_atoms)?;
+            let connected =
+                ConnectDisconnectedH(&mut atoms, structure.num_atoms, structure.num_deleted_H)?;
+            if connected >= 0 {
+                IncrZeroBonds(&mut atoms, structure.num_atoms, component.wrapping_add(1))?;
+            }
+            heap.slice_mut(structure.at2)?[..total_atoms].clone_from_slice(&atoms);
+            connected
         };
-        CopySt2At(&mut atoms, stereo.as_deref(), structure.num_atoms)?;
-        let connected =
-            ConnectDisconnectedH(&mut atoms, structure.num_atoms, structure.num_deleted_H)?;
-        heap.slice_mut(structure.at2)?[..total_atoms].clone_from_slice(&atoms);
         if connected < 0 {
             return Ok((connected, false));
         }
         original_atom_data.num_inp_atoms = connected;
 
-        IncrZeroBonds(&mut atoms, structure.num_atoms, component.wrapping_add(1))?;
-        heap.slice_mut(structure.at2)?[..total_atoms].clone_from_slice(&atoms);
         let reconciled =
             ReconcileAllCmlBondParities(heap, structure.at2, original_atom_data.num_inp_atoms, 0)?;
         if reconciled < 0 {
             return Ok((reconciled, false));
         }
 
-        let source_atoms = heap.slice(structure.at2.as_const())?[..total_atoms].to_vec();
-        heap.slice_mut(original_atom_data.at)?[..total_atoms].clone_from_slice(&source_atoms);
-        let mut copied_atoms = heap.slice(original_atom_data.at.as_const())?.to_vec();
-        ClearEndpts(&mut copied_atoms, structure.num_atoms)?;
-        heap.slice_mut(original_atom_data.at)?[..copied_atoms.len()]
-            .clone_from_slice(&copied_atoms);
+        copy_inp_atom_prefix(heap, original_atom_data.at, structure.at2, total_atoms)?;
+        let original_atom_count = usize::try_from(structure.num_atoms.max(0))
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let copied_atoms = heap
+            .slice_mut(original_atom_data.at)?
+            .get_mut(..original_atom_count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        ClearEndpts(copied_atoms, structure.num_atoms)?;
         if FixUnkn0DStereoBonds(heap, original_atom_data.at, structure.num_atoms)? != 0 {
             let reconciled = ReconcileAllCmlBondParities(
                 heap,
@@ -3529,6 +3598,7 @@ pub(crate) fn nTautEndpointEdgeCap(
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
+#[inline(always)]
 pub(crate) fn BondFlowMaxcapMinorder(
     atoms: &[inp_ATOM],
     valence_atoms: &[crate::source_types::VAL_AT],
@@ -3549,191 +3619,203 @@ pub(crate) fn BondFlowMaxcapMinorder(
     // INCHI✔️✔️:                             int *pnMinorder,
     // INCHI✔️✔️:                             int *pbNeedsFlower )
     // INCHI✔️✔️: {
-    // INCHI✔️✔️:
-    // INCHI✔️✔️:     int nFlow, nMaxcap, nMinorder, nInitorder, bNeedsFlower = 0;
-    // INCHI✔️✔️:     inp_ATOM *at = atom + iat;
-    // INCHI✔️✔️:     int       neigh = at->neighbor[ineigh];
-    // INCHI✔️✔️:     int       bond_type = at->bond_type[ineigh] & BOND_TYPE_MASK;
-    // INCHI✔️✔️:     int       nMetal = ( 0 != pVA[iat].cMetal ) + ( 0 != pVA[neigh].cMetal );
-    // INCHI✔️✔️:     int       nEndpoint = ( 0 != at->endpoint ) + ( 0 != atom[neigh].endpoint );
-    // INCHI✔️✔️:     int       nStereo = ( at->p_parity || at->sb_parity[0] ) + ( atom[neigh].p_parity || atom[neigh].sb_parity[0] );
-    // INCHI✔️✔️:
-    // INCHI✔️✔️:     if (bond_type > BOND_TYPE_TRIPLE)
-    // INCHI✔️✔️:     {
-    // INCHI✔️✔️:         bond_type = BOND_TYPE_SINGLE;
-    // INCHI✔️✔️:     }
-    // INCHI✔️✔️:
-    // INCHI✔️✔️:     /* M=metal, A=non-metal atom, e=endpoint */
-    // INCHI✔️✔️:     if ((nStereo && pSrm->bFixStereoBonds) || !nMetal || !pSrm->bMetalAddFlower) /* djb-rwth: addressing LLVM warning */
-    // INCHI✔️✔️:     {
-    // INCHI✔️✔️:         /* atom-atom rules, no metal atoms involved (1: A-A, A-Ae, Ae-Ae) */
-    // INCHI✔️✔️:         nMinorder = BOND_TYPE_SINGLE;
-    // INCHI✔️✔️:         nInitorder = bond_type;
-    // INCHI✔️✔️:         nFlow = nInitorder - nMinorder;
-    // INCHI✔️✔️:     }
-    // INCHI✔️✔️:     else if (nMetal && !nEndpoint)
-    // INCHI✔️✔️:     {
-    // INCHI✔️✔️:         /* M-a, M-M */
-    // INCHI✔️✔️:         /* atom - metal or metal-metal, none of them is an endpoint (2: M-M, M-A) */
-    // INCHI✔️✔️:         nMinorder = pSrm->nMetalMinBondOrder;
-    // INCHI✔️✔️:         nInitorder = pSrm->nMetalInitBondOrder + bond_type - BOND_TYPE_SINGLE;
-    // INCHI✔️✔️:         nFlow = nInitorder - nMinorder;
-    // INCHI✔️✔️:         if (!pSrm->nMetalInitEdgeFlow &&
-    // INCHI✔️✔️:              pSrm->nMetalInitBondOrder > pSrm->nMetalMinBondOrder &&
-    // INCHI✔️✔️:              nFlow > 0)
-    // INCHI✔️✔️:         {
-    // INCHI✔️✔️:             /* reduce initial flow by 1 and increase st_cap on metal by 1 */
-    // INCHI✔️✔️:             nFlow--;
-    // INCHI✔️✔️:         }
-    // INCHI✔️✔️:         bNeedsFlower = ( 0 != pVA[iat].cMetal );
-    // INCHI✔️✔️:     }
-    // INCHI✔️✔️:     else
-    // INCHI✔️✔️:         if ((pVA[iat].cMetal && !at->endpoint && !pVA[neigh].cMetal && atom[neigh].endpoint) ||
-    // INCHI✔️✔️:              (pVA[neigh].cMetal && !atom[neigh].endpoint && !pVA[iat].cMetal && at->endpoint)) /* djb-rwth: addressing LLVM warnings */
-    // INCHI✔️✔️:         {
-    // INCHI✔️✔️:             /* M-ae */
-    // INCHI✔️✔️:             /* metal connected to a non-metal endpoint (3: M-Ae) */
-    // INCHI✔️✔️:             nMinorder = pSrm->nMetal2EndpointMinBondOrder;
-    // INCHI✔️✔️:             nInitorder = pSrm->nMetal2EndpointInitBondOrder + bond_type - BOND_TYPE_SINGLE;
-    // INCHI✔️✔️:             nFlow = nInitorder - nMinorder;
-    // INCHI✔️✔️:             if (!pSrm->nMetal2EndpointInitEdgeFlow &&
-    // INCHI✔️✔️:                  pSrm->nMetal2EndpointInitBondOrder > pSrm->nMetal2EndpointMinBondOrder &&
-    // INCHI✔️✔️:                  nFlow > 0)
-    // INCHI✔️✔️:             {
-    // INCHI✔️✔️:                 /* reduce initial flow by 1 and increase st_cap on metal by 1 */
-    // INCHI✔️✔️:                 nFlow--;
-    // INCHI✔️✔️:             }
-    // INCHI✔️✔️:             bNeedsFlower = ( 0 != pVA[iat].cMetal );
-    // INCHI✔️✔️:         }
-    // INCHI✔️✔️:         else
-    // INCHI✔️✔️:         {
-    // INCHI✔️✔️:             /* endpoint is metal => no flower (4: M-Me, Me-Me, Me-A, Me-Ae) */
-    // INCHI✔️✔️:             nMinorder = pSrm->nMetal2EndpointMinBondOrder;
-    // INCHI✔️✔️:             nInitorder = pSrm->nMetal2EndpointInitBondOrder + bond_type - BOND_TYPE_SINGLE;
-    // INCHI✔️✔️:             nFlow = nInitorder - nMinorder;
-    // INCHI✔️✔️:             if (!pSrm->nMetal2EndpointInitEdgeFlow &&
-    // INCHI✔️✔️:                  pSrm->nMetal2EndpointInitBondOrder > pSrm->nMetal2EndpointMinBondOrder &&
-    // INCHI✔️✔️:                  nFlow > 0)
-    // INCHI✔️✔️:             {
-    // INCHI✔️✔️: /* reduce initial flow by 1 and increase st_cap on metal by 1 */
-    // INCHI✔️✔️:                 nFlow--;
-    // INCHI✔️✔️:             }
-    // INCHI✔️✔️:             bNeedsFlower = ( pVA[iat].cMetal && !at->endpoint );
-    // INCHI✔️✔️:         }
-    // INCHI✔️✔️:
-    // INCHI✔️✔️:     nMaxcap = BOND_TYPE_TRIPLE - nMinorder;
-    // INCHI✔️✔️:     if (pnMaxcap)
-    // INCHI✔️✔️:     {
-    // INCHI✔️✔️:         *pnMaxcap = nMaxcap;
-    // INCHI✔️✔️:     }
-    // INCHI✔️✔️:     if (pnMinorder)
-    // INCHI✔️✔️:     {
-    // INCHI✔️✔️:         *pnMinorder = nMinorder;
-    // INCHI✔️✔️:     }
-    // INCHI✔️✔️:     if (pbNeedsFlower)
-    // INCHI✔️✔️:     {
-    // INCHI✔️✔️:         *pbNeedsFlower = bNeedsFlower;
-    // INCHI✔️✔️:     }
-    // INCHI✔️✔️:
-    // INCHI✔️✔️:     return nFlow;
-    // INCHI✔️✔️: }
-    // END INCHI C FUNCTION: BondFlowMaxcapMinorder
-
     let iat = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let ineigh =
         usize::try_from(neighbor_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = atoms.get(iat).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let neigh = usize::from(
-        *atom
-            .neighbor
-            .get(ineigh)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-    );
-    let neighbor = atoms
-        .get(neigh)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let atom_va = valence_atoms
-        .get(iat)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let neigh_va = valence_atoms
-        .get(neigh)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let mut bond_type = i32::from(
-        *atom
-            .bond_type
-            .get(ineigh)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-    ) & BOND_TYPE_MASK as i32;
+    if iat >= atoms.len() || iat >= valence_atoms.len() {
+        return Err(SourceHeapError::PointerOutOfBounds);
+    }
+    // SAFETY: the source-array prefix containing `iat` was validated once
+    // above. Both slices remain immutably borrowed for this complete call.
+    let atom = unsafe { atoms.get_unchecked(iat) };
+    if ineigh >= atom.neighbor.len() || ineigh >= atom.bond_type.len() {
+        return Err(SourceHeapError::PointerOutOfBounds);
+    }
+    // SAFETY: the two fixed source arrays were validated for `ineigh` above.
+    let neigh = usize::from(unsafe { *atom.neighbor.get_unchecked(ineigh) });
+    if neigh >= atoms.len() || neigh >= valence_atoms.len() {
+        return Err(SourceHeapError::PointerOutOfBounds);
+    }
+    // SAFETY: `iat` and `neigh` are within both complete source arrays, which
+    // are not mutated during this call.
+    let neighbor = unsafe { atoms.get_unchecked(neigh) };
+    let atom_va = unsafe { valence_atoms.get_unchecked(iat) };
+    let neigh_va = unsafe { valence_atoms.get_unchecked(neigh) };
+
+    // SAFETY: all four source-array references and `ineigh` were validated
+    // above and remain immutable for the duration of the source calculation.
+    Ok(unsafe {
+        bond_flow_maxcap_minorder_source(
+            atom,
+            neighbor,
+            atom_va,
+            neigh_va,
+            restore_mode,
+            ineigh,
+            max_capacity,
+            minimum_order,
+            needs_flower,
+        )
+    })
+}
+
+/// Executes the Official InChI calculation after its array operands have been
+/// resolved by the owning source loop.
+///
+/// # Safety
+///
+/// `neighbor_order` must address both fixed bond arrays in `atom`. The four
+/// references must describe the same atom and neighbor pair from the live
+/// source arrays.
+#[allow(non_snake_case, clippy::too_many_arguments)]
+#[inline(always)]
+pub(crate) unsafe fn bond_flow_maxcap_minorder_source(
+    atom: &inp_ATOM,
+    neighbor: &inp_ATOM,
+    atom_va: &crate::source_types::VAL_AT,
+    neigh_va: &crate::source_types::VAL_AT,
+    restore_mode: &SRM,
+    neighbor_order: usize,
+    max_capacity: Option<&mut i32>,
+    minimum_order: Option<&mut i32>,
+    needs_flower: Option<&mut i32>,
+) -> i32 {
+    // INCHI✔️✔️:     int nFlow, nMaxcap, nMinorder, nInitorder, bNeedsFlower = 0;
+    let mut flow;
+    let max_capacity_value;
+    let min_order;
+    let initial_order;
+    let mut flower = 0;
+    // INCHI✔️✔️:     inp_ATOM *at = atom + iat;
+    // INCHI✔️✔️:     int       neigh = at->neighbor[ineigh];
+    // INCHI✔️✔️:     int       bond_type = at->bond_type[ineigh] & BOND_TYPE_MASK;
+    let mut bond_type =
+        i32::from(unsafe { *atom.bond_type.get_unchecked(neighbor_order) }) & BOND_TYPE_MASK as i32;
+    // INCHI✔️✔️:     int       nMetal = ( 0 != pVA[iat].cMetal ) + ( 0 != pVA[neigh].cMetal );
     let n_metal = i32::from(atom_va.cMetal != 0) + i32::from(neigh_va.cMetal != 0);
+    // INCHI✔️✔️:     int       nEndpoint = ( 0 != at->endpoint ) + ( 0 != atom[neigh].endpoint );
     let n_endpoint = i32::from(atom.endpoint != 0) + i32::from(neighbor.endpoint != 0);
+    // INCHI✔️✔️:     int       nStereo = ( at->p_parity || at->sb_parity[0] ) + ( atom[neigh].p_parity || atom[neigh].sb_parity[0] );
     let n_stereo = i32::from(atom.p_parity != 0 || atom.sb_parity[0] != 0)
         + i32::from(neighbor.p_parity != 0 || neighbor.sb_parity[0] != 0);
+
+    // INCHI✔️✔️:     if (bond_type > BOND_TYPE_TRIPLE)
     if bond_type > BOND_TYPE_TRIPLE as i32 {
+        // INCHI✔️✔️:         bond_type = BOND_TYPE_SINGLE;
         bond_type = BOND_TYPE_SINGLE as i32;
     }
 
-    let min_order;
-    let mut flow;
-    let flower;
+    // INCHI✔️✔️:     /* M=metal, A=non-metal atom, e=endpoint */
+    // INCHI✔️✔️:     if ((nStereo && pSrm->bFixStereoBonds) || !nMetal || !pSrm->bMetalAddFlower)
     if (n_stereo != 0 && restore_mode.bFixStereoBonds != 0)
         || n_metal == 0
         || restore_mode.bMetalAddFlower == 0
     {
+        // INCHI✔️✔️:         /* atom-atom rules, no metal atoms involved (1: A-A, A-Ae, Ae-Ae) */
+        // INCHI✔️✔️:         nMinorder = BOND_TYPE_SINGLE;
         min_order = BOND_TYPE_SINGLE as i32;
-        flow = bond_type.wrapping_sub(min_order);
-        flower = 0;
+        // INCHI✔️✔️:         nInitorder = bond_type;
+        initial_order = bond_type;
+        // INCHI✔️✔️:         nFlow = nInitorder - nMinorder;
+        flow = initial_order.wrapping_sub(min_order);
+    // INCHI✔️✔️:     else if (nMetal && !nEndpoint)
     } else if n_metal != 0 && n_endpoint == 0 {
+        // INCHI✔️✔️:         /* M-a, M-M */
+        // INCHI✔️✔️:         nMinorder = pSrm->nMetalMinBondOrder;
         min_order = restore_mode.nMetalMinBondOrder;
-        flow = restore_mode
+        // INCHI✔️✔️:         nInitorder = pSrm->nMetalInitBondOrder + bond_type - BOND_TYPE_SINGLE;
+        initial_order = restore_mode
             .nMetalInitBondOrder
             .wrapping_add(bond_type)
-            .wrapping_sub(BOND_TYPE_SINGLE as i32)
-            .wrapping_sub(min_order);
+            .wrapping_sub(BOND_TYPE_SINGLE as i32);
+        // INCHI✔️✔️:         nFlow = nInitorder - nMinorder;
+        flow = initial_order.wrapping_sub(min_order);
+        // INCHI✔️✔️:         if (!pSrm->nMetalInitEdgeFlow &&
+        // INCHI✔️✔️:             pSrm->nMetalInitBondOrder > pSrm->nMetalMinBondOrder && nFlow > 0)
         if restore_mode.nMetalInitEdgeFlow == 0
             && restore_mode.nMetalInitBondOrder > restore_mode.nMetalMinBondOrder
             && flow > 0
         {
+            // INCHI✔️✔️:             nFlow--;
             flow = flow.wrapping_sub(1);
         }
+        // INCHI✔️✔️:         bNeedsFlower = ( 0 != pVA[iat].cMetal );
         flower = i32::from(atom_va.cMetal != 0);
-    } else {
+    // INCHI✔️✔️:     else if ((pVA[iat].cMetal && !at->endpoint && !pVA[neigh].cMetal && atom[neigh].endpoint) ||
+    // INCHI✔️✔️:              (pVA[neigh].cMetal && !atom[neigh].endpoint && !pVA[iat].cMetal && at->endpoint))
+    } else if (atom_va.cMetal != 0
+        && atom.endpoint == 0
+        && neigh_va.cMetal == 0
+        && neighbor.endpoint != 0)
+        || (neigh_va.cMetal != 0
+            && neighbor.endpoint == 0
+            && atom_va.cMetal == 0
+            && atom.endpoint != 0)
+    {
+        // INCHI✔️✔️:             /* M-ae */
+        // INCHI✔️✔️:             nMinorder = pSrm->nMetal2EndpointMinBondOrder;
         min_order = restore_mode.nMetal2EndpointMinBondOrder;
-        flow = restore_mode
+        // INCHI✔️✔️:             nInitorder = pSrm->nMetal2EndpointInitBondOrder + bond_type - BOND_TYPE_SINGLE;
+        initial_order = restore_mode
             .nMetal2EndpointInitBondOrder
             .wrapping_add(bond_type)
-            .wrapping_sub(BOND_TYPE_SINGLE as i32)
-            .wrapping_sub(min_order);
+            .wrapping_sub(BOND_TYPE_SINGLE as i32);
+        // INCHI✔️✔️:             nFlow = nInitorder - nMinorder;
+        flow = initial_order.wrapping_sub(min_order);
+        // INCHI✔️✔️:             if (!pSrm->nMetal2EndpointInitEdgeFlow &&
+        // INCHI✔️✔️:                 pSrm->nMetal2EndpointInitBondOrder > pSrm->nMetal2EndpointMinBondOrder && nFlow > 0)
         if restore_mode.nMetal2EndpointInitEdgeFlow == 0
             && restore_mode.nMetal2EndpointInitBondOrder > restore_mode.nMetal2EndpointMinBondOrder
             && flow > 0
         {
+            // INCHI✔️✔️:                 nFlow--;
             flow = flow.wrapping_sub(1);
         }
-        let metal_to_nonmetal_endpoint = (atom_va.cMetal != 0
-            && atom.endpoint == 0
-            && neigh_va.cMetal == 0
-            && neighbor.endpoint != 0)
-            || (neigh_va.cMetal != 0
-                && neighbor.endpoint == 0
-                && atom_va.cMetal == 0
-                && atom.endpoint != 0);
-        flower = if metal_to_nonmetal_endpoint {
-            i32::from(atom_va.cMetal != 0)
-        } else {
-            i32::from(atom_va.cMetal != 0 && atom.endpoint == 0)
-        };
+        // INCHI✔️✔️:             bNeedsFlower = ( 0 != pVA[iat].cMetal );
+        flower = i32::from(atom_va.cMetal != 0);
+    // INCHI✔️✔️:         else
+    } else {
+        // INCHI✔️✔️:             /* endpoint is metal => no flower (4: M-Me, Me-Me, Me-A, Me-Ae) */
+        // INCHI✔️✔️:             nMinorder = pSrm->nMetal2EndpointMinBondOrder;
+        min_order = restore_mode.nMetal2EndpointMinBondOrder;
+        // INCHI✔️✔️:             nInitorder = pSrm->nMetal2EndpointInitBondOrder + bond_type - BOND_TYPE_SINGLE;
+        initial_order = restore_mode
+            .nMetal2EndpointInitBondOrder
+            .wrapping_add(bond_type)
+            .wrapping_sub(BOND_TYPE_SINGLE as i32);
+        // INCHI✔️✔️:             nFlow = nInitorder - nMinorder;
+        flow = initial_order.wrapping_sub(min_order);
+        // INCHI✔️✔️:             if (!pSrm->nMetal2EndpointInitEdgeFlow &&
+        // INCHI✔️✔️:                 pSrm->nMetal2EndpointInitBondOrder > pSrm->nMetal2EndpointMinBondOrder && nFlow > 0)
+        if restore_mode.nMetal2EndpointInitEdgeFlow == 0
+            && restore_mode.nMetal2EndpointInitBondOrder > restore_mode.nMetal2EndpointMinBondOrder
+            && flow > 0
+        {
+            // INCHI✔️✔️:                 nFlow--;
+            flow = flow.wrapping_sub(1);
+        }
+        // INCHI✔️✔️:             bNeedsFlower = ( pVA[iat].cMetal && !at->endpoint );
+        flower = i32::from(atom_va.cMetal != 0 && atom.endpoint == 0);
     }
 
+    // INCHI✔️✔️:     nMaxcap = BOND_TYPE_TRIPLE - nMinorder;
+    max_capacity_value = (BOND_TYPE_TRIPLE as i32).wrapping_sub(min_order);
+    // INCHI✔️✔️:     if (pnMaxcap) { *pnMaxcap = nMaxcap; }
     if let Some(value) = max_capacity {
-        *value = (BOND_TYPE_TRIPLE as i32).wrapping_sub(min_order);
+        *value = max_capacity_value;
     }
+    // INCHI✔️✔️:     if (pnMinorder) { *pnMinorder = nMinorder; }
     if let Some(value) = minimum_order {
         *value = min_order;
     }
+    // INCHI✔️✔️:     if (pbNeedsFlower) { *pbNeedsFlower = bNeedsFlower; }
     if let Some(value) = needs_flower {
         *value = flower;
     }
-    Ok(flow)
+    // INCHI✔️✔️:     return nFlow;
+    // INCHI✔️✔️: }
+    // END INCHI C FUNCTION: BondFlowMaxcapMinorder
+    flow
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -4348,7 +4430,7 @@ pub(crate) fn nCountBnsSizes(
                 }
                 for (node_index, node) in list.nodes.iter().enumerate() {
                     let (type_, node_cap, node_flow, edges) = *node;
-                    for (neighbor_number, edge_cap, edge_flow, _forbidden) in edges {
+                    for (neighbor_number, edge_cap, _forbidden, edge_flow) in edges {
                         if neighbor_number == 0 {
                             break;
                         }
@@ -5531,10 +5613,25 @@ pub(crate) fn RunBnsRestoreOnce(
 
     let mut total_delta = 0_i32;
     let _ = ReInitBnStructAltPaths(heap, pBNS)?;
+    // Some source-level error fixtures intentionally omit BNS work arrays.
+    // Keep the checked public path for those inputs so its original error code
+    // is preserved; valid BNS instances use the stable workspace below.
+    let mut workspace = BnsSearchWorkspace::new(heap, pBNS, pBD).ok();
 
     loop {
-        let delta =
-            RunBalancedNetworkSearch(heap, pBNS, pBD, BNS_EF_CHNG_FLOW as i32, clock_result)?;
+        let delta_result = if let Some(workspace) = workspace.as_mut() {
+            run_balanced_network_search_with_workspace(
+                heap,
+                pBNS,
+                pBD,
+                BNS_EF_CHNG_FLOW as i32,
+                clock_result,
+                workspace,
+            )
+        } else {
+            RunBalancedNetworkSearch(heap, pBNS, pBD, BNS_EF_CHNG_FLOW as i32, clock_result)
+        };
+        let delta = delta_result?;
         if BNS_ERR <= delta && delta <= BNS_MAX_ERR_VALUE {
             return Ok(delta);
         }
@@ -6492,67 +6589,73 @@ pub(crate) fn ConnectTwoVertices(
         usize::try_from(second_vertex_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let edge_index_usize =
         usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let mut vertices = heap.slice(network.vert.as_const())?.to_vec();
-    let mut edges = heap.slice(network.edge.as_const())?.to_vec();
-    let mut incident_edges = heap.slice(network.iedge.as_const())?.to_vec();
-    let first = vertices
-        .get(first_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let second = vertices
-        .get(second_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let first_start = first.iedge.difference(network.iedge)?;
-    let second_start = second.iedge.difference(network.iedge)?;
-    if first_start < 0
-        || first_start + i64::from(first.max_adj_edges) > i64::from(network.max_iedges)
-        || second_start < 0
-        || second_start + i64::from(second.max_adj_edges) > i64::from(network.max_iedges)
-        || first.num_adj_edges >= first.max_adj_edges
-        || second.num_adj_edges >= second.max_adj_edges
-    {
-        return Ok(BNS_VERT_EDGE_OVFL);
-    }
-    let mut edge = edges
-        .get(edge_index_usize)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone();
-    if clear_edge != 0 {
-        edge = BNS_EDGE::default();
-    } else if edge.neighbor1 != 0 || edge.neighbor12 != 0 {
-        return Ok(BNS_PROGRAM_ERR);
-    }
-    edge.neighbor1 = u16::try_from(first_vertex_index.min(second_vertex_index))
+    let neighbor1 = u16::try_from(first_vertex_index.min(second_vertex_index))
         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    edge.neighbor12 = u16::try_from(first_vertex_index ^ second_vertex_index)
+    let neighbor12 = u16::try_from(first_vertex_index ^ second_vertex_index)
         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    heap.with_two_slices_mut_and_optional_third(
+        network.vert,
+        network.edge,
+        Some(network.iedge),
+        |vertices, edges, incident_edges| {
+            let incident_edges = incident_edges.expect("the incident-edge allocation was supplied");
+            let first = vertices
+                .get(first_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let second = vertices
+                .get(second_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let first_start = first.iedge.difference(network.iedge)?;
+            let second_start = second.iedge.difference(network.iedge)?;
+            if first_start < 0
+                || first_start + i64::from(first.max_adj_edges) > i64::from(network.max_iedges)
+                || second_start < 0
+                || second_start + i64::from(second.max_adj_edges) > i64::from(network.max_iedges)
+                || first.num_adj_edges >= first.max_adj_edges
+                || second.num_adj_edges >= second.max_adj_edges
+            {
+                return Ok(BNS_VERT_EDGE_OVFL);
+            }
 
-    let first_slot = usize::try_from(first_start + i64::from(vertices[first_index].num_adj_edges))
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    incident_edges
-        .get_mut(first_slot)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone_from(&edge_index);
-    let second_slot =
-        usize::try_from(second_start + i64::from(vertices[second_index].num_adj_edges))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    incident_edges
-        .get_mut(second_slot)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone_from(&edge_index);
+            let edge = edges
+                .get(edge_index_usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if clear_edge == 0 && (edge.neighbor1 != 0 || edge.neighbor12 != 0) {
+                return Ok(BNS_PROGRAM_ERR);
+            }
+            let first_slot =
+                usize::try_from(first_start + i64::from(vertices[first_index].num_adj_edges))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let second_slot =
+                usize::try_from(second_start + i64::from(vertices[second_index].num_adj_edges))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            incident_edges
+                .get(first_slot)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            incident_edges
+                .get(second_slot)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
 
-    let first_order_slot = usize::from(first_vertex_index > second_vertex_index);
-    edge.neigh_ord[first_order_slot] = vertices[first_index].num_adj_edges;
-    vertices[first_index].num_adj_edges = vertices[first_index].num_adj_edges.wrapping_add(1);
-    let second_order_slot = usize::from(first_vertex_index < second_vertex_index);
-    edge.neigh_ord[second_order_slot] = vertices[second_index].num_adj_edges;
-    vertices[second_index].num_adj_edges = vertices[second_index].num_adj_edges.wrapping_add(1);
-    edges[edge_index_usize] = edge;
+            let edge = &mut edges[edge_index_usize];
+            if clear_edge != 0 {
+                *edge = BNS_EDGE::default();
+            }
+            edge.neighbor1 = neighbor1;
+            edge.neighbor12 = neighbor12;
+            incident_edges[first_slot] = edge_index;
+            incident_edges[second_slot] = edge_index;
 
-    heap.slice_mut(network.vert)?.clone_from_slice(&vertices);
-    heap.slice_mut(network.edge)?.clone_from_slice(&edges);
-    heap.slice_mut(network.iedge)?
-        .clone_from_slice(&incident_edges);
-    Ok(0)
+            let first_order_slot = usize::from(first_vertex_index > second_vertex_index);
+            edge.neigh_ord[first_order_slot] = vertices[first_index].num_adj_edges;
+            vertices[first_index].num_adj_edges =
+                vertices[first_index].num_adj_edges.wrapping_add(1);
+            let second_order_slot = usize::from(first_vertex_index < second_vertex_index);
+            edge.neigh_ord[second_order_slot] = vertices[second_index].num_adj_edges;
+            vertices[second_index].num_adj_edges =
+                vertices[second_index].num_adj_edges.wrapping_add(1);
+            Ok(0)
+        },
+    )
 }
 
 #[allow(non_snake_case)]
@@ -8764,17 +8867,6 @@ pub(crate) fn AddCGroups2TCGBnStruct(
             let vertex_index = base_vertex
                 .checked_add(node_index)
                 .ok_or(SourceHeapError::PointerOffsetOverflow)?;
-            let mut vertex_values = heap.slice(network.vert.as_const())?.to_vec();
-            let previous = vertex_values
-                .get(previous_vertex)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let next_iedge = previous.iedge.offset(i64::from(previous.max_adj_edges))?;
-            let vertex = vertex_values
-                .get_mut(vertex_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            vertex.iedge = next_iedge;
-            vertex.max_adj_edges = node_valences[node_index] as AT_NUMB;
-            vertex.num_adj_edges = 0;
             let capacity = if !metal_atoms {
                 node.1
             } else if node.1 != 0 {
@@ -8789,16 +8881,27 @@ pub(crate) fn AddCGroups2TCGBnStruct(
             } else {
                 0
             };
-            AddStCapFlow(
-                vertex,
-                &mut total_stationary_flow,
-                &mut total_stationary_capacity,
-                capacity,
-                flow,
-            );
-            vertex.type_ = node_type as AT_NUMB;
-            heap.slice_mut(network.vert)?
-                .clone_from_slice(&vertex_values);
+            {
+                let vertices = heap.slice_mut(network.vert)?;
+                let previous = vertices
+                    .get(previous_vertex)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let next_iedge = previous.iedge.offset(i64::from(previous.max_adj_edges))?;
+                let vertex = vertices
+                    .get_mut(vertex_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                vertex.iedge = next_iedge;
+                vertex.max_adj_edges = node_valences[node_index] as AT_NUMB;
+                vertex.num_adj_edges = 0;
+                AddStCapFlow(
+                    vertex,
+                    &mut total_stationary_flow,
+                    &mut total_stationary_capacity,
+                    capacity,
+                    flow,
+                );
+                vertex.type_ = node_type as AT_NUMB;
+            }
             previous_vertex = vertex_index;
             current_vertices = i32::try_from(vertex_index + 1)
                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
@@ -10217,91 +10320,90 @@ pub(crate) fn MakeOneInChIOutOfStrFromINChI2(
     clock_result: clock_t,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr1.c:5087 MakeOneInChIOutOfStrFromINChI2
-    // INCHI✔️❌: complete active source frame follows verbatim; typed SourceHeap snapshots add overhead.
-    /*
-    int MakeOneInChIOutOfStrFromINChI2( struct tagCANON_GLOBALS *pCG,
-                                        INCHI_CLOCK *ic,
-                                        ICHICONST INPUT_PARMS *ip_inp,
-                                        STRUCT_DATA *sd_inp,
-                                        BN_STRUCT *pBNS, StrFromINChI *pStruct,
-                                        inp_ATOM *at, inp_ATOM *at2, inp_ATOM *at3,
-                                        VAL_AT *pVA, ALL_TC_GROUPS *pTCGroups,
-                                        T_GROUP_INFO **t_group_info,
-                                        inp_ATOM **at_norm, inp_ATOM **at_prep )
-    {
-        int ret;
-        INPUT_PARMS ip_loc, *ip;
-        STRUCT_DATA sd_loc, *sd;
-
-        ip_loc = *ip_inp;
-        sd_loc = *sd_inp;
-        ip = &ip_loc;
-        sd = &sd_loc;
-
-        memset( sd, 0, sizeof( *sd ) ); /* djb-rwth: memset_s C11/Annex K variant? */
-
-        /* create structure out of BNS */
-        memcpy(at2, at, ((long long)pStruct->num_atoms + (long long)pStruct->num_deleted_H) * sizeof(at2[0])); /* djb-rwth: cast operator added */
-        pStruct->at = at2;
-        ret = CopyBnsToAtom( pStruct, pBNS, pVA, pTCGroups, 1 );
-        pStruct->at = at;
-        if (ret < 0)
-        {
-            goto exit_function;/*  out of RAM or other normalization problem */
-        }
-
-        pStruct->at = at;
-
-        ret = MakeOneInChIOutOfStrFromINChI( pCG, ic, ip, sd, pStruct,
-                                             at2, at3, pTCGroups );
-
-        if (ret < 0)
-        {
-            goto exit_function;/*  out of RAM or other normalization problem */
-        }
-        if (at_norm)
-        {
-            *at_norm = pStruct->pOne_norm_data[0]->at;
-        }
-        if (at_prep)
-        {
-            if (pStruct->pOne_norm_data[0]->bTautPreprocessed && pStruct->pOne_norm_data[0]->at_fixed_bonds)
-            {
-                *at_prep = pStruct->pOne_norm_data[0]->at_fixed_bonds;
-            }
-            else
-            /* get preprocessed structure in case of Fixed-H */
-                if (pStruct->iMobileH == TAUT_NON && pStruct->pOne_norm_data[1] && pStruct->pOne_norm_data[1]->bTautPreprocessed)
-                {
-                    *at_prep = pStruct->pOne_norm_data[1]->at_fixed_bonds;
-                }
-                else
-                {
-                    *at_prep = NULL;
-                }
-        }
-        if (t_group_info)
-        {
-            if (pStruct->iMobileH == TAUT_YES &&
-                 pStruct->One_ti.num_t_groups &&
-                 pStruct->One_ti.t_group && pStruct->One_ti.nEndpointAtomNumber)
-            {
-                *t_group_info = &pStruct->One_ti;
-            }
-            else
-            {
-                *t_group_info = NULL;
-            }
-        }
-
-    exit_function:
-        return ret;
-    }
-    */
+    // BEGIN COMPLETE VERBATIM SOURCE FRAME: MakeOneInChIOutOfStrFromINChI2
+    // INCHI✔️✔️: int MakeOneInChIOutOfStrFromINChI2( struct tagCANON_GLOBALS *pCG,
+    // INCHI✔️✔️:                                     INCHI_CLOCK *ic,
+    // INCHI✔️✔️:                                     ICHICONST INPUT_PARMS *ip_inp,
+    // INCHI✔️✔️:                                     STRUCT_DATA *sd_inp,
+    // INCHI✔️✔️:                                     BN_STRUCT *pBNS, StrFromINChI *pStruct,
+    // INCHI✔️✔️:                                     inp_ATOM *at, inp_ATOM *at2, inp_ATOM *at3,
+    // INCHI✔️✔️:                                     VAL_AT *pVA, ALL_TC_GROUPS *pTCGroups,
+    // INCHI✔️✔️:                                     T_GROUP_INFO **t_group_info,
+    // INCHI✔️✔️:                                     inp_ATOM **at_norm, inp_ATOM **at_prep )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     int ret;
+    // INCHI✔️✔️:     INPUT_PARMS ip_loc, *ip;
+    // INCHI✔️✔️:     STRUCT_DATA sd_loc, *sd;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     ip_loc = *ip_inp;
+    // INCHI✔️✔️:     sd_loc = *sd_inp;
+    // INCHI✔️✔️:     ip = &ip_loc;
+    // INCHI✔️✔️:     sd = &sd_loc;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     memset( sd, 0, sizeof( *sd ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     /* create structure out of BNS */
+    // INCHI✔️✔️:     memcpy(at2, at, ((long long)pStruct->num_atoms + (long long)pStruct->num_deleted_H) * sizeof(at2[0])); /* djb-rwth: cast operator added */
+    // INCHI✔️✔️:     pStruct->at = at2;
+    // INCHI✔️✔️:     ret = CopyBnsToAtom( pStruct, pBNS, pVA, pTCGroups, 1 );
+    // INCHI✔️✔️:     pStruct->at = at;
+    // INCHI✔️✔️:     if (ret < 0)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         goto exit_function;/*  out of RAM or other normalization problem */
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     pStruct->at = at;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     ret = MakeOneInChIOutOfStrFromINChI( pCG, ic, ip, sd, pStruct,
+    // INCHI✔️✔️:                                          at2, at3, pTCGroups );
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     if (ret < 0)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         goto exit_function;/*  out of RAM or other normalization problem */
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     if (at_norm)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         *at_norm = pStruct->pOne_norm_data[0]->at;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     if (at_prep)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         if (pStruct->pOne_norm_data[0]->bTautPreprocessed && pStruct->pOne_norm_data[0]->at_fixed_bonds)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             *at_prep = pStruct->pOne_norm_data[0]->at_fixed_bonds;
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         else
+    // INCHI✔️✔️:         /* get preprocessed structure in case of Fixed-H */
+    // INCHI✔️✔️:             if (pStruct->iMobileH == TAUT_NON && pStruct->pOne_norm_data[1] && pStruct->pOne_norm_data[1]->bTautPreprocessed)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 *at_prep = pStruct->pOne_norm_data[1]->at_fixed_bonds;
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:             else
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 *at_prep = NULL;
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     if (t_group_info)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         if (pStruct->iMobileH == TAUT_YES &&
+    // INCHI✔️✔️:              pStruct->One_ti.num_t_groups &&
+    // INCHI✔️✔️:              pStruct->One_ti.t_group && pStruct->One_ti.nEndpointAtomNumber)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             *t_group_info = &pStruct->One_ti;
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         else
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             *t_group_info = NULL;
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️: exit_function:
+    // INCHI✔️✔️:     return ret;
+    // INCHI✔️✔️: }
+    // END COMPLETE VERBATIM SOURCE FRAME: MakeOneInChIOutOfStrFromINChI2
     // END INCHI C FUNCTION: MakeOneInChIOutOfStrFromINChI2
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: MakeOneInChIOutOfStrFromINChI2
-    // INCHI✔️❌: COMPILE_ANSI_ONLY=1; TARGET_API_LIB=1; GCC/Linux.
-    // INCHI✔️❌: ICHICONST is const and the active memcpy is the GCC LP64 inp_ATOM layout.
+    // INCHI✔️✔️: COMPILE_ANSI_ONLY=1; TARGET_API_LIB=1; GCC/Linux.
+    // INCHI✔️✔️: ICHICONST is const and the active memcpy is the GCC LP64 inp_ATOM layout.
     // END INCHI ACTIVE MACRO CONFIGURATION: MakeOneInChIOutOfStrFromINChI2
 
     let input_parameters_local = input_parameters.clone();
@@ -10311,15 +10413,7 @@ pub(crate) fn MakeOneInChIOutOfStrFromINChI2(
     let count_i64 = i64::from(structure.num_atoms) + i64::from(structure.num_deleted_H);
     let count = usize::try_from(count_i64).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if count != 0 {
-        let source_atoms = heap
-            .slice(at.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at2)?
-            .get_mut(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&source_atoms);
+        copy_inp_atom_prefix(heap, at2, at, count)?;
     }
 
     structure.at = at2;
@@ -10889,7 +10983,7 @@ pub(crate) fn MakeOneInChIOutOfStrFromINChI(
 
         let selected = usize::try_from(structure.bMobileH)
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let num_at = Create_INChI(
+        let create_result = Create_INChI(
             heap,
             canonical_globals,
             clock,
@@ -10907,7 +11001,8 @@ pub(crate) fn MakeOneInChIOutOfStrFromINChI(
             Some(&mut structure.One_ti),
             Some(&mut structure_data.pStrErrStruct),
             clock_result,
-        )?;
+        );
+        let num_at = create_result?;
         SetConnectedComponentNumber(
             heap.slice_mut(current_data.at)?,
             current_data.num_at,
@@ -11224,6 +11319,90 @@ pub(crate) fn SetStCapFlow(
 mod tests {
     use super::*;
     use crate::source_types::{BOND_TYPE_DOUBLE, T_GROUP};
+
+    #[test]
+    fn copy_inp_atom_prefix_preserves_source_memcpy_boundaries() {
+        let atom = |number| inp_ATOM {
+            orig_at_number: number,
+            ..inp_ATOM::default()
+        };
+
+        let mut heap = SourceHeap::default();
+        let source = heap
+            .allocate_model_storage(vec![atom(1), atom(2), atom(3)])
+            .unwrap();
+        let destination = heap
+            .allocate_model_storage(vec![atom(10), atom(20), atom(30)])
+            .unwrap();
+        copy_inp_atom_prefix(&mut heap, destination, source, 2).unwrap();
+        assert_eq!(
+            heap.slice(source.as_const())
+                .unwrap()
+                .iter()
+                .map(|atom| atom.orig_at_number)
+                .collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert_eq!(
+            heap.slice(destination.as_const())
+                .unwrap()
+                .iter()
+                .map(|atom| atom.orig_at_number)
+                .collect::<Vec<_>>(),
+            [1, 2, 30]
+        );
+
+        copy_inp_atom_prefix(&mut heap, source, source, 3).unwrap();
+        assert_eq!(
+            heap.slice(source.as_const())
+                .unwrap()
+                .iter()
+                .map(|atom| atom.orig_at_number)
+                .collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert_eq!(
+            copy_inp_atom_prefix(&mut heap, source, source, 4),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+    }
+
+    #[test]
+    fn copy_inp_atom_prefix_preserves_modeled_overlap_and_error_order() {
+        let atom = |number| inp_ATOM {
+            orig_at_number: number,
+            ..inp_ATOM::default()
+        };
+
+        let mut heap = SourceHeap::default();
+        let atoms = heap
+            .allocate_model_storage(vec![atom(1), atom(2), atom(3), atom(4)])
+            .unwrap();
+        let shifted = atoms.offset(1).unwrap();
+        copy_inp_atom_prefix(&mut heap, shifted, atoms, 3).unwrap();
+        assert_eq!(
+            heap.slice(atoms.as_const())
+                .unwrap()
+                .iter()
+                .map(|atom| atom.orig_at_number)
+                .collect::<Vec<_>>(),
+            [1, 1, 2, 3]
+        );
+
+        let short_source = heap.allocate_model_storage(vec![atom(5)]).unwrap();
+        assert_eq!(
+            copy_inp_atom_prefix(&mut heap, SourceMutPointer::null(), short_source, 2),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(
+            copy_inp_atom_prefix(&mut heap, SourceMutPointer::null(), short_source, 1),
+            Err(SourceHeapError::NullPointer)
+        );
+        assert_eq!(
+            copy_inp_atom_prefix(&mut heap, shifted, atoms, 4),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+    }
 
     #[test]
     fn source_port__ichirvr1__getdeltachargefromvf__line_4229() {
@@ -14657,6 +14836,45 @@ mod tests {
                 "cnListIndex={list_index}"
             );
         }
+
+        let mut heap = SourceHeap::default();
+        let mut groups = ALL_TC_GROUPS::default();
+        assert_eq!(
+            nCountBnsSizes(
+                &mut heap,
+                &[inp_ATOM {
+                    el_number: 8,
+                    ..inp_ATOM::default()
+                }],
+                1,
+                0,
+                0,
+                &T_GROUP_INFO::default(),
+                &[crate::source_types::VAL_AT {
+                    cnListIndex: 11,
+                    ..crate::source_types::VAL_AT::default()
+                }],
+                &SRM::default(),
+                &mut groups,
+            ),
+            Ok(0)
+        );
+        let positive_group = heap
+            .slice(groups.pTCG.as_const())
+            .unwrap()
+            .iter()
+            .find(|group| group.type_ == BNS_VT_C_POS as i32)
+            .unwrap();
+        assert_eq!(
+            (
+                positive_group.num_edges,
+                positive_group.st_cap,
+                positive_group.st_flow,
+                positive_group.edges_cap,
+                positive_group.edges_flow,
+            ),
+            (2, 1, 1, 1, 1)
+        );
 
         let mut heap = SourceHeap::default();
         let tgroup_pointer = heap

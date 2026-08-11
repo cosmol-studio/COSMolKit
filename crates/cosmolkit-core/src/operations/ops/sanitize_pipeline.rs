@@ -111,8 +111,8 @@ fn sanitize_recompute_property_cache(
     step: crate::SanitizeStep,
     operation: &'static MoleculeOpSpec,
 ) -> Result<crate::ValenceAssignment, OperationError> {
-    let valence = parts.with_optional_block_read_parts(
-        topology.clone(),
+    let valence = parts.with_borrowed_optional_block_read_parts(
+        topology,
         coordinates,
         properties,
         |read| {
@@ -158,8 +158,8 @@ pub(super) fn run_sanitize_pipeline_on_topology(
     macro_rules! sanitize_read {
         ($read:ident => $body:expr) => {{
             parts
-                .with_optional_block_read_parts(
-                    (*topology).clone(),
+                .with_borrowed_optional_block_read_parts(
+                    topology,
                     coordinates,
                     properties,
                     |$read| Ok::<_, OperationError>($body),
@@ -811,24 +811,25 @@ fn sanitize_count_atom_electrons(
     Ok(result)
 }
 
-fn sanitize_valence_facts(
-    molecule: MoleculeReadParts<'_>,
-) -> Result<crate::ValenceAssignment, crate::ValenceError> {
+fn sanitize_valence_facts<'a>(
+    molecule: MoleculeReadParts<'a>,
+) -> Result<std::borrow::Cow<'a, crate::ValenceAssignment>, crate::ValenceError> {
     if let Some(valence) = &molecule.derived_cache().valence {
-        Ok(valence.clone())
+        Ok(std::borrow::Cow::Borrowed(valence))
     } else {
-        molecule.assign_valence_with_options(crate::ValenceModel::RdkitLike, false)
+        molecule
+            .assign_valence_with_options(crate::ValenceModel::RdkitLike, false)
+            .map(std::borrow::Cow::Owned)
     }
 }
 
 pub(super) fn sanitize_adjacency(
     molecule: MoleculeReadParts<'_>,
-) -> Result<crate::AdjacencyList, crate::ValenceError> {
-    crate::AdjacencyList::try_from_topology(molecule.num_atoms(), molecule.bonds()).map_err(|_| {
-        crate::ValenceError::UnsupportedBranch {
-            reason: "sanitize topology bond atom index out of range",
-        }
-    })
+) -> Result<&crate::AdjacencyList, crate::ValenceError> {
+    // RDKit sanitize stages read `mol.atomBonds(atom)` from the same RWMol.
+    // This pipeline changes atom and bond properties but never bond endpoints,
+    // so the operation-owned adjacency remains current for every stage.
+    Ok(molecule.adjacency())
 }
 
 fn sanitize_total_degree(

@@ -7,7 +7,11 @@ use crate::{
 
 #[derive(Clone, Copy)]
 pub(crate) struct MoleculeReadParts<'a> {
-    molecule: &'a Molecule,
+    topology: &'a TopologyBlock,
+    coordinates: &'a CoordinateBlock,
+    properties: &'a MoleculeProperties,
+    derived_cache: &'a DerivedCacheBlock,
+    capabilities: MoleculeCapabilities,
 }
 
 impl<'a> MoleculeReadParts<'a> {
@@ -19,83 +23,109 @@ impl<'a> MoleculeReadParts<'a> {
     // operation policy; do not expose the underlying Molecule.
     #[must_use]
     pub(crate) fn from_molecule(molecule: &'a Molecule) -> Self {
-        Self { molecule }
+        Self::from_blocks(
+            molecule.topology_block(),
+            molecule.coordinate_block(),
+            molecule.properties(),
+            molecule.derived_cache(),
+            molecule.capabilities(),
+        )
+    }
+
+    #[must_use]
+    pub(crate) const fn from_blocks(
+        topology: &'a TopologyBlock,
+        coordinates: &'a CoordinateBlock,
+        properties: &'a MoleculeProperties,
+        derived_cache: &'a DerivedCacheBlock,
+        capabilities: MoleculeCapabilities,
+    ) -> Self {
+        Self {
+            topology,
+            coordinates,
+            properties,
+            derived_cache,
+            capabilities,
+        }
     }
 
     #[must_use]
     pub(crate) fn atoms(self) -> &'a [Atom] {
-        self.molecule.atoms()
+        &self.topology.atoms
     }
 
     #[must_use]
     pub(crate) fn topology(self) -> &'a TopologyBlock {
-        self.molecule.topology_block()
+        self.topology
     }
 
     #[must_use]
     pub(crate) fn coordinates(self) -> &'a CoordinateBlock {
-        self.molecule.coordinate_block()
+        self.coordinates
     }
 
     #[must_use]
     pub(crate) fn bonds(self) -> &'a [Bond] {
-        self.molecule.bonds()
+        &self.topology.bonds
     }
 
     #[must_use]
     pub(crate) fn adjacency(self) -> &'a AdjacencyList {
-        &self.molecule.topology_block().adjacency
+        &self.topology.adjacency
     }
 
     #[must_use]
     pub(crate) fn atom(self, atom: AtomId) -> Option<&'a Atom> {
-        self.molecule.atom(atom)
+        self.topology.atoms.get(atom.index())
     }
 
     #[must_use]
     pub(crate) fn num_atoms(self) -> usize {
-        self.molecule.num_atoms()
+        self.topology.atoms.len()
     }
 
     #[must_use]
     pub(crate) fn num_bonds(self) -> usize {
-        self.molecule.num_bonds()
+        self.topology.bonds.len()
     }
 
     #[must_use]
     pub(crate) fn coordinates_2d(self) -> Option<&'a [[f64; 2]]> {
-        self.molecule.coordinates_2d()
+        self.coordinates
+            .conformers_2d
+            .first()
+            .map(crate::Conformer2D::coordinates)
     }
 
     #[must_use]
     pub(crate) fn conformers_3d(self) -> &'a [crate::Conformer3D] {
-        self.molecule.conformers_3d()
+        &self.coordinates.conformers_3d
     }
 
     #[must_use]
     pub(crate) fn substance_groups(self) -> &'a [SubstanceGroup] {
-        self.molecule.substance_groups()
+        &self.topology.substance_groups
     }
 
     #[allow(dead_code)]
     #[must_use]
     pub(crate) fn stereo_groups(self) -> &'a [StereoGroup] {
-        self.molecule.stereo_groups()
+        &self.topology.stereo_groups
     }
 
     #[must_use]
     pub(crate) fn properties(self) -> &'a MoleculeProperties {
-        self.molecule.properties()
+        self.properties
     }
 
     #[must_use]
     pub(crate) fn derived_cache(self) -> &'a DerivedCacheBlock {
-        self.molecule.derived_cache()
+        self.derived_cache
     }
 
     #[must_use]
     pub(crate) fn capabilities(self) -> MoleculeCapabilities {
-        self.molecule.capabilities()
+        self.capabilities
     }
 
     pub(crate) fn add_hs_assignment(

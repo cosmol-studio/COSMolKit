@@ -1,8 +1,208 @@
 use crate::source::base::util::{inchi_calloc, inchi_free};
 use crate::source_types::{
-    AT_RANK, MAX_ATOMS, QUEUE, S_CHAR, SourceHeap, SourceHeapError, SourceMutPointer, inp_ATOM,
-    qInt,
+    AT_RANK, MAX_ATOMS, QUEUE, S_CHAR, SourceHeap, SourceHeapError, SourceMutPointer,
+    StableSourceConstSlice, StableSourceSlice, inp_ATOM, qInt,
 };
+
+struct RingSearchWorkspace {
+    atom: StableSourceConstSlice<inp_ATOM>,
+    queue: StableSourceSlice<QUEUE>,
+    values: StableSourceSlice<qInt>,
+    atom_level: StableSourceSlice<AT_RANK>,
+    source: StableSourceSlice<S_CHAR>,
+}
+
+impl RingSearchWorkspace {
+    fn new(
+        heap: &mut SourceHeap,
+        atom: SourceMutPointer<inp_ATOM>,
+        q: SourceMutPointer<QUEUE>,
+        n_atom_level: SourceMutPointer<AT_RANK>,
+        source: SourceMutPointer<S_CHAR>,
+    ) -> Result<Self, SourceHeapError> {
+        let queue_value = heap
+            .slice(q.as_const())?
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .clone();
+        let writable_ids = [
+            q.allocation_identity(),
+            queue_value.Val.allocation_identity(),
+            n_atom_level.allocation_identity(),
+            source.allocation_identity(),
+        ];
+        if writable_ids.iter().any(Option::is_none)
+            || writable_ids
+                .iter()
+                .enumerate()
+                .any(|(index, id)| writable_ids[..index].contains(id))
+            || writable_ids.contains(&atom.allocation_identity())
+        {
+            return Err(SourceHeapError::PointerAllocationMismatch);
+        }
+
+        let total = usize::try_from(queue_value.nTotLength)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let first =
+            usize::try_from(queue_value.nFirst).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let length = usize::try_from(queue_value.nLength)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        if total == 0 || first >= total || length > total {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+
+        // SAFETY: the five source arrays have distinct allocation identities,
+        // and GetMinRingSize neither frees nor resizes them. The source graph
+        // contract makes every active neighbor and queued atom an index into
+        // atom[], nAtomLevel[], and cSource[].
+        let atom = unsafe { heap.stable_slice(atom.as_const())? };
+        let queue = unsafe { heap.stable_slice_mut(q)? };
+        let values = unsafe { heap.stable_slice_mut(queue_value.Val)? };
+        let atom_level = unsafe { heap.stable_slice_mut(n_atom_level)? };
+        let source = unsafe { heap.stable_slice_mut(source)? };
+        if values.len() < total || atom.len() < atom_level.len() || source.len() < atom_level.len()
+        {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+
+        Ok(Self {
+            atom,
+            queue,
+            values,
+            atom_level,
+            source,
+        })
+    }
+
+    #[inline(always)]
+    unsafe fn queue(&self) -> &QUEUE {
+        // SAFETY: construction requires the QUEUE allocation to contain one item.
+        unsafe { self.queue.get_unchecked(0) }
+    }
+
+    #[inline(always)]
+    unsafe fn queue_mut(&mut self) -> &mut QUEUE {
+        // SAFETY: construction requires the QUEUE allocation to contain one item.
+        unsafe { self.queue.get_unchecked_mut(0) }
+    }
+
+    #[inline(always)]
+    unsafe fn queue_get(&mut self, value: &mut qInt) -> i32 {
+        let queue = unsafe { self.queue() };
+        if queue.nLength <= 0 {
+            return -1;
+        }
+        let first = queue.nFirst as usize;
+        let total = queue.nTotLength;
+        // SAFETY: the source QUEUE invariants validated at construction and
+        // preserved below keep nFirst within the allocated circular buffer.
+        *value = *unsafe { self.values.get_unchecked(first) };
+        let queue = unsafe { self.queue_mut() };
+        queue.nFirst = if queue.nFirst == total.wrapping_sub(1) {
+            0
+        } else {
+            queue.nFirst.wrapping_add(1)
+        };
+        queue.nLength = queue.nLength.wrapping_sub(1);
+        queue.nLength
+    }
+
+    #[inline(always)]
+    unsafe fn queue_add(&mut self, value: qInt) -> i32 {
+        let queue = unsafe { self.queue() };
+        if queue.nLength >= queue.nTotLength {
+            return -1;
+        }
+        let destination = queue.nFirst.wrapping_add(queue.nLength) % queue.nTotLength;
+        let length = queue.nLength.wrapping_add(1);
+        // SAFETY: the source QUEUE invariants make the modulo result a valid
+        // circular-buffer index.
+        *unsafe { self.values.get_unchecked_mut(destination as usize) } = value;
+        unsafe { self.queue_mut() }.nLength = length;
+        length
+    }
+}
+
+fn get_min_ring_size_with_workspace(
+    workspace: &mut RingSearchWorkspace,
+    n_max_ring_size: AT_RANK,
+) -> i32 {
+    let mut n_min_ring_size = (MAX_ATOMS + 1) as AT_RANK;
+    let mut at_no: qInt = 0;
+
+    loop {
+        // SAFETY: RingSearchWorkspace validates and exclusively owns the queue.
+        let q_len = unsafe { workspace.queue() }.nLength;
+        if q_len == 0 {
+            break;
+        }
+        for _i in 0..q_len {
+            // SAFETY: the workspace maintains the source QUEUE invariants.
+            if unsafe { workspace.queue_get(&mut at_no) } >= 0 {
+                let iat_no = usize::from(at_no);
+                // SAFETY: queued atom numbers obey the source graph-array contract.
+                let n_cur_level =
+                    unsafe { workspace.atom_level.get_unchecked(iat_no) }.wrapping_add(1);
+                if 2 * i32::from(n_cur_level) > i32::from(n_max_ring_size) + 4 {
+                    if u32::from(n_min_ring_size) < MAX_ATOMS + 1 {
+                        return if n_min_ring_size >= n_max_ring_size {
+                            0
+                        } else {
+                            i32::from(n_min_ring_size)
+                        };
+                    }
+                    return 0;
+                }
+
+                let current_source = *unsafe { workspace.source.get_unchecked(iat_no) };
+                // SAFETY: iat_no is a queued source atom index. Each read is
+                // kept as a scalar so queue mutation does not extend a borrow
+                // across the independent atom allocation.
+                let valence = i32::from(unsafe { workspace.atom.get_unchecked(iat_no) }.valence);
+                for j in 0..valence {
+                    let next = unsafe { workspace.atom.get_unchecked(iat_no) }.neighbor[j as usize]
+                        as qInt;
+                    let inext = usize::from(next);
+                    // SAFETY: active inp_ATOM neighbors obey the source graph contract.
+                    let next_level = *unsafe { workspace.atom_level.get_unchecked(inext) };
+                    if next_level == 0 {
+                        // SAFETY: the workspace maintains the source QUEUE invariants.
+                        if unsafe { workspace.queue_add(next) } >= 0 {
+                            *unsafe { workspace.atom_level.get_unchecked_mut(inext) } = n_cur_level;
+                            *unsafe { workspace.source.get_unchecked_mut(inext) } = current_source;
+                        } else {
+                            return -1;
+                        }
+                    } else {
+                        let next_source = *unsafe { workspace.source.get_unchecked(inext) };
+                        if i32::from(next_level) + 1 >= i32::from(n_cur_level)
+                            && next_source != current_source
+                        {
+                            if next_source == -1 {
+                                return -1;
+                            }
+                            let n_ring_size = next_level.wrapping_add(n_cur_level).wrapping_sub(2);
+                            if n_ring_size < n_min_ring_size {
+                                n_min_ring_size = n_ring_size;
+                            }
+                        }
+                    }
+                }
+            } else {
+                return -1;
+            }
+        }
+    }
+
+    if u32::from(n_min_ring_size) < MAX_ATOMS + 1 {
+        return if n_min_ring_size >= n_max_ring_size {
+            0
+        } else {
+            i32::from(n_min_ring_size)
+        };
+    }
+    0
+}
 
 #[allow(non_snake_case)]
 pub(crate) fn QueueCreate(
@@ -347,204 +547,106 @@ pub(crate) fn GetMinRingSize(
     nMaxRingSize: AT_RANK,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiring.c:262 GetMinRingSize
-    // INCHI✔️❌: complete active source frame follows verbatim; checked SourceHeap access adds overhead.
-    /*
-    int GetMinRingSize( inp_ATOM* atom,
-                        QUEUE *q,
-                        AT_RANK *nAtomLevel,
-                        S_CHAR *cSource,
-                        AT_RANK nMaxRingSize )
-    {
-        int qLen, i, j;
-        AT_RANK nCurLevel, nRingSize, nMinRingSize = MAX_ATOMS + 1;
-        qInt at_no, next;
-        int  iat_no, inext;
-
-        while ((qLen = QueueLength( q ))) /* djb-rwth: addressing LLVM warning */
-        {
-            /*  traverse the next level (next outer ring) */
-            for (i = 0; i < qLen; i++)
-            {
-                if (0 <= QueueGet( q, &at_no ))
-                {
-                    iat_no = (int) at_no;
-                    nCurLevel = nAtomLevel[iat_no] + 1;
-                    if (2 * nCurLevel > nMaxRingSize + 4)
-                    {
-                        /*  2*nCurLevel = nRingSize + 3 + k, k = 0 or 1  */
-                        if (nMinRingSize < MAX_ATOMS + 1)
-                        {
-                            return ( nMinRingSize >= nMaxRingSize ) ? 0 : nMinRingSize;
-                        }
-                        return 0; /*  min. ring size > nMaxRingSize */
-                    }
-                    for (j = 0; j < atom[iat_no].valence; j++)
-                    {
-                        next = (qInt) atom[iat_no].neighbor[j];
-                        inext = (int) next;
-                        if (!nAtomLevel[inext])
-                        {
-                            /*  the at_no neighbor has not been traversed yet. Add it to the queue */
-                            if (0 <= QueueAdd( q, &next ))
-                            {
-                                nAtomLevel[inext] = nCurLevel;
-                                cSource[inext] = cSource[iat_no]; /*  keep the path number */
-                            }
-                            else
-                            {
-                                return -1; /*  error */
-                            }
-                        }
-                        else
-                        {
-                            if (nAtomLevel[inext] + 1 >= nCurLevel &&
-                                    cSource[inext] != cSource[iat_no]
-                                    /*  && cSource[(int)next] != -1 */
-                                  )
-                            {
-                                /*  found a ring closure */
-                                /*  debug */
-                                if (cSource[inext] == -1)
-                                {
-                                    return -1;  /*  error */
-                                }
-                                if (( nRingSize = nAtomLevel[inext] + nCurLevel - 2 ) < nMinRingSize)
-                                {
-                                    nMinRingSize = nRingSize;
-                                }
-                                /* return (nRingSize >= nMaxRingSize)? 0 : nRingSize; */
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    return -1; /*  error */
-                }
-            }
-        }
-
-        if (nMinRingSize < MAX_ATOMS + 1)
-        {
-            return ( nMinRingSize >= nMaxRingSize ) ? 0 : nMinRingSize;
-        }
-
-        return 0;
-    }
-    */
+    // INCHI✔️✔️: int GetMinRingSize( inp_ATOM* atom,
+    // INCHI✔️✔️:                     QUEUE *q,
+    // INCHI✔️✔️:                     AT_RANK *nAtomLevel,
+    // INCHI✔️✔️:                     S_CHAR *cSource,
+    // INCHI✔️✔️:                     AT_RANK nMaxRingSize )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     int qLen, i, j;
+    // INCHI✔️✔️:     AT_RANK nCurLevel, nRingSize, nMinRingSize = MAX_ATOMS + 1;
+    // INCHI✔️✔️:     qInt at_no, next;
+    // INCHI✔️✔️:     int  iat_no, inext;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     while ((qLen = QueueLength( q ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         /*  traverse the next level (next outer ring) */
+    // INCHI✔️✔️:         for (i = 0; i < qLen; i++)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             if (0 <= QueueGet( q, &at_no ))
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 iat_no = (int) at_no;
+    // INCHI✔️✔️:                 nCurLevel = nAtomLevel[iat_no] + 1;
+    // INCHI✔️✔️:                 if (2 * nCurLevel > nMaxRingSize + 4)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     /*  2*nCurLevel = nRingSize + 3 + k, k = 0 or 1  */
+    // INCHI✔️✔️:                     if (nMinRingSize < MAX_ATOMS + 1)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         return ( nMinRingSize >= nMaxRingSize ) ? 0 : nMinRingSize;
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     return 0; /*  min. ring size > nMaxRingSize */
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:                 for (j = 0; j < atom[iat_no].valence; j++)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     next = (qInt) atom[iat_no].neighbor[j];
+    // INCHI✔️✔️:                     inext = (int) next;
+    // INCHI✔️✔️:                     if (!nAtomLevel[inext])
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         /*  the at_no neighbor has not been traversed yet. Add it to the queue */
+    // INCHI✔️✔️:                         if (0 <= QueueAdd( q, &next ))
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             nAtomLevel[inext] = nCurLevel;
+    // INCHI✔️✔️:                             cSource[inext] = cSource[iat_no]; /*  keep the path number */
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                         else
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             return -1; /*  error */
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     else
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         if (nAtomLevel[inext] + 1 >= nCurLevel &&
+    // INCHI✔️✔️:                                 cSource[inext] != cSource[iat_no]
+    // INCHI✔️✔️:                                 /*  && cSource[(int)next] != -1 */
+    // INCHI✔️✔️:                               )
+    // INCHI✔️✔️:                         {
+    // INCHI✔️✔️:                             /*  found a ring closure */
+    // INCHI✔️✔️:                             /*  debug */
+    // INCHI✔️✔️:                             if (cSource[inext] == -1)
+    // INCHI✔️✔️:                             {
+    // INCHI✔️✔️:                                 return -1;  /*  error */
+    // INCHI✔️✔️:                             }
+    // INCHI✔️✔️:                             if (( nRingSize = nAtomLevel[inext] + nCurLevel - 2 ) < nMinRingSize)
+    // INCHI✔️✔️:                             {
+    // INCHI✔️✔️:                                 nMinRingSize = nRingSize;
+    // INCHI✔️✔️:                             }
+    // INCHI✔️✔️:                             /* return (nRingSize >= nMaxRingSize)? 0 : nRingSize; */
+    // INCHI✔️✔️:                         }
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:             else
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 return -1; /*  error */
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     if (nMinRingSize < MAX_ATOMS + 1)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         return ( nMinRingSize >= nMaxRingSize ) ? 0 : nMinRingSize;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     return 0;
+    // INCHI✔️✔️: }
     // END INCHI C FUNCTION: GetMinRingSize
 
-    let locals = heap.allocate_model_storage(vec![0_u16; 2])?;
-    let at_no = locals;
-    let next = locals.offset(1)?;
-    let result = (|| -> Result<i32, SourceHeapError> {
-        let mut n_min_ring_size = (MAX_ATOMS + 1) as AT_RANK;
-
-        loop {
-            let q_len = QueueLength(heap, q)?;
-            if q_len == 0 {
-                break;
-            }
-            for _i in 0..q_len {
-                if QueueGet(heap, q, at_no)? >= 0 {
-                    let iat_no = usize::from(
-                        *heap
-                            .slice(at_no.as_const())?
-                            .first()
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    );
-                    let n_cur_level = heap
-                        .slice(nAtomLevel.as_const())?
-                        .get(iat_no)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .wrapping_add(1);
-                    if 2 * i32::from(n_cur_level) > i32::from(nMaxRingSize) + 4 {
-                        if u32::from(n_min_ring_size) < MAX_ATOMS + 1 {
-                            return Ok(if n_min_ring_size >= nMaxRingSize {
-                                0
-                            } else {
-                                i32::from(n_min_ring_size)
-                            });
-                        }
-                        return Ok(0);
-                    }
-
-                    let current_atom = heap
-                        .slice(atom.as_const())?
-                        .get(iat_no)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .clone();
-                    for j in 0..i32::from(current_atom.valence) {
-                        let next_value = current_atom.neighbor[j as usize] as qInt;
-                        *heap
-                            .slice_mut(next)?
-                            .first_mut()
-                            .ok_or(SourceHeapError::PointerOutOfBounds)? = next_value;
-                        let inext = usize::from(next_value);
-                        let next_level = *heap
-                            .slice(nAtomLevel.as_const())?
-                            .get(inext)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        if next_level == 0 {
-                            if QueueAdd(heap, q, next)? >= 0 {
-                                heap.slice_mut(nAtomLevel)?[inext] = n_cur_level;
-                                let source = heap
-                                    .slice(cSource.as_const())?
-                                    .get(iat_no)
-                                    .copied()
-                                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                heap.slice_mut(cSource)?[inext] = source;
-                            } else {
-                                return Ok(-1);
-                            }
-                        } else {
-                            let next_source = heap
-                                .slice(cSource.as_const())?
-                                .get(inext)
-                                .copied()
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            let current_source = heap
-                                .slice(cSource.as_const())?
-                                .get(iat_no)
-                                .copied()
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            if i32::from(next_level) + 1 >= i32::from(n_cur_level)
-                                && next_source != current_source
-                            {
-                                if next_source == -1 {
-                                    return Ok(-1);
-                                }
-                                let n_ring_size =
-                                    next_level.wrapping_add(n_cur_level).wrapping_sub(2);
-                                if n_ring_size < n_min_ring_size {
-                                    n_min_ring_size = n_ring_size;
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    return Ok(-1);
-                }
-            }
-        }
-
-        if u32::from(n_min_ring_size) < MAX_ATOMS + 1 {
-            return Ok(if n_min_ring_size >= nMaxRingSize {
-                0
-            } else {
-                i32::from(n_min_ring_size)
-            });
-        }
-        Ok(0)
-    })();
-    let cleanup = heap.free(locals);
-    match result {
-        Err(error) => Err(error),
-        Ok(value) => {
-            cleanup?;
-            Ok(value)
-        }
+    if q.is_null() {
+        return Ok(0);
     }
+    let initial_length = heap
+        .slice(q.as_const())?
+        .first()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .nLength;
+    if initial_length == 0 {
+        return Ok(0);
+    }
+    let mut workspace = RingSearchWorkspace::new(heap, atom, q, nAtomLevel, cSource)?;
+    Ok(get_min_ring_size_with_workspace(
+        &mut workspace,
+        nMaxRingSize,
+    ))
 }
 
 #[allow(non_snake_case)]
@@ -559,120 +661,119 @@ pub(crate) fn is_bond_in_Nmax_memb_ring(
     nMaxRingSize: AT_RANK,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiring.c:362 is_bond_in_Nmax_memb_ring
-    // INCHI✔️❌: complete active source frame follows verbatim; checked SourceHeap access adds overhead.
-    /*
-    int is_bond_in_Nmax_memb_ring( inp_ATOM* atom,
-                                   int at_no,
-                                   int neigh_ord,
-                                   QUEUE *q,
-                                   AT_RANK *nAtomLevel,
-                                   S_CHAR *cSource,
-                                   AT_RANK nMaxRingSize )
-    {
-        int  nMinRingSize = -1, i;
-        qInt n;
-        int  nTotLen;
-
-        if (nMaxRingSize < 3)
-        {
-            return 0;
-        }
-
-        QueueReinit( q );
-
-        /*  mark the starting atom */
-        nAtomLevel[at_no] = 1;
-        cSource[at_no] = -1;
-        /*  add neighbors */
-        for (i = 0; i < atom[at_no].valence; i++)
-        {
-            n = (qInt) atom[at_no].neighbor[i];
-            nAtomLevel[(int) n] = 2;
-            cSource[(int) n] = 1 + ( i == neigh_ord );
-            QueueAdd( q, &n );
-        }
-
-        nMinRingSize = GetMinRingSize( atom, q, nAtomLevel, cSource, nMaxRingSize );
-        /*  cleanup */
-        nTotLen = QueueWrittenLength( q );
-        for (i = 0; i < nTotLen; i++)
-        {
-            if (0 < QueueGetAny( q, &n, i ))
-            {
-                nAtomLevel[(int) n] = 0;
-                cSource[(int) n] = 0;
-            }
-        }
-        nAtomLevel[at_no] = 0;
-        cSource[at_no] = 0;
-
-        /*
-        if ( nAtomLevel )
-            inchi_free ( nAtomLevel );
-        if ( cSource )
-            inchi_free ( cSource );
-        QueueDelete( q );
-        */
-
-        return nMinRingSize;
-    }
-    */
+    // INCHI✔️✔️: int is_bond_in_Nmax_memb_ring( inp_ATOM* atom,
+    // INCHI✔️✔️:                                int at_no,
+    // INCHI✔️✔️:                                int neigh_ord,
+    // INCHI✔️✔️:                                QUEUE *q,
+    // INCHI✔️✔️:                                AT_RANK *nAtomLevel,
+    // INCHI✔️✔️:                                S_CHAR *cSource,
+    // INCHI✔️✔️:                                AT_RANK nMaxRingSize )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     int  nMinRingSize = -1, i;
+    // INCHI✔️✔️:     qInt n;
+    // INCHI✔️✔️:     int  nTotLen;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     if (nMaxRingSize < 3)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         return 0;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     QueueReinit( q );
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     /*  mark the starting atom */
+    // INCHI✔️✔️:     nAtomLevel[at_no] = 1;
+    // INCHI✔️✔️:     cSource[at_no] = -1;
+    // INCHI✔️✔️:     /*  add neighbors */
+    // INCHI✔️✔️:     for (i = 0; i < atom[at_no].valence; i++)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         n = (qInt) atom[at_no].neighbor[i];
+    // INCHI✔️✔️:         nAtomLevel[(int) n] = 2;
+    // INCHI✔️✔️:         cSource[(int) n] = 1 + ( i == neigh_ord );
+    // INCHI✔️✔️:         QueueAdd( q, &n );
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     nMinRingSize = GetMinRingSize( atom, q, nAtomLevel, cSource, nMaxRingSize );
+    // INCHI✔️✔️:     /*  cleanup */
+    // INCHI✔️✔️:     nTotLen = QueueWrittenLength( q );
+    // INCHI✔️✔️:     for (i = 0; i < nTotLen; i++)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         if (0 < QueueGetAny( q, &n, i ))
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             nAtomLevel[(int) n] = 0;
+    // INCHI✔️✔️:             cSource[(int) n] = 0;
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     nAtomLevel[at_no] = 0;
+    // INCHI✔️✔️:     cSource[at_no] = 0;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     /*
+    // INCHI✔️✔️:     if ( nAtomLevel )
+    // INCHI✔️✔️:         inchi_free ( nAtomLevel );
+    // INCHI✔️✔️:     if ( cSource )
+    // INCHI✔️✔️:         inchi_free ( cSource );
+    // INCHI✔️✔️:     QueueDelete( q );
+    // INCHI✔️✔️:     */
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     return nMinRingSize;
+    // INCHI✔️✔️: }
     // END INCHI C FUNCTION: is_bond_in_Nmax_memb_ring
 
     if nMaxRingSize < 3 {
         return Ok(0);
     }
 
-    let local = heap.allocate_model_storage(vec![0_u16])?;
-    let result = (|| -> Result<i32, SourceHeapError> {
-        let _ = QueueReinit(heap, q)?;
-        let start = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        heap.slice_mut(nAtomLevel)?[start] = 1;
-        heap.slice_mut(cSource)?[start] = -1;
+    let queue = heap
+        .slice_mut(q)?
+        .first_mut()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    queue.nFirst = 0;
+    queue.nLength = 0;
 
-        let start_atom = heap
-            .slice(atom.as_const())?
-            .get(start)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone();
-        for i in 0..i32::from(start_atom.valence) {
-            let n = start_atom.neighbor[i as usize] as qInt;
-            *heap
-                .slice_mut(local)?
-                .first_mut()
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = n;
-            let neighbor = usize::from(n);
-            heap.slice_mut(nAtomLevel)?[neighbor] = 2;
-            heap.slice_mut(cSource)?[neighbor] = 1 + i8::from(i == neigh_ord);
-            let _ = QueueAdd(heap, q, local)?;
-        }
-
-        let n_min_ring_size = GetMinRingSize(heap, atom, q, nAtomLevel, cSource, nMaxRingSize)?;
-        let n_tot_len = QueueWrittenLength(heap, q)?;
-        for i in 0..n_tot_len {
-            if QueueGetAny(heap, q, local, i)? > 0 {
-                let n = usize::from(
-                    *heap
-                        .slice(local.as_const())?
-                        .first()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                );
-                heap.slice_mut(nAtomLevel)?[n] = 0;
-                heap.slice_mut(cSource)?[n] = 0;
-            }
-        }
-        heap.slice_mut(nAtomLevel)?[start] = 0;
-        heap.slice_mut(cSource)?[start] = 0;
-        Ok(n_min_ring_size)
-    })();
-    let cleanup = heap.free(local);
-    match result {
-        Err(error) => Err(error),
-        Ok(value) => {
-            cleanup?;
-            Ok(value)
-        }
+    let mut workspace = RingSearchWorkspace::new(heap, atom, q, nAtomLevel, cSource)?;
+    let start = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    if start >= workspace.atom.len()
+        || start >= workspace.atom_level.len()
+        || start >= workspace.source.len()
+    {
+        return Err(SourceHeapError::PointerOutOfBounds);
     }
+    // SAFETY: start was checked against all three source arrays above.
+    *unsafe { workspace.atom_level.get_unchecked_mut(start) } = 1;
+    *unsafe { workspace.source.get_unchecked_mut(start) } = -1;
+
+    // SAFETY: start was checked against atom[] above.
+    let valence = i32::from(unsafe { workspace.atom.get_unchecked(start) }.valence);
+    for i in 0..valence {
+        let n = unsafe { workspace.atom.get_unchecked(start) }.neighbor[i as usize] as qInt;
+        let neighbor = usize::from(n);
+        // SAFETY: active inp_ATOM neighbors obey the source graph contract.
+        *unsafe { workspace.atom_level.get_unchecked_mut(neighbor) } = 2;
+        *unsafe { workspace.source.get_unchecked_mut(neighbor) } = 1 + i8::from(i == neigh_ord);
+        // SAFETY: the workspace maintains the source QUEUE invariants. The C
+        // caller intentionally ignores QueueAdd's return value here.
+        let _ = unsafe { workspace.queue_add(n) };
+    }
+
+    let n_min_ring_size = get_min_ring_size_with_workspace(&mut workspace, nMaxRingSize);
+    // SAFETY: the workspace owns a validated QUEUE.
+    let queue = unsafe { workspace.queue() };
+    let written = queue.nFirst.wrapping_add(queue.nLength);
+    let n_tot_len = if written > queue.nTotLength {
+        queue.nTotLength
+    } else {
+        written
+    };
+    for i in 0..n_tot_len {
+        // SAFETY: QueueWrittenLength bounds i by nTotLength, and construction
+        // validates the backing circular-buffer capacity.
+        let n = usize::from(*unsafe { workspace.values.get_unchecked(i as usize) });
+        *unsafe { workspace.atom_level.get_unchecked_mut(n) } = 0;
+        *unsafe { workspace.source.get_unchecked_mut(n) } = 0;
+    }
+    *unsafe { workspace.atom_level.get_unchecked_mut(start) } = 0;
+    *unsafe { workspace.source.get_unchecked_mut(start) } = 0;
+
+    Ok(n_min_ring_size)
 }
 
 pub(crate) fn is_atom_in_3memb_ring(
@@ -681,64 +782,59 @@ pub(crate) fn is_atom_in_3memb_ring(
     at_no: i32,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiring.c:420 is_atom_in_3memb_ring
-    // INCHI✔️❌: complete active source frame follows verbatim; checked SourceHeap access adds overhead.
-    /*
-    int is_atom_in_3memb_ring( inp_ATOM* atom, int at_no )
-    {
-        AT_NUMB   neigh_neigh;
-        int       i, j, k, val, val_neigh, neigh;
-
-        if (atom[at_no].nNumAtInRingSystem < 3)
-        {
-            return 0;
-        }
-
-        for (i = 0, val = atom[at_no].valence; i < val; i++)
-        {
-            neigh = (int) atom[at_no].neighbor[i];
-            if (atom[at_no].nRingSystem != atom[neigh].nRingSystem)
-            {
-                continue;
-            }
-            for (j = 0, val_neigh = atom[neigh].valence; j < val_neigh; j++)
-            {
-                neigh_neigh = atom[neigh].neighbor[j];
-                if ((int) neigh_neigh == at_no)
-                {
-                    continue;
-                }
-                for (k = 0; k < val; k++)
-                {
-                    if (atom[at_no].neighbor[k] == neigh_neigh)
-                    {
-                        return 1;
-                    }
-                }
-            }
-        }
-
-        return 0;
-    }
-    */
+    // INCHI✔️✔️: int is_atom_in_3memb_ring( inp_ATOM* atom, int at_no )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     AT_NUMB   neigh_neigh;
+    // INCHI✔️✔️:     int       i, j, k, val, val_neigh, neigh;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     if (atom[at_no].nNumAtInRingSystem < 3)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         return 0;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     for (i = 0, val = atom[at_no].valence; i < val; i++)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         neigh = (int) atom[at_no].neighbor[i];
+    // INCHI✔️✔️:         if (atom[at_no].nRingSystem != atom[neigh].nRingSystem)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             continue;
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         for (j = 0, val_neigh = atom[neigh].valence; j < val_neigh; j++)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             neigh_neigh = atom[neigh].neighbor[j];
+    // INCHI✔️✔️:             if ((int) neigh_neigh == at_no)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 continue;
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:             for (k = 0; k < val; k++)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 if (atom[at_no].neighbor[k] == neigh_neigh)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     return 1;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     return 0;
+    // INCHI✔️✔️: }
     // END INCHI C FUNCTION: is_atom_in_3memb_ring
 
     let start_index = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let start = heap
-        .slice(atom.as_const())?
+    // SAFETY: this function is read-only and does not free or resize atom[].
+    let atoms = unsafe { heap.stable_slice(atom.as_const())? };
+    let start = atoms
         .get(start_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone();
+        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if start.nNumAtInRingSystem < 3 {
         return Ok(0);
     }
     let valence = i32::from(start.valence);
     for i in 0..valence {
         let neighbor_index = usize::from(start.neighbor[i as usize]);
-        let neighbor = heap
-            .slice(atom.as_const())?
+        let neighbor = atoms
             .get(neighbor_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone();
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if start.nRingSystem != neighbor.nRingSystem {
             continue;
         }
@@ -1163,6 +1259,29 @@ mod tests {
             Err(SourceHeapError::PointerOutOfBounds)
         );
         assert_eq!(heap.live_allocation_count(), allocations);
+    }
+
+    #[test]
+    fn get_min_ring_size_accepts_official_atom_tail_layout() {
+        let mut heap = SourceHeap::default();
+        let atoms = heap
+            .allocate_model_storage(vec![
+                ring_atom(&[2]),
+                ring_atom(&[2]),
+                ring_atom(&[0, 1]),
+                ring_atom(&[]),
+            ])
+            .unwrap();
+        let levels = heap.allocate_model_storage(vec![1_u16, 1, 0]).unwrap();
+        let sources = heap.allocate_model_storage(vec![1_i8, 2, 0]).unwrap();
+        let (_values, queue) = ring_queue(&mut heap, vec![0, 1, 99, 99], 4, 0, 2);
+
+        assert_eq!(
+            GetMinRingSize(&mut heap, atoms, queue, levels, sources, 10),
+            Ok(2)
+        );
+        assert_eq!(heap.slice(levels.as_const()).unwrap(), &[1, 1, 2]);
+        assert_eq!(heap.slice(sources.as_const()).unwrap(), &[1, 2, 1]);
     }
 
     #[test]

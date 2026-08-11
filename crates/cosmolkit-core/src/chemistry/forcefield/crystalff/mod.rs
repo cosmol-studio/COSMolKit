@@ -8,6 +8,4 @@ pub use torsion_angle_contribs::{
     TorsionAngleContribs, TorsionAngleContribsParams, calc_torsion_energy, calc_torsion_energy_m6,
 };
 pub use torsion_angle_m6::TorsionAngleContribM6;
-pub(crate) use torsion_preferences::{
-    CrystalFFDetails, build_crystalff_query_molecule, get_experimental_torsions_without_bonds,
-};
+pub(crate) use torsion_preferences::{CrystalFFDetails, get_experimental_torsions_without_bonds};

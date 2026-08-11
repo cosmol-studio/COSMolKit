@@ -1924,7 +1924,6 @@ pub(crate) fn InChI2Atom(
         selected,
         clock_result,
     );
-
     if !pStruct.at.is_null() && !pStruct.at2.is_null() {
         for atom_index in 0..selected_value.nNumberOfAtoms {
             let atom_pointer = selected_value.nAtom.offset(i64::from(atom_index))?;
@@ -2207,36 +2206,45 @@ pub(crate) fn AllInchiToStructure(
                     }
                 }
 
-                let mut structure = heap
-                    .slice(structure_pointer.as_const())?
-                    .first()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .clone();
-                structure.pSrm = pSrm;
-                structure.iInchiRec = i_inchi_rec as i8;
-                structure.iMobileH = i_mobile_h as i8;
-                let conversion = InChI2Atom(
-                    heap,
-                    ic,
-                    pCG,
-                    &ip,
-                    &mut sd,
-                    szCurHdr,
-                    num_inp,
-                    &mut structure,
-                    component_index,
-                    atom_offset,
-                    current_flags,
-                    bHasSomeFixedH,
-                    pOneInput,
-                    clock_result,
-                );
-                structure.nLink = input_component.nLink;
-                *heap
-                    .slice_mut(structure_pointer)?
-                    .first_mut()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)? = structure;
-                ret = conversion?;
+                // The validated in-place borrow is Rust's representation of
+                // the source `pStruct[...] + k` pointer. It remains live for
+                // exactly the source mutation interval.
+                let conversion_result =
+                    heap.with_slice_mut_and_heap_mut(structure_pointer, |structures, heap| {
+                        let structure = structures
+                            .first_mut()
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        // INCHI✔️✔️: pStruct[iInchiRec][iMobileH][k].pSrm = pSrm;
+                        structure.pSrm = pSrm;
+                        // INCHI✔️✔️: pStruct[iInchiRec][iMobileH][k].iInchiRec = iInchiRec;
+                        structure.iInchiRec = i_inchi_rec as i8;
+                        // INCHI✔️✔️: pStruct[iInchiRec][iMobileH][k].iMobileH = iMobileH;
+                        structure.iMobileH = i_mobile_h as i8;
+                        // INCHI✔️✔️: ret = InChI2Atom(ic, pCG, ip, sd, szCurHdr, num_inp,
+                        // INCHI✔️✔️:     pStruct[iInchiRec][iMobileH] + k, k,
+                        // INCHI✔️✔️:     iAtNoOffset, bCurI2A_Flag, bHasSomeFixedH, pOneInput);
+                        let conversion = InChI2Atom(
+                            heap,
+                            ic,
+                            pCG,
+                            &ip,
+                            &mut sd,
+                            szCurHdr,
+                            num_inp,
+                            structure,
+                            component_index,
+                            atom_offset,
+                            current_flags,
+                            bHasSomeFixedH,
+                            pOneInput,
+                            clock_result,
+                        )?;
+                        // INCHI✔️✔️: pStruct[iInchiRec][iMobileH][k].nLink =
+                        // INCHI✔️✔️:     pOneInput->pInpInChI[iInchiRec][iMobileH][k].nLink;
+                        structure.nLink = input_component.nLink;
+                        Ok(conversion)
+                    });
+                ret = conversion_result?;
                 if ret < 0 {
                     if ret == CT_USER_QUIT_ERR {
                         break 'all_layers;

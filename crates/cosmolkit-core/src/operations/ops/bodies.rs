@@ -60,10 +60,10 @@ pub(super) fn with_kekulized_bonds_impl(
 }
 
 #[mol_op_body(assigned_valence, parts)]
-pub(super) fn assigned_valence_impl() -> Result<OpOutcome, OperationError> {
+pub(super) fn assigned_valence_impl(strict: bool) -> Result<OpOutcome, OperationError> {
     let read = parts.begin_topology_read()?;
     let valence = read
-        .assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
+        .assign_valence_with_options(crate::ValenceModel::RdkitLike, strict)
         .map_err(|source| OperationError::Valence {
             operation: &ASSIGNED_VALENCE_SPEC,
             source,

@@ -154,8 +154,8 @@ fn public_error_from_builder(err: UffBuilderError) -> UffPublicApiError {
             UffPublicApiError::ParamsLengthMismatch { atoms, params }
         }
         UffBuilderError::RingFinding(err) => UffPublicApiError::RingFinding(err),
-        UffBuilderError::UnsupportedTorsionBondSmarts(smarts) => {
-            UffPublicApiError::UnsupportedTorsionBondSmarts(smarts)
+        UffBuilderError::TorsionBondQuery(error) => {
+            UffPublicApiError::UnsupportedTorsionBondSmarts(error.to_string())
         }
         UffBuilderError::AtomTyper(err) => public_error_from_atom_typer(err),
         UffBuilderError::Valence(err) => UffPublicApiError::Valence(err),

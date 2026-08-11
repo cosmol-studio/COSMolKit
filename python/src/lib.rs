@@ -142,6 +142,7 @@ fn inchi_error_kind_name(kind: cosmolkit_core::InchiErrorKind) -> &'static str {
         cosmolkit_core::InchiErrorKind::UnsupportedState => "unsupported_state",
         cosmolkit_core::InchiErrorKind::InvalidInput => "invalid_input",
         cosmolkit_core::InchiErrorKind::InvalidSourceOutput => "invalid_source_output",
+        cosmolkit_core::InchiErrorKind::SanitizeFailed => "sanitize_failed",
         cosmolkit_core::InchiErrorKind::Toolkit => "toolkit",
         cosmolkit_core::InchiErrorKind::SourcePort => "source_port",
     }
@@ -7339,10 +7340,18 @@ fn chem_mol_to_inchi_key(molecule: &Molecule, options: &str) -> PyResult<String>
 #[doc = r#"
 Generate an InChIKey directly from an InChI string.
 "#]
-fn inchi_to_inchi_key_py(inchi: &str) -> PyResult<String> {
+fn inchi_to_inchi_key_py(inchi: &str) -> PyResult<Option<String>> {
     let output = cosmolkit_core::inchi_to_inchi_key(inchi.as_bytes()).map_err(inchi_pyerr)?;
+    let failed = output.key.is_empty()
+        && output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.level == cosmolkit_core::InchiDiagnosticLevel::Error);
     emit_inchi_diagnostics(&output.diagnostics)?;
-    inchi_output_string("inchi_to_inchi_key", "InChIKey", output.key)
+    if failed {
+        return Ok(None);
+    }
+    inchi_output_string("inchi_to_inchi_key", "InChIKey", output.key).map(Some)
 }
 
 #[pyfunction(name = "MolFromInchi", signature = (inchi, sanitize = true, remove_hs = true))]
@@ -7350,8 +7359,15 @@ fn inchi_to_inchi_key_py(inchi: &str) -> PyResult<String> {
 Parse an InChI into a molecule, returning ``None`` when the source API returns no graph.
 "#]
 fn chem_mol_from_inchi(inchi: &str, sanitize: bool, remove_hs: bool) -> PyResult<Option<Molecule>> {
-    let output = cosmolkit_core::mol_from_inchi(inchi.as_bytes(), sanitize, remove_hs)
-        .map_err(inchi_pyerr)?;
+    let output = match cosmolkit_core::mol_from_inchi(inchi.as_bytes(), sanitize, remove_hs) {
+        Ok(output) => output,
+        Err(error) if error.kind == cosmolkit_core::InchiErrorKind::SanitizeFailed => {
+            // RDKit's Python MolFromInchi catches the ValueError translated
+            // from MolSanitizeException and returns None.
+            return Ok(None);
+        }
+        Err(error) => return Err(inchi_pyerr(error)),
+    };
     emit_inchi_diagnostics(&output.diagnostics)?;
     Ok(output.molecule.map(|inner| Molecule { inner }))
 }

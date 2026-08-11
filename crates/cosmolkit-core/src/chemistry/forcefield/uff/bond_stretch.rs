@@ -100,7 +100,7 @@ impl BondStretchContrib {
         // RDKit✔️✔️:   double distTerm =
         // RDKit✔️✔️:       dp_forceField->distance(d_end1Idx, d_end2Idx, pos) - d_restLen;
         let dist_term =
-            force_field.distance_const(self.end1_idx, self.end2_idx, Some(pos)) - self.rest_len;
+            force_field.distance(self.end1_idx, self.end2_idx, Some(pos)) - self.rest_len;
         // RDKit✔️✔️:   double res = 0.5 * d_forceConstant * distTerm * distTerm;
         // RDKit✔️✔️:   return res;
         // RDKit✔️✔️: }
@@ -115,7 +115,7 @@ impl BondStretchContrib {
         let force_field = self.force_field();
 
         // RDKit✔️✔️:   double dist = dp_forceField->distance(d_end1Idx, d_end2Idx, pos);
-        let dist = force_field.distance_const(self.end1_idx, self.end2_idx, Some(pos));
+        let dist = force_field.distance(self.end1_idx, self.end2_idx, Some(pos));
         // RDKit✔️✔️:   double preFactor = d_forceConstant * (dist - d_restLen);
         let pre_factor = self.force_constant * (dist - self.rest_len);
 

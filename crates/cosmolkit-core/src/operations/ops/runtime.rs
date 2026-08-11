@@ -289,6 +289,24 @@ impl<'a> OpParts<'a> {
         f(MoleculeReadParts::from_molecule(&view))
     }
 
+    pub(crate) fn with_borrowed_optional_block_read_parts<R>(
+        &self,
+        topology: &TopologyBlock,
+        coordinates: Option<&CoordinateBlock>,
+        properties: Option<&MoleculeProperties>,
+        f: impl FnOnce(MoleculeReadParts<'_>) -> Result<R, OperationError>,
+    ) -> Result<R, OperationError> {
+        self.validate_access_spec()?;
+        let read = MoleculeReadParts::from_blocks(
+            topology,
+            coordinates.unwrap_or_else(|| self.working.coordinate_block()),
+            properties.unwrap_or_else(|| self.working.properties()),
+            self.working.derived_cache(),
+            self.working.capabilities(),
+        );
+        f(read)
+    }
+
     fn read_parts_for_topology(&self, topology: TopologyBlock) -> Result<Molecule, OperationError> {
         self.read_parts_for_blocks(
             topology,

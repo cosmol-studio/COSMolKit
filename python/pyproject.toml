@@ -5,13 +5,14 @@ build-backend = "maturin"
 [project]
 name = "cosmolkit"
 version = "0.2.10"
-description = "Python bindings for COSMolKit"
+description = "Python bindings for the COSMolKit Rust-native cheminformatics toolkit"
 readme = "../README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
     { name = "COSMolKit Contributors" },
 ]
+keywords = [ "cheminformatics", "molecular-informatics", "rust", "rdkit", "molecular-modeling", ]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -32,6 +33,8 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/cosmol-studio/COSMolKit"
+Documentation = "https://kit.cosmol.org/"
+"Rust API" = "https://docs.rs/cosmolkit"
 Repository = "https://github.com/cosmol-studio/COSMolKit"
 Issues = "https://github.com/cosmol-studio/COSMolKit/issues"
 

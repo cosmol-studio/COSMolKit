@@ -6227,18 +6227,19 @@ pub(crate) fn RunBnsRestore1(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .to_vec();
 
-        ret = ForbidCarbonChargeEdges(
+        let forbid_carbon_result = ForbidCarbonChargeEdges(
             heap,
             pBNS,
             pTCGroups,
             &mut carbon_charge_edges,
             BNS_EDGE_FORBIDDEN_TEMP as i32,
-        )?;
+        );
+        ret = forbid_carbon_result?;
         if ret < 0 {
             return Ok(ret);
         }
 
-        ret = ForbidNintrogenPlus2BondsInSmallRings(
+        let forbid_n6_result = ForbidNintrogenPlus2BondsInSmallRings(
             heap,
             pBNS,
             &atoms,
@@ -6248,12 +6249,14 @@ pub(crate) fn RunBnsRestore1(
             pTCGroups,
             &mut nplus_two_bonds_edges,
             BNS_EDGE_FORBIDDEN_TEMP as i32,
-        )?;
+        );
+        ret = forbid_n6_result?;
         if ret < 0 {
             return Ok(ret);
         }
         if nplus_two_bonds_edges.num_edges != 0 {
-            ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
+            let result = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result);
+            ret = result?;
             number_bns_runs = number_bns_runs.wrapping_add(1);
             if ret < 0 {
                 return Ok(ret);
@@ -6268,7 +6271,7 @@ pub(crate) fn RunBnsRestore1(
             let _ = AllocEdgeList(heap, &mut nplus_two_bonds_edges, EDGE_LIST_FREE)?;
         }
 
-        ret = ForbidNintrogenPlus2BondsInSmallRings(
+        let forbid_n8_result = ForbidNintrogenPlus2BondsInSmallRings(
             heap,
             pBNS,
             &atoms,
@@ -6278,12 +6281,14 @@ pub(crate) fn RunBnsRestore1(
             pTCGroups,
             &mut nplus_two_bonds_edges,
             BNS_EDGE_FORBIDDEN_TEMP as i32,
-        )?;
+        );
+        ret = forbid_n8_result?;
         if ret < 0 {
             return Ok(ret);
         }
         if nplus_two_bonds_edges.num_edges != 0 {
-            ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
+            let result = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result);
+            ret = result?;
             number_bns_runs = number_bns_runs.wrapping_add(1);
             if ret < 0 {
                 return Ok(ret);
@@ -6299,7 +6304,8 @@ pub(crate) fn RunBnsRestore1(
         }
 
         if carbon_charge_edges.num_edges > 0 {
-            ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
+            let result = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result);
+            ret = result?;
             number_bns_runs = number_bns_runs.wrapping_add(1);
             if ret < 0 {
                 return Ok(ret);
@@ -6315,7 +6321,8 @@ pub(crate) fn RunBnsRestore1(
         }
 
         if metal_carbon_edges.num_edges > 0 {
-            ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
+            let result = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result);
+            ret = result?;
             number_bns_runs = number_bns_runs.wrapping_add(1);
             if ret < 0 {
                 return Ok(ret);
@@ -6330,14 +6337,15 @@ pub(crate) fn RunBnsRestore1(
             let _ = AllocEdgeList(heap, &mut metal_carbon_edges, EDGE_LIST_FREE)?;
         }
 
-        ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
+        let result = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result);
+        ret = result?;
         number_bns_runs = number_bns_runs.wrapping_add(1);
         if ret < 0 {
             return Ok(ret);
         }
         total_delta = total_delta.wrapping_add(ret);
 
-        ret = MoveRadToAtomsAddCharges(
+        let move_rad_result = MoveRadToAtomsAddCharges(
             heap,
             pBNS,
             pBD,
@@ -6348,12 +6356,13 @@ pub(crate) fn RunBnsRestore1(
             pTCGroups,
             BNS_EDGE_FORBIDDEN_TEMP as i32,
             clock_result,
-        )?;
+        );
+        ret = move_rad_result?;
         if ret < 0 {
             return Ok(ret);
         }
 
-        ret = RearrangePlusMinusEdgesFlow(
+        let rearrange_result = RearrangePlusMinusEdgesFlow(
             heap,
             pBNS,
             pBD,
@@ -6361,14 +6370,15 @@ pub(crate) fn RunBnsRestore1(
             pTCGroups,
             BNS_EDGE_FORBIDDEN_TEMP as i32,
             clock_result,
-        )?;
+        );
+        ret = rearrange_result?;
         if ret < 0 {
             return Ok(ret);
         }
 
         macro_rules! run_structure_helper {
             ($function:path) => {{
-                ret = $function(
+                let helper_result = $function(
                     heap,
                     pBNS,
                     pBD,
@@ -6381,7 +6391,8 @@ pub(crate) fn RunBnsRestore1(
                     &mut total_delta,
                     BNS_EDGE_FORBIDDEN_TEMP as i32,
                     clock_result,
-                )?;
+                );
+                ret = helper_result?;
                 if ret < 0 {
                     return Ok(ret);
                 }
@@ -6480,7 +6491,7 @@ pub(crate) fn RunBnsRestore1(
         run_structure_helper!(CheckAndRefixStereobonds);
         run_structure_helper!(SaltBondsToCoordBonds);
 
-        ret = NormalizeAndCompare(
+        let normalize_result = NormalizeAndCompare(
             heap,
             pCG,
             ic,
@@ -6502,7 +6513,8 @@ pub(crate) fn RunBnsRestore1(
             BNS_EDGE_FORBIDDEN_TEMP as i32,
             BNS_EDGE_FORBIDDEN_MASK as i32,
             clock_result,
-        )?;
+        );
+        ret = normalize_result?;
         Ok(ret)
     })();
 
@@ -7154,7 +7166,7 @@ pub(crate) fn RestoreAtomMakeBNS(
             Some(&groups),
             0,
         );
-        ret = RunBnsRestore1(
+        let restore_bns_result = RunBnsRestore1(
             heap,
             pCG,
             ic,
@@ -7169,7 +7181,8 @@ pub(crate) fn RestoreAtomMakeBNS(
             num_inp,
             bHasSomeFixedH,
             clock_result,
-        )?;
+        );
+        ret = restore_bns_result?;
         if ret >= 0 {
             ret = CheckBnsConsistency(
                 Some(pStruct),
@@ -7382,7 +7395,7 @@ pub(crate) fn OneInChI2Atom(
         return Ok(ret);
     }
 
-    ret = RestoreAtomMakeBNS(
+    let restore_result = RestoreAtomMakeBNS(
         heap,
         ic,
         pCG,
@@ -7396,7 +7409,8 @@ pub(crate) fn OneInChI2Atom(
         num_inp,
         bHasSomeFixedH,
         clock_result,
-    )?;
+    );
+    ret = restore_result?;
     if ret < 0 {
         return Ok(ret);
     }
@@ -8840,7 +8854,7 @@ pub(crate) fn NormalizeAndCompare(
                     };
                     forced_rebuild
                 } else {
-                    MakeOneInChIOutOfStrFromINChI2(
+                    let rebuild_result = MakeOneInChIOutOfStrFromINChI2(
                         heap,
                         pCG,
                         ic,
@@ -8857,7 +8871,8 @@ pub(crate) fn NormalizeAndCompare(
                         Some(&mut at_norm),
                         Some(&mut at_prep),
                         clock_result,
-                    )?
+                    );
+                    rebuild_result?
                 };
                 if ret < 0 {
                     return Ok(());
@@ -9266,7 +9281,7 @@ pub(crate) fn NormalizeAndCompare(
             ret = if let Some(forced) = forced {
                 forced
             } else {
-                FixMobileHRestoredStructure(
+                let fix_result = FixMobileHRestoredStructure(
                     heap,
                     pCG,
                     ic,
@@ -9291,7 +9306,8 @@ pub(crate) fn NormalizeAndCompare(
                     forbidden_edge_mask,
                     forbidden_stereo_edge_mask,
                     clock_result,
-                )?
+                );
+                fix_result?
             };
             if ret < 0 {
                 return Ok(());

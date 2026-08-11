@@ -47,7 +47,6 @@ pub(super) fn canonicalize_double_bond_directions_for_writer(
 
     let mut bond_dir_counts = vec![0i8; molecule.num_bonds()];
     let mut atom_dir_counts = vec![0i8; molecule.num_atoms()];
-    let cip_ranks = crate::stereo::assign_atom_cip_ranks(molecule).ok();
     canonicalize_double_bonds_for_writer(
         molecule,
         &bond_visit_orders,
@@ -56,7 +55,6 @@ pub(super) fn canonicalize_double_bond_directions_for_writer(
         &mut bond_dir_counts,
         &mut atom_dir_counts,
         stack,
-        cip_ranks.as_deref(),
     );
     remove_unwanted_bond_dir_specs_for_writer(
         molecule,
@@ -85,7 +83,6 @@ pub(super) fn canonicalize_double_bonds_for_writer(
     bond_dir_counts: &mut [i8],
     atom_dir_counts: &mut [i8],
     stack: &[MolStackElem],
-    cip_ranks: Option<&[u32]>,
 ) {
     // BEGIN RDKIT CPP FUNCTION Canon::canonicalizeDoubleBonds
     // RDKit✔️✔️: for (auto &msI : molStack) {
@@ -107,9 +104,7 @@ pub(super) fn canonicalize_double_bonds_for_writer(
             continue;
         };
         let bond_ref = &molecule.bonds()[bond.index()];
-        if !is_writer_stereo_double_bond(bond_ref)
-            || !writer_double_bond_has_distinguishable_ends(molecule, bond, cip_ranks)
-        {
+        if !is_writer_stereo_double_bond(bond_ref) {
             if bond_ref.order() == BondOrder::Double {
                 let bond_mut = &mut molecule.topology_block_mut().bonds[bond.index()];
                 bond_mut.set_stereo_atoms(None);
@@ -1134,37 +1129,6 @@ pub(super) fn is_writer_stereo_double_bond(bond: &Bond) -> bool {
             BondStereo::E | BondStereo::Z | BondStereo::Cis | BondStereo::Trans
         )
         && bond.stereo_atoms().is_some()
-}
-
-pub(super) fn writer_double_bond_has_distinguishable_ends(
-    molecule: &Molecule,
-    dbl_bond: BondId,
-    cip_ranks: Option<&[u32]>,
-) -> bool {
-    let Some(ranks) = cip_ranks else {
-        return true;
-    };
-    let bond = &molecule.bonds()[dbl_bond.index()];
-    for atom in [bond.begin(), bond.end()] {
-        let neighbors = incident_bonds(molecule, atom)
-            .into_iter()
-            .filter(|candidate| *candidate != dbl_bond)
-            .filter_map(|candidate| bond_other_atom(&molecule.bonds()[candidate.index()], atom))
-            .collect::<Vec<_>>();
-        if neighbors.len() == 2 {
-            // BEGIN RDKIT CPP FUNCTION Chirality::findAtomNeighborDirHelper duplicate-neighbor check
-            // RDKit✔️✔️: if (neighbors.size() == 2 &&
-            // RDKit✔️✔️:     ranks[neighbors[0].first] == ranks[neighbors[1].first]) {
-            // RDKit✔️✔️:   // the two substituents are identical, no stereochemistry here:
-            // RDKit✔️✔️:   neighbors.clear();
-            // RDKit✔️✔️: }
-            // END RDKIT CPP FUNCTION Chirality::findAtomNeighborDirHelper duplicate-neighbor check
-            if ranks.get(neighbors[0].index()) == ranks.get(neighbors[1].index()) {
-                return false;
-            }
-        }
-    }
-    true
 }
 
 pub(super) fn can_have_direction_for_writer(order: BondOrder) -> bool {

@@ -1603,6 +1603,35 @@ fn should_be_crossed_bond_for_writer(
         return Ok(true);
     }
 
+    // RDKit✔️✔️: const auto beginAtom = bond->getBeginAtom();
+    // RDKit✔️✔️: const auto endAtom = bond->getEndAtom();
+    // RDKit✔️✔️: if (beginAtom->getDegree() > 1 && endAtom->getDegree() > 1 &&
+    // RDKit✔️✔️:     (beginAtom->getTotalValence() - beginAtom->getTotalDegree()) == 1 &&
+    // RDKit✔️✔️:     (endAtom->getTotalValence() - endAtom->getTotalDegree()) == 1) {
+    let valence = molblock_valence_assignment(molecule)?;
+    let has_one_unsaturation = |atom_idx: usize| {
+        let atom = &molecule.atoms()[atom_idx];
+        let degree = adjacency.neighbors_of(atom_idx).len();
+        let total_valence =
+            valence.explicit_valence[atom_idx] + valence.implicit_hydrogens[atom_idx].max(0);
+        let total_degree = molfile_total_degree(molecule, atom, &valence);
+        degree > 1 && total_valence - total_degree == 1
+    };
+    if has_one_unsaturation(begin_idx) && has_one_unsaturation(end_idx) {
+        // RDKit✔️✔️:   // we only do this if each atom only has one unsaturation
+        // RDKit✔️✔️:   // FIX: this is the fix for github #2649, but we will need to
+        // RDKit✔️✔️:   // change it once we start handling allenes properly
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   if (canBeStereoBond(bond)) {
+        // RDKit✔️✔️:     return true;  // crossed double bond
+        // RDKit✔️✔️:   }
+        if can_be_stereo_bond_for_writer(molecule, bond)? {
+            return Ok(true);
+        }
+        // RDKit✔️✔️: }
+    }
+
+    // RDKit✔️✔️: return false;  // NOT crossed double bond
     Ok(false)
 }
 

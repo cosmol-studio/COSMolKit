@@ -4,6 +4,7 @@ use crate::source::base::{
         NodeSetCreate, NodeSetFree, NodeSetFromRadEndpoints, RemoveFromNodeSet, SetBitCreate,
     },
     ichicano::bInchiTimeIsOver,
+    ichisort::insertions_sort_typed,
     ichister::get_opposite_sb_atom_slice,
     ichitaut::{
         MakeIsotopicHGroup, MarkChargeGroups, MarkSaltChargeGroups, MarkSaltChargeGroups2,
@@ -54,15 +55,16 @@ use crate::source_types::{
     NO_VERTEX, NUM_H, NUM_H_ISOTOPES, NUM_KINDS_OF_GROUPS, NodeSet, RADICAL_DOUBLET,
     RADICAL_SINGLET, RADICAL_TRIPLET, RI_ERR_PROGR, S_CANDIDATE, S_CHAR, S_GROUP_INFO,
     SALT_ACCEPTOR, SALT_DONOR_H, SALT_DONOR_Neg, STEREO_DBLE_EITHER, SourceHeap, SourceHeapError,
-    SourceMutPointer, T_GROUP, T_GROUP_INFO, TAUT_PT_06_00, TAUT_PT_13_00, TAUT_PT_16_00,
-    TAUT_PT_18_00, TAUT_PT_22_00, TAUT_PT_39_00, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE,
-    TG_FLAG_FOUND_ISOTOPIC_H_DONE, TG_FLAG_HARD_ADD_REM_PROTONS, TG_FLAG_KETO_ENOL_TAUT,
-    TG_FLAG_MERGE_TAUT_SALTS, TG_FLAG_MERGE_TAUT_SALTS_DONE, TG_FLAG_MOVE_POS_CHARGES,
-    TG_FLAG_MOVE_POS_CHARGES_DONE, TG_FLAG_PT_06_00, TG_FLAG_PT_13_00, TG_FLAG_PT_16_00,
-    TG_FLAG_PT_18_00, TG_FLAG_PT_22_00, TG_FLAG_PT_39_00, TG_FLAG_TEST_TAUT__ATOMS_DONE,
-    TG_FLAG_TEST_TAUT__SALTS, TG_FLAG_TEST_TAUT__SALTS_DONE, TG_FLAG_TEST_TAUT2_SALTS,
-    TG_FLAG_TEST_TAUT2_SALTS_DONE, TG_FLAG_TEST_TAUT3_SALTS_DONE, TG_FLAG_VARIABLE_PROTONS, Vertex,
-    Vertex_s, Vertex_t, VertexFlow, bRELEASE_VERSION, clock_t, inchiTime, inp_ATOM,
+    SourceMutPointer, StableSourceConstSlice, StableSourceSlice, T_GROUP, T_GROUP_INFO,
+    TAUT_PT_06_00, TAUT_PT_13_00, TAUT_PT_16_00, TAUT_PT_18_00, TAUT_PT_22_00, TAUT_PT_39_00,
+    TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE, TG_FLAG_HARD_ADD_REM_PROTONS,
+    TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_MERGE_TAUT_SALTS, TG_FLAG_MERGE_TAUT_SALTS_DONE,
+    TG_FLAG_MOVE_POS_CHARGES, TG_FLAG_MOVE_POS_CHARGES_DONE, TG_FLAG_PT_06_00, TG_FLAG_PT_13_00,
+    TG_FLAG_PT_16_00, TG_FLAG_PT_18_00, TG_FLAG_PT_22_00, TG_FLAG_PT_39_00,
+    TG_FLAG_TEST_TAUT__ATOMS_DONE, TG_FLAG_TEST_TAUT__SALTS, TG_FLAG_TEST_TAUT__SALTS_DONE,
+    TG_FLAG_TEST_TAUT2_SALTS, TG_FLAG_TEST_TAUT2_SALTS_DONE, TG_FLAG_TEST_TAUT3_SALTS_DONE,
+    TG_FLAG_VARIABLE_PROTONS, Vertex, Vertex_s, Vertex_t, VertexFlow, bRELEASE_VERSION, clock_t,
+    inchiTime, inp_ATOM,
     local_ichi_bns::{
         AA_HARD_TYP_CO, AA_HARD_TYP_H, AA_HARD_TYP_NEG, AA_HARD_TYP_POS, AA_SIMPLE_TYP1,
         AA_SIMPLE_TYP4, ALT_PATH_CHANGES, AR_HARD_TYP_HA, AR_HARD_TYP_HN, AR_HARD_TYP_NEG,
@@ -1435,7 +1437,11 @@ pub(crate) fn fix_special_bonds(
     // INCHI✔️❌: #define S_VI_O_PLUS_METAL_FIX_BOND 1
     // END INCHI ACTIVE MACRO CONFIGURATION: fix_special_bonds
 
-    let atoms = heap.slice(atoms_ptr.as_const())?.to_vec();
+    // SAFETY: the source function treats `at` as read-only. The BNS helpers
+    // mutate separate edge/vertex allocations and never free or resize `at`.
+    let atoms_view: StableSourceConstSlice<inp_ATOM> =
+        unsafe { heap.stable_slice(atoms_ptr.as_const())? };
+    let atoms = atoms_view.prefix(atoms_view.len())?;
     let edge_forbidden_mask = forbidden_mask as S_CHAR;
     pBNS.edge_forbidden_mask |= edge_forbidden_mask;
     let mut num_changes = 0_i32;
@@ -1879,7 +1885,11 @@ pub(crate) fn SetForbiddenEdges(
     // INCHI❌❌: /*#define FIX_SRU_CYCLIZING_PS_BONDS_IN_BNS 1*/
     // END INCHI ACTIVE MACRO CONFIGURATION: SetForbiddenEdges
 
-    let atoms = heap.slice(atoms_ptr.as_const())?.to_vec();
+    // SAFETY: SetForbiddenEdges only reads `at`; all writes below target
+    // allocations owned by `pBNS`, matching the two disjoint C pointers.
+    let atoms_view: StableSourceConstSlice<inp_ATOM> =
+        unsafe { heap.stable_slice(atoms_ptr.as_const())? };
+    let atoms = atoms_view.prefix(atoms_view.len())?;
     let edge_forbidden_mask = forbidden_mask as S_CHAR;
     pBNS.edge_forbidden_mask |= edge_forbidden_mask;
     let mut num_found = 0_i32;
@@ -6127,8 +6137,17 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
         heap: &SourceHeap,
         at: SourceMutPointer<inp_ATOM>,
         num_atoms: i32,
+        t_group_info: SourceMutPointer<T_GROUP_INFO>,
     ) -> Result<Vec<inp_ATOM>, SourceHeapError> {
-        let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let removed_explicit_h = heap
+            .slice(t_group_info.as_const())?
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .tni
+            .nNumRemovedExplicitH;
+        let count =
+            usize::try_from(i64::from(num_atoms).wrapping_add(i64::from(removed_explicit_h)))
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let atoms = heap.slice(at.as_const())?;
         if atoms.len() < count {
             return Err(SourceHeapError::PointerOutOfBounds);
@@ -6140,12 +6159,8 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
         heap: &mut SourceHeap,
         at: SourceMutPointer<inp_ATOM>,
         atoms: &[inp_ATOM],
-        num_atoms: i32,
     ) -> Result<(), SourceHeapError> {
-        let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if atoms.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
+        let count = atoms.len();
         let destination = heap.slice_mut(at)?;
         if destination.len() < count {
             return Err(SourceHeapError::PointerOutOfBounds);
@@ -6216,13 +6231,13 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
 
     let num = total(heap, pAATG, ATTOT_NUM_NP_PROTON)? + total(heap, pAATG, ATTOT_NUM_OH_PLUS)?;
     if num != 0 {
-        let mut atoms = clone_atoms(heap, at, num_atoms)?;
+        let mut atoms = clone_atoms(heap, at, num_atoms, t_group_info_ptr)?;
         let mut t_group_info = tgroup_info(heap, t_group_info_ptr)?;
         {
             let totals = heap.slice_mut(pAATG.nAtTypeTotals)?;
             ret = SimpleRemoveHplusNPO(&mut atoms, num_atoms, Some(totals), &mut t_group_info)?;
         }
-        write_atoms(heap, at, &atoms, num_atoms)?;
+        write_atoms(heap, at, &atoms)?;
         if ret != num {
             b_error = BNS_PROGRAM_ERR;
         }
@@ -6257,9 +6272,9 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
 
     if b_error == 0 && total(heap, pAATG, ATTOT_TOT_CHARGE)? > 0 {
         let current_charge = total(heap, pAATG, ATTOT_TOT_CHARGE)?;
-        let mut atoms = clone_atoms(heap, at, num_atoms)?;
+        let mut atoms = clone_atoms(heap, at, num_atoms, t_group_info_ptr)?;
         ret = SimpleRemoveAcidicProtons(heap, &mut atoms, num_atoms, pAATG, current_charge)?;
-        write_atoms(heap, at, &atoms, num_atoms)?;
+        write_atoms(heap, at, &atoms)?;
         if is_bns_error(ret) {
             b_error = ret;
         } else if ret > 0 {
@@ -6285,9 +6300,9 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
             if is_bns_error(ret) {
                 b_error = ret;
             } else if ret > 0 {
-                let mut atoms = clone_atoms(heap, at, num_atoms)?;
+                let mut atoms = clone_atoms(heap, at, num_atoms, t_group_info_ptr)?;
                 let ret2 = SimpleRemoveAcidicProtons(heap, &mut atoms, num_atoms, pAATG, ret)?;
-                write_atoms(heap, at, &atoms, num_atoms)?;
+                write_atoms(heap, at, &atoms)?;
                 if ret2 != ret {
                     b_error = BNS_PROGRAM_ERR;
                 } else {
@@ -6299,9 +6314,9 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
         }
     } else if b_error == 0 && total(heap, pAATG, ATTOT_TOT_CHARGE)? < 0 {
         let current_charge = total(heap, pAATG, ATTOT_TOT_CHARGE)?.wrapping_neg();
-        let mut atoms = clone_atoms(heap, at, num_atoms)?;
+        let mut atoms = clone_atoms(heap, at, num_atoms, t_group_info_ptr)?;
         ret = SimpleAddAcidicProtons(heap, &mut atoms, num_atoms, pAATG, current_charge)?;
-        write_atoms(heap, at, &atoms, num_atoms)?;
+        write_atoms(heap, at, &atoms)?;
         if is_bns_error(ret) {
             b_error = ret;
         } else if ret > 0 {
@@ -6327,9 +6342,9 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
             if is_bns_error(ret) {
                 b_error = ret;
             } else if ret > 0 {
-                let mut atoms = clone_atoms(heap, at, num_atoms)?;
+                let mut atoms = clone_atoms(heap, at, num_atoms, t_group_info_ptr)?;
                 let ret2 = SimpleAddAcidicProtons(heap, &mut atoms, num_atoms, pAATG, ret)?;
-                write_atoms(heap, at, &atoms, num_atoms)?;
+                write_atoms(heap, at, &atoms)?;
                 if ret2 != ret {
                     b_error = BNS_PROGRAM_ERR;
                 } else {
@@ -8640,16 +8655,12 @@ fn mark_bns_edge(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum BnsEdgeTarget {
-    Edge(EdgeIndex),
-    StEdge(AT_NUMB),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct GetEdgePointerResult {
     pub backward: i32,
-    pub target: Option<BnsEdgeTarget>,
-    pub s_or_t: Option<S_CHAR>,
+    /// For a valid result, indexes `edge[]` when `s_or_t == 0`, otherwise
+    /// `vert[].st_edge`. `backward` carries invalidity exactly as in C.
+    pub target_index: EdgeIndex,
+    pub s_or_t: S_CHAR,
 }
 
 #[allow(non_snake_case)]
@@ -8718,32 +8729,50 @@ pub(crate) fn GetEdgePointer(
     // INCHI✔️✔️: #define BNS_WRONG_PARMS (BNS_ERR + 0)
     // END INCHI ACTIVE MACRO CONFIGURATION: GetEdgePointer
 
+    // INCHI✔️✔️:     int i = u / 2 - 1;
     let i = u / 2 - 1;
+    // INCHI✔️✔️:     int j = v / 2 - 1;
     let j = v / 2 - 1;
+    // INCHI✔️✔️:     int bBackward = BNS_WRONG_PARMS;
+    // INCHI✔️✔️:     *uv = NULL;
     let mut result = GetEdgePointerResult {
         backward: BNS_WRONG_PARMS,
-        target: None,
-        s_or_t: None,
+        target_index: 0,
+        s_or_t: 0,
     };
 
+    // INCHI✔️✔️:     if (i >= 0)
     if i >= 0 {
+        // INCHI✔️✔️:         if (j >= 0)
         if j >= 0 {
+            // INCHI✔️✔️:             if (( u + v ) % 2)
             if (u + v) % 2 != 0 {
-                result.target = Some(BnsEdgeTarget::Edge(iuv));
+                // INCHI✔️✔️:                 *uv = pBNS->edge + iuv;
+                result.target_index = iuv;
+                // INCHI✔️✔️:                 bBackward = ( u & 1 );
                 result.backward = u & 1;
-                result.s_or_t = Some(0);
+                // INCHI✔️✔️:                 *s_or_t = 0;
             }
+        // INCHI✔️✔️:             if (v >= 0 && !( ( u + v ) % 2 ))
         } else if v >= 0 && (u + v) % 2 == 0 {
-            result.target = Some(BnsEdgeTarget::StEdge(i as AT_NUMB));
+            // INCHI✔️✔️:                 *uv = (BNS_EDGE*) &pBNS->vert[i].st_edge;
+            result.target_index = i;
+            // INCHI✔️✔️:                 bBackward = !( v & 1 );
             result.backward = (v & 1 == 0) as i32;
-            result.s_or_t = Some((v + 3) as S_CHAR);
+            // INCHI✔️✔️:                 *s_or_t = v + 3;
+            result.s_or_t = (v + 3) as S_CHAR;
         }
+    // INCHI✔️✔️:         if (j >= 0 && u >= 0 && !( ( u + v ) % 2 ))
     } else if j >= 0 && u >= 0 && (u + v) % 2 == 0 {
-        result.target = Some(BnsEdgeTarget::StEdge(j as AT_NUMB));
+        // INCHI✔️✔️:             *uv = (BNS_EDGE*) &pBNS->vert[j].st_edge;
+        result.target_index = j;
+        // INCHI✔️✔️:             bBackward = ( u & 1 );
         result.backward = u & 1;
-        result.s_or_t = Some((u + 1) as S_CHAR);
+        // INCHI✔️✔️:             *s_or_t = u + 1;
+        result.s_or_t = (u + 1) as S_CHAR;
     }
 
+    // INCHI✔️✔️:     return bBackward;
     result
 }
 
@@ -8948,12 +8977,10 @@ pub(crate) fn AugmentEdge(
             delta = delta.wrapping_neg();
         }
 
-        if let Some(s_or_t) = edge_pointer.s_or_t.filter(|value| *value != 0) {
-            let index = match edge_pointer.target {
-                Some(BnsEdgeTarget::StEdge(index)) => index,
-                _ => return Ok(BNS_WRONG_PARMS),
-            };
-            let mut vertex = bns_vertex(heap, pBNS, i32::from(index))?;
+        if edge_pointer.s_or_t != 0 {
+            let s_or_t = edge_pointer.s_or_t;
+            let index = edge_pointer.target_index;
+            let mut vertex = bns_vertex(heap, pBNS, index)?;
             let mut st_edge = vertex.st_edge;
             let flow = st_edge.flow;
             let mut f = (flow & EDGE_FLOW_ST_MASK as i32).wrapping_add(delta);
@@ -8961,7 +8988,9 @@ pub(crate) fn AugmentEdge(
                 st_edge.flow &= !(EDGE_FLOW_ST_PATH as i32);
                 vertex.st_edge = st_edge;
                 heap.slice_mut(pBNS.vert)?
-                    .get_mut(usize::from(index))
+                    .get_mut(
+                        usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                    )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .clone_from(&vertex);
             } else if f < 0 || f > st_edge.cap {
@@ -8976,7 +9005,9 @@ pub(crate) fn AugmentEdge(
                     (flow & !(EDGE_FLOW_ST_PATH as i32 | EDGE_FLOW_ST_MASK as i32)).wrapping_add(f);
                 vertex.st_edge = st_edge;
                 heap.slice_mut(pBNS.vert)?
-                    .get_mut(usize::from(index))
+                    .get_mut(
+                        usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                    )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .clone_from(&vertex);
 
@@ -9075,10 +9106,7 @@ pub(crate) fn AugmentEdge(
             return Ok(if ret != 0 { ret } else { f });
         }
 
-        let edge_index = match edge_pointer.target {
-            Some(BnsEdgeTarget::Edge(index)) => index,
-            _ => return Ok(BNS_WRONG_PARMS),
-        };
+        let edge_index = edge_pointer.target_index;
         let mut edge = bns_edge(heap, pBNS, edge_index)?;
         let mut f = (edge.flow & EDGE_FLOW_MASK as i32).wrapping_add(delta);
         if delta == 0 {
@@ -9229,16 +9257,12 @@ pub(crate) fn rescap(
         return Ok(edge_pointer.backward);
     }
 
-    let (cap, flow) = match edge_pointer.target {
-        Some(BnsEdgeTarget::Edge(index)) => {
-            let edge = bns_edge(heap, pBNS, index)?;
-            (edge.cap, edge.flow & EDGE_FLOW_MASK as i32)
-        }
-        Some(BnsEdgeTarget::StEdge(index)) => {
-            let edge = bns_vertex(heap, pBNS, i32::from(index))?.st_edge;
-            (edge.cap, edge.flow & EDGE_FLOW_ST_MASK as i32)
-        }
-        None => return Ok(edge_pointer.backward),
+    let (cap, flow) = if edge_pointer.s_or_t != 0 {
+        let edge = bns_vertex(heap, pBNS, edge_pointer.target_index)?.st_edge;
+        (edge.cap, edge.flow & EDGE_FLOW_ST_MASK as i32)
+    } else {
+        let edge = bns_edge(heap, pBNS, edge_pointer.target_index)?;
+        (edge.cap, edge.flow & EDGE_FLOW_MASK as i32)
     };
 
     if edge_pointer.backward != 0 {
@@ -9326,49 +9350,45 @@ pub(crate) fn rescap_mark(
         return Ok(edge_pointer.backward);
     }
 
-    match edge_pointer.target {
-        Some(BnsEdgeTarget::StEdge(index)) => {
-            let mut vertex = bns_vertex(heap, pBNS, i32::from(index))?;
-            let flow = vertex.st_edge.flow;
-            let mut f = flow & EDGE_FLOW_ST_MASK as i32;
-            if edge_pointer.backward == 0 {
-                f = vertex.st_edge.cap.wrapping_sub(f);
-            }
-            if (flow & EDGE_FLOW_ST_PATH as i32) != 0 {
-                pBNS.bNotASimplePath = pBNS.bNotASimplePath.wrapping_add(1);
-                f /= 2;
-            } else {
-                vertex.st_edge.flow |= EDGE_FLOW_ST_PATH as i32;
-                heap.slice_mut(pBNS.vert)?
-                    .get_mut(usize::from(index))
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .clone_from(&vertex);
-            }
-            Ok(f)
+    if edge_pointer.s_or_t != 0 {
+        let index = edge_pointer.target_index;
+        let mut vertex = bns_vertex(heap, pBNS, index)?;
+        let flow = vertex.st_edge.flow;
+        let mut f = flow & EDGE_FLOW_ST_MASK as i32;
+        if edge_pointer.backward == 0 {
+            f = vertex.st_edge.cap.wrapping_sub(f);
         }
-        Some(BnsEdgeTarget::Edge(index)) => {
-            let mut edge = bns_edge(heap, pBNS, index)?;
-            let flow = edge.flow;
-            let mut f = flow & EDGE_FLOW_MASK as i32;
-            if edge_pointer.backward == 0 {
-                f = edge.cap.wrapping_sub(f);
-            }
-            if (flow & EDGE_FLOW_PATH as i32) != 0 {
-                f /= 2;
-                pBNS.bNotASimplePath = pBNS.bNotASimplePath.wrapping_add(1);
-            } else {
-                edge.flow |= EDGE_FLOW_PATH as i32;
-                heap.slice_mut(pBNS.edge)?
-                    .get_mut(
-                        usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .clone_from(&edge);
-            }
-            Ok(f)
+        if (flow & EDGE_FLOW_ST_PATH as i32) != 0 {
+            pBNS.bNotASimplePath = pBNS.bNotASimplePath.wrapping_add(1);
+            f /= 2;
+        } else {
+            vertex.st_edge.flow |= EDGE_FLOW_ST_PATH as i32;
+            heap.slice_mut(pBNS.vert)?
+                .get_mut(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .clone_from(&vertex);
         }
-        None => Ok(edge_pointer.backward),
+        return Ok(f);
     }
+
+    let index = edge_pointer.target_index;
+    let mut edge = bns_edge(heap, pBNS, index)?;
+    let flow = edge.flow;
+    let mut f = flow & EDGE_FLOW_MASK as i32;
+    if edge_pointer.backward == 0 {
+        f = edge.cap.wrapping_sub(f);
+    }
+    if (flow & EDGE_FLOW_PATH as i32) != 0 {
+        f /= 2;
+        pBNS.bNotASimplePath = pBNS.bNotASimplePath.wrapping_add(1);
+    } else {
+        edge.flow |= EDGE_FLOW_PATH as i32;
+        heap.slice_mut(pBNS.edge)?
+            .get_mut(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .clone_from(&edge);
+    }
+    Ok(f)
 }
 
 #[allow(non_snake_case)]
@@ -12979,12 +12999,16 @@ pub(crate) fn bExistsAltPath(
                                     write_heap_prefix(heap, p_aatg.nAtTypeTotals, &totals, 33)?;
                                     write_heap_prefix(heap, p_aatg.nMarkedAtom, &marks, num_atoms)?;
 
-                                    let mut atoms = clone_heap_prefix(heap, at, num_atoms)?;
                                     let mut t_group_info = heap
                                         .slice(p_aatg.t_group_info.as_const())?
                                         .first()
                                         .cloned()
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                    let atom_storage_count = num_atoms.wrapping_add(i32::from(
+                                        t_group_info.tni.nNumRemovedExplicitH,
+                                    ));
+                                    let mut atoms =
+                                        clone_heap_prefix(heap, at, atom_storage_count)?;
                                     let mut empty_totals: [i32; 0] = [];
                                     let mut empty_marks: [S_CHAR; 0] = [];
                                     SubtractOrChangeAtHChargeBNS(
@@ -12997,7 +13021,7 @@ pub(crate) fn bExistsAltPath(
                                         &mut t_group_info,
                                         0,
                                     )?;
-                                    write_heap_prefix(heap, at, &atoms, num_atoms)?;
+                                    write_heap_prefix(heap, at, &atoms, atom_storage_count)?;
                                     heap.slice_mut(p_aatg.t_group_info)?[0] = t_group_info;
                                 } else if p_aatg.nAtTypeTotals.is_null() {
                                     b_do_mark_changed_bonds = MarkAtomsAtTautGroups(
@@ -13226,12 +13250,765 @@ pub(crate) fn bExistsAnyAltPath(
     Ok(0)
 }
 
+pub(crate) struct BnsSearchWorkspace {
+    base_ptr: StableSourceSlice<Vertex>,
+    switch_edge: StableSourceSlice<Edge>,
+    tree: StableSourceSlice<S_CHAR>,
+    scan_q: StableSourceSlice<Vertex>,
+    pu: Option<StableSourceSlice<Vertex>>,
+    pv: Option<StableSourceSlice<Vertex>>,
+    vertices: Option<StableSourceSlice<BNS_VERTEX>>,
+    edges: Option<StableSourceSlice<BNS_EDGE>>,
+    contiguous_adjacency: Option<(SourceMutPointer<EdgeIndex>, StableSourceSlice<EdgeIndex>)>,
+    split_adjacency: Vec<Option<StableSourceSlice<EdgeIndex>>>,
+    source_layout: bool,
+}
+
+impl BnsSearchWorkspace {
+    pub(crate) fn new(
+        heap: &mut SourceHeap,
+        bns: &BN_STRUCT,
+        data: &BN_DATA,
+    ) -> Result<Self, SourceHeapError> {
+        let writable_ids = [
+            data.BasePtr.allocation_identity(),
+            data.SwitchEdge.allocation_identity(),
+            data.Tree.allocation_identity(),
+            data.ScanQ.allocation_identity(),
+            data.Pu.allocation_identity(),
+            data.Pv.allocation_identity(),
+        ];
+        if writable_ids[..4].iter().any(Option::is_none) {
+            return Err(SourceHeapError::NullPointer);
+        }
+        for (index, id) in writable_ids.iter().enumerate() {
+            if id.is_some() && writable_ids[..index].contains(id) {
+                return Err(SourceHeapError::PointerAllocationMismatch);
+            }
+        }
+        for graph_id in [
+            bns.vert.allocation_identity(),
+            bns.edge.allocation_identity(),
+            bns.iedge.allocation_identity(),
+        ] {
+            if graph_id.is_some() && writable_ids.contains(&graph_id) {
+                return Err(SourceHeapError::PointerAllocationMismatch);
+            }
+        }
+
+        // SAFETY: all writable allocation identities above are distinct. The
+        // BNS call keeps these allocations live and never resizes their Vec
+        // buffers; references produced by a handle are confined to individual
+        // expressions before any ordinary heap access.
+        let base_ptr = unsafe { heap.stable_slice_mut(data.BasePtr)? };
+        let switch_edge = unsafe { heap.stable_slice_mut(data.SwitchEdge)? };
+        let tree = unsafe { heap.stable_slice_mut(data.Tree)? };
+        let scan_q = unsafe { heap.stable_slice_mut(data.ScanQ)? };
+        let pu = if data.Pu.is_null() {
+            None
+        } else {
+            Some(unsafe { heap.stable_slice_mut(data.Pu)? })
+        };
+        let pv = if data.Pv.is_null() {
+            None
+        } else {
+            Some(unsafe { heap.stable_slice_mut(data.Pv)? })
+        };
+        let vertices = if bns.vert.is_null() {
+            None
+        } else {
+            Some(unsafe { heap.stable_slice_mut(bns.vert)? })
+        };
+        let edges = if bns.edge.is_null() {
+            None
+        } else {
+            Some(unsafe { heap.stable_slice_mut(bns.edge)? })
+        };
+
+        let uses_contiguous_adjacency = !bns.iedge.is_null()
+            && vertices.as_ref().is_some_and(|vertices| {
+                vertices.len() == 0 || vertices.get(0).is_ok_and(|v| v.iedge == bns.iedge)
+            });
+        let contiguous_adjacency = if uses_contiguous_adjacency {
+            // The source allocation places every vertex adjacency list in the
+            // single pBNS->iedge block and stores interior pointers in vert[].
+            Some((bns.iedge, unsafe { heap.stable_slice_mut(bns.iedge)? }))
+        } else {
+            None
+        };
+        let mut split_adjacency = Vec::new();
+        if contiguous_adjacency.is_none() {
+            let vertex_count = vertices.as_ref().map_or(0, StableSourceSlice::len);
+            split_adjacency.reserve(vertex_count);
+            for index in 0..vertex_count {
+                let pointer = vertices
+                    .as_ref()
+                    .expect("vertex count is nonzero only for a present allocation")
+                    .get(index)?
+                    .iedge;
+                if pointer.is_null() {
+                    split_adjacency.push(None);
+                    continue;
+                }
+                let id = pointer.allocation_identity();
+                if writable_ids.contains(&id) {
+                    return Err(SourceHeapError::PointerAllocationMismatch);
+                }
+                // Compatibility fixtures may model every adjacency list as a
+                // separate allocation instead of the contiguous source block.
+                split_adjacency.push(Some(unsafe { heap.stable_slice_mut(pointer)? }));
+            }
+        }
+
+        let data_slots = usize::try_from(data.max_num_vertices).ok();
+        let path_slots = usize::try_from(data.max_len_Pu_Pv).ok();
+        let max_vertices = usize::try_from(bns.max_vertices).ok();
+        let max_edges = usize::try_from(bns.max_edges).ok();
+        let max_iedges = usize::try_from(bns.max_iedges).ok();
+        let num_vertices = usize::try_from(bns.num_vertices).ok();
+        let num_edges = usize::try_from(bns.num_edges).ok();
+        let source_layout = contiguous_adjacency.as_ref().is_some_and(|(_, adjacency)| {
+            let Some(data_slots) = data_slots else {
+                return false;
+            };
+            let Some(path_slots) = path_slots else {
+                return false;
+            };
+            let Some(max_vertices) = max_vertices else {
+                return false;
+            };
+            let Some(max_edges) = max_edges else {
+                return false;
+            };
+            let Some(max_iedges) = max_iedges else {
+                return false;
+            };
+            let Some(num_vertices) = num_vertices else {
+                return false;
+            };
+            let Some(num_edges) = num_edges else {
+                return false;
+            };
+            let Some(required_data_slots) = max_vertices
+                .checked_mul(2)
+                .and_then(|count| count.checked_add(2))
+            else {
+                return false;
+            };
+            data_slots >= required_data_slots
+                && path_slots >= max_vertices.saturating_add(2)
+                && num_vertices <= max_vertices
+                && num_edges <= max_edges
+                && base_ptr.len() >= data_slots
+                && switch_edge.len() >= data_slots
+                && tree.len() >= data_slots
+                && scan_q.len() >= data_slots
+                && pu.as_ref().is_some_and(|path| path.len() >= path_slots)
+                && pv.as_ref().is_some_and(|path| path.len() >= path_slots)
+                && vertices
+                    .as_ref()
+                    .is_some_and(|vertices| vertices.len() >= max_vertices)
+                && edges.as_ref().is_some_and(|edges| edges.len() >= max_edges)
+                && adjacency.len() >= max_iedges
+        });
+
+        Ok(Self {
+            base_ptr,
+            switch_edge,
+            tree,
+            scan_q,
+            pu,
+            pv,
+            vertices,
+            edges,
+            contiguous_adjacency,
+            split_adjacency,
+            source_layout,
+        })
+    }
+
+    #[inline(always)]
+    fn slot<'a, T, const SOURCE_LAYOUT: bool>(
+        slice: &'a StableSourceSlice<T>,
+        index: i32,
+    ) -> Result<&'a T, SourceHeapError> {
+        if SOURCE_LAYOUT {
+            debug_assert!(index >= 0);
+            let index = index as usize;
+            debug_assert!(index < slice.len());
+            // SAFETY: `source_layout` proves the Official InChI allocation
+            // capacities once, and the C algorithm keeps every index within
+            // those declared arrays.
+            return Ok(unsafe { slice.get_unchecked(index) });
+        }
+        slice.get(Self::index(index)?)
+    }
+
+    #[inline(always)]
+    fn slot_mut<'a, T, const SOURCE_LAYOUT: bool>(
+        slice: &'a mut StableSourceSlice<T>,
+        index: i32,
+    ) -> Result<&'a mut T, SourceHeapError> {
+        if SOURCE_LAYOUT {
+            debug_assert!(index >= 0);
+            let index = index as usize;
+            debug_assert!(index < slice.len());
+            // SAFETY: as in `slot`; the workspace also proved that writable
+            // source arrays have distinct allocation identities.
+            return Ok(unsafe { slice.get_unchecked_mut(index) });
+        }
+        slice.get_mut(Self::index(index)?)
+    }
+
+    fn reinit_data<const SOURCE_LAYOUT: bool>(
+        &mut self,
+        data: &mut BN_DATA,
+    ) -> Result<i32, SourceHeapError> {
+        let mut ret = 0_i32;
+        if data.ScanQ.is_null() {
+            ret += 2;
+        }
+        if data.BasePtr.is_null() {
+            ret += 4;
+        }
+        if data.SwitchEdge.is_null() {
+            ret += 8;
+        }
+        if data.Tree.is_null() {
+            ret += 16;
+        }
+        if ret == 0 {
+            for index in 0..=data.QSize {
+                let u = *Self::slot::<_, SOURCE_LAYOUT>(&self.scan_q, index)?;
+                let v = u ^ 1;
+                *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.base_ptr, u)? = NO_VERTEX;
+                *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.base_ptr, v)? = NO_VERTEX;
+                Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.switch_edge, u)?[0] = NO_VERTEX;
+                Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.switch_edge, v)?[0] = NO_VERTEX;
+                *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.tree, u)? = TREE_NOT_IN_M as S_CHAR;
+                *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.tree, v)? = TREE_NOT_IN_M as S_CHAR;
+            }
+        }
+        data.QSize = -1;
+        if self.pu.is_none() {
+            ret += 32;
+        }
+        if self.pv.is_none() {
+            ret += 64;
+        }
+        Ok(ret)
+    }
+
+    #[inline]
+    fn reinit_data_for_layout(&mut self, data: &mut BN_DATA) -> Result<i32, SourceHeapError> {
+        if self.source_layout {
+            self.reinit_data::<true>(data)
+        } else {
+            self.reinit_data::<false>(data)
+        }
+    }
+
+    #[track_caller]
+    fn index(value: i32) -> Result<usize, SourceHeapError> {
+        usize::try_from(value).map_err(|_| SourceHeapError::PointerOutOfBounds)
+    }
+
+    #[inline(always)]
+    fn vertex<const SOURCE_LAYOUT: bool>(
+        &self,
+        index: i32,
+    ) -> Result<&BNS_VERTEX, SourceHeapError> {
+        if SOURCE_LAYOUT {
+            debug_assert!(index >= 0);
+            // SAFETY: `source_layout` is true only after `new` proves that the
+            // Official InChI `vert[]` allocation is present, has
+            // `max_vertices` slots, and the C algorithm supplies an in-range
+            // vertex index. The workspace owns the allocation view for the
+            // full search and no allocation is resized or freed meanwhile.
+            let vertices = unsafe { self.vertices.as_ref().unwrap_unchecked() };
+            debug_assert!((index as usize) < vertices.len());
+            return Ok(unsafe { vertices.get_unchecked(index as usize) });
+        }
+        let vertices = self.vertices.as_ref().ok_or(SourceHeapError::NullPointer)?;
+        Self::slot::<_, false>(vertices, index)
+    }
+
+    #[inline(always)]
+    fn edge<const SOURCE_LAYOUT: bool>(&self, index: i32) -> Result<&BNS_EDGE, SourceHeapError> {
+        if SOURCE_LAYOUT {
+            debug_assert!(index >= 0);
+            // SAFETY: `source_layout` proves the same fixed-allocation contract
+            // for Official InChI `edge[]`; all search edge indexes are produced
+            // from the validated adjacency block and are below `max_edges`.
+            let edges = unsafe { self.edges.as_ref().unwrap_unchecked() };
+            debug_assert!((index as usize) < edges.len());
+            return Ok(unsafe { edges.get_unchecked(index as usize) });
+        }
+        let edges = self.edges.as_ref().ok_or(SourceHeapError::NullPointer)?;
+        Self::slot::<_, false>(edges, index)
+    }
+
+    #[inline(always)]
+    fn get2nd_edge_vertex<const SOURCE_LAYOUT: bool>(
+        &self,
+        uv: Edge,
+    ) -> Result<Vertex, SourceHeapError> {
+        if uv[1] >= 0 {
+            let edge = self.edge::<SOURCE_LAYOUT>(uv[1])?;
+            return Ok(((uv[0] - 2) ^ (2 * i32::from(edge.neighbor12) + 1)) + 2);
+        }
+        if uv[0] <= 1 {
+            Ok(-(1 + uv[1]))
+        } else {
+            Ok(uv[0] % 2)
+        }
+    }
+
+    #[inline(always)]
+    fn vertex_scan<const SOURCE_LAYOUT: bool>(
+        &self,
+        bns: &BN_STRUCT,
+        vertex: Vertex,
+    ) -> Result<(i32, Option<usize>), SourceHeapError> {
+        let index = vertex / 2 - 1;
+        if index < 0 {
+            return Ok((bns.num_vertices, None));
+        }
+        let vertex_data = self.vertex::<SOURCE_LAYOUT>(index)?;
+        let degree = if vertex_data.st_edge.cap > 0 {
+            i32::from(vertex_data.num_adj_edges) + 1
+        } else {
+            0
+        };
+        let adjacency_base = if SOURCE_LAYOUT {
+            // SAFETY: `source_layout` established the single Official InChI
+            // `pBNS->iedge` allocation and every `vert[].iedge` value is a
+            // forward interior pointer into that fixed block.
+            let (origin, _) = unsafe { self.contiguous_adjacency.as_ref().unwrap_unchecked() };
+            Some(unsafe { vertex_data.iedge.forward_difference_unchecked(*origin) })
+        } else if let Some((origin, _)) = &self.contiguous_adjacency {
+            Some(
+                usize::try_from(vertex_data.iedge.difference(*origin)?)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+            )
+        } else {
+            None
+        };
+        Ok((degree, adjacency_base))
+    }
+
+    #[inline(always)]
+    fn vertex_neighbor<const SOURCE_LAYOUT: bool>(
+        &self,
+        vertex: Vertex,
+        mut neighbor_index: i32,
+        contiguous_base: Option<usize>,
+        edge_index: &mut EdgeIndex,
+    ) -> Result<Vertex, SourceHeapError> {
+        // INCHI✔️✔️:     if (( i = v - 2 ) >= 0)
+        let doubled_index = vertex - 2;
+        if doubled_index >= 0 {
+            // INCHI✔️✔️:         else /* neighbor of x or y is s or t */
+            if neighbor_index == 0 {
+                // INCHI✔️✔️:             neighbor = ( v & 1 );
+                let neighbor = vertex & 1;
+                // INCHI✔️✔️:             *iedge = -( neighbor + 1 );
+                *edge_index = -(neighbor + 1);
+                return Ok(neighbor);
+            }
+            // INCHI✔️✔️:         if (neigh) { neigh--; }
+            neighbor_index -= 1;
+            // INCHI✔️✔️:             *iedge = pBNS->vert[i / 2].iedge[neigh];
+            *edge_index = if SOURCE_LAYOUT {
+                // SAFETY: workspace construction proves that source layout has
+                // a contiguous `iedge[]` allocation. `vertex_scan` derives the
+                // base from the same allocation, and the C degree bound keeps
+                // `base + neighbor_index` within `max_iedges`. No buffer is
+                // resized or freed for the lifetime of this workspace.
+                let (_, adjacency) =
+                    unsafe { self.contiguous_adjacency.as_ref().unwrap_unchecked() };
+                let base = unsafe { contiguous_base.unwrap_unchecked() };
+                debug_assert!(neighbor_index >= 0);
+                let index = base + neighbor_index as usize;
+                debug_assert!(index < adjacency.len());
+                *unsafe { adjacency.get_unchecked(index) }
+            } else if let Some((_, adjacency)) = &self.contiguous_adjacency {
+                let base = contiguous_base.ok_or(SourceHeapError::PointerAllocationMismatch)?;
+                let index = base
+                    .checked_add(Self::index(neighbor_index)?)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                *adjacency.get(index)?
+            } else {
+                let vertex_index = Self::index(doubled_index / 2)?;
+                let adjacency_index = Self::index(neighbor_index)?;
+                let adjacency = self
+                    .split_adjacency
+                    .get(vertex_index)
+                    .and_then(Option::as_ref)
+                    .ok_or(SourceHeapError::NullPointer)?;
+                *adjacency.get(adjacency_index)?
+            };
+            let edge = self.edge::<SOURCE_LAYOUT>(*edge_index)?;
+            // INCHI✔️✔️:             if (!( pBNS->edge[*iedge].cap & EDGE_FLOW_MASK ) || IS_FORBIDDEN( pBNS->edge[*iedge].forbidden, pBNS ))
+            if edge.cap & EDGE_FLOW_MASK as i32 == 0 || edge.forbidden != 0 {
+                // INCHI✔️✔️:                 return NO_VERTEX;
+                return Ok(NO_VERTEX);
+            }
+            // INCHI✔️✔️:             neighbor = ( i ^ ( 2 * pBNS->edge[*iedge].neighbor12 + 1 ) ) + 2;
+            return Ok((doubled_index ^ (2 * i32::from(edge.neighbor12) + 1)) + 2);
+        }
+
+        // INCHI✔️✔️:         if (!( pBNS->vert[neigh].st_edge.cap & EDGE_FLOW_ST_MASK ))
+        let vertex_data = self.vertex::<SOURCE_LAYOUT>(neighbor_index)?;
+        if vertex_data.st_edge.cap & EDGE_FLOW_ST_MASK as i32 == 0 {
+            // INCHI✔️✔️:             return NO_VERTEX;
+            return Ok(NO_VERTEX);
+        }
+        // INCHI✔️✔️:         neighbor = 2 * neigh + 2 + ( v & 1 );
+        let neighbor = 2 * neighbor_index + 2 + (vertex & 1);
+        // INCHI✔️✔️:         *iedge = -( neighbor + 1 );
+        *edge_index = -(neighbor + 1);
+        // INCHI✔️✔️:     return neighbor;
+        Ok(neighbor)
+    }
+
+    #[inline(always)]
+    fn residual_capacity<const SOURCE_LAYOUT: bool>(
+        &self,
+        bns: &BN_STRUCT,
+        u: Vertex,
+        v: Vertex,
+        edge_index: EdgeIndex,
+    ) -> Result<i32, SourceHeapError> {
+        // INCHI✔️✔️:     int bBackward = GetEdgePointer( pBNS, u, v, iuv, &pedge, &s_or_t );
+        let edge_pointer = GetEdgePointer(bns, u, v, edge_index);
+        // INCHI✔️✔️:     if (!IS_BNS_ERROR( bBackward ))
+        if edge_pointer.backward == BNS_WRONG_PARMS {
+            // INCHI✔️✔️:     return bBackward;
+            return Ok(edge_pointer.backward);
+        }
+        // INCHI✔️✔️:         if (s_or_t)
+        let (capacity, flow) = if edge_pointer.s_or_t != 0 {
+            let edge = &self
+                .vertex::<SOURCE_LAYOUT>(edge_pointer.target_index)?
+                .st_edge;
+            // INCHI✔️✔️:             f = ( pst_edge->flow & EDGE_FLOW_ST_MASK );
+            (edge.cap, edge.flow & EDGE_FLOW_ST_MASK as i32)
+        } else {
+            let edge = self.edge::<SOURCE_LAYOUT>(edge_pointer.target_index)?;
+            // INCHI✔️✔️:             f = ( pedge->flow & EDGE_FLOW_MASK );
+            (edge.cap, edge.flow & EDGE_FLOW_MASK as i32)
+        };
+        // INCHI✔️✔️:             if (!bBackward) f = (int) edge->cap - f;
+        Ok(if edge_pointer.backward != 0 {
+            flow
+        } else {
+            capacity.wrapping_sub(flow)
+        })
+    }
+
+    #[inline(always)]
+    fn find_base<const SOURCE_LAYOUT: bool>(
+        &mut self,
+        vertex: Vertex,
+    ) -> Result<Vertex, SourceHeapError> {
+        let mut base = vertex;
+        loop {
+            let parent = *Self::slot::<_, SOURCE_LAYOUT>(&self.base_ptr, base)?;
+            if parent == NO_VERTEX {
+                return Ok(NO_VERTEX);
+            }
+            if parent == BLOSSOM_BASE {
+                break;
+            }
+            base = parent;
+        }
+        let mut current = vertex;
+        while current != base {
+            let parent = *Self::slot::<_, SOURCE_LAYOUT>(&self.base_ptr, current)?;
+            *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.base_ptr, current)? = base;
+            current = parent;
+        }
+        Ok(base)
+    }
+
+    #[inline(always)]
+    fn tree_mark<const SOURCE_LAYOUT: bool>(
+        &mut self,
+        vertex: Vertex,
+        mark: S_CHAR,
+    ) -> Result<(), SourceHeapError> {
+        let slot = Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.tree, vertex)?;
+        if *slot < mark {
+            *slot = mark;
+        }
+        Ok(())
+    }
+
+    fn path(&self, use_pu: bool) -> Result<&StableSourceSlice<Vertex>, SourceHeapError> {
+        if use_pu {
+            self.pu.as_ref()
+        } else {
+            self.pv.as_ref()
+        }
+        .ok_or(SourceHeapError::NullPointer)
+    }
+
+    fn path_mut(
+        &mut self,
+        use_pu: bool,
+    ) -> Result<&mut StableSourceSlice<Vertex>, SourceHeapError> {
+        if use_pu {
+            self.pu.as_mut()
+        } else {
+            self.pv.as_mut()
+        }
+        .ok_or(SourceHeapError::NullPointer)
+    }
+
+    fn previous_vertex<const SOURCE_LAYOUT: bool>(
+        &self,
+        _bns: &BN_STRUCT,
+        vertex: Vertex,
+        edge_index: &mut EdgeIndex,
+    ) -> Result<Vertex, SourceHeapError> {
+        let mut edge = *Self::slot::<_, SOURCE_LAYOUT>(&self.switch_edge, vertex)?;
+        let mut w = edge[0];
+        let mut z = self.get2nd_edge_vertex::<SOURCE_LAYOUT>(edge)?;
+        let mut previous_edge = edge[1];
+        if z == vertex {
+            *edge_index = previous_edge;
+            return Ok(w);
+        }
+
+        let complement = vertex ^ 1;
+        let mut cursor = z ^ 1;
+        while cursor != NO_VERTEX {
+            edge = *Self::slot::<_, SOURCE_LAYOUT>(&self.switch_edge, cursor)?;
+            w = edge[0];
+            z = self.get2nd_edge_vertex::<SOURCE_LAYOUT>(edge)?;
+            previous_edge = edge[1];
+            if w == complement {
+                *edge_index = previous_edge;
+                return Ok(if (vertex + z) % 2 != 0 { z } else { z ^ 1 });
+            }
+            if w == cursor {
+                return Ok(NO_VERTEX);
+            }
+            cursor = w;
+        }
+        Ok(cursor)
+    }
+
+    fn ignore_non_tacn_atom<const SOURCE_LAYOUT: bool>(
+        &self,
+        bns: &BN_STRUCT,
+        u: Vertex,
+        v: Vertex,
+    ) -> Result<bool, SourceHeapError> {
+        if bns.type_TACN == 0 || u <= 1 || v <= 1 {
+            return Ok(false);
+        }
+        if self.vertex::<SOURCE_LAYOUT>(v / 2 - 1)?.type_ & bns.type_TACN != 0
+            || bns.type_T == 0
+            || bns.type_CN == 0
+        {
+            return Ok(false);
+        }
+        let u_type = self.vertex::<SOURCE_LAYOUT>(u / 2 - 1)?.type_;
+        let u_is_taut = if u_type & bns.type_T == bns.type_T {
+            true
+        } else if u_type & bns.type_CN == bns.type_CN {
+            false
+        } else {
+            return Ok(false);
+        };
+
+        let mut allowed = 0;
+        let mut found_groups = 0;
+        let (degree, adjacency_base) = self.vertex_scan::<SOURCE_LAYOUT>(bns, v)?;
+        for index in 0..degree {
+            let mut edge_index = 0;
+            let neighbor =
+                self.vertex_neighbor::<SOURCE_LAYOUT>(v, index, adjacency_base, &mut edge_index)?;
+            if neighbor == NO_VERTEX || neighbor <= 1 || neighbor == u {
+                continue;
+            }
+            if self.residual_capacity::<SOURCE_LAYOUT>(bns, v, neighbor, edge_index)? > 0 {
+                allowed += 1;
+                let neighbor_type = self.vertex::<SOURCE_LAYOUT>(neighbor / 2 - 1)?.type_;
+                let matches = if u_is_taut {
+                    neighbor_type & bns.type_CN == bns.type_CN
+                } else {
+                    neighbor_type & bns.type_T == bns.type_T
+                };
+                found_groups += i32::from(matches);
+            }
+        }
+        Ok(found_groups != 0 && allowed == 1)
+    }
+
+    fn ignore_non_tacn_group<const SOURCE_LAYOUT: bool>(
+        &self,
+        bns: &BN_STRUCT,
+        v: Vertex,
+        w: Vertex,
+    ) -> Result<bool, SourceHeapError> {
+        if v <= 1 || w <= 1 || bns.type_TACN == 0 {
+            return Ok(false);
+        }
+        if self.vertex::<SOURCE_LAYOUT>(v / 2 - 1)?.type_ & bns.type_TACN != 0
+            || bns.type_T == 0
+            || bns.type_CN == 0
+        {
+            return Ok(false);
+        }
+        let mut edge_index = 0;
+        let u = self.previous_vertex::<SOURCE_LAYOUT>(bns, v, &mut edge_index)?;
+        if u == NO_VERTEX || edge_index < 0 {
+            return Ok(false);
+        }
+        let edge = self.edge::<SOURCE_LAYOUT>(edge_index)?;
+        let u_atom = u / 2 - 1;
+        let v_atom = v / 2 - 1;
+        if (i32::from(edge.neighbor1) != u_atom && i32::from(edge.neighbor1) != v_atom)
+            || (i32::from(edge.neighbor12) ^ u_atom) != v_atom
+        {
+            return Ok(false);
+        }
+        let classify = |type_: AT_NUMB| -> Option<bool> {
+            if type_ & bns.type_T == bns.type_T {
+                Some(true)
+            } else if type_ & bns.type_CN == bns.type_CN {
+                Some(false)
+            } else {
+                None
+            }
+        };
+        let Some(u_is_taut) = classify(self.vertex::<SOURCE_LAYOUT>(u_atom)?.type_) else {
+            return Ok(false);
+        };
+        let Some(w_is_taut) = classify(self.vertex::<SOURCE_LAYOUT>(w / 2 - 1)?.type_) else {
+            return Ok(false);
+        };
+        Ok(u_is_taut != w_is_taut)
+    }
+
+    fn find_path_to_source<const SOURCE_LAYOUT: bool>(
+        &mut self,
+        mut vertex: Vertex,
+        use_pu: bool,
+        max_len: i32,
+    ) -> Result<i32, SourceHeapError> {
+        let mut index = 0;
+        *Self::slot_mut::<_, SOURCE_LAYOUT>(self.path_mut(use_pu)?, 0)? = vertex;
+        while vertex != Vertex_s as Vertex {
+            let edge = *Self::slot::<_, SOURCE_LAYOUT>(&self.switch_edge, vertex)?;
+            vertex = self.find_base::<SOURCE_LAYOUT>(edge[0])?;
+            index += 1;
+            if index >= max_len {
+                return Ok(BNS_WRONG_PARMS);
+            }
+            *Self::slot_mut::<_, SOURCE_LAYOUT>(self.path_mut(use_pu)?, index)? = vertex;
+        }
+        Ok(index)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn make_blossom<const SOURCE_LAYOUT: bool>(
+        &mut self,
+        bns: &BN_STRUCT,
+        q_size: &mut i32,
+        max_path_len: i32,
+        u: Vertex,
+        v: Vertex,
+        edge_index: EdgeIndex,
+        base_u: Vertex,
+        base_v: Vertex,
+    ) -> Result<Vertex, SourceHeapError> {
+        let len_pu = self.find_path_to_source::<SOURCE_LAYOUT>(base_u, true, max_path_len)?;
+        if BNS_ERR <= len_pu && len_pu <= BNS_MAX_ERR_VALUE {
+            return Ok(len_pu);
+        }
+        let len_pv = self.find_path_to_source::<SOURCE_LAYOUT>(base_v, false, max_path_len)?;
+        if BNS_ERR <= len_pv && len_pv <= BNS_MAX_ERR_VALUE {
+            return Ok(len_pv);
+        }
+
+        let mut i = len_pu;
+        let mut j = len_pv;
+        while i >= 0
+            && j >= 0
+            && Self::slot::<_, SOURCE_LAYOUT>(self.path(true)?, i)?
+                == Self::slot::<_, SOURCE_LAYOUT>(self.path(false)?, j)?
+        {
+            i -= 1;
+            j -= 1;
+        }
+        i += 1;
+        let mut base = *Self::slot::<_, SOURCE_LAYOUT>(self.path(true)?, i)?;
+        let mut switch = *Self::slot::<_, SOURCE_LAYOUT>(&self.switch_edge, base)?;
+        let mut z = switch[0];
+        let mut izw = switch[1];
+        while base != Vertex_s as Vertex
+            && self.residual_capacity::<SOURCE_LAYOUT>(bns, z, base, izw)? >= 2
+        {
+            i += 1;
+            base = *Self::slot::<_, SOURCE_LAYOUT>(self.path(true)?, i)?;
+            switch = *Self::slot::<_, SOURCE_LAYOUT>(&self.switch_edge, base)?;
+            z = switch[0];
+            izw = switch[1];
+        }
+
+        let mut absorb_path = |workspace: &mut Self,
+                               use_pu: bool,
+                               mut path_index: i32,
+                               predecessor: Vertex|
+         -> Result<(), SourceHeapError> {
+            while path_index >= 0 {
+                let z = *Self::slot::<_, SOURCE_LAYOUT>(workspace.path(use_pu)?, path_index)?;
+                *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.base_ptr, z)? = base;
+                let complement = z ^ 1;
+                *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.base_ptr, complement)? = base;
+                if *Self::slot::<_, SOURCE_LAYOUT>(&workspace.tree, complement)?
+                    < TREE_IN_2BLOSS as S_CHAR
+                {
+                    let switch =
+                        Self::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.switch_edge, complement)?;
+                    switch[0] = predecessor;
+                    switch[1] = edge_index;
+                    *q_size = q_size.wrapping_add(1);
+                    *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.scan_q, *q_size)? =
+                        complement;
+                    workspace.tree_mark::<SOURCE_LAYOUT>(complement, TREE_IN_2BLOSS as S_CHAR)?;
+                }
+                path_index -= 1;
+            }
+            Ok(())
+        };
+        absorb_path(self, true, i - 1, v ^ 1)?;
+        absorb_path(self, false, j, u)?;
+
+        let complement = base ^ 1;
+        if *Self::slot::<_, SOURCE_LAYOUT>(&self.tree, complement)? < TREE_IN_2BLOSS as S_CHAR {
+            let switch = Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.switch_edge, complement)?;
+            switch[0] = u;
+            switch[1] = edge_index;
+            *q_size = q_size.wrapping_add(1);
+            *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.scan_q, *q_size)? = complement;
+            self.tree_mark::<SOURCE_LAYOUT>(complement, TREE_IN_2BLOSS as S_CHAR)?;
+        }
+        Ok(base)
+    }
+}
+
 #[allow(non_snake_case)]
-pub(crate) fn BalancedNetworkSearch(
+fn balanced_network_search_impl<const SOURCE_LAYOUT: bool>(
     heap: &mut SourceHeap,
     pBNS: &mut BN_STRUCT,
     pBD: &mut BN_DATA,
     bChangeFlow: i32,
+    workspace: &mut BnsSearchWorkspace,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:10779 BalancedNetworkSearch
     // INCHI✔️❌: int BalancedNetworkSearch( BN_STRUCT* pBNS, BN_DATA *pBD, int bChangeFlow )
@@ -13439,18 +14216,11 @@ pub(crate) fn BalancedNetworkSearch(
     // INCHI✔️❌: #define TREE_IS_S_REACHABLE(X) (Tree[X] >= TREE_IN_2BLOSS)
     // END INCHI ACTIVE MACRO CONFIGURATION: BalancedNetworkSearch
 
-    let base_ptr = pBD.BasePtr;
     let switch_edge = pBD.SwitchEdge;
-    let tree = pBD.Tree;
-    let scan_q = pBD.ScanQ;
-    let pu = pBD.Pu;
-    let pv = pBD.Pv;
     let max_len_pu_pv = pBD.max_len_Pu_Pv;
     let mut q_size = pBD.QSize;
     let mut ret = 0;
-    let q_size_slot = heap.allocate_model_storage(vec![q_size])?;
-
-    let result = (|| -> Result<i32, SourceHeapError> {
+    (|| -> Result<i32, SourceHeapError> {
         let b_rad_search =
             (BNS_EF_RAD_SRCH as i32 & bChangeFlow) != 0 && !pBD.RadEndpoints.is_null();
         let b_rad_srch_mode = if b_rad_search {
@@ -13463,106 +14233,131 @@ pub(crate) fn BalancedNetworkSearch(
             && pBNS.type_TACN != 0
             && b_rad_srch_mode == tagBnsRadSrchMode_RAD_SRCH_NORM;
 
-        let tree_mark = |heap: &mut SourceHeap,
-                         tree: SourceMutPointer<S_CHAR>,
-                         vertex: Vertex,
-                         mark: S_CHAR|
-         -> Result<(), SourceHeapError> {
-            if work_get(heap, tree, vertex)? < mark {
-                work_set(heap, tree, vertex, mark)?;
-            }
-            Ok(())
-        };
-
         q_size = 0;
         let mut k = 0;
-        work_set(heap, scan_q, q_size, Vertex_s as Vertex)?;
-        work_set(heap, base_ptr, Vertex_t as Vertex, Vertex_s as Vertex)?;
-        work_set(heap, base_ptr, Vertex_s as Vertex, BLOSSOM_BASE)?;
-        work_set(heap, tree, Vertex_s as Vertex, TREE_IN_1 as S_CHAR)?;
+        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.scan_q, q_size)? =
+            Vertex_s as Vertex;
+        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
+            &mut workspace.base_ptr,
+            Vertex_t as Vertex,
+        )? = Vertex_s as Vertex;
+        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
+            &mut workspace.base_ptr,
+            Vertex_s as Vertex,
+        )? = BLOSSOM_BASE;
+        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
+            &mut workspace.tree,
+            Vertex_s as Vertex,
+        )? = TREE_IN_1 as S_CHAR;
 
         loop {
-            let u = work_get(heap, scan_q, k)?;
-            let mut b_u = FindBase(heap, u, base_ptr)?;
-            let degree = GetVertexDegree(heap, pBNS, u)?;
+            let u = *BnsSearchWorkspace::slot::<_, SOURCE_LAYOUT>(&workspace.scan_q, k)?;
+            let mut b_u = workspace.find_base::<SOURCE_LAYOUT>(u)?;
+            let (degree, adjacency_base) = workspace.vertex_scan::<SOURCE_LAYOUT>(pBNS, u)?;
             let mut n = 0;
-            for i in 0..degree {
+            // INCHI✔️✔️:         for (i = 0; i < degree; i++)
+            let mut i = 0;
+            while i < degree {
                 let mut iuv: EdgeIndex = 0;
-                let v = GetVertexNeighbor(heap, pBNS, u, i, &mut iuv)?;
+                // INCHI✔️✔️:             v = GetVertexNeighbor( pBNS, u, i, &iuv );
+                let v =
+                    workspace.vertex_neighbor::<SOURCE_LAYOUT>(u, i, adjacency_base, &mut iuv)?;
+                // INCHI✔️✔️:             if (v == NO_VERTEX) { continue; }
                 if v == NO_VERTEX {
+                    i = i.wrapping_add(1);
                     continue;
                 }
+                // INCHI✔️✔️:             if (!k && bRadSrchMode == RAD_SRCH_FROM_FICT && v / 2 <= pBNS->num_atoms) { continue; }
                 if k == 0
                     && b_rad_srch_mode == tagBnsRadSrchMode_RAD_SRCH_FROM_FICT
                     && v / 2 <= pBNS.num_atoms
                 {
+                    i = i.wrapping_add(1);
                     continue;
                 }
+                // INCHI✔️✔️:             if (bRadSearchPrelim && v / 2 > pBNS->num_atoms) { continue; }
                 if b_rad_search_prelim && v / 2 > pBNS.num_atoms {
+                    i = i.wrapping_add(1);
                     continue;
                 }
 
-                let switch_u = work_get(heap, switch_edge, u)?;
-                let switch_u_avoids_t =
-                    switch_u[0] != v || Get2ndEdgeVertex(heap, pBNS, switch_u)? != u;
+                // INCHI✔️✔️:             ( SwitchEdge_Vert1( u ) != v || SwitchEdge_Vert2( u ) != u )
+                let switch_u =
+                    *BnsSearchWorkspace::slot::<_, SOURCE_LAYOUT>(&workspace.switch_edge, u)?;
+                let switch_u_avoids_t = switch_u[0] != v
+                    || workspace.get2nd_edge_vertex::<SOURCE_LAYOUT>(switch_u)? != u;
+                // INCHI✔️✔️:                  && ( ret = rescap( pBNS, u, v, iuv ) ) > 0
                 if switch_u_avoids_t {
-                    ret = rescap(heap, pBNS, u, v, iuv)?;
+                    ret = workspace.residual_capacity::<SOURCE_LAYOUT>(pBNS, u, v, iuv)?;
                 }
                 if switch_u_avoids_t && ret > 0 {
+                    // INCHI✔️✔️:                 if (pBNS->type_TACN)
                     if pBNS.type_TACN != 0 {
-                        if bIgnoreVertexNonTACN_atom(heap, pBNS, u, v)? != 0 {
+                        // INCHI✔️✔️:                     if (bIgnoreVertexNonTACN_atom( pBNS, u, v )) { continue; }
+                        if workspace.ignore_non_tacn_atom::<SOURCE_LAYOUT>(pBNS, u, v)? {
+                            i = i.wrapping_add(1);
                             continue;
                         }
-                        if bIgnoreVertexNonTACN_group(heap, pBNS, u, v, switch_edge)? != 0 {
+                        // INCHI✔️✔️:                     if (bIgnoreVertexNonTACN_group( pBNS, u, v, SwitchEdge )) { continue; }
+                        if workspace.ignore_non_tacn_group::<SOURCE_LAYOUT>(pBNS, u, v)? {
+                            i = i.wrapping_add(1);
                             continue;
                         }
                     }
-                    let b_v = FindBase(heap, v, base_ptr)?;
+                    // INCHI✔️✔️:                 b_v = FindBase( v, BasePtr );
+                    let b_v = workspace.find_base::<SOURCE_LAYOUT>(v)?;
                     if b_v == NO_VERTEX {
                         q_size += 1;
-                        work_set(heap, scan_q, q_size, v)?;
-                        tree_mark(heap, tree, v, TREE_IN_1 as S_CHAR)?;
-                        tree_mark(heap, tree, v ^ 1, TREE_IN_2 as S_CHAR)?;
-                        let mut switch_v = work_get(heap, switch_edge, v)?;
+                        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
+                            &mut workspace.scan_q,
+                            q_size,
+                        )? = v;
+                        workspace.tree_mark::<SOURCE_LAYOUT>(v, TREE_IN_1 as S_CHAR)?;
+                        workspace.tree_mark::<SOURCE_LAYOUT>(v ^ 1, TREE_IN_2 as S_CHAR)?;
+                        let switch_v = BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
+                            &mut workspace.switch_edge,
+                            v,
+                        )?;
                         switch_v[0] = u;
                         switch_v[1] = iuv;
-                        work_set(heap, switch_edge, v, switch_v)?;
-                        work_set(heap, base_ptr, v ^ 1, v)?;
-                        work_set(heap, base_ptr, v, BLOSSOM_BASE)?;
+                        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
+                            &mut workspace.base_ptr,
+                            v ^ 1,
+                        )? = v;
+                        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
+                            &mut workspace.base_ptr,
+                            v,
+                        )? = BLOSSOM_BASE;
                         n += 1;
                     } else {
                         let prim_v = v ^ 1;
                         let prim_u = u ^ 1;
-                        let switch_prim_u = work_get(heap, switch_edge, prim_u)?;
+                        let switch_prim_u = *BnsSearchWorkspace::slot::<_, SOURCE_LAYOUT>(
+                            &workspace.switch_edge,
+                            prim_u,
+                        )?;
                         let avoids_t_prime = switch_prim_u[0] != prim_v
-                            || Get2ndEdgeVertex(heap, pBNS, switch_prim_u)? != prim_u;
-                        if work_get(heap, tree, prim_v)? >= TREE_IN_2BLOSS as S_CHAR
+                            || workspace.get2nd_edge_vertex::<SOURCE_LAYOUT>(switch_prim_u)?
+                                != prim_u;
+                        if *BnsSearchWorkspace::slot::<_, SOURCE_LAYOUT>(&workspace.tree, prim_v)?
+                            >= TREE_IN_2BLOSS as S_CHAR
                             && avoids_t_prime
                             && b_u != b_v
                             && !(pBNS.type_TACN != 0
-                                && bIgnoreVertexNonTACN_group(heap, pBNS, prim_v, u, switch_edge)?
-                                    != 0)
+                                && workspace
+                                    .ignore_non_tacn_group::<SOURCE_LAYOUT>(pBNS, prim_v, u)?)
                         {
                             n += 1;
-                            work_set(heap, q_size_slot, 0, q_size)?;
-                            let w = MakeBlossom(
-                                heap,
+                            let w = workspace.make_blossom::<SOURCE_LAYOUT>(
                                 pBNS,
-                                scan_q,
-                                q_size_slot,
-                                pu,
-                                pv,
+                                &mut q_size,
                                 max_len_pu_pv,
-                                switch_edge,
-                                base_ptr,
                                 u,
                                 v,
                                 iuv,
                                 b_u,
                                 b_v,
-                                tree,
                             )?;
-                            q_size = work_get(heap, q_size_slot, 0)?;
                             if BNS_ERR <= w && w <= BNS_MAX_ERR_VALUE {
                                 pBD.QSize = q_size;
                                 return Ok(w);
@@ -13608,6 +14403,8 @@ pub(crate) fn BalancedNetworkSearch(
                     pBD.QSize = q_size;
                     return Ok(ret);
                 }
+                // INCHI✔️✔️:         for-loop increment: i++
+                i = i.wrapping_add(1);
             }
 
             if b_rad_search && n == 0 {
@@ -13626,17 +14423,43 @@ pub(crate) fn BalancedNetworkSearch(
 
         pBD.QSize = q_size;
         Ok(0)
-    })();
-    heap.free(q_size_slot)?;
-    result
+    })()
 }
+
+#[inline]
+fn balanced_network_search_with_workspace(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    bChangeFlow: i32,
+    workspace: &mut BnsSearchWorkspace,
+) -> Result<i32, SourceHeapError> {
+    if workspace.source_layout {
+        balanced_network_search_impl::<true>(heap, pBNS, pBD, bChangeFlow, workspace)
+    } else {
+        balanced_network_search_impl::<false>(heap, pBNS, pBD, bChangeFlow, workspace)
+    }
+}
+
 #[allow(non_snake_case)]
-pub(crate) fn RunBalancedNetworkSearch(
+pub(crate) fn BalancedNetworkSearch(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    bChangeFlow: i32,
+) -> Result<i32, SourceHeapError> {
+    let mut workspace = BnsSearchWorkspace::new(heap, pBNS, pBD)?;
+    balanced_network_search_with_workspace(heap, pBNS, pBD, bChangeFlow, &mut workspace)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn run_balanced_network_search_with_workspace(
     heap: &mut SourceHeap,
     pBNS: &mut BN_STRUCT,
     pBD: &mut BN_DATA,
     bChangeFlow: i32,
     clock_result: clock_t,
+    workspace: &mut BnsSearchWorkspace,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:689 RunBalancedNetworkSearch
     // INCHI✔️❌: int RunBalancedNetworkSearch( BN_STRUCT *pBNS, BN_DATA *pBD, int bChangeFlow )
@@ -13680,21 +14503,25 @@ pub(crate) fn RunBalancedNetworkSearch(
 
     let mut delta = 0;
     let mut n_sum_delta = 0;
-    for pass in 0..pBNS.max_altp {
+    // INCHI✔️✔️:     for (pass = 0; pass < pBNS->max_altp; pass++)
+    let mut pass = 0_i32;
+    while pass < pBNS.max_altp {
         let pass_index = usize::try_from(pass).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         pBNS.alt_path = *pBNS
             .altp
             .get(pass_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         pBNS.bChangeFlow = 0;
-        delta = BalancedNetworkSearch(heap, pBNS, pBD, bChangeFlow)?;
-        ReInitBnData(heap, Some(pBD))?;
+        delta = balanced_network_search_with_workspace(heap, pBNS, pBD, bChangeFlow, workspace)?;
+        workspace.reinit_data_for_layout(pBD)?;
         if delta > 0 {
             pBNS.num_altp += 1;
             n_sum_delta += delta.abs();
         } else {
             break;
         }
+        // INCHI✔️✔️:     for-loop increment: pass++
+        pass = pass.wrapping_add(1);
     }
 
     if BNS_ERR <= delta && delta <= BNS_MAX_ERR_VALUE {
@@ -13720,6 +14547,48 @@ pub(crate) fn RunBalancedNetworkSearch(
     }
 
     Ok(n_sum_delta)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn RunBalancedNetworkSearch(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    bChangeFlow: i32,
+    clock_result: clock_t,
+) -> Result<i32, SourceHeapError> {
+    if pBNS.max_altp <= 0 {
+        let tick_start: Option<inchiTime> = if pBNS.ulTimeOutTime.is_null() {
+            None
+        } else {
+            Some(
+                heap.slice(pBNS.ulTimeOutTime.as_const())?
+                    .first()
+                    .cloned()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            )
+        };
+        let clock = heap
+            .slice_mut(pBNS.ic)?
+            .first_mut()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        return Ok(
+            if bInchiTimeIsOver(clock, tick_start.as_ref(), clock_result) != 0 {
+                BNS_TIMEOUT
+            } else {
+                0
+            },
+        );
+    }
+    let mut workspace = BnsSearchWorkspace::new(heap, pBNS, pBD)?;
+    run_balanced_network_search_with_workspace(
+        heap,
+        pBNS,
+        pBD,
+        bChangeFlow,
+        clock_result,
+        &mut workspace,
+    )
 }
 
 #[allow(non_snake_case)]
@@ -14882,9 +15751,9 @@ pub(crate) fn BnsTestAndMarkAltBonds(
     // INCHI✔️❌:     bTestForNonStereoBond = pBNS->tot_st_cap > pBNS->tot_st_flow;
     // INCHI✔️❌:     for (iat = 0; iat < num_atoms && !bError; iat++)
     // INCHI✔️❌:     {
-    // INCHI✔️❌:         for (ineigh = 0; ineigh < at[iat].valence && !bError; ineigh++)
+    // INCHI✔️✔️:         for (ineigh = 0; ineigh < at[iat].valence && !bError; ineigh++)
     // INCHI✔️❌:         {
-    // INCHI✔️❌:             neigh = at[iat].neighbor[ineigh];
+    // INCHI✔️✔️:             neigh = at[iat].neighbor[ineigh];
     // INCHI✔️❌:             if (neigh < iat)
     // INCHI✔️❌:             {
     // INCHI✔️❌:                 continue; /* we have already tested the bond */
@@ -14894,7 +15763,7 @@ pub(crate) fn BnsTestAndMarkAltBonds(
     // INCHI✔️❌:             {
     // INCHI✔️❌:                 continue;
     // INCHI✔️❌:             }
-    // INCHI✔️❌:             if (nBondTypeToTest && ( at[iat].bond_type[ineigh] & BOND_TYPE_MASK ) != nBondTypeToTest)
+    // INCHI✔️✔️:             if (nBondTypeToTest && ( at[iat].bond_type[ineigh] & BOND_TYPE_MASK ) != nBondTypeToTest)
     // INCHI✔️❌:             {
     // INCHI✔️❌:                 continue;
     // INCHI✔️❌:             }
@@ -14915,24 +15784,24 @@ pub(crate) fn BnsTestAndMarkAltBonds(
     // INCHI✔️❌: #define BNS_EF_CHNG_RSTR 3
     // END INCHI ACTIVE MACRO CONFIGURATION: BnsTestAndMarkAltBonds
 
+    // SAFETY: the source keeps `at` as one fixed allocation throughout this
+    // search. Calls below may update atom fields but never free or resize the
+    // allocation; each reference from this view is confined to the expression
+    // that copies the current source fields before any such call. Consequently
+    // later iterations observe mutations exactly as repeated C `at[iat]`
+    // reads do, without cloning a complete inp_ATOM for every neighbor.
+    let atoms = unsafe { heap.stable_slice(at.as_const())? };
     let mut b_error = 0_i32;
     let mut n_changes = 0_i32;
     let b_test_for_non_stereo_bond = i32::from(pBNS.tot_st_cap > pBNS.tot_st_flow);
     let mut iat = 0_i32;
 
     while iat < num_atoms && b_error == 0 {
-        let atom = heap
-            .slice(at.as_const())?
-            .get(usize::try_from(iat).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-            .cloned()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom_index = usize::try_from(iat).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let valence = i32::from(atoms.get(atom_index)?.valence);
         let mut ineigh = 0_i32;
-        while ineigh < i32::from(atom.valence) && b_error == 0 {
-            let atom_now = heap
-                .slice(at.as_const())?
-                .get(usize::try_from(iat).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-                .cloned()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        while ineigh < valence && b_error == 0 {
+            let atom_now = atoms.get(atom_index)?;
             let neighbor_index =
                 usize::try_from(ineigh).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let neigh = i32::from(
@@ -16887,6 +17756,383 @@ pub(crate) fn ReInitBnStructAltPaths(
     Ok(i)
 }
 
+struct ReInitBnStructWorkspace {
+    vertices: StableSourceSlice<BNS_VERTEX>,
+    edges: StableSourceSlice<BNS_EDGE>,
+    adjacency_origin: SourceMutPointer<BNS_IEDGE>,
+    adjacency: StableSourceConstSlice<BNS_IEDGE>,
+    atoms: Option<StableSourceSlice<inp_ATOM>>,
+}
+
+impl ReInitBnStructWorkspace {
+    fn new(
+        heap: &mut SourceHeap,
+        bns: &BN_STRUCT,
+        atoms: SourceMutPointer<inp_ATOM>,
+        num_at: i32,
+        require_atoms: bool,
+    ) -> Result<Option<Self>, SourceHeapError> {
+        let (
+            Some(num_atoms),
+            Some(num_vertices),
+            Some(max_vertices),
+            Some(num_edges),
+            Some(max_edges),
+            Some(max_iedges),
+        ) = (
+            usize::try_from(bns.num_atoms).ok(),
+            usize::try_from(bns.num_vertices).ok(),
+            usize::try_from(bns.max_vertices).ok(),
+            usize::try_from(bns.num_edges).ok(),
+            usize::try_from(bns.max_edges).ok(),
+            usize::try_from(bns.max_iedges).ok(),
+        )
+        else {
+            return Ok(None);
+        };
+        if num_atoms > num_vertices
+            || num_vertices > max_vertices
+            || num_edges > max_edges
+            || bns.iedge.is_null()
+        {
+            return Ok(None);
+        }
+
+        let graph_ids = [
+            bns.vert.allocation_identity(),
+            bns.edge.allocation_identity(),
+            bns.iedge.allocation_identity(),
+        ];
+        if graph_ids.iter().any(Option::is_none)
+            || graph_ids[0] == graph_ids[1]
+            || graph_ids[0] == graph_ids[2]
+            || graph_ids[1] == graph_ids[2]
+        {
+            return Ok(None);
+        }
+
+        let needs_atoms = require_atoms && num_at > 0;
+        if needs_atoms
+            && (atoms.is_null()
+                || graph_ids.contains(&atoms.allocation_identity())
+                || usize::try_from(num_at).ok().is_none())
+        {
+            return Ok(None);
+        }
+
+        // A read-only validation pass selects only the fixed arrays created by
+        // CreateBnStruct. Hand-assembled split-adjacency fixtures retain the
+        // checked implementation below.
+        let (edge_len, vertex_len, first_adjacency, adjacency_len, atom_len) = {
+            let Ok(edge_values) = heap.slice(bns.edge.as_const()) else {
+                return Ok(None);
+            };
+            let Ok(vertex_values) = heap.slice(bns.vert.as_const()) else {
+                return Ok(None);
+            };
+            let Ok(adjacency_values) = heap.slice(bns.iedge.as_const()) else {
+                return Ok(None);
+            };
+            let atom_len = if needs_atoms {
+                let Ok(atom_values) = heap.slice(atoms.as_const()) else {
+                    return Ok(None);
+                };
+                Some(atom_values.len())
+            } else {
+                None
+            };
+            (
+                edge_values.len(),
+                vertex_values.len(),
+                vertex_values.first().map(|vertex| vertex.iedge),
+                adjacency_values.len(),
+                atom_len,
+            )
+        };
+        if edge_len < max_edges
+            || vertex_len < max_vertices
+            || adjacency_len < max_iedges
+            || first_adjacency.is_some_and(|pointer| pointer != bns.iedge)
+            || atom_len.is_some_and(|len| len < num_at as usize)
+        {
+            return Ok(None);
+        }
+
+        // SAFETY: the allocation identities are pairwise distinct, the
+        // official constructor capacities were validated above, and no BNS
+        // allocation is resized or freed during BNS reinitialization. CreateBnStruct
+        // establishes every vertex adjacency pointer as a forward interior
+        // pointer into the single iedge allocation; the BNS mutators preserve
+        // that layout and its max_iedges bound.
+        let edges = unsafe { heap.stable_slice_mut(bns.edge)? };
+        let vertices = unsafe { heap.stable_slice_mut(bns.vert)? };
+        let adjacency = unsafe { heap.stable_slice(bns.iedge.as_const())? };
+        let atoms = if needs_atoms {
+            Some(unsafe { heap.stable_slice_mut(atoms)? })
+        } else {
+            None
+        };
+        Ok(Some(Self {
+            vertices,
+            edges,
+            adjacency_origin: bns.iedge,
+            adjacency,
+            atoms,
+        }))
+    }
+
+    #[inline(always)]
+    unsafe fn adjacency_index(
+        &self,
+        vertex_adjacency: SourceMutPointer<BNS_IEDGE>,
+        neighbor: i32,
+    ) -> BNS_IEDGE {
+        debug_assert!(neighbor >= 0);
+        // SAFETY: `new` proves the official contiguous adjacency layout. The
+        // source loop bounds `neighbor` by this vertex's declared degree.
+        let base = unsafe { vertex_adjacency.forward_difference_unchecked(self.adjacency_origin) };
+        let index = base + neighbor as usize;
+        debug_assert!(index < self.adjacency.len());
+        *unsafe { self.adjacency.get_unchecked(index) }
+    }
+
+    fn restore(&mut self, bns: &BN_STRUCT, num_at: i32, remove_groups_from_atoms: i32) -> i32 {
+        let mut changed_edges = 0_i32;
+        for edge_index in 0..bns.num_edges {
+            debug_assert!(edge_index >= 0 && (edge_index as usize) < self.edges.len());
+            // SAFETY: `new` proves edge[] has max_edges elements and
+            // num_edges <= max_edges.
+            if unsafe { self.edges.get_unchecked(edge_index as usize) }.pass != 0 {
+                changed_edges = changed_edges.wrapping_add(1);
+            }
+        }
+        let ret = changed_edges.wrapping_mul(100);
+
+        for fictitious_vertex in bns.num_atoms..bns.num_vertices {
+            debug_assert!(fictitious_vertex >= 0);
+            let (fictitious_degree, fictitious_adjacency) = {
+                // SAFETY: `new` proves num_vertices <= max_vertices.
+                let vertex = unsafe { self.vertices.get_unchecked(fictitious_vertex as usize) };
+                (i32::from(vertex.num_adj_edges), vertex.iedge)
+            };
+            for fictitious_neighbor in 0..fictitious_degree {
+                // SAFETY: the C loop bounds this index by num_adj_edges.
+                let fictitious_edge =
+                    unsafe { self.adjacency_index(fictitious_adjacency, fictitious_neighbor) };
+                debug_assert!(
+                    fictitious_edge >= 0 && (fictitious_edge as usize) < self.edges.len()
+                );
+                // SAFETY: source adjacency entries index edge[max_edges].
+                let endpoint = i32::from(
+                    unsafe { self.edges.get_unchecked(fictitious_edge as usize) }.neighbor12
+                        ^ (fictitious_vertex as AT_NUMB),
+                );
+
+                if remove_groups_from_atoms != 0 && endpoint < num_at {
+                    debug_assert!(endpoint >= 0);
+                    // SAFETY: the Official InChI graph invariant makes every
+                    // endpoint non-negative; `new` proves atoms.len >= num_at.
+                    let atom = unsafe {
+                        self.atoms
+                            .as_mut()
+                            .unwrap_unchecked()
+                            .get_unchecked_mut(endpoint as usize)
+                    };
+                    atom.c_point = 0;
+                    atom.endpoint = 0;
+                }
+
+                debug_assert!(endpoint >= 0 && (endpoint as usize) < self.vertices.len());
+                let (endpoint_degree, endpoint_adjacency) = {
+                    // SAFETY: every edge endpoint indexes vert[max_vertices].
+                    let vertex = unsafe { self.vertices.get_unchecked(endpoint as usize) };
+                    (i32::from(vertex.num_adj_edges), vertex.iedge)
+                };
+                for endpoint_neighbor in 0..endpoint_degree {
+                    // SAFETY: the C loop bounds this index by num_adj_edges.
+                    let edge_index =
+                        unsafe { self.adjacency_index(endpoint_adjacency, endpoint_neighbor) };
+                    debug_assert!(edge_index >= 0 && (edge_index as usize) < self.edges.len());
+                    // SAFETY: source adjacency entries index edge[max_edges].
+                    let centerpoint = i32::from(
+                        unsafe { self.edges.get_unchecked(edge_index as usize) }.neighbor12
+                            ^ (endpoint as AT_NUMB),
+                    );
+                    {
+                        // SAFETY: as above; this is the unique edge workspace.
+                        let edge = unsafe { self.edges.get_unchecked_mut(edge_index as usize) };
+                        edge.cap = edge.cap0;
+                        edge.flow = edge.flow0;
+                        edge.pass = 0;
+                        edge.forbidden &= bns.edge_forbidden_mask;
+                    }
+                    debug_assert!(centerpoint >= 0 && (centerpoint as usize) < self.vertices.len());
+                    // SAFETY: the opposite endpoint indexes vert[max_vertices].
+                    let centerpoint_vertex =
+                        unsafe { self.vertices.get_unchecked_mut(centerpoint as usize) };
+                    centerpoint_vertex.st_edge.cap = centerpoint_vertex.st_edge.cap0;
+                    centerpoint_vertex.st_edge.flow = centerpoint_vertex.st_edge.flow0;
+                }
+
+                // SAFETY: endpoint was derived from a valid source edge.
+                let endpoint_vertex = unsafe { self.vertices.get_unchecked_mut(endpoint as usize) };
+                endpoint_vertex.st_edge.cap = endpoint_vertex.st_edge.cap0;
+                endpoint_vertex.st_edge.flow = endpoint_vertex.st_edge.flow0;
+                endpoint_vertex.type_ &= BNS_VERT_TYPE_ATOM as AT_NUMB;
+            }
+        }
+
+        if bns.num_edges > bns.num_bonds {
+            for atom_index in 0..bns.num_atoms {
+                debug_assert!(atom_index >= 0 && (atom_index as usize) < self.vertices.len());
+                // SAFETY: `new` proves num_atoms <= num_vertices <= max_vertices.
+                let vertex = unsafe { self.vertices.get_unchecked_mut(atom_index as usize) };
+                vertex.num_adj_edges = i32::from(vertex.max_adj_edges)
+                    .wrapping_sub(bns.nMaxAddEdges)
+                    .wrapping_sub(NUM_KINDS_OF_GROUPS as i32)
+                    as AT_NUMB;
+            }
+        }
+        ret
+    }
+
+    fn initialize_alt_bns(&mut self, bns: &BN_STRUCT, num_atoms: i32) -> i32 {
+        let mut num_to_test = 0_i32;
+        for vertex_index in 0..num_atoms {
+            debug_assert!(vertex_index >= 0 && (vertex_index as usize) < self.vertices.len());
+            let (degree, vertex_adjacency) = {
+                // SAFETY: workspace construction proves num_atoms is within
+                // the official vert[max_vertices] allocation.
+                let vertex = unsafe { self.vertices.get_unchecked(vertex_index as usize) };
+                (i32::from(vertex.num_adj_edges), vertex.iedge)
+            };
+            for neighbor_index in 0..degree {
+                // SAFETY: the C loop bounds the slot by valenceAltBns and the
+                // constructor established this vertex's iedge interior pointer.
+                let edge_index = unsafe { self.adjacency_index(vertex_adjacency, neighbor_index) };
+                debug_assert!(edge_index >= 0 && (edge_index as usize) < self.edges.len());
+                // SAFETY: source adjacency entries index edge[max_edges].
+                let edge_before = unsafe { self.edges.get_unchecked(edge_index as usize) };
+                if i32::from(edge_before.neighbor1) == vertex_index {
+                    let neighbor_atom_index =
+                        usize::from(edge_before.neighbor12 ^ (vertex_index as AT_NUMB));
+                    debug_assert!(neighbor_atom_index < num_atoms as usize);
+                    // SAFETY: the source graph invariant keeps both endpoints
+                    // in at[num_atoms], and inp_ATOM bond arrays have the
+                    // fixed source valence capacity used by this C loop.
+                    let atoms = unsafe { self.atoms.as_ref().unwrap_unchecked() };
+                    let atom = unsafe { atoms.get_unchecked(vertex_index as usize) };
+                    debug_assert!((neighbor_index as usize) < atom.bond_type.len());
+                    let mut bond_type =
+                        u32::from(atom.bond_type[neighbor_index as usize]) & BOND_TYPE_MASK;
+                    if atom.endpoint != 0
+                        || unsafe { atoms.get_unchecked(neighbor_atom_index) }.endpoint != 0
+                    {
+                        bond_type = 0;
+                    }
+
+                    let mapped = match bond_type {
+                        BOND_ALTERN => {
+                            num_to_test = num_to_test.wrapping_add(1);
+                            BT_ALTERN_BOND
+                        }
+                        BOND_ALT_123 | BOND_ALT_13 | BOND_ALT_23 => BT_OTHER_ALTERN_BOND,
+                        BOND_TAUTOM => BT_TAUTOM_BOND,
+                        BOND_ALT12NS => BT_ALTERN_NS_BOND,
+                        0 | BOND_SINGLE | BOND_DOUBLE | BOND_TRIPLE => BT_IGNORE_BOND,
+                        _ => BT_IGNORE_BOND,
+                    };
+                    // SAFETY: this is the unique writable edge workspace and
+                    // edge_index came from the source adjacency allocation.
+                    let edge = unsafe { self.edges.get_unchecked_mut(edge_index as usize) };
+                    edge.pass = mapped as S_CHAR;
+                    edge.cap = 0;
+                    edge.flow = 0;
+                    edge.cap = 0;
+                    edge.forbidden &= bns.edge_forbidden_mask;
+                }
+            }
+
+            // SAFETY: vertex_index is bounded by num_atoms <= max_vertices.
+            let vertex = unsafe { self.vertices.get_unchecked_mut(vertex_index as usize) };
+            vertex.st_edge.cap0 = 0;
+            vertex.st_edge.cap = 0;
+            vertex.st_edge.flow0 = 0;
+            vertex.st_edge.flow = 0;
+        }
+        num_to_test
+    }
+}
+
+fn reinit_bn_struct_checked(
+    heap: &mut SourceHeap,
+    bns: &BN_STRUCT,
+    at: SourceMutPointer<inp_ATOM>,
+    num_at: i32,
+    remove_groups_from_atoms: i32,
+) -> Result<i32, SourceHeapError> {
+    let mut changed_edges = 0_i32;
+    for edge_index in 0..bns.num_edges {
+        if bns_edge(heap, bns, edge_index)?.pass != 0 {
+            changed_edges = changed_edges.wrapping_add(1);
+        }
+    }
+    let ret = changed_edges.wrapping_mul(100);
+
+    for fictitious_vertex in bns.num_atoms..bns.num_vertices {
+        let vertex = bns_vertex(heap, bns, fictitious_vertex)?;
+        for fictitious_neighbor in 0..i32::from(vertex.num_adj_edges) {
+            let fictitious_edge = bns_edge_index(heap, &vertex, fictitious_neighbor)?;
+            let endpoint = i32::from(
+                bns_edge(heap, bns, fictitious_edge)?.neighbor12 ^ (fictitious_vertex as AT_NUMB),
+            );
+            if remove_groups_from_atoms != 0 && endpoint < num_at {
+                let atom_offset =
+                    usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let endpoint_atom = heap
+                    .slice_mut(at)?
+                    .get_mut(atom_offset)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                endpoint_atom.c_point = 0;
+                endpoint_atom.endpoint = 0;
+            }
+
+            let endpoint_vertex = bns_vertex(heap, bns, endpoint)?;
+            for endpoint_neighbor in 0..i32::from(endpoint_vertex.num_adj_edges) {
+                let edge_index = bns_edge_index(heap, &endpoint_vertex, endpoint_neighbor)?;
+                let edge_before = bns_edge(heap, bns, edge_index)?;
+                let centerpoint = i32::from(edge_before.neighbor12 ^ (endpoint as AT_NUMB));
+                {
+                    let edge = bns_edge_mut(heap, bns, edge_index)?;
+                    edge.cap = edge.cap0;
+                    edge.flow = edge.flow0;
+                    edge.pass = 0;
+                    edge.forbidden &= bns.edge_forbidden_mask;
+                }
+                let centerpoint_vertex = bns_vertex_mut(heap, bns, centerpoint)?;
+                centerpoint_vertex.st_edge.cap = centerpoint_vertex.st_edge.cap0;
+                centerpoint_vertex.st_edge.flow = centerpoint_vertex.st_edge.flow0;
+            }
+
+            let endpoint_vertex = bns_vertex_mut(heap, bns, endpoint)?;
+            endpoint_vertex.st_edge.cap = endpoint_vertex.st_edge.cap0;
+            endpoint_vertex.st_edge.flow = endpoint_vertex.st_edge.flow0;
+            endpoint_vertex.type_ &= BNS_VERT_TYPE_ATOM as AT_NUMB;
+        }
+    }
+
+    if bns.num_edges > bns.num_bonds {
+        for atom_index in 0..bns.num_atoms {
+            let vertex = bns_vertex_mut(heap, bns, atom_index)?;
+            vertex.num_adj_edges = i32::from(vertex.max_adj_edges)
+                .wrapping_sub(bns.nMaxAddEdges)
+                .wrapping_sub(NUM_KINDS_OF_GROUPS as i32)
+                as AT_NUMB;
+        }
+    }
+    Ok(ret)
+}
+
 #[allow(non_snake_case)]
 pub(crate) fn ReInitBnStruct(
     heap: &mut SourceHeap,
@@ -16896,101 +18142,101 @@ pub(crate) fn ReInitBnStruct(
     bRemoveGroupsFromAtoms: i32,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:9102 ReInitBnStruct
-    // INCHI✔️❌: int ReInitBnStruct( BN_STRUCT *pBNS,
-    // INCHI✔️❌:                     inp_ATOM *at,
-    // INCHI✔️❌:                     int num_at,
-    // INCHI✔️❌:                     int bRemoveGroupsFromAtoms )
-    // INCHI✔️❌: {
-    // INCHI✔️❌:     int i, vfict, kfict, iedgefict, endpoint, centerpoint, iedge, k;
-    // INCHI✔️❌:     int ret = 0;
-    // INCHI✔️❌:     if (pBNS)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         if (pBNS->vert && pBNS->edge)
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:             /* Debug */
-    // INCHI✔️❌:             for (k = 0, i = 0; k < pBNS->num_edges; k++)
-    // INCHI✔️❌:             {
-    // INCHI✔️❌:                 if (pBNS->edge[k].pass)
-    // INCHI✔️❌:                 {
-    // INCHI✔️❌:                     i++;
-    // INCHI✔️❌:                 }
-    // INCHI✔️❌:             }
-    // INCHI✔️❌:             ret += i * 100;
-    // INCHI✔️❌:             /* Restore flow and cap on edges to vertices connected to fictitious atoms */
-    // INCHI✔️❌:             for (vfict = pBNS->num_atoms; vfict < pBNS->num_vertices; vfict++)
-    // INCHI✔️❌:             {
-    // INCHI✔️❌:                 for (kfict = 0; kfict < pBNS->vert[vfict].num_adj_edges; kfict++)
-    // INCHI✔️❌:                 {
-    // INCHI✔️❌:                     iedgefict = pBNS->vert[vfict].iedge[kfict]; /* fictitious edge to the endpoint */
-    // INCHI✔️❌:                     endpoint = pBNS->edge[iedgefict].neighbor12 ^ vfict;  /* the endpoint */
-    // INCHI✔️❌:                                                                           /* To simlify restore cap and flow in ALL edges to the endpoint */
-    // INCHI✔️❌:                     if (bRemoveGroupsFromAtoms && endpoint < num_at)
-    // INCHI✔️❌:                     {
-    // INCHI✔️❌:                         at[endpoint].c_point = 0;
-    // INCHI✔️❌:                         at[endpoint].endpoint = 0;
-    // INCHI✔️❌:                     }
-    // INCHI✔️❌:                     for (k = 0; k < pBNS->vert[endpoint].num_adj_edges; k++)
-    // INCHI✔️❌:                     {
-    // INCHI✔️❌:                         iedge = pBNS->vert[endpoint].iedge[k]; /* edge to endpoint */
-    // INCHI✔️❌:                         centerpoint = pBNS->edge[iedge].neighbor12 ^ endpoint;
-    // INCHI✔️❌:                         pBNS->edge[iedge].cap = pBNS->edge[iedge].cap0;
-    // INCHI✔️❌:                         pBNS->edge[iedge].flow = pBNS->edge[iedge].flow0;
-    // INCHI✔️❌:                         pBNS->edge[iedge].pass = 0;
-    // INCHI✔️❌: #if ( RESET_EDGE_FORBIDDEN_MASK == 1 )
-    // INCHI✔️❌:                         pBNS->edge[iedge].forbidden &= pBNS->edge_forbidden_mask;
-    // INCHI✔️❌: #endif
-    // INCHI✔️❌:                         pBNS->vert[centerpoint].st_edge.cap = pBNS->vert[centerpoint].st_edge.cap0;
-    // INCHI✔️❌:                         pBNS->vert[centerpoint].st_edge.flow = pBNS->vert[centerpoint].st_edge.flow0;
-    // INCHI✔️❌:                     }
-    // INCHI✔️❌:                     pBNS->vert[endpoint].st_edge.cap = pBNS->vert[endpoint].st_edge.cap0;
-    // INCHI✔️❌:                     pBNS->vert[endpoint].st_edge.flow = pBNS->vert[endpoint].st_edge.flow0;
-    // INCHI✔️❌:                     pBNS->vert[endpoint].type &= BNS_VERT_TYPE_ATOM;
-    // INCHI✔️❌:                 }
-    // INCHI✔️❌:             }
-    // INCHI✔️❌:             /* Reset number of neighbors */
-    // INCHI✔️❌:             if (pBNS->num_edges > pBNS->num_bonds)
-    // INCHI✔️❌:             {
-    // INCHI✔️❌:                 for (i = 0; i < pBNS->num_atoms; i++)
-    // INCHI✔️❌:                 {
-    // INCHI✔️❌:                     pBNS->vert[i].num_adj_edges =
-    // INCHI✔️❌:                         pBNS->vert[i].max_adj_edges - pBNS->nMaxAddEdges - NUM_KINDS_OF_GROUPS;
-    // INCHI✔️❌:                 }
-    // INCHI✔️❌:             }
-    // INCHI✔️❌:         }
-    // INCHI✔️❌:         else
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:             ret += 2;
-    // INCHI✔️❌:         }
-    // INCHI✔️❌:         if (!pBNS->edge)
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:             ret += 4;
-    // INCHI✔️❌:         }
-    // INCHI✔️❌:         if (!pBNS->iedge)
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:             ret += 8;
-    // INCHI✔️❌:         }
-    // INCHI✔️❌:
-    // INCHI✔️❌:         ReInitBnStructAltPaths( pBNS );
-    // INCHI✔️❌:
-    // INCHI✔️❌:         pBNS->num_vertices = pBNS->num_atoms;
-    // INCHI✔️❌:         pBNS->num_edges = pBNS->num_bonds;
-    // INCHI✔️❌:         pBNS->num_added_atoms = 0;
-    // INCHI✔️❌:         pBNS->num_t_groups = 0;
-    // INCHI✔️❌:         pBNS->num_c_groups = 0;
-    // INCHI✔️❌:         pBNS->num_added_edges = 0;
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:     else
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         ret += 1;
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:
-    // INCHI✔️❌:     return ret;
-    // INCHI✔️❌: }
+    // INCHI✔️✔️: int ReInitBnStruct( BN_STRUCT *pBNS,
+    // INCHI✔️✔️:                     inp_ATOM *at,
+    // INCHI✔️✔️:                     int num_at,
+    // INCHI✔️✔️:                     int bRemoveGroupsFromAtoms )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     int i, vfict, kfict, iedgefict, endpoint, centerpoint, iedge, k;
+    // INCHI✔️✔️:     int ret = 0;
+    // INCHI✔️✔️:     if (pBNS)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         if (pBNS->vert && pBNS->edge)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             /* Debug */
+    // INCHI✔️✔️:             for (k = 0, i = 0; k < pBNS->num_edges; k++)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 if (pBNS->edge[k].pass)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     i++;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:             ret += i * 100;
+    // INCHI✔️✔️:             /* Restore flow and cap on edges to vertices connected to fictitious atoms */
+    // INCHI✔️✔️:             for (vfict = pBNS->num_atoms; vfict < pBNS->num_vertices; vfict++)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 for (kfict = 0; kfict < pBNS->vert[vfict].num_adj_edges; kfict++)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     iedgefict = pBNS->vert[vfict].iedge[kfict]; /* fictitious edge to the endpoint */
+    // INCHI✔️✔️:                     endpoint = pBNS->edge[iedgefict].neighbor12 ^ vfict;  /* the endpoint */
+    // INCHI✔️✔️:                                                                           /* To simlify restore cap and flow in ALL edges to the endpoint */
+    // INCHI✔️✔️:                     if (bRemoveGroupsFromAtoms && endpoint < num_at)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         at[endpoint].c_point = 0;
+    // INCHI✔️✔️:                         at[endpoint].endpoint = 0;
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     for (k = 0; k < pBNS->vert[endpoint].num_adj_edges; k++)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         iedge = pBNS->vert[endpoint].iedge[k]; /* edge to endpoint */
+    // INCHI✔️✔️:                         centerpoint = pBNS->edge[iedge].neighbor12 ^ endpoint;
+    // INCHI✔️✔️:                         pBNS->edge[iedge].cap = pBNS->edge[iedge].cap0;
+    // INCHI✔️✔️:                         pBNS->edge[iedge].flow = pBNS->edge[iedge].flow0;
+    // INCHI✔️✔️:                         pBNS->edge[iedge].pass = 0;
+    // INCHI✔️✔️: #if ( RESET_EDGE_FORBIDDEN_MASK == 1 )
+    // INCHI✔️✔️:                         pBNS->edge[iedge].forbidden &= pBNS->edge_forbidden_mask;
+    // INCHI✔️✔️: #endif
+    // INCHI✔️✔️:                         pBNS->vert[centerpoint].st_edge.cap = pBNS->vert[centerpoint].st_edge.cap0;
+    // INCHI✔️✔️:                         pBNS->vert[centerpoint].st_edge.flow = pBNS->vert[centerpoint].st_edge.flow0;
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     pBNS->vert[endpoint].st_edge.cap = pBNS->vert[endpoint].st_edge.cap0;
+    // INCHI✔️✔️:                     pBNS->vert[endpoint].st_edge.flow = pBNS->vert[endpoint].st_edge.flow0;
+    // INCHI✔️✔️:                     pBNS->vert[endpoint].type &= BNS_VERT_TYPE_ATOM;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:             /* Reset number of neighbors */
+    // INCHI✔️✔️:             if (pBNS->num_edges > pBNS->num_bonds)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 for (i = 0; i < pBNS->num_atoms; i++)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     pBNS->vert[i].num_adj_edges =
+    // INCHI✔️✔️:                         pBNS->vert[i].max_adj_edges - pBNS->nMaxAddEdges - NUM_KINDS_OF_GROUPS;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         else
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             ret += 2;
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         if (!pBNS->edge)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             ret += 4;
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         if (!pBNS->iedge)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             ret += 8;
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:         ReInitBnStructAltPaths( pBNS );
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:         pBNS->num_vertices = pBNS->num_atoms;
+    // INCHI✔️✔️:         pBNS->num_edges = pBNS->num_bonds;
+    // INCHI✔️✔️:         pBNS->num_added_atoms = 0;
+    // INCHI✔️✔️:         pBNS->num_t_groups = 0;
+    // INCHI✔️✔️:         pBNS->num_c_groups = 0;
+    // INCHI✔️✔️:         pBNS->num_added_edges = 0;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     else
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         ret += 1;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     return ret;
+    // INCHI✔️✔️: }
     // END INCHI C FUNCTION: ReInitBnStruct
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: ReInitBnStruct
-    // INCHI✔️❌: #define RESET_EDGE_FORBIDDEN_MASK 1
-    // INCHI✔️❌: #define BNS_VERT_TYPE_ATOM 0x0001
-    // INCHI✔️❌: #define NUM_KINDS_OF_GROUPS 2
+    // INCHI✔️✔️: #define RESET_EDGE_FORBIDDEN_MASK 1
+    // INCHI✔️✔️: #define BNS_VERT_TYPE_ATOM 0x0001
+    // INCHI✔️✔️: #define NUM_KINDS_OF_GROUPS 2
     // END INCHI ACTIVE MACRO CONFIGURATION: ReInitBnStruct
 
     let Some(pBNS) = pBNS else {
@@ -16999,66 +18245,13 @@ pub(crate) fn ReInitBnStruct(
 
     let mut ret = 0_i32;
     if !pBNS.vert.is_null() && !pBNS.edge.is_null() {
-        let mut changed_edges = 0_i32;
-        for edge_index in 0..pBNS.num_edges {
-            if bns_edge(heap, pBNS, edge_index)?.pass != 0 {
-                changed_edges = changed_edges.wrapping_add(1);
-            }
-        }
-        ret = ret.wrapping_add(changed_edges.wrapping_mul(100));
-
-        for fictitious_vertex in pBNS.num_atoms..pBNS.num_vertices {
-            let vertex = bns_vertex(heap, pBNS, fictitious_vertex)?;
-            for fictitious_neighbor in 0..i32::from(vertex.num_adj_edges) {
-                let fictitious_edge = bns_edge_index(heap, &vertex, fictitious_neighbor)?;
-                let endpoint = i32::from(
-                    bns_edge(heap, pBNS, fictitious_edge)?.neighbor12
-                        ^ (fictitious_vertex as AT_NUMB),
-                );
-                if bRemoveGroupsFromAtoms != 0 && endpoint < num_at {
-                    let atom_offset = usize::try_from(endpoint)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let endpoint_atom = heap
-                        .slice_mut(at)?
-                        .get_mut(atom_offset)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    endpoint_atom.c_point = 0;
-                    endpoint_atom.endpoint = 0;
-                }
-
-                let endpoint_vertex = bns_vertex(heap, pBNS, endpoint)?;
-                for endpoint_neighbor in 0..i32::from(endpoint_vertex.num_adj_edges) {
-                    let edge_index = bns_edge_index(heap, &endpoint_vertex, endpoint_neighbor)?;
-                    let edge_before = bns_edge(heap, pBNS, edge_index)?;
-                    let centerpoint = i32::from(edge_before.neighbor12 ^ (endpoint as AT_NUMB));
-                    {
-                        let edge = bns_edge_mut(heap, pBNS, edge_index)?;
-                        edge.cap = edge.cap0;
-                        edge.flow = edge.flow0;
-                        edge.pass = 0;
-                        edge.forbidden &= pBNS.edge_forbidden_mask;
-                    }
-                    let centerpoint_vertex = bns_vertex_mut(heap, pBNS, centerpoint)?;
-                    centerpoint_vertex.st_edge.cap = centerpoint_vertex.st_edge.cap0;
-                    centerpoint_vertex.st_edge.flow = centerpoint_vertex.st_edge.flow0;
-                }
-
-                let endpoint_vertex = bns_vertex_mut(heap, pBNS, endpoint)?;
-                endpoint_vertex.st_edge.cap = endpoint_vertex.st_edge.cap0;
-                endpoint_vertex.st_edge.flow = endpoint_vertex.st_edge.flow0;
-                endpoint_vertex.type_ &= BNS_VERT_TYPE_ATOM as AT_NUMB;
-            }
-        }
-
-        if pBNS.num_edges > pBNS.num_bonds {
-            for atom_index in 0..pBNS.num_atoms {
-                let vertex = bns_vertex_mut(heap, pBNS, atom_index)?;
-                vertex.num_adj_edges = i32::from(vertex.max_adj_edges)
-                    .wrapping_sub(pBNS.nMaxAddEdges)
-                    .wrapping_sub(NUM_KINDS_OF_GROUPS as i32)
-                    as AT_NUMB;
-            }
-        }
+        ret = if let Some(mut workspace) =
+            ReInitBnStructWorkspace::new(heap, pBNS, at, num_at, bRemoveGroupsFromAtoms != 0)?
+        {
+            workspace.restore(pBNS, num_at, bRemoveGroupsFromAtoms)
+        } else {
+            reinit_bn_struct_checked(heap, pBNS, at, num_at, bRemoveGroupsFromAtoms)?
+        };
     } else {
         ret = ret.wrapping_add(2);
     }
@@ -17156,12 +18349,12 @@ pub(crate) fn AddTGroups2BnStruct(
     // INCHI❌❌: #if ( bRELEASE_VERSION != 1 )
     // INCHI❌❌:         insertions_sort( pCG, tgi->t_group, num_tg, sizeof( tgi->t_group[0] ), CompTGroupNumber );
     // INCHI❌❌:         for (i = 1; i < num_tg; i++) { if (1 != tgi->t_group[i].nGroupNumber - tgi->t_group[i - 1].nGroupNumber) { return BNS_BOND_ERR; } }
-    // INCHI✔️❌: #else
-    // INCHI✔️❌:         if (nMaxTGroupNumber != tgi->t_group[num_tg - 1].nGroupNumber)
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:             insertions_sort( pCG, tgi->t_group, num_tg, sizeof( tgi->t_group[0] ), CompTGroupNumber );
-    // INCHI✔️❌:         }
-    // INCHI✔️❌: #endif
+    // INCHI✔️✔️: #else
+    // INCHI✔️✔️:         if (nMaxTGroupNumber != tgi->t_group[num_tg - 1].nGroupNumber)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             insertions_sort( pCG, tgi->t_group, num_tg, sizeof( tgi->t_group[0] ), CompTGroupNumber );
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️: #endif
     // INCHI✔️❌:         ver_ficpont_prev = pBNS->vert + num_vertices - 1;
     // INCHI✔️❌:         for (i = 0; i < num_tg; i++, ver_ficpont_prev = vert_ficpoint)
     // INCHI✔️❌:         {
@@ -17326,26 +18519,19 @@ pub(crate) fn AddTGroups2BnStruct(
     }
 
     let group_count = usize::try_from(num_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let mut groups = {
-        let source_groups = heap.slice(tgi.t_group.as_const())?;
-        if source_groups.len() < group_count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        source_groups[..group_count].to_vec()
-    };
+    let groups = heap
+        .slice_mut(tgi.t_group)?
+        .get_mut(..group_count)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut max_t_group_number = 0_i32;
-    for group in &groups {
+    for group in groups.iter() {
         if i32::from(group.nGroupNumber) > max_t_group_number {
             max_t_group_number = i32::from(group.nGroupNumber);
         }
     }
 
-    for offset in 0..max_t_group_number {
-        *bns_vertex_mut(heap, pBNS, num_vertices + offset)? = BNS_VERTEX::default();
-    }
-
     if bRELEASE_VERSION != 1 {
-        groups.sort_by(|first, second| CompTGroupNumber(first, second).cmp(&0));
+        insertions_sort_typed(groups, CompTGroupNumber);
         for i in 1..groups.len() {
             if groups[i]
                 .nGroupNumber
@@ -17363,16 +18549,53 @@ pub(crate) fn AddTGroups2BnStruct(
                 .nGroupNumber,
         )
     {
-        groups.sort_by(|first, second| CompTGroupNumber(first, second).cmp(&0));
+        insertions_sort_typed(groups, CompTGroupNumber);
     }
-    heap.slice_mut(tgi.t_group)?[..group_count].clone_from_slice(&groups);
+
+    let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    if atoms.len() < atom_count {
+        return Err(SourceHeapError::PointerOutOfBounds);
+    }
+
+    let vertex_pointer = pBNS.vert;
+    let edge_pointer = pBNS.edge;
+    let incident_edge_pointer = pBNS.iedge;
+    let group_pointer = tgi.t_group.as_const();
+
+    // The four source arrays have different element types, so SourceHeap cannot
+    // place them in the same allocation. No heap allocation is resized or freed
+    // until all views are dropped. This reproduces the C function's direct array
+    // access after validating each allocation exactly once.
+    let groups = unsafe { heap.stable_slice(group_pointer)? };
+    let mut vertices = unsafe { heap.stable_slice_mut(vertex_pointer)? };
+    let mut edges = unsafe { heap.stable_slice_mut(edge_pointer)? };
+    let mut incident_edges = unsafe { heap.stable_slice_mut(incident_edge_pointer)? };
+
+    let first_new_vertex =
+        usize::try_from(num_vertices).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let added_vertex_count =
+        usize::try_from(max_t_group_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let end_new_vertex = first_new_vertex
+        .checked_add(added_vertex_count)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    vertices
+        .prefix_mut(end_new_vertex)?
+        .get_mut(first_new_vertex..)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .fill(BNS_VERTEX::default());
 
     let mut previous_index = num_vertices - 1;
-    for group in &groups {
+    for group_index in 0..group_count {
+        let group = groups.get(group_index)?;
         let fictpoint = num_vertices + i32::from(group.nGroupNumber) - 1;
-        let previous = bns_vertex(heap, pBNS, previous_index)?;
-        let mut vertex = bns_vertex(heap, pBNS, fictpoint)?;
-        vertex.iedge = previous.iedge.offset(i64::from(previous.max_adj_edges))?;
+        let previous = vertices.get(
+            usize::try_from(previous_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+        )?;
+        let next_incident_edge = previous.iedge.offset(i64::from(previous.max_adj_edges))?;
+        let vertex = vertices.get_mut(
+            usize::try_from(fictpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+        )?;
+        vertex.iedge = next_incident_edge;
         vertex.max_adj_edges = (i32::from(group.nNumEndpoints)
             + BNS_ADD_EDGES as i32
             + BNS_ADD_SUPER_TGROUP as i32) as AT_NUMB;
@@ -17382,14 +18605,9 @@ pub(crate) fn AddTGroups2BnStruct(
         vertex.st_edge.cap = 0;
         vertex.st_edge.cap0 = 0;
         vertex.type_ = BNS_VERT_TYPE_TGROUP as AT_NUMB;
-        *bns_vertex_mut(heap, pBNS, fictpoint)? = vertex;
         previous_index = fictpoint;
     }
 
-    let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    if atoms.len() < atom_count {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
     let mut ret = 0_i32;
     for endpoint in 0..num_atoms {
         let endpoint_atom = input_atom_ref(atoms, endpoint)?;
@@ -17397,8 +18615,12 @@ pub(crate) fn AddTGroups2BnStruct(
             continue;
         }
         let fictpoint = i32::from(endpoint_atom.endpoint) + num_vertices - 1;
-        let mut vert_ficpoint = bns_vertex(heap, pBNS, fictpoint)?;
-        let mut vert_endpoint = bns_vertex(heap, pBNS, endpoint)?;
+        let endpoint_index =
+            usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let fictpoint_index =
+            usize::try_from(fictpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let mut vert_ficpoint = vertices.get(fictpoint_index)?.clone();
+        let mut vert_endpoint = vertices.get(endpoint_index)?.clone();
         if fictpoint >= pBNS.max_vertices
             || num_edges >= pBNS.max_edges
             || vert_ficpoint.num_adj_edges >= vert_ficpoint.max_adj_edges
@@ -17414,13 +18636,28 @@ pub(crate) fn AddTGroups2BnStruct(
         };
 
         vert_endpoint.type_ |= BNS_VERT_TYPE_ENDPOINT as AT_NUMB;
+        let endpoint_incident_start =
+            usize::try_from(vert_endpoint.iedge.difference(incident_edge_pointer)?)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         for k in 0..i32::from(vert_endpoint.num_adj_edges) {
-            let iedge = bns_edge_index(heap, &vert_endpoint, k)?;
-            let edge = bns_edge(heap, pBNS, iedge)?;
+            let incident_index = endpoint_incident_start
+                .checked_add(usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let iedge = *incident_edges.get(incident_index)?;
+            let edge_index =
+                usize::try_from(iedge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let edge = edges.get(edge_index)?;
             if edge.cap == 0 {
                 let centerpoint = i32::from(edge.neighbor12 ^ (endpoint as AT_NUMB));
                 if centerpoint < pBNS.num_atoms
-                    && bns_vertex(heap, pBNS, centerpoint)?.st_edge.cap >= 1
+                    && vertices
+                        .get(
+                            usize::try_from(centerpoint)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                        )?
+                        .st_edge
+                        .cap
+                        >= 1
                 {
                     let bond_type = input_atom_bond_type(endpoint_atom, k)? & BOND_TYPE_MASK as i32;
                     if bond_type == BOND_TAUTOM as i32
@@ -17428,13 +18665,15 @@ pub(crate) fn AddTGroups2BnStruct(
                         || bond_type == BOND_ALT12NS as i32
                         || bond_type == BOND_SINGLE as i32
                     {
-                        bns_edge_mut(heap, pBNS, iedge)?.cap = 1;
+                        edges.get_mut(edge_index)?.cap = 1;
                     }
                 }
             }
         }
 
-        let mut edge = bns_edge(heap, pBNS, num_edges)?;
+        let new_edge_index =
+            usize::try_from(num_edges).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let mut edge = edges.get(new_edge_index)?.clone();
         edge.cap = 1;
         edge.flow = 0;
         edge.pass = 0;
@@ -17451,18 +18690,17 @@ pub(crate) fn AddTGroups2BnStruct(
 
         edge.neighbor1 = endpoint as AT_NUMB;
         edge.neighbor12 = (endpoint as AT_NUMB) ^ (fictpoint as AT_NUMB);
-        work_set(
-            heap,
-            vert_endpoint.iedge,
-            i32::from(vert_endpoint.num_adj_edges),
-            num_edges,
-        )?;
-        work_set(
-            heap,
-            vert_ficpoint.iedge,
-            i32::from(vert_ficpoint.num_adj_edges),
-            num_edges,
-        )?;
+        let endpoint_slot = endpoint_incident_start
+            .checked_add(usize::from(vert_endpoint.num_adj_edges))
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let fictpoint_incident_start =
+            usize::try_from(vert_ficpoint.iedge.difference(incident_edge_pointer)?)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let fictpoint_slot = fictpoint_incident_start
+            .checked_add(usize::from(vert_ficpoint.num_adj_edges))
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        *incident_edges.get_mut(endpoint_slot)? = num_edges;
+        *incident_edges.get_mut(fictpoint_slot)? = num_edges;
         edge.neigh_ord[0] = vert_endpoint.num_adj_edges;
         vert_endpoint.num_adj_edges = vert_endpoint.num_adj_edges.wrapping_add(1);
         edge.neigh_ord[1] = vert_ficpoint.num_adj_edges;
@@ -17470,9 +18708,9 @@ pub(crate) fn AddTGroups2BnStruct(
         edge.cap0 = edge.cap;
         edge.flow0 = edge.flow;
 
-        *bns_edge_mut(heap, pBNS, num_edges)? = edge;
-        *bns_vertex_mut(heap, pBNS, endpoint)? = vert_endpoint;
-        *bns_vertex_mut(heap, pBNS, fictpoint)? = vert_ficpoint;
+        *edges.get_mut(new_edge_index)? = edge;
+        *vertices.get_mut(endpoint_index)? = vert_endpoint;
+        *vertices.get_mut(fictpoint_index)? = vert_ficpoint;
         num_edges = num_edges.wrapping_add(1);
     }
 
@@ -18242,21 +19480,32 @@ pub(crate) fn ReInitBnStructAddGroups(
     // INCHI✔️❌: #define TG_FLAG_MOVE_POS_CHARGES 8
     // END INCHI ACTIVE MACRO CONFIGURATION: ReInitBnStructAddGroups
 
-    let atoms_snapshot = heap.slice(atoms.as_const())?.to_vec();
     let mut ret = ReInitBnStruct(heap, Some(pBNS), atoms, num_atoms, 0)?;
     if ret != 0 {
         return Ok(BNS_REINIT_ERR);
     }
 
+    // INCHI✔️🔝: AddCGroups2BnStruct and AddTGroups2BnStruct receive the
+    // same atom allocation that the C source passes directly. ReInitBnStruct
+    // has already completed with bRemoveGroupsFromAtoms=0, and both helpers
+    // only read `at`; their writes target disjoint BNS/group allocations. A
+    // stable view therefore preserves the source pointer lifetime and avoids
+    // copying the complete inp_ATOM allocation on every reinitialization.
+    // SAFETY: neither helper frees, resizes, or mutates the `atoms` allocation
+    // while this view is live. The full allocation is retained so malformed
+    // source counts keep the same helper-level bounds/error ordering.
+    let atoms_view: StableSourceConstSlice<inp_ATOM> =
+        unsafe { heap.stable_slice(atoms.as_const())? };
+    let atoms = atoms_view.prefix(atoms_view.len())?;
     let taut_flags = work_get(heap, pBNS.pbTautFlags, 0)?;
     if (taut_flags & TG_FLAG_MOVE_POS_CHARGES as u64) != 0 {
-        ret = AddCGroups2BnStruct(heap, pCG, pBNS, &atoms_snapshot, num_atoms, cgi)?;
+        ret = AddCGroups2BnStruct(heap, pCG, pBNS, atoms, num_atoms, cgi)?;
         if is_bns_error(ret) {
             return Ok(ret);
         }
     }
 
-    ret = AddTGroups2BnStruct(heap, pCG, pBNS, &atoms_snapshot, num_atoms, tgi)?;
+    ret = AddTGroups2BnStruct(heap, pCG, pBNS, atoms, num_atoms, tgi)?;
     if is_bns_error(ret) {
         return Ok(ret);
     }
@@ -18264,150 +19513,18 @@ pub(crate) fn ReInitBnStructAddGroups(
     Ok(ret)
 }
 
-#[allow(non_snake_case)]
-pub(crate) fn ReInitBnStructForAltBns(
+fn initialize_alt_bns_checked(
     heap: &mut SourceHeap,
-    pBNS: &mut BN_STRUCT,
+    bns: &BN_STRUCT,
     at: SourceMutPointer<inp_ATOM>,
     num_atoms: i32,
-    bUnknAltAsNoStereo: i32,
 ) -> Result<i32, SourceHeapError> {
-    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:11800 ReInitBnStructForAltBns
-    // INCHI✔️❌: int ReInitBnStructForAltBns( BN_STRUCT *pBNS,
-    // INCHI✔️❌:                              inp_ATOM *at,
-    // INCHI✔️❌:                              int num_atoms,
-    // INCHI✔️❌:                              int bUnknAltAsNoStereo )
-    // INCHI✔️❌: {
-    // INCHI✔️❌:     Vertex v, v2;
-    // INCHI✔️❌:     int ret, bond_type, num_to_test, j;
-    // INCHI✔️❌:     BNS_EDGE   *pBond;
-    // INCHI✔️❌:     BNS_VERTEX *pAtom;
-    // INCHI✔️❌:
-    // INCHI✔️❌:     /* Strip all t-groups and c-groups */
-    // INCHI✔️❌:     num_to_test = 0;
-    // INCHI✔️❌:     if (bUnknAltAsNoStereo)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         for (j = 0; j < pBNS->num_edges; j++)
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:             pBNS->edge[j].pass = 0;
-    // INCHI✔️❌:         }
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:
-    // INCHI✔️❌:     ret = ReInitBnStruct( pBNS, at, num_atoms, 0 );
-    // INCHI✔️❌:
-    // INCHI✔️❌:     if (ret || pBNS->num_atoms != num_atoms || pBNS->num_vertices != num_atoms || pBNS->num_bonds != pBNS->num_edges)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         ret = BNS_REINIT_ERR;
-    // INCHI✔️❌:         goto exit_function;
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:
-    // INCHI✔️❌:     /* Eliminate bonds and fix st-caps */
-    // INCHI✔️❌:     for (v = 0; v < num_atoms; v++)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         pAtom = pBNS->vert + v;
-    // INCHI✔️❌:         for (j = 0; j < pAtom->valenceAltBns; j++)
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:             pBond = pBNS->edge + pAtom->iedge[j];
-    // INCHI✔️❌:             if (pBond->neighbor1 == v)
-    // INCHI✔️❌:             {
-    // INCHI✔️❌:                 bond_type = ( at[v].bond_type[j] & BOND_TYPE_MASK );
-    // INCHI✔️❌:                 v2 = pBond->neighbor12 ^ v;
-    // INCHI✔️❌:                 if (at[v].endpoint || at[v2].endpoint)
-    // INCHI✔️❌:                 {
-    // INCHI✔️❌:                     bond_type = 0; /* any bond to an endpoint considered non-stereogenic */
-    // INCHI✔️❌:                 }
-    // INCHI❌❌: #if ( FIX_EITHER_DB_AS_NONSTEREO == 1 )
-    // INCHI❌❌:                 if (bUnknAltAsNoStereo)
-    // INCHI❌❌:                 {
-    // INCHI❌❌:                     if (bond_type == BOND_ALTERN && at[v].bond_stereo[j] == STEREO_DBLE_EITHER)
-    // INCHI❌❌:                     {
-    // INCHI❌❌:                         bond_type = 0; /* treat unknown (Either) ALT bond as non-stereo */
-    // INCHI❌❌:                     }
-    // INCHI❌❌:                 }
-    // INCHI❌❌: #endif
-    // INCHI✔️❌:                 switch (bond_type)
-    // INCHI✔️❌:                 {
-    // INCHI✔️❌:
-    // INCHI✔️❌:                     case BOND_ALTERN:
-    // INCHI✔️❌:                         pBond->nBondTypeInpAltBns = BT_ALTERN_BOND;
-    // INCHI✔️❌:                         num_to_test++;
-    // INCHI✔️❌:                         break;
-    // INCHI✔️❌:
-    // INCHI✔️❌:                     case BOND_ALT_123:
-    // INCHI✔️❌:                     case BOND_ALT_13:
-    // INCHI✔️❌:                     case BOND_ALT_23:
-    // INCHI✔️❌:                         pBond->nBondTypeInpAltBns = BT_OTHER_ALTERN_BOND;
-    // INCHI✔️❌:                         break;
-    // INCHI✔️❌:
-    // INCHI✔️❌:                     case BOND_TAUTOM:
-    // INCHI✔️❌:                         pBond->nBondTypeInpAltBns = BT_TAUTOM_BOND;
-    // INCHI✔️❌:                         break;
-    // INCHI✔️❌:
-    // INCHI✔️❌:                     case BOND_ALT12NS:
-    // INCHI✔️❌:                         pBond->nBondTypeInpAltBns = BT_ALTERN_NS_BOND;
-    // INCHI✔️❌:                         break;
-    // INCHI✔️❌:
-    // INCHI✔️❌:                     case 0:
-    // INCHI✔️❌:                     case BOND_SINGLE:
-    // INCHI✔️❌:                     case BOND_DOUBLE:
-    // INCHI✔️❌:                     case BOND_TRIPLE:
-    // INCHI✔️❌:                         pBond->nBondTypeInpAltBns = BT_IGNORE_BOND;
-    // INCHI✔️❌:                         break;
-    // INCHI✔️❌:
-    // INCHI✔️❌:                     default:
-    // INCHI✔️❌:                         pBond->nBondTypeInpAltBns = BT_IGNORE_BOND;
-    // INCHI✔️❌:                         break;
-    // INCHI✔️❌:                 }
-    // INCHI✔️❌:                 pBond->nBondNonStereoAltBns = 0; /* djb-rwth: addressing GCC warning -- operations on pBond->cap might be undefined */
-    // INCHI✔️❌:                 pBond->nBlockNumberAltBns = 0;
-    // INCHI✔️❌:                 pBond->nNumAtInBlockAltBns = 0;
-    // INCHI✔️❌:
-    // INCHI✔️❌: #if ( RESET_EDGE_FORBIDDEN_MASK == 1 )
-    // INCHI✔️❌:                 pBond->forbidden &= pBNS->edge_forbidden_mask;
-    // INCHI✔️❌: #endif
-    // INCHI✔️❌:             }
-    // INCHI✔️❌:         }
-    // INCHI✔️❌:         pAtom->bCutVertexAltBns =
-    // INCHI✔️❌:             pAtom->nRingSystemAltBns =
-    // INCHI✔️❌:             pAtom->nNumAtInRingSystemAltBns =
-    // INCHI✔️❌:             pAtom->nBlockSystemAltBns = 0;
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:
-    // INCHI✔️❌:     return num_to_test;
-    // INCHI✔️❌:
-    // INCHI✔️❌: exit_function:
-    // INCHI✔️❌:
-    // INCHI✔️❌:     return ret;
-    // INCHI✔️❌: }
-    // END INCHI C FUNCTION: ReInitBnStructForAltBns
-    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: ReInitBnStructForAltBns
-    // INCHI✔️❌: #define FIX_EITHER_DB_AS_NONSTEREO 0
-    // INCHI✔️❌: #define RESET_EDGE_FORBIDDEN_MASK 1
-    // INCHI✔️❌: #define BNS_MARK_ONLY_BLOCKS 1
-    // END INCHI ACTIVE MACRO CONFIGURATION: ReInitBnStructForAltBns
-
     let mut num_to_test = 0_i32;
-    if bUnknAltAsNoStereo != 0 {
-        for edge_index in 0..pBNS.num_edges {
-            bns_edge_mut(heap, pBNS, edge_index)?.pass = 0;
-        }
-    }
-
-    let mut ret = ReInitBnStruct(heap, Some(pBNS), at, num_atoms, 0)?;
-    if ret != 0
-        || pBNS.num_atoms != num_atoms
-        || pBNS.num_vertices != num_atoms
-        || pBNS.num_bonds != pBNS.num_edges
-    {
-        ret = BNS_REINIT_ERR;
-        return Ok(ret);
-    }
-
     for vertex_index in 0..num_atoms {
-        let vertex = bns_vertex(heap, pBNS, vertex_index)?;
+        let vertex = bns_vertex(heap, bns, vertex_index)?;
         for neighbor_index in 0..i32::from(vertex.num_adj_edges) {
             let edge_index = bns_edge_index(heap, &vertex, neighbor_index)?;
-            let edge_before = bns_edge(heap, pBNS, edge_index)?;
+            let edge_before = bns_edge(heap, bns, edge_index)?;
             if i32::from(edge_before.neighbor1) == vertex_index {
                 let atom_index = usize::try_from(vertex_index)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -18455,23 +19572,175 @@ pub(crate) fn ReInitBnStructForAltBns(
                     0 | BOND_SINGLE | BOND_DOUBLE | BOND_TRIPLE => BT_IGNORE_BOND,
                     _ => BT_IGNORE_BOND,
                 };
-                let edge = bns_edge_mut(heap, pBNS, edge_index)?;
+                let edge = bns_edge_mut(heap, bns, edge_index)?;
                 edge.pass = mapped as S_CHAR;
                 edge.cap = 0;
                 edge.flow = 0;
                 edge.cap = 0;
-                edge.forbidden &= pBNS.edge_forbidden_mask;
+                edge.forbidden &= bns.edge_forbidden_mask;
             }
         }
 
-        let vertex = bns_vertex_mut(heap, pBNS, vertex_index)?;
+        let vertex = bns_vertex_mut(heap, bns, vertex_index)?;
         vertex.st_edge.cap0 = 0;
         vertex.st_edge.cap = 0;
         vertex.st_edge.flow0 = 0;
         vertex.st_edge.flow = 0;
     }
-
     Ok(num_to_test)
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn ReInitBnStructForAltBns(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    at: SourceMutPointer<inp_ATOM>,
+    num_atoms: i32,
+    bUnknAltAsNoStereo: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:11800 ReInitBnStructForAltBns
+    // INCHI✔️✔️: int ReInitBnStructForAltBns( BN_STRUCT *pBNS,
+    // INCHI✔️✔️:                              inp_ATOM *at,
+    // INCHI✔️✔️:                              int num_atoms,
+    // INCHI✔️✔️:                              int bUnknAltAsNoStereo )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     Vertex v, v2;
+    // INCHI✔️✔️:     int ret, bond_type, num_to_test, j;
+    // INCHI✔️✔️:     BNS_EDGE   *pBond;
+    // INCHI✔️✔️:     BNS_VERTEX *pAtom;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     /* Strip all t-groups and c-groups */
+    // INCHI✔️✔️:     num_to_test = 0;
+    // INCHI✔️✔️:     if (bUnknAltAsNoStereo)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         for (j = 0; j < pBNS->num_edges; j++)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             pBNS->edge[j].pass = 0;
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     ret = ReInitBnStruct( pBNS, at, num_atoms, 0 );
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     if (ret || pBNS->num_atoms != num_atoms || pBNS->num_vertices != num_atoms || pBNS->num_bonds != pBNS->num_edges)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         ret = BNS_REINIT_ERR;
+    // INCHI✔️✔️:         goto exit_function;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     /* Eliminate bonds and fix st-caps */
+    // INCHI✔️✔️:     for (v = 0; v < num_atoms; v++)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         pAtom = pBNS->vert + v;
+    // INCHI✔️✔️:         for (j = 0; j < pAtom->valenceAltBns; j++)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             pBond = pBNS->edge + pAtom->iedge[j];
+    // INCHI✔️✔️:             if (pBond->neighbor1 == v)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 bond_type = ( at[v].bond_type[j] & BOND_TYPE_MASK );
+    // INCHI✔️✔️:                 v2 = pBond->neighbor12 ^ v;
+    // INCHI✔️✔️:                 if (at[v].endpoint || at[v2].endpoint)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     bond_type = 0; /* any bond to an endpoint considered non-stereogenic */
+    // INCHI✔️✔️:                 }
+    // INCHI❌❌: #if ( FIX_EITHER_DB_AS_NONSTEREO == 1 )
+    // INCHI❌❌:                 if (bUnknAltAsNoStereo)
+    // INCHI❌❌:                 {
+    // INCHI❌❌:                     if (bond_type == BOND_ALTERN && at[v].bond_stereo[j] == STEREO_DBLE_EITHER)
+    // INCHI❌❌:                     {
+    // INCHI❌❌:                         bond_type = 0; /* treat unknown (Either) ALT bond as non-stereo */
+    // INCHI❌❌:                     }
+    // INCHI❌❌:                 }
+    // INCHI❌❌: #endif
+    // INCHI✔️✔️:                 switch (bond_type)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:                     case BOND_ALTERN:
+    // INCHI✔️✔️:                         pBond->nBondTypeInpAltBns = BT_ALTERN_BOND;
+    // INCHI✔️✔️:                         num_to_test++;
+    // INCHI✔️✔️:                         break;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:                     case BOND_ALT_123:
+    // INCHI✔️✔️:                     case BOND_ALT_13:
+    // INCHI✔️✔️:                     case BOND_ALT_23:
+    // INCHI✔️✔️:                         pBond->nBondTypeInpAltBns = BT_OTHER_ALTERN_BOND;
+    // INCHI✔️✔️:                         break;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:                     case BOND_TAUTOM:
+    // INCHI✔️✔️:                         pBond->nBondTypeInpAltBns = BT_TAUTOM_BOND;
+    // INCHI✔️✔️:                         break;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:                     case BOND_ALT12NS:
+    // INCHI✔️✔️:                         pBond->nBondTypeInpAltBns = BT_ALTERN_NS_BOND;
+    // INCHI✔️✔️:                         break;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:                     case 0:
+    // INCHI✔️✔️:                     case BOND_SINGLE:
+    // INCHI✔️✔️:                     case BOND_DOUBLE:
+    // INCHI✔️✔️:                     case BOND_TRIPLE:
+    // INCHI✔️✔️:                         pBond->nBondTypeInpAltBns = BT_IGNORE_BOND;
+    // INCHI✔️✔️:                         break;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:                     default:
+    // INCHI✔️✔️:                         pBond->nBondTypeInpAltBns = BT_IGNORE_BOND;
+    // INCHI✔️✔️:                         break;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:                 pBond->nBondNonStereoAltBns = 0; /* djb-rwth: addressing GCC warning -- operations on pBond->cap might be undefined */
+    // INCHI✔️✔️:                 pBond->nBlockNumberAltBns = 0;
+    // INCHI✔️✔️:                 pBond->nNumAtInBlockAltBns = 0;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️: #if ( RESET_EDGE_FORBIDDEN_MASK == 1 )
+    // INCHI✔️✔️:                 pBond->forbidden &= pBNS->edge_forbidden_mask;
+    // INCHI✔️✔️: #endif
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         pAtom->bCutVertexAltBns =
+    // INCHI✔️✔️:             pAtom->nRingSystemAltBns =
+    // INCHI✔️✔️:             pAtom->nNumAtInRingSystemAltBns =
+    // INCHI✔️✔️:             pAtom->nBlockSystemAltBns = 0;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     return num_to_test;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️: exit_function:
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     return ret;
+    // INCHI✔️✔️: }
+    // END INCHI C FUNCTION: ReInitBnStructForAltBns
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: ReInitBnStructForAltBns
+    // INCHI✔️✔️: #define FIX_EITHER_DB_AS_NONSTEREO 0
+    // INCHI✔️✔️: #define RESET_EDGE_FORBIDDEN_MASK 1
+    // INCHI✔️✔️: #define BNS_MARK_ONLY_BLOCKS 1
+    // END INCHI ACTIVE MACRO CONFIGURATION: ReInitBnStructForAltBns
+
+    if bUnknAltAsNoStereo != 0 {
+        if pBNS.num_edges > 0 {
+            let edge_count =
+                usize::try_from(pBNS.num_edges).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let edges = heap.slice_mut(pBNS.edge)?;
+            let edges = edges
+                .get_mut(..edge_count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            for edge in edges {
+                edge.pass = 0;
+            }
+        }
+    }
+
+    let mut ret = ReInitBnStruct(heap, Some(pBNS), at, num_atoms, 0)?;
+    if ret != 0
+        || pBNS.num_atoms != num_atoms
+        || pBNS.num_vertices != num_atoms
+        || pBNS.num_bonds != pBNS.num_edges
+    {
+        ret = BNS_REINIT_ERR;
+        return Ok(ret);
+    }
+
+    if let Some(mut workspace) = ReInitBnStructWorkspace::new(heap, pBNS, at, num_atoms, true)? {
+        Ok(workspace.initialize_alt_bns(pBNS, num_atoms))
+    } else {
+        initialize_alt_bns_checked(heap, pBNS, at, num_atoms)
+    }
 }
 
 #[allow(non_snake_case)]
@@ -22995,6 +24264,71 @@ mod tests {
             Err(SourceHeapError::NullPointer)
         );
         assert_eq!((missing_atoms[0].charge, missing_atoms[0].num_H), (0, 1));
+    }
+
+    #[test]
+    fn source_port__ichi_bns__removenpprotonsandacidcharges__preserves_explicit_h_tail() {
+        let mut atoms = vec![inp_ATOM::default(); 3];
+        atoms[0].el_number = 8;
+        atoms[0].valence = 1;
+        atoms[0].chem_bonds_valence = 1;
+        atoms[0].num_H = 1;
+        atoms[0].neighbor[0] = 1;
+        atoms[1].el_number = 6;
+        atoms[1].valence = 1;
+        atoms[1].chem_bonds_valence = 4;
+        atoms[1].neighbor[0] = 0;
+        atoms[2].el_number = 1;
+        atoms[2].neighbor[0] = 0;
+        atoms[2].orig_at_number = 3;
+
+        let mut heap = SourceHeap::default();
+        let atoms_pointer = heap.allocate(atoms).unwrap();
+        let totals_pointer = heap.allocate(vec![0_i32; ATTOT_ARRAY_LEN]).unwrap();
+        {
+            let mut heavy_atoms = heap.slice(atoms_pointer.as_const()).unwrap()[..2].to_vec();
+            assert_eq!(
+                mark_at_type(
+                    &mut heavy_atoms,
+                    2,
+                    Some(heap.slice_mut(totals_pointer).unwrap()),
+                ),
+                Ok(0)
+            );
+        }
+        heap.slice_mut(totals_pointer).unwrap()[ATTOT_TOT_CHARGE] = 1;
+
+        let mut group_info = T_GROUP_INFO::default();
+        group_info.tni.nNumRemovedExplicitH = 1;
+        let group_pointer = heap.allocate(vec![group_info]).unwrap();
+        let mut aatg = BN_AATG {
+            nAtTypeTotals: totals_pointer,
+            t_group_info: group_pointer,
+            ..BN_AATG::default()
+        };
+
+        assert_eq!(
+            RemoveNPProtonsAndAcidCharges(
+                &mut heap,
+                &mut CANON_GLOBALS::default(),
+                atoms_pointer,
+                2,
+                &mut aatg,
+                &mut BN_STRUCT::default(),
+                &mut BN_DATA::default(),
+                0,
+            ),
+            Ok(1)
+        );
+
+        let output = heap.slice(atoms_pointer.as_const()).unwrap();
+        assert_eq!((output[0].charge, output[0].num_H), (-1, 0));
+        assert_eq!(output.len(), 3);
+        let totals = heap.slice(totals_pointer.as_const()).unwrap();
+        assert_eq!(totals[ATTOT_TOT_CHARGE], 0);
+        let group_info = heap.slice(group_pointer.as_const()).unwrap();
+        assert_eq!(group_info[0].tni.nNumRemovedExplicitH, 0);
+        assert_eq!(group_info[0].tni.nNumRemovedProtons, 1);
     }
 
     #[test]
@@ -29069,9 +30403,7 @@ mod tests {
         );
 
         let mut heap = SourceHeap::default();
-        let atom_zero_edges = heap.allocate(vec![0_i32, 1]).unwrap();
-        let atom_one_edges = heap.allocate(vec![0_i32]).unwrap();
-        let fictitious_edges = heap.allocate(vec![1_i32]).unwrap();
+        let iedge = heap.allocate(vec![0_i32, 1, 0, 1]).unwrap();
         let vertices = heap
             .allocate(vec![
                 BNS_VERTEX {
@@ -29085,7 +30417,7 @@ mod tests {
                     type_: u16::MAX,
                     num_adj_edges: 2,
                     max_adj_edges: 7,
-                    iedge: atom_zero_edges,
+                    iedge,
                 },
                 BNS_VERTEX {
                     st_edge: crate::source_types::BNS_ST_EDGE {
@@ -29098,7 +30430,7 @@ mod tests {
                     type_: 9,
                     num_adj_edges: 1,
                     max_adj_edges: 6,
-                    iedge: atom_one_edges,
+                    iedge: iedge.offset(2).unwrap(),
                 },
                 BNS_VERTEX {
                     st_edge: crate::source_types::BNS_ST_EDGE {
@@ -29111,7 +30443,7 @@ mod tests {
                     type_: 10,
                     num_adj_edges: 1,
                     max_adj_edges: 4,
-                    iedge: fictitious_edges,
+                    iedge: iedge.offset(3).unwrap(),
                 },
             ])
             .unwrap();
@@ -29141,7 +30473,6 @@ mod tests {
                 },
             ])
             .unwrap();
-        let iedge = heap.allocate(vec![0_i32, 1, 0, 1]).unwrap();
         let atoms = heap
             .allocate(vec![
                 inp_ATOM {
@@ -29169,6 +30500,9 @@ mod tests {
             num_vertices: 3,
             num_bonds: 1,
             num_edges: 2,
+            max_vertices: 3,
+            max_edges: 2,
+            max_iedges: 4,
             num_added_atoms: 1,
             num_t_groups: 1,
             num_c_groups: 1,
@@ -29202,6 +30536,11 @@ mod tests {
             ..BN_STRUCT::default()
         };
 
+        assert!(
+            ReInitBnStructWorkspace::new(&mut heap, &bns, atoms, 2, true)
+                .unwrap()
+                .is_some()
+        );
         assert_eq!(
             ReInitBnStruct(&mut heap, Some(&mut bns), atoms, 2, 1),
             Ok(200)
@@ -29273,6 +30612,74 @@ mod tests {
         assert_eq!(
             path_after[tagAltPathConst_iALTP_END_ATOM as usize].number(),
             NO_VERTEX
+        );
+    }
+
+    #[test]
+    fn reinit_bn_struct_retains_checked_split_adjacency_path() {
+        let mut heap = SourceHeap::default();
+        let split_adjacency = heap.allocate(Vec::<BNS_IEDGE>::new()).unwrap();
+        let contiguous_adjacency = heap.allocate(Vec::<BNS_IEDGE>::new()).unwrap();
+        let vertices = heap
+            .allocate(vec![BNS_VERTEX {
+                iedge: split_adjacency,
+                ..BNS_VERTEX::default()
+            }])
+            .unwrap();
+        let edges = heap
+            .allocate(vec![BNS_EDGE {
+                pass: 1,
+                ..BNS_EDGE::default()
+            }])
+            .unwrap();
+        let mut bns = BN_STRUCT {
+            num_atoms: 0,
+            num_vertices: 1,
+            num_bonds: 0,
+            num_edges: 1,
+            max_vertices: 1,
+            max_edges: 1,
+            max_iedges: 0,
+            vert: vertices,
+            edge: edges,
+            iedge: contiguous_adjacency,
+            ..BN_STRUCT::default()
+        };
+
+        assert!(
+            ReInitBnStructWorkspace::new(&mut heap, &bns, SourceMutPointer::null(), 0, false)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            ReInitBnStruct(&mut heap, Some(&mut bns), SourceMutPointer::null(), 0, 0,),
+            Ok(100)
+        );
+    }
+
+    #[test]
+    fn reinit_bn_struct_rejects_aliased_graph_allocations_before_unsafe_path() {
+        let mut heap = SourceHeap::default();
+        let vertices = heap.allocate(vec![BNS_VERTEX::default()]).unwrap();
+        let adjacency = heap.allocate(Vec::<BNS_IEDGE>::new()).unwrap();
+        let mut bns = BN_STRUCT {
+            num_edges: 1,
+            max_vertices: 1,
+            max_edges: 1,
+            vert: vertices,
+            edge: vertices.cast(),
+            iedge: adjacency,
+            ..BN_STRUCT::default()
+        };
+
+        assert!(
+            ReInitBnStructWorkspace::new(&mut heap, &bns, SourceMutPointer::null(), 0, false)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            ReInitBnStruct(&mut heap, Some(&mut bns), SourceMutPointer::null(), 0, 0,),
+            Err(SourceHeapError::AllocationTypeMismatch)
         );
     }
 
@@ -29373,6 +30780,76 @@ mod tests {
             ReInitBnStructForAltBns(&mut mismatch_heap, &mut mismatch_bns, mismatch_atoms, 1, 0,),
             Ok(BNS_REINIT_ERR)
         );
+    }
+
+    #[test]
+    fn reinit_bn_struct_for_alt_bns_uses_official_contiguous_layout() {
+        let mut heap = SourceHeap::default();
+        let adjacency = heap.allocate(vec![0_i32, 0]).unwrap();
+        let vertices = heap
+            .allocate(vec![
+                BNS_VERTEX {
+                    num_adj_edges: 1,
+                    max_adj_edges: 1,
+                    iedge: adjacency,
+                    ..BNS_VERTEX::default()
+                },
+                BNS_VERTEX {
+                    num_adj_edges: 1,
+                    max_adj_edges: 1,
+                    iedge: adjacency.offset(1).unwrap(),
+                    ..BNS_VERTEX::default()
+                },
+            ])
+            .unwrap();
+        let edges = heap
+            .allocate(vec![BNS_EDGE {
+                neighbor1: 0,
+                neighbor12: 1,
+                ..BNS_EDGE::default()
+            }])
+            .unwrap();
+        let mut atoms = vec![inp_ATOM::default(); 2];
+        atoms[0].bond_type[0] = BOND_ALTERN as u8;
+        atoms[1].bond_type[0] = BOND_ALTERN as u8;
+        let atoms = heap.allocate(atoms).unwrap();
+        let mut bns = BN_STRUCT {
+            num_atoms: 2,
+            num_vertices: 2,
+            num_bonds: 1,
+            num_edges: 1,
+            max_vertices: 2,
+            max_edges: 1,
+            max_iedges: 2,
+            vert: vertices,
+            edge: edges,
+            iedge: adjacency,
+            ..BN_STRUCT::default()
+        };
+
+        assert!(
+            ReInitBnStructWorkspace::new(&mut heap, &bns, atoms, 2, true)
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(
+            ReInitBnStructForAltBns(&mut heap, &mut bns, atoms, 2, 0),
+            Ok(1)
+        );
+        let edge = &heap.slice(edges.as_const()).unwrap()[0];
+        assert_eq!(edge.pass, BT_ALTERN_BOND as S_CHAR);
+        assert_eq!((edge.cap, edge.flow), (0, 0));
+        for vertex in heap.slice(vertices.as_const()).unwrap() {
+            assert_eq!(
+                (
+                    vertex.st_edge.cap0,
+                    vertex.st_edge.cap,
+                    vertex.st_edge.flow0,
+                    vertex.st_edge.flow,
+                ),
+                (0, 0, 0, 0)
+            );
+        }
     }
 
     #[test]
@@ -29649,24 +31126,24 @@ mod tests {
             GetEdgePointer(&bns, 2, 3, 17),
             GetEdgePointerResult {
                 backward: 0,
-                target: Some(BnsEdgeTarget::Edge(17)),
-                s_or_t: Some(0),
+                target_index: 17,
+                s_or_t: 0,
             }
         );
         assert_eq!(
             GetEdgePointer(&bns, 3, 2, 17),
             GetEdgePointerResult {
                 backward: 1,
-                target: Some(BnsEdgeTarget::Edge(17)),
-                s_or_t: Some(0),
+                target_index: 17,
+                s_or_t: 0,
             }
         );
         assert_eq!(
             GetEdgePointer(&bns, 2, 2, 17),
             GetEdgePointerResult {
                 backward: BNS_WRONG_PARMS,
-                target: None,
-                s_or_t: None,
+                target_index: 0,
+                s_or_t: 0,
             }
         );
 
@@ -29674,24 +31151,24 @@ mod tests {
             GetEdgePointer(&bns, 2, 0, 17),
             GetEdgePointerResult {
                 backward: 1,
-                target: Some(BnsEdgeTarget::StEdge(0)),
-                s_or_t: Some(3),
+                target_index: 0,
+                s_or_t: 3,
             }
         );
         assert_eq!(
             GetEdgePointer(&bns, 3, 1, 17),
             GetEdgePointerResult {
                 backward: 0,
-                target: Some(BnsEdgeTarget::StEdge(0)),
-                s_or_t: Some(4),
+                target_index: 0,
+                s_or_t: 4,
             }
         );
         assert_eq!(
             GetEdgePointer(&bns, 2, 1, 17),
             GetEdgePointerResult {
                 backward: BNS_WRONG_PARMS,
-                target: None,
-                s_or_t: None,
+                target_index: 0,
+                s_or_t: 0,
             }
         );
 
@@ -29699,24 +31176,24 @@ mod tests {
             GetEdgePointer(&bns, 0, 2, 17),
             GetEdgePointerResult {
                 backward: 0,
-                target: Some(BnsEdgeTarget::StEdge(0)),
-                s_or_t: Some(1),
+                target_index: 0,
+                s_or_t: 1,
             }
         );
         assert_eq!(
             GetEdgePointer(&bns, 1, 3, 17),
             GetEdgePointerResult {
                 backward: 1,
-                target: Some(BnsEdgeTarget::StEdge(0)),
-                s_or_t: Some(2),
+                target_index: 0,
+                s_or_t: 2,
             }
         );
         assert_eq!(
             GetEdgePointer(&bns, 0, 3, 17),
             GetEdgePointerResult {
                 backward: BNS_WRONG_PARMS,
-                target: None,
-                s_or_t: None,
+                target_index: 0,
+                s_or_t: 0,
             }
         );
 
@@ -29724,16 +31201,16 @@ mod tests {
             GetEdgePointer(&bns, 0, 1, 17),
             GetEdgePointerResult {
                 backward: BNS_WRONG_PARMS,
-                target: None,
-                s_or_t: None,
+                target_index: 0,
+                s_or_t: 0,
             }
         );
         assert_eq!(
             GetEdgePointer(&bns, -1, 2, 17),
             GetEdgePointerResult {
                 backward: BNS_WRONG_PARMS,
-                target: None,
-                s_or_t: None,
+                target_index: 0,
+                s_or_t: 0,
             }
         );
     }
@@ -31869,6 +33346,42 @@ mod tests {
         assert_eq!(
             BalancedNetworkSearch(&mut error_heap, &mut error_bns, &mut error_bd, 0),
             Err(SourceHeapError::NullPointer)
+        );
+    }
+
+    #[test]
+    fn balanced_network_search_uses_official_contiguous_array_contract() {
+        let mut heap = SourceHeap::default();
+        let atoms = heap.allocate(vec![inp_ATOM::default()]).unwrap();
+        let mut changed_bonds = 0;
+        let bns_pointer =
+            AllocateAndInitBnStruct(&mut heap, atoms, 1, 0, 0, 0, &mut changed_bonds).unwrap();
+        let mut bns = heap.slice(bns_pointer.as_const()).unwrap()[0].clone();
+        let data_pointer = AllocateAndInitBnData(&mut heap, bns.max_vertices).unwrap();
+        let mut data = heap.slice(data_pointer.as_const()).unwrap()[0].clone();
+
+        let mut workspace = BnsSearchWorkspace::new(&mut heap, &bns, &data).unwrap();
+        assert!(workspace.source_layout);
+        assert_eq!(
+            balanced_network_search_impl::<true>(&mut heap, &mut bns, &mut data, 0, &mut workspace,),
+            Ok(0)
+        );
+        assert_eq!(data.QSize, 0);
+        assert_eq!(
+            heap.slice(data.ScanQ.as_const()).unwrap()[0],
+            Vertex_s as Vertex
+        );
+        assert_eq!(
+            heap.slice(data.BasePtr.as_const()).unwrap()[Vertex_s as usize],
+            BLOSSOM_BASE
+        );
+        assert_eq!(
+            heap.slice(data.BasePtr.as_const()).unwrap()[Vertex_t as usize],
+            Vertex_s as Vertex
+        );
+        assert_eq!(
+            heap.slice(data.Tree.as_const()).unwrap()[Vertex_s as usize],
+            TREE_IN_1 as S_CHAR
         );
     }
 

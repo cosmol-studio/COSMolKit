@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::sync::OnceLock;
 
 use crate::chemistry::ciplabeler::assign_cip_labels;
-use crate::chemistry::forcefield::crystalff::build_crystalff_query_molecule;
 use crate::chemistry::valence::rdkit_atomic_mass;
+use crate::search::smarts_parse::build_query_molecule;
 use crate::{AdjacencyList, AtomId, BondOrder, ChiralTag, Molecule};
 use serde_json::Value;
 
@@ -52,9 +52,9 @@ const DEFAULT_FEATURE_SMARTS: [&str; 6] = [
 // RDKit✔️✔️:   m_matcher.reset(p);
 // RDKit✔️✔️: };
 //
-// COSMolKit uses `build_crystalff_query_molecule` and `Molecule` ownership
-// instead of a cached `ROMOL_SPTR`, but preserves the same public behavior
-// for matcher construction and access.
+// COSMolKit owns the equivalent query-bearing `Molecule` directly instead of
+// caching an `ROMOL_SPTR`; matcher construction and access retain the same
+// observable behavior.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SsMatcher {
     matcher: Molecule,
@@ -63,7 +63,7 @@ pub(crate) struct SsMatcher {
 impl SsMatcher {
     #[must_use]
     pub fn try_new(pattern: &str) -> Result<Self, FingerprintError> {
-        let matcher = build_crystalff_query_molecule(pattern).map_err(|reason| {
+        let matcher = build_query_molecule(pattern).map_err(|reason| {
             FingerprintError::InvalidSmartsPattern {
                 pattern: pattern.to_string(),
                 reason,

@@ -20,10 +20,6 @@ pub enum AddHydrogensError {
         branch: &'static str,
         reason: &'static str,
     },
-    #[error(
-        "cannot add hydrogens to a molecule with explicit hydrogen atoms but no bonds; hydrogen ownership is not represented in the topology"
-    )]
-    ExplicitHydrogensWithoutBonds,
     #[error(transparent)]
     Valence(#[from] crate::ValenceError),
     #[error("hydrogen addition is not implemented")]
@@ -341,20 +337,6 @@ pub(crate) fn add_hs_assignment(
             }
         }
     }
-    if read_parts.num_bonds() == 0 {
-        let has_explicit_hydrogen_atom = read_parts
-            .atoms()
-            .iter()
-            .any(|atom| atom.atomic_number() == 1);
-        let has_heavy_atom = read_parts
-            .atoms()
-            .iter()
-            .any(|atom| atom.atomic_number() != 1);
-        if has_explicit_hydrogen_atom && has_heavy_atom {
-            return Err(AddHydrogensError::ExplicitHydrogensWithoutBonds);
-        }
-    }
-
     let valence = read_parts.assign_valence_with_options(ValenceModel::RdkitLike, false)?;
     let context = RemoveHsPredicateContext::new(read_parts);
     let mut assignment = AddHsAssignment {
@@ -2730,17 +2712,29 @@ mod tests {
     }
 
     #[test]
-    fn add_hs_assignment_rejects_explicit_hydrogen_atoms_without_bonds() {
+    fn add_hs_assignment_preserves_degree_zero_hydrogens_like_rdkit() {
         let mut builder = MoleculeBuilder::new();
-        builder.add_atom(AtomSpec::new(Element::O));
-        builder.add_atom(AtomSpec::new(Element::H));
-        builder.add_atom(AtomSpec::new(Element::H));
+        let oxygen = builder.add_atom(AtomSpec::new(Element::O));
+        let first_hydrogen = builder.add_atom(AtomSpec::new(Element::H));
+        let second_hydrogen = builder.add_atom(AtomSpec::new(Element::H));
         let molecule = builder.build().unwrap();
 
-        let err = add_hs_assignment(read(&molecule), &AddHsParams::default())
-            .expect_err("unbonded explicit hydrogens have no owned heavy atom");
+        let assignment = add_hs_assignment(read(&molecule), &AddHsParams::default()).unwrap();
 
-        assert_eq!(err, AddHydrogensError::ExplicitHydrogensWithoutBonds);
+        assert_eq!(assignment.hydrogens_to_add.len(), 2);
+        assert!(
+            assignment
+                .hydrogens_to_add
+                .iter()
+                .all(|hydrogen| hydrogen.heavy_atom == oxygen)
+        );
+        assert!(
+            assignment
+                .hydrogens_to_add
+                .iter()
+                .all(|hydrogen| hydrogen.heavy_atom != first_hydrogen
+                    && hydrogen.heavy_atom != second_hydrogen)
+        );
     }
 
     #[test]

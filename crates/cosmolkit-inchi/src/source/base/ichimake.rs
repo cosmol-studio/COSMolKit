@@ -35,14 +35,14 @@ use crate::source_types::{
     REQ_MODE_DIFF_UU_STEREO, REQ_MODE_ISO, REQ_MODE_ISO_STEREO, REQ_MODE_NO_ALT_SBONDS,
     REQ_MODE_NOEQ_STEREO, REQ_MODE_NON_ISO, REQ_MODE_RACEMIC_STEREO, REQ_MODE_REDNDNT_STEREO,
     REQ_MODE_RELATIVE_STEREO, REQ_MODE_SB_IGN_ALL_UU, REQ_MODE_SC_IGN_ALL_UU, REQ_MODE_STEREO,
-    REQ_MODE_TAUT, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, T_GROUP_INFO,
-    TAUT_NON, TAUT_NUM, TAUT_YES, TG_FLAG_ALL_TAUTOMERIC, TG_FLAG_ARSINE_STEREO,
-    TG_FLAG_FIX_ISO_FIXEDH_BUG, TG_FLAG_FIX_SP3_BUG, TG_FLAG_FIX_TERM_H_CHRG_BUG,
-    TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE, TG_FLAG_H_ALREADY_REMOVED,
-    TG_FLAG_PHOSPHINE_STEREO, TG_FLAG_POINTED_EDGE_STEREO, WARN_FAILED_ISOTOPIC,
-    WARN_FAILED_ISOTOPIC_STEREO, WARN_FAILED_STEREO, clock_t, inchiTime, inp_ATOM, sp_ATOM,
-    tagDiffINChILayers_DIFL_F, tagDiffINChILayers_DIFL_FI, tagDiffINChILayers_DIFL_M,
-    tagDiffINChILayers_DIFL_MI, tagDiffINChISegments_DIFS_b_SBONDS,
+    REQ_MODE_TAUT, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer,
+    StableSourceConstSlice, StableSourceSlice, T_GROUP_INFO, TAUT_NON, TAUT_NUM, TAUT_YES,
+    TG_FLAG_ALL_TAUTOMERIC, TG_FLAG_ARSINE_STEREO, TG_FLAG_FIX_ISO_FIXEDH_BUG, TG_FLAG_FIX_SP3_BUG,
+    TG_FLAG_FIX_TERM_H_CHRG_BUG, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE,
+    TG_FLAG_H_ALREADY_REMOVED, TG_FLAG_PHOSPHINE_STEREO, TG_FLAG_POINTED_EDGE_STEREO,
+    WARN_FAILED_ISOTOPIC, WARN_FAILED_ISOTOPIC_STEREO, WARN_FAILED_STEREO, clock_t, inchiTime,
+    inp_ATOM, sp_ATOM, tagDiffINChILayers_DIFL_F, tagDiffINChILayers_DIFL_FI,
+    tagDiffINChILayers_DIFL_M, tagDiffINChILayers_DIFL_MI, tagDiffINChISegments_DIFS_b_SBONDS,
     tagDiffINChISegments_DIFS_f_FORMULA, tagDiffINChISegments_DIFS_h_H_ATOMS,
     tagDiffINChISegments_DIFS_i_IATOMS, tagDiffINChISegments_DIFS_m_SP3INV,
     tagDiffINChISegments_DIFS_o_TRANSP, tagDiffINChISegments_DIFS_q_CHARGE,
@@ -66,6 +66,46 @@ use crate::source_types::{
     tagMarkDiff_DIFV_FI_EQ_MI, tagMarkDiff_DIFV_IS_EMPTY, tagMarkDiff_DIFV_NEQ2PRECED,
     tagMarkDiff_DIFV_OUTPUT_OMIT_F,
 };
+
+fn copy_inp_atom_prefix(
+    heap: &mut SourceHeap,
+    destination: SourceMutPointer<inp_ATOM>,
+    source: SourceConstPointer<inp_ATOM>,
+    count: usize,
+) -> Result<(), SourceHeapError> {
+    if destination.as_const() == source {
+        heap.slice(source)?
+            .get(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        return Ok(());
+    }
+    if destination.allocation_identity() != source.as_mut().allocation_identity() {
+        return heap.with_slice_mut_and_heap(destination, |destination, heap| {
+            let source = heap
+                .slice(source)?
+                .get(..count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            destination
+                .get_mut(..count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .copy_from_slice(source);
+            Ok(())
+        });
+    }
+
+    // Keep the established checked behavior for overlapping modeled pointers.
+    // Normal source calls always pass distinct allocations to memcpy.
+    let source = heap
+        .slice(source)?
+        .get(..count)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .to_vec();
+    heap.slice_mut(destination)?
+        .get_mut(..count)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .copy_from_slice(&source);
+    Ok(())
+}
 
 #[allow(non_snake_case)]
 pub(crate) fn inp2spATOM(
@@ -141,6 +181,59 @@ pub(crate) fn inp2spATOM(
     if count == 0 {
         return Ok(0);
     }
+    let copy_atoms = |input: &[inp_ATOM], output: &mut [sp_ATOM]| {
+        output.fill(sp_ATOM::default());
+        for (source, destination) in input.iter().zip(output.iter_mut()) {
+            let nul = source
+                .elname
+                .iter()
+                .position(|byte| *byte == 0)
+                .unwrap_or(source.elname.len());
+            for index in 0..5 {
+                destination.elname[index] = if index < nul { source.elname[index] } else { 0 };
+            }
+            destination.elname[5] = 0;
+            destination.el_number = get_periodic_table_number(Some(&destination.elname))? as u8;
+            destination.valence = source.valence;
+            let valence = i32::from(source.valence);
+            if valence > 20 {
+                return Err(SourceHeapError::PointerOutOfBounds);
+            }
+            for index in 0..usize::try_from(valence.max(0))
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+            {
+                destination.neighbor[index] = source.neighbor[index];
+                destination.bond_type[index] = source.bond_type[index];
+            }
+            destination.chem_bonds_valence = source.chem_bonds_valence;
+            destination.orig_at_number = source.orig_at_number;
+            destination.orig_compt_at_numb = source.orig_compt_at_numb;
+            destination.endpoint = source.endpoint;
+            destination.iso_atw_diff = source.iso_atw_diff;
+            destination.num_H = source.num_H;
+            destination.cFlags = source.cFlags;
+            for index in 0..NUM_H_ISOTOPES as usize {
+                destination.num_iso_H[index] = source.num_iso_H[index];
+            }
+            destination.charge = source.charge;
+            destination.radical = source.radical;
+            destination.nBlockSystem = source.nBlockSystem;
+            destination.bCutVertex = source.bCutVertex;
+            destination.nRingSystem = source.nRingSystem;
+            destination.nNumAtInRingSystem = source.nNumAtInRingSystem;
+        }
+        Ok(())
+    };
+
+    if inp_at.as_mut().allocation_identity() != at.allocation_identity() {
+        // SAFETY: Create_INChI allocates the input and output as distinct,
+        // fixed buffers. inp2spATOM reads the first and writes the second.
+        let input: StableSourceConstSlice<inp_ATOM> = unsafe { heap.stable_slice(inp_at)? };
+        let mut output: StableSourceSlice<sp_ATOM> = unsafe { heap.stable_slice_mut(at)? };
+        copy_atoms(input.prefix(count)?, output.prefix_mut(count)?)?;
+        return Ok(0);
+    }
+
     let input = heap
         .slice(inp_at)?
         .get(..count)
@@ -150,47 +243,7 @@ pub(crate) fn inp2spATOM(
         .slice_mut(at)?
         .get_mut(..count)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    output.fill(sp_ATOM::default());
-
-    for (source, destination) in input.iter().zip(output.iter_mut()) {
-        let nul = source
-            .elname
-            .iter()
-            .position(|byte| *byte == 0)
-            .unwrap_or(source.elname.len());
-        for index in 0..5 {
-            destination.elname[index] = if index < nul { source.elname[index] } else { 0 };
-        }
-        destination.elname[5] = 0;
-        destination.el_number = get_periodic_table_number(Some(&destination.elname))? as u8;
-        destination.valence = source.valence;
-        let valence = i32::from(source.valence);
-        if valence > 20 {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        for index in 0..usize::try_from(valence.max(0))
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
-        {
-            destination.neighbor[index] = source.neighbor[index];
-            destination.bond_type[index] = source.bond_type[index];
-        }
-        destination.chem_bonds_valence = source.chem_bonds_valence;
-        destination.orig_at_number = source.orig_at_number;
-        destination.orig_compt_at_numb = source.orig_compt_at_numb;
-        destination.endpoint = source.endpoint;
-        destination.iso_atw_diff = source.iso_atw_diff;
-        destination.num_H = source.num_H;
-        destination.cFlags = source.cFlags;
-        for index in 0..NUM_H_ISOTOPES as usize {
-            destination.num_iso_H[index] = source.num_iso_H[index];
-        }
-        destination.charge = source.charge;
-        destination.radical = source.radical;
-        destination.nBlockSystem = source.nBlockSystem;
-        destination.bCutVertex = source.bCutVertex;
-        destination.nRingSystem = source.nRingSystem;
-        destination.nNumAtInRingSystem = source.nNumAtInRingSystem;
-    }
+    copy_atoms(&input, output)?;
     Ok(0)
 }
 
@@ -1162,15 +1215,8 @@ pub(crate) fn Create_INChI(
         } else {
             out_norm_data[TAUT_NON as usize].at
         };
-        let copied_input = heap
-            .slice(inp_at.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(out_at)?
-            .get_mut(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&copied_input);
+        // INCHI✔️✔️:     memcpy(out_at, inp_at, num_inp_at * sizeof(out_at[0]));
+        copy_inp_atom_prefix(heap, out_at, inp_at.as_const(), count)?;
 
         t_group_info.bIgnoreIsotopic = 0;
         t_group_info.bTautFlags = *pbTautFlags;
@@ -1203,23 +1249,28 @@ pub(crate) fn Create_INChI(
         for index in 0..TAUT_NUM as usize {
             let destination = out_norm_data[index].at;
             if !destination.is_null() && destination != out_at {
-                let source = heap.slice(out_at.as_const())?[..count].to_vec();
-                heap.slice_mut(destination)?[..count].clone_from_slice(&source);
+                // INCHI✔️✔️:         memcpy(out_norm_data[TAUT_YES]->at, out_at, num_inp_at * sizeof(out_at[0]));
+                // INCHI✔️✔️:         memcpy(out_norm_data[TAUT_NON]->at, out_at, num_inp_at * sizeof(out_at[0]));
+                copy_inp_atom_prefix(heap, destination, out_at.as_const(), count)?;
             }
         }
         if !out_norm_data[TAUT_YES as usize].at_fixed_bonds.is_null()
             && !out_norm_data[TAUT_YES as usize].at.is_null()
         {
-            let source = heap.slice(out_at.as_const())?[..count].to_vec();
-            heap.slice_mut(out_norm_data[TAUT_YES as usize].at_fixed_bonds)?[..count]
-                .clone_from_slice(&source);
+            // INCHI✔️✔️:         memcpy(out_norm_data[TAUT_YES]->at_fixed_bonds, out_at, num_inp_at * sizeof(out_at[0]));
+            copy_inp_atom_prefix(
+                heap,
+                out_norm_data[TAUT_YES as usize].at_fixed_bonds,
+                out_at.as_const(),
+                count,
+            )?;
         }
 
         let mut num_removed_h_taut = 0_i32;
         let mut num_taut_at = 0_i32;
         if !out_norm_data[TAUT_YES as usize].at.is_null() && !at[TAUT_YES as usize].is_null() {
             tgi_storage = heap.allocate_model_storage(vec![t_group_info.clone()])?;
-            ret = mark_alt_bonds_and_taut_groups(
+            let normalization_result = mark_alt_bonds_and_taut_groups(
                 heap,
                 ic,
                 pCG,
@@ -1233,7 +1284,8 @@ pub(crate) fn Create_INChI(
                 0,
                 SourceMutPointer::null(),
                 clock_result,
-            )?;
+            );
+            ret = normalization_result?;
             t_group_info = heap.slice(tgi_storage.as_const())?[0].clone();
             if ret < 0 {
                 return Ok(ret);
@@ -2818,6 +2870,7 @@ pub(crate) fn GetSp3RelRacAbs(inchi: Option<&INChI>, stereo: Option<&INChI_Stere
     const SP3_ONLY: i32 = 1;
     const SP3_ABS: i32 = 2;
     const SP3_REL: i32 = 4;
+    const SP3_RAC: i32 = 8;
 
     let (Some(inchi), Some(stereo)) = (inchi, stereo) else {
         return SP3_NONE;
@@ -2825,29 +2878,16 @@ pub(crate) fn GetSp3RelRacAbs(inchi: Option<&INChI>, stereo: Option<&INChI_Stere
     if inchi.bDeleted != 0 || stereo.nNumberOfStereoCenters <= 0 {
         return SP3_NONE;
     }
-    let relative_or_racemic = INCHI_MODE::from(INCHI_FLAG_REL_STEREO | INCHI_FLAG_RAC_STEREO);
     if stereo.nCompInv2Abs != 0 {
         if inchi.nFlags & INCHI_MODE::from(INCHI_FLAG_REL_STEREO) != 0 {
-            return if stereo.nNumberOfStereoCenters > 1 {
-                SP3_REL
-            } else {
-                SP3_NONE
-            };
+            return SP3_REL;
         }
         if inchi.nFlags & INCHI_MODE::from(INCHI_FLAG_RAC_STEREO) != 0 {
-            return if stereo.nNumberOfStereoCenters > 1 {
-                SP3_REL
-            } else {
-                SP3_NONE
-            };
+            return SP3_RAC;
         }
         return SP3_ABS;
     }
-    if inchi.nFlags & relative_or_racemic != 0 && stereo.nNumberOfStereoCenters == 1 {
-        SP3_NONE
-    } else {
-        SP3_ONLY
-    }
+    SP3_ONLY
 }
 
 #[allow(non_snake_case)]
@@ -8893,6 +8933,46 @@ mod tests {
     }
 
     #[test]
+    fn source_port__ichimake__copy_inp_atom_prefix__source_memcpy_paths()
+    -> Result<(), SourceHeapError> {
+        fn atom(number: AT_NUMB) -> inp_ATOM {
+            inp_ATOM {
+                orig_at_number: number,
+                ..inp_ATOM::default()
+            }
+        }
+
+        let mut heap = SourceHeap::default();
+        let source = heap
+            .allocate_model_storage(vec![atom(1), atom(2), atom(3)])
+            .unwrap();
+        let destination = heap
+            .allocate_model_storage(vec![atom(8), atom(8), atom(8)])
+            .unwrap();
+
+        copy_inp_atom_prefix(&mut heap, destination, source.as_const(), 2).unwrap();
+        assert_eq!(
+            heap.slice(destination.as_const())?
+                .iter()
+                .map(|atom| atom.orig_at_number)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 8]
+        );
+
+        copy_inp_atom_prefix(&mut heap, source, source.as_const(), 3).unwrap();
+        copy_inp_atom_prefix(&mut heap, source.offset(1).unwrap(), source.as_const(), 2).unwrap();
+        assert_eq!(
+            heap.slice(source.as_const())?
+                .iter()
+                .map(|atom| atom.orig_at_number)
+                .collect::<Vec<_>>(),
+            vec![1, 1, 2]
+        );
+
+        Ok::<(), SourceHeapError>(())
+    }
+
+    #[test]
     fn source_port__ichimake__inp2spatom__line_119() {
         let mut heap = SourceHeap::default();
         assert_eq!(
@@ -9924,6 +10004,7 @@ mod tests {
         const SP3_ONLY: i32 = 1;
         const SP3_ABS: i32 = 2;
         const SP3_REL: i32 = 4;
+        const SP3_RAC: i32 = 8;
 
         let plain = INChI::default();
         let mut stereo = INChI_Stereo::default();
@@ -9949,17 +10030,17 @@ mod tests {
             nFlags: INCHI_MODE::from(INCHI_FLAG_RAC_STEREO),
             ..INChI::default()
         };
-        assert_eq!(GetSp3RelRacAbs(Some(&relative), Some(&stereo)), SP3_NONE);
-        assert_eq!(GetSp3RelRacAbs(Some(&racemic), Some(&stereo)), SP3_NONE);
+        assert_eq!(GetSp3RelRacAbs(Some(&relative), Some(&stereo)), SP3_REL);
+        assert_eq!(GetSp3RelRacAbs(Some(&racemic), Some(&stereo)), SP3_RAC);
         stereo.nNumberOfStereoCenters = 2;
         assert_eq!(GetSp3RelRacAbs(Some(&relative), Some(&stereo)), SP3_REL);
-        assert_eq!(GetSp3RelRacAbs(Some(&racemic), Some(&stereo)), SP3_REL);
+        assert_eq!(GetSp3RelRacAbs(Some(&racemic), Some(&stereo)), SP3_RAC);
 
         stereo.nCompInv2Abs = 0;
         stereo.nNumberOfStereoCenters = 1;
         assert_eq!(GetSp3RelRacAbs(Some(&plain), Some(&stereo)), SP3_ONLY);
-        assert_eq!(GetSp3RelRacAbs(Some(&relative), Some(&stereo)), SP3_NONE);
-        assert_eq!(GetSp3RelRacAbs(Some(&racemic), Some(&stereo)), SP3_NONE);
+        assert_eq!(GetSp3RelRacAbs(Some(&relative), Some(&stereo)), SP3_ONLY);
+        assert_eq!(GetSp3RelRacAbs(Some(&racemic), Some(&stereo)), SP3_ONLY);
         stereo.nNumberOfStereoCenters = 2;
         assert_eq!(GetSp3RelRacAbs(Some(&relative), Some(&stereo)), SP3_ONLY);
         assert_eq!(GetSp3RelRacAbs(Some(&racemic), Some(&stereo)), SP3_ONLY);

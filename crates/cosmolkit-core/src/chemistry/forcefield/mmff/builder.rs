@@ -1,9 +1,11 @@
 //! Source-backed RDKit MMFF force-field builder helpers.
 
+use std::collections::VecDeque;
+
 use crate::chemistry::forcefield::core::ForceField;
 use crate::chemistry::forcefield::core::ForceFieldVec3;
-use crate::chemistry::forcefield::uff::builder::{
-    RELATION_1_4, UffBuilderError, get_two_bit_cell, two_bit_cell_pos,
+use crate::chemistry::forcefield::torsion_query::{
+    DEFAULT_TORSION_BOND_SMARTS, TorsionBondQueryError, match_torsion_bonds,
 };
 use crate::chemistry::mol_transforms::{MolTransformError, get_atom_positions};
 use crate::notation::fragment::get_fragment_atom_mapping;
@@ -17,90 +19,10 @@ use super::oop_bend::OopBendContrib;
 use super::stretch_bend::StretchBendContrib;
 use super::torsion_angle::TorsionAngleContrib;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct DefaultTorsionBondSmarts;
-
-impl DefaultTorsionBondSmarts {
-    fn new() -> Self {
-        // BEGIN RDKIT CPP CONSTRUCTOR RDKit::MMFF::Tools::DefaultTorsionBondSmarts::DefaultTorsionBondSmarts (Builder.h / Builder.cpp)
-        // RDKit✔️✔️: class RDKIT_FORCEFIELDHELPERS_EXPORT DefaultTorsionBondSmarts
-        // RDKit✔️✔️:     : private boost::noncopyable {
-        // RDKit✔️✔️:  public:
-        // RDKit✔️✔️:   static const std::string &string() { return ds_string; }
-        // RDKit✔️✔️:   static const ROMol *query();
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:  private:
-        // RDKit✔️✔️:   DefaultTorsionBondSmarts() {}
-        // RDKit✔️✔️:   static void create();
-        // RDKit✔️✔️:   static const std::string ds_string;
-        // RDKit✔️✔️:   static boost::scoped_ptr<const ROMol> ds_instance;
-        // RDKit✔️✔️: };
-        // RDKit✔️✔️: const std::string DefaultTorsionBondSmarts::ds_string =
-        // RDKit✔️✔️:     "[!$(*#*)&!D1]~[!$(*#*)&!D1]";
-        Self
-    }
-
-    const fn string(self) -> &'static str {
-        let _ = self;
-        "[!$(*#*)&!D1]~[!$(*#*)&!D1]"
-    }
-
-    fn get_matches(
-        self,
-        mol: &Molecule,
-        torsion_bond_smarts: &str,
-    ) -> Result<Vec<usize>, MmffBuilderError> {
-        // BEGIN RDKIT CPP FUNCTION RDKit::MMFF::Tools::DefaultTorsionBondSmarts::getMatches (Builder.cpp / Builder.h query()+SubstructMatch call path)
-        // RDKit✔️❌:   static const ROMol *query();
-        // RDKit✔️❌:   static void create();
-        // RDKit✔️❌:   static const std::string ds_string;
-        // RDKit✔️❌:   static boost::scoped_ptr<const ROMol> ds_instance;
-        // RDKit✔️❌: void DefaultTorsionBondSmarts::create() {
-        // RDKit✔️❌:   ds_instance.reset(SmartsToMol(ds_string));
-        // RDKit✔️❌: }
-        // RDKit✔️❌: const ROMol *DefaultTorsionBondSmarts::query() {
-        // RDKit✔️❌: #ifdef RDK_BUILD_THREADSAFE_SSS
-        // RDKit✔️❌:   std::call_once(ds_flag, create);
-        // RDKit✔️❌: #else
-        // RDKit✔️❌:   static bool created = false;
-        // RDKit✔️❌:   if (!created) {
-        // RDKit✔️❌:     created = true;
-        // RDKit✔️❌:     create();
-        // RDKit✔️❌:   }
-        // RDKit✔️❌: #endif
-        // RDKit✔️❌:   return ds_instance.get();
-        // RDKit✔️❌: }
-        // RDKit✔️❌:   std::vector<MatchVectType> matchVect;
-        // RDKit✔️❌:   const ROMol *defaultQuery = DefaultTorsionBondSmarts::query();
-        // RDKit✔️❌:   const ROMol *query = (torsionBondSmarts == DefaultTorsionBondSmarts::string())
-        // RDKit✔️❌:                            ? defaultQuery
-        // RDKit✔️❌:                            : SmartsToMol(torsionBondSmarts);
-        // RDKit✔️❌:   TEST_ASSERT(query);
-        // RDKit✔️❌:   unsigned int nHits = SubstructMatch(mol, *query, matchVect);
-        // RDKit✔️❌:   if (query != defaultQuery) {
-        // RDKit✔️❌:     delete query;
-        // RDKit✔️❌:   }
-        if torsion_bond_smarts != self.string() {
-            return Err(MmffBuilderError::UnsupportedTorsionBondSmarts(
-                torsion_bond_smarts.to_string(),
-            ));
-        }
-
-        // COSMolKit currently reproduces only the source-backed default torsion
-        // SMARTS hit set and keeps custom SMARTS explicitly unsupported until a
-        // source-backed SmartsToMol/SubstructMatch query-molecule bridge exists.
-        Ok(mol
-            .bonds()
-            .iter()
-            .enumerate()
-            .filter_map(|(bond_idx, bond)| {
-                (matches_default_torsion_atom_query(mol, bond.begin().index())
-                    && matches_default_torsion_atom_query(mol, bond.end().index()))
-                .then_some(bond_idx)
-            })
-            .collect())
-    }
-}
+const RELATION_1_2: u8 = 0;
+const RELATION_1_3: u8 = 1;
+const RELATION_1_4: u8 = 2;
+const RELATION_1_X: u8 = 3;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum MmffBuilderError {
@@ -114,8 +36,8 @@ pub enum MmffBuilderError {
     InvalidConformerId { conf_id: isize },
     #[error("RDKit MMFF buildNeighborMatrix is unsupported for empty molecules")]
     EmptyMolecule,
-    #[error("unsupported torsion bond SMARTS for MMFF addTorsions: {0}")]
-    UnsupportedTorsionBondSmarts(String),
+    #[error(transparent)]
+    TorsionBondQuery(#[from] TorsionBondQueryError),
 }
 
 pub(crate) fn select_mmff_conformer_index(
@@ -237,7 +159,7 @@ pub(crate) fn construct_force_field_with_props(
             mol,
             mmff_mol_properties,
             &mut res,
-            DefaultTorsionBondSmarts::new().string(),
+            DEFAULT_TORSION_BOND_SMARTS,
         )?;
         // RDKit✔️❌:   }
     }
@@ -246,13 +168,7 @@ pub(crate) fn construct_force_field_with_props(
     if mmff_mol_properties.vdw_term || mmff_mol_properties.ele_term {
         // RDKit✔️❌:     boost::shared_array<std::uint8_t> neighborMat =
         // RDKit✔️❌:         Tools::buildNeighborMatrix(mol);
-        let neighbor_matrix = crate::chemistry::forcefield::uff::builder::build_neighbor_matrix(
-            mol,
-        )
-        .map_err(|err| match err {
-            UffBuilderError::EmptyMolecule => MmffBuilderError::EmptyMolecule,
-            other => panic!("unexpected UFF neighbor-matrix error in MMFF builder: {other}"),
-        })?;
+        let neighbor_matrix = build_neighbor_matrix(mol);
         // RDKit✔️❌:     Tools::addNonbonded(mol, confId, mmffMolProperties, res.get(), neighborMat,
         // RDKit✔️❌:                         nonBondedThresh, ignoreInterfragInteractions);
         add_nonbonded(
@@ -883,19 +799,125 @@ pub(crate) fn add_oop(
     Ok(())
 }
 
-fn matches_default_torsion_atom_query(mol: &Molecule, atom_idx: usize) -> bool {
-    if mol.topology_block().adjacency.neighbors_of(atom_idx).len() == 1 {
-        return false;
-    }
-    mol.topology_block()
-        .adjacency
-        .neighbors_of(atom_idx)
-        .iter()
-        .all(|neighbor| mol.bonds()[neighbor.bond.index()].order() != crate::BondOrder::Triple)
-}
-
 fn is_mmff_double_zero(value: f64) -> bool {
     value < 1.0e-10 && value > -1.0e-10
+}
+
+fn two_bit_cell_pos(n_atoms: usize, mut i: usize, mut j: usize) -> usize {
+    // BEGIN RDKIT CPP FUNCTION RDKit::MMFF::Tools::twoBitCellPos (Builder.cpp:102-108)
+    // RDKit✔️✔️: unsigned int twoBitCellPos(unsigned int N, int i, int j) {
+    // RDKit✔️✔️:   if (j < i) {
+    if j < i {
+        // RDKit✔️✔️:     std::swap(i, j);
+        std::mem::swap(&mut i, &mut j);
+        // RDKit✔️✔️:   }
+    }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return i * (N - 1) - (i - 1) * i / 2 + j;
+    // The rearranged triangular-number form avoids unsigned `i - 1` at i=0.
+    i * n_atoms - i * i.saturating_sub(1) / 2 + (j - i)
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDKit::MMFF::Tools::twoBitCellPos
+}
+
+fn set_two_bit_cell(res: &mut [u8], pos: usize, value: u8) {
+    // BEGIN RDKIT CPP FUNCTION RDKit::MMFF::Tools::setTwoBitCell (Builder.cpp:110-113)
+    // RDKit✔️✔️: void setTwoBitCell(boost::shared_array<std::uint8_t> &res, unsigned int pos,
+    // RDKit✔️✔️:                    std::uint8_t value) {
+    // RDKit✔️✔️:   res[pos] = value;
+    res[pos] = value;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDKit::MMFF::Tools::setTwoBitCell
+}
+
+fn get_two_bit_cell(res: &[u8], pos: usize) -> u8 {
+    // BEGIN RDKIT CPP FUNCTION RDKit::MMFF::Tools::getTwoBitCell (Builder.cpp:115-119)
+    // RDKit✔️✔️: std::uint8_t getTwoBitCell(boost::shared_array<std::uint8_t> &res,
+    // RDKit✔️✔️:                            unsigned int pos) {
+    // RDKit✔️✔️:   return res[pos];
+    res[pos]
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDKit::MMFF::Tools::getTwoBitCell
+}
+
+fn build_neighbor_matrix(mol: &Molecule) -> Vec<u8> {
+    // BEGIN RDKIT CPP FUNCTION RDKit::MMFF::Tools::buildNeighborMatrix (Builder.cpp:129-158)
+    // RDKit✔️✔️: // ------------------------------------------------------------------------
+    // RDKit✔️✔️: //
+    // RDKit✔️✔️: // the two-bit matrix returned by this contains:
+    // RDKit✔️✔️: //   0: if atoms i and j are directly connected
+    // RDKit✔️✔️: //   1: if atoms i and j are connected via an atom
+    // RDKit✔️✔️: //   2: if atoms i and j are in a 1,4 relationship
+    // RDKit✔️✔️: //   3: otherwise
+    // RDKit✔️✔️: //
+    // RDKit✔️✔️: // ------------------------------------------------------------------------
+    // RDKit✔️✔️: boost::shared_array<std::uint8_t> buildNeighborMatrix(const ROMol &mol) {
+    // RDKit✔️✔️:   const std::uint8_t RELATION_1_X_INIT = RELATION_1_X | (RELATION_1_X << 2) |
+    // RDKit✔️✔️:                                          (RELATION_1_X << 4) |
+    // RDKit✔️✔️:                                          (RELATION_1_X << 6);
+    // RDKit✔️✔️:   unsigned int nAtoms = mol.getNumAtoms();
+    let n_atoms = mol.num_atoms();
+    // RDKit✔️✔️:   unsigned nTwoBitCells = nAtoms * (nAtoms + 1) / 2;
+    let n_two_bit_cells = n_atoms * (n_atoms + 1) / 2;
+    // RDKit✔️✔️:   boost::shared_array<std::uint8_t> res(new std::uint8_t[nTwoBitCells]);
+    // RDKit✔️✔️:   std::memset(res.get(), RELATION_1_X_INIT, nTwoBitCells);
+    let mut res = vec![RELATION_1_X; n_two_bit_cells];
+
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   constexpr bool useBO = false;
+    // RDKit✔️✔️:   constexpr bool useAtomWts = false;
+    // RDKit✔️✔️:   auto dmat = MolOps::getDistanceMat(mol, useBO, useAtomWts);
+    let mut dmat = vec![usize::MAX; n_atoms * n_atoms];
+    let mut queue = VecDeque::with_capacity(n_atoms);
+    for source in 0..n_atoms {
+        dmat[source * n_atoms + source] = 0;
+        queue.push_back(source);
+        while let Some(current) = queue.pop_front() {
+            let distance = dmat[source * n_atoms + current];
+            for neighbor in mol.topology_block().adjacency.neighbors_of(current) {
+                let entry = &mut dmat[source * n_atoms + neighbor.atom_index];
+                if *entry == usize::MAX {
+                    *entry = distance + 1;
+                    queue.push_back(neighbor.atom_index);
+                }
+            }
+        }
+    }
+    // RDKit✔️✔️:   for (unsigned i = 0; i < nAtoms; ++i) {
+    for i in 0..n_atoms {
+        // RDKit✔️✔️:     setTwoBitCell(res, twoBitCellPos(nAtoms, i, i), RELATION_1_X);
+        set_two_bit_cell(&mut res, two_bit_cell_pos(n_atoms, i, i), RELATION_1_X);
+        // RDKit✔️✔️:     for (unsigned j = i + 1; j < nAtoms; ++j) {
+        for j in (i + 1)..n_atoms {
+            let distance = dmat[i * n_atoms + j];
+            // RDKit✔️✔️:       if (dmat[i * nAtoms + j] == 1.0) {
+            if distance == 1 {
+                // RDKit✔️✔️:         setTwoBitCell(res, twoBitCellPos(nAtoms, i, j), RELATION_1_2);
+                set_two_bit_cell(&mut res, two_bit_cell_pos(n_atoms, i, j), RELATION_1_2);
+                // RDKit✔️✔️:       } else if (dmat[i * nAtoms + j] == 2.0) {
+            } else if distance == 2 {
+                // RDKit✔️✔️:         setTwoBitCell(res, twoBitCellPos(nAtoms, i, j), RELATION_1_3);
+                set_two_bit_cell(&mut res, two_bit_cell_pos(n_atoms, i, j), RELATION_1_3);
+                // RDKit✔️✔️:       } else if (dmat[i * nAtoms + j] == 3.0) {
+            } else if distance == 3 {
+                // RDKit✔️✔️:         setTwoBitCell(res, twoBitCellPos(nAtoms, i, j), RELATION_1_4);
+                set_two_bit_cell(&mut res, two_bit_cell_pos(n_atoms, i, j), RELATION_1_4);
+                // RDKit✔️✔️:       } else if (dmat[i * nAtoms + j] < 1e7) {
+            } else if distance != usize::MAX {
+                // RDKit✔️✔️:         // the distance matrix sets the distance to 1e8 for atoms that have no
+                // RDKit✔️✔️:         // connecting path, so here we know that there's at least a connection
+                // RDKit✔️✔️:         setTwoBitCell(res, twoBitCellPos(nAtoms, i, j), RELATION_1_X);
+                set_two_bit_cell(&mut res, two_bit_cell_pos(n_atoms, i, j), RELATION_1_X);
+                // RDKit✔️✔️:       }
+            }
+            // RDKit✔️✔️:     }
+        }
+        // RDKit✔️✔️:   }
+    }
+    // RDKit✔️✔️:   return res;
+    res
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDKit::MMFF::Tools::buildNeighborMatrix
 }
 
 pub(crate) fn add_nonbonded(
@@ -1093,26 +1115,24 @@ pub(crate) fn add_torsions(
     // RDKit❗❌:   }
     // COSMolKit does not currently model RDKit MMFF verbosity stream output.
 
-    let default_torsion_bond_smarts = DefaultTorsionBondSmarts::new();
-    let torsion_bond_matches = default_torsion_bond_smarts.get_matches(mol, torsion_bond_smarts)?;
-    let n_hits = torsion_bond_matches.len();
+    let torsion_bond_matches = match_torsion_bonds(mol, torsion_bond_smarts)?;
 
     // RDKit✔️✔️:   auto contrib = std::make_unique<TorsionAngleContrib>(field);
     let mut contrib = TorsionAngleContrib::new(field);
     // RDKit✔️✔️:   bool contribAdded = false;
     let mut contrib_added = false;
 
-    // RDKit❗❌:   for (unsigned int i = 0; i < nHits; ++i) {
-    for bond_idx in torsion_bond_matches.iter().take(n_hits) {
-        // RDKit❗❌:     MatchVectType match = matchVect[i];
-        // RDKit❗❌:     TEST_ASSERT(match.size() == 2);
-        // RDKit❗❌:     int idx2 = match[0].second;
-        let bond = &mol.bonds()[*bond_idx];
-        let idx2 = bond.begin().index();
-        // RDKit❗❌:     int idx3 = match[1].second;
-        let idx3 = bond.end().index();
-        // RDKit❗❌:     const Bond *bond = mol.getBondBetweenAtoms(idx2, idx3);
-        // Matched topology bonds come directly from the molecule bond table.
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < nHits; ++i) {
+    for matched in &torsion_bond_matches {
+        let idx2 = matched.begin_atom_index;
+        let idx3 = matched.end_atom_index;
+        let bond_idx = matched.bond_index;
+        // RDKit✔️✔️:     MatchVectType match = matchVect[i];
+        // RDKit✔️✔️:     TEST_ASSERT(match.size() == 2);
+        // RDKit✔️✔️:     int idx2 = match[0].second;
+        // RDKit✔️✔️:     int idx3 = match[1].second;
+        // RDKit✔️✔️:     const Bond *bond = mol.getBondBetweenAtoms(idx2, idx3);
+        let bond = &mol.bonds()[bond_idx];
         let j_atom = &mol.atoms()[idx2];
         let k_atom = &mol.atoms()[idx3];
         // RDKit✔️✔️:     if (((jAtom->getHybridization() == Atom::SP2) ||
@@ -1194,20 +1214,19 @@ pub(crate) fn add_torsions(
 #[cfg(test)]
 mod tests {
     use super::{
-        DefaultTorsionBondSmarts, MmffBuilderError, add_angles, add_bonds, add_nonbonded, add_oop,
-        add_stretch_bend, add_torsions, construct_force_field, construct_force_field_with_props,
+        MmffBuilderError, RELATION_1_2, RELATION_1_3, RELATION_1_4, RELATION_1_X, add_angles,
+        add_bonds, add_nonbonded, add_oop, add_stretch_bend, add_torsions, build_neighbor_matrix,
+        construct_force_field, construct_force_field_with_props, get_two_bit_cell,
+        set_two_bit_cell, two_bit_cell_pos,
     };
     use crate::chemistry::forcefield::core::{ForceField, ForceFieldVec3};
     use crate::chemistry::forcefield::mmff::mol_properties::{
-        MMFF_DIELECTRIC_CONSTANT, MMFF_DIELECTRIC_DISTANCE, MMFF_MOL_PROPERTIES_FEATURE,
-        MmffAtomProperties, MmffMolProperties, MmffMolPropertiesError, MmffVariant,
-    };
-    use crate::chemistry::forcefield::uff::builder::{
-        RELATION_1_2, RELATION_1_3, RELATION_1_4, RELATION_1_X, set_two_bit_cell, two_bit_cell_pos,
+        MMFF_DIELECTRIC_CONSTANT, MMFF_DIELECTRIC_DISTANCE, MmffAtomProperties, MmffMolProperties,
+        MmffVariant,
     };
     use crate::{
         AromaticityAssignment, AtomSpec, BondOrder, BondSpec, Conformer3D, Element, Hybridization,
-        Molecule, MoleculeBuilder, UnsupportedFeatureError,
+        Molecule, MoleculeBuilder,
     };
 
     fn force_field_with_positions(positions: &[[f64; 3]]) -> ForceField {
@@ -1545,10 +1564,7 @@ mod tests {
     }
 
     fn manual_neighbor_matrix(n_atoms: usize, pairs: &[(usize, usize, u8)]) -> Vec<u8> {
-        let relation_1_x_init =
-            RELATION_1_X | (RELATION_1_X << 2) | (RELATION_1_X << 4) | (RELATION_1_X << 6);
-        let n_two_bit_cells = (n_atoms * (n_atoms + 1) - 1) / 8 + 1;
-        let mut res = vec![relation_1_x_init; n_two_bit_cells];
+        let mut res = vec![RELATION_1_X; n_atoms * (n_atoms + 1) / 2];
         for atom_idx in 0..n_atoms {
             set_two_bit_cell(
                 &mut res,
@@ -1566,6 +1582,30 @@ mod tests {
         assert!(
             (actual - expected).abs() < 1.0e-12,
             "actual={actual}, expected={expected}"
+        );
+    }
+
+    #[test]
+    fn mmff_builder_neighbor_matrix_distinguishes_all_topological_relations() {
+        let mol = linear_four_atom_molecule_with_two_conformers();
+        let matrix = build_neighbor_matrix(&mol);
+
+        assert_eq!(matrix.len(), mol.num_atoms() * (mol.num_atoms() + 1) / 2);
+        assert_eq!(
+            get_two_bit_cell(&matrix, two_bit_cell_pos(mol.num_atoms(), 0, 1)),
+            RELATION_1_2
+        );
+        assert_eq!(
+            get_two_bit_cell(&matrix, two_bit_cell_pos(mol.num_atoms(), 0, 2)),
+            RELATION_1_3
+        );
+        assert_eq!(
+            get_two_bit_cell(&matrix, two_bit_cell_pos(mol.num_atoms(), 0, 3)),
+            RELATION_1_4
+        );
+        assert_eq!(
+            get_two_bit_cell(&matrix, two_bit_cell_pos(mol.num_atoms(), 0, 0)),
+            RELATION_1_X
         );
     }
 
@@ -1701,20 +1741,14 @@ mod tests {
     }
 
     #[test]
-    fn mmff_builder_construct_force_field_reports_unported_empirical_rules_after_atom_typing() {
+    fn mmff_builder_construct_force_field_supports_ported_empirical_rules_after_atom_typing() {
         let mol = linear_four_atom_molecule_with_two_conformers();
 
-        let err = match construct_force_field(&mol, 100.0, -1, false) {
-            Ok(_) => panic!("force field should fail until empirical-rule parameters are ported"),
-            Err(err) => err,
-        };
+        let ff = construct_force_field(&mol, 100.0, -1, false)
+            .expect("ported empirical rules should construct the MMFF force field");
 
-        match err {
-            MmffBuilderError::MolProperties(MmffMolPropertiesError::UnsupportedFeature(source)) => {
-                assert_eq!(source.feature, MMFF_MOL_PROPERTIES_FEATURE.name);
-            }
-            other => panic!("unexpected error: {other:?}"),
-        }
+        assert_eq!(ff.positions().len(), mol.num_atoms());
+        assert!(!ff.contribs().is_empty());
     }
 
     #[test]
@@ -1751,89 +1785,6 @@ mod tests {
         };
 
         assert_eq!(err, MmffBuilderError::Missing3dConformer { conf_id: 8 });
-    }
-
-    #[test]
-    fn mmff_builder_default_torsion_bond_smarts_constructor_exposes_rdkit_literal() {
-        let smarts = DefaultTorsionBondSmarts::new();
-
-        assert_eq!(smarts.string(), "[!$(*#*)&!D1]~[!$(*#*)&!D1]");
-    }
-
-    #[test]
-    fn mmff_builder_default_torsion_bond_smarts_constructor_is_repeatable() {
-        let first = DefaultTorsionBondSmarts::new();
-        let second = DefaultTorsionBondSmarts::new();
-
-        assert_eq!(first, second);
-        assert_eq!(first.string(), second.string());
-    }
-
-    #[test]
-    fn mmff_builder_default_torsion_bond_smarts_get_matches_returns_default_query_hits() {
-        let mol = torsion_chain_molecule(
-            [
-                (Element::C, Hybridization::Sp3),
-                (Element::C, Hybridization::Sp3),
-                (Element::C, Hybridization::Sp3),
-                (Element::C, Hybridization::Sp3),
-            ],
-            [BondOrder::Single, BondOrder::Single, BondOrder::Single],
-        );
-        let smarts = DefaultTorsionBondSmarts::new();
-
-        let matches = smarts
-            .get_matches(&mol, smarts.string())
-            .expect("default SMARTS should produce bond matches");
-
-        assert_eq!(matches, vec![1]);
-    }
-
-    #[test]
-    fn mmff_builder_default_torsion_bond_smarts_get_matches_skips_degree_one_atoms() {
-        let mol = linear_three_atom_molecule();
-        let smarts = DefaultTorsionBondSmarts::new();
-
-        let matches = smarts
-            .get_matches(&mol, smarts.string())
-            .expect("terminal atoms should simply prevent matches");
-
-        assert!(matches.is_empty());
-    }
-
-    #[test]
-    fn mmff_builder_default_torsion_bond_smarts_get_matches_skips_triple_adjacent_atoms() {
-        let mol = torsion_chain_molecule(
-            [
-                (Element::C, Hybridization::Sp2),
-                (Element::C, Hybridization::Sp2),
-                (Element::C, Hybridization::Sp3),
-                (Element::C, Hybridization::Sp3),
-            ],
-            [BondOrder::Triple, BondOrder::Single, BondOrder::Single],
-        );
-        let smarts = DefaultTorsionBondSmarts::new();
-
-        let matches = smarts
-            .get_matches(&mol, smarts.string())
-            .expect("triple-adjacent atoms should be filtered out");
-
-        assert!(matches.is_empty());
-    }
-
-    #[test]
-    fn mmff_builder_default_torsion_bond_smarts_get_matches_rejects_custom_smarts() {
-        let mol = linear_three_atom_molecule();
-        let smarts = DefaultTorsionBondSmarts::new();
-
-        let err = smarts
-            .get_matches(&mol, "[*:1]-[*:2]")
-            .expect_err("custom SMARTS should remain explicitly unsupported");
-
-        assert_eq!(
-            err,
-            MmffBuilderError::UnsupportedTorsionBondSmarts("[*:1]-[*:2]".to_string())
-        );
     }
 
     #[test]
@@ -1892,23 +1843,19 @@ mod tests {
     }
 
     #[test]
-    fn mmff_builder_add_bonds_propagates_unported_empirical_fallback_error() {
-        let mol = two_atom_molecule(Element::C, Element::O, BondOrder::Double);
-        let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 7]);
+    fn mmff_builder_add_bonds_adds_empirical_bond_stretch_contrib() {
+        let mol = two_atom_molecule(Element::C, Element::O, BondOrder::Single);
+        let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[60, 6]);
         let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.2, 0.0, 0.0]]);
 
-        let err =
-            add_bonds(&mol, &props, &mut ff).expect_err("empirical fallback remains unsupported");
+        add_bonds(&mol, &props, &mut ff).expect("empirical bond parameters should add a term");
 
-        match err {
-            MmffBuilderError::MolProperties(MmffMolPropertiesError::UnsupportedFeature(
-                UnsupportedFeatureError { feature, reason },
-            )) => {
-                assert!(feature.contains("forcefield.mmff.mol_properties"));
-                assert!(reason.contains("empirical-rule"));
-            }
-            other => panic!("expected unsupported empirical fallback error, got {other:?}"),
-        }
+        assert_eq!(ff.contribs().len(), 1);
+        let expected = source_bond_stretch_energy(1.405, 5.129115902527102, 1.2);
+        assert_close(
+            ff.contribs()[0].get_energy(&[0.0, 0.0, 0.0, 1.2, 0.0, 0.0]),
+            expected,
+        );
     }
 
     #[test]
@@ -1982,24 +1929,18 @@ mod tests {
     }
 
     #[test]
-    fn mmff_builder_add_angles_propagates_unported_empirical_fallback_error() {
-        let mol = three_atom_angle_molecule(Element::C, Element::C, Element::C);
-        let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 1, 31]);
+    fn mmff_builder_add_angles_adds_empirical_angle_contrib() {
+        let mol = three_atom_angle_molecule(Element::F, Element::C, Element::CL);
+        let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[11, 1, 12]);
         let mut ff =
             force_field_with_positions(&[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
 
-        let err =
-            add_angles(&mol, &props, &mut ff).expect_err("empirical fallback remains unsupported");
+        add_angles(&mol, &props, &mut ff).expect("empirical angle should add a contribution");
 
-        match err {
-            MmffBuilderError::MolProperties(MmffMolPropertiesError::UnsupportedFeature(
-                UnsupportedFeatureError { feature, reason },
-            )) => {
-                assert!(feature.contains("forcefield.mmff.mol_properties"));
-                assert!(reason.contains("empirical-rule"));
-            }
-            other => panic!("expected unsupported empirical fallback error, got {other:?}"),
-        }
+        assert_eq!(ff.contribs().len(), 1);
+        let pos = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let expected = source_angle_bend_energy(108.9, 1.2566039721725888, false, 0.0);
+        assert_close(ff.contribs()[0].get_energy(&pos), expected);
     }
 
     #[test]
@@ -2101,24 +2042,18 @@ mod tests {
     }
 
     #[test]
-    fn mmff_builder_add_stretch_bend_propagates_unported_empirical_fallback_error() {
-        let mol = three_atom_angle_molecule(Element::O, Element::C, Element::H);
-        let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[6, 1, 12]);
+    fn mmff_builder_add_stretch_bend_adds_empirical_angle_contrib() {
+        let mol = three_atom_angle_molecule(Element::F, Element::C, Element::CL);
+        let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[11, 1, 12]);
         let mut ff =
-            force_field_with_positions(&[[1.1, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.2, 0.0]]);
+            force_field_with_positions(&[[1.36, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.773, 0.0]]);
 
-        let err = add_stretch_bend(&mol, &props, &mut ff)
-            .expect_err("empirical fallback remains unsupported");
+        add_stretch_bend(&mol, &props, &mut ff)
+            .expect("stretch-bend should consume empirical angle parameters");
 
-        match err {
-            MmffBuilderError::MolProperties(MmffMolPropertiesError::UnsupportedFeature(
-                UnsupportedFeatureError { feature, reason },
-            )) => {
-                assert!(feature.contains("forcefield.mmff.mol_properties"));
-                assert!(reason.contains("empirical-rule"));
-            }
-            other => panic!("expected unsupported empirical fallback error, got {other:?}"),
-        }
+        assert_eq!(ff.contribs().len(), 1);
+        let pos = [1.36, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.773, 0.0];
+        assert_close(ff.contribs()[0].get_energy(&pos), 0.0);
     }
 
     #[test]
@@ -2263,7 +2198,7 @@ mod tests {
     }
 
     #[test]
-    fn mmff_builder_add_torsions_rejects_custom_smarts() {
+    fn mmff_builder_add_torsions_accepts_custom_bond_smarts() {
         let mol = torsion_chain_molecule(
             [
                 (Element::C, Hybridization::Sp3),
@@ -2281,13 +2216,10 @@ mod tests {
             [2.0, 1.0, 1.0],
         ]);
 
-        let err = add_torsions(&mol, &props, &mut ff, "[*:1]-[*:2]")
-            .expect_err("custom torsion SMARTS should remain explicitly unsupported");
+        add_torsions(&mol, &props, &mut ff, "[*:1]-[*:2]")
+            .expect("custom torsion SMARTS should select the three single bonds");
 
-        assert_eq!(
-            err,
-            MmffBuilderError::UnsupportedTorsionBondSmarts("[*:1]-[*:2]".to_string())
-        );
+        assert_eq!(ff.contribs().len(), 1);
     }
 
     #[test]
@@ -2784,7 +2716,7 @@ mod tests {
     }
 
     #[test]
-    fn mmff_builder_add_torsions_propagates_unported_empirical_fallback_error() {
+    fn mmff_builder_add_torsions_accepts_ported_empirical_fallback() {
         let mol = torsion_chain_molecule(
             [
                 (Element::C, Hybridization::Sp3),
@@ -2802,17 +2734,9 @@ mod tests {
             [2.0, 1.0, 1.0],
         ]);
 
-        let err = add_torsions(&mol, &props, &mut ff, "[!$(*#*)&!D1]~[!$(*#*)&!D1]")
-            .expect_err("empirical torsion fallback remains unsupported");
+        add_torsions(&mol, &props, &mut ff, "[!$(*#*)&!D1]~[!$(*#*)&!D1]")
+            .expect("ported empirical torsion fallback should be supported");
 
-        match err {
-            MmffBuilderError::MolProperties(MmffMolPropertiesError::UnsupportedFeature(
-                UnsupportedFeatureError { feature, reason },
-            )) => {
-                assert!(feature.contains("forcefield.mmff.mol_properties"));
-                assert!(reason.contains("torsion empirical-rule"));
-            }
-            other => panic!("expected unsupported torsion empirical fallback error, got {other:?}"),
-        }
+        assert_eq!(ff.contribs().len(), 1);
     }
 }

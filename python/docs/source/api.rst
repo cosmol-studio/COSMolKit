@@ -31,7 +31,8 @@ entry points are not part of this public surface.
 
 .. py:function:: cosmolkit.InchiToInchiKey(inchi)
 
-   Return the InChIKey for an InChI string.
+   Return the InChIKey for an InChI string, or ``None`` when the source API
+   rejects the input.
 
 .. py:function:: cosmolkit.Chem.MolFromInchi(inchi, sanitize=True, remove_hs=True)
 

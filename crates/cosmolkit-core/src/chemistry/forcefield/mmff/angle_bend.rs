@@ -113,8 +113,8 @@ impl AngleBendContrib {
 
             // RDKit✔️✔️:     double dist1 = dp_forceField->distance(d_at1Idx, d_at2Idx, pos);
             // RDKit✔️✔️:     double dist2 = dp_forceField->distance(d_at2Idx, d_at3Idx, pos);
-            let dist1 = force_field.distance_const(atom1_idx, atom2_idx, Some(pos));
-            let dist2 = force_field.distance_const(atom2_idx, atom3_idx, Some(pos));
+            let dist1 = force_field.distance(atom1_idx, atom2_idx, Some(pos));
+            let dist2 = force_field.distance(atom2_idx, atom3_idx, Some(pos));
 
             // RDKit✔️✔️:     RDGeom::Point3D p1(pos[3 * d_at1Idx], pos[3 * d_at1Idx + 1],
             // RDKit✔️✔️:                        pos[3 * d_at1Idx + 2]);
@@ -177,8 +177,8 @@ impl AngleBendContrib {
             // RDKit✔️✔️:     double dist[2] = {dp_forceField->distance(d_at1Idx, d_at2Idx, pos),
             // RDKit✔️✔️:                       dp_forceField->distance(d_at2Idx, d_at3Idx, pos)};
             let dist = [
-                force_field.distance_const(atom1_idx, atom2_idx, Some(pos)),
-                force_field.distance_const(atom2_idx, atom3_idx, Some(pos)),
+                force_field.distance(atom1_idx, atom2_idx, Some(pos)),
+                force_field.distance(atom2_idx, atom3_idx, Some(pos)),
             ];
 
             // RDKit✔️✔️:     RDGeom::Point3D p1(pos[3 * d_at1Idx], pos[3 * d_at1Idx + 1],
@@ -428,29 +428,28 @@ fn calc_angle_bend_grad(
     let g0 = 3 * idx[0];
     let g1 = 3 * idx[1];
     let g2 = 3 * idx[2];
-    let scale = de_dtheta / (-sin_theta);
 
     // RDKit✔️✔️:   g[0][0] += dE_dTheta * dCos_dS[0] / (-sinTheta);
     // RDKit✔️✔️:   g[0][1] += dE_dTheta * dCos_dS[1] / (-sinTheta);
     // RDKit✔️✔️:   g[0][2] += dE_dTheta * dCos_dS[2] / (-sinTheta);
-    grad[g0] += scale * dcos_ds[0];
-    grad[g0 + 1] += scale * dcos_ds[1];
-    grad[g0 + 2] += scale * dcos_ds[2];
+    grad[g0] += de_dtheta * dcos_ds[0] / (-sin_theta);
+    grad[g0 + 1] += de_dtheta * dcos_ds[1] / (-sin_theta);
+    grad[g0 + 2] += de_dtheta * dcos_ds[2] / (-sin_theta);
 
     // RDKit✔️✔️:   g[1][0] += dE_dTheta * (-dCos_dS[0] - dCos_dS[3]) / (-sinTheta);
     // RDKit✔️✔️:   g[1][1] += dE_dTheta * (-dCos_dS[1] - dCos_dS[4]) / (-sinTheta);
     // RDKit✔️✔️:   g[1][2] += dE_dTheta * (-dCos_dS[2] - dCos_dS[5]) / (-sinTheta);
-    grad[g1] += scale * (-dcos_ds[0] - dcos_ds[3]);
-    grad[g1 + 1] += scale * (-dcos_ds[1] - dcos_ds[4]);
-    grad[g1 + 2] += scale * (-dcos_ds[2] - dcos_ds[5]);
+    grad[g1] += de_dtheta * (-dcos_ds[0] - dcos_ds[3]) / (-sin_theta);
+    grad[g1 + 1] += de_dtheta * (-dcos_ds[1] - dcos_ds[4]) / (-sin_theta);
+    grad[g1 + 2] += de_dtheta * (-dcos_ds[2] - dcos_ds[5]) / (-sin_theta);
 
     // RDKit✔️✔️:   g[2][0] += dE_dTheta * dCos_dS[3] / (-sinTheta);
     // RDKit✔️✔️:   g[2][1] += dE_dTheta * dCos_dS[4] / (-sinTheta);
     // RDKit✔️✔️:   g[2][2] += dE_dTheta * dCos_dS[5] / (-sinTheta);
     // RDKit✔️✔️: }
-    grad[g2] += scale * dcos_ds[3];
-    grad[g2 + 1] += scale * dcos_ds[4];
-    grad[g2 + 2] += scale * dcos_ds[5];
+    grad[g2] += de_dtheta * dcos_ds[3] / (-sin_theta);
+    grad[g2 + 1] += de_dtheta * dcos_ds[4] / (-sin_theta);
+    grad[g2 + 2] += de_dtheta * dcos_ds[5] / (-sin_theta);
 }
 
 #[cfg(test)]
@@ -983,20 +982,19 @@ mod tests {
             1.0 / dist[1] * (r[0].y - 0.25 * r[1].y),
             1.0 / dist[1] * (r[0].z - 0.25 * r[1].z),
         ];
-        let scale = 0.75 / -0.9;
         let expected = [
-            scale * dcos_ds[0],
-            scale * dcos_ds[1],
-            scale * dcos_ds[2],
-            scale * (-dcos_ds[0] - dcos_ds[3]),
-            scale * (-dcos_ds[1] - dcos_ds[4]),
-            scale * (-dcos_ds[2] - dcos_ds[5]),
-            scale * dcos_ds[3],
-            scale * dcos_ds[4],
-            scale * dcos_ds[5],
+            0.75 * dcos_ds[0] / -0.9,
+            0.75 * dcos_ds[1] / -0.9,
+            0.75 * dcos_ds[2] / -0.9,
+            0.75 * (-dcos_ds[0] - dcos_ds[3]) / -0.9,
+            0.75 * (-dcos_ds[1] - dcos_ds[4]) / -0.9,
+            0.75 * (-dcos_ds[2] - dcos_ds[5]) / -0.9,
+            0.75 * dcos_ds[3] / -0.9,
+            0.75 * dcos_ds[4] / -0.9,
+            0.75 * dcos_ds[5] / -0.9,
         ];
 
-        assert_slice_close(&grad, &expected);
+        assert_eq!(grad, expected);
     }
 
     #[test]

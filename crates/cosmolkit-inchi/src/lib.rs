@@ -32,6 +32,7 @@ pub enum InchiErrorKind {
     UnsupportedState,
     InvalidInput,
     InvalidSourceOutput,
+    SanitizeFailed,
     Toolkit,
     SourcePort,
 }
@@ -114,7 +115,11 @@ fn toolkit_error(
 ) -> InchiError {
     InchiError {
         operation,
-        kind: InchiErrorKind::Toolkit,
+        kind: if error.kind == "MolSanitizeException" {
+            InchiErrorKind::SanitizeFailed
+        } else {
+            InchiErrorKind::Toolkit
+        },
         detail: format!("{}: {}", error.kind, error.message),
     }
 }
@@ -493,6 +498,36 @@ mod scalar_api_tests {
         }
     }
 
+    fn bromochlorofluoromethane(chiral_tag: InchiChiralTag) -> InchiMolecule {
+        let mut center = carbon(0, chiral_tag);
+        center.num_explicit_hydrogens = 1;
+        center.no_implicit = true;
+        InchiMolecule::try_from_graph(
+            vec![
+                center,
+                InchiAtom {
+                    atomic_number: 9,
+                    ..InchiAtom::default()
+                },
+                InchiAtom {
+                    atomic_number: 17,
+                    ..InchiAtom::default()
+                },
+                InchiAtom {
+                    atomic_number: 35,
+                    ..InchiAtom::default()
+                },
+            ],
+            vec![
+                InchiBond::new(0, 1, InchiBondType::Single),
+                InchiBond::new(0, 2, InchiBondType::Single),
+                InchiBond::new(0, 3, InchiBondType::Single),
+            ],
+            Vec::new(),
+        )
+        .unwrap()
+    }
+
     #[test]
     fn inchi_core_scalar_api__inchi_key_success_and_error_diagnostic() {
         let success = inchi_to_inchi_key(b"InChI=1S/CH4/h1H4").unwrap();
@@ -526,6 +561,30 @@ mod scalar_api_tests {
         assert_eq!(output.inchi, b"InChI=1S/CH4/h1H4/i1+1");
         assert!(output.return_values.aux_info.is_empty());
         assert!(output.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn inchi_core_scalar_api__generation_preserves_single_center_relative_and_racemic_stereo() {
+        let molecule = bromochlorofluoromethane(InchiChiralTag::TetrahedralCw);
+
+        let absolute =
+            mol_to_inchi(&mut ScalarToolkit::default(), &molecule, Some(b"-AuxNone")).unwrap();
+        let relative = mol_to_inchi(
+            &mut ScalarToolkit::default(),
+            &molecule,
+            Some(b"-AuxNone -SRel"),
+        )
+        .unwrap();
+        let racemic = mol_to_inchi(
+            &mut ScalarToolkit::default(),
+            &molecule,
+            Some(b"-AuxNone -SRac"),
+        )
+        .unwrap();
+
+        assert_eq!(absolute.inchi, b"InChI=1S/CHBrClF/c2-1(3)4/h1H/t1-/m1/s1");
+        assert_eq!(relative.inchi, b"InChI=1/CHBrClF/c2-1(3)4/h1H/t1-/s2");
+        assert_eq!(racemic.inchi, b"InChI=1/CHBrClF/c2-1(3)4/h1H/t1-/s3");
     }
 
     #[test]
@@ -630,6 +689,76 @@ mod scalar_api_tests {
             InchiChiralTag::TetrahedralCw | InchiChiralTag::TetrahedralCcw
         ));
         assert!(molecule.conformers().is_empty());
+    }
+
+    #[test]
+    fn inchi_core_scalar_api__mol_from_inchi_parses_phosphoserine_graph() {
+        const PHOSPHOSERINE: &[u8] =
+            b"InChI=1S/C3H8NO6P/c4-2(3(5)6)1-10-11(7,8)9/h2H,1,4H2,(H,5,6)(H2,7,8,9)/t2-/m0/s1";
+
+        let unsanitized =
+            mol_from_inchi(&mut ScalarToolkit::default(), PHOSPHOSERINE, false, false)
+                .expect("source-defined phosphoserine InChI must parse");
+        let molecule = unsanitized
+            .molecule
+            .expect("successful parse must return a graph");
+        assert_eq!(molecule.atoms().len(), 12);
+        assert_eq!(molecule.bonds().len(), 11);
+        assert_eq!(
+            molecule
+                .atoms()
+                .iter()
+                .filter(|atom| atom.atomic_number == 1)
+                .count(),
+            1
+        );
+
+        assert_eq!(
+            molecule
+                .atoms()
+                .iter()
+                .map(|atom| atom.formal_charge)
+                .sum::<i32>(),
+            0
+        );
+        assert!(matches!(
+            molecule.atoms()[1].chiral_tag,
+            InchiChiralTag::TetrahedralCw | InchiChiralTag::TetrahedralCcw
+        ));
+        assert_eq!(
+            molecule
+                .bonds()
+                .iter()
+                .filter(|bond| bond.bond_type == InchiBondType::Double)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn inchi_core_scalar_api__mol_from_inchi_parses_guanidinium_alkaloid_hydrochloride() {
+        const GUANIDINIUM_ALKALOID_HYDROCHLORIDE: &[u8] = b"InChI=1S/C22H33N3O4.ClH/c1-3-16-8-4-5-11-21(29-16)13-15-9-10-17-18(19(26)27)22(12-6-7-14(2)28-22)24-20(23-21)25(15)17;/h4,8,14-18H,3,5-7,9-13H2,1-2H3,(H2,23,24,26,27);1H/t14-,15+,16+,17-,18+,21+,22-;/m1./s1";
+
+        let parsed = mol_from_inchi(
+            &mut ScalarToolkit::default(),
+            GUANIDINIUM_ALKALOID_HYDROCHLORIDE,
+            false,
+            false,
+        )
+        .expect("source-defined guanidinium alkaloid hydrochloride must parse");
+        let molecule = parsed
+            .molecule
+            .expect("successful parse must return a graph");
+        assert_eq!(molecule.atoms().len(), 35);
+        assert_eq!(molecule.bonds().len(), 38);
+        assert_eq!(
+            molecule
+                .atoms()
+                .iter()
+                .filter(|atom| atom.atomic_number == 1)
+                .count(),
+            5
+        );
     }
 }
 

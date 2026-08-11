@@ -17,12 +17,12 @@ use crate::source_types::{
     INCHI_FLAG_REL_STEREO, INCHI_FLAG_SB_IGN_ALL_UU, INCHI_FLAG_SC_IGN_ALL_ISO_UU,
     INCHI_FLAG_SC_IGN_ALL_UU, INCHI_IOS_STRING, INCHI_MODE, INCHI_T_NUM_MOVABLE, INChI, INChI_Aux,
     INChI_Stereo, MASK_CUMULENE_LEN, MAX_ATOMS, MAX_NUM_STEREO_BONDS, MULT_STEREOBOND,
-    NUM_H_ISOTOPES, RADICAL_DOUBLET, RADICAL_SINGLET, RADICAL_TRIPLET, REQ_MODE_RACEMIC_STEREO,
-    REQ_MODE_RELATIVE_STEREO, REQ_MODE_SB_IGN_ALL_UU, REQ_MODE_SC_IGN_ALL_UU, S_CHAR,
-    SourceConstPointer, SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer,
-    SourceVaList, TG_FLAG_ALL_SALT_DONE, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE,
-    TG_FLAG_FOUND_ISOTOPIC_H_DONE, U_CHAR, WARN_FAILED_ISOTOPIC, WARN_FAILED_ISOTOPIC_STEREO,
-    WARN_FAILED_STEREO, inp_ATOM, sp_ATOM,
+    NUM_H_ISOTOPES, ORIG_INFO, RADICAL_DOUBLET, RADICAL_SINGLET, RADICAL_TRIPLET,
+    REQ_MODE_RACEMIC_STEREO, REQ_MODE_RELATIVE_STEREO, REQ_MODE_SB_IGN_ALL_UU,
+    REQ_MODE_SC_IGN_ALL_UU, S_CHAR, SourceConstPointer, SourceFormatArgument, SourceHeap,
+    SourceHeapError, SourceMutPointer, SourceVaList, StableSourceConstSlice, StableSourceSlice,
+    TG_FLAG_ALL_SALT_DONE, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE, U_CHAR,
+    WARN_FAILED_ISOTOPIC, WARN_FAILED_ISOTOPIC_STEREO, WARN_FAILED_STEREO, inp_ATOM, sp_ATOM,
 };
 
 #[allow(non_snake_case)]
@@ -1360,6 +1360,330 @@ pub(crate) fn CopyLinearCTStereoToINChIStereo(
     Ok(0)
 }
 
+struct MarkAmbiguousStereoSourceLayout {
+    canonical_order: StableSourceConstSlice<AT_NUMB>,
+    centers: Option<StableSourceConstSlice<AT_STEREO_CARB>>,
+    bonds: Option<StableSourceConstSlice<AT_STEREO_DBLE>>,
+    atoms: StableSourceSlice<sp_ATOM>,
+    normalized_atoms: StableSourceSlice<inp_ATOM>,
+}
+
+impl MarkAmbiguousStereoSourceLayout {
+    fn new(
+        heap: &mut SourceHeap,
+        at: SourceMutPointer<sp_ATOM>,
+        norm_at: SourceMutPointer<inp_ATOM>,
+        p_canon_ord: SourceConstPointer<AT_NUMB>,
+        linear_ct_stereo_carb: SourceConstPointer<AT_STEREO_CARB>,
+        center_count: usize,
+        linear_ct_stereo_dble: SourceConstPointer<AT_STEREO_DBLE>,
+        bond_count: usize,
+    ) -> Result<Self, SourceHeapError> {
+        // SAFETY: mark_ambiguous_stereo_source_layout_is_valid proves that all
+        // active arrays have distinct allocation identities and sufficient
+        // lengths. MarkAmbiguousStereo neither frees nor resizes allocations.
+        let canonical_order = unsafe { heap.stable_slice(p_canon_ord)? };
+        let centers = if center_count == 0 {
+            None
+        } else {
+            Some(unsafe { heap.stable_slice(linear_ct_stereo_carb)? })
+        };
+        let bonds = if bond_count == 0 {
+            None
+        } else {
+            Some(unsafe { heap.stable_slice(linear_ct_stereo_dble)? })
+        };
+        let atoms = unsafe { heap.stable_slice_mut(at)? };
+        let normalized_atoms = unsafe { heap.stable_slice_mut(norm_at)? };
+        Ok(Self {
+            canonical_order,
+            centers,
+            bonds,
+            atoms,
+            normalized_atoms,
+        })
+    }
+
+    #[inline(always)]
+    unsafe fn canonical_atom(&self, number: AT_NUMB) -> usize {
+        // SAFETY: source-layout validation proves each active canonical number
+        // and every resulting atom index before the first write is performed.
+        let index = usize::from(number) - 1;
+        usize::from(*unsafe { self.canonical_order.get_unchecked(index) })
+    }
+
+    unsafe fn run(&mut self, b_isotopic: i32, center_count: usize, bond_count: usize) -> i32 {
+        let mark_atom = if b_isotopic != 0 {
+            AMBIGUOUS_STEREO_ATOM_ISO as i32
+        } else {
+            AMBIGUOUS_STEREO_ATOM as i32
+        };
+        let mark_bond = if b_isotopic != 0 {
+            AMBIGUOUS_STEREO_BOND_ISO as i32
+        } else {
+            AMBIGUOUS_STEREO_BOND as i32
+        };
+        let mut num = 0_i32;
+
+        for i in 0..center_count {
+            // SAFETY: construction validates the active center prefix.
+            let center = unsafe {
+                self.centers
+                    .as_ref()
+                    .expect("positive center count has a stable view")
+                    .get_unchecked(i)
+            };
+            let parity = i32::from(center.parity);
+            let parity_not_unknown = (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32)
+                .contains(&parity)
+                && parity != AB_PARITY_UNKN as i32;
+            if parity_not_unknown {
+                let j1 = unsafe { self.canonical_atom(center.at_num) };
+                // SAFETY: validation proves canonical center indices against
+                // both atom arrays.
+                let atom = unsafe { self.atoms.get_unchecked_mut(j1) };
+                if atom.bAmbiguousStereo != 0 {
+                    atom.bAmbiguousStereo =
+                        (i32::from(atom.bAmbiguousStereo) | mark_atom) as S_CHAR;
+                    let normalized = unsafe { self.normalized_atoms.get_unchecked_mut(j1) };
+                    normalized.bAmbiguousStereo =
+                        (i32::from(normalized.bAmbiguousStereo) | mark_atom) as S_CHAR;
+                    num = num.wrapping_add(1);
+                }
+            }
+        }
+
+        for i in 0..bond_count {
+            // SAFETY: construction validates the active bond prefix.
+            let bond = unsafe {
+                self.bonds
+                    .as_ref()
+                    .expect("positive bond count has a stable view")
+                    .get_unchecked(i)
+            };
+            let parity = i32::from(bond.parity);
+            if !(AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32)
+                .contains(&parity)
+            {
+                continue;
+            }
+
+            let j1 = unsafe { self.canonical_atom(bond.at_num1) };
+            let j2 = unsafe { self.canonical_atom(bond.at_num2) };
+            let endpoint_is_ambiguous = unsafe { self.atoms.get_unchecked(j1) }.bAmbiguousStereo
+                != 0
+                || unsafe { self.atoms.get_unchecked(j2) }.bAmbiguousStereo != 0;
+            if !endpoint_is_ambiguous {
+                continue;
+            }
+
+            let first = unsafe { self.atoms.get_unchecked(j1) };
+            let (encoded_parity, stereo_neighbor, stereo_order) = if b_isotopic != 0 {
+                (
+                    first.stereo_bond_parity2[0],
+                    first.stereo_bond_neighbor2,
+                    first.stereo_bond_ord2[0],
+                )
+            } else {
+                (
+                    first.stereo_bond_parity[0],
+                    first.stereo_bond_neighbor,
+                    first.stereo_bond_ord[0],
+                )
+            };
+            let mut cumulene_len =
+                (i32::from(encoded_parity) & MASK_CUMULENE_LEN as i32) / MULT_STEREOBOND as i32;
+            if cumulene_len % 2 != 0 && (1 >= MAX_NUM_STEREO_BONDS || stereo_neighbor[1] == 0) {
+                let order = stereo_order as usize;
+                let mut j = j1;
+                let mut next_j =
+                    usize::from(unsafe { self.atoms.get_unchecked(j) }.neighbor[order]);
+                cumulene_len = (cumulene_len - 1) / 2;
+                while cumulene_len != 0 && unsafe { self.atoms.get_unchecked(next_j) }.valence == 2
+                {
+                    let next_atom = unsafe { self.atoms.get_unchecked(next_j) };
+                    let next_neigh = usize::from(j == usize::from(next_atom.neighbor[0]));
+                    j = next_j;
+                    next_j = usize::from(next_atom.neighbor[next_neigh]);
+                    cumulene_len -= 1;
+                }
+                if unsafe { self.atoms.get_unchecked(next_j) }.valence == 2 {
+                    let atom = unsafe { self.atoms.get_unchecked_mut(next_j) };
+                    atom.bAmbiguousStereo =
+                        (i32::from(atom.bAmbiguousStereo) | mark_atom) as S_CHAR;
+                    let normalized = unsafe { self.normalized_atoms.get_unchecked_mut(next_j) };
+                    normalized.bAmbiguousStereo =
+                        (i32::from(normalized.bAmbiguousStereo) | mark_atom) as S_CHAR;
+                    num = num.wrapping_add(1);
+                    continue;
+                }
+            }
+
+            if unsafe { self.atoms.get_unchecked(j1) }.bAmbiguousStereo != 0 {
+                let atom = unsafe { self.atoms.get_unchecked_mut(j1) };
+                atom.bAmbiguousStereo = (i32::from(atom.bAmbiguousStereo) | mark_bond) as S_CHAR;
+                let normalized = unsafe { self.normalized_atoms.get_unchecked_mut(j1) };
+                normalized.bAmbiguousStereo =
+                    (i32::from(normalized.bAmbiguousStereo) | mark_bond) as S_CHAR;
+                num = num.wrapping_add(1);
+            }
+            if unsafe { self.atoms.get_unchecked(j2) }.bAmbiguousStereo != 0 {
+                let atom = unsafe { self.atoms.get_unchecked_mut(j2) };
+                atom.bAmbiguousStereo = (i32::from(atom.bAmbiguousStereo) | mark_bond) as S_CHAR;
+                let normalized = unsafe { self.normalized_atoms.get_unchecked_mut(j2) };
+                normalized.bAmbiguousStereo =
+                    (i32::from(normalized.bAmbiguousStereo) | mark_bond) as S_CHAR;
+                num = num.wrapping_add(1);
+            }
+        }
+
+        num
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn mark_ambiguous_stereo_source_layout_is_valid(
+    heap: &SourceHeap,
+    at: SourceMutPointer<sp_ATOM>,
+    norm_at: SourceMutPointer<inp_ATOM>,
+    b_isotopic: i32,
+    p_canon_ord: SourceConstPointer<AT_NUMB>,
+    linear_ct_stereo_carb: SourceConstPointer<AT_STEREO_CARB>,
+    center_count: usize,
+    linear_ct_stereo_dble: SourceConstPointer<AT_STEREO_DBLE>,
+    bond_count: usize,
+) -> bool {
+    let identities = [
+        at.allocation_identity(),
+        norm_at.allocation_identity(),
+        p_canon_ord.as_mut().allocation_identity(),
+        (center_count != 0)
+            .then(|| linear_ct_stereo_carb.as_mut().allocation_identity())
+            .flatten(),
+        (bond_count != 0)
+            .then(|| linear_ct_stereo_dble.as_mut().allocation_identity())
+            .flatten(),
+    ];
+    let required_identity_count = 3 + usize::from(center_count != 0) + usize::from(bond_count != 0);
+    if identities.iter().flatten().count() != required_identity_count
+        || identities
+            .iter()
+            .enumerate()
+            .any(|(index, identity)| identity.is_some() && identities[..index].contains(identity))
+    {
+        return false;
+    }
+
+    let Some(canonical_order) = heap.slice(p_canon_ord).ok() else {
+        return false;
+    };
+    let Some(atoms) = heap.slice(at.as_const()).ok() else {
+        return false;
+    };
+    let Some(normalized_atoms) = heap.slice(norm_at.as_const()).ok() else {
+        return false;
+    };
+    let centers = if center_count == 0 {
+        &[][..]
+    } else {
+        let Some(centers) = heap
+            .slice(linear_ct_stereo_carb)
+            .ok()
+            .and_then(|values| values.get(..center_count))
+        else {
+            return false;
+        };
+        centers
+    };
+    let bonds = if bond_count == 0 {
+        &[][..]
+    } else {
+        let Some(bonds) = heap
+            .slice(linear_ct_stereo_dble)
+            .ok()
+            .and_then(|values| values.get(..bond_count))
+        else {
+            return false;
+        };
+        bonds
+    };
+    let atom_bound = atoms.len().min(normalized_atoms.len());
+    let canonical_atom = |number: AT_NUMB| {
+        usize::from(number)
+            .checked_sub(1)
+            .and_then(|index| canonical_order.get(index))
+            .map(|&index| usize::from(index))
+            .filter(|&index| index < atom_bound)
+    };
+
+    for center in centers {
+        let parity = i32::from(center.parity);
+        if (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&parity)
+            && parity != AB_PARITY_UNKN as i32
+            && canonical_atom(center.at_num).is_none()
+        {
+            return false;
+        }
+    }
+
+    for bond in bonds {
+        let parity = i32::from(bond.parity);
+        if !(AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32)
+            .contains(&parity)
+        {
+            continue;
+        }
+        let Some(j1) = canonical_atom(bond.at_num1) else {
+            return false;
+        };
+        if canonical_atom(bond.at_num2).is_none() {
+            return false;
+        }
+
+        let first = &atoms[j1];
+        let (encoded_parity, stereo_neighbor, stereo_order) = if b_isotopic != 0 {
+            (
+                first.stereo_bond_parity2[0],
+                first.stereo_bond_neighbor2,
+                first.stereo_bond_ord2[0],
+            )
+        } else {
+            (
+                first.stereo_bond_parity[0],
+                first.stereo_bond_neighbor,
+                first.stereo_bond_ord[0],
+            )
+        };
+        let mut cumulene_len =
+            (i32::from(encoded_parity) & MASK_CUMULENE_LEN as i32) / MULT_STEREOBOND as i32;
+        if cumulene_len % 2 == 0 || (1 < MAX_NUM_STEREO_BONDS && stereo_neighbor[1] != 0) {
+            continue;
+        }
+        let Ok(order) = usize::try_from(stereo_order) else {
+            return false;
+        };
+        let Some(&next) = atoms[j1].neighbor.get(order) else {
+            return false;
+        };
+        let mut j = j1;
+        let mut next_j = usize::from(next);
+        cumulene_len = (cumulene_len - 1) / 2;
+        loop {
+            let Some(next_atom) = atoms.get(next_j).filter(|_| next_j < atom_bound) else {
+                return false;
+            };
+            if cumulene_len == 0 || next_atom.valence != 2 {
+                break;
+            }
+            let next_neigh = usize::from(j == usize::from(next_atom.neighbor[0]));
+            j = next_j;
+            next_j = usize::from(next_atom.neighbor[next_neigh]);
+            cumulene_len -= 1;
+        }
+    }
+    true
+}
+
 #[allow(non_snake_case, clippy::too_many_arguments)]
 pub(crate) fn MarkAmbiguousStereo(
     heap: &mut SourceHeap,
@@ -1373,7 +1697,7 @@ pub(crate) fn MarkAmbiguousStereo(
     nLenLinearCTStereoDble: i32,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimak2.c:713 MarkAmbiguousStereo
-    // INCHI✔️❌: complete behavior; SourceHeap requires target-array clones.
+    // INCHI✔️✔️: source-layout inputs execute the Official C loops in place; the checked fallback preserves malformed-pointer errors.
     /*
     int MarkAmbiguousStereo( sp_ATOM *at,
                              inp_ATOM *norm_at,
@@ -1498,6 +1822,33 @@ pub(crate) fn MarkAmbiguousStereo(
 
     let canonical_order = heap.slice(pCanonOrd)?.to_vec();
     let center_count = nLenLinearCTStereoCarb.max(0) as usize;
+    let bond_count = nLenLinearCTStereoDble.max(0) as usize;
+    if mark_ambiguous_stereo_source_layout_is_valid(
+        heap,
+        at,
+        norm_at,
+        bIsotopic,
+        pCanonOrd,
+        LinearCTStereoCarb,
+        center_count,
+        LinearCTStereoDble,
+        bond_count,
+    ) {
+        let mut source_layout = MarkAmbiguousStereoSourceLayout::new(
+            heap,
+            at,
+            norm_at,
+            pCanonOrd,
+            LinearCTStereoCarb,
+            center_count,
+            LinearCTStereoDble,
+            bond_count,
+        )?;
+        // SAFETY: the validation pass proves every canonical and cumulene
+        // index used by the source-order loop before any in-place mutation.
+        return Ok(unsafe { source_layout.run(bIsotopic, center_count, bond_count) });
+    }
+
     let centers = if center_count == 0 {
         Vec::new()
     } else {
@@ -1506,7 +1857,6 @@ pub(crate) fn MarkAmbiguousStereo(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .to_vec()
     };
-    let bond_count = nLenLinearCTStereoDble.max(0) as usize;
     let bonds = if bond_count == 0 {
         Vec::new()
     } else {
@@ -1852,12 +2202,40 @@ fn fill_out_source_set<T: Clone + 'static>(
     Ok(())
 }
 
-fn fill_out_copy_prefix<T: Clone + 'static>(
+fn fill_out_allocations_are_distinct(identities: &[Option<u64>]) -> bool {
+    identities
+        .iter()
+        .enumerate()
+        .all(|(index, identity)| identity.is_some() && !identities[..index].contains(identity))
+}
+
+fn fill_out_copy_prefix<T: Copy + 'static>(
     heap: &mut SourceHeap,
     destination: SourceMutPointer<T>,
     source: SourceConstPointer<T>,
     count: usize,
 ) -> Result<(), SourceHeapError> {
+    let allocations_are_distinct = fill_out_allocations_are_distinct(&[
+        destination.allocation_identity(),
+        source.as_mut().allocation_identity(),
+    ]);
+    let prefixes_are_available = heap.slice(source).is_ok_and(|values| values.len() >= count)
+        && heap
+            .slice(destination.as_const())
+            .is_ok_and(|values| values.len() >= count);
+    if allocations_are_distinct && prefixes_are_available {
+        // SAFETY: both complete prefixes were validated above, the allocation
+        // identities are distinct, and neither allocation is freed or resized
+        // before the source-equivalent copy completes.
+        let source_values = unsafe { heap.stable_slice(source)? };
+        // SAFETY: as above; this is the only writable view of `destination`.
+        let mut destination_values = unsafe { heap.stable_slice_mut(destination)? };
+        destination_values
+            .prefix_mut(count)?
+            .copy_from_slice(source_values.prefix(count)?);
+        return Ok(());
+    }
+
     let values = heap
         .slice(source)?
         .get(..count)
@@ -1870,6 +2248,461 @@ fn fill_out_copy_prefix<T: Clone + 'static>(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+fn fill_out_stereo_ranks(
+    heap: &mut SourceHeap,
+    canonical_order: SourceMutPointer<AT_NUMB>,
+    inverted_order: SourceMutPointer<AT_NUMB>,
+    canonical_rank: SourceMutPointer<AT_NUMB>,
+    inverted_rank: SourceMutPointer<AT_NUMB>,
+    count: usize,
+) -> Result<(), SourceHeapError> {
+    let allocations_are_distinct = fill_out_allocations_are_distinct(&[
+        canonical_order.allocation_identity(),
+        inverted_order.allocation_identity(),
+        canonical_rank.allocation_identity(),
+        inverted_rank.allocation_identity(),
+    ]);
+    let static_ranges_are_available = heap
+        .slice(canonical_order.as_const())
+        .is_ok_and(|values| values.len() >= count)
+        && heap
+            .slice(inverted_order.as_const())
+            .is_ok_and(|values| values.len() >= count)
+        && heap.slice(canonical_rank.as_const()).is_ok()
+        && heap.slice(inverted_rank.as_const()).is_ok();
+    if allocations_are_distinct && static_ranges_are_available {
+        // SAFETY: all four allocations are distinct and remain live. Static
+        // order ranges were validated above; each data-dependent rank index is
+        // checked at the corresponding Official C access.
+        let order = unsafe { heap.stable_slice(canonical_order.as_const())? };
+        let inverted_order = unsafe { heap.stable_slice(inverted_order.as_const())? };
+        let mut ranks = unsafe { heap.stable_slice_mut(canonical_rank)? };
+        let mut inverted_ranks = unsafe { heap.stable_slice_mut(inverted_rank)? };
+
+        // INCHI✔️✔️:         for (i = 0; i < num_at_tg; i++)
+        for i in 0..count {
+            // SAFETY: both complete order prefixes were validated before the
+            // source-order loop.
+            let canonical_atom = usize::from(*unsafe { order.get_unchecked(i) });
+            let inverted_atom = usize::from(*unsafe { inverted_order.get_unchecked(i) });
+            let rank = (i as AT_NUMB).wrapping_add(1);
+            // INCHI✔️✔️:             pCanonRankInv[pCanonOrdInv[i]] =
+            // INCHI✔️✔️:                 pCanonRank[pCanonOrd[i]] = (AT_NUMB) ( i + 1 );
+            *ranks.get_mut(canonical_atom)? = rank;
+            *inverted_ranks.get_mut(inverted_atom)? = rank;
+            // INCHI✔️✔️:         }
+        }
+        return Ok(());
+    }
+
+    for i in 0..count {
+        let rank = (i as AT_NUMB).wrapping_add(1);
+        let direct = fill_out_source_get(heap, canonical_order.as_const(), i)?;
+        let inverted = fill_out_source_get(heap, inverted_order.as_const(), i)?;
+        fill_out_source_set(heap, canonical_rank, usize::from(direct), rank)?;
+        fill_out_source_set(heap, inverted_rank, usize::from(inverted), rank)?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fill_out_stereo_original_atom_numbers(
+    heap: &mut SourceHeap,
+    canonical_order: SourceMutPointer<AT_NUMB>,
+    inverted_order: SourceMutPointer<AT_NUMB>,
+    atoms: SourceMutPointer<sp_ATOM>,
+    canonical_original_numbers: SourceMutPointer<AT_NUMB>,
+    inverted_original_numbers: SourceMutPointer<AT_NUMB>,
+    atom_count: usize,
+) -> Result<(), SourceHeapError> {
+    let allocations_are_distinct = fill_out_allocations_are_distinct(&[
+        canonical_order.allocation_identity(),
+        inverted_order.allocation_identity(),
+        atoms.allocation_identity(),
+        canonical_original_numbers.allocation_identity(),
+        inverted_original_numbers.allocation_identity(),
+    ]);
+    let static_ranges_are_available = heap
+        .slice(canonical_order.as_const())
+        .is_ok_and(|values| values.len() >= atom_count)
+        && heap
+            .slice(inverted_order.as_const())
+            .is_ok_and(|values| values.len() >= atom_count)
+        && heap.slice(atoms.as_const()).is_ok()
+        && heap
+            .slice(canonical_original_numbers.as_const())
+            .is_ok_and(|values| values.len() >= atom_count)
+        && heap
+            .slice(inverted_original_numbers.as_const())
+            .is_ok_and(|values| values.len() >= atom_count);
+    if allocations_are_distinct && static_ranges_are_available {
+        // SAFETY: all five allocations are distinct and remain live. Both
+        // canonical-order prefixes were validated above; each resulting atom
+        // index is checked at the corresponding Official C access.
+        let order = unsafe { heap.stable_slice(canonical_order.as_const())? };
+        let inverted_order = unsafe { heap.stable_slice(inverted_order.as_const())? };
+        let atoms = unsafe { heap.stable_slice(atoms.as_const())? };
+        let mut originals = unsafe { heap.stable_slice_mut(canonical_original_numbers)? };
+        let mut inverted_originals = unsafe { heap.stable_slice_mut(inverted_original_numbers)? };
+
+        // INCHI✔️✔️:         for (i = 0; i < num_atoms; i++)
+        for i in 0..atom_count {
+            // SAFETY: both order prefixes and both destination prefixes were
+            // validated before entering the loop.
+            let canonical_atom = usize::from(*unsafe { order.get_unchecked(i) });
+            let inverted_atom = usize::from(*unsafe { inverted_order.get_unchecked(i) });
+            let canonical_original = atoms.get(canonical_atom)?.orig_at_number;
+            let inverted_original = atoms.get(inverted_atom)?.orig_at_number;
+            // INCHI✔️✔️:             pINChI_Aux->nOrigAtNosInCanonOrdInv[i] = at[pCanonOrdInv[i]].orig_at_number;
+            *unsafe { inverted_originals.get_unchecked_mut(i) } = inverted_original;
+            // INCHI✔️✔️:             pINChI_Aux->nOrigAtNosInCanonOrd[i] = at[pCanonOrd[i]].orig_at_number;
+            *unsafe { originals.get_unchecked_mut(i) } = canonical_original;
+            // INCHI✔️✔️:             pINChI_Aux->nIsotopicOrigAtNosInCanonOrdInv[i] = at[pCanonOrdInv[i]].orig_at_number;
+            // INCHI✔️✔️:             pINChI_Aux->nIsotopicOrigAtNosInCanonOrd[i] = at[pCanonOrd[i]].orig_at_number;
+            // INCHI✔️✔️:         }
+        }
+        return Ok(());
+    }
+
+    for i in 0..atom_count {
+        let direct = fill_out_source_get(heap, canonical_order.as_const(), i)?;
+        let inverted = fill_out_source_get(heap, inverted_order.as_const(), i)?;
+        let direct_original =
+            fill_out_source_get(heap, atoms.as_const(), usize::from(direct))?.orig_at_number;
+        let inverted_original =
+            fill_out_source_get(heap, atoms.as_const(), usize::from(inverted))?.orig_at_number;
+        fill_out_source_set(heap, canonical_original_numbers, i, direct_original)?;
+        fill_out_source_set(heap, inverted_original_numbers, i, inverted_original)?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fill_out_numbering_without_stereo(
+    heap: &mut SourceHeap,
+    canonical_order: SourceMutPointer<AT_NUMB>,
+    canonical_rank: SourceMutPointer<AT_NUMB>,
+    original_numbers: SourceMutPointer<AT_NUMB>,
+    atoms: SourceMutPointer<sp_ATOM>,
+    atom_count: usize,
+    atom_and_group_count: usize,
+) -> Result<(), SourceHeapError> {
+    let allocations_are_distinct = fill_out_allocations_are_distinct(&[
+        canonical_order.allocation_identity(),
+        canonical_rank.allocation_identity(),
+        original_numbers.allocation_identity(),
+        atoms.allocation_identity(),
+    ]);
+    let static_ranges_are_available = heap
+        .slice(canonical_order.as_const())
+        .is_ok_and(|values| values.len() >= atom_and_group_count)
+        && heap
+            .slice(canonical_rank.as_const())
+            .is_ok_and(|values| values.len() >= atom_and_group_count)
+        && heap
+            .slice(original_numbers.as_const())
+            .is_ok_and(|values| values.len() >= atom_count)
+        && heap.slice(atoms.as_const()).is_ok();
+    if allocations_are_distinct && static_ranges_are_available {
+        // SAFETY: the four allocations are distinct, their static source
+        // ranges were validated above, and this helper neither frees nor
+        // resizes them. Dynamic canonical indices are checked in C order.
+        let order = unsafe { heap.stable_slice(canonical_order.as_const())? };
+        let atom_values = unsafe { heap.stable_slice(atoms.as_const())? };
+        let mut ranks = unsafe { heap.stable_slice_mut(canonical_rank)? };
+        let mut originals = unsafe { heap.stable_slice_mut(original_numbers)? };
+
+        // INCHI✔️✔️:             for (i = 0; i < num_atoms; i++)
+        for i in 0..atom_count {
+            // INCHI✔️✔️:                 pCanonRank[pCanonOrd[i]] = (AT_NUMB) ( i + 1 );
+            // SAFETY: all static prefixes were validated before this
+            // source-order loop.
+            let canonical_atom = *unsafe { order.get_unchecked(i) };
+            *ranks.get_mut(usize::from(canonical_atom))? = (i as AT_NUMB).wrapping_add(1);
+            // INCHI✔️✔️:                 pOrigNosInCanonOrd[i] = at[pCanonOrd[i]].orig_at_number;
+            *unsafe { originals.get_unchecked_mut(i) } =
+                atom_values.get(usize::from(canonical_atom))?.orig_at_number;
+            // INCHI✔️✔️:             }
+        }
+        // INCHI✔️✔️:             for (; i < num_at_tg; i++)
+        for i in atom_count..atom_and_group_count {
+            // INCHI✔️✔️:                 pCanonRank[pCanonOrd[i]] = (AT_NUMB) ( i + 1 );
+            let canonical_atom = *unsafe { order.get_unchecked(i) };
+            *ranks.get_mut(usize::from(canonical_atom))? = (i as AT_NUMB).wrapping_add(1);
+            // INCHI✔️✔️:             }
+        }
+        return Ok(());
+    }
+
+    for i in 0..atom_count {
+        let order = fill_out_source_get(heap, canonical_order.as_const(), i)?;
+        fill_out_source_set(
+            heap,
+            canonical_rank,
+            usize::from(order),
+            (i as AT_NUMB).wrapping_add(1),
+        )?;
+        let original =
+            fill_out_source_get(heap, atoms.as_const(), usize::from(order))?.orig_at_number;
+        fill_out_source_set(heap, original_numbers, i, original)?;
+    }
+    for i in atom_count..atom_and_group_count {
+        let order = fill_out_source_get(heap, canonical_order.as_const(), i)?;
+        fill_out_source_set(
+            heap,
+            canonical_rank,
+            usize::from(order),
+            (i as AT_NUMB).wrapping_add(1),
+        )?;
+    }
+    Ok(())
+}
+
+fn fill_out_original_atom_info(
+    heap: &mut SourceHeap,
+    canonical_order: SourceMutPointer<AT_NUMB>,
+    normalized_atoms: SourceMutPointer<inp_ATOM>,
+    original_info: SourceMutPointer<ORIG_INFO>,
+    atom_count: usize,
+) -> Result<(), SourceHeapError> {
+    let allocations_are_distinct = fill_out_allocations_are_distinct(&[
+        canonical_order.allocation_identity(),
+        normalized_atoms.allocation_identity(),
+        original_info.allocation_identity(),
+    ]);
+    let static_ranges_are_available = heap
+        .slice(canonical_order.as_const())
+        .is_ok_and(|values| values.len() >= atom_count)
+        && heap.slice(normalized_atoms.as_const()).is_ok()
+        && heap
+            .slice(original_info.as_const())
+            .is_ok_and(|values| values.len() >= atom_count);
+    if allocations_are_distinct && static_ranges_are_available {
+        // SAFETY: all three allocations are distinct and remain live. The
+        // order prefix was validated above; each resulting atom index is
+        // checked at the corresponding Official C access.
+        let order = unsafe { heap.stable_slice(canonical_order.as_const())? };
+        let atoms = unsafe { heap.stable_slice(normalized_atoms.as_const())? };
+        let mut information = unsafe { heap.stable_slice_mut(original_info)? };
+
+        // INCHI✔️✔️:         for (i = 0; i < num_atoms; i++)
+        for i in 0..atom_count {
+            // INCHI✔️✔️:             if (pCanonOrd)
+            // INCHI✔️✔️:                 ii = pCanonOrd[i];
+            // SAFETY: the order and output prefixes were validated before the
+            // Official C loop.
+            let canonical_atom = usize::from(*unsafe { order.get_unchecked(i) });
+            let atom = atoms.get(canonical_atom)?;
+            let radical = if atom.radical == RADICAL_SINGLET as i8 {
+                0
+            } else if atom.radical == RADICAL_DOUBLET as i8 {
+                1
+            } else if atom.radical == RADICAL_TRIPLET as i8 {
+                2
+            } else if atom.radical != 0 {
+                3
+            } else {
+                0
+            };
+            let info = unsafe { information.get_unchecked_mut(i) };
+            // INCHI✔️✔️:                 if (norm_at[ii].valence || norm_at[ii].num_H)
+            if atom.valence != 0 || atom.num_H != 0 {
+                // INCHI✔️✔️:                     pINChI_Aux->OrigInfo[i].cCharge = norm_at[ii].charge;
+                info.cCharge = atom.charge;
+                // INCHI✔️✔️:                     pINChI_Aux->OrigInfo[i].cRadical = (norm_at[ii].radical == RADICAL_SINGLET) ? 0 :
+                // INCHI✔️✔️:                         (norm_at[ii].radical == RADICAL_DOUBLET) ? 1 :
+                // INCHI✔️✔️:                         (norm_at[ii].radical == RADICAL_TRIPLET) ? 2 :
+                // INCHI✔️✔️:                         norm_at[ii].radical ? 3 : 0;
+                info.cRadical = radical;
+                // INCHI✔️✔️:                     pINChI_Aux->OrigInfo[i].cUnusualValence =
+                // INCHI✔️✔️:                         get_unusual_el_valence(norm_at[ii].el_number, norm_at[ii].charge, norm_at[ii].radical,
+                // INCHI✔️✔️:                             norm_at[ii].chem_bonds_valence, norm_at[ii].num_H, norm_at[ii].valence);
+                info.cUnusualValence = get_unusual_el_valence(
+                    i32::from(atom.el_number),
+                    i32::from(atom.charge),
+                    i32::from(atom.radical),
+                    i32::from(atom.chem_bonds_valence),
+                    i32::from(atom.num_H),
+                    i32::from(atom.valence),
+                )? as i8;
+            } else {
+                // INCHI✔️✔️:                     pINChI_Aux->OrigInfo[i].cRadical = (norm_at[ii].radical == RADICAL_SINGLET) ? 0 :
+                // INCHI✔️✔️:                         (norm_at[ii].radical == RADICAL_DOUBLET) ? 1 :
+                // INCHI✔️✔️:                         (norm_at[ii].radical == RADICAL_TRIPLET) ? 2 :
+                // INCHI✔️✔️:                         norm_at[ii].radical ? 3 : 0;
+                info.cRadical = radical;
+            }
+            // INCHI✔️✔️:         }
+        }
+        return Ok(());
+    }
+
+    for i in 0..atom_count {
+        let order = fill_out_source_get(heap, canonical_order.as_const(), i)?;
+        let atom = fill_out_source_get(heap, normalized_atoms.as_const(), usize::from(order))?;
+        let radical = if atom.radical == RADICAL_SINGLET as i8 {
+            0
+        } else if atom.radical == RADICAL_DOUBLET as i8 {
+            1
+        } else if atom.radical == RADICAL_TRIPLET as i8 {
+            2
+        } else if atom.radical != 0 {
+            3
+        } else {
+            0
+        };
+        let mut info = fill_out_source_get(heap, original_info.as_const(), i)?;
+        info.cRadical = radical;
+        if atom.valence != 0 || atom.num_H != 0 {
+            info.cCharge = atom.charge;
+            info.cUnusualValence = get_unusual_el_valence(
+                i32::from(atom.el_number),
+                i32::from(atom.charge),
+                i32::from(atom.radical),
+                i32::from(atom.chem_bonds_valence),
+                i32::from(atom.num_H),
+                i32::from(atom.valence),
+            )? as i8;
+        }
+        fill_out_source_set(heap, original_info, i, info)?;
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum FillOutEquivalenceTail {
+    DebugSentinel,
+    Identity,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fill_out_prepare_equivalence(
+    heap: &mut SourceHeap,
+    canonical_order: SourceMutPointer<AT_NUMB>,
+    symmetry_rank: SourceMutPointer<AT_NUMB>,
+    equivalence: SourceMutPointer<AT_NUMB>,
+    sort_order: SourceMutPointer<AT_NUMB>,
+    atom_count: usize,
+    atom_and_group_count: usize,
+    tail: FillOutEquivalenceTail,
+) -> Result<(), SourceHeapError> {
+    let allocations_are_distinct = fill_out_allocations_are_distinct(&[
+        canonical_order.allocation_identity(),
+        symmetry_rank.allocation_identity(),
+        equivalence.allocation_identity(),
+        sort_order.allocation_identity(),
+    ]);
+    let static_ranges_are_available = heap
+        .slice(canonical_order.as_const())
+        .is_ok_and(|values| values.len() >= atom_count)
+        && heap.slice(symmetry_rank.as_const()).is_ok()
+        && heap
+            .slice(equivalence.as_const())
+            .is_ok_and(|values| values.len() >= atom_count)
+        && heap
+            .slice(sort_order.as_const())
+            .is_ok_and(|values| values.len() >= atom_and_group_count);
+    if allocations_are_distinct && static_ranges_are_available {
+        // SAFETY: the four source arrays are distinct and remain live. The
+        // data-dependent symmetry index remains checked at its C read point.
+        let order = unsafe { heap.stable_slice(canonical_order.as_const())? };
+        let symmetry = unsafe { heap.stable_slice(symmetry_rank.as_const())? };
+        let mut equivalence_values = unsafe { heap.stable_slice_mut(equivalence)? };
+        let mut sort_values = unsafe { heap.stable_slice_mut(sort_order)? };
+
+        // INCHI✔️✔️:         for (i = 0; i < num_atoms; i++)
+        for i in 0..atom_count {
+            // INCHI✔️✔️:             pConstitEquNumb[i] = pSymmRank[pCanonOrd[i]];
+            // SAFETY: all static prefixes were validated before the
+            // source-order loop.
+            let canonical_atom = *unsafe { order.get_unchecked(i) };
+            *unsafe { equivalence_values.get_unchecked_mut(i) } =
+                *symmetry.get(usize::from(canonical_atom))?;
+            // INCHI✔️✔️:             pSortOrd[i] = i;
+            *unsafe { sort_values.get_unchecked_mut(i) } = i as AT_NUMB;
+            // INCHI✔️✔️:         }
+        }
+        // INCHI✔️✔️:         for (; i < num_at_tg; i++)
+        for i in atom_count..atom_and_group_count {
+            *unsafe { sort_values.get_unchecked_mut(i) } = match tail {
+                FillOutEquivalenceTail::DebugSentinel => {
+                    // INCHI✔️✔️:             pSortOrd[i] = MAX_ATOMS;
+                    MAX_ATOMS as AT_NUMB
+                }
+                FillOutEquivalenceTail::Identity => {
+                    // INCHI✔️✔️:             pSortOrd[i] = i;
+                    i as AT_NUMB
+                }
+            };
+            // INCHI✔️✔️:         }
+        }
+        return Ok(());
+    }
+
+    for i in 0..atom_count {
+        let order = fill_out_source_get(heap, canonical_order.as_const(), i)?;
+        let rank = fill_out_source_get(heap, symmetry_rank.as_const(), usize::from(order))?;
+        fill_out_source_set(heap, equivalence, i, rank)?;
+        fill_out_source_set(heap, sort_order, i, i as AT_NUMB)?;
+    }
+    for i in atom_count..atom_and_group_count {
+        let value = match tail {
+            FillOutEquivalenceTail::DebugSentinel => MAX_ATOMS as AT_NUMB,
+            FillOutEquivalenceTail::Identity => i as AT_NUMB,
+        };
+        fill_out_source_set(heap, sort_order, i, value)?;
+    }
+    Ok(())
+}
+
+fn fill_out_atomic_numbers(
+    heap: &mut SourceHeap,
+    canonical_order: SourceMutPointer<AT_NUMB>,
+    atoms: SourceMutPointer<sp_ATOM>,
+    atomic_numbers: SourceMutPointer<U_CHAR>,
+    atom_count: usize,
+) -> Result<(), SourceHeapError> {
+    let allocations_are_distinct = fill_out_allocations_are_distinct(&[
+        canonical_order.allocation_identity(),
+        atoms.allocation_identity(),
+        atomic_numbers.allocation_identity(),
+    ]);
+    let static_ranges_are_available = heap
+        .slice(canonical_order.as_const())
+        .is_ok_and(|values| values.len() >= atom_count)
+        && heap.slice(atoms.as_const()).is_ok()
+        && heap
+            .slice(atomic_numbers.as_const())
+            .is_ok_and(|values| values.len() >= atom_count);
+    if allocations_are_distinct && static_ranges_are_available {
+        // SAFETY: all allocations are distinct and remain live; the canonical
+        // atom index is checked immediately before the corresponding C read.
+        let order = unsafe { heap.stable_slice(canonical_order.as_const())? };
+        let atom_values = unsafe { heap.stable_slice(atoms.as_const())? };
+        let mut numbers = unsafe { heap.stable_slice_mut(atomic_numbers)? };
+        // INCHI✔️✔️:     for (i = 0; i < num_atoms; i++)
+        for i in 0..atom_count {
+            // INCHI✔️✔️:         pINChI->nAtom[i] = (int) at[pCanonOrd[i]].el_number;
+            // SAFETY: both static prefixes were validated before entering the
+            // Official C loop.
+            let canonical_atom = *unsafe { order.get_unchecked(i) };
+            *unsafe { numbers.get_unchecked_mut(i) } =
+                atom_values.get(usize::from(canonical_atom))?.el_number;
+            // INCHI✔️✔️:     }
+        }
+        return Ok(());
+    }
+
+    for i in 0..atom_count {
+        let order = fill_out_source_get(heap, canonical_order.as_const(), i)?;
+        let atomic_number =
+            fill_out_source_get(heap, atoms.as_const(), usize::from(order))?.el_number;
+        fill_out_source_set(heap, atomic_numbers, i, atomic_number)?;
+    }
+    Ok(())
+}
+
 fn fill_out_sort_equivalence(
     heap: &mut SourceHeap,
     globals: &mut CANON_GLOBALS,
@@ -1878,6 +2711,110 @@ fn fill_out_sort_equivalence(
     count: usize,
 ) -> Result<(), SourceHeapError> {
     globals.m_pn_RankForSort = equivalence.as_const();
+    let allocations_are_distinct = fill_out_allocations_are_distinct(&[
+        equivalence.allocation_identity(),
+        sort_order.allocation_identity(),
+    ]);
+    let prefixes_are_available = heap
+        .slice(equivalence.as_const())
+        .is_ok_and(|values| values.len() >= count)
+        && heap
+            .slice(sort_order.as_const())
+            .is_ok_and(|values| values.len() > count);
+    let order_values_are_rank_indices = prefixes_are_available
+        && heap.slice(equivalence.as_const()).is_ok_and(|ranks| {
+            heap.slice(sort_order.as_const()).is_ok_and(|order| {
+                order[..count]
+                    .iter()
+                    .all(|value| usize::from(*value) < ranks.len())
+            })
+        });
+    if allocations_are_distinct && prefixes_are_available && order_values_are_rank_indices {
+        // SAFETY: the two allocations are distinct, both prefixes were
+        // validated, and every initial order value indexes `ranks`. Official
+        // qsort only permutes that prefix, so the dynamic bound is invariant.
+        let mut ranks = unsafe { heap.stable_slice_mut(equivalence)? };
+        let mut order = unsafe { heap.stable_slice_mut(sort_order)? };
+        if count > 1 {
+            let bytes = bytemuck::cast_slice_mut::<AT_NUMB, u8>(order.prefix_mut(count)?);
+            // INCHI✔️✔️:         inchi_qsort( pCG, pSortOrd, num_atoms, sizeof( pSortOrd[0] ), CompRanksOrd );
+            inchi_qsort(
+                bytes,
+                count,
+                std::mem::size_of::<AT_NUMB>(),
+                &mut |first, second| {
+                    let first = AT_NUMB::from_ne_bytes(
+                        first
+                            .try_into()
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                    );
+                    let second = AT_NUMB::from_ne_bytes(
+                        second
+                            .try_into()
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                    );
+                    // SAFETY: both values came from the validated order prefix,
+                    // and qsort only permutes that prefix.
+                    let rank_difference = unsafe {
+                        i32::from(*ranks.get_unchecked(usize::from(first)))
+                            - i32::from(*ranks.get_unchecked(usize::from(second)))
+                    };
+                    Ok(if rank_difference == 0 {
+                        i32::from(first) - i32::from(second)
+                    } else {
+                        rank_difference
+                    })
+                },
+            )?;
+        }
+
+        // INCHI✔️✔️:         for (i = 0, nMinOrd = pSortOrd[0], j = 1; j <= num_atoms; j++)
+        let mut i = 0_usize;
+        // SAFETY: `order` has a validated prefix through the terminal slot.
+        let mut minimum_order = *unsafe { order.get_unchecked(0) };
+        for j in 1..=count {
+            // INCHI✔️✔️:             if (j == num_atoms || pConstitEquNumb[pSortOrd[i]] != pConstitEquNumb[pSortOrd[j]])
+            let boundary = if j == count {
+                true
+            } else {
+                // SAFETY: i and j are inside the sorted prefix here, and its
+                // values retain the validated rank bound after permutation.
+                let left_order = *unsafe { order.get_unchecked(i) };
+                let right_order = *unsafe { order.get_unchecked(j) };
+                (unsafe { ranks.get_unchecked(usize::from(left_order)) })
+                    != (unsafe { ranks.get_unchecked(usize::from(right_order)) })
+            };
+            if boundary {
+                // INCHI✔️✔️:                 nMinOrd++;
+                minimum_order = minimum_order.wrapping_add(1);
+                // INCHI✔️✔️:                 if (j - i > 1)
+                if j - i > 1 {
+                    // INCHI✔️✔️:                     while (i < j)
+                    while i < j {
+                        // INCHI✔️✔️:                         pConstitEquNumb[pSortOrd[i++]] = nMinOrd;
+                        // SAFETY: i is inside the validated sorted prefix, and
+                        // its value remains a valid rank index.
+                        let rank_index = usize::from(*unsafe { order.get_unchecked(i) });
+                        *unsafe { ranks.get_unchecked_mut(rank_index) } = minimum_order;
+                        i += 1;
+                        // INCHI✔️✔️:                     }
+                    }
+                } else {
+                    // INCHI✔️✔️:                     pConstitEquNumb[pSortOrd[i++]] = 0;
+                    // SAFETY: as above for the single-element group.
+                    let rank_index = usize::from(*unsafe { order.get_unchecked(i) });
+                    *unsafe { ranks.get_unchecked_mut(rank_index) } = 0;
+                    i += 1;
+                }
+                // INCHI✔️✔️:                 nMinOrd = pSortOrd[j];
+                // SAFETY: the static check includes the one-past terminal
+                // slot that Official C reads when j == count.
+                minimum_order = *unsafe { order.get_unchecked(j) };
+            }
+        }
+        return Ok(());
+    }
+
     if count > 1 {
         heap.with_slice_mut_and_heap(sort_order, |order, heap| {
             let order = order
@@ -1929,9 +2866,7 @@ fn fill_out_sort_equivalence(
                 fill_out_source_set(heap, equivalence, usize::from(order), 0)?;
                 i += 1;
             }
-            if j < count {
-                minimum_order = fill_out_source_get(heap, sort_order.as_const(), j)?;
-            }
+            minimum_order = fill_out_source_get(heap, sort_order.as_const(), j)?;
         }
     }
     Ok(())
@@ -2976,13 +3911,14 @@ pub(crate) fn FillOutINChIWithBehavior(
             pCanonOrd = pCS.nCanonOrdStereo;
             pCanonRankInv = pSortOrd;
             pCanonOrdInv = pCS.nCanonOrdStereoInv;
-            for i in 0..num_at_tg_usize {
-                let rank = (i as AT_NUMB).wrapping_add(1);
-                let direct = fill_out_source_get(heap, pCanonOrd.as_const(), i)?;
-                let inverted = fill_out_source_get(heap, pCanonOrdInv.as_const(), i)?;
-                fill_out_source_set(heap, pCanonRank, usize::from(direct), rank)?;
-                fill_out_source_set(heap, pCanonRankInv, usize::from(inverted), rank)?;
-            }
+            fill_out_stereo_ranks(
+                heap,
+                pCanonOrd,
+                pCanonOrdInv,
+                pCanonRank,
+                pCanonRankInv,
+                num_at_tg_usize,
+            )?;
             let mut stereo = heap
                 .slice(pINChI.Stereo.as_const())?
                 .first()
@@ -3026,25 +3962,21 @@ pub(crate) fn FillOutINChIWithBehavior(
                 }
             }
             heap.slice_mut(pINChI.Stereo)?[0] = stereo;
-            for i in 0..atom_count {
-                let direct = fill_out_source_get(heap, pCanonOrd.as_const(), i)?;
-                let inverted = fill_out_source_get(heap, pCanonOrdInv.as_const(), i)?;
-                let direct_original =
-                    fill_out_source_get(heap, at.as_const(), usize::from(direct))?.orig_at_number;
-                let inverted_original =
-                    fill_out_source_get(heap, at.as_const(), usize::from(inverted))?.orig_at_number;
-                fill_out_source_set(heap, pINChI_Aux.nOrigAtNosInCanonOrd, i, direct_original)?;
-                fill_out_source_set(
-                    heap,
-                    pINChI_Aux.nOrigAtNosInCanonOrdInv,
-                    i,
-                    inverted_original,
-                )?;
-            }
+            fill_out_stereo_original_atom_numbers(
+                heap,
+                pCanonOrd,
+                pCanonOrdInv,
+                at,
+                pINChI_Aux.nOrigAtNosInCanonOrd,
+                pINChI_Aux.nOrigAtNosInCanonOrdInv,
+                atom_count,
+            )?;
             if bUseNumberingInv != 0 {
                 switch_ptrs(&mut pCanonRank, &mut pCanonRankInv);
                 switch_ptrs(&mut pCanonOrd, &mut pCanonOrdInv);
+                // INCHI✔️✔️:             memcpy(pCanonRank, pCanonRankInv, num_at_tg * sizeof(pCanonRank[0]));
                 fill_out_copy_prefix(heap, pCanonRank, pCanonRankInv.as_const(), num_at_tg_usize)?;
+                // INCHI✔️✔️:             memcpy(pCanonOrd, pCanonOrdInv, num_at_tg * sizeof(pCanonOrd[0]));
                 fill_out_copy_prefix(heap, pCanonOrd, pCanonOrdInv.as_const(), num_at_tg_usize)?;
             }
         } else {
@@ -3056,63 +3988,20 @@ pub(crate) fn FillOutINChIWithBehavior(
                 SourceMutPointer::null()
             };
             if !pCanonOrd.is_null() {
-                for i in 0..atom_count {
-                    let order = fill_out_source_get(heap, pCanonOrd.as_const(), i)?;
-                    fill_out_source_set(
-                        heap,
-                        pCanonRank,
-                        usize::from(order),
-                        (i as AT_NUMB).wrapping_add(1),
-                    )?;
-                    let original = fill_out_source_get(heap, at.as_const(), usize::from(order))?
-                        .orig_at_number;
-                    fill_out_source_set(heap, pINChI_Aux.nOrigAtNosInCanonOrd, i, original)?;
-                }
-                for i in atom_count..num_at_tg_usize {
-                    let order = fill_out_source_get(heap, pCanonOrd.as_const(), i)?;
-                    fill_out_source_set(
-                        heap,
-                        pCanonRank,
-                        usize::from(order),
-                        (i as AT_NUMB).wrapping_add(1),
-                    )?;
-                }
+                fill_out_numbering_without_stereo(
+                    heap,
+                    pCanonOrd,
+                    pCanonRank,
+                    pINChI_Aux.nOrigAtNosInCanonOrd,
+                    at,
+                    atom_count,
+                    num_at_tg_usize,
+                )?;
             }
         }
 
-        if !pINChI_Aux.OrigInfo.is_null() {
-            for i in 0..atom_count {
-                if pCanonOrd.is_null() {
-                    continue;
-                }
-                let order = fill_out_source_get(heap, pCanonOrd.as_const(), i)?;
-                let atom = fill_out_source_get(heap, norm_at.as_const(), usize::from(order))?;
-                let radical = if atom.radical == RADICAL_SINGLET as i8 {
-                    0
-                } else if atom.radical == RADICAL_DOUBLET as i8 {
-                    1
-                } else if atom.radical == RADICAL_TRIPLET as i8 {
-                    2
-                } else if atom.radical != 0 {
-                    3
-                } else {
-                    0
-                };
-                let mut info = fill_out_source_get(heap, pINChI_Aux.OrigInfo.as_const(), i)?;
-                info.cRadical = radical;
-                if atom.valence != 0 || atom.num_H != 0 {
-                    info.cCharge = atom.charge;
-                    info.cUnusualValence = get_unusual_el_valence(
-                        i32::from(atom.el_number),
-                        i32::from(atom.charge),
-                        i32::from(atom.radical),
-                        i32::from(atom.chem_bonds_valence),
-                        i32::from(atom.num_H),
-                        i32::from(atom.valence),
-                    )? as i8;
-                }
-                fill_out_source_set(heap, pINChI_Aux.OrigInfo, i, info)?;
-            }
+        if !pINChI_Aux.OrigInfo.is_null() && !pCanonOrd.is_null() {
+            fill_out_original_atom_info(heap, pCanonOrd, norm_at, pINChI_Aux.OrigInfo, atom_count)?;
         }
 
         let pConstitEquNumb = pINChI_Aux.nConstitEquNumbers;
@@ -3124,29 +4013,26 @@ pub(crate) fn FillOutINChIWithBehavior(
             nErrorCode |= ERR_NO_CANON_RESULTS as i32;
             return Ok(-1);
         }
-        for i in 0..atom_count {
-            let order = fill_out_source_get(heap, pCanonOrd.as_const(), i)?;
-            let rank = fill_out_source_get(heap, pCS.nSymmRank.as_const(), usize::from(order))?;
-            fill_out_source_set(heap, pConstitEquNumb, i, rank)?;
-            fill_out_source_set(heap, pSortOrd, i, i as AT_NUMB)?;
-        }
-        for i in atom_count..num_at_tg_usize {
-            fill_out_source_set(heap, pSortOrd, i, MAX_ATOMS as AT_NUMB)?;
-        }
+        fill_out_prepare_equivalence(
+            heap,
+            pCanonOrd,
+            pCS.nSymmRank,
+            pConstitEquNumb,
+            pSortOrd,
+            atom_count,
+            num_at_tg_usize,
+            FillOutEquivalenceTail::DebugSentinel,
+        )?;
         fill_out_sort_equivalence(heap, pCG, pConstitEquNumb, pSortOrd, atom_count)?;
 
-        for i in 0..atom_count {
-            let order = fill_out_source_get(heap, pCanonOrd.as_const(), i)?;
-            let atomic_number =
-                fill_out_source_get(heap, at.as_const(), usize::from(order))?.el_number;
-            fill_out_source_set(heap, pINChI.nAtom, i, atomic_number)?;
-        }
+        fill_out_atomic_numbers(heap, pCanonOrd, at, pINChI.nAtom, atom_count)?;
         if pCS.nLenLinearCTAtOnly <= 0 || pCS.LinearCT.is_null() || pINChI.nConnTable.is_null() {
             nErrorCode |= ERR_NO_CANON_RESULTS as i32;
             return Ok(-2);
         }
         let connection_count = usize::try_from(pCS.nLenLinearCTAtOnly)
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        // INCHI✔️✔️:     memcpy(pINChI->nConnTable, pCS->LinearCT, sizeof(pINChI->nConnTable[0]) * pCS->nLenLinearCTAtOnly);
         fill_out_copy_prefix(
             heap,
             pINChI.nConnTable,
@@ -3229,6 +4115,10 @@ pub(crate) fn FillOutINChIWithBehavior(
         }
 
         if !pCS.nNum_H.is_null() {
+            // INCHI✔️✔️:         for (i = 0; i < num_atoms; i++)
+            // INCHI✔️✔️:         {
+            // INCHI✔️✔️:             pINChI->nNum_H[i] = pCS->nNum_H[i];
+            // INCHI✔️✔️:         }
             fill_out_copy_prefix(heap, pINChI.nNum_H, pCS.nNum_H.as_const(), atom_count)?;
         }
         if !pCS.nNum_H_fixed.is_null() && pINChI.lenTautomer == 0 {
@@ -3335,13 +4225,14 @@ pub(crate) fn FillOutINChIWithBehavior(
             pCanonOrd = pCS.nCanonOrdIsotopicStereo;
             pCanonRankInv = pSortOrd;
             pCanonOrdInv = pCS.nCanonOrdIsotopicStereoInv;
-            for i in 0..num_at_tg_usize {
-                let rank = (i as AT_NUMB).wrapping_add(1);
-                let direct = fill_out_source_get(heap, pCanonOrd.as_const(), i)?;
-                let inverted = fill_out_source_get(heap, pCanonOrdInv.as_const(), i)?;
-                fill_out_source_set(heap, pCanonRank, usize::from(direct), rank)?;
-                fill_out_source_set(heap, pCanonRankInv, usize::from(inverted), rank)?;
-            }
+            fill_out_stereo_ranks(
+                heap,
+                pCanonOrd,
+                pCanonOrdInv,
+                pCanonRank,
+                pCanonRankInv,
+                num_at_tg_usize,
+            )?;
             let mut stereo = heap
                 .slice(pINChI.StereoIsotopic.as_const())?
                 .first()
@@ -3385,30 +4276,21 @@ pub(crate) fn FillOutINChIWithBehavior(
                 }
             }
             heap.slice_mut(pINChI.StereoIsotopic)?[0] = stereo;
-            for i in 0..atom_count {
-                let direct = fill_out_source_get(heap, pCanonOrd.as_const(), i)?;
-                let inverted = fill_out_source_get(heap, pCanonOrdInv.as_const(), i)?;
-                let direct_original =
-                    fill_out_source_get(heap, at.as_const(), usize::from(direct))?.orig_at_number;
-                let inverted_original =
-                    fill_out_source_get(heap, at.as_const(), usize::from(inverted))?.orig_at_number;
-                fill_out_source_set(
-                    heap,
-                    pINChI_Aux.nIsotopicOrigAtNosInCanonOrd,
-                    i,
-                    direct_original,
-                )?;
-                fill_out_source_set(
-                    heap,
-                    pINChI_Aux.nIsotopicOrigAtNosInCanonOrdInv,
-                    i,
-                    inverted_original,
-                )?;
-            }
+            fill_out_stereo_original_atom_numbers(
+                heap,
+                pCanonOrd,
+                pCanonOrdInv,
+                at,
+                pINChI_Aux.nIsotopicOrigAtNosInCanonOrd,
+                pINChI_Aux.nIsotopicOrigAtNosInCanonOrdInv,
+                atom_count,
+            )?;
             if bUseIsotopicNumberingInv != 0 {
                 switch_ptrs(&mut pCanonRank, &mut pCanonRankInv);
                 switch_ptrs(&mut pCanonOrd, &mut pCanonOrdInv);
+                // INCHI✔️✔️:             memcpy(pCanonRank, pCanonRankInv, num_at_tg * sizeof(pCanonRank[0]));
                 fill_out_copy_prefix(heap, pCanonRank, pCanonRankInv.as_const(), num_at_tg_usize)?;
+                // INCHI✔️✔️:             memcpy(pCanonOrd, pCanonOrdInv, num_at_tg * sizeof(pCanonOrd[0]));
                 fill_out_copy_prefix(heap, pCanonOrd, pCanonOrdInv.as_const(), num_at_tg_usize)?;
             }
         } else {
@@ -3421,32 +4303,15 @@ pub(crate) fn FillOutINChIWithBehavior(
             };
             pCanonRank = pCanonRankAtoms;
             if !pCanonOrd.is_null() && !pINChI_Aux.nIsotopicOrigAtNosInCanonOrd.is_null() {
-                for i in 0..atom_count {
-                    let order = fill_out_source_get(heap, pCanonOrd.as_const(), i)?;
-                    fill_out_source_set(
-                        heap,
-                        pCanonRank,
-                        usize::from(order),
-                        (i as AT_NUMB).wrapping_add(1),
-                    )?;
-                    let original = fill_out_source_get(heap, at.as_const(), usize::from(order))?
-                        .orig_at_number;
-                    fill_out_source_set(
-                        heap,
-                        pINChI_Aux.nIsotopicOrigAtNosInCanonOrd,
-                        i,
-                        original,
-                    )?;
-                }
-                for i in atom_count..num_at_tg_usize {
-                    let order = fill_out_source_get(heap, pCanonOrd.as_const(), i)?;
-                    fill_out_source_set(
-                        heap,
-                        pCanonRank,
-                        usize::from(order),
-                        (i as AT_NUMB).wrapping_add(1),
-                    )?;
-                }
+                fill_out_numbering_without_stereo(
+                    heap,
+                    pCanonOrd,
+                    pCanonRank,
+                    pINChI_Aux.nIsotopicOrigAtNosInCanonOrd,
+                    at,
+                    atom_count,
+                    num_at_tg_usize,
+                )?;
             }
         }
 
@@ -3457,16 +4322,16 @@ pub(crate) fn FillOutINChIWithBehavior(
         {
             return Ok(ret);
         }
-        for i in 0..atom_count {
-            let order = fill_out_source_get(heap, pCanonOrd.as_const(), i)?;
-            let rank =
-                fill_out_source_get(heap, pCS.nSymmRankIsotopic.as_const(), usize::from(order))?;
-            fill_out_source_set(heap, pINChI_Aux.nConstitEquIsotopicNumbers, i, rank)?;
-            fill_out_source_set(heap, pSortOrd, i, i as AT_NUMB)?;
-        }
-        for i in atom_count..num_at_tg_usize {
-            fill_out_source_set(heap, pSortOrd, i, i as AT_NUMB)?;
-        }
+        fill_out_prepare_equivalence(
+            heap,
+            pCanonOrd,
+            pCS.nSymmRankIsotopic,
+            pINChI_Aux.nConstitEquIsotopicNumbers,
+            pSortOrd,
+            atom_count,
+            num_at_tg_usize,
+            FillOutEquivalenceTail::Identity,
+        )?;
         fill_out_sort_equivalence(
             heap,
             pCG,
@@ -4084,6 +4949,145 @@ mod tests {
     }
 
     #[test]
+    fn fill_out_numbering_fallback_preserves_source_partial_write_order() {
+        let mut heap = SourceHeap::default();
+        let canonical_order = heap.allocate_model_storage(vec![0_u16, 1]).unwrap();
+        let canonical_rank = heap.allocate_model_storage(vec![99_u16]).unwrap();
+        let original_numbers = heap.allocate_model_storage(vec![0_u16, 0]).unwrap();
+        let mut atom_values = vec![sp_ATOM::default(); 2];
+        atom_values[0].orig_at_number = 11;
+        atom_values[1].orig_at_number = 22;
+        let atoms = heap.allocate_model_storage(atom_values).unwrap();
+
+        assert_eq!(
+            fill_out_numbering_without_stereo(
+                &mut heap,
+                canonical_order,
+                canonical_rank,
+                original_numbers,
+                atoms,
+                2,
+                2,
+            ),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(heap.slice(canonical_rank.as_const()).unwrap(), &[1]);
+        assert_eq!(heap.slice(original_numbers.as_const()).unwrap(), &[11, 0]);
+    }
+
+    #[test]
+    fn fill_out_stereo_rank_alias_fallback_preserves_partial_write_order() {
+        let mut heap = SourceHeap::default();
+        let canonical_order = heap.allocate_model_storage(vec![0_u16]).unwrap();
+        let inverted_order = heap.allocate_model_storage(vec![1_u16]).unwrap();
+        let aliased_ranks = heap.allocate_model_storage(vec![99_u16]).unwrap();
+
+        assert_eq!(
+            fill_out_stereo_ranks(
+                &mut heap,
+                canonical_order,
+                inverted_order,
+                aliased_ranks,
+                aliased_ranks,
+                1,
+            ),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(heap.slice(aliased_ranks.as_const()).unwrap(), &[1]);
+    }
+
+    #[test]
+    fn fill_out_stereo_rank_invalid_index_fallback_preserves_prior_write() {
+        let mut heap = SourceHeap::default();
+        let canonical_order = heap.allocate_model_storage(vec![0_u16]).unwrap();
+        let inverted_order = heap.allocate_model_storage(vec![1_u16]).unwrap();
+        let canonical_ranks = heap.allocate_model_storage(vec![99_u16]).unwrap();
+        let inverted_ranks = heap.allocate_model_storage(vec![88_u16]).unwrap();
+
+        assert_eq!(
+            fill_out_stereo_ranks(
+                &mut heap,
+                canonical_order,
+                inverted_order,
+                canonical_ranks,
+                inverted_ranks,
+                1,
+            ),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(heap.slice(canonical_ranks.as_const()).unwrap(), &[1]);
+        assert_eq!(heap.slice(inverted_ranks.as_const()).unwrap(), &[88]);
+    }
+
+    #[test]
+    fn fill_out_stereo_original_number_alias_fallback_keeps_access_order() {
+        let mut heap = SourceHeap::default();
+        let canonical_order = heap.allocate_model_storage(vec![0_u16]).unwrap();
+        let inverted_order = heap.allocate_model_storage(vec![1_u16]).unwrap();
+        let mut atom_values = vec![sp_ATOM::default(); 2];
+        atom_values[0].orig_at_number = 11;
+        atom_values[1].orig_at_number = 22;
+        let atoms = heap.allocate_model_storage(atom_values).unwrap();
+        let aliased_originals = heap.allocate_model_storage(vec![0_u16]).unwrap();
+
+        assert_eq!(
+            fill_out_stereo_original_atom_numbers(
+                &mut heap,
+                canonical_order,
+                inverted_order,
+                atoms,
+                aliased_originals,
+                aliased_originals,
+                1,
+            ),
+            Ok(())
+        );
+        assert_eq!(heap.slice(aliased_originals.as_const()).unwrap(), &[22]);
+    }
+
+    #[test]
+    fn fill_out_stereo_original_number_invalid_atom_writes_neither_output() {
+        let mut heap = SourceHeap::default();
+        let canonical_order = heap.allocate_model_storage(vec![0_u16]).unwrap();
+        let inverted_order = heap.allocate_model_storage(vec![2_u16]).unwrap();
+        let mut atom_values = vec![sp_ATOM::default(); 2];
+        atom_values[0].orig_at_number = 11;
+        atom_values[1].orig_at_number = 22;
+        let atoms = heap.allocate_model_storage(atom_values).unwrap();
+        let originals = heap.allocate_model_storage(vec![77_u16]).unwrap();
+        let inverted_originals = heap.allocate_model_storage(vec![88_u16]).unwrap();
+
+        assert_eq!(
+            fill_out_stereo_original_atom_numbers(
+                &mut heap,
+                canonical_order,
+                inverted_order,
+                atoms,
+                originals,
+                inverted_originals,
+                1,
+            ),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(heap.slice(originals.as_const()).unwrap(), &[77]);
+        assert_eq!(heap.slice(inverted_originals.as_const()).unwrap(), &[88]);
+    }
+
+    #[test]
+    fn fill_out_equivalence_reads_source_terminal_sort_slot_after_writes() {
+        let mut heap = SourceHeap::default();
+        let equivalence = heap.allocate_model_storage(vec![7_u16]).unwrap();
+        let sort_order = heap.allocate_model_storage(vec![0_u16]).unwrap();
+        let mut globals = CANON_GLOBALS::default();
+
+        assert_eq!(
+            fill_out_sort_equivalence(&mut heap, &mut globals, equivalence, sort_order, 1,),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(heap.slice(equivalence.as_const()).unwrap(), &[0]);
+    }
+
+    #[test]
     fn source_port__inchi_dll_a2__filloutinchireducedwarn__line_2254() {
         let mut basic = FillOutFixture::new();
         assert_eq!(basic.call_reduced(0, 0), Ok(0));
@@ -4543,6 +5547,153 @@ mod tests {
                 16
             );
         }
+    }
+
+    #[test]
+    fn mark_ambiguous_stereo_source_layout_rejects_unproved_inputs() {
+        let mut alias_heap = SourceHeap::default();
+        let alias_atoms = alias_heap
+            .allocate_model_storage(vec![sp_ATOM::default()])
+            .unwrap();
+        let alias_order = alias_heap.allocate_model_storage(vec![0_u16]).unwrap();
+        assert!(!mark_ambiguous_stereo_source_layout_is_valid(
+            &alias_heap,
+            alias_atoms,
+            alias_atoms.cast(),
+            0,
+            alias_order.as_const(),
+            SourceConstPointer::null(),
+            0,
+            SourceConstPointer::null(),
+            0,
+        ));
+        assert_eq!(
+            MarkAmbiguousStereo(
+                &mut alias_heap,
+                alias_atoms,
+                alias_atoms.cast(),
+                0,
+                alias_order.as_const(),
+                SourceConstPointer::null(),
+                0,
+                SourceConstPointer::null(),
+                0,
+            ),
+            Err(SourceHeapError::AllocationTypeMismatch)
+        );
+        assert_eq!(
+            alias_heap.slice(alias_atoms.as_const()).unwrap(),
+            &[sp_ATOM::default()]
+        );
+
+        let mut canonical_heap = SourceHeap::default();
+        let mut canonical_atom = sp_ATOM::default();
+        canonical_atom.bAmbiguousStereo = 1;
+        let canonical_atoms = canonical_heap
+            .allocate_model_storage(vec![canonical_atom.clone()])
+            .unwrap();
+        let canonical_normalized = canonical_heap
+            .allocate_model_storage(vec![inp_ATOM::default()])
+            .unwrap();
+        let canonical_order = canonical_heap.allocate_model_storage(vec![0_u16]).unwrap();
+        let malformed_center = canonical_heap
+            .allocate_model_storage(vec![AT_STEREO_CARB {
+                at_num: 0,
+                parity: 1,
+            }])
+            .unwrap();
+        assert!(!mark_ambiguous_stereo_source_layout_is_valid(
+            &canonical_heap,
+            canonical_atoms,
+            canonical_normalized,
+            0,
+            canonical_order.as_const(),
+            malformed_center.as_const(),
+            1,
+            SourceConstPointer::null(),
+            0,
+        ));
+        assert_eq!(
+            MarkAmbiguousStereo(
+                &mut canonical_heap,
+                canonical_atoms,
+                canonical_normalized,
+                0,
+                canonical_order.as_const(),
+                malformed_center.as_const(),
+                1,
+                SourceConstPointer::null(),
+                0,
+            ),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(
+            canonical_heap.slice(canonical_atoms.as_const()).unwrap(),
+            &[canonical_atom]
+        );
+        assert_eq!(
+            canonical_heap
+                .slice(canonical_normalized.as_const())
+                .unwrap(),
+            &[inp_ATOM::default()]
+        );
+
+        let mut cumulene_heap = SourceHeap::default();
+        let mut cumulene_atoms = vec![sp_ATOM::default(); 2];
+        cumulene_atoms[0].bAmbiguousStereo = 1;
+        cumulene_atoms[0].stereo_bond_parity2[0] = MULT_STEREOBOND as S_CHAR;
+        cumulene_atoms[0].stereo_bond_ord2[0] = 0;
+        cumulene_atoms[0].neighbor[0] = 9;
+        let cumulene_atoms_before = cumulene_atoms.clone();
+        let cumulene_atoms = cumulene_heap
+            .allocate_model_storage(cumulene_atoms)
+            .unwrap();
+        let cumulene_normalized = cumulene_heap
+            .allocate_model_storage(vec![inp_ATOM::default(); 2])
+            .unwrap();
+        let cumulene_order = cumulene_heap
+            .allocate_model_storage(vec![0_u16, 1])
+            .unwrap();
+        let malformed_bond = cumulene_heap
+            .allocate_model_storage(vec![AT_STEREO_DBLE {
+                at_num1: 1,
+                at_num2: 2,
+                parity: 1,
+            }])
+            .unwrap();
+        assert!(!mark_ambiguous_stereo_source_layout_is_valid(
+            &cumulene_heap,
+            cumulene_atoms,
+            cumulene_normalized,
+            1,
+            cumulene_order.as_const(),
+            SourceConstPointer::null(),
+            0,
+            malformed_bond.as_const(),
+            1,
+        ));
+        assert_eq!(
+            MarkAmbiguousStereo(
+                &mut cumulene_heap,
+                cumulene_atoms,
+                cumulene_normalized,
+                1,
+                cumulene_order.as_const(),
+                SourceConstPointer::null(),
+                0,
+                malformed_bond.as_const(),
+                1,
+            ),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(
+            cumulene_heap.slice(cumulene_atoms.as_const()).unwrap(),
+            &cumulene_atoms_before
+        );
+        assert_eq!(
+            cumulene_heap.slice(cumulene_normalized.as_const()).unwrap(),
+            &[inp_ATOM::default(); 2]
+        );
     }
 
     #[test]

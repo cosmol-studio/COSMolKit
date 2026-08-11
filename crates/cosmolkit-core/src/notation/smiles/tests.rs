@@ -1390,6 +1390,31 @@ fn from_smiles_does_not_assign_imine_stereo_without_distinguishable_substituents
 }
 
 #[test]
+fn from_smiles_preserves_bridge_ring_imine_stereo_before_writing_like_rdkit() {
+    let molecule = Molecule::from_smiles("N/N=C1/C[C@H]2C[C@H]2C1").unwrap();
+
+    assert_eq!(molecule.bonds()[1].stereo(), BondStereo::E);
+    assert_eq!(
+        molecule.bonds()[1].stereo_atoms(),
+        Some([AtomId::new(0), AtomId::new(3)])
+    );
+}
+
+#[test]
+fn from_smiles_rejects_duplicate_ligand_pseudo_stereo_before_writing_like_rdkit() {
+    let molecule = Molecule::from_smiles("O=C1/C(CC[C@@H](C)C1)=C(C)/C").unwrap();
+
+    assert_eq!(molecule.bonds()[7].stereo(), BondStereo::None);
+    assert_eq!(molecule.bonds()[7].stereo_atoms(), None);
+    assert!(molecule.bonds().iter().all(|bond| {
+        !matches!(
+            bond.direction(),
+            BondDirection::EndUpRight | BondDirection::EndDownRight
+        )
+    }));
+}
+
+#[test]
 fn set_double_bond_neighbor_directions_marks_reverse_squiggle_neighbor_as_any_like_rdkit() {
     let mut molecule = squiggle_neighbor_double_bond_3d_molecule();
     molecule.topology_block_mut().bonds[1].set_direction(BondDirection::Unknown);

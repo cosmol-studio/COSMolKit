@@ -257,7 +257,7 @@ impl NonbondedContrib {
             let atom1_idx = self.atom1_indices[i] as usize;
             let atom2_idx = self.atom2_indices[i] as usize;
             // RDKit✔️✔️:     double dist = dp_forceField->distance(d_at1Idx, d_at2Idx, pos);
-            let dist = force_field.distance_const(atom1_idx, atom2_idx, Some(pos));
+            let dist = force_field.distance(atom1_idx, atom2_idx, Some(pos));
 
             // RDKit✔️✔️:     if (d_contribTypes[i] & ContribType::VDW) {
             if self.contrib_types[i] & 1 != 0 {
@@ -320,7 +320,7 @@ impl NonbondedContrib {
             let atom1_idx = self.atom1_indices[pair_idx] as usize;
             let atom2_idx = self.atom2_indices[pair_idx] as usize;
             // RDKit✔️✔️:     const double dist = dp_forceField->distance(d_at1Idx, d_at2Idx, pos);
-            let dist = force_field.distance_const(atom1_idx, atom2_idx, Some(pos));
+            let dist = force_field.distance(atom1_idx, atom2_idx, Some(pos));
             // RDKit✔️✔️:     const double *at1Coords = &(pos[3 * d_at1Idx]);
             // RDKit✔️✔️:     const double *at2Coords = &(pos[3 * d_at2Idx]);
             let atom1_offset = 3 * atom1_idx;

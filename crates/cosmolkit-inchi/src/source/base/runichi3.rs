@@ -1895,7 +1895,7 @@ exit_function:
     // INCHI✔️❌: Rust checked heap lookups and temporary source slices add work absent from direct C pointer access.
     // END INCHI ACTIVE MACRO CONFIGURATION: OAD_PolymerUnit_New
 
-    fn calloc_or_null<T: Default + 'static>(
+    fn calloc_or_null<T: Clone + Default + 'static>(
         heap: &mut SourceHeap,
         count: u64,
     ) -> Result<SourceMutPointer<T>, SourceHeapError> {

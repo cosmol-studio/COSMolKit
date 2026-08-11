@@ -430,7 +430,6 @@ molecule_ops! {
         },
         semantic_preconditions: [
             trusted_bond_topology,
-            hydrogen_ownership_represented,
             valence_computable,
         ],
         requires_mapping: required,
@@ -548,11 +547,14 @@ molecule_ops! {
         parity_profile: "sanitize_default_rdkit",
     }
 
-    op assigned_valence() {
-        method: with_assigned_valence,
+    op assigned_valence(strict: bool) {
+        method: with_assigned_valence_strict,
         impl_fn: assigned_valence_impl,
+        default_method: with_assigned_valence,
+        default_args: [true],
         inplace: true,
-        inplace_method: assign_valence_,
+        inplace_method: assign_valence_strict_,
+        default_inplace_method: assign_valence_,
         domain: topology,
         kind: weak,
         topology_edit: none,

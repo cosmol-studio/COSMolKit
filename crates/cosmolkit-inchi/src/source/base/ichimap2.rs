@@ -23,7 +23,7 @@ use crate::source_types::{
     CT_STEREOCOUNT_ERR, EQ_NEIGH, KNOWN_PARITIES_EQL, MASK_CUMULENE_LEN, MAX_ATOMS,
     MAX_NUM_STEREO_ATOM_NEIGH, MAX_NUM_STEREO_BOND_NEIGH, MAX_NUM_STEREO_BONDS,
     MIN_NUM_STEREO_BOND_NEIGH, MULT_STEREOBOND, NEIGH_LIST, SourceHeap, SourceHeapError,
-    SourceMutPointer, ppAT_RANK, sp_ATOM,
+    SourceMutPointer, StableSourceConstSlice, StableSourceSlice, ppAT_RANK, sp_ATOM,
 };
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -140,39 +140,72 @@ pub(crate) fn NumberOfTies(
     */
     // END INCHI C FUNCTION: NumberOfTies
 
-    let nRank1 = source_get(heap, pRankStack1, 0)?;
-    let nAtomNumber1 = source_get(heap, pRankStack1, 1)?;
-    let nRank2 = source_get(heap, pRankStack2, 0)?;
-    let nAtomNumber2 = source_get(heap, pRankStack2, 1)?;
+    // SAFETY: AllocateAndFillRankArray creates the from/to pointer stacks and
+    // every rank/order row as fixed allocations. NumberOfTies may fill later
+    // stack slots, but it neither frees nor resizes these four current rows.
+    // Element references obtained below end before any heap mutation.
+    let rank_stack1 = unsafe { heap.stable_slice(pRankStack1.as_const())? };
+    // INCHI✔️✔️:     AT_RANK *nRank1 = *pRankStack1++;
+    let nRank1 = *rank_stack1.get(0)?;
+    // INCHI✔️✔️:     AT_RANK *nAtomNumber1 = *pRankStack1++;
+    let nAtomNumber1 = *rank_stack1.get(1)?;
+    let rank_stack2 = unsafe { heap.stable_slice(pRankStack2.as_const())? };
+    // INCHI✔️✔️:     AT_RANK *nRank2 = *pRankStack2++;
+    let nRank2 = *rank_stack2.get(0)?;
+    // INCHI✔️✔️:     AT_RANK *nAtomNumber2 = *pRankStack2++;
+    let nAtomNumber2 = *rank_stack2.get(1)?;
+    let ranks1 = unsafe { heap.stable_slice(nRank1.as_const())? };
+    let atom_numbers1 = unsafe { heap.stable_slice(nAtomNumber1.as_const())? };
+    let ranks2 = unsafe { heap.stable_slice(nRank2.as_const())? };
+    let atom_numbers2 = unsafe { heap.stable_slice(nAtomNumber2.as_const())? };
 
+    // INCHI✔️✔️:     *bAddStack = 0;
     *bAddStack = 0;
+    // INCHI✔️✔️:     *bMapped1 = 0;
     *bMapped1 = 0;
+    // INCHI✔️✔️:     *nNewRank = 0;
     *nNewRank = 0;
-    let r = source_get(heap, nRank1, at_no1)?;
-    if r != source_get(heap, nRank2, at_no2)? {
+    let at_index1 = usize::try_from(at_no1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️✔️:     r = nRank1[at_no1];
+    let r = *ranks1.get(at_index1)?;
+    let at_index2 = usize::try_from(at_no2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️✔️:     if (r != nRank2[at_no2])
+    if r != *ranks2.get(at_index2)? {
+        // INCHI✔️✔️:         return CT_MAPCOUNT_ERR;
         return Ok(CT_MAPCOUNT_ERR);
     }
+    // INCHI✔️✔️:     iMax = r - 1;
     let i_max = i32::from(r).wrapping_sub(1);
+    // INCHI✔️✔️:     for (i1 = 1; i1 <= iMax && r == nRank1[nAtomNumber1[iMax - i1]]; i1++)
     let mut i1 = 1_i32;
     while i1 <= i_max {
-        let atom = source_get(heap, nAtomNumber1, i_max.wrapping_sub(i1))?;
-        if r != source_get(heap, nRank1, i32::from(atom))? {
+        let order_index = usize::try_from(i_max.wrapping_sub(i1))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let atom = *atom_numbers1.get(order_index)?;
+        if r != *ranks1.get(usize::from(atom))? {
             break;
         }
         i1 = i1.wrapping_add(1);
     }
+    // INCHI✔️✔️:     for (i2 = 1; i2 <= iMax && r == nRank2[nAtomNumber2[iMax - i2]]; i2++)
     let mut i2 = 1_i32;
     while i2 <= i_max {
-        let atom = source_get(heap, nAtomNumber2, i_max.wrapping_sub(i2))?;
-        if r != source_get(heap, nRank2, i32::from(atom))? {
+        let order_index = usize::try_from(i_max.wrapping_sub(i2))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let atom = *atom_numbers2.get(order_index)?;
+        if r != *ranks2.get(usize::from(atom))? {
             break;
         }
         i2 = i2.wrapping_add(1);
     }
+    // INCHI✔️✔️:     if (i2 != i1)
     if i2 != i1 {
+        // INCHI✔️✔️:         return CT_MAPCOUNT_ERR;
         return Ok(CT_MAPCOUNT_ERR);
     }
+    // INCHI✔️✔️:     if (i1 > 1)
     if i1 > 1 {
+        // INCHI✔️✔️:         *nNewRank = r - i1 + 1;
         *nNewRank = i32::from(r).wrapping_sub(i1).wrapping_add(1) as AT_RANK;
         if length < 0 || length % 2 != 0 {
             return Err(SourceHeapError::UnsupportedSourceBehavior);
@@ -185,9 +218,17 @@ pub(crate) fn NumberOfTies(
             } else {
                 (pRankStack2, i)
             };
-            let mut temporary = source_get(heap, stack, slot)?;
+            let slot_index =
+                usize::try_from(slot).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let mut temporary = if i < 2 {
+                *rank_stack1.get(slot_index)?
+            } else {
+                *rank_stack2.get(slot_index)?
+            };
             if i < 2 && !temporary.is_null() {
-                *bMapped1 = bMapped1.wrapping_add(i32::from(source_get(heap, temporary, 0)? != 0));
+                let temporary_values = unsafe { heap.stable_slice(temporary.as_const())? };
+                // INCHI✔️✔️:                 *bMapped1 += ( pTempArray && pTempArray[0] );
+                *bMapped1 = bMapped1.wrapping_add(i32::from(*temporary_values.get(0)? != 0));
             }
             if temporary.is_null() {
                 let mut values = Vec::new();
@@ -221,10 +262,14 @@ pub(crate) fn NumberOfTies(
                     return Err(SourceHeapError::PointerOutOfBounds);
                 }
             }
+            // INCHI✔️✔️:                 *pRankStack1++ = pTempArray;
+            // INCHI✔️✔️:                 *pRankStack2++ = pTempArray;
             source_set(heap, stack, slot, temporary)?;
         }
+        // INCHI✔️✔️:         *bAddStack = 2;
         *bAddStack = 2;
     }
+    // INCHI✔️✔️:     return i1;
     Ok(i1)
 }
 
@@ -719,6 +764,764 @@ fn source_set<T: Copy + 'static>(
         .map(|slot| *slot = value)
 }
 
+pub(crate) struct NeighListRankWorkspace {
+    ranks: StableSourceConstSlice<AT_RANK>,
+    lists: Vec<StableSourceConstSlice<AT_NUMB>>,
+}
+
+/// Direct views over the contiguous `pAtList` layout created by the official
+/// InChI `CreateNeighList`. The split-allocation representation remains valid
+/// source-pointer state, but it is not the layout used by the C canonicalizer.
+struct ContiguousNeighborRankSortWorkspace {
+    ranks: StableSourceConstSlice<AT_RANK>,
+    atom_numbers: StableSourceSlice<AT_RANK>,
+    neighbor_lists: StableSourceConstSlice<NEIGH_LIST>,
+    storage: StableSourceSlice<AT_NUMB>,
+    rank_identity: u64,
+    atom_number_identity: u64,
+    neighbor_list_identity: u64,
+    storage_identity: u64,
+    count: usize,
+}
+
+/// The two fixed rank buffers exchanged by the official `switch_ptrs` loops.
+/// The inactive handle is retained as a raw stable view and is never read while
+/// that allocation is the current output buffer.
+struct AlternatingContiguousNeighborRankSortWorkspace {
+    active: ContiguousNeighborRankSortWorkspace,
+    inactive_ranks: StableSourceConstSlice<AT_RANK>,
+    started: bool,
+}
+
+impl ContiguousNeighborRankSortWorkspace {
+    fn try_new(
+        heap: &mut SourceHeap,
+        count: usize,
+        ranks: SourceMutPointer<AT_RANK>,
+        neighbor_lists: SourceMutPointer<NEIGH_LIST>,
+        atom_numbers: SourceMutPointer<AT_RANK>,
+    ) -> Option<Self> {
+        // SAFETY: these views validate the fixed source allocations once and
+        // remain live while the constructor checks their C layout contracts.
+        let rank_values = unsafe { heap.stable_slice(ranks.as_const()).ok()? };
+        let atom_values = unsafe { heap.stable_slice(atom_numbers.as_const()).ok()? };
+        let list_pointers = unsafe { heap.stable_slice(neighbor_lists.as_const()).ok()? };
+        if rank_values.len() < count || atom_values.len() < count || list_pointers.len() < count {
+            return None;
+        }
+        let atom_numbers_are_bounded =
+            heap.has_proven_index_bound(atom_numbers.as_const(), count, count);
+        if !atom_numbers_are_bounded
+            && atom_values
+                .prefix(count)
+                .ok()?
+                .iter()
+                .any(|&atom| usize::from(atom) >= count)
+        {
+            return None;
+        }
+
+        let rank_identity = ranks.allocation_identity()?;
+        let atom_number_identity = atom_numbers.allocation_identity()?;
+        let neighbor_list_identity = neighbor_lists.allocation_identity()?;
+        if rank_identity == atom_number_identity
+            || rank_identity == neighbor_list_identity
+            || atom_number_identity == neighbor_list_identity
+        {
+            return None;
+        }
+
+        let storage_origin = heap.proven_contiguous_neighbor_storage::<NEIGH_LIST, AT_NUMB>(
+            neighbor_lists.as_const(),
+            count,
+            rank_values.len(),
+        )?;
+        let storage_identity = storage_origin.allocation_identity()?;
+        if [rank_identity, atom_number_identity, neighbor_list_identity].contains(&storage_identity)
+        {
+            return None;
+        }
+        if !atom_numbers_are_bounded {
+            heap.record_index_bound(atom_numbers, count, count).ok()?;
+        }
+        drop(atom_values);
+
+        // SAFETY: the official ranking loops only permute the atom-number
+        // prefix, so the checked index bound remains true for the workspace.
+        let atom_numbers = unsafe {
+            heap.stable_index_bounded_slice_mut(atom_numbers, count, count)
+                .ok()?
+        };
+        // `rank_values` and `list_pointers` are the stable views validated at
+        // the start of this constructor; no second allocation lookup is needed.
+        let ranks = rank_values;
+        let neighbor_lists = list_pointers;
+        let storage = unsafe { heap.stable_slice_mut(storage_origin).ok()? };
+        Some(Self {
+            ranks,
+            atom_numbers,
+            neighbor_lists,
+            storage,
+            rank_identity,
+            atom_number_identity,
+            neighbor_list_identity,
+            storage_identity,
+            count,
+        })
+    }
+
+    fn is_disjoint_from(&self, pointer: SourceMutPointer<AT_RANK>) -> bool {
+        let Some(identity) = pointer.allocation_identity() else {
+            return false;
+        };
+        ![
+            self.rank_identity,
+            self.atom_number_identity,
+            self.neighbor_list_identity,
+            self.storage_identity,
+        ]
+        .contains(&identity)
+    }
+
+    #[inline(always)]
+    fn row_offset(&self, atom: usize) -> usize {
+        // SAFETY: the official CreateNeighList provenance proves that every
+        // table entry addresses a complete row in the base storage allocation.
+        // The returned storage pointer has offset zero, so the source row
+        // pointer's allocation offset is its direct index into `storage`.
+        let pointer = unsafe { *self.neighbor_lists.get_unchecked(atom) };
+        unsafe { pointer.allocation_offset_unchecked() }
+    }
+
+    #[inline(always)]
+    fn rank(&self, atom: AT_NUMB) -> AT_RANK {
+        // SAFETY: every neighbor index was validated at construction.
+        unsafe { *self.ranks.get_unchecked(usize::from(atom)) }
+    }
+
+    #[inline(always)]
+    fn storage_value(&self, index: usize) -> AT_NUMB {
+        // SAFETY: every row extent was validated at construction and the sort
+        // only permutes values inside that extent.
+        unsafe { *self.storage.get_unchecked(index) }
+    }
+
+    #[inline(always)]
+    fn set_storage_value(&mut self, index: usize, value: AT_NUMB) {
+        // SAFETY: as above; this workspace owns the only writable stable view.
+        *unsafe { self.storage.get_unchecked_mut(index) } = value;
+    }
+
+    #[inline(always)]
+    fn atom_number(&self, index: usize) -> AT_RANK {
+        // SAFETY: construction validated the complete atom-number prefix.
+        unsafe { *self.atom_numbers.get_unchecked(index) }
+    }
+
+    #[inline(always)]
+    fn set_atom_number(&mut self, index: usize, value: AT_RANK) {
+        // SAFETY: the insertion sorts only write inside the validated prefix.
+        *unsafe { self.atom_numbers.get_unchecked_mut(index) } = value;
+    }
+
+    #[inline(always)]
+    fn sort_row_by_rank_swapping(&mut self, row_offset: usize) {
+        // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:355 insertions_sort_NeighList_AT_NUMBERS
+        // INCHI✔️✔️:     AT_NUMB *i, *j, *pk, tmp;
+        // INCHI✔️✔️:     AT_RANK rj; /* optimization */
+        // INCHI✔️✔️:     int k, num = (int) *base++;
+        let num = usize::from(self.storage_value(row_offset));
+        let base = row_offset + 1;
+        // INCHI✔️✔️:     for (k = 1, pk = base; k < num; k++, pk++)
+        let mut k = 1_usize;
+        while k < num {
+            let mut i = base + k - 1;
+            // INCHI✔️✔️:         for (j = ( i = pk ) + 1, rj = nRank[(int) *j]; j > base && nRank[(int) *i] > rj; j = i, i--)
+            let mut j = i + 1;
+            let rj = self.rank(self.storage_value(j));
+            while j > base && self.rank(self.storage_value(i)) > rj {
+                // INCHI✔️✔️:             tmp = *i;
+                let tmp = self.storage_value(i);
+                // INCHI✔️✔️:             *i = *j;
+                self.set_storage_value(i, self.storage_value(j));
+                // INCHI✔️✔️:             *j = tmp;
+                self.set_storage_value(j, tmp);
+                j = i;
+                i -= 1;
+            }
+            k += 1;
+        }
+        // END INCHI C FUNCTION: insertions_sort_NeighList_AT_NUMBERS
+    }
+
+    #[inline(always)]
+    fn sort_row_by_rank_shifting(&mut self, row_offset: usize) {
+        // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:396 insertions_sort_NeighList_AT_NUMBERS3
+        // INCHI✔️✔️:     AT_NUMB *i, *j, *pk, tmp;
+        // INCHI✔️✔️:     AT_RANK rj;
+        // INCHI✔️✔️:     int k, n, num = (int) *base++;
+        let num = usize::from(self.storage_value(row_offset));
+        let base = row_offset + 1;
+        let mut transitions = 0_i32;
+        // INCHI✔️✔️:     for (k = 1, pk = base, n = 0; k < num; k++, pk++)
+        let mut k = 1_usize;
+        while k < num {
+            let mut i = base + k - 1;
+            let mut j = i + 1;
+            // INCHI✔️✔️:         for (j = ( i = pk ) + 1, rj = nRank[(int) ( tmp = *j )];
+            let tmp = self.storage_value(j);
+            let rj = self.rank(tmp);
+            // INCHI✔️✔️:              j > base && nRank[(int) *i] > rj;
+            // INCHI✔️✔️:              j = i, i--)
+            while j > base && self.rank(self.storage_value(i)) > rj {
+                // INCHI✔️✔️:             *j = *i;
+                self.set_storage_value(j, self.storage_value(i));
+                // INCHI✔️✔️:             n++;
+                transitions = transitions.wrapping_add(1);
+                j = i;
+                i -= 1;
+            }
+            // INCHI✔️✔️:         *j = tmp;
+            self.set_storage_value(j, tmp);
+            k += 1;
+        }
+        // INCHI✔️✔️:     return n;
+        let _ = transitions;
+        // END INCHI C FUNCTION: insertions_sort_NeighList_AT_NUMBERS3
+    }
+
+    fn sort2(&mut self) {
+        let mut k = 0_usize;
+        while k < self.count {
+            // SAFETY: the full atom-number prefix was validated at construction.
+            let atom = usize::from(self.atom_number(k));
+            let row_offset = self.row_offset(atom);
+            if self.storage_value(row_offset) > 1 {
+                self.sort_row_by_rank_swapping(row_offset);
+            }
+            k += 1;
+        }
+    }
+
+    fn sort3(&mut self) {
+        let mut previous_rank = 0;
+        let mut k = 0_usize;
+        while k < self.count {
+            // SAFETY: the full atom-number prefix was validated at construction.
+            let atom = self.atom_number(k);
+            let rank = self.rank(atom);
+            let row_offset = self.row_offset(usize::from(atom));
+            if (rank != (k + 1) as AT_RANK || rank == previous_rank)
+                && self.storage_value(row_offset) > 1
+            {
+                self.sort_row_by_rank_shifting(row_offset);
+            }
+            previous_rank = rank;
+            k += 1;
+        }
+    }
+
+    #[inline(always)]
+    fn compare(&self, first: AT_RANK, second: AT_RANK, preserve_order: bool) -> i32 {
+        let first_index = usize::from(first);
+        let second_index = usize::from(second);
+        let mut difference = i32::from(self.rank(first)) - i32::from(self.rank(second));
+        if difference == 0 {
+            difference = self.compare_lists(first_index, second_index);
+        }
+        if difference == 0 && preserve_order {
+            difference = i32::from(first) - i32::from(second);
+        }
+        difference
+    }
+
+    #[inline(always)]
+    fn compare_lists(&self, first: usize, second: usize) -> i32 {
+        let first_offset = self.row_offset(first);
+        let second_offset = self.row_offset(second);
+        // INCHI✔️✔️:     int len1 = (int) *pp1++;
+        let first_len = usize::from(self.storage_value(first_offset));
+        // INCHI✔️✔️:     int len2 = (int) *pp2++;
+        let second_len = usize::from(self.storage_value(second_offset));
+        // INCHI✔️✔️:     int len = inchi_min( len1, len2 );
+        let shared_len = first_len.min(second_len);
+        // INCHI✔️✔️:     int diff = 0;
+        let mut index = 1_usize;
+        // INCHI✔️✔️:     while ((len > 0) && !diff)
+        while index <= shared_len {
+            // INCHI✔️✔️:         diff = (int)nRank[*pp1++] - (int)nRank[*pp2++];
+            let difference = i32::from(self.rank(self.storage_value(first_offset + index)))
+                - i32::from(self.rank(self.storage_value(second_offset + index)));
+            if difference != 0 {
+                return difference;
+            }
+            index += 1;
+        }
+        // INCHI✔️✔️:     ret = diff ? diff : (len1 - len2);
+        first_len as i32 - second_len as i32
+    }
+
+    #[inline(always)]
+    fn compare_lists_up_to_max_rank(&self, first: usize, second: usize, max_rank: AT_RANK) -> i32 {
+        let first_offset = self.row_offset(first);
+        let second_offset = self.row_offset(second);
+        // INCHI✔️✔️:     int len1 = (int) *pp1++;
+        let mut first_len = usize::from(self.storage_value(first_offset));
+        // INCHI✔️✔️:     int len2 = (int) *pp2++;
+        let mut second_len = usize::from(self.storage_value(second_offset));
+        // INCHI✔️✔️:     int diff = 0;
+        let mut difference = 0_i32;
+        // INCHI✔️✔️:     while (0 < len1 && nRank[pp1[len1 - 1]] > nMaxAtNeighRank)
+        while first_len > 0 && self.rank(self.storage_value(first_offset + first_len)) > max_rank {
+            // INCHI✔️✔️:         len1--;
+            first_len -= 1;
+        }
+        // INCHI✔️✔️:     while (0 < len2 && nRank[pp2[len2 - 1]] > nMaxAtNeighRank)
+        while second_len > 0 && self.rank(self.storage_value(second_offset + second_len)) > max_rank
+        {
+            // INCHI✔️✔️:         len2--;
+            second_len -= 1;
+        }
+        // INCHI✔️✔️:     len = inchi_min( len1, len2 );
+        let mut length = first_len.min(second_len);
+        let mut index = 1_usize;
+        // INCHI✔️✔️:     while (len-- > 0 && !( diff = (int) nRank[*pp1++] - (int) nRank[*pp2++] ))
+        while length > 0 {
+            length -= 1;
+            difference = i32::from(self.rank(self.storage_value(first_offset + index)))
+                - i32::from(self.rank(self.storage_value(second_offset + index)));
+            if difference != 0 {
+                break;
+            }
+            index += 1;
+        }
+        // INCHI✔️✔️:     return diff ? diff : ( len1 - len2 );
+        if difference != 0 {
+            difference
+        } else {
+            first_len as i32 - second_len as i32
+        }
+    }
+
+    #[inline(always)]
+    fn sort_atom_number_range_by_lists(
+        &mut self,
+        start: usize,
+        count: usize,
+        max_rank: Option<AT_RANK>,
+    ) {
+        // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:331 insertions_sort_AT_NUMBERS
+        // INCHI✔️✔️:     AT_NUMB *i, *j, *pk, tmp;
+        // INCHI✔️✔️:     int  k, num_trans = 0;
+        let mut transitions = 0_i32;
+        // INCHI✔️✔️:     for (k = 1, pk = base; k < num; k++, pk++)
+        let mut k = 1_usize;
+        while k < count {
+            let mut i = start + k - 1;
+            let mut j = i + 1;
+            // INCHI✔️✔️:         for (j = ( i = pk ) + 1, tmp = *j; j > base && ( *compare )( i, &tmp, pCG ) > 0; j = i, i--)
+            let temporary = self.atom_number(j);
+            while j > start {
+                let current = self.atom_number(i);
+                let difference = if let Some(max_rank) = max_rank {
+                    self.compare_lists_up_to_max_rank(
+                        usize::from(current),
+                        usize::from(temporary),
+                        max_rank,
+                    )
+                } else {
+                    self.compare_lists(usize::from(current), usize::from(temporary))
+                };
+                if difference <= 0 {
+                    break;
+                }
+                // INCHI✔️✔️:             *j = *i;
+                self.set_atom_number(j, current);
+                // INCHI✔️✔️:             num_trans++;
+                transitions = transitions.wrapping_add(1);
+                j = i;
+                i = i.wrapping_sub(1);
+            }
+            // INCHI✔️✔️:         *j = tmp;
+            self.set_atom_number(j, temporary);
+            k += 1;
+        }
+        // INCHI✔️✔️:     return num_trans;
+        let _ = transitions;
+        // END INCHI C FUNCTION: insertions_sort_AT_NUMBERS
+    }
+
+    fn set_new_ranks3(&mut self, new_ranks: &mut StableSourceSlice<AT_RANK>) -> i32 {
+        self.set_new_ranks_from_lists(new_ranks, None)
+    }
+
+    fn set_new_ranks2(&mut self, new_ranks: &mut StableSourceSlice<AT_RANK>) -> i32 {
+        // INCHI✔️✔️:     if (bUseAltSort & 1)
+        // INCHI✔️✔️:         tsort( pCG, nAtomNumber, num_atoms, sizeof( nAtomNumber[0] ), comp /*CompNeighListRanksOrd*/ );
+        // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:331 insertions_sort_AT_NUMBERS
+        // INCHI✔️✔️:     AT_NUMB *i, *j, *pk, tmp;
+        // INCHI✔️✔️:     int  k, num_trans = 0;
+        let mut transitions = 0_i32;
+        // INCHI✔️✔️:     for (k = 1, pk = base; k < num; k++, pk++)
+        let mut k = 1_usize;
+        while k < self.count {
+            let mut i = k - 1;
+            let mut j = i + 1;
+            // INCHI✔️✔️:         for (j = ( i = pk ) + 1, tmp = *j; j > base && ( *compare )( i, &tmp, pCG ) > 0; j = i, i--)
+            let temporary = self.atom_number(j);
+            while j > 0 {
+                let current = self.atom_number(i);
+                if self.compare(current, temporary, true) <= 0 {
+                    break;
+                }
+                // INCHI✔️✔️:             *j = *i;
+                self.set_atom_number(j, current);
+                // INCHI✔️✔️:             num_trans++;
+                transitions = transitions.wrapping_add(1);
+                j = i;
+                i = i.wrapping_sub(1);
+            }
+            // INCHI✔️✔️:         *j = tmp;
+            self.set_atom_number(j, temporary);
+            k += 1;
+        }
+        // INCHI✔️✔️:     return num_trans;
+        let _ = transitions;
+        // END INCHI C FUNCTION: insertions_sort_AT_NUMBERS
+
+        // INCHI✔️✔️:     nNumDiffRanks = 1;
+        let mut different_rank_count = 1_i32;
+        // INCHI✔️✔️:     if (num_atoms > 0)
+        if self.count > 0 {
+            // INCHI✔️✔️:         nCurrentRank = (AT_RANK)num_atoms;
+            let mut current_rank = self.count as AT_RANK;
+            // INCHI✔️✔️:         j = num_atoms - 1;
+            let j = self.count - 1;
+            // INCHI✔️✔️:         nNewRank[(int)nAtomNumber[j]] = nCurrentRank;
+            let atom = usize::from(self.atom_number(j));
+            *unsafe { new_ranks.get_unchecked_mut(atom) } = current_rank;
+
+            // INCHI✔️✔️:         for (i = num_atoms - 1; i > 0; i--)
+            let mut i = self.count - 1;
+            while i > 0 {
+                let previous = self.atom_number(i - 1);
+                let current = self.atom_number(i);
+                // INCHI✔️✔️:             if (CompNeighListRanks(&nAtomNumber[i - 1], &nAtomNumber[i], pCG))
+                if self.compare(previous, current, false) != 0 {
+                    // INCHI✔️✔️:                 nNumDiffRanks++;
+                    different_rank_count = different_rank_count.wrapping_add(1);
+                    // INCHI✔️✔️:                 nCurrentRank = (AT_RANK)i;
+                    current_rank = i as AT_RANK;
+                }
+                // INCHI✔️✔️:             nNewRank[(int)nAtomNumber[i - 1]] = nCurrentRank;
+                let atom = usize::from(previous);
+                *unsafe { new_ranks.get_unchecked_mut(atom) } = current_rank;
+                i -= 1;
+            }
+        }
+        // INCHI✔️✔️:     return nNumDiffRanks;
+        different_rank_count
+    }
+
+    fn set_new_ranks4(
+        &mut self,
+        new_ranks: &mut StableSourceSlice<AT_RANK>,
+        max_rank: AT_RANK,
+    ) -> i32 {
+        self.set_new_ranks_from_lists(new_ranks, Some(max_rank))
+    }
+
+    fn set_new_ranks_from_lists(
+        &mut self,
+        new_ranks: &mut StableSourceSlice<AT_RANK>,
+        max_rank: Option<AT_RANK>,
+    ) -> i32 {
+        let mut different_rank_count = 0_i32;
+        let mut new_rank_count = 0_i32;
+
+        // INCHI✔️✔️:     memset( nNewRank, 0, num_atoms * sizeof( nNewRank[0] ) );
+        new_ranks
+            .prefix_mut(self.count)
+            .expect("workspace validated output rank length")
+            .fill(0);
+
+        // INCHI✔️✔️:     for (i = 0, r1 = 1; i < num_atoms; r1++)
+        let mut i = 0_usize;
+        let mut r1: AT_RANK = 1;
+        while i < self.count {
+            // INCHI✔️✔️:         j = (int)nAtomNumber[i];
+            let mut j = usize::from(self.atom_number(i));
+            // INCHI✔️✔️:         r2 = nRank[j];
+            let mut r2 = self.rank(j as AT_NUMB);
+            // INCHI✔️✔️:         if (r1 == r2)
+            if r1 == r2 {
+                // INCHI✔️✔️:             nNewRank[j] = r2;
+                *unsafe { new_ranks.get_unchecked_mut(j) } = r2;
+                // INCHI✔️✔️:             nNumDiffRanks++;
+                different_rank_count = different_rank_count.wrapping_add(1);
+                // INCHI✔️✔️:             i++;
+                i += 1;
+                r1 = r1.wrapping_add(1);
+                // INCHI✔️✔️:             continue;
+                continue;
+            }
+            // INCHI✔️✔️:         r1 = r2;
+            r1 = r2;
+            // INCHI✔️✔️:         insertions_sort_AT_NUMBERS( pCG, nAtomNumber + i, (int) r2 - i, CompNeighLists );
+            self.sort_atom_number_range_by_lists(i, usize::from(r2) - i, max_rank);
+            // INCHI✔️✔️:         j = r2 - 1;
+            j = usize::from(r2) - 1;
+            // INCHI✔️✔️:         nNewRank[(int) nAtomNumber[j]] = r2;
+            let atom = usize::from(self.atom_number(j));
+            *unsafe { new_ranks.get_unchecked_mut(atom) } = r2;
+            // INCHI✔️✔️:         nNumDiffRanks++;
+            different_rank_count = different_rank_count.wrapping_add(1);
+            // INCHI✔️✔️:         while (j > i)
+            while j > i {
+                let previous = usize::from(self.atom_number(j - 1));
+                let current = usize::from(self.atom_number(j));
+                // INCHI✔️✔️:             if (CompareNeighListLex( NeighList[nAtomNumber[j - 1]], NeighList[nAtomNumber[j]], nRank ))
+                let difference = if let Some(max_rank) = max_rank {
+                    self.compare_lists_up_to_max_rank(previous, current, max_rank)
+                } else {
+                    self.compare_lists(previous, current)
+                };
+                if difference != 0 {
+                    // INCHI✔️✔️:                 r2 = j;
+                    r2 = j as AT_RANK;
+                    // INCHI✔️✔️:                 nNumDiffRanks++;
+                    different_rank_count = different_rank_count.wrapping_add(1);
+                    // INCHI✔️✔️:                 nNumNewRanks++;
+                    new_rank_count = new_rank_count.wrapping_add(1);
+                }
+                // INCHI✔️✔️:             j--;
+                j -= 1;
+                // INCHI✔️✔️:             nNewRank[(int) nAtomNumber[j]] = r2;
+                let atom = usize::from(self.atom_number(j));
+                *unsafe { new_ranks.get_unchecked_mut(atom) } = r2;
+            }
+            // INCHI✔️✔️:         i = r1;
+            i = usize::from(r1);
+            r1 = r1.wrapping_add(1);
+        }
+
+        // INCHI✔️✔️:     return nNumNewRanks ? -nNumDiffRanks : nNumDiffRanks;
+        if new_rank_count != 0 {
+            different_rank_count.wrapping_neg()
+        } else {
+            different_rank_count
+        }
+    }
+}
+
+impl AlternatingContiguousNeighborRankSortWorkspace {
+    fn try_new(
+        heap: &SourceHeap,
+        active: ContiguousNeighborRankSortWorkspace,
+        inactive: SourceMutPointer<AT_RANK>,
+    ) -> Option<Self> {
+        let inactive_identity = inactive.allocation_identity()?;
+        if [
+            active.rank_identity,
+            active.storage_identity,
+            active.atom_number_identity,
+            active.neighbor_list_identity,
+        ]
+        .contains(&inactive_identity)
+        {
+            return None;
+        }
+        if heap.slice(inactive.as_const()).ok()?.len() < active.count {
+            return None;
+        }
+        // SAFETY: construction proved that the inactive rank buffer is a
+        // distinct, fixed allocation with the complete source rank range.
+        let inactive_ranks = unsafe { heap.stable_slice(inactive.as_const()).ok()? };
+        Some(Self {
+            active,
+            inactive_ranks,
+            started: false,
+        })
+    }
+
+    #[inline(always)]
+    fn next_input(&mut self) -> &mut ContiguousNeighborRankSortWorkspace {
+        // The copied source calls switch_ptrs once before every pass. The first
+        // pass therefore reads the rank buffer used to construct `active`;
+        // every later pass reads the buffer written by the preceding pass.
+        if self.started {
+            std::mem::swap(&mut self.active.ranks, &mut self.inactive_ranks);
+        } else {
+            self.started = true;
+        }
+        &mut self.active
+    }
+}
+
+impl NeighListRankWorkspace {
+    fn try_new(
+        heap: &SourceHeap,
+        neighbor_lists: SourceMutPointer<NEIGH_LIST>,
+        ranks: SourceMutPointer<AT_RANK>,
+        atom_numbers: SourceMutPointer<AT_RANK>,
+        new_ranks: SourceMutPointer<AT_RANK>,
+        count: usize,
+    ) -> Option<Self> {
+        let rank_values = heap.slice(ranks.as_const()).ok()?;
+        let list_pointers = heap.slice(neighbor_lists.as_const()).ok()?;
+        let atoms = heap.slice(atom_numbers.as_const()).ok()?;
+        if rank_values.len() < count
+            || list_pointers.len() < count
+            || atoms.len() < count
+            || atoms[..count]
+                .iter()
+                .any(|&atom| usize::from(atom) >= count)
+        {
+            return None;
+        }
+
+        let writable_ids = [
+            atom_numbers.allocation_identity()?,
+            new_ranks.allocation_identity()?,
+        ];
+        if writable_ids[0] == writable_ids[1]
+            || [
+                ranks.allocation_identity()?,
+                neighbor_lists.allocation_identity()?,
+            ]
+            .iter()
+            .any(|identity| writable_ids.contains(identity))
+        {
+            return None;
+        }
+
+        let mut lists = Vec::new();
+        if lists.try_reserve_exact(count).is_err() {
+            return None;
+        }
+        for &pointer in &list_pointers[..count] {
+            if pointer
+                .allocation_identity()
+                .is_none_or(|identity| writable_ids.contains(&identity))
+            {
+                return None;
+            }
+            let values = heap.slice(pointer.as_const()).ok()?;
+            let length = usize::from(*values.first()?);
+            if values.len() <= length
+                || values[1..=length]
+                    .iter()
+                    .any(|&atom| usize::from(atom) >= rank_values.len())
+            {
+                return None;
+            }
+            // SAFETY: the row was validated above, is distinct from both
+            // writable outputs, and remains live for the refinement call.
+            lists.push(unsafe { heap.stable_slice(pointer.as_const()).ok()? });
+        }
+
+        // SAFETY: the rank allocation was validated above and is distinct
+        // from both writable outputs for the lifetime of this workspace.
+        let ranks = unsafe { heap.stable_slice(ranks.as_const()).ok()? };
+        Some(Self { ranks, lists })
+    }
+
+    fn refresh_ranks(
+        &mut self,
+        heap: &SourceHeap,
+        ranks: SourceMutPointer<AT_RANK>,
+        count: usize,
+    ) -> bool {
+        let Ok(values) = heap.slice(ranks.as_const()) else {
+            return false;
+        };
+        if values.len() < count {
+            return false;
+        }
+        // SAFETY: the initial workspace validation proved that both rank
+        // buffers are distinct from the neighbor rows and writable outputs.
+        // A completed refinement pass also proved this alternating input
+        // buffer contains the full logical rank range.
+        let Ok(ranks) = (unsafe { heap.stable_slice(ranks.as_const()) }) else {
+            return false;
+        };
+        self.ranks = ranks;
+        true
+    }
+
+    #[inline(always)]
+    fn compare(&self, first: AT_RANK, second: AT_RANK, preserve_order: bool) -> i32 {
+        let first_index = usize::from(first);
+        let second_index = usize::from(second);
+        let mut difference = i32::from(
+            *self
+                .ranks
+                .get(first_index)
+                .expect("workspace validated atom index"),
+        ) - i32::from(
+            *self
+                .ranks
+                .get(second_index)
+                .expect("workspace validated atom index"),
+        );
+        if difference == 0 {
+            difference = self.compare_lists(first_index, second_index);
+        }
+        if difference == 0 && preserve_order {
+            difference = i32::from(first) - i32::from(second);
+        }
+        difference
+    }
+
+    #[inline(always)]
+    fn compare_lists(&self, first: usize, second: usize) -> i32 {
+        let first = self.lists[first]
+            .prefix(self.lists[first].len())
+            .expect("workspace owns the complete row");
+        let second = self.lists[second]
+            .prefix(self.lists[second].len())
+            .expect("workspace owns the complete row");
+        let first_len = usize::from(first[0]);
+        let second_len = usize::from(second[0]);
+        for (&first_atom, &second_atom) in first[1..=first_len].iter().zip(&second[1..=second_len])
+        {
+            let difference = i32::from(
+                *self
+                    .ranks
+                    .get(usize::from(first_atom))
+                    .expect("workspace validated neighbor index"),
+            ) - i32::from(
+                *self
+                    .ranks
+                    .get(usize::from(second_atom))
+                    .expect("workspace validated neighbor index"),
+            );
+            if difference != 0 {
+                return difference;
+            }
+        }
+        first_len as i32 - second_len as i32
+    }
+}
+
+pub(crate) trait NeighListRankCompareWorkspace {
+    fn compare(&self, first: AT_RANK, second: AT_RANK, preserve_order: bool) -> i32;
+}
+
+impl NeighListRankCompareWorkspace for ContiguousNeighborRankSortWorkspace {
+    #[inline(always)]
+    fn compare(&self, first: AT_RANK, second: AT_RANK, preserve_order: bool) -> i32 {
+        ContiguousNeighborRankSortWorkspace::compare(self, first, second, preserve_order)
+    }
+}
+
+impl NeighListRankCompareWorkspace for NeighListRankWorkspace {
+    #[inline(always)]
+    fn compare(&self, first: AT_RANK, second: AT_RANK, preserve_order: bool) -> i32 {
+        NeighListRankWorkspace::compare(self, first, second, preserve_order)
+    }
+}
+
 #[allow(non_snake_case)]
 pub(crate) fn SetNewRanksFromNeighLists3(
     heap: &mut SourceHeap,
@@ -797,19 +1600,36 @@ pub(crate) fn SetNewRanksFromNeighLists3(
     let mut nNumDiffRanks = 0_i32;
     let mut nNumNewRanks = 0_i32;
 
+    if num_atoms <= 0 {
+        return Ok(0);
+    }
+    // SAFETY: ranking allocations remain live and retain their buffers for the
+    // complete refinement pass. References from these views are confined to
+    // individual expressions before any heap-based neighbor sort starts.
+    let mut new_ranks = unsafe { heap.stable_slice_mut(nNewRank)? };
     let mut clear_index = 0_i32;
     while clear_index < num_atoms {
-        source_set(heap, nNewRank, clear_index, 0)?;
+        *new_ranks.get_mut(
+            usize::try_from(clear_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+        )? = 0;
         clear_index = clear_index.wrapping_add(1);
     }
+    let atom_numbers = unsafe { heap.stable_slice(nAtomNumber.as_const())? };
+    let ranks = unsafe { heap.stable_slice(nRank.as_const())? };
 
     let mut i = 0_i32;
     let mut r1: AT_RANK = 1;
     while i < num_atoms {
-        let mut j = i32::from(source_get(heap, nAtomNumber, i)?);
-        let mut r2 = source_get(heap, nRank, j)?;
+        let mut j = i32::from(
+            *atom_numbers
+                .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
+        );
+        let mut r2 =
+            *ranks.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         if r1 == r2 {
-            source_set(heap, nNewRank, j, r2)?;
+            *new_ranks
+                .get_mut(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? =
+                r2;
             nNumDiffRanks = nNumDiffRanks.wrapping_add(1);
             i = i.wrapping_add(1);
             r1 = r1.wrapping_add(1);
@@ -824,12 +1644,20 @@ pub(crate) fn SetNewRanksFromNeighLists3(
             &mut |heap, left: AT_NUMB, right: AT_NUMB| CompNeighLists(heap, left, right, pCG),
         )?;
         j = i32::from(r2).wrapping_sub(1);
-        let k = i32::from(source_get(heap, nAtomNumber, j)?);
-        source_set(heap, nNewRank, k, r2)?;
+        let k = i32::from(
+            *atom_numbers
+                .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
+        );
+        *new_ranks
+            .get_mut(usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = r2;
         nNumDiffRanks = nNumDiffRanks.wrapping_add(1);
         while j > i {
-            let previous_atom = source_get(heap, nAtomNumber, j.wrapping_sub(1))?;
-            let current_atom = source_get(heap, nAtomNumber, j)?;
+            let previous_atom = *atom_numbers.get(
+                usize::try_from(j.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+            )?;
+            let current_atom = *atom_numbers
+                .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
             let previous_list = source_get(heap, NeighList, i32::from(previous_atom))?;
             let current_list = source_get(heap, NeighList, i32::from(current_atom))?;
             if CompareNeighListLex(heap, previous_list, current_list, nRank)? != 0 {
@@ -838,8 +1666,13 @@ pub(crate) fn SetNewRanksFromNeighLists3(
                 nNumNewRanks = nNumNewRanks.wrapping_add(1);
             }
             j = j.wrapping_sub(1);
-            let atom = i32::from(source_get(heap, nAtomNumber, j)?);
-            source_set(heap, nNewRank, atom, r2)?;
+            let atom = i32::from(
+                *atom_numbers
+                    .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
+            );
+            *new_ranks.get_mut(
+                usize::try_from(atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+            )? = r2;
         }
         i = i32::from(r1);
         r1 = r1.wrapping_add(1);
@@ -938,19 +1771,36 @@ pub(crate) fn SetNewRanksFromNeighLists4(
     let mut nNumDiffRanks = 0_i32;
     let mut nNumNewRanks = 0_i32;
 
+    if num_atoms <= 0 {
+        return Ok(0);
+    }
+    // SAFETY: ranking allocations remain live and retain their buffers for the
+    // complete refinement pass. References from these views are confined to
+    // individual expressions before any heap-based neighbor sort starts.
+    let mut new_ranks = unsafe { heap.stable_slice_mut(nNewRank)? };
     let mut clear_index = 0_i32;
     while clear_index < num_atoms {
-        source_set(heap, nNewRank, clear_index, 0)?;
+        *new_ranks.get_mut(
+            usize::try_from(clear_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+        )? = 0;
         clear_index = clear_index.wrapping_add(1);
     }
+    let atom_numbers = unsafe { heap.stable_slice(nAtomNumber.as_const())? };
+    let ranks = unsafe { heap.stable_slice(nRank.as_const())? };
 
     let mut i = 0_i32;
     let mut r1: AT_RANK = 1;
     while i < num_atoms {
-        let mut j = i32::from(source_get(heap, nAtomNumber, i)?);
-        let mut r2 = source_get(heap, nRank, j)?;
+        let mut j = i32::from(
+            *atom_numbers
+                .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
+        );
+        let mut r2 =
+            *ranks.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         if r1 == r2 {
-            source_set(heap, nNewRank, j, r2)?;
+            *new_ranks
+                .get_mut(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? =
+                r2;
             nNumDiffRanks = nNumDiffRanks.wrapping_add(1);
             i = i.wrapping_add(1);
             r1 = r1.wrapping_add(1);
@@ -967,12 +1817,20 @@ pub(crate) fn SetNewRanksFromNeighLists4(
             },
         )?;
         j = i32::from(r2).wrapping_sub(1);
-        let atom = i32::from(source_get(heap, nAtomNumber, j)?);
-        source_set(heap, nNewRank, atom, r2)?;
+        let atom = i32::from(
+            *atom_numbers
+                .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
+        );
+        *new_ranks
+            .get_mut(usize::try_from(atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = r2;
         nNumDiffRanks = nNumDiffRanks.wrapping_add(1);
         while j > i {
-            let previous_atom = source_get(heap, nAtomNumber, j.wrapping_sub(1))?;
-            let current_atom = source_get(heap, nAtomNumber, j)?;
+            let previous_atom = *atom_numbers.get(
+                usize::try_from(j.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+            )?;
+            let current_atom = *atom_numbers
+                .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
             let previous_list = source_get(heap, NeighList, i32::from(previous_atom))?;
             let current_list = source_get(heap, NeighList, i32::from(current_atom))?;
             if CompareNeighListLexUpToMaxRank(heap, previous_list, current_list, nRank, nMaxAtRank)?
@@ -983,8 +1841,13 @@ pub(crate) fn SetNewRanksFromNeighLists4(
                 nNumNewRanks = nNumNewRanks.wrapping_add(1);
             }
             j = j.wrapping_sub(1);
-            let atom = i32::from(source_get(heap, nAtomNumber, j)?);
-            source_set(heap, nNewRank, atom, r2)?;
+            let atom = i32::from(
+                *atom_numbers
+                    .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
+            );
+            *new_ranks.get_mut(
+                usize::try_from(atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+            )? = r2;
         }
         i = i32::from(r1);
         r1 = r1.wrapping_add(1);
@@ -1013,6 +1876,7 @@ pub(crate) fn SetNewRanksFromNeighLists(
         AT_RANK,
         &CANON_GLOBALS,
     ) -> Result<i32, SourceHeapError>,
+    workspace: Option<&dyn NeighListRankCompareWorkspace>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap2.c:380 SetNewRanksFromNeighLists
     // INCHI✔️❌: int SetNewRanksFromNeighLists( CANON_GLOBALS *pCG,
@@ -1075,39 +1939,108 @@ pub(crate) fn SetNewRanksFromNeighLists(
     if num_atoms < 0 {
         return Err(SourceHeapError::SourceIntegerOverflow);
     }
+    let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if num_atoms > 1 && bUseAltSort & 1 != 0 {
         insertions_sort_AT_NUMBERS(heap, nAtomNumber, num_atoms, &mut |heap, left, right| {
             comp(heap, left, right, pCG)
         })?;
     } else if num_atoms > 1 {
-        let count =
-            usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let mut atoms = heap
-            .slice(nAtomNumber.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        let sort_result = {
-            let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(&mut atoms);
-            inchi_qsort(
-                bytes,
-                count,
-                std::mem::size_of::<AT_RANK>(),
-                &mut |left, right| {
-                    let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                    let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                    comp(heap, left, right, pCG)
-                },
-            )
-        };
-        for (index, atom) in atoms.into_iter().enumerate() {
-            source_set(heap, nAtomNumber, index as i32, atom)?;
+        if nAtomNumber.allocation_identity() != nRank.allocation_identity() {
+            heap.with_slice_mut_and_heap_mut(nAtomNumber, |atoms, heap| {
+                let atoms = atoms
+                    .get_mut(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(atoms);
+                inchi_qsort(
+                    bytes,
+                    count,
+                    std::mem::size_of::<AT_RANK>(),
+                    &mut |left, right| {
+                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                        comp(heap, left, right, pCG)
+                    },
+                )
+            })?;
+        } else {
+            let mut atoms = heap
+                .slice(nAtomNumber.as_const())?
+                .get(..count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .to_vec();
+            let sort_result = {
+                let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(&mut atoms);
+                inchi_qsort(
+                    bytes,
+                    count,
+                    std::mem::size_of::<AT_RANK>(),
+                    &mut |left, right| {
+                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                        comp(heap, left, right, pCG)
+                    },
+                )
+            };
+            for (index, atom) in atoms.into_iter().enumerate() {
+                source_set(heap, nAtomNumber, index as i32, atom)?;
+            }
+            sort_result?;
         }
-        sort_result?;
     }
 
     let mut nNumDiffRanks = 1_i32;
-    if num_atoms > 0 {
+    if count != 0
+        && nAtomNumber.allocation_identity() != nNewRank.allocation_identity()
+        && heap.slice(nAtomNumber.as_const())?.len() >= count
+    {
+        let new_rank_len = heap.slice(nNewRank.as_const())?.len();
+        let atom_values = heap
+            .slice(nAtomNumber.as_const())?
+            .get(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if atom_values
+            .iter()
+            .any(|&atom| usize::from(atom) >= new_rank_len)
+        {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        // SAFETY: the complete source ranges and every indirect output index
+        // were validated above. The rank-order and output allocations are
+        // distinct and remain live for this C loop.
+        let atom_numbers = unsafe { heap.stable_slice(nAtomNumber.as_const())? };
+        let mut new_ranks = unsafe { heap.stable_slice_mut(nNewRank)? };
+
+        // INCHI✔️✔️:         nCurrentRank = (AT_RANK)num_atoms;
+        let mut nCurrentRank = num_atoms as AT_RANK;
+        // INCHI✔️✔️:         j = num_atoms - 1;
+        let j = count - 1;
+        // INCHI✔️✔️:         nNewRank[(int)nAtomNumber[j]] = nCurrentRank;
+        let atom = usize::from(unsafe { *atom_numbers.get_unchecked(j) });
+        *unsafe { new_ranks.get_unchecked_mut(atom) } = nCurrentRank;
+
+        // INCHI✔️✔️:         for (i = num_atoms - 1; i > 0; i--)
+        let mut i = count - 1;
+        while i > 0 {
+            let previous = unsafe { *atom_numbers.get_unchecked(i - 1) };
+            let current = unsafe { *atom_numbers.get_unchecked(i) };
+            // INCHI✔️✔️:             if (CompNeighListRanks(&nAtomNumber[i - 1], &nAtomNumber[i], pCG))
+            let difference = if let Some(workspace) = workspace {
+                workspace.compare(previous, current, false)
+            } else {
+                CompNeighListRanks(heap, previous, current, pCG)?
+            };
+            if difference != 0 {
+                // INCHI✔️✔️:                 nNumDiffRanks++;
+                nNumDiffRanks = nNumDiffRanks.wrapping_add(1);
+                // INCHI✔️✔️:                 nCurrentRank = (AT_RANK)i;
+                nCurrentRank = i as AT_RANK;
+            }
+            // INCHI✔️✔️:             nNewRank[(int)nAtomNumber[i - 1]] = nCurrentRank;
+            let atom = usize::from(unsafe { *atom_numbers.get_unchecked(i - 1) });
+            *unsafe { new_ranks.get_unchecked_mut(atom) } = nCurrentRank;
+            i -= 1;
+        }
+    } else if num_atoms > 0 {
         let mut nCurrentRank = num_atoms as AT_RANK;
         let mut j = num_atoms.wrapping_sub(1);
         let atom = i32::from(source_get(heap, nAtomNumber, j)?);
@@ -1117,7 +2050,12 @@ pub(crate) fn SetNewRanksFromNeighLists(
         while i > 0 {
             let previous = source_get(heap, nAtomNumber, i.wrapping_sub(1))?;
             let current = source_get(heap, nAtomNumber, i)?;
-            if CompNeighListRanks(heap, previous, current, pCG)? != 0 {
+            let difference = if let Some(workspace) = workspace {
+                workspace.compare(previous, current, false)
+            } else {
+                CompNeighListRanks(heap, previous, current, pCG)?
+            };
+            if difference != 0 {
                 nNumDiffRanks = nNumDiffRanks.wrapping_add(1);
                 nCurrentRank = i as AT_RANK;
             }
@@ -1156,9 +2094,16 @@ pub(crate) fn SortNeighListsBySymmAndCanonRank(
     */
     // END INCHI C FUNCTION: SortNeighListsBySymmAndCanonRank
 
+    if num_atoms <= 0 {
+        return Ok(());
+    }
+    // SAFETY: the pointer table remains live and only the separately allocated
+    // neighbor rows are mutated by the inner source sort.
+    let neighbor_lists = unsafe { heap.stable_slice(NeighList.as_const())? };
     let mut i = 0_i32;
     while i < num_atoms {
-        let list = source_get(heap, NeighList, i)?;
+        let list = *neighbor_lists
+            .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         insertions_sort_NeighListBySymmAndCanonRank(heap, list, nSymmRank, nCanonRank)?;
         i = i.wrapping_add(1);
     }
@@ -1210,18 +2155,34 @@ pub(crate) fn SortNeighLists2(
     // INCHI✔️✔️: #define FIX_STEREOCOUNT_ERR           1 /* (2018-01-09) Supplied by DT                              */
     // END INCHI ACTIVE MACRO CONFIGURATION: FIX_STEREOCOUNT_ERR
 
-    let mut nPrevRank: AT_RANK = 0;
-    let mut k = 0_i32;
-    while k < num_atoms {
-        let i = i32::from(source_get(heap, nAtomNumber, k)?);
-        let list = source_get(heap, NeighList, i)?;
+    if num_atoms <= 0 {
+        return Ok(0);
+    }
+    if let Some(mut workspace) = ContiguousNeighborRankSortWorkspace::try_new(
+        heap,
+        usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+        nRank,
+        NeighList,
+        nAtomNumber,
+    ) {
+        workspace.sort2();
+        return Ok(0);
+    }
+    // SAFETY: these allocations remain live for the duration of the loop.
+    // Sorting only mutates the separately allocated neighbor rows, and each
+    // reference obtained from a view is consumed before that mutation starts.
+    let atom_numbers = unsafe { heap.stable_slice(nAtomNumber.as_const())? };
+    let neighbor_lists = unsafe { heap.stable_slice(NeighList.as_const())? };
+    let mut position = 0_i32;
+    while position < num_atoms {
+        let atom = *atom_numbers
+            .get(usize::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+        let list = *neighbor_lists.get(usize::from(atom))?;
         if source_get(heap, list, 0)? > 1 {
             insertions_sort_NeighList_AT_NUMBERS(heap, list, nRank)?;
         }
-        nPrevRank = source_get(heap, nRank, i)?;
-        k = k.wrapping_add(1);
+        position = position.wrapping_add(1);
     }
-    let _ = nPrevRank;
     Ok(0)
 }
 
@@ -1234,13 +2195,13 @@ pub(crate) fn SortNeighLists3(
     nAtomNumber: SourceMutPointer<AT_RANK>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap2.c:482 SortNeighLists3
-    // INCHI✔️❌: int SortNeighLists3( int num_atoms,
-    // INCHI✔️❌:                      AT_RANK *nRank,
-    // INCHI✔️❌:                      NEIGH_LIST *NeighList,
-    // INCHI✔️❌:                      AT_RANK *nAtomNumber )
-    // INCHI✔️❌: {
-    // INCHI✔️❌:     int k, i;
-    // INCHI✔️❌:     AT_RANK nPrevRank = 0;
+    // INCHI✔️✔️: int SortNeighLists3( int num_atoms,
+    // INCHI✔️✔️:                      AT_RANK *nRank,
+    // INCHI✔️✔️:                      NEIGH_LIST *NeighList,
+    // INCHI✔️✔️:                      AT_RANK *nAtomNumber )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     int k, i;
+    // INCHI✔️✔️:     AT_RANK nPrevRank = 0;
     // INCHI✔️❌:     /*
     // INCHI✔️❌:      * on entry nRank[nAtomNumber[k]] <= nRank[nAtomNumber[k+1]]  ( k < num_atoms-1 )
     // INCHI✔️❌:      *          nRank[nAtomNumber[k]] >= k+1                      ( k < num_atoms )
@@ -1248,35 +2209,153 @@ pub(crate) fn SortNeighLists3(
     // INCHI✔️❌:      *                nRank[nAtomNumber[k]] < nRank[nAtomNumber[k+1]] OR if k = num_atoms-1.
     // INCHI✔️❌:      *
     // INCHI✔️❌:      */
-    // INCHI✔️❌:     for (k = 0; k < num_atoms; k++)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         i = nAtomNumber[k];
-    // INCHI✔️❌:         if (( nRank[i] != k + 1 || nRank[i] == nPrevRank ) && NeighList[i][0] > 1)
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:             /*  nRank[i] is tied (duplicated) */
-    // INCHI✔️❌:             insertions_sort_NeighList_AT_NUMBERS3( NeighList[i], nRank );
-    // INCHI✔️❌:         }
-    // INCHI✔️❌:         nPrevRank = nRank[i];
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:     return 0;
-    // INCHI✔️❌: }
+    // INCHI✔️✔️:     for (k = 0; k < num_atoms; k++)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         i = nAtomNumber[k];
+    // INCHI✔️✔️:         if (( nRank[i] != k + 1 || nRank[i] == nPrevRank ) && NeighList[i][0] > 1)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             /*  nRank[i] is tied (duplicated) */
+    // INCHI✔️✔️:             insertions_sort_NeighList_AT_NUMBERS3( NeighList[i], nRank );
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         nPrevRank = nRank[i];
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     return 0;
+    // INCHI✔️✔️: }
     // END INCHI C FUNCTION: SortNeighLists3
 
-    let mut nPrevRank: AT_RANK = 0;
-    let mut k = 0_i32;
-    while k < num_atoms {
-        let i = i32::from(source_get(heap, nAtomNumber, k)?);
-        let rank = source_get(heap, nRank, i)?;
-        if rank != k.wrapping_add(1) as AT_RANK || rank == nPrevRank {
-            let list = source_get(heap, NeighList, i)?;
+    if num_atoms <= 0 {
+        return Ok(0);
+    }
+    if let Some(mut workspace) = ContiguousNeighborRankSortWorkspace::try_new(
+        heap,
+        usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+        nRank,
+        NeighList,
+        nAtomNumber,
+    ) {
+        workspace.sort3();
+        return Ok(0);
+    }
+    // SAFETY: these allocations remain live for the duration of the loop.
+    // Neighbor-row mutations do not overlap references retained from a view.
+    let atom_numbers = unsafe { heap.stable_slice(nAtomNumber.as_const())? };
+    let ranks = unsafe { heap.stable_slice(nRank.as_const())? };
+    let mut position = 0_i32;
+    let mut previous_rank = 0;
+    while position < num_atoms {
+        let atom = *atom_numbers
+            .get(usize::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+        let rank = *ranks.get(usize::from(atom))?;
+        if rank != position.wrapping_add(1) as AT_RANK || rank == previous_rank {
+            let list = source_get(heap, NeighList, i32::from(atom))?;
             if source_get(heap, list, 0)? > 1 {
                 let _ = insertions_sort_NeighList_AT_NUMBERS3(heap, list, nRank)?;
             }
         }
-        nPrevRank = rank;
-        k = k.wrapping_add(1);
+        previous_rank = rank;
+        position = position.wrapping_add(1);
     }
     Ok(0)
+}
+
+/// Direct source-array form of `insertions_sort(..., CompRank)`.
+///
+/// # Safety
+///
+/// Every value in `atom_numbers` must be a valid index into `ranks`.
+#[inline]
+unsafe fn insertion_sort_atom_numbers_by_rank(
+    ranks: &[AT_RANK],
+    atom_numbers: &mut [AT_RANK],
+) -> i32 {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:304 insertions_sort
+    // INCHI✔️✔️:     char *i, *j, *pk = (char*) base;
+    // INCHI✔️✔️:     int  num_trans = 0;
+    // INCHI✔️✔️:     size_t k;
+    // INCHI✔️✔️:     for (k = 1; k < num; k++, pk += width)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         for (i = j = pk + width;
+    // INCHI✔️✔️:              j > ( char* )base && ( i -= width, ( *compare )( i, j, pCG ) ) > 0;
+    // INCHI✔️✔️:              j = i)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             inchi_swap( i, j, width );
+    // INCHI✔️✔️:             num_trans++;
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     return num_trans;
+    // END INCHI C FUNCTION: insertions_sort
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:475 CompRank
+    // INCHI✔️✔️:     int ret = (int) pCG->m_pn_RankForSort[( int )*(const AT_RANK*) a1] -
+    // INCHI✔️✔️:               (int) pCG->m_pn_RankForSort[( int )*(const AT_RANK*) a2];
+    // INCHI✔️✔️:     return ret;
+    // END INCHI C FUNCTION: CompRank
+
+    let mut num_trans = 0_i32;
+    for k in 1..atom_numbers.len() {
+        let mut j = k;
+        while j > 0 {
+            let i = j - 1;
+            // SAFETY: the caller proved the complete atom-number bound. Both
+            // positions are inside the slice by construction of this loop.
+            let left_rank =
+                unsafe { *ranks.get_unchecked(usize::from(*atom_numbers.get_unchecked(i))) };
+            // SAFETY: identical source-array proof and loop bounds as above.
+            let right_rank =
+                unsafe { *ranks.get_unchecked(usize::from(*atom_numbers.get_unchecked(j))) };
+            if left_rank <= right_rank {
+                break;
+            }
+            // The generic C sorter calls `inchi_swap` for each adjacent
+            // inversion; this is deliberately not the shift-based specialized
+            // `insertions_sort_AT_NUMBERS` implementation.
+            atom_numbers.swap(i, j);
+            num_trans = num_trans.wrapping_add(1);
+            j = i;
+        }
+    }
+    num_trans
+}
+
+fn try_insertion_sort_atom_numbers_by_rank(
+    heap: &mut SourceHeap,
+    ranks: SourceMutPointer<AT_RANK>,
+    atom_numbers: SourceMutPointer<AT_RANK>,
+    count: usize,
+) -> Option<i32> {
+    if count < 2 || ranks.allocation_identity()? == atom_numbers.allocation_identity()? {
+        return None;
+    }
+    let rank_values = heap.slice(ranks.as_const()).ok()?;
+    let atom_values = heap.slice(atom_numbers.as_const()).ok()?;
+    if rank_values.len() < count || atom_values.len() < count {
+        return None;
+    }
+    let indices_are_bounded = heap.has_proven_index_bound(atom_numbers.as_const(), count, count);
+    if !indices_are_bounded
+        && atom_values[..count]
+            .iter()
+            .any(|&atom| usize::from(atom) >= count)
+    {
+        return None;
+    }
+    if !indices_are_bounded {
+        heap.record_index_bound(atom_numbers, count, count).ok()?;
+    }
+
+    // SAFETY: the allocations are distinct and fixed for the duration of the
+    // call. The checked lengths and index-bound provenance prove all source
+    // array accesses performed by the direct C loop.
+    let ranks = unsafe { heap.stable_slice(ranks.as_const()).ok()? };
+    // SAFETY: the sorter only swaps values in the proved prefix, preserving
+    // both its membership and its index bound.
+    let mut atom_numbers = unsafe {
+        heap.stable_index_bounded_slice_mut(atom_numbers, count, count)
+            .ok()?
+    };
+    let ranks = ranks.prefix(count).ok()?;
+    let atom_numbers = atom_numbers.prefix_mut(count).ok()?;
+    // SAFETY: construction above proved every atom number indexes `ranks`.
+    Some(unsafe { insertion_sort_atom_numbers_by_rank(ranks, atom_numbers) })
 }
 
 #[allow(non_snake_case)]
@@ -1306,9 +2385,9 @@ pub(crate) fn DifferentiateRanks2(
     // INCHI✔️❌:     /*int nNumPrevRanks;*/
     // INCHI✔️❌:
     // INCHI✔️❌:     /*  SortNeighLists2 needs sorted ranks */
-    // INCHI✔️❌:     pCG->m_pn_RankForSort = pnCurrRank;
-    // INCHI✔️❌:     if (bUseAltSort & 1)
-    // INCHI✔️❌:         tsort( pCG, nAtomNumber, num_atoms, sizeof( nAtomNumber[0] ), CompRank /* CompRanksOrd*/ );
+    // INCHI✔️✔️:     pCG->m_pn_RankForSort = pnCurrRank;
+    // INCHI✔️✔️:     if (bUseAltSort & 1)
+    // INCHI✔️✔️:         tsort( pCG, nAtomNumber, num_atoms, sizeof( nAtomNumber[0] ), CompRank /* CompRanksOrd*/ );
     // INCHI✔️❌:     else
     // INCHI✔️❌:         inchi_qsort( pCG, nAtomNumber, num_atoms, sizeof( nAtomNumber[0] ), CompRanksOrd );
     // INCHI✔️❌:
@@ -1333,61 +2412,148 @@ pub(crate) fn DifferentiateRanks2(
 
     pCG.m_pn_RankForSort = pnCurrRank.as_const();
     let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let mut atoms = if count == 0 {
-        Vec::new()
-    } else {
-        heap.slice(nAtomNumber.as_const())?
+    let used_direct_insertion_sort = bUseAltSort & 1 != 0
+        && try_insertion_sort_atom_numbers_by_rank(heap, pnCurrRank, nAtomNumber, count).is_some();
+    if !used_direct_insertion_sort
+        && count != 0
+        && nAtomNumber.allocation_identity() != pnCurrRank.allocation_identity()
+    {
+        heap.with_slice_mut_and_heap_mut(nAtomNumber, |atoms, heap| {
+            let atoms = atoms
+                .get_mut(..count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(atoms);
+            if bUseAltSort & 1 != 0 {
+                insertions_sort(
+                    bytes,
+                    count,
+                    std::mem::size_of::<AT_RANK>(),
+                    &mut |left, right| {
+                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                        CompRank(heap, left, right, pCG)
+                    },
+                )
+                .map(|_| ())
+            } else {
+                inchi_qsort(
+                    bytes,
+                    count,
+                    std::mem::size_of::<AT_RANK>(),
+                    &mut |left, right| {
+                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                        CompRanksOrd(heap, left, right, pCG)
+                    },
+                )
+            }
+        })?;
+    } else if !used_direct_insertion_sort && count != 0 {
+        let mut atoms = heap
+            .slice(nAtomNumber.as_const())?
             .get(..count)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    };
-    let sort_result = {
-        let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(&mut atoms);
-        if bUseAltSort & 1 != 0 {
-            insertions_sort(
-                bytes,
-                count,
-                std::mem::size_of::<AT_RANK>(),
-                &mut |left, right| {
-                    let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                    let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                    CompRank(heap, left, right, pCG)
-                },
-            )
-            .map(|_| ())
-        } else {
-            inchi_qsort(
-                bytes,
-                count,
-                std::mem::size_of::<AT_RANK>(),
-                &mut |left, right| {
-                    let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                    let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                    CompRanksOrd(heap, left, right, pCG)
-                },
-            )
+            .to_vec();
+        let sort_result = {
+            let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(&mut atoms);
+            if bUseAltSort & 1 != 0 {
+                insertions_sort(
+                    bytes,
+                    count,
+                    std::mem::size_of::<AT_RANK>(),
+                    &mut |left, right| {
+                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                        CompRank(heap, left, right, pCG)
+                    },
+                )
+                .map(|_| ())
+            } else {
+                inchi_qsort(
+                    bytes,
+                    count,
+                    std::mem::size_of::<AT_RANK>(),
+                    &mut |left, right| {
+                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                        CompRanksOrd(heap, left, right, pCG)
+                    },
+                )
+            }
+        };
+        for (index, atom) in atoms.into_iter().enumerate() {
+            source_set(heap, nAtomNumber, index as i32, atom)?;
         }
-    };
-    for (index, atom) in atoms.into_iter().enumerate() {
-        source_set(heap, nAtomNumber, index as i32, atom)?;
+        sort_result?;
     }
-    sort_result?;
+    if count != 0 {
+        // The source sort only permutes the atom-number prefix established by
+        // SetInitialRanks2.
+        heap.record_index_bound(nAtomNumber, count, count)?;
+    }
 
+    let mut sort_workspace_cache = ContiguousNeighborRankSortWorkspace::try_new(
+        heap,
+        count,
+        pnCurrRank,
+        NeighList,
+        nAtomNumber,
+    )
+    .and_then(|workspace| {
+        AlternatingContiguousNeighborRankSortWorkspace::try_new(heap, workspace, pnPrevRank)
+    });
+    let mut workspace_cache: Option<NeighListRankWorkspace> = None;
     loop {
         *lNumIter = lNumIter.wrapping_add(1);
         switch_ptrs(&mut pnCurrRank, &mut pnPrevRank);
-        SortNeighLists2(heap, num_atoms, pnPrevRank, NeighList, nAtomNumber)?;
-        nNumCurrRanks = SetNewRanksFromNeighLists(
-            heap,
-            pCG,
-            num_atoms,
-            NeighList,
-            pnPrevRank,
-            pnCurrRank,
-            nAtomNumber,
-            1,
-            &mut CompNeighListRanksOrd,
-        )?;
+        if let Some(sort_workspace) = sort_workspace_cache.as_mut() {
+            let workspace = sort_workspace.next_input();
+            workspace.sort2();
+            pCG.m_pNeighList_RankForSort = NeighList.as_const();
+            pCG.m_pn_RankForSort = pnPrevRank.as_const();
+            // SAFETY: workspace construction proved that the output rank
+            // allocation is distinct from every source array used here.
+            let mut new_ranks = unsafe { heap.stable_slice_mut(pnCurrRank)? };
+            nNumCurrRanks = workspace.set_new_ranks2(&mut new_ranks);
+            workspace_cache = None;
+        } else {
+            SortNeighLists2(heap, num_atoms, pnPrevRank, NeighList, nAtomNumber)?;
+            let refreshed = workspace_cache
+                .as_mut()
+                .is_some_and(|workspace| workspace.refresh_ranks(heap, pnPrevRank, count));
+            if !refreshed {
+                workspace_cache = NeighListRankWorkspace::try_new(
+                    heap,
+                    NeighList,
+                    pnPrevRank,
+                    nAtomNumber,
+                    pnCurrRank,
+                    count,
+                );
+            }
+            let workspace: Option<&dyn NeighListRankCompareWorkspace> = workspace_cache
+                .as_ref()
+                .map(|workspace| workspace as &dyn NeighListRankCompareWorkspace);
+            let mut compare = |heap: &SourceHeap, first, second, globals: &CANON_GLOBALS| {
+                if let Some(workspace) = workspace {
+                    Ok(workspace.compare(first, second, true))
+                } else {
+                    CompNeighListRanksOrd(heap, first, second, globals)
+                }
+            };
+            nNumCurrRanks = SetNewRanksFromNeighLists(
+                heap,
+                pCG,
+                num_atoms,
+                NeighList,
+                pnPrevRank,
+                pnCurrRank,
+                nAtomNumber,
+                1,
+                &mut compare,
+                workspace,
+            )?;
+        }
         let ranks_match = if count == 0 {
             true
         } else {
@@ -1455,19 +2621,42 @@ pub(crate) fn DifferentiateRanks3(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: DifferentiateRanks3
 
+    let count = usize::try_from(num_atoms.max(0)).expect("non-negative i32 fits usize");
+    let mut sort_workspace_cache = ContiguousNeighborRankSortWorkspace::try_new(
+        heap,
+        count,
+        pnCurrRank,
+        NeighList,
+        nAtomNumber,
+    )
+    .and_then(|workspace| {
+        AlternatingContiguousNeighborRankSortWorkspace::try_new(heap, workspace, pnPrevRank)
+    });
     loop {
         *lNumIter = lNumIter.wrapping_add(1);
         switch_ptrs(&mut pnCurrRank, &mut pnPrevRank);
-        SortNeighLists3(heap, num_atoms, pnPrevRank, NeighList, nAtomNumber)?;
-        nNumCurrRanks = SetNewRanksFromNeighLists3(
-            heap,
-            pCG,
-            num_atoms,
-            NeighList,
-            pnPrevRank,
-            pnCurrRank,
-            nAtomNumber,
-        )?;
+        if let Some(sort_workspace) = sort_workspace_cache.as_mut() {
+            let workspace = sort_workspace.next_input();
+            workspace.sort3();
+            pCG.m_pNeighList_RankForSort = NeighList.as_const();
+            pCG.m_pn_RankForSort = pnPrevRank.as_const();
+            // SAFETY: workspace construction proved that the output rank
+            // allocation is distinct from ranks, atom numbers, row pointers,
+            // and contiguous row storage for this complete C refinement pass.
+            let mut new_ranks = unsafe { heap.stable_slice_mut(pnCurrRank)? };
+            nNumCurrRanks = workspace.set_new_ranks3(&mut new_ranks);
+        } else {
+            SortNeighLists3(heap, num_atoms, pnPrevRank, NeighList, nAtomNumber)?;
+            nNumCurrRanks = SetNewRanksFromNeighLists3(
+                heap,
+                pCG,
+                num_atoms,
+                NeighList,
+                pnPrevRank,
+                pnCurrRank,
+                nAtomNumber,
+            )?;
+        }
         if nNumCurrRanks >= 0 {
             break;
         }
@@ -1516,20 +2705,43 @@ pub(crate) fn DifferentiateRanks4(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: DifferentiateRanks4
 
+    let count = usize::try_from(num_atoms.max(0)).expect("non-negative i32 fits usize");
+    let mut sort_workspace_cache = ContiguousNeighborRankSortWorkspace::try_new(
+        heap,
+        count,
+        pnCurrRank,
+        NeighList,
+        nAtomNumber,
+    )
+    .and_then(|workspace| {
+        AlternatingContiguousNeighborRankSortWorkspace::try_new(heap, workspace, pnPrevRank)
+    });
     loop {
         *lNumIter = lNumIter.wrapping_add(1);
         switch_ptrs(&mut pnCurrRank, &mut pnPrevRank);
-        SortNeighLists3(heap, num_atoms, pnPrevRank, NeighList, nAtomNumber)?;
-        nNumCurrRanks = SetNewRanksFromNeighLists4(
-            heap,
-            pCG,
-            num_atoms,
-            NeighList,
-            pnPrevRank,
-            pnCurrRank,
-            nAtomNumber,
-            nMaxAtRank,
-        )?;
+        if let Some(sort_workspace) = sort_workspace_cache.as_mut() {
+            let workspace = sort_workspace.next_input();
+            workspace.sort3();
+            pCG.m_pNeighList_RankForSort = NeighList.as_const();
+            pCG.m_pn_RankForSort = pnPrevRank.as_const();
+            pCG.m_nMaxAtNeighRankForSort = nMaxAtRank;
+            // SAFETY: workspace construction proved the same distinct source
+            // arrays required by the official in-place ranking loop.
+            let mut new_ranks = unsafe { heap.stable_slice_mut(pnCurrRank)? };
+            nNumCurrRanks = workspace.set_new_ranks4(&mut new_ranks, nMaxAtRank);
+        } else {
+            SortNeighLists3(heap, num_atoms, pnPrevRank, NeighList, nAtomNumber)?;
+            nNumCurrRanks = SetNewRanksFromNeighLists4(
+                heap,
+                pCG,
+                num_atoms,
+                NeighList,
+                pnPrevRank,
+                pnCurrRank,
+                nAtomNumber,
+                nMaxAtRank,
+            )?;
+        }
         if nNumCurrRanks >= 0 {
             break;
         }
@@ -1629,12 +2841,65 @@ pub(crate) fn DifferentiateRanksBasic(
         source_set(heap, nAtomNumber, index as i32, atom)?;
     }
     sort_result?;
+    if count != 0 {
+        // The copied source qsort/tsort preserves the established index bound.
+        heap.record_index_bound(nAtomNumber, count, count)?;
+    }
 
+    let mut sort_workspace_cache = ContiguousNeighborRankSortWorkspace::try_new(
+        heap,
+        count,
+        pnCurrRank,
+        NeighList,
+        nAtomNumber,
+    )
+    .and_then(|workspace| {
+        AlternatingContiguousNeighborRankSortWorkspace::try_new(heap, workspace, pnPrevRank)
+    });
+    let mut workspace_cache: Option<NeighListRankWorkspace> = None;
     loop {
         *lNumIter = lNumIter.wrapping_add(1);
         let nNumPrevRanks = nNumCurrRanks;
         switch_ptrs(&mut pnCurrRank, &mut pnPrevRank);
-        SortNeighLists2(heap, num_atoms, pnPrevRank, NeighList, nAtomNumber)?;
+        let use_workspace = sort_workspace_cache.is_some();
+        if let Some(sort_workspace) = sort_workspace_cache.as_mut() {
+            sort_workspace.next_input().sort2();
+        } else {
+            SortNeighLists2(heap, num_atoms, pnPrevRank, NeighList, nAtomNumber)?;
+        }
+        if use_workspace {
+            workspace_cache = None;
+        } else {
+            let refreshed = workspace_cache
+                .as_mut()
+                .is_some_and(|workspace| workspace.refresh_ranks(heap, pnPrevRank, count));
+            if !refreshed {
+                workspace_cache = NeighListRankWorkspace::try_new(
+                    heap,
+                    NeighList,
+                    pnPrevRank,
+                    nAtomNumber,
+                    pnCurrRank,
+                    count,
+                );
+            }
+        }
+        let workspace: Option<&dyn NeighListRankCompareWorkspace> = if use_workspace {
+            sort_workspace_cache
+                .as_ref()
+                .map(|workspace| &workspace.active as &dyn NeighListRankCompareWorkspace)
+        } else {
+            workspace_cache
+                .as_ref()
+                .map(|workspace| workspace as &dyn NeighListRankCompareWorkspace)
+        };
+        let mut compare = |heap: &SourceHeap, first, second, globals: &CANON_GLOBALS| {
+            if let Some(workspace) = workspace {
+                Ok(workspace.compare(first, second, false))
+            } else {
+                CompNeighListRanks(heap, first, second, globals)
+            }
+        };
         nNumCurrRanks = SetNewRanksFromNeighLists(
             heap,
             pCG,
@@ -1644,7 +2909,8 @@ pub(crate) fn DifferentiateRanksBasic(
             pnCurrRank,
             nAtomNumber,
             bUseAltSort,
-            &mut CompNeighListRanks,
+            &mut compare,
+            workspace,
         )?;
         if nNumPrevRanks == nNumCurrRanks {
             let ranks_match = if count == 0 {
@@ -7346,6 +8612,58 @@ mod tests {
     use super::*;
 
     #[test]
+    fn direct_rank_insertion_sort_matches_checked_source_sort() {
+        let fixtures = [
+            (vec![1_u16, 2, 3, 4], vec![0_u16, 1, 2, 3], 0),
+            (vec![4_u16, 3, 2, 1], vec![0_u16, 1, 2, 3], 6),
+            (vec![1_u16, 1, 1, 1], vec![3_u16, 2, 1, 0], 0),
+            (vec![2_u16, 1, 2, 1], vec![0_u16, 1, 2, 3], 3),
+        ];
+
+        for (ranks, atoms, expected_transactions) in fixtures {
+            let mut checked = atoms.clone();
+            let checked_transactions = insertions_sort(
+                bytemuck::cast_slice_mut::<AT_RANK, u8>(&mut checked),
+                atoms.len(),
+                std::mem::size_of::<AT_RANK>(),
+                &mut |left, right| {
+                    let left = AT_RANK::from_ne_bytes(left.try_into().expect("AT_RANK width"));
+                    let right = AT_RANK::from_ne_bytes(right.try_into().expect("AT_RANK width"));
+                    Ok(i32::from(ranks[usize::from(left)]) - i32::from(ranks[usize::from(right)]))
+                },
+            )
+            .unwrap();
+
+            let mut direct = atoms;
+            // SAFETY: every fixture is a permutation of valid rank indices.
+            let direct_transactions =
+                unsafe { insertion_sort_atom_numbers_by_rank(&ranks, &mut direct) };
+            assert_eq!(direct, checked);
+            assert_eq!(direct_transactions, checked_transactions);
+            assert_eq!(direct_transactions, expected_transactions);
+        }
+    }
+
+    #[test]
+    fn direct_rank_insertion_sort_requires_distinct_bounded_allocations() {
+        let mut heap = SourceHeap::default();
+        let ranks = heap.allocate(vec![1_u16, 2]).unwrap();
+        let invalid_atoms = heap.allocate(vec![0_u16, 2]).unwrap();
+        assert_eq!(
+            try_insertion_sort_atom_numbers_by_rank(&mut heap, ranks, invalid_atoms, 2),
+            None
+        );
+        assert_eq!(heap.slice(invalid_atoms.as_const()).unwrap(), &[0, 2]);
+        assert!(!heap.has_proven_index_bound(invalid_atoms.as_const(), 2, 2));
+
+        assert_eq!(
+            try_insertion_sort_atom_numbers_by_rank(&mut heap, ranks, ranks, 2),
+            None
+        );
+        assert_eq!(heap.slice(ranks.as_const()).unwrap(), &[1, 2]);
+    }
+
+    #[test]
     fn source_port__ichimap2__removecalculatednonstereobondparities__line_3099() {
         let mut heap = SourceHeap::default();
         let atoms = heap
@@ -9475,6 +10793,208 @@ mod tests {
     }
 
     #[test]
+    fn contiguous_rank_workspace_matches_checked_set_new_ranks3_and_4() {
+        fn inputs(
+            heap: &mut SourceHeap,
+            record_official_layout: bool,
+        ) -> (
+            SourceMutPointer<NEIGH_LIST>,
+            SourceMutPointer<AT_RANK>,
+            SourceMutPointer<AT_RANK>,
+            SourceMutPointer<AT_RANK>,
+        ) {
+            let storage = heap
+                .allocate_model_storage(vec![0_u16, 1, 0, 2, 0, 0, 1, 0])
+                .unwrap();
+            let lists = heap
+                .allocate_model_storage(vec![
+                    storage,
+                    storage.offset(1).unwrap(),
+                    storage.offset(3).unwrap(),
+                    storage.offset(6).unwrap(),
+                ])
+                .unwrap();
+            let ranks = heap.allocate_model_storage(vec![4_u16; 4]).unwrap();
+            let new_ranks = heap.allocate_model_storage(vec![9_u16; 4]).unwrap();
+            let atoms = heap.allocate_model_storage(vec![2_u16, 0, 3, 1]).unwrap();
+            if record_official_layout {
+                // This fixture reproduces the pointer table and backing
+                // allocation after CreateNeighList has filled both arrays.
+                heap.record_contiguous_neighbor_layout(lists, storage, 4, 4)
+                    .unwrap();
+            }
+            (lists, ranks, new_ranks, atoms)
+        }
+
+        for max_rank in [None, Some(2_u16), Some(4_u16)] {
+            let mut checked_heap = SourceHeap::default();
+            let (checked_lists, checked_ranks, checked_new_ranks, checked_atoms) =
+                inputs(&mut checked_heap, false);
+            assert!(
+                ContiguousNeighborRankSortWorkspace::try_new(
+                    &mut checked_heap,
+                    4,
+                    checked_ranks,
+                    checked_lists,
+                    checked_atoms,
+                )
+                .is_none()
+            );
+            let mut checked_globals = CANON_GLOBALS::default();
+            let checked_result = if let Some(max_rank) = max_rank {
+                SetNewRanksFromNeighLists4(
+                    &mut checked_heap,
+                    &mut checked_globals,
+                    4,
+                    checked_lists,
+                    checked_ranks,
+                    checked_new_ranks,
+                    checked_atoms,
+                    max_rank,
+                )
+                .unwrap()
+            } else {
+                SetNewRanksFromNeighLists3(
+                    &mut checked_heap,
+                    &mut checked_globals,
+                    4,
+                    checked_lists,
+                    checked_ranks,
+                    checked_new_ranks,
+                    checked_atoms,
+                )
+                .unwrap()
+            };
+            let checked_atom_values = checked_heap
+                .slice(checked_atoms.as_const())
+                .unwrap()
+                .to_vec();
+            let checked_rank_values = checked_heap
+                .slice(checked_new_ranks.as_const())
+                .unwrap()
+                .to_vec();
+
+            let mut direct_heap = SourceHeap::default();
+            let (direct_lists, direct_ranks, direct_new_ranks, direct_atoms) =
+                inputs(&mut direct_heap, true);
+            let mut workspace = ContiguousNeighborRankSortWorkspace::try_new(
+                &mut direct_heap,
+                4,
+                direct_ranks,
+                direct_lists,
+                direct_atoms,
+            )
+            .unwrap();
+            assert!(workspace.is_disjoint_from(direct_new_ranks));
+            let mut direct_output =
+                unsafe { direct_heap.stable_slice_mut(direct_new_ranks).unwrap() };
+            let direct_result = if let Some(max_rank) = max_rank {
+                workspace.set_new_ranks4(&mut direct_output, max_rank)
+            } else {
+                workspace.set_new_ranks3(&mut direct_output)
+            };
+
+            assert_eq!(direct_result, checked_result, "max rank {max_rank:?}");
+            assert_eq!(
+                direct_heap.slice(direct_atoms.as_const()).unwrap(),
+                checked_atom_values,
+                "max rank {max_rank:?}"
+            );
+            assert_eq!(
+                direct_heap.slice(direct_new_ranks.as_const()).unwrap(),
+                checked_rank_values,
+                "max rank {max_rank:?}"
+            );
+        }
+
+        let mut checked_heap = SourceHeap::default();
+        let (checked_lists, checked_ranks, checked_new_ranks, checked_atoms) =
+            inputs(&mut checked_heap, false);
+        let mut checked_globals = CANON_GLOBALS::default();
+        let checked_result = SetNewRanksFromNeighLists(
+            &mut checked_heap,
+            &mut checked_globals,
+            4,
+            checked_lists,
+            checked_ranks,
+            checked_new_ranks,
+            checked_atoms,
+            1,
+            &mut CompNeighListRanksOrd,
+            None,
+        )
+        .unwrap();
+        let checked_atoms = checked_heap
+            .slice(checked_atoms.as_const())
+            .unwrap()
+            .to_vec();
+        let checked_new = checked_heap
+            .slice(checked_new_ranks.as_const())
+            .unwrap()
+            .to_vec();
+
+        let mut direct_heap = SourceHeap::default();
+        let (direct_lists, direct_ranks, direct_new_ranks, direct_atoms) =
+            inputs(&mut direct_heap, true);
+        let mut workspace = ContiguousNeighborRankSortWorkspace::try_new(
+            &mut direct_heap,
+            4,
+            direct_ranks,
+            direct_lists,
+            direct_atoms,
+        )
+        .unwrap();
+        let mut direct_output = unsafe { direct_heap.stable_slice_mut(direct_new_ranks).unwrap() };
+        let direct_result = workspace.set_new_ranks2(&mut direct_output);
+        assert_eq!(direct_result, checked_result);
+        assert_eq!(
+            direct_heap.slice(direct_atoms.as_const()).unwrap(),
+            checked_atoms
+        );
+        assert_eq!(
+            direct_heap.slice(direct_new_ranks.as_const()).unwrap(),
+            checked_new
+        );
+    }
+
+    #[test]
+    fn contiguous_rank_workspace_follows_the_prevalidated_rank_pair() {
+        let mut heap = SourceHeap::default();
+        let storage = heap.allocate_model_storage(vec![0_u16; 3]).unwrap();
+        let lists = heap
+            .allocate_model_storage(vec![
+                storage,
+                storage.offset(1).unwrap(),
+                storage.offset(2).unwrap(),
+            ])
+            .unwrap();
+        heap.record_contiguous_neighbor_layout(lists, storage, 3, 3)
+            .unwrap();
+        let first_ranks = heap.allocate_model_storage(vec![1_u16, 2, 3]).unwrap();
+        let second_ranks = heap.allocate_model_storage(vec![3_u16, 2, 1]).unwrap();
+        let atoms = heap.allocate_model_storage(vec![0_u16, 1, 2]).unwrap();
+
+        let aliased =
+            ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 3, first_ranks, lists, atoms)
+                .unwrap();
+        assert!(
+            AlternatingContiguousNeighborRankSortWorkspace::try_new(&heap, aliased, first_ranks,)
+                .is_none()
+        );
+
+        let active =
+            ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 3, first_ranks, lists, atoms)
+                .unwrap();
+        let mut workspace =
+            AlternatingContiguousNeighborRankSortWorkspace::try_new(&heap, active, second_ranks)
+                .unwrap();
+
+        assert_eq!(workspace.next_input().compare(0, 2, false), -2);
+        assert_eq!(workspace.next_input().compare(0, 2, false), 2);
+        assert_eq!(workspace.next_input().compare(0, 2, false), -2);
+    }
+
+    #[test]
     fn source_port__ichimap2__setnewranksfromneighlists__line_380() {
         let mut empty_heap = SourceHeap::default();
         let mut empty_globals = CANON_GLOBALS::default();
@@ -9493,6 +11013,7 @@ mod tests {
                     empty_calls += 1;
                     Ok(0)
                 },
+                None,
             ),
             Ok(1)
         );
@@ -9528,6 +11049,7 @@ mod tests {
                         calls = calls.wrapping_add(1);
                         CompNeighListRanks(heap, left, right, globals)
                     },
+                    None,
                 ),
                 Ok(4)
             );
@@ -9558,6 +11080,7 @@ mod tests {
                 tied_atoms,
                 1,
                 &mut CompNeighListRanks,
+                None,
             ),
             Ok(1)
         );
@@ -9574,9 +11097,120 @@ mod tests {
                 tied_atoms,
                 0,
                 &mut CompNeighListRanks,
+                None,
             ),
             Err(SourceHeapError::SourceIntegerOverflow)
         );
+    }
+
+    #[test]
+    fn neigh_list_rank_workspace_matches_source_comparators_and_rejects_invalid_views() {
+        let mut heap = SourceHeap::default();
+        let list0 = heap.allocate_model_storage(vec![2_u16, 1, 2]).unwrap();
+        let list1 = heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
+        let list2 = heap.allocate_model_storage(vec![2_u16, 0, 1]).unwrap();
+        let lists = heap
+            .allocate_model_storage(vec![list0, list1, list2])
+            .unwrap();
+        let ranks = heap.allocate_model_storage(vec![2_u16, 2, 3]).unwrap();
+        let atoms = heap.allocate_model_storage(vec![0_u16, 1, 2]).unwrap();
+        let new_ranks = heap.allocate_model_storage(vec![0_u16; 3]).unwrap();
+        let mut workspace =
+            NeighListRankWorkspace::try_new(&heap, lists, ranks, atoms, new_ranks, 3).unwrap();
+        let mut globals = CANON_GLOBALS {
+            m_pNeighList_RankForSort: lists.as_const(),
+            m_pn_RankForSort: ranks.as_const(),
+            ..CANON_GLOBALS::default()
+        };
+
+        for first in 0_u16..3 {
+            for second in 0_u16..3 {
+                assert_eq!(
+                    workspace.compare(first, second, false),
+                    CompNeighListRanks(&heap, first, second, &globals).unwrap()
+                );
+                assert_eq!(
+                    workspace.compare(first, second, true),
+                    CompNeighListRanksOrd(&heap, first, second, &globals).unwrap()
+                );
+            }
+        }
+
+        heap.slice_mut(new_ranks)
+            .unwrap()
+            .copy_from_slice(&[3, 1, 2]);
+        globals.m_pn_RankForSort = new_ranks.as_const();
+        assert!(workspace.refresh_ranks(&heap, new_ranks, 3));
+        for first in 0_u16..3 {
+            for second in 0_u16..3 {
+                assert_eq!(
+                    workspace.compare(first, second, false),
+                    CompNeighListRanks(&heap, first, second, &globals).unwrap()
+                );
+            }
+        }
+        let short_ranks = heap.allocate_model_storage(vec![1_u16; 2]).unwrap();
+        assert!(!workspace.refresh_ranks(&heap, short_ranks, 3));
+
+        let contiguous = heap
+            .allocate_model_storage(vec![2_u16, 1, 2, 1, 0, 2, 0, 1])
+            .unwrap();
+        let contiguous_lists = heap
+            .allocate_model_storage(vec![
+                contiguous,
+                contiguous.offset(3).unwrap(),
+                contiguous.offset(5).unwrap(),
+            ])
+            .unwrap();
+        assert!(
+            ContiguousNeighborRankSortWorkspace::try_new(
+                &mut heap,
+                3,
+                ranks,
+                contiguous_lists,
+                atoms,
+            )
+            .is_none()
+        );
+        // Model the proof recorded by CreateNeighList after fully populating
+        // this constructor-shaped fixture.
+        heap.record_contiguous_neighbor_layout(contiguous_lists, contiguous, 3, 3)
+            .unwrap();
+        let contiguous_workspace = ContiguousNeighborRankSortWorkspace::try_new(
+            &mut heap,
+            3,
+            ranks,
+            contiguous_lists,
+            atoms,
+        )
+        .unwrap();
+        globals.m_pNeighList_RankForSort = contiguous_lists.as_const();
+        globals.m_pn_RankForSort = ranks.as_const();
+        for first in 0_u16..3 {
+            for second in 0_u16..3 {
+                assert_eq!(
+                    contiguous_workspace.compare(first, second, false),
+                    CompNeighListRanks(&heap, first, second, &globals).unwrap()
+                );
+                assert_eq!(
+                    contiguous_workspace.compare(first, second, true),
+                    CompNeighListRanksOrd(&heap, first, second, &globals).unwrap()
+                );
+            }
+        }
+
+        let short_row = heap.allocate_model_storage(vec![2_u16, 1]).unwrap();
+        let short_lists = heap
+            .allocate_model_storage(vec![short_row, list1, list2])
+            .unwrap();
+        assert!(
+            NeighListRankWorkspace::try_new(&heap, short_lists, ranks, atoms, new_ranks, 3,)
+                .is_none()
+        );
+        assert!(NeighListRankWorkspace::try_new(&heap, lists, ranks, atoms, atoms, 3).is_none());
+
+        assert_eq!(heap.slice(atoms.as_const()).unwrap(), &[0, 1, 2]);
+        assert_eq!(heap.slice(new_ranks.as_const()).unwrap(), &[3, 1, 2]);
     }
 
     #[test]
@@ -9663,6 +11297,64 @@ mod tests {
         assert_eq!(heap.slice(empty.as_const()).unwrap(), &[0]);
         assert_eq!(heap.slice(atoms.as_const()).unwrap(), &[0, 1, 3, 2, 4]);
 
+        let contiguous = heap
+            .allocate(vec![3_u16, 2, 1, 4, 1, 4, 2, 3, 2, 3, 4, 2, 1, 0])
+            .unwrap();
+        let contiguous_lists = heap
+            .allocate(vec![
+                contiguous,
+                contiguous.offset(4).unwrap(),
+                contiguous.offset(6).unwrap(),
+                contiguous.offset(9).unwrap(),
+                contiguous.offset(13).unwrap(),
+            ])
+            .unwrap();
+        assert!(
+            ContiguousNeighborRankSortWorkspace::try_new(
+                &mut heap,
+                5,
+                ranks,
+                contiguous_lists,
+                atoms,
+            )
+            .is_none()
+        );
+        assert_eq!(
+            SortNeighLists2(&mut heap, 5, ranks, contiguous_lists, atoms),
+            Ok(0)
+        );
+        assert_eq!(
+            heap.slice(contiguous.as_const()).unwrap(),
+            &[3, 1, 2, 4, 1, 4, 2, 3, 2, 3, 1, 2, 4, 0]
+        );
+
+        let proven_contiguous = heap
+            .allocate(vec![3_u16, 2, 1, 4, 1, 4, 2, 3, 2, 3, 4, 2, 1, 0])
+            .unwrap();
+        let proven_lists = heap
+            .allocate(vec![
+                proven_contiguous,
+                proven_contiguous.offset(4).unwrap(),
+                proven_contiguous.offset(6).unwrap(),
+                proven_contiguous.offset(9).unwrap(),
+                proven_contiguous.offset(13).unwrap(),
+            ])
+            .unwrap();
+        heap.record_contiguous_neighbor_layout(proven_lists, proven_contiguous, 5, 5)
+            .unwrap();
+        assert!(
+            ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 5, ranks, proven_lists, atoms,)
+                .is_some()
+        );
+        assert_eq!(
+            SortNeighLists2(&mut heap, 5, ranks, proven_lists, atoms),
+            Ok(0)
+        );
+        assert_eq!(
+            heap.slice(proven_contiguous.as_const()).unwrap(),
+            &[3, 1, 2, 4, 1, 4, 2, 3, 2, 3, 1, 2, 4, 0]
+        );
+
         assert_eq!(
             SortNeighLists2(
                 &mut heap,
@@ -9714,6 +11406,64 @@ mod tests {
         assert_eq!(heap.slice(list3.as_const()).unwrap(), &[2, 0, 2]);
         assert_eq!(heap.slice(list4.as_const()).unwrap(), &[0]);
         assert_eq!(heap.slice(atoms.as_const()).unwrap(), &[0, 1, 2, 3, 4]);
+
+        let contiguous = heap
+            .allocate(vec![3_u16, 2, 0, 1, 1, 2, 0, 2, 2, 0, 0])
+            .unwrap();
+        let contiguous_lists = heap
+            .allocate(vec![
+                contiguous,
+                contiguous.offset(4).unwrap(),
+                contiguous.offset(6).unwrap(),
+                contiguous.offset(7).unwrap(),
+                contiguous.offset(10).unwrap(),
+            ])
+            .unwrap();
+        assert!(
+            ContiguousNeighborRankSortWorkspace::try_new(
+                &mut heap,
+                5,
+                ranks,
+                contiguous_lists,
+                atoms,
+            )
+            .is_none()
+        );
+        assert_eq!(
+            SortNeighLists3(&mut heap, 5, ranks, contiguous_lists, atoms),
+            Ok(0)
+        );
+        assert_eq!(
+            heap.slice(contiguous.as_const()).unwrap(),
+            &[3, 0, 1, 2, 1, 2, 0, 2, 0, 2, 0]
+        );
+
+        let proven_contiguous = heap
+            .allocate(vec![3_u16, 2, 0, 1, 1, 2, 0, 2, 2, 0, 0])
+            .unwrap();
+        let proven_lists = heap
+            .allocate(vec![
+                proven_contiguous,
+                proven_contiguous.offset(4).unwrap(),
+                proven_contiguous.offset(6).unwrap(),
+                proven_contiguous.offset(7).unwrap(),
+                proven_contiguous.offset(10).unwrap(),
+            ])
+            .unwrap();
+        heap.record_contiguous_neighbor_layout(proven_lists, proven_contiguous, 5, 5)
+            .unwrap();
+        assert!(
+            ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 5, ranks, proven_lists, atoms,)
+                .is_some()
+        );
+        assert_eq!(
+            SortNeighLists3(&mut heap, 5, ranks, proven_lists, atoms),
+            Ok(0)
+        );
+        assert_eq!(
+            heap.slice(proven_contiguous.as_const()).unwrap(),
+            &[3, 0, 1, 2, 1, 2, 0, 2, 0, 2, 0]
+        );
 
         assert_eq!(
             SortNeighLists3(

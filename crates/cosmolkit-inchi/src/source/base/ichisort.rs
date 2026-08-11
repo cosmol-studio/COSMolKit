@@ -1,9 +1,10 @@
 use crate::source::base::ichimap2::DifferentiateRanks2;
 use crate::source::base::util::{inchi_calloc, inchi_free};
 use crate::source_types::{
-    AT_NUMB, AT_RANK, BOND_DOUBLE, CANON_GLOBALS, CANON_STAT, CT_OUT_OF_RAM, NEIGH_LIST, S_CHAR,
-    SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, T_GROUP_INFO, sp_ATOM,
-    tagAtInvariantIndexes_AT_INV_BREAK1, tagAtInvariantIndexes_AT_INV_LENGTH,
+    AT_NUMB, AT_RANK, ATOM_INVARIANT2, BOND_DOUBLE, CANON_GLOBALS, CANON_STAT, CT_OUT_OF_RAM,
+    NEIGH_LIST, S_CHAR, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer,
+    T_GROUP_INFO, sp_ATOM, tagAtInvariantIndexes_AT_INV_BREAK1,
+    tagAtInvariantIndexes_AT_INV_LENGTH,
 };
 
 #[allow(non_snake_case)]
@@ -75,6 +76,123 @@ pub(crate) fn comp_AT_RANK(a1: AT_RANK, a2: AT_RANK) -> i32 {
     i32::from(a1) - i32::from(a2)
 }
 
+#[inline(always)]
+fn compare_atom_invariant2_values(first: &ATOM_INVARIANT2, second: &ATOM_INVARIANT2) -> i32 {
+    // BEGIN INCHI C FUNCTION BODY: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:508 CompAtomInvariants2Only
+    // INCHI✔️✔️:     int i;
+    // INCHI✔️✔️:     for (i = 0; i < AT_INV_BREAK1; i++)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         if (pAI1->val[i] == pAI2->val[i])
+    // INCHI✔️✔️:             continue;
+    // INCHI✔️✔️:         return  (int) pAI1->val[i] - (int) pAI2->val[i];
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     if (pAI1->iso_sort_key != pAI2->iso_sort_key)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         return ( pAI1->iso_sort_key > pAI2->iso_sort_key ) ? 1 : -1;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     for (; i < AT_INV_LENGTH; i++)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         if (pAI1->val[i] != pAI2->val[i])
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             continue;
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         return  (int) pAI1->val[i] - (int) pAI2->val[i];
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     if (pAI1->iso_aux_key != pAI2->iso_aux_key)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         return ( pAI1->iso_aux_key > pAI2->iso_aux_key ) ? 1 : -1;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     return 0;
+    // END INCHI C FUNCTION BODY: CompAtomInvariants2Only
+
+    let mut i = 0_usize;
+    while i < tagAtInvariantIndexes_AT_INV_BREAK1 as usize {
+        if first.val[i] != second.val[i] {
+            return i32::from(first.val[i]) - i32::from(second.val[i]);
+        }
+        i += 1;
+    }
+    if first.iso_sort_key != second.iso_sort_key {
+        return if first.iso_sort_key > second.iso_sort_key {
+            1
+        } else {
+            -1
+        };
+    }
+    while i < tagAtInvariantIndexes_AT_INV_LENGTH as usize {
+        if first.val[i] != second.val[i] {
+            i += 1;
+            continue;
+        }
+        return i32::from(first.val[i]) - i32::from(second.val[i]);
+    }
+    if first.iso_aux_key != second.iso_aux_key {
+        return if first.iso_aux_key > second.iso_aux_key {
+            1
+        } else {
+            -1
+        };
+    }
+    0
+}
+
+/// A source-array view for the two comparator call sites in `SetInitialRanks2`.
+/// The C implementation validates no pointer metadata between comparisons;
+/// constructing this view once gives its hot loops the same access shape.
+pub(crate) struct AtomInvariant2SortWorkspace<'a> {
+    invariants: &'a [ATOM_INVARIANT2],
+}
+
+impl<'a> AtomInvariant2SortWorkspace<'a> {
+    pub(crate) fn new(
+        invariants: &'a [ATOM_INVARIANT2],
+        count: usize,
+    ) -> Result<Self, SourceHeapError> {
+        Ok(Self {
+            invariants: invariants
+                .get(..count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+        })
+    }
+
+    /// Compares two source indices after `SetInitialRanks2` has established
+    /// that both belong to its initialized and permutation-only index array.
+    ///
+    /// # Safety
+    ///
+    /// `a1` and `a2` must be smaller than the count validated by `new`.
+    #[inline(always)]
+    pub(crate) unsafe fn compare_only_in_bounds(&self, a1: AT_RANK, a2: AT_RANK) -> i32 {
+        let first_index = usize::from(a1);
+        let second_index = usize::from(a2);
+        debug_assert!(first_index < self.invariants.len());
+        debug_assert!(second_index < self.invariants.len());
+        // SAFETY: the caller proves both source indices against the complete
+        // invariant prefix at workspace construction.
+        let first = unsafe { self.invariants.get_unchecked(first_index) };
+        // SAFETY: as above.
+        let second = unsafe { self.invariants.get_unchecked(second_index) };
+        compare_atom_invariant2_values(first, second)
+    }
+
+    /// Applies the source comparator's atom-number tie breaker.
+    ///
+    /// # Safety
+    ///
+    /// The requirements of `compare_only_in_bounds` apply.
+    #[inline(always)]
+    pub(crate) unsafe fn compare_in_bounds(&self, a1: AT_RANK, a2: AT_RANK) -> i32 {
+        // SAFETY: forwarded from this method's contract.
+        let ret = unsafe { self.compare_only_in_bounds(a1, a2) };
+        if ret == 0 {
+            i32::from(a1) - i32::from(a2)
+        } else {
+            ret
+        }
+    }
+}
+
 #[allow(non_snake_case)]
 pub(crate) fn CompAtomInvariants2Only(
     heap: &SourceHeap,
@@ -123,35 +241,7 @@ pub(crate) fn CompAtomInvariants2Only(
     let second = invariants
         .get(usize::from(a2))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let mut i = 0_usize;
-    while i < tagAtInvariantIndexes_AT_INV_BREAK1 as usize {
-        if first.val[i] != second.val[i] {
-            return Ok(i32::from(first.val[i]) - i32::from(second.val[i]));
-        }
-        i += 1;
-    }
-    if first.iso_sort_key != second.iso_sort_key {
-        return Ok(if first.iso_sort_key > second.iso_sort_key {
-            1
-        } else {
-            -1
-        });
-    }
-    while i < tagAtInvariantIndexes_AT_INV_LENGTH as usize {
-        if first.val[i] != second.val[i] {
-            i += 1;
-            continue;
-        }
-        return Ok(i32::from(first.val[i]) - i32::from(second.val[i]));
-    }
-    if first.iso_aux_key != second.iso_aux_key {
-        return Ok(if first.iso_aux_key > second.iso_aux_key {
-            1
-        } else {
-            -1
-        });
-    }
-    Ok(0)
+    Ok(compare_atom_invariant2_values(first, second))
 }
 
 #[allow(non_snake_case)]
@@ -254,12 +344,15 @@ pub(crate) fn CompRanksOrd(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn insertions_sort_AT_NUMBERS(
+pub(crate) fn insertions_sort_AT_NUMBERS<C>(
     heap: &mut SourceHeap,
     base: SourceMutPointer<AT_NUMB>,
     num: i32,
-    compare: &mut dyn FnMut(&SourceHeap, AT_NUMB, AT_NUMB) -> Result<i32, SourceHeapError>,
-) -> Result<i32, SourceHeapError> {
+    compare: &mut C,
+) -> Result<i32, SourceHeapError>
+where
+    C: FnMut(&SourceHeap, AT_NUMB, AT_NUMB) -> Result<i32, SourceHeapError>,
+{
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:331 insertions_sort_AT_NUMBERS
     // INCHI✔️❌: int insertions_sort_AT_NUMBERS( void *pCG,
     // INCHI✔️❌:                                 AT_NUMB *base,
@@ -282,26 +375,27 @@ pub(crate) fn insertions_sort_AT_NUMBERS(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: insertions_sort_AT_NUMBERS
 
-    let mut num_trans = 0_i32;
-    let mut k = 1_i32;
-    while k < num {
-        let tmp = source_at_number_get(heap, base, k)?;
-        let mut j = k;
-        let mut i = k.wrapping_sub(1);
-        while j > 0 {
-            let left = source_at_number_get(heap, base, i)?;
-            if compare(heap, left, tmp)? <= 0 {
-                break;
-            }
-            source_at_number_set(heap, base, j, left)?;
-            num_trans = num_trans.wrapping_add(1);
-            j = i;
-            i = i.wrapping_sub(1);
-        }
-        source_at_number_set(heap, base, j, tmp)?;
-        k = k.wrapping_add(1);
+    if num <= 0 {
+        return Ok(0);
     }
-    Ok(num_trans)
+    let count = usize::try_from(num).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    heap.with_slice_mut_and_heap(base, |values, heap| {
+        let mut num_trans = 0_i32;
+        for k in 1..count {
+            let tmp = values
+                .get(k)
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let mut j = k;
+            while j > 0 && compare(heap, values[j - 1], tmp)? > 0 {
+                values[j] = values[j - 1];
+                num_trans = num_trans.wrapping_add(1);
+                j -= 1;
+            }
+            values[j] = tmp;
+        }
+        Ok(num_trans)
+    })
 }
 
 #[allow(non_snake_case)]
@@ -707,28 +801,42 @@ pub(crate) fn insertions_sort_NeighList_AT_NUMBERS(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: insertions_sort_NeighList_AT_NUMBERS
 
-    let num = i32::from(source_at_number_get(heap, base, 0)?);
-    let mut k = 1_i32;
-    while k < num {
-        let mut j = k.wrapping_add(1);
-        let mut i = k;
-        let current = source_at_number_get(heap, base, j)?;
-        let rj = source_at_number_get(heap, nRank, i32::from(current))?;
-        while j > 1 {
-            let previous = source_at_number_get(heap, base, i)?;
-            if source_at_number_get(heap, nRank, i32::from(previous))? <= rj {
-                break;
-            }
-            let tmp = previous;
-            let current = source_at_number_get(heap, base, j)?;
-            source_at_number_set(heap, base, i, current)?;
-            source_at_number_set(heap, base, j, tmp)?;
-            j = i;
-            i = i.wrapping_sub(1);
+    heap.with_slice_mut_and_heap(base, |values, heap| {
+        let num = usize::from(
+            values
+                .first()
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+        );
+        if num <= 1 {
+            return Ok(());
         }
-        k = k.wrapping_add(1);
-    }
-    Ok(())
+        let ranks = heap.slice(nRank.as_const())?;
+        for k in 1..num {
+            let mut j = k + 1;
+            let mut i = k;
+            let current = values
+                .get(j)
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let current_rank = *ranks
+                .get(usize::from(current))
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            while j > 1 {
+                let previous = values[i];
+                let previous_rank = *ranks
+                    .get(usize::from(previous))
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                if previous_rank <= current_rank {
+                    break;
+                }
+                values.swap(i, j);
+                j = i;
+                i -= 1;
+            }
+        }
+        Ok(())
+    })
 }
 
 #[allow(non_snake_case)]
@@ -759,28 +867,45 @@ pub(crate) fn insertions_sort_NeighList_AT_NUMBERS3(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: insertions_sort_NeighList_AT_NUMBERS3
 
-    let num = i32::from(source_at_number_get(heap, base, 0)?);
-    let mut n = 0_i32;
-    let mut k = 1_i32;
-    while k < num {
-        let tmp = source_at_number_get(heap, base, k.wrapping_add(1))?;
-        let rj = source_at_number_get(heap, nRank, i32::from(tmp))?;
-        let mut j = k.wrapping_add(1);
-        let mut i = k;
-        while j > 1 {
-            let previous = source_at_number_get(heap, base, i)?;
-            if source_at_number_get(heap, nRank, i32::from(previous))? <= rj {
-                break;
-            }
-            source_at_number_set(heap, base, j, previous)?;
-            n = n.wrapping_add(1);
-            j = i;
-            i = i.wrapping_sub(1);
+    heap.with_slice_mut_and_heap(base, |values, heap| {
+        let num = usize::from(
+            values
+                .first()
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+        );
+        if num <= 1 {
+            return Ok(0);
         }
-        source_at_number_set(heap, base, j, tmp)?;
-        k = k.wrapping_add(1);
-    }
-    Ok(n)
+        let ranks = heap.slice(nRank.as_const())?;
+        let mut transitions = 0_i32;
+        for k in 1..num {
+            let tmp = values
+                .get(k + 1)
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let current_rank = *ranks
+                .get(usize::from(tmp))
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let mut j = k + 1;
+            let mut i = k;
+            while j > 1 {
+                let previous = values[i];
+                let previous_rank = *ranks
+                    .get(usize::from(previous))
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                if previous_rank <= current_rank {
+                    break;
+                }
+                values[j] = previous;
+                transitions = transitions.wrapping_add(1);
+                j = i;
+                i -= 1;
+            }
+            values[j] = tmp;
+        }
+        Ok(transitions)
+    })
 }
 
 #[allow(non_snake_case)]
@@ -887,12 +1012,15 @@ pub(crate) fn insertions_sort_AT_RANK(
     Ok(num_trans)
 }
 
-pub(crate) fn inchi_qsort(
+pub(crate) fn inchi_qsort<C>(
     base: &mut [u8],
     num: usize,
     width: usize,
-    compare: &mut dyn FnMut(&[u8], &[u8]) -> Result<i32, SourceHeapError>,
-) -> Result<(), SourceHeapError> {
+    compare: &mut C,
+) -> Result<(), SourceHeapError>
+where
+    C: FnMut(&[u8], &[u8]) -> Result<i32, SourceHeapError>,
+{
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:66 inchi_qsort
     // INCHI✔️✔️: void inchi_qsort( void *pParam,
     // INCHI✔️✔️:                   void *base,
@@ -1094,7 +1222,7 @@ pub(crate) fn inchi_qsort(
     let compare_at = |bytes: &[u8],
                       first: isize,
                       second: isize,
-                      compare: &mut dyn FnMut(&[u8], &[u8]) -> Result<i32, SourceHeapError>|
+                      compare: &mut C|
      -> Result<i32, SourceHeapError> {
         let first = usize::try_from(first).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let second = usize::try_from(second).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -1304,6 +1432,55 @@ pub(crate) fn insertions_sort(
         }
     }
     Ok(transactions)
+}
+
+/// Typed form of the Official InChI insertion sort for source-ported arrays.
+///
+/// This keeps the source algorithm's adjacent comparison and swap sequence
+/// without reinterpreting initialized Rust values, including their padding, as
+/// an initialized byte slice.
+pub(crate) fn insertions_sort_typed<T>(
+    base: &mut [T],
+    mut compare: impl FnMut(&T, &T) -> i32,
+) -> i32 {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:304 insertions_sort
+    // INCHI✔️✔️: int insertions_sort( void *pCG,
+    // INCHI✔️✔️:                      void *base,
+    // INCHI✔️✔️:                      size_t num, size_t width,
+    // INCHI✔️✔️:                      int( *compare )( const void *, const void *, void * ) ) /* djb-rwth: types of variables are sufficient */
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     char *i, *j, *pk = (char*) base;
+    // INCHI✔️✔️:     int  num_trans = 0;
+    // INCHI✔️✔️:     size_t k;
+    // INCHI✔️✔️:     for (k = 1; k < num; k++, pk += width)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         /*for( i = pk, j = pk + width; j > (char*)base && (*compare)(i,j) > 0; j=i, i -= width )*/
+    // INCHI✔️✔️:         for (i = j = pk + width;
+    // INCHI✔️✔️:              j > ( char* )base && ( i -= width, ( *compare )( i, j, pCG ) ) > 0;
+    // INCHI✔️✔️:              j = i)        /* changed to keep BoundsChecker happy 2007-09-24 DT */
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             inchi_swap( i, j, width );
+    // INCHI✔️✔️:             num_trans++;
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     return num_trans;
+    // INCHI✔️✔️: }
+    // END INCHI C FUNCTION: insertions_sort
+
+    let mut transactions = 0_i32;
+    for element in 1..base.len() {
+        let mut right = element;
+        while right > 0 {
+            let left = right - 1;
+            if compare(&base[left], &base[right]) <= 0 {
+                break;
+            }
+            base.swap(left, right);
+            transactions = transactions.wrapping_add(1);
+            right = left;
+        }
+    }
+    transactions
 }
 
 #[allow(non_snake_case)]
@@ -1539,6 +1716,7 @@ pub(crate) fn CreateNeighListFromLinearCT(
             }
         }
     }
+    heap.record_contiguous_neighbor_layout(pointer_list, atom_list, atom_count, atom_count)?;
     inchi_free(heap, valence)?;
     Ok(pointer_list)
 }
@@ -1699,6 +1877,18 @@ pub(crate) fn CreateNeighList(
             return Err(SourceHeapError::SourceIntegerOverflow);
         }
     };
+    let atoms_view = if atom_count == 0 {
+        None
+    } else {
+        // SAFETY: CreateNeighList only reads the source atom allocation, and
+        // the two output allocations created below necessarily have fresh
+        // identities. As in C, a null `at` is valid when there are no atoms.
+        Some(unsafe { heap.stable_slice(at)? })
+    };
+    let atoms = match &atoms_view {
+        Some(view) => view.prefix(atom_count)?,
+        None => &[],
+    };
 
     let (num_t_groups, group_pointer, endpoint_pointer) = if num_at_tg > num_atoms {
         let Some(info) = t_group_info else {
@@ -1711,13 +1901,19 @@ pub(crate) fn CreateNeighList(
     };
     let group_count =
         usize::try_from(num_t_groups.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let groups_view = if group_count == 0 {
+        None
+    } else {
+        // SAFETY: tautomer groups are read-only for this complete source loop.
+        Some(unsafe { heap.stable_slice(group_pointer.as_const())? })
+    };
+    let groups = match &groups_view {
+        Some(view) => view.prefix(group_count)?,
+        None => &[],
+    };
 
     let mut list_length = i64::from(num_atoms) + i64::from(num_t_groups);
-    for index in 0..atom_count {
-        let atom = heap
-            .slice(at)?
-            .get(index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    for atom in atoms {
         let valence = i32::from(atom.valence);
         if valence < 0 {
             inchi_free(heap, pointer_list)?;
@@ -1738,11 +1934,7 @@ pub(crate) fn CreateNeighList(
         }
         list_length += i64::from(num_t_groups != 0 && atom.endpoint != 0);
     }
-    for index in 0..group_count {
-        let group = heap
-            .slice(group_pointer.as_const())?
-            .get(index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    for group in groups {
         list_length += i64::from(group.nNumEndpoints);
     }
     list_length = list_length
@@ -1767,71 +1959,150 @@ pub(crate) fn CreateNeighList(
         }
     };
 
-    let mut position = 0_usize;
-    for index in 0..atom_count {
-        let (valence, neighbors, bond_types, endpoint) = {
-            let atom = heap
-                .slice(at)?
-                .get(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            (
-                usize::try_from(atom.valence)
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
-                atom.neighbor,
-                atom.bond_type,
-                atom.endpoint,
-            )
-        };
-        let start = position;
-        position += 1;
-        for bond in 0..valence {
-            heap.slice_mut(atom_list)?[position] = neighbors[bond];
+    let row_count = atom_count
+        .checked_add(group_count)
+        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+    let endpoint_values_view = if group_count == 0 {
+        None
+    } else {
+        // A malformed compatibility fixture must retain the checked write
+        // path's error point, so failure to form this view is not returned yet.
+        unsafe { heap.stable_slice(endpoint_pointer.as_const()).ok() }
+    };
+    let endpoint_values = endpoint_values_view.as_ref().map(|view| {
+        view.prefix(view.len())
+            .expect("the complete stable view is in bounds")
+    });
+    let source_layout_is_valid = heap
+        .slice(pointer_list.as_const())
+        .is_ok_and(|pointers| pointers.len() > row_count)
+        && (group_count == 0 || endpoint_values.is_some())
+        && endpoint_values.as_ref().is_none_or(|endpoints| {
+            groups.iter().all(|group| {
+                let start = usize::from(group.nFirstEndpointAtNoPos);
+                start
+                    .checked_add(usize::from(group.nNumEndpoints))
+                    .is_some_and(|end| end <= endpoints.len())
+            })
+        });
+
+    if source_layout_is_valid {
+        // SAFETY: both outputs are fresh, distinct allocations. The length pass
+        // above proves every pAtList write, and source_layout_is_valid proves
+        // pp[] and endpoint ranges before either output is exposed.
+        let mut list_view = unsafe { heap.stable_slice_mut(atom_list)? };
+        let mut pointers_view = unsafe { heap.stable_slice_mut(pointer_list)? };
+        let list = list_view.prefix_mut(list_length)?;
+        let pointers = pointers_view.prefix_mut(row_count + 1)?;
+        let endpoints = endpoint_values.unwrap_or(&[]);
+        let mut position = 0_usize;
+        for (index, atom) in atoms.iter().enumerate() {
+            let valence = atom.valence as usize;
+            let start = position;
             position += 1;
-            if bDoubleBondSquare != 0 && bond_types[bond] == BOND_DOUBLE as u8 {
-                heap.slice_mut(atom_list)?[position] = neighbors[bond];
+            let mut bond = 0_usize;
+            while bond < valence {
+                let neighbor = unsafe { *atom.neighbor.get_unchecked(bond) };
+                unsafe { *list.get_unchecked_mut(position) = neighbor };
+                position += 1;
+                if bDoubleBondSquare != 0
+                    && unsafe { *atom.bond_type.get_unchecked(bond) } == BOND_DOUBLE as u8
+                {
+                    unsafe { *list.get_unchecked_mut(position) = neighbor };
+                    position += 1;
+                }
+                bond += 1;
+            }
+            if num_t_groups != 0 && atom.endpoint != 0 {
+                unsafe {
+                    *list.get_unchecked_mut(position) = num_atoms
+                        .wrapping_add(i32::from(atom.endpoint))
+                        .wrapping_sub(1)
+                        as AT_NUMB;
+                }
                 position += 1;
             }
+            unsafe {
+                *list.get_unchecked_mut(start) =
+                    position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
+                *pointers.get_unchecked_mut(index) = atom_list.add_unchecked(start as u64);
+            }
         }
-        if num_t_groups != 0 && endpoint != 0 {
-            heap.slice_mut(atom_list)?[position] =
-                num_atoms.wrapping_add(i32::from(endpoint)).wrapping_sub(1) as AT_NUMB;
+        for (index, group) in groups.iter().enumerate() {
+            let valence = usize::from(group.nNumEndpoints);
+            let first_endpoint = usize::from(group.nFirstEndpointAtNoPos);
+            let start = position;
             position += 1;
+            let mut endpoint = 0_usize;
+            while endpoint < valence {
+                unsafe {
+                    *list.get_unchecked_mut(position) =
+                        *endpoints.get_unchecked(first_endpoint + endpoint);
+                }
+                position += 1;
+                endpoint += 1;
+            }
+            unsafe {
+                *list.get_unchecked_mut(start) =
+                    position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
+                *pointers.get_unchecked_mut(atom_count + index) =
+                    atom_list.add_unchecked(start as u64);
+            }
         }
-        heap.slice_mut(atom_list)?[start] = position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
-        heap.slice_mut(pointer_list)?[index] = atom_list.offset(start as i64)?;
+        debug_assert!(position < list_length);
+    } else {
+        let mut position = 0_usize;
+        for (index, atom) in atoms.iter().enumerate() {
+            let valence = usize::try_from(atom.valence)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let start = position;
+            position += 1;
+            for bond in 0..valence {
+                heap.slice_mut(atom_list)?[position] = atom.neighbor[bond];
+                position += 1;
+                if bDoubleBondSquare != 0 && atom.bond_type[bond] == BOND_DOUBLE as u8 {
+                    heap.slice_mut(atom_list)?[position] = atom.neighbor[bond];
+                    position += 1;
+                }
+            }
+            if num_t_groups != 0 && atom.endpoint != 0 {
+                heap.slice_mut(atom_list)?[position] = num_atoms
+                    .wrapping_add(i32::from(atom.endpoint))
+                    .wrapping_sub(1)
+                    as AT_NUMB;
+                position += 1;
+            }
+            heap.slice_mut(atom_list)?[start] =
+                position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
+            heap.slice_mut(pointer_list)?[index] = atom_list.offset(start as i64)?;
+        }
+        for (index, group) in groups.iter().enumerate() {
+            let valence = usize::from(group.nNumEndpoints);
+            let first_endpoint = usize::from(group.nFirstEndpointAtNoPos);
+            let start = position;
+            position += 1;
+            for endpoint in 0..valence {
+                let value = *heap
+                    .slice(endpoint_pointer.as_const())?
+                    .get(first_endpoint + endpoint)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                heap.slice_mut(atom_list)?[position] = value;
+                position += 1;
+            }
+            heap.slice_mut(atom_list)?[start] =
+                position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
+            let pointer_index = atom_count + index;
+            let pointers = heap.slice_mut(pointer_list)?;
+            if pointer_index >= pointers.len() {
+                inchi_free(heap, atom_list)?;
+                inchi_free(heap, pointer_list)?;
+                return Err(SourceHeapError::PointerOutOfBounds);
+            }
+            pointers[pointer_index] = atom_list.offset(start as i64)?;
+        }
     }
 
-    for index in 0..group_count {
-        let (valence, first_endpoint) = {
-            let group = heap
-                .slice(group_pointer.as_const())?
-                .get(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            (
-                usize::from(group.nNumEndpoints),
-                usize::from(group.nFirstEndpointAtNoPos),
-            )
-        };
-        let start = position;
-        position += 1;
-        for endpoint in 0..valence {
-            let value = *heap
-                .slice(endpoint_pointer.as_const())?
-                .get(first_endpoint + endpoint)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            heap.slice_mut(atom_list)?[position] = value;
-            position += 1;
-        }
-        heap.slice_mut(atom_list)?[start] = position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
-        let pointer_index = atom_count + index;
-        let pointers = heap.slice_mut(pointer_list)?;
-        if pointer_index >= pointers.len() {
-            inchi_free(heap, atom_list)?;
-            inchi_free(heap, pointer_list)?;
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        pointers[pointer_index] = atom_list.offset(start as i64)?;
-    }
+    heap.record_contiguous_neighbor_layout(pointer_list, atom_list, row_count, row_count)?;
 
     Ok(pointer_list)
 }
@@ -3588,6 +3859,14 @@ mod tests {
         let atoms_pointer = heap.allocate_model_storage(atoms.clone()).unwrap();
         let neighbors =
             CreateNeighList(&mut heap, 3, 3, atoms_pointer.as_const(), 0, None).unwrap();
+        assert!(
+            heap.proven_contiguous_neighbor_storage::<NEIGH_LIST, AT_NUMB>(
+                neighbors.as_const(),
+                3,
+                3,
+            )
+            .is_some()
+        );
         let pointers = heap.slice(neighbors.as_const()).unwrap().to_vec();
         assert_eq!(pointers.len(), 4);
         assert!(pointers[3].is_null());
@@ -3611,6 +3890,20 @@ mod tests {
             &[3, 1, 2, 2, 1, 0, 2, 0, 0]
         );
         FreeNeighList(&mut heap, squared).unwrap();
+
+        let mutable_neighbors =
+            CreateNeighList(&mut heap, 3, 3, atoms_pointer.as_const(), 0, None).unwrap();
+        let first = heap.slice(mutable_neighbors.as_const()).unwrap()[0];
+        heap.slice_mut(mutable_neighbors).unwrap()[0] = first;
+        assert!(
+            heap.proven_contiguous_neighbor_storage::<NEIGH_LIST, AT_NUMB>(
+                mutable_neighbors.as_const(),
+                3,
+                3,
+            )
+            .is_none()
+        );
+        FreeNeighList(&mut heap, mutable_neighbors).unwrap();
 
         let mut taut_heap = SourceHeap::default();
         let taut_atoms = taut_heap

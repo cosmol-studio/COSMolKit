@@ -2817,6 +2817,94 @@ fn debug_row103_etkdg_stage_trace() {
 }
 
 #[test]
+#[ignore = "source-bisection probe for audited ETKDGv3 experimental torsion minimization"]
+fn debug_audited_etkdgv3_forcefield_first_step() {
+    for smiles in [
+        "O=C1Nc2ccc(Cl)cc2C(c2ccccc2Cl)=NC1O",
+        "CN1C2CCC1CC1(CN=C(c3cn(C)c4ccccc34)O1)C2",
+    ] {
+        let mol = Molecule::from_smiles(smiles)
+            .expect("parse")
+            .with_hydrogens()
+            .expect("add hs");
+        let mut params = EmbedParameters::etkdg_v3();
+        params.random_seed = 61453;
+        params.max_iterations = 3;
+        params.num_threads = 1;
+        params.timeout = 0;
+
+        let staged = embedder_stage_coords_for_test(
+            &mol,
+            &mut params,
+            EmbedderTestStage::FourthDimensionCleaned,
+        )
+        .expect("stage embed");
+        let positions: Vec<ForceFieldVec3> = staged.conformers_3d()[0]
+            .coordinates()
+            .iter()
+            .map(|point| ForceFieldVec3::new(point[0], point[1], point[2]))
+            .collect();
+
+        let mut details = CrystalFFDetails::default();
+        embedder_init_etkdg(&mol, &params, &mut details).expect("init etkdg");
+        let mut bounds = BoundsMatrix::new(mol.num_atoms());
+        assert!(
+            embedder_setup_initial_bounds_matrix(
+                &mol,
+                &mut bounds,
+                params.coord_map.as_ref(),
+                &params,
+                &mut details,
+            )
+            .expect("bounds setup")
+        );
+
+        let mut field = construct_3d_forcefield(&bounds, &positions, &details);
+        field.initialize();
+        let mut contrib_energies = Vec::new();
+        let total_energy = field.calc_energy_current(Some(&mut contrib_energies));
+        let mut gradient = vec![0.0; 3 * positions.len()];
+        field.calc_grad_current(&mut gradient);
+
+        println!("probe molecule={smiles}");
+        println!(
+            "probe boundary=etk_forcefield_initial total_energy_bits={:x} contrib_count={}",
+            total_energy.to_bits(),
+            contrib_energies.len()
+        );
+        for (idx, energy) in contrib_energies.iter().enumerate() {
+            println!(
+                "probe contribution={idx} energy_bits={:x}",
+                energy.to_bits()
+            );
+        }
+        for (idx, (position, grad)) in positions
+            .iter()
+            .flat_map(|point| [point.x, point.y, point.z])
+            .zip(&gradient)
+            .enumerate()
+        {
+            println!(
+                "probe initial={idx} pos_bits={:x} grad_bits={:x}",
+                position.to_bits(),
+                grad.to_bits()
+            );
+        }
+
+        let status = field.minimize(1, params.optimizer_force_tol, 1.0e-6);
+        println!("probe boundary=etk_bfgs_first_step status={status}");
+        for (idx, position) in field
+            .positions()
+            .iter()
+            .flat_map(|point| [point.x, point.y, point.z])
+            .enumerate()
+        {
+            println!("probe first_step={idx} pos_bits={:x}", position.to_bits());
+        }
+    }
+}
+
+#[test]
 fn embed_parameter_presets_match_rdkit_global_parameters() {
     assert_embed_parameters_preset(
         &EmbedParameters::kdg(),

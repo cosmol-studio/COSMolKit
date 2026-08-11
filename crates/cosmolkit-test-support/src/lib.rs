@@ -127,6 +127,7 @@ pub fn rdkit_expected_domain(file_name: &str) -> &'static str {
         | "conformer_generation_library.jsonl"
         | "confseq_embed_template.jsonl" => "conformer",
         "forcefield_params.jsonl" | "mmff_builtin.jsonl" => "forcefield",
+        "forcefield_coverage.jsonl" => "forcefield_coverage",
         "smiles_writer.jsonl" | "isomeric_smiles.jsonl" => "smiles",
         "svg_drawer.jsonl" | "prepared_draw_molecule.jsonl" => "depiction",
         "graph_features.jsonl" => "graph",
@@ -545,6 +546,25 @@ fn count_data_rows(path: &Path) -> Result<usize, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expected_data_json_floats_round_trip_to_exact_binary64_values() {
+        for (literal, expected_bits) in [
+            ("-1.3006687716310001", 0xbff4_cf8a_0ed1_5695),
+            ("-0.39018908733716867", 0xbfd8_f8db_a657_a16b),
+            ("1.3682138422726557", 0x3ff5_e434_32a7_edcf),
+            ("1.8158026507898606", 0x3ffd_0d87_1492_1ef7),
+        ] {
+            let standard = literal
+                .parse::<f64>()
+                .expect("fixture float should parse with the standard library");
+            let json =
+                serde_json::from_str::<f64>(literal).expect("fixture float should parse as JSON");
+
+            assert_eq!(standard.to_bits(), expected_bits, "literal {literal}");
+            assert_eq!(json.to_bits(), expected_bits, "literal {literal}");
+        }
+    }
 
     fn test_manifest(
         domain: &str,

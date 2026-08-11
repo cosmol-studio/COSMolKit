@@ -24,7 +24,10 @@
 
 use std::collections::BTreeMap;
 
-use crate::{AtomQueryPredicate, BondOrder, BondQueryPredicate, QueryNode, SmartsParseError};
+use crate::{
+    AtomQueryPredicate, AtomSpec, BondOrder, BondQueryPredicate, BondSpec, Element, Molecule,
+    MoleculeBuilder, QueryNode, SmartsParseError,
+};
 
 // ---------------------------------------------------------------------------
 // SmartsMolecule – output of SMARTS parsing
@@ -81,6 +84,97 @@ impl SmartsMolecule {
     #[must_use]
     pub fn bond_query(&self, idx: usize) -> Option<&QueryNode<BondQueryPredicate>> {
         self.bond_queries.get(idx)
+    }
+}
+
+/// Build the query-bearing molecule consumed by the substructure matcher.
+pub(crate) fn build_query_molecule(smarts: &str) -> Result<Molecule, String> {
+    // BEGIN RDKIT CPP FUNCTION SmartsToMol (SmilesParse.h)
+    // RDKit✔️✔️: inline RWMol *SmartsToMol(const std::string &sma,
+    // RDKit✔️✔️:                           const SmartsParserParams &ps) {
+    // RDKit✔️✔️:   RDKit::v2::SmilesParse::SmartsParserParams v2ps;
+    // RDKit✔️✔️:   v2ps.debugParse = ps.debugParse;
+    // RDKit✔️✔️:   if (ps.replacements) {
+    // RDKit✔️✔️:     v2ps.replacements = *ps.replacements;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   v2ps.allowCXSMILES = ps.allowCXSMILES;
+    // RDKit✔️✔️:   v2ps.strictCXSMILES = ps.strictCXSMILES;
+    // RDKit✔️✔️:   v2ps.parseName = ps.parseName;
+    // RDKit✔️✔️:   v2ps.mergeHs = ps.mergeHs;
+    // RDKit✔️✔️:   v2ps.skipCleanup = ps.skipCleanup;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return RDKit::v2::SmilesParse::MolFromSmarts(sma, v2ps).release();
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION SmartsToMol
+    let parsed = parse_smarts(smarts).map_err(|error| error.to_string())?;
+    let mut builder = MoleculeBuilder::new();
+    let atom_ids: Vec<_> = parsed
+        .atom_queries
+        .iter()
+        .map(|query| {
+            builder.add_atom(
+                AtomSpec::new(
+                    Element::from_atomic_number(0)
+                        .expect("atomic number zero is a valid query atom"),
+                )
+                .with_query(query.clone()),
+            )
+        })
+        .collect();
+    for (atom_index, atom_id) in atom_ids.iter().enumerate() {
+        if let Some(map_number) = atom_map_number(&parsed.atom_queries[atom_index]) {
+            builder
+                .atom_mut(*atom_id)
+                .expect("new query atom must exist")
+                .set_atom_map(Some(map_number));
+        }
+    }
+    for ((begin_atom_index, end_atom_index), query) in parsed
+        .bond_edges
+        .iter()
+        .copied()
+        .zip(parsed.bond_queries.iter())
+    {
+        builder
+            .add_bond(
+                BondSpec::new(
+                    atom_ids[begin_atom_index],
+                    atom_ids[end_atom_index],
+                    representative_bond_order(query),
+                )
+                .with_query(query.clone()),
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    builder.build().map_err(|error| error.to_string())
+}
+
+fn atom_map_number(query: &QueryNode<AtomQueryPredicate>) -> Option<u32> {
+    match query {
+        QueryNode::Predicate(AtomQueryPredicate::AtomMapNumber(number)) => Some(*number),
+        QueryNode::And(children) | QueryNode::Or(children) => {
+            children.iter().find_map(atom_map_number)
+        }
+        QueryNode::Not(child) => atom_map_number(child),
+        _ => None,
+    }
+}
+
+fn representative_bond_order(query: &QueryNode<BondQueryPredicate>) -> BondOrder {
+    match query {
+        QueryNode::Predicate(BondQueryPredicate::Order(order)) => *order,
+        QueryNode::Predicate(BondQueryPredicate::IsAromatic(true)) => BondOrder::Aromatic,
+        QueryNode::And(children) | QueryNode::Or(children) => children
+            .iter()
+            .find_map(|child| match child {
+                QueryNode::Predicate(BondQueryPredicate::Order(order)) => Some(*order),
+                QueryNode::Predicate(BondQueryPredicate::IsAromatic(true)) => {
+                    Some(BondOrder::Aromatic)
+                }
+                _ => None,
+            })
+            .unwrap_or(BondOrder::Single),
+        _ => BondOrder::Single,
     }
 }
 
@@ -1288,11 +1382,22 @@ impl<'a> SmartsParser<'a> {
         }
 
         // Ring connectivity: x or x<N>
-        // RDKit✔️✔️: lowercase x matches atom ring-bond count.
+        // RDKit✔️✔️: <IN_ATOM_STATE>x {
+        // RDKit✔️✔️:   yylval->atom = new QueryAtom();
+        // RDKit✔️✔️:   yylval->atom->setQuery(makeAtomHasRingBondQuery());
+        // RDKit✔️✔️:   return RINGBOND_ATOM_QUERY_TOKEN;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: | RINGBOND_ATOM_QUERY_TOKEN number {
+        // RDKit✔️✔️:   $1->setQuery(makeAtomRingBondCountQuery($2));
+        // RDKit✔️✔️:   $$ = $1;
+        // RDKit✔️✔️: }
         if ch == 'x' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len);
-            if num == 0 {
-                return Ok((QueryNode::Predicate(AtomQueryPredicate::Any), consumed));
+            if consumed == i + 1 {
+                return Ok((
+                    QueryNode::Predicate(AtomQueryPredicate::NumRingBondsGreaterEqual(1)),
+                    consumed,
+                ));
             }
             return Ok((
                 QueryNode::Predicate(AtomQueryPredicate::NumRingBonds(num as u8)),
@@ -2191,6 +2296,21 @@ mod tests {
         assert!(mol.atom_query(0).is_some());
         assert!(mol.bond_query(0).is_some());
         assert!(mol.bond_query(1).is_some());
+    }
+
+    #[test]
+    fn ring_connectivity_distinguishes_bare_x_from_explicit_x0() {
+        let has_ring_bond = parse_smarts("[Cx]").expect("bare x SMARTS");
+        assert!(atom_query_contains(
+            &has_ring_bond.atom_queries[0],
+            &AtomQueryPredicate::NumRingBondsGreaterEqual(1)
+        ));
+
+        let no_ring_bonds = parse_smarts("[Cx0]").expect("x0 SMARTS");
+        assert!(atom_query_contains(
+            &no_ring_bonds.atom_queries[0],
+            &AtomQueryPredicate::NumRingBonds(0)
+        ));
     }
 
     #[test]

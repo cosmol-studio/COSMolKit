@@ -21,10 +21,13 @@ explicitly unfinished rather than being counted as compatible behavior.
 - **Unfinished** means the API may exist, but it must not be presented as
   RDKit-compatible until the listed exact parity boundary passes.
 - Default parity tests use the small `smiles_small` corpus for daily feedback.
-  The stricter `smiles_5000` profile uses the same assertions and separate
-  expected data under each domain's
-  `testdata/<domain>/expected/rdkit/smiles_5000/`; it is enabled explicitly with
-  `COSMOLKIT_PARITY_PROFILE=smiles_5000` or the manual CI workflow.
+  Most stricter profiles use the same assertions with separate expected data
+  under `testdata/<domain>/expected/rdkit/smiles_5000/`. Force fields use an
+  explicit two-tier strict boundary: all 5,000 rows cover parameter
+  availability, explicit-H behavior, MMFF atom types, and MMFF charges, while
+  all 150 curated rows cover initial energy, full gradient, and single- and
+  multi-conformer optimization. The tiers are separate tests and neither is
+  reported as coverage of the other's behavioral surface.
 - Golden baselines are condition-bound artifacts. A corpus, RDKit version,
   branch-matrix, normalization, RNG/coordinate setting, or compared-field change
   requires a new profile directory or file name. Reusing a name for incompatible
@@ -36,7 +39,7 @@ explicitly unfinished rather than being counted as compatible behavior.
 | SMILES writing | Strict branch-matrix parity | RDKit `MolToSmiles()` output across the full writer parameter matrix: isomeric on/off, kekule on/off, canonical on/off, clean-stereo on/off, explicit-bond on/off, explicit-H on/off, dative-bond inclusion on/off, atom-map ignoring on/off, and rooted output for none/first/last atom. Canonicalized SMILES are compared directly as part of the canonical branches. | The exhaustive all-combination matrix is the parity target; everyday runs cover common branches and the full matrix is run explicitly when auditing writer parity. Unsupported writer branches must remain explicit. |
 | Distance-geometry bounds | Strict numeric parity | Full bounds-matrix shape and every lower/upper-bound entry, including topology, ring, macrocycle, amide, VDW, and triangle-smoothing effects. | Entry tolerance is `1e-8`; this is matrix equality, not a smoke test. |
 | 3D conformer generation | RNG-sensitive coordinate parity | DG/KDG/ETDG/ETKDG presets, fixed seeds, single-thread execution, random-coordinate embedding, coordMap, custom pairwise terms, bounds-matrix handling, timeout/max-iteration controls, multi-conformer generation, and sequential-seed policy. | Successful seeded embeddings must reproduce RDKit coordinates within `1e-6`. |
-| UFF/MMFF force fields | State and optimizer parity | UFF/MMFF parameter availability, MMFF atom types, seeded initial coordinates, initial energy, initial gradient, single-conformer optimization, multi-conformer optimization, result codes, final energies, and final coordinates. | Energy, gradient, and coordinate tolerances are `1e-6`; this checks force-field state, not only parameter-table lookup. |
+| UFF/MMFF force fields | Tiered state and optimizer parity | All 5,000 strict-corpus rows compare UFF/MMFF parameter availability, explicit-H behavior, MMFF atom types, and MMFF formal/partial charges. All 150 curated rows compare seeded initial coordinates, initial energy, every gradient component, single-conformer optimization, multi-conformer optimization, result codes, final energies, and final coordinates. | Energy, gradient, and coordinate tolerances remain `1e-6`. The 5,000-row coverage tier is not presented as optimizer parity; optimizer parity is exhaustive on the curated corpus and all locked regressions. |
 | Molecular descriptors | Strict source-backed descriptor parity | Molecular weight, exact molecular weight, formula variants, hydrogen-bond donor/acceptor counts, fraction Csp3, Crippen LogP/MR, TPSA with and without S/P contributions, aromatic-ring count, rotatable-bond counts for default/non-strict/strict/strict-linkages modes, and QED. | Float descriptors are compared by exact RDKit bit pattern from the golden baseline; integer and string descriptors are exact equality. QED is pinned to the complete reference runtime `RDKit 2026.03.1 + CPython 3.13.12` because RDKit delegates its reductions to Python `sum()`, whose float algorithm differs before CPython 3.12. Unsupported or failed-closed descriptor calls are parity failures for the covered fields. |
 | 2D depiction preparation | Strict prepared-state parity | RDKit-style preparation before drawing: kekulization for depiction, chiral-H insertion, wedge-bond assignment, prepared atom order, prepared 2D coordinates, bond order, aromatic flags, and bond directions. | This is the prepared drawing boundary, not a blanket claim that every standalone `Compute2DCoords` branch is complete. |
 | SVG drawing | Final-output parity | Final SVG text after normalizing only tool namespace/prefix metadata. The comparison covers preparation, scaling, atom labels, bond geometry, text metrics, metadata, CSS/data attributes, and rendered paths present in the covered surface. | This is final-SVG parity for the covered depiction surface. Link-node extraction, StereoGroup masking, atomRegions, and other marker-open drawing branches remain unfinished. |

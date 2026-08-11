@@ -1550,7 +1550,7 @@ pub(crate) fn FixMobileHRestoredStructure(
     let execution = (|| -> Result<(), SourceHeapError> {
         macro_rules! rebuild {
             () => {{
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                let rebuild_result = MakeOneInChIOutOfStrFromINChI2(
                     heap,
                     pCG,
                     ic,
@@ -1567,7 +1567,8 @@ pub(crate) fn FixMobileHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
-                )?;
+                );
+                ret = rebuild_result?;
                 if ret < 0 {
                     return Ok(());
                 }
@@ -2671,8 +2672,8 @@ pub(crate) fn FixMobileHRestoredStructure(
                             groups[group_index].tg_num_Minus =
                                 groups[group_index].tg_num_Minus.wrapping_add(1);
                             groups[group_index].tg_RestoreFlags |= TGRF_MINUS_FIRST;
-                            let taut_group = heap
-                                .slice_mut(pStruct.ti.t_group)?
+                            let taut_groups = heap.slice_mut(pStruct.ti.t_group)?;
+                            let taut_group = taut_groups
                                 .get_mut(group_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             taut_group.num[1] = taut_group.num[1].wrapping_add(1);
@@ -2762,8 +2763,8 @@ pub(crate) fn FixMobileHRestoredStructure(
                             groups[group_index].tg_set_Minus = i32::try_from(endpoint)
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?
                                 .wrapping_add(1);
-                            let taut_group = heap
-                                .slice_mut(pStruct.ti.t_group)?
+                            let taut_groups = heap.slice_mut(pStruct.ti.t_group)?;
+                            let taut_group = taut_groups
                                 .get_mut(group_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             taut_group.num[1] = taut_group.num[1].wrapping_add(1);

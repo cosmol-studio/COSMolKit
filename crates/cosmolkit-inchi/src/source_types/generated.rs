@@ -1493,7 +1493,7 @@ impl ::std::default::Default for A_MOL_FMT_DATA {
 }
 pub type MOL_FMT_DATA = A_MOL_FMT_DATA;
 pub type ST_CAP_FLOW = S_SHORT;
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct tagInputAtom {
     pub elname: [i8; 6usize],
     pub el_number: U_CHAR,

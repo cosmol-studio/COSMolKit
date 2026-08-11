@@ -826,6 +826,58 @@ fn molblock_writer_marks_rdkit_unspecified_double_bond_as_crossed() {
 }
 
 #[test]
+fn molblock_writer_marks_unspecified_exocyclic_imine_as_crossed_like_rdkit() {
+    let molecule = Molecule::from_smiles("CN=c1ccn(C)cc1")
+        .unwrap()
+        .with_2d_coordinates()
+        .unwrap();
+    let v2000 = mol_to_mol_block_with_params(
+        &molecule,
+        &MolBlockWriteParams {
+            format: SdfFormat::V2000,
+            include_stereo: true,
+            kekulize: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let v3000 = mol_to_mol_block_with_params(
+        &molecule,
+        &MolBlockWriteParams {
+            format: SdfFormat::V3000,
+            include_stereo: true,
+            kekulize: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert!(v2000.contains("  2  3  2  3\n"));
+    assert!(v3000.contains("M  V30 2 2 2 3 CFG=2\n"));
+}
+
+#[test]
+fn molblock_writer_crosses_only_rdkit_eligible_unspecified_ring_double_bonds() {
+    for (smiles, should_cross) in [("C1C=CCCCC1", false), ("C1C=CCCCCC1", true)] {
+        let molecule = Molecule::from_smiles(smiles)
+            .unwrap()
+            .with_2d_coordinates()
+            .unwrap();
+        let v3000 = mol_to_mol_block_with_params(
+            &molecule,
+            &MolBlockWriteParams {
+                format: SdfFormat::V3000,
+                include_stereo: true,
+                kekulize: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(v3000.contains(" CFG=2\n"), should_cross, "{smiles}");
+    }
+}
+
+#[test]
 fn molblock_write_params_route_v3000_precision() {
     let molecule = charged_isotope_molecule();
     let params = MolBlockWriteParams {

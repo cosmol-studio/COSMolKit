@@ -44,16 +44,46 @@ def test_inchi_python_preserves_source_defined_stereo_and_isotope() -> None:
     }
 
 
+def test_inchi_python_preserves_relative_and_racemic_stereo_options() -> None:
+    source = cosmolkit.Molecule.from_smiles("F[C@H](Cl)Br")
+
+    assert cosmolkit.Chem.MolToInchi(source, "-SRel") == (
+        "InChI=1/CHBrClF/c2-1(3)4/h1H/t1-/s2"
+    )
+    assert cosmolkit.Chem.MolToInchi(source, "-SRac") == (
+        "InChI=1/CHBrClF/c2-1(3)4/h1H/t1-/s3"
+    )
+
+
+def test_inchi_python_preserves_cationic_aromatic_nitrogen_charge() -> None:
+    source = cosmolkit.Molecule.from_smiles("C[n+]1ccccc1")
+    inchi = cosmolkit.Chem.MolToInchi(source)
+
+    parsed = cosmolkit.Chem.MolFromInchi(inchi, False, False)
+    assert parsed is not None
+    nitrogen = next(atom for atom in parsed.atoms() if atom.atomic_num() == 7)
+    assert nitrogen.formal_charge() == 1
+
+
 def test_inchi_python_exposes_source_diagnostic_as_structured_warning() -> None:
     with pytest.warns(cosmolkit.InchiDiagnosticWarning) as records:
         key = cosmolkit.InchiToInchiKey("")
 
-    assert key == ""
+    assert key is None
     assert len(records) == 1
     diagnostic = records[0].message
     assert isinstance(diagnostic, cosmolkit.InchiDiagnosticWarning)
     assert diagnostic.level == "error"
     assert diagnostic.message == "Invalid InChI prefix in generating InChI Key\n"
+
+
+def test_inchi_python_returns_none_for_rdkit_mol_sanitize_exception() -> None:
+    inchi = (
+        "InChI=1S/C8H16O6S2/c9-5-8(14-16(11,12)13)7(10)6-15-3-1-2-4-15/"
+        "h7-10H,1-6H2/t7-,8+/m0/s1"
+    )
+
+    assert cosmolkit.Chem.MolFromInchi(inchi) is None
 
 
 def test_inchi_python_rejects_unsupported_molecule_state_structurally() -> None:

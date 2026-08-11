@@ -60,6 +60,32 @@ pub struct MmffBond {
     pub r0: f64,
 }
 
+/// Parameters for Herschbach-Laurie's version of Badger's rule.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MmffHerschbachLaurie {
+    // RDKit❗✔️: class RDKIT_FORCEFIELD_EXPORT MMFFHerschbachLaurie {
+    // RDKit❗✔️:  public:
+    // RDKit❗✔️:   double a_ij;
+    pub a_ij: f64,
+    // RDKit❗✔️:   double d_ij;
+    pub d_ij: f64,
+    // RDKit❗✔️:   double dp_ij;
+    pub dp_ij: f64,
+    // RDKit❗✔️: };
+}
+
+/// Covalent-radius and Pauling-electronegativity values for the MMFF bond rule.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MmffCovRadPauEle {
+    // RDKit❗✔️: class RDKIT_FORCEFIELD_EXPORT MMFFCovRadPauEle {
+    // RDKit❗✔️:  public:
+    // RDKit❗✔️:   double r0;
+    pub r0: f64,
+    // RDKit❗✔️:   double chi;
+    pub chi: f64,
+    // RDKit❗✔️: };
+}
+
 /// MMFF angle-bending parameter.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MmffAngle {
@@ -2189,6 +2215,105 @@ pub fn default_mmff_bond() -> Result<&'static str, MmffParamError> {
     Ok(DEFAULT_MMFF_BOND)
 }
 
+pub fn default_mmff_bndk() -> Result<&'static str, MmffParamError> {
+    Ok(DEFAULT_MMFF_BNDK)
+}
+
+pub fn default_mmff_herschbach_laurie() -> Result<&'static str, MmffParamError> {
+    Ok(DEFAULT_MMFF_HERSCHBACH_LAURIE)
+}
+
+pub fn default_mmff_cov_rad_pau_ele() -> Result<&'static str, MmffParamError> {
+    Ok(DEFAULT_MMFF_COV_RAD_PAU_ELE)
+}
+
+pub(crate) fn default_mmff_bndk_params(
+    atomic_num: u32,
+    nbr_atomic_num: u32,
+) -> Option<&'static MmffBond> {
+    // RDKit❗✔️: const MMFFBond *operator()(const int atomicNum,
+    // RDKit❗✔️:                              const int nbrAtomicNum) const {
+    // RDKit❗✔️:   const MMFFBond *mmffBndkParams = nullptr;
+    // RDKit❗✔️:   unsigned int canAtomicNum = atomicNum;
+    // RDKit❗✔️:   unsigned int canNbrAtomicNum = nbrAtomicNum;
+    // RDKit❗✔️:   if (atomicNum > nbrAtomicNum) {
+    // RDKit❗✔️:     canAtomicNum = nbrAtomicNum;
+    // RDKit❗✔️:     canNbrAtomicNum = atomicNum;
+    // RDKit❗✔️:   }
+    let key = if atomic_num <= nbr_atomic_num {
+        (atomic_num as u8, nbr_atomic_num as u8)
+    } else {
+        (nbr_atomic_num as u8, atomic_num as u8)
+    };
+    // RDKit❗✔️:   auto bounds = std::equal_range(d_iAtomicNum.begin(), d_iAtomicNum.end(),
+    // RDKit❗✔️:                                  canAtomicNum);
+    // RDKit❗✔️:   if (bounds.first != bounds.second) {
+    // RDKit❗✔️:     bounds = std::equal_range(
+    // RDKit❗✔️:         d_jAtomicNum.begin() + (bounds.first - d_iAtomicNum.begin()),
+    // RDKit❗✔️:         d_jAtomicNum.begin() + (bounds.second - d_iAtomicNum.begin()),
+    // RDKit❗✔️:         canNbrAtomicNum);
+    // RDKit❗✔️:     if (bounds.first != bounds.second) {
+    // RDKit❗✔️:       mmffBndkParams = &d_params[bounds.first - d_jAtomicNum.begin()];
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return mmffBndkParams;
+    // RDKit❗✔️: }
+    DEFAULT_MMFF_BNDK_ROWS
+        .binary_search_by_key(&key, |(i, j, _)| (*i, *j))
+        .ok()
+        .map(|idx| &DEFAULT_MMFF_BNDK_ROWS[idx].2)
+}
+
+pub(crate) fn default_mmff_herschbach_laurie_params(
+    i_row: u32,
+    j_row: u32,
+) -> Option<&'static MmffHerschbachLaurie> {
+    // RDKit❗✔️: const MMFFHerschbachLaurie *operator()(const int iRow, const int jRow) const {
+    // RDKit❗✔️:   const MMFFHerschbachLaurie *mmffHerschbachLaurieParams = nullptr;
+    // RDKit❗✔️:   unsigned int canIRow = iRow;
+    // RDKit❗✔️:   unsigned int canJRow = jRow;
+    // RDKit❗✔️:   if (iRow > jRow) {
+    // RDKit❗✔️:     canIRow = jRow;
+    // RDKit❗✔️:     canJRow = iRow;
+    // RDKit❗✔️:   }
+    let key = if i_row <= j_row {
+        (i_row as u8, j_row as u8)
+    } else {
+        (j_row as u8, i_row as u8)
+    };
+    // RDKit❗✔️:   auto bounds = std::equal_range(d_iRow.begin(), d_iRow.end(), canIRow);
+    // RDKit❗✔️:   if (bounds.first != bounds.second) {
+    // RDKit❗✔️:     bounds = std::equal_range(
+    // RDKit❗✔️:         d_jRow.begin() + (bounds.first - d_iRow.begin()),
+    // RDKit❗✔️:         d_jRow.begin() + (bounds.second - d_iRow.begin()), canJRow);
+    // RDKit❗✔️:     if (bounds.first != bounds.second) {
+    // RDKit❗✔️:       mmffHerschbachLaurieParams = &d_params[bounds.first - d_jRow.begin()];
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return mmffHerschbachLaurieParams;
+    // RDKit❗✔️: }
+    DEFAULT_MMFF_HERSCHBACH_LAURIE_ROWS
+        .binary_search_by_key(&key, |(i, j, _)| (*i, *j))
+        .ok()
+        .map(|idx| &DEFAULT_MMFF_HERSCHBACH_LAURIE_ROWS[idx].2)
+}
+
+pub(crate) fn default_mmff_cov_rad_pau_ele_params(
+    atomic_num: u32,
+) -> Option<&'static MmffCovRadPauEle> {
+    // RDKit❗✔️: const MMFFCovRadPauEle *operator()(const unsigned int atomicNum) const {
+    // RDKit❗✔️:   auto bounds =
+    // RDKit❗✔️:       std::equal_range(d_atomicNum.begin(), d_atomicNum.end(), atomicNum);
+    // RDKit❗✔️:   return ((bounds.first != bounds.second)
+    // RDKit❗✔️:               ? &d_params[bounds.first - d_atomicNum.begin()]
+    // RDKit❗✔️:               : nullptr);
+    // RDKit❗✔️: }
+    DEFAULT_MMFF_COV_RAD_PAU_ELE_ROWS
+        .binary_search_by_key(&(atomic_num as u8), |(key, _)| *key)
+        .ok()
+        .map(|idx| &DEFAULT_MMFF_COV_RAD_PAU_ELE_ROWS[idx].1)
+}
+
 pub fn default_mmff_angle() -> Result<&'static str, MmffParamError> {
     Ok(DEFAULT_MMFF_ANGLE)
 }
@@ -3154,6 +3279,41 @@ fn parse_f64(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mmff_generated_bndk_lookup_matches_source_and_canonicalizes_order() {
+        let forward = default_mmff_bndk_params(6, 8).expect("C-O Bndk row exists");
+        let reversed = default_mmff_bndk_params(8, 6).expect("O-C Bndk row exists");
+
+        assert_eq!(forward, &MmffBond { kb: 5.4, r0: 1.393 });
+        assert_eq!(reversed, forward);
+    }
+
+    #[test]
+    fn mmff_generated_herschbach_laurie_lookup_matches_source_and_canonicalizes_order() {
+        let forward = default_mmff_herschbach_laurie_params(2, 4).expect("period-pair row exists");
+        let reversed =
+            default_mmff_herschbach_laurie_params(4, 2).expect("reversed period-pair row exists");
+
+        assert_eq!(
+            forward,
+            &MmffHerschbachLaurie {
+                a_ij: 2.61,
+                d_ij: 1.28,
+                dp_ij: 1.4,
+            }
+        );
+        assert_eq!(reversed, forward);
+    }
+
+    #[test]
+    fn mmff_generated_cov_rad_pau_ele_lookup_matches_source() {
+        assert_eq!(
+            default_mmff_cov_rad_pau_ele_params(8),
+            Some(&MmffCovRadPauEle { r0: 0.72, chi: 3.5 })
+        );
+        assert_eq!(default_mmff_cov_rad_pau_ele_params(2), None);
+    }
 
     #[test]
     fn mmff_mmffdefcollection_loads_default_definition_table() {

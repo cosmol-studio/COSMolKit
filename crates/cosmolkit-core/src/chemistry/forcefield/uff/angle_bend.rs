@@ -206,8 +206,8 @@ impl AngleBendContrib {
 
         // RDKit✔️✔️:   double dist1 = dp_forceField->distance(d_at1Idx, d_at2Idx, pos);
         // RDKit✔️✔️:   double dist2 = dp_forceField->distance(d_at2Idx, d_at3Idx, pos);
-        let dist1 = force_field.distance_const(self.at1_idx, self.at2_idx, Some(pos));
-        let dist2 = force_field.distance_const(self.at2_idx, self.at3_idx, Some(pos));
+        let dist1 = force_field.distance(self.at1_idx, self.at2_idx, Some(pos));
+        let dist2 = force_field.distance(self.at2_idx, self.at3_idx, Some(pos));
 
         // RDKit✔️✔️:   RDGeom::Point3D p1(pos[3 * d_at1Idx], pos[3 * d_at1Idx + 1],
         // RDKit✔️✔️:                      pos[3 * d_at1Idx + 2]);
@@ -279,8 +279,8 @@ impl AngleBendContrib {
         // RDKit✔️✔️:   double dist[2] = {dp_forceField->distance(d_at1Idx, d_at2Idx, pos),
         // RDKit✔️✔️:                     dp_forceField->distance(d_at2Idx, d_at3Idx, pos)};
         let dist = [
-            force_field.distance_const(self.at1_idx, self.at2_idx, Some(pos)),
-            force_field.distance_const(self.at2_idx, self.at3_idx, Some(pos)),
+            force_field.distance(self.at1_idx, self.at2_idx, Some(pos)),
+            force_field.distance(self.at2_idx, self.at3_idx, Some(pos)),
         ];
 
         // RDKit✔️✔️:   RDGeom::Point3D p1(pos[3 * d_at1Idx], pos[3 * d_at1Idx + 1],
@@ -520,29 +520,28 @@ fn calc_angle_bend_grad(
     let g0 = 3 * idx[0];
     let g1 = 3 * idx[1];
     let g2 = 3 * idx[2];
-    let scale = de_dtheta / (-sin_theta);
 
     // RDKit✔️✔️:   g[0][0] += dE_dTheta * dCos_dS[0] / (-sinTheta);
     // RDKit✔️✔️:   g[0][1] += dE_dTheta * dCos_dS[1] / (-sinTheta);
     // RDKit✔️✔️:   g[0][2] += dE_dTheta * dCos_dS[2] / (-sinTheta);
-    grad[g0] += scale * dcos_ds[0];
-    grad[g0 + 1] += scale * dcos_ds[1];
-    grad[g0 + 2] += scale * dcos_ds[2];
+    grad[g0] += de_dtheta * dcos_ds[0] / (-sin_theta);
+    grad[g0 + 1] += de_dtheta * dcos_ds[1] / (-sin_theta);
+    grad[g0 + 2] += de_dtheta * dcos_ds[2] / (-sin_theta);
 
     // RDKit✔️✔️:   g[1][0] += dE_dTheta * (-dCos_dS[0] - dCos_dS[3]) / (-sinTheta);
     // RDKit✔️✔️:   g[1][1] += dE_dTheta * (-dCos_dS[1] - dCos_dS[4]) / (-sinTheta);
     // RDKit✔️✔️:   g[1][2] += dE_dTheta * (-dCos_dS[2] - dCos_dS[5]) / (-sinTheta);
-    grad[g1] += scale * (-dcos_ds[0] - dcos_ds[3]);
-    grad[g1 + 1] += scale * (-dcos_ds[1] - dcos_ds[4]);
-    grad[g1 + 2] += scale * (-dcos_ds[2] - dcos_ds[5]);
+    grad[g1] += de_dtheta * (-dcos_ds[0] - dcos_ds[3]) / (-sin_theta);
+    grad[g1 + 1] += de_dtheta * (-dcos_ds[1] - dcos_ds[4]) / (-sin_theta);
+    grad[g1 + 2] += de_dtheta * (-dcos_ds[2] - dcos_ds[5]) / (-sin_theta);
 
     // RDKit✔️✔️:   g[2][0] += dE_dTheta * dCos_dS[3] / (-sinTheta);
     // RDKit✔️✔️:   g[2][1] += dE_dTheta * dCos_dS[4] / (-sinTheta);
     // RDKit✔️✔️:   g[2][2] += dE_dTheta * dCos_dS[5] / (-sinTheta);
     // RDKit✔️✔️: }
-    grad[g2] += scale * dcos_ds[3];
-    grad[g2 + 1] += scale * dcos_ds[4];
-    grad[g2 + 2] += scale * dcos_ds[5];
+    grad[g2] += de_dtheta * dcos_ds[3] / (-sin_theta);
+    grad[g2 + 1] += de_dtheta * dcos_ds[4] / (-sin_theta);
+    grad[g2 + 2] += de_dtheta * dcos_ds[5] / (-sin_theta);
 }
 
 impl ForceFieldContrib for AngleBendContrib {
@@ -625,7 +624,15 @@ mod tests {
         );
     }
 
-    fn finite_difference_grad(contrib: &AngleBendContrib, pos: &[f64; 9]) -> [f64; 9] {
+    fn angle_energy_with_fresh_distance_cache(order: u32, pos: &[f64; 9]) -> f64 {
+        let ff = initialized_force_field();
+        let (at1, at2, at3) = params();
+        let contrib = AngleBendContrib::new(&ff, 0, 1, 2, 1.0, 1.0, &at1, &at2, &at3, order)
+            .expect("valid constructor");
+        contrib.get_energy(pos)
+    }
+
+    fn finite_difference_grad(order: u32, pos: &[f64; 9]) -> [f64; 9] {
         let mut out = [0.0; 9];
         let h = 1.0e-6;
         for i in 0..9 {
@@ -633,7 +640,9 @@ mod tests {
             let mut minus = *pos;
             plus[i] += h;
             minus[i] -= h;
-            out[i] = (contrib.get_energy(&plus) - contrib.get_energy(&minus)) / (2.0 * h);
+            out[i] = (angle_energy_with_fresh_distance_cache(order, &plus)
+                - angle_energy_with_fresh_distance_cache(order, &minus))
+                / (2.0 * h);
         }
         out
     }
@@ -861,7 +870,7 @@ mod tests {
         let mut grad = [0.0; 9];
 
         contrib.get_grad(&pos, &mut grad);
-        let expected = finite_difference_grad(&contrib, &pos);
+        let expected = finite_difference_grad(0, &pos);
 
         for i in 0..9 {
             assert_close_tol(grad[i], expected[i], 1.0e-5);
@@ -881,7 +890,7 @@ mod tests {
         let mut grad = [0.0; 9];
 
         contrib.get_grad(&pos, &mut grad);
-        let expected = finite_difference_grad(&contrib, &pos);
+        let expected = finite_difference_grad(3, &pos);
 
         for i in 0..9 {
             assert_close_tol(grad[i], expected[i], 1.0e-5);
@@ -944,17 +953,17 @@ mod tests {
     }
 
     #[test]
-    fn uff_anglebendcontrib_calc_angle_bend_grad_accumulates_source_coordinate_paths() {
+    fn uff_anglebendcontrib_calc_angle_bend_grad_preserves_source_evaluation_order() {
         let r = [
             ForceFieldVec3::new(0.6, 0.8, -0.1),
-            ForceFieldVec3::new(-0.2, 0.5, 0.84),
+            ForceFieldVec3::new(7.516_508_172_266_185, 0.5, 0.84),
         ];
-        let dist = [1.25, 1.75];
+        let dist = [1.0, 1.75];
         let idx = [2, 0, 3];
-        let de_dtheta = 2.5;
-        let cos_theta = 0.35;
-        let sin_theta = 0.936_749_699_759_759_7;
-        let mut grad = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0];
+        let de_dtheta = -5.714_193_060_994_148;
+        let cos_theta = 0.0;
+        let sin_theta = 0.486_800_828_948_617;
+        let mut grad = [0.0; 12];
         let mut expected = grad;
         let dcos_ds = [
             1.0 / dist[0] * (r[1].x - cos_theta * r[0].x),
@@ -964,26 +973,44 @@ mod tests {
             1.0 / dist[1] * (r[0].y - cos_theta * r[1].y),
             1.0 / dist[1] * (r[0].z - cos_theta * r[1].z),
         ];
-        let scale = de_dtheta / (-sin_theta);
         let g0 = 3 * idx[0];
         let g1 = 3 * idx[1];
         let g2 = 3 * idx[2];
+        let mut factorized = grad;
+        let scale = de_dtheta / (-sin_theta);
 
-        expected[g0] += scale * dcos_ds[0];
-        expected[g0 + 1] += scale * dcos_ds[1];
-        expected[g0 + 2] += scale * dcos_ds[2];
-        expected[g1] += scale * (-dcos_ds[0] - dcos_ds[3]);
-        expected[g1 + 1] += scale * (-dcos_ds[1] - dcos_ds[4]);
-        expected[g1 + 2] += scale * (-dcos_ds[2] - dcos_ds[5]);
-        expected[g2] += scale * dcos_ds[3];
-        expected[g2 + 1] += scale * dcos_ds[4];
-        expected[g2 + 2] += scale * dcos_ds[5];
+        expected[g0] += de_dtheta * dcos_ds[0] / (-sin_theta);
+        expected[g0 + 1] += de_dtheta * dcos_ds[1] / (-sin_theta);
+        expected[g0 + 2] += de_dtheta * dcos_ds[2] / (-sin_theta);
+        expected[g1] += de_dtheta * (-dcos_ds[0] - dcos_ds[3]) / (-sin_theta);
+        expected[g1 + 1] += de_dtheta * (-dcos_ds[1] - dcos_ds[4]) / (-sin_theta);
+        expected[g1 + 2] += de_dtheta * (-dcos_ds[2] - dcos_ds[5]) / (-sin_theta);
+        expected[g2] += de_dtheta * dcos_ds[3] / (-sin_theta);
+        expected[g2 + 1] += de_dtheta * dcos_ds[4] / (-sin_theta);
+        expected[g2 + 2] += de_dtheta * dcos_ds[5] / (-sin_theta);
+
+        factorized[g0] += scale * dcos_ds[0];
+        factorized[g0 + 1] += scale * dcos_ds[1];
+        factorized[g0 + 2] += scale * dcos_ds[2];
+        factorized[g1] += scale * (-dcos_ds[0] - dcos_ds[3]);
+        factorized[g1 + 1] += scale * (-dcos_ds[1] - dcos_ds[4]);
+        factorized[g1 + 2] += scale * (-dcos_ds[2] - dcos_ds[5]);
+        factorized[g2] += scale * dcos_ds[3];
+        factorized[g2 + 1] += scale * dcos_ds[4];
+        factorized[g2 + 2] += scale * dcos_ds[5];
 
         calc_angle_bend_grad(&r, &dist, &mut grad, idx, de_dtheta, cos_theta, sin_theta);
 
         for i in 0..grad.len() {
-            assert_close_tol(grad[i], expected[i], 1.0e-12);
+            assert_eq!(grad[i].to_bits(), expected[i].to_bits(), "flat axis {i}");
         }
+        assert!(
+            expected
+                .iter()
+                .zip(factorized.iter())
+                .any(|(source, optimized)| source.to_bits() != optimized.to_bits()),
+            "boundary input must distinguish RDKit's multiply-then-divide order"
+        );
     }
 
     #[test]

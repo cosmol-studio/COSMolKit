@@ -6377,6 +6377,8 @@ static const RootGetInchiCase ROOT_GET_INCHI_CASES[] = {
     {"generate-methane-standard", 0, NULL},
     {"generate-methane-fixedh-options", 0, "-FixedH -RecMet -SUU -SLUUD"},
     {"generate-tetrahedral-0d", 1, NULL},
+    {"generate-tetrahedral-0d-relative", 1, "-AuxNone -SRel"},
+    {"generate-tetrahedral-0d-racemic", 1, "-AuxNone -SRac"},
     {"generate-carbon-2d", 2, NULL},
     {"generate-carbon-3d-isotope-charge-radical", 3, "-FixedH"},
     {"generate-carbon-iron-reconnected", 4, "-RecMet -FixedH"},
@@ -6533,6 +6535,12 @@ static const RootGetStructCase ROOT_GET_STRUCT_CASES[] = {
      "h1H,(H4,6,7,8,9,10,11)/f/h8,10H,6H2",
      NULL},
     {"parse-reconnected", "InChI=1/CH4/h1H4/rCH4/h1H4", NULL},
+    {"parse-phosphoserine",
+     "InChI=1S/C3H8NO6P/c4-2(3(5)6)1-10-11(7,8)9/h2H,1,4H2,"
+     "(H,5,6)(H2,7,8,9)/t2-/m0/s1",
+     NULL},
+    {"parse-n-methylpyridinium",
+     "InChI=1S/C6H8N/c1-7-5-3-2-4-6-7/h2-6H,1H3/q+1", NULL},
     {"parse-polymer",
      "InChI=1B/C4H4N4.2Zz/c1-5-2-7-4-8-3-6-1;;/h1-4H;;/"
      "z101-1-8(9,10-8,3,1,6,2,5,2,7,3,6,1,5,4,7,4,8)/"

@@ -1875,6 +1875,66 @@ fn writer_plain_nonisomeric_row_91_matches_rdkit_after_direction_cleanup() {
 }
 
 #[test]
+fn writer_preserves_all_audited_bridge_ring_double_bond_stereo_like_rdkit() {
+    let fixtures = [
+        ("N/N=C1/C[C@H]2C[C@H]2C1", "N/N=C1\\C[C@@H]2C[C@@H]2C1"),
+        (
+            "COc1ccc([C@H]2N[C@@H](c3ccc(OC)cc3)C3CCCC2/C3=N/N=c2/[nH]c(-c3ccccc3)cs2)cc1",
+            "COc1ccc([C@H]2N[C@@H](c3ccc(OC)cc3)C3CCCC2/C3=N/N=c2/[nH]c(-c3ccccc3)cs2)cc1",
+        ),
+        (
+            "c1ccc(CO/N=C2\\C[C@@H](c3ccccc3)S[C@@H](c3ccccc3)C2)cc1",
+            "c1ccc(CO/N=C2\\C[C@@H](c3ccccc3)S[C@@H](c3ccccc3)C2)cc1",
+        ),
+        (
+            "CO/N=C1\\[C@H]2CCC[C@@H]1[C@H](c1ccc(Cl)cc1)N[C@@H]2c1ccc(Cl)cc1",
+            "CO/N=C1\\[C@H]2CCC[C@@H]1[C@H](c1ccc(Cl)cc1)N[C@@H]2c1ccc(Cl)cc1",
+        ),
+        (
+            "CCNC(=O)c1ccc(/C(=C2\\C[C@H]3CC[C@@H](C2)N3CCc2ccccc2)c2ccccc2)cc1",
+            "CCNC(=O)c1ccc(/C(=C2\\C[C@H]3CC[C@@H](C2)N3CCc2ccccc2)c2ccccc2)cc1",
+        ),
+        (
+            "O[C@@H](CN1[C@@H]2CC[C@H]1C/C(=C\\c1ccc(Cl)cc1)C2)c1ccccc1",
+            "O[C@@H](CN1[C@@H]2CC[C@H]1C/C(=C\\c1ccc(Cl)cc1)C2)c1ccccc1",
+        ),
+        (
+            "Fc1ccc(CN2[C@@H]3CC[C@H]2C/C(=C/COC(c2ccccc2)c2ccccc2)C3)cc1",
+            "Fc1ccc(CN2[C@@H]3CC[C@H]2C/C(=C/COC(c2ccccc2)c2ccccc2)C3)cc1",
+        ),
+        (
+            "C[C@@H]1/C(=N\\NC(=S)Nc2ccccc2)[C@@H](C)[C@H](c2cccc(Cl)c2)O[C@@H]1c1cccc(Cl)c1",
+            "C[C@@H]1/C(=N\\NC(=S)Nc2ccccc2)[C@@H](C)[C@H](c2cccc(Cl)c2)O[C@@H]1c1cccc(Cl)c1",
+        ),
+        (
+            "CO/N=C1\\[C@H]2CCC[C@@H]1[C@H](c1cccc(Cl)c1)N[C@@H]2c1cccc(Cl)c1",
+            "CO/N=C1\\[C@H]2CCC[C@@H]1[C@H](c1cccc(Cl)c1)N[C@@H]2c1cccc(Cl)c1",
+        ),
+        (
+            "O=C(N/N=C1/C[C@@H]2[C@H](C1)[C@H](OC(=O)c1ccccc1)C[C@@H]2OC(=O)c1ccccc1)c1ccncc1",
+            "O=C(N/N=C1/C[C@@H]2[C@H](C1)[C@H](OC(=O)c1ccccc1)C[C@@H]2OC(=O)c1ccccc1)c1ccncc1",
+        ),
+        (
+            "CO/N=C1\\[C@H]2CCC[C@@H]1[C@H](c1ccccc1Cl)N(C)[C@@H]2c1ccccc1Cl",
+            "CO/N=C1\\[C@H]2CCC[C@@H]1[C@H](c1ccccc1Cl)N(C)[C@@H]2c1ccccc1Cl",
+        ),
+        (
+            "C=CCN1[C@@H]2CC[C@H]1C/C(=C/COC(c1ccccc1)c1ccccc1)C2.O=C(O)C(=O)O",
+            "C=CCN1[C@@H]2CC[C@H]1C/C(=C/COC(c1ccccc1)c1ccccc1)C2.O=C(O)C(=O)O",
+        ),
+    ];
+
+    for (input, expected) in fixtures {
+        let molecule = Molecule::from_smiles(input).unwrap();
+        assert_eq!(
+            mol_to_smiles(&molecule, &SmilesWriteParams::default()).unwrap(),
+            expected,
+            "RDKit 2026.03.1 canonical output for {input}"
+        );
+    }
+}
+
+#[test]
 #[ignore = "debug helper for upstream/rust checkpoint alignment"]
 fn debug_probe_rust_writer_row_91_direction_cleanup_substeps() {
     let input = "O=C1/C(CC[C@@H](C)C1)=C(C)/C";
@@ -1930,7 +1990,6 @@ fn debug_probe_rust_writer_row_91_direction_cleanup_substeps() {
 
     let mut bond_dir_counts = vec![0i8; canonicalized.num_bonds()];
     let mut atom_dir_counts = vec![0i8; canonicalized.num_atoms()];
-    let cip_ranks = crate::stereo::assign_atom_cip_ranks(&canonicalized).ok();
     canonicalize_double_bonds_for_writer(
         &mut canonicalized,
         &bond_visit_orders,
@@ -1939,7 +1998,6 @@ fn debug_probe_rust_writer_row_91_direction_cleanup_substeps() {
         &mut bond_dir_counts,
         &mut atom_dir_counts,
         &traversal.stack,
-        cip_ranks.as_deref(),
     );
     eprintln!(
         "checkpoint=after_double_bonds bond1_dir={:?} bond7_dir={:?} bond8_dir={:?} bond_dir_counts={:?} atom_dir_counts={:?}",

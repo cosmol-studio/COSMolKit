@@ -1,4 +1,15 @@
-//! Facade crate that re-exports COSMolKit core modules.
+//! Rust-native cheminformatics and structural biology toolkit.
+//!
+//! COSMolKit provides molecular graph operations, SMILES/SMARTS processing,
+//! molecular file IO, fingerprints and descriptors, 2D depiction, native 3D
+//! conformer generation, UFF/MMFF optimization, InChI, substructure search,
+//! batch workflows, and protein structure APIs.
+//!
+//! For supported cheminformatics operations, RDKit-compatible behavior is
+//! treated as the correctness floor and validated through explicit parity
+//! tests.
+//!
+//! This crate is the public Rust facade that re-exports COSMolKit core modules.
 //!
 //! # Examples
 //!

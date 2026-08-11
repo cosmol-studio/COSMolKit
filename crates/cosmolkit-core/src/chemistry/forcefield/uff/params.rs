@@ -307,7 +307,8 @@ fn parse_param_data(param_data: &str) -> Result<BTreeMap<String, AtomicParams>, 
             r1: parse_param_float(line_number, "r1", columns[1])?,
             // RDKit✔️✔️:       paramObj.theta0 = boost::lexical_cast<double>(*token);
             // RDKit✔️✔️:       paramObj.theta0 = paramObj.theta0 * M_PI / 180.;
-            theta0: parse_param_float(line_number, "theta0", columns[2])? * DEG2RAD,
+            theta0: parse_param_float(line_number, "theta0", columns[2])? * std::f64::consts::PI
+                / 180.0,
             // RDKit✔️✔️:       paramObj.x1 = boost::lexical_cast<double>(*token);
             x1: parse_param_float(line_number, "x1", columns[3])?,
             // RDKit✔️✔️:       paramObj.D1 = boost::lexical_cast<double>(*token);
@@ -552,6 +553,29 @@ mod tests {
         assert_eq!(c3.gmp_hardness, 5.063);
         assert_eq!(c3.gmp_radius, 0.759);
         assert!(collection.get("Lw6+3").is_some());
+    }
+
+    #[test]
+    fn uff_param_collection_preserves_rdkit_theta0_conversion_evaluation_order() {
+        // RDKit✔️✔️:       paramObj.theta0 = boost::lexical_cast<double>(*token);
+        // RDKit✔️✔️:       paramObj.theta0 = paramObj.theta0 * M_PI / 180.;
+        let theta0_degrees = std::hint::black_box(104.51);
+        let rdkit_theta0 = theta0_degrees * std::f64::consts::PI / 180.0;
+        let previously_reassociated_theta0 = theta0_degrees * std::hint::black_box(DEG2RAD);
+        assert_ne!(
+            rdkit_theta0.to_bits(),
+            previously_reassociated_theta0.to_bits()
+        );
+
+        let defaults = ParamCollection::get_params("").expect("valid default UFF params");
+        let default_o3 = defaults.get("O_3").expect("O_3 default params");
+        assert_eq!(default_o3.theta0.to_bits(), rdkit_theta0.to_bits());
+
+        let custom_data =
+            "O_3\t0.658\t104.51\t3.5\t0.06\t14.085\t2.3\t0.018\t2\t8.741\t6.682\t0.669\n";
+        let custom = ParamCollection::get_params(custom_data).expect("valid custom UFF params");
+        let custom_o3 = custom.get("O_3").expect("O_3 custom params");
+        assert_eq!(custom_o3.theta0.to_bits(), rdkit_theta0.to_bits());
     }
 
     #[test]

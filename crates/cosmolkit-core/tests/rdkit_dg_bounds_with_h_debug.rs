@@ -101,3 +101,26 @@ fn debug_ethene_with_h_etkdg_details() {
     }
     println!("collect_bonds_and_angles_angles={angles:?}");
 }
+
+#[test]
+#[ignore = "source-bisection probe for the two audited ETKDGv3 coordinate divergences"]
+fn debug_audited_etkdgv3_exp_torsion_details() {
+    for smiles in [
+        "O=C1Nc2ccc(Cl)cc2C(c2ccccc2Cl)=NC1O",
+        "CN1C2CCC1CC1(CN=C(c3cn(C)c4ccccc34)O1)C2",
+    ] {
+        let molecule = Molecule::from_smiles(smiles)
+            .expect("parse")
+            .with_hydrogens()
+            .expect("add hs");
+        let params = EmbedParameters::etkdg_v3();
+        let details = rd_distgeom_get_exp_tors_helper_with_params(&molecule, &params)
+            .expect("experimental torsion details");
+
+        println!("smiles={smiles}");
+        println!("exp_torsion_atoms={:?}", details.exp_torsion_atoms);
+        println!("exp_torsion_angles={:?}", details.exp_torsion_angles);
+        println!("improper_atoms={:?}", details.improper_atoms);
+        println!("atom_nums={:?}", details.atom_nums);
+    }
+}

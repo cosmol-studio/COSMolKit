@@ -6,12 +6,12 @@
     unused_imports
 )]
 
-use std::any::Any;
-use std::collections::BTreeMap;
+use std::any::TypeId;
 #[cfg(test)]
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::marker::PhantomData;
+use std::ptr::NonNull;
 
 mod generated;
 
@@ -132,6 +132,7 @@ macro_rules! impl_source_pointer_value_traits {
                 self.allocation.is_none()
             }
 
+            #[inline(always)]
             pub(crate) fn offset(self, elements: i64) -> Result<Self, SourceHeapError> {
                 let magnitude = elements.unsigned_abs();
                 let element_offset = if elements.is_negative() {
@@ -144,6 +145,36 @@ macro_rules! impl_source_pointer_value_traits {
                     element_offset,
                     ..self
                 })
+            }
+
+            /// Advances a source pointer after the owning port has proved the
+            /// complete C allocation range once.
+            ///
+            /// # Safety
+            ///
+            /// `elements` must not overflow the element offset, and the
+            /// resulting pointer must remain within the same live allocation.
+            #[inline(always)]
+            pub(crate) unsafe fn add_unchecked(self, elements: u64) -> Self {
+                debug_assert!(self.element_offset.checked_add(elements).is_some());
+                Self {
+                    element_offset: self.element_offset.wrapping_add(elements),
+                    ..self
+                }
+            }
+
+            /// Returns the element offset from the allocation base after a
+            /// source constructor has proved that the pointer is live.
+            ///
+            /// # Safety
+            ///
+            /// The pointer must address a live allocation and its element
+            /// offset must fit in `usize`.
+            #[inline(always)]
+            pub(crate) unsafe fn allocation_offset_unchecked(self) -> usize {
+                debug_assert!(self.allocation.is_some());
+                debug_assert!(usize::try_from(self.element_offset).is_ok());
+                self.element_offset as usize
             }
         }
     };
@@ -169,13 +200,47 @@ impl<T> SourceMutPointer<T> {
         }
     }
 
+    #[inline(always)]
     pub(crate) fn difference(self, origin: Self) -> Result<i64, SourceHeapError> {
         let allocation = self.allocation.ok_or(SourceHeapError::NullPointer)?;
         if origin.allocation != Some(allocation) {
             return Err(SourceHeapError::PointerAllocationMismatch);
         }
-        let difference = i128::from(self.element_offset) - i128::from(origin.element_offset);
-        i64::try_from(difference).map_err(|_| SourceHeapError::PointerDifferenceOverflow)
+        if self.element_offset >= origin.element_offset {
+            let difference = self.element_offset - origin.element_offset;
+            i64::try_from(difference).map_err(|_| SourceHeapError::PointerDifferenceOverflow)
+        } else {
+            let difference = origin.element_offset - self.element_offset;
+            let difference = i64::try_from(difference)
+                .map_err(|_| SourceHeapError::PointerDifferenceOverflow)?;
+            Ok(-difference)
+        }
+    }
+
+    /// Returns the non-negative C element offset after a caller has proved
+    /// that both pointers address the same live allocation and that `self`
+    /// does not precede `origin`.
+    ///
+    /// # Safety
+    ///
+    /// The pointers must have the same non-null allocation identity,
+    /// `self.element_offset >= origin.element_offset`, and the difference must
+    /// fit in `usize`.
+    #[inline(always)]
+    pub(crate) unsafe fn forward_difference_unchecked(self, origin: Self) -> usize {
+        debug_assert!(self.allocation.is_some());
+        debug_assert_eq!(self.allocation, origin.allocation);
+        debug_assert!(self.element_offset >= origin.element_offset);
+        let difference = self.element_offset - origin.element_offset;
+        debug_assert!(usize::try_from(difference).is_ok());
+        difference as usize
+    }
+
+    pub(crate) const fn allocation_identity(self) -> Option<u64> {
+        match self.allocation {
+            Some(id) => Some(id.0),
+            None => None,
+        }
     }
 }
 
@@ -216,9 +281,292 @@ pub(crate) enum SourceHeapError {
 /// Handles preserve C nullability, allocation identity, aliasing, interior
 /// pointers, and one-past pointers without exposing native addresses.
 #[derive(Default)]
+struct AllocationArena {
+    slots: Vec<Option<AllocationSlot>>,
+    live_count: usize,
+}
+
+struct AllocationSlot {
+    pointer: NonNull<()>,
+    len: usize,
+    capacity: usize,
+    type_id: TypeId,
+    drop_vec: unsafe fn(NonNull<()>, usize, usize),
+    provenance: AllocationProvenance,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum AllocationProvenance {
+    #[default]
+    None,
+    ContiguousNeighborPointerTable {
+        storage: AllocationId,
+        row_count: usize,
+        neighbor_index_bound: usize,
+    },
+    IndexBound {
+        prefix_len: usize,
+        upper_bound: usize,
+    },
+}
+
+impl AllocationSlot {
+    fn new<T: 'static>(mut value: Vec<T>) -> Self {
+        let pointer = NonNull::new(value.as_mut_ptr())
+            .expect("Vec pointers, including dangling empty pointers, are non-null")
+            .cast();
+        let len = value.len();
+        let capacity = value.capacity();
+        std::mem::forget(value);
+        Self {
+            pointer,
+            len,
+            capacity,
+            type_id: TypeId::of::<Vec<T>>(),
+            drop_vec: drop_erased_vec::<T>,
+            provenance: AllocationProvenance::None,
+        }
+    }
+
+    #[inline(always)]
+    fn downcast_ref<T: 'static>(&self) -> Option<&[T]> {
+        if self.type_id != TypeId::of::<Vec<T>>() {
+            return None;
+        }
+        // SAFETY: `type_id` and the raw parts are recorded from the same Vec,
+        // and the allocation remains owned by this slot.
+        Some(unsafe { std::slice::from_raw_parts(self.pointer.cast::<T>().as_ptr(), self.len) })
+    }
+
+    #[inline(always)]
+    fn downcast_mut<T: 'static>(&mut self) -> Option<&mut [T]> {
+        if self.type_id != TypeId::of::<Vec<T>>() {
+            return None;
+        }
+        // A mutable view may overwrite source pointers whose construction
+        // established allocation relationships recorded below.
+        self.provenance = AllocationProvenance::None;
+        // SAFETY: as above; `&mut self` also guarantees unique access.
+        Some(unsafe { std::slice::from_raw_parts_mut(self.pointer.cast::<T>().as_ptr(), self.len) })
+    }
+
+    fn is<T: 'static>(&self) -> bool {
+        self.type_id == TypeId::of::<Vec<T>>()
+    }
+}
+
+impl Drop for AllocationSlot {
+    fn drop(&mut self) {
+        // SAFETY: the matching function was installed while erasing this Vec.
+        unsafe { (self.drop_vec)(self.pointer, self.len, self.capacity) };
+    }
+}
+
+unsafe fn drop_erased_vec<T>(pointer: NonNull<()>, len: usize, capacity: usize) {
+    // SAFETY: the caller supplies the unchanged raw parts of a Vec<T>.
+    drop(unsafe { Vec::from_raw_parts(pointer.cast::<T>().as_ptr(), len, capacity) });
+}
+
+/// A validated view into an allocation whose `Vec` buffer is stable.
+///
+/// This is intentionally not `Clone` or `Copy`: callers that create writable
+/// views must prove that their allocation identities are distinct. The heap
+/// never resizes allocation buffers, so the view remains valid until its
+/// allocation is freed.
+pub(crate) struct StableSourceSlice<T> {
+    pointer: NonNull<T>,
+    len: usize,
+}
+
+/// A validated read-only view into an allocation whose `Vec` buffer is stable.
+///
+/// Unlike an ordinary heap slice, this view does not keep the heap borrowed.
+/// It is intended for source loops that read one allocation while mutating
+/// separate allocations through the heap.
+pub(crate) struct StableSourceConstSlice<T> {
+    pointer: NonNull<T>,
+    len: usize,
+}
+
+impl<T> StableSourceConstSlice<T> {
+    #[inline(always)]
+    pub(crate) const fn len(&self) -> usize {
+        self.len
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    pub(crate) fn get(&self, index: usize) -> Result<&T, SourceHeapError> {
+        if index >= self.len {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        // SAFETY: construction validates the allocation type and bounds. The
+        // caller keeps the allocation live while this view is in use.
+        Ok(unsafe { &*self.pointer.as_ptr().add(index) })
+    }
+
+    /// Returns an element after the owning source port has proved its C array
+    /// contract once at workspace construction.
+    ///
+    /// # Safety
+    ///
+    /// `index` must be smaller than `self.len`, and the allocation must remain
+    /// live without overlapping mutation for the returned borrow.
+    #[inline(always)]
+    pub(crate) unsafe fn get_unchecked(&self, index: usize) -> &T {
+        // SAFETY: upheld by the caller's source-array contract.
+        unsafe { &*self.pointer.as_ptr().add(index) }
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    pub(crate) fn prefix(&self, len: usize) -> Result<&[T], SourceHeapError> {
+        if len > self.len {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        // SAFETY: the requested prefix is within the validated allocation.
+        Ok(unsafe { std::slice::from_raw_parts(self.pointer.as_ptr(), len) })
+    }
+}
+
+impl<T> StableSourceSlice<T> {
+    #[inline(always)]
+    pub(crate) const fn len(&self) -> usize {
+        self.len
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    pub(crate) fn get(&self, index: usize) -> Result<&T, SourceHeapError> {
+        if index >= self.len {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        // SAFETY: construction validates the allocation type and bounds. The
+        // caller of `stable_slice_mut` keeps the allocation live and unique.
+        Ok(unsafe { &*self.pointer.as_ptr().add(index) })
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    pub(crate) fn get_mut(&mut self, index: usize) -> Result<&mut T, SourceHeapError> {
+        if index >= self.len {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        // SAFETY: as above, with uniqueness enforced by the workspace that
+        // owns this non-cloneable handle.
+        Ok(unsafe { &mut *self.pointer.as_ptr().add(index) })
+    }
+
+    /// Returns an element after the owning source port has proved its C array
+    /// contract once at workspace construction.
+    ///
+    /// # Safety
+    ///
+    /// `index` must be smaller than `self.len`, and mutable handles to the
+    /// allocation must remain confined to the workspace that owns this view.
+    #[inline(always)]
+    pub(crate) unsafe fn get_unchecked(&self, index: usize) -> &T {
+        // SAFETY: upheld by the caller's source-array contract.
+        unsafe { &*self.pointer.as_ptr().add(index) }
+    }
+
+    /// Returns a writable element after the owning source port has proved its
+    /// C array contract once at workspace construction.
+    ///
+    /// # Safety
+    ///
+    /// `index` must be smaller than `self.len`, and this handle must be the
+    /// unique writable view of the element for the returned borrow.
+    #[inline(always)]
+    pub(crate) unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
+        // SAFETY: upheld by the caller's source-array and alias contracts.
+        unsafe { &mut *self.pointer.as_ptr().add(index) }
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    pub(crate) fn prefix_mut(&mut self, len: usize) -> Result<&mut [T], SourceHeapError> {
+        if len > self.len {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        // SAFETY: the requested prefix is within the validated allocation and
+        // the mutable handle is unique for the duration of this operation.
+        Ok(unsafe { std::slice::from_raw_parts_mut(self.pointer.as_ptr(), len) })
+    }
+
+    #[inline(always)]
+    pub(crate) fn fill(&mut self, value: T)
+    where
+        T: Clone,
+    {
+        // SAFETY: construction validated the complete allocation suffix and
+        // the mutable handle is unique for the duration of this operation.
+        unsafe { std::slice::from_raw_parts_mut(self.pointer.as_ptr(), self.len) }.fill(value);
+    }
+}
+
+impl AllocationArena {
+    fn index(id: AllocationId) -> Result<usize, SourceHeapError> {
+        usize::try_from(id.0).map_err(|_| SourceHeapError::MissingAllocation)
+    }
+
+    fn insert<T: 'static>(
+        &mut self,
+        id: AllocationId,
+        allocation: Vec<T>,
+    ) -> Result<(), SourceHeapError> {
+        let index = usize::try_from(id.0).map_err(|_| SourceHeapError::AllocationIdExhausted)?;
+        if index != self.slots.len() {
+            return Err(SourceHeapError::AllocationIdExhausted);
+        }
+        self.slots
+            .try_reserve(1)
+            .map_err(|_| SourceHeapError::AllocationFailed)?;
+        self.slots.push(Some(AllocationSlot::new(allocation)));
+        self.live_count += 1;
+        Ok(())
+    }
+
+    fn get(&self, id: AllocationId) -> Option<&AllocationSlot> {
+        self.slots.get(Self::index(id).ok()?)?.as_ref()
+    }
+
+    fn get_mut(&mut self, id: AllocationId) -> Option<&mut AllocationSlot> {
+        self.slots.get_mut(Self::index(id).ok()?)?.as_mut()
+    }
+
+    fn take(&mut self, id: AllocationId) -> Option<AllocationSlot> {
+        let allocation = self.slots.get_mut(Self::index(id).ok()?)?.take()?;
+        self.live_count -= 1;
+        Some(allocation)
+    }
+
+    fn restore(&mut self, id: AllocationId, allocation: AllocationSlot) {
+        let index = Self::index(id).expect("an allocated ID fits usize");
+        let slot = self.slots.get_mut(index).expect("allocated slot exists");
+        debug_assert!(slot.is_none());
+        *slot = Some(allocation);
+        self.live_count += 1;
+    }
+
+    fn remove(&mut self, id: AllocationId) -> Option<AllocationSlot> {
+        self.take(id)
+    }
+
+    fn len(&self) -> usize {
+        self.live_count
+    }
+
+    #[cfg(test)]
+    fn values(&self) -> impl Iterator<Item = &AllocationSlot> {
+        self.slots.iter().filter_map(Option::as_ref)
+    }
+}
+
+#[derive(Default)]
 pub(crate) struct SourceHeap {
     next_id: u64,
-    allocations: BTreeMap<AllocationId, Box<dyn Any>>,
+    allocations: AllocationArena,
     source_errno: i32,
     #[cfg(test)]
     allocations_before_failure: Option<u64>,
@@ -410,8 +758,8 @@ impl SourceHeap {
             .iter()
             .filter(|id| {
                 self.allocations
-                    .get(id)
-                    .is_some_and(|allocation| allocation.is::<Vec<T>>())
+                    .get(**id)
+                    .is_some_and(|allocation| allocation.is::<T>())
             })
             .count()
     }
@@ -428,7 +776,7 @@ impl SourceHeap {
     pub(crate) fn live_allocations_of<T: 'static>(&self) -> usize {
         self.allocations
             .values()
-            .filter(|allocation| allocation.is::<Vec<T>>())
+            .filter(|allocation| allocation.is::<T>())
             .count()
     }
 
@@ -466,11 +814,12 @@ impl SourceHeap {
         values: Vec<T>,
     ) -> Result<SourceMutPointer<T>, SourceHeapError> {
         let id = AllocationId(self.next_id);
-        self.next_id = self
+        let next_id = self
             .next_id
             .checked_add(1)
             .ok_or(SourceHeapError::AllocationIdExhausted)?;
-        self.allocations.insert(id, Box::new(values));
+        self.allocations.insert(id, values)?;
+        self.next_id = next_id;
         Ok(SourceMutPointer {
             allocation: Some(id),
             element_offset: 0,
@@ -478,7 +827,148 @@ impl SourceHeap {
         })
     }
 
+    /// Records the contiguous pointer-table layout produced by the two
+    /// Official InChI `CreateNeighList*` constructors.
+    pub(crate) fn record_contiguous_neighbor_layout<P: 'static, S: 'static>(
+        &mut self,
+        pointer_table: SourceMutPointer<P>,
+        storage: SourceMutPointer<S>,
+        row_count: usize,
+        neighbor_index_bound: usize,
+    ) -> Result<(), SourceHeapError> {
+        if pointer_table.element_offset != 0 || storage.element_offset != 0 {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        let table_id = pointer_table
+            .allocation
+            .ok_or(SourceHeapError::NullPointer)?;
+        let storage_id = storage.allocation.ok_or(SourceHeapError::NullPointer)?;
+        if table_id == storage_id {
+            return Err(SourceHeapError::PointerAllocationMismatch);
+        }
+        let storage_slot = self
+            .allocations
+            .get(storage_id)
+            .ok_or(SourceHeapError::MissingAllocation)?;
+        if !storage_slot.is::<S>() {
+            return Err(SourceHeapError::AllocationTypeMismatch);
+        }
+        let table_slot = self
+            .allocations
+            .get_mut(table_id)
+            .ok_or(SourceHeapError::MissingAllocation)?;
+        if !table_slot.is::<P>() {
+            return Err(SourceHeapError::AllocationTypeMismatch);
+        }
+        if table_slot.len < row_count {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        table_slot.provenance = AllocationProvenance::ContiguousNeighborPointerTable {
+            storage: storage_id,
+            row_count,
+            neighbor_index_bound,
+        };
+        Ok(())
+    }
+
+    /// Returns the base storage pointer when a live source constructor proved
+    /// the complete contiguous neighbor layout. Manually assembled pointer
+    /// tables deliberately return `None` and retain their checked path.
+    pub(crate) fn proven_contiguous_neighbor_storage<P: 'static, S: 'static>(
+        &self,
+        pointer_table: SourceConstPointer<P>,
+        requested_rows: usize,
+        available_neighbor_values: usize,
+    ) -> Option<SourceMutPointer<S>> {
+        if pointer_table.element_offset != 0 {
+            return None;
+        }
+        let table_id = pointer_table.allocation?;
+        let table_slot = self.allocations.get(table_id)?;
+        if !table_slot.is::<P>() || table_slot.len < requested_rows {
+            return None;
+        }
+        let AllocationProvenance::ContiguousNeighborPointerTable {
+            storage,
+            row_count,
+            neighbor_index_bound,
+        } = table_slot.provenance
+        else {
+            return None;
+        };
+        if row_count < requested_rows || neighbor_index_bound > available_neighbor_values {
+            return None;
+        }
+        let storage_slot = self.allocations.get(storage)?;
+        if !storage_slot.is::<S>() {
+            return None;
+        }
+        Some(SourceMutPointer {
+            allocation: Some(storage),
+            element_offset: 0,
+            marker: PhantomData,
+        })
+    }
+
+    /// Records a source-level proof that every value in the prefix is smaller
+    /// than `upper_bound`. Callers establish this either by direct source
+    /// initialization or by a complete checked scan.
+    pub(crate) fn record_index_bound<T: 'static>(
+        &mut self,
+        pointer: SourceMutPointer<T>,
+        prefix_len: usize,
+        upper_bound: usize,
+    ) -> Result<(), SourceHeapError> {
+        if pointer.element_offset != 0 {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
+        let slot = self
+            .allocations
+            .get_mut(id)
+            .ok_or(SourceHeapError::MissingAllocation)?;
+        if !slot.is::<T>() {
+            return Err(SourceHeapError::AllocationTypeMismatch);
+        }
+        if slot.len < prefix_len {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        slot.provenance = AllocationProvenance::IndexBound {
+            prefix_len,
+            upper_bound,
+        };
+        Ok(())
+    }
+
+    pub(crate) fn has_proven_index_bound<T: 'static>(
+        &self,
+        pointer: SourceConstPointer<T>,
+        requested_prefix_len: usize,
+        available_values: usize,
+    ) -> bool {
+        if pointer.element_offset != 0 {
+            return false;
+        }
+        let Some(id) = pointer.allocation else {
+            return false;
+        };
+        let Some(slot) = self.allocations.get(id) else {
+            return false;
+        };
+        if !slot.is::<T>() || slot.len < requested_prefix_len {
+            return false;
+        }
+        matches!(
+            slot.provenance,
+            AllocationProvenance::IndexBound {
+                prefix_len,
+                upper_bound,
+            } if prefix_len >= requested_prefix_len && upper_bound <= available_values
+        )
+    }
+
     #[track_caller]
+    #[inline(always)]
     pub(crate) fn slice<T: 'static>(
         &self,
         pointer: SourceConstPointer<T>,
@@ -486,9 +976,9 @@ impl SourceHeap {
         let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
         let values = self
             .allocations
-            .get(&id)
+            .get(id)
             .ok_or(SourceHeapError::MissingAllocation)?
-            .downcast_ref::<Vec<T>>()
+            .downcast_ref::<T>()
             .ok_or(SourceHeapError::AllocationTypeMismatch)?;
         let offset = usize::try_from(pointer.element_offset)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -498,6 +988,7 @@ impl SourceHeap {
     }
 
     #[track_caller]
+    #[inline(always)]
     pub(crate) fn slice_mut<T: 'static>(
         &mut self,
         pointer: SourceMutPointer<T>,
@@ -505,15 +996,87 @@ impl SourceHeap {
         let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
         let values = self
             .allocations
-            .get_mut(&id)
+            .get_mut(id)
             .ok_or(SourceHeapError::MissingAllocation)?
-            .downcast_mut::<Vec<T>>()
+            .downcast_mut::<T>()
             .ok_or(SourceHeapError::AllocationTypeMismatch)?;
         let offset = usize::try_from(pointer.element_offset)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         values
             .get_mut(offset..)
             .ok_or(SourceHeapError::PointerOutOfBounds)
+    }
+
+    /// Validates a source pointer once for a tightly scoped read-heavy loop.
+    ///
+    /// # Safety
+    ///
+    /// The allocation must remain live and its buffer must not be resized
+    /// while the returned view is used. Any mutable access to the allocation
+    /// must not overlap a reference returned by `get`.
+    pub(crate) unsafe fn stable_slice<T: 'static>(
+        &self,
+        pointer: SourceConstPointer<T>,
+    ) -> Result<StableSourceConstSlice<T>, SourceHeapError> {
+        let values = self.slice(pointer)?;
+        Ok(StableSourceConstSlice {
+            pointer: NonNull::new(values.as_ptr().cast_mut()).expect("slice pointers are non-null"),
+            len: values.len(),
+        })
+    }
+
+    /// Validates a mutable source pointer once for a tightly scoped hot loop.
+    ///
+    /// # Safety
+    ///
+    /// The allocation must remain live while the returned view is used. Any
+    /// other writable stable view used at the same time must refer to a
+    /// different allocation, and ordinary heap borrows of this allocation may
+    /// not overlap a reference returned by the view.
+    pub(crate) unsafe fn stable_slice_mut<T: 'static>(
+        &mut self,
+        pointer: SourceMutPointer<T>,
+    ) -> Result<StableSourceSlice<T>, SourceHeapError> {
+        let values = self.slice_mut(pointer)?;
+        Ok(StableSourceSlice {
+            pointer: NonNull::new(values.as_mut_ptr()).expect("slice pointers are non-null"),
+            len: values.len(),
+        })
+    }
+
+    /// Creates a mutable view for a source operation that only permutes a
+    /// prefix whose index bound has already been proved.
+    ///
+    /// # Safety
+    ///
+    /// In addition to the requirements of `stable_slice_mut`, every write
+    /// through the returned view must preserve the recorded prefix and bound.
+    pub(crate) unsafe fn stable_index_bounded_slice_mut<T: 'static>(
+        &mut self,
+        pointer: SourceMutPointer<T>,
+        prefix_len: usize,
+        upper_bound: usize,
+    ) -> Result<StableSourceSlice<T>, SourceHeapError> {
+        if !self.has_proven_index_bound(pointer.as_const(), prefix_len, upper_bound) {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
+        let slot = self
+            .allocations
+            .get_mut(id)
+            .ok_or(SourceHeapError::MissingAllocation)?;
+        let values = slot
+            .downcast_ref::<T>()
+            .ok_or(SourceHeapError::AllocationTypeMismatch)?;
+        let offset = usize::try_from(pointer.element_offset)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let values = values
+            .get(offset..)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        Ok(StableSourceSlice {
+            pointer: NonNull::new(values.as_ptr().cast_mut()).expect("slice pointers are non-null"),
+            len: values.len(),
+        })
     }
 
     #[track_caller]
@@ -525,23 +1088,23 @@ impl SourceHeap {
         let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
         let mut allocation = self
             .allocations
-            .remove(&id)
+            .remove(id)
             .ok_or(SourceHeapError::MissingAllocation)?;
         let offset = match usize::try_from(pointer.element_offset) {
             Ok(offset) => offset,
             Err(_) => {
-                self.allocations.insert(id, allocation);
+                self.allocations.restore(id, allocation);
                 return Err(SourceHeapError::PointerOutOfBounds);
             }
         };
-        let result = match allocation.downcast_mut::<Vec<T>>() {
+        let result = match allocation.downcast_mut::<T>() {
             Some(values) => match values.get_mut(offset..) {
                 Some(values) => operation(values, self),
                 None => Err(SourceHeapError::PointerOutOfBounds),
             },
             None => Err(SourceHeapError::AllocationTypeMismatch),
         };
-        self.allocations.insert(id, allocation);
+        self.allocations.restore(id, allocation);
         result
     }
 
@@ -554,23 +1117,23 @@ impl SourceHeap {
         let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
         let mut allocation = self
             .allocations
-            .remove(&id)
+            .remove(id)
             .ok_or(SourceHeapError::MissingAllocation)?;
         let offset = match usize::try_from(pointer.element_offset) {
             Ok(offset) => offset,
             Err(_) => {
-                self.allocations.insert(id, allocation);
+                self.allocations.restore(id, allocation);
                 return Err(SourceHeapError::PointerOutOfBounds);
             }
         };
-        let result = match allocation.downcast_mut::<Vec<T>>() {
+        let result = match allocation.downcast_mut::<T>() {
             Some(values) => match values.get_mut(offset..) {
                 Some(values) => operation(values, self),
                 None => Err(SourceHeapError::PointerOutOfBounds),
             },
             None => Err(SourceHeapError::AllocationTypeMismatch),
         };
-        self.allocations.insert(id, allocation);
+        self.allocations.restore(id, allocation);
         result
     }
 
@@ -590,18 +1153,18 @@ impl SourceHeap {
 
         let mut first_allocation = self
             .allocations
-            .remove(&first_id)
+            .remove(first_id)
             .ok_or(SourceHeapError::MissingAllocation)?;
-        let Some(mut second_allocation) = self.allocations.remove(&second_id) else {
-            self.allocations.insert(first_id, first_allocation);
+        let Some(mut second_allocation) = self.allocations.remove(second_id) else {
+            self.allocations.restore(first_id, first_allocation);
             return Err(SourceHeapError::MissingAllocation);
         };
         let mut third_allocation = if let Some(id) = third_id {
-            match self.allocations.remove(&id) {
+            match self.allocations.remove(id) {
                 Some(allocation) => Some((id, allocation)),
                 None => {
-                    self.allocations.insert(first_id, first_allocation);
-                    self.allocations.insert(second_id, second_allocation);
+                    self.allocations.restore(first_id, first_allocation);
+                    self.allocations.restore(second_id, second_allocation);
                     return Err(SourceHeapError::MissingAllocation);
                 }
             }
@@ -615,12 +1178,12 @@ impl SourceHeap {
             let second_offset = usize::try_from(second.element_offset)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let first_values = first_allocation
-                .downcast_mut::<Vec<A>>()
+                .downcast_mut::<A>()
                 .ok_or(SourceHeapError::AllocationTypeMismatch)?
                 .get_mut(first_offset..)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let second_values = second_allocation
-                .downcast_mut::<Vec<B>>()
+                .downcast_mut::<B>()
                 .ok_or(SourceHeapError::AllocationTypeMismatch)?
                 .get_mut(second_offset..)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -630,7 +1193,7 @@ impl SourceHeap {
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     Some(
                         allocation
-                            .downcast_mut::<Vec<C>>()
+                            .downcast_mut::<C>()
                             .ok_or(SourceHeapError::AllocationTypeMismatch)?
                             .get_mut(offset..)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
@@ -641,10 +1204,10 @@ impl SourceHeap {
             operation(first_values, second_values, third_values)
         })();
 
-        self.allocations.insert(first_id, first_allocation);
-        self.allocations.insert(second_id, second_allocation);
+        self.allocations.restore(first_id, first_allocation);
+        self.allocations.restore(second_id, second_allocation);
         if let Some((id, allocation)) = third_allocation {
-            self.allocations.insert(id, allocation);
+            self.allocations.restore(id, allocation);
         }
         result
     }
@@ -661,12 +1224,12 @@ impl SourceHeap {
         }
         let allocation = self
             .allocations
-            .get(&id)
+            .get(id)
             .ok_or(SourceHeapError::MissingAllocation)?;
-        if !allocation.is::<Vec<T>>() {
+        if !allocation.is::<T>() {
             return Err(SourceHeapError::AllocationTypeMismatch);
         }
-        self.allocations.remove(&id);
+        self.allocations.remove(id);
         #[cfg(test)]
         self.live_source_allocations.remove(&id);
         #[cfg(test)]
@@ -939,5 +1502,44 @@ mod tests {
         assert_eq!(local_inchi_dll_b::ISOLATED_ATOM, -15_i32);
         assert_eq!(local_readinch::MAX_CHAIN_LEN, 20_u32);
         assert_eq!(local_inchi_dll_b::MAX_CHAIN_LEN, 20_u32);
+    }
+
+    #[test]
+    fn index_bound_proof_survives_only_bound_preserving_mutation() {
+        let mut heap = SourceHeap::default();
+        let values = heap.allocate(vec![2_u16, 0, 1]).unwrap();
+        heap.record_index_bound(values, 3, 3).unwrap();
+
+        assert!(heap.has_proven_index_bound(values.as_const(), 3, 3));
+        assert!(heap.has_proven_index_bound(values.as_const(), 2, 4));
+        assert!(!heap.has_proven_index_bound(values.as_const(), 3, 2));
+
+        // SAFETY: swapping two entries preserves the recorded prefix bound.
+        let mut bounded = unsafe { heap.stable_index_bounded_slice_mut(values, 3, 3).unwrap() };
+        let first = *bounded.get(0).unwrap();
+        let second = *bounded.get(1).unwrap();
+        *bounded.get_mut(0).unwrap() = second;
+        *bounded.get_mut(1).unwrap() = first;
+        drop(bounded);
+        assert!(heap.has_proven_index_bound(values.as_const(), 3, 3));
+
+        heap.slice_mut(values).unwrap()[0] = 9;
+        assert!(!heap.has_proven_index_bound(values.as_const(), 3, 3));
+    }
+
+    #[test]
+    fn stable_const_view_observes_source_equivalent_in_place_refresh() {
+        let mut heap = SourceHeap::default();
+        let values = heap.allocate(vec![10_i32, 20]).unwrap();
+
+        // SAFETY: the allocation remains live and fixed-capacity. Each read
+        // borrow ends before the source-equivalent in-place refresh below.
+        let view = unsafe { heap.stable_slice(values.as_const()).unwrap() };
+        assert_eq!(*view.get(0).unwrap(), 10);
+
+        heap.slice_mut(values).unwrap().copy_from_slice(&[30, 40]);
+
+        assert_eq!(*view.get(0).unwrap(), 30);
+        assert_eq!(*view.get(1).unwrap(), 40);
     }
 }

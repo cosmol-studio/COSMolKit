@@ -104,7 +104,7 @@ impl BondStretchContrib {
             energy_sum += calc_bond_stretch_energy(
                 self.r0[i],
                 self.kb[i],
-                force_field.distance_const(self.atom1_indices[i], self.atom2_indices[i], Some(pos)),
+                force_field.distance(self.atom1_indices[i], self.atom2_indices[i], Some(pos)),
             );
             // RDKit✔️✔️:   }
         }
@@ -138,7 +138,7 @@ impl BondStretchContrib {
             let atom2_idx = self.atom2_indices[term_idx];
 
             // RDKit✔️✔️:     double dist = dp_forceField->distance(d_at1Idx, d_at2Idx, pos);
-            let dist = force_field.distance_const(atom1_idx, atom2_idx, Some(pos));
+            let dist = force_field.distance(atom1_idx, atom2_idx, Some(pos));
 
             // RDKit✔️✔️:     double *at1Coords = &(pos[3 * d_at1Idx]);
             // RDKit✔️✔️:     double *at2Coords = &(pos[3 * d_at2Idx]);

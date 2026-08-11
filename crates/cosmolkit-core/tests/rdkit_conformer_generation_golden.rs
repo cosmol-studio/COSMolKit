@@ -128,6 +128,10 @@ fn load_case_molecule(source_kind: &str, source: &str) -> Molecule {
         "fixture_mol" => read_rdkit_mol_fixture(source),
         "smiles" => Molecule::from_smiles(source)
             .unwrap_or_else(|err| panic!("failed to parse SMILES {source}: {err}")),
+        "smiles_with_hydrogens" => Molecule::from_smiles(source)
+            .unwrap_or_else(|err| panic!("failed to parse SMILES {source}: {err}"))
+            .with_hydrogens()
+            .unwrap_or_else(|err| panic!("failed to add hydrogens to SMILES {source}: {err}")),
         other => panic!("unsupported source_kind {other}"),
     }
 }
@@ -186,6 +190,13 @@ fn params_for_case(case_id: &str, preset: &str) -> (EmbedParameters, Option<usiz
             params.random_seed = 0xC0FFEE;
             params.num_threads = 1;
             params.cpci = Some(BTreeMap::from([((0, 3), 0.5), ((1, 4), -0.25)]));
+        }
+        "single_etkdgv3_x0_ring_connectivity_first"
+        | "single_etkdgv3_x0_ring_connectivity_second" => {
+            params.max_iterations = 3;
+            params.random_seed = 61453;
+            params.num_threads = 1;
+            params.timeout = 0;
         }
         "multi_embed_fragments_separately" => {
             params.random_seed = 0xf00d;
@@ -272,7 +283,7 @@ fn conformer_generation_golden_has_expected_case_count() {
     let records = load_golden();
     assert_eq!(
         records.len(),
-        17,
+        19,
         "unexpected conformer-generation golden case count"
     );
 }

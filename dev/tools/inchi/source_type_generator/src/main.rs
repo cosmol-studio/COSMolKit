@@ -94,8 +94,20 @@ fn owned_derives() -> Vec<Attribute> {
     vec![parse_quote!(#[derive(Clone, Debug, PartialEq)])]
 }
 
+/// These source structs are complete C value objects: every field is a scalar
+/// or a fixed-size scalar array, so C assignment/memcpy semantics are exactly
+/// represented by Rust's `Copy`. Keep this list explicit; pointer-bearing or
+/// owned source structs must continue to use `Clone`.
+fn copy_struct(name: &str) -> bool {
+    name == "tagInputAtom"
+}
+
 fn normalize_struct(item: &mut ItemStruct) {
-    item.attrs = owned_derives();
+    item.attrs = if copy_struct(&item.ident.to_string()) {
+        vec![parse_quote!(#[derive(Clone, Copy, Debug, PartialEq)])]
+    } else {
+        owned_derives()
+    };
 }
 
 fn default_expression(field_type: &Type) -> proc_macro2::TokenStream {

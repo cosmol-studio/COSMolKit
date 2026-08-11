@@ -66,7 +66,10 @@ SCHEMAS = {
         "case_id:string,coords:array,error:null,in_smiles:string,optimize_with_uff:boolean,pre_add_hs_summary:object,preset:string,random_seed:integer,rdkit_ok:boolean,sdf:string,status:integer,td_smiles:string,with_h_summary:object"
     ),
     "forcefield_params.jsonl": _schema(
-        "embedded:object,error:null|string,mmff:object,rdkit_ok:boolean,smiles:string,uff:object"
+        "embedded:object,error:null|string,mmff:object,mmff_explicit_h:object,rdkit_ok:boolean,smiles:string,uff:object,uff_explicit_h:object"
+    ),
+    "forcefield_coverage.jsonl": _schema(
+        "error:null|string,mmff:object,mmff_explicit_h:object,rdkit_ok:boolean,smiles:string,uff:object,uff_explicit_h:object"
     ),
     "mmff_builtin.jsonl": _schema(
         "atom_types:array,error:null,fixture:string,has_all:boolean,line_number:integer,num_atoms:integer,props_ok:boolean,rdkit_ok:boolean,row_name:string,smiles:string,variant:string"

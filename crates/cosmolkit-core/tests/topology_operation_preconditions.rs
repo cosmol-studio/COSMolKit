@@ -16,7 +16,7 @@ fn with_hydrogens_registry_declares_semantic_preconditions() {
     let preconditions = WITH_HYDROGENS_SPEC.semantic_preconditions;
 
     assert!(preconditions.contains(SemanticPreconditionSet::TRUSTED_BOND_TOPOLOGY));
-    assert!(preconditions.contains(SemanticPreconditionSet::HYDROGEN_OWNERSHIP_REPRESENTED));
+    assert!(!preconditions.contains(SemanticPreconditionSet::HYDROGEN_OWNERSHIP_REPRESENTED));
     assert!(preconditions.contains(SemanticPreconditionSet::VALENCE_COMPUTABLE));
 }
 
@@ -119,27 +119,27 @@ fn trusted_smiles_graph_without_explicit_hydrogens_allows_3d_conformer_generatio
 }
 
 #[test]
-fn trusted_graph_without_explicit_hydrogen_ownership_rejects_with_hydrogens() {
-    let mut builder = MoleculeBuilder::new();
-    builder.add_atom(AtomSpec::new(Element::O));
-    builder.add_atom(AtomSpec::new(Element::H));
-    builder.add_atom(AtomSpec::new(Element::H));
-    let molecule = builder
-        .build()
-        .expect("builder should produce a valid graph");
+fn trusted_graph_preserves_isolated_proton_component_when_adding_hydrogens() {
+    let molecule = Molecule::from_smiles("C.[H+]").expect("disconnected proton parses");
 
     assert_eq!(molecule.topology_trust(), TopologyTrust::TrustedGraph);
-    let err = molecule
+    let with_hydrogens = molecule
         .with_hydrogens()
-        .expect_err("unowned explicit H atoms cannot support AddHs");
+        .expect("RDKit AddHs preserves degree-zero hydrogen components");
 
-    assert!(matches!(
-        err,
-        OperationError::Precondition {
-            requirement: SemanticPrecondition::HydrogenOwnershipRepresented,
-            ..
-        }
-    ));
+    assert_eq!(with_hydrogens.num_atoms(), 6);
+    assert_eq!(with_hydrogens.num_bonds(), 4);
+    let proton = with_hydrogens
+        .atoms()
+        .iter()
+        .find(|atom| atom.atomic_number() == 1 && atom.formal_charge() == 1)
+        .expect("isolated proton is preserved");
+    assert!(
+        with_hydrogens
+            .bonds()
+            .iter()
+            .all(|bond| bond.begin() != proton.id() && bond.end() != proton.id())
+    );
 }
 
 #[test]

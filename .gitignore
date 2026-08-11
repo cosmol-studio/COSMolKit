@@ -12,4 +12,4 @@ python/cosmolkit.pyi
 
 tmp/
 python/examples/output
-/dev/inchi-source-type-generator/target/
+/dev/tools/inchi/source_type_generator/target/

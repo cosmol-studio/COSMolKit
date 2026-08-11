@@ -53,6 +53,9 @@ fn main() {
         "defaultMMFFPBCI",
         "defaultMMFFChg",
         "defaultMMFFBond",
+        "defaultMMFFBndk",
+        "defaultMMFFHerschbachLaurie",
+        "defaultMMFFCovRadPauEle",
         "defaultMMFFStbn",
         "defaultMMFFDfsb",
         "defaultMMFFOop",
@@ -88,6 +91,19 @@ fn main() {
     let mut mmff_bond_rows =
         parse_mmff_bond_rows(mmff_default(&mmff_string_defaults, "defaultMMFFBond"));
     mmff_bond_rows.sort_by_key(|row| (row.bond_type, row.i_atom_type, row.j_atom_type));
+    let mut mmff_bndk_rows =
+        parse_mmff_bndk_rows(mmff_default(&mmff_string_defaults, "defaultMMFFBndk"));
+    mmff_bndk_rows.sort_by_key(|row| (row.i_atomic_num, row.j_atomic_num));
+    let mut mmff_herschbach_laurie_rows = parse_mmff_herschbach_laurie_rows(mmff_default(
+        &mmff_string_defaults,
+        "defaultMMFFHerschbachLaurie",
+    ));
+    mmff_herschbach_laurie_rows.sort_by_key(|row| (row.i_row, row.j_row));
+    let mut mmff_cov_rad_pau_ele_rows = parse_mmff_cov_rad_pau_ele_rows(mmff_default(
+        &mmff_string_defaults,
+        "defaultMMFFCovRadPauEle",
+    ));
+    mmff_cov_rad_pau_ele_rows.sort_by_key(|row| row.atomic_num);
     let mut mmff_angle_rows = parse_mmff_angle_rows(&mmff_angle);
     mmff_angle_rows.sort_by_key(|row| {
         (
@@ -217,9 +233,11 @@ fn main() {
     )
     .unwrap();
     for row in &uff_atomic_params {
+        // RDKit✔️✔️: paramObj.theta0 = boost::lexical_cast<double>(*token);
+        // RDKit✔️✔️: paramObj.theta0 = paramObj.theta0 * M_PI / 180.;
         writeln!(
             generated,
-            "    ({:?}, AtomicParams {{ r1: {:?}, theta0: {:?} * DEG2RAD, x1: {:?}, d1: {:?}, zeta: {:?}, z1: {:?}, v1: {:?}, u1: {:?}, gmp_xi: {:?}, gmp_hardness: {:?}, gmp_radius: {:?} }}),",
+            "    ({:?}, AtomicParams {{ r1: {:?}, theta0: {:?} * std::f64::consts::PI / 180.0, x1: {:?}, d1: {:?}, zeta: {:?}, z1: {:?}, v1: {:?}, u1: {:?}, gmp_xi: {:?}, gmp_hardness: {:?}, gmp_radius: {:?} }}),",
             row.label,
             row.r1,
             row.theta0_degrees,
@@ -250,9 +268,11 @@ fn main() {
     )
     .unwrap();
     for row in &uff_atomic_params {
+        // RDKit✔️✔️: paramObj.theta0 = boost::lexical_cast<double>(*token);
+        // RDKit✔️✔️: paramObj.theta0 = paramObj.theta0 * M_PI / 180.;
         writeln!(
             uff_generated,
-            "    ({:?}, AtomicParams {{ r1: {:?}, theta0: {:?} * DEG2RAD, x1: {:?}, d1: {:?}, zeta: {:?}, z1: {:?}, v1: {:?}, u1: {:?}, gmp_xi: {:?}, gmp_hardness: {:?}, gmp_radius: {:?} }}),",
+            "    ({:?}, AtomicParams {{ r1: {:?}, theta0: {:?} * std::f64::consts::PI / 180.0, x1: {:?}, d1: {:?}, zeta: {:?}, z1: {:?}, v1: {:?}, u1: {:?}, gmp_xi: {:?}, gmp_hardness: {:?}, gmp_radius: {:?} }}),",
             row.label,
             row.r1,
             row.theta0_degrees,
@@ -284,6 +304,9 @@ fn main() {
         &mmff_pbci_rows,
         &mmff_chg_rows,
         &mmff_bond_rows,
+        &mmff_bndk_rows,
+        &mmff_herschbach_laurie_rows,
+        &mmff_cov_rad_pau_ele_rows,
         &mmff_angle_rows,
         &mmff_stbn_rows,
         &mmff_dfsb_rows,
@@ -384,6 +407,30 @@ struct MmffBondRow {
     j_atom_type: u8,
     kb: f64,
     r0: f64,
+}
+
+#[derive(Debug)]
+struct MmffBndkRow {
+    i_atomic_num: u8,
+    j_atomic_num: u8,
+    r0: f64,
+    kb: f64,
+}
+
+#[derive(Debug)]
+struct MmffHerschbachLaurieRow {
+    i_row: u8,
+    j_row: u8,
+    a_ij: f64,
+    d_ij: f64,
+    dp_ij: f64,
+}
+
+#[derive(Debug)]
+struct MmffCovRadPauEleRow {
+    atomic_num: u8,
+    r0: f64,
+    chi: f64,
 }
 
 #[derive(Debug)]
@@ -587,6 +634,72 @@ fn parse_mmff_bond_rows(mmff_bond: &str) -> Vec<MmffBondRow> {
             j_atom_type: parse_u8(columns[2], line),
             kb: parse_f64(columns[3], line),
             r0: parse_f64(columns[4], line),
+        });
+    }
+    rows
+}
+
+fn parse_mmff_bndk_rows(mmff_bndk: &str) -> Vec<MmffBndkRow> {
+    let mut rows = Vec::new();
+    for (line_idx, line) in mmff_bndk.lines().enumerate() {
+        if line.trim().is_empty() || line.starts_with('*') {
+            continue;
+        }
+        let columns: Vec<&str> = line.split('\t').collect();
+        assert!(
+            columns.len() >= 4,
+            "malformed MMFFBndk line {}",
+            line_idx + 1
+        );
+        rows.push(MmffBndkRow {
+            i_atomic_num: parse_u8(columns[0], line),
+            j_atomic_num: parse_u8(columns[1], line),
+            r0: parse_f64(columns[2], line),
+            kb: parse_f64(columns[3], line),
+        });
+    }
+    rows
+}
+
+fn parse_mmff_herschbach_laurie_rows(mmff_herschbach_laurie: &str) -> Vec<MmffHerschbachLaurieRow> {
+    let mut rows = Vec::new();
+    for (line_idx, line) in mmff_herschbach_laurie.lines().enumerate() {
+        if line.trim().is_empty() || line.starts_with('*') {
+            continue;
+        }
+        let columns: Vec<&str> = line.split('\t').collect();
+        assert!(
+            columns.len() >= 5,
+            "malformed MMFFHerschbachLaurie line {}",
+            line_idx + 1
+        );
+        rows.push(MmffHerschbachLaurieRow {
+            i_row: parse_u8(columns[0], line),
+            j_row: parse_u8(columns[1], line),
+            a_ij: parse_f64(columns[2], line),
+            d_ij: parse_f64(columns[3], line),
+            dp_ij: parse_f64(columns[4], line),
+        });
+    }
+    rows
+}
+
+fn parse_mmff_cov_rad_pau_ele_rows(mmff_cov_rad_pau_ele: &str) -> Vec<MmffCovRadPauEleRow> {
+    let mut rows = Vec::new();
+    for (line_idx, line) in mmff_cov_rad_pau_ele.lines().enumerate() {
+        if line.trim().is_empty() || line.starts_with('*') {
+            continue;
+        }
+        let columns: Vec<&str> = line.split('\t').collect();
+        assert!(
+            columns.len() >= 3,
+            "malformed MMFFCovRadPauEle line {}",
+            line_idx + 1
+        );
+        rows.push(MmffCovRadPauEleRow {
+            atomic_num: parse_u8(columns[0], line),
+            r0: parse_f64(columns[1], line),
+            chi: parse_f64(columns[2], line),
         });
     }
     rows
@@ -796,6 +909,9 @@ fn write_mmff_generated_tables(
     pbci_rows: &[MmffPbciRow],
     chg_rows: &[MmffChgRow],
     bond_rows: &[MmffBondRow],
+    bndk_rows: &[MmffBndkRow],
+    herschbach_laurie_rows: &[MmffHerschbachLaurieRow],
+    cov_rad_pau_ele_rows: &[MmffCovRadPauEleRow],
     angle_rows: &[MmffAngleRow],
     stbn_rows: &[MmffStbnRow],
     dfsb_rows: &[MmffDfsbRow],
@@ -815,6 +931,51 @@ fn write_mmff_generated_tables(
             output,
             "    ({}, MmffDef {{ eq_level: [{}, {}, {}, {}] }}),",
             row.atom_type, row.eq_level[0], row.eq_level[1], row.eq_level[2], row.eq_level[3]
+        )
+        .unwrap();
+    }
+    writeln!(output, "];\n").unwrap();
+
+    writeln!(
+        output,
+        "pub(crate) static DEFAULT_MMFF_BNDK_ROWS: &[(u8, u8, MmffBond)] = &["
+    )
+    .unwrap();
+    for row in bndk_rows {
+        writeln!(
+            output,
+            "    ({}, {}, MmffBond {{ kb: {:?}, r0: {:?} }}),",
+            row.i_atomic_num, row.j_atomic_num, row.kb, row.r0
+        )
+        .unwrap();
+    }
+    writeln!(output, "];\n").unwrap();
+
+    writeln!(
+        output,
+        "pub(crate) static DEFAULT_MMFF_HERSCHBACH_LAURIE_ROWS: &[(u8, u8, MmffHerschbachLaurie)] = &["
+    )
+    .unwrap();
+    for row in herschbach_laurie_rows {
+        writeln!(
+            output,
+            "    ({}, {}, MmffHerschbachLaurie {{ a_ij: {:?}, d_ij: {:?}, dp_ij: {:?} }}),",
+            row.i_row, row.j_row, row.a_ij, row.d_ij, row.dp_ij
+        )
+        .unwrap();
+    }
+    writeln!(output, "];\n").unwrap();
+
+    writeln!(
+        output,
+        "pub(crate) static DEFAULT_MMFF_COV_RAD_PAU_ELE_ROWS: &[(u8, MmffCovRadPauEle)] = &["
+    )
+    .unwrap();
+    for row in cov_rad_pau_ele_rows {
+        writeln!(
+            output,
+            "    ({}, MmffCovRadPauEle {{ r0: {:?}, chi: {:?} }}),",
+            row.atomic_num, row.r0, row.chi
         )
         .unwrap();
     }
@@ -1224,6 +1385,9 @@ fn mmff_symbol_to_rust(symbol: &str) -> &'static str {
         "defaultMMFFPBCI" => "DEFAULT_MMFF_PBCI",
         "defaultMMFFChg" => "DEFAULT_MMFF_CHG",
         "defaultMMFFBond" => "DEFAULT_MMFF_BOND",
+        "defaultMMFFBndk" => "DEFAULT_MMFF_BNDK",
+        "defaultMMFFHerschbachLaurie" => "DEFAULT_MMFF_HERSCHBACH_LAURIE",
+        "defaultMMFFCovRadPauEle" => "DEFAULT_MMFF_COV_RAD_PAU_ELE",
         "defaultMMFFStbn" => "DEFAULT_MMFF_STBN",
         "defaultMMFFDfsb" => "DEFAULT_MMFF_DFSB",
         "defaultMMFFOop" => "DEFAULT_MMFF_OOP",

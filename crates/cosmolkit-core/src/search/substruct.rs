@@ -19,11 +19,11 @@
 //! - RDKit❗✔️: unfinished behavior that must not be presented as parity
 //! - RDKit❌❌: not yet ported
 
-use crate::chemistry::forcefield::crystalff::build_crystalff_query_molecule;
 use crate::search::query::{
     QueryMatchContext, atom_predicate_matches_with_context, bond_predicate_matches_with_context,
     build_query_match_context,
 };
+use crate::search::smarts_parse::build_query_molecule;
 use crate::{
     Atom, AtomQueryPredicate, Bond, BondOrder, BondQueryPredicate, BondStereo, ChiralTag, Molecule,
     StereoGroupKind,
@@ -400,7 +400,7 @@ fn recursive_smarts_root_matches(
     else {
         return false;
     };
-    let Ok(query) = build_crystalff_query_molecule(inner) else {
+    let Ok(query) = build_query_molecule(inner) else {
         return false;
     };
     substruct_match_impl(
@@ -2154,7 +2154,7 @@ fn populate_recursive_query_match_cache(
             recursive_cache.insert(recursive_smarts, vec![false; mol.num_atoms()]);
             continue;
         };
-        let Ok(inner_query) = build_crystalff_query_molecule(inner) else {
+        let Ok(inner_query) = build_query_molecule(inner) else {
             recursive_cache.insert(recursive_smarts, vec![false; mol.num_atoms()]);
             continue;
         };
@@ -2510,6 +2510,19 @@ mod tests {
     use crate::MoleculeBuilder;
 
     #[test]
+    fn smarts_ring_connectivity_zero_rejects_ring_atoms() {
+        let chain = Molecule::from_smiles("CCC").expect("chain");
+        let ring = Molecule::from_smiles("C1CCCCC1").expect("ring");
+        let no_ring_bonds = build_query_molecule("[Cx0]").expect("x0 query");
+        let has_ring_bond = build_query_molecule("[Cx]").expect("x query");
+
+        assert!(!get_substruct_matches(&chain, &no_ring_bonds).is_empty());
+        assert!(get_substruct_matches(&ring, &no_ring_bonds).is_empty());
+        assert!(get_substruct_matches(&chain, &has_ring_bond).is_empty());
+        assert!(!get_substruct_matches(&ring, &has_ring_bond).is_empty());
+    }
+
+    #[test]
     fn shared_count_swaps_substruct_preserves_none_failure_mapping() {
         assert_eq!(count_swaps_to_interconvert_i32(&[1, 2], &[1]), None);
         assert_eq!(count_swaps_to_interconvert_i32(&[1, 2], &[1, 3]), None);
@@ -2722,7 +2735,7 @@ mod tests {
         for (name, smarts, smiles, expected_first, expected_atoms) in cases {
             let mol = Molecule::from_smiles_with_sanitize(smiles, false)
                 .unwrap_or_else(|_| panic!("{name} molecule should parse"));
-            let query = build_crystalff_query_molecule(smarts)
+            let query = build_query_molecule(smarts)
                 .unwrap_or_else(|_| panic!("{name} SMARTS should build query molecule"));
             let matches = get_substruct_matches(&mol, &query);
             assert!(
@@ -2788,7 +2801,7 @@ mod tests {
         for (name, smarts, smiles, expected) in cases {
             let mol = Molecule::from_smiles_with_sanitize(smiles, true)
                 .unwrap_or_else(|_| panic!("{name} molecule should parse"));
-            let query = build_crystalff_query_molecule(smarts)
+            let query = build_query_molecule(smarts)
                 .unwrap_or_else(|_| panic!("{name} SMARTS should build"));
             let matches = get_substruct_matches(&mol, &query);
             let atom_mappings = matches
@@ -2843,7 +2856,7 @@ mod tests {
         for (name, smarts, smiles, expected_match, expected_first) in cases {
             let mol = Molecule::from_smiles_with_sanitize(smiles, true)
                 .unwrap_or_else(|_| panic!("{name} molecule should parse"));
-            let query = build_crystalff_query_molecule(smarts)
+            let query = build_query_molecule(smarts)
                 .unwrap_or_else(|_| panic!("{name} MACCS SMARTS should build query"));
             let matches = get_substruct_matches(&mol, &query);
             assert_eq!(
@@ -3701,7 +3714,7 @@ mod tests {
                 Molecule::from_smiles_with_sanitize(golden.smiles, true).unwrap_or_else(|error| {
                     panic!("MACCS bit {} target SMILES failed: {error}", golden.bit)
                 });
-            let query = build_crystalff_query_molecule(golden.smarts)
+            let query = build_query_molecule(golden.smarts)
                 .unwrap_or_else(|error| panic!("MACCS bit {} SMARTS failed: {error}", golden.bit));
             let matches = get_substruct_matches(&mol, &query);
             assert!(
@@ -3722,7 +3735,7 @@ mod tests {
     #[test]
     fn maccs_bit_030_requires_four_explicit_neighbors_like_rdkit() {
         let mol = Molecule::from_smiles("ON(C)C").expect("fixture should parse");
-        let query = build_crystalff_query_molecule("[#6]~[!#6!#1](~[#6])(~[#6])~*")
+        let query = build_query_molecule("[#6]~[!#6!#1](~[#6])(~[#6])~*")
             .expect("MACCS bit 30 SMARTS should build");
 
         assert_eq!(query.num_atoms(), 5);
