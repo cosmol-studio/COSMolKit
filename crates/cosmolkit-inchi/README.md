@@ -13,6 +13,25 @@ stereo representations. It does not depend on `cosmolkit-core`; conversion
 between a COSMolKit `Molecule` and the neutral InChI graph belongs to the core
 crate.
 
+## Examples
+
+The direct InChIKey operation needs no toolkit adapter:
+
+```bash
+cargo run -p cosmolkit-inchi --example inchi_to_key
+cargo run -p cosmolkit-inchi --example inchi_to_key -- 'InChI=1S/H2O/h1H2'
+```
+
+The neutral graph operations use downstream toolkit traits for element,
+valence, sanitization, hydrogen, and stereochemistry behavior. These examples
+include an explicitly methane-only adapter that rejects every operation outside
+that narrow boundary:
+
+```bash
+cargo run -p cosmolkit-inchi --example neutral_graph_to_inchi
+cargo run -p cosmolkit-inchi --example inchi_to_neutral_graph
+```
+
 ## Behavior Boundary
 
 The four public operations reproduce pinned official InChI v1.07.5 and RDKit
