@@ -745,9 +745,6 @@ fn semantic_precondition_set_expr(items: &[Ident]) -> syn::Result<proc_macro2::T
             "hydrogen_ownership_represented" | "HydrogenOwnershipRepresented" => Ok(quote!(
                 crate::ops::SemanticPreconditionSet::HYDROGEN_OWNERSHIP_REPRESENTED
             )),
-            "valence_computable" | "ValenceComputable" => Ok(quote!(
-                crate::ops::SemanticPreconditionSet::VALENCE_COMPUTABLE
-            )),
             other => Err(syn::Error::new(
                 item.span(),
                 format!("unknown semantic precondition `{other}`"),

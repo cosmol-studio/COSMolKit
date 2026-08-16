@@ -312,9 +312,9 @@ pub(super) fn clear_fragment_temp_molecule_computed_stereo_props_for_writer(
     // END RDKIT CPP FUNCTION RWMol::removeAtom / commitBatchEdit computed prop reset
     // BEGIN RDKIT CPP FUNCTION ROMol::clearComputedProps
     // RDKit❗✔️: void ROMol::clearComputedProps(bool includeRings) const {
-    // RDKit❗✔️:   if (includeRings) {
-    // RDKit❗✔️:     this->dp_ringInfo->reset();
-    // RDKit❗✔️:   }
+    // RDKit✔️✔️:   if (includeRings) {
+    // RDKit✔️✔️:     this->dp_ringInfo->reset();
+    // RDKit✔️✔️:   }
     // RDKit❗✔️:   RDProps::clearComputedProps();
     // RDKit❗✔️:   for (auto atom : atoms()) {
     // RDKit❗✔️:     atom->clearComputedProps();
@@ -334,6 +334,7 @@ pub(super) fn clear_fragment_temp_molecule_computed_stereo_props_for_writer(
     }
 
     molecule.properties_mut().clear_prop("_StereochemDone");
+    molecule.derived_cache_mut().rings = None;
     for atom in &mut molecule.topology_block_mut().atoms {
         atom.clear_prop("_CIPCode");
         atom.clear_prop("_CIPRank");

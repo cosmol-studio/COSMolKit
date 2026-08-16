@@ -29,7 +29,7 @@ use crate::{AdjacencyList, Molecule};
 // ──────────────────────────────────────────────
 
 /// Errors that can occur during conformer transform operations.
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MolTransformError {
     #[error("atom index {atom} out of bounds: num_atoms={num_atoms}")]
     AtomIndexOutOfBounds { atom: usize, num_atoms: usize },
@@ -47,6 +47,8 @@ pub enum MolTransformError {
     BondsBothInRing { i: usize, j: usize, k: usize },
     #[error("atoms {i} and {j} have identical 3D coordinates (zero-length vector)")]
     ZeroLengthVector { i: usize, j: usize },
+    #[error("molecule operation contract failed: {message}")]
+    OperationContract { message: String },
 }
 
 // ──────────────────────────────────────────────
@@ -931,21 +933,48 @@ pub fn get_atom_position(
 ///
 /// Returns a new `Molecule` (value-style).
 pub fn set_atom_position(
-    mol: Molecule,
+    mut mol: Molecule,
     atom: usize,
     pos: [f64; 3],
     conf_id: usize,
 ) -> Result<Molecule, MolTransformError> {
-    let num_atoms = mol.num_atoms();
-    // Compute adjacency before mutable borrow
-    let adj = AdjacencyList::from_topology(num_atoms, mol.bonds());
-    if atom >= num_atoms {
-        return Err(MolTransformError::AtomIndexOutOfBounds { atom, num_atoms });
-    }
-    let mut mol = mol;
-    let coords = conf_coords_mut(&mut mol, conf_id)?;
-    coords[atom] = pos;
+    mol.set_atom_position_(atom, pos, conf_id)
+        .map_err(mol_transform_operation_error)?;
     Ok(mol)
+}
+
+pub(crate) fn set_atom_position_in_coordinate_block(
+    coordinates: &mut crate::molecule::CoordinateBlock,
+    atom: usize,
+    pos: [f64; 3],
+    conf_id: usize,
+) -> Result<bool, MolTransformError> {
+    let conformer_count = coordinates.conformers_3d.len();
+    let conformer = coordinates.conformers_3d.get_mut(conf_id).ok_or(
+        MolTransformError::ConformerIndexOutOfBounds {
+            id: conf_id,
+            max: conformer_count,
+        },
+    )?;
+    let atom_count = conformer.coordinates().len();
+    if atom >= atom_count {
+        return Err(MolTransformError::AtomIndexOutOfBounds {
+            atom,
+            num_atoms: atom_count,
+        });
+    }
+    let changed = conformer.coordinates()[atom] != pos;
+    conformer.coordinates_mut()[atom] = pos;
+    Ok(changed)
+}
+
+fn mol_transform_operation_error(error: crate::OperationError) -> MolTransformError {
+    match error {
+        crate::OperationError::MolTransform { source, .. } => source,
+        other => MolTransformError::OperationContract {
+            message: other.to_string(),
+        },
+    }
 }
 
 // RDKit✔️✔️: const RDGeom::POINT3D_VECT &Conformer::getPositions() const

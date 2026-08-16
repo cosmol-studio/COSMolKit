@@ -2,12 +2,12 @@
 
 ## Scope
 
-This report closes the narrowed source-port plan for these four scalar APIs:
+This report closes the narrowed source-port plan for these four scalar COSMolKit APIs:
 
-- `Chem.MolToInchi(mol)`;
-- `Chem.MolToInchiKey(mol)`;
-- `InchiToInchiKey(inchi)`;
-- `Chem.MolFromInchi(inchi)`.
+- `molecule.to_inchi()`;
+- `molecule.to_inchi_key()`;
+- `inchi_to_key(inchi)`;
+- `Molecule.from_inchi(inchi)`.
 
 The official target is GCC/Linux `libinchi` with `COMPILE_ANSI_ONLY`,
 `TARGET_API_LIB`, and `fPIC`. The RDKit adapter oracle is pinned to RDKit
@@ -115,10 +115,10 @@ RDKit `2026.03.1` C++ oracle tests. The four public-entry record sets contain:
 
 | Entry | Complete records | Result |
 |---|---:|---|
-| `MolToInchi` | `65` | every recorded source-defined field and branch matched exactly |
-| `MolToInchiKey` | `9` | every recorded source-defined field and branch matched exactly |
-| `InchiToInchiKey` | `9` | every recorded source-defined field and branch matched exactly |
-| `InchiToMol` / `MolFromInchi` | `33` | every recorded source-defined field and branch matched exactly |
+| `Molecule.to_inchi()` (`RDKit MolToInchi`) | `65` | every recorded source-defined field and branch matched exactly |
+| `Molecule.to_inchi_key()` (`RDKit MolToInchiKey`) | `9` | every recorded source-defined field and branch matched exactly |
+| `inchi_to_key()` (`RDKit InchiToInchiKey`) | `9` | every recorded source-defined field and branch matched exactly |
+| `Molecule.from_inchi()` (`RDKit InchiToMol` / `MolFromInchi`) | `33` | every recorded source-defined field and branch matched exactly |
 
 The schemas include return and exception paths, diagnostic ordering, graph
 mutation and preservation, atom/bond/stereo/isotope/H/charge/radical fields,
@@ -154,7 +154,7 @@ with `.venv/bin/maturin develop --manifest-path python/Cargo.toml`. A
 fail-closed public-wrapper harness processed all `5000` rows of
 `tests/smiles_5000.smi`, independently parsed each input with pinned RDKit
 `2026.03.1` and COSMolKit, and compared `rdkit.Chem.MolToInchi` with
-`cosmolkit.Chem.MolToInchi` by exact string equality. Its result was:
+`cosmolkit.Molecule.to_inchi()` by exact string equality. Its result was:
 
 ```text
 corpus_rows=5000

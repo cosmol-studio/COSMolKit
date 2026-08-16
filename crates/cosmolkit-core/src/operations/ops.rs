@@ -188,7 +188,6 @@ pub enum MappingRequirement {
 pub enum SemanticPrecondition {
     TrustedBondTopology,
     HydrogenOwnershipRepresented,
-    ValenceComputable,
 }
 
 impl fmt::Display for SemanticPrecondition {
@@ -196,7 +195,6 @@ impl fmt::Display for SemanticPrecondition {
         match self {
             Self::TrustedBondTopology => f.write_str("trusted_bond_topology"),
             Self::HydrogenOwnershipRepresented => f.write_str("hydrogen_ownership_represented"),
-            Self::ValenceComputable => f.write_str("valence_computable"),
         }
     }
 }
@@ -208,7 +206,6 @@ impl SemanticPreconditionSet {
     pub const NONE: Self = Self(0);
     pub const TRUSTED_BOND_TOPOLOGY: Self = Self(1 << 0);
     pub const HYDROGEN_OWNERSHIP_REPRESENTED: Self = Self(1 << 1);
-    pub const VALENCE_COMPUTABLE: Self = Self(1 << 2);
 
     #[must_use]
     pub const fn union(self, other: Self) -> Self {
@@ -287,6 +284,12 @@ pub enum OperationError {
         operation: &'static MoleculeOpSpec,
         #[source]
         source: crate::DgBoundsError,
+    },
+    #[error("{operation}: molecule transform failed: {source}")]
+    MolTransform {
+        operation: &'static MoleculeOpSpec,
+        #[source]
+        source: crate::mol_transforms::MolTransformError,
     },
     #[error("{operation}: {source}")]
     UnsupportedFeature {
@@ -430,10 +433,9 @@ molecule_ops! {
         },
         semantic_preconditions: [
             trusted_bond_topology,
-            valence_computable,
         ],
         requires_mapping: required,
-        allows_noop: false,
+        allows_noop: true,
         feature: HYDROGENS_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -743,7 +745,7 @@ molecule_ops! {
         domain: coordinate,
         kind: weak,
         topology_edit: none,
-        access: { read: [topology], write: [coordinates] },
+        access: { read: [topology, properties, derived_cache], write: [coordinates] },
         may_mutate: [coordinates],
         auto_remap: [],
         semantic_preconditions: [trusted_bond_topology],
@@ -769,7 +771,7 @@ molecule_ops! {
         domain: coordinate,
         kind: weak,
         topology_edit: none,
-        access: { read: [topology], write: [coordinates] },
+        access: { read: [topology, properties, derived_cache], write: [coordinates] },
         may_mutate: [coordinates],
         auto_remap: [],
         semantic_preconditions: [trusted_bond_topology],
@@ -835,6 +837,31 @@ molecule_ops! {
         io_roundtrip: true,
         invariant_profile: "coordinate_set_3d",
         parity_profile: "set_3d_coordinates_manual",
+    }
+
+    op with_atom_position(atom: usize, position: [f64; 3], conformer_index: usize) {
+        method: with_atom_position,
+        impl_fn: with_atom_position_impl,
+        inplace: true,
+        inplace_method: set_atom_position_,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology], write: [coordinates] },
+        may_mutate: [coordinates],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [],
+            invalidate: [drawing],
+        },
+        requires_mapping: none,
+        allows_noop: true,
+        feature: COORDINATE_EDIT_FEATURE,
+        parity: required_when_supported,
+        io_roundtrip: true,
+        invariant_profile: "coordinate_set_atom_position",
+        parity_profile: "set_atom_position_rdkit",
     }
 
     op with_cleared_3d_conformers() {
@@ -1092,6 +1119,10 @@ mod tests {
             "commit_coordinates",
             "begin_properties_mut",
             "commit_properties",
+            "with_topology_mut",
+            "with_coordinates_mut",
+            "with_topology_and_properties_mut",
+            "with_topology_coordinates_properties_mut",
             "record_topology_edit",
             "record_topology_mapping",
             "clear_cache",
@@ -1104,6 +1135,7 @@ mod tests {
             "with_block_read_parts",
             "with_optional_block_read_parts",
             "with_borrowed_optional_block_read_parts",
+            "with_coordinate_update_read_parts",
         ];
 
         for (source_name, source) in op_body_sources() {
@@ -1114,6 +1146,59 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn fallible_operation_bodies_do_not_leave_raw_blocks_checked_out() {
+        let sources = op_body_sources();
+        assert_sources_do_not_contain(
+            &sources,
+            &[
+                "parts.begin_topology_mut",
+                "parts.commit_topology",
+                "parts.begin_coordinates_mut",
+                "parts.commit_coordinates",
+                "parts.begin_properties_mut",
+                "parts.commit_properties",
+            ],
+        );
+    }
+
+    #[test]
+    fn scoped_in_place_error_returns_current_topology_block() {
+        let mut molecule = crate::Molecule::from_smiles("C").unwrap();
+        let mut parts = OpParts::new_in_place(&mut molecule, &WITH_KEKULIZED_BONDS_SPEC).unwrap();
+
+        let error = parts
+            .with_topology_mut(|_parts, topology| {
+                topology.atoms[0].set_formal_charge(1);
+                Err::<(), _>(OperationError::InvalidInput {
+                    operation: &WITH_KEKULIZED_BONDS_SPEC,
+                    message: "synthetic failure after a partial topology update",
+                })
+            })
+            .expect_err("the scoped mutation must return the operation error");
+        assert!(matches!(error, OperationError::InvalidInput { .. }));
+
+        parts.abort_in_place();
+        assert_eq!(molecule.num_atoms(), 1);
+        assert_eq!(molecule.atoms()[0].formal_charge(), 1);
+        enforce_molecule_invariants(&molecule)
+            .expect("the current topology block must be structurally complete after error");
+    }
+
+    #[test]
+    fn failed_in_place_sanitize_does_not_leak_checkout_placeholder() {
+        let mut molecule = crate::Molecule::from_smiles_with_sanitize("c", false).unwrap();
+
+        molecule
+            .sanitize_()
+            .expect_err("an isolated aromatic atom must fail kekulization");
+
+        assert_eq!(molecule.num_atoms(), 1);
+        assert_eq!(molecule.atoms()[0].element(), crate::Element::C);
+        enforce_molecule_invariants(&molecule)
+            .expect("failed sanitization must return a complete current topology block");
     }
 
     #[test]
@@ -1171,6 +1256,26 @@ mod tests {
         assert!(
             matches!(err, OperationError::InvalidInput { message, .. } if message.contains("same writable block twice"))
         );
+    }
+
+    #[cfg(feature = "op-contracts")]
+    #[test]
+    fn finish_rejects_a_writable_block_left_checked_out() {
+        let molecule = crate::Molecule::new();
+        let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC).unwrap();
+        let _topology = parts.begin_topology_mut().unwrap();
+
+        let error = parts
+            .finish(OpOutcome::Changed)
+            .expect_err("finish must reject an unclosed begin/commit lifecycle");
+
+        assert!(matches!(
+            error,
+            OperationError::InvalidInput {
+                message: "operation finished while a writable block was still checked out",
+                ..
+            }
+        ));
     }
 
     #[cfg(feature = "op-contracts")]
@@ -3544,6 +3649,19 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "op-contracts")]
+    #[test]
+    #[should_panic(
+        expected = "operation read capability does not permit access to the coordinates block"
+    )]
+    fn topology_read_capability_does_not_expose_coordinates() {
+        let molecule = crate::Molecule::new();
+        let parts = OpParts::new(&molecule, &ASSIGNED_VALENCE_SPEC).unwrap();
+        let read = parts.begin_topology_read().unwrap();
+
+        let _ = read.coordinates();
+    }
+
     #[test]
     fn needs_update_clears_matching_derived_cache_entries() {
         let molecule = crate::Molecule::new();
@@ -3565,6 +3683,27 @@ mod tests {
         assert!(cache.ring_families.is_none());
         assert!(!cache.aromaticity_valid);
         assert!(!cache.stereo_valid);
+    }
+
+    #[cfg(feature = "op-contracts")]
+    #[test]
+    fn finish_rejects_noop_when_registry_forbids_it() {
+        let molecule = crate::Molecule::new();
+        let parts = OpParts::new(&molecule, &WITH_2D_COORDINATE_BLOCK_SPEC).unwrap();
+
+        let error = parts
+            .finish(OpOutcome::NoOp {
+                reason: "synthetic forbidden no-op",
+            })
+            .expect_err("allows_noop=false must be an executable strict contract");
+
+        assert!(matches!(
+            error,
+            OperationError::InvalidInput {
+                message: "operation reported a no-op but the registry forbids no-op outcomes",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -3608,6 +3747,30 @@ mod tests {
             })
             .expect("a no-op has no derived-state effects to fulfill");
         assert_eq!(result, molecule);
+    }
+
+    #[cfg(feature = "op-contracts")]
+    #[test]
+    fn noop_cannot_bypass_cache_obligations_after_touching_a_block() {
+        let molecule = crate::Molecule::new();
+        let mut parts = OpParts::new(&molecule, &WITH_2D_COORDINATES_SPEC).unwrap();
+        parts
+            .with_coordinates_mut(|_parts, _coordinates| Ok(()))
+            .unwrap();
+
+        let error = parts
+            .finish(OpOutcome::NoOp {
+                reason: "synthetic mislabeled mutation",
+            })
+            .expect_err("NoOp must not bypass derived-state obligations after a block touch");
+
+        assert!(matches!(
+            error,
+            OperationError::InvalidInput {
+                message: "operation body did not clear or update every required cache state",
+                ..
+            }
+        ));
     }
 
     #[cfg(feature = "op-contracts")]

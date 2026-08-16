@@ -14,38 +14,39 @@ pub(super) fn with_kekulized_bonds_impl(
     // RDKit✔️✔️:   auto &wmol = static_cast<RWMol &>(mol);
     // RDKit✔️✔️:   MolOps::Kekulize(wmol, clearAromaticFlags, canonical);
     // RDKit✔️✔️: }
-    let mut topology = parts.begin_topology_mut()?;
-    let rings = parts.with_topology_read_parts(topology.clone(), |read| {
-        read.symmetrize_sssr()
-            .map_err(|source| OperationError::RingFinding {
-                operation: &WITH_KEKULIZED_BONDS_SPEC,
-                source,
-            })
-    })?;
-    parts.set_rings_cache(rings);
-    let assignment = parts.with_topology_read_parts(topology.clone(), |read| {
-        let ring_info = read
-            .derived_cache()
-            .rings
-            .as_ref()
-            .expect("rings were recomputed immediately above")
-            .clone();
-        read.kekulize_assignment(Some(&ring_info), clear_aromatic_flags, true, 100)
-            .map_err(|source| OperationError::Kekulize {
-                operation: &WITH_KEKULIZED_BONDS_SPEC,
-                source,
-            })
-    })?;
+    let (changed, valence) = parts.with_topology_mut(|parts, topology| {
+        let rings = parts.with_topology_read_parts(topology.clone(), |read| {
+            read.symmetrize_sssr()
+                .map_err(|source| OperationError::RingFinding {
+                    operation: &WITH_KEKULIZED_BONDS_SPEC,
+                    source,
+                })
+        })?;
+        parts.set_rings_cache(rings);
+        let assignment = parts.with_topology_read_parts(topology.clone(), |read| {
+            let ring_info = read
+                .derived_cache()
+                .rings
+                .as_ref()
+                .expect("rings were recomputed immediately above")
+                .clone();
+            read.kekulize_assignment(Some(&ring_info), clear_aromatic_flags, true, 100)
+                .map_err(|source| OperationError::Kekulize {
+                    operation: &WITH_KEKULIZED_BONDS_SPEC,
+                    source,
+                })
+        })?;
 
-    let changed = crate::kekulize::apply_kekulize_assignment(&mut topology, &assignment);
-    let valence = parts.with_topology_read_parts(topology.clone(), |read| {
-        read.assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
-            .map_err(|source| OperationError::Valence {
-                operation: &WITH_KEKULIZED_BONDS_SPEC,
-                source,
-            })
+        let changed = crate::kekulize::apply_kekulize_assignment(topology, &assignment);
+        let valence = parts.with_topology_read_parts(topology.clone(), |read| {
+            read.assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
+                .map_err(|source| OperationError::Valence {
+                    operation: &WITH_KEKULIZED_BONDS_SPEC,
+                    source,
+                })
+        })?;
+        Ok((changed, valence))
     })?;
-    parts.commit_topology(topology)?;
     parts.record_topology_edit(TopologyEditKind::Local)?;
     parts.clear_cache(DerivedState::AROMATICITY);
     parts.set_valence_cache(valence);
@@ -100,52 +101,52 @@ pub(super) fn assigned_ring_families_impl() -> Result<OpOutcome, OperationError>
 
 #[mol_op_body(assigned_aromaticity, parts)]
 pub(super) fn assigned_aromaticity_impl() -> Result<OpOutcome, OperationError> {
-    let mut topology = parts.begin_topology_mut()?;
-    let rings = parts.with_topology_read_parts(topology.clone(), |read| {
-        read.symmetrize_sssr()
-            .map_err(|source| OperationError::RingFinding {
-                operation: &ASSIGNED_AROMATICITY_SPEC,
-                source,
-            })
-    })?;
-    parts.set_rings_cache(rings);
-    let assignment = parts.with_topology_read_parts(topology.clone(), |read| {
-        read.set_aromaticity(crate::AromaticityModel::Default)
-            .map_err(|source| OperationError::Aromaticity {
-                operation: &ASSIGNED_AROMATICITY_SPEC,
-                source,
-            })
-    })?;
-    for (atom, is_aromatic) in topology
-        .atoms
-        .iter_mut()
-        .zip(assignment.atom_aromatic.iter().copied())
-    {
-        atom.set_aromatic(is_aromatic);
-    }
-    for (bond, is_aromatic) in topology
-        .bonds
-        .iter_mut()
-        .zip(assignment.bond_aromatic.iter().copied())
-    {
-        bond.set_aromatic(is_aromatic);
-        if is_aromatic
-            && matches!(
-                bond.order(),
-                crate::BondOrder::Single | crate::BondOrder::Double
-            )
+    let valence = parts.with_topology_mut(|parts, topology| {
+        let rings = parts.with_topology_read_parts(topology.clone(), |read| {
+            read.symmetrize_sssr()
+                .map_err(|source| OperationError::RingFinding {
+                    operation: &ASSIGNED_AROMATICITY_SPEC,
+                    source,
+                })
+        })?;
+        parts.set_rings_cache(rings);
+        let assignment = parts.with_topology_read_parts(topology.clone(), |read| {
+            read.set_aromaticity(crate::AromaticityModel::Default)
+                .map_err(|source| OperationError::Aromaticity {
+                    operation: &ASSIGNED_AROMATICITY_SPEC,
+                    source,
+                })
+        })?;
+        for (atom, is_aromatic) in topology
+            .atoms
+            .iter_mut()
+            .zip(assignment.atom_aromatic.iter().copied())
         {
-            bond.set_order(crate::BondOrder::Aromatic);
+            atom.set_aromatic(is_aromatic);
         }
-    }
-    let valence = parts.with_topology_read_parts(topology.clone(), |read| {
-        read.assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
-            .map_err(|source| OperationError::Valence {
-                operation: &ASSIGNED_AROMATICITY_SPEC,
-                source,
-            })
+        for (bond, is_aromatic) in topology
+            .bonds
+            .iter_mut()
+            .zip(assignment.bond_aromatic.iter().copied())
+        {
+            bond.set_aromatic(is_aromatic);
+            if is_aromatic
+                && matches!(
+                    bond.order(),
+                    crate::BondOrder::Single | crate::BondOrder::Double
+                )
+            {
+                bond.set_order(crate::BondOrder::Aromatic);
+            }
+        }
+        parts.with_topology_read_parts(topology.clone(), |read| {
+            read.assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
+                .map_err(|source| OperationError::Valence {
+                    operation: &ASSIGNED_AROMATICITY_SPEC,
+                    source,
+                })
+        })
     })?;
-    parts.commit_topology(topology)?;
     parts.record_topology_edit(TopologyEditKind::Local)?;
     parts.set_valence_cache(valence);
     parts.mark_aromaticity_valid();
@@ -155,36 +156,36 @@ pub(super) fn assigned_aromaticity_impl() -> Result<OpOutcome, OperationError> {
 
 #[mol_op_body(assigned_radicals, parts)]
 pub(super) fn assigned_radicals_impl() -> Result<OpOutcome, OperationError> {
-    let mut topology = parts.begin_topology_mut()?;
-    let (radicals, changed) = parts.with_topology_read_parts(topology.clone(), |read| {
-        let radicals = read
-            .assign_radicals()
-            .map_err(|source| OperationError::Valence {
-                operation: &ASSIGNED_RADICALS_SPEC,
-                source,
-            })?;
-        let changed = read
-            .atoms()
-            .iter()
-            .zip(radicals.iter().copied())
-            .any(|(atom, radical)| atom.radical_electrons() != radical);
-        Ok((radicals, changed))
-    })?;
+    let valence = parts.with_topology_mut(|parts, topology| {
+        let (radicals, changed) = parts.with_topology_read_parts(topology.clone(), |read| {
+            let radicals = read
+                .assign_radicals()
+                .map_err(|source| OperationError::Valence {
+                    operation: &ASSIGNED_RADICALS_SPEC,
+                    source,
+                })?;
+            let changed = read
+                .atoms()
+                .iter()
+                .zip(radicals.iter().copied())
+                .any(|(atom, radical)| atom.radical_electrons() != radical);
+            Ok((radicals, changed))
+        })?;
 
-    if changed {
-        for (atom, radical) in topology.atoms.iter_mut().zip(radicals) {
-            atom.set_radical_electrons(radical);
+        if changed {
+            for (atom, radical) in topology.atoms.iter_mut().zip(radicals) {
+                atom.set_radical_electrons(radical);
+            }
         }
-    }
 
-    let valence = parts.with_topology_read_parts(topology.clone(), |read| {
-        read.assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
-            .map_err(|source| OperationError::Valence {
-                operation: &ASSIGNED_RADICALS_SPEC,
-                source,
-            })
+        parts.with_topology_read_parts(topology.clone(), |read| {
+            read.assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
+                .map_err(|source| OperationError::Valence {
+                    operation: &ASSIGNED_RADICALS_SPEC,
+                    source,
+                })
+        })
     })?;
-    parts.commit_topology(topology)?;
     parts.record_topology_edit(TopologyEditKind::Local)?;
     parts.set_valence_cache(valence);
     Ok(OpOutcome::Changed)
@@ -255,10 +256,11 @@ pub(super) fn with_chiral_tags_from_structure_impl(
         });
     }
 
-    let _ = parts.begin_topology_mut()?;
-    let _ = parts.begin_properties_mut()?;
-    parts.commit_topology(topology)?;
-    parts.commit_properties(properties)?;
+    parts.with_topology_and_properties_mut(|_parts, working_topology, working_properties| {
+        *working_topology = topology;
+        *working_properties = properties;
+        Ok(())
+    })?;
     parts.record_topology_edit(TopologyEditKind::Local)?;
     parts.clear_cache(DerivedState::STEREO | DerivedState::DRAWING | DerivedState::FINGERPRINT);
     Ok(OpOutcome::Changed)
@@ -291,16 +293,17 @@ pub(super) fn with_2d_coordinates_impl(
             }
         }
     })?;
-    let mut coord_block = parts.begin_coordinates_mut()?;
-    if params.clear_confs {
-        coord_block.conformers_2d.clear();
-    }
-    coord_block.conformers_2d.push(crate::Conformer2D::new(
-        coord_block.conformers_2d.len(),
-        coords,
-    ));
-    coord_block.source_coordinate_dim = Some(crate::CoordinateDimension::TwoD);
-    parts.commit_coordinates(coord_block)?;
+    parts.with_coordinates_mut(|_parts, coord_block| {
+        if params.clear_confs {
+            coord_block.conformers_2d.clear();
+        }
+        coord_block.conformers_2d.push(crate::Conformer2D::new(
+            coord_block.conformers_2d.len(),
+            coords,
+        ));
+        coord_block.source_coordinate_dim = Some(crate::CoordinateDimension::TwoD);
+        Ok(())
+    })?;
     parts.clear_cache(DerivedState::DRAWING);
     Ok(OpOutcome::Changed)
 }
@@ -320,13 +323,14 @@ pub(super) fn with_2d_coordinate_block_impl(
         });
     }
 
-    let mut coord_block = parts.begin_coordinates_mut()?;
-    coord_block.conformers_2d.clear();
-    coord_block
-        .conformers_2d
-        .push(crate::Conformer2D::new(0, coords));
-    coord_block.source_coordinate_dim = Some(crate::CoordinateDimension::TwoD);
-    parts.commit_coordinates(coord_block)?;
+    parts.with_coordinates_mut(|_parts, coord_block| {
+        coord_block.conformers_2d.clear();
+        coord_block
+            .conformers_2d
+            .push(crate::Conformer2D::new(0, coords));
+        coord_block.source_coordinate_dim = Some(crate::CoordinateDimension::TwoD);
+        Ok(())
+    })?;
     parts.clear_cache(DerivedState::DRAWING);
     Ok(OpOutcome::Changed)
 }
@@ -351,16 +355,15 @@ fn source_coordinate_dim_for_block(
 pub(super) fn with_3d_conformer_impl(
     mut params: crate::EmbedParameters,
 ) -> Result<OpOutcome, OperationError> {
-    let coord_block = parts.begin_coordinates_mut()?;
-    let read = parts.begin_topology_read()?;
-    let (coord_block, id) =
-        crate::distgeom::embed_molecule_coordinate_update(read, coord_block, &mut params).map_err(
-            |source| OperationError::DistanceGeometry {
-                operation: &WITH_3D_CONFORMER_SPEC,
-                source,
-            },
-        )?;
-    parts.commit_coordinates(coord_block)?;
+    let id = parts.with_coordinates_mut(|parts, coord_block| {
+        parts.with_coordinate_update_read_parts(|read| {
+            crate::distgeom::embed_molecule_coordinate_update(read, coord_block, &mut params)
+                .map_err(|source| OperationError::DistanceGeometry {
+                    operation: &WITH_3D_CONFORMER_SPEC,
+                    source,
+                })
+        })
+    })?;
     parts.clear_cache(DerivedState::DRAWING);
     if id < 0 {
         Ok(OpOutcome::NoOp {
@@ -387,33 +390,73 @@ pub(super) fn with_3d_coordinates_impl(
         });
     }
 
-    let mut coord_block = parts.begin_coordinates_mut()?;
-    if conformer_index >= coord_block.conformers_3d.len() {
-        return Err(OperationError::InvalidInput {
-            operation: &WITH_3D_COORDINATES_SPEC,
-            message: "3D conformer index out of range",
-        });
-    }
-    let existing = &coord_block.conformers_3d[conformer_index];
-    coord_block.conformers_3d[conformer_index] =
-        crate::Conformer3D::new(existing.id(), coords, existing.is_3d());
-    coord_block.source_coordinate_dim = source_coordinate_dim_for_block(&coord_block);
-    parts.commit_coordinates(coord_block)?;
+    parts.with_coordinates_mut(|_parts, coord_block| {
+        if conformer_index >= coord_block.conformers_3d.len() {
+            return Err(OperationError::InvalidInput {
+                operation: &WITH_3D_COORDINATES_SPEC,
+                message: "3D conformer index out of range",
+            });
+        }
+        let existing = &coord_block.conformers_3d[conformer_index];
+        coord_block.conformers_3d[conformer_index] =
+            crate::Conformer3D::new(existing.id(), coords, existing.is_3d());
+        coord_block.source_coordinate_dim = source_coordinate_dim_for_block(coord_block);
+        Ok(())
+    })?;
     parts.clear_cache(DerivedState::DRAWING);
     Ok(OpOutcome::Changed)
 }
 
+#[mol_op_body(with_atom_position, parts)]
+pub(super) fn with_atom_position_impl(
+    atom: usize,
+    position: [f64; 3],
+    conformer_index: usize,
+) -> Result<OpOutcome, OperationError> {
+    let atom_count = parts.begin_topology_read()?.num_atoms();
+    if atom >= atom_count {
+        return Err(OperationError::MolTransform {
+            operation: &WITH_ATOM_POSITION_SPEC,
+            source: crate::mol_transforms::MolTransformError::AtomIndexOutOfBounds {
+                atom,
+                num_atoms: atom_count,
+            },
+        });
+    }
+    let changed = parts.with_coordinates_mut(|_parts, coordinates| {
+        crate::mol_transforms::set_atom_position_in_coordinate_block(
+            coordinates,
+            atom,
+            position,
+            conformer_index,
+        )
+        .map_err(|source| OperationError::MolTransform {
+            operation: &WITH_ATOM_POSITION_SPEC,
+            source,
+        })
+    })?;
+    parts.clear_cache(DerivedState::DRAWING);
+    Ok(if changed {
+        OpOutcome::Changed
+    } else {
+        OpOutcome::NoOp {
+            reason: "atom position already matched the requested coordinates",
+        }
+    })
+}
+
 #[mol_op_body(with_cleared_3d_conformers, parts)]
 pub(super) fn with_cleared_3d_conformers_impl() -> Result<OpOutcome, OperationError> {
-    let mut coord_block = parts.begin_coordinates_mut()?;
-    let changed = !coord_block.conformers_3d.is_empty()
-        || matches!(
-            coord_block.source_coordinate_dim,
-            Some(crate::CoordinateDimension::ThreeD)
-        );
-    coord_block.conformers_3d.clear();
-    coord_block.source_coordinate_dim = source_coordinate_dim_for_block(&coord_block);
-    parts.commit_coordinates(coord_block)?;
+    let changed = parts.with_coordinates_mut(|_parts, coord_block| {
+        let changed = !coord_block.conformers_3d.is_empty()
+            || matches!(
+                coord_block.source_coordinate_dim,
+                Some(crate::CoordinateDimension::ThreeD)
+            );
+        coord_block.conformers_3d.clear();
+        coord_block.source_coordinate_dim = source_coordinate_dim_for_block(coord_block);
+        Ok(changed)
+    })?;
     parts.clear_cache(DerivedState::DRAWING);
     Ok(if changed {
         OpOutcome::Changed
@@ -433,19 +476,20 @@ pub(super) fn with_3d_conformers_impl(
         operation: &WITH_3D_CONFORMERS_SPEC,
         message: "num_confs does not fit in RDKit unsigned int parameter",
     })?;
-    let coord_block = parts.begin_coordinates_mut()?;
-    let read = parts.begin_topology_read()?;
-    let (coord_block, ids) = crate::distgeom::embed_multiple_confs_coordinate_update(
-        read,
-        coord_block,
-        num_confs,
-        &mut params,
-    )
-    .map_err(|source| OperationError::DistanceGeometry {
-        operation: &WITH_3D_CONFORMERS_SPEC,
-        source,
+    let ids = parts.with_coordinates_mut(|parts, coord_block| {
+        parts.with_coordinate_update_read_parts(|read| {
+            crate::distgeom::embed_multiple_confs_coordinate_update(
+                read,
+                coord_block,
+                num_confs,
+                &mut params,
+            )
+            .map_err(|source| OperationError::DistanceGeometry {
+                operation: &WITH_3D_CONFORMERS_SPEC,
+                source,
+            })
+        })
     })?;
-    parts.commit_coordinates(coord_block)?;
     parts.clear_cache(DerivedState::DRAWING);
     if ids.is_empty() {
         Ok(OpOutcome::NoOp {
@@ -472,18 +516,19 @@ pub(super) fn with_added_3d_conformer_impl(
         });
     }
 
-    let mut coord_block = parts.begin_coordinates_mut()?;
-    let next_id = coord_block
-        .conformers_3d
-        .iter()
-        .map(crate::Conformer3D::id)
-        .max()
-        .map_or(0, |max_id| max_id + 1);
-    coord_block
-        .conformers_3d
-        .push(crate::Conformer3D::new(next_id, coords, is_3d));
-    coord_block.source_coordinate_dim = source_coordinate_dim_for_block(&coord_block);
-    parts.commit_coordinates(coord_block)?;
+    parts.with_coordinates_mut(|_parts, coord_block| {
+        let next_id = coord_block
+            .conformers_3d
+            .iter()
+            .map(crate::Conformer3D::id)
+            .max()
+            .map_or(0, |max_id| max_id + 1);
+        coord_block
+            .conformers_3d
+            .push(crate::Conformer3D::new(next_id, coords, is_3d));
+        coord_block.source_coordinate_dim = source_coordinate_dim_for_block(coord_block);
+        Ok(())
+    })?;
     parts.clear_cache(DerivedState::DRAWING);
     Ok(OpOutcome::Changed)
 }
@@ -504,13 +549,14 @@ pub(super) fn with_only_3d_conformer_impl(
         });
     }
 
-    let mut coord_block = parts.begin_coordinates_mut()?;
-    coord_block.conformers_3d.clear();
-    coord_block
-        .conformers_3d
-        .push(crate::Conformer3D::new(0, coords, is_3d));
-    coord_block.source_coordinate_dim = source_coordinate_dim_for_block(&coord_block);
-    parts.commit_coordinates(coord_block)?;
+    parts.with_coordinates_mut(|_parts, coord_block| {
+        coord_block.conformers_3d.clear();
+        coord_block
+            .conformers_3d
+            .push(crate::Conformer3D::new(0, coords, is_3d));
+        coord_block.source_coordinate_dim = source_coordinate_dim_for_block(coord_block);
+        Ok(())
+    })?;
     parts.clear_cache(DerivedState::DRAWING);
     Ok(OpOutcome::Changed)
 }

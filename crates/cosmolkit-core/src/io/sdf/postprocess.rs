@@ -2969,7 +2969,7 @@ mod tests {
         let mut molecule = difluoroethene_with_optional_hydrogen(false, false);
 
         molecule = detect_bond_stereochemistry(molecule, SdfReadParams::default()).unwrap();
-        crate::smiles::assign_double_bond_stereo_from_directions(&mut molecule).unwrap();
+        crate::smiles::set_bond_stereo_from_directions(&mut molecule).unwrap();
 
         assert!(matches!(
             molecule.bonds()[0].stereo(),
@@ -2986,7 +2986,7 @@ mod tests {
         let mut molecule = difluoroethene_with_optional_hydrogen(true, false);
 
         molecule = detect_bond_stereochemistry(molecule, SdfReadParams::default()).unwrap();
-        crate::smiles::assign_double_bond_stereo_from_directions(&mut molecule).unwrap();
+        crate::smiles::set_bond_stereo_from_directions(&mut molecule).unwrap();
 
         assert_eq!(molecule.num_atoms(), 4);
         assert!(matches!(

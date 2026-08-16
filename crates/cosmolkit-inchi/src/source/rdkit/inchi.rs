@@ -91,7 +91,7 @@ pub enum ChiralTag {
     Octahedral = 8,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct AdapterAtom {
     pub atomic_number: i32,
     pub formal_charge: i32,
@@ -102,7 +102,32 @@ pub struct AdapterAtom {
     pub no_implicit: bool,
     pub chiral_tag: ChiralTag,
     pub cip_rank: Option<u32>,
+    /// RDKit's per-atom property-cache value. This is deliberately separate
+    /// from the current graph: `InchiToMol(..., sanitize=false)` can return a
+    /// cache computed before `cleanUp()` rewrites a bond.
+    pub cached_explicit_valence: Option<i32>,
+    pub cached_implicit_valence: Option<i32>,
 }
+
+// Property-cache entries are derived observations, not part of the adapter's
+// chemical graph identity. Keeping them out of equality preserves the
+// pre-cache `AdapterAtom` equality contract; parity tests inspect the cached
+// values explicitly where RDKit exposes them.
+impl PartialEq for AdapterAtom {
+    fn eq(&self, other: &Self) -> bool {
+        self.atomic_number == other.atomic_number
+            && self.formal_charge == other.formal_charge
+            && self.num_explicit_hydrogens == other.num_explicit_hydrogens
+            && self.is_aromatic == other.is_aromatic
+            && self.isotope == other.isotope
+            && self.num_radical_electrons == other.num_radical_electrons
+            && self.no_implicit == other.no_implicit
+            && self.chiral_tag == other.chiral_tag
+            && self.cip_rank == other.cip_rank
+    }
+}
+
+impl Eq for AdapterAtom {}
 
 impl Default for AdapterAtom {
     fn default() -> Self {
@@ -116,6 +141,8 @@ impl Default for AdapterAtom {
             no_implicit: false,
             chiral_tag: ChiralTag::Unspecified,
             cip_rank: None,
+            cached_explicit_valence: None,
+            cached_implicit_valence: None,
         }
     }
 }
@@ -1349,7 +1376,10 @@ impl From<AdapterValenceError> for AdapterCleanup5Error {
     }
 }
 
-fn cleanup_explicit_valence(mol: &AdapterMol, atom_index: u32) -> Result<i32, AdapterValenceError> {
+fn cleanup_explicit_valence(
+    mol: &mut AdapterMol,
+    atom_index: u32,
+) -> Result<i32, AdapterValenceError> {
     let mut valence = f64::from(mol.atoms[atom_index as usize].num_explicit_hydrogens);
     for &(_, bond_index) in &mol.adjacency[atom_index as usize] {
         let bond = &mol.bonds[bond_index as usize];
@@ -1384,7 +1414,13 @@ fn cleanup_explicit_valence(mol: &AdapterMol, atom_index: u32) -> Result<i32, Ad
         };
         valence += contribution;
     }
-    Ok((valence + 0.1).round() as i32)
+    let valence = (valence + 0.1).round() as i32;
+    // RDKit✔️✔️: atom->calcExplicitValence(false);
+    // `calcExplicitValence()` writes `d_explicitValence`. Some clean-up
+    // branches intentionally do not call it again after changing a bond, so
+    // retaining this value is observable when sanitization is disabled.
+    mol.atoms[atom_index as usize].cached_explicit_valence = Some(valence);
+    Ok(valence)
 }
 
 fn bond_index_between(mol: &AdapterMol, first: u32, second: u32) -> Option<u32> {
@@ -6343,6 +6379,8 @@ mod tests {
                             .expect("no_implicit must be bool"),
                         chiral_tag: mol_to_inchi_oracle_chiral_tag(&field["chiral_tag"], case_id),
                         cip_rank: None,
+                        cached_explicit_valence: None,
+                        cached_implicit_valence: None,
                     }
                 })
                 .collect::<Vec<_>>();
@@ -6724,6 +6762,16 @@ mod tests {
                 )
                 .collect(),
         )
+    }
+
+    #[test]
+    fn cleanup_explicit_valence_records_source_property_cache_write() {
+        let mut mol = graph(&[(7, 0), (8, 0)], &[(0, 1, BondType::Double)]);
+        mol.atoms[0].num_explicit_hydrogens = 3;
+
+        assert_eq!(mol.atoms[0].cached_explicit_valence, None);
+        assert_eq!(cleanup_explicit_valence(&mut mol, 0), Ok(5));
+        assert_eq!(mol.atoms[0].cached_explicit_valence, Some(5));
     }
 
     #[derive(Clone)]
@@ -8140,6 +8188,8 @@ mod tests {
                             .expect("no_implicit must be bool"),
                         chiral_tag: mol_to_inchi_oracle_chiral_tag(&field["chiral_tag"], case_id),
                         cip_rank: None,
+                        cached_explicit_valence: None,
+                        cached_implicit_valence: None,
                     }
                 })
                 .collect::<Vec<_>>();
@@ -8761,6 +8811,8 @@ mod tests {
                         } else {
                             Some(unsigned(&atom["cip_rank"], "cip_rank", case_id))
                         },
+                        cached_explicit_valence: None,
+                        cached_implicit_valence: None,
                     }
                 })
                 .collect();

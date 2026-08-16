@@ -3469,6 +3469,31 @@ Use ``Molecule.from_smiles("CCO")`` to create a molecule and
     }
 
     #[classmethod]
+    #[pyo3(signature = (inchi, *, sanitize=true, remove_hs=true))]
+    #[doc = r#"
+Create a molecule from an InChI string.
+
+Returns ``None`` when the source API returns no graph or molecule
+sanitization rejects the parsed graph.
+"#]
+    fn from_inchi(
+        _cls: &Bound<'_, PyType>,
+        inchi: &str,
+        sanitize: bool,
+        remove_hs: bool,
+    ) -> PyResult<Option<Self>> {
+        let output = match cosmolkit_core::mol_from_inchi(inchi.as_bytes(), sanitize, remove_hs) {
+            Ok(output) => output,
+            Err(error) if error.kind == cosmolkit_core::InchiErrorKind::SanitizeFailed => {
+                return Ok(None);
+            }
+            Err(error) => return Err(inchi_pyerr(error)),
+        };
+        emit_inchi_diagnostics(&output.diagnostics)?;
+        Ok(output.molecule.map(|inner| Self { inner }))
+    }
+
+    #[classmethod]
     #[pyo3(signature = (text, *, sanitize=true, remove_hs=true, flavor=0, proximity_bonding=true))]
     #[doc = r#"
 Create a molecule from a PDB block.
@@ -4025,8 +4050,9 @@ Add explicit hydrogens in place.
 This is the in-place version of ``with_hydrogens()``.
 
 All public in-place ``Molecule`` methods end with ``_``. If this method returns
-an error, the receiver is not guaranteed to equal its pre-call value; use
-``with_hydrogens()`` when failure-preserving value semantics are required.
+an error, it does not roll back and may retain partial changes, but its internal
+storage remains complete. Use ``with_hydrogens()`` when failure-preserving value
+semantics are required.
 "#]
     fn add_hydrogens_(&mut self) -> PyResult<()> {
         self.inner
@@ -4159,9 +4185,12 @@ Return the number of bonds.
 Return read-only atom feature records.
 "#]
     fn atoms(&self) -> Vec<Atom> {
-        let assignment =
-            cosmolkit_core::assign_valence(&self.inner, cosmolkit_core::ValenceModel::RdkitLike)
-                .ok();
+        let assignment = cosmolkit_core::cached_valence_assignment(&self.inner)
+            .cloned()
+            .or_else(|| {
+                cosmolkit_core::assign_valence(&self.inner, cosmolkit_core::ValenceModel::RdkitLike)
+                    .ok()
+            });
         let mut degrees = vec![0usize; self.inner.atoms().len()];
         for bond in self.inner.bonds() {
             degrees[bond.begin().index()] += 1;
@@ -4927,6 +4956,28 @@ rooted_at_atom : int, optional
                 "Molecule.to_smiles(...) is not implemented for these parameters yet: {err}"
             ))
         })
+    }
+
+    #[pyo3(signature = (options = ""))]
+    #[doc = r#"
+Return the molecule's InChI without mutating the molecule.
+"#]
+    fn to_inchi(&self, options: &str) -> PyResult<String> {
+        let options = (!options.is_empty()).then_some(options.as_bytes());
+        let output = cosmolkit_core::mol_to_inchi(&self.inner, options).map_err(inchi_pyerr)?;
+        emit_inchi_diagnostics(&output.diagnostics)?;
+        inchi_output_string("mol_to_inchi", "InChI", output.inchi)
+    }
+
+    #[pyo3(signature = (options = ""))]
+    #[doc = r#"
+Return the molecule's InChIKey without mutating the molecule.
+"#]
+    fn to_inchi_key(&self, options: &str) -> PyResult<String> {
+        let options = (!options.is_empty()).then_some(options.as_bytes());
+        let output = cosmolkit_core::mol_to_inchi_key(&self.inner, options).map_err(inchi_pyerr)?;
+        emit_inchi_diagnostics(&output.diagnostics)?;
+        inchi_output_string("mol_to_inchi_key", "InChIKey", output.key)
     }
 
     #[pyo3(signature = (path, format=None, include_stereo=true, kekulize=true))]
@@ -7313,34 +7364,13 @@ fn expand_one_letter(
     Ok(cosmolkit_core::expand_one_letter(c, kind).map(str::to_string))
 }
 
-#[pyfunction(name = "MolToInchi", signature = (molecule, options = ""))]
-#[doc = r#"
-Generate an InChI for a molecule without mutating the source molecule.
-"#]
-fn chem_mol_to_inchi(molecule: &Molecule, options: &str) -> PyResult<String> {
-    let options = (!options.is_empty()).then_some(options.as_bytes());
-    let output = cosmolkit_core::mol_to_inchi(&molecule.inner, options).map_err(inchi_pyerr)?;
-    emit_inchi_diagnostics(&output.diagnostics)?;
-    inchi_output_string("mol_to_inchi", "InChI", output.inchi)
-}
-
-#[pyfunction(name = "MolToInchiKey", signature = (molecule, options = ""))]
-#[doc = r#"
-Generate an InChIKey for a molecule without mutating the source molecule.
-"#]
-fn chem_mol_to_inchi_key(molecule: &Molecule, options: &str) -> PyResult<String> {
-    let options = (!options.is_empty()).then_some(options.as_bytes());
-    let output = cosmolkit_core::mol_to_inchi_key(&molecule.inner, options).map_err(inchi_pyerr)?;
-    emit_inchi_diagnostics(&output.diagnostics)?;
-    inchi_output_string("mol_to_inchi_key", "InChIKey", output.key)
-}
-
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
-#[pyfunction(name = "InchiToInchiKey")]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pyfunction]
 #[doc = r#"
 Generate an InChIKey directly from an InChI string.
 "#]
-fn inchi_to_inchi_key_py(inchi: &str) -> PyResult<Option<String>> {
+fn inchi_to_key(inchi: &str) -> PyResult<Option<String>> {
     let output = cosmolkit_core::inchi_to_inchi_key(inchi.as_bytes()).map_err(inchi_pyerr)?;
     let failed = output.key.is_empty()
         && output
@@ -7352,38 +7382,6 @@ fn inchi_to_inchi_key_py(inchi: &str) -> PyResult<Option<String>> {
         return Ok(None);
     }
     inchi_output_string("inchi_to_inchi_key", "InChIKey", output.key).map(Some)
-}
-
-#[pyfunction(name = "MolFromInchi", signature = (inchi, sanitize = true, remove_hs = true))]
-#[doc = r#"
-Parse an InChI into a molecule, returning ``None`` when the source API returns no graph.
-"#]
-fn chem_mol_from_inchi(inchi: &str, sanitize: bool, remove_hs: bool) -> PyResult<Option<Molecule>> {
-    let output = match cosmolkit_core::mol_from_inchi(inchi.as_bytes(), sanitize, remove_hs) {
-        Ok(output) => output,
-        Err(error) if error.kind == cosmolkit_core::InchiErrorKind::SanitizeFailed => {
-            // RDKit's Python MolFromInchi catches the ValueError translated
-            // from MolSanitizeException and returns None.
-            return Ok(None);
-        }
-        Err(error) => return Err(inchi_pyerr(error)),
-    };
-    emit_inchi_diagnostics(&output.diagnostics)?;
-    Ok(output.molecule.map(|inner| Molecule { inner }))
-}
-
-fn add_chem_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    let py = m.py();
-    let submodule = PyModule::new(py, "Chem")?;
-    submodule.add_function(wrap_pyfunction!(chem_mol_to_inchi, &submodule)?)?;
-    submodule.add_function(wrap_pyfunction!(chem_mol_to_inchi_key, &submodule)?)?;
-    submodule.add_function(wrap_pyfunction!(chem_mol_from_inchi, &submodule)?)?;
-    py.import("sys")?
-        .getattr("modules")?
-        .set_item("cosmolkit.Chem", &submodule)?;
-    m.add_submodule(&submodule)?;
-    m.add("Chem", submodule)?;
-    Ok(())
 }
 
 #[pymodule]
@@ -7462,8 +7460,7 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(expand_protein_one_letter, m)?)?;
     m.add_function(wrap_pyfunction!(expand_one_letter_sequence, m)?)?;
     m.add_function(wrap_pyfunction!(expand_protein_one_letter_string, m)?)?;
-    m.add_function(wrap_pyfunction!(inchi_to_inchi_key_py, m)?)?;
-    add_chem_module(m)?;
+    m.add_function(wrap_pyfunction!(inchi_to_key, m)?)?;
     confseq_py::add_confseq_module(m)?;
     Ok(())
 }

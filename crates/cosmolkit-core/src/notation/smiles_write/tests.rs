@@ -1483,6 +1483,57 @@ fn prepare_plain_smiles_molecule_initializes_fast_ring_info_for_fused_ring_stere
 }
 
 #[test]
+fn writer_fragment_temp_graph_resets_ring_info_like_rdkit() {
+    let mut molecule = Molecule::from_smiles("C1CCCCC1.[Na+]").unwrap();
+    assert!(molecule.derived_cache().rings.is_some());
+
+    clear_fragment_temp_molecule_computed_stereo_props_for_writer(&mut molecule);
+
+    assert!(molecule.derived_cache().rings.is_none());
+}
+
+#[test]
+fn writer_fragment_reassignment_sets_double_bond_stereo_from_directions_like_rdkit() {
+    let mut molecule = Molecule::from_smiles_with_sanitize("FC=CF.[Na+]", false).unwrap();
+    let double_bond = molecule
+        .bonds()
+        .iter()
+        .find(|bond| bond.order() == BondOrder::Double)
+        .map(|bond| bond.id())
+        .unwrap();
+    let double = &molecule.bonds()[double_bond.index()];
+    let begin = double.begin();
+    let end = double.end();
+    let begin_directed = incident_bonds(&molecule, begin)
+        .into_iter()
+        .find(|bond| *bond != double_bond)
+        .unwrap();
+    let end_directed = incident_bonds(&molecule, end)
+        .into_iter()
+        .find(|bond| *bond != double_bond)
+        .unwrap();
+    molecule.topology_block_mut().bonds[begin_directed.index()]
+        .set_direction(BondDirection::EndUpRight);
+    molecule.topology_block_mut().bonds[end_directed.index()]
+        .set_direction(BondDirection::EndDownRight);
+    molecule.topology_block_mut().bonds[double_bond.index()].set_stereo(BondStereo::None);
+    molecule.topology_block_mut().bonds[double_bond.index()].set_stereo_atoms(None);
+    molecule.properties_mut().set_prop("_StereochemDone", "1");
+
+    prepare_plain_smiles_molecule(&mut molecule, &SmilesWriteParams::default()).unwrap();
+
+    let double = &molecule.bonds()[double_bond.index()];
+    assert_eq!(double.stereo(), BondStereo::Z);
+    assert_eq!(
+        double.stereo_atoms(),
+        Some([
+            bond_other_atom(&molecule.bonds()[begin_directed.index()], begin).unwrap(),
+            bond_other_atom(&molecule.bonds()[end_directed.index()], end).unwrap(),
+        ])
+    );
+}
+
+#[test]
 #[ignore = "debug helper for upstream/rust checkpoint alignment"]
 fn debug_probe_rust_writer_fused_ring_chain() {
     let input = "C1/C=C/C2=C/CCCC2C1";

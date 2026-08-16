@@ -5311,7 +5311,7 @@ pub fn rerank_atoms(mol: &Molecule, current_ranks: &[u32]) -> Result<Vec<u32>, S
 // RDKit✔️✔️:     mol.getAtomWithIdx(i)->setProp(common_properties::_CIPRank, ranks[i]);
 // RDKit✔️✔️:   }
 /// RDKit✔️✔️: rerankAtoms() plus atom-property writeback.
-pub fn rerank_atoms_in_place(
+pub(crate) fn rerank_atoms_in_place(
     mol: &mut Molecule,
     current_ranks: &[u32],
 ) -> Result<Vec<u32>, StereoError> {

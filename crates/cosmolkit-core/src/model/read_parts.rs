@@ -6,12 +6,37 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
+pub(crate) struct MoleculeReadAccess(u8);
+
+impl MoleculeReadAccess {
+    pub(crate) const NONE: Self = Self(0);
+    pub(crate) const TOPOLOGY: Self = Self(1 << 0);
+    pub(crate) const COORDINATES: Self = Self(1 << 1);
+    pub(crate) const PROPERTIES: Self = Self(1 << 2);
+    pub(crate) const DERIVED_CACHE: Self = Self(1 << 3);
+    pub(crate) const ALL: Self =
+        Self(Self::TOPOLOGY.0 | Self::COORDINATES.0 | Self::PROPERTIES.0 | Self::DERIVED_CACHE.0);
+
+    #[must_use]
+    pub(crate) const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    #[must_use]
+    const fn contains(self, other: Self) -> bool {
+        (self.0 & other.0) == other.0
+    }
+}
+
+#[derive(Clone, Copy)]
 pub(crate) struct MoleculeReadParts<'a> {
     topology: &'a TopologyBlock,
     coordinates: &'a CoordinateBlock,
     properties: &'a MoleculeProperties,
     derived_cache: &'a DerivedCacheBlock,
     capabilities: MoleculeCapabilities,
+    #[cfg(feature = "op-contracts")]
+    access: MoleculeReadAccess,
 }
 
 impl<'a> MoleculeReadParts<'a> {
@@ -23,12 +48,21 @@ impl<'a> MoleculeReadParts<'a> {
     // operation policy; do not expose the underlying Molecule.
     #[must_use]
     pub(crate) fn from_molecule(molecule: &'a Molecule) -> Self {
-        Self::from_blocks(
+        Self::from_molecule_with_access(molecule, MoleculeReadAccess::ALL)
+    }
+
+    #[must_use]
+    pub(crate) fn from_molecule_with_access(
+        molecule: &'a Molecule,
+        access: MoleculeReadAccess,
+    ) -> Self {
+        Self::from_blocks_with_access(
             molecule.topology_block(),
             molecule.coordinate_block(),
             molecule.properties(),
             molecule.derived_cache(),
             molecule.capabilities(),
+            access,
         )
     }
 
@@ -40,57 +74,103 @@ impl<'a> MoleculeReadParts<'a> {
         derived_cache: &'a DerivedCacheBlock,
         capabilities: MoleculeCapabilities,
     ) -> Self {
+        Self::from_blocks_with_access(
+            topology,
+            coordinates,
+            properties,
+            derived_cache,
+            capabilities,
+            MoleculeReadAccess::ALL,
+        )
+    }
+
+    #[must_use]
+    pub(crate) const fn from_blocks_with_access(
+        topology: &'a TopologyBlock,
+        coordinates: &'a CoordinateBlock,
+        properties: &'a MoleculeProperties,
+        derived_cache: &'a DerivedCacheBlock,
+        capabilities: MoleculeCapabilities,
+        access: MoleculeReadAccess,
+    ) -> Self {
+        #[cfg(not(feature = "op-contracts"))]
+        let _ = access;
         Self {
             topology,
             coordinates,
             properties,
             derived_cache,
             capabilities,
+            #[cfg(feature = "op-contracts")]
+            access,
+        }
+    }
+
+    #[inline]
+    fn assert_access(self, required: MoleculeReadAccess, block: &'static str) {
+        #[cfg(feature = "op-contracts")]
+        assert!(
+            self.access.contains(required),
+            "operation read capability does not permit access to the {block} block"
+        );
+        #[cfg(not(feature = "op-contracts"))]
+        {
+            let _ = required;
+            let _ = block;
         }
     }
 
     #[must_use]
     pub(crate) fn atoms(self) -> &'a [Atom] {
+        self.assert_access(MoleculeReadAccess::TOPOLOGY, "topology");
         &self.topology.atoms
     }
 
     #[must_use]
     pub(crate) fn topology(self) -> &'a TopologyBlock {
+        self.assert_access(MoleculeReadAccess::TOPOLOGY, "topology");
         self.topology
     }
 
     #[must_use]
     pub(crate) fn coordinates(self) -> &'a CoordinateBlock {
+        self.assert_access(MoleculeReadAccess::COORDINATES, "coordinates");
         self.coordinates
     }
 
     #[must_use]
     pub(crate) fn bonds(self) -> &'a [Bond] {
+        self.assert_access(MoleculeReadAccess::TOPOLOGY, "topology");
         &self.topology.bonds
     }
 
     #[must_use]
     pub(crate) fn adjacency(self) -> &'a AdjacencyList {
+        self.assert_access(MoleculeReadAccess::TOPOLOGY, "topology");
         &self.topology.adjacency
     }
 
     #[must_use]
     pub(crate) fn atom(self, atom: AtomId) -> Option<&'a Atom> {
+        self.assert_access(MoleculeReadAccess::TOPOLOGY, "topology");
         self.topology.atoms.get(atom.index())
     }
 
     #[must_use]
     pub(crate) fn num_atoms(self) -> usize {
+        self.assert_access(MoleculeReadAccess::TOPOLOGY, "topology");
         self.topology.atoms.len()
     }
 
     #[must_use]
     pub(crate) fn num_bonds(self) -> usize {
+        self.assert_access(MoleculeReadAccess::TOPOLOGY, "topology");
         self.topology.bonds.len()
     }
 
     #[must_use]
     pub(crate) fn coordinates_2d(self) -> Option<&'a [[f64; 2]]> {
+        self.assert_access(MoleculeReadAccess::COORDINATES, "coordinates");
         self.coordinates
             .conformers_2d
             .first()
@@ -99,27 +179,32 @@ impl<'a> MoleculeReadParts<'a> {
 
     #[must_use]
     pub(crate) fn conformers_3d(self) -> &'a [crate::Conformer3D] {
+        self.assert_access(MoleculeReadAccess::COORDINATES, "coordinates");
         &self.coordinates.conformers_3d
     }
 
     #[must_use]
     pub(crate) fn substance_groups(self) -> &'a [SubstanceGroup] {
+        self.assert_access(MoleculeReadAccess::TOPOLOGY, "topology");
         &self.topology.substance_groups
     }
 
     #[allow(dead_code)]
     #[must_use]
     pub(crate) fn stereo_groups(self) -> &'a [StereoGroup] {
+        self.assert_access(MoleculeReadAccess::TOPOLOGY, "topology");
         &self.topology.stereo_groups
     }
 
     #[must_use]
     pub(crate) fn properties(self) -> &'a MoleculeProperties {
+        self.assert_access(MoleculeReadAccess::PROPERTIES, "properties");
         self.properties
     }
 
     #[must_use]
     pub(crate) fn derived_cache(self) -> &'a DerivedCacheBlock {
+        self.assert_access(MoleculeReadAccess::DERIVED_CACHE, "derived cache");
         self.derived_cache
     }
 

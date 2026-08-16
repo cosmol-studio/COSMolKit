@@ -32,6 +32,7 @@ class ExpectedSchemaTests(unittest.TestCase):
         valid = {
             "error": None,
             "inchi": "InChI=1S/CH4/h1H4",
+            "mol_from_inchi_branches": {},
             "rdkit_ok": True,
             "row": 1,
             "smiles": "C",
@@ -53,6 +54,7 @@ class ExpectedSchemaTests(unittest.TestCase):
         record = {
             "error": None,
             "inchi": "InChI=1S/CH4/h1H4",
+            "mol_from_inchi_branches": {},
             "rdkit_ok": True,
             "row": 1,
             "smiles": "C",

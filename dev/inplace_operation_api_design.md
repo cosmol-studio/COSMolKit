@@ -52,9 +52,37 @@ non-mutating value semantics.
   mutation to preserve value semantics.
 - Clones required by the operation implementation itself remain the
   implementation's responsibility and are not hidden by the in-place API.
+
+## Error Semantics
+
+In-place operations provide a basic failure guarantee, not transactional
+rollback:
+
 - If an in-place operation returns an error, the receiver is not guaranteed to
-  equal its pre-call value. Users that require failure-preserving value
-  semantics should call the non-mutating method.
+  equal its pre-call value. It may retain the partial changes made before the
+  source algorithm reported the error.
+- The receiver's internal storage must remain complete after a returned error.
+  Every block checked out from the working molecule must be returned, and an
+  operation-system placeholder or default block must never escape into the
+  receiver as an error-path artifact.
+- Internal completeness does not mean that sanitization, kekulization,
+  stereochemistry assignment, or another requested chemistry operation
+  completed successfully. Callers must still handle the returned error.
+- Derived state affected by partial changes must be invalidated or updated
+  according to the registered operation contract.
+- The operation system must not preserve a full old `Molecule`, clone writable
+  blocks solely for rollback, or otherwise turn the in-place path into the
+  non-mutating COW path.
+
+Fallible operation bodies must use scoped mutable block capabilities. These
+capabilities return the current owned blocks to the working molecule on both
+`Ok` and `Err` before the public method returns. A raw `begin_*_mut()` value
+must not cross a fallible `?` path before its matching `commit_*()`.
+
+Users that require failure-preserving value semantics should call the
+non-mutating method. An individual operation may document and test a stronger
+transactional guarantee when all of its fallible work happens before mutation,
+but that is not the general in-place contract.
 
 ## Contract State
 

@@ -40,4 +40,5 @@ resvg = "0.47"
 
 [dev-dependencies]
 cosmolkit-test-support = { path = "../cosmolkit-test-support" }
+sha2 = "0.10"
 tempfile = "3"

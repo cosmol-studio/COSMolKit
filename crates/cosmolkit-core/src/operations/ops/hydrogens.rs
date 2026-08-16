@@ -4,32 +4,24 @@ use super::*;
 pub(super) fn with_hydrogens_impl(
     params: crate::hydrogens::AddHsParams,
 ) -> Result<OpOutcome, OperationError> {
-    let mut topology = parts.begin_topology_mut()?;
-    let mut coordinates = parts.begin_coordinates_mut()?;
-    let mut properties = parts.begin_properties_mut()?;
-    let assignment = parts.with_block_read_parts(
-        topology.clone(),
-        coordinates.clone(),
-        properties.clone(),
-        |read| {
-            read.add_hs_assignment(&params)
-                .map_err(|source| OperationError::AddHydrogens {
-                    operation: &WITH_HYDROGENS_SPEC,
-                    source,
-                })
+    let changed = parts.with_topology_coordinates_properties_mut(
+        |parts, topology, coordinates, properties| {
+            let assignment = parts.with_block_read_parts(
+                topology.clone(),
+                coordinates.clone(),
+                properties.clone(),
+                |read| {
+                    read.add_hs_assignment(&params)
+                        .map_err(|source| OperationError::AddHydrogens {
+                            operation: &WITH_HYDROGENS_SPEC,
+                            source,
+                        })
+                },
+            )?;
+
+            apply_add_hs_assignment(parts, topology, coordinates, properties, &assignment)
         },
     )?;
-
-    let changed = apply_add_hs_assignment(
-        parts,
-        &mut topology,
-        &mut coordinates,
-        &mut properties,
-        &assignment,
-    )?;
-    parts.commit_topology(topology)?;
-    parts.commit_coordinates(coordinates)?;
-    parts.commit_properties(properties)?;
     parts.prove_preserved(
         DerivedState::RINGS | DerivedState::RING_FAMILIES,
         PreservationProof::LeafAtomAppend,
@@ -668,48 +660,47 @@ fn without_hydrogens_apply(
     sanitize: bool,
     operation: &'static MoleculeOpSpec,
 ) -> Result<OpOutcome, OperationError> {
-    let mut topology = parts.begin_topology_mut()?;
-    let mut coordinates = parts.begin_coordinates_mut()?;
-    let mut properties = parts.begin_properties_mut()?;
-    let assignment = parts.with_block_read_parts(
-        topology.clone(),
-        coordinates.clone(),
-        properties.clone(),
-        |read| {
-            read.remove_hs_assignment(params, sanitize)
-                .map_err(|source| OperationError::RemoveHydrogens { operation, source })
+    let changed = parts.with_topology_coordinates_properties_mut(
+        |parts, topology, coordinates, properties| {
+            let assignment = parts.with_block_read_parts(
+                topology.clone(),
+                coordinates.clone(),
+                properties.clone(),
+                |read| {
+                    read.remove_hs_assignment(params, sanitize)
+                        .map_err(|source| OperationError::RemoveHydrogens { operation, source })
+                },
+            )?;
+
+            let mut changed = apply_remove_hs_assignment(topology, &assignment, operation)?;
+            let atoms_to_remove = assignment.atoms_to_remove.clone();
+            if atoms_to_remove.is_empty() {
+                let atom_count = topology.atoms.len();
+                let bond_count = topology.bonds.len();
+                parts.record_topology_edit(TopologyEditKind::Compacting)?;
+                parts.record_topology_mapping(TopologyMapping::identity(atom_count, bond_count));
+                parts.clear_cache(WITHOUT_HYDROGENS_SPEC.needs_update());
+            } else {
+                let mapping = topology.remove_atoms_with_mapping(&atoms_to_remove);
+                coordinates.remap_topology(&mapping);
+                properties.remap_topology(&mapping);
+                parts.record_topology_mapping(mapping);
+                parts.record_topology_edit(TopologyEditKind::Compacting)?;
+                parts.clear_cache(WITHOUT_HYDROGENS_SPEC.needs_update());
+                changed = true;
+            }
+            if assignment.sanitize_after_removal {
+                changed |= sanitize_after_remove_hs_removal(
+                    parts,
+                    topology,
+                    coordinates,
+                    properties,
+                    operation,
+                )?;
+            }
+            Ok(changed)
         },
     )?;
-
-    let mut changed = apply_remove_hs_assignment(&mut topology, &assignment, operation)?;
-    let atoms_to_remove = assignment.atoms_to_remove.clone();
-    if atoms_to_remove.is_empty() {
-        let atom_count = topology.atoms.len();
-        let bond_count = topology.bonds.len();
-        parts.record_topology_edit(TopologyEditKind::Compacting)?;
-        parts.record_topology_mapping(TopologyMapping::identity(atom_count, bond_count));
-        parts.clear_cache(WITHOUT_HYDROGENS_SPEC.needs_update());
-    } else {
-        let mapping = topology.remove_atoms_with_mapping(&atoms_to_remove);
-        coordinates.remap_topology(&mapping);
-        properties.remap_topology(&mapping);
-        parts.record_topology_mapping(mapping);
-        parts.record_topology_edit(TopologyEditKind::Compacting)?;
-        parts.clear_cache(WITHOUT_HYDROGENS_SPEC.needs_update());
-        changed = true;
-    }
-    if assignment.sanitize_after_removal {
-        changed |= sanitize_after_remove_hs_removal(
-            parts,
-            &mut topology,
-            &coordinates,
-            &properties,
-            operation,
-        )?;
-    }
-    parts.commit_topology(topology)?;
-    parts.commit_coordinates(coordinates)?;
-    parts.commit_properties(properties)?;
 
     Ok(if changed {
         OpOutcome::Changed

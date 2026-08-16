@@ -6622,8 +6622,10 @@ exit_function:
             }
         };
 
-        let endpoint_result =
-            (|| -> Result<(Vec<AT_NUMB>, Vec<AT_NUMB>, i32, i32, i32, i32), SourceHeapError> {
+        let endpoint_result = (|| -> Result<
+            (Vec<AT_NUMB>, usize, Vec<AT_NUMB>, usize, i32, i32, i32, i32),
+            SourceHeapError,
+        > {
                 let tautomer_count1 = usize::try_from(i1.lenTautomer)
                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 let tautomer_count2 = usize::try_from(i2.lenTautomer)
@@ -6645,8 +6647,22 @@ exit_function:
                         .to_vec()
                 };
 
-                let mut endpoints1 = Vec::new();
-                let mut endpoints2 = Vec::new();
+                // INCHI✔️❌: AT_NUMB* pe1 = (AT_NUMB*)inchi_malloc(((long long)i1->lenTautomer + 1) * sizeof(pe1[0]));
+                // INCHI✔️❌: AT_NUMB* pe2 = (AT_NUMB*)inchi_malloc(((long long)i2->lenTautomer + 1) * sizeof(pe2[0]));
+                // Keep the complete source allocation extents, not only the initialized
+                // endpoint prefixes. The later official `pe2[j1]` access is measured
+                // against this allocation. `inchi_malloc`'s SourceHeap model supplies
+                // zero-filled bytes for the otherwise uninitialized tail.
+                let endpoint_extent1 = tautomer_count1
+                    .checked_add(1)
+                    .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+                let endpoint_extent2 = tautomer_count2
+                    .checked_add(1)
+                    .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+                let mut endpoints1 = vec![0; endpoint_extent1];
+                let mut endpoints2 = vec![0; endpoint_extent2];
+                let mut endpoint_count1 = 0_usize;
+                let mut endpoint_count2 = 0_usize;
                 let mut taut_h1 = 0_i32;
                 let mut taut_h2 = 0_i32;
                 let mut taut_m1 = 0_i32;
@@ -6665,11 +6681,17 @@ exit_function:
                     taut_m1 = taut_m1.wrapping_add(i32::from(
                         *record.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?,
                     ));
-                    endpoints1.extend_from_slice(
-                        record
-                            .get(2..length)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    );
+                    let source_endpoints = record
+                        .get(2..length)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let next_count = endpoint_count1
+                        .checked_add(source_endpoints.len())
+                        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                    endpoints1
+                        .get_mut(endpoint_count1..next_count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .copy_from_slice(source_endpoints);
+                    endpoint_count1 = next_count;
                     m = m
                         .checked_add(length)
                         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
@@ -6688,30 +6710,54 @@ exit_function:
                     taut_m2 = taut_m2.wrapping_add(i32::from(
                         *record.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?,
                     ));
-                    endpoints2.extend_from_slice(
-                        record
-                            .get(2..length)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    );
+                    let source_endpoints = record
+                        .get(2..length)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let next_count = endpoint_count2
+                        .checked_add(source_endpoints.len())
+                        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                    endpoints2
+                        .get_mut(endpoint_count2..next_count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .copy_from_slice(source_endpoints);
+                    endpoint_count2 = next_count;
                     m = m
                         .checked_add(length)
                         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
                 }
 
-                let count1 = i32::try_from(endpoints1.len())
+                let count1 = i32::try_from(endpoint_count1)
                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                let count2 = i32::try_from(endpoints2.len())
+                let count2 = i32::try_from(endpoint_count2)
                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 insertions_sort_AT_NUMB(&mut endpoints1, count1)?;
                 insertions_sort_AT_NUMB(&mut endpoints2, count2)?;
-                Ok((endpoints1, endpoints2, taut_h1, taut_h2, taut_m1, taut_m2))
+                Ok((
+                    endpoints1,
+                    endpoint_count1,
+                    endpoints2,
+                    endpoint_count2,
+                    taut_h1,
+                    taut_h2,
+                    taut_m1,
+                    taut_m2,
+                ))
             })();
 
         let free1 = inchi_free(heap, endpoint_allocation1);
         let free2 = inchi_free(heap, endpoint_allocation2);
         free1?;
         free2?;
-        let (endpoints1, endpoints2, taut_h1, taut_h2, taut_m1, taut_m2) = endpoint_result?;
+        let (
+            endpoints1,
+            endpoint_count1,
+            endpoints2,
+            endpoint_count2,
+            taut_h1,
+            taut_h2,
+            taut_m1,
+            taut_m2,
+        ) = endpoint_result?;
 
         picr.num_taut_H1 = taut_h1;
         picr.num_taut_H2 = taut_h2;
@@ -6723,11 +6769,14 @@ exit_function:
         let mut num_equal = 0_i32;
         let mut num_in1_only = 0_i32;
         let mut num_in2_only = 0_i32;
-        while index1 < endpoints1.len() && index2 < endpoints2.len() {
+        while index1 < endpoint_count1 && index2 < endpoint_count2 {
             if endpoints1[index1] == endpoints2[index2] {
                 index1 += 1;
                 index2 += 1;
                 num_equal = num_equal.wrapping_add(1);
+            // INCHI✔️❌: if (pe1[j1] < pe2[j1])
+            // This intentionally uses `index1`, exactly as the official source
+            // does, while retaining checked access to the complete allocation.
             } else if endpoints1[index1]
                 < *endpoints2
                     .get(index1)
@@ -6748,7 +6797,7 @@ exit_function:
                 num_in2_only = num_in2_only.wrapping_add(1);
             }
         }
-        while index1 < endpoints1.len() {
+        while index1 < endpoint_count1 {
             if picr.num_endp_in1_only < ICR_MAX_ENDP_IN1_ONLY as i32 {
                 picr.endp_in1_only[picr.num_endp_in1_only as usize] = endpoints1[index1];
                 picr.num_endp_in1_only = picr.num_endp_in1_only.wrapping_add(1);
@@ -6756,7 +6805,7 @@ exit_function:
             index1 += 1;
             num_in1_only = num_in1_only.wrapping_add(1);
         }
-        while index2 < endpoints2.len() {
+        while index2 < endpoint_count2 {
             if picr.num_endp_in2_only < ICR_MAX_ENDP_IN2_ONLY as i32 {
                 picr.endp_in2_only[picr.num_endp_in2_only as usize] = endpoints2[index2];
                 picr.num_endp_in2_only = picr.num_endp_in2_only.wrapping_add(1);
@@ -9241,21 +9290,31 @@ mod tests {
             ),
             Ok((tagInchiCompareDiffBits_INCHIDIFF_SC_PARITY, 0))
         );
+    }
 
-        let mut bug_left = reversed_inchi3_fixture(&mut heap);
-        bug_left.nTautomer = heap
+    #[test]
+    fn compare_reversed_inchi_uses_the_source_allocated_extent_for_pe2_j1() {
+        let mut heap = SourceHeap::default();
+        let mut left = reversed_inchi3_fixture(&mut heap);
+        left.nTautomer = heap
             .allocate_model_storage(vec![1_u16, 4, 0, 0, 1, 2])
             .unwrap();
-        bug_left.lenTautomer = 6;
-        let mut bug_right = reversed_inchi3_fixture(&mut heap);
-        bug_right.nTautomer = heap
+        left.lenTautomer = 6;
+        let mut right = reversed_inchi3_fixture(&mut heap);
+        right.nTautomer = heap
             .allocate_model_storage(vec![1_u16, 3, 0, 0, 3])
             .unwrap();
-        bug_right.lenTautomer = 5;
+        right.lenTautomer = 5;
+        let mut error = 77;
+
         assert_eq!(
-            compare(&mut heap, Some(&bug_left), Some(&bug_right), None, None,),
-            Err(SourceHeapError::PointerOutOfBounds)
+            CompareReversedINChI3(&mut heap, Some(&left), Some(&right), None, None, &mut error),
+            Ok((tagInchiCompareDiffBits_INCHIDIFF_EXTRA_TG_ENDP
+                | tagInchiCompareDiffBits_INCHIDIFF_MISS_TG_ENDP
+                | tagInchiCompareDiffBits_INCHIDIFF_DIFF_TG_ENDP
+                | tagInchiCompareDiffBits_INCHIDIFF_TG) as INCHI_MODE)
         );
+        assert_eq!(error, 0);
     }
 
     #[test]

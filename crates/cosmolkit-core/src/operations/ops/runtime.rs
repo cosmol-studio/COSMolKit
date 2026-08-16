@@ -12,7 +12,6 @@ pub struct OperationTrace {
     recorded_topology_edit: TopologyEditKind,
     remapped_blocks: BlockSet,
     preserved_cache: DerivedState,
-    read_cache: DerivedState,
     cleared_cache: DerivedState,
     updated_cache: DerivedState,
     outcome: Option<OpOutcome>,
@@ -22,11 +21,6 @@ impl OperationTrace {
     #[must_use]
     pub const fn touched_blocks(&self) -> BlockSet {
         self.touched_blocks
-    }
-
-    #[must_use]
-    pub const fn read_cache(&self) -> DerivedState {
-        self.read_cache
     }
 
     #[must_use]
@@ -173,7 +167,6 @@ impl<'a> OpParts<'a> {
                 recorded_topology_edit: TopologyEditKind::None,
                 remapped_blocks: BlockSet::NONE,
                 preserved_cache: DerivedState::NONE,
-                read_cache: DerivedState::NONE,
                 cleared_cache: DerivedState::NONE,
                 updated_cache: DerivedState::NONE,
                 outcome: None,
@@ -210,7 +203,6 @@ impl<'a> OpParts<'a> {
                 recorded_topology_edit: TopologyEditKind::None,
                 remapped_blocks: BlockSet::NONE,
                 preserved_cache: DerivedState::NONE,
-                read_cache: DerivedState::NONE,
                 cleared_cache: DerivedState::NONE,
                 updated_cache: DerivedState::NONE,
                 outcome: None,
@@ -237,7 +229,10 @@ impl<'a> OpParts<'a> {
                 });
             }
         }
-        Ok(MoleculeReadParts::from_molecule(&self.working))
+        Ok(MoleculeReadParts::from_molecule_with_access(
+            &self.working,
+            crate::read_parts::MoleculeReadAccess::TOPOLOGY,
+        ))
     }
 
     pub(crate) fn begin_operation_read(&self) -> Result<MoleculeReadParts<'_>, OperationError> {
@@ -255,7 +250,10 @@ impl<'a> OpParts<'a> {
                 });
             }
         }
-        Ok(MoleculeReadParts::from_molecule(&self.working))
+        Ok(MoleculeReadParts::from_molecule_with_access(
+            &self.working,
+            crate::read_parts::MoleculeReadAccess::ALL,
+        ))
     }
 
     pub(crate) fn with_topology_read_parts<R>(
@@ -264,7 +262,10 @@ impl<'a> OpParts<'a> {
         f: impl FnOnce(MoleculeReadParts<'_>) -> Result<R, OperationError>,
     ) -> Result<R, OperationError> {
         let view = self.read_parts_for_topology(topology)?;
-        f(MoleculeReadParts::from_molecule(&view))
+        f(MoleculeReadParts::from_molecule_with_access(
+            &view,
+            self.read_access(),
+        ))
     }
 
     pub(crate) fn with_block_read_parts<R>(
@@ -275,7 +276,10 @@ impl<'a> OpParts<'a> {
         f: impl FnOnce(MoleculeReadParts<'_>) -> Result<R, OperationError>,
     ) -> Result<R, OperationError> {
         let view = self.read_parts_for_blocks(topology, coordinates, properties)?;
-        f(MoleculeReadParts::from_molecule(&view))
+        f(MoleculeReadParts::from_molecule_with_access(
+            &view,
+            self.read_access(),
+        ))
     }
 
     pub(crate) fn with_optional_block_read_parts<R>(
@@ -286,7 +290,10 @@ impl<'a> OpParts<'a> {
         f: impl FnOnce(MoleculeReadParts<'_>) -> Result<R, OperationError>,
     ) -> Result<R, OperationError> {
         let view = self.read_parts_for_optional_blocks(topology, coordinates, properties)?;
-        f(MoleculeReadParts::from_molecule(&view))
+        f(MoleculeReadParts::from_molecule_with_access(
+            &view,
+            self.read_access(),
+        ))
     }
 
     pub(crate) fn with_borrowed_optional_block_read_parts<R>(
@@ -297,14 +304,64 @@ impl<'a> OpParts<'a> {
         f: impl FnOnce(MoleculeReadParts<'_>) -> Result<R, OperationError>,
     ) -> Result<R, OperationError> {
         self.validate_access_spec()?;
-        let read = MoleculeReadParts::from_blocks(
+        let read = MoleculeReadParts::from_blocks_with_access(
             topology,
             coordinates.unwrap_or_else(|| self.working.coordinate_block()),
             properties.unwrap_or_else(|| self.working.properties()),
             self.working.derived_cache(),
             self.working.capabilities(),
+            self.read_access(),
         );
         f(read)
+    }
+
+    pub(crate) fn with_coordinate_update_read_parts<R>(
+        &self,
+        f: impl FnOnce(MoleculeReadParts<'_>) -> Result<R, OperationError>,
+    ) -> Result<R, OperationError> {
+        self.validate_access_spec()?;
+        #[cfg(feature = "op-contracts")]
+        if !self.spec.access.can_write(BlockSet::COORDINATES) {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "operation attempted to read a local coordinate block without coordinate write access",
+            });
+        }
+        let read = MoleculeReadParts::from_blocks_with_access(
+            self.working.topology_block(),
+            self.working.coordinate_block(),
+            self.working.properties(),
+            self.working.derived_cache(),
+            self.working.capabilities(),
+            self.declared_read_access(),
+        );
+        f(read)
+    }
+
+    fn read_access(&self) -> crate::read_parts::MoleculeReadAccess {
+        let blocks = self.spec.access.read().union(self.spec.access.write());
+        Self::read_access_for_blocks(blocks)
+    }
+
+    fn declared_read_access(&self) -> crate::read_parts::MoleculeReadAccess {
+        Self::read_access_for_blocks(self.spec.access.read())
+    }
+
+    fn read_access_for_blocks(blocks: BlockSet) -> crate::read_parts::MoleculeReadAccess {
+        let mut access = crate::read_parts::MoleculeReadAccess::NONE;
+        if blocks.contains(BlockSet::TOPOLOGY) {
+            access = access.union(crate::read_parts::MoleculeReadAccess::TOPOLOGY);
+        }
+        if blocks.contains(BlockSet::COORDINATES) {
+            access = access.union(crate::read_parts::MoleculeReadAccess::COORDINATES);
+        }
+        if blocks.contains(BlockSet::PROPERTIES) {
+            access = access.union(crate::read_parts::MoleculeReadAccess::PROPERTIES);
+        }
+        if blocks.contains(BlockSet::DERIVED_CACHE) {
+            access = access.union(crate::read_parts::MoleculeReadAccess::DERIVED_CACHE);
+        }
+        access
     }
 
     fn read_parts_for_topology(&self, topology: TopologyBlock) -> Result<Molecule, OperationError> {
@@ -458,6 +515,80 @@ impl<'a> OpParts<'a> {
         Ok(())
     }
 
+    pub(crate) fn with_topology_mut<R>(
+        &mut self,
+        mutate: impl FnOnce(&mut Self, &mut TopologyBlock) -> Result<R, OperationError>,
+    ) -> Result<R, OperationError> {
+        let mut topology = self.begin_topology_mut()?;
+        let result = mutate(self, &mut topology);
+        self.commit_topology(topology)?;
+        result
+    }
+
+    pub(crate) fn with_coordinates_mut<R>(
+        &mut self,
+        mutate: impl FnOnce(&mut Self, &mut CoordinateBlock) -> Result<R, OperationError>,
+    ) -> Result<R, OperationError> {
+        let mut coordinates = self.begin_coordinates_mut()?;
+        let result = mutate(self, &mut coordinates);
+        self.commit_coordinates(coordinates)?;
+        result
+    }
+
+    pub(crate) fn with_topology_and_properties_mut<R>(
+        &mut self,
+        mutate: impl FnOnce(
+            &mut Self,
+            &mut TopologyBlock,
+            &mut MoleculeProperties,
+        ) -> Result<R, OperationError>,
+    ) -> Result<R, OperationError> {
+        let mut topology = self.begin_topology_mut()?;
+        let mut properties = match self.begin_properties_mut() {
+            Ok(properties) => properties,
+            Err(error) => {
+                self.commit_topology(topology)?;
+                return Err(error);
+            }
+        };
+        let result = mutate(self, &mut topology, &mut properties);
+        self.commit_topology(topology)?;
+        self.commit_properties(properties)?;
+        result
+    }
+
+    pub(crate) fn with_topology_coordinates_properties_mut<R>(
+        &mut self,
+        mutate: impl FnOnce(
+            &mut Self,
+            &mut TopologyBlock,
+            &mut CoordinateBlock,
+            &mut MoleculeProperties,
+        ) -> Result<R, OperationError>,
+    ) -> Result<R, OperationError> {
+        let mut topology = self.begin_topology_mut()?;
+        let mut coordinates = match self.begin_coordinates_mut() {
+            Ok(coordinates) => coordinates,
+            Err(error) => {
+                self.commit_topology(topology)?;
+                return Err(error);
+            }
+        };
+        let mut properties = match self.begin_properties_mut() {
+            Ok(properties) => properties,
+            Err(error) => {
+                self.commit_topology(topology)?;
+                self.commit_coordinates(coordinates)?;
+                return Err(error);
+            }
+        };
+        let result = mutate(self, &mut topology, &mut coordinates, &mut properties);
+        self.commit_topology(topology)?;
+        self.commit_coordinates(coordinates)?;
+        self.commit_properties(properties)?;
+        result
+    }
+
     pub(crate) fn record_topology_edit(
         &mut self,
         kind: TopologyEditKind,
@@ -530,24 +661,6 @@ impl<'a> OpParts<'a> {
                 forbidden,
                 effects.invalidate(),
                 effects.recompute(),
-            );
-        }
-    }
-
-    /// Check that `state` is in `preserve` (read permission).
-    /// Panics with a clear message on violation.
-    #[cfg(feature = "op-contracts")]
-    fn check_cache_read_permission(&self, state: DerivedState) {
-        let effects = self.spec.derived_effects;
-        let allowed = effects.preserve();
-        if !allowed.contains(state) {
-            panic!(
-                "cache read permission violation: operation `{}` attempted to read \
-                 derived state `{:?}` but only has `preserve({:?})` \
-                 permissions",
-                self.spec.method,
-                state,
-                effects.preserve(),
             );
         }
     }
@@ -898,6 +1011,31 @@ impl<'a> OpParts<'a> {
     #[cfg(feature = "op-contracts")]
     fn validate_contract(&self) -> Result<(), OperationError> {
         self.validate_access_spec()?;
+        if matches!(self.trace.outcome, Some(OpOutcome::NoOp { .. })) && !self.spec.allows_noop {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "operation reported a no-op but the registry forbids no-op outcomes",
+            });
+        }
+        if self.topology_lifecycle == BlockLifecycle::Begun
+            || self.coordinates_lifecycle == BlockLifecycle::Begun
+            || self.properties_lifecycle == BlockLifecycle::Begun
+        {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "operation finished while a writable block was still checked out",
+            });
+        }
+        if !self
+            .trace
+            .touched_blocks
+            .contains(self.trace.claimed_write_blocks)
+        {
+            return Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "operation did not commit every claimed writable block",
+            });
+        }
         let effects = self.spec.derived_effects;
         let recompute_ds = effects.recompute();
         if recompute_ds.intersects(effects.preserve())
@@ -911,15 +1049,16 @@ impl<'a> OpParts<'a> {
         }
 
         let changed = matches!(self.trace.outcome, Some(OpOutcome::Changed));
+        let requires_effect_handling = changed || self.trace.touched_blocks != BlockSet::NONE;
         let updated_or_cleared = self.trace.cleared_cache | self.trace.updated_cache;
-        if changed && !updated_or_cleared.contains(self.spec.needs_update()) {
+        if requires_effect_handling && !updated_or_cleared.contains(self.spec.needs_update()) {
             return Err(OperationError::InvalidInput {
                 operation: self.spec,
                 message: "operation body did not clear or update every required cache state",
             });
         }
 
-        if changed
+        if requires_effect_handling
             && !self
                 .trace
                 .preserved_cache

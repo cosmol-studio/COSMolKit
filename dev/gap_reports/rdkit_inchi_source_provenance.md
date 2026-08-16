@@ -109,8 +109,9 @@ not link it, expose it through FFI, invoke an executable, or fall back to it.
 
 ## Public Support Boundary
 
-The supported public surface is limited to `Chem.MolToInchi`,
-`Chem.MolToInchiKey`, root `InchiToInchiKey`, and `Chem.MolFromInchi`.
+The supported public surface is limited to `Molecule.to_inchi()`,
+`Molecule.to_inchi_key()`, top-level `inchi_to_key()`, and
+`Molecule.from_inchi()`.
 MolBlock, SDF/V3000, IXA, AuxInfo conversion, incremental INCHIGEN,
 version-query, and extended-polymer entry points are frozen or unsupported and
 must not be inferred from private source-port coverage.

@@ -1633,14 +1633,14 @@ fn set_bond_stereo_from_directions_leaves_stereo_unset_without_both_neighbor_dir
 }
 
 #[test]
-fn assign_double_bond_stereo_from_directions_updates_public_molecule_state_like_rdkit() {
+fn set_bond_stereo_from_directions_updates_internal_molecule_state_like_rdkit() {
     let mut molecule = stereogenic_double_bond_3d_molecule(true);
     set_double_bond_neighbor_directions(&mut molecule, 0).unwrap();
     molecule
         .properties_mut()
         .set_prop("_needsDetectBondStereo", "1");
 
-    assign_double_bond_stereo_from_directions(&mut molecule).unwrap();
+    set_bond_stereo_from_directions(&mut molecule).unwrap();
 
     assert_eq!(molecule.bonds()[0].stereo(), BondStereo::Cis);
     assert_eq!(

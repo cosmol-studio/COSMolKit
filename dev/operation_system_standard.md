@@ -227,7 +227,7 @@ registry spec selection
 OpParts::new(source, spec)
 begin each write-owned block through OpParts
 read and mutate the local owned working blocks
-commit changed blocks back through OpParts
+return current blocks through the scoped mutation capability on success or error
 record topology edit kind when topology identity/state changed
 return OpOutcome
 parts.finish(outcome)
@@ -235,28 +235,33 @@ strict validation
 return Molecule
 ```
 
-Operation bodies must use registry-derived begin/commit block access rather
-than free `read_parts()` and independent mutation accessors.
+Fallible operation bodies must use registry-derived scoped mutation
+capabilities rather than free `read_parts()` and independent mutation
+accessors. The scoped capability owns the begin/commit lifecycle and returns
+the current block to the working molecule on both `Ok` and `Err`.
 
 For a write-owned block, reads and writes come from the same local owned
 working value:
 
 ```rust
-let mut topology = parts.begin_topology_mut()?;
-let mut coordinates = parts.begin_coordinates_mut()?;
-let mut properties = parts.begin_properties_mut()?;
-
-let assignment = topology.add_hs_assignment(&params)?;
-apply_add_hs_assignment(
-    &mut topology,
-    &mut coordinates,
-    &mut properties,
-    &assignment,
+let changed = parts.with_topology_coordinates_properties_mut(
+    |parts, topology, coordinates, properties| {
+        let assignment = parts.with_block_read_parts(
+            topology.clone(),
+            coordinates.clone(),
+            properties.clone(),
+            |read| read.add_hs_assignment(&params).map_err(map_add_hs_error),
+        )?;
+        apply_add_hs_assignment(
+            parts,
+            topology,
+            coordinates,
+            properties,
+            &assignment,
+        )
+    },
 )?;
 
-parts.commit_topology(topology)?;
-parts.commit_coordinates(coordinates)?;
-parts.commit_properties(properties)?;
 parts.record_topology_edit(TopologyEditKind::Appending)?;
 parts.record_topology_mapping(mapping);
 parts.prove_preserved(
@@ -270,8 +275,11 @@ The operation must not keep a separate read view of a write-owned block while
 also owning the mutable working value for that block.
 
 For a read-owned block, `OpParts` may expose a read-begin method. For a
-write-owned block, `OpParts` exposes only `begin_*_mut()` and `commit_*()`.
-For an inaccessible block, no begin method is legal.
+write-owned block, operation bodies use scoped `with_*_mut()` capabilities.
+Low-level `begin_*_mut()` and `commit_*()` methods implement and test that
+lifecycle, but a block obtained from `begin_*_mut()` must not remain checked
+out across a fallible return. For an inaccessible block, no begin or scoped
+mutation method is legal.
 
 Strong operations must record the declared topology edit kind after the edit.
 Weak operations may record only local stable-index topology edits.

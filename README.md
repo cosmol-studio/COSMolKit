@@ -23,7 +23,7 @@
 
 [COSMolKit](https://github.com/cosmol-studio/COSMolKit) is a Rust-native cheminformatics and structural biology toolkit with first-class Python bindings. It provides molecular graph operations, SMILES/SMARTS and molecular file workflows, 2D depiction, native 3D conformer generation, UFF/MMFF optimization, fingerprints, molecular descriptors, InChI, batch processing, and protein structure APIs.
 
-For supported cheminformatics operations, RDKit-compatible behavior is treated as the correctness floor. Implementations are validated with fixed parity oracles and source-defined tests where applicable, while unsupported behavior fails explicitly instead of being approximated through silent fallbacks.
+For supported cheminformatics operations, RDKit-compatible behavior is treated as the correctness floor. COSMolKit uses boundary-scoped parity claims: a feature is considered parity-covered only when its documented reference surface passes the required exact or numerical comparisons. Fixed reference oracles, source-backed implementations where reference semantics require them, committed regression corpora, and explicit unsupported-state handling are used together; aggregate success rates or approximate similarity are not treated as substitutes for behavioral parity.
 
 COSMolKit combines a native Rust API with Python interfaces designed for array-oriented scientific and machine-learning workflows. Molecular graphs, coordinates, fingerprints, bounds matrices, and structural data are exposed in forms suitable for NumPy, PyTorch, dataset processing, and model-building pipelines.
 
@@ -35,19 +35,19 @@ COSMolKit combines a native Rust API with Python interfaces designed for array-o
 
 ## Validation Status
 
-COSMolKit validates its supported cheminformatics surface with strict operation contracts, fixed reference oracles, source-backed parity tests, and committed validation corpora. Coverage CI instruments `cosmolkit-core`, `cosmolkit-inchi`, and `cosmolkit-ringdecomposer`, rejects mismatched LLVM profile data, and runs the committed 5000-row InChI parity corpus in addition to the default test suites.
+COSMolKit is extensively agent-driven, but compatibility-critical chemistry is not independently reimplemented from descriptions or approximated heuristically. Where reference behavior matters, implementations follow source-backed ports with explicit operation contracts, pinned RDKit/upstream oracles, and strict parity gates. Agents accelerate implementation; the reference source and parity tests constrain what counts as correct. COSMolKit does not infer reference semantics from final-output agreement: it source-ports reference behavior, verifies intermediate molecular states and invariants, and makes mutation explicit—because matching outputs alone cannot make a heuristic reimplementation trustworthy.
 
-The four public scalar InChI operations match pinned official InChI v1.07.5
-and RDKit 2026.03.1 output exactly for all currently validated source-defined
-cases. Official-C undefined behavior is represented by a structured Rust error
-instead of an implementation-dependent result.
+A parity claim is made only for a documented behavioral boundary that closes exactly or within an explicit numerical tolerance. **99% or 99.9% agreement remains unfinished when mismatches exist.** Unsupported branches fail explicitly rather than returning plausible substitutes. This source-first workflow is designed to minimize **semantic debt**: small heuristic deviations are not allowed to accumulate into undocumented behavioral differences that later require layers of corrective patches. By resolving reference semantics at implementation time and locking them with reproducible parity tests, COSMolKit aims to prevent locally reasonable approximations from becoming systemic chemistry errors discovered only through downstream corpus testing.
 
-The public `with_chiral_tags_from_structure()` operation is stable with pinned
-RDKit 2026.03.1 parity for its documented `assignChiralTypesFrom3D` scope. All
-77 fixed full-state oracle records match exactly, including conformer
-selection, replacement control, tetrahedral and enabled non-tetrahedral atom
-tags, properties, no-op paths, and defined errors. The value-style and in-place
-forms preserve caller state on failure.
+Current parity-covered surfaces include molecular graph state, SMILES branch behavior, distance geometry, ETKDG, UFF/MMFF, molecular descriptors, Morgan/MACCS fingerprints, molecular I/O, depiction, and the supported InChI APIs. Representative gates include:
+
+* **ETKDG:** bounds matrices to `1e-8`; covered fixed-seed coordinates to `1e-6` versus pinned RDKit.
+* **UFF/MMFF:** 5,000 molecules for parameter availability, MMFF atom types and charges; curated cases additionally require energy, every gradient component, optimizer result, and final coordinates within `1e-6`.
+* **Descriptors:** covered floating-point outputs are checked against pinned RDKit bit patterns.
+* **Fingerprints:** supported Morgan and MACCS branches require exact RDKit equality; unfinished APIs do not substitute approximate vectors.
+* **InChI:** the production implementation is pure Rust and source-backed against official InChI v1.07.5 semantics; the strict 5,000-molecule profile requires exact InChI equality on every row. Defined upstream behavior is reproduced; upstream undefined behavior is isolated and mapped to explicit structured Rust errors rather than disguised as parity.
+
+See [`dev/parity_scope.md`](dev/parity_scope.md) for the exact feature boundaries, reference versions, comparison fields, tolerances, and unfinished surfaces.
 
 ## Installation
 
@@ -58,8 +58,7 @@ pip install cosmolkit
 ## Core Concepts
 
 - **Value-style molecules:** methods such as `with_hydrogens()`,
-  `without_hydrogens()`, `with_kekulized_bonds()`, and `with_2d_coordinates()`
-  return new molecule values.
+  `without_hydrogens()`, `with_kekulized_bonds()`, and `with_2d_coordinates()` return new molecule values, keeping topology-changing operations explicit and preventing derived chemistry state from being silently invalidated.
 - **Explicit mutation:** in-place `Molecule` operations always end with `_`.
   The trailing underscore has no other public `Molecule` meaning.
 - **Explicit errors:** invalid input and unsupported behavior are surfaced as
@@ -245,10 +244,13 @@ model-building workflows.
   cheminformatics features.
 - High-throughput APIs should preserve input order and expose per-record
   failures.
+- Reference semantics come before heuristic approximation; semantic debt is treated as a correctness risk.
 
 ## Examples
 
 Python examples live in `python/examples/`.
+For the current InChI interface, see
+[`python/examples/inchi_roundtrip.py`](python/examples/inchi_roundtrip.py).
 
 ## Development
 
@@ -299,8 +301,8 @@ Goal: keep the supported molecular core correct before expanding breadth.
 - ✅ Distance-geometry bounds matrices
 - ✅ Native 3D conformer generation and UFF/MMFF post-optimization for
   supported molecules
-- ✅ `Chem.MolToInchi`, `Chem.MolToInchiKey`, `InchiToInchiKey`, and
-  `Chem.MolFromInchi` for source-defined behavior; official-C undefined
+- ✅ `Molecule.to_inchi()`, `Molecule.to_inchi_key()`, `inchi_to_key()`, and
+  `Molecule.from_inchi()` for source-defined behavior; official-C undefined
   allocation behavior returns a structured error
 - ✅ Morgan fingerprints and Tanimoto similarity for the validated exact-parity branches
 - ✅ MACCS fingerprints for the validated exact raw/public projection
@@ -383,9 +385,7 @@ Goal: support lightweight chemistry workflows outside native Python processes.
 ## Respect for RDKit
 
 COSMolKit is developed with deep respect for RDKit and the broader open-source
-cheminformatics community. The goal is an independent Rust-native implementation
-that preserves interoperability and RDKit-parity behavior where appropriate,
-while offering a deterministic Python API and AI-native extension surface.
+cheminformatics community. The goal is a Rust-native implementation that preserves interoperability and faithfully ports reference behavior where appropriate, while offering a deterministic Python API and AI-native extension surface.
 
 ## License
 

@@ -11976,7 +11976,7 @@ fn embedder_add_conformers(
 fn molecule_from_read_parts_with_coordinates(
     read: MoleculeReadParts<'_>,
     coordinates: MoleculeCoordinateBlock,
-) -> Result<Molecule, DgBoundsError> {
+) -> Molecule {
     Molecule::from_operation_blocks(
         read.topology().clone(),
         coordinates,
@@ -11984,28 +11984,37 @@ fn molecule_from_read_parts_with_coordinates(
         read.derived_cache().clone(),
         read.capabilities(),
     )
-    .map_err(|failure| DgBoundsError::CoordinateUpdateFailed(failure.to_string()))
+    .expect("an operation-owned coordinate block must preserve molecule invariants")
 }
 
 pub(crate) fn embed_multiple_confs_coordinate_update(
     read: MoleculeReadParts<'_>,
-    coordinates: MoleculeCoordinateBlock,
+    coordinates: &mut MoleculeCoordinateBlock,
     num_confs: u32,
     params: &mut EmbedParameters,
-) -> Result<(MoleculeCoordinateBlock, Vec<i32>), DgBoundsError> {
-    let source = molecule_from_read_parts_with_coordinates(read, coordinates)?;
-    let (embedded, ids) = embed_multiple_confs(&source, num_confs, params)?;
-    Ok((embedded.coordinate_block().clone(), ids))
+) -> Result<Vec<i32>, DgBoundsError> {
+    let owned_coordinates = std::mem::take(coordinates);
+    let mut source = molecule_from_read_parts_with_coordinates(read, owned_coordinates);
+    match embed_multiple_confs(&source, num_confs, params) {
+        Ok((mut embedded, ids)) => {
+            drop(source);
+            *coordinates = embedded.take_coordinate_block_or_clone();
+            Ok(ids)
+        }
+        Err(error) => {
+            *coordinates = source.take_coordinate_block_or_clone();
+            Err(error)
+        }
+    }
 }
 
 pub(crate) fn embed_molecule_coordinate_update(
     read: MoleculeReadParts<'_>,
-    coordinates: MoleculeCoordinateBlock,
+    coordinates: &mut MoleculeCoordinateBlock,
     params: &mut EmbedParameters,
-) -> Result<(MoleculeCoordinateBlock, i32), DgBoundsError> {
-    let (coordinates, conf_ids) =
-        embed_multiple_confs_coordinate_update(read, coordinates, 1, params)?;
-    Ok((coordinates, conf_ids.first().copied().unwrap_or(-1)))
+) -> Result<i32, DgBoundsError> {
+    let conf_ids = embed_multiple_confs_coordinate_update(read, coordinates, 1, params)?;
+    Ok(conf_ids.first().copied().unwrap_or(-1))
 }
 
 pub fn embed_multiple_confs(

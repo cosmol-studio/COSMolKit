@@ -296,6 +296,24 @@ pub fn assign_valence(
     assign_valence_with_options(molecule, model, true)
 }
 
+/// Returns the molecule's current atom property-cache valence, when present.
+///
+/// This does not recalculate from the current graph. That distinction is
+/// observable for source-compatible readers which intentionally return a
+/// pre-cleanup cache when sanitization is disabled.
+#[must_use]
+pub fn cached_valence_assignment(molecule: &Molecule) -> Option<&ValenceAssignment> {
+    // RDKit✔️✔️: int Atom::getExplicitValence() const {
+    // RDKit✔️✔️:   return getValence(ValenceType::EXPLICIT);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: if (which == ValenceType::EXPLICIT) {
+    // RDKit✔️✔️:   return d_explicitValence;
+    // RDKit✔️✔️: } else {
+    // RDKit✔️✔️:   return df_noImplicit ? 0 : d_implicitValence;
+    // RDKit✔️✔️: }
+    molecule.derived_cache().valence.as_ref()
+}
+
 pub fn assign_valence_with_options(
     molecule: &Molecule,
     model: ValenceModel,

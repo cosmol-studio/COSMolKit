@@ -17,7 +17,77 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read release notes from changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_version="${GITHUB_REF_NAME#v}"
+          release_header="$RUNNER_TEMP/release-header.md"
+          version_notes="$RUNNER_TEMP/version-notes.md"
+          release_notes="$RUNNER_TEMP/release-notes.md"
+          if ! awk '
+              $0 == "<!-- release-header:start -->" {
+                found_start = 1
+                copying = 1
+                next
+              }
+              $0 == "<!-- release-header:end -->" {
+                if (copying) {
+                  found_end = 1
+                  exit
+                }
+              }
+              copying {
+                print
+              }
+              END {
+                if (!found_start || !found_end) {
+                  exit 2
+                }
+              }
+            ' CHANGELOG.md > "$release_header"; then
+            echo "CHANGELOG.md has no complete release-header block" >&2
+            exit 1
+          fi
+          if ! grep -q '[^[:space:]]' "$release_header"; then
+            echo "CHANGELOG.md has an empty release-header block" >&2
+            exit 1
+          fi
+          if ! awk -v version="$release_version" '
+              index($0, "## [" version "]") == 1 {
+                found = 1
+                release_heading = $0
+                sub(/^## \[/, "## COSMolKit v", release_heading)
+                sub(/\] - /, " — ", release_heading)
+                print release_heading
+                next
+              }
+              found && /^## \[/ {
+                exit
+              }
+              found {
+                print
+              }
+              END {
+                if (!found) {
+                  exit 2
+                }
+              }
+            ' CHANGELOG.md > "$version_notes"; then
+            echo "CHANGELOG.md has no section for $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          if ! grep -q '[^[:space:]]' "$version_notes"; then
+            echo "CHANGELOG.md has no release notes for $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          {
+            cat "$release_header"
+            printf '\n'
+            cat "$version_notes"
+          } > "$release_notes"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: ${{ runner.temp }}/release-notes.md

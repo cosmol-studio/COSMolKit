@@ -129,10 +129,9 @@ fn run_sanitize_pipeline(
     ops: crate::SanitizeOps,
     operation: &'static MoleculeOpSpec,
 ) -> Result<bool, OperationError> {
-    let mut topology = parts.begin_topology_mut()?;
-    let changed =
-        run_sanitize_pipeline_on_topology(parts, &mut topology, None, None, ops, operation)?;
-    parts.commit_topology(topology)?;
+    let changed = parts.with_topology_mut(|parts, topology| {
+        run_sanitize_pipeline_on_topology(parts, topology, None, None, ops, operation)
+    })?;
     parts.record_topology_edit(TopologyEditKind::Local)?;
     Ok(changed)
 }

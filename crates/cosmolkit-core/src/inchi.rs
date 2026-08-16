@@ -277,10 +277,12 @@ fn validate_supported_source(read: MoleculeReadParts<'_>) -> Result<(), String> 
 fn adapter_from_read_parts(
     read: MoleculeReadParts<'_>,
 ) -> Result<(InchiMolecule, Vec<CoordinateDimension>), String> {
+    let cached_valence = read.derived_cache().valence.as_ref();
     let atoms = read
         .atoms()
         .iter()
-        .map(|atom| InchiAtom {
+        .enumerate()
+        .map(|(index, atom)| InchiAtom {
             atomic_number: i32::from(atom.atomic_number()),
             formal_charge: i32::from(atom.formal_charge()),
             num_explicit_hydrogens: u32::from(atom.explicit_hydrogens()),
@@ -292,6 +294,10 @@ fn adapter_from_read_parts(
             cip_rank: atom
                 .prop("_CIPRank")
                 .and_then(|rank| rank.parse::<u32>().ok()),
+            cached_explicit_valence: cached_valence
+                .map(|assignment| assignment.explicit_valence[index]),
+            cached_implicit_valence: cached_valence
+                .map(|assignment| assignment.implicit_hydrogens[index]),
         })
         .collect::<Vec<_>>();
 
@@ -452,9 +458,35 @@ fn core_from_adapter(
         };
     }
 
-    builder
+    let mut core = builder
         .build()
-        .map_err(|error| format!("adapter molecule cannot be built: {error}"))
+        .map_err(|error| format!("adapter molecule cannot be built: {error}"))?;
+    let cached_explicit = molecule
+        .atoms()
+        .iter()
+        .map(|atom| atom.cached_explicit_valence)
+        .collect::<Option<Vec<_>>>();
+    let cached_implicit = molecule
+        .atoms()
+        .iter()
+        .map(|atom| atom.cached_implicit_valence)
+        .collect::<Option<Vec<_>>>();
+    match (cached_explicit, cached_implicit) {
+        (Some(explicit_valence), Some(implicit_hydrogens)) => {
+            core.derived_cache_mut().valence = Some(ValenceAssignment {
+                explicit_valence,
+                implicit_hydrogens,
+            });
+        }
+        (None, None) => {}
+        _ => {
+            return Err(
+                "adapter molecule has only one half of the source property-cache valence"
+                    .to_owned(),
+            );
+        }
+    }
+    Ok(core)
 }
 
 struct CoreInchiToolkit {
@@ -593,6 +625,16 @@ impl MolToInchiToolkit for CoreInchiToolkit {
         let mut core = self.take_cached_or_build(molecule)?;
         core.assign_valence_strict_(strict)
             .map_err(|error| toolkit_error("COSMolKit property cache error", error.to_string()))?;
+        let assignment = core.derived_cache().valence.as_ref().ok_or_else(|| {
+            toolkit_error(
+                "COSMolKit property cache error",
+                "valence assignment did not populate the derived cache",
+            )
+        })?;
+        for (index, atom) in molecule.atom_properties_mut().iter_mut().enumerate() {
+            atom.cached_explicit_valence = Some(assignment.explicit_valence[index]);
+            atom.cached_implicit_valence = Some(assignment.implicit_hydrogens[index]);
+        }
         self.structure_cache = Some(core);
         self.source_needs_property_cache_update = false;
         Ok(())
@@ -756,17 +798,19 @@ impl InchiToMolToolkit for CoreInchiToolkit {
         clean_it: bool,
         force: bool,
     ) -> Result<(), InchiToolkitError> {
+        // RDKit❗✔️:     // call assignStereochemistry just to be safe; otherwise, MolToSmiles may
+        // RDKit❗✔️:     // overwrite E/Z and/or bond direction on double bonds.
+        // RDKit❗✔️:     MolOps::assignStereochemistry(*m, true, true);
         if !clean_it || !force {
             return Err(toolkit_error(
                 "Unsupported Feature",
                 "the audited InchiToMol path requires cleanIt=true and force=true",
             ));
         }
-        let core = self.take_cached_or_build(molecule)?;
-        core.perceive_stereochemistry()
+        let mut core = self.take_cached_or_build(molecule)?;
+        crate::smiles::assign_stereochemistry_cleanup_subset(&mut core, clean_it)
             .map_err(|error| toolkit_error("COSMolKit stereochemistry error", error.to_string()))?;
-        self.structure_cache = Some(core);
-        Ok(())
+        self.replace_adapter(molecule, core)
     }
 }
 
@@ -977,7 +1021,7 @@ mod tests {
     }
 
     #[test]
-    fn inchi_core_bridge_parsed_graph_preserves_isotope_charge_bond_and_stereo_fields() {
+    fn inchi_core_bridge_parsed_graph_matches_source_stereo_cleanup_for_isotopic_center() {
         let output =
             mol_from_inchi(b"InChI=1S/CHBrClF/c2-1(3)4/t1-/m0/s1/i1+1", false, false).unwrap();
         assert_eq!(output.return_values.return_code, 1);
@@ -988,10 +1032,9 @@ mod tests {
         assert_eq!(molecule.atoms()[0].atomic_number(), 6);
         assert_eq!(molecule.atoms()[0].isotope(), Some(13));
         assert_eq!(molecule.atoms()[0].formal_charge(), 0);
-        assert!(matches!(
-            molecule.atoms()[0].chiral_tag(),
-            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
-        ));
+        // The source's final forced assignStereochemistry cleanup removes this
+        // tag because the returned InChI reports a mobile-H/stereo mismatch.
+        assert_eq!(molecule.atoms()[0].chiral_tag(), ChiralTag::Unspecified);
         for bond in molecule.bonds() {
             assert!(bond.begin().index() < molecule.num_atoms());
             assert!(bond.end().index() < molecule.num_atoms());
@@ -1032,6 +1075,250 @@ mod tests {
             molecule.to_smiles(true).unwrap(),
             "CC(/C=C1\\SC(=S)N(CCCCCC(=O)O)C1=O)=C\\c1ccccc1"
         );
+    }
+
+    #[test]
+    fn mol_from_inchi_reassigns_double_bond_stereo_with_post_cleanup_cip_ranks() {
+        let output = mol_from_inchi(
+            b"InChI=1S/C14H22N8O8/c1-5-17(6-2)21(27)15-29-13-10-14(30-16-22(28)18(7-3)8-4)12(20(25)26)9-11(13)19(23)24/h9-10H,5-8H2,1-4H3/b21-15-,22-16+",
+            false,
+            false,
+        )
+        .expect("the source-defined InChI must parse");
+        let molecule = output.molecule.expect("successful parse returns a graph");
+        assert_eq!(
+            molecule
+                .atoms()
+                .iter()
+                .map(|atom| {
+                    atom.prop("_CIPRank")
+                        .expect("assignStereochemistry writes every CIP rank")
+                        .parse::<u32>()
+                        .expect("CIP ranks are unsigned integers")
+                })
+                .collect::<Vec<_>>(),
+            [
+                0, 0, 1, 1, 4, 4, 5, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 16, 17, 14, 15, 18, 24,
+                19, 25, 22, 23, 20, 21,
+            ]
+        );
+
+        let first = molecule
+            .bonds()
+            .iter()
+            .find(|bond| (bond.begin().index(), bond.end().index()) == (14, 20))
+            .expect("first audited double bond is present");
+        assert_eq!(first.order(), BondOrder::Double);
+        assert_eq!(first.stereo(), BondStereo::Z);
+        assert_eq!(
+            first.stereo_atoms(),
+            Some([AtomId::new(28), AtomId::new(26)])
+        );
+
+        let second = molecule
+            .bonds()
+            .iter()
+            .find(|bond| (bond.begin().index(), bond.end().index()) == (15, 21))
+            .expect("second audited double bond is present");
+        assert_eq!(second.order(), BondOrder::Double);
+        assert_eq!(second.stereo(), BondStereo::E);
+        assert_eq!(
+            second.stereo_atoms(),
+            Some([AtomId::new(29), AtomId::new(27)])
+        );
+    }
+
+    #[test]
+    fn inchi_assign_stereochemistry_writes_recomputed_state_back_to_the_adapter() {
+        struct CapturingToolkit {
+            inner: CoreInchiToolkit,
+            before_assign: Option<InchiMolecule>,
+        }
+
+        impl InchiToMolToolkit for CapturingToolkit {
+            fn atomic_number(&mut self, element: &[u8]) -> Result<i32, InchiToolkitError> {
+                <CoreInchiToolkit as InchiToMolToolkit>::atomic_number(&mut self.inner, element)
+            }
+
+            fn average_atomic_weight(
+                &mut self,
+                atomic_number: i32,
+            ) -> Result<f64, InchiToolkitError> {
+                <CoreInchiToolkit as InchiToMolToolkit>::average_atomic_weight(
+                    &mut self.inner,
+                    atomic_number,
+                )
+            }
+
+            fn update_property_cache(
+                &mut self,
+                molecule: &mut InchiMolecule,
+                strict: bool,
+            ) -> Result<(), InchiToolkitError> {
+                <CoreInchiToolkit as InchiToMolToolkit>::update_property_cache(
+                    &mut self.inner,
+                    molecule,
+                    strict,
+                )
+            }
+
+            fn assign_atom_cip_ranks(
+                &mut self,
+                molecule: &mut InchiMolecule,
+            ) -> Result<Vec<u32>, InchiToolkitError> {
+                <CoreInchiToolkit as InchiToMolToolkit>::assign_atom_cip_ranks(
+                    &mut self.inner,
+                    molecule,
+                )
+            }
+
+            fn remove_hydrogens(
+                &mut self,
+                molecule: &mut InchiMolecule,
+            ) -> Result<(), InchiToolkitError> {
+                <CoreInchiToolkit as InchiToMolToolkit>::remove_hydrogens(&mut self.inner, molecule)
+            }
+
+            fn sanitize_molecule(
+                &mut self,
+                molecule: &mut InchiMolecule,
+            ) -> Result<(), InchiToolkitError> {
+                <CoreInchiToolkit as InchiToMolToolkit>::sanitize_molecule(
+                    &mut self.inner,
+                    molecule,
+                )
+            }
+
+            fn synchronize_after_cleanup(
+                &mut self,
+                molecule: &InchiMolecule,
+            ) -> Result<(), InchiToolkitError> {
+                <CoreInchiToolkit as InchiToMolToolkit>::synchronize_after_cleanup(
+                    &mut self.inner,
+                    molecule,
+                )
+            }
+
+            fn assign_stereochemistry(
+                &mut self,
+                molecule: &mut InchiMolecule,
+                clean_it: bool,
+                force: bool,
+            ) -> Result<(), InchiToolkitError> {
+                self.before_assign = Some(molecule.clone());
+                <CoreInchiToolkit as InchiToMolToolkit>::assign_stereochemistry(
+                    &mut self.inner,
+                    molecule,
+                    clean_it,
+                    force,
+                )
+            }
+        }
+
+        fn audited_bond(molecule: &InchiMolecule, endpoints: (u32, u32)) -> &InchiBond {
+            molecule
+                .bonds()
+                .iter()
+                .find(|bond| (bond.begin_atom_index(), bond.end_atom_index()) == endpoints)
+                .expect("audited double bond is present")
+        }
+
+        let mut toolkit = CapturingToolkit {
+            inner: CoreInchiToolkit::for_structure(),
+            before_assign: None,
+        };
+        let output = cosmolkit_inchi::mol_from_inchi(
+            &mut toolkit,
+            b"InChI=1S/C14H22N8O8/c1-5-17(6-2)21(27)15-29-13-10-14(30-16-22(28)18(7-3)8-4)12(20(25)26)9-11(13)19(23)24/h9-10H,5-8H2,1-4H3/b21-15-,22-16+",
+            false,
+            false,
+        )
+        .expect("the toolkit-neutral source path must parse");
+        let before = toolkit
+            .before_assign
+            .expect("the source calls assignStereochemistry");
+        let after = output.molecule.expect("successful parse returns a graph");
+
+        let first_before = audited_bond(&before, (14, 20));
+        assert_eq!(
+            (first_before.stereo, first_before.stereo_atoms.as_slice()),
+            (InchiBondStereo::E, [28, 16].as_slice())
+        );
+        let second_before = audited_bond(&before, (15, 21));
+        assert_eq!(
+            (second_before.stereo, second_before.stereo_atoms.as_slice()),
+            (InchiBondStereo::Z, [29, 17].as_slice())
+        );
+
+        let first_after = audited_bond(&after, (14, 20));
+        assert_eq!(
+            (first_after.stereo, first_after.stereo_atoms.as_slice()),
+            (InchiBondStereo::Z, [28, 26].as_slice())
+        );
+        let second_after = audited_bond(&after, (15, 21));
+        assert_eq!(
+            (second_after.stereo, second_after.stereo_atoms.as_slice()),
+            (InchiBondStereo::E, [29, 27].as_slice())
+        );
+    }
+
+    #[test]
+    fn mol_from_inchi_preserves_writer_state_after_stereochemistry_reassignment() {
+        let output = mol_from_inchi(
+            b"InChI=1S/C39H43N5O9.4Na/c1-8-21-17(3)25-13-27-19(5)23(10-11-32(46)47)35(42-27)24(12-31(45)44-39(7,38(52)53)16-33(48)49)36-34(37(50)51)20(6)28(43-36)15-30-22(9-2)18(4)26(41-30)14-29(21)40-25;;;;/h8,13-15,19,23,27,43H,1,9-12,16H2,2-7H3,(H,44,45)(H,46,47)(H,48,49)(H,50,51)(H,52,53);;;;/q;4*+1/p-4/b25-13-,26-14-,28-15-,36-24-;;;;/t19-,23-,27?,39-;;;;/m0..../s1",
+            true,
+            true,
+        )
+        .expect("the source-defined InChI must parse");
+        let molecule = output.molecule.expect("successful parse returns a graph");
+        assert_eq!(
+            molecule.to_smiles(true).unwrap(),
+            "C=CC1=C(C)C2=C/C3N=C(/C(CC([O-])=N[C@@](C)(CC(=O)[O-])C(=O)O)=c4\\[nH]/c(c(C)c4C(=O)[O-])=C\\C4=NC(=C/C1=N\\2)\\C(C)=C4CC)[C@@H](CCC(=O)[O-])[C@@H]3C.[Na+].[Na+].[Na+].[Na+]"
+        );
+    }
+
+    #[test]
+    fn mol_from_inchi_preserves_the_source_tautomer_endpoint_allocation_extent() {
+        let output = mol_from_inchi(
+            b"InChI=1S/C21H20N8O4S/c22-19-18(26-25-12-3-5-13(30)6-4-12)20(28-27-19)24-17-15-11-14(7-8-16(15)23-21(17)31)34(32,33)29-9-1-2-10-29/h3-8,11,30H,1-2,9-10H2,(H4,22,23,24,27,28,31)/b26-25+",
+            true,
+            true,
+        )
+        .expect("the source-defined InChI must not become a Rust pointer error");
+        assert_eq!(output.return_values.return_code, 1);
+        let molecule = output.molecule.expect("warning result returns a graph");
+        assert_eq!(molecule.num_atoms(), 34);
+    }
+
+    #[test]
+    fn mol_from_inchi_preserves_property_cache_across_all_option_branches() {
+        const INCHI: &[u8] = b"InChI=1S/HNO3/c2-1(3)4/h(H,2,3,4)";
+
+        for sanitize in [false, true] {
+            for remove_hs in [false, true] {
+                let output = mol_from_inchi(INCHI, sanitize, remove_hs)
+                    .expect("the source-defined InChI must parse");
+                let molecule = output.molecule.expect("successful parse returns a graph");
+                let nitrogen = molecule
+                    .atoms()
+                    .iter()
+                    .position(|atom| atom.atomic_number() == 7)
+                    .expect("nitric acid contains nitrogen");
+                let valence = crate::cached_valence_assignment(&molecule)
+                    .expect("MolFromInchi populates the source property cache");
+                let expected = if sanitize { 4 } else { 5 };
+
+                assert_eq!(
+                    valence.explicit_valence[nitrogen], expected,
+                    "sanitize={sanitize} remove_hs={remove_hs}"
+                );
+                assert_eq!(
+                    valence.explicit_valence[nitrogen] + valence.implicit_hydrogens[nitrogen],
+                    expected,
+                    "sanitize={sanitize} remove_hs={remove_hs}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1175,9 +1462,15 @@ mod tests {
         let rebuilt = core_from_adapter(&adapter, &toolkit.coordinate_dimensions).unwrap();
         assert_eq!(rebuilt.num_atoms(), 1);
         assert_eq!(rebuilt.coordinates_2d(), Some(&[[0.0, -0.0]][..]));
-        assert!(rebuilt.derived_cache().valence.is_none());
-        let recomputed = rebuilt.with_assigned_valence().unwrap();
-        assert!(recomputed.derived_cache().valence.is_some());
+        let cached = rebuilt
+            .derived_cache()
+            .valence
+            .as_ref()
+            .expect("source removeHs leaves an updated property cache");
+        assert_eq!(
+            cached,
+            &crate::assign_valence(&rebuilt, ValenceModel::RdkitLike).unwrap()
+        );
     }
 
     #[test]

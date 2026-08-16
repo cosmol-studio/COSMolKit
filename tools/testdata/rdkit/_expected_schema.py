@@ -75,7 +75,7 @@ SCHEMAS = {
         "atom_types:array,error:null,fixture:string,has_all:boolean,line_number:integer,num_atoms:integer,props_ok:boolean,rdkit_ok:boolean,row_name:string,smiles:string,variant:string"
     ),
     "inchi.jsonl": _schema(
-        "error:null|string,inchi:null|string,rdkit_ok:boolean,row:integer,smiles:string"
+        "error:null|string,inchi:null|string,mol_from_inchi_branches:object,rdkit_ok:boolean,row:integer,smiles:string"
     ),
     "rdkit_builtin_fixture_migration.jsonl": _schema(
         "fixture:string,kind:string",

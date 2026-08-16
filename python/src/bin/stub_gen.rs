@@ -424,7 +424,6 @@ fn expose_batch_validation_error(mut text: String) -> String {
 
 fn expose_inchi_api(mut text: String) -> String {
     for export_name in [
-        "Chem",
         "InchiError",
         "InchiAllocationError",
         "InchiUnsupportedStateError",
@@ -439,7 +438,7 @@ fn expose_inchi_api(mut text: String) -> String {
         }
     }
 
-    if !text.contains("class _ChemModule(typing.Protocol):") {
+    if !text.contains("class InchiError(builtins.ValueError):") {
         let declarations = r#"class InchiError(builtins.ValueError):
     operation: builtins.str
     kind: builtins.str
@@ -452,13 +451,6 @@ class InchiUnsupportedStateError(InchiError): ...
 class InchiDiagnosticWarning(builtins.UserWarning):
     level: builtins.str
     message: builtins.str
-
-class _ChemModule(typing.Protocol):
-    def MolToInchi(self, molecule: Molecule, options: builtins.str = ...) -> builtins.str: ...
-    def MolToInchiKey(self, molecule: Molecule, options: builtins.str = ...) -> builtins.str: ...
-    def MolFromInchi(self, inchi: builtins.str, sanitize: builtins.bool = ..., remove_hs: builtins.bool = ...) -> typing.Optional[Molecule]: ...
-
-Chem: _ChemModule
 
 "#;
         text = text.replace(

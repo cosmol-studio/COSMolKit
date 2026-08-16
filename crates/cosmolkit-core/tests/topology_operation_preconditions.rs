@@ -17,7 +17,6 @@ fn with_hydrogens_registry_declares_semantic_preconditions() {
 
     assert!(preconditions.contains(SemanticPreconditionSet::TRUSTED_BOND_TOPOLOGY));
     assert!(!preconditions.contains(SemanticPreconditionSet::HYDROGEN_OWNERSHIP_REPRESENTED));
-    assert!(preconditions.contains(SemanticPreconditionSet::VALENCE_COMPUTABLE));
 }
 
 #[test]

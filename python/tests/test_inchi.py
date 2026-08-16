@@ -11,16 +11,16 @@ STEREO_ISOTOPE_INCHI = "InChI=1S/CHBrClF/c2-1(3)4/t1-/m0/s1/i1+1"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_inchi_python_four_scalar_apis_match_exact_methane_results() -> None:
+def test_inchi_python_four_entry_points_match_exact_methane_results() -> None:
     source = cosmolkit.Molecule.from_smiles("C")
     before = source.to_smiles()
 
-    inchi = cosmolkit.Chem.MolToInchi(source)
+    inchi = source.to_inchi()
     assert inchi == METHANE_INCHI
-    assert cosmolkit.Chem.MolToInchiKey(source) == METHANE_INCHI_KEY
-    assert cosmolkit.InchiToInchiKey(inchi) == METHANE_INCHI_KEY
+    assert source.to_inchi_key() == METHANE_INCHI_KEY
+    assert cosmolkit.inchi_to_key(inchi) == METHANE_INCHI_KEY
 
-    parsed = cosmolkit.Chem.MolFromInchi(inchi, False, False)
+    parsed = cosmolkit.Molecule.from_inchi(inchi, sanitize=False, remove_hs=False)
     assert parsed is not None
     assert parsed.num_atoms() == 1
     assert parsed.num_bonds() == 0
@@ -30,44 +30,58 @@ def test_inchi_python_four_scalar_apis_match_exact_methane_results() -> None:
     assert source.to_smiles() == before
 
 
-def test_inchi_python_preserves_source_defined_stereo_and_isotope() -> None:
-    parsed = cosmolkit.Chem.MolFromInchi(STEREO_ISOTOPE_INCHI, False, False)
+def test_inchi_python_matches_source_stereo_cleanup_for_isotopic_center() -> None:
+    parsed = cosmolkit.Molecule.from_inchi(
+        STEREO_ISOTOPE_INCHI, sanitize=False, remove_hs=False
+    )
     assert parsed is not None
     assert parsed.num_atoms() == 4
     assert parsed.num_bonds() == 3
     carbon = parsed.atoms()[0]
     assert carbon.atomic_num() == 6
     assert carbon.isotope() == 13
-    assert carbon.chiral_tag_name() in {
-        "CHI_TETRAHEDRAL_CW",
-        "CHI_TETRAHEDRAL_CCW",
-    }
+    assert carbon.chiral_tag_name() == "CHI_UNSPECIFIED"
 
 
 def test_inchi_python_preserves_relative_and_racemic_stereo_options() -> None:
     source = cosmolkit.Molecule.from_smiles("F[C@H](Cl)Br")
 
-    assert cosmolkit.Chem.MolToInchi(source, "-SRel") == (
+    assert source.to_inchi("-SRel") == (
         "InChI=1/CHBrClF/c2-1(3)4/h1H/t1-/s2"
     )
-    assert cosmolkit.Chem.MolToInchi(source, "-SRac") == (
+    assert source.to_inchi("-SRac") == (
         "InChI=1/CHBrClF/c2-1(3)4/h1H/t1-/s3"
     )
 
 
 def test_inchi_python_preserves_cationic_aromatic_nitrogen_charge() -> None:
     source = cosmolkit.Molecule.from_smiles("C[n+]1ccccc1")
-    inchi = cosmolkit.Chem.MolToInchi(source)
+    inchi = source.to_inchi()
 
-    parsed = cosmolkit.Chem.MolFromInchi(inchi, False, False)
+    parsed = cosmolkit.Molecule.from_inchi(inchi, sanitize=False, remove_hs=False)
     assert parsed is not None
     nitrogen = next(atom for atom in parsed.atoms() if atom.atomic_num() == 7)
     assert nitrogen.formal_charge() == 1
 
 
+def test_from_inchi_covers_all_sanitize_remove_hs_valence_branches() -> None:
+    inchi = "InChI=1S/HNO3/c2-1(3)4/h(H,2,3,4)"
+
+    for sanitize in (False, True):
+        for remove_hs in (False, True):
+            parsed = cosmolkit.Molecule.from_inchi(
+                inchi, sanitize=sanitize, remove_hs=remove_hs
+            )
+            assert parsed is not None
+            nitrogen = next(atom for atom in parsed.atoms() if atom.atomic_num() == 7)
+            expected_valence = 4 if sanitize else 5
+            assert nitrogen.explicit_valence() == expected_valence
+            assert nitrogen.total_valence() == expected_valence
+
+
 def test_inchi_python_exposes_source_diagnostic_as_structured_warning() -> None:
     with pytest.warns(cosmolkit.InchiDiagnosticWarning) as records:
-        key = cosmolkit.InchiToInchiKey("")
+        key = cosmolkit.inchi_to_key("")
 
     assert key is None
     assert len(records) == 1
@@ -83,7 +97,7 @@ def test_inchi_python_returns_none_for_rdkit_mol_sanitize_exception() -> None:
         "h7-10H,1-6H2/t7-,8+/m0/s1"
     )
 
-    assert cosmolkit.Chem.MolFromInchi(inchi) is None
+    assert cosmolkit.Molecule.from_inchi(inchi) is None
 
 
 def test_inchi_python_rejects_unsupported_molecule_state_structurally() -> None:
@@ -96,7 +110,7 @@ def test_inchi_python_rejects_unsupported_molecule_state_structurally() -> None:
     )
 
     with pytest.raises(cosmolkit.InchiUnsupportedStateError) as captured:
-        cosmolkit.Chem.MolToInchi(molecule)
+        _ = molecule.to_inchi()
 
     error = captured.value
     assert isinstance(error, cosmolkit.InchiError)
@@ -118,3 +132,14 @@ def test_inchi_python_allocation_error_contract_is_deterministic_and_structured(
     assert error.kind == "allocation_failed"
     assert error.detail == "AllocationFailed"
     assert str(error) == "mol_to_inchi failed (AllocationFailed): AllocationFailed"
+
+
+def test_inchi_python_surface_uses_molecule_methods_and_project_naming() -> None:
+    molecule = cosmolkit.Molecule.from_smiles("C")
+
+    assert callable(molecule.to_inchi)
+    assert callable(molecule.to_inchi_key)
+    assert callable(cosmolkit.Molecule.from_inchi)
+    assert callable(cosmolkit.inchi_to_key)
+    assert not hasattr(cosmolkit, "Chem")
+    assert not hasattr(cosmolkit, "InchiToInchiKey")

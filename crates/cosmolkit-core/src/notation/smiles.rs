@@ -15,7 +15,7 @@ mod stereo;
 pub(crate) use self::stereo::{
     assign_chiral_types_from_3d, assign_chiral_types_from_bond_dirs,
     assign_double_bond_stereo_after_smiles_parse, assign_stereochemistry_cleanup_subset,
-    clear_all_bond_dir_flags, set_double_bond_neighbor_directions,
+    clear_all_bond_dir_flags, set_bond_stereo_from_directions, set_double_bond_neighbor_directions,
     set_double_bond_neighbor_directions_from_stereo,
 };
 use self::{cx::*, stereo::*};
@@ -5008,17 +5008,6 @@ pub(crate) fn nontetrahedral_chiral_permutation_for_probe(
         inverse,
     )
     .map_err(|error| error.message().to_string())
-}
-
-pub fn assign_double_bond_stereo_from_directions(
-    molecule: &mut Molecule,
-) -> Result<(), StereoError> {
-    // BEGIN RDKIT CPP FUNCTION setBondStereoFromDirections caller path
-    // RDKit✔️✔️: MolOps::setBondStereoFromDirections(*res);
-    // RDKit✔️✔️: // clear _needsDetectBondStereo and assign E/Z plus stereo atoms from
-    // RDKit✔️✔️: // neighboring directed single bonds.
-    // END RDKIT CPP FUNCTION setBondStereoFromDirections caller path
-    set_bond_stereo_from_directions(molecule)
 }
 
 #[cfg(test)]
