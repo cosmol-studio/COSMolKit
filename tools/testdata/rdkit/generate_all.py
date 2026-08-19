@@ -202,6 +202,13 @@ GENERATOR_SPECS = [
         generator_dependencies=("rdkit_topological_fingerprint_profile.json",),
     ),
     spec(
+        "avalon_fingerprint_golden",
+        "avalon_fingerprint.jsonl",
+        "fingerprint",
+        {"default", "strict-corpus", "fingerprint"},
+        generator_dependencies=("avalon_fingerprint_profile.json",),
+    ),
+    spec(
         "sdf_write_golden",
         "sdf_write.jsonl",
         "sdf",

@@ -10,8 +10,7 @@ use serde::Deserialize;
 mod common;
 use common::parity_data;
 
-const GOLDEN_PATH: &str = "tmp/parity-audit/avalon_fingerprint_smiles_5000.jsonl";
-const FOCUSED_PATH: &str = "tmp/parity-audit/avalon_fingerprint_focused.json";
+const FOCUSED_PATH: &str = "testdata/fingerprint/fixtures/rdkit/avalon_fingerprint_focused.json";
 
 #[derive(Debug, Deserialize)]
 struct CorpusRecord {
@@ -38,7 +37,6 @@ struct Parameters {
     n_bits: u32,
     is_query: bool,
     bit_flags: String,
-    smiles: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,7 +51,7 @@ struct FocusedCase {
 }
 
 fn read_jsonl() -> Vec<CorpusRecord> {
-    let path = parity_data::repo_root().join(GOLDEN_PATH);
+    let path = parity_data::golden_path("avalon_fingerprint.jsonl");
     let file = File::open(&path)
         .unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
     BufReader::new(file)
@@ -78,6 +76,17 @@ fn read_jsonl() -> Vec<CorpusRecord> {
         .collect()
 }
 
+fn corpus_smiles() -> Vec<String> {
+    let path = parity_data::smiles_path();
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(str::to_owned)
+        .collect()
+}
+
 fn flags(value: &str) -> AvalonFingerprintFlags {
     let bits = u32::from_str_radix(value.trim_start_matches("0x"), 16)
         .unwrap_or_else(|error| panic!("invalid Avalon flags {value}: {error}"));
@@ -86,14 +95,6 @@ fn flags(value: &str) -> AvalonFingerprintFlags {
 }
 
 fn assert_branch(smiles: &str, branch_name: &str, branch: &BranchRecord, molecule: &Molecule) {
-    if !branch.ok {
-        assert!(
-            avalon_fingerprint(molecule, &AvalonFingerprintParams::default()).is_err(),
-            "row {smiles} branch {branch_name} unexpectedly succeeded; source error: {:?}",
-            branch.error
-        );
-        return;
-    }
     let parameters = branch
         .parameters
         .as_ref()
@@ -104,6 +105,14 @@ fn assert_branch(smiles: &str, branch_name: &str, branch: &BranchRecord, molecul
         bit_flags: flags(branch.bit_flags.as_deref().unwrap_or(&parameters.bit_flags)),
     };
     assert_eq!(parameters.name, branch_name, "branch metadata changed");
+    if !branch.ok {
+        assert!(
+            avalon_fingerprint(molecule, &params).is_err(),
+            "row {smiles} branch {branch_name} unexpectedly succeeded; source error: {:?}",
+            branch.error
+        );
+        return;
+    }
     let actual = avalon_fingerprint(molecule, &params);
     let actual =
         actual.unwrap_or_else(|error| panic!("row {smiles} branch {branch_name} failed: {error}"));
@@ -120,19 +129,25 @@ fn assert_branch(smiles: &str, branch_name: &str, branch: &BranchRecord, molecul
 }
 
 #[test]
-fn avalon_fingerprint_matches_every_active_5000_row_profile_exactly() {
+fn avalon_fingerprint_matches_every_active_corpus_profile_exactly() {
     let records = read_jsonl();
+    let corpus = corpus_smiles();
     assert_eq!(
         records.len(),
-        5000,
+        corpus.len(),
         "Avalon corpus golden must contain every row"
     );
     let mut failures: Vec<(usize, String)> = records
         .par_iter()
+        .zip(corpus.par_iter())
         .enumerate()
-        .filter_map(|(row, record)| {
+        .filter_map(|(row, (record, expected_smiles))| {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 assert_eq!(record.row, row, "Avalon row index changed");
+                assert_eq!(
+                    record.smiles, *expected_smiles,
+                    "Avalon corpus SMILES changed at row {row}"
+                );
                 let molecule = Molecule::from_smiles(&record.smiles);
                 for (branch_name, branch) in &record.branches {
                     if branch.ok {

@@ -1,0 +1,398 @@
+{
+  "cases": [
+    {
+      "case": {
+        "bit_flags": "0x007fff",
+        "is_query": false,
+        "n_bits": 64,
+        "name": "ethanol_cpp_64",
+        "smiles": "CCO"
+      },
+      "result": {
+        "bit_flags": "0x007fff",
+        "bytes_hex": "404000c000040000",
+        "counts": {},
+        "is_query": false,
+        "n_bits": 64,
+        "ok": true,
+        "on_bits": [
+          6,
+          14,
+          30,
+          31,
+          42
+        ],
+        "smiles": "CCO"
+      }
+    },
+    {
+      "case": {
+        "bit_flags": "0xf07fff",
+        "is_query": false,
+        "n_bits": 64,
+        "name": "ethanol_python_64",
+        "smiles": "CCO"
+      },
+      "result": {
+        "bit_flags": "0xf07fff",
+        "bytes_hex": "484000c000040000",
+        "counts": {},
+        "is_query": false,
+        "n_bits": 64,
+        "ok": true,
+        "on_bits": [
+          3,
+          6,
+          14,
+          30,
+          31,
+          42
+        ],
+        "smiles": "CCO"
+      }
+    },
+    {
+      "case": {
+        "bit_flags": "0x007fff",
+        "is_query": false,
+        "n_bits": 64,
+        "name": "benzene_cpp_64",
+        "smiles": "c1ccccc1"
+      },
+      "result": {
+        "bit_flags": "0x007fff",
+        "bytes_hex": "000481a020000000",
+        "counts": {},
+        "is_query": false,
+        "n_bits": 64,
+        "ok": true,
+        "on_bits": [
+          10,
+          16,
+          23,
+          29,
+          31,
+          37
+        ],
+        "smiles": "c1ccccc1"
+      }
+    },
+    {
+      "case": {
+        "bit_flags": "0x007fff",
+        "is_query": true,
+        "n_bits": 64,
+        "name": "query_64",
+        "smiles": "C[NH2+]C"
+      },
+      "result": {
+        "bit_flags": "0x007fff",
+        "bytes_hex": "0000000000000000",
+        "counts": {},
+        "is_query": true,
+        "n_bits": 64,
+        "ok": true,
+        "on_bits": [],
+        "smiles": "C[NH2+]C"
+      }
+    },
+    {
+      "case": {
+        "bit_flags": "0xf00000",
+        "is_query": false,
+        "n_bits": 64,
+        "name": "ethanol_non_sss_64",
+        "smiles": "CCO"
+      },
+      "result": {
+        "bit_flags": "0xf00000",
+        "bytes_hex": "0800000000000000",
+        "counts": {},
+        "is_query": false,
+        "n_bits": 64,
+        "ok": true,
+        "on_bits": [
+          3
+        ],
+        "smiles": "CCO"
+      }
+    },
+    {
+      "case": {
+        "bit_flags": "0x007fff",
+        "is_query": false,
+        "n_bits": 9,
+        "name": "ethanol_9_bit_rounding",
+        "smiles": "CCO"
+      },
+      "result": {
+        "bit_flags": "0x007fff",
+        "bytes_hex": "40",
+        "counts": {},
+        "is_query": false,
+        "n_bits": 9,
+        "ok": true,
+        "on_bits": [
+          6
+        ],
+        "smiles": "CCO"
+      }
+    },
+    {
+      "case": {
+        "bit_flags": "0x007fff",
+        "is_query": false,
+        "n_bits": 31,
+        "name": "ethanol_31_bit_rounding",
+        "smiles": "CCO"
+      },
+      "result": {
+        "bit_flags": "0x007fff",
+        "bytes_hex": "404400",
+        "counts": {},
+        "is_query": false,
+        "n_bits": 31,
+        "ok": true,
+        "on_bits": [
+          6,
+          10,
+          14
+        ],
+        "smiles": "CCO"
+      }
+    },
+    {
+      "case": {
+        "bit_flags": "0x007fff",
+        "is_query": false,
+        "n_bits": 33,
+        "name": "ethanol_33_bit_rounding",
+        "smiles": "CCO"
+      },
+      "result": {
+        "bit_flags": "0x007fff",
+        "bytes_hex": "404400c0",
+        "counts": {},
+        "is_query": false,
+        "n_bits": 33,
+        "ok": true,
+        "on_bits": [
+          6,
+          10,
+          14,
+          30,
+          31
+        ],
+        "smiles": "CCO"
+      }
+    }
+  ],
+  "engine": "AvalonToolkit_2.0.5-pre.3",
+  "profile": {
+    "avalon_engine": "AvalonToolkit_2.0.5-pre.3",
+    "corpus_branches": [
+      {
+        "bit_flags": "0x007fff",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "sss_all"
+      },
+      {
+        "bit_flags": "0xf07fff",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "similarity_all"
+      },
+      {
+        "bit_flags": "0xf00000",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "non_sss_all"
+      },
+      {
+        "bit_flags": "0x007fff",
+        "is_query": true,
+        "n_bits": 512,
+        "name": "query_sss_all"
+      },
+      {
+        "bit_flags": "0x000001",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "ring_pattern"
+      },
+      {
+        "bit_flags": "0x000002",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "ring_path"
+      },
+      {
+        "bit_flags": "0x000004",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "atom_symbol_path"
+      },
+      {
+        "bit_flags": "0x000008",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "atom_class_path"
+      },
+      {
+        "bit_flags": "0x000010",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "atom_count"
+      },
+      {
+        "bit_flags": "0x000020",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "augmented_atom"
+      },
+      {
+        "bit_flags": "0x000040",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "hcount_path"
+      },
+      {
+        "bit_flags": "0x000080",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "hcount_class_path"
+      },
+      {
+        "bit_flags": "0x000100",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "hcount_pair"
+      },
+      {
+        "bit_flags": "0x000200",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "bond_path"
+      },
+      {
+        "bit_flags": "0x000400",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "augmented_bond"
+      },
+      {
+        "bit_flags": "0x000800",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "ring_size_counts"
+      },
+      {
+        "bit_flags": "0x001000",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "degree_path"
+      },
+      {
+        "bit_flags": "0x002000",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "class_spiders"
+      },
+      {
+        "bit_flags": "0x004000",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "feature_pairs"
+      },
+      {
+        "bit_flags": "0x100000",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "scaffold_ids"
+      },
+      {
+        "bit_flags": "0x200000",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "scaffold_colors"
+      },
+      {
+        "bit_flags": "0x400000",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "scaffold_links"
+      },
+      {
+        "bit_flags": "0x800000",
+        "is_query": false,
+        "n_bits": 512,
+        "name": "shortcut_labels"
+      }
+    ],
+    "focused_cases": [
+      {
+        "bit_flags": "0x007fff",
+        "is_query": false,
+        "n_bits": 64,
+        "name": "ethanol_cpp_64",
+        "smiles": "CCO"
+      },
+      {
+        "bit_flags": "0xf07fff",
+        "is_query": false,
+        "n_bits": 64,
+        "name": "ethanol_python_64",
+        "smiles": "CCO"
+      },
+      {
+        "bit_flags": "0x007fff",
+        "is_query": false,
+        "n_bits": 64,
+        "name": "benzene_cpp_64",
+        "smiles": "c1ccccc1"
+      },
+      {
+        "bit_flags": "0x007fff",
+        "is_query": true,
+        "n_bits": 64,
+        "name": "query_64",
+        "smiles": "C[NH2+]C"
+      },
+      {
+        "bit_flags": "0xf00000",
+        "is_query": false,
+        "n_bits": 64,
+        "name": "ethanol_non_sss_64",
+        "smiles": "CCO"
+      },
+      {
+        "bit_flags": "0x007fff",
+        "is_query": false,
+        "n_bits": 9,
+        "name": "ethanol_9_bit_rounding",
+        "smiles": "CCO"
+      },
+      {
+        "bit_flags": "0x007fff",
+        "is_query": false,
+        "n_bits": 31,
+        "name": "ethanol_31_bit_rounding",
+        "smiles": "CCO"
+      },
+      {
+        "bit_flags": "0x007fff",
+        "is_query": false,
+        "n_bits": 33,
+        "name": "ethanol_33_bit_rounding",
+        "smiles": "CCO"
+      }
+    ],
+    "public_defaults": {
+      "bit_flags": "0xf07fff",
+      "is_query": false,
+      "n_bits": 512
+    },
+    "rdkit_version": "2026.3.1"
+  }
+}

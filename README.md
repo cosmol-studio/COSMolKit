@@ -316,9 +316,9 @@ Goal: keep the supported molecular core correct before expanding breadth.
 - ✅ Morgan fingerprints and Tanimoto similarity for the validated exact-parity branches
 - ✅ MACCS fingerprints for the validated exact raw/public projection
 - ✅ Source-backed RDKFingerprint/topological and Avalon fingerprints with
-  exact maintained-corpus validation (topological: 5,000 rows × 14 profiles;
-  Avalon: 5,000 rows × 23 profiles), including optional topological atom/bit
-  provenance
+  zero-mismatch ChEMBL 37 validation across 2,897,804 mutually parseable
+  molecules and 113,014,356 exact profile comparisons, including complete
+  topological `atomBits`/`bitInfo` provenance
 - ✅ Substructure matching and Python SMARTS parse metadata
 - ✅ Molecular descriptors: average/exact molecular weight, formula, H-bond
   donor/acceptor counts, fraction Csp3, Crippen logP/MR, TPSA, aromatic-ring

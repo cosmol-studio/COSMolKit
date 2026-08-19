@@ -18,10 +18,12 @@ interchangeably in tests or documentation.
 | Maintained strict | `testdata/smiles/corpus/smiles_5000.smi` | 5,000 | Committed exhaustive profile matrices for surfaces not yet audited over ChEMBL 37 |
 | Large stress | ChEMBL 37 structure table | 2,897,819 source; 2,897,804 mutually parseable | Large-scale parity, operation-order, batch, and concurrent-read stress auditing |
 
-The complete ChEMBL 37 profile contains 22 sharded phases and 2,816 tasks over
-128 corpus shards. Phases with a configured atom-count boundary evaluate
-2,854,362 eligible records. Large subset phases select their stated number of
-records from the same ChEMBL 37 source; they are not separate corpora.
+The original complete ChEMBL 37 profile contains 22 sharded phases and 2,816
+tasks over 128 corpus shards. The later full-corpus RDKFingerprint/Avalon audit
+adds 128 fingerprint tasks over the same shards. Phases with a configured
+atom-count boundary evaluate 2,854,362 eligible records. Large subset phases
+select their stated number of records from the same ChEMBL 37 source; they are
+not separate corpora.
 
 ## Numeric Coverage Summary
 
@@ -45,11 +47,12 @@ matrix entries actually compared, not merely the number of input molecules.
 | Shared-object concurrent reads | ChEMBL 37 subset | 64,524 | 16 values + 16 graph states | 2,064,768 per run; 2 runs |
 | Fixed-seed conformer outcome | ChEMBL 37 subset | 524,288 | coordinate or matching failure status | 524,288 |
 | UFF/MMFF parameter and optimizer paths | ChEMBL 37 subset | 516,096 | 4 parameter + 2 optimizer | 3,090,706 completed |
-| RDKFingerprint/topological | Maintained strict | 5,000 | 14 | 70,000 |
-| Avalon explicit-bit | Maintained strict | 5,000 | 23 | 115,000 |
+| RDKFingerprint/topological | ChEMBL 37 | 2,897,804 | 14 vectors + 2 provenance outputs | 46,364,864 |
+| Avalon explicit-bit | ChEMBL 37 | 2,897,804 | 23 | 66,649,492 |
 
-The ChEMBL 37 figures above are the complete audit's original counters. That
-audit deliberately retained every observed difference instead of accepting a
+Except for the separately identified RDKFingerprint and Avalon rows, the
+ChEMBL 37 figures above are the original complete audit's counters. That audit
+deliberately retained every observed difference instead of accepting a
 percentage threshold. Source-aligned fixes were then replayed over the retained
 records and their full affected branch matrices: 10 descriptor records, 3,092
 fingerprint records, one explicit-hydrogen record, 180 bounds matrices with
@@ -57,7 +60,9 @@ fingerprint records, one explicit-hydrogen record, 180 bounds matrices with
 records with 82,944 writer comparisons, 441 SVG records, 160 I/O records with
 2,560 writer comparisons, seven conformer records, and 262 force-field records.
 Those retained-set replays have no unexplained mismatch. They are not described
-as a post-fix rerun of the entire ChEMBL 37 corpus.
+as a post-fix rerun of the entire ChEMBL 37 corpus. RDKFingerprint and Avalon,
+by contrast, were subsequently rerun across the entire corpus after their
+source ports were completed.
 
 The 3,480 archived ChEMBL reference InChIs and 3,480 archived reference
 InChIKeys that differ from the current result are corpus-version differences:
@@ -121,12 +126,24 @@ one. The large-run counter contains 89,831,720 completed comparisons because
 as completed branch comparisons by the audit harness. The source fix was
 validated across the retained fingerprint set and all affected branches.
 
-RDKFingerprint and Avalon were completed after the ChEMBL run, so their claims
-remain explicitly tied to the 5,000-row maintained corpus: 14 topological
-profiles and 23 Avalon profiles. Sparse-count, sparse-bit, hashed-count,
-explicit-bit, raw/public projection, and provenance output are claimed only
-where enumerated by each family's active profile. No approximate vector,
-similarity correlation, or 99.9% bit agreement is accepted as parity.
+The dedicated RDKFingerprint/Avalon full-corpus audit processed all 2,897,819
+source records: 2,897,804 were mutually parseable and 15 were rejected by both
+libraries. Every mutually parseable molecule matched exactly across 14
+topological vector profiles (40,569,256 comparisons), 23 Avalon explicit-bit
+profiles (66,649,492 comparisons), and two topological provenance profiles
+(5,795,608 comparisons). The provenance comparison includes vector width,
+complete on-bit sets, `atomBits`, and `bitInfo`. All 128 shards completed with
+zero mismatches and no failed task, for 113,014,356 exact comparisons total.
+The 2026-08-19 run used COSMolKit `0.2.12` at commit `ea7c581c`, pinned RDKit
+`2026.03.1`, and ChEMBL 37 source SHA-256
+`ea6181ce8dc7af41974e35b92e1febb0c9dcbe2c62f7ccc4a5d983ac19f696e7`.
+
+The maintained 5,000-row corpus continues to provide committed exhaustive
+regression gates for the same 14 topological and 23 Avalon profiles. Sparse-
+count, sparse-bit, hashed-count, explicit-bit, raw/public projection, and
+provenance output are claimed only where enumerated by each family's active
+profile. No approximate vector, similarity correlation, or 99.9% bit
+agreement is accepted as parity.
 
 ### Bounds, Conformers, And Force Fields
 

@@ -21,6 +21,30 @@ fn charged_isotope_molecule() -> Molecule {
     builder.build().unwrap()
 }
 
+#[test]
+fn molblock_writer_rejects_out_of_range_effective_atomic_number_like_rdkit() {
+    let molecule = Molecule::from_smiles(
+        "[C+9]([F])([F])([F])([F])([F])([F])([F])([F])([F])([F])([F])([F])[F]",
+    )
+    .unwrap();
+    let error = mol_to_v2000_block(&molecule).unwrap_err();
+    assert!(matches!(
+        error,
+        MolWriteError::Value(ref reason) if reason == "Atomic number not found"
+    ));
+}
+
+#[test]
+fn non_default_valence_skips_periodic_table_lookup_when_implicit_hs_are_allowed() {
+    let mut builder = Molecule::builder();
+    let atom_id = builder.add_atom(AtomSpec::new(Element::C).with_formal_charge(9));
+    let molecule = builder.build().unwrap();
+    let atom = &molecule.atoms()[atom_id.index()];
+    assert!(!atom.no_implicit());
+    let valence = molblock_valence_assignment(&molecule).unwrap();
+    assert!(!has_non_default_valence(&molecule, atom, &valence).unwrap());
+}
+
 fn ethene_molecule() -> Molecule {
     let mut builder = Molecule::builder().with_name("ethene");
     let a0 = builder.add_atom(AtomSpec::new(Element::C));

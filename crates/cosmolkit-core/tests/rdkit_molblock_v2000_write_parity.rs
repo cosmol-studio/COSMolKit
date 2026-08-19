@@ -305,8 +305,18 @@ fn molblock_v2000_body_matches_rdkit_coordinates_and_topology() {
             .unwrap_or_else(|error| panic!("parse failed at row {row}: {error}"))
             .with_2d_coordinates()
             .unwrap_or_else(|error| panic!("2D coordinates failed at row {row}: {error}"));
-        let block = mol_to_v2000_block(&molecule)
-            .unwrap_or_else(|error| panic!("write failed at row {row}: {error}"));
+        let block = mol_to_v2000_block(&molecule);
+        if !record.v2000_ok && !record.v3000_ok {
+            assert!(
+                block.is_err(),
+                "write should fail at row {row} ({}); RDKit V2000 error: {:?}; RDKit V3000 error: {:?}",
+                record.smiles,
+                record.v2000_error,
+                record.v3000_error
+            );
+            continue;
+        }
+        let block = block.unwrap_or_else(|error| panic!("write failed at row {row}: {error}"));
         let actual_body = body(&block);
         if let Some(expected) = &record.v2000_body {
             compare_against_expected(&actual_body, expected, &record.smiles, row, "v2000");

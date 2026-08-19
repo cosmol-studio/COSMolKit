@@ -1489,16 +1489,18 @@ fn has_non_default_valence(
     if atom.atomic_number() == 1
         || crate::notation::smiles_write::in_organic_subset(atom.atomic_number()).unwrap_or(false)
     {
+        if !atom.no_implicit() {
+            return Ok(false);
+        }
         let effective_atomic_num =
-            i32::from(atom.atomic_number()) - i32::from(atom.formal_charge());
-        let default_valence = u8::try_from(effective_atomic_num)
-            .ok()
-            .and_then(|atomic_number| {
-                crate::chemistry::valence::rdkit_default_valence(atomic_number).ok()
-            })
-            .unwrap_or(-1);
+            u32::from(atom.atomic_number()).wrapping_sub(i32::from(atom.formal_charge()) as u32);
+        let effective_atomic_num = u8::try_from(effective_atomic_num)
+            .map_err(|_| MolWriteError::Value("Atomic number not found".to_string()))?;
+        let default_valence =
+            crate::chemistry::valence::rdkit_default_valence(effective_atomic_num)
+                .map_err(|_| MolWriteError::Value("Atomic number not found".to_string()))?;
         let explicit_valence = valence.explicit_valence[atom.id().index()];
-        return Ok(atom.no_implicit() && explicit_valence != default_valence);
+        return Ok(explicit_valence != default_valence);
     }
     let _ = molecule;
     Ok(true)

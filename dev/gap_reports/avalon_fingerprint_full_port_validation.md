@@ -25,7 +25,7 @@ Command:
 RUSTFLAGS=-Awarnings cargo test -p cosmolkit-core --release \
   --features op-contracts-strict \
   --test rdkit_avalon_fingerprint_golden \
-  avalon_fingerprint_matches_every_active_5000_row_profile_exactly -- --exact
+  avalon_fingerprint_matches_every_active_corpus_profile_exactly -- --exact
 ```
 
 Result: `1 passed`, 5000 corpus rows, 23 active profiles, 115,000 exact
@@ -36,6 +36,16 @@ It uses no sampling, tolerance, fallback, similarity threshold, or mismatch
 filter. Release execution completed in 171.46 seconds on the validation host;
 the deterministic parallel rerun completed in 12.97 seconds after compilation
 and produced the same result.
+
+The maintained gate is supplemented by a full ChEMBL 37 audit against the
+same pinned RDKit adapter. It processed 2,897,819 source records, of which
+2,897,804 were mutually parseable and 15 were rejected by both libraries.
+Every mutually parseable record matched across all 23 profiles, yielding
+66,649,492 exact bit-vector comparisons. All 128 shards completed with zero
+mismatch or failed task.
+The audit ran on 2026-08-19 with COSMolKit `0.2.12` at commit `ea7c581c`;
+the ChEMBL 37 source SHA-256 is
+`ea6181ce8dc7af41974e35b92e1febb0c9dcbe2c62f7ccc4a5d983ac19f696e7`.
 
 A three-run, one-profile Python API comparison over all 5,000 rows measured a
 median of 4.696 seconds for pinned RDKit and 8.411 seconds for COSMolKit. Both

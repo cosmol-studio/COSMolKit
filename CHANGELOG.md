@@ -98,10 +98,18 @@ profile.
   descriptor, Morgan, explicit-H, bounds, InChI, SMILES, SVG, MolBlock/SDF,
   conformer, and force-field regressions; it is not represented as a post-fix
   rerun of the entire ChEMBL corpus.
-- RDKit topological fingerprints match exactly on 5,000 molecules across 14
-  profiles (70,000 comparisons). Avalon matches exactly on the same 5,000
-  molecules across 23 profiles (115,000 comparisons). Neither suite uses
-  sampling, tolerance, similarity thresholds, or fallback fingerprints.
+- The complete ChEMBL 37 fingerprint audit processed all 2,897,819 source
+  records across 128 shards: 2,897,804 were mutually parseable and 15 were
+  rejected by both libraries. RDKit topological fingerprints matched exactly
+  across 14 vector profiles (40,569,256 comparisons) and two complete
+  `atomBits`/`bitInfo` provenance profiles (5,795,608 comparisons); Avalon
+  matched exactly across 23 explicit-bit profiles (66,649,492 comparisons).
+  All 113,014,356 comparisons completed with zero mismatch or failed task.
+- The maintained 5,000-molecule gates continue to run the same 14 topological
+  profiles (70,000 comparisons) and 23 Avalon profiles (115,000 comparisons)
+  as committed exhaustive regressions. Neither the full-corpus audit nor the
+  maintained gates use sampling, tolerance, similarity thresholds, or fallback
+  fingerprints.
 - The 3,480 archived ChEMBL InChIs and 3,480 archived InChIKeys that differ from
   current output are reference-corpus version differences: COSMolKit matches
   the current pinned RDKit output on those records.

@@ -8,11 +8,12 @@ import json
 from pathlib import Path
 from typing import Iterable
 
-from rdkit import Chem
+from rdkit import Chem, RDLogger
 from rdkit.Avalon import pyAvalonTools
 
 PROFILE_PATH = Path(__file__).with_name("avalon_fingerprint_profile.json")
 ENGINE_TAG = "AvalonToolkit_2.0.5-pre.3"
+RDLogger.DisableLog("rdApp.*")
 
 
 def iter_smiles(path: Path) -> Iterable[str]:
@@ -77,7 +78,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--focused-output", type=Path, required=True)
+    parser.add_argument("--focused-output", type=Path)
     args = parser.parse_args()
     profile = load_profile()
     branches = profile["corpus_branches"]
@@ -108,19 +109,22 @@ def main() -> None:
         for row in rows:
             handle.write(json.dumps(row, sort_keys=True, separators=(",", ":")))
             handle.write("\n")
-    args.focused_output.write_text(
-        json.dumps(
-            {
-                "engine": ENGINE_TAG,
-                "profile": profile,
-                "cases": focused_rows,
-            },
-            sort_keys=True,
-            indent=2,
+    if args.focused_output is not None:
+        args.focused_output.parent.mkdir(parents=True, exist_ok=True)
+        args.focused_output.write_text(
+            json.dumps(
+                {
+                    "engine": ENGINE_TAG,
+                    "profile": profile,
+                    "cases": focused_rows,
+                },
+                sort_keys=True,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
         )
-        + "\n",
-        encoding="utf-8",
-    )
+
     print(f"Wrote {len(rows)} corpus rows and {len(focused_rows)} focused cases")
 
 

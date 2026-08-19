@@ -1,8 +1,8 @@
 # RDKFingerprint Full-Port Validation
 
 Status: complete for the selected RDKit `RDKFingerprintMol` bit-vector and
-`atomBits`/`bitInfo` boundary. Public support metadata is upgraded separately
-after this report; Avalon remains on its own plan and is not covered here.
+`atomBits`/`bitInfo` boundary. Avalon has a separate completed validation
+report and is not covered by this family report.
 
 ## Reference and corpus
 
@@ -35,6 +35,18 @@ RAYON_NUM_THREADS=16 COSMOLKIT_PARITY_PROFILE=smiles_5000 \
 
 Result: 2 tests passed, including the row/branch structural check and
 70,000 exact profile-row comparisons. The final run completed in 6.03s.
+
+The maintained gate is supplemented by a full ChEMBL 37 audit against the
+same pinned RDKit version. It processed 2,897,819 source records, of which
+2,897,804 were mutually parseable and 15 were rejected by both libraries. All
+mutually parseable records matched across the 14 vector profiles (40,569,256
+comparisons) and two complete provenance profiles (5,795,608 comparisons).
+The provenance profiles compare output width, complete on-bit sets,
+`atomBits`, and `bitInfo`. All 128 shards completed with zero mismatch or
+failed task, for 46,364,864 exact topological comparisons.
+The audit ran on 2026-08-19 with COSMolKit `0.2.12` at commit `ea7c581c`;
+the ChEMBL 37 source SHA-256 is
+`ea6181ce8dc7af41974e35b92e1febb0c9dcbe2c62f7ccc4a5d983ac19f696e7`.
 
 Focused branch coverage also passes:
 
@@ -111,5 +123,5 @@ Machine artifacts are retained under ignored `tmp/parity-audit/`:
 This report validates only the selected `RDKFingerprintMol` behavior. It does
 not claim parity for LayeredFingerprint, PatternFingerprint, unfolded/count
 RDK fingerprints, the public fingerprint-generator hierarchy, Avalon, or any
-other unsupported fingerprint family. Avalon source provenance and porting
-must follow the subsequent ordered steps in the active fingerprint port plan.
+other unsupported fingerprint family. Avalon's separately selected explicit-
+bit boundary is covered by its own completed validation report.

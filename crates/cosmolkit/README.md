@@ -173,9 +173,12 @@ assert!(provenance.output.atom_bits.is_some());
 assert_eq!(avalon.n_bits(), 512);
 ```
 
-The documented topological and Avalon profiles are checked for exact bit
-equality against pinned RDKit across 70,000 and 115,000 maintained-corpus
-comparisons respectively.
+The documented topological and Avalon profiles are checked against pinned
+RDKit across all 2,897,804 mutually parseable ChEMBL 37 molecules. The
+full-corpus audit completed 113,014,356 exact comparisons over 14 topological
+vectors, 23 Avalon vectors, and two complete topological provenance outputs
+with zero mismatches. The committed 5,000-row matrices remain the continuous
+regression gates for these profiles.
 
 ## Conformer Generation And Force Field Applications
 

@@ -13,6 +13,12 @@ fail; those failures are listed rather than hidden.
   active flag families.
 - RDKit Python oracle generated 5,000 rows × 23 profiles = 115,000 exact
   comparisons. Release strict Rust test passed with zero mismatches.
+- The subsequent ChEMBL 37 audit processed all 2,897,819 source records and
+  found 2,897,804 mutually parseable molecules. Across 14 topological vector
+  profiles, two complete topological provenance profiles, and 23 Avalon
+  profiles, all 113,014,356 comparisons matched exactly; the remaining 15
+  records were rejected by both libraries. All 128 shards completed without a
+  failed task.
 - Focused Rust boundary test passed for Python/C++ defaults, query mode,
   non-SSS flags, and 8/9/31/32/33/511/512/513-bit boundaries.
 - Rust combined interaction tests passed for Avalon, RDK/topological, Morgan,

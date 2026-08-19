@@ -124,7 +124,8 @@ pub fn rdkit_expected_domain(file_name: &str) -> &'static str {
         "sdf_read.jsonl" | "sdf_write.jsonl" => "sdf",
         "morgan_fingerprint.jsonl"
         | "maccs_fingerprint.jsonl"
-        | "rdkit_topological_fingerprint.jsonl" => "fingerprint",
+        | "rdkit_topological_fingerprint.jsonl"
+        | "avalon_fingerprint.jsonl" => "fingerprint",
         "conformer_generation.jsonl"
         | "conformer_generation_library.jsonl"
         | "confseq_embed_template.jsonl" => "conformer",
