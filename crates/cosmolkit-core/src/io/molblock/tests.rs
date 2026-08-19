@@ -878,6 +878,33 @@ fn molblock_writer_crosses_only_rdkit_eligible_unspecified_ring_double_bonds() {
 }
 
 #[test]
+fn molblock_writer_does_not_cross_implicit_hydrogen_imine_like_rdkit() {
+    let molecule = Molecule::from_smiles("NC(O)=N").unwrap();
+
+    let v2000 = mol_to_mol_block_with_params(
+        &molecule,
+        &MolBlockWriteParams {
+            format: SdfFormat::V2000,
+            include_stereo: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let v3000 = mol_to_mol_block_with_params(
+        &molecule,
+        &MolBlockWriteParams {
+            format: SdfFormat::V3000,
+            include_stereo: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert!(v2000.contains("  2  4  2  0"));
+    assert!(!v3000.contains(" CFG=2\n"));
+}
+
+#[test]
 fn molblock_write_params_route_v3000_precision() {
     let molecule = charged_isotope_molecule();
     let params = MolBlockWriteParams {

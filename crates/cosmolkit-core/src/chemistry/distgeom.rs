@@ -5893,6 +5893,57 @@ fn compute_hybridizations_for_uff(
                 deg -= 1;
             }
         }
+        // BEGIN RDKIT CPP FUNCTION MolOps::setHybridization chiral-coordination branch
+        // RDKit✔️✔️: switch (atom->getChiralTag()) {
+        let chiral_hybridization = match atom.chiral_tag() {
+            // RDKit✔️✔️:   case Atom::ChiralType::CHI_TETRAHEDRAL:
+            // RDKit✔️✔️:   case Atom::ChiralType::CHI_TETRAHEDRAL_CW:
+            // RDKit✔️✔️:   case Atom::ChiralType::CHI_TETRAHEDRAL_CCW:
+            ChiralTag::Tetrahedral | ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw => {
+                // RDKit✔️✔️:     if (atom->getTotalDegree() == 4) {
+                // RDKit✔️✔️:       atom->setHybridization(Atom::HybridizationType::SP3);
+                // RDKit✔️✔️:       continue;
+                // RDKit✔️✔️:     }
+                (deg == 4).then_some(Hybridization::Sp3)
+                // RDKit✔️✔️:     break;
+            }
+            // RDKit✔️✔️:   case Atom::ChiralType::CHI_SQUAREPLANAR:
+            ChiralTag::SquarePlanar => {
+                // RDKit✔️✔️:     if (atom->getTotalDegree() <= 4 && atom->getTotalDegree() >= 2) {
+                // RDKit✔️✔️:       atom->setHybridization(Atom::HybridizationType::SP2D);
+                // RDKit✔️✔️:       continue;
+                // RDKit✔️✔️:     }
+                (2..=4).contains(&deg).then_some(Hybridization::Sp2d)
+                // RDKit✔️✔️:     break;
+            }
+            // RDKit✔️✔️:   case Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL:
+            ChiralTag::TrigonalBipyramidal => {
+                // RDKit✔️✔️:     if (atom->getTotalDegree() <= 5 && atom->getTotalDegree() >= 2) {
+                // RDKit✔️✔️:       atom->setHybridization(Atom::HybridizationType::SP3D);
+                // RDKit✔️✔️:       continue;
+                // RDKit✔️✔️:     }
+                (2..=5).contains(&deg).then_some(Hybridization::Sp3d)
+                // RDKit✔️✔️:     break;
+            }
+            // RDKit✔️✔️:   case Atom::ChiralType::CHI_OCTAHEDRAL:
+            ChiralTag::Octahedral => {
+                // RDKit✔️✔️:     if (atom->getTotalDegree() <= 6 && atom->getTotalDegree() >= 2) {
+                // RDKit✔️✔️:       atom->setHybridization(Atom::HybridizationType::SP3D2);
+                // RDKit✔️✔️:       continue;
+                // RDKit✔️✔️:     }
+                (2..=6).contains(&deg).then_some(Hybridization::Sp3d2)
+                // RDKit✔️✔️:     break;
+            }
+            // RDKit✔️✔️:   default:
+            // RDKit✔️✔️:     break;
+            _ => None,
+            // RDKit✔️✔️: }
+        };
+        // END RDKIT CPP FUNCTION MolOps::setHybridization chiral-coordination branch
+        if let Some(hybridization) = chiral_hybridization {
+            out.push(hybridization);
+            continue;
+        }
         let hyb = if atom.atomic_number() <= 1 {
             match deg {
                 0 | 1 => Hybridization::S,
@@ -5940,17 +5991,14 @@ fn compute_hybridizations_for_uff(
     out
 }
 
-fn atom_total_valence_for_uff(
-    mol: &Molecule,
-    assignment: &crate::ValenceAssignment,
-    atom_index: usize,
-) -> i32 {
-    mol.bonds()
-        .iter()
-        .map(|bond| bond_valence_contrib_for_atom(bond, atom_index))
-        .sum::<f64>()
-        .round() as i32
-        + assignment.implicit_hydrogens[atom_index]
+fn atom_total_valence_for_uff(assignment: &crate::ValenceAssignment, atom_index: usize) -> i32 {
+    // BEGIN RDKIT CPP FUNCTION Atom::getTotalValence (Atom.cpp:334-336)
+    // RDKit✔️✔️: unsigned int Atom::getTotalValence() const {
+    // RDKit✔️✔️:   return getValence(ValenceType::EXPLICIT) +
+    // RDKit✔️✔️:          getValence(ValenceType::IMPLICIT);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION Atom::getTotalValence
+    assignment.explicit_valence[atom_index] + assignment.implicit_hydrogens[atom_index]
 }
 
 // BEGIN RDKIT CPP FUNCTION Atom::getTotalNumHs (Atom.cpp:283-293)
@@ -5989,7 +6037,7 @@ fn get_atom_label_for_uff(
     atom_index: usize,
 ) -> Result<String, DgBoundsError> {
     let atom = &mol.atoms()[atom_index];
-    let total_valence = atom_total_valence_for_uff(mol, assignment, atom_index);
+    let total_valence = atom_total_valence_for_uff(assignment, atom_index);
     source_get_atom_label_for_uff(
         atom,
         atom_index,
@@ -8669,7 +8717,7 @@ fn set_12_bounds(
     let hybridizations =
         compute_hybridizations_for_uff(mol, &assignment, &atom_degree, &atom_has_conjugated_bond);
     let total_valences = (0..mol.atoms().len())
-        .map(|atom_index| atom_total_valence_for_uff(mol, &assignment, atom_index))
+        .map(|atom_index| atom_total_valence_for_uff(&assignment, atom_index))
         .collect::<Vec<_>>();
     let (atom_params, _found_all) = get_atom_types_for_uff(
         mol,

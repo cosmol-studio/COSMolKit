@@ -368,9 +368,7 @@ pub struct BioStructureOpSpec {
     pub needs_update: BioDerivedState,
 
     pub requires_mapping: MappingRequirement,
-    pub report: BioOperationReportSet,
 
-    pub allows_noop: bool,
     pub support: SupportStatus,
 
     pub parity: BioParityPolicy,
@@ -537,6 +535,9 @@ impl BioDerivedState {
 
 # Mapping System
 
+The first structure below is the current single-source mapping implemented by
+the operation framework:
+
 ```rust
 pub struct BioStructureMapping {
     pub atoms: BioRowMapping<AtomId>,
@@ -548,6 +549,9 @@ pub struct BioStructureMapping {
     pub assemblies: BioRowMapping<AssemblyId>,
 }
 ```
+
+The following source-indexed shape is the provisional target required before
+multi-source, split, merge, or expansion operations are exposed:
 
 ```rust
 pub struct BioSourceId(u32);
@@ -647,7 +651,7 @@ pub struct BioOpParts<'a> {
 
     _source: PhantomData<&'a BioStructure>,
 
-    #[cfg(feature = "bio-op-contracts")]
+    #[cfg(feature = "op-contracts")]
     trace: BioOperationTrace,
 }
 ```
@@ -655,6 +659,16 @@ pub struct BioOpParts<'a> {
 ---
 
 # Access API
+
+The following block is the planned target surface for the draft. The current
+implementation exposes the narrower crate-private subset needed by the
+registered `remove_waters` operation: `remove_residues`, `clear_cache`, and
+`finish`. The other methods must not be described as implemented until they
+exist behind the same capability boundary and have contract tests.
+
+The current `clear_cache` records strict trace handling only; `BioStructure`
+does not yet materialize the listed derived-cache payloads. It must not be
+described as clearing stored Bio cache values until those values exist.
 
 ```rust
 impl BioOpParts<'_> {
@@ -708,23 +722,16 @@ impl BioOpParts<'_> {
         &mut self,
     ) -> Result<()>;
 
-    pub fn finish(
-        self,
-        outcome: BioOpOutcome,
-    ) -> Result<BioStructure>;
-
-    pub fn finish_many(
-        self,
-        outcome: BioOpOutcome,
-    ) -> Result<Vec<BioStructure>>;
+    pub fn finish(self) -> Result<BioStructure>;
 }
 ```
 
 Most BioStructure operations are single-output value-style transforms and use
-`finish()`. Splitting operations such as `split_by_chain()` and
-`split_by_model()` are multi-output transforms and must use an explicit
-multi-output finish path. Multi-output operations must define source-structure
-provenance, per-output mappings, and property/annotation propagation policy.
+`finish()`. A `finish_many()` capability is not implemented. Before splitting
+operations such as `split_by_chain()` or `split_by_model()` become registered
+operations, the framework must add an explicit multi-output finish path with
+source-structure provenance, per-output mappings, and property/annotation
+propagation policy.
 
 ---
 
@@ -732,7 +739,7 @@ provenance, per-output mappings, and property/annotation propagation policy.
 
 ```rust
 #[bio_op_body(remove_waters, parts)]
-fn remove_waters_impl() -> Result<BioOpOutcome, BioOperationError> {
+fn remove_waters_impl() -> Result<(), BioOperationError> {
     let waters = parts.find_residues_by_kind(
         ResidueKind::Water
     );
@@ -746,7 +753,7 @@ fn remove_waters_impl() -> Result<BioOpOutcome, BioOperationError> {
         BioDerivedState::CONTACT_MAP
     );
 
-    Ok(BioOpOutcome::Changed)
+    Ok(())
 }
 ```
 
@@ -764,61 +771,15 @@ bio_structure_ops! {
         kind: strong,
         edit_kind: compacting,
 
-        may_mutate: [
-            atoms,
-            residues,
-            chains,
-            models,
-            coordinates,
-            bonds,
-            derived_cache,
-        ],
-
-        auto_remap: [
-            coordinates,
-            bonds,
-            assemblies,
-            annotations,
-        ],
-
-        must_handle: [
-            hierarchy,
-            residue_spans,
-            chain_spans,
-            model_spans,
-            bond_references,
-        ],
-
-        needs_update: [
-            atom_index,
-            residue_index,
-            chain_index,
-            sequence_cache,
-            graph_cache,
-            contact_map,
-        ],
-
+        may_mutate: [atoms, residues, chains, models, coordinates],
+        auto_remap: [coordinates],
+        must_handle: [hierarchy, residue_spans, chain_spans, model_spans, coordinate_alignment],
+        needs_update: [atom_index, residue_index, chain_index],
         requires_mapping: required,
-
-        report: [
-            atom_mapping,
-            residue_mapping,
-            chain_mapping,
-        ],
-
-        allows_noop: true,
-
         feature: BIO_SELECTION_FEATURE,
-
-        parity: gemmi_when_applicable,
-
-        io_roundtrip: true,
-
-        invariant_profile:
-            "compacting_hierarchy_with_coordinates",
-
-        parity_profile:
-            "remove_waters_gemmi_like",
+        parity: not_applicable,
+        io_roundtrip: false,
+        invariant_profile: "strong_bio_hierarchy",
     }
 }
 ```
@@ -838,10 +799,12 @@ operations. Unsupported operations should still be tested for structured
 unsupported errors, source immutability, and absence of partially mutated
 placeholder output.
 
-`BIO_PARITY_MATRIX` includes operations whose `BioParityPolicy` requires a
-source-level comparison profile. A `GemmiWhenApplicable` operation may appear
-before it is fully supported; until support is claimed, tests should assert
-explicit unsupported behavior rather than silently skipping the operation.
+The current macro emits a `BIO_PARITY_MATRIX` entry only for `RequiredNow`, and
+that policy requires a `parity_profile`. `GemmiWhenApplicable`,
+`BiopythonWhenApplicable`, and `PdbSpecRequired` describe future parity
+obligations but do not currently produce matrix entries. Tests for unsupported
+Bio operations must still assert explicit errors rather than silently skipping
+the operation.
 
 ---
 

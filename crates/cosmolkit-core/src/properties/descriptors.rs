@@ -635,17 +635,21 @@ pub fn calc_fraction_csp3(mol: &Molecule) -> DescriptorResult<f64> {
 pub fn calc_crippen_descriptors(
     mol: &Molecule,
     include_hs: bool,
-    _force: bool,
+    force: bool,
 ) -> DescriptorResult<CrippenDescriptorValues> {
     // RDKit✔️✔️:   if (!force && mol.hasProp(common_properties::_crippenLogP)) {
     // RDKit✔️✔️:     mol.getProp(common_properties::_crippenLogP, logp);
     // RDKit✔️✔️:     mol.getProp(common_properties::_crippenMR, mr);
     // RDKit✔️✔️:     return;
     // RDKit✔️✔️:   }
-    // COSMolKit modeled input state: RDKit's mutable typed computed-property
-    // cache entries `_crippenLogP` and `_crippenMR` are not modeled by this
-    // value-style `&Molecule` descriptor API, so no cached descriptor input can
-    // be observed or reused here.
+    if !force {
+        if let Some([logp, molar_refractivity]) = mol.crippen_descriptor_cache() {
+            return Ok(CrippenDescriptorValues {
+                logp,
+                molar_refractivity,
+            });
+        }
+    }
     //
     // RDKit✔️❌:   // this isn't as bad as it looks, we aren't actually going
     // RDKit✔️❌:   // to harm the molecule in any way!
@@ -688,9 +692,7 @@ pub fn calc_crippen_descriptors(
     //
     // RDKit✔️✔️:   mol.setProp(common_properties::_crippenLogP, logp, true);
     // RDKit✔️✔️:   mol.setProp(common_properties::_crippenMR, mr, true);
-    // COSMolKit modeled input state: Crippen descriptor calls return
-    // `CrippenDescriptorValues` and do not mutate the input molecule with RDKit
-    // computed-property cache entries.
+    mol.set_crippen_descriptor_cache([logp, molar_refractivity]);
     // RDKit✔️✔️: };
     Ok(CrippenDescriptorValues {
         logp,

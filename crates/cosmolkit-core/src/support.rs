@@ -78,7 +78,7 @@ pub const SMILES_PARSE_FEATURE: FeatureSpec = FeatureSpec {
         rdkit_version: "2026.03.1",
     },
     parity_sensitive: true,
-    docs: "Parse SMILES into Molecule with registered sanitize, valence, aromaticity, kekulize, ring, hydrogen, stereo, and supported CX postprocessing. The documented parse scope is checked against pinned RDKit graph-state golden data; unmodeled branches return explicit errors instead of guessed chemistry.",
+    docs: "Parse SMILES into Molecule with registered sanitize, valence, aromaticity, kekulize, ring, hydrogen, stereo, and supported CX postprocessing. The documented parse scope is checked against pinned RDKit graph-state golden data; separately scoped upstream extensions are not advertised as part of this boundary.",
 };
 
 pub const SMILES_WRITE_FEATURE: FeatureSpec = FeatureSpec {
@@ -88,7 +88,7 @@ pub const SMILES_WRITE_FEATURE: FeatureSpec = FeatureSpec {
         rdkit_version: "2026.03.1",
     },
     parity_sensitive: true,
-    docs: "Write canonical, noncanonical, rooted, isomeric, kekule, explicit-bond, explicit-hydrogen, dative, atom-map, and supported CX SMILES branches. The documented branch matrix is checked exactly against pinned RDKit output; unsupported branches return explicit errors.",
+    docs: "Write canonical, noncanonical, rooted, isomeric, kekule, explicit-bond, explicit-hydrogen, dative, atom-map, and supported CX SMILES branches. The documented branch matrix is checked exactly against pinned RDKit output; other upstream writer extensions are separate capability boundaries.",
 };
 
 pub const MOLBLOCK_IO_FEATURE: FeatureSpec = FeatureSpec {
@@ -98,7 +98,7 @@ pub const MOLBLOCK_IO_FEATURE: FeatureSpec = FeatureSpec {
         rdkit_version: "2026.03.1",
     },
     parity_sensitive: true,
-    docs: "Read and write the documented V2000/V3000 MolBlock and SDF branches with sanitize, remove-H, strict-parsing, coordinate-dimension, stereo, SGroup, RGroup, alias, value-line, and aromatic-bond handling. Covered fields and output branches are checked against pinned RDKit; unsupported extensions fail explicitly.",
+    docs: "Read and write the documented V2000/V3000 MolBlock and SDF branches with sanitize, remove-H, strict-parsing, coordinate-dimension, stereo, SGroup, RGroup, alias, value-line, and aromatic-bond handling. Covered fields and output branches are checked against pinned RDKit; unrelated CTAB extensions are outside this named boundary.",
 };
 
 pub const MOL2_READ_FEATURE: FeatureSpec = FeatureSpec {
@@ -118,7 +118,7 @@ pub const HYDROGENS_FEATURE: FeatureSpec = FeatureSpec {
         rdkit_version: "2026.03.1",
     },
     parity_sensitive: true,
-    docs: "Value-style and explicit in-place AddHs/RemoveHs operations with parameterized removal, atom and coordinate remapping, isotope tracking, stereo maintenance, and operation-contract checks. Modeled branches are covered by graph-state parity and focused source tests; unsupported states fail explicitly.",
+    docs: "Value-style and explicit in-place AddHs/RemoveHs operations with parameterized removal, atom and coordinate remapping, isotope tracking, stereo maintenance, and operation-contract checks. The documented state model is covered by graph-state parity and focused source tests.",
 };
 
 pub const COORDINATE_2D_FEATURE: FeatureSpec = FeatureSpec {
@@ -128,7 +128,7 @@ pub const COORDINATE_2D_FEATURE: FeatureSpec = FeatureSpec {
         rdkit_version: "2026.03.1",
     },
     parity_sensitive: true,
-    docs: "Generate 2D coordinates through registered value-style and in-place operations, including the local RDKit coordinate path, templates, constrained depiction, normalization, and straightening used by drawing and MolBlock workflows. Prepared coordinates and final depiction outputs are checked against pinned RDKit; unavailable CoordGen runtime branches fail explicitly.",
+    docs: "Generate 2D coordinates through registered value-style and in-place operations, including the local RDKit coordinate path, templates, constrained depiction, normalization, and straightening used by drawing and MolBlock workflows. Prepared coordinates and final depiction outputs are checked against pinned RDKit; the separate CoordGen runtime is outside this local-coordinate boundary.",
 };
 
 pub const COORDINATE_EDIT_FEATURE: FeatureSpec = FeatureSpec {
@@ -156,7 +156,7 @@ pub const SANITIZE_FEATURE: FeatureSpec = FeatureSpec {
         rdkit_version: "2026.03.1",
     },
     parity_sensitive: true,
-    docs: "Run modeled RDKit sanitize stages as registered weak topology-state operations, including cleanup, properties, rings, kekulization, radicals, aromaticity, conjugation, hybridization, chirality cleanup, and hydrogen adjustment. End-to-end graph parity and focused stage tests cover the supported branches; unsupported requested states fail explicitly.",
+    docs: "Run modeled RDKit sanitize stages as registered weak topology-state operations, including cleanup, properties, rings, kekulization, radicals, aromaticity, conjugation, hybridization, chirality cleanup, and hydrogen adjustment. End-to-end graph parity and focused stage tests cover the documented state and option boundary.",
 };
 
 pub const KEKULIZE_FEATURE: FeatureSpec = FeatureSpec {
@@ -176,7 +176,17 @@ pub const FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
         rdkit_version: "2026.03.1",
     },
     parity_sensitive: true,
-    docs: "Provide the enumerated Morgan sparse-count, sparse-bit, hashed-count, explicit-bit, AdditionalOutput, and MACCS raw/public projection branches with exact pinned-RDKit parity. RDKFingerprint/topological, Avalon, and unmodeled preparation branches return structured unsupported errors rather than approximate vectors.",
+    docs: "Provide the enumerated Morgan sparse-count, sparse-bit, hashed-count, explicit-bit, AdditionalOutput, and MACCS raw/public projection branches with exact pinned-RDKit parity. Other fingerprint families have separate feature specifications and do not silently fall back to Morgan.",
+};
+
+pub const AVALON_FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
+    name: "fingerprint.avalon",
+    category: FeatureCategory::Fingerprint,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
+    parity_sensitive: true,
+    docs: "Provide the source-backed Avalon/REACCS explicit-bit path for n_bits, is_query, and bit_flags, including source byte rounding, aromaticity passes, query branches, and non-SSS feature families. The pinned RDKit adapter matches exactly across the maintained 5,000-row, 23-profile validation matrix; count/string overloads and unrelated Avalon APIs remain out of scope.",
 };
 
 pub const DESCRIPTORS_FEATURE: FeatureSpec = FeatureSpec {
@@ -194,7 +204,7 @@ pub const SUBSTRUCTURE_FEATURE: FeatureSpec = FeatureSpec {
     category: FeatureCategory::Core,
     status: SupportStatus::Experimental,
     parity_sensitive: true,
-    docs: "Substructure matching is unfinished until the exposed molecule-query and future SMARTS-query surfaces pass strict RDKit parity tests. The current VF2 implementation must not be presented as RDKit-compatible while any atom/bond compatibility or query-matching branch remains approximate or marker-open.",
+    docs: "Experimental molecule-query substructure matching through the current VF2 surface. Direct SMARTS-query parity and broader RDKit query semantics are separate future capability boundaries and are not part of this feature's current parity claim.",
 };
 
 pub const DRAWING_FEATURE: FeatureSpec = FeatureSpec {
@@ -302,6 +312,7 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &SANITIZE_FEATURE,
     &KEKULIZE_FEATURE,
     &FINGERPRINT_FEATURE,
+    &AVALON_FINGERPRINT_FEATURE,
     &DESCRIPTORS_FEATURE,
     &SUBSTRUCTURE_FEATURE,
     &DRAWING_FEATURE,

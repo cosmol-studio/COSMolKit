@@ -30,11 +30,11 @@ pub const MMFF_VERBOSITY_HIGH: u8 = 2;
 pub const MMFF_MOL_PROPERTIES_FEATURE: FeatureSpec = FeatureSpec {
     name: "forcefield.mmff.mol_properties",
     category: FeatureCategory::Core,
-    status: SupportStatus::Unsupported {
-        reason: "MMFFMolProperties atom typing and charge assignment are not fully ported yet",
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
     },
     parity_sensitive: true,
-    docs: "RDKit MMFFMolProperties constructor skeleton with source-backed sanitize/aromaticity setup. Atom typing and charge assignment remain unsupported until their RDKit functions are ported.",
+    docs: "Source-backed RDKit MMFFMolProperties construction with sanitize/aromaticity preparation, atom typing, formal and partial charges, parameter-availability reporting, and MMFF94/MMFF94s handling. The documented state and optimizer boundary is compared with pinned RDKit; molecules without MMFF parameters reproduce the reference parameter-unavailable outcome.",
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -256,7 +256,7 @@ pub fn mmff_initial_gradient_for_parity(
 ) -> Result<Vec<f64>, MmffPublicApiError> {
     let mmff_mol_properties = MmffMolProperties::new(mol, mmff_variant, MMFF_VERBOSITY_NONE)?;
     let mut ff = construct_force_field_with_props(
-        mol,
+        &mmff_mol_properties.molecule,
         &mmff_mol_properties,
         non_bonded_thresh,
         conf_id,
@@ -298,14 +298,19 @@ pub fn mmff_optimize_molecule(
     };
     // RDKit❗✔️:   if (mmffMolProperties.isValid()) {
     if mmff_mol_properties.is_valid() {
+        // MMFFMolProperties mutates RDKit's input ROMol while preparing MMFF
+        // aromaticity. Its value-semantics counterpart is the prepared molecule
+        // owned by the properties object, so every downstream source call must
+        // use that same graph.
+        molecule = mmff_mol_properties.molecule.clone();
         // RDKit❗✔️:     NOGIL gil;
         // COSMolKit core does not model Python GIL state.
         // RDKit❗✔️:     std::unique_ptr<ForceFields::ForceField> ff(
         // RDKit❗✔️:         MMFF::constructForceField(mol, &mmffMolProperties, nonBondedThresh,
         // RDKit❗✔️:                                   confId, ignoreInterfragInteractions));
-        let conf_index = select_mmff_conformer_index(mol, conf_id)?;
+        let conf_index = select_mmff_conformer_index(&molecule, conf_id)?;
         let mut ff = construct_force_field_with_props(
-            mol,
+            &molecule,
             &mmff_mol_properties,
             non_bonded_thresh,
             conf_id,
@@ -383,11 +388,12 @@ pub fn mmff_optimize_molecule_confs(
     };
     // RDKit✔️❌:   if (mmffMolProperties.isValid()) {
     if mmff_mol_properties.is_valid() {
+        molecule = mmff_mol_properties.molecule.clone();
         // RDKit✔️❌:     std::unique_ptr<ForceFields::ForceField> ff(
         // RDKit✔️❌:         MMFF::constructForceField(mol, &mmffMolProperties, nonBondedThresh, -1,
         // RDKit✔️❌:                                   ignoreInterfragInteractions));
         let mut ff = construct_force_field_with_props(
-            mol,
+            &molecule,
             &mmff_mol_properties,
             non_bonded_thresh,
             -1,
@@ -4192,12 +4198,12 @@ fn set_mmff_heavy_atom_type(
                                             // RDKit✔️✔️:                     }
                                         }
                                         // RDKit✔️✔️:                     if (rmSize.isAtomInAromaticRingOfSize(nbrAtom, 6)) {
-                                        if nbr_atom.is_aromatic()
-                                            && ring_info.is_atom_in_ring_of_size(
-                                                AtomId::new(neighbor.atom_index),
-                                                6,
-                                            )
-                                        {
+                                        if mmff_is_atom_in_aromatic_ring_of_size(
+                                            mol,
+                                            ring_info,
+                                            AtomId::new(neighbor.atom_index),
+                                            6,
+                                        ) {
                                             // RDKit✔️✔️:                       ++nInAromatic6Ring;
                                             n_in_aromatic_6_ring += 1;
                                             // RDKit✔️✔️:                     }

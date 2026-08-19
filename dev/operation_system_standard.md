@@ -106,26 +106,35 @@ Any public mutation-capable API must be traceable to a registered `MoleculeOpSpe
 
 ---
 
-## 6. Required Spec Fields
+## 6. Registry Inputs And Generated Spec Fields
 
-Each registered operation must define:
+Every generated `MoleculeOpSpec` contains:
 
 ```text
 method
 impl_fn
 domain
 kind
+topology_edit
 access
 may_mutate
+auto_remap
 derived_effects
+semantic_preconditions
 requires_mapping
-allows_noop
-feature
+support
 parity
 io_roundtrip
-invariant_profile
-parity_profile when parity is required
 ```
+
+The `molecule_ops!` entry must explicitly provide `method`, `impl_fn`, `kind`,
+`access`, `derived_effects`, `feature`, `parity`, and `invariant_profile`.
+Every parity policy other than `not_applicable` also requires
+`parity_profile`. The macro supplies defined defaults for optional inputs such
+as `domain`, `topology_edit`, `may_mutate`, `auto_remap`,
+`semantic_preconditions`, `requires_mapping`, and `io_roundtrip`; entries
+should still spell out behaviorally meaningful values when omission would make
+review ambiguous.
 
 Strong topology operations must also define their migration surface, including fields such as:
 
@@ -134,7 +143,8 @@ topology_edit
 auto_remap
 ```
 
-These fields are behavioral contract inputs, not documentation-only metadata.
+These fields are either runtime contract inputs or generated evidence
+requirements. None may be treated as unowned documentation-only metadata.
 
 `access` is the authoritative block-capability declaration. For every molecule
 block that the operation may touch, the registry must declare exactly one
@@ -146,14 +156,39 @@ read
 write
 ```
 
-`may_mutate` is the write subset of `access` and exists for generated matrices,
-strict checks, and compatibility with current operation metadata. It must not
+`may_mutate` must equal `access.write`. It exists for generated matrices,
+strict checks, and compatibility with current operation metadata; it does not
 grant additional authority beyond `access`.
 
 A block must not be exposed through both an independent read capability and a
 write capability. If an operation needs to inspect a write-owned block before
 modifying it, it must begin the write-owned block and read from the same local
 owned working value.
+
+### Field execution ownership
+
+Registry fields must have an identified enforcement or evidence owner. The
+current ownership is:
+
+| Field | Execution or evidence owner |
+|---|---|
+| `access` | `OpParts` capability construction; strict runtime access checks |
+| `may_mutate` | strict runtime consistency and mutation-trace checks |
+| `derived_effects` | strict cache APIs, preservation proofs, and `finish()` trace validation |
+| `requires_mapping` | strict `finish()` validation of the mapping artifact |
+| `semantic_preconditions` | `OpParts::new` / `new_in_place` entry validation in strict and default release builds |
+| `support` | macro-generated public-wrapper rejection and `SUPPORT_MATRIX` |
+| `parity` / `parity_profile` | macro-generated `PARITY_MATRIX`; separate parity tests and CI must provide behavioral evidence |
+| `io_roundtrip` | registry metadata only today; operation-specific tests are required but are not selected by a universal field-driven runner |
+| `invariant_profile` | macro-generated `OPERATION_INVARIANT_MATRIX` plus invariant tests and CI evidence |
+
+This table must describe current enforcement honestly. `invariant_profile` is
+present in the generated matrix, but the current `OperationInvariantEntry`
+construction maps all profiles to the same required check set;
+profile-specific execution must not be claimed until such a runner exists.
+
+Removed fields such as `allows_noop`, `must_handle`, `require_handle`, and
+`derived_effects.unsupported` are not current contract inputs.
 
 ---
 
@@ -229,8 +264,8 @@ begin each write-owned block through OpParts
 read and mutate the local owned working blocks
 return current blocks through the scoped mutation capability on success or error
 record topology edit kind when topology identity/state changed
-return OpOutcome
-parts.finish(outcome)
+return `Result<(), OperationError>`
+parts.finish()
 strict validation
 return Molecule
 ```
@@ -305,7 +340,7 @@ registry-derived block access construction
 mutation permission checks
 registry-driven remap and topology mapping
 cache invalidation
-handled-state tracing
+derived-effect tracing
 topology mapping storage
 operation finalization
 ```
@@ -328,31 +363,32 @@ Canonical operation-body shape:
 
 ```rust
 #[mol_op_body(with_example_state, parts)]
-fn with_example_state_impl(args: ExampleArgs) -> Result<OpOutcome, OperationError> {
-    let mut topology = parts.begin_topology_mut()?;
-    let plan = parts.with_topology_read_parts(topology.clone(), |read| {
-        crate::example_domain::compute_plan(read, &args).map_err(|source| {
-            OperationError::Example {
-                operation: &WITH_EXAMPLE_STATE_SPEC,
-                source,
-            }
-        })
+fn with_example_state_impl(args: ExampleArgs) -> Result<(), OperationError> {
+    parts.with_topology_mut(|parts, topology| {
+        let plan = parts.with_topology_read_parts(topology.clone(), |read| {
+            crate::example_domain::compute_plan(read, &args).map_err(|source| {
+                OperationError::Example {
+                    operation: &WITH_EXAMPLE_STATE_SPEC,
+                    source,
+                }
+            })
+        })?;
+        crate::example_domain::apply_plan(topology, &plan);
+        Ok(())
     })?;
-    crate::example_domain::apply_plan(&mut topology, &plan);
-    parts.commit_topology(topology)?;
     parts.record_topology_edit(TopologyEditKind::Local)?;
     parts.clear_cache(DerivedState::DRAWING);
-    Ok(OpOutcome::Changed)
+    Ok(())
 }
 ```
 
 Forbidden operation-body shape:
 
 ```rust
-fn with_example_state_impl(...) -> Result<OpOutcome, OperationError> {
+fn with_example_state_impl(...) -> Result<(), OperationError> {
     let molecule = parts.working.clone();
     helper_that_accepts_whole_molecule(&molecule);
-    Ok(OpOutcome::Changed)
+    Ok(())
 }
 ```
 
@@ -421,7 +457,7 @@ record_topology_edit(TopologyEditKind::Merge)
 The operation body owns chemistry and row-level mutation of its write-owned
 blocks, including applying a topology mapping to other write-owned local blocks.
 The framework owns access validation, topology mapping artifact storage, cache
-invalidation tracing, handled-state tracing, and operation finalization.
+invalidation tracing, derived-effect tracing, and operation finalization.
 
 ---
 
@@ -451,24 +487,21 @@ If more mutation authority is needed, update the registry and framework API firs
 Every operation must explicitly classify affected derived state through
 `derived_effects`.
 
-`derived_effects` is the primary registry contract. `must_handle()` and
-`needs_update()` are derived compatibility views and must not be declared
-directly in new molecule-operation registry entries.
+`derived_effects` is the primary registry contract. `needs_update()` is a
+derived compatibility view and must not be declared directly in new
+molecule-operation registry entries.
 
 The contract dimensions are:
 
 ```text
-invalidate
 recompute
 preserve
-require_handle
-unsupported
+invalidate
 ```
 
 ### `invalidate`
 
-`invalidate` means old derived state becomes stale and must be cleared unless
-the operation also recomputes a replacement.
+`invalidate` means old derived state becomes stale and must be cleared.
 
 Invalidated states contribute to the derived compatibility view
 `needs_update()`.
@@ -476,13 +509,13 @@ Invalidated states contribute to the derived compatibility view
 ### `recompute`
 
 `recompute` means the operation must produce a fresh framework-visible value
-for the state.
+for the state, or explicitly clear it when reproduced source behavior leaves
+no materialized replacement.
 
-Recomputed states contribute to both derived compatibility views:
+Recomputed states contribute to the derived compatibility view:
 
 ```text
 needs_update()
-must_handle()
 ```
 
 ### `preserve`
@@ -501,23 +534,23 @@ The proof must validate objective structural conditions, such as old atom and
 bond identity preservation plus appended degree-one leaf atoms. Silent
 preservation without proof is invalid in strict builds.
 
-### `require_handle`
+### Read authority is separate
 
-`require_handle` means the operation cannot ignore that state even if the state
-is not materialized as a cache update. It must be satisfied by real
-framework-recognized handling such as recompute, validation, clear/drop policy,
-or structured unsupported behavior. Trace metadata alone is not enough.
+The effect categories do not grant cache-read authority. Reading derived cache
+state requires block-level authority from `access.read: [derived_cache]` (or a
+write-owned derived-cache block). `preserve` is a proof obligation, not read
+permission.
 
-`require_handle` contributes to the derived compatibility view
-`must_handle()`.
+The current capability model controls the derived-cache block as a whole. It
+does not enforce separate read permissions for rings, valence, aromaticity,
+stereo, or other individual cache entries.
 
-### `unsupported`
+`needs_update()` remains the only molecule-operation compatibility view and is
+derived as `recompute | invalidate`. Molecule operations have no
+`must_handle()` view or `must_handle`/`require_handle` registry input.
 
-`unsupported` means the operation recognizes that a derived-state effect exists
-but the modeled operation cannot currently provide the required behavior.
-
-Unsupported behavior must be explicit and structured. It must not be hidden by
-cache clearing, placeholder values, or label changes.
+Unsupported behavior is not a derived effect. It must be returned as a
+structured operation error and must not be encoded as cache metadata.
 
 ### Materialized vs invalidation-only state
 
@@ -543,21 +576,30 @@ If a block cannot be remapped meaningfully, the operation must explicitly drop i
 
 ---
 
-## 15. Mapping Artifacts And Outcomes
+## 15. Mapping Artifacts And Completion
 
 Topology mapping is an internal operation artifact, not a separate report
 module. If the registry requires mapping, `finish()` must verify that the
 mapping artifact was recorded.
 
-`OpOutcome` must accurately indicate whether the operation changed the molecule or returned an allowed no-op.
-
-If `allows_noop` is false, a successful operation must not silently return unchanged output.
+Operation bodies return `Result<(), OperationError>` and do not classify a
+successful source execution as changed or unchanged. Contract obligations are
+derived from structural trace facts such as claimed and committed writable
+blocks, recorded topology edits, mappings, remaps, and derived-state effects.
+Whether the source algorithm happened to produce an equal value is not a
+generic operation-contract dimension and belongs in source-parity tests when it
+is externally observable.
 
 ---
 
 ## 16. Unsupported Behavior
 
 Unsupported behavior must fail through structured errors.
+
+This is a capability-boundary design rule, not a parity-test disposition. It
+applies when an independently identified API, option family, or state model is
+outside the declared supported surface. A mismatching input inside a supported
+surface is a bug and must not be relabeled unsupported.
 
 Operations must not:
 
@@ -595,9 +637,13 @@ domain
 access
 may_mutate
 derived_effects
+semantic_preconditions
 requires_mapping
+support
 parity
 io_roundtrip
+invariant_profile
+parity_profile when parity is required
 ```
 
 Minimum requirements:
@@ -630,15 +676,17 @@ Strict mode catches:
 
 ```text
 unauthorized mutation
-missing handled state
-missing invalidation
+missing derived-effect handling
 missing mapping
 post-operation invariant failure
 ```
 
-Release mode may remove checking overhead, but must use the same operation path, `OpParts` accessors, and COW model.
+The Cargo optimization profile and the contract feature set are independent.
+`--release --features op-contracts-strict` retains strict checks. A default
+published release build without the strict feature may omit checking overhead,
+but it must use the same operation path, `OpParts` accessors, and COW model.
 
-Only checks disappear. Semantics must not change.
+Only feature-gated checks disappear. Semantics must not change.
 
 ---
 
@@ -649,8 +697,8 @@ An operation change is review-complete only when reviewers confirm:
 - registry spec matches behavior
 - strong/weak classification is correct
 - `may_mutate` is minimal and sufficient
-- `derived_effects` matches invalidated, recomputed, preserved, handled, and
-  unsupported state
+- `derived_effects` matches invalidated, recomputed, and preserved state
+- derived-cache reads are covered by block-level `access`
 - unsupported behavior is explicit
 - source-port markers are accurate
 - performance refactors preserve value semantics and framework ownership

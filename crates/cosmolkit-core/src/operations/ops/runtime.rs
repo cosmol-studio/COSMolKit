@@ -14,7 +14,6 @@ pub struct OperationTrace {
     preserved_cache: DerivedState,
     cleared_cache: DerivedState,
     updated_cache: DerivedState,
-    outcome: Option<OpOutcome>,
 }
 
 impl OperationTrace {
@@ -41,11 +40,6 @@ impl OperationTrace {
     #[must_use]
     pub const fn updated_cache(&self) -> DerivedState {
         self.updated_cache
-    }
-
-    #[must_use]
-    pub fn outcome(&self) -> Option<&OpOutcome> {
-        self.outcome.as_ref()
     }
 }
 
@@ -169,7 +163,6 @@ impl<'a> OpParts<'a> {
                 preserved_cache: DerivedState::NONE,
                 cleared_cache: DerivedState::NONE,
                 updated_cache: DerivedState::NONE,
-                outcome: None,
             },
         })
     }
@@ -205,7 +198,6 @@ impl<'a> OpParts<'a> {
                 preserved_cache: DerivedState::NONE,
                 cleared_cache: DerivedState::NONE,
                 updated_cache: DerivedState::NONE,
-                outcome: None,
             },
         })
     }
@@ -626,7 +618,6 @@ impl<'a> OpParts<'a> {
         self.record_remapped(self.spec.auto_remap);
     }
 
-    /// Check that `state` is in `requires | recompute` (write permission).
     /// Check that `state` is in `recompute` (write permission).
     /// Panics with a clear message on violation — this is a programming error.
     #[cfg(feature = "op-contracts")]
@@ -722,6 +713,11 @@ impl<'a> OpParts<'a> {
         }
     }
 
+    pub(crate) fn clear_computed_properties(&mut self) {
+        self.record_mutation(BlockSet::DERIVED_CACHE);
+        self.working.clear_computed_property_cache();
+    }
+
     pub(crate) fn prove_preserved(
         &mut self,
         states: DerivedState,
@@ -750,12 +746,11 @@ impl<'a> OpParts<'a> {
         Ok(())
     }
 
-    pub(crate) fn finish(self, outcome: OpOutcome) -> Result<Molecule, OperationError> {
+    pub(crate) fn finish(self) -> Result<Molecule, OperationError> {
         debug_assert!(self.in_place_target.is_none());
         #[cfg(feature = "op-contracts")]
         {
-            let mut this = self;
-            this.trace.outcome = Some(outcome);
+            let this = self;
             this.validate_contract()?;
             enforce_molecule_invariants(&this.working).map_err(|failure| {
                 OperationError::InvariantViolation {
@@ -767,7 +762,6 @@ impl<'a> OpParts<'a> {
         }
         #[cfg(not(feature = "op-contracts"))]
         {
-            let _ = outcome;
             enforce_molecule_invariants(&self.working).map_err(|failure| {
                 OperationError::InvariantViolation {
                     operation: self.spec,
@@ -785,11 +779,10 @@ impl<'a> OpParts<'a> {
         *target = self.working;
     }
 
-    pub(crate) fn finish_in_place(self, outcome: OpOutcome) -> Result<(), OperationError> {
+    pub(crate) fn finish_in_place(self) -> Result<(), OperationError> {
         #[cfg(feature = "op-contracts")]
         {
             let mut this = self;
-            this.trace.outcome = Some(outcome);
             let validation = this.validate_contract().and_then(|()| {
                 enforce_molecule_invariants(&this.working).map_err(|failure| {
                     OperationError::InvariantViolation {
@@ -811,7 +804,6 @@ impl<'a> OpParts<'a> {
         #[cfg(not(feature = "op-contracts"))]
         {
             let mut this = self;
-            let _ = outcome;
             let validation = enforce_molecule_invariants(&this.working).map_err(|failure| {
                 OperationError::InvariantViolation {
                     operation: this.spec,
@@ -1011,12 +1003,6 @@ impl<'a> OpParts<'a> {
     #[cfg(feature = "op-contracts")]
     fn validate_contract(&self) -> Result<(), OperationError> {
         self.validate_access_spec()?;
-        if matches!(self.trace.outcome, Some(OpOutcome::NoOp { .. })) && !self.spec.allows_noop {
-            return Err(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "operation reported a no-op but the registry forbids no-op outcomes",
-            });
-        }
         if self.topology_lifecycle == BlockLifecycle::Begun
             || self.coordinates_lifecycle == BlockLifecycle::Begun
             || self.properties_lifecycle == BlockLifecycle::Begun
@@ -1048,8 +1034,7 @@ impl<'a> OpParts<'a> {
             });
         }
 
-        let changed = matches!(self.trace.outcome, Some(OpOutcome::Changed));
-        let requires_effect_handling = changed || self.trace.touched_blocks != BlockSet::NONE;
+        let requires_effect_handling = self.trace.touched_blocks != BlockSet::NONE;
         let updated_or_cleared = self.trace.cleared_cache | self.trace.updated_cache;
         if requires_effect_handling && !updated_or_cleared.contains(self.spec.needs_update()) {
             return Err(OperationError::InvalidInput {

@@ -1,0 +1,44 @@
+{
+  "rdkit_version": "2026.3.1",
+  "avalon_engine": "AvalonToolkit_2.0.5-pre.3",
+  "public_defaults": {
+    "n_bits": 512,
+    "is_query": false,
+    "bit_flags": "0xf07fff"
+  },
+  "focused_cases": [
+    {"name": "ethanol_cpp_64", "smiles": "CCO", "n_bits": 64, "is_query": false, "bit_flags": "0x007fff"},
+    {"name": "ethanol_python_64", "smiles": "CCO", "n_bits": 64, "is_query": false, "bit_flags": "0xf07fff"},
+    {"name": "benzene_cpp_64", "smiles": "c1ccccc1", "n_bits": 64, "is_query": false, "bit_flags": "0x007fff"},
+    {"name": "query_64", "smiles": "C[NH2+]C", "n_bits": 64, "is_query": true, "bit_flags": "0x007fff"},
+    {"name": "ethanol_non_sss_64", "smiles": "CCO", "n_bits": 64, "is_query": false, "bit_flags": "0xf00000"},
+    {"name": "ethanol_9_bit_rounding", "smiles": "CCO", "n_bits": 9, "is_query": false, "bit_flags": "0x007fff"},
+    {"name": "ethanol_31_bit_rounding", "smiles": "CCO", "n_bits": 31, "is_query": false, "bit_flags": "0x007fff"},
+    {"name": "ethanol_33_bit_rounding", "smiles": "CCO", "n_bits": 33, "is_query": false, "bit_flags": "0x007fff"}
+  ],
+  "corpus_branches": [
+    {"name": "sss_all", "n_bits": 512, "is_query": false, "bit_flags": "0x007fff"},
+    {"name": "similarity_all", "n_bits": 512, "is_query": false, "bit_flags": "0xf07fff"},
+    {"name": "non_sss_all", "n_bits": 512, "is_query": false, "bit_flags": "0xf00000"},
+    {"name": "query_sss_all", "n_bits": 512, "is_query": true, "bit_flags": "0x007fff"},
+    {"name": "ring_pattern", "n_bits": 512, "is_query": false, "bit_flags": "0x000001"},
+    {"name": "ring_path", "n_bits": 512, "is_query": false, "bit_flags": "0x000002"},
+    {"name": "atom_symbol_path", "n_bits": 512, "is_query": false, "bit_flags": "0x000004"},
+    {"name": "atom_class_path", "n_bits": 512, "is_query": false, "bit_flags": "0x000008"},
+    {"name": "atom_count", "n_bits": 512, "is_query": false, "bit_flags": "0x000010"},
+    {"name": "augmented_atom", "n_bits": 512, "is_query": false, "bit_flags": "0x000020"},
+    {"name": "hcount_path", "n_bits": 512, "is_query": false, "bit_flags": "0x000040"},
+    {"name": "hcount_class_path", "n_bits": 512, "is_query": false, "bit_flags": "0x000080"},
+    {"name": "hcount_pair", "n_bits": 512, "is_query": false, "bit_flags": "0x000100"},
+    {"name": "bond_path", "n_bits": 512, "is_query": false, "bit_flags": "0x000200"},
+    {"name": "augmented_bond", "n_bits": 512, "is_query": false, "bit_flags": "0x000400"},
+    {"name": "ring_size_counts", "n_bits": 512, "is_query": false, "bit_flags": "0x000800"},
+    {"name": "degree_path", "n_bits": 512, "is_query": false, "bit_flags": "0x001000"},
+    {"name": "class_spiders", "n_bits": 512, "is_query": false, "bit_flags": "0x002000"},
+    {"name": "feature_pairs", "n_bits": 512, "is_query": false, "bit_flags": "0x004000"},
+    {"name": "scaffold_ids", "n_bits": 512, "is_query": false, "bit_flags": "0x100000"},
+    {"name": "scaffold_colors", "n_bits": 512, "is_query": false, "bit_flags": "0x200000"},
+    {"name": "scaffold_links", "n_bits": 512, "is_query": false, "bit_flags": "0x400000"},
+    {"name": "shortcut_labels", "n_bits": 512, "is_query": false, "bit_flags": "0x800000"}
+  ]
+}

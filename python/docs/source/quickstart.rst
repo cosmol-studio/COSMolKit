@@ -93,8 +93,10 @@ Assign atom chiral tags from a stored 3D conformer:
    assert assigned.atoms()[0].chiral_tag() != ChiralTag.CHI_UNSPECIFIED
 
 ``with_chiral_tags_from_structure()`` is a stable, RDKit-parity operation. Its
-in-place counterpart is ``assign_chiral_tags_from_structure_()``; both forms
-leave caller state unchanged on failure.
+in-place counterpart is ``assign_chiral_tags_from_structure_()``. The
+value-style form leaves caller state unchanged on failure. Like other in-place
+operations, the ``_`` form may retain valid partial changes after an error but
+keeps the molecule's internal storage complete.
 
 Read and write the first SDF record:
 
@@ -218,21 +220,25 @@ Optimize an existing 3D conformer with UFF:
        print(not result.needs_more())
        print(result.status_code())
 
-Generate a Morgan fingerprint:
+Generate source-backed fingerprints:
 
 .. code-block:: python
 
-   fp = Molecule.from_smiles("c1ccccc1O").fingerprint_morgan(
+   mol = Molecule.from_smiles("c1ccccc1O")
+   morgan = mol.fingerprint_morgan(
        radius=2,
        n_bits=2048,
    )
+   topological = mol.topological_fingerprint(fp_size=2048)
+   avalon = mol.avalon_fingerprint(n_bits=512)
 
-   print(fp.n_bits())
-   print(fp.on_bits())
+   print(morgan.on_bits())
+   print(topological.on_bits())
+   print(avalon.on_bits())
 
 ``on_bits()`` returns the sparse bit indexes set inside the fixed-length binary
-fingerprint. The exposed Morgan and MACCS fingerprint branches are covered by
-strict RDKit bit-identical parity tests; structurally similar hashes or
+fingerprint. The exposed Morgan, MACCS, RDKit topological, and Avalon branches
+are covered by exact pinned-RDKit comparisons; structurally similar hashes or
 similarity correlation are not compatibility claims. It is not a dense neural
 embedding.
 

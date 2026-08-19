@@ -191,7 +191,6 @@ pub struct BioStructureOpSpec {
     pub must_handle: BioStateSet,
     pub needs_update: BioDerivedState,
     pub requires_mapping: MappingRequirement,
-    pub allows_noop: bool,
     pub support: SupportStatus,
     pub parity: BioParityPolicy,
     pub io_roundtrip: bool,
@@ -204,14 +203,8 @@ impl std::fmt::Display for BioStructureOpSpec {
 }
 
 // ---------------------------------------------------------------------------
-// Operation outcome and errors
+// Operation errors
 // ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BioOpOutcome {
-    Changed,
-    NoOp { reason: &'static str },
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BioOperationError {
@@ -275,7 +268,6 @@ pub struct BioOperationTrace {
     handled: BioStateSet,
     cleared_cache: BioDerivedState,
     updated_cache: BioDerivedState,
-    outcome_recorded: bool,
 }
 
 pub struct BioOpParts<'a> {
@@ -302,7 +294,6 @@ impl<'a> BioOpParts<'a> {
                 handled: BioStateSet::NONE,
                 cleared_cache: BioDerivedState::NONE,
                 updated_cache: BioDerivedState::NONE,
-                outcome_recorded: false,
             },
         }
     }
@@ -496,19 +487,10 @@ impl<'a> BioOpParts<'a> {
         Ok(self.mapping.as_ref().expect("mapping was just recorded"))
     }
 
-    pub(crate) fn finish(
-        #[cfg_attr(not(feature = "op-contracts"), allow(unused_mut))] mut self,
-        outcome: BioOpOutcome,
-    ) -> Result<BioStructure, BioOperationError> {
+    pub(crate) fn finish(self) -> Result<BioStructure, BioOperationError> {
         #[cfg(feature = "op-contracts")]
         {
-            self.trace.outcome_recorded = true;
-            let _ = outcome;
             self.validate_contract()?;
-        }
-        #[cfg(not(feature = "op-contracts"))]
-        {
-            let _ = outcome;
         }
         if self.spec.requires_mapping == MappingRequirement::Required && self.mapping.is_none() {
             return Err(BioOperationError::InvalidInput {
@@ -626,7 +608,6 @@ bio_structure_ops! {
         must_handle: [hierarchy, residue_spans, chain_spans, model_spans, coordinate_alignment],
         needs_update: [atom_index, residue_index, chain_index],
         requires_mapping: required,
-        allows_noop: true,
         feature: BIO_SELECTION_FEATURE,
         parity: not_applicable,
         io_roundtrip: false,
@@ -635,7 +616,7 @@ bio_structure_ops! {
 }
 
 #[bio_op_body(remove_waters, parts)]
-fn remove_waters_impl() -> Result<BioOpOutcome, BioOperationError> {
+fn remove_waters_impl() -> Result<(), BioOperationError> {
     use crate::bio::ResidueKind;
 
     let water_residue_ids: Vec<ResidueId> = parts
@@ -651,13 +632,11 @@ fn remove_waters_impl() -> Result<BioOpOutcome, BioOperationError> {
         parts.record_identity_mapping();
         parts.mark_hierarchy_contract_handled();
         parts.clear_cache(BIO_REMOVE_WATERS_SPEC.needs_update);
-        return Ok(BioOpOutcome::NoOp {
-            reason: "no water residues found",
-        });
+        return Ok(());
     }
 
     parts.remove_residues(&water_residue_ids)?;
-    Ok(BioOpOutcome::Changed)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -676,7 +655,6 @@ mod tests {
         must_handle: BioStateSet::NONE,
         needs_update: BioDerivedState::NONE,
         requires_mapping: MappingRequirement::Required,
-        allows_noop: true,
         support: SupportStatus::Experimental,
         parity: BioParityPolicy::NotApplicable,
         io_roundtrip: false,
@@ -694,7 +672,6 @@ mod tests {
         must_handle: BioStateSet::NONE,
         needs_update: BioDerivedState::NONE,
         requires_mapping: MappingRequirement::Required,
-        allows_noop: true,
         support: SupportStatus::Experimental,
         parity: BioParityPolicy::NotApplicable,
         io_roundtrip: false,

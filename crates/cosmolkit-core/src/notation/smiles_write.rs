@@ -153,6 +153,8 @@ impl SmilesPlanStage {
 pub enum SmilesWriteError {
     #[error(transparent)]
     UnsupportedFeature(#[from] crate::UnsupportedFeatureError),
+    #[error(transparent)]
+    Fragment(#[from] crate::fragment::FragmentError),
     #[error("canonical ranking failed: {source}")]
     CanonicalRank { source: crate::KekulizeError },
     #[error("kekulization failed: {source}")]
@@ -895,6 +897,17 @@ fn rank_mol_atoms_for_smiles(
 ) -> Result<Vec<usize>, SmilesWriteError> {
     let _stage = SmilesPlanStage::LongTermCanonicalRanking;
     let _ = mode;
+    // RDKit✔️✔️:   auto mols =
+    // RDKit✔️✔️:       MolOps::getMolFrags(mol, false, nullptr, &fragsMolAtomMapping, false);
+    // RDKit✔️✔️:   for (unsigned fragIdx = 0; fragIdx < mols.size(); fragIdx++) {
+    // RDKit✔️✔️:     ROMol *tmol = mols[fragIdx].get();
+    let fragment_atom_indices = plan
+        .atoms
+        .iter()
+        .map(|atom| atom.index())
+        .collect::<Vec<_>>();
+    let fragment =
+        crate::fragment::build_fragment_molecule(molecule, &fragment_atom_indices, false)?;
     // BEGIN RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles canonical rank options
     // RDKit✔️✔️:       const bool includeChiralPresence = false;
     // RDKit✔️✔️:       const bool includeIsotopes = params.doIsomericSmiles;
@@ -912,7 +925,7 @@ fn rank_mol_atoms_for_smiles(
     // RDKit✔️✔️:                           useNonStereoRanks);
     // END RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles canonical rank options
     let ranks = crate::canon_rank::rank_mol_atoms_with_options(
-        molecule,
+        &fragment,
         crate::canon_rank::CanonicalRankOptions {
             break_ties: true,
             include_chirality: params.do_isomeric_smiles,
@@ -925,7 +938,7 @@ fn rank_mol_atoms_for_smiles(
             chirality_rings_use_ring_stereo: true,
         },
     )?;
-    Ok(plan.atoms.iter().map(|atom| ranks[atom.index()]).collect())
+    Ok(ranks)
 }
 
 fn choose_fragment_start_atom(

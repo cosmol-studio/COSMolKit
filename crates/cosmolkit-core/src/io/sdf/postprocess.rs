@@ -2960,7 +2960,10 @@ mod tests {
         let molecule = detect_bond_stereochemistry(molecule, SdfReadParams::default()).unwrap();
 
         assert_eq!(molecule.bonds()[0].stereo(), BondStereo::Any);
-        assert_eq!(molecule.bonds()[0].stereo_atoms(), None);
+        assert_eq!(
+            molecule.bonds()[0].stereo_atoms(),
+            Some([AtomId::new(2), AtomId::new(3)])
+        );
         assert_eq!(molecule.bonds()[1].direction(), BondDirection::Unknown);
     }
 

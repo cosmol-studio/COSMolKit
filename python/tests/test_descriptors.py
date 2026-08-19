@@ -33,7 +33,8 @@ def test_descriptor_bindings_preserve_exact_core_values_and_input():
 
 
 def test_descriptor_binding_options_and_errors_are_explicit():
-    ethene = cosmolkit.Molecule.from_smiles("C=C")
+    ethene_smiles = "C=C"
+    ethene = cosmolkit.Molecule.from_smiles(ethene_smiles)
     assert f64_bits(cosmolkit.calc_mol_wt(ethene, only_heavy=True)) == (
         "403805a1cac08312"
     )
@@ -47,8 +48,11 @@ def test_descriptor_binding_options_and_errors_are_explicit():
     }
     for include_hs in (False, True):
         for force in (False, True):
+            # The option matrix measures each branch from the same fresh input.
+            # Cache-order behavior is covered separately by the core parity tests.
+            branch_molecule = cosmolkit.Molecule.from_smiles(ethene_smiles)
             logp, molar_refractivity = cosmolkit.calc_crippen_descriptors(
-                ethene,
+                branch_molecule,
                 include_hs=include_hs,
                 force=force,
             )

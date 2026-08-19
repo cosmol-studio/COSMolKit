@@ -7,7 +7,7 @@
 [Documentation](https://kit.cosmol.org/) ·
 [Web tools](https://tools.cosmol.org/) ·
 [Rust crate](https://crates.io/crates/cosmolkit) ·
-[Python package](https://pypi.org/project/cosmolkit/)
+[Python package](https://pypi.org/project/cosmolkit/).
 <!-- release-header:end -->
 
 All notable changes to COSMolKit are recorded in this file.
@@ -19,14 +19,109 @@ named `## [x.y.z] - YYYY-MM-DD`. The release workflow extracts the section whose
 version matches the pushed `v*` tag and fails when that section is missing or
 empty.
 
-## [Unreleased]
+## [0.2.12] - 2026-08-19
+
+This release adds source-backed RDKit topological and Avalon fingerprints,
+moves Python InChI conversion onto `Molecule`, strengthens operation contracts,
+and incorporates the source-level fixes found by the complete ChEMBL 37 parity
+profile.
+
+### Added
+
+- Added source-backed RDKit topological fingerprints to Rust and Python,
+  including path-length limits, branched-path enumeration, hydrogen and bond
+  controls, custom atom invariants, source-compatible random-bit expansion,
+  density folding, and from-atoms selection.
+- Added `topological_fingerprint_with_output()` and the typed
+  `TopologicalFingerprintResult`, exposing the source `atomBits` and `bitInfo`
+  provenance branches without changing the ordinary fingerprint return type.
+- Added source-backed Avalon/REACCS explicit-bit fingerprints with configurable
+  vector length, query preprocessing, typed feature flags, aromaticity passes,
+  and source-compatible byte rounding.
+- Added the repeatable ChEMBL 37 parity and composition profile: 2,897,819
+  source records across 22 sharded phases, exhaustive option matrices,
+  operation-order permutations, scalar/batch comparisons, and shared-object
+  concurrent reads.
 
 ### Changed
 
-- Replaced the RDKit-shaped Python InChI surface with COSMolKit's object-oriented
-  naming: `Molecule.to_inchi()`, `Molecule.to_inchi_key()`,
-  `Molecule.from_inchi()`, and the top-level `inchi_to_key()` function. The
-  former `Chem.Mol*` namespace and `InchiToInchiKey()` name were removed.
+- Replaced the RDKit-shaped Python InChI namespace with the object-oriented
+  `Molecule.to_inchi()`, `Molecule.to_inchi_key()`, and
+  `Molecule.from_inchi()` methods plus the top-level `inchi_to_key()` function.
+  The former `Chem.Mol*` entry points and `InchiToInchiKey()` were removed.
+- Removed self-reported operation `NoOp` outcomes and `allows_noop` metadata.
+  Operation obligations now follow actual block lifecycle, mappings, writes,
+  and derived-state traces.
+- Narrowed operation read views to their declared capabilities and added scoped
+  mutation helpers that always return checked-out blocks on success or error.
+  In-place operations retain their efficient basic failure guarantee: they do
+  not roll back partial source-defined changes, but internal molecule storage
+  remains complete after a returned error.
+- Made source-compatible computed descriptor caching independent from
+  user-visible molecule state and preserved the correct cache lifecycle across
+  clones, operation invalidation, and repeated Crippen calls.
+- Updated all Rust crates and the Python package to version 0.2.12. GitHub
+  Release notes are now assembled from the matching version section in this
+  changelog.
+
+### Fixed
+
+- Corrected Morgan `num_bits_per_feature` propagation and its interaction with
+  every requested `AdditionalOutput` branch.
+- Aligned reverse InChI conversion with the source's final stereochemistry
+  cleanup, double-bond reconstruction, tautomer endpoint allocation, and
+  sanitize/remove-H property-cache behavior.
+- Corrected explicit-hydrogen state, distance-geometry bounds, canonical and
+  parameterized SMILES writing, SVG output, and MolBlock/SDF atom, bond,
+  coordinate, and stereo-direction behavior found by the large-corpus profile.
+- Aligned conformer outcomes, UFF/MMFF preparation, aromatic-ring atom typing,
+  parameter-unavailable classification, optimizer rejection, energy, and final
+  coordinate paths with pinned RDKit.
+- Hardened operation-contract enforcement for uncommitted writable blocks,
+  undeclared reads, cache effects, topology mappings, and in-place error paths.
+
+### Validation
+
+- The complete ChEMBL 37 audit uses pinned RDKit 2026.03.1 and evaluates
+  2,897,804 mutually parseable records across 22 sharded chemistry,
+  composition, batch, and concurrency phases.
+- Ten InChI option profiles produce 28,543,620 matching InChI strings and
+  28,543,620 matching InChIKeys. Each complete 768-profile SMILES writer matrix
+  performs 2,192,150,016 comparisons; three complete matrices were executed.
+- Descriptor coverage performs 84,036,316 comparisons over 29 branches;
+  distance-geometry coverage compares 2,757,910,995 matrix entries.
+- Scalar-versus-batch validation covers 1,027,660 records at both one and eight
+  jobs, totaling 12,331,920 output comparisons. Repeated concurrent-read runs
+  each compare 1,032,384 values and 1,032,384 graph states.
+- Every retained ChEMBL finding was replayed after its source-aligned fix across
+  the complete affected branch set, with no unexplained mismatch. This includes
+  descriptor, Morgan, explicit-H, bounds, InChI, SMILES, SVG, MolBlock/SDF,
+  conformer, and force-field regressions; it is not represented as a post-fix
+  rerun of the entire ChEMBL corpus.
+- RDKit topological fingerprints match exactly on 5,000 molecules across 14
+  profiles (70,000 comparisons). Avalon matches exactly on the same 5,000
+  molecules across 23 profiles (115,000 comparisons). Neither suite uses
+  sampling, tolerance, similarity thresholds, or fallback fingerprints.
+- The 3,480 archived ChEMBL InChIs and 3,480 archived InChIKeys that differ from
+  current output are reference-corpus version differences: COSMolKit matches
+  the current pinned RDKit output on those records.
+
+### Upgrade notes
+
+- Python callers must replace `Chem.MolToInchi(mol)` with `mol.to_inchi()`,
+  `Chem.MolToInchiKey(mol)` with `mol.to_inchi_key()`,
+  `Chem.MolFromInchi(text)` with `Molecule.from_inchi(text)`, and
+  `InchiToInchiKey(text)` with `inchi_to_key(text)`.
+- The former placeholder fingerprint signatures have been replaced by their
+  source APIs. `topological_fingerprint()` now uses `min_path`, `max_path`,
+  `fp_size`, `num_bits_per_feature`, `use_hs`, `target_density`, `min_size`,
+  `branched_paths`, `use_bond_order`, `atom_invariants`, and `from_atoms`;
+  `avalon_fingerprint()` uses `n_bits`, `is_query`, and `bit_flags`.
+- Code that requires rollback on an in-place failure should use the value-style
+  operation instead. In-place methods may retain valid partial changes after an
+  error, while guaranteeing complete internal storage.
+
+Full comparison: [v0.2.11...v0.2.12](https://github.com/cosmol-studio/COSMolKit/compare/v0.2.11...v0.2.12)
 
 ## [0.2.11] - 2026-08-11
 

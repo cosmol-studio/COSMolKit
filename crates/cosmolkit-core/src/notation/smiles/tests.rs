@@ -1333,7 +1333,10 @@ fn set_double_bond_neighbor_directions_marks_linear_arrangement_as_any_like_rdki
     set_double_bond_neighbor_directions(&mut molecule, 0).unwrap();
 
     assert_eq!(molecule.bonds()[0].stereo(), BondStereo::Any);
-    assert_eq!(molecule.bonds()[0].stereo_atoms(), None);
+    assert_eq!(
+        molecule.bonds()[0].stereo_atoms(),
+        Some([AtomId::new(2), AtomId::new(3)])
+    );
     assert_eq!(molecule.bonds()[1].direction(), BondDirection::None);
     assert_eq!(molecule.bonds()[2].direction(), BondDirection::None);
 }
@@ -1423,7 +1426,10 @@ fn set_double_bond_neighbor_directions_marks_reverse_squiggle_neighbor_as_any_li
     set_double_bond_neighbor_directions(&mut molecule, 0).unwrap();
 
     assert_eq!(molecule.bonds()[0].stereo(), BondStereo::Any);
-    assert_eq!(molecule.bonds()[0].stereo_atoms(), None);
+    assert_eq!(
+        molecule.bonds()[0].stereo_atoms(),
+        Some([AtomId::new(2), AtomId::new(3)])
+    );
     assert_eq!(molecule.bonds()[1].direction(), BondDirection::Unknown);
     assert!(molecule.bonds()[1].unknown_stereo());
 }

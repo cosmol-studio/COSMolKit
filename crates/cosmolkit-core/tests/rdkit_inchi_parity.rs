@@ -3,7 +3,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use cosmolkit_core::{
-    InchiErrorKind, Molecule, cached_valence_assignment, mol_from_inchi, mol_to_inchi,
+    AtomId, BondOrder, BondStereo, InchiErrorKind, Molecule, cached_valence_assignment,
+    mol_from_inchi, mol_to_inchi,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -268,4 +269,23 @@ fn inchi_matches_pinned_rdkit_for_every_active_profile_row() {
         mismatches.len(),
         mismatches.join("\n")
     );
+}
+
+#[test]
+fn mol_from_inchi_unsanitized_fused_ring_stereo_matches_pinned_rdkit() {
+    const INCHI: &[u8] = b"InChI=1S/C17H13NO2/c19-18-16-12-14(11-10-13-6-2-1-3-7-13)20-17-9-5-4-8-15(16)17/h1-12,19H/b11-10+,18-16+";
+
+    for remove_hs in [false, true] {
+        let output = mol_from_inchi(INCHI, false, remove_hs).expect("pinned RDKit accepts input");
+        let molecule = output.molecule.expect("successful parse returns a graph");
+        let bond = &molecule.bonds()[16];
+
+        assert_eq!((bond.begin().index(), bond.end().index()), (11, 13));
+        assert_eq!(bond.order(), BondOrder::Double);
+        assert_eq!(bond.stereo(), BondStereo::Z);
+        assert_eq!(
+            bond.stereo_atoms(),
+            Some([AtomId::new(15), AtomId::new(19)])
+        );
+    }
 }

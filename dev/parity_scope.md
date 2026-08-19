@@ -1,56 +1,213 @@
 # Feature Parity Scope
 
-This page summarizes how rigorously the main COSMolKit features are checked
-against RDKit. It is organized by user-visible capability: what the feature
-does, how strict the comparison is, and where the current boundary is.
+This page records the exact corpus and comparison boundary behind COSMolKit's
+RDKit parity claims. RDKit `2026.03.1` is the current chemistry reference. A
+feature is parity-covered only at the boundary listed here. Separate upstream
+APIs outside that boundary are not claimed as implemented.
+This scope distinction never permits a mismatching row inside a covered
+boundary to be reclassified as unsupported.
 
-RDKit `2026.03.1` is the current reference for chemistry parity. A feature is
-described as parity-covered only at the boundary listed here; open branches stay
-explicitly unfinished rather than being counted as compatible behavior.
+## Corpus Tiers
 
-## How To Read This Table
+The three corpus tiers are separate evidence sets. Their names must not be used
+interchangeably in tests or documentation.
 
-- **Strict parity** means 100% agreement on every known covered case for that
-  feature boundary.
-- We do not report pass percentages for strict parity surfaces. Any mismatch is
-  a failure to investigate, not an acceptable error rate.
-- **RNG-sensitive parity** means the test fixes seed and execution conditions and
-  compares deterministic coordinates or optimizer state.
-- **Final-output parity** means the serialized user-visible artifact is compared
-  directly.
-- **Unfinished** means the API may exist, but it must not be presented as
-  RDKit-compatible until the listed exact parity boundary passes.
-- Default parity tests use the small `smiles_small` corpus for daily feedback.
-  Most stricter profiles use the same assertions with separate expected data
-  under `testdata/<domain>/expected/rdkit/smiles_5000/`. Force fields use an
-  explicit two-tier strict boundary: all 5,000 rows cover parameter
-  availability, explicit-H behavior, MMFF atom types, and MMFF charges, while
-  all 150 curated rows cover initial energy, full gradient, and single- and
-  multi-conformer optimization. The tiers are separate tests and neither is
-  reported as coverage of the other's behavioral surface.
-- Golden baselines are condition-bound artifacts. A corpus, RDKit version,
-  branch-matrix, normalization, RNG/coordinate setting, or compared-field change
-  requires a new profile directory or file name. Reusing a name for incompatible
-  conditions is not allowed.
+| Tier | Corpus | Records | Primary use |
+|---|---|---:|---|
+| Project small | `testdata/smiles/corpus/smiles_small.smi` | 152 | Fast daily parity, focused source-port regressions, and high-detail state checks |
+| Maintained strict | `testdata/smiles/corpus/smiles_5000.smi` | 5,000 | Committed exhaustive profile matrices for surfaces not yet audited over ChEMBL 37 |
+| Large stress | ChEMBL 37 structure table | 2,897,819 source; 2,897,804 mutually parseable | Large-scale parity, operation-order, batch, and concurrent-read stress auditing |
 
-| Feature | Current rigor | What is compared | Important boundary |
-|---|---:|---|---|
-| Molecular graph state | Strict parity | Atom identity, charge, degree, hydrogens, radicals, hybridization, aromaticity, ring membership, bond type, bond stereo, conjugation, CIP rank/code, direct molecules, and explicit-H molecules. | This is the base state other chemistry features depend on. |
-| SMILES writing | Strict branch-matrix parity | RDKit `MolToSmiles()` output across the full writer parameter matrix: isomeric on/off, kekule on/off, canonical on/off, clean-stereo on/off, explicit-bond on/off, explicit-H on/off, dative-bond inclusion on/off, atom-map ignoring on/off, and rooted output for none/first/last atom. Canonicalized SMILES are compared directly as part of the canonical branches. | The exhaustive all-combination matrix is the parity target; everyday runs cover common branches and the full matrix is run explicitly when auditing writer parity. Unsupported writer branches must remain explicit. |
-| Distance-geometry bounds | Strict numeric parity | Full bounds-matrix shape and every lower/upper-bound entry, including topology, ring, macrocycle, amide, VDW, and triangle-smoothing effects. | Entry tolerance is `1e-8`; this is matrix equality, not a smoke test. |
-| 3D conformer generation | RNG-sensitive coordinate parity | DG/KDG/ETDG/ETKDG presets, fixed seeds, single-thread execution, random-coordinate embedding, coordMap, custom pairwise terms, bounds-matrix handling, timeout/max-iteration controls, multi-conformer generation, and sequential-seed policy. | Successful seeded embeddings must reproduce RDKit coordinates within `1e-6`. |
-| UFF/MMFF force fields | Tiered state and optimizer parity | All 5,000 strict-corpus rows compare UFF/MMFF parameter availability, explicit-H behavior, MMFF atom types, and MMFF formal/partial charges. All 150 curated rows compare seeded initial coordinates, initial energy, every gradient component, single-conformer optimization, multi-conformer optimization, result codes, final energies, and final coordinates. | Energy, gradient, and coordinate tolerances remain `1e-6`. The 5,000-row coverage tier is not presented as optimizer parity; optimizer parity is exhaustive on the curated corpus and all locked regressions. |
-| Molecular descriptors | Strict source-backed descriptor parity | Molecular weight, exact molecular weight, formula variants, hydrogen-bond donor/acceptor counts, fraction Csp3, Crippen LogP/MR, TPSA with and without S/P contributions, aromatic-ring count, rotatable-bond counts for default/non-strict/strict/strict-linkages modes, and QED. | Float descriptors are compared by exact RDKit bit pattern from the golden baseline; integer and string descriptors are exact equality. QED is pinned to the complete reference runtime `RDKit 2026.03.1 + CPython 3.13.12` because RDKit delegates its reductions to Python `sum()`, whose float algorithm differs before CPython 3.12. Unsupported or failed-closed descriptor calls are parity failures for the covered fields. |
-| 2D depiction preparation | Strict prepared-state parity | RDKit-style preparation before drawing: kekulization for depiction, chiral-H insertion, wedge-bond assignment, prepared atom order, prepared 2D coordinates, bond order, aromatic flags, and bond directions. | This is the prepared drawing boundary, not a blanket claim that every standalone `Compute2DCoords` branch is complete. |
-| SVG drawing | Final-output parity | Final SVG text after normalizing only tool namespace/prefix metadata. The comparison covers preparation, scaling, atom labels, bond geometry, text metrics, metadata, CSS/data attributes, and rendered paths present in the covered surface. | This is final-SVG parity for the covered depiction surface. Link-node extraction, StereoGroup masking, atomRegions, and other marker-open drawing branches remain unfinished. |
-| PNG drawing | Rasterization consistency | PNG export is checked as local SVG rasterization through the Rust rendering stack. | PNG is not claimed to be RDKit Cairo/Qt bit parity. |
-| MolBlock/SDF writing | Strict output parity for supported branches | V2000/V3000 output, 2D and 3D sources, stereochemistry, kekulization, SGroups, RGroups, aliases, value lines, and aromatic-bond bookkeeping in the covered writer branches. | Unsupported writer branches must fail closed or stay explicitly marked. |
-| MolBlock/SDF reading | Strict parse/state parity for supported branches | Topology, atom fields, bond fields, 2D coordinates, 3D coordinates, marker-derived chirality, coordinate-derived chirality, delayed sanitize/remove-H paths, and SMILES round-trip checks. | Reader coverage is broad but not a blanket claim for every CTAB/SDF extension. |
-| MOL2 reading | Source-backed parser parity | Parser parameters, topology, atom and bond fields, 3D coordinates, chirality, CORINA variant behavior, cleanup-substructure behavior, and SMILES output. | Source-ported for the exposed Tripos MOL2 profile; broader marker audit work remains tracked separately. |
-| InChI scalar APIs | Strict source-defined field and branch parity | `Molecule.to_inchi()`, `Molecule.to_inchi_key()`, top-level `inchi_to_key()`, and `Molecule.from_inchi()`; official return fields, diagnostics, graph state, atom/bond/stereo/isotope/H/charge/radical fields, options, cleanup, malformed input, source preservation, and concurrent calls. | Exact parity applies only where pinned official InChI v1.07.5 and RDKit 2026.03.1 define behavior. The official `NormalizeAndCompare` initial-buffer allocation-failure path is undefined C behavior; Rust returns a deterministic structured `allocation_failed` error instead. MolBlock, SDF/V3000, IXA, AuxInfo, INCHIGEN, version query, and extended-polymer APIs are frozen or unsupported. |
-| XYZ reading | Strict simple-format parity | Atom identities, one 3D conformer, coordinates, and absence of inferred bonds. | XYZ is coordinate input, not a chemistry perception format. |
-| Atom chiral tags from 3D structure | Strict full-state parity | Public `with_chiral_tags_from_structure` behavior over 77 fixed RDKit oracle records: operation status/errors, selected conformer, every atom chiral tag and permutation, `_NonExplicit3DChirality`, `_StereochemDone`, complete atom/bond state, conformer coordinates/dimensionality, replacement behavior, environment-controlled non-tetrahedral assignment, and unrelated properties. | This is exact parity with `assignChiralTypesFrom3D` for the modeled state space. It does not claim `assignStereochemistryFrom3D`, 3D double-bond direction/E-Z assignment, CIP orchestration, or distinct-substituent validation. COSMolKit intentionally preserves caller state when RDKit throws after partial mutation. |
-| Tetrahedral stereo geometry | Geometry parity | Ordered-ligand orientation and signed-volume behavior against RDKit ETKDG-generated chiral geometries. | Checked against seeded RDKit ETKDG geometry; it validates stereo geometry, not all conformer-generation behavior by itself. |
-| Batch surfaces | Determinism and order parity | Parallel batch paths preserve record order and reproduce the same outputs as scalar paths for bounds, prepared drawing, SVG, graph features, and supported transformations. | Batch checks are value/order checks, not separate chemistry definitions. |
-| Fingerprints | Exact only for enumerated branches | Morgan sparse-count/sparse-bit/hashed-count/explicit-bit/AdditionalOutput branches and MACCS raw-167/public-166 vectors are checked for exact RDKit equality. `RDKFingerprintMol`/topological and Avalon are not implemented and return structured unsupported errors. | Passing Morgan/MACCS tests do not imply coverage of unmodeled RDKit APIs or preparation branches. No approximate vector is returned; similarity correlation and 99.9% bit agreement are failures. |
-| Substructure matching | Partially checked, unfinished | Molecule-query matching is checked against RDKit query-to-target atom mappings. | Direct SMARTS-query parity remains a separate unfinished surface. |
+The complete ChEMBL 37 profile contains 22 sharded phases and 2,816 tasks over
+128 corpus shards. Phases with a configured atom-count boundary evaluate
+2,854,362 eligible records. Large subset phases select their stated number of
+records from the same ChEMBL 37 source; they are not separate corpora.
+
+## Numeric Coverage Summary
+
+The comparison count is the number of output values, states, matrices, or
+matrix entries actually compared, not merely the number of input molecules.
+
+| Surface | Corpus | Records evaluated | Profiles or output branches | Comparisons |
+|---|---|---:|---:|---:|
+| Core graph and default scalar APIs | ChEMBL 37 | 2,897,804 | 9 | 26,080,236 |
+| Molecular descriptors | ChEMBL 37 | 2,897,804 | 29 | 84,036,316 |
+| Morgan and MACCS fingerprints | ChEMBL 37 | 2,897,804 | 31 configured | 89,831,720 completed |
+| Explicit-hydrogen graph/state | ChEMBL 37 | 2,854,362 | 4 | 11,417,448 |
+| Distance-geometry bounds | ChEMBL 37 | 2,854,362 matrices | every matrix entry | 2,757,910,995 entries |
+| InChI parse branches | ChEMBL 37 | 2,854,362 | 4 | 11,417,448 |
+| InChI writer options and keys | ChEMBL 37 | 2,854,362 | 10 options x 2 outputs | 57,087,240 |
+| SMILES writer matrix | ChEMBL 37 | 2,854,362 | 768 | 2,192,150,016 per run; 3 runs |
+| Final SVG | ChEMBL 37 | 2,854,362 | 1 | 2,854,362 |
+| MolBlock/SDF I/O | ChEMBL 37 subset | 524,288 | 16 writer + 8 state/coordinate | 12,559,920 completed |
+| Scalar operation-order composition | ChEMBL 37 subset | 516,650 | 4 orders x 12 surfaces | 24,799,200 |
+| Scalar-versus-batch execution | ChEMBL 37 subset | 1,027,660 | 2 job counts x 6 outputs | 12,331,920 |
+| Shared-object concurrent reads | ChEMBL 37 subset | 64,524 | 16 values + 16 graph states | 2,064,768 per run; 2 runs |
+| Fixed-seed conformer outcome | ChEMBL 37 subset | 524,288 | coordinate or matching failure status | 524,288 |
+| UFF/MMFF parameter and optimizer paths | ChEMBL 37 subset | 516,096 | 4 parameter + 2 optimizer | 3,090,706 completed |
+| RDKFingerprint/topological | Maintained strict | 5,000 | 14 | 70,000 |
+| Avalon explicit-bit | Maintained strict | 5,000 | 23 | 115,000 |
+
+The ChEMBL 37 figures above are the complete audit's original counters. That
+audit deliberately retained every observed difference instead of accepting a
+percentage threshold. Source-aligned fixes were then replayed over the retained
+records and their full affected branch matrices: 10 descriptor records, 3,092
+fingerprint records, one explicit-hydrogen record, 180 bounds matrices with
+308,734 entries, 50 InChI records with 200 parse-branch comparisons, 108 SMILES
+records with 82,944 writer comparisons, 441 SVG records, 160 I/O records with
+2,560 writer comparisons, seven conformer records, and 262 force-field records.
+Those retained-set replays have no unexplained mismatch. They are not described
+as a post-fix rerun of the entire ChEMBL 37 corpus.
+
+The 3,480 archived ChEMBL reference InChIs and 3,480 archived reference
+InChIKeys that differ from the current result are corpus-version differences:
+COSMolKit agrees with pinned RDKit on those rows. They are not COSMolKit parity
+failures.
+
+## Comparison Details
+
+### Molecular Graph And Hydrogen State
+
+The core graph comparison covers atom identity, charge, degree, hydrogens,
+radicals, hybridization, aromaticity, ring membership, bond type, bond stereo,
+conjugation, CIP rank/code, atom count, and bond count. The ChEMBL core phase
+also compares default SMILES and the four default InChI scalar surfaces. The
+explicit-hydrogen phase separately compares atom state, bond state, atom count,
+and bond count after the transform.
+
+### SMILES Writing
+
+The 768-profile matrix is the Cartesian expansion of isomeric, kekule,
+canonical, clean-stereo, explicit-bond, explicit-H, dative-bond, and
+atom-map-ignore switches, with rooted output for no root, first atom, and last
+atom. Canonicalized SMILES are compared directly in canonical branches. The
+matrix was run three times to distinguish deterministic source differences from
+execution instability. Upstream writer options not enumerated by this matrix
+are separate capabilities outside the current parity claim; every enumerated
+branch remains subject to the zero-mismatch rule.
+
+### InChI
+
+The four public scalar APIs are `Molecule.to_inchi()`,
+`Molecule.to_inchi_key()`, top-level `inchi_to_key()`, and
+`Molecule.from_inchi()`. Comparisons cover official return fields, diagnostics,
+graph atom/bond/stereo/isotope/H/charge/radical state, ten writer option
+profiles, cleanup, malformed input, source preservation, and concurrent calls.
+
+Exact parity applies where official InChI v1.07.5 and RDKit `2026.03.1` define
+behavior. The official `NormalizeAndCompare` initial-buffer allocation-failure
+path is undefined C behavior; Rust returns a deterministic structured
+`allocation_failed` error. MolBlock, SDF/V3000, IXA, AuxInfo, INCHIGEN, version
+query, and extended-polymer APIs are separate upstream surfaces outside the
+four-scalar-API claim.
+
+### Molecular Descriptors
+
+The 29 ChEMBL branches cover molecular weight, exact molecular weight, formula
+variants, H-bond donor/acceptor counts, fraction Csp3, Crippen LogP/MR option
+branches, TPSA with and without S/P contributions and force recomputation,
+aromatic-ring count, four rotatable-bond modes, and QED. Float descriptors use
+exact RDKit bit-pattern comparison; integer and string outputs use exact
+equality. QED is pinned to `RDKit 2026.03.1 + CPython 3.13.12` because RDKit
+delegates reductions to Python `sum()` and older CPython versions use a
+different floating-point reduction algorithm.
+
+### Fingerprints
+
+Morgan coverage includes 15 parameter profiles. Each profile compares the main
+vector and `AdditionalOutput`, giving 30 configured output branches; MACCS adds
+one. The large-run counter contains 89,831,720 completed comparisons because
+102 records in each of the two custom-bond-invariant outputs were not recorded
+as completed branch comparisons by the audit harness. The source fix was
+validated across the retained fingerprint set and all affected branches.
+
+RDKFingerprint and Avalon were completed after the ChEMBL run, so their claims
+remain explicitly tied to the 5,000-row maintained corpus: 14 topological
+profiles and 23 Avalon profiles. Sparse-count, sparse-bit, hashed-count,
+explicit-bit, raw/public projection, and provenance output are claimed only
+where enumerated by each family's active profile. No approximate vector,
+similarity correlation, or 99.9% bit agreement is accepted as parity.
+
+### Bounds, Conformers, And Force Fields
+
+Bounds comparisons cover matrix shape and every lower/upper entry, including
+topology, ring, macrocycle, amide, VDW, and triangle-smoothing effects. Entry
+tolerance is `1e-8`.
+
+Conformer comparisons fix seeds and execution conditions. They cover
+DG/KDG/ETDG/ETKDG presets, single-thread execution, random-coordinate
+embedding, coordMap, custom pairwise terms, bounds-matrix handling,
+timeout/max-iteration controls, multi-conformer generation, and sequential seed
+policy. The ChEMBL subset produced 421,217 coordinate-bearing outcomes and
+103,071 matching failure statuses. Successful seeded coordinates use a `1e-6`
+tolerance.
+
+The ChEMBL force-field subset compares UFF/MMFF parameter availability with and
+without explicit hydrogens plus optimizer outcomes. The project small tier also
+contains 150 curated cases that compare seeded initial coordinates, initial
+energy, every gradient component, single- and multi-conformer optimization,
+result codes, final energies, and final coordinates. Energy, gradient, and
+coordinate tolerance is `1e-6`. Parameter availability over a large corpus is
+not presented as equivalent to the curated full-gradient boundary.
+
+### Molecular I/O And Depiction
+
+MolBlock/SDF writer comparisons cover 16 V2000/V3000 branches over 2D and 3D
+sources, including stereochemistry, kekulization, SGroups, RGroups, aliases,
+value lines, and aromatic-bond bookkeeping. Reader comparisons cover topology,
+atom fields, bond fields, coordinates, marker- and coordinate-derived
+chirality, delayed sanitize/remove-H paths, and parsed-SMILES checks. This is
+broad CTAB/SDF coverage, not a claim for every extension.
+
+MOL2 reading is source-ported for the exposed Tripos parser parameters,
+topology, atom/bond state, 3D coordinates, chirality, CORINA behavior,
+cleanup-substructure behavior, and SMILES output. XYZ reading compares atom
+identity, one 3D conformer, coordinates, and the absence of inferred bonds.
+
+Prepared 2D drawing state covers depiction kekulization, chiral-H insertion,
+wedge bonds, atom order, 2D coordinates, bond order, aromatic flags, and bond
+directions. Final SVG text is compared after normalizing only tool
+namespace/prefix metadata. Link-node extraction, StereoGroup masking,
+atomRegions, and other separately named drawing extensions are outside this
+SVG boundary. PNG is checked as local SVG rasterization and is not claimed to
+have RDKit Cairo/Qt bit parity.
+
+### Composition, Batch, And Concurrent Reads
+
+Four scalar operation orders each compare 12 named output/state surfaces,
+including graph state, explicit hydrogens, bounds, descriptors, Morgan, MACCS,
+SMILES, InChI/InChIKey, and SVG. Batch comparisons run the same add/remove-H,
+bounds, Morgan, Morgan `AdditionalOutput`, SMILES, and SVG surfaces with one and
+eight jobs while checking value equality and input order. Shared-object tests
+read the same molecule concurrently and compare both returned values and graph
+state; they do not define separate chemistry semantics.
+
+### Focused And Scope-Bound Surfaces
+
+The project regression tier contains 77 fixed full-state oracle records for
+`with_chiral_tags_from_structure`. They compare status/errors, selected
+conformer, every atom chiral tag and permutation, `_NonExplicit3DChirality`,
+`_StereochemDone`, complete atom/bond state, coordinates/dimensionality,
+replacement behavior, environment-controlled non-tetrahedral assignment, and
+unrelated properties. This covers `assignChiralTypesFrom3D`, not
+`assignStereochemistryFrom3D`, 3D double-bond E/Z assignment, CIP orchestration,
+or distinct-substituent validation.
+
+Tetrahedral stereo geometry separately checks ordered-ligand orientation and
+signed volume against seeded RDKit ETKDG geometries. Substructure matching
+currently compares molecule-query atom mappings; direct SMARTS-query parity is
+outside that specific claim.
+
+## Interpretation Rules
+
+- Strict parity means 100% agreement on every covered case. A mismatch is work
+  to investigate, not an accepted error rate.
+- RNG-sensitive parity fixes seed and execution conditions before comparing
+  coordinates or optimizer state.
+- Final-output parity compares the serialized user-visible artifact directly.
+- Outside scope means a separately identified upstream capability is not part
+  of the claim. It never means that a failing input inside a covered branch is
+  accepted or relabeled unsupported.
+- Golden baselines are condition-bound artifacts. Changing corpus, RDKit
+  version, branch matrix, normalization, RNG/coordinate settings, or compared
+  fields requires a new profile directory or file name.

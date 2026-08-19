@@ -127,6 +127,128 @@ fn molecular_descriptor_golden_has_one_record_per_smiles() {
 }
 
 #[test]
+fn split_source_isotope_mass_row_matches_rdkit_descriptors() {
+    let molecule = Molecule::from_smiles("[47Ca+2].[Cl-].[Cl-]").unwrap();
+
+    assert_eq!(
+        calc_mol_wt(&molecule, false).unwrap().to_bits(),
+        0x405d_7713_2f87_ad08
+    );
+    assert_eq!(
+        calc_mol_wt(&molecule, true).unwrap().to_bits(),
+        0x405d_7713_2f87_ad08
+    );
+    assert_eq!(
+        calc_exact_mol_wt(&molecule, false).unwrap().to_bits(),
+        0x405d_391a_a572_c0bd
+    );
+    assert_eq!(
+        calc_exact_mol_wt(&molecule, true).unwrap().to_bits(),
+        0x405d_391a_a572_c0bd
+    );
+    assert_eq!(
+        calc_qed(&molecule).unwrap().to_bits(),
+        0x3fd1_bfb4_805a_d56c
+    );
+}
+
+#[test]
+fn crippen_force_and_include_hs_follow_rdkit_computed_property_cache() {
+    let molecule = Molecule::from_smiles("CCO").unwrap();
+    let structural_snapshot = molecule.clone();
+
+    let without_hs = calc_crippen_descriptors(&molecule, false, true).unwrap();
+    assert_eq!(without_hs.logp.to_bits(), 0xbfd6_5119_ce07_5f70);
+    assert_eq!(
+        without_hs.molar_refractivity.to_bits(),
+        0x4018_51b7_1758_e21a
+    );
+
+    let cached = calc_crippen_descriptors(&molecule, true, false).unwrap();
+    assert_eq!(cached, without_hs);
+
+    let forced_with_hs = calc_crippen_descriptors(&molecule, true, true).unwrap();
+    assert_eq!(forced_with_hs.logp.to_bits(), 0xbf56_f006_8db8_bb00);
+    assert_eq!(
+        forced_with_hs.molar_refractivity.to_bits(),
+        0x4029_8504_816f_006a
+    );
+    assert_eq!(molecule, structural_snapshot);
+}
+
+#[test]
+fn crippen_computed_property_cache_is_copied_but_not_shared() {
+    let molecule = Molecule::from_smiles("CCO").unwrap();
+    let without_hs = calc_crippen_descriptors(&molecule, false, true).unwrap();
+    let clone = molecule.clone();
+
+    let clone_with_hs = calc_crippen_descriptors(&clone, true, true).unwrap();
+    assert_ne!(clone_with_hs, without_hs);
+    assert_eq!(
+        calc_crippen_descriptors(&molecule, true, false).unwrap(),
+        without_hs
+    );
+    assert_eq!(
+        calc_crippen_descriptors(&clone, false, false).unwrap(),
+        clone_with_hs
+    );
+}
+
+#[test]
+fn rdkit_computed_property_clearing_operations_invalidate_the_crippen_cache() {
+    let molecule = Molecule::from_smiles("CCO").unwrap();
+    let without_hs = calc_crippen_descriptors(&molecule, false, true).unwrap();
+
+    let with_hydrogens = molecule.with_hydrogens().unwrap();
+    let explicit_h_result = calc_crippen_descriptors(&with_hydrogens, false, false).unwrap();
+
+    assert_ne!(explicit_h_result, without_hs);
+    assert_eq!(explicit_h_result.logp.to_bits(), 0xbf56_f006_8db8_bb00);
+    assert_eq!(
+        explicit_h_result.molar_refractivity.to_bits(),
+        0x4029_8504_816f_006a
+    );
+
+    let sanitized = molecule
+        .sanitize_with_ops(cosmolkit_core::SanitizeOps::NONE)
+        .unwrap();
+    let sanitized_result = calc_crippen_descriptors(&sanitized, true, false).unwrap();
+    assert_ne!(sanitized_result, without_hs);
+    assert_eq!(sanitized_result.logp.to_bits(), 0xbf56_f006_8db8_bb00);
+
+    let without_hydrogens = with_hydrogens
+        .without_hydrogens_with_sanitize(false)
+        .unwrap();
+    let removed_h_result = calc_crippen_descriptors(&without_hydrogens, false, false).unwrap();
+    assert_ne!(removed_h_result, explicit_h_result);
+    assert_eq!(removed_h_result.logp.to_bits(), 0xbfd6_5119_ce07_5f70);
+}
+
+#[test]
+fn rdkit_topology_state_operations_preserve_the_crippen_cache() {
+    let molecule = Molecule::from_smiles("CCO").unwrap();
+    let without_hs = calc_crippen_descriptors(&molecule, false, true).unwrap();
+
+    let kekulized = molecule.with_kekulized_bonds(false).unwrap();
+    assert_eq!(
+        calc_crippen_descriptors(&kekulized, true, false).unwrap(),
+        without_hs
+    );
+
+    let with_radicals = molecule.with_assigned_radicals().unwrap();
+    assert_eq!(
+        calc_crippen_descriptors(&with_radicals, true, false).unwrap(),
+        without_hs
+    );
+
+    let with_aromaticity = molecule.with_assigned_aromaticity().unwrap();
+    assert_eq!(
+        calc_crippen_descriptors(&with_aromaticity, true, false).unwrap(),
+        without_hs
+    );
+}
+
+#[test]
 fn molecular_descriptors_match_rdkit_golden_for_supported_properties() {
     let records = load_golden();
     let mut failures = Vec::<String>::new();
@@ -200,7 +322,14 @@ fn molecular_descriptors_match_rdkit_golden_for_supported_properties() {
                     .crippen
                     .get(&key)
                     .unwrap_or_else(|| panic!("missing Crippen bit branch {key} in {context}"));
-                match calc_crippen_descriptors(&mol, include_hs, force) {
+                // The golden generator starts each option branch from a fresh
+                // RDKit molecule so one branch's computed-property cache cannot
+                // mask the next branch's includeHs argument. Keep that branch
+                // isolation here; cache-order parity has separate focused tests.
+                let branch_mol = Molecule::from_smiles(&record.smiles).unwrap_or_else(|err| {
+                    panic!("COSMolKit failed to parse Crippen branch {context}: {err}")
+                });
+                match calc_crippen_descriptors(&branch_mol, include_hs, force) {
                     Ok(CrippenDescriptorValues {
                         logp,
                         molar_refractivity,

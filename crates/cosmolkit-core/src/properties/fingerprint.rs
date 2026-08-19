@@ -2544,6 +2544,19 @@ pub struct Fingerprint {
 }
 
 impl Fingerprint {
+    pub(crate) fn from_lsb_bytes(n_bits: usize, bytes: &[u8]) -> Self {
+        let mut bits = vec![0; n_bits.div_ceil(64)];
+        for (byte_index, &byte) in bytes.iter().enumerate() {
+            for bit_index in 0..8 {
+                let bit = byte_index * 8 + bit_index;
+                if bit < n_bits && byte & (1 << bit_index) != 0 {
+                    bits[bit / 64] |= 1u64 << (bit % 64);
+                }
+            }
+        }
+        Self { bits, n_bits }
+    }
+
     #[must_use]
     pub fn from_on_bits(n_bits: usize, on_bits: impl IntoIterator<Item = usize>) -> Self {
         let mut bits = vec![0; n_bits.div_ceil(64)];
@@ -2619,6 +2632,8 @@ pub enum FingerprintError {
         option: &'static str,
         reason: &'static str,
     },
+    #[error("Avalon REACCS conversion failed: {reason}")]
+    AvalonConversion { reason: String },
     #[error("fingerprint bit length mismatch: {left} != {right}")]
     BitLengthMismatch { left: usize, right: usize },
 }
@@ -2970,7 +2985,7 @@ pub fn morgan_fingerprint_with_output(
                 use_chirality: params.use_chirality,
             }
         }));
-    let generator = getMorganGeneratorWithParams(
+    let mut generator = getMorganGeneratorWithParams(
         params.radius,
         params.count_simulation,
         params.use_chirality,
@@ -2984,6 +2999,11 @@ pub fn morgan_fingerprint_with_output(
         true,
         true,
     )?;
+    // RDKit✔️✔️: fpgen->getOptions()->d_numBitsPerFeature = nBitsPerHash;
+    generator
+        .fingerprint_arguments
+        .fingerprint_arguments
+        .d_num_bits_per_feature = params.num_bits_per_feature;
 
     let mut args = FingerprintFuncArguments {
         from_atoms: params.from_atoms.clone(),
@@ -3670,30 +3690,784 @@ fn atom_is_excluded(index: usize, params: &MorganFingerprintParams) -> bool {
 // RDKit source: GraphMol/Fingerprints/FingerprintUtil.cpp
 // ---------------------------------------------------------------------------
 
-/// Parameters reserved for the future source-backed `RDKFingerprintMol` port.
+/// RDKitFP's default atom invariant and the bond-hash input preparation are
+/// kept as explicit helpers so the later path/environment port can consume the
+/// exact source intermediate state.
+#[must_use]
+pub(crate) fn rdkit_fp_atom_invariants(molecule: &Molecule) -> Vec<u32> {
+    // RDKit source: FingerprintUtil.cpp lines 271-280
+    // RDKit✔️✔️: void buildDefaultRDKitFingerprintAtomInvariants(
+    // RDKit✔️✔️:     const ROMol &mol, std::vector<std::uint32_t> &lAtomInvariants) {
+    // RDKit✔️✔️:   lAtomInvariants.clear();
+    // RDKit✔️✔️:   lAtomInvariants.reserve(mol.getNumAtoms());
+    // RDKit✔️✔️:   for (ROMol::ConstAtomIterator atomIt = mol.beginAtoms();
+    // RDKit✔️✔️:        atomIt != mol.endAtoms(); ++atomIt) {
+    // RDKit✔️✔️:     unsigned int aHash = ((*atomIt)->getAtomicNum() % 128) << 1 |
+    // RDKit✔️✔️:                          static_cast<unsigned int>((*atomIt)->getIsAromatic());
+    // RDKit✔️✔️:     lAtomInvariants.push_back(aHash);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    molecule
+        .atoms()
+        .iter()
+        .map(|atom| ((u32::from(atom.atomic_number()) % 128) << 1) | u32::from(atom.is_aromatic()))
+        .collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RdkitFpBondHashInputs {
+    pub atoms_in_path: Vec<bool>,
+    pub bond_hashes: Vec<u32>,
+}
+
+pub(crate) fn rdkit_fp_generate_bond_hash_inputs(
+    molecule: &Molecule,
+    path: &[usize],
+    use_bond_order: bool,
+    atom_invariants: &[u32],
+) -> Result<RdkitFpBondHashInputs, FingerprintError> {
+    // RDKit source: FingerprintUtil.cpp lines 345-370
+    // RDKit✔️✔️: std::vector<unsigned int> generateBondHashes(
+    // RDKit✔️✔️:     const ROMol &mol, boost::dynamic_bitset<> &atomsInPath,
+    // RDKit✔️✔️:     const std::vector<const Bond *> &bondCache,
+    // RDKit✔️✔️:     const std::vector<short> &isQueryBond, const PATH_TYPE &path,
+    // RDKit✔️✔️:     bool useBondOrder, const std::vector<std::uint32_t> *atomInvariants) {
+    // RDKit✔️✔️:   PRECONDITION(!atomInvariants || atomInvariants->size() >= mol.getNumAtoms(),
+    // RDKit✔️✔️:                "bad atomInvariants size");
+    // RDKit✔️✔️:   std::vector<unsigned int> bondHashes;
+    // RDKit✔️✔️:   atomsInPath.reset();
+    // RDKit✔️✔️:   bool queryInPath = false;
+    // RDKit✔️✔️:   std::vector<unsigned int> atomDegrees(mol.getNumAtoms(), 0);
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < path.size() && !queryInPath; ++i) {
+    // RDKit✔️✔️:     const Bond *bi = bondCache[path[i]];
+    // RDKit✔️✔️:     CHECK_INVARIANT(bi, "bond not in cache");
+    // RDKit✔️✔️:     atomDegrees[bi->getBeginAtomIdx()]++;
+    // RDKit✔️✔️:     atomDegrees[bi->getEndAtomIdx()]++;
+    // RDKit✔️✔️:     atomsInPath.set(bi->getBeginAtomIdx());
+    // RDKit✔️✔️:     atomsInPath.set(bi->getEndAtomIdx());
+    // RDKit✔️✔️:     if (isQueryBond[path[i]]) {
+    // RDKit✔️✔️:       queryInPath = true;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (queryInPath) {
+    // RDKit✔️✔️:     return bondHashes;
+    // RDKit✔️✔️:   }
+    if atom_invariants.len() < molecule.num_atoms() {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "bad atomInvariants size",
+        });
+    }
+
+    let mut atoms_in_path = vec![false; molecule.num_atoms()];
+    let mut atom_degrees = vec![0_u32; molecule.num_atoms()];
+    let mut query_in_path = false;
+    for &bond_index in path {
+        let bond = molecule
+            .bonds()
+            .get(bond_index)
+            .ok_or(FingerprintError::InvalidArguments {
+                reason: "bond not in cache",
+            })?;
+        let begin = bond.begin().index();
+        let end = bond.end().index();
+        atom_degrees[begin] += 1;
+        atom_degrees[end] += 1;
+        atoms_in_path[begin] = true;
+        atoms_in_path[end] = true;
+        if bond.query().is_some()
+            || molecule.atoms()[begin].query().is_some()
+            || molecule.atoms()[end].query().is_some()
+        {
+            query_in_path = true;
+        }
+    }
+    if query_in_path {
+        return Ok(RdkitFpBondHashInputs {
+            atoms_in_path,
+            bond_hashes: Vec::new(),
+        });
+    }
+
+    // RDKit source: FingerprintUtil.cpp lines 372-434
+    // RDKit✔️✔️:   std::vector<unsigned int> bondNbrs(path.size(), 0);
+    // RDKit✔️✔️:   bondHashes.reserve(path.size() + 1);
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < path.size(); ++i) {
+    // RDKit✔️✔️:     const Bond *bi = bondCache[path[i]];
+    // RDKit✔️✔️:     for (unsigned int j = i + 1; j < path.size(); ++j) {
+    // RDKit✔️✔️:       const Bond *bj = bondCache[path[j]];
+    // RDKit✔️✔️:       if (bi->getBeginAtomIdx() == bj->getBeginAtomIdx() ||
+    // RDKit✔️✔️:           bi->getBeginAtomIdx() == bj->getEndAtomIdx() ||
+    // RDKit✔️✔️:           bi->getEndAtomIdx() == bj->getBeginAtomIdx() ||
+    // RDKit✔️✔️:           bi->getEndAtomIdx() == bj->getEndAtomIdx()) {
+    // RDKit✔️✔️:         ++bondNbrs[i];
+    // RDKit✔️✔️:         ++bondNbrs[j];
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     unsigned int a1Hash = (*atomInvariants)[bi->getBeginAtomIdx()];
+    // RDKit✔️✔️:     unsigned int a2Hash = (*atomInvariants)[bi->getEndAtomIdx()];
+    // RDKit✔️✔️:     unsigned int deg1 = atomDegrees[bi->getBeginAtomIdx()];
+    // RDKit✔️✔️:     unsigned int deg2 = atomDegrees[bi->getEndAtomIdx()];
+    // RDKit✔️✔️:     if (a1Hash < a2Hash) {
+    // RDKit✔️✔️:       std::swap(a1Hash, a2Hash);
+    // RDKit✔️✔️:       std::swap(deg1, deg2);
+    // RDKit✔️✔️:     } else if (a1Hash == a2Hash && deg1 < deg2) {
+    // RDKit✔️✔️:       std::swap(deg1, deg2);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     unsigned int bondHash = 1;
+    // RDKit✔️✔️:     if (useBondOrder) {
+    // RDKit✔️✔️:       if (bi->getIsAromatic() || bi->getBondType() == Bond::AROMATIC) {
+    // RDKit✔️✔️:         bondHash = Bond::AROMATIC;
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         bondHash = bi->getBondType();
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     std::uint32_t ourHash = bondNbrs[i];
+    // RDKit✔️✔️:     gboost::hash_combine(ourHash, bondHash);
+    // RDKit✔️✔️:     gboost::hash_combine(ourHash, a1Hash);
+    // RDKit✔️✔️:     gboost::hash_combine(ourHash, deg1);
+    // RDKit✔️✔️:     gboost::hash_combine(ourHash, a2Hash);
+    // RDKit✔️✔️:     gboost::hash_combine(ourHash, deg2);
+    // RDKit✔️✔️:     bondHashes.push_back(ourHash);
+    // RDKit✔️✔️:   }
+    let mut bond_neighbors = vec![0_u32; path.len()];
+    for i in 0..path.len() {
+        let first = &molecule.bonds()[path[i]];
+        for j in (i + 1)..path.len() {
+            let second = &molecule.bonds()[path[j]];
+            if first.begin() == second.begin()
+                || first.begin() == second.end()
+                || first.end() == second.begin()
+                || first.end() == second.end()
+            {
+                bond_neighbors[i] += 1;
+                bond_neighbors[j] += 1;
+            }
+        }
+    }
+    let mut bond_hashes = Vec::with_capacity(path.len() + 1);
+    for (i, &bond_index) in path.iter().enumerate() {
+        let bond = &molecule.bonds()[bond_index];
+        let begin = bond.begin().index();
+        let end = bond.end().index();
+        let mut first_hash = atom_invariants[begin];
+        let mut second_hash = atom_invariants[end];
+        let mut first_degree = atom_degrees[begin];
+        let mut second_degree = atom_degrees[end];
+        if first_hash < second_hash {
+            std::mem::swap(&mut first_hash, &mut second_hash);
+            std::mem::swap(&mut first_degree, &mut second_degree);
+        } else if first_hash == second_hash && first_degree < second_degree {
+            std::mem::swap(&mut first_degree, &mut second_degree);
+        }
+        let bond_hash = if use_bond_order {
+            if bond.is_aromatic() || bond.order() == crate::BondOrder::Aromatic {
+                rdkit_bond_type_code(crate::BondOrder::Aromatic)
+            } else {
+                rdkit_bond_type_code(bond.order())
+            }
+        } else {
+            1
+        };
+        let mut our_hash = bond_neighbors[i];
+        hash_combine(&mut our_hash, bond_hash);
+        hash_combine(&mut our_hash, first_hash);
+        hash_combine(&mut our_hash, first_degree);
+        hash_combine(&mut our_hash, second_hash);
+        hash_combine(&mut our_hash, second_degree);
+        bond_hashes.push(our_hash);
+    }
+    Ok(RdkitFpBondHashInputs {
+        atoms_in_path,
+        bond_hashes,
+    })
+}
+
+fn rdkit_fp_bond_neighbors(molecule: &Molecule, use_hs: bool) -> Vec<Vec<usize>> {
+    let mut neighbors = vec![Vec::new(); molecule.num_bonds()];
+    // RDKit source: Subgraphs.cpp lines 23-68 (`getNbrsList`).
+    // RDKit✔️✔️: for (unsigned int atomIdx = 0; atomIdx < mol.getNumAtoms(); ++atomIdx) {
+    // RDKit✔️✔️:   const Atom *atom = mol.getAtomWithIdx(atomIdx);
+    // RDKit✔️✔️:   ROMol::OEDGE_ITER bIt1, end;
+    // RDKit✔️✔️:   boost::tie(bIt1, end) = mol.getAtomBonds(atom);
+    // RDKit✔️✔️:   while (bIt1 != end) {
+    // RDKit✔️✔️:     const Bond *bond1 = mol[*bIt1];
+    // RDKit✔️✔️:     if (useHs || bond1->getOtherAtom(atom)->getAtomicNum() != 1) {
+    // RDKit✔️✔️:       int bid1 = bond1->getIdx();
+    // RDKit✔️✔️:       ROMol::OEDGE_ITER bIt2 = mol.getAtomBonds(atom).first;
+    // RDKit✔️✔️:       while (bIt2 != end) {
+    // RDKit✔️✔️:         const Bond *bond2 = mol[*bIt2];
+    // RDKit✔️✔️:         int bid2 = bond2->getIdx();
+    // RDKit✔️✔️:         if (bid1 != bid2 &&
+    // RDKit✔️✔️:             (useHs || bond2->getOtherAtom(atom)->getAtomicNum() != 1)) {
+    // RDKit✔️✔️:           nbrs[bid1].push_back(bid2);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         ++bIt2;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     ++bIt1;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    let adjacency = &molecule.topology_block().adjacency;
+    for atom_index in 0..molecule.num_atoms() {
+        let incident: Vec<_> = adjacency
+            .neighbors_of(atom_index)
+            .iter()
+            .copied()
+            .filter(|neighbor| {
+                use_hs
+                    || (molecule.atoms()[neighbor.atom_index].atomic_number() != 1
+                        && molecule.atoms()[atom_index].atomic_number() != 1)
+            })
+            .collect();
+        for first in &incident {
+            for second in &incident {
+                if first.bond != second.bond {
+                    neighbors[first.bond.index()].push(second.bond.index());
+                }
+            }
+        }
+    }
+    neighbors
+}
+
+fn rdkit_fp_recurse_subgraphs(
+    neighbors: &[Vec<usize>],
+    path: Vec<usize>,
+    mut candidates: Vec<usize>,
+    lower_len: usize,
+    upper_len: usize,
+    mut forbidden: Vec<bool>,
+    result: &mut BTreeMap<usize, Vec<Vec<usize>>>,
+) {
+    // RDKit source: Subgraphs.cpp lines 120-176 (`recurseWalkRange`).
+    // RDKit✔️✔️: unsigned int nsize = spath.size();
+    // RDKit✔️✔️: if ((nsize >= lowerLen) && (nsize <= upperLen)) {
+    // RDKit✔️✔️:   res[nsize].push_back(spath);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: if (nsize == upperLen || nsize > upperLen) return;
+    // RDKit✔️✔️: while (cands.size() != 0) {
+    // RDKit✔️✔️:   int next = cands.back(); cands.pop_back();
+    // RDKit✔️✔️:   if (!forbidden[next]) {
+    // RDKit✔️✔️:     forbidden[next] = 1;
+    // RDKit✔️✔️:     INT_VECT tstack = cands;
+    // RDKit✔️✔️:     for (int &bid : nbrs[next]) if (!forbidden[bid]) tstack.push_back(bid);
+    // RDKit✔️✔️:     PATH_TYPE tpath = spath; tpath.push_back(next);
+    // RDKit✔️✔️:     recurseWalkRange(nbrs, tpath, tstack, lowerLen, upperLen,
+    // RDKit✔️✔️:                       forbidden, res);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    let size = path.len();
+    if size >= lower_len && size <= upper_len {
+        result.entry(size).or_default().push(path.clone());
+    }
+    if size >= upper_len {
+        return;
+    }
+    while let Some(next) = candidates.pop() {
+        if forbidden.get(next).copied().unwrap_or(true) {
+            continue;
+        }
+        forbidden[next] = true;
+        let mut next_candidates = candidates.clone();
+        for &candidate in &neighbors[next] {
+            if !forbidden[candidate] {
+                next_candidates.push(candidate);
+            }
+        }
+        let mut next_path = path.clone();
+        next_path.push(next);
+        rdkit_fp_recurse_subgraphs(
+            neighbors,
+            next_path,
+            next_candidates,
+            lower_len,
+            upper_len,
+            forbidden.clone(),
+            result,
+        );
+    }
+}
+
+fn rdkit_fp_atom_adjacency(molecule: &Molecule, use_hs: bool) -> Vec<Vec<bool>> {
+    // RDKit source: Subgraphs.cpp lines 468-490 (`findAllPathsOfLengthsMtoN`).
+    // RDKit✔️✔️: adjMat = new int[dim * dim];
+    // RDKit✔️✔️: memset((void *)adjMat, 0, dim * dim * sizeof(int));
+    // RDKit✔️✔️: for (bondIt = mol.beginBonds(); bondIt != mol.endBonds(); bondIt++) {
+    // RDKit✔️✔️:   Atom *beg = (*bondIt)->getBeginAtom();
+    // RDKit✔️✔️:   Atom *end = (*bondIt)->getEndAtom();
+    // RDKit✔️✔️:   if (useHs || (beg->getAtomicNum() != 1 && end->getAtomicNum() != 1)) {
+    // RDKit✔️✔️:     adjMat[beg->getIdx() * dim + end->getIdx()] = 1;
+    // RDKit✔️✔️:     adjMat[end->getIdx() * dim + beg->getIdx()] = 1;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    let dim = molecule.num_atoms();
+    let mut adjacency = vec![vec![false; dim]; dim];
+    for bond in molecule.bonds() {
+        let begin = bond.begin().index();
+        let end = bond.end().index();
+        if use_hs
+            || (molecule.atoms()[begin].atomic_number() != 1
+                && molecule.atoms()[end].atomic_number() != 1)
+        {
+            adjacency[begin][end] = true;
+            adjacency[end][begin] = true;
+        }
+    }
+    adjacency
+}
+
+fn rdkit_fp_extend_atom_paths(
+    adjacency: &[Vec<bool>],
+    paths: &[Vec<usize>],
+    allow_ring_closures: usize,
+) -> Vec<Vec<usize>> {
+    // RDKit source: Subgraphs.cpp lines 189-241 (`extendPaths`).
+    // RDKit✔️✔️: for (path = paths.begin(); path != paths.end(); ++path) {
+    // RDKit✔️✔️:   unsigned int endIdx = (*path)[path->size() - 1];
+    // RDKit✔️✔️:   for (unsigned int otherIdx = 0; otherIdx < dim; otherIdx++) {
+    // RDKit✔️✔️:     if (adjMat[iTab + otherIdx] == 1) {
+    // RDKit✔️✔️:       auto loc = std::find(path->begin(), path->end(), otherIdx);
+    // RDKit✔️✔️:       if (loc == path->end()) { append; }
+    // RDKit✔️✔️:       else if (allowRingClosures > 2 && path->size() == allowRingClosures - 1) {
+    // RDKit✔️✔️:         auto rIt = path->rbegin(); rIt++;
+    // RDKit✔️✔️:         if (*rIt != static_cast<int>(otherIdx)) append;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    let mut result = Vec::new();
+    let dim = adjacency.len();
+    for path in paths {
+        let end = *path.last().expect("source paths are nonempty");
+        // The source scans every column of the dense adjacency matrix in
+        // atom-index order. Keep that order rather than the molecule's bond
+        // insertion order.
+        for other_idx in 0..dim {
+            if !adjacency[end][other_idx] {
+                continue;
+            }
+            if !path.contains(&other_idx) {
+                let mut next = path.clone();
+                next.push(other_idx);
+                result.push(next);
+            } else if allow_ring_closures > 2
+                && path.len() == allow_ring_closures - 1
+                && path.get(path.len().saturating_sub(2)).copied() != Some(other_idx)
+            {
+                let mut next = path.clone();
+                next.push(other_idx);
+                result.push(next);
+            }
+        }
+    }
+    result
+}
+
+fn rdkit_fp_bond_between_atoms(molecule: &Molecule, begin: usize, end: usize) -> Option<usize> {
+    // RDKit source: GraphMol/ROMol.cpp lines 338-350.
+    // RDKit✔️✔️: const Bond *ROMol::getBondBetweenAtoms(unsigned int idx1,
+    // RDKit✔️✔️:                                        unsigned int idx2) const {
+    // RDKit✔️✔️:   URANGE_CHECK(idx1, getNumAtoms());
+    // RDKit✔️✔️:   URANGE_CHECK(idx2, getNumAtoms());
+    // RDKit✔️✔️:   const Bond *res = nullptr;
+    // RDKit✔️✔️:   auto [edge, found] = boost::edge(boost::vertex(idx1, d_graph),
+    // RDKit✔️✔️:                                    boost::vertex(idx2, d_graph), d_graph);
+    // RDKit✔️✔️:   if (found) {
+    // RDKit✔️✔️:     res = d_graph[edge];
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    if begin >= molecule.num_atoms() || end >= molecule.num_atoms() {
+        return None;
+    }
+    molecule
+        .topology_block()
+        .adjacency
+        .neighbors_of(begin)
+        .iter()
+        .find(|neighbor| neighbor.atom_index == end)
+        .map(|neighbor| neighbor.bond.index())
+}
+
+pub(crate) fn enumerate_rdkit_fp_paths(
+    molecule: &Molecule,
+    min_path: u32,
+    max_path: u32,
+    use_hs: bool,
+    branched_paths: bool,
+    from_atoms: Option<&[u32]>,
+) -> Result<BTreeMap<usize, Vec<Vec<usize>>>, FingerprintError> {
+    if min_path == 0 || max_path < min_path {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "invalid path lengths",
+        });
+    }
+    let lower = min_path as usize;
+    let upper = max_path as usize;
+    let roots = from_atoms.unwrap_or(&[]);
+
+    if branched_paths {
+        let neighbors = rdkit_fp_bond_neighbors(molecule, use_hs);
+        let enumerate_for_root = |root: Option<usize>| {
+            let mut result = (lower..=upper)
+                .map(|length| (length, Vec::new()))
+                .collect::<BTreeMap<_, _>>();
+            let mut forbidden = vec![false; molecule.num_bonds()];
+            for bond_index in 0..molecule.num_bonds() {
+                let bond = &molecule.bonds()[bond_index];
+                if !neighbors[bond_index].is_empty()
+                    || (use_hs
+                        || (molecule.atoms()[bond.begin().index()].atomic_number() != 1
+                            && molecule.atoms()[bond.end().index()].atomic_number() != 1))
+                {
+                    if let Some(root) = root {
+                        if root >= molecule.num_atoms()
+                            || (root != bond.begin().index() && root != bond.end().index())
+                        {
+                            continue;
+                        }
+                    }
+                    if forbidden[bond_index] {
+                        continue;
+                    }
+                    forbidden[bond_index] = true;
+                    rdkit_fp_recurse_subgraphs(
+                        &neighbors,
+                        vec![bond_index],
+                        neighbors[bond_index].clone(),
+                        lower,
+                        upper,
+                        forbidden.clone(),
+                        &mut result,
+                    );
+                }
+            }
+            result
+        };
+
+        if roots.is_empty() {
+            return Ok(enumerate_for_root(None));
+        }
+        let mut result = (lower..=upper)
+            .map(|length| (length, Vec::new()))
+            .collect::<BTreeMap<_, _>>();
+        for &root in roots {
+            let root_paths = enumerate_for_root(Some(root as usize));
+            for (length, paths) in root_paths {
+                result.entry(length).or_default().splice(0..0, paths);
+            }
+        }
+        return Ok(result);
+    }
+
+    // RDKit source: Subgraphs.cpp lines 443-548 (`findAllPathsOfLengthsMtoN`).
+    // RDKit✔️✔️: if (useBonds) { ++lowerLen; ++upperLen; }
+    // RDKit✔️✔️: INT_PATH_LIST_MAP atomPaths = Subgraphs::pathFinderHelper(
+    // RDKit✔️✔️:     adjMat, dim, lowerLen, upperLen, rootedAtAtom, distMat);
+    // RDKit✔️✔️: for (PATH_LIST::const_iterator vivI = atomPaths[i].begin();
+    // RDKit✔️✔️:      vivI != atomPaths[i].end(); ++vivI) {
+    // RDKit✔️✔️:   for (unsigned int j = 0; j < i - 1; j++) {
+    // RDKit✔️✔️:     const Bond *bond = mol.getBondBetweenAtoms(resi[j], resi[j + 1]);
+    // RDKit✔️✔️:     locV.push_back(bond->getIdx()); invar.set(bond->getIdx());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (std::find(invars.begin(), invars.end(), invar) == invars.end()) {
+    // RDKit✔️✔️:     if (useBonds) res[i - 1].push_back(locV); else res[i].push_back(resi);
+    // RDKit✔️✔️:   }
+    let atom_lower = lower + 1;
+    let atom_upper = upper + 1;
+    let adjacency = rdkit_fp_atom_adjacency(molecule, use_hs);
+    let enumerate_for_root = |root: usize| {
+        let mut atom_paths: BTreeMap<usize, Vec<Vec<usize>>> = BTreeMap::new();
+        if root >= molecule.num_atoms() {
+            return atom_paths;
+        }
+        let mut paths = vec![vec![root]];
+        for length in 1..atom_upper {
+            if length >= atom_lower {
+                atom_paths.entry(length).or_default().extend(paths.clone());
+            }
+            paths = rdkit_fp_extend_atom_paths(&adjacency, &paths, atom_upper);
+            if paths.is_empty() {
+                break;
+            }
+        }
+        if atom_upper >= atom_lower {
+            atom_paths.entry(atom_upper).or_default().extend(paths);
+        }
+        atom_paths
+    };
+    let roots: Vec<usize> = if roots.is_empty() {
+        (0..molecule.num_atoms()).collect()
+    } else {
+        roots.iter().map(|&root| root as usize).collect()
+    };
+    let mut atom_paths: BTreeMap<usize, Vec<Vec<usize>>> = (atom_lower..=atom_upper)
+        .map(|length| (length, Vec::new()))
+        .collect();
+    if from_atoms.is_none() {
+        for root in roots {
+            let root_paths = enumerate_for_root(root);
+            for (length, paths) in root_paths {
+                atom_paths.entry(length).or_default().extend(paths);
+            }
+        }
+    } else {
+        for root in roots {
+            let root_paths = enumerate_for_root(root);
+            for (length, paths) in root_paths {
+                atom_paths.entry(length).or_default().splice(0..0, paths);
+            }
+        }
+    }
+    let mut result: BTreeMap<usize, Vec<Vec<usize>>> = BTreeMap::new();
+    for bond_length in lower..=upper {
+        result.insert(bond_length, Vec::new());
+    }
+    for (atom_length, paths) in atom_paths {
+        if atom_length == 0 {
+            continue;
+        }
+        let bond_length = atom_length - 1;
+        if bond_length < lower || bond_length > upper {
+            continue;
+        }
+        let mut seen = BTreeSet::new();
+        for atom_path in paths {
+            let mut bond_path = Vec::with_capacity(bond_length);
+            let mut membership = vec![false; molecule.num_bonds()];
+            for pair in atom_path.windows(2) {
+                let bond_index = rdkit_fp_bond_between_atoms(molecule, pair[0], pair[1]).ok_or(
+                    FingerprintError::InvalidArguments {
+                        reason: "path contains no connecting bond",
+                    },
+                )?;
+                bond_path.push(bond_index);
+                membership[bond_index] = true;
+            }
+            if seen.insert(membership) {
+                result.entry(bond_length).or_default().push(bond_path);
+            }
+        }
+    }
+    Ok(result)
+}
+
+/// One source `RDKitFPAtomEnv` produced by the RDKitFP environment generator.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RdkitFpEnvironment {
+    bit_id: u64,
+    atoms_in_path: Vec<bool>,
+    bond_path: Vec<usize>,
+}
+
+impl RdkitFpEnvironment {
+    #[must_use]
+    fn bit_id(&self) -> u64 {
+        self.bit_id
+    }
+
+    /// RDKit source: RDKitFPGenerator.cpp lines 121-149
+    // RDKit✔️✔️: template <typename OutputType>
+    // RDKit✔️✔️: void RDKitFPAtomEnv<OutputType>::updateAdditionalOutput(
+    // RDKit✔️✔️:     AdditionalOutput *additionalOutput, size_t bitId) const {
+    // RDKit✔️✔️:   PRECONDITION(additionalOutput, "bad output pointer");
+    // RDKit✔️✔️:   if (additionalOutput->bitPaths) {
+    // RDKit✔️✔️:     (*additionalOutput->bitPaths)[bitId].push_back(d_bondPath);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (additionalOutput->atomToBits || additionalOutput->atomCounts ||
+    // RDKit✔️✔️:       additionalOutput->atomsPerBit) {
+    // RDKit✔️✔️:     if (additionalOutput->atomsPerBit) {
+    // RDKit✔️✔️:       (*additionalOutput->atomsPerBit)[bitId].emplace_back();
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     for (size_t i = 0; i < d_atomsInPath.size(); ++i) {
+    // RDKit✔️✔️:       if (d_atomsInPath[i]) {
+    // RDKit✔️✔️:         if (additionalOutput->atomsPerBit) {
+    // RDKit✔️✔️:           (*additionalOutput->atomsPerBit)[bitId].back().push_back(i);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         if (additionalOutput->atomToBits) {
+    // RDKit✔️✔️:           auto &alist = additionalOutput->atomToBits->at(i);
+    // RDKit✔️✔️:           if (std::find(alist.begin(), alist.end(), bitId) == alist.end()) {
+    // RDKit✔️✔️:             alist.push_back(bitId);
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         if (additionalOutput->atomCounts) {
+    // RDKit✔️✔️:           additionalOutput->atomCounts->at(i)++;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    fn update_additional_output(&self, additional_output: &mut AdditionalOutput, bit_id: u64) {
+        if let Some(bit_paths) = additional_output.bit_paths.as_mut() {
+            bit_paths
+                .entry(bit_id)
+                .or_default()
+                .push(self.bond_path.clone());
+        }
+        if additional_output.atom_to_bits.is_some()
+            || additional_output.atom_counts.is_some()
+            || additional_output.atoms_per_bit.is_some()
+        {
+            if let Some(atoms_per_bit) = additional_output.atoms_per_bit.as_mut() {
+                atoms_per_bit.entry(bit_id).or_default().push(Vec::new());
+            }
+            for (atom_index, &in_path) in self.atoms_in_path.iter().enumerate() {
+                if !in_path {
+                    continue;
+                }
+                if let Some(atoms_per_bit) = additional_output.atoms_per_bit.as_mut() {
+                    atoms_per_bit
+                        .get_mut(&bit_id)
+                        .expect("atomsPerBit entry allocated above")
+                        .last_mut()
+                        .expect("atomsPerBit path allocated above")
+                        .push(atom_index);
+                }
+                if let Some(atom_to_bits) = additional_output.atom_to_bits.as_mut() {
+                    let bits = &mut atom_to_bits[atom_index];
+                    if !bits.contains(&bit_id) {
+                        bits.push(bit_id);
+                    }
+                }
+                if let Some(atom_counts) = additional_output.atom_counts.as_mut() {
+                    atom_counts[atom_index] += 1;
+                }
+            }
+        }
+    }
+}
+
+fn rdkit_fp_hash_range(values: &[u32]) -> u32 {
+    // RDKit source: RDGeneral/hash/hash.hpp `gboost::hash_range`.
+    // RDKit✔️✔️: template <class It> inline std::size_t hash_range(It first, It last) {
+    // RDKit✔️✔️:   std::size_t seed = 0;
+    // RDKit✔️✔️:   for (; first != last; ++first) hash_combine(seed, *first);
+    // RDKit✔️✔️:   return seed;
+    // RDKit✔️✔️: }
+    let mut seed = 0u32;
+    for &value in values {
+        hash_combine(&mut seed, value);
+    }
+    seed
+}
+
+pub(crate) fn generate_rdkit_fp_environments(
+    molecule: &Molecule,
+    params: &TopologicalFingerprintParams,
+    atom_invariants: &[u32],
+) -> Result<Vec<RdkitFpEnvironment>, FingerprintError> {
+    if atom_invariants.len() < molecule.num_atoms() {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "bad atomInvariants size",
+        });
+    }
+
+    // RDKit source: RDKitFPGenerator.cpp lines 182-236 (`getEnvironments`).
+    // RDKit✔️✔️: PRECONDITION(!atomInvariants || atomInvariants->size() >= mol.getNumAtoms(),
+    // RDKit✔️✔️:              "bad atomInvariants size");
+    // RDKit✔️✔️: auto *fpArguments = dynamic_cast<RDKitFPArguments *>(arguments);
+    // RDKit✔️✔️: std::vector<AtomEnvironment<OutputType> *> result;
+    // RDKit✔️✔️: INT_PATH_LIST_MAP allPaths;
+    // RDKit✔️✔️: RDKitFPUtils::enumerateAllPaths(
+    // RDKit✔️✔️:     mol, allPaths, fromAtoms, fpArguments->df_branchedPaths,
+    // RDKit✔️✔️:     fpArguments->df_useHs, fpArguments->d_minPath, fpArguments->d_maxPath);
+    let all_paths = enumerate_rdkit_fp_paths(
+        molecule,
+        params.min_path,
+        params.max_path,
+        params.use_hs,
+        params.branched_paths,
+        params.from_atoms.as_deref(),
+    )?;
+
+    // RDKit source: FingerprintUtil.cpp lines 291-315 (`identifyQueryBonds`).
+    // RDKit✔️✔️: std::vector<short> isQueryBond(mol.getNumBonds(), 0);
+    // RDKit✔️✔️: std::vector<const Bond *> bondCache;
+    // RDKit✔️✔️: RDKitFPUtils::identifyQueryBonds(mol, bondCache, isQueryBond);
+    // The typed molecule query fields are inspected directly by
+    // `rdkit_fp_generate_bond_hash_inputs`, preserving the same path-local
+    // query short circuit without a second cache representation.
+    let mut result = Vec::new();
+    for paths in all_paths.values() {
+        for path in paths {
+            // RDKit✔️✔️: std::vector<std::uint32_t> bondHashes = RDKitFPUtils::generateBondHashes(
+            // RDKit✔️✔️:     mol, atomsInPath, bondCache, isQueryBond, path,
+            // RDKit✔️✔️:     fpArguments->df_useBondOrder, atomInvariants);
+            let hash_inputs = rdkit_fp_generate_bond_hash_inputs(
+                molecule,
+                path,
+                params.use_bond_order,
+                atom_invariants,
+            )?;
+            if hash_inputs.bond_hashes.is_empty() {
+                continue;
+            }
+
+            // RDKit✔️✔️: unsigned long seed;
+            // RDKit✔️✔️: if (path.size() > 1) {
+            // RDKit✔️✔️:   std::sort(bondHashes.begin(), bondHashes.end());
+            // RDKit✔️✔️:   bondHashes.push_back(static_cast<std::uint32_t>(atomsInPath.count()));
+            // RDKit✔️✔️:   seed = gboost::hash_range(bondHashes.begin(), bondHashes.end());
+            // RDKit✔️✔️: } else {
+            // RDKit✔️✔️:   seed = bondHashes[0];
+            // RDKit✔️✔️: }
+            let seed = if path.len() > 1 {
+                let mut bond_hashes = hash_inputs.bond_hashes;
+                bond_hashes.sort_unstable();
+                bond_hashes.push(
+                    hash_inputs
+                        .atoms_in_path
+                        .iter()
+                        .filter(|&&in_path| in_path)
+                        .count() as u32,
+                );
+                rdkit_fp_hash_range(&bond_hashes)
+            } else {
+                hash_inputs.bond_hashes[0]
+            };
+            result.push(RdkitFpEnvironment {
+                bit_id: u64::from(seed),
+                atoms_in_path: hash_inputs.atoms_in_path,
+                bond_path: path.clone(),
+            });
+        }
+    }
+    Ok(result)
+}
+
+/// Parameters for the source-backed `RDKFingerprintMol` boundary.
 ///
-/// The current public shape is retained for API planning only. The operation
-/// returns `FingerprintError::UnsupportedOption` until the complete RDKit
-/// generator and option surface is ported.
+/// Parameters for the source-backed RDKit generator and legacy
+/// `RDKFingerprintMol` boundary.
 ///
 /// # Parameters
 /// - `min_path`: minimum path length in bonds (default 1).
 /// - `max_path`: maximum path length in bonds (default 7).
-/// - `n_bits`: size of the output fingerprint (default 2048).
-/// - `n_bits_per_hash`: number of bit positions to set per path hash (default 2).
-/// - `use_bond_types`: maps to RDKit's `useBondOrder` option.
+/// - `fp_size`: size of the output fingerprint (default 2048).
+/// - `num_bits_per_feature`: number of bit positions to set per path hash
+///   (default 2).
+/// - `use_hs`: include explicit hydrogens in paths (default true).
+/// - `target_density`: density threshold for source-compatible factor-of-two
+///   folding (default 0.0).
+/// - `min_size`: minimum folded size (default 128).
+/// - `branched_paths`: include branched subgraphs as well as linear paths
+///   (default true).
+/// - `use_bond_order`: include bond order in path hashes (default true).
+/// - `atom_invariants`: optional source-sized custom atom invariants.
 /// - `from_atoms`: if `Some`, only enumerate paths starting from these atoms.
-/// - `ignore_atoms`: reserved compatibility parameter; RDKit's exposed
-///   `RDKFingerprintMol` signature has no corresponding option.
 #[derive(Debug, Clone)]
 pub struct TopologicalFingerprintParams {
     pub min_path: u32,
     pub max_path: u32,
-    pub n_bits: usize,
-    pub n_bits_per_hash: u32,
-    pub use_bond_types: bool,
-    pub from_atoms: Option<Vec<usize>>,
-    pub ignore_atoms: Option<Vec<usize>>,
+    pub fp_size: u32,
+    pub num_bits_per_feature: u32,
+    pub use_hs: bool,
+    pub target_density: f64,
+    pub min_size: u32,
+    pub branched_paths: bool,
+    pub use_bond_order: bool,
+    pub atom_invariants: Option<Vec<u32>>,
+    pub from_atoms: Option<Vec<u32>>,
 }
 
 impl Default for TopologicalFingerprintParams {
@@ -3701,41 +4475,213 @@ impl Default for TopologicalFingerprintParams {
         Self {
             min_path: 1,
             max_path: 7,
-            n_bits: 2048,
-            n_bits_per_hash: 2,
-            use_bond_types: true,
+            fp_size: 2048,
+            num_bits_per_feature: 2,
+            use_hs: true,
+            target_density: 0.0,
+            min_size: 128,
+            branched_paths: true,
+            use_bond_order: true,
+            atom_invariants: None,
             from_atoms: None,
-            ignore_atoms: None,
         }
     }
 }
 
+impl TopologicalFingerprintParams {
+    pub fn validate(&self) -> Result<(), FingerprintError> {
+        if self.min_path == 0 {
+            return Err(FingerprintError::InvalidArguments {
+                reason: "minPath==0",
+            });
+        }
+        if self.max_path < self.min_path {
+            return Err(FingerprintError::InvalidArguments {
+                reason: "maxPath<minPath",
+            });
+        }
+        if self.fp_size == 0 {
+            return Err(FingerprintError::InvalidArguments {
+                reason: "fpSize==0",
+            });
+        }
+        if self.num_bits_per_feature == 0 {
+            return Err(FingerprintError::InvalidArguments {
+                reason: "nBitsPerHash==0",
+            });
+        }
+        if !self.target_density.is_finite() || self.target_density < 0.0 {
+            return Err(FingerprintError::InvalidArguments {
+                reason: "tgtDensity must be finite and non-negative",
+            });
+        }
+        Ok(())
+    }
+}
+
+/// Typed request for the two legacy `RDKFingerprintMol` provenance outputs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TopologicalFingerprintOutputRequest {
+    pub atom_bits: bool,
+    pub bit_info: bool,
+}
+
+/// Typed provenance returned by the source `atomBits` and `bitInfo` outputs.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TopologicalFingerprintOutput {
+    pub atom_bits: Option<Vec<Vec<u32>>>,
+    pub bit_info: Option<BTreeMap<u32, Vec<Vec<i32>>>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopologicalFingerprintResult {
+    pub fingerprint: Fingerprint,
+    pub output: TopologicalFingerprintOutput,
+}
+
 // RDKit source: GraphMol/Fingerprints/Fingerprints.h::RDKFingerprintMol
-// RDKit❌❌: RDKIT_FINGERPRINTS_EXPORT ExplicitBitVect *RDKFingerprintMol(
-// RDKit❌❌:     const ROMol &mol, unsigned int minPath = 1, unsigned int maxPath = 7,
-// RDKit❌❌:     unsigned int fpSize = 2048, unsigned int nBitsPerHash = 2,
-// RDKit❌❌:     bool useHs = true, double tgtDensity = 0.0, unsigned int minSize = 128,
-// RDKit❌❌:     bool branchedPaths = true, bool useBondOrder = true,
-// RDKit❌❌:     std::vector<std::uint32_t> *atomInvariants = nullptr,
-// RDKit❌❌:     const std::vector<std::uint32_t> *fromAtoms = nullptr,
-// RDKit❌❌:     std::vector<std::vector<std::uint32_t>> *atomBits = nullptr,
-// RDKit❌❌:     std::map<std::uint32_t, std::vector<std::vector<int>>> *bitInfo = nullptr);
-// RDKit source: GraphMol/Fingerprints/Fingerprints.cpp::RDKFingerprintMol
-// RDKit❌❌: std::unique_ptr<FingerprintGenerator<std::uint32_t>> fpgen(
-// RDKit❌❌:     RDKit::RDKitFP::getRDKitFPGenerator<std::uint32_t>(
-// RDKit❌❌:         minPath, maxPath, useHs, branchedPaths, useBondOrder));
-// RDKit❌❌: fpgen->getOptions()->d_fpSize = fpSize;
-// RDKit❌❌: fpgen->getOptions()->d_numBitsPerFeature = nBitsPerHash;
-//
-// No approximate bit vector is returned. The previous local DFS/hash
-// implementation was removed because it was not RDKit RDKFingerprint behavior.
+// RDKit✔️✔️: RDKIT_FINGERPRINTS_EXPORT ExplicitBitVect *RDKFingerprintMol(
+// RDKit✔️✔️:     const ROMol &mol, unsigned int minPath = 1, unsigned int maxPath = 7,
+// RDKit✔️✔️:     unsigned int fpSize = 2048, unsigned int nBitsPerHash = 2,
+// RDKit✔️✔️:     bool useHs = true, double tgtDensity = 0.0, unsigned int minSize = 128,
+// RDKit✔️✔️:     bool branchedPaths = true, bool useBondOrder = true,
+// RDKit✔️✔️:     std::vector<std::uint32_t> *atomInvariants = nullptr,
+// RDKit✔️✔️:     const std::vector<std::uint32_t> *fromAtoms = nullptr,
+// RDKit✔️✔️:     std::vector<std::vector<std::uint32_t>> *atomBits = nullptr,
+// RDKit✔️✔️:     std::map<std::uint32_t, std::vector<std::vector<int>>> *bitInfo = nullptr);
+fn rdkit_fp_fold_bits(on_bits: &mut BTreeSet<usize>, current_size: &mut usize) {
+    // RDKit source: DataStructs/BitOps.cpp `FoldFingerprint`.
+    // RDKit✔️✔️: for (unsigned int i = 0; i < nBits / factor; ++i) {
+    // RDKit✔️✔️:   if (bv.getBit(i) || bv.getBit(i + nBits / factor)) {
+    // RDKit✔️✔️:     res->setBit(i);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    let folded_size = *current_size / 2;
+    let folded = on_bits.iter().map(|&bit| bit % folded_size).collect();
+    *on_bits = folded;
+    *current_size = folded_size;
+}
+
+fn rdkit_fp_output_from_additional(
+    additional_output: AdditionalOutput,
+    request: TopologicalFingerprintOutputRequest,
+) -> TopologicalFingerprintOutput {
+    let atom_bits = request.atom_bits.then(|| {
+        additional_output
+            .atom_to_bits
+            .unwrap_or_default()
+            .into_iter()
+            .map(|bits| bits.into_iter().map(|bit| bit as u32).collect())
+            .collect()
+    });
+    let bit_info = request.bit_info.then(|| {
+        additional_output
+            .bit_paths
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(bit, paths)| {
+                (
+                    bit as u32,
+                    paths
+                        .into_iter()
+                        .map(|path| path.into_iter().map(|bond| bond as i32).collect())
+                        .collect(),
+                )
+            })
+            .collect()
+    });
+    TopologicalFingerprintOutput {
+        atom_bits,
+        bit_info,
+    }
+}
+
 pub fn topological_fingerprint(
-    _molecule: &Molecule,
-    _params: &TopologicalFingerprintParams,
+    molecule: &Molecule,
+    params: &TopologicalFingerprintParams,
 ) -> Result<Fingerprint, FingerprintError> {
-    Err(FingerprintError::UnsupportedOption {
-        option: "topological_fingerprint",
-        reason: "RDKit RDKFingerprint exact-bit source port is not implemented",
+    Ok(topological_fingerprint_with_output(molecule, params, Default::default())?.fingerprint)
+}
+
+pub fn topological_fingerprint_with_output(
+    molecule: &Molecule,
+    params: &TopologicalFingerprintParams,
+    request: TopologicalFingerprintOutputRequest,
+) -> Result<TopologicalFingerprintResult, FingerprintError> {
+    params.validate()?;
+
+    // RDKit source: Fingerprints.cpp lines 190-231 (`RDKFingerprintMol`).
+    // RDKit✔️✔️: std::unique_ptr<FingerprintGenerator<std::uint32_t>> fpgen(
+    // RDKit✔️✔️:     RDKit::RDKitFP::getRDKitFPGenerator<std::uint32_t>(
+    // RDKit✔️✔️:         minPath, maxPath, useHs, branchedPaths, useBondOrder));
+    // RDKit✔️✔️: fpgen->getOptions()->d_fpSize = fpSize;
+    // RDKit✔️✔️: fpgen->getOptions()->d_numBitsPerFeature = nBitsPerHash;
+    // RDKit✔️✔️: FingerprintFuncArguments args;
+    // RDKit✔️✔️: args.customAtomInvariants = atomInvariants;
+    // RDKit✔️✔️: args.fromAtoms = fromAtoms;
+    // RDKit✔️✔️: AdditionalOutput ao;
+    // RDKit✔️✔️: if (atomBits) { args.additionalOutput = &ao; ao.allocateAtomToBits(); }
+    // RDKit✔️✔️: if (bitInfo) { args.additionalOutput = &ao; ao.allocateBitPaths(); }
+    let atom_invariants = params
+        .atom_invariants
+        .clone()
+        .unwrap_or_else(|| rdkit_fp_atom_invariants(molecule));
+    let mut additional_output = AdditionalOutput::new();
+    if request.atom_bits {
+        additional_output.allocate_atom_to_bits();
+    }
+    if request.bit_info {
+        additional_output.allocate_bit_paths();
+    }
+    if request.atom_bits || request.bit_info {
+        additional_output.reset_for_atom_count(molecule.num_atoms());
+    }
+
+    let environments = generate_rdkit_fp_environments(molecule, params, &atom_invariants)?;
+    let mut on_bits = BTreeSet::new();
+    let mut random_source =
+        (params.num_bits_per_feature > 1).then(|| RdkitFingerprintMtRng::new(42));
+    for environment in environments {
+        let seed = environment.bit_id();
+        let mut bit_id = (seed % u64::from(params.fp_size)) as usize;
+        on_bits.insert(bit_id);
+        if request.atom_bits || request.bit_info {
+            environment.update_additional_output(&mut additional_output, bit_id as u64);
+        }
+        if let Some(random_source) = random_source.as_mut() {
+            random_source.seed(seed as u32);
+            for _ in 1..params.num_bits_per_feature {
+                bit_id = (u64::from(random_source.uniform_int_0_to_i32_max())
+                    % u64::from(params.fp_size)) as usize;
+                on_bits.insert(bit_id);
+                if request.atom_bits || request.bit_info {
+                    environment.update_additional_output(&mut additional_output, bit_id as u64);
+                }
+            }
+        }
+    }
+
+    // RDKit source: Fingerprints.cpp lines 231-242 (density folding).
+    // RDKit✔️✔️: if (tgtDensity > 0.0) {
+    // RDKit✔️✔️:   while (static_cast<double>(res->getNumOnBits()) / res->getNumBits() <
+    // RDKit✔️✔️:              tgtDensity && res->getNumBits() >= 2 * minSize) {
+    // RDKit✔️✔️:     ExplicitBitVect *tmpV = FoldFingerprint(*res, 2);
+    // RDKit✔️✔️:     delete res;
+    // RDKit✔️✔️:     res = tmpV;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    let mut fingerprint_size = params.fp_size as usize;
+    while params.target_density > 0.0
+        && (on_bits.len() as f64) / (fingerprint_size as f64) < params.target_density
+        && fingerprint_size >= (params.min_size as usize).saturating_mul(2)
+    {
+        rdkit_fp_fold_bits(&mut on_bits, &mut fingerprint_size);
+    }
+
+    let fingerprint = Fingerprint::from_on_bits(fingerprint_size, on_bits);
+    Ok(TopologicalFingerprintResult {
+        fingerprint,
+        output: rdkit_fp_output_from_additional(additional_output, request),
     })
 }
 
@@ -4887,17 +5833,355 @@ mod tests {
     }
 
     #[test]
-    fn unported_topological_fingerprint_fails_closed() {
-        let err =
+    fn topological_fingerprint_empty_molecule_matches_source() {
+        let fingerprint =
             topological_fingerprint(&Molecule::new(), &TopologicalFingerprintParams::default())
-                .expect_err("unfinished RDKFingerprint must not return approximate bits");
+                .expect("empty molecule fingerprint");
+        assert_eq!(fingerprint.n_bits(), 2048);
+        assert!(fingerprint.on_bits().is_empty());
+    }
+
+    #[test]
+    fn topological_params_match_rdkit_boundary_defaults() {
+        let params = TopologicalFingerprintParams::default();
+        assert_eq!(params.min_path, 1);
+        assert_eq!(params.max_path, 7);
+        assert_eq!(params.fp_size, 2048);
+        assert_eq!(params.num_bits_per_feature, 2);
+        assert!(params.use_hs);
+        assert_eq!(params.target_density, 0.0);
+        assert_eq!(params.min_size, 128);
+        assert!(params.branched_paths);
+        assert!(params.use_bond_order);
+        assert!(params.atom_invariants.is_none());
+        assert!(params.from_atoms.is_none());
+    }
+
+    #[test]
+    fn topological_params_reject_source_precondition_ranges() {
+        let mut params = TopologicalFingerprintParams::default();
+        params.min_path = 0;
         assert!(matches!(
-            err,
-            FingerprintError::UnsupportedOption {
-                option: "topological_fingerprint",
-                ..
-            }
+            params.validate(),
+            Err(FingerprintError::InvalidArguments {
+                reason: "minPath==0"
+            })
         ));
+        params = TopologicalFingerprintParams::default();
+        params.max_path = 0;
+        assert!(matches!(
+            params.validate(),
+            Err(FingerprintError::InvalidArguments {
+                reason: "maxPath<minPath"
+            })
+        ));
+        params = TopologicalFingerprintParams::default();
+        params.fp_size = 0;
+        assert!(matches!(
+            params.validate(),
+            Err(FingerprintError::InvalidArguments {
+                reason: "fpSize==0"
+            })
+        ));
+        params = TopologicalFingerprintParams::default();
+        params.num_bits_per_feature = 0;
+        assert!(matches!(
+            params.validate(),
+            Err(FingerprintError::InvalidArguments {
+                reason: "nBitsPerHash==0"
+            })
+        ));
+    }
+
+    #[test]
+    fn topological_typed_provenance_request_allocates_empty_source_outputs() {
+        let request = TopologicalFingerprintOutputRequest {
+            atom_bits: true,
+            bit_info: true,
+        };
+        let result = topological_fingerprint_with_output(
+            &Molecule::new(),
+            &TopologicalFingerprintParams::default(),
+            request,
+        )
+        .expect("source provenance output");
+        assert_eq!(result.output.atom_bits, Some(Vec::new()));
+        assert_eq!(result.output.bit_info, Some(BTreeMap::new()));
+    }
+
+    #[test]
+    fn rdkit_fp_atom_invariants_use_atomic_number_and_aromatic_flag() {
+        let aliphatic = Molecule::from_smiles("CCO").expect("aliphatic fixture");
+        assert_eq!(rdkit_fp_atom_invariants(&aliphatic), vec![12, 12, 16]);
+        let aromatic = Molecule::from_smiles("c1ccccc1").expect("aromatic fixture");
+        assert_eq!(rdkit_fp_atom_invariants(&aromatic), vec![13; 6]);
+    }
+
+    #[test]
+    fn rdkit_fp_bond_hash_inputs_match_boost_hash_combine_order() {
+        let molecule = Molecule::from_smiles("CCO").expect("fixture");
+        let invariants = rdkit_fp_atom_invariants(&molecule);
+        let first = rdkit_fp_generate_bond_hash_inputs(&molecule, &[0], true, &invariants)
+            .expect("first bond hash");
+        assert_eq!(first.atoms_in_path, vec![true, true, false]);
+        assert_eq!(first.bond_hashes, vec![4_275_705_116]);
+        let second = rdkit_fp_generate_bond_hash_inputs(&molecule, &[1], true, &invariants)
+            .expect("second bond hash");
+        assert_eq!(second.bond_hashes, vec![4_274_652_475]);
+        let without_order = rdkit_fp_generate_bond_hash_inputs(&molecule, &[0], false, &invariants)
+            .expect("order-free bond hash");
+        assert_eq!(first.bond_hashes, without_order.bond_hashes);
+        let double_bond = Molecule::from_smiles("C=C").expect("double-bond fixture");
+        let double_invariants = rdkit_fp_atom_invariants(&double_bond);
+        let with_order =
+            rdkit_fp_generate_bond_hash_inputs(&double_bond, &[0], true, &double_invariants)
+                .expect("double bond hash");
+        let without_order =
+            rdkit_fp_generate_bond_hash_inputs(&double_bond, &[0], false, &double_invariants)
+                .expect("double bond order-free hash");
+        assert_ne!(with_order.bond_hashes, without_order.bond_hashes);
+    }
+
+    #[test]
+    fn rdkit_fp_query_bond_path_is_rejected_at_hash_input_boundary() {
+        let query =
+            crate::search::smarts_parse::build_query_molecule("[#6]~[#6]").expect("query fixture");
+        let invariants = rdkit_fp_atom_invariants(&query);
+        let inputs = rdkit_fp_generate_bond_hash_inputs(&query, &[0], true, &invariants)
+            .expect("query path result");
+        assert!(inputs.bond_hashes.is_empty());
+        assert_eq!(inputs.atoms_in_path, vec![true, true]);
+    }
+
+    fn expected_paths(
+        molecule: &Molecule,
+        min_path: u32,
+        max_path: u32,
+        use_hs: bool,
+        branched_paths: bool,
+        from_atoms: Option<&[u32]>,
+    ) -> BTreeMap<usize, Vec<Vec<usize>>> {
+        enumerate_rdkit_fp_paths(
+            molecule,
+            min_path,
+            max_path,
+            use_hs,
+            branched_paths,
+            from_atoms,
+        )
+        .expect("valid source path arguments")
+    }
+
+    #[test]
+    fn rdkit_fp_linear_and_branched_paths_match_source_order() {
+        let linear = Molecule::from_smiles("CCCC").expect("linear fixture");
+        assert_eq!(
+            expected_paths(&linear, 1, 3, true, false, None),
+            BTreeMap::from([
+                (1, vec![vec![0], vec![1], vec![2]]),
+                (2, vec![vec![0, 1], vec![1, 2]]),
+                (3, vec![vec![0, 1, 2]]),
+            ])
+        );
+
+        let branched = Molecule::from_smiles("CC(C)C").expect("branched fixture");
+        assert_eq!(
+            expected_paths(&branched, 1, 3, true, false, None),
+            BTreeMap::from([
+                (1, vec![vec![0], vec![1], vec![2]]),
+                (2, vec![vec![0, 1], vec![0, 2], vec![1, 2]]),
+                (3, Vec::new()),
+            ])
+        );
+        assert_eq!(
+            expected_paths(&branched, 1, 3, true, true, None),
+            BTreeMap::from([
+                (1, vec![vec![0], vec![1], vec![2]]),
+                (2, vec![vec![0, 2], vec![0, 1], vec![1, 2]]),
+                (3, vec![vec![0, 2, 1]]),
+            ])
+        );
+    }
+
+    #[test]
+    fn rdkit_fp_ring_and_fused_ring_paths_preserve_bond_order() {
+        let ring = Molecule::from_smiles("C1CCCCC1").expect("ring fixture");
+        assert_eq!(
+            expected_paths(&ring, 1, 3, true, false, None),
+            BTreeMap::from([
+                (
+                    1,
+                    vec![vec![0], vec![5], vec![1], vec![2], vec![3], vec![4]]
+                ),
+                (
+                    2,
+                    vec![
+                        vec![0, 1],
+                        vec![5, 4],
+                        vec![0, 5],
+                        vec![1, 2],
+                        vec![2, 3],
+                        vec![3, 4]
+                    ]
+                ),
+                (
+                    3,
+                    vec![
+                        vec![0, 1, 2],
+                        vec![5, 4, 3],
+                        vec![0, 5, 4],
+                        vec![1, 2, 3],
+                        vec![1, 0, 5],
+                        vec![2, 3, 4]
+                    ]
+                ),
+            ])
+        );
+        let fused = Molecule::from_smiles("c1ccc2ccccc2c1").expect("fused-ring fixture");
+        assert_eq!(
+            expected_paths(&fused, 2, 2, true, false, None)[&2],
+            vec![
+                vec![0, 1],
+                vec![9, 8],
+                vec![0, 9],
+                vec![1, 2],
+                vec![2, 3],
+                vec![2, 10],
+                vec![3, 4],
+                vec![10, 7],
+                vec![10, 8],
+                vec![3, 10],
+                vec![4, 5],
+                vec![5, 6],
+                vec![6, 7],
+                vec![7, 8],
+            ]
+        );
+    }
+
+    #[test]
+    fn rdkit_fp_paths_handle_disconnected_and_restricted_roots() {
+        let disconnected = Molecule::from_smiles("CC.CC").expect("disconnected fixture");
+        assert_eq!(
+            expected_paths(&disconnected, 1, 3, true, false, None),
+            BTreeMap::from([
+                (1, vec![vec![0], vec![1]]),
+                (2, Vec::new()),
+                (3, Vec::new()),
+            ])
+        );
+
+        let chain = Molecule::from_smiles("CCCC").expect("restricted fixture");
+        assert_eq!(
+            expected_paths(&chain, 1, 3, true, false, Some(&[2])),
+            BTreeMap::from([
+                (1, vec![vec![1], vec![2]]),
+                (2, vec![vec![1, 0]]),
+                (3, Vec::new()),
+            ])
+        );
+        assert_eq!(
+            expected_paths(&chain, 1, 3, true, true, Some(&[2])),
+            BTreeMap::from([
+                (1, vec![vec![1], vec![2]]),
+                (2, vec![vec![1, 2], vec![1, 0]]),
+                (3, vec![vec![1, 2, 0]]),
+            ])
+        );
+        let invalid_root = expected_paths(&chain, 1, 2, true, false, Some(&[99]));
+        assert_eq!(
+            invalid_root,
+            BTreeMap::from([(1, Vec::new()), (2, Vec::new())])
+        );
+    }
+
+    #[test]
+    fn rdkit_fp_explicit_hydrogen_filter_matches_source() {
+        let molecule = Molecule::from_smiles("CC")
+            .expect("explicit-H fixture")
+            .with_hydrogens()
+            .expect("materialize explicit hydrogens");
+        assert_eq!(molecule.num_atoms(), 8);
+        assert_eq!(
+            expected_paths(&molecule, 1, 1, false, false, None)[&1],
+            vec![vec![0]]
+        );
+        assert_eq!(
+            expected_paths(&molecule, 1, 1, true, false, None)[&1],
+            vec![
+                vec![0],
+                vec![1],
+                vec![2],
+                vec![3],
+                vec![4],
+                vec![5],
+                vec![6]
+            ]
+        );
+    }
+
+    #[test]
+    fn rdkit_fp_environment_hashes_and_additional_output_match_source() {
+        let molecule = Molecule::from_smiles("CCO").expect("environment fixture");
+        let params = TopologicalFingerprintParams {
+            min_path: 1,
+            max_path: 2,
+            branched_paths: false,
+            ..TopologicalFingerprintParams::default()
+        };
+        let invariants = rdkit_fp_atom_invariants(&molecule);
+        let environments = generate_rdkit_fp_environments(&molecule, &params, &invariants)
+            .expect("environment generation");
+        assert_eq!(
+            environments
+                .iter()
+                .map(RdkitFpEnvironment::bit_id)
+                .collect::<Vec<_>>(),
+            vec![4_275_705_116, 4_274_652_475, 1_524_090_560]
+        );
+        assert_eq!(
+            environments
+                .iter()
+                .map(|environment| environment.bond_path.clone())
+                .collect::<Vec<_>>(),
+            vec![vec![0], vec![1], vec![0, 1]]
+        );
+
+        let mut output = AdditionalOutput::new();
+        output.allocate_atom_to_bits();
+        output.allocate_bit_paths();
+        output.allocate_atom_counts();
+        output.allocate_atoms_per_bit();
+        output.reset_for_atom_count(molecule.num_atoms());
+        for environment in &environments {
+            environment.update_additional_output(&mut output, environment.bit_id());
+        }
+        environments[0].update_additional_output(&mut output, environments[0].bit_id());
+        assert_eq!(output.atom_counts, Some(vec![3, 4, 2]));
+        assert_eq!(
+            output.atom_to_bits,
+            Some(vec![
+                vec![4_275_705_116, 1_524_090_560],
+                vec![4_275_705_116, 4_274_652_475, 1_524_090_560],
+                vec![4_274_652_475, 1_524_090_560],
+            ])
+        );
+        assert_eq!(
+            output.bit_paths,
+            Some(BTreeMap::from([
+                (1_524_090_560, vec![vec![0, 1]]),
+                (4_274_652_475, vec![vec![1]]),
+                (4_275_705_116, vec![vec![0], vec![0]]),
+            ]))
+        );
+        assert_eq!(
+            output.atoms_per_bit,
+            Some(BTreeMap::from([
+                (1_524_090_560, vec![vec![0, 1, 2]]),
+                (4_274_652_475, vec![vec![1, 2]]),
+                (4_275_705_116, vec![vec![0, 1], vec![0, 1]]),
+            ]))
+        );
     }
 
     #[test]

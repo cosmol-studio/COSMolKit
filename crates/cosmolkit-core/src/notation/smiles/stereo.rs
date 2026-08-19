@@ -33,11 +33,12 @@ pub(crate) fn assign_double_bond_stereo_after_smiles_parse(
     // RDKit❗❌:   MolOps::assignStereochemistry(*res, cleanIt, force, flagPossible);
     // RDKit❗❌: }
     // END RDKIT CPP FUNCTION MolFromSmiles final stereochemistry assignment subset
-    // RDKit❗✔️: if (!mol.getRingInfo()->isSymmSssr()) {
-    // RDKit❗✔️:   RDKit::MolOps::symmetrizeSSSR(mol);
-    // RDKit❗✔️: }
-    ensure_symm_sssr_for_double_bond_stereo(mol)?;
     // RDKit✔️✔️: mol.clearProp("_needsDetectBondStereo");
+    mol.properties_mut().clear_prop("_needsDetectBondStereo");
+    // RDKit✔️✔️: if (!mol.getRingInfo()->isFindFastOrBetter()) {
+    // RDKit✔️✔️:   MolOps::fastFindRings(mol);
+    // RDKit✔️✔️: }
+    ensure_fast_find_rings_for_legacy_stereo(mol)?;
     //
     // `setBondStereoFromDirections()` is not part of RDKit's
     // legacyStereoPerception() parser finalization path for coordinate-free
@@ -835,6 +836,29 @@ pub(super) fn ensure_symm_sssr_for_double_bond_stereo(
     Ok(())
 }
 
+fn ensure_fast_find_rings_for_legacy_stereo(mol: &mut Molecule) -> Result<(), StereoError> {
+    // BEGIN RDKIT CPP FUNCTION legacyStereoPerception ring-info preparation
+    // RDKit✔️✔️: if (!mol.getRingInfo()->isFindFastOrBetter()) {
+    if !mol
+        .derived_cache()
+        .rings
+        .as_ref()
+        .is_some_and(crate::RingInfo::is_find_fast_or_better)
+    {
+        // RDKit✔️✔️:   MolOps::fastFindRings(mol);
+        let rings = crate::fast_find_rings(mol).map_err(|_error| {
+            StereoError::UnsupportedFeature(crate::UnsupportedFeatureError {
+                feature: "RING_INFO",
+                reason: "fast ring assignment failed before legacy stereo perception",
+            })
+        })?;
+        mol.derived_cache_mut().rings = Some(rings);
+        // RDKit✔️✔️: }
+    }
+    // END RDKIT CPP FUNCTION legacyStereoPerception ring-info preparation
+    Ok(())
+}
+
 pub(super) fn set_double_bond_neighbor_directions_impl(
     mol: &mut Molecule,
     conf_id: Option<usize>,
@@ -957,6 +981,90 @@ pub(super) fn set_double_bond_neighbor_directions_impl(
     Ok(())
 }
 
+fn set_stereo_for_bond(
+    mol: &mut Molecule,
+    adjacency: &AdjacencyList,
+    bond_id: BondId,
+    stereo: BondStereo,
+    use_cx_smiles_ordering: bool,
+) {
+    // BEGIN RDKIT CPP FUNCTION Chirality::detail::setStereoForBond
+    // RDKit✔️✔️: void setStereoForBond(ROMol &mol, Bond *bond, Bond::BondStereo stereo,
+    // RDKit✔️✔️:                       bool useCXSmilesOrdering) {
+    // RDKit✔️✔️:   auto begAtom = bond->getBeginAtom();
+    // RDKit✔️✔️:   auto endAtom = bond->getEndAtom();
+    let Some(bond) = mol.bonds().get(bond_id.index()) else {
+        return;
+    };
+    let original_begin = bond.begin();
+    let mut begin_atom = original_begin;
+    let mut end_atom = bond.end();
+    // RDKit✔️✔️:   if (begAtom->getIdx() > endAtom->getIdx()) {
+    if begin_atom > end_atom {
+        // RDKit✔️✔️:     std::swap(begAtom, endAtom);
+        std::mem::swap(&mut begin_atom, &mut end_atom);
+        // RDKit✔️✔️:   }
+    }
+    // RDKit✔️✔️:   if (begAtom->getDegree() > 1 && endAtom->getDegree() > 1) {
+    if adjacency.neighbors_of(begin_atom.index()).len() > 1
+        && adjacency.neighbors_of(end_atom.index()).len() > 1
+    {
+        // RDKit✔️✔️:     unsigned int begControl = mol.getNumAtoms();
+        let mut begin_control = mol.num_atoms();
+        // RDKit✔️✔️:     for (auto nbr : mol.atomNeighbors(begAtom)) {
+        for neighbor in adjacency.neighbors_of(begin_atom.index()) {
+            // RDKit✔️✔️:       if (nbr == endAtom) {
+            if neighbor.atom_index == end_atom.index() {
+                // RDKit✔️✔️:         continue;
+                continue;
+                // RDKit✔️✔️:       }
+            }
+            // RDKit✔️✔️:       begControl = std::min(nbr->getIdx(), begControl);
+            begin_control = begin_control.min(neighbor.atom_index);
+            // RDKit✔️✔️:     }
+        }
+        // RDKit✔️✔️:     unsigned int endControl = useCXSmilesOrdering ? mol.getNumAtoms() : 0;
+        let mut end_control = if use_cx_smiles_ordering {
+            mol.num_atoms()
+        } else {
+            0
+        };
+        // RDKit✔️✔️:     for (auto nbr : mol.atomNeighbors(endAtom)) {
+        for neighbor in adjacency.neighbors_of(end_atom.index()) {
+            // RDKit✔️✔️:       if (nbr == begAtom) {
+            if neighbor.atom_index == begin_atom.index() {
+                // RDKit✔️✔️:         continue;
+                continue;
+                // RDKit✔️✔️:       }
+            }
+            // RDKit✔️✔️:       endControl = useCXSmilesOrdering ? std::min(nbr->getIdx(), endControl)
+            // RDKit✔️✔️:                                        : std::max(nbr->getIdx(), endControl);
+            end_control = if use_cx_smiles_ordering {
+                end_control.min(neighbor.atom_index)
+            } else {
+                end_control.max(neighbor.atom_index)
+            };
+            // RDKit✔️✔️:     }
+        }
+        // RDKit✔️✔️:     if (begAtom != bond->getBeginAtom()) {
+        if begin_atom != original_begin {
+            // RDKit✔️✔️:       std::swap(begControl, endControl);
+            std::mem::swap(&mut begin_control, &mut end_control);
+            // RDKit✔️✔️:     }
+        }
+        // RDKit✔️✔️:     bond->setStereoAtoms(begControl, endControl);
+        // RDKit✔️✔️:     bond->setStereo(stereo);
+        let bond = &mut mol.topology_block_mut().bonds[bond_id.index()];
+        bond.set_stereo_atoms(Some([AtomId::new(begin_control), AtomId::new(end_control)]));
+        bond.set_stereo(stereo);
+        // RDKit✔️✔️:     mol.setProp("_needsDetectBondStereo", 1);
+        mol.properties_mut().set_prop("_needsDetectBondStereo", "1");
+        // RDKit✔️✔️:   }
+    }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION Chirality::detail::setStereoForBond
+}
+
 pub(super) fn update_double_bond_neighbors(
     mol: &mut Molecule,
     dbl_bond_id: BondId,
@@ -1030,10 +1138,7 @@ pub(super) fn update_double_bond_neighbors(
         atom1,
     );
     if begin_result.squiggle_bond_seen {
-        if let Some(bond) = mol.topology_block_mut().bonds.get_mut(dbl_bond_id.index()) {
-            bond.set_stereo(BondStereo::Any);
-            bond.set_stereo_atoms(None);
-        }
+        set_stereo_for_bond(mol, adjacency, dbl_bond_id, BondStereo::Any, false);
         return Ok(());
     }
     let Some(mut bond1) = begin_result.bond else {
@@ -1050,10 +1155,7 @@ pub(super) fn update_double_bond_neighbors(
         atom2,
     );
     if end_result.squiggle_bond_seen {
-        if let Some(bond) = mol.topology_block_mut().bonds.get_mut(dbl_bond_id.index()) {
-            bond.set_stereo(BondStereo::Any);
-            bond.set_stereo_atoms(None);
-        }
+        set_stereo_for_bond(mol, adjacency, dbl_bond_id, BondStereo::Any, false);
         return Ok(());
     }
     let Some(mut bond2) = end_result.bond else {
@@ -1107,10 +1209,7 @@ pub(super) fn update_double_bond_neighbors(
             }
         }
         if linear {
-            if let Some(bond) = mol.topology_block_mut().bonds.get_mut(dbl_bond_id.index()) {
-                bond.set_stereo(BondStereo::Any);
-                bond.set_stereo_atoms(None);
-            }
+            set_stereo_for_bond(mol, adjacency, dbl_bond_id, BondStereo::Any, false);
             return Ok(());
         }
         compute_dihedral_angle_points(bond1_point, begin_point, end_point, bond2_point) >= PI / 2.0

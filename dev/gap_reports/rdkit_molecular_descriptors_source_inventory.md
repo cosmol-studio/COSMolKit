@@ -11,7 +11,7 @@
 ## Current COSMolKit Surface
 
 - `crates/cosmolkit-core/src/properties/descriptors.rs` now exposes source-backed implementations for the descriptor/QED surface required by this plan in the currently modeled molecule input state.
-- Remaining descriptor-local source markers are narrow: Crippen explicit-hydrogen/query-cache performance markers and modeled-state exclusions for RDKit mutable descriptor property caches and Python `None` input.
+- Remaining descriptor-local source markers are narrow: Crippen explicit-hydrogen/query-cache performance markers, the intentionally unexposed vector-valued contribution cache, and Python `None` input.
 - `DescriptorError::Unsupported` remains the structured fail-closed path for unsupported descriptor dependencies; unsupported behavior must not silently produce chemically meaningful output.
 
 ## Parity Test And Golden Coverage
@@ -317,7 +317,8 @@
 - `crates/cosmolkit-core/src/properties/descriptors.rs:754` in `rdkit_parse_default_crippen_params`: `RDKit✔️❌` covers eager `SmartsToMol(paramObj.smarts)` storage in `paramObj.dp_pattern`.
   - Gap: behavior is preserved by storing source SMARTS and compiling at match time in `rdkit_crippen_atom_contribs`, but this repeats SMARTS parsing instead of using RDKit's cached parsed query molecule.
   - Step 129 disposition: not a descriptor behavior blocker. The marker remains `RDKit✔️❌` until a separate Crippen performance plan changes `CrippenParam` to store source-backed parsed query molecules equivalent to RDKit `dp_pattern`, or proves the current parse-at-match-time path has equivalent complexity for the modeled descriptor state.
-- RDKit Crippen/TPSA computed-property caches are explicitly excluded from the modeled input state in source comments because current COSMolKit descriptor APIs take `&Molecule`, return values, and do not expose typed mutable descriptor cache entries.
+- The scalar Crippen computed-property cache (`_crippenLogP`/`_crippenMR`) is modeled in `Molecule` and follows RDKit's copy-on-clone and operation-specific invalidation behavior. The descriptor call leaves the chemical graph and user-visible properties unchanged, but may populate that internal cache.
+- RDKit's vector-valued Crippen contribution cache and TPSA contribution cache are not exposed as public COSMolKit state. They remain local computation details; no parity claim is made for inspecting those private RDKit properties.
 - `crates/cosmolkit-core/src/properties/descriptors.rs:1953` in `rdkit_qed_properties`: Python `properties(None)` is marked as an unrepresentable input state for the Rust core API and covered by `qed_properties_none_input_is_unrepresentable_in_rust_core_api`.
 
 ### Substructure Markers Required By Descriptor/QED Dependencies

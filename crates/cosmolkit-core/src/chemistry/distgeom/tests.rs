@@ -6871,6 +6871,22 @@ fn run_set12_bounds(mol: &Molecule) -> (BoundsMatrix, ComputedData) {
     (mmat, accum_data)
 }
 
+#[test]
+fn set12_bounds_uff_total_valence_includes_bracket_explicit_hydrogen() {
+    let mol = Molecule::from_smiles("C[SH+][O-]").expect("explicit sulfur hydrogen");
+    let assignment = assign_valence(&mol, ValenceModel::RdkitLike).expect("valence");
+
+    assert_eq!(assignment.explicit_valence[1], 3);
+    assert_eq!(assignment.implicit_hydrogens[1], 0);
+    assert_eq!(atom_total_valence_for_uff(&assignment, 1), 3);
+
+    let (bounds, accum_data) = run_set12_bounds(&mol);
+    assert!((accum_data.bond_lengths[0] - 1.776_838_813_449_356_2).abs() < 1.0e-14);
+    assert!((accum_data.bond_lengths[1] - 1.679_472_654_030_108).abs() < 1.0e-14);
+    assert!((bounds.get_upper(0, 1) - 1.786_838_813_449_356_2).abs() < 1.0e-14);
+    assert!((bounds.get_upper(1, 2) - 1.689_472_654_030_108).abs() < 1.0e-14);
+}
+
 fn run_set13_bounds(mol: &Molecule) -> (BoundsMatrix, ComputedData) {
     let (mut mmat, mut accum_data) = run_set12_bounds(mol);
     let rinfo = ring_info_for_distgeom(mol).expect("ring info");
@@ -7552,7 +7568,7 @@ fn atom_charge_flags_adds_default_copper_charge_from_formal_charge() {
     );
     let assignment = assign_valence(&mol, ValenceModel::RdkitLike).expect("valence");
     let hybridizations = vec![Hybridization::Unspecified];
-    let total_valence = atom_total_valence_for_uff(&mol, &assignment, 0);
+    let total_valence = atom_total_valence_for_uff(&assignment, 0);
     let mut atom_key = "Cu".to_string();
 
     add_atom_charge_flags_for_uff(
@@ -7576,7 +7592,7 @@ fn atom_charge_flags_adds_lanthanide_plus_three_when_tolerating_mismatch() {
     );
     let assignment = assign_valence(&mol, ValenceModel::RdkitLike).expect("valence");
     let hybridizations = vec![Hybridization::Sp3d2];
-    let total_valence = atom_total_valence_for_uff(&mol, &assignment, 0);
+    let total_valence = atom_total_valence_for_uff(&assignment, 0);
     let mut atom_key = "Ce".to_string();
 
     add_atom_charge_flags_for_uff(
@@ -7600,7 +7616,7 @@ fn atom_charge_flags_rewrites_rhenium_special_labels_when_tolerating_mismatch() 
     );
     let assignment = assign_valence(&mol, ValenceModel::RdkitLike).expect("valence");
     let hybridizations = vec![Hybridization::Sp3d];
-    let total_valence = atom_total_valence_for_uff(&mol, &assignment, 0);
+    let total_valence = atom_total_valence_for_uff(&assignment, 0);
     let mut atom_key = "Re6".to_string();
 
     add_atom_charge_flags_for_uff(

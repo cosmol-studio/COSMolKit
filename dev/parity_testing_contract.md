@@ -41,6 +41,12 @@ mark the feature unsupported
 register an executable known-failure
 ```
 
+`mark the feature unsupported` means withdrawing a separately named capability
+boundary from the support claim while it is being implemented. It must never
+mean excluding selected failing rows or branches from an otherwise unchanged
+parity claim. Executable known failures are development evidence only; a
+surface with one cannot be reported as parity-covered in a release.
+
 The disallowed responses are:
 
 ```text
@@ -191,7 +197,7 @@ source
 notes
 ```
 
-Example:
+Illustrative development-only schema (not a current accepted mismatch):
 
 ```csv
 case_id,input,input_type,tags,description
@@ -441,7 +447,7 @@ Example:
   "feature": "molblock_write",
   "expected_failure_kind": "MolBlockMismatch",
   "expected_mismatch_field": "bond_block",
-  "reason": "Known mismatch under kekulize=false behavior",
+  "reason": "Development finding under kekulize=false behavior",
   "rdkit_version": "2026.03.1",
   "created_at": "2026-05-08"
 }
@@ -965,31 +971,57 @@ NotApplicable
 
 RequiredWhenSupported
   The operation is intended to match RDKit once its SupportStatus is no longer
-  Unsupported. The operation may already appear in PARITY_MATRIX so tests can
-  assert explicit unsupported behavior until implementation lands.
+  Unsupported. For molecule operations it must already appear in PARITY_MATRIX
+  with a parity profile, so tests can assert the separately declared capability
+  boundary until implementation lands. This status cannot be applied to
+  selected failing inputs inside another supported profile.
 
 RequiredNow
   The operation currently claims RDKit-compatible supported behavior. It must
   appear in PARITY_MATRIX and must have a parity profile, corpus, golden output,
-  comparison schema, and known-failure handling if needed.
+  and comparison schema. Any recorded mismatch blocks the parity claim until
+  its source-aligned fix passes.
 ```
+
+These `PARITY_MATRIX` rules describe molecule operations. The current Bio
+registry emits `BIO_PARITY_MATRIX` entries only for `BioParityPolicy::RequiredNow`;
+its source-specific "when applicable" policies remain future obligations.
 
 Example:
 
 ```rust
-op without_hydrogens {
-    kind: Strong,
-    may_mutate: [Topology, Conformers],
-    must_handle: [Coordinates, Stereo, Caches],
-    support: Unsupported,
-    parity: RequiredWhenSupported,
+op without_hydrogens(sanitize: bool) {
+    method: without_hydrogens_with_sanitize,
+    impl_fn: without_hydrogens_impl,
+    default_method: without_hydrogens,
+    default_args: [true],
+    inplace: true,
+    inplace_method: remove_hydrogens_with_sanitize_,
+    default_inplace_method: remove_hydrogens_,
+    domain: topology,
+    kind: strong,
+    topology_edit: compacting,
+    access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+    may_mutate: [topology, coordinates, properties, derived_cache],
+    auto_remap: [coordinates, properties],
+    derived_effects: {
+        recompute: [valence, aromaticity, rings],
+        preserve: [],
+        invalidate: [ring_families, stereo, drawing, fingerprint],
+    },
+    requires_mapping: required,
+    feature: HYDROGENS_FEATURE,
+    parity: required_now,
+    io_roundtrip: true,
+    invariant_profile: "strong_topology_with_coordinates",
+    parity_profile: "remove_hs_default_rdkit",
 }
 ```
 
 This implies:
 
 ```text
-the operation should appear in PARITY_MATRIX with a RemoveHs profile
+the operation appears in PARITY_MATRIX with its RemoveHs profile
 while unsupported, tests should assert explicit UnsupportedFeature behavior
 once supported, there must be corpus coverage for this operation
 once supported, there must be golden output generated from RDKit

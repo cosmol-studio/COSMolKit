@@ -7,12 +7,14 @@ authoritative when this file disagrees with code.
 ## Current Planning Mode
 
 - Scope: checked README claims for `crates/cosmolkit-core/`.
-- Out of scope for this pass: Python bindings, Python docs/stubs/tests, strict
-  RDKit parity hardening, bit-identical hash/distance/drawing parity.
+- This ledger does not redefine parity evidence. Current exact comparison
+  boundaries and corpus results are authoritative in
+  [`parity_scope.md`](./parity_scope.md).
 - No repository-wide completion percentage is maintained. The feature rows and
   source-backed gap reports are the status evidence.
-- Remaining work: functional closure, unsupported-branch cleanup, support-spec
-  consistency, and operation-contract correctness.
+- Remaining ledger work: functional closure outside the documented parity
+  surfaces, capability-boundary documentation, support-spec consistency, and
+  operation-contract correctness.
 - Executable remaining queues are listed in [`plans/`](./plans/).
 
 ## Status Legend
@@ -23,7 +25,7 @@ authoritative when this file disagrees with code.
 | `substantial` | Broad implementation exists, but README-level closure still has known gaps |
 | `partial` | Some implementation exists, but important README-visible behavior remains |
 | `deferred` | Explicitly outside this pass |
-| `unsupported` | Public boundary exists but fails explicitly; no result is produced |
+| `unsupported` | A separately named public capability is outside implemented scope and returns no result; this is not a status for failing rows inside a supported boundary |
 
 ## Cross-Cutting Gaps
 
@@ -31,8 +33,8 @@ authoritative when this file disagrees with code.
 |------|------------------|---------------------|
 | Code/ledger drift | Current source is ahead of older plan notes for DG bounds, drawing, batch, Morgan, SDF, and SMILES writer. | Treat Rust code as primary evidence; keep this ledger synchronized after source inspection. |
 | Python claims | README contains Python-facing claims and examples. | Deferred for this pass. Do not change Python bindings unless explicitly requested. |
-| Strict parity | README often implies RDKit-compatible behavior. | Defer strict parity hardening. Close functional Rust behavior first; record parity gaps separately later. |
-| Unsupported branches | SMILES writer `unsupported_stage` guards are gone, and the frozen writer/canon/rings files are now marker-closed. The frozen-scope audit in `dev/gap_reports/smiles_rdkit_remaining_source_scan.md` still shows unresolved parser, kekulize, valence, and sanitize-orchestration copied-source blocks. | Keep marker audits current and close the remaining frozen-scope parity branches with source-backed tests. |
+| Strict parity | Exact covered boundaries and their ChEMBL 37 or maintained-corpus evidence are recorded in `parity_scope.md`. | Keep this implementation ledger synchronized without weakening or broadening those claims. |
+| Source-audit scope | SMILES writer `unsupported_stage` guards are gone, and the frozen writer/canon/rings files are marker-closed. The source audit in `dev/gap_reports/smiles_rdkit_remaining_source_scan.md` still tracks parser, kekulize, valence, and sanitize-orchestration copied-source blocks outside its completed marker set; these are audit-closure items, not accepted mismatches in the passing profiles documented by `parity_scope.md`. | Keep marker audits current and close the remaining source-review items without weakening the documented passing boundaries. |
 | SMILES dependencies | Reader-side postprocessing now runs through explicit sanitize/valence/kekulize/ring operations, and writer-side unsupported-stage guards are gone. | Keep `support.rs`, checklist evidence, and chemistry-core feature rows synchronized when those dependent operations change status. |
 | Operation policy | Topology and derived-state changes must go through registered operations and `OpParts`. | Keep code audits focused on mutation paths, not just public API existence. |
 
@@ -50,7 +52,7 @@ authoritative when this file disagrees with code.
 | Valence handling | `valence.rs`, `ops.rs` | `VALENCE_FEATURE` | substantial | RDKit-like assignment is the active dependency for sanitize/kekulize/SMILES postprocessing. The frozen-scope audit is still open: `chemistry/valence.rs` now only retains 4 `RDKit✔️❌` lines in `ValenceContext::new`, and related sanitize/property orchestration in `operations/ops.rs` still carries unresolved copied-source blocks. Remaining work is concentrated in property-cache maintenance, radicals, dative/query edge cases, and entrypoint/orchestration closure. |
 | Kekulization | `kekulize.rs`, `ops.rs` | `KEKULIZE_FEATURE` | substantial | Fragment filtering, fused aromatic candidate selection, worker ordering/backtracking, dummy-question permutation, and value-style `KekulizeIfPossible` restoration now have focused parity tests. The frozen-scope audit is still open because `chemistry/kekulize.rs` currently contains 397 `RDKit✔️❌` copied-source lines across the remaining kekulize helper and entrypoint blocks. |
 | SMILES writer | `smiles_write.rs`, `Molecule::to_smiles` | `SMILES_WRITE_FEATURE` (Experimental) | substantial | The checklist-closed double-bond-direction, non-tetrahedral writer, and helper/CX targeted tests are covered, and writer-side unsupported-stage guards are removed. The frozen writer file is now marker-closed for the current checklist scope, but the feature still depends on experimental aromatic/valence/kekulize state conventions and should not be described as full end-to-end RDKit parity closure. |
-| InChI scalar generation, keying, and parsing | `inchi.rs`, `mol_to_inchi`, `mol_to_inchi_key`, `inchi_to_inchi_key`, `mol_from_inchi`, Python `Chem` | `INCHI_FEATURE` (SupportedWithRdkitParity for source-defined behavior) | implemented | The configured five-root official-engine closure and RDKit adapter boundary are source-ported for exactly four scalar APIs. Official InChI v1.07.5 and RDKit 2026.03.1 tests compare source-defined behavior exactly. The official-C undefined `NormalizeAndCompare` initial-allocation path intentionally returns structured `allocation_failed` in Rust. MolBlock, SDF/V3000, IXA, AuxInfo, INCHIGEN, version query, and extended-polymer APIs are frozen or unsupported. |
+| InChI scalar generation, keying, and parsing | `inchi.rs`, `mol_to_inchi`, `mol_to_inchi_key`, `inchi_to_inchi_key`, `mol_from_inchi`, Python `Chem` | `INCHI_FEATURE` (SupportedWithRdkitParity for source-defined behavior) | implemented | The configured five-root official-engine closure and RDKit adapter boundary are source-ported for exactly four scalar APIs. Official InChI v1.07.5 and RDKit 2026.03.1 tests compare source-defined behavior exactly. The official-C undefined `NormalizeAndCompare` initial-allocation path intentionally returns structured `allocation_failed` in Rust. MolBlock, SDF/V3000, IXA, AuxInfo, INCHIGEN, version query, and extended-polymer APIs are separately scoped upstream surfaces outside this four-API entry. |
 | Atom/bond feature extraction | `Atom`, `Bond`, `query.rs` | — | partial | Public query-inspection surface is not complete. |
 | Explicit hydrogen expansion/removal | `hydrogens.rs`, `ops.rs` | `HYDROGENS_FEATURE` | substantial | Coordinates, residue info, and less common AddHs/RemoveHs branches. |
 | Stereo representation and atom-tag perception | `stereo.rs`, `atom.rs`, `bond.rs`, `smiles.rs`, `Molecule::with_chiral_tags_from_structure` | `STEREO_FEATURE` | substantial | The standalone `assignAtomChiralTagsFromStructure` / `assignChiralTypesFrom3D` scope is source-ported and exact across 77 pinned-RDKit full-state oracle records, including conformer selection, replacement, tetrahedral and enabled non-tetrahedral branches, properties, no-ops, and errors. Typed stereo inspection, CIP ranking/codes, pseudo-3D wedge detection, non-tetrahedral tables, and ring cases are present. The broader `assignStereochemistryFrom3D` workflow and 3D double-bond direction/E-Z assignment remain separate, unclaimed capabilities rather than gaps hidden inside the completed atom-tag operation. |
@@ -58,10 +60,10 @@ authoritative when this file disagrees with code.
 | 3D conformer generation | `distgeom.rs`, `Molecule::with_3d_conformer*`, `Molecule::with_3d_conformers*`, Python wrapper | `CONFORMER_GENERATION_FEATURE` | substantial | The active conformer-generation surface is source-backed across the exposed DG/KDG/ETDG/ETKDG presets, Rust and Python value-style entry points, failure tracking, deterministic explicit-seed single-conformer path, deterministic batch seed policy, source-backed unseeded `clock()` RNG path, pruning, coordMap, CPCI, custom bounds-matrix validation, stereo/chiral checks, macrocycle and small-ring torsion paths, examples, and strict parity coverage. Final marker audit is not closed: `dev/gap_reports/rdkit_conformer_generation_final_marker_audit.md` records one remaining first-axis `RDKit❌❌` block for `MolAlign::details::symmetrizeTerminalAtoms()` during symmetry pruning, plus unresolved `RDKit❗✔️`, `RDKit✔️❗`, and `RDKit✔️❌` helper-surface markers in bounds building and CrystalFF torsion preference collection. |
 | MolBlock V2000/V3000 handling | `io/sdf.rs`, `Molecule::from_mol_block` | `MOLBLOCK_IO_FEATURE` (Experimental) | substantial | V3000 reader, complex query predicates, supplier edge cases. |
 | Sanitization pipeline | `ops.rs`, `sanitize.rs` | `SANITIZE_FEATURE` | partial | Registered weak-topology sanitize flow exists and is now the explicit reader-side chemistry handoff. The frozen-scope audit is still open in sanitize/property/cleanup orchestration: `operations/ops.rs` currently contains 216 `RDKit✔️❌` copied-source lines across the remaining orchestration and cleanup helpers listed in `dev/gap_reports/smiles_rdkit_remaining_source_scan.md`. |
-| Morgan fingerprint | `fingerprint.rs` | `FINGERPRINT_FEATURE` (Experimental) | substantial | Functional options mostly present; strict RDKit hash parity deferred; audit unsupported options. |
-| RDKFingerprint/topological fingerprint | `fingerprint.rs`, `Molecule::topological_fingerprint` | `FINGERPRINT_FEATURE` | unsupported | The public boundary returns a structured unsupported error. Follow `plans/rdkit_topological_avalon_fingerprint_port_plan.md`; support requires a complete source-exact RDKitFP generator port and exact-bit parity on focused options plus the maintained 5000-row corpus. |
-| Avalon fingerprint | `avalon_fingerprint.rs`, `Molecule::avalon_fingerprint` | `FINGERPRINT_FEATURE` | unsupported | The public boundary returns a structured unsupported error. Follow `plans/rdkit_topological_avalon_fingerprint_port_plan.md`; support requires a complete source-exact Avalon/reaccs port, including byte-rounded vector semantics, and exact-bit parity on focused options plus the maintained 5000-row corpus. |
-| Force fields | `forcefield/`, `uff_*`, `mmff_*` | — | substantial | The source-backed force-field core, UFF, MMFF, and CrystalFF modules have local branch coverage, and `rdkit_forcefield_params_parity.rs` currently passes with `0 ignored` tests for UFF/MMFF parameter coverage, initial energy/gradient, and single-/multi-conformer final-coordinate comparisons on the shared corpus. This is not a blanket claim that every remaining copied RDKit marker in force-field files is closed; marker cleanup and any unsupported source branches must remain explicit. |
+| Morgan fingerprint | `fingerprint.rs` | `FINGERPRINT_FEATURE` (Experimental) | substantial | The documented Morgan profiles and `AdditionalOutput` branches have exact ChEMBL 37 evidence; unrelated upstream fingerprint APIs remain outside this row. |
+| RDKFingerprint/topological fingerprint | `fingerprint.rs`, `Molecule::topological_fingerprint` | `FINGERPRINT_FEATURE` | substantial | Source-exact RDKitFP generator and focused exact-bit tests are implemented. The family validation report is complete for the maintained 5,000-row profile; broader unmodeled RDKit fingerprint families remain outside this entry. |
+| Avalon fingerprint | `avalon_fingerprint.rs`, `Molecule::avalon_fingerprint` | `AVALON_FINGERPRINT_FEATURE` | implemented | Source-exact Avalon/REACCS explicit-bit path, byte-rounded vector semantics, and all 115,000 comparisons in the maintained 5,000-row × 23-profile RDKit adapter matrix pass exactly. Count/string overloads and unrelated Avalon APIs remain out of scope. |
+| Force fields | `forcefield/`, `uff_*`, `mmff_*` | — | substantial | The source-backed force-field core, UFF, MMFF, and CrystalFF modules have local branch coverage, and `rdkit_forcefield_params_parity.rs` currently passes with `0 ignored` tests for UFF/MMFF parameter coverage, initial energy/gradient, and single-/multi-conformer final-coordinate comparisons on the shared corpus. This is not a blanket claim for unrelated upstream force-field APIs; separately scoped capabilities and remaining source markers stay visible without weakening the passing documented boundary. |
 
 ### Chemical File I/O
 
@@ -90,7 +92,7 @@ authoritative when this file disagrees with code.
 |---|---|---|---|---|
 | DG bounds matrix | `distgeom.rs` | `DG_BOUNDS_FEATURE` | implemented | The selected RDKit DG bounds call graph is behaviorally source-backed in Rust, including raw matrix semantics, smoothing, helper dispatch, and wrapper defaults. Local strict `distgeom` coverage passes for the audited scope. Final audit found no remaining first-axis `RDKit❌*` gap in the active DG bounds call chain, while performance and helper-abstraction markers remain documented. Keep parity claims separate: this ledger row records audited baseline completion, not blanket parity for every future RDKit-comparison fixture. |
 | 3D conformer generation | `distgeom.rs`, `support.rs`, Rust facade, Python wrapper | `CONFORMER_GENERATION_FEATURE` | substantial | The strict validation slice now passes for the exposed conformer-generation surface, including Rust facade exports, Python wrapper exports, examples, Sphinx docs, whole-workspace strict tests, and source-ported terminal-group symmetrization during symmetry pruning. The final marker audit no longer has any first-axis `RDKit❌❌` block in the audited conformer-generation path, but multiple second-axis/perf-review markers remain in bounds-builder helpers and CrystalFF torsion preference collection, so this row remains substantial instead of implemented. |
-| Morgan fingerprint + Tanimoto | `fingerprint.rs` | `FINGERPRINT_FEATURE` | substantial | Hash parity deferred; unsupported option audit remains. |
+| Morgan fingerprint + Tanimoto | `fingerprint.rs` | `FINGERPRINT_FEATURE` | substantial | The enumerated Morgan vector and `AdditionalOutput` profiles have exact ChEMBL 37 evidence. Tanimoto behavior and unrelated upstream overloads retain their separately documented boundaries. |
 | Query atom/bond storage | `query.rs`, `atom.rs`, `bond.rs`, `io/sdf.rs` | — | partial | Internal storage exists; public inspection/matching APIs deferred unless README-core requires them. |
 
 ### 2D Coordinates and Drawing
@@ -105,7 +107,7 @@ authoritative when this file disagrees with code.
 ## Deferred For Later
 
 - Python binding parity with README examples.
-- Strict RDKit behavior parity, bit-identical Morgan hashes,
-  and visual regression parity for drawings.
+- Upstream operation families and overloads not enumerated by the current
+  feature-specific parity boundaries.
 - Public query matching/inspection APIs unless the Rust README claim is
   explicitly narrowed to require them in this pass.

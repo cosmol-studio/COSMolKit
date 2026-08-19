@@ -57,7 +57,6 @@ fn registry_declares_complete_assign_chiral_tags_operation_contract() {
     assert_eq!(operation.may_mutate, operation.access.write());
     assert_eq!(operation.auto_remap, BlockSet::NONE);
     assert_eq!(operation.requires_mapping, MappingRequirement::None);
-    assert!(operation.allows_noop);
     assert_eq!(operation.parity, ParityPolicy::RequiredNow);
     assert!(operation.io_roundtrip);
     assert_eq!(

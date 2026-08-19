@@ -430,6 +430,25 @@ impl MmffDefCollection {
             }
         }
     }
+
+    fn torsion_equivalence_level(&self, atom_type: u32, level: usize) -> Option<u8> {
+        let definition = self.get(atom_type)?;
+        if let Some(&equivalent_type) = definition.eq_level.get(level) {
+            return Some(equivalent_type);
+        }
+
+        // RDKit✔️✔️:       unsigned int canIAtomType = (*mmffDef)(iAtomType)->eqLevel[iWildCard];
+        // RDKit✔️✔️:       unsigned int canLAtomType = (*mmffDef)(lAtomType)->eqLevel[lWildCard];
+        //
+        // The source fallback loop has one additional `iter == 4` pass for a
+        // type-5 torsion with a secondary type, although `eqLevel` contains
+        // four entries. The pinned RDKit build observes zero for both terminal
+        // types on that pass, selecting the source table's `0-...-0` wildcard
+        // row when present. Model that observable source behavior explicitly;
+        // indexing beyond the Rust array would abort, while reproducing the
+        // C++ out-of-bounds access would be undefined behavior.
+        (level == definition.eq_level.len()).then_some(0)
+    }
 }
 
 /// MMFF atom-type property collection.
@@ -1781,16 +1800,20 @@ impl MmffTorCollection {
                     i_wild_card = 3;
                     l_wild_card = 1;
                 }
-                let Some(i_def) = mmff_def.get(i_atom_type) else {
+                let Some(can_i_atom_type) =
+                    mmff_def.torsion_equivalence_level(i_atom_type, i_wild_card)
+                else {
                     return (can_tor_type, None);
                 };
-                let Some(l_def) = mmff_def.get(l_atom_type) else {
+                let Some(can_l_atom_type) =
+                    mmff_def.torsion_equivalence_level(l_atom_type, l_wild_card)
+                else {
                     return (can_tor_type, None);
                 };
-                let mut can_i_atom_type = u32::from(i_def.eq_level[i_wild_card]);
+                let mut can_i_atom_type = u32::from(can_i_atom_type);
                 let mut can_j_atom_type = j_atom_type;
                 let mut can_k_atom_type = k_atom_type;
-                let mut can_l_atom_type = u32::from(l_def.eq_level[l_wild_card]);
+                let mut can_l_atom_type = u32::from(can_l_atom_type);
                 if can_j_atom_type > can_k_atom_type {
                     std::mem::swap(&mut can_j_atom_type, &mut can_k_atom_type);
                     std::mem::swap(&mut can_i_atom_type, &mut can_l_atom_type);
@@ -1884,16 +1907,20 @@ impl MmffTorCollection {
             // RDKit✔️✔️:       unsigned int canJAtomType = jAtomType;
             // RDKit✔️✔️:       unsigned int canKAtomType = kAtomType;
             // RDKit✔️✔️:       unsigned int canLAtomType = (*mmffDef)(lAtomType)->eqLevel[lWildCard];
-            let Some(i_def) = mmff_def.get(i_atom_type) else {
+            let Some(can_i_atom_type) =
+                mmff_def.torsion_equivalence_level(i_atom_type, i_wild_card)
+            else {
                 return (can_tor_type, None);
             };
-            let Some(l_def) = mmff_def.get(l_atom_type) else {
+            let Some(can_l_atom_type) =
+                mmff_def.torsion_equivalence_level(l_atom_type, l_wild_card)
+            else {
                 return (can_tor_type, None);
             };
-            let mut can_i_atom_type = u32::from(i_def.eq_level[i_wild_card]);
+            let mut can_i_atom_type = u32::from(can_i_atom_type);
             let mut can_j_atom_type = j_atom_type;
             let mut can_k_atom_type = k_atom_type;
-            let mut can_l_atom_type = u32::from(l_def.eq_level[l_wild_card]);
+            let mut can_l_atom_type = u32::from(can_l_atom_type);
 
             // RDKit✔️✔️:       if (canJAtomType > canKAtomType) {
             // RDKit✔️✔️:         unsigned int temp = canKAtomType;
@@ -4831,6 +4858,53 @@ mod tests {
                     v3: 1.0,
                 }),
             )
+        );
+    }
+
+    #[test]
+    fn mmff_mmfftorcollection_uses_source_final_wildcard_stage_after_type_five_fallback() {
+        let defs = MmffDefCollection::new(
+            "A\t1\t5\t6\t7\t8\n\
+             B\t2\t2\t2\t2\t2\n\
+             C\t3\t3\t3\t3\t3\n\
+             D\t4\t9\t10\t11\t12\n",
+        )
+        .expect("custom MMFFDef parses");
+        let collection = MmffTorCollection::new(false, "2\t0\t2\t3\t0\t1.250\t1.125\t1.000\n")
+            .expect("custom MMFFTor parses");
+
+        assert_eq!(
+            collection.get_mmff_tor_params(&defs, (5, 2), 1, 2, 3, 4),
+            (
+                2,
+                Some(&MmffTor {
+                    v1: 1.25,
+                    v2: 1.125,
+                    v3: 1.0,
+                }),
+            )
+        );
+    }
+
+    #[test]
+    fn mmff_mmfftorcollection_final_wildcard_stage_matches_pinned_rdkit_parameters() {
+        let defs = MmffDefCollection::new("").expect("default MMFFDef parses");
+        let collection = MmffTorCollection::new(false, "").expect("default MMFFTor parses");
+
+        assert_eq!(
+            collection.get_mmff_tor_params(&defs, (5, 2), 2, 3, 17, 1),
+            (
+                2,
+                Some(&MmffTor {
+                    v1: 0.0,
+                    v2: 1.423,
+                    v3: 0.0,
+                }),
+            )
+        );
+        assert_eq!(
+            collection.get_mmff_tor_params(&defs, (5, 1), 64, 54, 2, 1),
+            (1, None)
         );
     }
 

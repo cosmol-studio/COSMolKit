@@ -2,10 +2,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use cosmolkit_core::{
-    Atom, AtomSpec, Bond, BondSpec, MmffMolProperties, Molecule, MoleculeBuilder,
-    mmff_has_all_molecule_params, mmff_initial_gradient_for_parity, mmff_optimize_molecule,
-    mmff_optimize_molecule_confs, uff_has_all_molecule_params, uff_initial_gradient_for_parity,
-    uff_optimize_molecule, uff_optimize_molecule_confs,
+    Atom, AtomSpec, Bond, BondSpec, MmffMolProperties, MmffPublicApiError, Molecule,
+    MoleculeBuilder, mmff_has_all_molecule_params, mmff_initial_gradient_for_parity,
+    mmff_optimize_molecule, mmff_optimize_molecule_confs, uff_has_all_molecule_params,
+    uff_initial_gradient_for_parity, uff_optimize_molecule, uff_optimize_molecule_confs,
 };
 use serde::Deserialize;
 
@@ -980,6 +980,89 @@ fn mmff_single_conformer_final_coordinates_match_rdkit_golden_for_all_embedded_r
 }
 
 #[test]
+fn mmff_aromatic_ring_membership_atom_properties_match_rdkit_regression() {
+    let molecule = Molecule::from_smiles("CN1C(=O)c2c([n+](C)cn2C)NC1N.O=C([O-])C(F)(F)F")
+        .expect("MMFF aromatic-ring-membership regression molecule parses");
+    let properties = MmffMolProperties::new(&molecule, "MMFF94", 0)
+        .expect("MMFF aromatic-ring-membership properties build");
+    let expected: [(u8, f64, f64); 21] = [
+        (1, 0.0, 0.3001),
+        (10, 0.0, -0.6601999999999999),
+        (3, 0.0, 0.7029999999999998),
+        (7, 0.0, -0.57),
+        (78, 0.0, 0.27699999999999997),
+        (78, 0.0, 0.6579999999999999),
+        (81, 0.5, -0.764),
+        (1, 0.0, 0.514),
+        (80, 0.0, 0.8),
+        (81, 0.5, -0.764),
+        (1, 0.0, 0.514),
+        (55, 0.0, -0.7974999999999999),
+        (1, 0.0, 1.0596),
+        (8, 0.0, -0.27),
+        (32, -0.5, -0.9),
+        (41, 0.0, 0.9060000000000001),
+        (32, -0.5, -0.9),
+        (1, 0.0, 0.9140000000000001),
+        (11, 0.0, -0.34),
+        (11, 0.0, -0.34),
+        (11, 0.0, -0.34),
+    ];
+
+    assert_eq!(molecule.num_atoms(), expected.len());
+    for (atom_index, (atom_type, formal_charge, partial_charge)) in expected.into_iter().enumerate()
+    {
+        assert_eq!(
+            properties
+                .get_mmff_atom_type(atom_index)
+                .expect("MMFF atom type lookup succeeds"),
+            atom_type,
+            "MMFF atom type mismatch at atom {atom_index}",
+        );
+        assert_eq!(
+            properties
+                .get_mmff_formal_charge(atom_index)
+                .expect("MMFF formal-charge lookup succeeds")
+                .to_bits(),
+            formal_charge.to_bits(),
+            "MMFF formal charge mismatch at atom {atom_index}",
+        );
+        assert_eq!(
+            properties
+                .get_mmff_partial_charge(atom_index)
+                .expect("MMFF partial-charge lookup succeeds")
+                .to_bits(),
+            partial_charge.to_bits(),
+            "MMFF partial charge mismatch at atom {atom_index}",
+        );
+    }
+}
+
+#[test]
+fn mmff_nonbonded_fragment_sanitization_rejects_when_rdkit_rejects() {
+    let molecule = Molecule::from_smiles("CS1(C)=NC(=O)C2=C(N=1)c1ccccc1S2(=O)=O")
+        .expect("MMFF fragment-sanitization regression molecule parses")
+        .with_only_3d_conformer(vec![[0.0, 0.0, 0.0]; 18], true)
+        .expect("MMFF fragment-sanitization regression conformer attaches");
+
+    MmffMolProperties::new(&molecule, "MMFF94", 0)
+        .expect("MMFF atom-property construction succeeds before fragment sanitization");
+    let error = mmff_optimize_molecule(
+        &molecule,
+        "MMFF94",
+        FORCEFIELD_OPT_MAX_ITERS,
+        FORCEFIELD_PARITY_NONBONDED_THRESH,
+        -1,
+        true,
+    )
+    .expect_err("MMFF construction must preserve source fragment-sanitization rejection");
+    assert!(
+        matches!(error, MmffPublicApiError::Builder(_)),
+        "MMFF rejection must occur during source force-field construction",
+    );
+}
+
+#[test]
 fn uff_multi_conformer_final_coordinates_match_rdkit_golden_for_all_embedded_rows() {
     let records = load_golden();
     let eligible = records.iter().enumerate().filter(|(_, record)| {
@@ -1446,6 +1529,33 @@ fn mmff_charge_and_one_four_optimizer_regressions_match_rdkit() {
 #[test]
 fn mmff_torsion_empirical_optimizer_regression_row_123_matches_rdkit() {
     assert_mmff_empirical_optimizer_regression(123);
+}
+
+#[test]
+fn mmff_type_five_final_wildcard_regressions_match_rdkit() {
+    let table_backed = Molecule::from_smiles("COC(=O)[C@H](c1ccccc1Cl)N1CCC2C(=CC(=O)[S+]2[O-])C1")
+        .expect("table-backed MMFF regression molecule parses");
+    let table_backed_properties = MmffMolProperties::new(&table_backed, "MMFF94", 0)
+        .expect("table-backed MMFF properties build");
+    let (torsion_type, params) = table_backed_properties
+        .get_mmff_torsion_params(17, 18, 20, 15)
+        .expect("table-backed MMFF torsion lookup succeeds")
+        .expect("table-backed MMFF torsion has parameters");
+    assert_eq!(torsion_type, 2);
+    assert_eq!((params.v1, params.v2, params.v3), (0.0, 1.423, 0.0));
+
+    let empirical = Molecule::from_smiles("COc1ccc(-c2csc3c2[N+]2=CCC=C2C3[O-])cc1")
+        .expect("empirical MMFF regression molecule parses");
+    let empirical_properties =
+        MmffMolProperties::new(&empirical, "MMFF94", 0).expect("empirical MMFF properties build");
+    let (torsion_type, params) = empirical_properties
+        .get_mmff_torsion_params(10, 11, 15, 16)
+        .expect("empirical MMFF torsion lookup succeeds")
+        .expect("empirical MMFF torsion has parameters");
+    assert_eq!(torsion_type, 5);
+    assert!((params.v1 - 0.0).abs() <= f64::EPSILON);
+    assert!((params.v2 - 1.8).abs() <= f64::EPSILON);
+    assert!((params.v3 - 0.0).abs() <= f64::EPSILON);
 }
 
 #[test]

@@ -3,46 +3,73 @@ Fingerprints
 
 COSMolKit exposes fingerprint APIs as fixed-length bit vectors. The exposed
 Morgan and MACCS branches are covered by strict RDKit bit-identical parity
-tests. Similarity-shape correlation or structurally similar hashing is not a
-compatibility claim. ``RDKFingerprintMol``/topological and Avalon fingerprints
-are not implemented: those calls raise an unsupported-feature error instead of
-returning approximate path-hash bits. The Python ``Fingerprint`` object is a
-sparse view over the binary vector: ``on_bits()``
-returns the bit indexes whose value is 1. It is not a dense floating-point
-neural embedding.
+tests. The source-backed topological and Avalon implementations follow their
+pinned upstream algorithms and exact maintained-corpus validation.
+Similarity-shape correlation or structurally similar hashing is not a
+compatibility claim. The Python ``Fingerprint`` object is a sparse view over
+the binary vector: ``on_bits()`` returns the bit indexes whose value is 1. It
+is not a dense floating-point neural embedding.
 
-Unsupported APIs and Planned Ports
-----------------------------------
+Source-backed topological and Avalon fingerprints
+-------------------------------------------------
 
-.. warning::
+``Molecule.topological_fingerprint()`` and
+``Molecule.avalon_fingerprint()`` execute source-backed Rust implementations.
+The maintained topological matrix is exact across 5,000 rows and 14 profiles;
+the Avalon matrix is exact across 5,000 rows and 23 profiles.
 
-   ``Molecule.topological_fingerprint()`` and
-   ``Molecule.avalon_fingerprint()`` are unsupported in COSMolKit 0.2.11.
-   Calling either method raises ``ValueError`` with an ``unsupported
-   fingerprint option`` message. They do not return an empty vector, reuse a
-   Morgan fingerprint, or run a locally invented path-hash approximation.
-
-The two APIs remain present so callers receive an explicit, stable failure at
-the intended public boundary while their source-exact implementations are
-pending:
+The two APIs are source-backed and return a fresh explicit bit vector:
 
 - ``topological_fingerprint()`` requires the complete RDKit
   ``RDKFingerprintMol``/RDKitFP generator behavior, including branched-path
   enumeration, source random-bit generation, density folding, atom
   invariants, and the exposed path and atom-selection parameters.
-- ``avalon_fingerprint()`` requires the complete Avalon/reaccs behavior,
-  including ``bitFlags``, ``isQuery``, ``resetVect``, hydrogen handling,
-  tautomeric fingerprints, and byte-rounded vector semantics.
+- ``avalon_fingerprint()`` follows the complete Avalon/reaccs bit-vector path,
+  including ``bitFlags``, ``isQuery``, hydrogen handling, aromaticity passes,
+  and byte-rounded vector semantics. ``resetVect`` is an internal adapter
+  detail and is not exposed on COSMolKit's value-returning API.
 
-Neither API will be marked supported until its implementation is copied from
-the pinned upstream source under the project's two-axis source-marker rules and
-produces bit-identical results on focused option fixtures and the maintained
-5000-molecule parity corpus. Similarity correlation, partial bit agreement, or
-a heuristic replacement is not an acceptance condition.
+The focused option fixtures and maintained corpus are exact source
+comparisons. Similarity correlation, partial bit agreement, or a heuristic
+replacement is not an acceptance condition.
 
-The executable follow-up work is tracked in the `topological and Avalon
-fingerprint source-port plan
-<https://github.com/cosmol-studio/COSMolKit/blob/main/dev/plans/rdkit_topological_avalon_fingerprint_port_plan.md>`_.
+.. code-block:: python
+
+   mol = Molecule.from_smiles("c1ccccc1O")
+
+   topological = mol.topological_fingerprint(
+       min_path=1,
+       max_path=7,
+       fp_size=2048,
+       num_bits_per_feature=2,
+   )
+   avalon = mol.avalon_fingerprint(
+       n_bits=512,
+       is_query=False,
+       bit_flags=0xF07FFF,
+   )
+
+   print(topological.on_bits())
+   print(avalon.on_bits())
+
+Topological provenance
+-----------------------
+
+``topological_fingerprint_with_output()`` returns a
+``TopologicalFingerprintResult``. Request ``atom_bits`` and/or ``bit_info`` to
+receive the matching source provenance outputs:
+
+.. code-block:: python
+
+   result = mol.topological_fingerprint_with_output(
+       fp_size=2048,
+       atom_bits=True,
+       bit_info=True,
+   )
+
+   print(result.fingerprint().on_bits())
+   print(result.atom_bits())
+   print(result.bit_info())
 
 Single Molecules
 ----------------

@@ -1263,6 +1263,25 @@ mod tests {
     }
 
     #[test]
+    fn mol_from_inchi_unsanitized_legacy_stereo_uses_source_fast_ring_basis() {
+        const INCHI: &[u8] = b"InChI=1S/C17H13NO2/c19-18-16-12-14(11-10-13-6-2-1-3-7-13)20-17-9-5-4-8-15(16)17/h1-12,19H/b11-10+,18-16+";
+
+        for remove_hs in [false, true] {
+            let output = mol_from_inchi(INCHI, false, remove_hs).expect("audited InChI");
+            let molecule = output.molecule.expect("successful parse returns a graph");
+            let bond = &molecule.bonds()[16];
+
+            assert_eq!((bond.begin().index(), bond.end().index()), (11, 13));
+            assert_eq!(bond.order(), BondOrder::Double);
+            assert_eq!(bond.stereo(), BondStereo::Z);
+            assert_eq!(
+                bond.stereo_atoms(),
+                Some([AtomId::new(15), AtomId::new(19)])
+            );
+        }
+    }
+
+    #[test]
     fn mol_from_inchi_preserves_writer_state_after_stereochemistry_reassignment() {
         let output = mol_from_inchi(
             b"InChI=1S/C39H43N5O9.4Na/c1-8-21-17(3)25-13-27-19(5)23(10-11-32(46)47)35(42-27)24(12-31(45)44-39(7,38(52)53)16-33(48)49)36-34(37(50)51)20(6)28(43-36)15-30-22(9-2)18(4)26(41-30)14-29(21)40-25;;;;/h8,13-15,19,23,27,43H,1,9-12,16H2,2-7H3,(H,44,45)(H,46,47)(H,48,49)(H,50,51)(H,52,53);;;;/q;4*+1/p-4/b25-13-,26-14-,28-15-,36-24-;;;;/t19-,23-,27?,39-;;;;/m0..../s1",

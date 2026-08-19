@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, RwLock},
+};
 
 use crate::{
     Atom, AtomId, Bond, MoleculeBuilder, error::InvariantError,
@@ -426,6 +429,53 @@ impl DerivedCacheBlock {
     }
 }
 
+/// RDKit-compatible computed properties written through logically read-only
+/// descriptor APIs. This cache is separate from the Arc-backed operation
+/// cache: cloning a molecule copies the current values without coupling later
+/// descriptor calls between the copies.
+#[derive(Debug, Default)]
+struct ComputedPropertyCache {
+    crippen: RwLock<Option<[f64; 2]>>,
+}
+
+impl Clone for ComputedPropertyCache {
+    fn clone(&self) -> Self {
+        Self {
+            crippen: RwLock::new(self.crippen()),
+        }
+    }
+}
+
+impl PartialEq for ComputedPropertyCache {
+    fn eq(&self, _other: &Self) -> bool {
+        // Computed properties are observational caches, not molecule state.
+        true
+    }
+}
+
+impl ComputedPropertyCache {
+    fn crippen(&self) -> Option<[f64; 2]> {
+        *self
+            .crippen
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn set_crippen(&self, values: [f64; 2]) {
+        *self
+            .crippen
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(values);
+    }
+
+    fn clear(&self) {
+        *self
+            .crippen
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AtomMapping {
     pub(crate) old_to_new: Vec<Option<AtomId>>,
@@ -715,13 +765,27 @@ impl CoordinateBlock {
 ///
 /// assert_eq!(mol.num_atoms(), 6);
 /// ```
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, PartialEq, Default)]
 pub struct Molecule {
     topology: Arc<TopologyBlock>,
     coordinates: Arc<CoordinateBlock>,
     properties: Arc<MoleculeProperties>,
     derived_cache: Arc<DerivedCacheBlock>,
     capabilities: Arc<MoleculeCapabilities>,
+    computed_properties: ComputedPropertyCache,
+}
+
+impl Clone for Molecule {
+    fn clone(&self) -> Self {
+        Self {
+            topology: Arc::clone(&self.topology),
+            coordinates: Arc::clone(&self.coordinates),
+            properties: Arc::clone(&self.properties),
+            derived_cache: Arc::clone(&self.derived_cache),
+            capabilities: Arc::clone(&self.capabilities),
+            computed_properties: self.computed_properties.clone(),
+        }
+    }
 }
 
 impl Molecule {
@@ -748,6 +812,7 @@ impl Molecule {
             properties: Arc::new(properties),
             derived_cache: Arc::new(DerivedCacheBlock::default()),
             capabilities: Arc::new(MoleculeCapabilities::default()),
+            computed_properties: ComputedPropertyCache::default(),
         };
         enforce_molecule_invariants(&molecule)?;
         Ok(molecule)
@@ -767,6 +832,7 @@ impl Molecule {
             properties: Arc::new(properties),
             derived_cache: Arc::new(DerivedCacheBlock::default()),
             capabilities: Arc::new(capabilities),
+            computed_properties: ComputedPropertyCache::default(),
         };
         enforce_molecule_invariants(&molecule)?;
         Ok(molecule)
@@ -787,6 +853,7 @@ impl Molecule {
             properties: Arc::new(properties),
             derived_cache: Arc::new(derived_cache),
             capabilities: Arc::new(capabilities),
+            computed_properties: ComputedPropertyCache::default(),
         };
         enforce_molecule_invariants(&molecule)?;
         Ok(molecule)
@@ -885,6 +952,7 @@ impl Molecule {
             properties: Arc::new(properties),
             derived_cache: Arc::clone(&self.derived_cache),
             capabilities: Arc::clone(&self.capabilities),
+            computed_properties: self.computed_properties.clone(),
         }
     }
 
@@ -898,6 +966,7 @@ impl Molecule {
             properties: Arc::new(properties),
             derived_cache: Arc::clone(&self.derived_cache),
             capabilities: Arc::clone(&self.capabilities),
+            computed_properties: self.computed_properties.clone(),
         }
     }
 
@@ -911,6 +980,7 @@ impl Molecule {
             properties: Arc::new(properties),
             derived_cache: Arc::clone(&self.derived_cache),
             capabilities: Arc::clone(&self.capabilities),
+            computed_properties: self.computed_properties.clone(),
         }
     }
 
@@ -1003,6 +1073,14 @@ impl Molecule {
         params: &crate::fingerprint::TopologicalFingerprintParams,
     ) -> Result<crate::Fingerprint, crate::FingerprintError> {
         crate::fingerprint::topological_fingerprint(self, params)
+    }
+
+    pub fn topological_fingerprint_with_output(
+        &self,
+        params: &crate::fingerprint::TopologicalFingerprintParams,
+        request: crate::fingerprint::TopologicalFingerprintOutputRequest,
+    ) -> Result<crate::fingerprint::TopologicalFingerprintResult, crate::FingerprintError> {
+        crate::fingerprint::topological_fingerprint_with_output(self, params, request)
     }
 
     pub fn maccs_fingerprint(
@@ -1118,6 +1196,18 @@ impl Molecule {
         Arc::make_mut(&mut self.derived_cache)
     }
 
+    pub(crate) fn crippen_descriptor_cache(&self) -> Option<[f64; 2]> {
+        self.computed_properties.crippen()
+    }
+
+    pub(crate) fn set_crippen_descriptor_cache(&self, values: [f64; 2]) {
+        self.computed_properties.set_crippen(values);
+    }
+
+    pub(crate) fn clear_computed_property_cache(&self) {
+        self.computed_properties.clear();
+    }
+
     #[allow(dead_code)]
     pub(crate) fn properties_mut(&mut self) -> &mut MoleculeProperties {
         Arc::make_mut(&mut self.properties)
@@ -1218,13 +1308,15 @@ mod tests {
         let maccs_params = MaccsFingerprintParams::default();
 
         assert_eq!(
-            mol.avalon_fingerprint(&avalon_params).unwrap_err(),
-            avalon_fingerprint(&mol, &avalon_params).unwrap_err()
+            mol.avalon_fingerprint(&avalon_params)
+                .expect("method Avalon fingerprint"),
+            avalon_fingerprint(&mol, &avalon_params).expect("module Avalon fingerprint")
         );
         assert_eq!(
             mol.topological_fingerprint(&topological_params)
-                .unwrap_err(),
-            crate::fingerprint::topological_fingerprint(&mol, &topological_params).unwrap_err()
+                .expect("method topological fingerprint"),
+            crate::fingerprint::topological_fingerprint(&mol, &topological_params)
+                .expect("module topological fingerprint")
         );
         assert_eq!(
             mol.maccs_fingerprint(&maccs_params)
@@ -1318,15 +1410,21 @@ mod tests {
         let params = TopologicalFingerprintParams {
             min_path: 1,
             max_path: 2,
-            n_bits: 512,
-            n_bits_per_hash: 3,
-            use_bond_types: false,
+            fp_size: 512,
+            num_bits_per_feature: 3,
+            use_hs: true,
+            target_density: 0.0,
+            min_size: 128,
+            branched_paths: true,
+            use_bond_order: false,
+            atom_invariants: None,
             from_atoms: Some(vec![0]),
-            ignore_atoms: Some(vec![2]),
         };
         assert_eq!(
-            mol.topological_fingerprint(&params).unwrap_err(),
-            crate::fingerprint::topological_fingerprint(&mol, &params).unwrap_err()
+            mol.topological_fingerprint(&params)
+                .expect("Molecule helper result"),
+            crate::fingerprint::topological_fingerprint(&mol, &params)
+                .expect("module function result")
         );
     }
 }

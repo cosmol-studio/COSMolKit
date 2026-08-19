@@ -821,8 +821,41 @@ fn calc_inner_perpendicular(cds1: DVec2, cds2: DVec2, cds3: DVec2) -> DVec2 {
     perp
 }
 
+// BEGIN RDKIT CPP FUNCTION RDGeom::Point2D::normalize (Geometry/point.h)
+// RDKit✔️✔️: void normalize() override {
+// RDKit✔️✔️:   double ln = this->length();
+// RDKit✔️✔️:   if (ln < zero_tolerance) {
+// RDKit✔️✔️:     throw std::runtime_error("Cannot normalize a zero length vector");
+// RDKit✔️✔️:   }
+// RDKit✔️✔️:   x /= ln;
+// RDKit✔️✔️:   y /= ln;
+// RDKit✔️✔️: }
+// RDKit✔️✔️: double length() const override {
+// RDKit✔️✔️:   double res = x * x + y * y;
+// RDKit✔️✔️:   return sqrt(res);
+// RDKit✔️✔️: }
+// END RDKIT CPP FUNCTION RDGeom::Point2D::normalize
+fn normalize_point2d(mut point: DVec2) -> DVec2 {
+    let length_squared = point.x * point.x + point.y * point.y;
+    let length = length_squared.sqrt();
+    assert!(length >= 1.0e-16, "Cannot normalize a zero length vector");
+    point.x /= length;
+    point.y /= length;
+    point
+}
+
+// BEGIN RDKIT CPP FUNCTION RDGeom::Point2D::directionVector (Geometry/point.h)
+// RDKit✔️✔️: Point2D directionVector(const Point2D &other) const {
+// RDKit✔️✔️:   Point2D res;
+// RDKit✔️✔️:   res.x = other.x - x;
+// RDKit✔️✔️:   res.y = other.y - y;
+// RDKit✔️✔️:   res.normalize();
+// RDKit✔️✔️:   return res;
+// RDKit✔️✔️: }
+// END RDKIT CPP FUNCTION RDGeom::Point2D::directionVector
 fn direction_vector(from: DVec2, to: DVec2) -> DVec2 {
-    (to - from).normalize_or_zero()
+    let result = DVec2::new(to.x - from.x, to.y - from.y);
+    normalize_point2d(result)
 }
 
 // BEGIN RDKIT CPP FUNCTION RDGeom::Point2D::angleTo (Geometry/point.h)
@@ -2268,14 +2301,14 @@ impl DrawMol {
         out.calculate_scale();
 
         let drawn_font_size = out.font_size * out.font_scale;
-        let clamped_font_scale = if drawn_font_size > 40.0 {
-            40.0 / out.font_size
+        let (clamped_font_scale, font_scale_was_clamped) = if drawn_font_size > 40.0 {
+            (40.0 / out.font_size, true)
         } else if drawn_font_size < 6.0 {
-            6.0 / out.font_size
+            (6.0 / out.font_size, true)
         } else {
-            out.font_scale
+            (out.font_scale, false)
         };
-        if (clamped_font_scale - out.font_scale).abs() > 1.0e-12 {
+        if font_scale_was_clamped {
             // BEGIN RDKIT CPP FUNCTION DrawMol::setScale (DrawMol.cpp)
             // RDKit✔️✔️: resetEverything();
             // RDKit✔️✔️: fontScale_ = newFontScale / newScale;
@@ -2557,24 +2590,24 @@ impl DrawMol {
     }
 
     fn calc_mean_bond_length(&mut self, mol: &Molecule) {
-        if mol.bonds().is_empty() || self.at_cds.len() < 2 {
-            self.mean_bond_length = 1.0;
-            return;
-        }
-        let mut total = 0.0;
-        let mut count = 0;
-        for bond in mol.bonds() {
-            let b = bond.begin().index();
-            let e = bond.end().index();
-            if b < self.at_cds.len() && e < self.at_cds.len() {
-                let dist = (self.at_cds[b] - self.at_cds[e]).length();
-                if dist > 1e-8 {
-                    total += dist;
-                    count += 1;
-                }
+        // RDKit✔️✔️: double bondLen = 0.0;
+        let mut bond_len = 0.0;
+        // RDKit✔️✔️: if (mol.getNumBonds()) {
+        if !mol.bonds().is_empty() {
+            // RDKit✔️✔️: auto conf = mol.getConformer(confId);
+            // RDKit✔️✔️: for (auto bond : mol.bonds()) {
+            for bond in mol.bonds() {
+                let begin = bond.begin().index();
+                let end = bond.end().index();
+                // RDKit✔️✔️: bondLen += MolTransforms::getBondLength(
+                // RDKit✔️✔️:     conf, bond->getBeginAtomIdx(), bond->getEndAtomIdx());
+                bond_len += (self.at_cds[begin] - self.at_cds[end]).length();
             }
+            // RDKit✔️✔️: bondLen /= mol.getNumBonds();
+            bond_len /= mol.bonds().len() as f64;
         }
-        self.mean_bond_length = if count > 0 { total / count as f64 } else { 1.0 };
+        // RDKit✔️✔️: return bondLen;
+        self.mean_bond_length = bond_len;
     }
 
     fn extract_bonds(&mut self, mol: &Molecule) -> Result<(), SvgDrawError> {
@@ -2590,6 +2623,20 @@ impl DrawMol {
         let double_bond_offset = self.options.multiple_bond_offset * self.mean_bond_length;
 
         for bond in mol.bonds() {
+            // BEGIN RDKIT CPP FUNCTION DrawMol::makeStandardBond (DrawMol.cpp)
+            // RDKit✔️✔️: int begAt = bond->getBeginAtomIdx();
+            // RDKit✔️✔️: int endAt = bond->getEndAtomIdx();
+            // RDKit✔️✔️: const Point2D &at1_cds = atCds_[begAt];
+            // RDKit✔️✔️: const Point2D &at2_cds = atCds_[endAt];
+            // RDKit✔️✔️: if ((at1_cds - at2_cds).lengthSq() < 0.0001) {
+            // RDKit✔️✔️:   return;
+            // RDKit✔️✔️: }
+            // END RDKIT CPP FUNCTION DrawMol::makeStandardBond
+            let begin_atom = bond.begin().index();
+            let end_atom = bond.end().index();
+            if (self.at_cds[begin_atom] - self.at_cds[end_atom]).length_squared() < 0.0001 {
+                continue;
+            }
             match bond.order() {
                 BondOrder::Double | BondOrder::Aromatic => {
                     if bond.order() == BondOrder::Double {
@@ -3361,7 +3408,7 @@ impl DrawMol {
     ) -> DVec2 {
         let v21 = direction_vector(at_cds[at2], at_cds[at1]);
         let v23 = direction_vector(at_cds[at2], at_cds[at3]);
-        let mut v23perp = DVec2::new(-v23.y, v23.x).normalize_or_zero();
+        let mut v23perp = normalize_point2d(DVec2::new(-v23.y, v23.x));
         let mut bis = v21 + v23;
         if bis.length_squared() < 1.0e-6 {
             let result = at_cds[at2] - v23perp * offset;
@@ -3373,7 +3420,7 @@ impl DrawMol {
             }
             return result;
         }
-        bis = bis.normalize();
+        bis = normalize_point2d(bis);
         if v23perp.dot(bis) < 0.0 {
             v23perp *= -1.0;
         }
@@ -3466,10 +3513,6 @@ impl DrawMol {
         // END RDKIT CPP FUNCTION DrawMol::makeWedgedBond
         let b = bond.begin().index();
         let e = bond.end().index();
-        let too_small = (self.at_cds[b] - self.at_cds[e]).length_squared() < 1e-8;
-        if too_small {
-            return Ok(());
-        }
 
         let saved_mean_bond_length = self.mean_bond_length;
         if self.atom_labels[b].is_some() || self.atom_labels[e].is_some() {
@@ -7782,6 +7825,104 @@ mod tests {
     fn test_format_double() {
         assert_eq!(format_double(1.0), "1.0");
         assert_eq!(format_double(1.5), "1.5");
+    }
+
+    #[test]
+    fn aromatic_outer_line_draw_coordinate_matches_rdkit_rounding_regression() {
+        let molecule = Molecule::from_smiles(r"O=C(O)/C(=C\c1ccccc1)Cc1ccccc1").unwrap();
+        let svg = mol_to_svg(&molecule, 300, 300).unwrap();
+
+        assert!(
+            svg.contains("<path class='bond-12 atom-12 atom-13' d='M 76.7,130.0 L 48.7,113.9'")
+        );
+    }
+
+    #[test]
+    fn overlapping_depiction_atoms_skip_bond_regression() {
+        let molecule = Molecule::from_smiles("CC12CC34CN(C(=N)N)CC3(C1)CC2(C)C4.Cl").unwrap();
+        let svg = mol_to_svg(&molecule, 300, 300).unwrap();
+
+        assert!(!svg.contains("<path class='bond-16 atom-13 atom-1'"));
+        assert!(svg.contains("<path class='bond-4 atom-4 atom-5' d='M 121.8,184.1 L 111.8,170.9'"));
+    }
+
+    #[test]
+    fn minimum_svg_font_size_clamps_at_binary64_boundary_regression() {
+        let molecule = Molecule::from_smiles(
+            "C=C(c1ccc(Oc2ccc(Oc3ccc(C(=C)C4COC5(CCCCC5)OO4)cc3)cc2)cc1)C1COC2(CCCCC2)OO1",
+        )
+        .unwrap();
+        let svg = mol_to_svg(&molecule, 300, 300).unwrap();
+
+        assert!(svg.contains("class='atom-6' style='font-size:6px"));
+        assert!(!svg.contains("style='font-size:5px"));
+    }
+
+    #[test]
+    fn prepared_drawing_uses_rdkit_canonical_kekule_assignment_regression() {
+        let molecule = Molecule::from_smiles(
+            "CC1=C(CCNCCN)c2cc3[nH]c(cc4[nH]c(cc5nc(cc1n2)C(C)=C5CCNCCN)c(C)c4CCNCCN)c(CCNCCN)c3C",
+        )
+        .unwrap();
+        let prepared = prepare_molecule_for_drawing(&molecule, true).unwrap();
+        let bond_orders: String = prepared
+            .bonds()
+            .iter()
+            .map(|bond| match bond.order() {
+                BondOrder::Single => 'S',
+                BondOrder::Double => 'D',
+                BondOrder::Triple => 'T',
+                BondOrder::Aromatic => 'A',
+                _ => '?',
+            })
+            .collect();
+
+        assert_eq!(
+            bond_orders,
+            "SDSSSSSSSSDSSDSSSSDSDSDSSSDSSSSSSDSSSSSSSSSSSSSSSDSSDSDS"
+        );
+        let coordinates = prepared.coordinates_2d().unwrap();
+        assert_eq!(
+            coordinates[0][0].to_bits(),
+            (-0.7271872994113224_f64).to_bits()
+        );
+        assert_eq!(
+            coordinates[0][1].to_bits(),
+            (-7.508043887184295_f64).to_bits()
+        );
+        assert_eq!(
+            coordinates[49][0].to_bits(),
+            10.57352991454218_f64.to_bits()
+        );
+        assert_eq!(
+            coordinates[49][1].to_bits(),
+            4.749281830440951_f64.to_bits()
+        );
+
+        let svg = mol_to_svg(&molecule, 300, 300).unwrap();
+        assert!(svg.contains("<path class='bond-0 atom-0 atom-1' d='M 140.4,250.0 L 145.7,232.9'"));
+    }
+
+    #[test]
+    fn polycyclic_chiral_hydrogen_preparation_matches_rdkit_regression() {
+        let molecule = Molecule::from_smiles(
+            "O=C1CCC(=O)O[C@@H]2[C@@H](O)[C@H](O)[C@@H](COC(=O)CCC(=O)O[C@@H]3[C@@H](O)[C@H](O)[C@@H](CO1)O[C@@H]3O)O[C@@H]2O",
+        )
+        .unwrap();
+        let prepared = prepare_molecule_for_drawing(&molecule, false).unwrap();
+
+        assert_eq!(prepared.num_atoms(), 46);
+        assert_eq!(
+            prepared
+                .atoms()
+                .iter()
+                .filter(|atom| atom.atomic_number() == 1)
+                .count(),
+            10
+        );
+
+        let svg = mol_to_svg(&molecule, 300, 300).unwrap();
+        assert!(svg.contains("<path class='bond-0 atom-0 atom-1' d='M 189.8,250.4 L 186.4,239.5'"));
     }
 
     #[test]

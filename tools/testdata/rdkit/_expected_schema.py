@@ -96,6 +96,9 @@ SCHEMAS = {
     "maccs_fingerprint.jsonl": _schema(
         "error:null|string,label:null|string,public_n_bits:integer,public_on_bits:null|array,raw_n_bits:integer,raw_on_bits:null|array,rdkit_ok:boolean,record_type:string,smiles:string"
     ),
+    "rdkit_topological_fingerprint.jsonl": _schema(
+        "branches:object,error:null|string,rdkit_ok:boolean,row:integer,smiles:string"
+    ),
     "molecular_descriptors.jsonl": _schema(
         "descriptor_bits:null|object,descriptor_option_bits:null|object,descriptor_options:null|object,descriptors:null|object,error:null|string,rdkit_ok:boolean,smiles:string",
     ),

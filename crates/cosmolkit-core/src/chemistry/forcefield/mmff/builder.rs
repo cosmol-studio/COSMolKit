@@ -8,7 +8,7 @@ use crate::chemistry::forcefield::torsion_query::{
     DEFAULT_TORSION_BOND_SMARTS, TorsionBondQueryError, match_torsion_bonds,
 };
 use crate::chemistry::mol_transforms::{MolTransformError, get_atom_positions};
-use crate::notation::fragment::get_fragment_atom_mapping;
+use crate::notation::fragment::{get_fragment_atom_mapping, get_mol_frags};
 use crate::{AdjacencyList, Hybridization, Molecule};
 
 use super::angle_bend::AngleBendContrib;
@@ -30,6 +30,10 @@ pub enum MmffBuilderError {
     MolProperties(#[from] MmffMolPropertiesError),
     #[error(transparent)]
     MolTransform(#[from] MolTransformError),
+    #[error(transparent)]
+    Fragment(#[from] crate::fragment::FragmentError),
+    #[error(transparent)]
+    Operation(#[from] crate::OperationError),
     #[error("MMFF constructForceField requires a 3D conformer when conf_id={conf_id}")]
     Missing3dConformer { conf_id: isize },
     #[error("MMFF constructForceField conf_id must be >= -1, got {conf_id}")]
@@ -81,7 +85,7 @@ pub(crate) fn construct_force_field(
     // RDKit✔️❌:       constructForceField(mol, &mmffMolProperties, nonBondedThresh, confId,
     // RDKit✔️❌:                           ignoreInterfragInteractions);
     let res = construct_force_field_with_props(
-        mol,
+        &mmff_mol_properties.molecule,
         &mmff_mol_properties,
         non_bonded_thresh,
         conf_id,
@@ -949,12 +953,16 @@ pub(crate) fn add_nonbonded(
     // RDKit✔️✔️:   if (ignoreInterfragInteractions) {
     // RDKit✔️✔️:     std::vector<ROMOL_SPTR> molFrags =
     // RDKit✔️✔️:         MolOps::getMolFrags(mol, true, &fragMapping);
-    // RDKit✔️✔️:   }
     let frag_mapping = if ignore_interfrag_interactions {
-        Some(get_fragment_atom_mapping(mol))
+        let mapping = get_fragment_atom_mapping(mol);
+        for fragment in get_mol_frags(mol)? {
+            let _sanitized_fragment = fragment.sanitize()?;
+        }
+        Some(mapping)
     } else {
         None
     };
+    // RDKit✔️✔️:   }
 
     // RDKit❌❌:   unsigned int nAtoms = mol.getNumAtoms();
     let n_atoms = mol.num_atoms();

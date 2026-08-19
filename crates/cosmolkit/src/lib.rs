@@ -117,7 +117,7 @@ mod tests {
     }
 
     #[test]
-    fn inchi_rust_facade_preserves_source_defined_stereo_isotope_and_diagnostics() {
+    fn inchi_rust_facade_preserves_isotope_diagnostics_and_source_stereo_cleanup() {
         let parsed = mol_from_inchi(b"InChI=1S/CHBrClF/c2-1(3)4/t1-/m0/s1/i1+1", false, false)
             .expect("parsed isotope and stereo fixture");
         assert_eq!(parsed.return_values.return_code, 1);
@@ -126,10 +126,7 @@ mod tests {
         assert_eq!(molecule.num_bonds(), 3);
         assert_eq!(molecule.atoms()[0].atomic_number(), 6);
         assert_eq!(molecule.atoms()[0].isotope(), Some(13));
-        assert!(matches!(
-            molecule.atoms()[0].chiral_tag(),
-            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
-        ));
+        assert_eq!(molecule.atoms()[0].chiral_tag(), ChiralTag::Unspecified);
 
         let invalid_key = inchi_to_inchi_key(b"").expect("source-defined key diagnostic");
         assert!(invalid_key.key.is_empty());

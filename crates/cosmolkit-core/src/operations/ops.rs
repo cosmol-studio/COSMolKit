@@ -1,9 +1,10 @@
 //! Macro-controlled molecule operations.
 //!
 //! This module is the canonical operation-contract surface for molecular state
-//! migration. Operation bodies must be written as no-argument functions annotated
-//! with `#[mol_op_body(op_name, parts)]`; the attribute macro injects the only
-//! allowed mutable capability object.
+//! migration. Operation bodies must be annotated with
+//! `#[mol_op_body(op_name, parts)]`; the attribute macro injects the only
+//! allowed mutable capability object while preserving declared operation
+//! parameters.
 //!
 //! Agent guardrail: operation bodies must not take `&mut Molecule`, must not
 //! access `Molecule` storage directly, and must not update derived-state caches
@@ -231,7 +232,6 @@ pub struct MoleculeOpSpec {
     pub derived_effects: DerivedEffects,
     pub semantic_preconditions: SemanticPreconditionSet,
     pub requires_mapping: MappingRequirement,
-    pub allows_noop: bool,
     pub support: SupportStatus,
     pub parity: ParityPolicy,
     pub io_roundtrip: bool,
@@ -248,12 +248,6 @@ impl MoleculeOpSpec {
     pub const fn needs_update(self: &Self) -> DerivedState {
         self.derived_effects.needs_update()
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OpOutcome {
-    Changed,
-    NoOp { reason: &'static str },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -435,7 +429,6 @@ molecule_ops! {
             trusted_bond_topology,
         ],
         requires_mapping: required,
-        allows_noop: true,
         feature: HYDROGENS_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -463,7 +456,6 @@ molecule_ops! {
             invalidate: [ring_families, stereo, drawing, fingerprint],
         },
         requires_mapping: required,
-        allows_noop: true,
         feature: HYDROGENS_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -488,7 +480,6 @@ molecule_ops! {
             invalidate: [ring_families, stereo, drawing, fingerprint],
         },
         requires_mapping: required,
-        allows_noop: true,
         feature: HYDROGENS_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -513,7 +504,6 @@ molecule_ops! {
             invalidate: [aromaticity, drawing, fingerprint],
         },
         requires_mapping: none,
-        allows_noop: true,
         feature: KEKULIZE_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -541,7 +531,6 @@ molecule_ops! {
             invalidate: [ring_families, stereo, drawing, fingerprint],
         },
         requires_mapping: none,
-        allows_noop: true,
         feature: SANITIZE_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -569,7 +558,6 @@ molecule_ops! {
             invalidate: [],
         },
         requires_mapping: none,
-        allows_noop: true,
         feature: VALENCE_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -594,7 +582,6 @@ molecule_ops! {
             invalidate: [],
         },
         requires_mapping: none,
-        allows_noop: true,
         feature: RINGS_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -619,7 +606,6 @@ molecule_ops! {
             invalidate: [],
         },
         requires_mapping: none,
-        allows_noop: true,
         feature: RINGS_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -644,7 +630,6 @@ molecule_ops! {
             invalidate: [drawing, fingerprint],
         },
         requires_mapping: none,
-        allows_noop: true,
         feature: AROMATICITY_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -669,7 +654,6 @@ molecule_ops! {
             invalidate: [],
         },
         requires_mapping: none,
-        allows_noop: true,
         feature: VALENCE_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -697,7 +681,6 @@ molecule_ops! {
         },
         semantic_preconditions: [trusted_bond_topology],
         requires_mapping: none,
-        allows_noop: true,
         feature: STEREO_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -716,7 +699,7 @@ molecule_ops! {
         domain: coordinate,
         kind: weak,
         topology_edit: none,
-        access: { read: [topology], write: [coordinates] },
+        access: { read: [topology, properties], write: [coordinates] },
         may_mutate: [coordinates],
         auto_remap: [],
         semantic_preconditions: [trusted_bond_topology],
@@ -726,7 +709,6 @@ molecule_ops! {
             invalidate: [drawing],
         },
         requires_mapping: none,
-        allows_noop: true,
         feature: COORDINATE_2D_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -755,7 +737,6 @@ molecule_ops! {
             invalidate: [drawing],
         },
         requires_mapping: none,
-        allows_noop: true,
         feature: CONFORMER_GENERATION_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -781,7 +762,6 @@ molecule_ops! {
             invalidate: [drawing],
         },
         requires_mapping: none,
-        allows_noop: true,
         feature: CONFORMER_GENERATION_FEATURE,
         parity: required_now,
         io_roundtrip: true,
@@ -806,7 +786,6 @@ molecule_ops! {
             invalidate: [drawing],
         },
         requires_mapping: none,
-        allows_noop: false,
         feature: COORDINATE_EDIT_FEATURE,
         parity: required_when_supported,
         io_roundtrip: true,
@@ -831,7 +810,6 @@ molecule_ops! {
             invalidate: [drawing],
         },
         requires_mapping: none,
-        allows_noop: false,
         feature: COORDINATE_EDIT_FEATURE,
         parity: required_when_supported,
         io_roundtrip: true,
@@ -856,7 +834,6 @@ molecule_ops! {
             invalidate: [drawing],
         },
         requires_mapping: none,
-        allows_noop: true,
         feature: COORDINATE_EDIT_FEATURE,
         parity: required_when_supported,
         io_roundtrip: true,
@@ -881,7 +858,6 @@ molecule_ops! {
             invalidate: [drawing],
         },
         requires_mapping: none,
-        allows_noop: true,
         feature: COORDINATE_EDIT_FEATURE,
         parity: required_when_supported,
         io_roundtrip: true,
@@ -906,7 +882,6 @@ molecule_ops! {
             invalidate: [drawing],
         },
         requires_mapping: none,
-        allows_noop: false,
         feature: COORDINATE_EDIT_FEATURE,
         parity: required_when_supported,
         io_roundtrip: true,
@@ -931,7 +906,6 @@ molecule_ops! {
             invalidate: [drawing],
         },
         requires_mapping: none,
-        allows_noop: false,
         feature: COORDINATE_EDIT_FEATURE,
         parity: required_when_supported,
         io_roundtrip: true,
@@ -976,7 +950,6 @@ mod tests {
             DerivedState::VALENCE.union(DerivedState::RINGS), // invalidate: needs_update target + clear-permitted
         ),
         requires_mapping: MappingRequirement::None,
-        allows_noop: true,
         support: SupportStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
         io_roundtrip: false,
@@ -998,7 +971,6 @@ mod tests {
             DerivedState::NONE,    // invalidate
         ),
         requires_mapping: MappingRequirement::None,
-        allows_noop: true,
         support: SupportStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
         io_roundtrip: false,
@@ -1016,7 +988,6 @@ mod tests {
         semantic_preconditions: SemanticPreconditionSet::NONE,
         derived_effects: DerivedEffects::NONE,
         requires_mapping: MappingRequirement::None,
-        allows_noop: true,
         support: SupportStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
         io_roundtrip: false,
@@ -1126,6 +1097,7 @@ mod tests {
             "record_topology_edit",
             "record_topology_mapping",
             "clear_cache",
+            "clear_computed_properties",
             "set_rings_cache",
             "set_ring_families_cache",
             "set_valence_cache",
@@ -1266,7 +1238,7 @@ mod tests {
         let _topology = parts.begin_topology_mut().unwrap();
 
         let error = parts
-            .finish(OpOutcome::Changed)
+            .finish()
             .expect_err("finish must reject an unclosed begin/commit lifecycle");
 
         assert!(matches!(
@@ -1889,6 +1861,26 @@ mod tests {
     }
 
     #[test]
+    fn with_hydrogens_materializes_bracket_hydrogen_count_like_rdkit() {
+        let molecule = crate::Molecule::from_smiles("[HH]").unwrap();
+        assert_eq!(molecule.num_atoms(), 1);
+        assert_eq!(molecule.atoms()[0].explicit_hydrogens(), 1);
+
+        let result = molecule.with_hydrogens().unwrap();
+
+        assert_eq!(result.num_atoms(), 2);
+        assert_eq!(result.num_bonds(), 1);
+        assert!(result.atoms().iter().all(|atom| atom.atomic_number() == 1));
+        assert!(
+            result
+                .atoms()
+                .iter()
+                .all(|atom| atom.explicit_hydrogens() == 0)
+        );
+        assert_eq!(result.bonds()[0].order(), crate::BondOrder::Single);
+    }
+
+    #[test]
     fn with_hydrogens_commits_topology_with_rebuilt_adjacency_for_valence_followups() {
         let molecule = crate::Molecule::from_smiles("C=C").unwrap();
 
@@ -1938,6 +1930,7 @@ mod tests {
                 .any(|atom| atom.prop("_CIPRank").is_some()),
             "SMILES sanitize path should assign legacy _CIPRank before AddHs"
         );
+        assert_eq!(molecule.prop("_StereochemDone"), Some("1"));
 
         let result = molecule
             .with_hydrogens_with_params(crate::AddHsParams {
@@ -1957,6 +1950,11 @@ mod tests {
                 .iter()
                 .all(|atom| atom.prop("_CIPRank").is_none()),
             "RDKit AddHs clears atom _CIPRank computed props before depiction"
+        );
+        assert_eq!(
+            result.prop("_StereochemDone"),
+            None,
+            "RDKit AddHs clears the molecule-level stereochemistry computed marker"
         );
     }
 
@@ -1999,7 +1997,7 @@ mod tests {
                 PreservationProof::LeafAtomAppend,
             )
             .unwrap();
-        let result = parts.finish(OpOutcome::Changed).unwrap();
+        let result = parts.finish().unwrap();
 
         assert!(changed);
         let info = result.atoms()[1].pdb_residue_info().unwrap();
@@ -2068,7 +2066,7 @@ mod tests {
                 PreservationProof::LeafAtomAppend,
             )
             .unwrap();
-        let result = parts.finish(OpOutcome::Changed).unwrap();
+        let result = parts.finish().unwrap();
 
         assert!(changed);
         let info = result.atoms()[hydrogen.index()].pdb_residue_info().unwrap();
@@ -3674,7 +3672,7 @@ mod tests {
 
         parts.clear_cache(SANITIZE_SPEC.needs_update());
         let result = parts
-            .finish(OpOutcome::Changed)
+            .finish()
             .expect("cache invalidation should satisfy operation contract");
 
         let cache = result.derived_cache();
@@ -3683,27 +3681,6 @@ mod tests {
         assert!(cache.ring_families.is_none());
         assert!(!cache.aromaticity_valid);
         assert!(!cache.stereo_valid);
-    }
-
-    #[cfg(feature = "op-contracts")]
-    #[test]
-    fn finish_rejects_noop_when_registry_forbids_it() {
-        let molecule = crate::Molecule::new();
-        let parts = OpParts::new(&molecule, &WITH_2D_COORDINATE_BLOCK_SPEC).unwrap();
-
-        let error = parts
-            .finish(OpOutcome::NoOp {
-                reason: "synthetic forbidden no-op",
-            })
-            .expect_err("allows_noop=false must be an executable strict contract");
-
-        assert!(matches!(
-            error,
-            OperationError::InvalidInput {
-                message: "operation reported a no-op but the registry forbids no-op outcomes",
-                ..
-            }
-        ));
     }
 
     #[test]
@@ -3724,7 +3701,7 @@ mod tests {
                 | DerivedState::FINGERPRINT,
         );
         let result = parts
-            .finish(OpOutcome::Changed)
+            .finish()
             .expect("updated cache entries should satisfy needs_update without clear first");
 
         let cache = result.derived_cache();
@@ -3737,21 +3714,19 @@ mod tests {
 
     #[cfg(feature = "op-contracts")]
     #[test]
-    fn finish_accepts_noop_without_derived_state_updates() {
+    fn finish_accepts_untouched_operation_without_derived_state_updates() {
         let molecule = crate::Molecule::new();
         let parts = OpParts::new(&molecule, &TEST_NEEDS_VALENCE_UPDATE_SPEC).unwrap();
 
         let result = parts
-            .finish(OpOutcome::NoOp {
-                reason: "no state changed",
-            })
-            .expect("a no-op has no derived-state effects to fulfill");
+            .finish()
+            .expect("an untouched operation has no derived-state effects to fulfill");
         assert_eq!(result, molecule);
     }
 
     #[cfg(feature = "op-contracts")]
     #[test]
-    fn noop_cannot_bypass_cache_obligations_after_touching_a_block() {
+    fn committed_write_cannot_bypass_cache_obligations() {
         let molecule = crate::Molecule::new();
         let mut parts = OpParts::new(&molecule, &WITH_2D_COORDINATES_SPEC).unwrap();
         parts
@@ -3759,10 +3734,8 @@ mod tests {
             .unwrap();
 
         let error = parts
-            .finish(OpOutcome::NoOp {
-                reason: "synthetic mislabeled mutation",
-            })
-            .expect_err("NoOp must not bypass derived-state obligations after a block touch");
+            .finish()
+            .expect_err("a committed write must satisfy derived-state obligations");
 
         assert!(matches!(
             error,
@@ -3781,7 +3754,7 @@ mod tests {
 
         parts.clear_cache(DerivedState::RINGS);
         let err = parts
-            .finish(OpOutcome::Changed)
+            .finish()
             .expect_err("clearing rings must not satisfy a valence needs_update contract");
 
         assert!(matches!(
@@ -3812,7 +3785,7 @@ mod tests {
         parts.clear_cache(WITH_HYDROGENS_SPEC.needs_update());
 
         let err = parts
-            .finish(OpOutcome::Changed)
+            .finish()
             .expect_err("declared preserve states require an explicit preservation proof");
 
         assert!(matches!(
@@ -3874,7 +3847,7 @@ mod tests {
             implicit_hydrogens: Vec::new(),
         });
         let result = parts
-            .finish(OpOutcome::Changed)
+            .finish()
             .expect("setting valence cache should satisfy recompute requirement");
 
         assert_eq!(
@@ -3904,20 +3877,21 @@ mod tests {
         let mut unauthorized = OpParts::new(&molecule, &WITH_2D_COORDINATES_SPEC).unwrap();
         unauthorized.clear_cache(DerivedState::VALENCE);
         unauthorized
-            .finish(OpOutcome::Changed)
+            .finish()
             .expect("without op-contracts, cache permission checks are disabled");
 
         let missing_update = OpParts::new(&molecule, &TEST_NEEDS_VALENCE_UPDATE_SPEC).unwrap();
         missing_update
-            .finish(OpOutcome::Changed)
+            .finish()
             .expect("without op-contracts, needs_update checks are disabled");
     }
 
     #[cfg(feature = "op-contracts")]
     #[test]
     #[should_panic(expected = "cache write permission violation")]
-    fn set_valence_cache_panics_without_requires_or_recompute() {
-        // WITH_2D_COORDINATES_SPEC has no requires/recompute — set_valence_cache must panic
+    fn set_valence_cache_panics_without_recompute() {
+        // WITH_2D_COORDINATES_SPEC has no recompute permission, so
+        // set_valence_cache must panic.
         let molecule = crate::Molecule::new();
         let mut parts = OpParts::new(&molecule, &WITH_2D_COORDINATES_SPEC).unwrap();
         parts.set_valence_cache(crate::ValenceAssignment {
@@ -3964,7 +3938,7 @@ mod tests {
         parts.clear_cache(DerivedState::DRAWING | DerivedState::FINGERPRINT);
 
         let result = parts
-            .finish(OpOutcome::Changed)
+            .finish()
             .expect("COW topology edit should produce a valid molecule");
 
         assert_eq!(molecule.num_atoms(), 0);
@@ -4032,7 +4006,7 @@ mod tests {
         parts.commit_properties(properties).unwrap();
 
         let result = parts
-            .finish(OpOutcome::Changed)
+            .finish()
             .expect("strong compacting edit should satisfy registry contract");
 
         assert_eq!(molecule, original);
@@ -4090,7 +4064,7 @@ mod tests {
         parts.commit_properties(properties).unwrap();
 
         let result = parts
-            .finish(OpOutcome::Changed)
+            .finish()
             .expect("strong compacting edit should preserve surviving SGroup parent links");
 
         assert_eq!(result.substance_groups().len(), 2);

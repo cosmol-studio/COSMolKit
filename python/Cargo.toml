@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 doc = false
 
 [dependencies]
-cosmolkit-core = { version = "0.2.11", path = "../crates/cosmolkit-core" }
+cosmolkit-core = { version = "0.2.12", path = "../crates/cosmolkit-core" }
 pyo3-stub-gen = { version = "0.23.0", default-features = false, optional = true }
 pyo3-stub-gen-derive = "0.23.0"
 pyo3 = { version = "0.29.0", default-features = false }

@@ -8,6 +8,7 @@ contains `plan` or `checklist`.
 - [`pdb_mmcif_gemmi_full_port_checklist.md`](./pdb_mmcif_gemmi_full_port_checklist.md)
 - [`rdkit_assign_atom_chiral_tags_from_structure_full_port_plan.md`](./rdkit_assign_atom_chiral_tags_from_structure_full_port_plan.md)
 - [`rdkit_mol2_full_port_plan.md`](./rdkit_mol2_full_port_plan.md)
+- [`rdkit_topological_avalon_fingerprint_port_plan.md`](./rdkit_topological_avalon_fingerprint_port_plan.md)
 - [`smiles_rdkit_full_port_checklist.md`](./smiles_rdkit_full_port_checklist.md)
 
 Plans must follow [`../agent_plan_standard.md`](../agent_plan_standard.md).

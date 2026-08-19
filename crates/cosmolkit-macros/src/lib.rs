@@ -37,7 +37,6 @@ struct OpFields {
     derived_effects: Option<DerivedEffectFields>,
     semantic_preconditions: Vec<Ident>,
     requires_mapping: Option<Ident>,
-    allows_noop: Option<LitBool>,
     feature: Option<Path>,
     parity: Option<Ident>,
     io_roundtrip: Option<LitBool>,
@@ -122,7 +121,7 @@ impl Parse for OpEntry {
                 "must_handle" => {
                     return Err(syn::Error::new(
                         key.span(),
-                        "use `derived_effects: { require_handle: [...], recompute: [...] }`; `must_handle` is a derived compatibility view",
+                        "`must_handle` was removed; use `derived_effects.recompute`, `preserve`, and `invalidate`, and return structured errors for unsupported behavior",
                     ));
                 }
                 "needs_update" => {
@@ -147,7 +146,6 @@ impl Parse for OpEntry {
                 "report" => {
                     let _ = parse_ident_list(&content)?;
                 }
-                "allows_noop" => fields.allows_noop = Some(content.parse()?),
                 "feature" => fields.feature = Some(content.parse()?),
                 "parity" => fields.parity = Some(content.parse()?),
                 "io_roundtrip" => fields.io_roundtrip = Some(content.parse()?),
@@ -418,10 +416,6 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         .fields
         .requires_mapping
         .map_or_else(|| ident_with_span("none", op.name.span()), Ok)?;
-    let allows_noop = op
-        .fields
-        .allows_noop
-        .map_or_else(|| parse_quote!(true), |value| value);
     let io_roundtrip = op
         .fields
         .io_roundtrip
@@ -468,7 +462,6 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
             ),
             semantic_preconditions: #semantic_preconditions_expr,
             requires_mapping: #mapping_expr,
-            allows_noop: #allows_noop,
             support: crate::#feature.status,
             parity: #parity_expr,
             io_roundtrip: #io_roundtrip,
@@ -519,8 +512,8 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
                 });
             }
             let mut parts = crate::ops::OpParts::new(self, &crate::ops::#spec_ident)?;
-            let outcome = #impl_fn(&mut parts, #(#call_args),*)?;
-            parts.finish(outcome)
+            #impl_fn(&mut parts, #(#call_args),*)?;
+            parts.finish()
         }
     };
 
@@ -541,14 +534,11 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
                     });
                 }
                 let mut parts = crate::ops::OpParts::new_in_place(self, &crate::ops::#spec_ident)?;
-                let outcome = match #impl_fn(&mut parts, #(#call_args),*) {
-                    Ok(outcome) => outcome,
-                    Err(error) => {
-                        parts.abort_in_place();
-                        return Err(error);
-                    }
-                };
-                parts.finish_in_place(outcome)
+                if let Err(error) = #impl_fn(&mut parts, #(#call_args),*) {
+                    parts.abort_in_place();
+                    return Err(error);
+                }
+                parts.finish_in_place()
             }
         })
     } else {
@@ -942,7 +932,6 @@ struct BioOpFields {
     must_handle: Vec<Ident>,
     needs_update: Vec<Ident>,
     requires_mapping: Option<Ident>,
-    allows_noop: Option<LitBool>,
     parity: Option<Ident>,
     io_roundtrip: Option<LitBool>,
     invariant_profile: Option<LitStr>,
@@ -990,7 +979,6 @@ impl Parse for BioOpEntry {
                 "must_handle" => fields.must_handle = parse_ident_list(&content)?,
                 "needs_update" => fields.needs_update = parse_ident_list(&content)?,
                 "requires_mapping" => fields.requires_mapping = Some(content.parse()?),
-                "allows_noop" => fields.allows_noop = Some(content.parse()?),
                 "parity" => fields.parity = Some(content.parse()?),
                 "io_roundtrip" => fields.io_roundtrip = Some(content.parse()?),
                 "invariant_profile" => fields.invariant_profile = Some(content.parse()?),
@@ -1100,10 +1088,6 @@ fn expand_bio_op(op: BioOpEntry) -> syn::Result<ExpandedBioOp> {
         .fields
         .requires_mapping
         .map_or_else(|| ident_with_span("none", op.name.span()), Ok)?;
-    let allows_noop = op
-        .fields
-        .allows_noop
-        .map_or_else(|| parse_quote!(true), |v| v);
     let io_roundtrip = op
         .fields
         .io_roundtrip
@@ -1138,7 +1122,6 @@ fn expand_bio_op(op: BioOpEntry) -> syn::Result<ExpandedBioOp> {
             must_handle: #must_handle_expr,
             needs_update: #needs_update_expr,
             requires_mapping: #mapping_expr,
-            allows_noop: #allows_noop,
             support: #support_expr,
             parity: #parity_expr,
             io_roundtrip: #io_roundtrip,
@@ -1197,8 +1180,8 @@ fn expand_bio_op(op: BioOpEntry) -> syn::Result<ExpandedBioOp> {
                 });
             }
             let mut parts = crate::bio_ops::BioOpParts::new(self, &crate::bio_ops::#spec_ident);
-            let outcome = #impl_fn(&mut parts, #(#call_args),*)?;
-            parts.finish(outcome)
+            #impl_fn(&mut parts, #(#call_args),*)?;
+            parts.finish()
         }
     };
 

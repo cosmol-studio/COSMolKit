@@ -345,9 +345,6 @@ pub(crate) fn add_hs_assignment(
         ..AddHsAssignment::default()
     };
     for atom in read_parts.atoms() {
-        if atom.atomic_number() == 1 {
-            continue;
-        }
         if let Some(only_on_atoms) = &params.only_on_atoms
             && !only_on_atoms.contains(&atom.id())
         {
@@ -2712,7 +2709,7 @@ mod tests {
     }
 
     #[test]
-    fn add_hs_assignment_preserves_degree_zero_hydrogens_like_rdkit() {
+    fn add_hs_assignment_materializes_implicit_hydrogens_on_degree_zero_hydrogens_like_rdkit() {
         let mut builder = MoleculeBuilder::new();
         let oxygen = builder.add_atom(AtomSpec::new(Element::O));
         let first_hydrogen = builder.add_atom(AtomSpec::new(Element::H));
@@ -2721,19 +2718,40 @@ mod tests {
 
         let assignment = add_hs_assignment(read(&molecule), &AddHsParams::default()).unwrap();
 
-        assert_eq!(assignment.hydrogens_to_add.len(), 2);
-        assert!(
+        assert_eq!(assignment.hydrogens_to_add.len(), 4);
+        assert_eq!(
             assignment
                 .hydrogens_to_add
                 .iter()
-                .all(|hydrogen| hydrogen.heavy_atom == oxygen)
+                .map(|hydrogen| hydrogen.heavy_atom)
+                .collect::<Vec<_>>(),
+            vec![oxygen, oxygen, first_hydrogen, second_hydrogen]
         );
         assert!(
             assignment
                 .hydrogens_to_add
                 .iter()
-                .all(|hydrogen| hydrogen.heavy_atom != first_hydrogen
-                    && hydrogen.heavy_atom != second_hydrogen)
+                .all(|hydrogen| hydrogen.is_implicit)
+        );
+    }
+
+    #[test]
+    fn add_hs_assignment_materializes_explicit_hydrogen_on_hydrogen_like_rdkit() {
+        let mut builder = MoleculeBuilder::new();
+        let hydrogen = builder.add_atom(AtomSpec::new(Element::H).with_explicit_hydrogens(1));
+        let molecule = builder.build().unwrap();
+
+        let assignment = add_hs_assignment(read(&molecule), &AddHsParams::default()).unwrap();
+
+        assert_eq!(assignment.hydrogens_to_add.len(), 1);
+        assert_eq!(assignment.hydrogens_to_add[0].heavy_atom, hydrogen);
+        assert!(!assignment.hydrogens_to_add[0].is_implicit);
+        assert_eq!(
+            assignment.atom_explicit_hydrogen_updates,
+            vec![AtomExplicitHydrogenUpdate {
+                atom: hydrogen,
+                explicit_hydrogens: 0,
+            }]
         );
     }
 

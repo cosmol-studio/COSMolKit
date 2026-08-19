@@ -8,6 +8,7 @@ use crate::{
     Atom, AtomId, AtomQueryPredicate, Bond, BondDirection, BondId, BondOrder, BondQueryPredicate,
     BondStereo, ChiralTag, CoordinateDimension, QueryNode, SGroupBondRole, SGroupBracketStyle,
     SGroupConnection, SGroupData, StereoGroupKind, SubstanceGroup, SubstanceGroupKind,
+    ValenceAssignment,
 };
 use crate::{Molecule, RingInfo, UnsupportedFeatureError, find_sssr};
 
@@ -208,6 +209,14 @@ struct PreparedMol<'a> {
     aromatic_bonds: Vec<usize>,
     wedge_bonds: BTreeMap<usize, usize>,
     selected: SelectedCoordinates,
+    ring_info: RingInfo,
+    valence: ValenceAssignment,
+}
+
+#[derive(Clone, Copy)]
+struct MolfileStereoContext<'a> {
+    ring_info: &'a RingInfo,
+    valence: &'a ValenceAssignment,
 }
 
 fn prepare_mol_for_writing<'a>(
@@ -256,12 +265,15 @@ fn prepare_mol_for_writing<'a>(
         _ => find_sssr(mol.as_ref()).map_err(|e| MolWriteError::Value(e.to_string()))?,
     };
     let wedge_bonds = pick_bonds_to_wedge(mol.as_ref(), &ring_info);
+    let valence = molblock_valence_assignment(mol.as_ref())?;
 
     Ok(PreparedMol {
         molecule: mol,
         aromatic_bonds,
         wedge_bonds,
         selected,
+        ring_info,
+        valence,
     })
 }
 
@@ -577,7 +589,11 @@ fn mol_to_v3000_block_with_params(
     let aromatic_bonds = &prepared.aromatic_bonds;
     let wedge_bonds = &prepared.wedge_bonds;
     let selected = &prepared.selected;
-    validate_v3000_writer_subset(molecule, params.include_stereo)?;
+    let stereo_context = MolfileStereoContext {
+        ring_info: &prepared.ring_info,
+        valence: &prepared.valence,
+    };
+    validate_v3000_writer_subset(molecule, params.include_stereo, stereo_context)?;
     let chiral_flag = molfile_chiral_flag(molecule)?;
     let generated_sgroups = v3000_generated_zbo_sgroups(molecule);
 
@@ -640,6 +656,7 @@ fn mol_to_v3000_block_with_params(
                 aromatic_bonds,
                 wedge_bonds,
                 selected.coords.as_deref(),
+                stereo_context,
             )?);
             out.push('\n');
         }
@@ -723,7 +740,11 @@ fn mol_to_v2000_block_with_params(
     let aromatic_bonds = &prepared.aromatic_bonds;
     let wedge_bonds = &prepared.wedge_bonds;
     let selected = &prepared.selected;
-    validate_v2000_writer_subset(molecule, params.include_stereo)?;
+    let stereo_context = MolfileStereoContext {
+        ring_info: &prepared.ring_info,
+        valence: &prepared.valence,
+    };
+    validate_v2000_writer_subset(molecule, params.include_stereo, stereo_context)?;
     validate_v2000_coordinate_range(selected.coords.as_deref())?;
     let chiral_flag = molfile_chiral_flag(molecule)?;
 
@@ -781,6 +802,7 @@ fn mol_to_v2000_block_with_params(
             aromatic_bonds,
             wedge_bonds,
             selected.coords.as_deref(),
+            stereo_context,
         )?);
         out.push('\n');
     }
@@ -1120,6 +1142,7 @@ fn select_coordinates(
 fn validate_v2000_writer_subset(
     molecule: &Molecule,
     include_stereo: bool,
+    stereo_context: MolfileStereoContext<'_>,
 ) -> Result<(), MolWriteError> {
     if molecule.num_atoms() > 999
         || molecule.num_bonds() > 999
@@ -1177,7 +1200,7 @@ fn validate_v2000_writer_subset(
         }
         if include_stereo {
             let empty_wedge_bonds = BTreeMap::new();
-            v2000_bond_stereo_code(molecule, bond, &empty_wedge_bonds, None)?;
+            v2000_bond_stereo_code(molecule, bond, &empty_wedge_bonds, None, stereo_context)?;
             if bond.unknown_stereo() {
                 return Err(MolWriteError::UnsupportedSubset(
                     "bond stereochemistry MolBlock writing is not ported",
@@ -1192,6 +1215,7 @@ fn validate_v2000_writer_subset(
 fn validate_v3000_writer_subset(
     molecule: &Molecule,
     include_stereo: bool,
+    stereo_context: MolfileStereoContext<'_>,
 ) -> Result<(), MolWriteError> {
     if include_stereo {
         validate_v3000_stereo_groups(molecule)?;
@@ -1243,7 +1267,7 @@ fn validate_v3000_writer_subset(
         }
         if include_stereo {
             let empty_wedge_bonds = BTreeMap::new();
-            v3000_bond_cfg_code(molecule, bond, &empty_wedge_bonds, None)?;
+            v3000_bond_cfg_code(molecule, bond, &empty_wedge_bonds, None, stereo_context)?;
             if bond.unknown_stereo() {
                 return Err(MolWriteError::UnsupportedSubset(
                     "bond stereochemistry V3000 writing is not ported",
@@ -1554,7 +1578,8 @@ fn molfile_total_degree(
 fn should_be_crossed_bond_for_writer(
     molecule: &Molecule,
     bond: &Bond,
-) -> Result<bool, MolWriteError> {
+    context: MolfileStereoContext<'_>,
+) -> bool {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: shouldBeACrossedBond
     // RDKit✔️✔️: if (bond->getStereo() == Bond::STEREOANY) { ... return true; }
     // RDKit✔️✔️: if (bond->getStereo() != Bond::BondStereo::STEREONONE) { return false; }
@@ -1568,7 +1593,7 @@ fn should_be_crossed_bond_for_writer(
     // RDKit✔️✔️: return false;
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: shouldBeACrossedBond
     if bond.order() != BondOrder::Double {
-        return Ok(false);
+        return false;
     }
 
     let begin_idx = bond.begin().index();
@@ -1581,26 +1606,26 @@ fn should_be_crossed_bond_for_writer(
             if nbr_bond.direction() == BondDirection::Unknown
                 && nbr_bond.begin().index() == begin_idx
             {
-                return Ok(false);
+                return false;
             }
         }
         for neighbor in adjacency.neighbors_of(end_idx) {
             let nbr_bond = &molecule.bonds()[neighbor.bond.index()];
             if nbr_bond.direction() == BondDirection::Unknown && nbr_bond.begin().index() == end_idx
             {
-                return Ok(false);
+                return false;
             }
         }
-        return Ok(true);
+        return true;
     }
     if bond.stereo() != BondStereo::None {
-        return Ok(false);
+        return false;
     }
-    if !crate::stereo::is_bond_candidate_for_stereo(molecule, bond.id().index()) {
-        return Ok(false);
+    if !is_bond_potential_stereo_bond_for_writer(molecule, bond, context) {
+        return false;
     }
     if bond.direction() == BondDirection::EitherDouble {
-        return Ok(true);
+        return true;
     }
 
     // RDKit✔️✔️: const auto beginAtom = bond->getBeginAtom();
@@ -1608,13 +1633,12 @@ fn should_be_crossed_bond_for_writer(
     // RDKit✔️✔️: if (beginAtom->getDegree() > 1 && endAtom->getDegree() > 1 &&
     // RDKit✔️✔️:     (beginAtom->getTotalValence() - beginAtom->getTotalDegree()) == 1 &&
     // RDKit✔️✔️:     (endAtom->getTotalValence() - endAtom->getTotalDegree()) == 1) {
-    let valence = molblock_valence_assignment(molecule)?;
     let has_one_unsaturation = |atom_idx: usize| {
         let atom = &molecule.atoms()[atom_idx];
         let degree = adjacency.neighbors_of(atom_idx).len();
-        let total_valence =
-            valence.explicit_valence[atom_idx] + valence.implicit_hydrogens[atom_idx].max(0);
-        let total_degree = molfile_total_degree(molecule, atom, &valence);
+        let total_valence = context.valence.explicit_valence[atom_idx]
+            + context.valence.implicit_hydrogens[atom_idx].max(0);
+        let total_degree = molfile_total_degree(molecule, atom, context.valence);
         degree > 1 && total_valence - total_degree == 1
     };
     if has_one_unsaturation(begin_idx) && has_one_unsaturation(end_idx) {
@@ -1625,17 +1649,89 @@ fn should_be_crossed_bond_for_writer(
         // RDKit✔️✔️:   if (canBeStereoBond(bond)) {
         // RDKit✔️✔️:     return true;  // crossed double bond
         // RDKit✔️✔️:   }
-        if can_be_stereo_bond_for_writer(molecule, bond)? {
-            return Ok(true);
+        if can_be_stereo_bond_for_writer(molecule, bond) {
+            return true;
         }
         // RDKit✔️✔️: }
     }
 
     // RDKit✔️✔️: return false;  // NOT crossed double bond
-    Ok(false)
+    false
 }
 
-fn can_be_stereo_bond_for_writer(molecule: &Molecule, bond: &Bond) -> Result<bool, MolWriteError> {
+fn is_bond_potential_stereo_bond_for_writer(
+    molecule: &Molecule,
+    bond: &Bond,
+    context: MolfileStereoContext<'_>,
+) -> bool {
+    // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FindStereo.cpp :: isBondPotentialStereoBond
+    // RDKit✔️✔️: bool isBondPotentialStereoBond(const Bond *bond) {
+    // RDKit✔️✔️:   PRECONDITION(bond, "bond is null");
+    // RDKit✔️✔️:   if (bond->getBondType() != Bond::BondType::DOUBLE) {
+    if bond.order() != BondOrder::Double {
+        // RDKit✔️✔️:     return false;
+        return false;
+        // RDKit✔️✔️:   }
+    }
+    // RDKit✔️✔️:   const auto beginAtom = bond->getBeginAtom();
+    // RDKit✔️✔️:   auto begDegree = beginAtom->getTotalDegree();
+    // RDKit✔️✔️:   const auto endAtom = bond->getEndAtom();
+    // RDKit✔️✔️:   auto endDegree = endAtom->getTotalDegree();
+    let adjacency = &molecule.topology_block().adjacency;
+    let total_hydrogens_without_neighbors = |atom_idx: usize| {
+        usize::from(molecule.atoms()[atom_idx].explicit_hydrogens())
+            + context.valence.implicit_hydrogens[atom_idx].max(0) as usize
+    };
+    let total_degree = |atom_idx: usize| {
+        adjacency.neighbors_of(atom_idx).len() + total_hydrogens_without_neighbors(atom_idx)
+    };
+    let begin_idx = bond.begin().index();
+    let end_idx = bond.end().index();
+    let begin_degree = total_degree(begin_idx);
+    let end_degree = total_degree(end_idx);
+    // RDKit✔️✔️:   if (begDegree > 1 && begDegree < 4 && endDegree > 1 && endDegree < 4 &&
+    // RDKit✔️✔️:       beginAtom->getTotalNumHs(true) < 2 && endAtom->getTotalNumHs(true) < 2) {
+    let total_hydrogens_with_neighbors = |atom_idx: usize| {
+        total_hydrogens_without_neighbors(atom_idx)
+            + adjacency
+                .neighbors_of(atom_idx)
+                .iter()
+                .filter(|neighbor| molecule.atoms()[neighbor.atom_index].atomic_number() == 1)
+                .count()
+    };
+    if begin_degree > 1
+        && begin_degree < 4
+        && end_degree > 1
+        && end_degree < 4
+        && total_hydrogens_with_neighbors(begin_idx) < 2
+        && total_hydrogens_with_neighbors(end_idx) < 2
+    {
+        // RDKit✔️✔️:     const auto ri = bond->getOwningMol().getRingInfo();
+        // RDKit✔️✔️:     for (const auto &bring : ri->bondRings()) {
+        for ring in context.ring_info.bond_rings() {
+            // RDKit✔️✔️:       if (bring.size() < minRingSizeForDoubleBondStereo &&
+            // RDKit✔️✔️:           std::find(bring.begin(), bring.end(), bond->getIdx()) !=
+            // RDKit✔️✔️:               bring.end()) {
+            if ring.len() < 8 && ring.contains(&bond.id()) {
+                // RDKit✔️✔️:         return false;
+                return false;
+                // RDKit✔️✔️:       }
+            }
+            // RDKit✔️✔️:     }
+        }
+        // RDKit✔️✔️:     return true;
+        true
+        // RDKit✔️✔️:   } else {
+    } else {
+        // RDKit✔️✔️:     return false;
+        false
+        // RDKit✔️✔️:   }
+    }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FindStereo.cpp :: isBondPotentialStereoBond
+}
+
+fn can_be_stereo_bond_for_writer(molecule: &Molecule, bond: &Bond) -> bool {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: canBeStereoBond
     // RDKit✔️✔️: if (bond->getBondType() != Bond::BondType::DOUBLE &&
     // RDKit✔️✔️:     bond->getBondType() != Bond::BondType::AROMATIC) { return false; }
@@ -1655,10 +1751,9 @@ fn can_be_stereo_bond_for_writer(molecule: &Molecule, bond: &Bond) -> Result<boo
     // RDKit✔️✔️: return true;
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: canBeStereoBond
     if !matches!(bond.order(), BondOrder::Double | BondOrder::Aromatic) {
-        return Ok(false);
+        return false;
     }
     let adjacency = &molecule.topology_block().adjacency;
-    let mut computed_cip_ranks: Option<Vec<u32>> = None;
     for atom_idx in [bond.begin().index(), bond.end().index()] {
         let mut nbr_ranks = Vec::new();
         for neighbor in adjacency.neighbors_of(atom_idx) {
@@ -1673,46 +1768,27 @@ fn can_be_stereo_bond_for_writer(molecule: &Molecule, bond: &Bond) -> Result<boo
                 nbr_bond.direction(),
                 BondDirection::EndUpRight | BondDirection::EndDownRight
             ) {
-                return Ok(false);
+                return false;
             }
             if nbr_bond.direction() == BondDirection::Unknown
                 && nbr_bond.begin().index() == atom_idx
             {
-                return Ok(false);
+                return false;
             }
             let other_atom = &molecule.atoms()[neighbor.atom_index];
             let rank = other_atom
-                .prop("_ChiralAtomRank")
-                .or_else(|| other_atom.prop("_CIPRank"))
+                .prop("_CIPRank")
                 .and_then(|value| value.parse::<i32>().ok())
-                .or_else(|| {
-                    if computed_cip_ranks.is_none() {
-                        computed_cip_ranks = Some(
-                            crate::stereo::assign_atom_cip_ranks(molecule)
-                                .map_err(|source| {
-                                    MolWriteError::Value(format!(
-                                        "MolBlock CIP rank assignment failed: {source}"
-                                    ))
-                                })
-                                .ok()?,
-                        );
-                    }
-                    computed_cip_ranks
-                        .as_ref()
-                        .and_then(|ranks| ranks.get(neighbor.atom_index))
-                        .copied()
-                        .map(|rank| rank as i32)
-                })
                 .unwrap_or(-1);
             if rank >= 0 {
                 if nbr_ranks.contains(&rank) {
-                    return Ok(false);
+                    return false;
                 }
                 nbr_ranks.push(rank);
             }
         }
     }
-    Ok(true)
+    true
 }
 
 fn v2000_bond_line(
@@ -1722,6 +1798,7 @@ fn v2000_bond_line(
     aromatic_bonds: &[usize],
     wedge_bonds: &BTreeMap<usize, usize>,
     coords: Option<&[[f64; 3]]>,
+    stereo_context: MolfileStereoContext<'_>,
 ) -> Result<String, MolWriteError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: BondGetMolFileSymbol / GetMolFileBondLine
     // RDKit❗✔️: if (bond->hasQuery()) { res = getQueryBondSymbol(bond); }
@@ -1732,7 +1809,8 @@ fn v2000_bond_line(
     // RDKit❗✔️: ss << std::setw(3) << symbol;
     // RDKit❗✔️: ss << " " << std::setw(2) << dirCode;
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: BondGetMolFileSymbol / GetMolFileBondLine
-    let (mut stereo_code, reverse) = v2000_bond_stereo_code(molecule, bond, wedge_bonds, coords)?;
+    let (mut stereo_code, reverse) =
+        v2000_bond_stereo_code(molecule, bond, wedge_bonds, coords, stereo_context)?;
     // RDKit✔️✔️: do not cross bonds which were aromatic before kekulization.
     if aromatic_bonds.contains(&bond.id().index()) && stereo_code == 3 {
         stereo_code = 0;
@@ -1761,6 +1839,7 @@ fn v2000_bond_stereo_code(
     bond: &Bond,
     wedge_bonds: &BTreeMap<usize, usize>,
     coords: Option<&[[f64; 3]]>,
+    stereo_context: MolfileStereoContext<'_>,
 ) -> Result<(u32, bool), MolWriteError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: GetMolFileBondStereoInfo
     // RDKit❗✔️: reverse = false;
@@ -1788,7 +1867,8 @@ fn v2000_bond_stereo_code(
     // RDKit❗✔️: UNKNOWN single bond -> 4
     // RDKit❗✔️: BEGINDASH -> 6
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetMolFileBondLine stereo dirCode branch
-    let (dir, reverse) = molfile_bond_stereo_info(molecule, bond, wedge_bonds, coords)?;
+    let (dir, reverse) =
+        molfile_bond_stereo_info(molecule, bond, wedge_bonds, coords, stereo_context)?;
     Ok((molfile_bond_dir_code(dir), reverse))
 }
 
@@ -1797,6 +1877,7 @@ fn molfile_bond_stereo_info(
     bond: &Bond,
     wedge_bonds: &BTreeMap<usize, usize>,
     coords: Option<&[[f64; 3]]>,
+    stereo_context: MolfileStereoContext<'_>,
 ) -> Result<(BondDirection, bool), MolWriteError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: GetMolFileBondStereoInfo
     // RDKit✔️✔️: reverse = false;
@@ -1836,7 +1917,7 @@ fn molfile_bond_stereo_info(
             reverse = true;
         }
     } else if bond.order() == BondOrder::Double
-        && should_be_crossed_bond_for_writer(molecule, bond)?
+        && should_be_crossed_bond_for_writer(molecule, bond, stereo_context)
     {
         dir = BondDirection::EitherDouble;
     }
@@ -2017,6 +2098,7 @@ fn v3000_bond_line(
     aromatic_bonds: &[usize],
     wedge_bonds: &BTreeMap<usize, usize>,
     coords: Option<&[[f64; 3]]>,
+    stereo_context: MolfileStereoContext<'_>,
 ) -> Result<String, MolWriteError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetV3000MolFileBondLine
     // RDKit❗✔️: ss << "M  V30 " << bond->getIdx() + 1;
@@ -2029,7 +2111,8 @@ fn v3000_bond_line(
     // RDKit❗✔️: if (bond->getPropIfPresent(common_properties::_MolFileBondEndPts, sprop) && sprop != "0") { ss << " ENDPTS=" << sprop; }
     // RDKit❗✔️: if (bond->getPropIfPresent(common_properties::_MolFileBondAttach, sprop) && sprop != "0") { ss << " ATTACH=" << sprop; }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetV3000MolFileBondLine
-    let (mut cfg, reverse) = v3000_bond_cfg_code(molecule, bond, wedge_bonds, coords)?;
+    let (mut cfg, reverse) =
+        v3000_bond_cfg_code(molecule, bond, wedge_bonds, coords, stereo_context)?;
     let (begin_idx, end_idx) = if reverse {
         (bond.end().index(), bond.begin().index())
     } else {
@@ -2046,7 +2129,7 @@ fn v3000_bond_line(
     if aromatic_bonds.contains(&bond.id().index())
         && cfg == Some(2)
         && matches!(
-            molfile_bond_stereo_info(molecule, bond, wedge_bonds, coords)?.0,
+            molfile_bond_stereo_info(molecule, bond, wedge_bonds, coords, stereo_context)?.0,
             BondDirection::EitherDouble
         )
     {
@@ -2070,6 +2153,7 @@ fn v3000_bond_cfg_code(
     bond: &Bond,
     wedge_bonds: &BTreeMap<usize, usize>,
     coords: Option<&[[f64; 3]]>,
+    stereo_context: MolfileStereoContext<'_>,
 ) -> Result<(Option<u32>, bool), MolWriteError> {
     // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Chirality.cpp :: GetMolFileBondStereoInfo
     // RDKit❗✔️: reverse = false;
@@ -2097,7 +2181,8 @@ fn v3000_bond_cfg_code(
     // RDKit❗✔️: EITHERDOUBLE double bond -> CFG=2
     // RDKit❗✔️: BEGINDASH -> CFG=3
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/FileParsers/MolFileWriter.cpp :: GetV3000MolFileBondLine stereo CFG branch
-    let (dir, reverse) = molfile_bond_stereo_info(molecule, bond, wedge_bonds, coords)?;
+    let (dir, reverse) =
+        molfile_bond_stereo_info(molecule, bond, wedge_bonds, coords, stereo_context)?;
     let cfg = match molfile_bond_dir_code(dir) {
         0 => None,
         1 => Some(1),

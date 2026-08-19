@@ -2302,7 +2302,12 @@ pub(crate) fn rdkit_atomic_mass(atomic_number: u8, isotope: Option<u16>) -> f64 
     // BEGIN RDKIT CPP FUNCTION Atom::getMass / PeriodicTable::getAtomicWeight / PeriodicTable::getMassForIsotope
     // RDKit✔️✔️: double Atom::getMass() const {
     // RDKit✔️✔️:   if (d_isotope) {
-    // RDKit✔️✔️:     return PeriodicTable::getTable()->getMassForIsotope(d_atomicNum, d_isotope);
+    // RDKit✔️✔️:     double res =
+    // RDKit✔️✔️:         PeriodicTable::getTable()->getMassForIsotope(d_atomicNum, d_isotope);
+    // RDKit✔️✔️:     if (d_atomicNum != 0 && res == 0.0) {
+    // RDKit✔️✔️:       res = d_isotope;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     return res;
     // RDKit✔️✔️:   } else {
     // RDKit✔️✔️:     return PeriodicTable::getTable()->getAtomicWeight(d_atomicNum);
     // RDKit✔️✔️:   }
@@ -2330,10 +2335,15 @@ pub(crate) fn rdkit_atomic_mass(atomic_number: u8, isotope: Option<u16>) -> f64 
         .copied()
         .unwrap_or(0.0);
     if let Some(isotope) = isotope {
-        RDKIT_ISOTOPE_MASSES
+        let isotope_mass = RDKIT_ISOTOPE_MASSES
             .binary_search_by_key(&(atomic_number, isotope), |&(key, _)| key)
             .map(|index| RDKIT_ISOTOPE_MASSES[index].1)
-            .unwrap_or(0.0)
+            .unwrap_or(0.0);
+        if atomic_number != 0 && isotope_mass == 0.0 {
+            f64::from(isotope)
+        } else {
+            isotope_mass
+        }
     } else {
         atomic_weight
     }
@@ -2693,6 +2703,13 @@ mod tests {
         }
         assert_eq!(super::rdkit_atomic_number_from_symbol("Uut"), Some(113));
         assert_eq!(super::rdkit_atomic_number_from_symbol("Uup"), Some(115));
+    }
+
+    #[test]
+    fn rdkit_atomic_mass_preserves_split_source_rows_and_unknown_isotope_fallback() {
+        assert_eq!(super::rdkit_atomic_mass(20, Some(47)), 46.954546);
+        assert_eq!(super::rdkit_atomic_mass(20, Some(999)), 999.0);
+        assert_eq!(super::rdkit_atomic_mass(0, Some(999)), 0.0);
     }
 
     #[test]

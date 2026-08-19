@@ -1,16 +1,10 @@
 use super::*;
 
 #[mol_op_body(sanitize, parts)]
-pub(super) fn sanitize_impl(ops: crate::SanitizeOps) -> Result<OpOutcome, OperationError> {
+pub(super) fn sanitize_impl(ops: crate::SanitizeOps) -> Result<(), OperationError> {
     let mut parts = parts;
-    let changed = run_sanitize_pipeline(&mut parts, ops, &SANITIZE_SPEC)?;
-    Ok(if changed {
-        OpOutcome::Changed
-    } else {
-        OpOutcome::NoOp {
-            reason: "requested sanitize steps only updated derived state",
-        }
-    })
+    run_sanitize_pipeline(&mut parts, ops, &SANITIZE_SPEC)?;
+    Ok(())
 }
 
 fn sanitize_error(
@@ -153,6 +147,7 @@ pub(super) fn run_sanitize_pipeline_on_topology(
     // RDKit✔️✔️:                  unsigned int sanitizeOps) {
     // RDKit✔️✔️:   // clear out any cached properties
     // RDKit✔️✔️:   mol.clearComputedProps();
+    parts.clear_computed_properties();
     parts.clear_cache(SANITIZE_SPEC.needs_update());
     macro_rules! sanitize_read {
         ($read:ident => $body:expr) => {{

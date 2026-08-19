@@ -603,10 +603,9 @@ def test_fingerprint_and_stereo_outputs_are_structurally_reasonable():
     assert result.fingerprint().n_bits() == 256
     assert len(additional.atom_counts()) == len(chiral)
     assert isinstance(additional.bit_info_map(), dict)
-    with pytest.raises(ValueError, match="avalon_fingerprint.*not implemented"):
-        chiral.avalon_fingerprint(n_bits=256)
-    with pytest.raises(ValueError, match="topological_fingerprint.*not implemented"):
-        chiral.topological_fingerprint(n_bits=256)
+    avalon = chiral.avalon_fingerprint(n_bits=256, bit_flags=0x007FFF)
+    assert avalon.n_bits() == 256
+    assert chiral.topological_fingerprint(fp_size=256).n_bits() == 256
     assert chiral.maccs_fingerprint().n_bits() == 166
     chiral.perceive_stereochemistry()
 

@@ -195,6 +195,13 @@ GENERATOR_SPECS = [
         {"default", "strict-corpus", "fingerprint"},
     ),
     spec(
+        "rdkit_topological_fingerprint_golden",
+        "rdkit_topological_fingerprint.jsonl",
+        "fingerprint",
+        {"default", "strict-corpus", "fingerprint"},
+        generator_dependencies=("rdkit_topological_fingerprint_profile.json",),
+    ),
+    spec(
         "sdf_write_golden",
         "sdf_write.jsonl",
         "sdf",

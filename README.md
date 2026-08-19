@@ -16,38 +16,41 @@
   <a href="https://pypi.org/project/cosmolkit/">
     <img src="https://img.shields.io/pypi/v/cosmolkit.svg" alt="pypi badge"/>
   </a>
+  <a href="https://deepwiki.com/cosmol-studio/COSMolKit">
+    <img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"/>
+  </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license badge"/>
   </a>
 </p>
 
-[COSMolKit](https://github.com/cosmol-studio/COSMolKit) is a Rust-native cheminformatics and structural biology toolkit with first-class Python bindings. It provides molecular graph operations, SMILES/SMARTS and molecular file workflows, 2D depiction, native 3D conformer generation, UFF/MMFF optimization, fingerprints, molecular descriptors, InChI, batch processing, and protein structure APIs.
+[COSMolKit](https://github.com/cosmol-studio/COSMolKit) is a Rust-native cheminformatics and structural biology toolkit with first-class Python bindings. It provides molecular graph operations, SMILES/SMARTS and molecular file workflows, 2D depiction, native 3D conformer generation, UFF/MMFF optimization, fingerprints, molecular descriptors, InChI, batch processing, and protein structure APIs. Selected workflows are also available directly in the browser through the [COSMolKit Web Tools](https://tools.cosmol.org/tools).
 
-For supported cheminformatics operations, RDKit-compatible behavior is treated as the correctness floor. COSMolKit uses boundary-scoped parity claims: a feature is considered parity-covered only when its documented reference surface passes the required exact or numerical comparisons. Fixed reference oracles, source-backed implementations where reference semantics require them, committed regression corpora, and explicit unsupported-state handling are used together; aggregate success rates or approximate similarity are not treated as substitutes for behavioral parity.
+
+For supported cheminformatics operations, RDKit-compatible behavior is treated as the correctness floor. COSMolKit uses boundary-scoped parity claims: a feature is considered parity-covered only when its documented reference surface passes the required exact or numerical comparisons. Fixed reference oracles, source-backed implementations where reference semantics require them, committed regression corpora, and explicit capability boundaries are used together; aggregate success rates or approximate similarity are not treated as substitutes for behavioral parity.
 
 COSMolKit combines a native Rust API with Python interfaces designed for array-oriented scientific and machine-learning workflows. Molecular graphs, coordinates, fingerprints, bounds matrices, and structural data are exposed in forms suitable for NumPy, PyTorch, dataset processing, and model-building pipelines.
 
 ## Documentation
 
-- Python documentation: <https://kit.cosmol.org/>
-- Rust crate notes: [`crates/cosmolkit/README.md`](crates/cosmolkit/README.md)
-- Feature parity scope: [`dev/parity_scope.md`](dev/parity_scope.md)
+* Python documentation: https://kit.cosmol.org/
+* Interactive Web Tools: https://tools.cosmol.org/tools
+* Rust crate notes: [`crates/cosmolkit/README.md`](crates/cosmolkit/README.md)
+* Feature parity scope: [`dev/parity_scope.md`](dev/parity_scope.md)
 
 ## Validation Status
 
-COSMolKit is extensively agent-driven, but compatibility-critical chemistry is not independently reimplemented from descriptions or approximated heuristically. Where reference behavior matters, implementations follow source-backed ports with explicit operation contracts, pinned RDKit/upstream oracles, and strict parity gates. Agents accelerate implementation; the reference source and parity tests constrain what counts as correct. COSMolKit does not infer reference semantics from final-output agreement: it source-ports reference behavior, verifies intermediate molecular states and invariants, and makes mutation explicit—because matching outputs alone cannot make a heuristic reimplementation trustworthy.
+COSMolKit treats parity as **source-backed semantic equivalence within explicitly documented boundaries**, not as statistical agreement of final outputs. Compatibility-critical chemistry is implemented as a line-by-line, source-backed port with explicit operation contracts and traceable correspondence to pinned upstream code. Validation corpora verify that port; they are not used to iteratively tune heuristic reimplementations until outputs happen to agree.
 
-A parity claim is made only for a documented behavioral boundary that closes exactly or within an explicit numerical tolerance. **99% or 99.9% agreement remains unfinished when mismatches exist.** Unsupported branches fail explicitly rather than returning plausible substitutes. This source-first workflow is designed to minimize **semantic debt**: small heuristic deviations are not allowed to accumulate into undocumented behavioral differences that later require layers of corrective patches. By resolving reference semantics at implementation time and locking them with reproducible parity tests, COSMolKit aims to prevent locally reasonable approximations from becoming systemic chemistry errors discovered only through downstream corpus testing.
+The comparison boundary therefore extends well beyond final strings. Covered surfaces compare exact bytes, bits, return status, complete atom and bond state, stereochemistry, derived state and invariants, **RNG state, seed handling, and random draw sequences where stochastic behavior is part of the contract**, every matrix entry, coordinates, energies, and every gradient component where applicable. Discrete results must match exactly; declared numerical tolerances reach `1e-8` for matrix entries and `1e-6` for coordinates, energies, and gradients. **99% or 99.9% agreement remains unfinished when any covered mismatch exists.**
 
-Current parity-covered surfaces include molecular graph state, SMILES branch behavior, distance geometry, ETKDG, UFF/MMFF, molecular descriptors, Morgan/MACCS fingerprints, molecular I/O, depiction, and the supported InChI APIs. Representative gates include:
+This boundary is stress-tested against a complete ChEMBL 37 profile: 2,897,819 source records, 2,897,804 of them mutually parseable, across 22 sharded test phases against pinned RDKit `2026.03.1`. The profile performs billions of comparisons, expands parameter spaces into matrices of up to 768 branches, repeats complete matrices to expose instability, permutes operation order, and checks scalar, one-thread, multi-thread, batch, and shared-object concurrent paths.
 
-* **ETKDG:** bounds matrices to `1e-8`; covered fixed-seed coordinates to `1e-6` versus pinned RDKit.
-* **UFF/MMFF:** 5,000 molecules for parameter availability, MMFF atom types and charges; curated cases additionally require energy, every gradient component, optimizer result, and final coordinates within `1e-6`.
-* **Descriptors:** covered floating-point outputs are checked against pinned RDKit bit patterns.
-* **Fingerprints:** supported Morgan and MACCS branches require exact RDKit equality; unfinished APIs do not substitute approximate vectors.
-* **InChI:** the production implementation is pure Rust and source-backed against official InChI v1.07.5 semantics; the strict 5,000-molecule profile requires exact InChI equality on every row. Defined upstream behavior is reproduced; upstream undefined behavior is isolated and mapped to explicit structured Rust errors rather than disguised as parity.
+Every discovered mismatch is traced back to the corresponding upstream logic, corrected at the source-port level, and permanently retained as a focused regression rather than hidden by corpus-specific adjustments. This discipline limits **semantic debt** by preventing convenient local fixes from accumulating into undocumented chemistry behavior.
 
-See [`dev/parity_scope.md`](dev/parity_scope.md) for the exact feature boundaries, reference versions, comparison fields, tolerances, and unfinished surfaces.
+The parity suite uses three complementary validation layers. The complete ChEMBL 37 profile provides large-scale stress coverage; the maintained 5,000-record corpus runs exhaustive parameter matrices not yet practical across the full ChEMBL profile; and the 152-record project corpus keeps focused regressions fast enough for daily testing.
+
+See [`dev/parity_scope.md`](dev/parity_scope.md) for exact corpus eligibility, comparison counts, tolerances, per-feature boundaries, retained-case replays, and upstream surfaces outside the current claim.
 
 ## Installation
 
@@ -223,7 +226,8 @@ inputs until a trusted graph has been constructed.
 - 2D coordinate generation and SVG/PNG depiction
 - Native 3D conformer generation with DG/KDG/ETDG/ETKDG parameter presets
 - UFF/MMFF optimization of generated or imported 3D conformers
-- Morgan and MACCS fingerprints for the validated exact-parity branches
+- Morgan, MACCS, RDKit topological, and Avalon fingerprints for the validated
+  exact-parity branches
 - Distance-geometry bounds matrices
 - Substructure matching and SMARTS parse metadata
 - Ordered batch transforms and exports
@@ -239,7 +243,10 @@ model-building workflows.
 - Correctness comes before breadth.
 - Public transforms use value semantics.
 - Mutation-capable workflows are explicit.
-- Unsupported chemistry should fail clearly.
+- **Fail-closed capability boundaries:** a separately named capability outside
+  documented support returns a structured error rather than fabricated
+  chemistry. This is an API design rule, not an accepted mismatch within a
+  supported feature.
 - RDKit-parity behavior is the correctness floor for supported
   cheminformatics features.
 - High-throughput APIs should preserve input order and expose per-record
@@ -282,7 +289,9 @@ Status labels:
 
 The ✅ status applies to the documented COSMolKit scope. It does not claim that
 every API or input branch from an upstream reference library is implemented;
-behavior outside that scope must continue to fail explicitly.
+separately named upstream capabilities outside that scope are not represented
+as implemented. Every path inside a parity-covered boundary is still required
+to match; individual failing rows cannot be reclassified as out of scope.
 
 ### Chemistry Core
 
@@ -306,9 +315,10 @@ Goal: keep the supported molecular core correct before expanding breadth.
   allocation behavior returns a structured error
 - ✅ Morgan fingerprints and Tanimoto similarity for the validated exact-parity branches
 - ✅ MACCS fingerprints for the validated exact raw/public projection
-- 🚧 RDKFingerprint/topological and Avalon fingerprints fail closed until
-  the [source-exact follow-up plan](dev/plans/rdkit_topological_avalon_fingerprint_port_plan.md)
-  is completed with exact-bit parity
+- ✅ Source-backed RDKFingerprint/topological and Avalon fingerprints with
+  exact maintained-corpus validation (topological: 5,000 rows × 14 profiles;
+  Avalon: 5,000 rows × 23 profiles), including optional topological atom/bit
+  provenance
 - ✅ Substructure matching and Python SMARTS parse metadata
 - ✅ Molecular descriptors: average/exact molecular weight, formula, H-bond
   donor/acceptor counts, fraction Csp3, Crippen logP/MR, TPSA, aromatic-ring
@@ -376,11 +386,12 @@ Goal: expose verified molecular behavior through a practical Python interface.
 
 ### Browser and Deployment
 
-Goal: support lightweight chemistry workflows outside native Python processes.
+Goal: make validated COSMolKit functionality usable without requiring a local Python or Rust installation.
 
-- 🚧 WASM compilation target
-- 🚧 JavaScript bindings
-- 🚧 Browser-native SMILES/SDF parsing and depiction
+* ✅ [COSMolKit Web Tools](https://tools.cosmol.org/tools) for browser-based molecular workflows
+* ✅ Browser-native deployment of selected COSMolKit functionality through WebAssembly
+* 🚧 Broader JavaScript bindings
+* 🚧 Expansion of browser-native chemistry and structural-biology workflows
 
 ## Respect for RDKit
 

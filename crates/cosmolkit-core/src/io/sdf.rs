@@ -12006,6 +12006,56 @@ $$$$
     }
 
     #[test]
+    fn read_v3000_unknown_single_bond_sets_crossed_double_bond_controls_like_rdkit() {
+        let mut counts_line = "  0  0  0  0  0            999".to_string();
+        while counts_line.len() < 34 {
+            counts_line.push(' ');
+        }
+        counts_line.push_str("V3000");
+        let input = format!(
+            "\
+v3000-crossed-double-bond
+  COSMolKit
+
+{counts_line}
+M  V30 BEGIN CTAB
+M  V30 COUNTS 4 3 0 0 0
+M  V30 BEGIN ATOM
+M  V30 1 C -1.0 0.0 0.0 0
+M  V30 2 C 1.0 0.0 0.0 0
+M  V30 3 F -1.0 1.0 0.0 0
+M  V30 4 Cl 1.0 -1.0 0.0 0
+M  V30 END ATOM
+M  V30 BEGIN BOND
+M  V30 1 2 1 2
+M  V30 2 1 3 1 CFG=2
+M  V30 3 1 2 4
+M  V30 END BOND
+M  V30 END CTAB
+M  END
+$$$$
+"
+        );
+
+        let record = read_sdf_from_str_with_params(
+            &input,
+            SdfReadParams {
+                sanitize: false,
+                remove_hs: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let double_bond = &record.molecule.bonds()[0];
+        assert_eq!(double_bond.stereo(), BondStereo::Any);
+        assert_eq!(
+            double_bond.stereo_atoms(),
+            Some([AtomId::new(2), AtomId::new(3)])
+        );
+    }
+
+    #[test]
     fn read_sdf_from_str_reads_v3000_rgroups_and_ignores_unknown_props_like_rdkit() {
         let mut counts_line = "  0  0  0  0  0            999".to_string();
         while counts_line.len() < 34 {

@@ -238,3 +238,43 @@ fn dg_bounds_matrix_matches_rdkit_golden_in_parallel_batch() {
         }
     }
 }
+
+#[test]
+fn dg_bounds_matrix_explicit_sulfur_hydrogen_matches_pinned_rdkit() {
+    let molecule = Molecule::from_smiles("C[SH+][O-]").expect("explicit sulfur hydrogen");
+
+    let actual = molecule.dg_bounds_matrix().expect("RDKit bounds path");
+    let expected = [
+        [0.0, 1.786_838_813_449_356_2, 2.863_126_902_897_991_3],
+        [1.766_838_813_449_356_2, 0.0, 1.689_472_654_030_108],
+        [2.783_126_902_897_991_3, 1.669_472_654_030_108, 0.0],
+    ];
+
+    assert_eq!(actual.len(), expected.len());
+    for (actual_row, expected_row) in actual.iter().zip(expected) {
+        assert_eq!(actual_row.len(), expected_row.len());
+        for (&actual_value, expected_value) in actual_row.iter().zip(expected_row) {
+            assert!((actual_value - expected_value).abs() < 1.0e-14);
+        }
+    }
+}
+
+#[test]
+fn dg_bounds_matrix_tetrahedral_sulfur_uses_source_chiral_hybridization() {
+    let molecule = Molecule::from_smiles("C[S@@](O)(N)F").expect("tetrahedral sulfur");
+
+    let actual = molecule.dg_bounds_matrix().expect("RDKit bounds path");
+    let expected_sulfur_neighbor_bounds = [
+        (0, 1.788_783_963_761_604_3, 1.808_783_963_761_604_3),
+        (2, 1.691_420_345_007_524_5, 1.711_420_345_007_524_5),
+        (3, 1.738_998_153_953_875_2, 1.758_998_153_953_875_3),
+        (4, 1.685_645_058_687_724, 1.705_645_058_687_724),
+    ];
+
+    for (neighbor, expected_lower, expected_upper) in expected_sulfur_neighbor_bounds {
+        let high = 1usize.max(neighbor);
+        let low = 1usize.min(neighbor);
+        assert!((actual[high][low] - expected_lower).abs() < 1.0e-14);
+        assert!((actual[low][high] - expected_upper).abs() < 1.0e-14);
+    }
+}

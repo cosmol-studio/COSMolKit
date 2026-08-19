@@ -7140,6 +7140,12 @@ fn rdkit_depict_ordering_cip_ranks(
                 .and_then(|value| value.parse::<u32>().ok())
         })
         .collect::<Option<Vec<_>>>();
+    // RDKit✔️✔️: if (!force && mol.hasProp(common_properties::_StereochemDone)) {
+    // RDKit✔️✔️:   return;
+    // RDKit✔️✔️: }
+    if depict_mol.prop("_StereochemDone").is_some() {
+        return Ok(existing_cip_ranks.unwrap_or_default());
+    }
     if let Some(ranks) = existing_cip_ranks {
         return Ok(ranks);
     }
@@ -7279,9 +7285,10 @@ pub(crate) fn compute_2d_coords_with_options(
 // RDKit✔️✔️: };
 // RDKit❗✔️: unsigned int compute2DCoords(RDKit::ROMol &mol,
 // RDKit❗✔️:                              const Compute2DCoordParameters &params);
-pub(crate) fn compute_2d_coords_with_params(
+fn compute_2d_coords_with_molecule_state(
     atoms: &[Atom],
     bonds: &[Bond],
+    stereochemistry_done: bool,
     params: &Compute2DCoordParameters<'_>,
 ) -> Result<Vec<[f64; 2]>, Coordinate2DError> {
     // BEGIN RDKIT CPP FUNCTION: compute2DCoords params overload (RDDepictor.cpp CoordGen routing)
@@ -7308,6 +7315,9 @@ pub(crate) fn compute_2d_coords_with_params(
         ));
     }
     let mut depict_mol = build_rdkit_depict_molecule_from_slices(atoms, bonds)?;
+    if stereochemistry_done {
+        depict_mol.properties_mut().set_prop("_StereochemDone", "1");
+    }
     let cip_ranks = rdkit_depict_ordering_cip_ranks(&mut depict_mol)?;
     let depict_atoms = depict_mol.atoms();
     let depict_bonds = depict_mol.bonds();
@@ -7378,6 +7388,28 @@ pub(crate) fn compute_2d_coords_with_params(
         }
     }
     Ok(coords)
+}
+
+pub(crate) fn compute_2d_coords_with_params(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    params: &Compute2DCoordParameters<'_>,
+) -> Result<Vec<[f64; 2]>, Coordinate2DError> {
+    compute_2d_coords_with_molecule_state(atoms, bonds, false, params)
+}
+
+pub(crate) fn compute_2d_coords_with_properties_and_params(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    properties: &crate::MoleculeProperties,
+    params: &Compute2DCoordParameters<'_>,
+) -> Result<Vec<[f64; 2]>, Coordinate2DError> {
+    compute_2d_coords_with_molecule_state(
+        atoms,
+        bonds,
+        properties.prop("_StereochemDone").is_some(),
+        params,
+    )
 }
 
 // BEGIN RDKIT CPP FUNCTION: compute2DCoordsMimicDistMat (RDDepictor.h / RDDepictor.cpp)

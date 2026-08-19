@@ -36,7 +36,7 @@ Public-facing feature status should use one of the following categories:
 | `supported_with_rdkit_parity` | Implemented and tested against the pinned RDKit version |
 | `preserved_only` | Parsed or stored, but not semantically interpreted |
 | `experimental` | Available, but behavior may change |
-| `unsupported` | Not implemented and should fail explicitly |
+| `unsupported` | A separately named capability is not implemented and returns no result |
 
 The status `unknown` may be used only for internal triage. It should not appear as a public user-facing feature guarantee.
 
@@ -55,6 +55,14 @@ short public documentation
 Unsupported features must return a structured `UnsupportedFeature` error. They
 must not panic through `unimplemented!`, return empty results, or produce
 chemically meaningful-looking placeholder output.
+
+This is the project's **fail-closed design rule**. It applies only at an
+explicitly documented capability boundary: it prevents an unimplemented API or
+option family from fabricating a plausible result. It is not an allowed
+classification for a mismatching input inside a `supported` or
+`supported_with_rdkit_parity` boundary. Those statuses require all covered
+inputs and branches to pass; a failing row cannot be carved out and renamed
+unsupported.
 
 ### Policy invariant
 
@@ -792,16 +800,19 @@ Avoid vague errors that provide no actionable context.
 
 Chemical behavior should not be guessed casually.
 
-If the correct behavior is unclear, COSMolKit should prefer:
+If source-defined behavior is unclear during development, COSMolKit must not
+publish a guessed result as supported. Keep the separately named capability
+outside the support claim while investigating it through:
 
 ```text
-unsupported
-known mismatch
-explicit TODO
-parity investigation
+source inspection
+an explicit internal TODO
+an executable investigation case
+a structured capability-boundary error only when a public entry already exists
 ```
 
-over an unverified heuristic.
+An already supported boundary does not get this exception: any difference
+found there is a bug to fix and blocks the parity claim while open.
 
 ### Policy invariant
 

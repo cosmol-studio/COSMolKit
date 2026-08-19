@@ -72,7 +72,7 @@ This enables:
 ```text
 Molecule invariant checks
 OpParts operation contract checks
-operation body invalidation/handled-state checks
+operation body derived-effect and trace checks
 ```
 
 Agents must not validate topology-operation changes with plain
@@ -152,23 +152,41 @@ confirming the design exception with the human author.
 
 Topology-related public operations must be registered through `molecule_ops!`.
 
-Each registered operation must declare:
+Every generated `MoleculeOpSpec` contains:
 
 ```text
 method
 impl_fn
 domain
 kind
+topology_edit
+access
 may_mutate
+auto_remap
 derived_effects
+semantic_preconditions
 requires_mapping
-allows_noop
-feature
+support
 parity
 io_roundtrip
-invariant_profile
-parity_profile when parity is not not_applicable
 ```
+
+Registry entries explicitly provide `method`, `impl_fn`, `kind`, `access`,
+`derived_effects`, `feature`, `parity`, and `invariant_profile`. Every parity
+policy other than `not_applicable` also requires `parity_profile`. Other
+inputs have defined macro defaults, although behaviorally meaningful
+non-defaults should remain explicit for review.
+
+For molecule operations, `derived_effects` has exactly three independent,
+pairwise-disjoint categories: `recompute`, `preserve`, and `invalidate`.
+Derived-cache read authority comes from block-level `access`; `preserve` does
+not grant read permission, and there is currently no per-cache-item read
+capability. Unsupported source behavior is returned as a structured operation
+error rather than encoded as a derived effect. The complete model is defined in
+[`derived_effects_permission_model.md`](./derived_effects_permission_model.md).
+Here, unsupported denotes an explicitly separate capability outside the
+declared support boundary, never a mismatching case inside a parity-covered
+surface.
 
 The generated matrices are the source of truth:
 
@@ -209,24 +227,24 @@ Large block cloning happens only through registry-checked begin methods such as
 `begin_topology_mut()`.
 ```
 
-Operation bodies must access mutable molecule state only through `OpParts`
-methods:
+Operation bodies must access mutable molecule state only through scoped
+`OpParts` methods:
 
 ```text
-begin_topology_mut()
-commit_topology(...)
-begin_coordinates_mut()
-commit_coordinates(...)
-begin_properties_mut()
-commit_properties(...)
+with_topology_mut(...)
+with_coordinates_mut(...)
+with_topology_and_properties_mut(...)
+with_topology_coordinates_properties_mut(...)
 record_topology_edit(...)
 record_topology_mapping(...)
-recompute_aromaticity()
-recompute_valence()
-recompute_stereo()
+set_*_cache(...)
 clear_cache(...)
-finish(...)
+prove_preserved(...)
 ```
+
+Low-level `begin_*_mut()` / `commit_*()` methods implement and test the scoped
+lifecycle; fallible operation bodies must not leave a block checked out across
+an error. The macro-generated wrapper, not the operation body, owns `finish()`.
 
 Operation bodies must not recover a raw `Molecule` or raw `&Molecule` through
 helper APIs. Helpers called from operation bodies must accept narrowed inputs
@@ -280,7 +298,7 @@ plan is in
 Compacting, appending, or renumbering topology edits must use the operation
 begin/commit discipline. Operation bodies begin each registry write-owned block
 once, mutate the owned local blocks, commit them once, and record the declared
-topology edit, topology mapping artifact, and cache/handled-state effects
+topology edit, topology mapping artifact, and derived-state effects
 through `OpParts`. They must not mutate `Molecule` internals directly or mix
 whole-molecule read views with independently writable blocks.
 

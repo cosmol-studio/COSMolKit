@@ -74,7 +74,7 @@ fn main() {
             )
         })
         .collect();
-    let mmff_angle = extract_cpp_string_array(&mmff_source, "defaultMMFFAngleData")
+    let mmff_angle = extract_cpp_string_array(&mmff_source, "defaultMMFFAngleData", "")
         .expect("extract RDKit MMFF defaultMMFFAngleData");
     let mut mmff_def_rows =
         parse_mmff_def_rows(mmff_default(&mmff_string_defaults, "defaultMMFFDef"));
@@ -211,10 +211,19 @@ fn main() {
     let periodic_table_atom_data =
         extract_cpp_string(&rdkit_atomic_data_source, "periodicTableAtomData")
             .expect("extract RDKit periodicTableAtomData");
-    let isotope_atom_data = extract_cpp_string_array(&rdkit_atomic_data_source, "isotopesAtomData")
-        .expect("extract RDKit isotopesAtomData");
+    let isotope_atom_data =
+        extract_cpp_string_array(&rdkit_atomic_data_source, "isotopesAtomData", "\n")
+            .expect("extract RDKit isotopesAtomData");
     let mut isotope_masses = parse_rdkit_isotope_masses(&isotope_atom_data);
     isotope_masses.sort_by_key(|row| (row.atomic_number, row.isotope));
+    assert_eq!(
+        isotope_masses
+            .binary_search_by_key(&(20, 47), |row| (row.atomic_number, row.isotope))
+            .ok()
+            .map(|index| isotope_masses[index].mass),
+        Some(46.954546),
+        "RDKit isotope array element boundaries must preserve the Ca-47 source row"
+    );
     let most_common_isotopes = parse_rdkit_most_common_isotopes(&periodic_table_atom_data);
     let most_common_isotope_masses =
         parse_rdkit_most_common_isotope_masses(&periodic_table_atom_data);
@@ -1298,7 +1307,7 @@ fn parse_rdkit_isotope_masses(table: &str) -> Vec<RdkitIsotopeMassRow> {
         .lines()
         .filter_map(|raw_line| {
             let line = raw_line.trim();
-            if line.is_empty() {
+            if line.is_empty() || line == "EOS" {
                 return None;
             }
             let fields: Vec<&str> = line.split_whitespace().collect();
@@ -1413,16 +1422,27 @@ fn extract_cpp_string(source: &str, symbol: &str) -> Option<String> {
     extract_cpp_string_by_header(source, &header)
 }
 
-fn extract_cpp_string_array(source: &str, symbol: &str) -> Option<String> {
+fn extract_cpp_string_array(source: &str, symbol: &str, element_separator: &str) -> Option<String> {
     let header = format!("const std::string {symbol}[] =");
-    extract_cpp_string_by_header(source, &header)
+    extract_cpp_string_by_header_with_separator(source, &header, element_separator)
 }
 
 fn extract_cpp_string_by_header(source: &str, header: &str) -> Option<String> {
+    extract_cpp_string_by_header_with_separator(source, header, "")
+}
+
+fn extract_cpp_string_by_header_with_separator(
+    source: &str,
+    header: &str,
+    element_separator: &str,
+) -> Option<String> {
     let start = source.find(header)?;
     let after_equals = &source[start + header.len()..];
     let end = find_initializer_end(after_equals)?;
-    Some(decode_cpp_string_literals(&after_equals[..end]))
+    Some(decode_cpp_string_literals(
+        &after_equals[..end],
+        element_separator,
+    ))
 }
 
 fn find_initializer_end(source: &str) -> Option<usize> {
@@ -1490,7 +1510,7 @@ fn find_initializer_end(source: &str) -> Option<usize> {
     None
 }
 
-fn decode_cpp_string_literals(source: &str) -> String {
+fn decode_cpp_string_literals(source: &str, element_separator: &str) -> String {
     let mut decoded = String::new();
     let mut chars = source.chars().peekable();
     while let Some(ch) = chars.next() {
@@ -1511,6 +1531,10 @@ fn decode_cpp_string_literals(source: &str) -> String {
                 }
                 prev = comment_ch;
             }
+            continue;
+        }
+        if ch == ',' {
+            decoded.push_str(element_separator);
             continue;
         }
         if ch == 'R' && chars.peek() == Some(&'"') {

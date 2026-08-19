@@ -3,8 +3,10 @@ use super::*;
 #[mol_op_body(with_hydrogens, parts)]
 pub(super) fn with_hydrogens_impl(
     params: crate::hydrogens::AddHsParams,
-) -> Result<OpOutcome, OperationError> {
-    let changed = parts.with_topology_coordinates_properties_mut(
+) -> Result<(), OperationError> {
+    // RDKit✔️✔️:   mol.clearComputedProps(false);
+    parts.clear_computed_properties();
+    parts.with_topology_coordinates_properties_mut(
         |parts, topology, coordinates, properties| {
             let assignment = parts.with_block_read_parts(
                 topology.clone(),
@@ -27,13 +29,7 @@ pub(super) fn with_hydrogens_impl(
         PreservationProof::LeafAtomAppend,
     )?;
 
-    Ok(if changed {
-        OpOutcome::Changed
-    } else {
-        OpOutcome::NoOp {
-            reason: "no hydrogens were added by AddHsParameters",
-        }
-    })
+    Ok(())
 }
 
 pub(super) fn apply_add_hs_assignment(
@@ -44,16 +40,21 @@ pub(super) fn apply_add_hs_assignment(
     assignment: &crate::hydrogens::AddHsAssignment,
 ) -> Result<bool, OperationError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::addHs(RWMol&, const AddHsParameters&, const UINT_VECT*)
-    // RDKit❗✔️:   mol.clearComputedProps(false);
+    if assignment.clear_computed_properties {
+        // RDKit✔️✔️:   RDProps::clearComputedProps();
+        // `_StereochemDone` is the molecule-level computed property currently
+        // represented by the Rust model and consumed by legacy stereo perception.
+        properties.clear_prop("_StereochemDone");
+        // RDKit✔️✔️:   for (auto atom : atoms()) {
+        // RDKit✔️✔️:     atom->clearComputedProps();
+        // RDKit✔️✔️:   }
+        for atom in &mut topology.atoms {
+            atom.clear_prop("_CIPRank");
+        }
+    }
     // RDKit❗✔️:   ...
     // RDKit❗✔️:     newAt->clearComputedProps();
-    //
-    // COSMolKit does not yet model RDProps' computed-property registry, so the
-    // AddHs subset clears the atom-level computed stereo rank property that is
-    // observably consumed by the depictor path.
-    for atom in &mut topology.atoms {
-        atom.clear_prop("_CIPRank");
-    }
+    // END RDKIT CPP FUNCTION MolOps::addHs(RWMol&, const AddHsParameters&, const UINT_VECT*)
 
     let old_atom_count = topology.atoms.len();
     let old_bond_count = topology.bonds.len();
@@ -636,7 +637,7 @@ fn add_hs_angle(left: [f64; 3], right: [f64; 3]) -> f64 {
 }
 
 #[mol_op_body(without_hydrogens, parts)]
-pub(super) fn without_hydrogens_impl(sanitize: bool) -> Result<OpOutcome, OperationError> {
+pub(super) fn without_hydrogens_impl(sanitize: bool) -> Result<(), OperationError> {
     let params = crate::hydrogens::RemoveHsParams::default();
     without_hydrogens_apply(parts, &params, sanitize, &WITHOUT_HYDROGENS_SPEC)
 }
@@ -645,7 +646,7 @@ pub(super) fn without_hydrogens_impl(sanitize: bool) -> Result<OpOutcome, Operat
 pub(super) fn without_hydrogens_with_params_impl(
     params: crate::hydrogens::RemoveHsParams,
     sanitize: bool,
-) -> Result<OpOutcome, OperationError> {
+) -> Result<(), OperationError> {
     without_hydrogens_apply(
         parts,
         &params,
@@ -659,8 +660,8 @@ fn without_hydrogens_apply(
     params: &crate::hydrogens::RemoveHsParams,
     sanitize: bool,
     operation: &'static MoleculeOpSpec,
-) -> Result<OpOutcome, OperationError> {
-    let changed = parts.with_topology_coordinates_properties_mut(
+) -> Result<(), OperationError> {
+    parts.with_topology_coordinates_properties_mut(
         |parts, topology, coordinates, properties| {
             let assignment = parts.with_block_read_parts(
                 topology.clone(),
@@ -689,6 +690,8 @@ fn without_hydrogens_apply(
                 parts.clear_cache(WITHOUT_HYDROGENS_SPEC.needs_update());
                 changed = true;
             }
+            // RDKit✔️✔️:   mol.clearComputedProps(true);
+            parts.clear_computed_properties();
             if assignment.sanitize_after_removal {
                 changed |= sanitize_after_remove_hs_removal(
                     parts,
@@ -702,13 +705,7 @@ fn without_hydrogens_apply(
         },
     )?;
 
-    Ok(if changed {
-        OpOutcome::Changed
-    } else {
-        OpOutcome::NoOp {
-            reason: "no removable explicit hydrogens matched RemoveHsParameters",
-        }
-    })
+    Ok(())
 }
 
 fn apply_remove_hs_assignment(

@@ -7,8 +7,7 @@
 // Here we implement an equivalent DFS-based connected-components algorithm.
 
 use crate::{
-    AdjacencyList, Atom, AtomSpec, Bond, BondSpec, Molecule, MoleculeBuilder,
-    error::MoleculeBuildError,
+    AdjacencyList, Atom, AtomSpec, BondSpec, Molecule, MoleculeBuilder, error::MoleculeBuildError,
 };
 
 // ---------------------------------------------------------------------------
@@ -152,11 +151,11 @@ fn group_atoms_by_fragment(mol: &Molecule) -> Vec<Vec<usize>> {
 // We use MoleculeBuilder to construct a new molecule from the atoms and bonds
 // that belong to this fragment.
 // ---------------------------------------------------------------------------
-fn build_fragment_molecule(
+pub(crate) fn build_fragment_molecule(
     mol: &Molecule,
     fragment_atoms: &[usize],
     copy_conformers: bool,
-) -> Result<Molecule, MoleculeBuildError> {
+) -> Result<Molecule, FragmentError> {
     let mut builder = MoleculeBuilder::new();
 
     let num_frag_atoms = fragment_atoms.len();
@@ -165,9 +164,12 @@ fn build_fragment_molecule(
     // RDKit equivalent: the atomsInFrag bitset + new atom index tracking
     // RDKit source: MolOps.cpp lines 727-733
     let mut old_to_new = vec![usize::MAX; mol.num_atoms()];
+    let mut atom_mapping = vec![None; mol.num_atoms()];
     for (new_idx, old_idx) in fragment_atoms.iter().enumerate() {
         old_to_new[*old_idx] = new_idx;
+        atom_mapping[*old_idx] = Some(AtomId_usize(new_idx));
     }
+    let mut bond_mapping = vec![None; mol.num_bonds()];
 
     // Add each atom to the builder
     // RDKit equivalent: getTheFrags — atoms are either copied via copyMolSubset
@@ -212,7 +214,14 @@ fn build_fragment_molecule(
             for (key, value) in bond.props() {
                 spec = spec.with_prop(key.clone(), value.clone());
             }
-            builder.add_bond(spec)?;
+            let new_bond = builder.add_bond(spec)?;
+            bond_mapping[bond.id().index()] = Some(new_bond);
+        }
+    }
+
+    for stereo_group in mol.stereo_groups() {
+        if let Some(fragment_group) = stereo_group.remapped(&atom_mapping, &bond_mapping) {
+            builder.add_stereo_group(fragment_group)?;
         }
     }
 
@@ -239,7 +248,7 @@ fn build_fragment_molecule(
         }
     }
 
-    builder.build()
+    Ok(builder.build()?)
 }
 
 // ---------------------------------------------------------------------------

@@ -263,20 +263,13 @@ fn rank_mol_atoms_with_options_from_view(
     // RDKit✔️✔️:     clearRings = true;
     // RDKit✔️✔️:   }
     // COSMolKit rank computation is read-only, so ring info is computed ephemerally.
-    let atoms_to_use = vec![true; view.num_atoms()];
-    let bonds_to_use = vec![true; view.num_bonds()];
-
     // RDKit✔️✔️:   res.resize(mol.getNumAtoms());
     // RDKit✔️✔️:   std::vector<Canon::canon_atom> atoms(mol.getNumAtoms());
     // RDKit✔️✔️:   initCanonAtoms(mol, atoms, includeChirality, includeStereoGroups);
-    let mut atoms = init_fragment_canon_atoms_for_kekulize(
+    let mut atoms = init_canon_atoms_for_rank_mol(
         view,
-        &atoms_to_use,
-        &bonds_to_use,
         options.include_chirality,
         options.include_stereo_groups,
-        None,
-        None,
     )?;
 
     // RDKit✔️✔️:   AtomCompareFunctor ftor(&atoms.front(), mol);
@@ -573,6 +566,125 @@ fn count_swaps_to_interconvert<T: Copy + Eq>(reference: &[T], probe: Vec<T>) -> 
             }
         },
     )
+}
+
+fn empty_canon_atom_from_source_atom(atom: &Atom) -> CanonAtom<'static> {
+    CanonAtom {
+        index: i32::try_from(atom.id().index()).unwrap_or(i32::MAX),
+        is_in_play: true,
+        degree: 0,
+        atomic_number: atom.atomic_number(),
+        isotope: atom.isotope().unwrap_or(0),
+        atom_map: atom.atom_map().unwrap_or(0),
+        canonical_ranking_number: atom
+            .prop("_CanonicalRankingNumber")
+            .and_then(|value| value.parse::<i32>().ok())
+            .unwrap_or(0),
+        formal_charge: atom.formal_charge(),
+        chiral_tag: atom.chiral_tag(),
+        total_num_hs: 0,
+        is_ring_atom: false,
+        has_ring_nbr: false,
+        is_ring_stereo_atom: false,
+        which_stereo_group: 0,
+        type_of_stereo_group: CanonStereoGroupType::Absolute,
+        neighbor_num: Vec::new(),
+        revisted_neighbors: Vec::new(),
+        all_nbr_ids: Vec::new(),
+        nbr_ids: Vec::new(),
+        p_symbol: None,
+        bonds: Vec::new(),
+    }
+}
+
+fn init_canon_atoms_for_rank_mol(
+    view: &CanonRankReadView<'_>,
+    include_chirality: bool,
+    include_stereo_groups: bool,
+) -> Result<Vec<CanonAtom<'static>>, KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: void initCanonAtoms(const ROMol&, std::vector<Canon::canon_atom>&, bool, bool)
+    // RDKit✔️✔️: void initCanonAtoms(const ROMol &mol, std::vector<Canon::canon_atom> &atoms,
+    // RDKit✔️✔️:                     bool includeChirality, bool includeStereoGroups) {
+    let mut atoms = view
+        .atoms
+        .iter()
+        .map(empty_canon_atom_from_source_atom)
+        .collect::<Vec<_>>();
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    for atom_idx in 0..view.num_atoms() {
+        // RDKit✔️✔️:     basicInitCanonAtom(mol, atoms[i], i);
+        // RDKit✔️✔️:   atom.atom = mol.getAtomWithIdx(idx);
+        // RDKit✔️✔️:   atom.index = idx;
+        // RDKit✔️✔️:   atom.p_symbol = nullptr;
+        // RDKit✔️✔️:   atom.degree = atom.atom->getDegree();
+        // RDKit✔️✔️:   atom.nbrIds = std::make_unique<int[]>(atom.degree);
+        // RDKit✔️✔️:   getNbrs(mol, atom.atom, atom.nbrIds.get());
+        let neighbors = view.adjacency.neighbors_of(atom_idx);
+        let degree = neighbors.len();
+        let nbr_ids = neighbors
+            .iter()
+            .map(|neighbor| neighbor.atom_index)
+            .collect::<Vec<_>>();
+        atoms[atom_idx].degree = degree;
+        atoms[atom_idx].all_nbr_ids.clone_from(&nbr_ids);
+        atoms[atom_idx].nbr_ids = nbr_ids;
+
+        // RDKit✔️✔️:     advancedInitCanonAtom(mol, atoms[i], i);
+        // RDKit✔️✔️:   atom.totalNumHs = atom.atom->getTotalNumHs();
+        let atom = &view.atoms[atom_idx];
+        atoms[atom_idx].total_num_hs = usize::from(atom.explicit_hydrogens())
+            + usize::try_from(view.valence.implicit_hydrogens[atom_idx].max(0))
+                .unwrap_or(usize::MAX);
+        // RDKit✔️✔️:   atom.isRingStereoAtom =
+        // RDKit✔️✔️:       (atom.atom->getChiralTag() == Atom::CHI_TETRAHEDRAL_CW ||
+        // RDKit✔️✔️:        atom.atom->getChiralTag() == Atom::CHI_TETRAHEDRAL_CCW) &&
+        // RDKit✔️✔️:       atom.atom->hasProp(common_properties::_ringStereoAtoms);
+        atoms[atom_idx].is_ring_atom = view.rings.num_atom_rings(atom.id()) > 0;
+        atoms[atom_idx].is_ring_stereo_atom = matches!(
+            atom.chiral_tag(),
+            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+        ) && atom.prop("_ringStereoAtoms").is_some();
+        // RDKit✔️✔️:   atom.hasRingNbr = hasRingNbr(mol, atom.atom);
+        atoms[atom_idx].has_ring_nbr = has_ring_nbr_for_kekulize(view, atom_idx);
+
+        // RDKit✔️✔️:     atoms[i].bonds.reserve(atoms[i].degree);
+        atoms[atom_idx].bonds.reserve(degree);
+        // RDKit✔️✔️:     getBonds(mol, atoms[i].atom, atoms[i].bonds, includeChirality, atoms);
+        for neighbor in neighbors {
+            atoms[atom_idx].bonds.push(make_canon_bond_holder(
+                view,
+                neighbor.bond.index(),
+                neighbor.atom_index,
+                include_chirality,
+            )?);
+        }
+        // RDKit✔️✔️:   std::sort(nbrs.begin(), nbrs.end(), bondholder::greater);
+        let initial_ranks = canon_atom_rank_snapshot(&atoms);
+        sort_canon_bonds_descending(&mut atoms[atom_idx].bonds, &initial_ranks);
+        // RDKit✔️✔️:   }
+    }
+    // RDKit✔️✔️:   if (includeChirality && includeStereoGroups) {
+    // RDKit✔️✔️:     unsigned int sgidx = 1;
+    // RDKit✔️✔️:     for (auto &sg : mol.getStereoGroups()) {
+    // RDKit✔️✔️:       for (auto atom : sg.getAtoms()) {
+    // RDKit✔️✔️:         atoms[atom->getIdx()].whichStereoGroup = sgidx;
+    // RDKit✔️✔️:         atoms[atom->getIdx()].typeOfStereoGroup = sg.getGroupType();
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       ++sgidx;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    if include_chirality && include_stereo_groups {
+        for (group_idx, group) in view.stereo_groups.iter().enumerate() {
+            for atom in group.atoms() {
+                atoms[atom.index()].which_stereo_group = group_idx + 1;
+                atoms[atom.index()].type_of_stereo_group =
+                    canon_stereo_group_type_from_kind(group.kind());
+            }
+        }
+    }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: void initCanonAtoms(const ROMol&, std::vector<Canon::canon_atom>&, bool, bool)
+    Ok(atoms)
 }
 
 fn init_fragment_canon_atoms_for_kekulize<'a>(
@@ -1021,14 +1133,6 @@ fn rank_with_atom_compare_functor_for_kekulize(
     let mut changed = vec![true; n_atoms];
     let mut touched = vec![false; n_atoms];
     let mut active_set = -1isize;
-    let trace_row_142 = std::env::var_os("COSMOLKIT_TRACE_CANON").is_some();
-    let debug_trace_stage = |stage: &str, order: &[usize], count: &[usize]| {
-        if !trace_row_142 {
-            return;
-        }
-        eprintln!("rank-stage {stage} order={order:?}");
-        eprintln!("rank-stage {stage} count={count:?}");
-    };
     // RDKit✔️✔️:   CreateSinglePartition(nAts, order, count, atoms);
     create_single_partition_for_kekulize(n_atoms, order, &mut count, atoms);
     // RDKit✔️✔️:   ftor.df_useNbrs = true;
@@ -1056,7 +1160,6 @@ fn rank_with_atom_compare_functor_for_kekulize(
         &mut changed,
         &mut touched,
     );
-    debug_trace_stage("after_refine", order, &count);
     // RDKit✔️✔️:   bool ties = false;
     // RDKit✔️✔️:   for (unsigned i = 0; i < nAts; ++i) {
     // RDKit✔️✔️:     if (!count[i]) {
@@ -1093,7 +1196,6 @@ fn rank_with_atom_compare_functor_for_kekulize(
             &mut changed,
             &mut touched,
         );
-        debug_trace_stage("after_special_chirality", order, &count);
     }
     // RDKit✔️✔️:   ties = false;
     // RDKit✔️✔️:   unsigned symRingAtoms = 0;
@@ -1133,7 +1235,6 @@ fn rank_with_atom_compare_functor_for_kekulize(
             &mut changed,
             &mut touched,
         );
-        debug_trace_stage("after_special_symmetry", order, &count);
     }
     // RDKit✔️✔️:   if (breakTies) {
     // RDKit✔️✔️:     BreakTies(mol, atoms, ftor, true, order, count, activeset, next, changed,
@@ -1153,7 +1254,6 @@ fn rank_with_atom_compare_functor_for_kekulize(
             &mut changed,
             &mut touched,
         );
-        debug_trace_stage("after_break_ties", order, &count);
     }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION detail::rankWithFunctor
@@ -1832,26 +1932,50 @@ fn compare_canon_atoms_for_kekulize(
     if !atom_pair_has_any_in_play_for_kekulize(atoms, left, right) {
         return Ordering::Equal;
     }
+    // RDKit✔️✔️:     int v = basecomp(i, j);
+    // RDKit✔️✔️:     if (v) {
+    // RDKit✔️✔️:       return v;
+    // RDKit✔️✔️:     }
+    let base_cmp = compare_canon_atom_base_for_kekulize(atoms, left, right, flags);
+    if base_cmp != Ordering::Equal {
+        return base_cmp;
+    }
+    // RDKit✔️✔️:     if (df_useNbrs) {
+    // RDKit✔️✔️:       if (!dp_atomsInPlay || (*dp_atomsInPlay)[i]) {
     if atoms[left].is_in_play {
         update_atom_neighbor_index_for_kekulize(atoms, left);
     }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (!dp_atomsInPlay || (*dp_atomsInPlay)[j]) {
     if atoms[right].is_in_play {
         update_atom_neighbor_index_for_kekulize(atoms, right);
     }
+    // RDKit✔️✔️:       }
     let ranks = canon_atom_rank_snapshot(atoms);
-    compare_canon_atom_base_for_kekulize(atoms, left, right, flags).then_with(|| {
-        for idx in 0..atoms[left].bonds.len().min(atoms[right].bonds.len()) {
-            let cmp = compare_canon_bond_holder(
-                &atoms[left].bonds[idx],
-                &atoms[right].bonds[idx],
-                &ranks,
-            );
-            if cmp != Ordering::Equal {
-                return cmp;
-            }
+    // RDKit✔️✔️:       for (unsigned int ii = 0;
+    // RDKit✔️✔️:            ii < dp_atoms[i].bonds.size() && ii < dp_atoms[j].bonds.size();
+    // RDKit✔️✔️:            ++ii) {
+    // RDKit✔️✔️:         int cmp =
+    // RDKit✔️✔️:             bondholder::compare(dp_atoms[i].bonds[ii], dp_atoms[j].bonds[ii]);
+    // RDKit✔️✔️:         if (cmp) {
+    // RDKit✔️✔️:           return cmp;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    for idx in 0..atoms[left].bonds.len().min(atoms[right].bonds.len()) {
+        let cmp =
+            compare_canon_bond_holder(&atoms[left].bonds[idx], &atoms[right].bonds[idx], &ranks);
+        if cmp != Ordering::Equal {
+            return cmp;
         }
-        atoms[left].bonds.len().cmp(&atoms[right].bonds.len())
-    })
+    }
+    // RDKit✔️✔️:       if (dp_atoms[i].bonds.size() < dp_atoms[j].bonds.size()) {
+    // RDKit✔️✔️:         return -1;
+    // RDKit✔️✔️:       } else if (dp_atoms[i].bonds.size() > dp_atoms[j].bonds.size()) {
+    // RDKit✔️✔️:         return 1;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     return 0;
+    atoms[left].bonds.len().cmp(&atoms[right].bonds.len())
 }
 
 fn compare_special_chirality_atoms_for_kekulize(

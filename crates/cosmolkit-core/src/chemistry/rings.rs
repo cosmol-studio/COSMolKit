@@ -1384,11 +1384,114 @@ fn is_inactive_ring_bond(
         || (!include_hydrogen_bonds && order == BondOrder::Hydrogen)
 }
 
-fn compute_ring_invariant(ring: &[usize]) -> Vec<usize> {
-    let mut invariant = ring.to_vec();
-    invariant.sort_unstable();
-    invariant.dedup();
-    invariant
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RingInvariant {
+    num_bits: usize,
+    blocks: Vec<u64>,
+}
+
+impl Ord for RingInvariant {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // BEGIN BOOST CPP FUNCTION boost::operator<(dynamic_bitset, dynamic_bitset)
+        // Boost✔️✔️: bool operator<(const dynamic_bitset<Block, Allocator>& a,
+        // Boost✔️✔️:                const dynamic_bitset<Block, Allocator>& b)
+        // Boost✔️✔️: {
+        // Boost✔️✔️: //    assert(a.size() == b.size());
+        // Boost✔️✔️:   typedef BOOST_DEDUCED_TYPENAME dynamic_bitset<Block, Allocator>::size_type size_type;
+        // Boost✔️✔️:   size_type asize(a.size());
+        // Boost✔️✔️:   size_type bsize(b.size());
+        // Boost✔️✔️:   if (!bsize)
+        // Boost✔️✔️:     {
+        // Boost✔️✔️:     return false;
+        // Boost✔️✔️:     }
+        // Boost✔️✔️:   else if (!asize)
+        // Boost✔️✔️:     {
+        // Boost✔️✔️:     return true;
+        // Boost✔️✔️:     }
+        // Boost✔️✔️:   else if (asize == bsize)
+        // Boost✔️✔️:     {
+        // Boost✔️✔️:     for (size_type ii = a.num_blocks(); ii > 0; --ii)
+        // Boost✔️✔️:       {
+        // Boost✔️✔️:       size_type i = ii-1;
+        // Boost✔️✔️:       if (a.m_bits[i] < b.m_bits[i])
+        // Boost✔️✔️:         return true;
+        // Boost✔️✔️:       else if (a.m_bits[i] > b.m_bits[i])
+        // Boost✔️✔️:         return false;
+        // Boost✔️✔️:       }
+        // Boost✔️✔️:     return false;
+        // Boost✔️✔️:     }
+        // Boost✔️✔️:   else
+        // Boost✔️✔️:     {
+        // Boost✔️✔️:     size_type leqsize(std::min BOOST_PREVENT_MACRO_SUBSTITUTION(asize,bsize));
+        // Boost✔️✔️:     for (size_type ii = 0; ii < leqsize; ++ii,--asize,--bsize)
+        // Boost✔️✔️:       {
+        // Boost✔️✔️:       size_type i = asize-1;
+        // Boost✔️✔️:       size_type j = bsize-1;
+        // Boost✔️✔️:       if (a[i] < b[j])
+        // Boost✔️✔️:         return true;
+        // Boost✔️✔️:       else if (a[i] > b[j])
+        // Boost✔️✔️:         return false;
+        // Boost✔️✔️:       }
+        // Boost✔️✔️:     return (a.size() < b.size());
+        // Boost✔️✔️:     }
+        // Boost✔️✔️: }
+        // END BOOST CPP FUNCTION boost::operator<(dynamic_bitset, dynamic_bitset)
+        if self.num_bits == other.num_bits {
+            return self.blocks.iter().rev().cmp(other.blocks.iter().rev());
+        }
+
+        let shared = self.num_bits.min(other.num_bits);
+        for offset in 0..shared {
+            let self_bit = self.bit(self.num_bits - offset - 1);
+            let other_bit = other.bit(other.num_bits - offset - 1);
+            match self_bit.cmp(&other_bit) {
+                std::cmp::Ordering::Equal => {}
+                ordering => return ordering,
+            }
+        }
+        self.num_bits.cmp(&other.num_bits)
+    }
+}
+
+impl PartialOrd for RingInvariant {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl RingInvariant {
+    fn bit(&self, index: usize) -> bool {
+        self.blocks
+            .get(index / u64::BITS as usize)
+            .is_some_and(|block| block & (1_u64 << (index % u64::BITS as usize)) != 0)
+    }
+
+    #[cfg(test)]
+    fn atom_indices(&self) -> Vec<usize> {
+        (0..self.num_bits)
+            .filter(|&index| self.bit(index))
+            .collect()
+    }
+}
+
+fn compute_ring_invariant(ring: &[usize], num_atoms: usize) -> RingInvariant {
+    // BEGIN RDKIT CPP FUNCTION RingUtils::computeRingInvariant
+    // RDKit✔️✔️: RINGINVAR computeRingInvariant(const INT_VECT &ring, unsigned int numAtoms) {
+    // RDKit✔️✔️:   boost::dynamic_bitset<> res(numAtoms);
+    let mut blocks = vec![0_u64; num_atoms.div_ceil(u64::BITS as usize)];
+    // RDKit✔️✔️:   for (auto idx : ring) {
+    // RDKit✔️✔️:     res.set(idx);
+    // RDKit✔️✔️:   }
+    for &atom_index in ring {
+        blocks[atom_index / u64::BITS as usize] |= 1_u64 << (atom_index % u64::BITS as usize);
+    }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RingUtils::computeRingInvariant
+    RingInvariant {
+        num_bits: num_atoms,
+        blocks,
+    }
 }
 
 fn convert_to_bonds(
@@ -1695,9 +1798,9 @@ fn pick_d2_nodes(
 fn find_sssr_for_dup_candidates(
     context: &RingSearchContext<'_>,
     res: &mut Vec<Vec<usize>>,
-    invars: &mut BTreeSet<Vec<usize>>,
+    invars: &mut BTreeSet<RingInvariant>,
     dup_map: &BTreeMap<usize, Vec<usize>>,
-    dup_d2_candidates: &BTreeMap<Vec<usize>, Vec<usize>>,
+    dup_d2_candidates: &BTreeMap<RingInvariant, Vec<usize>>,
     atom_degrees: &[i32],
     active_bonds: &[bool],
 ) -> Result<(), RingFindingError> {
@@ -1764,7 +1867,7 @@ fn find_sssr_for_dup_candidates(
                 if ring.len() == min_size {
                     // RDKit✔️✔️:           auto invr = RingUtils::computeRingInvariant(nring, mol.getNumAtoms());
                     // RDKit✔️✔️:           if (invars.find(invr) == invars.end()) {
-                    let invariant = compute_ring_invariant(&ring);
+                    let invariant = compute_ring_invariant(&ring, context.atom_count());
                     if !invars.contains(&invariant) {
                         // RDKit✔️✔️:             res.push_back(nring);
                         // RDKit✔️✔️:             invars.insert(invr);
@@ -1784,7 +1887,7 @@ fn find_sssr_for_dup_candidates(
 fn find_rings_d2_nodes(
     context: &RingSearchContext<'_>,
     res: &mut Vec<Vec<usize>>,
-    invars: &mut BTreeSet<Vec<usize>>,
+    invars: &mut BTreeSet<RingInvariant>,
     d2nodes: &[usize],
     atom_degrees: &mut [i32],
     active_bonds: &mut [bool],
@@ -1800,7 +1903,7 @@ fn find_rings_d2_nodes(
     // RDKit✔️✔️:                       boost::dynamic_bitset<> &ringAtoms) {
     // RDKit✔️✔️:   RINGINVAR_INT_VECT_MAP dupD2Cands;
     // RDKit✔️✔️:   INT_INT_VECT_MAP dupMap;
-    let mut dup_d2_candidates: BTreeMap<Vec<usize>, Vec<usize>> = BTreeMap::new();
+    let mut dup_d2_candidates: BTreeMap<RingInvariant, Vec<usize>> = BTreeMap::new();
     let mut dup_map: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     // RDKit✔️✔️:   for (auto &cand : d2nodes) {
     for &candidate in d2nodes {
@@ -1810,7 +1913,7 @@ fn find_rings_d2_nodes(
         // RDKit✔️✔️:     for (const auto &nring : srings) {
         for ring in &smallest_rings {
             // RDKit✔️✔️:       auto invr = RingUtils::computeRingInvariant(nring, tMol.getNumAtoms());
-            let invariant = compute_ring_invariant(ring);
+            let invariant = compute_ring_invariant(ring, context.atom_count());
             // RDKit✔️✔️:       auto &duplicateInvars = dupD2Cands[invr];
             let duplicate_invariants = dup_d2_candidates.entry(invariant.clone()).or_default();
             // RDKit✔️✔️:       if (invars.find(invr) == invars.end()) {
@@ -1898,7 +2001,7 @@ fn find_rings_d2_nodes(
 fn find_rings_d3_node(
     context: &RingSearchContext<'_>,
     res: &mut Vec<Vec<usize>>,
-    invars: &mut BTreeSet<Vec<usize>>,
+    invars: &mut BTreeSet<RingInvariant>,
     candidate: usize,
     active_bonds: &[bool],
 ) -> Result<(), RingFindingError> {
@@ -1914,7 +2017,7 @@ fn find_rings_d3_node(
     for ring in &smallest {
         // RDKit✔️✔️:     auto invr = RingUtils::computeRingInvariant(nring, tMol.getNumAtoms());
         // RDKit✔️✔️:     if (invars.find(invr) == invars.end()) {
-        let invariant = compute_ring_invariant(ring);
+        let invariant = compute_ring_invariant(ring, context.atom_count());
         if !invars.contains(&invariant) {
             // RDKit✔️✔️:       res.push_back(nring);
             // RDKit✔️✔️:       invars.insert(invr);
@@ -1990,7 +2093,7 @@ fn find_rings_d3_node(
             for ring in rings {
                 // RDKit✔️✔️:         auto invr = RingUtils::computeRingInvariant(nring, tMol.getNumAtoms());
                 // RDKit✔️✔️:         if (invars.find(invr) == invars.end()) {
-                let invariant = compute_ring_invariant(&ring);
+                let invariant = compute_ring_invariant(&ring, context.atom_count());
                 if !invars.contains(&invariant) {
                     // RDKit✔️✔️:           res.push_back(nring);
                     // RDKit✔️✔️:           invars.insert(invr);
@@ -2021,7 +2124,7 @@ fn find_rings_d3_node(
             // RDKit✔️✔️:       smallestRingsBfs(tMol, cand, trings, activeBonds, &forb);
             let rings = smallest_rings_bfs(context, candidate, active_bonds, Some(&[f2]))?;
             for ring in rings {
-                let invariant = compute_ring_invariant(&ring);
+                let invariant = compute_ring_invariant(&ring, context.atom_count());
                 if !invars.contains(&invariant) {
                     res.push(ring);
                     invars.insert(invariant);
@@ -2033,7 +2136,7 @@ fn find_rings_d3_node(
             // RDKit✔️✔️:       smallestRingsBfs(tMol, cand, trings, activeBonds, &forb);
             let rings = smallest_rings_bfs(context, candidate, active_bonds, Some(&[f1]))?;
             for ring in rings {
-                let invariant = compute_ring_invariant(&ring);
+                let invariant = compute_ring_invariant(&ring, context.atom_count());
                 if !invars.contains(&invariant) {
                     res.push(ring);
                     invars.insert(invariant);
@@ -2302,7 +2405,7 @@ fn atom_search_bfs(
     start_atom: usize,
     end_atom: usize,
     ring_atoms: &[bool],
-    invars: &BTreeSet<Vec<usize>>,
+    invars: &BTreeSet<RingInvariant>,
 ) -> Result<Option<Vec<usize>>, RingFindingError> {
     // BEGIN RDKIT CPP FUNCTION FindRings::_atomSearchBFS
     // RDKit✔️✔️: bool _atomSearchBFS(const ROMol &tMol, unsigned int startAtomIdx,
@@ -2346,7 +2449,7 @@ fn atom_search_bfs(
                     let mut new_path = path.clone();
                     new_path.push(neighbor_idx);
                     // RDKit✔️✔️:           auto invr = RingUtils::computeRingInvariant(nv, tMol.getNumAtoms());
-                    let invariant = compute_ring_invariant(&new_path);
+                    let invariant = compute_ring_invariant(&new_path, context.atom_count());
                     // RDKit✔️✔️:           if (invars.find(invr) == invars.end()) {
                     // RDKit✔️✔️:             res.resize(nv.size());
                     // RDKit✔️✔️:             std::copy(nv.begin(), nv.end(), res.begin());
@@ -2381,7 +2484,7 @@ fn find_ring_connecting_atoms(
     context: &RingSearchContext<'_>,
     bond: BondId,
     res: &mut Vec<Vec<usize>>,
-    invars: &mut BTreeSet<Vec<usize>>,
+    invars: &mut BTreeSet<RingInvariant>,
     ring_bonds: &mut [bool],
     ring_atoms: &mut [bool],
 ) -> Result<bool, RingFindingError> {
@@ -2412,7 +2515,7 @@ fn find_ring_connecting_atoms(
         return Ok(false);
     };
     // RDKit✔️✔️:     auto invr = RingUtils::computeRingInvariant(nring, tMol.getNumAtoms());
-    let invariant = compute_ring_invariant(&ring);
+    let invariant = compute_ring_invariant(&ring, context.atom_count());
     // RDKit✔️✔️:     if (invars.find(invr) == invars.end()) {
     if !invars.contains(&invariant) {
         // RDKit✔️✔️:       res.push_back(nring);
@@ -2658,6 +2761,54 @@ mod tests {
         assert_eq!(rings.num_bond_rings(BondId::new(0)), 1);
         assert!(rings.is_atom_in_ring_of_size(AtomId::new(0), 6));
         assert!(rings.is_bond_in_ring_of_size(BondId::new(0), 6));
+    }
+
+    #[test]
+    fn ring_invariant_order_matches_boost_dynamic_bitset_high_block_order() {
+        let invariants = [
+            [7, 8, 9, 46, 47],
+            [17, 18, 19, 20, 21],
+            [29, 30, 31, 44, 45],
+            [39, 40, 41, 42, 43],
+        ]
+        .into_iter()
+        .map(|ring| compute_ring_invariant(&ring, 82))
+        .collect::<BTreeSet<_>>();
+
+        assert_eq!(
+            invariants
+                .into_iter()
+                .map(|invariant| invariant.atom_indices())
+                .collect::<Vec<_>>(),
+            vec![
+                vec![17, 18, 19, 20, 21],
+                vec![39, 40, 41, 42, 43],
+                vec![29, 30, 31, 44, 45],
+                vec![7, 8, 9, 46, 47],
+            ]
+        );
+    }
+
+    #[test]
+    fn symmetrize_sssr_matches_rdkit_duplicate_candidate_ring_order_regression() {
+        let molecule = Molecule::from_smiles(
+            "COc1ccc(-c2c3nc(c(-c4ccccc4)c4ccc([nH]4)c(-c4ccccc4)c4nc(c(-c5ccccc5)c5ccc2[nH]5)C=C4)C=C3)cc1",
+        )
+        .unwrap()
+        .with_hydrogens()
+        .unwrap();
+        let rings = symmetrize_sssr(&molecule).unwrap();
+
+        let atom_ring = rings.atom_rings().last().unwrap();
+        let bond_ring = rings.bond_rings().last().unwrap();
+        assert_eq!(
+            atom_ring,
+            &[21, 17, 10, 9, 8, 7, 6, 42, 43, 39, 32, 31, 30, 29, 22, 20,].map(AtomId::new)
+        );
+        assert_eq!(
+            bond_ring,
+            &[53, 16, 9, 8, 7, 6, 50, 42, 57, 38, 31, 30, 29, 28, 21, 20].map(BondId::new)
+        );
     }
 
     #[test]
@@ -2997,8 +3148,8 @@ mod tests {
         let mut res = Vec::new();
         let mut invars = BTreeSet::new();
         let dup_map = BTreeMap::from([(0usize, Vec::new()), (2usize, Vec::new())]);
-        let dup_d2_candidates =
-            BTreeMap::from([(vec![0usize, 1usize, 2usize, 3usize], vec![0usize, 2usize])]);
+        let ring_invariant = compute_ring_invariant(&[0, 1, 2, 3], molecule.num_atoms());
+        let dup_d2_candidates = BTreeMap::from([(ring_invariant.clone(), vec![0usize, 2usize])]);
 
         find_sssr_for_dup_candidates(
             &context,
@@ -3012,8 +3163,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(res.len(), 1);
-        assert_eq!(compute_ring_invariant(&res[0]), vec![0, 1, 2, 3]);
-        assert_eq!(invars, BTreeSet::from([vec![0, 1, 2, 3]]));
+        assert_eq!(
+            compute_ring_invariant(&res[0], molecule.num_atoms()).atom_indices(),
+            vec![0, 1, 2, 3]
+        );
+        assert_eq!(invars, BTreeSet::from([ring_invariant]));
     }
 
     #[test]
@@ -3021,10 +3175,10 @@ mod tests {
         let molecule = Molecule::from_smiles_with_sanitize("C1CCC1", false).unwrap();
         let context = RingSearchContext::new(&molecule).unwrap();
         let mut res = vec![vec![0usize, 1usize, 2usize, 3usize]];
-        let mut invars = BTreeSet::from([vec![0usize, 1usize, 2usize, 3usize]]);
+        let ring_invariant = compute_ring_invariant(&[0, 1, 2, 3], molecule.num_atoms());
+        let mut invars = BTreeSet::from([ring_invariant.clone()]);
         let dup_map = BTreeMap::from([(1usize, Vec::new()), (3usize, Vec::new())]);
-        let dup_d2_candidates =
-            BTreeMap::from([(vec![0usize, 1usize, 2usize, 3usize], vec![1usize, 3usize])]);
+        let dup_d2_candidates = BTreeMap::from([(ring_invariant.clone(), vec![1usize, 3usize])]);
 
         find_sssr_for_dup_candidates(
             &context,
@@ -3038,7 +3192,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(res, vec![vec![0, 1, 2, 3]]);
-        assert_eq!(invars, BTreeSet::from([vec![0, 1, 2, 3]]));
+        assert_eq!(invars, BTreeSet::from([ring_invariant]));
     }
 
     #[test]
@@ -3068,7 +3222,7 @@ mod tests {
 
         let mut invariants = res
             .iter()
-            .map(|ring| compute_ring_invariant(ring))
+            .map(|ring| compute_ring_invariant(ring, molecule.num_atoms()).atom_indices())
             .collect::<Vec<_>>();
         invariants.sort();
 
@@ -3114,7 +3268,7 @@ mod tests {
 
         let mut invariants = res
             .iter()
-            .map(|ring| compute_ring_invariant(ring))
+            .map(|ring| compute_ring_invariant(ring, molecule.num_atoms()).atom_indices())
             .collect::<Vec<_>>();
         invariants.sort();
 
@@ -3215,7 +3369,13 @@ mod tests {
         assert!(found);
         assert_eq!(res, vec![vec![0usize, 1usize, 2usize]]);
         assert!(ring_bonds[4]);
-        assert_eq!(invars, BTreeSet::from([vec![0usize, 1usize, 2usize]]));
+        assert_eq!(
+            invars,
+            BTreeSet::from([compute_ring_invariant(
+                &[0usize, 1usize, 2usize],
+                molecule.num_atoms()
+            )])
+        );
     }
 
     #[test]
@@ -3333,7 +3493,7 @@ mod tests {
         let mut invariants = fast_find_rings_internal(&context)
             .unwrap()
             .into_iter()
-            .map(|ring| compute_ring_invariant(&ring))
+            .map(|ring| compute_ring_invariant(&ring, molecule.num_atoms()).atom_indices())
             .collect::<Vec<_>>();
         invariants.sort();
 

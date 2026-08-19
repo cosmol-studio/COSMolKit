@@ -156,7 +156,7 @@ fn maccs_fingerprint_matches_rdkit_raw_and_public_golden() {
                     ..
                 }
             ),
-            "MACCS non-166-bit output must fail closed in {context}: {err}"
+            "MACCS non-166-bit request must be rejected at its option boundary in {context}: {err}"
         );
     }
 }

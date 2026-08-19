@@ -3279,6 +3279,103 @@ fn writer_preserves_bridgehead_tetrahedral_stereo_like_rdkit_row_110() {
 }
 
 #[test]
+fn canonical_isomeric_smiles_ranks_each_disconnected_chiral_fragment_like_source() {
+    let molecule = Molecule::from_smiles(
+        "COc1cc2c(cc1OC)[C@@H](Cc1cc(OC)c(OC)c(OC)c1)[N@+](C)(CCCOC(=O)/C(Cl)=C/C(=O)OCCC[N@+]13CCc4cc(OC)c(OC)cc4[C@H]1c1cc(OC)c(OC)cc1CC3)CC2.[Cl-].[Cl-]",
+    )
+    .unwrap();
+    let params = SmilesWriteParams {
+        do_isomeric_smiles: true,
+        canonical: true,
+        clean_stereo: false,
+        ..Default::default()
+    };
+
+    assert_eq!(
+        molecule.to_smiles_with_params(&params).unwrap(),
+        "COc1cc2c(cc1OC)[C@H]1c3cc(OC)c(OC)cc3CC[N@@+]1(CCCOC(=O)/C=C(\\Cl)C(=O)OCCC[N@+]1(C)CCc3cc(OC)c(OC)cc3[C@H]1Cc1cc(OC)c(OC)c(OC)c1)CC2.[Cl-].[Cl-]"
+    );
+}
+
+#[derive(serde::Deserialize)]
+struct FragmentScopeStressParams {
+    do_isomeric_smiles: bool,
+    do_kekule: bool,
+    canonical: bool,
+    clean_stereo: bool,
+    all_bonds_explicit: bool,
+    all_hydrogens_explicit: bool,
+    include_dative_bonds: bool,
+    ignore_atom_map_numbers: bool,
+    root: String,
+}
+
+#[derive(serde::Deserialize)]
+struct FragmentScopeStressRecord {
+    case_id: String,
+    smiles: String,
+    params: FragmentScopeStressParams,
+    expected_smiles: String,
+}
+
+#[test]
+fn canonical_fragment_scope_matches_every_retained_stress_profile() {
+    let fixture = include_str!(
+        "../../../../../testdata/smiles/fixtures/rdkit_fragment_scope_stress_regressions.jsonl"
+    );
+    let mut records = 0usize;
+    let mut cases = std::collections::BTreeSet::new();
+
+    for (line_idx, line) in fixture.lines().enumerate() {
+        let record: FragmentScopeStressRecord =
+            serde_json::from_str(line).unwrap_or_else(|error| {
+                panic!(
+                    "invalid fragment-scope stress fixture line {}: {error}",
+                    line_idx + 1
+                )
+            });
+        let molecule = Molecule::from_smiles(&record.smiles)
+            .unwrap_or_else(|error| panic!("failed to parse {}: {error}", record.case_id));
+        let rooted_at_atom = match record.params.root.as_str() {
+            "none" => None,
+            "first" => Some(0),
+            "last" => molecule.num_atoms().checked_sub(1),
+            root => panic!("invalid root {root:?} in {}", record.case_id),
+        };
+        let params = SmilesWriteParams {
+            do_isomeric_smiles: record.params.do_isomeric_smiles,
+            do_kekule: record.params.do_kekule,
+            canonical: record.params.canonical,
+            clean_stereo: record.params.clean_stereo,
+            all_bonds_explicit: record.params.all_bonds_explicit,
+            all_hydrogens_explicit: record.params.all_hydrogens_explicit,
+            include_dative_bonds: record.params.include_dative_bonds,
+            ignore_atom_map_numbers: record.params.ignore_atom_map_numbers,
+            rooted_at_atom,
+            do_random: false,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            mol_to_smiles(&molecule, &params).unwrap(),
+            record.expected_smiles,
+            "RDKit 2026.03.1 stress regression {} at fixture line {}",
+            record.case_id,
+            line_idx + 1
+        );
+        cases.insert(record.case_id);
+        records += 1;
+    }
+
+    assert_eq!(records, 108, "fixture must retain every affected profile");
+    assert_eq!(
+        cases.len(),
+        9,
+        "fixture must retain every affected molecule"
+    );
+}
+
+#[test]
 #[ignore = "debug helper for RDKit row 121 traversal parity"]
 fn debug_row_121_noncanonical_traversal() {
     let mut molecule = Molecule::from_smiles(

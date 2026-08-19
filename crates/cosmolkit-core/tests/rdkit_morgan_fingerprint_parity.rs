@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader};
 
 use cosmolkit_core::fingerprint::{
     AdditionalOutput, FingerprintFuncArguments, MorganFingerprintGenerator,
-    getMorganGeneratorWithParams,
+    getMorganGeneratorWithParams, morgan_fingerprint_with_output,
 };
 use cosmolkit_core::{
     Molecule, MorganAtomInvariantsGenerator, MorganBondInvariantsGenerator,
@@ -639,6 +639,62 @@ fn public_morgan_explicit_bit_wrapper_matches_rdkit_golden() {
     assert_eq!(
         output.atoms_setting_bits,
         Some(bimap(&[(1057, &[(0, 0), (1, 0)]), (1275, &[(0, 1)])]))
+    );
+}
+
+#[test]
+fn public_morgan_params_apply_num_bits_per_feature_to_bits_and_additional_output() {
+    let mol = Molecule::from_smiles("CC(=O)O").unwrap();
+    let output = morgan_fingerprint_with_output(
+        &mol,
+        &MorganFingerprintParams {
+            radius: 2,
+            n_bits: 2048,
+            num_bits_per_feature: 2,
+            collect_additional_output: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        output.fingerprint.on_bits(),
+        vec![
+            134, 226, 389, 508, 524, 650, 807, 928, 1017, 1057, 1167, 1397, 1435, 1784, 1917,
+        ]
+    );
+    let additional = output.additional_output.unwrap();
+    assert_eq!(additional.atom_counts, vec![4, 4, 4, 4]);
+    assert_eq!(
+        additional.atom_to_bits,
+        vec![
+            vec![1057, 1784, 1017, 134],
+            vec![807, 226, 508, 524],
+            vec![650, 928, 1917, 1397],
+            vec![807, 1167, 389, 1435],
+        ]
+    );
+}
+
+#[test]
+fn public_morgan_isotope_invariant_uses_complete_rdkit_mass_table() {
+    let mol = Molecule::from_smiles("[47Ca+2].[Cl-].[Cl-]").unwrap();
+
+    let default_output =
+        morgan_fingerprint_with_output(&mol, &MorganFingerprintParams::default()).unwrap();
+    assert_eq!(default_output.fingerprint.on_bits(), vec![1302, 1866]);
+
+    let two_bits_output = morgan_fingerprint_with_output(
+        &mol,
+        &MorganFingerprintParams {
+            num_bits_per_feature: 2,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        two_bits_output.fingerprint.on_bits(),
+        vec![560, 703, 1302, 1866]
     );
 }
 

@@ -55,7 +55,8 @@ The trailing underscore is reserved for in-place mutation on public `Molecule`
 methods; it has no other meaning. In-place operations prioritize avoiding the
 operation-system working-copy clone when molecule blocks are uniquely owned. If
 an in-place operation returns an error, the receiver is not guaranteed to equal
-its pre-call value; use the non-mutating operation when failure-preserving value
+its pre-call value and may retain partial changes, while its internal storage
+remains complete. Use the non-mutating operation when failure-preserving value
 semantics are required.
 
 Stable molecule operations include assigning atom chiral tags from a selected
@@ -141,6 +142,40 @@ assert_eq!(calc_num_aromatic_rings(&molecule)?, 1);
 The documented descriptor surface is stable. Supported rows and parameter
 combinations are checked field-by-field against pinned RDKit golden data;
 unmodeled source states return an explicit descriptor error.
+
+## Fingerprints
+
+The Rust facade exposes source-backed Morgan, MACCS, RDKit topological, and
+Avalon fingerprints. Topological fingerprints can also return typed atom and
+path provenance:
+
+```rust
+use cosmolkit::{
+    AvalonFingerprintParams, Molecule, TopologicalFingerprintOutputRequest,
+    TopologicalFingerprintParams,
+};
+
+let molecule = Molecule::from_smiles("c1ccccc1O")?;
+let topological = molecule.topological_fingerprint(
+    &TopologicalFingerprintParams::default(),
+)?;
+let provenance = molecule.topological_fingerprint_with_output(
+    &TopologicalFingerprintParams::default(),
+    TopologicalFingerprintOutputRequest {
+        atom_bits: true,
+        bit_info: true,
+    },
+)?;
+let avalon = molecule.avalon_fingerprint(&AvalonFingerprintParams::default())?;
+
+assert_eq!(topological.n_bits(), 2048);
+assert!(provenance.output.atom_bits.is_some());
+assert_eq!(avalon.n_bits(), 512);
+```
+
+The documented topological and Avalon profiles are checked for exact bit
+equality against pinned RDKit across 70,000 and 115,000 maintained-corpus
+comparisons respectively.
 
 ## Conformer Generation And Force Field Applications
 

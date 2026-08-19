@@ -99,8 +99,9 @@ The independent official InChI C oracle runner is
 source identity before building under `target/` and is test-only. Production
 Rust never links or invokes it.
 
-The public InChI parity boundary is `Chem.MolToInchi`,
-`Chem.MolToInchiKey`, root `InchiToInchiKey`, and `Chem.MolFromInchi`.
+The public Python InChI parity boundary is `Molecule.to_inchi()`,
+`Molecule.to_inchi_key()`, top-level `inchi_to_key()`, and
+`Molecule.from_inchi()`.
 Source-defined behavior is compared exactly. Official-C undefined behavior is
 mapped to a deterministic structured Rust error and is not presented as an
 exact C result.

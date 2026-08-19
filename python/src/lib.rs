@@ -381,44 +381,43 @@ fn make_morgan_fingerprint_params(
 }
 
 fn make_avalon_fingerprint_params(
-    min_path: u32,
-    max_path: u32,
-    n_bits: usize,
-    n_bits_per_hash: u32,
-    use_bond_order: bool,
-    use_hs: bool,
-    tautomeric_fingerprint: bool,
-    from_atoms: Option<Vec<usize>>,
+    n_bits: u32,
+    is_query: bool,
+    bit_flags: u32,
 ) -> cosmolkit_core::avalon_fingerprint::AvalonFingerprintParams {
     cosmolkit_core::avalon_fingerprint::AvalonFingerprintParams {
-        min_path,
-        max_path,
         n_bits,
-        n_bits_per_hash,
-        use_bond_order,
-        use_hs,
-        tautomeric_fingerprint,
-        from_atoms,
+        is_query,
+        bit_flags: cosmolkit_core::AvalonFingerprintFlags::from_bits_retain(bit_flags),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_topological_fingerprint_params(
     min_path: u32,
     max_path: u32,
-    n_bits: usize,
-    n_bits_per_hash: u32,
-    use_bond_types: bool,
-    from_atoms: Option<Vec<usize>>,
-    ignore_atoms: Option<Vec<usize>>,
+    fp_size: u32,
+    num_bits_per_feature: u32,
+    use_hs: bool,
+    target_density: f64,
+    min_size: u32,
+    branched_paths: bool,
+    use_bond_order: bool,
+    atom_invariants: Option<Vec<u32>>,
+    from_atoms: Option<Vec<u32>>,
 ) -> cosmolkit_core::fingerprint::TopologicalFingerprintParams {
     cosmolkit_core::fingerprint::TopologicalFingerprintParams {
         min_path,
         max_path,
-        n_bits,
-        n_bits_per_hash,
-        use_bond_types,
+        fp_size,
+        num_bits_per_feature,
+        use_hs,
+        target_density,
+        min_size,
+        branched_paths,
+        use_bond_order,
+        atom_invariants,
         from_atoms,
-        ignore_atoms,
     }
 }
 
@@ -5090,43 +5089,22 @@ as one new molecule value.
         }
     }
 
-    #[pyo3(signature = (
-        min_path=1,
-        max_path=7,
-        n_bits=2048,
-        n_bits_per_hash=1,
-        use_bond_order=true,
-        use_hs=false,
-        tautomeric_fingerprint=false,
-        from_atoms=None
-    ))]
+    #[pyo3(signature = (n_bits=512, is_query=false, bit_flags=0xf07fff))]
     #[doc = r#"
-Report that Avalon fingerprint generation is unsupported.
+Return the source-backed Avalon explicit bit fingerprint.
 
-This call fails with an unsupported-feature error. COSMolKit does not return
-approximate Avalon-like bits while the Avalon source dependency is unported.
+The parameters follow the pinned RDKit Python adapter: ``n_bits`` controls
+the public vector size, ``is_query`` selects query-molecule preprocessing,
+and ``bit_flags`` selects the Avalon feature families. The result does not
+mutate the source molecule.
 "#]
     fn avalon_fingerprint(
         &self,
-        min_path: u32,
-        max_path: u32,
-        n_bits: usize,
-        n_bits_per_hash: u32,
-        use_bond_order: bool,
-        use_hs: bool,
-        tautomeric_fingerprint: bool,
-        from_atoms: Option<Vec<usize>>,
+        n_bits: u32,
+        is_query: bool,
+        bit_flags: u32,
     ) -> PyResult<Fingerprint> {
-        let params = make_avalon_fingerprint_params(
-            min_path,
-            max_path,
-            n_bits,
-            n_bits_per_hash,
-            use_bond_order,
-            use_hs,
-            tautomeric_fingerprint,
-            from_atoms,
-        );
+        let params = make_avalon_fingerprint_params(n_bits, is_query, bit_flags);
         self.inner
             .avalon_fingerprint(&params)
             .map(|inner| Fingerprint { inner })
@@ -5332,40 +5310,115 @@ exact-bit and exact-field parity for the supported branches.
     #[pyo3(signature = (
         min_path=1,
         max_path=7,
-        n_bits=2048,
-        n_bits_per_hash=2,
-        use_bond_types=true,
-        from_atoms=None,
-        ignore_atoms=None
+        fp_size=2048,
+        num_bits_per_feature=2,
+        use_hs=true,
+        target_density=0.0,
+        min_size=128,
+        branched_paths=true,
+        use_bond_order=true,
+        atom_invariants=None,
+        from_atoms=None
     ))]
     #[doc = r#"
-Report that RDKit topological fingerprint generation is unsupported.
+Return the source-backed RDKit topological fingerprint.
 
-This call fails with an unsupported-feature error. COSMolKit does not return
-approximate path-hash bits while ``RDKFingerprintMol`` is unported.
+The parameters and bit ordering follow the pinned ``RDKFingerprintMol``
+boundary. Unsupported argument ranges raise ``ValueError``.
 "#]
     fn topological_fingerprint(
         &self,
         min_path: u32,
         max_path: u32,
-        n_bits: usize,
-        n_bits_per_hash: u32,
-        use_bond_types: bool,
-        from_atoms: Option<Vec<usize>>,
-        ignore_atoms: Option<Vec<usize>>,
+        fp_size: u32,
+        num_bits_per_feature: u32,
+        use_hs: bool,
+        target_density: f64,
+        min_size: u32,
+        branched_paths: bool,
+        use_bond_order: bool,
+        atom_invariants: Option<Vec<u32>>,
+        from_atoms: Option<Vec<u32>>,
     ) -> PyResult<Fingerprint> {
         let params = make_topological_fingerprint_params(
             min_path,
             max_path,
-            n_bits,
-            n_bits_per_hash,
-            use_bond_types,
+            fp_size,
+            num_bits_per_feature,
+            use_hs,
+            target_density,
+            min_size,
+            branched_paths,
+            use_bond_order,
+            atom_invariants,
             from_atoms,
-            ignore_atoms,
         );
         self.inner
             .topological_fingerprint(&params)
             .map(|inner| Fingerprint { inner })
+            .map_err(fingerprint_pyerr)
+    }
+
+    #[pyo3(signature = (
+        min_path=1,
+        max_path=7,
+        fp_size=2048,
+        num_bits_per_feature=2,
+        use_hs=true,
+        target_density=0.0,
+        min_size=128,
+        branched_paths=true,
+        use_bond_order=true,
+        atom_invariants=None,
+        from_atoms=None,
+        atom_bits=false,
+        bit_info=false
+    ))]
+    #[doc = r#"
+Return an RDKit topological fingerprint with typed optional provenance.
+
+``atom_bits`` and ``bit_info`` request the corresponding source
+``AdditionalOutput`` branches. Provenance bit identifiers retain the source
+pre-folding values when density folding is enabled.
+"#]
+    fn topological_fingerprint_with_output(
+        &self,
+        min_path: u32,
+        max_path: u32,
+        fp_size: u32,
+        num_bits_per_feature: u32,
+        use_hs: bool,
+        target_density: f64,
+        min_size: u32,
+        branched_paths: bool,
+        use_bond_order: bool,
+        atom_invariants: Option<Vec<u32>>,
+        from_atoms: Option<Vec<u32>>,
+        atom_bits: bool,
+        bit_info: bool,
+    ) -> PyResult<TopologicalFingerprintResult> {
+        let params = make_topological_fingerprint_params(
+            min_path,
+            max_path,
+            fp_size,
+            num_bits_per_feature,
+            use_hs,
+            target_density,
+            min_size,
+            branched_paths,
+            use_bond_order,
+            atom_invariants,
+            from_atoms,
+        );
+        self.inner
+            .topological_fingerprint_with_output(
+                &params,
+                cosmolkit_core::TopologicalFingerprintOutputRequest {
+                    atom_bits,
+                    bit_info,
+                },
+            )
+            .map(Into::into)
             .map_err(fingerprint_pyerr)
     }
 
@@ -6384,6 +6437,60 @@ Return the Morgan additional output collected by ``fingerprint_morgan_with_outpu
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(skip_from_py_object)]
 #[derive(Clone)]
+struct TopologicalFingerprintResult {
+    fingerprint: Fingerprint,
+    atom_bits: Option<Vec<Vec<u32>>>,
+    bit_info: Option<BTreeMap<u32, Vec<Vec<i32>>>>,
+}
+
+impl From<cosmolkit_core::TopologicalFingerprintResult> for TopologicalFingerprintResult {
+    fn from(value: cosmolkit_core::TopologicalFingerprintResult) -> Self {
+        Self {
+            fingerprint: Fingerprint {
+                inner: value.fingerprint,
+            },
+            atom_bits: value.output.atom_bits,
+            bit_info: value.output.bit_info,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl TopologicalFingerprintResult {
+    fn fingerprint(&self) -> Fingerprint {
+        self.fingerprint.clone()
+    }
+
+    fn atom_bits(&self) -> PyResult<Vec<Vec<u32>>> {
+        self.atom_bits.clone().ok_or_else(|| {
+            PyValueError::new_err(
+                "topological atom_bits output was not requested for this fingerprint result",
+            )
+        })
+    }
+
+    fn bit_info(&self) -> PyResult<BTreeMap<u32, Vec<Vec<i32>>>> {
+        self.bit_info.clone().ok_or_else(|| {
+            PyValueError::new_err(
+                "topological bit_info output was not requested for this fingerprint result",
+            )
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TopologicalFingerprintResult(n_bits={}, has_atom_bits={}, has_bit_info={})",
+            self.fingerprint.inner.n_bits(),
+            self.atom_bits.is_some(),
+            self.bit_info.is_some()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
 struct EmbedMoleculeResult {
     molecule: Molecule,
     conf_id: i32,
@@ -7193,7 +7300,9 @@ fn calc_fraction_csp3(molecule: &Molecule) -> PyResult<f64> {
 #[doc = r#"
 Return ``(logp, molar_refractivity)`` using the RDKit Crippen descriptor path.
 
-The input molecule is not mutated.
+The chemical graph and user-visible molecule properties are not mutated. The
+source-compatible computed Crippen descriptor cache may be populated on the
+input molecule, matching RDKit's property-cache behavior.
 "#]
 fn calc_crippen_descriptors(
     molecule: &Molecule,
@@ -7413,6 +7522,7 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Fingerprint>()?;
     m.add_class::<MorganAdditionalOutput>()?;
     m.add_class::<MorganFingerprintResult>()?;
+    m.add_class::<TopologicalFingerprintResult>()?;
     m.add_class::<EmbedMoleculeResult>()?;
     m.add_class::<EmbedMultipleConfsResult>()?;
     m.add_class::<UffOptimizeMoleculeResult>()?;
