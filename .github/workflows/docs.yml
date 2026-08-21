@@ -50,7 +50,8 @@ jobs:
             - name: Build HTML documentation
               run: |
                   rm -rf python/docs/build/html
-                  .venv/bin/python -m sphinx -E -b html python/docs/source python/docs/build/html
+                  .venv/bin/python -m sphinx -W --keep-going -E -b html python/docs/source python/docs/build/html
+                  .venv/bin/python python/docs/check_seo.py python/docs/build/html
 
             - name: Configure GitHub Pages
               uses: actions/configure-pages@v5

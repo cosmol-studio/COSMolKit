@@ -1,6 +1,9 @@
 Molecule Values
 ===============
 
+.. meta::
+   :description: COSMolKit molecular graph APIs for value semantics, SMILES and SMARTS, stereochemistry, coordinates, conformers, substructure search, editing, InChI, and binary serialization.
+
 ``Molecule`` objects behave as value-style molecule values. Transformation
 methods return new molecule objects and leave the original object unchanged.
 Internally COSMolKit uses copy-on-write (COW) storage to share unchanged data
@@ -28,6 +31,29 @@ Common transformations include:
 - ``with_kekulized_bonds()``
 - ``with_2d_coordinates()``
 - ``with_chiral_tags_from_structure()``
+
+Elements and Periodic-Table Metadata
+------------------------------------
+
+``Element`` is a stable integer enum whose values are atomic numbers. Zero is
+the dummy atom, and 1 through 118 represent H through Og. Symbol lookup is
+case-sensitive and metadata comes from the same source-aligned periodic table
+used by the chemistry core:
+
+.. code-block:: python
+
+   from cosmolkit import Element, element_from_symbol, get_element_info
+
+   assert Element.C == 6
+   assert element_from_symbol("Cl") == Element.CL
+
+   chlorine = get_element_info(Element.CL)
+   assert chlorine.symbol() == "Cl"
+   assert chlorine.atomic_number() == 17
+
+``ELEMENT_MAP`` maps canonical symbols, the dummy symbol ``"*"``, and retained
+source aliases to ``Element`` values. Molecule atoms expose the same identity
+through ``atom.element()``.
 
 Read Finalization
 -----------------

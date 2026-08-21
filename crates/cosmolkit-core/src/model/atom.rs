@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, fmt};
+use std::{collections::BTreeMap, fmt, str::FromStr};
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use thiserror::Error;
 
 use crate::{AtomQueryPredicate, QueryNode};
 
@@ -237,10 +240,47 @@ impl fmt::Display for AtomId {
     }
 }
 
-/// Minimal element identity for the core.
+/// Stable chemical-element identity.
+///
+/// The private atomic number is always in the inclusive range `0..=118`.
+/// Zero is the source-compatible dummy atom (`*`); `1..=118` are H through
+/// Og. Use [`Element::from_atomic_number`] or [`FromStr`] for checked external
+/// construction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Element {
     atomic_number: u8,
+}
+
+/// Error returned when a string is not a source-recognized element symbol.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("unknown element symbol '{input}'")]
+pub struct ElementParseError {
+    input: String,
+}
+
+impl ElementParseError {
+    #[must_use]
+    pub fn input(&self) -> &str {
+        &self.input
+    }
+}
+
+/// Source-aligned periodic-table metadata for an [`Element`].
+///
+/// This is a read-only projection of the periodic-table data used by the
+/// chemistry core. `valences` preserves the source sentinel values, including
+/// `-1`; callers must not reinterpret those values as an exhaustive IUPAC
+/// oxidation-state table.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[non_exhaustive]
+pub struct ElementInfo {
+    pub element: Element,
+    pub symbol: &'static str,
+    pub atomic_number: u8,
+    pub period: u8,
+    pub outer_electrons: i32,
+    pub valences: &'static [i32],
+    pub atomic_weight: f64,
 }
 
 impl Element {
@@ -375,15 +415,126 @@ impl Element {
     pub const TS: Self = Self { atomic_number: 117 };
     pub const OG: Self = Self { atomic_number: 118 };
 
+    /// Construct an element from a checked atomic number.
+    ///
+    /// `0` is the dummy atom and `1..=118` are the real elements. Values above
+    /// 118 are rejected rather than creating an invalid element identity.
+    #[must_use]
     pub const fn from_atomic_number(atomic_number: u8) -> Option<Self> {
-        Some(Self { atomic_number })
+        if atomic_number <= 118 {
+            Some(Self { atomic_number })
+        } else {
+            None
+        }
     }
 
     #[must_use]
     pub const fn atomic_number(self) -> u8 {
         self.atomic_number
     }
+
+    /// Construct an element from a source-recognized symbol.
+    ///
+    /// Parsing is case-sensitive, matching the source periodic-table API.
+    /// Legacy source aliases such as `Uut` and `Uup` are accepted and
+    /// canonicalize to `Nh` and `Mc` respectively.
+    #[must_use]
+    pub fn from_symbol(symbol: &str) -> Option<Self> {
+        crate::chemistry::valence::rdkit_atomic_number_from_symbol(symbol)
+            .and_then(Self::from_atomic_number)
+    }
+
+    /// Return the canonical element symbol (`*`, `H` through `Og`).
+    #[must_use]
+    pub fn symbol(self) -> &'static str {
+        crate::chemistry::valence::rdkit_element_symbol(self.atomic_number)
+            .expect("Element's private atomic number is always in 0..=118")
+    }
+
+    /// Return the source-aligned periodic-table metadata used by COSMolKit.
+    #[must_use]
+    pub fn info(self) -> ElementInfo {
+        let atomic_number = self.atomic_number;
+        ElementInfo {
+            element: self,
+            symbol: self.symbol(),
+            atomic_number,
+            period: crate::chemistry::valence::periodic_table_row(atomic_number)
+                .expect("Element's private atomic number is always in 0..=118"),
+            outer_electrons: crate::chemistry::valence::periodic_table_outer_electrons(
+                atomic_number,
+            )
+            .expect("Element's private atomic number is always in 0..=118"),
+            valences: crate::chemistry::valence::rdkit_valence_list(atomic_number)
+                .expect("Element's private atomic number is always in 0..=118")
+                .expect("every valid Element has a periodic-table row"),
+            atomic_weight: crate::chemistry::valence::rdkit_atomic_mass(atomic_number, None),
+        }
+    }
+
+    /// Iterate over the 118 real elements, excluding the dummy atom.
+    pub fn iter() -> impl ExactSizeIterator<Item = Self> + DoubleEndedIterator {
+        ELEMENTS.iter().copied()
+    }
+
+    /// Iterate over the dummy atom followed by all 118 real elements.
+    pub fn iter_with_dummy() -> impl ExactSizeIterator<Item = Self> + DoubleEndedIterator {
+        ELEMENTS_WITH_DUMMY.iter().copied()
+    }
 }
+
+impl fmt::Display for Element {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.symbol())
+    }
+}
+
+impl FromStr for Element {
+    type Err = ElementParseError;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        Self::from_symbol(input).ok_or_else(|| ElementParseError {
+            input: input.to_string(),
+        })
+    }
+}
+
+impl Serialize for Element {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.symbol())
+    }
+}
+
+impl<'de> Deserialize<'de> for Element {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let symbol = String::deserialize(deserializer)?;
+        symbol.parse().map_err(serde::de::Error::custom)
+    }
+}
+
+const fn element_array<const N: usize>(first_atomic_number: u8) -> [Element; N] {
+    let mut elements = [Element::DUMMY; N];
+    let mut index = 0;
+    while index < N {
+        elements[index] = Element {
+            atomic_number: first_atomic_number + index as u8,
+        };
+        index += 1;
+    }
+    elements
+}
+
+/// All 118 real elements in ascending atomic-number order (H through Og).
+pub static ELEMENTS: [Element; 118] = element_array::<118>(1);
+
+/// The dummy atom followed by all real elements in atomic-number order.
+pub static ELEMENTS_WITH_DUMMY: [Element; 119] = element_array::<119>(0);
 
 /// Atom construction payload.
 ///
@@ -955,5 +1106,81 @@ impl Atom {
     #[allow(dead_code)]
     pub(crate) fn set_pdb_residue_info(&mut self, info: Option<AtomPdbResidueInfo>) {
         self.pdb_residue_info = info;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ELEMENTS, ELEMENTS_WITH_DUMMY, Element};
+
+    #[test]
+    fn element_domain_and_public_tables_cover_exactly_dummy_through_oganesson() {
+        assert_eq!(ELEMENTS.len(), 118);
+        assert_eq!(ELEMENTS_WITH_DUMMY.len(), 119);
+        assert_eq!(Element::iter().count(), 118);
+        assert_eq!(Element::iter_with_dummy().count(), 119);
+
+        for (atomic_number, element) in ELEMENTS_WITH_DUMMY.iter().copied().enumerate() {
+            let atomic_number = u8::try_from(atomic_number).unwrap();
+            assert_eq!(element.atomic_number(), atomic_number);
+            assert_eq!(Element::from_atomic_number(atomic_number), Some(element));
+        }
+        assert_eq!(ELEMENTS[0], Element::H);
+        assert_eq!(ELEMENTS[117], Element::OG);
+        assert_eq!(Element::from_atomic_number(119), None);
+        assert_eq!(Element::from_atomic_number(u8::MAX), None);
+    }
+
+    #[test]
+    fn every_element_symbol_roundtrips_through_display_parse_and_serde() {
+        for element in Element::iter_with_dummy() {
+            let symbol = element.symbol();
+            assert_eq!(element.to_string(), symbol);
+            assert_eq!(symbol.parse(), Ok(element));
+            assert_eq!(Element::from_symbol(symbol), Some(element));
+
+            let json = serde_json::to_string(&element).unwrap();
+            assert_eq!(serde_json::from_str::<Element>(&json).unwrap(), element);
+            assert_eq!(json, format!(r#""{symbol}""#));
+        }
+    }
+
+    #[test]
+    fn element_parsing_preserves_source_case_and_legacy_alias_behavior() {
+        assert_eq!("Uut".parse(), Ok(Element::NH));
+        assert_eq!("Uup".parse(), Ok(Element::MC));
+        assert_eq!(
+            serde_json::to_string(&"Uut".parse::<Element>().unwrap()).unwrap(),
+            r#""Nh""#
+        );
+
+        for invalid in ["", "cl", "CL", "Carbon", "Xx"] {
+            let error = invalid.parse::<Element>().unwrap_err();
+            assert_eq!(error.input(), invalid);
+        }
+    }
+
+    #[test]
+    fn element_info_is_self_consistent_for_every_periodic_table_row() {
+        for element in Element::iter_with_dummy() {
+            let info = element.info();
+            assert_eq!(info.element, element);
+            assert_eq!(info.atomic_number, element.atomic_number());
+            assert_eq!(info.symbol, element.symbol());
+            assert!(!info.valences.is_empty());
+
+            let serialized = serde_json::to_value(info).unwrap();
+            assert_eq!(serialized["element"], element.symbol());
+            assert_eq!(serialized["symbol"], element.symbol());
+            assert_eq!(serialized["atomic_number"], element.atomic_number());
+        }
+
+        let carbon = Element::C.info();
+        assert_eq!(carbon.symbol, "C");
+        assert_eq!(carbon.atomic_number, 6);
+        assert_eq!(carbon.period, 2);
+        assert_eq!(carbon.outer_electrons, 4);
+        assert_eq!(carbon.valences, &[4]);
+        assert_eq!(carbon.atomic_weight, 12.011);
     }
 }

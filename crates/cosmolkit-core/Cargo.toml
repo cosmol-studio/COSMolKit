@@ -25,7 +25,7 @@ op-contracts-strict = ["runtime-invariants", "op-contracts"]
 cosmolkit-inchi = { version = "0.2.12", path = "../cosmolkit-inchi" }
 cosmolkit-macros = { version = "0.2.12", path = "../cosmolkit-macros" }
 cosmolkit-ringdecomposer = { version = "0.2.12", path = "../cosmolkit-ringdecomposer" }
-glam = "0.33.1"
+glam = "0.33.5"
 indicatif = "0.18"
 libc = "0.2"
 log = "0.4.29"
@@ -35,10 +35,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2.0.18"
 tiny-skia = "0.12.0"
-usvg = "0.47"
-resvg = "0.47"
+usvg = "0.48.1"
+resvg = "0.48.1"
 
 [dev-dependencies]
 cosmolkit-test-support = { path = "../cosmolkit-test-support" }
-sha2 = "0.10"
+sha2 = "0.11"
 tempfile = "3"

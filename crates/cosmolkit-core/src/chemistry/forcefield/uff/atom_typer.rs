@@ -1853,14 +1853,6 @@ mod tests {
     }
 
     #[test]
-    fn uff_atom_typer_get_atom_label_returns_error_for_out_of_range_atomic_number() {
-        let atom = atom(119, 0);
-        let err = get_atom_label_for_uff(&atom, 0, 0, Hybridization::Sp3, false, true)
-            .expect_err("out-of-range atomic number should fail");
-        assert!(err.to_string().contains("out of range"));
-    }
-
-    #[test]
     fn uff_atom_typer_get_atom_types_returns_params_and_found_all_for_known_labels() {
         let mol = molecule_with_atomic_numbers(&[6, 8]);
         let (params, found_all) = get_atom_types_for_uff(
@@ -1914,15 +1906,6 @@ mod tests {
                 conjugation_flags: 1
             }
         ));
-    }
-
-    #[test]
-    fn uff_atom_typer_get_atom_types_propagates_atom_label_errors() {
-        let mol = molecule_with_atomic_numbers(&[119]);
-        let err = get_atom_types_for_uff(&mol, &[0], &[Hybridization::Sp3], &[false])
-            .expect_err("out-of-range atom should fail");
-
-        assert!(matches!(err, UffAtomTyperError::Valence(_)));
     }
 
     #[test]

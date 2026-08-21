@@ -1,6 +1,9 @@
 Molecular Descriptors
 =====================
 
+.. meta::
+   :description: Calculate molecular weight, formula, H-bond counts, Crippen LogP and MR, TPSA, aromatic rings, rotatable bonds, fraction Csp3, and QED with COSMolKit.
+
 COSMolKit exposes the source-backed molecular descriptor functions from the
 Rust core directly in Python. Descriptor calls are read-only and do not mutate
 the input :class:`cosmolkit.Molecule`.

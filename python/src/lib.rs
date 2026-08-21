@@ -515,20 +515,7 @@ fn residue_info_kind_code(kind: cosmolkit_core::ResidueInfoKind) -> i64 {
 }
 
 fn residue_info_kind_name(kind: cosmolkit_core::ResidueInfoKind) -> &'static str {
-    match kind {
-        cosmolkit_core::ResidueInfoKind::Unknown => "UNKNOWN",
-        cosmolkit_core::ResidueInfoKind::Aa => "AA",
-        cosmolkit_core::ResidueInfoKind::Aad => "AAD",
-        cosmolkit_core::ResidueInfoKind::Paa => "PAA",
-        cosmolkit_core::ResidueInfoKind::Maa => "MAA",
-        cosmolkit_core::ResidueInfoKind::Rna => "RNA",
-        cosmolkit_core::ResidueInfoKind::Dna => "DNA",
-        cosmolkit_core::ResidueInfoKind::Buf => "BUF",
-        cosmolkit_core::ResidueInfoKind::Hoh => "HOH",
-        cosmolkit_core::ResidueInfoKind::Pyr => "PYR",
-        cosmolkit_core::ResidueInfoKind::Ket => "KET",
-        cosmolkit_core::ResidueInfoKind::Els => "ELS",
-    }
+    kind.name()
 }
 
 fn residue_info_kind_from_code(code: i64) -> PyResult<cosmolkit_core::ResidueInfoKind> {
@@ -560,6 +547,13 @@ fn residue_code_enum_member<'py>(
     code: cosmolkit_core::ResidueCode,
 ) -> PyResult<Bound<'py, PyAny>> {
     enum_member(py, "ResidueCode", i64::from(code.as_u16()))
+}
+
+fn element_enum_member<'py>(
+    py: Python<'py>,
+    element: cosmolkit_core::Element,
+) -> PyResult<Bound<'py, PyAny>> {
+    enum_member(py, "Element", i64::from(element.atomic_number()))
 }
 
 fn residue_info_kind_enum_member<'py>(
@@ -634,6 +628,48 @@ fn add_int_enum_with_map_aliases(
 }
 
 fn add_public_enums(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let element_members = cosmolkit_core::ELEMENTS_WITH_DUMMY
+        .iter()
+        .map(|element| {
+            let name = if *element == cosmolkit_core::Element::DUMMY {
+                "DUMMY".to_string()
+            } else {
+                element.symbol().to_ascii_uppercase()
+            };
+            (name, i64::from(element.atomic_number()))
+        })
+        .collect::<Vec<_>>();
+    let element_member_refs = element_members
+        .iter()
+        .map(|(name, value)| (name.as_str(), *value))
+        .collect::<Vec<_>>();
+    let mut element_aliases = cosmolkit_core::ELEMENTS_WITH_DUMMY
+        .iter()
+        .map(|element| {
+            let member_name = if *element == cosmolkit_core::Element::DUMMY {
+                "DUMMY".to_string()
+            } else {
+                element.symbol().to_ascii_uppercase()
+            };
+            (element.symbol().to_string(), member_name)
+        })
+        .collect::<Vec<_>>();
+    element_aliases.extend([
+        ("Uut".to_string(), "NH".to_string()),
+        ("Uup".to_string(), "MC".to_string()),
+    ]);
+    let element_alias_refs = element_aliases
+        .iter()
+        .map(|(symbol, name)| (symbol.as_str(), name.as_str()))
+        .collect::<Vec<_>>();
+    add_int_enum_with_map_aliases(
+        m,
+        "Element",
+        "ELEMENT_MAP",
+        &element_member_refs,
+        &element_alias_refs,
+    )?;
+
     add_int_enum(
         m,
         "BondOrder",
@@ -1661,6 +1697,19 @@ struct ProteinChain {
 struct ProteinResidue {
     inner: cosmolkit_core::Protein,
     index: usize,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "ElementInfo", skip_from_py_object)]
+#[derive(Clone)]
+#[doc = r#"
+Source-aligned periodic-table metadata used by COSMolKit.
+
+The ``valences()`` values preserve the source periodic-table sentinels and are
+not an exhaustive oxidation-state table.
+"#]
+struct PyElementInfo {
+    inner: cosmolkit_core::ElementInfo,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
@@ -5835,6 +5884,40 @@ impl ProteinResidue {
             .to_string()
     }
 
+    #[doc = "Return the canonical one-letter amino-acid code, if table-defined."]
+    fn canonical_one_letter_code(&self) -> Option<String> {
+        self.inner
+            .residues()
+            .nth(self.index)
+            .expect("valid protein residue")
+            .info()
+            .canonical_one_letter_code()
+            .map(|code| code.to_string())
+    }
+
+    #[doc = "Return the table-defined standard parent residue code, if available."]
+    #[gen_stub(override_return_type(type_repr = "ResidueCode | None"))]
+    fn parent_standard_code<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        self.inner
+            .residues()
+            .nth(self.index)
+            .expect("valid protein residue")
+            .info()
+            .parent_standard_code()
+            .map(|code| residue_code_enum_member(py, code))
+            .transpose()
+    }
+
+    #[doc = "Return whether this is a non-standard amino acid in the residue table."]
+    fn is_modified_amino_acid(&self) -> bool {
+        self.inner
+            .residues()
+            .nth(self.index)
+            .expect("valid protein residue")
+            .info()
+            .is_modified_amino_acid()
+    }
+
     #[doc = "Return whether Gemmi marks this residue as standard."]
     fn is_standard(&self) -> bool {
         self.inner
@@ -5946,6 +6029,24 @@ impl PyResidueInfo {
         self.inner.fasta_code().to_string()
     }
 
+    fn canonical_one_letter_code(&self) -> Option<String> {
+        self.inner
+            .canonical_one_letter_code()
+            .map(|code| code.to_string())
+    }
+
+    #[gen_stub(override_return_type(type_repr = "ResidueCode | None"))]
+    fn parent_standard_code<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        self.inner
+            .parent_standard_code()
+            .map(|code| residue_code_enum_member(py, code))
+            .transpose()
+    }
+
+    fn is_modified_amino_acid(&self) -> bool {
+        self.inner.is_modified_amino_acid()
+    }
+
     fn is_peptide_linking(&self) -> bool {
         self.inner.is_peptide_linking()
     }
@@ -5965,6 +6066,7 @@ impl PyResidueInfo {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
 impl ProteinAtom {
     #[doc = "Return the zero-based atom index."]
@@ -5972,8 +6074,33 @@ impl ProteinAtom {
         self.index
     }
 
-    #[doc = "Return the atomic number as a string."]
-    fn element(&self) -> String {
+    #[doc = "Return the atom's element as ``Element``."]
+    #[gen_stub(override_return_type(type_repr = "Element"))]
+    fn element<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let element = self
+            .inner
+            .atoms()
+            .nth(self.index)
+            .expect("valid protein atom")
+            .row()
+            .element;
+        element_enum_member(py, element)
+    }
+
+    #[doc = "Return the canonical element symbol."]
+    fn element_symbol(&self) -> String {
+        self.inner
+            .atoms()
+            .nth(self.index)
+            .expect("valid protein atom")
+            .row()
+            .element
+            .symbol()
+            .to_string()
+    }
+
+    #[doc = "Return the atomic number."]
+    fn atomic_num(&self) -> u8 {
         self.inner
             .atoms()
             .nth(self.index)
@@ -5981,7 +6108,6 @@ impl ProteinAtom {
             .row()
             .element
             .atomic_number()
-            .to_string()
     }
 
     #[doc = "Return the atom name, for example ``CA``."]
@@ -6017,6 +6143,18 @@ impl Atom {
     }
     fn atomic_num(&self) -> usize {
         self.atomic_num
+    }
+    #[gen_stub(override_return_type(type_repr = "Element"))]
+    fn element<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let atomic_number = u8::try_from(self.atomic_num)
+            .map_err(|_| PyValueError::new_err("atom atomic number is outside u8 range"))?;
+        let element =
+            cosmolkit_core::Element::from_atomic_number(atomic_number).ok_or_else(|| {
+                PyValueError::new_err(format!(
+                    "atom atomic number {atomic_number} is outside the Element domain"
+                ))
+            })?;
+        element_enum_member(py, element)
     }
     fn formal_charge(&self) -> i8 {
         self.formal_charge
@@ -6077,6 +6215,47 @@ impl Atom {
                 .unwrap_or_else(|| "None".to_string()),
             self.is_aromatic,
             self.degree
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyElementInfo {
+    #[gen_stub(override_return_type(type_repr = "Element"))]
+    fn element<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        element_enum_member(py, self.inner.element)
+    }
+
+    fn symbol(&self) -> String {
+        self.inner.symbol.to_string()
+    }
+
+    fn atomic_number(&self) -> u8 {
+        self.inner.atomic_number
+    }
+
+    fn period(&self) -> u8 {
+        self.inner.period
+    }
+
+    fn outer_electrons(&self) -> i32 {
+        self.inner.outer_electrons
+    }
+
+    fn valences(&self) -> Vec<i32> {
+        self.inner.valences.to_vec()
+    }
+
+    fn atomic_weight(&self) -> f64 {
+        self.inner.atomic_weight
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ElementInfo(symbol='{}', atomic_number={}, period={})",
+            self.inner.symbol, self.inner.atomic_number, self.inner.period
         )
     }
 }
@@ -6168,14 +6347,11 @@ impl MoleculeEdit {
 Add an atom by element symbol and return its atom index.
 "#]
     fn add_atom(&mut self, element: &str) -> PyResult<usize> {
-        let Some(atomic_num) = cosmolkit_core::rdkit_atomic_number_from_symbol(element) else {
+        let Some(element) = cosmolkit_core::Element::from_symbol(element) else {
             return Err(PyValueError::new_err(format!(
                 "unsupported element symbol '{element}'"
             )));
         };
-        let element = cosmolkit_core::Element::from_atomic_number(atomic_num).ok_or_else(|| {
-            PyValueError::new_err(format!("unsupported atomic number {atomic_num}"))
-        })?;
         Ok(self
             .builder
             .add_atom(cosmolkit_core::AtomSpec::new(element))
@@ -7361,6 +7537,32 @@ fn calc_qed(molecule: &Molecule) -> PyResult<f64> {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pyfunction]
+#[gen_stub(override_return_type(type_repr = "Element"))]
+#[doc = "Return the element represented by a canonical or source-recognized symbol."]
+fn element_from_symbol<'py>(py: Python<'py>, symbol: &str) -> PyResult<Bound<'py, PyAny>> {
+    let element = cosmolkit_core::Element::from_symbol(symbol)
+        .ok_or_else(|| PyValueError::new_err(format!("unknown element symbol '{symbol}'")))?;
+    element_enum_member(py, element)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pyfunction]
+#[doc = "Return source-aligned periodic-table metadata for an atomic number."]
+fn get_element_info(atomic_number: u8) -> PyResult<PyElementInfo> {
+    let element = cosmolkit_core::Element::from_atomic_number(atomic_number).ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "atomic number {atomic_number} is outside the Element domain 0..=118"
+        ))
+    })?;
+    Ok(PyElementInfo {
+        inner: element.info(),
+    })
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 #[doc = r#"
 Return Gemmi-derived tabulated residue information for a residue name.
@@ -7504,6 +7706,7 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Protein>()?;
     m.add_class::<ProteinChain>()?;
     m.add_class::<ProteinResidue>()?;
+    m.add_class::<PyElementInfo>()?;
     m.add_class::<PyResidueInfo>()?;
     m.add_class::<ProteinAtom>()?;
     m.add_class::<MoleculeBatch>()?;
@@ -7562,6 +7765,8 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(calc_num_aromatic_rings, m)?)?;
     m.add_function(wrap_pyfunction!(calc_num_rotatable_bonds, m)?)?;
     m.add_function(wrap_pyfunction!(calc_qed, m)?)?;
+    m.add_function(wrap_pyfunction!(element_from_symbol, m)?)?;
+    m.add_function(wrap_pyfunction!(get_element_info, m)?)?;
     m.add_function(wrap_pyfunction!(find_tabulated_residue, m)?)?;
     m.add_function(wrap_pyfunction!(find_tabulated_residue_idx, m)?)?;
     m.add_function(wrap_pyfunction!(get_residue_info, m)?)?;

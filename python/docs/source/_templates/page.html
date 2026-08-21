@@ -1,0 +1,19 @@
+{% extends "!page.html" %}
+
+{% block footer %}
+  {{ super() }}
+  <nav class="cosmolkit-project-links" aria-label="Project and Rust crates">
+    <p class="cosmolkit-project-links__title">Project and Rust crates</p>
+    <div class="cosmolkit-project-links__items">
+      <a href="https://github.com/cosmol-studio/COSMolKit">Source repository</a>
+      <a href="https://crates.io/crates/cosmolkit">cosmolkit Rust facade crate</a>
+      <a href="https://crates.io/crates/cosmolkit-core">cosmolkit-core chemistry crate</a>
+      <a href="https://crates.io/crates/cosmolkit-inchi">cosmolkit-inchi crate</a>
+      <a href="https://crates.io/crates/cosmolkit-ringdecomposer">cosmolkit-ringdecomposer crate</a>
+      <a href="https://docs.rs/cosmolkit/latest/cosmolkit/">Rust API documentation</a>
+      <a href="https://pypi.org/project/cosmolkit/">COSMolKit Python package</a>
+      <a href="https://kit.cosmol.org/">Documentation</a>
+      <a href="https://tools.cosmol.org/">Web tools</a>
+    </div>
+  </nav>
+{% endblock footer %}

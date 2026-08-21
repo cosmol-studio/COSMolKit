@@ -20,6 +20,7 @@ fn main() -> Result<()> {
         text = format!("{future_line}{text}");
     }
     text = expose_chem_enums(text);
+    text = expose_element_enum(text);
     text = expose_batch_validation_error(text);
     text = expose_batch_error_mode_inputs(text);
     text = expose_batch_getitem_overloads(text);
@@ -31,6 +32,44 @@ fn main() -> Result<()> {
     fs::write(pyi_path, text)?;
 
     Ok(())
+}
+
+fn element_stub_defs() -> String {
+    let mut out = String::from("@typing.final\nclass Element(enum.IntEnum):\n");
+    for element in cosmolkit_core::ELEMENTS_WITH_DUMMY.iter().copied() {
+        let name = if element == cosmolkit_core::Element::DUMMY {
+            "DUMMY".to_string()
+        } else {
+            element.symbol().to_ascii_uppercase()
+        };
+        out.push_str(&format!("    {name} = {}\n", element.atomic_number()));
+    }
+    out.push_str("\nELEMENT_MAP: typing.Mapping[builtins.str, Element]\n\n");
+    out
+}
+
+fn expose_element_enum(mut text: String) -> String {
+    if !text.contains("import enum\n") {
+        text = text.replace("import builtins\n", "import builtins\nimport enum\n");
+    }
+
+    for name in ["Element", "ELEMENT_MAP", "ElementInfo"] {
+        let export = format!("    \"{name}\",\n");
+        if !text.contains(&export) {
+            text = text.replace("    \"Bond\",\n", &format!("{export}    \"Bond\",\n"));
+        }
+    }
+
+    if !text.contains("class Element(enum.IntEnum)") {
+        text = text.replace(
+            "@typing.final\nclass BondOrder(enum.IntEnum):",
+            &format!(
+                "{}@typing.final\nclass BondOrder(enum.IntEnum):",
+                element_stub_defs()
+            ),
+        );
+    }
+    text
 }
 
 fn expose_confseq_module(mut text: String) -> String {

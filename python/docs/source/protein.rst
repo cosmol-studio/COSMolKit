@@ -1,6 +1,9 @@
 Protein Structures
 ==================
 
+.. meta::
+   :description: Read PDB and mmCIF protein structures with COSMolKit and traverse models, chains, residues, atoms, residue metadata, and modified amino-acid identities.
+
 Use ``Protein`` when a workflow starts from PDB or mmCIF structural data and
 needs protein-chain, residue, and atom traversal.
 
@@ -79,12 +82,21 @@ source-derived classification fields. Sequence expansion follows Gemmi's
    assert info.code() == ResidueCode.MSE
    assert info.kind() == ResidueInfoKind.AA
    assert info.fasta_code() == "X"
+   assert info.canonical_one_letter_code() == "M"
+   assert info.parent_standard_code() == ResidueCode.MET
+   assert info.is_modified_amino_acid()
    assert expand_one_letter_sequence("ACD(MSE)", ResidueInfoKind.AA) == [
        "ALA",
        "CYS",
        "ASP",
        "MSE",
    ]
+
+``fasta_code()`` deliberately follows Gemmi and emits ``"X"`` for modified
+residues. For rendering, secondary-structure logic, or residue-family tests,
+use ``canonical_one_letter_code()`` or ``parent_standard_code()`` instead. For
+example, ``HYP`` maps to ``PRO`` and ``SEP`` maps to ``SER`` without changing
+the raw residue name returned by ``ProteinResidue.name()``.
 
 Protein vs Molecule PDB APIs
 ----------------------------

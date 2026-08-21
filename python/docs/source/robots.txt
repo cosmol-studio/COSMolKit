@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://kit.cosmol.org/sitemap.xml

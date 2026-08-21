@@ -49,7 +49,9 @@ From repo root:
 ```bash
 uv sync --group dev
 .venv/bin/maturin develop --manifest-path python/Cargo.toml
-.venv/bin/python -m sphinx -b html python/docs/source python/docs/build/html
+rm -rf python/docs/build/html
+.venv/bin/python -m sphinx -W --keep-going -E -b html python/docs/source python/docs/build/html
+.venv/bin/python python/docs/check_seo.py python/docs/build/html
 ```
 
 Generated HTML:
@@ -57,6 +59,11 @@ Generated HTML:
 ```text
 python/docs/build/html/index.html
 ```
+
+The strict build treats documentation warnings as failures. The final command
+also verifies every public page's title, description, and canonical URL, plus
+the generated sitemap, homepage structured data, shared project links on every
+generated page, and copied ``robots.txt``.
 
 ## Type Checking
 

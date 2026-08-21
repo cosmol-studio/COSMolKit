@@ -1,6 +1,9 @@
 ConfSeq
 =======
 
+.. meta::
+   :description: Decode ConfSeq molecular conformations with COSMolKit using source-aligned distance geometry or the optional fast geometry coordinate backend.
+
 ConfSeq decoding uses an input SMILES string and a ConfSeq string to recover a
 3D molecule. COSMolKit exposes two template backends:
 

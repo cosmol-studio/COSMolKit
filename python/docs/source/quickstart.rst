@@ -1,6 +1,9 @@
 Quick Start
 ===========
 
+.. meta::
+   :description: Start using COSMolKit in Python for value-style molecular graphs, SMILES, coordinates, conformers, fingerprints, descriptors, depiction, and batch workflows.
+
 Value-Style Molecule Values
 ---------------------------
 
@@ -30,6 +33,9 @@ In-place molecule operations are explicit and always end with ``_``:
    mol = Molecule.from_smiles("CCO")
    mol.add_hydrogens_()
    mol.compute_2d_coordinates_()
+
+Molecule Graphs And Stereochemistry
+-----------------------------------
 
 Create a molecule from SMILES and export a depiction:
 
@@ -98,6 +104,9 @@ value-style form leaves caller state unchanged on failure. Like other in-place
 operations, the ``_`` form may retain valid partial changes after an error but
 keeps the molecule's internal storage complete.
 
+Molecular File IO And Stored Coordinates
+-----------------------------------------
+
 Read and write the first SDF record:
 
 .. code-block:: python
@@ -132,6 +141,9 @@ Round-trip a molecule through Python pickle:
 
    print(restored.to_smiles(canonical=False))
    print(restored.has_2d_coordinates())
+
+Conformers And Force Fields
+---------------------------
 
 Generate a native 3D conformer with ETKDGv3:
 
@@ -220,6 +232,9 @@ Optimize an existing 3D conformer with UFF:
        print(not result.needs_more())
        print(result.status_code())
 
+Fingerprints And SMARTS
+-----------------------
+
 Generate source-backed fingerprints:
 
 .. code-block:: python
@@ -255,6 +270,9 @@ Parse SMARTS metadata:
 
 ``parse_smarts()`` returns a ``SmartsMolecule`` parse tree value. Direct SMARTS
 query matching is not yet a Python API.
+
+Batch Processing
+----------------
 
 Process a list of molecules:
 

@@ -4,6 +4,9 @@
 
 #![allow(non_camel_case_types)]
 
+use std::{convert::Infallible, fmt, str::FromStr};
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -380,9 +383,91 @@ pub enum ResidueCode {
 }
 
 impl ResidueCode {
+    /// Return the Gemmi table index used by this build.
+    ///
+    /// This number is an implementation detail, not a stable serialization
+    /// format. Use [`Display`](fmt::Display), [`FromStr`], or serde when a
+    /// persistent representation is required.
     #[must_use]
     pub const fn as_u16(self) -> u16 {
         self as u16
+    }
+
+    /// Return the source-derived metadata for this residue code.
+    #[must_use]
+    pub const fn info(self) -> ResidueInfo {
+        RESIDUE_INFO_TABLE[self as usize]
+    }
+
+    /// Return the stable residue name used for display and serialization.
+    ///
+    /// [`ResidueCode::UNKNOWN`] is the absence of a tabulated residue rather
+    /// than the real tabulated residue `UNK`, so it uses the explicit protocol
+    /// token `"UNKNOWN"`.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        if matches!(self, Self::UNKNOWN) {
+            "UNKNOWN"
+        } else {
+            self.info().name
+        }
+    }
+}
+
+impl fmt::Display for ResidueCode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
+/// Error returned when a name is not present in the source residue table.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("unknown residue code name '{input}'")]
+pub struct ResidueCodeParseError {
+    input: String,
+}
+
+impl ResidueCodeParseError {
+    #[must_use]
+    pub fn input(&self) -> &str {
+        &self.input
+    }
+}
+
+impl FromStr for ResidueCode {
+    type Err = ResidueCodeParseError;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        if input.eq_ignore_ascii_case("UNKNOWN") {
+            return Ok(Self::UNKNOWN);
+        }
+        let code = residue_code_from_name(input);
+        if matches!(code, Self::UNKNOWN) {
+            Err(ResidueCodeParseError {
+                input: input.to_string(),
+            })
+        } else {
+            Ok(code)
+        }
+    }
+}
+
+impl Serialize for ResidueCode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.name())
+    }
+}
+
+impl<'de> Deserialize<'de> for ResidueCode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let name = String::deserialize(deserializer)?;
+        name.parse().map_err(serde::de::Error::custom)
     }
 }
 
@@ -403,7 +488,44 @@ pub enum ResidueInfoKind {
     Els = 11,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+impl ResidueInfoKind {
+    /// Return the stable Gemmi residue-kind name.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Unknown => "UNKNOWN",
+            Self::Aa => "AA",
+            Self::Aad => "AAD",
+            Self::Paa => "PAA",
+            Self::Maa => "MAA",
+            Self::Rna => "RNA",
+            Self::Dna => "DNA",
+            Self::Buf => "BUF",
+            Self::Hoh => "HOH",
+            Self::Pyr => "PYR",
+            Self::Ket => "KET",
+            Self::Els => "ELS",
+        }
+    }
+}
+
+impl fmt::Display for ResidueInfoKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
+impl Serialize for ResidueInfoKind {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.name())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[non_exhaustive]
 pub struct ResidueInfo {
     pub code: ResidueCode,
     pub name: &'static str,
@@ -412,6 +534,90 @@ pub struct ResidueInfo {
     pub one_letter_code: char,
     pub hydrogen_count: u8,
     pub weight: f32,
+}
+
+/// A residue name together with its table classification.
+///
+/// The original name remains authoritative so unrecognized component names
+/// survive roundtrips. The classified code is private and is always derived
+/// by the source-aligned table lookup, preventing contradictory identities.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ResidueIdentity {
+    name: String,
+    code: ResidueCode,
+}
+
+impl ResidueIdentity {
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        let name = name.into();
+        let code = residue_code_from_name(&name);
+        Self { name, code }
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[must_use]
+    pub const fn code(&self) -> ResidueCode {
+        self.code
+    }
+
+    #[must_use]
+    pub const fn info(&self) -> ResidueInfo {
+        self.code.info()
+    }
+
+    #[must_use]
+    pub const fn is_tabulated(&self) -> bool {
+        !matches!(self.code, ResidueCode::UNKNOWN)
+    }
+}
+
+impl From<&str> for ResidueIdentity {
+    fn from(name: &str) -> Self {
+        Self::new(name)
+    }
+}
+
+impl From<String> for ResidueIdentity {
+    fn from(name: String) -> Self {
+        Self::new(name)
+    }
+}
+
+impl FromStr for ResidueIdentity {
+    type Err = Infallible;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        Ok(Self::new(name))
+    }
+}
+
+impl fmt::Display for ResidueIdentity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.name)
+    }
+}
+
+impl Serialize for ResidueIdentity {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.name)
+    }
+}
+
+impl<'de> Deserialize<'de> for ResidueIdentity {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(Self::new)
+    }
 }
 
 impl ResidueInfo {
@@ -470,6 +676,40 @@ impl ResidueInfo {
         } else {
             'X'
         }
+    }
+
+    /// Return the canonical one-letter amino-acid code when Gemmi provides
+    /// enough source metadata to identify one.
+    ///
+    /// Gemmi stores standard codes in uppercase and the corresponding code
+    /// for modified amino acids in lowercase. Blank or unmappable entries do
+    /// not acquire an inferred parent.
+    #[must_use]
+    pub fn canonical_one_letter_code(self) -> Option<char> {
+        if !self.is_amino_acid() {
+            return None;
+        }
+        let code = self.one_letter_code.to_ascii_uppercase();
+        expand_one_letter(code, ResidueInfoKind::Aa).map(|_| code)
+    }
+
+    /// Return the standard amino-acid code represented by Gemmi's one-letter
+    /// metadata.
+    ///
+    /// Standard residues return themselves; modified residues return their
+    /// table-defined parent. Entries without a mappable one-letter code return
+    /// `None` rather than using a name-based guess.
+    #[must_use]
+    pub fn parent_standard_code(self) -> Option<ResidueCode> {
+        let code = self.canonical_one_letter_code()?;
+        let name = expand_one_letter(code, ResidueInfoKind::Aa)?;
+        name.parse().ok()
+    }
+
+    /// Return whether Gemmi classifies this as a non-standard amino acid.
+    #[must_use]
+    pub const fn is_modified_amino_acid(self) -> bool {
+        self.is_amino_acid() && !self.is_standard()
     }
     #[must_use]
     pub const fn is_peptide_linking(self) -> bool {
@@ -4437,6 +4677,121 @@ mod tests {
         assert_eq!(unknown.kind, ResidueInfoKind::Unknown);
         assert!(!unknown.found());
         assert_eq!(get_residue_info_checked(999), None);
+    }
+
+    #[test]
+    fn every_residue_code_maps_to_its_own_table_row_and_stable_name() {
+        for (index, info) in RESIDUE_INFO_TABLE.iter().copied().enumerate() {
+            assert_eq!(usize::from(info.code.as_u16()), index);
+            assert_eq!(info.code.info(), info);
+            if matches!(info.code, ResidueCode::UNKNOWN) {
+                assert_eq!(info.code.name(), "UNKNOWN");
+                assert_eq!(info.code.to_string(), "UNKNOWN");
+                assert_eq!("UNKNOWN".parse(), Ok(ResidueCode::UNKNOWN));
+            } else {
+                assert_eq!(info.code.name(), info.name);
+                assert_eq!(info.code.to_string(), info.name);
+                assert_eq!(info.name.parse(), Ok(info.code));
+            }
+        }
+    }
+
+    #[test]
+    fn residue_code_parsing_keeps_source_aliases_but_rejects_unknown_names() {
+        assert_eq!("TRY".parse(), Ok(ResidueCode::TRP));
+        assert_eq!("wat".parse(), Ok(ResidueCode::HOH));
+        assert_eq!("H2O".parse(), Ok(ResidueCode::HOH));
+        assert_eq!("+A".parse(), Ok(ResidueCode::DA));
+        assert_eq!("unknown".parse(), Ok(ResidueCode::UNKNOWN));
+
+        let error = "not-tabulated"
+            .parse::<ResidueCode>()
+            .expect_err("an unrecognized residue name must not become UNKNOWN implicitly");
+        assert_eq!(error.input(), "not-tabulated");
+    }
+
+    #[test]
+    fn residue_code_and_info_serde_use_stable_source_names() {
+        assert_eq!(
+            serde_json::to_string(&ResidueCode::MSE).unwrap(),
+            r#""MSE""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ResidueCode::R3FG).unwrap(),
+            r#""3FG""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ResidueCode::UNKNOWN).unwrap(),
+            r#""UNKNOWN""#
+        );
+        assert_eq!(
+            serde_json::from_str::<ResidueCode>(r#""MSE""#).unwrap(),
+            ResidueCode::MSE
+        );
+        assert_eq!(
+            serde_json::from_str::<ResidueCode>(r#""3FG""#).unwrap(),
+            ResidueCode::R3FG
+        );
+        assert!(serde_json::from_str::<ResidueCode>(r#""XYZ""#).is_err());
+
+        let serialized = serde_json::to_value(ResidueCode::MSE.info()).unwrap();
+        assert_eq!(serialized["code"], "MSE");
+        assert_eq!(serialized["name"], "MSE");
+        assert_eq!(serialized["kind"], "AA");
+        assert_eq!(serialized["one_letter_code"], "m");
+        assert_eq!(serialized["hydrogen_count"], 11);
+    }
+
+    #[test]
+    fn modified_amino_acid_metadata_maps_only_through_source_one_letter_codes() {
+        for (modified, one_letter, parent) in [
+            (ResidueCode::MSE, 'M', ResidueCode::MET),
+            (ResidueCode::HYP, 'P', ResidueCode::PRO),
+            (ResidueCode::SEP, 'S', ResidueCode::SER),
+        ] {
+            let info = modified.info();
+            assert!(info.is_modified_amino_acid());
+            assert_eq!(info.canonical_one_letter_code(), Some(one_letter));
+            assert_eq!(info.parent_standard_code(), Some(parent));
+        }
+
+        let proline = ResidueCode::PRO.info();
+        assert!(!proline.is_modified_amino_acid());
+        assert_eq!(proline.canonical_one_letter_code(), Some('P'));
+        assert_eq!(proline.parent_standard_code(), Some(ResidueCode::PRO));
+
+        let unmappable_amino_acid = ResidueCode::R3FG.info();
+        assert!(unmappable_amino_acid.is_modified_amino_acid());
+        assert_eq!(unmappable_amino_acid.canonical_one_letter_code(), None);
+        assert_eq!(unmappable_amino_acid.parent_standard_code(), None);
+
+        let water = ResidueCode::HOH.info();
+        assert!(!water.is_modified_amino_acid());
+        assert_eq!(water.canonical_one_letter_code(), None);
+        assert_eq!(water.parent_standard_code(), None);
+    }
+
+    #[test]
+    fn residue_identity_preserves_raw_known_aliases_and_unknown_names() {
+        let alias = ResidueIdentity::new("wat");
+        assert_eq!(alias.name(), "wat");
+        assert_eq!(alias.code(), ResidueCode::HOH);
+        assert_eq!(alias.info(), ResidueCode::HOH.info());
+        assert!(alias.is_tabulated());
+
+        let unknown = ResidueIdentity::new("CUSTOM_COMPONENT");
+        assert_eq!(unknown.name(), "CUSTOM_COMPONENT");
+        assert_eq!(unknown.code(), ResidueCode::UNKNOWN);
+        assert!(!unknown.is_tabulated());
+        assert_eq!(unknown.to_string(), "CUSTOM_COMPONENT");
+        assert_eq!(
+            serde_json::to_string(&unknown).unwrap(),
+            r#""CUSTOM_COMPONENT""#
+        );
+        assert_eq!(
+            serde_json::from_str::<ResidueIdentity>(r#""CUSTOM_COMPONENT""#).unwrap(),
+            unknown
+        );
     }
 
     #[test]

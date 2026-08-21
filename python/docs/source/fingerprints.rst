@@ -1,6 +1,9 @@
 Fingerprints
 ============
 
+.. meta::
+   :description: COSMolKit molecular fingerprint APIs for source-backed Morgan, MACCS, RDKit topological, and Avalon bit vectors with explicit parameters and RDKit parity boundaries.
+
 COSMolKit exposes fingerprint APIs as fixed-length bit vectors. The exposed
 Morgan and MACCS branches are covered by strict RDKit bit-identical parity
 tests. The source-backed topological and Avalon implementations follow their

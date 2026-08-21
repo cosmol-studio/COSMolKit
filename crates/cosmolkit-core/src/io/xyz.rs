@@ -79,11 +79,9 @@ fn rdkit_to_unsigned(value: &str) -> Result<usize, XyzReadError> {
     if digit_prefix == 0 {
         return Ok(0);
     }
-    trimmed_start[..digit_prefix]
-        .parse::<usize>()
-        .map_err(|_| XyzReadError::AtomCount {
-            value: value.to_string(),
-        })
+    // `from_chars()` leaves the initialized result unchanged when the parsed
+    // prefix is outside the `unsigned int` range; RDKit ignores that status.
+    Ok(trimmed_start[..digit_prefix].parse::<u32>().unwrap_or(0) as usize)
     // END RDKIT CPP FUNCTION
 }
 
@@ -249,13 +247,17 @@ pub fn read_xyz_from_str(block: &str) -> Result<Molecule, XyzReadError> {
 
     // RDKit✔️✔️: auto mol = std::make_unique<RWMol>();
     // RDKit✔️✔️: if (numAtoms) {
-    // RDKit✔️✔️:   Conformer *conf = new Conformer(numAtoms);
+    // RDKit✔️🔝:   Conformer *conf = new Conformer(numAtoms);
     // RDKit✔️✔️:   if (!comment.empty()) {
     // RDKit✔️✔️:     mol->setProp("_FileComments", comment);
     // RDKit✔️✔️:   }
     let mut builder =
         MoleculeBuilder::new().with_topology_trust(crate::TopologyTrust::CoordinateOnly);
-    let mut coords = Vec::with_capacity(num_atoms);
+    // Grow from atom lines actually present instead of allowing the declared
+    // count to trigger an eager allocation. Successful parse semantics remain
+    // identical, while truncated untrusted input reaches RDKit's EOF error
+    // without first reserving attacker-controlled memory.
+    let mut coords = Vec::new();
     if num_atoms > 0 && !comment.is_empty() {
         builder = builder.with_property("_FileComments", comment);
     }
@@ -349,5 +351,24 @@ mod tests {
             err.to_string()
                 .contains("unable to recognize the number of atoms")
         );
+    }
+
+    #[test]
+    fn xyz_reader_reproduces_rdkit_unsigned_int_overflow_as_zero() {
+        let mol = read_xyz_from_str("4294967296\ncomment\n")
+            .expect("out-of-range unsigned int remains initialized to zero");
+
+        assert_eq!(mol.num_atoms(), 0);
+        assert!(mol.conformers_2d().is_empty());
+        assert!(mol.conformers_3d().is_empty());
+        assert_eq!(mol.properties().prop("_FileComments"), None);
+    }
+
+    #[test]
+    fn xyz_reader_does_not_eagerly_allocate_the_declared_atom_count() {
+        let err = read_xyz_from_str("4294967295\ncomment\n")
+            .expect_err("a truncated maximum-count block should fail at EOF");
+
+        assert_eq!(err, super::XyzReadError::UnexpectedEof);
     }
 }

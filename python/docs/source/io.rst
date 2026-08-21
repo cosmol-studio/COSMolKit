@@ -1,6 +1,9 @@
 File IO and Arrays
 ==================
 
+.. meta::
+   :description: Read and write molecular files with COSMolKit using SDF, MolBlock, MOL2, PDB, XYZ, streaming datasets, bounded-memory batches, and NumPy coordinate arrays.
+
 SDF Files
 ---------
 

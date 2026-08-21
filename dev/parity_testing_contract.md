@@ -117,6 +117,13 @@ A parity test must not depend on an unspecified local RDKit version.
 
 If RDKit is upgraded, golden files must be regenerated intentionally and reviewed.
 
+The ChEMBL 37 large-stress workflow has an additional repository-owned
+entrypoint at [`tools/chembl_parity/`](tools/chembl_parity/README.md), relative
+to this `dev/` directory. Its run manifest must pin the corpus, phase profile,
+audit scripts, Git state, installed COSMolKit extension, Python, and RDKit.
+A stopped or time-limited run is incomplete evidence even when every completed
+task matched.
+
 ---
 
 ## 4. Parity Test Categories

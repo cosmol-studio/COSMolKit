@@ -1,0 +1,16 @@
+{% extends "!base.html" %}
+
+{% block extrahead %}
+  {{ super() }}
+  {% if pagename == "index" %}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "COSMolKit",
+    "alternateName": "COSMolKit Documentation",
+    "url": "https://kit.cosmol.org/"
+  }
+  </script>
+  {% endif %}
+{% endblock %}

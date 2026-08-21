@@ -1,6 +1,9 @@
 Batch Workflows
 ===============
 
+.. meta::
+   :description: Process ordered molecule collections with COSMolKit batch APIs, structured per-record errors, deterministic parallel jobs, transforms, descriptors, and exports.
+
 ``MoleculeBatch`` is an ordered collection for processing many molecules with a
 single API call. Valid records keep their original input order through
 transform, export, and filtering steps.

@@ -33,6 +33,35 @@
 //! assert!(mol.num_atoms() > 3);
 //! assert_eq!(mol.coordinates_2d().unwrap().len(), mol.num_atoms());
 //! ```
+//!
+//! Residue codes use stable source names for parsing, display, and serde; their
+//! numeric table indexes are not a persistence format:
+//!
+//! ```
+//! use cosmolkit::{ResidueCode, ResidueIdentity};
+//!
+//! let mse: ResidueCode = "MSE".parse().unwrap();
+//! assert_eq!(mse.to_string(), "MSE");
+//! assert_eq!(mse.info().parent_standard_code(), Some(ResidueCode::MET));
+//!
+//! let unknown = ResidueIdentity::new("MY_COMPONENT");
+//! assert_eq!(unknown.name(), "MY_COMPONENT");
+//! assert_eq!(unknown.code(), ResidueCode::UNKNOWN);
+//! ```
+//!
+//! Elements are checked values over the dummy atom and the 118 real elements.
+//! Symbols are the stable display and serde representation:
+//!
+//! ```
+//! use cosmolkit::{ELEMENTS, Element};
+//!
+//! let chlorine: Element = "Cl".parse().unwrap();
+//! assert_eq!(chlorine, Element::CL);
+//! assert_eq!(chlorine.atomic_number(), 17);
+//! assert_eq!(chlorine.info().symbol, "Cl");
+//! assert_eq!(ELEMENTS.len(), 118);
+//! assert!(Element::from_atomic_number(119).is_none());
+//! ```
 
 pub use cosmolkit_core as core;
 pub use cosmolkit_core::bio;

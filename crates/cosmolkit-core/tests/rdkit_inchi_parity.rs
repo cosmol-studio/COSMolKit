@@ -39,6 +39,16 @@ enum ActualInchi {
     GenerationFailed(String),
 }
 
+fn lowercase_hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
+        encoded.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        encoded.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
 impl ActualInchi {
     fn description(&self) -> String {
         match self {
@@ -147,7 +157,7 @@ fn mol_from_inchi_digest(molecule: &Molecule) -> Result<String, String> {
         .map_err(|error| format!("MolFromInchi result cannot be serialized: {error}"))?;
     let encoded = serde_json::to_vec(&json!([smiles, atoms, bonds]))
         .map_err(|error| format!("MolFromInchi state cannot be encoded: {error}"))?;
-    Ok(format!("{:x}", Sha256::digest(encoded)))
+    Ok(lowercase_hex(Sha256::digest(encoded).as_ref()))
 }
 
 fn compare_mol_from_inchi_branches(

@@ -18,12 +18,79 @@ interchangeably in tests or documentation.
 | Maintained strict | `testdata/smiles/corpus/smiles_5000.smi` | 5,000 | Committed exhaustive profile matrices for surfaces not yet audited over ChEMBL 37 |
 | Large stress | ChEMBL 37 structure table | 2,897,819 source; 2,897,804 mutually parseable | Large-scale parity, operation-order, batch, and concurrent-read stress auditing |
 
-The original complete ChEMBL 37 profile contains 22 sharded phases and 2,816
-tasks over 128 corpus shards. The later full-corpus RDKFingerprint/Avalon audit
-adds 128 fingerprint tasks over the same shards. Phases with a configured
-atom-count boundary evaluate 2,854,362 eligible records. Large subset phases
-select their stated number of records from the same ChEMBL 37 source; they are
-not separate corpora.
+The complete ChEMBL 37 evidence inventory contains the 22-phase chemistry,
+composition, batch, and concurrency audit; the later complete
+RDKFingerprint/Avalon audit; and the final 15-phase execution recorded below.
+The original audit contains 2,816 tasks over 128 corpus shards, while the
+fingerprint audit adds 128 tasks over the same shards.
+Phases with a configured atom-count boundary evaluate 2,854,362 eligible
+records. Large subset phases select their stated number of records from the
+same ChEMBL 37 source; they are not separate corpora.
+
+The repository-owned preparation, phase definitions, resumable runner, result
+identity, and acceptance procedure are documented in
+[`dev/tools/chembl_parity/README.md`](tools/chembl_parity/README.md). The
+current `complete.json` profile preserves the completed phases and adds four
+configured phases for topology operations, fragments, direct 2D coordinates,
+and binary roundtrips. The extended profile contains 27 phases and 3,456 shard
+tasks. The final 15-phase execution ran all four additions over their complete
+configured ChEMBL boundaries. Fragments and direct 2D
+coordinates were clean; topology operations and binary roundtrips exposed
+blocking systemic differences. The consolidated summary records both the clean
+and failed boundaries while keeping failed phases outside accepted parity
+evidence.
+Corpus shards and run outputs remain uncommitted; code, profiles, source and
+reference pins, and pass/fail rules are version controlled.
+
+## Complete ChEMBL 37 Validation Summary
+
+The consolidated validation record combines the original 22-phase audit, the
+complete RDKFingerprint/Avalon audit, and the final 15-phase execution. The
+final execution used COSMolKit `0.2.12`, pinned RDKit `2026.03.1`, the same
+2,897,819-record ChEMBL 37 source, 128 corpus shards, and 112 workers. All 15
+phases and all 1,920 shard tasks completed; every result artifact and checksum
+was independently revalidated. It performed 31,755,360 phase-record executions
+and recorded 2,500,870,740 passing checks plus 7,804,836 blocking mismatch
+checks. Bounds additionally traversed 2,757,910,995 matrix entries.
+
+| Evidence boundary | Result |
+|---|---|
+| Original 22-phase chemistry/composition audit | Complete; source-fixed retained-branch replays are recorded without claiming a complete post-fix corpus rerun |
+| Complete RDKFingerprint/Avalon audit | 113,014,356 exact comparisons, zero mismatch |
+| Final 15-phase execution | 13 phase aggregates pass; topology operations and binary roundtrip fail |
+
+| Phase group | Records evaluated | Matching checks | Blocking mismatches | Status |
+|---|---:|---:|---:|---|
+| Descriptors | 2,897,819 | 84,036,316 | 0 | Pass |
+| Morgan/MACCS | 2,897,819 | 89,831,720 | 0 | Pass |
+| Explicit hydrogen | 2,854,362 | 11,417,448 | 0 | Pass |
+| Topology operations | 2,854,376 | 39,962,026 | 5,707,822 | **Fail** |
+| Connected fragments | 2,854,362 | 5,852,676 | 0 | Pass |
+| Direct 2D coordinates | 2,854,362 | 14,271,810 | 0 | Pass |
+| Binary roundtrip | 524,288 | 9,437,322 | 2,097,014 | **Fail** |
+| Bounds | 2,854,362 | 2,854,362 | 0 | Pass |
+| InChI parse branches | 2,854,362 | 11,417,448 | 0 | Pass |
+| SMILES matrix | 2,854,362 | 2,192,150,016 | 0 | Pass |
+| Final SVG | 2,854,362 | 2,854,362 | 0 | Pass |
+| Molecular I/O | 524,288 | 12,559,920 | 0 | Pass |
+| Scalar/batch composition | 1,027,660 | 20,561,265 | 0 | Pass |
+| Fixed-seed conformer outcome | 524,288 | 524,288 | 0 | Pass |
+| UFF/MMFF force fields | 524,288 | 3,139,761 | 0 | Pass |
+
+The topology differences are confined to the `RemoveHs(sanitize=false)`
+value and in-place branches: each has 2,853,911 mismatches and 451 matches. All
+retained examples differ only in explicit valence, implicit-H, and total-H
+intermediate-state fields. The binary differences affect hash behavior on all
+524,288 rows and Morgan on 524,219 rows through each deserialization entrypoint;
+graph state, conformer count, and deterministic reserialization still match.
+Both patterns were reproduced after completion and remain implementation
+defects, not harness, shard, or aggregation failures.
+
+The immutable identity and detailed acceptance record are in
+[`dev/gap_reports/chembl37_complete_validation_summary_20260820.md`](gap_reports/chembl37_complete_validation_summary_20260820.md).
+The run validates the recorded extension and start-of-run repository snapshot.
+Later uncommitted working-tree changes require a rebuilt extension and a new
+identity before they can inherit this evidence.
 
 ## Numeric Coverage Summary
 
@@ -193,11 +260,42 @@ have RDKit Cairo/Qt bit parity.
 
 Four scalar operation orders each compare 12 named output/state surfaces,
 including graph state, explicit hydrogens, bounds, descriptors, Morgan, MACCS,
-SMILES, InChI/InChIKey, and SVG. Batch comparisons run the same add/remove-H,
-bounds, Morgan, Morgan `AdditionalOutput`, SMILES, and SVG surfaces with one and
-eight jobs while checking value equality and input order. Shared-object tests
-read the same molecule concurrently and compare both returned values and graph
-state; they do not define separate chemistry semantics.
+SMILES, InChI/InChIKey, and SVG. Batch comparisons run add/remove-H, bounds,
+Morgan, Morgan `AdditionalOutput`, SMILES, SVG, raw-graph sanitize, both
+kekulize flag branches, and direct 2D coordinates with one and eight jobs while
+checking scalar equality and input order. Shared-object tests read the same
+molecule concurrently and compare both returned values and graph state; they
+do not define separate chemistry semantics.
+
+### Configured Additional ChEMBL Coverage
+
+The extended profile adds strict structural-state comparisons for raw parse
+and full-state comparisons after sanitize, value and in-place kekulization
+with both aromatic-flag branches, AddHs followed by RemoveHs with both sanitize
+branches, connected fragments, and direct 2D coordinate generation. Graph
+comparisons retain atom valence and hydrogen-cache fields so unsanitized
+intermediate-state differences cannot be hidden by an equal final SMILES.
+Value-style calls additionally require the source molecule to remain
+byte-identical.
+
+The raw topology entrance processes 2,854,376 records with at most 80 atoms.
+It deliberately includes 14 records outside the ordinary 2,854,362-record
+sanitized boundary so raw-success/sanitize-rejection parity is exercised.
+
+The binary-roundtrip phase creates 2D coordinates and compares graph state,
+SMILES, descriptors, hash, fingerprint, coordinates, conformer count, and
+deterministic reserialization across both public deserialization entrypoints.
+This is a COSMolKit serialization invariant exercised on ChEMBL structures,
+not a claim that COSMolKit and RDKit share a binary representation.
+
+The final 2026-08-20 execution completed these four phases across every
+configured shard. Fragments and direct 2D coordinates had no blocking
+mismatch. Topology operations exposed the unsanitized `RemoveHs` intermediate
+valence/H-state difference, and binary roundtrips exposed post-deserialization
+hash/fingerprint differences. Because the run-level gate failed, the results
+remain an audit record rather than accepted zero-mismatch evidence. They can be
+promoted only after source-level fixes, focused regressions, complete affected-
+phase reruns, and a passing complete-profile identity.
 
 ### Focused And Scope-Bound Surfaces
 

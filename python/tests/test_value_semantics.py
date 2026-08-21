@@ -19,6 +19,37 @@ def require_valid_molecules(batch: cosmolkit.MoleculeBatch) -> list[cosmolkit.Mo
     return [mol for mol in molecules if mol is not None]
 
 
+def test_element_enum_lookup_metadata_and_atom_surface_are_consistent():
+    assert len(cosmolkit.Element) == 119
+    assert cosmolkit.Element.DUMMY == 0
+    assert cosmolkit.Element.H == 1
+    assert cosmolkit.Element.OG == 118
+    assert cosmolkit.element_from_symbol("Cl") == cosmolkit.Element.CL
+    assert cosmolkit.element_from_symbol("Uut") == cosmolkit.Element.NH
+    assert cosmolkit.ELEMENT_MAP["*"] == cosmolkit.Element.DUMMY
+    assert cosmolkit.ELEMENT_MAP["Og"] == cosmolkit.Element.OG
+
+    carbon = cosmolkit.get_element_info(cosmolkit.Element.C)
+    assert carbon.element() == cosmolkit.Element.C
+    assert carbon.symbol() == "C"
+    assert carbon.atomic_number() == 6
+    assert carbon.period() == 2
+    assert carbon.outer_electrons() == 4
+    assert carbon.valences() == [4]
+    assert carbon.atomic_weight() == pytest.approx(12.011)
+
+    atoms = cosmolkit.Molecule.from_smiles("CCl").atoms()
+    assert [atom.element() for atom in atoms] == [
+        cosmolkit.Element.C,
+        cosmolkit.Element.CL,
+    ]
+
+    with pytest.raises(ValueError, match="unknown element symbol"):
+        cosmolkit.element_from_symbol("cl")
+    with pytest.raises(ValueError, match="outside the Element domain"):
+        cosmolkit.get_element_info(119)
+
+
 def test_with_2d_coordinates_returns_new_molecule_without_mutating_input():
     mol = cosmolkit.Molecule.from_smiles("CCO")
 
@@ -607,10 +638,28 @@ HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
     assert residue.info().is_amino_acid()
     assert residue.one_letter_code() == "A"
     assert residue.fasta_code() == "A"
+    assert [atom.element() for atom in residue.atoms()] == [
+        cosmolkit.Element.N,
+        cosmolkit.Element.C,
+        cosmolkit.Element.C,
+    ]
+    assert [atom.element_symbol() for atom in residue.atoms()] == ["N", "C", "C"]
+    assert [atom.atomic_num() for atom in residue.atoms()] == [7, 6, 6]
     assert cosmolkit.residue_code_from_name("TRY") == cosmolkit.ResidueCode.TRP
     assert cosmolkit.find_tabulated_residue_idx("h2o") == 154
     assert cosmolkit.get_residue_info(154).code() == cosmolkit.ResidueCode.HOH
-    assert cosmolkit.find_tabulated_residue("MSE").fasta_code() == "X"
+    mse = cosmolkit.find_tabulated_residue("MSE")
+    assert mse.fasta_code() == "X"
+    assert mse.canonical_one_letter_code() == "M"
+    assert mse.parent_standard_code() == cosmolkit.ResidueCode.MET
+    assert mse.is_modified_amino_acid()
+    assert not cosmolkit.find_tabulated_residue("MET").is_modified_amino_acid()
+    assert cosmolkit.find_tabulated_residue("HYP").parent_standard_code() == (
+        cosmolkit.ResidueCode.PRO
+    )
+    assert cosmolkit.find_tabulated_residue("SEP").parent_standard_code() == (
+        cosmolkit.ResidueCode.SER
+    )
     assert cosmolkit.expand_one_letter("m", cosmolkit.ResidueInfoKind.AA) == "MET"
     assert cosmolkit.expand_protein_one_letter("m") == "MET"
     assert cosmolkit.expand_one_letter_sequence(

@@ -70,6 +70,29 @@ A test MAY create temporary files in a temporary directory. Test execution
 MUST treat committed inputs and generated expected data as read-only and MUST
 NOT write into `testdata/`.
 
+### 2.1 Large externally distributed audit corpora
+
+A complete externally distributed corpus MAY remain uncommitted when its size
+or distribution terms make repository storage unsuitable and it is used only
+by an explicit large-stress audit, not by ordinary tests. This exception does
+not permit an undocumented local corpus. The repository MUST commit:
+
+- the upstream release and stable source URL;
+- the exact source checksum and expected record count;
+- deterministic, atomic preparation and selection code;
+- the shard assignment algorithm and output-manifest schema;
+- the complete audit profile, reference-version pins, and acceptance rules;
+  and
+- a documented repository-owned command that validates every prepared shard
+  before execution.
+
+The source, prepared shards, and run outputs MUST remain outside tracked
+repository data. A run manifest MUST bind the external corpus identity to the
+Git state, installed implementation, reference environment, audit code, and
+result checksums. The current ChEMBL 37 implementation of this exception is
+[`tools/chembl_parity/`](tools/chembl_parity/README.md), relative to this
+`dev/` directory.
+
 ## 3. Test Data Layout
 
 `testdata/` MUST group data by stable format or domain. Inputs, corpora,

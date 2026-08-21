@@ -120,7 +120,10 @@ pub use search::{query, smarts_parse, substruct};
 
 pub use adjacency::{AdjacencyError, AdjacencyList, NeighborRef};
 pub use aromaticity::{AromaticityAssignment, AromaticityError, AromaticityModel, set_aromaticity};
-pub use atom::{Atom, AtomId, AtomPdbResidueInfo, AtomSpec, ChiralTag, Element, Hybridization};
+pub use atom::{
+    Atom, AtomId, AtomPdbResidueInfo, AtomSpec, ChiralTag, ELEMENTS, ELEMENTS_WITH_DUMMY, Element,
+    ElementInfo, ElementParseError, Hybridization,
+};
 pub use batch::{
     BatchErrorMode, BatchExportReport, BatchProgress, BatchProgressBar, BatchRecord,
     BatchRecordError, BatchValidationError, MoleculeBatch, batch_progress_bar,
@@ -129,10 +132,11 @@ pub use bio::protein::{
     Protein, ProteinAtomRef, ProteinChainRef, ProteinResidueRef, ProteinSelectionSummary,
 };
 pub use bio::resinfo::{
-    RESIDUE_INFO_TABLE, ResidueCode, ResidueInfo, ResidueInfoKind, ResidueInfoSequenceError,
-    UNKNOWN_TABULATED_RESIDUE_IDX, expand_one_letter, expand_one_letter_sequence,
-    expand_protein_one_letter, expand_protein_one_letter_string, find_tabulated_residue,
-    find_tabulated_residue_idx, get_residue_info, get_residue_info_checked, residue_code_from_name,
+    RESIDUE_INFO_TABLE, ResidueCode, ResidueCodeParseError, ResidueIdentity, ResidueInfo,
+    ResidueInfoKind, ResidueInfoSequenceError, UNKNOWN_TABULATED_RESIDUE_IDX, expand_one_letter,
+    expand_one_letter_sequence, expand_protein_one_letter, expand_protein_one_letter_string,
+    find_tabulated_residue, find_tabulated_residue_idx, get_residue_info, get_residue_info_checked,
+    residue_code_from_name,
 };
 pub use bio::{
     AltLocLabel, AtomName, AtomRow, AtomSourceIds, BioAssembly, BioCisPep, BioConnection,

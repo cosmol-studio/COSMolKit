@@ -2509,7 +2509,7 @@ pub(crate) fn rdkit_default_valence(atomic_number: u8) -> Result<i32, ValenceErr
     Ok(required_valence_list(atomic_number)?[0])
 }
 
-fn periodic_table_row(atomic_number: u8) -> Option<u8> {
+pub(crate) fn periodic_table_row(atomic_number: u8) -> Option<u8> {
     // BEGIN RDKIT CPP FUNCTION atomicData::Row / PeriodicTable::getRow
     // RDKit✔️✔️: unsigned int Row() const { return row; }
     // END RDKIT CPP FUNCTION atomicData::Row / PeriodicTable::getRow

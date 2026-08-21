@@ -488,6 +488,16 @@ fn verify_checksum_cached(path: &Path, expected: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn lowercase_hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
+        encoded.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        encoded.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
 fn checksum_and_data_rows(path: &Path) -> Result<(String, usize), String> {
     let file =
         File::open(path).map_err(|error| format!("failed to open {}: {error}", path.display()))?;
@@ -512,7 +522,7 @@ fn checksum_and_data_rows(path: &Path) -> Result<(String, usize), String> {
             records += 1;
         }
     }
-    Ok((format!("{:x}", digest.finalize()), records))
+    Ok((lowercase_hex(digest.finalize().as_ref()), records))
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
@@ -529,7 +539,7 @@ fn sha256_file(path: &Path) -> Result<String, String> {
         }
         digest.update(&buffer[..count]);
     }
-    Ok(format!("{:x}", digest.finalize()))
+    Ok(lowercase_hex(digest.finalize().as_ref()))
 }
 
 fn count_data_rows(path: &Path) -> Result<usize, String> {
@@ -549,6 +559,20 @@ fn count_data_rows(path: &Path) -> Result<usize, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sha256_file_uses_the_standard_lowercase_hex_representation() {
+        let path = std::env::temp_dir().join(format!(
+            "cosmolkit-test-support-sha256-{}",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"abc").expect("checksum fixture should be written");
+        assert_eq!(
+            sha256_file(&path).expect("fixture checksum should be available"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        std::fs::remove_file(path).expect("checksum fixture should be removed");
+    }
 
     #[test]
     fn expected_data_json_floats_round_trip_to_exact_binary64_values() {
