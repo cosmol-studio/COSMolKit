@@ -1,5 +1,8 @@
 //! Source-backed RDKit UFF parameter structures.
 
+// Generated UFF tables preserve the exact source parameter literals.
+#![allow(clippy::approx_constant)]
+
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::num::ParseFloatError;

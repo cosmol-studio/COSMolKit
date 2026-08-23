@@ -214,6 +214,38 @@ def test_from_rdkit_copies_3d_conformers():
     assert np.allclose(bridged.coordinates_3d(), coords)
 
 
+def test_from_rdkit_defaults_to_prepared_graph_for_3d_atom_pair_fingerprint():
+    rd_mol = Chem.MolFromSmiles("C=C")
+    _add_conformer(
+        rd_mol,
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        is_3d=True,
+    )
+
+    default = cosmolkit.Molecule.from_rdkit(rd_mol)
+    explicit = cosmolkit.Molecule.from_rdkit(rd_mol, sanitize=True)
+
+    assert default.fingerprint_atom_pair(use_2d=False).on_bits() == [1432]
+    assert (
+        default.fingerprint_atom_pair(use_2d=False).on_bits()
+        == explicit.fingerprint_atom_pair(use_2d=False).on_bits()
+    )
+
+
+def test_from_rdkit_sanitize_false_preserves_unprepared_graph_state():
+    rd_mol = Chem.MolFromSmiles("C=C")
+    _add_conformer(
+        rd_mol,
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        is_3d=True,
+    )
+
+    raw = cosmolkit.Molecule.from_rdkit(rd_mol, sanitize=False)
+
+    with pytest.raises(ValueError, match="explicit valence has not been computed"):
+        raw.fingerprint_atom_pair(use_2d=False)
+
+
 def test_from_rdkit_copies_multiple_3d_conformers_and_skips_2d():
     rd_mol = Chem.MolFromSmiles("CO")
     coordinates_2d = np.array([[10.0, 11.0, 0.0], [12.0, 13.0, 0.0]])

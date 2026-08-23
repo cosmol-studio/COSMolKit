@@ -618,40 +618,49 @@ impl<'a> OpParts<'a> {
         self.record_remapped(self.spec.auto_remap);
     }
 
-    /// Check that `state` is in `recompute` (write permission).
+    /// Check that `state` is in `recompute` or the guarded
+    /// `operation_defined` category (write permission).
     /// Panics with a clear message on violation — this is a programming error.
     #[cfg(feature = "op-contracts")]
     fn check_cache_write_permission(&self, state: DerivedState) {
         let effects = self.spec.derived_effects;
-        let allowed = effects.recompute();
+        let allowed = effects.recompute().union(effects.operation_defined());
         if !allowed.contains(state) {
             panic!(
                 "cache write permission violation: operation `{}` attempted to write \
-                 derived state `{:?}` but only has `recompute({:?})` \
+                 derived state `{:?}` but only has `recompute({:?})` and \
+                 `operation_defined({:?})` \
                  permissions",
                 self.spec.method,
                 state,
                 effects.recompute(),
+                effects.operation_defined(),
             );
         }
     }
 
-    /// Check that every bit set in `states` is in `invalidate | recompute` (clear permission).
+    /// Check that every bit set in `states` is in `invalidate | recompute |
+    /// operation_defined` (clear permission).
     /// Panics with a clear message on violation.
     #[cfg(feature = "op-contracts")]
     fn check_cache_clear_permission(&self, states: DerivedState) {
         let effects = self.spec.derived_effects;
-        let allowed = effects.invalidate().union(effects.recompute());
+        let allowed = effects
+            .invalidate()
+            .union(effects.recompute())
+            .union(effects.operation_defined());
         let forbidden = states.bits() & !allowed.bits();
         if forbidden != 0 {
             panic!(
                 "cache clear permission violation: operation `{}` attempted to clear \
-                 derived state bits `{:#010b}` but only has `invalidate({:?})` and `recompute({:?})` \
+                 derived state bits `{:#010b}` but only has `invalidate({:?})`, \
+                 `recompute({:?})`, and `operation_defined({:?})` \
                  permissions",
                 self.spec.method,
                 forbidden,
                 effects.invalidate(),
                 effects.recompute(),
+                effects.operation_defined(),
             );
         }
     }
@@ -852,6 +861,25 @@ impl<'a> OpParts<'a> {
                 message: "operation access write set must match may_mutate",
             });
         }
+        let operation_defined = self.spec.derived_effects.operation_defined();
+        if operation_defined != DerivedState::NONE {
+            let approved_operation = matches!(
+                self.spec.method,
+                "without_hydrogens_with_sanitize" | "without_hydrogens_with_params"
+            );
+            if !approved_operation || operation_defined != DerivedState::VALENCE {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "operation-defined derived effects are currently permitted only for valence in the hydrogen-removal operation family",
+                });
+            }
+            if !self.spec.access.can_write(BlockSet::DERIVED_CACHE) {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "operation-defined derived effects require derived-cache write access",
+                });
+            }
+        }
         Ok(())
     }
 
@@ -1024,9 +1052,13 @@ impl<'a> OpParts<'a> {
         }
         let effects = self.spec.derived_effects;
         let recompute_ds = effects.recompute();
+        let operation_defined_ds = effects.operation_defined();
         if recompute_ds.intersects(effects.preserve())
             || recompute_ds.intersects(effects.invalidate())
+            || recompute_ds.intersects(operation_defined_ds)
             || effects.preserve().intersects(effects.invalidate())
+            || effects.preserve().intersects(operation_defined_ds)
+            || effects.invalidate().intersects(operation_defined_ds)
         {
             return Err(OperationError::InvalidInput {
                 operation: self.spec,

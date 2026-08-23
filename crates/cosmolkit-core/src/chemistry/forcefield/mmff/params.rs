@@ -1,5 +1,9 @@
 //! Source-backed RDKit MMFF parameter structures.
 
+// Generated MMFF tables preserve source parameter literals such as 0.318 and
+// 6.283; their resemblance to mathematical constants is coincidental.
+#![allow(clippy::approx_constant)]
+
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;

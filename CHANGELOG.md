@@ -19,6 +19,45 @@ named `## [x.y.z] - YYYY-MM-DD`. The release workflow extracts the section whose
 version matches the pushed `v*` tag and fails when that section is missing or
 empty.
 
+## [Unreleased]
+
+### Added
+
+- Added source-backed AtomPair sparse-count, folded-count, sparse-bit, and
+  explicit-bit fingerprints in Rust and Python, including 2D and 3D distances,
+  chirality, count simulation, selectors, custom atom invariants, complete
+  provenance, metadata/JSON restoration, and ordered batch execution through
+  one generator core.
+
+### Changed
+
+- Reproduced RDKit's logically read-only 2D and resolved-conformer 3D distance
+  matrix caching in shared molecule computed state, with topology/coordinate
+  invalidation and clone-local synchronization. AtomPair and distance-geometry
+  consumers reuse this single matrix implementation.
+
+### Fixed
+
+- Corrected `Molecule.from_rdkit()` so its default preserves the imported RDKit
+  graph while copying hybridization and computing the explicit-valence cache.
+  `sanitize=True` remains the explicit full-sanitize path and `sanitize=False`
+  remains the raw unprepared path.
+
+### Validation
+
+- The complete AtomPair audit processed all 2,897,819 ChEMBL 37 source records
+  over 128 shards. All 2,897,804 mutually parseable records matched pinned
+  RDKit across ten profiles, four result forms, and one complete provenance
+  output, totaling 118,809,964 exact comparisons with zero mismatch or failed
+  task.
+- After the source-defined distance-cache port, all 24 deterministic scalar
+  AtomPair benchmarks and all eight 3,072-molecule batch benchmarks were faster
+  than the pinned RDKit build. The former 80-atom 2D long tail fell from
+  3.224–4.768 times RDKit to 0.458–0.493 times without changing output.
+- The maintained 5,000-molecule gate runs ten AtomPair profiles as a committed
+  exhaustive regression. Neither the full-corpus audit nor the maintained gate
+  uses sampling, tolerance, similarity thresholds, or fallback fingerprints.
+
 ## [0.2.12] - 2026-08-19
 
 This release adds source-backed RDKit topological and Avalon fingerprints,

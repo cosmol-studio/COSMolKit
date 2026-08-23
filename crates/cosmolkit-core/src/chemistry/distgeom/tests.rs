@@ -1,3 +1,7 @@
+// Row-major assertions intentionally retain explicit `row * width + column`
+// expressions, including row or column zero, to keep matrix orientation clear.
+#![allow(clippy::erasing_op, clippy::identity_op)]
+
 use super::*;
 use crate::builder::MoleculeBuilder;
 use crate::chemistry::forcefield::uff::atom_typer::add_atom_charge_flags_for_uff;
@@ -7141,7 +7145,7 @@ fn find_dispatch_triple(
 }
 
 fn flatten_topological_distances(mol: &Molecule) -> Vec<f64> {
-    compute_topological_distances(mol)
+    compute_topological_distances(mol).to_vec()
 }
 
 fn single_atom_molecule(spec: AtomSpec) -> Molecule {

@@ -9,7 +9,7 @@
 //! PDB/mmCIF policy:
 //!
 //! - `io::bio` is the Gemmi-aligned structural reader path into `BioStructure`.
-//! - Future RDKit-compatible molecule input must be layered over `BioStructure`
+//! - RDKit-compatible molecule input is layered over explicit `BioStructure`
 //!   conversion, not implemented as a second text parser.
 //! - RDKit-derived PDB behavior belongs only to Molecule compatibility APIs.
 //! - Do not expose parallel public parser modules for the same input format.

@@ -195,21 +195,27 @@ not leave stale indices.
 
 ## Derived State
 
-Topology operations declare exactly three derived-effect categories:
+Topology operations declare exactly four pairwise-disjoint derived-effect
+categories:
 
 ```text
 recompute
 preserve
 invalidate
+operation_defined
 ```
 
-They are pairwise disjoint. Cache write/clear methods and preservation proofs
-record the actual handling trace. `needs_update()` is derived as
-`recompute | invalidate`; Molecule operations have no `must_handle` field.
+Cache write/clear methods and preservation proofs record the actual handling
+trace. `operation_defined` is a guarded escape hatch for a source-required
+transition that does not fit the other three categories; it delegates the
+mechanism, not correctness. It is currently restricted to `valence` in the
+hydrogen-removal operation family. `needs_update()` is derived as `recompute |
+invalidate | operation_defined`; Molecule operations have no `must_handle`
+field.
 
 Derived-cache read authority comes from block-level `access`, not from an
-effect category. Unsupported source behavior is a structured operation error,
-not a derived effect.
+effect category, including `operation_defined`. Unsupported source behavior is
+a structured operation error, not a derived effect.
 
 ## Value And In-Place APIs
 

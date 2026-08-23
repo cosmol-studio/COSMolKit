@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from dev.tools.chembl_parity import audit_surfaces
+from dev.tools.chembl_parity import audit_fingerprints, audit_surfaces
 
 
 TOOL_DIR = Path(__file__).resolve().parents[1]
@@ -52,6 +52,148 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(
             phases["topology-operations"]["expected_processed"], 2_854_376
         )
+
+    def test_atom_pair_phase_is_complete_and_source_profiled(self) -> None:
+        profile = runner.load_json(TOOL_DIR / "profiles/complete.json")
+        phases = {phase["name"]: phase for phase in profile["phases"]}
+        phase = phases["atom-pair"]
+        self.assertEqual(phase["script"], "audit_fingerprints.py")
+        self.assertEqual(phase["mode"], "atom_pair")
+        self.assertEqual(phase["expected_processed"], profile["corpus_records"])
+        self.assertEqual(
+            phase["expected_profiles"],
+            {
+                "atom_pair_sparse_count": 10,
+                "atom_pair_count": 10,
+                "atom_pair_sparse_bit": 10,
+                "atom_pair_explicit_bit": 10,
+                "atom_pair_additional_output": 1,
+            },
+        )
+        command = runner.command_for(
+            TOOL_DIR.parents[2],
+            phase,
+            Path("corpus/shard-017.jsonl"),
+            Path("run/atom-pair/shard-017.json"),
+            123,
+            4,
+        )
+        self.assertIn("corpus/shard-017.jsonl", command)
+        self.assertIn("run/atom-pair/shard-017.json", command)
+        self.assertEqual(command[command.index("--mode") + 1], "atom_pair")
+        atom_profile = Path(
+            command[command.index("--atom-pair-profile") + 1]
+        )
+        self.assertEqual(
+            atom_profile.name, "atom_pair_fingerprint_profile.json"
+        )
+
+    def test_atom_pair_auditor_compares_every_configured_exact_field(self) -> None:
+        profile = runner.load_json(
+            TOOL_DIR.parents[2]
+            / "tools/testdata/rdkit/atom_pair_fingerprint_profile.json"
+        )
+        by_name = {branch["name"]: branch for branch in profile["branches"]}
+        branches = [by_name["default"], by_name["additional_output"]]
+        generators = audit_fingerprints.make_atom_pair_generators(branches)
+        record = {"row": 0, "chembl_id": "HARNESS", "smiles": "CCCO"}
+        rd_mol = audit_fingerprints.Chem.MolFromSmiles(record["smiles"])
+        ck_mol = audit_fingerprints.cosmolkit.Molecule.from_smiles(record["smiles"])
+        self.assertIsNotNone(rd_mol)
+        with tempfile.TemporaryDirectory() as temporary:
+            audit = audit_fingerprints.Audit(Path(temporary) / "summary.json", 4)
+            audit_fingerprints.compare_atom_pair(
+                audit, record, rd_mol, ck_mol, branches, generators
+            )
+            self.assertEqual(sum(audit.counts.values()), 9)
+            self.assertTrue(
+                all(key.startswith("match.atom_pair.") for key in audit.counts)
+            )
+            audit.finish(
+                1,
+                {
+                    "atom_pair_sparse_count": 2,
+                    "atom_pair_count": 2,
+                    "atom_pair_sparse_bit": 2,
+                    "atom_pair_explicit_bit": 2,
+                    "atom_pair_additional_output": 1,
+                },
+            )
+
+    def test_atom_pair_aggregate_rejects_filtered_or_partial_shards(self) -> None:
+        expected_profiles = {
+            "atom_pair_sparse_count": 10,
+            "atom_pair_count": 10,
+            "atom_pair_sparse_bit": 10,
+            "atom_pair_explicit_bit": 10,
+            "atom_pair_additional_output": 1,
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            phase_dir = Path(temporary)
+            results = {}
+            for shard in range(2):
+                output = phase_dir / f"shard-{shard:03d}.json"
+                output.write_text(
+                    json.dumps(
+                        {
+                            "processed": 1,
+                            "profiles": expected_profiles,
+                            "counts": {"match.atom_pair.default.explicit_bit": 1},
+                        }
+                    )
+                )
+                output.with_suffix(".findings.jsonl").write_text("")
+                results[str(shard)] = {"returncode": 0, "output": str(output)}
+            aggregate = runner.aggregate_phase(
+                phase_dir, results, 2, set(), 2, expected_profiles
+            )
+            self.assertTrue(aggregate["complete"])
+            self.assertTrue(aggregate["passed"])
+
+            filtered = phase_dir / "shard-001.json"
+            summary = json.loads(filtered.read_text())
+            summary["profiles"] = {"atom_pair_explicit_bit": 1}
+            filtered.write_text(json.dumps(summary))
+            aggregate = runner.aggregate_phase(
+                phase_dir, results, 2, set(), 2, expected_profiles
+            )
+            self.assertFalse(aggregate["complete"])
+            self.assertFalse(aggregate["passed"])
+            self.assertEqual(aggregate["invalid_profile_tasks"], 1)
+
+            del results["1"]
+            aggregate = runner.aggregate_phase(
+                phase_dir, results, 2, set(), 2, expected_profiles
+            )
+            self.assertFalse(aggregate["complete"])
+
+    def test_atom_pair_run_resume_requires_identical_phase_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            identity = {
+                "selected_phases": ["atom-pair"],
+                "reference_profiles": {
+                    "tools/testdata/rdkit/atom_pair_fingerprint_profile.json": "abc"
+                },
+            }
+            profile = {"name": "atom-pair-harness"}
+            manifest = runner.initialize_manifest(
+                run_dir, identity, profile, workers=2, resume=False
+            )
+            runner.atomic_json(run_dir / "manifest.json", manifest)
+            resumed = runner.initialize_manifest(
+                run_dir, identity, profile, workers=4, resume=True
+            )
+            self.assertEqual(resumed["identity"], identity)
+            self.assertEqual(resumed["workers"], 4)
+            with self.assertRaisesRegex(ValueError, "run identity changed"):
+                runner.initialize_manifest(
+                    run_dir,
+                    {**identity, "selected_phases": ["other"]},
+                    profile,
+                    workers=4,
+                    resume=True,
+                )
 
     def test_observation_errors_are_structured_values(self) -> None:
         def fail() -> None:

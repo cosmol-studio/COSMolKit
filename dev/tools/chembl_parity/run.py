@@ -54,6 +54,7 @@ SCRIPT_MODES = {
         "topology_operations",
     },
     "audit_combinations.py": {"batch", "concurrent", "scalar"},
+    "audit_fingerprints.py": {"atom_pair", "topological_avalon"},
 }
 
 
@@ -142,14 +143,26 @@ def validate_profile(profile: dict[str, Any]) -> None:
             value = phase.get(key)
             if value is not None and (not isinstance(value, int) or value < 1):
                 raise ValueError(f"phase {name!r} has invalid {key}: {value!r}")
-        if script != "audit_fingerprints.py":
-            mode = phase.get("mode")
-            if mode not in SCRIPT_MODES[script]:
-                raise ValueError(
-                    f"phase {name!r} has invalid mode {mode!r} for {script}"
-                )
+        mode = phase.get("mode")
+        if mode not in SCRIPT_MODES[script]:
+            raise ValueError(
+                f"phase {name!r} has invalid mode {mode!r} for {script}"
+            )
         if not isinstance(phase.get("expected_processed"), int):
             raise ValueError(f"phase {name!r} requires expected_processed")
+        expected_profiles = phase.get("expected_profiles")
+        if expected_profiles is not None and (
+            not isinstance(expected_profiles, dict)
+            or not expected_profiles
+            or not all(
+                isinstance(key, str)
+                and key
+                and isinstance(value, int)
+                and value > 0
+                for key, value in expected_profiles.items()
+            )
+        ):
+            raise ValueError(f"phase {name!r} has invalid expected_profiles")
 
 
 def validate_corpus(
@@ -284,6 +297,7 @@ def build_identity(
                 root
                 / "tools/testdata/rdkit/rdkit_topological_fingerprint_profile.json",
                 root / "tools/testdata/rdkit/avalon_fingerprint_profile.json",
+                root / "tools/testdata/rdkit/atom_pair_fingerprint_profile.json",
             )
         },
     }
@@ -364,6 +378,10 @@ def command_for(
                 str(root / "tools/testdata/rdkit/rdkit_topological_fingerprint_profile.json"),
                 "--avalon-profile",
                 str(root / "tools/testdata/rdkit/avalon_fingerprint_profile.json"),
+                "--atom-pair-profile",
+                str(root / "tools/testdata/rdkit/atom_pair_fingerprint_profile.json"),
+                "--mode",
+                str(phase["mode"]),
             )
         )
     else:
@@ -451,12 +469,14 @@ def aggregate_phase(
     shard_count: int,
     informational_metrics: set[str],
     expected_processed: int,
+    expected_profiles: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     counts: Counter[str] = Counter()
     processed = 0
     summaries = 0
     successful_tasks = 0
     retained_examples = 0
+    invalid_profile_tasks = 0
     for shard in range(shard_count):
         result = task_results.get(str(shard))
         if not isinstance(result, dict) or result.get("returncode") != 0:
@@ -465,6 +485,9 @@ def aggregate_phase(
         if not output.is_file():
             continue
         summary = load_json(output)
+        if expected_profiles is not None and summary.get("profiles") != expected_profiles:
+            invalid_profile_tasks += 1
+            continue
         summaries += 1
         successful_tasks += 1
         processed += int(summary["processed"])
@@ -493,6 +516,7 @@ def aggregate_phase(
         "expected_tasks": shard_count,
         "successful_tasks": successful_tasks,
         "failed_or_missing_tasks": shard_count - successful_tasks,
+        "invalid_profile_tasks": invalid_profile_tasks,
         "summaries": summaries,
         "processed": processed,
         "expected_processed": expected_processed,
@@ -703,6 +727,7 @@ def main() -> None:
             len(shards),
             informational,
             int(phase["expected_processed"]),
+            phase.get("expected_profiles"),
         )
         phase_state["definition"] = phase
         phase_state["workers"] = worker_count

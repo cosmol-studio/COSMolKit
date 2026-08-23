@@ -26,6 +26,8 @@ TOOL_DIR = Path(__file__).resolve().parent
 REFERENCE_IDENTITY_PATH = REPO_ROOT / "testdata/reference/rdkit.json"
 SCHEMA_PATH = TOOL_DIR / "_expected_schema.py"
 PROFILE_INPUTS = {
+    "atom_pair_focused": REPO_ROOT
+    / "testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi",
     "smiles_small": REPO_ROOT / "testdata/smiles/corpus/smiles_small.smi",
     "smiles_5000": REPO_ROOT / "testdata/smiles/corpus/smiles_5000.smi",
 }
@@ -187,6 +189,13 @@ GENERATOR_SPECS = [
         "morgan_fingerprint.jsonl",
         "fingerprint",
         {"default", "strict-corpus", "fingerprint"},
+    ),
+    spec(
+        "atom_pair_fingerprint_golden",
+        "atom_pair_fingerprint.jsonl",
+        "fingerprint",
+        {"default", "strict-corpus", "fingerprint", "atom-pair"},
+        generator_dependencies=("atom_pair_fingerprint_profile.json",),
     ),
     spec(
         "maccs_fingerprint_golden",

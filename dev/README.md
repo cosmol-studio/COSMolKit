@@ -42,6 +42,7 @@ subdirectories so that an old plan cannot be mistaken for current policy.
 - [`bio_structure_io_policy.md`](./bio_structure_io_policy.md)
 - [`pdb_mmcif_gemmi_primary_plan.md`](./pdb_mmcif_gemmi_primary_plan.md)
 - [`rdkit_pdb_molecule_conversion_plan.md`](./rdkit_pdb_molecule_conversion_plan.md)
+- [`wwpdb_macromolecular_stress_experiment.md`](./wwpdb_macromolecular_stress_experiment.md)
 - [`tetrahedral_stereo.md`](./tetrahedral_stereo.md)
 - [`confseq_fast_geometry_design.md`](./confseq_fast_geometry_design.md)
 - [`ai_native_features.md`](./ai_native_features.md)
@@ -177,12 +178,15 @@ policy other than `not_applicable` also requires `parity_profile`. Other
 inputs have defined macro defaults, although behaviorally meaningful
 non-defaults should remain explicit for review.
 
-For molecule operations, `derived_effects` has exactly three independent,
-pairwise-disjoint categories: `recompute`, `preserve`, and `invalidate`.
-Derived-cache read authority comes from block-level `access`; `preserve` does
-not grant read permission, and there is currently no per-cache-item read
-capability. Unsupported source behavior is returned as a structured operation
-error rather than encoded as a derived effect. The complete model is defined in
+For molecule operations, `derived_effects` has four independent,
+pairwise-disjoint categories: `recompute`, `preserve`, `invalidate`, and the
+narrowly allow-listed `operation_defined`. The last category delegates the
+mechanism for a source-required transition, not its correctness, and is
+currently restricted to hydrogen-removal valence state. Derived-cache read
+authority still comes from block-level `access`; no effect category grants read
+permission, and there is currently no per-cache-item read capability.
+Unsupported source behavior is returned as a structured operation error rather
+than encoded as a derived effect. The complete model is defined in
 [`derived_effects_permission_model.md`](./derived_effects_permission_model.md).
 Here, unsupported denotes an explicitly separate capability outside the
 declared support boundary, never a mismatching case inside a parity-covered
@@ -282,10 +286,11 @@ COSMolKit uses one public structural model: `BioStructure`.
 
 Gemmi-derived code is the canonical source for PDB/mmCIF reading into
 `BioStructure`. RDKit-derived PDB code is reserved for `Molecule` compatibility
-behavior such as PDB block writing, future `Molecule::from_pdb_block` support,
-and `AtomPDBResidueInfo` semantics. Future molecule input must be layered over
-the Gemmi-primary `BioStructure` parse plus an explicit conversion profile; it
-must not introduce a second public parser.
+behavior such as PDB block writing, `Molecule::from_pdb_block`,
+`Molecule::from_mmcif_block`, and `AtomPDBResidueInfo` semantics. Molecule input
+is layered over the Gemmi-primary `BioStructure` parse plus an explicit
+structure-to-molecule conversion policy; it must not introduce a second public
+parser.
 
 Do not expose parallel public parser modules for the same user task. In
 particular, do not publicize `pdb_parser.rs` or `mmcif_parser.rs` beside

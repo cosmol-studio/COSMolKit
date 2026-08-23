@@ -93,6 +93,9 @@ SCHEMAS = {
     "morgan_fingerprint.jsonl": _schema(
         "branches:object,error:null|string,rdkit_ok:boolean,smiles:string"
     ),
+    "atom_pair_fingerprint.jsonl": _schema(
+        "branches:object,error:null|string,rdkit_ok:boolean,row:integer,smiles:string"
+    ),
     "maccs_fingerprint.jsonl": _schema(
         "error:null|string,label:null|string,public_n_bits:integer,public_on_bits:null|array,raw_n_bits:integer,raw_on_bits:null|array,rdkit_ok:boolean,record_type:string,smiles:string"
     ),

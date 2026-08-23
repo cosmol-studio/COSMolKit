@@ -251,6 +251,22 @@ def test_in_place_molecule_methods_preserve_shared_python_values():
     assert mol.num_bonds() == 8
 
 
+def test_remove_hydrogens_without_sanitize_retains_rdkit_atom_cache_state():
+    source = cosmolkit.Molecule.from_smiles("CCO").with_hydrogens()
+    source_before = source.mol_to_binary()
+    value = source.without_hydrogens(sanitize=False)
+    in_place = cosmolkit.Molecule.from_smiles("CCO").with_hydrogens()
+
+    assert in_place.remove_hydrogens_(sanitize=False) is None
+    assert source.mol_to_binary() == source_before
+    for molecule in (value, in_place):
+        atoms = molecule.atoms()
+        assert [atom.explicit_valence() for atom in atoms] == [4, 4, 2]
+        assert [atom.implicit_hydrogens() for atom in atoms] == [0, 0, 0]
+        assert [atom.total_num_hs() for atom in atoms] == [0, 0, 0]
+        assert [atom.total_valence() for atom in atoms] == [4, 4, 2]
+
+
 def test_in_place_sanitize_and_kekulize_methods_match_value_methods():
     raw = cosmolkit.Molecule.from_smiles("CN(=O)=O", sanitize=False)
     expected = raw.sanitize()
@@ -618,10 +634,10 @@ $$$$
 def test_protein_from_pdb_str_projects_protein_chains():
     pdb = """\
 ATOM      1  N   ALA A   1      11.104  13.207   9.900  1.00 20.00           N
-ATOM      2  CA  ALA A   1      12.210  13.912  10.555  1.00 20.00           C  
-ATOM      3  C   ALA A   1      13.470  13.079  10.413  1.00 20.00           C  
-HETATM    4  O   HOH A   2      18.000  10.000   8.000  1.00 10.00           O  
-HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C  
+ATOM      2  CA  ALA A   1      12.210  13.912  10.555  1.00 20.00           C
+ATOM      3  C   ALA A   1      13.470  13.079  10.413  1.00 20.00           C
+HETATM    4  O   HOH A   2      18.000  10.000   8.000  1.00 10.00           O
+HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
 """
     protein = cosmolkit.Protein.from_pdb_str(pdb)
 
@@ -666,6 +682,52 @@ HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
         "ACD(MSE)", cosmolkit.ResidueInfoKind.AA
     ) == ["ALA", "CYS", "ASP", "MSE"]
     assert cosmolkit.expand_protein_one_letter_string("m") == ["MET"]
+
+
+def test_biostructure_keeps_complete_hierarchy_before_explicit_projection():
+    pdb = """\
+ATOM      1  N   ALA A   1      11.104  13.207   9.900  1.00 20.00           N
+ATOM      2  CA  ALA A   1      12.210  13.912  10.555  1.00 20.00           C
+ATOM      3  C   ALA A   1      13.470  13.079  10.413  1.00 20.00           C
+HETATM    4  O   HOH A   2      18.000  10.000   8.000  1.00 10.00           O
+HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
+"""
+    structure = cosmolkit.BioStructure.from_pdb_str(pdb)
+
+    assert repr(structure) == (
+        "BioStructure(models=1, chains=2, residues=3, atoms=5, entities=0)"
+    )
+    assert len(structure) == 1
+    assert structure.input_format() == "Pdb"
+    assert structure.num_models() == 1
+    assert structure.num_chains() == 2
+    assert structure.num_residues() == 3
+    assert structure.num_atoms() == 5
+    assert structure.num_entities() == 0
+    assert len(structure[0].chains()) == 2
+    assert [residue.name() for residue in structure.residues()] == [
+        "ALA",
+        "HOH",
+        "LIG",
+    ]
+    assert [atom.name() for atom in structure.atoms()] == ["N", "CA", "C", "O", "C1"]
+    assert structure.residues()[0].code() == cosmolkit.ResidueCode.ALA
+    assert structure.residues()[1].code() == cosmolkit.ResidueCode.HOH
+    assert structure.atoms()[0].element() == cosmolkit.Element.N
+    assert structure.atoms()[0].residue_index() == 0
+    assert structure.chains()[0].auth_chain_id() == "A"
+
+    protein = structure.protein()
+    assert protein.num_chains() == 1
+    assert protein.num_residues() == 1
+    assert protein.num_atoms() == 3
+
+    molecule = structure.to_molecule(
+        sanitize=False,
+        remove_hs=False,
+        proximity_bonding=False,
+    )
+    assert molecule.num_atoms() == 5
 
 
 def test_protein_from_pdb_str_does_not_fail_on_supported_metal_hetatm():

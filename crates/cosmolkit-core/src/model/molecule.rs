@@ -436,12 +436,16 @@ impl DerivedCacheBlock {
 #[derive(Debug, Default)]
 struct ComputedPropertyCache {
     crippen: RwLock<Option<[f64; 2]>>,
+    topological_distance_matrix: RwLock<Option<Arc<[f64]>>>,
+    distance_matrices_3d: RwLock<BTreeMap<usize, Arc<[f64]>>>,
 }
 
 impl Clone for ComputedPropertyCache {
     fn clone(&self) -> Self {
         Self {
             crippen: RwLock::new(self.crippen()),
+            topological_distance_matrix: RwLock::new(self.topological_distance_matrix()),
+            distance_matrices_3d: RwLock::new(self.distance_matrices_3d()),
         }
     }
 }
@@ -468,11 +472,82 @@ impl ComputedPropertyCache {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(values);
     }
 
+    fn topological_distance_matrix(&self) -> Option<Arc<[f64]>> {
+        self.topological_distance_matrix
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn topological_distance_matrix_or_init(
+        &self,
+        initialize: impl FnOnce() -> Vec<f64>,
+    ) -> Arc<[f64]> {
+        if let Some(matrix) = self.topological_distance_matrix() {
+            return matrix;
+        }
+        let mut cached = self
+            .topological_distance_matrix
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(matrix) = cached.as_ref() {
+            return Arc::clone(matrix);
+        }
+        let matrix = Arc::<[f64]>::from(initialize());
+        *cached = Some(Arc::clone(&matrix));
+        matrix
+    }
+
+    fn distance_matrices_3d(&self) -> BTreeMap<usize, Arc<[f64]>> {
+        self.distance_matrices_3d
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn distance_matrix_3d_or_init(
+        &self,
+        conformer_id: usize,
+        initialize: impl FnOnce() -> Vec<f64>,
+    ) -> Arc<[f64]> {
+        if let Some(matrix) = self
+            .distance_matrices_3d
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&conformer_id)
+            .cloned()
+        {
+            return matrix;
+        }
+        let mut cached = self
+            .distance_matrices_3d
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(matrix) = cached.get(&conformer_id) {
+            return Arc::clone(matrix);
+        }
+        let matrix = Arc::<[f64]>::from(initialize());
+        cached.insert(conformer_id, Arc::clone(&matrix));
+        matrix
+    }
+
+    fn clear_coordinate_dependent(&self) {
+        self.distance_matrices_3d
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
+
     fn clear(&self) {
         *self
             .crippen
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        *self
+            .topological_distance_matrix
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        self.clear_coordinate_dependent();
     }
 }
 
@@ -1068,6 +1143,20 @@ impl Molecule {
         crate::fingerprint::morgan_fingerprint_with_output(self, params)
     }
 
+    pub fn atom_pair_fingerprint(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+    ) -> Result<crate::Fingerprint, crate::FingerprintError> {
+        crate::fingerprint::atom_pair_fingerprint(self, params)
+    }
+
+    pub fn atom_pair_fingerprint_with_output(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+    ) -> Result<crate::AtomPairFingerprintOutput, crate::FingerprintError> {
+        crate::fingerprint::atom_pair_fingerprint_with_output(self, params)
+    }
+
     pub fn topological_fingerprint(
         &self,
         params: &crate::fingerprint::TopologicalFingerprintParams,
@@ -1149,14 +1238,17 @@ impl Molecule {
     // are intentionally ahead of the first real operation body that uses them.
     #[allow(dead_code)]
     pub(crate) fn topology_block_mut(&mut self) -> &mut TopologyBlock {
+        self.clear_computed_property_cache();
         Arc::make_mut(&mut self.topology)
     }
 
     pub(crate) fn replace_topology_block(&mut self, topology: TopologyBlock) {
+        self.clear_computed_property_cache();
         self.topology = Arc::new(topology);
     }
 
     pub(crate) fn take_topology_block_or_clone(&mut self) -> TopologyBlock {
+        self.clear_computed_property_cache();
         let block = std::mem::replace(&mut self.topology, Arc::new(TopologyBlock::default()));
         match Arc::try_unwrap(block) {
             Ok(block) => block,
@@ -1171,14 +1263,17 @@ impl Molecule {
 
     #[allow(dead_code)]
     pub(crate) fn coordinate_block_mut(&mut self) -> &mut CoordinateBlock {
+        self.clear_coordinate_dependent_computed_property_cache();
         Arc::make_mut(&mut self.coordinates)
     }
 
     pub(crate) fn replace_coordinate_block(&mut self, coordinates: CoordinateBlock) {
+        self.clear_coordinate_dependent_computed_property_cache();
         self.coordinates = Arc::new(coordinates);
     }
 
     pub(crate) fn take_coordinate_block_or_clone(&mut self) -> CoordinateBlock {
+        self.clear_coordinate_dependent_computed_property_cache();
         let block = std::mem::replace(&mut self.coordinates, Arc::new(CoordinateBlock::default()));
         match Arc::try_unwrap(block) {
             Ok(block) => block,
@@ -1196,6 +1291,17 @@ impl Molecule {
         Arc::make_mut(&mut self.derived_cache)
     }
 
+    /// Restore a validated cache block while constructing a molecule at an IO
+    /// boundary. Runtime operations must continue to use `OpParts` cache APIs.
+    pub(crate) fn with_deserialized_derived_cache(
+        mut self,
+        derived_cache: DerivedCacheBlock,
+    ) -> Result<Self, InvariantError> {
+        self.derived_cache = Arc::new(derived_cache);
+        enforce_molecule_invariants(&self)?;
+        Ok(self)
+    }
+
     pub(crate) fn crippen_descriptor_cache(&self) -> Option<[f64; 2]> {
         self.computed_properties.crippen()
     }
@@ -1204,8 +1310,29 @@ impl Molecule {
         self.computed_properties.set_crippen(values);
     }
 
+    pub(crate) fn topological_distance_matrix_cache_or_init(
+        &self,
+        initialize: impl FnOnce() -> Vec<f64>,
+    ) -> Arc<[f64]> {
+        self.computed_properties
+            .topological_distance_matrix_or_init(initialize)
+    }
+
+    pub(crate) fn distance_matrix_3d_cache_or_init(
+        &self,
+        conformer_id: usize,
+        initialize: impl FnOnce() -> Vec<f64>,
+    ) -> Arc<[f64]> {
+        self.computed_properties
+            .distance_matrix_3d_or_init(conformer_id, initialize)
+    }
+
     pub(crate) fn clear_computed_property_cache(&self) {
         self.computed_properties.clear();
+    }
+
+    fn clear_coordinate_dependent_computed_property_cache(&self) {
+        self.computed_properties.clear_coordinate_dependent();
     }
 
     #[allow(dead_code)]

@@ -1,5 +1,5 @@
 use cosmolkit_core::{
-    ChiralTag, Mol2ReadParams, Molecule, RdkitPdbMolProfile, SdfReadParams,
+    ChiralTag, Mol2ReadParams, Molecule, SdfReadParams, StructureMoleculeOptions,
     mol_from_mol2_block_like_rdkit,
 };
 
@@ -158,7 +158,7 @@ END
 ";
     let molecule = Molecule::from_pdb_block_with_options(
         pdb,
-        RdkitPdbMolProfile {
+        StructureMoleculeOptions {
             sanitize: false,
             remove_hs: false,
             flavor: 0,

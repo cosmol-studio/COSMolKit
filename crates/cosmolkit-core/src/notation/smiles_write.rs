@@ -4,7 +4,9 @@ mod cx;
 mod direction;
 mod stereo;
 
-pub(crate) use self::stereo::serialize_ring_stereo_atoms;
+pub(crate) use self::stereo::{
+    assign_stereochemistry_on_working_copy, serialize_ring_stereo_atoms,
+};
 use self::{cx::*, direction::*, stereo::*};
 
 use crate::{

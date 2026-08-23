@@ -61,6 +61,7 @@ struct DerivedEffectFields {
     recompute: Vec<Ident>,
     preserve: Vec<Ident>,
     invalidate: Vec<Ident>,
+    operation_defined: Vec<Ident>,
 }
 
 impl Parse for MolOpBodyAttr {
@@ -121,7 +122,7 @@ impl Parse for OpEntry {
                 "must_handle" => {
                     return Err(syn::Error::new(
                         key.span(),
-                        "`must_handle` was removed; use `derived_effects.recompute`, `preserve`, and `invalidate`, and return structured errors for unsupported behavior",
+                        "`must_handle` was removed; use the current `derived_effects` categories, and return structured errors for unsupported behavior",
                     ));
                 }
                 "needs_update" => {
@@ -225,6 +226,7 @@ fn parse_derived_effect_fields(input: ParseStream<'_>) -> syn::Result<DerivedEff
             "recompute" => fields.recompute = parse_ident_list(&content)?,
             "preserve" => fields.preserve = parse_ident_list(&content)?,
             "invalidate" => fields.invalidate = parse_ident_list(&content)?,
+            "operation_defined" => fields.operation_defined = parse_ident_list(&content)?,
             "requires" => {
                 return Err(syn::Error::new(
                     key.span(),
@@ -240,7 +242,7 @@ fn parse_derived_effect_fields(input: ParseStream<'_>) -> syn::Result<DerivedEff
             "require_handle" => {
                 return Err(syn::Error::new(
                     key.span(),
-                    "`require_handle` was removed with `derived_effects.requires`; use recompute/preserve/invalidate only",
+                    "`require_handle` was removed with `derived_effects.requires`; use the current derived-effect categories",
                 ));
             }
             other => {
@@ -255,6 +257,31 @@ fn parse_derived_effect_fields(input: ParseStream<'_>) -> syn::Result<DerivedEff
         }
     }
     Ok(fields)
+}
+
+fn validate_operation_defined_guardrail(
+    operation: &Ident,
+    effects: &DerivedEffectFields,
+) -> syn::Result<()> {
+    if effects.operation_defined.is_empty() {
+        return Ok(());
+    }
+
+    let operation_name = operation.to_string();
+    let is_hydrogen_removal = matches!(
+        operation_name.as_str(),
+        "without_hydrogens" | "without_hydrogens_with_params"
+    );
+    let is_valence_only =
+        effects.operation_defined.len() == 1 && effects.operation_defined[0] == "valence";
+    if is_hydrogen_removal && is_valence_only {
+        return Ok(());
+    }
+
+    Err(syn::Error::new(
+        operation.span(),
+        "`derived_effects.operation_defined` is currently permitted only for the `valence` state of the `without_hydrogens` operation family; adding another use requires an explicit design decision and guardrail update",
+    ))
 }
 
 fn parse_expr_list(input: ParseStream<'_>) -> syn::Result<Vec<Expr>> {
@@ -412,6 +439,7 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         .map_or_else(|| ident_with_span("none", op.name.span()), Ok)?;
     let access = required_field(op.fields.access, &op.name, "access")?;
     let derived_effects = required_field(op.fields.derived_effects, &op.name, "derived_effects")?;
+    validate_operation_defined_guardrail(&op.name, &derived_effects)?;
     let requires_mapping = op
         .fields
         .requires_mapping
@@ -440,6 +468,7 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
     let recompute_expr = derived_state_expr(&derived_effects.recompute)?;
     let preserve_expr = derived_state_expr(&derived_effects.preserve)?;
     let invalidate_expr = derived_state_expr(&derived_effects.invalidate)?;
+    let operation_defined_expr = derived_state_expr(&derived_effects.operation_defined)?;
     let mapping_expr = mapping_expr(&requires_mapping)?;
     let parity_expr = parity_expr(&parity)?;
     let call_args = param_idents(&op.params)?;
@@ -459,6 +488,7 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
                 #recompute_expr,
                 #preserve_expr,
                 #invalidate_expr,
+                #operation_defined_expr,
             ),
             semantic_preconditions: #semantic_preconditions_expr,
             requires_mapping: #mapping_expr,

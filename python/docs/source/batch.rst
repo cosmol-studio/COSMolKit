@@ -132,10 +132,11 @@ Derived Outputs
    svgs = prepared.to_svg_list(width=300, height=300)
    bounds = prepared.dg_bounds_matrix_list()
    fingerprints = prepared.fingerprint_morgan_list(n_bits=2048)
+   atom_pairs = prepared.fingerprint_atom_pair_list(n_bits=2048)
 
-Morgan fingerprint batch APIs use the same source-backed branches as the
-single-molecule API and are covered by strict RDKit bit-identical parity tests.
-Morgan fingerprints can also be collected with provenance data:
+Morgan and AtomPair batch APIs use the same source-backed generator cores as
+the single-molecule APIs, preserve record order, and are covered by exact
+pinned-RDKit parity tests. Both families can also collect provenance data:
 
 .. code-block:: python
 
@@ -145,6 +146,15 @@ Morgan fingerprints can also be collected with provenance data:
    )
 
    for result in results:
+       if result is not None:
+           print(result.fingerprint().on_bits())
+           print(result.additional_output().bit_info_map())
+
+   atom_pair_results = prepared.fingerprint_atom_pair_with_output_list(
+       n_bits=2048,
+   )
+
+   for result in atom_pair_results:
        if result is not None:
            print(result.fingerprint().on_bits())
            print(result.additional_output().bit_info_map())

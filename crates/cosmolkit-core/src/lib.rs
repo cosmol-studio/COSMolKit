@@ -199,14 +199,17 @@ pub use distgeom::{
 pub use draw::SvgDrawError;
 pub use error::{InvariantError, MoleculeBuildError};
 pub use fingerprint::{
-    AdditionalOutput, Fingerprint, FingerprintArguments, FingerprintError, MaccsFingerprintParams,
-    MorganAdditionalOutput, MorganAtomInvariantsGenerator, MorganBitFingerprintOutput,
-    MorganBondInvariantsGenerator, MorganFingerprintOutput, MorganFingerprintParams,
-    MorganSparseFingerprintOutput, SparseBitFingerprint, SparseCountFingerprint,
-    TopologicalFingerprintOutput, TopologicalFingerprintOutputRequest,
-    TopologicalFingerprintParams, TopologicalFingerprintResult, maccs_fingerprint,
-    maccs_get_fingerprint_as_bit_vect, morgan_get_fingerprint, morgan_get_fingerprint_as_bit_vect,
-    morgan_get_hashed_fingerprint, topological_fingerprint_with_output,
+    AdditionalOutput, AtomPairFingerprintGenerator, AtomPairFingerprintOutput,
+    AtomPairFingerprintParams, Fingerprint, FingerprintArguments, FingerprintError,
+    FingerprintFuncArguments, MaccsFingerprintParams, MorganAdditionalOutput,
+    MorganAtomInvariantsGenerator, MorganBitFingerprintOutput, MorganBondInvariantsGenerator,
+    MorganFingerprintOutput, MorganFingerprintParams, MorganSparseFingerprintOutput,
+    SparseBitFingerprint, SparseCountFingerprint, TopologicalFingerprintOutput,
+    TopologicalFingerprintOutputRequest, TopologicalFingerprintParams,
+    TopologicalFingerprintResult, atom_pair_fingerprint, atom_pair_fingerprint_with_output,
+    maccs_fingerprint, maccs_get_fingerprint_as_bit_vect, morgan_get_fingerprint,
+    morgan_get_fingerprint_as_bit_vect, morgan_get_hashed_fingerprint,
+    topological_fingerprint_with_output,
 };
 pub use hydrogens::{AddHsParams, AddHydrogensError, RemoveHsParams, RemoveHydrogensError};
 pub use inchi::{
@@ -215,16 +218,20 @@ pub use inchi::{
     MolToInchiKeyOutput, MolToInchiOutput, inchi_to_inchi_key, mol_from_inchi, mol_to_inchi,
     mol_to_inchi_key,
 };
-pub use io::bio::{BioPdbReadParams, BioReadError, read_mmcif_atom_site_subset_from_str};
+#[allow(deprecated)]
+pub use io::bio::read_mmcif_atom_site_subset_from_str;
+pub use io::bio::{BioPdbReadParams, BioReadError};
 pub use io::mol2::{
     Mol2ReadError, Mol2ReadParams, Mol2Record, Mol2Type, mol_from_mol2_block_like_rdkit,
     mol_from_mol2_data_stream_like_rdkit, mol_from_mol2_file_like_rdkit, read_mol2_file,
     read_mol2_file_with_params, read_mol2_from_str, read_mol2_from_str_with_params,
 };
+#[allow(deprecated)]
 pub use io::pdb_molecule::{
     PdbMoleculeConversionError, RdkitPdbMolProfile, bio_structure_to_rdkit_pdb_molecule,
     molecule_from_mmcif_block_with_options, molecule_from_pdb_block_with_options,
 };
+pub use io::pdb_molecule::{StructureMoleculeConversionError, StructureMoleculeOptions};
 pub use io::sdf::{SdfCoordinateMode, SdfDataset, SdfReadParams, SdfRecordMetadata};
 pub use io::xyz::{XyzReadError, read_xyz_from_str};
 pub use kekulize::KekulizeError;
@@ -275,7 +282,7 @@ pub use substruct::{
     try_get_substruct_matches_with_params,
 };
 pub use support::{
-    AROMATICITY_FEATURE, AVALON_FINGERPRINT_FEATURE, BATCH_FEATURE,
+    AROMATICITY_FEATURE, ATOM_PAIR_FINGERPRINT_FEATURE, AVALON_FINGERPRINT_FEATURE, BATCH_FEATURE,
     BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE, BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
     BIO_SELECTION_FEATURE, BIO_STRUCTURE_FEATURE, CONFORMER_GENERATION_FEATURE,
     COORDINATE_2D_FEATURE, COORDINATE_EDIT_FEATURE, DESCRIPTORS_FEATURE, DG_BOUNDS_FEATURE,

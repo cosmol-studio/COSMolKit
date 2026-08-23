@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{BufReader, Write};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use cosmolkit_core::io::molblock::{self, SdfFormat};
 use cosmolkit_core::io::sdf::SdfReader;
@@ -228,9 +229,9 @@ fn svg_draw_pyerr(error: cosmolkit_core::SvgDrawError) -> PyErr {
     PyValueError::new_err(error.to_string())
 }
 
-fn pdb_molecule_pyerr(error: cosmolkit_core::PdbMoleculeConversionError) -> PyErr {
+fn pdb_molecule_pyerr(error: cosmolkit_core::StructureMoleculeConversionError) -> PyErr {
     match error {
-        cosmolkit_core::PdbMoleculeConversionError::Unsupported(message) => {
+        cosmolkit_core::StructureMoleculeConversionError::Unsupported(message) => {
             PyNotImplementedError::new_err(message)
         }
         other => PyValueError::new_err(other.to_string()),
@@ -378,6 +379,51 @@ fn make_morgan_fingerprint_params(
         num_bits_per_feature,
         collect_additional_output,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn make_atom_pair_fingerprint_params(
+    n_bits: usize,
+    min_distance: u32,
+    max_distance: u32,
+    use_2d: bool,
+    include_chirality: bool,
+    count_simulation: bool,
+    count_bounds: Option<Vec<u32>>,
+    num_bits_per_feature: u32,
+    from_atoms: Option<Vec<usize>>,
+    ignore_atoms: Option<Vec<usize>>,
+    conformer_id: i32,
+    custom_atom_invariants: Option<Vec<u32>>,
+    collect_additional_output: bool,
+) -> cosmolkit_core::AtomPairFingerprintParams {
+    cosmolkit_core::AtomPairFingerprintParams {
+        n_bits,
+        min_distance,
+        max_distance,
+        use_2d,
+        use_chirality: include_chirality,
+        count_simulation,
+        count_bounds: count_bounds.unwrap_or_else(|| vec![1, 2, 4, 8]),
+        num_bits_per_feature,
+        from_atoms,
+        ignore_atoms,
+        conformer_id,
+        custom_atom_invariants,
+        collect_additional_output,
+    }
+}
+
+fn atom_pair_call_arguments(
+    params: &cosmolkit_core::AtomPairFingerprintParams,
+) -> cosmolkit_core::FingerprintFuncArguments {
+    cosmolkit_core::FingerprintFuncArguments {
+        from_atoms: params.from_atoms.clone(),
+        ignore_atoms: params.ignore_atoms.clone(),
+        conf_id: params.conformer_id,
+        custom_atom_invariants: params.custom_atom_invariants.clone(),
+        ..Default::default()
+    }
 }
 
 fn make_avalon_fingerprint_params(
@@ -1170,6 +1216,23 @@ fn rdkit_chiral_tag_from_name(name: &str) -> PyResult<cosmolkit_core::ChiralTag>
     }
 }
 
+fn rdkit_hybridization_from_name(name: &str) -> PyResult<cosmolkit_core::Hybridization> {
+    match name {
+        "UNSPECIFIED" => Ok(cosmolkit_core::Hybridization::Unspecified),
+        "S" => Ok(cosmolkit_core::Hybridization::S),
+        "SP" => Ok(cosmolkit_core::Hybridization::Sp),
+        "SP2" => Ok(cosmolkit_core::Hybridization::Sp2),
+        "SP3" => Ok(cosmolkit_core::Hybridization::Sp3),
+        "SP2D" => Ok(cosmolkit_core::Hybridization::Sp2d),
+        "SP3D" => Ok(cosmolkit_core::Hybridization::Sp3d),
+        "SP3D2" => Ok(cosmolkit_core::Hybridization::Sp3d2),
+        "OTHER" => Ok(cosmolkit_core::Hybridization::Other),
+        _ => Err(PyValueError::new_err(format!(
+            "from_rdkit unsupported atom hybridization '{name}'"
+        ))),
+    }
+}
+
 fn rdkit_bond_order_from_name(name: &str) -> PyResult<cosmolkit_core::BondOrder> {
     match name {
         "UNSPECIFIED" | "ZERO" => Ok(cosmolkit_core::BondOrder::Unspecified),
@@ -1680,14 +1743,14 @@ text, ``Protein.from_mmcif()`` for mmCIF files, and
 ``Protein.from_mmcif_str()`` for mmCIF text.
 "#]
 struct Protein {
-    inner: cosmolkit_core::Protein,
+    inner: Arc<cosmolkit_core::Protein>,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(from_py_object)]
 #[derive(Clone)]
 struct ProteinChain {
-    inner: cosmolkit_core::Protein,
+    inner: Arc<cosmolkit_core::Protein>,
     index: usize,
 }
 
@@ -1695,7 +1758,7 @@ struct ProteinChain {
 #[pyclass(from_py_object)]
 #[derive(Clone)]
 struct ProteinResidue {
-    inner: cosmolkit_core::Protein,
+    inner: Arc<cosmolkit_core::Protein>,
     index: usize,
 }
 
@@ -1729,7 +1792,62 @@ struct PyResidueInfo {
 #[pyclass(from_py_object)]
 #[derive(Clone)]
 struct ProteinAtom {
-    inner: cosmolkit_core::Protein,
+    inner: Arc<cosmolkit_core::Protein>,
+    index: usize,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(from_py_object)]
+#[derive(Clone)]
+#[doc = r#"
+A complete biomolecular structural value.
+
+``BioStructure`` retains all modeled models, chains, residues, atoms, entities,
+ligands, waters, nucleic acids, assemblies, and crystallographic metadata.
+Use ``Protein`` only when an amino-acid-only projection is intended, and use
+``Molecule`` when the desired result is a cheminformatics graph.
+"#]
+struct BioStructure {
+    inner: Arc<cosmolkit_core::BioStructure>,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(from_py_object)]
+#[derive(Clone)]
+struct StructureModel {
+    inner: Arc<cosmolkit_core::BioStructure>,
+    index: usize,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(from_py_object)]
+#[derive(Clone)]
+struct StructureChain {
+    inner: Arc<cosmolkit_core::BioStructure>,
+    index: usize,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(from_py_object)]
+#[derive(Clone)]
+struct StructureResidue {
+    inner: Arc<cosmolkit_core::BioStructure>,
+    index: usize,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(from_py_object)]
+#[derive(Clone)]
+struct StructureAtom {
+    inner: Arc<cosmolkit_core::BioStructure>,
+    index: usize,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(from_py_object)]
+#[derive(Clone)]
+struct StructureEntity {
+    inner: Arc<cosmolkit_core::BioStructure>,
     index: usize,
 }
 
@@ -2974,6 +3092,332 @@ Return the number of invalid records.
         self.inner.invalid_count()
     }
 
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        n_bits=2048,
+        min_distance=1,
+        max_distance=30,
+        use_2d=true,
+        include_chirality=false,
+        count_simulation=true,
+        count_bounds=None,
+        num_bits_per_feature=1,
+        from_atoms=None,
+        ignore_atoms=None,
+        conformer_id=-1,
+        custom_atom_invariants=None,
+        n_jobs=None,
+        progress_bar=None
+    ))]
+    #[doc = r#"
+Return ordered explicit-bit AtomPair fingerprints for valid batch records.
+
+Invalid input records remain ``None`` at their original positions.
+"#]
+    fn fingerprint_atom_pair_list(
+        &self,
+        n_bits: usize,
+        min_distance: u32,
+        max_distance: u32,
+        use_2d: bool,
+        include_chirality: bool,
+        count_simulation: bool,
+        count_bounds: Option<Vec<u32>>,
+        num_bits_per_feature: u32,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        conformer_id: i32,
+        custom_atom_invariants: Option<Vec<u32>>,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> PyResult<Vec<Option<Fingerprint>>> {
+        let params = make_atom_pair_fingerprint_params(
+            n_bits,
+            min_distance,
+            max_distance,
+            use_2d,
+            include_chirality,
+            count_simulation,
+            count_bounds,
+            num_bits_per_feature,
+            from_atoms,
+            ignore_atoms,
+            conformer_id,
+            custom_atom_invariants,
+            false,
+        );
+        self.inner
+            .atom_pair_fingerprint_list_with_options(
+                &params,
+                validate_n_jobs(n_jobs)?,
+                progress_bar,
+            )
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.map(|inner| Fingerprint { inner }))
+                    .collect()
+            })
+            .map_err(batch_validation_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        n_bits=2048,
+        min_distance=1,
+        max_distance=30,
+        use_2d=true,
+        include_chirality=false,
+        count_simulation=true,
+        count_bounds=None,
+        num_bits_per_feature=1,
+        from_atoms=None,
+        ignore_atoms=None,
+        conformer_id=-1,
+        custom_atom_invariants=None,
+        n_jobs=None,
+        progress_bar=None
+    ))]
+    fn fingerprint_atom_pair_sparse_count_list(
+        &self,
+        n_bits: usize,
+        min_distance: u32,
+        max_distance: u32,
+        use_2d: bool,
+        include_chirality: bool,
+        count_simulation: bool,
+        count_bounds: Option<Vec<u32>>,
+        num_bits_per_feature: u32,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        conformer_id: i32,
+        custom_atom_invariants: Option<Vec<u32>>,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> PyResult<Vec<Option<AtomPairSparseCountFingerprint>>> {
+        let params = make_atom_pair_fingerprint_params(
+            n_bits,
+            min_distance,
+            max_distance,
+            use_2d,
+            include_chirality,
+            count_simulation,
+            count_bounds,
+            num_bits_per_feature,
+            from_atoms,
+            ignore_atoms,
+            conformer_id,
+            custom_atom_invariants,
+            false,
+        );
+        self.inner
+            .atom_pair_sparse_count_fingerprint_list_with_options(
+                &params,
+                validate_n_jobs(n_jobs)?,
+                progress_bar,
+            )
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.map(|inner| AtomPairSparseCountFingerprint { inner }))
+                    .collect()
+            })
+            .map_err(batch_validation_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        n_bits=2048,
+        min_distance=1,
+        max_distance=30,
+        use_2d=true,
+        include_chirality=false,
+        count_simulation=true,
+        count_bounds=None,
+        num_bits_per_feature=1,
+        from_atoms=None,
+        ignore_atoms=None,
+        conformer_id=-1,
+        custom_atom_invariants=None,
+        n_jobs=None,
+        progress_bar=None
+    ))]
+    fn fingerprint_atom_pair_count_list(
+        &self,
+        n_bits: usize,
+        min_distance: u32,
+        max_distance: u32,
+        use_2d: bool,
+        include_chirality: bool,
+        count_simulation: bool,
+        count_bounds: Option<Vec<u32>>,
+        num_bits_per_feature: u32,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        conformer_id: i32,
+        custom_atom_invariants: Option<Vec<u32>>,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> PyResult<Vec<Option<AtomPairSparseCountFingerprint>>> {
+        let params = make_atom_pair_fingerprint_params(
+            n_bits,
+            min_distance,
+            max_distance,
+            use_2d,
+            include_chirality,
+            count_simulation,
+            count_bounds,
+            num_bits_per_feature,
+            from_atoms,
+            ignore_atoms,
+            conformer_id,
+            custom_atom_invariants,
+            false,
+        );
+        self.inner
+            .atom_pair_count_fingerprint_list_with_options(
+                &params,
+                validate_n_jobs(n_jobs)?,
+                progress_bar,
+            )
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.map(|inner| AtomPairSparseCountFingerprint { inner }))
+                    .collect()
+            })
+            .map_err(batch_validation_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        n_bits=2048,
+        min_distance=1,
+        max_distance=30,
+        use_2d=true,
+        include_chirality=false,
+        count_simulation=true,
+        count_bounds=None,
+        num_bits_per_feature=1,
+        from_atoms=None,
+        ignore_atoms=None,
+        conformer_id=-1,
+        custom_atom_invariants=None,
+        n_jobs=None,
+        progress_bar=None
+    ))]
+    fn fingerprint_atom_pair_sparse_bits_list(
+        &self,
+        n_bits: usize,
+        min_distance: u32,
+        max_distance: u32,
+        use_2d: bool,
+        include_chirality: bool,
+        count_simulation: bool,
+        count_bounds: Option<Vec<u32>>,
+        num_bits_per_feature: u32,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        conformer_id: i32,
+        custom_atom_invariants: Option<Vec<u32>>,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> PyResult<Vec<Option<AtomPairSparseBitFingerprint>>> {
+        let params = make_atom_pair_fingerprint_params(
+            n_bits,
+            min_distance,
+            max_distance,
+            use_2d,
+            include_chirality,
+            count_simulation,
+            count_bounds,
+            num_bits_per_feature,
+            from_atoms,
+            ignore_atoms,
+            conformer_id,
+            custom_atom_invariants,
+            false,
+        );
+        self.inner
+            .atom_pair_sparse_bit_fingerprint_list_with_options(
+                &params,
+                validate_n_jobs(n_jobs)?,
+                progress_bar,
+            )
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.map(|inner| AtomPairSparseBitFingerprint { inner }))
+                    .collect()
+            })
+            .map_err(batch_validation_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        n_bits=2048,
+        min_distance=1,
+        max_distance=30,
+        use_2d=true,
+        include_chirality=false,
+        count_simulation=true,
+        count_bounds=None,
+        num_bits_per_feature=1,
+        from_atoms=None,
+        ignore_atoms=None,
+        conformer_id=-1,
+        custom_atom_invariants=None,
+        n_jobs=None,
+        progress_bar=None
+    ))]
+    fn fingerprint_atom_pair_with_output_list(
+        &self,
+        n_bits: usize,
+        min_distance: u32,
+        max_distance: u32,
+        use_2d: bool,
+        include_chirality: bool,
+        count_simulation: bool,
+        count_bounds: Option<Vec<u32>>,
+        num_bits_per_feature: u32,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        conformer_id: i32,
+        custom_atom_invariants: Option<Vec<u32>>,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> PyResult<Vec<Option<AtomPairFingerprintResult>>> {
+        let params = make_atom_pair_fingerprint_params(
+            n_bits,
+            min_distance,
+            max_distance,
+            use_2d,
+            include_chirality,
+            count_simulation,
+            count_bounds,
+            num_bits_per_feature,
+            from_atoms,
+            ignore_atoms,
+            conformer_id,
+            custom_atom_invariants,
+            true,
+        );
+        self.inner
+            .atom_pair_fingerprint_with_output_list_with_options(
+                &params,
+                validate_n_jobs(n_jobs)?,
+                progress_bar,
+            )
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.map(Into::into))
+                    .collect()
+            })
+            .map_err(batch_validation_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         isomeric_smiles=true,
         canonical=true,
@@ -3015,7 +3459,6 @@ rooted_at_atom : int, optional
 n_jobs : int, optional
     Number of worker threads to use.
 "#]
-    #[allow(clippy::too_many_arguments)]
     fn to_smiles_list(
         &self,
         isomeric_smiles: bool,
@@ -3577,13 +4020,13 @@ Molecule
         flavor: u32,
         proximity_bonding: bool,
     ) -> PyResult<Self> {
-        let profile = cosmolkit_core::RdkitPdbMolProfile {
+        let options = cosmolkit_core::StructureMoleculeOptions {
             sanitize,
             remove_hs,
             flavor,
             proximity_bonding,
         };
-        let inner = cosmolkit_core::Molecule::from_pdb_block_with_options(text, profile)
+        let inner = cosmolkit_core::Molecule::from_pdb_block_with_options(text, options)
             .map_err(pdb_molecule_pyerr)?;
         Ok(Self { inner })
     }
@@ -3626,13 +4069,13 @@ Molecule
         flavor: u32,
         proximity_bonding: bool,
     ) -> PyResult<Self> {
-        let profile = cosmolkit_core::RdkitPdbMolProfile {
+        let options = cosmolkit_core::StructureMoleculeOptions {
             sanitize,
             remove_hs,
             flavor,
             proximity_bonding,
         };
-        let inner = cosmolkit_core::Molecule::from_mmcif_block_with_options(text, profile)
+        let inner = cosmolkit_core::Molecule::from_mmcif_block_with_options(text, options)
             .map_err(pdb_molecule_pyerr)?;
         Ok(Self { inner })
     }
@@ -3675,7 +4118,9 @@ Parameters
 rdmol : object
     An object exposing RDKit's molecule API.
 sanitize : bool, optional
-    Optional molecule preparation flag.
+    By default, preserve the copied RDKit graph and prepare its valence cache.
+    Pass ``True`` to run full sanitization or ``False`` to retain an
+    unprepared graph without a computed valence cache.
 
 Returns
 -------
@@ -3725,6 +4170,8 @@ Molecule
             let atom_map_raw: u32 = py_method_extract(&atom, "GetAtomMapNum")?;
             let isotope_raw: u16 = py_method_extract(&atom, "GetIsotope")?;
             let chiral_tag = rdkit_chiral_tag_from_name(&py_method_str(&atom, "GetChiralTag")?)?;
+            let hybridization =
+                rdkit_hybridization_from_name(&py_method_str(&atom, "GetHybridization")?)?;
             let mut spec = cosmolkit_core::AtomSpec::new(
                 cosmolkit_core::Element::from_atomic_number(atomic_num).ok_or_else(|| {
                     PyValueError::new_err(format!(
@@ -3737,7 +4184,8 @@ Molecule
             .with_no_implicit(py_method_extract(&atom, "GetNoImplicit")?)
             .with_chiral_tag(chiral_tag)
             .with_aromatic(py_method_extract(&atom, "GetIsAromatic")?)
-            .with_radical_electrons(num_radical_electrons);
+            .with_radical_electrons(num_radical_electrons)
+            .with_hybridization(hybridization);
             if isotope_raw != 0 {
                 spec = spec.with_isotope(isotope_raw);
             }
@@ -3812,11 +4260,14 @@ Molecule
         let mol = builder
             .build()
             .map_err(|err| PyValueError::new_err(format!("from_rdkit build failed: {err}")))?;
-        let inner = if matches!(sanitize, Some(true)) {
-            mol.sanitize()
-                .map_err(|err| PyValueError::new_err(err.to_string()))?
-        } else {
-            mol
+        let inner = match sanitize {
+            Some(true) => mol
+                .sanitize()
+                .map_err(|err| PyValueError::new_err(err.to_string()))?,
+            Some(false) => mol,
+            None => mol
+                .with_assigned_valence()
+                .map_err(|err| PyValueError::new_err(err.to_string()))?,
         };
         Ok(Self { inner })
     }
@@ -5162,6 +5613,286 @@ mutate the source molecule.
 
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
+        n_bits=2048,
+        min_distance=1,
+        max_distance=30,
+        use_2d=true,
+        include_chirality=false,
+        count_simulation=true,
+        count_bounds=None,
+        num_bits_per_feature=1,
+        from_atoms=None,
+        ignore_atoms=None,
+        conformer_id=-1,
+        custom_atom_invariants=None
+    ))]
+    #[doc = r#"
+Return the explicit-bit AtomPair fingerprint.
+
+The implementation follows the pinned source generator for 2D or conformer
+distances, chirality, count simulation, atom filters, and custom invariants.
+The molecule is not mutated.
+"#]
+    fn fingerprint_atom_pair(
+        &self,
+        n_bits: usize,
+        min_distance: u32,
+        max_distance: u32,
+        use_2d: bool,
+        include_chirality: bool,
+        count_simulation: bool,
+        count_bounds: Option<Vec<u32>>,
+        num_bits_per_feature: u32,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        conformer_id: i32,
+        custom_atom_invariants: Option<Vec<u32>>,
+    ) -> PyResult<Fingerprint> {
+        let params = make_atom_pair_fingerprint_params(
+            n_bits,
+            min_distance,
+            max_distance,
+            use_2d,
+            include_chirality,
+            count_simulation,
+            count_bounds,
+            num_bits_per_feature,
+            from_atoms,
+            ignore_atoms,
+            conformer_id,
+            custom_atom_invariants,
+            false,
+        );
+        self.inner
+            .atom_pair_fingerprint(&params)
+            .map(|inner| Fingerprint { inner })
+            .map_err(fingerprint_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        n_bits=2048,
+        min_distance=1,
+        max_distance=30,
+        use_2d=true,
+        include_chirality=false,
+        count_simulation=true,
+        count_bounds=None,
+        num_bits_per_feature=1,
+        from_atoms=None,
+        ignore_atoms=None,
+        conformer_id=-1,
+        custom_atom_invariants=None
+    ))]
+    #[doc = r#"
+Return the source-width sparse-count AtomPair fingerprint.
+"#]
+    fn fingerprint_atom_pair_sparse_count(
+        &self,
+        n_bits: usize,
+        min_distance: u32,
+        max_distance: u32,
+        use_2d: bool,
+        include_chirality: bool,
+        count_simulation: bool,
+        count_bounds: Option<Vec<u32>>,
+        num_bits_per_feature: u32,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        conformer_id: i32,
+        custom_atom_invariants: Option<Vec<u32>>,
+    ) -> PyResult<AtomPairSparseCountFingerprint> {
+        let params = make_atom_pair_fingerprint_params(
+            n_bits,
+            min_distance,
+            max_distance,
+            use_2d,
+            include_chirality,
+            count_simulation,
+            count_bounds,
+            num_bits_per_feature,
+            from_atoms,
+            ignore_atoms,
+            conformer_id,
+            custom_atom_invariants,
+            false,
+        );
+        let generator = cosmolkit_core::AtomPairFingerprintGenerator::new(&params)
+            .map_err(fingerprint_pyerr)?;
+        generator
+            .sparse_count_fingerprint(&self.inner, &mut atom_pair_call_arguments(&params))
+            .map(|inner| AtomPairSparseCountFingerprint { inner })
+            .map_err(fingerprint_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        n_bits=2048,
+        min_distance=1,
+        max_distance=30,
+        use_2d=true,
+        include_chirality=false,
+        count_simulation=true,
+        count_bounds=None,
+        num_bits_per_feature=1,
+        from_atoms=None,
+        ignore_atoms=None,
+        conformer_id=-1,
+        custom_atom_invariants=None
+    ))]
+    #[doc = r#"
+Return the folded-count AtomPair fingerprint.
+"#]
+    fn fingerprint_atom_pair_count(
+        &self,
+        n_bits: usize,
+        min_distance: u32,
+        max_distance: u32,
+        use_2d: bool,
+        include_chirality: bool,
+        count_simulation: bool,
+        count_bounds: Option<Vec<u32>>,
+        num_bits_per_feature: u32,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        conformer_id: i32,
+        custom_atom_invariants: Option<Vec<u32>>,
+    ) -> PyResult<AtomPairSparseCountFingerprint> {
+        let params = make_atom_pair_fingerprint_params(
+            n_bits,
+            min_distance,
+            max_distance,
+            use_2d,
+            include_chirality,
+            count_simulation,
+            count_bounds,
+            num_bits_per_feature,
+            from_atoms,
+            ignore_atoms,
+            conformer_id,
+            custom_atom_invariants,
+            false,
+        );
+        let generator = cosmolkit_core::AtomPairFingerprintGenerator::new(&params)
+            .map_err(fingerprint_pyerr)?;
+        generator
+            .count_fingerprint(&self.inner, &mut atom_pair_call_arguments(&params))
+            .map(|inner| AtomPairSparseCountFingerprint { inner })
+            .map_err(fingerprint_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        n_bits=2048,
+        min_distance=1,
+        max_distance=30,
+        use_2d=true,
+        include_chirality=false,
+        count_simulation=true,
+        count_bounds=None,
+        num_bits_per_feature=1,
+        from_atoms=None,
+        ignore_atoms=None,
+        conformer_id=-1,
+        custom_atom_invariants=None
+    ))]
+    #[doc = r#"
+Return the sparse-bit AtomPair fingerprint.
+"#]
+    fn fingerprint_atom_pair_sparse_bits(
+        &self,
+        n_bits: usize,
+        min_distance: u32,
+        max_distance: u32,
+        use_2d: bool,
+        include_chirality: bool,
+        count_simulation: bool,
+        count_bounds: Option<Vec<u32>>,
+        num_bits_per_feature: u32,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        conformer_id: i32,
+        custom_atom_invariants: Option<Vec<u32>>,
+    ) -> PyResult<AtomPairSparseBitFingerprint> {
+        let params = make_atom_pair_fingerprint_params(
+            n_bits,
+            min_distance,
+            max_distance,
+            use_2d,
+            include_chirality,
+            count_simulation,
+            count_bounds,
+            num_bits_per_feature,
+            from_atoms,
+            ignore_atoms,
+            conformer_id,
+            custom_atom_invariants,
+            false,
+        );
+        let generator = cosmolkit_core::AtomPairFingerprintGenerator::new(&params)
+            .map_err(fingerprint_pyerr)?;
+        generator
+            .sparse_bit_fingerprint(&self.inner, &mut atom_pair_call_arguments(&params))
+            .map(|inner| AtomPairSparseBitFingerprint { inner })
+            .map_err(fingerprint_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        n_bits=2048,
+        min_distance=1,
+        max_distance=30,
+        use_2d=true,
+        include_chirality=false,
+        count_simulation=true,
+        count_bounds=None,
+        num_bits_per_feature=1,
+        from_atoms=None,
+        ignore_atoms=None,
+        conformer_id=-1,
+        custom_atom_invariants=None
+    ))]
+    #[doc = r#"
+Return the explicit-bit AtomPair fingerprint with exact provenance output.
+"#]
+    fn fingerprint_atom_pair_with_output(
+        &self,
+        n_bits: usize,
+        min_distance: u32,
+        max_distance: u32,
+        use_2d: bool,
+        include_chirality: bool,
+        count_simulation: bool,
+        count_bounds: Option<Vec<u32>>,
+        num_bits_per_feature: u32,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        conformer_id: i32,
+        custom_atom_invariants: Option<Vec<u32>>,
+    ) -> PyResult<AtomPairFingerprintResult> {
+        let params = make_atom_pair_fingerprint_params(
+            n_bits,
+            min_distance,
+            max_distance,
+            use_2d,
+            include_chirality,
+            count_simulation,
+            count_bounds,
+            num_bits_per_feature,
+            from_atoms,
+            ignore_atoms,
+            conformer_id,
+            custom_atom_invariants,
+            true,
+        );
+        self.inner
+            .atom_pair_fingerprint_with_output(&params)
+            .map(Into::into)
+            .map_err(fingerprint_pyerr)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
         radius=2,
         n_bits=2048,
         include_chirality=false,
@@ -5620,6 +6351,490 @@ Deserialize a molecule from COSMolKit binary data.
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
+impl BioStructure {
+    #[classmethod]
+    #[doc = "Read a PDB file into the complete biomolecular structural model."]
+    fn from_pdb(_cls: &Bound<'_, PyType>, path: &str) -> PyResult<Self> {
+        let path = expand_user_path(path)?;
+        let inner = cosmolkit_core::BioStructure::from_pdb(&path)
+            .map_err(|err| PyValueError::new_err(err.to_string()))?;
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
+    }
+
+    #[classmethod]
+    #[doc = "Read PDB text into the complete biomolecular structural model."]
+    fn from_pdb_str(_cls: &Bound<'_, PyType>, text: &str) -> PyResult<Self> {
+        let inner = cosmolkit_core::BioStructure::from_pdb_str(text)
+            .map_err(|err| PyValueError::new_err(err.to_string()))?;
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
+    }
+
+    #[classmethod]
+    #[doc = "Read an mmCIF file into the complete biomolecular structural model."]
+    fn from_mmcif(_cls: &Bound<'_, PyType>, path: &str) -> PyResult<Self> {
+        let path = expand_user_path(path)?;
+        let inner = cosmolkit_core::BioStructure::from_mmcif(&path)
+            .map_err(|err| PyValueError::new_err(err.to_string()))?;
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
+    }
+
+    #[classmethod]
+    #[pyo3(signature = (text, path="input.cif"))]
+    #[doc = "Read mmCIF text into the complete biomolecular structural model."]
+    fn from_mmcif_str(_cls: &Bound<'_, PyType>, text: &str, path: &str) -> PyResult<Self> {
+        let inner = cosmolkit_core::BioStructure::from_mmcif_str(text, path)
+            .map_err(|err| PyValueError::new_err(err.to_string()))?;
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
+    }
+
+    #[classmethod]
+    #[pyo3(signature = (text, path="input"))]
+    #[doc = "Read structural text after detecting PDB, mmCIF, or mmJSON format."]
+    fn from_structure_str(_cls: &Bound<'_, PyType>, text: &str, path: &str) -> PyResult<Self> {
+        let inner = cosmolkit_core::BioStructure::from_structure_str(text, path)
+            .map_err(|err| PyValueError::new_err(err.to_string()))?;
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
+    }
+
+    #[doc = "Return the structure name or input data-block name."]
+    fn name(&self) -> String {
+        self.inner.name().to_string()
+    }
+
+    #[doc = "Return the detected input format name."]
+    fn input_format(&self) -> String {
+        format!("{:?}", self.inner.input_format())
+    }
+
+    #[doc = "Return the number of coordinate models."]
+    fn num_models(&self) -> usize {
+        self.inner.num_models()
+    }
+
+    #[doc = "Return the number of chains across all models."]
+    fn num_chains(&self) -> usize {
+        self.inner.num_chains()
+    }
+
+    #[doc = "Return the number of residues of every modeled kind."]
+    fn num_residues(&self) -> usize {
+        self.inner.num_residues()
+    }
+
+    #[doc = "Return the number of atoms of every modeled kind."]
+    fn num_atoms(&self) -> usize {
+        self.inner.num_atoms()
+    }
+
+    #[doc = "Return the number of structural entities."]
+    fn num_entities(&self) -> usize {
+        self.inner.num_entities()
+    }
+
+    #[doc = "Return all coordinate models as shared read-only views."]
+    fn models(&self) -> Vec<StructureModel> {
+        (0..self.inner.num_models())
+            .map(|index| StructureModel {
+                inner: Arc::clone(&self.inner),
+                index,
+            })
+            .collect()
+    }
+
+    #[doc = "Return all chains as shared read-only views."]
+    fn chains(&self) -> Vec<StructureChain> {
+        (0..self.inner.num_chains())
+            .map(|index| StructureChain {
+                inner: Arc::clone(&self.inner),
+                index,
+            })
+            .collect()
+    }
+
+    #[doc = "Return all residues, including ligands, waters, and nucleic acids."]
+    fn residues(&self) -> Vec<StructureResidue> {
+        (0..self.inner.num_residues())
+            .map(|index| StructureResidue {
+                inner: Arc::clone(&self.inner),
+                index,
+            })
+            .collect()
+    }
+
+    #[doc = "Return all atoms as shared read-only views."]
+    fn atoms(&self) -> Vec<StructureAtom> {
+        (0..self.inner.num_atoms())
+            .map(|index| StructureAtom {
+                inner: Arc::clone(&self.inner),
+                index,
+            })
+            .collect()
+    }
+
+    #[doc = "Return all structural entities as shared read-only views."]
+    fn entities(&self) -> Vec<StructureEntity> {
+        (0..self.inner.num_entities())
+            .map(|index| StructureEntity {
+                inner: Arc::clone(&self.inner),
+                index,
+            })
+            .collect()
+    }
+
+    #[doc = r#"
+Return an amino-acid-only ``Protein`` projection.
+
+The returned value intentionally excludes ligands, waters, and nucleic acids;
+the source ``BioStructure`` remains unchanged.
+"#]
+    fn protein(&self) -> Protein {
+        Protein {
+            inner: Arc::new(cosmolkit_core::Protein::project_from_bio_structure(
+                &self.inner,
+            )),
+        }
+    }
+
+    #[pyo3(signature = (sanitize=true, remove_hs=true, flavor=0, proximity_bonding=true))]
+    #[doc = r#"
+Convert the structural rows to a cheminformatics ``Molecule``.
+
+This is an explicit, potentially lossy model conversion. It follows the same
+RDKit-compatible graph construction options as ``Molecule.from_pdb_block()``.
+"#]
+    fn to_molecule(
+        &self,
+        sanitize: bool,
+        remove_hs: bool,
+        flavor: u32,
+        proximity_bonding: bool,
+    ) -> PyResult<Molecule> {
+        let options = cosmolkit_core::StructureMoleculeOptions {
+            sanitize,
+            remove_hs,
+            flavor,
+            proximity_bonding,
+        };
+        self.inner
+            .to_molecule_with_options(options)
+            .map(|inner| Molecule { inner })
+            .map_err(pdb_molecule_pyerr)
+    }
+
+    fn __getitem__(&self, index: isize) -> PyResult<StructureModel> {
+        let index = normalize_python_index(index, self.inner.num_models(), "model")?;
+        Ok(StructureModel {
+            inner: Arc::clone(&self.inner),
+            index,
+        })
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.num_models()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "BioStructure(models={}, chains={}, residues={}, atoms={}, entities={})",
+            self.inner.num_models(),
+            self.inner.num_chains(),
+            self.inner.num_residues(),
+            self.inner.num_atoms(),
+            self.inner.num_entities()
+        )
+    }
+}
+
+fn normalize_python_index(index: isize, len: usize, kind: &str) -> PyResult<usize> {
+    let len = len as isize;
+    let index = if index < 0 { len + index } else { index };
+    if index < 0 || index >= len {
+        return Err(PyIndexError::new_err(format!(
+            "BioStructure {kind} index out of range"
+        )));
+    }
+    Ok(index as usize)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl StructureModel {
+    fn index(&self) -> usize {
+        self.index
+    }
+
+    fn source_model_number(&self) -> Option<i32> {
+        self.inner.models()[self.index].source_model_number
+    }
+
+    fn chains(&self) -> Vec<StructureChain> {
+        let span = self.inner.models()[self.index].chain_span;
+        (span.start as usize..span.end() as usize)
+            .map(|index| StructureChain {
+                inner: Arc::clone(&self.inner),
+                index,
+            })
+            .collect()
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.models()[self.index].chain_span.len as usize
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl StructureChain {
+    fn index(&self) -> usize {
+        self.index
+    }
+
+    fn model_index(&self) -> usize {
+        self.inner.chains()[self.index].model_id.index() as usize
+    }
+
+    fn entity_index(&self) -> Option<usize> {
+        self.inner.chains()[self.index]
+            .entity_id
+            .map(|id| id.index() as usize)
+    }
+
+    fn kind(&self) -> String {
+        format!("{:?}", self.inner.chains()[self.index].kind)
+    }
+
+    fn auth_chain_id(&self) -> Option<String> {
+        self.inner.chains()[self.index]
+            .source
+            .auth_chain_id
+            .map(|id| id.as_str().to_string())
+    }
+
+    fn label_asym_id(&self) -> Option<String> {
+        self.inner.chains()[self.index]
+            .source
+            .label_asym_id
+            .map(|id| id.as_str().to_string())
+    }
+
+    fn residues(&self) -> Vec<StructureResidue> {
+        let span = self.inner.chains()[self.index].residue_span;
+        (span.start as usize..span.end() as usize)
+            .map(|index| StructureResidue {
+                inner: Arc::clone(&self.inner),
+                index,
+            })
+            .collect()
+    }
+
+    fn atoms(&self) -> Vec<StructureAtom> {
+        let residue_span = self.inner.chains()[self.index].residue_span;
+        let residue_range = residue_span.start as usize..residue_span.end() as usize;
+        let atom_count = residue_range
+            .clone()
+            .map(|index| self.inner.residues()[index].atom_span.len as usize)
+            .sum();
+        let mut atoms = Vec::with_capacity(atom_count);
+        for residue_index in residue_range {
+            let atom_span = self.inner.residues()[residue_index].atom_span;
+            atoms.extend(
+                (atom_span.start as usize..atom_span.end() as usize).map(|index| StructureAtom {
+                    inner: Arc::clone(&self.inner),
+                    index,
+                }),
+            );
+        }
+        atoms
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.chains()[self.index].residue_span.len as usize
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl StructureResidue {
+    fn index(&self) -> usize {
+        self.index
+    }
+
+    fn chain_index(&self) -> usize {
+        self.inner.residues()[self.index].chain_id.index() as usize
+    }
+
+    fn name(&self) -> String {
+        self.inner.residues()[self.index].name.as_str().to_string()
+    }
+
+    fn kind(&self) -> String {
+        format!("{:?}", self.inner.residues()[self.index].kind)
+    }
+
+    fn entity_kind(&self) -> String {
+        format!("{:?}", self.inner.residues()[self.index].entity_kind)
+    }
+
+    #[gen_stub(override_return_type(type_repr = "ResidueCode"))]
+    fn code<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let code =
+            cosmolkit_core::residue_code_from_name(self.inner.residues()[self.index].name.as_str());
+        residue_code_enum_member(py, code)
+    }
+
+    fn info(&self) -> PyResidueInfo {
+        PyResidueInfo {
+            inner: cosmolkit_core::find_tabulated_residue(
+                self.inner.residues()[self.index].name.as_str(),
+            ),
+        }
+    }
+
+    fn source_sequence_number(&self) -> Option<i32> {
+        self.inner.residues()[self.index]
+            .source
+            .seq_id
+            .map(|id| id.seq_num)
+    }
+
+    fn insertion_code(&self) -> Option<String> {
+        self.inner.residues()[self.index]
+            .source
+            .seq_id
+            .and_then(|id| id.ins_code)
+            .map(|code| char::from(code).to_string())
+    }
+
+    fn atoms(&self) -> Vec<StructureAtom> {
+        let span = self.inner.residues()[self.index].atom_span;
+        (span.start as usize..span.end() as usize)
+            .map(|index| StructureAtom {
+                inner: Arc::clone(&self.inner),
+                index,
+            })
+            .collect()
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.residues()[self.index].atom_span.len as usize
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl StructureAtom {
+    fn index(&self) -> usize {
+        self.index
+    }
+
+    fn residue_index(&self) -> usize {
+        self.inner.atoms()[self.index].residue_id.index() as usize
+    }
+
+    fn name(&self) -> String {
+        String::from_utf8_lossy(&self.inner.atoms()[self.index].name.0)
+            .trim()
+            .to_string()
+    }
+
+    #[gen_stub(override_return_type(type_repr = "Element"))]
+    fn element<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        element_enum_member(py, self.inner.atoms()[self.index].element)
+    }
+
+    fn element_symbol(&self) -> String {
+        self.inner.atoms()[self.index].element.symbol().to_string()
+    }
+
+    fn position(&self) -> Option<(f32, f32, f32)> {
+        self.inner
+            .atom_position(cosmolkit_core::BioAtomId::new(self.index as u32))
+            .map(|[x, y, z]| (x, y, z))
+    }
+
+    fn altloc(&self) -> Option<String> {
+        self.inner.atoms()[self.index]
+            .altloc
+            .map(|value| char::from(value.0).to_string())
+    }
+
+    fn occupancy(&self) -> Option<f32> {
+        self.inner.atoms()[self.index].occupancy
+    }
+
+    fn b_factor(&self) -> Option<f32> {
+        self.inner.atoms()[self.index].b_iso
+    }
+
+    fn formal_charge(&self) -> Option<i8> {
+        self.inner.atoms()[self.index].formal_charge
+    }
+
+    fn source_serial(&self) -> Option<i32> {
+        self.inner.atoms()[self.index]
+            .source
+            .serial
+            .map(|serial| serial.0)
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl StructureEntity {
+    fn index(&self) -> usize {
+        self.index
+    }
+
+    fn source_id(&self) -> String {
+        self.inner.entities()[self.index]
+            .source
+            .source_entity_id
+            .clone()
+    }
+
+    fn kind(&self) -> String {
+        format!("{:?}", self.inner.entities()[self.index].kind)
+    }
+
+    fn polymer_kind(&self) -> String {
+        format!("{:?}", self.inner.entities()[self.index].polymer_kind)
+    }
+
+    fn sequence(&self) -> Vec<String> {
+        self.inner.entities()[self.index].sequence.clone()
+    }
+
+    fn subchains(&self) -> Vec<String> {
+        self.inner.entities()[self.index]
+            .subchains
+            .iter()
+            .map(|id| id.as_str().to_string())
+            .collect()
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.entities()[self.index].sequence.len()
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
 impl Protein {
     #[classmethod]
     #[doc = r#"
@@ -5636,7 +6851,9 @@ result is a RDKit-compatible molecule conversion.
                 .ok_or_else(|| PyValueError::new_err("path must be valid UTF-8"))?,
         )
         .map_err(|err| PyValueError::new_err(err.to_string()))?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 
     #[classmethod]
@@ -5648,7 +6865,9 @@ This is the in-memory counterpart to ``Protein.from_pdb()``.
     fn from_pdb_str(_cls: &Bound<'_, PyType>, text: &str) -> PyResult<Self> {
         let inner = cosmolkit_core::Protein::from_pdb_str(text)
             .map_err(|err| PyValueError::new_err(err.to_string()))?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 
     #[classmethod]
@@ -5664,7 +6883,9 @@ The result uses the same protein projection as ``Protein.from_pdb()``.
                 .ok_or_else(|| PyValueError::new_err("path must be valid UTF-8"))?,
         )
         .map_err(|err| PyValueError::new_err(err.to_string()))?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 
     #[classmethod]
@@ -5676,7 +6897,9 @@ Read mmCIF text as a protein-focused structural value.
     fn from_mmcif_str(_cls: &Bound<'_, PyType>, text: &str, path: Option<&str>) -> PyResult<Self> {
         let inner = cosmolkit_core::Protein::from_mmcif_str(text, path.unwrap_or("input.cif"))
             .map_err(|err| PyValueError::new_err(err.to_string()))?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 
     #[doc = "Return the number of coordinate models in the protein structure."]
@@ -6495,6 +7718,165 @@ Return the Tanimoto similarity to another fingerprint.
             "Fingerprint(n_bits={}, on_bits={})",
             self.inner.n_bits(),
             self.inner.on_bits().len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct AtomPairSparseCountFingerprint {
+    inner: cosmolkit_core::SparseCountFingerprint,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl AtomPairSparseCountFingerprint {
+    fn size(&self) -> u64 {
+        self.inner.size()
+    }
+
+    fn nonzero_elements(&self) -> BTreeMap<u64, i32> {
+        self.inner.nonzero_elements().clone()
+    }
+
+    fn value(&self, bit: u64) -> i32 {
+        self.inner.get_val(bit)
+    }
+
+    fn __len__(&self) -> usize {
+        usize::try_from(self.inner.size()).unwrap_or(usize::MAX)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AtomPairSparseCountFingerprint(size={}, nonzero={})",
+            self.inner.size(),
+            self.inner.nonzero_elements().len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct AtomPairSparseBitFingerprint {
+    inner: cosmolkit_core::SparseBitFingerprint,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl AtomPairSparseBitFingerprint {
+    fn size(&self) -> u64 {
+        self.inner.size()
+    }
+
+    fn on_bits(&self) -> Vec<u64> {
+        self.inner.on_bits().iter().copied().collect()
+    }
+
+    fn __len__(&self) -> usize {
+        usize::try_from(self.inner.size()).unwrap_or(usize::MAX)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AtomPairSparseBitFingerprint(size={}, on_bits={})",
+            self.inner.size(),
+            self.inner.on_bits().len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct AtomPairAdditionalOutput {
+    atom_counts: Vec<u32>,
+    atom_to_bits: Vec<Vec<u64>>,
+    bit_info_map: BTreeMap<u64, Vec<(u32, u32)>>,
+    atoms_per_bit: BTreeMap<u64, Vec<Vec<usize>>>,
+}
+
+impl From<cosmolkit_core::AdditionalOutput> for AtomPairAdditionalOutput {
+    fn from(value: cosmolkit_core::AdditionalOutput) -> Self {
+        Self {
+            atom_counts: value.atom_counts.unwrap_or_default(),
+            atom_to_bits: value.atom_to_bits.unwrap_or_default(),
+            bit_info_map: value.bit_info_map.unwrap_or_default(),
+            atoms_per_bit: value.atoms_per_bit.unwrap_or_default(),
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl AtomPairAdditionalOutput {
+    fn atom_counts(&self) -> Vec<u32> {
+        self.atom_counts.clone()
+    }
+
+    fn atom_to_bits(&self) -> Vec<Vec<u64>> {
+        self.atom_to_bits.clone()
+    }
+
+    fn bit_info_map(&self) -> BTreeMap<u64, Vec<(u32, u32)>> {
+        self.bit_info_map.clone()
+    }
+
+    fn atoms_per_bit(&self) -> BTreeMap<u64, Vec<Vec<usize>>> {
+        self.atoms_per_bit.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AtomPairAdditionalOutput(atom_counts={}, bit_info_bits={}, atoms_per_bit={})",
+            self.atom_counts.len(),
+            self.bit_info_map.len(),
+            self.atoms_per_bit.len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
+struct AtomPairFingerprintResult {
+    fingerprint: Fingerprint,
+    additional_output: Option<AtomPairAdditionalOutput>,
+}
+
+impl From<cosmolkit_core::AtomPairFingerprintOutput> for AtomPairFingerprintResult {
+    fn from(value: cosmolkit_core::AtomPairFingerprintOutput) -> Self {
+        Self {
+            fingerprint: Fingerprint {
+                inner: value.fingerprint,
+            },
+            additional_output: value.additional_output.map(Into::into),
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl AtomPairFingerprintResult {
+    fn fingerprint(&self) -> Fingerprint {
+        self.fingerprint.clone()
+    }
+
+    fn additional_output(&self) -> PyResult<AtomPairAdditionalOutput> {
+        self.additional_output.clone().ok_or_else(|| {
+            PyValueError::new_err(
+                "AtomPair additional output was not collected for this fingerprint result",
+            )
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AtomPairFingerprintResult(n_bits={}, has_additional_output={})",
+            self.fingerprint.inner.n_bits(),
+            self.additional_output.is_some()
         )
     }
 }
@@ -7703,6 +9085,12 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     add_inchi_error_classes(m)?;
     m.add_class::<Molecule>()?;
     m.add_class::<PyEmbedParameters>()?;
+    m.add_class::<BioStructure>()?;
+    m.add_class::<StructureModel>()?;
+    m.add_class::<StructureChain>()?;
+    m.add_class::<StructureResidue>()?;
+    m.add_class::<StructureAtom>()?;
+    m.add_class::<StructureEntity>()?;
     m.add_class::<Protein>()?;
     m.add_class::<ProteinChain>()?;
     m.add_class::<ProteinResidue>()?;
@@ -7723,6 +9111,10 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Bond>()?;
     m.add_class::<MoleculeEdit>()?;
     m.add_class::<Fingerprint>()?;
+    m.add_class::<AtomPairSparseCountFingerprint>()?;
+    m.add_class::<AtomPairSparseBitFingerprint>()?;
+    m.add_class::<AtomPairAdditionalOutput>()?;
+    m.add_class::<AtomPairFingerprintResult>()?;
     m.add_class::<MorganAdditionalOutput>()?;
     m.add_class::<MorganFingerprintResult>()?;
     m.add_class::<TopologicalFingerprintResult>()?;

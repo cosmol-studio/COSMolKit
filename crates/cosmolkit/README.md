@@ -145,14 +145,14 @@ unmodeled source states return an explicit descriptor error.
 
 ## Fingerprints
 
-The Rust facade exposes source-backed Morgan, MACCS, RDKit topological, and
-Avalon fingerprints. Topological fingerprints can also return typed atom and
-path provenance:
+The Rust facade exposes source-backed Morgan, MACCS, RDKit topological, Avalon,
+and AtomPair fingerprints. Topological and AtomPair fingerprints can also
+return typed provenance:
 
 ```rust
 use cosmolkit::{
-    AvalonFingerprintParams, Molecule, TopologicalFingerprintOutputRequest,
-    TopologicalFingerprintParams,
+    AtomPairFingerprintParams, AvalonFingerprintParams, Molecule,
+    TopologicalFingerprintOutputRequest, TopologicalFingerprintParams,
 };
 
 let molecule = Molecule::from_smiles("c1ccccc1O")?;
@@ -167,18 +167,21 @@ let provenance = molecule.topological_fingerprint_with_output(
     },
 )?;
 let avalon = molecule.avalon_fingerprint(&AvalonFingerprintParams::default())?;
+let atom_pair = molecule.atom_pair_fingerprint(&AtomPairFingerprintParams::default())?;
 
 assert_eq!(topological.n_bits(), 2048);
 assert!(provenance.output.atom_bits.is_some());
 assert_eq!(avalon.n_bits(), 512);
+assert_eq!(atom_pair.n_bits(), 2048);
 ```
 
-The documented topological and Avalon profiles are checked against pinned
-RDKit across all 2,897,804 mutually parseable ChEMBL 37 molecules. The
-full-corpus audit completed 113,014,356 exact comparisons over 14 topological
-vectors, 23 Avalon vectors, and two complete topological provenance outputs
-with zero mismatches. The committed 5,000-row matrices remain the continuous
-regression gates for these profiles.
+The documented topological, Avalon, and AtomPair profiles are checked against
+pinned RDKit across all 2,897,804 mutually parseable ChEMBL 37 molecules. The
+topological/Avalon audit completed 113,014,356 exact comparisons; the AtomPair
+audit completed another 118,809,964 comparisons over 40 vectors and one
+complete provenance output per molecule. Both completed with zero mismatches.
+The committed 5,000-row matrices remain the continuous regression gates for
+these profiles.
 
 ## Conformer Generation And Force Field Applications
 

@@ -4,8 +4,39 @@ Protein Structures
 .. meta::
    :description: Read PDB and mmCIF protein structures with COSMolKit and traverse models, chains, residues, atoms, residue metadata, and modified amino-acid identities.
 
-Use ``Protein`` when a workflow starts from PDB or mmCIF structural data and
-needs protein-chain, residue, and atom traversal.
+Use ``BioStructure`` when a workflow must retain the complete modeled PDB or
+mmCIF hierarchy, including nucleic acids, ligands, waters, and entities. Use
+``Protein`` when the workflow intentionally needs only amino-acid chains,
+residues, and atoms.
+
+Complete Structures
+-------------------
+
+Read the complete structural value before selecting a projection:
+
+.. code-block:: python
+
+   from cosmolkit import BioStructure
+
+   structure = BioStructure.from_pdb("complex.pdb")
+   print(structure.num_models(), structure.num_entities())
+
+   for model in structure.models():
+       for chain in model.chains():
+           for residue in chain.residues():
+               print(residue.name(), residue.kind())
+
+``structure.protein()`` returns an amino-acid-only projection without changing
+``structure``. Structural child objects share the parent storage; traversal
+does not copy the complete structure for every model, chain, residue, or atom.
+
+Direct Gemmi-aligned mmCIF serialization on ``BioStructure`` is planned but is
+not part of the current API. It will be documented here after the writer and
+CIF serializer are source-ported and validated; no placeholder method is
+exposed in the meantime.
+
+Protein Projections
+-------------------
 
 Read a PDB file directly:
 
@@ -34,8 +65,8 @@ Read mmCIF input with the same high-level protein projection:
    protein = Protein.from_mmcif_str(cif_text, path="1crn.cif")
 
 ``Protein`` keeps amino-acid residues and excludes ligands, nucleic acids, and
-waters by default. Use it for protein-focused traversal rather than low-level
-mixed structural tables.
+waters. Use it for protein-focused traversal rather than mixed structural
+data. When those removed rows matter, start from ``BioStructure`` instead.
 
 Chains, Residues, And Atoms
 ---------------------------
@@ -98,11 +129,14 @@ use ``canonical_one_letter_code()`` or ``parent_standard_code()`` instead. For
 example, ``HYP`` maps to ``PRO`` and ``SEP`` maps to ``SER`` without changing
 the raw residue name returned by ``ProteinResidue.name()``.
 
-Protein vs Molecule PDB APIs
-----------------------------
+BioStructure vs Protein vs Molecule
+-----------------------------------
+
+Use ``BioStructure.from_pdb()`` or ``BioStructure.from_mmcif()`` when the
+complete modeled structural hierarchy must remain available.
 
 Use ``Protein.from_pdb()`` or ``Protein.from_pdb_str()`` when the desired
-object is a protein structural view:
+object is intentionally a protein-only structural view:
 
 .. code-block:: python
 

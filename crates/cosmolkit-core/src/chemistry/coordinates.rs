@@ -11467,6 +11467,9 @@ mod tests {
 /// RDKit bond length constant.
 const BOND_LEN: f64 = 1.5;
 /// RDKit 1/sqrt(2) constant for square planar layout.
+// Preserve the source's rounded depiction constant instead of substituting a
+// mathematically related standard-library value.
+#[allow(clippy::approx_constant)]
 const ISQRT2: f64 = 0.707_107;
 /// RDKit sqrt(3)/2 constant for trigonal bipyramidal layout.
 const SQRT3_2: f64 = 0.866_025;

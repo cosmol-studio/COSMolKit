@@ -7,6 +7,15 @@ use crate::search::smarts_parse::build_query_molecule;
 use crate::{AdjacencyList, AtomId, BondOrder, ChiralTag, Molecule};
 use serde_json::Value;
 
+mod atom_pair;
+pub(crate) mod generator;
+
+pub(crate) use atom_pair::atom_pair_function_arguments;
+pub use atom_pair::{
+    AtomPairFingerprintGenerator, AtomPairFingerprintOutput, AtomPairFingerprintParams,
+    atom_pair_fingerprint, atom_pair_fingerprint_with_output,
+};
+
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 // Copied source lines appear as:  // RDKit<beh><perf>: ...
 
@@ -1920,6 +1929,108 @@ pub struct MorganFingerprintGenerator {
     pub owns_bond_invariants_generator: bool,
 }
 
+impl generator::FingerprintEnvironment for MorganAtomEnv {
+    fn bit_id(
+        &self,
+        _arguments: &FingerprintArguments,
+        _atom_invariants: &[u32],
+        _bond_invariants: &[u32],
+        _hash_results: bool,
+        _fp_size: u64,
+    ) -> Result<u64, FingerprintError> {
+        Ok(self.getBitId())
+    }
+
+    fn update_additional_output(&self, output: &mut AdditionalOutput, bit_id: u64) {
+        self.updateAdditionalOutput(output, bit_id);
+    }
+}
+
+impl generator::FingerprintFamily for MorganFingerprintGenerator {
+    type Environment = MorganAtomEnv;
+
+    fn common_arguments(&self) -> &FingerprintArguments {
+        &self.fingerprint_arguments.fingerprint_arguments
+    }
+
+    fn result_size(&self) -> u64 {
+        self.atom_environment_generator.getResultSize()
+    }
+
+    fn arguments_info_string(&self) -> String {
+        self.fingerprint_arguments.infoString()
+    }
+
+    fn environment_info_string(&self) -> String {
+        self.atom_environment_generator.infoString()
+    }
+
+    fn atom_invariants_info_string(&self) -> Option<String> {
+        Some(match &self.atom_invariants_generator {
+            MorganAtomInvariantsGenerator::Connectivity {
+                include_ring_membership,
+            } => MorganAtomInvGenerator::new(*include_ring_membership).infoString(),
+            MorganAtomInvariantsGenerator::Feature => {
+                MorganFeatureAtomInvGenerator::new().infoString()
+            }
+        })
+    }
+
+    fn bond_invariants_info_string(&self) -> Option<String> {
+        Some(self.bond_invariants_generator.infoString())
+    }
+
+    fn arguments_json(&self) -> String {
+        self.fingerprint_arguments.toJSON()
+    }
+
+    fn environment_json(&self) -> String {
+        self.atom_environment_generator.toJSON()
+    }
+
+    fn atom_invariants_json(&self) -> Option<String> {
+        Some(match &self.atom_invariants_generator {
+            MorganAtomInvariantsGenerator::Connectivity {
+                include_ring_membership,
+            } => MorganAtomInvGenerator::new(*include_ring_membership).toJSON(),
+            MorganAtomInvariantsGenerator::Feature => MorganFeatureAtomInvGenerator::new().toJSON(),
+        })
+    }
+
+    fn bond_invariants_json(&self) -> Option<String> {
+        Some(self.bond_invariants_generator.toJSON())
+    }
+
+    fn atom_invariants(&self, molecule: &Molecule) -> Result<Vec<u32>, FingerprintError> {
+        self.atom_invariants_generator.get_atom_invariants(molecule)
+    }
+
+    fn bond_invariants(&self, molecule: &Molecule) -> Result<Vec<u32>, FingerprintError> {
+        self.bond_invariants_generator
+            .try_get_bond_invariants(molecule)
+    }
+
+    fn environments(
+        &self,
+        molecule: &Molecule,
+        from_atoms: Option<&[usize]>,
+        ignore_atoms: Option<&[usize]>,
+        _conf_id: i32,
+        atom_invariants: &[u32],
+        bond_invariants: &[u32],
+        _hash_results: bool,
+    ) -> Result<Vec<Self::Environment>, FingerprintError> {
+        self.atom_environment_generator.getEnvironments(
+            molecule,
+            &self.fingerprint_arguments,
+            from_atoms,
+            ignore_atoms,
+            atom_invariants,
+            bond_invariants,
+        )
+    }
+}
+
 impl MorganFingerprintGenerator {
     #[allow(non_snake_case)]
     pub fn getSparseCountFingerprint(
@@ -1927,14 +2038,7 @@ impl MorganFingerprintGenerator {
         molecule: &Molecule,
         args: &mut FingerprintFuncArguments,
     ) -> Result<SparseCountFingerprint, FingerprintError> {
-        // RDKit source: FingerprintGenerator.cpp lines 505-508
-        // RDKit✔️✔️: template <typename OutputType>
-        // RDKit✔️✔️: std::unique_ptr<SparseIntVect<OutputType>>
-        // RDKit✔️✔️: FingerprintGenerator<OutputType>::getSparseCountFingerprint(
-        // RDKit✔️✔️:     const ROMol &mol, FingerprintFuncArguments &args) const {
-        // RDKit✔️✔️:   return getFingerprintHelper(mol, args);
-        // RDKit✔️✔️: }
-        self.getFingerprintHelper(molecule, args, 0)
+        generator::FingerprintGenerator::new(self).get_sparse_count_fingerprint(molecule, args)
     }
 
     #[allow(non_snake_case)]
@@ -1943,113 +2047,7 @@ impl MorganFingerprintGenerator {
         molecule: &Molecule,
         args: &mut FingerprintFuncArguments,
     ) -> Result<SparseBitFingerprint, FingerprintError> {
-        // RDKit source: FingerprintGenerator.cpp lines 510-575
-        // RDKit✔️✔️: template <typename OutputType>
-        // RDKit✔️✔️: std::unique_ptr<SparseBitVect>
-        // RDKit✔️✔️: FingerprintGenerator<OutputType>::getSparseFingerprint(
-        // RDKit✔️✔️:     const ROMol &mol, FingerprintFuncArguments &args) const {
-        // RDKit✔️✔️:   std::uint32_t resultSize =
-        // RDKit✔️✔️:       std::min((std::uint64_t)std::numeric_limits<std::uint32_t>::max(),
-        // RDKit✔️✔️:                (std::uint64_t)dp_atomEnvironmentGenerator->getResultSize());
-        let result_size = self
-            .atom_environment_generator
-            .getResultSize()
-            .min(u64::from(u32::MAX)) as u32;
-
-        // RDKit✔️✔️:   std::uint32_t effectiveSize = resultSize;
-        // RDKit✔️✔️:   if (dp_fingerprintArguments->df_countSimulation) {
-        // RDKit✔️✔️:     effectiveSize /= dp_fingerprintArguments->d_countBounds.size();
-        // RDKit✔️✔️:   }
-        let count_simulation = self
-            .fingerprint_arguments
-            .fingerprint_arguments
-            .df_count_simulation;
-        let count_bounds = &self
-            .fingerprint_arguments
-            .fingerprint_arguments
-            .d_count_bounds;
-        let effective_size = if count_simulation {
-            result_size / count_bounds.len() as u32
-        } else {
-            result_size
-        };
-
-        // RDKit✔️✔️:   AdditionalOutput countSimulationOutput;
-        // RDKit✔️✔️:   AdditionalOutput *origAO = nullptr;
-        // RDKit✔️✔️:   if (dp_fingerprintArguments->df_countSimulation && args.additionalOutput) {
-        // RDKit✔️✔️:     setupTempAdditionalOutput(args, countSimulationOutput, mol.getNumAtoms());
-        // RDKit✔️✔️:     origAO = args.additionalOutput;
-        // RDKit✔️✔️:     args.additionalOutput = &countSimulationOutput;
-        // RDKit✔️✔️:   }
-        let mut original_additional_output = None;
-        if count_simulation && args.additional_output.is_some() {
-            let mut count_simulation_output = AdditionalOutput::default();
-            setup_temp_additional_output(args, &mut count_simulation_output, molecule.num_atoms());
-            original_additional_output = args.additional_output.take();
-            args.additional_output = Some(count_simulation_output);
-        }
-
-        // RDKit✔️✔️:   auto tempResult = getFingerprintHelper(mol, args, effectiveSize);
-        // RDKit✔️✔️:   auto result = std::make_unique<SparseBitVect>(resultSize);
-        let temp_result = self.getFingerprintHelper(molecule, args, u64::from(effective_size))?;
-        let mut result = SparseBitFingerprint::new(u64::from(result_size));
-
-        // RDKit✔️✔️:   for (auto val : tempResult->getNonzeroElements()) {
-        for (&bit_id, &count) in temp_result.nonzero_elements() {
-            // RDKit✔️✔️:     if (dp_fingerprintArguments->df_countSimulation) {
-            if count_simulation {
-                for (idx, &bound) in count_bounds.iter().enumerate() {
-                    // RDKit✔️✔️:       if (val.second >= static_cast<int>(bounds_count[i])) {
-                    // RDKit✔️✔️:         OutputType nBitId = val.first * bounds_count.size() + i;
-                    // RDKit✔️✔️:         result->setBit(nBitId);
-                    // RDKit✔️✔️:         if (args.additionalOutput) {
-                    // RDKit✔️✔️:           duplicateAdditionalOutputBit(*args.additionalOutput, *origAO,
-                    // RDKit✔️✔️:                                          static_cast<OutputType>(val.first),
-                    // RDKit✔️✔️:                                          nBitId);
-                    // RDKit✔️✔️:         }
-                    // RDKit✔️✔️:       }
-                    if count >= bound as i32 {
-                        let new_bit_id = bit_id * count_bounds.len() as u64 + idx as u64;
-                        result.set_bit(new_bit_id);
-                        if let (Some(temp_output), Some(orig_output)) = (
-                            args.additional_output.as_ref(),
-                            original_additional_output.as_mut(),
-                        ) {
-                            duplicate_additional_output_bit(
-                                temp_output,
-                                orig_output,
-                                bit_id,
-                                new_bit_id,
-                            )?;
-                        }
-                    }
-                }
-            } else {
-                // RDKit✔️✔️:     } else {
-                // RDKit✔️✔️:       result->setBit(val.first);
-                // RDKit✔️✔️:     }
-                result.set_bit(bit_id);
-            }
-        }
-
-        // RDKit✔️✔️:   if (origAO) {
-        // RDKit✔️✔️:     if (origAO->atomCounts) {
-        // RDKit✔️✔️:       *origAO->atomCounts = *countSimulationOutput.atomCounts;
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     args.additionalOutput = origAO;
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   return result;
-        // RDKit✔️✔️: }
-        if let Some(mut orig_output) = original_additional_output {
-            if orig_output.atom_counts.is_some() {
-                orig_output.atom_counts = args
-                    .additional_output
-                    .as_ref()
-                    .and_then(|output| output.atom_counts.clone());
-            }
-            args.additional_output = Some(orig_output);
-        }
-        Ok(result)
+        generator::FingerprintGenerator::new(self).get_sparse_fingerprint(molecule, args)
     }
 
     #[allow(non_snake_case)]
@@ -2058,28 +2056,7 @@ impl MorganFingerprintGenerator {
         molecule: &Molecule,
         args: &mut FingerprintFuncArguments,
     ) -> Result<SparseCountFingerprint, FingerprintError> {
-        // RDKit source: FingerprintGenerator.cpp lines 577-590
-        // RDKit✔️✔️: template <typename OutputType>
-        // RDKit✔️✔️: std::unique_ptr<SparseIntVect<std::uint32_t>>
-        // RDKit✔️✔️: FingerprintGenerator<OutputType>::getCountFingerprint(
-        // RDKit✔️✔️:     const ROMol &mol, FingerprintFuncArguments &args) const {
-        // RDKit✔️✔️:   auto tempResult =
-        // RDKit✔️✔️:       getFingerprintHelper(mol, args, dp_fingerprintArguments->d_fpSize);
-        let fp_size = self.fingerprint_arguments.fingerprint_arguments.d_fp_size;
-        let temp_result = self.getFingerprintHelper(molecule, args, u64::from(fp_size))?;
-
-        // RDKit✔️✔️:   auto result = std::make_unique<SparseIntVect<std::uint32_t>>(
-        // RDKit✔️✔️:       dp_fingerprintArguments->d_fpSize);
-        // RDKit✔️✔️:   for (auto val : tempResult->getNonzeroElements()) {
-        // RDKit✔️✔️:     result->setVal(val.first, val.second);
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   return result;
-        // RDKit✔️✔️: }
-        let mut result = SparseCountFingerprint::new(u64::from(fp_size));
-        for (&bit_id, &count) in temp_result.nonzero_elements() {
-            result.set_val(bit_id, count);
-        }
-        Ok(result)
+        generator::FingerprintGenerator::new(self).get_count_fingerprint(molecule, args)
     }
 
     #[allow(non_snake_case)]
@@ -2088,119 +2065,7 @@ impl MorganFingerprintGenerator {
         molecule: &Molecule,
         args: &mut FingerprintFuncArguments,
     ) -> Result<Fingerprint, FingerprintError> {
-        // RDKit source: FingerprintGenerator.cpp lines 592-650
-        // RDKit✔️✔️: template <typename OutputType>
-        // RDKit✔️✔️: std::unique_ptr<ExplicitBitVect>
-        // RDKit✔️✔️: FingerprintGenerator<OutputType>::getFingerprint(
-        // RDKit✔️✔️:     const ROMol &mol, FingerprintFuncArguments &args) const {
-        // RDKit✔️✔️:   std::uint32_t effectiveSize = dp_fingerprintArguments->d_fpSize;
-        let fp_args = &self.fingerprint_arguments.fingerprint_arguments;
-        let mut effective_size = fp_args.d_fp_size;
-
-        // RDKit✔️✔️:   if (dp_fingerprintArguments->df_countSimulation) {
-        // RDKit✔️✔️:     if (dp_fingerprintArguments->d_countBounds.empty()) {
-        // RDKit✔️✔️:       throw ValueErrorException("Count bounds are empty");
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     if (dp_fingerprintArguments->d_countBounds.size() >= effectiveSize) {
-        // RDKit✔️✔️:       throw ValueErrorException("Count bounds size is >= fingerprint size");
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     effectiveSize /= dp_fingerprintArguments->d_countBounds.size();
-        // RDKit✔️✔️:   }
-        if fp_args.df_count_simulation {
-            if fp_args.d_count_bounds.is_empty() {
-                return Err(FingerprintError::InvalidArguments {
-                    reason: "Count bounds are empty",
-                });
-            }
-            if fp_args.d_count_bounds.len() >= effective_size as usize {
-                return Err(FingerprintError::InvalidArguments {
-                    reason: "Count bounds size is >= fingerprint size",
-                });
-            }
-            effective_size /= fp_args.d_count_bounds.len() as u32;
-        }
-
-        // RDKit✔️✔️:   AdditionalOutput countSimulationOutput;
-        // RDKit✔️✔️:   AdditionalOutput *origAO = nullptr;
-        // RDKit✔️✔️:   if (dp_fingerprintArguments->df_countSimulation && args.additionalOutput) {
-        // RDKit✔️✔️:     setupTempAdditionalOutput(args, countSimulationOutput, mol.getNumAtoms());
-        // RDKit✔️✔️:     origAO = args.additionalOutput;
-        // RDKit✔️✔️:     args.additionalOutput = &countSimulationOutput;
-        // RDKit✔️✔️:   }
-        let mut original_additional_output = None;
-        if fp_args.df_count_simulation && args.additional_output.is_some() {
-            let mut count_simulation_output = AdditionalOutput::default();
-            setup_temp_additional_output(args, &mut count_simulation_output, molecule.num_atoms());
-            original_additional_output = args.additional_output.take();
-            args.additional_output = Some(count_simulation_output);
-        }
-
-        // RDKit✔️✔️:   auto tempResult = getFingerprintHelper(mol, args, effectiveSize);
-        // RDKit✔️✔️:   auto result =
-        // RDKit✔️✔️:       std::make_unique<ExplicitBitVect>(dp_fingerprintArguments->d_fpSize);
-        let temp_result = self.getFingerprintHelper(molecule, args, u64::from(effective_size))?;
-        let mut on_bits = Vec::new();
-
-        // RDKit✔️✔️:   for (auto val : tempResult->getNonzeroElements()) {
-        for (&bit_id, &count) in temp_result.nonzero_elements() {
-            // RDKit✔️✔️:     if (dp_fingerprintArguments->df_countSimulation) {
-            if fp_args.df_count_simulation {
-                for (idx, &bound) in fp_args.d_count_bounds.iter().enumerate() {
-                    // RDKit✔️✔️:       if (val.second >= static_cast<int>(bounds_count[i])) {
-                    // RDKit✔️✔️:         OutputType nBitId = val.first * bounds_count.size() + i;
-                    // RDKit✔️✔️:         result->setBit(nBitId);
-                    // RDKit✔️✔️:         if (args.additionalOutput) {
-                    // RDKit✔️✔️:           duplicateAdditionalOutputBit(*args.additionalOutput, *origAO,
-                    // RDKit✔️✔️:                                          static_cast<OutputType>(val.first),
-                    // RDKit✔️✔️:                                          nBitId);
-                    // RDKit✔️✔️:         }
-                    // RDKit✔️✔️:       }
-                    if count >= bound as i32 {
-                        let new_bit_id = bit_id * fp_args.d_count_bounds.len() as u64 + idx as u64;
-                        on_bits.push(new_bit_id as usize);
-                        if let (Some(temp_output), Some(orig_output)) = (
-                            args.additional_output.as_ref(),
-                            original_additional_output.as_mut(),
-                        ) {
-                            duplicate_additional_output_bit(
-                                temp_output,
-                                orig_output,
-                                bit_id,
-                                new_bit_id,
-                            )?;
-                        }
-                    }
-                }
-            } else {
-                // RDKit✔️✔️:     } else {
-                // RDKit✔️✔️:       result->setBit(val.first);
-                // RDKit✔️✔️:     }
-                on_bits.push(bit_id as usize);
-            }
-        }
-
-        // RDKit✔️✔️:   if (origAO) {
-        // RDKit✔️✔️:     if (origAO->atomCounts) {
-        // RDKit✔️✔️:       *origAO->atomCounts = *countSimulationOutput.atomCounts;
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     args.additionalOutput = origAO;
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   return result;
-        // RDKit✔️✔️: }
-        if let Some(mut orig_output) = original_additional_output {
-            if orig_output.atom_counts.is_some() {
-                orig_output.atom_counts = args
-                    .additional_output
-                    .as_ref()
-                    .and_then(|output| output.atom_counts.clone());
-            }
-            args.additional_output = Some(orig_output);
-        }
-
-        Ok(Fingerprint::from_on_bits(
-            fp_args.d_fp_size as usize,
-            on_bits,
-        ))
+        generator::FingerprintGenerator::new(self).get_fingerprint(molecule, args)
     }
 
     #[allow(non_snake_case)]
@@ -2210,194 +2075,9 @@ impl MorganFingerprintGenerator {
         args: &mut FingerprintFuncArguments,
         fp_size: u64,
     ) -> Result<SparseCountFingerprint, FingerprintError> {
-        // RDKit source: FingerprintGenerator.cpp lines 325-435
-        // RDKit✔️✔️: template <typename OutputType>
-        // RDKit✔️✔️: std::unique_ptr<SparseIntVect<OutputType>>
-        // RDKit✔️✔️: FingerprintGenerator<OutputType>::getFingerprintHelper(
-        // RDKit✔️✔️:     const ROMol &mol, FingerprintFuncArguments &args,
-        // RDKit✔️✔️:     const std::uint64_t fpSize) const {
-        // RDKit❌❌:   const ROMol *lmol = &mol;
-        // RDKit❌❌:   std::unique_ptr<ROMol> tmol;
-        // RDKit❌❌:   if (dp_fingerprintArguments->df_includeChirality &&
-        // RDKit❌❌:       !mol.hasProp(common_properties::_StereochemDone)) {
-        // RDKit❌❌:     tmol = std::unique_ptr<ROMol>(new ROMol(mol));
-        // RDKit❌❌:     MolOps::assignStereochemistry(*tmol);
-        // RDKit❌❌:     lmol = tmol.get();
-        // RDKit❌❌:   }
-        if self
-            .fingerprint_arguments
-            .fingerprint_arguments
-            .df_include_chirality
-            && molecule.prop("_StereochemDone").is_none()
-        {
-            return Err(FingerprintError::UnsupportedOption {
-                option: "includeChirality",
-                reason: "FingerprintGenerator requires RDKit assignStereochemistry parity before recomputing missing stereochemistry labels",
-            });
-        }
-
-        let labeled;
-        let molecule = if self
-            .fingerprint_arguments
-            .fingerprint_arguments
-            .df_include_chirality
-            && !rdkit_use_legacy_stereo_perception()
-            && molecule.prop("_CIPComputed").is_none()
-        {
-            labeled = assign_cip_labels(molecule, 0)?;
-            &labeled
-        } else {
-            molecule
-        };
-
-        // RDKit✔️✔️:   if (args.additionalOutput) {
-        // RDKit✔️✔️:     reinitAdditionalOutput(*args.additionalOutput, mol.getNumAtoms());
-        // RDKit✔️✔️:   }
-        if let Some(additional_output) = args.additional_output.as_mut() {
-            additional_output.reset_for_atom_count(molecule.num_atoms());
-        }
-
-        // RDKit✔️✔️:   bool hashResults = false;
-        // RDKit✔️✔️:   if (fpSize != 0) {
-        // RDKit✔️✔️:     hashResults = true;
-        // RDKit✔️✔️:   }
-        let hash_results = fp_size != 0;
-
-        // RDKit✔️✔️:   std::unique_ptr<std::vector<std::uint32_t>> atomInvariants = nullptr;
-        // RDKit✔️✔️:   if (args.customAtomInvariants) {
-        // RDKit✔️✔️:     atomInvariants.reset(
-        // RDKit✔️✔️:         new std::vector<std::uint32_t>(*args.customAtomInvariants));
-        // RDKit✔️✔️:   } else if (dp_atomInvariantsGenerator) {
-        // RDKit✔️✔️:     atomInvariants.reset(dp_atomInvariantsGenerator->getAtomInvariants(mol));
-        // RDKit✔️✔️:   }
-        let atom_invariants = if let Some(custom) = &args.custom_atom_invariants {
-            custom.clone()
-        } else {
-            self.atom_invariants_generator
-                .get_atom_invariants(molecule)?
-        };
-
-        // RDKit✔️✔️:   std::unique_ptr<std::vector<std::uint32_t>> bondInvariants = nullptr;
-        // RDKit✔️✔️:   if (args.customBondInvariants) {
-        // RDKit✔️✔️:     bondInvariants.reset(
-        // RDKit✔️✔️:         new std::vector<std::uint32_t>(*args.customBondInvariants));
-        // RDKit✔️✔️:   } else if (dp_bondInvariantsGenerator) {
-        // RDKit✔️✔️:     bondInvariants.reset(dp_bondInvariantsGenerator->getBondInvariants(mol));
-        // RDKit✔️✔️:   }
-        let bond_invariants = if let Some(custom) = &args.custom_bond_invariants {
-            custom.clone()
-        } else {
-            self.bond_invariants_generator
-                .try_get_bond_invariants(molecule)?
-        };
-
-        // RDKit✔️✔️:   auto atomEnvironments = dp_atomEnvironmentGenerator->getEnvironments(
-        // RDKit✔️✔️:       *lmol, dp_fingerprintArguments, args.fromAtoms, args.ignoreAtoms,
-        // RDKit✔️✔️:       args.confId, args.additionalOutput, atomInvariants.get(),
-        // RDKit✔️✔️:       bondInvariants.get(), hashResults);
-        let atom_environments = self.atom_environment_generator.getEnvironments(
-            molecule,
-            &self.fingerprint_arguments,
-            args.from_atoms.as_deref(),
-            args.ignore_atoms.as_deref(),
-            &atom_invariants,
-            &bond_invariants,
-        )?;
-
-        // RDKit✔️✔️:   auto res = std::make_unique<SparseIntVect<OutputType>>(
-        // RDKit✔️✔️:       fpSize ? fpSize : dp_atomEnvironmentGenerator->getResultSize());
-        let result_size = if fp_size == 0 {
-            self.atom_environment_generator.getResultSize()
-        } else {
-            fp_size
-        };
-        let mut result = SparseCountFingerprint::new(result_size);
-
-        // RDKit✔️✔️:   typedef boost::random::mersenne_twister<std::uint32_t, 32, 4, 2, 31,
-        // RDKit✔️✔️:                                           0x9908b0df, 11, 7, 0x9d2c5680, 15,
-        // RDKit✔️✔️:                                           0xefc60000, 18, 3346425566U>
-        // RDKit✔️✔️:       rng_type;
-        // RDKit✔️✔️:   typedef boost::uniform_int<> distrib_type;
-        // RDKit✔️✔️:   typedef boost::variate_generator<rng_type &, distrib_type> source_type;
-        // RDKit✔️✔️:   std::unique_ptr<rng_type> generator;
-        // RDKit✔️✔️:   std::unique_ptr<distrib_type> dist;
-        // RDKit✔️✔️:   std::unique_ptr<source_type> randomSource;
-        // RDKit✔️✔️:   if (dp_fingerprintArguments->d_numBitsPerFeature > 1) {
-        // RDKit✔️✔️:     generator.reset(new rng_type(42u));
-        // RDKit✔️✔️:     dist.reset(new distrib_type(0, INT_MAX));
-        // RDKit✔️✔️:     randomSource.reset(new source_type(*generator, *dist));
-        // RDKit✔️✔️:   }
-        let mut random_source = (self
-            .fingerprint_arguments
-            .fingerprint_arguments
-            .d_num_bits_per_feature
-            > 1)
-        .then(|| RdkitFingerprintMtRng::new(42));
-
-        // RDKit✔️✔️:   for (const auto env : atomEnvironments) {
-        // RDKit✔️✔️:     OutputType seed = env->getBitId(dp_fingerprintArguments,
-        // RDKit✔️✔️:                                     atomInvariants.get(), bondInvariants.get(),
-        // RDKit✔️✔️:                                     args.additionalOutput, hashResults, fpSize);
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:     auto bitId = seed;
-        // RDKit✔️✔️:     if (fpSize != 0) {
-        // RDKit✔️✔️:       bitId %= fpSize;
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     res->setVal(bitId, res->getVal(bitId) + 1);
-        // RDKit✔️✔️:     if (args.additionalOutput) {
-        // RDKit✔️✔️:       env->updateAdditionalOutput(args.additionalOutput, bitId);
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     if (dp_fingerprintArguments->d_numBitsPerFeature > 1) {
-        // RDKit✔️✔️:       generator->seed(static_cast<rng_type::result_type>(seed));
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:       for (boost::uint32_t bitN = 1;
-        // RDKit✔️✔️:            bitN < dp_fingerprintArguments->d_numBitsPerFeature; ++bitN) {
-        // RDKit✔️✔️:         bitId = (*randomSource)();
-        // RDKit✔️✔️:         if (fpSize != 0) {
-        // RDKit✔️✔️:           bitId %= fpSize;
-        // RDKit✔️✔️:         }
-        // RDKit✔️✔️:         res->setVal(bitId, res->getVal(bitId) + 1);
-        // RDKit✔️✔️:         if (args.additionalOutput) {
-        // RDKit✔️✔️:           env->updateAdditionalOutput(args.additionalOutput, bitId);
-        // RDKit✔️✔️:         }
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     delete env;
-        // RDKit✔️✔️:   }
-        for env in atom_environments {
-            let seed = env.getBitId();
-            let bit_id = if hash_results { seed % fp_size } else { seed };
-            result.set_val(bit_id, result.get_val(bit_id) + 1);
-            if let Some(additional_output) = args.additional_output.as_mut() {
-                env.updateAdditionalOutput(additional_output, bit_id);
-            }
-            if let Some(random_source) = random_source.as_mut() {
-                random_source.seed(seed as u32);
-                for _ in 1..self
-                    .fingerprint_arguments
-                    .fingerprint_arguments
-                    .d_num_bits_per_feature
-                {
-                    let random_bit_id = u64::from(random_source.uniform_int_0_to_i32_max());
-                    let random_bit_id = if hash_results {
-                        random_bit_id % fp_size
-                    } else {
-                        random_bit_id
-                    };
-                    result.set_val(random_bit_id, result.get_val(random_bit_id) + 1);
-                    if let Some(additional_output) = args.additional_output.as_mut() {
-                        env.updateAdditionalOutput(additional_output, random_bit_id);
-                    }
-                }
-            }
-        }
-
-        // RDKit✔️✔️:   return res;
-        // RDKit✔️✔️: }
-        Ok(result)
+        generator::FingerprintGenerator::new(self).get_fingerprint_helper(molecule, args, fp_size)
     }
 }
-
 #[allow(non_snake_case)]
 pub fn getMorganGenerator(
     args: &MorganArguments,
@@ -2615,7 +2295,7 @@ impl Fingerprint {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum FingerprintError {
-    #[error("Morgan fingerprint requires n_bits > 0")]
+    #[error("fingerprint requires n_bits > 0")]
     EmptyFingerprint,
     #[error(transparent)]
     UnsupportedFeature(#[from] crate::UnsupportedFeatureError),
@@ -2625,6 +2305,12 @@ pub enum FingerprintError {
     InvalidArgumentsJson(String),
     #[error("CIPLabeler failed while preparing Morgan fingerprint chirality: {reason}")]
     CipLabeler { reason: String },
+    #[error("stereochemistry preparation failed while generating a fingerprint: {reason}")]
+    StereoPreparation { reason: String },
+    #[error("AtomPair fingerprint generation failed: {reason}")]
+    AtomPair { reason: String },
+    #[error("sparse fingerprint index {index} is outside vector length {size}")]
+    SparseIndexOutOfRange { index: u64, size: u64 },
     #[error("invalid SMARTS pattern '{pattern}': {reason}")]
     InvalidSmartsPattern { pattern: String, reason: String },
     #[error("unsupported fingerprint option {option}: {reason}")]
@@ -3203,31 +2889,6 @@ fn compute_feature_invariants(molecule: &Molecule) -> Result<Vec<u32>, Fingerpri
     MorganFeatureAtomInvGenerator::new().getAtomInvariants(molecule)
 }
 
-fn compute_initial_invariants(
-    molecule: &Molecule,
-    adjacency: &AdjacencyList,
-    params: &MorganFingerprintParams,
-) -> Result<Vec<u32>, FingerprintError> {
-    let invariants = match &params.atom_invariants_generator {
-        MorganAtomInvariantsGenerator::Connectivity { .. } => {
-            compute_connectivity_invariants(molecule, adjacency, params)
-        }
-        MorganAtomInvariantsGenerator::Feature => compute_feature_invariants(molecule)?,
-    };
-
-    if let Some(custom) = &params.custom_atom_invariants {
-        let mut overridden = invariants;
-        for (i, inv) in overridden.iter_mut().enumerate() {
-            if let Some(c) = custom.get(i) {
-                *inv = *c;
-            }
-        }
-        Ok(overridden)
-    } else {
-        Ok(invariants)
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Invariant propagation — hash_combine matches boost::hash_combine pattern
 // ---------------------------------------------------------------------------
@@ -3239,29 +2900,6 @@ fn validate_morgan_params(params: &MorganFingerprintParams) -> Result<(), Finger
     // fail closed at their helper boundary instead of returning local guesses.
     let _ = params;
     Ok(())
-}
-
-fn morgan_bond_invariant(
-    bond_idx: usize,
-    bond: &crate::Bond,
-    params: &MorganFingerprintParams,
-) -> u32 {
-    // custom_bond_invariants override: if provided and this bond index has a
-    // value, use it directly instead of computing from bond order.
-    if let Some(custom) = &params.custom_bond_invariants {
-        if let Some(&inv) = custom.get(bond_idx) {
-            return inv;
-        }
-    }
-    let use_bond_types = params
-        .bond_invariants_generator
-        .as_ref()
-        .map_or(params.use_bond_types, |generator| generator.use_bond_types);
-    let use_chirality = params
-        .bond_invariants_generator
-        .as_ref()
-        .map_or(params.use_chirality, |generator| generator.use_chirality);
-    MorganBondInvGenerator::new(use_bond_types, use_chirality).bond_invariant(bond)
 }
 
 fn rdkit_bond_type_code(order: crate::BondOrder) -> u32 {
@@ -3311,111 +2949,6 @@ pub(crate) fn hash_combine(seed: &mut u32, value: u32) {
         .wrapping_add(0x9e3779b9u32)
         .wrapping_add(seed.wrapping_shl(6))
         .wrapping_add(seed.wrapping_shr(2));
-}
-
-// ---------------------------------------------------------------------------
-// Fingerprint construction
-// ---------------------------------------------------------------------------
-
-fn fold_invariant(invariant: u32, n_bits: usize) -> usize {
-    invariant as usize % n_bits
-}
-
-fn build_fingerprint(
-    molecule: &Molecule,
-    all_rounds: &[Vec<u32>],
-    params: &MorganFingerprintParams,
-) -> Result<MorganFingerprintOutput, FingerprintError> {
-    let n_bits = params.n_bits;
-    let collect = params.collect_additional_output;
-    let mut additional_output = if collect {
-        let mut output = AdditionalOutput::new();
-        output.allocate_atom_counts();
-        output.allocate_atom_to_bits();
-        output.allocate_bit_info_map();
-        output.allocate_atoms_per_bit();
-        output.reset_for_atom_count(molecule.num_atoms());
-        Some(output)
-    } else {
-        None
-    };
-
-    let mut on_bits = Vec::new();
-
-    // Track seen invariants for include_redundant_environments=false.
-    // When disabled, each unique invariant value is only allowed to
-    // contribute bits once across all atoms and all rounds, matching
-    // RDKit's behavior of deduplicating redundant environments.
-    let mut seen_invariants: std::collections::HashSet<u32> = std::collections::HashSet::new();
-
-    for (round_idx, round_invs) in all_rounds.iter().enumerate() {
-        let round = round_idx as u32;
-        for atom_idx in 0..molecule.num_atoms() {
-            if atom_is_excluded(atom_idx, params) {
-                continue;
-            }
-            let inv = round_invs[atom_idx];
-
-            // When include_redundant_environments is false, skip invariants
-            // that have already contributed bits in a previous round or atom.
-            if !params.include_redundant_environments && !seen_invariants.insert(inv) {
-                continue;
-            }
-
-            if params.only_nonzero_invariants && inv == 0 {
-                continue;
-            }
-
-            if params.count_simulation {
-                let env = MorganAtomEnv::new(u64::from(inv), atom_idx, round, molecule);
-                let bit = fold_invariant(env.getBitId() as u32, n_bits);
-                on_bits.push(bit);
-
-                if let Some(output) = additional_output.as_mut() {
-                    env.updateAdditionalOutput(output, bit as u64);
-                }
-            } else {
-                for chunk in 0..params.num_bits_per_feature {
-                    let code = inv.wrapping_add(chunk.wrapping_mul(0x517cc1b7));
-                    let env = MorganAtomEnv::new(u64::from(code), atom_idx, round, molecule);
-                    let bit = fold_invariant(env.getBitId() as u32, n_bits);
-                    on_bits.push(bit);
-
-                    if let Some(output) = additional_output.as_mut() {
-                        env.updateAdditionalOutput(output, bit as u64);
-                    }
-                }
-            }
-        }
-    }
-
-    // Count-simulation folding: each unique bit's count is compared against
-    // count_bounds to set additional offset bits.
-    if params.count_simulation && !params.count_bounds.is_empty() {
-        let mut counts_per_bit: BTreeMap<usize, u32> = BTreeMap::new();
-        for &bit in &on_bits {
-            *counts_per_bit.entry(bit).or_insert(0) += 1;
-        }
-        on_bits.clear();
-        for (&bit, &count) in &counts_per_bit {
-            on_bits.push(bit);
-            for (bound_idx, &bound) in params.count_bounds.iter().enumerate().skip(1) {
-                if count >= bound {
-                    let offset_bit = (bit + bound_idx * n_bits) % n_bits;
-                    on_bits.push(offset_bit);
-                }
-            }
-        }
-    }
-
-    let fingerprint = Fingerprint::from_on_bits(n_bits, on_bits.iter().copied());
-
-    let additional_output = additional_output.map(morgan_additional_output_from_rdkit_output);
-
-    Ok(MorganFingerprintOutput {
-        fingerprint,
-        additional_output,
-    })
 }
 
 fn morgan_additional_output_from_rdkit_output(output: AdditionalOutput) -> MorganAdditionalOutput {
@@ -3672,16 +3205,6 @@ fn json_value_as_u32(name: &str, value: &Value) -> Result<u32, FingerprintError>
     Err(FingerprintError::InvalidArgumentsJson(format!(
         "{name} must be a 32-bit integer"
     )))
-}
-
-fn atom_is_excluded(index: usize, params: &MorganFingerprintParams) -> bool {
-    if let Some(from) = &params.from_atoms {
-        return !from.contains(&index);
-    }
-    if let Some(ignore) = &params.ignore_atoms {
-        return ignore.contains(&index);
-    }
-    false
 }
 
 // ---------------------------------------------------------------------------
@@ -7361,26 +6884,97 @@ mod tests {
     }
 
     #[test]
-    fn morgan_fingerprint_include_chirality_without_stereochem_done_fails_closed() {
-        // RDKit FingerprintGenerator first calls MolOps::assignStereochemistry()
-        // when includeChirality=true and _StereochemDone is absent. That
-        // branch remains explicitly unsupported until the RDKit source path is
-        // ported; do not silently substitute legacy/partial stereo labels.
-        let r_mol = Molecule::from_smiles_with_sanitize("C[C@@H](O)CC", false).unwrap();
+    fn generator_chirality_preparation_morgan_clones_unprepared_input_without_regression() {
+        let prepared = Molecule::from_smiles("C[C@@H](O)CC").unwrap();
+        assert_eq!(prepared.prop("_StereochemDone"), Some("1"));
+        let mut unprepared = prepared.clone();
+        unprepared.properties_mut().clear_prop("_StereochemDone");
+        let source_snapshot = unprepared.clone();
         let params = MorganFingerprintParams {
             radius: 2,
             n_bits: 2048,
             use_chirality: true,
             ..Default::default()
         };
-        let err = morgan_fingerprint(&r_mol, &params).unwrap_err();
-        assert!(matches!(
-            err,
-            FingerprintError::UnsupportedOption {
-                option: "includeChirality",
-                ..
-            }
-        ));
+
+        let prepared_fingerprint = morgan_fingerprint(&prepared, &params).unwrap();
+        let unprepared_fingerprint = morgan_fingerprint(&unprepared, &params).unwrap();
+
+        assert_eq!(unprepared_fingerprint, prepared_fingerprint);
+        assert_eq!(unprepared, source_snapshot);
+        assert_eq!(unprepared.prop("_StereochemDone"), None);
+    }
+
+    #[test]
+    fn generator_chirality_preparation_atom_pair_preserves_r_s_and_no_label_states() {
+        use atom_pair::{AtomPairArguments, atom_pair_generator};
+
+        let r_molecule = Molecule::from_smiles("C[C@@H](O)CC").unwrap();
+        let s_molecule = Molecule::from_smiles("C[C@H](O)CC").unwrap();
+        let r_with_cip_computed = assign_cip_labels(&r_molecule, 0).unwrap();
+        assert_eq!(r_with_cip_computed.prop("_CIPComputed"), Some("1"));
+        let mut no_label = r_molecule.clone();
+        no_label.properties_mut().clear_prop("_CIPComputed");
+        for atom in &mut no_label.topology_block_mut().atoms {
+            atom.clear_prop("_CIPCode");
+            atom.clear_prop("_CIPRank");
+        }
+        let mut unprepared_no_label = no_label.clone();
+        unprepared_no_label
+            .properties_mut()
+            .clear_prop("_StereochemDone");
+        let source_snapshot = unprepared_no_label.clone();
+
+        let arguments = AtomPairArguments::new(false, true, true, 1, 30, Vec::new(), 2048)
+            .expect("valid chiral AtomPair arguments");
+        let generator = atom_pair_generator(&arguments, None, false);
+        let sparse_count = |molecule: &Molecule| {
+            generator
+                .sparse_count_fingerprint(molecule, &mut FingerprintFuncArguments::default())
+                .unwrap()
+        };
+
+        let r_fingerprint = sparse_count(&r_molecule);
+        let r_with_cip_computed_fingerprint = sparse_count(&r_with_cip_computed);
+        let s_fingerprint = sparse_count(&s_molecule);
+        let no_label_fingerprint = sparse_count(&no_label);
+        let unprepared_no_label_fingerprint = sparse_count(&unprepared_no_label);
+
+        assert_ne!(r_fingerprint, s_fingerprint);
+        assert_eq!(r_fingerprint, r_with_cip_computed_fingerprint);
+        assert_ne!(r_fingerprint, no_label_fingerprint);
+        assert_eq!(unprepared_no_label_fingerprint, no_label_fingerprint);
+        assert_eq!(unprepared_no_label, source_snapshot);
+        assert_eq!(unprepared_no_label.prop("_StereochemDone"), None);
+        assert_eq!(unprepared_no_label.prop("_CIPComputed"), None);
+    }
+
+    #[test]
+    fn generator_chirality_preparation_custom_atom_invariants_remain_authoritative() {
+        use atom_pair::{AtomPairArguments, atom_pair_generator};
+
+        let r_molecule = Molecule::from_smiles("C[C@@H](O)CC").unwrap();
+        let mut s_molecule = Molecule::from_smiles("C[C@H](O)CC").unwrap();
+        s_molecule.properties_mut().clear_prop("_StereochemDone");
+        let source_snapshot = s_molecule.clone();
+        let arguments = AtomPairArguments::new(false, true, true, 1, 30, Vec::new(), 2048)
+            .expect("valid chiral AtomPair arguments");
+        let generator = atom_pair_generator(&arguments, None, false);
+        let custom_atom_invariants = vec![17; r_molecule.num_atoms()];
+        let fingerprint = |molecule: &Molecule| {
+            generator
+                .sparse_count_fingerprint(
+                    molecule,
+                    &mut FingerprintFuncArguments {
+                        custom_atom_invariants: Some(custom_atom_invariants.clone()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap()
+        };
+
+        assert_eq!(fingerprint(&r_molecule), fingerprint(&s_molecule));
+        assert_eq!(s_molecule, source_snapshot);
     }
 
     #[test]
@@ -8005,12 +7599,170 @@ mod tests {
     }
 
     #[test]
+    fn fingerprint_generator_architecture_has_one_family_neutral_projector() {
+        let family_source = include_str!("fingerprint.rs");
+        let production_family_source = family_source
+            .split("// Tests")
+            .next()
+            .expect("fingerprint production source");
+        let generator_source = include_str!("fingerprint/generator.rs");
+
+        assert_eq!(
+            generator_source
+                .matches("for environment in environments")
+                .count(),
+            1,
+            "the common core must own the only environment projection loop"
+        );
+        assert_eq!(
+            generator_source
+                .matches("pub(crate) fn get_sparse_count_fingerprint(")
+                .count(),
+            1
+        );
+        assert_eq!(
+            generator_source
+                .matches("pub(crate) fn get_sparse_fingerprint(")
+                .count(),
+            1
+        );
+        assert_eq!(
+            generator_source
+                .matches("pub(crate) fn get_count_fingerprint(")
+                .count(),
+            1
+        );
+        assert_eq!(
+            generator_source
+                .matches("pub(crate) fn get_fingerprint(")
+                .count(),
+            1
+        );
+        assert!(
+            family_source.contains(
+                "generator::FingerprintGenerator::new(self).get_sparse_count_fingerprint"
+            )
+        );
+        assert!(
+            family_source
+                .contains("generator::FingerprintGenerator::new(self).get_sparse_fingerprint")
+        );
+        assert!(
+            family_source
+                .contains("generator::FingerprintGenerator::new(self).get_count_fingerprint")
+        );
+        assert!(
+            family_source.contains("generator::FingerprintGenerator::new(self).get_fingerprint")
+        );
+        assert!(!production_family_source.contains("fn build_fingerprint("));
+        assert!(!production_family_source.contains("fn compute_initial_invariants("));
+        assert!(!production_family_source.contains("fn fold_invariant("));
+        assert!(!production_family_source.contains("fn atom_is_excluded("));
+    }
+
+    #[test]
+    fn shared_generator_preserves_morgan_json_outputs_and_all_provenance_fields() {
+        let molecule = rdkit_morgan_oracle_mol("CCO");
+        let mut original_arguments =
+            MorganArguments::new(2, true, false, false, vec![1, 2, 4, 8], 256, false, true)
+                .unwrap();
+        original_arguments
+            .fingerprint_arguments
+            .d_num_bits_per_feature = 2;
+        let json = original_arguments.toJSON();
+        let mut restored_arguments = MorganArguments::default();
+        restored_arguments.fromJSON(&json).unwrap();
+        assert_eq!(restored_arguments, original_arguments);
+
+        let original = getMorganGenerator(&original_arguments, None, None, false, false);
+        let restored = getMorganGenerator(&restored_arguments, None, None, false, false);
+
+        fn all_outputs(atom_count: usize) -> AdditionalOutput {
+            let mut output = allocated_morgan_additional_output(atom_count);
+            output.allocate_bit_paths();
+            output
+        }
+
+        let mut original_args = FingerprintFuncArguments {
+            additional_output: Some(all_outputs(molecule.num_atoms())),
+            ..Default::default()
+        };
+        let mut restored_args = original_args.clone();
+        assert_eq!(
+            original
+                .getSparseCountFingerprint(&molecule, &mut original_args)
+                .unwrap(),
+            restored
+                .getSparseCountFingerprint(&molecule, &mut restored_args)
+                .unwrap()
+        );
+        assert_eq!(
+            original_args.additional_output,
+            restored_args.additional_output
+        );
+
+        let mut original_args = FingerprintFuncArguments {
+            additional_output: Some(all_outputs(molecule.num_atoms())),
+            ..Default::default()
+        };
+        let mut restored_args = original_args.clone();
+        assert_eq!(
+            original
+                .getSparseFingerprint(&molecule, &mut original_args)
+                .unwrap(),
+            restored
+                .getSparseFingerprint(&molecule, &mut restored_args)
+                .unwrap()
+        );
+        assert_eq!(
+            original_args.additional_output,
+            restored_args.additional_output
+        );
+
+        let mut original_args = FingerprintFuncArguments {
+            additional_output: Some(all_outputs(molecule.num_atoms())),
+            ..Default::default()
+        };
+        let mut restored_args = original_args.clone();
+        assert_eq!(
+            original
+                .getCountFingerprint(&molecule, &mut original_args)
+                .unwrap(),
+            restored
+                .getCountFingerprint(&molecule, &mut restored_args)
+                .unwrap()
+        );
+        assert_eq!(
+            original_args.additional_output,
+            restored_args.additional_output
+        );
+
+        let mut original_args = FingerprintFuncArguments {
+            additional_output: Some(all_outputs(molecule.num_atoms())),
+            ..Default::default()
+        };
+        let mut restored_args = original_args.clone();
+        assert_eq!(
+            original
+                .getFingerprint(&molecule, &mut original_args)
+                .unwrap(),
+            restored
+                .getFingerprint(&molecule, &mut restored_args)
+                .unwrap()
+        );
+        assert_eq!(
+            original_args.additional_output,
+            restored_args.additional_output
+        );
+    }
+
+    #[test]
     fn morgan_fingerprint_generator_outputs_radius_and_fp_size_match_rdkit_golden() {
         let mol = rdkit_morgan_oracle_mol("CCC");
         let generator = getMorganGeneratorWithParams(
             2,
             false,
-            false,
+            true,
             true,
             false,
             false,

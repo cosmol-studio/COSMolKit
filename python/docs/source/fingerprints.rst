@@ -2,12 +2,13 @@ Fingerprints
 ============
 
 .. meta::
-   :description: COSMolKit molecular fingerprint APIs for source-backed Morgan, MACCS, RDKit topological, and Avalon bit vectors with explicit parameters and RDKit parity boundaries.
+   :description: COSMolKit molecular fingerprint APIs for source-backed Morgan, MACCS, RDKit topological, Avalon, and AtomPair bit and count vectors with explicit parameters and RDKit parity boundaries.
 
-COSMolKit exposes fingerprint APIs as fixed-length bit vectors. The exposed
-Morgan and MACCS branches are covered by strict RDKit bit-identical parity
-tests. The source-backed topological and Avalon implementations follow their
-pinned upstream algorithms and exact maintained-corpus validation.
+COSMolKit exposes fixed-length bit vectors plus the source-defined sparse bit
+and count forms used by AtomPair. The exposed Morgan and MACCS branches are
+covered by strict RDKit bit-identical parity tests. The source-backed
+topological, Avalon, and AtomPair implementations follow their pinned upstream
+algorithms and exact maintained-corpus validation.
 Similarity-shape correlation or structurally similar hashing is not a
 compatibility claim. The Python ``Fingerprint`` object is a sparse view over
 the binary vector: ``on_bits()`` returns the bit indexes whose value is 1. It
@@ -54,6 +55,56 @@ replacement is not an acceptance condition.
 
    print(topological.on_bits())
    print(avalon.on_bits())
+
+AtomPair fingerprints
+---------------------
+
+``Molecule`` exposes the four source generator result forms through one
+project-native implementation:
+
+- ``fingerprint_atom_pair_sparse_count()`` returns the source-width count map;
+- ``fingerprint_atom_pair_count()`` returns the folded count map;
+- ``fingerprint_atom_pair_sparse_bits()`` returns the source-width bit set;
+- ``fingerprint_atom_pair()`` returns the fixed-width explicit bit vector.
+
+The shared parameter surface covers 2D topological or 3D conformer distances,
+minimum and maximum distance, chirality, count simulation and bounds,
+``num_bits_per_feature``, ``from_atoms``, ``ignore_atoms``, conformer selection,
+and custom atom invariants. A 3D call requires a conformer and sets
+``use_2d=False`` explicitly.
+
+.. code-block:: python
+
+   mol = Molecule.from_smiles("CCCO")
+
+   explicit = mol.fingerprint_atom_pair(n_bits=2048)
+   sparse_count = mol.fingerprint_atom_pair_sparse_count()
+   folded_count = mol.fingerprint_atom_pair_count(n_bits=2048)
+   sparse_bits = mol.fingerprint_atom_pair_sparse_bits()
+
+   print(explicit.on_bits())
+   print(sparse_count.nonzero_elements())
+   print(folded_count.nonzero_elements())
+   print(sparse_bits.on_bits())
+
+``fingerprint_atom_pair_with_output()`` additionally returns exact atom counts,
+atom-to-bit rows, endpoint-pair bit information, and atoms-per-bit provenance:
+
+.. code-block:: python
+
+   result = mol.fingerprint_atom_pair_with_output()
+   output = result.additional_output()
+
+   print(result.fingerprint().on_bits())
+   print(output.atom_counts())
+   print(output.atom_to_bits())
+   print(output.bit_info_map())
+   print(output.atoms_per_bit())
+
+The complete ChEMBL 37 validation compares 40 vectors and one full provenance
+output for every one of the 2,897,804 mutually parseable records: 118,809,964
+exact comparisons with zero mismatch. The maintained 5,000-row, ten-profile
+matrix remains the committed continuous regression gate.
 
 Topological provenance
 -----------------------
@@ -153,5 +204,11 @@ Batch Fingerprints
        errors="keep",
    ).with_parallel_jobs(8)
    fps = batch.fingerprint_morgan_list(n_bits=2048)
+   atom_pairs = batch.fingerprint_atom_pair_list(
+       n_bits=2048,
+       n_jobs=8,
+       progress_bar=False,
+   )
 
    print([fp.on_bits() if fp is not None else None for fp in fps])
+   print([fp.on_bits() if fp is not None else None for fp in atom_pairs])

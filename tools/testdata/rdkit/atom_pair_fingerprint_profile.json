@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "rdkit_version": "2026.3.1",
+  "source_paths": [
+    "Code/GraphMol/Fingerprints/AtomPairGenerator.cpp",
+    "Code/GraphMol/Fingerprints/FingerprintGenerator.cpp",
+    "Code/GraphMol/Fingerprints/FingerprintUtil.cpp",
+    "Code/GraphMol/Fingerprints/AtomPairs.cpp"
+  ],
+  "comparison_fields": {
+    "sparse_count": ["length", "nonzero_elements"],
+    "count": ["length", "nonzero_elements"],
+    "sparse_bit": ["length", "on_bits"],
+    "explicit_bit": ["length", "on_bits"],
+    "additional_output": [
+      "atom_counts",
+      "atom_to_bits",
+      "bit_info_map",
+      "atoms_per_bit"
+    ]
+  },
+  "branches": [
+    {
+      "name": "default",
+      "minDistance": 1,
+      "maxDistance": 30,
+      "includeChirality": false,
+      "use2D": true,
+      "countSimulation": true,
+      "countBounds": [1, 2, 4, 8],
+      "fpSize": 2048,
+      "numBitsPerFeature": 1
+    },
+    {
+      "name": "chiral",
+      "minDistance": 1,
+      "maxDistance": 30,
+      "includeChirality": true,
+      "use2D": true,
+      "countSimulation": true,
+      "countBounds": [1, 2, 4, 8],
+      "fpSize": 2048,
+      "numBitsPerFeature": 1
+    },
+    {
+      "name": "count_simulation_false",
+      "minDistance": 1,
+      "maxDistance": 30,
+      "includeChirality": false,
+      "use2D": true,
+      "countSimulation": false,
+      "countBounds": [1, 2, 4, 8],
+      "fpSize": 2048,
+      "numBitsPerFeature": 1
+    },
+    {
+      "name": "custom_bounds_collision",
+      "minDistance": 1,
+      "maxDistance": 30,
+      "includeChirality": false,
+      "use2D": true,
+      "countSimulation": true,
+      "countBounds": [1, 3, 5],
+      "fpSize": 257,
+      "numBitsPerFeature": 1
+    },
+    {
+      "name": "distance_2_4",
+      "minDistance": 2,
+      "maxDistance": 4,
+      "includeChirality": false,
+      "use2D": true,
+      "countSimulation": true,
+      "countBounds": [1, 2, 4, 8],
+      "fpSize": 2048,
+      "numBitsPerFeature": 1
+    },
+    {
+      "name": "from_first",
+      "minDistance": 1,
+      "maxDistance": 30,
+      "includeChirality": false,
+      "use2D": true,
+      "countSimulation": true,
+      "countBounds": [1, 2, 4, 8],
+      "fpSize": 2048,
+      "numBitsPerFeature": 1,
+      "fromAtoms": "first"
+    },
+    {
+      "name": "ignore_first",
+      "minDistance": 1,
+      "maxDistance": 30,
+      "includeChirality": false,
+      "use2D": true,
+      "countSimulation": true,
+      "countBounds": [1, 2, 4, 8],
+      "fpSize": 2048,
+      "numBitsPerFeature": 1,
+      "ignoreAtoms": "first"
+    },
+    {
+      "name": "custom_atom_index_plus_11",
+      "minDistance": 1,
+      "maxDistance": 30,
+      "includeChirality": false,
+      "use2D": true,
+      "countSimulation": true,
+      "countBounds": [1, 2, 4, 8],
+      "fpSize": 2048,
+      "numBitsPerFeature": 1,
+      "customAtomInvariants": "index_plus_11"
+    },
+    {
+      "name": "num_bits_per_feature_2",
+      "minDistance": 1,
+      "maxDistance": 30,
+      "includeChirality": false,
+      "use2D": true,
+      "countSimulation": true,
+      "countBounds": [1, 2, 4, 8],
+      "fpSize": 2048,
+      "numBitsPerFeature": 2
+    },
+    {
+      "name": "additional_output",
+      "minDistance": 1,
+      "maxDistance": 30,
+      "includeChirality": true,
+      "use2D": true,
+      "countSimulation": true,
+      "countBounds": [1, 2, 4, 8],
+      "fpSize": 2048,
+      "numBitsPerFeature": 1,
+      "additionalOutput": true
+    }
+  ]
+}

@@ -25,9 +25,10 @@ access: {
 }
 
 derived_effects: {
-    recompute:  [valence],
-    preserve:   [],
-    invalidate: [drawing, fingerprint],
+    recompute:         [aromaticity],
+    preserve:          [],
+    invalidate:        [drawing, fingerprint],
+    operation_defined: [valence],
 }
 ```
 
@@ -47,6 +48,7 @@ Consequently:
 - `preserve` is not read permission;
 - `recompute` is not read permission and does not itself forbid reading;
 - `invalidate` is not read permission;
+- `operation_defined` is not read permission;
 - per-cache-item read permissions do not currently exist.
 
 Strict builds check the block capability. Default release builds use the same
@@ -62,8 +64,9 @@ The only valid `derived_effects` categories are:
 | `recompute` | Produce a fresh framework-visible value, or explicitly clear it when the operation's source behavior leaves it unavailable | `set_*_cache`, validity-marker update, or `clear_cache` |
 | `preserve` | Prove that the old value remains valid across the edit | An approved `prove_preserved` proof; no cache mutation authority |
 | `invalidate` | Declare that the old value is stale | `clear_cache`; no cache write authority |
+| `operation_defined` | Reproduce a source-required state transition that cannot be expressed truthfully as preserve, recompute, or invalidate | `set_*_cache`, validity-marker update, or `clear_cache`, as required by the source-port implementation |
 
-The three categories must be pairwise disjoint. Strict `finish()` rejects an
+The four categories must be pairwise disjoint. Strict `finish()` rejects an
 overlapping declaration.
 
 ### `recompute`
@@ -96,12 +99,32 @@ Invalidation-only downstream products, including drawing and fingerprint
 state, must not be marked recomputed unless the operation actually produces a
 fresh framework-visible value.
 
+### `operation_defined`
+
+`operation_defined` is a narrow escape hatch for a source-required state
+transition that does not fit the three standard mechanisms. It delegates the
+transition mechanism, not the correctness obligation: the operation may use
+the ordinary cache set, validity-update, and clear APIs, and strict
+finalization still requires the declared state to be updated or cleared.
+Correctness of the chosen transition remains established by the line-for-line
+source port, focused regression tests, and the declared parity profile.
+
+This category grants no derived-cache read authority. Read access continues to
+come only from the operation's block-level `access` declaration.
+
+The current contract permits exactly one use: `valence` in the hydrogen-removal
+operation family. The macro rejects every other registry declaration, strict
+runtime validation repeats the allow-list check, and a registry test locks the
+two generated hydrogen-removal specifications to that single state. Adding a
+second use requires an explicit design decision and corresponding updates to
+all three guardrails.
+
 ## Compatibility View
 
 `MoleculeOpSpec::needs_update()` is a derived compatibility view:
 
 ```text
-needs_update() = recompute | invalidate
+needs_update() = recompute | invalidate | operation_defined
 ```
 
 It is not an independent registry input.
@@ -133,8 +156,11 @@ prove_preserved(...)                       -> preservation proof trace
 ```
 
 With `op-contracts` enabled, cache mutation APIs check that the corresponding
-effect is declared, and `finish()` checks category disjointness and completion
-of the declared obligations after a block was touched.
+effect permits the action, and `finish()` checks category disjointness and
+completion of the declared obligations after a block was touched. For
+`operation_defined`, the runtime verifies trace completion but does not infer
+the chemically correct value; that obligation is unchanged from ordinary
+source-port code that writes a recomputed cache.
 
 The default release build executes the same wrapper, source-port body,
 `OpParts` mutation methods, COW/in-place storage path, and cache updates. It

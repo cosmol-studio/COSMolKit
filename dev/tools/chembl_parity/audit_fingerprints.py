@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # pyright: reportAttributeAccessIssue=false
-"""Exact ChEMBL parity audit for topological and Avalon fingerprints."""
+"""Exact ChEMBL parity audit for repository-supported fingerprint families."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from typing import Any
 import cosmolkit
 from rdkit import Chem, RDLogger, rdBase
 from rdkit.Avalon import pyAvalonTools
+from rdkit.Chem import rdFingerprintGenerator
 
 
 EXPECTED_RDKIT_VERSION = "2026.03.1"
@@ -267,12 +268,233 @@ def compare_avalon(
         audit.compare(f"avalon.{name}", record, rd_value, ck_value)
 
 
+def atom_pair_kwargs(
+    branch: dict[str, Any], atom_count: int
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    rdkit_kwargs: dict[str, Any] = {}
+    cosmolkit_kwargs: dict[str, Any] = {
+        "n_bits": branch["fpSize"],
+        "min_distance": branch["minDistance"],
+        "max_distance": branch["maxDistance"],
+        "use_2d": branch["use2D"],
+        "include_chirality": branch["includeChirality"],
+        "count_simulation": branch["countSimulation"],
+        "count_bounds": branch["countBounds"],
+        "num_bits_per_feature": branch["numBitsPerFeature"],
+    }
+    if branch.get("fromAtoms") == "first":
+        atoms = [0] if atom_count else []
+        rdkit_kwargs["fromAtoms"] = atoms
+        cosmolkit_kwargs["from_atoms"] = atoms
+    if branch.get("ignoreAtoms") == "first":
+        atoms = [0] if atom_count else []
+        rdkit_kwargs["ignoreAtoms"] = atoms
+        cosmolkit_kwargs["ignore_atoms"] = atoms
+    if branch.get("customAtomInvariants") == "index_plus_11":
+        invariants = [index + 11 for index in range(atom_count)]
+        rdkit_kwargs["customAtomInvariants"] = invariants
+        cosmolkit_kwargs["custom_atom_invariants"] = invariants
+    return rdkit_kwargs, cosmolkit_kwargs
+
+
+def make_atom_pair_generators(
+    branches: list[dict[str, Any]],
+) -> dict[str, Any]:
+    generators: dict[str, Any] = {}
+    for branch in branches:
+        generator = rdFingerprintGenerator.GetAtomPairGenerator(
+            minDistance=branch["minDistance"],
+            maxDistance=branch["maxDistance"],
+            includeChirality=branch["includeChirality"],
+            use2D=branch["use2D"],
+            countSimulation=branch["countSimulation"],
+            countBounds=branch["countBounds"],
+            fpSize=branch["fpSize"],
+        )
+        generator.GetOptions().numBitsPerFeature = branch["numBitsPerFeature"]
+        generators[str(branch["name"])] = generator
+    return generators
+
+
+def atom_pair_additional_output() -> rdFingerprintGenerator.AdditionalOutput:
+    output = rdFingerprintGenerator.AdditionalOutput()
+    output.AllocateAtomCounts()
+    output.AllocateAtomToBits()
+    output.AllocateBitInfoMap()
+    output.AllocateAtomsPerBit()
+    return output
+
+
+def normalize_atom_pair_additional_output(output: Any) -> dict[str, Any]:
+    return {
+        "atom_counts": list(output.GetAtomCounts()),
+        "atom_to_bits": [list(bits) for bits in output.GetAtomToBits()],
+        "bit_info_map": {
+            int(bit): [list(pair) for pair in pairs]
+            for bit, pairs in sorted(output.GetBitInfoMap().items())
+        },
+        "atoms_per_bit": {
+            int(bit): [list(atoms) for atoms in entries]
+            for bit, entries in sorted(output.GetAtomsPerBit().items())
+        },
+    }
+
+
+def normalize_cosmolkit_atom_pair_additional_output(output: Any) -> dict[str, Any]:
+    return {
+        "atom_counts": output.atom_counts(),
+        "atom_to_bits": output.atom_to_bits(),
+        "bit_info_map": {
+            int(bit): [list(pair) for pair in pairs]
+            for bit, pairs in sorted(output.bit_info_map().items())
+        },
+        "atoms_per_bit": {
+            int(bit): [list(atoms) for atoms in entries]
+            for bit, entries in sorted(output.atoms_per_bit().items())
+        },
+    }
+
+
+def capture_atom_pair_count(call: Any) -> dict[str, Any]:
+    try:
+        fingerprint = call()
+        return {
+            "status": "ok",
+            "length": fingerprint.GetLength()
+            if hasattr(fingerprint, "GetLength")
+            else fingerprint.size(),
+            "nonzero_elements": {
+                int(bit): int(count)
+                for bit, count in sorted(
+                    (
+                        fingerprint.GetNonzeroElements()
+                        if hasattr(fingerprint, "GetNonzeroElements")
+                        else fingerprint.nonzero_elements()
+                    ).items()
+                )
+            },
+        }
+    except Exception:  # noqa: BLE001
+        return {"status": "error"}
+
+
+def capture_atom_pair_bits(call: Any) -> dict[str, Any]:
+    try:
+        fingerprint = call()
+        if hasattr(fingerprint, "GetNumBits"):
+            length = fingerprint.GetNumBits()
+            on_bits = list(fingerprint.GetOnBits())
+        else:
+            length = fingerprint.n_bits() if hasattr(fingerprint, "n_bits") else fingerprint.size()
+            on_bits = fingerprint.on_bits()
+        return {"status": "ok", "length": length, "on_bits": on_bits}
+    except Exception:  # noqa: BLE001
+        return {"status": "error"}
+
+
+def compare_atom_pair(
+    audit: Audit,
+    record: dict[str, Any],
+    rd_mol: Chem.Mol,
+    ck_mol: Any,
+    branches: list[dict[str, Any]],
+    generators: dict[str, Any],
+) -> None:
+    for branch in branches:
+        name = str(branch["name"])
+        generator = generators[name]
+        rdkit_kwargs, cosmolkit_kwargs = atom_pair_kwargs(
+            branch, rd_mol.GetNumAtoms()
+        )
+        audit.compare(
+            f"atom_pair.{name}.sparse_count",
+            record,
+            capture_atom_pair_count(
+                lambda: generator.GetSparseCountFingerprint(rd_mol, **rdkit_kwargs)
+            ),
+            capture_atom_pair_count(
+                lambda: ck_mol.fingerprint_atom_pair_sparse_count(**cosmolkit_kwargs)
+            ),
+        )
+        audit.compare(
+            f"atom_pair.{name}.count",
+            record,
+            capture_atom_pair_count(
+                lambda: generator.GetCountFingerprint(rd_mol, **rdkit_kwargs)
+            ),
+            capture_atom_pair_count(
+                lambda: ck_mol.fingerprint_atom_pair_count(**cosmolkit_kwargs)
+            ),
+        )
+        audit.compare(
+            f"atom_pair.{name}.sparse_bit",
+            record,
+            capture_atom_pair_bits(
+                lambda: generator.GetSparseFingerprint(rd_mol, **rdkit_kwargs)
+            ),
+            capture_atom_pair_bits(
+                lambda: ck_mol.fingerprint_atom_pair_sparse_bits(**cosmolkit_kwargs)
+            ),
+        )
+        audit.compare(
+            f"atom_pair.{name}.explicit_bit",
+            record,
+            capture_atom_pair_bits(
+                lambda: generator.GetFingerprint(rd_mol, **rdkit_kwargs)
+            ),
+            capture_atom_pair_bits(
+                lambda: ck_mol.fingerprint_atom_pair(**cosmolkit_kwargs)
+            ),
+        )
+        if branch.get("additionalOutput"):
+            try:
+                rd_output = atom_pair_additional_output()
+                rd_fingerprint = generator.GetFingerprint(
+                    rd_mol, additionalOutput=rd_output, **rdkit_kwargs
+                )
+                rd_value: Any = {
+                    "status": "ok",
+                    "length": rd_fingerprint.GetNumBits(),
+                    "on_bits": list(rd_fingerprint.GetOnBits()),
+                    "additional_output": normalize_atom_pair_additional_output(
+                        rd_output
+                    ),
+                }
+            except Exception:  # noqa: BLE001
+                rd_value = {"status": "error"}
+            try:
+                ck_result = ck_mol.fingerprint_atom_pair_with_output(
+                    **cosmolkit_kwargs
+                )
+                ck_fingerprint = ck_result.fingerprint()
+                ck_value: Any = {
+                    "status": "ok",
+                    "length": ck_fingerprint.n_bits(),
+                    "on_bits": ck_fingerprint.on_bits(),
+                    "additional_output": normalize_cosmolkit_atom_pair_additional_output(
+                        ck_result.additional_output()
+                    ),
+                }
+            except Exception:  # noqa: BLE001
+                ck_value = {"status": "error"}
+            audit.compare(
+                f"atom_pair.{name}.additional_output",
+                record,
+                rd_value,
+                ck_value,
+            )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--topological-profile", type=Path, required=True)
     parser.add_argument("--avalon-profile", type=Path, required=True)
+    parser.add_argument("--atom-pair-profile", type=Path, required=True)
+    parser.add_argument(
+        "--mode", choices=("topological_avalon", "atom_pair"), required=True
+    )
     parser.add_argument("--limit", type=int)
     parser.add_argument("--max-examples", type=int, default=12)
     args = parser.parse_args()
@@ -291,8 +513,11 @@ def main() -> None:
 
     topological_profile = load_json(args.topological_profile)
     avalon_profile = load_json(args.avalon_profile)
+    atom_pair_profile = load_json(args.atom_pair_profile)
     topological_branches = topological_profile["branches"]
     avalon_branches = avalon_profile["corpus_branches"]
+    atom_pair_branches = atom_pair_profile["branches"]
+    atom_pair_generators = make_atom_pair_generators(atom_pair_branches)
     audit = Audit(args.output, args.max_examples)
     processed = 0
     try:
@@ -328,21 +553,44 @@ def main() -> None:
                         )
                     continue
                 audit.count("parse.both_ok")
-                compare_topological(
-                    audit, record, rd_mol, ck_mol, topological_branches
-                )
-                compare_topological_provenance(
-                    audit, record, rd_mol, ck_mol, topological_branches
-                )
-                compare_avalon(audit, record, rd_mol, ck_mol, avalon_branches)
+                if args.mode == "topological_avalon":
+                    compare_topological(
+                        audit, record, rd_mol, ck_mol, topological_branches
+                    )
+                    compare_topological_provenance(
+                        audit, record, rd_mol, ck_mol, topological_branches
+                    )
+                    compare_avalon(audit, record, rd_mol, ck_mol, avalon_branches)
+                else:
+                    compare_atom_pair(
+                        audit,
+                        record,
+                        rd_mol,
+                        ck_mol,
+                        atom_pair_branches,
+                        atom_pair_generators,
+                    )
     finally:
         audit.finish(
             processed,
-            {
-                "topological": len(topological_branches),
-                "topological_provenance": 2,
-                "avalon": len(avalon_branches),
-            },
+            (
+                {
+                    "topological": len(topological_branches),
+                    "topological_provenance": 2,
+                    "avalon": len(avalon_branches),
+                }
+                if args.mode == "topological_avalon"
+                else {
+                    "atom_pair_sparse_count": len(atom_pair_branches),
+                    "atom_pair_count": len(atom_pair_branches),
+                    "atom_pair_sparse_bit": len(atom_pair_branches),
+                    "atom_pair_explicit_bit": len(atom_pair_branches),
+                    "atom_pair_additional_output": sum(
+                        bool(branch.get("additionalOutput"))
+                        for branch in atom_pair_branches
+                    ),
+                }
+            ),
         )
 
 

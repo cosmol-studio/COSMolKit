@@ -179,6 +179,16 @@ pub const FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Provide the enumerated Morgan sparse-count, sparse-bit, hashed-count, explicit-bit, AdditionalOutput, and MACCS raw/public projection branches with exact pinned-RDKit parity. Other fingerprint families have separate feature specifications and do not silently fall back to Morgan.",
 };
 
+pub const ATOM_PAIR_FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
+    name: "fingerprint.atom_pair",
+    category: FeatureCategory::Fingerprint,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
+    parity_sensitive: true,
+    docs: "Provide the source-backed AtomPair sparse-count, folded-count, sparse-bit, explicit-bit, AdditionalOutput, 2D/3D distance, chirality, selector, custom-invariant, count-simulation, metadata/JSON, and ordered batch branches through one generator core. Exact validation covers every mutually parseable ChEMBL 37 record across ten profiles and 118,809,964 comparisons against pinned RDKit.",
+};
+
 pub const AVALON_FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
     name: "fingerprint.avalon",
     category: FeatureCategory::Fingerprint,
@@ -312,6 +322,7 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &SANITIZE_FEATURE,
     &KEKULIZE_FEATURE,
     &FINGERPRINT_FEATURE,
+    &ATOM_PAIR_FINGERPRINT_FEATURE,
     &AVALON_FINGERPRINT_FEATURE,
     &DESCRIPTORS_FEATURE,
     &SUBSTRUCTURE_FEATURE,
@@ -346,3 +357,23 @@ pub const BIO_SELECTION_FEATURE: FeatureSpec = FeatureSpec {
     parity_sensitive: false,
     docs: "Experimental BioStructure selection and filtering operations (e.g. remove_waters).",
 };
+
+#[cfg(test)]
+mod tests {
+    use super::{ATOM_PAIR_FINGERPRINT_FEATURE, PUBLIC_FEATURES, SupportStatus};
+
+    #[test]
+    fn atom_pair_support_metadata_records_the_validated_rdkit_boundary() {
+        assert_eq!(
+            ATOM_PAIR_FINGERPRINT_FEATURE.status,
+            SupportStatus::SupportedWithRdkitParity {
+                rdkit_version: "2026.03.1",
+            }
+        );
+        assert!(
+            PUBLIC_FEATURES
+                .iter()
+                .any(|feature| std::ptr::eq(*feature, &ATOM_PAIR_FINGERPRINT_FEATURE))
+        );
+    }
+}

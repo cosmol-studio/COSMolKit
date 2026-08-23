@@ -22,14 +22,14 @@ const HASHY: i32 = 127;
 const HASHZ: i32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RdkitPdbMolProfile {
+pub struct StructureMoleculeOptions {
     pub sanitize: bool,
     pub remove_hs: bool,
     pub flavor: u32,
     pub proximity_bonding: bool,
 }
 
-impl Default for RdkitPdbMolProfile {
+impl Default for StructureMoleculeOptions {
     fn default() -> Self {
         Self {
             sanitize: true,
@@ -40,9 +40,15 @@ impl Default for RdkitPdbMolProfile {
     }
 }
 
+#[deprecated(
+    since = "0.2.13",
+    note = "use StructureMoleculeOptions; the same options apply to PDB and mmCIF structural inputs"
+)]
+pub type RdkitPdbMolProfile = StructureMoleculeOptions;
+
 #[derive(Debug, Error)]
-pub enum PdbMoleculeConversionError {
-    #[error("BioStructure PDB read error: {0}")]
+pub enum StructureMoleculeConversionError {
+    #[error("BioStructure read error: {0}")]
     BioRead(#[from] crate::BioReadError),
     #[error("molecule build error: {0}")]
     Build(#[from] MoleculeBuildError),
@@ -50,63 +56,103 @@ pub enum PdbMoleculeConversionError {
     Operation(#[from] OperationError),
     #[error("stereochemistry error: {0}")]
     Stereo(#[from] crate::StereoError),
-    #[error("unsupported RDKit PDB molecule conversion branch: {0}")]
+    #[error("unsupported structure-to-molecule conversion branch: {0}")]
     Unsupported(&'static str),
 }
 
+#[deprecated(since = "0.2.13", note = "use StructureMoleculeConversionError")]
+pub type PdbMoleculeConversionError = StructureMoleculeConversionError;
+
+#[deprecated(since = "0.2.13", note = "use Molecule::from_pdb_block_with_options()")]
 pub fn molecule_from_pdb_block_with_options(
     text: &str,
-    profile: RdkitPdbMolProfile,
-) -> Result<Molecule, PdbMoleculeConversionError> {
+    options: StructureMoleculeOptions,
+) -> Result<Molecule, StructureMoleculeConversionError> {
     let structure = BioStructure::from_pdb_str(text)?;
-    bio_structure_to_rdkit_pdb_molecule(&structure, profile)
+    bio_structure_to_molecule(&structure, options)
 }
 
+#[deprecated(
+    since = "0.2.13",
+    note = "use Molecule::from_mmcif_block_with_options()"
+)]
 pub fn molecule_from_mmcif_block_with_options(
     text: &str,
-    profile: RdkitPdbMolProfile,
-) -> Result<Molecule, PdbMoleculeConversionError> {
-    let structure = crate::io::bio::read_mmcif_atom_site_subset_from_str(text)?;
-    bio_structure_to_rdkit_pdb_molecule(&structure, profile)
+    options: StructureMoleculeOptions,
+) -> Result<Molecule, StructureMoleculeConversionError> {
+    let structure = BioStructure::from_mmcif_str(text, "input.cif")?;
+    bio_structure_to_molecule(&structure, options)
 }
 
 impl Molecule {
     pub fn from_pdb_block_with_options(
         text: &str,
-        profile: RdkitPdbMolProfile,
-    ) -> Result<Self, PdbMoleculeConversionError> {
-        molecule_from_pdb_block_with_options(text, profile)
+        options: StructureMoleculeOptions,
+    ) -> Result<Self, StructureMoleculeConversionError> {
+        let structure = BioStructure::from_pdb_str(text)?;
+        bio_structure_to_molecule(&structure, options)
     }
 
-    pub fn from_pdb_block(text: &str) -> Result<Self, PdbMoleculeConversionError> {
-        molecule_from_pdb_block_with_options(text, RdkitPdbMolProfile::default())
+    pub fn from_pdb_block(text: &str) -> Result<Self, StructureMoleculeConversionError> {
+        Self::from_pdb_block_with_options(text, StructureMoleculeOptions::default())
     }
 
     pub fn from_mmcif_block_with_options(
         text: &str,
-        profile: RdkitPdbMolProfile,
-    ) -> Result<Self, PdbMoleculeConversionError> {
-        molecule_from_mmcif_block_with_options(text, profile)
+        options: StructureMoleculeOptions,
+    ) -> Result<Self, StructureMoleculeConversionError> {
+        let structure = BioStructure::from_mmcif_str(text, "input.cif")?;
+        bio_structure_to_molecule(&structure, options)
     }
 
-    pub fn from_mmcif_block(text: &str) -> Result<Self, PdbMoleculeConversionError> {
-        molecule_from_mmcif_block_with_options(text, RdkitPdbMolProfile::default())
+    pub fn from_mmcif_block(text: &str) -> Result<Self, StructureMoleculeConversionError> {
+        Self::from_mmcif_block_with_options(text, StructureMoleculeOptions::default())
     }
+}
+
+#[deprecated(
+    since = "0.2.13",
+    note = "use BioStructure::to_molecule_with_options()"
+)]
+pub fn bio_structure_to_rdkit_pdb_molecule(
+    structure: &BioStructure,
+    options: StructureMoleculeOptions,
+) -> Result<Molecule, StructureMoleculeConversionError> {
+    structure.to_molecule_with_options(options)
 }
 
 impl BioStructure {
+    /// Convert the complete structure into a molecule using the default
+    /// RDKit-compatible structure-to-molecule policy.
+    pub fn to_molecule(&self) -> Result<Molecule, StructureMoleculeConversionError> {
+        self.to_molecule_with_options(StructureMoleculeOptions::default())
+    }
+
+    /// Convert the complete structure into a molecule using explicit graph
+    /// construction, sanitization, hydrogen-removal, and PDB flavor options.
+    pub fn to_molecule_with_options(
+        &self,
+        options: StructureMoleculeOptions,
+    ) -> Result<Molecule, StructureMoleculeConversionError> {
+        bio_structure_to_molecule(self, options)
+    }
+
+    #[deprecated(
+        since = "0.2.13",
+        note = "use BioStructure::to_molecule_with_options()"
+    )]
     pub fn to_rdkit_pdb_molecule(
         &self,
-        profile: RdkitPdbMolProfile,
-    ) -> Result<Molecule, PdbMoleculeConversionError> {
-        bio_structure_to_rdkit_pdb_molecule(self, profile)
+        options: StructureMoleculeOptions,
+    ) -> Result<Molecule, StructureMoleculeConversionError> {
+        self.to_molecule_with_options(options)
     }
 }
 
-pub fn bio_structure_to_rdkit_pdb_molecule(
+fn bio_structure_to_molecule(
     structure: &BioStructure,
-    profile: RdkitPdbMolProfile,
-) -> Result<Molecule, PdbMoleculeConversionError> {
+    options: StructureMoleculeOptions,
+) -> Result<Molecule, StructureMoleculeConversionError> {
     let mut builder = MoleculeBuilder::new();
     let mut serial_to_atom = HashMap::<i32, AtomId>::new();
     let mut bio_atom_to_mol_atom = vec![None; structure.atoms().len()];
@@ -115,7 +161,7 @@ pub fn bio_structure_to_rdkit_pdb_molecule(
 
     for (bio_atom_index, atom) in structure.atoms().iter().enumerate() {
         let residue = &structure.residues()[atom.residue_id.index() as usize];
-        if !include_atom_like_rdkit(atom, residue, structure, bio_atom_index, profile)? {
+        if !include_atom_like_rdkit(atom, residue, structure, bio_atom_index, options)? {
             continue;
         }
         let mol_atom = builder.add_atom(atom_spec_from_bio_atom_like_rdkit(
@@ -142,25 +188,25 @@ pub fn bio_structure_to_rdkit_pdb_molecule(
 
     apply_conect_records_like_rdkit(&mut builder, structure, &serial_to_atom)?;
 
-    if profile.proximity_bonding {
+    if options.proximity_bonding {
         connect_the_dots_like_rdkit(&mut builder, CTD_IGNORE_H_H_CONTACTS)?;
     }
-    if profile.proximity_bonding || (profile.flavor & 8) != 0 {
+    if options.proximity_bonding || (options.flavor & 8) != 0 {
         standard_pdb_residue_bond_orders_like_rdkit(&mut builder)?;
     }
 
     basic_pdb_cleanup_like_rdkit(&mut builder);
-    let topology_trust = if profile.proximity_bonding || !builder.bonds().is_empty() {
+    let topology_trust = if options.proximity_bonding || !builder.bonds().is_empty() {
         crate::TopologyTrust::TrustedGraph
     } else {
         crate::TopologyTrust::CoordinateOnly
     };
     builder.set_topology_trust(topology_trust);
     let mut molecule = builder.build()?;
-    if profile.sanitize {
+    if options.sanitize {
         molecule = molecule.sanitize()?;
     }
-    if profile.remove_hs {
+    if options.remove_hs {
         molecule = molecule.without_hydrogens()?;
     }
     // BEGIN RDKIT CPP FUNCTION parsePdbBlock chirality tail
@@ -178,8 +224,8 @@ fn include_atom_like_rdkit(
     residue: &crate::ResidueRow,
     structure: &BioStructure,
     bio_atom_index: usize,
-    profile: RdkitPdbMolProfile,
-) -> Result<bool, PdbMoleculeConversionError> {
+    options: StructureMoleculeOptions,
+) -> Result<bool, StructureMoleculeConversionError> {
     // BEGIN RDKIT CPP FUNCTION PDBAtomLine filtering
     // RDKit✔️✔️:   if ((flavor & 1) == 0) {
     // RDKit✔️✔️:     // Ignore alternate locations of atoms.
@@ -200,7 +246,7 @@ fn include_atom_like_rdkit(
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     // END RDKIT CPP FUNCTION PDBAtomLine filtering
-    if (profile.flavor & 1) != 0 {
+    if (options.flavor & 1) != 0 {
         return Ok(true);
     }
     if atom
@@ -214,7 +260,7 @@ fn include_atom_like_rdkit(
     }
     let position = structure.coordinates().positions()[bio_atom_index];
     if position == [9999.0, 9999.0, 9999.0] {
-        return Err(PdbMoleculeConversionError::Unsupported(
+        return Err(StructureMoleculeConversionError::Unsupported(
             "XPLOR pseudo-atom filtering requires original PDB coordinate field text",
         ));
     }
@@ -225,7 +271,7 @@ fn atom_spec_from_bio_atom_like_rdkit(
     atom: &crate::AtomRow,
     residue: &crate::ResidueRow,
     structure: &BioStructure,
-) -> Result<AtomSpec, PdbMoleculeConversionError> {
+) -> Result<AtomSpec, StructureMoleculeConversionError> {
     // BEGIN RDKIT CPP FUNCTION PDBAtomLine atom state
     // RDKit❗✔️:   Atom *atom = (Atom *)nullptr;
     // RDKit❗✔️:   char symb[3];
@@ -296,7 +342,7 @@ fn apply_conect_records_like_rdkit(
     builder: &mut MoleculeBuilder,
     structure: &BioStructure,
     serial_to_atom: &HashMap<i32, AtomId>,
-) -> Result<(), PdbMoleculeConversionError> {
+) -> Result<(), StructureMoleculeConversionError> {
     // BEGIN RDKIT CPP FUNCTION PDBBondLine
     // RDKit✔️✔️:   if (len < 16) {
     // RDKit✔️✔️:     return;
@@ -344,7 +390,7 @@ fn apply_one_conect_bond_like_rdkit(
     src_serial: i32,
     dst_serial: i32,
     bond_seen: &mut HashMap<crate::BondId, u8>,
-) -> Result<(), PdbMoleculeConversionError> {
+) -> Result<(), StructureMoleculeConversionError> {
     // BEGIN RDKIT CPP FUNCTION PDBBondLine bond order bitmap
     // RDKit✔️✔️:       Bond *bond =
     // RDKit✔️✔️:           mol->getBondBetweenAtoms(amap[src]->getIdx(), amap[dst]->getIdx());
@@ -552,7 +598,7 @@ struct ProximityEntry {
     elem: u8,
 }
 
-fn rdkit_covalent_radius(atomic_number: u8) -> Result<f32, PdbMoleculeConversionError> {
+fn rdkit_covalent_radius(atomic_number: u8) -> Result<f32, StructureMoleculeConversionError> {
     // BEGIN RDKIT CPP FUNCTION PeriodicTable::getRcovalent / atomicData::Rcov
     // RDKit✔️✔️: double getRcovalent(UINT atomicNumber) const {
     // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
@@ -578,7 +624,7 @@ fn rdkit_covalent_radius(atomic_number: u8) -> Result<f32, PdbMoleculeConversion
     RDKIT_COVALENT_RADII
         .get(usize::from(atomic_number))
         .copied()
-        .ok_or(PdbMoleculeConversionError::Unsupported(
+        .ok_or(StructureMoleculeConversionError::Unsupported(
             "RDKit covalent radius lookup requires an atomic number in periodicTableAtomData",
         ))
 }
@@ -795,7 +841,7 @@ fn cleanup_multivalent_hydrogens_like_rdkit(builder: &mut MoleculeBuilder, flags
 fn connect_the_dots_like_rdkit(
     builder: &mut MoleculeBuilder,
     flags: u32,
-) -> Result<(), PdbMoleculeConversionError> {
+) -> Result<(), StructureMoleculeConversionError> {
     // BEGIN RDKIT CPP FUNCTION ConnectTheDots / ConnectTheDots_Large
     // RDKit✔️✔️: void ConnectTheDots(RWMol *mol, unsigned int flags) {
     // RDKit✔️✔️:   if (!mol || !mol->getNumConformers()) {
@@ -1702,8 +1748,8 @@ fn atom_name_string(name: crate::AtomName) -> String {
 mod tests {
     use super::*;
 
-    fn no_proximity_profile() -> RdkitPdbMolProfile {
-        RdkitPdbMolProfile {
+    fn no_proximity_profile() -> StructureMoleculeOptions {
+        StructureMoleculeOptions {
             sanitize: false,
             remove_hs: false,
             flavor: 0,
@@ -1758,7 +1804,7 @@ ATOM      2  CA BALA A   1      12.104  13.207   9.900  1.00 20.00           C
 ";
         let mol = Molecule::from_pdb_block_with_options(
             pdb,
-            RdkitPdbMolProfile {
+            StructureMoleculeOptions {
                 flavor: 1,
                 ..no_proximity_profile()
             },
@@ -1789,7 +1835,7 @@ HETATM    2  O1  LIG A   1       1.200   0.000   0.000  1.00 10.00           O
 ";
         let mol = Molecule::from_pdb_block_with_options(
             pdb,
-            RdkitPdbMolProfile {
+            StructureMoleculeOptions {
                 sanitize: false,
                 remove_hs: false,
                 flavor: 0,
@@ -1810,7 +1856,7 @@ HETATM    2  H2  LIG A   1       0.700   0.000   0.000  1.00 10.00           H
 ";
         let mol = Molecule::from_pdb_block_with_options(
             pdb,
-            RdkitPdbMolProfile {
+            StructureMoleculeOptions {
                 sanitize: false,
                 remove_hs: false,
                 flavor: 0,
@@ -1857,7 +1903,7 @@ CONECT    1    2
 ";
         let mol = Molecule::from_pdb_block_with_options(
             pdb,
-            RdkitPdbMolProfile {
+            StructureMoleculeOptions {
                 flavor: 8,
                 ..no_proximity_profile()
             },
@@ -1949,7 +1995,7 @@ HETATM 2 O O1 . LIG A 1 1.200 0.000 0.000
 
         let mol = Molecule::from_mmcif_block_with_options(
             cif,
-            RdkitPdbMolProfile {
+            StructureMoleculeOptions {
                 sanitize: false,
                 remove_hs: false,
                 flavor: 0,
@@ -1961,5 +2007,21 @@ HETATM 2 O O1 . LIG A 1 1.200 0.000 0.000
         assert_eq!(mol.num_atoms(), 2);
         assert_eq!(mol.num_bonds(), 1);
         assert_eq!(mol.bonds()[0].order(), BondOrder::Single);
+    }
+
+    #[test]
+    fn bio_structure_default_molecule_projection_matches_default_pdb_constructor() {
+        let pdb = "\
+HETATM    1  C1  LIG A   1       0.000   0.000   0.000  1.00 10.00           C
+HETATM    2  O1  LIG A   1       1.200   0.000   0.000  1.00 10.00           O
+";
+        let structure = BioStructure::from_pdb_str(pdb).unwrap();
+        let projected = structure.to_molecule().unwrap();
+        let direct = Molecule::from_pdb_block(pdb).unwrap();
+
+        assert_eq!(projected.num_atoms(), direct.num_atoms());
+        assert_eq!(projected.num_bonds(), direct.num_bonds());
+        assert_eq!(projected.atoms()[0].atomic_number(), 6);
+        assert_eq!(projected.atoms()[1].atomic_number(), 8);
     }
 }

@@ -20,6 +20,9 @@ topological_output = mol.topological_fingerprint_with_output(
 )
 avalon = mol.avalon_fingerprint(n_bits=512)
 maccs = mol.maccs_fingerprint()
+atom_pair = mol.fingerprint_atom_pair(n_bits=2048)
+atom_pair_sparse_count = mol.fingerprint_atom_pair_sparse_count()
+atom_pair_output = mol.fingerprint_atom_pair_with_output().additional_output()
 
 print("fp1 bits:", fp1.on_bits()[:8])
 print("similarity:", similarity)
@@ -33,3 +36,9 @@ print(
 print("topological path entries:", len(topological_output.bit_info()))
 print("Avalon bits:", avalon.on_bits()[:8])
 print("MACCS bits:", maccs.on_bits()[:8])
+print("AtomPair bits:", atom_pair.on_bits()[:8])
+print(
+    "AtomPair sparse counts:",
+    list(atom_pair_sparse_count.nonzero_elements().items())[:8],
+)
+print("AtomPair atom counts:", atom_pair_output.atom_counts())

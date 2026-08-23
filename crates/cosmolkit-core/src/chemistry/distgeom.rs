@@ -6103,123 +6103,13 @@ fn ideal_bond_angle(hybridization: &crate::Hybridization, ring_size: Option<usiz
 // Topological distance matrix
 // ──────────────────────────────────────────────
 
-const LOCAL_INF_DIST: f64 = 1.0e8;
-
-// BEGIN RDKIT CPP FUNCTION RDKit::MolOps::getDistanceMat (Matrices.cpp:167-222)
-// RDKit✔️✔️: double *getDistanceMat(const ROMol &mol, bool useBO, bool useAtomWts,
-// RDKit✔️✔️:                        bool force, const char *propNamePrefix) {
-// RDKit✔️✔️:   int nAts = mol.getNumAtoms();
-// RDKit✔️✔️:   auto *dMat = new double[nAts * nAts];
-// RDKit✔️✔️:   int i, j;
-// RDKit✔️✔️:   // initialize off diagonals to LOCAL_INF and diagonals to 0
-// RDKit✔️✔️:   for (i = 0; i < nAts * nAts; i++) {
-// RDKit✔️✔️:     dMat[i] = LOCAL_INF;
-// RDKit✔️✔️:   }
-// RDKit✔️✔️:   for (i = 0; i < nAts; i++) {
-// RDKit✔️✔️:     dMat[i * nAts + i] = 0.0;
-// RDKit✔️✔️:   }
-// RDKit✔️✔️:   while (firstB != lastB) {
-// RDKit✔️✔️:     const Bond *bond = mol[*firstB];
-// RDKit✔️✔️:     i = bond->getBeginAtomIdx();
-// RDKit✔️✔️:     j = bond->getEndAtomIdx();
-// RDKit✔️✔️:     double contrib;
-// RDKit✔️✔️:     if (useBO) { ... } else { contrib = 1.0; }
-// RDKit✔️✔️:     dMat[i * nAts + j] = contrib;
-// RDKit✔️✔️:     dMat[j * nAts + i] = contrib;
-// RDKit✔️✔️:     ++firstB;
-// RDKit✔️✔️:   }
-// RDKit✔️✔️:   auto *pathMat = new int[nAts * nAts];
-// RDKit✔️✔️:   memset(static_cast<void *>(pathMat), 0, nAts * nAts * sizeof(int));
-// RDKit✔️✔️:   FloydWarshall(nAts, dMat, pathMat);
-// RDKit✔️✔️:   return dMat;
-// RDKit✔️✔️: };
-// END RDKIT CPP FUNCTION RDKit::MolOps::getDistanceMat
-//
-// BEGIN RDKIT CPP FUNCTION RDKit::FloydWarshall (Matrices.cpp:35-87)
-// RDKit✔️✔️: template <class T>
-// RDKit✔️✔️: void FloydWarshall(int dim, T *adjMat, int *pathMat) {
-// RDKit✔️✔️:   for (i = 0; i < dim; i++) {
-// RDKit✔️✔️:     int itab = i * dim;
-// RDKit✔️✔️:     for (j = 0; j < dim; j++) {
-// RDKit✔️✔️:       if (i == j || adjMat[itab + j] == LOCAL_INF) {
-// RDKit✔️✔️:         pathMat[itab + j] = -1;
-// RDKit✔️✔️:       } else {
-// RDKit✔️✔️:         pathMat[itab + j] = i;
-// RDKit✔️✔️:       }
-// RDKit✔️✔️:     }
-// RDKit✔️✔️:   }
-// RDKit✔️✔️:   for (k = 0; k < dim; k++) {
-// RDKit✔️✔️:     int ktab = k * dim;
-// RDKit✔️✔️:     for (i = 0; i < dim; i++) {
-// RDKit✔️✔️:       int itab = i * dim;
-// RDKit✔️✔️:       for (j = 0; j < dim; j++) {
-// RDKit✔️✔️:         T v1 = lastD[itab + j];
-// RDKit✔️✔️:         T v2 = lastD[itab + k] + lastD[ktab + j];
-// RDKit✔️✔️:         if (v1 <= v2) {
-// RDKit✔️✔️:           currD[itab + j] = v1;
-// RDKit✔️✔️:           currP[itab + j] = lastP[itab + j];
-// RDKit✔️✔️:         } else {
-// RDKit✔️✔️:           currD[itab + j] = v2;
-// RDKit✔️✔️:           currP[itab + j] = lastP[ktab + j];
-// RDKit✔️✔️:         }
-// RDKit✔️✔️:       }
-// RDKit✔️✔️:     }
-// RDKit✔️✔️:   }
-// RDKit✔️✔️: }
-// END RDKIT CPP FUNCTION RDKit::FloydWarshall
-fn compute_topological_distances(mol: &Molecule) -> Vec<f64> {
-    let n_atoms = mol.num_atoms();
-    let mut last_dist = vec![LOCAL_INF_DIST; n_atoms * n_atoms];
-    let mut last_path = vec![0_i32; n_atoms * n_atoms];
-
-    for i in 0..n_atoms {
-        last_dist[i * n_atoms + i] = 0.0;
-    }
-    for bond in mol.bonds() {
-        let i = bond.begin().index();
-        let j = bond.end().index();
-        last_dist[i * n_atoms + j] = 1.0;
-        last_dist[j * n_atoms + i] = 1.0;
-    }
-
-    for i in 0..n_atoms {
-        let itab = i * n_atoms;
-        for j in 0..n_atoms {
-            if i == j || last_dist[itab + j] == LOCAL_INF_DIST {
-                last_path[itab + j] = -1;
-            } else {
-                last_path[itab + j] = i as i32;
-            }
-        }
-    }
-
-    let mut curr_dist = vec![0.0; n_atoms * n_atoms];
-    let mut curr_path = vec![0_i32; n_atoms * n_atoms];
-    for k in 0..n_atoms {
-        let ktab = k * n_atoms;
-        for i in 0..n_atoms {
-            let itab = i * n_atoms;
-            for j in 0..n_atoms {
-                let v1 = last_dist[itab + j];
-                let v2 = last_dist[itab + k] + last_dist[ktab + j];
-                if v1 <= v2 {
-                    curr_dist[itab + j] = v1;
-                    curr_path[itab + j] = last_path[itab + j];
-                } else {
-                    curr_dist[itab + j] = v2;
-                    curr_path[itab + j] = last_path[ktab + j];
-                }
-            }
-        }
-        std::mem::swap(&mut curr_dist, &mut last_dist);
-        std::mem::swap(&mut curr_path, &mut last_path);
-    }
-
-    last_dist
-}
+use crate::chemistry::matrices::{
+    LOCAL_INF_DISTANCE as LOCAL_INF_DIST,
+    topological_distance_matrix as compute_topological_distances,
+};
 
 fn flatten_topological_distances_matrix(mol: &Molecule) -> Vec<f64> {
-    compute_topological_distances(mol)
+    compute_topological_distances(mol).to_vec()
 }
 
 // ──────────────────────────────────────────────

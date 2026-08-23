@@ -44,7 +44,7 @@ COSMolKit treats parity as **source-backed semantic equivalence within explicitl
 
 The comparison boundary therefore extends well beyond final strings. Covered surfaces compare exact bytes, bits, return status, complete atom and bond state, stereochemistry, derived state and invariants, **RNG state, seed handling, and random draw sequences where stochastic behavior is part of the contract**, every matrix entry, coordinates, energies, and every gradient component where applicable. Discrete results must match exactly; declared numerical tolerances reach `1e-8` for matrix entries and `1e-6` for coordinates, energies, and gradients. **99% or 99.9% agreement remains unfinished when any covered mismatch exists.**
 
-This boundary is stress-tested against a complete ChEMBL 37 profile: 2,897,819 source records, 2,897,804 of them mutually parseable, across 22 sharded test phases against pinned RDKit `2026.03.1`. The profile performs billions of comparisons, expands parameter spaces into matrices of up to 768 branches, repeats complete matrices to expose instability, permutes operation order, and checks scalar, one-thread, multi-thread, batch, and shared-object concurrent paths.
+This boundary is stress-tested against a complete ChEMBL 37 profile: 2,897,819 source records, 2,897,804 of them mutually parseable, across 28 repository-defined sharded phases against pinned RDKit `2026.03.1`. The profile performs billions of comparisons, expands parameter spaces into matrices of up to 768 branches, repeats complete matrices to expose instability, permutes operation order, and checks scalar, one-thread, multi-thread, batch, and shared-object concurrent paths.
 
 Every discovered mismatch is traced back to the corresponding upstream logic, corrected at the source-port level, and permanently retained as a focused regression rather than hidden by corpus-specific adjustments. This discipline limits **semantic debt** by preventing convenient local fixes from accumulating into undocumented chemistry behavior.
 
@@ -111,6 +111,9 @@ mol_2d.write_png("phenol.png", width=400, height=300)
 fp = mol.fingerprint_morgan(radius=2, n_bits=2048)
 print(fp.on_bits())
 
+atom_pair = mol.fingerprint_atom_pair(n_bits=2048)
+print(atom_pair.on_bits())
+
 batch = (
     MoleculeBatch.from_smiles_list(
         ["CCO", "c1ccccc1", "CC(=O)O"],
@@ -136,13 +139,26 @@ prepared.to_images(
 
 ## Protein Structures
 
-Use `Protein` when the workflow is focused on protein chains rather than the
-full structural table.
+Use `BioStructure` for complete PDB/mmCIF structural data, including modeled
+proteins, nucleic acids, ligands, waters, entities, models, and metadata. Use
+`Protein` only when an amino-acid-only projection is intended.
 
 ```python
-from cosmolkit import Protein
+from cosmolkit import BioStructure
 
-protein = Protein.from_pdb("1crn.pdb")
+structure = BioStructure.from_pdb("complex.pdb")
+print(structure.num_models(), structure.num_chains(), structure.num_atoms())
+
+for model in structure.models():
+    for chain in model.chains():
+        for residue in chain.residues():
+            print(residue.name(), residue.kind())
+```
+
+The protein projection is explicit and leaves the full structure available:
+
+```python
+protein = structure.protein()
 
 print(protein.num_chains())
 print(protein.num_residues())
@@ -226,13 +242,15 @@ inputs until a trusted graph has been constructed.
 - 2D coordinate generation and SVG/PNG depiction
 - Native 3D conformer generation with DG/KDG/ETDG/ETKDG parameter presets
 - UFF/MMFF optimization of generated or imported 3D conformers
-- Morgan, MACCS, RDKit topological, and Avalon fingerprints for the validated
-  exact-parity branches
+- Morgan, MACCS, RDKit topological, Avalon, and AtomPair fingerprints for the
+  validated exact-parity branches, including AtomPair sparse/count forms,
+  provenance, 2D/3D distances, and ordered batch execution
 - Distance-geometry bounds matrices
 - Substructure matching and SMARTS parse metadata
 - Ordered batch transforms and exports
 - Python pickle round-tripping for `Molecule`
-- PDB/mmCIF molecule-block parsing and protein projection APIs
+- Complete PDB/mmCIF `BioStructure` parsing, protein projections, and explicit
+  structure-to-molecule conversion
 - Support-status metadata for public features
 
 ## Design Principles
@@ -313,12 +331,10 @@ Goal: keep the supported molecular core correct before expanding breadth.
 - ✅ `Molecule.to_inchi()`, `Molecule.to_inchi_key()`, `inchi_to_key()`, and
   `Molecule.from_inchi()` for source-defined behavior; official-C undefined
   allocation behavior returns a structured error
-- ✅ Morgan fingerprints and Tanimoto similarity for the validated exact-parity branches
-- ✅ MACCS fingerprints for the validated exact raw/public projection
-- ✅ Source-backed RDKFingerprint/topological and Avalon fingerprints with
-  zero-mismatch ChEMBL 37 validation across 2,897,804 mutually parseable
-  molecules and 113,014,356 exact profile comparisons, including complete
-  topological `atomBits`/`bitInfo` provenance
+- ✅ Source-backed Morgan, MACCS, RDKFingerprint/topological, Avalon, and
+  AtomPair fingerprints for their validated exact-parity branches, including
+  typed provenance, count/bit forms, 2D/3D AtomPair distances, Tanimoto
+  similarity, and ordered batch execution
 - ✅ Substructure matching and Python SMARTS parse metadata
 - ✅ Molecular descriptors: average/exact molecular weight, formula, H-bond
   donor/acceptor counts, fraction Csp3, Crippen logP/MR, TPSA, aromatic-ring
@@ -365,9 +381,12 @@ Goal: provide practical Biopython-like structure workflows without forcing users
 through low-level structural tables.
 
 - ✅ `Protein.from_pdb()` / `Protein.from_mmcif()` high-level entry points
+- ✅ `BioStructure.from_pdb()` / `BioStructure.from_mmcif()` complete-structure
+  entry points and mixed-structure hierarchy traversal
 - ✅ Protein chain, residue, and atom iteration
 - ✅ Protein-only projection from broader structural data
 - ✅ PDB/mmCIF structural parsing
+- 🚧 Gemmi-aligned `BioStructure` mmCIF serialization and file writing
 - 🚧 Selection utilities for chains, residues, atoms, and neighborhoods
 - 🚧 Ligand, nucleic-acid, and mixed-structure ergonomic APIs
 

@@ -7,8 +7,21 @@
 //! See `dev/archive/plans/rdkit_inchi_full_port_plan.md` in the workspace for
 //! the required source inventory, marker, and parity contract.
 
+// The generated ABI constants intentionally retain the official C literals.
+// Replacing them with Rust standard-library constants would weaken the
+// source-reproduction audit without changing their compiled values.
+#[allow(clippy::approx_constant)]
 mod source_types;
 
+// These control-flow shapes and assignments are direct reproductions of the
+// official C source. Newer Clippy releases diagnose them as Rust idioms, but
+// rewriting them would obscure the line-level source correspondence.
+#[allow(
+    clippy::almost_swapped,
+    clippy::approx_constant,
+    clippy::never_loop,
+    clippy::while_immutable_condition
+)]
 mod source;
 
 pub use source::rdkit::inchi::{

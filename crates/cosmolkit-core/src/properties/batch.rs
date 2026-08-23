@@ -201,6 +201,15 @@ fn run_with_parallel_jobs_option<R: Send>(
     }
 }
 
+fn atom_pair_generator_for_batch(
+    params: &crate::AtomPairFingerprintParams,
+    operation: &'static str,
+) -> Result<crate::AtomPairFingerprintGenerator, BatchValidationError> {
+    crate::AtomPairFingerprintGenerator::new(params).map_err(|error| {
+        BatchValidationError::simple(1, operation, format!("invalid configuration: {error}"))
+    })
+}
+
 impl MoleculeBatch {
     #[must_use]
     pub fn new(records: Vec<BatchRecord>) -> Self {
@@ -1102,6 +1111,237 @@ impl MoleculeBatch {
                 molecule
                     .dg_bounds_matrix()
                     .map_err(|error| error.to_string())
+            },
+            progress,
+            n_jobs,
+        )
+    }
+
+    pub fn atom_pair_sparse_count_fingerprint_list_with_progress(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::SparseCountFingerprint>>, BatchValidationError> {
+        self.atom_pair_sparse_count_fingerprint_list_with_runtime(params, progress, None)
+    }
+
+    pub fn atom_pair_sparse_count_fingerprint_list_with_options(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<crate::SparseCountFingerprint>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing sparse-count AtomPair fingerprints",
+            |progress| {
+                self.atom_pair_sparse_count_fingerprint_list_with_runtime(params, progress, n_jobs)
+            },
+        )
+    }
+
+    fn atom_pair_sparse_count_fingerprint_list_with_runtime(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<crate::SparseCountFingerprint>>, BatchValidationError> {
+        let generator =
+            atom_pair_generator_for_batch(params, "batch.atom_pair_sparse_count_fingerprint")?;
+        self.collect_optional_values_with_options(
+            "batch.atom_pair_sparse_count_fingerprint",
+            |molecule| {
+                generator
+                    .sparse_count_fingerprint(
+                        molecule,
+                        &mut crate::fingerprint::atom_pair_function_arguments(params),
+                    )
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            n_jobs,
+        )
+    }
+
+    pub fn atom_pair_count_fingerprint_list_with_progress(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::SparseCountFingerprint>>, BatchValidationError> {
+        self.atom_pair_count_fingerprint_list_with_runtime(params, progress, None)
+    }
+
+    pub fn atom_pair_count_fingerprint_list_with_options(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<crate::SparseCountFingerprint>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing count AtomPair fingerprints",
+            |progress| self.atom_pair_count_fingerprint_list_with_runtime(params, progress, n_jobs),
+        )
+    }
+
+    fn atom_pair_count_fingerprint_list_with_runtime(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<crate::SparseCountFingerprint>>, BatchValidationError> {
+        let generator = atom_pair_generator_for_batch(params, "batch.atom_pair_count_fingerprint")?;
+        self.collect_optional_values_with_options(
+            "batch.atom_pair_count_fingerprint",
+            |molecule| {
+                generator
+                    .count_fingerprint(
+                        molecule,
+                        &mut crate::fingerprint::atom_pair_function_arguments(params),
+                    )
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            n_jobs,
+        )
+    }
+
+    pub fn atom_pair_sparse_bit_fingerprint_list_with_progress(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::SparseBitFingerprint>>, BatchValidationError> {
+        self.atom_pair_sparse_bit_fingerprint_list_with_runtime(params, progress, None)
+    }
+
+    pub fn atom_pair_sparse_bit_fingerprint_list_with_options(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<crate::SparseBitFingerprint>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing sparse-bit AtomPair fingerprints",
+            |progress| {
+                self.atom_pair_sparse_bit_fingerprint_list_with_runtime(params, progress, n_jobs)
+            },
+        )
+    }
+
+    fn atom_pair_sparse_bit_fingerprint_list_with_runtime(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<crate::SparseBitFingerprint>>, BatchValidationError> {
+        let generator =
+            atom_pair_generator_for_batch(params, "batch.atom_pair_sparse_bit_fingerprint")?;
+        self.collect_optional_values_with_options(
+            "batch.atom_pair_sparse_bit_fingerprint",
+            |molecule| {
+                generator
+                    .sparse_bit_fingerprint(
+                        molecule,
+                        &mut crate::fingerprint::atom_pair_function_arguments(params),
+                    )
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            n_jobs,
+        )
+    }
+
+    pub fn atom_pair_fingerprint_list_with_progress(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        self.atom_pair_fingerprint_list_with_runtime(params, progress, None)
+    }
+
+    pub fn atom_pair_fingerprint_list_with_options(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing AtomPair fingerprints",
+            |progress| self.atom_pair_fingerprint_list_with_runtime(params, progress, n_jobs),
+        )
+    }
+
+    fn atom_pair_fingerprint_list_with_runtime(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        let generator = atom_pair_generator_for_batch(params, "batch.atom_pair_fingerprint")?;
+        self.collect_optional_values_with_options(
+            "batch.atom_pair_fingerprint",
+            |molecule| {
+                generator
+                    .fingerprint(
+                        molecule,
+                        &mut crate::fingerprint::atom_pair_function_arguments(params),
+                    )
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            n_jobs,
+        )
+    }
+
+    pub fn atom_pair_fingerprint_with_output_list_with_progress(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::AtomPairFingerprintOutput>>, BatchValidationError> {
+        self.atom_pair_fingerprint_with_output_list_with_runtime(params, progress, None)
+    }
+
+    pub fn atom_pair_fingerprint_with_output_list_with_options(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<crate::AtomPairFingerprintOutput>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing AtomPair fingerprints",
+            |progress| {
+                self.atom_pair_fingerprint_with_output_list_with_runtime(params, progress, n_jobs)
+            },
+        )
+    }
+
+    fn atom_pair_fingerprint_with_output_list_with_runtime(
+        &self,
+        params: &crate::AtomPairFingerprintParams,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<crate::AtomPairFingerprintOutput>>, BatchValidationError> {
+        let generator =
+            atom_pair_generator_for_batch(params, "batch.atom_pair_fingerprint_with_output")?;
+        self.collect_optional_values_with_options(
+            "batch.atom_pair_fingerprint_with_output",
+            |molecule| {
+                let mut arguments = crate::fingerprint::atom_pair_function_arguments(params);
+                let fingerprint = generator
+                    .fingerprint(molecule, &mut arguments)
+                    .map_err(|error| error.to_string())?;
+                Ok(crate::AtomPairFingerprintOutput {
+                    fingerprint,
+                    additional_output: arguments.additional_output,
+                })
             },
             progress,
             n_jobs,

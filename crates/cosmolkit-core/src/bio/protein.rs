@@ -48,6 +48,9 @@ impl Protein {
         &self.structure
     }
 
+    /// Returns the already protein-filtered structural value owned by this
+    /// projection. This does not recover ligands, waters, nucleic acids, or
+    /// other rows removed when the `Protein` was created.
     #[must_use]
     pub fn into_bio_structure(self) -> BioStructure {
         self.structure
@@ -59,11 +62,8 @@ impl Protein {
     }
 
     pub fn from_pdb(path: &str) -> Result<Self, BioReadError> {
-        let text = std::fs::read_to_string(path).map_err(|error| BioReadError::Parse {
-            line_number: 0,
-            message: format!("failed to read PDB file '{path}': {error}"),
-        })?;
-        Self::from_pdb_str(&text)
+        let structure = BioStructure::from_pdb(path)?;
+        Ok(Self::project_from_bio_structure(&structure))
     }
 
     pub fn from_mmcif_str(text: &str, path: &str) -> Result<Self, BioReadError> {
@@ -71,11 +71,8 @@ impl Protein {
     }
 
     pub fn from_mmcif(path: &str) -> Result<Self, BioReadError> {
-        let text = std::fs::read_to_string(path).map_err(|error| BioReadError::Parse {
-            line_number: 0,
-            message: format!("failed to read mmCIF file '{path}': {error}"),
-        })?;
-        Self::from_mmcif_str(&text, path)
+        let structure = BioStructure::from_mmcif(path)?;
+        Ok(Self::project_from_bio_structure(&structure))
     }
 
     pub fn from_str_with_format(

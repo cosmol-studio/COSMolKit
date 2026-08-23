@@ -56,8 +56,36 @@ Typical usage keeps molecule conversion on :class:`cosmolkit.Molecule`::
    Return a :class:`cosmolkit.Molecule`, or ``None`` when the source API returns
    no graph.
 
-Protein API
------------
+Structural API
+--------------
+
+.. autoclass:: cosmolkit.BioStructure
+   :members:
+   :undoc-members:
+   :no-show-inheritance:
+
+.. autoclass:: cosmolkit.StructureModel
+   :members:
+   :no-show-inheritance:
+
+.. autoclass:: cosmolkit.StructureChain
+   :members:
+   :no-show-inheritance:
+
+.. autoclass:: cosmolkit.StructureResidue
+   :members:
+   :no-show-inheritance:
+
+.. autoclass:: cosmolkit.StructureAtom
+   :members:
+   :no-show-inheritance:
+
+.. autoclass:: cosmolkit.StructureEntity
+   :members:
+   :no-show-inheritance:
+
+Protein Projection API
+----------------------
 
 .. autoclass:: cosmolkit.Protein
    :members:

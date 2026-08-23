@@ -828,6 +828,19 @@ impl BioStructure {
         Self::from_pdb_str_with_params(text, crate::io::bio::BioPdbReadParams::default())
     }
 
+    /// Reads a PDB file into the complete structural model.
+    pub fn from_pdb(
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<Self, crate::io::bio::BioReadError> {
+        let path = path.as_ref();
+        let text =
+            std::fs::read_to_string(path).map_err(|error| crate::io::bio::BioReadError::Parse {
+                line_number: 0,
+                message: format!("failed to read PDB file '{}': {error}", path.display()),
+            })?;
+        Self::from_pdb_str(&text)
+    }
+
     /// Reads a Gemmi-aligned PDB structural record stream with explicit PDB reader parameters.
     pub fn from_pdb_str_with_params(
         text: &str,
@@ -839,6 +852,19 @@ impl BioStructure {
     /// Reads a Gemmi-aligned mmCIF structural document into a `BioStructure`.
     pub fn from_mmcif_str(text: &str, path: &str) -> Result<Self, crate::io::bio::BioReadError> {
         Self::from_str_with_format(text, path, BioCoorFormat::Mmcif)
+    }
+
+    /// Reads an mmCIF file into the complete structural model.
+    pub fn from_mmcif(
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<Self, crate::io::bio::BioReadError> {
+        let path = path.as_ref();
+        let text =
+            std::fs::read_to_string(path).map_err(|error| crate::io::bio::BioReadError::Parse {
+                line_number: 0,
+                message: format!("failed to read mmCIF file '{}': {error}", path.display()),
+            })?;
+        Self::from_mmcif_str(&text, &path.to_string_lossy())
     }
 
     /// Reads a Gemmi-aligned structure by detecting the input format from text.

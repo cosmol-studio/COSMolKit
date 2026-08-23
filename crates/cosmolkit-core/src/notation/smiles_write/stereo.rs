@@ -351,6 +351,19 @@ pub(super) fn assign_stereochemistry_for_smiles(
     molecule: &mut Molecule,
     clean_stereo: bool,
 ) -> Result<(), SmilesWriteError> {
+    assign_stereochemistry_on_working_copy(molecule, clean_stereo)
+}
+
+/// Apply the source-backed `MolOps::assignStereochemistry()` pipeline to a
+/// caller-owned working molecule.
+///
+/// Callers that promise a non-mutating public API must clone before entering
+/// this function. Keeping the mutating engine here lets SMILES writing and
+/// fingerprint generation share one stereochemistry implementation.
+pub(crate) fn assign_stereochemistry_on_working_copy(
+    molecule: &mut Molecule,
+    clean_stereo: bool,
+) -> Result<(), SmilesWriteError> {
     // BEGIN RDKIT CPP FUNCTION Chirality::assignStereochemistry dispatcher tail
     // RDKit❗✔️: void assignStereochemistry(ROMol &mol, bool cleanIt, bool force,
     // RDKit❗✔️:                            bool flagPossibleStereoCenters) {

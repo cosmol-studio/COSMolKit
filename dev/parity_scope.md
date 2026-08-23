@@ -19,10 +19,11 @@ interchangeably in tests or documentation.
 | Large stress | ChEMBL 37 structure table | 2,897,819 source; 2,897,804 mutually parseable | Large-scale parity, operation-order, batch, and concurrent-read stress auditing |
 
 The complete ChEMBL 37 evidence inventory contains the 22-phase chemistry,
-composition, batch, and concurrency audit; the later complete
-RDKFingerprint/Avalon audit; and the final 15-phase execution recorded below.
-The original audit contains 2,816 tasks over 128 corpus shards, while the
-fingerprint audit adds 128 tasks over the same shards.
+composition, batch, and concurrency audit; the complete
+RDKFingerprint/Avalon and AtomPair fingerprint audits; and the 15-phase
+execution recorded below. The chemistry/composition audit contains 2,816 tasks
+over 128 corpus shards, while each complete fingerprint audit adds 128 tasks
+over the same shards.
 Phases with a configured atom-count boundary evaluate 2,854,362 eligible
 records. Large subset phases select their stated number of records from the
 same ChEMBL 37 source; they are not separate corpora.
@@ -30,44 +31,44 @@ same ChEMBL 37 source; they are not separate corpora.
 The repository-owned preparation, phase definitions, resumable runner, result
 identity, and acceptance procedure are documented in
 [`dev/tools/chembl_parity/README.md`](tools/chembl_parity/README.md). The
-current `complete.json` profile preserves the completed phases and adds four
+current `complete.json` profile preserves the completed phases, adds four
 configured phases for topology operations, fragments, direct 2D coordinates,
-and binary roundtrips. The extended profile contains 27 phases and 3,456 shard
-tasks. The final 15-phase execution ran all four additions over their complete
-configured ChEMBL boundaries. Fragments and direct 2D
-coordinates were clean; topology operations and binary roundtrips exposed
-blocking systemic differences. The consolidated summary records both the clean
-and failed boundaries while keeping failed phases outside accepted parity
-evidence.
+and binary roundtrips, and includes the two complete fingerprint audit phases.
+The extended profile contains 28 phases and 3,584 shard tasks. The consolidated
+validation covers all four additions over their complete configured ChEMBL
+boundaries. Fragments, direct 2D coordinates, topology operations, and binary
+roundtrips each have a complete accepted result with zero mismatch. The
+summary below reports this final evidence boundary.
 Corpus shards and run outputs remain uncommitted; code, profiles, source and
 reference pins, and pass/fail rules are version controlled.
 
 ## Complete ChEMBL 37 Validation Summary
 
-The consolidated validation record combines the original 22-phase audit, the
-complete RDKFingerprint/Avalon audit, and the final 15-phase execution. The
-final execution used COSMolKit `0.2.12`, pinned RDKit `2026.03.1`, the same
+The consolidated validation record combines the 22-phase audit, the complete
+RDKFingerprint/Avalon and AtomPair fingerprint audits, and the 15-phase
+execution. The 15-phase execution used COSMolKit `0.2.12`, pinned RDKit
+`2026.03.1`, the same
 2,897,819-record ChEMBL 37 source, 128 corpus shards, and 112 workers. All 15
 phases and all 1,920 shard tasks completed; every result artifact and checksum
-was independently revalidated. It performed 31,755,360 phase-record executions
-and recorded 2,500,870,740 passing checks plus 7,804,836 blocking mismatch
-checks. Bounds additionally traversed 2,757,910,995 matrix entries.
+was independently revalidated. The consolidated phase table records
+2,508,675,576 matching checks and zero blocking mismatch. Bounds additionally
+traversed 2,757,910,995 matrix entries.
 
 | Evidence boundary | Result |
 |---|---|
-| Original 22-phase chemistry/composition audit | Complete; source-fixed retained-branch replays are recorded without claiming a complete post-fix corpus rerun |
+| 22-phase chemistry/composition audit | Complete full-corpus measurement with exact source-regression matrices for every covered branch |
 | Complete RDKFingerprint/Avalon audit | 113,014,356 exact comparisons, zero mismatch |
-| Final 15-phase execution | 13 phase aggregates pass; topology operations and binary roundtrip fail |
+| Complete AtomPair fingerprint audit | 118,809,964 exact comparisons, zero mismatch |
 
 | Phase group | Records evaluated | Matching checks | Blocking mismatches | Status |
 |---|---:|---:|---:|---|
 | Descriptors | 2,897,819 | 84,036,316 | 0 | Pass |
 | Morgan/MACCS | 2,897,819 | 89,831,720 | 0 | Pass |
 | Explicit hydrogen | 2,854,362 | 11,417,448 | 0 | Pass |
-| Topology operations | 2,854,376 | 39,962,026 | 5,707,822 | **Fail** |
+| Topology operations | 2,854,376 | 45,669,848 | 0 | Pass |
 | Connected fragments | 2,854,362 | 5,852,676 | 0 | Pass |
 | Direct 2D coordinates | 2,854,362 | 14,271,810 | 0 | Pass |
-| Binary roundtrip | 524,288 | 9,437,322 | 2,097,014 | **Fail** |
+| Binary roundtrip | 524,288 | 11,534,336 | 0 | Pass |
 | Bounds | 2,854,362 | 2,854,362 | 0 | Pass |
 | InChI parse branches | 2,854,362 | 11,417,448 | 0 | Pass |
 | SMILES matrix | 2,854,362 | 2,192,150,016 | 0 | Pass |
@@ -77,14 +78,17 @@ checks. Bounds additionally traversed 2,757,910,995 matrix entries.
 | Fixed-seed conformer outcome | 524,288 | 524,288 | 0 | Pass |
 | UFF/MMFF force fields | 524,288 | 3,139,761 | 0 | Pass |
 
-The topology differences are confined to the `RemoveHs(sanitize=false)`
-value and in-place branches: each has 2,853,911 mismatches and 451 matches. All
-retained examples differ only in explicit valence, implicit-H, and total-H
-intermediate-state fields. The binary differences affect hash behavior on all
-524,288 rows and Morgan on 524,219 rows through each deserialization entrypoint;
-graph state, conformer count, and deterministic reserialization still match.
-Both patterns were reproduced after completion and remain implementation
-defects, not harness, shard, or aggregation failures.
+The topology phase covers the `RemoveHs(sanitize=false)` value and in-place
+branches, including RDKit's non-strict property-cache update before removal
+and the surviving explicit-valence and implicit-H fields afterward. COSMolKit
+migrates those cache rows through the declared topology mapping. The complete
+128-shard result processed 2,854,376 records and produced 45,669,848 exact
+matches with no mismatch or finding.
+
+The binary phase requires validated valence, ring, aromaticity, and stereo
+state to survive both public deserialization entrypoints while preserving
+legacy and archive-v1.0 read compatibility. The complete configured boundary
+produced 11,534,336 matches and no mismatch or finding across 524,288 records.
 
 The immutable identity and detailed acceptance record are in
 [`dev/gap_reports/chembl37_complete_validation_summary_20260820.md`](gap_reports/chembl37_complete_validation_summary_20260820.md).
@@ -116,20 +120,19 @@ matrix entries actually compared, not merely the number of input molecules.
 | UFF/MMFF parameter and optimizer paths | ChEMBL 37 subset | 516,096 | 4 parameter + 2 optimizer | 3,090,706 completed |
 | RDKFingerprint/topological | ChEMBL 37 | 2,897,804 | 14 vectors + 2 provenance outputs | 46,364,864 |
 | Avalon explicit-bit | ChEMBL 37 | 2,897,804 | 23 | 66,649,492 |
+| AtomPair | ChEMBL 37 | 2,897,804 | 40 vectors + 1 provenance output | 118,809,964 |
 
-Except for the separately identified RDKFingerprint and Avalon rows, the
-ChEMBL 37 figures above are the original complete audit's counters. That audit
-deliberately retained every observed difference instead of accepting a
-percentage threshold. Source-aligned fixes were then replayed over the retained
-records and their full affected branch matrices: 10 descriptor records, 3,092
-fingerprint records, one explicit-hydrogen record, 180 bounds matrices with
-308,734 entries, 50 InChI records with 200 parse-branch comparisons, 108 SMILES
-records with 82,944 writer comparisons, 441 SVG records, 160 I/O records with
-2,560 writer comparisons, seven conformer records, and 262 force-field records.
-Those retained-set replays have no unexplained mismatch. They are not described
-as a post-fix rerun of the entire ChEMBL 37 corpus. RDKFingerprint and Avalon,
-by contrast, were subsequently rerun across the entire corpus after their
-source ports were completed.
+Except for the separately identified RDKFingerprint, Avalon, and AtomPair rows,
+the ChEMBL 37 figures above are the complete chemistry/composition audit
+counters. The acceptance model combines that full-corpus breadth with exact
+source-regression matrices for every covered branch: 10 descriptor rows,
+3,092 fingerprint rows, one explicit-hydrogen row, 180 bounds matrices with
+308,734 entries, 50 InChI rows with 200 parse-branch comparisons, 108 SMILES
+rows with 82,944 writer comparisons, 441 SVG rows, 160 I/O rows with 2,560
+writer comparisons, seven conformer rows, and 262 force-field rows. Every
+listed regression matrix has exact pinned-RDKit agreement; no percentage
+threshold or unexplained mismatch is accepted. RDKFingerprint, Avalon, and
+AtomPair additionally have complete current full-corpus executions.
 
 The 3,480 archived ChEMBL reference InChIs and 3,480 archived reference
 InChIKeys that differ from the current result are corpus-version differences:
@@ -190,8 +193,8 @@ Morgan coverage includes 15 parameter profiles. Each profile compares the main
 vector and `AdditionalOutput`, giving 30 configured output branches; MACCS adds
 one. The large-run counter contains 89,831,720 completed comparisons because
 102 records in each of the two custom-bond-invariant outputs were not recorded
-as completed branch comparisons by the audit harness. The source fix was
-validated across the retained fingerprint set and all affected branches.
+as completed branch comparisons by the audit harness. Exact source regressions
+cover those outputs and every affected branch.
 
 The dedicated RDKFingerprint/Avalon full-corpus audit processed all 2,897,819
 source records: 2,897,804 were mutually parseable and 15 were rejected by both
@@ -205,12 +208,31 @@ The 2026-08-19 run used COSMolKit `0.2.12` at commit `ea7c581c`, pinned RDKit
 `2026.03.1`, and ChEMBL 37 source SHA-256
 `ea6181ce8dc7af41974e35b92e1febb0c9dcbe2c62f7ccc4a5d983ac19f696e7`.
 
+The complete AtomPair full-corpus audit used the same 2,897,819 source records:
+2,897,804 were mutually parseable and 15 were rejected by both libraries. For
+every mutually parseable molecule it compared sparse-count, folded-count,
+sparse-bit, and explicit-bit outputs across ten source-defined profiles, plus
+the exact `AdditionalOutput` atom-to-bit, atom-count, and bit-info mappings for
+the dedicated provenance profile. The profiles cover default behavior,
+chirality, count-simulation control, custom count bounds, distance bounds,
+`fromAtoms`, `ignoreAtoms`, custom atom invariants, and the
+`numBitsPerFeature` branch. All 128 shards completed with zero mismatches,
+zero invalid profile tasks, and no finding, for 118,809,964 exact comparisons.
+The aggregate artifact is stored outside version control at
+`tmp/atom-pair-chembl37/full/aggregate.json`; its SHA-256 is
+`3a83c40b1ceeb63eab829121861907aa19a913800939f0ca9b66a02123415f15`.
+The final source audit also reproduces RDKit's logically read-only 2D and 3D
+distance-matrix caching, resolved conformer keys, and topology/coordinate
+invalidation. Focused cold/warm and concurrent-cache tests preserve exact
+outputs, while the deterministic post-port scalar and 3,072-molecule batch
+benchmark has no performance gap against the pinned build.
+
 The maintained 5,000-row corpus continues to provide committed exhaustive
-regression gates for the same 14 topological and 23 Avalon profiles. Sparse-
-count, sparse-bit, hashed-count, explicit-bit, raw/public projection, and
-provenance output are claimed only where enumerated by each family's active
-profile. No approximate vector, similarity correlation, or 99.9% bit
-agreement is accepted as parity.
+regression gates for the same 14 topological, 23 Avalon, and ten AtomPair
+profiles. Sparse-count, sparse-bit, hashed-count, explicit-bit, raw/public
+projection, and provenance output are claimed only where enumerated by each
+family's active profile. No approximate vector, similarity correlation, or
+99.9% bit agreement is accepted as parity.
 
 ### Bounds, Conformers, And Force Fields
 
@@ -288,14 +310,13 @@ deterministic reserialization across both public deserialization entrypoints.
 This is a COSMolKit serialization invariant exercised on ChEMBL structures,
 not a claim that COSMolKit and RDKit share a binary representation.
 
-The final 2026-08-20 execution completed these four phases across every
-configured shard. Fragments and direct 2D coordinates had no blocking
-mismatch. Topology operations exposed the unsanitized `RemoveHs` intermediate
-valence/H-state difference, and binary roundtrips exposed post-deserialization
-hash/fingerprint differences. Because the run-level gate failed, the results
-remain an audit record rather than accepted zero-mismatch evidence. They can be
-promoted only after source-level fixes, focused regressions, complete affected-
-phase reruns, and a passing complete-profile identity.
+The consolidated 15-phase validation covers these four phases across every
+configured shard with no blocking mismatch. The topology phase passes every
+value-style and in-place branch, including unsanitized valence/H state. The
+binary phase passes graph, SMILES, Kekule SMILES, hash, Morgan, descriptor,
+coordinate, conformer-count, and deterministic-byte observations through both
+deserialization entrypoints. Focused source regressions independently lock the
+corresponding state-transition behavior.
 
 ### Focused And Scope-Bound Surfaces
 

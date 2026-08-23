@@ -171,6 +171,7 @@ pub(crate) struct AddHydrogen {
 #[allow(dead_code)]
 pub(crate) struct RemoveHsAssignment {
     pub(crate) atoms_to_remove: Vec<AtomId>,
+    pub(crate) atom_valence_cache_updates: Vec<AtomValenceCacheUpdate>,
     pub(crate) atom_explicit_hydrogen_updates: Vec<AtomExplicitHydrogenUpdate>,
     pub(crate) atom_chirality_inversions: Vec<AtomId>,
     pub(crate) atom_property_updates: Vec<AtomPropertyUpdate>,
@@ -180,6 +181,14 @@ pub(crate) struct RemoveHsAssignment {
     pub(crate) sgroup_updates: Vec<SGroupRemoveHsUpdate>,
     pub(crate) sanitize_after_removal: bool,
     pub(crate) clear_computed_properties: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) struct AtomValenceCacheUpdate {
+    pub(crate) atom: AtomId,
+    pub(crate) explicit_valence: i32,
+    pub(crate) implicit_hydrogens: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -736,11 +745,17 @@ fn remove_hs_assignment_inner(
         filter_sgroup_emptying_hydrogens_for_assignment(read_parts, &mut atoms_to_remove);
     }
 
-    // RDKit✔️❌:   for (auto atom : mol.atoms()) { atom->updatePropertyCache(false); }
-    // COSMolKit computes the valence data needed by molRemoveH without mutating molecule cache here.
-    let cached_total_valence = cached_total_valence(read_parts)?;
+    // RDKit✔️❌:   for (auto atom : mol.atoms()) {
+    // RDKit✔️❌:     atom->updatePropertyCache(false);
+    // RDKit✔️❌:   }
+    // The assignment carries those per-atom cache values across the later
+    // compacting topology mapping. This mirrors Atom's value fields; they are
+    // not computed RDProps and therefore survive mol.clearComputedProps(true).
+    let (atom_valence_cache_updates, cached_total_valence) =
+        remove_hs_property_cache_update(read_parts)?;
     let mut assignment = RemoveHsAssignment {
         atoms_to_remove,
+        atom_valence_cache_updates,
         sanitize_after_removal: false,
         clear_computed_properties: true,
         ..RemoveHsAssignment::default()
@@ -769,7 +784,7 @@ fn remove_hs_assignment_inner(
             read_parts,
             atom,
             params,
-            cached_total_valence.as_deref(),
+            Some(&cached_total_valence),
             &mut assignment,
         )?;
     }
@@ -823,6 +838,7 @@ fn merge_remove_hs_assignments(
     second: RemoveHsAssignment,
 ) -> RemoveHsAssignment {
     first.atoms_to_remove.extend(second.atoms_to_remove);
+    first.atom_valence_cache_updates = second.atom_valence_cache_updates;
     first
         .atom_explicit_hydrogen_updates
         .extend(second.atom_explicit_hydrogen_updates);
@@ -994,6 +1010,9 @@ fn remap_remove_hs_assignment_to_original(
     mapping: &crate::molecule::TopologyMapping,
     branch: &'static str,
 ) -> Result<RemoveHsAssignment, RemoveHydrogensError> {
+    for update in &mut assignment.atom_valence_cache_updates {
+        update.atom = original_atom_from_prepass(mapping, update.atom, branch)?;
+    }
     for atom in &mut assignment.atoms_to_remove {
         *atom = original_atom_from_prepass(mapping, *atom, branch)?;
     }
@@ -1181,15 +1200,13 @@ fn filter_sgroup_emptying_hydrogens_for_assignment(
     // END RDKIT CPP FUNCTION filter_sgroup_emptying_hydrogens
 }
 
-fn cached_total_valence(
+fn remove_hs_property_cache_update(
     read_parts: MoleculeReadParts<'_>,
-) -> Result<Option<Vec<i32>>, RemoveHydrogensError> {
+) -> Result<(Vec<AtomValenceCacheUpdate>, Vec<i32>), RemoveHydrogensError> {
     // BEGIN RDKIT CPP BODY MolOps::removeHs property-cache preparation
-    // RDKit✔️❌:   for (auto atom : mol.atoms()) { atom->updatePropertyCache(false); }
-    // COSMolKit computes the equivalent valence facts as immutable assignment input.
-    if read_parts.num_atoms() == 0 {
-        return Ok(None);
-    }
+    // RDKit✔️❌:   for (auto atom : mol.atoms()) {
+    // RDKit✔️❌:     atom->updatePropertyCache(false);
+    // RDKit✔️❌:   }
     let assignment =
         read_parts
             .assign_valence_with_options(ValenceModel::RdkitLike, false)
@@ -1197,14 +1214,22 @@ fn cached_total_valence(
                 branch: "MolOps::removeHs/updatePropertyCache",
                 reason: "remove-H requires a modeled RDKit-like property-cache update before heavy-atom explicit H decisions",
             })?;
-    Ok(Some(
-        assignment
-            .explicit_valence
-            .iter()
-            .zip(assignment.implicit_hydrogens.iter())
-            .map(|(explicit, implicit)| *explicit + *implicit)
-            .collect(),
-    ))
+    let mut updates = Vec::with_capacity(read_parts.num_atoms());
+    let mut total_valence = Vec::with_capacity(read_parts.num_atoms());
+    for (index, (explicit_valence, implicit_hydrogens)) in assignment
+        .explicit_valence
+        .into_iter()
+        .zip(assignment.implicit_hydrogens)
+        .enumerate()
+    {
+        updates.push(AtomValenceCacheUpdate {
+            atom: AtomId::new(index),
+            explicit_valence,
+            implicit_hydrogens,
+        });
+        total_valence.push(explicit_valence + implicit_hydrogens);
+    }
+    Ok((updates, total_valence))
     // END RDKIT CPP BODY MolOps::removeHs property-cache preparation
 }
 

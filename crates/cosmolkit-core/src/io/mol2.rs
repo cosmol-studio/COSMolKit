@@ -3112,7 +3112,14 @@ mod tests {
             .without_hydrogens_with_sanitize(false)
             .unwrap();
 
-        assert!(cleanup_then_remove_hs.derived_cache().valence.is_none());
+        assert_eq!(
+            cleanup_then_remove_hs.derived_cache().valence,
+            Some(crate::ValenceAssignment {
+                explicit_valence: vec![1],
+                implicit_hydrogens: vec![0],
+            }),
+            "removeHs(sanitize=false) retains the pre-removal Atom property-cache fields"
+        );
         assert!(cleanup_then_remove_hs.derived_cache().rings.is_none());
 
         let sanitized =

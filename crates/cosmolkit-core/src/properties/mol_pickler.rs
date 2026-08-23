@@ -15,10 +15,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Atom, AtomId, Bond, BondDirection, BondId, BondOrder, BondStereo, ChiralTag, Conformer3D,
-    CoordinateDimension, Hybridization, Molecule, SGroupAttachPoint, SGroupBondRole, SGroupBracket,
-    SGroupBracketStyle, SGroupCState, SGroupConnection, SGroupData, SGroupDisplay, SdfPropertyList,
-    SdfPropertyListTarget, StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId,
-    SubstanceGroupKind, TopologyTrust,
+    CoordinateDimension, Hybridization, Molecule, RingFindType, RingInfo, SGroupAttachPoint,
+    SGroupBondRole, SGroupBracket, SGroupBracketStyle, SGroupCState, SGroupConnection, SGroupData,
+    SGroupDisplay, SdfPropertyList, SdfPropertyListTarget, StereoGroup, StereoGroupKind,
+    SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyTrust, ValenceAssignment,
+    molecule::DerivedCacheBlock,
 };
 
 // ──────────────────────────────────────────────
@@ -27,14 +28,17 @@ use crate::{
 const PICKLE_VERSION: u8 = 2;
 const ARCHIVE_MAGIC: &[u8; 8] = b"CSMOLPKL";
 const ARCHIVE_MAJOR: u16 = 1;
-const ARCHIVE_MINOR: u16 = 0;
+const ARCHIVE_MINOR: u16 = 1;
 const SECTION_FLAG_REQUIRED: u8 = 1;
 const SECTION_CODEC_RAW: u8 = 0;
 const SECTION_CODEC_POSTCARD: u8 = 1;
 const SECTION_MANIFEST: u16 = 1;
 const SECTION_MOLECULE_STATE: u16 = 2;
+const SECTION_DERIVED_STATE: u16 = 3;
 const MANIFEST_VERSION: u16 = 1;
 const MOLECULE_STATE_VERSION: u16 = 1;
+const DERIVED_STATE_VERSION: u16 = 1;
+const MAX_DERIVED_ROWS: usize = 1_000_000;
 
 // ──────────────────────────────────────────────
 // Error type
@@ -295,6 +299,376 @@ fn read_u32_le(r: &mut PickleReader<'_>) -> Result<u32, PickleError> {
     Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
 }
 
+fn checked_u32(value: usize, context: &str) -> Result<u32, PickleError> {
+    u32::try_from(value).map_err(|_| {
+        PickleError::InvalidArchive(format!(
+            "{context} exceeds the archive u32 boundary: {value}"
+        ))
+    })
+}
+
+fn write_atom_id_rows(
+    w: &mut PickleWriter,
+    rows: &[Vec<AtomId>],
+    context: &str,
+) -> Result<(), PickleError> {
+    w.write_u32(checked_u32(rows.len(), context)?);
+    for row in rows {
+        w.write_u32(checked_u32(row.len(), context)?);
+        for id in row {
+            w.write_u32(checked_u32(id.index(), context)?);
+        }
+    }
+    Ok(())
+}
+
+fn write_bond_id_rows(
+    w: &mut PickleWriter,
+    rows: &[Vec<BondId>],
+    context: &str,
+) -> Result<(), PickleError> {
+    w.write_u32(checked_u32(rows.len(), context)?);
+    for row in rows {
+        w.write_u32(checked_u32(row.len(), context)?);
+        for id in row {
+            w.write_u32(checked_u32(id.index(), context)?);
+        }
+    }
+    Ok(())
+}
+
+fn read_row_count(r: &mut PickleReader<'_>, context: &str) -> Result<usize, PickleError> {
+    let count = r.read_u32()? as usize;
+    if count > MAX_DERIVED_ROWS {
+        return Err(PickleError::InvalidArchive(format!(
+            "{context} row count exceeds the archive limit: {count}"
+        )));
+    }
+    Ok(count)
+}
+
+fn read_atom_id_rows(
+    r: &mut PickleReader<'_>,
+    atom_count: usize,
+    context: &str,
+) -> Result<Vec<Vec<AtomId>>, PickleError> {
+    let row_count = read_row_count(r, context)?;
+    let mut rows = Vec::with_capacity(row_count);
+    for _ in 0..row_count {
+        let count = r.read_u32()? as usize;
+        if count > atom_count {
+            return Err(PickleError::InvalidArchive(format!(
+                "{context} row length {count} exceeds atom count {atom_count}"
+            )));
+        }
+        let mut row = Vec::with_capacity(count);
+        for _ in 0..count {
+            let index = r.read_u32()? as usize;
+            if index >= atom_count {
+                return Err(PickleError::InvalidArchive(format!(
+                    "{context} atom index {index} is out of range for {atom_count} atoms"
+                )));
+            }
+            row.push(AtomId::new(index));
+        }
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
+fn read_bond_id_rows(
+    r: &mut PickleReader<'_>,
+    bond_count: usize,
+    context: &str,
+) -> Result<Vec<Vec<BondId>>, PickleError> {
+    let row_count = read_row_count(r, context)?;
+    let mut rows = Vec::with_capacity(row_count);
+    for _ in 0..row_count {
+        let count = r.read_u32()? as usize;
+        if count > bond_count {
+            return Err(PickleError::InvalidArchive(format!(
+                "{context} row length {count} exceeds bond count {bond_count}"
+            )));
+        }
+        let mut row = Vec::with_capacity(count);
+        for _ in 0..count {
+            let index = r.read_u32()? as usize;
+            if index >= bond_count {
+                return Err(PickleError::InvalidArchive(format!(
+                    "{context} bond index {index} is out of range for {bond_count} bonds"
+                )));
+            }
+            row.push(BondId::new(index));
+        }
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
+fn write_ring_find_type(w: &mut PickleWriter, find_type: RingFindType) {
+    w.write_u8(match find_type {
+        RingFindType::OtherOrUnknown => 0,
+        RingFindType::Fast => 1,
+        RingFindType::Sssr => 2,
+        RingFindType::SymmSssr => 3,
+    });
+}
+
+fn read_ring_find_type(r: &mut PickleReader<'_>) -> Result<RingFindType, PickleError> {
+    match r.read_u8()? {
+        0 => Ok(RingFindType::OtherOrUnknown),
+        1 => Ok(RingFindType::Fast),
+        2 => Ok(RingFindType::Sssr),
+        3 => Ok(RingFindType::SymmSssr),
+        value => Err(PickleError::InvalidEnumValue {
+            value,
+            type_name: "RingFindType",
+        }),
+    }
+}
+
+fn write_ring_info(w: &mut PickleWriter, ring_info: &RingInfo) -> Result<(), PickleError> {
+    // RDKit✔️✔️: const RingInfo *ringInfo = mol->getRingInfo();
+    // RDKit✔️✔️: if (ringInfo && ringInfo->isInitialized()) {
+    // RDKit✔️✔️:   switch (ringInfo->getRingType()) {
+    // RDKit✔️✔️:     case RDKit::FIND_RING_TYPE::FIND_RING_TYPE_FAST:
+    // RDKit✔️✔️:       streamWrite(ss, BEGINFASTFIND);
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case RDKit::FIND_RING_TYPE::FIND_RING_TYPE_SSSR:
+    // RDKit✔️✔️:       streamWrite(ss, BEGINSSSR);
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case RDKit::FIND_RING_TYPE::FIND_RING_TYPE_SYMM_SSSR:
+    // RDKit✔️✔️:       streamWrite(ss, BEGINSYMMSSSR);
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     default:
+    // RDKit✔️✔️:       streamWrite(ss, BEGINFINDOTHERORUNKNOWN);
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   _pickleSSSR<T>(ss, ringInfo, atomIdxMap);
+    // RDKit✔️✔️: }
+    w.write_bool(ring_info.is_initialized());
+    write_ring_find_type(w, ring_info.persisted_find_type());
+    write_atom_id_rows(w, ring_info.atom_rings(), "atom rings")?;
+    write_bond_id_rows(w, ring_info.bond_rings(), "bond rings")?;
+    write_atom_id_rows(w, ring_info.atom_ring_families(), "atom ring families")?;
+    write_bond_id_rows(w, ring_info.bond_ring_families(), "bond ring families")?;
+    match ring_info.persisted_relevant_cycle_count() {
+        Some(count) => {
+            w.write_bool(true);
+            w.write_u32(checked_u32(count, "relevant cycle count")?);
+        }
+        None => w.write_bool(false),
+    }
+    let fused_rings = ring_info.persisted_fused_rings();
+    w.write_u32(checked_u32(fused_rings.len(), "fused-ring matrix")?);
+    for row in fused_rings {
+        w.write_u32(checked_u32(row.len(), "fused-ring matrix row")?);
+        for value in row {
+            w.write_bool(*value);
+        }
+    }
+    let num_fused_bonds = ring_info.persisted_num_fused_bonds();
+    w.write_u32(checked_u32(
+        num_fused_bonds.len(),
+        "fused-bond count table",
+    )?);
+    for count in num_fused_bonds {
+        w.write_u32(checked_u32(*count, "fused-bond count")?);
+    }
+    Ok(())
+}
+
+fn read_ring_info(
+    r: &mut PickleReader<'_>,
+    atom_count: usize,
+    bond_count: usize,
+) -> Result<RingInfo, PickleError> {
+    // RDKit✔️✔️: RingInfo *ringInfo = mol->getRingInfo();
+    // RDKit✔️✔️: ringInfo->initialize(ringType);
+    // RDKit✔️✔️: if (numRings > 0) {
+    // RDKit✔️✔️:   ringInfo->preallocate(mol->getNumAtoms(), mol->getNumBonds());
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < static_cast<unsigned int>(numRings); i++) {
+    // RDKit✔️✔️:     INT_VECT atoms(static_cast<int>(ringSize));
+    // RDKit✔️✔️:     INT_VECT bonds(static_cast<int>(ringSize));
+    // RDKit✔️✔️:     ringInfo->addRing(atoms, bonds);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    let initialized = r.read_bool()?;
+    let find_type = read_ring_find_type(r)?;
+    let atom_rings = read_atom_id_rows(r, atom_count, "atom rings")?;
+    let bond_rings = read_bond_id_rows(r, bond_count, "bond rings")?;
+    let atom_ring_families = read_atom_id_rows(r, atom_count, "atom ring families")?;
+    let bond_ring_families = read_bond_id_rows(r, bond_count, "bond ring families")?;
+    let relevant_cycle_count = if r.read_bool()? {
+        Some(r.read_u32()? as usize)
+    } else {
+        None
+    };
+    let fused_row_count = read_row_count(r, "fused-ring matrix")?;
+    let mut fused_rings = Vec::with_capacity(fused_row_count);
+    for _ in 0..fused_row_count {
+        let count = read_row_count(r, "fused-ring matrix row")?;
+        let mut row = Vec::with_capacity(count);
+        for _ in 0..count {
+            row.push(r.read_bool()?);
+        }
+        fused_rings.push(row);
+    }
+    let fused_bond_count = read_row_count(r, "fused-bond count table")?;
+    let mut num_fused_bonds = Vec::with_capacity(fused_bond_count);
+    for _ in 0..fused_bond_count {
+        num_fused_bonds.push(r.read_u32()? as usize);
+    }
+
+    RingInfo::from_persisted_components(
+        initialized,
+        find_type,
+        atom_count,
+        bond_count,
+        atom_rings,
+        bond_rings,
+        atom_ring_families,
+        bond_ring_families,
+        relevant_cycle_count,
+        fused_rings,
+        num_fused_bonds,
+    )
+    .map_err(|message| PickleError::InvalidArchive(message.to_string()))
+}
+
+fn encode_derived_state(mol: &Molecule) -> Result<Vec<u8>, PickleError> {
+    let cache = mol.derived_cache();
+    let mut w = PickleWriter::new();
+
+    match &cache.rings {
+        Some(rings) => {
+            w.write_bool(true);
+            write_ring_info(&mut w, rings)?;
+        }
+        None => w.write_bool(false),
+    }
+    match &cache.ring_families {
+        Some(rings) => {
+            w.write_bool(true);
+            write_ring_info(&mut w, rings)?;
+        }
+        None => w.write_bool(false),
+    }
+
+    // RDKit✔️✔️: if (atom->d_explicitValence > 0) {
+    // RDKit✔️✔️:   tmpChar = static_cast<char>(atom->d_explicitValence);
+    // RDKit✔️✔️:   propFlags |= 1 << 5;
+    // RDKit✔️✔️:   streamWrite(tss, tmpChar);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: if (atom->d_implicitValence > 0) {
+    // RDKit✔️✔️:   tmpChar = static_cast<char>(atom->d_implicitValence);
+    // RDKit✔️✔️:   propFlags |= 1 << 6;
+    // RDKit✔️✔️:   streamWrite(tss, tmpChar);
+    // RDKit✔️✔️: }
+    match &cache.valence {
+        Some(valence) => {
+            if valence.explicit_valence.len() != mol.num_atoms()
+                || valence.implicit_hydrogens.len() != mol.num_atoms()
+            {
+                return Err(PickleError::InvalidMolecule(
+                    "valence cache row count does not match atom count".to_string(),
+                ));
+            }
+            w.write_bool(true);
+            w.write_u32(checked_u32(
+                valence.explicit_valence.len(),
+                "explicit valence table",
+            )?);
+            for value in &valence.explicit_valence {
+                w.write_i32(*value);
+            }
+            w.write_u32(checked_u32(
+                valence.implicit_hydrogens.len(),
+                "implicit hydrogen table",
+            )?);
+            for value in &valence.implicit_hydrogens {
+                w.write_i32(*value);
+            }
+        }
+        None => w.write_bool(false),
+    }
+    w.write_bool(cache.aromaticity_valid);
+    w.write_bool(cache.stereo_valid);
+    Ok(w.into_inner())
+}
+
+fn decode_derived_state(data: &[u8], mol: &Molecule) -> Result<DerivedCacheBlock, PickleError> {
+    let mut r = PickleReader::new(data);
+    let rings = if r.read_bool()? {
+        Some(read_ring_info(&mut r, mol.num_atoms(), mol.num_bonds())?)
+    } else {
+        None
+    };
+    let ring_families = if r.read_bool()? {
+        Some(read_ring_info(&mut r, mol.num_atoms(), mol.num_bonds())?)
+    } else {
+        None
+    };
+
+    // RDKit✔️✔️: if (propFlags & (1 << 5)) {
+    // RDKit✔️✔️:   streamRead(ss, tmpChar, version);
+    // RDKit✔️✔️: } else {
+    // RDKit✔️✔️:   tmpChar = 0;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: atom->d_explicitValence = tmpChar;
+    // RDKit✔️✔️: if (propFlags & (1 << 6)) {
+    // RDKit✔️✔️:   streamRead(ss, tmpChar, version);
+    // RDKit✔️✔️: } else {
+    // RDKit✔️✔️:   tmpChar = 0;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: atom->d_implicitValence = tmpChar;
+    let valence = if r.read_bool()? {
+        let explicit_count = r.read_u32()? as usize;
+        if explicit_count != mol.num_atoms() {
+            return Err(PickleError::InvalidArchive(format!(
+                "explicit valence rows {explicit_count} do not match atom count {}",
+                mol.num_atoms()
+            )));
+        }
+        let mut explicit_valence = Vec::with_capacity(explicit_count);
+        for _ in 0..explicit_count {
+            explicit_valence.push(r.read_i32()?);
+        }
+        let implicit_count = r.read_u32()? as usize;
+        if implicit_count != mol.num_atoms() {
+            return Err(PickleError::InvalidArchive(format!(
+                "implicit hydrogen rows {implicit_count} do not match atom count {}",
+                mol.num_atoms()
+            )));
+        }
+        let mut implicit_hydrogens = Vec::with_capacity(implicit_count);
+        for _ in 0..implicit_count {
+            implicit_hydrogens.push(r.read_i32()?);
+        }
+        Some(ValenceAssignment {
+            explicit_valence,
+            implicit_hydrogens,
+        })
+    } else {
+        None
+    };
+    let aromaticity_valid = r.read_bool()?;
+    let stereo_valid = r.read_bool()?;
+    if r.remaining() != 0 {
+        return Err(PickleError::InvalidArchive(format!(
+            "trailing bytes after derived state: {}",
+            r.remaining()
+        )));
+    }
+    Ok(DerivedCacheBlock {
+        rings,
+        ring_families,
+        valence,
+        aromaticity_valid,
+        stereo_valid,
+    })
+}
+
 fn archive_manifest() -> ArchiveManifestV1 {
     ArchiveManifestV1 {
         crate_version: crate::version().to_string(),
@@ -341,16 +715,26 @@ fn write_archive_section(
     Ok(())
 }
 
-fn encode_sectioned_archive(molecule_state: Vec<u8>) -> Result<Vec<u8>, PickleError> {
+fn encode_sectioned_archive(
+    molecule_state: Vec<u8>,
+    derived_state: Vec<u8>,
+) -> Result<Vec<u8>, PickleError> {
     let manifest = encode_manifest()?;
     let molecule_state = encode_molecule_state(molecule_state)?;
     let mut buf = Vec::with_capacity(
-        ARCHIVE_MAGIC.len() + 2 + 2 + 2 + 20 + manifest.len() + molecule_state.len(),
+        ARCHIVE_MAGIC.len()
+            + 2
+            + 2
+            + 2
+            + 30
+            + manifest.len()
+            + molecule_state.len()
+            + derived_state.len(),
     );
     buf.extend_from_slice(ARCHIVE_MAGIC);
     write_u16_le(&mut buf, ARCHIVE_MAJOR);
     write_u16_le(&mut buf, ARCHIVE_MINOR);
-    write_u16_le(&mut buf, 2);
+    write_u16_le(&mut buf, 3);
     write_archive_section(
         &mut buf,
         SECTION_MANIFEST,
@@ -367,10 +751,20 @@ fn encode_sectioned_archive(molecule_state: Vec<u8>) -> Result<Vec<u8>, PickleEr
         SECTION_CODEC_POSTCARD,
         &molecule_state,
     )?;
+    write_archive_section(
+        &mut buf,
+        SECTION_DERIVED_STATE,
+        DERIVED_STATE_VERSION,
+        SECTION_FLAG_REQUIRED,
+        SECTION_CODEC_RAW,
+        &derived_state,
+    )?;
     Ok(buf)
 }
 
-fn read_archive_sections<'a>(data: &'a [u8]) -> Result<Vec<ArchiveSection<'a>>, PickleError> {
+fn read_archive_sections<'a>(
+    data: &'a [u8],
+) -> Result<(u16, Vec<ArchiveSection<'a>>), PickleError> {
     let mut r = PickleReader::new(data);
     let magic = r.read_exact_slice(ARCHIVE_MAGIC.len())?;
     if magic != ARCHIVE_MAGIC {
@@ -378,7 +772,7 @@ fn read_archive_sections<'a>(data: &'a [u8]) -> Result<Vec<ArchiveSection<'a>>, 
     }
     let major = read_u16_le(&mut r)?;
     let minor = read_u16_le(&mut r)?;
-    if major > ARCHIVE_MAJOR {
+    if major > ARCHIVE_MAJOR || (major == ARCHIVE_MAJOR && minor > ARCHIVE_MINOR) {
         return Err(PickleError::UnsupportedArchiveVersion { major, minor });
     }
     let section_count = read_u16_le(&mut r)? as usize;
@@ -409,13 +803,14 @@ fn read_archive_sections<'a>(data: &'a [u8]) -> Result<Vec<ArchiveSection<'a>>, 
             r.remaining()
         )));
     }
-    Ok(sections)
+    Ok((minor, sections))
 }
 
 fn decode_sectioned_archive(data: &[u8]) -> Result<Molecule, PickleError> {
-    let sections = read_archive_sections(data)?;
+    let (archive_minor, sections) = read_archive_sections(data)?;
     let mut manifest_seen = false;
     let mut molecule_state: Option<&[u8]> = None;
+    let mut derived_state: Option<&[u8]> = None;
     for section in sections {
         match section.id {
             SECTION_MANIFEST => {
@@ -470,6 +865,24 @@ fn decode_sectioned_archive(data: &[u8]) -> Result<Molecule, PickleError> {
                 }
                 molecule_state = Some(section.payload);
             }
+            SECTION_DERIVED_STATE => {
+                if derived_state.is_some() {
+                    return Err(PickleError::DuplicateSection(SECTION_DERIVED_STATE));
+                }
+                if section.version != DERIVED_STATE_VERSION {
+                    return Err(PickleError::UnsupportedSectionVersion {
+                        section: SECTION_DERIVED_STATE,
+                        version: section.version,
+                    });
+                }
+                if section.codec != SECTION_CODEC_RAW {
+                    return Err(PickleError::InvalidArchive(format!(
+                        "derived state uses unsupported codec {}",
+                        section.codec
+                    )));
+                }
+                derived_state = Some(section.payload);
+            }
             unknown => {
                 if section.is_required() {
                     return Err(PickleError::UnknownRequiredSection(unknown));
@@ -483,6 +896,9 @@ fn decode_sectioned_archive(data: &[u8]) -> Result<Molecule, PickleError> {
     let Some(molecule_state) = molecule_state else {
         return Err(PickleError::MissingRequiredSection(SECTION_MOLECULE_STATE));
     };
+    if archive_minor >= 1 && derived_state.is_none() {
+        return Err(PickleError::MissingRequiredSection(SECTION_DERIVED_STATE));
+    }
     let state: MoleculeStateV1 = postcard::from_bytes(molecule_state).map_err(|err| {
         PickleError::InvalidArchive(format!("molecule state decode failed: {err}"))
     })?;
@@ -495,7 +911,14 @@ fn decode_sectioned_archive(data: &[u8]) -> Result<Molecule, PickleError> {
     if state.encoding_version > PICKLE_VERSION {
         return Err(PickleError::UnsupportedVersion(state.encoding_version));
     }
-    mol_from_legacy_binary(&state.payload)
+    let molecule = mol_from_legacy_binary(&state.payload)?;
+    let Some(derived_state) = derived_state else {
+        return Ok(molecule);
+    };
+    let cache = decode_derived_state(derived_state, &molecule)?;
+    molecule
+        .with_deserialized_derived_cache(cache)
+        .map_err(|error| PickleError::InvalidMolecule(error.to_string()))
 }
 
 // ──────────────────────────────────────────────
@@ -1291,20 +1714,19 @@ fn write_stereo_group(w: &mut PickleWriter, sg: &StereoGroup) {
 /// Serialize a `Molecule` to a compact binary format.
 ///
 /// Format structure:
-/// - Version byte
-/// - Atom count + atom data
-/// - Bond count + bond data
-/// - 2D coordinates (optional)
-/// - 3D conformers
-/// - Substance groups
-/// - Stereo groups
-/// - Molecule properties
+/// - Versioned archive header and manifest
+/// - Molecule state: atoms, bonds, coordinates, groups, and properties
+/// - Derived chemistry state: rings, valence, aromaticity, and stereo validity
+///
+/// Current archives retain the materialized chemistry state needed for
+/// behavior-preserving roundtrips. Direct legacy payloads and archive v1.0
+/// remain readable.
 ///
 /// # Errors
 ///
 /// Returns `PickleError` if serialization encounters an internal issue.
 pub fn mol_to_binary(mol: &Molecule) -> Result<Vec<u8>, PickleError> {
-    encode_sectioned_archive(mol_to_legacy_binary(mol)?)
+    encode_sectioned_archive(mol_to_legacy_binary(mol)?, encode_derived_state(mol)?)
 }
 
 fn mol_to_legacy_binary(mol: &Molecule) -> Result<Vec<u8>, PickleError> {
@@ -2056,6 +2478,38 @@ mod tests {
         builder.build().expect("build ethanol")
     }
 
+    fn encode_v1_0_sectioned_archive(mol: &Molecule) -> Vec<u8> {
+        let manifest = encode_manifest().expect("encode v1.0 manifest");
+        let molecule_state = encode_molecule_state(
+            mol_to_legacy_binary(mol).expect("encode v1.0 legacy molecule state"),
+        )
+        .expect("encode v1.0 molecule-state envelope");
+        let mut data = Vec::new();
+        data.extend_from_slice(ARCHIVE_MAGIC);
+        write_u16_le(&mut data, ARCHIVE_MAJOR);
+        write_u16_le(&mut data, 0);
+        write_u16_le(&mut data, 2);
+        write_archive_section(
+            &mut data,
+            SECTION_MANIFEST,
+            MANIFEST_VERSION,
+            0,
+            SECTION_CODEC_POSTCARD,
+            &manifest,
+        )
+        .expect("write v1.0 manifest section");
+        write_archive_section(
+            &mut data,
+            SECTION_MOLECULE_STATE,
+            MOLECULE_STATE_VERSION,
+            SECTION_FLAG_REQUIRED,
+            SECTION_CODEC_POSTCARD,
+            &molecule_state,
+        )
+        .expect("write v1.0 molecule-state section");
+        data
+    }
+
     #[test]
     fn test_empty_molecule_roundtrip() {
         let mol = Molecule::new();
@@ -2072,6 +2526,88 @@ mod tests {
         assert!(!data.starts_with(ARCHIVE_MAGIC));
         let mol2 = mol_from_binary(&data).unwrap();
         assert_eq!(mol, mol2, "legacy molecule-state roundtrip failed");
+    }
+
+    #[test]
+    fn test_v1_0_sectioned_archive_remains_readable() {
+        let mol = build_simple_methane();
+        let data = encode_v1_0_sectioned_archive(&mol);
+        let mol2 = mol_from_binary(&data).unwrap();
+        assert_eq!(mol, mol2, "v1.0 sectioned archive decode failed");
+    }
+
+    #[test]
+    fn test_v1_1_archive_requires_derived_state_section() {
+        let mol = build_simple_methane();
+        let mut data = encode_v1_0_sectioned_archive(&mol);
+        let minor_offset = ARCHIVE_MAGIC.len() + 2;
+        data[minor_offset..minor_offset + 2].copy_from_slice(&ARCHIVE_MINOR.to_le_bytes());
+
+        assert_eq!(
+            mol_from_binary(&data).unwrap_err(),
+            PickleError::MissingRequiredSection(SECTION_DERIVED_STATE)
+        );
+    }
+
+    #[test]
+    fn test_derived_state_rejects_valence_rows_for_a_different_graph() {
+        let mol = build_simple_methane()
+            .with_deserialized_derived_cache(DerivedCacheBlock {
+                valence: Some(ValenceAssignment {
+                    explicit_valence: vec![4, 1, 1, 1, 1],
+                    implicit_hydrogens: vec![0; 5],
+                }),
+                ..DerivedCacheBlock::default()
+            })
+            .expect("build molecule with validated valence state");
+        let mut derived_state = encode_derived_state(&mol).expect("encode derived state");
+        assert_eq!(&derived_state[..3], &[0, 0, 1]);
+        derived_state[3..7].copy_from_slice(&4_u32.to_le_bytes());
+
+        let error = decode_derived_state(&derived_state, &mol).unwrap_err();
+        assert!(
+            matches!(&error, PickleError::InvalidArchive(message) if message.contains("explicit valence rows")),
+            "unexpected malformed-cache error: {error:?}"
+        );
+    }
+
+    #[test]
+    fn test_chembl_binary_roundtrip_preserves_derived_behavior_exactly() {
+        // Retained from the ChEMBL 37 binary-roundtrip phase: the old archive
+        // discarded valence state, so the restored graph could neither produce
+        // its pre-archive molecular hash nor reproduce its Morgan fingerprint.
+        let mol = Molecule::from_smiles(
+            "CNC(=O)[C@H](CCCNC(=O)OC(C)(C)C)NC(=O)[C@H](CCCc1ccccc1)[C@@](C)(O)C(=O)NO",
+        )
+        .expect("parse retained ChEMBL binary-roundtrip molecule")
+        .with_2d_coordinates()
+        .expect("generate the audited pre-archive 2D state");
+        let hash_before = crate::mol_hash::mol_hash(&mol).expect("hash before archive");
+        let morgan_before = mol
+            .morgan_fingerprint(&crate::MorganFingerprintParams::default())
+            .expect("Morgan fingerprint before archive");
+
+        let data = mol_to_binary(&mol).expect("encode molecule archive");
+        let restored = mol_from_binary(&data).expect("decode molecule archive");
+
+        assert_eq!(mol.derived_cache(), restored.derived_cache());
+        assert_eq!(mol.coordinates_2d(), restored.coordinates_2d());
+        assert_eq!(mol.conformers_2d().len(), restored.conformers_2d().len());
+        assert_eq!(mol.conformers_3d().len(), restored.conformers_3d().len());
+        assert_eq!(
+            hash_before,
+            crate::mol_hash::mol_hash(&restored).expect("hash after archive")
+        );
+        assert_eq!(
+            morgan_before,
+            restored
+                .morgan_fingerprint(&crate::MorganFingerprintParams::default())
+                .expect("Morgan fingerprint after archive")
+        );
+        assert_eq!(
+            data,
+            mol_to_binary(&restored).expect("re-encode restored molecule")
+        );
     }
 
     #[test]

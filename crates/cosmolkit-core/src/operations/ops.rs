@@ -135,6 +135,7 @@ pub struct DerivedEffects {
     recompute: DerivedState,
     preserve: DerivedState,
     invalidate: DerivedState,
+    operation_defined: DerivedState,
 }
 
 impl DerivedEffects {
@@ -142,6 +143,7 @@ impl DerivedEffects {
         recompute: DerivedState::NONE,
         preserve: DerivedState::NONE,
         invalidate: DerivedState::NONE,
+        operation_defined: DerivedState::NONE,
     };
 
     #[must_use]
@@ -149,11 +151,13 @@ impl DerivedEffects {
         recompute: DerivedState,
         preserve: DerivedState,
         invalidate: DerivedState,
+        operation_defined: DerivedState,
     ) -> Self {
         Self {
             recompute,
             preserve,
             invalidate,
+            operation_defined,
         }
     }
 
@@ -172,9 +176,21 @@ impl DerivedEffects {
         self.invalidate
     }
 
+    /// States whose source-required transition is implemented by the
+    /// operation body instead of one of the three standard mechanisms.
+    ///
+    /// This category grants no read access. The registry guardrail currently
+    /// permits it only for valence in the hydrogen-removal operation family.
+    #[must_use]
+    pub const fn operation_defined(self) -> DerivedState {
+        self.operation_defined
+    }
+
     #[must_use]
     pub const fn needs_update(self) -> DerivedState {
-        self.invalidate.union(self.recompute)
+        self.invalidate
+            .union(self.recompute)
+            .union(self.operation_defined)
     }
 }
 
@@ -451,9 +467,10 @@ molecule_ops! {
         may_mutate: [topology, coordinates, properties, derived_cache],
         auto_remap: [coordinates, properties],
         derived_effects: {
-            recompute: [valence, aromaticity, rings],
+            recompute: [aromaticity, rings],
             preserve: [],
             invalidate: [ring_families, stereo, drawing, fingerprint],
+            operation_defined: [valence],
         },
         requires_mapping: required,
         feature: HYDROGENS_FEATURE,
@@ -475,9 +492,10 @@ molecule_ops! {
         may_mutate: [topology, coordinates, properties, derived_cache],
         auto_remap: [coordinates, properties],
         derived_effects: {
-            recompute: [valence, aromaticity, rings],
+            recompute: [aromaticity, rings],
             preserve: [],
             invalidate: [ring_families, stereo, drawing, fingerprint],
+            operation_defined: [valence],
         },
         requires_mapping: required,
         feature: HYDROGENS_FEATURE,
@@ -948,6 +966,7 @@ mod tests {
             DerivedState::NONE,                               // recompute
             DerivedState::NONE,                               // preserve
             DerivedState::VALENCE.union(DerivedState::RINGS), // invalidate: needs_update target + clear-permitted
+            DerivedState::NONE,                               // operation_defined
         ),
         requires_mapping: MappingRequirement::None,
         support: SupportStatus::Experimental,
@@ -969,6 +988,7 @@ mod tests {
             DerivedState::VALENCE, // recompute
             DerivedState::NONE,    // preserve
             DerivedState::NONE,    // invalidate
+            DerivedState::NONE,    // operation_defined
         ),
         requires_mapping: MappingRequirement::None,
         support: SupportStatus::Experimental,
@@ -1350,6 +1370,56 @@ mod tests {
                 operation.method
             );
         }
+    }
+
+    #[test]
+    fn operation_defined_effect_is_limited_to_hydrogen_removal_valence() {
+        let operation_defined = MOLECULE_OPS
+            .iter()
+            .copied()
+            .filter(|operation| operation.derived_effects.operation_defined() != DerivedState::NONE)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            operation_defined
+                .iter()
+                .map(|operation| operation.method)
+                .collect::<Vec<_>>(),
+            vec![
+                "without_hydrogens_with_sanitize",
+                "without_hydrogens_with_params"
+            ],
+            "OperationDefined is approved only for the two generated specs of the single hydrogen-removal operation family"
+        );
+        for operation in operation_defined {
+            assert_eq!(
+                operation.derived_effects.operation_defined(),
+                DerivedState::VALENCE
+            );
+            assert!(operation.access.can_write(BlockSet::DERIVED_CACHE));
+            assert_eq!(operation.parity, ParityPolicy::RequiredNow);
+        }
+    }
+
+    #[cfg(feature = "op-contracts")]
+    #[test]
+    fn strict_runtime_rejects_unapproved_operation_defined_spec() {
+        let mut unapproved = WITHOUT_HYDROGENS_SPEC;
+        unapproved.method = "synthetic_unapproved_operation";
+        let unapproved = Box::leak(Box::new(unapproved));
+        let molecule = crate::Molecule::new();
+        let parts = OpParts::new(&molecule, unapproved).unwrap();
+
+        let error = parts
+            .finish()
+            .expect_err("strict runtime must enforce the OperationDefined allow-list");
+        assert!(matches!(
+            error,
+            OperationError::InvalidInput {
+                message: "operation-defined derived effects are currently permitted only for valence in the hydrogen-removal operation family",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -2236,8 +2306,41 @@ mod tests {
         let result = molecule.without_hydrogens_with_sanitize(false).unwrap();
 
         assert_eq!(result.num_atoms(), 6);
-        assert!(result.derived_cache().valence.is_none());
+        assert!(result.derived_cache().valence.is_some());
         assert!(result.derived_cache().rings.is_none());
+    }
+
+    #[test]
+    fn without_hydrogens_without_sanitize_retains_rdkit_pre_removal_valence_cache() {
+        let molecule = crate::Molecule::from_smiles("CCO")
+            .unwrap()
+            .with_hydrogens()
+            .unwrap();
+        let original = molecule.clone();
+
+        let value = molecule.without_hydrogens_with_sanitize(false).unwrap();
+        let mut in_place = molecule.clone();
+        in_place.remove_hydrogens_with_sanitize_(false).unwrap();
+
+        assert_eq!(molecule, original);
+        for result in [&value, &in_place] {
+            assert_eq!(
+                result.derived_cache().valence,
+                Some(crate::ValenceAssignment {
+                    explicit_valence: vec![4, 4, 2],
+                    implicit_hydrogens: vec![0, 0, 0],
+                })
+            );
+            assert_eq!(
+                crate::assign_valence_with_options(result, crate::ValenceModel::RdkitLike, false,)
+                    .unwrap(),
+                crate::ValenceAssignment {
+                    explicit_valence: vec![1, 2, 1],
+                    implicit_hydrogens: vec![3, 2, 1],
+                },
+                "the retained source cache must remain distinguishable from a post-removal recomputation"
+            );
+        }
     }
 
     #[test]

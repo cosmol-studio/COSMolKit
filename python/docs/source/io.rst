@@ -173,11 +173,27 @@ The MOL2 reader exposes RDKit's ``Mol2ParserParams`` controls. ``variant`` is
 currently limited to ``"corina"``, the only variant present in RDKit's public
 MOL2 enum for this parser.
 
-PDB and mmCIF Blocks
---------------------
+PDB and mmCIF Structures
+------------------------
+
+Use ``BioStructure`` for complete modeled structural data. This path retains
+all modeled residue kinds and the model/chain/residue/atom/entity hierarchy:
+
+.. code-block:: python
+
+   from cosmolkit import BioStructure
+
+   structure = BioStructure.from_pdb("input.pdb")
+   structure = BioStructure.from_pdb_str(pdb_text)
+   structure = BioStructure.from_mmcif("input.cif")
+   structure = BioStructure.from_mmcif_str(cif_text, path="input.cif")
+
+Use ``structure.protein()`` when an amino-acid-only projection is intentionally
+required. Use ``structure.to_molecule()`` when an explicit conversion to a
+cheminformatics graph is required.
 
 Use ``Protein.from_pdb()`` or ``Protein.from_pdb_str()`` when you want to read
-PDB data as a protein structural view:
+PDB data directly as a protein-only structural view:
 
 .. code-block:: python
 
@@ -225,6 +241,13 @@ table coverage, including metal elements such as ``Hg`` and ``Cd``. The
 high-level ``Protein`` projection keeps protein residues for traversal while
 still accepting supported non-protein HETATM element records in the input
 structure.
+
+Gemmi-aligned ``BioStructure.to_mmcif()`` and ``write_mmcif()`` methods are a
+planned writer feature, not a currently implemented API. Direct structural
+writing will be exposed on ``BioStructure`` after the Gemmi document builder
+and CIF serializer have been source-ported. It will not be placed on
+``Protein`` or ``Molecule``, because those values do not preserve the complete
+structural model.
 
 XYZ Blocks
 ----------

@@ -497,6 +497,7 @@ The contract dimensions are:
 recompute
 preserve
 invalidate
+operation_defined
 ```
 
 ### `invalidate`
@@ -534,6 +535,22 @@ The proof must validate objective structural conditions, such as old atom and
 bond identity preservation plus appended degree-one leaf atoms. Silent
 preservation without proof is invalid in strict builds.
 
+### `operation_defined`
+
+`operation_defined` is an explicit escape hatch for a source-required state
+transition that cannot be classified truthfully as preserve, recompute, or
+invalidate. It delegates the transition mechanism, not the correctness
+obligation. The operation may use the normal cache set, validity-update, and
+clear APIs, while strict finalization still requires the declared state to be
+updated or cleared. Source alignment, focused regression coverage, and the
+declared parity profile remain responsible for proving the value semantics.
+
+This exception is currently allow-listed only for `valence` in the
+hydrogen-removal operation family. The registry macro, strict runtime, and a
+registry-wide test reject every other use. Expanding the allow-list requires an
+explicit design decision and coordinated guardrail changes; it is not a
+general-purpose alternative to selecting one of the standard categories.
+
 ### Read authority is separate
 
 The effect categories do not grant cache-read authority. Reading derived cache
@@ -546,7 +563,7 @@ does not enforce separate read permissions for rings, valence, aromaticity,
 stereo, or other individual cache entries.
 
 `needs_update()` remains the only molecule-operation compatibility view and is
-derived as `recompute | invalidate`. Molecule operations have no
+derived as `recompute | invalidate | operation_defined`. Molecule operations have no
 `must_handle()` view or `must_handle`/`require_handle` registry input.
 
 Unsupported behavior is not a derived effect. It must be returned as a
@@ -697,7 +714,8 @@ An operation change is review-complete only when reviewers confirm:
 - registry spec matches behavior
 - strong/weak classification is correct
 - `may_mutate` is minimal and sufficient
-- `derived_effects` matches invalidated, recomputed, and preserved state
+- `derived_effects` matches invalidated, recomputed, preserved, and explicitly
+  allow-listed operation-defined state
 - derived-cache reads are covered by block-level `access`
 - unsupported behavior is explicit
 - source-port markers are accurate

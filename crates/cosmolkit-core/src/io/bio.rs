@@ -975,6 +975,10 @@ pub(crate) fn read_pdb_bio_structure_from_str_with_params(
 ///
 /// The historical function name is kept for API stability. Unsupported mmCIF
 /// source branches remain marked in this module's Gemmi source frame.
+#[deprecated(
+    since = "0.2.13",
+    note = "use BioStructure::from_mmcif_str(); this function now reads more than an atom-site subset"
+)]
 pub fn read_mmcif_atom_site_subset_from_str(text: &str) -> Result<BioStructure, BioReadError> {
     let document = parse_cif_document(text)?;
     make_structure_from_mmcif_document(document, None)
@@ -8786,6 +8790,10 @@ mod tests {
     use super::*;
     use crate::bio::BioHelixClass;
 
+    fn read_test_mmcif(text: &str) -> Result<BioStructure, BioReadError> {
+        BioStructure::from_mmcif_str(text, "input.cif")
+    }
+
     #[test]
     fn reads_single_pdb_atom_record() {
         let pdb =
@@ -8903,7 +8911,7 @@ _atom_site.Cartn_z
         mmcif.push_str("HETATM 119 HG HG . LIG A 1 119 0.0 0.0 0.0\n");
         mmcif.push_str("HETATM 120 CD CD . LIG A 1 120 0.0 0.0 0.0\n");
 
-        let structure = read_mmcif_atom_site_subset_from_str(&mmcif).unwrap();
+        let structure = read_test_mmcif(&mmcif).unwrap();
 
         for atomic_number in 1..=118 {
             assert_eq!(
@@ -9765,7 +9773,7 @@ _atom_site_anisotrop.U[2][3]
 1 1.0 2.0 3.0 4.0 5.0 6.0
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
         assert_eq!(
             structure.atoms[0].anisou,
             Some([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
@@ -9800,7 +9808,7 @@ _atom_site_anisotrop.U[2][3]
 2 1.5 2.5 3.5 4.5 5.5 6.5
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
 
         assert_eq!(structure.atoms[0].anisou, None);
         assert_eq!(
@@ -10841,7 +10849,7 @@ _atom_site.pdbx_PDB_model_num
 ATOM 1 C CA . ALA A 7 11.104 13.207 9.900 1.00 20.00 7 ALA A CA 1
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
 
         assert_eq!(structure.num_models(), 1);
         assert_eq!(structure.models[0].source_model_number, Some(1));
@@ -10902,7 +10910,7 @@ _atom_site_anisotrop.U[2][3]
 1 1 2 3 4 5 6
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
 
         assert_eq!(structure.num_models(), 2);
         assert_eq!(structure.models[0].source_model_number, Some(1));
@@ -10973,7 +10981,7 @@ _atom_site.Cartn_z
 ATOM 1 C CA . ALA A 1 0.0 1.0 2.0
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
 
         assert_eq!(structure.num_entities(), 1);
         assert_eq!(structure.entities[0].kind, EntityKind::Polymer);
@@ -11042,7 +11050,7 @@ _atom_site.Cartn_z
 ATOM 1 C CA . ALA A 1 1 0.0 1.0 2.0
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
 
         assert_eq!(structure.entities[0].sequence, vec!["ALA", "GLY,SER"]);
         assert!(structure.entities[0].reflects_microhetero);
@@ -11094,7 +11102,7 @@ ATOM 1 C CA . ALA AX 1 1 0.0 1.0 2.0
 ATOM 2 C CB . ALA AX 1 1 0.0 1.5 2.0
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
 
         assert_eq!(structure.entities.len(), 1);
         assert_eq!(
@@ -11138,7 +11146,7 @@ _struct_conn.ptnr2_label_seq_id
 conn1 disulf A A CYS CYS SG SG 1 2
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
         assert_eq!(structure.connections.len(), 1);
         let conn = &structure.connections[0];
         assert_eq!(conn.type_, BioConnectionType::Disulf);
@@ -11175,7 +11183,7 @@ _struct_conn.ptnr2_label_atom_id
 broken disulf CYS CYS SG SG
 "#;
 
-        let err = read_mmcif_atom_site_subset_from_str(cif).unwrap_err();
+        let err = read_test_mmcif(cif).unwrap_err();
         assert!(matches!(err, BioReadError::Parse { .. }));
     }
 
@@ -11217,7 +11225,7 @@ _struct_mon_prot_cis.pdbx_omega_angle
 1 X 30 ? ALA ALA Y 40 ? GLY GLY B -12.5
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
 
         assert_eq!(structure.cispeps.len(), 1);
         let cis = &structure.cispeps[0];
@@ -11259,7 +11267,7 @@ _pdbx_struct_mod_residue.ccp4_mod_id
 A 5 ? MSE MSE MET 'SELENOMETHIONINE' MOD1
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
 
         assert_eq!(structure.mod_residues.len(), 1);
         let modres = &structure.mod_residues[0];
@@ -11338,7 +11346,7 @@ _pdbx_struct_assembly_prop.value
 2 MORE 4.5
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
         assert_eq!(structure.assemblies.len(), 2);
         assert_eq!(structure.assemblies[0].name, "1");
         assert_eq!(structure.assemblies[0].software_name, "program");
@@ -11382,7 +11390,7 @@ ATOM 1 C CA . ALA A 1 0.0 0.0 0.0 1
 HETATM 2 O O . HOH B . 1.0 0.0 0.0 2
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
         assert_eq!(structure.residues[0].entity_kind, EntityKind::Unknown);
         assert_eq!(structure.residues[1].entity_kind, EntityKind::Water);
     }
@@ -11433,7 +11441,7 @@ _pdbx_sifts_xref_db.unp_acc
 1 A 1 2 y G 102 P12345
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
         assert_eq!(structure.entities[0].sifts_unp_acc, vec!["P12345"]);
         assert_eq!(
             structure.residues[0].sifts_unp,
@@ -11794,7 +11802,7 @@ _atom_site.Cartn_z
 ATOM 1 C CA . ALA A 1 1 0.0 1.0 2.0
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
         let crystal = structure.crystal().unwrap();
 
         assert_eq!(structure.metadata.entry_id.as_deref(), Some("9XYZ"));
@@ -11917,7 +11925,7 @@ _chem_comp.three_letter_code
 ~XY LONGNAME
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
 
         assert_eq!(structure.connections.len(), 1);
         assert_eq!(structure.connections[0].type_, BioConnectionType::Disulf);
@@ -11965,7 +11973,7 @@ _atom_site.Cartn_z
 ATOM 1 C CA . ALA A 1 1 0.0 0.0 0.0
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
 
         assert_eq!(structure.num_atoms(), 1);
         assert_eq!(structure.num_models(), 1);
@@ -11997,7 +12005,7 @@ _chem_comp.name
 ALA Alanine
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
 
         assert_eq!(structure.num_atoms(), 1);
         assert!(structure.shortened_ccd_codes.is_empty());
@@ -12096,7 +12104,7 @@ _pdbx_sifts_xref_db.asym_id
 1 A
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
 
         assert_eq!(structure.num_atoms(), 1);
         assert!(structure.connections.is_empty());
@@ -12133,7 +12141,7 @@ _chem_comp.name
 ALA Alanine
 "#;
 
-        let structure = read_mmcif_atom_site_subset_from_str(cif).unwrap();
+        let structure = read_test_mmcif(cif).unwrap();
 
         assert_eq!(structure.num_atoms(), 1);
         assert_eq!(structure.num_models(), 1);
@@ -12209,7 +12217,7 @@ _atom_site.Cartn_z
 ATOM 2 N N . GLY B 2 2 1.0 1.0 1.0
 "#;
 
-        let err = read_mmcif_atom_site_subset_from_str(cif).unwrap_err();
+        let err = read_test_mmcif(cif).unwrap_err();
 
         assert!(matches!(
             err,
@@ -12551,7 +12559,7 @@ C1 C 0 1.0 2.0 3.0 4.0 5.0 6.0
 
     #[test]
     fn rejects_mmcif_without_atom_site_loop() {
-        let err = read_mmcif_atom_site_subset_from_str("data_test\n").unwrap_err();
+        let err = read_test_mmcif("data_test\n").unwrap_err();
 
         assert!(matches!(
             err,

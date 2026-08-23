@@ -123,6 +123,7 @@ pub fn rdkit_expected_domain(file_name: &str) -> &'static str {
         | "molfile_read.jsonl" => "molblock",
         "sdf_read.jsonl" | "sdf_write.jsonl" => "sdf",
         "morgan_fingerprint.jsonl"
+        | "atom_pair_fingerprint.jsonl"
         | "maccs_fingerprint.jsonl"
         | "rdkit_topological_fingerprint.jsonl"
         | "avalon_fingerprint.jsonl" => "fingerprint",
@@ -155,7 +156,21 @@ pub fn golden_path(file_name: &str) -> PathBuf {
 }
 
 pub fn expected_path(domain: &str, reference: &str, file_name: &str) -> PathBuf {
-    let family_dir = expected_family_dir(domain, reference);
+    expected_path_for_profile(domain, reference, &profile_name(), file_name)
+}
+
+pub fn expected_path_for_profile(
+    domain: &str,
+    reference: &str,
+    profile: &str,
+    file_name: &str,
+) -> PathBuf {
+    let family_dir = repo_root()
+        .join("testdata")
+        .join(domain)
+        .join("expected")
+        .join(reference)
+        .join(profile);
     validate_expected_output_cached(&family_dir, domain, reference, file_name).unwrap_or_else(
         |error| {
             panic!(
@@ -200,6 +215,15 @@ pub fn validate_expected_family(
     expected_domain: &str,
     expected_reference: &str,
 ) -> Result<(), String> {
+    let expected_profile = family_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            format!(
+                "expected-data directory has no profile name: {}",
+                family_dir.display()
+            )
+        })?;
     let manifest_path = family_dir.join("manifest.json");
     let manifest_bytes = std::fs::read(&manifest_path)
         .map_err(|error| format!("failed to read {}: {error}", manifest_path.display()))?;
@@ -211,11 +235,12 @@ pub fn validate_expected_family(
         &manifest_path,
         expected_domain,
         expected_reference,
+        expected_profile,
     )?;
 
-    validate_current_input(&manifest.input)?;
+    validate_current_input(&manifest.input, expected_profile)?;
     for output in &manifest.outputs {
-        validate_output_identity(output, &manifest.input)?;
+        validate_output_identity(output, &manifest.input, expected_profile)?;
         validate_output_file(family_dir, output)?;
     }
     Ok(())
@@ -250,6 +275,15 @@ fn validate_expected_output(
     expected_reference: &str,
     file_name: &str,
 ) -> Result<(), String> {
+    let expected_profile = family_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            format!(
+                "expected-data directory has no profile name: {}",
+                family_dir.display()
+            )
+        })?;
     let manifest_path = family_dir.join("manifest.json");
     let manifest_bytes = std::fs::read(&manifest_path)
         .map_err(|error| format!("failed to read {}: {error}", manifest_path.display()))?;
@@ -261,8 +295,9 @@ fn validate_expected_output(
         &manifest_path,
         expected_domain,
         expected_reference,
+        expected_profile,
     )?;
-    validate_current_input(&manifest.input)?;
+    validate_current_input(&manifest.input, expected_profile)?;
 
     let requested = Path::new(file_name);
     if requested.is_absolute()
@@ -285,7 +320,7 @@ fn validate_expected_output(
                 manifest_path.display()
             )
         })?;
-    validate_output_identity(output, &manifest.input)?;
+    validate_output_identity(output, &manifest.input, expected_profile)?;
     validate_output_file(family_dir, output)
 }
 
@@ -294,6 +329,7 @@ fn validate_manifest_identity(
     manifest_path: &Path,
     expected_domain: &str,
     expected_reference: &str,
+    expected_profile: &str,
 ) -> Result<(), String> {
     if manifest.schema_version != 1 {
         return Err(format!(
@@ -305,7 +341,7 @@ fn validate_manifest_identity(
     let reference_identity = reference_identity(expected_reference)?;
     if manifest.family != expected_reference
         || manifest.domain != expected_domain
-        || manifest.profile != profile_name()
+        || manifest.profile != expected_profile
         || manifest.reference_implementation.name != reference_identity.name
         || manifest.reference_implementation.version != reference_identity.version
         || manifest.reference_runtime.implementation != reference_identity.runtime.implementation
@@ -314,7 +350,7 @@ fn validate_manifest_identity(
         return Err(format!(
             "{} identity does not match family={expected_reference} domain={expected_domain} profile={}",
             manifest_path.display(),
-            profile_name()
+            expected_profile
         ));
     }
     Ok(())
@@ -330,8 +366,19 @@ fn reference_identity(reference: &str) -> Result<ReferenceIdentity, String> {
         .map_err(|error| format!("failed to parse {}: {error}", path.display()))
 }
 
-fn validate_current_input(input: &ManifestFile) -> Result<(), String> {
-    let current = normalize_existing_path(&smiles_path())?;
+fn validate_current_input(input: &ManifestFile, expected_profile: &str) -> Result<(), String> {
+    let current_path = if expected_profile == profile_name() {
+        smiles_path()
+    } else {
+        match expected_profile {
+            "atom_pair_focused" => repo_root()
+                .join("testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi"),
+            "smiles_small" => repo_root().join("testdata/smiles/corpus/smiles_small.smi"),
+            "smiles_5000" => repo_root().join("testdata/smiles/corpus/smiles_5000.smi"),
+            other => return Err(format!("unknown expected-data profile '{other}'")),
+        }
+    };
+    let current = normalize_existing_path(&current_path)?;
     let declared = normalize_existing_path(&identity_path(input)?)?;
     if current != declared {
         return Err(format!(
@@ -346,6 +393,7 @@ fn validate_current_input(input: &ManifestFile) -> Result<(), String> {
 fn validate_output_identity(
     output: &ManifestOutput,
     primary_input: &ManifestFile,
+    expected_profile: &str,
 ) -> Result<(), String> {
     if output.output_schema_version != 1 {
         return Err(format!(
@@ -381,7 +429,8 @@ fn validate_output_identity(
         "--output".to_string(),
         output.path.clone(),
     ];
-    if output.options.profile != profile_name() || output.options.arguments != expected_arguments {
+    if output.options.profile != expected_profile || output.options.arguments != expected_arguments
+    {
         return Err(format!(
             "{} generation options do not match the active profile",
             output.path

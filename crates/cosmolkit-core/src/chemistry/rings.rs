@@ -74,6 +74,145 @@ impl RingInfo {
         self.initialized
     }
 
+    pub(crate) const fn persisted_find_type(&self) -> RingFindType {
+        self.find_type
+    }
+
+    pub(crate) const fn persisted_relevant_cycle_count(&self) -> Option<usize> {
+        self.relevant_cycle_count
+    }
+
+    pub(crate) fn persisted_fused_rings(&self) -> &[Vec<bool>] {
+        &self.fused_rings
+    }
+
+    pub(crate) fn persisted_num_fused_bonds(&self) -> &[usize] {
+        &self.num_fused_bonds
+    }
+
+    pub(crate) fn from_persisted_components(
+        initialized: bool,
+        find_type: RingFindType,
+        atom_count: usize,
+        bond_count: usize,
+        atom_rings: Vec<Vec<AtomId>>,
+        bond_rings: Vec<Vec<BondId>>,
+        atom_ring_families: Vec<Vec<AtomId>>,
+        bond_ring_families: Vec<Vec<BondId>>,
+        relevant_cycle_count: Option<usize>,
+        fused_rings: Vec<Vec<bool>>,
+        num_fused_bonds: Vec<usize>,
+    ) -> Result<Self, &'static str> {
+        if !initialized {
+            if find_type != RingFindType::OtherOrUnknown
+                || !atom_rings.is_empty()
+                || !bond_rings.is_empty()
+                || !atom_ring_families.is_empty()
+                || !bond_ring_families.is_empty()
+                || relevant_cycle_count.is_some()
+                || !fused_rings.is_empty()
+                || !num_fused_bonds.is_empty()
+            {
+                return Err("uninitialized ring state contains materialized data");
+            }
+            return Ok(Self {
+                initialized: false,
+                find_type,
+                atom_members: Vec::new(),
+                bond_members: Vec::new(),
+                atom_rings,
+                bond_rings,
+                atom_ring_families,
+                bond_ring_families,
+                relevant_cycle_count,
+                fused_rings,
+                num_fused_bonds,
+            });
+        }
+
+        if atom_rings.len() != bond_rings.len() {
+            return Err("ring atom/bond table length mismatch");
+        }
+        if atom_ring_families.len() != bond_ring_families.len() {
+            return Err("ring-family atom/bond table length mismatch");
+        }
+
+        let mut atom_members = vec![Vec::new(); atom_count];
+        let mut bond_members = vec![Vec::new(); bond_count];
+        for (ring_index, (ring_atoms, ring_bonds)) in atom_rings.iter().zip(&bond_rings).enumerate()
+        {
+            if ring_atoms.len() != ring_bonds.len() {
+                return Err("ring atom/bond size mismatch");
+            }
+            for atom in ring_atoms {
+                let members = atom_members
+                    .get_mut(atom.index())
+                    .ok_or("ring atom index out of range")?;
+                members.push(ring_index);
+            }
+            for bond in ring_bonds {
+                let members = bond_members
+                    .get_mut(bond.index())
+                    .ok_or("ring bond index out of range")?;
+                members.push(ring_index);
+            }
+        }
+        for (family_atoms, family_bonds) in atom_ring_families.iter().zip(&bond_ring_families) {
+            if family_atoms.len() != family_bonds.len() {
+                return Err("ring-family atom/bond size mismatch");
+            }
+            if family_atoms.iter().any(|atom| atom.index() >= atom_count) {
+                return Err("ring-family atom index out of range");
+            }
+            if family_bonds.iter().any(|bond| bond.index() >= bond_count) {
+                return Err("ring-family bond index out of range");
+            }
+        }
+
+        let ring_count = atom_rings.len();
+        if !fused_rings.is_empty() {
+            if fused_rings.len() != ring_count
+                || fused_rings.iter().any(|row| row.len() != ring_count)
+            {
+                return Err("fused-ring matrix dimensions do not match ring count");
+            }
+            for left in 0..ring_count {
+                if fused_rings[left][left] {
+                    return Err("fused-ring matrix diagonal must be false");
+                }
+                for right in left + 1..ring_count {
+                    if fused_rings[left][right] != fused_rings[right][left] {
+                        return Err("fused-ring matrix must be symmetric");
+                    }
+                }
+            }
+        }
+        if !num_fused_bonds.is_empty() && num_fused_bonds.len() != ring_count {
+            return Err("fused-bond count length does not match ring count");
+        }
+        if num_fused_bonds
+            .iter()
+            .zip(&bond_rings)
+            .any(|(count, ring)| *count > ring.len())
+        {
+            return Err("fused-bond count exceeds ring size");
+        }
+
+        Ok(Self {
+            initialized,
+            find_type,
+            atom_members,
+            bond_members,
+            atom_rings,
+            bond_rings,
+            atom_ring_families,
+            bond_ring_families,
+            relevant_cycle_count,
+            fused_rings,
+            num_fused_bonds,
+        })
+    }
+
     pub(crate) fn initialize(&mut self, find_type: RingFindType) {
         // BEGIN RDKIT CPP FUNCTION RingInfo::initialize
         // RDKit✔️✔️: void RingInfo::initialize(RDKit::FIND_RING_TYPE ringType) {

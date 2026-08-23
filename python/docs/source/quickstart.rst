@@ -246,16 +246,18 @@ Generate source-backed fingerprints:
    )
    topological = mol.topological_fingerprint(fp_size=2048)
    avalon = mol.avalon_fingerprint(n_bits=512)
+   atom_pair = mol.fingerprint_atom_pair(n_bits=2048)
 
    print(morgan.on_bits())
    print(topological.on_bits())
    print(avalon.on_bits())
+   print(atom_pair.on_bits())
 
 ``on_bits()`` returns the sparse bit indexes set inside the fixed-length binary
-fingerprint. The exposed Morgan, MACCS, RDKit topological, and Avalon branches
-are covered by exact pinned-RDKit comparisons; structurally similar hashes or
-similarity correlation are not compatibility claims. It is not a dense neural
-embedding.
+fingerprint. The exposed Morgan, MACCS, RDKit topological, Avalon, and AtomPair
+branches are covered by exact pinned-RDKit comparisons; structurally similar
+hashes or similarity correlation are not compatibility claims. It is not a
+dense neural embedding.
 
 Parse SMARTS metadata:
 

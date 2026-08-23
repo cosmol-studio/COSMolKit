@@ -357,7 +357,7 @@ pub(crate) fn add_hs_set_terminal_atom_coord(
             // RDKit✔️✔️:       // One other neighbor.
             // RDKit✔️✔️: nbr1Vect = nbr1Pos - otherPos; ... nbr1Vect *= -1;
             let nbr1 = neighbors[0];
-            let Some(mut nbr1_vec) = add_hs_direction_away(coords, other_pos, nbr1) else {
+            let Some(nbr1_vec) = add_hs_direction_away(coords, other_pos, nbr1) else {
                 return Ok(other_pos);
             };
             match other_atom.hybridization() {
@@ -404,8 +404,6 @@ pub(crate) fn add_hs_set_terminal_atom_coord(
                     dir = nbr1_vec;
                 }
             }
-            nbr1_vec = dir;
-            dir = nbr1_vec;
         }
         3 => {
             // RDKit✔️✔️:     case 3:
@@ -675,21 +673,28 @@ fn without_hydrogens_apply(
 
             let mut changed = apply_remove_hs_assignment(topology, &assignment, operation)?;
             let atoms_to_remove = assignment.atoms_to_remove.clone();
-            if atoms_to_remove.is_empty() {
+            let mapping = if atoms_to_remove.is_empty() {
                 let atom_count = topology.atoms.len();
                 let bond_count = topology.bonds.len();
                 parts.record_topology_edit(TopologyEditKind::Compacting)?;
-                parts.record_topology_mapping(TopologyMapping::identity(atom_count, bond_count));
-                parts.clear_cache(WITHOUT_HYDROGENS_SPEC.needs_update());
+                TopologyMapping::identity(atom_count, bond_count)
             } else {
                 let mapping = topology.remove_atoms_with_mapping(&atoms_to_remove);
                 coordinates.remap_topology(&mapping);
                 properties.remap_topology(&mapping);
-                parts.record_topology_mapping(mapping);
                 parts.record_topology_edit(TopologyEditKind::Compacting)?;
-                parts.clear_cache(WITHOUT_HYDROGENS_SPEC.needs_update());
                 changed = true;
-            }
+                mapping
+            };
+            let valence = remap_remove_hs_valence_cache(&assignment, &mapping, operation)?;
+            parts.record_topology_mapping(mapping);
+            parts.clear_cache(
+                WITHOUT_HYDROGENS_SPEC
+                    .derived_effects
+                    .recompute()
+                    .union(WITHOUT_HYDROGENS_SPEC.derived_effects.invalidate()),
+            );
+            parts.set_valence_cache(valence);
             // RDKit✔️✔️:   mol.clearComputedProps(true);
             parts.clear_computed_properties();
             if assignment.sanitize_after_removal {
@@ -706,6 +711,53 @@ fn without_hydrogens_apply(
     )?;
 
     Ok(())
+}
+
+fn remap_remove_hs_valence_cache(
+    assignment: &crate::hydrogens::RemoveHsAssignment,
+    mapping: &TopologyMapping,
+    operation: &'static MoleculeOpSpec,
+) -> Result<crate::ValenceAssignment, OperationError> {
+    // RDKit✔️❌:   for (auto atom : mol.atoms()) {
+    // RDKit✔️❌:     atom->updatePropertyCache(false);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ... mol.removeAtom(atom, false); ...
+    // RDKit✔️❌:   mol.clearComputedProps(true);
+    // Atom valence is stored outside RDProps in RDKit. Compacting removal
+    // therefore drops removed rows and retains every surviving row unchanged.
+    let new_atom_count = mapping.atoms().new_to_old().len();
+    let mut explicit_valence = vec![None; new_atom_count];
+    let mut implicit_hydrogens = vec![None; new_atom_count];
+    for update in &assignment.atom_valence_cache_updates {
+        let Some(new_atom) = mapping
+            .atoms()
+            .old_to_new()
+            .get(update.atom.index())
+            .and_then(|mapped| *mapped)
+        else {
+            continue;
+        };
+        explicit_valence[new_atom.index()] = Some(update.explicit_valence);
+        implicit_hydrogens[new_atom.index()] = Some(update.implicit_hydrogens);
+    }
+    let explicit_valence = explicit_valence
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+        .ok_or(OperationError::InvalidInput {
+            operation,
+            message: "remove-H valence migration did not cover every surviving atom",
+        })?;
+    let implicit_hydrogens = implicit_hydrogens
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+        .ok_or(OperationError::InvalidInput {
+            operation,
+            message: "remove-H implicit-H migration did not cover every surviving atom",
+        })?;
+    Ok(crate::ValenceAssignment {
+        explicit_valence,
+        implicit_hydrogens,
+    })
 }
 
 fn apply_remove_hs_assignment(

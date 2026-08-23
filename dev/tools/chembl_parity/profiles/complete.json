@@ -36,6 +36,7 @@
     {"name": "repeat-2-core", "script": "audit_core.py", "mode": "core", "expected_processed": 2897819},
     {"name": "repeat-2-morgan-maccs", "script": "audit_core.py", "mode": "fingerprints", "expected_processed": 2897819},
     {"name": "repeat-2-smiles-matrix", "script": "audit_surfaces.py", "mode": "smiles", "max_atoms": 80, "expected_processed": 2854362},
-    {"name": "topological-avalon", "script": "audit_fingerprints.py", "expected_processed": 2897819}
+    {"name": "topological-avalon", "script": "audit_fingerprints.py", "mode": "topological_avalon", "expected_processed": 2897819},
+    {"name": "atom-pair", "script": "audit_fingerprints.py", "mode": "atom_pair", "expected_processed": 2897819, "expected_profiles": {"atom_pair_sparse_count": 10, "atom_pair_count": 10, "atom_pair_sparse_bit": 10, "atom_pair_explicit_bit": 10, "atom_pair_additional_output": 1}}
   ]
 }

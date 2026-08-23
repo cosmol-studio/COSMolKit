@@ -171,7 +171,10 @@ structure.
 Advanced callers can use ``mol_to_binary()`` and ``mol_from_binary()`` to
 inspect or persist the COSMolKit molecule archive directly. Python
 applications should prefer ``pickle`` unless they specifically need the raw
-archive payload:
+archive payload. The versioned archive preserves graph, coordinate, property,
+and materialized derived chemistry state so supported operations retain the
+same behavior after restoration; legacy archive readers remain available for
+older payloads:
 
 .. code-block:: python
 
