@@ -19,7 +19,7 @@ CI and cached, but a restored cache is reusable only when its manifest,
 reference version, generator/input/options/platform identity, output checksum,
 and record count match exactly.
 
-Coverage CI uses cache schema `v2`. Cache saves have a unique workflow
+Coverage CI uses cache schema `v4`. Cache saves have a unique workflow
 run/attempt suffix and restores use the stable identity prefix. If preparation
 rejects and regenerates a restored candidate, the replacement can therefore be
 saved without attempting to overwrite GitHub Actions' immutable cache entry.
@@ -87,6 +87,24 @@ coordinate tolerances.
 Omit `--clean` to validate and reuse an exact cache. Use `--clean` only when
 an intentional full regeneration is required. Individual `_generate_*.py`
 files are internal helpers and are not supported public workflows.
+
+## Gemmi Expected Data
+
+Gemmi `0.7.5` at commit `5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e`
+is the pinned structural-writer reference. Prepare the exact mmCIF writer
+profile through its single public entrypoint:
+
+```bash
+.venv/bin/python tools/testdata/gemmi/generate_all.py \
+  --profile bio_mmcif_writer \
+  --suite mmcif_writer \
+  --jobs 4
+```
+
+The generator verifies the pinned source hashes before compiling its narrow
+oracle under `target/`. Coverage CI initializes only the Gemmi submodule and
+runs this preparation before Rust tests; generated output remains ignored in
+accordance with the repository-wide expected-data policy.
 
 `cargo test` never generates expected data. Missing, stale, corrupt, or
 incomplete data fails with the corresponding prepare command; tests do not

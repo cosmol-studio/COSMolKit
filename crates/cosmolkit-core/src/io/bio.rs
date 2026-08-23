@@ -37,11 +37,34 @@ use crate::bio_invariants::enforce_bio_structure_invariants;
 use crate::io::gemmi_spacegroup_table::{
     GEMMI_ALT_NAMES, GEMMI_OP_DEN, GEMMI_SPACEGROUPS, GemmiSpaceGroupEntry,
 };
-use crate::support::{
-    BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE, BIO_PDB_COORDINATE_SUBSET_READ_FEATURE, FeatureSpec,
-};
+use crate::support::{BIO_MMCIF_READ_FEATURE, BIO_PDB_READ_FEATURE, FeatureSpec};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+
+mod cif;
+mod sprintf;
+mod writer;
+
+use cif::{CifBlock, CifDocument, CifItem, CifLoop, CifToken};
+pub use writer::{BioWriteError, MmcifOutputGroups, MmcifWriteOptions};
+
+pub(crate) fn bio_structure_to_mmcif(
+    structure: &BioStructure,
+    options: MmcifWriteOptions,
+) -> Result<String, BioWriteError> {
+    let document = writer::make_mmcif_document(structure, options.groups)?;
+    cif::cif_document_to_string(&document, options.cif_options()).map_err(BioWriteError::Io)
+}
+
+pub(crate) fn write_bio_structure_mmcif(
+    structure: &BioStructure,
+    path: &std::path::Path,
+    options: MmcifWriteOptions,
+) -> Result<(), BioWriteError> {
+    let document = writer::make_mmcif_document(structure, options.groups)?;
+    let file = std::fs::File::create(path)?;
+    cif::write_cif_document(file, &document, options.cif_options()).map_err(BioWriteError::Io)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BioReadError {
@@ -61,9 +84,6 @@ pub enum BioReadError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BioPdbReadParams {
-    /// Reject records whose Gemmi behavior has not been ported into this
-    /// PDB structural reader path.
-    pub reject_unported_records: bool,
     pub max_line_length: usize,
     pub split_chain_on_ter: bool,
     pub skip_remarks: bool,
@@ -74,7 +94,6 @@ pub struct BioPdbReadParams {
 impl Default for BioPdbReadParams {
     fn default() -> Self {
         Self {
-            reject_unported_records: false,
             max_line_length: 120,
             split_chain_on_ter: false,
             skip_remarks: false,
@@ -84,7 +103,7 @@ impl Default for BioPdbReadParams {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct ResidueKey {
     chain_key: PdbChainId,
     seq_id: PdbSeqId,
@@ -98,6 +117,8 @@ struct PdbBioBuilder {
     current_model: Option<ModelId>,
     current_chain: Option<(ChainId, PdbChainId)>,
     current_residue: Option<(ResidueId, ResidueKey)>,
+    residue_lookup: HashMap<ResidueKey, ResidueId>,
+    last_atom_index: Option<usize>,
     skip_remarks: bool,
 }
 
@@ -229,6 +250,8 @@ impl PdbBioBuilder {
         self.current_model = None;
         self.current_chain = None;
         self.current_residue = None;
+        self.residue_lookup.clear();
+        self.last_atom_index = None;
         self.ensure_model(source_model_number);
     }
 
@@ -236,6 +259,8 @@ impl PdbBioBuilder {
         self.current_model = None;
         self.current_chain = None;
         self.current_residue = None;
+        self.residue_lookup.clear();
+        self.last_atom_index = None;
     }
 
     fn ensure_chain(
@@ -274,6 +299,7 @@ impl PdbBioBuilder {
             .len += 1;
         self.current_chain = Some((chain_id, chain_key));
         self.current_residue = None;
+        self.residue_lookup.clear();
         chain_id
     }
 
@@ -298,16 +324,7 @@ impl PdbBioBuilder {
             return *residue_id;
         }
 
-        let chain_row = &self.structure.chains[chain_id.index() as usize];
-        let chain_start = chain_row.residue_span.start as usize;
-        let chain_end = chain_row.residue_span.end() as usize;
-        if let Some(existing_idx) = (chain_start..chain_end).find(|&idx| {
-            let residue = &self.structure.residues[idx];
-            residue.name == key.name
-                && residue.source.seq_id == Some(key.seq_id)
-                && residue.source.segment_id == key.segment_id
-        }) {
-            let residue_id = ResidueId::new(existing_idx as u32);
+        if let Some(&residue_id) = self.residue_lookup.get(&key) {
             self.current_residue = Some((residue_id, key));
             return residue_id;
         }
@@ -333,6 +350,7 @@ impl PdbBioBuilder {
         self.structure.chains[chain_id.index() as usize]
             .residue_span
             .len += 1;
+        self.residue_lookup.insert(key.clone(), residue_id);
         self.current_residue = Some((residue_id, key));
         residue_id
     }
@@ -413,6 +431,7 @@ impl PdbBioBuilder {
                 }
             }
         }
+        self.last_atom_index = Some(insert_idx);
         self.structure.residues[residue_idx].atom_span.len += 1;
     }
 
@@ -422,9 +441,8 @@ impl PdbBioBuilder {
         anisou: [f32; 6],
     ) -> Result<(), BioReadError> {
         let atom = self
-            .structure
-            .atoms
-            .last_mut()
+            .last_atom_index
+            .and_then(|index| self.structure.atoms.get_mut(index))
             .ok_or_else(|| BioReadError::Parse {
                 line_number,
                 message: "ANISOU before ATOM/HETATM is not valid".to_string(),
@@ -447,9 +465,8 @@ impl PdbBioBuilder {
         fraction: Option<f32>,
     ) -> Result<(), BioReadError> {
         let atom = self
-            .structure
-            .atoms
-            .last_mut()
+            .last_atom_index
+            .and_then(|index| self.structure.atoms.get_mut(index))
             .ok_or_else(|| BioReadError::Parse {
                 line_number,
                 message: "mmCIF atom properties before atom_site row is not valid".to_string(),
@@ -519,7 +536,7 @@ struct PdbAtomRecord {
     label_entity_id: Option<EntityId>,
     group_pdb: Option<char>,
     segment_id: Option<[u8; 4]>,
-    position: [f32; 3],
+    position: [f64; 3],
     occupancy: Option<f32>,
     b_iso: Option<f32>,
     formal_charge: Option<i8>,
@@ -540,10 +557,18 @@ impl PdbAtomRecord {
     }
 }
 
-/// Reads the Gemmi-aligned PDB structural reader surface with explicit record
-/// rejection policy for still-unported source branches.
+/// Reads the Gemmi-aligned PDB structural reader surface with explicit parser
+/// options for the source-defined record branches.
 pub(crate) fn read_pdb_bio_structure_from_str_with_params(
     text: &str,
+    params: BioPdbReadParams,
+) -> Result<BioStructure, BioReadError> {
+    read_pdb_bio_structure_from_str_with_params_and_source(text, "", params)
+}
+
+fn read_pdb_bio_structure_from_str_with_params_and_source(
+    text: &str,
+    source: &str,
     params: BioPdbReadParams,
 ) -> Result<BioStructure, BioReadError> {
     // BEGIN GEMMI CPP FUNCTION gemmi::populate_structure_from_pdb_stream
@@ -552,20 +577,20 @@ pub(crate) fn read_pdb_bio_structure_from_str_with_params(
     // Gemmi✔️✔️:     wrong("The line is too short to be correct:\n" + std::string(line));
     // Gemmi✔️✔️:   std::string chain_name = read_string(line+20, 2);
     // Gemmi✔️✔️:   ResidueId rid = read_res_id(line+22, line+17);
-    // Gemmi❗✔️:   if (!chain || chain_name != chain->name) {
-    // Gemmi❗✔️:     if (!model) {
-    // Gemmi❗✔️:       int num = (int) st.models.size() + 1;
-    // Gemmi❌❌:       if (st.find_model(num))
-    // Gemmi❌❌:         wrong("ATOM/HETATM between models");
-    // Gemmi❗✔️:       st.models.emplace_back(num);
-    // Gemmi❗✔️:       model = &st.models.back();
+    // Gemmi✔️✔️:   if (!chain || chain_name != chain->name) {
+    // Gemmi✔️✔️:     if (!model) {
+    // Gemmi✔️✔️:       int num = (int) st.models.size() + 1;
+    // Gemmi✔️✔️:       if (st.find_model(num))
+    // Gemmi✔️✔️:         wrong("ATOM/HETATM between models");
+    // Gemmi✔️✔️:       st.models.emplace_back(num);
+    // Gemmi✔️✔️:       model = &st.models.back();
     // Gemmi✔️✔️:     const Chain* prev_part = model->find_chain(chain_name);
     // Gemmi✔️✔️:     after_ter = prev_part &&
     // Gemmi✔️✔️:                   prev_part->residues[0].entity_type == EntityType::Polymer;
-    // Gemmi❗✔️:     model->chains.emplace_back(chain_name);
-    // Gemmi❗✔️:     chain = &model->chains.back();
-    // Gemmi❗✔️:     resmap.clear();
-    // Gemmi❗✔️:     resi = nullptr;
+    // Gemmi✔️✔️:     model->chains.emplace_back(chain_name);
+    // Gemmi✔️✔️:     chain = &model->chains.back();
+    // Gemmi✔️✔️:     resmap.clear();
+    // Gemmi✔️✔️:     resi = nullptr;
     // Gemmi✔️✔️:   if (len > 72)
     // Gemmi✔️✔️:     rid.segment = read_string(line+72, 4);
     // Gemmi✔️✔️:   if (!resi || !resi->matches(rid)) {
@@ -670,6 +695,12 @@ pub(crate) fn read_pdb_bio_structure_from_str_with_params(
     }
 
     let mut builder = PdbBioBuilder::default();
+    // BEGIN GEMMI CPP FUNCTION gemmi::populate_structure_from_pdb_stream
+    // Gemmi✔️✔️: st.input_format = CoorFormat::Pdb;
+    // Gemmi✔️✔️: st.name = path_basename(source, {".gz", ".pdb"});
+    // END GEMMI CPP FUNCTION
+    builder.structure.input_format = BioCoorFormat::Pdb;
+    builder.structure.name = gemmi_path_basename(source, &[".gz", ".pdb"]);
     builder.skip_remarks = params.skip_remarks;
     let mut split_chain_on_next_atom = false;
     let mut after_ter = false;
@@ -894,13 +925,6 @@ pub(crate) fn read_pdb_bio_structure_from_str_with_params(
                     }
                 }
             }
-            "TER " | "TER" if starts_record3(line, "TER") && params.reject_unported_records => {
-                return Err(unsupported(
-                    &BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
-                    line_number,
-                    "PDB TER chain/entity semantics are not ported",
-                ));
-            }
             "TER " | "TER" if starts_record3(line, "TER") && !params.ignore_ter => {
                 if let Some((chain_id, _)) = builder.current_chain {
                     if builder.structure.ter_status == 'e' {
@@ -927,13 +951,6 @@ pub(crate) fn read_pdb_bio_structure_from_str_with_params(
                 }
             }
             "END " | "END" if starts_record3(line, "END") => break,
-            "SSBO" | "LINK" | "CISP" if params.reject_unported_records => {
-                return Err(unsupported(
-                    &BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
-                    line_number,
-                    "PDB metadata, sequence, secondary-structure, and connection records are not ported",
-                ));
-            }
             "SSBO" if starts_record(line, "SSBOND") => {
                 builder
                     .structure
@@ -965,9 +982,31 @@ pub(crate) fn read_pdb_bio_structure_from_str_with_params(
         }
     }
 
-    let mut structure = builder.finish()?;
-    structure.input_format = BioCoorFormat::Pdb;
-    Ok(structure)
+    builder.finish()
+}
+
+fn gemmi_path_basename(path: &str, extensions: &[&str]) -> String {
+    // BEGIN GEMMI CPP FUNCTION gemmi::path_basename
+    // Gemmi✔️✔️: size_t pos = path.find_last_of("\\/");
+    // Gemmi✔️✔️: std::string basename = pos == std::string::npos ? path : path.substr(pos + 1);
+    // Gemmi✔️✔️: for (const char* ext : exts) {
+    // Gemmi✔️✔️:   size_t len = std::strlen(ext);
+    // Gemmi✔️✔️:   if (basename.size() > len &&
+    // Gemmi✔️✔️:       basename.compare(basename.length() - len, len, ext, len) == 0)
+    // Gemmi✔️✔️:     basename.resize(basename.length() - len);
+    // Gemmi✔️✔️: }
+    // Gemmi✔️✔️: return basename;
+    // END GEMMI CPP FUNCTION
+    let mut basename = path
+        .rfind(['\\', '/'])
+        .map_or(path, |position| &path[position + 1..])
+        .to_string();
+    for extension in extensions {
+        if basename.len() > extension.len() && basename.ends_with(extension) {
+            basename.truncate(basename.len() - extension.len());
+        }
+    }
+    basename
 }
 
 /// Reads the Gemmi-aligned mmCIF structural reader surface into a
@@ -999,7 +1038,7 @@ fn build_structure_from_mmcif_first_block(
         atom_site_storage = make_single_row_atom_site_loop_from_items(block)?;
         atom_site_storage.as_ref().ok_or_else(|| {
             unsupported(
-                &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                &BIO_MMCIF_READ_FEATURE,
                 0,
                 "mmCIF _atom_site loop is missing",
             )
@@ -1239,7 +1278,7 @@ fn read_mmcif_atom_site_subset_from_document(
     }
     let block = document.blocks.first().ok_or_else(|| {
         unsupported(
-            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+            &BIO_MMCIF_READ_FEATURE,
             0,
             "mmCIF _atom_site loop is missing",
         )
@@ -1282,7 +1321,7 @@ enum ChemCompModel {
 struct ChemCompResidueBuild {
     residue: ResidueRow,
     atoms: Vec<AtomRow>,
-    positions: Vec<[f32; 3]>,
+    positions: Vec<[f64; 3]>,
 }
 
 // BEGIN GEMMI CPP FUNCTION make_residue_from_chemcomp_block
@@ -1390,7 +1429,7 @@ fn make_residue_from_chemcomp_block(
         ),
         ChemCompModel::First => {
             return Err(unsupported(
-                &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                &BIO_MMCIF_READ_FEATURE,
                 0,
                 "chem_comp block does not contain supported coordinate tags",
             ));
@@ -1399,7 +1438,7 @@ fn make_residue_from_chemcomp_block(
 
     let atom_loop = find_cif_loop(&block.loops, "_chem_comp_atom.atom_id").ok_or_else(|| {
         unsupported(
-            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+            &BIO_MMCIF_READ_FEATURE,
             0,
             "chem_comp block is missing _chem_comp_atom.atom_id loop",
         )
@@ -1482,9 +1521,9 @@ fn make_residue_from_chemcomp_block(
             .transpose()?
             .map(|value| value.round() as i8);
         let pos = [
-            parse_f32(row[x].value.as_str(), row[x].line_number, xyz_tags.0)?,
-            parse_f32(row[y].value.as_str(), row[y].line_number, xyz_tags.1)?,
-            parse_f32(row[z].value.as_str(), row[z].line_number, xyz_tags.2)?,
+            parse_f64(row[x].value.as_str(), row[x].line_number, xyz_tags.0)?,
+            parse_f64(row[y].value.as_str(), row[y].line_number, xyz_tags.1)?,
+            parse_f64(row[z].value.as_str(), row[z].line_number, xyz_tags.2)?,
         ];
         atoms.push(AtomRow {
             residue_id: ResidueId::new(0),
@@ -1826,7 +1865,11 @@ pub(crate) fn read_structure_from_memory(
         other => other,
     };
     match format {
-        BioCoorFormat::Pdb => BioStructure::from_pdb_str(data),
+        BioCoorFormat::Pdb => read_pdb_bio_structure_from_str_with_params_and_source(
+            data,
+            path,
+            BioPdbReadParams::default(),
+        ),
         BioCoorFormat::Mmcif => make_structure_from_doc(&parse_cif_document(data)?, true),
         BioCoorFormat::Mmjson => {
             let document = read_mmjson_document(data, path)?;
@@ -1849,30 +1892,16 @@ fn parse_pdb_atom_record(line: &str, line_number: usize) -> Result<PdbAtomRecord
         });
     }
 
-    let serial = parse_decimal_i32(
-        &BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
-        field(line, 6, 11),
-        line_number,
-        "atom serial",
-    )?;
+    let serial = read_pdb_serial(field_raw(line, 6, 11));
     let atom_name = atom_name_from_field(field_raw(line, 12, 16));
     let altloc = parse_altloc(byte_at(line, 16));
     let residue_name = residue_name_from_field(field(line, 17, 20));
     let residue_kind = classify_residue_name(residue_name);
     let chain_id = pdb_chain_id_from_field(field(line, 20, 22));
-    let seq_num = parse_decimal_i32(
-        &BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
-        field(line, 22, 26),
-        line_number,
-        "residue sequence number",
-    )?;
-    let ins_code = match byte_at(line, 26) {
-        b' ' | 0 => None,
-        value => Some(value),
-    };
-    let x = parse_f32(field(line, 30, 38), line_number, "x coordinate")?;
-    let y = parse_f32(field(line, 38, 46), line_number, "y coordinate")?;
-    let z = parse_f32(field(line, 46, 54), line_number, "z coordinate")?;
+    let seq_id = read_pdb_seq_id(field_raw(line, 22, 27));
+    let x = parse_f64(field(line, 30, 38), line_number, "x coordinate")?;
+    let y = parse_f64(field(line, 38, 46), line_number, "y coordinate")?;
+    let z = parse_f64(field(line, 46, 54), line_number, "z coordinate")?;
     let occupancy = parse_optional_f32(field(line, 54, 60), line_number, "occupancy")?;
     let b_iso = parse_optional_f32(field(line, 60, 66), line_number, "B_iso")?;
     let element = parse_pdb_element(line, line_number)?;
@@ -1889,7 +1918,7 @@ fn parse_pdb_atom_record(line: &str, line_number: usize) -> Result<PdbAtomRecord
             auth_chain_id: Some(chain_id),
             label_asym_id: None,
         },
-        seq_id: PdbSeqId { seq_num, ins_code },
+        seq_id,
         label_seq_id: None,
         label_entity_id: None,
         group_pdb: Some(if starts_record(line, "HETATM") {
@@ -1928,10 +1957,10 @@ fn read_matrix(transform: &mut BioTransform, line: &str) -> i32 {
     let n = i32::from(byte_at(line, 5).saturating_sub(b'0'));
     if (1..=3).contains(&n) {
         let row = (n - 1) as usize;
-        transform.mat[row][0] = read_pdb_lossy_f32(field_raw(line, 10, 20));
-        transform.mat[row][1] = read_pdb_lossy_f32(field_raw(line, 20, 30));
-        transform.mat[row][2] = read_pdb_lossy_f32(field_raw(line, 30, 40));
-        transform.vec[row] = read_pdb_lossy_f32(field_raw(line, 45, 55));
+        transform.mat[row][0] = read_pdb_lossy_f64(field_raw(line, 10, 20));
+        transform.mat[row][1] = read_pdb_lossy_f64(field_raw(line, 20, 30));
+        transform.mat[row][2] = read_pdb_lossy_f64(field_raw(line, 30, 40));
+        transform.vec[row] = read_pdb_lossy_f64(field_raw(line, 45, 55));
     }
     n
 }
@@ -2144,6 +2173,31 @@ fn push_tls_selection(ref_info: &mut BioRefinementInfo, value: &str) -> Option<(
     Some((tls_group_idx, group.selections.len() - 1))
 }
 
+// BEGIN GEMMI CPP FUNCTION gemmi::SeqId::SeqId(const std::string&)
+// Gemmi✔️✔️: explicit SeqId(const std::string& str) {
+// Gemmi✔️✔️:   char* endptr;
+// Gemmi✔️✔️:   num = std::strtol(str.c_str(), &endptr, 10);
+// Gemmi✔️✔️:   if (endptr == str.c_str() || (*endptr != '\0' && endptr[1] != '\0'))
+// Gemmi✔️✔️:     throw std::invalid_argument("Not a seqid: " + str);
+// Gemmi✔️✔️:   icode = (*endptr | 0x20);
+// Gemmi✔️✔️: }
+// END GEMMI CPP FUNCTION
+fn parse_gemmi_seq_id_string(value: &str) -> Option<PdbSeqId> {
+    let value = value.trim();
+    let bytes = value.as_bytes();
+    let mut end = usize::from(matches!(bytes.first(), Some(b'+' | b'-')));
+    let digit_start = end;
+    while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+        end += 1;
+    }
+    if end == digit_start || bytes.len().saturating_sub(end) > 1 {
+        return None;
+    }
+    let seq_num = value[..end].parse::<i32>().ok()?;
+    let ins_code = bytes.get(end).copied().map(|value| value | 0x20);
+    Some(PdbSeqId { seq_num, ins_code })
+}
+
 // BEGIN GEMMI CPP HELPER is_tls_item(key)
 // Gemmi✔️✔️: is_tls_item(key) recognizes T/L/S tensor labels followed by 11..33.
 // END GEMMI CPP HELPER is_tls_item(key)
@@ -2190,7 +2244,25 @@ fn parse_tls_key_values(group: &mut BioTlsGroup, key_start: &str) {
 // Gemmi✔️✔️: read_string(ptr, len) returns the trimmed fixed-width substring.
 // END GEMMI CPP HELPER read_string(ptr, len)
 fn read_fixed_string(line: &str, start: usize, len: usize) -> String {
-    field_raw(line, start, start + len).trim().to_string()
+    // BEGIN GEMMI CPP FUNCTION read_string
+    // Gemmi✔️✔️: // left trim
+    // Gemmi✔️✔️: while (field_length != 0 && is_space(*p)) {
+    // Gemmi✔️✔️:   ++p;
+    // Gemmi✔️✔️:   --field_length;
+    // Gemmi✔️✔️: }
+    // Gemmi✔️✔️: // EOL/EOF ends the string
+    // Gemmi✔️✔️: for (int i = 0; i < field_length; ++i)
+    // Gemmi✔️✔️:   if (p[i] == '\n' || p[i] == '\r' || p[i] == '\0') {
+    // Gemmi✔️✔️:     field_length = i;
+    // Gemmi✔️✔️:     break;
+    // Gemmi✔️✔️:   }
+    // Gemmi✔️✔️: // right trim
+    // Gemmi✔️✔️: while (field_length != 0 && is_space(p[field_length-1]))
+    // Gemmi✔️✔️:   --field_length;
+    // Gemmi✔️✔️: return std::string(p, field_length);
+    // END GEMMI CPP FUNCTION
+    let end = start.saturating_add(len).min(line.len());
+    line.get(start..end).unwrap_or("").trim().to_string()
 }
 
 // BEGIN GEMMI CPP FUNCTION read_remark3_line
@@ -2452,12 +2524,18 @@ fn read_remark3_line(
                     let chain1 = read_fixed_string(line, colon_idx + 11, 5);
                     let chain2 = read_fixed_string(line, colon_idx + 26, 5);
                     if !chain1.is_empty() && chain1 == chain2 {
-                        group.selections.push(BioTlsSelection {
-                            chain: chain1,
-                            res_begin: read_fixed_string(line, colon_idx + 16, 6),
-                            res_end: read_fixed_string(line, colon_idx + 31, 6),
-                            details: String::new(),
-                        });
+                        let res_begin =
+                            parse_gemmi_seq_id_string(&read_fixed_string(line, colon_idx + 16, 6));
+                        let res_end =
+                            parse_gemmi_seq_id_string(&read_fixed_string(line, colon_idx + 31, 6));
+                        if let (Some(res_begin), Some(res_end)) = (res_begin, res_end) {
+                            group.selections.push(BioTlsSelection {
+                                chain: chain1,
+                                res_begin: Some(res_begin),
+                                res_end: Some(res_end),
+                                details: String::new(),
+                            });
+                        }
                     }
                 }
             }
@@ -2721,7 +2799,7 @@ fn residue_matches_address(
     {
         return false;
     }
-    residue.source.seq_id == address.seq_id
+    residue.source.seq_id == address.seq_id && residue.name.as_str() == address.residue_name
 }
 
 fn find_residue_for_address(
@@ -2790,7 +2868,7 @@ fn complete_ssbond_atom(
     Some(residue_id)
 }
 
-fn atom_distance_sq(structure: &BioStructure, left: usize, right: usize) -> f32 {
+fn atom_distance_sq(structure: &BioStructure, left: usize, right: usize) -> f64 {
     let a = structure.coordinates.positions[left];
     let b = structure.coordinates.positions[right];
     let dx = a[0] - b[0];
@@ -2819,7 +2897,7 @@ fn complete_ssbond(connection: &mut BioConnection, structure: &BioStructure) {
     if connection.partner1.altloc.is_none() && connection.partner2.altloc.is_none() {
         return;
     }
-    let mut best: Option<(f32, Option<AltLocLabel>, Option<AltLocLabel>)> = None;
+    let mut best: Option<(f64, Option<AltLocLabel>, Option<AltLocLabel>)> = None;
     for a1_idx in residue_atom_indices(structure, res1).filter(|&idx| {
         atom_name_trimmed(structure.atoms[idx].name) == connection.partner1.atom_name
     }) {
@@ -2963,6 +3041,7 @@ fn process_conn(structure: &mut BioStructure, conn_records: &[String]) {
                     type_: BioConnectionType::Disulf,
                     partner1: BioAtomAddress {
                         chain_name: read_fixed_string(record, 14, 2),
+                        residue_name: read_fixed_string(record, 11, 3),
                         seq_id: Some(PdbSeqId {
                             seq_num: field(record, 17, 21).parse::<i32>().unwrap_or(0),
                             ins_code: match byte_at(record, 21) {
@@ -2974,6 +3053,7 @@ fn process_conn(structure: &mut BioStructure, conn_records: &[String]) {
                     },
                     partner2: BioAtomAddress {
                         chain_name: read_fixed_string(record, 28, 2),
+                        residue_name: read_fixed_string(record, 25, 3),
                         seq_id: Some(PdbSeqId {
                             seq_num: field(record, 31, 35).parse::<i32>().unwrap_or(0),
                             ins_code: match byte_at(record, 35) {
@@ -2987,7 +3067,7 @@ fn process_conn(structure: &mut BioStructure, conn_records: &[String]) {
                 };
                 connection.asu = compare_link_symops(record, &mut connection.reported_sym);
                 if record.len() > 73 {
-                    connection.reported_distance = field(record, 73, 78).parse::<f32>().ok();
+                    connection.reported_distance = field(record, 73, 78).parse::<f64>().ok();
                 }
                 complete_ssbond(&mut connection, structure);
                 structure.connections.push(connection);
@@ -3005,6 +3085,7 @@ fn process_conn(structure: &mut BioStructure, conn_records: &[String]) {
                         &mut connection.partner2
                     };
                     address.chain_name = read_fixed_string(record, base + 20, 2);
+                    address.residue_name = read_fixed_string(record, base + 17, 3);
                     address.seq_id = Some(PdbSeqId {
                         seq_num: field(record, base + 22, base + 26)
                             .parse::<i32>()
@@ -3044,7 +3125,7 @@ fn process_conn(structure: &mut BioStructure, conn_records: &[String]) {
                     if byte_at(record, 4) == b'R' {
                         connection.link_id = read_fixed_string(record, 72, 8);
                     } else {
-                        connection.reported_distance = field(record, 73, 78).parse::<f32>().ok();
+                        connection.reported_distance = field(record, 73, 78).parse::<f64>().ok();
                     }
                 }
                 structure.connections.push(connection);
@@ -3061,6 +3142,7 @@ fn process_conn(structure: &mut BioStructure, conn_records: &[String]) {
                 structure.cispeps.push(BioCisPep {
                     partner_c: BioAtomAddress {
                         chain_name: read_fixed_string(record, 14, 2),
+                        residue_name: read_fixed_string(record, 11, 3),
                         seq_id: Some(PdbSeqId {
                             seq_num: field(record, 17, 21).parse::<i32>().unwrap_or(0),
                             ins_code: match byte_at(record, 21) {
@@ -3072,6 +3154,7 @@ fn process_conn(structure: &mut BioStructure, conn_records: &[String]) {
                     },
                     partner_n: BioAtomAddress {
                         chain_name: read_fixed_string(record, 28, 2),
+                        residue_name: read_fixed_string(record, 25, 3),
                         seq_id: Some(PdbSeqId {
                             seq_num: field(record, 31, 35).parse::<i32>().unwrap_or(0),
                             ins_code: match byte_at(record, 35) {
@@ -3083,7 +3166,7 @@ fn process_conn(structure: &mut BioStructure, conn_records: &[String]) {
                     },
                     model_num,
                     only_altloc: None,
-                    reported_angle: field(record, 53, 59).parse::<f32>().ok(),
+                    reported_angle: field(record, 53, 59).parse::<f64>().ok(),
                 });
             }
             _ => {}
@@ -3649,8 +3732,8 @@ fn find_crystal_spacegroup(crystal: &CrystalInfo) -> Option<&'static GemmiSpaceG
 // END GEMMI CPP FUNCTION
 fn find_spacegroup_by_name(
     name: &str,
-    alpha: f32,
-    gamma: f32,
+    alpha: f64,
+    gamma: f64,
     prefer: Option<&str>,
 ) -> Option<&'static GemmiSpaceGroupEntry> {
     let mut prefer_2 = false;
@@ -3814,29 +3897,29 @@ fn find_spacegroup_by_name(
 }
 
 fn gemmi_op_to_bio_transform(op: &crate::io::gemmi_spacegroup_table::GemmiSymOp) -> BioTransform {
-    let den = GEMMI_OP_DEN as f32;
+    let den = GEMMI_OP_DEN as f64;
     BioTransform {
         mat: [
             [
-                op.rot[0][0] as f32 / den,
-                op.rot[0][1] as f32 / den,
-                op.rot[0][2] as f32 / den,
+                op.rot[0][0] as f64 / den,
+                op.rot[0][1] as f64 / den,
+                op.rot[0][2] as f64 / den,
             ],
             [
-                op.rot[1][0] as f32 / den,
-                op.rot[1][1] as f32 / den,
-                op.rot[1][2] as f32 / den,
+                op.rot[1][0] as f64 / den,
+                op.rot[1][1] as f64 / den,
+                op.rot[1][2] as f64 / den,
             ],
             [
-                op.rot[2][0] as f32 / den,
-                op.rot[2][1] as f32 / den,
-                op.rot[2][2] as f32 / den,
+                op.rot[2][0] as f64 / den,
+                op.rot[2][1] as f64 / den,
+                op.rot[2][2] as f64 / den,
             ],
         ],
         vec: [
-            op.tran[0] as f32 / den,
-            op.tran[1] as f32 / den,
-            op.tran[2] as f32 / den,
+            op.tran[0] as f64 / den,
+            op.tran[1] as f64 / den,
+            op.tran[2] as f64 / den,
         ],
     }
 }
@@ -3887,42 +3970,42 @@ fn parse_pdb_anisou_record(line: &str, line_number: usize) -> Result<[f32; 6], B
     }
     Ok([
         parse_decimal_i32(
-            &BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
+            &BIO_PDB_READ_FEATURE,
             field(line, 28, 35),
             line_number,
             "ANISOU u11",
         )? as f32
             * 1e-4,
         parse_decimal_i32(
-            &BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
+            &BIO_PDB_READ_FEATURE,
             field(line, 35, 42),
             line_number,
             "ANISOU u22",
         )? as f32
             * 1e-4,
         parse_decimal_i32(
-            &BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
+            &BIO_PDB_READ_FEATURE,
             field(line, 42, 49),
             line_number,
             "ANISOU u33",
         )? as f32
             * 1e-4,
         parse_decimal_i32(
-            &BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
+            &BIO_PDB_READ_FEATURE,
             field(line, 49, 56),
             line_number,
             "ANISOU u12",
         )? as f32
             * 1e-4,
         parse_decimal_i32(
-            &BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
+            &BIO_PDB_READ_FEATURE,
             field(line, 56, 63),
             line_number,
             "ANISOU u13",
         )? as f32
             * 1e-4,
         parse_decimal_i32(
-            &BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
+            &BIO_PDB_READ_FEATURE,
             field(line, 63, 70),
             line_number,
             "ANISOU u23",
@@ -3954,6 +4037,7 @@ fn parse_pdb_helix_record(structure: &mut BioStructure, line: &str) {
     let mut helix = BioHelix {
         start: BioAtomAddress {
             chain_name: read_fixed_string(line, 18, 2),
+            residue_name: read_fixed_string(line, 15, 3),
             seq_id: Some(PdbSeqId {
                 seq_num: field(line, 21, 25).parse::<i32>().unwrap_or(0),
                 ins_code: match byte_at(line, 25) {
@@ -3965,6 +4049,7 @@ fn parse_pdb_helix_record(structure: &mut BioStructure, line: &str) {
         },
         end: BioAtomAddress {
             chain_name: read_fixed_string(line, 30, 2),
+            residue_name: read_fixed_string(line, 27, 3),
             seq_id: Some(PdbSeqId {
                 seq_num: field(line, 33, 37).parse::<i32>().unwrap_or(0),
                 ins_code: match byte_at(line, 37) {
@@ -4003,6 +4088,7 @@ fn parse_pdb_sheet_record(structure: &mut BioStructure, line: &str) {
     let mut strand = BioSheetStrand {
         start: BioAtomAddress {
             chain_name: read_fixed_string(line, 20, 2),
+            residue_name: read_fixed_string(line, 17, 3),
             seq_id: Some(PdbSeqId {
                 seq_num: field(line, 22, 26).parse::<i32>().unwrap_or(0),
                 ins_code: match byte_at(line, 26) {
@@ -4014,6 +4100,7 @@ fn parse_pdb_sheet_record(structure: &mut BioStructure, line: &str) {
         },
         end: BioAtomAddress {
             chain_name: read_fixed_string(line, 31, 2),
+            residue_name: read_fixed_string(line, 28, 3),
             seq_id: Some(PdbSeqId {
                 seq_num: field(line, 33, 37).parse::<i32>().unwrap_or(0),
                 ins_code: match byte_at(line, 37) {
@@ -4028,6 +4115,7 @@ fn parse_pdb_sheet_record(structure: &mut BioStructure, line: &str) {
     };
     if line.len() > 67 {
         strand.hbond_atom2.atom_name = read_fixed_string(line, 41, 4);
+        strand.hbond_atom2.residue_name = read_fixed_string(line, 45, 3);
         strand.hbond_atom2.chain_name = read_fixed_string(line, 48, 2);
         strand.hbond_atom2.seq_id = Some(PdbSeqId {
             seq_num: field(line, 50, 54).parse::<i32>().unwrap_or(0),
@@ -4037,6 +4125,7 @@ fn parse_pdb_sheet_record(structure: &mut BioStructure, line: &str) {
             },
         });
         strand.hbond_atom1.atom_name = read_fixed_string(line, 56, 4);
+        strand.hbond_atom1.residue_name = read_fixed_string(line, 60, 3);
         strand.hbond_atom1.chain_name = read_fixed_string(line, 63, 2);
         strand.hbond_atom1.seq_id = Some(PdbSeqId {
             seq_num: field(line, 65, 69).parse::<i32>().unwrap_or(0),
@@ -4052,6 +4141,7 @@ fn parse_pdb_sheet_record(structure: &mut BioStructure, line: &str) {
 fn parse_pdb_modres_record(structure: &mut BioStructure, line: &str) {
     let mut modres = BioModRes {
         chain_name: read_fixed_string(line, 15, 2),
+        residue_name: read_fixed_string(line, 12, 3),
         res_id: PdbSeqId {
             seq_num: field(line, 18, 22).parse::<i32>().unwrap_or(0),
             ins_code: match byte_at(line, 22) {
@@ -4110,25 +4200,32 @@ fn parse_pdb_dbref_record(builder: &mut PdbBioBuilder, line: &str) {
         }
     } else if byte_at(line, 5) == b'2' {
         dbref.accession_code = read_fixed_string(line, 18, 22);
-        dbref.db_begin = PdbSeqId {
-            seq_num: field(line, 45, 55).parse::<i32>().unwrap_or(0),
-            ins_code: None,
-        };
-        dbref.db_end = PdbSeqId {
-            seq_num: field(line, 57, 67).parse::<i32>().unwrap_or(0),
-            ins_code: None,
-        };
+        dbref.db_begin = field(line, 45, 55)
+            .parse::<i32>()
+            .ok()
+            .map(|seq_num| PdbSeqId {
+                seq_num,
+                ins_code: None,
+            });
+        dbref.db_end = field(line, 57, 67)
+            .parse::<i32>()
+            .ok()
+            .map(|seq_num| PdbSeqId {
+                seq_num,
+                ins_code: None,
+            });
     }
 }
 
-fn read_seq_id_range(line: &str, start: usize) -> PdbSeqId {
-    PdbSeqId {
-        seq_num: field(line, start, start + 5).parse::<i32>().unwrap_or(0),
+fn read_seq_id_range(line: &str, start: usize) -> Option<PdbSeqId> {
+    let seq_num = field(line, start, start + 5).parse::<i32>().ok()?;
+    Some(PdbSeqId {
+        seq_num,
         ins_code: match byte_at(line, start + 5) {
             b' ' | 0 => None,
             value => Some(value),
         },
-    }
+    })
 }
 
 fn parse_pdb_header_record(builder: &mut PdbBioBuilder, line: &str) {
@@ -4192,12 +4289,12 @@ fn parse_pdb_cryst1_record(
         crystal_set(
             &mut crystal,
             CrystalCell {
-                a: parse_f32(field(line, 6, 15), line_number, "CRYST1 a")?,
-                b: parse_f32(field(line, 15, 24), line_number, "CRYST1 b")?,
-                c: parse_f32(field(line, 24, 33), line_number, "CRYST1 c")?,
-                alpha: parse_f32(field(line, 33, 40), line_number, "CRYST1 alpha")?,
-                beta: parse_f32(field(line, 40, 47), line_number, "CRYST1 beta")?,
-                gamma: parse_f32(field(line, 47, 54), line_number, "CRYST1 gamma")?,
+                a: parse_f64(field(line, 6, 15), line_number, "CRYST1 a")?,
+                b: parse_f64(field(line, 15, 24), line_number, "CRYST1 b")?,
+                c: parse_f64(field(line, 24, 33), line_number, "CRYST1 c")?,
+                alpha: parse_f64(field(line, 33, 40), line_number, "CRYST1 alpha")?,
+                beta: parse_f64(field(line, 40, 47), line_number, "CRYST1 beta")?,
+                gamma: parse_f64(field(line, 47, 54), line_number, "CRYST1 gamma")?,
             },
         );
         if let Some(scale) = existing_scale {
@@ -4222,36 +4319,6 @@ fn parse_pdb_cryst1_record(
         }
     }
     Ok(())
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct CifToken {
-    value: String,
-    line_number: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct CifItem {
-    tag: String,
-    value: CifToken,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct CifLoop {
-    tags: Vec<String>,
-    values: Vec<CifToken>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct CifBlock {
-    name: String,
-    items: Vec<CifItem>,
-    loops: Vec<CifLoop>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct CifDocument {
-    blocks: Vec<CifBlock>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -4323,7 +4390,7 @@ fn read_mmcif_entity_and_sequence_info(
                     continue;
                 };
                 let pos = parse_decimal_i32(
-                    &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                    &BIO_MMCIF_READ_FEATURE,
                     row[num_col].value.as_str(),
                     row[num_col].line_number,
                     "_entity_poly_seq.num",
@@ -4435,7 +4502,7 @@ fn read_mmcif_entity_and_sequence_info(
                 dbref.label_seq_begin = cif_optional(seq_row[seq_align_beg].value.as_str())
                     .map(|value| {
                         parse_decimal_i32(
-                            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                            &BIO_MMCIF_READ_FEATURE,
                             value,
                             seq_row[seq_align_beg].line_number,
                             "_struct_ref_seq.seq_align_beg",
@@ -4445,35 +4512,41 @@ fn read_mmcif_entity_and_sequence_info(
                 dbref.label_seq_end = cif_optional(seq_row[seq_align_end].value.as_str())
                     .map(|value| {
                         parse_decimal_i32(
-                            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                            &BIO_MMCIF_READ_FEATURE,
                             value,
                             seq_row[seq_align_end].line_number,
                             "_struct_ref_seq.seq_align_end",
                         )
                     })
                     .transpose()?;
-                dbref.db_begin.seq_num = cif_optional(seq_row[db_align_beg].value.as_str())
+                dbref.db_begin = cif_optional(seq_row[db_align_beg].value.as_str())
                     .map(|value| {
                         parse_decimal_i32(
-                            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                            &BIO_MMCIF_READ_FEATURE,
                             value,
                             seq_row[db_align_beg].line_number,
                             "_struct_ref_seq.db_align_beg",
                         )
                     })
                     .transpose()?
-                    .unwrap_or_default();
-                dbref.db_end.seq_num = cif_optional(seq_row[db_align_end].value.as_str())
+                    .map(|seq_num| PdbSeqId {
+                        seq_num,
+                        ins_code: None,
+                    });
+                dbref.db_end = cif_optional(seq_row[db_align_end].value.as_str())
                     .map(|value| {
                         parse_decimal_i32(
-                            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                            &BIO_MMCIF_READ_FEATURE,
                             value,
                             seq_row[db_align_end].line_number,
                             "_struct_ref_seq.db_align_end",
                         )
                     })
                     .transpose()?
-                    .unwrap_or_default();
+                    .map(|seq_num| PdbSeqId {
+                        seq_num,
+                        ins_code: None,
+                    });
                 if let Some(index) = auth_seq_align_beg
                     && cif_row_has2(seq_row, index)
                     && let Some(seq_id) = make_seqid(
@@ -4482,7 +4555,7 @@ fn read_mmcif_entity_and_sequence_info(
                         seq_row[index].line_number,
                     )?
                 {
-                    dbref.seq_begin = seq_id;
+                    dbref.seq_begin = Some(seq_id);
                 }
                 if let Some(index) = auth_seq_align_end
                     && cif_row_has2(seq_row, index)
@@ -4492,7 +4565,7 @@ fn read_mmcif_entity_and_sequence_info(
                         seq_row[index].line_number,
                     )?
                 {
-                    dbref.seq_end = seq_id;
+                    dbref.seq_end = Some(seq_id);
                 }
                 entity.dbrefs.push(dbref);
             }
@@ -4508,15 +4581,19 @@ fn read_mmcif_entity_and_sequence_info(
             return Ok(());
         };
         for row in struct_asym_loop.values.chunks(width) {
-            let source_id = cif_optional(row[entity_col].value.as_str()).ok_or_else(|| {
-                missing_cif_value(row[entity_col].line_number, "_struct_asym.entity_id")
-            })?;
+            // Gemmi✔️✔️: for (auto row : s_asym_table)
+            // Gemmi✔️✔️:   if (Entity* ent = st.get_entity(row.str(1)))
+            // Gemmi✔️✔️:     ent->subchains.push_back(row.str(0));
+            let Some(source_id) = cif_optional(row[entity_col].value.as_str()) else {
+                continue;
+            };
             let Some(entity_id) = builder.find_entity_by_source_id(source_id) else {
                 continue;
             };
-            let subchain = cif_optional(row[id_col].value.as_str())
-                .ok_or_else(|| missing_cif_value(row[id_col].line_number, "_struct_asym.id"))
-                .and_then(|value| pdb_chain_id_from_cif(value, row[id_col].line_number))?;
+            let subchain = pdb_chain_id_from_cif(
+                cif_optional(row[id_col].value.as_str()).unwrap_or(""),
+                row[id_col].line_number,
+            )?;
             builder.add_entity_subchain(entity_id, subchain);
             builder.assign_chain_entity_by_subchain(subchain, entity_id);
         }
@@ -4777,7 +4854,7 @@ fn make_seqid(
         }
         if !seqid.is_empty() {
             ret.seq_num = parse_decimal_i32(
-                &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                &BIO_MMCIF_READ_FEATURE,
                 seqid.as_str(),
                 line_number,
                 "mmCIF residue sequence number",
@@ -4885,7 +4962,7 @@ fn copy_int(row: &[CifToken], index: usize, dest: &mut i32) -> Result<(), BioRea
     if cif_row_has2(row, index) {
         let token = &row[index];
         *dest = parse_decimal_i32(
-            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+            &BIO_MMCIF_READ_FEATURE,
             token.value.as_str(),
             token.line_number,
             "mmCIF integer field",
@@ -5106,14 +5183,14 @@ fn get_transform_matrix(row: &[CifToken]) -> Result<BioTransform, BioReadError> 
     for i in 0..3 {
         for j in 0..3 {
             let idx = 4 * i + j;
-            transform.mat[i][j] = parse_f32(
+            transform.mat[i][j] = parse_f64(
                 row[idx].value.as_str(),
                 row[idx].line_number,
                 "transform matrix",
             )?;
         }
         let idx = 4 * i + 3;
-        transform.vec[i] = parse_f32(
+        transform.vec[i] = parse_f64(
             row[idx].value.as_str(),
             row[idx].line_number,
             "transform vector",
@@ -5134,6 +5211,7 @@ fn bio_address_from_mmcif(
     Ok(BioAtomAddress {
         chain_name: chain_name.trim().to_string(),
         seq_id,
+        residue_name: residue_name.trim().to_string(),
         atom_name: atom_name.unwrap_or_default().trim().to_string(),
         altloc: None,
     })
@@ -5159,7 +5237,7 @@ fn set_part_of_address_from_label(
     line_number: usize,
 ) -> Result<(), BioReadError> {
     let seq = parse_decimal_i32(
-        &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+        &BIO_MMCIF_READ_FEATURE,
         label_seq_id_raw,
         line_number,
         "_struct_conn label_seq_id",
@@ -5188,23 +5266,15 @@ fn set_part_of_address_from_label(
 
 fn connection_type_from_mmcif(
     value: &str,
-    line_number: usize,
+    _line_number: usize,
 ) -> Result<BioConnectionType, BioReadError> {
-    match value.trim() {
-        "covale" => Ok(BioConnectionType::Covale),
-        "disulf" => Ok(BioConnectionType::Disulf),
-        "metalc" => Ok(BioConnectionType::MetalC),
-        "hydrog" | "." | "?" | "" => Err(unsupported(
-            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
-            line_number,
-            "mmCIF _struct_conn connection type is not modeled in BioConnectionType",
-        )),
-        _ => Err(unsupported(
-            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
-            line_number,
-            "unknown mmCIF _struct_conn connection type is not modeled in BioConnectionType",
-        )),
-    }
+    Ok(match value.trim() {
+        "covale" => BioConnectionType::Covale,
+        "disulf" => BioConnectionType::Disulf,
+        "hydrog" => BioConnectionType::Hydrog,
+        "metalc" => BioConnectionType::MetalC,
+        _ => BioConnectionType::Unknown,
+    })
 }
 
 // BEGIN GEMMI CPP FUNCTION read_connectivity
@@ -5301,7 +5371,7 @@ fn read_connectivity(loops: &[CifLoop], structure: &mut BioStructure) -> Result<
         if let Some(index) = pdbx_dist_value
             && cif_row_has2(row, index)
         {
-            connection.reported_distance = Some(parse_f32(
+            connection.reported_distance = Some(parse_f64(
                 row[index].value.as_str(),
                 row[index].line_number,
                 "_struct_conn.pdbx_dist_value",
@@ -5383,6 +5453,7 @@ fn read_connectivity(loops: &[CifLoop], structure: &mut BioStructure) -> Result<
                         .to_string(),
                 });
             }
+            address.residue_name = row[label_comp].value.trim().to_string();
             address.atom_name = row[label_atom].value.trim().to_string();
             if let Some(index) = label_alt {
                 address.altloc = cif_optional(row[index].value.as_str())
@@ -5434,7 +5505,7 @@ fn read_prot_cis(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), 
         let line_number = row[model_num].line_number;
         let mut cispep = BioCisPep {
             model_num: parse_decimal_i32(
-                &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                &BIO_MMCIF_READ_FEATURE,
                 row[model_num].value.as_str(),
                 line_number,
                 "_struct_mon_prot_cis.pdbx_PDB_model_num",
@@ -5447,10 +5518,11 @@ fn read_prot_cis(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), 
             ins_code.map(|idx| row[idx].value.as_str()),
             line_number,
         )?;
-        let _comp_c = auth_comp_id
+        cispep.partner_c.residue_name = auth_comp_id
             .and_then(|idx| cif_optional(row[idx].value.as_str()))
             .or_else(|| label_comp_id.and_then(|idx| cif_optional(row[idx].value.as_str())))
-            .unwrap_or("");
+            .unwrap_or("")
+            .to_string();
         if let Some(idx) = auth_asym_id_2
             && cif_row_has2(row, idx)
         {
@@ -5465,10 +5537,11 @@ fn read_prot_cis(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), 
                 line_number,
             )?;
         }
-        let _comp_n = auth_comp_id_2
+        cispep.partner_n.residue_name = auth_comp_id_2
             .and_then(|idx| cif_optional(row[idx].value.as_str()))
             .or_else(|| label_comp_id_2.and_then(|idx| cif_optional(row[idx].value.as_str())))
-            .unwrap_or("");
+            .unwrap_or("")
+            .to_string();
         if let Some(idx) = label_alt_id {
             cispep.only_altloc = cif_optional(row[idx].value.as_str())
                 .and_then(|value| value.as_bytes().first().copied())
@@ -5477,7 +5550,7 @@ fn read_prot_cis(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), 
         if let Some(idx) = omega_angle
             && cif_row_has2(row, idx)
         {
-            cispep.reported_angle = Some(parse_f32(
+            cispep.reported_angle = Some(parse_f64(
                 row[idx].value.as_str(),
                 row[idx].line_number,
                 "_struct_mon_prot_cis.pdbx_omega_angle",
@@ -5544,10 +5617,11 @@ fn read_struct_mod_residue(
             .and_then(|idx| cif_optional(row[idx].value.as_str()))
             .unwrap_or_default()
             .to_string();
-        let _mod_name = auth_comp_id
+        modres.residue_name = auth_comp_id
             .and_then(|idx| cif_optional(row[idx].value.as_str()))
             .or_else(|| label_comp_id.and_then(|idx| cif_optional(row[idx].value.as_str())))
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .to_string();
         structure.mod_residues.push(modres);
     }
     Ok(())
@@ -5703,17 +5777,6 @@ fn append_info_value(target: &mut Option<String>, value: &str) {
     }
 }
 
-fn pdb_seq_id_to_string(seq_id: Option<PdbSeqId>) -> String {
-    let Some(seq_id) = seq_id else {
-        return String::new();
-    };
-    let mut out = seq_id.seq_num.to_string();
-    if let Some(ins) = seq_id.ins_code {
-        out.push(ins as char);
-    }
-    out
-}
-
 fn software_classification_from_string(value: &str) -> BioSoftwareClassification {
     match value.trim().to_ascii_lowercase().as_str() {
         "data collection" => BioSoftwareClassification::DataCollection,
@@ -5747,12 +5810,8 @@ fn parse_optional_seq_id_from_mmcif(
     value: &str,
     ins_code: Option<&str>,
     line_number: usize,
-) -> Result<String, BioReadError> {
-    Ok(pdb_seq_id_to_string(make_seqid(
-        value,
-        ins_code,
-        line_number,
-    )?))
+) -> Result<Option<PdbSeqId>, BioReadError> {
+    make_seqid(value, ins_code, line_number)
 }
 
 fn transform_is_identity(transform: &BioTransform) -> bool {
@@ -5775,7 +5834,7 @@ fn copy_optional_i32(
 ) -> Result<(), BioReadError> {
     if cif_row_has2(row, index) {
         *dest = Some(parse_decimal_i32(
-            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+            &BIO_MMCIF_READ_FEATURE,
             row[index].value.as_str(),
             row[index].line_number,
             "mmCIF integer field",
@@ -6872,7 +6931,7 @@ fn read_assemblies(loops: &[CifLoop]) -> Result<Vec<BioAssembly>, BioReadError> 
         }
         assembly.oligomeric_details = row[oligomeric_details].value.trim().to_string();
         assembly.oligomeric_count = parse_decimal_i32(
-            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+            &BIO_MMCIF_READ_FEATURE,
             row[oligomeric_count].value.as_str(),
             row[oligomeric_count].line_number,
             "_pdbx_struct_assembly.oligomeric_count",
@@ -6983,13 +7042,13 @@ fn read_sifts_unp(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(),
             idx
         };
         let label_seq = parse_decimal_i32(
-            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+            &BIO_MMCIF_READ_FEATURE,
             row[seq_id].value.as_str(),
             row[seq_id].line_number,
             "_pdbx_sifts_xref_db.seq_id",
         )?;
         let unp_num_value = parse_decimal_i32(
-            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+            &BIO_MMCIF_READ_FEATURE,
             row[unp_num].value.as_str(),
             row[unp_num].line_number,
             "_pdbx_sifts_xref_db.unp_num",
@@ -7102,14 +7161,13 @@ fn read_helices(loops: &[CifLoop]) -> Result<Vec<BioHelix>, BioReadError> {
                 None,
                 line_number,
             )?,
-            length: 0,
             ..BioHelix::default()
         };
         if let Some(index) = helix_class
             && cif_row_has2(row, index)
         {
             helix.set_helix_class_as_int(parse_decimal_i32(
-                &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                &BIO_MMCIF_READ_FEATURE,
                 row[index].value.as_str(),
                 row[index].line_number,
                 "mmCIF helix class",
@@ -7119,7 +7177,7 @@ fn read_helices(loops: &[CifLoop]) -> Result<Vec<BioHelix>, BioReadError> {
             && cif_row_has2(row, index)
         {
             helix.length = parse_decimal_i32(
-                &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+                &BIO_MMCIF_READ_FEATURE,
                 row[index].value.as_str(),
                 row[index].line_number,
                 "mmCIF helix length",
@@ -7408,12 +7466,7 @@ fn read_mmcif_atom_site(
             .model_num
             .and_then(|idx| cif_optional(row[idx].value.as_str()))
             .map(|value| {
-                parse_decimal_i32(
-                    &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
-                    value,
-                    line_number,
-                    "model number",
-                )
+                parse_decimal_i32(&BIO_MMCIF_READ_FEATURE, value, line_number, "model number")
             })
             .transpose()?;
         let effective_model_number = model_number.or(Some(1));
@@ -7427,13 +7480,20 @@ fn read_mmcif_atom_site(
             builder.begin_model(effective_model_number);
         }
 
-        let label_chain = cif_optional(row[columns.label_asym_id].value.as_str())
-            .ok_or_else(|| missing_cif_value(line_number, "_atom_site.label_asym_id"))?;
+        // Gemmi✔️✔️: if (!chain || cif::as_string(asym_id.get(gap)) != chain->name) {
+        // Gemmi✔️✔️:   model->chains.emplace_back(cif::as_string(asym_id.get(gap)));
+        // Gemmi✔️✔️:   chain = &model->chains.back();
+        // Gemmi✔️✔️:   resi = nullptr;
+        // Gemmi✔️✔️: }
         let auth_chain = columns
             .auth_asym_id
             .and_then(|idx| cif_optional(row[idx].value.as_str()));
-        let chain_key = pdb_chain_id_from_cif(auth_chain.unwrap_or(label_chain), line_number)?;
-        let label_chain_id = pdb_chain_id_from_cif(label_chain, line_number)?;
+        let chain_name = asym_id.get(row).and_then(cif_optional).unwrap_or("");
+        let chain_key = pdb_chain_id_from_cif(chain_name, line_number)?;
+        // Gemmi✔️✔️: resi->subchain = row.str(kLabelAsymId);
+        let label_chain_id = cif_optional(row[columns.label_asym_id].value.as_str())
+            .map(|value| pdb_chain_id_from_cif(value, line_number))
+            .transpose()?;
         let auth_chain_id = auth_chain
             .map(|value| pdb_chain_id_from_cif(value, line_number))
             .transpose()?;
@@ -7466,19 +7526,27 @@ fn read_mmcif_atom_site(
             .and_then(element_from_symbol)
             .ok_or_else(|| missing_cif_value(line_number, "_atom_site.type_symbol"))?;
 
-        let x = parse_f32(row[columns.x].value.as_str(), line_number, "Cartn_x")?;
-        let y = parse_f32(row[columns.y].value.as_str(), line_number, "Cartn_y")?;
-        let z = parse_f32(row[columns.z].value.as_str(), line_number, "Cartn_z")?;
+        let x = parse_f64(row[columns.x].value.as_str(), line_number, "Cartn_x")?;
+        let y = parse_f64(row[columns.y].value.as_str(), line_number, "Cartn_y")?;
+        let z = parse_f64(row[columns.z].value.as_str(), line_number, "Cartn_z")?;
+        // Gemmi✔️✔️: float occ = 1.0f;
+        // Gemmi✔️✔️: float b_iso = 20.0f; // arbitrary default value
+        // Gemmi✔️✔️: if (row.has2(kOcc))
+        // Gemmi✔️✔️:   atom.occ = (float) cif::as_number(row[kOcc]);
+        // Gemmi✔️✔️: if (row.has2(kBiso))
+        // Gemmi✔️✔️:   atom.b_iso = (float) cif::as_number(row[kBiso]);
         let occupancy = columns
             .occupancy
             .and_then(|idx| cif_optional(row[idx].value.as_str()))
             .map(|value| parse_f32(value, line_number, "occupancy"))
-            .transpose()?;
+            .transpose()?
+            .unwrap_or(1.0);
         let b_iso = columns
             .b_iso
             .and_then(|idx| cif_optional(row[idx].value.as_str()))
             .map(|value| parse_f32(value, line_number, "B_iso_or_equiv"))
-            .transpose()?;
+            .transpose()?
+            .unwrap_or(20.0);
         let formal_charge = columns
             .formal_charge
             .and_then(|idx| cif_optional(row[idx].value.as_str()))
@@ -7531,7 +7599,7 @@ fn read_mmcif_atom_site(
                 chain_key,
                 chain_source: ChainSourceIds {
                     auth_chain_id,
-                    label_asym_id: Some(label_chain_id),
+                    label_asym_id: label_chain_id,
                 },
                 seq_id: seq_id_value,
                 label_seq_id: cif_optional(row[columns.label_seq_id].value.as_str())
@@ -7540,8 +7608,8 @@ fn read_mmcif_atom_site(
                 group_pdb,
                 segment_id: None,
                 position: [x, y, z],
-                occupancy,
-                b_iso,
+                occupancy: Some(occupancy),
+                b_iso: Some(b_iso),
                 formal_charge,
                 element,
                 calc_flag,
@@ -7798,6 +7866,7 @@ fn fill_document_from_mmjson_value(
             name: block_name["data_".len()..].to_string(),
             items: Vec::new(),
             loops: Vec::new(),
+            entries: Vec::new(),
         };
 
         for (category_key, category) in top_map {
@@ -7863,13 +7932,13 @@ fn fill_document_from_mmjson_value(
 
                 let tag = format!("{category_name}{column_key}");
                 if cif_rows == 1 {
-                    block.items.push(CifItem {
+                    block.push_pair(
                         tag,
-                        value: CifToken {
+                        CifToken {
                             value: mmjson_value_as_cif_value(&values[0], line_number)?,
                             line_number,
                         },
-                    });
+                    );
                 } else if cif_rows != 0 {
                     let loop_ = pending_loop.as_mut().expect("loop allocated for multi-row");
                     loop_.tags.push(tag);
@@ -7883,7 +7952,7 @@ fn fill_document_from_mmjson_value(
             }
 
             if let Some(loop_) = pending_loop {
-                block.loops.push(loop_);
+                block.push_loop(loop_);
             }
         }
 
@@ -7948,14 +8017,18 @@ fn set_cell_from_mmcif(document: &CifDocument, crystal: &mut Option<CrystalInfo>
     if cif_optional(a).is_none() || cif_optional(b).is_none() || cif_optional(c).is_none() {
         return;
     }
-    crystal.get_or_insert_with(default_crystal_info).cell = CrystalCell {
-        a: cif_number_or_nan(a),
-        b: cif_number_or_nan(b),
-        c: cif_number_or_nan(c),
-        alpha: cif_number_or_nan(alpha),
-        beta: cif_number_or_nan(beta),
-        gamma: cif_number_or_nan(gamma),
-    };
+    let crystal = crystal.get_or_insert_with(default_crystal_info);
+    crystal_set(
+        crystal,
+        CrystalCell {
+            a: cif_number_or_nan(a),
+            b: cif_number_or_nan(b),
+            c: cif_number_or_nan(c),
+            alpha: cif_number_or_nan(alpha),
+            beta: cif_number_or_nan(beta),
+            gamma: cif_number_or_nan(gamma),
+        },
+    );
 }
 
 // BEGIN GEMMI CPP FUNCTION gemmi::impl::find_spacegroup_hm_value
@@ -7973,6 +8046,7 @@ fn parse_cif_document(text: &str) -> Result<CifDocument, BioReadError> {
         name: String::new(),
         items: Vec::new(),
         loops: Vec::new(),
+        entries: Vec::new(),
     };
     let mut idx = 0;
     while idx < tokens.len() {
@@ -7986,6 +8060,7 @@ fn parse_cif_document(text: &str) -> Result<CifDocument, BioReadError> {
                     name: String::new(),
                     items: Vec::new(),
                     loops: Vec::new(),
+                    entries: Vec::new(),
                 };
             }
             current_block.name = tokens[idx].value["data_".len()..].to_string();
@@ -8003,7 +8078,7 @@ fn parse_cif_document(text: &str) -> Result<CifDocument, BioReadError> {
                         line_number: tokens.last().map_or(0, |token| token.line_number),
                         message: format!("mmCIF item {tag} is missing a value"),
                     })?;
-                current_block.items.push(CifItem { tag, value });
+                current_block.push_pair(tag, value);
                 idx += 1;
                 continue;
             }
@@ -8038,7 +8113,7 @@ fn parse_cif_document(text: &str) -> Result<CifDocument, BioReadError> {
             values.push(tokens[idx].clone());
             idx += 1;
         }
-        current_block.loops.push(CifLoop { tags, values });
+        current_block.push_loop(CifLoop { tags, values });
     }
     if !current_block.items.is_empty()
         || !current_block.loops.is_empty()
@@ -8051,6 +8126,7 @@ fn parse_cif_document(text: &str) -> Result<CifDocument, BioReadError> {
             name: String::new(),
             items: Vec::new(),
             loops: Vec::new(),
+            entries: Vec::new(),
         });
     }
     Ok(CifDocument { blocks })
@@ -8203,7 +8279,7 @@ fn pdb_chain_id_from_str(value: &str) -> Option<PdbChainId> {
     Some(PdbChainId(storage, bytes.len() as u8))
 }
 
-fn bio_transform_apply_mat(mat: &[[f32; 3]; 3], vec: [f32; 3]) -> [f32; 3] {
+fn bio_transform_apply_mat(mat: &[[f64; 3]; 3], vec: [f64; 3]) -> [f64; 3] {
     [
         mat[0][0] * vec[0] + mat[0][1] * vec[1] + mat[0][2] * vec[2],
         mat[1][0] * vec[0] + mat[1][1] * vec[1] + mat[1][2] * vec[2],
@@ -8211,7 +8287,7 @@ fn bio_transform_apply_mat(mat: &[[f32; 3]; 3], vec: [f32; 3]) -> [f32; 3] {
     ]
 }
 
-fn bio_transform_multiply(a: &[[f32; 3]; 3], b: &[[f32; 3]; 3]) -> [[f32; 3]; 3] {
+fn bio_transform_multiply(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
     [
         [
             a[0][0] * b[0][0] + a[0][1] * b[1][0] + a[0][2] * b[2][0],
@@ -8250,7 +8326,7 @@ fn bio_transform_inverse(transform: &BioTransform) -> Option<BioTransform> {
     let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
         - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
         + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-    if det.abs() <= f32::EPSILON {
+    if det.abs() <= f64::EPSILON {
         return None;
     }
     let inv_det = 1.0 / det;
@@ -8278,7 +8354,7 @@ fn bio_transform_inverse(transform: &BioTransform) -> Option<BioTransform> {
     })
 }
 
-fn bio_transform_approx_eq(a: &BioTransform, b: &BioTransform, mat_eps: f32, vec_eps: f32) -> bool {
+fn bio_transform_approx_eq(a: &BioTransform, b: &BioTransform, mat_eps: f64, vec_eps: f64) -> bool {
     for row in 0..3 {
         for col in 0..3 {
             if (a.mat[row][col] - b.mat[row][col]).abs() > mat_eps {
@@ -8374,6 +8450,18 @@ fn crystal_calculate_properties(crystal: &mut CrystalInfo) {
 }
 
 fn crystal_set(crystal: &mut CrystalInfo, cell: CrystalCell) {
+    // Gemmi✔️✔️: void set(double a_, double b_, double c_,
+    // Gemmi✔️✔️:          double alpha_, double beta_, double gamma_) {
+    // Gemmi✔️✔️:   if (gamma_ == 0.0)  // ignore empty/partial CRYST1 (example: 3iyp)
+    // Gemmi✔️✔️:     return;
+    // Gemmi✔️✔️:   a = a_;
+    // Gemmi✔️✔️:   b = b_;
+    // Gemmi✔️✔️:   c = c_;
+    // Gemmi✔️✔️:   alpha = alpha_;
+    // Gemmi✔️✔️:   beta = beta_;
+    // Gemmi✔️✔️:   gamma = gamma_;
+    // Gemmi✔️✔️:   calculate_properties();
+    // Gemmi✔️✔️: }
     if cell.gamma == 0.0 {
         return;
     }
@@ -8397,14 +8485,17 @@ fn crystal_set_matrices_from_fract(crystal: &mut CrystalInfo, fract: BioTransfor
 }
 
 fn default_crystal_info() -> CrystalInfo {
+    // Gemmi✔️✔️: struct UnitCellParameters {
+    // Gemmi✔️✔️:   double a = 1.0, b = 1.0, c = 1.0;
+    // Gemmi✔️✔️:   double alpha = 90.0, beta = 90.0, gamma = 90.0;
     CrystalInfo {
         cell: CrystalCell {
-            a: 0.0,
-            b: 0.0,
-            c: 0.0,
-            alpha: 0.0,
-            beta: 0.0,
-            gamma: 0.0,
+            a: 1.0,
+            b: 1.0,
+            c: 1.0,
+            alpha: 90.0,
+            beta: 90.0,
+            gamma: 90.0,
         },
         spacegroup_hm: None,
         z_pdb: None,
@@ -8431,35 +8522,167 @@ fn byte_at(line: &str, index: usize) -> u8 {
     line.as_bytes().get(index).copied().unwrap_or(b' ')
 }
 
-fn cif_number_or_nan(value: &str) -> f32 {
+fn cif_number_or_nan(value: &str) -> f64 {
     let value = value.trim();
     if value.is_empty() || value == "." || value == "?" {
-        return f32::NAN;
+        return f64::NAN;
     }
-    value
-        .parse::<f32>()
-        .or_else(|_| value.parse::<f64>().map(|parsed| parsed as f32))
-        .unwrap_or(f32::NAN)
+    value.parse::<f64>().unwrap_or(f64::NAN)
 }
 
-fn read_pdb_lossy_f32(value: &str) -> f32 {
-    value.trim().parse::<f32>().unwrap_or(0.0)
+fn read_pdb_lossy_f64(value: &str) -> f64 {
+    value.trim().parse::<f64>().unwrap_or(0.0)
+}
+
+fn read_pdb_unchecked_decimal(value: &str) -> i32 {
+    // BEGIN GEMMI CPP FUNCTION gemmi::string_to_int
+    // Gemmi✔️✔️: inline int string_to_int(const char* p, bool checked, size_t length=0) {
+    // Gemmi✔️✔️:   int mult = -1;
+    // Gemmi✔️✔️:   int n = 0;
+    // Gemmi✔️✔️:   size_t i = 0;
+    // Gemmi✔️✔️:   while ((length == 0 || i < length) && is_space(p[i]))
+    // Gemmi✔️✔️:     ++i;
+    // Gemmi✔️✔️:   if (p[i] == '-') {
+    // Gemmi✔️✔️:     mult = 1;
+    // Gemmi✔️✔️:     ++i;
+    // Gemmi✔️✔️:   } else if (p[i] == '+') {
+    // Gemmi✔️✔️:     ++i;
+    // Gemmi✔️✔️:   }
+    // Gemmi✔️✔️:   bool has_digits = false;
+    // Gemmi✔️✔️:   // use negative numbers because INT_MIN < -INT_MAX
+    // Gemmi✔️✔️:   for (; (length == 0 || i < length) && is_digit(p[i]); ++i) {
+    // Gemmi✔️✔️:     n = n * 10 - (p[i] - '0');
+    // Gemmi✔️✔️:     has_digits = true;
+    // Gemmi✔️✔️:   }
+    // Gemmi✔️✔️:   if (checked) {
+    // Gemmi✔️✔️:     while ((length == 0 || i < length) && is_space(p[i]))
+    // Gemmi✔️✔️:       ++i;
+    // Gemmi✔️✔️:     if (!has_digits || p[i] != '\0')
+    // Gemmi✔️✔️:       throw std::invalid_argument("not an integer: " +
+    // Gemmi✔️✔️:                                   std::string(p, length ? length : i+1));
+    // Gemmi✔️✔️:   }
+    // Gemmi✔️✔️:   return mult * n;
+    // Gemmi✔️✔️: }
+    // END GEMMI CPP FUNCTION
+    let bytes = value.as_bytes();
+    let mut multiplier = -1;
+    let mut number = 0_i32;
+    let mut index = 0;
+    while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+        index += 1;
+    }
+    if bytes.get(index) == Some(&b'-') {
+        multiplier = 1;
+        index += 1;
+    } else if bytes.get(index) == Some(&b'+') {
+        index += 1;
+    }
+    while let Some(&byte) = bytes.get(index)
+        && byte.is_ascii_digit()
+    {
+        number = number * 10 - i32::from(byte - b'0');
+        index += 1;
+    }
+    multiplier * number
+}
+
+fn read_pdb_base36<const N: usize>(value: &str) -> i32 {
+    // BEGIN GEMMI CPP FUNCTION gemmi::read_base36
+    // Gemmi✔️✔️: template<int N> int read_base36(const char* p) {
+    // Gemmi✔️✔️:   char zstr[N+1] = {0};
+    // Gemmi✔️✔️:   std::memcpy(zstr, p, N);
+    // Gemmi✔️✔️:   return std::strtol(zstr, nullptr, 36);
+    // Gemmi✔️✔️: }
+    // END GEMMI CPP FUNCTION
+    let bytes = value.as_bytes();
+    let limit = N.min(bytes.len());
+    let mut index = 0;
+    while index < limit && bytes[index].is_ascii_whitespace() {
+        index += 1;
+    }
+    let mut sign = 1_i32;
+    if bytes.get(index) == Some(&b'-') {
+        sign = -1;
+        index += 1;
+    } else if bytes.get(index) == Some(&b'+') {
+        index += 1;
+    }
+    let mut number = 0_i32;
+    while index < limit {
+        let digit = match bytes[index] {
+            b'0'..=b'9' => i32::from(bytes[index] - b'0'),
+            b'a'..=b'z' => i32::from(bytes[index] - b'a') + 10,
+            b'A'..=b'Z' => i32::from(bytes[index] - b'A') + 10,
+            _ => break,
+        };
+        number = number * 36 + digit;
+        index += 1;
+    }
+    sign * number
+}
+
+fn read_pdb_seq_id(value: &str) -> PdbSeqId {
+    // BEGIN GEMMI CPP FUNCTION gemmi::read_seq_id
+    // Gemmi✔️✔️: SeqId read_seq_id(const char* str) {
+    // Gemmi✔️✔️:   SeqId seqid;
+    // Gemmi✔️✔️:   if (str[4] != '\r' && str[4] != '\n')
+    // Gemmi✔️✔️:     seqid.icode = str[4];
+    // Gemmi✔️✔️:   // We support hybrid-36 extension, although it is never used in practice
+    // Gemmi✔️✔️:   // as 9999 residues per chain are enough.
+    // Gemmi✔️✔️:   if (str[0] < 'A') {
+    // Gemmi✔️✔️:     for (int i = 4; i != 0; --i, ++str)
+    // Gemmi✔️✔️:       if (!is_space(*str)) {
+    // Gemmi✔️✔️:         seqid.num = read_int(str, i);
+    // Gemmi✔️✔️:         break;
+    // Gemmi✔️✔️:       }
+    // Gemmi✔️✔️:   } else {
+    // Gemmi✔️✔️:     seqid.num = read_base36<4>(str) - 466560 + 10000;
+    // Gemmi✔️✔️:   }
+    // Gemmi✔️✔️:   return seqid;
+    // Gemmi✔️✔️: }
+    // END GEMMI CPP FUNCTION
+    let bytes = value.as_bytes();
+    let ins_code = match bytes.get(4).copied().unwrap_or(b' ') {
+        b' ' | b'\r' | b'\n' | 0 => None,
+        byte => Some(byte),
+    };
+    let seq_num = if bytes.first().copied().unwrap_or(b' ') < b'A' {
+        (0..4)
+            .find(|&index| {
+                bytes
+                    .get(index)
+                    .is_some_and(|byte| !byte.is_ascii_whitespace())
+            })
+            .map_or(i32::MIN, |index| {
+                read_pdb_unchecked_decimal(&value[index..4.min(value.len())])
+            })
+    } else {
+        read_pdb_base36::<4>(value) - 466_560 + 10_000
+    };
+    PdbSeqId { seq_num, ins_code }
+}
+
+fn read_pdb_serial(value: &str) -> i32 {
+    // BEGIN GEMMI CPP FUNCTION gemmi::read_serial
+    // Gemmi✔️✔️: int read_serial(const char* ptr) {
+    // Gemmi✔️✔️:   return ptr[0] < 'A' ? read_int(ptr, 5)
+    // Gemmi✔️✔️:                       : read_base36<5>(ptr) - 16796160 + 100000;
+    // Gemmi✔️✔️: }
+    // END GEMMI CPP FUNCTION
+    if value.as_bytes().first().copied().unwrap_or(b' ') < b'A' {
+        read_pdb_unchecked_decimal(value)
+    } else {
+        read_pdb_base36::<5>(value) - 16_796_160 + 100_000
+    }
 }
 
 fn parse_decimal_i32(
-    feature: &'static FeatureSpec,
+    _feature: &'static FeatureSpec,
     value: &str,
     line_number: usize,
     field_name: &'static str,
 ) -> Result<i32, BioReadError> {
     let trimmed = value.trim();
-    if trimmed.bytes().any(|byte| byte.is_ascii_alphabetic()) {
-        return Err(unsupported(
-            feature,
-            line_number,
-            "Gemmi hybrid-36 atom serial/residue sequence decoding is not ported",
-        ));
-    }
     trimmed.parse::<i32>().map_err(|_| BioReadError::Parse {
         line_number,
         message: format!("invalid {field_name}: {trimmed:?}"),
@@ -8471,13 +8694,7 @@ fn parse_optional_i32(value: &str, line_number: usize) -> Result<Option<i32>, Bi
     if trimmed.is_empty() {
         return Ok(None);
     }
-    parse_decimal_i32(
-        &BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
-        trimmed,
-        line_number,
-        "model number",
-    )
-    .map(Some)
+    parse_decimal_i32(&BIO_PDB_READ_FEATURE, trimmed, line_number, "model number").map(Some)
 }
 
 fn append_metadata_string(target: &mut Option<String>, value: &str) {
@@ -8542,6 +8759,18 @@ fn parse_f32(
 ) -> Result<f32, BioReadError> {
     let trimmed = value.trim();
     trimmed.parse::<f32>().map_err(|_| BioReadError::Parse {
+        line_number,
+        message: format!("invalid {field_name}: {trimmed:?}"),
+    })
+}
+
+fn parse_f64(
+    value: &str,
+    line_number: usize,
+    field_name: &'static str,
+) -> Result<f64, BioReadError> {
+    let trimmed = value.trim();
+    trimmed.parse::<f64>().map_err(|_| BioReadError::Parse {
         line_number,
         message: format!("invalid {field_name}: {trimmed:?}"),
     })
@@ -8631,7 +8860,7 @@ fn pdb_chain_id_from_cif(value: &str, line_number: usize) -> Result<PdbChainId, 
     let trimmed = value.trim();
     if trimmed.len() > 4 {
         return Err(unsupported(
-            &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+            &BIO_MMCIF_READ_FEATURE,
             line_number,
             "mmCIF chain identifiers longer than 4 bytes are not modeled in PdbChainId",
         ));
@@ -8788,6 +9017,16 @@ fn unsupported(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mmcif_output_group_all_categories_emit_and_replace_prepopulated_categories() {
+        writer::tests::check_mmcif_output_group_all_categories_emit_and_replace_prepopulated_categories();
+    }
+
+    #[test]
+    fn mmcif_output_group_all_disabled_preserves_prepopulated_block_exactly() {
+        writer::tests::check_mmcif_output_group_all_disabled_preserves_prepopulated_block_exactly();
+    }
     use crate::bio::BioHelixClass;
 
     fn read_test_mmcif(text: &str) -> Result<BioStructure, BioReadError> {
@@ -9115,26 +9354,6 @@ ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
     }
 
     #[test]
-    fn strict_pdb_mode_rejects_unported_records() {
-        let pdb = "\
-ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
-HELIX    1   1 ALA A    7  GLY A    8  1                                   2
-LINK         O   HOH A 201                 ZN   ZN A 301     1555   1555  2.10
-";
-
-        let err = BioStructure::from_pdb_str_with_params(
-            &pdb,
-            BioPdbReadParams {
-                reject_unported_records: true,
-                ..BioPdbReadParams::default()
-            },
-        )
-        .unwrap_err();
-
-        assert!(matches!(err, BioReadError::Unsupported { .. }));
-    }
-
-    #[test]
     fn reads_pdb_helix_and_sheet_secondary_structure_records() {
         let pdb = [
             "SEQRES   1 A    7  ALA GLY SER THR TYR VAL LEU".to_string(),
@@ -9200,7 +9419,7 @@ LINK         O   HOH A 201                 ZN   ZN A 301     1555   1555  2.10
     }
 
     #[test]
-    fn reads_pdb_deferred_connection_records_and_routes_single_model_cispep() {
+    fn explicit_pdb_params_accept_ter_and_deferred_connection_records() {
         let mut link = " ".repeat(80);
         link.replace_range(0..4, "LINK");
         link.replace_range(12..16, "ZN1A");
@@ -9229,17 +9448,28 @@ ATOM      1  SG  CYS A   3       0.000   0.000   0.000  1.00 20.00           S
 ATOM      2  SG  CYS A   4       2.000   0.000   0.000  1.00 20.00           S
 HETATM    3 ZN1A  ZN A   1       5.000   0.000   0.000  1.00 20.00          ZN
 ATOM      4  O   HOH A   2       6.900   0.000   0.000  1.00 20.00           O
-SSBOND   1 CYS A   3    CYS A   4                          1555   1555  2.03
+TER
+SSBOND   1 CYS A   3     CYS A   4                          1555   1555  2.03
 {cispep}
 {link}
 "
         );
 
-        let structure = BioStructure::from_pdb_str(&pdb).unwrap();
+        let structure = BioStructure::from_pdb_str_with_params(
+            &pdb,
+            BioPdbReadParams {
+                max_line_length: 120,
+                ..BioPdbReadParams::default()
+            },
+        )
+        .unwrap();
 
+        assert_eq!(structure.ter_status, 'e');
         assert!(structure.deferred_conn_records.is_empty());
         assert_eq!(structure.connections.len(), 2);
         assert_eq!(structure.connections[0].type_, BioConnectionType::Disulf);
+        assert_eq!(structure.connections[0].partner1.residue_name, "CYS");
+        assert_eq!(structure.connections[0].partner2.residue_name, "CYS");
         assert_eq!(structure.connections[1].type_, BioConnectionType::MetalC);
         assert_eq!(structure.cispeps.len(), 1);
         assert_eq!(structure.cispeps[0].model_num, 1);
@@ -9288,6 +9518,9 @@ SSBOND   1 CYS A   3    CYS A   4                          1555   1555  2.03
         dbref2.replace_range(45..55, "       101");
         dbref2.replace_range(57..67, "       109");
 
+        let dbref1 = dbref1.trim_end();
+        let dbref2 = dbref2.trim_end();
+
         let pdb = format!(
             "\
 ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 20.00           C
@@ -9318,15 +9551,21 @@ TER
         assert_eq!(structure.entities[0].dbrefs[0].db_name, "UNP");
         assert_eq!(structure.entities[0].dbrefs[0].accession_code, "Q12345");
         assert_eq!(structure.entities[0].dbrefs[0].id_code, "SAMPLE_ID");
-        assert_eq!(structure.entities[0].dbrefs[0].db_begin.seq_num, 11);
-        assert_eq!(structure.entities[0].dbrefs[0].db_end.seq_num, 19);
+        assert_eq!(
+            structure.entities[0].dbrefs[0].db_begin.unwrap().seq_num,
+            11
+        );
+        assert_eq!(structure.entities[0].dbrefs[0].db_end.unwrap().seq_num, 19);
         assert_eq!(structure.entities[0].dbrefs[1].id_code, "SAMPLE_IDENTIFIER");
         assert_eq!(
             structure.entities[0].dbrefs[1].accession_code,
             "Q12345LONGACCESSION"
         );
-        assert_eq!(structure.entities[0].dbrefs[1].db_begin.seq_num, 101);
-        assert_eq!(structure.entities[0].dbrefs[1].db_end.seq_num, 109);
+        assert_eq!(
+            structure.entities[0].dbrefs[1].db_begin.unwrap().seq_num,
+            101
+        );
+        assert_eq!(structure.entities[0].dbrefs[1].db_end.unwrap().seq_num, 109);
         assert!(structure.residues[0].source.subchain_id.is_none());
         assert!(structure.residues[1].source.subchain_id.is_none());
     }
@@ -10246,6 +10485,7 @@ ATOM      4  SD BCYS A   2      30.000   0.000   0.000  1.00 20.00           S
         let mut connection = BioConnection {
             partner1: BioAtomAddress {
                 chain_name: "A".to_string(),
+                residue_name: "CYS".to_string(),
                 seq_id: Some(PdbSeqId {
                     seq_num: 1,
                     ins_code: None,
@@ -10254,6 +10494,7 @@ ATOM      4  SD BCYS A   2      30.000   0.000   0.000  1.00 20.00           S
             },
             partner2: BioAtomAddress {
                 chain_name: "A".to_string(),
+                residue_name: "CYS".to_string(),
                 seq_id: Some(PdbSeqId {
                     seq_num: 2,
                     ins_code: None,
@@ -10514,6 +10755,39 @@ MODEL        1
     }
 
     #[test]
+    fn pdb_atom_reader_matches_gemmi_hybrid36_serial_and_sequence_values() {
+        let pdb = "\
+ATOM  99998  SD  MET L9999      48.231 -64.383  -9.257  1.00 11.54           S
+ATOM  99999  CE  MET L9999      49.398 -63.242 -10.211  1.00 14.60           C
+ATOM  A0000  N   VAL LA000      52.228 -67.689 -12.196  1.00  8.76           N
+ATOM  A0001  CA  VAL LA000      53.657 -67.774 -12.458  1.00  3.40           C
+";
+
+        let structure = BioStructure::from_pdb_str(pdb).unwrap();
+        let values = structure
+            .atoms
+            .iter()
+            .map(|atom| {
+                let residue = &structure.residues[atom.residue_id.index() as usize];
+                (
+                    atom.source.serial.unwrap().0,
+                    residue.source.seq_id.unwrap().seq_num,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            values,
+            vec![
+                (99_998, 9_999),
+                (99_999, 9_999),
+                (100_000, 10_000),
+                (100_001, 10_000)
+            ]
+        );
+    }
+
+    #[test]
     fn pdb_model_control_flow_rejects_non_adjacent_anisou() {
         let err = BioStructure::from_pdb_str(
             "\
@@ -10753,7 +11027,22 @@ ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
         atom3.replace_range(30..38, "   2.000");
         atom3.replace_range(76..78, " N");
 
-        let pdb = format!("{atom1}\n{atom2}\n{atom3}\n");
+        let mut anisou = " ".repeat(80);
+        anisou.replace_range(0..6, "ANISOU");
+        anisou.replace_range(6..11, "    3");
+        anisou.replace_range(12..16, " N  ");
+        anisou.replace_range(17..20, "ALA");
+        anisou.replace_range(20..22, "A ");
+        anisou.replace_range(22..26, "   1");
+        anisou.replace_range(28..35, "   1000");
+        anisou.replace_range(35..42, "   2000");
+        anisou.replace_range(42..49, "   3000");
+        anisou.replace_range(49..56, "    400");
+        anisou.replace_range(56..63, "    500");
+        anisou.replace_range(63..70, "    600");
+        anisou.replace_range(76..78, " N");
+
+        let pdb = format!("{atom1}\n{atom2}\n{atom3}\n{anisou}\n");
         let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
         assert_eq!(structure.num_residues(), 2);
@@ -10766,6 +11055,18 @@ ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
         assert_eq!(structure.atoms[2].name, AtomName(*b" CB "));
         assert_eq!(structure.atoms[1].residue_id, ResidueId::new(0));
         assert_eq!(structure.atoms[2].residue_id, ResidueId::new(1));
+        assert_eq!(
+            structure.atoms[1].anisou,
+            Some([
+                1000.0_f32 * 1e-4,
+                2000.0_f32 * 1e-4,
+                3000.0_f32 * 1e-4,
+                400.0_f32 * 1e-4,
+                500.0_f32 * 1e-4,
+                600.0_f32 * 1e-4,
+            ])
+        );
+        assert_eq!(structure.atoms[2].anisou, None);
     }
 
     #[test]
@@ -10866,6 +11167,26 @@ ATOM 1 C CA . ALA A 7 11.104 13.207 9.900 1.00 20.00 7 ALA A CA 1
         assert_eq!(structure.atoms[0].occupancy, Some(1.0));
         assert_eq!(structure.atoms[0].b_iso, Some(20.0));
         assert_eq!(structure.coordinates.positions[0], [11.104, 13.207, 9.900]);
+    }
+
+    #[test]
+    fn mmcif_atom_site_uses_gemmi_atom_defaults_for_missing_or_null_occ_and_b_iso() {
+        for optional_columns in [
+            "".to_string(),
+            "_atom_site.occupancy\n_atom_site.B_iso_or_equiv\n".to_string(),
+        ] {
+            let optional_values = if optional_columns.is_empty() {
+                ""
+            } else {
+                ". ? "
+            };
+            let cif = format!(
+                "data_demo\nloop_\n_atom_site.id\n_atom_site.type_symbol\n_atom_site.label_atom_id\n_atom_site.label_alt_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.label_seq_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n{optional_columns}1 C CA . ALA A 1 0 0 0 {optional_values}\n"
+            );
+            let structure = read_test_mmcif(&cif).unwrap();
+            assert_eq!(structure.atoms[0].occupancy, Some(1.0));
+            assert_eq!(structure.atoms[0].b_iso, Some(20.0));
+        }
     }
 
     #[test]
@@ -11062,11 +11383,11 @@ ATOM 1 C CA . ALA A 1 1 0.0 1.0 2.0
         assert_eq!(dbref.isoform, "ISO1");
         assert_eq!(dbref.label_seq_begin, Some(1));
         assert_eq!(dbref.label_seq_end, Some(3));
-        assert_eq!(dbref.db_begin.seq_num, 11);
-        assert_eq!(dbref.db_end.seq_num, 19);
-        assert_eq!(dbref.seq_begin.seq_num, 101);
-        assert_eq!(dbref.seq_end.seq_num, 103);
-        assert_eq!(dbref.seq_end.ins_code, Some(b'A'));
+        assert_eq!(dbref.db_begin.unwrap().seq_num, 11);
+        assert_eq!(dbref.db_end.unwrap().seq_num, 19);
+        assert_eq!(dbref.seq_begin.unwrap().seq_num, 101);
+        assert_eq!(dbref.seq_end.unwrap().seq_num, 103);
+        assert_eq!(dbref.seq_end.unwrap().ins_code, Some(b'A'));
         assert_eq!(
             structure.entities[0].subchains,
             vec![pdb_chain_id_from_str("A").unwrap()]
@@ -11691,11 +12012,17 @@ _struct_ncs_oper.code
         );
         assert_eq!(
             structure.metadata.refinement[0].tls_groups[0].selections[0].res_begin,
-            "10"
+            Some(PdbSeqId {
+                seq_num: 10,
+                ins_code: None,
+            })
         );
         assert_eq!(
             structure.metadata.refinement[0].tls_groups[0].selections[0].res_end,
-            "20A"
+            Some(PdbSeqId {
+                seq_num: 20,
+                ins_code: Some(b'A'),
+            })
         );
         assert_eq!(structure.metadata.experiments.len(), 1);
         assert_eq!(
@@ -12457,6 +12784,7 @@ C1 C 0 1.0 2.0 3.0 4.0 5.0 6.0
         let pdb_structure =
             read_structure_from_memory(pdb, "demo.pdb", BioCoorFormat::Detect).unwrap();
         assert_eq!(pdb_structure.input_format, BioCoorFormat::Pdb);
+        assert_eq!(pdb_structure.name, "demo");
         assert_eq!(pdb_structure.num_atoms(), 1);
 
         let mmcif = "data_demo\nloop_\n_atom_site.group_PDB\n_atom_site.id\n_atom_site.type_symbol\n_atom_site.label_atom_id\n_atom_site.label_alt_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.label_entity_id\n_atom_site.label_seq_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\nATOM 1 C CA . ALA A 1 1 0.0 0.0 0.0\n";
@@ -12472,6 +12800,19 @@ C1 C 0 1.0 2.0 3.0 4.0 5.0 6.0
         assert_eq!(chemcomp_structure.input_format, BioCoorFormat::ChemComp);
         assert_eq!(chemcomp_structure.name, "GLY");
         assert_eq!(chemcomp_structure.num_atoms(), 1);
+    }
+
+    #[test]
+    fn pdb_source_name_uses_gemmi_path_basename_rules() {
+        assert_eq!(
+            gemmi_path_basename(r"C:\data\demo.pdb.gz", &[".gz", ".pdb"]),
+            "demo"
+        );
+        assert_eq!(
+            gemmi_path_basename("/data/demo.PDB", &[".gz", ".pdb"]),
+            "demo.PDB"
+        );
+        assert_eq!(gemmi_path_basename(".pdb", &[".gz", ".pdb"]), ".pdb");
     }
 
     #[test]

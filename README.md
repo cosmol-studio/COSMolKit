@@ -149,6 +149,10 @@ from cosmolkit import BioStructure
 structure = BioStructure.from_pdb("complex.pdb")
 print(structure.num_models(), structure.num_chains(), structure.num_atoms())
 
+# Structural format conversion remains on the complete structural value.
+mmcif_text = structure.to_mmcif()
+roundtrip = BioStructure.from_mmcif_str(mmcif_text, path="complex.cif")
+
 for model in structure.models():
     for chain in model.chains():
         for residue in chain.residues():
@@ -249,8 +253,8 @@ inputs until a trusted graph has been constructed.
 - Substructure matching and SMARTS parse metadata
 - Ordered batch transforms and exports
 - Python pickle round-tripping for `Molecule`
-- Complete PDB/mmCIF `BioStructure` parsing, protein projections, and explicit
-  structure-to-molecule conversion
+- Complete PDB/mmCIF `BioStructure` parsing, Gemmi-aligned mmCIF writing,
+  protein projections, and explicit structure-to-molecule conversion
 - Support-status metadata for public features
 
 ## Design Principles
@@ -386,7 +390,7 @@ through low-level structural tables.
 - ✅ Protein chain, residue, and atom iteration
 - ✅ Protein-only projection from broader structural data
 - ✅ PDB/mmCIF structural parsing
-- 🚧 Gemmi-aligned `BioStructure` mmCIF serialization and file writing
+- ✅ Gemmi-aligned `BioStructure` mmCIF serialization and file writing
 - 🚧 Selection utilities for chains, residues, atoms, and neighborhoods
 - 🚧 Ligand, nucleic-acid, and mixed-structure ergonomic APIs
 

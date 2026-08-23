@@ -30,10 +30,19 @@ Read the complete structural value before selecting a projection:
 ``structure``. Structural child objects share the parent storage; traversal
 does not copy the complete structure for every model, chain, residue, or atom.
 
-Direct Gemmi-aligned mmCIF serialization on ``BioStructure`` is planned but is
-not part of the current API. It will be documented here after the writer and
-CIF serializer are source-ported and validated; no placeholder method is
-exposed in the meantime.
+Serialize the complete structural value as Gemmi-aligned mmCIF without
+mutating it. Writer options control category groups and CIF formatting:
+
+.. code-block:: python
+
+   mmcif_text = structure.to_mmcif()
+   structure.write_mmcif("roundtrip.cif")
+
+These writers belong only to ``BioStructure``. ``Protein`` and ``Molecule`` do
+not expose structural mmCIF writer aliases because they intentionally preserve
+different state boundaries. The writer emits the state represented by
+``BioStructure``; arbitrary source categories not modeled by that value are
+not claimed to round-trip.
 
 Protein Projections
 -------------------

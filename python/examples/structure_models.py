@@ -13,6 +13,11 @@ HETATM    3  O   HOH A   2      18.000  10.000   8.000  1.00 10.00           O
 structure = BioStructure.from_pdb_str(PDB)
 print(structure)
 
+# Structural writing stays on BioStructure so mixed hierarchy state is retained.
+mmcif_text = structure.to_mmcif()
+roundtrip = BioStructure.from_mmcif_str(mmcif_text, path="memory.cif")
+print(roundtrip)
+
 for model in structure.models():
     for chain in model.chains():
         for residue in chain.residues():

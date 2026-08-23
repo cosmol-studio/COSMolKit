@@ -285,8 +285,8 @@ operation body.
 COSMolKit uses one public structural model: `BioStructure`.
 
 Gemmi-derived code is the canonical source for PDB/mmCIF reading into
-`BioStructure`. RDKit-derived PDB code is reserved for `Molecule` compatibility
-behavior such as PDB block writing, `Molecule::from_pdb_block`,
+`BioStructure` and mmCIF writing from it. RDKit-derived PDB code is reserved for
+`Molecule` compatibility behavior such as PDB block writing, `Molecule::from_pdb_block`,
 `Molecule::from_mmcif_block`, and `AtomPDBResidueInfo` semantics. Molecule input
 is layered over the Gemmi-primary `BioStructure` parse plus an explicit
 structure-to-molecule conversion policy; it must not introduce a second public

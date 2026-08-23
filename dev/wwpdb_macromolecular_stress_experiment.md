@@ -27,8 +27,8 @@ fuzzing are separate boundaries.
 
 ## Current Public Boundary
 
-The experiment must test what COSMolKit currently exposes without describing a
-missing writer as implemented.
+The experiment must test what COSMolKit currently exposes and keep the
+structural writer boundary explicit.
 
 Supported compositions in scope are:
 
@@ -38,24 +38,26 @@ mmCIF text -> BioStructure -> Protein
 PDB text   -> BioStructure -> Molecule
 mmCIF text -> BioStructure -> Molecule
 Molecule   -> PDB text
+BioStructure -> mmCIF text -> BioStructure
 BioStructure.without_waters() -> BioStructure
 ```
 
-The project does not currently expose `BioStructure.to_pdb()`,
-`BioStructure.to_mmcif()`, `Protein.to_pdb()`, or `Protein.to_mmcif()`.
-Consequently, “PDB/mmCIF conversion” in this experiment has two precise
-meanings:
+The project does not expose `BioStructure.to_pdb()`, `Protein.to_pdb()`, or
+`Protein.to_mmcif()`. `BioStructure.to_mmcif()` is implemented and belongs to
+the complete structural model. Consequently, “PDB/mmCIF conversion” in this
+experiment has three precise meanings:
 
 1. PDB and mmCIF representations of the same wwPDB entry are parsed and
    compared through their common structural projection, relative to pinned
    Gemmi.
-2. The implemented `mmCIF -> Molecule -> PDB -> Molecule` and
+2. The implemented `PDB -> BioStructure -> mmCIF -> BioStructure` composition
+   is compared through complete structural state and the pinned Gemmi writer.
+3. The implemented `mmCIF -> Molecule -> PDB -> Molecule` and
    `PDB -> Molecule -> PDB -> Molecule` compositions are exercised.
 
-Direct PDB-to-mmCIF writing is not claimed or silently substituted. If a
-public structural writer is added later, it must receive a separate phase and
-a Gemmi writer oracle before it becomes part of this experiment's accepted
-boundary.
+Direct `BioStructure` PDB-to-mmCIF writing is exercised through the public
+composition above. PDB output remains a `Molecule` compatibility writer; there
+is no `BioStructure.to_pdb()`.
 
 ## Corpus Identity
 
@@ -89,6 +91,12 @@ represent all current structures; the
 lists chain-count, atom-count, identifier, and numeric-field boundaries.
 Absence of a legacy PDB file is therefore corpus metadata, not a failed or
 skipped mmCIF case.
+
+The run manifest must separately count mmCIF entries rejected because a chain
+or subchain identifier exceeds the current four-byte `PdbChainId` model. That
+declared model boundary is not a matching result and cannot be silently
+truncated or excluded from corpus accounting. Entity source identifiers are
+variable-length strings and are not part of this rejection class.
 
 ## Reproducible Preparation
 
@@ -266,6 +274,12 @@ cross-format consistency, not RDKit mmCIF parity.
 
 ### PDB writing and compositions
 
+For every selected structural PDB profile, `BioStructure.to_mmcif()` output is
+compared with the pinned Gemmi writer at exact bytes, then reparsed by both
+implementations and compared through complete represented structural state.
+Category suppression and every public `MmcifWriteOptions` formatting branch
+are included in the deterministic writer phase.
+
 Every successful selected PDB molecule profile is written with `conf_id=-1`
 and `conf_id=0` across all 64 combinations of the six documented RDKit PDB
 writer flavor bits. COSMolKit and RDKit text compare byte-for-byte. The output
@@ -280,6 +294,7 @@ mmCIF -> Molecule -> PDB -> Molecule
 PDB   -> BioStructure -> Protein traversal
 mmCIF -> BioStructure -> Protein traversal
 BioStructure -> without_waters -> hierarchy validation
+BioStructure -> mmCIF -> BioStructure -> hierarchy and metadata validation
 ```
 
 The value-style `without_waters()` result must preserve the source object,
@@ -299,6 +314,7 @@ span and coordinate row consistently, and satisfy BioStructure invariants.
 | `pdb_molecule` | deterministic expensive-path paired set | 32 RDKit reader profiles |
 | `mmcif_molecule` | deterministic expensive-path set | 32 documented conversion profiles |
 | `pdb_writer` | every successful selected PDB molecule outcome | 128 writer outputs per outcome and RDKit exact text |
+| `biostructure_mmcif_writer` | every selected structural PDB/mmCIF outcome | exact Gemmi writer bytes, semantic reparse, option matrix |
 | `format_composition` | deterministic expensive-path set | complete post-roundtrip state relations |
 | `concurrency_determinism` | every diversity label and extreme metric | 1-worker and configured-worker digests identical |
 | `resource_profile` | every phase | per-entry time, CPU, allocation/RSS, and output bytes retained |

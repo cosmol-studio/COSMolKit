@@ -304,21 +304,35 @@ pub const BIO_STRUCTURE_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Flat-row BioStructure hierarchy and coordinate storage for protein, PDB, mmCIF, mmJSON, and chem-comp workflows. Public access is read-only; mutation goes through crate-internal builders or registered BioStructure operations.",
 };
 
-pub const BIO_PDB_COORDINATE_SUBSET_READ_FEATURE: FeatureSpec = FeatureSpec {
-    name: "bio.pdb.coordinate_subset.read",
+pub const BIO_PDB_READ_FEATURE: FeatureSpec = FeatureSpec {
+    name: "bio.pdb.read",
     category: FeatureCategory::Io,
     status: SupportStatus::Supported,
     parity_sensitive: true,
-    docs: "Read the documented Gemmi-aligned PDB structural record scope into BioStructure, including coordinates, models, anisotropic data, hierarchy, entities, connections, selected metadata, crystallography, and NCS transforms. Unmodeled records fail explicitly in strict mode.",
+    docs: "Read the documented Gemmi-aligned PDB structural record scope into BioStructure, including decimal and hybrid-36 identifiers, coordinates, models, anisotropic data, hierarchy, entities, connections, selected metadata, crystallography, and NCS transforms.",
 };
 
-pub const BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE: FeatureSpec = FeatureSpec {
-    name: "bio.mmcif.atom_site_subset.read",
+pub const BIO_MMCIF_READ_FEATURE: FeatureSpec = FeatureSpec {
+    name: "bio.mmcif.read",
     category: FeatureCategory::Io,
     status: SupportStatus::Supported,
     parity_sensitive: true,
     docs: "Read the documented Gemmi-aligned mmCIF, mmJSON, and chem-comp structural scope into BioStructure, including atom sites, entities and sequences, references, connectivity, assemblies, SIFTS mappings, crystallography, and NCS transforms. Unmodeled structural categories fail explicitly where required.",
 };
+
+pub const BIO_MMCIF_WRITE_FEATURE: FeatureSpec = FeatureSpec {
+    name: "bio.mmcif.write",
+    category: FeatureCategory::Io,
+    status: SupportStatus::Supported,
+    parity_sensitive: true,
+    docs: "Serialize BioStructure as canonical Gemmi-aligned mmCIF with source-defined category groups and CIF formatting options. The writer emits state represented by BioStructure and belongs only to BioStructure, not Protein or Molecule.",
+};
+
+#[deprecated(note = "use BIO_PDB_READ_FEATURE")]
+pub const BIO_PDB_COORDINATE_SUBSET_READ_FEATURE: FeatureSpec = BIO_PDB_READ_FEATURE;
+
+#[deprecated(note = "use BIO_MMCIF_READ_FEATURE")]
+pub const BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE: FeatureSpec = BIO_MMCIF_READ_FEATURE;
 
 pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &SMILES_PARSE_FEATURE,
@@ -346,8 +360,9 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &BATCH_FEATURE,
     &DG_BOUNDS_FEATURE,
     &BIO_STRUCTURE_FEATURE,
-    &BIO_PDB_COORDINATE_SUBSET_READ_FEATURE,
-    &BIO_MMCIF_ATOM_SITE_SUBSET_READ_FEATURE,
+    &BIO_PDB_READ_FEATURE,
+    &BIO_MMCIF_READ_FEATURE,
+    &BIO_MMCIF_WRITE_FEATURE,
     &BIO_SELECTION_FEATURE,
 ];
 

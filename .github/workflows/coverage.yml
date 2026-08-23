@@ -54,6 +54,9 @@ jobs:
             - name: Checkout
               uses: actions/checkout@v4
 
+            - name: Initialize pinned Gemmi source
+              run: git submodule update --init --depth 1 third_party/gemmi
+
             - name: Setup Rust
               uses: dtolnay/rust-toolchain@stable
 
@@ -74,6 +77,13 @@ jobs:
 
             - name: Sync dev environment
               run: uv sync --group dev
+
+            - name: Prepare and validate Gemmi mmCIF writer expected data
+              run: |
+                  .venv/bin/python tools/testdata/gemmi/generate_all.py \
+                      --profile bio_mmcif_writer \
+                      --suite mmcif_writer \
+                      --jobs 4
 
             - name: Restore RDKit golden cache
               id: rdkit_golden_cache

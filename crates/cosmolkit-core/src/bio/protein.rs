@@ -268,7 +268,7 @@ impl<'a> ProteinAtomRef<'a> {
     }
 
     #[must_use]
-    pub fn position(self) -> Option<[f32; 3]> {
+    pub fn position(self) -> Option<[f64; 3]> {
         self.protein.structure.atom_position(self.atom_id)
     }
 }

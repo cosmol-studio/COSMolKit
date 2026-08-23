@@ -139,7 +139,7 @@ pub enum ChainKind {
 pub struct PdbAtomSerial(pub i32);
 
 /// PDB/mmCIF chain identifier string (up to 4 chars).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PdbChainId(pub [u8; 4], pub u8);
 
 impl PdbChainId {
@@ -150,7 +150,7 @@ impl PdbChainId {
 }
 
 /// PDB residue sequence number + insertion code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct PdbSeqId {
     pub seq_num: i32,
     pub ins_code: Option<u8>,
@@ -165,7 +165,7 @@ pub struct PdbSeqId {
 pub struct AtomName(pub [u8; 4]);
 
 /// Up to 3-char residue name (e.g. "ALA", "GLY").
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ResidueName(pub [u8; 4], pub u8);
 
 impl ResidueName {
@@ -329,10 +329,13 @@ pub struct BioEntityDbRef {
     pub accession_code: String,
     pub id_code: String,
     pub isoform: String,
-    pub seq_begin: PdbSeqId,
-    pub seq_end: PdbSeqId,
-    pub db_begin: PdbSeqId,
-    pub db_end: PdbSeqId,
+    // Gemmi✔️✔️: SeqId seq_begin, seq_end;
+    // Gemmi✔️✔️: SeqId db_begin, db_end;
+    // Gemmi✔️✔️: OptionalNum num;   // sequence number
+    pub seq_begin: Option<PdbSeqId>,
+    pub seq_end: Option<PdbSeqId>,
+    pub db_begin: Option<PdbSeqId>,
+    pub db_end: Option<PdbSeqId>,
     pub label_seq_begin: Option<i32>,
     pub label_seq_end: Option<i32>,
 }
@@ -348,6 +351,7 @@ pub struct BioSiftsUnpResidue {
 pub struct BioModRes {
     pub chain_name: String,
     pub res_id: PdbSeqId,
+    pub residue_name: String,
     pub parent_comp_id: String,
     pub mod_id: String,
     pub details: String,
@@ -433,8 +437,8 @@ pub struct BioRefinementRestraint {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct BioTlsSelection {
     pub chain: String,
-    pub res_begin: String,
-    pub res_end: String,
+    pub res_begin: Option<PdbSeqId>,
+    pub res_end: Option<PdbSeqId>,
     pub details: String,
 }
 
@@ -581,16 +585,19 @@ pub enum BioAsu {
 pub struct BioAtomAddress {
     pub chain_name: String,
     pub seq_id: Option<PdbSeqId>,
+    pub residue_name: String,
     pub atom_name: String,
     pub altloc: Option<AltLocLabel>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BioConnectionType {
-    #[default]
-    Disulf,
     Covale,
+    Disulf,
+    Hydrog,
     MetalC,
+    #[default]
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -601,7 +608,7 @@ pub struct BioConnection {
     pub partner2: BioAtomAddress,
     pub asu: BioAsu,
     pub reported_sym: [i16; 4],
-    pub reported_distance: Option<f32>,
+    pub reported_distance: Option<f64>,
     pub link_id: String,
 }
 
@@ -611,7 +618,7 @@ pub struct BioCisPep {
     pub partner_n: BioAtomAddress,
     pub model_num: i32,
     pub only_altloc: Option<AltLocLabel>,
-    pub reported_angle: Option<f32>,
+    pub reported_angle: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -630,12 +637,27 @@ pub enum BioHelixClass {
     HelixPolyProlineNone,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BioHelix {
     pub start: BioAtomAddress,
     pub end: BioAtomAddress,
     pub helix_class: BioHelixClass,
     pub length: i32,
+}
+
+impl Default for BioHelix {
+    fn default() -> Self {
+        // Gemmi✔️✔️: struct Helix {
+        // Gemmi✔️✔️:   AtomAddress start, end;
+        // Gemmi✔️✔️:   HelixClass pdb_helix_class = UnknownHelix;
+        // Gemmi✔️✔️:   int length = -1;
+        Self {
+            start: BioAtomAddress::default(),
+            end: BioAtomAddress::default(),
+            helix_class: BioHelixClass::UnknownHelix,
+            length: -1,
+        }
+    }
 }
 
 impl BioHelix {
@@ -672,10 +694,26 @@ pub struct BioSheet {
     pub strands: Vec<BioSheetStrand>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BioTransform {
-    pub mat: [[f32; 3]; 3],
-    pub vec: [f32; 3],
+    pub mat: [[f64; 3]; 3],
+    pub vec: [f64; 3],
+}
+
+impl Default for BioTransform {
+    fn default() -> Self {
+        // Gemmi✔️✔️: struct Mat33 {
+        // Gemmi✔️✔️:   double a[3][3] = { {1.,0.,0.}, {0.,1.,0.}, {0.,0.,1.} };
+        // Gemmi✔️✔️:   Mat33() = default;
+        // Gemmi✔️✔️: struct Transform {
+        // Gemmi✔️✔️:   Mat33 mat;
+        // Gemmi✔️✔️:   Vec3 vec;
+        // Gemmi✔️✔️:   Vec3_() : x(0), y(0), z(0) {}
+        Self {
+            mat: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            vec: [0.0, 0.0, 0.0],
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -725,12 +763,12 @@ pub struct BioAssembly {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CrystalCell {
-    pub a: f32,
-    pub b: f32,
-    pub c: f32,
-    pub alpha: f32,
-    pub beta: f32,
-    pub gamma: f32,
+    pub a: f64,
+    pub b: f64,
+    pub c: f64,
+    pub alpha: f64,
+    pub beta: f64,
+    pub gamma: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -754,12 +792,12 @@ pub struct CrystalInfo {
 /// Invariant: `len() == atoms.len()` in the owning BioStructure.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct CoordinateBlock {
-    pub(crate) positions: Vec<[f32; 3]>,
+    pub(crate) positions: Vec<[f64; 3]>,
 }
 
 impl CoordinateBlock {
     #[must_use]
-    pub fn positions(&self) -> &[[f32; 3]] {
+    pub fn positions(&self) -> &[[f64; 3]] {
         &self.positions
     }
 }
@@ -838,7 +876,7 @@ impl BioStructure {
                 line_number: 0,
                 message: format!("failed to read PDB file '{}': {error}", path.display()),
             })?;
-        Self::from_pdb_str(&text)
+        Self::from_str_with_format(&text, &path.to_string_lossy(), BioCoorFormat::Pdb)
     }
 
     /// Reads a Gemmi-aligned PDB structural record stream with explicit PDB reader parameters.
@@ -882,6 +920,36 @@ impl BioStructure {
         format: BioCoorFormat,
     ) -> Result<Self, crate::io::bio::BioReadError> {
         crate::io::bio::read_structure_from_memory(text, path, format)
+    }
+
+    /// Serializes this complete structural model as Gemmi-aligned mmCIF.
+    pub fn to_mmcif(&self) -> Result<String, crate::io::bio::BioWriteError> {
+        self.to_mmcif_with_options(crate::io::bio::MmcifWriteOptions::default())
+    }
+
+    /// Serializes this complete structural model with explicit mmCIF output options.
+    pub fn to_mmcif_with_options(
+        &self,
+        options: crate::io::bio::MmcifWriteOptions,
+    ) -> Result<String, crate::io::bio::BioWriteError> {
+        crate::io::bio::bio_structure_to_mmcif(self, options)
+    }
+
+    /// Writes this complete structural model as Gemmi-aligned mmCIF.
+    pub fn write_mmcif(
+        &self,
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<(), crate::io::bio::BioWriteError> {
+        self.write_mmcif_with_options(path, crate::io::bio::MmcifWriteOptions::default())
+    }
+
+    /// Writes this complete structural model with explicit mmCIF output options.
+    pub fn write_mmcif_with_options(
+        &self,
+        path: impl AsRef<std::path::Path>,
+        options: crate::io::bio::MmcifWriteOptions,
+    ) -> Result<(), crate::io::bio::BioWriteError> {
+        crate::io::bio::write_bio_structure_mmcif(self, path.as_ref(), options)
     }
 
     #[must_use]
@@ -1010,7 +1078,7 @@ impl BioStructure {
     }
 
     #[must_use]
-    pub fn atom_position(&self, atom: AtomId) -> Option<[f32; 3]> {
+    pub fn atom_position(&self, atom: AtomId) -> Option<[f64; 3]> {
         self.coordinates
             .positions
             .get(atom.index() as usize)

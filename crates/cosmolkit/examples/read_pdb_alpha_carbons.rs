@@ -18,8 +18,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => DEMO_PDB.to_string(),
     };
     let structure = BioStructure::from_pdb_str(&pdb)?;
+    let mmcif = structure.to_mmcif()?;
+    let roundtrip = BioStructure::from_mmcif_str(&mmcif, "converted.cif")?;
 
-    for alpha_carbon in alpha_carbons(&structure) {
+    for alpha_carbon in alpha_carbons(&roundtrip) {
         println!(
             "{} {} {:.3} {:.3} {:.3}",
             alpha_carbon.residue_name,
@@ -36,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 struct AlphaCarbon<'a> {
     residue_index: usize,
     residue_name: &'a str,
-    position: [f32; 3],
+    position: [f64; 3],
 }
 
 fn alpha_carbons(structure: &BioStructure) -> impl Iterator<Item = AlphaCarbon<'_>> {

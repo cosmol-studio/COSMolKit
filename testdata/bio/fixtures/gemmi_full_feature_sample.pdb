@@ -25,7 +25,7 @@ HETATM    4  O   HOH A   2       6.900   0.000   0.000  1.00 20.00           O
 HETATM    5 ZN1A  ZN A   1       5.000   0.000   0.000  1.00 20.00          ZN
 TER
 TER
-SSBOND   1 CYS A   3    CYS A   4                          1555   1555  2.03
+SSBOND   1 CYS A   3     CYS A   4                          1555   1555  2.03
 CISPEP        A     3       A     4          0        12.34
 LINK        ZN1A ZN A    1                 O   HOHA    2   1555   1555   2.00
 MODRES      MSEA     5  MET  SELENOMETHIONINE                           MODID001

@@ -242,12 +242,17 @@ high-level ``Protein`` projection keeps protein residues for traversal while
 still accepting supported non-protein HETATM element records in the input
 structure.
 
-Gemmi-aligned ``BioStructure.to_mmcif()`` and ``write_mmcif()`` methods are a
-planned writer feature, not a currently implemented API. Direct structural
-writing will be exposed on ``BioStructure`` after the Gemmi document builder
-and CIF serializer have been source-ported. It will not be placed on
-``Protein`` or ``Molecule``, because those values do not preserve the complete
-structural model.
+Gemmi-aligned ``BioStructure.to_mmcif()`` and ``write_mmcif()`` serialize the
+complete structural value without mutation. ``MmcifWriteOptions`` exposes the
+source-defined category switches and CIF formatting controls. Structural
+writing remains on ``BioStructure`` only; it is not aliased onto ``Protein`` or
+``Molecule`` because those values do not preserve the complete hierarchy.
+
+.. code-block:: python
+
+   structure = BioStructure.from_pdb("input.pdb")
+   cif_text = structure.to_mmcif()
+   structure.write_mmcif("output.cif")
 
 XYZ Blocks
 ----------

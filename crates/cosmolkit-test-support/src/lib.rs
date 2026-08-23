@@ -176,7 +176,7 @@ pub fn expected_path_for_profile(
         |error| {
             panic!(
                 "invalid {reference} {domain} expected data: {error}; prepare it with `{}`",
-                prepare_command(reference, domain)
+                prepare_command(reference, domain, profile)
             )
         },
     );
@@ -194,12 +194,14 @@ pub fn rdkit_prepare_command(suite: &str) -> String {
     )
 }
 
-pub fn prepare_command(reference: &str, domain: &str) -> String {
+fn prepare_command(reference: &str, domain: &str, profile: &str) -> String {
     match reference {
         "rdkit" => rdkit_prepare_command(domain),
+        "gemmi" => format!(
+            ".venv/bin/python tools/testdata/gemmi/generate_all.py --profile {profile} --suite mmcif_writer --jobs 4"
+        ),
         other => format!(
-            ".venv/bin/python tools/testdata/{other}/generate_all.py --profile {} --suite {domain}",
-            profile_name()
+            ".venv/bin/python tools/testdata/{other}/generate_all.py --profile {profile} --suite {domain}"
         ),
     }
 }
@@ -368,16 +370,14 @@ fn reference_identity(reference: &str) -> Result<ReferenceIdentity, String> {
 }
 
 fn validate_current_input(input: &ManifestFile, expected_profile: &str) -> Result<(), String> {
-    let current_path = if expected_profile == profile_name() {
-        smiles_path()
-    } else {
-        match expected_profile {
-            "atom_pair_focused" => repo_root()
-                .join("testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi"),
-            "smiles_small" => repo_root().join("testdata/smiles/corpus/smiles_small.smi"),
-            "smiles_5000" => repo_root().join("testdata/smiles/corpus/smiles_5000.smi"),
-            other => return Err(format!("unknown expected-data profile '{other}'")),
-        }
+    let current_path = match expected_profile {
+        "bio_mmcif_writer" => repo_root().join("testdata/bio/gemmi_mmcif_writer_profile.json"),
+        profile if profile == profile_name() => smiles_path(),
+        "atom_pair_focused" => repo_root()
+            .join("testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi"),
+        "smiles_small" => repo_root().join("testdata/smiles/corpus/smiles_small.smi"),
+        "smiles_5000" => repo_root().join("testdata/smiles/corpus/smiles_5000.smi"),
+        other => return Err(format!("unknown expected-data profile '{other}'")),
     };
     let current = normalize_existing_path(&current_path)?;
     let declared = normalize_existing_path(&identity_path(input)?)?;

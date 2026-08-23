@@ -33,6 +33,18 @@ empty.
   modern and legacy APIs, live options and JSON restoration, chirality,
   selectors, custom atom invariants, complete provenance, and ordered batch
   execution through the shared fingerprint generator core.
+- Added Gemmi-aligned mmCIF serialization and file writing to the complete
+  `BioStructure` model in Rust and Python. The single writer path covers all 34
+  source `MmcifOutputGroups`, canonical CIF document construction and quoting,
+  structural hierarchy, entities, crystallographic metadata, assemblies,
+  secondary structure, connections, cis-peptides, modified residues, TLS, NCS,
+  and the other categories represented by the typed model.
+- Added public `MmcifOutputGroups` and `MmcifWriteOptions` controls in Rust and
+  Python, together with Rust's structured `BioWriteError`; Python maps writer
+  state and IO failures to `ValueError` and `OSError`, respectively. Structural
+  format conversion now composes explicitly through `BioStructure`, including
+  PDB-to-mmCIF workflows, without adding parallel writers to the lossy
+  `Protein` projection or the chemical-graph `Molecule` model.
 
 ### Changed
 
@@ -43,6 +55,19 @@ empty.
 - Reproduced the source-defined AddHs explicit-valence cache transition through
   the operation contract so molecules returned by `with_hydrogens()` can be
   consumed directly by modern and legacy Topological Torsion APIs.
+- Completed the remaining Gemmi-backed PDB, mmCIF, and mmJSON reader paths for
+  state representable by `BioStructure`, including hybrid-36 identifiers,
+  modified-residue identity, all source connection kinds, entity and sequence
+  metadata, crystallographic transforms, assemblies, secondary structure,
+  anisotropic displacement values, and indexed chain/residue construction.
+- Clarified the structural ownership boundary throughout the public
+  documentation and examples: `BioStructure` owns complete modeled structural
+  IO, `Protein` is an explicit amino-acid projection, and `Molecule` retains the
+  separate RDKit-compatible chemical-graph and PDB-block boundary.
+- Renamed the canonical structural-read support constants to
+  `BIO_PDB_READ_FEATURE` and `BIO_MMCIF_READ_FEATURE`; the former subset-named
+  constants remain deprecated compatibility aliases and are not separate
+  registry entries.
 
 ### Fixed
 
@@ -50,6 +75,10 @@ empty.
   graph while copying hybridization and computing the explicit-valence cache.
   `sanitize=True` remains the explicit full-sanitize path and `sanitize=False`
   remains the raw unprepared path.
+- Corrected BioStructure source fidelity across optional sequence identifiers,
+  residue-qualified structural addresses, connection and cis-peptide numeric
+  precision, TLS residue ranges, space-group transforms, PDB fixed-field
+  parsing, and full model/chain/residue/atom metadata propagation.
 
 ### Validation
 
@@ -74,6 +103,16 @@ empty.
   as an exhaustive CI regression; focused source, public-API, atom-invariant,
   batch, and Python tests cover live states, edge graphs, errors, deterministic
   parallel execution, and source immutability.
+- Pinned Gemmi exact-output tests compare canonical mmCIF bytes and reparsed
+  semantic state for complete PDB and mmCIF fixtures. Focused Rust and Python
+  integration tests additionally cover non-mutating conversion, hierarchy and
+  metadata preservation, multi-model coordinates, output-group suppression,
+  file output, structured IO errors, and the public runtime/stub surface.
+- The completed Bio reader/writer line passes the release strict workspace test
+  gate, Python static and runtime API checks, and the Sphinx documentation
+  build. The declared boundary is the state represented by `BioStructure`;
+  arbitrary private CIF categories and source-document layout are not claimed
+  as byte-preserving round trips.
 
 ## [0.2.12] - 2026-08-19
 

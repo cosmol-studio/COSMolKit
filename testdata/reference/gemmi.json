@@ -1,0 +1,9 @@
+{
+  "name": "gemmi",
+  "runtime": {
+    "implementation": "gemmi-cpp",
+    "version": "0.7.5"
+  },
+  "source_revision": "5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e",
+  "version": "0.7.5"
+}

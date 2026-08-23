@@ -12,7 +12,8 @@ use numpy::{
 };
 use pyo3::PyErr;
 use pyo3::exceptions::{
-    PyIndexError, PyNotImplementedError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError,
+    PyIndexError, PyNotImplementedError, PyOSError, PyOverflowError, PyRuntimeError, PyTypeError,
+    PyValueError,
 };
 use pyo3::prelude::*;
 use pyo3::types::{
@@ -1813,6 +1814,181 @@ Use ``Protein`` only when an amino-acid-only projection is intended, and use
 "#]
 struct BioStructure {
     inner: Arc<cosmolkit_core::BioStructure>,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "MmcifOutputGroups", get_all, set_all, from_py_object)]
+#[derive(Clone)]
+#[doc = "Category switches for BioStructure mmCIF output; all categories are enabled by default."]
+struct PyMmcifOutputGroups {
+    atoms: bool,
+    block_name: bool,
+    entry: bool,
+    database_status: bool,
+    author: bool,
+    cell: bool,
+    symmetry: bool,
+    entity: bool,
+    entity_poly: bool,
+    struct_ref: bool,
+    chem_comp: bool,
+    exptl: bool,
+    diffrn: bool,
+    reflns: bool,
+    refine: bool,
+    title_keywords: bool,
+    ncs: bool,
+    struct_asym: bool,
+    origx: bool,
+    struct_conf: bool,
+    struct_sheet: bool,
+    struct_biol: bool,
+    assembly: bool,
+    conn: bool,
+    cis: bool,
+    modres: bool,
+    scale: bool,
+    atom_type: bool,
+    entity_poly_seq: bool,
+    tls: bool,
+    software: bool,
+    group_pdb: bool,
+    auth_all: bool,
+}
+
+impl From<cosmolkit_core::io::bio::MmcifOutputGroups> for PyMmcifOutputGroups {
+    fn from(groups: cosmolkit_core::io::bio::MmcifOutputGroups) -> Self {
+        Self {
+            atoms: groups.atoms,
+            block_name: groups.block_name,
+            entry: groups.entry,
+            database_status: groups.database_status,
+            author: groups.author,
+            cell: groups.cell,
+            symmetry: groups.symmetry,
+            entity: groups.entity,
+            entity_poly: groups.entity_poly,
+            struct_ref: groups.struct_ref,
+            chem_comp: groups.chem_comp,
+            exptl: groups.exptl,
+            diffrn: groups.diffrn,
+            reflns: groups.reflns,
+            refine: groups.refine,
+            title_keywords: groups.title_keywords,
+            ncs: groups.ncs,
+            struct_asym: groups.struct_asym,
+            origx: groups.origx,
+            struct_conf: groups.struct_conf,
+            struct_sheet: groups.struct_sheet,
+            struct_biol: groups.struct_biol,
+            assembly: groups.assembly,
+            conn: groups.conn,
+            cis: groups.cis,
+            modres: groups.modres,
+            scale: groups.scale,
+            atom_type: groups.atom_type,
+            entity_poly_seq: groups.entity_poly_seq,
+            tls: groups.tls,
+            software: groups.software,
+            group_pdb: groups.group_pdb,
+            auth_all: groups.auth_all,
+        }
+    }
+}
+
+impl From<&PyMmcifOutputGroups> for cosmolkit_core::io::bio::MmcifOutputGroups {
+    fn from(groups: &PyMmcifOutputGroups) -> Self {
+        Self {
+            atoms: groups.atoms,
+            block_name: groups.block_name,
+            entry: groups.entry,
+            database_status: groups.database_status,
+            author: groups.author,
+            cell: groups.cell,
+            symmetry: groups.symmetry,
+            entity: groups.entity,
+            entity_poly: groups.entity_poly,
+            struct_ref: groups.struct_ref,
+            chem_comp: groups.chem_comp,
+            exptl: groups.exptl,
+            diffrn: groups.diffrn,
+            reflns: groups.reflns,
+            refine: groups.refine,
+            title_keywords: groups.title_keywords,
+            ncs: groups.ncs,
+            struct_asym: groups.struct_asym,
+            origx: groups.origx,
+            struct_conf: groups.struct_conf,
+            struct_sheet: groups.struct_sheet,
+            struct_biol: groups.struct_biol,
+            assembly: groups.assembly,
+            conn: groups.conn,
+            cis: groups.cis,
+            modres: groups.modres,
+            scale: groups.scale,
+            atom_type: groups.atom_type,
+            entity_poly_seq: groups.entity_poly_seq,
+            tls: groups.tls,
+            software: groups.software,
+            group_pdb: groups.group_pdb,
+            auth_all: groups.auth_all,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyMmcifOutputGroups {
+    #[new]
+    #[pyo3(signature = (all=true))]
+    fn new(all: bool) -> Self {
+        cosmolkit_core::io::bio::MmcifOutputGroups::all(all).into()
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "MmcifWriteOptions", get_all, set_all, from_py_object)]
+#[derive(Clone)]
+#[doc = "Options for canonical Gemmi-aligned BioStructure mmCIF serialization."]
+struct PyMmcifWriteOptions {
+    groups: PyMmcifOutputGroups,
+    prefer_pairs: bool,
+    compact: bool,
+    misuse_hash: bool,
+    align_pairs: u16,
+    align_loops: u16,
+}
+
+impl PyMmcifWriteOptions {
+    fn core_options(&self) -> cosmolkit_core::io::bio::MmcifWriteOptions {
+        cosmolkit_core::io::bio::MmcifWriteOptions {
+            groups: (&self.groups).into(),
+            prefer_pairs: self.prefer_pairs,
+            compact: self.compact,
+            misuse_hash: self.misuse_hash,
+            align_pairs: self.align_pairs,
+            align_loops: self.align_loops,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pymethods]
+impl PyMmcifWriteOptions {
+    #[new]
+    fn new() -> Self {
+        let options = cosmolkit_core::io::bio::MmcifWriteOptions::default();
+        Self {
+            groups: options.groups.into(),
+            prefer_pairs: options.prefer_pairs,
+            compact: options.compact,
+            misuse_hash: options.misuse_hash,
+            align_pairs: options.align_pairs,
+            align_loops: options.align_loops,
+        }
+    }
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
@@ -6352,6 +6528,13 @@ Deserialize a molecule from COSMolKit binary data.
     }
 }
 
+fn bio_write_pyerr(error: cosmolkit_core::io::bio::BioWriteError) -> PyErr {
+    match error {
+        cosmolkit_core::io::bio::BioWriteError::Io(error) => PyOSError::new_err(error.to_string()),
+        error => PyValueError::new_err(error.to_string()),
+    }
+}
+
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
@@ -6408,6 +6591,31 @@ impl BioStructure {
         Ok(Self {
             inner: Arc::new(inner),
         })
+    }
+
+    #[pyo3(signature = (options=None))]
+    #[doc = "Serialize this complete structural model as Gemmi-aligned mmCIF without mutating it."]
+    fn to_mmcif(&self, options: Option<&PyMmcifWriteOptions>) -> PyResult<String> {
+        let options = options.map_or_else(
+            cosmolkit_core::io::bio::MmcifWriteOptions::default,
+            PyMmcifWriteOptions::core_options,
+        );
+        self.inner
+            .to_mmcif_with_options(options)
+            .map_err(bio_write_pyerr)
+    }
+
+    #[pyo3(signature = (path, options=None))]
+    #[doc = "Write this complete structural model as Gemmi-aligned mmCIF without mutating it."]
+    fn write_mmcif(&self, path: &str, options: Option<&PyMmcifWriteOptions>) -> PyResult<()> {
+        let path = expand_user_path(path)?;
+        let options = options.map_or_else(
+            cosmolkit_core::io::bio::MmcifWriteOptions::default,
+            PyMmcifWriteOptions::core_options,
+        );
+        self.inner
+            .write_mmcif_with_options(path, options)
+            .map_err(bio_write_pyerr)
     }
 
     #[doc = "Return the structure name or input data-block name."]
@@ -6764,7 +6972,7 @@ impl StructureAtom {
         self.inner.atoms()[self.index].element.symbol().to_string()
     }
 
-    fn position(&self) -> Option<(f32, f32, f32)> {
+    fn position(&self) -> Option<(f64, f64, f64)> {
         self.inner
             .atom_position(cosmolkit_core::BioAtomId::new(self.index as u32))
             .map(|[x, y, z]| (x, y, z))
@@ -7351,7 +7559,7 @@ impl ProteinAtom {
     }
 
     #[doc = "Return ``(x, y, z)`` coordinates, or ``None`` when absent."]
-    fn position(&self) -> Option<(f32, f32, f32)> {
+    fn position(&self) -> Option<(f64, f64, f64)> {
         self.inner
             .atoms()
             .nth(self.index)
@@ -10139,6 +10347,8 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Molecule>()?;
     m.add_class::<PyEmbedParameters>()?;
     m.add_class::<BioStructure>()?;
+    m.add_class::<PyMmcifOutputGroups>()?;
+    m.add_class::<PyMmcifWriteOptions>()?;
     m.add_class::<StructureModel>()?;
     m.add_class::<StructureChain>()?;
     m.add_class::<StructureResidue>()?;

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "profile": "bio_mmcif_writer",
+  "gemmi_commit": "5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e",
+  "cases": [
+    {
+      "case_id": "pdb_full_default",
+      "input": "testdata/bio/fixtures/gemmi_full_feature_sample.pdb",
+      "input_format": "pdb",
+      "arguments": [],
+      "output": "pdb_full_default.cif"
+    },
+    {
+      "case_id": "mmcif_full_default",
+      "input": "testdata/bio/fixtures/gemmi_full_feature_sample.cif",
+      "input_format": "mmcif",
+      "arguments": [],
+      "output": "mmcif_full_default.cif"
+    }
+  ]
+}

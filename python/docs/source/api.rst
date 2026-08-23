@@ -59,6 +59,14 @@ Typical usage keeps molecule conversion on :class:`cosmolkit.Molecule`::
 Structural API
 --------------
 
+.. autoclass:: cosmolkit.MmcifOutputGroups
+   :members:
+   :no-show-inheritance:
+
+.. autoclass:: cosmolkit.MmcifWriteOptions
+   :members:
+   :no-show-inheritance:
+
 .. autoclass:: cosmolkit.BioStructure
    :members:
    :undoc-members:

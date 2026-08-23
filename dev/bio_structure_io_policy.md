@@ -36,7 +36,7 @@ The public object boundary is:
 
 | Object | Preserved state | Owns | Must not imply |
 |---|---|---|---|
-| `BioStructure` | complete modeled hierarchy, entities, mixed residue kinds, coordinates, assemblies, and crystallographic metadata | structural PDB/mmCIF/mmJSON reading and future structural writing | RDKit molecule-graph semantics |
+| `BioStructure` | complete modeled hierarchy, entities, mixed residue kinds, coordinates, assemblies, and crystallographic metadata | structural PDB/mmCIF/mmJSON reading and Gemmi-aligned mmCIF writing | RDKit molecule-graph semantics |
 | `Protein` | an amino-acid-only projection of `BioStructure` | ergonomic protein chain/residue/atom traversal | lossless structural format conversion |
 | `Molecule` | chemical graph, chemical state, properties, and conformers | RDKit-compatible molecule parsing, conversion, and molecule writers | preservation of the complete biomolecular hierarchy |
 
@@ -58,6 +58,14 @@ The Gemmi-aligned path owns:
 - structural unsupported-feature boundaries
 - entity, assembly, secondary-structure, symmetry, and crystallographic
   metadata represented by `BioStructure`
+- canonical mmCIF document construction, category groups, and CIF serialization
+
+The current source-identifier representation stores chain and subchain
+hierarchy references in `PdbChainId`, which is limited to four bytes. A longer
+mmCIF chain or subchain identifier returns a structured unsupported error; it
+is never truncated, hashed, or replaced with an invented alias. Entity source
+identifiers themselves remain variable-length strings. This is a declared
+model boundary, not a parser fallback.
 
 The current Rust implementation of this path lives in:
 
@@ -171,25 +179,25 @@ composition through the public model, not a separate format-pair function:
 BioStructure::from_pdb_str(input)?.to_mmcif()
 ```
 
-The following API is planned but is not implemented yet:
+The implemented structural writer API is:
 
 ```text
 BioStructure::to_mmcif()
 BioStructure::to_mmcif_with_options(MmcifWriteOptions)
 BioStructure::write_mmcif(path)
+BioStructure::write_mmcif_with_options(path, MmcifWriteOptions)
 ```
 
-Do not add placeholders that return unsupported errors merely to make these
-methods appear present. They become public only after Gemmi
-`make_mmcif_document`, `update_mmcif_block`, output-group behavior, and CIF
-serialization have been source-ported and tested.
+These methods are backed by the single Gemmi-aligned document-builder and CIF
+serializer path. They emit represented `BioStructure` state and do not claim
+to preserve arbitrary unmodeled source categories.
 
 Do not add `Protein::to_mmcif()`: `Protein` has already discarded non-protein
 rows, so that name would look like lossless format conversion while silently
 writing a projection. Do not add `Molecule::to_mmcif()`: `Molecule` does not
 represent the complete structural hierarchy or mmCIF metadata.
 
-The initial structural writer will generate a canonical mmCIF document from
+The structural writer generates a canonical mmCIF document from
 the state modeled by `BioStructure`. It must not claim to preserve arbitrary
 unmodeled or private categories from an input CIF document unless the public
 model later retains that source document explicitly.

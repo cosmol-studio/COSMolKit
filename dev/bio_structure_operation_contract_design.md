@@ -248,8 +248,8 @@ Protein/DNA/RNA are annotations, NOT separate structs.
 
 # Source Identifier Semantics
 
-Gemmi is the planned source-level reproduction target for PDB/mmCIF
-macromolecular parsing. COSMolKit's internal representation should be flat,
+Gemmi is the pinned source-level reproduction target for PDB/mmCIF
+macromolecular parsing and mmCIF structural writing. COSMolKit's internal representation is flat,
 typed, and row-id based, but it must preserve the source identifiers that make
 PDB/mmCIF structures addressable.
 
