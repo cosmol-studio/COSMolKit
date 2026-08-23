@@ -145,14 +145,20 @@ unmodeled source states return an explicit descriptor error.
 
 ## Fingerprints
 
-The Rust facade exposes source-backed Morgan, MACCS, RDKit topological, Avalon,
-and AtomPair fingerprints. Topological and AtomPair fingerprints can also
-return typed provenance:
+The Rust facade exposes source-backed Morgan, AtomPair, Topological Torsion,
+MACCS, RDKit topological, and Avalon fingerprints. ``TopologicalTorsion*`` is
+the ordered atom-path torsion family; ``TopologicalFingerprint*`` remains
+RDKit's distinct path/subgraph ``RDKFingerprintMol`` family. The applicable
+families can also return typed provenance:
 
 ```rust
 use cosmolkit::{
     AtomPairFingerprintParams, AvalonFingerprintParams, Molecule,
-    TopologicalFingerprintOutputRequest, TopologicalFingerprintParams,
+    TopologicalFingerprintOutputRequest,
+    TopologicalFingerprintParams, TopologicalTorsionFingerprintOutputRequest,
+    TopologicalTorsionFingerprintParams, TopologicalTorsionFingerprintVector,
+    topological_torsion_fingerprint, topological_torsion_fingerprint_with_output,
+    topological_torsion_sparse_count_fingerprint,
 };
 
 let molecule = Molecule::from_smiles("c1ccccc1O")?;
@@ -168,20 +174,50 @@ let provenance = molecule.topological_fingerprint_with_output(
 )?;
 let avalon = molecule.avalon_fingerprint(&AvalonFingerprintParams::default())?;
 let atom_pair = molecule.atom_pair_fingerprint(&AtomPairFingerprintParams::default())?;
+let torsion_params = TopologicalTorsionFingerprintParams::default();
+let torsion_ids = topological_torsion_sparse_count_fingerprint(&molecule, &torsion_params)?;
+let torsion_bits = topological_torsion_fingerprint(&molecule, &torsion_params)?;
+let torsion_provenance = topological_torsion_fingerprint_with_output(
+    &molecule,
+    &torsion_params,
+    TopologicalTorsionFingerprintOutputRequest {
+        vector: TopologicalTorsionFingerprintVector::Bit,
+        bit_paths: true,
+        ..Default::default()
+    },
+)?;
 
 assert_eq!(topological.n_bits(), 2048);
 assert!(provenance.output.atom_bits.is_some());
 assert_eq!(avalon.n_bits(), 512);
 assert_eq!(atom_pair.n_bits(), 2048);
+assert!(!torsion_ids.nonzero_elements().is_empty());
+assert_eq!(torsion_bits.n_bits(), 2048);
+assert!(torsion_provenance.additional_output.is_some());
 ```
 
-The documented topological, Avalon, and AtomPair profiles are checked against
-pinned RDKit across all 2,897,804 mutually parseable ChEMBL 37 molecules. The
-topological/Avalon audit completed 113,014,356 exact comparisons; the AtomPair
-audit completed another 118,809,964 comparisons over 40 vectors and one
-complete provenance output per molecule. Both completed with zero mismatches.
-The committed 5,000-row matrices remain the continuous regression gates for
-these profiles.
+Topological Torsion also exposes sparse-bit and folded-count forms, ordered
+``MoleculeBatch`` conveniences, shared ``AdditionalOutput`` provenance, and
+three explicitly typed legacy adapters. Invalid arguments return
+``FingerprintError``; batch calculation errors retain the original record
+index. Exact parity is continuously checked against pinned RDKit 2026.03.1 on
+focused branch fixtures and every row of a 5,000-molecule, nine-profile
+matrix. The complete ChEMBL 37 audit additionally covers all 2,897,804
+mutually parseable records through 127,503,376 exact vector and provenance
+comparisons. Legacy adapters preserve their historical unfolded-size and
+``n_bits_per_entry`` threshold differences while delegating to the same
+chemistry and vector-assembly core.
+
+The documented topological and Avalon profiles are checked against pinned
+RDKit across all 2,897,804 mutually parseable ChEMBL 37 molecules. The
+full-corpus audit completed 113,014,356 exact comparisons over 14 topological
+vectors, 23 Avalon vectors, and two complete topological provenance outputs
+with zero mismatches. The committed 5,000-row matrices remain the continuous
+regression gates for these profiles.
+
+AtomPair is additionally checked across all 2,897,804 mutually parseable
+ChEMBL 37 molecules, covering 118,809,964 comparisons over 40 vectors and one
+complete provenance output per molecule with zero mismatches.
 
 ## Conformer Generation And Force Field Applications
 

@@ -1,9 +1,12 @@
 # RDKit AtomPair Fingerprint Source Inventory
 
-Status: pre-port source inventory. This report fixes the selected call graph,
-ownership boundaries, source ranges, and line-coverage obligations before any
-AtomPair production implementation is added. A listed range is not considered
-ported until its target artifact and focused evidence are complete.
+Status: completed pre-port source inventory retained as an audit baseline. This
+report fixes the selected call graph, ownership boundaries, source ranges, and
+line-coverage obligations as they existed before the AtomPair production port;
+its historical disposition columns are intentionally not a current support
+matrix. Current implementation status and exact focused, maintained-corpus,
+and complete ChEMBL 37 evidence are recorded in
+[`rdkit_atom_pair_fingerprint_full_port_validation.md`](rdkit_atom_pair_fingerprint_full_port_validation.md).
 
 ## Pinned source and selected boundary
 

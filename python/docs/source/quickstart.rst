@@ -239,6 +239,8 @@ Generate source-backed fingerprints:
 
 .. code-block:: python
 
+   from cosmolkit import get_topological_torsion_generator
+
    mol = Molecule.from_smiles("c1ccccc1O")
    morgan = mol.fingerprint_morgan(
        radius=2,
@@ -247,17 +249,22 @@ Generate source-backed fingerprints:
    topological = mol.topological_fingerprint(fp_size=2048)
    avalon = mol.avalon_fingerprint(n_bits=512)
    atom_pair = mol.fingerprint_atom_pair(n_bits=2048)
+   torsion = get_topological_torsion_generator(
+       torsion_atom_count=4,
+       fp_size=2048,
+   ).get_fingerprint(mol)
 
    print(morgan.on_bits())
    print(topological.on_bits())
    print(avalon.on_bits())
    print(atom_pair.on_bits())
+   print(torsion.on_bits())
 
 ``on_bits()`` returns the sparse bit indexes set inside the fixed-length binary
-fingerprint. The exposed Morgan, MACCS, RDKit topological, Avalon, and AtomPair
-branches are covered by exact pinned-RDKit comparisons; structurally similar
-hashes or similarity correlation are not compatibility claims. It is not a
-dense neural embedding.
+fingerprint. The exposed Morgan, MACCS, RDKit topological, Avalon, AtomPair,
+and Topological Torsion branches are covered by exact pinned-RDKit comparisons;
+structurally similar hashes or similarity correlation are not compatibility
+claims. It is not a dense neural embedding.
 
 Parse SMARTS metadata:
 

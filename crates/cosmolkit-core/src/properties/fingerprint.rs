@@ -12,14 +12,207 @@ pub(crate) mod generator;
 
 pub(crate) use atom_pair::atom_pair_function_arguments;
 pub use atom_pair::{
-    AtomPairFingerprintGenerator, AtomPairFingerprintOutput, AtomPairFingerprintParams,
-    atom_pair_fingerprint, atom_pair_fingerprint_with_output,
+    AtomPairAtomInvariantsGenerator as AtomPairAtomInvGenerator, AtomPairFingerprintGenerator,
+    AtomPairFingerprintOutput, AtomPairFingerprintParams, atom_pair_fingerprint,
+    atom_pair_fingerprint_with_output,
 };
 
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 // Copied source lines appear as:  // RDKit<beh><perf>: ...
 
 // RDKit source file: FingerprintUtil.cpp
+
+// BEGIN RDKIT CPP CONSTANTS AtomPairs atom-code layout (FingerprintUtil.h)
+// RDKit✔️✔️: const unsigned int numTypeBits = 4;
+pub const ATOM_PAIR_NUM_TYPE_BITS: u32 = atom_pair::NUM_TYPE_BITS;
+// RDKit✔️✔️: const unsigned int atomNumberTypes[1 << numTypeBits] = {
+// RDKit✔️✔️:     5, 6, 7, 8, 9, 14, 15, 16, 17, 33, 34, 35, 51, 52, 53};
+pub const ATOM_PAIR_ATOM_NUMBER_TYPES: [u32; 1 << ATOM_PAIR_NUM_TYPE_BITS] =
+    atom_pair::ATOM_NUMBER_TYPES;
+// RDKit✔️✔️: const unsigned int numPiBits = 2;
+pub const ATOM_PAIR_NUM_PI_BITS: u32 = atom_pair::NUM_PI_BITS;
+// RDKit✔️✔️: const unsigned int maxNumPi = (1 << numPiBits) - 1;
+pub const ATOM_PAIR_MAX_NUM_PI: u32 = atom_pair::MAX_NUM_PI;
+// RDKit✔️✔️: const unsigned int numBranchBits = 3;
+pub const ATOM_PAIR_NUM_BRANCH_BITS: u32 = atom_pair::NUM_BRANCH_BITS;
+// RDKit✔️✔️: const unsigned int maxNumBranches = (1 << numBranchBits) - 1;
+pub const ATOM_PAIR_MAX_NUM_BRANCHES: u32 = atom_pair::MAX_NUM_BRANCHES;
+// RDKit✔️✔️: const unsigned int numChiralBits = 2;
+pub const ATOM_PAIR_NUM_CHIRAL_BITS: u32 = atom_pair::NUM_CHIRAL_BITS;
+// RDKit✔️✔️: const unsigned int codeSize = numTypeBits + numPiBits + numBranchBits;
+pub const ATOM_PAIR_CODE_SIZE: u32 = atom_pair::CODE_SIZE;
+// RDKit✔️✔️: const unsigned int numPathBits = 5;
+pub const ATOM_PAIR_NUM_PATH_BITS: u32 = atom_pair::NUM_PATH_BITS;
+// RDKit✔️✔️: const unsigned int maxPathLen = (1 << numPathBits) - 1;
+pub const ATOM_PAIR_MAX_PATH_LENGTH: u32 = atom_pair::MAX_PATH_LEN;
+// RDKit✔️✔️: const unsigned int numAtomPairFingerprintBits =
+// RDKit✔️✔️:     numPathBits + 2 * codeSize;
+pub const ATOM_PAIR_NUM_FINGERPRINT_BITS: u32 = atom_pair::NUM_ATOM_PAIR_FINGERPRINT_BITS;
+// RDKit source: AtomPairs.h line 44.
+// RDKit✔️✔️: const std::string atomPairsVersion = "1.1.0";
+pub const ATOM_PAIRS_VERSION: &str = "1.1.0";
+// END RDKIT CPP CONSTANTS AtomPairs atom-code layout (FingerprintUtil.h)
+
+pub fn get_atom_code(
+    molecule: &Molecule,
+    atom_id: AtomId,
+    branch_subtract: u32,
+    include_chirality: bool,
+) -> Result<u32, FingerprintError> {
+    atom_pair::get_atom_code(molecule, atom_id, branch_subtract, include_chirality)
+        .map_err(FingerprintError::from)
+}
+
+#[must_use]
+const fn topological_torsion_correct_atom_invariant(invariant: u32) -> u32 {
+    invariant.wrapping_sub(2)
+}
+
+#[must_use]
+fn topological_torsion_reverse(path_codes: &[u32]) -> bool {
+    let mut i = 0usize;
+    let mut j = path_codes.len() - 1;
+    while i < j {
+        if path_codes[i] > path_codes[j] {
+            return true;
+        } else if path_codes[i] < path_codes[j] {
+            return false;
+        }
+        i += 1;
+        j -= 1;
+    }
+    false
+}
+
+pub fn get_topological_torsion_code(
+    path_codes: &[u32],
+    include_chirality: bool,
+) -> Result<u64, FingerprintError> {
+    // BEGIN RDKIT CPP FUNCTION AtomPairs::getTopologicalTorsionCode
+    // RDKit✔️✔️: std::uint64_t getTopologicalTorsionCode(
+    // RDKit✔️✔️:     const std::vector<std::uint32_t> &pathCodes, bool includeChirality) {
+    // RDKit✔️✔️:   bool reverseIt = false;
+    // RDKit✔️✔️:   unsigned int i = 0;
+    // RDKit✔️✔️:   unsigned int j = pathCodes.size() - 1;
+    // RDKit✔️✔️:   while (i < j) {
+    // RDKit✔️✔️:     if (pathCodes[i] > pathCodes[j]) {
+    // RDKit✔️✔️:       reverseIt = true;
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     } else if (pathCodes[i] < pathCodes[j]) {
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     ++i;
+    // RDKit✔️✔️:     --j;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   int shiftSize = codeSize + (includeChirality ? numChiralBits : 0);
+    // RDKit✔️✔️:   std::uint64_t res = 0;
+    // RDKit✔️✔️:   if (reverseIt) {
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < pathCodes.size(); ++i) {
+    // RDKit✔️✔️:       res |= static_cast<std::uint64_t>(pathCodes[pathCodes.size() - i - 1])
+    // RDKit✔️✔️:              << (shiftSize * i);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < pathCodes.size(); ++i) {
+    // RDKit✔️✔️:       res |= static_cast<std::uint64_t>(pathCodes[i]) << (shiftSize * i);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION AtomPairs::getTopologicalTorsionCode
+    // The source underflows `size() - 1` for an empty vector and has undefined
+    // behavior when a left-shift count reaches 64. COSMolKit fails closed for
+    // those inputs while preserving the source's exact u64 packing otherwise.
+    if path_codes.is_empty() {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "topological torsion code path must not be empty",
+        });
+    }
+
+    let shift_size = (ATOM_PAIR_CODE_SIZE
+        + if include_chirality {
+            ATOM_PAIR_NUM_CHIRAL_BITS
+        } else {
+            0
+        }) as usize;
+    let last_shift =
+        shift_size
+            .checked_mul(path_codes.len() - 1)
+            .ok_or(FingerprintError::InvalidArguments {
+                reason: "topological torsion code shift exceeds platform limits",
+            })?;
+    if last_shift >= u64::BITS as usize {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "topological torsion code shift must be less than 64 bits",
+        });
+    }
+
+    let reverse_it = topological_torsion_reverse(path_codes);
+    let mut result = 0u64;
+    if reverse_it {
+        for (i, path_code) in path_codes.iter().rev().enumerate() {
+            result |= u64::from(*path_code) << (shift_size * i);
+        }
+    } else {
+        for (i, path_code) in path_codes.iter().enumerate() {
+            result |= u64::from(*path_code) << (shift_size * i);
+        }
+    }
+    Ok(result)
+}
+
+pub fn get_topological_torsion_hash(path_codes: &[u32]) -> Result<u32, FingerprintError> {
+    // BEGIN RDKIT CPP FUNCTION AtomPairs::getTopologicalTorsionHash
+    // RDKit✔️✔️: std::uint32_t getTopologicalTorsionHash(
+    // RDKit✔️✔️:     const std::vector<std::uint32_t> &pathCodes) {
+    // RDKit✔️✔️:   bool reverseIt = false;
+    // RDKit✔️✔️:   unsigned int i = 0;
+    // RDKit✔️✔️:   unsigned int j = pathCodes.size() - 1;
+    // RDKit✔️✔️:   while (i < j) {
+    // RDKit✔️✔️:     if (pathCodes[i] > pathCodes[j]) {
+    // RDKit✔️✔️:       reverseIt = true;
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     } else if (pathCodes[i] < pathCodes[j]) {
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     ++i;
+    // RDKit✔️✔️:     --j;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   std::uint32_t res = 0;
+    // RDKit✔️✔️:   if (reverseIt) {
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < pathCodes.size(); ++i) {
+    // RDKit✔️✔️:       gboost::hash_combine(res, pathCodes[pathCodes.size() - i - 1]);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     for (unsigned int pathCode : pathCodes) {
+    // RDKit✔️✔️:       gboost::hash_combine(res, pathCode);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION AtomPairs::getTopologicalTorsionHash
+    // As in the code-packing function, COSMolKit rejects the source's empty
+    // path underflow instead of attempting to reproduce undefined behavior.
+    if path_codes.is_empty() {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "topological torsion hash path must not be empty",
+        });
+    }
+
+    let reverse_it = topological_torsion_reverse(path_codes);
+    let mut result = 0u32;
+    if reverse_it {
+        for path_code in path_codes.iter().rev() {
+            hash_combine(&mut result, *path_code);
+        }
+    } else {
+        for path_code in path_codes {
+            hash_combine(&mut result, *path_code);
+        }
+    }
+    Ok(result)
+}
 
 // RDKit source: FingerprintUtil.cpp lines 98-112 (smartsPatterns)
 // RDKit✔️✔️: const char *smartsPatterns[6] = {
@@ -179,7 +372,20 @@ impl AdditionalOutput {
         self.atoms_per_bit = Some(BTreeMap::new());
     }
 
-    /// RDKit✔️✔️: reinitAdditionalOutput(AdditionalOutput &ao, size_t numAtoms)
+    /// RDKit source: FingerprintGenerator.cpp lines 134-147
+    /// RDKit✔️✔️: void reinitAdditionalOutput(AdditionalOutput &ao, size_t numAtoms) {
+    /// RDKit✔️✔️:   if (ao.atomCounts) {
+    /// RDKit✔️✔️:     ao.atomCounts->resize(numAtoms);
+    /// RDKit✔️✔️:     std::fill(ao.atomCounts->begin(), ao.atomCounts->end(), 0);
+    /// RDKit✔️✔️:   }
+    /// RDKit✔️✔️:   if (ao.atomToBits) {
+    /// RDKit✔️✔️:     ao.atomToBits->resize(numAtoms);
+    /// RDKit✔️✔️:     std::fill(ao.atomToBits->begin(), ao.atomToBits->end(),
+    /// RDKit✔️✔️:               std::vector<std::uint64_t>());
+    /// RDKit✔️✔️:   }
+    /// RDKit✔️✔️:   if (ao.bitInfoMap) ao.bitInfoMap->clear();
+    /// RDKit✔️✔️:   if (ao.bitPaths) ao.bitPaths->clear();
+    /// RDKit✔️✔️: }
     pub fn reset_for_atom_count(&mut self, num_atoms: usize) {
         if let Some(atom_counts) = self.atom_counts.as_mut() {
             atom_counts.resize(num_atoms, 0);
@@ -196,9 +402,6 @@ impl AdditionalOutput {
         }
         if let Some(bit_paths) = self.bit_paths.as_mut() {
             bit_paths.clear();
-        }
-        if let Some(atoms_per_bit) = self.atoms_per_bit.as_mut() {
-            atoms_per_bit.clear();
         }
     }
 }
@@ -317,11 +520,13 @@ impl FingerprintArguments {
         let count_bounds = self
             .d_count_bounds
             .iter()
-            .map(u32::to_string)
+            .map(|bound| format!("\"{bound}\""))
             .collect::<Vec<_>>()
             .join(",");
+        // Boost property_tree stores every leaf as text, so write_json quotes
+        // numeric and boolean values even though fromJSON reads typed values.
         format!(
-            "{{\"countSimulation\":{},\"fpSize\":{},\"numBitsPerFeature\":{},\"includeChirality\":{},\"countBounds\":[{}]}}",
+            "{{\"countSimulation\":\"{}\",\"fpSize\":\"{}\",\"numBitsPerFeature\":\"{}\",\"includeChirality\":\"{}\",\"countBounds\":[{}]}}",
             self.df_count_simulation,
             self.d_fp_size,
             self.d_num_bits_per_feature,
@@ -398,6 +603,566 @@ impl FingerprintArguments {
             }
         }
         Ok(())
+    }
+}
+
+/// RDKit Topological Torsion fingerprint arguments layered over the shared
+/// fingerprint-generator arguments.
+// RDKit source: TopologicalTorsionGenerator.h lines 21-50
+// RDKit✔️✔️: class RDKIT_FINGERPRINTS_EXPORT TopologicalTorsionArguments
+// RDKit✔️✔️:     : public FingerprintArguments {
+// RDKit✔️✔️:  public:
+// RDKit✔️✔️:   uint32_t d_torsionAtomCount = 4;
+// RDKit✔️✔️:   bool df_onlyShortestPaths = false;
+// RDKit✔️✔️:
+// RDKit✔️✔️:   std::string infoString() const override;
+// RDKit✔️✔️:   void toJSON(boost::property_tree::ptree &pt) const override;
+// RDKit✔️✔️:   void fromJSON(const boost::property_tree::ptree &pt) override;
+// RDKit✔️✔️:
+// RDKit✔️✔️:   TopologicalTorsionArguments(
+// RDKit✔️✔️:       const bool includeChirality = false, const uint32_t torsionAtomCount = 4,
+// RDKit✔️✔️:       const bool countSimulation = true,
+// RDKit✔️✔️:       const std::vector<std::uint32_t> countBounds = {1, 2, 4, 8},
+// RDKit✔️✔️:       const std::uint32_t fpSize = 2048);
+// RDKit✔️✔️: };
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopologicalTorsionArguments {
+    pub fingerprint_arguments: FingerprintArguments,
+    pub d_torsion_atom_count: u32,
+    pub df_only_shortest_paths: bool,
+}
+
+impl Default for TopologicalTorsionArguments {
+    fn default() -> Self {
+        Self {
+            fingerprint_arguments: FingerprintArguments {
+                df_count_simulation: true,
+                df_include_chirality: false,
+                d_count_bounds: vec![1, 2, 4, 8],
+                d_fp_size: 2048,
+                d_num_bits_per_feature: 1,
+            },
+            d_torsion_atom_count: 4,
+            df_only_shortest_paths: false,
+        }
+    }
+}
+
+impl TopologicalTorsionArguments {
+    #[must_use]
+    pub fn new(
+        include_chirality: bool,
+        torsion_atom_count: u32,
+        count_simulation: bool,
+        count_bounds: Vec<u32>,
+        fp_size: u32,
+    ) -> Result<Self, FingerprintError> {
+        // RDKit source: TopologicalTorsionGenerator.cpp lines 25-32
+        // RDKit✔️✔️: TopologicalTorsionArguments::TopologicalTorsionArguments(
+        // RDKit✔️✔️:     const bool includeChirality, const uint32_t torsionAtomCount,
+        // RDKit✔️✔️:     const bool countSimulation, const std::vector<std::uint32_t> countBounds,
+        // RDKit✔️✔️:     const std::uint32_t fpSize)
+        // RDKit✔️✔️:     : FingerprintArguments(countSimulation, countBounds, fpSize, 1,
+        // RDKit✔️✔️:                            includeChirality),
+        // RDKit✔️✔️:       d_torsionAtomCount(torsionAtomCount) {};
+        let fingerprint_arguments = FingerprintArguments::new(
+            count_simulation,
+            count_bounds,
+            fp_size,
+            1,
+            include_chirality,
+        )?;
+        Ok(Self {
+            fingerprint_arguments,
+            d_torsion_atom_count: torsion_atom_count,
+            df_only_shortest_paths: false,
+        })
+    }
+
+    #[must_use]
+    pub fn info_string(&self) -> String {
+        // RDKit source: TopologicalTorsionGenerator.cpp lines 47-51
+        // RDKit✔️✔️: std::string TopologicalTorsionArguments::infoString() const {
+        // RDKit✔️✔️:   return "TopologicalTorsionArguments torsionAtomCount=" +
+        // RDKit✔️✔️:          std::to_string(d_torsionAtomCount) +
+        // RDKit✔️✔️:          " onlyShortestPaths=" + std::to_string(df_onlyShortestPaths);
+        // RDKit✔️✔️: };
+        format!(
+            "TopologicalTorsionArguments torsionAtomCount={} onlyShortestPaths={}",
+            self.d_torsion_atom_count, self.df_only_shortest_paths as u8
+        )
+    }
+
+    #[allow(non_snake_case)]
+    #[must_use]
+    pub fn infoString(&self) -> String {
+        self.info_string()
+    }
+
+    #[must_use]
+    pub fn to_json(&self) -> String {
+        // RDKit source: TopologicalTorsionGenerator.cpp lines 52-58
+        // RDKit✔️✔️: void TopologicalTorsionArguments::toJSON(
+        // RDKit✔️✔️:     boost::property_tree::ptree &pt) const {
+        // RDKit✔️✔️:   pt.put("type", "TopologicalTorsionArguments");
+        // RDKit✔️✔️:   pt.put("torsionAtomCount", d_torsionAtomCount);
+        // RDKit✔️✔️:   pt.put("onlyShortestPaths", df_onlyShortestPaths);
+        // RDKit✔️✔️:   FingerprintArguments::toJSON(pt);
+        // RDKit✔️✔️: }
+        let common = self.fingerprint_arguments.to_json();
+        let common_body = &common[1..common.len().saturating_sub(1)];
+        let mut json = format!(
+            "{{\"type\":\"TopologicalTorsionArguments\",\"torsionAtomCount\":\"{}\",\"onlyShortestPaths\":\"{}\"",
+            self.d_torsion_atom_count, self.df_only_shortest_paths
+        );
+        if !common_body.is_empty() {
+            json.push(',');
+            json.push_str(common_body);
+        }
+        json.push('}');
+        json
+    }
+
+    #[allow(non_snake_case)]
+    #[must_use]
+    pub fn toJSON(&self) -> String {
+        self.to_json()
+    }
+
+    pub fn from_json(&mut self, json: &str) -> Result<(), FingerprintError> {
+        if json.trim().is_empty() {
+            return Ok(());
+        }
+        let value: Value = serde_json::from_str(json)
+            .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
+        self.from_json_value(&value)
+    }
+
+    #[allow(non_snake_case)]
+    pub fn fromJSON(&mut self, json: &str) -> Result<(), FingerprintError> {
+        self.from_json(json)
+    }
+
+    fn from_json_value(&mut self, value: &Value) -> Result<(), FingerprintError> {
+        // RDKit source: TopologicalTorsionGenerator.cpp lines 59-65
+        // RDKit✔️✔️: void TopologicalTorsionArguments::fromJSON(
+        // RDKit✔️✔️:     const boost::property_tree::ptree &pt) {
+        // RDKit✔️✔️:   d_torsionAtomCount = pt.get<uint32_t>("torsionAtomCount", d_torsionAtomCount);
+        // RDKit✔️✔️:   df_onlyShortestPaths =
+        // RDKit✔️✔️:       pt.get<bool>("onlyShortestPaths", df_onlyShortestPaths);
+        // RDKit✔️✔️:   FingerprintArguments::fromJSON(pt);
+        // RDKit✔️✔️: }
+        let object = value.as_object().ok_or_else(|| {
+            FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
+        })?;
+        if let Some(field) = object.get("torsionAtomCount") {
+            self.d_torsion_atom_count = json_value_as_u32("torsionAtomCount", field)?;
+        }
+        if let Some(field) = object.get("onlyShortestPaths") {
+            self.df_only_shortest_paths = json_value_as_bool("onlyShortestPaths", field)?;
+        }
+        self.fingerprint_arguments.from_json_value(value)
+    }
+}
+
+/// One source `TopologicalTorsionAtomEnv` produced by the Topological Torsion
+/// environment generator.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopologicalTorsionAtomEnv {
+    bit_id: u64,
+    atom_path: Vec<usize>,
+}
+
+impl TopologicalTorsionAtomEnv {
+    #[must_use]
+    pub fn new(bit_id: u64, atom_path: Vec<usize>) -> Self {
+        // RDKit source: TopologicalTorsionGenerator.h lines 69-70
+        // RDKit✔️✔️: TopologicalTorsionAtomEnv(OutputType bitId, INT_VECT atomPath)
+        // RDKit✔️✔️:     : d_bitId(bitId), d_atomPath(std::move(atomPath)) {}
+        Self { bit_id, atom_path }
+    }
+
+    #[must_use]
+    #[allow(non_snake_case)]
+    pub fn getBitId(&self) -> u64 {
+        // RDKit source: TopologicalTorsionGenerator.cpp lines 89-101
+        // RDKit✔️✔️: template <typename OutputType>
+        // RDKit✔️✔️: OutputType TopologicalTorsionAtomEnv<OutputType>::getBitId(
+        // RDKit✔️✔️:     FingerprintArguments *,              // arguments
+        // RDKit✔️✔️:     const std::vector<std::uint32_t> *,  // atomInvariants
+        // RDKit✔️✔️:     const std::vector<std::uint32_t> *,  // bondInvariants
+        // RDKit✔️✔️:     AdditionalOutput *,                  // additionalOutput,
+        // RDKit✔️✔️:     const bool,                          // hashResults
+        // RDKit✔️✔️:     const std::uint64_t                  // fpSize
+        // RDKit✔️✔️: ) const {
+        // RDKit✔️✔️:   return d_bitId;
+        // RDKit✔️✔️: };
+        self.bit_id
+    }
+
+    #[allow(non_snake_case)]
+    pub fn updateAdditionalOutput(&self, additional_output: &mut AdditionalOutput, bit_id: u64) {
+        // RDKit source: TopologicalTorsionGenerator.cpp lines 68-87
+        // RDKit✔️✔️: template <typename OutputType>
+        // RDKit✔️✔️: void TopologicalTorsionAtomEnv<OutputType>::updateAdditionalOutput(
+        // RDKit✔️✔️:     AdditionalOutput *additionalOutput, size_t bitId) const {
+        // RDKit✔️✔️:   PRECONDITION(additionalOutput, "bad output pointer");
+        // RDKit✔️✔️:   if (additionalOutput->atomToBits || additionalOutput->atomCounts) {
+        // RDKit✔️✔️:     for (auto aid : d_atomPath) {
+        // RDKit✔️✔️:       if (additionalOutput->atomToBits) {
+        // RDKit✔️✔️:         additionalOutput->atomToBits->at(aid).push_back(bitId);
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       if (additionalOutput->atomCounts) {
+        // RDKit✔️✔️:         additionalOutput->atomCounts->at(aid)++;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   if (additionalOutput->bitPaths) {
+        // RDKit✔️✔️:     (*additionalOutput->bitPaths)[bitId].push_back(d_atomPath);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   if (additionalOutput->atomsPerBit) {
+        // RDKit✔️✔️:     (*additionalOutput->atomsPerBit)[bitId].push_back(d_atomPath);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        if additional_output.atom_to_bits.is_some() || additional_output.atom_counts.is_some() {
+            for &atom_id in &self.atom_path {
+                if let Some(atom_to_bits) = additional_output.atom_to_bits.as_mut() {
+                    atom_to_bits[atom_id].push(bit_id);
+                }
+                if let Some(atom_counts) = additional_output.atom_counts.as_mut() {
+                    atom_counts[atom_id] += 1;
+                }
+            }
+        }
+        if let Some(bit_paths) = additional_output.bit_paths.as_mut() {
+            bit_paths
+                .entry(bit_id)
+                .or_default()
+                .push(self.atom_path.clone());
+        }
+        if let Some(atoms_per_bit) = additional_output.atoms_per_bit.as_mut() {
+            atoms_per_bit
+                .entry(bit_id)
+                .or_default()
+                .push(self.atom_path.clone());
+        }
+    }
+}
+
+/// RDKit Topological Torsion atom-environment generator. The source stores a
+/// borrowed arguments pointer in the generator base; Rust passes that borrow
+/// explicitly so there is only one owned arguments value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum TopologicalTorsionAtomCodeMode {
+    #[default]
+    Modern,
+    LegacyUnfolded,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TopologicalTorsionEnvGenerator {
+    atom_code_mode: TopologicalTorsionAtomCodeMode,
+}
+
+impl TopologicalTorsionEnvGenerator {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            atom_code_mode: TopologicalTorsionAtomCodeMode::Modern,
+        }
+    }
+
+    fn use_legacy_unfolded_atom_codes(&mut self) {
+        self.atom_code_mode = TopologicalTorsionAtomCodeMode::LegacyUnfolded;
+    }
+
+    #[must_use]
+    #[allow(non_snake_case)]
+    pub fn infoString(&self) -> String {
+        // RDKit source: TopologicalTorsionGenerator.cpp lines 196-200
+        // RDKit✔️✔️: template <typename OutputType>
+        // RDKit✔️✔️: std::string TopologicalTorsionEnvGenerator<OutputType>::infoString() const {
+        // RDKit✔️✔️:   return "TopologicalTorsionEnvGenerator";
+        // RDKit✔️✔️: };
+        "TopologicalTorsionEnvGenerator".to_string()
+    }
+
+    #[must_use]
+    #[allow(non_snake_case)]
+    pub fn toJSON(&self) -> String {
+        // RDKit source: TopologicalTorsionGenerator.cpp lines 201-206
+        // RDKit✔️✔️: template <typename OutputType>
+        // RDKit✔️✔️: void TopologicalTorsionEnvGenerator<OutputType>::toJSON(
+        // RDKit✔️✔️:     boost::property_tree::ptree &pt) const {
+        // RDKit✔️✔️:   pt.put("type", "TopologicalTorsionEnvGenerator");
+        // RDKit✔️✔️:   AtomEnvironmentGenerator<OutputType>::toJSON(pt);
+        // RDKit✔️✔️: };
+        r#"{"type":"TopologicalTorsionEnvGenerator"}"#.to_string()
+    }
+
+    #[allow(non_snake_case)]
+    pub fn fromJSON(&mut self, json: &str) -> Result<(), FingerprintError> {
+        // RDKit source: TopologicalTorsionGenerator.cpp lines 207-211
+        // RDKit✔️✔️: template <typename OutputType>
+        // RDKit✔️✔️: void TopologicalTorsionEnvGenerator<OutputType>::fromJSON(
+        // RDKit✔️✔️:     const boost::property_tree::ptree &pt) {
+        // RDKit✔️✔️:   AtomEnvironmentGenerator<OutputType>::fromJSON(pt);
+        // RDKit✔️✔️: };
+        validate_stateless_environment_generator_json(json)
+    }
+
+    #[allow(non_snake_case)]
+    pub fn getEnvironments(
+        &self,
+        molecule: &Molecule,
+        arguments: &TopologicalTorsionArguments,
+        from_atoms: Option<&[usize]>,
+        ignore_atoms: Option<&[usize]>,
+        atom_invariants: &[u32],
+        hash_results: bool,
+    ) -> Result<Vec<TopologicalTorsionAtomEnv>, FingerprintError> {
+        // RDKit source: TopologicalTorsionGenerator.cpp lines 101-194
+        // RDKit✔️✔️: template <typename OutputType>
+        // RDKit✔️✔️: std::vector<AtomEnvironment<OutputType> *>
+        // RDKit✔️✔️: TopologicalTorsionEnvGenerator<OutputType>::getEnvironments(
+        // RDKit✔️✔️:     const ROMol &mol, FingerprintArguments *arguments,
+        // RDKit✔️✔️:     const std::vector<std::uint32_t> *fromAtoms,
+        // RDKit✔️✔️:     const std::vector<std::uint32_t> *ignoreAtoms,
+        // RDKit✔️✔️:     const int,                 // confId
+        // RDKit✔️✔️:     const AdditionalOutput *,  // additionalOutput
+        // RDKit✔️✔️:     const std::vector<std::uint32_t> *atomInvariants,
+        // RDKit✔️✔️:     const std::vector<std::uint32_t> *,  // bondInvariants
+        // RDKit✔️✔️:     const bool hashResults) const {
+        // RDKit✔️✔️:   auto *topologicalTorsionArguments =
+        // RDKit✔️✔️:       dynamic_cast<TopologicalTorsionArguments *>(arguments);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   std::vector<AtomEnvironment<OutputType> *> result;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   boost::dynamic_bitset<> *fromAtomsBV = nullptr;
+        // RDKit✔️✔️:   if (fromAtoms) {
+        // RDKit✔️✔️:     fromAtomsBV = new boost::dynamic_bitset<>(mol.getNumAtoms());
+        // RDKit✔️✔️:     for (auto fAt : *fromAtoms) {
+        // RDKit✔️✔️:       fromAtomsBV->set(fAt);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   boost::dynamic_bitset<> *ignoreAtomsBV = nullptr;
+        // RDKit✔️✔️:   if (ignoreAtoms) {
+        // RDKit✔️✔️:     ignoreAtomsBV = new boost::dynamic_bitset<>(mol.getNumAtoms());
+        // RDKit✔️✔️:     for (auto fAt : *ignoreAtoms) {
+        // RDKit✔️✔️:       ignoreAtomsBV->set(fAt);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   boost::dynamic_bitset<> pAtoms(mol.getNumAtoms());
+        // RDKit✔️✔️:   bool useBonds = false;
+        // RDKit✔️✔️:   bool useHs = false;
+        // RDKit✔️✔️:   int rootedAtAtom = -1;
+        // RDKit✔️✔️:   PATH_LIST paths = findAllPathsOfLengthN(
+        // RDKit✔️✔️:       mol, topologicalTorsionArguments->d_torsionAtomCount, useBonds, useHs,
+        // RDKit✔️✔️:       rootedAtAtom, topologicalTorsionArguments->df_onlyShortestPaths);
+        // RDKit✔️✔️:   for (PATH_LIST::const_iterator pathIt = paths.begin(); pathIt != paths.end();
+        // RDKit✔️✔️:        ++pathIt) {
+        // RDKit✔️✔️:     bool keepIt = true;
+        // RDKit✔️✔️:     if (fromAtomsBV) {
+        // RDKit✔️✔️:       keepIt = false;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     std::vector<std::uint32_t> pathCodes;
+        // RDKit✔️✔️:     const PATH_TYPE &path = *pathIt;
+        // RDKit✔️✔️:     if (fromAtomsBV) {
+        // RDKit✔️✔️:       if (fromAtomsBV->test(static_cast<std::uint32_t>(path.front())) ||
+        // RDKit✔️✔️:           fromAtomsBV->test(static_cast<std::uint32_t>(path.back()))) {
+        // RDKit✔️✔️:         keepIt = true;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     if (keepIt && ignoreAtomsBV) {
+        // RDKit✔️✔️:       for (int pElem : path) {
+        // RDKit✔️✔️:         if (ignoreAtomsBV->test(pElem)) {
+        // RDKit✔️✔️:           keepIt = false;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         }
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     if (keepIt) {
+        // RDKit✔️✔️:       pAtoms.reset();
+        // RDKit✔️✔️:       for (auto pIt = path.begin(); pIt < path.end(); ++pIt) {
+        // RDKit✔️✔️:         // look for a cycle that doesn't start at the first atom
+        // RDKit✔️✔️:         // we can't effectively canonicalize these at the moment
+        // RDKit✔️✔️:         // (was github #811)
+        // RDKit✔️✔️:         if (pIt != path.begin() && *pIt != *(path.begin()) && pAtoms[*pIt]) {
+        // RDKit✔️✔️:           pathCodes.clear();
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         }
+        // RDKit✔️✔️:         pAtoms.set(*pIt);
+        // RDKit✔️✔️:         unsigned int code = (*atomInvariants)[*pIt] % ((1 << codeSize) - 1) + 1;
+        // RDKit✔️✔️:         // subtract off the branching number:
+        // RDKit✔️✔️:         if (pIt != path.begin() && pIt + 1 != path.end()) {
+        // RDKit✔️✔️:           --code;
+        // RDKit✔️✔️:         }
+        // RDKit✔️✔️:         pathCodes.push_back(code);
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       if (pathCodes.size()) {
+        // RDKit✔️✔️:         OutputType code;
+        // RDKit✔️✔️:         if (hashResults) {
+        // RDKit✔️✔️:           code = getTopologicalTorsionHash(pathCodes);
+        // RDKit✔️✔️:         } else {
+        // RDKit✔️✔️:           code = getTopologicalTorsionCode(
+        // RDKit✔️✔️:               pathCodes, topologicalTorsionArguments->df_includeChirality);
+        // RDKit✔️✔️:         }
+        // RDKit✔️✔️:         result.push_back(new TopologicalTorsionAtomEnv<OutputType>(code, path));
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   delete fromAtomsBV;
+        // RDKit✔️✔️:   delete ignoreAtomsBV;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   return result;
+        // RDKit✔️✔️: };
+        let atom_count = molecule.num_atoms();
+        if atom_invariants.len() < atom_count {
+            return Err(FingerprintError::InvalidArguments {
+                reason: "bad atom invariants size",
+            });
+        }
+        if from_atoms
+            .into_iter()
+            .chain(ignore_atoms)
+            .flatten()
+            .any(|&atom_id| atom_id >= atom_count)
+        {
+            return Err(FingerprintError::InvalidArguments {
+                reason: "atom selection contains an atom index outside the molecule",
+            });
+        }
+
+        let mut from_atoms_bits = from_atoms.map(|_| vec![false; atom_count]);
+        if let (Some(bits), Some(atom_ids)) = (from_atoms_bits.as_mut(), from_atoms) {
+            for &atom_id in atom_ids {
+                bits[atom_id] = true;
+            }
+        }
+        let mut ignore_atoms_bits = ignore_atoms.map(|_| vec![false; atom_count]);
+        if let (Some(bits), Some(atom_ids)) = (ignore_atoms_bits.as_mut(), ignore_atoms) {
+            for &atom_id in atom_ids {
+                bits[atom_id] = true;
+            }
+        }
+
+        let paths = find_all_paths_of_length_n(
+            molecule,
+            arguments.d_torsion_atom_count as usize,
+            false,
+            false,
+            -1,
+            arguments.df_only_shortest_paths,
+        )?;
+        let mut result = Vec::new();
+        let mut path_atoms = vec![false; atom_count];
+        let code_modulus = (1_u32 << ATOM_PAIR_CODE_SIZE) - 1;
+        for path in paths {
+            let mut keep = from_atoms_bits.is_none();
+            if let Some(bits) = from_atoms_bits.as_ref() {
+                let (Some(&first), Some(&last)) = (path.first(), path.last()) else {
+                    return Err(FingerprintError::InvalidArguments {
+                        reason: "enumerated topological torsion path is empty",
+                    });
+                };
+                keep = bits[first] || bits[last];
+            }
+            if keep
+                && ignore_atoms_bits
+                    .as_ref()
+                    .is_some_and(|bits| path.iter().any(|&atom_id| bits[atom_id]))
+            {
+                keep = false;
+            }
+            if !keep {
+                continue;
+            }
+
+            path_atoms.fill(false);
+            let mut path_codes = Vec::new();
+            for (position, &atom_id) in path.iter().enumerate() {
+                if position != 0 && atom_id != path[0] && path_atoms[atom_id] {
+                    path_codes.clear();
+                    break;
+                }
+                path_atoms[atom_id] = true;
+                // The modern generator and deprecated unfolded API share this
+                // traversal but intentionally use different source formulas.
+                // RDKit✔️✔️: unsigned int code = (*atomInvariants)[*pIt] % ((1 << codeSize) - 1) + 1;
+                // RDKit✔️✔️: unsigned int code = atomCodes[*pIt] - 1;
+                let mut code = match self.atom_code_mode {
+                    TopologicalTorsionAtomCodeMode::Modern => {
+                        atom_invariants[atom_id] % code_modulus + 1
+                    }
+                    TopologicalTorsionAtomCodeMode::LegacyUnfolded => {
+                        atom_invariants[atom_id].wrapping_add(1)
+                    }
+                };
+                if position != 0 && position + 1 != path.len() {
+                    code -= 1;
+                }
+                path_codes.push(code);
+            }
+            if path_codes.is_empty() {
+                continue;
+            }
+            let bit_id = if hash_results {
+                u64::from(get_topological_torsion_hash(&path_codes)?)
+            } else {
+                get_topological_torsion_code(
+                    &path_codes,
+                    arguments.fingerprint_arguments.df_include_chirality,
+                )?
+            };
+            result.push(TopologicalTorsionAtomEnv::new(bit_id, path));
+        }
+        Ok(result)
+    }
+
+    pub fn get_result_size(
+        &self,
+        arguments: &TopologicalTorsionArguments,
+    ) -> Result<u64, FingerprintError> {
+        // RDKit source: TopologicalTorsionGenerator.cpp lines 33-45
+        // RDKit✔️✔️: template <typename OutputType>
+        // RDKit✔️✔️: OutputType TopologicalTorsionEnvGenerator<OutputType>::getResultSize() const {
+        // RDKit✔️✔️:   OutputType result = 1;
+        // RDKit✔️✔️:   return (result << ((
+        // RDKit✔️✔️:               dynamic_cast<const TopologicalTorsionArguments *>(
+        // RDKit✔️✔️:                   this->dp_fingerprintArguments)
+        // RDKit✔️✔️:                   ->d_torsionAtomCount *
+        // RDKit✔️✔️:               (codeSize + (dynamic_cast<const TopologicalTorsionArguments *>(
+        // RDKit✔️✔️:                                this->dp_fingerprintArguments)
+        // RDKit✔️✔️:                                    ->df_includeChirality
+        // RDKit✔️✔️:                                ? numChiralBits
+        // RDKit✔️✔️:                                : 0)))));
+        // RDKit✔️✔️: };
+        let bits_per_atom = ATOM_PAIR_CODE_SIZE
+            + if arguments.fingerprint_arguments.df_include_chirality {
+                ATOM_PAIR_NUM_CHIRAL_BITS
+            } else {
+                0
+            };
+        let shift = arguments
+            .d_torsion_atom_count
+            .checked_mul(bits_per_atom)
+            .ok_or(FingerprintError::InvalidArguments {
+                reason: "topological torsion result-size width overflow",
+            })?;
+        if shift >= u64::BITS {
+            return Err(FingerprintError::InvalidArguments {
+                reason: "topological torsion result-size shift must be less than 64 bits",
+            });
+        }
+        Ok(1_u64 << shift)
+    }
+
+    #[allow(non_snake_case)]
+    pub fn getResultSize(
+        &self,
+        arguments: &TopologicalTorsionArguments,
+    ) -> Result<u64, FingerprintError> {
+        self.get_result_size(arguments)
     }
 }
 
@@ -1541,15 +2306,7 @@ impl MorganEnvGenerator {
         // RDKit✔️✔️:     const boost::property_tree::ptree &pt) {
         // RDKit✔️✔️:   AtomEnvironmentGenerator<OutputType>::fromJSON(pt);
         // RDKit✔️✔️: }
-        if json.trim().is_empty() {
-            return Ok(());
-        }
-        let value: Value = serde_json::from_str(json)
-            .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
-        value.as_object().ok_or_else(|| {
-            FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
-        })?;
-        Ok(())
+        validate_stateless_environment_generator_json(json)
     }
 
     // RDKit✔️✔️: OutputType MorganEnvGenerator<OutputType>::getResultSize() const
@@ -1953,8 +2710,8 @@ impl generator::FingerprintFamily for MorganFingerprintGenerator {
         &self.fingerprint_arguments.fingerprint_arguments
     }
 
-    fn result_size(&self) -> u64 {
-        self.atom_environment_generator.getResultSize()
+    fn result_size(&self) -> Result<u64, FingerprintError> {
+        Ok(self.atom_environment_generator.getResultSize())
     }
 
     fn arguments_info_string(&self) -> String {
@@ -2031,53 +2788,449 @@ impl generator::FingerprintFamily for MorganFingerprintGenerator {
     }
 }
 
-impl MorganFingerprintGenerator {
-    #[allow(non_snake_case)]
-    pub fn getSparseCountFingerprint(
+/// RDKit's Topological Torsion generator is instantiated only with a 64-bit
+/// output type; Rust fixes the bit-id and sparse-vector domain to `u64`.
+// RDKit✔️✔️: // Topological torsion fingerprint does not support 32 bit output yet
+#[derive(Debug, Clone)]
+pub struct TopologicalTorsionFingerprintGenerator {
+    pub atom_environment_generator: TopologicalTorsionEnvGenerator,
+    pub fingerprint_arguments: TopologicalTorsionArguments,
+    pub atom_invariants_generator: AtomPairAtomInvGenerator,
+    pub owns_atom_invariants_generator: bool,
+}
+
+impl generator::FingerprintEnvironment for TopologicalTorsionAtomEnv {
+    fn bit_id(
         &self,
-        molecule: &Molecule,
-        args: &mut FingerprintFuncArguments,
-    ) -> Result<SparseCountFingerprint, FingerprintError> {
-        generator::FingerprintGenerator::new(self).get_sparse_count_fingerprint(molecule, args)
+        _arguments: &FingerprintArguments,
+        _atom_invariants: &[u32],
+        _bond_invariants: &[u32],
+        _hash_results: bool,
+        _fp_size: u64,
+    ) -> Result<u64, FingerprintError> {
+        Ok(self.getBitId())
     }
 
-    #[allow(non_snake_case)]
-    pub fn getSparseFingerprint(
-        &self,
-        molecule: &Molecule,
-        args: &mut FingerprintFuncArguments,
-    ) -> Result<SparseBitFingerprint, FingerprintError> {
-        generator::FingerprintGenerator::new(self).get_sparse_fingerprint(molecule, args)
-    }
-
-    #[allow(non_snake_case)]
-    pub fn getCountFingerprint(
-        &self,
-        molecule: &Molecule,
-        args: &mut FingerprintFuncArguments,
-    ) -> Result<SparseCountFingerprint, FingerprintError> {
-        generator::FingerprintGenerator::new(self).get_count_fingerprint(molecule, args)
-    }
-
-    #[allow(non_snake_case)]
-    pub fn getFingerprint(
-        &self,
-        molecule: &Molecule,
-        args: &mut FingerprintFuncArguments,
-    ) -> Result<Fingerprint, FingerprintError> {
-        generator::FingerprintGenerator::new(self).get_fingerprint(molecule, args)
-    }
-
-    #[allow(non_snake_case)]
-    pub fn getFingerprintHelper(
-        &self,
-        molecule: &Molecule,
-        args: &mut FingerprintFuncArguments,
-        fp_size: u64,
-    ) -> Result<SparseCountFingerprint, FingerprintError> {
-        generator::FingerprintGenerator::new(self).get_fingerprint_helper(molecule, args, fp_size)
+    fn update_additional_output(&self, output: &mut AdditionalOutput, bit_id: u64) {
+        self.updateAdditionalOutput(output, bit_id);
     }
 }
+
+impl generator::FingerprintFamily for TopologicalTorsionFingerprintGenerator {
+    type Environment = TopologicalTorsionAtomEnv;
+
+    fn common_arguments(&self) -> &FingerprintArguments {
+        &self.fingerprint_arguments.fingerprint_arguments
+    }
+
+    fn result_size(&self) -> Result<u64, FingerprintError> {
+        self.atom_environment_generator
+            .get_result_size(&self.fingerprint_arguments)
+    }
+
+    fn arguments_info_string(&self) -> String {
+        self.fingerprint_arguments.infoString()
+    }
+
+    fn environment_info_string(&self) -> String {
+        self.atom_environment_generator.infoString()
+    }
+
+    fn atom_invariants_info_string(&self) -> Option<String> {
+        Some(self.atom_invariants_generator.infoString())
+    }
+
+    fn bond_invariants_info_string(&self) -> Option<String> {
+        None
+    }
+
+    fn arguments_json(&self) -> String {
+        self.fingerprint_arguments.toJSON()
+    }
+
+    fn environment_json(&self) -> String {
+        self.atom_environment_generator.toJSON()
+    }
+
+    fn atom_invariants_json(&self) -> Option<String> {
+        Some(self.atom_invariants_generator.toJSON())
+    }
+
+    fn bond_invariants_json(&self) -> Option<String> {
+        None
+    }
+
+    fn atom_invariants(&self, molecule: &Molecule) -> Result<Vec<u32>, FingerprintError> {
+        self.atom_invariants_generator.getAtomInvariants(molecule)
+    }
+
+    fn bond_invariants(&self, _molecule: &Molecule) -> Result<Vec<u32>, FingerprintError> {
+        Ok(Vec::new())
+    }
+
+    fn environments(
+        &self,
+        molecule: &Molecule,
+        from_atoms: Option<&[usize]>,
+        ignore_atoms: Option<&[usize]>,
+        _conf_id: i32,
+        atom_invariants: &[u32],
+        _bond_invariants: &[u32],
+        hash_results: bool,
+    ) -> Result<Vec<Self::Environment>, FingerprintError> {
+        self.atom_environment_generator.getEnvironments(
+            molecule,
+            &self.fingerprint_arguments,
+            from_atoms,
+            ignore_atoms,
+            atom_invariants,
+            hash_results,
+        )
+    }
+}
+
+macro_rules! fingerprint_generator_api {
+    ($generator:ty) => {
+        impl $generator {
+            #[must_use]
+            pub fn info_string(&self) -> String {
+                generator::FingerprintGenerator::new(self).info_string()
+            }
+
+            #[must_use]
+            pub fn to_json(&self) -> String {
+                generator::FingerprintGenerator::new(self).to_json()
+            }
+
+            pub fn sparse_count_fingerprint(
+                &self,
+                molecule: &Molecule,
+                args: &mut FingerprintFuncArguments,
+            ) -> Result<SparseCountFingerprint, FingerprintError> {
+                generator::FingerprintGenerator::new(self)
+                    .get_sparse_count_fingerprint(molecule, args)
+            }
+
+            pub fn sparse_fingerprint(
+                &self,
+                molecule: &Molecule,
+                args: &mut FingerprintFuncArguments,
+            ) -> Result<SparseBitFingerprint, FingerprintError> {
+                generator::FingerprintGenerator::new(self).get_sparse_fingerprint(molecule, args)
+            }
+
+            pub fn count_fingerprint(
+                &self,
+                molecule: &Molecule,
+                args: &mut FingerprintFuncArguments,
+            ) -> Result<SparseCountFingerprint, FingerprintError> {
+                generator::FingerprintGenerator::new(self).get_count_fingerprint(molecule, args)
+            }
+
+            pub fn fingerprint(
+                &self,
+                molecule: &Molecule,
+                args: &mut FingerprintFuncArguments,
+            ) -> Result<Fingerprint, FingerprintError> {
+                generator::FingerprintGenerator::new(self).get_fingerprint(molecule, args)
+            }
+
+            #[allow(non_snake_case)]
+            pub fn getSparseCountFingerprint(
+                &self,
+                molecule: &Molecule,
+                args: &mut FingerprintFuncArguments,
+            ) -> Result<SparseCountFingerprint, FingerprintError> {
+                self.sparse_count_fingerprint(molecule, args)
+            }
+
+            #[allow(non_snake_case)]
+            pub fn getSparseFingerprint(
+                &self,
+                molecule: &Molecule,
+                args: &mut FingerprintFuncArguments,
+            ) -> Result<SparseBitFingerprint, FingerprintError> {
+                self.sparse_fingerprint(molecule, args)
+            }
+
+            #[allow(non_snake_case)]
+            pub fn getCountFingerprint(
+                &self,
+                molecule: &Molecule,
+                args: &mut FingerprintFuncArguments,
+            ) -> Result<SparseCountFingerprint, FingerprintError> {
+                self.count_fingerprint(molecule, args)
+            }
+
+            #[allow(non_snake_case)]
+            pub fn getFingerprint(
+                &self,
+                molecule: &Molecule,
+                args: &mut FingerprintFuncArguments,
+            ) -> Result<Fingerprint, FingerprintError> {
+                self.fingerprint(molecule, args)
+            }
+
+            #[allow(non_snake_case)]
+            pub fn getFingerprintHelper(
+                &self,
+                molecule: &Molecule,
+                args: &mut FingerprintFuncArguments,
+                fp_size: u64,
+            ) -> Result<SparseCountFingerprint, FingerprintError> {
+                generator::FingerprintGenerator::new(self)
+                    .get_fingerprint_helper(molecule, args, fp_size)
+            }
+
+            #[allow(non_snake_case)]
+            pub fn getFingerprints(
+                &self,
+                molecules: &[Option<&Molecule>],
+                num_threads: i32,
+            ) -> Result<Vec<Option<Fingerprint>>, FingerprintError> {
+                generator::FingerprintGenerator::new(self).get_fingerprints(molecules, num_threads)
+            }
+
+            #[allow(non_snake_case)]
+            pub fn getSparseFingerprints(
+                &self,
+                molecules: &[Option<&Molecule>],
+                num_threads: i32,
+            ) -> Result<Vec<Option<SparseBitFingerprint>>, FingerprintError> {
+                generator::FingerprintGenerator::new(self)
+                    .get_sparse_fingerprints(molecules, num_threads)
+            }
+
+            #[allow(non_snake_case)]
+            pub fn getCountFingerprints(
+                &self,
+                molecules: &[Option<&Molecule>],
+                num_threads: i32,
+            ) -> Result<Vec<Option<SparseCountFingerprint>>, FingerprintError> {
+                generator::FingerprintGenerator::new(self)
+                    .get_count_fingerprints(molecules, num_threads)
+            }
+
+            #[allow(non_snake_case)]
+            pub fn getSparseCountFingerprints(
+                &self,
+                molecules: &[Option<&Molecule>],
+                num_threads: i32,
+            ) -> Result<Vec<Option<SparseCountFingerprint>>, FingerprintError> {
+                generator::FingerprintGenerator::new(self)
+                    .get_sparse_count_fingerprints(molecules, num_threads)
+            }
+        }
+    };
+}
+
+fingerprint_generator_api!(MorganFingerprintGenerator);
+fingerprint_generator_api!(TopologicalTorsionFingerprintGenerator);
+
+/// Typed source generator restored by the shared JSON and public dispatch path.
+pub type TypedFingerprintGenerator = generator::RestoredFingerprintGenerator;
+
+/// RDKit's default fingerprint-family selector.
+// RDKit source: FingerprintGenerator.h lines 485-490
+// RDKit✔️✔️:   AtomPairFP,
+// RDKit✔️✔️:   MorganFP,
+// RDKit❌❌:   RDKitFP,
+// RDKit✔️✔️:   TopologicalTorsionFP
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FPType {
+    AtomPairFP,
+    MorganFP,
+    RDKitFP,
+    TopologicalTorsionFP,
+}
+
+fn default_generator_for_fp_type(
+    fingerprint_type: FPType,
+) -> Result<TypedFingerprintGenerator, FingerprintError> {
+    // RDKit source: FingerprintGenerator.cpp lines 850-874; the same switch is
+    // repeated for all four source bulk output functions.
+    // RDKit✔️✔️:   switch (fPType) {
+    // RDKit✔️✔️:     case FPType::AtomPairFP: {
+    // RDKit✔️✔️:       generator = AtomPair::getAtomPairGenerator<std::uint64_t>();
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     case FPType::MorganFP: {
+    // RDKit✔️✔️:       generator = MorganFingerprint::getMorganGenerator<std::uint64_t>(2);
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     }
+    // RDKit❌❌:     case FPType::RDKitFP: {
+    // RDKit❌❌:       generator = RDKitFP::getRDKitFPGenerator<std::uint64_t>();
+    // RDKit❌❌:       break;
+    // RDKit❌❌:     }
+    // RDKit✔️✔️:     case FPType::TopologicalTorsionFP: {
+    // RDKit✔️✔️:       generator =
+    // RDKit✔️✔️:           TopologicalTorsion::getTopologicalTorsionGenerator<std::uint64_t>();
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     default: {
+    // RDKit✔️✔️:       throw UnimplementedFPException(
+    // RDKit✔️✔️:           "Fingerprint type not implemented for getSparseCountFP");
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    match fingerprint_type {
+        FPType::MorganFP => Ok(TypedFingerprintGenerator::Morgan(getMorganGenerator(
+            &MorganArguments::default(),
+            None,
+            None,
+            true,
+            true,
+        ))),
+        FPType::TopologicalTorsionFP => Ok(TypedFingerprintGenerator::TopologicalTorsion(
+            getTopologicalTorsionGenerator(&TopologicalTorsionArguments::default(), None, true)?,
+        )),
+        FPType::AtomPairFP => Ok(TypedFingerprintGenerator::AtomPair(
+            atom_pair::atom_pair_generator(&atom_pair::AtomPairArguments::default(), None, true),
+        )),
+        FPType::RDKitFP => Err(FingerprintError::UnsupportedOption {
+            option: "FPType::RDKitFP",
+            reason: "the modern RDKitFP generator is outside the modeled shared generator core",
+        }),
+    }
+}
+
+fn scalar_dispatch_result<T>(mut results: Vec<Option<T>>) -> Result<T, FingerprintError> {
+    results
+        .pop()
+        .flatten()
+        .ok_or(FingerprintError::InvalidArguments {
+            reason: "scalar fingerprint dispatch produced no result",
+        })
+}
+
+#[allow(non_snake_case)]
+pub fn getSparseCountFP(
+    molecule: &Molecule,
+    fingerprint_type: FPType,
+) -> Result<SparseCountFingerprint, FingerprintError> {
+    // RDKit source: FingerprintGenerator.cpp lines 826-830
+    // RDKit✔️✔️: SparseIntVect<std::uint64_t> *getSparseCountFP(const ROMol &mol,
+    // RDKit✔️✔️:                                                FPType fPType) {
+    // RDKit✔️✔️:   std::vector<const ROMol *> tempVect(1, &mol);
+    // RDKit✔️✔️:   return (*getSparseCountFPBulk(tempVect, fPType))[0];
+    // RDKit✔️✔️: }
+    scalar_dispatch_result(getSparseCountFPBulk(&[Some(molecule)], fingerprint_type)?)
+}
+
+#[allow(non_snake_case)]
+pub fn getSparseFP(
+    molecule: &Molecule,
+    fingerprint_type: FPType,
+) -> Result<SparseBitFingerprint, FingerprintError> {
+    // RDKit source: FingerprintGenerator.cpp lines 832-835
+    // RDKit✔️✔️: SparseBitVect *getSparseFP(const ROMol &mol, FPType fPType) {
+    // RDKit✔️✔️:   std::vector<const ROMol *> tempVect(1, &mol);
+    // RDKit✔️✔️:   return (*getSparseFPBulk(tempVect, fPType))[0];
+    // RDKit✔️✔️: }
+    scalar_dispatch_result(getSparseFPBulk(&[Some(molecule)], fingerprint_type)?)
+}
+
+#[allow(non_snake_case)]
+pub fn getCountFP(
+    molecule: &Molecule,
+    fingerprint_type: FPType,
+) -> Result<SparseCountFingerprint, FingerprintError> {
+    // RDKit source: FingerprintGenerator.cpp lines 837-840
+    // RDKit✔️✔️: SparseIntVect<std::uint32_t> *getCountFP(const ROMol &mol, FPType fPType) {
+    // RDKit✔️✔️:   std::vector<const ROMol *> tempVect(1, &mol);
+    // RDKit✔️✔️:   return (*getCountFPBulk(tempVect, fPType))[0];
+    // RDKit✔️✔️: }
+    scalar_dispatch_result(getCountFPBulk(&[Some(molecule)], fingerprint_type)?)
+}
+
+#[allow(non_snake_case)]
+pub fn getFP(
+    molecule: &Molecule,
+    fingerprint_type: FPType,
+) -> Result<Fingerprint, FingerprintError> {
+    // RDKit source: FingerprintGenerator.cpp lines 842-845
+    // RDKit✔️✔️: ExplicitBitVect *getFP(const ROMol &mol, FPType fPType) {
+    // RDKit✔️✔️:   std::vector<const ROMol *> tempVect(1, &mol);
+    // RDKit✔️✔️:   return (*getFPBulk(tempVect, fPType))[0];
+    // RDKit✔️✔️: }
+    scalar_dispatch_result(getFPBulk(&[Some(molecule)], fingerprint_type)?)
+}
+
+#[allow(non_snake_case)]
+pub fn getSparseCountFPBulk(
+    molecules: &[Option<&Molecule>],
+    fingerprint_type: FPType,
+) -> Result<Vec<Option<SparseCountFingerprint>>, FingerprintError> {
+    // RDKit source: FingerprintGenerator.cpp lines 847-881
+    // RDKit✔️✔️: std::vector<SparseIntVect<std::uint64_t> *> *getSparseCountFPBulk(
+    // RDKit✔️✔️:     const std::vector<const ROMol *> molVector, FPType fPType) {
+    // RDKit✔️✔️:   FingerprintGenerator<std::uint64_t> *generator = nullptr;
+    // RDKit✔️✔️:   auto *res = new std::vector<SparseIntVect<std::uint64_t> *>();
+    // RDKit✔️✔️:   for (const auto *mol : molVector) {
+    // RDKit✔️✔️:     res->push_back(generator->getSparseCountFingerprint(*mol));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   delete generator;
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    default_generator_for_fp_type(fingerprint_type)?.getSparseCountFingerprints(molecules, 1)
+}
+
+#[allow(non_snake_case)]
+pub fn getSparseFPBulk(
+    molecules: &[Option<&Molecule>],
+    fingerprint_type: FPType,
+) -> Result<Vec<Option<SparseBitFingerprint>>, FingerprintError> {
+    // RDKit source: FingerprintGenerator.cpp lines 883-917
+    // RDKit✔️✔️: std::vector<SparseBitVect *> *getSparseFPBulk(
+    // RDKit✔️✔️:     const std::vector<const ROMol *> molVector, FPType fPType) {
+    // RDKit✔️✔️:   FingerprintGenerator<std::uint64_t> *generator = nullptr;
+    // RDKit✔️✔️:   auto *res = new std::vector<SparseBitVect *>();
+    // RDKit✔️✔️:   for (const auto *mol : molVector) {
+    // RDKit✔️✔️:     res->push_back(generator->getSparseFingerprint(*mol));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   delete generator;
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    default_generator_for_fp_type(fingerprint_type)?.getSparseFingerprints(molecules, 1)
+}
+
+#[allow(non_snake_case)]
+pub fn getCountFPBulk(
+    molecules: &[Option<&Molecule>],
+    fingerprint_type: FPType,
+) -> Result<Vec<Option<SparseCountFingerprint>>, FingerprintError> {
+    // RDKit source: FingerprintGenerator.cpp lines 919-953
+    // RDKit✔️✔️: std::vector<SparseIntVect<std::uint32_t> *> *getCountFPBulk(
+    // RDKit✔️✔️:     const std::vector<const ROMol *> molVector, FPType fPType) {
+    // RDKit✔️✔️:   FingerprintGenerator<std::uint64_t> *generator = nullptr;
+    // RDKit✔️✔️:   auto *res = new std::vector<SparseIntVect<std::uint32_t> *>();
+    // RDKit✔️✔️:   for (const auto *mol : molVector) {
+    // RDKit✔️✔️:     res->push_back(generator->getCountFingerprint(*mol));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   delete generator;
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    default_generator_for_fp_type(fingerprint_type)?.getCountFingerprints(molecules, 1)
+}
+
+#[allow(non_snake_case)]
+pub fn getFPBulk(
+    molecules: &[Option<&Molecule>],
+    fingerprint_type: FPType,
+) -> Result<Vec<Option<Fingerprint>>, FingerprintError> {
+    // RDKit source: FingerprintGenerator.cpp lines 955-989
+    // RDKit✔️✔️: std::vector<ExplicitBitVect *> *getFPBulk(
+    // RDKit✔️✔️:     const std::vector<const ROMol *> molVector, FPType fPType) {
+    // RDKit✔️✔️:   FingerprintGenerator<std::uint64_t> *generator = nullptr;
+    // RDKit✔️✔️:   auto *res = new std::vector<ExplicitBitVect *>();
+    // RDKit✔️✔️:   for (const auto *mol : molVector) {
+    // RDKit✔️✔️:     res->push_back(generator->getFingerprint(*mol));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   delete generator;
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    default_generator_for_fp_type(fingerprint_type)?.getFingerprints(molecules, 1)
+}
+
 #[allow(non_snake_case)]
 pub fn getMorganGenerator(
     args: &MorganArguments,
@@ -2145,6 +3298,801 @@ pub fn getMorganGenerator(
         owns_atom_invariants_generator,
         owns_bond_invariants_generator,
     }
+}
+
+#[allow(non_snake_case)]
+pub fn getTopologicalTorsionGenerator(
+    args: &TopologicalTorsionArguments,
+    atom_invariants_generator: Option<AtomPairAtomInvGenerator>,
+    owns_atom_inv_gen: bool,
+) -> Result<TopologicalTorsionFingerprintGenerator, FingerprintError> {
+    // RDKit source: TopologicalTorsionGenerator.cpp lines 212-229
+    // RDKit✔️✔️: template <typename OutputType>
+    // RDKit✔️✔️: FingerprintGenerator<OutputType> *getTopologicalTorsionGenerator(
+    // RDKit✔️✔️:     const TopologicalTorsionArguments &args,
+    // RDKit✔️✔️:     AtomInvariantsGenerator *atomInvariantsGenerator,
+    // RDKit✔️✔️:     const bool ownsAtomInvGen) {
+    // RDKit✔️✔️:   auto *envGenerator = new TopologicalTorsionEnvGenerator<OutputType>();
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   bool ownsAtomInvGenerator = ownsAtomInvGen;
+    // RDKit✔️✔️:   if (!atomInvariantsGenerator) {
+    // RDKit✔️✔️:     atomInvariantsGenerator =
+    // RDKit✔️✔️:         new AtomPair::AtomPairAtomInvGenerator(args.df_includeChirality, true);
+    // RDKit✔️✔️:     ownsAtomInvGenerator = true;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return new FingerprintGenerator<OutputType>(
+    // RDKit✔️✔️:       envGenerator, new TopologicalTorsionArguments(args),
+    // RDKit✔️✔️:       atomInvariantsGenerator, nullptr, ownsAtomInvGenerator, false);
+    // RDKit✔️✔️: };
+    let atom_environment_generator = TopologicalTorsionEnvGenerator::new();
+    atom_environment_generator.get_result_size(args)?;
+    let mut owns_atom_invariants_generator = owns_atom_inv_gen;
+    let atom_invariants_generator = match atom_invariants_generator {
+        Some(generator) => generator,
+        None => {
+            owns_atom_invariants_generator = true;
+            AtomPairAtomInvGenerator::new(args.fingerprint_arguments.df_include_chirality, true)
+        }
+    };
+
+    Ok(TopologicalTorsionFingerprintGenerator {
+        atom_environment_generator,
+        fingerprint_arguments: args.clone(),
+        atom_invariants_generator,
+        owns_atom_invariants_generator,
+    })
+}
+
+#[allow(clippy::too_many_arguments, non_snake_case)]
+pub fn getTopologicalTorsionGeneratorWithParams(
+    include_chirality: bool,
+    torsion_atom_count: u32,
+    atom_invariants_generator: Option<AtomPairAtomInvGenerator>,
+    count_simulation: bool,
+    fp_size: u32,
+    count_bounds: Vec<u32>,
+    owns_atom_inv_gen: bool,
+) -> Result<TopologicalTorsionFingerprintGenerator, FingerprintError> {
+    // RDKit source: TopologicalTorsionGenerator.cpp lines 230-240
+    // RDKit✔️✔️: template <typename OutputType>
+    // RDKit✔️✔️: FingerprintGenerator<OutputType> *getTopologicalTorsionGenerator(
+    // RDKit✔️✔️:     bool includeChirality, uint32_t torsionAtomCount,
+    // RDKit✔️✔️:     AtomInvariantsGenerator *atomInvariantsGenerator, bool countSimulation,
+    // RDKit✔️✔️:     std::uint32_t fpSize, std::vector<std::uint32_t> countBounds,
+    // RDKit✔️✔️:     bool ownsAtomInvGen) {
+    // RDKit✔️✔️:   TopologicalTorsionArguments arguments(includeChirality, torsionAtomCount,
+    // RDKit✔️✔️:                                         countSimulation, countBounds, fpSize);
+    // RDKit✔️✔️:   return getTopologicalTorsionGenerator<OutputType>(
+    // RDKit✔️✔️:       arguments, atomInvariantsGenerator, ownsAtomInvGen);
+    // RDKit✔️✔️: };
+    let arguments = TopologicalTorsionArguments::new(
+        include_chirality,
+        torsion_atom_count,
+        count_simulation,
+        count_bounds,
+        fp_size,
+    )?;
+    getTopologicalTorsionGenerator(&arguments, atom_invariants_generator, owns_atom_inv_gen)
+}
+
+/// Legacy un-hashed Topological Torsion fingerprint compatibility entry.
+#[deprecated(note = "please use TopologicalTorsionFingerprintGenerator")]
+#[allow(clippy::too_many_arguments, non_snake_case)]
+pub fn getTopologicalTorsionFingerprint(
+    molecule: &Molecule,
+    target_size: u32,
+    from_atoms: Option<&[usize]>,
+    ignore_atoms: Option<&[usize]>,
+    atom_invariants: Option<&[u32]>,
+    include_chirality: bool,
+) -> Result<SparseCountFingerprint, FingerprintError> {
+    // RDKit source: AtomPairs.cpp lines 159-265
+    // A Rust deprecation attribute provides the source warning at API use
+    // time; it is compile-time instead of RDKit's runtime log emission.
+    // RDKit❗✔️:   RDLog::deprecationWarning("please use TopologicalTorsionGenerator");
+    // RDKit✔️✔️:   PRECONDITION(!atomInvariants || atomInvariants->size() >= mol.getNumAtoms(),
+    // RDKit✔️✔️:                "bad atomInvariants size");
+    // RDKit✔️✔️:   const ROMol *lmol = &mol;
+    // RDKit✔️✔️:   std::unique_ptr<ROMol> tmol;
+    // RDKit✔️✔️:   if (includeChirality && !mol.hasProp(common_properties::_StereochemDone)) {
+    // RDKit✔️✔️:     tmol = std::unique_ptr<ROMol>(new ROMol(mol));
+    // RDKit✔️✔️:     MolOps::assignStereochemistry(*tmol);
+    // RDKit✔️✔️:     lmol = tmol.get();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   boost::uint64_t sz = 1;
+    // RDKit✔️✔️:   sz = (sz << (targetSize *
+    // RDKit✔️✔️:                (codeSize + (includeChirality ? numChiralBits : 0))));
+    // RDKit✔️✔️:   // NOTE: this -1 is incorrect but it's needed for backwards compatibility.
+    // RDKit✔️✔️:   //  hopefully we'll never have a case with a torsion that hits this.
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   //  mmm, bug compatible.
+    // RDKit✔️✔️:   sz -= 1;
+    // RDKit✔️✔️:   auto *res = new SparseIntVect<boost::int64_t>(sz);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   std::vector<std::uint32_t> atomCodes;
+    // RDKit✔️✔️:   atomCodes.reserve(lmol->getNumAtoms());
+    // RDKit✔️✔️:   for (ROMol::ConstAtomIterator atomItI = lmol->beginAtoms();
+    // RDKit✔️✔️:        atomItI != lmol->endAtoms(); ++atomItI) {
+    // RDKit✔️✔️:     if (!atomInvariants) {
+    // RDKit✔️✔️:       atomCodes.push_back(getAtomCode(*atomItI, 0, includeChirality));
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       // need to add to the atomCode here because we subtract off up to 2 below
+    // RDKit✔️✔️:       // as part of the branch correction
+    // RDKit✔️✔️:       atomCodes.push_back(
+    // RDKit✔️✔️:           (*atomInvariants)[(*atomItI)->getIdx()] % ((1 << codeSize) - 1) + 2);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   boost::dynamic_bitset<> *fromAtomsBV = nullptr;
+    // RDKit✔️✔️:   if (fromAtoms) {
+    // RDKit✔️✔️:     fromAtomsBV = new boost::dynamic_bitset<>(lmol->getNumAtoms());
+    // RDKit✔️✔️:     for (auto fAt : *fromAtoms) {
+    // RDKit✔️✔️:       fromAtomsBV->set(fAt);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   boost::dynamic_bitset<> *ignoreAtomsBV = nullptr;
+    // RDKit✔️✔️:   if (ignoreAtoms) {
+    // RDKit✔️✔️:     ignoreAtomsBV = new boost::dynamic_bitset<>(mol.getNumAtoms());
+    // RDKit✔️✔️:     for (auto fAt : *ignoreAtoms) {
+    // RDKit✔️✔️:       ignoreAtomsBV->set(fAt);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   boost::dynamic_bitset<> pAtoms(lmol->getNumAtoms());
+    // RDKit✔️✔️:   PATH_LIST paths = findAllPathsOfLengthN(*lmol, targetSize, false);
+    // RDKit✔️✔️:   for (PATH_LIST::const_iterator pathIt = paths.begin(); pathIt != paths.end();
+    // RDKit✔️✔️:        ++pathIt) {
+    // RDKit✔️✔️:     bool keepIt = true;
+    // RDKit✔️✔️:     if (fromAtomsBV) {
+    // RDKit✔️✔️:       keepIt = false;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     std::vector<std::uint32_t> pathCodes;
+    // RDKit✔️✔️:     const PATH_TYPE &path = *pathIt;
+    // RDKit✔️✔️:     if (fromAtomsBV) {
+    // RDKit✔️✔️:       if (fromAtomsBV->test(static_cast<std::uint32_t>(path.front())) ||
+    // RDKit✔️✔️:           fromAtomsBV->test(static_cast<std::uint32_t>(path.back()))) {
+    // RDKit✔️✔️:         keepIt = true;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (keepIt && ignoreAtomsBV) {
+    // RDKit✔️✔️:       for (auto pElem : path) {
+    // RDKit✔️✔️:         if (ignoreAtomsBV->test(pElem)) {
+    // RDKit✔️✔️:           keepIt = false;
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (keepIt) {
+    // RDKit✔️✔️:       pAtoms.reset();
+    // RDKit✔️✔️:       for (auto pIt = path.begin(); pIt < path.end(); ++pIt) {
+    // RDKit✔️✔️:         // look for a cycle that doesn't start at the first atom
+    // RDKit✔️✔️:         // we can't effectively canonicalize these at the moment
+    // RDKit✔️✔️:         // (was github #811)
+    // RDKit✔️✔️:         if (pIt != path.begin() && *pIt != *(path.begin()) && pAtoms[*pIt]) {
+    // RDKit✔️✔️:           pathCodes.clear();
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         pAtoms.set(*pIt);
+    // RDKit✔️✔️:         unsigned int code = atomCodes[*pIt] - 1;
+    // RDKit✔️✔️:         // subtract off the branching number:
+    // RDKit✔️✔️:         if (pIt != path.begin() && pIt + 1 != path.end()) {
+    // RDKit✔️✔️:           --code;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         pathCodes.push_back(code);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (pathCodes.size()) {
+    // RDKit✔️✔️:         boost::int64_t code =
+    // RDKit✔️✔️:             getTopologicalTorsionCode(pathCodes, includeChirality);
+    // RDKit✔️✔️:         updateElement(*res, code);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   delete fromAtomsBV;
+    // RDKit✔️✔️:   delete ignoreAtomsBV;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    if atom_invariants.is_some_and(|invariants| invariants.len() < molecule.num_atoms()) {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "bad atom invariants size",
+        });
+    }
+
+    let arguments = TopologicalTorsionArguments::new(
+        include_chirality,
+        target_size,
+        false,
+        vec![1, 2, 4, 8],
+        2048,
+    )?;
+    let mut generator = getTopologicalTorsionGenerator(&arguments, None, true)?;
+    if atom_invariants.is_none() {
+        // AtomPairAtomInvGenerator has already applied its source `- 2`
+        // correction. The legacy environment mode adds one at endpoints and
+        // leaves internal atoms unchanged, reproducing legacy `atomCode - 1`
+        // followed by the internal branch correction without duplicating the
+        // path-enumeration core.
+        generator
+            .atom_environment_generator
+            .use_legacy_unfolded_atom_codes();
+    }
+    let prepared_molecule;
+    let fingerprint_molecule = if include_chirality && molecule.prop("_StereochemDone").is_none() {
+        // RDKit source: AtomPairs.cpp lines 169-174
+        // RDKit❗✔️: if (includeChirality && !mol.hasProp(common_properties::_StereochemDone)) {
+        // RDKit❗✔️:   tmol = std::unique_ptr<ROMol>(new ROMol(mol));
+        // RDKit❗✔️:   MolOps::assignStereochemistry(*tmol);
+        // RDKit❗✔️:   lmol = tmol.get();
+        // RDKit❗✔️: }
+        prepared_molecule = {
+            let mut copy = molecule.clone();
+            crate::smiles::assign_stereochemistry_cleanup_subset(&mut copy, false)?;
+            copy
+        };
+        &prepared_molecule
+    } else {
+        molecule
+    };
+    let mut call_arguments = FingerprintFuncArguments {
+        from_atoms: from_atoms.map(<[usize]>::to_vec),
+        ignore_atoms: ignore_atoms.map(<[usize]>::to_vec),
+        custom_atom_invariants: atom_invariants.map(<[u32]>::to_vec),
+        ..FingerprintFuncArguments::default()
+    };
+    let mut result =
+        generator.getSparseCountFingerprint(fingerprint_molecule, &mut call_arguments)?;
+    let compatibility_size = generator
+        .atom_environment_generator
+        .get_result_size(&generator.fingerprint_arguments)?
+        .checked_sub(1)
+        .ok_or(FingerprintError::InvalidArguments {
+            reason: "legacy topological torsion compatibility size underflow",
+        })?;
+    if result
+        .nonzero_elements()
+        .keys()
+        .any(|&bit_id| bit_id >= compatibility_size)
+    {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "legacy topological torsion id reaches the compatibility vector boundary",
+        });
+    }
+    result.size = compatibility_size;
+    Ok(result)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn torsion_fp_calc(
+    molecule: &Molecule,
+    n_bits: u32,
+    target_size: u32,
+    from_atoms: Option<&[usize]>,
+    ignore_atoms: Option<&[usize]>,
+    atom_invariants: Option<&[u32]>,
+    include_chirality: bool,
+) -> Result<SparseCountFingerprint, FingerprintError> {
+    // RDKit source: AtomPairs.cpp lines 267-297
+    // RDKit✔️✔️: template <typename T>
+    // RDKit✔️✔️: void TorsionFpCalc(T *res, const ROMol &mol, unsigned int nBits,
+    // RDKit✔️✔️:                    unsigned int targetSize,
+    // RDKit✔️✔️:                    const std::vector<std::uint32_t> *fromAtoms,
+    // RDKit✔️✔️:                    const std::vector<std::uint32_t> *ignoreAtoms,
+    // RDKit✔️✔️:                    const std::vector<std::uint32_t> *atomInvariants,
+    // RDKit✔️✔️:                    bool includeChirality) {
+    // RDKit✔️✔️:   PRECONDITION(!atomInvariants || atomInvariants->size() >= mol.getNumAtoms(),
+    // RDKit✔️✔️:                "bad atomInvariants size");
+    // RDKit✔️✔️:   const ROMol *lmol = &mol;
+    // RDKit✔️✔️:   std::unique_ptr<ROMol> tmol;
+    // RDKit✔️✔️:   if (includeChirality && !mol.hasProp(common_properties::_StereochemDone)) {
+    // RDKit✔️✔️:     tmol = std::unique_ptr<ROMol>(new ROMol(mol));
+    // RDKit✔️✔️:     MolOps::assignStereochemistry(*tmol);
+    // RDKit✔️✔️:     lmol = tmol.get();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   std::unique_ptr<FingerprintGenerator<std::uint64_t>> fpgen{
+    // RDKit✔️✔️:       RDKit::TopologicalTorsion::getTopologicalTorsionGenerator<std::uint64_t>(
+    // RDKit✔️✔️:           includeChirality, targetSize, nullptr, true, nBits)};
+    // RDKit✔️✔️:   FingerprintFuncArguments args;
+    // RDKit✔️✔️:   args.fromAtoms = fromAtoms;
+    // RDKit✔️✔️:   args.ignoreAtoms = ignoreAtoms;
+    // RDKit✔️✔️:   args.customAtomInvariants = atomInvariants;
+    // RDKit✔️✔️:   auto siv = fpgen->getCountFingerprint(*lmol, args);
+    // RDKit✔️🔝:   for (auto v : siv->getNonzeroElements()) {
+    // RDKit✔️🔝:     res->setVal(v.first, v.second);
+    // RDKit✔️🔝:   }
+    // RDKit✔️✔️: }
+    // Returning the shared generator's owned count vector preserves every
+    // element and its declared size while eliminating the source adapter's
+    // second sparse-container allocation and O(k) element copy.
+    if n_bits == 0 {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "legacy hashed topological torsion nBits must be greater than zero",
+        });
+    }
+    if atom_invariants.is_some_and(|invariants| invariants.len() < molecule.num_atoms()) {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "bad atom invariants size",
+        });
+    }
+
+    let generator = getTopologicalTorsionGeneratorWithParams(
+        include_chirality,
+        target_size,
+        None,
+        true,
+        n_bits,
+        vec![1, 2, 4, 8],
+        true,
+    )?;
+    let mut args = FingerprintFuncArguments {
+        from_atoms: from_atoms.map(<[usize]>::to_vec),
+        ignore_atoms: ignore_atoms.map(<[usize]>::to_vec),
+        custom_atom_invariants: atom_invariants.map(<[u32]>::to_vec),
+        ..FingerprintFuncArguments::default()
+    };
+    generator.getCountFingerprint(molecule, &mut args)
+}
+
+#[deprecated(note = "please use TopologicalTorsionGenerator")]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub fn getHashedTopologicalTorsionFingerprint(
+    molecule: &Molecule,
+    n_bits: u32,
+    target_size: u32,
+    from_atoms: Option<&[usize]>,
+    ignore_atoms: Option<&[usize]>,
+    atom_invariants: Option<&[u32]>,
+    include_chirality: bool,
+) -> Result<SparseCountFingerprint, FingerprintError> {
+    // RDKit source: AtomPairs.cpp lines 299-310
+    // RDKit✔️✔️: SparseIntVect<boost::int64_t> *getHashedTopologicalTorsionFingerprint(
+    // RDKit✔️✔️:     const ROMol &mol, unsigned int nBits, unsigned int targetSize,
+    // RDKit✔️✔️:     const std::vector<std::uint32_t> *fromAtoms,
+    // RDKit✔️✔️:     const std::vector<std::uint32_t> *ignoreAtoms,
+    // RDKit✔️✔️:     const std::vector<std::uint32_t> *atomInvariants, bool includeChirality) {
+    // RDKit❗✔️:   RDLog::deprecationWarning("please use TopologicalTorsionGenerator");
+    // RDKit✔️✔️:   PRECONDITION(!atomInvariants || atomInvariants->size() >= mol.getNumAtoms(),
+    // RDKit✔️✔️:                "bad atomInvariants size");
+    // RDKit✔️🔝:   auto *res = new SparseIntVect<boost::int64_t>(nBits);
+    // RDKit✔️🔝:   TorsionFpCalc(res, mol, nBits, targetSize, fromAtoms, ignoreAtoms,
+    // RDKit✔️🔝:                 atomInvariants, includeChirality);
+    // RDKit✔️🔝:   return res;
+    // RDKit✔️🔝: }
+    // Rust's deprecation attribute reports use at compile time instead of at
+    // runtime. `torsion_fp_calc` already returns the shared generator's owned
+    // sparse vector, so this adapter preserves the source result while avoiding
+    // the source wrapper's additional allocation and element-copy pass.
+    torsion_fp_calc(
+        molecule,
+        n_bits,
+        target_size,
+        from_atoms,
+        ignore_atoms,
+        atom_invariants,
+        include_chirality,
+    )
+}
+
+#[deprecated(note = "please use TopologicalTorsionGenerator")]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub fn getHashedTopologicalTorsionFingerprintAsBitVect(
+    molecule: &Molecule,
+    n_bits: u32,
+    target_size: u32,
+    from_atoms: Option<&[usize]>,
+    ignore_atoms: Option<&[usize]>,
+    atom_invariants: Option<&[u32]>,
+    n_bits_per_entry: u32,
+    include_chirality: bool,
+) -> Result<Fingerprint, FingerprintError> {
+    // RDKit source: AtomPairs.cpp lines 312-347
+    // RDKit✔️✔️: ExplicitBitVect *getHashedTopologicalTorsionFingerprintAsBitVect(
+    // RDKit✔️✔️:     const ROMol &mol, unsigned int nBits, unsigned int targetSize,
+    // RDKit✔️✔️:     const std::vector<std::uint32_t> *fromAtoms,
+    // RDKit✔️✔️:     const std::vector<std::uint32_t> *ignoreAtoms,
+    // RDKit✔️✔️:     const std::vector<std::uint32_t> *atomInvariants,
+    // RDKit✔️✔️:     unsigned int nBitsPerEntry, bool includeChirality) {
+    // RDKit❗✔️:   RDLog::deprecationWarning("please use TopologicalTorsionGenerator");
+    // RDKit✔️✔️:   PRECONDITION(!atomInvariants || atomInvariants->size() >= mol.getNumAtoms(),
+    // RDKit✔️✔️:                "bad atomInvariants size");
+    // RDKit✔️✔️:   static int bounds[4] = {1, 2, 4, 8};
+    // RDKit✔️✔️:   unsigned int blockLength = nBits / nBitsPerEntry;
+    // RDKit✔️✔️:   auto *sres = new SparseIntVect<boost::int64_t>(blockLength);
+    // RDKit✔️✔️:   TorsionFpCalc(sres, mol, blockLength, targetSize, fromAtoms, ignoreAtoms,
+    // RDKit✔️✔️:                 atomInvariants, includeChirality);
+    // RDKit✔️✔️:   auto *res = new ExplicitBitVect(nBits);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (nBitsPerEntry != 4) {
+    // RDKit✔️✔️:     for (auto val : sres->getNonzeroElements()) {
+    // RDKit✔️✔️:       for (unsigned int i = 0; i < nBitsPerEntry; ++i) {
+    // RDKit✔️✔️:         if (val.second > static_cast<int>(i)) {
+    // RDKit✔️✔️:           res->setBit(val.first * nBitsPerEntry + i);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     for (auto val : sres->getNonzeroElements()) {
+    // RDKit✔️✔️:       for (unsigned int i = 0; i < nBitsPerEntry; ++i) {
+    // RDKit✔️✔️:         if (val.second >= bounds[i]) {
+    // RDKit✔️✔️:           res->setBit(val.first * nBitsPerEntry + i);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   delete sres;
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // Rust's deprecation attribute reports use at compile time. Invalid zero
+    // divisors and zero-sized hash blocks are returned as structured errors
+    // instead of entering source-undefined arithmetic/generator states.
+    if n_bits_per_entry == 0 {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "legacy topological torsion nBitsPerEntry must be greater than zero",
+        });
+    }
+    let block_length = n_bits / n_bits_per_entry;
+    if block_length == 0 {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "legacy topological torsion bit vector requires at least one complete entry block",
+        });
+    }
+
+    let sparse_counts = torsion_fp_calc(
+        molecule,
+        block_length,
+        target_size,
+        from_atoms,
+        ignore_atoms,
+        atom_invariants,
+        include_chirality,
+    )?;
+    let mut on_bits = Vec::new();
+    const BOUNDS: [i32; 4] = [1, 2, 4, 8];
+    for (&bit_id, &count) in sparse_counts.nonzero_elements() {
+        for i in 0..n_bits_per_entry {
+            let set = if n_bits_per_entry == 4 {
+                count >= BOUNDS[i as usize]
+            } else {
+                i64::from(count) > i64::from(i)
+            };
+            if set {
+                let output_bit = bit_id
+                    .checked_mul(u64::from(n_bits_per_entry))
+                    .and_then(|base| base.checked_add(u64::from(i)))
+                    .ok_or(FingerprintError::InvalidArguments {
+                        reason: "legacy topological torsion bit index overflow",
+                    })?;
+                on_bits.push(usize::try_from(output_bit).map_err(|_| {
+                    FingerprintError::InvalidArguments {
+                        reason: "legacy topological torsion bit index exceeds platform size",
+                    }
+                })?);
+            }
+        }
+    }
+    let output_size = usize::try_from(n_bits).map_err(|_| FingerprintError::InvalidArguments {
+        reason: "legacy topological torsion bit-vector size exceeds platform size",
+    })?;
+    Ok(Fingerprint::from_on_bits(output_size, on_bits))
+}
+
+/// Rust-native parameters for the RDKit Topological Torsion generator.
+///
+/// This family is intentionally distinct from [`TopologicalFingerprintParams`],
+/// which configures RDKit's path/subgraph `RDKFingerprintMol` algorithm.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopologicalTorsionFingerprintParams {
+    pub include_chirality: bool,
+    pub torsion_atom_count: u32,
+    pub count_simulation: bool,
+    pub count_bounds: Vec<u32>,
+    pub fp_size: u32,
+    pub num_bits_per_feature: u32,
+    pub only_shortest_paths: bool,
+    pub from_atoms: Option<Vec<usize>>,
+    pub ignore_atoms: Option<Vec<usize>>,
+    pub custom_atom_invariants: Option<Vec<u32>>,
+    pub atom_invariants_generator: Option<AtomPairAtomInvGenerator>,
+}
+
+impl Default for TopologicalTorsionFingerprintParams {
+    fn default() -> Self {
+        Self {
+            include_chirality: false,
+            torsion_atom_count: 4,
+            count_simulation: true,
+            count_bounds: vec![1, 2, 4, 8],
+            fp_size: 2048,
+            num_bits_per_feature: 1,
+            only_shortest_paths: false,
+            from_atoms: None,
+            ignore_atoms: None,
+            custom_atom_invariants: None,
+            atom_invariants_generator: None,
+        }
+    }
+}
+
+impl TopologicalTorsionFingerprintParams {
+    fn generator_arguments(&self) -> Result<TopologicalTorsionArguments, FingerprintError> {
+        if self.num_bits_per_feature == 0 {
+            return Err(FingerprintError::InvalidArguments {
+                reason: "Topological Torsion num_bits_per_feature must be greater than zero",
+            });
+        }
+        let mut arguments = TopologicalTorsionArguments::new(
+            self.include_chirality,
+            self.torsion_atom_count,
+            self.count_simulation,
+            self.count_bounds.clone(),
+            self.fp_size,
+        )?;
+        arguments.fingerprint_arguments.d_num_bits_per_feature = self.num_bits_per_feature;
+        arguments.df_only_shortest_paths = self.only_shortest_paths;
+        Ok(arguments)
+    }
+
+    fn call_arguments(&self) -> FingerprintFuncArguments {
+        FingerprintFuncArguments {
+            from_atoms: self.from_atoms.clone(),
+            ignore_atoms: self.ignore_atoms.clone(),
+            custom_atom_invariants: self.custom_atom_invariants.clone(),
+            ..FingerprintFuncArguments::default()
+        }
+    }
+}
+
+/// Vector form requested from [`topological_torsion_fingerprint_with_output`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TopologicalTorsionFingerprintVector {
+    SparseCount,
+    SparseBit,
+    Count,
+    #[default]
+    Bit,
+}
+
+/// Typed request for a Topological Torsion vector and shared provenance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TopologicalTorsionFingerprintOutputRequest {
+    pub vector: TopologicalTorsionFingerprintVector,
+    pub atom_to_bits: bool,
+    pub atom_counts: bool,
+    pub bit_paths: bool,
+    pub atoms_per_bit: bool,
+}
+
+/// One of the four source-supported Topological Torsion vector forms.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TopologicalTorsionFingerprintValue {
+    SparseCount(SparseCountFingerprint),
+    SparseBit(SparseBitFingerprint),
+    Count(SparseCountFingerprint),
+    Bit(Fingerprint),
+}
+
+/// Rust-native Topological Torsion result with optional shared provenance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopologicalTorsionFingerprintResult {
+    pub fingerprint: TopologicalTorsionFingerprintValue,
+    pub additional_output: Option<AdditionalOutput>,
+}
+
+/// Construct the public Rust Topological Torsion generator over the sole
+/// shared fingerprint-generator core.
+pub fn topological_torsion_generator(
+    params: &TopologicalTorsionFingerprintParams,
+) -> Result<TopologicalTorsionFingerprintGenerator, FingerprintError> {
+    let arguments = params.generator_arguments()?;
+    getTopologicalTorsionGenerator(&arguments, params.atom_invariants_generator.clone(), true)
+}
+
+fn allocate_topological_torsion_output(
+    request: TopologicalTorsionFingerprintOutputRequest,
+) -> Option<AdditionalOutput> {
+    if !(request.atom_to_bits || request.atom_counts || request.bit_paths || request.atoms_per_bit)
+    {
+        return None;
+    }
+    let mut output = AdditionalOutput::new();
+    if request.atom_to_bits {
+        output.allocate_atom_to_bits();
+    }
+    if request.atom_counts {
+        output.allocate_atom_counts();
+    }
+    if request.bit_paths {
+        output.allocate_bit_paths();
+    }
+    if request.atoms_per_bit {
+        output.allocate_atoms_per_bit();
+    }
+    Some(output)
+}
+
+/// Generate any source-supported Topological Torsion vector form and the
+/// requested shared provenance without mutating `molecule`.
+pub fn topological_torsion_fingerprint_with_output(
+    molecule: &Molecule,
+    params: &TopologicalTorsionFingerprintParams,
+    request: TopologicalTorsionFingerprintOutputRequest,
+) -> Result<TopologicalTorsionFingerprintResult, FingerprintError> {
+    if params.fp_size == 0
+        && matches!(
+            request.vector,
+            TopologicalTorsionFingerprintVector::SparseBit
+                | TopologicalTorsionFingerprintVector::Bit
+        )
+    {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "Topological Torsion bit-vector convenience output requires fp_size > 0",
+        });
+    }
+    let generator = topological_torsion_generator(params)?;
+    let mut arguments = params.call_arguments();
+    arguments.additional_output = allocate_topological_torsion_output(request);
+    let fingerprint = match request.vector {
+        TopologicalTorsionFingerprintVector::SparseCount => {
+            TopologicalTorsionFingerprintValue::SparseCount(
+                generator.getSparseCountFingerprint(molecule, &mut arguments)?,
+            )
+        }
+        TopologicalTorsionFingerprintVector::SparseBit => {
+            TopologicalTorsionFingerprintValue::SparseBit(
+                generator.getSparseFingerprint(molecule, &mut arguments)?,
+            )
+        }
+        TopologicalTorsionFingerprintVector::Count => TopologicalTorsionFingerprintValue::Count(
+            generator.getCountFingerprint(molecule, &mut arguments)?,
+        ),
+        TopologicalTorsionFingerprintVector::Bit => TopologicalTorsionFingerprintValue::Bit(
+            generator.getFingerprint(molecule, &mut arguments)?,
+        ),
+    };
+    Ok(TopologicalTorsionFingerprintResult {
+        fingerprint,
+        additional_output: arguments.additional_output,
+    })
+}
+
+pub fn topological_torsion_sparse_count_fingerprint(
+    molecule: &Molecule,
+    params: &TopologicalTorsionFingerprintParams,
+) -> Result<SparseCountFingerprint, FingerprintError> {
+    let generator = topological_torsion_generator(params)?;
+    generator.getSparseCountFingerprint(molecule, &mut params.call_arguments())
+}
+
+pub fn topological_torsion_sparse_fingerprint(
+    molecule: &Molecule,
+    params: &TopologicalTorsionFingerprintParams,
+) -> Result<SparseBitFingerprint, FingerprintError> {
+    if params.fp_size == 0 {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "Topological Torsion sparse-bit convenience output requires fp_size > 0",
+        });
+    }
+    let generator = topological_torsion_generator(params)?;
+    generator.getSparseFingerprint(molecule, &mut params.call_arguments())
+}
+
+pub fn topological_torsion_count_fingerprint(
+    molecule: &Molecule,
+    params: &TopologicalTorsionFingerprintParams,
+) -> Result<SparseCountFingerprint, FingerprintError> {
+    let generator = topological_torsion_generator(params)?;
+    generator.getCountFingerprint(molecule, &mut params.call_arguments())
+}
+
+pub fn topological_torsion_fingerprint(
+    molecule: &Molecule,
+    params: &TopologicalTorsionFingerprintParams,
+) -> Result<Fingerprint, FingerprintError> {
+    if params.fp_size == 0 {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "Topological Torsion bit-vector convenience output requires fp_size > 0",
+        });
+    }
+    let generator = topological_torsion_generator(params)?;
+    generator.getFingerprint(molecule, &mut params.call_arguments())
+}
+
+/// Legacy compatibility form selected by [`TopologicalTorsionLegacyParams`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TopologicalTorsionLegacyKind {
+    #[default]
+    UnfoldedCount,
+    HashedCount,
+    HashedBit,
+}
+
+/// Rust-native parameters for the three deprecated RDKit compatibility paths.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopologicalTorsionLegacyParams {
+    pub kind: TopologicalTorsionLegacyKind,
+    pub n_bits: u32,
+    pub torsion_atom_count: u32,
+    pub from_atoms: Option<Vec<usize>>,
+    pub ignore_atoms: Option<Vec<usize>>,
+    pub atom_invariants: Option<Vec<u32>>,
+    pub n_bits_per_entry: u32,
+    pub include_chirality: bool,
+}
+
+impl Default for TopologicalTorsionLegacyParams {
+    fn default() -> Self {
+        Self {
+            kind: TopologicalTorsionLegacyKind::UnfoldedCount,
+            n_bits: 2048,
+            torsion_atom_count: 4,
+            from_atoms: None,
+            ignore_atoms: None,
+            atom_invariants: None,
+            n_bits_per_entry: 4,
+            include_chirality: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TopologicalTorsionLegacyResult {
+    SparseCount(SparseCountFingerprint),
+    Bit(Fingerprint),
+}
+
+/// Call one of the three source-compatible legacy adapters. This function is
+/// a naming/typing layer only and does not contain a second chemistry path.
+#[allow(deprecated)]
+pub fn topological_torsion_legacy_fingerprint(
+    molecule: &Molecule,
+    params: &TopologicalTorsionLegacyParams,
+) -> Result<TopologicalTorsionLegacyResult, FingerprintError> {
+    let result = match params.kind {
+        TopologicalTorsionLegacyKind::UnfoldedCount => {
+            TopologicalTorsionLegacyResult::SparseCount(getTopologicalTorsionFingerprint(
+                molecule,
+                params.torsion_atom_count,
+                params.from_atoms.as_deref(),
+                params.ignore_atoms.as_deref(),
+                params.atom_invariants.as_deref(),
+                params.include_chirality,
+            )?)
+        }
+        TopologicalTorsionLegacyKind::HashedCount => {
+            TopologicalTorsionLegacyResult::SparseCount(getHashedTopologicalTorsionFingerprint(
+                molecule,
+                params.n_bits,
+                params.torsion_atom_count,
+                params.from_atoms.as_deref(),
+                params.ignore_atoms.as_deref(),
+                params.atom_invariants.as_deref(),
+                params.include_chirality,
+            )?)
+        }
+        TopologicalTorsionLegacyKind::HashedBit => {
+            TopologicalTorsionLegacyResult::Bit(getHashedTopologicalTorsionFingerprintAsBitVect(
+                molecule,
+                params.n_bits,
+                params.torsion_atom_count,
+                params.from_atoms.as_deref(),
+                params.ignore_atoms.as_deref(),
+                params.atom_invariants.as_deref(),
+                params.n_bits_per_entry,
+                params.include_chirality,
+            )?)
+        }
+    };
+    Ok(result)
+}
+
+#[allow(non_snake_case)]
+pub fn generatorToJSON(generator: &TypedFingerprintGenerator) -> String {
+    generator.to_json()
+}
+
+#[allow(non_snake_case)]
+pub fn generatorFromJSON(json: &str) -> Result<TypedFingerprintGenerator, FingerprintError> {
+    generator::generator_from_json(json)
 }
 
 #[allow(clippy::too_many_arguments, non_snake_case)]
@@ -2311,6 +4259,8 @@ pub enum FingerprintError {
     AtomPair { reason: String },
     #[error("sparse fingerprint index {index} is outside vector length {size}")]
     SparseIndexOutOfRange { index: u64, size: u64 },
+    #[error(transparent)]
+    Valence(#[from] crate::ValenceError),
     #[error("invalid SMARTS pattern '{pattern}': {reason}")]
     InvalidSmartsPattern { pattern: String, reason: String },
     #[error("unsupported fingerprint option {option}: {reason}")]
@@ -2318,6 +4268,8 @@ pub enum FingerprintError {
         option: &'static str,
         reason: &'static str,
     },
+    #[error("fingerprint parallel execution failed: {0}")]
+    ParallelExecution(String),
     #[error("Avalon REACCS conversion failed: {reason}")]
     AvalonConversion { reason: String },
     #[error("fingerprint bit length mismatch: {left} != {right}")]
@@ -2327,6 +4279,14 @@ pub enum FingerprintError {
 impl From<crate::chemistry::ciplabeler::CipLabelerError> for FingerprintError {
     fn from(error: crate::chemistry::ciplabeler::CipLabelerError) -> Self {
         Self::CipLabeler {
+            reason: error.to_string(),
+        }
+    }
+}
+
+impl From<crate::StereoError> for FingerprintError {
+    fn from(error: crate::StereoError) -> Self {
+        Self::StereoPreparation {
             reason: error.to_string(),
         }
     }
@@ -3159,6 +5119,18 @@ fn setup_temp_additional_output(
 // Helpers
 // ---------------------------------------------------------------------------
 
+fn validate_stateless_environment_generator_json(json: &str) -> Result<(), FingerprintError> {
+    if json.trim().is_empty() {
+        return Ok(());
+    }
+    let value: Value = serde_json::from_str(json)
+        .map_err(|error| FingerprintError::InvalidArgumentsJson(error.to_string()))?;
+    value.as_object().ok_or_else(|| {
+        FingerprintError::InvalidArgumentsJson("expected JSON object".to_string())
+    })?;
+    Ok(())
+}
+
 fn json_value_as_bool(name: &str, value: &Value) -> Result<bool, FingerprintError> {
     if let Some(flag) = value.as_bool() {
         return Ok(flag);
@@ -3511,62 +5483,107 @@ fn rdkit_fp_recurse_subgraphs(
     }
 }
 
-fn rdkit_fp_atom_adjacency(molecule: &Molecule, use_hs: bool) -> Vec<Vec<bool>> {
-    // RDKit source: Subgraphs.cpp lines 468-490 (`findAllPathsOfLengthsMtoN`).
-    // RDKit✔️✔️: adjMat = new int[dim * dim];
-    // RDKit✔️✔️: memset((void *)adjMat, 0, dim * dim * sizeof(int));
-    // RDKit✔️✔️: for (bondIt = mol.beginBonds(); bondIt != mol.endBonds(); bondIt++) {
-    // RDKit✔️✔️:   Atom *beg = (*bondIt)->getBeginAtom();
-    // RDKit✔️✔️:   Atom *end = (*bondIt)->getEndAtom();
-    // RDKit✔️✔️:   if (useHs || (beg->getAtomicNum() != 1 && end->getAtomicNum() != 1)) {
-    // RDKit✔️✔️:     adjMat[beg->getIdx() * dim + end->getIdx()] = 1;
-    // RDKit✔️✔️:     adjMat[end->getIdx() * dim + beg->getIdx()] = 1;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    let dim = molecule.num_atoms();
-    let mut adjacency = vec![vec![false; dim]; dim];
-    for bond in molecule.bonds() {
-        let begin = bond.begin().index();
-        let end = bond.end().index();
-        if use_hs
-            || (molecule.atoms()[begin].atomic_number() != 1
-                && molecule.atoms()[end].atomic_number() != 1)
-        {
-            adjacency[begin][end] = true;
-            adjacency[end][begin] = true;
-        }
-    }
-    adjacency
-}
-
-fn rdkit_fp_extend_atom_paths(
-    adjacency: &[Vec<bool>],
+fn extend_paths(
+    adjacency: &[u8],
+    dim: usize,
     paths: &[Vec<usize>],
-    allow_ring_closures: usize,
-) -> Vec<Vec<usize>> {
-    // RDKit source: Subgraphs.cpp lines 189-241 (`extendPaths`).
-    // RDKit✔️✔️: for (path = paths.begin(); path != paths.end(); ++path) {
-    // RDKit✔️✔️:   unsigned int endIdx = (*path)[path->size() - 1];
-    // RDKit✔️✔️:   for (unsigned int otherIdx = 0; otherIdx < dim; otherIdx++) {
-    // RDKit✔️✔️:     if (adjMat[iTab + otherIdx] == 1) {
-    // RDKit✔️✔️:       auto loc = std::find(path->begin(), path->end(), otherIdx);
-    // RDKit✔️✔️:       if (loc == path->end()) { append; }
-    // RDKit✔️✔️:       else if (allowRingClosures > 2 && path->size() == allowRingClosures - 1) {
-    // RDKit✔️✔️:         auto rIt = path->rbegin(); rIt++;
-    // RDKit✔️✔️:         if (*rIt != static_cast<int>(otherIdx)) append;
+    allow_ring_closures: i64,
+    distance_matrix: Option<&[f64]>,
+) -> Result<Vec<Vec<usize>>, FingerprintError> {
+    // BEGIN RDKIT CPP FUNCTION Subgraphs::extendPaths
+    // RDKit✔️✔️: PATH_LIST
+    // RDKit✔️✔️: extendPaths(int *adjMat, unsigned int dim, const PATH_LIST &paths,
+    // RDKit✔️✔️:             int allowRingClosures = -1, double *distMat = nullptr) {
+    // RDKit✔️✔️:   PRECONDITION(adjMat, "no matrix");
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   //  extend each of the currently active paths by adding
+    // RDKit✔️✔️:   //   a single adjacent index to the end of each
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   PATH_LIST res;
+    // RDKit✔️✔️:   PATH_LIST::const_iterator path;
+    // RDKit✔️✔️:   for (path = paths.begin(); path != paths.end(); ++path) {
+    // RDKit✔️✔️:     unsigned int endIdx = (*path)[path->size() - 1];
+    // RDKit✔️✔️:     unsigned int iTab = endIdx * dim;
+    // RDKit✔️✔️:     for (unsigned int otherIdx = 0; otherIdx < dim; otherIdx++) {
+    // RDKit✔️✔️:       if (adjMat[iTab + otherIdx] == 1) {
+    // RDKit✔️✔️:         if (distMat &&
+    // RDKit✔️✔️:             distMat[path->front() * dim + otherIdx] - path->size() < -0.001) {
+    // RDKit✔️✔️:           continue;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         // test 1: make sure the new atom is not already
+    // RDKit✔️✔️:         //   in the path
+    // RDKit✔️✔️:         auto loc =
+    // RDKit✔️✔️:             std::find(path->begin(), path->end(), static_cast<int>(otherIdx));
+    // RDKit✔️✔️:         // The two conditions for adding the atom are:
+    // RDKit✔️✔️:         //   1) it's not there already
+    // RDKit✔️✔️:         //   2) it's there, but ring closures are allowed and this
+    // RDKit✔️✔️:         //      will be the last addition to the path.
+    // RDKit✔️✔️:         if (loc == path->end()) {
+    // RDKit✔️✔️:           // the easy case
+    // RDKit✔️✔️:           // PATH_TYPE newPath=*path;
+    // RDKit✔️✔️:           // newPath.push_back(otherIdx);
+    // RDKit✔️✔️:           // res.push_back(newPath);
+    // RDKit✔️✔️:           res.push_back(*path);
+    // RDKit✔️✔️:           res.rbegin()->push_back(otherIdx);
+    // RDKit✔️✔️:         } else if (allowRingClosures > 2 &&
+    // RDKit✔️✔️:                    static_cast<int>(path->size()) == allowRingClosures - 1) {
+    // RDKit✔️✔️:           // We *might* be adding the atom, but we need to make sure
+    // RDKit✔️✔️:           // that we're not just duplicating the second to last
+    // RDKit✔️✔️:           // element of the path:
+    // RDKit✔️✔️:           auto rIt = path->rbegin();
+    // RDKit✔️✔️:           rIt++;
+    // RDKit✔️✔️:           if (*rIt != static_cast<int>(otherIdx)) {
+    // RDKit✔️✔️:             // PATH_TYPE newPath=*path;
+    // RDKit✔️✔️:             // newPath.push_back(otherIdx);
+    // RDKit✔️✔️:             // res.push_back(newPath);
+    // RDKit✔️✔️:             res.push_back(*path);
+    // RDKit✔️✔️:             res.rbegin()->push_back(otherIdx);
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION Subgraphs::extendPaths
+    let matrix_len = dim
+        .checked_mul(dim)
+        .ok_or(FingerprintError::InvalidArguments {
+            reason: "path adjacency matrix dimensions overflow",
+        })?;
+    if adjacency.len() != matrix_len {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "path adjacency matrix has invalid dimensions",
+        });
+    }
+    if distance_matrix.is_some_and(|matrix| matrix.len() != matrix_len) {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "path distance matrix has invalid dimensions",
+        });
+    }
+
     let mut result = Vec::new();
-    let dim = adjacency.len();
     for path in paths {
-        let end = *path.last().expect("source paths are nonempty");
+        let end = *path.last().ok_or(FingerprintError::InvalidArguments {
+            reason: "path to extend must not be empty",
+        })?;
+        let start = path[0];
+        if end >= dim || start >= dim {
+            return Err(FingerprintError::InvalidArguments {
+                reason: "path atom index is out of range",
+            });
+        }
+        let row_offset = end * dim;
         // The source scans every column of the dense adjacency matrix in
         // atom-index order. Keep that order rather than the molecule's bond
         // insertion order.
         for other_idx in 0..dim {
-            if !adjacency[end][other_idx] {
+            if adjacency[row_offset + other_idx] != 1 {
+                continue;
+            }
+            if distance_matrix.is_some_and(|matrix| {
+                matrix[start * dim + other_idx] - (path.len() as f64) < -0.001
+            }) {
                 continue;
             }
             if !path.contains(&other_idx) {
@@ -3574,8 +5591,8 @@ fn rdkit_fp_extend_atom_paths(
                 next.push(other_idx);
                 result.push(next);
             } else if allow_ring_closures > 2
-                && path.len() == allow_ring_closures - 1
-                && path.get(path.len().saturating_sub(2)).copied() != Some(other_idx)
+                && i64::try_from(path.len()).ok() == Some(allow_ring_closures - 1)
+                && path[path.len() - 2] != other_idx
             {
                 let mut next = path.clone();
                 next.push(other_idx);
@@ -3583,7 +5600,88 @@ fn rdkit_fp_extend_atom_paths(
             }
         }
     }
-    result
+    Ok(result)
+}
+
+fn path_finder_helper(
+    adjacency: &[u8],
+    dim: usize,
+    min_len: usize,
+    max_len: usize,
+    rooted_at_atom: i64,
+    distance_matrix: Option<&[f64]>,
+) -> Result<BTreeMap<usize, Vec<Vec<usize>>>, FingerprintError> {
+    // BEGIN RDKIT CPP FUNCTION Subgraphs::pathFinderHelper
+    // RDKit✔️✔️: INT_PATH_LIST_MAP
+    // RDKit✔️✔️: pathFinderHelper(int *adjMat, unsigned int dim, unsigned int minLen,
+    // RDKit✔️✔️:                  unsigned int maxLen, int rootedAtAtom, double *distMat) {
+    // RDKit✔️✔️:   PRECONDITION(adjMat, "no matrix");
+    // RDKit✔️✔️:   PRECONDITION(minLen <= maxLen, "bad lengths provided");
+    // RDKit✔️✔️:   // finds all paths of length N using an adjacency matrix,
+    // RDKit✔️✔️:   //  which is constructed elsewhere
+    // RDKit✔️✔️:   INT_PATH_LIST_MAP res;
+    // RDKit✔️✔️:   PATH_LIST paths;
+    // RDKit✔️✔️:   paths.clear();
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (rootedAtAtom < 0) {
+    // RDKit✔️✔️:     // start a path at each possible index
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < dim; i++) {
+    // RDKit✔️✔️:       PATH_TYPE tPath;
+    // RDKit✔️✔️:       tPath.push_back(i);
+    // RDKit✔️✔️:       paths.push_back(tPath);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else if (rootedAtAtom < static_cast<int>(dim)) {
+    // RDKit✔️✔️:     // only start a path at the atom of interest:
+    // RDKit✔️✔️:     PATH_TYPE tPath;
+    // RDKit✔️✔️:     tPath.push_back(rootedAtAtom);
+    // RDKit✔️✔️:     paths.push_back(tPath);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     return res;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // and build them up one index at a time:
+    // RDKit✔️✔️:   for (unsigned int length = 1; length < maxLen; length++) {
+    // RDKit✔️✔️:     // extend each path:
+    // RDKit✔️✔️:     if (length >= minLen) {
+    // RDKit✔️✔️:       res[length] = paths;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     paths = extendPaths(adjMat, dim, paths, maxLen, distMat);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   res[maxLen] = paths;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION Subgraphs::pathFinderHelper
+    if min_len > max_len {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "minimum path length exceeds maximum path length",
+        });
+    }
+    let allow_ring_closures =
+        i64::try_from(max_len).map_err(|_| FingerprintError::InvalidArguments {
+            reason: "path length exceeds supported range",
+        })?;
+
+    let mut result = BTreeMap::new();
+    let mut paths = Vec::new();
+    if rooted_at_atom < 0 {
+        for atom_index in 0..dim {
+            paths.push(vec![atom_index]);
+        }
+    } else if usize::try_from(rooted_at_atom).is_ok_and(|root| root < dim) {
+        paths.push(vec![rooted_at_atom as usize]);
+    } else {
+        return Ok(result);
+    }
+
+    for length in 1..max_len {
+        if length >= min_len {
+            result.insert(length, paths.clone());
+        }
+        paths = extend_paths(adjacency, dim, &paths, allow_ring_closures, distance_matrix)?;
+    }
+    result.insert(max_len, paths);
+    Ok(result)
 }
 
 fn rdkit_fp_bond_between_atoms(molecule: &Molecule, begin: usize, end: usize) -> Option<usize> {
@@ -3610,6 +5708,258 @@ fn rdkit_fp_bond_between_atoms(molecule: &Molecule, begin: usize, end: usize) ->
         .iter()
         .find(|neighbor| neighbor.atom_index == end)
         .map(|neighbor| neighbor.bond.index())
+}
+
+fn find_all_paths_of_lengths_m_to_n(
+    molecule: &Molecule,
+    mut lower_len: usize,
+    mut upper_len: usize,
+    use_bonds: bool,
+    use_hs: bool,
+    rooted_at_atom: i64,
+    only_shortest_paths: bool,
+) -> Result<BTreeMap<usize, Vec<Vec<usize>>>, FingerprintError> {
+    // BEGIN RDKIT CPP FUNCTION findAllPathsOfLengthsMtoN
+    // RDKit✔️✔️: INT_PATH_LIST_MAP
+    // RDKit✔️✔️: findAllPathsOfLengthsMtoN(const ROMol &mol, unsigned int lowerLen,
+    // RDKit✔️✔️:                           unsigned int upperLen, bool useBonds, bool useHs,
+    // RDKit✔️✔️:                           int rootedAtAtom, bool onlyShortestPaths) {
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   //  We can't be clever here and just use the bond adjacency matrix
+    // RDKit✔️✔️:   //  to solve this problem when useBonds is true.  This is because
+    // RDKit✔️✔️:   //  the bond adjacency matrices for the molecules C1CC1 and CC(C)C
+    // RDKit✔️✔️:   //  are indistinguishable.  In the second case, t-butane (and
+    // RDKit✔️✔️:   //  anything else with a T junction), we'll get some subgraphs mixed
+    // RDKit✔️✔️:   //  in with the paths.  So we have to construct paths of atoms and
+    // RDKit✔️✔️:   //  then convert them into bond paths.
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   PRECONDITION(lowerLen <= upperLen, "");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // the molecule owns the distance matrix pointer (if we need to get it)
+    // RDKit✔️✔️:   double *distMat = onlyShortestPaths ? MolOps::getDistanceMat(mol) : nullptr;
+    // RDKit✔️✔️:   int *adjMat, dim;
+    // RDKit✔️✔️:   dim = mol.getNumAtoms();
+    // RDKit✔️✔️:   adjMat = new int[dim * dim];
+    // RDKit✔️✔️:   memset((void *)adjMat, 0, dim * dim * sizeof(int));
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (!distMat) {
+    // RDKit✔️✔️:     // generate the adjacency matrix by hand by looping over the bonds
+    // RDKit✔️✔️:     ROMol::ConstBondIterator bondIt;
+    // RDKit✔️✔️:     for (bondIt = mol.beginBonds(); bondIt != mol.endBonds(); bondIt++) {
+    // RDKit✔️✔️:       Atom *beg = (*bondIt)->getBeginAtom();
+    // RDKit✔️✔️:       Atom *end = (*bondIt)->getEndAtom();
+    // RDKit✔️✔️:       // check for H, which we might be skipping
+    // RDKit✔️✔️:       if (useHs || (beg->getAtomicNum() != 1 && end->getAtomicNum() != 1)) {
+    // RDKit✔️✔️:         adjMat[beg->getIdx() * dim + end->getIdx()] = 1;
+    // RDKit✔️✔️:         adjMat[end->getIdx() * dim + beg->getIdx()] = 1;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     // if we have the distance matrix, we can just loop over that:
+    // RDKit✔️✔️:     for (auto i = 0; i < dim; ++i) {
+    // RDKit✔️✔️:       for (auto j = i + 1; j < dim; ++j) {
+    // RDKit✔️✔️:         if (fabs(distMat[i * dim + j] - 1) < 1e-4) {
+    // RDKit✔️✔️:           adjMat[i * dim + j] = 1;
+    // RDKit✔️✔️:           adjMat[j * dim + i] = 1;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // if we're using bonds, we'll need to find paths of length N+1,
+    // RDKit✔️✔️:   // then convert them
+    // RDKit✔️✔️:   if (useBonds) {
+    // RDKit✔️✔️:     ++lowerLen;
+    // RDKit✔️✔️:     ++upperLen;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // find the paths themselves
+    // RDKit✔️✔️:   INT_PATH_LIST_MAP atomPaths = Subgraphs::pathFinderHelper(
+    // RDKit✔️✔️:       adjMat, dim, lowerLen, upperLen, rootedAtAtom, distMat);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // clean up the adjacency matrix
+    // RDKit✔️✔️:   delete[] adjMat;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   INT_PATH_LIST_MAP res;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   //--------------------------------------------------------
+    // RDKit✔️✔️:   // loop through all the paths we have and make sure that there are
+    // RDKit✔️✔️:   // no duplicates (duplicate = contains identical bond indices)
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   //  We need to use the bond paths for this duplicate finding
+    // RDKit✔️✔️:   //  because, in rings, there can be many paths which share atom
+    // RDKit✔️✔️:   //  indices but which have different bond compositions. For example,
+    // RDKit✔️✔️:   //  there is only one "atom unique" path of length 5 bonds (6 atoms)
+    // RDKit✔️✔️:   //  through a 6-ring, but there are six bond paths.
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   if (!useBonds && lowerLen >= 1) {
+    // RDKit✔️✔️:     res[1] = atomPaths[1];
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (useBonds || upperLen > 1) {
+    // RDKit✔️✔️:     for (unsigned int i = lowerLen; i <= upperLen; ++i) {
+    // RDKit✔️✔️:       if (i <= 1) {
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       std::vector<boost::dynamic_bitset<>> invars;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       for (PATH_LIST::const_iterator vivI = atomPaths[i].begin();
+    // RDKit✔️✔️:            vivI != atomPaths[i].end(); ++vivI) {
+    // RDKit✔️✔️:         boost::dynamic_bitset<> invar(mol.getNumBonds());
+    // RDKit✔️✔️:         const PATH_TYPE &resi = *vivI;
+    // RDKit✔️✔️:         PATH_TYPE locV;
+    // RDKit✔️✔️:         locV.reserve(i);
+    // RDKit✔️✔️:         for (unsigned int j = 0; j < i - 1; j++) {
+    // RDKit✔️✔️:           const Bond *bond = mol.getBondBetweenAtoms(resi[j], resi[j + 1]);
+    // RDKit✔️✔️:           locV.push_back(bond->getIdx());
+    // RDKit✔️✔️:           invar.set(bond->getIdx());
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         if (std::find(invars.begin(), invars.end(), invar) == invars.end()) {
+    // RDKit✔️✔️:           invars.push_back(invar);
+    // RDKit✔️✔️:           if (useBonds) {
+    // RDKit✔️✔️:             res[i - 1].push_back(locV);
+    // RDKit✔️✔️:           } else {
+    // RDKit✔️✔️:             res[i].push_back(resi);
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION findAllPathsOfLengthsMtoN
+    if lower_len > upper_len {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "minimum path length exceeds maximum path length",
+        });
+    }
+
+    let distance_matrix = only_shortest_paths
+        .then(|| crate::chemistry::matrices::topological_distance_matrix(molecule));
+    let dim = molecule.num_atoms();
+    let matrix_len = dim
+        .checked_mul(dim)
+        .ok_or(FingerprintError::InvalidArguments {
+            reason: "path adjacency matrix dimensions overflow",
+        })?;
+    let mut adjacency = vec![0u8; matrix_len];
+    if let Some(matrix) = distance_matrix.as_deref() {
+        for first in 0..dim {
+            for second in (first + 1)..dim {
+                if (matrix[first * dim + second] - 1.0).abs() < 1.0e-4 {
+                    adjacency[first * dim + second] = 1;
+                    adjacency[second * dim + first] = 1;
+                }
+            }
+        }
+    } else {
+        for bond in molecule.bonds() {
+            let begin = bond.begin().index();
+            let end = bond.end().index();
+            if use_hs
+                || (molecule.atoms()[begin].atomic_number() != 1
+                    && molecule.atoms()[end].atomic_number() != 1)
+            {
+                adjacency[begin * dim + end] = 1;
+                adjacency[end * dim + begin] = 1;
+            }
+        }
+    }
+
+    if use_bonds {
+        lower_len = lower_len
+            .checked_add(1)
+            .ok_or(FingerprintError::InvalidArguments {
+                reason: "minimum bond path length exceeds supported range",
+            })?;
+        upper_len = upper_len
+            .checked_add(1)
+            .ok_or(FingerprintError::InvalidArguments {
+                reason: "maximum bond path length exceeds supported range",
+            })?;
+    }
+    let atom_paths = path_finder_helper(
+        &adjacency,
+        dim,
+        lower_len,
+        upper_len,
+        rooted_at_atom,
+        distance_matrix.as_deref(),
+    )?;
+
+    let mut result = BTreeMap::new();
+    if !use_bonds && lower_len >= 1 {
+        result.insert(1, atom_paths.get(&1).cloned().unwrap_or_default());
+    }
+    if use_bonds || upper_len > 1 {
+        for path_length in lower_len..=upper_len {
+            if path_length <= 1 {
+                continue;
+            }
+            let mut invariants: Vec<Vec<bool>> = Vec::new();
+            if let Some(paths) = atom_paths.get(&path_length) {
+                for atom_path in paths {
+                    if atom_path.len() < path_length {
+                        return Err(FingerprintError::InvalidArguments {
+                            reason: "enumerated atom path is shorter than its length key",
+                        });
+                    }
+                    let mut invariant = vec![false; molecule.num_bonds()];
+                    let mut bond_path = Vec::with_capacity(path_length);
+                    for atom_pair in atom_path[..path_length].windows(2) {
+                        let bond_index =
+                            rdkit_fp_bond_between_atoms(molecule, atom_pair[0], atom_pair[1])
+                                .ok_or(FingerprintError::InvalidArguments {
+                                    reason: "path contains no connecting bond",
+                                })?;
+                        bond_path.push(bond_index);
+                        invariant[bond_index] = true;
+                    }
+                    if !invariants.contains(&invariant) {
+                        invariants.push(invariant);
+                        if use_bonds {
+                            result.entry(path_length - 1).or_default().push(bond_path);
+                        } else {
+                            result
+                                .entry(path_length)
+                                .or_default()
+                                .push(atom_path.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(result)
+}
+
+fn find_all_paths_of_length_n(
+    molecule: &Molecule,
+    target_len: usize,
+    use_bonds: bool,
+    use_hs: bool,
+    rooted_at_atom: i64,
+    only_shortest_paths: bool,
+) -> Result<Vec<Vec<usize>>, FingerprintError> {
+    // BEGIN RDKIT CPP FUNCTION findAllPathsOfLengthN
+    // RDKit✔️✔️: PATH_LIST
+    // RDKit✔️✔️: findAllPathsOfLengthN(const ROMol &mol, unsigned int targetLen, bool useBonds,
+    // RDKit✔️✔️:                       bool useHs, int rootedAtAtom, bool onlyShortestPaths) {
+    // RDKit✔️✔️:   return findAllPathsOfLengthsMtoN(mol, targetLen, targetLen, useBonds, useHs,
+    // RDKit✔️✔️:                                    rootedAtAtom, onlyShortestPaths)[targetLen];
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION findAllPathsOfLengthN
+    let mut paths = find_all_paths_of_lengths_m_to_n(
+        molecule,
+        target_len,
+        target_len,
+        use_bonds,
+        use_hs,
+        rooted_at_atom,
+        only_shortest_paths,
+    )?;
+    Ok(paths.remove(&target_len).unwrap_or_default())
 }
 
 pub(crate) fn enumerate_rdkit_fp_paths(
@@ -3683,96 +6033,40 @@ pub(crate) fn enumerate_rdkit_fp_paths(
         return Ok(result);
     }
 
-    // RDKit source: Subgraphs.cpp lines 443-548 (`findAllPathsOfLengthsMtoN`).
-    // RDKit✔️✔️: if (useBonds) { ++lowerLen; ++upperLen; }
-    // RDKit✔️✔️: INT_PATH_LIST_MAP atomPaths = Subgraphs::pathFinderHelper(
-    // RDKit✔️✔️:     adjMat, dim, lowerLen, upperLen, rootedAtAtom, distMat);
-    // RDKit✔️✔️: for (PATH_LIST::const_iterator vivI = atomPaths[i].begin();
-    // RDKit✔️✔️:      vivI != atomPaths[i].end(); ++vivI) {
-    // RDKit✔️✔️:   for (unsigned int j = 0; j < i - 1; j++) {
-    // RDKit✔️✔️:     const Bond *bond = mol.getBondBetweenAtoms(resi[j], resi[j + 1]);
-    // RDKit✔️✔️:     locV.push_back(bond->getIdx()); invar.set(bond->getIdx());
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (std::find(invars.begin(), invars.end(), invar) == invars.end()) {
-    // RDKit✔️✔️:     if (useBonds) res[i - 1].push_back(locV); else res[i].push_back(resi);
-    // RDKit✔️✔️:   }
-    let atom_lower = lower + 1;
-    let atom_upper = upper + 1;
-    let adjacency = rdkit_fp_atom_adjacency(molecule, use_hs);
-    let enumerate_for_root = |root: usize| {
-        let mut atom_paths: BTreeMap<usize, Vec<Vec<usize>>> = BTreeMap::new();
-        if root >= molecule.num_atoms() {
-            return atom_paths;
-        }
-        let mut paths = vec![vec![root]];
-        for length in 1..atom_upper {
-            if length >= atom_lower {
-                atom_paths.entry(length).or_default().extend(paths.clone());
-            }
-            paths = rdkit_fp_extend_atom_paths(&adjacency, &paths, atom_upper);
-            if paths.is_empty() {
-                break;
-            }
-        }
-        if atom_upper >= atom_lower {
-            atom_paths.entry(atom_upper).or_default().extend(paths);
-        }
-        atom_paths
-    };
-    let roots: Vec<usize> = if roots.is_empty() {
-        (0..molecule.num_atoms()).collect()
-    } else {
-        roots.iter().map(|&root| root as usize).collect()
-    };
-    let mut atom_paths: BTreeMap<usize, Vec<Vec<usize>>> = (atom_lower..=atom_upper)
-        .map(|length| (length, Vec::new()))
-        .collect();
     if from_atoms.is_none() {
-        for root in roots {
-            let root_paths = enumerate_for_root(root);
-            for (length, paths) in root_paths {
-                atom_paths.entry(length).or_default().extend(paths);
-            }
-        }
+        find_all_paths_of_lengths_m_to_n(molecule, lower, upper, true, use_hs, -1, false)
     } else {
-        for root in roots {
-            let root_paths = enumerate_for_root(root);
-            for (length, paths) in root_paths {
-                atom_paths.entry(length).or_default().splice(0..0, paths);
+        // RDKit source: FingerprintUtil.cpp lines 293-320 (`enumerateAllPaths`).
+        // RDKit✔️✔️: for (auto aidx : *fromAtoms) {
+        // RDKit✔️✔️:   INT_PATH_LIST_MAP tPaths;
+        // RDKit✔️✔️:   tPaths = findAllPathsOfLengthsMtoN(
+        // RDKit✔️✔️:       mol, minPath, maxPath, true, useHs, aidx);
+        // RDKit✔️✔️:   for (INT_PATH_LIST_MAP::const_iterator tpit = tPaths.begin();
+        // RDKit✔️✔️:        tpit != tPaths.end(); ++tpit) {
+        // RDKit✔️✔️:     allPaths[tpit->first].insert(allPaths[tpit->first].begin(),
+        // RDKit✔️✔️:                                      tpit->second.begin(), tpit->second.end());
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        let mut result = BTreeMap::new();
+        for &root in roots {
+            let rooted_paths = find_all_paths_of_lengths_m_to_n(
+                molecule,
+                lower,
+                upper,
+                true,
+                use_hs,
+                i64::from(root),
+                false,
+            )?;
+            for (length, paths) in rooted_paths {
+                result
+                    .entry(length)
+                    .or_insert_with(Vec::new)
+                    .splice(0..0, paths);
             }
         }
+        Ok(result)
     }
-    let mut result: BTreeMap<usize, Vec<Vec<usize>>> = BTreeMap::new();
-    for bond_length in lower..=upper {
-        result.insert(bond_length, Vec::new());
-    }
-    for (atom_length, paths) in atom_paths {
-        if atom_length == 0 {
-            continue;
-        }
-        let bond_length = atom_length - 1;
-        if bond_length < lower || bond_length > upper {
-            continue;
-        }
-        let mut seen = BTreeSet::new();
-        for atom_path in paths {
-            let mut bond_path = Vec::with_capacity(bond_length);
-            let mut membership = vec![false; molecule.num_bonds()];
-            for pair in atom_path.windows(2) {
-                let bond_index = rdkit_fp_bond_between_atoms(molecule, pair[0], pair[1]).ok_or(
-                    FingerprintError::InvalidArguments {
-                        reason: "path contains no connecting bond",
-                    },
-                )?;
-                bond_path.push(bond_index);
-                membership[bond_index] = true;
-            }
-            if seen.insert(membership) {
-                result.entry(bond_length).or_default().push(bond_path);
-            }
-        }
-    }
-    Ok(result)
 }
 
 /// One source `RDKitFPAtomEnv` produced by the RDKitFP environment generator.
@@ -5343,6 +7637,27 @@ pub fn maccs_fingerprint(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+mod topological_torsion_code_tests;
+
+#[cfg(test)]
+mod topological_torsion_path_tests;
+
+#[cfg(test)]
+mod topological_torsion_arguments_tests;
+
+#[cfg(test)]
+mod topological_torsion_environment_tests;
+
+#[cfg(test)]
+mod topological_torsion_generator_tests;
+
+#[cfg(test)]
+mod topological_torsion_legacy_tests;
+
+#[cfg(test)]
+mod topological_torsion_public_api_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::{AtomSpec, BondSpec, BondStereo, Element, Molecule};
@@ -5513,7 +7828,6 @@ mod tests {
             BTreeMap::from([
                 (1, vec![vec![0], vec![1], vec![2]]),
                 (2, vec![vec![0, 1], vec![0, 2], vec![1, 2]]),
-                (3, Vec::new()),
             ])
         );
         assert_eq!(
@@ -5587,21 +7901,13 @@ mod tests {
         let disconnected = Molecule::from_smiles("CC.CC").expect("disconnected fixture");
         assert_eq!(
             expected_paths(&disconnected, 1, 3, true, false, None),
-            BTreeMap::from([
-                (1, vec![vec![0], vec![1]]),
-                (2, Vec::new()),
-                (3, Vec::new()),
-            ])
+            BTreeMap::from([(1, vec![vec![0], vec![1]])])
         );
 
         let chain = Molecule::from_smiles("CCCC").expect("restricted fixture");
         assert_eq!(
             expected_paths(&chain, 1, 3, true, false, Some(&[2])),
-            BTreeMap::from([
-                (1, vec![vec![1], vec![2]]),
-                (2, vec![vec![1, 0]]),
-                (3, Vec::new()),
-            ])
+            BTreeMap::from([(1, vec![vec![1], vec![2]]), (2, vec![vec![1, 0]]),])
         );
         assert_eq!(
             expected_paths(&chain, 1, 3, true, true, Some(&[2])),
@@ -5612,10 +7918,7 @@ mod tests {
             ])
         );
         let invalid_root = expected_paths(&chain, 1, 2, true, false, Some(&[99]));
-        assert_eq!(
-            invalid_root,
-            BTreeMap::from([(1, Vec::new()), (2, Vec::new())])
-        );
+        assert_eq!(invalid_root, BTreeMap::new());
     }
 
     #[test]
@@ -7062,7 +9365,10 @@ mod tests {
         assert_eq!(ao.bit_info_map, Some(BTreeMap::new()));
         assert_eq!(ao.bit_paths, Some(BTreeMap::new()));
         assert_eq!(ao.atom_counts, Some(vec![0, 0, 0, 0]));
-        assert_eq!(ao.atoms_per_bit, Some(BTreeMap::new()));
+        assert_eq!(
+            ao.atoms_per_bit,
+            Some(BTreeMap::from([(13, vec![vec![2, 5]])]))
+        );
     }
 
     #[test]
@@ -8496,7 +10802,7 @@ mod tests {
         let args = FingerprintArguments::new(true, vec![1, 2, 4, 8], 4096, 3, true).unwrap();
         assert_eq!(
             args.toJSON(),
-            r#"{"countSimulation":true,"fpSize":4096,"numBitsPerFeature":3,"includeChirality":true,"countBounds":[1,2,4,8]}"#
+            r#"{"countSimulation":"true","fpSize":"4096","numBitsPerFeature":"3","includeChirality":"true","countBounds":["1","2","4","8"]}"#
         );
     }
 
@@ -8547,7 +10853,7 @@ mod tests {
             MorganArguments::new(2, true, true, true, vec![1, 2, 4, 8], 1024, true, false).unwrap();
         assert_eq!(
             args.toJSON(),
-            r#"{"type":"MorganArguments","onlyNonzeroInvariants":true,"radius":2,"countSimulation":true,"fpSize":1024,"numBitsPerFeature":1,"includeChirality":true,"countBounds":[1,2,4,8]}"#
+            r#"{"type":"MorganArguments","onlyNonzeroInvariants":true,"radius":2,"countSimulation":"true","fpSize":"1024","numBitsPerFeature":"1","includeChirality":"true","countBounds":["1","2","4","8"]}"#
         );
     }
 
@@ -8906,5 +11212,16 @@ mod tests {
         let invariants = compute_feature_invariants(&mol).expect("feature invariants");
         assert_eq!(invariants.len(), mol.num_atoms());
         assert!(invariants.iter().any(|inv| *inv != 0));
+    }
+
+    #[test]
+    fn topological_torsion_atom_invariants_custom_correction_wraps_u32() {
+        assert_eq!(topological_torsion_correct_atom_invariant(0), u32::MAX - 1);
+        assert_eq!(topological_torsion_correct_atom_invariant(1), u32::MAX);
+        assert_eq!(topological_torsion_correct_atom_invariant(2), 0);
+        assert_eq!(
+            topological_torsion_correct_atom_invariant(u32::MAX),
+            u32::MAX - 2
+        );
     }
 }

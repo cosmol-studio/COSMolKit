@@ -221,7 +221,15 @@ fn rdkit_computed_property_clearing_operations_invalidate_the_crippen_cache() {
         .unwrap();
     let removed_h_result = calc_crippen_descriptors(&without_hydrogens, false, false).unwrap();
     assert_ne!(removed_h_result, explicit_h_result);
-    assert_eq!(removed_h_result.logp.to_bits(), 0xbfd6_5119_ce07_5f70);
+    // RemoveHs clears molecule computed properties but, with sanitize=false,
+    // preserves the source atom property-cache values computed before the
+    // explicit H atoms are removed. Crippen therefore observes that retained
+    // valence state instead of the state of freshly parsed, sanitized CCO.
+    assert_eq!(removed_h_result.logp.to_bits(), 0x3fa6_6a55_0870_110a);
+    assert_eq!(
+        removed_h_result.molar_refractivity.to_bits(),
+        0x401c_b0a3_d70a_3d70
+    );
 }
 
 #[test]

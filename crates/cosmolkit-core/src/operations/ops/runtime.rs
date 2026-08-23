@@ -407,7 +407,7 @@ impl<'a> OpParts<'a> {
             self.topology_lifecycle = BlockLifecycle::Begun;
         }
         Ok(if self.in_place_target.is_some() {
-            self.working.take_topology_block_or_clone()
+            self.working.take_topology_block_or_clone_from_operation()
         } else {
             self.working.topology_block().clone()
         })
@@ -429,7 +429,7 @@ impl<'a> OpParts<'a> {
         topology.adjacency =
             crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
         self.record_mutation(BlockSet::TOPOLOGY);
-        self.working.replace_topology_block(topology);
+        self.working.replace_topology_block_from_operation(topology);
         #[cfg(feature = "op-contracts")]
         {
             self.topology_lifecycle = BlockLifecycle::Committed;

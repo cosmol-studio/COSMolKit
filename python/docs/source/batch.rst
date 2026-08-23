@@ -136,7 +136,9 @@ Derived Outputs
 
 Morgan and AtomPair batch APIs use the same source-backed generator cores as
 the single-molecule APIs, preserve record order, and are covered by exact
-pinned-RDKit parity tests. Both families can also collect provenance data:
+pinned-RDKit parity tests. Topological Torsion exposes the same ordered bulk
+execution through its generator methods. Morgan and AtomPair can also collect
+provenance through the following ``MoleculeBatch`` conveniences:
 
 .. code-block:: python
 

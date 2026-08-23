@@ -242,7 +242,7 @@ def test_from_rdkit_sanitize_false_preserves_unprepared_graph_state():
 
     raw = cosmolkit.Molecule.from_rdkit(rd_mol, sanitize=False)
 
-    with pytest.raises(ValueError, match="explicit valence has not been computed"):
+    with pytest.raises(ValueError, match="explicit valence cache is not initialized"):
         raw.fingerprint_atom_pair(use_2d=False)
 
 

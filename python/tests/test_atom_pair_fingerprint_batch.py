@@ -1,23 +1,40 @@
 from concurrent.futures import ThreadPoolExecutor
+from typing import TypeVar, TypedDict
 
 import cosmolkit
 import pytest
 
 
 SMILES = ["C", "CCO", "c1ccccc1O", "C[C@H](O)F"]
+T = TypeVar("T")
+
+
+class AtomPairKeywordArgs(TypedDict, total=False):
+    n_bits: int
+    include_chirality: bool
+    count_simulation: bool
+    count_bounds: list[int]
+    num_bits_per_feature: int
+
+
+def present_values(values: list[T | None]) -> list[T]:
+    assert all(value is not None for value in values)
+    return [value for value in values if value is not None]
 
 
 def test_atom_pair_batch_all_result_forms_match_ordered_scalar_calls():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(SMILES)
-    kwargs = {
+    kwargs: AtomPairKeywordArgs = {
         "n_bits": 256,
         "include_chirality": True,
         "count_simulation": True,
         "count_bounds": [1, 3, 5],
-        "num_bits_per_feature": 2,
+        "num_bits_per_feature": 1,
     }
 
-    explicit = batch.fingerprint_atom_pair_list(**kwargs, n_jobs=4, progress_bar=False)
+    explicit = present_values(
+        batch.fingerprint_atom_pair_list(**kwargs, n_jobs=4, progress_bar=False)
+    )
     assert [value.on_bits() for value in explicit] == [
         cosmolkit.Molecule.from_smiles(smiles)
         .fingerprint_atom_pair(**kwargs)
@@ -25,8 +42,10 @@ def test_atom_pair_batch_all_result_forms_match_ordered_scalar_calls():
         for smiles in SMILES
     ]
 
-    sparse_count = batch.fingerprint_atom_pair_sparse_count_list(
-        **kwargs, n_jobs=3, progress_bar=False
+    sparse_count = present_values(
+        batch.fingerprint_atom_pair_sparse_count_list(
+            **kwargs, n_jobs=3, progress_bar=False
+        )
     )
     assert [value.nonzero_elements() for value in sparse_count] == [
         cosmolkit.Molecule.from_smiles(smiles)
@@ -35,8 +54,10 @@ def test_atom_pair_batch_all_result_forms_match_ordered_scalar_calls():
         for smiles in SMILES
     ]
 
-    count = batch.fingerprint_atom_pair_count_list(
-        **kwargs, n_jobs=2, progress_bar=False
+    count = present_values(
+        batch.fingerprint_atom_pair_count_list(
+            **kwargs, n_jobs=2, progress_bar=False
+        )
     )
     assert [value.nonzero_elements() for value in count] == [
         cosmolkit.Molecule.from_smiles(smiles)
@@ -45,8 +66,10 @@ def test_atom_pair_batch_all_result_forms_match_ordered_scalar_calls():
         for smiles in SMILES
     ]
 
-    sparse_bits = batch.fingerprint_atom_pair_sparse_bits_list(
-        **kwargs, n_jobs=4, progress_bar=False
+    sparse_bits = present_values(
+        batch.fingerprint_atom_pair_sparse_bits_list(
+            **kwargs, n_jobs=4, progress_bar=False
+        )
     )
     assert [value.on_bits() for value in sparse_bits] == [
         cosmolkit.Molecule.from_smiles(smiles)
@@ -55,8 +78,10 @@ def test_atom_pair_batch_all_result_forms_match_ordered_scalar_calls():
         for smiles in SMILES
     ]
 
-    outputs = batch.fingerprint_atom_pair_with_output_list(
-        **kwargs, n_jobs=4, progress_bar=False
+    outputs = present_values(
+        batch.fingerprint_atom_pair_with_output_list(
+            **kwargs, n_jobs=4, progress_bar=False
+        )
     )
     assert [value.fingerprint().on_bits() for value in outputs] == [
         value.on_bits() for value in explicit
@@ -68,6 +93,28 @@ def test_atom_pair_batch_all_result_forms_match_ordered_scalar_calls():
         .atom_counts()
         for smiles in SMILES
     ]
+
+
+def test_atom_pair_sparse_count_batch_preserves_source_extra_bit_range_errors():
+    molecule = cosmolkit.Molecule.from_smiles("CCO")
+    kwargs: AtomPairKeywordArgs = {
+        "include_chirality": True,
+        "num_bits_per_feature": 2,
+    }
+    with pytest.raises(
+        ValueError,
+        match="sparse fingerprint index 1795012513 is outside vector length 134217728",
+    ):
+        molecule.fingerprint_atom_pair_sparse_count(**kwargs)
+
+    batch = cosmolkit.MoleculeBatch.from_smiles_list(["C", "CCO"])
+    with pytest.raises(
+        cosmolkit.BatchValidationError,
+        match="batch.atom_pair_sparse_count_fingerprint",
+    ):
+        batch.fingerprint_atom_pair_sparse_count_list(
+            **kwargs, n_jobs=2, progress_bar=False
+        )
 
 
 def test_atom_pair_batch_keeps_invalid_positions_and_reports_operation_indices():
@@ -89,12 +136,15 @@ def test_atom_pair_batch_thread_counts_progress_defaults_and_repeats_are_stable(
     configured = batch.with_parallel_jobs(4).with_progress_bar(False)
     assert configured.parallel_jobs() == 4
     assert configured.progress_bar() is False
-    baseline = configured.fingerprint_atom_pair_list(n_jobs=1)
+    baseline = present_values(configured.fingerprint_atom_pair_list(n_jobs=1))
     for n_jobs in (1, 2, 4):
         for _ in range(3):
-            assert [value.on_bits() for value in configured.fingerprint_atom_pair_list(
-                n_jobs=n_jobs
-            )] == [value.on_bits() for value in baseline]
+            current = present_values(
+                configured.fingerprint_atom_pair_list(n_jobs=n_jobs)
+            )
+            assert [value.on_bits() for value in current] == [
+                value.on_bits() for value in baseline
+            ]
 
     with pytest.raises(ValueError, match="n_jobs"):
         configured.fingerprint_atom_pair_list(n_jobs=0)
@@ -104,19 +154,25 @@ def test_atom_pair_batch_is_safe_during_concurrent_mixed_family_calls():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(SMILES)
     expected = [
         value.on_bits()
-        for value in batch.fingerprint_atom_pair_list(n_jobs=2, progress_bar=False)
+        for value in present_values(
+            batch.fingerprint_atom_pair_list(n_jobs=2, progress_bar=False)
+        )
     ]
 
     def atom_pair_call():
         return [
             value.on_bits()
-            for value in batch.fingerprint_atom_pair_list(n_jobs=4, progress_bar=False)
+            for value in present_values(
+                batch.fingerprint_atom_pair_list(n_jobs=4, progress_bar=False)
+            )
         ]
 
     def morgan_call():
         return [
             value.on_bits()
-            for value in batch.fingerprint_morgan_list(n_jobs=3, progress_bar=False)
+            for value in present_values(
+                batch.fingerprint_morgan_list(n_jobs=3, progress_bar=False)
+            )
         ]
 
     with ThreadPoolExecutor(max_workers=4) as executor:
@@ -127,5 +183,7 @@ def test_atom_pair_batch_is_safe_during_concurrent_mixed_family_calls():
 
     assert [
         value.on_bits()
-        for value in batch.fingerprint_atom_pair_list(n_jobs=2, progress_bar=False)
+        for value in present_values(
+            batch.fingerprint_atom_pair_list(n_jobs=2, progress_bar=False)
+        )
     ] == expected

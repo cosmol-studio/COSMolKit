@@ -437,9 +437,9 @@ molecule_ops! {
         may_mutate: [topology, coordinates, properties, derived_cache],
         auto_remap: [coordinates, properties],
         derived_effects: {
-            recompute: [],
+            recompute: [valence],
             preserve: [rings, ring_families],
-            invalidate: [valence, aromaticity, stereo, drawing, fingerprint],
+            invalidate: [aromaticity, stereo, drawing, fingerprint],
         },
         semantic_preconditions: [
             trusted_bond_topology,
@@ -1959,6 +1959,96 @@ mod tests {
 
         assert_eq!(assignment.explicit_valence, vec![4, 4, 1, 1, 1, 1]);
         assert_eq!(assignment.implicit_hydrogens, vec![0, 0, 0, 0, 0, 0]);
+        assert_eq!(result.derived_cache().valence, Some(assignment));
+    }
+
+    #[test]
+    fn with_hydrogens_immediately_supports_modern_and_legacy_topological_torsion() {
+        let molecule = crate::Molecule::from_smiles("CCCC").unwrap();
+        let result = molecule.with_hydrogens().unwrap();
+        let expected = std::collections::BTreeMap::from([(4_706_550_819_u64, 1)]);
+
+        let modern = crate::topological_torsion_sparse_count_fingerprint(
+            &result,
+            &crate::TopologicalTorsionFingerprintParams::default(),
+        )
+        .unwrap();
+        assert_eq!(modern.size(), 1_u64 << 36);
+        assert_eq!(modern.nonzero_elements(), &expected);
+
+        let legacy = crate::topological_torsion_legacy_fingerprint(
+            &result,
+            &crate::TopologicalTorsionLegacyParams::default(),
+        )
+        .unwrap();
+        let crate::TopologicalTorsionLegacyResult::SparseCount(legacy) = legacy else {
+            panic!("default legacy Topological Torsion must return unfolded counts");
+        };
+        assert_eq!(legacy.size(), (1_u64 << 36) - 1);
+        assert_eq!(legacy.nonzero_elements(), &expected);
+    }
+
+    #[test]
+    fn with_hydrogens_partial_selection_updates_only_source_on_atoms_cache_entries() {
+        let molecule = crate::Molecule::from_smiles("CCO").unwrap();
+        let before = molecule.derived_cache().valence.clone().unwrap();
+        assert_eq!(before.explicit_valence, vec![1, 2, 1]);
+        assert_eq!(before.implicit_hydrogens, vec![3, 2, 1]);
+
+        let result = molecule
+            .with_hydrogens_with_params(crate::AddHsParams {
+                only_on_atoms: Some(vec![crate::AtomId::new(0)]),
+                ..crate::AddHsParams::default()
+            })
+            .unwrap();
+        let after = result.derived_cache().valence.as_ref().unwrap();
+
+        assert_eq!(after.explicit_valence, vec![4, 2, 1, 1, 1, 1]);
+        assert_eq!(after.implicit_hydrogens, vec![0, 2, 1, 0, 0, 0]);
+    }
+
+    #[test]
+    fn with_hydrogens_skip_queries_preserves_skipped_atom_cache_entry() {
+        let mut builder = crate::MoleculeBuilder::new();
+        let query_carbon = builder.add_atom(
+            crate::AtomSpec::new(crate::Element::C)
+                .with_query(crate::QueryNode::predicate(crate::AtomQueryPredicate::Any)),
+        );
+        let plain_carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        builder
+            .add_bond(crate::BondSpec::new(
+                query_carbon,
+                plain_carbon,
+                crate::BondOrder::Single,
+            ))
+            .unwrap();
+        let molecule = builder
+            .build()
+            .unwrap()
+            .with_assigned_valence_strict(false)
+            .unwrap();
+        let before = molecule.derived_cache().valence.clone().unwrap();
+
+        let result = molecule
+            .with_hydrogens_with_params(crate::AddHsParams {
+                skip_queries: true,
+                ..crate::AddHsParams::default()
+            })
+            .unwrap();
+        let after = result.derived_cache().valence.as_ref().unwrap();
+
+        assert_eq!(
+            after.explicit_valence[query_carbon.index()],
+            before.explicit_valence[0]
+        );
+        assert_eq!(
+            after.implicit_hydrogens[query_carbon.index()],
+            before.implicit_hydrogens[0]
+        );
+        assert_eq!(after.explicit_valence[plain_carbon.index()], 4);
+        assert_eq!(after.implicit_hydrogens[plain_carbon.index()], 0);
+        assert_eq!(after.explicit_valence.len(), result.num_atoms());
+        assert_eq!(after.implicit_hydrogens.len(), result.num_atoms());
     }
 
     #[test]
@@ -2043,6 +2133,15 @@ mod tests {
                     " H1 ", 12, "GLY", 3, "A", false,
                 )),
             }],
+            atoms_to_update_property_cache: vec![nitrogen],
+            valence_before_add_hs: Some(
+                crate::assign_valence_with_options(
+                    &molecule,
+                    crate::ValenceModel::RdkitLike,
+                    false,
+                )
+                .unwrap(),
+            ),
             ..crate::hydrogens::AddHsAssignment::default()
         };
         let mut parts = OpParts::new(&molecule, &WITH_HYDROGENS_SPEC).unwrap();
@@ -2112,6 +2211,15 @@ mod tests {
                 atom: hydrogen,
                 pdb_residue_info: crate::AtomPdbResidueInfo::new(" H1 ", 12, "GLY", 3, "A", false),
             }],
+            atoms_to_update_property_cache: vec![hydrogen],
+            valence_before_add_hs: Some(
+                crate::assign_valence_with_options(
+                    &molecule,
+                    crate::ValenceModel::RdkitLike,
+                    false,
+                )
+                .unwrap(),
+            ),
             ..crate::hydrogens::AddHsAssignment::default()
         };
         let mut parts = OpParts::new(&molecule, &WITH_HYDROGENS_SPEC).unwrap();
@@ -2358,7 +2466,10 @@ mod tests {
 
         assert_eq!(result.derived_cache().rings, rings_before);
         assert_eq!(result.derived_cache().ring_families, ring_families_before);
-        assert!(result.derived_cache().valence.is_none());
+        let expected =
+            crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, false)
+                .unwrap();
+        assert_eq!(result.derived_cache().valence, Some(expected));
     }
 
     #[test]

@@ -1430,6 +1430,224 @@ impl MoleculeBatch {
         )
     }
 
+    pub fn topological_torsion_sparse_count_fingerprint_list_with_progress(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::SparseCountFingerprint>>, BatchValidationError> {
+        self.topological_torsion_sparse_count_fingerprint_list_with_runtime(params, progress, None)
+    }
+
+    pub fn topological_torsion_sparse_count_fingerprint_list_with_options(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<crate::SparseCountFingerprint>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing Topological Torsion sparse-count fingerprints",
+            |progress| {
+                self.topological_torsion_sparse_count_fingerprint_list_with_runtime(
+                    params, progress, n_jobs,
+                )
+            },
+        )
+    }
+
+    fn topological_torsion_sparse_count_fingerprint_list_with_runtime(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<crate::SparseCountFingerprint>>, BatchValidationError> {
+        self.collect_optional_values_with_options(
+            "batch.topological_torsion_sparse_count_fingerprint",
+            |molecule| {
+                crate::topological_torsion_sparse_count_fingerprint(molecule, params)
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            n_jobs,
+        )
+    }
+
+    pub fn topological_torsion_sparse_fingerprint_list_with_progress(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::SparseBitFingerprint>>, BatchValidationError> {
+        self.topological_torsion_sparse_fingerprint_list_with_runtime(params, progress, None)
+    }
+
+    pub fn topological_torsion_sparse_fingerprint_list_with_options(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<crate::SparseBitFingerprint>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing Topological Torsion sparse-bit fingerprints",
+            |progress| {
+                self.topological_torsion_sparse_fingerprint_list_with_runtime(
+                    params, progress, n_jobs,
+                )
+            },
+        )
+    }
+
+    fn topological_torsion_sparse_fingerprint_list_with_runtime(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<crate::SparseBitFingerprint>>, BatchValidationError> {
+        self.collect_optional_values_with_options(
+            "batch.topological_torsion_sparse_fingerprint",
+            |molecule| {
+                crate::topological_torsion_sparse_fingerprint(molecule, params)
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            n_jobs,
+        )
+    }
+
+    pub fn topological_torsion_count_fingerprint_list_with_progress(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::SparseCountFingerprint>>, BatchValidationError> {
+        self.topological_torsion_count_fingerprint_list_with_runtime(params, progress, None)
+    }
+
+    pub fn topological_torsion_count_fingerprint_list_with_options(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<crate::SparseCountFingerprint>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing Topological Torsion count fingerprints",
+            |progress| {
+                self.topological_torsion_count_fingerprint_list_with_runtime(
+                    params, progress, n_jobs,
+                )
+            },
+        )
+    }
+
+    fn topological_torsion_count_fingerprint_list_with_runtime(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<crate::SparseCountFingerprint>>, BatchValidationError> {
+        self.collect_optional_values_with_options(
+            "batch.topological_torsion_count_fingerprint",
+            |molecule| {
+                crate::topological_torsion_count_fingerprint(molecule, params)
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            n_jobs,
+        )
+    }
+
+    pub fn topological_torsion_fingerprint_list_with_progress(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        self.topological_torsion_fingerprint_list_with_runtime(params, progress, None)
+    }
+
+    pub fn topological_torsion_fingerprint_list_with_options(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing Topological Torsion fingerprints",
+            |progress| {
+                self.topological_torsion_fingerprint_list_with_runtime(params, progress, n_jobs)
+            },
+        )
+    }
+
+    fn topological_torsion_fingerprint_list_with_runtime(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        self.collect_optional_values_with_options(
+            "batch.topological_torsion_fingerprint",
+            |molecule| {
+                crate::topological_torsion_fingerprint(molecule, params)
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            n_jobs,
+        )
+    }
+
+    pub fn topological_torsion_fingerprint_with_output_list_with_progress(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        request: crate::TopologicalTorsionFingerprintOutputRequest,
+        progress: BatchProgress<'_>,
+    ) -> Result<Vec<Option<crate::TopologicalTorsionFingerprintResult>>, BatchValidationError> {
+        self.topological_torsion_fingerprint_with_output_list_with_runtime(
+            params, request, progress, None,
+        )
+    }
+
+    pub fn topological_torsion_fingerprint_with_output_list_with_options(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        request: crate::TopologicalTorsionFingerprintOutputRequest,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> Result<Vec<Option<crate::TopologicalTorsionFingerprintResult>>, BatchValidationError> {
+        self.with_progress_bar_for(
+            progress_bar,
+            self.records.len(),
+            "Computing Topological Torsion fingerprints with provenance",
+            |progress| {
+                self.topological_torsion_fingerprint_with_output_list_with_runtime(
+                    params, request, progress, n_jobs,
+                )
+            },
+        )
+    }
+
+    fn topological_torsion_fingerprint_with_output_list_with_runtime(
+        &self,
+        params: &crate::TopologicalTorsionFingerprintParams,
+        request: crate::TopologicalTorsionFingerprintOutputRequest,
+        progress: BatchProgress<'_>,
+        n_jobs: Option<usize>,
+    ) -> Result<Vec<Option<crate::TopologicalTorsionFingerprintResult>>, BatchValidationError> {
+        self.collect_optional_values_with_options(
+            "batch.topological_torsion_fingerprint_with_output",
+            |molecule| {
+                crate::topological_torsion_fingerprint_with_output(molecule, params, request)
+                    .map_err(|error| error.to_string())
+            },
+            progress,
+            n_jobs,
+        )
+    }
+
     pub fn to_svg_list_with_options(
         &self,
         width: u32,

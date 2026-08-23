@@ -177,9 +177,23 @@ pub(super) fn apply_add_hs_assignment(
     );
     properties.remap_topology(&mapping);
 
+    let adjacency = crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
+    let valence = crate::hydrogens::add_hs_valence_assignment_from_parts(
+        &topology.atoms,
+        &topology.bonds,
+        &adjacency,
+        old_atom_count,
+        assignment,
+    )
+    .map_err(|source| OperationError::AddHydrogens {
+        operation: &WITH_HYDROGENS_SPEC,
+        source,
+    })?;
+
     parts.record_topology_edit(TopologyEditKind::Appending)?;
     parts.record_topology_mapping(mapping);
     parts.clear_cache(WITH_HYDROGENS_SPEC.needs_update());
+    parts.set_valence_cache(valence);
     Ok(changed)
 }
 

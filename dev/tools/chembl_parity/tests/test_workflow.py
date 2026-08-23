@@ -120,6 +120,90 @@ class WorkflowTests(unittest.TestCase):
                 },
             )
 
+    def test_topological_torsion_phase_is_complete_and_source_profiled(self) -> None:
+        profile = runner.load_json(TOOL_DIR / "profiles/complete.json")
+        phases = {phase["name"]: phase for phase in profile["phases"]}
+        phase = phases["topological-torsion"]
+        self.assertEqual(phase["script"], "audit_fingerprints.py")
+        self.assertEqual(phase["mode"], "topological_torsion")
+        self.assertEqual(phase["expected_processed"], profile["corpus_records"])
+        self.assertEqual(
+            phase["expected_profiles"],
+            {
+                "topological_torsion_sparse_count": 9,
+                "topological_torsion_count": 9,
+                "topological_torsion_sparse_bit": 9,
+                "topological_torsion_explicit_bit": 9,
+                "topological_torsion_sparse_count_additional_output": 2,
+                "topological_torsion_count_additional_output": 2,
+                "topological_torsion_sparse_bit_additional_output": 2,
+                "topological_torsion_explicit_bit_additional_output": 2,
+            },
+        )
+        command = runner.command_for(
+            TOOL_DIR.parents[2],
+            phase,
+            Path("corpus/shard-017.jsonl"),
+            Path("run/topological-torsion/shard-017.json"),
+            123,
+            4,
+        )
+        self.assertEqual(
+            command[command.index("--mode") + 1], "topological_torsion"
+        )
+        torsion_profile = Path(
+            command[command.index("--topological-torsion-profile") + 1]
+        )
+        self.assertEqual(
+            torsion_profile.name, "topological_torsion_fingerprint_profile.json"
+        )
+
+    def test_topological_torsion_auditor_compares_all_vectors_and_provenance(self) -> None:
+        profile = runner.load_json(
+            TOOL_DIR.parents[2]
+            / "tools/testdata/rdkit/topological_torsion_fingerprint_profile.json"
+        )
+        by_name = {branch["name"]: branch for branch in profile["corpus_branches"]}
+        branches = [by_name["default"], by_name["all_provenance"]]
+        rdkit_generators, cosmolkit_generators = (
+            audit_fingerprints.make_topological_torsion_generators(branches)
+        )
+        record = {"row": 0, "chembl_id": "HARNESS", "smiles": "CCCO"}
+        rd_mol = audit_fingerprints.Chem.MolFromSmiles(record["smiles"])
+        ck_mol = audit_fingerprints.cosmolkit.Molecule.from_smiles(record["smiles"])
+        self.assertIsNotNone(rd_mol)
+        with tempfile.TemporaryDirectory() as temporary:
+            audit = audit_fingerprints.Audit(Path(temporary) / "summary.json", 4)
+            audit_fingerprints.compare_topological_torsion(
+                audit,
+                record,
+                rd_mol,
+                ck_mol,
+                branches,
+                rdkit_generators,
+                cosmolkit_generators,
+            )
+            self.assertEqual(sum(audit.counts.values()), 12)
+            self.assertTrue(
+                all(
+                    key.startswith("match.topological_torsion.")
+                    for key in audit.counts
+                )
+            )
+            audit.finish(
+                1,
+                {
+                    "topological_torsion_sparse_count": 2,
+                    "topological_torsion_count": 2,
+                    "topological_torsion_sparse_bit": 2,
+                    "topological_torsion_explicit_bit": 2,
+                    "topological_torsion_sparse_count_additional_output": 1,
+                    "topological_torsion_count_additional_output": 1,
+                    "topological_torsion_sparse_bit_additional_output": 1,
+                    "topological_torsion_explicit_bit_additional_output": 1,
+                },
+            )
+
     def test_atom_pair_aggregate_rejects_filtered_or_partial_shards(self) -> None:
         expected_profiles = {
             "atom_pair_sparse_count": 10,

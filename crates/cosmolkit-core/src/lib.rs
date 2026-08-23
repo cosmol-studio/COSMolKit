@@ -199,17 +199,29 @@ pub use distgeom::{
 pub use draw::SvgDrawError;
 pub use error::{InvariantError, MoleculeBuildError};
 pub use fingerprint::{
-    AdditionalOutput, AtomPairFingerprintGenerator, AtomPairFingerprintOutput,
-    AtomPairFingerprintParams, Fingerprint, FingerprintArguments, FingerprintError,
-    FingerprintFuncArguments, MaccsFingerprintParams, MorganAdditionalOutput,
-    MorganAtomInvariantsGenerator, MorganBitFingerprintOutput, MorganBondInvariantsGenerator,
-    MorganFingerprintOutput, MorganFingerprintParams, MorganSparseFingerprintOutput,
-    SparseBitFingerprint, SparseCountFingerprint, TopologicalFingerprintOutput,
-    TopologicalFingerprintOutputRequest, TopologicalFingerprintParams,
-    TopologicalFingerprintResult, atom_pair_fingerprint, atom_pair_fingerprint_with_output,
-    maccs_fingerprint, maccs_get_fingerprint_as_bit_vect, morgan_get_fingerprint,
-    morgan_get_fingerprint_as_bit_vect, morgan_get_hashed_fingerprint,
-    topological_fingerprint_with_output,
+    ATOM_PAIR_ATOM_NUMBER_TYPES, ATOM_PAIR_CODE_SIZE, ATOM_PAIR_MAX_NUM_BRANCHES,
+    ATOM_PAIR_MAX_NUM_PI, ATOM_PAIR_MAX_PATH_LENGTH, ATOM_PAIR_NUM_BRANCH_BITS,
+    ATOM_PAIR_NUM_CHIRAL_BITS, ATOM_PAIR_NUM_FINGERPRINT_BITS, ATOM_PAIR_NUM_PATH_BITS,
+    ATOM_PAIR_NUM_PI_BITS, ATOM_PAIR_NUM_TYPE_BITS, ATOM_PAIRS_VERSION, AdditionalOutput,
+    AtomPairFingerprintGenerator, AtomPairFingerprintOutput, AtomPairFingerprintParams,
+    Fingerprint, FingerprintArguments, FingerprintError, FingerprintFuncArguments,
+    MaccsFingerprintParams, MorganAdditionalOutput, MorganAtomInvariantsGenerator,
+    MorganBitFingerprintOutput, MorganBondInvariantsGenerator, MorganFingerprintOutput,
+    MorganFingerprintParams, MorganSparseFingerprintOutput, SparseBitFingerprint,
+    SparseCountFingerprint, TopologicalFingerprintOutput, TopologicalFingerprintOutputRequest,
+    TopologicalFingerprintParams, TopologicalFingerprintResult,
+    TopologicalTorsionFingerprintGenerator, TopologicalTorsionFingerprintOutputRequest,
+    TopologicalTorsionFingerprintParams, TopologicalTorsionFingerprintResult,
+    TopologicalTorsionFingerprintValue, TopologicalTorsionFingerprintVector,
+    TopologicalTorsionLegacyKind, TopologicalTorsionLegacyParams, TopologicalTorsionLegacyResult,
+    atom_pair_fingerprint, atom_pair_fingerprint_with_output, get_atom_code,
+    get_topological_torsion_code, get_topological_torsion_hash, maccs_fingerprint,
+    maccs_get_fingerprint_as_bit_vect, morgan_get_fingerprint, morgan_get_fingerprint_as_bit_vect,
+    morgan_get_hashed_fingerprint, topological_fingerprint_with_output,
+    topological_torsion_count_fingerprint, topological_torsion_fingerprint,
+    topological_torsion_fingerprint_with_output, topological_torsion_generator,
+    topological_torsion_legacy_fingerprint, topological_torsion_sparse_count_fingerprint,
+    topological_torsion_sparse_fingerprint,
 };
 pub use hydrogens::{AddHsParams, AddHydrogensError, RemoveHsParams, RemoveHydrogensError};
 pub use inchi::{
@@ -289,7 +301,8 @@ pub use support::{
     DRAWING_FEATURE, FINGERPRINT_FEATURE, FeatureCategory, FeatureSpec, HYDROGENS_FEATURE,
     INCHI_FEATURE, KEKULIZE_FEATURE, MOLBLOCK_IO_FEATURE, PUBLIC_FEATURES, RINGS_FEATURE,
     SANITIZE_FEATURE, SMILES_PARSE_FEATURE, SMILES_WRITE_FEATURE, STEREO_FEATURE,
-    SUBSTRUCTURE_FEATURE, SupportStatus, UnsupportedFeatureError, VALENCE_FEATURE,
+    SUBSTRUCTURE_FEATURE, SupportStatus, TOPOLOGICAL_TORSION_FINGERPRINT_FEATURE,
+    UnsupportedFeatureError, VALENCE_FEATURE,
 };
 pub use valence::{
     ValenceAssignment, ValenceError, ValenceModel, assign_radicals, assign_valence,

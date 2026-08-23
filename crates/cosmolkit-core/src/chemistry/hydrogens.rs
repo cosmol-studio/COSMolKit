@@ -150,6 +150,8 @@ pub struct AddHsParams {
 #[allow(dead_code)]
 pub(crate) struct AddHsAssignment {
     pub(crate) hydrogens_to_add: Vec<AddHydrogen>,
+    pub(crate) atoms_to_update_property_cache: Vec<AtomId>,
+    pub(crate) valence_before_add_hs: Option<crate::ValenceAssignment>,
     pub(crate) atom_explicit_hydrogen_updates: Vec<AtomExplicitHydrogenUpdate>,
     pub(crate) atom_pdb_residue_info_updates: Vec<AtomPdbResidueInfoUpdate>,
     pub(crate) clear_isotopic_hydrogen_properties: Vec<AtomId>,
@@ -346,22 +348,50 @@ pub(crate) fn add_hs_assignment(
             }
         }
     }
-    let valence = read_parts.assign_valence_with_options(ValenceModel::RdkitLike, false)?;
+    let atom_count = read_parts.num_atoms();
+    let valence = match read_parts.derived_cache().valence.as_ref() {
+        Some(valence)
+            if valence.explicit_valence.len() == atom_count
+                && valence.implicit_hydrogens.len() == atom_count =>
+        {
+            valence.clone()
+        }
+        Some(_) => {
+            return Err(crate::ValenceError::UnsupportedBranch {
+                reason: "AddHs input valence cache length does not match the atom count",
+            }
+            .into());
+        }
+        None => {
+            // COSMolKit builders store valence in a molecule-level typed cache,
+            // while RDKit stores it on each Atom. Materialize the same
+            // Atom::updatePropertyCache(false) values when that typed cache has
+            // not yet been initialized, then follow AddHs.cpp incrementally.
+            read_parts.assign_valence_with_options(ValenceModel::RdkitLike, false)?
+        }
+    };
     let context = RemoveHsPredicateContext::new(read_parts);
+    let mut on_atoms = vec![params.only_on_atoms.is_none(); atom_count];
+    if let Some(only_on_atoms) = &params.only_on_atoms {
+        for atom in only_on_atoms {
+            on_atoms[atom.index()] = true;
+        }
+    }
     let mut assignment = AddHsAssignment {
+        valence_before_add_hs: Some(valence.clone()),
         clear_computed_properties: true,
         add_terminal_coordinates: params.add_coords,
         ..AddHsAssignment::default()
     };
     for atom in read_parts.atoms() {
-        if let Some(only_on_atoms) = &params.only_on_atoms
-            && !only_on_atoms.contains(&atom.id())
-        {
+        if !on_atoms[atom.id().index()] {
             continue;
         }
         if params.skip_queries && is_add_hs_query_atom(&context, atom.id())? {
+            on_atoms[atom.id().index()] = false;
             continue;
         }
+        assignment.atoms_to_update_property_cache.push(atom.id());
         let isotopic_hydrogens = isotopic_hydrogen_property(atom);
         if !atom.tracked_isotopic_hydrogens().is_empty() {
             assignment
@@ -405,6 +435,97 @@ pub(crate) fn add_hs_assignment(
     }
     // END RDKIT CPP BODY MolOps::addHs assignment planner
     Ok(assignment)
+}
+
+pub(crate) fn add_hs_valence_assignment_from_parts(
+    atoms: &[Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    old_atom_count: usize,
+    assignment: &AddHsAssignment,
+) -> Result<crate::ValenceAssignment, AddHydrogensError> {
+    // BEGIN RDKIT CPP FUNCTION MolOps::addHs(RWMol&, const AddHsParameters&, const UINT_VECT*)
+    // RDKit✔️❌:     newAt->clearComputedProps();
+    // RDKit✔️❌:     unsigned int onumexpl = numExplicitHs[aidx];
+    // RDKit✔️❌:     for (unsigned int i = 0; i < onumexpl; i++) {
+    // RDKit✔️❌:       newIdx = mol.addAtom(new Atom(1), false, true);
+    // RDKit✔️❌:       mol.addBond(aidx, newIdx, Bond::SINGLE);
+    // RDKit✔️❌:       auto hAtom = mol.getAtomWithIdx(newIdx);
+    // RDKit✔️❌:       hAtom->updatePropertyCache();
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     newAt->setNumExplicitHs(0);
+    // RDKit✔️❌:     if (!params.explicitOnly) {
+    // RDKit✔️❌:       for (unsigned int i = 0; i < numImplicitHs[aidx]; i++) {
+    // RDKit✔️❌:         newIdx = mol.addAtom(new Atom(1), false, true);
+    // RDKit✔️❌:         mol.addBond(aidx, newIdx, Bond::SINGLE);
+    // RDKit✔️❌:         auto hAtom = mol.getAtomWithIdx(newIdx);
+    // RDKit✔️❌:         hAtom->setProp(common_properties::isImplicit, 1);
+    // RDKit✔️❌:         hAtom->updatePropertyCache();
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     newAt->updatePropertyCache(false);
+    // END RDKIT CPP FUNCTION MolOps::addHs(RWMol&, const AddHsParameters&, const UINT_VECT*)
+    // The molecule-level vectors require one O(numAtoms) clone that RDKit's
+    // per-Atom cache layout does not. The per-atom calculations and source loop
+    // ordering below are otherwise the same.
+    let valence_before_add_hs = assignment.valence_before_add_hs.as_ref().ok_or(
+        crate::ValenceError::UnsupportedBranch {
+            reason: "AddHs assignment is missing its original valence cache",
+        },
+    )?;
+    if valence_before_add_hs.explicit_valence.len() != old_atom_count
+        || valence_before_add_hs.implicit_hydrogens.len() != old_atom_count
+    {
+        return Err(crate::ValenceError::UnsupportedBranch {
+            reason: "AddHs assignment valence cache length does not match the original atom count",
+        }
+        .into());
+    }
+    if atoms.len() != old_atom_count + assignment.hydrogens_to_add.len() {
+        return Err(crate::ValenceError::UnsupportedBranch {
+            reason: "AddHs assignment hydrogen count does not match the appended topology",
+        }
+        .into());
+    }
+
+    let mut valence = valence_before_add_hs.clone();
+    valence.explicit_valence.resize(atoms.len(), -1);
+    valence.implicit_hydrogens.resize(atoms.len(), -1);
+
+    let mut hydrogen_offset = 0usize;
+    for heavy_atom in &assignment.atoms_to_update_property_cache {
+        while assignment
+            .hydrogens_to_add
+            .get(hydrogen_offset)
+            .is_some_and(|hydrogen| hydrogen.heavy_atom == *heavy_atom)
+        {
+            let hydrogen = AtomId::new(old_atom_count + hydrogen_offset);
+            let (explicit, implicit) = crate::valence::assign_valence_state_for_atom_from_parts(
+                atoms, bonds, adjacency, hydrogen, true,
+            )?;
+            valence.explicit_valence[hydrogen.index()] = explicit;
+            valence.implicit_hydrogens[hydrogen.index()] = implicit;
+            hydrogen_offset += 1;
+        }
+
+        let (explicit, implicit) = crate::valence::assign_valence_state_for_atom_from_parts(
+            atoms,
+            bonds,
+            adjacency,
+            *heavy_atom,
+            false,
+        )?;
+        valence.explicit_valence[heavy_atom.index()] = explicit;
+        valence.implicit_hydrogens[heavy_atom.index()] = implicit;
+    }
+    if hydrogen_offset != assignment.hydrogens_to_add.len() {
+        return Err(crate::ValenceError::UnsupportedBranch {
+            reason: "AddHs assignment hydrogens are not grouped by processed heavy atom",
+        }
+        .into());
+    }
+
+    Ok(valence)
 }
 
 #[derive(Debug, Clone, Default)]

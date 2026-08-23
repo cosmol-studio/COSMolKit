@@ -19,6 +19,7 @@ from rdkit.Chem import rdFingerprintGenerator
 
 
 EXPECTED_RDKIT_VERSION = "2026.03.1"
+UINT32_MASK = (1 << 32) - 1
 RDLogger.DisableLog("rdApp.*")
 
 
@@ -355,7 +356,7 @@ def normalize_cosmolkit_atom_pair_additional_output(output: Any) -> dict[str, An
     }
 
 
-def capture_atom_pair_count(call: Any) -> dict[str, Any]:
+def capture_count_fingerprint(call: Any) -> dict[str, Any]:
     try:
         fingerprint = call()
         return {
@@ -378,7 +379,7 @@ def capture_atom_pair_count(call: Any) -> dict[str, Any]:
         return {"status": "error"}
 
 
-def capture_atom_pair_bits(call: Any) -> dict[str, Any]:
+def capture_bit_fingerprint(call: Any, *, unsigned_bits: bool = False) -> dict[str, Any]:
     try:
         fingerprint = call()
         if hasattr(fingerprint, "GetNumBits"):
@@ -387,6 +388,8 @@ def capture_atom_pair_bits(call: Any) -> dict[str, Any]:
         else:
             length = fingerprint.n_bits() if hasattr(fingerprint, "n_bits") else fingerprint.size()
             on_bits = fingerprint.on_bits()
+        if unsigned_bits:
+            on_bits = sorted(int(bit) & UINT32_MASK for bit in on_bits)
         return {"status": "ok", "length": length, "on_bits": on_bits}
     except Exception:  # noqa: BLE001
         return {"status": "error"}
@@ -409,40 +412,40 @@ def compare_atom_pair(
         audit.compare(
             f"atom_pair.{name}.sparse_count",
             record,
-            capture_atom_pair_count(
+            capture_count_fingerprint(
                 lambda: generator.GetSparseCountFingerprint(rd_mol, **rdkit_kwargs)
             ),
-            capture_atom_pair_count(
+            capture_count_fingerprint(
                 lambda: ck_mol.fingerprint_atom_pair_sparse_count(**cosmolkit_kwargs)
             ),
         )
         audit.compare(
             f"atom_pair.{name}.count",
             record,
-            capture_atom_pair_count(
+            capture_count_fingerprint(
                 lambda: generator.GetCountFingerprint(rd_mol, **rdkit_kwargs)
             ),
-            capture_atom_pair_count(
+            capture_count_fingerprint(
                 lambda: ck_mol.fingerprint_atom_pair_count(**cosmolkit_kwargs)
             ),
         )
         audit.compare(
             f"atom_pair.{name}.sparse_bit",
             record,
-            capture_atom_pair_bits(
+            capture_bit_fingerprint(
                 lambda: generator.GetSparseFingerprint(rd_mol, **rdkit_kwargs)
             ),
-            capture_atom_pair_bits(
+            capture_bit_fingerprint(
                 lambda: ck_mol.fingerprint_atom_pair_sparse_bits(**cosmolkit_kwargs)
             ),
         )
         audit.compare(
             f"atom_pair.{name}.explicit_bit",
             record,
-            capture_atom_pair_bits(
+            capture_bit_fingerprint(
                 lambda: generator.GetFingerprint(rd_mol, **rdkit_kwargs)
             ),
-            capture_atom_pair_bits(
+            capture_bit_fingerprint(
                 lambda: ck_mol.fingerprint_atom_pair(**cosmolkit_kwargs)
             ),
         )
@@ -485,6 +488,208 @@ def compare_atom_pair(
             )
 
 
+def topological_torsion_kwargs(
+    branch: dict[str, Any], atom_count: int
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    rdkit_kwargs: dict[str, Any] = {}
+    cosmolkit_kwargs: dict[str, Any] = {}
+    if branch.get("fromAtoms") == "first":
+        atoms = [0] if atom_count else []
+        rdkit_kwargs["fromAtoms"] = atoms
+        cosmolkit_kwargs["from_atoms"] = atoms
+    if branch.get("ignoreAtoms") == "first":
+        atoms = [0] if atom_count else []
+        rdkit_kwargs["ignoreAtoms"] = atoms
+        cosmolkit_kwargs["ignore_atoms"] = atoms
+    if branch.get("customAtomInvariants") == "index_plus_17":
+        invariants = [index + 17 for index in range(atom_count)]
+        rdkit_kwargs["customAtomInvariants"] = invariants
+        cosmolkit_kwargs["custom_atom_invariants"] = invariants
+    return rdkit_kwargs, cosmolkit_kwargs
+
+
+def make_topological_torsion_generators(
+    branches: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    rdkit_generators: dict[str, Any] = {}
+    cosmolkit_generators: dict[str, Any] = {}
+    for branch in branches:
+        name = str(branch["name"])
+        rdkit_generator = rdFingerprintGenerator.GetTopologicalTorsionGenerator(
+            includeChirality=branch.get("includeChirality", False),
+            torsionAtomCount=branch.get("torsionAtomCount", 4),
+            countSimulation=branch.get("countSimulation", True),
+            countBounds=branch.get("countBounds"),
+            fpSize=branch.get("fpSize", 2048),
+        )
+        rdkit_options = rdkit_generator.GetOptions()
+        rdkit_options.onlyShortestPaths = branch.get("onlyShortestPaths", False)
+        rdkit_options.numBitsPerFeature = branch.get("numBitsPerFeature", 1)
+
+        cosmolkit_generator = cosmolkit.get_topological_torsion_generator(
+            include_chirality=branch.get("includeChirality", False),
+            torsion_atom_count=branch.get("torsionAtomCount", 4),
+            count_simulation=branch.get("countSimulation", True),
+            count_bounds=branch.get("countBounds"),
+            fp_size=branch.get("fpSize", 2048),
+        )
+        cosmolkit_options = cosmolkit_generator.get_options()
+        cosmolkit_options.only_shortest_paths = branch.get("onlyShortestPaths", False)
+        cosmolkit_options.num_bits_per_feature = branch.get("numBitsPerFeature", 1)
+        rdkit_generators[name] = rdkit_generator
+        cosmolkit_generators[name] = cosmolkit_generator
+    return rdkit_generators, cosmolkit_generators
+
+
+def topological_torsion_additional_output() -> tuple[Any, Any]:
+    rdkit_output = rdFingerprintGenerator.AdditionalOutput()
+    cosmolkit_output = cosmolkit.AdditionalOutput()
+    for rdkit_method, cosmolkit_method in (
+        ("AllocateAtomCounts", "allocate_atom_counts"),
+        ("AllocateAtomToBits", "allocate_atom_to_bits"),
+        ("AllocateBitInfoMap", "allocate_bit_info_map"),
+        ("AllocateBitPaths", "allocate_bit_paths"),
+        ("AllocateAtomsPerBit", "allocate_atoms_per_bit"),
+    ):
+        getattr(rdkit_output, rdkit_method)()
+        getattr(cosmolkit_output, cosmolkit_method)()
+    return rdkit_output, cosmolkit_output
+
+
+def normalize_topological_torsion_additional_output(output: Any) -> dict[str, Any]:
+    if hasattr(output, "GetAtomCounts"):
+        atom_counts = output.GetAtomCounts()
+        atom_to_bits = output.GetAtomToBits()
+        bit_info_map = output.GetBitInfoMap()
+        bit_paths = output.GetBitPaths()
+        atoms_per_bit = output.GetAtomsPerBit()
+    else:
+        atom_counts = output.atom_counts()
+        atom_to_bits = output.atom_to_bits()
+        bit_info_map = output.bit_info_map()
+        bit_paths = output.bit_paths()
+        atoms_per_bit = output.atoms_per_bit()
+    return {
+        "atom_counts": list(atom_counts),
+        "atom_to_bits": [list(bits) for bits in atom_to_bits],
+        "bit_info_map": {
+            int(bit): [list(pair) for pair in pairs]
+            for bit, pairs in sorted(bit_info_map.items())
+        },
+        "bit_paths": {
+            int(bit): [list(path) for path in paths]
+            for bit, paths in sorted(bit_paths.items())
+        },
+        "atoms_per_bit": {
+            int(bit): [list(atoms) for atoms in entries]
+            for bit, entries in sorted(atoms_per_bit.items())
+        },
+    }
+
+
+def compare_topological_torsion(
+    audit: Audit,
+    record: dict[str, Any],
+    rd_mol: Chem.Mol,
+    ck_mol: Any,
+    branches: list[dict[str, Any]],
+    rdkit_generators: dict[str, Any],
+    cosmolkit_generators: dict[str, Any],
+) -> None:
+    forms = (
+        (
+            "sparse_count",
+            "GetSparseCountFingerprint",
+            "get_sparse_count_fingerprint",
+            capture_count_fingerprint,
+            False,
+        ),
+        (
+            "count",
+            "GetCountFingerprint",
+            "get_count_fingerprint",
+            capture_count_fingerprint,
+            False,
+        ),
+        (
+            "sparse_bit",
+            "GetSparseFingerprint",
+            "get_sparse_fingerprint",
+            capture_bit_fingerprint,
+            True,
+        ),
+        (
+            "explicit_bit",
+            "GetFingerprint",
+            "get_fingerprint",
+            capture_bit_fingerprint,
+            False,
+        ),
+    )
+    for branch in branches:
+        name = str(branch["name"])
+        rdkit_generator = rdkit_generators[name]
+        cosmolkit_generator = cosmolkit_generators[name]
+        rdkit_kwargs, cosmolkit_kwargs = topological_torsion_kwargs(
+            branch, rd_mol.GetNumAtoms()
+        )
+        for form, rdkit_method, cosmolkit_method, capture, unsigned_bits in forms:
+            audit.compare(
+                f"topological_torsion.{name}.{form}",
+                record,
+                capture(
+                    lambda method=rdkit_method: getattr(rdkit_generator, method)(
+                        rd_mol, **rdkit_kwargs
+                    ),
+                    **(
+                        {"unsigned_bits": unsigned_bits}
+                        if capture is capture_bit_fingerprint
+                        else {}
+                    ),
+                ),
+                capture(
+                    lambda method=cosmolkit_method: getattr(cosmolkit_generator, method)(
+                        ck_mol, **cosmolkit_kwargs
+                    ),
+                    **(
+                        {"unsigned_bits": unsigned_bits}
+                        if capture is capture_bit_fingerprint
+                        else {}
+                    ),
+                ),
+            )
+            if branch.get("additionalOutput"):
+                rdkit_output, cosmolkit_output = topological_torsion_additional_output()
+                rdkit_value = capture(
+                    lambda method=rdkit_method: getattr(rdkit_generator, method)(
+                        rd_mol, additionalOutput=rdkit_output, **rdkit_kwargs
+                    ),
+                    **(
+                        {"unsigned_bits": unsigned_bits}
+                        if capture is capture_bit_fingerprint
+                        else {}
+                    ),
+                )
+                cosmolkit_value = capture(
+                    lambda method=cosmolkit_method: getattr(cosmolkit_generator, method)(
+                        ck_mol, additional_output=cosmolkit_output, **cosmolkit_kwargs
+                    ),
+                    **(
+                        {"unsigned_bits": unsigned_bits}
+                        if capture is capture_bit_fingerprint
+                        else {}
+                    ),
+                )
+                rdkit_value["additional_output"] = normalize_topological_torsion_additional_output(rdkit_output)
+                cosmolkit_value["additional_output"] = normalize_topological_torsion_additional_output(cosmolkit_output)
+                audit.compare(
+                    f"topological_torsion.{name}.{form}.additional_output",
+                    record,
+                    rdkit_value,
+                    cosmolkit_value,
+                )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, required=True)
@@ -492,8 +697,11 @@ def main() -> None:
     parser.add_argument("--topological-profile", type=Path, required=True)
     parser.add_argument("--avalon-profile", type=Path, required=True)
     parser.add_argument("--atom-pair-profile", type=Path, required=True)
+    parser.add_argument("--topological-torsion-profile", type=Path, required=True)
     parser.add_argument(
-        "--mode", choices=("topological_avalon", "atom_pair"), required=True
+        "--mode",
+        choices=("topological_avalon", "atom_pair", "topological_torsion"),
+        required=True,
     )
     parser.add_argument("--limit", type=int)
     parser.add_argument("--max-examples", type=int, default=12)
@@ -514,10 +722,15 @@ def main() -> None:
     topological_profile = load_json(args.topological_profile)
     avalon_profile = load_json(args.avalon_profile)
     atom_pair_profile = load_json(args.atom_pair_profile)
+    topological_torsion_profile = load_json(args.topological_torsion_profile)
     topological_branches = topological_profile["branches"]
     avalon_branches = avalon_profile["corpus_branches"]
     atom_pair_branches = atom_pair_profile["branches"]
     atom_pair_generators = make_atom_pair_generators(atom_pair_branches)
+    topological_torsion_branches = topological_torsion_profile["corpus_branches"]
+    rdkit_torsion_generators, cosmolkit_torsion_generators = (
+        make_topological_torsion_generators(topological_torsion_branches)
+    )
     audit = Audit(args.output, args.max_examples)
     processed = 0
     try:
@@ -561,7 +774,7 @@ def main() -> None:
                         audit, record, rd_mol, ck_mol, topological_branches
                     )
                     compare_avalon(audit, record, rd_mol, ck_mol, avalon_branches)
-                else:
+                elif args.mode == "atom_pair":
                     compare_atom_pair(
                         audit,
                         record,
@@ -569,6 +782,16 @@ def main() -> None:
                         ck_mol,
                         atom_pair_branches,
                         atom_pair_generators,
+                    )
+                else:
+                    compare_topological_torsion(
+                        audit,
+                        record,
+                        rd_mol,
+                        ck_mol,
+                        topological_torsion_branches,
+                        rdkit_torsion_generators,
+                        cosmolkit_torsion_generators,
                     )
     finally:
         audit.finish(
@@ -588,6 +811,29 @@ def main() -> None:
                     "atom_pair_additional_output": sum(
                         bool(branch.get("additionalOutput"))
                         for branch in atom_pair_branches
+                    ),
+                }
+                if args.mode == "atom_pair"
+                else {
+                    "topological_torsion_sparse_count": len(topological_torsion_branches),
+                    "topological_torsion_count": len(topological_torsion_branches),
+                    "topological_torsion_sparse_bit": len(topological_torsion_branches),
+                    "topological_torsion_explicit_bit": len(topological_torsion_branches),
+                    "topological_torsion_sparse_count_additional_output": sum(
+                        bool(branch.get("additionalOutput"))
+                        for branch in topological_torsion_branches
+                    ),
+                    "topological_torsion_count_additional_output": sum(
+                        bool(branch.get("additionalOutput"))
+                        for branch in topological_torsion_branches
+                    ),
+                    "topological_torsion_sparse_bit_additional_output": sum(
+                        bool(branch.get("additionalOutput"))
+                        for branch in topological_torsion_branches
+                    ),
+                    "topological_torsion_explicit_bit_additional_output": sum(
+                        bool(branch.get("additionalOutput"))
+                        for branch in topological_torsion_branches
                     ),
                 }
             ),

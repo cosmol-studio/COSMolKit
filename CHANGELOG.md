@@ -28,6 +28,11 @@ empty.
   chirality, count simulation, selectors, custom atom invariants, complete
   provenance, metadata/JSON restoration, and ordered batch execution through
   one generator core.
+- Added source-backed Topological Torsion sparse-count, folded-count,
+  sparse-bit, and explicit-bit fingerprints in Rust and Python, including
+  modern and legacy APIs, live options and JSON restoration, chirality,
+  selectors, custom atom invariants, complete provenance, and ordered batch
+  execution through the shared fingerprint generator core.
 
 ### Changed
 
@@ -35,6 +40,9 @@ empty.
   matrix caching in shared molecule computed state, with topology/coordinate
   invalidation and clone-local synchronization. AtomPair and distance-geometry
   consumers reuse this single matrix implementation.
+- Reproduced the source-defined AddHs explicit-valence cache transition through
+  the operation contract so molecules returned by `with_hydrogens()` can be
+  consumed directly by modern and legacy Topological Torsion APIs.
 
 ### Fixed
 
@@ -57,6 +65,15 @@ empty.
 - The maintained 5,000-molecule gate runs ten AtomPair profiles as a committed
   exhaustive regression. Neither the full-corpus audit nor the maintained gate
   uses sampling, tolerance, similarity thresholds, or fallback fingerprints.
+- The complete Topological Torsion audit processed all 2,897,819 ChEMBL 37
+  source records over 128 shards. All 2,897,804 mutually parseable records
+  matched pinned RDKit across nine profiles, four vector forms, and complete
+  requested provenance, totaling 127,503,376 exact comparisons with zero
+  mismatch, invalid profile task, or retained finding.
+- The maintained 5,000-molecule Topological Torsion gate runs all nine profiles
+  as an exhaustive CI regression; focused source, public-API, atom-invariant,
+  batch, and Python tests cover live states, edge graphs, errors, deterministic
+  parallel execution, and source immutability.
 
 ## [0.2.12] - 2026-08-19
 

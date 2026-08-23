@@ -10,6 +10,7 @@ contains `plan` or `checklist`.
 - [`rdkit_atom_pair_fingerprint_full_port_plan.md`](./rdkit_atom_pair_fingerprint_full_port_plan.md)
 - [`rdkit_mol2_full_port_plan.md`](./rdkit_mol2_full_port_plan.md)
 - [`rdkit_topological_avalon_fingerprint_port_plan.md`](./rdkit_topological_avalon_fingerprint_port_plan.md)
+- [`rdkit_topological_torsion_fingerprint_full_port_plan.md`](./rdkit_topological_torsion_fingerprint_full_port_plan.md)
 - [`smiles_rdkit_full_port_checklist.md`](./smiles_rdkit_full_port_checklist.md)
 
 Plans must follow [`../agent_plan_standard.md`](../agent_plan_standard.md).

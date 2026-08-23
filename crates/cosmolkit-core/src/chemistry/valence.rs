@@ -32,6 +32,8 @@ pub enum ValenceError {
     },
     #[error("unsupported valence branch: {reason}")]
     UnsupportedBranch { reason: &'static str },
+    #[error("explicit valence cache is not initialized at atom {atom}")]
+    ExplicitValenceCacheNotInitialized { atom: crate::AtomId },
     #[error("radical electron count out of range at atom {atom}: {count}")]
     RadicalCountOutOfRange { atom: crate::AtomId, count: i32 },
     #[error("{message}")]

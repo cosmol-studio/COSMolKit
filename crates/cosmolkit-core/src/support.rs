@@ -189,6 +189,16 @@ pub const ATOM_PAIR_FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Provide the source-backed AtomPair sparse-count, folded-count, sparse-bit, explicit-bit, AdditionalOutput, 2D/3D distance, chirality, selector, custom-invariant, count-simulation, metadata/JSON, and ordered batch branches through one generator core. Exact validation covers every mutually parseable ChEMBL 37 record across ten profiles and 118,809,964 comparisons against pinned RDKit.",
 };
 
+pub const TOPOLOGICAL_TORSION_FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
+    name: "fingerprint.topological_torsion",
+    category: FeatureCategory::Fingerprint,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
+    parity_sensitive: true,
+    docs: "Provide the modern Topological Torsion sparse-count, sparse-bit, folded-count, explicit-bit, AdditionalOutput, JSON, scalar, ordered bulk, and Rust batch branches plus the three legacy compatibility adapters. Focused and maintained 5,000-row validation covers modern and legacy options, selections, chirality, path behavior, provenance, collisions, and errors. The complete ChEMBL 37 audit matches every mutually parseable record across nine profiles and 127,503,376 exact vector/provenance comparisons against pinned RDKit. RDKFingerprint, Atom Pair fingerprints, and unrelated fingerprint families remain separate capabilities.",
+};
+
 pub const AVALON_FINGERPRINT_FEATURE: FeatureSpec = FeatureSpec {
     name: "fingerprint.avalon",
     category: FeatureCategory::Fingerprint,
@@ -323,6 +333,7 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &KEKULIZE_FEATURE,
     &FINGERPRINT_FEATURE,
     &ATOM_PAIR_FINGERPRINT_FEATURE,
+    &TOPOLOGICAL_TORSION_FINGERPRINT_FEATURE,
     &AVALON_FINGERPRINT_FEATURE,
     &DESCRIPTORS_FEATURE,
     &SUBSTRUCTURE_FEATURE,

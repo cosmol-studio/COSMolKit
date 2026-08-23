@@ -69,9 +69,10 @@ Run the command from the repository root. Worker processes are launched as
 normal package imports rather than depending on the current script directory.
 
 `profiles/complete.json` is the default profile. It retains the 22 phases from
-the original completed audit and the later full-corpus topological/Avalon
-phase. Four additional phases now cover topology operations, connected
-fragments, direct 2D coordinate generation, and COSMolKit binary roundtrips.
+the original completed audit and the later full-corpus
+RDKFingerprint/Avalon, AtomPair, and Topological Torsion fingerprint phases.
+Four additional phases cover topology operations, connected fragments, direct
+2D coordinate generation, and COSMolKit binary roundtrips.
 The existing batch phase also compares scalar and batch sanitize, both
 kekulize branches, and direct 2D coordinates. The profile records phase order,
 selection boundaries, branch modes, fixed repeat phases, reference version,

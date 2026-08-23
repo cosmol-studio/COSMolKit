@@ -126,6 +126,7 @@ pub fn rdkit_expected_domain(file_name: &str) -> &'static str {
         | "atom_pair_fingerprint.jsonl"
         | "maccs_fingerprint.jsonl"
         | "rdkit_topological_fingerprint.jsonl"
+        | "topological_torsion_fingerprint.jsonl"
         | "avalon_fingerprint.jsonl" => "fingerprint",
         "conformer_generation.jsonl"
         | "conformer_generation_library.jsonl"
@@ -698,6 +699,21 @@ mod tests {
         })
     }
 
+    fn temporary_family_dir(label: &str) -> (PathBuf, PathBuf) {
+        let unique = format!(
+            "cosmolkit-test-support-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should follow UNIX epoch")
+                .as_nanos()
+        );
+        let temporary_root = std::env::temp_dir().join(unique);
+        let family_dir = temporary_root.join(profile_name());
+        std::fs::create_dir_all(&family_dir).expect("temporary family should be created");
+        (temporary_root, family_dir)
+    }
+
     #[test]
     fn profile_paths_are_repository_owned() {
         assert!(smiles_path().starts_with(repo_root().join("testdata")));
@@ -706,16 +722,7 @@ mod tests {
 
     #[test]
     fn output_lookup_does_not_validate_unrelated_outputs() {
-        let unique = format!(
-            "cosmolkit-test-support-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("system clock should follow UNIX epoch")
-                .as_nanos()
-        );
-        let family_dir = std::env::temp_dir().join(unique);
-        std::fs::create_dir_all(&family_dir).expect("temporary family should be created");
+        let (temporary_root, family_dir) = temporary_family_dir("unrelated-output");
 
         let requested_path = family_dir.join("requested.jsonl");
         std::fs::write(&requested_path, b"{\"case\":1}\n")
@@ -753,16 +760,12 @@ mod tests {
             .expect("requested output should validate independently");
         assert!(validate_expected_family(&family_dir, "test_domain", "rdkit").is_err());
 
-        std::fs::remove_dir_all(family_dir).expect("temporary family should be removed");
+        std::fs::remove_dir_all(temporary_root).expect("temporary family should be removed");
     }
 
     #[test]
     fn output_lookup_rejects_stale_generator_identity() {
-        let family_dir = std::env::temp_dir().join(format!(
-            "cosmolkit-test-support-stale-generator-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&family_dir).expect("temporary family should be created");
+        let (temporary_root, family_dir) = temporary_family_dir("stale-generator");
         let output_path = family_dir.join("requested.jsonl");
         std::fs::write(&output_path, b"{\"case\":1}\n").expect("output should be written");
         let manifest = test_manifest(
@@ -781,16 +784,12 @@ mod tests {
             validate_expected_output(&family_dir, "test_domain", "rdkit", "requested.jsonl")
                 .expect_err("stale generator identity must be rejected");
         assert!(error.contains("checksum"), "unexpected error: {error}");
-        std::fs::remove_dir_all(family_dir).expect("temporary family should be removed");
+        std::fs::remove_dir_all(temporary_root).expect("temporary family should be removed");
     }
 
     #[test]
     fn cached_output_lookup_scans_requested_output_once() {
-        let family_dir = std::env::temp_dir().join(format!(
-            "cosmolkit-test-support-cached-output-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&family_dir).expect("temporary family should be created");
+        let (temporary_root, family_dir) = temporary_family_dir("cached-output");
         let output_path = family_dir.join("requested.jsonl");
         std::fs::write(&output_path, b"{\"case\":1}\n\n# comment\n")
             .expect("output should be written");
@@ -818,6 +817,6 @@ mod tests {
             .expect("scan-count lock should not be poisoned");
         assert_eq!(scans.get(&output_path), Some(&1));
         drop(scans);
-        std::fs::remove_dir_all(family_dir).expect("temporary family should be removed");
+        std::fs::remove_dir_all(temporary_root).expect("temporary family should be removed");
     }
 }

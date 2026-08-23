@@ -54,7 +54,11 @@ SCRIPT_MODES = {
         "topology_operations",
     },
     "audit_combinations.py": {"batch", "concurrent", "scalar"},
-    "audit_fingerprints.py": {"atom_pair", "topological_avalon"},
+    "audit_fingerprints.py": {
+        "atom_pair",
+        "topological_avalon",
+        "topological_torsion",
+    },
 }
 
 
@@ -298,6 +302,8 @@ def build_identity(
                 / "tools/testdata/rdkit/rdkit_topological_fingerprint_profile.json",
                 root / "tools/testdata/rdkit/avalon_fingerprint_profile.json",
                 root / "tools/testdata/rdkit/atom_pair_fingerprint_profile.json",
+                root
+                / "tools/testdata/rdkit/topological_torsion_fingerprint_profile.json",
             )
         },
     }
@@ -380,6 +386,11 @@ def command_for(
                 str(root / "tools/testdata/rdkit/avalon_fingerprint_profile.json"),
                 "--atom-pair-profile",
                 str(root / "tools/testdata/rdkit/atom_pair_fingerprint_profile.json"),
+                "--topological-torsion-profile",
+                str(
+                    root
+                    / "tools/testdata/rdkit/topological_torsion_fingerprint_profile.json"
+                ),
                 "--mode",
                 str(phase["mode"]),
             )

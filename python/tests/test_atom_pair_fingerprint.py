@@ -1,5 +1,18 @@
+from typing import TypedDict
+
 import cosmolkit
 import pytest
+
+
+class AtomPairKeywordArgs(TypedDict, total=False):
+    n_bits: int
+    min_distance: int
+    max_distance: int
+    include_chirality: bool
+    count_simulation: bool
+    from_atoms: list[int]
+    ignore_atoms: list[int]
+    custom_atom_invariants: list[int]
 
 
 def test_atom_pair_default_keywords_convert_all_four_exact_result_forms():
@@ -11,7 +24,7 @@ def test_atom_pair_default_keywords_convert_all_four_exact_result_forms():
     assert explicit.on_bits() == [624, 1144, 1336, 1337, 1404, 1596]
 
     sparse_count = molecule.fingerprint_atom_pair_sparse_count()
-    assert isinstance(sparse_count, cosmolkit.AtomPairSparseCountFingerprint)
+    assert isinstance(sparse_count, cosmolkit.SparseCountFingerprint)
     assert sparse_count.size() == 1 << 23
     assert sparse_count.nonzero_elements() == {
         558113: 1,
@@ -25,7 +38,7 @@ def test_atom_pair_default_keywords_convert_all_four_exact_result_forms():
     assert sparse_count.value(0) == 0
 
     count = molecule.fingerprint_atom_pair_count()
-    assert isinstance(count, cosmolkit.AtomPairSparseCountFingerprint)
+    assert isinstance(count, cosmolkit.SparseCountFingerprint)
     assert count.size() == 2048
     assert count.nonzero_elements() == {
         1310: 1,
@@ -36,7 +49,7 @@ def test_atom_pair_default_keywords_convert_all_four_exact_result_forms():
     }
 
     sparse_bits = molecule.fingerprint_atom_pair_sparse_bits()
-    assert isinstance(sparse_bits, cosmolkit.AtomPairSparseBitFingerprint)
+    assert isinstance(sparse_bits, cosmolkit.SparseBitFingerprint)
     assert sparse_bits.size() == 1 << 23
     assert sparse_bits.on_bits() == [
         7918712,
@@ -54,7 +67,7 @@ def test_atom_pair_provenance_matches_exact_count_simulation_projection():
     assert result.fingerprint().on_bits() == [624, 1144, 1336, 1337, 1404, 1596]
 
     output = result.additional_output()
-    assert isinstance(output, cosmolkit.AtomPairAdditionalOutput)
+    assert isinstance(output, cosmolkit.AdditionalOutput)
     assert output.atom_counts() == [3, 3, 3, 3]
     assert output.atom_to_bits() == [
         [624, 1144, 1404],
@@ -79,7 +92,7 @@ def test_atom_pair_provenance_matches_exact_count_simulation_projection():
 def test_atom_pair_option_interactions_and_repeated_calls_are_exact_and_immutable():
     molecule = cosmolkit.Molecule.from_smiles("C[C@H](O)F")
     before = molecule.to_smiles()
-    kwargs = {
+    kwargs: AtomPairKeywordArgs = {
         "n_bits": 64,
         "min_distance": 1,
         "max_distance": 2,

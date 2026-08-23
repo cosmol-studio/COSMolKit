@@ -315,7 +315,7 @@ impl AtomPairArguments {
         let common = self.fingerprint_arguments.to_json();
         let common_body = &common[1..common.len().saturating_sub(1)];
         format!(
-            "{{\"type\":\"AtomPairArguments\",\"use2D\":{},\"minDistance\":{},\"maxDistance\":{},{common_body}}}",
+            "{{\"type\":\"AtomPairArguments\",\"use2D\":\"{}\",\"minDistance\":\"{}\",\"maxDistance\":\"{}\",{common_body}}}",
             self.use_2d, self.min_distance, self.max_distance
         )
     }
@@ -457,6 +457,12 @@ impl AtomPairAtomInvariantsGenerator {
         // RDKit✔️✔️: }
     }
 
+    #[allow(non_snake_case)]
+    pub fn getAtomInvariants(&self, molecule: &Molecule) -> Result<Vec<u32>, FingerprintError> {
+        self.atom_invariants(molecule)
+            .map_err(FingerprintError::from)
+    }
+
     #[must_use]
     pub fn info_string(&self) -> String {
         // RDKit source: AtomPairGenerator.cpp lines 45-48
@@ -470,6 +476,12 @@ impl AtomPairAtomInvariantsGenerator {
         )
     }
 
+    #[allow(non_snake_case)]
+    #[must_use]
+    pub fn infoString(&self) -> String {
+        self.info_string()
+    }
+
     #[must_use]
     pub fn to_json(&self) -> String {
         // RDKit source: AtomPairGenerator.cpp lines 50-55
@@ -480,9 +492,15 @@ impl AtomPairAtomInvariantsGenerator {
         // RDKit✔️✔️:   AtomInvariantsGenerator::toJSON(pt);
         // RDKit✔️✔️: }
         format!(
-            "{{\"type\":\"AtomPairAtomInvGenerator\",\"includeChirality\":{},\"topologicalTorsionCorrection\":{}}}",
+            "{{\"type\":\"AtomPairAtomInvGenerator\",\"includeChirality\":\"{}\",\"topologicalTorsionCorrection\":\"{}\"}}",
             self.include_chirality, self.topological_torsion_correction
         )
+    }
+
+    #[allow(non_snake_case)]
+    #[must_use]
+    pub fn toJSON(&self) -> String {
+        self.to_json()
     }
 
     pub fn from_json(&mut self, json: &str) -> Result<(), FingerprintError> {
@@ -509,6 +527,11 @@ impl AtomPairAtomInvariantsGenerator {
         // RDKit✔️✔️:   AtomInvariantsGenerator::fromJSON(pt);
         // RDKit✔️✔️: }
         Ok(())
+    }
+
+    #[allow(non_snake_case)]
+    pub fn fromJSON(&mut self, json: &str) -> Result<(), FingerprintError> {
+        self.from_json(json)
     }
 }
 
@@ -722,8 +745,8 @@ impl generator::FingerprintFamily for AtomPairFingerprintGenerator {
         &self.arguments.fingerprint_arguments
     }
 
-    fn result_size(&self) -> u64 {
-        self.atom_environment_generator.result_size(&self.arguments)
+    fn result_size(&self) -> Result<u64, FingerprintError> {
+        Ok(self.atom_environment_generator.result_size(&self.arguments))
     }
 
     fn arguments_info_string(&self) -> String {
@@ -823,6 +846,11 @@ impl AtomPairFingerprintGenerator {
         match generator::generator_from_json(json)? {
             generator::RestoredFingerprintGenerator::AtomPair(generator) => Ok(generator),
             generator::RestoredFingerprintGenerator::Morgan(_) => {
+                Err(FingerprintError::InvalidArgumentsJson(
+                    "serialized generator is not an AtomPair generator".to_string(),
+                ))
+            }
+            generator::RestoredFingerprintGenerator::TopologicalTorsion(_) => {
                 Err(FingerprintError::InvalidArgumentsJson(
                     "serialized generator is not an AtomPair generator".to_string(),
                 ))
@@ -1187,8 +1215,16 @@ impl From<crate::chemistry::ciplabeler::CipLabelerError> for AtomPairCodeError {
 
 impl From<AtomPairCodeError> for FingerprintError {
     fn from(error: AtomPairCodeError) -> Self {
-        Self::AtomPair {
-            reason: error.to_string(),
+        match error {
+            AtomPairCodeError::AtomProperty(AtomPropertyError::MissingExplicitValence { atom }) => {
+                Self::Valence(crate::ValenceError::ExplicitValenceCacheNotInitialized { atom })
+            }
+            AtomPairCodeError::AtomProperty(AtomPropertyError::Valence(error)) => {
+                Self::Valence(error)
+            }
+            other => Self::AtomPair {
+                reason: other.to_string(),
+            },
         }
     }
 }
@@ -1605,7 +1641,7 @@ mod tests {
         let original = AtomPairArguments::default();
         assert_eq!(
             original.to_json(),
-            r#"{"type":"AtomPairArguments","use2D":true,"minDistance":1,"maxDistance":30,"countSimulation":true,"fpSize":2048,"numBitsPerFeature":1,"includeChirality":false,"countBounds":[1,2,4,8]}"#
+            r#"{"type":"AtomPairArguments","use2D":"true","minDistance":"1","maxDistance":"30","countSimulation":"true","fpSize":"2048","numBitsPerFeature":"1","includeChirality":"false","countBounds":["1","2","4","8"]}"#
         );
 
         let mut restored =
@@ -1724,7 +1760,7 @@ mod tests {
         );
         assert_eq!(
             original.to_json(),
-            r#"{"type":"AtomPairAtomInvGenerator","includeChirality":true,"topologicalTorsionCorrection":true}"#
+            r#"{"type":"AtomPairAtomInvGenerator","includeChirality":"true","topologicalTorsionCorrection":"true"}"#
         );
 
         let mut restored = AtomPairAtomInvariantsGenerator::default();
@@ -2310,7 +2346,7 @@ mod tests {
         );
         assert_eq!(
             generator.to_json(),
-            r#"{"name":"FingerprintGenerator","fingerprintArguments":{"type":"AtomPairArguments","use2D":true,"minDistance":1,"maxDistance":30,"countSimulation":true,"fpSize":2048,"numBitsPerFeature":1,"includeChirality":false,"countBounds":[1,2,4,8]},"atomEnvironmentGenerator":{"type":"AtomPairEnvGenerator"},"atomInvariantsGenerator":{"type":"AtomPairAtomInvGenerator","includeChirality":false,"topologicalTorsionCorrection":false}}"#
+            r#"{"name":"FingerprintGenerator","fingerprintArguments":{"type":"AtomPairArguments","use2D":"true","minDistance":"1","maxDistance":"30","countSimulation":"true","fpSize":"2048","numBitsPerFeature":"1","includeChirality":"false","countBounds":["1","2","4","8"]},"atomEnvironmentGenerator":{"type":"AtomPairEnvGenerator"},"atomInvariantsGenerator":{"type":"AtomPairAtomInvGenerator","includeChirality":"false","topologicalTorsionCorrection":"false"}}"#
         );
         let core = generator::FingerprintGenerator::new(&generator);
         core.from_json("").unwrap();

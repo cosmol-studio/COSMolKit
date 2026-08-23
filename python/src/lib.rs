@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{BufReader, Write};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use cosmolkit_core::io::molblock::{self, SdfFormat};
 use cosmolkit_core::io::sdf::SdfReader;
@@ -12,7 +12,7 @@ use numpy::{
 };
 use pyo3::PyErr;
 use pyo3::exceptions::{
-    PyIndexError, PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError,
+    PyIndexError, PyNotImplementedError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError,
 };
 use pyo3::prelude::*;
 use pyo3::types::{
@@ -207,6 +207,10 @@ fn inchi_output_string(
 
 fn fingerprint_pyerr(error: cosmolkit_core::FingerprintError) -> PyErr {
     PyValueError::new_err(error.to_string())
+}
+
+fn normalize_fingerprint_indices<T>(values: Option<Vec<T>>) -> Option<Vec<T>> {
+    values.filter(|values| !values.is_empty())
 }
 
 fn descriptor_pyerr(error: cosmolkit_core::DescriptorError) -> PyErr {
@@ -3194,7 +3198,7 @@ Invalid input records remain ``None`` at their original positions.
         custom_atom_invariants: Option<Vec<u32>>,
         n_jobs: Option<usize>,
         progress_bar: Option<bool>,
-    ) -> PyResult<Vec<Option<AtomPairSparseCountFingerprint>>> {
+    ) -> PyResult<Vec<Option<PySparseCountFingerprint>>> {
         let params = make_atom_pair_fingerprint_params(
             n_bits,
             min_distance,
@@ -3219,7 +3223,7 @@ Invalid input records remain ``None`` at their original positions.
             .map(|values| {
                 values
                     .into_iter()
-                    .map(|value| value.map(|inner| AtomPairSparseCountFingerprint { inner }))
+                    .map(|value| value.map(|inner| PySparseCountFingerprint { inner }))
                     .collect()
             })
             .map_err(batch_validation_pyerr)
@@ -3258,7 +3262,7 @@ Invalid input records remain ``None`` at their original positions.
         custom_atom_invariants: Option<Vec<u32>>,
         n_jobs: Option<usize>,
         progress_bar: Option<bool>,
-    ) -> PyResult<Vec<Option<AtomPairSparseCountFingerprint>>> {
+    ) -> PyResult<Vec<Option<PySparseCountFingerprint>>> {
         let params = make_atom_pair_fingerprint_params(
             n_bits,
             min_distance,
@@ -3283,7 +3287,7 @@ Invalid input records remain ``None`` at their original positions.
             .map(|values| {
                 values
                     .into_iter()
-                    .map(|value| value.map(|inner| AtomPairSparseCountFingerprint { inner }))
+                    .map(|value| value.map(|inner| PySparseCountFingerprint { inner }))
                     .collect()
             })
             .map_err(batch_validation_pyerr)
@@ -3322,7 +3326,7 @@ Invalid input records remain ``None`` at their original positions.
         custom_atom_invariants: Option<Vec<u32>>,
         n_jobs: Option<usize>,
         progress_bar: Option<bool>,
-    ) -> PyResult<Vec<Option<AtomPairSparseBitFingerprint>>> {
+    ) -> PyResult<Vec<Option<PySparseBitFingerprint>>> {
         let params = make_atom_pair_fingerprint_params(
             n_bits,
             min_distance,
@@ -3347,7 +3351,7 @@ Invalid input records remain ``None`` at their original positions.
             .map(|values| {
                 values
                     .into_iter()
-                    .map(|value| value.map(|inner| AtomPairSparseBitFingerprint { inner }))
+                    .map(|value| value.map(|inner| PySparseBitFingerprint { inner }))
                     .collect()
             })
             .map_err(batch_validation_pyerr)
@@ -5701,7 +5705,7 @@ Return the source-width sparse-count AtomPair fingerprint.
         ignore_atoms: Option<Vec<usize>>,
         conformer_id: i32,
         custom_atom_invariants: Option<Vec<u32>>,
-    ) -> PyResult<AtomPairSparseCountFingerprint> {
+    ) -> PyResult<PySparseCountFingerprint> {
         let params = make_atom_pair_fingerprint_params(
             n_bits,
             min_distance,
@@ -5721,7 +5725,7 @@ Return the source-width sparse-count AtomPair fingerprint.
             .map_err(fingerprint_pyerr)?;
         generator
             .sparse_count_fingerprint(&self.inner, &mut atom_pair_call_arguments(&params))
-            .map(|inner| AtomPairSparseCountFingerprint { inner })
+            .map(|inner| PySparseCountFingerprint { inner })
             .map_err(fingerprint_pyerr)
     }
 
@@ -5757,7 +5761,7 @@ Return the folded-count AtomPair fingerprint.
         ignore_atoms: Option<Vec<usize>>,
         conformer_id: i32,
         custom_atom_invariants: Option<Vec<u32>>,
-    ) -> PyResult<AtomPairSparseCountFingerprint> {
+    ) -> PyResult<PySparseCountFingerprint> {
         let params = make_atom_pair_fingerprint_params(
             n_bits,
             min_distance,
@@ -5777,7 +5781,7 @@ Return the folded-count AtomPair fingerprint.
             .map_err(fingerprint_pyerr)?;
         generator
             .count_fingerprint(&self.inner, &mut atom_pair_call_arguments(&params))
-            .map(|inner| AtomPairSparseCountFingerprint { inner })
+            .map(|inner| PySparseCountFingerprint { inner })
             .map_err(fingerprint_pyerr)
     }
 
@@ -5813,7 +5817,7 @@ Return the sparse-bit AtomPair fingerprint.
         ignore_atoms: Option<Vec<usize>>,
         conformer_id: i32,
         custom_atom_invariants: Option<Vec<u32>>,
-    ) -> PyResult<AtomPairSparseBitFingerprint> {
+    ) -> PyResult<PySparseBitFingerprint> {
         let params = make_atom_pair_fingerprint_params(
             n_bits,
             min_distance,
@@ -5833,7 +5837,7 @@ Return the sparse-bit AtomPair fingerprint.
             .map_err(fingerprint_pyerr)?;
         generator
             .sparse_bit_fingerprint(&self.inner, &mut atom_pair_call_arguments(&params))
-            .map(|inner| AtomPairSparseBitFingerprint { inner })
+            .map(|inner| PySparseBitFingerprint { inner })
             .map_err(fingerprint_pyerr)
     }
 
@@ -7679,6 +7683,723 @@ Commit staged edits and return a new molecule.
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "SparseCountFingerprint", skip_from_py_object)]
+#[derive(Clone)]
+struct PySparseCountFingerprint {
+    inner: cosmolkit_core::SparseCountFingerprint,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl PySparseCountFingerprint {
+    fn size(&self) -> u64 {
+        self.inner.size()
+    }
+
+    fn get_value(&self, bit_id: u64) -> i32 {
+        self.inner.get_val(bit_id)
+    }
+
+    fn value(&self, bit_id: u64) -> i32 {
+        self.inner.get_val(bit_id)
+    }
+
+    fn nonzero_elements(&self) -> BTreeMap<u64, i32> {
+        self.inner.nonzero_elements().clone()
+    }
+
+    fn __len__(&self) -> PyResult<usize> {
+        usize::try_from(self.inner.size())
+            .map_err(|_| PyOverflowError::new_err("fingerprint size exceeds Python platform size"))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "SparseCountFingerprint(size={}, nonzero={})",
+            self.inner.size(),
+            self.inner.nonzero_elements().len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "SparseBitFingerprint", skip_from_py_object)]
+#[derive(Clone)]
+struct PySparseBitFingerprint {
+    inner: cosmolkit_core::SparseBitFingerprint,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl PySparseBitFingerprint {
+    fn size(&self) -> u64 {
+        self.inner.size()
+    }
+
+    fn on_bits(&self) -> Vec<u64> {
+        self.inner.on_bits().iter().copied().collect()
+    }
+
+    fn __len__(&self) -> PyResult<usize> {
+        usize::try_from(self.inner.size())
+            .map_err(|_| PyOverflowError::new_err("fingerprint size exceeds Python platform size"))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "SparseBitFingerprint(size={}, on_bits={})",
+            self.inner.size(),
+            self.inner.on_bits().len()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "AdditionalOutput", skip_from_py_object)]
+#[derive(Clone, Default)]
+struct PyAdditionalOutput {
+    inner: cosmolkit_core::AdditionalOutput,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl PyAdditionalOutput {
+    #[new]
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn allocate_atom_to_bits(&mut self) {
+        self.inner.allocate_atom_to_bits();
+    }
+
+    fn collect_atom_to_bits(&mut self) {
+        self.inner.allocate_atom_to_bits();
+    }
+
+    fn allocate_bit_info_map(&mut self) {
+        self.inner.allocate_bit_info_map();
+    }
+
+    fn collect_bit_info_map(&mut self) {
+        self.inner.allocate_bit_info_map();
+    }
+
+    fn allocate_bit_paths(&mut self) {
+        self.inner.allocate_bit_paths();
+    }
+
+    fn collect_bit_paths(&mut self) {
+        self.inner.allocate_bit_paths();
+    }
+
+    fn allocate_atom_counts(&mut self) {
+        self.inner.allocate_atom_counts();
+    }
+
+    fn collect_atom_counts(&mut self) {
+        self.inner.allocate_atom_counts();
+    }
+
+    fn allocate_atoms_per_bit(&mut self) {
+        self.inner.allocate_atoms_per_bit();
+    }
+
+    fn collect_atoms_per_bit(&mut self) {
+        self.inner.allocate_atoms_per_bit();
+    }
+
+    fn atom_to_bits(&self) -> Option<Vec<Vec<u64>>> {
+        self.inner.atom_to_bits.clone()
+    }
+
+    fn bit_info_map(&self) -> Option<BTreeMap<u64, Vec<(u32, u32)>>> {
+        self.inner.bit_info_map.clone()
+    }
+
+    fn bit_paths(&self) -> Option<BTreeMap<u64, Vec<Vec<usize>>>> {
+        self.inner.bit_paths.clone()
+    }
+
+    fn atom_counts(&self) -> Option<Vec<u32>> {
+        self.inner.atom_counts.clone()
+    }
+
+    fn atoms_per_bit(&self) -> Option<BTreeMap<u64, Vec<Vec<usize>>>> {
+        self.inner.atoms_per_bit.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AdditionalOutput(atom_to_bits={}, bit_info_map={}, bit_paths={}, atom_counts={}, atoms_per_bit={})",
+            self.inner.atom_to_bits.is_some(),
+            self.inner.bit_info_map.is_some(),
+            self.inner.bit_paths.is_some(),
+            self.inner.atom_counts.is_some(),
+            self.inner.atoms_per_bit.is_some()
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "AtomPairsParameters", frozen, skip_from_py_object)]
+struct PyAtomPairsParameters;
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl PyAtomPairsParameters {
+    #[classattr]
+    const VERSION: &'static str = cosmolkit_core::ATOM_PAIRS_VERSION;
+
+    #[classattr]
+    const NUM_TYPE_BITS: u32 = cosmolkit_core::ATOM_PAIR_NUM_TYPE_BITS;
+
+    #[classattr]
+    const NUM_PI_BITS: u32 = cosmolkit_core::ATOM_PAIR_NUM_PI_BITS;
+
+    #[classattr]
+    const NUM_BRANCH_BITS: u32 = cosmolkit_core::ATOM_PAIR_NUM_BRANCH_BITS;
+
+    #[classattr]
+    const NUM_CHIRAL_BITS: u32 = cosmolkit_core::ATOM_PAIR_NUM_CHIRAL_BITS;
+
+    #[classattr]
+    const CODE_SIZE: u32 = cosmolkit_core::ATOM_PAIR_CODE_SIZE;
+
+    #[classattr]
+    const NUM_PATH_BITS: u32 = cosmolkit_core::ATOM_PAIR_NUM_PATH_BITS;
+
+    #[classattr]
+    const MAX_PATH_LENGTH: u32 = cosmolkit_core::ATOM_PAIR_MAX_PATH_LENGTH;
+
+    #[classattr]
+    const NUM_ATOM_PAIR_FINGERPRINT_BITS: u32 = cosmolkit_core::ATOM_PAIR_NUM_FINGERPRINT_BITS;
+
+    #[classattr]
+    fn atom_types() -> Vec<u32> {
+        cosmolkit_core::ATOM_PAIR_ATOM_NUMBER_TYPES.to_vec()
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "AtomPairAtomInvariantsGenerator", skip_from_py_object)]
+#[derive(Clone)]
+struct PyAtomPairAtomInvariantsGenerator {
+    inner: cosmolkit_core::fingerprint::AtomPairAtomInvGenerator,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl PyAtomPairAtomInvariantsGenerator {
+    #[new]
+    #[pyo3(signature = (include_chirality=false, topological_torsion_correction=false))]
+    fn new(include_chirality: bool, topological_torsion_correction: bool) -> Self {
+        Self {
+            inner: cosmolkit_core::fingerprint::AtomPairAtomInvGenerator::new(
+                include_chirality,
+                topological_torsion_correction,
+            ),
+        }
+    }
+
+    fn info_string(&self) -> String {
+        self.inner.infoString()
+    }
+
+    fn to_json(&self) -> String {
+        self.inner.toJSON()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("AtomPairAtomInvariantsGenerator({})", self.info_string())
+    }
+}
+
+#[derive(Clone)]
+struct PyTopologicalTorsionGeneratorState {
+    arguments: cosmolkit_core::fingerprint::TopologicalTorsionArguments,
+    atom_invariants_generator: cosmolkit_core::fingerprint::AtomPairAtomInvGenerator,
+}
+
+impl PyTopologicalTorsionGeneratorState {
+    fn build(
+        &self,
+    ) -> Result<
+        cosmolkit_core::TopologicalTorsionFingerprintGenerator,
+        cosmolkit_core::FingerprintError,
+    > {
+        cosmolkit_core::fingerprint::getTopologicalTorsionGenerator(
+            &self.arguments,
+            Some(self.atom_invariants_generator.clone()),
+            true,
+        )
+    }
+}
+
+type SharedTopologicalTorsionGenerator = Arc<Mutex<PyTopologicalTorsionGeneratorState>>;
+
+fn lock_topological_torsion_generator(
+    state: &SharedTopologicalTorsionGenerator,
+) -> PyResult<MutexGuard<'_, PyTopologicalTorsionGeneratorState>> {
+    state.lock().map_err(|_| {
+        PyRuntimeError::new_err("Topological Torsion generator state lock was poisoned")
+    })
+}
+
+fn topological_torsion_call_arguments(
+    from_atoms: Option<Vec<usize>>,
+    ignore_atoms: Option<Vec<usize>>,
+    conf_id: i32,
+    custom_atom_invariants: Option<Vec<u32>>,
+    custom_bond_invariants: Option<Vec<u32>>,
+    additional_output: Option<&PyAdditionalOutput>,
+) -> cosmolkit_core::fingerprint::FingerprintFuncArguments {
+    // RDKit source: FingerprintGeneratorWrapper.cpp lines 43-82.
+    // RDKit✔️✔️: if (!py_fromAtoms.is_none()) {
+    // RDKit✔️✔️:   unsigned int len = python::len(py_fromAtoms);
+    // RDKit✔️✔️:   if (len) { fromAtoms.reset(new std::vector<std::uint32_t>()); ... }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: if (!py_ignoreAtoms.is_none()) { ... if (len) { ... } }
+    // RDKit✔️✔️: if (!py_atomInvs.is_none()) { ... if (len) { ... } }
+    // RDKit✔️✔️: if (!py_bondInvs.is_none()) { ... if (len) { ... } }
+    cosmolkit_core::fingerprint::FingerprintFuncArguments {
+        from_atoms: normalize_fingerprint_indices(from_atoms),
+        ignore_atoms: normalize_fingerprint_indices(ignore_atoms),
+        conf_id,
+        custom_atom_invariants: normalize_fingerprint_indices(custom_atom_invariants),
+        custom_bond_invariants: normalize_fingerprint_indices(custom_bond_invariants),
+        additional_output: additional_output.map(|output| output.inner.clone()),
+    }
+}
+
+fn restore_topological_torsion_additional_output(
+    arguments: &mut cosmolkit_core::fingerprint::FingerprintFuncArguments,
+    output: &mut Option<PyRefMut<'_, PyAdditionalOutput>>,
+) {
+    if let (Some(output), Some(updated)) = (output.as_mut(), arguments.additional_output.take()) {
+        output.inner = updated;
+    }
+}
+
+fn require_complete_fingerprint_bulk<T>(values: Vec<Option<T>>) -> PyResult<Vec<T>> {
+    values
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            value.ok_or_else(|| {
+                PyValueError::new_err(format!("fingerprint bulk result at index {index} is null"))
+            })
+        })
+        .collect()
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "TopologicalTorsionFingerprintOptions", skip_from_py_object)]
+#[derive(Clone)]
+struct PyTopologicalTorsionFingerprintOptions {
+    state: SharedTopologicalTorsionGenerator,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl PyTopologicalTorsionFingerprintOptions {
+    #[getter]
+    fn count_simulation(&self) -> PyResult<bool> {
+        Ok(lock_topological_torsion_generator(&self.state)?
+            .arguments
+            .fingerprint_arguments
+            .df_count_simulation)
+    }
+
+    #[setter]
+    fn set_count_simulation(&self, value: bool) -> PyResult<()> {
+        lock_topological_torsion_generator(&self.state)?
+            .arguments
+            .fingerprint_arguments
+            .df_count_simulation = value;
+        Ok(())
+    }
+
+    #[getter]
+    fn include_chirality(&self) -> PyResult<bool> {
+        Ok(lock_topological_torsion_generator(&self.state)?
+            .arguments
+            .fingerprint_arguments
+            .df_include_chirality)
+    }
+
+    #[setter]
+    fn set_include_chirality(&self, value: bool) -> PyResult<()> {
+        lock_topological_torsion_generator(&self.state)?
+            .arguments
+            .fingerprint_arguments
+            .df_include_chirality = value;
+        Ok(())
+    }
+
+    #[getter]
+    fn fp_size(&self) -> PyResult<u32> {
+        Ok(lock_topological_torsion_generator(&self.state)?
+            .arguments
+            .fingerprint_arguments
+            .d_fp_size)
+    }
+
+    #[setter]
+    fn set_fp_size(&self, value: u32) -> PyResult<()> {
+        lock_topological_torsion_generator(&self.state)?
+            .arguments
+            .fingerprint_arguments
+            .d_fp_size = value;
+        Ok(())
+    }
+
+    #[getter]
+    fn num_bits_per_feature(&self) -> PyResult<u32> {
+        Ok(lock_topological_torsion_generator(&self.state)?
+            .arguments
+            .fingerprint_arguments
+            .d_num_bits_per_feature)
+    }
+
+    #[setter]
+    fn set_num_bits_per_feature(&self, value: u32) -> PyResult<()> {
+        lock_topological_torsion_generator(&self.state)?
+            .arguments
+            .fingerprint_arguments
+            .d_num_bits_per_feature = value;
+        Ok(())
+    }
+
+    #[getter]
+    fn torsion_atom_count(&self) -> PyResult<u32> {
+        Ok(lock_topological_torsion_generator(&self.state)?
+            .arguments
+            .d_torsion_atom_count)
+    }
+
+    #[setter]
+    fn set_torsion_atom_count(&self, value: u32) -> PyResult<()> {
+        lock_topological_torsion_generator(&self.state)?
+            .arguments
+            .d_torsion_atom_count = value;
+        Ok(())
+    }
+
+    #[getter]
+    fn only_shortest_paths(&self) -> PyResult<bool> {
+        Ok(lock_topological_torsion_generator(&self.state)?
+            .arguments
+            .df_only_shortest_paths)
+    }
+
+    #[setter]
+    fn set_only_shortest_paths(&self, value: bool) -> PyResult<()> {
+        lock_topological_torsion_generator(&self.state)?
+            .arguments
+            .df_only_shortest_paths = value;
+        Ok(())
+    }
+
+    #[getter]
+    fn count_bounds(&self) -> PyResult<Vec<u32>> {
+        Ok(lock_topological_torsion_generator(&self.state)?
+            .arguments
+            .fingerprint_arguments
+            .d_count_bounds
+            .clone())
+    }
+
+    fn set_count_bounds(&self, bounds: Vec<u32>) -> PyResult<()> {
+        lock_topological_torsion_generator(&self.state)?
+            .arguments
+            .fingerprint_arguments
+            .d_count_bounds = bounds;
+        Ok(())
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        let state = lock_topological_torsion_generator(&self.state)?;
+        Ok(format!(
+            "TopologicalTorsionFingerprintOptions(torsion_atom_count={}, fp_size={}, count_simulation={}, include_chirality={}, only_shortest_paths={})",
+            state.arguments.d_torsion_atom_count,
+            state.arguments.fingerprint_arguments.d_fp_size,
+            state.arguments.fingerprint_arguments.df_count_simulation,
+            state.arguments.fingerprint_arguments.df_include_chirality,
+            state.arguments.df_only_shortest_paths
+        ))
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(name = "TopologicalTorsionFingerprintGenerator", skip_from_py_object)]
+#[derive(Clone)]
+struct PyTopologicalTorsionFingerprintGenerator {
+    state: SharedTopologicalTorsionGenerator,
+}
+
+impl PyTopologicalTorsionFingerprintGenerator {
+    fn core_generator(&self) -> PyResult<cosmolkit_core::TopologicalTorsionFingerprintGenerator> {
+        lock_topological_torsion_generator(&self.state)?
+            .build()
+            .map_err(fingerprint_pyerr)
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl PyTopologicalTorsionFingerprintGenerator {
+    #[pyo3(signature = (molecule, from_atoms=None, ignore_atoms=None, conf_id=-1, custom_atom_invariants=None, custom_bond_invariants=None, additional_output=None))]
+    fn get_sparse_count_fingerprint(
+        &self,
+        molecule: &Molecule,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        conf_id: i32,
+        custom_atom_invariants: Option<Vec<u32>>,
+        custom_bond_invariants: Option<Vec<u32>>,
+        mut additional_output: Option<PyRefMut<'_, PyAdditionalOutput>>,
+    ) -> PyResult<PySparseCountFingerprint> {
+        let mut arguments = topological_torsion_call_arguments(
+            from_atoms,
+            ignore_atoms,
+            conf_id,
+            custom_atom_invariants,
+            custom_bond_invariants,
+            additional_output.as_deref(),
+        );
+        let result = self
+            .core_generator()?
+            .getSparseCountFingerprint(&molecule.inner, &mut arguments);
+        restore_topological_torsion_additional_output(&mut arguments, &mut additional_output);
+        result
+            .map(|inner| PySparseCountFingerprint { inner })
+            .map_err(fingerprint_pyerr)
+    }
+
+    #[pyo3(signature = (molecule, from_atoms=None, ignore_atoms=None, conf_id=-1, custom_atom_invariants=None, custom_bond_invariants=None, additional_output=None))]
+    fn get_sparse_fingerprint(
+        &self,
+        molecule: &Molecule,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        conf_id: i32,
+        custom_atom_invariants: Option<Vec<u32>>,
+        custom_bond_invariants: Option<Vec<u32>>,
+        mut additional_output: Option<PyRefMut<'_, PyAdditionalOutput>>,
+    ) -> PyResult<PySparseBitFingerprint> {
+        let mut arguments = topological_torsion_call_arguments(
+            from_atoms,
+            ignore_atoms,
+            conf_id,
+            custom_atom_invariants,
+            custom_bond_invariants,
+            additional_output.as_deref(),
+        );
+        let result = self
+            .core_generator()?
+            .getSparseFingerprint(&molecule.inner, &mut arguments);
+        restore_topological_torsion_additional_output(&mut arguments, &mut additional_output);
+        result
+            .map(|inner| PySparseBitFingerprint { inner })
+            .map_err(fingerprint_pyerr)
+    }
+
+    #[pyo3(signature = (molecule, from_atoms=None, ignore_atoms=None, conf_id=-1, custom_atom_invariants=None, custom_bond_invariants=None, additional_output=None))]
+    fn get_count_fingerprint(
+        &self,
+        molecule: &Molecule,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        conf_id: i32,
+        custom_atom_invariants: Option<Vec<u32>>,
+        custom_bond_invariants: Option<Vec<u32>>,
+        mut additional_output: Option<PyRefMut<'_, PyAdditionalOutput>>,
+    ) -> PyResult<PySparseCountFingerprint> {
+        let mut arguments = topological_torsion_call_arguments(
+            from_atoms,
+            ignore_atoms,
+            conf_id,
+            custom_atom_invariants,
+            custom_bond_invariants,
+            additional_output.as_deref(),
+        );
+        let result = self
+            .core_generator()?
+            .getCountFingerprint(&molecule.inner, &mut arguments);
+        restore_topological_torsion_additional_output(&mut arguments, &mut additional_output);
+        result
+            .map(|inner| PySparseCountFingerprint { inner })
+            .map_err(fingerprint_pyerr)
+    }
+
+    #[pyo3(signature = (molecule, from_atoms=None, ignore_atoms=None, conf_id=-1, custom_atom_invariants=None, custom_bond_invariants=None, additional_output=None))]
+    fn get_fingerprint(
+        &self,
+        molecule: &Molecule,
+        from_atoms: Option<Vec<usize>>,
+        ignore_atoms: Option<Vec<usize>>,
+        conf_id: i32,
+        custom_atom_invariants: Option<Vec<u32>>,
+        custom_bond_invariants: Option<Vec<u32>>,
+        mut additional_output: Option<PyRefMut<'_, PyAdditionalOutput>>,
+    ) -> PyResult<Fingerprint> {
+        let mut arguments = topological_torsion_call_arguments(
+            from_atoms,
+            ignore_atoms,
+            conf_id,
+            custom_atom_invariants,
+            custom_bond_invariants,
+            additional_output.as_deref(),
+        );
+        let result = self
+            .core_generator()?
+            .getFingerprint(&molecule.inner, &mut arguments);
+        restore_topological_torsion_additional_output(&mut arguments, &mut additional_output);
+        result
+            .map(|inner| Fingerprint { inner })
+            .map_err(fingerprint_pyerr)
+    }
+
+    #[pyo3(signature = (molecules, num_threads=1))]
+    fn get_sparse_count_fingerprints(
+        &self,
+        molecules: Vec<Molecule>,
+        num_threads: i32,
+    ) -> PyResult<Vec<PySparseCountFingerprint>> {
+        let refs = molecules
+            .iter()
+            .map(|molecule| Some(&molecule.inner))
+            .collect::<Vec<_>>();
+        require_complete_fingerprint_bulk(
+            self.core_generator()?
+                .getSparseCountFingerprints(&refs, num_threads)
+                .map_err(fingerprint_pyerr)?,
+        )
+        .map(|values| {
+            values
+                .into_iter()
+                .map(|inner| PySparseCountFingerprint { inner })
+                .collect()
+        })
+    }
+
+    #[pyo3(signature = (molecules, num_threads=1))]
+    fn get_sparse_fingerprints(
+        &self,
+        molecules: Vec<Molecule>,
+        num_threads: i32,
+    ) -> PyResult<Vec<PySparseBitFingerprint>> {
+        let refs = molecules
+            .iter()
+            .map(|molecule| Some(&molecule.inner))
+            .collect::<Vec<_>>();
+        require_complete_fingerprint_bulk(
+            self.core_generator()?
+                .getSparseFingerprints(&refs, num_threads)
+                .map_err(fingerprint_pyerr)?,
+        )
+        .map(|values| {
+            values
+                .into_iter()
+                .map(|inner| PySparseBitFingerprint { inner })
+                .collect()
+        })
+    }
+
+    #[pyo3(signature = (molecules, num_threads=1))]
+    fn get_count_fingerprints(
+        &self,
+        molecules: Vec<Molecule>,
+        num_threads: i32,
+    ) -> PyResult<Vec<PySparseCountFingerprint>> {
+        let refs = molecules
+            .iter()
+            .map(|molecule| Some(&molecule.inner))
+            .collect::<Vec<_>>();
+        require_complete_fingerprint_bulk(
+            self.core_generator()?
+                .getCountFingerprints(&refs, num_threads)
+                .map_err(fingerprint_pyerr)?,
+        )
+        .map(|values| {
+            values
+                .into_iter()
+                .map(|inner| PySparseCountFingerprint { inner })
+                .collect()
+        })
+    }
+
+    #[pyo3(signature = (molecules, num_threads=1))]
+    fn get_fingerprints(
+        &self,
+        molecules: Vec<Molecule>,
+        num_threads: i32,
+    ) -> PyResult<Vec<Fingerprint>> {
+        let refs = molecules
+            .iter()
+            .map(|molecule| Some(&molecule.inner))
+            .collect::<Vec<_>>();
+        require_complete_fingerprint_bulk(
+            self.core_generator()?
+                .getFingerprints(&refs, num_threads)
+                .map_err(fingerprint_pyerr)?,
+        )
+        .map(|values| {
+            values
+                .into_iter()
+                .map(|inner| Fingerprint { inner })
+                .collect()
+        })
+    }
+
+    fn get_options(&self) -> PyTopologicalTorsionFingerprintOptions {
+        PyTopologicalTorsionFingerprintOptions {
+            state: Arc::clone(&self.state),
+        }
+    }
+
+    fn get_info_string(&self) -> PyResult<String> {
+        // RDKit source: FingerprintGenerator.cpp lines 157-173.
+        // RDKit✔️✔️: return dp_fingerprintArguments->commonArgumentsString() + separator +
+        // RDKit✔️✔️:        dp_fingerprintArguments->infoString() + separator +
+        // RDKit✔️✔️:        dp_atomEnvironmentGenerator->infoString() + separator +
+        // RDKit✔️✔️:        (dp_atomInvariantsGenerator ? ... : ...) +
+        // RDKit✔️✔️:        (dp_bondInvariantsGenerator ? ... : "No bond invariants generator");
+        let state = lock_topological_torsion_generator(&self.state)?;
+        Ok(format!(
+            "{} --- {} --- {} --- {} --- No bond invariants generator",
+            state
+                .arguments
+                .fingerprint_arguments
+                .common_arguments_string(),
+            state.arguments.infoString(),
+            cosmolkit_core::fingerprint::TopologicalTorsionEnvGenerator::new().infoString(),
+            state.atom_invariants_generator.infoString(),
+        ))
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        let generator = self.core_generator()?;
+        Ok(cosmolkit_core::fingerprint::generatorToJSON(
+            &cosmolkit_core::fingerprint::TypedFingerprintGenerator::TopologicalTorsion(generator),
+        ))
+    }
+
+    #[staticmethod]
+    fn from_json(json: &str) -> PyResult<Self> {
+        topological_torsion_generator_from_json(json)
+    }
+
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "TopologicalTorsionFingerprintGenerator({})",
+            self.get_info_string()?
+        ))
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(skip_from_py_object)]
 #[derive(Clone)]
 struct Fingerprint {
@@ -7725,125 +8446,9 @@ Return the Tanimoto similarity to another fingerprint.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(skip_from_py_object)]
 #[derive(Clone)]
-struct AtomPairSparseCountFingerprint {
-    inner: cosmolkit_core::SparseCountFingerprint,
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
-#[pymethods]
-impl AtomPairSparseCountFingerprint {
-    fn size(&self) -> u64 {
-        self.inner.size()
-    }
-
-    fn nonzero_elements(&self) -> BTreeMap<u64, i32> {
-        self.inner.nonzero_elements().clone()
-    }
-
-    fn value(&self, bit: u64) -> i32 {
-        self.inner.get_val(bit)
-    }
-
-    fn __len__(&self) -> usize {
-        usize::try_from(self.inner.size()).unwrap_or(usize::MAX)
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "AtomPairSparseCountFingerprint(size={}, nonzero={})",
-            self.inner.size(),
-            self.inner.nonzero_elements().len()
-        )
-    }
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(skip_from_py_object)]
-#[derive(Clone)]
-struct AtomPairSparseBitFingerprint {
-    inner: cosmolkit_core::SparseBitFingerprint,
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
-#[pymethods]
-impl AtomPairSparseBitFingerprint {
-    fn size(&self) -> u64 {
-        self.inner.size()
-    }
-
-    fn on_bits(&self) -> Vec<u64> {
-        self.inner.on_bits().iter().copied().collect()
-    }
-
-    fn __len__(&self) -> usize {
-        usize::try_from(self.inner.size()).unwrap_or(usize::MAX)
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "AtomPairSparseBitFingerprint(size={}, on_bits={})",
-            self.inner.size(),
-            self.inner.on_bits().len()
-        )
-    }
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(skip_from_py_object)]
-#[derive(Clone)]
-struct AtomPairAdditionalOutput {
-    atom_counts: Vec<u32>,
-    atom_to_bits: Vec<Vec<u64>>,
-    bit_info_map: BTreeMap<u64, Vec<(u32, u32)>>,
-    atoms_per_bit: BTreeMap<u64, Vec<Vec<usize>>>,
-}
-
-impl From<cosmolkit_core::AdditionalOutput> for AtomPairAdditionalOutput {
-    fn from(value: cosmolkit_core::AdditionalOutput) -> Self {
-        Self {
-            atom_counts: value.atom_counts.unwrap_or_default(),
-            atom_to_bits: value.atom_to_bits.unwrap_or_default(),
-            bit_info_map: value.bit_info_map.unwrap_or_default(),
-            atoms_per_bit: value.atoms_per_bit.unwrap_or_default(),
-        }
-    }
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
-#[pymethods]
-impl AtomPairAdditionalOutput {
-    fn atom_counts(&self) -> Vec<u32> {
-        self.atom_counts.clone()
-    }
-
-    fn atom_to_bits(&self) -> Vec<Vec<u64>> {
-        self.atom_to_bits.clone()
-    }
-
-    fn bit_info_map(&self) -> BTreeMap<u64, Vec<(u32, u32)>> {
-        self.bit_info_map.clone()
-    }
-
-    fn atoms_per_bit(&self) -> BTreeMap<u64, Vec<Vec<usize>>> {
-        self.atoms_per_bit.clone()
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "AtomPairAdditionalOutput(atom_counts={}, bit_info_bits={}, atoms_per_bit={})",
-            self.atom_counts.len(),
-            self.bit_info_map.len(),
-            self.atoms_per_bit.len()
-        )
-    }
-}
-
-#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(skip_from_py_object)]
-#[derive(Clone)]
 struct AtomPairFingerprintResult {
     fingerprint: Fingerprint,
-    additional_output: Option<AtomPairAdditionalOutput>,
+    additional_output: Option<PyAdditionalOutput>,
 }
 
 impl From<cosmolkit_core::AtomPairFingerprintOutput> for AtomPairFingerprintResult {
@@ -7852,7 +8457,9 @@ impl From<cosmolkit_core::AtomPairFingerprintOutput> for AtomPairFingerprintResu
             fingerprint: Fingerprint {
                 inner: value.fingerprint,
             },
-            additional_output: value.additional_output.map(Into::into),
+            additional_output: value
+                .additional_output
+                .map(|inner| PyAdditionalOutput { inner }),
         }
     }
 }
@@ -7864,7 +8471,7 @@ impl AtomPairFingerprintResult {
         self.fingerprint.clone()
     }
 
-    fn additional_output(&self) -> PyResult<AtomPairAdditionalOutput> {
+    fn additional_output(&self) -> PyResult<PyAdditionalOutput> {
         self.additional_output.clone().ok_or_else(|| {
             PyValueError::new_err(
                 "AtomPair additional output was not collected for this fingerprint result",
@@ -9077,6 +9684,452 @@ fn inchi_to_key(inchi: &str) -> PyResult<Option<String>> {
     inchi_output_string("inchi_to_inchi_key", "InChIKey", output.key).map(Some)
 }
 
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (include_chirality=false, torsion_atom_count=4, count_simulation=true, count_bounds=None, fp_size=2048, atom_invariants_generator=None))]
+fn get_topological_torsion_generator(
+    include_chirality: bool,
+    torsion_atom_count: u32,
+    count_simulation: bool,
+    count_bounds: Option<Vec<u32>>,
+    fp_size: u32,
+    atom_invariants_generator: Option<&PyAtomPairAtomInvariantsGenerator>,
+) -> PyResult<PyTopologicalTorsionFingerprintGenerator> {
+    // RDKit source: TopologicalTorsionWrapper.cpp lines 21-45.
+    // RDKit✔️✔️: FingerprintGenerator<OutputType> *getTopologicalTorsionFPGenerator(
+    // RDKit✔️✔️:     const bool includeChirality, const uint32_t torsionAtomCount,
+    // RDKit✔️✔️:     const bool countSimulation, python::object &py_countBounds,
+    // RDKit✔️✔️:     const std::uint32_t fpSize, python::object &py_atomInvGen) {
+    // RDKit✔️✔️:   AtomInvariantsGenerator *atomInvariantsGenerator = nullptr;
+    // RDKit✔️✔️:   ... atomInvariantsGenerator = atomInvariantsGenerator->clone();
+    // RDKit✔️✔️:   std::vector<std::uint32_t> countBounds = {1, 2, 4, 8};
+    // RDKit✔️✔️:   if (py_countBounds) { ... countBounds = *tmp; }
+    // RDKit✔️✔️:   return TopologicalTorsion::getTopologicalTorsionGenerator<OutputType>(
+    // RDKit✔️✔️:       includeChirality, torsionAtomCount, atomInvariantsGenerator,
+    // RDKit✔️✔️:       countSimulation, fpSize, countBounds, false);
+    // RDKit✔️✔️: }
+    let arguments = cosmolkit_core::fingerprint::TopologicalTorsionArguments::new(
+        include_chirality,
+        torsion_atom_count,
+        count_simulation,
+        count_bounds.unwrap_or_else(|| vec![1, 2, 4, 8]),
+        fp_size,
+    )
+    .map_err(fingerprint_pyerr)?;
+    let atom_invariants_generator = atom_invariants_generator.map_or_else(
+        || cosmolkit_core::fingerprint::AtomPairAtomInvGenerator::new(include_chirality, true),
+        |generator| generator.inner.clone(),
+    );
+    let state = PyTopologicalTorsionGeneratorState {
+        arguments,
+        atom_invariants_generator,
+    };
+    state.build().map_err(fingerprint_pyerr)?;
+    Ok(PyTopologicalTorsionFingerprintGenerator {
+        state: Arc::new(Mutex::new(state)),
+    })
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+fn topological_torsion_generator_from_json(
+    json: &str,
+) -> PyResult<PyTopologicalTorsionFingerprintGenerator> {
+    let generator =
+        cosmolkit_core::fingerprint::generatorFromJSON(json).map_err(fingerprint_pyerr)?;
+    let cosmolkit_core::fingerprint::TypedFingerprintGenerator::TopologicalTorsion(generator) =
+        generator
+    else {
+        return Err(PyValueError::new_err(
+            "JSON does not describe a Topological Torsion fingerprint generator",
+        ));
+    };
+    Ok(PyTopologicalTorsionFingerprintGenerator {
+        state: Arc::new(Mutex::new(PyTopologicalTorsionGeneratorState {
+            arguments: generator.fingerprint_arguments,
+            atom_invariants_generator: generator.atom_invariants_generator,
+        })),
+    })
+}
+
+fn topological_torsion_legacy_params(
+    kind: cosmolkit_core::TopologicalTorsionLegacyKind,
+    n_bits: u32,
+    torsion_atom_count: u32,
+    from_atoms: Option<Vec<usize>>,
+    ignore_atoms: Option<Vec<usize>>,
+    atom_invariants: Option<Vec<u32>>,
+    n_bits_per_entry: u32,
+    include_chirality: bool,
+) -> cosmolkit_core::TopologicalTorsionLegacyParams {
+    cosmolkit_core::TopologicalTorsionLegacyParams {
+        kind,
+        n_bits,
+        torsion_atom_count,
+        from_atoms: normalize_fingerprint_indices(from_atoms),
+        ignore_atoms: normalize_fingerprint_indices(ignore_atoms),
+        atom_invariants: normalize_fingerprint_indices(atom_invariants),
+        n_bits_per_entry,
+        include_chirality,
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, torsion_atom_count=4, from_atoms=None, ignore_atoms=None, atom_invariants=None, include_chirality=false))]
+fn get_topological_torsion_fingerprint(
+    molecule: &Molecule,
+    torsion_atom_count: u32,
+    from_atoms: Option<Vec<usize>>,
+    ignore_atoms: Option<Vec<usize>>,
+    atom_invariants: Option<Vec<u32>>,
+    include_chirality: bool,
+) -> PyResult<PySparseCountFingerprint> {
+    // RDKit source: rdMolDescriptors.cpp lines 250-274.
+    // RDKit✔️✔️: RDKit::SparseIntVect<boost::int64_t> *res;
+    // RDKit✔️✔️: res = RDKit::AtomPairs::getTopologicalTorsionFingerprint(
+    // RDKit✔️✔️:     mol, targetSize, fvect.get(), ivect.get(), invvect.get(),
+    // RDKit✔️✔️:     includeChirality);
+    let params = topological_torsion_legacy_params(
+        cosmolkit_core::TopologicalTorsionLegacyKind::UnfoldedCount,
+        2048,
+        torsion_atom_count,
+        from_atoms,
+        ignore_atoms,
+        atom_invariants,
+        4,
+        include_chirality,
+    );
+    match cosmolkit_core::topological_torsion_legacy_fingerprint(&molecule.inner, &params)
+        .map_err(fingerprint_pyerr)?
+    {
+        cosmolkit_core::TopologicalTorsionLegacyResult::SparseCount(inner) => {
+            Ok(PySparseCountFingerprint { inner })
+        }
+        cosmolkit_core::TopologicalTorsionLegacyResult::Bit(_) => Err(PyRuntimeError::new_err(
+            "legacy unfolded Topological Torsion returned an unexpected bit vector",
+        )),
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, n_bits=2048, torsion_atom_count=4, from_atoms=None, ignore_atoms=None, atom_invariants=None, include_chirality=false))]
+fn get_hashed_topological_torsion_fingerprint(
+    molecule: &Molecule,
+    n_bits: u32,
+    torsion_atom_count: u32,
+    from_atoms: Option<Vec<usize>>,
+    ignore_atoms: Option<Vec<usize>>,
+    atom_invariants: Option<Vec<u32>>,
+    include_chirality: bool,
+) -> PyResult<PySparseCountFingerprint> {
+    // RDKit source: rdMolDescriptors.cpp lines 276-292.
+    // RDKit✔️✔️: res = RDKit::AtomPairs::getHashedTopologicalTorsionFingerprint(
+    // RDKit✔️✔️:     mol, nBits, targetSize, fvect.get(), ivect.get(), invvect.get(),
+    // RDKit✔️✔️:     includeChirality);
+    let params = topological_torsion_legacy_params(
+        cosmolkit_core::TopologicalTorsionLegacyKind::HashedCount,
+        n_bits,
+        torsion_atom_count,
+        from_atoms,
+        ignore_atoms,
+        atom_invariants,
+        4,
+        include_chirality,
+    );
+    match cosmolkit_core::topological_torsion_legacy_fingerprint(&molecule.inner, &params)
+        .map_err(fingerprint_pyerr)?
+    {
+        cosmolkit_core::TopologicalTorsionLegacyResult::SparseCount(inner) => {
+            Ok(PySparseCountFingerprint { inner })
+        }
+        cosmolkit_core::TopologicalTorsionLegacyResult::Bit(_) => Err(PyRuntimeError::new_err(
+            "legacy hashed-count Topological Torsion returned an unexpected bit vector",
+        )),
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, n_bits=2048, torsion_atom_count=4, from_atoms=None, ignore_atoms=None, atom_invariants=None, n_bits_per_entry=4, include_chirality=false))]
+fn get_hashed_topological_torsion_fingerprint_as_bit_vect(
+    molecule: &Molecule,
+    n_bits: u32,
+    torsion_atom_count: u32,
+    from_atoms: Option<Vec<usize>>,
+    ignore_atoms: Option<Vec<usize>>,
+    atom_invariants: Option<Vec<u32>>,
+    n_bits_per_entry: u32,
+    include_chirality: bool,
+) -> PyResult<Fingerprint> {
+    // RDKit source: rdMolDescriptors.cpp lines 294-309.
+    // RDKit✔️✔️: res = RDKit::AtomPairs::getHashedTopologicalTorsionFingerprintAsBitVect(
+    // RDKit✔️✔️:     mol, nBits, targetSize, fvect.get(), ivect.get(), invvect.get(),
+    // RDKit✔️✔️:     nBitsPerEntry, includeChirality);
+    let params = topological_torsion_legacy_params(
+        cosmolkit_core::TopologicalTorsionLegacyKind::HashedBit,
+        n_bits,
+        torsion_atom_count,
+        from_atoms,
+        ignore_atoms,
+        atom_invariants,
+        n_bits_per_entry,
+        include_chirality,
+    );
+    match cosmolkit_core::topological_torsion_legacy_fingerprint(&molecule.inner, &params)
+        .map_err(fingerprint_pyerr)?
+    {
+        cosmolkit_core::TopologicalTorsionLegacyResult::Bit(inner) => Ok(Fingerprint { inner }),
+        cosmolkit_core::TopologicalTorsionLegacyResult::SparseCount(_) => {
+            Err(PyRuntimeError::new_err(
+                "legacy hashed-bit Topological Torsion returned an unexpected count vector",
+            ))
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, atom_index, branch_subtract=0, include_chirality=false))]
+fn get_atom_code(
+    molecule: &Molecule,
+    atom_index: usize,
+    branch_subtract: u32,
+    include_chirality: bool,
+) -> PyResult<u32> {
+    // RDKit source: rdMolDescriptors.cpp lines 978-982.
+    // RDKit✔️✔️: python::def("GetAtomPairAtomCode", RDKit::AtomPairs::getAtomCode,
+    // RDKit✔️✔️:             (python::arg("atom"), python::arg("branchSubtract") = 0,
+    // RDKit✔️✔️:              python::arg("includeChirality") = false),
+    // RDKit✔️✔️:             docString.c_str());
+    cosmolkit_core::get_atom_code(
+        &molecule.inner,
+        cosmolkit_core::AtomId::new(atom_index),
+        branch_subtract,
+        include_chirality,
+    )
+    .map_err(fingerprint_pyerr)
+}
+
+fn atom_pair_symbol(type_index: usize) -> String {
+    let atomic_number = cosmolkit_core::ATOM_PAIR_ATOM_NUMBER_TYPES
+        .get(type_index)
+        .copied();
+    atomic_number
+        .and_then(|value| u8::try_from(value).ok())
+        .and_then(cosmolkit_core::Element::from_atomic_number)
+        .map_or_else(|| "X".to_string(), |element| element.symbol().to_string())
+}
+
+fn explain_atom_code_fields(
+    mut code: u32,
+    branch_subtract: u32,
+    include_chirality: bool,
+) -> (String, u32, u32, Option<&'static str>) {
+    // RDKit source: rdkit/Chem/AtomPairs/Utils.py lines 75-99.
+    // RDKit✔️✔️: typeMask = (1 << rdMolDescriptors.AtomPairsParameters.numTypeBits) - 1
+    // RDKit✔️✔️: branchMask = (1 << rdMolDescriptors.AtomPairsParameters.numBranchBits) - 1
+    // RDKit✔️✔️: piMask = (1 << rdMolDescriptors.AtomPairsParameters.numPiBits) - 1
+    // RDKit✔️✔️: chiMask = (1 << rdMolDescriptors.AtomPairsParameters.numChiralBits) - 1
+    // RDKit✔️✔️: nBranch = int(code & branchMask)
+    // RDKit✔️✔️: code = code >> rdMolDescriptors.AtomPairsParameters.numBranchBits
+    // RDKit✔️✔️: nPi = int(code & piMask)
+    // RDKit✔️✔️: code = code >> rdMolDescriptors.AtomPairsParameters.numPiBits
+    // RDKit✔️✔️: typeIdx = int(code & typeMask)
+    // RDKit✔️✔️: if not includeChirality: return (atomSymbol, nBranch, nPi)
+    // RDKit✔️✔️: code = code >> rdMolDescriptors.AtomPairsParameters.numTypeBits
+    // RDKit✔️✔️: chiDict = {0: '', 1: 'R', 2: 'S'}
+    let branch_mask = (1 << cosmolkit_core::ATOM_PAIR_NUM_BRANCH_BITS) - 1;
+    let pi_mask = (1 << cosmolkit_core::ATOM_PAIR_NUM_PI_BITS) - 1;
+    let type_mask = (1 << cosmolkit_core::ATOM_PAIR_NUM_TYPE_BITS) - 1;
+    let n_branch = (code & branch_mask).wrapping_add(branch_subtract);
+    code >>= cosmolkit_core::ATOM_PAIR_NUM_BRANCH_BITS;
+    let n_pi = code & pi_mask;
+    code >>= cosmolkit_core::ATOM_PAIR_NUM_PI_BITS;
+    let type_index = (code & type_mask) as usize;
+    let symbol = atom_pair_symbol(type_index);
+    if !include_chirality {
+        return (symbol, n_branch, n_pi, None);
+    }
+    code >>= cosmolkit_core::ATOM_PAIR_NUM_TYPE_BITS;
+    let chi_mask = (1 << cosmolkit_core::ATOM_PAIR_NUM_CHIRAL_BITS) - 1;
+    let chirality = match code & chi_mask {
+        0 => "",
+        1 => "R",
+        2 => "S",
+        _ => "",
+    };
+    (symbol, n_branch, n_pi, Some(chirality))
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pyfunction]
+#[gen_stub(override_return_type(
+    type_repr = "typing.Union[tuple[builtins.str, builtins.int, builtins.int], tuple[builtins.str, builtins.int, builtins.int, builtins.str]]",
+    imports = ("builtins", "typing")
+))]
+#[pyo3(signature = (code, branch_subtract=0, include_chirality=false))]
+fn explain_atom_code<'py>(
+    py: Python<'py>,
+    code: u32,
+    branch_subtract: u32,
+    include_chirality: bool,
+) -> PyResult<Bound<'py, PyTuple>> {
+    let (symbol, branches, pi_electrons, chirality) =
+        explain_atom_code_fields(code, branch_subtract, include_chirality);
+    if let Some(chirality) = chirality {
+        PyTuple::new(
+            py,
+            [
+                symbol.into_pyobject(py)?.into_any(),
+                branches.into_pyobject(py)?.into_any(),
+                pi_electrons.into_pyobject(py)?.into_any(),
+                chirality.into_pyobject(py)?.into_any(),
+            ],
+        )
+    } else {
+        PyTuple::new(
+            py,
+            [
+                symbol.into_pyobject(py)?.into_any(),
+                branches.into_pyobject(py)?.into_any(),
+                pi_electrons.into_pyobject(py)?.into_any(),
+            ],
+        )
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, path, size, atom_codes=None))]
+fn py_score_path(
+    molecule: &Molecule,
+    path: Vec<usize>,
+    size: usize,
+    atom_codes: Option<Vec<u32>>,
+) -> PyResult<u64> {
+    // RDKit source: rdkit/Chem/AtomPairs/Torsions.py lines 31-75.
+    // RDKit✔️✔️: codes = [None] * size
+    // RDKit✔️✔️: for i in range(size):
+    // RDKit✔️✔️:   if i == 0 or i == size - 1: sub = 1
+    // RDKit✔️✔️:   else: sub = 2
+    // RDKit✔️✔️:   if not atomCodes:
+    // RDKit✔️✔️:     codes[i] = Utils.GetAtomCode(mol.GetAtomWithIdx(path[i]), sub)
+    // RDKit✔️✔️:   else: codes[i] = atomCodes[path[i]] - sub
+    // RDKit✔️✔️: ... canonicalize ... accum |= code << (codeSize * i)
+    if size == 0 {
+        return Err(PyValueError::new_err("size must be greater than zero"));
+    }
+    if path.len() < size {
+        return Err(PyValueError::new_err(
+            "path must contain at least size atom indices",
+        ));
+    }
+    let atom_codes = normalize_fingerprint_indices(atom_codes);
+    if atom_codes
+        .as_ref()
+        .is_some_and(|codes| codes.len() < molecule.inner.num_atoms())
+    {
+        return Err(PyValueError::new_err(
+            "atom_codes must contain at least one entry per molecule atom",
+        ));
+    }
+    let mut codes = Vec::with_capacity(size);
+    for (position, &atom_index) in path.iter().take(size).enumerate() {
+        if atom_index >= molecule.inner.num_atoms() {
+            return Err(PyIndexError::new_err(format!(
+                "atom index {atom_index} is out of range"
+            )));
+        }
+        let subtract = if position == 0 || position + 1 == size {
+            1
+        } else {
+            2
+        };
+        let code = if let Some(atom_codes) = atom_codes.as_ref() {
+            atom_codes[atom_index]
+                .checked_sub(subtract)
+                .ok_or_else(|| {
+                    PyValueError::new_err("atom code is smaller than the path branch subtraction")
+                })?
+        } else {
+            cosmolkit_core::get_atom_code(
+                &molecule.inner,
+                cosmolkit_core::AtomId::new(atom_index),
+                subtract,
+                false,
+            )
+            .map_err(fingerprint_pyerr)?
+        };
+        codes.push(code);
+    }
+    cosmolkit_core::get_topological_torsion_code(&codes, false).map_err(fingerprint_pyerr)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
+#[pyfunction]
+#[gen_stub(override_return_type(
+    type_repr = "tuple[tuple[builtins.str, builtins.int, builtins.int], ...]",
+    imports = ("builtins")
+))]
+#[pyo3(signature = (score, size=4))]
+fn explain_path_score<'py>(
+    py: Python<'py>,
+    mut score: u64,
+    size: usize,
+) -> PyResult<Bound<'py, PyTuple>> {
+    // RDKit source: rdkit/Chem/AtomPairs/Torsions.py lines 78-150.
+    // RDKit✔️✔️: codeSize = rdMolDescriptors.AtomPairsParameters.codeSize
+    // RDKit✔️✔️: codeMask = (1 << codeSize) - 1
+    // RDKit✔️✔️: for i in range(size):
+    // RDKit✔️✔️:   if i == 0 or i == size - 1: sub = 1
+    // RDKit✔️✔️:   else: sub = 2
+    // RDKit✔️✔️:   code = score & codeMask; score = score >> codeSize
+    // RDKit✔️✔️:   symb, nBranch, nPi = Utils.ExplainAtomCode(code)
+    // RDKit✔️✔️:   res[i] = (symb, nBranch + sub, nPi)
+    let code_mask = (1_u64 << cosmolkit_core::ATOM_PAIR_CODE_SIZE) - 1;
+    let mut entries = Vec::with_capacity(size);
+    for position in 0..size {
+        let subtract = if position == 0 || position + 1 == size {
+            1
+        } else {
+            2
+        };
+        let code = (score & code_mask) as u32;
+        score >>= cosmolkit_core::ATOM_PAIR_CODE_SIZE;
+        let (symbol, branches, pi_electrons, _) = explain_atom_code_fields(code, subtract, false);
+        entries.push((symbol, branches, pi_electrons));
+    }
+    PyTuple::new(py, entries)
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+#[pyo3(signature = (molecule, torsion_atom_count=4))]
+fn get_topological_torsion_fingerprint_as_ids(
+    molecule: &Molecule,
+    torsion_atom_count: u32,
+) -> PyResult<Vec<u64>> {
+    // RDKit source: rdkit/Chem/AtomPairs/Torsions.py lines 153-159.
+    // RDKit✔️✔️: nonZeroElements = GetTopologicalTorsionFingerprint(mol, targetSize).GetNonzeroElements()
+    // RDKit✔️✔️: frequencies = sorted(nonZeroElements.items())
+    // RDKit✔️✔️: res = []
+    // RDKit✔️✔️: for k, v in frequencies: res.extend([k] * v)
+    let fingerprint =
+        get_topological_torsion_fingerprint(molecule, torsion_atom_count, None, None, None, false)?;
+    let mut ids = Vec::new();
+    for (&bit_id, &count) in fingerprint.inner.nonzero_elements() {
+        let count = usize::try_from(count).map_err(|_| {
+            PyValueError::new_err("Topological Torsion count cannot be expanded as ids")
+        })?;
+        ids.extend(std::iter::repeat_n(bit_id, count));
+    }
+    Ok(ids)
+}
+
 #[pymodule]
 fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
@@ -9110,10 +10163,14 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Atom>()?;
     m.add_class::<Bond>()?;
     m.add_class::<MoleculeEdit>()?;
+    m.add_class::<PySparseCountFingerprint>()?;
+    m.add_class::<PySparseBitFingerprint>()?;
+    m.add_class::<PyAdditionalOutput>()?;
+    m.add_class::<PyAtomPairsParameters>()?;
+    m.add_class::<PyAtomPairAtomInvariantsGenerator>()?;
+    m.add_class::<PyTopologicalTorsionFingerprintOptions>()?;
+    m.add_class::<PyTopologicalTorsionFingerprintGenerator>()?;
     m.add_class::<Fingerprint>()?;
-    m.add_class::<AtomPairSparseCountFingerprint>()?;
-    m.add_class::<AtomPairSparseBitFingerprint>()?;
-    m.add_class::<AtomPairAdditionalOutput>()?;
     m.add_class::<AtomPairFingerprintResult>()?;
     m.add_class::<MorganAdditionalOutput>()?;
     m.add_class::<MorganFingerprintResult>()?;
@@ -9168,6 +10225,28 @@ fn cosmolkit(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(expand_one_letter_sequence, m)?)?;
     m.add_function(wrap_pyfunction!(expand_protein_one_letter_string, m)?)?;
     m.add_function(wrap_pyfunction!(inchi_to_key, m)?)?;
+    m.add_function(wrap_pyfunction!(get_topological_torsion_generator, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        topological_torsion_generator_from_json,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(get_topological_torsion_fingerprint, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        get_hashed_topological_torsion_fingerprint,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        get_hashed_topological_torsion_fingerprint_as_bit_vect,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(get_atom_code, m)?)?;
+    m.add_function(wrap_pyfunction!(explain_atom_code, m)?)?;
+    m.add_function(wrap_pyfunction!(py_score_path, m)?)?;
+    m.add_function(wrap_pyfunction!(explain_path_score, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        get_topological_torsion_fingerprint_as_ids,
+        m
+    )?)?;
     confseq_py::add_confseq_module(m)?;
     Ok(())
 }

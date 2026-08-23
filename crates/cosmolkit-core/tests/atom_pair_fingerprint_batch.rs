@@ -34,7 +34,7 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         n_bits: 256,
         count_simulation: true,
         count_bounds: vec![1, 3, 5],
-        num_bits_per_feature: 2,
+        num_bits_per_feature: 1,
         use_chirality: true,
         ..Default::default()
     };
@@ -112,6 +112,61 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         })
         .collect();
     assert_eq!(outputs, expected_outputs);
+}
+
+#[test]
+fn unfolded_extra_bits_preserve_source_index_errors_and_batch_positions() {
+    let source = smiles(&["C", "CCO", "c1ccccc1", "C[C@H](O)F"]);
+    let molecules: Vec<_> = source
+        .iter()
+        .map(|value| Molecule::from_smiles(value).unwrap())
+        .collect();
+    let batch = MoleculeBatch::from_smiles_list(&source);
+    let params = AtomPairFingerprintParams {
+        num_bits_per_feature: 2,
+        use_chirality: true,
+        ..Default::default()
+    };
+    let generator = AtomPairFingerprintGenerator::new(&params).unwrap();
+
+    assert!(
+        generator
+            .sparse_count_fingerprint(&molecules[0], &mut arguments(&params))
+            .is_ok(),
+        "a graph with no atom-pair environment does not consume an extra bit"
+    );
+
+    let expected_indices = [1_795_012_513_u64, 601_524_142, 525_510_353];
+    for (molecule, expected_index) in molecules[1..].iter().zip(expected_indices) {
+        let error = generator
+            .sparse_count_fingerprint(molecule, &mut arguments(&params))
+            .expect_err("RDKit's unfolded extra bit must exceed the chiral result width");
+        assert!(
+            error.to_string().contains(&expected_index.to_string()),
+            "unexpected scalar source-parity error: {error}"
+        );
+    }
+
+    let error = batch
+        .atom_pair_sparse_count_fingerprint_list_with_options(&params, Some(4), Some(false))
+        .expect_err("batch collection must retain every source-defined index error");
+    assert_eq!(error.errors, 3);
+    assert_eq!(
+        error
+            .record_errors
+            .iter()
+            .map(|error| error.index)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3]
+    );
+    for (error, expected_index) in error.record_errors.iter().zip(expected_indices) {
+        assert_eq!(error.operation, "batch.atom_pair_sparse_count_fingerprint");
+        assert!(
+            error.message.contains(&expected_index.to_string()),
+            "unexpected indexed source-parity error: {}",
+            error.message
+        );
+    }
 }
 
 #[test]

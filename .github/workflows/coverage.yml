@@ -40,7 +40,7 @@ jobs:
             COSMOLKIT_PARITY_PROFILE: ${{ github.event.inputs.parity_profile || 'smiles_small' }}
             COSMOLKIT_GOLDEN_SUITE: ${{ github.event.inputs.golden_suite || 'all' }}
             COSMOLKIT_RUN_EXHAUSTIVE_PARITY: ${{ github.event.inputs.run_exhaustive_parity || 'false' }}
-            RDKIT_EXPECTED_CACHE_SCHEMA: v3
+            RDKIT_EXPECTED_CACHE_SCHEMA: v4
             # Optimization and fat LTO can emit zero-hash coverage mappings
             # that disagree with records from static test binaries.
             CARGO_PROFILE_RELEASE_OPT_LEVEL: "0"
@@ -104,6 +104,35 @@ jobs:
                   path: testdata/*/expected/rdkit/${{ env.COSMOLKIT_PARITY_PROFILE }}
                   key: ${{ steps.rdkit_golden_cache.outputs.cache-primary-key }}
 
+            - name: Restore focused AtomPair golden cache
+              id: focused_atom_pair_golden_cache
+              uses: actions/cache/restore@v4
+              with:
+                  path: testdata/fingerprint/expected/rdkit/atom_pair_focused
+                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-atom-pair-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_atom_pair_fingerprint_golden.py', 'tools/testdata/rdkit/atom_pair_fingerprint_profile.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  restore-keys: |
+                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-atom-pair-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_atom_pair_fingerprint_golden.py', 'tools/testdata/rdkit/atom_pair_fingerprint_profile.json') }}-
+
+            - name: Prepare and validate focused AtomPair expected data
+              id: prepare_focused_atom_pair_expected
+              shell: bash
+              run: |
+                  set -o pipefail
+                  prepare_log="$(mktemp)"
+                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile atom_pair_focused --suite atom-pair --jobs 1 | tee "$prepare_log"
+                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
+                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Save validated focused AtomPair expected-data cache
+              if: steps.prepare_focused_atom_pair_expected.outputs.regenerated == 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: testdata/fingerprint/expected/rdkit/atom_pair_focused
+                  key: ${{ steps.focused_atom_pair_golden_cache.outputs.cache-primary-key }}
+
             - name: Restore strict 5000 InChI golden cache
               id: strict_5000_inchi_golden_cache
               uses: actions/cache/restore@v4
@@ -132,6 +161,36 @@ jobs:
               with:
                   path: testdata/inchi/expected/rdkit/smiles_5000
                   key: ${{ steps.strict_5000_inchi_golden_cache.outputs.cache-primary-key }}
+
+            - name: Restore strict 5000 fingerprint golden cache
+              id: strict_5000_fingerprint_golden_cache
+              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
+              uses: actions/cache/restore@v4
+              with:
+                  path: testdata/fingerprint/expected/rdkit/smiles_5000
+                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-fingerprint-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_*fingerprint*.py', 'tools/testdata/rdkit/*fingerprint*_profile.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  restore-keys: |
+                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-fingerprint-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_*fingerprint*.py', 'tools/testdata/rdkit/*fingerprint*_profile.json') }}-
+
+            - name: Prepare and validate strict 5000 fingerprint expected data
+              id: prepare_strict_5000_fingerprint_expected
+              shell: bash
+              run: |
+                  set -o pipefail
+                  prepare_log="$(mktemp)"
+                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile smiles_5000 --suite fingerprint --jobs 4 | tee "$prepare_log"
+                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
+                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Save validated strict 5000 fingerprint expected-data cache
+              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000' && steps.prepare_strict_5000_fingerprint_expected.outputs.regenerated == 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: testdata/fingerprint/expected/rdkit/smiles_5000
+                  key: ${{ steps.strict_5000_fingerprint_golden_cache.outputs.cache-primary-key }}
 
             - name: Run core, InChI, and ring tests with coverage instrumentation
               id: cov_run
@@ -163,6 +222,13 @@ jobs:
               shell: bash
               run: |
                   COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_inchi_parity --no-report -- inchi_matches_pinned_rdkit_for_every_active_profile_row --exact
+
+            - name: Run strict 5000 Topological Torsion parity with coverage instrumentation
+              id: strict_5000_topological_torsion
+              continue-on-error: true
+              shell: bash
+              run: |
+                  COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_topological_torsion_fingerprint_parity --no-report -- --ignored topological_torsion_matches_all_5000_rows_and_profiles_exactly --exact
 
             - name: Generate HTML coverage report
               if: always()
@@ -214,7 +280,7 @@ jobs:
                   verbose: true
 
             - name: Fail workflow if tests failed
-              if: steps.cov_run.outcome == 'failure' || steps.smiles_writer_full.outcome == 'failure' || steps.sdf_reader_full.outcome == 'failure' || steps.strict_5000_inchi.outcome == 'failure'
+              if: steps.cov_run.outcome == 'failure' || steps.smiles_writer_full.outcome == 'failure' || steps.sdf_reader_full.outcome == 'failure' || steps.strict_5000_inchi.outcome == 'failure' || steps.strict_5000_topological_torsion.outcome == 'failure'
               run: |
                   echo "Rust tests failed. Coverage artifacts were still generated and uploaded."
                   exit 1

@@ -211,6 +211,13 @@ GENERATOR_SPECS = [
         generator_dependencies=("rdkit_topological_fingerprint_profile.json",),
     ),
     spec(
+        "topological_torsion_fingerprint_golden",
+        "topological_torsion_fingerprint.jsonl",
+        "fingerprint",
+        {"default", "strict-corpus", "fingerprint", "topological-torsion"},
+        generator_dependencies=("topological_torsion_fingerprint_profile.json",),
+    ),
+    spec(
         "avalon_fingerprint_golden",
         "avalon_fingerprint.jsonl",
         "fingerprint",

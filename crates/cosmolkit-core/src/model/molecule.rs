@@ -1247,8 +1247,24 @@ impl Molecule {
         self.topology = Arc::new(topology);
     }
 
+    /// Commit topology owned by the operation runtime.
+    ///
+    /// Operation bodies reproduce the source operation's computed-property
+    /// policy explicitly through `OpParts::clear_computed_properties()`. The
+    /// general mutation accessors above and below remain conservatively
+    /// invalidating for non-operation callers.
+    pub(crate) fn replace_topology_block_from_operation(&mut self, topology: TopologyBlock) {
+        self.topology = Arc::new(topology);
+    }
+
     pub(crate) fn take_topology_block_or_clone(&mut self) -> TopologyBlock {
         self.clear_computed_property_cache();
+        self.take_topology_block_or_clone_from_operation()
+    }
+
+    /// Move topology into the operation runtime without imposing a cache
+    /// transition that belongs to the source operation body.
+    pub(crate) fn take_topology_block_or_clone_from_operation(&mut self) -> TopologyBlock {
         let block = std::mem::replace(&mut self.topology, Arc::new(TopologyBlock::default()));
         match Arc::try_unwrap(block) {
             Ok(block) => block,
