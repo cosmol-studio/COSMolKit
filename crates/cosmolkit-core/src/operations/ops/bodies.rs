@@ -252,6 +252,41 @@ pub(super) fn with_chiral_tags_from_structure_impl(
     Ok(())
 }
 
+#[mol_op_body(assigned_cip_labels, parts)]
+pub(super) fn assigned_cip_labels_impl(
+    options: crate::CipLabelOptions,
+) -> Result<(), OperationError> {
+    let assignment_error =
+        parts.with_topology_and_properties_mut(|parts, topology, properties| {
+            let transition = parts.with_borrowed_optional_block_read_parts(
+                topology,
+                None,
+                Some(properties),
+                |read| {
+                    crate::chemistry::ciplabeler::assign_cip_labels_from_read_parts(read, &options)
+                        .map_err(|source| OperationError::CipLabeler {
+                            operation: &ASSIGNED_CIP_LABELS_SPEC,
+                            source,
+                        })
+                },
+            )?;
+            let (assigned_topology, assigned_properties, assignment_error) =
+                transition.into_parts();
+            *topology = assigned_topology;
+            *properties = assigned_properties;
+            Ok(assignment_error)
+        })?;
+    parts.record_topology_edit(TopologyEditKind::Local)?;
+    parts.clear_cache(DerivedState::STEREO | DerivedState::DRAWING | DerivedState::FINGERPRINT);
+    match assignment_error {
+        Some(source) => Err(OperationError::CipLabeler {
+            operation: &ASSIGNED_CIP_LABELS_SPEC,
+            source,
+        }),
+        None => Ok(()),
+    }
+}
+
 #[mol_op_body(with_2d_coordinates, parts)]
 pub(super) fn with_2d_coordinates_impl(
     params: crate::With2DCoordinatesParams,

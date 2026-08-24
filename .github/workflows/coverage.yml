@@ -172,6 +172,37 @@ jobs:
                   path: testdata/inchi/expected/rdkit/smiles_5000
                   key: ${{ steps.strict_5000_inchi_golden_cache.outputs.cache-primary-key }}
 
+            - name: Restore strict 5000 CIPLabeler golden cache
+              id: strict_5000_ciplabeler_golden_cache
+              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
+              uses: actions/cache/restore@v4
+              with:
+                  path: testdata/stereo/expected/rdkit/smiles_5000
+                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-ciplabeler-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_ciplabeler_golden.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  restore-keys: |
+                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-ciplabeler-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_ciplabeler_golden.py') }}-
+
+            - name: Prepare and validate strict 5000 CIPLabeler expected data
+              id: prepare_strict_5000_ciplabeler_expected
+              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
+              shell: bash
+              run: |
+                  set -o pipefail
+                  prepare_log="$(mktemp)"
+                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile smiles_5000 --suite ciplabeler --jobs 4 | tee "$prepare_log"
+                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
+                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Save validated strict 5000 CIPLabeler expected-data cache
+              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000' && steps.prepare_strict_5000_ciplabeler_expected.outputs.regenerated == 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: testdata/stereo/expected/rdkit/smiles_5000
+                  key: ${{ steps.strict_5000_ciplabeler_golden_cache.outputs.cache-primary-key }}
+
             - name: Restore strict 5000 fingerprint golden cache
               id: strict_5000_fingerprint_golden_cache
               if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
@@ -240,6 +271,13 @@ jobs:
               run: |
                   COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_topological_torsion_fingerprint_parity --no-report -- --ignored topological_torsion_matches_all_5000_rows_and_profiles_exactly --exact
 
+            - name: Run strict 5000 CIPLabeler parity with coverage instrumentation
+              id: strict_5000_ciplabeler
+              continue-on-error: true
+              shell: bash
+              run: |
+                  COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_ciplabeler_parity --no-report -- --ignored modern_ciplabeler_matches_all_5000_rows_exactly --exact
+
             - name: Generate HTML coverage report
               if: always()
               shell: bash
@@ -290,7 +328,7 @@ jobs:
                   verbose: true
 
             - name: Fail workflow if tests failed
-              if: steps.cov_run.outcome == 'failure' || steps.smiles_writer_full.outcome == 'failure' || steps.sdf_reader_full.outcome == 'failure' || steps.strict_5000_inchi.outcome == 'failure' || steps.strict_5000_topological_torsion.outcome == 'failure'
+              if: steps.cov_run.outcome == 'failure' || steps.smiles_writer_full.outcome == 'failure' || steps.sdf_reader_full.outcome == 'failure' || steps.strict_5000_inchi.outcome == 'failure' || steps.strict_5000_topological_torsion.outcome == 'failure' || steps.strict_5000_ciplabeler.outcome == 'failure'
               run: |
                   echo "Rust tests failed. Coverage artifacts were still generated and uploaded."
                   exit 1

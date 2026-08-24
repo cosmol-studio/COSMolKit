@@ -398,7 +398,10 @@ fn core_from_adapter(
             spec = spec.with_isotope(isotope);
         }
         if let Some(rank) = atom.cip_rank {
-            spec = spec.with_prop("_CIPRank", rank.to_string());
+            // RDKit's InChI path obtains these values through
+            // Chirality::assignAtomCIPRanks(), whose atom writeback registers
+            // `_CIPRank` as computed state.
+            spec = spec.with_computed_prop("_CIPRank", rank.to_string());
         }
         builder.add_atom(spec);
     }

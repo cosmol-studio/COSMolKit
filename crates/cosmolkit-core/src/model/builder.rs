@@ -590,7 +590,11 @@ impl Molecule {
                 spec = spec.with_pdb_residue_info(info);
             }
             for (key, value) in atom.props() {
-                spec = spec.with_prop(key.clone(), value.clone());
+                spec = if atom.is_prop_computed(key) {
+                    spec.with_computed_prop(key.clone(), value.clone())
+                } else {
+                    spec.with_prop(key.clone(), value.clone())
+                };
             }
             builder.add_atom(spec);
         }
@@ -609,7 +613,11 @@ impl Molecule {
                 spec = spec.with_query(query);
             }
             for (key, value) in bond.props() {
-                spec = spec.with_prop(key.clone(), value.clone());
+                spec = if bond.is_prop_computed(key) {
+                    spec.with_computed_prop(key.clone(), value.clone())
+                } else {
+                    spec.with_prop(key.clone(), value.clone())
+                };
             }
             builder
                 .add_bond(spec)

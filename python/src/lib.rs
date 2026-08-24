@@ -2057,6 +2057,9 @@ struct Atom {
     implicit_hydrogens: Option<usize>,
     total_num_hs: Option<usize>,
     total_valence: Option<usize>,
+    cip_code: Option<String>,
+    cip_neighbor_order: Option<Vec<usize>>,
+    cip_rank: Option<u32>,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
@@ -2080,6 +2083,8 @@ struct Bond {
     stereo_code: i64,
     stereo_atoms: Vec<usize>,
     is_aromatic: bool,
+    cip_code: Option<String>,
+    cip_neighbor_order: Option<Vec<usize>>,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
@@ -4860,6 +4865,68 @@ Return the number of bonds.
         self.inner.bonds().len()
     }
 
+    #[pyo3(signature = (atoms=None, bonds=None, max_recursive_iterations=0))]
+    #[doc = r#"
+Return a new molecule with source-backed modern CIP labels assigned.
+
+When both ``atoms`` and ``bonds`` are omitted or empty, the full molecule is
+labeled. Once either selection is non-empty, an omitted or empty category
+selects no entries, matching the pinned RDKit wrapper dispatch. Assignment is
+molecular-context dependent; query descriptors from ``mol.atoms()[i]`` or
+``mol.bonds()[i]`` after this call.
+"#]
+    fn with_cip_labels(
+        &self,
+        atoms: Option<Vec<usize>>,
+        bonds: Option<Vec<usize>>,
+        max_recursive_iterations: u32,
+    ) -> PyResult<Self> {
+        let mut options = cosmolkit_core::CipLabelOptions::default()
+            .with_max_recursive_iterations(max_recursive_iterations);
+        if let Some(indices) = atoms {
+            options = options.with_atoms(indices.into_iter().map(cosmolkit_core::AtomId::new));
+        }
+        if let Some(indices) = bonds {
+            options = options.with_bonds(indices.into_iter().map(cosmolkit_core::BondId::new));
+        }
+        self.inner
+            .with_cip_labels_with_options(options)
+            .map(|inner| Self { inner })
+            .map_err(|error| PyValueError::new_err(error.to_string()))
+    }
+
+    #[pyo3(signature = (atoms=None, bonds=None, max_recursive_iterations=0))]
+    #[doc = r#"
+Assign source-backed modern CIP labels in place.
+
+The operation follows COSMolKit's explicit in-place policy. On an error, the
+source-backed operation may retain partial source state; internal storage
+remains complete and the error is raised to Python.
+"#]
+    fn assign_cip_labels_(
+        &mut self,
+        atoms: Option<Vec<usize>>,
+        bonds: Option<Vec<usize>>,
+        max_recursive_iterations: u32,
+    ) -> PyResult<()> {
+        let mut options = cosmolkit_core::CipLabelOptions::default()
+            .with_max_recursive_iterations(max_recursive_iterations);
+        if let Some(indices) = atoms {
+            options = options.with_atoms(indices.into_iter().map(cosmolkit_core::AtomId::new));
+        }
+        if let Some(indices) = bonds {
+            options = options.with_bonds(indices.into_iter().map(cosmolkit_core::BondId::new));
+        }
+        self.inner
+            .assign_cip_labels_with_options_(options)
+            .map_err(|error| PyValueError::new_err(error.to_string()))
+    }
+
+    #[doc = "Return whether the molecule has modern CIP assignment state."]
+    fn cip_computed(&self) -> bool {
+        self.inner.is_prop_computed("_CIPComputed") && self.inner.prop("_CIPComputed") == Some("1")
+    }
+
     #[doc = r#"
 Return read-only atom feature records.
 "#]
@@ -4905,6 +4972,14 @@ Return read-only atom feature records.
                     v.explicit_valence[atom.id().index()] as usize
                         + v.implicit_hydrogens[atom.id().index()] as usize
                 }),
+                cip_code: atom.prop("_CIPCode").map(str::to_owned),
+                cip_neighbor_order: atom
+                    .prop("_CIPNeighborOrder")
+                    .and_then(|value| serde_json::from_str::<Vec<u32>>(value).ok())
+                    .map(|values| values.into_iter().map(|value| value as usize).collect()),
+                cip_rank: atom
+                    .prop("_CIPRank")
+                    .and_then(|value| value.parse::<u32>().ok()),
             })
             .collect()
     }
@@ -4931,6 +5006,11 @@ Return read-only bond feature records.
                     .map(|refs| refs.map(|id| id.index()).to_vec())
                     .unwrap_or_default(),
                 is_aromatic: bond.is_aromatic(),
+                cip_code: bond.prop("_CIPCode").map(str::to_owned),
+                cip_neighbor_order: bond
+                    .prop("_CIPNeighborOrder")
+                    .and_then(|value| serde_json::from_str::<Vec<u32>>(value).ok())
+                    .map(|values| values.into_iter().map(|value| value as usize).collect()),
             })
             .collect()
     }
@@ -7637,6 +7717,15 @@ impl Atom {
     fn total_valence(&self) -> Option<usize> {
         self.total_valence
     }
+    fn cip_descriptor(&self) -> Option<&str> {
+        self.cip_code.as_deref()
+    }
+    fn cip_neighbor_order(&self) -> Option<Vec<usize>> {
+        self.cip_neighbor_order.clone()
+    }
+    fn cip_rank(&self) -> Option<u32> {
+        self.cip_rank
+    }
 
     fn __repr__(&self) -> String {
         format!(
@@ -7743,6 +7832,12 @@ impl Bond {
     }
     fn is_aromatic(&self) -> bool {
         self.is_aromatic
+    }
+    fn cip_descriptor(&self) -> Option<&str> {
+        self.cip_code.as_deref()
+    }
+    fn cip_neighbor_order(&self) -> Option<Vec<usize>> {
+        self.cip_neighbor_order.clone()
     }
 
     fn __repr__(&self) -> String {

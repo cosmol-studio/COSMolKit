@@ -36,3 +36,18 @@ are generated only through:
 The generated rows must include all observable fields listed in the source
 audit. No case may be filtered after RDKit execution, including exception and
 non-finite-coordinate rows.
+
+## Modern CIPLabeler cases
+
+`ciplabeler_focused.json` is a COSMolKit-authored case matrix for the pinned
+RDKit `2026.03.1` modern `CIPLabeler::assignCIPLabels` boundary. Its molecular
+inputs are taken from pinned upstream CIPLabeler regressions where available;
+the selection, repeated-call sequences, selected atom/bond masks, recursion
+profiles, and unsupported-dispatcher boundary are assembled by COSMolKit.
+
+The generated oracle records the complete observable `_CIPComputed`,
+`_CIPCode`, `_CIPNeighborOrder`, `_CIPRank`, chiral-tag, bond-stereo, stereo
+atom, computed-property, success, and error state after every call. The focused
+matrix covers all ten public descriptors emitted by the supported modern
+assignment configurations: `R`, `S`, `r`, `s`, `E`, `Z`, `M`, `P`, `m`, and
+`p`.

@@ -26,6 +26,8 @@ TOOL_DIR = Path(__file__).resolve().parent
 REFERENCE_IDENTITY_PATH = REPO_ROOT / "testdata/reference/rdkit.json"
 SCHEMA_PATH = TOOL_DIR / "_expected_schema.py"
 PROFILE_INPUTS = {
+    "ciplabeler_focused": REPO_ROOT
+    / "testdata/stereo/fixtures/ciplabeler_focused.json",
     "atom_pair_focused": REPO_ROOT
     / "testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi",
     "smiles_small": REPO_ROOT / "testdata/smiles/corpus/smiles_small.smi",
@@ -41,6 +43,7 @@ class GeneratorSpec:
     suites: frozenset[str]
     extra_inputs: tuple[str, ...] = ()
     generator_dependencies: tuple[str, ...] = ()
+    deterministic_shards: int | None = None
 
 
 def spec(
@@ -51,6 +54,7 @@ def spec(
     *,
     extra_inputs: tuple[str, ...] = (),
     generator_dependencies: tuple[str, ...] = (),
+    deterministic_shards: int | None = None,
 ) -> GeneratorSpec:
     return GeneratorSpec(
         script=f"_generate_{script}.py",
@@ -59,6 +63,7 @@ def spec(
         suites=frozenset({*suites, "all", domain}),
         extra_inputs=extra_inputs,
         generator_dependencies=generator_dependencies,
+        deterministic_shards=deterministic_shards,
     )
 
 
@@ -114,6 +119,13 @@ GENERATOR_SPECS = [
         extra_inputs=(
             "testdata/stereo/fixtures/assign_atom_chiral_tags_from_structure_cases.json",
         ),
+    ),
+    spec(
+        "ciplabeler_golden",
+        "ciplabeler.jsonl",
+        "stereo",
+        {"ciplabeler", "default", "strict-corpus"},
+        deterministic_shards=16,
     ),
     spec(
         "dg_bounds_golden",
@@ -295,6 +307,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--input", type=Path, default=None)
     parser.add_argument("--clean", action="store_true")
+    parser.add_argument(
+        "--only",
+        default=None,
+        help="run one output stem, generator stem, or domain (for example ciplabeler)",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="validate cached outputs and fail instead of regenerating stale data",
+    )
     parser.add_argument("--jobs", type=int, default=None)
     return parser.parse_args()
 
@@ -409,8 +431,16 @@ def output_identity(
     ]
     generator_paths.extend(TOOL_DIR / name for name in item.generator_dependencies)
     input_paths = expand_input(input_path)
+    if item.output == "ciplabeler.jsonl" and input_path.suffix.lower() == ".json":
+        document = json.loads(input_path.read_text(encoding="utf-8"))
+        for case in document.get("cases", []):
+            if isinstance(case, dict) and isinstance(case.get("input_file"), str):
+                input_paths.extend(expand_input(REPO_ROOT / case["input_file"]))
     for relative in item.extra_inputs:
         input_paths.extend(expand_input(REPO_ROOT / relative))
+    arguments = ["--input", repository_path(input_path), "--output", item.output]
+    if item.deterministic_shards is not None:
+        arguments.extend(["--shards", str(item.deterministic_shards)])
     return {
         "path": item.output,
         "output_schema_version": 1,
@@ -418,7 +448,7 @@ def output_identity(
         "inputs": file_identities(input_paths, checksums),
         "options": {
             "profile": profile,
-            "arguments": ["--input", repository_path(input_path), "--output", item.output],
+            "arguments": arguments,
         },
         "platform": platform_id,
     }
@@ -488,6 +518,7 @@ def run_generator(
     item: GeneratorSpec,
     input_path: Path,
     output_path: Path,
+    jobs: int,
 ) -> subprocess.CompletedProcess[str]:
     command = [
         python,
@@ -497,6 +528,10 @@ def run_generator(
         "--output",
         str(output_path),
     ]
+    if item.deterministic_shards is not None:
+        command.extend(
+            ["--shards", str(item.deterministic_shards), "--jobs", str(jobs)]
+        )
     return subprocess.run(
         command,
         cwd=REPO_ROOT,
@@ -539,9 +574,24 @@ def publish_directory(staging: Path, target: Path) -> None:
 def main() -> None:
     args = parse_args()
     selected_suite = SUITE_ALIASES.get(args.suite, args.suite)
-    selected = [item for item in GENERATOR_SPECS if selected_suite in item.suites]
+    if args.only is None:
+        selected = [item for item in GENERATOR_SPECS if selected_suite in item.suites]
+    else:
+        selected = [
+            item
+            for item in GENERATOR_SPECS
+            if args.only
+            in {
+                item.domain,
+                Path(item.output).stem,
+                Path(item.script).stem.removeprefix("_generate_").removesuffix(
+                    "_golden"
+                ),
+            }
+        ]
     if not selected:
-        raise SystemExit(f"--suite {args.suite!r} did not select any generators")
+        selector = f"--only {args.only!r}" if args.only else f"--suite {args.suite!r}"
+        raise SystemExit(f"{selector} did not select any generators")
     jobs = args.jobs or min(4, os.cpu_count() or 1, len(selected))
     if jobs < 1:
         raise SystemExit("--jobs must be >= 1")
@@ -591,14 +641,45 @@ def main() -> None:
         )
         return
 
+    if args.check:
+        stale_domains = ", ".join(sorted(stale))
+        raise SystemExit(f"generated RDKit expected data is stale: {stale_domains}")
+
     staging_dirs: dict[str, Path] = {}
+    preserved_outputs: dict[str, list[dict[str, Any]]] = {}
     try:
-        for domain in stale:
-            parent = expected_directory(domain, args.profile).parent
+        for domain, (items, top_identity, _) in stale.items():
+            target = expected_directory(domain, args.profile)
+            parent = target.parent
             parent.mkdir(parents=True, exist_ok=True)
-            staging_dirs[domain] = Path(
+            staging = Path(
                 tempfile.mkdtemp(prefix=f".{args.profile}.prepare-", dir=parent)
             )
+            staging_dirs[domain] = staging
+            preserved_outputs[domain] = []
+            if target.is_dir():
+                try:
+                    previous_manifest = json.loads(
+                        (target / "manifest.json").read_text(encoding="utf-8")
+                    )
+                except (OSError, json.JSONDecodeError):
+                    previous_manifest = {}
+                if all(
+                    previous_manifest.get(key) == value
+                    for key, value in top_identity.items()
+                ):
+                    selected_paths = {item.output for item in items}
+                    for entry in previous_manifest.get("outputs", []):
+                        path = entry.get("path")
+                        source = target / path if isinstance(path, str) else None
+                        if (
+                            isinstance(path, str)
+                            and path not in selected_paths
+                            and source is not None
+                            and source.is_file()
+                        ):
+                            shutil.copy2(source, staging / path)
+                            preserved_outputs[domain].append(entry)
 
         work = []
         for domain, (items, _, _) in stale.items():
@@ -607,7 +688,9 @@ def main() -> None:
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
             futures = {
-                executor.submit(run_generator, args.python, item, input_path, output): item
+                executor.submit(
+                    run_generator, args.python, item, input_path, output, jobs
+                ): item
                 for item, output in work
             }
             for future in concurrent.futures.as_completed(futures):
@@ -616,7 +699,7 @@ def main() -> None:
 
         for domain, (_, top_identity, identities) in stale.items():
             staging = staging_dirs[domain]
-            outputs = []
+            outputs = list(preserved_outputs[domain])
             for identity in identities:
                 output = staging / identity["path"]
                 entry = dict(identity)

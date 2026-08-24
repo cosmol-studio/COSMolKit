@@ -53,6 +53,23 @@ class WorkflowTests(unittest.TestCase):
             phases["topology-operations"]["expected_processed"], 2_854_376
         )
 
+    def test_ciplabeler_phase_is_complete_and_source_backed(self) -> None:
+        profile = runner.load_json(TOOL_DIR / "profiles/complete.json")
+        phase = {item["name"]: item for item in profile["phases"]}["ciplabeler"]
+        self.assertEqual(phase["script"], "audit_core.py")
+        self.assertEqual(phase["mode"], "ciplabeler")
+        self.assertEqual(phase["expected_processed"], 2_897_819)
+        command = runner.command_for(
+            TOOL_DIR.parents[2],
+            phase,
+            Path("corpus/shard-017.jsonl"),
+            Path("run/ciplabeler/shard-017.json"),
+            123,
+            4,
+        )
+        self.assertEqual(command[command.index("--mode") + 1], "ciplabeler")
+        self.assertNotIn("--max-atoms", command)
+
     def test_atom_pair_phase_is_complete_and_source_profiled(self) -> None:
         profile = runner.load_json(TOOL_DIR / "profiles/complete.json")
         phases = {phase["name"]: phase for phase in profile["phases"]}

@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::{Arc, RwLock},
 };
 
@@ -225,6 +225,7 @@ pub struct MoleculeProperties {
     sdf_data_fields: Vec<(String, String)>,
     sdf_property_lists: Vec<SdfPropertyList>,
     props: BTreeMap<String, String>,
+    computed_props: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -302,9 +303,28 @@ impl MoleculeProperties {
         self.props.get(key).map(String::as_str)
     }
 
+    /// Returns whether a property is registered as computed state.
+    #[must_use]
+    pub fn is_prop_computed(&self, key: &str) -> bool {
+        self.computed_props.contains(key)
+    }
+
+    #[must_use]
+    pub fn computed_prop_names(&self) -> &BTreeSet<String> {
+        &self.computed_props
+    }
+
     #[must_use]
     pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.props.insert(key.into(), value.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_computed_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        let key = key.into();
+        self.props.insert(key.clone(), value.into());
+        self.computed_props.insert(key);
         self
     }
 
@@ -322,12 +342,52 @@ impl MoleculeProperties {
 
     #[allow(dead_code)]
     pub(crate) fn set_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        // RDKit✔️✔️: d_props.setVal(key, val);
+        // A non-computed write does not remove an existing computed marker.
         self.props.insert(key.into(), value.into());
     }
 
     #[allow(dead_code)]
+    pub(crate) fn set_computed_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        // RDKit✔️🔝: if (computed) {
+        // RDKit✔️🔝:   STR_VECT compLst;
+        // RDKit✔️🔝:   getPropIfPresent(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝:   if (std::find(compLst.begin(), compLst.end(), key) == compLst.end()) {
+        // RDKit✔️🔝:     compLst.emplace_back(key);
+        // RDKit✔️🔝:     d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝:   }
+        // RDKit✔️🔝: }
+        // RDKit✔️🔝: d_props.setVal(key, val);
+        // The ordered set preserves membership semantics while replacing the
+        // source vector's linear duplicate scan with logarithmic insertion.
+        let key = key.into();
+        self.props.insert(key.clone(), value.into());
+        self.computed_props.insert(key);
+    }
+
+    #[allow(dead_code)]
     pub(crate) fn clear_prop(&mut self, key: &str) {
+        // RDKit✔️🔝: auto svi = std::find(compLst.begin(), compLst.end(), key);
+        // RDKit✔️🔝: if (svi != compLst.end()) {
+        // RDKit✔️🔝:   compLst.erase(svi);
+        // RDKit✔️🔝:   d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝: }
+        // RDKit✔️🔝: d_props.clearVal(key);
+        // BTreeSet removal preserves the source transition with logarithmic
+        // lookup instead of the source vector's linear search and erase.
         self.props.remove(key);
+        self.computed_props.remove(key);
+    }
+
+    pub(crate) fn clear_computed_props(&mut self) {
+        // RDKit✔️🔝: for (const auto &key : compLst) {
+        // RDKit✔️🔝:   d_props.clearVal(key);
+        // RDKit✔️🔝: }
+        // Moving the set avoids the source vector copy while preserving exact
+        // membership-based clearing.
+        for key in std::mem::take(&mut self.computed_props) {
+            self.props.remove(&key);
+        }
     }
 
     pub(crate) fn remap_topology(&mut self, mapping: &TopologyMapping) {
@@ -1017,6 +1077,12 @@ impl Molecule {
         self.properties.prop(key)
     }
 
+    /// Returns whether a molecule property is registered as computed state.
+    #[must_use]
+    pub fn is_prop_computed(&self, key: &str) -> bool {
+        self.properties.is_prop_computed(key)
+    }
+
     #[must_use]
     pub fn with_name(&self, name: impl Into<String>) -> Self {
         let mut properties = (*self.properties).clone();
@@ -1061,6 +1127,13 @@ impl Molecule {
 
     pub fn from_smiles(smiles: &str) -> Result<Self, SmilesParseError> {
         crate::smiles::mol_from_smiles(smiles, &crate::smiles::SmilesParseParams::default())
+    }
+
+    pub fn from_smiles_with_params(
+        smiles: &str,
+        params: &crate::SmilesParseParams,
+    ) -> Result<Self, SmilesParseError> {
+        crate::smiles::mol_from_smiles(smiles, params)
     }
 
     pub fn from_smiles_with_sanitize(

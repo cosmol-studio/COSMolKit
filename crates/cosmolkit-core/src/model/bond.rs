@@ -1,6 +1,9 @@
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
 use crate::{AtomId, BondQueryPredicate, QueryNode};
 
@@ -237,6 +240,7 @@ pub struct BondSpec {
     unknown_stereo: bool,
     query: Option<QueryNode<BondQueryPredicate>>,
     props: BTreeMap<String, String>,
+    computed_props: BTreeSet<String>,
 }
 
 impl BondSpec {
@@ -254,6 +258,7 @@ impl BondSpec {
             unknown_stereo: false,
             query: None,
             props: BTreeMap::new(),
+            computed_props: BTreeSet::new(),
         }
     }
 
@@ -374,6 +379,14 @@ impl BondSpec {
     }
 
     #[must_use]
+    pub fn with_computed_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        let key = key.into();
+        self.props.insert(key.clone(), value.into());
+        self.computed_props.insert(key);
+        self
+    }
+
+    #[must_use]
     pub fn props(&self) -> &BTreeMap<String, String> {
         &self.props
     }
@@ -381,6 +394,11 @@ impl BondSpec {
     #[must_use]
     pub fn prop(&self, key: &str) -> Option<&str> {
         self.props.get(key).map(String::as_str)
+    }
+
+    #[must_use]
+    pub fn is_prop_computed(&self, key: &str) -> bool {
+        self.computed_props.contains(key)
     }
 
     pub(crate) fn remapped_endpoints(
@@ -412,6 +430,7 @@ pub struct Bond {
     unknown_stereo: bool,
     query: Option<QueryNode<BondQueryPredicate>>,
     props: BTreeMap<String, String>,
+    computed_props: BTreeSet<String>,
 }
 
 impl Bond {
@@ -429,6 +448,7 @@ impl Bond {
             unknown_stereo: spec.unknown_stereo,
             query: spec.query,
             props: spec.props,
+            computed_props: spec.computed_props,
         }
     }
 
@@ -516,6 +536,24 @@ impl Bond {
         self.props.get(key).map(String::as_str)
     }
 
+    /// Returns whether a property is registered as computed state.
+    #[must_use]
+    pub fn is_prop_computed(&self, key: &str) -> bool {
+        self.computed_props.contains(key)
+    }
+
+    #[must_use]
+    pub fn computed_prop_names(&self) -> &BTreeSet<String> {
+        &self.computed_props
+    }
+
+    /// Returns the modern CIP descriptor persisted on this bond, if present.
+    pub fn cip_descriptor(
+        &self,
+    ) -> Result<Option<crate::CipDescriptor>, crate::CipDescriptorError> {
+        crate::chemistry::cip::descriptor_from_property(self.prop("_CIPCode"))
+    }
+
     #[allow(dead_code)]
     pub(crate) fn set_order(&mut self, order: BondOrder) {
         self.order = order;
@@ -577,11 +615,51 @@ impl Bond {
 
     #[allow(dead_code)]
     pub(crate) fn set_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        // RDKit✔️✔️: d_props.setVal(key, val);
+        // A non-computed write does not remove an existing computed marker.
         self.props.insert(key.into(), value.into());
     }
 
     #[allow(dead_code)]
+    pub(crate) fn set_computed_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        // RDKit✔️🔝: if (computed) {
+        // RDKit✔️🔝:   STR_VECT compLst;
+        // RDKit✔️🔝:   getPropIfPresent(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝:   if (std::find(compLst.begin(), compLst.end(), key) == compLst.end()) {
+        // RDKit✔️🔝:     compLst.emplace_back(key);
+        // RDKit✔️🔝:     d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝:   }
+        // RDKit✔️🔝: }
+        // RDKit✔️🔝: d_props.setVal(key, val);
+        // The ordered set preserves membership semantics while replacing the
+        // source vector's linear duplicate scan with logarithmic insertion.
+        let key = key.into();
+        self.props.insert(key.clone(), value.into());
+        self.computed_props.insert(key);
+    }
+
+    #[allow(dead_code)]
     pub(crate) fn clear_prop(&mut self, key: &str) {
+        // RDKit✔️🔝: auto svi = std::find(compLst.begin(), compLst.end(), key);
+        // RDKit✔️🔝: if (svi != compLst.end()) {
+        // RDKit✔️🔝:   compLst.erase(svi);
+        // RDKit✔️🔝:   d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝: }
+        // RDKit✔️🔝: d_props.clearVal(key);
+        // BTreeSet removal preserves the source transition with logarithmic
+        // lookup instead of the source vector's linear search and erase.
         self.props.remove(key);
+        self.computed_props.remove(key);
+    }
+
+    pub(crate) fn clear_computed_props(&mut self) {
+        // RDKit✔️🔝: for (const auto &key : compLst) {
+        // RDKit✔️🔝:   d_props.clearVal(key);
+        // RDKit✔️🔝: }
+        // Moving the set avoids the source vector copy while preserving exact
+        // membership-based clearing.
+        for key in std::mem::take(&mut self.computed_props) {
+            self.props.remove(&key);
+        }
     }
 }

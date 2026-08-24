@@ -155,6 +155,7 @@ pub use bio_ops::{
 };
 pub use bond::{Bond, BondDirection, BondId, BondOrder, BondSpec, BondStereo};
 pub use builder::MoleculeBuilder;
+pub use chemistry::cip::{CipDescriptor, CipDescriptorError, CipLabelOptions, CipLabelerError};
 pub use chemistry::forcefield::mmff::{
     MMFF_MOL_PROPERTIES_FEATURE, MmffAngle, MmffAngleCollection, MmffAtomProperties, MmffBond,
     MmffBondCollection, MmffChg, MmffChgCollection, MmffDef, MmffDefCollection, MmffDfsbCollection,
@@ -255,9 +256,10 @@ pub use molecule::{
     Molecule, MoleculeCapabilities, MoleculeProperties, PropertyStore, SdfPropertyList,
     SdfPropertyListTarget, SmilesParseError, SmilesWriteError, TopologyMapping, TopologyTrust,
 };
+pub use notation::smiles::SmilesParseParams;
 pub use ops::{
     ASSIGNED_AROMATICITY_SPEC, ASSIGNED_RING_FAMILIES_SPEC, ASSIGNED_RINGS_SPEC,
-    ASSIGNED_VALENCE_SPEC, BlockAccess, BlockSet, InvariantCheckSet, MOLECULE_OPS,
+    ASSIGNED_VALENCE_SPEC, BlockAccess, BlockSet, CipStatePolicy, InvariantCheckSet, MOLECULE_OPS,
     MappingRequirement, MoleculeOpKind, MoleculeOpSpec, OPERATION_INVARIANT_MATRIX,
     OperationDomain, OperationError, OperationInvariantEntry, OperationTrace, PARITY_MATRIX,
     ParityMatrixEntry, ParityPolicy, SANITIZE_SPEC, SUPPORT_MATRIX, SemanticPrecondition,
@@ -298,13 +300,13 @@ pub use substruct::{
 pub use support::{
     AROMATICITY_FEATURE, ATOM_PAIR_FINGERPRINT_FEATURE, AVALON_FINGERPRINT_FEATURE, BATCH_FEATURE,
     BIO_MMCIF_READ_FEATURE, BIO_MMCIF_WRITE_FEATURE, BIO_PDB_READ_FEATURE, BIO_SELECTION_FEATURE,
-    BIO_STRUCTURE_FEATURE, CONFORMER_GENERATION_FEATURE, COORDINATE_2D_FEATURE,
-    COORDINATE_EDIT_FEATURE, DESCRIPTORS_FEATURE, DG_BOUNDS_FEATURE, DRAWING_FEATURE,
-    FINGERPRINT_FEATURE, FeatureCategory, FeatureSpec, HYDROGENS_FEATURE, INCHI_FEATURE,
-    KEKULIZE_FEATURE, MOLBLOCK_IO_FEATURE, PUBLIC_FEATURES, RINGS_FEATURE, SANITIZE_FEATURE,
-    SMILES_PARSE_FEATURE, SMILES_WRITE_FEATURE, STEREO_FEATURE, SUBSTRUCTURE_FEATURE,
-    SupportStatus, TOPOLOGICAL_TORSION_FINGERPRINT_FEATURE, UnsupportedFeatureError,
-    VALENCE_FEATURE,
+    BIO_STRUCTURE_FEATURE, CIP_LABELER_FEATURE, CONFORMER_GENERATION_FEATURE,
+    COORDINATE_2D_FEATURE, COORDINATE_EDIT_FEATURE, DESCRIPTORS_FEATURE, DG_BOUNDS_FEATURE,
+    DRAWING_FEATURE, FINGERPRINT_FEATURE, FeatureCategory, FeatureSpec, HYDROGENS_FEATURE,
+    INCHI_FEATURE, KEKULIZE_FEATURE, MOLBLOCK_IO_FEATURE, PUBLIC_FEATURES, RINGS_FEATURE,
+    SANITIZE_FEATURE, SMILES_PARSE_FEATURE, SMILES_WRITE_FEATURE, STEREO_FEATURE,
+    SUBSTRUCTURE_FEATURE, SupportStatus, TOPOLOGICAL_TORSION_FINGERPRINT_FEATURE,
+    UnsupportedFeatureError, VALENCE_FEATURE,
 };
 #[allow(deprecated)]
 pub use support::{

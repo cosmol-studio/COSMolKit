@@ -13,7 +13,8 @@ pub(crate) fn assign_stereochemistry_cleanup_subset(
     // END RDKIT CPP FUNCTION assignStereochemistry cleanup subset
     ensure_valence_for_stereo(mol)?;
     assign_double_bond_stereo_after_smiles_parse(mol, clean_it)?;
-    mol.properties_mut().set_prop("_StereochemDone", "1");
+    mol.properties_mut()
+        .set_computed_prop("_StereochemDone", "1");
     Ok(())
 }
 

@@ -42,15 +42,7 @@ pub(super) fn apply_add_hs_assignment(
     // BEGIN RDKIT CPP FUNCTION MolOps::addHs(RWMol&, const AddHsParameters&, const UINT_VECT*)
     if assignment.clear_computed_properties {
         // RDKit✔️✔️:   RDProps::clearComputedProps();
-        // `_StereochemDone` is the molecule-level computed property currently
-        // represented by the Rust model and consumed by legacy stereo perception.
-        properties.clear_prop("_StereochemDone");
-        // RDKit✔️✔️:   for (auto atom : atoms()) {
-        // RDKit✔️✔️:     atom->clearComputedProps();
-        // RDKit✔️✔️:   }
-        for atom in &mut topology.atoms {
-            atom.clear_prop("_CIPRank");
-        }
+        crate::chemistry::cip::clear_computed_source_properties(topology, properties);
     }
     // RDKit❗✔️:   ...
     // RDKit❗✔️:     newAt->clearComputedProps();
@@ -710,6 +702,7 @@ fn without_hydrogens_apply(
             );
             parts.set_valence_cache(valence);
             // RDKit✔️✔️:   mol.clearComputedProps(true);
+            crate::chemistry::cip::clear_computed_source_properties(topology, properties);
             parts.clear_computed_properties();
             if assignment.sanitize_after_removal {
                 changed |= sanitize_after_remove_hs_removal(

@@ -30,6 +30,9 @@ def _schema(required: str, optional: str = "") -> OutputSchema:
 
 
 SCHEMAS = {
+    "ciplabeler.jsonl": _schema(
+        "calls:array,case_id:string,initial_state:null|object,parse_error:null|string,parse_status:string,schema_version:integer,source:object"
+    ),
     "graph_features.jsonl": _schema(
         "addhs_removehs:null|object,chiral_centers:null|object,direct:null|object,error:null|string,possible_stereo:null|object,rdkit_ok:boolean,smiles:string,with_hs:null|object"
     ),

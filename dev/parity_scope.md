@@ -19,12 +19,11 @@ interchangeably in tests or documentation.
 | Large stress | ChEMBL 37 structure table | 2,897,819 source; 2,897,804 mutually parseable | Large-scale parity, operation-order, batch, and concurrent-read stress auditing |
 
 The complete ChEMBL 37 evidence inventory contains the 22-phase chemistry,
-composition, batch, and concurrency audit; the complete
-RDKFingerprint/Avalon, AtomPair, and Topological Torsion fingerprint audits;
-and the 15-phase
-execution recorded below. The chemistry/composition audit contains 2,816 tasks
-over 128 corpus shards, while the three complete fingerprint audit phases add
-384 tasks over the same shards.
+composition, batch, and concurrency audit; the complete modern CIPLabeler,
+RDKFingerprint/Avalon, AtomPair, and Topological Torsion audits; and the
+15-phase execution recorded below. The chemistry/composition audit contains
+2,816 tasks over 128 corpus shards, while the four complete independent audit
+phases add 512 tasks over the same shards.
 Phases with a configured atom-count boundary evaluate 2,854,362 eligible
 records. Large subset phases select their stated number of records from the
 same ChEMBL 37 source; they are not separate corpora.
@@ -34,32 +33,31 @@ identity, and acceptance procedure are documented in
 [`dev/tools/chembl_parity/README.md`](tools/chembl_parity/README.md). The
 current `complete.json` profile preserves the completed phases, adds four
 configured phases for topology operations, fragments, direct 2D coordinates,
-and binary roundtrips, and includes the three complete fingerprint audit phases.
-The extended profile contains 29 phases and 3,712 shard tasks. The consolidated
-validation covers all four additions over their complete configured ChEMBL
-boundaries. Fragments, direct 2D coordinates, topology operations, and binary
-roundtrips each have a complete accepted result with zero mismatch. The
-summary below reports this final evidence boundary.
+and binary roundtrips, and includes modern CIPLabeler plus the three complete
+fingerprint audit phases. The extended profile contains 30 phases and 3,840
+shard tasks. The consolidated validation covers all five additions over their
+complete configured ChEMBL boundaries. Modern CIPLabeler, fragments, direct 2D
+coordinates, topology operations, and binary roundtrips each have a complete
+accepted result with zero mismatch. The summary below reports this final
+evidence boundary.
 Corpus shards and run outputs remain uncommitted; code, profiles, source and
 reference pins, and pass/fail rules are version controlled.
 
 ## Complete ChEMBL 37 Validation Summary
 
 The consolidated validation record combines the 22-phase audit, the complete
-RDKFingerprint/Avalon, AtomPair, and Topological Torsion fingerprint audits,
-and the 15-phase
-execution. The 15-phase execution used COSMolKit `0.2.12`, pinned RDKit
-`2026.03.1`, the same
-2,897,819-record ChEMBL 37 source, 128 corpus shards, and 112 workers. All 15
-phases and all 1,920 shard tasks completed; every result artifact and checksum
-was independently revalidated. Together with the three independent complete
-fingerprint audits, the consolidated evidence table records 2,868,003,272
-matching checks and zero blocking mismatch. Bounds additionally traversed
-2,757,910,995 matrix entries.
+modern CIPLabeler, RDKFingerprint/Avalon, AtomPair, and Topological Torsion
+audits, and the 15-phase execution. The 15-phase execution used COSMolKit
+`0.2.12`, pinned RDKit `2026.03.1`, the same 2,897,819-record ChEMBL 37 source,
+128 corpus shards, and 112 workers. All 15 phases and all 1,920 shard tasks
+completed; every result artifact and checksum was independently revalidated.
+Together with the four independent complete audits, the consolidated evidence
+table records 2,879,420,720 matching checks and zero blocking mismatch. Bounds
+additionally traversed 2,757,910,995 matrix entries.
 
 The first 15 rows summarize the consolidated chemistry and composition
-execution. The final three rows are independent complete fingerprint audits
-over the same ChEMBL 37 source.
+execution. The final four rows are independent complete modern CIPLabeler and
+fingerprint audits over the same ChEMBL 37 source.
 
 | Phase or independent audit | Records evaluated | Matching checks | Blocking mismatches | Status |
 |---|---:|---:|---:|---|
@@ -78,6 +76,7 @@ over the same ChEMBL 37 source.
 | Scalar/batch composition | 1,027,660 | 20,561,265 | 0 | Pass |
 | Fixed-seed conformer outcome | 524,288 | 524,288 | 0 | Pass |
 | UFF/MMFF force fields | 524,288 | 3,139,761 | 0 | Pass |
+| Modern CIPLabeler | 2,854,362 compared; 15 parser rejects; 43,442 over 80 atoms | 11,417,448 | 0 | Pass |
 | RDKFingerprint/Avalon fingerprints | 2,897,819 source; 2,897,804 compared | 113,014,356 | 0 | Pass |
 | AtomPair fingerprints | 2,897,819 source; 2,897,804 compared | 118,809,964 | 0 | Pass |
 | Topological Torsion fingerprints | 2,897,819 source; 2,897,804 compared | 127,503,376 | 0 | Pass |
@@ -126,9 +125,10 @@ matrix entries actually compared, not merely the number of input molecules.
 | RDKFingerprint/topological | ChEMBL 37 | 2,897,804 | 14 vectors + 2 provenance outputs | 46,364,864 |
 | Avalon explicit-bit | ChEMBL 37 | 2,897,804 | 23 | 66,649,492 |
 | AtomPair | ChEMBL 37 | 2,897,804 | 40 vectors + 1 provenance output | 118,809,964 |
+| Modern CIPLabeler | ChEMBL 37 | 2,854,362 | full, selected atom, selected bond, empty selection | 11,417,448 |
 
-Except for the separately identified RDKFingerprint, Avalon, AtomPair, and
-Topological Torsion rows,
+Except for the separately identified modern CIPLabeler, RDKFingerprint,
+Avalon, AtomPair, and Topological Torsion rows,
 the ChEMBL 37 figures above are the complete chemistry/composition audit
 counters. The acceptance model combines that full-corpus breadth with exact
 source-regression matrices for every covered branch: 10 descriptor rows,
@@ -193,6 +193,26 @@ exact RDKit bit-pattern comparison; integer and string outputs use exact
 equality. QED is pinned to `RDKit 2026.03.1 + CPython 3.13.12` because RDKit
 delegates reductions to Python `sum()` and older CPython versions use a
 different floating-point reduction algorithm.
+
+### Modern CIPLabeler
+
+The modern CIPLabeler audit uses the reproducible ChEMBL runner and the same
+128 deterministic corpus shards as the other complete audits. Each of the
+2,854,362 eligible records is compared after full assignment, selected-atom
+assignment, selected-bond assignment, and empty-selection dispatch. All
+11,417,448 comparisons match pinned RDKit exactly; all 128 shards completed
+with zero mismatch or retained finding. Fifteen source records are rejected by
+both parsers, and 43,442 accepted records exceed the phase's configured
+80-atom boundary.
+
+Each comparison includes success or exact error state, molecule
+`_CIPComputed`, atom and bond `_CIPCode` and `_CIPNeighborOrder`, atom
+`_CIPRank`, computed-property membership, chiral tags, bond stereo, and stereo
+atoms. The pinned source boundary covers tetrahedral, double-bond, and
+atropisomeric configurations constructed by `findConfigs`; descriptor families
+outside that dispatcher are separate capabilities. The immutable result and
+reproduction command are recorded in the [modern CIPLabeler validation
+report](gap_reports/rdkit_ciplabeler_full_port_validation.md).
 
 ### Morgan And MACCS Fingerprints
 

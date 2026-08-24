@@ -9,7 +9,7 @@
 // COSMolKit MolPickler — compact binary serialization for Molecule.
 // Uses a forward-compatible versioned format with little-endian encoding.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -25,7 +25,7 @@ use crate::{
 // ──────────────────────────────────────────────
 // Format version
 // ──────────────────────────────────────────────
-const PICKLE_VERSION: u8 = 2;
+const PICKLE_VERSION: u8 = 3;
 const ARCHIVE_MAGIC: &[u8; 8] = b"CSMOLPKL";
 const ARCHIVE_MAJOR: u16 = 1;
 const ARCHIVE_MINOR: u16 = 1;
@@ -163,6 +163,13 @@ impl PickleWriter {
             self.write_string(value);
         }
     }
+
+    fn write_computed_props(&mut self, props: &BTreeSet<String>) {
+        self.write_u32(props.len() as u32);
+        for key in props {
+            self.write_string(key);
+        }
+    }
 }
 
 struct PickleReader<'a> {
@@ -249,6 +256,20 @@ impl<'a> PickleReader<'a> {
             let key = self.read_string()?;
             let value = self.read_string()?;
             props.insert(key, value);
+        }
+        Ok(props)
+    }
+
+    fn read_computed_props(&mut self) -> Result<BTreeSet<String>, PickleError> {
+        let count = self.read_u32()? as usize;
+        if count > 1_000_000 {
+            return Err(PickleError::InvalidArchive(format!(
+                "unreasonable computed-property count: {count}"
+            )));
+        }
+        let mut props = BTreeSet::new();
+        for _ in 0..count {
+            props.insert(self.read_string()?);
         }
         Ok(props)
     }
@@ -1201,12 +1222,13 @@ fn write_atom(w: &mut PickleWriter, atom: &Atom) {
 
     // Properties
     w.write_props(atom.props());
+    w.write_computed_props(atom.computed_prop_names());
 
     // PDB residue info presence flag
     w.write_bool(atom.pdb_residue_info().is_some());
 }
 
-fn read_bond(r: &mut PickleReader) -> Result<Bond, PickleError> {
+fn read_bond(r: &mut PickleReader, version: u8) -> Result<Bond, PickleError> {
     let begin_idx = r.read_u32()? as usize;
     let end_idx = r.read_u32()? as usize;
     let order = read_bond_order(r)?;
@@ -1230,6 +1252,11 @@ fn read_bond(r: &mut PickleReader) -> Result<Bond, PickleError> {
     let _has_query = r.read_bool()?;
 
     let props = r.read_props()?;
+    let computed_props = if version >= 3 {
+        r.read_computed_props()?
+    } else {
+        BTreeSet::new()
+    };
 
     // Reconstruct via builder-like approach using spec
     // Note: BondSpec is the construction payload; we need id, begin, end
@@ -1249,7 +1276,11 @@ fn read_bond(r: &mut PickleReader) -> Result<Bond, PickleError> {
     // Properties
     let mut spec = spec;
     for (key, value) in &props {
-        spec = spec.with_prop(key.clone(), value.clone());
+        spec = if computed_props.contains(key) {
+            spec.with_computed_prop(key.clone(), value.clone())
+        } else {
+            spec.with_prop(key.clone(), value.clone())
+        };
     }
 
     // Creating from_spec requires BondId
@@ -1291,6 +1322,7 @@ fn write_bond(w: &mut PickleWriter, bond: &Bond) {
 
     // Properties
     w.write_props(bond.props());
+    w.write_computed_props(bond.computed_prop_names());
 }
 
 // ──────────────────────────────────────────────
@@ -1814,6 +1846,7 @@ fn mol_to_legacy_binary(mol: &Molecule) -> Result<Vec<u8>, PickleError> {
     let props = mol.properties();
     w.write_option_string(props.name());
     w.write_props(props.props());
+    w.write_computed_props(props.computed_prop_names());
 
     // SDF data fields
     let sdf_fields = props.sdf_data_fields();
@@ -1927,6 +1960,11 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
         }
         let _has_query = r.read_bool()?;
         let props = r.read_props()?;
+        let computed_props = if version >= 3 {
+            r.read_computed_props()?
+        } else {
+            BTreeSet::new()
+        };
         let _has_pdb_info = r.read_bool()?;
 
         let element =
@@ -1964,7 +2002,11 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
 
         // Properties
         for (key, value) in &props {
-            spec = spec.with_prop(key.clone(), value.clone());
+            spec = if computed_props.contains(key) {
+                spec.with_computed_prop(key.clone(), value.clone())
+            } else {
+                spec.with_prop(key.clone(), value.clone())
+            };
         }
 
         atom_specs.push((i, spec));
@@ -1978,7 +2020,7 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
 
     let mut bond_specs = Vec::with_capacity(bond_count);
     for _ in 0..bond_count {
-        let bond = read_bond(&mut r)?;
+        let bond = read_bond(&mut r, version)?;
         // Store just the spec components we need
         bond_specs.push((
             bond.begin(),
@@ -1991,6 +2033,7 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
             bond.stereo_atoms(),
             bond.unknown_stereo(),
             bond.props().clone(),
+            bond.computed_prop_names().clone(),
         ));
     }
 
@@ -2240,6 +2283,11 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
     // ── Molecule Properties ──
     let prop_name = r.read_option_string()?;
     let props = r.read_props()?;
+    let computed_props = if version >= 3 {
+        r.read_computed_props()?
+    } else {
+        BTreeSet::new()
+    };
     let sdf_field_count = r.read_u32()? as usize;
     let mut sdf_data_fields = Vec::with_capacity(sdf_field_count);
     for _ in 0..sdf_field_count {
@@ -2289,6 +2337,7 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
         stereo_atoms,
         unknown_stereo,
         bond_props,
+        bond_computed_props,
     ) in &bond_specs
     {
         let mut bspec = crate::BondSpec::new(*begin, *end, *order)
@@ -2301,7 +2350,11 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
             bspec = bspec.with_stereo_atoms(*sa_begin, *sa_end);
         }
         for (key, value) in bond_props {
-            bspec = bspec.with_prop(key.clone(), value.clone());
+            bspec = if bond_computed_props.contains(key) {
+                bspec.with_computed_prop(key.clone(), value.clone())
+            } else {
+                bspec.with_prop(key.clone(), value.clone())
+            };
         }
         builder
             .add_bond(bspec)
@@ -2349,7 +2402,11 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
         mol_props = mol_props.with_name(name.clone());
     }
     for (key, value) in &props {
-        mol_props = mol_props.with_prop(key.clone(), value.clone());
+        mol_props = if computed_props.contains(key) {
+            mol_props.with_computed_prop(key.clone(), value.clone())
+        } else {
+            mol_props.with_prop(key.clone(), value.clone())
+        };
     }
     for (key, value) in &sdf_data_fields {
         mol_props = mol_props.with_sdf_data_field(key.clone(), value.clone());

@@ -21,6 +21,66 @@ empty.
 
 ## [Unreleased]
 
+This release adds the public modern RDKit CIPLabeler capability through one
+source-backed Rust implementation, with explicit state lifecycle and exact
+large-corpus validation across full and selected assignment.
+
+### Added
+
+- Added registered Rust and Python CIP-label assignment for complete molecules
+  and selected atoms or bonds, including source-width recursion limits and
+  typed `R/S/r/s`, `E/Z`, and `M/P/m/p` descriptor queries on atoms and bonds.
+  Value-style and explicit trailing-underscore in-place forms share the same
+  molecular-context implementation; neither delegates to the legacy CIP-rank
+  helper.
+- Added focused RDKit oracle fixtures, Rust and Python examples, generated
+  expected-data support, a maintained exhaustive 5,000-row CI gate, and a
+  reproducible ChEMBL 37 parity phase for the complete observable CIP state.
+- Added source-backed Rust SMILES parser options so sanitization and hydrogen
+  removal can be selected independently when constructing exact intermediate
+  states.
+
+### Changed
+
+- Modeled RDKit computed-property membership explicitly for molecule, atom,
+  and bond properties. Sanitization and hydrogen operations now reproduce
+  `clearComputedProps()` by membership, preserving same-named user properties
+  that were not registered as computed.
+- Added a generated CIP-state policy to every molecule operation. Modern CIP
+  assignment is the only assignment owner; other operations explicitly
+  preserve or clear computed CIP state according to their source transition.
+- Advanced molecule binary state encoding while retaining reads of earlier
+  archive and legacy payloads, so CIP values and computed-property
+  classification survive clone and serialization roundtrips.
+
+### Fixed
+
+- Completed the modern CIP digraph, configuration, auxiliary-label, and
+  sequence-rule call paths, including source-prefix sorter ownership in Rule4b
+  and Rule5New, exact selected-call dispatch, shared recursion budgeting,
+  atropisomer carrier ordering, and source-observable partial state on errors.
+- Removed duplicate atropisomer carrier extraction from the CIP path and made
+  it reuse the source-backed shared topology helper.
+
+### Validation
+
+- The complete modern CIPLabeler audit processed all 2,897,819 ChEMBL 37
+  source records over 128 shards. Fifteen records were rejected by both
+  parsers and 43,442 accepted records exceeded the configured 80-atom phase
+  boundary. Every one of the remaining 2,854,362 records matched pinned RDKit
+  after full, selected-atom, selected-bond, and empty-selection assignment,
+  totaling 11,417,448 exact complete-state comparisons with zero mismatch or
+  retained finding.
+- Comparisons include success and exact error state, `_CIPComputed`, atom and
+  bond `_CIPCode` and `_CIPNeighborOrder`, atom `_CIPRank`, computed-property
+  membership, chiral tags, bond stereo, and stereo atoms. Focused fixtures also
+  cover all ten emitted descriptor spellings, repeated calls, recursion
+  limits, malformed state, and the declared dispatcher boundary.
+- Source-equivalent process-global cancellation and non-tetrahedral
+  configuration construction outside pinned `findConfigs` remain separately
+  identified capabilities; no mismatch inside the supported dispatcher is
+  classified as unsupported.
+
 ## [0.2.13] - 2026-08-24
 
 This release completes source-backed AtomPair and Topological Torsion

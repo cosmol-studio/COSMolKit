@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "rdkit_version": "2026.03.1",
+  "source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8c",
+  "cases": [
+    {
+      "case_id": "upstream-tetrahedral-s",
+      "input_kind": "smiles",
+      "input": "Br[C@H](Cl)F"
+    },
+    {
+      "case_id": "upstream-sp2-e-z",
+      "input_kind": "smiles",
+      "input": "CC\\C(\\C(\\C)=N\\O)=N\\O"
+    },
+    {
+      "case_id": "upstream-phosphine-r",
+      "input_kind": "smiles",
+      "input": "C[P@](C1CCCC1)C1=CC=CC=C1"
+    },
+    {
+      "case_id": "upstream-arsine-s",
+      "input_kind": "smiles",
+      "input": "C[As@@](C1CCCC1)C1=CC=CC=C1"
+    },
+    {
+      "case_id": "upstream-pseudoasymmetric-lower-r",
+      "input_kind": "smiles",
+      "input": "C\\C=C/[C@@H](\\C=C\\O)[C@H](C)[C@H](\\C=C/C)\\C=C\\O"
+    },
+    {
+      "case_id": "github-4996-dummy-unique",
+      "input_kind": "smiles",
+      "input": "*[C@](F)(Cl)Br"
+    },
+    {
+      "case_id": "github-4996-dummy-equal",
+      "input_kind": "smiles",
+      "input": "*[C@](*)(Cl)Br"
+    },
+    {
+      "case_id": "github-4996-dummy-cyclic-pseudo",
+      "input_kind": "smiles",
+      "input": "C1CC[C@](*)2CCCC[C@H]2C1"
+    },
+    {
+      "case_id": "non-kekulizable-fragment-fallback",
+      "input_kind": "smiles",
+      "input": "F[C@H](CNC)CCc(:c):c",
+      "sanitize": false,
+      "remove_hs": false,
+      "update_property_cache": true
+    },
+    {
+      "case_id": "neighbor-order-noatom-sentinel",
+      "input_kind": "smiles",
+      "input": "[2H]/C(=C(/[1H])\\[H])/[H]",
+      "remove_hs": false,
+      "calls": [
+        {
+          "atoms_to_label": null,
+          "bonds_to_label": null,
+          "max_recursive_iterations": 100
+        }
+      ]
+    },
+    {
+      "case_id": "selected-atoms-repeated-state",
+      "input_kind": "smiles",
+      "input": "C[C@H](Cl)CC[C@H](Cl)C",
+      "sanitize": false,
+      "remove_hs": false,
+      "update_property_cache": true,
+      "calls": [
+        {
+          "atoms_to_label": [1, 1],
+          "bonds_to_label": null,
+          "max_recursive_iterations": 0
+        },
+        {
+          "atoms_to_label": [5],
+          "bonds_to_label": null,
+          "max_recursive_iterations": 0
+        },
+        {
+          "atoms_to_label": [],
+          "bonds_to_label": [],
+          "max_recursive_iterations": 0
+        },
+        {
+          "atoms_to_label": null,
+          "bonds_to_label": null,
+          "max_recursive_iterations": 0
+        }
+      ]
+    },
+    {
+      "case_id": "selected-bonds-repeated-state",
+      "input_kind": "smiles",
+      "input": "C\\C=C\\C=C/C",
+      "calls": [
+        {
+          "atoms_to_label": null,
+          "bonds_to_label": [3, 3],
+          "max_recursive_iterations": 0
+        },
+        {
+          "atoms_to_label": null,
+          "bonds_to_label": [1],
+          "max_recursive_iterations": 0
+        },
+        {
+          "atoms_to_label": null,
+          "bonds_to_label": null,
+          "max_recursive_iterations": 0
+        }
+      ]
+    },
+    {
+      "case_id": "simultaneous-atom-bond-selection",
+      "input_kind": "smiles",
+      "input": "C[C@H](F)/C=C/Cl",
+      "calls": [
+        {
+          "atoms_to_label": [1],
+          "bonds_to_label": [3],
+          "max_recursive_iterations": 0
+        }
+      ]
+    },
+    {
+      "case_id": "shared-recursion-budget-error-and-retry",
+      "input_kind": "smiles",
+      "input": "C/C=C/[C@@H](/C=C/O)[C@H](C)[C@H](/C=C/C)/C=C/O",
+      "calls": [
+        {
+          "atoms_to_label": null,
+          "bonds_to_label": null,
+          "max_recursive_iterations": 1
+        },
+        {
+          "atoms_to_label": null,
+          "bonds_to_label": null,
+          "max_recursive_iterations": 0
+        }
+      ]
+    },
+    {
+      "case_id": "pinned-atropisomer-v3000",
+      "input_kind": "molblock",
+      "input_file": "testdata/rdkit_builtin/fixtures/Code/GraphMol/FileParsers/atropisomers/AtropTest.sdf",
+      "remove_hs": false,
+      "calls": [
+        {
+          "atoms_to_label": null,
+          "bonds_to_label": null,
+          "max_recursive_iterations": 100000
+        }
+      ]
+    },
+    {
+      "case_id": "upstream-atropisomer-uppercase-m",
+      "input_kind": "smiles",
+      "input": "O=C1C=CNC(=O)N1C(=C)[C@]([C@H](C)Br)([C@@H](F)C)[C@H](Cl)C |(1.6038,0.5917,;1.2842,-0.2899,;1.9435,-0.5613,;2.0181,-1.3829,;1.344,-1.8584,;0.5951,-1.5123,;0.0595,-2.2018,;0.5204,-0.6907,;-0.3117,-0.3431,;-0.861,-1.0085,;-0.5013,0.5405,;-0.4918,1.4387,;-0.0783,2.2018,;-1.0961,2.0398,;0.3347,0.736,;0.6313,-0.0436,;1.118,1.0786,;-1.3746,0.4021,;-2.0181,0.9732,),wU:7.7,11.13,10.14,17.18wD:14.15|",
+      "remove_hs": false
+    },
+    {
+      "case_id": "upstream-atropisomer-lowercase-m",
+      "input_kind": "smiles",
+      "input": "C1(N2C(C)=CC=C2Br)=C(C)C(C)=C(N2C(C)=CC=C2Br)C(C)=C1C |(-0.0002,1.5403,;-0.0002,3.0805,;-1.334,3.8508,;-2.6678,3.0807,;-1.334,5.391,;1.3338,5.391,;1.3338,3.8508,;2.6676,3.0807,;-1.3338,0.7702,;-2.6678,1.5403,;-1.3338,-0.7702,;-2.6678,-1.5401,;-0.0002,-1.5403,;-0.0002,-3.0805,;1.3338,-3.8508,;2.6676,-3.0805,;1.3338,-5.391,;-1.334,-5.391,;-1.334,-3.8508,;-2.6678,-3.0805,;1.3338,-0.7702,;2.6678,-1.5403,;1.3338,0.7702,;2.6678,1.5404,),wU:1.6,13.14|",
+      "remove_hs": false
+    },
+    {
+      "case_id": "upstream-atropisomer-lowercase-p",
+      "input_kind": "smiles",
+      "input": "N1(n2c(C)ccc2Br)C(=O)[C@H](C)[C@H](C)C1=O |(-11.1517,1.8306,;-11.1517,3.3708,;-12.4855,4.1411,;-13.8193,3.371,;-12.4855,5.6813,;-9.8177,5.6813,;-9.8177,4.1411,;-8.4839,3.371,;-12.3975,0.9252,;-13.8622,1.4011,;-11.9217,-0.5394,;-12.8269,-1.7852,;-10.3817,-0.5394,;-9.4765,-1.7852,;-9.9059,0.9252,;-8.4413,1.4011,),wU:0.8,10.11,12.13|",
+      "remove_hs": false
+    },
+    {
+      "case_id": "non-tetrahedral-dispatcher-boundary",
+      "input_kind": "smiles",
+      "input": "[Pt@SP1](Cl)(Br)(I)F",
+      "sanitize": false,
+      "remove_hs": false,
+      "update_property_cache": true
+    }
+  ]
+}

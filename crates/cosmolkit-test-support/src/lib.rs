@@ -375,6 +375,9 @@ fn validate_current_input(input: &ManifestFile, expected_profile: &str) -> Resul
         profile if profile == profile_name() => smiles_path(),
         "atom_pair_focused" => repo_root()
             .join("testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi"),
+        "ciplabeler_focused" => {
+            repo_root().join("testdata/stereo/fixtures/ciplabeler_focused.json")
+        }
         "smiles_small" => repo_root().join("testdata/smiles/corpus/smiles_small.smi"),
         "smiles_5000" => repo_root().join("testdata/smiles/corpus/smiles_5000.smi"),
         other => return Err(format!("unknown expected-data profile '{other}'")),
@@ -424,14 +427,24 @@ fn validate_output_identity(
             output.path
         ));
     }
-    let expected_arguments = vec![
+    let expected_argument_prefix = [
         "--input".to_string(),
         primary_input.path.clone(),
         "--output".to_string(),
         output.path.clone(),
     ];
-    if output.options.profile != expected_profile || output.options.arguments != expected_arguments
-    {
+    let deterministic_shard_arguments_are_valid = match output.options.arguments.as_slice() {
+        arguments if arguments == expected_argument_prefix => true,
+        [prefix @ .., flag, count]
+            if prefix == expected_argument_prefix
+                && flag == "--shards"
+                && count.parse::<usize>().is_ok_and(|count| count > 0) =>
+        {
+            true
+        }
+        _ => false,
+    };
+    if output.options.profile != expected_profile || !deterministic_shard_arguments_are_valid {
         return Err(format!(
             "{} generation options do not match the active profile",
             output.path

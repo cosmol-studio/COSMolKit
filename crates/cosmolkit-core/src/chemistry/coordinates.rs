@@ -3785,7 +3785,11 @@ fn rdkit_atom_to_spec(atom: &Atom) -> AtomSpec {
         spec = spec.with_query(query.clone());
     }
     for (key, value) in atom.props() {
-        spec = spec.with_prop(key.clone(), value.clone());
+        spec = if atom.is_prop_computed(key) {
+            spec.with_computed_prop(key.clone(), value.clone())
+        } else {
+            spec.with_prop(key.clone(), value.clone())
+        };
     }
     if let Some(pdb_info) = atom.pdb_residue_info() {
         spec = spec.with_pdb_residue_info(pdb_info.clone());

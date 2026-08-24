@@ -35,6 +35,7 @@ struct OpFields {
     may_mutate: Vec<Ident>,
     auto_remap: Vec<Ident>,
     derived_effects: Option<DerivedEffectFields>,
+    cip_state: Option<Ident>,
     semantic_preconditions: Vec<Ident>,
     requires_mapping: Option<Ident>,
     feature: Option<Path>,
@@ -116,6 +117,7 @@ impl Parse for OpEntry {
                 "derived_effects" => {
                     fields.derived_effects = Some(parse_derived_effect_fields(&content)?)
                 }
+                "cip_state" => fields.cip_state = Some(content.parse()?),
                 "semantic_preconditions" => {
                     fields.semantic_preconditions = parse_ident_list(&content)?
                 }
@@ -439,6 +441,7 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         .map_or_else(|| ident_with_span("none", op.name.span()), Ok)?;
     let access = required_field(op.fields.access, &op.name, "access")?;
     let derived_effects = required_field(op.fields.derived_effects, &op.name, "derived_effects")?;
+    let cip_state = required_field(op.fields.cip_state, &op.name, "cip_state")?;
     validate_operation_defined_guardrail(&op.name, &derived_effects)?;
     let requires_mapping = op
         .fields
@@ -469,6 +472,7 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
     let preserve_expr = derived_state_expr(&derived_effects.preserve)?;
     let invalidate_expr = derived_state_expr(&derived_effects.invalidate)?;
     let operation_defined_expr = derived_state_expr(&derived_effects.operation_defined)?;
+    let cip_state_expr = cip_state_expr(&cip_state)?;
     let mapping_expr = mapping_expr(&requires_mapping)?;
     let parity_expr = parity_expr(&parity)?;
     let call_args = param_idents(&op.params)?;
@@ -490,6 +494,7 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
                 #invalidate_expr,
                 #operation_defined_expr,
             ),
+            cip_state: #cip_state_expr,
             semantic_preconditions: #semantic_preconditions_expr,
             requires_mapping: #mapping_expr,
             support: crate::#feature.status,
@@ -702,6 +707,18 @@ fn parity_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
         other => Err(syn::Error::new(
             ident.span(),
             format!("unknown parity policy `{other}`"),
+        )),
+    }
+}
+
+fn cip_state_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
+    match ident.to_string().as_str() {
+        "preserve" | "Preserve" => Ok(quote!(crate::ops::CipStatePolicy::Preserve)),
+        "clear_computed" | "ClearComputed" => Ok(quote!(crate::ops::CipStatePolicy::ClearComputed)),
+        "assign" | "Assign" => Ok(quote!(crate::ops::CipStatePolicy::Assign)),
+        other => Err(syn::Error::new(
+            ident.span(),
+            format!("unknown CIP state policy `{other}`"),
         )),
     }
 }

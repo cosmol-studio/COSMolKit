@@ -425,7 +425,9 @@ pub(crate) fn assign_stereochemistry_on_working_copy(
     if clean_stereo {
         apply_clean_stereo_ring_special_cases_for_writer(molecule, &ranks)?;
     }
-    molecule.properties_mut().set_prop("_StereochemDone", "1");
+    molecule
+        .properties_mut()
+        .set_computed_prop("_StereochemDone", "1");
     Ok(())
 }
 

@@ -1,16 +1,23 @@
-//! Private source-backed RDKit CIPLabeler port.
+//! Single source-backed implementation of modern RDKit CIP labeling.
 //!
-//! This module is intentionally crate-private while the full RDKit
-//! `CIPLabeler::assignCIPLabels` dependency chain is being reproduced for
-//! Morgan fingerprint chirality parity.
+//! Public molecule operations and fingerprint consumers delegate to this
+//! crate-private `CIPLabeler::assignCIPLabels` core.
 
 use std::collections::VecDeque;
 
+use crate::chemistry::atropisomer::atropisomer_atoms_and_bonds;
 use crate::chemistry::valence::rdkit_atomic_mass;
 use crate::{
     Atom, AtomId, Bond, BondId, BondOrder, BondStereo, ChiralTag, Molecule, RingInfo,
     ValenceAssignment, ValenceModel,
 };
+
+pub(crate) use crate::CipLabelerError;
+
+type CipSourceIndex = u32;
+type CipPairing = u64;
+
+const CIP_NO_ATOM: CipSourceIndex = CipSourceIndex::MAX;
 
 // BEGIN RDKIT CPP ENUM Descriptor (CIPLabeler/Descriptor.h)
 // RDKit✔️✔️: enum class Descriptor {
@@ -132,104 +139,70 @@ impl Descriptor {
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION to_string
 pub(crate) fn descriptor_to_string(desc: Descriptor) -> &'static str {
+    if let Ok(public_descriptor) = crate::CipDescriptor::try_from(desc) {
+        return public_descriptor.as_str();
+    }
     match desc {
         Descriptor::None => "NONE",
         Descriptor::Unknown => "UNKNOWN",
         Descriptor::ns => "ns",
-        Descriptor::R => "R",
-        Descriptor::S => "S",
-        Descriptor::r => "r",
-        Descriptor::s => "s",
         Descriptor::seqTrans => "e",
         Descriptor::seqCis => "z",
-        Descriptor::E => "E",
-        Descriptor::Z => "Z",
-        Descriptor::M => "M",
-        Descriptor::P => "P",
-        Descriptor::m => "m",
-        Descriptor::p => "p",
         Descriptor::SP_4 => "SP_4",
         Descriptor::TBPY_5 => "TBPY_5",
         Descriptor::OC_6 => "OC_6",
+        Descriptor::R
+        | Descriptor::S
+        | Descriptor::r
+        | Descriptor::s
+        | Descriptor::E
+        | Descriptor::Z
+        | Descriptor::M
+        | Descriptor::P
+        | Descriptor::m
+        | Descriptor::p => unreachable!("public emitted descriptors returned above"),
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum CipLabelerError {
-    #[error("CIPLabeler atom index {index} is out of range for {atom_count} atoms")]
-    AtomIndexOutOfRange { index: usize, atom_count: usize },
-    #[error("CIPLabeler bond index {index} is out of range for {bond_count} bonds")]
-    BondIndexOutOfRange { index: usize, bond_count: usize },
-    #[error("CIPLabeler bond {bond} is not incident to atom {atom}")]
-    BondNotIncident { bond: usize, atom: usize },
-    #[error("CIPLabeler non integer-order bond is not allowed: {order:?}")]
-    NonIntegerBondOrder { order: BondOrder },
-    #[error("CIPLabeler node {node} is not an endpoint of edge {edge}")]
-    EdgeEndpointMismatch { edge: usize, node: usize },
-    #[error("Digraph generation failed: more than {limit} nodes found.")]
-    TooManyNodes { limit: usize },
-    #[error("Max Iterations Exceeded in CIP label calculation")]
-    MaxIterationsExceeded,
-    #[error("CIPLabeler unexpected up-edge ordering")]
-    UnexpectedUpEdgeOrdering,
-    #[error("No sequence rule provided")]
-    NoSequenceRuleProvided,
-    #[error("Descriptor lists should be the same length!")]
-    DescriptorListLengthMismatch,
-    #[error("Invalid stereo descriptor")]
-    InvalidStereoDescriptor,
-    #[error("Substituents should be topologically equivalent!")]
-    SubstituentsShouldBeTopologicallyEquivalent,
-    #[error("Something unexpected!")]
-    SomethingUnexpected,
-    #[error("Rule4b instance not in rule set")]
-    Rule4bInstanceNotInRuleSet,
-    #[error("Rule5New instance not in rule set")]
-    Rule5NewInstanceNotInRuleSet,
-    #[error("Parity vectors must have size 4.")]
-    ParityVectorsMustHaveSize4,
-    #[error("CIPLabeler Configuration requires at least one focus atom")]
-    EmptyConfigurationFoci,
-    #[error("CIPLabeler Tetrahedral received a bad atom")]
-    BadTetrahedralAtom,
-    #[error("CIPLabeler Tetrahedral received a bad config")]
-    BadTetrahedralConfig,
-    #[error("CIPLabeler Tetrahedral configuration must have 4 carriers")]
-    TetrahedralConfigurationMustHave4Carriers,
-    #[error("Received a Descriptor that is not supported for atoms")]
-    DescriptorNotSupportedForAtoms,
-    #[error("Received an invalid Atom Descriptor")]
-    InvalidAtomDescriptor,
-    #[error("Could not calculate parity! Carrier mismatch")]
-    CarrierMismatch,
-    #[error("CIPLabeler Sp2Bond received bad foci")]
-    BadSp2BondFoci,
-    #[error("CIPLabeler Sp2Bond received bad config")]
-    BadSp2BondConfig,
-    #[error("CIPLabeler Sp2Bond has incorrect number of stereo atoms")]
-    IncorrectNumberOfStereoAtoms,
-    #[error("Received a Descriptor that is not supported for double bonds")]
-    DescriptorNotSupportedForDoubleBonds,
-    #[error("Received an invalid Bond Descriptor")]
-    InvalidBondDescriptor,
-    #[error("CIPLabeler AtropisomerBond received bad foci")]
-    BadAtropisomerBondFoci,
-    #[error("CIPLabeler AtropisomerBond received bad config")]
-    BadAtropisomerBondConfig,
-    #[error("Received a Descriptor that is not supported for atropisomer bonds")]
-    DescriptorNotSupportedForAtropisomerBonds,
-    #[error("CIPLabeler dependency is not ported yet: {dependency}")]
-    UnsupportedDependency { dependency: &'static str },
-    #[error(transparent)]
-    RingFinding(#[from] crate::RingFindingError),
-    #[error(transparent)]
-    Valence(#[from] crate::ValenceError),
+impl TryFrom<Descriptor> for crate::CipDescriptor {
+    type Error = ();
+
+    fn try_from(descriptor: Descriptor) -> Result<Self, Self::Error> {
+        match descriptor {
+            Descriptor::R => Ok(Self::R),
+            Descriptor::S => Ok(Self::S),
+            Descriptor::r => Ok(Self::LowerR),
+            Descriptor::s => Ok(Self::LowerS),
+            Descriptor::E => Ok(Self::E),
+            Descriptor::Z => Ok(Self::Z),
+            Descriptor::M => Ok(Self::M),
+            Descriptor::P => Ok(Self::P),
+            Descriptor::m => Ok(Self::LowerM),
+            Descriptor::p => Ok(Self::LowerP),
+            _ => Err(()),
+        }
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct RationalI32 {
     numerator: i32,
     denominator: i32,
+}
+
+impl PartialOrd for RationalI32 {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for RationalI32 {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // boost::rational compares normalized values, not numerator/denominator
+        // tuples.  The products fit in i64 for the source int32 domain.
+        (i64::from(self.numerator) * i64::from(other.denominator))
+            .cmp(&(i64::from(other.numerator) * i64::from(self.denominator)))
+    }
 }
 
 impl RationalI32 {
@@ -453,6 +426,12 @@ pub(crate) struct CipLabelerContext {
     remaining_call_count: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CipCancellationMode {
+    NotRequested,
+    RdkitControlC,
+}
+
 impl CipLabelerContext {
     pub(crate) const CONSTITUTIONAL_RULE_TIMEOUT: u32 = 2_000;
 
@@ -605,9 +584,12 @@ pub(crate) trait CipSequenceRule {
     // RDKit✔️✔️:   if (!CIPLabeler_detail::decrementRemainingCallCountAndCheck()) {
     // RDKit✔️✔️:     throw MaxIterationsExceeded();
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (ControlCHandler::getGotSignal()) {
-    // RDKit✔️✔️:     throw ControlCCaught();
-    // RDKit✔️✔️:   }
+    // RDKit❌❌:   if (ControlCHandler::getGotSignal()) {
+    // RDKit❌❌:     throw ControlCCaught();
+    // RDKit❌❌:   }
+    // COSMolKit has no source-equivalent process-global ControlCHandler.
+    // Explicit requests for that integration fail before mutation through
+    // CipLabelerError::CancellationUnsupported.
     // RDKit✔️✔️:
     // RDKit✔️✔️:   int cmp = compare(a, b);
     // RDKit✔️✔️:   if (cmp != 0) {
@@ -770,7 +752,7 @@ fn recursive_compare_sequence_rule<R: CipSequenceRule + ?Sized>(
         return Err(CipLabelerError::MaxIterationsExceeded);
     }
 
-    let mut cmp = rule.compare(digraph, context, a, b)?;
+    let mut cmp = rule.compare_with_sort_rules(sort_rules, digraph, context, a, b)?;
     if cmp != 0 {
         return Ok(cmp);
     }
@@ -812,7 +794,7 @@ fn recursive_compare_sequence_rule<R: CipSequenceRule + ?Sized>(
                 continue;
             }
 
-            cmp = rule.compare(digraph, context, *a_edge, *b_edge)?;
+            cmp = rule.compare_with_sort_rules(sort_rules, digraph, context, *a_edge, *b_edge)?;
             if cmp != 0 {
                 return Ok(cmp);
             }
@@ -846,7 +828,7 @@ fn recursive_compare_sequence_rule<R: CipSequenceRule + ?Sized>(
                 continue;
             }
 
-            cmp = rule.compare(digraph, context, *a_edge, *b_edge)?;
+            cmp = rule.compare_with_sort_rules(sort_rules, digraph, context, *a_edge, *b_edge)?;
             if cmp != 0 {
                 return Ok(cmp);
             }
@@ -1136,9 +1118,15 @@ impl<'r> CipSort<'r> {
             return Ok(-1);
         }
 
-        for rule in &self.rules {
+        for (idx, rule) in self.rules.iter().enumerate() {
+            // RDKit assigns each SequenceRule the sorter snapshot that existed
+            // when Rules::add() installed it.  Keep that prefix when the
+            // aggregate sorter dispatches into the rule; passing the final
+            // sorter here lets Rule4b/Rule5New see rules that did not exist in
+            // their source snapshot and can cause unbounded recursive work.
+            let rule_snapshot = &self.rules[..=idx];
             let cmp = rule.get_comparison_with_sort_rules(
-                Some(&self.rules),
+                Some(rule_snapshot),
                 digraph,
                 context,
                 a,
@@ -1225,6 +1213,8 @@ fn cip_all_rules() -> Result<CipRules, CipLabelerError> {
     // RDKit✔️✔️: const Rules all_rules({new Rule1a, new Rule1b, new Rule2, new Rule3, new Rule4a,
     // RDKit✔️✔️:                        new Rule4b, new Rule4c, new Rule5New, new Rule6});
     // END RDKIT CPP CONSTANT all_rules
+    // The pinned modern dispatcher instantiates Rule5New only. The separate
+    // legacy Rule5 source is therefore intentionally unreachable here.
     CipRules::new(vec![
         Box::new(CipRule1a),
         Box::new(CipRule1b),
@@ -1309,6 +1299,18 @@ fn cip_find_configs<'a>(
     atom_mask: &[bool],
     bond_mask: &[bool],
 ) -> Result<Vec<CipConfig<'a>>, CipLabelerError> {
+    if atom_mask.len() != molecule.num_atoms() {
+        return Err(CipLabelerError::AtomMaskLengthMismatch {
+            actual: atom_mask.len(),
+            expected: molecule.num_atoms(),
+        });
+    }
+    if bond_mask.len() != molecule.num_bonds() {
+        return Err(CipLabelerError::BondMaskLengthMismatch {
+            actual: bond_mask.len(),
+            expected: molecule.num_bonds(),
+        });
+    }
     let mut configs = Vec::new();
 
     for (index, selected) in atom_mask.iter().copied().enumerate() {
@@ -1482,20 +1484,23 @@ fn cip_label_aux(
         .iter()
         .enumerate()
         .filter(|(idx, _)| *idx != center_idx)
-        .map(|(idx, config)| (idx, config.get_foci().to_vec()))
+        .map(|(idx, config)| {
+            let foci = config.get_foci();
+            (idx, foci[0], foci.get(1).copied())
+        })
         .collect::<Vec<_>>();
     let mut aux = Vec::<(CipNodeId, usize, i32)>::new();
 
     {
         let digraph = configs[center_idx].get_digraph_mut();
-        for (config_idx, foci) in config_foci {
-            for node in digraph.get_nodes(foci[0])? {
+        for (config_idx, first_focus, second_focus) in config_foci {
+            for node in digraph.get_nodes(first_focus)? {
                 if digraph.node(node).is_duplicate() {
                     continue;
                 }
                 let mut low = node;
-                if foci.len() == 2 {
-                    for edge in digraph.node_edges_for_atom(node, Some(foci[1]))? {
+                if let Some(second_focus) = second_focus {
+                    for edge in digraph.node_edges_for_atom(node, Some(second_focus))? {
                         let other_node = digraph.edge(edge).get_other(edge, node)?;
                         if digraph.node(other_node).get_distance()
                             < digraph.node(node).get_distance()
@@ -1624,16 +1629,20 @@ fn cip_label(
     Ok(())
 }
 
-fn cip_neighbor_order_value(indices: &[usize]) -> String {
+fn cip_neighbor_order_value(indices: &[CipSourceIndex]) -> String {
     let body = indices
         .iter()
-        .map(usize::to_string)
+        .map(CipSourceIndex::to_string)
         .collect::<Vec<_>>()
         .join(",");
     format!("[{body}]")
 }
 
-fn cip_clear_selected_labels(molecule: &mut Molecule, atom_mask: &[bool], bond_mask: &[bool]) {
+fn cip_clear_selected_primary_codes(
+    molecule: &mut Molecule,
+    atom_mask: &[bool],
+    bond_mask: &[bool],
+) {
     for (idx, selected) in atom_mask.iter().copied().enumerate() {
         if !selected {
             continue;
@@ -1644,7 +1653,6 @@ fn cip_clear_selected_labels(molecule: &mut Molecule, atom_mask: &[bool], bond_m
                 ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
             ) {
                 atom.clear_prop("_CIPCode");
-                atom.clear_prop("_CIPNeighborOrder");
             }
         }
     }
@@ -1663,7 +1671,6 @@ fn cip_clear_selected_labels(molecule: &mut Molecule, atom_mask: &[bool], bond_m
                     | BondStereo::AtropCw
             ) {
                 bond.clear_prop("_CIPCode");
-                bond.clear_prop("_CIPNeighborOrder");
             }
         }
     }
@@ -1685,7 +1692,7 @@ fn cip_apply_primary_labels(
                     },
                 )?;
                 atom.set_prop("_CIPCode", label.cip_code);
-                atom.set_prop(
+                atom.set_computed_prop(
                     "_CIPNeighborOrder",
                     cip_neighbor_order_value(&label.cip_neighbor_order),
                 );
@@ -1704,7 +1711,7 @@ fn cip_apply_primary_labels(
                 ]));
                 bond.set_stereo(label.stereo);
                 bond.set_prop("_CIPCode", label.cip_code);
-                bond.set_prop(
+                bond.set_computed_prop(
                     "_CIPNeighborOrder",
                     cip_neighbor_order_value(&label.cip_neighbor_order),
                 );
@@ -1718,7 +1725,7 @@ fn cip_apply_primary_labels(
                     },
                 )?;
                 bond.set_prop("_CIPCode", label.cip_code);
-                bond.set_prop(
+                bond.set_computed_prop(
                     "_CIPNeighborOrder",
                     cip_neighbor_order_value(&label.cip_neighbor_order),
                 );
@@ -1726,6 +1733,20 @@ fn cip_apply_primary_labels(
         }
     }
     Ok(())
+}
+
+struct CipAssignmentOutcome {
+    molecule: Molecule,
+    error: Option<CipLabelerError>,
+}
+
+impl CipAssignmentOutcome {
+    fn into_result(self) -> Result<Molecule, CipLabelerError> {
+        match self.error {
+            Some(error) => Err(error),
+            None => Ok(self.molecule),
+        }
+    }
 }
 
 // BEGIN RDKIT CPP FUNCTION assignCIPLabels selected overload (CIPLabeler.cpp)
@@ -1753,27 +1774,129 @@ fn cip_apply_primary_labels(
 // RDKit✔️✔️:   mol.setProp(common_properties::_CIPComputed, true, computed);
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION assignCIPLabels selected overload
-pub(crate) fn assign_cip_labels_for_indices(
+fn assign_cip_labels_for_masks_with_cancellation(
     molecule: &Molecule,
     atom_mask: &[bool],
     bond_mask: &[bool],
     max_recursive_iterations: u32,
+    cancellation: CipCancellationMode,
 ) -> Result<Molecule, CipLabelerError> {
+    assign_cip_labels_for_masks_outcome_with_cancellation(
+        molecule,
+        atom_mask,
+        bond_mask,
+        max_recursive_iterations,
+        cancellation,
+    )?
+    .into_result()
+}
+
+fn assign_cip_labels_for_masks_outcome_with_cancellation(
+    molecule: &Molecule,
+    atom_mask: &[bool],
+    bond_mask: &[bool],
+    max_recursive_iterations: u32,
+    cancellation: CipCancellationMode,
+) -> Result<CipAssignmentOutcome, CipLabelerError> {
+    if cancellation == CipCancellationMode::RdkitControlC {
+        return Err(CipLabelerError::CancellationUnsupported);
+    }
+
     let mut labeled = molecule.clone();
     labeled.properties_mut().clear_prop("_CIPComputed");
-    cip_clear_selected_labels(&mut labeled, atom_mask, bond_mask);
 
-    let mut configs = cip_find_configs(&labeled, atom_mask, bond_mask)?;
-    cip_label(&mut configs, max_recursive_iterations)?;
+    let mut configs = match cip_find_configs(&labeled, atom_mask, bond_mask) {
+        Ok(configs) => configs,
+        Err(error) => {
+            return Ok(CipAssignmentOutcome {
+                molecule: labeled,
+                error: Some(error),
+            });
+        }
+    };
+    let label_result = cip_label(&mut configs, max_recursive_iterations);
     let labels = configs
         .iter()
         .filter_map(CipConfig::primary_label)
         .collect::<Vec<_>>();
     drop(configs);
 
-    cip_apply_primary_labels(&mut labeled, labels)?;
-    labeled.properties_mut().set_prop("_CIPComputed", "1");
-    Ok(labeled)
+    cip_clear_selected_primary_codes(&mut labeled, atom_mask, bond_mask);
+    if let Err(error) = cip_apply_primary_labels(&mut labeled, labels) {
+        return Ok(CipAssignmentOutcome {
+            molecule: labeled,
+            error: Some(error),
+        });
+    }
+    if let Err(error) = label_result {
+        return Ok(CipAssignmentOutcome {
+            molecule: labeled,
+            error: Some(error),
+        });
+    }
+    labeled
+        .properties_mut()
+        .set_computed_prop("_CIPComputed", "1");
+    Ok(CipAssignmentOutcome {
+        molecule: labeled,
+        error: None,
+    })
+}
+
+fn assign_cip_labels_for_masks(
+    molecule: &Molecule,
+    atom_mask: &[bool],
+    bond_mask: &[bool],
+    max_recursive_iterations: u32,
+) -> Result<Molecule, CipLabelerError> {
+    assign_cip_labels_for_masks_with_cancellation(
+        molecule,
+        atom_mask,
+        bond_mask,
+        max_recursive_iterations,
+        CipCancellationMode::NotRequested,
+    )
+}
+
+fn cip_exact_selection_masks(
+    molecule: &Molecule,
+    atom_indices: &[CipSourceIndex],
+    bond_indices: &[CipSourceIndex],
+) -> Result<(Vec<bool>, Vec<bool>), CipLabelerError> {
+    let mut atom_mask = vec![false; molecule.num_atoms()];
+    for &index in atom_indices {
+        let index = index as usize;
+        let selected = atom_mask
+            .get_mut(index)
+            .ok_or(CipLabelerError::AtomIndexOutOfRange {
+                index,
+                atom_count: molecule.num_atoms(),
+            })?;
+        *selected = true;
+    }
+
+    let mut bond_mask = vec![false; molecule.num_bonds()];
+    for &index in bond_indices {
+        let index = index as usize;
+        let selected = bond_mask
+            .get_mut(index)
+            .ok_or(CipLabelerError::BondIndexOutOfRange {
+                index,
+                bond_count: molecule.num_bonds(),
+            })?;
+        *selected = true;
+    }
+    Ok((atom_mask, bond_mask))
+}
+
+pub(crate) fn assign_cip_labels_for_indices(
+    molecule: &Molecule,
+    atom_indices: &[CipSourceIndex],
+    bond_indices: &[CipSourceIndex],
+    max_recursive_iterations: u32,
+) -> Result<Molecule, CipLabelerError> {
+    let (atom_mask, bond_mask) = cip_exact_selection_masks(molecule, atom_indices, bond_indices)?;
+    assign_cip_labels_for_masks(molecule, &atom_mask, &bond_mask, max_recursive_iterations)
 }
 
 // BEGIN RDKIT CPP FUNCTION assignCIPLabels all-molecule overload (CIPLabeler.cpp)
@@ -1791,7 +1914,107 @@ pub(crate) fn assign_cip_labels(
 ) -> Result<Molecule, CipLabelerError> {
     let atom_mask = vec![true; molecule.num_atoms()];
     let bond_mask = vec![true; molecule.num_bonds()];
-    assign_cip_labels_for_indices(molecule, &atom_mask, &bond_mask, max_recursive_iterations)
+    assign_cip_labels_for_masks(molecule, &atom_mask, &bond_mask, max_recursive_iterations)
+}
+
+pub(crate) struct CipAssignmentTransition {
+    topology: crate::molecule::TopologyBlock,
+    properties: crate::MoleculeProperties,
+    error: Option<CipLabelerError>,
+}
+
+impl CipAssignmentTransition {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        crate::molecule::TopologyBlock,
+        crate::MoleculeProperties,
+        Option<CipLabelerError>,
+    ) {
+        (self.topology, self.properties, self.error)
+    }
+}
+
+pub(crate) fn assign_cip_labels_from_read_parts(
+    read: crate::ops::MoleculeReadParts<'_>,
+    options: &crate::CipLabelOptions,
+) -> Result<CipAssignmentTransition, CipLabelerError> {
+    let molecule = Molecule::from_operation_blocks(
+        read.topology().clone(),
+        crate::molecule::CoordinateBlock::default(),
+        read.properties().clone(),
+        crate::molecule::DerivedCacheBlock::default(),
+        read.capabilities(),
+    )?;
+
+    // BEGIN RDKIT CPP FUNCTION assignCIPLabelsWrapHelper selection dispatch
+    // (CIPLabeler/Wrap/rdCIPLabeler.cpp:31-44; RDBoost/Wrap.cpp:75-90)
+    // RDKit✔️✔️: auto atoms = pythonObjectToDynBitset(atomsToLabel, mol.getNumAtoms());
+    // RDKit✔️✔️: auto bonds = pythonObjectToDynBitset(bondsToLabel, mol.getNumBonds());
+    // RDKit✔️✔️: // If both atoms and bonds are None, assign all the mol.
+    // RDKit✔️✔️: if (!atomsToLabel && !bondsToLabel) {
+    // RDKit✔️✔️:   atoms.set();
+    // RDKit✔️✔️:   bonds.set();
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: assignCIPLabels(mol, atoms, bonds, maxRecursiveIterations);
+    // END RDKIT CPP FUNCTION assignCIPLabelsWrapHelper selection dispatch
+    // Boost.Python truth-tests its objects here, so both omitted and empty
+    // collections are false. The lower-level exact-mask function deliberately
+    // retains the distinct C++ selected-overload semantics for internal users.
+    let atoms = options.atom_indices();
+    let bonds = options.bond_indices();
+    let has_atom_selection = atoms.is_some_and(|indices| !indices.is_empty());
+    let has_bond_selection = bonds.is_some_and(|indices| !indices.is_empty());
+    let outcome = if !has_atom_selection && !has_bond_selection {
+        let atom_mask = vec![true; molecule.num_atoms()];
+        let bond_mask = vec![true; molecule.num_bonds()];
+        assign_cip_labels_for_masks_outcome_with_cancellation(
+            &molecule,
+            &atom_mask,
+            &bond_mask,
+            options.max_recursive_iterations(),
+            CipCancellationMode::NotRequested,
+        )?
+    } else {
+        let atom_indices = atoms
+            .unwrap_or_default()
+            .iter()
+            .map(|atom| {
+                CipSourceIndex::try_from(atom.index()).map_err(|_| {
+                    CipLabelerError::SourceIndexWidthExceeded {
+                        kind: "atom",
+                        index: atom.index(),
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let bond_indices = bonds
+            .unwrap_or_default()
+            .iter()
+            .map(|bond| {
+                CipSourceIndex::try_from(bond.index()).map_err(|_| {
+                    CipLabelerError::SourceIndexWidthExceeded {
+                        kind: "bond",
+                        index: bond.index(),
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let (atom_mask, bond_mask) =
+            cip_exact_selection_masks(&molecule, &atom_indices, &bond_indices)?;
+        assign_cip_labels_for_masks_outcome_with_cancellation(
+            &molecule,
+            &atom_mask,
+            &bond_mask,
+            options.max_recursive_iterations(),
+            CipCancellationMode::NotRequested,
+        )?
+    };
+    Ok(CipAssignmentTransition {
+        topology: outcome.molecule.topology_block().clone(),
+        properties: outcome.molecule.properties().clone(),
+        error: outcome.error,
+    })
 }
 
 impl CipSequenceRule for CipRules {
@@ -1817,9 +2040,10 @@ impl CipSequenceRule for CipRules {
         b: CipEdgeId,
     ) -> Result<i32, CipLabelerError> {
         let sort_rules = self.rule_refs();
-        for rule in &sort_rules {
+        for (idx, rule) in sort_rules.iter().enumerate() {
+            let rule_snapshot = &sort_rules[..=idx];
             let value =
-                rule.recursive_compare_with_sort_rules(&sort_rules, digraph, context, a, b)?;
+                rule.recursive_compare_with_sort_rules(rule_snapshot, digraph, context, a, b)?;
             if value != 0 {
                 return Ok(value);
             }
@@ -1854,9 +2078,49 @@ impl CipSequenceRule for CipRules {
         _deep: bool,
     ) -> Result<i32, CipLabelerError> {
         let sort_rules = self.rule_refs();
-        for rule in &sort_rules {
+        for (idx, rule) in sort_rules.iter().enumerate() {
+            let rule_snapshot = &sort_rules[..=idx];
             let value =
-                rule.recursive_compare_with_sort_rules(&sort_rules, digraph, context, a, b)?;
+                rule.recursive_compare_with_sort_rules(rule_snapshot, digraph, context, a, b)?;
+            if value != 0 {
+                return Ok(value);
+            }
+        }
+        Ok(0)
+    }
+
+    // BEGIN RDKIT CPP FUNCTION Rules::getComparision (rules/Rules.h)
+    // RDKit✔️✔️: int getComparision(const Edge *a, const Edge *b, bool deep) const override {
+    // RDKit✔️✔️:   (void)deep;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // Try using each rules. The rules will expand the search exhaustively
+    // RDKit✔️✔️:   // to all child substituents
+    // RDKit✔️✔️:   for (const auto &rule : d_rules) {
+    // RDKit✔️✔️:     // compare expands exhaustively across the whole graph
+    // RDKit✔️✔️:     int value = rule->recursiveCompare(a, b);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     if (value != 0) {
+    // RDKit✔️✔️:       return value;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return 0;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION Rules::getComparision
+    fn get_comparison_with_sort_rules(
+        &self,
+        _sort_rules: Option<&[&dyn CipSequenceRule]>,
+        digraph: &mut CipDigraph<'_>,
+        context: &mut CipLabelerContext,
+        a: CipEdgeId,
+        b: CipEdgeId,
+        _deep: bool,
+    ) -> Result<i32, CipLabelerError> {
+        let sort_rules = self.rule_refs();
+        for (idx, rule) in sort_rules.iter().enumerate() {
+            let rule_snapshot = &sort_rules[..=idx];
+            let value =
+                rule.recursive_compare_with_sort_rules(rule_snapshot, digraph, context, a, b)?;
             if value != 0 {
                 return Ok(value);
             }
@@ -2109,31 +2373,12 @@ impl CipSequenceRule for CipRule3 {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CipPairList {
     descriptors: Vec<Descriptor>,
-    pairing: u64,
+    pairing: CipPairing,
 }
 
 impl Default for CipPairList {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl PartialOrd for CipPairList {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for CipPairList {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self.compare_to(other) {
-            Ok(-1) => std::cmp::Ordering::Less,
-            Ok(0) => std::cmp::Ordering::Equal,
-            Ok(1) => std::cmp::Ordering::Greater,
-            Ok(value) if value < 0 => std::cmp::Ordering::Less,
-            Ok(_) => std::cmp::Ordering::Greater,
-            Err(_) => std::cmp::Ordering::Equal,
-        }
     }
 }
 
@@ -2254,7 +2499,7 @@ impl CipPairList {
     // BEGIN RDKIT CPP FUNCTION PairList::getPairing (rules/Pairlist.h)
     // RDKit✔️✔️: pairing_t getPairing() const { return d_pairing; }
     // END RDKIT CPP FUNCTION PairList::getPairing
-    pub(crate) fn get_pairing(&self) -> u64 {
+    pub(crate) fn get_pairing(&self) -> CipPairing {
         self.pairing
     }
 
@@ -2293,6 +2538,29 @@ impl CipPairList {
             }
         }
         Ok(0)
+    }
+
+    pub(crate) fn less_than(&self, that: &Self) -> Result<bool, CipLabelerError> {
+        Ok(self.compare_to(that)? == -1)
+    }
+
+    fn sort_descending(lists: &mut [Self]) -> Result<(), CipLabelerError> {
+        let Some(expected_len) = lists.first().map(|list| list.descriptors.len()) else {
+            return Ok(());
+        };
+        if lists
+            .iter()
+            .any(|list| list.descriptors.len() != expected_len)
+        {
+            return Err(CipLabelerError::DescriptorListLengthMismatch);
+        }
+        lists.sort_unstable_by(|left, right| {
+            right
+                .compare_to(left)
+                .expect("descriptor lengths were validated before sorting")
+                .cmp(&0)
+        });
+        Ok(())
     }
 
     // BEGIN RDKIT CPP FUNCTION PairList::toString (rules/Pairlist.h)
@@ -2481,6 +2749,17 @@ impl CipRule4b {
         node: CipNodeId,
     ) -> Result<Vec<Descriptor>, CipLabelerError> {
         let mut result = Vec::new();
+        let source_sort_rules = if let Some(sort_rules) = sort_rules {
+            let self_ptr = self as &dyn CipSequenceRule as *const dyn CipSequenceRule;
+            let end = sort_rules
+                .iter()
+                .position(|rule| std::ptr::addr_eq(*rule as *const dyn CipSequenceRule, self_ptr))
+                .map(|index| index + 1)
+                .ok_or(CipLabelerError::Rule4bInstanceNotInRuleSet)?;
+            Some(sort_rules[..end].to_vec())
+        } else {
+            None
+        };
         let mut prev = self.initial_level(node);
         while !prev.is_empty() {
             for nodes in &prev {
@@ -2488,7 +2767,7 @@ impl CipRule4b {
                     return Ok(result);
                 }
             }
-            prev = self.get_next_level(sort_rules, digraph, context, &prev)?;
+            prev = self.get_next_level(source_sort_rules.as_deref(), digraph, context, &prev)?;
         }
         Ok(Vec::new())
     }
@@ -2684,8 +2963,8 @@ impl CipRule4b {
             }
 
             let mut size = -1_i32;
-            for _ in 0..tmp.len() {
-                let local_size = tmp.first().map(Vec::len).unwrap_or(0) as i32;
+            for groups in &tmp {
+                let local_size = groups.len() as i32;
                 if size < 0 {
                     size = local_size;
                 } else if size != local_size {
@@ -2913,13 +3192,13 @@ impl CipRule4b {
     ) -> Result<Vec<&'r dyn CipSequenceRule>, CipLabelerError> {
         let mut new_rules = Vec::new();
         if let Some(sort_rules) = sort_rules {
-            new_rules.reserve(sort_rules.len());
             let self_ptr = self as &dyn CipSequenceRule as *const dyn CipSequenceRule;
             let mut found = false;
             for rule in sort_rules {
                 let rule_ptr = *rule as *const dyn CipSequenceRule;
                 if std::ptr::addr_eq(rule_ptr, self_ptr) {
                     found = true;
+                    break;
                 } else {
                     new_rules.push(*rule);
                 }
@@ -3071,8 +3350,8 @@ impl CipSequenceRule for CipRule4b {
                 self.fill_pairs(sort_rules, digraph, context, b_end, plist)?;
             }
 
-            list1.sort_by(|left, right| right.cmp(left));
-            list2.sort_by(|left, right| right.cmp(left));
+            CipPairList::sort_descending(&mut list1)?;
+            CipPairList::sort_descending(&mut list2)?;
 
             for (left, right) in list1.iter().zip(list2.iter()) {
                 let cmp = left.compare_to(right)?;
@@ -3240,13 +3519,13 @@ impl CipRule5New {
     ) -> Result<Vec<&'r dyn CipSequenceRule>, CipLabelerError> {
         let mut new_rules = Vec::new();
         if let Some(sort_rules) = sort_rules {
-            new_rules.reserve(sort_rules.len());
             let self_ptr = self as &dyn CipSequenceRule as *const dyn CipSequenceRule;
             let mut found = false;
             for rule in sort_rules {
                 let rule_ptr = *rule as *const dyn CipSequenceRule;
                 if std::ptr::addr_eq(rule_ptr, self_ptr) {
                     found = true;
+                    break;
                 } else {
                     new_rules.push(*rule);
                 }
@@ -3436,7 +3715,7 @@ pub(crate) struct CipConfiguration<'a> {
 pub(crate) struct CipAtomPrimaryLabel {
     atom_idx: usize,
     cip_code: &'static str,
-    cip_neighbor_order: Vec<usize>,
+    cip_neighbor_order: Vec<CipSourceIndex>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3445,14 +3724,14 @@ pub(crate) struct CipBondPrimaryLabel {
     stereo_atoms: [usize; 2],
     stereo: BondStereo,
     cip_code: &'static str,
-    cip_neighbor_order: Vec<usize>,
+    cip_neighbor_order: Vec<CipSourceIndex>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CipAtropisomerBondPrimaryLabel {
     bond_idx: usize,
     cip_code: &'static str,
-    cip_neighbor_order: Vec<usize>,
+    cip_neighbor_order: Vec<CipSourceIndex>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3554,7 +3833,7 @@ impl<'a> CipConfig<'a> {
 }
 
 impl<'a> CipConfiguration<'a> {
-    pub(crate) const IMPLICIT_H: usize = usize::MAX;
+    pub(crate) const IMPLICIT_H: CipSourceIndex = CIP_NO_ATOM;
 
     // BEGIN RDKIT CPP FUNCTION Configuration::parity4 (configs/Configuration.h)
     // RDKit✔️✔️: template <typename T>
@@ -3975,8 +4254,9 @@ impl<'a> CipConfiguration<'a> {
 
 pub(crate) struct CipTetrahedral<'a> {
     configuration: CipConfiguration<'a>,
-    ranked_anchors: Vec<usize>,
+    ranked_anchors: Vec<CipSourceIndex>,
     primary_label: Option<CipAtomPrimaryLabel>,
+    source_primary_label_visible: bool,
 }
 
 impl<'a> CipTetrahedral<'a> {
@@ -4011,6 +4291,7 @@ impl<'a> CipTetrahedral<'a> {
     pub(crate) fn new(molecule: &'a Molecule, focus: usize) -> Result<Self, CipLabelerError> {
         let mut configuration = CipConfiguration::new(molecule, focus)?;
         let atom = configuration.digraph.mol().atom(focus)?;
+        let source_primary_label_visible = atom.prop("_CIPCode").is_some();
         match atom.chiral_tag() {
             ChiralTag::TetrahedralCcw | ChiralTag::TetrahedralCw => {}
             ChiralTag::Unspecified
@@ -4041,6 +4322,7 @@ impl<'a> CipTetrahedral<'a> {
             configuration,
             ranked_anchors: Vec::new(),
             primary_label: None,
+            source_primary_label_visible,
         })
     }
 
@@ -4056,7 +4338,7 @@ impl<'a> CipTetrahedral<'a> {
         self.configuration.get_carriers()
     }
 
-    pub(crate) fn ranked_anchors(&self) -> &[usize] {
+    pub(crate) fn ranked_anchors(&self) -> &[CipSourceIndex] {
         &self.ranked_anchors
     }
 
@@ -4103,6 +4385,7 @@ impl<'a> CipTetrahedral<'a> {
                     cip_code: descriptor_to_string(desc),
                     cip_neighbor_order: self.ranked_anchors.clone(),
                 });
+                self.source_primary_label_visible = false;
                 Ok(())
             }
             Descriptor::seqTrans
@@ -4128,13 +4411,7 @@ impl<'a> CipTetrahedral<'a> {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Tetrahedral::hasPrimaryLabel
     pub(crate) fn has_primary_label(&self) -> bool {
-        self.primary_label.is_some()
-            || self
-                .configuration
-                .digraph
-                .mol()
-                .atom(self.configuration.get_focus())
-                .is_ok_and(|atom| atom.prop("_CIPCode").is_some())
+        self.primary_label.is_some() || self.source_primary_label_visible
     }
 
     // BEGIN RDKIT CPP FUNCTION Tetrahedral::resetPrimaryLabel (configs/Tetrahedral.cpp)
@@ -4144,6 +4421,7 @@ impl<'a> CipTetrahedral<'a> {
     // END RDKIT CPP FUNCTION Tetrahedral::resetPrimaryLabel
     pub(crate) fn reset_primary_label(&mut self) {
         self.primary_label = None;
+        self.source_primary_label_visible = false;
     }
 
     // BEGIN RDKIT CPP FUNCTION Tetrahedral::label(const Rules &) (configs/Tetrahedral.cpp)
@@ -4337,7 +4615,7 @@ impl<'a> CipTetrahedral<'a> {
     fn label_node_impl(
         focus: usize,
         carriers: &[Option<usize>],
-        ranked_anchors: &mut Vec<usize>,
+        ranked_anchors: &mut Vec<CipSourceIndex>,
         node: CipNodeId,
         digraph: &mut CipDigraph<'_>,
         comp: &CipRules,
@@ -4401,7 +4679,12 @@ impl<'a> CipTetrahedral<'a> {
                 ordered[idx] = atom;
             }
             if let Some(atom_idx) = atom {
-                ranked_anchors.push(atom_idx);
+                ranked_anchors.push(CipSourceIndex::try_from(atom_idx).map_err(|_| {
+                    CipLabelerError::SourceIndexWidthExceeded {
+                        kind: "atom",
+                        index: atom_idx,
+                    }
+                })?);
             }
             idx += 1;
         }
@@ -4446,8 +4729,9 @@ pub(crate) struct CipSp2Bond<'a> {
     configuration: CipConfiguration<'a>,
     bond_idx: usize,
     cfg: BondStereo,
-    ranked_anchors: Vec<usize>,
+    ranked_anchors: Vec<CipSourceIndex>,
     primary_label: Option<CipBondPrimaryLabel>,
+    source_primary_label_visible: bool,
 }
 
 impl<'a> CipSp2Bond<'a> {
@@ -4478,7 +4762,7 @@ impl<'a> CipSp2Bond<'a> {
     // RDKit✔️✔️:
     // RDKit✔️✔️:   if (!bond->getStereoAtoms().empty()) {
     // RDKit✔️✔️:     return bond->getStereoAtoms();
-    // RDKit❌❌:   }
+    // RDKit✔️✔️:   }
     // RDKit✔️✔️:   if (bond->getStereo() == Bond::BondStereo::STEREOE ||
     // RDKit✔️✔️:       bond->getStereo() == Bond::BondStereo::STEREOZ) {
     // RDKit✔️✔️:     const Atom *startStereoAtom =
@@ -4513,9 +4797,7 @@ impl<'a> CipSp2Bond<'a> {
         configuration.digraph.mol().atom(start_atom)?;
         configuration.digraph.mol().atom(end_atom)?;
         let bond = configuration.digraph.mol().bond(bond_idx)?;
-        if bond.order() != BondOrder::Double {
-            return Err(CipLabelerError::BadSp2BondFoci);
-        }
+        let source_primary_label_visible = bond.prop("_CIPCode").is_some();
         if !((bond.begin().index() == start_atom && bond.end().index() == end_atom)
             || (bond.begin().index() == end_atom && bond.end().index() == start_atom))
         {
@@ -4523,6 +4805,12 @@ impl<'a> CipSp2Bond<'a> {
         }
         if !matches!(cfg, BondStereo::Trans | BondStereo::Cis) {
             return Err(CipLabelerError::BadSp2BondConfig);
+        }
+        if bond.order() != BondOrder::Double {
+            return Err(CipLabelerError::Sp2BondNotDoubleBond);
+        }
+        if matches!(bond.stereo(), BondStereo::None | BondStereo::Any) {
+            return Err(CipLabelerError::Sp2BondHasNoDefinedStereo);
         }
 
         let stereo_atoms = if let Some([left, right]) = bond.stereo_atoms() {
@@ -4555,6 +4843,7 @@ impl<'a> CipSp2Bond<'a> {
             cfg,
             ranked_anchors: Vec::new(),
             primary_label: None,
+            source_primary_label_visible,
         })
     }
 
@@ -4627,7 +4916,7 @@ impl<'a> CipSp2Bond<'a> {
         self.configuration.get_carriers()
     }
 
-    pub(crate) fn ranked_anchors(&self) -> &[usize] {
+    pub(crate) fn ranked_anchors(&self) -> &[CipSourceIndex] {
         &self.ranked_anchors
     }
 
@@ -4689,6 +4978,7 @@ impl<'a> CipSp2Bond<'a> {
                     cip_code: descriptor_to_string(desc),
                     cip_neighbor_order: self.ranked_anchors.clone(),
                 });
+                self.source_primary_label_visible = false;
                 Ok(())
             }
             Descriptor::R
@@ -4714,13 +5004,7 @@ impl<'a> CipSp2Bond<'a> {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Sp2Bond::hasPrimaryLabel
     pub(crate) fn has_primary_label(&self) -> bool {
-        self.primary_label.is_some()
-            || self
-                .configuration
-                .digraph
-                .mol()
-                .bond(self.bond_idx)
-                .is_ok_and(|bond| bond.prop("_CIPCode").is_some())
+        self.primary_label.is_some() || self.source_primary_label_visible
     }
 
     // BEGIN RDKIT CPP FUNCTION Sp2Bond::resetPrimaryLabel (configs/Sp2Bond.cpp)
@@ -4730,6 +5014,7 @@ impl<'a> CipSp2Bond<'a> {
     // END RDKIT CPP FUNCTION Sp2Bond::resetPrimaryLabel
     pub(crate) fn reset_primary_label(&mut self) {
         self.primary_label = None;
+        self.source_primary_label_visible = false;
     }
 
     // BEGIN RDKIT CPP FUNCTION Sp2Bond::label(const Rules &) (configs/Sp2Bond.cpp)
@@ -4762,11 +5047,13 @@ impl<'a> CipSp2Bond<'a> {
         comp: &CipRules,
         context: &mut CipLabelerContext,
     ) -> Result<Descriptor, CipLabelerError> {
-        let foci = self.configuration.get_foci().to_vec();
+        let focus1 = self.configuration.foci[0];
+        let focus2 = self.configuration.foci[1];
         let carriers = self.configuration.get_carriers().to_vec();
         Self::label_node_impl(
-            &foci,
-            &carriers,
+            focus1,
+            focus2,
+            carriers,
             self.cfg,
             &mut self.ranked_anchors,
             root1,
@@ -4829,9 +5116,19 @@ impl<'a> CipSp2Bond<'a> {
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:
     // RDKit✔️✔️:   {
+    // RDKit✔️✔️:     // At this point, edges1 and edges2 are sorted by priority starting from
+    // RDKit✔️✔️:     // this node. Record that now! - they may be resorted after processing
+    // RDKit✔️✔️:     // other nodes.
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // As weird as it seems, these may actually be implicit Hs: Rule 2
+    // RDKit✔️✔️:     // in the paper on which this code is based states that,
+    // RDKit✔️✔️:     // in CIP ranks, H > 1H, so implicit H actually has a higher
+    // RDKit✔️✔️:     // priority than 1H (!!!). getAtomIdx() returns Atom::NOATOM
+    // RDKit✔️✔️:     // if that is the case.
     // RDKit✔️✔️:     auto carrier1_idx = edges1[0]->getEnd()->getAtomIdx();
     // RDKit✔️✔️:     auto carrier2_idx = edges2[0]->getEnd()->getAtomIdx();
     // RDKit✔️✔️:
+    // RDKit✔️✔️:     // Make sure the stereo atoms are in the right order
     // RDKit✔️✔️:     if (edges1[0]->getBeg()->getAtom() == focus1) {
     // RDKit✔️✔️:       d_ranked_anchors.assign({carrier1_idx, carrier2_idx});
     // RDKit✔️✔️:     } else if (edges2[0]->getBeg()->getAtom() == focus1) {
@@ -4862,11 +5159,13 @@ impl<'a> CipSp2Bond<'a> {
         comp: &CipRules,
         context: &mut CipLabelerContext,
     ) -> Result<Descriptor, CipLabelerError> {
-        let foci = self.configuration.get_foci().to_vec();
+        let focus1 = self.configuration.foci[0];
+        let focus2 = self.configuration.foci[1];
         let carriers = self.configuration.get_carriers().to_vec();
         Self::label_node_impl(
-            &foci,
-            &carriers,
+            focus1,
+            focus2,
+            carriers,
             self.cfg,
             &mut self.ranked_anchors,
             root1,
@@ -4877,17 +5176,16 @@ impl<'a> CipSp2Bond<'a> {
     }
 
     fn label_node_impl(
-        foci: &[usize],
-        carriers: &[Option<usize>],
+        focus1: usize,
+        focus2: usize,
+        mut carriers: Vec<Option<usize>>,
         cfg: BondStereo,
-        ranked_anchors: &mut Vec<usize>,
+        ranked_anchors: &mut Vec<CipSourceIndex>,
         root1: CipNodeId,
         digraph: &mut CipDigraph<'_>,
         comp: &CipRules,
         context: &mut CipLabelerContext,
     ) -> Result<Descriptor, CipLabelerError> {
-        let focus1 = foci[0];
-        let focus2 = foci[1];
         ranked_anchors.clear();
 
         let root1_edges = digraph.node_edges(root1)?;
@@ -4907,7 +5205,6 @@ impl<'a> CipSp2Bond<'a> {
             return Ok(Descriptor::Unknown);
         }
 
-        let mut carriers = carriers.to_vec();
         let mut config = cfg;
         if digraph.node(root1).atom_idx() == Some(focus2) {
             carriers.swap(0, 1);
@@ -4945,12 +5242,10 @@ impl<'a> CipSp2Bond<'a> {
 
         let carrier1_idx = digraph
             .node(digraph.edge(edges1[0]).get_end())
-            .atom_idx()
-            .unwrap_or(CipNode::NO_ATOM_INDEX);
+            .get_atom_idx()?;
         let carrier2_idx = digraph
             .node(digraph.edge(edges2[0]).get_end())
-            .atom_idx()
-            .unwrap_or(CipNode::NO_ATOM_INDEX);
+            .get_atom_idx()?;
         if digraph.node(digraph.edge(edges1[0]).get_beg()).atom_idx() == Some(focus1) {
             ranked_anchors.extend([carrier1_idx, carrier2_idx]);
         } else if digraph.node(digraph.edge(edges2[0]).get_beg()).atom_idx() == Some(focus1) {
@@ -4979,8 +5274,9 @@ pub(crate) struct CipAtropisomerBond<'a> {
     configuration: CipConfiguration<'a>,
     bond_idx: usize,
     cfg: BondStereo,
-    ranked_anchors: Vec<usize>,
+    ranked_anchors: Vec<CipSourceIndex>,
     primary_label: Option<CipAtropisomerBondPrimaryLabel>,
+    source_primary_label_visible: bool,
 }
 
 impl<'a> CipAtropisomerBond<'a> {
@@ -5021,6 +5317,7 @@ impl<'a> CipAtropisomerBond<'a> {
         configuration.digraph.mol().atom(start_atom)?;
         configuration.digraph.mol().atom(end_atom)?;
         let bond = configuration.digraph.mol().bond(bond_idx)?;
+        let source_primary_label_visible = bond.prop("_CIPCode").is_some();
         if !((bond.begin().index() == start_atom && bond.end().index() == end_atom)
             || (bond.begin().index() == end_atom && bond.end().index() == start_atom))
         {
@@ -5030,10 +5327,10 @@ impl<'a> CipAtropisomerBond<'a> {
             return Err(CipLabelerError::BadAtropisomerBondConfig);
         }
 
-        if let Some(carriers) =
-            Self::atropisomer_carriers_like_rdkit(configuration.digraph.mol(), bond_idx)?
+        if let Some(parts) = atropisomer_atoms_and_bonds(molecule, BondId::new(bond_idx))
+            && let Some(carriers) = parts.first_neighbor_atoms(molecule)
         {
-            configuration.set_carriers(vec![Some(carriers[0]), Some(carriers[1])]);
+            configuration.set_carriers(vec![Some(carriers[0].index()), Some(carriers[1].index())]);
         }
 
         Ok(Self {
@@ -5042,72 +5339,8 @@ impl<'a> CipAtropisomerBond<'a> {
             cfg,
             ranked_anchors: Vec::new(),
             primary_label: None,
+            source_primary_label_visible,
         })
-    }
-
-    // BEGIN RDKIT CPP FUNCTION Atropisomers::getAtropisomerAtomsAndBonds (Atropisomers.cpp)
-    // RDKit✔️✔️: bool getAtropisomerAtomsAndBonds(const Bond *bond,
-    // RDKit✔️✔️:                                  AtropAtomAndBondVec atomsAndBondVects[2],
-    // RDKit✔️✔️:                                  const ROMol &mol) {
-    // RDKit✔️✔️:   PRECONDITION(bond, "no bond");
-    // RDKit✔️✔️:   atomsAndBondVects[0].first = bond->getBeginAtom();
-    // RDKit✔️✔️:   atomsAndBondVects[1].first = bond->getEndAtom();
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   for (int bondAtomIndex = 0; bondAtomIndex < 2; ++bondAtomIndex) {
-    // RDKit✔️✔️:     for (const auto nbrBond :
-    // RDKit✔️✔️:          mol.atomBonds(atomsAndBondVects[bondAtomIndex].first)) {
-    // RDKit✔️✔️:       if (nbrBond == bond) {
-    // RDKit✔️✔️:         continue;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       atomsAndBondVects[bondAtomIndex].second.push_back(nbrBond);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     if (atomsAndBondVects[bondAtomIndex].second.size() == 0) {
-    // RDKit✔️✔️:       return false;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:     // make sure the bond with the lowest atom index is first
-    // RDKit✔️✔️:     if (atomsAndBondVects[bondAtomIndex].second.size() == 2 &&
-    // RDKit✔️✔️:         atomsAndBondVects[bondAtomIndex]
-    // RDKit✔️✔️:                 .second[1]
-    // RDKit✔️✔️:                 ->getOtherAtom(atomsAndBondVects[bondAtomIndex].first)
-    // RDKit✔️✔️:                 ->getIdx() <
-    // RDKit✔️✔️:             atomsAndBondVects[bondAtomIndex]
-    // RDKit✔️✔️:                 .second[0]
-    // RDKit✔️✔️:                 ->getOtherAtom(atomsAndBondVects[bondAtomIndex].first)
-    // RDKit✔️✔️:                 ->getIdx()) {
-    // RDKit✔️✔️:       std::swap(atomsAndBondVects[bondAtomIndex].second[0],
-    // RDKit✔️✔️:                 atomsAndBondVects[bondAtomIndex].second[1]);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return true;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION Atropisomers::getAtropisomerAtomsAndBonds
-    fn atropisomer_carriers_like_rdkit(
-        mol: &CipMol<'_>,
-        bond_idx: usize,
-    ) -> Result<Option<[usize; 2]>, CipLabelerError> {
-        let bond = mol.bond(bond_idx)?;
-        let foci = [bond.begin().index(), bond.end().index()];
-        let mut carriers = [0_usize; 2];
-        for (side, focus) in foci.into_iter().enumerate() {
-            let mut nbr_bonds = mol
-                .bond_indices_for_atom(focus)?
-                .into_iter()
-                .filter(|candidate| *candidate != bond_idx)
-                .collect::<Vec<_>>();
-            if nbr_bonds.is_empty() {
-                return Ok(None);
-            }
-            if nbr_bonds.len() == 2 {
-                let other0 = mol.other_atom_idx(nbr_bonds[0], focus)?;
-                let other1 = mol.other_atom_idx(nbr_bonds[1], focus)?;
-                if other1 < other0 {
-                    nbr_bonds.swap(0, 1);
-                }
-            }
-            carriers[side] = mol.other_atom_idx(nbr_bonds[0], focus)?;
-        }
-        Ok(Some(carriers))
     }
 
     pub(crate) fn get_foci(&self) -> &[usize] {
@@ -5118,7 +5351,7 @@ impl<'a> CipAtropisomerBond<'a> {
         self.configuration.get_carriers()
     }
 
-    pub(crate) fn ranked_anchors(&self) -> &[usize] {
+    pub(crate) fn ranked_anchors(&self) -> &[CipSourceIndex] {
         &self.ranked_anchors
     }
 
@@ -5164,6 +5397,7 @@ impl<'a> CipAtropisomerBond<'a> {
                     cip_code: descriptor_to_string(desc),
                     cip_neighbor_order: self.ranked_anchors.clone(),
                 });
+                self.source_primary_label_visible = false;
                 Ok(())
             }
             Descriptor::R
@@ -5193,17 +5427,12 @@ impl<'a> CipAtropisomerBond<'a> {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION AtropisomerBond::hasPrimaryLabel/resetPrimaryLabel
     pub(crate) fn has_primary_label(&self) -> bool {
-        self.primary_label.is_some()
-            || self
-                .configuration
-                .digraph
-                .mol()
-                .bond(self.bond_idx)
-                .is_ok_and(|bond| bond.prop("_CIPCode").is_some())
+        self.primary_label.is_some() || self.source_primary_label_visible
     }
 
     pub(crate) fn reset_primary_label(&mut self) {
         self.primary_label = None;
+        self.source_primary_label_visible = false;
     }
 
     // BEGIN RDKIT CPP FUNCTION AtropisomerBond::label(const Rules &) (configs/AtropisomerBond.cpp)
@@ -5236,11 +5465,13 @@ impl<'a> CipAtropisomerBond<'a> {
         comp: &CipRules,
         context: &mut CipLabelerContext,
     ) -> Result<Descriptor, CipLabelerError> {
-        let foci = self.configuration.get_foci().to_vec();
+        let focus1 = self.configuration.foci[0];
+        let focus2 = self.configuration.foci[1];
         let carriers = self.configuration.get_carriers().to_vec();
         Self::label_node_impl(
-            &foci,
-            &carriers,
+            focus1,
+            focus2,
+            carriers,
             self.cfg,
             &mut self.ranked_anchors,
             root1,
@@ -5305,6 +5536,30 @@ impl<'a> CipAtropisomerBond<'a> {
     // RDKit✔️✔️:       config = Bond::STEREOATROPCCW;
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   {
+    // RDKit✔️✔️:     // This is mostly the same as in Sp2Bonds, but I doubt the anchors will be
+    // RDKit✔️✔️:     // implicit Hs in this case.
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // At this point, edges1 and edges2 are sorted by priority starting from
+    // RDKit✔️✔️:     // this node. Record that now! - they may be resorted after processing
+    // RDKit✔️✔️:     // other nodes.
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // As weird as it seems, these may actually be implicit Hs: Rule 2
+    // RDKit✔️✔️:     // in the paper on which this code is based states that,
+    // RDKit✔️✔️:     // in CIP ranks, H > 1H, so implicit H actually has a higher
+    // RDKit✔️✔️:     // priority than 1H (!!!). getAtomIdx() returns Atom::NOATOM
+    // RDKit✔️✔️:     // if that is the case.
+    // RDKit✔️✔️:     auto carrier1_idx = edges1[0]->getEnd()->getAtomIdx();
+    // RDKit✔️✔️:     auto carrier2_idx = edges2[0]->getEnd()->getAtomIdx();
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // Make sure the stereo atoms are in the right order
+    // RDKit✔️✔️:     if (edges1[0]->getBeg()->getAtom() == focus1) {
+    // RDKit✔️✔️:       d_ranked_anchors.assign({carrier1_idx, carrier2_idx});
+    // RDKit✔️✔️:     } else if (edges2[0]->getBeg()->getAtom() == focus1) {
+    // RDKit✔️✔️:       d_ranked_anchors.assign({carrier2_idx, carrier1_idx});
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
     // RDKit✔️✔️:   if (config == Bond::STEREOATROPCCW) {
     // RDKit✔️✔️:     if (priority1.isPseudoAsymetric() || priority2.isPseudoAsymetric()) {
     // RDKit✔️✔️:       return Descriptor::m;
@@ -5327,11 +5582,13 @@ impl<'a> CipAtropisomerBond<'a> {
         comp: &CipRules,
         context: &mut CipLabelerContext,
     ) -> Result<Descriptor, CipLabelerError> {
-        let foci = self.configuration.get_foci().to_vec();
+        let focus1 = self.configuration.foci[0];
+        let focus2 = self.configuration.foci[1];
         let carriers = self.configuration.get_carriers().to_vec();
         Self::label_node_impl(
-            &foci,
-            &carriers,
+            focus1,
+            focus2,
+            carriers,
             self.cfg,
             &mut self.ranked_anchors,
             root1,
@@ -5342,17 +5599,16 @@ impl<'a> CipAtropisomerBond<'a> {
     }
 
     fn label_node_impl(
-        foci: &[usize],
-        carriers: &[Option<usize>],
+        focus1: usize,
+        focus2: usize,
+        mut carriers: Vec<Option<usize>>,
         cfg: BondStereo,
-        ranked_anchors: &mut Vec<usize>,
+        ranked_anchors: &mut Vec<CipSourceIndex>,
         root1: CipNodeId,
         digraph: &mut CipDigraph<'_>,
         comp: &CipRules,
         context: &mut CipLabelerContext,
     ) -> Result<Descriptor, CipLabelerError> {
-        let focus1 = foci[0];
-        let focus2 = foci[1];
         ranked_anchors.clear();
         if carriers.len() < 2 {
             return Ok(Descriptor::Unknown);
@@ -5376,7 +5632,6 @@ impl<'a> CipAtropisomerBond<'a> {
             return Ok(Descriptor::Unknown);
         }
 
-        let mut carriers = carriers.to_vec();
         let mut config = cfg;
         if digraph.node(root1).atom_idx() == Some(focus2) {
             carriers.swap(0, 1);
@@ -5390,10 +5645,10 @@ impl<'a> CipAtropisomerBond<'a> {
         if edges1.len() > 1
             && carriers[0] == digraph.node(digraph.edge(edges1[1]).get_end()).atom_idx()
         {
-            config = match config {
-                BondStereo::AtropCcw => BondStereo::AtropCw,
-                BondStereo::AtropCw => BondStereo::AtropCcw,
-                _ => config,
+            config = if config == BondStereo::AtropCcw {
+                BondStereo::AtropCw
+            } else {
+                BondStereo::AtropCcw
             };
         }
 
@@ -5405,21 +5660,19 @@ impl<'a> CipAtropisomerBond<'a> {
         if edges2.len() > 1
             && carriers[1] == digraph.node(digraph.edge(edges2[1]).get_end()).atom_idx()
         {
-            config = match config {
-                BondStereo::AtropCcw => BondStereo::AtropCw,
-                BondStereo::AtropCw => BondStereo::AtropCcw,
-                _ => config,
+            config = if config == BondStereo::AtropCcw {
+                BondStereo::AtropCw
+            } else {
+                BondStereo::AtropCcw
             };
         }
 
         let carrier1_idx = digraph
             .node(digraph.edge(edges1[0]).get_end())
-            .atom_idx()
-            .unwrap_or(CipNode::NO_ATOM_INDEX);
+            .get_atom_idx()?;
         let carrier2_idx = digraph
             .node(digraph.edge(edges2[0]).get_end())
-            .atom_idx()
-            .unwrap_or(CipNode::NO_ATOM_INDEX);
+            .get_atom_idx()?;
         if digraph.node(digraph.edge(edges1[0]).get_beg()).atom_idx() == Some(focus1) {
             ranked_anchors.extend([carrier1_idx, carrier2_idx]);
         } else if digraph.node(digraph.edge(edges2[0]).get_beg()).atom_idx() == Some(focus1) {
@@ -5461,7 +5714,7 @@ impl CipNode {
     pub(crate) const IMPL_HYDROGEN: i32 = 0x8;
     pub(crate) const DUPLICATE_OR_H: i32 =
         Self::RING_DUPLICATE | Self::BOND_DUPLICATE | Self::IMPL_HYDROGEN;
-    pub(crate) const NO_ATOM_INDEX: usize = usize::MAX;
+    pub(crate) const NO_ATOM_INDEX: CipSourceIndex = CIP_NO_ATOM;
 
     // BEGIN RDKIT CPP FUNCTION Node::Node (CIPLabeler/Node.cpp)
     // RDKit✔️✔️: Node::Node(Digraph *g, std::vector<char> &&visit, Atom *atom,
@@ -5555,8 +5808,8 @@ impl CipNode {
         mol: &mut CipMol<'_>,
     ) -> Result<Self, CipLabelerError> {
         let new_dist = if flags & Self::DUPLICATE != 0 {
-            let idx = idx.ok_or(CipLabelerError::UnsupportedDependency {
-                dependency: "Node::newTerminalChild duplicate without atom index",
+            let idx = idx.ok_or(CipLabelerError::InvalidInternalState {
+                detail: "Node::newTerminalChild duplicate without atom index",
             })?;
             i32::from(self.visit[idx])
         } else {
@@ -5565,11 +5818,9 @@ impl CipNode {
         let new_visit = Vec::new();
 
         if flags & Self::BOND_DUPLICATE != 0 {
-            let current_atom = self
-                .atom_idx
-                .ok_or(CipLabelerError::UnsupportedDependency {
-                    dependency: "Node::newTerminalChild bond duplicate from null atom",
-                })?;
+            let current_atom = self.atom_idx.ok_or(CipLabelerError::InvalidInternalState {
+                detail: "Node::newTerminalChild bond duplicate from null atom",
+            })?;
             let frac = mol.get_fractional_atomic_num(current_atom)?;
             if frac.denominator > 1 {
                 return Self::new(
@@ -5622,12 +5873,17 @@ impl CipNode {
     // RDKit✔️✔️:   return dp_atom->getIdx();
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Node::getAtomIdx
-    pub(crate) fn get_atom_idx(&self) -> usize {
+    pub(crate) fn get_atom_idx(&self) -> Result<CipSourceIndex, CipLabelerError> {
         if self.is_set(Self::IMPL_HYDROGEN) {
-            Self::NO_ATOM_INDEX
+            Ok(Self::NO_ATOM_INDEX)
         } else {
-            self.atom_idx
-                .expect("RDKit Node::getAtomIdx requires non-null atom")
+            let index = self
+                .atom_idx
+                .expect("RDKit Node::getAtomIdx requires non-null atom");
+            CipSourceIndex::try_from(index).map_err(|_| CipLabelerError::SourceIndexWidthExceeded {
+                kind: "atom",
+                index,
+            })
         }
     }
 
@@ -5826,8 +6082,8 @@ impl CipNode {
     // nodes and edges without self-referential borrowing.
     pub(crate) fn get_edges(&self) -> Result<&[CipEdgeId], CipLabelerError> {
         if !self.is_expanded() {
-            return Err(CipLabelerError::UnsupportedDependency {
-                dependency: "use CipDigraph::node_edges for Node::getEdges lazy expansion",
+            return Err(CipLabelerError::InvalidInternalState {
+                detail: "use CipDigraph::node_edges for Node::getEdges lazy expansion",
             });
         }
         Ok(&self.edges)
@@ -6047,35 +6303,16 @@ impl<'a> CipDigraph<'a> {
         node: CipNodeId,
         end_atom_idx: Option<usize>,
     ) -> Result<Vec<CipEdgeId>, CipLabelerError> {
-        let edge_ids = self.node_edges(node)?;
-        let mut result = Vec::new();
-        for edge_id in edge_ids {
-            let edge = &self.edges[edge_id.index()];
-            if self.nodes[edge.get_end().index()].is_duplicate() {
-                continue;
-            }
-            if end_atom_idx == self.nodes[edge.get_beg().index()].atom_idx
-                || end_atom_idx == self.nodes[edge.get_end().index()].atom_idx
-            {
-                result.push(edge_id);
-            }
-        }
-        Ok(result)
+        self.node_edges(node)?;
+        self.nodes[node.index()].get_edges_for_atom(end_atom_idx, &self.nodes, &self.edges)
     }
 
     pub(crate) fn non_terminal_out_edges(
         &mut self,
         node: CipNodeId,
     ) -> Result<Vec<CipEdgeId>, CipLabelerError> {
-        let edge_ids = self.node_edges(node)?;
-        let mut result = Vec::new();
-        for edge_id in edge_ids {
-            let edge = &self.edges[edge_id.index()];
-            if edge.is_beg(node) && !self.nodes[edge.get_end().index()].is_terminal() {
-                result.push(edge_id);
-            }
-        }
-        Ok(result)
+        self.node_edges(node)?;
+        self.nodes[node.index()].get_non_terminal_out_edges(node, &self.nodes, &self.edges)
     }
 
     // BEGIN RDKIT CPP FUNCTION Digraph::getNodes (CIPLabeler/Digraph.cpp)
@@ -6256,8 +6493,8 @@ impl<'a> CipDigraph<'a> {
         let atom_idx =
             self.nodes[beg.index()]
                 .atom_idx
-                .ok_or(CipLabelerError::UnsupportedDependency {
-                    dependency: "Digraph::expand on null atom node",
+                .ok_or(CipLabelerError::InvalidInternalState {
+                    detail: "Digraph::expand on null atom node",
                 })?;
         let prev = self.nodes[beg.index()].edges.first().and_then(|edge_id| {
             let edge = &self.edges[edge_id.index()];
@@ -6436,6 +6673,11 @@ impl<'a> CipMol<'a> {
             })
     }
 
+    // BEGIN RDKIT CPP FUNCTION CIPMol::atoms (CIPLabeler/CIPMol.cpp)
+    // RDKit✔️✔️: CXXAtomIterator<MolGraph, Atom *> CIPMol::atoms() const {
+    // RDKit✔️✔️:   return d_mol.atoms();
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION CIPMol::atoms
     pub(crate) fn atoms(&self) -> &'a [Atom] {
         self.molecule.atoms()
     }
@@ -7092,19 +7334,44 @@ fn calc_frac_atom_nums(mol: &mut CipMol<'_>) -> Result<Vec<RationalI32>, CipLabe
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::Cell, rc::Rc};
+
     use super::{
-        CipAtropisomerBond, CipConfiguration, CipDigraph, CipEdge, CipEdgeId, CipLabelerContext,
-        CipLabelerError, CipMol, CipNode, CipNodeId, CipPairList, CipPriority, CipRule1a,
-        CipRule1b, CipRule2, CipRule3, CipRule4a, CipRule4b, CipRule4c, CipRule5New, CipRule6,
-        CipRules, CipSequenceRule, CipSort, CipSp2Bond, CipTetrahedral, Descriptor, RationalI32,
-        assign_cip_labels, assign_cip_labels_for_indices, cip_all_rules, descriptor_to_string,
+        CipAtropisomerBond, CipCancellationMode, CipConfiguration, CipDigraph, CipEdge, CipEdgeId,
+        CipLabelerContext, CipLabelerError, CipMol, CipNode, CipNodeId, CipPairList, CipPriority,
+        CipRule1a, CipRule1b, CipRule2, CipRule3, CipRule4a, CipRule4b, CipRule4c, CipRule5New,
+        CipRule6, CipRules, CipSequenceRule, CipSort, CipSp2Bond, CipTetrahedral, Descriptor,
+        MancudeType, RationalI32, assign_cip_labels, assign_cip_labels_for_indices,
+        assign_cip_labels_for_masks, assign_cip_labels_for_masks_with_cancellation, cip_all_rules,
+        descriptor_to_string, relax_types, seed_types, three_way_comparison_i32, visit_parts,
     };
     use crate::{
-        AtomSpec, BondOrder, BondSpec, BondStereo, ChiralTag, Element, Molecule, MoleculeBuilder,
+        AtomSpec, BondId, BondOrder, BondSpec, BondStereo, ChiralTag, Element, Molecule,
+        MoleculeBuilder,
     };
 
     #[test]
-    fn ciplabeler_descriptor_to_string_matches_rdkit() {
+    fn ciplabeler_rational_order_matches_boost_rational() {
+        assert!(RationalI32::new(13, 2) < RationalI32::new(7, 1));
+        assert!(RationalI32::new(-3, 2) < RationalI32::new(-1, 3));
+        assert_eq!(RationalI32::new(6, 4), RationalI32::new(3, 2));
+    }
+
+    #[test]
+    fn ciplabeler_chembl_recursive_priority_regressions_match_rdkit() {
+        let molecule = Molecule::from_smiles("CCOC(C)(C)C(=O)N[C@@H](COC)c1ccccn1").unwrap();
+        let atom_mask = vec![true; molecule.num_atoms()];
+        let bond_mask = vec![true; molecule.num_bonds()];
+        let labeled = assign_cip_labels_for_masks(&molecule, &atom_mask, &bond_mask, 0).unwrap();
+        assert_eq!(labeled.atoms()[9].prop("_CIPCode"), Some("R"));
+        assert_eq!(
+            labeled.atoms()[9].prop("_CIPNeighborOrder"),
+            Some("[8,10,13]")
+        );
+    }
+
+    #[test]
+    fn ciplabeler_sort_priority_descriptor_to_string_matches_rdkit() {
         let expected = [
             (Descriptor::None, "NONE"),
             (Descriptor::Unknown, "UNKNOWN"),
@@ -7131,7 +7398,7 @@ mod tests {
     }
 
     #[test]
-    fn ciplabeler_descriptor_order_matches_rdkit_enum_order() {
+    fn ciplabeler_sort_priority_descriptor_order_matches_rdkit_enum_order() {
         assert_eq!(
             Descriptor::ALL_IN_RDKIT_ORDER,
             [
@@ -7243,6 +7510,61 @@ mod tests {
     }
 
     #[test]
+    fn ciplabeler_cipmol_mancude_seed_relax_and_partition_match_rdkit() {
+        let molecule = Molecule::from_smiles("c1ccncc1").unwrap();
+        let mut cipmol = CipMol::new(&molecule);
+        let mut types = vec![MancudeType::Other; molecule.num_atoms()];
+
+        assert!(seed_types(&mut types, &mut cipmol).unwrap());
+        assert_eq!(
+            types,
+            vec![
+                MancudeType::Cv4D3,
+                MancudeType::Cv4D3,
+                MancudeType::Cv4D3,
+                MancudeType::Nv3D2,
+                MancudeType::Cv4D3,
+                MancudeType::Cv4D3,
+            ]
+        );
+        relax_types(&mut types, &cipmol).unwrap();
+        assert!(types.iter().all(|kind| *kind != MancudeType::Other));
+
+        let mut parts = vec![0; molecule.num_atoms()];
+        assert_eq!(visit_parts(&mut parts, &types, &mut cipmol).unwrap(), 1);
+        assert_eq!(parts, vec![1; molecule.num_atoms()]);
+    }
+
+    #[test]
+    fn ciplabeler_cipmol_mancude_relax_removes_non_resonant_typed_chain() {
+        let molecule = Molecule::from_smiles("CCC").unwrap();
+        let cipmol = CipMol::new(&molecule);
+        let mut types = vec![MancudeType::Cv4D3, MancudeType::Cv4D3, MancudeType::Other];
+
+        relax_types(&mut types, &cipmol).unwrap();
+        assert_eq!(types, vec![MancudeType::Other; 3]);
+    }
+
+    #[test]
+    fn ciplabeler_cipmol_rejects_non_integer_bond_orders() {
+        let mut builder = MoleculeBuilder::new();
+        let first = builder.add_atom(AtomSpec::new(Element::C));
+        let second = builder.add_atom(AtomSpec::new(Element::C));
+        builder
+            .add_bond(BondSpec::new(first, second, BondOrder::OneAndHalf))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+        let mut cipmol = CipMol::new(&molecule);
+
+        assert!(matches!(
+            cipmol.get_bond_order(0),
+            Err(CipLabelerError::NonIntegerBondOrder {
+                order: BondOrder::OneAndHalf
+            })
+        ));
+    }
+
+    #[test]
     fn ciplabeler_node_constructor_flags_mass_and_visits_match_rdkit() {
         let molecule = Molecule::from_smiles("[13CH4]").unwrap();
         let cipmol = CipMol::new(&molecule);
@@ -7251,7 +7573,7 @@ mod tests {
 
         assert_eq!(node.get_digraph(), 11);
         assert_eq!(node.atom_idx(), Some(0));
-        assert_eq!(node.get_atom_idx(), 0);
+        assert_eq!(node.get_atom_idx().unwrap(), 0);
         assert_eq!(node.get_distance(), 1);
         assert_eq!(node.get_atomic_num_fraction().tuple(), (6, 1));
         assert_eq!(node.get_atomic_num(&cipmol).unwrap(), 6);
@@ -7313,7 +7635,7 @@ mod tests {
 
         let implicit_h = root.new_implicit_hydrogen_child(&mut cipmol).unwrap();
         assert_eq!(implicit_h.atom_idx(), None);
-        assert_eq!(implicit_h.get_atom_idx(), CipNode::NO_ATOM_INDEX);
+        assert_eq!(implicit_h.get_atom_idx().unwrap(), CipNode::NO_ATOM_INDEX);
         assert_eq!(implicit_h.get_atomic_num(&cipmol).unwrap(), 1);
         assert_eq!(implicit_h.get_mass_num(&cipmol).unwrap(), 0);
         assert!(implicit_h.is_duplicate_or_h());
@@ -7325,7 +7647,104 @@ mod tests {
     }
 
     #[test]
-    fn ciplabeler_edge_endpoints_aux_and_flip_match_rdkit() {
+    fn ciplabeler_node_bond_duplicate_uses_parent_mancude_fraction() {
+        let molecule = Molecule::from_smiles("c1ccncc1").unwrap();
+        let mut cipmol = CipMol::new(&molecule);
+        let parent = CipNode::new(
+            5,
+            vec![0, 0, 1, 0, 0, 0],
+            Some(2),
+            RationalI32::new(13, 2),
+            1,
+            0,
+            &cipmol,
+        )
+        .unwrap();
+
+        let duplicate = parent
+            .new_bond_duplicate_child(1, Some(1), &mut cipmol)
+            .unwrap();
+        assert_eq!(duplicate.atom_idx(), Some(1));
+        assert_eq!(duplicate.get_atomic_num_fraction().tuple(), (13, 2));
+        assert_eq!(duplicate.get_distance(), 0);
+        assert_eq!(duplicate.get_atomic_mass(), 0.0);
+        assert!(duplicate.is_set(CipNode::BOND_DUPLICATE));
+        assert!(duplicate.is_duplicate());
+        assert!(duplicate.is_duplicate_or_h());
+        assert!(duplicate.is_expanded());
+        assert!(duplicate.is_terminal());
+        assert!(duplicate.edges.capacity() >= 4);
+    }
+
+    #[test]
+    fn ciplabeler_node_terminal_state_tracks_visit_expansion_and_edge_count() {
+        let molecule = Molecule::from_smiles("C").unwrap();
+        let cipmol = CipMol::new(&molecule);
+
+        let empty_visit = CipNode::new(
+            0,
+            Vec::new(),
+            Some(0),
+            RationalI32::new(6, 1),
+            1,
+            0,
+            &cipmol,
+        )
+        .unwrap();
+        assert!(empty_visit.is_expanded());
+        assert!(empty_visit.is_terminal());
+
+        let mut expanded = CipNode::new(
+            0,
+            vec![1],
+            Some(0),
+            RationalI32::new(6, 1),
+            1,
+            CipNode::EXPANDED,
+            &cipmol,
+        )
+        .unwrap();
+        assert!(!expanded.is_terminal());
+        expanded.add(CipEdgeId::new(0));
+        assert!(expanded.is_terminal());
+        expanded.add(CipEdgeId::new(1));
+        assert!(!expanded.is_terminal());
+    }
+
+    #[test]
+    fn ciplabeler_node_atom_edge_filter_skips_duplicate_end_nodes() {
+        let molecule = Molecule::from_smiles("C=C").unwrap();
+        let mut digraph = CipDigraph::new(&molecule, 0, true).unwrap();
+        let root = digraph.get_current_root();
+
+        let matching = digraph.node_edges_for_atom(root, Some(1)).unwrap();
+        assert_eq!(matching.len(), 1);
+        let edge = digraph.edge(matching[0]);
+        assert_eq!(digraph.node(edge.get_end()).atom_idx(), Some(1));
+        assert!(!digraph.node(edge.get_end()).is_duplicate());
+    }
+
+    #[test]
+    fn ciplabeler_node_non_terminal_out_edges_follow_direction_and_terminal_state() {
+        let molecule = Molecule::from_smiles("CCC").unwrap();
+        let mut digraph = CipDigraph::new(&molecule, 1, false).unwrap();
+        let root = digraph.get_current_root();
+
+        let outgoing = digraph.non_terminal_out_edges(root).unwrap();
+        let atom_indices = outgoing
+            .iter()
+            .map(|edge_id| {
+                let edge = digraph.edge(*edge_id);
+                assert!(edge.is_beg(root));
+                assert!(!digraph.node(edge.get_end()).is_terminal());
+                digraph.node(edge.get_end()).atom_idx().unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(atom_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn ciplabeler_sort_priority_edge_endpoints_aux_and_flip_match_rdkit() {
         let mut edge = CipEdge::new(CipNodeId::new(0), CipNodeId::new(1), Some(7));
         assert_eq!(edge.get_beg(), CipNodeId::new(0));
         assert_eq!(edge.get_end(), CipNodeId::new(1));
@@ -7370,8 +7789,8 @@ mod tests {
         .unwrap();
         assert!(matches!(
             node.get_edges(),
-            Err(CipLabelerError::UnsupportedDependency {
-                dependency: "use CipDigraph::node_edges for Node::getEdges lazy expansion"
+            Err(CipLabelerError::InvalidInternalState {
+                detail: "use CipDigraph::node_edges for Node::getEdges lazy expansion"
             })
         ));
     }
@@ -7421,10 +7840,24 @@ mod tests {
             .filter(|edge_id| digraph.edge(**edge_id).get_bond_idx().is_none())
             .count();
         assert_eq!(implicit_count, 3);
+
+        let node_count = digraph.get_num_nodes();
+        let repeated_edges = digraph.node_edges(root).unwrap();
+        assert_eq!(repeated_edges, root_edges);
+        assert_eq!(digraph.get_num_nodes(), node_count);
     }
 
     #[test]
     fn ciplabeler_digraph_expansion_creates_bond_and_ring_duplicates() {
+        let normal_ethene = Molecule::from_smiles("C=C").unwrap();
+        let mut normal_graph = CipDigraph::new(&normal_ethene, 0, false).unwrap();
+        let normal_root = normal_graph.get_current_root();
+        let normal_root_edges = normal_graph.node_edges(normal_root).unwrap();
+        assert!(!normal_root_edges.iter().any(|edge_id| {
+            let end = normal_graph.edge(*edge_id).get_end();
+            normal_graph.node(end).is_duplicate()
+        }));
+
         let ethene = Molecule::from_smiles("C=C").unwrap();
         let mut ethene_graph = CipDigraph::new(&ethene, 0, true).unwrap();
         let root = ethene_graph.get_current_root();
@@ -7478,6 +7911,7 @@ mod tests {
 
         digraph.change_root(left).unwrap();
         assert_eq!(digraph.get_current_root(), left);
+        assert_eq!(digraph.get_original_root(), root);
         let flipped_back_edge = digraph
             .node_edges(left)
             .unwrap()
@@ -7485,6 +7919,26 @@ mod tests {
             .find(|edge_id| digraph.edge(*edge_id).get_end() == root)
             .unwrap();
         assert!(digraph.edge(flipped_back_edge).is_beg(left));
+    }
+
+    #[test]
+    fn ciplabeler_digraph_get_nodes_returns_repeated_atoms_in_distance_order() {
+        let molecule = Molecule::from_smiles("C1CC1").unwrap();
+        let mut digraph = CipDigraph::new(&molecule, 0, false).unwrap();
+
+        let nodes = digraph.get_nodes(0).unwrap();
+        assert_eq!(nodes[0], digraph.get_current_root());
+        assert!(nodes.len() > 1);
+        let distances = nodes
+            .iter()
+            .map(|node| digraph.node(*node).get_distance())
+            .collect::<Vec<_>>();
+        assert!(distances.windows(2).all(|pair| pair[0] <= pair[1]));
+        assert!(
+            nodes
+                .iter()
+                .all(|node| digraph.node(*node).atom_idx() == Some(0))
+        );
     }
 
     struct AtomicNumberSortRule;
@@ -7594,6 +8048,30 @@ mod tests {
         }
     }
 
+    struct CountingAtomicNumberSortRule {
+        calls: Rc<Cell<usize>>,
+    }
+
+    impl CipSequenceRule for CountingAtomicNumberSortRule {
+        fn compare(
+            &self,
+            digraph: &mut CipDigraph<'_>,
+            _context: &mut CipLabelerContext,
+            a: CipEdgeId,
+            b: CipEdgeId,
+        ) -> Result<i32, CipLabelerError> {
+            self.calls.set(self.calls.get() + 1);
+            let a_end = digraph.edge(a).get_end();
+            let b_end = digraph.edge(b).get_end();
+            let a_atomic_num = digraph.node(a_end).get_atomic_num(digraph.mol())?;
+            let b_atomic_num = digraph.node(b_end).get_atomic_num(digraph.mol())?;
+            Ok(three_way_comparison_i32(
+                i32::from(a_atomic_num),
+                i32::from(b_atomic_num),
+            ))
+        }
+    }
+
     fn edge_end_atomic_nums(
         digraph: &CipDigraph<'_>,
         edges: &[CipEdgeId],
@@ -7680,6 +8158,43 @@ mod tests {
         assert!(priority.is_unique());
         assert!(priority.is_pseudo_asymetric());
         assert_eq!(edge_end_atomic_nums(&digraph, &edges).unwrap(), vec![9, 7]);
+    }
+
+    #[test]
+    fn ciplabeler_sort_priority_forwards_deep_and_uses_first_nonzero_rule() {
+        let molecule = Molecule::from_smiles("FON").unwrap();
+        let mut digraph = CipDigraph::new(&molecule, 1, false).unwrap();
+        let root = digraph.get_current_root();
+        let original_edges = digraph.node_edges(root).unwrap();
+
+        let equal = AlwaysEqualSortRule;
+        let atomic_number = AtomicNumberSortRule;
+        let sorter = CipSort::from_rules(vec![&equal, &atomic_number]);
+        assert_eq!(sorter.get_rules().len(), 2);
+
+        let mut shallow_edges = original_edges.clone();
+        let mut shallow_context = CipLabelerContext::with_remaining_call_count(1);
+        let shallow_priority = sorter
+            .prioritize(
+                &mut digraph,
+                &mut shallow_context,
+                root,
+                &mut shallow_edges,
+                false,
+            )
+            .unwrap();
+        assert!(shallow_priority.is_unique());
+        assert_eq!(
+            edge_end_atomic_nums(&digraph, &shallow_edges).unwrap(),
+            vec![9, 7]
+        );
+
+        let mut deep_edges = original_edges;
+        let mut deep_context = CipLabelerContext::with_remaining_call_count(1);
+        assert_eq!(
+            sorter.prioritize(&mut digraph, &mut deep_context, root, &mut deep_edges, true,),
+            Err(CipLabelerError::MaxIterationsExceeded)
+        );
     }
 
     #[test]
@@ -7906,6 +8421,58 @@ mod tests {
     }
 
     #[test]
+    fn ciplabeler_sequence_rule_subrule_sorters_use_addition_prefixes() {
+        let molecule = Molecule::from_smiles("C(CF)CCl").unwrap();
+        let mut digraph = CipDigraph::new(&molecule, 0, false).unwrap();
+        let root = digraph.get_current_root();
+        let carbon_edges = digraph
+            .node_edges(root)
+            .unwrap()
+            .into_iter()
+            .filter(|edge_id| {
+                let end = digraph.edge(*edge_id).get_end();
+                digraph.node(end).get_atomic_num(digraph.mol()).unwrap() == 6
+            })
+            .collect::<Vec<_>>();
+        let calls = Rc::new(Cell::new(0));
+        let rules = CipRules::new(vec![
+            Box::new(AlwaysEqualSortRule),
+            Box::new(CountingAtomicNumberSortRule {
+                calls: Rc::clone(&calls),
+            }),
+        ])
+        .unwrap();
+        let rule_refs = rules.rule_refs();
+
+        let mut context = CipLabelerContext::new(0);
+        assert_eq!(
+            rule_refs[0]
+                .recursive_compare_with_sort_rules(
+                    &rule_refs[..=0],
+                    &mut digraph,
+                    &mut context,
+                    carbon_edges[0],
+                    carbon_edges[1],
+                )
+                .unwrap(),
+            0
+        );
+        assert_eq!(calls.get(), 0);
+
+        let mut context = CipLabelerContext::new(0);
+        rule_refs[0]
+            .recursive_compare_with_sort_rules(
+                &rule_refs,
+                &mut digraph,
+                &mut context,
+                carbon_edges[0],
+                carbon_edges[1],
+            )
+            .unwrap();
+        assert!(calls.get() > 0);
+    }
+
+    #[test]
     fn ciplabeler_rules_compare_tries_subrules_in_order_like_rdkit() {
         let molecule = Molecule::from_smiles("C(F)Cl").unwrap();
         let mut digraph = CipDigraph::new(&molecule, 0, false).unwrap();
@@ -8031,6 +8598,18 @@ mod tests {
                 .unwrap(),
             -1
         );
+        assert_eq!(
+            CipRule1a
+                .compare(&mut digraph, &mut context, fractional_n, carbon)
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            CipRule1a
+                .compare(&mut digraph, &mut context, carbon, carbon)
+                .unwrap(),
+            0
+        );
     }
 
     #[test]
@@ -8067,6 +8646,35 @@ mod tests {
                 .compare(&mut digraph, &mut context, non_duplicate, ring_duplicate)
                 .unwrap(),
             -1
+        );
+
+        let nearer_ring_duplicate_node = digraph
+            .add_node(
+                vec![],
+                Some(1),
+                RationalI32::new(6, 1),
+                2,
+                CipNode::RING_DUPLICATE,
+            )
+            .unwrap();
+        digraph.add_edge(root, Some(0), nearer_ring_duplicate_node);
+        let nearer_ring_duplicate = CipEdgeId::new(digraph.edges.len() - 1);
+        assert_eq!(
+            CipRule1b
+                .compare(
+                    &mut digraph,
+                    &mut context,
+                    nearer_ring_duplicate,
+                    ring_duplicate,
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            CipRule1b
+                .compare(&mut digraph, &mut context, non_duplicate, non_duplicate)
+                .unwrap(),
+            0
         );
     }
 
@@ -8123,7 +8731,66 @@ mod tests {
     }
 
     #[test]
+    fn ciplabeler_rules_rule2_handles_zero_atomic_and_mass_numbers_like_rdkit() {
+        let mut builder = MoleculeBuilder::new();
+        let center = builder.add_atom(AtomSpec::new(Element::C));
+        let dummy = builder.add_atom(AtomSpec::new(Element::DUMMY));
+        let carbon = builder.add_atom(AtomSpec::new(Element::C));
+        let nitrogen = builder.add_atom(AtomSpec::new(Element::N));
+        builder
+            .add_bond(BondSpec::new(center, dummy, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(center, carbon, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(center, nitrogen, BondOrder::Single))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+        let mut digraph = CipDigraph::new(&molecule, center.index(), false).unwrap();
+        let root = digraph.get_current_root();
+        let edges = digraph.node_edges(root).unwrap();
+        let edge_for = |digraph: &CipDigraph<'_>, atom_idx| {
+            edges
+                .iter()
+                .copied()
+                .find(|edge_id| {
+                    digraph.node(digraph.edge(*edge_id).get_end()).atom_idx() == Some(atom_idx)
+                })
+                .unwrap()
+        };
+        let dummy_edge = edge_for(&digraph, dummy.index());
+        let carbon_edge = edge_for(&digraph, carbon.index());
+        let nitrogen_edge = edge_for(&digraph, nitrogen.index());
+
+        let mut context = CipLabelerContext::new(0);
+        assert_eq!(
+            CipRule2
+                .compare(&mut digraph, &mut context, dummy_edge, dummy_edge)
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            CipRule2
+                .compare(&mut digraph, &mut context, dummy_edge, carbon_edge)
+                .unwrap(),
+            -1
+        );
+        assert_eq!(
+            CipRule2
+                .compare(&mut digraph, &mut context, carbon_edge, nitrogen_edge)
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
     fn ciplabeler_rules_rule3_orders_e_z_aux_labels_like_rdkit() {
+        assert_eq!(CipRule3::ord(Descriptor::E), 1);
+        assert_eq!(CipRule3::ord(Descriptor::Z), 2);
+        assert_eq!(CipRule3::ord(Descriptor::R), 0);
+        assert_eq!(CipRule3::ord(Descriptor::None), 0);
+
         let molecule = Molecule::from_smiles("CC").unwrap();
         let mut digraph = CipDigraph::new(&molecule, 0, false).unwrap();
         let root = digraph.get_current_root();
@@ -8151,6 +8818,14 @@ mod tests {
                 .unwrap(),
             1
         );
+        digraph.nodes[e_node.index()].set_aux(Descriptor::R);
+        digraph.nodes[z_node.index()].set_aux(Descriptor::S);
+        assert_eq!(
+            CipRule3
+                .compare(&mut digraph, &mut context, e_edge, z_edge)
+                .unwrap(),
+            0
+        );
     }
 
     #[test]
@@ -8174,6 +8849,7 @@ mod tests {
         assert_eq!(CipPairList::ref_descriptor(Descriptor::r), Descriptor::None);
 
         let mut pairs = CipPairList::new();
+        assert_eq!(pairs.to_rdkit_string(), "");
         assert!(!pairs.add(Descriptor::None));
         assert!(!pairs.add(Descriptor::r));
         assert!(pairs.add(Descriptor::M));
@@ -8215,7 +8891,13 @@ mod tests {
 
         assert_eq!(like.compare_to(&unlike).unwrap(), 1);
         assert_eq!(unlike.compare_to(&like).unwrap(), -1);
-        assert!(unlike < like);
+        assert!(unlike.less_than(&like).unwrap());
+        assert!(!like.less_than(&unlike).unwrap());
+
+        let mut lists = vec![unlike.clone(), like.clone()];
+        CipPairList::sort_descending(&mut lists).unwrap();
+        assert_eq!(lists[0], like);
+        assert_eq!(lists[1], unlike);
 
         let mut shorter = CipPairList::with_ref(Descriptor::R);
         shorter.add(Descriptor::R);
@@ -8225,10 +8907,42 @@ mod tests {
             shorter.compare_to(&longer),
             Err(CipLabelerError::DescriptorListLengthMismatch)
         ));
+        assert!(matches!(
+            CipPairList::sort_descending(&mut [shorter, longer]),
+            Err(CipLabelerError::DescriptorListLengthMismatch)
+        ));
     }
 
     #[test]
     fn ciplabeler_rules_rule4a_orders_descriptor_classes_like_rdkit() {
+        for descriptor in [Descriptor::Unknown, Descriptor::ns, Descriptor::None] {
+            assert_eq!(CipRule4a::ord(descriptor).unwrap(), 0);
+        }
+        for descriptor in [
+            Descriptor::r,
+            Descriptor::s,
+            Descriptor::m,
+            Descriptor::p,
+            Descriptor::E,
+            Descriptor::Z,
+        ] {
+            assert_eq!(CipRule4a::ord(descriptor).unwrap(), 1);
+        }
+        for descriptor in [
+            Descriptor::R,
+            Descriptor::S,
+            Descriptor::M,
+            Descriptor::P,
+            Descriptor::seqTrans,
+            Descriptor::seqCis,
+        ] {
+            assert_eq!(CipRule4a::ord(descriptor).unwrap(), 2);
+        }
+        assert!(matches!(
+            CipRule4a::ord(Descriptor::SP_4),
+            Err(CipLabelerError::InvalidStereoDescriptor)
+        ));
+
         let molecule = Molecule::from_smiles("CC").unwrap();
         let mut digraph = CipDigraph::new(&molecule, 0, false).unwrap();
         let root = digraph.get_current_root();
@@ -8272,6 +8986,12 @@ mod tests {
 
     #[test]
     fn ciplabeler_rules_rule4c_orders_lowercase_descriptor_classes_like_rdkit() {
+        assert_eq!(CipRule4c::ord(Descriptor::m), 2);
+        assert_eq!(CipRule4c::ord(Descriptor::r), 2);
+        assert_eq!(CipRule4c::ord(Descriptor::p), 1);
+        assert_eq!(CipRule4c::ord(Descriptor::s), 1);
+        assert_eq!(CipRule4c::ord(Descriptor::R), 0);
+
         let molecule = Molecule::from_smiles("CC").unwrap();
         let mut digraph = CipDigraph::new(&molecule, 0, false).unwrap();
         let root = digraph.get_current_root();
@@ -8391,6 +9111,84 @@ mod tests {
             vec![Descriptor::S]
         );
         assert!(rule.has_descriptors(&mut digraph, left_node).unwrap());
+    }
+
+    #[test]
+    fn ciplabeler_pairlist_rule4b_reference_counts_and_level_shape_match_rdkit() {
+        let molecule = Molecule::from_smiles("C(F)(Cl)Br").unwrap();
+        let mut digraph = CipDigraph::new(&molecule, 0, false).unwrap();
+        let mut nodes = Vec::new();
+        for descriptor in [
+            Descriptor::R,
+            Descriptor::M,
+            Descriptor::seqCis,
+            Descriptor::S,
+            Descriptor::P,
+            Descriptor::seqTrans,
+            Descriptor::r,
+            Descriptor::None,
+        ] {
+            let node = digraph
+                .add_node(vec![], Some(1), RationalI32::new(9, 1), 2, 0)
+                .unwrap();
+            digraph.nodes[node.index()].set_aux(descriptor);
+            nodes.push(node);
+        }
+
+        let rule = CipRule4b::new();
+        let mut result = Vec::new();
+        assert!(rule.get_reference(&digraph, &nodes[..3], &mut result));
+        assert_eq!(result, vec![Descriptor::R]);
+        result.clear();
+        assert!(rule.get_reference(&digraph, &nodes[3..6], &mut result));
+        assert_eq!(result, vec![Descriptor::S]);
+        result.clear();
+        assert!(rule.get_reference(&digraph, &[nodes[0], nodes[3]], &mut result));
+        assert_eq!(result, vec![Descriptor::R, Descriptor::S]);
+        result.clear();
+        assert!(!rule.get_reference(&digraph, &nodes[6..], &mut result));
+        assert!(result.is_empty());
+
+        let parent_a = digraph
+            .add_node(
+                vec![1, 0, 0, 0],
+                Some(0),
+                RationalI32::new(6, 1),
+                2,
+                CipNode::EXPANDED,
+            )
+            .unwrap();
+        let parent_b = digraph
+            .add_node(
+                vec![1, 0, 0, 0],
+                Some(0),
+                RationalI32::new(6, 1),
+                2,
+                CipNode::EXPANDED,
+            )
+            .unwrap();
+        let fluorine = digraph
+            .add_node(vec![1, 1, 0, 0], Some(1), RationalI32::new(9, 1), 3, 0)
+            .unwrap();
+        let chlorine = digraph
+            .add_node(vec![1, 0, 1, 0], Some(2), RationalI32::new(17, 1), 3, 0)
+            .unwrap();
+        digraph.add_edge(parent_a, Some(0), fluorine);
+        digraph.add_edge(parent_b, Some(0), fluorine);
+        digraph.add_edge(parent_b, Some(1), chlorine);
+
+        let sort_rule = CipRule1a;
+        let sort_rules = [&sort_rule as &dyn CipSequenceRule];
+        let mut context = CipLabelerContext::new(0);
+        assert!(matches!(
+            rule.get_next_level(
+                Some(&sort_rules),
+                &mut digraph,
+                &mut context,
+                &[vec![parent_a, parent_b]],
+            ),
+            Err(CipLabelerError::SomethingUnexpected)
+        ));
     }
 
     #[test]
@@ -8520,6 +9318,25 @@ mod tests {
             .unwrap(),
             2
         );
+        assert_eq!(
+            rule.compare_with_sort_rules(
+                Some(&sort_rules),
+                &mut digraph,
+                &mut context,
+                right,
+                left,
+            )
+            .unwrap(),
+            -2
+        );
+
+        let unrelated_rule = CipRule1a;
+        let unrelated_rules = [&unrelated_rule as &dyn CipSequenceRule];
+        let replacement = CipRule5New::with_ref(Descriptor::R);
+        assert!(matches!(
+            rule.get_ref_sorter(Some(&unrelated_rules), &replacement),
+            Err(CipLabelerError::Rule5NewInstanceNotInRuleSet)
+        ));
     }
 
     #[test]
@@ -8566,13 +9383,24 @@ mod tests {
                 .unwrap(),
             -1
         );
+        assert_eq!(
+            CipRule6
+                .compare(&mut digraph, &mut context, right, right)
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn ciplabeler_rules_rule5new_rule6_modern_dispatch_uses_nine_pinned_rules() {
+        assert_eq!(cip_all_rules().unwrap().get_num_sub_rules(), 9);
     }
 
     #[test]
     fn ciplabeler_configuration_constructors_accessors_and_carriers_match_rdkit() {
         let molecule = Molecule::from_smiles("CCO").unwrap();
         let mut config = CipConfiguration::new(&molecule, 1).unwrap();
-        assert_eq!(CipConfiguration::IMPLICIT_H, usize::MAX);
+        assert_eq!(CipConfiguration::IMPLICIT_H, u32::MAX);
         assert_eq!(config.get_focus(), 1);
         assert_eq!(config.get_foci(), &[1]);
         assert!(config.get_carriers().is_empty());
@@ -8649,6 +9477,10 @@ mod tests {
             CipConfiguration::parity4(&[0, 1, 2], &reference),
             Err(CipLabelerError::ParityVectorsMustHaveSize4)
         ));
+        assert!(matches!(
+            CipConfiguration::parity4(&reference, &[0, 1, 2]),
+            Err(CipLabelerError::ParityVectorsMustHaveSize4)
+        ));
     }
 
     #[test]
@@ -8700,6 +9532,29 @@ mod tests {
             &[Some(0), Some(2), Some(3), Some(1)]
         );
 
+        let mut builder = MoleculeBuilder::new();
+        let center =
+            builder.add_atom(AtomSpec::new(Element::N).with_chiral_tag(ChiralTag::TetrahedralCcw));
+        let carbon = builder.add_atom(AtomSpec::new(Element::C));
+        let oxygen = builder.add_atom(AtomSpec::new(Element::O));
+        builder
+            .add_bond(BondSpec::new(center, carbon, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(center, oxygen, BondOrder::Single))
+            .unwrap();
+        let trigonal_pyramid = builder.build().unwrap();
+        let trigonal_config = CipTetrahedral::new(&trigonal_pyramid, center.index()).unwrap();
+        assert_eq!(
+            trigonal_config.get_carriers(),
+            &[
+                Some(carbon.index()),
+                Some(oxygen.index()),
+                Some(center.index()),
+                None
+            ]
+        );
+
         let methane = Molecule::from_smiles("C").unwrap();
         assert!(matches!(
             CipTetrahedral::new(&methane, 0),
@@ -8714,19 +9569,25 @@ mod tests {
         assert!(!config.has_primary_label());
 
         config.ranked_anchors = vec![4, 3, 2, 1];
-        config.set_primary_label(Descriptor::S).unwrap();
-        assert!(config.has_primary_label());
-        assert_eq!(
-            config.primary_label(),
-            Some(&super::CipAtomPrimaryLabel {
-                atom_idx: 0,
-                cip_code: "S",
-                cip_neighbor_order: vec![4, 3, 2, 1],
-            })
-        );
-
-        config.reset_primary_label();
-        assert!(!config.has_primary_label());
+        for (descriptor, code) in [
+            (Descriptor::R, "R"),
+            (Descriptor::S, "S"),
+            (Descriptor::r, "r"),
+            (Descriptor::s, "s"),
+        ] {
+            config.set_primary_label(descriptor).unwrap();
+            assert!(config.has_primary_label());
+            assert_eq!(
+                config.primary_label(),
+                Some(&super::CipAtomPrimaryLabel {
+                    atom_idx: 0,
+                    cip_code: code,
+                    cip_neighbor_order: vec![4, 3, 2, 1],
+                })
+            );
+            config.reset_primary_label();
+            assert!(!config.has_primary_label());
+        }
         assert!(matches!(
             config.set_primary_label(Descriptor::E),
             Err(CipLabelerError::DescriptorNotSupportedForAtoms)
@@ -8752,6 +9613,40 @@ mod tests {
         let mut context = CipLabelerContext::new(0);
         assert_eq!(config.label(&rules, &mut context).unwrap(), Descriptor::R);
         assert_eq!(config.ranked_anchors(), &[4, 3, 2, 1]);
+    }
+
+    #[test]
+    fn ciplabeler_tetrahedral_label_assigns_lowercase_for_pseudoasymmetric_priority() {
+        let rules = CipRules::new(vec![Box::new(SinglePseudoAsymSortRule)]).unwrap();
+
+        let molecule = tetrahedral_molecule(ChiralTag::TetrahedralCcw);
+        let mut config = CipTetrahedral::new(&molecule, 0).unwrap();
+        let mut context = CipLabelerContext::new(0);
+        assert_eq!(config.label(&rules, &mut context).unwrap(), Descriptor::s);
+
+        let molecule = tetrahedral_molecule(ChiralTag::TetrahedralCw);
+        let mut config = CipTetrahedral::new(&molecule, 0).unwrap();
+        let mut context = CipLabelerContext::new(0);
+        assert_eq!(config.label(&rules, &mut context).unwrap(), Descriptor::r);
+    }
+
+    #[test]
+    fn ciplabeler_tetrahedral_configuration_edge_filters_match_rdkit() {
+        let molecule = Molecule::from_smiles("CC").unwrap();
+        let mut digraph = CipDigraph::new(&molecule, 0, false).unwrap();
+        let root = digraph.get_current_root();
+        let edges = digraph.node_edges(root).unwrap();
+        let internal = CipConfiguration::find_internal_edge(&digraph, &edges, 0, 1).unwrap();
+        assert!(CipConfiguration::is_internal_edge(&digraph, internal, 0, 1));
+        assert!(CipConfiguration::is_internal_edge(&digraph, internal, 1, 0));
+
+        let mut without_internal = edges.clone();
+        CipConfiguration::remove_internal_edges(&digraph, &mut without_internal, 0, 1);
+        assert!(!without_internal.contains(&internal));
+
+        let mut without_duplicates_and_hs = edges;
+        CipConfiguration::remove_duplicates_and_hs(&digraph, &mut without_duplicates_and_hs);
+        assert_eq!(without_duplicates_and_hs, vec![internal]);
     }
 
     #[test]
@@ -8869,6 +9764,56 @@ mod tests {
         builder.build().unwrap()
     }
 
+    fn sp2_pseudoasymmetric_bond_molecule(stereo: BondStereo) -> Molecule {
+        let mut builder = MoleculeBuilder::new();
+        let bromine = builder.add_atom(AtomSpec::new(Element::BR));
+        let begin = builder.add_atom(AtomSpec::new(Element::C));
+        let end = builder.add_atom(AtomSpec::new(Element::C));
+        let fluorine = builder.add_atom(AtomSpec::new(Element::F));
+        let iodine = builder.add_atom(AtomSpec::new(Element::I));
+        let chlorine = builder.add_atom(AtomSpec::new(Element::CL));
+        builder
+            .add_bond(
+                BondSpec::new(begin, end, BondOrder::Double)
+                    .with_stereo(stereo)
+                    .with_stereo_atoms(iodine, chlorine),
+            )
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(begin, bromine, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(begin, iodine, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(end, fluorine, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(end, chlorine, BondOrder::Single))
+            .unwrap();
+        builder.build().unwrap()
+    }
+
+    fn cip_rank_neighbor_molecule(ranks: &[Option<&str>]) -> Molecule {
+        let mut builder = MoleculeBuilder::new();
+        let center = builder.add_atom(AtomSpec::new(Element::C));
+        let skipped = builder.add_atom(AtomSpec::new(Element::C));
+        builder
+            .add_bond(BondSpec::new(center, skipped, BondOrder::Single))
+            .unwrap();
+        for rank in ranks {
+            let mut spec = AtomSpec::new(Element::F);
+            if let Some(rank) = rank {
+                spec = spec.with_prop("_CIPRank", *rank);
+            }
+            let neighbor = builder.add_atom(spec);
+            builder
+                .add_bond(BondSpec::new(center, neighbor, BondOrder::Single))
+                .unwrap();
+        }
+        builder.build().unwrap()
+    }
+
     #[test]
     fn ciplabeler_sp2bond_constructor_builds_carriers_like_rdkit_find_stereo_atoms() {
         let molecule = sp2_bond_molecule(BondStereo::Cis, (4, 5));
@@ -8882,6 +9827,10 @@ mod tests {
         ));
         assert!(matches!(
             CipSp2Bond::new(&molecule, 1, 1, 0, BondStereo::Cis),
+            Err(CipLabelerError::Sp2BondNotDoubleBond)
+        ));
+        assert!(matches!(
+            CipSp2Bond::new(&molecule, 1, 1, 2, BondStereo::Cis),
             Err(CipLabelerError::BadSp2BondFoci)
         ));
 
@@ -8907,27 +9856,86 @@ mod tests {
     }
 
     #[test]
-    fn ciplabeler_sp2bond_primary_label_records_bond_props_like_rdkit() {
-        let molecule = sp2_bond_molecule(BondStereo::Cis, (4, 5));
-        let mut config = CipSp2Bond::new(&molecule, 0, 1, 2, BondStereo::Cis).unwrap();
-        assert!(!config.has_primary_label());
-
-        config.ranked_anchors = vec![4, 5];
-        config.set_primary_label(Descriptor::Z).unwrap();
-        assert!(config.has_primary_label());
+    fn ciplabeler_sp2bond_find_highest_cip_neighbor_matches_missing_tie_and_recovery() {
+        let missing = cip_rank_neighbor_molecule(&[Some("10"), None, Some("20")]);
         assert_eq!(
-            config.primary_label(),
-            Some(&super::CipBondPrimaryLabel {
-                bond_idx: 0,
-                stereo_atoms: [4, 5],
-                stereo: BondStereo::Cis,
-                cip_code: "Z",
-                cip_neighbor_order: vec![4, 5],
-            })
+            CipSp2Bond::find_highest_cip_neighbor_like_rdkit(&CipMol::new(&missing), 0, 1).unwrap(),
+            None
         );
 
-        config.reset_primary_label();
-        assert!(!config.has_primary_label());
+        let tied = cip_rank_neighbor_molecule(&[Some("10"), Some("10")]);
+        assert_eq!(
+            CipSp2Bond::find_highest_cip_neighbor_like_rdkit(&CipMol::new(&tied), 0, 1).unwrap(),
+            None
+        );
+
+        let recovered = cip_rank_neighbor_molecule(&[Some("10"), Some("10"), Some("20")]);
+        assert_eq!(
+            CipSp2Bond::find_highest_cip_neighbor_like_rdkit(&CipMol::new(&recovered), 0, 1)
+                .unwrap(),
+            Some(4)
+        );
+    }
+
+    #[test]
+    fn ciplabeler_sp2bond_rejects_undefined_source_stereo_before_explicit_stereo_atoms() {
+        for stereo in [BondStereo::None, BondStereo::Any] {
+            let mut builder = MoleculeBuilder::new();
+            let left = builder.add_atom(AtomSpec::new(Element::F));
+            let begin = builder.add_atom(AtomSpec::new(Element::C));
+            let end = builder.add_atom(AtomSpec::new(Element::C));
+            let right = builder.add_atom(AtomSpec::new(Element::CL));
+            builder
+                .add_bond(
+                    BondSpec::new(begin, end, BondOrder::Double)
+                        .with_stereo(stereo)
+                        .with_stereo_atoms(left, right),
+                )
+                .unwrap();
+            builder
+                .add_bond(BondSpec::new(begin, left, BondOrder::Single))
+                .unwrap();
+            builder
+                .add_bond(BondSpec::new(end, right, BondOrder::Single))
+                .unwrap();
+            let molecule = builder.build().unwrap();
+
+            assert!(matches!(
+                CipSp2Bond::new(&molecule, 0, 1, 2, BondStereo::Cis),
+                Err(CipLabelerError::Sp2BondHasNoDefinedStereo)
+            ));
+        }
+    }
+
+    #[test]
+    fn ciplabeler_sp2bond_primary_label_records_bond_props_like_rdkit() {
+        let molecule = sp2_bond_molecule(BondStereo::Cis, (4, 5));
+        for (descriptor, code) in [
+            (Descriptor::seqTrans, "e"),
+            (Descriptor::E, "E"),
+            (Descriptor::seqCis, "z"),
+            (Descriptor::Z, "Z"),
+        ] {
+            let mut config = CipSp2Bond::new(&molecule, 0, 1, 2, BondStereo::Cis).unwrap();
+            assert!(!config.has_primary_label());
+            config.ranked_anchors = vec![4, 5];
+            config.set_primary_label(descriptor).unwrap();
+            assert!(config.has_primary_label());
+            assert_eq!(
+                config.primary_label(),
+                Some(&super::CipBondPrimaryLabel {
+                    bond_idx: 0,
+                    stereo_atoms: [4, 5],
+                    stereo: BondStereo::Cis,
+                    cip_code: code,
+                    cip_neighbor_order: vec![4, 5],
+                })
+            );
+            config.reset_primary_label();
+            assert!(!config.has_primary_label());
+        }
+
+        let mut config = CipSp2Bond::new(&molecule, 0, 1, 2, BondStereo::Cis).unwrap();
         assert!(matches!(
             config.set_primary_label(Descriptor::R),
             Err(CipLabelerError::DescriptorNotSupportedForDoubleBonds)
@@ -8970,6 +9978,35 @@ mod tests {
         let mut context = CipLabelerContext::new(0);
         assert_eq!(config.label(&rules, &mut context).unwrap(), Descriptor::Z);
         assert_eq!(config.ranked_anchors(), &[4, 5]);
+    }
+
+    #[test]
+    fn ciplabeler_sp2bond_label_assigns_pseudoasymmetric_seq_descriptors_like_rdkit() {
+        let rules = CipRules::new(vec![Box::new(SinglePseudoAsymSortRule)]).unwrap();
+        for (stereo, expected) in [
+            (BondStereo::Cis, Descriptor::seqCis),
+            (BondStereo::Trans, Descriptor::seqTrans),
+        ] {
+            let molecule = sp2_pseudoasymmetric_bond_molecule(stereo);
+            let mut config = CipSp2Bond::new(&molecule, 0, 1, 2, stereo).unwrap();
+            let mut context = CipLabelerContext::new(0);
+            assert_eq!(config.label(&rules, &mut context).unwrap(), expected);
+            assert_eq!(config.ranked_anchors(), &[4, 5]);
+        }
+    }
+
+    #[test]
+    fn ciplabeler_sp2bond_label_returns_unknown_for_nonunique_substituents() {
+        let molecule = sp2_bond_molecule(BondStereo::Cis, (4, 5));
+        let mut config = CipSp2Bond::new(&molecule, 0, 1, 2, BondStereo::Cis).unwrap();
+        let rules = CipRules::new(vec![Box::new(AlwaysEqualSortRule)]).unwrap();
+        let mut context = CipLabelerContext::new(0);
+
+        assert_eq!(
+            config.label(&rules, &mut context).unwrap(),
+            Descriptor::Unknown
+        );
+        assert!(config.ranked_anchors().is_empty());
     }
 
     #[test]
@@ -9105,28 +10142,67 @@ mod tests {
         let mut config = CipAtropisomerBond::new(&molecule, 0, 1, 2, BondStereo::AtropCcw).unwrap();
         assert!(!config.has_primary_label());
 
-        config.ranked_anchors = vec![4, 5];
-        config.set_primary_label(Descriptor::M).unwrap();
-        assert!(config.has_primary_label());
-        assert_eq!(
-            config.primary_label(),
-            Some(&super::CipAtropisomerBondPrimaryLabel {
-                bond_idx: 0,
-                cip_code: "M",
-                cip_neighbor_order: vec![4, 5],
-            })
-        );
+        for (descriptor, code) in [
+            (Descriptor::M, "M"),
+            (Descriptor::P, "P"),
+            (Descriptor::m, "m"),
+            (Descriptor::p, "p"),
+        ] {
+            config.ranked_anchors = vec![4, 5];
+            config.set_primary_label(descriptor).unwrap();
+            assert!(config.has_primary_label());
+            assert_eq!(
+                config.primary_label(),
+                Some(&super::CipAtropisomerBondPrimaryLabel {
+                    bond_idx: 0,
+                    cip_code: code,
+                    cip_neighbor_order: vec![4, 5],
+                })
+            );
+            config.reset_primary_label();
+            assert!(!config.has_primary_label());
+        }
 
+        for descriptor in [
+            Descriptor::R,
+            Descriptor::S,
+            Descriptor::r,
+            Descriptor::s,
+            Descriptor::SP_4,
+            Descriptor::TBPY_5,
+            Descriptor::OC_6,
+            Descriptor::seqTrans,
+            Descriptor::E,
+            Descriptor::seqCis,
+            Descriptor::Z,
+        ] {
+            assert!(matches!(
+                config.set_primary_label(descriptor),
+                Err(CipLabelerError::DescriptorNotSupportedForAtropisomerBonds)
+            ));
+        }
+        for descriptor in [Descriptor::None, Descriptor::Unknown, Descriptor::ns] {
+            assert!(matches!(
+                config.set_primary_label(descriptor),
+                Err(CipLabelerError::InvalidBondDescriptor)
+            ));
+        }
+    }
+
+    #[test]
+    fn ciplabeler_atropisomerbond_reset_hides_a_source_primary_label_like_rdkit() {
+        let molecule = atropisomer_bond_molecule(BondStereo::AtropCcw, true);
+        let mut builder = molecule.to_builder();
+        builder
+            .bond_mut(BondId::new(0))
+            .unwrap()
+            .set_prop("_CIPCode", "P");
+        let molecule = builder.build().unwrap();
+        let mut config = CipAtropisomerBond::new(&molecule, 0, 1, 2, BondStereo::AtropCcw).unwrap();
+
+        assert!(config.has_primary_label());
         config.reset_primary_label();
         assert!(!config.has_primary_label());
-        assert!(matches!(
-            config.set_primary_label(Descriptor::Z),
-            Err(CipLabelerError::DescriptorNotSupportedForAtropisomerBonds)
-        ));
-        assert!(matches!(
-            config.set_primary_label(Descriptor::Unknown),
-            Err(CipLabelerError::InvalidBondDescriptor)
-        ));
     }
 
     #[test]
@@ -9179,6 +10255,91 @@ mod tests {
             Descriptor::M
         );
         assert_eq!(config.ranked_anchors(), &[4, 5]);
+    }
+
+    #[test]
+    fn ciplabeler_atropisomerbond_label_restores_the_original_root_before_labeling() {
+        let molecule = atropisomer_bond_molecule(BondStereo::AtropCcw, false);
+        let mut config = CipAtropisomerBond::new(&molecule, 0, 1, 2, BondStereo::AtropCcw).unwrap();
+        let focus2_node = config.configuration.digraph.get_nodes(2).unwrap()[0];
+        config
+            .configuration
+            .digraph
+            .change_root(focus2_node)
+            .unwrap();
+        let rules = cip_all_rules().unwrap();
+        let mut context = CipLabelerContext::new(0);
+
+        assert_eq!(config.label(&rules, &mut context).unwrap(), Descriptor::M);
+        assert_eq!(config.ranked_anchors(), &[4, 5]);
+    }
+
+    #[test]
+    fn ciplabeler_atropisomerbond_label_reversed_root_preserves_source_anchor_order() {
+        let molecule = atropisomer_bond_molecule(BondStereo::AtropCcw, false);
+        let mut config = CipAtropisomerBond::new(&molecule, 0, 1, 2, BondStereo::AtropCcw).unwrap();
+        let mut external = CipDigraph::new(&molecule, 2, true).unwrap();
+        let root = external.get_original_root();
+        let rules = cip_all_rules().unwrap();
+        let mut context = CipLabelerContext::new(0);
+
+        assert_eq!(
+            config
+                .label_with_external_digraph(root, &mut external, &rules, &mut context)
+                .unwrap(),
+            Descriptor::M
+        );
+        assert_eq!(config.ranked_anchors(), &[4, 5]);
+    }
+
+    #[test]
+    fn ciplabeler_atropisomerbond_label_assigns_pseudoasymmetric_m_and_p_like_rdkit() {
+        let rules = CipRules::new(vec![Box::new(PseudoAsymSortRule)]).unwrap();
+        for (stereo, expected) in [
+            (BondStereo::AtropCcw, Descriptor::m),
+            (BondStereo::AtropCw, Descriptor::p),
+        ] {
+            let molecule = atropisomer_bond_molecule(stereo, false);
+            let mut config = CipAtropisomerBond::new(&molecule, 0, 1, 2, stereo).unwrap();
+            let mut context = CipLabelerContext::new(0);
+
+            assert_eq!(config.label(&rules, &mut context).unwrap(), expected);
+            assert_eq!(config.ranked_anchors(), &[4, 5]);
+        }
+    }
+
+    #[test]
+    fn ciplabeler_atropisomerbond_label_returns_unknown_for_nonunique_substituents() {
+        let molecule = atropisomer_bond_molecule(BondStereo::AtropCcw, false);
+        let mut config = CipAtropisomerBond::new(&molecule, 0, 1, 2, BondStereo::AtropCcw).unwrap();
+        config.ranked_anchors = vec![u32::MAX];
+        let rules = CipRules::new(vec![Box::new(AlwaysEqualSortRule)]).unwrap();
+        let mut context = CipLabelerContext::new(0);
+
+        assert_eq!(
+            config.label(&rules, &mut context).unwrap(),
+            Descriptor::Unknown
+        );
+        assert!(config.ranked_anchors().is_empty());
+    }
+
+    #[test]
+    fn ciplabeler_atropisomerbond_label_returns_unknown_without_internal_edge() {
+        let molecule = atropisomer_bond_molecule(BondStereo::AtropCcw, false);
+        let mut config = CipAtropisomerBond::new(&molecule, 0, 1, 2, BondStereo::AtropCcw).unwrap();
+        config.ranked_anchors = vec![u32::MAX];
+        let mut external = CipDigraph::new(&molecule, 0, true).unwrap();
+        let root = external.get_original_root();
+        let rules = cip_all_rules().unwrap();
+        let mut context = CipLabelerContext::new(0);
+
+        assert_eq!(
+            config
+                .label_with_external_digraph(root, &mut external, &rules, &mut context)
+                .unwrap(),
+            Descriptor::Unknown
+        );
+        assert!(config.ranked_anchors().is_empty());
     }
 
     #[test]
@@ -9385,7 +10546,7 @@ mod tests {
         let atom_mask = vec![false; molecule.num_atoms()];
         let bond_mask = vec![false; molecule.num_bonds()];
 
-        let labeled = assign_cip_labels_for_indices(&molecule, &atom_mask, &bond_mask, 0).unwrap();
+        let labeled = assign_cip_labels_for_masks(&molecule, &atom_mask, &bond_mask, 0).unwrap();
 
         assert_eq!(labeled.prop("_CIPComputed"), Some("1"));
         assert_eq!(labeled.atoms()[0].prop("_CIPCode"), Some("old"));
@@ -9393,11 +10554,179 @@ mod tests {
 
         let mut atom_mask = vec![false; molecule.num_atoms()];
         atom_mask[0] = true;
-        let labeled = assign_cip_labels_for_indices(&molecule, &atom_mask, &bond_mask, 0).unwrap();
+        let labeled = assign_cip_labels_for_masks(&molecule, &atom_mask, &bond_mask, 0).unwrap();
         assert_eq!(labeled.atoms()[0].prop("_CIPCode"), Some("S"));
         assert_eq!(
             labeled.atoms()[0].prop("_CIPNeighborOrder"),
             Some("[4,3,2,1]")
+        );
+    }
+
+    #[test]
+    fn ciplabeler_assign_selected_atom_preserves_unselected_primary_state_like_rdkit() {
+        let mut molecule =
+            Molecule::from_smiles_with_sanitize("F[C@](Cl)(Br)I.F[C@@](Cl)(Br)I", false).unwrap();
+        molecule.topology_block_mut().atoms[1].set_prop("_CIPCode", "selected-old");
+        molecule.topology_block_mut().atoms[1].set_prop("_CIPNeighborOrder", "[91]");
+        molecule.topology_block_mut().atoms[6].set_prop("_CIPCode", "unselected-old");
+        molecule.topology_block_mut().atoms[6].set_prop("_CIPNeighborOrder", "[92]");
+        let mut atom_mask = vec![false; molecule.num_atoms()];
+        atom_mask[1] = true;
+        let bond_mask = vec![false; molecule.num_bonds()];
+
+        let labeled = assign_cip_labels_for_masks(&molecule, &atom_mask, &bond_mask, 0).unwrap();
+
+        assert_ne!(labeled.atoms()[1].prop("_CIPCode"), Some("selected-old"));
+        assert_ne!(labeled.atoms()[1].prop("_CIPNeighborOrder"), Some("[91]"));
+        assert_eq!(labeled.atoms()[6].prop("_CIPCode"), Some("unselected-old"));
+        assert_eq!(labeled.atoms()[6].prop("_CIPNeighborOrder"), Some("[92]"));
+    }
+
+    #[test]
+    fn ciplabeler_assign_unresolved_selected_center_clears_only_primary_code_like_rdkit() {
+        let mut molecule = Molecule::from_smiles_with_sanitize("C[C@H](C)C", false).unwrap();
+        molecule.topology_block_mut().atoms[1].set_prop("_CIPCode", "stale");
+        molecule.topology_block_mut().atoms[1].set_prop("_CIPNeighborOrder", "[7,8,9]");
+        let mut atom_mask = vec![false; molecule.num_atoms()];
+        atom_mask[1] = true;
+        let bond_mask = vec![false; molecule.num_bonds()];
+
+        let labeled = assign_cip_labels_for_masks(&molecule, &atom_mask, &bond_mask, 0).unwrap();
+
+        assert_eq!(labeled.atoms()[1].prop("_CIPCode"), None);
+        assert_eq!(
+            labeled.atoms()[1].prop("_CIPNeighborOrder"),
+            Some("[7,8,9]")
+        );
+        assert_eq!(labeled.prop("_CIPComputed"), Some("1"));
+    }
+
+    #[test]
+    fn ciplabeler_assign_empty_masks_replace_computed_mark_without_touching_center_state() {
+        let mut molecule = tetrahedral_molecule(ChiralTag::TetrahedralCcw);
+        molecule.properties_mut().set_prop("_CIPComputed", "stale");
+        molecule.topology_block_mut().atoms[0].set_prop("_CIPCode", "old");
+        molecule.topology_block_mut().atoms[0].set_prop("_CIPNeighborOrder", "[9]");
+
+        let labeled = assign_cip_labels_for_masks(
+            &molecule,
+            &vec![false; molecule.num_atoms()],
+            &vec![false; molecule.num_bonds()],
+            0,
+        )
+        .unwrap();
+
+        assert_eq!(labeled.prop("_CIPComputed"), Some("1"));
+        assert_eq!(labeled.atoms()[0].prop("_CIPCode"), Some("old"));
+        assert_eq!(labeled.atoms()[0].prop("_CIPNeighborOrder"), Some("[9]"));
+    }
+
+    #[test]
+    fn ciplabeler_assign_normalizes_e_z_configurations_to_trans_cis_like_rdkit() {
+        for (input, normalized) in [
+            (BondStereo::E, BondStereo::Trans),
+            (BondStereo::Z, BondStereo::Cis),
+        ] {
+            let molecule = sp2_bond_molecule(input, (4, 5));
+            let labeled = assign_cip_labels(&molecule, 0).unwrap();
+
+            assert_eq!(labeled.bonds()[0].stereo(), normalized);
+            assert!(matches!(
+                labeled.bonds()[0].prop("_CIPCode"),
+                Some("E" | "Z")
+            ));
+        }
+    }
+
+    #[test]
+    fn ciplabeler_assign_ignores_bond_stereo_outside_find_configs_dispatcher() {
+        let mut builder = MoleculeBuilder::new();
+        let begin = builder.add_atom(AtomSpec::new(Element::C));
+        let end = builder.add_atom(AtomSpec::new(Element::C));
+        builder
+            .add_bond(
+                BondSpec::new(begin, end, BondOrder::Double)
+                    .with_stereo(BondStereo::Any)
+                    .with_prop("_CIPCode", "preserved")
+                    .with_prop("_CIPNeighborOrder", "[4,5]"),
+            )
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        let labeled = assign_cip_labels(&molecule, 0).unwrap();
+
+        assert_eq!(labeled.bonds()[0].prop("_CIPCode"), Some("preserved"));
+        assert_eq!(labeled.bonds()[0].prop("_CIPNeighborOrder"), Some("[4,5]"));
+        assert_eq!(labeled.prop("_CIPComputed"), Some("1"));
+    }
+
+    #[test]
+    fn ciplabeler_assign_atom_and_bond_masks_share_one_ordered_assignment_call() {
+        let mut builder = MoleculeBuilder::new();
+        let center =
+            builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCcw));
+        let fluorine = builder.add_atom(AtomSpec::new(Element::F));
+        let chlorine = builder.add_atom(AtomSpec::new(Element::CL));
+        let bromine = builder.add_atom(AtomSpec::new(Element::BR));
+        let iodine = builder.add_atom(AtomSpec::new(Element::I));
+        for neighbor in [fluorine, chlorine, bromine, iodine] {
+            builder
+                .add_bond(BondSpec::new(center, neighbor, BondOrder::Single))
+                .unwrap();
+        }
+        let alkene_begin = builder.add_atom(AtomSpec::new(Element::C));
+        let alkene_end = builder.add_atom(AtomSpec::new(Element::C));
+        let left_low = builder.add_atom(AtomSpec::new(Element::F));
+        let left_high = builder.add_atom(AtomSpec::new(Element::BR));
+        let right_low = builder.add_atom(AtomSpec::new(Element::CL));
+        let right_high = builder.add_atom(AtomSpec::new(Element::I));
+        let alkene = builder
+            .add_bond(
+                BondSpec::new(alkene_begin, alkene_end, BondOrder::Double)
+                    .with_stereo(BondStereo::Cis)
+                    .with_stereo_atoms(left_high, right_high),
+            )
+            .unwrap();
+        for (focus, neighbor) in [
+            (alkene_begin, left_low),
+            (alkene_begin, left_high),
+            (alkene_end, right_low),
+            (alkene_end, right_high),
+        ] {
+            builder
+                .add_bond(BondSpec::new(focus, neighbor, BondOrder::Single))
+                .unwrap();
+        }
+        let molecule = builder.build().unwrap();
+        let mut atom_mask = vec![false; molecule.num_atoms()];
+        atom_mask[center.index()] = true;
+        let mut bond_mask = vec![false; molecule.num_bonds()];
+        bond_mask[alkene.index()] = true;
+
+        let labeled = assign_cip_labels_for_masks(&molecule, &atom_mask, &bond_mask, 0).unwrap();
+
+        assert_eq!(labeled.atoms()[center.index()].prop("_CIPCode"), Some("S"));
+        assert!(matches!(
+            labeled.bonds()[alkene.index()].prop("_CIPCode"),
+            Some("E" | "Z")
+        ));
+    }
+
+    #[test]
+    fn ciplabeler_assign_second_pass_uses_the_requested_shared_recursion_budget() {
+        let molecule =
+            Molecule::from_smiles("C/C=C/[C@@H](/C=C/O)[C@H](C)[C@H](/C=C/C)/C=C/O").unwrap();
+
+        assert!(matches!(
+            assign_cip_labels(&molecule, 1),
+            Err(CipLabelerError::MaxIterationsExceeded)
+        ));
+        let labeled = assign_cip_labels(&molecule, 0).unwrap();
+        assert!(
+            labeled
+                .atoms()
+                .iter()
+                .any(|atom| matches!(atom.prop("_CIPCode"), Some("r" | "s")))
         );
     }
 
@@ -9413,5 +10742,193 @@ mod tests {
             labeled.atoms()[0].prop("_CIPNeighborOrder"),
             Some("[4,3,2,1]")
         );
+    }
+
+    #[test]
+    fn ciplabeler_exact_width_source_sentinels_are_unsigned_int_max() {
+        assert_eq!(CipNode::NO_ATOM_INDEX, 4_294_967_295);
+        assert_eq!(CipConfiguration::IMPLICIT_H, 4_294_967_295);
+    }
+
+    #[test]
+    fn ciplabeler_exact_width_implicit_h_neighbor_order_serializes_as_u32_like_rdkit() {
+        // VS185 from the pinned RDKit CIPLabeler catch tests exercises a real
+        // _CIPNeighborOrder containing Atom::NOATOM.
+        let mut molecule = Molecule::from_smiles(r"[2H]/C(=C(/[1H])\[H])/[H]").unwrap();
+        molecule.topology_block_mut().bonds[1]
+            .set_stereo_atoms(Some([crate::AtomId::new(0), crate::AtomId::new(3)]));
+
+        let labeled = assign_cip_labels(&molecule, 100).unwrap();
+
+        assert_eq!(
+            labeled.bonds()[1].prop("_CIPNeighborOrder"),
+            Some("[0,4294967295]")
+        );
+        assert!(
+            !labeled.bonds()[1]
+                .prop("_CIPNeighborOrder")
+                .unwrap()
+                .contains("18446744073709551615")
+        );
+    }
+
+    #[test]
+    fn ciplabeler_exact_width_real_atom_index_conversion_accepts_u32_max() {
+        let node = CipNode {
+            digraph: 0,
+            atom_idx: Some(u32::MAX as usize),
+            distance: 0,
+            atomic_num_fraction: RationalI32::new(6, 1),
+            atomic_mass: 12.0,
+            aux: Descriptor::None,
+            flags: 0,
+            edges: Vec::new(),
+            visit: Vec::new(),
+        };
+
+        assert_eq!(node.get_atom_idx().unwrap(), u32::MAX);
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn ciplabeler_exact_width_real_atom_index_conversion_rejects_above_u32_max() {
+        let index = u32::MAX as usize + 1;
+        let node = CipNode {
+            digraph: 0,
+            atom_idx: Some(index),
+            distance: 0,
+            atomic_num_fraction: RationalI32::new(6, 1),
+            atomic_mass: 12.0,
+            aux: Descriptor::None,
+            flags: 0,
+            edges: Vec::new(),
+            visit: Vec::new(),
+        };
+
+        assert_eq!(
+            node.get_atom_idx(),
+            Err(CipLabelerError::SourceIndexWidthExceeded {
+                kind: "atom",
+                index,
+            })
+        );
+    }
+
+    #[test]
+    fn ciplabeler_exact_width_selection_indexes_equal_to_counts_are_rejected() {
+        let molecule = Molecule::from_smiles("CC").unwrap();
+
+        assert_eq!(
+            assign_cip_labels_for_indices(&molecule, &[molecule.num_atoms() as u32], &[], 0,),
+            Err(CipLabelerError::AtomIndexOutOfRange {
+                index: molecule.num_atoms(),
+                atom_count: molecule.num_atoms(),
+            })
+        );
+        assert_eq!(
+            assign_cip_labels_for_indices(&molecule, &[], &[molecule.num_bonds() as u32], 0,),
+            Err(CipLabelerError::BondIndexOutOfRange {
+                index: molecule.num_bonds(),
+                bond_count: molecule.num_bonds(),
+            })
+        );
+    }
+
+    #[test]
+    fn ciplabeler_exact_width_duplicate_selected_indexes_are_idempotent() {
+        let molecule = tetrahedral_molecule(ChiralTag::TetrahedralCcw);
+
+        let once = assign_cip_labels_for_indices(&molecule, &[0], &[], 0).unwrap();
+        let repeated = assign_cip_labels_for_indices(&molecule, &[0, 0, 0], &[], 0).unwrap();
+
+        assert_eq!(repeated, once);
+    }
+
+    #[test]
+    fn ciplabeler_exact_width_short_and_long_selection_masks_are_rejected() {
+        let molecule = Molecule::from_smiles("CC").unwrap();
+        let atom_count = molecule.num_atoms();
+        let bond_count = molecule.num_bonds();
+
+        for actual in [atom_count - 1, atom_count + 1] {
+            assert_eq!(
+                assign_cip_labels_for_masks(
+                    &molecule,
+                    &vec![false; actual],
+                    &vec![false; bond_count],
+                    0,
+                ),
+                Err(CipLabelerError::AtomMaskLengthMismatch {
+                    actual,
+                    expected: atom_count,
+                })
+            );
+        }
+        for actual in [bond_count - 1, bond_count + 1] {
+            assert_eq!(
+                assign_cip_labels_for_masks(
+                    &molecule,
+                    &vec![false; atom_count],
+                    &vec![false; actual],
+                    0,
+                ),
+                Err(CipLabelerError::BondMaskLengthMismatch {
+                    actual,
+                    expected: bond_count,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn ciplabeler_exact_width_pairlist_uses_highest_and_lowest_relevant_u64_bits() {
+        let mut pairs = CipPairList::with_ref(Descriptor::R);
+        pairs.add(Descriptor::R);
+        for _ in 0..61 {
+            pairs.add(Descriptor::S);
+        }
+        pairs.add(Descriptor::R);
+
+        assert_eq!(pairs.get_pairing(), (1_u64 << 62) | 1_u64);
+    }
+
+    #[test]
+    fn ciplabeler_exact_width_recursion_counter_reproduces_unsigned_predecrement() {
+        let mut zero = CipLabelerContext::with_remaining_call_count(0);
+        assert!(zero.decrement_remaining_call_count_and_check());
+        assert_eq!(zero.remaining_call_count, u32::MAX);
+
+        let mut one = CipLabelerContext::with_remaining_call_count(1);
+        assert!(!one.decrement_remaining_call_count_and_check());
+        assert_eq!(one.remaining_call_count, 0);
+
+        let mut two = CipLabelerContext::with_remaining_call_count(2);
+        assert!(two.decrement_remaining_call_count_and_check());
+        assert_eq!(two.remaining_call_count, 1);
+        assert!(!two.decrement_remaining_call_count_and_check());
+        assert_eq!(two.remaining_call_count, 0);
+    }
+
+    #[test]
+    fn ciplabeler_cancellation_rejects_without_mutating_source_state() {
+        let mut molecule = tetrahedral_molecule(ChiralTag::TetrahedralCcw);
+        molecule.properties_mut().set_prop("_CIPComputed", "stale");
+        molecule.topology_block_mut().atoms[0].set_prop("_CIPCode", "old");
+        molecule.topology_block_mut().atoms[0].set_prop("_CIPNeighborOrder", "[9]");
+        let before = molecule.clone();
+        let atom_mask = vec![true; molecule.num_atoms()];
+        let bond_mask = vec![true; molecule.num_bonds()];
+
+        assert_eq!(
+            assign_cip_labels_for_masks_with_cancellation(
+                &molecule,
+                &atom_mask,
+                &bond_mask,
+                0,
+                CipCancellationMode::RdkitControlC,
+            ),
+            Err(CipLabelerError::CancellationUnsupported)
+        );
+        assert_eq!(molecule, before);
     }
 }

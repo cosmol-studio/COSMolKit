@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, fmt, str::FromStr};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+    str::FromStr,
+};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
@@ -560,6 +564,7 @@ pub struct AtomSpec {
     hybridization: Hybridization,
     query: Option<QueryNode<AtomQueryPredicate>>,
     props: BTreeMap<String, String>,
+    computed_props: BTreeSet<String>,
     pdb_residue_info: Option<AtomPdbResidueInfo>,
 }
 
@@ -585,6 +590,7 @@ impl AtomSpec {
             hybridization: Hybridization::Unspecified,
             query: None,
             props: BTreeMap::new(),
+            computed_props: BTreeSet::new(),
             pdb_residue_info: None,
         }
     }
@@ -734,6 +740,14 @@ impl AtomSpec {
     }
 
     #[must_use]
+    pub fn with_computed_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        let key = key.into();
+        self.props.insert(key.clone(), value.into());
+        self.computed_props.insert(key);
+        self
+    }
+
+    #[must_use]
     pub fn with_pdb_residue_info(mut self, info: AtomPdbResidueInfo) -> Self {
         self.pdb_residue_info = Some(info);
         self
@@ -836,6 +850,11 @@ impl AtomSpec {
     }
 
     #[must_use]
+    pub fn is_prop_computed(&self, key: &str) -> bool {
+        self.computed_props.contains(key)
+    }
+
+    #[must_use]
     pub const fn pdb_residue_info(&self) -> Option<&AtomPdbResidueInfo> {
         self.pdb_residue_info.as_ref()
     }
@@ -863,6 +882,7 @@ pub struct Atom {
     hybridization: Hybridization,
     query: Option<QueryNode<AtomQueryPredicate>>,
     props: BTreeMap<String, String>,
+    computed_props: BTreeSet<String>,
     pdb_residue_info: Option<AtomPdbResidueInfo>,
 }
 
@@ -888,6 +908,7 @@ impl Atom {
             hybridization: spec.hybridization,
             query: spec.query,
             props: spec.props,
+            computed_props: spec.computed_props,
             pdb_residue_info: spec.pdb_residue_info,
         }
     }
@@ -1008,6 +1029,24 @@ impl Atom {
         self.props.get(key).map(String::as_str)
     }
 
+    /// Returns whether a property is registered as computed state.
+    #[must_use]
+    pub fn is_prop_computed(&self, key: &str) -> bool {
+        self.computed_props.contains(key)
+    }
+
+    #[must_use]
+    pub fn computed_prop_names(&self) -> &BTreeSet<String> {
+        &self.computed_props
+    }
+
+    /// Returns the modern CIP descriptor persisted on this atom, if present.
+    pub fn cip_descriptor(
+        &self,
+    ) -> Result<Option<crate::CipDescriptor>, crate::CipDescriptorError> {
+        crate::chemistry::cip::descriptor_from_property(self.prop("_CIPCode"))
+    }
+
     #[must_use]
     pub const fn pdb_residue_info(&self) -> Option<&AtomPdbResidueInfo> {
         self.pdb_residue_info.as_ref()
@@ -1090,12 +1129,53 @@ impl Atom {
 
     #[allow(dead_code)]
     pub(crate) fn set_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        // RDKit✔️✔️: d_props.setVal(key, val);
+        // A non-computed write does not remove an existing computed marker.
         self.props.insert(key.into(), value.into());
     }
 
     #[allow(dead_code)]
+    pub(crate) fn set_computed_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        // RDKit✔️🔝: if (computed) {
+        // RDKit✔️🔝:   STR_VECT compLst;
+        // RDKit✔️🔝:   getPropIfPresent(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝:   if (std::find(compLst.begin(), compLst.end(), key) == compLst.end()) {
+        // RDKit✔️🔝:     compLst.emplace_back(key);
+        // RDKit✔️🔝:     d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝:   }
+        // RDKit✔️🔝: }
+        // RDKit✔️🔝: d_props.setVal(key, val);
+        // The ordered set preserves membership semantics while replacing the
+        // source vector's linear duplicate scan with logarithmic insertion.
+        let key = key.into();
+        self.props.insert(key.clone(), value.into());
+        self.computed_props.insert(key);
+    }
+
+    #[allow(dead_code)]
     pub(crate) fn clear_prop(&mut self, key: &str) {
+        // RDKit✔️🔝: auto svi = std::find(compLst.begin(), compLst.end(), key);
+        // RDKit✔️🔝: if (svi != compLst.end()) {
+        // RDKit✔️🔝:   compLst.erase(svi);
+        // RDKit✔️🔝:   d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝: }
+        // RDKit✔️🔝: d_props.clearVal(key);
+        // BTreeSet removal preserves the source transition with logarithmic
+        // lookup instead of the source vector's linear search and erase.
         self.props.remove(key);
+        self.computed_props.remove(key);
+    }
+
+    pub(crate) fn clear_computed_props(&mut self) {
+        // RDKit✔️🔝: for (const auto &key : compLst) {
+        // RDKit✔️🔝:   d_props.clearVal(key);
+        // RDKit✔️🔝: }
+        // Moving the set avoids the source vector copy while preserving exact
+        // membership-based clearing, including non-computed properties that
+        // happen to use a conventional computed-property name.
+        for key in std::mem::take(&mut self.computed_props) {
+            self.props.remove(&key);
+        }
     }
 
     #[allow(dead_code)]

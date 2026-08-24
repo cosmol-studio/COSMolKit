@@ -1109,10 +1109,14 @@ pub fn assign_atom_cip_ranks(mol: &Molecule) -> Result<Vec<u32>, StereoError> {
 // RDKit✔️✔️:     mol[i]->setProp(common_properties::_CIPRank, ranks[i], 1);
 // RDKit✔️✔️:   }
 // RDKit✔️✔️: }
-fn write_atom_cip_ranks_to_props(mol: &mut Molecule, ranks: &[u32]) {
+fn write_atom_cip_ranks_to_props(mol: &mut Molecule, ranks: &[u32], computed: bool) {
     for (i, rank) in ranks.iter().copied().enumerate() {
         if let Some(atom_mut) = mol.topology_block_mut().atoms.get_mut(i) {
-            atom_mut.set_prop("_CIPRank", rank.to_string());
+            if computed {
+                atom_mut.set_computed_prop("_CIPRank", rank.to_string());
+            } else {
+                atom_mut.set_prop("_CIPRank", rank.to_string());
+            }
         }
     }
 }
@@ -1123,7 +1127,7 @@ fn write_atom_cip_ranks_to_props(mol: &mut Molecule, ranks: &[u32]) {
 /// metadata persistence is modeled as approved public molecule state.
 pub(crate) fn assign_atom_cip_ranks_in_place(mol: &mut Molecule) -> Result<Vec<u32>, StereoError> {
     let ranks = assign_atom_cip_ranks(mol)?;
-    write_atom_cip_ranks_to_props(mol, &ranks);
+    write_atom_cip_ranks_to_props(mol, &ranks, true);
     Ok(ranks)
 }
 
@@ -5316,7 +5320,7 @@ pub(crate) fn rerank_atoms_in_place(
     current_ranks: &[u32],
 ) -> Result<Vec<u32>, StereoError> {
     let ranks = rerank_atoms(mol, current_ranks)?;
-    write_atom_cip_ranks_to_props(mol, &ranks);
+    write_atom_cip_ranks_to_props(mol, &ranks, false);
     Ok(ranks)
 }
 

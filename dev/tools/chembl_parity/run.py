@@ -37,7 +37,7 @@ SCRIPT_MODULES = {
     for script in KNOWN_SCRIPTS
 }
 SCRIPT_MODES = {
-    "audit_core.py": {"core", "descriptors", "fingerprints"},
+    "audit_core.py": {"core", "descriptors", "fingerprints", "ciplabeler"},
     "audit_surfaces.py": {
         "binary_roundtrip",
         "bounds",

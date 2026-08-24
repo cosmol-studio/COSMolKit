@@ -56,6 +56,108 @@ enum BlockLifecycle {
 struct ContractSourceSnapshot {
     atom_count: usize,
     bond_endpoints: Vec<(AtomId, AtomId)>,
+    cip_state: CipStateSnapshot,
+}
+
+#[cfg(feature = "op-contracts")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CipStateSnapshot {
+    computed: CipPropertySnapshot,
+    atom_codes: Vec<CipPropertySnapshot>,
+    atom_neighbor_orders: Vec<CipPropertySnapshot>,
+    atom_ranks: Vec<CipPropertySnapshot>,
+    bond_codes: Vec<CipPropertySnapshot>,
+    bond_neighbor_orders: Vec<CipPropertySnapshot>,
+}
+
+#[cfg(feature = "op-contracts")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CipPropertySnapshot {
+    value: Option<String>,
+    computed: bool,
+}
+
+#[cfg(feature = "op-contracts")]
+impl CipPropertySnapshot {
+    fn new(value: Option<&str>, computed: bool) -> Self {
+        Self {
+            value: value.map(str::to_owned),
+            computed,
+        }
+    }
+
+    fn after_clear_computed(&self) -> Self {
+        if self.computed {
+            Self {
+                value: None,
+                computed: false,
+            }
+        } else {
+            self.clone()
+        }
+    }
+}
+
+#[cfg(feature = "op-contracts")]
+impl CipStateSnapshot {
+    fn from_molecule(molecule: &Molecule) -> Self {
+        Self {
+            computed: CipPropertySnapshot::new(
+                molecule.prop("_CIPComputed"),
+                molecule.is_prop_computed("_CIPComputed"),
+            ),
+            atom_codes: molecule
+                .atoms()
+                .iter()
+                .map(|atom| {
+                    CipPropertySnapshot::new(
+                        atom.prop("_CIPCode"),
+                        atom.is_prop_computed("_CIPCode"),
+                    )
+                })
+                .collect(),
+            atom_neighbor_orders: molecule
+                .atoms()
+                .iter()
+                .map(|atom| {
+                    CipPropertySnapshot::new(
+                        atom.prop("_CIPNeighborOrder"),
+                        atom.is_prop_computed("_CIPNeighborOrder"),
+                    )
+                })
+                .collect(),
+            atom_ranks: molecule
+                .atoms()
+                .iter()
+                .map(|atom| {
+                    CipPropertySnapshot::new(
+                        atom.prop("_CIPRank"),
+                        atom.is_prop_computed("_CIPRank"),
+                    )
+                })
+                .collect(),
+            bond_codes: molecule
+                .bonds()
+                .iter()
+                .map(|bond| {
+                    CipPropertySnapshot::new(
+                        bond.prop("_CIPCode"),
+                        bond.is_prop_computed("_CIPCode"),
+                    )
+                })
+                .collect(),
+            bond_neighbor_orders: molecule
+                .bonds()
+                .iter()
+                .map(|bond| {
+                    CipPropertySnapshot::new(
+                        bond.prop("_CIPNeighborOrder"),
+                        bond.is_prop_computed("_CIPNeighborOrder"),
+                    )
+                })
+                .collect(),
+        }
+    }
 }
 
 #[cfg(feature = "op-contracts")]
@@ -68,6 +170,7 @@ impl ContractSourceSnapshot {
                 .iter()
                 .map(|bond| (bond.begin(), bond.end()))
                 .collect(),
+            cip_state: CipStateSnapshot::from_molecule(molecule),
         }
     }
 
@@ -81,6 +184,10 @@ impl ContractSourceSnapshot {
 
     fn bond_endpoint(&self, index: usize) -> Option<(AtomId, AtomId)> {
         self.bond_endpoints.get(index).copied()
+    }
+
+    fn cip_state(&self) -> CipStateSnapshot {
+        self.cip_state.clone()
     }
 }
 
@@ -113,6 +220,13 @@ impl ContractSource<'_> {
                 .get(index)
                 .map(|bond| (bond.begin(), bond.end())),
             Self::Snapshot(snapshot) => snapshot.bond_endpoint(index),
+        }
+    }
+
+    fn cip_state(&self) -> CipStateSnapshot {
+        match self {
+            Self::Borrowed(molecule) => CipStateSnapshot::from_molecule(molecule),
+            Self::Snapshot(snapshot) => snapshot.cip_state(),
         }
     }
 }
@@ -880,6 +994,24 @@ impl<'a> OpParts<'a> {
                 });
             }
         }
+        match self.spec.cip_state {
+            CipStatePolicy::Assign if self.spec.method != "with_cip_labels_with_options" => {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "modern CIP assignment state is owned only by with_cip_labels_with_options",
+                });
+            }
+            CipStatePolicy::ClearComputed
+                if !self.spec.access.can_write(BlockSet::TOPOLOGY)
+                    || !self.spec.access.can_write(BlockSet::PROPERTIES) =>
+            {
+                return Err(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "clearing computed CIP state requires topology and properties write access",
+                });
+            }
+            _ => {}
+        }
         Ok(())
     }
 
@@ -1113,6 +1245,144 @@ impl<'a> OpParts<'a> {
             });
         }
 
+        self.validate_cip_state_lifecycle()?;
+
+        Ok(())
+    }
+
+    #[cfg(feature = "op-contracts")]
+    fn validate_cip_state_lifecycle(&self) -> Result<(), OperationError> {
+        let before = self.contract_source.cip_state();
+        let after = CipStateSnapshot::from_molecule(&self.working);
+        match self.spec.cip_state {
+            CipStatePolicy::Assign => Ok(()),
+            CipStatePolicy::Preserve if before == after => Ok(()),
+            CipStatePolicy::Preserve => Err(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "operation declared CIP state preservation but changed observable CIP state",
+            }),
+            CipStatePolicy::ClearComputed => {
+                if after.computed.computed
+                    || after.atom_codes.iter().any(|state| state.computed)
+                    || after
+                        .atom_neighbor_orders
+                        .iter()
+                        .any(|state| state.computed)
+                    || after.atom_ranks.iter().any(|state| state.computed)
+                    || after.bond_codes.iter().any(|state| state.computed)
+                    || after
+                        .bond_neighbor_orders
+                        .iter()
+                        .any(|state| state.computed)
+                {
+                    return Err(OperationError::InvalidInput {
+                        operation: self.spec,
+                        message: "operation declared computed CIP clearing but retained computed CIP state",
+                    });
+                }
+                if after.computed != before.computed.after_clear_computed() {
+                    return Err(OperationError::InvalidInput {
+                        operation: self.spec,
+                        message: "operation did not reproduce molecule computed-property clearing for _CIPComputed",
+                    });
+                }
+                self.validate_mapped_cip_properties(&before, &after)
+            }
+        }
+    }
+
+    #[cfg(feature = "op-contracts")]
+    fn validate_mapped_cip_properties(
+        &self,
+        before: &CipStateSnapshot,
+        after: &CipStateSnapshot,
+    ) -> Result<(), OperationError> {
+        for old_index in 0..before.atom_codes.len() {
+            let new_index = match &self.topology_mapping {
+                Some(mapping) => mapping
+                    .atoms()
+                    .old_to_new()
+                    .get(old_index)
+                    .copied()
+                    .flatten()
+                    .map(AtomId::index),
+                None => (old_index < after.atom_codes.len()).then_some(old_index),
+            };
+            if let Some(new_index) = new_index {
+                for (before_values, after_values, property) in [
+                    (&before.atom_codes, &after.atom_codes, "_CIPCode"),
+                    (
+                        &before.atom_neighbor_orders,
+                        &after.atom_neighbor_orders,
+                        "_CIPNeighborOrder",
+                    ),
+                    (&before.atom_ranks, &after.atom_ranks, "_CIPRank"),
+                ] {
+                    if after_values.get(new_index)
+                        != before_values
+                            .get(old_index)
+                            .map(|state| state.after_clear_computed())
+                            .as_ref()
+                    {
+                        return Err(OperationError::InvalidInput {
+                            operation: self.spec,
+                            message: match property {
+                                "_CIPCode" => {
+                                    "operation did not reproduce atom computed-property clearing for _CIPCode"
+                                }
+                                "_CIPNeighborOrder" => {
+                                    "operation did not reproduce atom computed-property clearing for _CIPNeighborOrder"
+                                }
+                                _ => {
+                                    "operation did not reproduce atom computed-property clearing for _CIPRank"
+                                }
+                            },
+                        });
+                    }
+                }
+            }
+        }
+        for old_index in 0..before.bond_codes.len() {
+            let new_index = match &self.topology_mapping {
+                Some(mapping) => mapping
+                    .bonds()
+                    .old_to_new()
+                    .get(old_index)
+                    .copied()
+                    .flatten()
+                    .map(crate::BondId::index),
+                None => (old_index < after.bond_codes.len()).then_some(old_index),
+            };
+            if let Some(new_index) = new_index {
+                for (before_values, after_values, property) in [
+                    (&before.bond_codes, &after.bond_codes, "_CIPCode"),
+                    (
+                        &before.bond_neighbor_orders,
+                        &after.bond_neighbor_orders,
+                        "_CIPNeighborOrder",
+                    ),
+                ] {
+                    if after_values.get(new_index)
+                        != before_values
+                            .get(old_index)
+                            .map(|state| state.after_clear_computed())
+                            .as_ref()
+                    {
+                        return Err(OperationError::InvalidInput {
+                            operation: self.spec,
+                            message: match property {
+                                "_CIPCode" => {
+                                    "operation did not reproduce bond computed-property clearing for _CIPCode"
+                                }
+                                _ => {
+                                    "operation did not reproduce bond computed-property clearing for _CIPNeighborOrder"
+                                }
+                            },
+                        });
+                    }
+                }
+            }
+        }
         Ok(())
     }
 

@@ -123,8 +123,11 @@ fn run_sanitize_pipeline(
     ops: crate::SanitizeOps,
     operation: &'static MoleculeOpSpec,
 ) -> Result<bool, OperationError> {
-    let changed = parts.with_topology_mut(|parts, topology| {
-        run_sanitize_pipeline_on_topology(parts, topology, None, None, ops, operation)
+    let changed = parts.with_topology_and_properties_mut(|parts, topology, properties| {
+        // RDKit's entry-point clearComputedProps() runs even when the selected
+        // sanitize mask later changes no chemical topology.
+        crate::chemistry::cip::clear_computed_source_properties(topology, properties);
+        run_sanitize_pipeline_on_topology(parts, topology, None, Some(properties), ops, operation)
     })?;
     parts.record_topology_edit(TopologyEditKind::Local)?;
     Ok(changed)

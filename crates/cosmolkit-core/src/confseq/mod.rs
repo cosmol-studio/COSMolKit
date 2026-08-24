@@ -5783,7 +5783,11 @@ fn bond_spec_from_bond(bond: &Bond) -> BondSpec {
         spec = spec.with_query(query);
     }
     for (key, value) in bond.props() {
-        spec = spec.with_prop(key.clone(), value.clone());
+        spec = if bond.is_prop_computed(key) {
+            spec.with_computed_prop(key.clone(), value.clone())
+        } else {
+            spec.with_prop(key.clone(), value.clone())
+        };
     }
     spec
 }

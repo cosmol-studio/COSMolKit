@@ -19,11 +19,16 @@ from rdkit import Chem, DataStructs, RDLogger
 from rdkit import rdBase
 from rdkit.Chem import Crippen, Descriptors, MACCSkeys, QED, rdFingerprintGenerator
 from rdkit.Chem import rdMolDescriptors
+from rdkit.Chem import rdCIPLabeler
 
 
 RDLogger.DisableLog("rdApp.*")
 
 EXPECTED_RDKIT_VERSION = "2026.03.1"
+
+
+def error_value(error: BaseException) -> dict[str, str]:
+    return {"type": type(error).__name__, "message": str(error)}
 
 
 def validate_runtime_versions() -> None:
@@ -678,10 +683,113 @@ def audit_fingerprints(audit: Audit, record: dict[str, Any]) -> None:
         audit.mismatch("maccs.error", record, "success", repr(error))
 
 
+def rd_cip_property(owner: Any, name: str, kind: str) -> Any:
+    if not owner.HasProp(name):
+        return None
+    if kind == "string":
+        return owner.GetProp(name)
+    if kind == "unsigned":
+        return int(owner.GetUnsignedProp(name))
+    if kind == "vector":
+        return [int(value) & ((1 << 32) - 1) for value in json.loads(owner.GetProp(name))]
+    raise ValueError(f"unsupported CIP property kind: {kind}")
+
+
+def rd_cip_state(mol: Chem.Mol) -> dict[str, Any]:
+    return {
+        # RDKit stores this property as an integer in failed-labeling paths
+        # (0/1), while the normal accessor exposes it as a bool.  Normalize
+        # the source-observable value before comparing it with COSMolKit's
+        # boolean property view.
+        "cip_computed": bool(
+            mol.HasProp("_CIPComputed") and mol.GetBoolProp("_CIPComputed")
+        ),
+        "atoms": [
+            {
+                "code": rd_cip_property(atom, "_CIPCode", "string"),
+                "neighbor_order": rd_cip_property(atom, "_CIPNeighborOrder", "vector"),
+                "rank": rd_cip_property(atom, "_CIPRank", "unsigned"),
+            }
+            for atom in mol.GetAtoms()
+        ],
+        "bonds": [
+            {
+                "code": rd_cip_property(bond, "_CIPCode", "string"),
+                "neighbor_order": rd_cip_property(bond, "_CIPNeighborOrder", "vector"),
+            }
+            for bond in mol.GetBonds()
+        ],
+    }
+
+
+def ck_cip_state(mol: Any) -> dict[str, Any]:
+    return {
+        "cip_computed": mol.cip_computed(),
+        "atoms": [
+            {
+                "code": atom.cip_descriptor(),
+                "neighbor_order": atom.cip_neighbor_order(),
+                "rank": atom.cip_rank(),
+            }
+            for atom in mol.atoms()
+        ],
+        "bonds": [
+            {
+                "code": bond.cip_descriptor(),
+                "neighbor_order": bond.cip_neighbor_order(),
+            }
+            for bond in mol.bonds()
+        ],
+    }
+
+
+def audit_ciplabeler(audit: Audit, record: dict[str, Any]) -> None:
+    rd_mol, ck_mol = parse_pair(audit, record)
+    if rd_mol is None or ck_mol is None:
+        return
+    if rd_mol.GetNumAtoms() > 80:
+        audit.count("skip.ciplabeler.max_atoms")
+        return
+    atom_selection = next(
+        ([atom.GetIdx()] for atom in rd_mol.GetAtoms() if atom.GetChiralTag() != Chem.ChiralType.CHI_UNSPECIFIED),
+        [],
+    )
+    bond_selection = next(
+        ([bond.GetIdx()] for bond in rd_mol.GetBonds() if bond.GetStereo() != Chem.BondStereo.STEREONONE),
+        [],
+    )
+    branches = (
+        ("full", None, None, 0),
+        ("selected_atom", atom_selection, None, 0),
+        ("selected_bond", None, bond_selection, 0),
+        ("empty_selection", [], [], 1),
+    )
+    for name, atoms, bonds, limit in branches:
+        rd_call = Chem.Mol(rd_mol)
+        try:
+            rdCIPLabeler.AssignCIPLabels(rd_call, atoms, bonds, limit)
+            rd_value: Any = {"status": "ok", "state": rd_cip_state(rd_call)}
+        except Exception as error:
+            rd_value = {"status": "error", "error_message": str(error), "state": rd_cip_state(rd_call)}
+        ck_call = ck_mol
+        try:
+            ck_call = type(ck_mol).from_smiles(record["smiles"])
+            ck_call.assign_cip_labels_(atoms=atoms, bonds=bonds, max_recursive_iterations=limit)
+            ck_value: Any = {"status": "ok", "state": ck_cip_state(ck_call)}
+        except Exception as error:
+            ck_value = {
+                "status": "error",
+                "error_message": str(error).split(": modern CIP labeling error: ", 1)[-1],
+                "state": ck_cip_state(ck_call),
+            }
+        compare_value(audit, f"ciplabeler.{name}.state", record, rd_value, ck_value)
+
+
 MODES: dict[str, Callable[[Audit, dict[str, Any]], None]] = {
     "core": audit_core,
     "descriptors": audit_descriptors,
     "fingerprints": audit_fingerprints,
+    "ciplabeler": audit_ciplabeler,
 }
 
 
@@ -696,6 +804,7 @@ def main() -> None:
     parser.add_argument("--shards", type=int, default=1)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--max-examples", type=int, default=100)
+    parser.add_argument("--max-atoms", type=int)
     args = parser.parse_args()
     if not 0 <= args.shard < args.shards:
         raise SystemExit("shard must satisfy 0 <= shard < shards")
@@ -706,6 +815,14 @@ def main() -> None:
         for processed, record in enumerate(
             iter_records(args.input, args.shard, args.shards, args.limit), start=1
         ):
+            if args.max_atoms is not None:
+                try:
+                    probe = Chem.MolFromSmiles(record["smiles"], sanitize=True)
+                except Exception:
+                    probe = None
+                if probe is not None and probe.GetNumAtoms() > args.max_atoms:
+                    audit.count("skip.max_atoms")
+                    continue
             MODES[args.mode](audit, record)
             if processed % 1000 == 0:
                 print(

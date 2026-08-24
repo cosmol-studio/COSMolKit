@@ -56,6 +56,22 @@ pub enum ParityPolicy {
     RequiredNow,
 }
 
+/// Source-defined lifecycle of modern CIP observable state for an operation.
+///
+/// This is separate from `DerivedState::STEREO`: `_CIPCode` is deliberately a
+/// non-computed RDKit property, while `_CIPNeighborOrder` and `_CIPComputed`
+/// are computed properties with different clearing behavior.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CipStatePolicy {
+    /// Preserve all modern and legacy CIP properties byte-for-byte.
+    Preserve,
+    /// Reproduce `ROMol::clearComputedProps()`: preserve `_CIPCode`, clear
+    /// `_CIPNeighborOrder`, `_CIPComputed`, and legacy `_CIPRank`.
+    ClearComputed,
+    /// The operation is the sole modern CIP assignment producer.
+    Assign,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlockSet(u8);
 
@@ -246,6 +262,7 @@ pub struct MoleculeOpSpec {
     pub may_mutate: BlockSet,
     pub auto_remap: BlockSet,
     pub derived_effects: DerivedEffects,
+    pub cip_state: CipStatePolicy,
     pub semantic_preconditions: SemanticPreconditionSet,
     pub requires_mapping: MappingRequirement,
     pub support: SupportStatus,
@@ -336,6 +353,12 @@ pub enum OperationError {
         operation: &'static MoleculeOpSpec,
         #[source]
         source: crate::StereoError,
+    },
+    #[error("{operation}: modern CIP labeling error: {source}")]
+    CipLabeler {
+        operation: &'static MoleculeOpSpec,
+        #[source]
+        source: crate::CipLabelerError,
     },
     #[error("{operation}: kekulize error: {source}")]
     Kekulize {
@@ -441,6 +464,7 @@ molecule_ops! {
             preserve: [rings, ring_families],
             invalidate: [aromaticity, stereo, drawing, fingerprint],
         },
+        cip_state: clear_computed,
         semantic_preconditions: [
             trusted_bond_topology,
         ],
@@ -472,6 +496,7 @@ molecule_ops! {
             invalidate: [ring_families, stereo, drawing, fingerprint],
             operation_defined: [valence],
         },
+        cip_state: clear_computed,
         requires_mapping: required,
         feature: HYDROGENS_FEATURE,
         parity: required_now,
@@ -497,6 +522,7 @@ molecule_ops! {
             invalidate: [ring_families, stereo, drawing, fingerprint],
             operation_defined: [valence],
         },
+        cip_state: clear_computed,
         requires_mapping: required,
         feature: HYDROGENS_FEATURE,
         parity: required_now,
@@ -521,6 +547,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [aromaticity, drawing, fingerprint],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: KEKULIZE_FEATURE,
         parity: required_now,
@@ -540,14 +567,15 @@ molecule_ops! {
         domain: topology,
         kind: weak,
         topology_edit: local,
-        access: { read: [], write: [topology, derived_cache] },
-        may_mutate: [topology, derived_cache],
+        access: { read: [], write: [topology, properties, derived_cache] },
+        may_mutate: [topology, properties, derived_cache],
         auto_remap: [],
         derived_effects: {
             recompute: [rings, valence, aromaticity],
             preserve: [],
             invalidate: [ring_families, stereo, drawing, fingerprint],
         },
+        cip_state: clear_computed,
         requires_mapping: none,
         feature: SANITIZE_FEATURE,
         parity: required_now,
@@ -575,6 +603,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: VALENCE_FEATURE,
         parity: required_now,
@@ -599,6 +628,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: RINGS_FEATURE,
         parity: required_now,
@@ -623,6 +653,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: RINGS_FEATURE,
         parity: required_now,
@@ -647,6 +678,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [drawing, fingerprint],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: AROMATICITY_FEATURE,
         parity: required_now,
@@ -671,6 +703,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: VALENCE_FEATURE,
         parity: required_now,
@@ -697,6 +730,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [stereo, drawing, fingerprint],
         },
+        cip_state: preserve,
         semantic_preconditions: [trusted_bond_topology],
         requires_mapping: none,
         feature: STEREO_FEATURE,
@@ -704,6 +738,37 @@ molecule_ops! {
         io_roundtrip: true,
         invariant_profile: "weak_topology_state",
         parity_profile: "assign_atom_chiral_tags_from_structure_rdkit",
+    }
+
+    op assigned_cip_labels(options: crate::CipLabelOptions) {
+        method: with_cip_labels_with_options,
+        docs: "Return a new molecule with modern molecular-context CIP labels assigned according to `options`. When both selections are absent or empty, all eligible atoms and bonds are labeled, matching the pinned wrapper's truth-value dispatch. Once either selection is non-empty, an absent or empty category selects no entries. The source molecule, topology indexing, and coordinates are preserved.",
+        impl_fn: assigned_cip_labels_impl,
+        default_method: with_cip_labels,
+        default_args: [crate::CipLabelOptions::default()],
+        inplace: true,
+        inplace_method: assign_cip_labels_with_options_,
+        default_inplace_method: assign_cip_labels_,
+        inplace_docs: "Assign modern molecular-context CIP labels in place. Errors leave internally complete molecule storage; callers must not assume rollback of source-ordered CIP state.",
+        domain: topology,
+        kind: weak,
+        topology_edit: local,
+        access: { read: [], write: [topology, properties, derived_cache] },
+        may_mutate: [topology, properties, derived_cache],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [],
+            invalidate: [stereo, drawing, fingerprint],
+        },
+        cip_state: assign,
+        semantic_preconditions: [trusted_bond_topology],
+        requires_mapping: none,
+        feature: CIP_LABELER_FEATURE,
+        parity: required_when_supported,
+        io_roundtrip: true,
+        invariant_profile: "weak_topology_state",
+        parity_profile: "modern_ciplabeler_rdkit",
     }
 
     op with_2d_coordinates(params: crate::With2DCoordinatesParams) {
@@ -726,6 +791,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [drawing],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: COORDINATE_2D_FEATURE,
         parity: required_now,
@@ -754,6 +820,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [drawing],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: CONFORMER_GENERATION_FEATURE,
         parity: required_now,
@@ -779,6 +846,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [drawing],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: CONFORMER_GENERATION_FEATURE,
         parity: required_now,
@@ -803,6 +871,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [drawing],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: COORDINATE_EDIT_FEATURE,
         parity: required_when_supported,
@@ -827,6 +896,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [drawing],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: COORDINATE_EDIT_FEATURE,
         parity: required_when_supported,
@@ -851,6 +921,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [drawing],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: COORDINATE_EDIT_FEATURE,
         parity: required_when_supported,
@@ -875,6 +946,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [drawing],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: COORDINATE_EDIT_FEATURE,
         parity: required_when_supported,
@@ -899,6 +971,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [drawing],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: COORDINATE_EDIT_FEATURE,
         parity: required_when_supported,
@@ -923,6 +996,7 @@ molecule_ops! {
             preserve: [],
             invalidate: [drawing],
         },
+        cip_state: preserve,
         requires_mapping: none,
         feature: COORDINATE_EDIT_FEATURE,
         parity: required_when_supported,
@@ -968,6 +1042,7 @@ mod tests {
             DerivedState::VALENCE.union(DerivedState::RINGS), // invalidate: needs_update target + clear-permitted
             DerivedState::NONE,                               // operation_defined
         ),
+        cip_state: CipStatePolicy::Preserve,
         requires_mapping: MappingRequirement::None,
         support: SupportStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
@@ -990,6 +1065,7 @@ mod tests {
             DerivedState::NONE,    // invalidate
             DerivedState::NONE,    // operation_defined
         ),
+        cip_state: CipStatePolicy::Preserve,
         requires_mapping: MappingRequirement::None,
         support: SupportStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
@@ -1007,6 +1083,7 @@ mod tests {
         auto_remap: BlockSet::NONE,
         semantic_preconditions: SemanticPreconditionSet::NONE,
         derived_effects: DerivedEffects::NONE,
+        cip_state: CipStatePolicy::Preserve,
         requires_mapping: MappingRequirement::None,
         support: SupportStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
@@ -4127,14 +4204,13 @@ mod tests {
 
     #[test]
     fn op_parts_cow_mutation_changes_result_without_changing_source() {
-        let molecule = crate::Molecule::new();
+        let mut builder = crate::MoleculeBuilder::new();
+        builder.add_atom(crate::AtomSpec::new(crate::Element::C));
+        let molecule = builder.build().expect("COW source molecule must be valid");
         let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC).unwrap();
 
         let mut topology = parts.begin_topology_mut().unwrap();
-        topology.atoms.push(crate::Atom::from_spec(
-            crate::AtomId::new(0),
-            crate::AtomSpec::new(crate::Element::C),
-        ));
+        topology.atoms[0].set_prop("cow", "changed");
         let valence = parts
             .with_topology_read_parts(topology.clone(), |read| {
                 read.assign_valence_with_options(crate::ValenceModel::RdkitLike, true)
@@ -4155,9 +4231,11 @@ mod tests {
             .finish()
             .expect("COW topology edit should produce a valid molecule");
 
-        assert_eq!(molecule.num_atoms(), 0);
+        assert_eq!(molecule.num_atoms(), 1);
         assert_eq!(result.num_atoms(), 1);
         assert_eq!(result.atomic_numbers(), vec![6]);
+        assert_eq!(molecule.atoms()[0].prop("cow"), None);
+        assert_eq!(result.atoms()[0].prop("cow"), Some("changed"));
     }
 
     #[test]

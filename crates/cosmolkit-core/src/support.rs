@@ -245,6 +245,16 @@ pub const STEREO_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Inspect modeled atom and bond stereo state and assign atom ChiralTag values from a selected 3D conformer through the registered with_chiral_tags_from_structure operation. This stable 3D assignment surface has exact full-state parity with pinned RDKit 2026.03.1 assignChiralTypesFrom3D across all 77 fixed oracle records, covering default or explicit conformer selection, replacement control, tetrahedral C/S/Se centers, environment-enabled square-planar/trigonal-bipyramidal/octahedral centers, property updates, no-op paths, and source-defined errors. It preserves topology and coordinates and commits no partial state on error. The broader assignStereochemistryFrom3D workflow, 3D double-bond direction/E-Z assignment, CIP orchestration, and distinct-substituent validation are separate capabilities and are not claimed by this feature.",
 };
 
+pub const CIP_LABELER_FEATURE: FeatureSpec = FeatureSpec {
+    name: "stereo.cip_labeler",
+    category: FeatureCategory::Stereo,
+    status: SupportStatus::SupportedWithRdkitParity {
+        rdkit_version: "2026.03.1",
+    },
+    parity_sensitive: true,
+    docs: "Assign modern molecular-context CIP descriptors through the source-backed RDKit 2026.03.1 CIPLabeler path. Full-molecule and selected atom/bond assignment share one implementation and expose typed R/S/r/s, E/Z, and M/P/m/p descriptors. Focused, maintained 5,000-row, and complete ChEMBL 37 full/selected state comparisons pass exactly. Non-tetrahedral configurations outside the pinned findConfigs dispatcher and source-equivalent cancellation remain separate unsupported boundaries.",
+};
+
 pub const VALENCE_FEATURE: FeatureSpec = FeatureSpec {
     name: "valence.assignment",
     category: FeatureCategory::Valence,
@@ -353,6 +363,7 @@ pub const PUBLIC_FEATURES: &[&FeatureSpec] = &[
     &SUBSTRUCTURE_FEATURE,
     &DRAWING_FEATURE,
     &STEREO_FEATURE,
+    &CIP_LABELER_FEATURE,
     &VALENCE_FEATURE,
     &RINGS_FEATURE,
     &AROMATICITY_FEATURE,

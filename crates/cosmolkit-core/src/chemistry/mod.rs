@@ -6,6 +6,7 @@
 pub mod aromaticity;
 pub(crate) mod atom_properties;
 pub mod atropisomer;
+pub mod cip;
 pub(crate) mod ciplabeler;
 pub mod coordinates;
 pub mod distgeom;

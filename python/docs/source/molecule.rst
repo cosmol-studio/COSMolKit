@@ -283,6 +283,36 @@ centers, property updates, no-op paths, and defined errors. It does not include 
 broader ``assignStereochemistryFrom3D`` workflow, 3D double-bond direction or
 E/Z assignment, CIP orchestration, or distinct-substituent validation.
 
+Modern CIP Labels
+-----------------
+
+``with_cip_labels()`` assigns molecular-context CIP descriptors and returns a
+new molecule. ``assign_cip_labels_()`` is the explicit in-place form. After
+assignment, atom and bond records expose ``cip_descriptor()`` and
+``cip_neighbor_order()``; ``cip_computed()`` reports the molecule-level
+completion state.
+
+.. code-block:: python
+
+   from cosmolkit import Molecule
+
+   mol = Molecule.from_smiles("C[C@H](F)Cl")
+   labeled = mol.with_cip_labels()
+   print(labeled.atoms()[1].cip_descriptor())
+
+   alkene = Molecule.from_smiles("F/C=C/F")
+   alkene.assign_cip_labels_()
+   print(alkene.bonds()[1].cip_descriptor())
+
+Pass ``atoms=[...]`` or ``bonds=[...]`` for selected assignment. Priorities
+remain molecular-context dependent; selection controls which configurations
+are labeled, not how their priorities are calculated. The source-backed
+boundary includes tetrahedral ``R/S/r/s``, double-bond ``E/Z``, and
+atropisomeric ``M/P/m/p`` descriptors constructed by the pinned RDKit
+``findConfigs`` dispatcher. The maintained ChEMBL 37 phase compares full,
+selected-atom, selected-bond, and empty-selection state across 2,854,362
+eligible molecules with exact agreement.
+
 Conformer Generation And Force-Field Optimization
 -------------------------------------------------
 

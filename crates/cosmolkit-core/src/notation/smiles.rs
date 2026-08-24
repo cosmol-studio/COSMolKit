@@ -71,7 +71,11 @@ fn atom_spec_from_atom(atom: &Atom) -> AtomSpec {
         spec = spec.with_query(query);
     }
     for (key, value) in atom.props() {
-        spec = spec.with_prop(key.clone(), value.clone());
+        spec = if atom.is_prop_computed(key) {
+            spec.with_computed_prop(key.clone(), value.clone())
+        } else {
+            spec.with_prop(key.clone(), value.clone())
+        };
     }
     if let Some(info) = atom.pdb_residue_info().cloned() {
         spec = spec.with_pdb_residue_info(info);
@@ -112,8 +116,13 @@ fn report_parse_error(message: &str, throw_it: bool) -> Result<(), SmilesParseEr
     }
 }
 
+/// Source-backed SMILES parser options.
+///
+/// `sanitize` and `remove_hs` are independent, matching the pinned parser
+/// boundary. Use [`Self::with_sanitize`] and [`Self::with_remove_hs`] to
+/// override the default `true` values.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SmilesParseParams {
+pub struct SmilesParseParams {
     sanitize: bool,
     allow_cxsmiles: bool,
     strict_cxsmiles: bool,
@@ -140,7 +149,8 @@ impl Default for SmilesParseParams {
 }
 
 impl SmilesParseParams {
-    pub(crate) fn with_sanitize(sanitize: bool) -> Self {
+    #[must_use]
+    pub fn with_sanitize(sanitize: bool) -> Self {
         Self {
             sanitize,
             // RDKit's Python-facing `MolFromSmiles(..., sanitize=False)`
@@ -150,6 +160,12 @@ impl SmilesParseParams {
             remove_hs: sanitize,
             ..Default::default()
         }
+    }
+
+    #[must_use]
+    pub const fn with_remove_hs(mut self, remove_hs: bool) -> Self {
+        self.remove_hs = remove_hs;
+        self
     }
 
     #[cfg(test)]
@@ -1981,7 +1997,11 @@ impl SmilesBuildState {
                 if key == CXSMILES_BOND_IDX_PROP {
                     continue;
                 }
-                spec = spec.with_prop(key.clone(), value.clone());
+                spec = if bond.is_prop_computed(key) {
+                    spec.with_computed_prop(key.clone(), value.clone())
+                } else {
+                    spec.with_prop(key.clone(), value.clone())
+                };
             }
             spec = spec.with_prop(CXSMILES_BOND_IDX_PROP, self.cx_bond_order.len().to_string());
             let bond_id = self

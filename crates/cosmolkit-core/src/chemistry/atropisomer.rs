@@ -74,6 +74,35 @@ pub struct AtropisomerResult {
     pub stereo: Option<BondStereo>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AtropisomerAtomsAndBonds {
+    pub(crate) atoms: [AtomId; 2],
+    pub(crate) neighbor_bonds: [Vec<BondId>; 2],
+}
+
+impl AtropisomerAtomsAndBonds {
+    pub(crate) fn first_neighbor_atoms(&self, mol: &Molecule) -> Option<[AtomId; 2]> {
+        let first = mol.bonds().get(self.neighbor_bonds[0].first()?.index())?;
+        let second = mol.bonds().get(self.neighbor_bonds[1].first()?.index())?;
+        Some([
+            if first.begin() == self.atoms[0] {
+                first.end()
+            } else if first.end() == self.atoms[0] {
+                first.begin()
+            } else {
+                return None;
+            },
+            if second.begin() == self.atoms[1] {
+                second.end()
+            } else if second.end() == self.atoms[1] {
+                second.begin()
+            } else {
+                return None;
+            },
+        ])
+    }
+}
+
 // BEGIN RDKIT CPP FUNCTION: getAtropisomerAtomsAndBonds (Atropisomers.cpp:31-69)
 // RDKit✔️✔️: bool getAtropisomerAtomsAndBonds(const Bond *bond,
 // RDKit✔️✔️:                                  AtropAtomAndBondVec atomsAndBondVects[2],
@@ -82,19 +111,22 @@ pub struct AtropisomerResult {
 // RDKit✔️✔️:   atomsAndBondVects[0].first = bond->getBeginAtom();
 // RDKit✔️✔️:   atomsAndBondVects[1].first = bond->getEndAtom();
 // RDKit✔️✔️:
+// RDKit✔️✔️:   // get the one or two bonds on each end
+// RDKit✔️✔️:
 // RDKit✔️✔️:   for (int bondAtomIndex = 0; bondAtomIndex < 2; ++bondAtomIndex) {
 // RDKit✔️✔️:     for (const auto nbrBond :
 // RDKit✔️✔️:          mol.atomBonds(atomsAndBondVects[bondAtomIndex].first)) {
 // RDKit✔️✔️:       if (nbrBond == bond) {
-// RDKit✔️✔️:         continue;
+// RDKit✔️✔️:         continue;  // a bond is NOT its own neighbor
 // RDKit✔️✔️:       }
 // RDKit✔️✔️:       atomsAndBondVects[bondAtomIndex].second.push_back(nbrBond);
 // RDKit✔️✔️:     }
 // RDKit✔️✔️:     if (atomsAndBondVects[bondAtomIndex].second.size() == 0) {
-// RDKit✔️✔️:       return false;
+// RDKit✔️✔️:       return false;  // no neighbor bonds found
 // RDKit✔️✔️:     }
 // RDKit✔️✔️:
-// RDKit✔️✔️:     // make sure the bond with the lowest atom index is first
+// RDKit✔️✔️:     // make sure the bond with this lowest atom is is first
+// RDKit✔️✔️:
 // RDKit✔️✔️:     if (atomsAndBondVects[bondAtomIndex].second.size() == 2 &&
 // RDKit✔️✔️:         atomsAndBondVects[bondAtomIndex]
 // RDKit✔️✔️:                 .second[1]
@@ -111,58 +143,59 @@ pub struct AtropisomerResult {
 // RDKit✔️✔️:   return true;
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION: getAtropisomerAtomsAndBonds
-/// Get the two atoms of the atropisomer bond and their neighbor bonds
-/// (1-2 per end), sorted by the other atom's index.
-///
-/// Returns `None` if either end has no neighbor bonds (dead end), which
-/// means the bond cannot be an atropisomeric axis.
-pub fn get_atropisomer_atoms_and_bonds(mol: &Molecule, bond_id: BondId) -> Option<[AtomId; 2]> {
-    let bond = mol.bonds().get(bond_id.index())?;
-    Some([bond.begin(), bond.end()])
-}
-
-/// Get the neighbor bonds for one end of an atropisomer bond, excluding
-/// the atropisomer bond itself. Returns 1-2 bonds sorted by the other
-/// atom's index (RDKit convention: lowest index first).
-fn get_atropisomer_neighbor_bonds(
+pub(crate) fn atropisomer_atoms_and_bonds(
     mol: &Molecule,
-    focus_atom: AtomId,
-    atrop_bond: BondId,
-) -> Option<Vec<BondId>> {
-    let mut nbr_bonds: Vec<BondId> = mol
-        .bonds()
-        .iter()
-        .filter(|b| b.id() != atrop_bond && (b.begin() == focus_atom || b.end() == focus_atom))
-        .map(|b| b.id())
-        .collect();
+    bond_id: BondId,
+) -> Option<AtropisomerAtomsAndBonds> {
+    let topology = mol.topology_block();
+    let bond = topology.bonds.get(bond_id.index())?;
+    let atoms = [bond.begin(), bond.end()];
+    let mut neighbor_bonds = [Vec::new(), Vec::new()];
 
-    if nbr_bonds.is_empty() {
-        return None;
-    }
-
-    // RDKit convention: if there are 2 neighbor bonds, sort by the other
-    // atom index (lowest first).
-    if nbr_bonds.len() == 2 {
-        let other0 = bond_other_atom(mol, nbr_bonds[0], focus_atom)?;
-        let other1 = bond_other_atom(mol, nbr_bonds[1], focus_atom)?;
-        if other1.index() < other0.index() {
-            nbr_bonds.swap(0, 1);
+    for (side, atom) in atoms.into_iter().enumerate() {
+        let neighbors = topology.adjacency.neighbors_of(atom.index());
+        for neighbor in neighbors {
+            if neighbor.bond == bond_id {
+                continue;
+            }
+            neighbor_bonds[side].push(neighbor.bond);
+        }
+        if neighbor_bonds[side].is_empty() {
+            return None;
+        }
+        if neighbor_bonds[side].len() == 2 {
+            let first = topology.bonds.get(neighbor_bonds[side][0].index())?;
+            let second = topology.bonds.get(neighbor_bonds[side][1].index())?;
+            let first_other = if first.begin() == atom {
+                first.end().index()
+            } else if first.end() == atom {
+                first.begin().index()
+            } else {
+                return None;
+            };
+            let second_other = if second.begin() == atom {
+                second.end().index()
+            } else if second.end() == atom {
+                second.begin().index()
+            } else {
+                return None;
+            };
+            if second_other < first_other {
+                neighbor_bonds[side].swap(0, 1);
+            }
         }
     }
 
-    Some(nbr_bonds)
+    Some(AtropisomerAtomsAndBonds {
+        atoms,
+        neighbor_bonds,
+    })
 }
 
-/// Get the other atom of a bond given one endpoint.
-fn bond_other_atom(mol: &Molecule, bond_id: BondId, atom: AtomId) -> Option<AtomId> {
-    let bond = mol.bonds().get(bond_id.index())?;
-    if bond.begin() == atom {
-        Some(bond.end())
-    } else if bond.end() == atom {
-        Some(bond.begin())
-    } else {
-        None
-    }
+/// Return the axis endpoint atoms when both ends have the neighbor bonds
+/// required by RDKit's atropisomer helper.
+pub fn get_atropisomer_atoms_and_bonds(mol: &Molecule, bond_id: BondId) -> Option<[AtomId; 2]> {
+    atropisomer_atoms_and_bonds(mol, bond_id).map(|parts| parts.atoms)
 }
 
 /// Check if a bond order can have wedge direction (single or aromatic).
@@ -298,18 +331,13 @@ pub fn detect_atropisomers(
         // RDKit❗✔️: Already assigned as atropisomer
         if matches!(bond.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw) {
             // Already detected, include it in results for completeness.
-            let begin = bond.begin();
-            let end = bond.end();
-            let nbr_begin = get_atropisomer_neighbor_bonds(mol, begin, bond_id);
-            let nbr_end = get_atropisomer_neighbor_bonds(mol, end, bond_id);
-            let (nbr0, nbr1) = match (nbr_begin, nbr_end) {
-                (Some(n0), Some(n1)) => (n0, n1),
-                _ => continue,
+            let Some(parts) = atropisomer_atoms_and_bonds(mol, bond_id) else {
+                continue;
             };
             results.push(AtropisomerResult {
                 bond: bond_id,
-                atoms: [begin, end],
-                neighbor_bonds: [nbr0, nbr1],
+                atoms: parts.atoms,
+                neighbor_bonds: parts.neighbor_bonds,
                 stereo: Some(bond.stereo()),
             });
             continue;
@@ -372,13 +400,8 @@ pub fn detect_atropisomers(
         }
 
         // Found a candidate. Get neighbor bonds.
-        let begin = bond.begin();
-        let end = bond.end();
-        let nbr_begin = get_atropisomer_neighbor_bonds(mol, begin, bond_id);
-        let nbr_end = get_atropisomer_neighbor_bonds(mol, end, bond_id);
-        let (nbr0, nbr1) = match (nbr_begin, nbr_end) {
-            (Some(n0), Some(n1)) => (n0, n1),
-            _ => continue,
+        let Some(parts) = atropisomer_atoms_and_bonds(mol, bond_id) else {
+            continue;
         };
 
         // At least one side must have distinguishable substituents.
@@ -390,14 +413,10 @@ pub fn detect_atropisomers(
         // has no distinguishable substituents on that end, so both ends
         // must have at least 2 non-axis bonds for full atropisomerism,
         // but RDKit accepts degree-2 atoms.
-        if nbr0.is_empty() || nbr1.is_empty() {
-            continue;
-        }
-
         results.push(AtropisomerResult {
             bond: bond_id,
-            atoms: [begin, end],
-            neighbor_bonds: [nbr0, nbr1],
+            atoms: parts.atoms,
+            neighbor_bonds: parts.neighbor_bonds,
             stereo: None,
         });
     }
@@ -595,17 +614,10 @@ pub fn assign_atropisomer_stereo(mol: &Molecule) -> Result<Vec<(BondId, ChiralTa
         }
 
         // Get neighbor bonds for both ends.
-        let begin = candidate.begin();
-        let end = candidate.end();
-        let nbr_begin = get_atropisomer_neighbor_bonds(mol, begin, candidate_id);
-        let nbr_end = get_atropisomer_neighbor_bonds(mol, end, candidate_id);
-        let (nbr0, nbr1) = match (nbr_begin, nbr_end) {
-            (Some(n0), Some(n1)) => (n0, n1),
-            _ => continue,
-        };
-        if nbr0.is_empty() || nbr1.is_empty() {
+        let Some(parts) = atropisomer_atoms_and_bonds(mol, candidate_id) else {
             continue;
-        }
+        };
+        let [nbr0, nbr1] = &parts.neighbor_bonds;
 
         // --- Wedge direction parity analysis ---
         // RDKit's no-conf approach (Atropisomers.cpp:343-371):
@@ -627,8 +639,8 @@ pub fn assign_atropisomer_stereo(mol: &Molecule) -> Result<Vec<(BondId, ChiralTa
 
         // RDKit❗✔️: getBondDir returns the wedge direction for each end.
         // The first bond on each end is the "primary" bond.
-        let dir0 = get_end_wedge_direction(mol, &nbr0, begin);
-        let dir1 = get_end_wedge_direction(mol, &nbr1, end);
+        let dir0 = get_end_wedge_direction(mol, nbr0, candidate.begin());
+        let dir1 = get_end_wedge_direction(mol, nbr1, candidate.end());
 
         let (has_dir0, wedge_dir0) = dir0;
         let (has_dir1, wedge_dir1) = dir1;
@@ -845,15 +857,10 @@ pub fn validate_atropisomer_assignment(mol: &Molecule, bond_id: BondId) -> Resul
     }
 
     // Must have neighbor bonds on both ends.
-    let nbr_begin = get_atropisomer_neighbor_bonds(mol, bond.begin(), bond_id);
-    let nbr_end = get_atropisomer_neighbor_bonds(mol, bond.end(), bond_id);
-    match (nbr_begin, nbr_end) {
-        (Some(n0), Some(n1)) if !n0.is_empty() && !n1.is_empty() => {}
-        _ => {
-            return Err(AtropError::UnsupportedBranch {
-                message: "atropisomer bond must have neighbor bonds on both ends",
-            });
-        }
+    if atropisomer_atoms_and_bonds(mol, bond_id).is_none() {
+        return Err(AtropError::UnsupportedBranch {
+            message: "atropisomer bond must have neighbor bonds on both ends",
+        });
     }
 
     Ok(())
@@ -862,18 +869,110 @@ pub fn validate_atropisomer_assignment(mol: &Molecule, bond_id: BondId) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Molecule;
+    use crate::{Element, Molecule, atom::AtomSpec, bond::BondSpec, builder::MoleculeBuilder};
+
+    #[test]
+    fn atropisomer_atoms_and_bonds_orders_two_neighbors_by_other_atom_index() {
+        let mut builder = MoleculeBuilder::new();
+        let low_left = builder.add_atom(AtomSpec::new(Element::C));
+        let begin = builder.add_atom(AtomSpec::new(Element::C));
+        let end = builder.add_atom(AtomSpec::new(Element::C));
+        let low_right = builder.add_atom(AtomSpec::new(Element::C));
+        let high_left = builder.add_atom(AtomSpec::new(Element::C));
+        let high_right = builder.add_atom(AtomSpec::new(Element::C));
+        let axis = builder
+            .add_bond(BondSpec::new(begin, end, BondOrder::Single))
+            .unwrap();
+        let high_left_bond = builder
+            .add_bond(BondSpec::new(begin, high_left, BondOrder::Single))
+            .unwrap();
+        let low_left_bond = builder
+            .add_bond(BondSpec::new(begin, low_left, BondOrder::Single))
+            .unwrap();
+        let high_right_bond = builder
+            .add_bond(BondSpec::new(end, high_right, BondOrder::Single))
+            .unwrap();
+        let low_right_bond = builder
+            .add_bond(BondSpec::new(end, low_right, BondOrder::Single))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        let parts = atropisomer_atoms_and_bonds(&molecule, axis).unwrap();
+        assert_eq!(parts.atoms, [begin, end]);
+        assert_eq!(
+            parts.neighbor_bonds,
+            [
+                vec![low_left_bond, high_left_bond],
+                vec![low_right_bond, high_right_bond],
+            ]
+        );
+        assert_eq!(
+            parts.first_neighbor_atoms(&molecule),
+            Some([low_left, low_right])
+        );
+        assert_eq!(
+            get_atropisomer_atoms_and_bonds(&molecule, axis),
+            Some([begin, end])
+        );
+    }
+
+    #[test]
+    fn atropisomer_atoms_and_bonds_preserves_adjacency_order_above_two_neighbors() {
+        let mut builder = MoleculeBuilder::new();
+        let begin = builder.add_atom(AtomSpec::new(Element::C));
+        let end = builder.add_atom(AtomSpec::new(Element::C));
+        let first = builder.add_atom(AtomSpec::new(Element::C));
+        let second = builder.add_atom(AtomSpec::new(Element::C));
+        let third = builder.add_atom(AtomSpec::new(Element::C));
+        let right = builder.add_atom(AtomSpec::new(Element::C));
+        let axis = builder
+            .add_bond(BondSpec::new(begin, end, BondOrder::Single))
+            .unwrap();
+        let first_bond = builder
+            .add_bond(BondSpec::new(begin, third, BondOrder::Single))
+            .unwrap();
+        let second_bond = builder
+            .add_bond(BondSpec::new(begin, first, BondOrder::Single))
+            .unwrap();
+        let third_bond = builder
+            .add_bond(BondSpec::new(begin, second, BondOrder::Single))
+            .unwrap();
+        let right_bond = builder
+            .add_bond(BondSpec::new(end, right, BondOrder::Single))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        let parts = atropisomer_atoms_and_bonds(&molecule, axis).unwrap();
+        assert_eq!(
+            parts.neighbor_bonds,
+            [vec![first_bond, second_bond, third_bond], vec![right_bond]]
+        );
+        assert_eq!(parts.first_neighbor_atoms(&molecule), Some([third, right]));
+    }
+
+    #[test]
+    fn atropisomer_atoms_and_bonds_rejects_an_axis_with_a_dead_end() {
+        let mut builder = MoleculeBuilder::new();
+        let begin = builder.add_atom(AtomSpec::new(Element::C));
+        let end = builder.add_atom(AtomSpec::new(Element::C));
+        let left = builder.add_atom(AtomSpec::new(Element::C));
+        let axis = builder
+            .add_bond(BondSpec::new(begin, end, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(begin, left, BondOrder::Single))
+            .unwrap();
+        let molecule = builder.build().unwrap();
+
+        assert!(atropisomer_atoms_and_bonds(&molecule, axis).is_none());
+        assert!(get_atropisomer_atoms_and_bonds(&molecule, axis).is_none());
+    }
 
     fn build_simple_biaryl() -> Molecule {
         // Build a simple biphenyl-like molecule:
         // Two phenyl rings connected by a single bond.
         // c1ccccc1-c2ccccc2
         // For testing, construct manually.
-        use crate::Element;
-        use crate::atom::AtomSpec;
-        use crate::bond::BondSpec;
-        use crate::builder::MoleculeBuilder;
-
         let mut builder = MoleculeBuilder::new();
 
         // Ring 1: c1-c2-c3-c4-c5-c6
@@ -980,10 +1079,6 @@ mod tests {
     #[test]
     fn test_get_atropisomer_neighbor_bonds_empty() {
         // Single atom molecule has no bonds.
-        use crate::Element;
-        use crate::atom::AtomSpec;
-        use crate::builder::MoleculeBuilder;
-
         let mut builder = MoleculeBuilder::new();
         let _c1 = builder.add_atom(AtomSpec::new(Element::C));
         let _mol = builder.build().expect("molecule should build");
