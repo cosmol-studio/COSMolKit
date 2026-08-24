@@ -11,6 +11,7 @@ from urllib.parse import urljoin
 from xml.etree import ElementTree
 
 BASE_URL = "https://kit.cosmol.org/"
+INDEXNOW_KEY = "283f8e40-25ad-4213-b83b-e5c6d3b3c5e0"
 EXCLUDED_HTML = {"genindex.html", "py-modindex.html", "search.html"}
 PROJECT_LINKS = {
     "https://github.com/cosmol-studio/COSMolKit",
@@ -203,6 +204,14 @@ def validate_robots(build_dir: Path) -> None:
     assert f"Sitemap: {BASE_URL}sitemap.xml" in lines
 
 
+def validate_indexnow_key(build_dir: Path) -> None:
+    key_path = build_dir / f"{INDEXNOW_KEY}.txt"
+    assert key_path.is_file(), "IndexNow key was not copied to the site root"
+    assert key_path.read_text(encoding="utf-8").splitlines() == [INDEXNOW_KEY], (
+        "IndexNow key file must contain exactly the public verification key"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("build_dir", type=Path)
@@ -212,6 +221,7 @@ def main() -> None:
     validate_sitemap(build_dir, expected_urls)
     project_link_page_count = validate_project_links(build_dir)
     validate_robots(build_dir)
+    validate_indexnow_key(build_dir)
     print(
         f"validated SEO artifacts for {len(expected_urls)} public pages and "
         f"project links for {project_link_page_count} generated pages"

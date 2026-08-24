@@ -24,7 +24,10 @@ exclude_patterns = []
 
 html_theme = "furo"
 html_baseurl = "https://kit.cosmol.org/"
-html_extra_path = ["robots.txt"]
+html_extra_path = [
+    "robots.txt",
+    "283f8e40-25ad-4213-b83b-e5c6d3b3c5e0.txt",
+]
 html_static_path = ["_static"]
 html_css_files = ["cosmolkit.css"]
 

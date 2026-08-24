@@ -21,6 +21,12 @@ empty.
 
 ## [Unreleased]
 
+## [0.2.13] - 2026-08-24
+
+This release completes source-backed AtomPair and Topological Torsion
+fingerprints, expands complete structural input into `BioStructure`, and adds
+Gemmi-aligned mmCIF serialization through consistent Rust and Python APIs.
+
 ### Added
 
 - Added source-backed AtomPair sparse-count, folded-count, sparse-bit, and
@@ -48,6 +54,7 @@ empty.
 
 ### Changed
 
+- Updated all Rust crates and the Python package to version 0.2.13.
 - Reproduced RDKit's logically read-only 2D and resolved-conformer 3D distance
   matrix caching in shared molecule computed state, with topology/coordinate
   invalidation and clone-local synchronization. AtomPair and distance-geometry
@@ -113,6 +120,8 @@ empty.
   build. The declared boundary is the state represented by `BioStructure`;
   arbitrary private CIF categories and source-document layout are not claimed
   as byte-preserving round trips.
+
+Full comparison: [v0.2.12...v0.2.13](https://github.com/cosmol-studio/COSMolKit/compare/v0.2.12...v0.2.13)
 
 ## [0.2.12] - 2026-08-19
 
